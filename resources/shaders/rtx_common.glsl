@@ -1,4 +1,4 @@
-// Comun RTX: trabajo en lineal con par inverso/tonemap intacto.
+// rtx shared: linear-space work, inverse/tonemap pairs intact.
 #ifdef GL_ES
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
@@ -7,7 +7,7 @@ precision mediump float;
 #endif
 #endif
 
-// Techo: las inversas divergen en blanco puro.
+// inverses diverge at pure white.
 const float kHdrCeil = 0.9995;
 const float kU2White = 0.72519;
 
@@ -24,14 +24,14 @@ float hash12(vec2 p) {
     return fract((p3.x + p3.y) * p3.z);
 }
 
-// ANGLE falla con aristas nulas o invertidas.
+// ANGLE fails on empty or inverted edges.
 float safeSmoothstep(float e0, float e1, float x) {
     if (abs(e1 - e0) < 0.00001) return step(e0, x);
     if (e1 < e0) return 1.0 - smoothstep(e1, e0, x);
     return smoothstep(e0, e1, x);
 }
 
-// Halton para dither temporal (complementa al IGN espacial).
+// halton for temporal dither.
 float halton(float idx, float base) {
     float f = 1.0;
     float r = 0.0;
@@ -45,7 +45,7 @@ float halton(float idx, float base) {
     return fract(r);
 }
 
-// Evita Inf/NaN si el buffer fuese HDR.
+// guards HDR Inf/NaN.
 vec3 softClampHi(vec3 c) {
     float l = luma(c);
     return c / (1.0 + max(l - 1.0, 0.0));
@@ -63,7 +63,7 @@ vec3 tmAcesInv(vec3 c) {
          / (502.0 - 486.0 * y);
 }
 
-// Filmic trae sRGB dentro: se devuelve a lineal al cuadrado.
+// filmic bakes sRGB in; square back to linear.
 vec3 tmFilmic(vec3 c) {
     vec3 x = max(vec3(0.0), c - 0.004);
     vec3 s = (x * (6.2 * x + 0.5)) / (x * (6.2 * x + 1.7) + 0.06);
@@ -72,7 +72,7 @@ vec3 tmFilmic(vec3 c) {
 vec3 tmFilmicInv(vec3 c) {
     vec3 s = min(toDisplay(c), kHdrCeil);
     vec3 a = 6.2 * (s - 1.0);
-    // Evita division por cero con entradas fuera de rango.
+    // no div-by-zero on out-of-range input.
     vec3 ax = abs(a);
     a.x = ax.x < 0.001 ? -0.001 : a.x;
     a.y = ax.y < 0.001 ? -0.001 : a.y;

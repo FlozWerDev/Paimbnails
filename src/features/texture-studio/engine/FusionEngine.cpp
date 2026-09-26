@@ -18,8 +18,7 @@ inline float rgbDist(std::uint8_t const* a, std::uint8_t r, std::uint8_t g,
     return std::sqrt(dr * dr + dg * dg + db * db);
 }
 
-// Luminance-tolerant distance keeps same-hue shades together while strict chroma
-// excludes white rings and glyphs.
+// Luma-tolerant distance groups same-hue shades; strict chroma excludes white rings/glyphs.
 inline float colorDist(std::uint8_t const* p,
                        std::uint8_t sr, std::uint8_t sg, std::uint8_t sb) {
     float dr = static_cast<float>(p[0]) - static_cast<float>(sr);
@@ -170,7 +169,7 @@ ImageBuffer FusionEngine::buildStampCanvas(ImageBuffer const& texture,
                                            int pixelOffsetY) {
     if (texture.empty() || frameW <= 0 || frameH <= 0) return ImageBuffer();
     transform.opacity = 255;
-// Default to Fill so the texture covers the painted region.
+    // Default Fill: texture covers the painted region.
     if (transform.isDefault()) {
         transform.fitMode = ImageFitMode::Fill;
     }
@@ -180,7 +179,7 @@ ImageBuffer FusionEngine::buildStampCanvas(ImageBuffer const& texture,
         && mask->width == frameW && mask->height == frameH) {
         int mx = 0, my = 0, mw = 0, mh = 0;
         if (maskBounds(*mask, mx, my, mw, mh) && mw > 0 && mh > 0) {
-// One-pixel padding preserves soft AA at mask edges.
+            // 1px padding keeps soft AA at mask edges.
             constexpr int kPad = 1;
             bx = std::max(0, mx - kPad);
             by = std::max(0, my - kPad);
@@ -191,7 +190,7 @@ ImageBuffer FusionEngine::buildStampCanvas(ImageBuffer const& texture,
         }
     }
 
-// Fit/Fill/Stretch use the mask AABB, not the full sprite canvas.
+    // Fit/Fill/Stretch target the mask AABB, not the full canvas.
     ImageBuffer patch = SpritePreviewRenderer::renderCustomImage(
         texture, bw, bh, transform,
         static_cast<float>(pixelOffsetX), static_cast<float>(pixelOffsetY));
@@ -234,7 +233,7 @@ void FusionEngine::applyCached(ImageBuffer& base,
         auto* bp = baseData + i * ImageBuffer::kBytesPerPixel;
         if (bp[3] == 0) continue;
 
-// Sample with integer pixel shift; out-of-bounds is transparent.
+        // Integer pixel shift; out-of-bounds reads transparent.
         int x = static_cast<int>(i % static_cast<std::size_t>(fw));
         int y = static_cast<int>(i / static_cast<std::size_t>(fw));
         int sx = x - offX;
@@ -306,7 +305,7 @@ MaskBuffer FusionEngine::floodFill(ImageBuffer const& sprite,
     }
 
     std::uint8_t sr = seedPx[0], sg = seedPx[1], sb = seedPx[2];
-// UI radius 0..255; soft band absorbs AA and gradient fringes.
+    // Soft band absorbs AA and gradient fringes.
     float tol = static_cast<float>(std::clamp(colorRadius, 0, 255));
     float softTol = tol * 1.55f;
 
@@ -366,7 +365,7 @@ MaskBuffer FusionEngine::floodFill(ImageBuffer const& sprite,
     }
 
     sealInteriorHoles(out, sprite, aCut);
-// Expand only into same-color neighbors; reject rings and glyphs.
+    // Same-color neighbors only; rings and glyphs rejected.
     expandMask(out, sprite, expandRadius, sr, sg, sb,
                static_cast<int>(std::lround(softTol)), aCut);
     return out;
@@ -402,7 +401,7 @@ void FusionEngine::expandMask(MaskBuffer& mask,
                 }
                 auto const* p = px + i * ImageBuffer::kBytesPerPixel;
                 if (p[3] < static_cast<std::uint8_t>(aCut)) continue;
-// Reject white outlines, letters, and other hues.
+                // White outlines, letters and other hues rejected.
                 if (colorDist(p, seedR, seedG, seedB) > limit) continue;
 
                 bool neighbour = false;
@@ -480,7 +479,7 @@ void FusionEngine::apply(ImageBuffer& base,
     if (local.isDefault()) {
         local.fitMode = ImageFitMode::Fill;
     }
-// Bake integer placement into source sampling so masked edge pixels are preserved.
+    // Integer placement bakes into sampling so masked edge pixels survive.
     auto stamp = buildStampCanvas(texture, base.width(), base.height(), local, &mask,
                                   options.pixelOffsetX, options.pixelOffsetY);
     if (stamp.empty()) return;

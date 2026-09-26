@@ -61,7 +61,7 @@ struct PopupEntry {
     GuideAnimation animation = GuideAnimation::Point;
 };
 
-    // Stable category id used by GuideIntent.
+// Stable category id used by GuideIntent.
 char const* categoryIdString(PopupCategory cat);
 
 PopupCategory categoryFromId(std::string const& id);

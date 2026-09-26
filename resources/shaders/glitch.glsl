@@ -27,7 +27,6 @@ void main() {
     float b3 = u_intensity * 3.0;
     float str = b3 * 0.1;
     
-    // line + block displacement (2 noise calls)
     float n1 = noise(vec2(uv.y * 40.0, u_time * 6.0));
     float n2 = noise(vec2(uv.y * 5.0, u_time * 3.5));
     uv.x += (n1 - 0.5) * str * smoothstep(0.92 - b3 * 0.04, 0.95, n1);
@@ -35,14 +34,12 @@ void main() {
     
     vec4 color = texture2D(u_texture, uv);
     
-    // chromatic split (1 noise call, reuse for flicker)
     float n3 = noise(vec2(uv.y * 60.0, u_time * 8.0));
     float cg = smoothstep(0.88 - b3 * 0.03, 0.94, n3);
     float shift = 0.015 * b3 * cg;
     color.r = mix(color.r, texture2D(u_texture, uv + vec2(shift, 0.0)).r, cg);
     color.b = mix(color.b, texture2D(u_texture, uv - vec2(shift, 0.0)).b, cg);
     
-    // scanline flicker (1 noise call)
     float n4 = noise(vec2(u_time * 12.0, uv.y * 200.0));
     color.rgb *= 1.0 - smoothstep(0.65, 0.95, n4) * 0.15 * b3;
     

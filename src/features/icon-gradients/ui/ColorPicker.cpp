@@ -1,7 +1,4 @@
-// Idea credit: "Icon Gradients" by zilko
-// (https://github.com/zilko144/icon-gradients-geode, unlicensed —
-// all rights reserved). Independent implementation: same behavior,
-// own expression.
+// After zilko's "Icon Gradients" (independent implementation; idea credit zilko144, unlicensed).
 
 #include "ColorPicker.hpp"
 #include "../GradientUtils.hpp"

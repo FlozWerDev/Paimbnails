@@ -27,7 +27,7 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
 #define kQuadSize sizeof(ccV3F_C4B_T2F)
 #endif
 
-// Thumbnail sprite with a custom shader and manual draw path.
+// thumbnail sprite with custom shader and manual draw path.
 class PaimonShaderSprite : public CCSprite {
 public:
     float m_intensity = 0.0f;
@@ -36,7 +36,7 @@ public:
     CCSize m_texSize = {0, 0};
     paimon::SoftEdgeFade m_softEdgeFade;
 
-    // Uniform locations are cached until the linked shader program changes.
+    // uniform locations cached per linked program.
     cocos2d::CCGLProgram* m_cachedProgram = nullptr;
     GLint m_locIntensity  = -2;  // -2 = uninitialized, -1 = not present
     GLint m_locTime       = -2;
@@ -122,7 +122,7 @@ public:
     }
 };
 
-// Custom gradient shader with per-vertex colors.
+// gradient shader with per-vertex colors.
 class PaimonShaderGradient : public CCSprite {
 public:
     float m_intensity = 0.0f;
@@ -255,7 +255,7 @@ public:
     }
 };
 
-// Blur sprite synced to an animated GIF through a geode::Ref target.
+// blur sprite synced to an animated GIF via geode::Ref.
 class PaimonBlurSprite : public CCSprite {
 public:
     float m_intensity = 0.0f;
@@ -280,8 +280,7 @@ public:
 
     void update(float dt) override {
         if (m_syncTarget) {
-            // Sync the texture without changing rect/contentSize; the blur keeps
-            // its existing scale.
+            // sync texture only; blur keeps its scale.
             auto targetTex = m_syncTarget->getTexture();
             if (targetTex && targetTex != this->getTexture()) {
                 auto savedSize = this->getContentSize();

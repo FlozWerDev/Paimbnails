@@ -25,7 +25,7 @@ bool TintPreviewSprite::init(cocos2d::CCTexture2D* base,
     setMaskTexture(mask);
     if (auto* program = paimon::shaders::getTintPreviewShader()) {
         setShaderProgram(program);
-        // Sampler units stay fixed; only colors/grades move per draw.
+        // Sampler units fixed; only colors/grades move per draw.
         program->use();
         GLint loc = program->getUniformLocationForName("u_texture");
         if (loc != -1) program->setUniformLocationWith1i(loc, 0);
@@ -46,7 +46,7 @@ void TintPreviewSprite::setMaskTexture(cocos2d::CCTexture2D* mask) {
     if (m_maskTex) m_maskTex->release();
     m_maskTex = mask;
     if (m_maskTex) {
-        // Weights must survive sampling bit-exact; NPOT needs clamp on GLES2.
+        // Weights must survive sampling bit-exact; NPOT clamps on GLES2.
         cocos2d::ccTexParams params{GL_NEAREST, GL_NEAREST,
                                     GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
         m_maskTex->setTexParameters(&params);
@@ -58,8 +58,7 @@ void TintPreviewSprite::setTint(TintColors const& colors, int brightness,
                                 bool glowReplace, bool applyDetail,
                                 int darkThreshold) {
     m_colors = colors;
-    // Same clamps as PrecomputedTint::make so out-of-range UI values grade
-    // identically on both paths.
+    // Same clamps as PrecomputedTint::make: out-of-range UI grades identically on both paths.
     m_brightness = std::clamp(static_cast<float>(brightness), 1.f, 1000.f);
     m_saturation = std::clamp(saturation, 0.f, 3.f);
     m_contrast = std::clamp(contrast, -1.f, 1.f);

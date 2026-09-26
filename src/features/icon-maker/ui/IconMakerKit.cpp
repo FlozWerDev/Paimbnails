@@ -24,8 +24,7 @@ namespace paimon::icon_maker::gdkit {
 
 namespace {
 
-// Prioridad para controles hijos, compatible con el force-priority de los
-// popups de Geode.
+// child-control priority, compatible with Geode popups' force-priority.
 int childTouchPrio() {
     return CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2;
 }
@@ -59,7 +58,7 @@ float scaledHeight(CCLabelBMFont* l) {
     return l ? l->getContentSize().height * l->getScale() : 0.f;
 }
 
-// Fila con placa del juego de fondo, ya dimensionada.
+// game-plated row, pre-sized.
 CCNode* makeRow(float width, float height) {
     auto* row = CCNode::create();
     row->setAnchorPoint({0.f, 0.f});
@@ -71,7 +70,7 @@ CCNode* makeRow(float width, float height) {
     return row;
 }
 
-// Wrapper CCObject para el callback del toggle vanilla.
+// CCObject wrapper for the vanilla toggle callback.
 class ToggleCallback : public CCObject {
 public:
     std::function<void(bool)> m_callback;
@@ -85,12 +84,12 @@ public:
     }
 
     void onToggle(CCObject*) {
-        // isToggled() devuelve el estado ANTES del click.
+        // isToggled() reports the state BEFORE the click.
         if (m_callback && m_toggler) m_callback(!m_toggler->isToggled());
     }
 };
 
-// Slider::create exige un CCNode* como target.
+// Slider::create requires a CCNode* target.
 class SliderCallback : public CCNode {
 public:
     std::function<void(double)> m_callback;
@@ -133,8 +132,7 @@ std::string formatNumber(double value, int decimals) {
     return fmt::format("{:.{}f}", value, decimals);
 }
 
-// Estado compartido de makeNumberRow: el slider, la casilla y las flechas
-// escriben los tres sobre el mismo valor.
+// makeNumberRow shared state: slider, box and arrows write the same value.
 struct NumberState {
     Slider* slider = nullptr;
     geode::TextInput* input = nullptr;
@@ -284,7 +282,7 @@ CCNode* makeSliderRow(
         row->addChild(descLbl);
     }
 
-    // El valor vive arriba a la derecha, en dorado, siempre visible.
+    // value sits top-right in gold, always visible.
     auto* valLbl = CCLabelBMFont::create(
         format ? format(value).c_str() : "", "goldFont.fnt");
     valLbl->setAnchorPoint({1.f, 1.f});
@@ -293,7 +291,7 @@ CCNode* makeSliderRow(
     valLbl->setPosition({width - 11.f, rowH - kPad + 1.f});
     row->addChild(valLbl);
 
-    // Slider a todo lo ancho de la fila.
+    // full-row slider.
     float const grooveW = width - 26.f;
     float const sliderScale = std::clamp(grooveW / 210.f, 0.3f, 1.f);
     float const sliderCY = kPad + kSliderH / 2.f - 2.f;
@@ -394,7 +392,7 @@ CCNode* makeNumberRow(
         input->setCallback([state](std::string const& text) {
             char* end = nullptr;
             double const parsed = std::strtod(text.c_str(), &end);
-            // Al escribir se pasa por textos que todavia no son un numero.
+            // typing passes through text that isn't a number yet.
             if (end == text.c_str()) return;
             state->apply(parsed, true);
         });
@@ -579,8 +577,7 @@ CCNode* makeCard(
 
     float y = cardH;
     if (hasTitle) {
-        // Punto del color de la seccion + titulo dorado, como los encabezados
-        // de las listas del juego.
+        // section-color dot + gold title, like the game list headers.
         if (auto* dot = paimon::SpriteHelper::createColorPanel(7.f, 7.f, accent, 255, 3.f)) {
             dot->setAnchorPoint({0.f, 0.f});
             dot->setPosition({4.f, y - 15.f});
@@ -647,8 +644,8 @@ geode::ScrollLayer* makeScrollStack(
 
 namespace {
 
-// Cada pestana lleva dentro sus dos versiones (verde elegida / gris apagada) y
-// solo cambia cual se ve: ButtonSprite no se puede re-tintar en caliente.
+// Each tab holds both faces (green on / gray off) and swaps visibility:
+// ButtonSprite can't re-tint live.
 struct TabBarState {
     std::vector<CCNode*> onSprites;
     std::vector<CCNode*> offSprites;

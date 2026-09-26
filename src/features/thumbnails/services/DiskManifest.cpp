@@ -93,7 +93,7 @@ void DiskManifest::load(std::filesystem::path const& cacheDir) {
         log::info("[DiskManifest] loaded {} entries", loaded);
     }
 
-    // clean orphaned .tmp files left by interrupted atomic writes
+    // Drop .tmp orphans from interrupted atomic writes.
     {
         int tmpCleaned = 0;
         for (auto const& entry : std::filesystem::directory_iterator(cacheDir, ec)) {
@@ -138,7 +138,7 @@ void DiskManifest::flush() {
     std::error_code ec;
     std::filesystem::create_directories(m_cacheDir, ec);
 
-    // Atomic write: write to .tmp then rename, so a crash mid-write can't corrupt the existing manifest.
+    // Atomic write via .tmp + rename: mid-write crashes can't corrupt the manifest.
     auto tmpPath = m_manifestPath;
     tmpPath += ".tmp";
 
@@ -181,7 +181,7 @@ DiskManifestEntry const* DiskManifest::getEntry(int levelID, bool isGif) const {
     return getEntryLocked(levelID, isGif);
 }
 
-// Consultas sin lock (caller DEBE tener mutex)
+// Lock-free queries (caller MUST hold mutex)
 
 bool DiskManifest::containsLocked(int levelID, bool isGif) const {
     return m_entries.count(makeKey(levelID, isGif)) > 0;
@@ -246,7 +246,7 @@ void DiskManifest::touchAccess(int levelID, bool isGif) {
     auto it = m_entries.find(makeKey(levelID, isGif));
     if (it != m_entries.end()) {
         it->second.touchAccess();
-        // mark dirty periodically so access times survive crashes
+        // Dirty every 20 touches so access times survive crashes.
         if (++m_accessCounter % 20 == 0) {
             m_dirty = true;
         }
@@ -273,7 +273,7 @@ DiskManifest::PruneResult DiskManifest::computePrune(size_t maxBytes, std::chron
     candidates.reserve(m_entries.size());
 
     for (auto const& [key, me] : m_entries) {
-        // protect main levels (1-22)
+        // Main levels (1-22) never evict.
         int realID = me.levelID > 0 ? me.levelID : 0;
         if (realID >= 1 && realID <= 22) continue;
 
@@ -287,7 +287,7 @@ DiskManifest::PruneResult DiskManifest::computePrune(size_t maxBytes, std::chron
         }
     }
 
-    // if still over quota, evict by lastAccess (disk LRU)
+    // Over quota: evict oldest-first (disk LRU).
     if (currentTotal > maxBytes) {
         std::sort(candidates.begin(), candidates.end(), [](Candidate const& a, Candidate const& b) {
             return a.lastAccess < b.lastAccess;
@@ -307,7 +307,7 @@ DiskManifest::PruneResult DiskManifest::computePrune(size_t maxBytes, std::chron
 void DiskManifest::applyPrune(PruneResult const& result) {
     if (result.filesToDelete.empty()) return;
 
-    // reverse filename->key index to avoid O(entries * filesToDelete)
+    // Reverse index avoids O(entries * filesToDelete).
     std::unordered_map<std::string, std::string> filenameToKey;
     filenameToKey.reserve(m_entries.size());
     for (auto const& [key, me] : m_entries) {

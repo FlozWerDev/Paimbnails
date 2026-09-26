@@ -1,12 +1,12 @@
-#include "../services/VolumeScrollManager.hpp"
-#include "../../../utils/ExtendedKeybind.hpp"
-#include "../../../utils/Debug.hpp"
-#include "../../../core/modules/ModuleRegistry.hpp"
-
 #include <Geode/Geode.hpp>
 #include <Geode/modify/CCMouseDispatcher.hpp>
 #include <Geode/loader/SettingV3.hpp>
 #include <Geode/utils/Keyboard.hpp>
+
+#include "../services/VolumeScrollManager.hpp"
+#include "../../../utils/ExtendedKeybind.hpp"
+#include "../../../utils/Debug.hpp"
+#include "../../../core/modules/ModuleRegistry.hpp"
 
 #include <cmath>
 #include <unordered_set>
@@ -21,13 +21,12 @@ using namespace cocos2d;
 using paimon::volscroll::VolumeKind;
 using paimon::volscroll::VolumeScrollManager;
 
-// Lets QuickHubKeybind cancel Ctrl-hold when Ctrl+Scroll changes volume.
+// lets QuickHubKeybind cancel Ctrl-hold when Ctrl+Scroll changes volume.
 
 namespace paimon::quickhub {
     void notifyVolumeScrollUsed();
 }
 
-// Pause-zoom hook from PlayLayer.cpp.
 namespace paimon::pausezoom {
     void dispatchScroll(float y, float x);
 }
@@ -35,7 +34,7 @@ namespace paimon::pausezoom {
 namespace {
 constexpr float kVolumeStep = 0.05f;
 
-// Modifier state is updated by both keybind and keyboard listeners.
+// modifier state is updated by both keybind and keyboard listeners.
     bool g_ctrlDown  = false;
     bool g_shiftDown = false;
     bool g_altDown   = false;
@@ -96,7 +95,7 @@ constexpr float kVolumeStep = 0.05f;
         }
     }
 
-// Normalize Geode's bind shapes, then require its key and modifier subset.
+    // normalize Geode's bind shapes, then require its key and modifier subset.
     bool isKeybindActive(Keybind bind) {
         auto extra = keyToModifier(bind.key);
         if (extra != KeyboardModifier::None) {
@@ -123,7 +122,7 @@ constexpr float kVolumeStep = 0.05f;
         return true;
     }
 
-// Re-sync modifiers from the OS on Windows; no-op elsewhere.
+    // re-sync modifiers from the OS on Windows; no-op elsewhere.
     void resyncModifiersFromOS() {
 #ifdef GEODE_IS_WINDOWS
         g_ctrlDown  = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
@@ -132,7 +131,7 @@ constexpr float kVolumeStep = 0.05f;
 #endif
     }
 
-// Whether the current-context music/SFX bind is held; outKind receives the match.
+    // whether the current-context music/SFX bind is held.
     bool matchVolumeGesture(VolumeKind& outKind) {
         bool editor = isInEditor();
         char const* musicKey = editor ? kMusicEditorKey : kMusicGameKey;
@@ -167,7 +166,7 @@ namespace paimon::volscroll {
         g_altDown   = alt;
     }
 
-// Smooth-scroll uses this to bypass momentum for volume gestures.
+    // smooth-scroll reads this to bypass momentum on volume gestures.
     bool isVolumeGestureActive() {
         if (!paimon::modules::isEnabled("paimbnails.volumescroll.global")) return false;
         resyncModifiersFromOS();
@@ -175,8 +174,6 @@ namespace paimon::volscroll {
         return matchVolumeGesture(kind);
     }
 }
-
-// Track keys and authoritative modifier state.
 
 $execute {
     KeyboardInputEvent().listen(+[](KeyboardInputData& data) {
@@ -208,7 +205,7 @@ $execute {
     }).leak();
 }
 
-// Hookable on desktop; on iOS it is inlined so the touch gestures below cover mobile.
+// hookable on desktop; on iOS it is inlined, so the touch gestures below cover mobile.
 
 #if defined(GEODE_IS_DESKTOP)
 class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
@@ -222,7 +219,6 @@ class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
             return CCMouseDispatcher::dispatchScrollMSG(y, x);
         };
 
-// Forward unrelated scroll to ExtendedKeybind and the game.
         auto notOurs = [&]() -> bool {
             (void)paimon::keybinds::dispatchScrollAsTrigger(
                 static_cast<double>(y),
@@ -233,7 +229,7 @@ class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
 
         if (y == 0.f) return passthrough();
 
-// Let ExtendedKeybind capture scroll while a recording popup is open.
+        // let ExtendedKeybind capture scroll while a recording popup is open.
         if (paimon::keybinds::hasScrollCaptor()) {
             auto const& captor = paimon::keybinds::currentScrollCaptor();
             if (captor) {
@@ -245,7 +241,7 @@ class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
 
         if (!paimon::modules::isEnabled("paimbnails.volumescroll.global")) return notOurs();
 
-// Refresh OS modifiers here so dropped Releases cannot trigger volume scroll.
+        // refresh OS modifiers here, so dropped Releases can't fake volume scroll.
         resyncModifiersFromOS();
 
         bool editor = isInEditor();
@@ -258,7 +254,7 @@ class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
         auto musicExt = paimon::keybinds::loadExtendedKeybind(musicKey);
         auto sfxExt   = paimon::keybinds::loadExtendedKeybind(sfxKey);
 
-// Guard debug formatting; this path runs on every wheel event.
+        // this path runs on every wheel event; keep debug formatting guarded.
         PaimonDebug::log("[VolScroll] scroll y={:.2f} editor={} music={{kbKey={:#x},kbMods={:#x},extKind={}}} sfx={{kbKey={:#x},kbMods={:#x},extKind={}}} state ctrl={} shift={} alt={}",
             y, editor,
             (int)musicBind.key, (int)musicBind.modifiers.value, (int)musicExt.kind,
@@ -267,7 +263,6 @@ class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
 
         VolumeKind kind;
         bool match = false;
-// Try keyboard binds, then extended mouse binds.
         if (isKeybindActive(musicBind) || paimon::keybinds::isExtendedHeld(musicExt)) {
             kind = VolumeKind::Music;
             match = true;
@@ -291,7 +286,7 @@ class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
     }
 };
 
-// Late so smooth-scroll momentum replays arrive normalized; discrete gestures pass once.
+// late, so smooth-scroll momentum replays arrive normalized.
 class $modify(PaimonPauseZoomMouseHook, CCMouseDispatcher) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityPre(
@@ -307,14 +302,14 @@ class $modify(PaimonPauseZoomMouseHook, CCMouseDispatcher) {
 };
 #endif
 
-// Three-finger drag replaces the wheel; touches are only observed (Post priority,
-// never consumed) and the gesture stays out of unpaused gameplay.
+// three-finger drag replaces the wheel; touches are only observed (Post,
+// never consumed) and stay out of unpaused gameplay.
 #if defined(GEODE_IS_MOBILE)
 #include <Geode/modify/CCEGLViewProtocol.hpp>
 
 namespace {
-// Raw handleTouches coords are view pixels with y pointing down, so dragging
-// UP on screen decreases the average y.
+// raw handleTouches coords are view pixels with y down, so dragging UP
+// on screen decreases the average y.
 constexpr float kTouchDeadzonePx = 36.f; // drift before the first step
 constexpr float kTouchStepPx     = 28.f; // pixels per volume step
 constexpr int   kGestureFingers  = 3;
@@ -353,7 +348,7 @@ void volumeTouchSyncCount() {
     }
 }
 
-// Feed one axis: deadzone first, then one kVolumeStep per kTouchStepPx.
+// feed one axis: deadzone first, then one step per kTouchStepPx.
 void volumeTouchPush(VolumeKind kind, float deltaPixels, float& acc) {
     acc += deltaPixels;
     float sign = (acc < 0.f) ? -1.f : 1.f;
@@ -373,7 +368,7 @@ float touchAvg(float const* v, int n) {
 
 class $modify(VolumeScrollTouchView, CCEGLViewProtocol) {
     static void onModify(auto& self) {
-        // Gameplay first: touches are observed, never consumed.
+        // gameplay first: touches are observed, never consumed.
         (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesBegin", geode::Priority::Normal);
         (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesMove", geode::Priority::Normal);
         (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesEnd", geode::Priority::Normal);
@@ -405,7 +400,7 @@ class $modify(VolumeScrollTouchView, CCEGLViewProtocol) {
             volumeTouchReset();
             return;
         }
-        // Only feed full-set moves: partial subsets would skew the average.
+        // only full-set moves feed: partial subsets would skew the average.
         if (num != kGestureFingers) {
             g_volTouch.baselineValid = false;
             return;

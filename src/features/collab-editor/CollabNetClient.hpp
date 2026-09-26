@@ -12,8 +12,7 @@
 
 namespace paimon::collab {
 
-// HTTP long-poll transport; callbacks are delivered on the main thread.
-// WebSockets are unavailable in Geode, so ops and permissions use HTTP POSTs.
+// HTTP long-poll (no WebSockets in Geode); callbacks land on main thread.
 class CollabNetClient {
 public:
     using MessageCb = std::function<void(matjson::Value const&)>;

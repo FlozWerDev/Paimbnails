@@ -42,8 +42,6 @@ T* findSceneLayer() {
     return scene ? scene->getChildByType<T>(0) : nullptr;
 }
 
-std::string trimOrDefault(std::string value, std::string const& fallback);
-std::string safeUtf8Truncate(std::string value, size_t maxBytes);
 std::string safeUtf8Truncate(std::string value, size_t maxBytes) {
     if (value.size() <= maxBytes) return value;
     size_t pos = maxBytes;
@@ -112,7 +110,6 @@ void DiscordPresenceManager::ensureWorker() {
         geode::utils::thread::setName("Paimon Discord RPC");
         using namespace std::chrono_literals;
         while (token->load(std::memory_order_acquire) && !paimon::isRuntimeShuttingDown()) {
-            if (paimon::isRuntimeShuttingDown()) return;
             Loader::get()->queueInMainThread([]() {
                 if (paimon::isRuntimeShuttingDown()) return;
                 DiscordPresenceManager::get().refreshNow();
@@ -220,13 +217,10 @@ void DiscordPresenceManager::refreshNow(bool force) {
         activity.largeText = payload.largeImageText;
         activity.smallImage = payload.smallImage;
         activity.smallText = payload.smallImageText;
-
-        {
-            activity.type = DiscordActivityType::Playing;
-            if (activityType == "Listening") activity.type = DiscordActivityType::Listening;
-            else if (activityType == "Watching") activity.type = DiscordActivityType::Watching;
-            else if (activityType == "Competing") activity.type = DiscordActivityType::Competing;
-        }
+        activity.type = DiscordActivityType::Playing;
+        if (activityType == "Listening") activity.type = DiscordActivityType::Listening;
+        else if (activityType == "Watching") activity.type = DiscordActivityType::Watching;
+        else if (activityType == "Competing") activity.type = DiscordActivityType::Competing;
 
         if (showTimestamp) {
             activity.startTimestamp = payload.startTimestamp ? payload.startTimestamp : m_startTimestamp;
@@ -586,12 +580,10 @@ PresencePayload DiscordPresenceManager::applyAssetFallbacks(PresencePayload payl
     auto customSmallImage = normalizeImageSetting(paimon::settings::discord_rpc::smallImageKey());
     if (isExternalImageUrl(customSmallImage)) {
         payload.smallImage = customSmallImage;
+    } else if (!customSmallImage.empty() && isValidAssetKey(customSmallImage)) {
+        payload.smallImage = customSmallImage;
     } else if (!customSmallImage.empty()) {
-        if (isValidAssetKey(customSmallImage)) {
-            payload.smallImage = customSmallImage;
-        } else {
-            geode::log::warn("[DiscordPresence] invalid small image key '{}', keeping scene image", customSmallImage);
-        }
+        geode::log::warn("[DiscordPresence] invalid small image key '{}', keeping scene image", customSmallImage);
     }
     payload.largeImageText = "Paimbnails Rich Presence";
     auto customText = paimon::settings::discord_rpc::largeText();

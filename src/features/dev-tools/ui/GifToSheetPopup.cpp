@@ -167,7 +167,7 @@ void GifToSheetPopup::onPickGif() {
             return;
         }
         auto opt = res.unwrap();
-        if (!opt) return; // cancelled
+        if (!opt) return;
         popup->loadGif(*opt);
     });
 }
@@ -309,7 +309,7 @@ void GifToSheetPopup::onExport() {
             return;
         }
         auto opt = res.unwrap();
-        if (!opt) return; // cancelled
+        if (!opt) return;
         popup->exportTo(*opt);
     });
 }

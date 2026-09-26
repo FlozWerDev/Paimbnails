@@ -60,8 +60,7 @@ namespace paimon {
 void bootstrap() {
     log::info("[PaimonThumbnails][Init] Loaded event start");
 
-    // Hard ban gate: if the local .paimon cache marks the user as banned, don't
-    // initialize anything. Otherwise (no cache) this schedules a server check.
+    // banned cache means no init; without cache this schedules a server check
     if (paimon::ban::runStartupBanGate()) {
         log::warn("[PaimonThumbnails][Init] Aborting init: user is banned");
         return;
@@ -87,7 +86,6 @@ void bootstrap() {
 
     paimon::versus::init();
 
-    // These managers publish shared config and touch Geode/Cocos state.
     LayerBackgroundManager::get().migrateFromLegacy();
     LayerBackgroundManager::get().migrateToGlobalMusic();
     LayerBackgroundManager::get().migrateExternalAssetsToManagedStorage();
@@ -107,7 +105,7 @@ void bootstrap() {
             auto saveDir = Mod::get()->getSaveDir();
             std::error_code ec;
             std::filesystem::remove(saveDir / "manifest_cache.json", ec);
-            // setSavedValue touches Geode structures, so do it on the main thread.
+            // Geode state must update on the main thread.
             geode::queueInMainThread([]() {
                 if (paimon::isRuntimeShuttingDown()) return;
                 Mod::get()->setSavedValue("thumbnail-disk-cache", matjson::Value::object());
@@ -132,7 +130,7 @@ void bootstrap() {
             log::info("[PaimonThumbnails][Language] Changed to '{}'", value);
         });
 
-        // Re-entry guard: listenForSettingChanges can fire from any thread in Geode.
+        // Geode can fire setting callbacks on any thread.
         static std::atomic<bool> s_cursorSyncGuard{false};
         geode::listenForSettingChanges<bool>("custom-cursor-enable", +[](bool value) {
             if (s_cursorSyncGuard.exchange(true, std::memory_order_acq_rel)) return;
@@ -141,15 +139,12 @@ void bootstrap() {
             s_cursorSyncGuard.store(false, std::memory_order_release);
         });
 
-        // Geode's settings panel bypasses setEnabled, so invalidate the
-        // version-stamped ModuleRegistry cache on any setting change.
+        // settings panel bypasses setEnabled: invalidate the settings cache.
         geode::listenForAllSettingChanges(
             +[](std::string_view, std::shared_ptr<geode::SettingV3>) {
                 paimon::settings::internal::invalidateSettingsCache();
             });
     }
-
-    log::info("[PaimonThumbnails][Init] Applying startup init");
 
     log::info("[PaimonThumbnails][Init] Startup init complete");
 

@@ -263,7 +263,7 @@ CCNode* ProgressionPopup::buildOverview() {
     auto* page = CCNode::create();
     page->setContentSize({kPageW, kPageH});
 
-    // Keep it above y=110 so the two cards underneath stay clear.
+    // Above y=110: the two cards underneath stay clear.
     constexpr float kColX = 108.f;
     constexpr float kColRight = kPageW - 8.f;
 
@@ -422,7 +422,7 @@ CCNode* ProgressionPopup::buildOverview() {
         badgeCard->addChild(bar);
     }
 
-    // Four rarest unlocked badges as a teaser row.
+    // Four rarest unlocked as a teaser row.
     std::vector<BadgeDef const*> showcase;
     for (auto const& badge : allBadges()) {
         if (isUnlocked(badge, m_ctx)) showcase.push_back(&badge);
@@ -587,8 +587,7 @@ void ProgressionPopup::rebuildBadgeGrid() {
         bool const active = (i - 1) == m_category;
         auto const accent = i == 0 ? tier.base : categories[i - 1].color;
         setTinted(m_categoryChips[i], "chip-plate"_spr, active ? accent : kIdleTint);
-        // The face keeps a trace of the category colour while idle, so the row
-        // still reads as twelve different things.
+        // Idle face keeps a trace of category colour so rows stay distinct.
         setTinted(m_categoryChips[i], "chip-face"_spr, active ? accent : dim(accent, 0.42f));
     }
 
@@ -629,8 +628,7 @@ void ProgressionPopup::rebuildBadgeGrid() {
         auto* btn = CCMenuItemSpriteExtra::create(icon, this, menu_selector(ProgressionPopup::onBadge));
         if (!btn) continue;
         btn->setTag(static_cast<int>(i));
-        // Cheap staggered reveal for the first rows only; the rest pop in as
-        // they scroll into view anyway.
+        // Stagger only first rows; rest reveal on scroll anyway.
         if (i < kGridColumns * 3) icon->playIntro(0.02f * static_cast<float>(i));
         menu->addChild(btn);
     }

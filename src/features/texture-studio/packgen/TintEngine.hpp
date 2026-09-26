@@ -1,6 +1,5 @@
 #pragma once
-// TintEngine: PackGen v2 luminance-tint kernel, bit-exact with TintMath
-// (same op order/rounding) — speed comes from hoisted invariants, not new math.
+// PackGen v2 tint kernel, bit-exact with TintMath; speed from hoisted invariants, not new math.
 
 #include <algorithm>
 #include <cmath>
@@ -18,9 +17,7 @@ inline std::uint8_t clampByteFast(int v) {
     return static_cast<std::uint8_t>(std::clamp(v, 0, 255));
 }
 
-// Identical float values to per-pixel `a / 255.0f` (lut[i] is computed with
-// the same expression once), so blending stays bit-identical while the hot
-// loop does a table lookup instead of a float division.
+// Same expression as per-pixel a/255 once: bit-identical blend via table lookup.
 struct AlphaLut {
     float v[256];
     static AlphaLut make() {
@@ -109,10 +106,7 @@ inline void blendPixelFast(std::uint8_t& baseR, std::uint8_t& baseG,
     baseA = std::max(baseA, ovA);
 }
 
-// Fused multi-role kernel: mirrors LuminanceTinter::apply (base -> C1 ->
-// C2 -> detail -> glow). `dst` must start as a copy of `src` (outline and
-// unmasked pixels stay correct without touching them). Null mask rows mean
-// "role absent". Returns tinted pixel count (for progress/stats).
+// Fused multi-role kernel mirroring LuminanceTinter::apply. dst starts as a src copy; null rows mean role absent.
 inline std::size_t tintStackImage(std::uint8_t const* src, std::uint8_t* dst,
                                   int w, int h,
                                   std::uint8_t const* maskC1,
@@ -185,9 +179,7 @@ inline std::size_t tintStackImage(std::uint8_t const* src, std::uint8_t* dst,
     return tinted;
 }
 
-// One overlay pass over a row band [y0, y1): tints the overlay's own pixels
-// by their luminance, composites over dst. Mirrors OverlayTinter::applyOne
-// including the top-left overlap rule (caller clamps W/H to the overlap).
+// One overlay pass over row band [y0, y1), mirroring OverlayTinter::applyOne with the top-left overlap rule.
 inline void applyOverlayBand(std::uint8_t* dst, int dstW,
                              std::uint8_t const* ov, int ovW,
                              int y0, int y1, int bandW,

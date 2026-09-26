@@ -9,8 +9,7 @@ class CoverBlurBackground : public cocos2d::CCNode {
 public:
     static CoverBlurBackground* create(cocos2d::CCSize const& size);
 
-    // Reemplaza el fondo por la portada dada (path vacio = limpiar).
-    // Seguro de llamar varias veces aunque el blur previo no haya terminado.
+    // swaps in the given cover (empty path clears); safe to call while a blur is in flight.
     void setCoverFromPath(const std::string& absolutePath);
 
 protected:

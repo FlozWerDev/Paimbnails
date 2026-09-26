@@ -20,22 +20,21 @@ using cocos2d::kCCVertexAttrib_TexCoords;
 using cocos2d::kCCVertexAttrib_Color;
 using cocos2d::kCCVertexAttribFlag_PosColorTex;
 
-/* Client arrays: other mods corrupt VBO state, so GL_ARRAY_BUFFER stays unbound
- * and the draw buffer is revalidated each draw. */
+/* client arrays: other mods corrupt VBO state, so GL_ARRAY_BUFFER stays
+ * unbound and the draw buffer is revalidated each draw. */
 class PaimonDrawNode : public CCDrawNode {
 public:
-// Retained 1×1 white texture; reset it after GL context reloads.
+    // retained 1x1 white texture; reset after GL context reloads.
     static inline CCTexture2D* s_cached = nullptr;
 
     static CCTexture2D* getWhiteTexture() {
-// Fast path reuses the last lookup. Context loss clears the cache, so the
-// next failed lookup recreates the texture.
+        // fast path reuses the last lookup; context loss clears the cache.
         if (s_cached) return s_cached;
 
         auto* cache = CCTextureCache::sharedTextureCache();
         if (!cache) return nullptr;
         constexpr char const* kKey = "paimon-draw-node-white";
-// Extra retain prevents removeUnusedTextures() from dangling the cached pointer.
+        // extra retain: removeUnusedTextures() must not dangle the cached pointer.
         if (auto* existing = cache->textureForKey(kKey)) {
             existing->retain();
             s_cached = existing;
@@ -92,7 +91,7 @@ public:
         this->drawPolygon(verts.data(), static_cast<unsigned int>(verts.size()), fillColor, 0.f, cocos2d::ccc4f(0.f, 0.f, 0.f, 0.f));
     }
 
-    // Uniform capsule between two points, avoiding gaps and alpha buildup.
+    // uniform capsule between two points, no gaps or alpha buildup.
     void drawCapsuleSegment(cocos2d::CCPoint p1, cocos2d::CCPoint p2,
                             float thickness, cocos2d::ccColor4F const& color,
                             unsigned int capSegs = 24) {
@@ -105,7 +104,7 @@ public:
         float dy = p2.y - p1.y;
         float len = std::sqrt(dx * dx + dy * dy);
 
-// Coincident points reduce to a single pencil dot.
+        // coincident points draw a single dot.
         if (len < 0.0001f) {
             std::vector<cocos2d::CCPoint> verts;
             verts.reserve(capSegs * 2);
@@ -126,8 +125,7 @@ public:
         std::vector<cocos2d::CCPoint> outline;
         outline.reserve(capSegs * 2 + 2);
 
-// Orient caps to the stroke normal rather than global X.
-const float baseAngle = std::atan2(ny, nx);
+        const float baseAngle = std::atan2(ny, nx);
 
         for (unsigned int i = 0; i < capSegs; ++i) {
             float t = static_cast<float>(i) / static_cast<float>(capSegs);
@@ -136,7 +134,7 @@ const float baseAngle = std::atan2(ny, nx);
                                  p2.y + sinf(a) * radius);
         }
 
-const float baseAngleP1 = baseAngle + kPi;
+        const float baseAngleP1 = baseAngle + kPi;
         for (unsigned int i = 0; i < capSegs; ++i) {
             float t = static_cast<float>(i) / static_cast<float>(capSegs);
             float a = baseAngleP1 - kPi * t;
@@ -161,7 +159,7 @@ const float baseAngleP1 = baseAngle + kPi;
 
         CC_NODE_DRAW_SETUP();
 
-// Unbind the VBO before client-side arrays to isolate other draw hooks.
+        // unbind before client-side arrays to isolate other draw hooks.
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         if (auto* texture = getWhiteTexture()) {
             ccGLBindTexture2D(texture->getName());
@@ -173,7 +171,6 @@ const float baseAngleP1 = baseAngle + kPi;
 
         ccGLEnableVertexAttribs(kCCVertexAttribFlag_PosColorTex);
 
-// ccV2F_C4B_T2F: 2 floats + 4 color bytes + 2 texture floats.
         #define kPaimonDrawNodeStride sizeof(cocos2d::ccV2F_C4B_T2F)
 
         glVertexAttribPointer(kCCVertexAttrib_Position, 2, GL_FLOAT, GL_FALSE,
@@ -192,7 +189,7 @@ const float baseAngleP1 = baseAngle + kPi;
         CC_INCREMENT_GL_DRAWS(1);
 #endif
 
-// Leave the VBO unbound; later nodes bind their own. Reading the previous
-// binding with glGetIntegerv stalls the pipeline and is costly on dense UIs.
+// leave the VBO unbound; later nodes bind their own. reading the previous
+// binding with glGetIntegerv stalls dense UIs.
     }
 };

@@ -1,5 +1,5 @@
-#include "ThumbnailAPI.hpp"
 #include <Geode/loader/Log.hpp>
+#include "ThumbnailAPI.hpp"
 #include "../features/profiles/services/ProfileThumbs.hpp"
 #include "../features/thumb-alerts/ThumbAlerts.hpp"
 
@@ -28,7 +28,6 @@ ThumbnailAPI::ThumbnailAPI() {
 }
 
 void ThumbnailAPI::getThumbnails(int levelId, ThumbnailListCallback callback) {
-    log::info("[ThumbnailAPI] getThumbnails: levelId={}", levelId);
     ThumbnailTransportClient::get().getThumbnails(levelId, std::move(callback));
 }
 void ThumbnailAPI::getThumbnailInfo(int levelId, ActionCallback callback) {
@@ -38,7 +37,6 @@ std::string ThumbnailAPI::getThumbnailURL(int levelId) {
     return ThumbnailTransportClient::get().getThumbnailURL(levelId);
 }
 void ThumbnailAPI::uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback, std::string const& levelMeta) {
-    log::info("[ThumbnailAPI] uploadThumbnail: levelId={} user={} bytes={}", levelId, username, pngData.size());
     ThumbnailTransportClient::get().uploadThumbnail(levelId, pngData, username,
         withAlert(levelId, username, levelMeta, std::move(callback)), levelMeta);
 }
@@ -51,19 +49,15 @@ void ThumbnailAPI::uploadVideo(int levelId, std::vector<uint8_t> const& mp4Data,
         withAlert(levelId, username, levelMeta, std::move(callback)), levelMeta);
 }
 void ThumbnailAPI::downloadThumbnail(int levelId, DownloadCallback callback, bool isGif) {
-    log::info("[ThumbnailAPI] downloadThumbnail: levelId={} isGif={}", levelId, isGif);
     ThumbnailTransportClient::get().downloadThumbnail(levelId, std::move(callback), isGif);
 }
 void ThumbnailAPI::checkExists(int levelId, ExistsCallback callback) {
-    log::debug("[ThumbnailAPI] checkExists: levelId={}", levelId);
     ThumbnailTransportClient::get().checkExists(levelId, std::move(callback));
 }
 void ThumbnailAPI::deleteThumbnail(int levelId, std::string const& thumbnailId, std::string const& username, int accountID, ActionCallback callback) {
-    log::info("[ThumbnailAPI] deleteThumbnail: levelId={} thumbId={} user={}", levelId, thumbnailId, username);
     ThumbnailTransportClient::get().deleteThumbnail(levelId, thumbnailId, username, accountID, std::move(callback));
 }
 void ThumbnailAPI::reorderThumbnails(int levelId, std::vector<std::string> const& thumbnailIds, ActionCallback callback) {
-    log::info("[ThumbnailAPI] reorderThumbnails: levelId={} count={}", levelId, thumbnailIds.size());
     ThumbnailTransportClient::get().reorderThumbnails(levelId, thumbnailIds, std::move(callback));
 }
 void ThumbnailAPI::getRating(int levelId, std::string const& username, std::string const& thumbnailId, geode::CopyableFunction<void(bool success, float average, int count, int userVote)> callback) {
@@ -76,7 +70,6 @@ void ThumbnailAPI::getThumbnail(int levelId, DownloadCallback callback) {
     ThumbnailTransportClient::get().getThumbnail(levelId, std::move(callback));
 }
 void ThumbnailAPI::downloadFromUrl(std::string const& url, DownloadCallback callback) {
-    log::debug("[ThumbnailAPI] downloadFromUrl: url={}", url);
     ThumbnailTransportClient::get().downloadFromUrl(url, std::move(callback));
 }
 void ThumbnailAPI::downloadFromUrlData(std::string const& url, DownloadDataCallback callback) {
@@ -89,15 +82,12 @@ void ThumbnailAPI::getTopThumbnails(ActionCallback callback) {
     ThumbnailTransportClient::get().getTopThumbnails(std::move(callback));
 }
 void ThumbnailAPI::getUserUploads(std::string const& username, ActionCallback callback) {
-    log::info("[ThumbnailAPI] getUserUploads: username={}", username);
     ThumbnailTransportClient::get().getUserUploads(username, std::move(callback));
 }
 void ThumbnailAPI::uploadSuggestion(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback, std::string const& levelMeta) {
-    log::info("[ThumbnailAPI] uploadSuggestion: levelId={} user={} bytes={}", levelId, username, pngData.size());
     ThumbnailSubmissionService::get().uploadSuggestion(levelId, pngData, username, std::move(callback), levelMeta);
 }
 void ThumbnailAPI::uploadUpdate(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback, std::string const& levelMeta) {
-    log::info("[ThumbnailAPI] uploadUpdate: levelId={} user={} bytes={}", levelId, username, pngData.size());
     ThumbnailSubmissionService::get().uploadUpdate(levelId, pngData, username, std::move(callback), levelMeta);
 }
 void ThumbnailAPI::downloadSuggestion(int levelId, DownloadCallback callback) {
@@ -117,7 +107,6 @@ void ThumbnailAPI::checkModerator(std::string const& username, ModeratorCallback
     ModerationService::get().checkModerator(username, std::move(callback));
 }
 void ThumbnailAPI::checkModeratorAccount(std::string const& username, int accountID, ModeratorCallback callback) {
-    log::info("[ThumbnailAPI] checkModeratorAccount: user={} accountID={}", username, accountID);
     ModerationService::get().checkModeratorAccount(username, accountID, std::move(callback));
 }
 void ThumbnailAPI::checkUserStatus(std::string const& username, ModeratorCallback callback) {
@@ -142,12 +131,10 @@ void ThumbnailAPI::rejectQueueItem(int levelId, PendingCategory category, std::s
     ModerationService::get().rejectQueueItem(levelId, category, username, reason, std::move(callback), type, targetFilename);
 }
 void ThumbnailAPI::submitReport(int levelId, std::string const& username, std::string const& note, ActionCallback callback) {
-    log::info("[ThumbnailAPI] submitReport: levelId={} user={}", levelId, username);
     ModerationService::get().submitReport(levelId, username, note, std::move(callback));
 }
 
 void ThumbnailAPI::uploadProfile(int accountID, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback) {
-    log::info("[ThumbnailAPI] uploadProfile: accountID={} user={} bytes={}", accountID, username, pngData.size());
     ProfileImageService::get().uploadProfile(accountID, pngData, username, std::move(callback));
 }
 void ThumbnailAPI::uploadProfileGIF(int accountID, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback) {
@@ -157,11 +144,9 @@ void ThumbnailAPI::uploadProfileVideo(int accountID, std::vector<uint8_t> const&
     ProfileImageService::get().uploadProfileVideo(accountID, mp4Data, username, std::move(callback));
 }
 void ThumbnailAPI::downloadProfile(int accountID, std::string const& username, DownloadCallback callback) {
-    log::info("[ThumbnailAPI] downloadProfile: accountID={} user={}", accountID, username);
     ProfileImageService::get().downloadProfile(accountID, username, std::move(callback));
 }
 void ThumbnailAPI::batchCheckProfiles(std::vector<int> const& accountIDs, BatchCheckCallback callback) {
-    log::info("[ThumbnailAPI] batchCheckProfiles: {} accounts", accountIDs.size());
     ProfileImageService::get().batchCheckProfiles(accountIDs, std::move(callback));
 }
 void ThumbnailAPI::uploadProfileImg(int accountID, std::vector<uint8_t> const& imgData, std::string const& username, std::string const& contentType, UploadCallback callback) {

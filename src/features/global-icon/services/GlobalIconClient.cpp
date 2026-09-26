@@ -138,7 +138,7 @@ void GlobalIconClient::getMetadata(int accountID, MetaCallback cb) {
                 success = false;
             }
         } else if (isNotFound(resp)) {
-            // Definitive "not sharing": cache it so we stop asking.
+            // definitive "not sharing": cache it to stop asking.
             success = true;
         }
 

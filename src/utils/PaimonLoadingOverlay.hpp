@@ -2,8 +2,8 @@
 
 #include <Geode/Geode.hpp>
 
-// Full-screen (or local) loading overlay: GD loading circle with the Paimon mascot,
-// gold status text and rotating fun-facts. Falls back to LoadingSpinner on texture packs.
+// loading overlay: GD circle + Paimon mascot, status text, fun facts.
+// falls back to LoadingSpinner under texture packs.
 class PaimonLoadingOverlay : public cocos2d::CCLayerColor {
 protected:
     cocos2d::CCNode* m_badge = nullptr;          // ring + mascot cluster
@@ -38,7 +38,6 @@ public:
     void dismiss();
     void updateText(std::string const& text);
 
-    // Swallow touches over the covered area while loading.
     void registerWithTouchDispatcher() override;
     bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
 };

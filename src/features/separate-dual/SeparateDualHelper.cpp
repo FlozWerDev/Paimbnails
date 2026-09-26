@@ -351,8 +351,7 @@ void DualKitVault::dressFighter(PlayerObject* player, Side side) {
     player->m_originalMainColor = gm->colorForIdx(inkOf(side));
     player->m_originalSecondColor = gm->colorForIdx(trimOf(side));
 
-    // Platformer jetpack rides on the cube body, so it needs both frames.
-    // Ship and bird likewise pair their vehicle frame with the cube frame.
+    // Jetpack/ship/bird pair their vehicle frame with the cube frame.
     if (player->m_isShip && player->m_isPlatformer) {
         player->updatePlayerJetpackFrame(slotIcon(IconSlot::Jetpack, side));
         player->updatePlayerFrame(slotIcon(IconSlot::Cube, side));

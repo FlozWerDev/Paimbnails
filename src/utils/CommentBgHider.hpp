@@ -4,15 +4,14 @@
 #include <Geode/cocos/extensions/GUI/CCControlExtension/CCScale9Sprite.h>
 #include <string>
 
-// Hides the vanilla brown CommentCell backgrounds (InfoLayer + ProfilePage).
-// `using namespace prelude` stays inside each function body, not the header.
+// hides vanilla brown CommentCell backgrounds (InfoLayer + ProfilePage).
+// `using namespace prelude` stays in function bodies, not the header.
 namespace paimon::commentbg {
 
 inline bool shouldHideVanillaCommentBgNode(cocos2d::CCNode* node) {
     using namespace geode::prelude;
     if (!node) return false;
-    // Keep the ZStringView getID() returns instead of converting to std::string:
-    // that conversion allocated once per node, on every node of every comment cell.
+    // getID() returns a view; converting to std::string allocated once per node.
     auto const nodeID = node->getID();
     if (!nodeID.empty()) {
         if (nodeID.view().find("paimon-") != std::string_view::npos) return false;
@@ -25,8 +24,7 @@ inline bool shouldHideVanillaCommentBgNode(cocos2d::CCNode* node) {
     return typeinfo_cast<CCLayerColor*>(node) || typeinfo_cast<CCScale9Sprite*>(node);
 }
 
-// Hide vanilla decorative backgrounds of cells that already have a paimon panel;
-// the user object caches processed cells to avoid reprocessing non-recycled ones.
+// hide vanilla decorative bgs of cells that already have a paimon panel.
 inline void hideCommentCellBgs(cocos2d::CCNode* listNode) {
     using namespace geode::prelude;
     if (!listNode) return;
@@ -39,17 +37,16 @@ inline void hideCommentCellBgs(cocos2d::CCNode* listNode) {
             if (!child) continue;
 
             if (typeinfo_cast<CommentCell*>(child)) {
-                // Panel (solid) or clip (image/gif) both count as paimon bg.
-                // Direct getChildByID — both are added on the cell root.
+                // solid panel or image/gif clip both count as paimon bg.
                 bool hasPaimonBg =
                     child->getChildByID("paimon-comment-bg-panel"_spr) ||
                     child->getChildByID("paimon-comment-bg-clip"_spr);
                 if (!hasPaimonBg) {
-                    // No nested CommentCells inside a cell; skip the subtree.
+                    // no nested CommentCells inside a cell; skip subtree.
                     continue;
                 }
 
-                // FPS: skip if already processed (loadFromComment clears this)
+                // skip if already processed (loadFromComment clears this).
                 if (child->getUserObject("paimon-comment-bgs-hidden"_spr)) {
                     continue;
                 }

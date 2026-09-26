@@ -85,7 +85,6 @@ bool isValidAssetKey(std::string const& v) {
     return true;
 }
 
-// Releases pre-async retain on scope exit.
 struct RetainGuard {
     CCObject* m_target;
     explicit RetainGuard(CCObject* t) : m_target(t) {}
@@ -183,13 +182,8 @@ void uploadToCatbox(std::vector<uint8_t> const& data, std::string const& filenam
             [sharedCb, isHttp2Error, extractError, tryFallback, tryCatbox, attempt](geode::utils::web::WebResponse res) mutable {
                 if (!res.ok()) {
                     std::string body = res.string().unwrapOr("");
-                    bool http2 = isHttp2Error(res, body);
-                    if (http2 && attempt == 0) {
+                    if (isHttp2Error(res, body) && attempt == 0) {
                         (*tryCatbox)(1);
-                        return;
-                    }
-                    if (attempt >= 1) {
-                        tryFallback();
                         return;
                     }
                     tryFallback();
@@ -393,7 +387,6 @@ CCNode* makeInputRow(const char* title, const char* placeholder,
     return row;
 }
 
-// Local image -> Discord external asset.
 CCNode* makeImagePickerRow(const char* title, const char* placeholder,
                            std::string const& value, int maxChars,
                            std::function<void(std::string const&)> onChange,
@@ -463,7 +456,6 @@ CCNode* makeImagePickerRow(const char* title, const char* placeholder,
     }
     menu->addChild(btn);
 
-
     return row;
 }
 
@@ -501,11 +493,6 @@ CCNode* makeCard(const char* title, std::vector<CCNode*> const& rows, float widt
         y -= kRowGap;
     }
     return card;
-}
-
-std::string upperCopy(std::string s) {
-    for (auto& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    return s;
 }
 
 }
@@ -871,7 +858,7 @@ void DiscordConfigPopup::updatePreview() {
 
     auto type = gset<std::string>("discord-rpc-activity-type");
     if (type.empty()) type = "Playing";
-    m_prevHeader->setString(upperCopy(type + " Geometry Dash").c_str());
+    m_prevHeader->setString(geode::utils::string::toUpper(type + " Geometry Dash").c_str());
 
     std::string details;
     std::string state;
@@ -891,7 +878,7 @@ void DiscordConfigPopup::updatePreview() {
             state = gset<std::string>("discord-rpc-custom-state");
         }
         if (state.empty() && gset<bool>("discord-rpc-show-progress")) {
-        // Static example: only best % is sent, never attempts.
+            // Static example: only best % is sent, never attempts.
             state = "Stereo Madness (Best 34%)";
         }
     }
@@ -920,7 +907,7 @@ void DiscordConfigPopup::updatePreview() {
             if (label.size() > 28) label.resize(28);
             m_prevSmall->setString(label.c_str());
             m_prevSmall->setVisible(true);
-            m_prevState->setVisible(state.empty() ? false : true);
+            m_prevState->setVisible(!state.empty());
             if (!state.empty() && showTime) {
                 m_prevState->setPositionY(14.f);
                 m_prevSmall->setPositionY(5.f);
@@ -1016,7 +1003,7 @@ void DiscordConfigPopup::onResetDefaults(CCObject*) {
             if (m_smallImageKeyInput) m_smallImageKeyInput->setString("");
             if (m_smallTextInput) m_smallTextInput->setString("");
 
-    // Sync widgets to defaults; toggle() only flips visual state.
+            // Sync widgets to defaults; toggle() only flips visual state.
             auto defaultFor = [](std::string const& key) {
                 if (key == "discord-rpc-private-mode") return false;
                 if (key == "discord-rpc-override-details") return false;

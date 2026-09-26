@@ -18,7 +18,6 @@ constexpr float ROW_HEIGHT = 30.f;
 constexpr float HEADER_HEIGHT = 24.f;
 constexpr float LABEL_X = 10.f;
 
-// Toggle (bool)
 cocos2d::CCNode* createToggleRow(
     const char* label,
     bool initialValue,
@@ -26,7 +25,6 @@ cocos2d::CCNode* createToggleRow(
     float width
 );
 
-// Slider (float)
 cocos2d::CCNode* createSliderRow(
     const char* label,
     float initialValue,
@@ -45,7 +43,6 @@ cocos2d::CCNode* createIntSliderRow(
     float width
 );
 
-// Dropdown (string one-of)
 cocos2d::CCNode* createDropdownRow(
     const char* label,
     std::string const& initialValue,
@@ -54,7 +51,6 @@ cocos2d::CCNode* createDropdownRow(
     float width
 );
 
-// Button (action)
 cocos2d::CCNode* createButtonRow(
     const char* label,
     const char* buttonText,
@@ -62,14 +58,12 @@ cocos2d::CCNode* createButtonRow(
     float width
 );
 
-// Link row (opens sub-popup/layer)
 cocos2d::CCNode* createLinkRow(
     const char* label,
     std::function<void()> onOpen,
     float width
 );
 
-// Text input (single-line string)
 cocos2d::CCNode* createTextInputRow(
     const char* label,
     std::string const& initialValue,
@@ -79,7 +73,6 @@ cocos2d::CCNode* createTextInputRow(
     float width
 );
 
-// Hint / helper text row (small gray label, no control)
 cocos2d::CCNode* createHintRow(
     const char* text,
     float width
@@ -87,7 +80,7 @@ cocos2d::CCNode* createHintRow(
 
 cocos2d::CCNode* createSectionHeader(const char* title, float width);
 
-// Collapsible subsection header — toggles visibility of contentContainer on tap
+// Collapsible header: toggles contentContainer on tap.
 cocos2d::CCNode* createCollapsibleHeader(
     const char* title,
     float width,

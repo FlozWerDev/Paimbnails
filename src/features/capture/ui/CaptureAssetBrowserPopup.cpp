@@ -30,7 +30,7 @@ using paimon::capture::ui::ClippedMenu;
 
 // Intentionally leaked to avoid destruction-order crashes at DLL unload.
 static auto& s_originalAssetVisibilities = *new std::vector<paimon::capture::VisibilityRecord>();
-// Snapshot perezoso por tipo: no recorre miles de objetos al abrir el browser.
+// Lazy per-type snapshot: avoids walking thousands of objects on open.
 static auto& s_snapshottedIDs = *new std::unordered_set<int>();
 
 namespace {
@@ -199,8 +199,7 @@ bool CaptureAssetBrowserPopup::init() {
 
     m_search = TextInput::create(C::SEARCH_WIDTH, loc("assets.search_hint").c_str(), "bigFont.fnt");
     if (m_search) {
-        // Alphanumeric: numeric queries still match by object ID, text also
-        // matches the localized category name (e.g. "spike", "pincho").
+        // Numeric queries match object IDs; text also matches localized category names.
         m_search->setMaxCharCount(12);
         m_search->setTextAlign(TextInputAlign::Left);
         m_search->setScale(C::SEARCH_SCALE);
@@ -406,8 +405,7 @@ bool CaptureAssetBrowserPopup::categoryHasMatches(int catIdx) const {
 CaptureAssetBrowserPopup::TriState CaptureAssetBrowserPopup::categoryState(int catIdx) const {
     if (catIdx < 0 || catIdx >= static_cast<int>(m_categories.size())) return TriState::Visible;
 
-    // While searching, the header reflects only the matching groups — the same
-    // set its toggle actually affects (setCategoryVisible skips misses).
+    // Searching: header reflects only matching groups, the set its toggle affects.
     bool const filtering = !m_searchQuery.empty();
     bool anyVisible = false;
     bool anyHidden  = false;
@@ -449,8 +447,7 @@ void CaptureAssetBrowserPopup::buildList() {
     const float viewH   = listTop - listBot;
     const float viewX   = E::SIDE_PAD;
 
-    // Flatten to visual rows first: collapsed categories and search misses drop
-    // out here, so the scroll height always matches what is drawn.
+    // Flatten to visual rows first so scroll height always matches the drawing.
     struct VisualRow { int categoryIdx; int groupIdx; };
     std::vector<VisualRow> rows;
     for (int ci = 0; ci < static_cast<int>(m_categories.size()); ++ci) {
@@ -870,8 +867,7 @@ void CaptureAssetBrowserPopup::onClearSearchBtn(CCObject*) {
 }
 
 void CaptureAssetBrowserPopup::onSearchChanged(std::string const& text) {
-    // Debounced: rebuilding the whole list per keystroke drops frames on big
-    // levels. The pending query applies 150ms after the last keystroke.
+    // Debounced: per-keystroke rebuilds drop frames on big levels; applies 150ms after last key.
     std::string query = text;
     query.erase(0, query.find_first_not_of(" \t"));
     query.erase(query.find_last_not_of(" \t") + 1);

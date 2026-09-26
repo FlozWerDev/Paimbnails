@@ -12,8 +12,7 @@
 #include <chrono>
 #include <atomic>
 
-// CCSprite wrapper around VideoPlayer with muted autoplay and zero-allocation
-// frame uploads.
+// CCSprite wrapper around VideoPlayer; muted autoplay, zero-alloc frame uploads.
 class VideoThumbnailSprite : public cocos2d::CCSprite {
 public:
     using FrameReadyCallback = std::function<void(VideoThumbnailSprite*)>;
@@ -24,7 +23,6 @@ public:
 
     static bool isCached(std::string const& cacheKey);
 
-    // Returns a cached MP4 path, or empty when missing. Thread-safe.
     static std::string getCachedPathForKey(std::string const& cacheKey);
 
     static VideoThumbnailSprite* createFromCache(std::string const& cacheKey);
@@ -45,12 +43,10 @@ public:
 
     static void clearCache();
 
-    // Release GL players before reload; keep temp files for lazy recreation.
     static void onGLContextReload();
 
     static void removeForLevel(int levelID);
 
-    // Remove a cache when a profile switches away from video.
     static void removeForCacheKey(std::string const& cacheKey);
 
     void onEnter() override;
@@ -91,9 +87,9 @@ private:
     static void pruneRecentFailuresLocked(std::chrono::steady_clock::time_point now);
     static void pumpAsyncQueues();
     static void handleDownloadResponse(std::string requestKey, geode::utils::web::WebResponse&& response);
-    // Opens the decoder off the main thread, then hands the player to finishCreateJob.
+    // decoder opens off main thread, then finishCreateJob takes the player.
     static void handleCreateJob(CreateJob job);
-    // Main thread: wraps the player in a sprite and settles the queue bookkeeping.
+    // main thread: wrap the player in a sprite and settle queue bookkeeping.
     static void finishCreateJob(CreateJob job, std::unique_ptr<paimon::video::VideoPlayer> player);
     void dispatchFirstVisibleFrame();
 
@@ -104,7 +100,6 @@ private:
     bool m_firstFrameSavedToCache = false;
     FrameReadyCallback m_onFirstVisibleFrame;
 
-    // Raw RGBA first-frame cache for instant display after restart.
     static std::string getFirstFrameCachePath(std::string const& videoPath);
     void saveFirstFrameToCache();
     bool loadFirstFrameFromCache(std::string const& videoPath);
@@ -137,12 +132,12 @@ private:
     static constexpr auto FAILED_REQUEST_TTL = std::chrono::minutes(2);
     static std::string getTempPath(std::string const& cacheKey);
 
-    // Enforce the MP4 count/size budget; caller holds s_cacheMutex.
+    // enforce the MP4 count/size budget; caller holds s_cacheMutex.
     static void enforceTempFilesBudgetLocked();
 
-    // Remove unreferenced runtime cache files once per session; do not hold locks.
+    // remove unreferenced runtime cache files once per session; no locks held.
     static void cleanupOrphanedDiskFiles();
-    
+
     struct CachedPlayer {
         std::unique_ptr<paimon::video::VideoPlayer> player;
         std::string cacheKey;
@@ -150,13 +145,13 @@ private:
     };
     static std::mutex s_playerCacheMutex;
     static std::deque<CachedPlayer> s_playerCache;
-    
+
     static std::unique_ptr<paimon::video::VideoPlayer> getCachedPlayer(std::string const& cacheKey);
     static void returnPlayerToCache(std::string const& cacheKey, std::unique_ptr<paimon::video::VideoPlayer> player);
     static void clearPlayerCache();
 
-    // Bound concurrent decoders in multi-sprite scenes; excess sprites pause
-    // until an active slot is released.
+    // bound concurrent decoders in multi-sprite scenes; excess sprites pause
+    // until a slot frees up.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     static constexpr int MAX_ACTIVE_SPRITES = 3;
 #else
@@ -166,16 +161,15 @@ private:
     static std::mutex s_activeSpritesMutex;
     static int s_activeSpriteCount;
 
-    // Keep total decode frame budget bounded as visible sprite count grows.
+    // total decode frame budget stays bounded as visible sprite count grows.
     static int adaptiveSpriteFPS(int activeCount);
 
-    // Claim one active-sprite slot, if available.
     bool tryAcquireActiveSlot();
     void releaseActiveSlot();
 
     bool m_holdsActiveSlot = false;
 
-    // Pause decoding after this sprite stays off-screen long enough.
+    // pause decoding after staying off-screen past the threshold.
     float m_offscreenAccumulator = 0.0f;
     static constexpr float kOffscreenPauseThreshold = 0.5f; // seconds
 };

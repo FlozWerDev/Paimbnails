@@ -7,11 +7,10 @@
 
 namespace paimon::gifimport {
 
-// Traza un color con elipses y nada mas: la mas grande que quepa donde la mancha
-// es mas gorda, estirada hacia donde la mancha da de si, y asi hasta no dejar
-// celda sin pintar. Todos los objetos salen del mismo circulo de GD, o sea de la
-// misma hoja de sprites, asi que aqui el orden Z entre ellos si manda y ninguno
-// tiene que quedarse debajo de un cuadrado.
+// Traces one color with ellipses only: biggest fitting where the blob is
+// fattest, stretched where the blob gives, until no cell stays unpainted. Every
+// object comes from the same GD circle (one sprite sheet), so Z order between
+// them holds and none must hide under a square.
 std::vector<Primitive> vectorizeCircles(
     std::vector<int> const& positions,
     int width,

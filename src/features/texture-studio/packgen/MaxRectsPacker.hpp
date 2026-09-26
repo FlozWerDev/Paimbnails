@@ -1,6 +1,5 @@
 #pragma once
-// MaxRectsPacker: BSSF rect packer; ties break by (y, x, input index) so
-// output is thread-schedule independent. allowRotate=false keeps shelf layout for A/B.
+// BSSF rect packer; (y, x, index) tie-breaks keep output thread-schedule independent. No rotation keeps shelf A/B.
 
 #include <algorithm>
 #include <cstddef>
@@ -63,9 +62,7 @@ public:
             return rects[a].id < rects[b].id;
         });
 
-        // Growing-atlas strategy: start from the biggest rect, expand only
-        // when the next rect no longer fits. Expansion order (right vs down)
-        // prefers the squarer atlas to keep UV waste low.
+        // Growing atlas: expand only when the next rect stops fitting; squarer wins, less UV waste.
         int curW = 0, curH = 0;
         for (std::size_t oi : order) {
             int rw = rects[oi].w + m_opts.padding;
@@ -170,8 +167,7 @@ private:
     }
 
     bool grow(int& curW, int& curH, int rw, int rh) {
-        // Try expand right, then down; pick the growth that keeps the atlas
-        // squarer. Either may fail against maxSize.
+        // Right then down; squarer growth wins, either may hit maxSize.
         bool canRight = curW < m_opts.maxSize;
         bool canDown = curH < m_opts.maxSize;
         int growRightW = std::min(m_opts.maxSize, curW * 2);
@@ -210,8 +206,7 @@ private:
     }
 
     void placeRect(int x, int y, int w, int h) {
-        // Split every intersecting free rect (Guillotine split, shorter axis
-        // first) then prune contained rects.
+        // Guillotine-split intersecting free rects (shorter axis first), then prune contained.
         std::vector<FreeRect> next;
         next.reserve(m_free.size() + 2);
         for (auto const& f : m_free) {

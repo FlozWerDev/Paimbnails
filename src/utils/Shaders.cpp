@@ -526,7 +526,7 @@ CCGLProgram* getBgShaderProgram(std::string const& shaderName) {
     if (shaderName == "underwater") return paimon::shaders::loadShader("layerbg-underwater-dyn"_spr, "cell_vertex.glsl", "underwater_dynamic.glsl", nullptr, nullptr);
     if (shaderName == "neon-trail") return paimon::shaders::loadShader("layerbg-neon-trail-dyn"_spr, "cell_vertex.glsl", "neon_trail_dynamic.glsl", nullptr, nullptr);
 
-    // Beat-reactive shaders read FFT uniforms; zeroed uniforms keep them static when off.
+    // beat shaders read FFT uniforms; zeroed keeps them static when off.
     if (shaderName == "glitch-beat")      return paimon::shaders::loadShader("beat-glitch"_spr,      "cell_vertex.glsl", "glitch_beat.glsl",      nullptr, nullptr);
     if (shaderName == "wave-beat")        return paimon::shaders::loadShader("beat-wave"_spr,        "cell_vertex.glsl", "wave_beat.glsl",        nullptr, nullptr);
     if (shaderName == "chromatic-beat")   return paimon::shaders::loadShader("beat-chromatic"_spr,   "cell_vertex.glsl", "chromatic_beat.glsl",   nullptr, nullptr);
@@ -933,7 +933,7 @@ void ProgressiveBlurJob::tickGaussian() {
 
         m_radius = intensityToBlurRadius(m_intensity);
         m_phase = Phase::GaussianH1;
-        if (!m_fastMode) return; 
+        if (!m_fastMode) return;
     }
 
     if (m_phase == Phase::GaussianH1) {
@@ -1266,17 +1266,6 @@ void ShaderBgSprite::updateShaderTime(float dt) {
         if (frame != g_lastShaderAudioFrame) {
             g_lastShaderAudioFrame = frame;
             PaimonAudio::get().update(dt);
-
-            static int s_logAccum = 0;
-            ++s_logAccum;
-            if (s_logAccum >= 60) {
-                s_logAccum = 0;
-                auto& a = PaimonAudio::get();
-                geode::log::info(
-                    "[ShaderBgSprite] audio: bass={:.2f} mid={:.2f} treble={:.2f} beat={:.2f} energy={:.2f} active={}",
-                    a.bass(), a.mid(), a.treble(), a.beatPulse(), a.energy(), a.isActive()
-                );
-            }
         }
     }
 }

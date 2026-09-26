@@ -6,8 +6,7 @@
 
 namespace paimon::texture_studio {
 
-// GPU re-tint on every draw from the role-mask texture (uniforms only, no
-// re-upload); layer-owned, dies with the editor, so no shutdown wiring.
+// GPU re-tint per draw from the role mask (uniforms only); layer-owned, dies with the editor.
 class TintPreviewSprite : public cocos2d::CCSprite {
 public:
     static TintPreviewSprite* create(cocos2d::CCTexture2D* base,

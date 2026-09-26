@@ -1,12 +1,10 @@
-// MenuLayerEntry.cpp - Adds a "Texture Studio" button to MenuLayer's
-// bottom-menu. Hook priority runs AFTER geode.node-ids so the
-// "bottom-menu" string ID is reliably present.
-
-#include "../ui/TextureStudioLayer.hpp"
-#include "../services/LiveSlotRuntime.hpp"
+// Texture Studio button on MenuLayer's bottom-menu; runs after geode.node-ids so the ID exists.
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/MenuLayer.hpp>
+
+#include "../ui/TextureStudioLayer.hpp"
+#include "../services/LiveSlotRuntime.hpp"
 #include "../../../framework/HookConventions.hpp"
 
 using namespace geode::prelude;

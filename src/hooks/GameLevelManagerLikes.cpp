@@ -1,5 +1,4 @@
-// Feeds the For You model: likeItem is the single funnel every like/dislike
-// passes through, so one hook catches paths the old tracker never saw.
+// likeItem funnels every like/dislike, catching paths the old tracker missed
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/GameLevelManager.hpp>
@@ -13,7 +12,7 @@ class $modify(PaimonForYouLikesGameLevelManager, GameLevelManager) {
     void likeItem(LikeItemType type, int id, bool liked, int parentID) {
         GameLevelManager::likeItem(type, id, liked, parentID);
 
-        // Comment and list votes say nothing about level taste.
+        // taste model only tracks levels
         if (type != LikeItemType::Level || id <= 0) return;
 
         auto& profile = paimon::foryou::TasteProfile::get();

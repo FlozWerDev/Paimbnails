@@ -18,7 +18,6 @@ namespace {
 
 void apply(cocos2d::CCLayer* layer, char const* key) {
     if (!layer) return;
-    geode::log::info("[BeatShaders/Hook] init done for layer '{}'", key);
     paimon::beat_shaders::BeatShaderManager::get().applyToLayer(layer, key);
 }
 

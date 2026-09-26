@@ -1,4 +1,3 @@
-// Separable, alpha-weighted Gaussian for the image-to-objects source.
 #ifdef GL_ES
 precision mediump float;
 #endif

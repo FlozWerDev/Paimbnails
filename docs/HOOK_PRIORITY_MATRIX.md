@@ -7,9 +7,12 @@
 
 ## Hooks clave auditados
 
-- `CCMenuItemSpriteExtra::activate` (`src/hooks/DynamicPopupHook.cpp`)
-  - `Pre + First`
-  - Motivo: capturar origen del boton antes de cualquier mutacion de otros hooks.
+- `CCMenuItemSpriteExtra::selected` (`src/hooks/DynamicPopupHook.cpp`)
+  - `Pre + VeryEarly`
+  - Motivo: capturar origen del boton en press-down, antes de que `activate` pueda destruir el popup.
+- `CCMenuItemSpriteExtra::selected` / `unselected` / `activate` (`src/hooks/MenuItemScaleFix.cpp`)
+  - `Post + VeryLate`
+  - Motivo: no pisar la escala de otros mods; va el ultimo.
 
 - `FLAlertLayer::show` (`src/hooks/DynamicPopupHook.cpp`)
   - `Post + Late`

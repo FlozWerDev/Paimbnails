@@ -130,8 +130,7 @@ CCNode* createRankSeal(ModlyUser const& user, float size) {
     seal->setContentSize({size, size});
     seal->setAnchorPoint({0.f, 0.5f});
 
-    // bigFont.fnt has no check glyph, so the tick comes from a GD sprite frame
-    // and a tinted disc stands in if that frame is ever missing.
+    // bigFont has no check glyph: tick from GD sprite frame, tinted disc fallback.
     if (auto* check = CCSprite::createWithSpriteFrameName("GJ_completesIcon_001.png")) {
         check->setColor(*color);
         float scale = size / std::max(check->getContentSize().width, check->getContentSize().height);
@@ -154,8 +153,7 @@ CCNode* createRankSeal(ModlyUser const& user, float size) {
 std::string translateTag(std::string const& tag) {
     if (Localization::get().getLanguage() != Localization::Language::ENGLISH) return tag;
 
-    // Keys are the Spanish values Modly stores; the accented ones are matched
-    // as raw UTF-8 bytes because that is what arrives from the server.
+    // Spanish keys matched as raw UTF-8 bytes, as they arrive from the server.
     static std::unordered_map<std::string, std::string> const translations = {
         {"Desarrollador", "Developer"},
         {"Dise\xC3\xB1" "ador", "Designer"},

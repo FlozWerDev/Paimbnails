@@ -1,6 +1,6 @@
 #pragma once
-// La rejilla del hub del icon kit. Los botones no se duplican: se los pide
-// prestados al carril oculto del garage y se los devuelve al cerrar.
+// Hub grid for the icon kit. Buttons are borrowed from the hidden garage rail
+// and returned on close.
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
@@ -16,8 +16,7 @@ public:
     static GarageHubPopup* create(GJGarageLayer* garage);
 
 protected:
-    // Un boton prestado, con el destino original que hay que devolverle: el
-    // popup se pone de intermediario para poder cerrarse antes de disparar.
+    // Borrowed button plus its original target: popup intercepts to close first.
     struct Borrowed {
         geode::Ref<cocos2d::CCMenuItem> button;
         cocos2d::CCObject* listener = nullptr;

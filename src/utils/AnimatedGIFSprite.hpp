@@ -20,7 +20,7 @@
 #include <filesystem>
 #include <chrono>
 
-// Animated GIF sprite with shared caching and incremental loading.
+// animated GIF with shared cache and incremental loading.
 class AnimatedGIFSprite : public cocos2d::CCSprite {
 public:
     static AnimatedGIFSprite* create(std::string const& filename);
@@ -32,7 +32,7 @@ public:
     struct SharedGIFData {
         std::vector<cocos2d::CCTexture2D*> textures;
         std::vector<float> delays;
-        std::vector<cocos2d::CCRect> frameRects; // Left, top, width, height.
+        std::vector<cocos2d::CCRect> frameRects;
         int width;
         int height;
     };
@@ -40,9 +40,9 @@ public:
 protected:
     struct GIFFrame {
         cocos2d::CCTexture2D* texture = nullptr;
-        cocos2d::CCRect rect; // Canvas position and size.
-        float delay = 0.1f; // Seconds.
-        
+        cocos2d::CCRect rect;
+        float delay = 0.1f;
+
         ~GIFFrame() {
             if (texture) {
                 texture->release();
@@ -50,24 +50,23 @@ protected:
             }
         }
     };
-    
+
     static std::unordered_map<std::string, SharedGIFData> s_gifCache;
     static std::list<std::string> s_lruList;
-    static std::unordered_map<std::string, std::list<std::string>::iterator> s_lruMap; // O(1) LRU.
+    static std::unordered_map<std::string, std::list<std::string>::iterator> s_lruMap;
     static std::unordered_set<std::string> s_pinnedGIFs;
-    static std::shared_mutex s_cacheMutex; // Protects cache state.
-    
-    static size_t s_currentCacheSize; // Bytes
+    static std::shared_mutex s_cacheMutex;
+
+    static size_t s_currentCacheSize;
     static size_t getMaxCacheMem();
     static void pruneDiskCache();
     static std::filesystem::path getDiskCacheDir();
-    
+
     static void evictIfNeeded();
 
     std::vector<GIFFrame*> m_frames;
-    // Dominant colors per frame: {A, B}.
-    std::vector<std::pair<cocos2d::ccColor3B, cocos2d::ccColor3B>> m_frameColors;
-    
+    std::vector<std::pair<cocos2d::ccColor3B, cocos2d::ccColor3B>> m_frameColors; // per frame: {A, B}.
+
     unsigned int m_currentFrame = 0;
     float m_frameTimer = 0.0f;
     bool m_isPlaying = true;
@@ -75,9 +74,9 @@ protected:
     std::string m_filename;
     int m_canvasWidth = 0;
     int m_canvasHeight = 0;
-    
+
     struct PendingFrame {
-        std::vector<uint8_t> pixels; // RGBA8888.
+        std::vector<uint8_t> pixels;
         int left = 0;
         int top = 0;
         int width = 0;
@@ -89,11 +88,10 @@ protected:
     void updateTextureLoading(float dt);
 
     void updateAnimation(float dt);
-    
+
     virtual ~AnimatedGIFSprite();
-    
+
 public:
-    // Shader support for blur effects.
     float m_intensity = 0.0f;
     float m_time = 0.0f;
     float m_brightness = 1.0f;
@@ -109,30 +107,30 @@ public:
     cocos2d::CCGLProgram* m_cachedShaderProgram = nullptr;
 
     static void clearCache();
-    // Clear GL textures after context reload without stopping the worker.
+    // drop GL textures on reload; worker keeps running.
     static void clearCacheForReload();
     static void remove(std::string const& filename);
     static bool isCached(std::string const& filename);
     static size_t currentCacheBytes();
-    
+
     using AsyncCallback = geode::CopyableFunction<void(AnimatedGIFSprite*)>;
     static void createAsync(std::string const& path, AsyncCallback callback);
     static void createAsync(std::vector<uint8_t> const& data, std::string const& key, AsyncCallback callback);
-    
+
     static AnimatedGIFSprite* createFromCache(std::string const& key);
 
     struct DiskCacheEntry {
         int width;
         int height;
         struct Frame {
-            std::vector<uint8_t> pixels; // RGBA8888.
+            std::vector<uint8_t> pixels;
             float delay;
             int width;
             int height;
         };
         std::vector<Frame> frames;
     };
-    
+
     static bool loadFromDiskCache(std::string const& path, DiskCacheEntry& outEntry);
     static void saveToDiskCache(std::string const& path, DiskCacheEntry const& entry);
     static std::string getCachePath(std::string const& path);
@@ -147,7 +145,7 @@ private:
         AsyncCallback callback;
         bool isData = false;
     };
-    
+
     static std::deque<GIFTask> s_taskQueue;
     static std::mutex s_queueMutex;
     static std::condition_variable s_queueCV;
@@ -165,8 +163,8 @@ public:
         m_isPlaying = false;
         if (m_pendingFrames.empty()) this->unscheduleUpdate();
     }
-    void stop() { 
-        m_isPlaying = false; 
+    void stop() {
+        m_isPlaying = false;
         m_currentFrame = 0;
         if (!m_frames.empty() && m_frames[0] && m_frames[0]->texture) {
             this->setTexture(m_frames[0]->texture);
@@ -182,20 +180,20 @@ public:
     }
 
     void onExit() override {
-        // Recycled off-tree GIFs must not keep a global schedule.
+        // recycled off-tree GIFs must not keep a global schedule.
         this->unscheduleUpdate();
         this->unschedule(schedule_selector(AnimatedGIFSprite::updateTextureLoading));
         CCSprite::onExit();
     }
-    
+
     void setLoop(bool loop) { m_loop = loop; }
     bool isPlaying() const { return m_isPlaying; }
     bool isLooping() const { return m_loop; }
-    
+
     unsigned int getCurrentFrame() const { return m_currentFrame; }
     unsigned int getFrameCount() const { return m_frames.size(); }
     std::string getCacheKey() const { return m_filename; }
-    
+
     void setCurrentFrame(unsigned int frame);
 
     bool processNextPendingFrame();
@@ -209,12 +207,11 @@ public:
 
 private:
     bool initFromCache(std::string const& cacheKey);
-    
+
     std::string const& getFilename() const { return m_filename; }
-    
+
     void update(float dt) override;
 
-    // Manual draw for shader support.
     void draw() override;
 
 private:

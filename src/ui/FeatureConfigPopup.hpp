@@ -3,9 +3,6 @@
 #include <Geode/Geode.hpp>
 #include <string>
 
-// Generic popup showing grouped settings for a Paimon Hub feature; a featureKey
-// maps to a builder in the internal registry that renders the widgets.
-
 namespace paimon::ui {
 
 class FeatureConfigPopup : public geode::Popup {

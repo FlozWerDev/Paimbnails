@@ -3,7 +3,7 @@
 
 namespace paimon {
 
-// Dynamic Popup marker (via Geode user flag)
+// dynamic popup marker (Geode user flag).
 
 inline std::string const& dynamicPopupFlag() {
     static const std::string flag = geode::Mod::get()->getID() + "/dynamic-popup";
@@ -26,7 +26,7 @@ inline void unmarkDynamicPopup(cocos2d::CCNode* node) {
     }
 }
 
-// origin of the last pressed button (world coords)
+// last pressed button origin (world coords).
 
 inline cocos2d::CCPoint& lastButtonOrigin() {
     static cocos2d::CCPoint s(-1.f, -1.f);

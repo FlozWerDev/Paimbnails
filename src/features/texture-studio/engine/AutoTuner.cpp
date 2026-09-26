@@ -30,8 +30,7 @@ AutoTuner::Suggestion AutoTuner::tuneForSprite(ImageBuffer const& framePixels,
     auto classified = ClusterClassifier::classify(clusters, framePixels);
     if (classified.clusters.empty()) return result;
 
-    // Centre the tint on the brightest colored role (Color1/Color2/Glow),
-    // weighted toward dominant Color1. Outline is excluded — it's never tinted.
+    // Center on the brightest colored role, weighted to dominant Color1; outline never tints.
     float targetLum = -1.0f;
     bool  haveColored = false;
     for (auto const& c : classified.clusters) {
@@ -50,8 +49,7 @@ AutoTuner::Suggestion AutoTuner::tuneForSprite(ImageBuffer const& framePixels,
     }
     if (!haveColored || targetLum < 0.0f) return result;
 
-    // brightness == target luminance maps the dominant fill to factor ≈ 1.0
-    // (full user color). PackGen supports ~100..300.
+    // brightness == target maps the dominant fill to factor ~1.0 (PackGen range ~100..300).
     int tuned = std::clamp(static_cast<int>(std::lround(targetLum)), 100, 300);
 
     result.suggestedBrightness = tuned;

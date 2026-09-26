@@ -13,7 +13,7 @@
 
 namespace paimon {
 
-// The worker must exit before its owner releases the state it uses.
+// worker must exit before its owner releases shared state.
 inline void joinWithWarning(std::thread& t, std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
     if (!t.joinable()) return;
 

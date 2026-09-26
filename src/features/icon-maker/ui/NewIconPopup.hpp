@@ -1,6 +1,6 @@
 #pragma once
-// Crear un icono en una sola pantalla: gamemode, nombre y de que se parte
-// (lienzo vacio o la forma de un icono oficial). Devuelve el id creado.
+// One-screen icon creation: gamemode, name, starting point (blank or official
+// shape). Returns the created id.
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>

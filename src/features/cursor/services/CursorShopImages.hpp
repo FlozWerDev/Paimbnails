@@ -1,5 +1,5 @@
 #pragma once
-// Miniaturas remotas por cola con tope de concurrentes: pedir 40 a la vez dejaba celdas en blanco.
+// Queued remote thumbs with a concurrency cap: 40 at once left cells blank.
 
 #include <Geode/Geode.hpp>
 
@@ -17,8 +17,7 @@ public:
 
     static ShopImages& get();
 
-    // Devuelve la textura si ya esta cacheada. Si no, encola la descarga y llama
-    // a cb cuando llegue (nullptr si acaba fallando).
+    // Cached texture, else queued download; cb gets nullptr on failure.
     cocos2d::CCTexture2D* fetch(std::string const& url, Callback cb);
 
     void clear();
@@ -38,8 +37,7 @@ private:
     int m_active = 0;
 };
 
-// Cuelga la miniatura de `holder` cuando llega, escalada para caber. Mientras
-// tanto deja un marcador, que pasa a "?" si la descarga no sale.
+// Mounts the thumb on `holder` when it arrives; placeholder until then, "?" on failure.
 void mountThumb(cocos2d::CCNode* holder, std::string const& url,
                 float maxWidth, float maxHeight);
 

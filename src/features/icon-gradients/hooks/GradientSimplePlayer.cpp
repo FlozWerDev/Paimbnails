@@ -1,10 +1,5 @@
-// Menu-doll shading outside gameplay, rethought for Paimbnails.
-//
-// Idea credit: "Icon Gradients" by zilko
-// (https://github.com/zilko144/icon-gradients-geode, unlicensed —
-// all rights reserved). Independent implementation: same behavior (shade
-// SimplePlayer dolls shown in icon previews, skipping in-game dolls),
-// own expression.
+// Shades SimplePlayer preview dolls, skipping in-game ones, after zilko's
+// "Icon Gradients" (independent implementation; idea credit zilko144, unlicensed).
 
 #include "GradientSimplePlayer.hpp"
 #include "../GradientCache.hpp"

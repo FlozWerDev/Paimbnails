@@ -10,8 +10,7 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// 1 finger opens radial, 2 open layout editor; move/release cancels. Los
-// handleTouches* tienen direccion real en Android e iOS (ver bindings).
+// 1 finger opens radial, 2 open layout editor; move/release cancels.
 
 #if defined(GEODE_IS_MOBILE)
 
@@ -57,7 +56,7 @@ void resetTouch() {
     syncTouchTicking();
 }
 
-// Cocos runs first, so a tracking menu means an intentional UI touch.
+// Cocos runs first: a tracking menu means an intentional UI touch.
 bool hasTrackingMenu(CCNode* node) {
     if (!node || !node->isVisible()) return false;
 

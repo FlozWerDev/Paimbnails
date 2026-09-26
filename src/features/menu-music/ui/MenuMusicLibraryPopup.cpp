@@ -122,7 +122,6 @@ bool MenuMusicLibraryPopup::init(float width, float height) {
     m_libListenerToken = MenuMusicLibrary::get().addListener([this]() {
         this->rebuildList();
     });
-    // Refrescar el marcador "Playing" cuando cambia el track.
     m_playerListenerToken = MenuMusicPlayer::get().addListener(
         [this](const std::string&) { this->rebuildList(); });
 

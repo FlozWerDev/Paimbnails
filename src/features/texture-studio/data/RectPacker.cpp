@@ -11,8 +11,7 @@ namespace paimon::texture_studio {
 
 namespace {
 
-// Opt-in MaxRects path (PackerOptions::bestFit). Orientation is kept
-// shelf-compatible (no rotation); only the arrangement changes.
+// Opt-in MaxRects path: no rotation, shelf-compatible orientation, new arrangement only.
 PackResult packBestFit(std::vector<RectPackInput> const& rects,
                        PackerOptions const& options) {
     using packgen::MaxRectsPacker;
@@ -63,8 +62,7 @@ PackResult RectPacker::pack(std::vector<RectPackInput> rects, PackerOptions opti
         return packBestFit(rects, options);
     }
 
-    // Sort indices instead of moving the (string-heavy) inputs; the visit
-    // order — and therefore every placement — is unchanged.
+    // Sort indices, not string-heavy inputs: visit order (hence placements) unchanged.
     std::vector<std::size_t> order(rects.size());
     for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
     std::sort(order.begin(), order.end(),

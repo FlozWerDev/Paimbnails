@@ -206,8 +206,7 @@ void QuickButtonSfxPopup::refresh() {
     m_gameInput = nullptr;
     m_onlineInput = nullptr;
     m_fileLabel = nullptr;
-    // Menu propio para los botones del contexto (Online/Archivo): al limpiar
-    // m_ctx desaparece con el, sin podas por conteo.
+    // Own menu for context buttons (Online/File): clearing m_ctx drops it with no count pruning.
     m_dynMenu = CCMenu::create();
     m_dynMenu->setPosition({0.f, 0.f});
     m_dynMenu->setContentSize(m_mainLayer->getContentSize());

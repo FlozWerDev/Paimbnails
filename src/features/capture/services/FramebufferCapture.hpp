@@ -20,9 +20,8 @@ struct CaptureValidation {
 
 class FramebufferCapture {
 public:
-    // Callback: (success, texture, rgbaData, width, height). Texture carries a
-    // +1 the service releases on return; keepers must retain it. May run off
-    // the main thread — marshal to main before touching UI.
+    // Callback (success, texture, rgba, w, h); texture +1 released on return,
+    // retain to keep. May run off-thread: marshal to main for UI.
     static void requestCapture(
         int levelID,
         geode::CopyableFunction<void(bool success, cocos2d::CCTexture2D* texture, std::shared_ptr<uint8_t> rgbaData, int width, int height)> callback,

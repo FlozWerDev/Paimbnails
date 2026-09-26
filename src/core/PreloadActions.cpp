@@ -71,16 +71,14 @@ void schedulePrefetchMainLevels() {
 namespace paimon::preload {
 
 void startFullPreload() {
-    // No cache stats, HTTP client construction or texture uploads while Geode
-    // is loading binaries/resources. Publish the total now for the menu label.
+    // Geode is still loading: publish the total now for the menu label, nothing else.
     g_thumbsTotal.store(paimon::kMainLevelMaxID - paimon::kMainLevelMinID + 1,
         std::memory_order_release);
     scheduleAfterGameLoaded(1.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         schedulePrefetchMainLevels();
     });
-    // Global icons pile one directory per visited profile; trim the oldest off
-    // the main thread once the startup rush is over (disk-only, no menu hitch).
+    // global icons pile a dir per profile: prune oldest off-thread after startup.
     scheduleAfterGameLoaded(20.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         paimon::ThreadTracker::get().spawn([]() {

@@ -162,10 +162,7 @@ CCNode* SlotsGridView::makeSlotCard(std::string const& id,
         previewHost->addChildAtPosition(placeholder, Anchor::Center);
     }
 
-    // CCMenu keeps ignoreAnchorPointForPosition=true: its position is the
-    // menu centre and children are offsets from that centre. Avoid
-    // addChildAtPosition here — AnchorLayout flips the flag and piles every
-    // item on top of each other (Edit/Delete stacked).
+    // CCMenu ignores anchor: position is the menu centre, children are offsets. No addChildAtPosition (AnchorLayout piles items).
     auto* menu = CCMenu::create();
     if (!menu) return card;
     menu->setPosition({kCardW * 0.5f, kCardH * 0.5f});
@@ -189,7 +186,7 @@ CCNode* SlotsGridView::makeSlotCard(std::string const& id,
             [action = std::move(action)](CCMenuItemSpriteExtra*) { if (action) action(); });
     };
 
-    // Side-by-side at the bottom; centres ~100 px apart so the sprites don't touch.
+    // Bottom side-by-side; ~100px apart so sprites don't touch.
     if (auto* editBtn = makeMini("Edit", "GJ_button_04.png",
             [this, id]() { if (m_onEdit) m_onEdit(id); })) {
         editBtn->setPosition({-50.f, kBottom + 18.f});

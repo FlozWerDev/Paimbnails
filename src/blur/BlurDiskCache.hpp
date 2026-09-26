@@ -41,12 +41,9 @@ private:
     std::filesystem::path cacheDir() const;
     std::filesystem::path pathForKey(std::string const& key) const;
 
-    bool loadIndex();
-    bool writeIndex();
-
     cocos2d::CCTexture2D* uploadRawRGBA(std::vector<uint8_t> const& pixels, int w, int h);
 
-    // Writes a finished RGBA blob to disk on the I/O pool and indexes it.
+    // Writes the finished RGBA blob on the I/O pool and indexes it.
     void persistPixelsAsync(std::string key, std::shared_ptr<std::vector<uint8_t>> pixels, int w, int h);
 
     // Requires unique_lock on m_mutex.

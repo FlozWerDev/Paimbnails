@@ -20,10 +20,10 @@ using namespace cocos2d;
 
 namespace {
 
-// Shared readback FBO; kept at file scope so context reload can invalidate it.
+// file-scope readback FBO so context reload can invalidate it.
 GLuint s_readbackFBO = 0;
 
-// K-means on GPU-reduced LAB data (32×32 = 1024 pixels max).
+// k-means on GPU-reduced LAB (32x32, 1024px max).
 
 struct LABPixel {
     float L, a, b;
@@ -37,7 +37,6 @@ static float labDistSq(LABPixel const& a, LABPixel const& b) {
 }
 
 static DCColor labToRGB(float L, float a, float b) {
-    // LAB → XYZ → linear RGB → sRGB.
     const float Xn = 0.95047f, Yn = 1.0f, Zn = 1.08883f;
     float fy = (L + 16.0f) / 116.0f;
     float fx = a / 500.0f + fy;
@@ -152,7 +151,7 @@ static std::pair<DCColor, DCColor> runMiniKMeans(std::vector<LABPixel> const& pi
 
     DCColor color1 = labToRGB(clusters[0].centroid.L, clusters[0].centroid.a, clusters[0].centroid.b);
 
-    // Prefer a second cluster with a useful perceptual distance.
+    // second cluster needs a useful perceptual distance.
     const float DELTA_THRESHOLD_SQ = 20.0f * 20.0f; // deltaE² ≈ 400
     DCColor color2 = color1;
     for (int i = 1; i < K; ++i) {
@@ -254,7 +253,6 @@ static std::pair<DCColor, DCColor> gpuExtract(CCTexture2D* texture) {
         uint8_t b = pixels[i * 4 + 2];
         uint8_t a = pixels[i * 4 + 3];
 
-        // Transparent pixels are filtered out by the shader.
         if (a < 128) continue;
 
         float L = (r / 255.0f) * 100.0f;           // [0,1] → [0,100]
@@ -291,7 +289,7 @@ bool isAvailable() {
 }
 
 void onGLContextReload() {
-    // Delete while the old context is active; the FBO is recreated lazily.
+    // delete while the old context is live; recreated lazily.
     if (s_readbackFBO != 0) {
         glDeleteFramebuffers(1, &s_readbackFBO);
         s_readbackFBO = 0;

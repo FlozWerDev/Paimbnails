@@ -19,19 +19,6 @@ bool enabled() {
     return paimon::modules::isEnabled("paimbnails.physics.editor");
 }
 
-CCMenu* hostMenu(EditorUI* ui) {
-    for (auto const* id : {"toolbar-toggles-menu", "editor-buttons-menu", "undo-menu"}) {
-        if (auto* menu = typeinfo_cast<CCMenu*>(ui->getChildByID(id))) return menu;
-    }
-    if (ui->m_swipeBtn) {
-        if (auto* menu = typeinfo_cast<CCMenu*>(ui->m_swipeBtn->getParent())) return menu;
-    }
-    if (ui->m_undoBtn) {
-        if (auto* menu = typeinfo_cast<CCMenu*>(ui->m_undoBtn->getParent())) return menu;
-    }
-    return nullptr;
-}
-
 void openLab() {
     if (!enabled()) return;
     auto* editor = LevelEditorLayer::get();
@@ -86,7 +73,7 @@ class $modify(PaimonPhysicsEditorUI, EditorUI) {
         if (!button) return true;
         button->setID("physics-lab-button"_spr);
 
-        if (auto* menu = hostMenu(this)) {
+        if (auto* menu = paimon::editor::hostToolbarMenu(this)) {
             menu->addChild(button);
             if (menu->getLayout()) menu->updateLayout();
         } else {

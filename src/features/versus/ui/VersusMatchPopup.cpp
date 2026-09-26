@@ -103,12 +103,9 @@ void VersusMatchPopup::onExit() {
 void VersusMatchPopup::rebuild() {
     auto const phase = VersusSession::get().phase();
 
-    if (phase == Phase::Countdown || phase == Phase::Running) {
-        // The level takes over from here.
-        Popup::onClose(nullptr);
-        return;
-    }
-    if (phase == Phase::Idle || phase == Phase::Finished) {
+    // The level takes over from here; idle and finished have no modal.
+    if (phase == Phase::Countdown || phase == Phase::Running ||
+        phase == Phase::Idle || phase == Phase::Finished) {
         Popup::onClose(nullptr);
         return;
     }

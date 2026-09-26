@@ -53,7 +53,7 @@ bool TwitchMessagePopup::init(
     float const inner = content.width - kPad * 2.f;
     auto const accent = platformAccent(request.platform);
 
-    // Quien lo mando manda en la ficha: el recado es suyo, no del nivel.
+    // the sender owns the card: the note is theirs, not the level's.
     auto requester = "@" + request.requester;
     if (request.platform == Platform::Web) {
         requester += request.requesterVerified ? " - verificado" : " - sin verificar";
@@ -81,7 +81,7 @@ bool TwitchMessagePopup::init(
     name->setPosition({kPad, levelY});
     m_mainLayer->addChild(name);
 
-    // El creador va en el dorado del juego, como en cualquier celda de nivel.
+    // the creator reads in game gold, like any level cell.
     if (!author.empty()) {
         float const authorX = kPad + name->getScaledContentSize().width + 7.f;
         auto* by = CCLabelBMFont::create(author.c_str(), "goldFont.fnt");
@@ -100,8 +100,7 @@ bool TwitchMessagePopup::init(
         m_mainLayer->addChild(panel);
     }
 
-    // El recado puede traer saltos de linea, asi que va en un scroll: si no
-    // cabe se lee arrastrando en vez de salirse del popup.
+    // notes may carry newlines, so they scroll instead of overflowing.
     auto const note = requestNote(request);
     auto* text = SimpleTextArea::create(note, "chatFont.fnt", 0.55f, inner - 24.f);
     text->setAnchorPoint({0.f, 1.f});

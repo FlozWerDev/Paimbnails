@@ -149,8 +149,7 @@ SimplePlayer* installPaimonIconsButton(GJGarageLayer* layer) {
     if (!layer) return nullptr;
     if (layer->getChildByID("paimbnails/paimon-icons-btn"_spr)) return nullptr;
 
-// Wrap SimplePlayer because its zero content size would make BasedButtonSprite
-// scale it infinitely.
+// SimplePlayer has zero content size; wrap or BasedButtonSprite scales infinitely.
     auto* mini = SimplePlayer::create(1);
     if (!mini) return nullptr;
     auto* wrap = CCNode::create();
@@ -173,8 +172,7 @@ SimplePlayer* installPaimonIconsButton(GJGarageLayer* layer) {
     btn->setID("paimbnails/paimon-icons-btn"_spr);
     btn->setScale(0.7f);
 
-// Node IDs do not expose category/currency menus; place this below the color
-// buttons to avoid covering stats-menu.
+// No Node IDs for category/currency menus; place below color buttons, clear of stats-menu.
     if (auto* column = colorColumnOf(layer)) {
         float lowestY = 1e9f;
         float x = 0.f;
@@ -187,7 +185,6 @@ SimplePlayer* installPaimonIconsButton(GJGarageLayer* layer) {
         }
         if (lowestY < 1e8f) {
             CCPoint spot{x, lowestY - kColumnStep};
-// Use the lower corner if the left column is already full.
             if (column->convertToWorldSpace(spot).y >= 24.f) {
                 btn->setPosition(spot);
                 column->addChild(btn);

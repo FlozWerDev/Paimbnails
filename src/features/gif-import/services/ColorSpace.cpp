@@ -8,8 +8,8 @@ namespace paimon::gifimport {
 
 namespace {
 
-// sRGB -> lineal es una funcion de un solo canal de 256 valores: la tabla
-// ahorra las tres potencias por pixel de la cuantizacion.
+// sRGB->linear is a 256-value single-channel function: the table saves three
+// pow()s per pixel of quantization.
 const std::array<float, 256>& linearTable() {
     static const std::array<float, 256> table = [] {
         std::array<float, 256> values{};

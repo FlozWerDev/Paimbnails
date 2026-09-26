@@ -13,7 +13,6 @@ void main() {
     vec2 center = vec2(cx, cy);
     vec2 dir = v_texCoord - center;
     float str = u_intensity * 0.05;
-    // 8 fixed samples along radial direction
     vec4 c  = texture2D(u_texture, center + dir * (1.0 - str * 0.000));
     c += texture2D(u_texture, center + dir * (1.0 - str * 0.143));
     c += texture2D(u_texture, center + dir * (1.0 - str * 0.286));

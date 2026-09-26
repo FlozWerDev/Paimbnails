@@ -79,8 +79,7 @@ std::unique_ptr<uint8_t[]> scale(
         return result;
     }
 
-    // ARGBScale treats the four channels independently. Despite the historical
-    // name, that is exactly what is needed for tightly packed RGBA8888 bytes.
+    // ARGBScale treats channels independently: exactly right for packed RGBA8888.
     auto const filter = (dstWidth < srcWidth || dstHeight < srcHeight)
         ? libyuv::kFilterBox
         : libyuv::kFilterBilinear;

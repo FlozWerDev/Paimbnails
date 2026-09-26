@@ -9,8 +9,7 @@ enum class VolumeKind {
     SFX     // Shift + scroll
 };
 
-// Singleton for the volume overlay, FMOD volume updates, auto-hide, and the
-// scroll-held state consumed by Quick Hub.
+// volume overlay, FMOD updates, auto-hide, and the scroll-held state Quick Hub reads.
 
 class VolumeScrollManager {
 public:
@@ -21,13 +20,12 @@ public:
     void onSceneChange();
     void releaseSharedResources();
 
-    // Apply a scroll delta and show the overlay; return whether it was consumed.
     bool onScroll(VolumeKind kind, float delta);
 
 private:
     VolumeScrollManager() = default;
 
-    // Hidden → SlidingIn → Expanding → Visible → Collapsing → SlidingOut.
+    // Hidden -> SlidingIn -> Expanding -> Visible -> Collapsing -> SlidingOut.
     enum class State {
         Hidden,
         SlidingIn,
@@ -46,7 +44,6 @@ private:
     void redrawBar();
     void applyExpandProgress();
 
-    // Read/write FMOD volumes, clamped to [0, 1].
     float readVolume(VolumeKind kind) const;
     void  writeVolume(VolumeKind kind, float value);
 
@@ -67,8 +64,8 @@ private:
     cocos2d::CCScene* m_attachedScene = nullptr;
 };
 
-// True while a volume-scroll bind is held. Smooth-scroll uses this to avoid
-// replaying one wheel tick as momentum.
+// true while a volume-scroll bind is held, so smooth-scroll doesn't replay
+// one wheel tick as momentum.
 bool isVolumeGestureActive();
 
 }

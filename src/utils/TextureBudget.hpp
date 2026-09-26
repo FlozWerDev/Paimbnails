@@ -6,9 +6,9 @@
 
 namespace paimon::image {
 
-// CCTextureCache no suelta nada; aqui solo se quedan las ultimas `budget`.
+// CCTextureCache never releases; only the last `budget` entries stay.
 
-// Para listas con muchas portadas.
+// for lists with many covers.
 inline constexpr std::size_t kDiskTextureBudget = 24;
 
 cocos2d::CCTexture2D* loadBudgeted(

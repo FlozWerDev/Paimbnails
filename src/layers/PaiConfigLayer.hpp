@@ -1,7 +1,6 @@
 #pragma once
 
-// PaiConfigLayer — editor de fondos en una sola pantalla, con preview vivo
-// bajo una maqueta de la UI vanilla.
+// single-screen background editor with live preview under a vanilla UI mock.
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
@@ -26,8 +25,7 @@ public:
     static PaiConfigLayer* create();
     static cocos2d::CCScene* scene();
 
-    // Abre el editor encima de la escena actual, sin pushScene. Lo usan los
-    // sitios que ya viven dentro de un popup y no pueden empujar escena.
+    // overlay entry point for callers inside a popup that cannot push a scene.
     static PaiConfigLayer* openOverlay();
 
 protected:
@@ -43,7 +41,7 @@ protected:
     cocos2d::CCNode* buildPreviewCard(cocos2d::CCRect area);
     cocos2d::CCNode* buildControlsCard(cocos2d::CCRect area);
 
-    // Filas del panel de controles (todas devuelven anchor {0,0}).
+    // control rows, all anchored at {0,0}.
     cocos2d::CCNode* rowSources(float width);
     cocos2d::CCNode* rowLevelId(float width);
     cocos2d::CCNode* rowDarken(float width);
@@ -114,11 +112,10 @@ protected:
 
     geode::ScrollLayer* m_controlsScroll = nullptr;
     cocos2d::CCNode* m_controlsHint = nullptr;
-    // Las filas viven en un Ref: el ScrollLayer recorta con setVisible(),
-    // asi que la visibilidad no dice que filas quiere la config.
+    // rows live in Refs: the scroll layer culls with setVisible(),
+    // so visibility does not track config intent.
     std::vector<geode::Ref<cocos2d::CCNode>> m_controlRows;
-    // Recoloca las filas activas del panel de controles para que ocultar una no
-    // deje un hueco. Solo hace scroll al inicio si cambio que filas se ven.
+    // packs visible rows gap-free; scrolls to top only when the set changes.
     void relayoutControls();
     bool isControlRowEnabled(cocos2d::CCNode* row) const;
     std::string m_controlsSignature;
@@ -133,7 +130,7 @@ protected:
     geode::Ref<cocos2d::CCNode> m_adaptiveRow;
     geode::Ref<cocos2d::CCNode> m_videoRow;
     geode::Ref<cocos2d::CCNode> m_moduleWarnRow;
-    // Filas condicionales: que la config las quiera, no si estan dibujadas.
+    // conditional rows: wanted by config, not drawn state.
     bool m_showAdaptive = false;
     bool m_showVideo = false;
     bool m_showModuleWarn = false;
@@ -146,7 +143,6 @@ protected:
     int m_filterIndex = 0;
     bool m_overlayMode = false;
 
-    // Scroll con rueda
     float m_controlsTargetY = 0.f;
     bool m_controlsTargetSet = false;
     float m_screenTargetY = 0.f;

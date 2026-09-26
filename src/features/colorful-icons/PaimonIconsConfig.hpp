@@ -4,8 +4,7 @@
 
 namespace paimon::icons {
 
-// Stored as int in JSON. Numeric values are frozen for save-compat; the gaps
-// (3 = SatBoost, 7 = PerGamemode) are legacy modes removed in the redesign.
+// Int-stored JSON; values frozen for save-compat (gaps are removed legacy modes).
 enum class ColorMode : int {
     Player       = 0,
     CustomRGB    = 1,

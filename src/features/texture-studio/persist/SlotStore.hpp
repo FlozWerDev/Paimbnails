@@ -1,7 +1,6 @@
 #pragma once
-//
-// Main thread only; the exporter hops back via queueInMainThread before mutating slots.
-//
+
+// Main thread only; exporter hops back via queueInMainThread before mutating slots.
 
 #include "TextureProject.hpp"
 
@@ -14,8 +13,7 @@
 
 namespace paimon::texture_studio {
 
-// Lightweight summary entry kept in slots.json so the UI can render the
-// slot grid without parsing every project.json.
+// Summary entry in slots.json: grid renders without parsing every project.json.
 struct SlotIndexEntry {
     std::string  id;
     std::string  name;

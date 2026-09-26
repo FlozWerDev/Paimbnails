@@ -7,8 +7,8 @@
 
 namespace paimon::updates {
 
-// Centro de actualizaciones: estado actual, boton de actualizar e historial
-// completo de versiones publicadas para volver a una antigua.
+// update center: current state, update button, and full published-version
+// history for rolling back to an older one.
 class UpdateCenterPopup : public geode::Popup {
 public:
     static UpdateCenterPopup* create();

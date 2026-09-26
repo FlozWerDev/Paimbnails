@@ -311,10 +311,7 @@ geode::Result<SheetTinterOutput> processInPlace(SheetTinterRequest const& req,
                        needsReviewCount);
 }
 
-// Phase-2 unit for processRepack: everything a frame needs, plus its
-// outputs. `frameColors` is a copy (12 bytes) so workers never touch the
-// request maps; `tintedDelta`/`reviewDelta` reproduce the exact counter
-// semantics of the old inline loop and are folded in serially afterwards.
+// Phase-2 unit: per-frame inputs plus outputs. frameColors is a 12-byte copy so workers skip request maps.
 struct RepackJob {
     SpriteFrameInfo info;
     ImageBuffer origPixels;
@@ -329,9 +326,7 @@ struct RepackJob {
     int reviewDelta = 0;
 };
 
-// Pure recolor compute for one frame: no I/O, no logging, no shared state
-// (reads only its job + req, both const alive for the whole call), so jobs
-// run safely on the PackScheduler pool.
+// Pure per-frame recolor: no I/O, logging or shared state, pool-safe.
 void computeRepackJob(RepackJob& job, SheetTinterRequest const& req) {
     if (!job.customCanvas.empty() && !job.imageOverlay) {
         job.recolored = std::move(job.customCanvas);
@@ -403,8 +398,7 @@ geode::Result<SheetTinterOutput> processRepack(SheetTinterRequest const& req,
     std::vector<Tinted> tinted;
     tinted.reserve(parsed.frames.size());
 
-    // Phase 1 (serial, frame order): extract pixels, resolve flags, and do
-    // the custom-canvas file I/O — warnings keep their original order.
+    // Phase 1 (serial, frame order): pixels, flags, custom-canvas I/O; warnings keep order.
     std::vector<RepackJob> jobs;
     jobs.reserve(parsed.frames.size());
 
@@ -442,8 +436,7 @@ geode::Result<SheetTinterOutput> processRepack(SheetTinterRequest const& req,
         jobs.push_back(std::move(job));
     }
 
-    // Phase 2 (parallel): pure recolor compute. The pool is owned by this
-    // call and joined before return, so Geode unload never strands threads.
+    // Phase 2 (parallel): pool owned and joined here, so unload never strands threads.
     if (jobs.size() == 1) {
         computeRepackJob(jobs.front(), req);
     } else if (!jobs.empty()) {
@@ -453,8 +446,7 @@ geode::Result<SheetTinterOutput> processRepack(SheetTinterRequest const& req,
         });
     }
 
-    // Phase 3 (serial, frame order): fusion I/O, resize, assemble. Counter
-    // semantics match the old inline loop exactly.
+    // Phase 3 (serial, frame order): fusion I/O, resize, assemble.
     for (auto& job : jobs) {
         if (applyFusionIfAny(req, job.info.name, job.recolored)) {
             ++job.tintedDelta;

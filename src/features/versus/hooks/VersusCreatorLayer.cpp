@@ -38,14 +38,14 @@ class $modify(PaimonVersusCreatorLayer, CreatorLayer) {
 
         auto* versus = typeinfo_cast<CCMenuItemSpriteExtra*>(menu->getChildByID("versus-button"));
         if (versus) {
-            // Retargeting the node GD already laid out keeps its native sprite,
-            // its size, its hitbox and its place in the row.
+            // retargeting the laid-out node keeps its sprite, size, hitbox
+            // and place in the row.
             versus->setTarget(this, menu_selector(PaimonVersusCreatorLayer::onPaimonVersus));
             return true;
         }
 
-        // Some other mod took the button away, or a future GD moved it. Add our
-        // own with the native art so the entry point never disappears.
+        // another mod may take the button, or a future GD may move it; add
+        // our own so the entry point never disappears.
         auto* face = paimon::SpriteHelper::safeCreateWithFrameName("GJ_versusBtn_001.png");
         if (!face) return true;
         fitSquare(face, 60.f);

@@ -337,7 +337,7 @@ static long long planar420Size(int srcStride, int alignedH) {
     return static_cast<long long>(srcStride) * alignedH + 2 * uvStride * alignedUvH;
 }
 
-// Probe strides from sample size; -1 when nothing fits.
+// -1 when nothing fits.
 static int detectLinearStride(size_t bufLen, int width, int visibleHeight, int hintedStride) {
     auto const fits = [&](int stride) {
         if (stride < width || bufLen == 0) return false;
@@ -764,8 +764,7 @@ void DecoderMF::decodeLoop() {
         }
 
         LONGLONG pts100ns = 0;
-        // A missing timestamp must not read as pts=0: every sample would look
-        // like the first and the import would collapse to a single frame.
+        // Missing timestamps must not read as pts=0.
         double pts = std::numeric_limits<double>::quiet_NaN();
         if (SUCCEEDED(sample->GetSampleTime(&pts100ns))) {
             pts = static_cast<double>(pts100ns) / 10000000.0;
@@ -871,7 +870,6 @@ void DecoderMF::decodeLoop() {
 }
 
 
-// Retry without DXVA after repeated readback failures.
 bool DecoderMF::fallbackToSoftwareDecode(const std::string& path) {
     m_dxvaEnabled = false;
     m_dxvaReadbackFailures = 0;
@@ -997,7 +995,6 @@ void DecoderMF::releaseFrame() {
 void DecoderMF::closeInternal() {
     stopDecoding();
 
-    // Keep shared device in process-wide cache.
     {
         std::lock_guard lk(g_d3d11Mutex);
         if (m_dxgiMgr) {

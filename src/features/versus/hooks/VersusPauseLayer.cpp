@@ -59,7 +59,7 @@ class $modify(PaimonVersusPauseLayer, PauseLayer) {
     }
 
     void onPaimonForfeit(CCObject*) {
-        // Quitting straight after is the point: the server already has the
+        // quitting right after is the point: the server already holds the
         // forfeit, so PlayLayer::onExit has nothing left to rule on.
         VersusSession::get().forfeit();
         this->onQuit(nullptr);

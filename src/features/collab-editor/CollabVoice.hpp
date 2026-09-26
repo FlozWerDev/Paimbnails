@@ -23,8 +23,7 @@ struct SpeakingInfo {
     float level = 0.f; // 0..1.
 };
 
-// HTTP-relay voice: 12 kHz mono PCM16 -> 250 ms VAD frames -> mu-law/base64.
-// Playback uses one FMOD user stream per peer and zero-fills jitter underruns.
+// HTTP-relay voice: 12kHz PCM16 -> 250ms VAD -> mu-law/base64; one FMOD stream per peer.
 class CollabVoice {
 public:
     // Public for the FMOD pcmread callback.

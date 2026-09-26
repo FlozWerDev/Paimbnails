@@ -93,8 +93,7 @@ void ProgressionService::rememberOwnScore(GJUserScore* score) {
         changed = true;
     }
 
-    // An empty field means the server didn't send it this time; keep the last
-    // good one instead of wiping the breakdown.
+    // Empty field: server skipped it, keep the last good one.
     auto keep = [&](char const* key, std::string const& value) {
         if (value.empty()) return;
         if (mod->getSavedValue<std::string>(key, "") == value) return;
@@ -105,8 +104,7 @@ void ProgressionService::rememberOwnScore(GJUserScore* score) {
     keep(kKeyStarsInfo, std::string(score->m_starsInfo));
     keep(kKeyPlatInfo, std::string(score->m_platformerInfo));
 
-    // A breakdown that only just arrived re-prices demons already beaten long
-    // ago; committing here keeps that recalibration out of the next gain.
+    // A fresh breakdown re-prices old demons; commit so the next gain skips it.
     if (changed && hasSnapshot()) commitSnapshot();
 }
 

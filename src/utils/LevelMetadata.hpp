@@ -5,8 +5,7 @@
 
 namespace paimon {
 
-// Serializes level fields for thumbnail uploads. Geometry is omitted; only its
-// length is kept. Must run on the main thread and returns empty for null.
+// level fields for uploads; geometry omitted (length only). main thread; empty for null.
 std::string collectLevelMetadata(GJGameLevel* level);
 
 } // namespace paimon

@@ -1,7 +1,7 @@
 #pragma once
 
-// Card effects never touch physics, hitboxes, geometry or game speed, so a run
-// with cards is still legitimate and the state Globed syncs stays clean.
+// card effects never touch physics, hitboxes, geometry or speed, so a run
+// with cards stays legitimate and Globed's synced state stays clean.
 
 #include "../data/VersusCards.hpp"
 
@@ -28,16 +28,16 @@ public:
     void detach();
     bool attached() const { return m_layer != nullptr; }
 
-    // `fromRival` separates a card the opponent threw at us from one we cast on
-    // ourselves; only the first kind can be reflected or dispelled.
+    // `fromRival` separates thrown cards from self-cast ones; only thrown
+    // cards can be reflected or dispelled.
     void apply(CardId card, bool fromRival);
     void update(float dt);
 
     void dispelAll();
     bool has(CardId card) const;
     bool cardsLocked() const;
-    // Eye lets the duel bar and the rival's hand through; Blackout takes the
-    // bar away from both of them.
+    // Eye lets the duel bar and rival hand through; Blackout takes the bar
+    // from both.
     bool seesRival() const;
     bool barsHidden() const;
     bool reflectArmed() const { return m_reflect; }
@@ -66,8 +66,8 @@ private:
     std::vector<ActiveEffect> m_active;
     bool m_reflect = false;
 
-    // What our cards multiplied into the object layer's scale last frame, so it
-    // can be divided back out before the next one goes in.
+    // what our cards multiplied into the object scale last frame, so it
+    // divides back out before the next one goes in.
     float m_cameraFactor = 1.f;
     bool m_cameraMirrored = false;
     float m_bombTimer = 0.f;

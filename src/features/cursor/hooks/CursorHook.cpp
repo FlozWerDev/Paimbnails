@@ -11,8 +11,7 @@ using namespace geode::prelude;
 using namespace cocos2d;
 
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-// En movil no hay raton: la fuente de apretar/soltar son los toques, enganchados
-// en el dispatcher antes de que los botones se traguen el toque.
+// No mouse on mobile: press/release comes from touches, hooked before buttons swallow them.
 namespace {
 void feedTouch(CCSet* touches, int state) {
     if (!touches) return;
@@ -90,14 +89,12 @@ static bool s_mouseListenerRegistered = false;
 void initCursorTicker() {
     if (s_cursorTicker) return;
     s_cursorTicker = CursorTickerNode::create();
-    // Register directly with the global scheduler (paused=false) so the node
-    // keeps ticking even when it is not part of a running scene.
+    // Global scheduler (paused=false) so the node ticks outside a running scene.
     CCDirector::get()->getScheduler()->scheduleUpdateForTarget(
         s_cursorTicker.data(), 0, false
     );
 
-    // Click-hold global para el estado Click y los efectos (idea de Ecuet's "Custom Cursor");
-    // listener de sesion intencional con .leak().
+    // Global click-hold for Click state/effects (Ecuet's Custom Cursor idea); intentional session .leak().
     if (!s_mouseListenerRegistered) {
         s_mouseListenerRegistered = true;
         MouseInputEvent().listen(+[](MouseInputData& data) {

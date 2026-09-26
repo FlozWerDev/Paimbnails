@@ -48,22 +48,6 @@ constexpr ccColor3B kDescColor = {171, 197, 232};
 
 NotifyConfig g_config;
 
-bool motionOn() {
-    return !paimon::settings::smoothui::reducedMotion();
-}
-
-float animTime(float seconds) {
-    auto const speed = std::clamp(paimon::settings::smoothui::globalSpeed(), 0.35, 2.5);
-    return std::max(0.05f, seconds / static_cast<float>(speed));
-}
-
-std::string shorten(std::string text, size_t limit) {
-    if (text.size() <= limit) return text;
-    text.resize(limit > 3 ? limit - 3 : limit);
-    text += "...";
-    return text;
-}
-
 char const* soundFile(NotifySound sound) {
     switch (sound) {
         case NotifySound::Soft: return "chestClick.ogg";
@@ -163,7 +147,7 @@ void presentCard(CCNodeRGBA* card, NotifyConfig config) {
         ++alive;
         if (!oldest) oldest = entry;
     }
-// Evict the oldest immediately when the stack is full.
+    // Evict the oldest immediately when the stack is full.
     if (alive >= kMaxLive && oldest) {
         releaseSlot(oldest);
         oldest->removeFromParent();
@@ -184,7 +168,7 @@ void presentCard(CCNodeRGBA* card, NotifyConfig config) {
     paimon::scheduleMainThreadDelay(notifyEnterSeconds(config) + hold, [ref, config, rest] {
         if (!ref || !ref->getParent()) return;
         runNotifyExit(ref, config, rest, [ref] {
-// Run outside the action callback so the active node is not removed mid-walk.
+            // Run outside the action callback so the active node is not removed mid-walk.
             Loader::get()->queueInMainThread([ref] {
                 if (!ref) return;
                 releaseSlot(ref);
@@ -199,6 +183,22 @@ bool requestsLayerOnScreen() {
     return scene && scene->getChildByID("twitch-requests-layer"_spr);
 }
 
+}
+
+bool motionOn() {
+    return !paimon::settings::smoothui::reducedMotion();
+}
+
+float animTime(float seconds) {
+    auto const speed = std::clamp(paimon::settings::smoothui::globalSpeed(), 0.35, 2.5);
+    return std::max(0.05f, seconds / static_cast<float>(speed));
+}
+
+std::string shorten(std::string text, size_t limit) {
+    if (text.size() <= limit) return text;
+    text.resize(limit > 3 ? limit - 3 : limit);
+    text += "...";
+    return text;
 }
 
 std::vector<std::string> notifySpotNames() {
@@ -289,7 +289,7 @@ CCNodeRGBA* buildNotifyCard(
     if (!card) return nullptr;
     card->setAnchorPoint({0.5f, 0.5f});
     card->ignoreAnchorPointForPosition(false);
-// Fade the whole card contents together.
+    // Fade the whole card contents together.
     card->setCascadeOpacityEnabled(true);
 
     auto const accent = platformAccent(platform);
@@ -298,7 +298,7 @@ CCNodeRGBA* buildNotifyCard(
 
     std::vector<CCLabelBMFont*> lines;
 
-// Keep the source chat ID when multiple chats are active.
+    // Keep the source chat ID when multiple chats are active.
     auto const heading = TwitchRequestManager::get().activeCount() > 1
         ? fmt::format("Nuevo request - {}", platformName(platform))
         : std::string("Nuevo request");
@@ -315,7 +315,7 @@ CCNodeRGBA* buildNotifyCard(
 
     if (config.showRequester) {
         auto meta = "@" + shorten(requester, 18);
-// The ID is needed only when the level name is shown.
+        // The ID is needed only when the level name is shown.
         if (config.showLevel && !levelName.empty()) meta += fmt::format("  -  ID {}", levelID);
         auto* who = CCLabelBMFont::create(meta.c_str(), "chatFont.fnt");
         who->limitLabelWidth(textWidth, 0.36f, 0.2f);
@@ -382,7 +382,7 @@ CCPoint notifyRestPoint(NotifyConfig const& config, CCSize card, int slot) {
         : row == 1 ? win.height / 2.f
         : kScreenMargin + halfH;
 
-// Fine positioning must keep the card on screen.
+    // Fine positioning must keep the card on screen.
     x = std::clamp(x + config.offsetX, halfW, std::max(halfW, win.width - halfW));
     y = std::clamp(y + config.offsetY, halfH, std::max(halfH, win.height - halfH));
 
@@ -528,10 +528,10 @@ void playNotifySound(NotifyConfig const& config) {
 void showRequestNotify(LevelRequest const& request) {
     auto const& config = notifyConfig();
     if (!config.enabled || paimon::isRuntimeShuttingDown()) return;
-// The notice covers only the existing list.
+    // The notice covers only the existing list.
     if (!config.overLayer && requestsLayerOnScreen()) return;
 
-// Use cached data; fetching here would steal GameLevelManager's delegate.
+    // Use cached data; fetching here would steal GameLevelManager's delegate.
     std::string name;
     if (auto const* brief = TwitchLevelBriefCache::get().peek(request.levelID);
         brief && brief->found) {

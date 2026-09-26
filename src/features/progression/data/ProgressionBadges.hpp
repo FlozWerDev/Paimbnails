@@ -61,7 +61,7 @@ struct BadgeCategory {
     cocos2d::ccColor3B color;
 };
 
-// Everything a badge is evaluated against, so callers build it once per profile.
+// Built once per profile, evaluated against everything.
 struct BadgeContext {
     PlayerStats stats;
     int level = 1;

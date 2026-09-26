@@ -8,7 +8,7 @@
 
 namespace paimon {
 
-// Recorte por scissor en vez de stencil; si hay rotacion usa stencil.
+// scissor clip instead of stencil; falls back to stencil when rotated.
 class ScissorClipNode : public cocos2d::CCClippingNode {
 public:
     static ScissorClipNode* create(cocos2d::CCNode* stencil) {
@@ -21,7 +21,7 @@ public:
         return nullptr;
     }
 
-    // stencil-less variant (for the create() + later setStencil() pattern)
+    // stencil-less variant (create() + later setStencil() pattern)
     static ScissorClipNode* create() {
         auto ret = new (std::nothrow) ScissorClipNode();
         if (ret && ret->init()) {
@@ -39,14 +39,13 @@ public:
         auto* director = cocos2d::CCDirector::get();
         auto* view = director ? director->getOpenGLView() : nullptr;
 
-        // no valid size or no GL view: use the classic clipping
+        // no valid size or GL view: classic clipping
         if (!view || size.width <= 0.f || size.height <= 0.f) {
             cocos2d::CCClippingNode::visit();
             return;
         }
 
-        // The stencil is always the [0,0]-(w,h) rect in node space; without
-        // rotation/skew an axis-aligned scissor matches it exactly.
+        // stencil covers [0,0]-(w,h); without rotation/skew scissor matches it.
         auto t = this->nodeToWorldTransform();
         if (std::fabs(t.b) > 1e-3f || std::fabs(t.c) > 1e-3f) {
             cocos2d::CCClippingNode::visit(); // rotated/skewed -> stencil
@@ -64,7 +63,7 @@ public:
         bool prevEnabled = view->isScissorEnabled();
         cocos2d::CCRect prev;
         if (prevEnabled) {
-            // intersect with an ancestor's scissor (list, popup) to stay within its area
+            // intersect with the ancestor scissor (list, popup).
             prev = view->getScissorRect();
             float nx = std::max(rect.getMinX(), prev.getMinX());
             float ny = std::max(rect.getMinY(), prev.getMinY());
@@ -77,7 +76,7 @@ public:
 
         view->setScissorInPoints(rect.origin.x, rect.origin.y, rect.size.width, rect.size.height);
 
-        // render children without stencil; the scissor does the clipping
+        // children render without stencil; scissor clips them.
         cocos2d::CCNode::visit();
 
         if (prevEnabled) {

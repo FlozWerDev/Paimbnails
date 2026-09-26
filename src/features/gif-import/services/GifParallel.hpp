@@ -7,18 +7,18 @@
 
 namespace paimon::gifimport {
 
-// Tope de hilos del trazado. 0 deja que lo decida la maquina.
+// Tracing thread cap. 0 lets the machine decide.
 unsigned int workerLimit();
 
-// Los hilos de un reparto nacen y se juntan dentro de la misma llamada, asi que
-// no pasan por ThreadTracker: no hay nada que cerrar al salir del juego mas alla
-// del hilo de importacion, que si esta apuntado y espera a estos.
+// Split threads are born and joined inside one call, so they skip ThreadTracker:
+// nothing to close at game exit beyond the import thread, which is tracked and
+// waits on these.
 unsigned int parallelThreads(std::size_t count);
 void enterParallelRegion();
 void leaveParallelRegion();
 
-// Reparte [0, count) entre los hilos. Dentro de un reparto no se abre otro: los
-// pases de render ya ocupan la maquina entera y anidar solo la sobrecarga.
+// Splits [0, count) across threads. Never nested: render passes already take
+// the whole machine and nesting only oversubscribes.
 template <typename Fn>
 void parallelFor(std::size_t count, Fn body) {
     unsigned int const threads = parallelThreads(count);

@@ -1,6 +1,6 @@
 #pragma once
 
-// Compartidos por los editores del boton rapido (imagen + sonido) y QuickButtonPopup.
+// Shared by the quick-button editors (image + sound) and QuickButtonPopup.
 
 #include "../data/QuickHubCategories.hpp"
 #include "../../../utils/PaimonNotification.hpp"

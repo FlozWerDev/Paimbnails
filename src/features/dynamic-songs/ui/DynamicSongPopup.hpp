@@ -30,7 +30,7 @@ protected:
 
 private:
     DynamicSongConfig m_cfg{};
-    int m_tab = 0; // 0 = Basico, 1 = Buceo, 2 = Avanzado
+    int m_tab = 0; // 0 = basic, 1 = dive, 2 = advanced
 
     geode::ScrollLayer* m_scroll = nullptr;
     float m_scrollTargetY = 0.f;

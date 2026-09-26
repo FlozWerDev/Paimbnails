@@ -15,13 +15,15 @@ class $modify(GradientPlayLayer, PlayLayer) {
         if (!moduleEnabled()) return;
 
         if (m_player1) {
-            static_cast<GradientPlayerObject*>(m_player1)->updateVisibility();
+            auto* p1 = static_cast<GradientPlayerObject*>(m_player1);
+            p1->updateVisibility();
+            p1->updateFlip(0.f);
         }
-        static_cast<GradientPlayerObject*>(m_player1)->updateFlip(0.f);
 
         if (m_player2) {
-            static_cast<GradientPlayerObject*>(m_player2)->updateVisibility();
+            auto* p2 = static_cast<GradientPlayerObject*>(m_player2);
+            p2->updateVisibility();
+            p2->updateFlip(0.f);
         }
-        static_cast<GradientPlayerObject*>(m_player2)->updateFlip(0.f);
     }
 };

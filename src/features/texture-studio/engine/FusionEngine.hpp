@@ -31,8 +31,7 @@ struct FusionApplyOptions {
 
 class FusionEngine final {
 public:
-    // 8-way flood fill of color-similar pixels into an R8 mask. Transparent
-    // pixels are hard borders; colorRadius and expandRadius control tolerance.
+    // 8-way flood fill into an R8 mask; transparent pixels are hard borders.
     static MaskBuffer floodFill(ImageBuffer const& sprite,
                                 int seedX, int seedY,
                                 int colorRadius = 120,
@@ -50,8 +49,7 @@ public:
     // OR masks with matching dimensions.
     static void orMask(MaskBuffer& dst, MaskBuffer const& src);
 
-    // Apply texture to non-zero mask pixels. Map over the full frame so preview
-    // and export remain aligned as the mask grows.
+    // Texture on non-zero mask pixels; full-frame mapping keeps preview/export aligned as masks grow.
     static void apply(ImageBuffer& base,
                       MaskBuffer const& mask,
                       ImageBuffer const& texture,

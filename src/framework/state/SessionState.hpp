@@ -1,7 +1,6 @@
 ﻿#pragma once
 
-// Typed session state: replaces transient setSavedValue() keys with a singleton
-// reset on game close. Persistent keys stay in SavedValue.
+// Transient state reset on game close; persistent keys stay in SavedValue.
 
 namespace paimon {
 
@@ -27,14 +26,12 @@ public:
 
     VerificationContext verification;
 
-    // Consume a one-shot flag: reads and resets it in one call.
     static bool consumeFlag(bool& flag) {
         bool was = flag;
         flag = false;
         return was;
     }
 
-    // Consume a one-shot int: returns the value and resets it to -1.
     static int consumeInt(int& value, int resetTo = -1) {
         int was = value;
         value = resetTo;

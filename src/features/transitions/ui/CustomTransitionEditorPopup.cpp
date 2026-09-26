@@ -930,7 +930,7 @@ void CustomTransitionEditorPopup::onPreviewTransition(CCObject*) {
     sub->setScale(0.5f);
     destScene->addChild(sub);
 
-// Preview a sanitized copy so invalid edits cannot crash the editor.
+    // preview a sanitized copy, so invalid edits can't crash the editor.
     auto previewCommands = m_commands;
     validateAndSanitizeForSave(previewCommands);
 
@@ -989,7 +989,7 @@ void CustomTransitionEditorPopup::onSave(CCObject*) {
         PaimonNotify::create("Applied. Save in the Transitions window.", NotificationIcon::Success)->show();
     }
 
-// Keep the editor state in sync with the sanitized persisted values.
+    // keep the editor on the sanitized persisted values.
     m_commands = safeCommands;
     refreshDisplay();
 }

@@ -70,7 +70,6 @@ void ModlyModPopup::buildHeader() {
     if (!m_mod.gdps.empty()) addPill(fmt::format("GDPS: {}", m_mod.gdps), {60, 160, 180});
     if (m_mod.isPack()) addPill(loc.getString("modly.type_pack"), {180, 110, 190});
 
-    // Author shortcut: avatar plus name, opening the developer profile.
     auto const* author = repo.user(m_mod.authorUid);
     std::string authorName = author && !author->name.empty() ? author->name : m_mod.authorName;
     if (authorName.empty()) authorName = loc.getString("modly.unknown_author");

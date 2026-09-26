@@ -8,7 +8,7 @@ using namespace cocos2d;
 #define M_PI 3.14159265358979323846
 #endif
 
-// Shapes are centered in local draw coordinates; callers position the container.
+// shapes centered in local draw coords; callers position the container.
 
 static CCDrawNode* drawRegularPolygon(float half, int sides, float radius) {
     auto draw = PaimonDrawNode::create();
@@ -303,7 +303,6 @@ CCNode* createShapeStencil(std::string const& shapeName, float size) {
     }
 
     if (draw) {
-    // Wrap centered local-space vertices in a positioned content-size container.
         auto container = CCNode::create();
         container->setContentSize({size, size});
         container->addChild(draw);

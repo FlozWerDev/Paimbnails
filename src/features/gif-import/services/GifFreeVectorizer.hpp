@@ -7,10 +7,10 @@
 
 namespace paimon::gifimport {
 
-// Traza un color con la biblioteca de decoracion entera: por cada mancha busca
-// el objeto que mejor la cubre, y lo que ningun objeto cubre bien se lo queda el
-// trazado de pintura de siempre. El `stamp` de cada figura es el indice de la
-// variante en `stampVariants()`; el plan los recoge y los reindexa al final.
+// Traces one color with the whole decoration library: per blob the best-covering
+// object wins, paint tracing keeps what no object covers well. Each figure's
+// `stamp` is its index into `stampVariants()`; the plan collects and reindexes
+// at the end.
 std::vector<Primitive> vectorizeFree(
     std::vector<int> const& positions,
     int width,

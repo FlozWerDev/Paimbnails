@@ -25,10 +25,8 @@ void main() {
     vec2 uv = v_texCoord * 2.0 - 1.0;
     float t = u_time * 0.15;
     
-    // Dark space background
     vec3 col = vec3(0.01, 0.005, 0.03);
     
-    // Galaxy spiral
     float r = length(uv);
     float a = atan(uv.y, uv.x);
     
@@ -40,18 +38,15 @@ void main() {
     vec3 arm2Col = vec3(0.1, 0.2, 0.6) * pow(spiral2, 3.0) * spiralMask;
     col += arm1Col + arm2Col;
     
-    // Nebula clouds
     float n1 = noise(uv * 3.0 + t * 0.5);
     float n2 = noise(uv * 6.0 - t * 0.3);
     float nebula = n1 * n2 * spiralMask * 2.0;
     col += vec3(0.4, 0.1, 0.3) * nebula * 0.5;
     
-    // Core glow
     float core = exp(-r * 8.0);
     col += vec3(1.0, 0.8, 0.5) * core * 0.6;
     col += vec3(0.5, 0.3, 0.7) * exp(-r * 4.0) * 0.3;
     
-    // Stars (multiple layers)
     for (int layer = 0; layer < 3; layer++) {
         float fl = float(layer);
         vec2 starUV = v_texCoord * (50.0 + fl * 30.0);

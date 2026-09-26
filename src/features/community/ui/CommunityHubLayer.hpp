@@ -67,8 +67,7 @@ protected:
     void showEmptyState();
     void finishTabLoad();
 
-    // Moderator profiles: username -> accountID -> GD profile, throttled.
-    // Icons, stats and banners land on their own cell; the list is never rebuilt.
+    // Moderator profiles (username -> accountID -> GD, throttled); cells update in place, never rebuilt.
     void startIconPipeline();
     void beginIconRequest(std::string const& key);
     void requestUserInfo(std::string const& key, int accountID);

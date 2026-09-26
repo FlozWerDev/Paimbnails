@@ -10,8 +10,8 @@ namespace paimon::gifimport {
 namespace {
 
 constexpr std::uint8_t kMaskFloor = 128;
-// Mas alla de esto la busqueda deja de ganar nada y solo cuesta: la biblioteca
-// de GD tiene muchas siluetas repetidas y el filtrado por firma se las come.
+// past this search gains nothing and only costs: GD's library repeats many
+// silhouettes and signature filtering eats them.
 constexpr std::size_t kMaxVariants = 3072;
 
 std::vector<StampVariant> g_variants;
@@ -28,8 +28,7 @@ StampMask rotateMask(StampMask const& mask, int quarters) {
         for (int x = 0; x < turned.width; ++x) {
             int sourceX = 0;
             int sourceY = 0;
-            // Un giro de +90 en el convenio del trazador —donde la y crece hacia
-            // abajo— es el que se ve girar en el sentido de las agujas.
+            // +90 in tracer convention (y grows down) reads as clockwise.
             if (quarters == 1) {
                 sourceX = y;
                 sourceY = mask.height - 1 - x;
@@ -131,8 +130,8 @@ std::vector<StampVariant> buildVariants(std::vector<CatalogEntry> const& entries
                 variant.stamp.baseHeight = swapped ? entry.baseWidth : entry.baseHeight;
                 variant.stamp.rotation = static_cast<float>(quarters) * 90.f;
                 variant.stamp.flipX = flip != 0;
-                // El desplazamiento viaja con el arte: voltear le cambia el signo
-                // en x, y cada cuarto de vuelta lo gira como al resto del dibujo.
+                // offset travels with the art: flip negates x, each quarter-turn
+                // rotates it like the rest.
                 float const shiftX = flip ? -entry.offsetX : entry.offsetX;
                 float const shiftY = entry.offsetY;
                 switch (quarters) {
@@ -237,9 +236,9 @@ void setStampCatalog(std::vector<CatalogEntry> entries) {
 
 std::vector<StampVariant> const& stampVariants() {
     if (!g_variants.empty()) return g_variants;
-    // El trazado pide la biblioteca desde varios hilos a la vez, y el repuesto se
-    // arma en la primera llamada: como estatico local la inicializacion la
-    // serializa el propio lenguaje, que es lo unico que hace segura esa carrera.
+    // tracing asks from several threads at once, and the spare builds on first
+    // call: as a local static the language serializes init, which is what makes
+    // that race safe.
     static std::vector<StampVariant> const fallback = buildVariants(builtinStampCatalog());
     return fallback;
 }

@@ -8,8 +8,7 @@
 
 namespace paimon::texture_studio {
 
-// Full tint parameter set, shared by the live previews and the export path
-// so what you see in the editor is exactly what the pack generates.
+// Tint params shared by live previews and export: editor shows exactly what the pack generates.
 struct SpritePreviewOptions {
     TintColors colors{};
     int   brightness = 160;
@@ -19,8 +18,7 @@ struct SpritePreviewOptions {
     // Number of color clusters the segmentation looks for (2..10).
     int   clusterPrecision = 5;
 
-    // Edge-aware mask refinement passes (0..4). Removes speckle without
-    // blurring real color edges.
+    // Edge-aware refinement (0..4): kills speckle, keeps real edges.
     int   edgeCleanup = 1;
 
     // Pixels darker than this Rec.601 luminance are never tinted (0 = off).
@@ -58,27 +56,21 @@ public:
         ImageBuffer const& framePixels,
         SpritePreviewOptions const& options);
 
-    // Segmentation without the tint: same clustering + masks + coverage as
-    // renderTintedWithStats, so the GPU preview and the CPU bake agree on
-    // which pixel belongs to which role.
+    // Tintless segmentation with identical role maps, so GPU preview and CPU bake agree.
     static MaskBuildResult renderMasks(ImageBuffer const& framePixels,
                                        SpritePreviewOptions const& options);
 
-    // Packs role weights into RGBA (R=C1 G=C2 B=detail A=glow) for GPU
-    // upload; empty when no mask carries dimensions.
+    // Role weights packed RGBA (R=C1 G=C2 B=detail A=glow) for GPU upload.
     static ImageBuffer renderRoleMask(MaskSet const& masks);
 
-    // Composites the user image into a frameW×frameH canvas honoring the
-    // transform (fit mode, scale, offset, rotation, opacity, flips) with
-    // bilinear resampling.
+    // User image composited honoring the transform, bilinear.
     static ImageBuffer renderCustomImage(ImageBuffer const& userImage,
                                          int frameW, int frameH,
                                          ImageTransform const& transform = {},
                                          float pixelOffsetX = 0.f,
                                          float pixelOffsetY = 0.f);
 
-    // Straight-alpha "over" blend of `top` onto `base` in place. Both buffers
-    // must have identical dimensions; mismatches are a no-op.
+    // Straight-alpha "over" in place; size mismatch is a no-op.
     static void compositeOver(ImageBuffer& base, ImageBuffer const& top);
 
     static cocos2d::CCTexture2D* createTexture(ImageBuffer const& image);

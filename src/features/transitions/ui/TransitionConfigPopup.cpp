@@ -11,15 +11,20 @@ using namespace geode::prelude;
 using namespace cocos2d;
 
 
+static int typeIndex(TransitionType type) {
+    auto const& types = TransitionManager::allTypes();
+    for (int i = 0; i < (int)types.size(); i++) {
+        if (types[i] == type) return i;
+    }
+    return 0;
+}
+
 static void cycleType(TransitionConfig& cfg, int dir) {
     auto const& types = TransitionManager::allTypes();
-    int idx = 0;
-    for (int i = 0; i < (int)types.size(); i++) {
-        if (types[i] == cfg.type) { idx = i; break; }
-    }
-    idx += dir;
-    if (idx < 0) idx = (int)types.size() - 1;
-    if (idx >= (int)types.size()) idx = 0;
+    int count = (int)types.size();
+    if (count == 0) return;
+    int idx = (typeIndex(cfg.type) + dir) % count;
+    if (idx < 0) idx += count;
     cfg.type = types[idx];
 }
 
@@ -251,23 +256,18 @@ bool TransitionConfigPopup::init() {
 
 
 int TransitionConfigPopup::getTypeIndex(TransitionType t) const {
-    auto const& types = TransitionManager::allTypes();
-    for (int i = 0; i < (int)types.size(); i++) {
-        if (types[i] == t) return i;
-    }
-    return 0;
+    return typeIndex(t);
 }
 
 void TransitionConfigPopup::updateGlobalDisplay() {
     m_globalNameLabel->setString(TransitionManager::typeDisplayName(m_editingGlobal.type).c_str());
     m_globalDescLabel->setString(TransitionManager::typeDescription(m_editingGlobal.type).c_str());
 
-    char buf[16]; snprintf(buf, sizeof(buf), "%.2fs", m_editingGlobal.duration);
-    m_globalDurLabel->setString(buf);
+    m_globalDurLabel->setString(fmt::format("{:.2f}s", m_editingGlobal.duration).c_str());
 
     int idx = getTypeIndex(m_editingGlobal.type);
-    char idxBuf[16]; snprintf(idxBuf, sizeof(idxBuf), "%d/%d", idx + 1, (int)TransitionManager::allTypes().size());
-    m_globalIndexLabel->setString(idxBuf);
+    m_globalIndexLabel->setString(
+        fmt::format("{}/{}", idx + 1, (int)TransitionManager::allTypes().size()).c_str());
 
     if (m_globalColorSwatch) {
         m_globalColorSwatch->setColor({
@@ -283,12 +283,11 @@ void TransitionConfigPopup::updateLevelDisplay() {
     m_levelNameLabel->setString(TransitionManager::typeDisplayName(m_editingLevel.type).c_str());
     m_levelDescLabel->setString(TransitionManager::typeDescription(m_editingLevel.type).c_str());
 
-    char buf[16]; snprintf(buf, sizeof(buf), "%.2fs", m_editingLevel.duration);
-    m_levelDurLabel->setString(buf);
+    m_levelDurLabel->setString(fmt::format("{:.2f}s", m_editingLevel.duration).c_str());
 
     int idx = getTypeIndex(m_editingLevel.type);
-    char idxBuf[16]; snprintf(idxBuf, sizeof(idxBuf), "%d/%d", idx + 1, (int)TransitionManager::allTypes().size());
-    m_levelIndexLabel->setString(idxBuf);
+    m_levelIndexLabel->setString(
+        fmt::format("{}/{}", idx + 1, (int)TransitionManager::allTypes().size()).c_str());
 
     if (m_levelColorSwatch) {
         m_levelColorSwatch->setColor({

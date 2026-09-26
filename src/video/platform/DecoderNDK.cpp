@@ -53,8 +53,7 @@ const ImageReaderApi& imageReaderApi() {
     return api;
 }
 
-// Copy one chroma plane honouring AImage's pixel stride: 1 is planar, 2 means
-// the U/V samples are interleaved in a shared NV12 buffer.
+// Pixel stride 2 means interleaved NV12 samples.
 void copyChromaPlane(const uint8_t* src, int rowStride, int pixelStride,
                      uint8_t* dst, int dstStride, int w, int h) {
     if (pixelStride == 1) {
@@ -374,7 +373,7 @@ void DecoderNDK::stopDecoding() {
 void DecoderNDK::decodeLoop() {
     bool inputDone = false;
     int frameCount = 0;
-    int skippedBeforeFormat = 0;  // count buffers skipped waiting for format change
+    int skippedBeforeFormat = 0;
 
     while (m_decoding.load(std::memory_order_relaxed)) {
         if (!inputDone) {
@@ -385,8 +384,7 @@ void DecoderNDK::decodeLoop() {
                 if (inputBuf) {
                     int sampleSize = AMediaExtractor_readSampleData(m_extractor, inputBuf, bufSize);
                     if (sampleSize < 0 && m_looping.load(std::memory_order_relaxed)) {
-// Rewind the demuxer instead of draining: PTS restarts at 0 and the ring
-// stays fed across the loop point.
+// Rewind instead of draining; PTS restarts at 0.
                         AMediaExtractor_seekTo(m_extractor, 0, AMEDIAEXTRACTOR_SEEK_CLOSEST_SYNC);
                         sampleSize = AMediaExtractor_readSampleData(m_extractor, inputBuf, bufSize);
                     }
@@ -453,7 +451,6 @@ void DecoderNDK::decodeLoop() {
             }
 
             if (!isReadableColorFormat(m_outputColorFormat)) {
-// Opaque, tiled, or unknown formats are not CPU-readable.
                 geode::log::warn("DecoderNDK: unreadable color-format 0x{:X}, stopping",
                                  static_cast<unsigned>(m_outputColorFormat));
                 AMediaCodec_releaseOutputBuffer(m_codec, outputIdx, false);
@@ -563,7 +560,6 @@ void DecoderNDK::seekTo(double seconds) {
         AMediaCodec_flush(m_codec);
     }
     m_finished.store(false, std::memory_order_relaxed);
-// Revalidate after flush in case the driver changes stride or layout.
 
     if (wasDecoding) startDecoding();
 }
@@ -616,7 +612,6 @@ void DecoderNDK::closeInternal() {
     stopDecoding();
 
     if (m_codec) {
-// Some drivers crash if stop() is called before the codec starts.
         if (m_codecStarted) {
             AMediaCodec_stop(m_codec);
         }

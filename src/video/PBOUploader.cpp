@@ -48,7 +48,6 @@ static void loadGLSyncFunctions() {
 #define GL_CONDITION_SATISFIED        0x911C
 
 #elif defined(GEODE_IS_ANDROID)
-// Android loads GLES3 PBO symbols at runtime.
 #include <GLES2/gl2ext.h>
 #include <EGL/egl.h>
 
@@ -77,7 +76,6 @@ static void loadGLSyncFunctions() {
 #define GL_CONDITION_SATISFIED 0x911C
 #endif
 
-// GLES3 PBO/fence functions loaded at runtime.
 typedef void* (*PFN_glMapBufferRange)(GLenum, GLintptr, GLsizeiptr, GLbitfield);
 typedef GLboolean (*PFN_glUnmapBuffer)(GLenum);
 typedef GLsync (*PFN_glFenceSync)(GLenum, GLbitfield);
@@ -110,8 +108,8 @@ static void loadGLSyncFunctions() {
     if (pglMapBufferRange) return;
     pglMapBufferRange  = (PFN_glMapBufferRange)eglGetProcAddress("glMapBufferRange");
     pglUnmapBuffer     = (PFN_glUnmapBuffer)eglGetProcAddress("glUnmapBuffer");
-        pglFenceSync       = (PFN_glFenceSync)eglGetProcAddress("glFenceSync");
-        pglClientWaitSync  = (PFN_glClientWaitSync)eglGetProcAddress("glClientWaitSync");
+    pglFenceSync       = (PFN_glFenceSync)eglGetProcAddress("glFenceSync");
+    pglClientWaitSync  = (PFN_glClientWaitSync)eglGetProcAddress("glClientWaitSync");
     pglDeleteSync      = (PFN_glDeleteSync)eglGetProcAddress("glDeleteSync");
 
     if (!pglMapBufferRange || !pglUnmapBuffer) {
@@ -139,7 +137,6 @@ static void loadGLSyncFunctions() {
 #define glDeleteSync      pglDeleteSync
 
 #elif defined(GEODE_IS_IOS)
-// iOS uses ES2 plus APPLE sync/PBO extensions.
 
 #ifndef GL_PIXEL_UNPACK_BUFFER
 #define GL_PIXEL_UNPACK_BUFFER 0x88EC
@@ -170,7 +167,6 @@ static void loadGLSyncFunctions() {
 #define glClientWaitSync(sync, flags, timeout) glClientWaitSyncAPPLE(sync, flags, timeout)
 #define glDeleteSync(sync)                    glDeleteSyncAPPLE(sync)
 
-// iOS exposes map/unmap through EXT/OES.
 #ifndef glMapBufferRange
 #define glMapBufferRange glMapBufferRangeEXT
 #endif
@@ -242,6 +238,17 @@ bool PBOUploader::checkAndClearFence(int idx) {
 
 bool PBOUploader::isSlotReady(int idx) {
     return checkAndClearFence(idx);
+}
+
+int PBOUploader::claimReadySlot() {
+    for (int attempt = 0; attempt < m_activeSlots; ++attempt) {
+        int idx = (m_uploadIdx + attempt) % m_activeSlots;
+        if (checkAndClearFence(idx)) {
+            m_uploadIdx = idx;
+            return idx;
+        }
+    }
+    return -1;
 }
 
 void PBOUploader::deleteAllFences() {
@@ -349,7 +356,6 @@ bool PBOUploader::init(int rgbaSize) {
     }
 
 #if defined(GEODE_IS_ANDROID)
-// Android requires a real GLES3 context; resolved function pointers alone are insufficient.
     if (!isGLES3Context() || !pglMapBufferRange || !pglUnmapBuffer) {
         geode::log::info("PBOUploader: PBO unavailable (GLES2 context) - "
                          "using direct texture upload");
@@ -484,20 +490,7 @@ bool PBOUploader::upload(GLuint texY, GLuint texCb, GLuint texCr,
                           const uint8_t* planeCr, int strideCr,
                           int width, int height) {
     if (!m_initialized) return false;
-
-    int startIdx = m_uploadIdx;
-    bool found = false;
-    for (int attempt = 0; attempt < m_activeSlots; ++attempt) {
-        int idx = (startIdx + attempt) % m_activeSlots;
-        if (checkAndClearFence(idx)) {
-            m_uploadIdx = idx;
-            found = true;
-            break;
-        }
-    }
-    if (!found) {
-        return false;
-    }
+    if (claimReadySlot() < 0) return false;
 
     int uvH = (height + 1) / 2;
     int uvW = (width + 1) / 2;
@@ -520,20 +513,7 @@ bool PBOUploader::upload(GLuint texY, GLuint texCb, GLuint texCr,
 
 bool PBOUploader::uploadRGBA(GLuint texId, const uint8_t* rgbaData, int width, int height) {
     if (!m_initialized || !m_rgbaMode) return false;
-
-    int startIdx = m_uploadIdx;
-    bool found = false;
-    for (int attempt = 0; attempt < m_activeSlots; ++attempt) {
-        int idx = (startIdx + attempt) % m_activeSlots;
-        if (checkAndClearFence(idx)) {
-            m_uploadIdx = idx;
-            found = true;
-            break;
-        }
-    }
-    if (!found) {
-        return false;
-    }
+    if (claimReadySlot() < 0) return false;
 
     uploadSinglePBO(m_slots[m_uploadIdx].pboRGBA, m_rgbaSize, texId,
                     GL_RGBA, rgbaData, width * 4, width, height);
@@ -562,15 +542,7 @@ uint8_t* PBOUploader::tryBeginRGBAUpload(int width, int height) {
     int64_t needed64 = static_cast<int64_t>(width) * static_cast<int64_t>(height) * 4;
     if (needed64 <= 0 || needed64 > static_cast<int64_t>(m_rgbaSize)) return nullptr;
 
-    int startIdx = m_uploadIdx;
-    int chosen = -1;
-    for (int attempt = 0; attempt < m_activeSlots; ++attempt) {
-        int idx = (startIdx + attempt) % m_activeSlots;
-        if (checkAndClearFence(idx)) {
-            chosen = idx;
-            break;
-        }
-    }
+    int chosen = claimReadySlot();
     if (chosen < 0) return nullptr;
 
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_slots[chosen].pboRGBA);

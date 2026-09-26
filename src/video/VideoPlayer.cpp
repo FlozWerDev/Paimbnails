@@ -30,7 +30,7 @@ namespace paimon::video {
 
 namespace {
 
-// Backwards PTS jump larger than this means the decoder rewound for a loop.
+// Backwards PTS jump past this means the decoder rewound for a loop.
 constexpr double kLoopWrapGuard = 0.5;
 
 static std::thread::id s_mainThreadId;
@@ -56,11 +56,7 @@ void VideoPlayer::bindMainThreadId() {
 }
 
 std::unique_ptr<VideoPlayer> VideoPlayer::create(const std::string& videoPath) {
-    auto ret = std::unique_ptr<VideoPlayer>(new (std::nothrow) VideoPlayer());
-    if (ret && ret->init(videoPath, {})) {
-        return ret;
-    }
-    return nullptr;
+    return create(videoPath, {});
 }
 
 std::unique_ptr<VideoPlayer> VideoPlayer::create(const std::string& videoPath, const VideoPlayerCreateOptions& options) {
@@ -326,8 +322,7 @@ bool VideoPlayer::uploadFrameGPU(const IVideoDecoder::Frame& frame) {
     m_hasVisibleFrame = true;
     return true;
 }
-// libyuv picks the best SIMD path per CPU. ABGR in libyuv byte order is
-// R,G,B,A in memory, which is what the GL_RGBA upload expects.
+// ABGR bytes match GL_RGBA memory order.
 static inline void yuvToRgba(const uint8_t* planeY, int strideY,
                               const uint8_t* planeCb, int strideCb,
                               const uint8_t* planeCr, int strideCr,
@@ -380,49 +375,8 @@ void VideoPlayer::prepareGPUPipeline() {
         initTexture(m_texWidth, m_texHeight);
     }
 
-    if (m_useGPUYuv && m_texY && m_texCb && m_texCr && !m_resolveRT) {
-        m_blitShader = paimon::shaders::getYUVBlitShader();
-        if (m_blitShader) {
-            int w = m_texWidth;
-            int h = m_texHeight;
-
-            m_resolveRT = cocos2d::CCRenderTexture::create(w, h);
-            if (m_resolveRT) {
-                m_resolveRT->retain();
-
-                cocos2d::ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
-                m_resolveRT->getSprite()->getTexture()->setTexParameters(&params);
-
-                m_resolveSprite = cocos2d::CCSprite::createWithTexture(m_texY);
-                if (m_resolveSprite) {
-                    m_resolveSprite->retain();
-
-                    float sx = static_cast<float>(w) / m_texY->getContentSize().width;
-                    float sy = static_cast<float>(h) / m_texY->getContentSize().height;
-                    m_resolveSprite->setScale(std::max(sx, sy));
-                    m_resolveSprite->setAnchorPoint({0.5f, 0.5f});
-                    m_resolveSprite->setPosition({static_cast<float>(w) * 0.5f, static_cast<float>(h) * 0.5f});
-                    m_resolveSprite->setFlipY(true);
-                    m_resolveSprite->setShaderProgram(m_blitShader);
-
-                    m_locCb = m_blitShader->getUniformLocationForName("u_textureCb");
-                    m_locCr = m_blitShader->getUniformLocationForName("u_textureCr");
-                    m_locY  = m_blitShader->getUniformLocationForName("u_textureY");
-                    m_locCS = m_blitShader->getUniformLocationForName("u_colorSpace");
-
-                    m_colorSpace = (w >= 1280 || h >= 720) ? 1.0f : 0.0f;
-
-                    m_blitShader->use();
-                    if (m_locY  != -1) m_blitShader->setUniformLocationWith1i(m_locY,  0);
-                    if (m_locCb != -1) m_blitShader->setUniformLocationWith1i(m_locCb, 1);
-                    if (m_locCr != -1) m_blitShader->setUniformLocationWith1i(m_locCr, 2);
-                    if (m_locCS != -1) m_blitShader->setUniformLocationWith1f(m_locCS, m_colorSpace);
-                } else {
-                    m_resolveRT->release();
-                    m_resolveRT = nullptr;
-                }
-            }
-        }
+    if (m_useGPUYuv && m_texY && m_texCb && m_texCr) {
+        ensureResolveTarget();
     }
 }
 
@@ -457,7 +411,7 @@ bool VideoPlayer::uploadFrame(const IVideoDecoder::Frame& frame) {
     auto* director = cocos2d::CCDirector::get();
     if (!director) return false;
     float dt = director->getDeltaTime();
-    bool isFrameLag = dt > 0.020f;  // > 20ms = severe lag @ 60fps
+    bool isFrameLag = dt > 0.020f;
 
     if (isFrameLag && !m_hasVisibleFrame) {
         return false;
@@ -529,8 +483,7 @@ void VideoPlayer::update(float dt) {
     if (currentFrame == m_lastUpdateFrame) return;
     m_lastUpdateFrame = currentFrame;
 
-    // Anchor the clock to the first uploaded PTS so decoder/GPU warm-up does not
-    // make the first update skip a burst of frames.
+    // Anchor the clock to the first PTS so warm-up does not skip a frame burst.
     if (!m_hasVisibleFrame) {
         if (!m_decoderStalled && !m_pendingUpload) {
             m_timeSincePlay += static_cast<double>(dt);
@@ -573,8 +526,7 @@ void VideoPlayer::update(float dt) {
     double advance = std::min(static_cast<double>(dt), 0.1);
     m_timeSinceLastUpload += advance;
 
-    // Slave video to the audio clock so drift is absorbed by dropping frames
-    // instead of re-seeking the channel, which is audible.
+    // Slave video to the audio clock; drift drops frames instead of audible re-seeks.
     double audioPos = m_audio ? m_audio->positionSeconds() : -1.0;
     if (audioPos >= 0.0 && m_audio->isPlaying()) {
         m_playbackTime = audioPos;
@@ -774,49 +726,56 @@ cocos2d::CCTexture2D* VideoPlayer::getResolvedRGBATexture() {
     return m_texY;
 }
 
-bool VideoPlayer::resolveYUVToRGBA() {
-    if (!m_texY || !m_texCb || !m_texCr) return false;
+bool VideoPlayer::ensureResolveTarget() {
+    if (m_resolveRT) return true;
+    m_blitShader = paimon::shaders::getYUVBlitShader();
+    if (!m_blitShader) return false;
 
     int w = m_texWidth;
     int h = m_texHeight;
 
-    if (!m_resolveRT) {
-        m_blitShader = paimon::shaders::getYUVBlitShader();
-        if (!m_blitShader) return false;
+    m_resolveRT = cocos2d::CCRenderTexture::create(w, h);
+    if (!m_resolveRT) return false;
+    m_resolveRT->retain();
 
-        m_resolveRT = cocos2d::CCRenderTexture::create(w, h);
-        if (!m_resolveRT) return false;
-        m_resolveRT->retain();
+    cocos2d::ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
+    m_resolveRT->getSprite()->getTexture()->setTexParameters(&params);
 
-        cocos2d::ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
-        m_resolveRT->getSprite()->getTexture()->setTexParameters(&params);
-
-        m_resolveSprite = cocos2d::CCSprite::createWithTexture(m_texY);
-        if (!m_resolveSprite) { m_resolveRT->release(); m_resolveRT = nullptr; return false; }
-        m_resolveSprite->retain();
-
-        float sx = static_cast<float>(w) / m_texY->getContentSize().width;
-        float sy = static_cast<float>(h) / m_texY->getContentSize().height;
-        m_resolveSprite->setScale(std::max(sx, sy));
-        m_resolveSprite->setAnchorPoint({0.5f, 0.5f});
-        m_resolveSprite->setPosition({static_cast<float>(w) * 0.5f, static_cast<float>(h) * 0.5f});
-        m_resolveSprite->setFlipY(true);
-        m_resolveSprite->setShaderProgram(m_blitShader);
-
-        m_locCb = m_blitShader->getUniformLocationForName("u_textureCb");
-        m_locCr = m_blitShader->getUniformLocationForName("u_textureCr");
-        m_locY  = m_blitShader->getUniformLocationForName("u_textureY");
-        m_locCS = m_blitShader->getUniformLocationForName("u_colorSpace");
-
-        m_colorSpace = (w >= 1280 || h >= 720) ? 1.0f : 0.0f;
-
-        // Sampler units stay fixed; avoid setting them every frame.
-        m_blitShader->use();
-        if (m_locY  != -1) m_blitShader->setUniformLocationWith1i(m_locY,  0);
-        if (m_locCb != -1) m_blitShader->setUniformLocationWith1i(m_locCb, 1);
-        if (m_locCr != -1) m_blitShader->setUniformLocationWith1i(m_locCr, 2);
-        if (m_locCS != -1) m_blitShader->setUniformLocationWith1f(m_locCS, m_colorSpace);
+    m_resolveSprite = cocos2d::CCSprite::createWithTexture(m_texY);
+    if (!m_resolveSprite) {
+        m_resolveRT->release();
+        m_resolveRT = nullptr;
+        return false;
     }
+    m_resolveSprite->retain();
+
+    float sx = static_cast<float>(w) / m_texY->getContentSize().width;
+    float sy = static_cast<float>(h) / m_texY->getContentSize().height;
+    m_resolveSprite->setScale(std::max(sx, sy));
+    m_resolveSprite->setAnchorPoint({0.5f, 0.5f});
+    m_resolveSprite->setPosition({static_cast<float>(w) * 0.5f, static_cast<float>(h) * 0.5f});
+    m_resolveSprite->setFlipY(true);
+    m_resolveSprite->setShaderProgram(m_blitShader);
+
+    m_locCb = m_blitShader->getUniformLocationForName("u_textureCb");
+    m_locCr = m_blitShader->getUniformLocationForName("u_textureCr");
+    m_locY  = m_blitShader->getUniformLocationForName("u_textureY");
+    m_locCS = m_blitShader->getUniformLocationForName("u_colorSpace");
+
+    m_colorSpace = (w >= 1280 || h >= 720) ? 1.0f : 0.0f;
+
+    // Sampler units stay fixed; avoid setting them every frame.
+    m_blitShader->use();
+    if (m_locY  != -1) m_blitShader->setUniformLocationWith1i(m_locY,  0);
+    if (m_locCb != -1) m_blitShader->setUniformLocationWith1i(m_locCb, 1);
+    if (m_locCr != -1) m_blitShader->setUniformLocationWith1i(m_locCr, 2);
+    if (m_locCS != -1) m_blitShader->setUniformLocationWith1f(m_locCS, m_colorSpace);
+    return true;
+}
+
+bool VideoPlayer::resolveYUVToRGBA() {
+    if (!m_texY || !m_texCb || !m_texCr) return false;
+    if (!ensureResolveTarget()) return false;
 
     m_blitShader->use();
     m_blitShader->setUniformsForBuiltins();

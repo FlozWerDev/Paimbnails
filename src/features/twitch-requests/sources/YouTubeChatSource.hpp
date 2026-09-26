@@ -6,8 +6,8 @@
 
 namespace paimon::twitch {
 
-// Lee el chat como la pagina de watch: clave innertube + continuation de
-// /live_chat, sin cuenta de Google ni cuota.
+// reads chat like the watch page: innertube key + /live_chat continuation,
+// no Google account or quota.
 class YouTubeChatSource final : public ChatSourceBase {
 public:
     YouTubeChatSource(std::string channel, ChatCallbacks callbacks);

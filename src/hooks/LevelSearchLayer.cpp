@@ -18,14 +18,12 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-
-using namespace geode::prelude;
-
 #include "../features/level-search/services/LevelSearchHelpers.hpp"
 #include "../features/level-search/services/SearchRequestCoordinator.hpp"
-using namespace paimon::levelsearch;
-
 #include "../features/level-search/services/LevelSearchInternal.hpp"
+
+using namespace geode::prelude;
+using namespace paimon::levelsearch;
 
 class $modify(MyLevelSearchLayer, LevelSearchLayer) {
     static void onModify(auto& self) {
@@ -50,7 +48,7 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
 
         bool hasCustomBg = LayerBackgroundManager::get().applyBackground(this, "search");
 
-        // With a custom bg, hide GD's decorative sprites
+        // with a custom bg, hide GD's decorative sprites
         if (hasCustomBg) {
             static char const* hideIDs[] = {
                 "level-search-bg",
@@ -80,9 +78,7 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
 
         float targetSize = 35.0f;
         float currentSize = std::max(spr->getContentWidth(), spr->getContentHeight());
-        if (currentSize > 0) {
-            spr->setScale(targetSize / currentSize);
-        }
+        if (currentSize > 0) spr->setScale(targetSize / currentSize);
 
         auto btn = CCMenuItemSpriteExtra::create(
             spr,
@@ -94,14 +90,12 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
         if (auto menu = this->getChildByID("other-filter-menu")) {
             menu->addChild(btn);
             menu->updateLayout();
+        } else if (auto fallbackMenu = paimon::compat::LevelBrowserLocator::findSearchMenu(this)) {
+            fallbackMenu->addChild(btn);
+            fallbackMenu->updateLayout();
+            log::warn("Using fallback menu locator in LevelSearchLayer");
         } else {
-            if (auto fallbackMenu = paimon::compat::LevelBrowserLocator::findSearchMenu(this)) {
-                fallbackMenu->addChild(btn);
-                fallbackMenu->updateLayout();
-                log::warn("Using fallback menu locator in LevelSearchLayer");
-            } else {
-                log::warn("Could not find 'other-filter-menu' nor fallback menu in LevelSearchLayer");
-            }
+            log::warn("Could not find 'other-filter-menu' nor fallback menu in LevelSearchLayer");
         }
 
         if (kEnableRealtimeSearchPreview() && supportsRealtimePreviewUI()) {
@@ -137,28 +131,18 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
     void onEnter() {
         LevelSearchLayer::onEnter();
         m_fields->m_previewCallbacksSuspended = false;
-        
-        // Recreate realtime preview if it was destroyed during transition
-        // and we're in the normal search tab (searchType == 0)
+
+        // recreate the realtime preview destroyed in transition (normal tab only)
         if (kEnableRealtimeSearchPreview() && !hasRealtimePreview() && supportsRealtimePreviewUI()) {
             if (auto searchInput = typeinfo_cast<CCTextInputNode*>(this->getChildByID("search-input"))) {
-                // Get search type from the tab buttons - 0 = normal search, 1 = list search
-                int searchType = 0;
-                if (auto tabMenu = this->getChildByID("tab-menu")) {
-                    if (auto listBtn = tabMenu->getChildByID("list-search-btn")) {
-                        if (auto listBtnItem = typeinfo_cast<CCMenuItemToggler*>(listBtn)) {
-                            searchType = listBtnItem->isToggled() ? 1 : 0;
-                        }
-                    }
-                }
-                
-                if (searchType == 0) {
+                // 0 = normal search, 1 = list search (from the tab buttons)
+                auto* tabMenu = this->getChildByID("tab-menu");
+                auto* listBtn = tabMenu ? tabMenu->getChildByID("list-search-btn") : nullptr;
+                auto* listBtnItem = listBtn ? typeinfo_cast<CCMenuItemToggler*>(listBtn) : nullptr;
+                if (!listBtnItem || !listBtnItem->isToggled()) {
                     if (auto preview = RealtimeSearchBrowserPreview::create(this)) {
                         this->addChild(preview, 30);
-                        log::debug("[LevelSearchLayer] Recreated realtime preview in onEnter()");
                     }
-                } else {
-                    log::debug("[LevelSearchLayer] Skipped realtime preview recreate in list search tab");
                 }
             }
         }
@@ -167,8 +151,7 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
     $override
     void cleanup() {
         m_fields->m_previewCallbacksSuspended = true;
-        // Do NOT destroy the preview here: replaceScene() triggers cleanup()
-        // mid-transition and onEnter() re-activates it after.
+        // replaceScene() fires cleanup() mid-transition; onEnter() re-activates after
         LevelSearchLayer::cleanup();
     }
 
@@ -182,8 +165,7 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
     }
 
     void destroyRealtimePreviewNow() {
-        // Grab the node before suspending callbacks: getRealtimePreviewNodeSafe() returns
-        // null once suspended, which would no-op this teardown and leak the debounced search.
+        // grab before suspending: the safe getter returns null once suspended
         auto* node = this->getChildByID("paimon-realtime-search-preview"_spr);
 
         m_fields->m_previewCallbacksSuspended = true;
@@ -199,9 +181,7 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
     void textChanged(CCTextInputNode* node) {
         LevelSearchLayer::textChanged(node);
 
-        if (m_fields->m_previewCallbacksSuspended || paimon::isRuntimeShuttingDown()) {
-            return;
-        }
+        if (m_fields->m_previewCallbacksSuspended || paimon::isRuntimeShuttingDown()) return;
 
         if (auto preview = typeinfo_cast<RealtimeSearchBrowserPreview*>(
             getRealtimePreviewNodeSafe()
@@ -211,9 +191,7 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
     }
 
     void refreshRealtimePreview(bool force) {
-        if (m_fields->m_previewCallbacksSuspended || paimon::isRuntimeShuttingDown()) {
-            return;
-        }
+        if (m_fields->m_previewCallbacksSuspended || paimon::isRuntimeShuttingDown()) return;
 
         if (auto preview = typeinfo_cast<RealtimeSearchBrowserPreview*>(
             getRealtimePreviewNodeSafe()
@@ -265,8 +243,7 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
     $override
     void keyBackClicked() {
         destroyRealtimePreviewNow();
-        // Leaving the search UI entirely: release the cached result pages so
-        // they do not outlive the session that needed them.
+        // leaving search entirely; release the cached result pages
         paimon::levelsearch::SearchRequestCoordinator::get().reset();
         LevelSearchLayer::keyBackClicked();
     }

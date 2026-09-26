@@ -22,7 +22,7 @@ namespace paimon::twitch {
 
 namespace {
 
-// 420 es lo mas ancho que cabe en 4:3, donde la pantalla del juego mide 426.
+// 420 is the widest that fits 4:3, where the game screen is 426 wide.
 constexpr float kPopupWidth = 420.f;
 constexpr float kPopupHeight = 300.f;
 constexpr float kStripHeight = 88.f;
@@ -38,8 +38,7 @@ std::string optionName(std::vector<std::string> const& names, int index) {
     return names[static_cast<size_t>(index)];
 }
 
-// Fondo de la pantalla de mentira: el mismo degradado del juego, apagado para
-// que la tarjeta se lea encima.
+// fake screen background: the game's gradient, dimmed so the card reads on top.
 CCNode* makeFakeScreen(CCSize size) {
     if (auto* bg = paimon::SpriteHelper::safeCreate("GJ_gradientBG.png")) {
         bg->setAnchorPoint({0.f, 0.f});
@@ -104,14 +103,14 @@ void TwitchNotifyPopup::buildPreview(CCPoint origin, CCSize size) {
         panel->addChild(bg, -1);
     }
 
-    // La pantalla de mentira guarda la forma de la de verdad, asi que el hueco
-    // que ves aqui es el que va a ocupar el aviso en el stream.
+    // the fake screen keeps the real one's shape, so the gap here is what
+    // the notice will take on stream.
     auto const win = CCDirector::get()->getWinSize();
     float const screenHeight = size.height - 12.f;
     float const screenWidth = screenHeight * (win.width / std::max(win.height, 1.f));
     m_ratio = screenWidth / std::max(win.width, 1.f);
 
-    // Recortado, para que la animacion de entrada no se salga del recuadro.
+    // clipped, so the enter animation stays inside the frame.
     CCNode* screen = paimon::ScissorClipNode::create(
         paimon::SpriteHelper::createRectStencil(screenWidth, screenHeight));
     if (!screen) screen = CCNode::create();
@@ -331,7 +330,7 @@ void TwitchNotifyPopup::apply(
 ) {
     change(m_config);
     setNotifyConfig(m_config);
-    // setNotifyConfig recorta lo que se pasa de la raya; sigue con lo guardado.
+    // setNotifyConfig clamps what overshoots; keep reading the stored one.
     m_config = notifyConfig();
 
     if (rebuild) {
@@ -388,15 +387,15 @@ void TwitchNotifyPopup::syncCard(bool replayEnter) {
     if (replayEnter) runNotifyEnter(m_card, m_config, rest);
 }
 
-// La salida se ensena aqui dentro y la tarjeta vuelve a entrar sola, para no
-// llenar la pantalla de avisos de prueba cada vez que tocas la flecha.
+// the exit rehearses in here and the card re-enters on its own, so tweaking
+// the arrows never floods the screen with test notices.
 void TwitchNotifyPopup::replayExit() {
     if (!m_card) return;
 
     Ref<TwitchNotifyPopup> self = this;
     runNotifyExit(m_card, m_config, cardRestPoint(), [self] {
         if (!self) return;
-        // Fuera del callback: la accion que acaba de terminar sigue viva.
+        // outside the callback: the action that just ended is still alive.
         Loader::get()->queueInMainThread([self] {
             if (self && self->getParent()) self->syncCard(true);
         });

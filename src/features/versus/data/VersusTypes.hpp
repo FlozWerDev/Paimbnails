@@ -5,8 +5,8 @@
 
 namespace paimon::versus {
 
-// Classic and platformer keep separate ratings, queues and histories: they are
-// different skills and mixing them wrecks the matchmaking.
+// classic and platformer keep separate ratings, queues and histories: mixing
+// them wrecks the matchmaking.
 enum class Mode : uint8_t {
     Classic,
     Platformer,
@@ -44,8 +44,7 @@ enum class CardTarget : uint8_t {
     Both,
 };
 
-// Order matters: it is the wire id of a card in vs-card, so new cards go at the
-// end and nothing is ever removed.
+// order is the vs-card wire id: new cards go at the end, nothing is removed.
 enum class CardId : uint8_t {
     Fog,
     Quake,
@@ -74,7 +73,7 @@ enum class CardId : uint8_t {
     Count,
 };
 
-// The server drives everything up to Countdown; the level drives the rest.
+// the server drives up to Countdown; the level drives the rest.
 enum class Phase : uint8_t {
     Idle,
     Queued,

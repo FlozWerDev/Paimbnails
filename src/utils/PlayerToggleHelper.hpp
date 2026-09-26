@@ -23,7 +23,7 @@ struct PlayerVisState {
     bool ghostTrailDraw = true;
     bool vehicleGroundPart = true;
     bool robotFire = true;
-    
+
     bool playerGroundPart = true;
     bool trailingPart = true;
     bool shipClickPart = true;
@@ -40,8 +40,7 @@ struct PlayerVisState {
     bool swingFireTop = true;
     bool dashSpritesContainer = true;
 
-    // WeakRef: this state can outlive a frame, and unknown mod-added player descendants
-    // may be destroyed in the meantime.
+    // WeakRef: state outlives frames; mod-added descendants may die meanwhile.
     std::vector<std::pair<geode::WeakRef<CCNode>, bool>> otherParticles;
 };
 

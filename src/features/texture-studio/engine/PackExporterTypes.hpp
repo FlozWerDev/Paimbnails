@@ -32,8 +32,7 @@ struct SpriteImageOverride {
     bool overlay = false;
 };
 
-// Region fill applied after tint/image overrides. Sheets bake frame 0; animated
-// fusions can also be exported as standalone GIFs.
+// Region fill after tint/image overrides. Sheets bake frame 0; animated fusions optionally ship as GIFs.
 struct SpriteFusionOverride {
     std::filesystem::path maskPath;
     std::filesystem::path texturePath;
@@ -52,7 +51,7 @@ struct PackExportConfig {
     int           brightness = 160;
     bool          alternativeGlowOverlay = false;
 
-    // Gameplay tinting hurts readability, so UI-only is the default.
+    // Gameplay tint hurts readability: UI-only by default.
     bool onlyTintUiSprites = true;
     TintScope tintScope = TintScope::ButtonsOnly;
 
@@ -83,9 +82,7 @@ struct PackExportConfig {
     bool colorGradientBg  = false;
     bool colorMainMenu    = false;
 
-    // Local-extras mode: also export unselected local sheets, with the
-    // clustering fallback (no overlay masks ship locally). The field name is
-    // deprecated but kept so old projects still parse.
+    // Local-extras mode: also export unselected local sheets via clustering fallback. Deprecated name, kept for parsing.
     bool usePackGenAssets = true;
 
     // These options apply only when local extras are enabled.

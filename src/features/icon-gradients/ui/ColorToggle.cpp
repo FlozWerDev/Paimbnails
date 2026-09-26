@@ -1,11 +1,5 @@
-// Channel toggle button for the gradient editor: a color swatch that
-// previews one gradient channel, with an optional index badge and a
-// crossfade second sprite for animated transitions.
-//
-// Idea credit: "Icon Gradients" by zilko
-// (https://github.com/zilko144/icon-gradients-geode, unlicensed —
-// all rights reserved). Independent implementation: same behavior,
-// own expression.
+// Channel toggle: color swatch previewing one gradient channel, optional index
+// badge, crossfade sprite for transitions. After zilko's "Icon Gradients" (independent implementation; idea credit zilko144, unlicensed).
 
 #include "ColorToggle.hpp"
 #include "GradientLayer.hpp"
@@ -148,9 +142,7 @@ void ColorToggle::applyGradient(GradientConfig config, bool /*force*/, bool tran
     if (transition && !m_currentConfig.isEmpty(m_colorType, second) && m_secondSprite)
         m_secondSprite->setColor({255, 255, 255});
 
-    // Animated crossfade only when there is a second sprite to fade with;
-    // an empty target still runs the fade machinery below, so the empty
-    // check stays out of this flag.
+    // crossfade only with a second sprite; empty targets still run the fade below.
     bool animate = transition && m_secondSprite;
     bool empty = config.isEmpty(m_colorType, second);
 
@@ -195,8 +187,7 @@ void ColorToggle::onAnimationEnded() {
 }
 
 void ColorToggle::setForceDisabled(bool off) {
-    // Sandwich: the first call runs under the previous flag (a no-op when
-    // coming from force-disabled), the second applies the new one.
+    // sandwich: first call runs under the previous flag, second applies the new one.
     setEnabled(!off);
 
     m_forceDisabled = off;

@@ -28,16 +28,13 @@ public:
     bool isLayerEnabled(std::string const& layerKey) const;
     void setLayerEnabled(std::string const& layerKey, bool enabled);
 
-    // Forces LayerBgConfig.shader and re-applies. No-op when disabled;
-    // layer may be null (only the saved value updates until next mount).
+    // Forces LayerBgConfig.shader and re-applies; null layer only updates the saved value.
     void applyToLayer(cocos2d::CCLayer* layer, std::string const& layerKey);
 
-    // Update every ShaderBgSprite's audio-reactive uniforms from the live config,
-    // for instant feedback on slider changes without rebuilding the background.
+    // Pushes live-config audio uniforms to ShaderBgSprites for instant slider feedback.
     void refreshLiveSpriteUniforms();
 
-    // Re-mount backgrounds on every supported layer when the chosen shader changed
-    // (a different shader requires LayerBackgroundManager to rebuild the sprite).
+    // Re-mounts backgrounds when the shader changed (LayerBackgroundManager rebuilds the sprite).
     void rebuildBackgrounds();
 
     struct ShaderEntry {

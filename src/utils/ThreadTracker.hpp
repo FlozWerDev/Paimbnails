@@ -22,7 +22,7 @@ public:
         return instance;
     }
 
-    // Callers waiting on worker completion must handle a rejected spawn during shutdown.
+    // rejected spawns during shutdown: waiters must handle them.
     template<typename Function, typename... Args>
     bool spawn(Function&& f, Args&&... args) {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -34,7 +34,7 @@ public:
         cleanupNoLock();
 
         auto completed = std::make_shared<std::atomic<bool>>(false);
-        
+
         std::thread t([completed, f = std::forward<Function>(f), ...args = std::forward<Args>(args)]() mutable {
             try {
                 f(std::forward<Args>(args)...);
@@ -83,7 +83,7 @@ public:
 
 private:
     ThreadTracker() = default;
-    
+
     ~ThreadTracker() {
         shutdown();
     }

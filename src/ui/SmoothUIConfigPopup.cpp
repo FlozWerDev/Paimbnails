@@ -36,7 +36,6 @@ void ssaved(const char* key, T val) {
     Mod::get()->setSavedValue(key, val);
 }
 
-// Ids internos y nombres visibles de los presets.
 std::vector<std::string> const kPresetIds = {
     "balanced", "subtle", "silky", "bouncy", "cinematic", "off"
 };
@@ -47,6 +46,23 @@ std::vector<std::string> const kPresetNames = {
 int presetIndexFromId(std::string const& id) {
     for (size_t i = 0; i < kPresetIds.size(); ++i) {
         if (kPresetIds[i] == id) return static_cast<int>(i);
+    }
+    return 0;
+}
+
+std::vector<std::string> const& popupStyles() {
+    static const std::vector<std::string> styles = {
+        "paimonUI", "jelly", "spiral", "drop-bounce", "skew-pop", "elastic",
+        "bounce", "slide-up", "slide-down", "slide-left", "slide-right",
+        "zoom-fade", "flip", "fold", "pop-rotate", "elastic-drop",
+        "glitch-shake", "card-turn", "fly-spin"};
+    return styles;
+}
+
+int popupStyleIndex(std::string const& id) {
+    auto const& styles = popupStyles();
+    for (size_t i = 0; i < styles.size(); ++i) {
+        if (styles[i] == id) return static_cast<int>(i);
     }
     return 0;
 }
@@ -171,8 +187,7 @@ bool SmoothUIConfigPopup::init() {
 }
 
 void SmoothUIConfigPopup::scheduleRebuild() {
-    // Reconstruir en el siguiente frame: el control que dispara el cambio
-    // sigue vivo dentro del scroll actual y no se puede destruir aun.
+// The triggering control still lives in the current scroll, so rebuild next frame.
     this->retain();
     Loader::get()->queueInMainThread([this] {
         if (this->getParent()) this->rebuild();
@@ -203,7 +218,6 @@ void SmoothUIConfigPopup::rebuild() {
         gset<bool>("smooth-ui-enabled"),
         [](bool v) { sset<bool>("smooth-ui-enabled", v); });
 
-    // Preset rapido (cambia varias opciones de golpe)
     auto* presetCard = kit::makeCard(scrollW, "Preset rapido", {255, 200, 100}, {
         kit::makeSelectRow(innerW,
             "Estilo general",
@@ -256,28 +270,10 @@ void SmoothUIConfigPopup::rebuild() {
                 [](bool v) { sset<bool>("dynamic-popup-enabled", v); }),
             kit::makeSelectRow(innerW,
                 "Estilo de entrada", "Como aparece cada popup.",
-                {"paimonUI", "jelly", "spiral", "drop-bounce", "skew-pop", "elastic",
-                 "bounce", "slide-up", "slide-down", "slide-left", "slide-right",
-                 "zoom-fade", "flip", "fold", "pop-rotate", "elastic-drop",
-                 "glitch-shake", "card-turn", "fly-spin"},
-                [] {
-                    auto cur = gsaved<std::string>("dynamic-popup-style", "paimonUI");
-                    std::vector<std::string> styles = {
-                        "paimonUI", "jelly", "spiral", "drop-bounce", "skew-pop", "elastic",
-                        "bounce", "slide-up", "slide-down", "slide-left", "slide-right",
-                        "zoom-fade", "flip", "fold", "pop-rotate", "elastic-drop",
-                        "glitch-shake", "card-turn", "fly-spin"};
-                    for (size_t i = 0; i < styles.size(); ++i) {
-                        if (styles[i] == cur) return static_cast<int>(i);
-                    }
-                    return 0;
-                }(),
+                popupStyles(),
+                popupStyleIndex(gsaved<std::string>("dynamic-popup-style", "paimonUI")),
                 [](int idx) {
-                    static std::vector<std::string> const styles = {
-                        "paimonUI", "jelly", "spiral", "drop-bounce", "skew-pop", "elastic",
-                        "bounce", "slide-up", "slide-down", "slide-left", "slide-right",
-                        "zoom-fade", "flip", "fold", "pop-rotate", "elastic-drop",
-                        "glitch-shake", "card-turn", "fly-spin"};
+                    auto const& styles = popupStyles();
                     if (idx >= 0 && idx < static_cast<int>(styles.size())) {
                         ssaved<std::string>("dynamic-popup-style", styles[static_cast<size_t>(idx)]);
                     }

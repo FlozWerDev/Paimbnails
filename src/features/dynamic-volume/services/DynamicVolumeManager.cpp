@@ -194,7 +194,6 @@ void DynamicVolumeManager::resetRuntimeState() {
     applyGainDb(0.0f);
 }
 
-
 bool DynamicVolumeManager::ensureDsps() {
     if (m_shuttingDown || paimon::isRuntimeShuttingDown()) return false;
 
@@ -212,26 +211,19 @@ bool DynamicVolumeManager::ensureDsps() {
         return true;
     }
 
-    if (!m_gainDsp) {
-        if (engine->m_system->createDSPByType(FMOD_DSP_TYPE_FADER, &m_gainDsp) != FMOD_OK) {
-            m_gainDsp = nullptr;
-            log::warn("[DynamicVolume] FADER DSP unavailable, feature stays idle");
+    auto createDsp = [&](FMOD::DSP*& dsp, FMOD_DSP_TYPE type, char const* name) {
+        if (dsp) return true;
+        if (engine->m_system->createDSPByType(type, &dsp) != FMOD_OK) {
+            dsp = nullptr;
+            log::warn("[DynamicVolume] {} DSP unavailable, feature stays idle", name);
             return false;
         }
-    }
-    if (!m_meterDsp) {
-        if (engine->m_system->createDSPByType(FMOD_DSP_TYPE_LOUDNESS_METER, &m_meterDsp) != FMOD_OK) {
-            m_meterDsp = nullptr;
-            log::warn("[DynamicVolume] LOUDNESS_METER DSP unavailable, feature stays idle");
-            return false;
-        }
-    }
-    if (!m_limiterDsp) {
-        if (engine->m_system->createDSPByType(FMOD_DSP_TYPE_LIMITER, &m_limiterDsp) != FMOD_OK) {
-            m_limiterDsp = nullptr;
-            log::warn("[DynamicVolume] LIMITER DSP unavailable, feature stays idle");
-            return false;
-        }
+        return true;
+    };
+    if (!createDsp(m_gainDsp, FMOD_DSP_TYPE_FADER, "FADER")
+        || !createDsp(m_meterDsp, FMOD_DSP_TYPE_LOUDNESS_METER, "LOUDNESS_METER")
+        || !createDsp(m_limiterDsp, FMOD_DSP_TYPE_LIMITER, "LIMITER")) {
+        return false;
     }
 
     m_attachedGroup = group;

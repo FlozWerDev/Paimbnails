@@ -7,8 +7,7 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// Hold Ctrl to open the radial. Modifier updates are reliable across platforms;
-// key dispatch only cancels the hold when Ctrl is used as a shortcut.
+// Hold Ctrl to open the radial; key dispatch only cancels the hold when Ctrl is a shortcut.
 
 namespace {
 
@@ -83,8 +82,7 @@ void resetHold() {
     syncHoldTicking();
 }
 
-// Never-freed singleton so it outlives scene changes; the tick itself is
-// registered and dropped as the hold starts and ends.
+// Never-freed singleton: outlives scene changes; the tick registers only for the hold window.
 class QuickHubScheduler : public CCNode {
 public:
     static QuickHubScheduler* get() {
@@ -97,8 +95,7 @@ public:
         return s_instance;
     }
 
-    // onUpdate only advances the hold timer, so the selector is registered for
-    // that window instead of ticking every frame for the whole session.
+    // onUpdate only advances the hold timer: register for that window, not the whole session.
     static void setTicking(bool on) {
         auto* self = get();
         if (self->m_ticking == on) return;
@@ -157,7 +154,7 @@ void syncHoldTicking() {
 
 }
 
-// Lets volume-scroll cancel an in-progress Ctrl hold.
+// Volume-scroll cancels an in-progress Ctrl hold.
 namespace paimon::quickhub {
     void notifyVolumeScrollUsed() {
         if (s_hold.ctrlDown && !s_hold.radialOpened) {
@@ -180,8 +177,7 @@ namespace paimon::volscroll {
 }
 
 $execute {
-    // Geode's input event works on every target and avoids the generated
-    // CCKeyboardDispatcher modify header, which is not valid on iOS.
+    // Geode input event works on every target; the generated CCKeyboardDispatcher header is invalid on iOS.
     KeyboardInputEvent().listen(+[](KeyboardInputData& data) {
         auto const modifiers = data.modifiers.value;
         bool shft = (modifiers & uint8_t(KeyboardModifier::Shift)) != 0;
@@ -190,7 +186,7 @@ $execute {
         bool cmd = (modifiers & uint8_t(KeyboardModifier::Super)) != 0;
         paimon::volscroll::onModifierKeysChanged(shft, ctrl, alt, cmd);
 
-        // Super represents Cmd on Apple platforms.
+        // Super is Cmd on Apple platforms.
         bool ctrlOrCmd = ctrl || cmd;
 
         if (!paimon::modules::isEnabled("paimbnails.quickhub.global") ||

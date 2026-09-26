@@ -32,15 +32,14 @@ public:
         auto* gm = GameManager::get();
         if (!gm) return result;
 
-        // username must match between AccountManager and GameManager
+        // AccountManager and GameManager must agree.
         std::string gmName(gm->m_playerName);
         if (result.username.empty()) result.username = gmName;
 
-        // userID from GameManager (SeedValue)
+        // GameManager userID (SeedValue).
         result.userID = gm->m_playerUserID;
 
-        // isOfficialServer: m_scoreValid is true only when connected to
-        // official Boomlings servers with valid leaderboard scores
+        // m_scoreValid is true only on official servers with valid scores.
         result.isOfficialServer = gm->m_scoreValid;
 
         result.isValid = result.accountID > 0 && !result.username.empty();

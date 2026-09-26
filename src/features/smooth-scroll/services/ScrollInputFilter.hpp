@@ -17,8 +17,7 @@ struct FilteredScrollFrame {
     ScrollVector actions;
 };
 
-// List momentum and discrete-action intent stay separate: one wheel step
-// always adds back up to one action, however many frames it spans.
+// Momentum and discrete intent stay separate: one wheel step always tops up to one action.
 class ScrollInputFilter {
 public:
     static constexpr double kMaxRawInput = 60.0;
@@ -99,8 +98,7 @@ private:
     ) {
         if (input == 0.0) return;
 
-        // Reversing the wheel should react immediately, not first repay old
-        // momentum in the opposite direction.
+        // Wheel reversal reacts at once instead of repaying opposite momentum first.
         bool const reversesContent =
             (content > 0.0 && input < 0.0) || (content < 0.0 && input > 0.0);
         bool const reversesActions =
@@ -128,8 +126,7 @@ private:
         double output = pending * blend;
         pending -= output;
         if (std::abs(pending) <= epsilon) {
-            // Flush the tail instead of dropping it. This matters for discrete
-            // consumers accumulating exactly one normalized wheel step.
+            // Flush the tail: discrete consumers accumulate exactly one step.
             output += pending;
             pending = 0.0;
         }

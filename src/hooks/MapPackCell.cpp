@@ -54,11 +54,8 @@ class $modify(PaimonMapPackCell, MapPackCell) {
         if (pack->m_levels && pack->m_levels->count() > 0) {
             for (auto obj : CCArrayExt<CCObject*>(pack->m_levels)) {
                 if (auto str = typeinfo_cast<CCString*>(obj)) {
-                    if (auto res = geode::utils::numFromString<int>(str->getCString())) {
-                        levelIDs.push_back(res.unwrap());
-                    }
-                } 
-                else if (auto level = typeinfo_cast<GJGameLevel*>(obj)) {
+                    if (auto res = geode::utils::numFromString<int>(str->getCString())) levelIDs.push_back(res.unwrap());
+                } else if (auto level = typeinfo_cast<GJGameLevel*>(obj)) {
                     levelIDs.push_back(level->m_levelID);
                 }
             }
@@ -81,9 +78,7 @@ class $modify(PaimonMapPackCell, MapPackCell) {
         auto size = this->getContentSize();
         
         CCSize carouselSize = size;
-        if (carouselSize.height < 90.0f) {
-            carouselSize.height = 90.0f;
-        }
+        if (carouselSize.height < 90.0f) carouselSize.height = 90.0f;
 
         auto carousel = ListThumbnailCarousel::create(levelIDs, carouselSize);
         if (carousel) {

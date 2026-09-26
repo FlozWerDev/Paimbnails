@@ -27,8 +27,7 @@ constexpr float kExitDur = 0.34f;
 
 // Above the capture preview (999000), below the color picker HUD (999500).
 constexpr int kZOrder = 999100;
-// Beats popups/inputs (~-500) so an invite over an alert keeps working buttons;
-// CCMenu only claims touches that hit a button.
+// Beats popups/inputs (~-500); CCMenu only claims touches hitting buttons.
 constexpr int kTouchPriority = -1000;
 
 float easeOutCubic(float t) {
@@ -154,8 +153,7 @@ bool CollabInviteBanner::init(std::string const& room, std::string const& fromNa
     m_roomLabel->setPosition({kTextX, 26.f});
     this->addChild(m_roomLabel, 2);
 
-    // Countdown along the bottom of the panel: same track + fill pair the collab
-    // chat uses for its mic level, driven with scaleX so it drains smoothly.
+    // Bottom countdown reuses the chat mic track+fill pair, drained via scaleX.
     float trackW = kCardW - kBarInset * 2.f;
     auto* track = CCLayerColor::create({0, 0, 0, 110}, trackW, 4.f);
     track->ignoreAnchorPointForPosition(false);
@@ -181,8 +179,7 @@ void CollabInviteBanner::onEnter() {
 
     if (m_priorityQueued) return;
     m_priorityQueued = true;
-    // Re-registering mid-touch dereferences a handler still in the pending-add
-    // queue; one frame later it has been committed.
+    // Re-registering mid-touch dereferences a pending-add handler; wait one frame.
     WeakRef<CollabInviteBanner> weak = this;
     Loader::get()->queueInMainThread([weak]() {
         if (auto self = weak.lock(); self && self->m_menu) {
@@ -239,8 +236,7 @@ void CollabInviteBanner::tick(float dt) {
 
 void CollabInviteBanner::captureFade() {
     m_fade.clear();
-    // Read every opacity before touching any of them: containers push their own
-    // onto their children, so a half-faded parent would poison the targets.
+    // Snapshot opacities first: half-faded parents would poison child targets.
     std::function<void(CCNode*)> walk = [&](CCNode* node) {
         if (!node) return;
         if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(node)) {

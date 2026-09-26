@@ -1,6 +1,5 @@
 #pragma once
-// SelfCheck: headless runtime self-check (no assets); SelfTest and the
-// regression tests assert on each sub-check individually.
+// Headless runtime self-check (no assets); SelfTest and regressions assert per sub-check.
 
 #include <cstdint>
 #include <string>
@@ -25,9 +24,7 @@ struct SelfCheckResult {
 inline SelfCheckResult runSelfCheck() {
     SelfCheckResult r;
 
-    // 1. Tint kernel: grey 200 through pure-red tint at brightness 160 must
-    //    give (200-ish scaled) — hand-computed: lum=200, factor=1.25,
-    //    255*1.25=318.75 -> clamped 255, G/B 0. So (255,0,0).
+    // 1. Tint kernel: grey 200 at brightness 160 (factor 1.25) through pure red gives (255,0,0).
     {
         PrecomputedTint spec = PrecomputedTint::make(255, 0, 0, 160.0f, 1.0f, 0.0f);
         std::uint8_t oR, oG, oB;
@@ -37,9 +34,7 @@ inline SelfCheckResult runSelfCheck() {
             r.detail = "expected (255,0,0)";
             return r;
         }
-        // Same numbers as the engine SelfTest overlay case: grey 200 at
-        // brightness 160 (factor 1.25) through tint (160,80,40) gives
-        // exactly (200,100,50) — cross-validates the kernel with TintMath.
+        // Same numbers as the SelfTest overlay case: cross-validates the kernel with TintMath.
         PrecomputedTint scaled = PrecomputedTint::make(160, 80, 40, 160.0f, 1.0f, 0.0f);
         tintPixelFast(200, 200, 200, scaled, oR, oG, oB);
         if (oR != 200 || oG != 100 || oB != 50) {

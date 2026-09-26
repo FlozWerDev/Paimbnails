@@ -5,8 +5,7 @@
 
 namespace paimon::quickhub {
 
-// Menu radial que aparece al mantener Ctrl. La seleccion es por sector angular
-// y el centro cancela.
+// Ctrl-hold radial menu: angular sectors select, center cancels.
 
 class QuickHubRadial : public cocos2d::CCLayer {
 public:
@@ -31,11 +30,11 @@ private:
     struct RadialItem {
         std::string id;
         std::string name;
-        std::string hint;                      // aviso cuando no se puede pulsar aqui
+        std::string hint;                      // shown when not pressable here
         cocos2d::ccColor3B color{255, 255, 255};
-        cocos2d::CCNode* node = nullptr;       // contenedor: posicion + open/close
-        cocos2d::CCNode* inner = nullptr;      // hijo: escala de hover
-        cocos2d::CCNode* ring = nullptr;       // aro de acento: solo al apuntar
+        cocos2d::CCNode* node = nullptr;       // container: open/close position
+        cocos2d::CCNode* inner = nullptr;      // child: hover scale
+        cocos2d::CCNode* ring = nullptr;       // accent ring: aim only
         cocos2d::CCPoint position;
         float angle = 0.f;
         bool reachable = true;
@@ -48,7 +47,7 @@ private:
     cocos2d::CCPoint m_center;
     float m_radius = 96.f;
     float m_badgeSize = 46.f;
-    float m_deadZone = 40.f;  // radio del centro: dentro no hay seleccion
+    float m_deadZone = 40.f;  // center radius: no selection inside
     int m_hoveredIndex = -1;
 
     void buildBackdrop();

@@ -36,8 +36,8 @@ private:
     void buildQueuePanel();
     void buildFooter();
 
-    // Entrada diferida hasta acabar la transicion: si no, la animacion se gasta
-    // detras del fundido.
+    // deferred entry until the transition ends, or the animation plays out
+    // behind the fade.
     void enterBy(cocos2d::CCNode* node, cocos2d::CCPoint offset, float delay, bool bounce = false);
     void runIntro();
 
@@ -56,7 +56,7 @@ private:
     void applyPlatformSkin();
     void onToggleQueue();
     void onToggleOrder();
-    // Modo pagina: encender/apagar tu URL y compartirla.
+    // page mode: toggle and share your URL.
     void onToggleWebPage();
     void onCopyWebUrl();
     void onOpenWebUrl();
@@ -77,8 +77,8 @@ private:
     cocos2d::CCLabelBMFont* m_hintLabel = nullptr;
     cocos2d::CCLabelBMFont* m_channelCaption = nullptr;
     cocos2d::CCLabelBMFont* m_commandCaption = nullptr;
-    // Solo en modo pagina: la direccion y sus dos botones ocupan el hueco del
-    // campo de canal y el de comandos.
+    // page mode only: the address and its two buttons take the channel and
+    // command fields' place.
     cocos2d::CCLabelBMFont* m_webUrlLabel = nullptr;
     cocos2d::CCMenu* m_webMenu = nullptr;
     cocos2d::CCSprite* m_background = nullptr;

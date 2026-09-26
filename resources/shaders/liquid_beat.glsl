@@ -1,6 +1,4 @@
-// liquid_beat.glsl — flowing liquid distortion. Mid drives flow speed,
-// bass amplitude, treble adds high-frequency micro-ripples, beat fires a
-// localized wave from the center.
+// liquid_beat.glsl — liquid flow; mid speeds, bass swells, beat waves.
 #ifdef GL_ES
 precision mediump float;
 #endif
@@ -35,7 +33,6 @@ void main() {
     float speed = 0.6 + u_mid * u_intensity * 1.2 + u_energy * 0.4;
     float amp   = 0.012 * u_intensity + u_bass * 0.025 * u_intensity;
 
-    // Two layers of noise-driven flow.
     vec2 q = vec2(
         noise(uv * 3.5 + vec2(0.0, u_time * speed)),
         noise(uv * 3.5 + vec2(u_time * speed * 0.8, 0.0))
@@ -46,13 +43,11 @@ void main() {
     );
     uv += (r - 0.5) * 2.0 * amp;
 
-    // Treble micro shimmer.
     uv += vec2(
         sin(v_texCoord.y * 90.0 + u_time * 12.0),
         cos(v_texCoord.x * 90.0 + u_time * 11.0)
     ) * u_treble * u_intensity * 0.0025;
 
-    // Beat radial wave from center.
     vec2 c2 = v_texCoord - 0.5;
     float rad = length(c2);
     float wave = sin(rad * 18.0 - u_time * 5.0) * exp(-rad * 3.0);
@@ -60,7 +55,6 @@ void main() {
 
     vec4 col = texture2D(u_texture, uv);
 
-    // Subtle blue/teal tint.
     col.rgb = mix(col.rgb, col.rgb * vec3(0.95, 1.0, 1.05), u_intensity * 0.25);
     col.rgb *= 1.0 + u_beat * 0.25;
 

@@ -13,8 +13,7 @@ namespace {
         char const* reasonKey;
     };
 
-    // Vacia desde v1.1.2 (Level Thumbnails ya convive). std::array porque un array C
-    // no puede ser de tamano cero; el mecanismo se queda montado para el siguiente.
+    // empty since v1.1.2; kept mounted for the next conflict.
     constexpr std::array<StartupIncompatibleMod, 0> kStartupIncompatibleMods{};
 
     bool s_startupIncompatibilityPopupShown = false;

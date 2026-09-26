@@ -112,13 +112,11 @@ void cleanupDiskCache(char const* context) {
 }
 
 $on_game(Exiting) {
-    // Destroy EventBus subscribers before Cocos2d teardown: their WeakRef<CCNode>
-    // lambdas crash in atexit once the WeakRefPool is gone.
+    // EventBus first: subscriber lambdas crash in atexit once the WeakRefPool is gone.
     paimon::EventBus::get().beginShutdown();
 
     paimon::markRuntimeShuttingDown();
-    // Release scheduled callbacks and Geode async handles while their owning
-    // runtimes (CCScheduler, WeakRefPool and arc) are still valid.
+    // release callbacks and async handles while CCScheduler, WeakRefPool and arc are alive.
     paimon::cancelAllMainThreadDelays();
     pt::cancelPendingFilePick();
     paimon::icon_maker::IconShare::cancelPendingPick();
@@ -206,8 +204,7 @@ $on_game(Exiting) {
         ProfileThumbs::get().clearNoProfileCache();
     });
 
-    // Clear pending callbacks capturing Ref<GJScoreCell> etc.; otherwise the
-    // static destructor would destroy them after CCPoolManager is gone -> crash.
+    // drop pending callbacks holding Refs; statics dying after CCPoolManager crash.
     safeShutdownStep("profile-thumbs-clear-pending", []() {
         ProfileThumbs::get().clearPendingDownloads();
     });
@@ -263,8 +260,7 @@ $on_game(Exiting) {
     });
     log::info("[SHUTDOWN] 12/13 Audio + resources released");
 
-    // Release shared video players before MF shuts down; the static destructor
-    // would otherwise run in atexit and crash inside msmpeg2vdec.dll.
+    // release shared videos before MF dies; the static destructor crashes in msmpeg2vdec.dll.
     log::info("[SHUTDOWN] 13/13 releaseAllSharedVideos starting...");
     safeShutdownStep("layer-bg-release-videos", []() {
         LayerBackgroundManager::get().releaseAllSharedVideos();
@@ -278,14 +274,12 @@ $on_game(Exiting) {
     safeShutdownStep("transition-watchdog-disarm", []() {
         paimon::transitions::shutdownLevelTransitionWatchdog();
     });
-    // Before statics die: joins the media import worker so it can't touch
-    // the cache or queue main-thread work during atexit.
+    // join the media worker before statics die so it can't touch the cache in atexit.
     safeShutdownStep("transition-media-shutdown", []() {
         paimon::transitions::shutdownTransitionMedia();
     });
 
-    bool clearCache = clearCacheOnExit;
-    if (!clearCache) {
+    if (!clearCacheOnExit) {
         log::info("[PaimonThumbnails] Disk cache cleanup disabled by setting");
         log::info("[SHUTDOWN] === EXIT SEQUENCE COMPLETE ===");
         return;

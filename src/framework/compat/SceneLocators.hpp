@@ -9,7 +9,7 @@ using namespace geode::prelude;
 namespace paimon::compat {
 
 struct LevelBrowserLocator {
-    // ID search-menu, then the uppermost CCMenu.
+    // search-menu ID, then the uppermost CCMenu.
     static cocos2d::CCMenu* findSearchMenu(cocos2d::CCNode* layer) {
         if (!layer) return nullptr;
 
@@ -36,7 +36,7 @@ struct InfoLayerLocator {
         bool found = false;
     };
 
-    // ID background, then the first CCScale9Sprite.
+    // background ID, then the first CCScale9Sprite.
     static PopupGeometry findPopupGeometry(cocos2d::CCNode* mainLayer) {
         if (!mainLayer) return {};
 
@@ -60,21 +60,19 @@ struct InfoLayerLocator {
             }
         }
 
-        geo.found = false;
         return geo;
     }
 };
 
 struct LevelSelectLocator {
-    // Recognize foreign mod nodes by their _spr-prefixed IDs so they stay visible.
+    // Foreign mod nodes stay visible.
     static bool isForeignModNode(cocos2d::CCNode* node) {
         if (!node) return false;
         std::string id = node->getID();
         if (id.empty()) return false;
 
-        // Foreign prefixes whose backgrounds must not be hidden.
         static char const* const kForeignPrefixes[] = {
-            "alphalaneous.",       // happy_textures, etc.
+            "alphalaneous.",
             "geode.texture-loader/",
             "geode.node-ids/",
             "prevter.imageplus",
@@ -93,7 +91,7 @@ struct LevelSelectLocator {
         return false;
     }
 
-    // Hide vanilla backgrounds and GJGroundLayer, but leave other mods alone.
+    // Hide vanilla backdrops; leave other mods alone.
     static void hideVanillaBackground(cocos2d::CCNode* layer) {
         if (!layer) return;
 
@@ -101,12 +99,8 @@ struct LevelSelectLocator {
         if (!children) return;
 
         for (auto* node : CCArrayExt<cocos2d::CCNode*>(children)) {
-            if (!node) continue;
-            if (isForeignModNode(node)) continue;
-            if (node->getZOrder() < -1) {
-                node->setVisible(false);
-            }
-            if (typeinfo_cast<GJGroundLayer*>(node)) {
+            if (!node || isForeignModNode(node)) continue;
+            if (node->getZOrder() < -1 || typeinfo_cast<GJGroundLayer*>(node)) {
                 node->setVisible(false);
             }
         }

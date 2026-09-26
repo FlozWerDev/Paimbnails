@@ -126,8 +126,7 @@ IconColorTriple IconColorService::resolveRainbow(IconDescriptor const& desc, Pai
 
 IconColorTriple IconColorService::resolveGradient(IconDescriptor const& desc, PaimonIconConfig const& cfg) const {
     const float total = std::max(1, desc.totalCount);
-    // Guard the single-icon case (total==1): displayIndex/0 would be NaN, and
-    // std::clamp(NaN,..) stays NaN, which later reaches a float->int cast (UB).
+    // Guard total==1: displayIndex/0 is NaN, and clamp(NaN) reaches float->int cast (UB).
     const float denom = total - 1.0f;
     const float progress = denom > 0.0f
         ? std::clamp(static_cast<float>(desc.displayIndex) / denom, 0.0f, 1.0f)

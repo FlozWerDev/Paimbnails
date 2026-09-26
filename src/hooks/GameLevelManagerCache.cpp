@@ -42,16 +42,13 @@ bool tryServeCached(
     if (!key || !*key) return false;
     auto cached = paimon::gd::GDRobTopCache::get().lookup(category, key);
     if (!cached) return false;
-    log::debug("[GDRobTopCache] {} hit: {}", category, key);
     deliverCachedResponse(self, *cached, key, handler);
     return true;
 }
 
 } // namespace
 
-// Browse filters change constantly, so disk snapshots went stale; GD already
-// keeps them in memory. Profiles include relationship state, so native caching
-// handles those as well.
+// browse filters go stale and profiles carry relationship state; users only
 class $modify(PaimonRobTopCacheGameLevelManager, GameLevelManager) {
     $override
     void getUsers(GJSearchObject* object) {

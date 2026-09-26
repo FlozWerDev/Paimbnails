@@ -28,8 +28,8 @@ struct SeasonInfo {
 
 struct MatchInfo {
     std::string id;
-    // Straight from the server, so the client can react to a match that ended
-    // without it: a dodge, a void, a rival that walked.
+    // straight from the server, so the client can react to a match that ended
+    // without it: dodge, void, walked rival.
     std::string serverPhase;
     PlayerRef rival;
     Mode mode = Mode::Classic;
@@ -38,15 +38,14 @@ struct MatchInfo {
     uint64_t seed = 0;
     int countdownMs = 0;
     bool catchUp = true;
-    // The server decides this, not the format: every friendly is unranked even
-    // when it is played under Race.
+    // the server decides this, not the format: friendlies are always unranked.
     bool ranked = true;
     std::vector<std::string> mutators;
     std::vector<LevelOffer> offers;
 };
 
-// Either half of a friendly. The server hands back a code to pass around when
-// nobody was named, and a match id when the duel is already open.
+// either half of a friendly: a code to pass around when nobody was named,
+// a match id when the duel is already open.
 struct ChallengeResult {
     std::string code;
     std::string matchId;
@@ -67,6 +66,11 @@ struct LeaderboardRow {
     int losses = 0;
 };
 
+// json field readers shared with the store.
+int64_t intField(matjson::Value const& v, char const* key, int64_t fallback = 0);
+std::string stringField(matjson::Value const& v, char const* key);
+bool boolField(matjson::Value const& v, char const* key, bool fallback = false);
+
 class VersusClient {
 public:
     using OkCallback     = geode::CopyableFunction<void(bool ok, std::string const& message)>;
@@ -76,7 +80,7 @@ public:
     using BoardCallback  = geode::CopyableFunction<void(bool ok, std::vector<LeaderboardRow> const& rows)>;
     using ChallengeCallback = geode::CopyableFunction<void(bool ok, ChallengeResult const& result,
                                                            std::string const& message)>;
-    // Only the local player's rank belongs in the store; profile visits must not overwrite it.
+    // only the local rank belongs in the store; profile visits must not overwrite it.
     using ProfileCallback = geode::CopyableFunction<void(bool ok, ModeProfile const& classic,
                                                          ModeProfile const& platformer)>;
 
@@ -86,14 +90,14 @@ public:
     bool authenticated() const;
     SeasonInfo const& season() const { return m_season; }
 
-    // Trades the mod-code for a session token and fills both mode profiles.
+    // trades the mod-code for a session token and fills both mode profiles.
     void authenticate(AuthCallback cb);
 
     void joinQueue(Mode mode, Format format, QueueCallback cb);
     void leaveQueue(OkCallback cb);
 
-    // One poll of the lobby channel. The server answers immediately with the
-    // current phase, so a dropped connection costs one tick, not the match.
+    // one lobby poll; the server answers at once, so a dropped connection
+    // costs one tick, not the match.
     void pollLobby(MatchCallback cb);
 
     void acceptMatch(std::string const& matchId, bool accept, OkCallback cb);
@@ -103,8 +107,8 @@ public:
                       SideState const& rival, Outcome outcome, OkCallback cb);
     void forfeit(std::string const& matchId, OkCallback cb);
 
-    // An empty target asks for a code to share; a six character code joins the
-    // invite behind it; anything else is read as a username.
+    // empty target asks for a shareable code; six chars join the invite
+    // behind it; anything else reads as a username.
     void challenge(std::string const& target, Mode mode, Format format, ChallengeCallback cb);
 
     void fetchProfile(int accountId, ProfileCallback cb);
@@ -120,13 +124,13 @@ private:
         int64_t fetchedAt = 0;
     };
 
-    // Both the versus chip and the progression chip want the same numbers when
-    // a profile opens; without this every visit costs two identical requests.
+    // both chips want the same numbers on profile open; without this every
+    // visit costs two identical requests.
     static constexpr int64_t kProfileTtlSeconds = 60;
     std::unordered_map<int, ProfileCacheEntry> m_profileCache;
     std::unordered_map<int, std::vector<ProfileCallback>> m_profileWaiters;
 
-    // The server may drop a session; allowRetry prevents recursive re-auth after a rejected token.
+    // the server may drop a session; allowRetry stops recursive re-auth on a rejected token.
     void send(std::string const& method, std::string const& path,
               matjson::Value const& body,
               geode::CopyableFunction<void(bool ok, matjson::Value const& json,

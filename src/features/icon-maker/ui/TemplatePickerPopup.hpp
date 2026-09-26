@@ -14,8 +14,7 @@ public:
     using PickedCallback = std::function<void(int iconId)>;
     using ProjectCallback = std::function<void(std::string const& projectId)>;
 
-    // Con `onProject` puesto aparece la pestana "Mis iconos", que solo lista
-    // proyectos del mismo gamemode para que las zonas cuadren.
+    // with `onProject` the "My icons" tab appears, listing same-gamemode projects only.
     static TemplatePickerPopup* create(IconType type, PickedCallback onPicked,
                                        ProjectCallback onProject = nullptr);
 

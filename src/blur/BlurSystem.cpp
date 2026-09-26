@@ -8,6 +8,9 @@
 
 using namespace cocos2d;
 
+// gaussian shares the cache; offset avoids collisions with paimon buckets
+static constexpr int kGaussianBucketOffset = 1000;
+
 BlurSystem::BlurKey BlurSystem::makeBlurKey(CCTexture2D* source, CCSize const& targetSize, float intensity, std::string const& cacheKey) {
     // Bucket intensity in 0.5 steps to avoid thrashing the cache on small slider deltas.
     int intensityBucket = paimon::cache::blurIntensityBucket(intensity);
@@ -86,25 +89,14 @@ void BlurSystem::clearBlurCache() {
 
 void BlurSystem::destroy() {
     m_shutdown = true;
-
-    for (auto& job : m_runningJobs) {
-        if (job) job->cancel();
-    }
-    m_runningJobs.clear();
-
-    for (auto& [key, callbacks] : m_inFlight) {
-        for (auto& cb : callbacks) {
-            if (cb) cb(nullptr);
-        }
-    }
-    m_inFlight.clear();
-    m_pendingJobs.clear();
-    m_activeJobCount = 0;
-
-    clearBlurCache();
+    abortJobs();
 }
 
 void BlurSystem::onGLContextReload() {
+    abortJobs();
+}
+
+void BlurSystem::abortJobs() {
     for (auto& job : m_runningJobs) {
         if (job) job->cancel();
     }
@@ -142,7 +134,7 @@ bool BlurSystem::tryDispatchFromDisk(BlurKey const& key, BlurFlavor flavor, Queu
                 }
                 drainPendingJobs();
             } else {
-                // Disk failed (corrupt file or race). Fall back to a GPU job.
+                // disk miss; fall back to a GPU job
                 if (m_activeJobCount < MAX_CONCURRENT_BLUR_JOBS) {
                     dispatchJob(fallbackJob);
                 } else {
@@ -216,7 +208,7 @@ void BlurSystem::onJobCompleted(BlurKey const& key, CCSprite* result) {
             insertBlur(key, cachedTex);
 
             // Persist to disk (fire-and-forget), only for persistent keys.
-            BlurFlavor flavor = (key.intensityBucket >= 1000) ? BlurFlavor::Gaussian : BlurFlavor::Paimon;
+            BlurFlavor flavor = (key.intensityBucket >= kGaussianBucketOffset) ? BlurFlavor::Gaussian : BlurFlavor::Paimon;
             std::string diskKey = makeDiskKey(key, flavor);
             if (!diskKey.empty() && !paimon::blur::BlurDiskCache::get().hasEntry(diskKey)) {
                 paimon::blur::BlurDiskCache::get().storeFromTextureAsync(
@@ -246,12 +238,15 @@ void BlurSystem::drainPendingJobs() {
     }
 }
 
-void BlurSystem::buildPaimonBlurAsync(
+void BlurSystem::enqueueBuild(
     CCTexture2D* source,
     CCSize const& targetSize,
     float intensity,
     std::string cacheKey,
-    std::function<void(CCSprite*)> onReady
+    std::function<void(CCSprite*)> onReady,
+    BlurFlavor flavor,
+    bool fastMode,
+    bool priority
 ) {
     if (!onReady) return;
     if (!source || targetSize.width <= 0.f || targetSize.height <= 0.f) {
@@ -260,13 +255,13 @@ void BlurSystem::buildPaimonBlurAsync(
     }
 
     BlurKey key = makeBlurKey(source, targetSize, intensity, cacheKey);
+    if (flavor == BlurFlavor::Gaussian) key.intensityBucket += kGaussianBucketOffset;
 
     if (auto* tex = lookupBlur(key)) {
         onReady(spriteFromCachedTexture(tex));
         return;
     }
 
-    // Deduplicate in-flight callbacks.
     auto inFlightIt = m_inFlight.find(key);
     if (inFlightIt != m_inFlight.end()) {
         inFlightIt->second.push_back(std::move(onReady));
@@ -274,16 +269,27 @@ void BlurSystem::buildPaimonBlurAsync(
     }
 
     m_inFlight[key].push_back(std::move(onReady));
+    QueuedJob job{key, geode::Ref<CCTexture2D>(source), targetSize, intensity, flavor, fastMode};
 
-    QueuedJob job{key, geode::Ref<CCTexture2D>(source), targetSize, intensity, BlurFlavor::Paimon};
+    // disk hit beats a GPU job even on the priority path
+    if (tryDispatchFromDisk(key, flavor, job)) return;
 
-    if (tryDispatchFromDisk(key, BlurFlavor::Paimon, job)) return;
-
-    if (m_activeJobCount < MAX_CONCURRENT_BLUR_JOBS) {
+    if (priority || m_activeJobCount < MAX_CONCURRENT_BLUR_JOBS) {
         dispatchJob(job);
     } else {
         m_pendingJobs.push_back(std::move(job));
     }
+}
+
+void BlurSystem::buildPaimonBlurAsync(
+    CCTexture2D* source,
+    CCSize const& targetSize,
+    float intensity,
+    std::string cacheKey,
+    std::function<void(CCSprite*)> onReady
+) {
+    enqueueBuild(source, targetSize, intensity, std::move(cacheKey), std::move(onReady),
+        BlurFlavor::Paimon, false, false);
 }
 
 void BlurSystem::buildPaimonBlurPriority(
@@ -293,33 +299,8 @@ void BlurSystem::buildPaimonBlurPriority(
     std::string cacheKey,
     std::function<void(CCSprite*)> onReady
 ) {
-    if (!onReady) return;
-    if (!source || targetSize.width <= 0.f || targetSize.height <= 0.f) {
-        onReady(nullptr);
-        return;
-    }
-
-    BlurKey key = makeBlurKey(source, targetSize, intensity, cacheKey);
-
-    if (auto* tex = lookupBlur(key)) {
-        onReady(spriteFromCachedTexture(tex));
-        return;
-    }
-
-    auto inFlightIt = m_inFlight.find(key);
-    if (inFlightIt != m_inFlight.end()) {
-        inFlightIt->second.push_back(std::move(onReady));
-        return;
-    }
-
-    m_inFlight[key].push_back(std::move(onReady));
-    QueuedJob job{key, geode::Ref<CCTexture2D>(source), targetSize, intensity, BlurFlavor::Paimon, /*fastMode*/true};
-
-    // Disk cache first: even on the priority path, a disk hit beats a GPU job.
-    if (tryDispatchFromDisk(key, BlurFlavor::Paimon, job)) return;
-
-    // Priority: bypass the limit, dispatch immediately.
-    dispatchJob(job);
+    enqueueBuild(source, targetSize, intensity, std::move(cacheKey), std::move(onReady),
+        BlurFlavor::Paimon, true, true);
 }
 
 void BlurSystem::buildGaussianBlurAsync(
@@ -329,38 +310,8 @@ void BlurSystem::buildGaussianBlurAsync(
     std::string cacheKey,
     std::function<void(CCSprite*)> onReady
 ) {
-    if (!onReady) return;
-    if (!source || targetSize.width <= 0.f || targetSize.height <= 0.f) {
-        onReady(nullptr);
-        return;
-    }
-
-    // Gaussian and dual-kawase share the cache; gaussian uses bucket 1000+ to avoid collisions.
-    BlurKey key = makeBlurKey(source, targetSize, intensity, cacheKey);
-    key.intensityBucket += 1000;
-
-    if (auto* tex = lookupBlur(key)) {
-        onReady(spriteFromCachedTexture(tex));
-        return;
-    }
-
-    auto inFlightIt = m_inFlight.find(key);
-    if (inFlightIt != m_inFlight.end()) {
-        inFlightIt->second.push_back(std::move(onReady));
-        return;
-    }
-
-    m_inFlight[key].push_back(std::move(onReady));
-
-    QueuedJob job{key, geode::Ref<CCTexture2D>(source), targetSize, intensity, BlurFlavor::Gaussian};
-
-    if (tryDispatchFromDisk(key, BlurFlavor::Gaussian, job)) return;
-
-    if (m_activeJobCount < MAX_CONCURRENT_BLUR_JOBS) {
-        dispatchJob(job);
-    } else {
-        m_pendingJobs.push_back(std::move(job));
-    }
+    enqueueBuild(source, targetSize, intensity, std::move(cacheKey), std::move(onReady),
+        BlurFlavor::Gaussian, false, false);
 }
 
 void BlurSystem::buildGaussianBlurPriority(
@@ -370,30 +321,6 @@ void BlurSystem::buildGaussianBlurPriority(
     std::string cacheKey,
     std::function<void(CCSprite*)> onReady
 ) {
-    if (!onReady) return;
-    if (!source || targetSize.width <= 0.f || targetSize.height <= 0.f) {
-        onReady(nullptr);
-        return;
-    }
-
-    BlurKey key = makeBlurKey(source, targetSize, intensity, cacheKey);
-    key.intensityBucket += 1000;
-
-    if (auto* tex = lookupBlur(key)) {
-        onReady(spriteFromCachedTexture(tex));
-        return;
-    }
-
-    auto inFlightIt = m_inFlight.find(key);
-    if (inFlightIt != m_inFlight.end()) {
-        inFlightIt->second.push_back(std::move(onReady));
-        return;
-    }
-
-    m_inFlight[key].push_back(std::move(onReady));
-    QueuedJob job{key, geode::Ref<CCTexture2D>(source), targetSize, intensity, BlurFlavor::Gaussian, /*fastMode*/true};
-
-    if (tryDispatchFromDisk(key, BlurFlavor::Gaussian, job)) return;
-
-    dispatchJob(job);
+    enqueueBuild(source, targetSize, intensity, std::move(cacheKey), std::move(onReady),
+        BlurFlavor::Gaussian, true, true);
 }

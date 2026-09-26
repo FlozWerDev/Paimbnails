@@ -1,5 +1,5 @@
 #pragma once
-// Tienda de cursores: solo se descarga lo que el usuario instala, nunca rastreo masivo.
+// Cursor shop: only installed items are downloaded, never bulk-crawled.
 // All callbacks return on main thread.
 
 #include <Geode/Geode.hpp>
@@ -21,16 +21,13 @@ inline constexpr int kStoreCount = 2;
 struct Category {
     std::string id;
     std::string name;
-    // Las secciones paginadas piden una pagina nueva al servidor; el resto
-    // devuelve todo de golpe y la tienda pagina en local.
+    // Paged sections fetch per page; the rest arrives whole and paginates locally.
     bool paged = false;
-    // Fichas por peticion. rw-designer redondea el offset a multiplos de este
-    // numero, asi que no se puede pedir menos. 0 = catalogo entero de una vez.
+    // Listings per request; rw-designer rounds offsets to it. 0 = whole catalog.
     int fetchSize = 0;
 };
 
-// Ficha del grid: un set de rw-designer, un cursor suelto del junkyard o un
-// pack de custom-cursor.
+// Grid entry: an rw-designer set, a junkyard single, or a custom-cursor pack.
 struct Listing {
     Store store = Store::RwDesigner;
     std::string id;
@@ -38,10 +35,10 @@ struct Listing {
     std::string author;
     std::string extra;      // descargas, numero de cursores...
     std::string thumbUrl;
-    // Los cursores sueltos ya saben su fichero, no hace falta abrir la ficha.
+    // Singles already know their file; no detail page needed.
     std::string directUrl;
     bool single = false;
-    // .ani: al instalarlo se convierte en GIF y se mueve de verdad.
+    // .ani converts to GIF on install.
     bool animated = false;
 };
 
@@ -55,11 +52,9 @@ struct DetailCursor {
     std::string name;
     std::string previewUrl;
     std::string downloadUrl;
-    // custom-cursor sirve algunos packs en dos tamaños; se intenta el grande y
-    // se cae al de la pagina si no existe.
+    // Some packs ship two sizes; try large, fall back to page size.
     std::string fallbackUrl;
-    // rw-designer marca el rol de cada cursor y custom-cursor separa flecha de
-    // puntero, asi que casi siempre se puede sugerir un estado.
+    // Both stores tag cursor roles, so a state can usually be suggested.
     CursorState suggested = CursorState::Idle;
     bool hasSuggested = false;
     bool animated = false;
@@ -69,8 +64,7 @@ struct Detail {
     std::string name;
     std::string author;
     std::string description;
-    // Canonical page this detail was read from (empty when unknown). The UI
-    // offers it as "Ver original" so authors get the visit.
+    // Canonical page (empty when unknown); UI links it so authors get the visit.
     std::string sourceUrl;
     std::vector<DetailCursor> cursors;
 };
@@ -87,19 +81,17 @@ public:
 
     static std::vector<Category> builtinCategories(Store store);
 
-    // rw-designer tiene buscador propio; el de custom-cursor esta bloqueado y
-    // hay que recorrer sus colecciones a mano.
+    // rw-designer has its own search; custom-cursor's is blocked, walk collections.
     static bool supportsSearch(Store store);
-    // Categoria sintetica que fetchListing reconoce y resuelve como busqueda.
+    // Synthetic category that fetchListing resolves as a search.
     static Category searchCategory(Store store, std::string const& query);
-    // Añade las colecciones recientes de custom-cursor a las fijas. En
-    // rw-designer no hay categorias, asi que responde con las fijas.
+    // Adds custom-cursor recents to the fixed ones.
     static void fetchCategories(Store store, CategoryCallback cb);
 
     static void fetchListing(Store store, Category const& category, int page, ListingCallback cb);
     static void fetchDetail(Listing const& listing, DetailCallback cb);
 
-    // Solo desde una accion explicita del usuario.
+    // Only from explicit user action.
     static void download(std::string const& url, BytesCallback cb);
     static void download(std::string const& url, std::string const& fallbackUrl, BytesCallback cb);
 

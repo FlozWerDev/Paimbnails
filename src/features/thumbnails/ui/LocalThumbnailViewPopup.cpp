@@ -228,7 +228,7 @@ void LocalThumbnailViewPopup::onInfo(CCObject*) {
          if (!item.creator.empty()) creator = item.creator;
          if (!item.date.empty()) date = item.date;
 
-// Derive a date when the id looks like a timestamp.
+        // Timestamp-looking ids derive a date.
         if (date == "Unknown" && id.length() >= 13) {
             auto numResult = geode::utils::numFromString<long long>(id);
             if (numResult.isOk()) {
@@ -375,7 +375,7 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
     int requestToken = ++m_galleryRequestToken;
     auto& thumb = m_thumbnails[index];
 
-// Cache by thumbnail id, not request token.
+    // Cache key is the thumbnail id, not the request token.
     std::string url = thumb.url;
     if (!thumb.id.empty()) {
         auto sep = (url.find('?') == std::string::npos) ? "?" : "&";
@@ -422,7 +422,7 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
         return;
     }
 
-// Show RAM hits immediately; otherwise wait for the callback.
+    // RAM hits show at once; misses wait for the callback.
     {
         auto& cache = paimon::cache::ThumbnailCache::get();
         auto ramTex = cache.getUrlFromRam(url);
@@ -454,7 +454,7 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
         }
     }
 
-// A manual open clears the failure marker and allows a retry.
+    // Manual open clears the failure marker for a retry.
     {
         auto& cache = paimon::cache::ThumbnailCache::get();
         std::string normalizedUrl = ThumbnailLoader::normalizeUrlKey(url);
@@ -609,8 +609,7 @@ void LocalThumbnailViewPopup::onExit() {
         m_invalidationListenerId = 0;
     }
 
-    // Stop the video and detach menus BEFORE removeAllChildren: they live
-    // under m_mainLayer, which would free them and leave these derefs dangling.
+    // Stop video and detach menus BEFORE removeAllChildren: m_mainLayer would free them mid-deref.
     if (m_thumbnailSprite) {
         if (auto* videoSprite = geode::cast::typeinfo_cast<VideoThumbnailSprite*>(m_thumbnailSprite)) {
             videoSprite->stop();
@@ -708,7 +707,7 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
     int  verificationCategory = paimon::SessionState::consumeInt(vctx.verificationCategory);
     m_verificationCategory = verificationCategory;
 
-    // When opened outside verification, restore pending moderator suggestions.
+    // Outside verification: restore pending moderator suggestions.
     if (verificationCategory < 0) {
         std::string modCode = geode::Mod::get()->getSavedValue<std::string>("mod-code", "");
         if (!modCode.empty()) {
@@ -849,7 +848,7 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
         WeakRef<LocalThumbnailViewPopup> self = this;
         ThumbnailAPI::get().getThumbnails(m_levelID, [self](bool success, std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbs) {
             auto popup = self.lock();
-            // Cached results may resolve before the popup is attached.
+            // Cached results can resolve before attach.
             if (!popup || popup->m_isExiting || !popup->m_mainLayer) return;
 
             if (!success || thumbs.empty()) {
@@ -928,7 +927,7 @@ void LocalThumbnailViewPopup::tryLoadFromMultipleSources(float maxWidth, float m
             m_localCurrentIndex, m_levelID);
     }
 
-    // Local PNG/JPG fallback; videos go through the gallery API to avoid a flash.
+    // Local PNG/JPG fallback; videos use the gallery API to avoid a flash.
     auto localPath = LocalThumbs::get().findAnyThumbnail(m_levelID);
     if (localPath) {
         auto lowerPath = geode::utils::string::toLower(*localPath);
@@ -943,7 +942,7 @@ void LocalThumbnailViewPopup::tryLoadFromMultipleSources(float maxWidth, float m
 
     m_viewingLocal = false;
 
-    // Check the URL-keyed RAM cache used by LevelCell.
+    // URL-keyed RAM cache shared with LevelCell.
     {
         auto& cache = paimon::cache::ThumbnailCache::get();
         std::string mainUrl = ThumbnailAPI::get().getThumbnailURL(m_levelID);
@@ -958,7 +957,7 @@ void LocalThumbnailViewPopup::tryLoadFromMultipleSources(float maxWidth, float m
 }
 
 bool LocalThumbnailViewPopup::tryLoadFromCache(float maxWidth, float maxHeight, CCSize content, bool openedFromReport) {
-    // ThumbnailLoader owns the disk-cache path.
+    // Disk-cache path lives in ThumbnailLoader.
     auto ramTex = paimon::cache::ThumbnailCache::get().getFromRam(m_levelID, false);
     if (!ramTex.has_value()) {
         ramTex = paimon::cache::ThumbnailCache::get().getFromRam(m_levelID, true);
@@ -997,7 +996,7 @@ void LocalThumbnailViewPopup::tryDirectServerDownload(float maxWidth, float maxH
         }
 
         if (success && !data.empty()) {
-            // Detect MP4 data via the ftyp box at offset 4.
+            // MP4 sniff: ftyp box at offset 4.
             bool isMp4 = data.size() >= 8 && data[4] == 'f' && data[5] == 't' && data[6] == 'y' && data[7] == 'p';
             if (isMp4) {
                 std::string cacheKey = fmt::format("direct_video_{}", safeRef->m_levelID);
@@ -1041,8 +1040,7 @@ void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoS
 
     clearGalleryDisplay();
 
-    // Keep video invisible until first frame is decoded - the 1x1 placeholder
-    // texture stretched to video dimensions causes glitchy rendering artifacts
+    // Hidden until first frame: the stretched 1x1 placeholder glitches.
     m_videoPlaying = false;
     videoSprite->setVisible(false);
     videoSprite->setOpacity(0);
@@ -1069,7 +1067,7 @@ void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoS
     m_thumbnailTexture = nullptr;
     resetZoomGestureState();
 
-    // Play muted to start decoding - first frame callback will pause and apply scale
+    // Muted play kickstarts decode; first-frame callback pauses and scales.
     videoSprite->play();
 
     Ref<LocalThumbnailViewPopup> safeRef = this;
@@ -1101,7 +1099,7 @@ void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoS
         readySprite->setVisible(true);
         readySprite->setOpacity(255);
 
-        // First frame decoded - pause video so play button overlay works
+        // First frame in: pause so the play overlay works.
         if (!safeRef->m_videoPlaying) {
             readySprite->pause();
         }
@@ -1477,7 +1475,7 @@ void LocalThumbnailViewPopup::clearGalleryDisplay() {
     }
     m_thumbnailTexture = nullptr;
 
-    // Keep the clip node; only replace its sprites.
+    // Clip node survives; only its sprites swap.
     if (m_clippingNode) {
         m_clippingNode->removeAllChildren();
         // Restore the clip background.
@@ -2008,7 +2006,7 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
     auto doSave = [safeRef, weakRef, levelID, notifyResult](std::filesystem::path savePath) {
         log::debug("Save path chosen: {}", geode::utils::string::pathToString(savePath));
 
-        // Prefer existing thumb/cache files.
+    // Prefer existing thumb/cache files.
         std::optional<std::string> pathStr = LocalThumbs::get().findAnyThumbnail(levelID);
         bool fromCache = false;
         if (!pathStr) {
@@ -2079,7 +2077,7 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
             return;
         }
 
-        // No disk path: save the displayed texture.
+        // No disk path: persist the displayed texture.
         if (safeRef->m_thumbnailTexture && safeRef->m_thumbnailTexture->getPixelsWide() > 0 && safeRef->m_thumbnailTexture->getPixelsHigh() > 0) {
             int w = safeRef->m_thumbnailTexture->getPixelsWide();
             int h = safeRef->m_thumbnailTexture->getPixelsHigh();
@@ -2200,7 +2198,7 @@ void LocalThumbnailViewPopup::onDeleteReportedThumb(CCObject*) {
                 PaimonNotify::create(Localization::get().getString("level.deleted_server").c_str(), NotificationIcon::Success)->show();
                 log::info("[ThumbnailViewPopup] Miniatura {} eliminada del servidor", levelID);
 
-                 // Invalidate cache and refresh the gallery.
+                // Invalidate cache and refresh the gallery.
                 ThumbnailTransportClient::get().invalidateGalleryMetadata(levelID);
                 ThumbnailLoader::get().invalidateLevel(levelID);
 
@@ -2262,7 +2260,7 @@ void LocalThumbnailViewPopup::onAcceptThumbBtn(CCObject*) {
                     PaimonNotify::create(Localization::get().getString("level.accepted").c_str(), NotificationIcon::Success)->show();
                     log::info("[ThumbnailViewPopup] Miniatura aceptada para nivel {}", levelID);
 
-                     // Invalidate cache so the gallery reloads on return.
+                    // Invalidate cache so the gallery reloads on return.
                     ThumbnailTransportClient::get().invalidateGalleryMetadata(levelID);
                     ThumbnailLoader::get().invalidateLevel(levelID);
                 } else {
@@ -2753,7 +2751,7 @@ bool LocalThumbnailViewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
         return true;
     }
 
-    // A tap on the video area toggles playback.
+    // Tap on the video area toggles playback.
     if (m_videoPlaying && m_thumbnailSprite) {
         auto* videoSprite = geode::cast::typeinfo_cast<VideoThumbnailSprite*>(m_thumbnailSprite);
         if (videoSprite) {

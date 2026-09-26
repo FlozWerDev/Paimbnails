@@ -4,19 +4,15 @@
 #include <string_view>
 #include <vector>
 
-// Resolves a mod repository page URL to the raw-file base its preview
-// images can be fetched from. Strip idea compatible with "Mod Previews" by
-// Alphalaneous; parsing below is our own (see THIRD-PARTY-NOTICES.md).
+// repo page URL -> raw-file base for preview images (see THIRD-PARTY-NOTICES.md).
+// strip idea compatible with "Mod Previews" by Alphalaneous; parsing our own.
 
 namespace paimon::mod_previews {
 
 // Raw-file base for one repository, branch still unresolved.
 struct PreviewSource {
     bool ok = false;
-    // Host-specific raw base WITHOUT the branch, e.g.
-    // "https://raw.githubusercontent.com/<owner>/<repo>".
-    // Manifest: <assetBase>/<branch>/mod.json
-    // Thumbs:   <assetBase>/<branch>/previews/preview-<n>.png
+    // host raw base WITHOUT branch; manifest/thumbs append "<branch>/..." below.
     std::string assetBase;
 };
 
@@ -48,8 +44,7 @@ inline bool parseHttpUrl(std::string_view url, std::string& hostOut,
         }
     }
     if (!cur.empty() && cur != ".") segmentsOut.push_back(cur);
-    // The last segment may carry the clone suffix ("repo.git"); a bare
-    // ".git" segment only happens for degenerate URLs, drop it too.
+    // trailing ".git" is a clone suffix (bare ".git" only on degenerate URLs).
     if (!segmentsOut.empty()) {
         auto& last = segmentsOut.back();
         if (last == ".git") segmentsOut.pop_back();
@@ -67,8 +62,7 @@ inline std::string joinSegments(std::vector<std::string> const& segs) {
     return out;
 }
 
-// Maps a repo page URL to its raw asset base. Table-driven per host so
-// adding a forge means adding a row, not a code path.
+// table-driven per host: a new forge is a new row, not a code path.
 inline PreviewSource resolvePreviewSource(std::string const& pageUrl) {
     std::string host;
     std::vector<std::string> segs;

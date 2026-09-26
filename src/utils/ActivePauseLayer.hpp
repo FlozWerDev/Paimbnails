@@ -6,8 +6,8 @@
 #include <atomic>
 
 namespace paimon {
-    // Raw atomic instead of WeakRef: only compared for identity, never dereferenced —
-    // avoids the dangling-WeakRef crash in WeakRefPool::check; stale values are overwritten.
+    // raw atomic, identity-compared only: dodges the dangling-WeakRef crash
+    // in WeakRefPool::check; stale values get overwritten.
     inline std::atomic<PauseLayer*>& activePauseLayerAtomic() {
         static std::atomic<PauseLayer*> s_activePauseLayer{nullptr};
         return s_activePauseLayer;
@@ -22,19 +22,18 @@ namespace paimon {
     }
 
     inline void clearActivePauseLayer(PauseLayer* layer) {
-        // Only clear if the active PauseLayer is exactly this one, so overlapping
-        // PauseLayers don't clear the wrong (newer) one.
+        // only clear when still ours; overlapping PauseLayers must not clear the newer one.
         auto& slot = activePauseLayerAtomic();
         PauseLayer* expected = layer;
         slot.compare_exchange_strong(expected, nullptr, std::memory_order_acq_rel);
     }
 
-    // Tell PauseZoomManager (in PlayLayer.cpp) the PauseLayer is closing, so its
-    // ticker stops calling showLayer()/setVisible() during the exit animation.
+    // tell PauseZoomManager (PlayLayer.cpp) the layer is closing so its ticker
+    // stops calling showLayer()/setVisible() mid exit animation.
     void notifyPauseClosing();
 
-    // "Capture in progress" flag: keeps PauseZoomManager::update() from restoring
-    // visibility mid-capture, which would leave the menu in the screenshot.
+    // capture flag: keeps PauseZoomManager::update() from restoring visibility
+    // mid-capture, which would leak the menu into the screenshot.
     inline std::atomic<bool>& captureInProgressFlag() {
         static std::atomic<bool> s_inProgress{false};
         return s_inProgress;
@@ -48,8 +47,8 @@ namespace paimon {
         captureInProgressFlag().store(inProgress, std::memory_order_release);
     }
 
-    // "PauseLayer hidden by zoom" flag: visit() returns early when set, regardless of
-    // m_bVisible, which something else keeps flipping back to true.
+    // zoom-hide flag: visit() returns early when set, even though something
+    // else keeps flipping m_bVisible back to true.
     inline std::atomic<bool>& pauseZoomHiddenFlag() {
         static std::atomic<bool> s_zoomHidden{false};
         return s_zoomHidden;
@@ -59,8 +58,8 @@ namespace paimon {
         return pauseZoomHiddenFlag().load(std::memory_order_acquire);
     }
 
-    // CCNode::visit filter hook (PaimonPauseZoomVisitFilter): kept disabled except while
-    // pause-zoom hides the layer, so the 99.9% of frames pay no trampoline overhead.
+    // CCNode::visit filter hook: enabled only while pause-zoom hides the layer,
+    // so normal frames pay no trampoline overhead.
     inline std::atomic<geode::Hook*>& pauseZoomVisitHookSlot() {
         static std::atomic<geode::Hook*> s_hook{nullptr};
         return s_hook;
@@ -79,8 +78,8 @@ namespace paimon {
         }
     }
 
-    // Scan the scene for a real PauseLayer: the atomic registry can miss one that exists
-    // before customSetup runs (e.g. Esc + capture-key in the same frame).
+    // scan for a real PauseLayer; the atomic misses ones predating customSetup
+    // (e.g. Esc + capture key in the same frame).
     inline bool hasPauseLayerInScene() {
         auto* director = cocos2d::CCDirector::get();
         if (!director) return false;

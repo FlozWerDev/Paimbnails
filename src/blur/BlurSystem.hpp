@@ -72,8 +72,7 @@ public:
     );
 
     void clearBlurCache();
-    // Cancela jobs y suelta texturas RAM antes de que GD recree el contexto GL;
-    // el sistema sigue usable y los blurs se regeneran lazy tras el reload.
+    // drops jobs and textures on GL reload; blurs rebuild lazily
     void onGLContextReload();
     void onWindowResized(int /*w*/, int /*h*/) {}
     void destroy();
@@ -153,4 +152,15 @@ private:
     void onJobCompleted(BlurKey const& key, cocos2d::CCSprite* result);
     void drainPendingJobs();
     bool tryDispatchFromDisk(BlurKey const& key, BlurFlavor flavor, QueuedJob const& fallbackJob);
+    void abortJobs();
+    void enqueueBuild(
+        cocos2d::CCTexture2D* source,
+        cocos2d::CCSize const& targetSize,
+        float intensity,
+        std::string cacheKey,
+        std::function<void(cocos2d::CCSprite*)> onReady,
+        BlurFlavor flavor,
+        bool fastMode,
+        bool priority
+    );
 };

@@ -1,7 +1,7 @@
 #pragma once
 
-// GameLevelManager solo admite un delegate: las busquedas salen de una en una
-// por una FIFO; resultados cacheados, la UI repinta segun revision().
+// GameLevelManager takes a single delegate: lookups leave one at a time
+// through a FIFO; results are cached, the UI repaints on revision().
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/GJGameLevel.hpp>
@@ -23,7 +23,7 @@ struct LevelBrief {
     int stars = 0;
     int difficulty = 0;  // value understood by GJDifficultySprite
     bool found = false;
-    int length = 0;      // 0 tiny .. 4 XL, sin sentido en plataformas
+    int length = 0;      // 0 tiny .. 4 XL, meaningless on platformer
     bool platformer = false;
     int filterDifficulty = 0;
 };
@@ -38,11 +38,11 @@ public:
     // Queues a lookup if the ID is not cached yet.
     void request(int levelID);
 
-    // Nivel ya resuelto, listo para abrir un LevelInfoLayer.
+    // resolved level, ready to open a LevelInfoLayer.
     GJGameLevel* peekLevel(int levelID) const;
 
-    // Como request(), pero avisa cuando el nivel esta listo (nullptr si no se
-    // pudo bajar). Si ya esta en cache, el callback corre al instante.
+    // like request(), but fires when the level is ready (nullptr if the
+    // download failed). Cached levels invoke the callback at once.
     void fetch(int levelID, std::function<void(GJGameLevel*)> callback);
 
     // Drives the queue and drops stalled lookups; call it from the UI refresh.

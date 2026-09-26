@@ -1,6 +1,6 @@
 #pragma once
 
-// Sequentially hide and fade in nodes created in the same frame.
+// staggered hide + fade-in for nodes created in the same frame.
 
 #include <Geode/Geode.hpp>
 #include "MainThreadDelay.hpp"
@@ -18,10 +18,10 @@ struct RevealOpts {
 
 namespace detail {
 
-// Tag used to avoid stacking fades on one node.
+// tag to avoid stacking fades on one node.
 inline constexpr int kFadeActionTag = 0x46414445;
 
-// Hide immediately, recursing to the first RGBA descendant when needed.
+// hide immediately, recursing to the first RGBA descendant when needed.
 inline void prehide(cocos2d::CCNode* node, bool recurse, int depth) {
     if (!node || depth > 10) return;
 
@@ -41,7 +41,7 @@ inline void prehide(cocos2d::CCNode* node, bool recurse, int depth) {
     }
 }
 
-// Start the fade-in, mirroring prehide()'s recursion.
+// fade-in, mirroring prehide's recursion.
 inline void fadeIn(cocos2d::CCNode* node, float duration, bool recurse, int depth) {
     if (!node || depth > 10) return;
 

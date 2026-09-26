@@ -68,8 +68,7 @@ $execute {
     ).leak();
 }
 
-// swapBuffers lives on CCEGLView, whose overrides only ship on Windows/Android
-// (macOS/iOS use other view classes), so the capture hook stays narrow.
+// swapBuffers only exists on Windows/Android views; other platforms use other classes.
 #if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_ANDROID)
 
 class $modify(CaptureView, CCEGLView) {
@@ -87,10 +86,10 @@ class $modify(CaptureView, CCEGLView) {
             paimon::editorcp::ColorPickerOverlay::onPreSwapSample();
         }
 
-        // RTX repinta el frame antes del cursor.
+        // RTX before cursor
         paimon::rtx::RTXRenderer::get().renderFrame();
 
-        // Cursor last: visible but out of screenshots.
+        // cursor last: visible but out of screenshots
         CursorManager::get().renderOverlay();
 
         CCEGLView::swapBuffers();
@@ -118,9 +117,7 @@ class $modify(CaptureTouchView, CCEGLViewProtocol) {
     void handleTouchesBegin(int num, int ids[], float xs[], float ys[], double timestamp) {
         CCEGLViewProtocol::handleTouchesBegin(num, ids, xs, ys, timestamp);
 
-        if (!PetManager::get().config().enableClickInteraction) {
-            return;
-        }
+        if (!PetManager::get().config().enableClickInteraction) return;
 
         for (int i = 0; i < num; ++i) {
             PetManager::get().registerClick({xs[i], ys[i]});

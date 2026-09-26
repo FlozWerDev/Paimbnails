@@ -16,10 +16,10 @@ class GJSearchObject;
 
 namespace paimon::searchhistory {
 
-// Una entrada del historial: la query + el snapshot completo de filtros.
+// One entry: the query plus the full filter snapshot.
 struct Entry {
-    int64_t time = 0;            // epoch seconds (para mostrar la fecha)
-    int type = 0;                // 0 = niveles, 1 = listas, 2 = usuarios
+    int64_t time = 0;            // epoch seconds (date display)
+    int type = 0;                // 0 = levels, 1 = lists, 2 = users
     std::string query;
     std::vector<int> difficulties;
     std::vector<int> lengths;
@@ -39,16 +39,16 @@ struct Entry {
     bool noStar = false;
     bool star = false;
 
-    // Dos entradas son "la misma" si comparten dia, tipo, query y filtros.
+    // Two entries match when day, type, query and filters agree.
     bool operator==(const Entry& other) const;
-    // Texto corto con los filtros activos (para el subtitulo de la celda).
+    // Short text with the active filters (cell subtitle).
     std::string summary() const;
 };
 
-// Mas reciente primero. Vive en memoria; se persiste en load()/save().
+// Newest first. Lives in memory; persisted in load()/save().
 extern std::vector<Entry> history;
 
-// Inserta (o re-promueve) una busqueda al frente del historial.
+// Pushes (or re-promotes) a search to the front.
 void add(GJSearchObject* search, std::vector<int> difficulties, std::vector<int> lengths, int type);
 void remove(int index);
 void clear();

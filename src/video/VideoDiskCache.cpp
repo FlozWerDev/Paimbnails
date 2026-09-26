@@ -6,13 +6,12 @@
 namespace paimon::video {
 namespace fs = std::filesystem;
 
-// Mirror of getAudioCacheDir() in AudioExtractor.cpp.
-// Kept in sync: both use temp_directory_path() / "paimbnails_audio_cache".
-static std::filesystem::path audioCacheDir() {
-    return std::filesystem::temp_directory_path() / "paimbnails_audio_cache";
+// Keep in sync with getAudioCacheDir() in AudioExtractor.cpp.
+static fs::path audioCacheDir() {
+    return fs::temp_directory_path() / "paimbnails_audio_cache";
 }
 
-static int removeDirectoryFiles(std::filesystem::path const& dir) {
+static int removeDirectoryFiles(fs::path const& dir) {
     std::error_code ec;
     if (!fs::exists(dir, ec) || ec) {
         return 0;

@@ -13,27 +13,26 @@ namespace paimon::gifimport {
 
 namespace {
 
-// Giros que se prueban al estirar la elipse. Dieciseis reparten media vuelta con
-// mayor precision angular, alineandose mucho mejor con trazos en diagonal.
+// angles tried when stretching the ellipse. Sixteen split the half-turn for
+// diagonal strokes.
 constexpr int kAngles = 16;
-// Cinturas probadas: desde circulo entero hasta huso fino de 0.22 para lineas delgadas.
+// waists tried: full circle down to a 0.22 spindle for thin lines.
 constexpr std::array<float, 6> kWaists{1.f, 0.82f, 0.65f, 0.48f, 0.35f, 0.22f};
-// Con que paso se camina el eje al medir hasta donde llega la elipse.
+// axis step when measuring ellipse reach.
 constexpr float kWalk = 0.5f;
-// Hasta donde se camina.
+// how far to walk.
 constexpr float kReach = 64.f;
-// Radio menor de la elipse mas pequena.
+// minor radius of the smallest ellipse.
 constexpr float kMinRadius = 0.5f;
-// Aire que se le da a la elipse ya elegida, de mas a menos.
+// bleed given to the chosen ellipse, largest first.
 constexpr std::array<float, 4> kBleeds{0.5f, 0.35f, 0.2f, 0.1f};
-// Cuanto puede asomar una elipse sobre un color que se ve.
+// how far an ellipse may spill over a visible color.
 constexpr float kSpill = 0.14f;
 
 struct Field {
     int width = 0;
     int height = 0;
-    // Cuanto se puede alejar del centro de cada celda sin salirse de donde este
-    // color puede pintar sin que se note.
+    // per-cell clearance from its center before this color would show.
     std::vector<float> clearance;
 
     float at(float x, float y) const {
@@ -64,9 +63,8 @@ Primitive ellipse(
     };
 }
 
-// Cuantas celdas de las que faltan se lleva la elipse, y cuantas de las que ya
-// estaban pintadas repite. Lo segundo no estorba —son del mismo color— pero entre
-// dos que se llevan lo mismo gana la que menos se solape.
+// missing cells the ellipse takes plus already-painted ones it repeats.
+// Repeats don't hurt (same color), but ties break toward less overlap.
 struct Gain {
     int fresh = 0;
     int repeated = 0;
@@ -114,8 +112,8 @@ void consume(
     }
 }
 
-// La elipse entra entera si el circulo mas gordo cabe en todo el recorrido:
-// una elipse es la union de los circulos que se apoyan en su eje.
+// the ellipse fits whole when the fattest circle fits the whole run:
+// an ellipse is the union of the circles resting on its axis.
 Primitive stretch(
     Field const& field,
     Point const& seed,
@@ -234,9 +232,9 @@ std::vector<Primitive> vectorizeCircles(
             target[static_cast<std::size_t>(position)] = 1;
         }
     }
-    // Por donde la elipse puede crecer sin que se vea: sus propias celdas y las
-    // que una capa de mas arriba tapa despues. El hueco no entra —ahi crecer solo
-    // engorda la silueta— pero se deja pasar el pico de las esquinas.
+    // where the ellipse may grow unseen: its own cells plus ones an upper layer
+    // covers later. Void excluded (growth only fattens the silhouette), except
+    // corner peaks.
     std::vector<std::uint8_t> room = target;
     if (blocked.size() == cells) {
         for (std::size_t position = 0; position < cells; ++position) {
@@ -254,8 +252,8 @@ std::vector<Primitive> vectorizeCircles(
     field.width = width;
     field.height = height;
     field.clearance = distanceField(room, width, height);
-    // La distancia es de centro a centro de celda, y la celda de al lado empieza
-    // media antes; sin descontarla, la elipse se sale siempre esa media celda.
+    // distance runs center to center; the neighbor cell starts half early,
+    // so without this the ellipse always overshoots that half cell.
     for (auto& value : field.clearance) value = std::max(value - 0.5f, 0.f);
 
     std::vector<std::uint8_t> remaining = target;
@@ -290,9 +288,8 @@ std::vector<Primitive> vectorizeCircles(
         }
         std::vector<int> pending = component;
         while (!pending.empty()) {
-            // Se empieza siempre por donde la mancha es mas gorda: ahi cabe la
-            // elipse mas grande, y las de despues se van repartiendo lo que ella
-            // deja, que es como se pinta a manchas y no celda a celda.
+            // always seed where the blob is fattest: biggest ellipse first, the
+            // rest split its leftovers, painting by blob instead of cell by cell.
             int seedCell = -1;
             float widest = -1.f;
             std::size_t alive = 0;
@@ -333,14 +330,14 @@ std::vector<Primitive> vectorizeCircles(
                 }
             }
             if (bestGain.fresh <= 0) {
-                // Una celda a la que ninguna elipse llega sin taparle algo a otro
-                // color se queda con la suya, del tamano justo para pintarse el
-                // centro. Sin esto el bucle no terminaria.
+                // a cell no ellipse reaches without covering another color keeps
+                // its own, just big enough to paint its center. Without this
+                // the loop never ends.
                 best = ellipse(seed, kMinRadius, kMinRadius, 0.f, color, layer);
                 remaining[static_cast<std::size_t>(seedCell)] = 0;
             }
-            // Con el aire justo las de al lado se tocan y el trazo sale continuo,
-            // pero solo hasta donde no tape a otro color.
+            // just enough bleed for neighbors to touch (continuous stroke),
+            // stopping where another color starts.
             for (float bleed : kBleeds) {
                 Primitive fatter = best;
                 fatter.width += bleed * 2.f;

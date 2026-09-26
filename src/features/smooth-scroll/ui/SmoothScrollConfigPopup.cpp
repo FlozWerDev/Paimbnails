@@ -33,7 +33,7 @@ bool SmoothScrollConfigPopup::init() {
 
     rebuild();
 
-    // Boton fijo abajo: restaurar valores por defecto
+    // Pinned bottom button: restore defaults
     auto* resetSpr = ButtonSprite::create("Restaurar", "goldFont.fnt", "GJ_button_06.png", 0.7f);
     resetSpr->setScale(0.55f);
     auto* resetBtn = CCMenuItemExt::createSpriteExtra(resetSpr,
@@ -55,8 +55,7 @@ bool SmoothScrollConfigPopup::init() {
 }
 
 void SmoothScrollConfigPopup::scheduleRebuild() {
-    // Diferido al siguiente tick para no destruir el control que disparo
-    // el cambio mientras el touch dispatcher lo sigue usando.
+    // Deferred a tick so the firing control isn't destroyed while the dispatcher uses it.
     Ref<SmoothScrollConfigPopup> self = this;
     Loader::get()->queueInMainThread([self] {
         if (self && self->getParent()) self->rebuild();
@@ -71,7 +70,7 @@ void SmoothScrollConfigPopup::rebuild() {
 
     auto content = m_mainLayer->getContentSize();
     float scrollW = content.width - 24.f;
-    float scrollH = content.height - 36.f - 38.f; // titulo arriba, boton abajo
+    float scrollH = content.height - 36.f - 38.f; // title top, button bottom
     float innerW = kit::cardInnerWidth(scrollW);
 
     auto fmtTimes = [](double v) { return fmt::format("x{:.2f}", v); };
@@ -89,7 +88,7 @@ void SmoothScrollConfigPopup::rebuild() {
             scheduleRebuild();
         });
 
-    // Tarjeta: comportamiento en menus
+    // Card: menu behavior
     auto* menusCard = kit::makeCard(scrollW, "En los menus", {120, 210, 255}, {
         kit::makeSliderRow(innerW,
             "Velocidad",
@@ -103,7 +102,7 @@ void SmoothScrollConfigPopup::rebuild() {
             [](double v) { (void)Mod::get()->setSavedValue<double>("smooth-scroll-smoothness", v); }),
     });
 
-    // Tarjeta: comportamiento en el editor
+    // Card: editor behavior
     auto* editorCard = kit::makeCard(scrollW, "En el editor", {130, 240, 170}, {
         kit::makeToggleRow(innerW,
             "Zoom suave",

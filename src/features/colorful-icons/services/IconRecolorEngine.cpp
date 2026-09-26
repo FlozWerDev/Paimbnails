@@ -38,13 +38,11 @@ void forEachItemIcon(CCNode* root, Fn&& cb) {
 
 bool isLockedIcon(GJItemIcon* icon, SimplePlayer* sp) {
     if (icon && icon->getUserObject(kIconLockedKey)) return true;
-    // Fallback for icons locked before our hook stamped them: vanilla
-    // changeToLockedState leaves the first layer at opacity 120.
+    // Fallback for pre-hook locks: vanilla leaves the first layer at opacity 120.
     return sp && sp->m_firstLayer && sp->m_firstLayer->getOpacity() == 120;
 }
 
-// Collect icons across all cached ListButtonBar pages; swiped-away pages are
-// detached from the node tree, so a subtree walk misses them.
+// Swiped-away ListButtonBar pages detach; subtree walks miss them, so collect across cached pages.
 void collectListBarIcons(ListButtonBar* bar, std::vector<GJItemIcon*>& out) {
     if (!bar || !bar->m_pages) return;
     int pageCount = bar->m_pages->count();
@@ -67,8 +65,7 @@ void collectListBarIcons(ListButtonBar* bar, std::vector<GJItemIcon*>& out) {
     }
 }
 
-// Snapshot of everything vanilla changeToLockedState touched; restore replays
-// it verbatim (hardcoded rebuilds wash locked icons out to white blobs).
+// Snapshot what vanilla changeToLockedState touched; restore replays it (rebuilds wash icons white).
 class LockedVanillaSnapshot : public CCObject {
 public:
     ccColor3B first{175, 175, 175};
@@ -214,8 +211,7 @@ void IconRecolorEngine::restoreOne(GJItemIcon* icon) {
     if (!sp) return;
 
     bool const locked = isLockedIcon(icon, sp);
-    // Icons we never touched are already vanilla; repainting them here only
-    // introduces drift from the real stock look.
+    // Untouched icons are already vanilla; repainting only drifts from stock.
     if (!locked && !icon->getUserObject(kIconRecoloredKey)) return;
 
     if (locked) {
@@ -224,8 +220,7 @@ void IconRecolorEngine::restoreOne(GJItemIcon* icon) {
         if (snap) {
             snap->replay(icon, sp);
         } else {
-            // No snapshot (icon locked before our hook existed): best-effort
-            // vanilla, which hides detail layers and keeps the icon dimmed.
+            // No snapshot (pre-hook lock): best-effort vanilla, hides detail, stays dimmed.
             sp->setVisible(true);
             if (sp->m_detailSprite) sp->m_detailSprite->setVisible(false);
             if (sp->m_birdDome)     sp->m_birdDome->setVisible(false);

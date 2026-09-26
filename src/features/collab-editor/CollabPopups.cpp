@@ -32,8 +32,7 @@ std::string trim(std::string value) {
     return value;
 }
 
-// Displayed codes use hyphens but the glyph isn't in every input font, so
-// strip non-alphanumerics and uppercase before matching.
+// Displayed codes use hyphens (missing from some fonts): strip and uppercase before matching.
 std::string normRoomCode(std::string value) {
     std::string out;
     for (char c : value) {
@@ -54,8 +53,7 @@ void showAlert(std::string const& message) {
 }
 
 std::string randomRoomCode() {
-    // 60 bits so room-code guessing stays impractical on the public endpoint.
-    // Exclude I/L/O/U to avoid ambiguous codes.
+    // 60-bit codes resist guessing; skip I/L/O/U lookalikes.
     auto code = geode::utils::random::generateString(12, "0123456789ABCDEFGHJKMNPQRSTVWXYZ");
     std::string out = "PAIM-";
     for (size_t i = 0; i < code.size(); ++i) {

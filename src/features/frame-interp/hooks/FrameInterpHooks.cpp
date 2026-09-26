@@ -14,8 +14,8 @@ inline paimon::frameinterp::FrameInterpolator& interp() {
 
 class $modify(PaimonFrameInterpBaseLayer, GJBaseGameLayer) {
     static void onModify(auto& self) {
-        // El ultimo de la cadena es el que envuelve al dibujado real: cualquier
-        // otro mod que enganche visit lo hace con las posiciones autenticas.
+        // Last in the chain wraps the real draw: any other mod hooking visit
+        // still sees the true positions.
         (void)self.setHookPriority("GJBaseGameLayer::visit", geode::Priority::VeryLate);
     }
 

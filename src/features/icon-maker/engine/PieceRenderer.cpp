@@ -14,9 +14,7 @@ namespace paimon::icon_maker {
 
 namespace {
 
-// Squashing one axis is the same picture whether you stretch the long side or
-// shrink the short one, because renderCustomImage refits the result either way.
-// Shrinking keeps the buffer from growing, so that is the direction taken.
+// squash direction is free (renderCustomImage refits either way); shrinking keeps the buffer small.
 ts::ImageBuffer applyAxisScale(ts::ImageBuffer source, float scaleX, float scaleY) {
     float const longest = std::max(scaleX, scaleY);
     if (longest <= 0.f) return source;
@@ -31,7 +29,7 @@ ts::ImageBuffer applyAxisScale(ts::ImageBuffer source, float scaleX, float scale
 }
 
 std::vector<std::uint8_t> alphaMask(ts::ImageBuffer const& pixels, int maskSize) {
-    // Ojo con el nombre: "small" es un macro de los headers de Windows.
+    // "small" is a Windows headers macro; never name a local that.
     auto scaled = pixels.resizedBilinear(maskSize, maskSize);
     std::vector<std::uint8_t> mask(static_cast<std::size_t>(maskSize) * maskSize, 0);
     auto const* src = scaled.data();

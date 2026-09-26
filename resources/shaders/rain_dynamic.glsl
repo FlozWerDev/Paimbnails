@@ -6,7 +6,7 @@ varying vec2 v_texCoord;
 uniform sampler2D u_texture;
 uniform float u_intensity;
 uniform float u_time;
-uniform vec2 u_cursor; // normalized 0..1 cursor/touch position
+uniform vec2 u_cursor;
 
 float rHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
@@ -22,15 +22,12 @@ void main() {
     vec4 color = texture2D(u_texture, v_texCoord);
     float str = u_intensity * 0.15;
     
-    // Rain intensity varies with distance from cursor (splash effect)
     float cursorDist = length(v_texCoord - u_cursor);
     float splash = 1.0 + (1.0 - smoothstep(0.0, 0.35, cursorDist)) * 0.8;
     
-    // Wind direction influenced by cursor horizontal position
     float wind = (u_cursor.x - 0.5) * 0.02 * u_intensity;
     vec2 windUV = v_texCoord + vec2(wind, 0.0);
     
-    // 3 layers with cursor-influenced intensity
     float rain = rainLayer(windUV, 4.0, 80.0, 0.0)
                + rainLayer(windUV, 6.0, 120.0, 1.0) * 0.75
                + rainLayer(windUV, 8.0, 160.0, 2.0) * 0.5;

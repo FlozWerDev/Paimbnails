@@ -9,15 +9,13 @@
 
 namespace paimon::scorecell {
 
-// Gradient background from the player's icon colors. Vector/opacity-only: the
-// quad itself never moves, so no uncovered corners or size breathing.
+// Icon-color gradient background. Vector/opacity-only: quad never moves, no uncovered corners.
 class ScoreGradientLayer : public cocos2d::CCLayerGradient {
     float m_hover = 0.f;
     double m_time = 0.0;
     GLubyte m_baseOpacity = 125;
     float m_idleSpeed = 1.f;
-    // Retriggered pulse: set to 1 on every mouse-enter rising edge, then
-    // decays exponentially. Vector/opacity-only, so the quad never moves.
+    // Retriggered pulse: 1 on every mouse-enter rising edge, then exponential decay.
     float m_burst = 0.f;
     bool m_wasHovered = false;
 
@@ -55,15 +53,13 @@ class ScoreGradientLayer : public cocos2d::CCLayerGradient {
         m_hover += (target - m_hover) * (1.f - std::exp(-10.f * dt));
         if (std::abs(m_hover - target) < 0.001f) m_hover = target;
 
-        // Rising edge: the cursor just entered the cell. Restart the pulse
-        // every time, so each pass gets its own animation.
+        // Rising edge: restart the pulse so each pass animates.
         if (hovered && !m_wasHovered) m_burst = 1.f;
         m_wasHovered = hovered;
         m_burst *= std::exp(-3.2f * dt);
         if (m_burst < 0.01f) m_burst = 0.f;
 
-        // Idle sheen: gentle sway of the gradient direction + a faint
-        // brightness breath. Fades out as hover takes over.
+        // Idle sheen: direction sway + faint breath, fading as hover takes over.
         constexpr double kTwoPi = 6.283185307179586;
         double ph = std::fmod(m_time * m_idleSpeed * kTwoPi / 5.0, kTwoPi);
         float sway = static_cast<float>(std::sin(ph)) * (1.f - m_hover);

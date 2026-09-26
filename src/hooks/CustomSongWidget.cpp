@@ -48,7 +48,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
 
         ~Fields() {
             if (!m_owner) return;
-            // Teardown runs after release; no widget access here.
+            // teardown runs after release; no widget access here
             if (paimon::isRuntimeShuttingDown()) {
                 m_owner = nullptr;
                 return;
@@ -78,10 +78,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
     }
 
     bool isPassthroughMode() {
-        if (paimon::isEditorScene()) return true;
-        if (m_isMusicLibrary || m_isInCell) return true;
-        if (isUnderEditorHierarchy()) return true;
-        return false;
+        return paimon::isEditorScene() || m_isMusicLibrary || m_isInCell || isUnderEditorHierarchy();
     }
 
     LevelInfoLayer* findLevelInfoLayer() {
@@ -109,14 +106,11 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         auto const title = std::string_view(m_songLabel->getString());
         auto const artist = std::string_view(m_artistLabel->getString());
         if (title == "SONG TITLE" || artist == "ARTIST NAME") return true;
-        if (resolveSongID() > 0) {
-            if (m_songInfoObject) {
-                return m_songInfoObject->m_songName.empty()
-                    || m_songInfoObject->m_artistName.empty();
-            }
-            return title.empty() || artist.empty();
+        if (resolveSongID() <= 0) return false;
+        if (m_songInfoObject) {
+            return m_songInfoObject->m_songName.empty() || m_songInfoObject->m_artistName.empty();
         }
-        return false;
+        return title.empty() || artist.empty();
     }
 
     void refreshSongLabelsFromCache() {
@@ -190,12 +184,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         CCPoint bgAnchor = bgNode->getAnchorPoint();
         int     bgZ      = bgNode->getZOrder();
 
-        log::info("[PaimonCSW] swapBg: pos({},{}) anchor({},{}) size {}x{} (unscaled {}x{}) z={}",
-            bgPos.x, bgPos.y, bgAnchor.x, bgAnchor.y,
-            bgSz.width, bgSz.height,
-            bgNode->getContentSize().width, bgNode->getContentSize().height,
-            bgZ);
-
         if (bgSz.width < 5.f || bgSz.height < 5.f) {
             log::debug("[PaimonCSW] swapBg: bg size too small, waiting");
             m_fields->m_clipperBuilt = false;
@@ -222,16 +210,12 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
 
         this->addChild(clip, bgZ);
         m_fields->m_clipper = clip;
-
-        log::info("[PaimonCSW] swapBg: clipper created & added OK");
         return true;
     }
 
     bool ensureClipper() {
-        if (m_fields->m_clipper && m_fields->m_clipper->getParent() == this) {
-            return true;
-        }
-        if (m_fields->m_clipper && m_fields->m_clipper->getParent() != this) {
+        if (m_fields->m_clipper) {
+            if (m_fields->m_clipper->getParent() == this) return true;
             m_fields->m_clipper = nullptr;
             m_fields->m_clipperBuilt = false;
         }
@@ -261,7 +245,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         m_fields->m_clipper->addChild(blurred, 1);
         blurred->runAction(CCFadeTo::create(0.3f, 255));
 
-        // Dark overlay keeps text readable.
+        // keep text readable
         if (!m_fields->m_clipper->getChildByID("paimon-song-dark-overlay"_spr)) {
             auto* dark = CCLayerColor::create(ccc4(0, 0, 0, 110));
             if (dark) {
@@ -274,7 +258,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         }
     }
 
-    // Async blur to avoid stalling a frame.
+    // async blur to avoid stalling a frame
     void applyBlurredThumbnail(CCTexture2D* texture) {
         if (!texture) {
             log::warn("[PaimonCSW] applyBlur: texture is null");
@@ -314,22 +298,15 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             return lil->m_level;
         }
         if (auto* pl = PlayLayer::get()) {
-            log::info("[PaimonCSW] findLevel: using PlayLayer fallback");
             return pl->m_level;
         }
-        log::debug("[PaimonCSW] findLevel: no owning level context yet");
         return nullptr;
     }
 
     void tryApplyBlur() {
-        if (!shouldManageBlur()) {
-            return;
-        }
+        if (!shouldManageBlur()) return;
 
-        if (!ensureClipper()) {
-            log::debug("[PaimonCSW] tryApplyBlur: clipper not ready yet");
-            return;
-        }
+        if (!ensureClipper()) return;
 
         auto* level = findLevel();
         if (!level) return;
@@ -346,12 +323,9 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         if (alreadyBound && hasBlur) return;
         m_fields->m_levelID = levelID;
 
-        log::info("[PaimonCSW] tryApplyBlur: requesting thumbnail for levelID={}", levelID);
-
-        // Reuse LevelInfoLayer texture to stay in sync.
+        // reuse LevelInfoLayer texture to stay in sync
         if (paimon::ThumbnailBackgroundChangedEvent::s_lastLevelID == levelID) {
             if (auto* lastTex = paimon::ThumbnailBackgroundChangedEvent::getLastTexture()) {
-                log::info("[PaimonCSW] using LevelInfoLayer last texture for {}", levelID);
                 applyBlurredThumbnail(lastTex);
                 return;
             }
@@ -359,12 +333,9 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
 
         auto ramTex = paimon::cache::ThumbnailCache::get().getFromRam(levelID, false);
         if (ramTex.has_value() && ramTex.value()) {
-            log::info("[PaimonCSW] RAM cache HIT for {}", levelID);
             applyBlurredThumbnail(ramTex.value());
             return;
         }
-
-        log::info("[PaimonCSW] RAM cache miss, starting async load for {}", levelID);
 
         auto* widget = asBase();
         uint32_t const generation = m_fields->m_callbackGeneration;
@@ -391,7 +362,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
                     return;
                 }
                 if (ok && tex) {
-                    log::info("[PaimonCSW] async load OK for {}", levelID);
                     w->applyBlurredThumbnail(tex);
                 } else {
                     log::warn("[PaimonCSW] async load FAILED for {} (ok={} tex={})",
@@ -411,7 +381,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         bool const hasBlur = m_fields->m_clipper
             && m_fields->m_clipper->getChildByID("paimon-song-blur"_spr) != nullptr;
         if (m_fields->m_levelID > 0 && hasBlur) return;
-        log::info("[PaimonCSW] retryBlur: trying again...");
         tryApplyBlur();
     }
 
@@ -429,7 +398,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             return true;
         }
 
-
         m_fields.self();
         m_fields->m_owner = asBase();
         paimon::csw::Lifecycle::registerWidget(m_fields->m_owner);
@@ -442,7 +410,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             auto* widget = asBase();
             m_fields->m_bgEventHandle = paimon::EventBus::get().subscribe<paimon::ThumbnailBackgroundChangedEvent>(
                 [widget](paimon::ThumbnailBackgroundChangedEvent const& e) {
-                    log::info("[PaimonCSW] event received: levelID={} tex={}", e.levelID, (void*)e.texture);
                     if (!paimon::csw::Lifecycle::isAlive(widget)) {
                         log::warn("[PaimonCSW] event: widget dead");
                         return;
@@ -454,21 +421,17 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
 
                     if (w->m_fields->m_levelID <= 0) {
                         auto* level = w->findLevel();
-                        if (level && level->m_levelID.value() == e.levelID) {
-                            w->m_fields->m_levelID = e.levelID;
-                            log::info("[PaimonCSW] late levelID resolve from event: {}", e.levelID);
-                        } else {
+                        if (!level || level->m_levelID.value() != e.levelID) {
                             log::warn("[PaimonCSW] event: cannot resolve levelID");
                             return;
                         }
+                        w->m_fields->m_levelID = e.levelID;
                     }
 
                     if (w->m_fields->m_levelID != e.levelID) return;
 
-                    log::info("[PaimonCSW] bg sync event for levelID={}, applying blur...", e.levelID);
                     w->applyBlurredThumbnail(e.texture);
                 });
-            log::info("[PaimonCSW] subscribed to ThumbnailBackgroundChangedEvent, handle={}", m_fields->m_bgEventHandle);
         }
 
         return true;
@@ -514,18 +477,15 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             return;
         }
 
-        // GD calls this from init() before parenting.
+        // GD calls this from init() before parenting
         CustomSongWidget::updateSongInfo();
 
         auto* widget = asBase();
         if (!paimon::csw::Lifecycle::isAlive(widget)) return;
         if (paimon::csw::Lifecycle::shouldSkipDelegateCall(widget)) return;
 
-        if (shouldManageBlur()) {
-            requestSongMetadataIfNeeded();
-        }
-
         if (!shouldManageBlur()) return;
+        requestSongMetadataIfNeeded();
         if (!this->getParent()) return;
 
         ensureClipper();

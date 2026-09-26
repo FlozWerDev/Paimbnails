@@ -125,7 +125,7 @@ void MenuPhysicsNode::captureHost() {
 
         float startAngle = -baseRot + tilt(gen);
         float angVel = spin(gen);
-        // Botones mas lejanos del centro giran un poco mas
+        // farther from center spins a bit more.
         angVel += (dl * 0.15f) * ((angVel >= 0.f) ? 1.f : -1.f);
 
         m_world.addBody(btn, worldPos, size, vel, angVel, startAngle);
@@ -145,7 +145,7 @@ void MenuPhysicsNode::update(float dt) {
         return;
     }
 
-    // Releer ajustes periodicamente para feedback al vivo desde el panel
+    // re-read settings on a timer: live feedback from the panel.
     m_configTimer += dt;
     if (m_configTimer >= kConfigRefresh) {
         m_configTimer = 0.f;

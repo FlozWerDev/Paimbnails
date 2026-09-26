@@ -1,10 +1,5 @@
-// Menu-doll gradient refresh, rethought for Paimbnails.
-//
-// Idea credit: "Icon Gradients" by zilko
-// (https://github.com/zilko144/icon-gradients-geode, unlicensed —
-// all rights reserved). Independent implementation: same behavior (stash
-// the menu doll, repaint it on init/reset, work around the doll-replacing
-// compat mod and the Known Players overlay), own expression.
+// Stashes the menu doll, repaints on init/reset (doll-replacer and Known Players
+// workarounds), after zilko's "Icon Gradients" (independent implementation; idea credit zilko144, unlicensed).
 
 #include "GradientMenuGameLayer.hpp"
 #include "GradientPlayerObject.hpp"

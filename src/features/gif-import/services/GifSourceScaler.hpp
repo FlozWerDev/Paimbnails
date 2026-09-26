@@ -6,14 +6,12 @@
 
 namespace paimon::gifimport {
 
-// Deja los frames en la resolucion que el trazado va a mirar de verdad antes de
-// soltar el hilo de trabajo. Un video de 1080p se pasa el rato promediando dos
-// millones de pixeles por frame para acabar en una rejilla de 64 celdas: esto lo
-// hace una vez, en la GPU cuando hay contexto y por reparto de hilos cuando no,
-// y todo lo que viene detras trabaja ya sobre la imagen pequena.
+// Frames land at the resolution tracing actually looks at before the worker
+// spins up. A 1080p video would average two million pixels per frame down to
+// a 64-cell grid: this does it once (GPU with context, thread pool without)
+// and everything downstream works on the small image.
 //
-// Hilo principal: toca GL. Devuelve la misma fuente cuando no hay nada que
-// recortar.
+// Main thread: touches GL. Returns the same source when there is nothing to trim.
 std::shared_ptr<SourceAnimation> prescaleSource(
     std::shared_ptr<SourceAnimation> source,
     int maxDimension,

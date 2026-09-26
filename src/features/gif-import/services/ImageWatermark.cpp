@@ -19,10 +19,9 @@ constexpr float kPi = 3.14159265358979323846f;
 constexpr float kSolidObjectSize = 30.f;
 constexpr float kSplitA = 0.381966f;
 constexpr float kSplitB = 0.438447f;
-// El marcado parte rectangulos en dos. En una tira girada corta de una curva,
-// esa operacion convertia una pieza valida en dos astillas de menos de 1.6
-// celdas; cada una mostraba un pico en la previsualizacion y hacia mas dificil
-// auditar el resultado. Las piezas largas siguen marcandose igual.
+// Marking splits rectangles in two. On a short rotated curve strip that turned
+// one valid piece into two sub-1.6-cell splinters, each peaking in preview and
+// harder to audit. Long pieces still mark the same.
 constexpr float kMinimumMarkedPart = 1.6f;
 constexpr float kTurnsA = 2160.f;
 constexpr float kTurnsB = 3960.f;
@@ -37,9 +36,8 @@ bool canSplit(Primitive const& object) {
     float folded = std::fmod(std::abs(object.rotation), 90.f);
     folded = std::min(folded, 90.f - folded);
     if (folded <= 7.f) return true;
-    // splitPrimitive elige el eje mayor (y en un cuadrado el hash decide). El
-    // factor menor de las dos proporciones es kSplitA, por eso este umbral
-    // garantiza que ninguna mitad marcada queda como una astilla.
+    // splitPrimitive picks the major axis (hash on squares). kSplitA is the
+    // smaller of the two ratios, so this floor keeps no marked half a splinter.
     return std::max(object.width, object.height) * kSplitA >=
         kMinimumMarkedPart;
 }

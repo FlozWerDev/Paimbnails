@@ -18,7 +18,7 @@ namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
 
-// Por debajo de esto el gesto todavia puede acabar siendo un toque.
+// below this a gesture can still settle as a tap.
 constexpr float kTapSlop = 5.f;
 
 constexpr float kHandleHit = 12.f;
@@ -70,8 +70,7 @@ bool EditorCanvas::init(float side, Callbacks callbacks) {
         }
     }
 
-    // El dibujo va recortado al marco, si no al acercar se sale por encima de
-    // los paneles de al lado.
+    // drawing is clipped to the frame, else zooming spills over side panels.
     auto* stencil = CCLayerColor::create({255, 255, 255, 255});
     stencil->setContentSize({side, side});
     auto* clip = CCClippingNode::create(stencil);
@@ -83,7 +82,7 @@ bool EditorCanvas::init(float side, Callbacks callbacks) {
     m_world->setContentSize({side, side});
     clip->addChild(m_world);
 
-    // El arte que cae dentro de este cuadro sale del tamano que usa el juego.
+    // art inside this box renders at the size the game uses.
     m_guide = CCLayerColor::create(ccc4(255, 255, 255, 16));
     float const guideSide = side * 0.5f;
     m_guide->setContentSize({guideSide, guideSide});
@@ -298,7 +297,7 @@ bool EditorCanvas::selectionBox(float& left, float& bottom,
 
     left   = static_cast<float>(render->boundsX) * k;
     right  = static_cast<float>(render->boundsX + render->boundsW) * k;
-    // Las filas del buffer van de arriba abajo y el nodo al reves.
+    // buffer rows run top-down, node bottom-up.
     top    = m_side - static_cast<float>(render->boundsY) * k;
     bottom = m_side - static_cast<float>(render->boundsY + render->boundsH) * k;
     return true;
@@ -330,7 +329,7 @@ void EditorCanvas::redrawOverlay() {
     float l, b, r, t;
     if (!selectionBox(l, b, r, t)) return;
 
-    // Mientras se arrastra la caja sigue al dedo sin esperar al re-dibujado.
+    // mid-drag the box tracks the finger without waiting for repaint.
     if (m_grab == Grab::Move) {
         float const dx = m_dragCenter.x - m_grabCenter.x;
         float const dy = m_dragCenter.y - m_grabCenter.y;
@@ -470,7 +469,7 @@ bool EditorCanvas::ccTouchBegan(CCTouch* touch, CCEvent*) {
         return true;
     }
 
-    // Dentro de la caja pero sobre un hueco transparente: sigue siendo mover.
+    // inside the box but over a transparent gap: still a move.
     if (hasBox && !m_selLocked &&
         m_startCanvas.x >= l && m_startCanvas.x <= r &&
         m_startCanvas.y >= b && m_startCanvas.y <= t) {
@@ -545,7 +544,7 @@ void EditorCanvas::ccTouchMoved(CCTouch* touch, CCEvent*) {
         case Grab::Rotate: {
             float const angle = std::atan2(canvasPoint.y - m_grabCenter.y,
                                            canvasPoint.x - m_grabCenter.x) * 180.f / kPi;
-            // atan2 crece en sentido antihorario y el giro de GD al reves.
+            // atan2 grows CCW, GD rotation the other way.
             float step = m_lastAngle - angle;
             while (step > 180.f) step -= 360.f;
             while (step < -180.f) step += 360.f;

@@ -5,14 +5,14 @@
 
 namespace paimon::twitch {
 
-// replaceScene: true al navegar entre pedidos (intercambia la escena para que
-// el boton de volver siga llevando a la lista), false al entrar desde la cola.
+// replaceScene: true between requests (swaps the scene so back returns to
+// the list), false on entry from the queue.
 void openRequestedLevel(int levelID, bool replaceScene);
 
-// Marca el pedido como revisado con el avance actual del jugador y lo abre.
+// marks the request reviewed with the player's current progress, then opens it.
 void playRequestAt(size_t index, bool replaceScene);
 
-// Indice del pedido con esa ID dentro de la cola, si sigue ahi.
+// queue index of that ID, if still there.
 std::optional<size_t> indexOfRequest(int levelID);
 
 } // namespace paimon::twitch

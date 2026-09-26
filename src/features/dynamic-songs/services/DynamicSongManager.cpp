@@ -150,7 +150,6 @@ float DynamicSongManager::getFadeDurationSec() const {
     return dynsong::config().fadeSeconds;
 }
 
-// Target volume combines the game slider and feature trim.
 float DynamicSongManager::dynamicTargetVolume() const {
     auto* engine = FMODAudioEngine::sharedEngine();
     float const base = engine ? engine->m_musicVolume : 1.0f;
@@ -316,7 +315,7 @@ void DynamicSongManager::applyStartPosition(int levelID, FMOD::Channel* existing
         unsigned int lengthMs = 0;
         if (currentSound) currentSound->getLength(&lengthMs, FMOD_TIMEUNIT_MS);
 
-// Clamp positions saved by older versions.
+        // Clamp positions saved by older versions.
         if (lengthMs > 0 && it->second < lengthMs) {
             bgCh->setPosition(it->second, FMOD_TIMEUNIT_MS);
         } else {
@@ -427,7 +426,6 @@ std::string DynamicSongManager::getNextRotationSong(GJGameLevel* level) {
 }
 
 void DynamicSongManager::playSong(GJGameLevel* level) {
-
     if (!Mod::get()->getSettingValue<bool>("dynamic-song")) return;
     if (!level) return;
     if (!isInValidLayer()) return;
@@ -436,8 +434,8 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
     if (paimon::isVideoAudioInteropActive()) return;
     auto* engine = FMODAudioEngine::sharedEngine();
     if (!engine || engine->m_musicVolume <= 0.0f) {
-        // The stream never joined the music group, so silencing the slider does
-        // not stop it: tear it down instead of leaving it buffering.
+        // The stream never joined the music group, so slider silence can't stop
+        // it: tear it down instead of leaving it buffering.
         if (m_streamingPreview || isStreamingPreviewPending() || m_awaitingDownloadOnly) {
             cancelFade();
             stopStreamingPreview();
@@ -498,7 +496,6 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
         songPath = getNextRotationSong(level);
     }
     if (songPath.empty()) {
-        // No local song; try streaming preview.
         startStreamingPreview(level);
         return;
     }
@@ -556,7 +553,7 @@ void DynamicSongManager::stopSong() {
     m_handoffLayer = DynSongLayer::None;
     m_handoffLevelID = 0;
 
-// Download-watch mode has no local channel to fade; stop polling and go idle.
+    // Download-watch mode has no local channel to fade; stop polling and go idle.
     if (m_awaitingDownloadOnly) {
         stopStreamingPreview();
         m_activeSongPath.clear();
@@ -611,7 +608,7 @@ void DynamicSongManager::fadeOutForLevelStart() {
     cancelFade();
     rememberPosition();
 
-// No local channel in download-watch mode; stop polling.
+    // No local channel in download-watch mode; stop polling.
     if (m_awaitingDownloadOnly) {
         stopStreamingPreview();
         m_activeSongPath.clear();
@@ -651,8 +648,6 @@ void DynamicSongManager::fadeOutForLevelStart() {
     m_state = DynState::FadingOut;
     fadeVolume(currentVol, 0.0f, getFadeDurationSec(), PostFadeAction::Cleanup);
 }
-
-// Gameplay handoff: the muffled window between pressing play and the level.
 
 namespace {
 
@@ -699,7 +694,6 @@ bool levelScreenStillShowing() {
         || scene->getChildByType<LevelSelectLayer>(0) != nullptr;
 }
 
-// Detect modal popups and loading circles on the scene or one child level down.
 bool sceneHasBlockingLayer() {
     auto* director = CCDirector::get();
     if (!director) return false;
@@ -1034,9 +1028,7 @@ bool DynamicSongManager::verifyPlayback() {
     if (!isActive() || m_activeSongPath.empty()) return false;
     if (!isInValidLayer()) return false;
 
-    if (isStreamingPreviewPending()) return true;
-
-    if (m_streamingPreview) return true;
+    if (isStreamingPreviewPending() || m_streamingPreview) return true;
 
     // Suspension is intentional external audio, not a hijack.
     if (m_state == DynState::Suspended) {

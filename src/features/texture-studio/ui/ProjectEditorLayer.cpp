@@ -2217,7 +2217,6 @@ void ProjectEditorLayer::renderPreviewAfterDelay(float) {
         bool wantFusion = hasSelection && setting.hasFusion
             && fusionMask && !fusionMask->empty()
             && fusionAsset && !fusionAsset->empty();
-        // Fusion stamp needs a mask.
         if (wantFusion) {
             FusionEngine::apply(preview.image, *fusionMask,
                 fusionAsset->frameAt(fusionFrame), fusionOpts);

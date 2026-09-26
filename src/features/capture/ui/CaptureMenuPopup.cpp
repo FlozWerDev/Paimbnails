@@ -33,8 +33,7 @@ constexpr float kInvertY  = 42.f;
 constexpr float kPhysicsY = 6.f;
 constexpr float kSmoothY  = -30.f;
 
-// Flag para marcar popups abiertos desde este menu: solo esos bloquean el
-// toggle por click derecho, el resto de popups del juego no.
+// Flag for popups opened from this menu: only those block right-click toggle.
 std::string const& captureChildFlag() {
     static const std::string flag = Mod::get()->getID() + "/capture-menu-child";
     return flag;
@@ -55,7 +54,7 @@ ButtonSprite* makeHoldCtrlButtonSprite(bool enabled) {
 CaptureMenuPopup* CaptureMenuPopup::s_instance = nullptr;
 
 void CaptureMenuPopup::toggle() {
-    // Solo los popups hijo de este menu bloquean el toggle con click derecho.
+    // Only this menu's child popups block right-click toggle.
     if (auto* scene = CCDirector::get()->getRunningScene()) {
         for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
             auto* alert = typeinfo_cast<FLAlertLayer*>(child);
@@ -177,7 +176,7 @@ bool CaptureMenuPopup::initContents() {
         menu->addChild(gearBtn);
     }
 
-    // Opt-in al tema/animaciones/blur dinamico del mod (DynamicPopupHook).
+    // Opt-in to the mod's theme/animations/dynamic blur (DynamicPopupHook).
     paimon::markDynamicPopup(this);
 
     return true;
@@ -197,8 +196,7 @@ void CaptureMenuPopup::onCapture(CCObject*) {
             NotificationIcon::Info)->show();
         return;
     }
-    // Hide this popup and drop only its own blur; popups underneath keep theirs
-    // so they still look right in the screenshot.
+    // Hide popup and drop only its blur; underneath popups keep theirs for the shot.
     this->setVisible(false);
     paimon::popupblur::cleanup(this);
     CaptureOverlay::show();

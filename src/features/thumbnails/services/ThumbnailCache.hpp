@@ -45,7 +45,7 @@ public:
             : texture(tex), lastAccessUs(toUs(la)), addedAt(added), byteSize(bytes),
               invalidationVersion(ver), originalWidth(oW), originalHeight(oH) {}
 
-        // atomic no es trivialmente copiable: copy/move manuales preservan el snapshot del valor.
+        // atomic isn't trivially copyable: manual copy/move preserves the value snapshot.
         RamEntry(RamEntry const& o)
             : texture(o.texture), lastAccessUs(o.lastAccessUs.load(std::memory_order_relaxed)),
               addedAt(o.addedAt), byteSize(o.byteSize),
@@ -80,15 +80,13 @@ public:
     };
 
     std::optional<geode::Ref<cocos2d::CCTexture2D>> getFromRam(int levelID, bool isGif);
-    // Fast presence check: level RAM map only (no URL fallback, no access touch).
-    // Not equivalent to ThumbnailLoader::isLoaded — that also treats a default-URL
-    // hit in the URL RAM cache as loaded for static thumbs.
+    // Level RAM map only (no URL fallback, no access touch); unlike isLoaded, default-URL hits don't count.
     bool hasInRam(int levelID, bool isGif) const;
     bool isRamEntrySuitable(int levelID, bool isGif, int requestedMaxDim) const;
     void addToRam(int levelID, bool isGif, cocos2d::CCTexture2D* texture, int version = -1, int origW = 0, int origH = 0);
     void removeFromRam(int levelID, bool isGif);
     void evictRamIfNeeded();
-    // libera texturas con retainCount==1 (nadie las muestra)
+    // Frees retainCount==1 textures (nobody showing them).
     void purgeUnusedTextures();
     size_t ramEntryCount() const;
 
@@ -118,7 +116,7 @@ public:
     void clearAllFailed();
     void purgeExpiredFailed();
 
-    // Thumbnails confirmados inexistentes en el servidor; sin TTL practico, solo se limpia con clearNotFound() / invalidateLevel().
+    // Server-confirmed missing; no practical TTL, cleared via clearNotFound()/invalidateLevel().
     bool isNotFound(std::string const& key) const;
     void markNotFound(std::string const& key);
     void clearNotFound(std::string const& key);
@@ -131,7 +129,7 @@ public:
     void clearDisk();
     void clearAll();
 
-    // safe destructor: take() texturas sin release() para evitar crash durante static destruction.
+    // Safe teardown: take() without release() survives static destruction.
     void takeAllTextures();
 
     CacheStats& stats() { return m_stats; }
@@ -141,7 +139,7 @@ public:
     static constexpr size_t URL_CACHE_MAX_BYTES = 32ull * 1024 * 1024;
 
     static constexpr auto FAILED_CACHE_TTL = std::chrono::minutes(5);
-    // Backoff escalonado: 15s → 30s → 60s → 300s. El primer paso no es 2s para no martillar el servidor en fallos masivos.
+    // Staggered backoff 15s → 30s → 60s → 300s; first step isn't 2s to avoid hammering on mass failures.
     static constexpr int FAILED_BACKOFF_STEPS[] = {15, 30, 60, 300};
     static constexpr int FAILED_BACKOFF_MAX_STEP = 3;
 
@@ -152,7 +150,7 @@ public:
 #endif
 
     static constexpr auto PURGE_INTERVAL = std::chrono::seconds(2);
-    // Grace period: entradas recientes inmunes al purge para que callbacks pendientes retengan la textura. 2s cubre picos de stress con budget de callbacks reducido.
+    // Grace period: fresh entries immune to purge so pending callbacks keep the texture (2s covers stress peaks).
     static constexpr auto PURGE_GRACE_PERIOD = std::chrono::milliseconds(2000);
 
     static constexpr auto NOT_FOUND_TTL = std::chrono::hours(24 * 365);

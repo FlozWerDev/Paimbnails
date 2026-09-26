@@ -31,8 +31,7 @@ public:
     static bool isHoldCtrlEnabled();
     static void setHoldCtrlEnabled(bool enabled);
 
-    // El radial es una herramienta de navegacion: nunca debe aparecer sobre
-    // gameplay real ni durante el playtest del editor.
+    // Navigation tool: never over real gameplay or editor playtest.
     static bool canOpenInCurrentContext();
 
     static void abortActiveHold();

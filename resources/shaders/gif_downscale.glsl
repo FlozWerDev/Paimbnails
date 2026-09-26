@@ -1,13 +1,4 @@
-// Reduccion a la mitad para el importador de GIF, video e imagen a objetos.
-//
-// El trazado trabaja sobre una rejilla de 48 a 128 celdas, asi que de un frame
-// de 1080p sobran mas de dos millones de pixeles. Encadenando esta pasada se
-// baja a la resolucion de trabajo en potencias de dos, que es una media de area
-// exacta y no el desenfoque bilineal que saldria de una sola reduccion grande.
-//
-// El color va ponderado por alfa y devuelto sin premultiplicar: promediando el
-// RGB a secas, el negro transparente del borde de un sprite se cuela en el color
-// y el dibujo sale con una orla oscura alrededor.
+// half-downsample for object tracing; alpha-weighted average avoids dark fringes.
 
 #ifdef GL_ES
 precision mediump float;

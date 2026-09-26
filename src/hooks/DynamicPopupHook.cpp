@@ -29,7 +29,7 @@ bool isEditorContextActive() {
 }
 }
 
-// Capture before activate() (may destroy popup).
+// capture before selected() (may destroy popup)
 class $modify(PaimonButtonOriginCapture, CCMenuItemSpriteExtra) {
     static void onModify(auto& self) {
         // VeryEarly keeps original button position.
@@ -39,7 +39,7 @@ class $modify(PaimonButtonOriginCapture, CCMenuItemSpriteExtra) {
     $override
     void selected() {
         if (!isEditorContextActive()) {
-            // Cache setting; runs on every press.
+            // cache setting; runs on every press
             static bool s_enabled = Mod::get()->getSettingValue<bool>("dynamic-popup-enabled");
             static auto s_listener = []{
                 geode::listenForSettingChanges<bool>("dynamic-popup-enabled", [](bool v){
@@ -66,12 +66,12 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
     struct Fields {
         bool    m_exiting = false;
         CCPoint m_origin  = {-1.f, -1.f};
-        CCPoint m_finalPos= {0.f, 0.f};
+        CCPoint m_finalPos = {0.f, 0.f};
         Ref<FLAlertLayer> m_exitGuard = nullptr;
         Ref<CCNode> m_blurNode = nullptr;
         FLAlertLayer* m_self = nullptr;
 
-        // Blur cleanup here: onExit not bound on FLAlertLayer.
+        // blur cleanup here: onExit not bound on FLAlertLayer
         ~Fields() {
             if (paimon::isRuntimeShuttingDown()) return;
             if (Ref<CCNode> blur = m_blurNode) {
@@ -115,13 +115,9 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         return isPaimonPopup() && paimon::popupblur::getConfig().enabled && !isEditorContextActive();
     }
 
-    float getSpeed() {
-        float speed = static_cast<float>(
-            Mod::get()->getSavedValue<double>("dynamic-popup-speed", 1.0)
-        );
-        if (!(speed > 0.f)) {
-            speed = 1.0f;
-        }
+    float getSpeedFor(char const* key) {
+        float speed = static_cast<float>(Mod::get()->getSavedValue<double>(key, 1.0));
+        if (!(speed > 0.f)) speed = 1.0f;
         if (paimon::settings::smoothui::enabled()) {
             speed *= static_cast<float>(std::clamp(
                 paimon::settings::smoothui::globalSpeed(), 0.35, 2.5));
@@ -129,25 +125,19 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         return std::max(0.1f, speed);
     }
 
+    float getSpeed() {
+        return getSpeedFor("dynamic-popup-speed");
+    }
+
     float getExitSpeed() {
-        float speed = static_cast<float>(
-            Mod::get()->getSavedValue<double>("dynamic-exit-speed", 1.0)
-        );
-        if (!(speed > 0.f)) {
-            speed = 1.0f;
-        }
-        if (paimon::settings::smoothui::enabled()) {
-            speed *= static_cast<float>(std::clamp(
-                paimon::settings::smoothui::globalSpeed(), 0.35, 2.5));
-        }
-        return std::max(0.1f, speed);
+        return getSpeedFor("dynamic-exit-speed");
     }
 
     std::string getStyle() {
         return Mod::get()->getSavedValue<std::string>("dynamic-popup-style", "paimonUI");
     }
 
-    // Unregister now; fade removes the node later.
+    // unregister now; fade removes the node later
     void fadeOutAndRemoveBlur(float duration) {
         paimon::popupblur::cleanupWithFade(this, duration);
 
@@ -573,7 +563,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
 
     void deferredClose(float) {
         m_fields->m_exitGuard = nullptr;
-    // Defer removal so a destructor cannot return into freed memory.
+        // defer removal so a destructor cannot return into freed memory
         auto self = Ref<FLAlertLayer>(this);
         Loader::get()->queueInMainThread([self]() {
             if (paimon::isRuntimeShuttingDown()) return;
@@ -583,7 +573,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
 
     $override
     void show() {
-    // No VMT hook on inherited virtuals; table follows base size.
+        // no VMT hook on inherited virtuals; table follows base size
         m_fields->m_self = this;
         FLAlertLayer::show();
 
@@ -622,7 +612,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         this->setKeypadEnabled(false);
         this->setTouchEnabled(false);
 
-    // Keep blur visible through the longer exit/fade duration.
+        // keep blur visible through the longer exit/fade duration
         float spd = getExitSpeed();
         float sty_dur_max = 0.25f / spd;
         float settingFade = std::clamp(
@@ -635,14 +625,14 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
 };
 
 
-    // show() hooks cover classes bypassing FLAlertLayer::show.
+    // show() hooks cover classes bypassing FLAlertLayer::show
 
 #include <Geode/binding/SetupShaderEffectPopup.hpp>
 
 namespace {
 bool isShaderRelatedPopup(cocos2d::CCNode* popup) {
     if (!popup) return false;
-    // Keep the live gameplay background for SetupShaderEffectPopup.
+    // keep the live gameplay background for SetupShaderEffectPopup
     if (typeinfo_cast<SetupShaderEffectPopup*>(popup)) return true;
     return false;
 }
@@ -669,7 +659,7 @@ class $modify(PaimonProfilePageBlur, ProfilePage) {
 class $modify(PaimonSetupTriggerPopupBlur, SetupTriggerPopup) {
     $override
     void show() {
-        // SetupTriggerPopup has many GD subclasses; avoid a base VMT hook.
+        // SetupTriggerPopup has many GD subclasses; avoid a base VMT hook
         SetupTriggerPopup::show();
         if (isEditorContextActive()) return;
         if (isShaderRelatedPopup(this)) return;

@@ -222,7 +222,7 @@ void YtDlpInstallPopup::finishError(const std::string& error) {
 }
 
 void YtDlpInstallPopup::onDismiss(CCObject*) {
-    // onExit se encarga de invocar m_onFinished(false) si no hubo exito.
+    // onExit fires m_onFinished(false) unless install succeeded.
     Popup::onClose(nullptr);
 }
 

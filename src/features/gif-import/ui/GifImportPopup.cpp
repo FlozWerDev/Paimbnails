@@ -41,7 +41,7 @@ struct ProcessingProgress {
     std::atomic<int> passes = 0;
     std::mutex mutex;
     std::optional<BuildResult> result;
-    // El dibujo a medias llega en pixeles; el hilo principal solo lo sube a textura.
+    // half-done drawing arrives in pixels; the main thread only uploads it to texture.
     std::mutex previewMutex;
     std::optional<PreviewImage> preview;
     std::uint64_t previewVersion = 0;
@@ -350,7 +350,7 @@ void GifImportPopup::pickSource() {
 }
 
 void GifImportPopup::loadSource(std::filesystem::path const& path) {
-    // Video se decodifica desde archivo, no desde memoria.
+    // video decodes from file, not memory.
     if (isVideoFile(path)) {
         loadVideo(path);
         return;
@@ -477,11 +477,11 @@ void GifImportPopup::loadVideo(std::filesystem::path const& path) {
     bool const started = paimon::ThreadTracker::get().spawn([state, progress, path, frames] {
         geode::utils::thread::setName("Paimon GIF Video Decode");
         LoadedSource loaded{path, nullptr, {}};
-        // Muestreo con marcas acumuladas; videos largos fallan con mensaje.
+        // sampling with cumulative marks; long videos fail with a message.
         bool partial = false;
         loaded.source = decodeVideo(path, frames, loaded.error, 30.0, &partial, progress.get());
         loaded.partial = partial;
-        // El cierre aborta sin marcar cancel: sin esto el vacio se aplicaria.
+        // closing aborts without flagging cancel: else the void would apply.
         loaded.cancelled = progress->cancelled.load(std::memory_order_relaxed) ||
             paimon::isRuntimeShuttingDown();
         if (!loaded.source && !loaded.cancelled) loaded.source = std::make_shared<SourceAnimation>();
@@ -537,9 +537,9 @@ void GifImportPopup::startProcess() {
     m_statsLabel->setColor({255, 205, 105});
     m_statsLabel->setString("Procesando y optimizando...");
 
-    // Modo libre puede venir guardado sin pasar por el boton.
+    // free mode may arrive saved without touching the button.
     if (m_options.mode == ImportMode::Free && !stampLibraryReady()) buildStampLibrary();
-    // La reduccion toca GL: aqui, no en el hilo.
+    // downscaling touches GL: here, not on the thread.
     if (usesSoftGeometry(m_options.mode)) {
         auto library = buildSoftStampLibrary();
         m_options.softStamps = std::move(library.stamps);
@@ -649,7 +649,7 @@ void GifImportPopup::refreshControls() {
 
     if (!m_plan || m_processing) return;
     m_statsLabel->setColor({135, 230, 170});
-    // Fps desde delays reales tras diezmar/fusionar.
+    // fps from real delays after decimation/merge.
     double fps = 0.0;
     if (m_plan->frames.size() > 1) {
         double totalMs = 0.0;
@@ -698,7 +698,7 @@ void GifImportPopup::pollSourceLoad() {
     }
     m_sourceLoad.reset();
     hideBusy();
-    // Intento viejo: otro archivo o el cierre lo cancelo; el nuevo manda.
+    // stale attempt: another file or the close cancelled it; the new one wins.
     if (loaded->cancelled) return;
     if (!loaded->error.empty()) {
         PaimonNotify::show(loaded->error, NotificationIcon::Error);
@@ -774,7 +774,7 @@ void GifImportPopup::displaySource() {
     auto const& rgba = m_scaled->frames.front().rgba;
     if (width <= 0 || height <= 0 ||
         rgba.size() < static_cast<std::size_t>(width) * height * 4) return;
-    // La fuente puede ser enorme; basta una miniatura para el primer destello.
+    // sources can be huge; a thumbnail suffices for the first flash.
     int const stride = std::max(1, std::max(width, height) / 192);
     int const previewWidth = (width + stride - 1) / stride;
     int const previewHeight = (height + stride - 1) / stride;
@@ -959,7 +959,7 @@ void GifImportPopup::adjustBudget(int direction) {
 void GifImportPopup::adjustFrames(int direction) {
     int const before = m_options.maxFrames;
     m_options.maxFrames = std::clamp(m_options.maxFrames + direction * 5, 1, 120);
-    // El video se decodifica una vez: subir el tope exige re-decodificar.
+    // video decodes once: raising the cap forces a re-decode.
     if (m_options.maxFrames > before && m_source && isVideoFile(m_path) &&
         static_cast<int>(m_source->frames.size()) < m_options.maxFrames) {
         loadVideo(m_path);
@@ -989,7 +989,7 @@ void GifImportPopup::toggleMode() {
         : m_options.mode == ImportMode::Vert ? ImportMode::VertX
         : m_options.mode == ImportMode::VertX ? ImportMode::Blocks
         : ImportMode::Free;
-    // Decoracion toca GL: con aviso; si hay plan activo, va en startProcess.
+    // decoration touches GL: warn; with an active plan it rides in startProcess.
     if (m_options.mode == ImportMode::Free && !stampLibraryReady() && !m_processing) {
         refreshControls();
         showBusy("Leyendo la decoracion de GD");

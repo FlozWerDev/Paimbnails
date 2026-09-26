@@ -149,8 +149,7 @@ class $modify(PaimonCollabLevelEditorLayer, LevelEditorLayer) {
         auto& mgr = paimon::collab::CollabManager::get();
         mgr.tick();
 #if defined(GEODE_IS_DESKTOP)
-        // Middle-click pings the cursor spot; touch screens use the Ping
-        // button in the collab overlay instead.
+        // Middle-click pings the cursor; touch uses the overlay Ping button.
         if (mgr.connected() && !mgr.isApplyingRemote()) {
             bool middle = paimon::keybinds::isMouseButtonHeld(paimon::keybinds::MouseButton::Middle);
             if (middle && !m_fields->m_wasMiddle) {

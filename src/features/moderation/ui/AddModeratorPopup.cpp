@@ -149,7 +149,6 @@ void AddModeratorPopup::onRoleTab(CCObject* sender) {
 void AddModeratorPopup::selectRole(std::string const& role) {
     m_activeRole = role;
 
-    // Highlight the active tab.
     for (auto* child : CCArrayExt<CCNode*>(m_tabMenu->getChildren())) {
         auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(child);
         if (!btn) continue;

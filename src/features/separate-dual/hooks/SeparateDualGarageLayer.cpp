@@ -271,8 +271,7 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
             }
         }
         if (!row) return true;
-        // Trail and ship-fire share one page with vanilla icons, so their
-        // unlock state still has to be checked per button.
+        // One shared page with vanilla icons: unlock state still checked per button.
         if ((kind == IconType::Special || kind == IconType::ShipFire)
             && !GameManager::get()->isIconUnlocked(picked, kind)) {
             GJGarageLayer::showUnlockPopup(picked, row->unlock);

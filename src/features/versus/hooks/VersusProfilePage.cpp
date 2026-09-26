@@ -20,8 +20,8 @@ namespace {
 
 constexpr char const* kChipId = "paimon-versus-chip"_spr;
 
-// Mirrors the progression chip that already sits in this row: mini badge plus
-// the rank, so the two ladders read as one line.
+// mirrors the progression chip in this row: mini badge plus rank, so both
+// ladders read as one line.
 CCNode* buildVersusChip(RankInfo const& rank, float height) {
     auto* text = CCLabelBMFont::create(rankShortName(rank).c_str(), "bigFont.fnt");
     if (!text) return nullptr;
@@ -84,8 +84,8 @@ class $modify(PaimonVersusProfilePage, ProfilePage) {
             return;
         }
 
-        // Someone else's ladder has to come from the server, and the page is
-        // already on screen, so the chip appears when the answer lands.
+        // another player's ladder comes from the server while the page is up,
+        // so the chip appears when the answer lands.
         auto self = Ref<PaimonVersusProfilePage>(this);
         VersusClient::get().fetchProfile(m_fields->m_accountId,
             [self](bool ok, ModeProfile const& classic, ModeProfile const& platformer) {
@@ -105,8 +105,8 @@ class $modify(PaimonVersusProfilePage, ProfilePage) {
             existing->removeFromParent();
         }
 
-        // Nothing to show for someone who has never duelled; an unranked chip
-        // on every profile in the game would be noise.
+        // no chip for a never-duelled stranger; an unranked chip on every
+        // profile would be noise.
         auto const& best = m_fields->m_classic.wins + m_fields->m_classic.losses >=
                            m_fields->m_platformer.wins + m_fields->m_platformer.losses
             ? m_fields->m_classic : m_fields->m_platformer;

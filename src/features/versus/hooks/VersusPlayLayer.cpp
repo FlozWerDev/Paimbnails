@@ -56,8 +56,8 @@ class $modify(PaimonVersusPlayLayer, PlayLayer) {
             }
         }
 
-        // The hand is its own module: turning the bars off is not a reason to
-        // deal cards nobody can see or play.
+        // the hand is its own module: hiding the bars must not deal cards
+        // nobody can see or play.
         if (session.dealsCards()) {
             if (auto* hand = VersusHandNode::create()) {
                 hand->setID("versus-hand"_spr);
@@ -69,8 +69,8 @@ class $modify(PaimonVersusPlayLayer, PlayLayer) {
         return true;
     }
 
-    // Keys come from the mod's keybind settings so they stay rebindable; the
-    // listener holds a plain pointer because a Ref would leak the level per duel.
+    // keys stay rebindable via settings; the listener holds a raw pointer,
+    // since a Ref would leak the level per duel.
     void bindCardKeys() {
         for (int slot = 0; slot < 2; slot++) {
             auto const key = slot == 0 ? "versus-card-1-keybind" : "versus-card-2-keybind";
@@ -102,8 +102,7 @@ class $modify(PaimonVersusPlayLayer, PlayLayer) {
     $override
     void destroyPlayer(PlayerObject* player, GameObject* object) {
         PlayLayer::destroyPlayer(player, object);
-        // The hook also fires for the second player of a dual, and for deaths
-        // that safe mode swallowed; only the real one counts.
+        // also fires for dual player 2 and safe-mode deaths; only the real one counts.
         if (!duelRunning() || player != m_player1 || m_isPracticeMode) return;
         VersusSession::get().onDeath();
     }
@@ -140,8 +139,8 @@ class $modify(PaimonVersusPlayLayer, PlayLayer) {
         if (session.inLevel()) session.onLevelLeft();
         PlayLayer::onExit();
 
-        // The result popup belongs to whatever scene comes next, so it is
-        // queued rather than parented to a layer that is going away.
+        // the result popup belongs to the next scene, so it queues instead of
+        // parenting to a layer that is going away.
         if (finished && outcome != Outcome::Pending) {
             paimon::scheduleMainThreadDelay(0.35f, []() {
                 if (auto* popup = VersusEndPopup::create()) popup->show();

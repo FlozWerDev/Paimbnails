@@ -7,8 +7,7 @@
 
 namespace paimon::collab {
 
-// Account-keyed presence so hosts can invite online friends who aren't in a
-// room. Globed-style reachability, only while signed in.
+// Account-keyed presence for inviting online friends; Globed-style, only while signed in.
 class CollabPresence {
 public:
     static CollabPresence& get();

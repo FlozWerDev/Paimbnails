@@ -7,11 +7,11 @@
 using namespace geode::prelude;
 namespace gfile = geode::utils::file;
 
-// Holder keeps pending pick alive; only one dialog at a time.
+// holder keeps the pending pick alive; one dialog at a time.
 using FilePickHolder =
     geode::async::TaskHolder<Result<std::optional<std::filesystem::path>>>;
 
-// Leaked on purpose: avoids teardown order issue with async runtime.
+// leaked on purpose: async runtime outlives teardown.
 static FilePickHolder& s_filePickHolder = *new FilePickHolder();
 
 namespace pt {

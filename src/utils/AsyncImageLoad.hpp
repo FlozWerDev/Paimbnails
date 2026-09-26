@@ -1,6 +1,6 @@
 #pragma once
 
-// Off-thread decode, sprite delivered on the main thread. Static images only;
+// off-thread decode, sprite delivered on main thread. static images only;
 // GIF/APNG go through AnimatedGIFSprite.
 
 #include <Geode/Geode.hpp>
@@ -16,16 +16,15 @@ namespace paimon::asyncimg {
 using SpriteCallback = geode::CopyableFunction<void(cocos2d::CCSprite*)>;
 
 namespace detail {
-// Shared lifetime pool (heap, no atexit destructor); 2 threads decode previews
-// without saturating I/O.
+// shared lifetime pool (heap, no atexit destructor); 2 threads.
 inline paimon::ThreadPool& pool() {
     static auto* p = new paimon::ThreadPool(2, "PaimonAsyncImg");
     return *p;
 }
 } // namespace detail
 
-// Delivers an autoreleased CCSprite* on the main thread (nullptr on failure).
-// The caller must guard its own lifetime in the callback (Ref/WeakRef/generation guard).
+// autoreleased CCSprite* on main thread (nullptr on failure).
+// caller guards its own lifetime in the callback.
 inline void loadStaticSprite(std::filesystem::path path, size_t maxSizeMB, SpriteCallback callback) {
     if (paimon::isRuntimeShuttingDown()) {
         if (callback) callback(nullptr);
@@ -67,7 +66,7 @@ inline void loadStaticSprite(std::filesystem::path path, size_t maxSizeMB, Sprit
             px, px + static_cast<size_t>(w) * static_cast<size_t>(h) * 4);
         stbi_image_free(px);
 
-// GL texture creation on the main thread.
+// GL texture creation must run on main thread.
         geode::Loader::get()->queueInMainThread(
             [rgba, w, h, callback = std::move(callback)]() mutable {
                 if (paimon::isRuntimeShuttingDown()) return;

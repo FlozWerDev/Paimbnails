@@ -60,8 +60,8 @@ void finishProgress(BuildProgressCallback const& progress, int pass = 0, int pas
 constexpr int kPreviewScale = 2;
 constexpr long long kPreviewIntervalMs = 250;
 
-// El trazado avisa con el dibujo a medias; el popup solo sube la textura.
-// Sin espera: si otro hilo ya esta publicando, este aviso se salta.
+// tracing reports the half-done drawing; the popup only uploads the texture.
+// no waiting: when another thread is already publishing, this notice is skipped.
 struct PreviewThrottle {
     explicit PreviewThrottle(BuildPreviewCallback preview = {})
         : callback(std::move(preview)) {}
@@ -156,7 +156,7 @@ struct BucketKey {
     }
 };
 
-// El tope lo pone la UI; aqui solo se sanea el rango.
+// the UI sets the cap; here the range is only sanitized.
 Options sanitize(Options options, std::size_t) {
     options.maxDimension = std::clamp(options.maxDimension, 4, 320);
     options.minDimension = std::clamp(options.minDimension, 4, options.maxDimension);
@@ -167,8 +167,8 @@ Options sanitize(Options options, std::size_t) {
     options.backgroundTolerance = std::clamp(options.backgroundTolerance, 0, 120);
     options.pixelSize = std::clamp(options.pixelSize, 1.f, 30.f);
     options.blurGlowDiameter = std::clamp(options.blurGlowDiameter, 2.f, 20.f);
-    // Pixel respeta Suave/Pixel del popup; defecto Suave.
-    // Dither apagado: pierde analisis a resolucion de origen.
+    // Pixel follows the popup's Smooth/Pixel; default Smooth.
+    // dither off: loses source-resolution analysis.
     if (options.mode == ImportMode::Paint || options.mode == ImportMode::Render ||
         options.mode == ImportMode::Free) {
         options.dither = false;
@@ -262,7 +262,7 @@ std::vector<std::uint8_t> backgroundMask(
         return a.count < b.count;
     });
     if (best == bins.end() || best->count == 0) return removed;
-    // Solo fondo plano: en fotos el tono top no llega a 1/3 del borde.
+    // flat backgrounds only: in photos the top tone never reaches 1/3 of the edge.
     if (best->count * 3 < borderSamples) return removed;
 
     Pixel background{
@@ -306,7 +306,7 @@ std::vector<std::uint8_t> backgroundMask(
         if (y + 1 < height) tryPush(x, y + 1);
     }
 
-    // No vaciar una imagen solida detectada como fondo.
+    // never empty a solid image mistaken for background.
     std::size_t visible = 0;
     std::size_t kept = 0;
     for (std::size_t index = 0; index < removed.size(); ++index) {
@@ -393,7 +393,7 @@ Pixel sampleArea(
     };
 }
 
-// Analiza a resolucion real con tope de muestras por frame.
+// Analyzes at true resolution with a per-frame sample cap.
 constexpr std::size_t kMaxAnalysisSamples = 4u << 20;
 
 int analysisStride(int width, int height) {
@@ -485,7 +485,7 @@ int colorDistanceSq(Pixel const& pixel, Color const& color) {
 
 constexpr int kFlatColorDistance = 20;
 
-// La orla no es color real: pesa por vecindad plana.
+// orla is no true color: weighs by flat neighborhood.
 template <typename Sample>
 std::uint64_t flatnessWeight(Sample const& sample, int x, int y, int width, int height) {
     Color center;
@@ -530,7 +530,7 @@ std::vector<Color> medianCut(Histogram const& histogram, int maxColors) {
     auto channel = [](Color const& color, int index) {
         return index == 0 ? color.r : index == 1 ? color.g : color.b;
     };
-    // Parte por error, no por peso: evita duplicar el color dominante.
+    // splits by error, not weight: avoids duplicating the dominant color.
     struct Spread {
         double error = 0.0;
         double weight = 0.0;
@@ -581,7 +581,7 @@ std::vector<Color> medianCut(Histogram const& histogram, int maxColors) {
         for (int i = 0; i < static_cast<int>(boxes.size()); ++i) {
             if (boxes[static_cast<std::size_t>(i)].entries.size() < 2) continue;
             auto const s = spread(boxes[static_cast<std::size_t>(i)]);
-            // Bajo 0.1% de la imagen no merece entrada propia.
+            // under 0.1% of the image earns no entry of its own.
             if (s.weight < totalHistogramWeight * 0.001) continue;
             if (s.error > bestError) {
                 bestError = s.error;
@@ -633,7 +633,7 @@ std::vector<Color> medianCut(Histogram const& histogram, int maxColors) {
     return palette;
 }
 
-// Lleva cada entrada al tono plano mas repetido y fusiona iguales.
+// Snaps each entry to the most-repeated flat tone and fuses equals.
 std::vector<Color> refinePalette(Histogram const& histogram, std::vector<Color> palette) {
     if (palette.size() < 2) return palette;
 
@@ -740,7 +740,7 @@ int nearestColor(float r, float g, float b, std::vector<OkLab> const& paletteLab
     return best;
 }
 
-// Tabla unica para cuantizar cada pixel del origen.
+// Single table quantizing every source pixel.
 std::vector<std::int16_t> paletteLookup(std::vector<Color> const& palette) {
     std::vector<OkLab> labs;
     labs.reserve(palette.size());
@@ -767,7 +767,7 @@ std::vector<std::int16_t> paletteLookup(std::vector<Color> const& palette) {
     return lookup;
 }
 
-// Vota el color dominante; la media inventa tonos en los bordes.
+// Votes the dominant color; averaging invents edge tones.
 std::vector<GridFrame> quantizeFromSource(
     SourceAnimation const& source,
     std::vector<SelectedFrame> const& selected,
@@ -900,7 +900,7 @@ std::vector<GridFrame> quantize(
     return output;
 }
 
-// Histograma del origen; en Pintura pesa lo plano, no la orla.
+// Source histogram; in Paint flatness weighs, not orla.
 std::vector<Color> buildPalette(
     SourceAnimation const& source,
     std::vector<SelectedFrame> const& selected,
@@ -912,7 +912,7 @@ std::vector<Color> buildPalette(
     bool flat
 ) {
     int const stride = analysisStride(source.width, source.height);
-    // Lo plano se mide a escala de celda, no de pixel.
+    // flatness measures at cell scale, not pixel.
     int const flatX = std::max(1, source.width / std::max(gridWidth, 1));
     int const flatY = std::max(1, source.height / std::max(gridHeight, 1));
     int const flatWidth = (source.width + flatX - 1) / flatX;
@@ -968,15 +968,15 @@ std::vector<Color> buildPalette(
 constexpr int kSpeckleColorDistance = 50;
 constexpr int kSmallPaletteSpeckleDistance = 65;
 
-// Coste = distancia por area: funde ruido y conserva detalle.
+// Cost = distance over area: melts noise, keeps detail.
 constexpr float kSpeckBudget = 0.25f;
-// El glow funde celdas vecinas: Vert traga motas que en plano se verian.
-// A x4 se come ojos; x2 recorta sin tocarlos.
+// glow melts neighbor cells: Vert swallows specks that would show in flat.
+// At x4 it eats eyes; x2 trims without touching them.
 constexpr float kVertSpeckScale = 2.f;
-// Tope por area: las lineas finas largas sobreviven.
+// area cap: long thin lines survive.
 constexpr int kSpeckArea = 12;
 
-// Mancha chica cara: cuesta un objeto y parte al vecino; se funde.
+// Small blobs are dear: one object each while splitting the neighbor; melted.
 void mergeFaintSpecks(
     std::vector<GridFrame>& frames,
     std::vector<Color> const& palette,
@@ -994,7 +994,7 @@ void mergeFaintSpecks(
         std::pair{-1, 0}, std::pair{1, 0}, std::pair{0, -1}, std::pair{0, 1}
     };
     for (auto& frame : frames) {
-        // La rampa sale por capas: cada pasada come la exterior.
+        // ramps peel by layers: each pass eats the outer one.
         for (int pass = 0; pass < 8; ++pass) {
             std::vector<std::uint8_t> visited(cells, 0);
             bool changed = false;
@@ -1018,10 +1018,10 @@ void mergeFaintSpecks(
                         component.push_back(neighbor);
                     }
                 }
-                // Recorre la mancha entera aunque exceda el tope.
+                // walks the whole blob even past the cap.
                 if (static_cast<int>(component.size()) > kSpeckArea) continue;
 
-                // Hueco encerrado: es alfa corto, no fondo; se cierra.
+                // enclosed void: short alpha, not background; closed.
                 if (color < 0) {
                     bool enclosed = true;
                     for (int position : component) {
@@ -1071,7 +1071,7 @@ void mergeFaintSpecks(
     }
 }
 
-// Solo cae lo rodeado del todo; el borde del dibujo se ve.
+// Only fully-surrounded drops; the drawing edge shows.
 void dissolveSpecks(
     std::vector<GridFrame>& frames,
     std::vector<Color> const& palette,
@@ -1164,7 +1164,7 @@ void dissolveSpecks(
                         }
                     }
                 }
-                // Mota flotando en vacio: trama de fondo, se borra.
+                // speck floating in void: background weave, erased.
                 if (touching == 0) {
                     if (exposed == 0) continue;
                     for (int position : component) {
@@ -1189,7 +1189,7 @@ void dissolveSpecks(
     }
 }
 
-// Funde la mota con el vecino casi igual mas presente.
+// Melts the speck into its most-present near-equal neighbor.
 int nearbyReplacement(
     std::vector<int> const& votes,
     std::vector<Color> const& palette,
@@ -1218,7 +1218,7 @@ int nearbyReplacement(
     return replacement;
 }
 
-// Solo funde si el color cae en la recta entre sus vecinos.
+// Melts only when the color lands on the line between its neighbors.
 int blendReplacement(
     std::vector<int> const& votes,
     std::vector<Color> const& palette,
@@ -1299,7 +1299,7 @@ void compactPaintSpeckles(
             }
             return increase <= static_cast<long long>(component.size()) * maxErrorIncrease;
         };
-        // Cierra huecos antes de medir areas para no romper trazos.
+        // closes voids before measuring areas, so strokes never break.
         constexpr std::array<std::pair<int, int>, 4> gapDirections{
             std::pair{1, 0}, std::pair{0, 1}, std::pair{1, 1}, std::pair{1, -1}
         };
@@ -1369,7 +1369,7 @@ void compactPaintSpeckles(
         }
         frame.cells = std::move(bridged);
 
-        // Cada pasada come la hebra exterior y descubre la siguiente.
+        // each pass eats the outer thread and uncovers the next.
         for (int pass = 0; pass < passes; ++pass) {
             std::vector<std::uint8_t> visited(cells, 0);
             auto next = frame.cells;
@@ -1402,7 +1402,7 @@ void compactPaintSpeckles(
                         }
                     }
                 }
-                // Hebra: sin celdas rodeadas por los cuatro lados.
+                // filament: no cells ringed on all four sides.
                 bool filament = true;
                 for (int position : component) {
                     int const x = position % width;
@@ -1476,7 +1476,7 @@ struct GeometryContext {
     ImportMode mode = ImportMode::Blocks;
     bool quarterGlow = false;
     float glowDiameter = 4.f;
-    // Muestreo da color; no convierte Pintura en salida pixel.
+    // sampling lends color; never turns Paint into pixel output.
     bool gridExact = true;
     std::vector<std::vector<std::uint8_t>> obstacles;
     std::vector<int> ranks;
@@ -1509,7 +1509,7 @@ std::vector<Primitive> buildGeometry(
                 float const span = static_cast<float>(end - i);
                 float const x = first % width + span * 0.5f;
                 float const y = row + 0.5f;
-                // Rampas enfrentadas comparten par por tramo horizontal.
+                // facing ramps share even runs per horizontal span.
                 objects.push_back({x, y + 0.5f, span, 1.f, 0.f,
                     static_cast<std::uint16_t>(color), PrimitiveKind::Stamp, 0, 1});
                 objects.push_back({x, y - 0.5f, span, 1.f, 0.f,
@@ -1656,7 +1656,7 @@ std::vector<std::vector<std::uint8_t>> paintObstacles(
     return result;
 }
 
-// Celda libre en todo frame: deja rematar en diagonal sin picos.
+// Cells free in every frame: diagonal caps land peak-free.
 std::vector<std::uint8_t> paintVoid(std::vector<GridFrame> const& frames, int cells) {
     std::vector<std::uint8_t> empty(static_cast<std::size_t>(cells), 1);
     for (auto const& frame : frames) {
@@ -1744,7 +1744,7 @@ Candidate temporalCandidate(
         traced[index] = buildGeometry(
             *entries[index].second, width, height, entries[index].first->color, context);
         tracedDone[index].store(true, std::memory_order_release);
-        // Los modos suaves leen sus moldes del plan final; a medias saldrian en blanco.
+        // soft modes read their molds from the final plan; half-built they come out blank.
         if (!preview || usesSoftGeometry(mode)) return;
         auto claim = preview->claim();
         if (!claim.owns_lock()) return;
@@ -1788,7 +1788,7 @@ Candidate temporalCandidate(
     }
     sortByLayer(candidate.staticObjects);
     for (auto& track : candidate.tracks) sortByLayer(track.objects);
-    // Poda conjunta: una pista sola no ve lo que hay debajo.
+    // joint prune: one track never sees what's below.
     if (usesPaintGeometry(context.mode)) {
         prunePaintObjectsByVisibility(
             candidate.staticObjects, candidate.tracks, frameCount, width, height);
@@ -1915,7 +1915,7 @@ Candidate frameCandidate(
     return candidate;
 }
 
-// Solo traza la pose inicial; los Move llevan al resto.
+// Only the starting pose is traced; Moves carry the rest.
 std::vector<MotionTrack> buildMotionTracks(
     std::vector<MotionGroup> const& groups,
     int width,
@@ -1945,7 +1945,7 @@ std::vector<MotionTrack> buildMotionTracks(
     return tracks;
 }
 
-// Mover compensa si baja el total bajo el tope de triggers.
+// Moving pays when the total drops under the trigger cap.
 bool worthMoving(Candidate const& plain, Candidate const& moved, std::size_t objectBudget) {
     if (moved.triggers > kPlaybackTriggerLimit) return false;
     if (moved.total() > objectBudget) return false;
@@ -1976,9 +1976,9 @@ Candidate chooseCandidate(Candidate temporal, Candidate perFrame, std::size_t ob
     return temporal.total() <= perFrame.total() ? std::move(temporal) : std::move(perFrame);
 }
 
-// Reindexa moldes usados para no arrastrar la biblioteca.
+// Reindexes used molds so the library isn't dragged along.
 void collectStamps(ImportPlan& plan) {
-    // Solo Free usa moldes; la biblioteca es global.
+    // Free alone uses molds; the library is global.
     if (plan.mode != ImportMode::Free) return;
     auto const& variants = stampVariants();
     std::map<std::uint16_t, std::uint16_t> slots;
@@ -2117,7 +2117,7 @@ BuildResult buildAt(
         usesPaintGeometry(options.mode));
     if (palette.empty()) return {{}, "El GIF quedo completamente transparente con estos ajustes."};
     report(progress, BuildStage::Palette, 0.4f);
-    // Con dither usa reducida; sin el, decide del original.
+    // dithered uses the reduced copy; plain decides from the original.
     auto frames = options.dither
         ? quantize(reduced, palette, width, height, true)
         : quantizeFromSource(
@@ -2128,14 +2128,14 @@ BuildResult buildAt(
         options.mode == ImportMode::Vert || options.mode == ImportMode::VertX
             ? kSpeckBudget * kVertSpeckScale : kSpeckBudget);
     if (usesPaintGeometry(options.mode)) {
-        // Mota bajo 1/4000 del dibujo; a poca rejilla no se toca.
+        // specks under 1/4000 of the drawing; tiny grids stay untouched.
         dissolveSpecks(
             frames, palette, width, height, std::min(width * height / 4000, 2));
         if (compactSpeckles) {
             compactPaintSpeckles(frames, reduced, palette, width, height);
         }
     }
-    // Geometria se revisa contra rejilla limpia, no contra previa.
+    // geometry reviews against the clean grid, never the preview.
     if (preview) {
         preview->publish(gridPreviewImage(frames.front().cells, palette, width, height));
     }
@@ -2201,7 +2201,7 @@ BuildResult buildAt(
         if (usesPaintGeometry(context.mode)) {
             prunePaintObjects(chosen.staticObjects, width, height);
             if (matchesGridExactly(context.mode)) {
-                // La reparacion mete relleno: poda y repara de nuevo.
+                // repairs add fill: prune and repair again.
                 repairPaintSeams(
                     chosen.staticObjects, frames.front().cells, context.ranks,
                     width, height, context.gridExact);
@@ -2209,7 +2209,7 @@ BuildResult buildAt(
                 repairPaintSeams(
                     chosen.staticObjects, frames.front().cells, context.ranks,
                     width, height, context.gridExact);
-                // Lo cosido tambien se fusiona con sus tiras.
+                // stitched seams merge with their strips too.
                 mergePaintSolids(chosen.staticObjects);
             }
         }
@@ -2228,7 +2228,7 @@ BuildResult buildAt(
 
         MotionAnalysis motion;
         if (options.motion) motion = analyzeMotion(frames, width, height);
-        // El plan movido compite; no sustituye al fijo.
+        // the moved plan competes; never replaces the fixed one.
         if (!motion.groups.empty()) {
             auto moved = plan(motion.residual);
             moved.motionTracks = buildMotionTracks(motion.groups, width, height, context);
@@ -2262,13 +2262,13 @@ BuildResult buildAt(
             auto const& mask = plan.stamps[context.quarterGlow ? 3 : 0].mask;
             double sum = 0.;
             for (auto alpha : mask.coverage) sum += alpha / 255.;
-            // El brillo total no crece con el diametro: se compensa por area.
+            // total glow never grows with diameter: compensated by area.
             float const glowArea = context.glowDiameter * context.glowDiameter;
             plan.glowOpacity = static_cast<float>(std::min(1.,
                 mask.coverage.size() / std::max(glowArea * sum, 1.)));
         }
-        // El wash lleva el flujo vertical de la imagen: promedios arriba/abajo
-        // resueltos a la paleta para no gastar canales nuevos.
+        // the wash carries the image's vertical flow: top/bottom averages
+        // resolved to the palette, spending no new channels.
         if (options.mode == ImportMode::VertX && options.gradientWash) {
             auto washIndex = [&](bool top) {
                 int sumR = 0, sumG = 0, sumB = 0, count = 0;
@@ -2312,7 +2312,7 @@ BuildResult buildAt(
                 width * 0.5f, height * 0.5f, static_cast<float>(width), static_cast<float>(height),
                 0.f, static_cast<std::uint16_t>(plan.softBackdropColor), PrimitiveKind::Block, -999});
         }
-        // El diametro queda en la estrategia para comparar duelos del banco.
+        // diameter stays in the strategy string for bench duel comparison.
         char glowTag[16] = "vert/";
         if (options.mode == ImportMode::Blur) {
             std::snprintf(glowTag, sizeof(glowTag), "blur/%dx/",
@@ -2350,7 +2350,7 @@ BuildResult buildAt(
     for (auto const& track : plan.motionTracks) {
         for (auto const& object : track.objects) countShape(object);
     }
-    // La revision compara frame a frame y tarda; el dibujo ya esta listo.
+    // review compares frame by frame and takes a while; the drawing is ready.
     if (preview) {
         auto pixels = renderPlanFrame(plan, 0, kPreviewScale, false);
         preview->publish({
@@ -2433,13 +2433,13 @@ BuildResult buildRenderPlan(
     std::size_t const softLimit = std::min<std::size_t>(
         options.objectBudget, source.frames.size() > 1 ? 6000 : 2500);
 
-    // Pases independientes en paralelo; eleccion ordenada despues.
+    // independent passes in parallel; ordered pick after.
     std::vector<BuildResult> results(static_cast<std::size_t>(passes));
     std::vector<std::atomic<float>> shares(static_cast<std::size_t>(passes));
     std::atomic<int> done{0};
     std::mutex reporting;
     float published = 0.f;
-    // La barra no baja: suma bajo candado.
+    // the bar never goes back: summed under lock.
     auto publish = [&] {
         if (!progress) return;
         std::lock_guard<std::mutex> lock(reporting);
@@ -2581,7 +2581,7 @@ BuildResult buildRegularPlan(
     return {{}, "No cabe en el presupuesto ni con la resolucion y frames minimos."};
 }
 
-// Movimiento al final: su borde falsearia la busqueda.
+// Motion goes last: its edge would poison the search.
 BuildResult tryMotionPlan(
     SourceAnimation const& source,
     Options const& options,
@@ -2647,7 +2647,7 @@ BuildResult buildPlan(
             : (validStamp(1) && validStamp(2) && !options.softStamps[1].analyticFallback &&
                 !options.softStamps[2].analyticFallback));
         if (!valid) {
-            // Solo se llega sin toolbox o sin nativo ni repuesto.
+            // only reachable with no toolbox, or no native nor spare.
             std::string missing;
             auto const flag = [&](std::size_t index, char const* label) {
                 if (!validStamp(index)) {
@@ -2676,7 +2676,7 @@ BuildResult buildPlan(
             if ((options.mode == ImportMode::Vert || options.mode == ImportMode::VertX) &&
                 options.softStamps.size() == 7 &&
                 (options.softStamps[1].analyticFallback || options.softStamps[2].analyticFallback)) {
-                // El repuesto 3637 estirado a tramo x 1 pinta discos, no rampas.
+                // spare 3637 stretched to span x 1 paints discs, not ramps.
                 return {{}, "El modo " +
                     std::string(options.mode == ImportMode::VertX ? "VertX" : "Vert") +
                     " necesita rampas nativas (slots 1/2): esta instalacion "
@@ -2692,13 +2692,13 @@ BuildResult buildPlan(
     Options searchOptions = options;
     searchOptions.motion = false;
     PreviewThrottle throttle{std::move(preview)};
-    // Sin callback no hay a quien avisar: se pasa nulo y se ahorra el raster.
+    // no callback means nobody to notify: pass null and skip the raster.
     PreviewThrottle* previewPtr = throttle.callback ? &throttle : nullptr;
     auto result = options.mode == ImportMode::Render
         ? buildRenderPlan(source, searchOptions, frameLimit, progress, previewPtr)
         : buildRegularPlan(source, searchOptions, frameLimit, progress, previewPtr);
     if (options.motion) result = tryMotionPlan(source, options, std::move(result));
-    // Glow despues: el halo no debe bajar la rejilla.
+    // glow last: the halo must not lower the grid.
     if (result && !usesSoftGeometry(options.mode)) {
         applyGlow(
             result.plan, options.glow, static_cast<std::size_t>(options.objectBudget));

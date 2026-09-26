@@ -6,18 +6,17 @@
 
 namespace paimon::gifimport {
 
-// Rasteriza la decoracion de GD en moldes para el modo libre. Necesita GL y el
-// cache de sprites del juego, asi que corre en el hilo principal; el trazado la
-// lee ya hecha desde sus hilos. Se construye una vez por sesion.
+// Rasterizes GD decoration into free-mode molds. Needs GL and the game sprite
+// cache, so it runs on the main thread; tracing reads it ready-made from its
+// threads. Built once per session.
 // Full alpha masks: round glow, descending/ascending ramps, four radial quarters.
 struct SoftStampLibrary {
-    // Siempre 7 moldes cuando el toolbox esta disponible: los nativos que se
-    // encontraron, el mejor aunque supere el umbral como degradado, y repuesto
-    // analitico con IDs fijos (analyticFallback) para lo que siga faltando.
-    // Vacia solo si el toolbox aun no existe; el pipeline lo rechaza.
+    // Always 7 molds when the toolbox exists: natives found, best over-threshold
+    // kept as fallback, analytic spare with fixed IDs (analyticFallback) for the
+    // rest. Empty only when the toolbox is missing; the pipeline rejects it.
     std::vector<PlanStamp> stamps;
-    // Mejor error nativo por forma (radial, vertical, cuartos): alimenta el log
-    // 'Native soft shapes' y el mensaje de error del pipeline.
+    // Best native error per shape (radial, vertical, quarters): feeds the
+    // 'Native soft shapes' log and the pipeline error message.
     std::array<double, 3> errors{1.0, 1.0, 1.0};
 };
 

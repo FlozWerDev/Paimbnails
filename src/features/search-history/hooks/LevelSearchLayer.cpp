@@ -9,11 +9,9 @@
 
 using namespace geode::prelude;
 
-// Capture/restore of search filters ported from "Search History" by
-// hiimjasmine00 (MIT, Copyright (c) 2024-2026 hiimjasmine00).
-// See SearchHistory.hpp and THIRD-PARTY-NOTICES.md.
+// Filter capture/restore ported from "Search History" by hiimjasmine00 (MIT); see THIRD-PARTY-NOTICES.md.
 
-// Separate hook from main LevelSearchLayer.cpp. Geode chains both $modify over the same class without conflict.
+// Separate from the main LevelSearchLayer hook: Geode chains both $modifies without conflict.
 class $modify(PaimonSearchHistoryLayer, LevelSearchLayer) {
     static void onModify(auto& self) {
         // Run after node-ids assigns "other-filter-menu".
@@ -35,16 +33,14 @@ class $modify(PaimonSearchHistoryLayer, LevelSearchLayer) {
         // Module off or incognito mode: don't show the button or save anything.
         if (historyOn()) {
             if (auto menu = this->getChildByID("search-button-menu")) {
-                // Usar el mismo estilo cuadrado que rate-profile-btn (GJ_button_04.png)
+                // Same square style as rate-profile-btn.
                 auto bg = CCScale9Sprite::create("GJ_button_04.png");
                 if (!bg) bg = CCScale9Sprite::create("GJ_button_01.png");
                 if (bg) {
                     bg->setContentSize({30.f, 30.f});
                     
-                    // Clock icon for history button.
                     auto clockIcon = CCSprite::createWithSpriteFrameName("GJ_timeIcon_001.png");
                     if (clockIcon) {
-                        // Scale to fit inside the square button.
                         float targetSize = 18.f;
                         float iconSize = clockIcon->getContentSize().width;
                         if (iconSize > 0.f) {
@@ -82,7 +78,7 @@ class $modify(PaimonSearchHistoryLayer, LevelSearchLayer) {
                 glm->setBoolForKey(object.noStar, "nostar_filter");
                 glm->setBoolForKey(object.featured, "featured_filter");
                 glm->setBoolForKey(object.epic, "epic_filter");
-                // Nota: GD intercambia estas dos claves internamente.
+                // GD swaps these two keys internally.
                 glm->setBoolForKey(object.mythic, "legendary_filter");
                 glm->setBoolForKey(object.legendary, "mythic_filter");
                 glm->setBoolForKey(object.customSong, "customsong_filter");
@@ -111,7 +107,7 @@ class $modify(PaimonSearchHistoryLayer, LevelSearchLayer) {
 
             m_searchInput->setString(object.query);
 
-            // Lanzar la busqueda directamente en vez de solo rellenar el formulario.
+            // Fire the search directly instead of just filling the form.
             if (object.type == 2) this->onSearchUser(nullptr);
             else this->onSearch(nullptr);
         })->show();

@@ -1,5 +1,5 @@
 #pragma once
-// Un campo de texto y nada mas. Se usa para renombrar iconos y capas.
+// Single text field. Renames icons and layers.
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>

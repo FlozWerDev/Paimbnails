@@ -35,11 +35,10 @@ protected:
     float m_intensity = 4.0f;
     float m_darkness = 0.28f;
 
-    // Set when a GL step failed unrecoverably; visit() becomes a no-op.
+    // set on unrecoverable GL failure; visit() no-ops
     bool m_broken = false;
 
-    // Steady-state throttle: once fully faded in, re-run the costly capture +
-    // horizontal pass only every Nth frame and reuse the cached intermediate (m_texB).
+    // steady-state throttle: reuse m_texB, full pass every Nth frame
     bool m_hasCachedBlur = false;
     float m_lastRadius = -1.f;
     int m_steadyFrames = 0;

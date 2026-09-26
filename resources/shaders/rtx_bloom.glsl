@@ -1,4 +1,4 @@
-// Bloom: 5 modos (prefilter/down/up/god rays/brillo) con filtros Jimenez.
+// bloom: prefilter/down/up/god-rays/brightness via Jimenez filters.
 
 varying vec2 v_texCoord;
 
@@ -21,10 +21,10 @@ uniform float u_adaptRate;
 uniform float u_frame;
 
 const int kRaySamples = 24;
-// Sombra aproximada por luma, sin G-buffer.
+// luma-approx shadows, no G-buffer.
 const float kVolBlock = 0.35;
 
-// Nivel 0 viene en sRGB; el resto ya en lineal.
+// mip 0 is sRGB; rest already linear.
 vec3 tap(vec2 uv, float prefilter) {
     vec3 c = texture2D(u_src, uv).rgb;
     if (prefilter > 0.5) c = min(tonemapInverse(toLinear(c), u_tonemap), vec3(max(u_hdrRange, 1.0)));
@@ -74,7 +74,7 @@ vec3 tent9(vec2 uv, vec2 t) {
     return c / 16.0;
 }
 
-// Ruido barato sin texturas para volumetricos.
+// textureless noise for volumetrics.
 float vnoise(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);
@@ -86,7 +86,7 @@ float vnoise(vec2 p) {
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
-// Rodilla suave: el corte duro deja linea y parpadeo.
+// soft knee: hard cuts band and flicker.
 vec3 knee(vec3 c) {
     float thr = tonemapInverse(vec3(u_threshold * u_threshold), u_tonemap).r;
     float br = max(max(c.r, c.g), c.b);
@@ -104,9 +104,9 @@ void main() {
         float lum = max(luma(toLinear(texture2D(u_src, vec2(0.5), 14.0).rgb)), 0.0005);
         outColor = vec3(mix(texture2D(u_add, vec2(0.5)).r, lum, u_adaptRate));
     } else if (u_mode > 2.5) {
-        // Jitter temporal: sin el, la marcha deja bandas concentricas.
+        // temporal jitter kills concentric banding.
         vec2 delta = (uv - u_lightPos) * u_density / float(kRaySamples);
-        // mod 64: evita degradar el hash por precision.
+        // mod 64 keeps the hash precision-safe.
         float frameIx = mod(u_frame, 64.0);
         float j0 = fract(hash12(gl_FragCoord.xy) + halton(frameIx, 2.0));
         vec2 p = uv - delta * j0;
@@ -121,14 +121,13 @@ void main() {
             vec3 s = texture2D(u_src, p).rgb;
             if (!all(equal(s, s))) s = vec3(0.0);
             s = max(s, vec3(0.0));
-            // La luma densa absorbe; pesa igual que el decaimiento.
+            // dense luma absorbs like decay.
             float w = illum * trans;
             acc += s * w;
             wsum += w;
             trans *= exp(-min(luma(s), 8.0) * kVolBlock);
             illum *= decay;
         }
-        // Ruido polar de 2 octavas modula la densidad.
         vec2 rel = uv - u_lightPos;
         float rad = length(rel);
         float ang = 0.0;

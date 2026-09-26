@@ -171,7 +171,7 @@ private:
     }
 
     geode::Result<Value> readValue() {
-        // Limit recursive descent before a nested plist exhausts the stack.
+        // Cap recursion before a nested plist exhausts the stack.
         struct DepthGuard {
             std::size_t& d;
             explicit DepthGuard(std::size_t& d) : d(d) { ++d; }
@@ -286,7 +286,7 @@ bool parseBracedTuple(std::string_view s, float& outA, float& outB) {
     trim(bStr);
 
     auto parseFloat = [](std::string_view sv, float& out) {
-        // strtof (not std::from_chars): float from_chars is unsupported on some target toolchains.
+        // strtof: float from_chars missing on some target toolchains.
         std::string tmp(sv);
         char* end = nullptr;
         out = std::strtof(tmp.c_str(), &end);
@@ -346,8 +346,7 @@ geode::Result<SpriteFrameInfo> decodeFrameFormat3(std::string const& name, Value
         }
     }
     if (f.spriteW <= 0 || f.spriteH <= 0) {
-        // In format 3 textureRect already carries the logical size (it mirrors
-        // spriteSize); textureRotated only says how the slot is stored.
+        // Format 3 textureRect already is the logical size; rotated only says storage.
         f.spriteW = f.rectW;
         f.spriteH = f.rectH;
     }
@@ -401,8 +400,7 @@ geode::Result<SpriteFrameInfo> decodeFrameLegacy(std::string const& name, Value 
         f.rectW = static_cast<int>(rw);
         f.rectH = static_cast<int>(rh);
         f.rotated = (rotated && rotated->isBool() && rotated->asBool());
-        // The legacy rect stores the packed footprint; normalise it to the
-        // logical size so rectW/rectH mean the same in every format.
+        // Legacy rect is the packed footprint; normalize to logical size.
         if (f.rotated) std::swap(f.rectW, f.rectH);
         f.spriteW = f.rectW;
         f.spriteH = f.rectH;

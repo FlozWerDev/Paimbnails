@@ -3,8 +3,7 @@
 #include <string_view>
 #include <unordered_map>
 
-// Spanish display names for the catalog; English stays the fallback, except the
-// Level/Web "Requests" modules, intentionally left in English.
+// Spanish display names; English stays the fallback except Requests modules.
 
 namespace paimon::modules {
 

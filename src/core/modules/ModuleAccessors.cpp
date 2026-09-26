@@ -10,8 +10,7 @@
 #include "../../features/rtx/services/RTXManager.hpp"
 #include "../../features/frame-interp/services/FrameInterpolator.hpp"
 
-// Backing::Custom modules keep their state in a manager config instead of a
-// mod.json setting, so the registry needs a getter/setter pair for each.
+// Custom modules live in manager configs, so each needs a getter/setter pair.
 
 namespace paimon::modules {
 

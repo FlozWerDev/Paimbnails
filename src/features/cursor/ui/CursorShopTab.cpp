@@ -21,13 +21,11 @@ namespace kit = paimon::configkit;
 constexpr float kCellWidth  = 108.f;
 constexpr float kCellHeight = 86.f;
 constexpr float kCellGap    = 6.f;
-// Fichas por vista. Cada una arrastra la descarga de su miniatura, asi que
-// conviene que sean pocas aunque la peticion traiga mas.
+// Cards per view; each drags a thumb download, so keep it low even when the request brings more.
 constexpr int kPageSize = 20;
-// La rejilla enseña unas dos filas: con la velocidad por defecto (16) cada
-// muesca de rueda se saltaba una entera.
+// Grid shows ~2 rows; at default speed (16) each wheel notch skipped a whole one.
 constexpr float kScrollSpeed = 5.f;
-// Tope de paginas que rastrea la busqueda profunda.
+// Deep-search page cap.
 constexpr int kDeepSearchRequests = 12;
 
 std::string toLower(std::string value) {
@@ -109,7 +107,7 @@ void CursorShopTab::buildChrome(CCSize size) {
         m_query = toLower(text);
         m_localPage = 0;
 
-        // Al vaciar la busqueda se vuelve a la categoria que estaba antes.
+        // Clearing search returns to the previous category.
         if (m_query.empty() && m_searchResults) {
             m_searchResults = false;
             m_loadedKey.clear();
@@ -278,8 +276,7 @@ void CursorShopTab::selectStore(Store store) {
 }
 
 void CursorShopTab::ensureCategories() {
-    // Las colecciones recientes de custom-cursor se piden una vez por sesion;
-    // si la peticion falla, el siguiente intento vuelve a probar.
+    // custom-cursor recents load once per session; a failure retries next time.
     if (m_store != Store::CustomCursor) return;
     static bool loaded = false;
     if (loaded) return;
@@ -355,7 +352,7 @@ void CursorShopTab::fetchListing() {
 
         tab->m_loading = false;
 
-        // El usuario pudo cambiar de tienda o categoria mientras cargaba.
+        // User may have switched store/category while loading.
         if (key != tab->listingKey()) return;
 
         if (!res) {
@@ -370,7 +367,7 @@ void CursorShopTab::fetchListing() {
         tab->m_serverPageCount = std::max(1, listing.pageCount);
         tab->m_loadedKey = key;
         tab->applyFilter();
-        // Al retroceder de pagina se entra por el final del bloque.
+        // Stepping back a page enters at the block end.
         tab->m_localPage = tab->m_pendingLocalPage < 0
             ? tab->localPageCount() - 1
             : std::clamp(tab->m_pendingLocalPage, 0, tab->localPageCount() - 1);
@@ -406,15 +403,14 @@ void CursorShopTab::rebuildGrid() {
     int visible = std::max(0, last - first);
 
     auto viewSize = m_grid->getContentSize();
-    // Mismo reparto que hace RowLayout; calcular de menos dejaba la rejilla
-    // con filas fantasma y el contenido descolocado.
+    // Same split RowLayout does; shorting it left ghost rows and shifted content.
     int columns = std::max(1, static_cast<int>((viewSize.width + kCellGap) / (kCellWidth + kCellGap)));
     int rows = (visible + columns - 1) / columns;
     float gridHeight = std::max(viewSize.height, rows * (kCellHeight + kCellGap) + kCellGap);
     layer->setContentSize({viewSize.width, gridHeight});
 
     if (visible == 0) {
-        // Durante el rastreo el mensaje lo lleva stepDeepSearch.
+        // stepDeepSearch owns the message while scanning.
         if (!m_scanning && !m_loading && !m_items.empty()) {
             setOverlay("Nada coincide en esta pagina.", kit::kDescColor);
             setOverlayAction("Buscar en la tienda", !m_query.empty());
@@ -570,16 +566,14 @@ std::vector<CursorShopTab::ScanTarget> CursorShopTab::buildScanTargets() const {
     std::vector<ScanTarget> targets;
     auto const& category = currentCategory();
 
-    // En rw-designer el catalogo es una sola lista larguisima: se rastrean sus
-    // primeras paginas, que son las mejor valoradas.
+    // rw-designer catalog is one long list; scan its top-rated first pages.
     if (category.paged) {
         int pages = std::min(kDeepSearchRequests, std::max(1, m_serverPageCount));
         for (int i = 0; i < pages; ++i) targets.push_back({category, i});
         return targets;
     }
 
-    // En custom-cursor cada coleccion viene entera de una peticion, asi que se
-    // recorren las colecciones.
+    // custom-cursor serves each collection whole, so walk collections.
     for (auto const& other : m_categories[storeIndex()]) {
         if (static_cast<int>(targets.size()) >= kDeepSearchRequests) break;
         targets.push_back({other, 0});
@@ -597,7 +591,7 @@ void CursorShopTab::startDeepSearch() {
     m_scanning = true;
     m_searchCategory = ShopClient::searchCategory(m_store, m_query);
     m_searchResults = true;
-    // Al salir de la busqueda habra que recargar la categoria.
+    // Leaving search must reload the category.
     m_loadedKey.clear();
     ShopImages::get().forgetFailures();
     m_items.clear();
@@ -640,8 +634,7 @@ void CursorShopTab::stepDeepSearch() {
                 if (known) continue;
                 tab->m_items.push_back(std::move(item));
             }
-            // La rejilla se monta al terminar: asi el cartel de progreso no
-            // acaba pintado encima de las fichas.
+            // Build the grid at the end so progress never paints over cards.
             tab->applyFilter();
         }
 
@@ -681,7 +674,7 @@ void CursorShopTab::onOverlayAction(CCObject*) {
 void CursorShopTab::startSearch() {
     if (m_query.empty() || m_loading || m_scanning) return;
 
-    // custom-cursor no deja consultar su buscador, asi que ahi toca rastrear.
+    // custom-cursor search is blocked, so crawl there.
     if (!ShopClient::supportsSearch(m_store)) {
         startDeepSearch();
         return;

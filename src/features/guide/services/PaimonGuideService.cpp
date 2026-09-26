@@ -364,7 +364,7 @@ void PaimonGuideService::registerIntents() {
     int featureCount = static_cast<int>(PopupRegistry::get().entries().size());
     std::string version = "?";
     if (auto* mod = geode::Mod::get()) {
-        // toNonVString: las respuestas ya escriben la "v" delante.
+        // responses already print the "v" prefix.
         version = mod->getVersion().toNonVString(false);
     }
 
@@ -1088,7 +1088,7 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery, AskCallback ca
         return makeFallback({}, langId);
     }
 
-     // Max mode sends the thread to Gemini asynchronously.
+    // Max mode sends the thread to Gemini asynchronously.
     if (getMode() == GuideMode::Max) {
         std::vector<GeminiClient::ChatMessage> history;
         auto const& turns = m_memory.history();

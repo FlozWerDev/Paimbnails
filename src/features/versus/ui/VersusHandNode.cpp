@@ -154,7 +154,7 @@ void VersusHandNode::rebuildHand() {
 }
 
 void VersusHandNode::onPlayCard(CCObject* sender) {
-    auto* item = geode::cast::typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
+    auto* item = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
     if (!item) return;
     VersusSession::get().playCard(item->getTag());
 }

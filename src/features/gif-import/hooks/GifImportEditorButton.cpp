@@ -22,19 +22,6 @@ void openImporter() {
     if (auto* popup = paimon::gifimport::GifImportPopup::create()) popup->show();
 }
 
-CCMenu* hostMenu(EditorUI* ui) {
-    for (auto const* id : {"toolbar-toggles-menu", "editor-buttons-menu", "undo-menu"}) {
-        if (auto* menu = typeinfo_cast<CCMenu*>(ui->getChildByID(id))) return menu;
-    }
-    if (ui->m_swipeBtn) {
-        if (auto* menu = typeinfo_cast<CCMenu*>(ui->m_swipeBtn->getParent())) return menu;
-    }
-    if (ui->m_undoBtn) {
-        if (auto* menu = typeinfo_cast<CCMenu*>(ui->m_undoBtn->getParent())) return menu;
-    }
-    return nullptr;
-}
-
 } // namespace
 
 class $modify(PaimonGifImportEditorUI, EditorUI) {
@@ -58,7 +45,7 @@ class $modify(PaimonGifImportEditorUI, EditorUI) {
         if (!button) return true;
         button->setID("gif-import-button"_spr);
 
-        if (auto* menu = hostMenu(this)) {
+        if (auto* menu = paimon::editor::hostToolbarMenu(this)) {
             menu->addChild(button);
             if (menu->getLayout()) menu->updateLayout();
         } else {

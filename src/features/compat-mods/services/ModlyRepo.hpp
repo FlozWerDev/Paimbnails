@@ -8,8 +8,7 @@
 #include <unordered_map>
 #include <vector>
 
-// Read-only client for the Modly mirror: direct reads answer 403 behind App Check,
-// so the mirror re-serves Firestore as flat JSON plus plain PNG endpoints.
+// Read-only Modly mirror client: direct reads 403 behind App Check, mirror serves flat JSON + PNG.
 
 namespace paimon::compat_mods {
 
@@ -31,8 +30,7 @@ public:
 
     bool hasCatalog() const { return m_hasCatalog; }
 
-    // Serves from cache while it is younger than the TTL unless force is set.
-    // The callback always runs on the main thread.
+    // Serves cache younger than TTL unless forced; callback always on main thread.
     void fetchCatalog(bool force, CatalogCallback callback);
 
     // Comments are fetched per mod and cached for the session.

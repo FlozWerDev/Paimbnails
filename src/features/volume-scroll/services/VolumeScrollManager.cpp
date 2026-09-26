@@ -10,11 +10,10 @@ using namespace cocos2d;
 
 namespace paimon::volscroll {
 
-// Parented to OverlayManager, the top-most host shared with the custom cursor,
-// so it renders above scenes and popups while staying below the INT_MAX cursor.
+// parented to OverlayManager, the top-most host shared with the custom
+// cursor: renders above scenes and popups, below the INT_MAX cursor.
 
 namespace {
-    // Dimensions — chip vs expanded.
     constexpr float kPanelHeight   =  34.f;
     constexpr float kPanelWidthMin =  56.f;
     constexpr float kPanelWidthMax = 168.f;
@@ -52,8 +51,8 @@ namespace {
         {110, 225, 110},
     };
 
-    // easeOutBack: slight overshoot then settle — the GD popup feel. Softened
-    // c1 so the slide/width never overshoots more than ~6%.
+    // easeOutBack: overshoot then settle, the GD popup feel. Softened c1
+    // caps the slide/width overshoot at ~6%.
     inline float easeOutBack(float t) {
         t = std::clamp(t, 0.f, 1.f);
         constexpr float c1 = 1.2f;
@@ -62,13 +61,13 @@ namespace {
         return 1.f + c3 * u * u * u + c1 * u * u;
     }
 
-    // easeInQuad: smooth acceleration → exits leave without an abrupt cut.
+    // easeInQuad for exits: accelerating away, no abrupt cut.
     inline float easeInQuad(float t) {
         t = std::clamp(t, 0.f, 1.f);
         return t * t;
     }
 
-    // easeOutQuint: very gradual deceleration → used for the extras fade-in.
+    // easeOutQuint for the extras fade-in.
     inline float easeOutQuint(float t) {
         t = std::clamp(t, 0.f, 1.f);
         float u = 1.f - t;
@@ -115,8 +114,8 @@ void VolumeScrollManager::ensureOverlayBuilt() {
     }
     m_pillNode = bg;
 
-    // MUS/SFX chip — goldFont like GD titles, tinted by kind. Anchored to the
-    // container's right edge so it drifts right as the panel expands.
+    // MUS/SFX chip in goldFont, tinted by kind; pinned to the right edge so
+    // it drifts right as the panel expands.
     auto icon = CCLabelBMFont::create("MUS", "goldFont.fnt");
     icon->setScale(0.42f);
     icon->setAnchorPoint({1.f, 0.5f});
@@ -134,7 +133,7 @@ void VolumeScrollManager::ensureOverlayBuilt() {
     }
     m_barDraw = fill;
 
-    // Percentage label (only visible when expanded) — bigFont like GD percents.
+    // percent label, bigFont, visible only when expanded.
     auto pctLabel = CCLabelBMFont::create("0%", "bigFont.fnt");
     pctLabel->setScale(0.32f);
     pctLabel->setAnchorPoint({0.f, 0.5f});
@@ -162,7 +161,6 @@ void VolumeScrollManager::redrawPill() {
     bg->setPosition({sz.width * 0.5f, sz.height * 0.5f});
 }
 
-// Blend the four band colors at normalized position t.
 static ccColor4F sampleBandColor(float t, float alpha) {
     t = std::clamp(t, 0.f, 1.f);
     const float p = t * 4.f - 0.5f;
@@ -310,14 +308,14 @@ void VolumeScrollManager::detachFromScene() {
 }
 
 void VolumeScrollManager::onSceneChange() {
-    if (m_state != State::Hidden) {
-        if (!m_overlay || !m_overlay->getParent() || m_attachedScene) {
-            attachToRunningScene();
+    if (m_state == State::Hidden) {
+        if (m_overlay && m_overlay->getParent()) {
+            m_overlay->removeFromParent();
+            m_attachedScene = nullptr;
         }
-    } else if (m_overlay && m_overlay->getParent()) {
-        m_overlay->removeFromParent();
-        m_attachedScene = nullptr;
+        return;
     }
+    if (!m_overlay || !m_overlay->getParent() || m_attachedScene) attachToRunningScene();
 }
 
 void VolumeScrollManager::releaseSharedResources() {
@@ -422,8 +420,7 @@ void VolumeScrollManager::update(float dt) {
         redrawBar();
     }
 
-    // Vertical slide + container fade: entrance pops (easeOutBack), exit
-    // accelerates away (easeInQuad) — same curve family as the expansion.
+    // entrance pops, exit accelerates away; same curve family as the expansion.
     const float slide = (m_state == State::SlidingOut)
                         ? easeInQuad(m_animProgress)
                         : easeOutBack(m_animProgress);
@@ -494,7 +491,6 @@ bool VolumeScrollManager::onScroll(VolumeKind kind, float delta) {
             break;
 
         case State::Collapsing:
-            // Was collapsing — expand again from the current progress.
             m_state = State::Expanding;
             break;
 

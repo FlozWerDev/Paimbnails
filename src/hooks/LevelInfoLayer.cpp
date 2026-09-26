@@ -148,7 +148,7 @@ class $modify(PaimonGameplayPerformanceOptions, GameLevelOptionsLayer) {
 };
 
 namespace {
-// Raw pointer avoids WeakRefPool key reuse across sessions; clear it on exit.
+// raw pointer avoids WeakRefPool key reuse across sessions; clear on exit
 std::atomic<LevelInfoLayer*> s_activeLevelInfoForOverlay{nullptr};
 int s_levelInfoOverlayPauseDepth = 0;
 
@@ -255,9 +255,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         if (!evidence.detected()) return;
 
         m_fields->m_imageWarningQueued = true;
-        log::info(
-            "[ImageWatermark] level {} detected ({} pairs, {} turns)",
-            level->m_levelID.value(), evidence.geometryPairs, evidence.rotationMarks);
         WeakRef<PaimonLevelInfoLayer> safeRef = this;
         Loader::get()->queueInMainThread([safeRef] {
             auto selfRef = safeRef.lock();
@@ -419,7 +416,7 @@ int m_fallbackOrigin = -1;
         bool m_overlayHadCursor = false;
         bool m_overlayHadVideo = false;
 
-// Windows does not reliably bind onExit; clean listeners/audio here too.
+// Windows doesn't reliably bind onExit; clean listeners/audio here too
         ~Fields() {
             if (paimon::isRuntimeShuttingDown()) return;
             if (m_invalidationListenerId != 0) {
@@ -587,13 +584,11 @@ int m_fallbackOrigin = -1;
         paimon::ThumbnailBackgroundChangedEvent::setLastTexture(tex);
 
         auto subCount = paimon::EventBus::get().subscriberCount<paimon::ThumbnailBackgroundChangedEvent>();
-        log::info("[LevelInfoLayer] publishing ThumbnailBackgroundChangedEvent levelID={} tex={} subscribers={}", levelID, (void*)tex, subCount);
         paimon::EventBus::get().publish(paimon::ThumbnailBackgroundChangedEvent{levelID, tex});
 
         m_fields->m_initLoadState = Fields::InitLoadState::Applying;
         m_fields->m_fallbackOrigin = -1;
 
-        log::info("[LevelInfoLayer] Aplicando fondo del thumbnail");
         
         m_fields->m_animatedShader = false;
         m_fields->m_shaderTime = 0.0f;
@@ -1172,7 +1167,7 @@ int m_fallbackOrigin = -1;
                 });
             }
         } else if (auto finalSprite = CCSprite::createWithTexture(tex)) {
-// Build blur asynchronously; cache hits stay immediate.
+// build blur async; cache hits stay immediate
             if (!hasGifBackground && (bgStyle == "blur" || bgStyle == "paimonblur")) {
                 auto win = CCDirector::get()->getWinSize();
                 Ref<CCTexture2D> texRef = tex;
@@ -1266,7 +1261,6 @@ int m_fallbackOrigin = -1;
             }
         }
 
-        log::info("[LevelInfoLayer] Fondo aplicado exitosamente (estilo: {}, intensidad: {})", bgStyle, intensity);
     }
     
     $override
@@ -1291,7 +1285,6 @@ int m_fallbackOrigin = -1;
             int32_t levelID = m_level->m_levelID.value();
             int currentVersion = ThumbnailLoader::get().getInvalidationVersion(levelID);
             if (currentVersion != m_fields->m_loadedInvalidationVersion) {
-                log::info("[LevelInfoLayer] onEnterTransitionDidFinish: thumbnail invalidated levelID={} ver {} -> {}", levelID, m_fields->m_loadedInvalidationVersion, currentVersion);
                 m_fields->m_loadedInvalidationVersion = currentVersion;
                 refreshGalleryData(levelID, true);
             } else if (!m_fields->m_pixelBg && m_fields->m_initLoadState == Fields::InitLoadState::Idle) {
@@ -1488,8 +1481,8 @@ int m_fallbackOrigin = -1;
     }
 
     void updateCursorFromMouse(float dt) {
-        // Touch callbacks already drive the cursor on mobile; polling the mouse here
-        // would clobber it with a stale position, so never fight an active touch.
+        // touch callbacks already drive the cursor on mobile; polling here
+        // would clobber it with a stale position, so never fight an active touch
         if (m_fields->m_touchActive) return;
 #if defined(GEODE_IS_MOBILE)
         return;
@@ -1502,7 +1495,7 @@ int m_fallbackOrigin = -1;
         m_fields->m_targetClickState = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) ? 1.0f : 0.0f;
 #else
         // Mac has a real mouse but no GetAsyncKeyState; the keybind tracker
-        // keeps OS-resynced button state on every platform.
+        // keeps OS-resynced button state instead
         m_fields->m_targetClickState =
             paimon::keybinds::isMouseButtonHeld(paimon::keybinds::MouseButton::Left) ? 1.0f : 0.0f;
 #endif
@@ -1571,7 +1564,7 @@ int m_fallbackOrigin = -1;
         if (!videoSprite) {
             return;
         }
-        // Video backgrounds need their own module gate.
+        // video backgrounds need their own module gate
         if (!paimon::modules::isEnabled("paimbnails.levelbackground.level")) {
             return;
         }
@@ -1611,7 +1604,6 @@ int m_fallbackOrigin = -1;
 
     $override
     void onExit() {
-        log::info("[LevelInfoLayer] onExit: levelID={}", m_level ? m_level->m_levelID.value() : 0);
 
         if (clearActiveLevelInfoForOverlay(this)) {
             s_levelInfoOverlayPauseDepth = 0;
@@ -1718,7 +1710,6 @@ int m_fallbackOrigin = -1;
     void levelDownloadFinished(GJGameLevel* level) {
         LevelInfoLayer::levelDownloadFinished(level);
         if (m_fields->m_forcedDailyID > 0 && m_level && m_level->m_dailyID.value() <= 0) {
-            log::info("[LevelInfoLayer] restaurando dailyID={} tras re-download", m_fields->m_forcedDailyID);
             m_level->m_dailyID = m_fields->m_forcedDailyID;
         }
         showImageWarningIfNeeded(m_level ? m_level : level);
@@ -1743,14 +1734,13 @@ int m_fallbackOrigin = -1;
             }
         }
 
-// Daily/weekly pages may miss vanilla auto-download; reload idempotently.
+// daily/weekly pages may miss vanilla auto-download; reload idempotently
         if (level) {
             bool isDailyOrWeekly = (level->m_dailyID.value() > 0) || challenge;
             bool hasPartialData = level->m_levelDesc.empty()
                                || level->m_levelString.empty()
                                || level->m_creatorName.empty();
             if (isDailyOrWeekly && hasPartialData) {
-                log::info("[LevelInfoLayer] daily/weekly partial data detected (levelID={}), forcing re-download", level->m_levelID.value());
                 m_fields->m_forcedDailyID = level->m_dailyID.value();
                 Ref<LevelInfoLayer> safeRef = this;
                 Loader::get()->queueInMainThread([safeRef]() {
@@ -1783,7 +1773,6 @@ int m_fallbackOrigin = -1;
         }
 
         if (!level || level->m_levelID <= 0) {
-                log::debug("[LevelInfoLayer] Level ID invalid, skipping thumbnail button");
                 return true;
             }
 
@@ -1844,7 +1833,6 @@ int m_fallbackOrigin = -1;
                 if (localThumbPath) {
                     auto lowerPath = geode::utils::string::toLower(*localThumbPath);
                     if (lowerPath.ends_with(".mp4")) {
-                        log::info("[LevelInfoLayer] init: found local MP4 for levelID={}", levelID);
                         auto* videoSprite = VideoThumbnailSprite::create(*localThumbPath);
                         if (videoSprite) {
                             this->queueVideoBackgroundSprite(videoSprite, levelID);
@@ -1907,14 +1895,12 @@ int m_fallbackOrigin = -1;
                     levelRamTex = cache.getFromRam(currentLevelID, true);
                 }
                 if (levelRamTex.has_value() && levelRamTex.value()) {
-                    log::info("[LevelInfoLayer] init: instant level RAM cache hit for levelID={}", currentLevelID);
                     this->applyThumbnailBackground(levelRamTex.value(), currentLevelID);
                 }
 
                 std::string mainUrl = ThumbnailAPI::get().getThumbnailURL(currentLevelID);
                 auto ramTex = cache.getUrlFromRam(mainUrl);
                 if (!m_fields->m_pixelBg && ramTex.has_value() && ramTex.value()) {
-                    log::info("[LevelInfoLayer] init: instant RAM cache hit for main thumbnail levelID={}", currentLevelID);
                     this->applyThumbnailBackground(ramTex.value(), currentLevelID);
                 } else if (!m_fields->m_pixelBg) {
                     Ref<LevelInfoLayer> safeRef = this;
@@ -1938,10 +1924,6 @@ int m_fallbackOrigin = -1;
                             auto* self = static_cast<PaimonLevelInfoLayer*>(safeRef.data());
                             if (!self || !self->getParent() || !self->m_level) return;
                             if (self->m_level->m_levelID.value() != currentLevelID) return;
-                            log::info(
-                                "[LevelInfoLayer] init: background applied from cache/load levelID={}",
-                                currentLevelID
-                            );
                             self->applyThumbnailBackground(tex, currentLevelID);
                         }
                     );
@@ -1976,10 +1958,8 @@ int m_fallbackOrigin = -1;
                 });
             }
 
-            log::info("Thumbnail button added successfully");
 
             if (fromVerificationQueue && verificationQueueLevelID == level->m_levelID.value()) {
-                log::info("Nivel abierto desde verificacion (categoria: {}) - boton listo para usar", verificationQueueCategory);
                 paimon::SessionState::get().verification.verificationCategory = verificationQueueCategory;
             }
 
@@ -2003,7 +1983,6 @@ int m_fallbackOrigin = -1;
         }
 
         int32_t levelID = m_level->m_levelID.value();
-        log::info("Opening thumbnail view for level ID: {}", levelID);
 
         bool canAccept = false;
         paimon::SessionState::get().verification.fromReportPopup = m_fields->m_fromReportSection;
@@ -2022,7 +2001,6 @@ int m_fallbackOrigin = -1;
     }
 
     void onUploadLocalThumbnail(CCObject*) {
-        log::info("[LevelInfoLayer] Upload local thumbnail button clicked");
         
         if (!m_level) {
             PaimonNotify::create(Localization::get().getString("level.error_prefix") + "nivel no encontrado", NotificationIcon::Error)->show();
@@ -2094,14 +2072,12 @@ int m_fallbackOrigin = -1;
 
     $override
     void onPlay(CCObject* sender) {
-        log::info("[LevelInfoLayer] onPlay: levelID={}", m_level ? m_level->m_levelID.value() : 0);
         AudioContextCoordinator::get().beginGameplayTransition();
         LevelInfoLayer::onPlay(sender);
     }
 
     $override
     void onBack(CCObject* sender) {
-        log::info("[LevelInfoLayer] onBack: levelID={} fromVerify={} fromLeaderboards={}", m_level ? m_level->m_levelID.value() : 0, m_fields->m_fromVerificationQueue, m_fields->m_fromLeaderboards);
 
         bool returnsToLevelSelect = false;
         auto scene = CCDirector::get()->getRunningScene();
@@ -2190,7 +2166,6 @@ int m_fallbackOrigin = -1;
 
     void refreshGalleryData(int32_t levelID, bool refreshBackground) {
         int token = ++m_fields->m_galleryToken;
-        log::info("[LevelInfoLayer] refreshGalleryData: levelID={} refreshBg={} token={}", levelID, refreshBackground, token);
         Ref<LevelInfoLayer> safeRef = this;
         ThumbnailAPI::get().getThumbnails(levelID, [safeRef, levelID, token, refreshBackground](bool success, std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbs) {
             auto* self = static_cast<PaimonLevelInfoLayer*>(safeRef.data());
@@ -2201,7 +2176,6 @@ int m_fallbackOrigin = -1;
             if (success) self->m_fields->m_thumbnails = thumbs;
             self->m_fields->m_lazyLoadIndex = 1;
             self->m_fields->m_lazyLoadScheduled = false;
-            log::info("[LevelInfoLayer] refreshGalleryData callback: levelID={} success={} thumbCount={}", levelID, success, thumbs.size());
             if (self->m_fields->m_thumbnails.empty()) {
                 ThumbnailAPI::ThumbnailInfo mainThumb;
                 mainThumb.id = "0";
@@ -2366,7 +2340,6 @@ int m_fallbackOrigin = -1;
     }
     
     void onPrevBtn(CCObject*) {
-        log::info("[LevelInfoLayer] onPrevBtn: currentIndex={}", m_fields->m_currentThumbnailIndex);
         if (m_fields->m_thumbnails.empty()) return;
         m_fields->m_cycling = false;
         m_fields->m_bgNavDirection = Fields::BgNavDir::Left;
@@ -2376,7 +2349,6 @@ int m_fallbackOrigin = -1;
     }
     
     void onNextBtn(CCObject*) {
-        log::info("[LevelInfoLayer] onNextBtn: currentIndex={}", m_fields->m_currentThumbnailIndex);
         if (m_fields->m_thumbnails.empty()) return;
         m_fields->m_cycling = false;
         m_fields->m_bgNavDirection = Fields::BgNavDir::Right;
@@ -2389,12 +2361,10 @@ int m_fallbackOrigin = -1;
         
         auto& thumb = m_fields->m_thumbnails[index];
         int requestToken = ++m_fields->m_bgRequestToken;
-        log::info("[LevelInfoLayer] loadThumbnail: index={}/{} thumbId={} token={}", index, m_fields->m_thumbnails.size(), thumb.id, requestToken);
 
         stopVideoBackgroundSprite();
 
         if (thumb.isVideo() && !thumb.url.empty()) {
-            log::info("[LevelInfoLayer] loadThumbnail: video detected for index={}", index);
             int32_t levelID = m_level ? m_level->m_levelID.value() : 0;
             std::string cacheKey = fmt::format("levelinfo_video_{}_{}", levelID, index);
             Ref<LevelInfoLayer> safeRef = this;
@@ -2411,7 +2381,6 @@ int m_fallbackOrigin = -1;
 
                 self->m_fields->m_fallbackOrigin = -1;
                 self->queueVideoBackgroundSprite(videoSprite, levelID, requestToken);
-                log::info("[LevelInfoLayer] loadThumbnail: waiting for first visible video frame for index={}", index);
             });
             return;
         }
@@ -2427,7 +2396,6 @@ int m_fallbackOrigin = -1;
             if (!self) return;
             if (self->m_fields->m_bgRequestToken != requestToken) return;
             if (success && tex) {
-                log::info("[LevelInfoLayer] loadThumbnail callback: index={} OK", index);
                 int32_t levelID = self->m_level ? self->m_level->m_levelID.value() : 0;
                 self->applyThumbnailBackground(tex, levelID);
                 if (index == 0 && self->m_fields->m_thumbnails.size() > 1) {
@@ -2445,7 +2413,6 @@ int m_fallbackOrigin = -1;
                         if (!lowerPath.ends_with(".mp4")) {
                             auto localTex = LocalThumbs::get().loadTexture(fallbackLevelID);
                             if (localTex) {
-                                log::info("[LevelInfoLayer] loadThumbnail: local cache fallback hit for levelID={}", fallbackLevelID);
                                 self->applyThumbnailBackground(localTex, fallbackLevelID);
                                 fallbackApplied = true;
                             }
@@ -2458,7 +2425,6 @@ int m_fallbackOrigin = -1;
                     auto ramTex = cache.getFromRam(fallbackLevelID, false);
                     if (!ramTex.has_value()) ramTex = cache.getFromRam(fallbackLevelID, true);
                     if (ramTex.has_value() && ramTex.value()) {
-                        log::info("[LevelInfoLayer] loadThumbnail: RAM cache fallback hit for levelID={}", fallbackLevelID);
                         self->applyThumbnailBackground(ramTex.value(), fallbackLevelID);
                         fallbackApplied = true;
                     }
@@ -2517,7 +2483,6 @@ int m_fallbackOrigin = -1;
             if (self->m_fields->m_galleryToken != galleryToken) return;
             self->m_fields->m_lazyLoadScheduled = false;
             if (success) {
-                log::info("[LevelInfoLayer] lazyLoad: index={} loaded", index);
             }
             self->m_fields->m_lazyLoadIndex++;
             if (self->m_fields->m_lazyLoadIndex < static_cast<int>(self->m_fields->m_thumbnails.size())) {
@@ -2556,7 +2521,6 @@ void LocalThumbnailViewPopup::onSettings(CCObject*) {
     int32_t levelID = m_levelID;
 
     popup->setOnSettingsChanged([texRef, levelID]() {
-        log::info("[ThumbnailViewPopup] Settings changed, refrescando fondo");
         auto scene = CCDirector::get()->getRunningScene();
         if (!scene) return;
 

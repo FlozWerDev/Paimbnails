@@ -43,7 +43,6 @@ std::string tr(char const* key, char const* fallback = "") {
     return v;
 }
 
-// Wrap text to roughly maxChars while preserving words.
 std::string wrapText(std::string const& text, std::size_t maxChars) {
     std::string out;
     std::size_t lineLen = 0;
@@ -136,7 +135,7 @@ bool PaimonGuideChatPopup::init() {
     {
         int featureCount = static_cast<int>(PopupRegistry::get().entries().size());
         std::string version = "?";
-        // toNonVString: el formato de abajo ya pone la "v", toVString daria "vv1.1.0".
+        // format below already prints the "v"; toVString would give "vv1.1.0".
         if (auto* mod = Mod::get()) version = mod->getVersion().toNonVString(false);
 
         auto featuresWord = tr("pai.guide.subtitle", "features");
@@ -242,10 +241,9 @@ bool PaimonGuideChatPopup::init() {
         m_input->setPosition({kChatFrameX, kInputY});
         m_mainLayer->addChild(m_input, 5);
 
-// Enter submits a focused query.
         geode::WeakRef<PaimonGuideChatPopup> weak = this;
         m_input->setOnSubmit([weak]() {
-// Defer mutation out of the IME callback.
+            // defer mutation out of the IME callback.
             Loader::get()->queueInMainThread([weak]() {
                 if (paimon::isRuntimeShuttingDown()) return;
                 if (auto self = weak.lock()) {

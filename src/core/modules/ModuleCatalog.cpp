@@ -1,7 +1,6 @@
 #include "ModuleRegistry.hpp"
 
-// Full module catalog: canonical user-visible ids over each feature's existing
-// storage, so toggling here equals toggling in mod.json settings.
+// canonical ids over existing storage; toggling here equals mod.json.
 
 namespace paimon::modules {
 
@@ -398,9 +397,6 @@ std::vector<Module> buildCatalog() {
               "The requests filed from Discord and what the team decided about each one.",
               "module-thumb-requests", "Thumbnails", S::Social, true),
 
-        setting("paimbnails.computeruse.editor", "Computer Use",
-                "Lets an AI drive the editor like a human: virtual cursor, clicks, drags and keys, all inside GD.",
-                "computeruse-enable", "Tools", S::Editor, true),
         setting("paimbnails.colorpicker.editor", "Colorpicker",
                 "Eyedropper to pick colors anywhere in the editor.",
                 "editor-color-picker-enable", "Tools", S::Editor, true),

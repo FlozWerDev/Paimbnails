@@ -47,9 +47,7 @@ class SlotLevelCache {
 public:
     static SlotLevelCache& get();
 
-    // Null only when the slot has no playable content yet (a level id whose
-    // download is still in flight). The returned level stays valid until
-    // invalidate() is called.
+    // null only while the level id download is in flight; valid until invalidate().
     GJGameLevel* levelForSlot(Slot const& slot);
 
     void invalidate();

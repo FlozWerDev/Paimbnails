@@ -79,8 +79,7 @@ void ProgressionToast::present(ProgressDelta const& delta, BadgeContext const& c
         scene->addChild(card, kToastZOrder);
     }
 
-    // Stack the badge cards above whatever height the progress card ended up
-    // with, so a level-up card never gets covered.
+    // Stack above the progress card so a level-up never gets covered.
     float stackY = kMargin + (delta.leveledUp() ? kProgressTallHeight : kProgressHeight) + 8.f;
     size_t const shown = std::min(delta.newBadges.size(), kMaxBadgeCards);
     for (size_t i = 0; i < shown; ++i) {
@@ -226,8 +225,7 @@ bool ProgressionToast::initProgress(ProgressDelta const& delta) {
 
         Ref<TierBadgeNode> badgeRef = badge;
         Ref<CCLabelBMFont> headlineRef = headline;
-        // Weak: the bar is a child of the card, so a strong ref back would keep
-        // the whole toast alive after it slides out.
+        // Weak: bar is a card child, strong ref back would leak the toast.
         WeakRef<ProgressionToast> weakSelf = this;
         bar->setLevelUpCallback([badgeRef, headlineRef, weakSelf](int reached) mutable {
             if (paimon::isRuntimeShuttingDown()) return;
@@ -245,8 +243,7 @@ bool ProgressionToast::initProgress(ProgressDelta const& delta) {
             }
         });
 
-        // The fill starts once the card has settled, so it runs from a delayed
-        // call instead of straight after create().
+        // Fill starts once the card settles: delayed call, not straight after create.
         m_pendingBar = bar;
         m_pendingExp = delta.totalExp;
         this->runAction(CCSequence::create(

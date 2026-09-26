@@ -5,7 +5,7 @@
 
 namespace paimon::json {
 
-// Itera un array sin reventar si viene roto.
+// iterate an array without crashing on malformed input.
 template <typename F>
 inline void forEachInArray(matjson::Value const& value, F&& fn) {
     if (!value.isArray()) return;
@@ -24,7 +24,7 @@ inline void forEachInArrayResult(geode::Result<std::vector<matjson::Value>> cons
     }
 }
 
-// Array o vacio si no hay.
+// array, or empty when missing.
 inline std::vector<matjson::Value> arrayOrEmpty(matjson::Value const& value) {
     if (!value.isArray()) return {};
     auto res = value.asArray();

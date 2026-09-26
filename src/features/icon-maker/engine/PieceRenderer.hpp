@@ -1,6 +1,5 @@
 #pragma once
-// Renderiza un slot ("zona de color") de un proyecto: coloca cada pieza en el
-// lienzo, le aplica su relleno y las compone en orden.
+// Renders one project slot ("color zone"): places pieces, fills, composites in order.
 
 #include "../data/IconProject.hpp"
 #include "../../texture-studio/data/ImageBuffer.hpp"
@@ -26,8 +25,7 @@ struct PieceRender {
     std::vector<std::uint8_t> mask;
     int maskSize = 0;
 
-    // Lado del lienzo en el que se midio la caja; el editor libera `pixels`
-    // en cuanto tiene la miniatura, asi que no se puede deducir de ahi.
+    // canvas side the box was measured on; editor frees `pixels` after thumbnailing.
     int canvasSize = 0;
 
     // Canvas pixels, rows running top-down like the buffer.

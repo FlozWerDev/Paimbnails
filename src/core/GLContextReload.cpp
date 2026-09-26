@@ -36,55 +36,48 @@ void onBeforeGameReload() {
     log::info("[GLContextReload] GameManager::reloadAll - soltando texturas y "
               "shaders del mod antes de que se recree el contexto GL");
 
-    // Thumbnails: cache RAM + colas pendientes que retienen texturas viejas.
+    // thumbnails: RAM cache and pending queues hold dead textures.
     ThumbnailLoader::get().onGLContextReload();
     LocalThumbs::get().clearTextureCache();
 
-    // Perfiles.
     ProfileThumbs::get().clearPendingDownloads();
     ProfileThumbs::get().clearAllCache();
     clearProfileImgCache();
 
-    // Emotes / previews / GIFs / videos.
     paimon::emotes::EmoteCache::get().clearRam();
     paimon::autopreview::AutoPreviewStore::get().clearRamCache();
     AnimatedGIFSprite::clearCacheForReload();
     VideoThumbnailSprite::onGLContextReload();
 
-    // Overlays persistentes (sobreviven al cambio de escena del reload).
+    // persistent overlays survive the reload scene change.
     CursorManager::get().onGLContextReload();
     PetManager::get().onGLContextReload();
 
-    // Postproceso de pantalla completa: FBOs y programas propios.
     paimon::rtx::RTXRenderer::get().onGLContextReload();
 
-    // Fondos / blur / slider / barra de progreso.
     LayerBackgroundManager::get().onGLContextReload();
     BlurSystem::getInstance()->onGLContextReload();
     paimon::slider::CustomSliderManager::get().invalidateImageCache();
     ProgressBarManager::get().releaseCustomTextures();
     ProgressBarManager::get().invalidateBaseline();
 
-    // Iconos creados con el Icon Maker (texturas + frames registrados).
     paimon::icon_maker::IconApplier::get().onGLContextReload();
     paimon::icon_maker::IconThumbs::get().onGLContextReload();
     paimon::icon_maker::ui::resetCheckerTexture();
 
-    // Estáticos sueltos.
     paimon::ThumbnailBackgroundChangedEvent::setLastTexture(nullptr);
     paimon::ThumbnailBackgroundChangedEvent::s_lastLevelID = 0;
     PaimonDrawNode::invalidateWhiteTextureCache();
     DominantColorsGPU::onGLContextReload();
 
-    // GL programs compilados por el mod: mueren con el contexto y CCShaderCache
-    // solo recompila los default de cocos, no los nuestros.
+    // mod shaders die with the context; CCShaderCache only rebuilds cocos defaults.
     paimon::shaders::purgeTrackedShaders();
 }
 
 } // namespace paimon::glreload
 
-// reloadAll() recrea la ventana GLFW y purga CCTextureCache; se despacha ANTES
-// del original para que los release() corran con el contexto viejo aún activo.
+// reloadAll rebuilds GLFW and purges CCTextureCache: run before the original
+// so releases still see the old GL context.
 class $modify(PaimonGLReloadHook, GameManager) {
     void reloadAll(bool switchingModes, bool toFullscreen, bool borderless, bool fix, bool unused) {
         paimon::glreload::onBeforeGameReload();

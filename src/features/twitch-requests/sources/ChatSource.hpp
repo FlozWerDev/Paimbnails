@@ -10,10 +10,10 @@
 namespace paimon::twitch {
 
 enum class Platform { Twitch, YouTube, Kick, TikTok, Web };
-// Chats con canal escrito: los que recorren los bucles de conexion.
+// chats with a typed channel: the ones walking the reconnect loops.
 constexpr int kPlatformCount = 4;
-// Lo anterior mas la pagina web, que es lo que se puede elegir en la pantalla.
-// La web no tiene canal ni ChatSource: la cuenta de GD ya dice cual es tu URL.
+// the above plus the web page, which is what the screen offers.
+// web has no channel or ChatSource: the GD account already names your URL.
 constexpr int kSelectableCount = 5;
 
 char const* platformKey(Platform platform);

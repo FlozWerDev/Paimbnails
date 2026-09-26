@@ -129,8 +129,8 @@ void ColorPickerOverlay::buildUI() {
     hint->setOpacity(210);
     this->addChild(hint, 21);
 
-const float boxSize  = 34.f;
-const float fillSize = 29.f;
+    const float boxSize  = 34.f;
+    const float fillSize = 29.f;
     const float sx = 12.f, sy = 18.f;
     const float fillOff = (boxSize - fillSize) / 2.f;
 
@@ -425,7 +425,7 @@ void ColorPickerOverlay::onToggleAuto(CCObject* sender) {
     Mod::get()->setSavedValue<bool>("editor-cp-auto-apply", m_autoApply);
     if (m_autoApply) {
         m_autoNoIdWarned = false;
-    this->tryAutoApply();
+        this->tryAutoApply();
     }
 }
 
@@ -456,7 +456,7 @@ void ColorPickerOverlay::onSave(CCObject*) {
     if (channelID > 0) {
         const int       chId = channelID;
         const ccColor3B c    = col;
-    this->doClose();
+        this->doClose();
         Loader::get()->queueInMainThread([chId, c]() {
             if (paimon::isRuntimeShuttingDown()) return;
             auto* lel = LevelEditorLayer::get();

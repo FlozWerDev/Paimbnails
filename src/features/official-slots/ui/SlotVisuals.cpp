@@ -29,9 +29,7 @@ GJFeatureState featureStateOf(Tier tier) {
 } // namespace
 
 CCNode* createDifficultyBadge(Difficulty difficulty, Tier tier, float scale) {
-    // GJDifficultySprite carries its own rate glow, so the tier goes through
-    // updateFeatureState instead of a coin mounted beside it. Doing it by hand
-    // is what left the glow at twice the size of the face in the request list.
+    // tier via updateFeatureState: hand-mounted coins doubled the glow in the request list.
     auto* face = GJDifficultySprite::create(difficultyFace(difficulty), GJDifficultyName::Short);
     if (!face) return nullptr;
 

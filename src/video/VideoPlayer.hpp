@@ -17,7 +17,7 @@ namespace paimon::video {
 struct VideoPlayerCreateOptions {
     bool requireCanonicalAudio = false;
     bool enableAudio = false;
-    // Deprecated CPU path; GPU YUV resolves through an FBO on demand.
+    // legacy CPU path; GPU YUV resolves via FBO on demand.
     bool forceRGBA = false;
 };
 
@@ -48,10 +48,9 @@ public:
 
     cocos2d::CCTexture2D* getCurrentFrameTexture() const;
 
-    /// Return an RGBA texture, resolving GPU YUV through a cached FBO when needed.
     cocos2d::CCTexture2D* getResolvedRGBATexture();
 
-    /// In GPU YUV mode, return the Y plane; callers bind Cb/Cr and the shader.
+    // GPU YUV mode: caller binds Cb/Cr with the shader.
     cocos2d::CCGLProgram* getYUVShaderProgram() const;
     cocos2d::CCTexture2D* getTextureCb() const;
     cocos2d::CCTexture2D* getTextureCr() const;
@@ -70,7 +69,6 @@ public:
 
     void setOnFinished(std::function<void()> cb);
 
-    // Release the YUV resolve cache; it is recreated on demand on the GL thread.
     void releaseGPUResolveCache();
 
     // Audio API kept for LayerBackgroundManager compatibility.
@@ -86,13 +84,13 @@ private:
 
     void initTexture(int width, int height);
     void initYUVTextures(int width, int height);
-    /// Pre-allocate the GL upload pipeline; call on the GL thread.
+    // GL thread only.
     void prepareGPUPipeline();
     bool uploadFrameGPU(const IVideoDecoder::Frame& frame);
     bool uploadFrame(const IVideoDecoder::Frame& frame);
     bool retryUploadFromRgbaBuffer();
     bool initAudio(const VideoPlayerCreateOptions& options);
-    void playAudioFromCurrentTime(bool restartIfNeeded = false);
+    void playAudioFromCurrentTime(bool = false);
     void pauseAudio();
     void stopAudio(bool stopChannel);
 
@@ -102,14 +100,12 @@ private:
     cocos2d::CCTexture2D* m_texture = nullptr;
     uint8_t* m_rgbaBuffer = nullptr;
 
-    // GPU YUV→RGB path: three luminance textures plus shader conversion.
     cocos2d::CCTexture2D* m_texY  = nullptr;
     cocos2d::CCTexture2D* m_texCb = nullptr;
     cocos2d::CCTexture2D* m_texCr = nullptr;
     cocos2d::CCGLProgram* m_yuvShader = nullptr;
     bool m_useGPUYuv = false;
 
-    // PBO-based async uploaders for RGBA and YUV paths.
     PBOUploader m_pboUploader;
     PBOUploader m_pboUploaderYUV;
     bool m_pboInitAttempted = false;
@@ -134,7 +130,7 @@ private:
     std::string m_filePath;
 
     double m_timeSinceLastUpload = 0.0;
-    double m_timeSincePlay = 0.0;  // stall detection
+    double m_timeSincePlay = 0.0;
     uint64_t m_frameCounter = 0;
 
     // Avoid duplicate updates when several nodes share a player.
@@ -147,7 +143,6 @@ private:
     bool m_audioInitFailed = false;
     std::shared_ptr<std::atomic<uint32_t>> m_audioFadeGeneration = std::make_shared<std::atomic<uint32_t>>(0);
 
-    // GPU YUV→RGBA resolve FBO.
     cocos2d::CCTexture2D* m_resolvedRGBA = nullptr;
     cocos2d::CCRenderTexture* m_resolveRT = nullptr;
     cocos2d::CCSprite* m_resolveSprite = nullptr;
@@ -159,6 +154,7 @@ private:
     float m_colorSpace = 0.0f;  // 0=BT.601, 1=BT.709
     uint64_t m_resolvedAtFrame = 0;
     mutable GLuint m_readbackFBO = 0;
+    bool ensureResolveTarget();
     bool resolveYUVToRGBA();
 };
 

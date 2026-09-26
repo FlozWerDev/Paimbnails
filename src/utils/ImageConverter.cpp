@@ -76,7 +76,6 @@ bool ImageConverter::saveRGBAToPNG(const uint8_t* rgba, uint32_t width, uint32_t
 bool ImageConverter::rgbaToWebpBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>& outData, float quality) {
     if (!rgba || width == 0 || height == 0) return false;
 
-    // WebP encoding requires ImagePlus (optional) — not available natively
     log::warn("[ImageConverter] WebP encode not available (requires ImagePlus mod)");
     return false;
 }
@@ -84,7 +83,6 @@ bool ImageConverter::rgbaToWebpBuffer(const uint8_t* rgba, uint32_t width, uint3
 bool ImageConverter::rgbaToJxlBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>& outData, float quality) {
     if (!rgba || width == 0 || height == 0) return false;
 
-    // JPEG XL encoding requires ImagePlus (optional) — not available natively
     log::warn("[ImageConverter] JPEG XL encode not available (requires ImagePlus mod)");
     return false;
 }
@@ -92,7 +90,6 @@ bool ImageConverter::rgbaToJxlBuffer(const uint8_t* rgba, uint32_t width, uint32
 bool ImageConverter::rgbaToQoiBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>& outData) {
     if (!rgba || width == 0 || height == 0) return false;
 
-    // QOI encoding requires ImagePlus (optional) — not available natively
     log::warn("[ImageConverter] QOI encode not available (requires ImagePlus mod)");
     return false;
 }
@@ -113,7 +110,7 @@ bool ImageConverter::saveRGBAToWebP(const uint8_t* rgba, uint32_t width, uint32_
 
 bool ImageConverter::rgbToPng(std::vector<uint8_t> const& rgbData, uint32_t width, uint32_t height, std::vector<uint8_t>& outPngData) {
     bool isRgba = (rgbData.size() == static_cast<size_t>(width) * height * 4);
-    
+
     if (isRgba) {
         return rgbaToPngBuffer(rgbData.data(), width, height, outPngData);
     }
@@ -125,11 +122,11 @@ bool ImageConverter::rgbToPng(std::vector<uint8_t> const& rgbData, uint32_t widt
 bool ImageConverter::loadRgbFileToPng(std::string const& rgbFilePath, std::vector<uint8_t>& outPngData) {
     std::vector<uint8_t> rgbData;
     uint32_t width, height;
-    
+
     if (!loadRgbFile(rgbFilePath, rgbData, width, height)) {
         return false;
     }
-    
+
     return rgbToPng(rgbData, width, height, outPngData);
 }
 
@@ -139,14 +136,14 @@ bool ImageConverter::loadRgbFile(std::string const& rgbFilePath, std::vector<uin
         log::error("[ImageConverter] Failed to open RGB file: {}", rgbFilePath);
         return false;
     }
-    
+
     RGBHeader header{};
     in.read(reinterpret_cast<char*>(&header), sizeof(header));
     if (!in || header.width == 0 || header.height == 0) {
         log::error("[ImageConverter] Invalid RGB header in file: {}", rgbFilePath);
         return false;
     }
-    
+
     uint64_t const pixels = static_cast<uint64_t>(header.width) * header.height;
     if (header.width > 16384 || header.height > 16384 || pixels > 16ull * 1024 * 1024) {
         log::error("[ImageConverter] RGB dimensions too large in file: {}", rgbFilePath);
@@ -164,14 +161,14 @@ bool ImageConverter::loadRgbFile(std::string const& rgbFilePath, std::vector<uin
     }
     outRgbData.resize(rgbSize);
     in.read(reinterpret_cast<char*>(outRgbData.data()), rgbSize);
-    
+
     if (!in) {
         log::error("[ImageConverter] Failed to read RGB data from file: {}", rgbFilePath);
         return false;
     }
-    
+
     outWidth = header.width;
     outHeight = header.height;
-    
+
     return true;
 }

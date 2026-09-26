@@ -58,8 +58,7 @@ constexpr float kMinInspectorW = 240.f;
 constexpr float kMaxInspectorW = 330.f;
 constexpr float kStripH = 30.f;
 
-// Acertar la capa por toque no necesita la resolucion entera del lienzo, y a
-// este tamano una mascara ocupa 14 KB en vez de 230.
+// touch hit-testing needs no full canvas resolution; at this size a mask is 14 KB, not 230.
 constexpr int kHitMaskSize = 120;
 constexpr int kThumbSize = 44;
 
@@ -221,7 +220,7 @@ geode::Result<> fillPieceFromTemplate(IconProject const& project, IconPiece& pie
     return Ok();
 }
 
-// Rejilla de temas; cada uno ensena los dos colores con los que va a pintar.
+// theme grid; each shows the two colors it paints with.
 CCNode* makeThemeGrid(float width, std::vector<IconTheme> const& themes,
                       std::function<void(IconTheme const&)> onPick) {
     constexpr float kChipH = 34.f;
@@ -516,8 +515,8 @@ void IconEditorLayer::buildWorkspace() {
         edit("canvas-scale", [&] {
             auto* piece = selectedPiece();
             if (!piece) return;
-            // La parte comun del estiron va al tamano general y lo que sobra a
-            // cada eje, para que arrastrar en diagonal no tope enseguida.
+            // shared stretch goes to overall size, remainder per axis, so diagonal
+            // drags don't cap out early.
             float const uniform = std::sqrt(std::max(0.0001f, factorX * factorY));
             piece->transform.scale = std::clamp(piece->transform.scale * uniform, 0.05f, 3.f);
             piece->scaleX = std::clamp(piece->scaleX * (factorX / uniform), 0.25f, 4.f);
@@ -552,7 +551,7 @@ void IconEditorLayer::buildWorkspace() {
         addChild(m_canvas, 5);
     }
 
-    // Robot y spider llevan cuatro dibujos que se editan por separado.
+    // robot/spider carry four drawings edited separately.
     if (hasParts) {
         m_partsHost = CCNode::create();
         m_partsHost->setPosition({layout.workspaceCX, layout.partsY});
@@ -583,7 +582,7 @@ void IconEditorLayer::buildWorkspace() {
         addChild(frame, 4);
     }
 
-    // Estas herramientas solo cambian como se ve, nunca el icono.
+    // these tools only change the view, never the icon.
     auto* toolMenu = CCMenu::create();
     toolMenu->setPosition({0.f, 0.f});
     addChild(toolMenu, 6);
@@ -592,7 +591,7 @@ void IconEditorLayer::buildWorkspace() {
     float const toolLeft = layout.workspaceCX - layout.canvasSide / 2.f;
     m_toolLabelW = std::max(8.f, toolW - 12.f);
 
-    // ButtonSprite es dueno de su arte, asi que el estado va en el texto.
+    // ButtonSprite owns its art, so state goes in the text.
     auto makeToolButton = [&](float cx, cocos2d::CCLabelBMFont** out,
                               std::function<void(CCMenuItemSpriteExtra*)> action) {
         float const btnW = std::max(12.f, toolW - 5.f);
@@ -642,8 +641,7 @@ void IconEditorLayer::buildWorkspace() {
         [this](CCMenuItemSpriteExtra*) {
             m_eyedropper = !m_eyedropper;
             if (m_canvas) m_canvas->setEyedropper(m_eyedropper);
-            // Los pixeles del icono solo se llevan al lienzo con el
-            // cuentagotas puesto, asi que hay que volver a dibujarlo.
+            // icon pixels only reach the canvas with the eyedropper on, so redraw.
             if (m_eyedropper) schedulePreview(false);
             setStatus(m_eyedropper
                 ? "Toca el icono para copiar ese color."
@@ -704,8 +702,7 @@ void IconEditorLayer::buildInspector() {
     m_zoneChipsHost->setPosition({layout.scrollX, layout.chipsY});
     addChild(m_zoneChipsHost, 6);
 
-    // Cuelga de la tira para que la separacion siga a las chips cuando el
-    // numero de zonas cambia entre las partes del robot.
+    // hangs off the strip so spacing tracks chips when robot parts change zone counts.
     if (auto* line = paimon::SpriteHelper::createColorPanel(
             layout.scrollW, 1.f, {255, 255, 255}, 60, 0.f)) {
         line->setAnchorPoint({0.f, 0.f});
@@ -856,7 +853,7 @@ void IconEditorLayer::rebuildInspector() {
     if (!m_inspectorHost || !m_tabsHost) return;
 
     if (m_inspector) {
-        // Guardar el desplazamiento para que rehacer la lista no salte arriba.
+        // keep the scroll offset so rebuilding the list doesn't jump to top.
         if (auto* content = m_inspector->m_contentLayer) {
             m_inspectorScrollY = content->getPositionY();
         }
@@ -1201,7 +1198,7 @@ std::vector<CCNode*> IconEditorLayer::buildPaintTab(float width) {
             scheduleInspectorRebuild();
         }));
 
-    // El borde vive con la pintura porque es otra pasada de color sobre la forma.
+    // outline lives with the fill: another color pass over the same shape.
     rows.push_back(kit::makeToggleRow(width, "Borde",
         "Un contorno alrededor de la capa. Ayuda a que el icono se vea "
         "nitido en el juego.",
@@ -1450,7 +1447,7 @@ std::vector<SlotDef> IconEditorLayer::visibleZones() const {
     auto const* def = anatomyFor(m_project.type);
     if (!def) return out;
     for (auto const& slot : def->slots) {
-        // "Extra" solo existe en la primera parte del robot/spider.
+        // "extra" only exists on robot/spider part 1.
         if (def->partCount > 1 && m_currentPart > 1 && slot.key == "extra") continue;
         out.push_back(slot);
     }
@@ -1526,8 +1523,8 @@ void IconEditorLayer::selectTab(Tab tab) {
     if (tab == m_tab) return;
     m_tab = tab;
     m_inspectorScrollY = 0.f;
-    // Llega desde el propio boton de la barra, asi que la barra se rehace en
-    // el siguiente frame y no debajo del despachador de toques.
+    // arrives from the bar's own button, so the bar rebuilds next frame,
+    // not under the touch dispatcher.
     scheduleInspectorRebuild();
 }
 
@@ -1676,7 +1673,7 @@ void IconEditorLayer::alignSelected(mkui::AlignMode mode) {
         if (!piece) return;
         piece->transform.offsetX =
             std::clamp(piece->transform.offsetX + dx / half, -1.f, 1.f);
-        // Las filas del render van de arriba abajo y el offset al reves.
+        // render rows run top-down, offset bottom-up.
         piece->transform.offsetY =
             std::clamp(piece->transform.offsetY - dy / half, -1.f, 1.f);
     });
@@ -1688,7 +1685,7 @@ void IconEditorLayer::applyFillToZone(FillSpec const& fill, std::string const& s
         auto it = m_project.slots.find(storageKey);
         if (it == m_project.slots.end()) return;
         for (auto& piece : it->second.pieces) {
-            // El contorno lo decide el usuario por capa, no la pintura copiada.
+            // outline stays per-layer by user choice, not from the copied fill.
             auto outline = piece.fill.outline;
             piece.fill = fill;
             piece.fill.outline = outline;
@@ -1836,7 +1833,7 @@ void IconEditorLayer::onLoadWholeIcon() {
                     continue;
                 }
                 auto key = slotStorageKey(self->m_currentPart, slot.key);
-                // Partir de un icono oficial es empezar de cero en esa zona.
+                // starting from an official icon resets that zone.
                 self->m_project.slots[key].pieces.clear();
                 self->m_project.slots[key].pieces.push_back(std::move(piece));
                 ++loaded;
@@ -1951,8 +1948,7 @@ void IconEditorLayer::adoptShapeFromProject(std::string const& projectId) {
         return;
     }
 
-    // El PNG se copia al proyecto para que siga abriendose aunque el otro
-    // icono se borre.
+    // PNG is copied into the project so it reopens even if the source icon is deleted.
     auto const name = IconPaths::sanitizeFilename(
         fmt::format("prestada_{}_{}", selectedPiece()->id, sourcePiece.shape.file));
     std::error_code ec;
@@ -2213,8 +2209,8 @@ void IconEditorLayer::maybeShowTour() {
     auto* outlines = PaimonDrawNode::create();
     host->addChild(outlines, 1);
 
-    // Un recuadro y una linea por sitio, sacados del mismo layout que dibuja
-    // el editor, para que no se descoloquen si cambia el tamano de ventana.
+    // one box + line per site, from the same layout the editor draws, so window
+    // resizes can't desync them.
     auto highlight = [&](CCRect const& rect, char const* text, bool labelBelow) {
         ccColor4F const accent{0.42f, 0.80f, 1.f, 1.f};
         CCPoint const bl{rect.origin.x, rect.origin.y};
@@ -2329,7 +2325,7 @@ void IconEditorLayer::update(float dt) {
 }
 
 void IconEditorLayer::scrollWheel(float x, float y) {
-    // Sobre el lienzo la rueda acerca; fuera desplaza el panel.
+    // wheel zooms over the canvas, scrolls the panel outside it.
     if (m_canvas) {
         auto const local = m_canvas->viewportFromScreen(geode::cocos::getMousePos());
         auto const size = m_canvas->getContentSize();
@@ -2350,7 +2346,7 @@ std::vector<std::string> IconEditorLayer::drawOrderKeys() const {
     auto const* def = anatomyFor(m_project.type);
     if (!def) return keys;
 
-    // De atras hacia delante, para que el brillo quede detras del blanco.
+    // back-to-front, so glow lands behind white.
     for (char const* key : {"glow", "tertiary", "secondary", "main", "extra"}) {
         for (auto const& slot : def->slots) {
             if (slot.key != key) continue;
@@ -2375,8 +2371,7 @@ void IconEditorLayer::kickPreviewJob() {
 
     std::vector<std::string> keys;
     if (m_previewFast) {
-        // Arrastrando solo cambia la zona activa, y re-dibujar las cinco a
-        // quince veces por segundo se nota.
+        // mid-drag only the active zone changes; repainting all five at 15 Hz shows.
         keys.push_back(activeKey);
     } else {
         keys = drawOrderKeys();
@@ -2424,8 +2419,7 @@ void IconEditorLayer::applyPreview(std::vector<std::pair<std::string, SlotRender
             if (auto* texture = ts::SpritePreviewRenderer::createTexture(thumb)) {
                 m_pieceThumbs[piece.pieceId] = texture;
             }
-            // Una vez hecha la miniatura los pixeles a tamano completo solo
-            // ocuparian memoria: lo que se usa despues es la mascara.
+            // full-size pixels only waste memory past the thumbnail; the mask is what's used.
             piece.pixels = ts::ImageBuffer{};
         }
         m_slotRenders[key] = std::move(slot);
@@ -2436,8 +2430,7 @@ void IconEditorLayer::applyPreview(std::vector<std::pair<std::string, SlotRender
         EditorCanvas::Zone zone;
         zone.key = key;
         if (auto it = m_slotRenders.find(key); it != m_slotRenders.end()) {
-            // El lienzo solo necesita los pixeles para el cuentagotas, y
-            // copiarlos en cada re-dibujado de un arrastre no sale gratis.
+            // canvas needs pixels for the eyedropper only; copying them every drag repaint is dear.
             if (m_eyedropper) zone.composite = it->second.composite;
             zone.pieces = it->second.pieces;
         }
@@ -2452,8 +2445,7 @@ void IconEditorLayer::applyPreview(std::vector<std::pair<std::string, SlotRender
     m_canvas->setEyedropper(m_eyedropper);
     pushCanvasSelection();
 
-    // Mientras se arrastra no se tocan chips ni lista: se reconstruyen al
-    // soltar, en onGestureEnd.
+    // mid-drag chips and list stay frozen; rebuilt on release in onGestureEnd.
     if (m_gestureActive) return;
     refreshZoneChips();
     if (m_tab == Tab::Layers) scheduleInspectorRebuild();

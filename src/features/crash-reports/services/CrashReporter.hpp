@@ -2,8 +2,7 @@
 
 namespace paimon::crash {
 
-// Uploads the crashlogs Geode left behind on previous launches, together with
-// the session log that goes with each one.
+// Uploads Geode's leftover crashlogs with their matching session logs.
 void reportPendingCrashes();
 
 } // namespace paimon::crash

@@ -42,6 +42,13 @@ float scaledHeight(CCLabelBMFont* l) {
     return l ? l->getContentSize().height * l->getScale() : 0.f;
 }
 
+CCLabelBMFont* makeDescBlock(char const* text, float maxW, float& h) {
+    if (!text || text[0] == '\0') return nullptr;
+    auto* l = makeDescLabel(text, maxW);
+    h = scaledHeight(l) + 2.f;
+    return l;
+}
+
 CCMenu* makeRowMenu(CCNode* row) {
     auto* menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
@@ -134,12 +141,8 @@ CCNode* makeToggleRow(
     constexpr float kTitleH = 14.f;
     float textMaxW = width - 60.f;
 
-    CCLabelBMFont* descLbl = nullptr;
     float descH = 0.f;
-    if (desc && desc[0] != '\0') {
-        descLbl = makeDescLabel(desc, textMaxW);
-        descH = scaledHeight(descLbl) + 2.f;
-    }
+    auto* descLbl = makeDescBlock(desc, textMaxW, descH);
 
     float rowH = kPad + kTitleH + descH + kPad;
 
@@ -178,12 +181,8 @@ CCNode* makeSliderRow(
     float leftW = width * 0.50f;
     float textMaxW = leftW - 14.f;
 
-    CCLabelBMFont* descLbl = nullptr;
     float descH = 0.f;
-    if (desc && desc[0] != '\0') {
-        descLbl = makeDescLabel(desc, textMaxW);
-        descH = scaledHeight(descLbl) + 2.f;
-    }
+    auto* descLbl = makeDescBlock(desc, textMaxW, descH);
 
     float rowH = std::max(kPad + kTitleH + descH + kPad, 42.f);
 
@@ -245,16 +244,11 @@ CCNode* makeSelectRow(
     constexpr float kPad = 6.f;
     constexpr float kTitleH = 14.f;
     constexpr float kZoneW = 150.f;
-// Leave room for the gear without overlapping arrows.
     float gearW = onGear ? 24.f : 0.f;
     float textMaxW = width - kZoneW - 24.f - gearW;
 
-    CCLabelBMFont* descLbl = nullptr;
     float descH = 0.f;
-    if (desc && desc[0] != '\0') {
-        descLbl = makeDescLabel(desc, textMaxW);
-        descH = scaledHeight(descLbl) + 2.f;
-    }
+    auto* descLbl = makeDescBlock(desc, textMaxW, descH);
 
     float rowH = std::max(kPad + kTitleH + descH + kPad, 30.f);
 
@@ -287,7 +281,6 @@ CCNode* makeSelectRow(
 
     auto* menu = makeRowMenu(row);
 
-// Shared state for both arrows.
     auto state = std::make_shared<int>(index);
     auto opts = std::make_shared<std::vector<std::string>>(std::move(options));
     auto cb = std::make_shared<std::function<void(int)>>(std::move(onChange));
@@ -341,12 +334,8 @@ CCNode* makeButtonRow(
     constexpr float kTitleH = 14.f;
     float textMaxW = width - 130.f;
 
-    CCLabelBMFont* descLbl = nullptr;
     float descH = 0.f;
-    if (desc && desc[0] != '\0') {
-        descLbl = makeDescLabel(desc, textMaxW);
-        descH = scaledHeight(descLbl) + 2.f;
-    }
+    auto* descLbl = makeDescBlock(desc, textMaxW, descH);
 
     float rowH = std::max(kPad + kTitleH + descH + kPad, 32.f);
 
@@ -386,12 +375,8 @@ CCNode* makeColorRow(
     constexpr float kSwatch = 26.f;
     float textMaxW = width - 90.f;
 
-    CCLabelBMFont* descLbl = nullptr;
     float descH = 0.f;
-    if (desc && desc[0] != '\0') {
-        descLbl = makeDescLabel(desc, textMaxW);
-        descH = scaledHeight(descLbl) + 2.f;
-    }
+    auto* descLbl = makeDescBlock(desc, textMaxW, descH);
 
     float rowH = std::max(kPad + kTitleH + descH + kPad, 34.f);
 
@@ -529,12 +514,8 @@ CCNode* makeHeroToggle(
     constexpr float kTitleH = 17.f;
     float textMaxW = width - 150.f;
 
-    CCLabelBMFont* descLbl = nullptr;
     float descH = 0.f;
-    if (desc && desc[0] != '\0') {
-        descLbl = makeDescLabel(desc, textMaxW);
-        descH = scaledHeight(descLbl) + 2.f;
-    }
+    auto* descLbl = makeDescBlock(desc, textMaxW, descH);
 
     float rowH = std::max(kPad + kTitleH + descH + kPad, 40.f);
 
@@ -611,7 +592,6 @@ geode::ScrollLayer* makeScrollStack(
 
 namespace {
 
-// Shared tab-bar state for restyling after selection changes.
 struct TabBarState {
     std::vector<cocos2d::CCNodeRGBA*> panels;
     std::vector<CCLabelBMFont*> labels;
@@ -751,8 +731,7 @@ void showAbove(FLAlertLayer* alert, CCNode* owner) {
     int const above = owner ? owner->getZOrder() + 1 : 100;
     alert->m_ZOrder = above;
     alert->show();
-    // show() may ignore m_ZOrder depending on how the alert was built, so put
-    // it where it belongs once it actually has a parent.
+// show() may ignore m_ZOrder, so reorder once it has a parent.
     if (auto* parent = alert->getParent()) parent->reorderChild(alert, above);
 }
 

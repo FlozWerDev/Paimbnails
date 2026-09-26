@@ -55,7 +55,6 @@ public:
         m_postHooks[action].push_back(std::move(hook));
     }
 
-// One Deny blocks.
     HookResult runPreHooks(HookContext const& ctx) {
         std::unique_lock lock(m_mutex);
         auto it = m_preHooks.find(ctx.action);

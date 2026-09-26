@@ -1,5 +1,4 @@
 // hue_shift_beat.glsl — full-screen hue rotation reactive to mid + beat.
-// Bass adds saturation pumping; treble adds slight horizontal jitter.
 #ifdef GL_ES
 precision mediump float;
 #endif
@@ -35,22 +34,18 @@ vec3 hsv2rgb(vec3 c) {
 void main() {
     vec2 uv = v_texCoord;
 
-    // Treble jitter on x.
     uv.x += sin(uv.y * 80.0 + u_time * 12.0) * u_treble * u_intensity * 0.003;
 
     vec4 base = texture2D(u_texture, uv);
     vec3 hsv = rgb2hsv(base.rgb);
 
-    // Hue shift: continuous from time + impulse from beat + mid bias.
     float hueShift = u_time * 0.08
                    + u_mid * u_intensity * 0.35
                    + u_beat * 0.2;
     hsv.x = fract(hsv.x + hueShift * u_intensity);
 
-    // Saturation pump with bass.
     hsv.y = clamp(hsv.y * (1.0 + u_bass * u_intensity * 0.6), 0.0, 1.0);
 
-    // Brightness with energy + beat.
     hsv.z *= 1.0 + u_beat * 0.35 + u_energy * 0.15;
 
     vec3 col = hsv2rgb(hsv);

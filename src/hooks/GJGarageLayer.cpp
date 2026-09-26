@@ -30,16 +30,12 @@ class $modify(PaimonGJGarageLayer, GJGarageLayer) {
     bool init() {
         if (!GJGarageLayer::init()) return false;
         LayerBackgroundManager::get().applyBackground(this, "garage");
-        // Inject the gear button + listen for config changes that should
-        // re-color the open kit. El Creador de Iconos cuelga de ese mismo
-        // popup, asi que no necesita boton propio aqui.
+        // gear button + re-color on config change; Icon Maker hangs off the same popup
         paimon::icons::garage::onGarageInit(this);
         paimon::iconcopy::garage::onGarageInit(this);
-        // Los accesos de arriba ya no se apilan en la columna: cuelgan del hub,
-        // y este es el unico boton que se ve.
+        // accesses hang off the hub; this is the only visible button
         paimon::garage_hub::installHubButton(this);
-        // Stats Display API lays out its children one frame after garage init,
-        // but leaves the menu anchor at the right edge instead of its center.
+        // Stats Display API lays out one frame late with the anchor at the edge
         this->scheduleOnce(schedule_selector(PaimonGJGarageLayer::fixStatsMenuPosition), 0.f);
         return true;
     }

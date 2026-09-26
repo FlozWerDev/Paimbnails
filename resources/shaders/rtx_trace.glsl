@@ -1,6 +1,4 @@
-// Trazado en pantalla: altura desde luma+saturacion.
-// Direcciones estratificadas con rotacion IGN para bajar varianza.
-// Pasos geometricos; altura/emision en sRGB, rebote en lineal.
+// screen trace: height from luma+saturation, IGN strata, geometric steps.
 
 varying vec2 v_texCoord;
 
@@ -32,7 +30,7 @@ const float kTau      = 6.28318531;
 const float kPi       = 3.14159265;
 const float kF0       = 0.04;
 const float kGlassIor = 1.33;
-// Mascara de vidrio: luma alta y saturacion baja.
+// glass mask: high luma, low saturation.
 const float kTransLuma0 = 0.55;
 const float kTransLuma1 = 0.85;
 const float kTransSat0  = 0.05;
@@ -51,7 +49,7 @@ float emissiveOf(vec3 c, float range) {
     return safeSmoothstep(u_lightThreshold, u_lightThreshold + range, luma(c));
 }
 
-// IGN con offset por frame: baja discrepancia temporal.
+// per-frame IGN offset.
 float ign(vec2 p, float frame) {
     p += 5.588238 * mod(frame, 64.0);
     return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
@@ -64,7 +62,7 @@ bool outside(vec2 p) {
 void main() {
     vec2 uv = v_texCoord;
 
-    // Clamp defensivo: un JSON a mano no debe meter NaN/Inf.
+    // clamp: hand-written JSON must not inject NaN/Inf.
     float steps = clamp(u_raySteps, 1.0, float(kMaxSteps));
     float dist  = max(u_rayDistance, 0.001);
     float range = max(u_lightRange, 0.0001);
@@ -87,7 +85,7 @@ void main() {
                             1.0));
     float slopeMag = (abs(hR - hL) + abs(hU - hD)) * 0.5;
 
-    // 4 streams IGN separados para no correlacionar difuso y especular.
+    // separate IGN streams for diffuse vs specular.
     vec2 frag = gl_FragCoord.xy;
     float rotA   = ign(frag, u_frame);
     float rPhase = ign(frag + 11.31, u_frame + 57.0);
@@ -105,18 +103,16 @@ void main() {
     for (int i = 0; i < kMaxRays; i++) {
         if (float(i) >= u_rayCount) break;
 
-        // Estratificado con jitter: reparte el giro sin reagrupar rayos.
         float j = hash12(frag + vec2(float(i) * 12.91, float(i) * 7.73)
                          + fract(u_frame * 0.159) * 43.7);
         float a = ((float(i) + j) / rayN + rotA) * kTau;
         vec2 dirPx = vec2(cos(a), sin(a));
 
-        // Sin luz trasera; peso 0 salta la marcha.
         float w = max(dot(dirPx, n.xy) * 0.5 + 0.5, 0.0);
         wsum += w;
         if (w <= 0.0001) continue;
 
-        // Marcha isotropa en pixeles para no depender del aspecto.
+        // pixel-space march, aspect-independent.
         vec2 dirUV = dirPx * u_texel;
         dirUV /= max(length(dirUV), 0.0000001);
 
@@ -132,7 +128,7 @@ void main() {
             if (outside(p)) break;
 
             vec3 c = texture2D(u_scene, p).rgb;
-            // Tolerancia conica con sesgo por pendiente contra el acne.
+            // cone tolerance with slope bias against acne.
             float tN = t / dist;
             float tol = h0 + slopeMag * thick * 0.5
                       + n.z * t * thick * (0.75 + 0.5 * tN);
@@ -156,7 +152,6 @@ void main() {
     vec3 trans = vec3(0.0);
     float rStr = clamp(u_reflectStrength, 0.0, 4.0);
     if (rStr > 0.001) {
-        // GGX con Smith y Schlick; 4 taps solo si hay reflejo.
         vec3 vDir = vec3(0.0, 0.0, 1.0);
         float ndv = clamp(n.z, 0.0, 1.0);
         float rough = clamp(u_reflectRoughness, 0.0, 1.0);
@@ -164,7 +159,6 @@ void main() {
         float alpha2 = alpha * alpha;
         float fresAmt = clamp(u_reflectFresnel, 0.0, 1.0);
 
-        // Tangente con fallback a +X si la normal es plana.
         vec3 tDir = vec3(-n.y, n.x, 0.0);
         float tLen = length(tDir);
         if (tLen > 0.0001) {
@@ -174,13 +168,11 @@ void main() {
         }
         vec3 bDir = cross(n, tDir);
 
-        // Reflejo con menos pasos; reparto recalculado al alcance.
         float reflSteps = max(4.0, steps * 0.6);
         float reflSpan = 1.0 / max(pow(g, reflSteps) - 1.0, 0.0001);
 
         vec3 specAcc = vec3(0.0);
         for (int k = 0; k < kSpecTaps; k++) {
-            // Estratos 2x2 con Cranley-Patterson, sin tocar el difuso.
             float kx = mod(float(k), 2.0);
             float ky = floor(float(k) * 0.5);
             float u1 = fract((kx + specU) * 0.5);
@@ -200,7 +192,7 @@ void main() {
             if (ndl <= 0.0) continue;
             float ndlc = clamp(ndl, 0.0, 1.0);
 
-            // D se cancela con la pdf para acotar energia.
+            // D cancels with the pdf to bound energy.
             float ggxD = alpha2 / max(kPi * pow(ndh * ndh * (alpha2 - 1.0) + 1.0, 2.0), 0.0000001);
             float kk = alpha * 0.5;
             float gV = ndv / max(ndv * (1.0 - kk) + kk, 0.0001);
@@ -216,7 +208,7 @@ void main() {
             vec2 rd = lDir.xy;
             float rl = length(rd);
             if (rl <= 0.0001) {
-                // En espejo plano se reutiliza el azimut muestreado.
+                // flat mirror reuses the sampled azimuth.
                 rd = vec2(cos(phi), sin(phi));
             } else {
                 rd /= max(rl, 0.0000001);
@@ -248,7 +240,7 @@ void main() {
             }
         }
 
-        // Promedio acotado; empaqueta (gi+refl+trans, AO) para el composite.
+        // packs (gi+refl+trans, AO) for the composite.
         refl = specAcc * (1.0 / float(kSpecTaps)) * rStr;
 
         float sat0 = max(max(c0.r, c0.g), c0.b) - min(min(c0.r, c0.g), c0.b);
@@ -257,7 +249,7 @@ void main() {
         float fPix = mix(1.0, kF0 + (1.0 - kF0) * pow(max(1.0 - ndv, 0.0), 5.0), fresAmt);
         float transK = clamp(transMask * (1.0 - fPix), 0.0, 1.0);
         if (transK > 0.001) {
-            // Sin TIR posible (eta < 1); fallbacks estables sin shimmer.
+            // no TIR possible (eta < 1); stable fallbacks.
             vec3 refr3 = refract(-vDir, n, 1.0 / kGlassIor);
             vec2 refrD = refr3.xy;
             float refrL = length(refrD);
@@ -294,11 +286,10 @@ void main() {
                 }
             }
             trans = transHit * transK * rStr;
-            // El difuso cede a la transmision para que los pesos sumen <= 1.
+            // diffuse yields to transmission so weights sum <= 1.
             gi *= (1.0 - transK);
         }
     }
 
-    // Clamp final contra entradas degeneradas.
     gl_FragColor = vec4(min(gi + refl + trans, vec3(8.0)), clamp(ao, 0.0, 1.0));
 }

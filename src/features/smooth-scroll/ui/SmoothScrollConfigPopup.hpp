@@ -3,8 +3,7 @@
 
 namespace paimon::smoothscroll {
 
-// Popup de configuracion de smooth-scroll, montado sobre PaiConfigKit:
-// tarjetas por seccion, descripciones y valores siempre visibles.
+// Smooth-scroll config on PaiConfigKit: cards per section, always-visible values.
 class SmoothScrollConfigPopup : public geode::Popup {
 public:
     static SmoothScrollConfigPopup* create();
@@ -12,13 +11,13 @@ public:
 protected:
     bool init() override;
 
-    // Reconstruye el contenido scrolleable (tras un reset, por ejemplo).
+    // Rebuilds the scrollable content (after a reset, e.g.).
     void rebuild();
-    // Reconstruccion diferida al siguiente tick (cambio de pestana).
+    // Deferred rebuild next tick (tab change).
     void scheduleRebuild();
 
     geode::ScrollLayer* m_scroll = nullptr;
-    int m_tab = 0; // 0 = Basico (menus), 1 = Avanzado (editor)
+    int m_tab = 0; // 0 = Basic (menus), 1 = Advanced (editor)
 };
 
 } // namespace paimon::smoothscroll

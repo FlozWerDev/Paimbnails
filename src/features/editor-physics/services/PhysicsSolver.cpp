@@ -286,9 +286,8 @@ bool collideCirclePolygon(
     Vec2 const from = polygon.points[deepest];
     Vec2 const to = polygon.points[(deepest + 1) % polygon.count];
     Vec2 const contact = closestPointOnSegment(from, to, circle.center);
-    // Once the centre is inside the polygon the closest edge point is the only
-    // stable direction left; pushing along the face normal keeps a sunken orb
-    // from popping out of the wrong side.
+    // Inside the polygon the closest edge point is the only stable direction;
+    // pushing along the face normal keeps a sunken orb from popping out wrong.
     Vec2 normal = faceNormalOf(polygon, deepest);
     float penetration = circle.radius - separation;
     if (separation >= 0.f) {

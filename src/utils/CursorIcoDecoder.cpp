@@ -11,7 +11,7 @@ namespace paimon::cursor_ico {
 
 namespace {
 
-// Bounds-checked little-endian reads.
+// bounds-checked LE reads.
 inline uint16_t rd16(uint8_t const* p) {
     return static_cast<uint16_t>(p[0] | (p[1] << 8));
 }
@@ -27,7 +27,7 @@ constexpr int kMaxDim = 1024; // cursors should stay small
 bool decodeIconImage(uint8_t const* img, size_t imgSize, DecodedFrame& out) {
     if (imgSize < 8) return false;
 
-// Decode embedded PNGs without CCTexture2D so import is GL-independent.
+// PNG path avoids CCTexture2D; import stays GL-independent.
     if (paimon::format::isPng(img, imgSize)) {
         int w = 0, h = 0, channels = 0;
         unsigned char* pixels = stbi_load_from_memory(
@@ -45,7 +45,7 @@ bool decodeIconImage(uint8_t const* img, size_t imgSize, DecodedFrame& out) {
         return true;
     }
 
-// DIB height includes the color image and the 1bpp AND mask.
+// DIB height covers color image + 1bpp AND mask.
     if (imgSize < 40) return false;
     uint32_t headerSize = rd32(img + 0);
     if (headerSize < 40) return false;
@@ -68,7 +68,7 @@ bool decodeIconImage(uint8_t const* img, size_t imgSize, DecodedFrame& out) {
     uint8_t const* p = img + headerSize;
     uint8_t const* end = img + imgSize;
 
-// DIB rows are bottom-up; output rows are top-down.
+// DIB rows bottom-up; output top-down.
     auto setPixel = [&](int x, int yTop, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
         size_t idx = (static_cast<size_t>(yTop) * w + x) * 4;
         out.rgba[idx + 0] = r;
@@ -78,7 +78,7 @@ bool decodeIconImage(uint8_t const* img, size_t imgSize, DecodedFrame& out) {
     };
 
     if (bpp == 32) {
-// Rows are 4-byte aligned and stored as BGRA.
+// rows 4-byte aligned, BGRA.
         size_t rowBytes = static_cast<size_t>(w) * 4;
         for (int y = 0; y < h; ++y) {
             uint8_t const* row = p + static_cast<size_t>(y) * rowBytes;
@@ -187,7 +187,7 @@ bool decodeIcoInternal(uint8_t const* data, size_t size, DecodedFrame& out) {
     uint8_t const* e = data + 6 + static_cast<size_t>(bestIdx) * 16;
     uint32_t bytesInRes  = rd32(e + 8);
     uint32_t imageOffset = rd32(e + 12);
-// Reject offset + size overflow before reading the entry.
+// reject offset+size overflow before reading.
     if (bytesInRes == 0 || imageOffset > size || bytesInRes > size - imageOffset) return false;
 
     return decodeIconImage(data + imageOffset, bytesInRes, out);

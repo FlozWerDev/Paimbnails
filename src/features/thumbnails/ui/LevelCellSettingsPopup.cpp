@@ -65,7 +65,7 @@ constexpr char const* kBlurApiTag = "thesillydoggo.blur-api/blur-options";
 void LevelCellSettingsPopup::onExit() {
     this->unschedule(schedule_selector(LevelCellSettingsPopup::checkScrollPosition));
     this->unschedule(schedule_selector(LevelCellSettingsPopup::checkDragState));
-// Restore external blur if the popup closes during a drag.
+    // Restore external blur on close-mid-drag.
     if (m_dragHiding) {
         m_dragHiding = false;
         m_activeDragSlider = nullptr;
@@ -114,7 +114,7 @@ void LevelCellSettingsPopup::loadSettings() {
 }
 
 void LevelCellSettingsPopup::saveSettings() {
-// Persist the same types LevelCell and Settings.hpp read.
+    // Same types LevelCell and Settings.hpp read.
     Mod::get()->setSavedValue<std::string>("levelcell-background-type", m_currentBgType);
     Mod::get()->setSettingValue<double>("level-thumb-width", static_cast<double>(m_currentThumbWidth));
     Mod::get()->setSavedValue<double>("levelcell-background-blur", static_cast<double>(m_currentBlur));
@@ -133,7 +133,7 @@ void LevelCellSettingsPopup::saveSettings() {
     Mod::get()->setSavedValue<bool>("levelcell-mythic-particles", m_mythicParticles);
     Mod::get()->setSavedValue<bool>("levelcell-animated-gradient", m_animatedGradient);
 
-// Invalidate both the cell watcher and shared settings cache.
+    // Invalidate cell watcher + shared settings cache.
     paimon::settings::internal::invalidateSettingsCache();
     s_settingsVersion++;
 
@@ -176,7 +176,7 @@ void LevelCellSettingsPopup::checkScrollPosition(float dt) {
     }
 }
 
-// Poll slider drag state each frame without hooks.
+// Frame-polled slider drag state, no hooks.
 void LevelCellSettingsPopup::checkDragState(float dt) {
     Slider* dragging = nullptr;
     for (auto& row : m_sliderRows) {
@@ -196,7 +196,7 @@ void LevelCellSettingsPopup::checkDragState(float dt) {
     }
 }
 
-// Keep the live value caption above the active slider.
+// Live value caption stays above the active slider.
 void LevelCellSettingsPopup::updateDragCaption(Slider* active) {
     if (!m_dragCaptionPill || !active) return;
 
@@ -232,16 +232,14 @@ void LevelCellSettingsPopup::applyDragVisibility(Slider* active) {
     bool hiding = (active != nullptr);
     m_dragHiding = hiding;
 
-// Use visibility instead of opacity; Slider, ScrollLayer, and BreakLine do not
-// implement CCRGBAProtocol.
+    // Visibility, not opacity: Slider/ScrollLayer/BreakLine lack CCRGBAProtocol.
     for (auto* node : m_hideOnDragNodes) {
         if (!node) continue;
     if (active && node == static_cast<CCNode*>(active)) continue;
         node->setVisible(!hiding);
     }
 
-// Fade the popup's dim layer during drag to preview the list beneath it;
-// restore its original opacity afterward.
+    // Fade the dim layer mid-drag to preview the list beneath; restore after.
     if (hiding && m_dimOriginalOpacity == 0) {
         m_dimOriginalOpacity = this->getOpacity();
         if (m_dimOriginalOpacity == 0) m_dimOriginalOpacity = 150;
@@ -254,7 +252,7 @@ void LevelCellSettingsPopup::applyDragVisibility(Slider* active) {
     constexpr float kBlurFade = 0.22f;
     paimon::popupblur::setLivePreviewMode(this, hiding, kBlurFade);
 
-// Detach external BlurAPI markers during drag and restore them afterward.
+    // External BlurAPI markers detach mid-drag, restore after.
     if (hiding) {
         if (!m_savedBlurApiOptions) {
             if (auto* opts = this->getUserObject(kBlurApiTag)) {
@@ -708,7 +706,7 @@ void LevelCellSettingsPopup::onSeparatorToggled(CCObject*) {
 void LevelCellSettingsPopup::onViewButtonToggled(CCObject*) {
     m_showViewButton = !m_viewButtonToggle->isToggled();
     saveSettings();
-// Restoring the vanilla View button requires a full list rebuild.
+    // Vanilla View button needs a full list rebuild.
     paimon::thumbnails::refreshActiveLevelBrowserForCompactToggle();
 }
 
@@ -726,7 +724,7 @@ void LevelCellSettingsPopup::onCompactShowToggleToggled(CCObject*) {
 void LevelCellSettingsPopup::onTransparentToggled(CCObject*) {
     m_transparentMode = !m_transparentToggle->isToggled();
     saveSettings();
-// Transparent mode changes the cell structure; rebuild.
+    // Transparent mode restructures cells: rebuild.
     paimon::thumbnails::refreshActiveLevelBrowserForCompactToggle();
 }
 

@@ -6,16 +6,13 @@
 
 namespace paimon::badges {
 
-// Stable node ID for a role badge (mod-prefixed). "mod" maps to the historical
-// "paimon-moderator-badge" id so existing lookups keep working.
+// Mod-prefixed node IDs; "mod" keeps the historical paimon-moderator-badge id.
 std::string roleBadgeId(std::string const& roleId);
 
-// Build a badge node for a role. Prefers a packed sprite when present,
-// otherwise draws a colored pill so it works without shipping new art.
+// Packed sprite when shipped, else a colored pill; no extra art needed.
 cocos2d::CCNode* createRoleBadgeNode(std::string const& roleId, float targetHeight);
 
-// Add a clickable badge per active role. Idempotent across the cache-hit and
-// network paths; vip suppressed (server auto-grants it), admin wins over mod.
+// One clickable badge per role, idempotent; vip suppressed, admin beats mod.
 void applyRoleBadges(
     cocos2d::CCMenu* menu,
     paimon::roles::UserRoles const& roles,

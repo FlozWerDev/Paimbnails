@@ -1,5 +1,5 @@
-// Flechas de navegacion de la cola de Twitch dentro del LevelInfoLayer: una a
-// cada lado del nombre del nivel para saltar al pedido anterior / siguiente.
+// queue navigation arrows inside LevelInfoLayer: one on each side of the
+// level name to jump to the previous/next request.
 
 #include "../TwitchRequestManager.hpp"
 #include "../services/TwitchLevelOpen.hpp"
@@ -35,8 +35,8 @@ class $modify(PaimonTwitchLevelInfo, LevelInfoLayer) {
         return true;
     }
 
-    // El titulo no tiene miembro propio en las bindings: primero por node-id y,
-    // si no esta, buscando la etiqueta que muestra el nombre del nivel.
+    // title has no member in the bindings: first by node id, then by
+    // searching the label that shows the level name.
     CCLabelBMFont* findTitleLabel() {
         if (auto* byId = typeinfo_cast<CCLabelBMFont*>(this->getChildByID("title-label"))) {
             return byId;
@@ -48,7 +48,9 @@ class $modify(PaimonTwitchLevelInfo, LevelInfoLayer) {
         if (auto* children = this->getChildren()) {
             for (auto* child : CCArrayExt<CCNode*>(children)) {
                 auto* label = typeinfo_cast<CCLabelBMFont*>(child);
-                if (label && label->getString() && name == label->getString()) return label;
+                if (label) {
+                    if (auto const* text = label->getString(); text && name == text) return label;
+                }
             }
         }
         return nullptr;
@@ -68,8 +70,8 @@ class $modify(PaimonTwitchLevelInfo, LevelInfoLayer) {
         auto* title = findTitleLabel();
         if (!title || !title->getParent()) return;
 
-        // El titulo puede colgar de otro nodo (redisenos, otros mods): pasamos
-        // su posicion a coordenadas de la capa.
+        // the title may hang off another node (redesigns, other mods): convert
+        // its position to layer coordinates.
         auto const world = title->getParent()->convertToWorldSpace(title->getPosition());
         auto const local = this->convertToNodeSpace(world);
         float const gap = title->getScaledContentSize().width / 2.f + 20.f;

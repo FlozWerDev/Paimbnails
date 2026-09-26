@@ -26,10 +26,8 @@ void main() {
     vec4 texColor = texture2D(u_texture, v_texCoord);
     vec4 color = texColor * v_fragmentColor;
     vec3 hsv = rgb2hsv(color.rgb);
-    // shift hue based on time and intensity
     hsv.x = fract(hsv.x + u_time * 0.5 * u_intensity); 
     vec3 rgb = hsv2rgb(hsv);
-    // mix with original based on intensity (so it fades in)
     vec3 result = mix(color.rgb, rgb, u_intensity);
     gl_FragColor = vec4(result, color.a);
 }

@@ -9,8 +9,7 @@ inline std::atomic<int> g_thumbsLoaded{0};
 
 inline std::atomic<bool> g_preloadStarted{false};
 
-// Set from $on_game(Loaded). Deferred preload work waits on it so it never
-// competes with the game's own asset loading on slow machines.
+// set on $on_game(Loaded); deferred work waits so preload never races game loading.
 inline std::atomic<bool> g_gameLoaded{false};
 
 inline int getTotalLoaded() {

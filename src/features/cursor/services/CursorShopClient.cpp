@@ -12,8 +12,7 @@ namespace paimon::cursorshop {
 
 namespace {
 
-// Cloudflare rechaza user agents genericos en custom-cursor.com, asi que se
-// manda uno de navegador completo.
+// Cloudflare rejects generic user agents on custom-cursor.com, so send a full browser one.
 constexpr char const* kUserAgent =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -27,15 +26,13 @@ constexpr std::size_t kMaxDownloadBytes = 24u * 1024 * 1024;
 constexpr int kRwSetsPerPage  = 40;
 constexpr int kRwLoosePerPage = 100;
 constexpr int kRwSearchPerPage = 50;
-// La cuenta que da el buscador incluye iconos, asi que las ultimas paginas
-// pueden venir sin cursores; mas alla de esto no merece la pena seguir.
+// Search counts include icon sets, so tail pages may hold no cursors; stop here.
 constexpr int kMaxSearchPages = 40;
 
-// Prefijo de la categoria sintetica de busqueda.
+// Synthetic search-category prefix.
 constexpr std::string_view kSearchPrefix = "search:";
 
-// Las colecciones grandes de custom-cursor pasan de 600 packs; se recorta para
-// no construir un grid interminable.
+// Large custom-cursor collections pass 600 packs; cap keeps the grid finite.
 constexpr std::size_t kMaxListingItems = 600;
 
 web::WebRequest makeRequest(int timeoutSeconds) {
@@ -91,8 +88,7 @@ std::string stripTags(std::string_view raw) {
     return out;
 }
 
-// Los .fnt del juego solo tienen ASCII imprimible: lo demas se descarta antes de
-// llegar a una etiqueta.
+// Game .fnt files only carry printable ASCII; the rest is dropped before labeling.
 std::string cleanLabel(std::string_view raw, std::size_t maxLen = 58) {
     auto decoded = htmlDecode(raw);
     std::string out;
@@ -117,7 +113,7 @@ std::string cleanLabel(std::string_view raw, std::size_t maxLen = 58) {
     return out;
 }
 
-// Valor de `key="..."` buscando desde `from` sin pasar de `limit`.
+// Value of `key="..."` from `from`, never past `limit`.
 std::string rawAttr(std::string const& h, std::size_t from, std::size_t limit, std::string_view key) {
     std::string needle(key);
     needle += "=\"";
@@ -129,7 +125,7 @@ std::string rawAttr(std::string const& h, std::size_t from, std::size_t limit, s
     return h.substr(start, end - start);
 }
 
-// Corta en el cierre de la misma etiqueta; si el elemento lleva hijos, pasar por stripTags.
+// Cuts at the same-tag close; nested elements need stripTags.
 std::string rawTagText(std::string const& h, std::size_t from, std::size_t limit, std::string_view openPrefix) {
     if (openPrefix.size() < 2 || openPrefix.front() != '<') return "";
     auto at = h.find(openPrefix, from);
@@ -162,7 +158,7 @@ std::string absolute(char const* base, std::string const& path) {
     return std::string(base) + "/" + path;
 }
 
-// Los .ani traen varios fotogramas; el resto son estaticos.
+// Only .ani files carry frames; the rest is static.
 bool looksAnimated(std::string const& url) {
     auto end = url.find_last_of("?#");
     auto path = end == std::string::npos ? url : url.substr(0, end);
@@ -170,8 +166,7 @@ bool looksAnimated(std::string const& url) {
     return geode::utils::string::toLower(path.substr(path.size() - 4)) == ".ani";
 }
 
-// rw-designer marca el rol de cada cursor con una clase; los que tienen
-// equivalente en el mod se sugieren solos.
+// rw-designer tags each cursor role with a class; known ones self-suggest.
 bool suggestedForRwRole(std::string_view role, CursorState& out) {
     if (role == "curarrow") { out = CursorState::Idle;     return true; }
     if (role == "curlink")  { out = CursorState::Hover;    return true; }
@@ -181,7 +176,7 @@ bool suggestedForRwRole(std::string_view role, CursorState& out) {
     return false;
 }
 
-// Ultima pagina del paginador de rw-designer, deducida del mayor offset enlazado.
+// Last rw-designer page, from the largest linked offset.
 int rwPageCount(std::string const& html, std::string_view prefix, int step) {
     std::string needle = "href=\"/cursor-library/";
     needle += prefix;
@@ -328,7 +323,7 @@ Detail parseRwDetail(std::string const& html, std::string const& slug) {
     return out;
 }
 
-// "Showing items 1-50 of 1369 items..." o "Showing all 44 items...".
+// Matches "Showing items 1-50 of N..." or "Showing all N...".
 int rwSearchPageCount(std::string const& html) {
     auto at = html.find("Showing items");
     if (at == std::string::npos) return 1;
@@ -346,8 +341,7 @@ int rwSearchPageCount(std::string const& html) {
     return std::clamp(pages, 1, kMaxSearchPages);
 }
 
-// Los resultados del buscador mezclan sets, cursores sueltos y sets de iconos;
-// estos ultimos se descartan.
+// Search mixes sets, singles and icon sets; icon sets are dropped.
 ListingPage parseRwMixed(std::string const& html, int page) {
     ListingPage out;
     out.page = page;
@@ -386,7 +380,7 @@ ListingPage parseRwMixed(std::string const& html, int page) {
             continue;
         }
 
-        // Sin enlace de descarga no es un cursor (sets de iconos, por ejemplo).
+        // No download link means not a cursor (icon sets, e.g.).
         auto dlAt = html.find(kDlRef, blockStart);
         if (dlAt == std::string::npos || dlAt >= limit) continue;
 
@@ -395,7 +389,7 @@ ListingPage parseRwMixed(std::string const& html, int page) {
         if (hrefEnd == std::string::npos || hrefEnd > limit) continue;
         auto href = html.substr(hrefStart, hrefEnd - hrefStart);
 
-        // /cursor-download/{id}/{fichero}
+        // /cursor-download/{id}/{file}
         auto idStart = std::string_view("/cursor-download/").size();
         auto idEnd = href.find('/', idStart);
         if (idEnd == std::string::npos) continue;
@@ -496,8 +490,7 @@ std::vector<Category> parseCcCollections(std::string const& html) {
     return out;
 }
 
-// custom-cursor sirve algunas artes de pack tambien a tamaño completo, quitando
-// el segmento /32/ de la ruta.
+// Some pack art also exists full-size; drop the /32/ path segment.
 std::string ccLargeVariant(std::string const& url) {
     if (url.find("/db/") == std::string::npos) return "";
     auto at = url.find("/32/");
@@ -505,8 +498,7 @@ std::string ccLargeVariant(std::string const& url) {
     return url.substr(0, at) + "/" + url.substr(at + 4);
 }
 
-// El bloque de demostracion pinta la flecha en el contenedor y el puntero en el
-// boton de dentro, asi que el orden en el HTML da el rol de cada imagen.
+// Demo block paints arrow on the box, pointer on the inner button: HTML order gives each role.
 Detail parseCcDetail(std::string const& html, std::string const& fallbackName) {
     Detail out;
     out.name = cleanLabel(stripTags(rawTagText(html, 0, html.size(), "<h1")));
@@ -671,8 +663,7 @@ void ShopClient::fetchListing(Store store, Category const& category, int page, L
             return;
         }
 
-        // /cursor-library filtra a cursores; en /gallery hay que añadir "cursors"
-        // a la query para que no se cuele de todo.
+        // /cursor-library is cursors-only; /gallery needs "cursors" in the query.
         auto url = safePage == 0
             ? fmt::format("{}/cursor-library?search={}", kRwBase, urlEncode(query))
             : fmt::format("{}/gallery?search={}&page={}", kRwBase,
@@ -730,12 +721,11 @@ void ShopClient::fetchListing(Store store, Category const& category, int page, L
 }
 
 void ShopClient::fetchDetail(Listing const& listing, DetailCallback cb) {
-    // Un cursor suelto ya trae todo lo que hace falta.
+    // A single already carries everything needed.
     if (listing.single && !listing.directUrl.empty()) {
         Detail detail;
         detail.name = listing.name;
-        // Los cursores sueltos no tienen ficha propia: enlazar a la
-        // seccion de la tienda para que el autor reciba la visita.
+        // Singles have no detail page; link the store section so authors get the visit.
         detail.sourceUrl = listing.store == Store::CustomCursor
             ? std::string(kCcBase)
             : std::string(kRwBase) + "/cursor-library";
@@ -818,7 +808,7 @@ std::string ShopClient::filenameFor(std::string const& url, std::string const& f
     auto query = name.find('?');
     if (query != std::string::npos) name.resize(query);
 
-    // Los enlaces de rw-designer traen los espacios como %20.
+    // rw-designer links encode spaces as %20.
     std::string decoded;
     decoded.reserve(name.size());
     for (std::size_t i = 0; i < name.size(); ++i) {

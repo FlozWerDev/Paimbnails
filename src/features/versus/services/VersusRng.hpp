@@ -7,9 +7,8 @@
 
 namespace paimon::versus {
 
-// PCG32. The server hands out one seed per match before the countdown, so both
-// clients build the same milestone list without a round trip and a card lands
-// the instant the percentage is crossed.
+// PCG32. One server seed per match before the countdown, so both clients
+// build the same milestone list with no round trip.
 class VersusRng {
 public:
     explicit VersusRng(uint64_t seed);
@@ -29,8 +28,8 @@ inline constexpr float kMilestoneGap = 6.f;
 
 std::vector<float> rollMilestones(uint64_t seed);
 
-// The card a milestone deals. Each side rolls its own and announces it, so the
-// deficit shift can use local numbers without the two clients having to agree.
+// the card a milestone deals. Each side rolls its own and announces it, so
+// the deficit shift uses local numbers with no agreement needed.
 CardId rollCard(uint64_t seed, int milestone, uint8_t modeMask, float deficit, bool catchUp);
 
 } // namespace paimon::versus

@@ -84,8 +84,7 @@ std::deque<NewThumb>& queue() {
 }
 
 bool g_showing = false;
-// Bumped whenever the queue is reset, so a thumbnail download that lands late
-// cannot push a card the user already moved past.
+// Reset bumps this so a late download can't push a moved-past card.
 uint64_t g_generation = 0;
 
 void pump();
@@ -151,8 +150,7 @@ void present(NewThumb const& item, CCTexture2D* thumbnail, Config const& config,
     card->setOnFinished([config, generation] { finishCurrent(config, generation); });
     overlay->addChild(card, kZOrder);
 
-    // A card torn down without running its exit (scene wipe, GL reload) would
-    // never release the queue, and no alert would come out again this session.
+    // No-exit teardown (scene wipe, GL reload) would wedge the queue for the session: backstop it.
     float const lifetime = config.enterTime + config.hold + config.exitTime + 5.f;
     paimon::scheduleMainThreadDelay(lifetime, [config, generation] {
         if (generation != g_generation || !g_showing) return;
@@ -187,8 +185,7 @@ void pump() {
         return;
     }
 
-    // Whichever comes first wins: the download, or the patience cut-off. The
-    // card is still worth showing over a plain plate.
+    // Download or patience cut-off, whichever first; card still beats a plain plate.
     auto shown = std::make_shared<bool>(false);
     auto reveal = [item, config, generation, shown](CCTexture2D* texture) {
         if (*shown || generation != g_generation || paimon::isRuntimeShuttingDown()) return;
@@ -220,8 +217,7 @@ void enqueue(NewThumb item, bool ignoreSceneFilter) {
     pump();
 }
 
-// The same star/demon mapping the server applies in normalizeLevelMeta, so the
-// uploader's card reads exactly like the one everybody else will get.
+// Same star/demon mapping as the server's normalizeLevelMeta: uploader card matches everyone else's.
 std::string difficultyName(bool autoLevel, bool demon, int demonDifficulty, int stars) {
     if (autoLevel) return "Auto";
     if (demon) {
@@ -342,8 +338,7 @@ void showThumbAlertForUpload(int levelId, std::string const& uploader,
                              std::string const& levelMeta,
                              std::string const& serverMessage) {
     if (levelId <= 0) return;
-    // Suggestions sit in the moderation queue; the server only publishes them
-    // once a moderator accepts, so announcing one here would be a lie.
+    // Pending suggestions publish only after mod approval: announcing one here would lie.
     if (serverMessage.find("pending") != std::string::npos ||
         serverMessage.find("verification") != std::string::npos) {
         return;
@@ -351,10 +346,9 @@ void showThumbAlertForUpload(int levelId, std::string const& uploader,
 
     auto item = thumbFromLevelMeta(levelId, levelMeta);
     item.uploader = uploader;
-    // The poll would otherwise show this same upload a second time.
+    // Suppress: poll would show this upload twice.
     NewThumbWatcher::get().suppressLevel(levelId);
-    // You asked for this one, so it is not the interruption the scene filters
-    // exist to prevent.
+    // Requested by the user: not the interruption scene filters guard against.
     enqueue(std::move(item), true);
 }
 
@@ -377,7 +371,7 @@ void showThumbAlertPreview() {
     demo.likes = 92310;
     demo.rateTier = 3;
 
-    // Borrow a thumbnail already on disk so the preview shows the real thing.
+    // Borrow an on-disk thumbnail so the preview shows the real thing.
     auto const owned = LocalThumbs::get().getAllLevelIDs();
     if (!owned.empty()) demo.levelId = owned.front();
 

@@ -17,10 +17,9 @@ namespace paimon::gifimport {
 
 namespace {
 
-// La rejilla mas fina que el trazado llega a mirar es el doble de la pedida —el
-// modo render compara el detalle a 2x— y el muestreo por area quiere un par de
-// pixeles por celda. Con cuatro veces la rejilla no se pierde nada de lo que se
-// va a acabar viendo.
+// Finest grid tracing ever looks at is twice requested (render mode compares
+// detail at 2x) and area sampling wants a couple pixels per cell. At four times
+// the grid nothing visible gets lost.
 constexpr int kWorkingFactor = 4;
 constexpr int kMinWorking = 128;
 // The importer ignores alpha below this value by default. If the GPU path
@@ -37,9 +36,9 @@ bool hasVisibleAlpha(SourceAnimation const& animation) {
     return false;
 }
 
-// Cada frame deja media docena de render targets por el camino. Sin una piscina
-// propia no se sueltan hasta el final del fotograma, y un video entero se come
-// la memoria de golpe antes de que le toque el turno al recolector.
+// each frame leaks half a dozen render targets. Without their own pool they
+// release at frame end, and a whole video eats memory at once before the
+// collector runs.
 struct FramePool {
     FramePool() { CCPoolManager::sharedPoolManager()->push(); }
     ~FramePool() { CCPoolManager::sharedPoolManager()->pop(); }
@@ -75,8 +74,8 @@ void reduceFrame(
             }
             auto* pixel = target + (static_cast<std::size_t>(y) * width + x) * 4;
             pixel[3] = static_cast<std::uint8_t>(alpha / std::max(weight, 1u));
-            // Sin ponderar por alfa, el negro transparente del borde de un
-            // sprite se cuela en el color y el dibujo sale con orla oscura.
+            // without alpha weighting, transparent edge black bleeds into color
+            // and the drawing grows a dark orla.
             for (int channel = 0; channel < 3; ++channel) {
                 pixel[channel] = alpha > 0
                     ? static_cast<std::uint8_t>(color[channel] / alpha)
@@ -105,11 +104,11 @@ CCRenderTexture* renderPass(
     sprite->setPosition({0.f, 0.f});
     sprite->setScaleX(static_cast<float>(width) / sourceSize.width);
     sprite->setScaleY(static_cast<float>(height) / sourceSize.height);
-    // La textura de un render target viene del reves; volverla a dar la vuelta
-    // deja la cadena de pasadas siempre en la misma orientacion.
+    // render-target textures come upside down; flipping back keeps the pass
+    // chain in one orientation.
     sprite->setFlipY(flipped);
-    // El alfa del destino tiene que ser el que escribe el shader, no el que
-    // saldria de mezclarlo contra el hueco: el trazado lee ese canal.
+    // destination alpha must be the shader's write, not a blend against void:
+    // tracing reads that channel.
     sprite->setBlendFunc({GL_ONE, GL_ZERO});
     sprite->setShaderProgram(shader);
 
@@ -158,8 +157,8 @@ bool reduceOnGpu(
         CCTexture2D* input = texture;
         CCSize step = full;
         bool flipped = false;
-        // Mitad a mitad mientras quepa: una sola reduccion grande con filtro
-        // bilineal solo mira cuatro texeles y se deja fuera casi toda la imagen.
+        // halve while it fits: one big bilinear downsample reads four texels
+        // and skips nearly the whole image.
         while (true) {
             int const nextWidth = std::max(width, static_cast<int>(step.width) / 2);
             int const nextHeight = std::max(height, static_cast<int>(step.height) / 2);

@@ -99,8 +99,7 @@ protected:
     FMOD::DSP* m_lowpassDSP = nullptr;
     FMOD::DSP* m_reverbDSP = nullptr;
 
-    // Push/pop position save so cave music resumes where it left off when the
-    // user comes back from a pushed scene (LevelInfoLayer, history, etc.).
+    // Push/pop position save so cave music resumes after pushed scenes.
     unsigned int m_savedCaveMusicPosMs = 0;
     bool m_caveMusicShouldRestore = false;
     bool m_musicPlaying = false;

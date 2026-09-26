@@ -16,10 +16,7 @@ uniform float u_darkThreshold;
 uniform float u_glowReplace;
 uniform float u_applyDetail;
 
-// GPU mirror of packgen::tintPixelFast: same op order in the 0..255 domain,
-// floor(x + 0.5) instead of lround (identical for non-negative values;
-// negatives clamp to 0 either way). Preview only: the export bake stays on
-// the CPU kernel, so shipped packs remain bit-identical.
+// GPU mirror of packgen::tintPixelFast; export bake stays on the CPU kernel.
 float rec601(vec3 c) {
     return 0.30 * c.r + 0.59 * c.g + 0.11 * c.b;
 }
@@ -37,8 +34,7 @@ vec3 tintByLum(vec3 src, vec3 tint) {
     return clamp(floor(f + 0.5), 0.0, 255.0);
 }
 
-// Mirror of blendPixelFast; w is the mask byte (0..255) recovered from the
-// NEAREST-sampled mask, so the == 0 / == 255 fast paths stay exact.
+// mirror of blendPixelFast; NEAREST mask keeps ==0/==255 paths exact.
 void blendRole(inout vec3 base, vec3 tinted, float w, float replaceFlag) {
     if (w < 0.5) return;
     if (replaceFlag > 0.5 || w > 254.5) {
@@ -59,7 +55,6 @@ void main() {
     float wDet = floor(m.b * 255.0 + 0.5);
     float wGlow = floor(m.a * 255.0 + 0.5);
 
-    // Untouched pixels keep the verbatim copy, like the kernel's dst.
     vec3 base = src;
     float maxW = 0.0;
     bool gated = srcA < 0.5 ||

@@ -1,6 +1,4 @@
-// Acumulacion temporal SVGF-lite con reproyeccion por transformada de capa.
-// Clipping contra AABB 3x3 + media +- k*sigma; feedback adaptado a velocidad.
-// Pase varianza (u_outVariance): error actual vs historia sin recortar.
+// SVGF-lite temporal accumulation with layer-transform reprojection.
 
 varying vec2 v_texCoord;
 
@@ -13,16 +11,16 @@ uniform float u_clampSigma;
 uniform vec2  u_reprojNow;
 uniform vec2  u_reprojPrev;
 uniform float u_reprojScale;
-// 0 = historia invalida, 1 = reproyeccion valida.
+// 0 = invalid history, 1 = valid reprojection.
 uniform float u_historyValid;
-// 0 = color, 1 = escribe varianza en R.
+// 0 = color, 1 = writes variance to R.
 uniform float u_outVariance;
 
-// Techo LDR y reset sobre ruido convergido.
+// LDR ceiling; reset on converged noise.
 const float kVarMax   = 4.0;
 const float kVarReset = 1.0;
 
-// NaN se detecta con equal(c,c); el if no propaga NaN como mix.
+// equal(c,c) detects NaN; if avoids mix propagation.
 vec3 sanitizeColor(vec3 c) {
     if (!all(equal(c, c))) return vec3(0.0);
     return clamp(c, vec3(0.0), vec3(kVarMax));
@@ -40,7 +38,6 @@ void main() {
     vec2 histUV = (uv - u_reprojNow) * u_reprojScale + u_reprojPrev;
     bool varPass = u_outVariance > 0.5;
     if (histUV.x < 0.0 || histUV.x > 1.0 || histUV.y < 0.0 || histUV.y > 1.0) {
-        // Sin historia: usa actual y resetea varianza.
         if (varPass) {
             gl_FragColor = vec4(kVarReset, 0.0, 0.0, 1.0);
         } else {
@@ -86,7 +83,7 @@ void main() {
 
     vec4 hist = histRaw;
     if (u_clampSigma > 0.0) {
-        // Interseccion nunca vacia: mn <= m1 <= mx.
+        // intersection never empty: mn <= m1 <= mx.
         vec4 lo = max(mn, m1 - sigma * u_clampSigma);
         vec4 hi = min(mx, m1 + sigma * u_clampSigma);
         hist = clamp(hist, lo, hi);

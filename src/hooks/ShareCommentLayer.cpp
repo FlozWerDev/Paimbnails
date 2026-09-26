@@ -13,7 +13,7 @@ using namespace cocos2d;
 
 class $modify(PaimonShareComment, ShareCommentLayer) {
     struct Fields {
-        // WeakRef avoids dangling toolbar nodes during teardown.
+        // WeakRef avoids dangling toolbar nodes during teardown
         WeakRef<CCMenu> m_toolMenu;
         WeakRef<CCMenuItemSpriteExtra> m_copyBtn;
         WeakRef<CCMenuItemSpriteExtra> m_pasteBtn;
@@ -28,9 +28,7 @@ class $modify(PaimonShareComment, ShareCommentLayer) {
     void onCopyInput(CCObject*) {
         if (!m_commentInput) return;
         std::string text = m_commentInput->getString();
-        if (!text.empty()) {
-            geode::utils::clipboard::write(text);
-        }
+        if (!text.empty()) geode::utils::clipboard::write(text);
     }
 
     void onPasteInput(CCObject*) {
@@ -58,10 +56,9 @@ class $modify(PaimonShareComment, ShareCommentLayer) {
 
     $override
     bool init(gd::string title, int charLimit, CommentType type, int ID, gd::string desc) {
-        // Extend the local limit; the server still validates length.
+        // extend the local limit; the server still validates length
         int extendedLimit = charLimit * 2;
         if (!ShareCommentLayer::init(title, extendedLimit, type, ID, desc)) return false;
-
 
         m_charLimit = extendedLimit;
         if (m_commentInput) {
@@ -186,14 +183,14 @@ class $modify(PaimonShareComment, ShareCommentLayer) {
         }
 
         if (m_commentInput) {
-            auto ac = paimon::emotes::EmoteAutocomplete::create(                m_commentInput,
+            auto ac = paimon::emotes::EmoteAutocomplete::create(m_commentInput,
                 [self](std::string const& newText) {
                     if (!self->m_commentInput) return;
                     self->m_commentInput->setString(newText);
                     self->updateCharCountLabel();
                 }
             );
-            ac->setPosition({contentSize.width / 2.f - 60.f, contentSize.height / 2.f - 30.f + 40.f});
+            ac->setPosition({contentSize.width / 2.f - 60.f, contentSize.height / 2.f + 10.f});
             layer->addChild(ac, 100);
         }
 

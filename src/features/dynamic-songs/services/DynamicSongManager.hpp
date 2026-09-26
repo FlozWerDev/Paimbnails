@@ -6,18 +6,18 @@
 #include <chrono>
 
 enum class DynSongLayer {
-    None,        // No dynamic song.
-    LevelSelect, // Official level selector.
-    LevelInfo,   // Level info (online/custom).
+    None,
+    LevelSelect,
+    LevelInfo,
 };
 
 enum class DynState {
-    Idle,      // No dynamic song active.
-    FadingIn,  // Volume ramps to target.
-    Playing,   // Stable full-volume state.
-    FadingOut, // Volume falls toward the post-fade action.
-    Suspended, // Paused for external audio.
-    Handoff,   // Muffled while gameplay takes over.
+    Idle,
+    FadingIn,
+    Playing,
+    FadingOut,
+    Suspended,
+    Handoff,
 };
 
 class DynSongFadeNode;

@@ -1,7 +1,6 @@
 #pragma once
 
-// Popup del boton "i" de una fila: el recado que la persona escribio junto al
-// nivel cuando lo mando desde tu pagina web.
+// popup behind a row's "i" button: the note sent with the level from your web page.
 
 #include <Geode/Geode.hpp>
 
@@ -13,8 +12,8 @@ struct LevelRequest;
 
 class TwitchMessagePopup : public geode::Popup {
 public:
-    // `levelName` y `author` son lo que ya sabemos del nivel; vacios mientras
-    // todavia se esta cargando.
+    // `levelName` and `author` are what the level is known by; empty while
+    // still loading.
     static TwitchMessagePopup* create(
         LevelRequest const& request, std::string levelName, std::string author);
 

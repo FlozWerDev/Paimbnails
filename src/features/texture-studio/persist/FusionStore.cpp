@@ -293,7 +293,7 @@ geode::Result<> FusionStore::deleteForSlot(std::string_view slotId,
         return Ok();
     };
 
-    // Mask + any extension of the texture file.
+    // Mask plus every texture extension.
     if (auto r = deleteMaskForSlot(slotId, spriteName); !r) return r;
     for (auto const* ext : {".png", ".gif", ".jpg", ".jpeg", ".webp"}) {
         auto p = SlotPaths::fusionTextureFile(slotId, spriteName, ext);
@@ -328,9 +328,9 @@ geode::Result<std::filesystem::path> FusionStore::importTexture(
 
     std::filesystem::path dst;
     if (isGif) {
-        // Preserve original GIF bytes so multi-frame animation is not lost.
+        // Keep original GIF bytes: multi-frame animation survives.
         dst = SlotPaths::fusionTextureFile(slotId, spriteName, ".gif");
-        // Drop any stale static sibling.
+        // Drop the stale static sibling.
         std::error_code ec;
         std::filesystem::remove(
             SlotPaths::fusionTextureFile(slotId, spriteName, ".png"), ec);
@@ -342,7 +342,7 @@ geode::Result<std::filesystem::path> FusionStore::importTexture(
         return Ok(std::move(dst));
     }
 
-    // Re-encode static images as PNG for a stable on-disk format.
+    // Re-encode statics as PNG: stable on-disk format.
     auto imgRes = ImageBuffer::loadFromMemory(
         std::span<std::uint8_t const>(bytes.unwrap().data(), bytes.unwrap().size()));
     if (!imgRes) {

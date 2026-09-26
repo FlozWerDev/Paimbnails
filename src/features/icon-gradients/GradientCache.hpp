@@ -1,9 +1,7 @@
 #pragma once
 
-// Snapshot of the Icon Gradients settings, refreshed on mod load and on every
-// setting change so hooks never read mod.json mid-frame. The master module
-// toggle (paimbnails.icongradients.global) is backed by icon-gradients-enabled,
-// while the cache keeps the inverse disabled state used by the original hooks.
+// Settings snapshot so hooks never read mod.json mid-frame. The module toggle
+// is backed by icon-gradients-enabled; the cache keeps the inverse disabled bit.
 
 #include "GradientTypes.hpp"
 #include "../../core/modules/ModuleRegistry.hpp"
@@ -49,18 +47,15 @@ public:
 
     static GradientCache& get();
 
-    // Master switch.
     static void setModDisabled(bool);
 
     static bool isModDisabled();
 
-    // Menu-doll shading.
     static void setMenuGradientsEnabled(bool);
 
     static bool isMenuGradientsEnabled();
 
-    // Second-player handling; separate only sticks while neither the
-    // module nor the 2P doll is disabled.
+    // separate only sticks while neither the module nor the 2P doll is disabled.
     static void set2PDisabled(bool);
 
     static bool is2PDisabled();
@@ -73,7 +68,6 @@ public:
 
     static bool is2PFlip();
 
-    // Editor popup state.
     static IconType getLastSelected();
 
     static void setLastSelected(IconType);

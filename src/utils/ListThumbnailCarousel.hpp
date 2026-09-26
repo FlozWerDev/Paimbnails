@@ -18,8 +18,8 @@ protected:
     cocos2d::CCRect m_panStartRect;
     cocos2d::CCRect m_panEndRect;
     float m_panElapsed = 0.0f;
-    
-    // Safety flag for async callbacks
+
+    // async callback guard.
     std::shared_ptr<bool> m_alive;
 
     bool init(std::vector<int> const& levelIDs, cocos2d::CCSize size);
@@ -32,7 +32,7 @@ public:
     static ListThumbnailCarousel* create(std::vector<int> const& levelIDs, cocos2d::CCSize size);
     virtual ~ListThumbnailCarousel();
     void onExit() override;
-    
+
     void visit() override;
 
     void startCarousel();

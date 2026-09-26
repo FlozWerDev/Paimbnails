@@ -16,25 +16,25 @@ using namespace geode::prelude;
 
 namespace {
 
-// Walks GJCommentListLayer -> BoomListView -> TableView -> CCContentLayer
-// (the node holding the cells). Returns nullptr if the hierarchy isn't built yet.
+// walks GJCommentListLayer -> BoomListView -> TableView -> CCContentLayer
+// (the node holding the cells); null when the hierarchy isn't built yet
+template <typename T>
+T findChildOfType(CCNode* parent) {
+    if (auto* ch = parent ? parent->getChildren() : nullptr) {
+        for (auto* child : CCArrayExt<CCNode*>(ch)) {
+            if (auto* t = typeinfo_cast<T>(child)) return t;
+        }
+    }
+    return nullptr;
+}
+
 CCNode* findLeaderboardContentLayer(GJCommentListLayer* list) {
     if (!list) return nullptr;
 
-    BoomListView* listView = nullptr;
-    if (auto* ch = list->getChildren()) {
-        for (auto* child : CCArrayExt<CCNode*>(ch)) {
-            if (auto* blv = typeinfo_cast<BoomListView*>(child)) { listView = blv; break; }
-        }
-    }
+    auto* listView = findChildOfType<BoomListView*>(list);
     if (!listView) return nullptr;
 
-    TableView* tableView = nullptr;
-    if (auto* ch = listView->getChildren()) {
-        for (auto* child : CCArrayExt<CCNode*>(ch)) {
-            if (auto* tv = typeinfo_cast<TableView*>(child)) { tableView = tv; break; }
-        }
-    }
+    auto* tableView = findChildOfType<TableView*>(listView);
     if (!tableView) return nullptr;
 
     if (auto* ch = tableView->getChildren()) {
@@ -66,7 +66,7 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         int levelID = level->m_levelID.value();
         m_fields->m_levelID = levelID;
 
-        // Use LevelInfoLayer's active thumbnail if available
+        // reuse LevelInfoLayer's live thumbnail when available
         if (paimon::ThumbnailBackgroundChangedEvent::s_lastLevelID == levelID &&
             paimon::ThumbnailBackgroundChangedEvent::getLastTexture()) {
             applyBlurredBackground(paimon::ThumbnailBackgroundChangedEvent::getLastTexture());
@@ -110,16 +110,12 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         auto* layer = this->m_mainLayer;
         if (!layer) return;
 
-        CCSize popupSize  = {440.f, 290.f};
+        CCSize popupSize = {440.f, 290.f};
         CCPoint popupCenter = {layer->getContentSize().width * 0.5f,
                                layer->getContentSize().height * 0.5f};
 
         CCNode* bgNode = layer->getChildByID("background");
-        if (!bgNode) {
-            for (auto* child : CCArrayExt<CCNode*>(layer->getChildren())) {
-                if (typeinfo_cast<CCScale9Sprite*>(child)) { bgNode = child; break; }
-            }
-        }
+        if (!bgNode) bgNode = findChildOfType<CCScale9Sprite*>(layer);
         if (bgNode) {
             popupSize   = bgNode->getScaledContentSize();
             popupCenter = bgNode->getPosition();
@@ -142,7 +138,7 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         clip->setID("paimon-leaderboard-bg-clip"_spr);
         clip->addChild(blurredSprite);
 
-        // Darken for legibility
+        // legibility
         auto dark = CCLayerColor::create(ccc4(0, 0, 0, 130));
         dark->setContentSize(imgArea);
         dark->setAnchorPoint({0.f, 0.f});
@@ -176,7 +172,7 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         }
     }
 
-    // Normalize all cell opacity so vanilla's alternating pattern doesn't show
+    // hide vanilla's alternating pattern
     void normalizeCellBackgrounds(GJCommentListLayer* list) {
         auto* contentLayer = findLeaderboardContentLayer(list);
         if (!contentLayer) return;
@@ -200,11 +196,9 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         auto* cellChildren = contentLayer->getChildren();
         if (!cellChildren) return;
 
-        std::vector<CCNode*> cells;
+        std::vector<TableViewCell*> cells;
         for (auto* child : CCArrayExt<CCNode*>(cellChildren)) {
-            if (typeinfo_cast<TableViewCell*>(child)) {
-                cells.push_back(child);
-            }
+            if (auto* cell = typeinfo_cast<TableViewCell*>(child)) cells.push_back(cell);
         }
 
         for (size_t i = 0; i < cells.size(); i++) {
@@ -233,9 +227,8 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
 
             if (auto* ch = cell->getChildren()) {
                 for (auto* child : CCArrayExt<CCNode*>(ch)) {
-                    auto* tableCell = typeinfo_cast<TableViewCell*>(cell);
-                    // Don't restore m_backgroundLayer opacity (already hidden)
-                    if (tableCell && child == static_cast<CCNode*>(tableCell->m_backgroundLayer)) continue;
+                    // m_backgroundLayer stays hidden
+                    if (child == static_cast<CCNode*>(cell->m_backgroundLayer)) continue;
                     if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(child)) {
                         child->runAction(CCSequence::create(
                             CCDelayTime::create(delay),
@@ -245,6 +238,13 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
                     }
                 }
             }
+        }
+    }
+
+    void unsubscribeBg() {
+        if (m_fields->m_bgEventHandle != 0) {
+            paimon::EventBus::get().unsubscribe(m_fields->m_bgEventHandle);
+            m_fields->m_bgEventHandle = 0;
         }
     }
 
@@ -260,21 +260,15 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
 
     $override
     void keyBackClicked() {
-        if (m_fields->m_bgEventHandle != 0) {
-            paimon::EventBus::get().unsubscribe(m_fields->m_bgEventHandle);
-            m_fields->m_bgEventHandle = 0;
-        }
+        unsubscribeBg();
         LevelLeaderboard::keyBackClicked();
     }
 
-    // Safety net: unsubscribe if the layer dies via scene-replace/popScene or
-    // any path skipping keyBackClicked; otherwise the listener leaks as a zombie.
+    // safety net: unsubscribe if the layer dies via scene-replace/popScene or
+    // any path skipping keyBackClicked; otherwise the listener leaks as a zombie
     $override
     void onExit() {
-        if (m_fields->m_bgEventHandle != 0) {
-            paimon::EventBus::get().unsubscribe(m_fields->m_bgEventHandle);
-            m_fields->m_bgEventHandle = 0;
-        }
+        unsubscribeBg();
         LevelLeaderboard::onExit();
     }
 };

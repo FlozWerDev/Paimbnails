@@ -97,7 +97,7 @@ bool LevelHistoryDetailPopup::init(HistoryEntry const& entry) {
         row->setContentSize({kInnerW, kRowH});
         row->setPosition({0.f, y});
 
-        // Bandas alternas: la lista es larga y sin ellas cuesta seguir la fila.
+        // zebra bands: the list runs long and rows blur without them.
         if (i % 2 == 0) {
             if (auto* band = paimon::SpriteHelper::createDarkPanel(kInnerW - 6.f, kRowH - 2.f, 55, 3.f)) {
                 band->setPosition({3.f, 1.f});

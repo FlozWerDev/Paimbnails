@@ -61,7 +61,6 @@ AudioPcm extractAudioToPcm(const std::string& videoPath) {
         }
         AVAssetTrack* audioTrack = tracks[0];
 
-        // Pull source channel count / sample rate from the track's format.
         CMAudioFormatDescriptionRef fmtDesc =
             (__bridge CMAudioFormatDescriptionRef)audioTrack.formatDescriptions.firstObject;
         const AudioStreamBasicDescription* asbd =

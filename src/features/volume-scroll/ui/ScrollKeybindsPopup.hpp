@@ -6,7 +6,7 @@
 
 namespace paimon::volscroll {
 
-// Volume rows use a mouse hold as the modifier for scrolling.
+// volume rows take a mouse hold as the scroll modifier.
 
 class ScrollKeybindsPopup : public geode::Popup {
 public:
@@ -15,7 +15,6 @@ public:
 protected:
     bool init() override;
 
-    // Scroll content containing headers and keybinds.
     geode::ScrollLayer* m_scrollLayer = nullptr;
 
     cocos2d::CCNode* makeSectionHeader(char const* title, float width);
@@ -27,7 +26,6 @@ protected:
         bool allowScroll
     );
 
-    // Open the editor and refresh labelToRefresh after saving.
     void openEditPopup(
         std::string settingKey,
         std::string displayName,
@@ -35,7 +33,6 @@ protected:
         cocos2d::CCLabelBMFont* labelToRefresh
     );
 
-    // Restore volume defaults and clear their extended binds.
     void onResetVolumeDefaults(cocos2d::CCObject*);
 };
 

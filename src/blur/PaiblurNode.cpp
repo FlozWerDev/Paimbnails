@@ -47,7 +47,7 @@ inline bool paimonBlitFramebuffer(
     fn(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1, mask, filter);
     return true;
 #elif defined(GEODE_IS_IOS)
-// iOS lacks the blit symbol and runtime loader, so blit-based blur is unavailable.
+// no blit symbol or loader on iOS
     (void)sx0; (void)sy0; (void)sx1; (void)sy1;
     (void)dx0; (void)dy0; (void)dx1; (void)dy1; (void)mask; (void)filter;
     return false;
@@ -69,7 +69,6 @@ namespace {
 constexpr int kMaxBlurLongEdge = 1280;
 // Refresh a steady backdrop periodically instead of re-blurring every frame.
 constexpr int kSteadyRefreshInterval = 2;
-// Smoothstep intensity (0.1..10) to normalized blur radius.
 float intensityToEclipseRadius(float intensity) {
     float t = std::clamp((intensity - 0.5f) / 9.5f, 0.0f, 1.0f);
     float curved = t * t * (3.0f - 2.0f * t);

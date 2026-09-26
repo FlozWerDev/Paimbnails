@@ -32,8 +32,7 @@ struct ZoneChip {
     std::string label;
     cocos2d::ccColor3B accent{255, 255, 255};
     int layerCount = 0;
-    // Mini-vista de lo que hay en la zona. Es la misma textura que dibuja el
-    // lienzo, asi que no cuesta memoria aparte.
+    // zone thumbnail; same texture the canvas draws, so no extra memory.
     cocos2d::CCTexture2D* preview = nullptr;
 };
 

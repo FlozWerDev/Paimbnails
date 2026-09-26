@@ -138,10 +138,10 @@ void GDRobTopCache::init() {
         ec.clear();
     }
 
-    log::info("[GDRobTopCache] Inicializado en {}", utils::string::pathToString(dir));
+    log::info("[GDRobTopCache] initialized at {}", utils::string::pathToString(dir));
 
-    // pruneExpired() hace I/O pesada de disco (antes congelaba el arranque en $on_game).
-    // Corre en segundo plano: solo borra expirados y lookup/readDisk toleran desapariciones.
+    // pruneExpired() does heavy disk I/O (once froze startup); background only.
+    // lookup/readDisk tolerate entries vanishing mid-prune.
     paimon::ThreadTracker::get().spawn([this]() {
         geode::utils::thread::setName("PaimonRobTopPrune");
         if (m_shuttingDown.load(std::memory_order_acquire)) return;
@@ -282,10 +282,7 @@ void GDRobTopCache::writeDisk(
     if (content.size() > static_cast<size_t>(kMaxCachedFileBytes)) return;
 
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out) {
-        log::debug("[GDRobTopCache] No se pudo escribir {}", utils::string::pathToString(path));
-        return;
-    }
+    if (!out) return;
     out << content;
 }
 
@@ -315,7 +312,7 @@ void GDRobTopCache::pruneExpired() {
     }
 
     if (removed > 0) {
-        log::info("[GDRobTopCache] Eliminadas {} entradas expiradas", removed);
+        log::info("[GDRobTopCache] pruned {} expired entries", removed);
     }
 }
 

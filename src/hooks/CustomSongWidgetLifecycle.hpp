@@ -5,8 +5,7 @@
 #include <mutex>
 #include <unordered_set>
 
-// Global registry of live CustomSongWidgets + editor teardown window: FMOD can
-// call updateSongInfo/songStateChanged during onStopPlaytest (UAF otherwise).
+// FMOD may call back during onStopPlaytest; liveness + teardown window guard UAF
 
 namespace paimon::csw {
 
@@ -46,7 +45,7 @@ public:
         return editorTeardownDepth().load(std::memory_order_acquire) > 0;
     }
 
-    // During editor teardown, don't touch parentless widgets (already detached).
+    // parentless widgets during teardown are already detached
     static bool shouldSkipDelegateCall(CustomSongWidget const* widget) {
         if (!isAlive(widget)) return true;
         if (!isEditorTeardown()) return false;

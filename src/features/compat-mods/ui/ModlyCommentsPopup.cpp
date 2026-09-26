@@ -116,8 +116,7 @@ CCNode* ModlyCommentsPopup::buildCommentCard(ModlyComment const& comment, float 
     auto& repo = ModlyRepo::get();
     auto const* author = repo.user(comment.authorUid);
 
-    // The site prefers the profile name over the one stored on the comment so a
-    // renamed user cannot keep an old display name.
+    // Site prefers profile name so renames can't keep old display names.
     std::string authorName = author && !author->name.empty() ? author->name : comment.authorName;
     if (authorName.empty()) authorName = Localization::get().getString("modly.unknown_author");
 

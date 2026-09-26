@@ -96,7 +96,7 @@ CCSprite* loadButtonSprite(
         }
     }
 
-    // otherwise try the mod resources: resources/buttons/{key}.png then resources/{key}.png
+    // then mod resources: resources/buttons/{key}.png, resources/{key}.png.
     auto modResourcePath = Mod::get()->getResourcesDir() / "buttons" / (key + ".png");
     if (std::filesystem::exists(modResourcePath, ecAsset)) {
         if (auto spr = CCSprite::create(geode::utils::string::pathToString(modResourcePath).c_str())) {

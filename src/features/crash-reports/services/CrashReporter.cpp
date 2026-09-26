@@ -54,8 +54,7 @@ std::vector<LogFile> collectLogs(std::filesystem::path const& dir) {
     return files;
 }
 
-// The session log that goes with a crash is the one whose last write lands
-// closest to it, skipping the log this launch is currently writing to.
+// Crash's session log is the closest last-write, skipping the live one.
 std::filesystem::path sessionLogFor(std::filesystem::file_time_type crashTime) {
     std::error_code ec;
     auto current = std::filesystem::weakly_canonical(log::getCurrentLogPath(), ec);
@@ -100,8 +99,7 @@ std::string readCapped(std::filesystem::path const& path, size_t limit, bool kee
     return content;
 }
 
-// Logs are full of absolute paths; the account folder is the only part of them
-// that identifies the player, so it goes out as a placeholder.
+// Only the account folder in absolute paths identifies the player; placeholder it.
 void scrubUserPaths(std::string& text) {
     for (std::string_view needle : {"\\Users\\", "/Users/", "/home/"}) {
         size_t at = 0;

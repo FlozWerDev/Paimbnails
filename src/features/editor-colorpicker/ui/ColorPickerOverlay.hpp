@@ -35,7 +35,7 @@ public:
 private:
     static ColorPickerOverlay* s_instance;
 
-    std::vector<uint8_t>             m_pixelBuf;        // RGBA readback
+    std::vector<uint8_t>             m_pixelBuf;
     bool m_ready    = false;
     bool m_closing  = false;
     bool m_dragging = false;

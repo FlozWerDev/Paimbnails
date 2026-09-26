@@ -9,8 +9,7 @@
 
 namespace paimon::thumbalerts {
 
-// Level data over the level's own thumbnail in a popup frame. One tick drives
-// position, scale, rotation and opacity together so nothing drifts mid-animation.
+// Level data over its own thumbnail in a popup frame. One tick drives pose+opacity together: no mid-animation drift.
 class ThumbAlertCard : public cocos2d::CCNodeRGBA {
 public:
     static ThumbAlertCard* create(NewThumb const& item, Config const& config,
@@ -79,16 +78,14 @@ private:
     float m_thumbScale = 1.f;
     cocos2d::CCPoint m_thumbHome{0.f, 0.f};
 
-    // CCLayerGradient ignores setOpacity: its alpha lives in the start/end
-    // opacity pair, so the scrims fade through their own list.
+    // CCLayerGradient ignores setOpacity: scrims fade through their own list.
     struct GradientFade {
         geode::Ref<cocos2d::CCLayerGradient> node;
         GLubyte start = 0;
         GLubyte end = 0;
     };
 
-    // The badge column and the text come in half a beat behind the frame, so
-    // they fade through their own list.
+    // Badges and text trail the frame by half a beat: own fade list.
     FadeList m_fade;
     FadeList m_fadeContent;
     std::vector<GradientFade> m_fadeGradients;

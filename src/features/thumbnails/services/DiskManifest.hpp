@@ -18,7 +18,7 @@ public:
     bool contains(int levelID, bool isGif) const;
     DiskManifestEntry const* getEntry(int levelID, bool isGif) const;
 
-    // Consultas sin lock (caller DEBE tener mutex)
+    // Lock-free queries (caller MUST hold mutex)
     bool containsLocked(int levelID, bool isGif) const;
     DiskManifestEntry const* getEntryLocked(int levelID, bool isGif) const;
 
@@ -38,7 +38,7 @@ public:
     void applyPrune(PruneResult const& result);
 
     size_t totalBytes() const;
-    size_t totalBytesLocked() const; // caller DEBE tener mutex
+    size_t totalBytesLocked() const; // caller MUST hold mutex
     size_t entryCount() const;
 
     mutable std::recursive_mutex mutex;

@@ -205,9 +205,7 @@ struct SeedTrack {
     std::string title;
 };
 
-// Fetches GD info for every seed in parallel and returns the merged list in
-// the original order. Seeds that GD doesn't know keep their feed title and
-// stay gdAvailable=false.
+// parallel GD info fetch, merged in seed order; unknown seeds keep feed title.
 void hydrateSeeds(
     std::vector<SeedTrack> seeds,
     std::string listTitle,

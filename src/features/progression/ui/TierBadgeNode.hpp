@@ -5,8 +5,7 @@
 
 namespace paimon::progression {
 
-// Tier medal on a paim_progTier* plate; effects are plain sprites, so a new
-// tier only costs a row in the tier table.
+// Tier medal: effects are plain sprites, a new tier is one table row.
 class TierBadgeNode : public cocos2d::CCNode {
 public:
     static TierBadgeNode* create(int level, float size);

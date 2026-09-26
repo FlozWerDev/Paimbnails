@@ -46,13 +46,10 @@ private:
     void updateOutputFormat();
     // Container keys first, codec output format refines; unknown keys keep Auto.
     void readColorAspects(AMediaFormat* fmt);
-    // Returns true if the color format is known and safe to read from CPU.
     bool isReadableColorFormat(int colorFormat) const;
-    // Returns true if the color format delivers YUV in semi-planar (NV12) layout.
     bool isSemiPlanar(int colorFormat) const;
 
-    // AImageReader hands back YUV_420_888 with documented per-plane strides,
-    // which sidesteps the vendor color-format guessing of the raw buffer path.
+    // YUV_420_888 sidesteps vendor color-format guessing.
     bool setupImageReader();
     void releaseImageReader();
     bool drainImageReader(int64_t presentationTimeUs);
@@ -75,13 +72,11 @@ private:
     int              m_rotation = 0;
     double           m_duration = 0.0;
 
-    // Track codec state so we never call AMediaCodec_stop on an unstarted/
-    // released codec — that crashes on some Mali/PowerVR drivers.
+    // Never stop an unstarted codec; crashes some Mali/PowerVR drivers.
     bool             m_codecConfigured = false;
     bool             m_codecStarted    = false;
 
-    // No YUV reads until a valid output format arrives; some drivers emit
-    // a dummy buffer before the first format-change signal.
+    // Some drivers emit a dummy buffer before format-change.
     std::atomic<bool> m_outputFormatValid{false};
 
     std::atomic<bool> m_decoding{false};

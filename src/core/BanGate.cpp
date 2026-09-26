@@ -58,8 +58,7 @@ void terminateModProcesses() {
     HttpClient::get().cleanTasks(false);
 }
 
-// scheduleMainThreadDelay drops callbacks during shutdown — exactly the state
-// a ban sets — so the banned popup needs its own task here.
+// MainThreadDelay drops callbacks during shutdown, so the ban popup schedules its own task.
 void showBannedPopupForced(std::string const& reason, float delay) {
     auto* director = CCDirector::get();
     if (!director) return;
@@ -115,8 +114,7 @@ bool runStartupBanGate() {
         return false;
     }
 
-    // No cache or older than 7 days: revalidate with the server. The mod runs
-    // meanwhile; a stale ban plus unreachable server fails closed (ban stays).
+    // no cache or older than 7 days: revalidate async; a stale ban plus no server fails closed.
     bool staleBanned = haveCache && cachedBanned;
     std::string staleReason = cachedReason;
 
@@ -130,7 +128,6 @@ bool runStartupBanGate() {
             username = am->m_username;
         }
 
-        // Can't identify the user yet (not logged in).
         if (username.empty() && accountID <= 0) {
             if (staleBanned) enforceBan(staleReason);
             return;
@@ -138,7 +135,7 @@ bool runStartupBanGate() {
 
         HttpClient::get().checkBanned([staleBanned, staleReason](bool ok, bool banned, std::string const& reason) {
             if (!ok) {
-                // Network/parse failure: keep the ban if the stale cache had one.
+                // unreachable server: a stale ban stays.
                 if (staleBanned) {
                     log::warn("[BanGate] Revalidation failed; keeping stale ban.");
                     enforceBan(staleReason);

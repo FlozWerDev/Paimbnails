@@ -20,16 +20,16 @@ namespace paimon::twitch {
 
 namespace {
 
-// Una sesion por cuenta: cambiar de cuenta de GD no puede reutilizar el token de
-// la anterior, y la clave vieja (una sola para todas) se lee como respaldo.
+// one session per account: switching GD accounts must not reuse the old
+// token, and the legacy key (one for all) reads as fallback.
 constexpr char const* kLegacyTokenKey = "web-requests-host-token";
 
 std::string tokenKey(int accountID) {
     return fmt::format("web-requests-host-token-{}", accountID);
 }
 
-// Como se ve el usuario en la URL: el servidor manda el suyo, esto es solo para
-// no quedarnos sin nada que mostrar si la respuesta viene corta.
+// how the user reads in the URL: the server sends its own, this only keeps
+// something to show when the response comes up short.
 std::string slugify(std::string const& value) {
     std::string slug;
     for (unsigned char ch : value) {
@@ -139,8 +139,8 @@ std::string WebRequestSource::savedToken() const {
 }
 
 void WebRequestSource::registerHost() {
-    // El servidor comprueba la cuenta contra los servidores de RobTop, asi que
-    // manda el nombre tal cual: el de la URL lo decide el.
+    // the server checks the account against RobTop's servers, so send the
+    // name as is: it decides the URL one.
     auto token = savedToken();
     auto body = matjson::makeObject({
         {"username", m_username},
@@ -152,8 +152,8 @@ void WebRequestSource::registerHost() {
         .timeout(std::chrono::seconds(12))
         .bodyString(body.dump(matjson::NO_INDENTATION));
     if (!token.empty()) request.header("Authorization", "Bearer " + token);
-    // Prueba de propiedad de la cuenta: si el token guardado se perdio, el
-    // servidor solo crea uno nuevo cuando esto demuestra que la cuenta es tuya.
+    // account ownership proof: with the saved token lost, the server only
+    // issues a new one when this proves the account is yours.
     auto modCode = HttpClient::get().getModCode();
     if (!modCode.empty()) request.header("X-Mod-Code", modCode);
     auto viewerToken = HttpClient::get().getViewerToken();
@@ -174,7 +174,7 @@ void WebRequestSource::registerHost() {
                 fail("El servidor no entrego una sesion segura para requests");
                 return;
             }
-            // El servidor manda el usuario ya limpio para la URL.
+            // the server sends the URL-ready user already cleaned.
             auto slug = parsed.unwrap()["slug"].asString().unwrapOr("");
             if (!slug.empty()) m_slug = std::move(slug);
             Mod::get()->setSavedValue<std::string>(tokenKey(m_accountID), newToken);
@@ -188,8 +188,8 @@ void WebRequestSource::registerHost() {
         });
 }
 
-// Token desconocido: se tira y se re-pide con prueba de propiedad; rotar sin
-// ella dejaria la pagina inservible.
+// unknown token: drop it and re-ask with ownership proof; rotating without
+// it would brick the page.
 void WebRequestSource::handleRegisterError(int status, std::string code) {
     if (code == "TOKEN_REQUIRED" && !m_retriedWithoutToken) {
         m_retriedWithoutToken = true;

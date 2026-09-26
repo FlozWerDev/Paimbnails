@@ -23,12 +23,11 @@ bool ExtraEffectsPopup::init() {
         std::string token;
         while (std::getline(ss, token, ',') && (int)m_indices.size() < MAX_EXTRA) {
             size_t a = token.find_first_not_of(" \t");
+            if (a == std::string::npos) continue;
             size_t b = token.find_last_not_of(" \t");
-            if (a != std::string::npos) {
-                std::string name = token.substr(a, b - a + 1);
-                for (int i = 0; i < (int)m_styles.size(); i++) {
-                    if (m_styles[i] == name) { m_indices.push_back(i); break; }
-                }
+            std::string name = token.substr(a, b - a + 1);
+            for (int i = 0; i < (int)m_styles.size(); i++) {
+                if (m_styles[i] == name) { m_indices.push_back(i); break; }
             }
         }
     }
@@ -63,17 +62,15 @@ void ExtraEffectsPopup::rebuildRows() {
     info->setPosition({cx, topY});
     m_rowContainer->addChild(info);
 
-    {
-        auto iBtn = PaimonInfo::createInfoBtn("Extra Effects",
-            "Stack up to <cy>4 additional</c> visual effects on top of\n"
-            "the main background style.\n\n"
-            "Each slot applies its effect in order.\n"
-            "Use the arrows to cycle effects, and <cr>X</c> to remove.\n"
-            "Effects combine for unique visual results!", this, 0.3f);
-        if (iBtn) {
-            iBtn->setPosition({cx + 95.f, topY});
-            m_rowMenu->addChild(iBtn);
-        }
+    auto iBtn = PaimonInfo::createInfoBtn("Extra Effects",
+        "Stack up to <cy>4 additional</c> visual effects on top of\n"
+        "the main background style.\n\n"
+        "Each slot applies its effect in order.\n"
+        "Use the arrows to cycle effects, and <cr>X</c> to remove.\n"
+        "Effects combine for unique visual results!", this, 0.3f);
+    if (iBtn) {
+        iBtn->setPosition({cx + 95.f, topY});
+        m_rowMenu->addChild(iBtn);
     }
 
     float baseY = topY - 28.f;
@@ -175,24 +172,17 @@ void ExtraEffectsPopup::save() {
 }
 
 std::string ExtraEffectsPopup::displayName(std::string const& s) {
-    if (s == "normal") return "Normal";
-    if (s == "pixel") return "Pixel";
-    if (s == "blur") return "Blur";
-    if (s == "paimonblur") return "Paimon Blur";
-    if (s == "grayscale") return "Grayscale";
-    if (s == "sepia") return "Sepia";
-    if (s == "vignette") return "Vignette";
-    if (s == "scanlines") return "Scanlines";
-    if (s == "bloom") return "Bloom";
-    if (s == "chromatic") return "Chromatic";
-    if (s == "radial-blur") return "Radial Blur";
-    if (s == "glitch") return "Glitch";
-    if (s == "posterize") return "Posterize";
-    if (s == "rain") return "Rain";
-    if (s == "matrix") return "Matrix";
-    if (s == "neon-pulse") return "Neon Pulse";
-    if (s == "wave-distortion") return "Wave";
-    if (s == "crt") return "CRT";
+    static constexpr char const* names[][2] = {
+        {"normal", "Normal"}, {"pixel", "Pixel"}, {"blur", "Blur"},
+        {"paimonblur", "Paimon Blur"}, {"grayscale", "Grayscale"}, {"sepia", "Sepia"},
+        {"vignette", "Vignette"}, {"scanlines", "Scanlines"}, {"bloom", "Bloom"},
+        {"chromatic", "Chromatic"}, {"radial-blur", "Radial Blur"}, {"glitch", "Glitch"},
+        {"posterize", "Posterize"}, {"rain", "Rain"}, {"matrix", "Matrix"},
+        {"neon-pulse", "Neon Pulse"}, {"wave-distortion", "Wave"}, {"crt", "CRT"},
+    };
+    for (auto const& entry : names) {
+        if (s == entry[0]) return entry[1];
+    }
     return s;
 }
 

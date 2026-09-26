@@ -35,7 +35,7 @@ constexpr float kStageH = 138.f;
 constexpr float kSizes[] = {0.55f, 0.9f, 1.5f};
 constexpr char const* kSizeNames[] = {"Mini", "En juego", "Garaje"};
 
-// Lo que GD multiplica sobre cada capa del icono.
+// what GD multiplies over each icon layer.
 ccColor3B tintFor(std::string_view slotKey, bool exactColors) {
     if (exactColors) return {255, 255, 255};
 
@@ -107,7 +107,7 @@ bool IconTryPopup::init(IconProject project) {
     m_stage->setPosition({15.f, stageY});
     m_mainLayer->addChild(m_stage, 3);
 
-    // El icono vanilla del gamemode va al lado como referencia de tamano.
+    // vanilla gamemode icon alongside as a size reference.
     m_vanilla = SimplePlayer::create(1);
     if (m_vanilla) {
         if (auto* gm = GameManager::get()) {
@@ -198,8 +198,7 @@ void IconTryPopup::kickRender() {
 void IconTryPopup::rebuildPreview() {
     if (!m_stage) return;
 
-    // Se recogen antes de tocar nada: borrar mientras se recorre el array de
-    // hijos es pedir problemas.
+    // collect before touching anything: deleting while iterating the child array is trouble.
     std::vector<CCNode*> stale;
     for (auto* child : CCArrayExt<CCNode*>(m_stage->getChildren())) {
         if (child != m_vanilla) stale.push_back(child);
@@ -221,8 +220,7 @@ void IconTryPopup::rebuildPreview() {
     float const stageH = m_stage->getContentSize().height;
     int const parts = def->partCount > 1 ? def->partCount : 1;
 
-    // Robot y spider se ensenan por partes: montar el esqueleto animado no
-    // aporta nada para ver colores y tamano.
+    // robot/spider preview per part: the animated skeleton adds nothing for color/size.
     float const slotW = (stageW - 76.f) / static_cast<float>(parts);
     float const base = kSizes[std::clamp(m_sizeIndex, 0, 2)] * 52.f;
 

@@ -34,7 +34,7 @@ uint32_t addPreset(std::string name, IconSet set);
 void renamePreset(uint32_t id, std::string name);
 void removePreset(uint32_t id);
 
-// "Style 4": the first number nothing else is called.
+// first free "Style N" number.
 std::string suggestPresetName();
 
 }  // namespace paimon::iconcopy

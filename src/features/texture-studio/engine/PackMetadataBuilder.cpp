@@ -59,8 +59,7 @@ matjson::Value rgbObj(int r, int g, int b) {
     return obj;
 }
 
-// Wrap `content` as {"children": {"node": {<name>: content}}} — the nesting
-// HappyTextures layer-jsons use to address a node by ID.
+// Wrap content as children/node/name: HappyTextures node-by-ID nesting.
 matjson::Value nodeChild(std::string_view name, matjson::Value content) {
     auto node = matjson::Value::object();
     node[std::string(name)] = std::move(content);
@@ -73,7 +72,7 @@ matjson::Value nodeChild(std::string_view name, matjson::Value content) {
 
 }  // namespace
 
-// JSON layouts mirror PackGen so generated packs stay interchangeable.
+// JSON layouts mirror PackGen: packs stay interchangeable.
 
 std::string PackMetadataBuilder::buildPackId(std::string_view packName) {
     return std::string("paimbnails.texture_studio.") + slugify(packName);
@@ -82,8 +81,7 @@ std::string PackMetadataBuilder::buildPackId(std::string_view packName) {
 std::string PackMetadataBuilder::buildPackJson(std::string_view packName,
                                                std::string_view author) {
     auto obj = matjson::Value::object();
-    // Texture Loader version this pack targets. PackGen ships "1.6.2";
-    // claiming a version newer than the installed loader trips its check.
+    // Target loader version: newer than installed trips its check.
     obj["textureldr"] = "1.6.2";
     obj["name"]    = std::string("Paimon Studio - ") + std::string(packName);
     obj["id"]      = buildPackId(packName);

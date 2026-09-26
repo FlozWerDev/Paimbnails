@@ -19,7 +19,6 @@ MaskBuffer makeMask(int W, int H) {
     return m;
 }
 
-// Find the nearest two clusters for a HSV point.
 void findNearestTwo(float h, float s, float v,
                     ClassifiedCluster const* clusters, int n,
                     int& idx0, float& d0,
@@ -48,7 +47,7 @@ MaskBuffer* maskPtrForRole(MaskSet& set, ClusterRole role) {
     }
 }
 
-// One 3x3 grayscale morphology pass; useMax selects dilation vs erosion.
+// 3x3 grayscale pass; useMax picks dilation over erosion.
 void morphPass(MaskBuffer& mask, std::vector<std::uint8_t>& scratch, bool useMax) {
     int W = mask.width;
     int H = mask.height;
@@ -86,8 +85,7 @@ void morphOpen(MaskBuffer& mask, MaskMorphology const& morph,
 
 constexpr int kRefineMasks = 5;
 
-// Joint-bilateral smoothing follows RGB edges and restores each pixel's alpha
-// after averaging, preserving the mask partition.
+// Joint-bilateral: follows RGB edges, restores per-pixel alpha to keep the partition.
 void edgeRefinePass(ImageBuffer const& sprite,
                     std::array<MaskBuffer*, kRefineMasks> const& masks,
                     int alphaCutoff,
@@ -96,7 +94,7 @@ void edgeRefinePass(ImageBuffer const& sprite,
     int H = sprite.height();
     if (W <= 0 || H <= 0) return;
 
-// Weights use exp(-d² / (2·32²)), quantized to 256 steps.
+    // Weights: exp(-d2/(2*32^2)), quantized to 256 steps.
     static const std::array<float, 256> kSimilarity = [] {
         std::array<float, 256> lut{};
         for (int i = 0; i < 256; ++i) {
@@ -135,7 +133,7 @@ void edgeRefinePass(ImageBuffer const& sprite,
                     int d2 = dr * dr + dg * dg + db * db;
                     float w = kSimilarity[std::min(d2 >> 8, 255)];
 
-// Normalize the neighbour to its alpha before applying its fractional split.
+                    // Normalize the neighbor to its alpha before splitting.
                     float qa = static_cast<float>(q[3]);
                     if (qa <= 0.0f) continue;
                     std::size_t nIdx = static_cast<std::size_t>(yy) * W + xx;
@@ -147,7 +145,7 @@ void edgeRefinePass(ImageBuffer const& sprite,
             }
             if (wSum <= 0.0f) continue;
 
-// Restore this pixel's alpha after smoothing.
+            // Restore this pixel's alpha after smoothing.
             float fracSum = 0.0f;
             for (int m = 0; m < kRefineMasks; ++m) fracSum += acc[m];
             if (fracSum <= 1e-6f) continue;
@@ -164,8 +162,7 @@ void edgeRefinePass(ImageBuffer const& sprite,
     }
 }
 
-// Move enclosed bright components from the glow mask to detail; only the outer
-// ring should receive the glow color.
+// Enclosed bright glow goes to detail; only the outer ring takes glow color.
 void splitInteriorGlow(ImageBuffer const& sprite, MaskSet& masks, int alphaCutoff) {
     int W = sprite.width();
     int H = sprite.height();
@@ -298,8 +295,7 @@ MaskSet MaskBuilder::build(ImageBuffer const& sprite,
                 continue;
             }
 
-// Give the second cluster weight only when the pixel lies between both centers;
-// a pixel on its centroid stays pure.
+            // Second cluster weighs in only between centers; on-centroid stays pure.
             float ratio = (d1 > 1e-6f) ? std::clamp(d0 / d1, 0.0f, 1.0f) : 0.0f;
     float share1 = 0.5f * softness * ratio;
             float share0 = 1.0f - share1;
@@ -314,14 +310,14 @@ MaskSet MaskBuilder::build(ImageBuffer const& sprite,
             if (m1 && m1 != m0) {
                 m1->data[idx] = static_cast<std::uint8_t>(std::clamp(v1, 0, 255));
             } else if (m1 == m0) {
-// Both nearest clusters share a role; merge v1 into m0.
+                // Same role for both: merge v1 into m0.
                 int merged = static_cast<int>(m0->data[idx]) + v1;
                 m0->data[idx] = static_cast<std::uint8_t>(std::clamp(merged, 0, 255));
             }
         }
     }
 
-// Split before smoothing so ring detection sees crisp masks.
+    // Split before smoothing so ring detection sees crisp masks.
     if (options.separateInteriorGlow) {
         splitInteriorGlow(sprite, out, alphaCutoff);
     }

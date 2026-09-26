@@ -17,6 +17,7 @@
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 #include "../features/profiles/services/ProfileImageService.hpp"
+#include "../features/profiles/services/ProfileImageCache.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
 #include "../framework/EventBus.hpp"
 #include "../framework/ModEvents.hpp"
@@ -25,9 +26,6 @@
 #include <tuple>
 
 using namespace geode::prelude;
-
-// Profile image cache access kept at global scope for compatibility.
-#include "../features/profiles/services/ProfileImageCache.hpp"
 
 class $modify(PaimonInfoLayer, InfoLayer) {
     static void onModify(auto& self) {
@@ -55,9 +53,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
 
     std::tuple<CCNode*, CCSize, CCPoint> resolvePopupBackgroundLayout() {
         auto layer = this->m_mainLayer;
-        if (!layer) {
-            return {nullptr, CCSizeZero, CCPointZero};
-        }
+        if (!layer) return {nullptr, CCSizeZero, CCPointZero};
 
         auto layerSize = layer->getContentSize();
         CCSize popupSize = CCSize(440.f, 290.f);
@@ -80,17 +76,13 @@ class $modify(PaimonInfoLayer, InfoLayer) {
     }
 
     CCClippingNode* buildBlurBackgroundClip(CCSprite* backgroundSprite, CCSize const& imgArea, CCPoint popupCenter) {
-        if (!backgroundSprite || imgArea.width <= 0.f || imgArea.height <= 0.f) {
-            return nullptr;
-        }
+        if (!backgroundSprite || imgArea.width <= 0.f || imgArea.height <= 0.f) return nullptr;
 
         backgroundSprite->setPosition(ccp(imgArea.width * 0.5f, imgArea.height * 0.5f));
 
         auto stencil = paimon::SpriteHelper::createRectStencil(imgArea.width, imgArea.height);
         auto clip = CCClippingNode::create();
-        if (!stencil || !clip) {
-            return nullptr;
-        }
+        if (!stencil || !clip) return nullptr;
 
         clip->setStencil(stencil);
         clip->setContentSize(imgArea);
@@ -111,7 +103,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
     void removeAllInfoLayerBgClips() {
         auto layer = this->m_mainLayer;
         if (!layer) return;
-// Remove every background clip; delayed single-ID cleanup could leak duplicates.
+        // remove every bg clip; delayed single-ID cleanup could leak duplicates
         auto* children = layer->getChildren();
         if (!children) return;
         std::vector<CCNode*> toRemove;
@@ -132,9 +124,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
 
     void installBackgroundClip(CCClippingNode* clip, bool fadeIn) {
         auto layer = this->m_mainLayer;
-        if (!layer || !clip) {
-            return;
-        }
+        if (!layer || !clip) return;
 
         this->unschedule(schedule_selector(PaimonInfoLayer::cleanupOldBgClip));
         removeAllInfoLayerBgClips();
@@ -152,7 +142,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         styleInfoLayerBgs(layer);
         addInfoAreaPanel();
         this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
-// Run a short catch-up for cells that finish loading after clip setup.
+        // short catch-up for cells that finish loading after clip setup
         m_fields->m_styleTickCount = 0;
         this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.8f);
     }
@@ -176,7 +166,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                 Ref<InfoLayer> safeRef = this;
                 ThumbnailAPI::get().downloadProfileImg(accountID, [safeRef, accountID](bool success, CCTexture2D* texture) {
                     if (success && texture) {
-// Retain the autoreleased texture across the second main-thread hop.
+                        // retain the autoreleased texture across the second main-thread hop
                         Ref<CCTexture2D> texRef = texture;
                         Loader::get()->queueInMainThread([safeRef, accountID, texRef]() {
                             if (paimon::isRuntimeShuttingDown()) return;
@@ -192,15 +182,13 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                         });
                     }
                 }, false);
-                if (needsAnimatedFetch || !tex) {
-                    if (tex && m_fields->m_bgClip == nullptr) {
-                        applyBlurredBackground(tex);
-                    }
-                    return true;
+                if (tex && !m_fields->m_bgClip) {
+                    applyBlurredBackground(tex);
                 }
+                return true;
             }
 
-            if (!needsAnimatedFetch && m_fields->m_bgClip == nullptr && tex) {
+            if (!m_fields->m_bgClip) {
                 applyBlurredBackground(tex);
             }
 
@@ -236,7 +224,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                     if (!self->getParent()) return;
                     if (self->m_fields->m_levelID <= 0 || self->m_fields->m_levelID != e.levelID) return;
                     if (!e.texture) return;
-// Follow gallery changes; blur application deduplicates textures.
+                    // follow gallery changes; blur dedups textures
                     self->applyBlurredBackground(e.texture);
                 });
         }
@@ -316,7 +304,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         gif->setScale(std::max(scaleX, scaleY));
         gif->setAnchorPoint(ccp(0.5f, 0.5f));
         gif->setPosition(ccp(imgArea.width * 0.5f, imgArea.height * 0.5f));
-// Use a static first frame for the full popup background.
+        // static first frame for the full popup background
         gif->stop();
 
         if (auto clip = buildBlurBackgroundClip(gif, imgArea, popupCenter)) {
@@ -332,36 +320,19 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         if (layer->getChildByID("paimon-info-area-bg"_spr)) return;
 
         TextArea* descText = nullptr;
-        auto findTA = [&](auto const& self, CCNode* node) -> void {
-            if (!node || descText) return;
-            if (auto* ta = typeinfo_cast<TextArea*>(node)) {
-                descText = ta;
-                return;
-            }
-            auto* children = node->getChildren();
-            if (!children) return;
-            for (auto* child : CCArrayExt<CCNode*>(children)) {
-                self(self, child);
-            }
-        };
-        findTA(findTA, layer);
-        if (!descText) return;
-
         GJCommentListLayer* commentList = nullptr;
-        auto findCL = [&](auto const& self, CCNode* node) -> void {
-            if (!node || commentList) return;
-            auto* children = node->getChildren();
-            if (!children) return;
-            for (auto* child : CCArrayExt<CCNode*>(children)) {
-                if (auto* cl = typeinfo_cast<GJCommentListLayer*>(child)) {
-                    commentList = cl;
-                    return;
+        auto findNodes = [&](auto const& self, CCNode* node) -> void {
+            if (!node || (descText && commentList)) return;
+            if (!descText) descText = typeinfo_cast<TextArea*>(node);
+            if (!commentList) commentList = typeinfo_cast<GJCommentListLayer*>(node);
+            if (auto* children = node->getChildren()) {
+                for (auto* child : CCArrayExt<CCNode*>(children)) {
+                    self(self, child);
                 }
-                self(self, child);
             }
         };
-        findCL(findCL, layer);
-        if (!commentList) return;
+        findNodes(findNodes, layer);
+        if (!descText || !commentList) return;
 
         CCSize clSize = commentList->getScaledContentSize();
         CCPoint clBL = commentList->convertToWorldSpace(ccp(0.f, 0.f));
@@ -432,11 +403,9 @@ class $modify(PaimonInfoLayer, InfoLayer) {
     }
 
     void cleanupOldBgClip(float) {
-        if (auto* layer = this->m_mainLayer) {
-            if (auto* old = layer->getChildByID("paimon-infolayer-bg-clip-old"_spr)) {
-                old->removeFromParent();
-            }
-        }
+        auto* layer = this->m_mainLayer;
+        if (!layer) return;
+        if (auto* old = layer->getChildByID("paimon-infolayer-bg-clip-old"_spr)) old->removeFromParent();
     }
 
     void tickStyleBgs(float) {
@@ -448,20 +417,17 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         }
     }
 
-// Reapply the style as soon as GD rebuilds the list; leave vanilla UI untouched
-// when no Paimon background is installed.
+// GD rebuilds the list on setup/response/paging; skip when no paimon bg is installed
     void styleCommentsNow() {
         if (!m_fields->m_bgClip) return;
-        if (auto* layer = this->m_mainLayer) {
-            styleInfoLayerBgs(layer);
-        }
-// Re-arm a short catch-up after paging.
+        if (auto* layer = this->m_mainLayer) styleInfoLayerBgs(layer);
+        // re-arm a short catch-up after paging
         m_fields->m_styleTickCount = 0;
         this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
         this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.8f);
     }
 
-// Setup, response, and paging can all create new vanilla brown nodes; hide them.
+// setup/response/paging recreate vanilla brown nodes
     $override
     void setupCommentsBrowser(cocos2d::CCArray* comments) {
         InfoLayer::setupCommentsBrowser(comments);

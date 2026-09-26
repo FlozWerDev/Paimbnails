@@ -7,7 +7,7 @@
 
 namespace paimon::quickhub {
 
-// Muestra la "direccion" detectada para que se vea que se guardo.
+// Shows the detected "address" as proof of what got saved.
 class QuickButtonPopup : public geode::Popup {
 public:
     static QuickButtonPopup* create(CustomQuickButton candidate);

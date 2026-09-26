@@ -114,8 +114,7 @@ void AudioContextCoordinator::deactivateLevelSelect(bool stopSong) {
 
     if (!stopSong || m_profileOpen) return;
 
-    // Leaving the screen mid-dive means the player backed out of the play they
-    // started: let the song go and give the menu its music back.
+    // Backing out mid-dive: release the song, restore menu music.
     if (dsm->isHandingOff()) {
         m_gameplayActive = false;
         dsm->stopSong();
@@ -158,16 +157,14 @@ void AudioContextCoordinator::deactivateLevelInfo(bool returnsToLevelSelect) {
 
     if (m_profileOpen) return;
 
-    // Leaving the screen mid-dive means the player backed out of the play they
-    // started: let the song go and give the menu its music back.
+    // Backing out mid-dive: release the song, restore menu music.
     if (dsm->isHandingOff()) {
         m_gameplayActive = false;
         dsm->stopSong();
         return;
     }
 
-    // The level took over already. Starting menu music here would talk over the
-    // level song for as long as it takes the game to load it.
+    // Level already took over; menu music here would talk over the level song.
     if (m_gameplayActive) return;
 
     if (dsm->isActive()) {
@@ -182,8 +179,7 @@ void AudioContextCoordinator::beginGameplayTransition() {
     m_gameplayActive = true;
     m_preGameplayLayer = m_dynamicContextLayer;
     m_dynamicContextLayer = DynSongLayer::None;
-    // Keeps the song playing under a filter until the level is actually up, so
-    // a download or a popup does not land on dead silence.
+    // Keep song filtered until the level is up; downloads/popups never hit silence.
     DynamicSongManager::get()->submergeForLevelStart();
 }
 

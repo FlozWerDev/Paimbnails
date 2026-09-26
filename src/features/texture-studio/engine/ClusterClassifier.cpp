@@ -15,7 +15,6 @@ float pixelToClusterDist(float h, float s, float v, ColorCluster const& c) {
     return ColorClustering::hsvDistance(h, s, v, c.h, c.s, c.v);
 }
 
-// Find the index of the nearest cluster for a given (H, S, V).
 int nearestCluster(float h, float s, float v,
                    ColorCluster const* clusters, int n) {
     int best = 0;
@@ -27,8 +26,7 @@ int nearestCluster(float h, float s, float v,
     return best;
 }
 
-// Single-pass border ratios for all clusters; values identical to k passes
-// (same math, same counts — empty clusters still report 0).
+// Single shared pass, values identical to per-cluster passes.
 std::vector<float> computeAllBorderRatios(ImageBuffer const& sprite,
                                           ColorCluster const* allClusters,
                                           int clusterCount) {
@@ -98,8 +96,7 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
         return out;
     }
 
-    // Step 1: copy clusters and compute border ratios in a single shared
-    // pass (identical values to one computeBorderRatio call per cluster).
+    // Step 1: single shared border-ratio pass.
     int n = static_cast<int>(set.clusters.size());
     auto ratios = computeAllBorderRatios(sprite, set.clusters.data(), n);
     out.clusters.reserve(n);
@@ -118,7 +115,7 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
         return out;
     }
 
-    // Weighted median value makes thresholds follow the asset's exposure.
+    // Weighted median: thresholds follow asset exposure.
     std::vector<std::pair<float, int>> values;
     values.reserve(out.clusters.size());
     for (auto const& c : out.clusters) {
@@ -155,8 +152,7 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
         float darkness   = std::clamp((darkRef - v) / darkRef, 0.0f, 1.0f);
         float brightness = std::clamp((v - glowFloor) / brightRef, 0.0f, 1.0f);
 
-        // Outline must touch the silhouette, else a dark interior accent
-        // (legitimate Color2) would be eaten.
+        // Outline must touch the silhouette or dark interior Color2 gets eaten.
         outlineScore[i] = (border > 0.02f)
             ? 0.50f * darkness + 0.35f * (1.0f - s) + 0.15f * border
             : 0.0f;
@@ -166,8 +162,7 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
             : 0.0f;
     }
 
-    // Step 2a: Outline (multiple allowed). If that consumed every cluster
-    // (an all-dark sprite), keep only the darkest so Color1 can survive.
+    // Step 2a: outline (multiple ok); all-dark sprite keeps only the darkest for Color1.
     constexpr float kOutlineBar = 0.45f;
     int outlineCount = 0;
     int darkestIdx = -1;
@@ -209,8 +204,7 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
     for (int i = 0; i < n; ++i) {
         if (out.clusters[i].role != ClusterRole::Unassigned) continue;
         auto const& c = out.clusters[i].source;
-        // The 0.4 floor keeps zero-saturation clusters (e.g. flat-grey logo)
-        // from being ignored entirely.
+        // 0.4 floor: zero-saturation clusters (flat-grey logos) still count.
         float satFactor = 0.4f + 0.6f * std::clamp(c.s, 0.0f, 1.0f);
         float score = static_cast<float>(c.pixelCount) * satFactor;
         if (score > c1Score) {
@@ -223,8 +217,7 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
         out.clusters[c1Idx].confidence = 0.80f;
     }
 
-    // Step 5: Color 2 (secondary) — prefer a cluster hue-distant from
-    // Color1; otherwise the largest remaining cluster.
+    // Step 5: Color2 — hue-distant from Color1, else largest remaining.
     int c2Idx = -1;
     float c2Score = -1.0f;
     if (c1Idx >= 0) {
@@ -256,8 +249,7 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
         out.clusters[c2Idx].confidence = 0.65f;
     }
 
-    // Step 6: fold anything still Unassigned into the closest existing role
-    // by hue+value distance.
+    // Step 6: fold leftovers into the closest role by hue+value.
     int leftover = 0;
     auto roleHueDist = [&](int idx, ClusterRole role) -> float {
         for (int j = 0; j < n; ++j) {
@@ -287,9 +279,7 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
         ++leftover;
     }
 
-    // Step 7: needsReview when no Color1 was found, most clusters were
-    // leftover-folded, or average confidence is low. (Flat icons can lack
-    // both outline and glow, so that alone isn't an error.)
+    // Step 7: review when Color1 missing, mostly folded, or low confidence (flat icons lack outline+glow legitimately).
     bool hasC1 = false;
     float confidenceSum = 0.f;
     for (auto const& c : out.clusters) {

@@ -20,8 +20,7 @@ struct ColorCluster {
 
     int pixelCount = 0;
 
-    // Fraction of this cluster's pixels touching the silhouette edge.
-    // Computed by the classifier; 0.0 from the clusterer itself.
+    // Fraction touching the silhouette edge; set by the classifier, 0.0 from the clusterer.
     float borderRatio = 0.0f;
 };
 
@@ -43,24 +42,16 @@ struct ClusteringOptions {
     float weightS = 0.3f;
     float weightV = 0.2f;
 
-    // Weight each pixel by its alpha so anti-aliased edge pixels (which mix
-    // the sprite color with the transparent background) stop dragging the
-    // centroids toward muddy in-between colors.
+    // Alpha-weighted pixels: AA edges stop dragging centroids to muddy middles.
     bool alphaWeighting = true;
 
-    // Independent k-means runs with different seeds; the run with the lowest
-    // weighted inertia wins. Protects against a bad k-means++ draw.
+    // Independent seeded runs; lowest inertia wins, guarding bad k-means++ draws.
     int restarts = 2;
 
-    // After convergence, centroids closer than this (weighted HSV distance)
-    // are merged. Splitting one visual color into two clusters makes the
-    // classifier assign the same surface to two different roles. Kept small:
-    // dark outline vs dark accent colors sit ~0.015 apart and must survive.
+    // Merge near-duplicate centroids; kept small so dark outline vs accent (~0.015 apart) survive.
     float mergeThreshold = 0.012f;
 
-    // Iterating on every pixel of a large sprite is wasted work; a stride
-    // subsample this size estimates the same centroids. Counts are still
-    // computed over all pixels afterwards. 0 = no cap.
+    // Stride subsample cap for big sprites; full-pixel counts still computed after. 0 = no cap.
     int maxSamples = 24000;
 };
 

@@ -6,7 +6,7 @@
 #include <vector>
 
 namespace paimon::transitions {
-// Bit validation remains correct with the project's -ffast-math build.
+// bit validation stays correct under the project's -ffast-math build.
 inline bool finite(float value) {
     return (std::bit_cast<std::uint32_t>(value) & 0x7f800000u) != 0x7f800000u;
 }
@@ -22,8 +22,8 @@ struct Timeline {
     std::vector<TimelineClip> clips;
     float duration = 0.f;
 };
-// Spawn consumes the next N commands as a parallel group. Delays are relative
-// to the start of the command/group; following commands wait for its last end.
+// spawn eats the next N commands as a parallel group. Delays are relative
+// to the group start; followers wait for its last end.
 template<class Commands, class IsSpawn>
 Timeline compileTimeline(Commands const& commands, IsSpawn isSpawn) {
     Timeline result;

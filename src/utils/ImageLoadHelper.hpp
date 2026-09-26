@@ -111,8 +111,6 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
 
         if (!result.success) {
             result.error = "texture_error";
-        } else {
-            geode::log::debug("[ImageLoadHelper] Loaded via stb_image (memory): {}x{} (original {} channels)", w, h, channels);
         }
         return result;
     }
@@ -135,8 +133,8 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
         return loadWithSTBFromMemory(fileData.data(), fileData.size());
     }
 
-    // Decode a static image, trying stb_image before CCImage. maxSizeMB=0 disables
-    // the file-size limit.
+    // decode a static image, stb_image first, then CCImage.
+    // maxSizeMB=0 disables the file-size limit.
     inline LoadedImage loadStaticImage(std::filesystem::path const& path, size_t maxSizeMB = 10) {
         LoadedImage result;
 

@@ -50,7 +50,7 @@ public:
 
     geode::Result<> deleteProject(std::string_view id);
 
-    // Marca de la galeria; no toca el project.json.
+    // gallery marker; leaves project.json alone.
     geode::Result<> setFavorite(std::string_view id, bool favorite);
 
     bool exists(std::string_view id) const;

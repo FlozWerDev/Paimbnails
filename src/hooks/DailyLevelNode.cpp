@@ -117,11 +117,7 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
         CCSize nodeSize = this->getContentSize();
 
         CCNode* bg = this->getChildByID("background");
-        if (!bg) {
-             if (auto scale9 = this->getChildByType<CCScale9Sprite>(0)) {
-                 bg = scale9;
-             }
-        }
+        if (!bg) bg = this->getChildByType<CCScale9Sprite>(0);
 
         CCSize clipSize;
         CCPoint clipPos;
@@ -162,22 +158,15 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
 
         int levelID = level->m_levelID;
         std::string fileName = fmt::format("{}.png", levelID);
-        
-        log::info("[DailyLevelNode] requesting thumbnail: levelID={}", levelID);
+
         Ref<DailyLevelNode> self = this;
         ThumbnailLoader::get().requestLoad(levelID, fileName, [self, levelID](CCTexture2D* tex, bool success) {
             auto* node = static_cast<PaimonDailyLevelNode*>(self.data());
             if (!node) return;
             auto* fields = node->m_fields.self();
-            // A cache hit can fire before addChild; the Ref keeps the clipper alive.
-            if (!fields || !fields->m_paimonClipper) {
-                log::debug("[DailyLevelNode] callback levelID={}: clipper destroyed, skipping", levelID);
-                return;
-            }
-            if (fields->m_levelID != levelID) {
-                log::debug("[DailyLevelNode] callback levelID={}: level changed to {}, skipping", levelID, fields->m_levelID);
-                return;
-            }
+            // cache hit can fire before addChild; the Ref keeps the clipper alive
+            if (!fields || !fields->m_paimonClipper) return;
+            if (fields->m_levelID != levelID) return;
 
             if (fields->m_loadingSpinner) {
                 fields->m_loadingSpinner->removeFromParent();
@@ -185,7 +174,6 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
             }
 
             if (success && tex && fields->m_paimonClipper) {
-                log::info("[DailyLevelNode] thumbnail loaded OK: levelID={}", levelID);
                 if (fields->m_paimonThumb) {
                     fields->m_paimonThumb->removeFromParent();
                 }

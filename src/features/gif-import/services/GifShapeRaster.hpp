@@ -10,10 +10,9 @@
 
 namespace paimon::gifimport {
 
-// El giro de un objeto resuelto una sola vez. Preguntar si un punto cae dentro
-// de una figura es de largo lo que mas se repite del importador —cientos de
-// millones de veces en una imagen grande— y sacar el seno y el coseno en cada
-// pregunta se llevaba, medido, tres cuartas partes del tiempo de la importacion.
+// One object's rotation solved once. Point-in-shape is the importer's hottest
+// query (hundreds of millions on a big image); per-query sin/cos measured at
+// three quarters of import time.
 struct ShapeXform {
     float x = 0.f;
     float y = 0.f;
@@ -63,15 +62,13 @@ ShapeXform xformOf(Primitive const& object);
 ShapeXform xformOf(Primitive const& object, std::vector<PlanStamp> const& stamps);
 std::vector<ShapeXform> xformsOf(std::vector<Primitive> const& objects);
 
-// Celdas que toca la caja envolvente, ya recortadas a la rejilla. Devuelve la
-// caja vacia (max < min) cuando la figura se queda fuera.
+// Bounding-box cells, clipped to the grid. Empty box (max < min) when outside.
 std::array<int, 4> xformBox(ShapeXform const& shape, int width, int height);
 
-// Una figura puede asomar de sus celdas solo hacia donde no se nota: celdas del
-// mismo color, celdas que otro color tapa despues, o hueco que ningun frame
-// pinta. Asomando sobre el color que queda debajo es cuando se ve el pico, y
-// medir por el centro de la celda no lo detecta porque el pico entra menos de
-// media celda.
+// A figure may only poke out where it doesn't show: same-color cells, cells a
+// later color covers, or void no frame paints. Poking over the color below is
+// when the peak shows, and center-sampling misses it (peaks enter under half
+// a cell).
 bool shapeStaysInside(
     Primitive const& shape,
     std::vector<std::uint8_t> const& permitted,
@@ -79,9 +76,9 @@ bool shapeStaysInside(
     int height
 );
 
-// Que parte de la figura cae fuera de lo permitido. Para una tira, exigir cero es
-// pasarse: el bisel y el remate de una tira buena se salen un pico y no se ve,
-// pero tirarla manda la mancha al contorno, que se pasa mucho mas.
+// How much of the figure falls outside permitted. For a strip, demanding zero
+// overshoots: a good strip's bevel and cap poke a peak unseen, but dropping it
+// sends the blob to outline, which overshoots far worse.
 float shapeSpill(
     Primitive const& shape,
     std::vector<std::uint8_t> const& permitted,
@@ -89,13 +86,12 @@ float shapeSpill(
     int height
 );
 
-// Tramo de x que la figura puede tocar en una fila. Sobra un pelo por los dos
-// lados a proposito, asi que fuera de el se puede dar el punto por descartado
-// sin preguntar.
+// X span a figure can touch in a row. Deliberately a hair wide both sides,
+// so outside it the point reads as rejected without asking.
 bool xformSpan(ShapeXform const& shape, float y, float& fromX, float& toX);
 
-// Recorre las muestras que la figura cubre en una rejilla de `scale` muestras
-// por celda, en coordenadas de muestra. Devolver true desde `fn` corta.
+// Walks the samples a figure covers on a `scale`-samples-per-cell grid, in
+// sample coords. Returning true from `fn` cuts.
 template <typename Fn>
 bool forEachSample(ShapeXform const& shape, int width, int height, int scale, Fn&& fn) {
     auto const box = xformBox(shape, width, height);

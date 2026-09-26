@@ -339,8 +339,7 @@ void CollabNetClient::doCreate() {
     uint64_t gen = m_gen;
     auto lifetime = std::weak_ptr<uint8_t>(m_lifetime);
 
-    // Send an empty initial snapshot: the manager streams the host's editor
-    // objects afterwards via the bulk /api/seed path.
+    // Empty initial snapshot; the host streams objects via bulk /api/seed after.
     auto body = matjson::makeObject({
         {"roomCode", m_room},
         {"username", m_user},
@@ -391,8 +390,7 @@ void CollabNetClient::doCreate() {
                 }
             }
 
-            // Create mode never silently joins someone else's room: the code
-            // is taken, so ask for a new one.
+            // Create mode never silently joins another room; a taken code asks for a new one.
             if (res.code() == 409 && code == "room_exists") {
                 emitError("room_exists", "Ese codigo ya esta en uso. Genera uno nuevo.");
                 return;
@@ -612,8 +610,7 @@ void CollabNetClient::sendJson(matjson::Value const& value) {
     }
 
     auto req = web::WebRequest();
-    // Voice/pings/claims are perishable: short timeout so a slow connection
-    // doesn't pile up 15s-long in-flight requests.
+    // Voice/pings/claims are perishable: short timeout caps slow-connection pileup.
     bool ephemeral = (t == "voice" || t == "ping" || t == "claim_layer");
     req.timeout(std::chrono::seconds(ephemeral ? 6 : 15));
     req.header("Content-Type", "application/json");
@@ -646,8 +643,7 @@ void CollabNetClient::sendOps(matjson::Value const& ops, OpsCb cb) {
     WebHelper::dispatch(std::move(req), "POST", apiUrl("/api/ops"),
         [this, lifetime, gen, cb = std::move(cb)](web::WebResponse res) {
             if (!cb) return;
-            // A different generation means stop()/start() ran while this was
-            // in flight; the manager reset its outbox too, so stay silent.
+            // New generation means stop()/start() ran mid-flight; outbox reset too, stay silent.
             if (lifetime.expired() || gen != m_gen) return;
             int accepted = 0;
             if (auto parsed = matjson::parse(res.string().unwrapOr(""))) {

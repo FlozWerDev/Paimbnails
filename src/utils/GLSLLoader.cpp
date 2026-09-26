@@ -19,16 +19,14 @@ namespace paimon::shaders {
 
 namespace {
 
-// RAM cache of file contents, populated lazily on first request. Shared_mutex
-// because reads (hits) dominate; only the first load writes.
+// RAM cache of file contents, populated lazily. shared_mutex: reads dominate.
 struct ShaderSourceCache {
     std::shared_mutex mutex;
     std::unordered_map<std::string, std::string> contents;
 };
 
 ShaderSourceCache& sourceCache() {
-    // Heap-allocated on purpose to avoid running destructors at exit (dodges
-    // static-destruction-order crashes across DLLs, like PopupBlurService).
+    // heap-allocated: no destructors at exit, dodges static-order crashes across DLLs.
     static auto* cache = new ShaderSourceCache();
     return *cache;
 }
@@ -38,8 +36,7 @@ std::filesystem::path shadersDir() {
     return geode::Mod::get()->getResourcesDir() / "shaders";
 }
 
-// Geode flattens resources/ inside the .geode (no subfolders preserved), so the
-// installed path is getResourcesDir()/<name>.glsl. Try both (dev + installed).
+// installed .geode flattens resources/ (no subfolders); try dev layout then flat.
 std::filesystem::path shadersDirFlat() {
     return geode::Mod::get()->getResourcesDir();
 }
@@ -72,13 +69,12 @@ std::string readShaderFile(std::string_view relName) {
 
     auto contents = readFileRaw(shadersDir() / key);
     if (contents.empty()) {
-        // fallback to the flat layout used by the installed .geode
         contents = readFileRaw(shadersDirFlat() / key);
     }
 
     {
         std::unique_lock<std::shared_mutex> lock(sourceCache().mutex);
-        // double-check: another thread may have inserted while we read
+        // another thread may have inserted while we read.
         auto [it, inserted] = sourceCache().contents.emplace(std::move(key), std::move(contents));
         return it->second;
     }
@@ -86,8 +82,7 @@ std::string readShaderFile(std::string_view relName) {
 
 namespace {
 
-// Keys del mod dentro de CCShaderCache. Main thread only (igual que loadShader).
-// Heap-allocated por la misma razón que sourceCache().
+// mod keys inside CCShaderCache. main thread only; heap-allocated like sourceCache().
 std::unordered_set<std::string>& trackedShaderKeys() {
     static auto* keys = new std::unordered_set<std::string>();
     return *keys;
@@ -113,7 +108,7 @@ void purgeTrackedShaders() {
         }
     }
     trackedShaderKeys().clear();
-    geode::log::info("[GLSLLoader] purgeTrackedShaders: {} programas removidos de CCShaderCache", removed);
+    geode::log::info("[GLSLLoader] purgeTrackedShaders: {} programs removed from CCShaderCache", removed);
 }
 
 CCGLProgram* loadShader(
@@ -153,14 +148,6 @@ CCGLProgram* loadShader(
         return nullptr;
     }
 
-    bool vertexFromFile = !vertexFromDisk.empty();
-    bool fragmentFromFile = !fragmentFromDisk.empty();
-    geode::log::debug(
-        "[GLSLLoader] Compiling '{}' (vertex: {}, fragment: {})",
-        keyStr,
-        vertexFromFile ? "file" : "inline",
-        fragmentFromFile ? "file" : "inline");
-
     auto* program = new CCGLProgram();
     if (!program->initWithVertexShaderByteArray(vertexSrc, fragmentSrc)) {
         geode::log::error("[GLSLLoader] initWithVertexShaderByteArray failed for '{}'", keyStr);
@@ -168,7 +155,7 @@ CCGLProgram* loadShader(
         return nullptr;
     }
 
-    // standard cocos2d attributes; all mod shaders use these names
+    // standard cocos2d attribute names; all mod shaders use these.
     program->addAttribute("a_position", kCCVertexAttrib_Position);
     program->addAttribute("a_color", kCCVertexAttrib_Color);
     program->addAttribute("a_texCoord", kCCVertexAttrib_TexCoords);
@@ -186,8 +173,8 @@ CCGLProgram* loadShader(
     return shaderCache->programForKey(keyStr.c_str());
 }
 
-// Typed helpers use per-shader cache keys ("-v3") so hot updates don't clash
-// with old keys. All pass nullptr fallback (fail-fast if the .glsl is missing).
+// per-shader cache keys ("-v3") avoid clashes with old keys on hot updates.
+// all pass nullptr fallback: fail fast when the .glsl is missing.
 
 CCGLProgram* getBlurHorizontalShader() {
     return loadShader(

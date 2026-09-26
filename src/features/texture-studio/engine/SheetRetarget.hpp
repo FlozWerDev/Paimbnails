@@ -18,8 +18,7 @@ struct InstalledSheet {
     std::filesystem::path plistPath;
 };
 
-// Mod updates repack the atlas without renaming, so stored rects point at
-// wrong pixels; retargeting moves each tinted frame to the installed layout.
+// Mod updates repack without renaming, so stored rects go stale; retargeting moves frames to the installed layout.
 struct RetargetOutcome {
     enum class Status {
         NotInstalled,   // nothing to compare against; ship as-is.

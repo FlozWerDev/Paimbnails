@@ -24,10 +24,9 @@ constexpr float kMaxTextHeight = 185.f;
 constexpr float kAvgAdvance = 7.3f;
 constexpr float kLineHeight = 18.f;
 
-// Approximation is enough: it only picks auto-height vs scroller.
+// rough is fine; only picks auto-height vs scroller.
 float measureTextHeight(std::string const& desc) {
-    // Wrapping happens before the scale is applied, so the column count comes
-    // from the raw (2 * width) font units and does not depend on kTextScale.
+    // wrap precedes scale: columns come from raw 2x-width units.
     int const columns = static_cast<int>(2.f * kAlertWidth / kAvgAdvance);
     int total = 0;
     for (size_t pos = 0; pos <= desc.size();) {

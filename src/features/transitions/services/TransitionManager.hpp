@@ -4,7 +4,7 @@
 #include <vector>
 #include "TransitionMedia.hpp"
 
-// TransitionManager — sistema de transiciones personalizables
+// customizable transition system
 
 enum class TransitionType {
     Fade,

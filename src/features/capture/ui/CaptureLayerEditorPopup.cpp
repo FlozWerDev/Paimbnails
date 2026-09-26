@@ -136,8 +136,7 @@ bool CaptureLayerEditorPopup::init() {
         return true;
     }
 
-    // Sub-branches start folded: the flat tree used to open with a hundred rows
-    // of trails and particles before the first interesting layer.
+    // Sub-branches start folded; flat tree opened on a hundred trail/particle rows.
     for (auto& entry : m_layers) {
         if (entry.isGroup && entry.depth >= 1) entry.collapsed = true;
     }
@@ -355,8 +354,7 @@ void CaptureLayerEditorPopup::populateLayers() {
             for (auto* obj : CCArrayExt<CCObject*>(children)) {
                 auto* nd = typeinfo_cast<CCNode*>(obj);
                 if (!nd) continue;
-// Keep the other player out of the current player's tree; dual mode can nest
-// either player under the other and would otherwise toggle both at once.
+// Dual mode can nest either player under the other; keep each out of the other's tree.
                 if (auto* otherPlayer = typeinfo_cast<PlayerObject*>(nd)) {
                     if (otherPlayer != player) continue;
                 }
@@ -589,8 +587,7 @@ void CaptureLayerEditorPopup::refreshRowVisuals(int idx) {
     if (entry.toggler) {
         bool desired = vis;
         if (entry.isGroup) {
-            // Half-lit groups stay checked but amber, so folding one away does
-            // not read as "everything under here is hidden".
+            // Half-lit groups stay checked but amber; folding never reads as fully hidden.
             bool const partial = visibleLeaves > 0 && visibleLeaves < totalLeaves;
             desired = vis || partial;
             if (auto* onButton = entry.toggler->m_onButton) {
@@ -749,8 +746,7 @@ void CaptureLayerEditorPopup::buildList() {
         float labelScale = entry.isGroup ? C::LABEL_SCALE_GROUP
                          : (entry.depth >= 2 ? C::LABEL_SCALE_LEAF_D2 : C::LABEL_SCALE_LEAF_D0);
         float const labelX = C::LABEL_X_BASE + indent;
-        // Mod node ids and shader layer names are long enough to slide under
-        // the counter and the checkbox.
+        // Long mod node ids and shader names slide under counter and checkbox.
         label->limitLabelWidth(
             listW - C::CHECK_X_FROM_RIGHT - (entry.isGroup ? 44.f : 22.f) - labelX,
             labelScale, 0.16f);
@@ -958,8 +954,7 @@ void CaptureLayerEditorPopup::onFilterSelect(CCObject* sender) {
         m_filterLabel->setString(name.c_str());
     }
 
-    // Defer: destroying the filter dropdown inline kills the CCMenu while
-    // the touch dispatcher is still unwinding the activate.
+    // Defer: inline dropdown destroy kills the CCMenu mid touch-dispatch unwind.
     Ref<CaptureLayerEditorPopup> self = this;
     Loader::get()->queueInMainThread([self]() {
         if (paimon::isRuntimeShuttingDown()) return;
@@ -991,8 +986,7 @@ void CaptureLayerEditorPopup::onDoneBtn(CCObject* sender) {
 void CaptureLayerEditorPopup::onRestoreAllBtn(CCObject* sender) {
     if (!sender) return;
 
-// The baseline lives in s_originalVisibilities (filled by populateLayers);
-// restoreVisibility is WeakRef-safe, so dead level nodes are just skipped.
+// Baseline lives in s_originalVisibilities; restoreVisibility skips dead nodes via WeakRef.
     paimon::capture::restoreVisibility(s_originalVisibilities);
     paimon::capture::clearUserShown();
 

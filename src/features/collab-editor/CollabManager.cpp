@@ -194,8 +194,7 @@ PeerAppearance CollabManager::localAppearance() {
 }
 
 CollabManager& CollabManager::get() {
-    // Explicitly disconnected by RuntimeLifecycle. A CRT destructor would
-    // otherwise stop networking after Geode's async runtime is gone.
+    // RuntimeLifecycle disconnects; a CRT destructor would run after Geode's async runtime is gone.
     static auto* instance = new CollabManager();
     return *instance;
 }
@@ -606,8 +605,7 @@ void CollabManager::tick() {
         }
         tickPings(kTickInterval);
         tickHeatmap(kTickInterval);
-        // Normally the overlay updates follow mode every rendered frame. Keep
-        // this fallback for the unlikely case that overlay creation failed.
+        // Fallback if overlay creation failed; normally it updates follow mode every frame.
         if (!m_overlay) updateFollow(kTickInterval);
 
         bool playtesting = m_editor->m_playbackMode == PlaybackMode::Playing;
@@ -1871,8 +1869,7 @@ void CollabManager::sendSelection(CCArray* selected) {
 
 void CollabManager::pollLocalSelection() {
     if (!connected() || m_applyingRemote || !m_editor || !m_editor->m_editorUI) return;
-    // Polling avoids hooks on EditorUI::select/deselect/undo, which are common
-    // hook-chain collision points for BetterEdit, Tinker and editor-tab mods.
+    // Polling dodges EditorUI select/deselect/undo hooks, collision points for BetterEdit/Tinker/tabs.
     if (++m_selectionPollTicks < 2) return;
     m_selectionPollTicks = 0;
 

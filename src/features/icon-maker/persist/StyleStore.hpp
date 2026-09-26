@@ -1,6 +1,5 @@
 #pragma once
-// Biblioteca de pinturas: guarda como esta pintada una capa para reutilizarla.
-// Todo desde el hilo principal, como IconProjectStore.
+// Fill library: stores layer paints for reuse. Main thread only, like IconProjectStore.
 
 #include "../data/FillSpec.hpp"
 
@@ -24,7 +23,7 @@ public:
 
     static StyleStore& get();
 
-    // Idempotente.
+    // idempotent.
     void load();
 
     std::vector<SavedStyle> const& list() const { return m_styles; }

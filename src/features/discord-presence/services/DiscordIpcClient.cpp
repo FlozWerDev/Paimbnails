@@ -204,7 +204,6 @@ bool DiscordIpcClient::tryConnect() {
     }
     return false;
 #else
-    // Scan base dirs x suffixes x discord-ipc-0..9.
     std::vector<std::string> bases;
     auto addBase = [&](char const* dir) {
         if (!dir || !*dir) return;
@@ -359,7 +358,7 @@ bool DiscordIpcClient::drainReads() {
     while (drained.size() < kMaxDrainBytes) {
         DWORD avail = 0;
         if (!PeekNamedPipe(pipe, nullptr, 0, nullptr, &avail, nullptr)) {
-            return GetLastError() == ERROR_BROKEN_PIPE ? false : true;
+            return GetLastError() != ERROR_BROKEN_PIPE;
         }
         if (avail == 0) break;
         DWORD toRead = avail < static_cast<DWORD>(sizeof(buf)) ? avail : static_cast<DWORD>(sizeof(buf));

@@ -35,10 +35,10 @@ inline constexpr int LEVELCELL_GALLERY_SEARCH_WINDOW = 3;
 inline constexpr size_t LEVELCELL_GALLERY_MAX_PENDING = 3;
 inline constexpr float LEVELCELL_GALLERY_RETRY_DELAY = 8.0f;
 inline constexpr int LEVELCELL_GALLERY_MAX_MISSES = 2;
-// Espaciado al re-entrar en una lista (evita picos de FPS con N celdas visibles).
+// Re-enter stagger: avoids FPS spikes with N visible cells.
 inline constexpr float LEVELCELL_GALLERY_REENTER_STAGGER = 0.05f;
 inline constexpr int LEVELCELL_GALLERY_REENTER_STAGGER_SLOTS = 12;
-// 0.0f => el scheduler corre el selector cada frame con dt real (velocidad igual, fluido al fps nativo).
+// 0.0f = scheduler runs every frame with real dt (same speed, native-fps smooth).
 inline constexpr float LEVELCELL_VISUAL_TICK_INTERVAL = 0.0f;
 inline constexpr float LEVELCELL_MAINTENANCE_INTERVAL = 0.4f;
 

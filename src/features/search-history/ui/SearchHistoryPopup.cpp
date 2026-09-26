@@ -13,7 +13,7 @@ static constexpr float POPUP_W = 320.f;
 static constexpr float POPUP_H = 240.f;
 static constexpr float ROW_H = 30.f;
 
-// Icono de dificultad segun la entrada (nullptr = usar la lupa generica).
+// Difficulty icon per entry (nullptr = generic loupe).
 static const char* difficultyFrameFor(const sh::Entry& e) {
     if (e.type != 0 && e.type != 1) return nullptr;
     if (e.difficulties.empty()) return nullptr;
@@ -37,7 +37,7 @@ static const char* difficultyFrameFor(const sh::Entry& e) {
     }
 }
 
-// Fecha relativa corta para la esquina de cada fila.
+// Short relative date for each row corner.
 static std::string timeAgo(int64_t t) {
     if (t <= 0) return "";
     int64_t diff = std::time(nullptr) - t;
@@ -65,7 +65,7 @@ bool SearchHistoryPopup::init(std::function<void(int)> callback) {
     m_callback = std::move(callback);
     this->setTitle("Search History", "goldFont.fnt", 0.75f);
 
-    // Relojitos flanqueando el titulo (mismo icono que el boton que abre esto).
+    // Clocks flanking the title (same icon as the opener button).
     if (m_title) {
         float halfW = m_title->getScaledContentWidth() / 2.f;
         auto addTitleIcon = [this, halfW](float side) {
@@ -82,7 +82,7 @@ bool SearchHistoryPopup::init(std::function<void(int)> callback) {
     float scrollW = POPUP_W - 44.f;
     float scrollH = POPUP_H - 88.f;
 
-    // Fondo oscuro detras de la lista.
+    // Dark backdrop behind the list.
     auto listBg = CCScale9Sprite::create("square02b_001.png");
     listBg->setContentSize({ scrollW + 8.f, scrollH + 8.f });
     listBg->setColor({ 0, 0, 0 });
@@ -93,19 +93,19 @@ bool SearchHistoryPopup::init(std::function<void(int)> callback) {
     m_scroll->setID("history-scroll"_spr);
     m_mainLayer->addChildAtPosition(m_scroll, Anchor::Center, { -scrollW / 2.f, -scrollH / 2.f + 4.f });
 
-    // Borde decorativo alrededor del scroll.
+    // Decorative border around the scroll.
     auto borders = geode::ListBorders::create();
     borders->setContentSize({ scrollW + 6.f, scrollH });
     m_mainLayer->addChildAtPosition(borders, Anchor::Center, { 0.f, 4.f });
 
-    // Contador de busquedas guardadas (abajo a la izquierda).
+    // Saved-search count (bottom left).
     m_countLabel = CCLabelBMFont::create("", "goldFont.fnt");
     m_countLabel->setScale(0.4f);
     m_countLabel->setAnchorPoint({ 0.f, 0.5f });
     m_countLabel->setOpacity(190);
     m_mainLayer->addChildAtPosition(m_countLabel, Anchor::BottomLeft, { 26.f, 22.f });
 
-    // Boton Clear (abajo).
+    // Clear button (bottom).
     auto clearSpr = ButtonSprite::create("Clear", "bigFont.fnt", "GJ_button_06.png", 0.8f);
     clearSpr->setScale(0.55f);
     auto clearBtn = CCMenuItemSpriteExtra::create(clearSpr, this, menu_selector(SearchHistoryPopup::onClear));
@@ -163,13 +163,13 @@ void SearchHistoryPopup::rebuild() {
         menu->setContentSize({ w, ROW_H });
         content->addChild(menu);
 
-        // Fondo redondeado de la fila; toda la fila es el boton de buscar.
+        // Rounded row backdrop; the whole row is the search button.
         auto rowBg = CCScale9Sprite::create("square02b_001.png");
         rowBg->setContentSize({ rowW, ROW_H - 4.f });
         rowBg->setColor({ 0, 0, 0 });
         rowBg->setOpacity((i % 2) ? 50 : 85);
 
-        // Icono: dificultad de la busqueda, o lupa si no aplica.
+        // Icon: search difficulty, or loupe fallback.
         CCSprite* icon = nullptr;
         if (auto frame = difficultyFrameFor(e)) {
             icon = CCSprite::createWithSpriteFrameName(frame);
@@ -199,7 +199,7 @@ void SearchHistoryPopup::rebuild() {
         sub->setPosition({ 32.f, (ROW_H - 4.f) * 0.28f });
         rowBg->addChild(sub);
 
-        // Fecha relativa (arriba a la derecha de la fila).
+        // Relative date (row top right).
         auto when = CCLabelBMFont::create(timeAgo(e.time).c_str(), "chatFont.fnt");
         when->setAnchorPoint({ 1.f, 0.5f });
         when->setScale(0.4f);
@@ -213,7 +213,7 @@ void SearchHistoryPopup::rebuild() {
         rowBtn->setPosition({ rowW / 2.f, ROW_H / 2.f });
         menu->addChild(rowBtn);
 
-        // Boton eliminar, fuera de la fila para no chocar con el boton grande.
+        // Delete button sits outside the row to not collide with the big button.
         auto delSpr = CCSprite::createWithSpriteFrameName("GJ_deleteIcon_001.png");
         CCNode* delIcon = delSpr ? (CCNode*)delSpr : (CCNode*)ButtonSprite::create("X");
         delIcon->setScale(delSpr ? 0.55f : 0.35f);

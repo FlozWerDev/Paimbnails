@@ -202,7 +202,7 @@ void GradientEditorPopup::rebuildBody() {
                 self->notifyChanged();
             });
 
-        // La fila crece con el control que lleva dentro.
+        // row grows with its inner control.
         float const rowH = std::max(
             42.f, (posRow ? posRow->getContentSize().height : 0.f) + 6.f);
         auto* row = CCNode::create();

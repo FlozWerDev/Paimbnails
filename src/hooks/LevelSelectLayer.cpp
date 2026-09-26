@@ -41,12 +41,10 @@ namespace {
         }
 
         auto* fmod = FMODAudioEngine::get();
-        if (fmod && !sm.getPauseSongPositionTracking()) {
-            auto oldTrack = fmod->getActiveMusic(0);
-            if (oldTrack == sm.getCurrentSong()) {
-                sm.setPauseSongPositionTracking(false);
-                return;
-            }
+        if (fmod && !sm.getPauseSongPositionTracking() &&
+            fmod->getActiveMusic(0) == sm.getCurrentSong()) {
+            sm.setPauseSongPositionTracking(false);
+            return;
         }
 
         sm.restoreLastMenuLoopPosition();
@@ -100,8 +98,7 @@ class $modify(PaimonGameManager, GameManager) {
     }
 };
 
-// Prevent GD from restarting music on transitions; also handles music
-// transitions (save/restore position). Priority::Late (not Last) — see above.
+// block GD music restarts on transitions; Late (not Last) keeps later observers working
 class $modify(PaimonFMODAudioEngine, FMODAudioEngine) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityPre("FMODAudioEngine::playMusic", geode::Priority::Late);
@@ -115,7 +112,8 @@ class $modify(PaimonFMODAudioEngine, FMODAudioEngine) {
             return;
         }
         auto requestedPath = static_cast<std::string>(path);
-        std::string menuTrack = GameManager::get() ? std::string(GameManager::get()->getMenuMusicFile()) : std::string();
+        auto* gm = GameManager::get();
+        std::string menuTrack = gm ? std::string(gm->getMenuMusicFile()) : std::string();
         bool isMenuTrack = !menuTrack.empty() && requestedPath == menuTrack;
 
         if (!DynamicSongManager::s_selfPlayMusic) {
@@ -184,7 +182,6 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     bool init(int p0) {
         if (!LevelSelectLayer::init(p0)) return false;
 
-
         auto win = CCDirector::get()->getWinSize();
 
         int levelID = p0 + 1;
@@ -194,8 +191,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         m_fields->m_soundtrackButton = soundtrackButton;
         m_fields->m_waitingForSoundtrack = this->isVisibleInTree(soundtrackButton);
         
-        // Keep GD's original background until the thumbnail is ready (see
-        // hideVanillaBackgroundWithFade from applyBackground).
+        // keep GD bg until the thumbnail is ready
         this->updateThumbnailBackground(levelID);
 
         if (m_scrollLayer) {
@@ -271,7 +267,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             }
         }
 
-        // Style only the first unclaimed vanilla list border.
+        // style only the first unclaimed vanilla list border
         {
             for (auto* child : CCArrayExt<CCNode*>(this->getChildren())) {
                 if (!child) continue;
@@ -314,7 +310,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     $override
     void onEnterTransitionDidFinish() {
         LevelSelectLayer::onEnterTransitionDidFinish();
-        // Render blur only after the transition; RAM hits apply immediately.
+        // render blur only after the transition; RAM hits apply immediately
         m_fields->m_transitionFinished = true;
         this->updateThumbnailBackground(m_fields->m_currentLevelID);
     }
@@ -371,11 +367,11 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     }
 
     void forcePlayMusic(float dt) {
-         int levelID = this->resolveVisibleLevelID();
-         if (levelID <= 0) levelID = 1;
-         m_fields->m_currentLevelID = levelID;
-         
-         this->syncLevelSelectSong(true);
+        int levelID = this->resolveVisibleLevelID();
+        if (levelID <= 0) levelID = 1;
+        m_fields->m_currentLevelID = levelID;
+
+        this->syncLevelSelectSong(true);
     }
 
     bool isVisibleInTree(CCNode* node) const {
@@ -411,7 +407,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             }
         }
 
-        // Recover background rendering on paths that skip the enter callback.
+        // recover bg rendering on paths that skip the enter callback
         if (!m_fields->m_transitionFinished) {
             m_fields->m_transitionFallbackTime += dt;
             if (m_fields->m_transitionFallbackTime >= 0.7f) {
@@ -462,58 +458,52 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             this->syncLevelSelectSong();
         }
 
-        if (m_fields->m_bgSprite && m_fields->m_cachedDynamicSong) {
-             if (++m_fields->m_meteringFrameCounter < 3) return;
-             m_fields->m_meteringFrameCounter = 0;
-              auto engine = FMODAudioEngine::sharedEngine();
-              if (engine && engine->m_system) {
-                 FMOD::ChannelGroup* masterGroup = nullptr;
-                 engine->m_system->getMasterChannelGroup(&masterGroup);
-                 
-                 if (masterGroup) {
-                     FMOD::DSP* headDSP = nullptr;
-                     masterGroup->getDSP(FMOD_CHANNELCONTROL_DSP_HEAD, &headDSP);
-                     
-                     if (headDSP) {
-                         if (!m_fields->m_meteringEnabled) {
-                             headDSP->setMeteringEnabled(false, true);
-                             m_fields->m_meteringEnabled = true;
-                         }
+        if (!m_fields->m_bgSprite || !m_fields->m_cachedDynamicSong) return;
+        if (++m_fields->m_meteringFrameCounter < 3) return;
+        m_fields->m_meteringFrameCounter = 0;
 
-                         FMOD_DSP_METERING_INFO meteringInfo = {};
-                         headDSP->getMeteringInfo(nullptr, &meteringInfo);
-                         
-                         float peak = 0.f;
-                         if (meteringInfo.numchannels > 0) {
-                             for (int i=0; i<meteringInfo.numchannels; i++) {
-                                 if (meteringInfo.peaklevel[i] > peak) peak = meteringInfo.peaklevel[i];
-                             }
-                         }
-                         
-                         if (peak > m_fields->m_smoothedPeak) {
-                             m_fields->m_smoothedPeak = peak;
-                         } else {
-                              m_fields->m_smoothedPeak -= dt * 1.5f;
-                             if (m_fields->m_smoothedPeak < 0.f) m_fields->m_smoothedPeak = 0.f;
-                         }
-                         
-                         float val = m_fields->m_smoothedPeak * 0.7f;
+        auto engine = FMODAudioEngine::sharedEngine();
+        if (!engine || !engine->m_system) return;
 
-                         float brightnessVal = 80.f + (val * 175.f);
-                         if (brightnessVal > 255.f) brightnessVal = 255.f;
-                         GLubyte cVal = static_cast<GLubyte>(brightnessVal);
+        FMOD::ChannelGroup* masterGroup = nullptr;
+        engine->m_system->getMasterChannelGroup(&masterGroup);
+        if (!masterGroup) return;
 
-                         if (m_fields->m_bgSprite) {
-                             m_fields->m_bgSprite->setColor({cVal, cVal, cVal});
-                         }
-                         
-                         if (m_fields->m_sharpBgSprite) {
-                             GLubyte sharpVal = static_cast<GLubyte>(cVal * 0.9f); 
-                             m_fields->m_sharpBgSprite->setColor({sharpVal, sharpVal, sharpVal});
-                         }
-                     }
-                 }
-             }
+        FMOD::DSP* headDSP = nullptr;
+        masterGroup->getDSP(FMOD_CHANNELCONTROL_DSP_HEAD, &headDSP);
+        if (!headDSP) return;
+
+        if (!m_fields->m_meteringEnabled) {
+            headDSP->setMeteringEnabled(false, true);
+            m_fields->m_meteringEnabled = true;
+        }
+
+        FMOD_DSP_METERING_INFO meteringInfo = {};
+        headDSP->getMeteringInfo(nullptr, &meteringInfo);
+
+        float peak = 0.f;
+        for (int i = 0; i < meteringInfo.numchannels; i++) {
+            if (meteringInfo.peaklevel[i] > peak) peak = meteringInfo.peaklevel[i];
+        }
+
+        if (peak > m_fields->m_smoothedPeak) {
+            m_fields->m_smoothedPeak = peak;
+        } else {
+            m_fields->m_smoothedPeak -= dt * 1.5f;
+            if (m_fields->m_smoothedPeak < 0.f) m_fields->m_smoothedPeak = 0.f;
+        }
+
+        float val = m_fields->m_smoothedPeak * 0.7f;
+
+        float brightnessVal = 80.f + (val * 175.f);
+        if (brightnessVal > 255.f) brightnessVal = 255.f;
+        GLubyte cVal = static_cast<GLubyte>(brightnessVal);
+
+        m_fields->m_bgSprite->setColor({cVal, cVal, cVal});
+
+        if (m_fields->m_sharpBgSprite) {
+            GLubyte sharpVal = static_cast<GLubyte>(cVal * 0.9f);
+            m_fields->m_sharpBgSprite->setColor({sharpVal, sharpVal, sharpVal});
         }
     }
     
@@ -554,9 +544,8 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             }
         }, ThumbnailLoader::PriorityHero, false);
     }
-    
-    
-    // Fade an outgoing snapshot over the incoming background.
+
+    // fade an outgoing snapshot over the incoming background
     void showFadeOverlayFrom(CCSprite* src) {
         auto* tex = src->getTexture();
         if (!tex) return;
@@ -593,7 +582,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         int prevLevelID = m_fields->m_appliedLevelID;
         m_fields->m_appliedLevelID = levelID;
 
-        // Capture the outgoing background except on the first application.
+        // snapshot the outgoing bg except on first apply
         if (levelID != prevLevelID && prevLevelID != 0 && m_fields->m_transitionFinished) {
             CCSprite* fadeSrc = nullptr;
             if (auto* b = m_fields->m_bgSprite.data(); b && b->isVisible() && b->getOpacity() > 0) {
@@ -690,13 +679,13 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             m_fields->m_bgSprite->setVisible(false);
         }
 
-        // Hide vanilla background only after a real thumbnail is visible.
+        // hide vanilla bg only after a real thumbnail is visible
         if (tex && m_fields->m_transitionFinished) {
             this->hideVanillaBackgroundWithFade();
         }
     }
 
-    // Fade vanilla background nodes without touching our or other mods' nodes.
+    // fade vanilla bg nodes without touching ours or other mods'
     void hideVanillaBackgroundWithFade() {
         if (m_fields->m_vanillaHidden) return;
         m_fields->m_vanillaHidden = true;
@@ -755,7 +744,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         AudioContextCoordinator::get().deactivateLevelSelect(true);
     }
 
-    // Ease our UI out with GD's outgoing scene transition.
+    // ease our UI out with GD's outgoing scene transition
     void animateExit() {
         if (m_fields->m_exitAnimated) return;
         m_fields->m_exitAnimated = true;

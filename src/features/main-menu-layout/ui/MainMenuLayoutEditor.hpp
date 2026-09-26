@@ -57,7 +57,7 @@ private:
     Item* selectedItem();
     void selectIndex(int index);
     cocos2d::CCRect itemRect(Item const& item) const;
-    // itemRect con el margen del contorno: es donde se dibuja el grip.
+    // itemRect plus outline margin: grip draw zone.
     cocos2d::CCRect outlineRect(Item const& item) const;
     cocos2d::CCPoint gripPos(Item const& item) const;
     Item* findItemAt(cocos2d::CCPoint worldPos);
@@ -97,7 +97,7 @@ private:
         float duration;
     };
     std::unordered_map<std::string, LayoutTransition> m_transitions;
-    // Shapes al abrir: cancelar las devuelve aunque el cierre se interrumpa.
+    // shapes on open: cancel restores them even mid-close.
     std::vector<DrawShapeLayout> m_initialShapes;
     bool m_closing = false;
     bool m_saved = false;

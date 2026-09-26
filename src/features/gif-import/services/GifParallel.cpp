@@ -14,7 +14,7 @@ thread_local bool t_inParallel = false;
 unsigned int workerLimit() {
     unsigned int limit = g_workerLimit.load(std::memory_order_relaxed);
     if (limit == 0) limit = std::thread::hardware_concurrency();
-    // Uno de los nucleos es del juego, que sigue dibujando mientras se importa.
+    // one core belongs to the game, still drawing mid-import.
     return std::max(1u, limit > 2 ? limit - 1 : limit);
 }
 

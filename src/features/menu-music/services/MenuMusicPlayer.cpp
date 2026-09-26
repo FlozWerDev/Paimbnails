@@ -150,7 +150,7 @@ bool MenuMusicPlayer::playSpecific(const std::string& trackId) {
     auto* track = lib.findTrack(trackId);
     if (!track || track->blacklisted) return false;
 
-    // Cambiar a modo Queue para que el siguiente tick no sobreescriba.
+    // queue mode so the next tick does not overwrite.
     if (lib.mode() == PlaybackMode::Disabled) {
         lib.setMode(PlaybackMode::Queue);
     }
@@ -182,8 +182,7 @@ bool MenuMusicPlayer::isManagingPlayback() const {
 }
 
 void MenuMusicPlayer::pause() {
-    // Solo el canal donde suena la cancion del menu: m_backgroundMusicChannel
-    // es el grupo compartido y pausarlo deja mudo tambien el nivel.
+    // only the menu song channel: the shared group would mute the level too.
     m_pausedChannel = paimon::audio::mainMusicChannel();
     paimon::audio::setMusicChannelPaused(m_pausedChannel, true);
     m_paused = m_pausedChannel != nullptr;
@@ -200,8 +199,7 @@ void MenuMusicPlayer::resume() {
 }
 
 bool MenuMusicPlayer::isPaused() const {
-    // El juego rearranca la musica del menu en un canal nuevo al salir de un
-    // nivel o cambiar de escena; la pausa que aplicamos murio con el anterior.
+    // game restarts menu music on a new channel per scene; our pause died with the old one.
     return m_paused && paimon::audio::isMusicChannelPaused(m_pausedChannel);
 }
 

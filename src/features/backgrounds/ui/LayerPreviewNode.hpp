@@ -1,7 +1,6 @@
 #pragma once
 
-// Live preview of a configured layer, including the same image/GIF/video/shader
-// pipeline and a small vanilla UI mockup. Animated sources keep running.
+// Live preview running the real image/GIF/video/shader pipeline plus a vanilla UI mockup.
 
 #include <Geode/Geode.hpp>
 #include <string>

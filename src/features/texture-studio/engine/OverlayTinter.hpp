@@ -5,10 +5,7 @@
 
 namespace paimon::texture_studio {
 
-// Hand-drawn overlay layers from the PackGen asset pack, all the same size
-// as the base image (or empty). Each overlay carries the actual artwork of
-// its region; tinting recolors the overlay's own pixels by luminance and
-// alpha-composites them over the base — exactly PackGen's algorithm.
+// PackGen asset overlays, base-sized or empty. Tint recolors overlay pixels by luminance, then composites — PackGen's algorithm.
 struct OverlayImages {
     ImageBuffer overlay1;  // tinted with color1
     ImageBuffer overlay2;  // tinted with color2
@@ -22,8 +19,7 @@ struct OverlayImages {
 
 class OverlayTinter final {
 public:
-    // Mirrors PackGen's drawImage(img, 0, 0): mismatched overlays paint their
-    // top-left overlap, in generatePack() order.
+    // PackGen drawImage(img, 0, 0): mismatches paint top-left overlap, in generatePack() order.
     static ImageBuffer apply(ImageBuffer const& base,
                              OverlayImages const& overlays,
                              TintColors const& colors,

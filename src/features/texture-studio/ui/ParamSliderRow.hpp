@@ -9,13 +9,11 @@ class Slider;
 
 namespace paimon::texture_studio {
 
-// Compact "label — slider — value" row used by the Texture Studio editors.
-// Values are plain floats in [minValue, maxValue]; `step` snaps the slider
-// (e.g. 1.0 for integer parameters, 0 for continuous).
+// Compact label-slider-value row. Values are floats in [min,max]; step snaps (1.0 = int, 0 = continuous).
 class ParamSliderRow : public cocos2d::CCNode {
 public:
     using ChangeCallback = std::function<void(float)>;
-    // Turns the raw value into the text shown at the right (e.g. "35%").
+    // Raw value to right-side text (e.g. "35%").
     using Formatter = std::function<std::string(float)>;
 
     static ParamSliderRow* create(std::string const& label,

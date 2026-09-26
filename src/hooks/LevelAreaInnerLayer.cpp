@@ -15,11 +15,11 @@ using namespace geode::prelude;
 
 namespace {
 
-// The cache and async paths mount thumbnails identically through this helper.
+// cache and async paths mount thumbnails identically through this helper
 void mountDoorThumbnail(CCNode* door, CCTexture2D* tex, int levelID,
                         std::unordered_map<int, Ref<CCSprite>>& thumbsMap) {
     if (!tex || !door) return;
-    // Don't duplicate if a thumbnail already exists (RAM hit and requestLoad racing).
+    // RAM hit and requestLoad can race; don't duplicate
     if (thumbsMap.find(levelID) != thumbsMap.end()) return;
 
     auto* thumbSprite = CCSprite::createWithTexture(tex);
@@ -95,15 +95,13 @@ class $modify(PaimonLevelAreaInnerLayer, LevelAreaInnerLayer) {
 
     $override
     bool init(bool returning) {
-        log::debug("[LevelAreaInnerLayer] init() called with returning={}", returning);
 
         if (!LevelAreaInnerLayer::init(returning)) {
             return false;
         }
 
-        log::debug("[LevelAreaInnerLayer] Init successful, scheduling thumbnail addition");
 
-        // Wait for the doors to exist
+        // doors don't exist yet
         this->scheduleOnce(schedule_selector(PaimonLevelAreaInnerLayer::addThumbnailsToDoors), 0.1f);
 
         return true;
@@ -114,43 +112,31 @@ class $modify(PaimonLevelAreaInnerLayer, LevelAreaInnerLayer) {
         if (fields->m_thumbnailsAdded) return;
         fields->m_thumbnailsAdded = true;
 
-        log::debug("[LevelAreaInnerLayer] Adding thumbnails to main level doors");
 
-        // Main levels 1-21
         std::vector<int> mainLevelIDs;
-        for (int i = 1; i <= 21; i++) {
-            mainLevelIDs.push_back(i);
-        }
+        for (int i = 1; i <= 21; i++) mainLevelIDs.push_back(i);
 
-        int addedCount = 0;
         for (int levelID : mainLevelIDs) {
-            auto doorNode = this->findDoorForLevel(levelID);
-            if (doorNode) {
-                this->addThumbnailToDoor(doorNode, levelID);
-                addedCount++;
-            }
+            if (auto doorNode = this->findDoorForLevel(levelID)) this->addThumbnailToDoor(doorNode, levelID);
         }
 
-        log::info("[LevelAreaInnerLayer] Added {} thumbnails to doors", addedCount);
     }
 
     CCNode* findDoorForLevel(int levelID) {
         auto children = CCArrayExt<CCNode*>(this->getChildren());
-        
+
         for (auto child : children) {
-            if (auto menu = typeinfo_cast<CCMenu*>(child)) {
-                auto menuChildren = CCArrayExt<CCNode*>(menu->getChildren());
-                for (auto menuChild : menuChildren) {
-                    if (auto menuItem = typeinfo_cast<CCMenuItemSpriteExtra*>(menuChild)) {
-                        int doorTag = menuItem->getTag();
-                        if (doorTag == levelID || doorTag == (1000 + levelID)) {
-                            return menuItem;
-                        }
-                    }
-                }
+            auto menu = typeinfo_cast<CCMenu*>(child);
+            if (!menu) continue;
+            auto menuChildren = CCArrayExt<CCNode*>(menu->getChildren());
+            for (auto menuChild : menuChildren) {
+                auto menuItem = typeinfo_cast<CCMenuItemSpriteExtra*>(menuChild);
+                if (!menuItem) continue;
+                int doorTag = menuItem->getTag();
+                if (doorTag == levelID || doorTag == (1000 + levelID)) return menuItem;
             }
         }
-        
+
         return nullptr;
     }
 
@@ -162,17 +148,14 @@ class $modify(PaimonLevelAreaInnerLayer, LevelAreaInnerLayer) {
             return;
         }
 
-        log::info("[LevelAreaInnerLayer] Adding thumbnail for level {}", levelID);
 
-        // Sync fast path: if in RAM (preloaded at mod start), apply this frame
-        // without queuing.
+        // sync fast path: RAM-preloaded textures apply this frame
         if (auto* cached = ThumbnailLoader::get().tryGetCachedTexture(levelID, false)) {
             mountDoorThumbnail(doorNode, cached, levelID, fields->m_doorThumbnails);
-            log::debug("[LevelAreaInnerLayer] Thumbnail RAM-hit for level {} (sync)", levelID);
             return;
         }
 
-        // Slow path: load async from disk/network.
+        // slow path: async disk/network load
         WeakRef<PaimonLevelAreaInnerLayer> self = this;
         Ref<CCNode> doorRef = doorNode;
         std::string fileName = fmt::format("{}.png", levelID);
@@ -187,7 +170,6 @@ class $modify(PaimonLevelAreaInnerLayer, LevelAreaInnerLayer) {
                 if (!layerFields) return;
 
                 mountDoorThumbnail(doorRef, tex, levelID, layerFields->m_doorThumbnails);
-                log::info("[LevelAreaInnerLayer] Thumbnail added for level {} (async)", levelID);
             },
             ThumbnailLoader::PriorityHero, false
         );
@@ -210,16 +192,15 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
     }
 
     struct Fields {
-        // Read the saved level ID; translated alert titles are unreliable.
+        // translated alert titles are unreliable; read the saved level ID
         int m_capturedLevelID = -1;
     };
 
     $override
-
     void show() {
         FLAlertLayer::show();
 
-        // Filter so we don't affect other game popups
+        // only our popups
         auto* scene = CCDirector::get()->getRunningScene();
         if (!scene) return;
         LevelAreaInnerLayer* lai = nullptr;
@@ -243,26 +224,24 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
 
     $override
     void onExit() {
-        // The selector fires one frame later; if the popup closes first the
-        // scheduler would tick into a freed layer.
+        // selector fires a frame later; unschedule or it ticks a freed layer
         this->unschedule(schedule_selector(InfoBtnHookFLAlertLayer::checkAndAddButton));
         FLAlertLayer::onExit();
     }
 
     void checkAndAddButton(float) {
-        // Don't add the button on our own popup
+        // skip our own popup
         if (this->getID() == "simple-thumbnail-popup"_spr) return;
 
         int foundLevelID = m_fields->m_capturedLevelID;
         if (foundLevelID < 5001 || foundLevelID > 5004) return;
 
         CCNode* container = this->m_mainLayer ? this->m_mainLayer : this;
-        if (!container) return;
 
         if (foundLevelID > 0) {
             auto winSize = CCDirector::get()->getWinSize();
             
-            // Icon fallback chain
+            // icon fallback chain
             CCSprite* iconSpr = CCSprite::create("paim_BotonMostrarThumbnails.png"_spr);
             if (!paimon::SpriteHelper::isValidSprite(iconSpr)) iconSpr = nullptr;
             if (!iconSpr) iconSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plusBtn_001.png");
@@ -299,7 +278,7 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
                     btn->setPosition({160.f, 100.f});
                     
                     container->addChild(menu, 10);
-                    // Dynamic priority so we don't block other mods
+                    // don't block other mods' touches
                     menu->setTouchPriority(
                         CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 1
                     ); 

@@ -1,6 +1,5 @@
 #pragma once
-// PackGraph: reactive DAG; evaluate() skips nodes whose input hash matches
-// the last run. Single-threaded by design: the scheduler parallelizes across graphs.
+// Reactive DAG: evaluate() skips hash-unchanged nodes. Single-threaded by design; scheduler parallelizes across graphs.
 
 #include <cstddef>
 #include <cstdint>
@@ -72,8 +71,7 @@ public:
         std::size_t cacheHits = 0;
     };
 
-    // Deterministic topo order (insertion order, deps first). Returns false
-    // only on a dependency cycle or missing compute fn.
+    // Deterministic topo order; false only on cycle or missing compute fn.
     bool evaluate(EvalStats* outStats = nullptr) {
         EvalStats stats;
         std::vector<char> state(m_nodes.size(), 0);  // 0=unvisited 1=in-stack 2=done
@@ -152,5 +150,5 @@ private:
     }
 };
 
-// Node::cached storage without changing the public struct layout above.
+// Node::cached persists across runs; keep the public layout above stable.
 }  // namespace paimon::texture_studio::packgen

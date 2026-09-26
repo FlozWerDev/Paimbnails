@@ -81,8 +81,7 @@ void XPBarNode::animateTo(int64_t exp, float duration) {
     m_segment = 0;
     m_segmentTime = 0.f;
 
-    // One segment per level crossed, weighted by how much of the gain falls in
-    // each so a long grind doesn't spend the whole animation on one level.
+    // One segment per level crossed, weighted by gain share.
     int64_t cursor = from;
     int64_t const span = exp - from;
     while (cursor < exp) {

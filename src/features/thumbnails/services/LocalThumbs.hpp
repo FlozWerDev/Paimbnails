@@ -28,7 +28,7 @@ public:
 
     std::optional<std::string> findAnyThumbnail(int32_t levelID) const;
 
-    // Para .rgb: pixels son RGB888 raw (isRgb=true). Para png/jpg/webp: bytes crudos del archivo.
+    // .rgb: raw RGB888 pixels (isRgb=true). png/jpg/webp: raw file bytes.
     struct LoadResult {
         std::vector<uint8_t> pixels;
         int width = 0;
@@ -39,19 +39,19 @@ public:
 
     bool has(int32_t levelID) const;
 
-    // Cachea en RAM: se llama en cada transicion de capa; sin cache cada llamada releeria varios MB del disco en el main thread.
+    // RAM-cached: runs per layer transition; uncached it would re-read MBs from disk on main.
     cocos2d::CCTexture2D* loadTexture(int32_t levelID) const;
 
     cocos2d::CCTexture2D* getCachedTexture(int32_t levelID) const;
 
-    // Carga async: lectura+conversion en worker, upload GPU en main thread. callback siempre se invoca en main thread.
+    // Async load: read+convert on worker, GPU upload on main; callback always on main.
     void loadTextureAsync(int32_t levelID, std::function<void(cocos2d::CCTexture2D*)> callback);
 
     cocos2d::CCTexture2D* loadTextureByIndex(int32_t levelID, int index) const;
 
     std::vector<int32_t> getAllLevelIDs() const;
 
-    // agrega al final de la galeria, no sobreescribe
+    // Appends to the gallery, never overwrites.
     bool saveRGB(int32_t levelID, const uint8_t* data, uint32_t width, uint32_t height);
 
     bool removeThumb(int32_t levelID, int index);
@@ -61,8 +61,7 @@ public:
 
     void invalidateLookup(int32_t levelID);
 
-    // Suelta el cache RAM de texturas (mueren con el contexto GL en
-    // GameManager::reloadAll); los archivos en disco quedan y se recargan lazy.
+    // Drops the RAM texture cache (dies with the GL context on reloadAll); disk files stay, reload lazy.
     void clearTextureCache();
 
 private:

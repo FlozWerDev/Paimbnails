@@ -107,7 +107,7 @@ protected:
     float m_trackClipWidth = 0.f;
     cocos2d::CCLabelBMFont* m_subtitleLabel = nullptr;
 
-    // Selector de modo (Off / All Songs / Playlist): el activo se resalta.
+    // mode selector (Off / All Songs / Playlist); active one highlighted.
     ButtonSprite* m_modeOffSpr = nullptr;
     ButtonSprite* m_modeAllSpr = nullptr;
     ButtonSprite* m_modePlaylistSpr = nullptr;

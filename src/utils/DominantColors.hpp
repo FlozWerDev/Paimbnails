@@ -6,11 +6,9 @@
 struct DCColor { uint8_t r, g, b; };
 
 namespace DominantColors {
-    // Extract two dominant colors from an RGB24 buffer. Returns {A,B}.
-    // If only one distinct color is found, both will be identical.
+    // two dominant colors from RGB24; identical when only one exists.
     std::pair<DCColor, DCColor> extract(const uint8_t* rgb, int width, int height);
 
-    // Re-run extraction on a reduced overview and keep the pair that best
-    // represents the full thumbnail.
+    // re-run on a reduced overview; keep the most representative pair.
     std::pair<DCColor, DCColor> extractReviewed(const uint8_t* rgb, int width, int height);
 }

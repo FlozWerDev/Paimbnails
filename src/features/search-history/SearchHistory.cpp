@@ -1,6 +1,7 @@
+#include <Geode/Geode.hpp>
+
 #include "SearchHistory.hpp"
 
-#include <Geode/Geode.hpp>
 #include <algorithm>
 #include <ctime>
 
@@ -11,7 +12,7 @@ namespace paimon::searchhistory {
 std::vector<Entry> history;
 
 bool Entry::operator==(const Entry& o) const {
-    // Same day (ignores exact time) to avoid duplicating same-day searches.
+    // Same day, ignoring exact time: no same-day duplicates.
     return (time - time % 86400) == (o.time - o.time % 86400)
         && type == o.type && query == o.query
         && difficulties == o.difficulties && lengths == o.lengths
@@ -39,7 +40,7 @@ std::string Entry::summary() const {
         else if (d == -3) parts.push_back("N/A");
         else if (d >= 1 && d <= 5) parts.push_back(kDiffNames[d - 1]);
     }
-    // El tipo de demon solo aplica si la dificultad Demon estaba seleccionada.
+    // Demon kind only applies when Demon difficulty was selected.
     if (hasDemon) {
         parts.push_back(kDemonNames[(demonFilter >= 1 && demonFilter <= 5) ? demonFilter : 0]);
     }
@@ -85,8 +86,7 @@ void add(GJSearchObject* search, std::vector<int> difficulties, std::vector<int>
     obj.song = search->m_songFilter;
     obj.customSong = search->m_customSongFilter;
     obj.songID = search->m_songID;
-    // m_demonFilter conserva el ultimo valor elegido aunque la dificultad Demon
-    // ya no este seleccionada; solo lo guardamos si Demon esta activo.
+    // m_demonFilter keeps its last pick after Demon is deselected; store only while active.
     bool hasDemon = std::find(obj.difficulties.begin(), obj.difficulties.end(), -2) != obj.difficulties.end();
     obj.demonFilter = hasDemon ? (int)search->m_demonFilter : 0;
     obj.noStar = search->m_noStarFilter;

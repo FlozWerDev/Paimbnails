@@ -8,7 +8,7 @@ using namespace geode::prelude;
 
 class $modify(ForYouEndLevelLayer, EndLevelLayer) {
     static void onModify(auto& self) {
-        // Late: run after other mods so we don't appear in their achievement/stats stacks.
+        // late: keep out of other mods' achievement/stats stacks
         paimon::hooks::afterNodeIdsOrLate(self, "EndLevelLayer::customSetup");
     }
 
@@ -16,13 +16,10 @@ class $modify(ForYouEndLevelLayer, EndLevelLayer) {
     void customSetup() {
         EndLevelLayer::customSetup();
 
-        // Defer the tracker to the next tick to stay out of the levelComplete
-        // stack (where the game fires achievements).
+        // next tick: stay out of the levelComplete achievement stack
         int levelID = 0;
-        if (auto* pl = PlayLayer::get()) {
-            if (auto* level = pl->m_level) {
-                levelID = level->m_levelID.value();
-            }
+        if (auto* pl = PlayLayer::get(); pl && pl->m_level) {
+            levelID = pl->m_level->m_levelID.value();
         }
         if (levelID <= 0) return;
 

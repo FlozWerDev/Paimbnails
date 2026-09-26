@@ -94,7 +94,7 @@ AudioPcm extractAudioToPcm(const std::string& videoPath) {
     }
 
     std::vector<uint8_t> pcm;
-    pcm.reserve(1u << 20);  // 1 MB initial — grows as needed
+    pcm.reserve(1u << 20);
 
     while (true) {
         DWORD streamIdx = 0, flags = 0;

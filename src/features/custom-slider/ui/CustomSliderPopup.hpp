@@ -6,8 +6,7 @@
 
 namespace paimon::slider {
 
-// Popup de configuracion del slider, sobre PaiConfigKit. Las opciones que
-// dependen del modo (Icono vs Imagen/GIF) reconstruyen el contenido.
+// Slider config popup on PaiConfigKit; mode-dependent options rebuild content.
 class CustomSliderPopup : public geode::Popup {
 public:
     static CustomSliderPopup* create();
@@ -24,13 +23,12 @@ protected:
     float                   m_previewScalePerUnit = 1.f;
     bool                    m_sliderRefreshPending = false;
 
-    // Reconstruye el contenido scrolleable (cambios de modo/marco).
+    // Rebuilds scroll content (mode/frame changes).
     void rebuild();
-    // Una tarjeta por tab: solo se construye la visible.
+    // One card per tab; only the visible one builds.
     std::vector<cocos2d::CCNode*> buildBasicCards(float scrollW, float innerW);
     std::vector<cocos2d::CCNode*> buildAdvancedCards(float scrollW, float innerW);
-    // Igual que rebuild() pero diferido al siguiente tick, para no mutar la
-    // escena dentro del touch dispatcher.
+    // Same as rebuild() but next tick: never mutate the scene inside touch dispatch.
     void scheduleRebuild();
     void scheduleSliderRefresh();
     void applySliderRefresh(float);

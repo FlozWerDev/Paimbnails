@@ -149,8 +149,7 @@ void QuickButtonImagePopup::refresh() {
         m_rotValue->setString(
             fmt::format("{} deg", static_cast<int>(std::round(m_target->imageRotation))).c_str());
     }
-    // El resaltado de FlipX/FlipY se fija al abrir (ver init); el thumb y el
-    // preview del padre ya muestran cada cambio en vivo.
+    // FlipX/FlipY highlight pins at open (see init); thumb and parent preview update live.
 }
 
 void QuickButtonImagePopup::onChooseFile() {
@@ -182,7 +181,7 @@ void QuickButtonImagePopup::importImage(std::filesystem::path const& src) {
                 PaimonNotify::create("Imagen muy pesada (max 8 MB).", NotificationIcon::Warning)->show();
                 return false;
             }
-            // Validar que cocos la cargue de verdad.
+            // Check cocos really loads it.
             bool ok = false;
             if (auto* tex = cocos2d::CCTextureCache::sharedTextureCache()->addImage(destStr.c_str(), false)) {
                 auto px = tex->getContentSizeInPixels();

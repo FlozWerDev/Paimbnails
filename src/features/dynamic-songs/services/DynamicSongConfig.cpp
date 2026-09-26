@@ -180,20 +180,15 @@ void loadConfig() {
 
     // A named preset owns its tone knobs: reading the stored ones back would
     // resurrect whatever a Custom session left behind.
-    SubmergeConfig const tone = (sub.preset == SubmergePreset::Custom)
-        ? SubmergeConfig{}
-        : submergePresetConfig(sub.preset);
+    bool const custom = sub.preset == SubmergePreset::Custom;
+    SubmergeConfig const tone = custom ? SubmergeConfig{}
+                                       : submergePresetConfig(sub.preset);
 
-    sub.cutoffHz   = (sub.preset == SubmergePreset::Custom)
-        ? mod->getSavedValue<float>(kKeySubCutoff, tone.cutoffHz) : tone.cutoffHz;
-    sub.highpassHz = (sub.preset == SubmergePreset::Custom)
-        ? mod->getSavedValue<float>(kKeySubHighpass, tone.highpassHz) : tone.highpassHz;
-    sub.duckDb     = (sub.preset == SubmergePreset::Custom)
-        ? mod->getSavedValue<float>(kKeySubDuck, tone.duckDb) : tone.duckDb;
-    sub.reverbMix  = (sub.preset == SubmergePreset::Custom)
-        ? mod->getSavedValue<float>(kKeySubReverb, tone.reverbMix) : tone.reverbMix;
-    sub.pitch      = (sub.preset == SubmergePreset::Custom)
-        ? mod->getSavedValue<float>(kKeySubPitch, tone.pitch) : tone.pitch;
+    sub.cutoffHz   = custom ? mod->getSavedValue<float>(kKeySubCutoff, tone.cutoffHz) : tone.cutoffHz;
+    sub.highpassHz = custom ? mod->getSavedValue<float>(kKeySubHighpass, tone.highpassHz) : tone.highpassHz;
+    sub.duckDb     = custom ? mod->getSavedValue<float>(kKeySubDuck, tone.duckDb) : tone.duckDb;
+    sub.reverbMix  = custom ? mod->getSavedValue<float>(kKeySubReverb, tone.reverbMix) : tone.reverbMix;
+    sub.pitch      = custom ? mod->getSavedValue<float>(kKeySubPitch, tone.pitch) : tone.pitch;
 
     // Timing is the user's either way: a preset is a tone, not a tempo.
     sub.diveSeconds    = mod->getSavedValue<float>(kKeySubDive, sub.diveSeconds);

@@ -788,49 +788,33 @@ void EmotePickerPopup::onSearchToggle(CCObject*) {
     if (m_renderPreviewBg) m_renderPreviewBg->setVisible(!m_searchActive);
     if (m_renderPreview) m_renderPreview->setVisible(!m_searchActive);
 
+    float gridX = m_searchActive ? PAD + 4 : m_gridX;
+    float gridW = m_searchActive ? m_popupW - PAD * 2 - 8 : m_gridW;
     if (m_searchActive) {
         if (m_typeMenu) m_typeMenu->setVisible(false);
         if (m_catScroll) m_catScroll->setVisible(false);
+    } else {
+        if (m_typeMenu) m_typeMenu->setVisible(true);
+        if (m_activeTab != Tab::All && m_catScroll) m_catScroll->setVisible(true);
+    }
 
-        if (m_scroll) {
-            float fullX = PAD + 4;
-            float fullW = m_popupW - PAD * 2 - 8;
-            m_scroll->setPosition({fullX, m_botY + 1.f});
-            m_scroll->setContentSize({fullW, m_gridH});
-            if (m_scroll->m_contentLayer) {
-                m_scroll->m_contentLayer->setContentSize({fullW, m_gridH});
-            }
-
-            if (m_scroll->m_contentLayer) {
-                m_scroll->m_contentLayer->stopAllActions();
-                m_scroll->m_contentLayer->setScale(0.97f);
-                m_scroll->m_contentLayer->runAction(
-                    CCEaseBackOut::create(CCScaleTo::create(0.20f, 1.0f)));
-            }
+    if (m_scroll) {
+        m_scroll->setPosition({gridX, m_botY + 1.f});
+        m_scroll->setContentSize({gridW, m_gridH});
+        if (m_scroll->m_contentLayer) {
+            m_scroll->m_contentLayer->setContentSize({gridW, m_gridH});
+            m_scroll->m_contentLayer->stopAllActions();
+            m_scroll->m_contentLayer->setScale(0.97f);
+            m_scroll->m_contentLayer->runAction(
+                CCEaseBackOut::create(CCScaleTo::create(0.20f, 1.0f)));
         }
+    }
 
+    if (m_searchActive) {
         if (m_searchInput) m_searchInput->setString("");
         m_searchQuery.clear();
         buildSearchResultsGrid();
     } else {
-        if (m_typeMenu) m_typeMenu->setVisible(true);
-        if (m_activeTab != Tab::All && m_catScroll) m_catScroll->setVisible(true);
-
-        if (m_scroll) {
-            m_scroll->setPosition({m_gridX, m_botY + 1.f});
-            m_scroll->setContentSize({m_gridW, m_gridH});
-            if (m_scroll->m_contentLayer) {
-                m_scroll->m_contentLayer->setContentSize({m_gridW, m_gridH});
-            }
-
-            if (m_scroll->m_contentLayer) {
-                m_scroll->m_contentLayer->stopAllActions();
-                m_scroll->m_contentLayer->setScale(0.97f);
-                m_scroll->m_contentLayer->runAction(
-                    CCEaseBackOut::create(CCScaleTo::create(0.20f, 1.0f)));
-            }
-        }
-
         m_searchQuery.clear();
         if (m_activeTab == Tab::All) {
             buildAllEmotesGrid();

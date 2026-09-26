@@ -95,7 +95,7 @@ std::string SlotPaths::sanitizeFilename(std::string_view name) {
         }
     }
     if (out.empty()) out = "_unnamed";
-    // Defensive cap below the Windows 255-char path-component limit.
+    // Cap under the Windows 255-char path-component limit.
     if (out.size() > 200) out.resize(200);
     return out;
 }

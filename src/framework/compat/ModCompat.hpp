@@ -7,12 +7,11 @@
 namespace paimon::compat {
 
 struct ModCompat {
-// More Icons provides the optional custom-icon API.
     static bool isMoreIconsLoaded() {
         return geode::Loader::get()->isModLoaded("hiimjustin000.more_icons");
     }
 
-// Known conflicts that require lower hook priority or ceded UI ownership.
+// Known conflicts: lower hook priority or cede UI ownership.
 
 // CDC level thumbnails are incompatible.
     static bool isCDCLevelThumbnailsLoaded() {
@@ -42,7 +41,7 @@ struct ModCompat {
         return geode::Loader::get()->isModLoaded("cvolton.betterinfo");
     }
 
-// EclipseMenu owns its ImGui popup/blur layer; detect its published and legacy IDs.
+// EclipseMenu owns its ImGui popup/blur layer.
     static bool isEclipseMenuLoaded() {
         return geode::Loader::get()->isModLoaded("eclipse.eclipse-menu") ||
                geode::Loader::get()->isModLoaded("eclipsemenu.eclipse-menu") ||
@@ -55,8 +54,8 @@ struct ModCompat {
                geode::Loader::get()->isModLoaded("dankmeme.globed");
     }
 
-// These mods can render the scene from their hooks; re-visiting PlayLayer in
-// our FBO would re-enter them with a foreign viewport. The back-buffer path is safe.
+// These mods render from their hooks; revisiting PlayLayer in our FBO
+// would re-enter them with a foreign viewport.
     static bool isTinkerLoaded() {
         return geode::Loader::get()->isModLoaded("alphalaneous.tinker");
     }
@@ -70,8 +69,7 @@ struct ModCompat {
                isEclipseMenuLoaded() || isTinkerLoaded() || isMegaHackLoaded();
     }
 
-// Editor UI owners seen in the crash corpus. Detection is centralized so hook
-// code can stay a no-op unless Paimbnails truly owns an active operation.
+// Editor UI owners from the crash corpus; hooks stay no-op unless we own an operation.
     static bool isBetterEditLoaded() {
         return geode::Loader::get()->isModLoaded("hjfod.betteredit");
     }
@@ -90,16 +88,13 @@ struct ModCompat {
         return geode::Loader::get()->isModLoaded("fleym.menuloop_randomizer");
     }
 
-// Active blur mods disable ours to avoid duplicate FBO passes and bad snapshots.
+// Active blur mods disable ours to avoid duplicate FBO passes.
     static bool isBlurBGLoaded() {
-// alphalaneous.blur_bg blurs all popups.
         return geode::Loader::get()->isModLoaded("alphalaneous.blur_bg");
     }
     static bool isBlurBehindPopupsLoaded() {
-// malikhw47.blur-behind-popups applies BlurAPI to every FLAlertLayer.
         return geode::Loader::get()->isModLoaded("malikhw47.blur-behind-popups");
     }
-// True when another mod already covers our popup blur use case.
     static bool externalGlobalBlurActive() {
         return isBlurBGLoaded() || isBlurBehindPopupsLoaded();
     }

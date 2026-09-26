@@ -24,7 +24,7 @@ public:
 
     bool exists() const;
 
-    // Los callbacks corren en main thread.
+    // callbacks run on the main thread.
     void ensureInstalled(
         BootstrapProgressCallback onProgress,
         BootstrapCompleteCallback onComplete

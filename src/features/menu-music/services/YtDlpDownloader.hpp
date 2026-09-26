@@ -31,12 +31,12 @@ class YtDlpDownloader {
 public:
     static YtDlpDownloader& get();
 
-    // El resultado se cachea 60s para no llamar a exec en cada apertura del popup.
+    // result cached 60s: no exec on every popup open.
     std::string locateBinary();
 
     bool isAvailable();
 
-    // Los callbacks corren siempre en main thread.
+    // callbacks always run on the main thread.
     void download(
         const std::string& url,
         const std::string& trackId,

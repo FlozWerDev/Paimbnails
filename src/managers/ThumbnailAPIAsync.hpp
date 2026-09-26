@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-// ThumbnailAPI exposed as arc::Future; new code should use these calls.
+// Future-based facade; prefer these in new code.
 namespace paimon::thumb_api {
 
 using namespace geode::prelude;

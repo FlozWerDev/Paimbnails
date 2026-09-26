@@ -155,7 +155,7 @@ void RadialConfigPopup::rebuildPreview() {
             fmt::format("{} de {} botones", count, MAX_RADIAL_OPTIONS).c_str());
     }
 
-    // Misma geometria que la rueda real, a escala.
+    // Same geometry as the real wheel, scaled down.
     constexpr float kBadge = 24.f;
     float radius = count > 1 ? std::clamp((kBadge + 8.f) * count / (2.f * static_cast<float>(M_PI)),
                                           46.f, 62.f)
@@ -288,7 +288,7 @@ void RadialConfigPopup::rebuildList() {
         rowMenu->setContentSize({kListW, kRowH});
         row->addChild(rowMenu, 2);
 
-        // Ancho libre para el nombre: depende de cuantos botones lleve la fila.
+        // Free width for the name: depends on the row's button count.
         float controlsW = 0.f;
         std::string id = opt->id;
 

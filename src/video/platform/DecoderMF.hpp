@@ -30,7 +30,7 @@ public:
     double getDuration() const override;
     int getWidth() const override;
     int getHeight() const override;
-    // Real codificado; getWidth/Height devuelven salida reducida.
+    // Coded size; getWidth/Height return downscaled output.
     int getNativeWidth() const override;
     int getNativeHeight() const override;
     VideoColorMatrix getColorMatrix() const override { return m_colorMatrix; }
@@ -53,13 +53,12 @@ private:
     bool setupReader(const std::string& path);
     bool setOutputFormat();
     void refreshLinearStride();
-    // False si el buffer no trae planos validos: se descarta el frame.
+    // False drops the frame.
     bool copyPlanesToSlot2D(BYTE* scanline0, LONG lStride, Frame& slot, size_t bufferSize = 0);
     bool copyPlanesToSlotLinear(BYTE* data, DWORD bufLen, Frame& slot);
     bool createStagingTexture();
     bool copyPlanesFromD3D11(ID3D11Texture2D* srcTexture, UINT subresource, Frame& slot);
     bool fallbackToSoftwareDecode(const std::string& path);
-    // Downscale por promedio al slot reducido.
     void downscalePlanes(const Frame& src, Frame& dst, int factor);
     IMFSourceReader*   m_reader     = nullptr;
     IMFDXGIDeviceManager* m_dxgiMgr = nullptr;
@@ -72,7 +71,7 @@ private:
     bool               m_dxvaEnabled = false;
     int                m_dxvaReadbackFailures = 0;
     UINT               m_resetToken = 0;
-    // Si es compartido no hacer Release, solo releaseSharedD3D11().
+    // Shared: release via releaseSharedD3D11(), never Release().
     bool               m_sharedD3D = false;
     std::mutex         m_d3dCtxMutex;  // serialises context ops vs DXVA decode (AMD fix)
 
@@ -80,16 +79,16 @@ private:
     std::string        m_videoPath;
     int                m_width  = 0;
     int                m_height = 0;
-    // Salida post-downscale; igual a m_width/height si factor == 1.
+    // Post-downscale output; native when factor == 1.
     int                m_outWidth  = 0;
     int                m_outHeight = 0;
     int                m_downscaleFactor = 1;
-    // Stride de MF con relleno (854 -> 856) sin stride propio.
+    // MF padded stride (e.g. 854 -> 856).
     int                m_linearStride = 0;
     VideoColorMatrix   m_colorMatrix = VideoColorMatrix::Auto;
     bool               m_fullRange = false;
     int                m_rotation = 0;
-    // Scratch nativo; solo si hay downscale.
+    // Native-size scratch, downscale only.
     Frame              m_scratch;
     double             m_duration = 0.0;
     GUID               m_pixelFormat = GUID_NULL;

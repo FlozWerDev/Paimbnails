@@ -23,7 +23,7 @@ namespace {
 bool g_opening = false;
 
 void pushLevelInfo(GJGameLevel* level, bool replaceScene) {
-    // El nivel guardado trae el progreso del jugador; el de la busqueda no.
+    // the saved level carries the player's progress; the searched one does not.
     if (auto* glm = GameLevelManager::get()) {
         if (auto* saved = glm->getSavedLevel(level->m_levelID)) level = saved;
     }
@@ -65,8 +65,8 @@ void openRequestedLevel(int levelID, bool replaceScene) {
         pushLevelInfo(level, replaceScene);
     });
 
-    // Sin la cola nadie llama a tick(): se mueve el reloj a mano para que una
-    // busqueda colgada no bloquee el boton.
+    // nobody ticks the queue out here: move the clock by hand so a hung
+    // lookup never blocks the button.
     paimon::scheduleMainThreadDelay(13.f, [] {
         if (paimon::isRuntimeShuttingDown()) return;
         TwitchLevelBriefCache::get().tick();

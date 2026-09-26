@@ -89,7 +89,6 @@ static CCScene* createTransitionSafe(
     auto* trans = tm.createTransition(cfg, realDest, isPush);
     if (trans) return trans;
 
-// If transition creation fails, enter safe mode and fall back.
     tm.tripCustomSafeMode("createTransition returned nullptr");
     log::warn("[TransitionHook] createTransition returned nullptr, falling back");
 
@@ -112,40 +111,30 @@ class $modify(PaimonDirector, CCDirector) {
         }
         (void)self.setHookPriorityPre("cocos2d::CCDirector::pushScene", geode::Priority::VeryEarly);
         (void)self.setHookPriorityPre("cocos2d::CCDirector::popSceneWithTransition", geode::Priority::VeryEarly);
-// Leave plain popScene() alone; some mods use it for an intentional instant back.
+        // plain popScene() stays alone; some mods use it for an instant back.
     }
 
     bool replaceScene(CCScene* scene) {
         if (!scene) return CCDirector::replaceScene(scene);
 
-        if (paimon::transitions::isLevelExitTransitionPending()) {
-            log::info("[TransitionHook] Exit replace received (ready: {}, applying: {})",
-                s_gameReady.load(), s_applying.load());
-        }
-
-    // Let the first MenuLayer transition through and mark the game ready.
+        // first MenuLayer pass marks the game ready.
         if (!s_gameReady) {
-            bool foundMenu = false;
-            if (scene->getChildByType<MenuLayer>(0)) foundMenu = true;
+            bool foundMenu = scene->getChildByType<MenuLayer>(0) != nullptr;
             if (!foundMenu) {
                 if (auto* trans = typeinfo_cast<CCTransitionScene*>(scene)) {
-                    if (trans->m_pInScene && trans->m_pInScene->getChildByType<MenuLayer>(0))
-                        foundMenu = true;
+                    foundMenu = trans->m_pInScene &&
+                        trans->m_pInScene->getChildByType<MenuLayer>(0) != nullptr;
                 }
             }
-            if (foundMenu) {
-                s_gameReady = true;
-            }
+            if (foundMenu) s_gameReady = true;
             return CCDirector::replaceScene(scene);
         }
 
         if (!canIntercept()) return CCDirector::replaceScene(scene);
 
-    // Do not re-intercept our own custom scene.
         if (typeinfo_cast<CustomTransitionScene*>(scene)) return CCDirector::replaceScene(scene);
 
-    // Only vanilla transitions wrapped in CCTransitionScene; custom scenes
-    // from other mods keep theirs.
+        // only vanilla transitions; other mods' custom scenes keep theirs.
         auto* nativeTrans = typeinfo_cast<CCTransitionScene*>(scene);
         if (!nativeTrans || !isVanillaTransition(nativeTrans)) return CCDirector::replaceScene(scene);
 
@@ -159,7 +148,6 @@ class $modify(PaimonDirector, CCDirector) {
             ApplyingGuard guard;
             if (auto* levelTransition =
                     paimon::transitions::createLevelEntryTransition(realDest)) {
-                log::debug("[TransitionHook] Using Smooth+ for PlayLayer");
                 return CCDirector::replaceScene(levelTransition);
             }
             log::warn("[TransitionHook] Level entry transition could not be created; using configured fallback");
@@ -172,8 +160,6 @@ class $modify(PaimonDirector, CCDirector) {
             ApplyingGuard guard;
             if (auto* levelTransition =
                     paimon::transitions::createLevelExitTransition(realDest)) {
-                log::debug("[TransitionHook] Using Smooth+ while leaving PlayLayer (pending: {})",
-                    paimon::transitions::isLevelExitTransitionPending());
                 return CCDirector::replaceScene(levelTransition);
             }
             log::warn("[TransitionHook] Level exit transition could not be created; using configured fallback");
@@ -222,7 +208,6 @@ class $modify(PaimonDirector, CCDirector) {
         }
 
         if (!TransitionManager::get().isEnabled()) return CCDirector::pushScene(scene);
-        if (!isVanillaTransition(nativeTrans)) return CCDirector::pushScene(scene);
 
         auto cfg = selectConfig(realDest);
         ApplyingGuard guard;
@@ -245,7 +230,7 @@ class $modify(PaimonDirector, CCDirector) {
             return CCDirector::popSceneWithTransition(duration, type);
         }
 
-    // Capture fromScene before popping so the replacement has the correct source.
+        // capture fromScene before popping, so the replacement keeps the right source.
         auto* fromScene = m_pRunningScene;
         Ref<CCScene> safeFrom = fromScene;
         Ref<CCScene> safeDest = destScene;
@@ -260,8 +245,8 @@ class $modify(PaimonDirector, CCDirector) {
         auto cfg = selectConfig(destScene);
 
         ApplyingGuard guard;
-        // Construct while the outgoing scene is still the director's source.
-        // Native initialization retains both scenes before pop edits the stack.
+        // build while the outgoing scene is still the source; native init
+        // retains both scenes before pop edits the stack.
         CCScene* ourTrans = useLevelExit
             ? static_cast<CCScene*>(paimon::transitions::createLevelExitTransition(destScene))
             : createTransitionSafe(destScene, cfg);
@@ -289,8 +274,6 @@ class $modify(PaimonTransitionGameManager, GameManager) {
     void returnToLastScene(GJGameLevel* level) {
         auto* playLayer = PlayLayer::get();
         paimon::transitions::beginLevelExitTransition(playLayer);
-        log::info("[TransitionHook] GameManager::returnToLastScene (playLayer: {})",
-            playLayer != nullptr);
         GameManager::returnToLastScene(level);
         paimon::transitions::endLevelExitTransition();
     }

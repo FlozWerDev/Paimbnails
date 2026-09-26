@@ -58,8 +58,7 @@ float measureLevelLength(PlayLayer* pl) {
     }
     return maxX;
 }
-// Shows only objects inside the capture window (GD hides mid-level objects
-// until the player reaches them, but the FBO has no camera progress).
+// Only objects inside the capture window (FBO has no camera progress to unhide mid-level ones).
 int setupWindow(PlayLayer* pl, float zoneX, float designW) {
     float const camLeftX = zoneX - designW * 0.5f;
     float const marginX = 90.f;
@@ -123,8 +122,7 @@ OffscreenRenderResult result;
     if (PlayLayer::get() != nullptr) return result;
     if (level->m_levelString.empty()) return result;
 
-    // PlayLayer::create runs every mod's init hook; Globed would announce the
-    // level online until another is entered (only retracted in onQuit), so skip.
+    // PlayLayer::create runs every mod's init hook; skip or Globed announces the level online.
     if (paimon::compat::ModCompat::isGlobedLoaded()) {
         static bool warned = false;
         if (!warned) {

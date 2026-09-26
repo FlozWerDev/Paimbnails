@@ -27,7 +27,7 @@ bool tryStartLocalVideoThumbnail(int32_t levelID, bool enableSpinners, LocalVide
 
     player->setLoop(true);
     player->setVolume(0.0f);
-    // Decode starts on play(); GPU pipeline init is deferred inside play().
+    // Decode starts on play(); GPU init defers inside play().
     player->play();
 
     if (host.setHasVideo) host.setHasVideo(true);
@@ -63,7 +63,7 @@ bool tryStartServerVideoThumbnail(
 
     std::string const cacheKey = fmt::format("thumb_video_{}", levelID);
 
-    // Disk / warm-player hit: skip spinner flash for already-local assets.
+    // Disk/warm hit: no spinner flash for already-local assets.
     bool const likelyCached = VideoThumbnailSprite::isCached(cacheKey);
     if (enableSpinners && !likelyCached && host.showSpinner) host.showSpinner();
 

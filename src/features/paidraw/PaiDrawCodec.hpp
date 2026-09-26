@@ -216,8 +216,7 @@ public:
     }
 
 private:
-    // Caps guard against malformed msgpack frames claiming huge element counts.
-    // PaiDraw payloads in normal play are small — these limits are well above any realistic max.
+    // caps vs malformed msgpack frames claiming huge counts; normal payloads are far smaller.
     static constexpr size_t kMaxStringSize = 1 * 1024 * 1024;     // 1 MB string
     static constexpr size_t kMaxBinarySize = 4 * 1024 * 1024;     // 4 MB blob
     static constexpr size_t kMaxArrayElements = 100000;            // 100k items

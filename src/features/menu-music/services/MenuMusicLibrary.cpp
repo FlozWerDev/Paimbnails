@@ -207,9 +207,7 @@ std::size_t MenuMusicLibrary::syncDownloadedSongs(bool force) {
     auto* songs = manager ? manager->getDownloadedSongs() : nullptr;
     if (!manager || !songs) return 0;
 
-    // The scan does one stat() per downloaded song, which adds up on every
-    // MenuLayer entry. Callers that only want to pick up new downloads can pass
-    // force=false to skip it while the downloaded set is unchanged.
+    // one stat() per song adds up on MenuLayer entry; force=false skips when the set is unchanged.
     const auto songCount = static_cast<std::size_t>(songs->count());
     if (!force && m_syncedSongCount == songCount) return 0;
     m_syncedSongCount = songCount;
@@ -419,8 +417,7 @@ std::string MenuMusicLibrary::generateId(const std::string& prefix) {
 
 bool MenuMusicLibrary::isAudioExtension(const std::filesystem::path& p) {
     auto ext = geode::utils::string::toLower(geode::utils::string::pathToString(p.extension()));
-    // FMOD 2.02+ (GD 2.2) decodifica Opus solo dentro de Ogg, no de WebM;
-    // el downloader remuxea al contenedor correcto cuando se pide Opus.
+    // FMOD 2.02+ decodes Opus only in Ogg; downloader remuxes on Opus request.
     static const std::array<std::string, 7> ok = {
         ".mp3", ".ogg", ".wav", ".flac", ".oga", ".m4a", ".opus"
     };
@@ -450,7 +447,7 @@ void MenuMusicLibrary::removeListener(std::size_t token) {
 }
 
 void MenuMusicLibrary::notifyChanged() {
-    // Copia defensiva para permitir que un listener se desregistre a si mismo
+    // defensive copy: a listener may unregister itself.
     auto copy = m_listeners;
     for (auto& [token, cb] : copy) {
         if (cb) cb();

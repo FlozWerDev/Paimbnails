@@ -41,8 +41,7 @@ public:
     }
 
     void dispatch(Event const& event) const {
-        // Copy so a handler can unsubscribe during dispatch without racing the
-        // internal storage.
+        // Handlers may unsubscribe mid-dispatch.
         auto copy = snapshot();
         for (auto const& entry : copy) {
             entry.callback(event);
@@ -64,7 +63,7 @@ private:
     std::vector<Entry> m_entries;
 };
 
-// EventBus: typed pub/sub. Thread-safe: every operation takes the lock.
+// Typed pub/sub; every operation takes the lock.
 class EventBus {
 public:
     static EventBus& get() {
@@ -88,9 +87,8 @@ public:
         auto it = m_handleToType.find(handle);
         if (it == m_handleToType.end()) return;
         auto listIt = m_subscribers.find(it->second);
-        if (listIt != m_subscribers.end()) {
-            listIt->second->removeSubscriber(handle);
-        }
+        if (listIt == m_subscribers.end()) return;
+        listIt->second->removeSubscriber(handle);
         m_handleToType.erase(it);
     }
 

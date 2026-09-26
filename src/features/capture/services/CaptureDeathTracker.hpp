@@ -3,9 +3,8 @@
 #include <atomic>
 #include <cstdint>
 
-// Detects deaths via destroyPlayer's progress tick (not m_isDead, which
-// noclip mods clear immediately). currentProgress resets per attempt, so stale
-// ticks from previous attempts naturally fail the guard.
+// Deaths via destroyPlayer progress tick, not m_isDead (noclip clears it);
+// progress resets per attempt, so stale ticks fail the guard.
 namespace paimon::capture {
 
 inline std::atomic<int64_t>& lastDeathTickRef() {

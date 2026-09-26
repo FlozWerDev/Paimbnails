@@ -59,7 +59,6 @@ UnlockRequirement parseRequirement(std::string const& sentence) {
         }
     }
 
-// Parse the first number, ignoring commas.
     std::string digits;
     for (char c : sentence) {
         if (std::isdigit(static_cast<unsigned char>(c))) {

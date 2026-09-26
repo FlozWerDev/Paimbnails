@@ -1,6 +1,5 @@
 #pragma once
-// Galeria del Creador de Iconos: rejilla de tarjetas con la miniatura real de
-// cada icono, buscador y orden. Escena completa, como Texture Studio.
+// Icon Maker gallery: card grid with true thumbnails, search and sort. Full scene, like Texture Studio.
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/TextInput.hpp>
@@ -53,7 +52,7 @@ protected:
 
     std::string m_query;
     Sort m_sort = Sort::Recent;
-    // -1 = todos los gamemodes; si no, indice en supportedTypes().
+    // -1 = all gamemodes; else index into supportedTypes().
     int m_typeFilter = -1;
     bool m_onlyFavorites = false;
     cocos2d::CCLabelBMFont* m_filterLabel = nullptr;

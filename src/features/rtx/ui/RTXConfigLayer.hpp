@@ -1,12 +1,11 @@
-// Popup de configuracion de Paimon RTX.
 #pragma once
 
+// Paimon RTX config popup.
 #include <Geode/Geode.hpp>
 
 namespace paimon::rtx {
 
-// Cinco pestanas sobre PaiConfigKit. Los sliders escriben en la config viva y
-// el volcado a disco va aparte para no escribir el JSON en cada arrastre.
+// Five tabs on PaiConfigKit. Sliders write live config; disk flush stays separate so drags don't rewrite JSON.
 class RTXConfigLayer : public geode::Popup {
 public:
     static RTXConfigLayer* create();

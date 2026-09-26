@@ -1,7 +1,4 @@
-// PaimonBlur real-time single-pass for GIFs — lightweight Dual Kawase 9-tap.
-// Este shader se usa en `getPaimonBlurShader()` (clave `paimonblur-rt-v2`).
-// Debe mantenerse idéntico a `fragmentShaderPaimonBlurRT` del inline hasta
-// que la Fase 5 elimine el literal.
+// PaimonBlur realtime single pass for GIFs; keep in sync with fragmentShaderPaimonBlurRT.
 #ifdef GL_ES
 precision mediump float;
 #endif
@@ -16,7 +13,6 @@ void main() {
     float blurAmount = u_intensity * 4.0 + 1.5;
     vec2 hp = (blurAmount * 0.5) * texelSize;
 
-    // Optimized 9-tap Kawase single-pass (5 texture reads total)
     vec3 color = texture2D(u_texture, v_texCoord).rgb * 4.0;
     color += texture2D(u_texture, v_texCoord + hp).rgb;
     color += texture2D(u_texture, v_texCoord - hp).rgb;

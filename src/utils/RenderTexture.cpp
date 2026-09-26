@@ -3,8 +3,7 @@
 #include <Geode/cocos/platform/CCGL.h>
 #include <limits>
 
-// OpenGL ES 2.0 lacks GL_DEPTH24_STENCIL8 / GL_DEPTH_STENCIL_ATTACHMENT; use
-// the OES_packed_depth_stencil extension instead
+// GLES2 lacks packed depth-stencil; use OES_packed_depth_stencil.
 #ifndef GL_DEPTH24_STENCIL8
   #ifdef GL_DEPTH24_STENCIL8_OES
     #define GL_DEPTH24_STENCIL8 GL_DEPTH24_STENCIL8_OES
@@ -17,7 +16,6 @@
   #ifdef GL_DEPTH_STENCIL_ATTACHMENT_OES
     #define GL_DEPTH_STENCIL_ATTACHMENT GL_DEPTH_STENCIL_ATTACHMENT_OES
   #else
-    // fallback: attach depth and stencil separately
     #define PT_SEPARATE_DEPTH_STENCIL 1
   #endif
 #endif
@@ -49,7 +47,6 @@ RenderTexture::RenderTexture(uint32_t width, uint32_t height) : m_width(width), 
     glGenRenderbuffers(1, &m_depthStencil);
     glBindRenderbuffer(GL_RENDERBUFFER, m_depthStencil);
 #ifdef PT_SEPARATE_DEPTH_STENCIL
-    // OpenGL ES without packed depth-stencil: attach separately
     glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, m_width, m_height);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_depthStencil);
     glGenRenderbuffers(1, &m_stencilBuffer);
@@ -81,14 +78,12 @@ RenderTexture::RenderTexture(uint32_t width, uint32_t height) : m_width(width), 
 }
 
 RenderTexture::~RenderTexture() {
-    // GL context safety: if the destructor runs after CCDirector/GL view teardown
-    // (atexit, hot-reload), the GL handles are invalid and glDelete* can corrupt
-    // or crash on some drivers.
+    // destructor may run after GL teardown (atexit, hot-reload): handles invalid,
+    // glDelete* can crash some drivers.
     auto* director = cocos2d::CCDirector::get();
     bool glAlive = director && director->getOpenGLView();
     if (!glAlive) {
-        // GL context dead — intentionally leak the handles; the OS frees them on
-        // exit. Better to leak than crash.
+        // context dead: leak the handles, the OS frees them. better than crashing.
         return;
     }
 
@@ -134,10 +129,10 @@ bool RenderTexture::begin() {
     glViewport(0, 0, m_width, m_height);
 
     glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
-    
+
     glGetFloatv(GL_COLOR_CLEAR_VALUE, m_oldClearColor.data());
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    
+
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
     m_begun = true;
     return true;
@@ -190,10 +185,10 @@ std::unique_ptr<uint8_t[]> RenderTexture::getData() const {
     GLint oldPackAlignment = 4;
     glGetIntegerv(GL_PACK_ALIGNMENT, &oldPackAlignment);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    
+
     GLint oldFBO;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &oldFBO);
-    
+
     glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
     glReadPixels(0, 0, m_width, m_height, GL_RGBA, GL_UNSIGNED_BYTE, data.get());
     GLenum const error = glGetError();

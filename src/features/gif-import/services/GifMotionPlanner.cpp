@@ -9,8 +9,8 @@ namespace paimon::gifimport {
 
 namespace {
 
-// Por debajo de esto la silueta no paga el grupo ni los triggers que la mueven:
-// repetirla en cada frame sale mas barato que seguirla.
+// Below this a silhouette isn't worth a group plus its triggers:
+// repeating it per frame costs less than tracking it.
 constexpr std::size_t kMinTrackedCells = 8;
 constexpr int kMinTrackedFrames = 3;
 constexpr std::size_t kMaxTrackedGroups = 24;
@@ -27,10 +27,9 @@ struct Component {
     bool taken = false;
 };
 
-// La pose de referencia es la del primer frame y cada frame guarda su
-// desplazamiento contra ella. `alive` va tachando las celdas que algun frame no
-// repite, asi que al final la silueta que se mueve es la que todos los frames
-// tienen igual y el resto se queda en la rejilla, donde se pinta como siempre.
+// Reference pose is frame 0; each frame stores its offset against it. `alive`
+// unchecks cells some frame drops, so the moving silhouette ends up as what
+// every frame shares and the rest stays on the grid, painted as usual.
 struct Chain {
     std::vector<int> positions;
     std::vector<std::int32_t> colors;
@@ -58,9 +57,8 @@ std::vector<std::uint8_t> dynamicCells(
     return dynamic;
 }
 
-// El color que mas ocupa el frame es el fondo. Una mancha suya encaja igual de
-// bien en cualquier sitio, asi que la cadena que la siguiera acabaria dando
-// saltos sin sentido y gastando un grupo por el camino.
+// The most-covering color is the background. Its blobs fit anywhere, so a
+// chain following one would jump senselessly and waste a group.
 std::int32_t dominantColor(GridFrame const& frame) {
     std::int32_t highest = 0;
     for (auto cell : frame.cells) highest = std::max(highest, cell);
@@ -119,8 +117,8 @@ std::vector<Component> componentsOf(
                 }
             }
         }
-        // Una mancha que se come media rejilla es el fondo, y el fondo no se
-        // mueve: seguirlo solo gasta un grupo y sus triggers.
+        // a blob eating half the grid is background, and background doesn't
+        // move: tracking it only spends a group and its triggers.
         if (component.positions.size() < kMinTrackedCells) continue;
         if (component.positions.size() * 5 > dynamic.size() * 2) continue;
 
@@ -227,18 +225,16 @@ MotionAnalysis analyzeMotion(
                 velocityY = last.y - previous.y;
             }
 
-            // La busqueda arranca donde deberia estar si sigue como venia y mira
-            // alrededor: un desplazamiento de celda y cuarto no cae nunca en el
-            // centro de una mancha, y sin este barrido la cadena se quedaba
-            // clavada en el sitio que ya tenia.
+            // search starts where it should be if it kept course, plus neighbors:
+            // a cell-and-quarter drift never lands on a blob center, and without
+            // this sweep the chain stuck to its old spot.
             std::vector<std::pair<int, int>> offsets;
             for (int dy = -kSearchRadius; dy <= kSearchRadius; ++dy) {
                 for (int dx = -kSearchRadius; dx <= kSearchRadius; ++dx) {
                     offsets.emplace_back(last.x + velocityX + dx, last.y + velocityY + dy);
                 }
             }
-            // Un salto largo no cae en el barrido, asi que las manchas de tamano
-            // parecido tambien proponen su desplazamiento.
+            // long jumps miss the sweep, so similar-size blobs propose their own shift.
             std::size_t const swept = offsets.size();
             std::vector<int> sources(swept, -1);
             for (std::size_t i = 0; i < components.size(); ++i) {
@@ -309,13 +305,13 @@ MotionAnalysis analyzeMotion(
     std::vector<MotionGroup> merged;
     std::vector<std::vector<std::int64_t>> signatures;
     for (auto const& chain : chains) {
-        // Solo se sigue lo que esta en todos los frames. El relleno que deja la
-        // silueta en la rejilla vale para toda la animacion, asi que si hubiera
-        // un frame sin ella ahi se veria el fondo en vez de lo que tocaba.
+        // only what every frame shares is tracked. The fill the silhouette
+        // leaves on the grid holds for the whole animation; a missing frame
+        // would show background there instead.
         if (static_cast<int>(chain.keys.size()) != frameCount) continue;
         if (chain.aliveCount < kMinTrackedCells) continue;
-        // Lo que la silueta no repite en todos los frames se lo va a comer el
-        // fondo, asi que solo se sigue mientras eso sea el borde y no medio dibujo.
+        // untracked leftovers get eaten by the background, so track only while
+        // that's the edge and not half the drawing.
         if (chain.aliveCount * 5 < chain.positions.size() * 4) continue;
         if (!chainMoves(chain, std::max(width, height) / 3)) continue;
 
@@ -371,9 +367,9 @@ MotionAnalysis analyzeMotion(
         analysis.groups.push_back(std::move(merged[index]));
     }
 
-    // El fondo que tapaba la silueta se reconstruye con el color que la celda
-    // tiene en los frames en los que esta despejada: asi vuelve a ser el mismo en
-    // todos y lo pintan objetos fijos en vez de una pista por frame.
+    // background under the silhouette rebuilds from each cell's color in clear
+    // frames: uniform again everywhere, painted by fixed objects instead of
+    // one track per frame.
     analysis.residual = frames;
     std::int32_t highest = 0;
     for (auto const& frame : frames) {
@@ -401,11 +397,10 @@ MotionAnalysis analyzeMotion(
             best = count;
         }
 
-        // El relleno entra en todos los frames y no solo donde la silueta tapa:
-        // es lo que hace que la celda deje de cambiar y la pinte un objeto fijo
-        // en vez de una pista entera. Lo que cuesta es el borde de la silueta,
-        // que en los frames en los que se corre se ve como fondo; quien decide
-        // si esa diferencia sale a cuenta es la comparacion de planes.
+        // fill lands in every frame, not just under the silhouette: that's what
+        // stops the cell changing so a fixed object paints it. The cost is the
+        // silhouette edge, reading as background on shifted frames; plan
+        // comparison decides whether that trade pays.
         for (auto& frame : analysis.residual) frame.cells[position] = plate;
     }
     return analysis;

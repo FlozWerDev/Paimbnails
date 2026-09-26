@@ -282,7 +282,7 @@ void LevelStatsPopup::requestThumbnail() {
     ThumbnailLoader::get().requestLoad(levelID, fmt::format("{}.png", levelID),
         [self, levelID](CCTexture2D* texture, bool success) {
             if (!success || !texture) {
-                log::debug("[Paimbnails] stats popup: sin miniatura para {}", levelID);
+                log::debug("[Paimbnails] stats popup: no thumbnail for {}", levelID);
                 return;
             }
             auto ref = self.lock();

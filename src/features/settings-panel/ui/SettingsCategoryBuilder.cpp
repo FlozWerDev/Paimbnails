@@ -52,7 +52,7 @@ void ssaved(const char* key, T val) {
 
 using namespace paimon::settings_ui;
 
-// Solo escritorio: en movil el setting no existe y leerlo fallaria.
+// Desktop-only: the setting doesn't exist on mobile, reading it would fail.
 bool discordSupported() {
     if (auto* mod = Mod::get()) return mod->hasSetting("discord-rpc-enabled");
     return false;
@@ -1001,7 +1001,7 @@ std::vector<SettingsGroup> const& getAllGroups() {
             { "discord", "Rich Presence", buildDiscord },
         }},
     };
-    // Discord es el ultimo grupo: filtrarlo no desplaza indices 0..7.
+    // Discord is the last group: filtering it never shifts indices 0..7.
     static const std::vector<SettingsGroup> s_groupsNoDiscord = []{
         std::vector<SettingsGroup> v;
         for (auto const& g : s_groups) {

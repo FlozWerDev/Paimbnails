@@ -36,8 +36,7 @@ TinterOptions makeTintOptions(PackExportConfig const& cfg) {
     return o;
 }
 
-// Tint a single logical frame the same way SheetTinter does (no overlay pack
-// path — those sprites are rare for user fusions; clustering is the fallback).
+// Same tint as SheetTinter; no overlay path (rare for fusions, clustering covers it).
 ImageBuffer tintFrame(ImageBuffer const& orig,
                       PackExportConfig const& cfg,
                       std::string const& frameName,
@@ -93,7 +92,6 @@ ImageBuffer tintFrame(ImageBuffer const& orig,
     return result;
 }
 
-// Locate the frame among the pack's selected sheets.
 struct FrameLocate {
     ImageBuffer pixels;
     SpriteFrameInfo info;
@@ -125,7 +123,6 @@ bool isAnimatedTexture(std::filesystem::path const& path) {
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
     if (ext != ".gif") {
-        // Still try: a .png path might be wrong; only GIFs are multi-frame here.
         return false;
     }
     auto asset = FusionAssetLoader::loadFromFile(path);
@@ -135,7 +132,7 @@ bool isAnimatedTexture(std::filesystem::path const& path) {
 }  // namespace
 
 std::string fusionGifEntryName(std::string const& frameName) {
-    // Frame names almost always end in ".png"; strip and re-append ".gif".
+    // Frame names end in ".png"; swap the extension.
     std::string base = frameName;
     auto dot = base.rfind('.');
     if (dot != std::string::npos) {
@@ -194,7 +191,7 @@ geode::Result<AnimatedFusionExport> AnimatedFusionExporter::exportOne(
             loc.pixels.width(), loc.pixels.height());
     }
 
-    // Base (tinted, no fusion) once — then stamp each fusion texture frame.
+    // Tint base once, then stamp each fusion frame.
     ImageBuffer baseTinted = tintFrame(loc.pixels, cfg, frameName, loc.sheetBaseName);
     if (baseTinted.empty()) {
         return Err("tint produced empty image");
@@ -213,9 +210,7 @@ geode::Result<AnimatedFusionExport> AnimatedFusionExporter::exportOne(
         ImageBuffer composed = baseTinted;
         FusionEngine::apply(composed, payload.mask, asset->frameAt(i), opts);
 
-        // Export the logical source-frame canvas (matches in-game layout
-        // for offset/sourceW/sourceH sprites) so individual overrides look
-        // identical to the sheet-baked first frame.
+        // Logical source-frame canvas: overrides match the sheet-baked first frame in-game.
         ImageBuffer logical = SpritesheetReader::composeLogicalFrame(
             composed, loc.info);
 

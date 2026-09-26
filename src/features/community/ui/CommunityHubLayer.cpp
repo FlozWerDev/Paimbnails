@@ -70,8 +70,7 @@ namespace {
         return iconReadyNames().count(key) > 0;
     }
 
-    // GJUserScore::create() leaves most fields untouched, so every field the
-    // cell reads gets an explicit value here.
+    // GJUserScore::create() leaves fields untouched; set every field the cell reads.
     void fillPlaceholderScore(GJUserScore* score, std::string const& username, bool admin, int accountID) {
         score->m_userName = username;
         score->m_userID = 0;
@@ -494,8 +493,7 @@ void CommunityHubLayer::onTab(CCObject* sender) {
         return;
     }
 
-    // Leaving the thumbnails tab: drop the pending downloads so they stop
-    // holding the loader's concurrent slots.
+    // Leaving thumbnails tab: drop pending downloads to free loader slots.
     if (m_currentTab == Tab::TopThumbnails) {
         for (auto& entry : m_thumbnailEntries) {
             if (entry.levelId > 0) ThumbnailLoader::get().cancelLoad(entry.levelId);
@@ -598,8 +596,7 @@ CCLayerColor* CommunityHubLayer::addCell(CCNode* content, float height, int inde
     auto cell = CCLayerColor::create(ccc4(0, 0, 0, index % 2 == 0 ? 110 : 55));
     cell->setContentSize({m_listW, height});
     cell->setPosition({0.f, totalHeight - static_cast<float>(index + 1) * height});
-    // Only the row background fades in; labels and icons ride the slide at full
-    // opacity, so a late arrival never looks half-drawn.
+    // Only row background fades; labels/icons ride at full opacity so late arrivals never half-draw.
     cell->setCascadeOpacityEnabled(false);
     content->addChild(cell);
     return cell;
@@ -890,8 +887,7 @@ CommunityHubLayer::IconSlot* CommunityHubLayer::findIconSlot(std::string const& 
     return nullptr;
 }
 
-// Same construction GJScoreCell uses: frame from the icon type, both player
-// colors from the palette, glow only when the profile says so.
+// Same build GJScoreCell uses: icon-type frame, palette colors, glow per profile.
 SimplePlayer* CommunityHubLayer::createIcon(GJUserScore* score, bool hasData) {
     if (!score) return nullptr;
 
@@ -1119,8 +1115,7 @@ void CommunityHubLayer::startIconPipeline() {
     }
     if (!pending) return;
 
-    // m_iconClock keeps running for the layer's lifetime: resetting it here
-    // would push every pending backoff into the future on a list rebuild.
+    // m_iconClock runs for the layer lifetime; resetting would push backoffs forward on rebuild.
     this->schedule(schedule_selector(CommunityHubLayer::onIconTick), kIconTickInterval);
     this->onIconTick(0.f);
 }
@@ -1151,8 +1146,7 @@ void CommunityHubLayer::onIconTick(float dt) {
         if (it == m_iconStates.end() || it->second.done) continue;
         pending = true;
         if (it->second.inFlight || it->second.readyAt > m_iconClock) continue;
-        // Re-checked every iteration: a disk-cache hit finishes synchronously
-        // and frees its slot right away.
+        // Re-checked per iteration: disk hits finish synchronously and free slots.
         if (inFlightCount() >= kMaxIconsInFlight) continue;
         it->second.inFlight = true;
         it->second.attempts++;
@@ -1178,8 +1172,7 @@ void CommunityHubLayer::beginIconRequest(std::string const& key) {
         }
     }
 
-    // Same source ProfilePage and GJScoreCell read from: if the game already
-    // parsed this account's info, take it and skip the round trip.
+    // Same source ProfilePage reads: reuse parsed account info, skip the round trip.
     if (score->m_accountID > 0) {
         auto* glm = GameLevelManager::get();
         auto* known = glm ? glm->userInfoForAccountID(score->m_accountID) : nullptr;
@@ -1562,8 +1555,7 @@ void CommunityHubLayer::buildCompatibleModsList() {
     float totalH = std::max(m_listH, cellH * static_cast<float>(m_compatMods.size()));
     auto* content = addScrollList(totalH);
 
-    // One menu spanning the whole content layer; each row gets a button on top
-    // of its cell so tapping anywhere in the row opens the project.
+    // One menu over the content layer; each row's button opens its project anywhere tapped.
     auto* menu = CCMenu::create();
     menu->setPosition(CCPointZero);
     menu->setContentSize({m_listW, totalH});

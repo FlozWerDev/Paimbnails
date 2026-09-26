@@ -5,15 +5,13 @@
 
 namespace paimon::capture {
 
-// Live thumbnail of what the capture is going to look like, shared by the layer
-// editor and the asset browser. Refreshes are coalesced: a burst of toggles
-// (a whole category, "hide all") renders the level once instead of once per row.
+// Live capture thumbnail shared by layer editor and asset browser; toggle
+// bursts coalesce into one render.
 class MiniPreview : public cocos2d::CCNode {
 public:
     static MiniPreview* create(float width, float height);
 
-    // Mirror the hidden players from the preview popup so the thumbnail matches
-    // the image that will actually be uploaded.
+    // Mirror the popup's hidden players so the thumb matches the upload.
     void setPlayersHidden(bool hideP1, bool hideP2);
 
     // Coalesced: several calls in the same frame render once.

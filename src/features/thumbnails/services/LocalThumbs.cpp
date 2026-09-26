@@ -83,7 +83,7 @@ void LocalThumbs::initCache() {
 }
 
 LocalThumbs& LocalThumbs::get() {
-    // Kept alive intentionally: avoids destruction races if initCache was never awaited (RuntimeLifecycle::shutdown handles teardown).
+    // Leaked on purpose: un-awaited initCache would race destruction (shutdown owns teardown).
     static auto* inst = new LocalThumbs();
     static std::once_flag loadFlag;
     static std::once_flag initFlag;
@@ -96,8 +96,7 @@ LocalThumbs& LocalThumbs::get() {
             geode::utils::thread::setName("PaimonLocalThumbs");
             self->initCache();
         });
-        // Spawn rechazado en shutdown: nadie marcaria m_cacheInitialized y
-        // shutdown() quemaria su timeout esperando un hilo que nunca corrio.
+        // Rejected spawn in shutdown: nobody would set initialized, and shutdown would burn its timeout on a never-ran thread.
         if (!started) {
             self->m_cacheInitialized.store(true, std::memory_order_release);
         }
@@ -233,7 +232,7 @@ std::optional<std::string> LocalThumbs::findAnyThumbnail(int32_t levelID) const 
         if (std::filesystem::exists(p, ecFind)) return store(geode::utils::string::pathToString(p));
     }
 
-    // Generated browser previews live in the auto-preview store, same .rgb format.
+    // Browser previews share the auto-preview store and .rgb format.
     auto previewPath = paimon::autopreview::AutoPreviewStore::get().dir() / (std::to_string(levelID) + ".rgb");
     if (std::filesystem::exists(previewPath, ecFind)) return store(geode::utils::string::pathToString(previewPath));
 
@@ -461,7 +460,7 @@ CCTexture2D* LocalThumbs::loadTexture(int32_t levelID) const {
         return tex;
     }
 
-    // Same store as above, via its own reader + RAM cache.
+    // Same store, own reader + RAM cache.
     if (auto tex = paimon::autopreview::AutoPreviewStore::get().loadTexture(levelID)) {
         cacheTexture(levelID, tex);
         return tex;
@@ -618,9 +617,7 @@ void LocalThumbs::loadMappings() {
 void LocalThumbs::shutdown() {
     log::info("[LocalThumbs] shutdown");
     m_shuttingDown.store(true, std::memory_order_release);
-    // initCache() polls m_shuttingDown inside its directory walk, so it bails
-    // within one entry. 1s is plenty; the old 3s only ever mattered when the
-    // flag could never be set at all (see get()).
+    // initCache bails within one entry on m_shuttingDown; 1s is plenty (3s only mattered when the flag was unsettable).
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
     while (!m_cacheInitialized.load(std::memory_order_acquire)) {
         if (std::chrono::steady_clock::now() >= deadline) {

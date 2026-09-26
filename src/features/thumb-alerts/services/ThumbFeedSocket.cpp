@@ -25,7 +25,7 @@ constexpr float kKeepaliveSeconds = 45.f;
 constexpr float kFirstRetrySeconds = 5.f;
 constexpr float kMaxRetrySeconds = 300.f;
 
-// The server URL is a full origin; the socket needs the bare host.
+// Server URL is a full origin; socket needs the bare host.
 std::string hostOf(std::string const& url) {
     std::string host = url;
     if (auto scheme = host.find("://"); scheme != std::string::npos) {
@@ -42,8 +42,7 @@ int pickShard() {
     return std::uniform_int_distribution<int>(0, kShards - 1)(rng);
 }
 
-// The setting only exists on Windows, which is also the only platform where
-// WebSocketClient has an implementation.
+// Setting exists on Windows only, the sole platform with a WebSocketClient.
 bool liveWanted() {
 #ifdef GEODE_IS_WINDOWS
     return Mod::get()->getSettingValue<bool>("thumbalert-live");
@@ -104,8 +103,7 @@ void ThumbFeedSocket::connect() {
     m_connecting = true;
     auto const generation = ++m_generation;
 
-    // Every callback lands on the socket's reader thread; nothing here may
-    // touch cocos or the save file before hopping to the main thread.
+    // Callbacks land on the reader thread: hop to main before touching cocos or saves.
     bool const started = socket->connect(
         std::move(options),
         [generation] {
@@ -139,8 +137,7 @@ void ThumbFeedSocket::connect() {
     );
 
     if (!started) {
-        // No WebSocket implementation on this platform, or the handshake never
-        // got off the ground. The poll already covers this case.
+        // No implementation or dead handshake; the poll already covers it.
         m_connecting = false;
         PaimonDebug::log("[ThumbFeed] live feed unavailable, staying on the poll");
         return;

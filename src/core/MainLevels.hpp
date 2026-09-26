@@ -130,8 +130,7 @@ inline int64_t mainLevelsCachedAtEpoch() {
     return geode::Mod::get()->getSavedValue<int64_t>(kMainLevelsCachedAtKey, 0);
 }
 
-// Up to 44 stat calls per check from two startup paths; cache the answer for
-// the session once known (slow drives add up).
+// two startup paths stat up to 44 files; cache the answer for the session.
 inline std::atomic<int>& mainLevelsFreshCache() {
     static std::atomic<int> value{-1}; // -1 unknown, 0 no, 1 yes
     return value;

@@ -313,7 +313,7 @@ std::vector<Primitive> packBlocks(
         int const y = position / width - box[1];
         source[static_cast<std::size_t>(y) * localWidth + x] = 1;
     }
-    // 1 es celda que hay que cubrir, 2 es celda que se puede pisar de paso.
+    // 1 is a cell to cover, 2 a cell that may be stepped on in passing.
     bool const hasSpare = spare.size() == static_cast<std::size_t>(width) * height;
     if (hasSpare) {
         for (int y = 0; y < localHeight; ++y) {
@@ -333,7 +333,7 @@ std::vector<Primitive> packBlocks(
         int width = 0;
         int height = 0;
     };
-    // Prioriza cubrir celdas pendientes, no area; a igual cobertura gana el mayor.
+    // prefers covering pending cells, not area; ties go to the largest.
     auto sweep = [](std::vector<std::uint8_t> cells, int gridWidth, int gridHeight) {
         std::vector<int> rowSum(
             static_cast<std::size_t>(gridHeight) * (gridWidth + 1), 0);
@@ -553,7 +553,7 @@ std::vector<std::uint8_t> renderPlanFrame(
     std::vector<float> light;
     if (usesSoftGeometry(plan.mode)) light.assign(pixels.size(), 0.f);
 
-    // Reutiliza el scratch de cobertura entre primitivas del preview.
+    // reuses the coverage scratch across preview primitives.
     std::vector<std::uint8_t> previewCoverage;
     auto draw = [&](Primitive const& object) {
         if (object.color >= plan.palette.size()) return;
@@ -587,7 +587,7 @@ std::vector<std::uint8_t> renderPlanFrame(
             return;
         }
         auto const shape = xformOf(object, plan.stamps);
-        // Preview con supersampling; el renderer normal usa mascara binaria.
+        // preview supersamples; the normal renderer uses a binary mask.
         bool const smoothPreview = antialias && usesPaintGeometry(plan.mode);
         if (!smoothPreview) {
             forEachSample(shape, plan.width, plan.height, scale, [&](int x, int y) {

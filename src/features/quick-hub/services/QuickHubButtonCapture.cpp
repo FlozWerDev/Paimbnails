@@ -45,15 +45,14 @@ std::string classNameOf(CCObject* obj) {
         name = typeid(*obj).name();
     }
 #endif
-    // Geode's $modify genera clases derivadas; quedarse con el nombre base.
+    // $modify generates derived classes; keep the base name.
     if (auto colons = name.rfind("::"); colons != std::string::npos) {
         name.erase(0, colons + 2);
     }
     return name;
 }
 
-// CCMenu y los contenedores de scroll heredan de CCLayer, asi que hay que
-// descartarlos explicitamente: no son pantallas, estan dentro de una.
+// CCMenu and scroll containers inherit CCLayer: discard explicitly, they live inside a screen.
 bool isGenericLayerClass(std::string const& cls) {
     return cls.empty() || cls == "CCLayer" || cls == "CCLayerColor" ||
            cls == "CCLayerRGBA" || cls == "CCLayerGradient" || cls == "CCNode" ||
@@ -62,8 +61,7 @@ bool isGenericLayerClass(std::string const& cls) {
            cls == "BoomScrollLayer" || cls == "ListLayer" || cls == "TableView";
 }
 
-// Capa de GD que contiene el boton; se coge la mas externa porque la de dentro
-// suele ser el cuerpo de un scroll.
+// Outermost GD layer owning the button; inner one is usually a scroll body.
 std::string ownerLayerClass(CCNode* node) {
     std::string outermost;
     for (auto* current = node; current; current = current->getParent()) {
@@ -74,7 +72,7 @@ std::string ownerLayerClass(CCNode* node) {
     return outermost;
 }
 
-// Capa principal de la escena: el primer CCLayer con clase propia.
+// Main scene layer: first CCLayer with its own class.
 std::string sceneLayerClass(CCScene* scene) {
     if (!scene) return {};
     auto* children = scene->getChildren();
@@ -88,8 +86,7 @@ std::string sceneLayerClass(CCScene* scene) {
     return {};
 }
 
-// Los primeros botones capturados guardaron "CCMenu" como pantalla. Ignorar esos
-// valores evita que el filtro por capa los descarte para siempre.
+// Early captures stored "CCMenu" as screen; ignoring those keeps the filter from dropping them.
 std::string usableOwnerClass(CustomQuickButton const& def) {
     return isGenericLayerClass(def.ownerClass) ? std::string() : def.ownerClass;
 }
@@ -99,8 +96,7 @@ std::string currentSceneClass() {
     return sceneLayerClass(director ? director->getRunningScene() : nullptr);
 }
 
-// Varios nombres pueden apuntar al mismo recorte del atlas. Elegir siempre el
-// mismo (mas corto, luego alfabetico) evita que el icono cambie entre partidas.
+// Several names can point at one atlas crop; always pick the same (shortest, then alpha).
 bool betterFrameName(std::string_view candidate, std::string_view current) {
     if (current.empty()) return true;
     bool candGD = candidate.ends_with("_001.png");
@@ -110,8 +106,7 @@ bool betterFrameName(std::string_view candidate, std::string_view current) {
     return candidate < current;
 }
 
-// Indice inverso recorte -> nombre: el barrido lo consultaria cientos de veces,
-// asi que se construye una vez y se reusa hasta que cargan hojas nuevas.
+// Crop -> name reverse index: sweep would query it hundreds of times, so build once per sheet load.
 struct FrameKey {
     CCTexture2D* texture = nullptr;
     int x = 0, y = 0, w = 0, h = 0;
@@ -164,8 +159,7 @@ std::string frameNameForSprite(CCSprite* sprite) {
     return found == index.end() ? std::string() : found->second;
 }
 
-// El sprite propio manda; si no, gana el hijo de mayor area, asi el item
-// devuelve su icono real en vez de una esquina del nine-slice del fondo.
+// Own sprite wins; else largest child area, so the item returns its icon, not a nine-slice corner.
 void collectIconCandidate(CCNode* node, std::string& bestName, float& bestArea) {
     if (!node || typeinfo_cast<CCLabelBMFont*>(node)) return;
 
@@ -231,7 +225,7 @@ bool isActuallyVisible(CCNode* node) {
     return true;
 }
 
-// Un CCMenu deshabilitado ignora los toques de todos sus hijos.
+// Disabled CCMenu ignores touches for all its children.
 bool isInteractable(CCMenuItem* item) {
     if (!item || !item->isEnabled()) return false;
     if (!isActuallyVisible(item)) return false;
@@ -257,8 +251,7 @@ std::vector<int> makeNodePath(CCNode* node, CCScene* scene) {
     return reversePath;
 }
 
-// Ruta de node ids. Los niveles sin id quedan vacios y actuan de comodin, asi
-// que otros mods pueden insertar contenedores sin romper la ruta.
+// Node id path. Id-less levels stay empty as wildcards, so other mods can insert containers.
 std::vector<std::string> makeIdPath(CCNode* node, CCScene* scene) {
     std::vector<std::string> reversePath;
     for (auto* current = node; current && current != scene; current = current->getParent()) {
@@ -279,8 +272,7 @@ CCNode* resolvePath(CCScene* scene, std::vector<int> const& path) {
     return current;
 }
 
-// Busca en profundidad el boton cuya cadena de ids coincide con idPath. Si el
-// nodo que hay al final de una rama no sirve, sigue buscando por las demas.
+// Depth-first search for the button matching idPath; dead ends keep searching other branches.
 CCMenuItem* resolveIdPath(CCNode* root, std::vector<std::string> const& path, size_t depth) {
     if (!root) return nullptr;
     if (depth >= path.size()) {
@@ -295,7 +287,7 @@ CCMenuItem* resolveIdPath(CCNode* root, std::vector<std::string> const& path, si
     for (unsigned int i = 0; i < children->count(); ++i) {
         auto* child = typeinfo_cast<CCNode*>(children->objectAtIndex(i));
         if (!child) continue;
-        // Un tramo vacio en la ruta original acepta cualquier nodo intermedio.
+        // Empty stretch in the original path accepts any middle node.
         if (!want.empty() && child->getID() != want) continue;
         if (auto* found = resolveIdPath(child, path, depth + 1)) return found;
     }
@@ -315,8 +307,7 @@ CCPoint normalizedCenterOf(CCNode* node) {
     return ccp(world.x / win.width, world.y / win.height);
 }
 
-// El de mas arriba gana: los hijos se recorren al reves porque cocos los ordena
-// por z-order, asi un boton de un popup manda sobre el de la capa de debajo.
+// Topmost wins: children walk in reverse since cocos orders by z, so a popup button beats the layer below.
 CCMenuItem* findButtonAt(CCNode* node, CCPoint worldPoint) {
     if (!node || !node->isVisible()) return nullptr;
 
@@ -335,8 +326,7 @@ CCMenuItem* findButtonAt(CCNode* node, CCPoint worldPoint) {
     return CCRect(0.f, 0.f, size.width, size.height).containsPoint(local) ? item : nullptr;
 }
 
-// Dos puntuaciones: `identity` distingue ESTE boton de sus hermanos y `total`
-// suma ademas contexto compartido; exigir ambas evita activar el de al lado.
+// Two scores: identity tells THIS button from siblings, total adds shared context; both required.
 constexpr long kMinIdentity = 140;
 constexpr long kMinConfidence = 320;
 
@@ -351,8 +341,7 @@ Score evaluateCandidate(CCMenuItem* item, CustomQuickButton const& def) {
     Score score;
     auto addIdentity = [&](long points) { score.identity += points; score.total += points; };
 
-    // Un boton no cambia de tipo de pantalla. Los node ids si se repiten entre
-    // capas, asi que esto se descarta antes de puntuar nada.
+    // Buttons don't change screen type; node ids repeat across layers, so discard before scoring.
     if (auto wanted = usableOwnerClass(def); !wanted.empty()) {
         auto owner = ownerLayerClass(item);
         if (owner.empty()) score.total -= 60;
@@ -370,7 +359,7 @@ Score evaluateCandidate(CCMenuItem* item, CustomQuickButton const& def) {
     if (!def.icon.empty() && iconFrameOfItem(item) == def.icon) addIdentity(200);
     if (def.tag != 0 && item->getTag() == def.tag) addIdentity(140);
 
-    // La posicion desempata entre botones gemelos (flechas, filas de una lista).
+    // Position breaks ties between twins (arrows, list rows).
     if (def.relX >= 0.f && def.relY >= 0.f) {
         auto rel = normalizedCenterOf(item);
         float dx = rel.x - def.relX;
@@ -385,7 +374,7 @@ Score evaluateCandidate(CCMenuItem* item, CustomQuickButton const& def) {
     if (!def.listenerClass.empty()) {
         auto listener = classNameOf(item->m_pListener);
         if (!listener.empty() && listener == def.listenerClass) score.total += 260;
-        else if (!listener.empty()) score.total -= 200; // otro receptor: otro boton
+        else if (!listener.empty()) score.total -= 200; // other listener: other button
     }
 
     if (!def.itemClass.empty() && classNameOf(item) == def.itemClass) score.total += 90;
@@ -397,8 +386,7 @@ Score evaluateCandidate(CCMenuItem* item, CustomQuickButton const& def) {
     return score;
 }
 
-// Senales que evaluateCandidate sabe puntuar. Sin ninguna, barrer la escena no
-// puede dar un resultado fiable.
+// Signals evaluateCandidate can score. Without any, a scene sweep can't be trusted.
 bool hasAnyIdentity(CustomQuickButton const& def) {
     return !def.targetNodeId.empty() || !def.labelText.empty() || !def.icon.empty() ||
            def.tag != 0 || (def.relX >= 0.f && def.relY >= 0.f);
@@ -433,28 +421,26 @@ CCMenuItem* locateButton(CustomQuickButton const& def) {
     auto* scene = director ? director->getRunningScene() : nullptr;
     if (!scene) return nullptr;
 
-    // Ruta de ids primero: sobrevive a nodos que otros mods anadan o quiten,
-    // pero solo sirve si el boton tenia id (si no, todo comodines).
+    // Id path first: survives nodes other mods add/remove, needs the button to have an id.
     if (!def.idPath.empty() && !def.idPath.back().empty()) {
         if (auto* item = resolveIdPath(scene, def.idPath, 0)) {
-            // Los ids se repiten entre pantallas; comprobar que la capa cuadra.
+            // Ids repeat across screens; check the layer matches.
             auto wanted = usableOwnerClass(def);
             if (wanted.empty() || ownerLayerClass(item) == wanted) return item;
         }
     }
 
-    // 2. Barrido completo puntuando toda la identidad guardada.
+    // 2. Full sweep scoring all saved identity.
     if (hasAnyIdentity(def)) {
         ButtonMatch best;
         scanBestButton(scene, def, best);
         if (best.item && best.score.accepted()) return best.item;
     }
 
-    // 3. Ultimo recurso: la ruta de indices original.
+    // 3. Last resort: original index path.
     if (auto* item = typeinfo_cast<CCMenuItem*>(resolvePath(scene, def.nodePath))) {
         if (isInteractable(item)) {
-            // Sin identidad guardada no hay nada que verificar; con ella, exigir
-            // que el nodo de esa posicion sea de verdad el mismo boton.
+            // No saved identity: nothing to verify; else the node there must be the same button.
             if (!hasAnyIdentity(def) || evaluateCandidate(item, def).accepted()) return item;
         }
     }
@@ -471,8 +457,7 @@ CCScene* buildSceneForClass(std::string const& cls) {
     return nullptr;
 }
 
-// Tras cambiar de escena el boton no existe hasta que la transicion termina, asi
-// que se reintenta unos frames antes de rendirse.
+// After a scene change the button doesn't exist until the transition ends; retry a few frames first.
 class PendingActivation : public CCNode {
 public:
     static void start(CustomQuickButton def) {
@@ -547,7 +532,7 @@ std::string humanName(std::string value) {
     for (char& ch : value) {
         if (ch == '-' || ch == '_') ch = ' ';
     }
-    // Los ids de GD acaban en "_001"; sobra en un nombre visible.
+    // GD ids end in "_001"; noise in a display name.
     if (value.ends_with(" 001")) value.resize(value.size() - 4);
     while (!value.empty() && value.back() == ' ') value.pop_back();
     if (value.empty()) return "Boton rapido";
@@ -616,7 +601,7 @@ bool activateCustomQuickButton(std::string const& id) {
         return true;
     }
 
-    // No esta aqui: si sabemos construir su pantalla, vamos y lo pulsamos alli.
+    // Not here: if we can build its screen, go there and press it.
     if (isNavigableScreen(definition->sceneClass) &&
         currentSceneClass() != definition->sceneClass) {
         if (auto* scene = buildSceneForClass(definition->sceneClass)) {

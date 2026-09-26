@@ -6,7 +6,7 @@ varying vec2 v_texCoord;
 uniform sampler2D u_texture;
 uniform float u_intensity;
 uniform float u_time;
-uniform vec2 u_cursor; // normalized 0..1 cursor/touch position
+uniform vec2 u_cursor;
 
 float mHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
@@ -22,7 +22,6 @@ void main() {
     float head = smoothstep(0.38, 0.42, fall);
     float flick = step(0.3, mHash(cell + floor(u_time * 8.0)));
     
-    // Matrix rain intensifies near cursor
     float cursorDist = length(v_texCoord - u_cursor);
     float cursorBoost = 1.0 + (1.0 - smoothstep(0.0, 0.4, cursorDist)) * 1.5;
     

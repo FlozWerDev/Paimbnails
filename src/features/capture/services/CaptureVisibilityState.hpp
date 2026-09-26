@@ -5,9 +5,8 @@
 #include <algorithm>
 
 namespace paimon::capture {
-    // Nodes user-set VISIBLE in layer editor; capture must not hide these.
-    // WeakRefs + prune on write: raw pointers here went stale when the level
-    // was exited while the editor popup stayed alive.
+    // User-VISIBLE nodes capture must not hide; WeakRefs + prune on write
+    // (raw pointers went stale when the level exited under the popup).
     inline std::vector<geode::WeakRef<cocos2d::CCNode>>& userShownNodes() {
         static auto& s = *new std::vector<geode::WeakRef<cocos2d::CCNode>>();
         return s;

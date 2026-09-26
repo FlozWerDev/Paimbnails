@@ -24,7 +24,7 @@ public:
     using BanUserCallback = geode::CopyableFunction<void(bool success, std::string const& message)>;
     using ModeratorsListCallback = geode::CopyableFunction<void(bool success, std::vector<std::string> const& moderators)>;
 
-    // Full role set; newer flags default false for older servers.
+    // full role set; newer flags default false on older servers.
     struct UserRoleFlags {
         bool isMod = false;
         bool isAdmin = false;
@@ -56,8 +56,8 @@ public:
     void startModCodeSetup(std::string const& username, int accountID, GenericCallback callback);
     void completeModCodeSetup(std::string const& challengeToken, GenericCallback callback);
 
-    // Prueba de propiedad para no-moderadores: el token firmado demuestra que la cuenta
-    // es tuya; la consulta publica a los servidores de GD no demuestra nada.
+    // ownership proof for non-moderators: the signed token proves the account
+    // is yours; a public GD server lookup proves nothing.
     std::string getViewerToken() const { return m_viewerToken; }
     void setViewerToken(std::string const& token);
     bool hasViewerToken() const { return !m_viewerToken.empty(); }
@@ -65,7 +65,6 @@ public:
     void checkAccountVerification(std::string const& username, GenericCallback callback);
 
     void cleanTasks(bool allowNewRequests = true);
-
 
     void uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback, std::string const& levelMeta = "");
 
@@ -93,7 +92,7 @@ public:
     void uploadProfileVideo(int accountID, std::vector<uint8_t> const& mp4Data, std::string const& username, UploadCallback callback);
     void downloadProfile(int accountID, std::string const& username, DownloadCallback callback);
     void batchCheckProfiles(std::vector<int> const& accountIDs, GenericCallback callback);
-    // Image download with signature validation.
+    // image download with signature validation.
     void downloadFromUrl(std::string const& url, DownloadCallback callback);
     void downloadFromUrlRaw(std::string const& url, DownloadCallback callback);
 
@@ -114,7 +113,7 @@ public:
     void downloadThumbnail(int levelId, DownloadCallback callback);
     void downloadThumbnail(int levelId, bool isGif, DownloadCallback callback);
 
-    // Batch result keyed by level/account ID; data is empty on failure.
+    // batch result keyed by level/account ID; data empty on failure.
     struct BatchItem {
         bool ok = false;
         std::string format;
@@ -125,13 +124,13 @@ public:
     void downloadThumbnailsBatch(std::vector<int> const& levelIds, BatchDownloadCallback callback);
     void downloadProfileBackgroundsBatch(std::vector<int> const& accountIDs, BatchDownloadCallback callback);
     void downloadProfileImgsBatch(std::vector<int> const& accountIDs, BatchDownloadCallback callback);
-    
+
     void checkThumbnailExists(int levelId, CheckCallback callback);
 
     bool isThumbnailNotFound(int levelId) const;
     void markThumbnailNotFound(int levelId) const;
     void clearThumbnailNotFound(int levelId);
-    
+
     void checkModerator(std::string const& username, ModeratorCallback callback);
     void checkModeratorAccount(std::string const& username, int accountID, ModeratorCallback callback);
     void checkUserRoles(std::string const& username, int accountID, UserRolesCallback callback);
@@ -150,7 +149,6 @@ public:
 
     void getBanList(BanListCallback callback);
 
-    // Startup ban check for the current user.
     using BanCheckCallback = geode::CopyableFunction<void(bool ok, bool banned, std::string const& reason)>;
     void checkBanned(BanCheckCallback callback);
 
@@ -166,7 +164,7 @@ public:
     void getTopCreators(GenericCallback callback);
     void getTopThumbnails(GenericCallback callback);
     void getUserUploads(std::string const& username, GenericCallback callback);
-    
+
     void getRating(int levelId, std::string const& username, std::string const& thumbnailId, GenericCallback callback);
     void submitVote(int levelId, int stars, std::string const& username, std::string const& thumbnailId, GenericCallback callback);
 
@@ -190,7 +188,7 @@ public:
 
     void downloadProfileBundle(int accountID, std::string const& username, GenericCallback callback);
 
-    // Cached CDN URLs from /api/manifest, used to bypass the Worker.
+    // cached CDN URLs from /api/manifest, bypassing the Worker.
     struct ManifestEntry {
         std::string format;
         std::string cdnUrl;
@@ -231,10 +229,10 @@ public:
     using BatchBundleCallback = geode::CopyableFunction<void(bool success, std::string const& json)>;
     void fetchBatchProfileBundle(std::vector<std::pair<int, std::string>> const& accounts, BatchBundleCallback callback);
 
-    // Public CDN Pull Zone used when the Worker is exhausted.
+    // public CDN pull zone used when the Worker is exhausted.
     std::string m_cdnBaseURL;
 
-    // After repeated 503/429s, route reads through the CDN for 30 seconds.
+    // after repeated 503/429s, reads route through the CDN for 30 seconds.
     std::atomic<bool> m_workerExhausted{false};
     std::atomic<int64_t> m_exhaustedAt{0};
     std::atomic<int> m_consecutiveWorkerFailures{0};
@@ -250,8 +248,8 @@ public:
     void saveManifestToDisk();
     void loadManifestFromDisk();
 
-    // Como performBinaryRequest pero con el codigo HTTP: un 404 se cachea en negativo,
-    // un fallo pasajero se reintenta.
+    // like performBinaryRequest plus HTTP status: 404 caches negative,
+    // transient failures retry.
     using BinaryStatusCallback = geode::CopyableFunction<void(bool, std::vector<uint8_t> const&, int status)>;
     void performBinaryRequestEx(
         std::string const& url,
@@ -264,7 +262,7 @@ public:
 private:
     HttpClient();
     ~HttpClient() = default;
-    
+
     HttpClient(HttpClient const&) = delete;
     HttpClient& operator=(HttpClient const&) = delete;
 
@@ -274,10 +272,10 @@ private:
     std::string m_modCode;
     std::string m_viewerToken;
 
-    // Las credenciales solo salen hacia los backends propios (worker y foro), nunca
-    // hacia el CDN ni hacia URLs que vengan en una respuesta.
+    // credentials only leave toward our own backends (worker, forum), never
+    // toward the CDN or URLs from a response.
     bool isTrustedBackendUrl(std::string const& url) const;
-    
+
     struct ExistsCacheEntry {
         bool exists;
         time_t timestamp;
@@ -292,7 +290,7 @@ private:
     static constexpr int64_t MANIFEST_ENTRY_TTL = 48 * 60 * 60;
     std::shared_ptr<std::atomic<bool>> m_callbackGate;
 
-    // Coalesces manifest fetches and backs off after 429.
+    // coalesces manifest fetches and backs off after 429.
     bool m_manifestFetchInFlight = false;
     std::vector<std::function<void(bool)>> m_manifestPendingCallbacks;
     std::mutex m_manifestFetchMutex;
@@ -304,18 +302,18 @@ private:
     bool isWorkerExhausted();
     void markWorkerExhausted();
 
-    // Coalesce concurrent downloads for the same level ID.
+    // coalesce concurrent downloads for the same level ID.
     std::unordered_map<int, std::vector<DownloadCallback>> m_inflightDownloads;
     std::mutex m_inflightMutex;
     void resolveInflight(int levelId, bool success, std::vector<uint8_t> const& data);
 
-    // Short-lived negative cache for downloads that failed through both endpoints;
-    // avoids retry loops while allowing transient errors to recover.
+    // short-lived negative cache for downloads failed on both endpoints;
+    // avoids retry loops while transient errors recover.
     mutable std::unordered_map<int, std::chrono::steady_clock::time_point> m_notFoundCache;
     mutable std::mutex m_notFoundMutex;
     static constexpr int NOT_FOUND_TTL_SECONDS = 5 * 60;
 
-    // Coalesce concurrent moderator checks for the same username.
+    // coalesce concurrent moderator checks for the same username.
     std::unordered_map<std::string, std::vector<ModeratorCallback>> m_inflightModChecks;
     std::mutex m_inflightModMutex;
     void resolveModCheckInflight(std::string const& key, bool isMod, bool isAdmin);
@@ -328,7 +326,7 @@ private:
         geode::CopyableFunction<void(bool, std::string const&)> callback,
         bool includeStoredModCode = true
     );
-    
+
     void performBinaryRequest(
         std::string const& url,
         std::vector<std::string> const& headers,

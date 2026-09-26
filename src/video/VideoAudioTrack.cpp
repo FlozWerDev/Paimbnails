@@ -23,7 +23,6 @@ float musicVolume() {
     return engine ? std::clamp(engine->m_musicVolume, 0.0f, 1.0f) : 1.0f;
 }
 
-// Own group so video sound can be mixed and stopped independently of GD's.
 FMOD::ChannelGroup* videoAudioGroup(FMOD::System* system) {
     static FMOD::ChannelGroup* group = nullptr;
     if (!system) return nullptr;
@@ -80,7 +79,7 @@ bool VideoAudioTrack::init(AudioPcm&& pcm) {
     exinfo.defaultfrequency  = pcm.sampleRate;
     exinfo.format            = format;
 
-    // FMOD_OPENMEMORY copies the buffer, so ours is free to die with this call.
+    // FMOD_OPENMEMORY copies the buffer; ours dies with this call.
     FMOD_MODE mode = FMOD_OPENMEMORY | FMOD_OPENRAW | FMOD_CREATESAMPLE |
                      FMOD_2D | FMOD_LOOP_OFF;
 

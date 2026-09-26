@@ -1,6 +1,4 @@
-// Vertex shader compartido por todos los shaders "cell" del mod.
-// Idéntico a `vertexShaderCell` del inline en Shaders.hpp. Usa `CC_MVPMatrix`
-// que Cocos inyecta via `setUniformsForBuiltins()`.
+// shared vertex for all cell shaders; keep in sync with vertexShaderCell inline.
 attribute vec4 a_position;
 attribute vec4 a_color;
 attribute vec2 a_texCoord;

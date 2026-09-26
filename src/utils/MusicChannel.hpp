@@ -3,8 +3,8 @@
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <fmod.hpp>
 
-// m_backgroundMusicChannel agrupa TODA la musica: pausar el grupo silencia tambien el nivel
-// y la bandera sobrevive a stop(). Estos helpers usan el canal de la cancion principal.
+// m_backgroundMusicChannel groups all music; group pause also silences the
+// level and survives stop(). Helpers below use the main song channel.
 
 namespace paimon::audio {
 
@@ -31,16 +31,15 @@ inline void setMusicChannelPaused(FMOD::Channel* channel, bool paused) {
     if (channel) channel->setPaused(paused);
 }
 
-// Solo true mientras el handle siga apuntando a un canal vivo y pausado. Si la
-// cancion se detuvo o fue reemplazada, FMOD responde FMOD_ERR_INVALID_HANDLE.
+// true only while the handle points at a live paused channel; stopped or
+// replaced songs answer FMOD_ERR_INVALID_HANDLE.
 inline bool isMusicChannelPaused(FMOD::Channel* channel) {
     if (!channel) return false;
     bool paused = false;
     return channel->getPaused(&paused) == FMOD_OK && paused;
 }
 
-// Deshace una pausa a nivel de grupo dejada por otro flujo, para que la cancion
-// que estamos por arrancar se escuche.
+// clear a group-level pause left by another flow so the next song is audible.
 inline void clearMusicGroupPause() {
     auto* engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_backgroundMusicChannel) return;

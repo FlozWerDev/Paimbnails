@@ -1,6 +1,5 @@
 ﻿#pragma once
-// Load GLSL programs from resources/shaders/ with optional inline fallbacks.
-// GPU operations run on the GL thread; file reads are cached and reentrant.
+// load GLSL programs from resources/shaders/, with optional inline fallbacks.
 
 #include <Geode/cocos/shaders/CCGLProgram.h>
 #include <string>
@@ -8,8 +7,7 @@
 
 namespace paimon::shaders {
 
-/// Load or retrieve a cached program; returns nullptr when sources are missing
-/// and no fallback is provided.
+// cached program; nullptr when sources are missing and no fallback given.
 cocos2d::CCGLProgram* loadShader(
     std::string_view cacheKey,
     std::string_view vertexFile,
@@ -18,16 +16,16 @@ cocos2d::CCGLProgram* loadShader(
     char const* fragmentFallback
 );
 
-/// Read and cache resources/shaders/<relName>; empty means missing/unreadable.
+// read and cache resources/shaders/<relName>; empty means missing/unreadable.
 std::string readShaderFile(std::string_view relName);
 
-/// Track a mod-owned CCShaderCache key for later purging. Main thread only.
+// track a mod-owned CCShaderCache key for later purging. main thread only.
 void trackShaderKey(std::string const& key);
 
-/// Purge mod programs before GL context recreation; they are rebuilt lazily.
+// purge mod programs before GL context recreation; rebuilt lazily.
 void purgeTrackedShaders();
 
-// Typed helpers wrap cache keys and shader files.
+// typed helpers wrap cache keys and shader files.
 
 cocos2d::CCGLProgram* getBlurHorizontalShader();
 cocos2d::CCGLProgram* getBlurVerticalShader();
@@ -35,33 +33,32 @@ cocos2d::CCGLProgram* getKawaseDownShader();
 cocos2d::CCGLProgram* getKawaseUpShader();
 cocos2d::CCGLProgram* getKawaseRealtimeShader();
 
-/// High-quality single-pass 9×9 cell blur.
+// single-pass 9x9 cell blur.
 cocos2d::CCGLProgram* getBlurCellShader();
 
-/// Cheaper single-pass dual-Kawase blur for animated sprites.
+// cheaper single-pass dual-kawase blur for animated sprites.
 cocos2d::CCGLProgram* getBlurSinglePassShader();
 
-/// Fixed 3.5 px fallback blur for ProfileThumbs.
+// fixed 3.5px fallback blur for ProfileThumbs.
 cocos2d::CCGLProgram* getBlurFastShader();
 
 // PaiblurNode embeds its dynamic shader and bypasses this loader.
 
-/// VideoPlayer's three-plane YUV→RGB shader.
+// VideoPlayer three-plane YUV->RGB shader.
 cocos2d::CCGLProgram* getYUVShader();
 
-/// Blit YUV planes into an RGBA FBO for VideoPlayer.
+// blit YUV planes into an RGBA FBO for VideoPlayer.
 cocos2d::CCGLProgram* getYUVBlitShader();
 
-/// Pre-reduce sRGB→LAB into a small FBO for CPU-side K-means.
+// pre-reduce sRGB->LAB into a small FBO for CPU-side k-means.
 cocos2d::CCGLProgram* getDominantColorsDownsampleShader();
 
-/// Halve a frame with an alpha-weighted box filter for the GIF importer.
+// halve a frame with an alpha-weighted box filter for the GIF importer.
 cocos2d::CCGLProgram* getGifDownscaleShader();
 cocos2d::CCGLProgram* getGifBlurShader();
 
-/// Live PackGen tint for the texture-studio preview (base + packed role
-/// masks, colors as uniforms). Null when tint_preview.glsl is missing; the
-/// editor falls back to the CPU render path.
+// live PackGen tint for the texture-studio preview. null when
+// tint_preview.glsl is missing; the editor falls back to CPU render.
 cocos2d::CCGLProgram* getTintPreviewShader();
 
 }

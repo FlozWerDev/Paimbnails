@@ -1,10 +1,5 @@
-// Color-grid popup for the gradient editor: every GD color index as a
-// tappable swatch, arranged in the same blocks the game itself uses.
-//
-// Idea credit: "Icon Gradients" by zilko
-// (https://github.com/zilko144/icon-gradients-geode, unlicensed —
-// all rights reserved). Independent implementation: same layout and
-// behavior, own expression.
+// Color-grid popup: every GD color index as a tappable swatch, in the game's own
+// blocks. After zilko's "Icon Gradients" (independent implementation; idea credit zilko144, unlicensed).
 
 #include "ColorSelectLayer.hpp"
 #include "GradientLayer.hpp"

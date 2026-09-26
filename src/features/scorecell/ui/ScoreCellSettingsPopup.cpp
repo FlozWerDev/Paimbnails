@@ -208,8 +208,7 @@ void ScoreCellSettingsPopup::rebuildPreview() {
     m_previewContainer->addChild(clip);
 
     if (scoreGradientEnabled()) {
-        // Preview the exact gradient layer the game paints, so the popup stays
-        // WYSIWYG (fixed sway + own hover lift, Effect setting N/A).
+        // Preview the exact layer the game paints: stays WYSIWYG.
         if (auto* grad = paimon::scorecell::ScoreGradientLayer::create(sz, a, b)) {
             grad->setAnchorPoint({0.f, 0.f});
             grad->setPosition({0.f, 0.f});
@@ -219,7 +218,7 @@ void ScoreCellSettingsPopup::rebuildPreview() {
             attachCellOverlays(clip, sz);
         }
     } else {
-        // Preview what the legacy path actually paints (harmonized pair).
+        // Preview the legacy path: harmonized pair.
         {
             auto tuned = detail::harmonizePair(a, b);
             a = tuned.first;

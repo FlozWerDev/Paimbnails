@@ -13,7 +13,7 @@
 
 namespace paimon {
 
-// Fixed-size pool to keep concurrent disk I/O bounded.
+// fixed pool; bounds concurrent disk I/O.
 class ThreadPool {
 public:
     struct SharedState {
@@ -59,7 +59,7 @@ public:
         state->cv.notify_one();
     }
 
-    // Visible-cell work runs before predictive prefetches.
+    // visible-cell work jumps predictive prefetches.
     void enqueueFront(std::function<void()> job) {
         auto state = m_state;
         if (!state) return;
@@ -78,7 +78,7 @@ public:
             std::lock_guard<std::mutex> lock(state->mutex);
             if (state->stopped.load(std::memory_order_acquire)) return;
             state->stopped.store(true, std::memory_order_release);
-            // Discard pending jobs — only currently-executing jobs need to finish.
+            // drop pending jobs; running ones finish.
             std::queue<std::function<void()>>().swap(state->jobs);
             std::queue<std::function<void()>>().swap(state->priorityJobs);
         }
@@ -110,8 +110,7 @@ private:
             std::function<void()> job;
             {
                 std::unique_lock<std::mutex> lock(state->mutex);
-                // 200ms timeout to avoid busy-spinning when idle; threads still wake instantly
-                // via notify, so the timeout only affects idle periods.
+                // 200ms idle timeout; notify still wakes instantly.
                 state->cv.wait_for(lock, std::chrono::milliseconds(200), [state]() {
                     return state->stopped.load(std::memory_order_acquire) ||
                            !state->priorityJobs.empty() ||

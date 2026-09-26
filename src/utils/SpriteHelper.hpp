@@ -7,7 +7,7 @@
 
 namespace paimon {
 
-// Validates sprites and rejects Geode's missing-asset fallback.
+// validate sprites; reject Geode's missing-asset fallback.
 struct SpriteHelper {
 
     static cocos2d::CCDrawNode* createRectStencil(float width, float height) {
@@ -66,8 +66,7 @@ struct SpriteHelper {
         return cocos2d::extension::CCScale9Sprite::create(file);
     }
 
-    // The default insets are thirds of the texture, which fold in on themselves
-    // once the target is smaller than two corners.
+    // thirds-of-texture insets fold in below two-corner size.
     static cocos2d::extension::CCScale9Sprite* safeCreateScale9(
         const char* file,
         cocos2d::CCRect const& capInsets

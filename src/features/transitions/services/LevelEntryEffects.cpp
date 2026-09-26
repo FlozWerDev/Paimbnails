@@ -246,8 +246,8 @@ void centerMenu(CCNode* menu, bool useScreenCenter = true) {
 }
 
 class LevelEffectsTransitionScene final : public CCTransitionScene {
-// Manual handoff instead of CCTransitionScene's: the switch is deferred to
-// switchToIncoming (replaceScene drives the real enter), so base enter/exit are skipped.
+// manual handoff, not CCTransitionScene's: the switch defers to
+// switchToIncoming, so base enter/exit are skipped.
 public:
     static LevelEffectsTransitionScene* create(
         CCScene* destination,
@@ -306,14 +306,10 @@ public:
         }
         if (!m_playLayer) {
             if (m_direction == TransitionDirection::Exit) {
-                log::info("[LevelTransitions] Exit scene has no PlayLayer");
+                log::warn("[LevelTransitions] Exit scene has no PlayLayer");
             }
             finishTransition();
             return;
-        }
-
-        if (m_direction == TransitionDirection::Exit) {
-            log::info("[LevelTransitions] Exit scene started ({:.2f}s)", m_fDuration);
         }
 
         m_playLayer->setVisible(true);
@@ -336,8 +332,8 @@ public:
             nullptr
         ));
 
-        // Entering the destination can stall a frame; that huge dt would
-        // fast-forward every action, so drop the accumulated time.
+        // entering the destination can stall a frame; that huge dt would
+        // fast-forward every action, so drop it.
         CCDirector::get()->setNextDeltaTimeZero(true);
     }
 
@@ -349,8 +345,8 @@ public:
         unscheduleUpdate();
         unschedule(schedule_selector(LevelEffectsTransitionScene::switchToIncoming));
         CCScene::onExit();
-        // CCTransitionScene's contract is to leave input enabled on exit. Do
-        // not restore a stale `false` captured from an overlapping transition.
+        // CCTransitionScene leaves input enabled on exit; never restore a
+        // stale `false` from an overlapping transition.
         CCTouchDispatcher::get()->setDispatchEvents(true);
 
         if (m_switchingToIncoming && m_pInScene && !m_inSceneEntered) {
@@ -446,10 +442,9 @@ private:
             node->setRotationY(state.rotationY);
             node->setVisible(state.visible);
             node->ignoreAnchorPointForPosition(state.ignoresAnchor);
-            if (state.hasOpacity) {
-                if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(node)) {
-                    rgba->setOpacity(state.opacity);
-                }
+            if (!state.hasOpacity) continue;
+            if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(node)) {
+                rgba->setOpacity(state.opacity);
             }
         }
 
@@ -827,7 +822,7 @@ private:
 
         for (size_t i = 0; i < count; ++i) {
             auto* candidate = reinterpret_cast<CCObject*>(m_playLayer->m_activeObjects[i]);
-            // Active slots outlive their objects during exit teardown; m_objects is the owning list.
+            // active slots outlive their objects during exit teardown; m_objects owns them.
             if (!candidate || !objects->containsObject(candidate)) continue;
 
             auto* object = typeinfo_cast<GameObject*>(candidate);
@@ -1066,8 +1061,7 @@ void LevelTransitionWatchdog::check(float) {
     }
     if (std::chrono::steady_clock::now() < m_deadline) return;
 
-    // Drop the watchdog's ownership before replacing the scene. The local Ref
-    // keeps the transition valid throughout recoverFromWatchdog().
+    // drop the watchdog's ownership first; the local Ref keeps the transition valid.
     disarm(active.data());
     if (auto* transition = typeinfo_cast<LevelEffectsTransitionScene*>(active.data())) {
         transition->recoverFromWatchdog();

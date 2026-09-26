@@ -13,8 +13,8 @@
 
 namespace paimon::keybinds {
 
-// Adds mouse buttons and scroll triggers beside Geode's keyboard-only keybinds.
-// Extended bindings live in saved values under paimon-extkb-{settingKey}.
+// mouse buttons and scroll triggers beside Geode's keyboard-only keybinds.
+// extended bindings live in saved values as paimon-extkb-{settingKey}.
 
 enum class ExtendedKind : int {
     None      = 0,
@@ -55,8 +55,7 @@ void saveExtendedKeybind(std::string_view settingKey, ExtendedKeybind const& bin
 
 bool isMouseButtonHeld(MouseButton button);
 
-// Currently pressed modifiers (resynced from KeyboardInputEvent and
-// MouseInputEvent — the same flags the rest of the volume-scroll code uses).
+// pressed modifiers, mirrored from keyboard/mouse input events.
 geode::KeyboardModifier currentModifiers();
 
 bool isExtendedHeld(ExtendedKeybind const& bind);
@@ -80,8 +79,7 @@ public:
     using Event::Event;
 };
 
-// No need to call it manually — the internal dispatcher invokes it when mouse/scroll
-// matches a registered ExtendedKeybind.
+// the internal dispatcher calls it on mouse/scroll match; not manual.
 void emitExtendedTrigger(std::string_view settingKey, double timestamp);
 
 std::vector<std::string> const& allManagedKeybinds();

@@ -8,8 +8,8 @@
 
 namespace paimon::video {
 
-// Saved "video-quality" (0=Auto, 50=Low, 75=Medium, 100=High) → longest-side
-// decode cap in px (0 = native). Shared with Settings and unit tests.
+// "video-quality" setting to longest-side decode cap px (0 = native).
+// Auto caps 1440p/4K only.
 inline int maxDecodeDimensionForQuality(int quality) {
     switch (quality) {
         case 100: return 0;     // High: native
@@ -19,8 +19,7 @@ inline int maxDecodeDimensionForQuality(int quality) {
     }
 }
 
-// Stable async download key: cacheKey when present, else normalized URL so
-// query cache-busters don't spawn duplicate downloads.
+// Stable download key; cache-busters must not duplicate downloads.
 inline std::string makeVideoRequestKey(std::string_view url, std::string_view cacheKey) {
     if (!cacheKey.empty()) {
         return std::string("cache:") + std::string(cacheKey);
@@ -31,14 +30,12 @@ inline std::string makeVideoRequestKey(std::string_view url, std::string_view ca
     return {};
 }
 
-// Prefer admitting a create when disk already has the bytes (no network).
-// networkPending=true means the create depends on an in-flight download.
+// Admit disk-backed creates ahead of pending downloads.
 inline bool shouldPrioritizeDiskCreate(bool hasLocalFile, bool networkPending) {
     return hasLocalFile && !networkPending;
 }
 
-// Adaptive target FPS for N concurrent sprites (mirrors VideoThumbnailSprite).
-// Pure: no Mod/settings access.
+// Target FPS for N sprites; mirrors VideoThumbnailSprite, no settings access.
 inline int adaptiveSpriteFpsFromBase(int baseFPS, int minFPS, bool adaptive, int activeCount) {
     if (baseFPS <= 0) baseFPS = 30;
     if (minFPS < 1) minFPS = 1;
@@ -50,15 +47,13 @@ inline int adaptiveSpriteFpsFromBase(int baseFPS, int minFPS, bool adaptive, int
     return target;
 }
 
-// Player-cache lookup key: prefer the on-disk file path so create(path) and
-// returnPlayerToCache agree. Falls back to logical cacheKey when path empty.
+// On-disk path first so store and lookup agree.
 inline std::string playerCacheStoreKey(std::string_view filePath, std::string_view logicalKey) {
     if (!filePath.empty()) return std::string(filePath);
     return std::string(logicalKey);
 }
 
-// Version-gated snapshot for videoMaxDecodeDimension()/adaptiveSpriteFPS():
-// when version advances the next call re-evaluates quality.
+// Re-evaluates quality when the settings version advances.
 struct DecodeDimSnapshot {
     int cachedDim = -1;
     uint64_t cachedVer = UINT64_MAX;

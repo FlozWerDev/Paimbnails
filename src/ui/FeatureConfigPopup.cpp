@@ -59,6 +59,15 @@ void openNativeSettings() {
     geode::openSettingsPopup(Mod::get(), false);
 }
 
+std::vector<std::string> const& popupStyleOptions() {
+    static const std::vector<std::string> styles = {
+        "paimonUI", "jelly", "spiral", "drop-bounce", "skew-pop", "elastic",
+        "bounce", "slide-up", "slide-down", "slide-left", "slide-right",
+        "zoom-fade", "flip", "fold", "pop-rotate", "elastic-drop",
+        "glitch-shake", "card-turn", "fly-spin"};
+    return styles;
+}
+
 struct FeatureGroup {
     std::string title;
     std::string subtitle;
@@ -420,10 +429,7 @@ void buildPopupAnimationGroup(CCNode* c, float w) {
 
     c->addChild(createDropdownRow("Popup Style",
         gsaved<std::string>("dynamic-popup-style", "paimonUI"),
-        {"paimonUI", "jelly", "spiral", "drop-bounce", "skew-pop", "elastic",
-         "bounce", "slide-up", "slide-down", "slide-left", "slide-right",
-         "zoom-fade", "flip", "fold", "pop-rotate", "elastic-drop",
-         "glitch-shake", "card-turn", "fly-spin"},
+        popupStyleOptions(),
         [](std::string const& v) { ssaved<std::string>("dynamic-popup-style", v); },
         w));
 
@@ -505,7 +511,7 @@ void buildPerformanceGroup(CCNode* c, float w) {
 
     c->addChild(createLinkRow("Open Thumbnails Folder",
         []() {
-// Reuse the mod's "button" setting; MaintenanceActions registers the handler.
+// Folder opens via the "button" setting handler in MaintenanceActions.
             openNativeSettings();
         },
         w));
@@ -572,10 +578,7 @@ void buildSmoothUIGroup(CCNode* c, float w) {
 
     c->addChild(createDropdownRow("Popup Style",
         gsaved<std::string>("dynamic-popup-style", "paimonUI"),
-        {"paimonUI", "jelly", "spiral", "drop-bounce", "skew-pop", "elastic",
-         "bounce", "slide-up", "slide-down", "slide-left", "slide-right",
-         "zoom-fade", "flip", "fold", "pop-rotate", "elastic-drop",
-         "glitch-shake", "card-turn", "fly-spin"},
+        popupStyleOptions(),
         [](std::string const& v) { ssaved<std::string>("dynamic-popup-style", v); },
         w));
 
@@ -830,7 +833,6 @@ GranularRoute routeForGranular(std::string const& englishName) {
     }
     if (englishName == "Editor Fondos" || englishName == "Configuracion Completa") {
         return {{}, []() {
-// PaiConfigLayer is fullscreen; mirror the Hub path.
             SettingsPanelManager::get().close();
             PaiConfigLayer::openOverlay();
         }};

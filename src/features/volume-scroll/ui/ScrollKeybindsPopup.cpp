@@ -47,7 +47,6 @@ namespace {
         return false;
     }
 
-    // Read the first keyboard bind from a setting.
     std::optional<Keybind> getFirstKeyboardKeybind(char const* settingKey) {
         auto* mod = Mod::get();
         if (!mod || !mod->hasSetting(settingKey)) return std::nullopt;
@@ -84,7 +83,7 @@ namespace {
         if (kb.has_value() &&
             (kb->key != KEY_None || kb->modifiers != KeyboardModifier::None))
         {
-            // Handles modifier-only binds without "Ctrl+Unknown".
+            // modifier-only binds must not read as "Ctrl+Unknown".
             text = paimon::keybinds::formatKeyboardKeybind(*kb);
         }
         if (!ext.isEmpty()) {
@@ -92,7 +91,7 @@ namespace {
             text += ext.toDisplayString();
         }
         if (text.empty()) return "(unset)";
-        // Make volume gestures explicit: "<bind> + Scroll".
+        // volume gestures read as "<bind> + Scroll".
         if (appendScrollHint) {
             text += " + Scroll";
         }
@@ -156,7 +155,7 @@ bool ScrollKeybindsPopup::init() {
     addRow(makeKeybindRow(kSFXEditorKey,   "SFX Volume",   scrollW, /*allowScroll=*/false));
 
 #if defined(GEODE_IS_MOBILE)
-    // No wheel on touch screens: remind that the three-finger drag replaces it.
+    // no wheel on touch screens; the three-finger drag replaces it.
     {
         auto hintRow = CCNode::create();
         hintRow->setAnchorPoint({0.f, 0.f});
@@ -291,7 +290,7 @@ CCNode* ScrollKeybindsPopup::makeKeybindRow(
     btnMenu->updateLayout();
     row->addChild(btnMenu, 1);
 
-    // Store the label and setting key for in-place refreshes.
+    // label + setting key for in-place refreshes.
     row->setUserObject("paimon-binding-label"_spr, bindingLabel);
     row->setUserObject("paimon-binding-key"_spr, CCString::create(settingKey));
 
@@ -336,7 +335,7 @@ void ScrollKeybindsPopup::openEditPopup(
 void ScrollKeybindsPopup::onResetVolumeDefaults(CCObject*) {
     auto* mod = Mod::get();
 
-    // Restore the four volume binds and clear their extended binds.
+    // restore the four volume binds and clear their extended binds.
     for (auto const* key : kVolumeKeys) {
         if (!mod->hasSetting(key)) continue;
         auto setting = cast::typeinfo_pointer_cast<KeybindSettingV3>(
@@ -347,7 +346,7 @@ void ScrollKeybindsPopup::onResetVolumeDefaults(CCObject*) {
         saveExtendedKeybind(key, ExtendedKeybind{});
     }
 
-    // Re-read every visible label from storage.
+    // re-read every visible label from storage.
     if (m_scrollLayer && m_scrollLayer->m_contentLayer) {
         auto children = m_scrollLayer->m_contentLayer->getChildren();
         if (children) {

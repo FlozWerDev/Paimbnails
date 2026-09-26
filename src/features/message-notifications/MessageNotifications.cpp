@@ -178,7 +178,7 @@ private:
         return gstr::split(hash[0], "|");
     }
 
-    // Main thread. Fire a messages request and a friend-requests request.
+    // main thread.
     void pollOnce() {
         if (!sBool("msgnotif-enabled")) return;
         if (PlayLayer::get() && sBool("msgnotif-disable-while-playing")) return;
@@ -204,7 +204,7 @@ private:
         }
     }
 
-    // POST to RobTop. Messages/requests are not cached (live polling).
+    // live polling: not cached.
     void request(char const* endpoint, std::string const& body,
                  std::function<void(std::string)> cb) {
         paimon::gd::postCached(

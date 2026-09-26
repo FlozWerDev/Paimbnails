@@ -1,7 +1,6 @@
 #pragma once
 
-// Pestaña Tienda: solo lee listados y miniaturas; las descargas salen del popup de detalle.
-// custom-cursor bloquea su buscador y se recorre coleccion por coleccion.
+// Shop tab: reads listings and thumbs only; downloads happen in the detail popup.
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -17,13 +16,12 @@ class CursorShopTab : public cocos2d::CCNode {
 public:
     static CursorShopTab* create(cocos2d::CCSize size, std::function<void()> onInstalled);
 
-    // El catalogo no se pide hasta que el usuario entra en la pestaña; si la
-    // carga fallo, volver a entrar reintenta.
+    // Catalog loads on first tab entry; re-entry retries a failed load.
     void onShown();
-    // El popup contenedor reenvia la rueda y el tick de scroll suave.
+    // Container popup forwards wheel and smooth-scroll ticks.
     void handleScrollWheel(float x, float y);
     void stepScroll(float dt);
-    // Suelta el IME antes de que el popup se destruya.
+    // Releases IME before the popup is destroyed.
     void shutdown();
 
 private:
@@ -31,7 +29,7 @@ private:
     using Category = paimon::cursorshop::Category;
     using Listing  = paimon::cursorshop::Listing;
 
-    // Una peticion pendiente del rastreo de busqueda.
+    // One pending search-crawl request.
     struct ScanTarget {
         Category category;
         int page = 0;
@@ -48,19 +46,18 @@ private:
     std::vector<int> m_filtered;
     std::string m_query;
 
-    // Identifica el listado ya descargado para no repetir la peticion al
-    // paginar en local.
+    // Tags the loaded listing so local paging never refetches.
     std::string m_loadedKey;
     int m_serverPage = 0;
     int m_serverPageCount = 1;
     int m_localPage = 0;
-    // -1 pide saltar a la ultima pagina local tras cargar (al ir hacia atras).
+    // -1 jumps to the last local page after load (when paging back).
     int m_pendingLocalPage = 0;
     bool m_loading = false;
 
-    // m_items son resultados de busqueda en vez de una pagina de categoria.
+    // m_items holds search results instead of a category page.
     bool m_searchResults = false;
-    // Categoria sintetica que representa la busqueda en curso.
+    // Synthetic category for the search in flight.
     Category m_searchCategory;
     bool m_scanning = false;
     std::vector<ScanTarget> m_scanTargets;
@@ -77,8 +74,7 @@ private:
     cocos2d::CCLabelBMFont* m_creditLabel = nullptr;
     cocos2d::CCLabelBMFont* m_overlayLabel = nullptr;
     CCMenuItemSpriteExtra* m_overlayButton = nullptr;
-    // Lanza la busqueda cuando el filtro local si encontro algo y el cartel
-    // del centro no llega a salir.
+    // Fires search when the local filter hit but the center overlay never showed.
     CCMenuItemSpriteExtra* m_searchButton = nullptr;
     ButtonSprite* m_overlayButtonSprite = nullptr;
     std::array<ButtonSprite*, paimon::cursorshop::kStoreCount> m_storeSprites{};
@@ -89,9 +85,9 @@ private:
     Category const& currentCategory() const;
     std::string listingKey() const;
     int storeIndex() const { return static_cast<int>(m_store); }
-    // Paginas locales que caben en una peticion.
+    // Local pages fitting one fetch.
     int localPagesPerFetch() const;
-    // Paginas locales que ocupa lo que hay cargado ahora.
+    // Local pages the loaded items span.
     int localPageCount() const;
 
     void selectStore(Store store);

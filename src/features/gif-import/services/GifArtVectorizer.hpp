@@ -4,7 +4,7 @@
 
 namespace paimon::gifimport {
 
-// `spare` puede pisarse: otra capa lo tapa y permite fusionar en rectangulos.
+// `spare` may be stepped on: another layer covers it and allows rectangle merges.
 std::vector<Primitive> packBlocks(
     std::vector<int> const& positions,
     int width,

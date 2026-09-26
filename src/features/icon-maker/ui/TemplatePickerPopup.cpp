@@ -129,8 +129,7 @@ bool TemplatePickerPopup::init(IconType type, PickedCallback onPicked,
         m_mainLayer->addChild(m_pageLabel);
     }
 
-    // Con 200 y pico iconos por gamemode, pasar paginas hasta el 137 no es
-    // manera: se escribe el numero y ya.
+    // 200+ icons per gamemode: paging to #137 is no way; type the number.
     m_idInput = TextInput::create(70.f, "id", "bigFont.fnt");
     if (m_idInput) {
         m_idInput->setCommonFilter(CommonFilter::Uint);

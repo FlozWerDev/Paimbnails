@@ -67,7 +67,7 @@ geode::Result<> MoreIconsBridge::registerIcon(IconProject const& project,
     if (!info) {
         return Err("More Icons rechazo el icono (addIcon fallo)");
     }
-    log::info("[icon-maker] icono '{}' registrado en More Icons", regName);
+    log::info("[icon-maker] icon '{}' registered in More Icons", regName);
     return Ok();
 }
 

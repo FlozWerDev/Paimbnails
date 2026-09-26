@@ -1,6 +1,6 @@
 #pragma once
 
-// Postproceso RTX: copia el frame, traza, filtra y compone encima.
+// RTX postfx: copy frame, trace, filter, composite on top.
 
 #include <Geode/cocos/platform/CCGL.h>
 
@@ -49,7 +49,7 @@ private:
     void drawInto(Target const& t);
     void updateAdaptiveScale(RTXConfig const& cfg);
 
-    // Efectivos sin tocar config; degrada escala>rayos>atrous>bloom>cadencia.
+    // Effectives without touching config; degrades scale>rays>atrous>bloom>cadence.
     void syncGovernorEffectives(RTXConfig const& cfg);
     void clampGovernorToConfig(RTXConfig const& cfg);
     bool governorStepDown(float budget);
@@ -162,7 +162,7 @@ private:
     Target m_traceSrc;
     Target m_traceRT;
     Target m_history[2];
-    // m_variance[i] es la varianza de m_history[i].
+    // m_variance[i] tracks m_history[i].
     Target m_variance[2];
     Target m_atrous[2];
     Target m_bloomDown[kBloomLevels];
@@ -177,11 +177,11 @@ private:
     GLuint m_bloomResultTex = 0;
     GLuint m_giResultTex = 0;
 
-    // Sin FBO flotante el HDR se recorta: se deja plano.
+    // No float FBO clips HDR: stays flat.
     bool m_hdr = true;
     bool m_hasExposure = false;
 
-    // Camara anterior para reproyectar; solo se actualiza al trazar.
+    // Previous camera for reprojection; updated only when tracing.
     float m_prevCamX = 0.f;
     float m_prevCamY = 0.f;
     float m_prevCamScale = 1.f;

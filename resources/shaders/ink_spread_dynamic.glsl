@@ -28,29 +28,23 @@ void main() {
     
     float dist = length(v_texCoord - u_cursor);
     
-    // Ink spread radius grows with time, resets periodically
     float cycle = mod(u_time * 0.4, 3.0);
     float spreadRadius = cycle * 0.4 * (0.5 + u_click * 0.5);
     
-    // Organic edge using noise
     float n = noise(v_texCoord * 8.0 + u_time * 0.5);
     float n2 = noise(v_texCoord * 16.0 - u_time * 0.3);
     float organicDist = dist - n * 0.08 - n2 * 0.04;
     
-    // Ink mask
     float ink = smoothstep(spreadRadius + 0.02, spreadRadius - 0.02, organicDist);
     ink *= u_intensity * 0.1;
     
-    // Ink darkens the image with slight blue tint
     vec3 inkColor = vec3(0.02, 0.02, 0.08);
     color.rgb = mix(color.rgb, inkColor, ink * 0.7);
     
-    // Feathered edge with color bleed
     float edge = smoothstep(spreadRadius + 0.04, spreadRadius, organicDist)
                - smoothstep(spreadRadius, spreadRadius - 0.02, organicDist);
     color.rgb += vec3(0.1, 0.05, 0.2) * edge * u_intensity * 0.1;
     
-    // Paper texture in ink area
     float paper = noise(v_texCoord * 50.0) * 0.1;
     color.rgb += paper * ink * 0.3;
     

@@ -1,10 +1,5 @@
-// Color-page icon shading, rethought for Paimbnails.
-//
-// Idea credit: "Icon Gradients" by zilko
-// (https://github.com/zilko144/icon-gradients-geode, unlicensed —
-// all rights reserved). Independent implementation: same behavior (shade
-// each doll on the color page by its slot index, with the Ship slot
-// doubling as Jetpack), own expression.
+// Shades each color-page doll by slot index (Ship doubles as Jetpack), after
+// zilko's "Icon Gradients" (independent implementation; idea credit zilko144, unlicensed).
 
 #include "GradientCharacterColorPage.hpp"
 #include "GradientGarageLayer.hpp"

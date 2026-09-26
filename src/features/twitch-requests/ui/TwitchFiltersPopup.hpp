@@ -1,6 +1,6 @@
 #pragma once
 
-// Popup del boton "Filtros": niveles aceptados y limites por usuario.
+// popup behind the "Filters" button: accepted levels and per-user limits.
 
 #include <Geode/Geode.hpp>
 

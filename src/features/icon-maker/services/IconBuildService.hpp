@@ -1,9 +1,7 @@
 #pragma once
-// Compilar + activar un icono. Lo usan el editor ("Usar") y la galeria, asi
-// que vive aqui en vez de duplicarse en las dos pantallas.
-//
-// Threading: llamar desde el hilo principal; el trabajo pesado se va a un
-// hilo del ThreadTracker y el callback vuelve al principal.
+// Compile + apply an icon, shared by the editor ("Use") and the gallery.
+// Threading: call on the main thread; heavy work moves to a ThreadTracker
+// thread and the callback returns on main.
 
 #include "../data/IconProject.hpp"
 
@@ -16,7 +14,7 @@ namespace paimon::icon_maker {
 
 class IconBuildService final {
 public:
-    // On success the message is ready to show to the user ("Listo! ...").
+    // on success the message is user-ready.
     using DoneCallback = std::function<void(geode::Result<std::string>)>;
 
     // Compiles the sheets, hands the icon to More Icons when it is installed

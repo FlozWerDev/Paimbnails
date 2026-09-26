@@ -64,8 +64,7 @@ using paimon::compat::ModCompat;
 #define GL_MAX_RENDERBUFFER_SIZE 0x84E8
 #endif
 
-// Suppress background-art camera helpers while the retargeted render owns the
-// camera; they can dereference stale game-layer state mid-drawScene.
+// Retargeted render owns the camera; background-art helpers may deref stale state.
 static std::atomic<bool> s_suppressCameraArt{false};
 
 struct SuppressCameraArtGuard {
@@ -87,8 +86,7 @@ class $modify(PaimonCaptureBGArtGuard, GJBaseGameLayer) {
     }
 };
 
-// Camera/visibility recalculation is best-effort during retargeted rendering.
-// The raw function-pointer split keeps C++ destructors outside __try frames.
+// Best-effort recalc during retarget; raw pointers keep destructors out of __try.
 #ifdef GEODE_IS_WINDOWS
 static bool sehGuardedCall(void (*fn)(PlayLayer*), PlayLayer* pl) noexcept {
     __try {
@@ -247,8 +245,7 @@ void hideKnownModNodes(PlayLayer* pl, HiddenNodeList& hidden) {
     }
 }
 
-// Guard scene classification against dangling nodes in the children array.
-// Raw function pointers keep C++ destructors outside __try frames.
+// Scene classification vs dangling children; raw pointers stay out of __try.
 #ifdef GEODE_IS_WINDOWS
 bool sehClassify(bool (*fn)(void*), void* ctx, bool* faulted) noexcept {
     __try {
@@ -920,9 +917,8 @@ int FramebufferCapture::getMaxTextureSize() {
 CaptureValidation FramebufferCapture::validateCaptureConditions() {
     CaptureValidation result;
 #if !defined(GEODE_IS_WINDOWS) && !defined(GEODE_IS_ANDROID)
-    // No swapBuffers hook drives the capture state machine on this platform;
-    // an armed request would never execute. Fail here so callers show a
-    // reason instead of hanging with the busy flag set.
+    // No swapBuffers hook pumps the state machine here; fail so callers
+    // show a reason instead of hanging with the busy flag set.
     result.canCapture = false;
     result.reason = Localization::get().getString("capture.unsupported_platform");
     return result;
@@ -987,8 +983,7 @@ void FramebufferCapture::finishPendingFailure() {
     deletePboIfAny();
 #endif
 
-    // Do not re-enter capture callers from inside the state machine. A caller
-    // may open/close layers or request another capture from its failure path.
+    // Never re-enter capture callers from the state machine; failure paths may reopen layers.
     if (requestCallback) {
         s_deferredCallbacks.push_back(
             {std::move(requestCallback), false, nullptr, nullptr, 0, 0}
@@ -1019,9 +1014,7 @@ void FramebufferCapture::requestCapture(
     if (paimon::isRuntimeShuttingDown()) return;
 
 #if !defined(GEODE_IS_WINDOWS) && !defined(GEODE_IS_ANDROID)
-    // No swapBuffers hook pumps the state machine here; fail synchronously
-    // (same convention as the other early-failure paths below) so callers
-    // release their busy flags instead of hanging.
+    // Same: fail synchronously so callers release busy flags instead of hanging.
     if (callback) callback(false, nullptr, nullptr, 0, 0);
     return;
 #endif
@@ -1058,8 +1051,7 @@ void FramebufferCapture::requestCapture(
     g_waitingTicks = 0;
     g_phase.store(Phase::ArmedHide);
 
-    // Replacement used to invoke the displaced callback synchronously after
-    // arming the new request. That allowed the old UI to mutate this new state.
+    // Displaced callbacks defer: synchronous invoke let old UI mutate the new state.
     if (previousRequestCallback) {
         s_deferredCallbacks.push_back(
             {std::move(previousRequestCallback), false, nullptr, nullptr, 0, 0}

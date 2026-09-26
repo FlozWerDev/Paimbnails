@@ -9,8 +9,7 @@
 
 namespace paimon::texture_studio::serial {
 
-// v2 removed the network base-pack mirror: base sheets are detected locally.
-// v1 projects referenced mirror downloads, so they are refused below.
+// v2 dropped the network base-pack mirror (local detection); v1 refs are refused below.
 inline constexpr int kCurrentSchemaVersion = 2;
 
 inline matjson::Value colorToJson(cocos2d::ccColor3B c) {
@@ -89,7 +88,7 @@ struct matjson::Serialize<paimon::texture_studio::AutoCacheRef> {
     static matjson::Value toJson(paimon::texture_studio::AutoCacheRef const& r) {
         auto obj = matjson::Value::object();
         obj["sprite"]   = r.spriteName;
-        // Hash stored signed; the sign bit is meaningless for hashing.
+        // Hash stored signed; sign bit meaningless for hashing.
         obj["hash"]     = static_cast<std::int64_t>(r.spriteHash);
         obj["clusters"] = r.clusterCount;
         return obj;
@@ -384,9 +383,7 @@ struct matjson::Serialize<paimon::texture_studio::TextureProject> {
                 }
             }
         }
-        // TintScope::Everything (2) is legacy: it used to paint the whole
-        // game, now it maps to ButtonsAndMenuUi, so clamp stored values to
-        // 0..1 on load.
+        // Legacy Everything (2) painted the whole game; now ButtonsAndMenuUi, so clamp to 0..1.
         p.tintScope = static_cast<TintScope>(std::clamp<std::int64_t>(
             v["tintScope"].asInt().unwrapOr(0), 0, 1));
 

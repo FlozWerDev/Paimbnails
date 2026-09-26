@@ -7,8 +7,7 @@
 // Row building blocks shared by the layer editor and the asset browser lists.
 namespace paimon::capture::ui {
 
-// Clips touch testing to a parent ScrollLayer's visible rect, so rows scrolled
-// out of view cannot swallow taps meant for the popup underneath.
+// Clip touch tests to the ScrollLayer's visible rect; scrolled-out rows can't steal taps.
 class ClippedMenu : public cocos2d::CCMenu {
 public:
     static ClippedMenu* create(cocos2d::CCNode* clipParent) {
@@ -72,8 +71,7 @@ inline CCMenuItemToggler* makeCheck(
     return toggler;
 }
 
-// Disclosure triangle. GD's fonts have no arrow glyph, so this is a rotated
-// sprite with a "+"/"-" fallback if the frame is missing.
+// Disclosure triangle: rotated sprite, GD fonts lack arrows; "+"/"-" fallback.
 inline cocos2d::CCNode* makeDisclosure(bool expanded, float scale) {
     if (auto* arrow = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_03_001.png")) {
         arrow->setScale(scale);

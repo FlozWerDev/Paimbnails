@@ -22,8 +22,6 @@ struct ReleaseInfo {
     bool prerelease = false;
 };
 
-// Downloads a selected .geode; progress callbacks run on the main thread.
-
 class UpdateChecker {
 public:
     enum class State {
@@ -36,10 +34,9 @@ public:
 
     static UpdateChecker& get();
 
-    // Start the GitHub check once; force re-runs it from the update center.
+    // runs once; force re-runs it from the update center.
     void checkAsync(bool force = false);
 
-    // True when a successful check found a newer version.
     bool hasUpdate() const { return m_state.load() == State::UpdateAvailable; }
     State state() const { return m_state.load(); }
 
@@ -49,19 +46,19 @@ public:
     std::string const& downloadUrl() const { return m_downloadUrl; }
     std::string const& lastError() const { return m_lastError; }
 
-    // Full release history, newest first. Empty until fetchReleasesAsync runs.
+    // newest first; empty until fetchReleasesAsync runs.
     void fetchReleasesAsync(std::function<void(bool, std::string)> onDone);
     std::vector<ReleaseInfo> const& releases() const { return m_releases; }
     bool releasesLoaded() const { return m_releasesLoaded; }
     bool releasesLoading() const { return m_releasesLoading; }
 
-    // Download with main-thread progress callbacks; onDone fires once.
+    // main-thread progress; onDone fires once.
     void downloadUpdate(
         std::function<void(uint64_t, uint64_t)> onProgress,
         std::function<void(bool, std::string)> onDone
     );
 
-    // Same, for any release of the history (older ones included).
+    // same, for any history release.
     void downloadRelease(
         std::string url,
         std::string version,
@@ -69,25 +66,19 @@ public:
         std::function<void(bool, std::string)> onDone
     );
 
-    // True when an update is installed and only restart remains.
     bool hasPendingInstall() const;
 
-    // Version written to disk by the last successful download.
     std::string const& pendingVersion() const { return m_pendingVersion; }
 
-    // Restart to load the installed update.
     bool restartToApplyPendingUpdate() const;
 
-    // The update is written in place when the download finishes.
     bool applyPendingUpdateInPlace() const;
 
-    // Start a silent download when auto-update is enabled and no install is pending.
     void autoDownloadIfNeeded();
 
-    // Cancel the active download, if any.
     void cancelDownload();
 
-    // Cancel every async handle and release callbacks before Geode teardown.
+    // release async handles before Geode teardown.
     void shutdown();
 
     // >0 when other is newer than base, 0 when equal, <0 when older.

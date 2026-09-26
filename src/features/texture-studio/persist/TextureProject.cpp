@@ -25,9 +25,7 @@ PackExportConfig TextureProject::toExportConfig() const {
     cfg.brightness             = brightness;
     cfg.alternativeGlowOverlay = alternativeGlowOverlay;
     cfg.tintScope              = tintScope;
-    // UI-only is now unconditional: TintScope::Everything is legacy and
-    // UiSpriteCatalog::shouldTint already maps it to menu/button UI, so the
-    // filter flag stays on even for a legacy in-memory value.
+    // UI-only now unconditional: legacy Everything already maps to menu/button UI.
     cfg.onlyTintUiSprites      = true;
     cfg.maskSoftness           = maskSoftness;
     cfg.clusterPrecision       = clusterPrecision;
@@ -64,7 +62,7 @@ PackExportConfig TextureProject::toExportConfig() const {
         if (setting.hasFusion) {
             SpriteFusionOverride fus;
             fus.maskPath = SlotPaths::fusionMaskFile(id, frameName);
-            // Prefer GIF when animated, else PNG; export only needs one path.
+            // GIF when animated else PNG; export needs one path.
             auto gifPath = SlotPaths::fusionTextureFile(id, frameName, ".gif");
             auto pngPath = SlotPaths::fusionTextureFile(id, frameName, ".png");
             std::error_code ec;

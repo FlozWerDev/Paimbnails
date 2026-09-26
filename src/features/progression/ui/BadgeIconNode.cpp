@@ -11,8 +11,7 @@ namespace paimon::progression {
 
 namespace {
 
-// One frame per rarity: plain, chamfered, riveted, gemmed, crowned, spiked. The
-// silhouette carries the rarity, the face behind it carries the category.
+// Silhouette carries rarity, face carries category.
 char const* plateFile(BadgeRarity rarity) {
     switch (rarity) {
         case BadgeRarity::Common:    return "paim_progPlate1.png"_spr;
@@ -25,7 +24,7 @@ char const* plateFile(BadgeRarity rarity) {
     return "paim_progPlate1.png"_spr;
 }
 
-// Below this the goal never comes out readable, so the tile drops it.
+// Below this the goal is unreadable, so the tile drops it.
 constexpr float kGoalMinSize = 40.f;
 
 void fitSquare(CCSprite* sprite, float size) {

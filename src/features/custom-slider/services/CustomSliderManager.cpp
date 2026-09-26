@@ -18,8 +18,7 @@ using namespace paimon::slider;
 namespace {
 constexpr int kMaxThumbTextureSize = 256;
 
-// Shader cache namespace for the slider thumbs. Gradient programs are keyed by
-// this value, so thumbs never share uniforms with the garage or item icons.
+// Slider-thumb shader namespace; never share uniforms with garage/icons.
 constexpr int kGradientExtra = 909;
 
 ImageLoadHelper::LoadedImage loadThumbTexture(std::filesystem::path const& path) {
@@ -475,8 +474,7 @@ bool CustomSliderManager::shouldAffectSlider(CCNode* slider) {
     if (!slider) return false;
     if (!slider->getParent()) return false;
 
-    // Native editor sliders rebuild color state on close; skinning their
-    // thumbs corrupts internal pointers, so walk the whole parent chain.
+    // Native editor sliders rebuild color state on close; skinning corrupts pointers, walk parents.
     if (paimon::isEditorScene()) {
         for (auto* p = slider->getParent(); p; p = p->getParent()) {
             if (std::string(typeid(*p).name()).find("CustomSliderPopup") != std::string::npos) {

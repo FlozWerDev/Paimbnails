@@ -389,7 +389,7 @@ void CursorConfigPopup::buildGalleryTab() {
     m_thumbScroll = ScrollLayer::create({scrollW, scrollH});
     m_thumbScroll->setPosition({(content.width - scrollW) / 2.f, scrollBottom});
     m_galleryTab->addChild(m_thumbScroll, 1);
-    // refreshGallery rebuilds the cells inside Geode's contentLayer.
+    // Cells live in Geode's contentLayer.
 
     m_emptyGalleryLabel = CCLabelBMFont::create(
         "Aun no hay cursores aqui.\nUsa + Anadir para importar imagenes, cursores .cur/.ani o un pack .zip.",

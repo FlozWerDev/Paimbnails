@@ -90,7 +90,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         std::shared_ptr<std::monostate> m_asyncCancelToken = std::make_shared<std::monostate>();
         int m_lastRequestedLevelID = 0; 
         bool m_thumbnailApplied = false; 
-// Do not retry a known failure until state changes.
+// don't retry a known failure until state changes
         bool m_thumbnailFailed = false;
         bool m_wasInCenter = false; 
         float m_centerLerp = 0.0f; 
@@ -526,12 +526,12 @@ class $modify(PaimonLevelCell, LevelCell) {
     }
 
     void applyMainLevelFallbackThumbnail(int32_t levelID) {
-        // Keep official-level fallbacks black.
+        // keep official-level fallbacks black
         if (levelID <= 0 || levelID > 100) {
             return;
         }
 
-        // Keep the fallback texture alive through shutdown.
+        // keep the fallback texture alive through shutdown
         static CCTexture2D* s_blackTex = []() -> CCTexture2D* {
             uint8_t blackPixel[4] = {0, 0, 0, 255};
             auto* tex = new CCTexture2D();
@@ -564,7 +564,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         }
 
         if (!texture) {
-            // Leave the request retryable only after the level or settings change.
+            // leave the request retryable until level or settings change
             fields->m_thumbnailRequested = false;
             fields->m_thumbnailApplied = false;
             fields->m_thumbnailFailed = true;
@@ -577,7 +577,7 @@ class $modify(PaimonLevelCell, LevelCell) {
 
         this->addOrUpdateThumb(texture);
 
-            // Keep it retryable until a sprite is mounted.
+            // keep it retryable until a sprite is mounted
         if (fields->m_thumbSprite && fields->m_thumbSprite->getParent()) {
             fields->m_thumbnailApplied = true;
             this->flashThumbnailSprite();
@@ -697,7 +697,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             }
         };
 
-        // Avoid a full-tree scan when no tracked node exists.
+        // skip the full-tree scan when nothing is tracked
         bool anyTrackedNode = fields->m_clippingNode || fields->m_separator ||
             fields->m_gradient || fields->m_hoverContainer || fields->m_boundsClipper ||
             fields->m_mythicParticles || fields->m_darkOverlay || fields->m_gradientLayer ||
@@ -1479,8 +1479,6 @@ this->addChild(ps, bg->getZOrder() + 1);
         CCPoint targetPos = newNode->getPosition();
         float sx = newNode->getScaleX();
         float sy = newNode->getScaleY();
-        log::debug("[LevelCell] applyGalleryTransition: type={} dur={:.2f} targetPos=({:.1f},{:.1f}) sx={:.3f} sy={:.3f} hasOld={}",
-            static_cast<int>(type), dur, targetPos.x, targetPos.y, sx, sy, oldNode != nullptr);
         float halfDur = dur * 0.5f;
         float removeDelay = dur + 0.05f;
 
@@ -1736,7 +1734,6 @@ this->addChild(ps, bg->getZOrder() + 1);
 
     void applyEntryTransition(CCNode* clipNode, CCSprite* sprite, PaimonGalleryTransition type,
                               float dur, CCSize clipSize) {
-        log::debug("[LevelCell] applyEntryTransition: type={} dur={:.2f} clipSize=({:.1f},{:.1f})", static_cast<int>(type), dur, clipSize.width, clipSize.height);
         applyGalleryTransition(clipNode, sprite, nullptr, nullptr, type, dur, clipSize);
     }
 
@@ -1753,7 +1750,6 @@ this->addChild(ps, bg->getZOrder() + 1);
         fields->m_isGalleryTransitioning = true;
         fields->m_galleryTransitionStart = std::chrono::steady_clock::now();
 
-        log::debug("[LevelCell] beginGalleryTransitionGuard: dur={:.2f} centerLerp={:.2f}", dur, fields->m_centerLerp);
         this->unschedule(schedule_selector(PaimonLevelCell::endGalleryTransition));
         this->scheduleOnce(schedule_selector(PaimonLevelCell::endGalleryTransition), dur + 0.1f);
     }
@@ -1768,11 +1764,9 @@ this->addChild(ps, bg->getZOrder() + 1);
 
         if (!fields->m_clippingNode || !fields->m_clippingNode->getParent() ||
             !fields->m_thumbSprite || !fields->m_thumbSprite->getParent()) {
-            log::debug("[LevelCell] crossfadeToThumb: fallback to full rebuild (missing clip/sprite)");
             addOrUpdateThumb(texture, activeVideoDriver);
             return;
         }
-        log::debug("[LevelCell] crossfadeToThumb: starting, oldBaseScale={:.4f}", fields->m_thumbBaseScaleX);
 
         auto oldClip = fields->m_clippingNode;
         auto oldSprite = fields->m_thumbSprite;
@@ -1792,7 +1786,6 @@ this->addChild(ps, bg->getZOrder() + 1);
             addOrUpdateThumb(texture, activeVideoDriver);
             return;
         }
-        log::debug("[LevelCell] crossfadeToThumb: newBaseScale={:.4f} clipSize=({:.1f},{:.1f})", newBaseScale, newClip->getContentSize().width, newClip->getContentSize().height);
 
         newSprite->setAnchorPoint(oldSprite->getAnchorPoint());
         newSprite->setZOrder(oldSprite->getZOrder());
@@ -1818,9 +1811,8 @@ this->addChild(ps, bg->getZOrder() + 1);
 
         setVideoDriver(activeVideoDriver, dur + 0.05f);
 
-        log::debug("[LevelCell] crossfadeToThumb: transType={} dur={:.2f}", static_cast<int>(transType), dur);
 
-        // Store the final bases before the transition changes positions.
+        // store final bases before the transition moves positions
         fields->m_clippingNode = newClip;
         fields->m_thumbSprite = newSprite;
         fields->m_thumbBasePos = newSprite->getPosition();
@@ -1843,7 +1835,7 @@ this->addChild(ps, bg->getZOrder() + 1);
             this->addChild(newClip);
         }
 
-        // Prime hover state before the transition to avoid a visual jump.
+        // prime hover state before the transition to avoid a jump
         this->updateCenterAnimation(0.f);
 
         beginGalleryTransitionGuard(dur);
@@ -2041,7 +2033,6 @@ fields2->m_gradientIsPSG = false;
                 if (fields->m_thumbSprite && fields->m_thumbSprite->getTexture()) {
                     return;
                 }
-                log::debug("[LevelCell] requestGalleryThumbnail: shared cache hit index={} url={}", index, thumb.url);
                 WeakRef<PaimonLevelCell> safeRef = this;
                 ThumbnailLoader::get().requestUrlLoad(thumb.url, [safeRef, levelID, galleryToken, index](CCTexture2D* tex, bool ok) {
                     auto cellRef = safeRef.lock();
@@ -2058,12 +2049,10 @@ fields2->m_gradientIsPSG = false;
         }
 
         if (!allowOverBudget && fields->m_galleryPendingUrls.size() >= LEVELCELL_GALLERY_MAX_PENDING) {
-            log::debug("[LevelCell] requestGalleryThumbnail: pending budget reached index={} pending={}", index, fields->m_galleryPendingUrls.size());
             return;
         }
 
         if (!fields->m_galleryPendingUrls.insert(thumb.url).second) {
-            log::debug("[LevelCell] requestGalleryThumbnail: already pending index={}", index);
             return;
         }
 
@@ -2078,7 +2067,6 @@ fields2->m_gradientIsPSG = false;
             fields->m_galleryPendingUrls.erase(url);
             if (fields->m_galleryToken != galleryToken) return;
             if (!success || !tex) {
-                log::debug("[LevelCell] requestGalleryThumbnail callback: download failed index={} url={}", index, url);
                 return;
             }
 
@@ -2150,8 +2138,6 @@ return;
             fields->m_galleryConsecutiveMisses++;
 
             if (fields->m_galleryConsecutiveMisses >= LEVELCELL_GALLERY_MAX_MISSES) {
-                log::debug("[LevelCell] updateGalleryCycle: {} consecutive misses, stopping gallery cycle",
-                    fields->m_galleryConsecutiveMisses);
                 this->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
                 return;
             }
@@ -2183,7 +2169,7 @@ return;
             return;
         }
 
-        // Fast-swap the mounted sprite when the level is unchanged.
+        // fast-swap the mounted sprite when the level is unchanged
         int32_t currentLevelID = m_level ? m_level->m_levelID.value() : 0;
         bool canFastSwap =
             !activeVideoDriver &&
@@ -2256,7 +2242,7 @@ return;
             applyEntryTransition(fields->m_clippingNode, fields->m_thumbSprite, transType, dur, clipSize);
         }
 
-        // Defer gradient and blur setup until the next frame.
+        // defer gradient and blur setup until next frame
         if (m_level) {
             int32_t levelID = m_level->m_levelID.value();
             WeakRef<PaimonLevelCell> weakSelf = this;
@@ -2411,7 +2397,6 @@ return;
 
         if (action == paimon::thumbnails::levelcell::MaintenanceAction::RetryLoad) {
             if (fields->m_thumbnailApplied && !spriteAlive) {
-                log::debug("[LevelCell] maintenance: sprite lost for levelID={}, retrying", levelID);
             } else if (fields->m_thumbnailRequested && !fields->m_thumbnailApplied &&
                 requestAge.count() > 1500) {
                 log::warn(
@@ -2681,10 +2666,10 @@ return;
         {
             auto fields = m_fields.self();
             if (!fields || fields->m_isBeingDestroyed || !fields->m_gradientLayer) return;
-            // Non-PSG backgrounds never animate.
+            // non-PSG backgrounds never animate
             if (!fields->m_gradientIsPSG) return;
 
-            // Heal a stale type flag instead of casting through an invalid node.
+            // heal a stale type flag instead of casting an invalid node
             auto* grad = typeinfo_cast<PaimonShaderGradient*>(static_cast<CCSprite*>(fields->m_gradientLayer));
             if (!grad) {
                 fields->m_gradientIsPSG = false;
@@ -2783,7 +2768,7 @@ return;
         }
 
         if (fields->m_isGalleryTransitioning) {
-            // Pause hover updates while gallery actions are running.
+            // pause hover updates while gallery actions run
             return;
         }
 
@@ -3278,21 +3263,15 @@ return;
                     if (f && f->m_loadedInvalidationVersion != capturedVersion) return;
                 }
                 if (!success || !tex) {
-                    // No thumbnail anywhere: let Tier-1 generate one in the background.
+                    // no thumbnail anywhere; Tier-1 generates one in the background
                     if (cell->m_level) paimon::autopreview::AutoPreviewQueue::get().enqueueIfEligible(cell->m_level);
                     auto f = cell->m_fields.self();
-                    if (f && f->m_thumbnailFailed) {
-                        log::debug(
-                            "[LevelCell] tryLoadThumbnail: load FAILED levelID={} (cached fail)",
-                            levelID
-                        );
-                    } else {
+                    if (!f || !f->m_thumbnailFailed) {
                         log::warn("[LevelCell] tryLoadThumbnail: load FAILED levelID={}", levelID);
                     }
                     cell->applyStaticThumbnailTexture(levelID, currentRequestId, nullptr, enableSpinners);
                     return;
                 }
-                PaimonDebug::log("[LevelCell] tryLoadThumbnail: texture loaded OK levelID={}", levelID);
                 if (auto f = cell->m_fields.self()) {
                     f->m_hasGif = ThumbnailLoader::get().hasGIFData(levelID);
                 }
@@ -3382,7 +3361,7 @@ return;
 
         if (fields->m_isBeingDestroyed) return;
 
-        // Advance video on the GL thread.
+        // advance video on the GL thread
         if (fields->m_hasVideo && fields->m_videoPlayer && fields->m_videoPlayer->isPlaying()) {
             fields->m_videoPlayer->update(dt);
 
@@ -3400,7 +3379,7 @@ return;
         }
     }
 
-    // Compact mode hides the first-page place label and shifts its contents.
+    // compact mode hides the first-page place label and shifts contents
     void applyCompactLayoutAdjustments() {
         if (!m_compactView || !m_level) return;
         if (m_level->m_listPosition != 0) return;
@@ -3435,7 +3414,7 @@ return;
         }
     }
 
-    // Hide the background while preserving its child layout.
+    // hide the background but keep its child layout
     void applyTransparentMode() {
         auto fields = m_fields.self();
         if (!fields) return;
@@ -3452,7 +3431,7 @@ return;
     }
 
     bool isInCompactExcludedContext() {
-        // The thread-local flag covers unparented cells during creation.
+        // thread-local flag covers unparented cells during creation
         if (paimon::hooks::g_suppressCompactLevelCellsInContext) {
             return true;
         }
@@ -3551,7 +3530,7 @@ return;
         if (isInCompactExcludedContext()) {
             return false;
         }
-        // Timed levels keep the vanilla layout.
+        // timed levels keep the vanilla layout
         if (level && level->m_dailyID > 0) {
             compact = false;
         }
@@ -3566,7 +3545,7 @@ return;
     }
 
     void applyCompactViewFromSetting(GJGameLevel* level = nullptr) {
-        // Recycled cells may retain compact state; reset it first.
+        // recycled cells may retain compact state; reset first
         if (isInCompactExcludedContext()) {
             m_compactView = false;
             return;
@@ -3634,14 +3613,12 @@ return;
         if (paimon::hooks::g_suppressLevelCellEnhancements) {
             return;
         }
-        // Igual que loadCustomLevelCell: sin esto la celda queda en compacto
-        // pero con el layout de RobTop sin ajustar, que es lo que rompe las
-        // celdas del ProfilePage (siempre entran por aqui, con m_cellMode 0).
+        // same as loadCustomLevelCell: without this the cell stays compact
+        // with unadjusted vanilla layout, breaking ProfilePage cells
         if (!isInsideLevelListLayerContext()) {
             applyCompactLayoutAdjustments();
         }
         applyTransparentMode();
-        PaimonDebug::log("[LevelCell] loadFromLevel levelID={} compact={}", level ? level->m_levelID.value() : 0, m_compactView);
         tryLoadThumbnail();
     }
 

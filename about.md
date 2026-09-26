@@ -62,14 +62,6 @@ Customize the background for <cg>CreatorLayer</c>, <cg>LevelBrowserLayer</c>, <c
 
 One popup to configure everything: <cy>background type, thumbnail size, blur, darkness, separator, view button, compact mode, hover animations, mythic particles and animated gradients</c>. All changes <cy>apply instantly</c>.
 
-## Autobuild
-
-Decorate once, build everywhere. <co>**Capture**</c> any decorated selection as a template: <co>Wave</c> learns a grid of tiles plus which tile fits next to which, <co>Stamp</c> keeps whole clusters. Then fill <co>marker blocks (467 / 143 / 146)</c>, the <co>current selection</c> or a whole <co>area</c> with it. Objects keep their exact colors, HSV, groups and layers because the original object strings are reused. <co>New seed</c> re-rolls the same spot, <co>Undo</c> removes the build and puts the markers back, and templates live as files you can share or import (including <co>.tblib</c> libraries from other autobuilders). Editor button or <co>Ctrl+B</c>.
-
-<co>**Analyze a level**</c> by id and Autobuild reads it the way a builder would: <co>Z layer</c>, whether an object lands on the 30 grid, its scale, its rotation and which colour channel paints it. With that it separates <co>structure</c>, <co>decoration</c>, <co>background</c>, <co>foreground</c> and <co>triggers</c>, mines the shapes the level repeats and offers each one as a ready template, palette included. Triggers are never copied.
-
-<co>**Template editor**</c> on every template: drop everything of one kind (spikes, decoration, triggers), change how often a piece shows up, duplicate or delete pieces, open and close each of a piece's eight edges, and move colour channels around. Object classification can be corrected with a <co>config/autobuild/objects.txt</c> file.
-
 ## Moderation
 
 <cr>**Verification Center**</c> for reviewing thumbnails, updates, reports, banners and profile images. <cr>**Ban system**</c> with reasons. <cr>**Moderator management**</c>. <cr>**Report system**</c> for inappropriate content. <cr>Admin and Moderator badges</c> on comments and profiles.

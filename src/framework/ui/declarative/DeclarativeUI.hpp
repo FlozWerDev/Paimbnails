@@ -1,7 +1,6 @@
 #pragma once
 
-// Declarative node trees built from Spec/JSON through per-type factories and
-// attribute appliers.
+// Node trees built from Spec through per-type factories.
 
 #include <matjson.hpp>
 #include <functional>
@@ -15,13 +14,12 @@ namespace cocos2d { class CCNode; }
 namespace paimon::ui::dec {
 
 struct Spec {
-    std::string type;                                    // Node type.
-    std::string id;                                      // Optional node ID.
+    std::string type;
+    std::string id;
     matjson::Value attributes = matjson::Value::object();
     std::vector<Spec> children;
 };
 
-// Type string -> base node creator.
 using Creator = std::function<cocos2d::CCNode*(matjson::Value const& attrs)>;
 
 // Default types register on first use.
@@ -37,11 +35,10 @@ private:
     std::unordered_map<std::string, Creator> m_creators;
 };
 
-// Apply attributes; anchored positions use parent or the screen when null.
+// Anchored positions fall back to the screen when parent is null.
 void applyAttributes(cocos2d::CCNode* node, matjson::Value const& attrs,
                      cocos2d::CCNode* parent = nullptr);
 
-// Build a Spec tree, optionally attaching the root to parent.
 cocos2d::CCNode* build(Spec const& spec, cocos2d::CCNode* parent = nullptr);
 
 }

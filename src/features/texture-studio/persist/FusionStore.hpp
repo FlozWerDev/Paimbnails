@@ -42,8 +42,7 @@ public:
     static geode::Result<FusionPayload> loadForSlot(std::string_view slotId,
                                                     std::string_view spriteName);
 
-    // Remove only the painted mask/metadata, preserving the picked texture so
-    // the user can paint a different region without importing it again.
+    // Drops mask/metadata only; picked texture stays for repainting without re-import.
     static geode::Result<> deleteMaskForSlot(std::string_view slotId,
                                              std::string_view spriteName);
 
@@ -51,8 +50,7 @@ public:
     static geode::Result<> deleteForSlot(std::string_view slotId,
                                          std::string_view spriteName);
 
-    // Copy a user-picked texture into the slot fusion folder. Preserves GIF
-    // bytes so animation survives; static images are re-encoded as PNG.
+    // Copy a picked texture in: GIF bytes preserved, statics re-encoded as PNG.
     static geode::Result<std::filesystem::path> importTexture(
         std::string_view slotId,
         std::string_view spriteName,

@@ -18,8 +18,7 @@ constexpr float kInset = 2.5f;
 
 } // namespace
 
-// The texture is a 340x20 capsule with a 10px cap, so the stretchable middle is
-// everything but the caps. The default thirds would squash a short bar.
+// 340x20 capsule, 10px caps: stretchable middle is everything but caps.
 CCScale9Sprite* GDProgressBar::makeCapsule() {
     if (!CCTextureCache::sharedTextureCache()->addImage(kBarFile, false)) return nullptr;
     return CCScale9Sprite::create(
@@ -40,8 +39,7 @@ bool GDProgressBar::init(float width, float height) {
     if (!CCNode::init()) return false;
 
     m_width = width;
-    // Below the natural height the caps have to be squashed instead of resized,
-    // or the scale9 corners eat the whole bar.
+    // Below natural height squash caps instead of resizing them.
     m_artHeight = std::max(height, kBarH);
     m_squash = height / m_artHeight;
 

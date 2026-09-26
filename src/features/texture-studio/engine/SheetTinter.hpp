@@ -46,38 +46,37 @@ struct SheetTinterRequest {
     std::string outputBaseName;
     std::string outputQualitySuffix;
 
-// Non-empty overlays use pixel-exact PackGen tinting; uncovered frames stay
-// vanilla. Per-sprite color overrides still use clustering.
+    // Overlays tint pixel-exact PackGen-style; uncovered frames stay vanilla, per-sprite overrides use clustering.
     std::shared_ptr<SheetOverlaySources const> overlaySources;
 
     TintColors    colors{};
     int           brightness = 160;
     bool          alternativeGlowOverlay = false;
 
-// When true, tint only menu/button UI sprites for readability.
+    // True: tint menu/button UI sprites only, for readability.
     bool onlyTintUiSprites = true;
     TintScope tintScope = TintScope::ButtonsOnly;
 
-// 0 = hard, 1 = fully soft; softness affects ambiguous cluster edges.
+    // 0 = hard, 1 = fully soft on ambiguous cluster edges.
     float maskSoftness = 0.35f;
 
-// Segmentation/grading parameters; see SpritePreviewOptions.
+    // Segmentation/grading params; see SpritePreviewOptions.
     int   clusterPrecision = 5;
     int   edgeCleanup = 1;
     int   outlineProtect = 0;
     float saturation = 1.0f;
     float contrast   = 0.0f;
 
-// spriteSkip bypasses tinting; spriteColors override global colors and filters.
+    // spriteSkip bypasses; spriteColors override globals and filters.
     std::unordered_set<std::string> spriteSkip;
     std::unordered_map<std::string, TintColors> spriteColors;
     std::unordered_map<std::string, SpriteImageOverride> spriteImages;
     std::unordered_map<std::string, SpriteFusionOverride> spriteFusions;
 
-// Downscale before repacking; 1.0 means none.
+    // Downscale before repacking; 1.0 = none.
     float resizeScale = 1.0f;
 
-// PackGen compatibility: do not scale GJ_table_side_001's offset.
+    // PackGen compat: never scale GJ_table_side_001's offset.
     bool preserveOffsetForTableSide = true;
 };
 

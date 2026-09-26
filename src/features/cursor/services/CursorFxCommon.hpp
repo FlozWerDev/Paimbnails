@@ -35,7 +35,6 @@ void abandonFxTextures();
 // Private RNG; do not disturb GD gameplay randomness.
 float frand();
 float frand(float a, float b);
-// Seeded noise is deterministic.
 float hashNoise(unsigned int seed, int i);
 
 cocos2d::ccColor3B hsv(float h, float s, float v);
@@ -43,8 +42,7 @@ cocos2d::ccColor3B mixColor(cocos2d::ccColor3B a, cocos2d::ccColor3B b, float t)
 // Premultiplied blend requires RGB multiplied by alpha.
 cocos2d::ccColor4F pma(cocos2d::ccColor3B c, float a);
 
-// Untextured batch reuses vertex capacity; client arrays with an unbound VBO
-// avoid conflicts with other draw hooks.
+// Vertex-capacity batch; unbound-VBO client arrays avoid draw-hook conflicts.
 class FxDrawBatch : public cocos2d::CCNode {
 public:
     static FxDrawBatch* create();

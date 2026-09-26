@@ -32,7 +32,7 @@ char const* plateFile(TierFrame frame) {
     return "paim_progTierRound.png"_spr;
 }
 
-// The plates are drawn on a square canvas, so one factor fits every shape.
+// Square canvas: one factor fits every shape.
 void fitSquare(CCSprite* sprite, float size) {
     float const source = std::max(sprite->getContentSize().width, sprite->getContentSize().height);
     sprite->setScale(size / std::max(1.f, source));
@@ -117,8 +117,7 @@ void TierBadgeNode::buildFrame(Tier const& tier) {
         }
     }
 
-    // The plate is drawn light over black, so the accent lands on the body and
-    // the recessed face keeps the number readable whatever the tier colour is.
+    // Light plate over black: accent lands on body, face keeps number readable.
     if (auto* plate = makeTierPlate(tier.frame)) {
         fitSquare(plate, m_size);
         plate->setColor(tier.accent);
@@ -126,13 +125,12 @@ void TierBadgeNode::buildFrame(Tier const& tier) {
         m_content->addChild(plate, 0);
     }
 
-    // At chip size the number is unreadable and the chip prints it anyway.
+    // Chip size: number unreadable, and the chip prints it anyway.
     if (m_size < 26.f) return;
 
     m_levelLabel = CCLabelBMFont::create(std::to_string(m_level).c_str(), "bigFont.fnt");
     if (m_levelLabel) {
-        // The crown recesses a band across its base instead of a middle, so the
-        // number sits lower and smaller there than on the other plates.
+        // Crown recesses a base band, not a middle: number sits lower, smaller.
         bool const crown = tier.frame == TierFrame::Crown;
         float const target = m_size * (crown ? 0.20f : (m_level >= 100 ? 0.30f : 0.38f));
         m_levelLabel->limitLabelWidth(
@@ -147,8 +145,7 @@ void TierBadgeNode::buildFrame(Tier const& tier) {
 void TierBadgeNode::buildEffects(Tier const& tier) {
     float const r = m_size * 0.5f;
 
-    // A white copy of the plate flashing on and off, which reads like the shine
-    // sweeping over the medal without needing a clipped light bar.
+    // White plate flashing on/off reads as shine, no clipped light bar needed.
     if (tier.effects & TierEffectSweep) {
         if (auto* shine = makeTierPlate(tier.frame)) {
             fitSquare(shine, m_size);

@@ -8,8 +8,7 @@
 
 namespace paimon::icon_maker {
 
-// El blanco ("extra") son los ojos y los brillos de los iconos del juego, asi
-// que solo se pinta cuando el tema lo pide expresamente.
+// white ("extra") is the game's icon eyes and glints, so it only paints on request.
 struct IconTheme {
     std::string name;
     FillSpec main;
@@ -22,11 +21,10 @@ struct IconTheme {
 
 std::vector<IconTheme> const& iconThemes();
 
-// Tema armado con los colores de jugador de ahora mismo. Devuelve false si
-// GameManager todavia no esta en pie.
+// theme from the current player colors. False when GameManager isn't up yet.
 bool currentKitTheme(IconTheme& out);
 
-// Relleno que le toca a una zona; false cuando el tema no la pinta.
+// fill for a zone; false when the theme leaves it unpainted.
 bool themeFillFor(IconTheme const& theme, std::string_view slotKey, FillSpec& out);
 
 }  // namespace paimon::icon_maker

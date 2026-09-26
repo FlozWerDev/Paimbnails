@@ -1,6 +1,5 @@
 #pragma once
-// One hidden rail in the icon kit lends buttons to the hub popup, instead of
-// stacking them in the garage column.
+// Hidden rail on the icon kit holds hub buttons instead of the garage column.
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/GJGarageLayer.hpp>
@@ -10,19 +9,18 @@
 
 namespace paimon::garage_hub {
 
-// Guarda el boton en el carril del layer. `label` es el texto que sale bajo el
-// icono en el popup y `order` decide el sitio en la fila (menor va antes).
+// Stores the button on the layer rail; label shows under the icon, lower order first.
 void addButton(GJGarageLayer* layer, cocos2d::CCMenuItem* btn, std::string const& label, int order);
 
-// El carril oculto del layer, o null si nadie ha registrado nada todavia.
+// Hidden layer rail, or null when nothing registered yet.
 cocos2d::CCMenu* rail(GJGarageLayer* layer);
 
-// Los botones registrados, ya ordenados como los pinta el popup.
+// Registered buttons, already sorted as the popup draws them.
 std::vector<cocos2d::CCMenuItem*> entries(GJGarageLayer* layer);
 
 std::string labelOf(cocos2d::CCNode* btn);
 
-// Pone el unico boton visible, el que abre el popup del hub.
+// Single visible button opening the hub popup.
 void installHubButton(GJGarageLayer* layer);
 
 }  // namespace paimon::garage_hub

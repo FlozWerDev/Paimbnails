@@ -1223,8 +1223,7 @@ void ProfileMusicManager::stopCurrentAudio(bool restoreContext) {
 
 void ProfileMusicManager::pauseProfileMusic() {
     if (m_playbackKind == PlaybackKind::Profile && m_isPlaying) {
-        // Solo el canal de la cancion del perfil: m_backgroundMusicChannel es
-        // el grupo compartido y pausarlo deja mudo tambien el nivel.
+        // only the profile song channel: the shared group would mute the level too.
         m_pausedChannel = paimon::audio::mainMusicChannel(FMODAudioEngine::sharedEngine());
         paimon::audio::setMusicChannelPaused(m_pausedChannel, true);
         m_isPaused = true;
@@ -1606,7 +1605,7 @@ bool ProfileMusicManager::isCacheValid(int accountID, ProfileMusicConfig const& 
 }
 
 void ProfileMusicManager::applyCaveEffect() {
-    // Avoid reentrancy: adding/removing the same DSP during transitions can destabilize FMOD on fast layer changes.
+    // no reentrancy: toggling one DSP mid-transition destabilizes FMOD on fast layer changes.
     if (m_caveEffectActive || m_caveTransitioning) return;
     if (!m_isPlaying) return;
 

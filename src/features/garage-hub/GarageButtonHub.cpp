@@ -19,7 +19,7 @@ constexpr auto kHubButtonID = "garage-hub-btn"_spr;
 constexpr auto kLabelKey = "hub-label"_spr;
 constexpr auto kOrderKey = "hub-order"_spr;
 
-// Todos los iconos del hub se ven al mismo tamano dentro del popup.
+// Shared hub icon size inside the popup.
 constexpr float kIconSize = 42.f;
 
 int orderOf(CCNode* btn) {
@@ -34,8 +34,7 @@ void fitButton(CCMenuItem* btn) {
 
     float const scale = kIconSize / dim;
     btn->setScale(scale);
-    // CCMenuItemSpriteExtra anima el toque contra m_baseScale; sin ponerlo al
-    // dia el boton pega un salto de tamano en cuanto lo pulsas.
+    // touch animation runs against m_baseScale; keep it in sync.
     if (auto* extra = typeinfo_cast<CCMenuItemSpriteExtra*>(btn)) extra->m_baseScale = scale;
 }
 
@@ -45,8 +44,7 @@ CCMenu* ensureRail(GJGarageLayer* layer) {
     auto* menu = CCMenu::create();
     menu->setID(kRailID);
     menu->setPosition({0.f, 0.f});
-    // Invisible a proposito: CCMenu ignora los toques mientras no se ve, asi
-    // que los botones esperan aqui sin robarle pulsaciones al icon kit.
+    // hidden on purpose: invisible CCMenu ignores touches.
     menu->setVisible(false);
     layer->addChild(menu);
     return menu;
@@ -115,16 +113,14 @@ void installHubButton(GJGarageLayer* layer) {
     btn->setID(kHubButtonID);
     btn->setScale(0.7f);
 
-    // node-ids saca los botones de fragmentos y colores a una columna propia;
-    // ese carril es donde los mods de garage cuelgan lo suyo.
+    // node-ids moves shards/colors buttons to their own column; hang hub button there.
     if (auto* column = typeinfo_cast<CCMenu*>(layer->getChildByID("shards-menu"))) {
         column->addChild(btn);
         column->updateLayout();
         return;
     }
 
-    // Sin node-ids: menu propio abajo a la izquierda, al lado del boton de
-    // colorful-icons (x = 26).
+    // no node-ids: own menu bottom-left, next to colorful-icons (x = 26).
     auto* host = CCMenu::create();
     host->setID("garage-hub-host-menu"_spr);
     host->setPosition({0.f, 0.f});

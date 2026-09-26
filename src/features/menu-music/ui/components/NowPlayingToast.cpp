@@ -82,8 +82,7 @@ void NowPlayingToast::redrawPill(float width) {
             ccc4FFromccc4B({80, 85, 105, 90}));
     }
 
-    // CCDrawNode dibuja desde (0,0); centramos restando w/2,h/2 para que
-    // la pill se expanda simetricamente.
+    // CCDrawNode draws from (0,0); center so the pill grows symmetric.
     const CCSize parentSize = this->getContentSize();
     paimonPill->setContentSize({w, h});
     paimonPill->setAnchorPoint({0.f, 0.f});
@@ -97,8 +96,7 @@ void NowPlayingToast::setContentOpacity(float op) {
     if (!m_contentHolder) return;
     const GLubyte a = static_cast<GLubyte>(std::clamp(op, 0.f, 1.f) * 255.f);
 
-    // Recursivo en vez de cascadeOpacity: CCLabelBMFont no siempre lo
-    // propaga bien en cocos 2.x.
+    // manual recursion: cascadeOpacity is unreliable on CCLabelBMFont in cocos 2.x.
     std::function<void(CCNode*)> apply = [&](CCNode* n) {
         if (!n) return;
         if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(n)) {
@@ -186,8 +184,7 @@ bool NowPlayingToast::init(const std::string& title, const std::string& subtitle
 
     this->setPosition({winSize.width / 2.f, m_hideY});
 
-    // Wait deja al main menu terminar su transicion; el toast queda
-    // invisible para que el primer frame no muestre el circulo parado.
+    // wait out the menu transition; hidden so frame one never shows the idle disc.
     this->setVisible(false);
     m_phase = Phase::Wait;
     m_phaseTime = 0.f;

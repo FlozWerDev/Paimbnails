@@ -110,7 +110,7 @@ geode::Result<std::shared_ptr<FusionAsset>> FusionAssetLoader::loadFromMemory(
         asset->animated = gif.frames.size() > 1;
         asset->frames.reserve(gif.frames.size());
 
-        // GIFDecoder already composites disposal into full-canvas frames.
+        // GIFDecoder already composited disposal: frames are full-canvas.
         for (auto const& gf : gif.frames) {
             std::size_t need = static_cast<std::size_t>(gif.width) * gif.height * 4;
             if (gf.pixels.size() < need || gif.width <= 0 || gif.height <= 0) continue;

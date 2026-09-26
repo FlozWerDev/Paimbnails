@@ -37,13 +37,10 @@ public:
 private:
     void decodeLoop();
     void closeInternal();
-    // Fresh reader over the current asset at the given offset; m_asset
-    // must already be set.
+    // m_asset must already be set.
     bool buildReader(double startTimeSeconds);
-    // Static track metadata (rotation flag, color attachments) into members.
     void readTrackMetadata();
-    // Release just the reader/trackOutput (not the asset) without disturbing
-    // the decode thread state.  Used by seekTo() to rewind.
+    // Reader only, never the asset; used by seekTo().
     void releaseReaderOnly();
 
     // Opaque pointers to Obj-C objects (managed with ARC in .mm)
@@ -56,7 +53,6 @@ private:
     int              m_width  = 0;
     int              m_height = 0;
     double           m_duration = 0.0;
-    // The decode loop accepts both planar I420 and bi-planar NV12.
     uint32_t         m_pixelFormat = 0;
     VideoColorMatrix m_colorMatrix = VideoColorMatrix::Auto;
     bool             m_fullRange = false;

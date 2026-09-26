@@ -76,8 +76,7 @@ struct IconProject {
     std::string makePieceId() const;
 };
 
-// La biblioteca de estilos guarda pinturas sueltas, asi que estas dos salen
-// del anonimato para no tener dos copias del mismo formato.
+// style library stores loose fills, so these two stay public to share the format.
 matjson::Value fillToJson(FillSpec const& fill);
 FillSpec fillFromJson(matjson::Value const& value);
 

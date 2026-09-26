@@ -1,6 +1,6 @@
 #pragma once
 
-// JSON propio (rtx_config.json): demasiados campos para saved values.
+// Own JSON (rtx_config.json): too many fields for saved values.
 
 #include <string>
 
@@ -23,7 +23,7 @@ enum class Tonemap : int {
 };
 
 struct RTXConfig {
-    // Defaults = preset Balanced (no un hibrido sin nombre).
+    // Defaults = Balanced preset, not a nameless hybrid.
     bool  enabled          = false;
     float intensity        = 1.00f;
 
@@ -99,7 +99,7 @@ struct RTXConfig {
     bool  skipWhenPaused   = false;
 };
 
-// Solo toca campos de coste; conserva el resto. Custom no toca nada.
+// Only cost fields; keeps the rest. Custom touches nothing.
 void applyPreset(RTXConfig& cfg, Preset preset);
 
 char const* presetName(int preset);

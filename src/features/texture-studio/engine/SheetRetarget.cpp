@@ -144,8 +144,7 @@ RetargetOutcome SheetRetarget::conform(std::vector<std::uint8_t> const& processe
             ++outcome.missingFrames;
             continue;
         }
-        // Packing rotation is a property of the slot, not of the sprite, so it
-        // follows the installed plist rather than the snapshot's.
+        // Packing rotation belongs to the slot: follow the installed plist, not the snapshot.
         if (dst.rotated) pixels.rotateCW90();
         out.blitOverwrite(dst.rectX, dst.rectY, pixels);
         ++outcome.matchedFrames;

@@ -1,6 +1,5 @@
 #pragma once
-// Diagnostico de portadas: escribe SIEMPRE a cover-debug.log (los logs
-// normales estan desactivados por defecto) y fuerza la consola de Geode.
+// cover diagnostics: always goes to cover-debug.log, forces Geode console.
 
 #include <Geode/Geode.hpp>
 #include <filesystem>

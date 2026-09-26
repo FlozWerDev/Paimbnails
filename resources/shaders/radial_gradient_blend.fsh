@@ -26,15 +26,11 @@ uniform float u_animSpeed;
 uniform float u_animIntensity;
 uniform float u_animDirection;
 
-// Custom animation (u_animType == 6): a stack of up to 4 movements applied in
-// order. u_customLayers[i] = (motion, wave, amount, speed) and u_customPhase[i]
-// shifts the layer inside its own cycle. The numbers are the enum values in
-// GradientAnimationManager.hpp, so don't renumber the branches below.
+// layer enums mirror GradientAnimationManager.hpp; don't renumber.
 uniform int u_customCount;
 uniform vec4 u_customLayers[4];
 uniform float u_customPhase[4];
 
-// Shape of a layer's value over time, in [-1, 1] (Bounce stays in [0, 1]).
 float animWave(int shape, float t)
 {
     if (shape == 1) return 1.0 - 4.0 * abs(fract(t + 0.25) - 0.5);
@@ -51,7 +47,6 @@ float animWave(int shape, float t)
     return sin(t * 6.28318531);
 }
 
-// How a layer pushes the gradient. `value` is the animWave output.
 vec2 animMotion(vec2 uv, int motion, float value, float amount)
 {
     vec2 center = vec2(0.5);
@@ -135,7 +130,6 @@ vec2 animateGradient(vec2 uv)
     return uv;
 }
 
-// Image coordinates and animation are shared by all points in this fragment.
 vec2 imageCoordinates() {
     if (u_imageMode == 0) return vec2(0.0);
     vec2 delta = v_texCoord - u_imageOrigin;
@@ -159,7 +153,6 @@ void main()
         return;
     }
     vec2 imageUV = imageCoordinates();
-
 
     if (stopAt <= 1) {
         gl_FragColor = pointColor(0, imageUV) * texColor * v_fragmentColor;

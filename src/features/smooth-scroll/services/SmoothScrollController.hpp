@@ -23,12 +23,11 @@ public:
     bool isReplaying() const { return m_replaying; }
     bool isEditorZoomReplay() const { return m_replaying && m_editorZoomMode; }
 
-    // true = consumir el evento (no pasar scroll instantaneo al juego).
+    // True = consume the event (no instant scroll reaches the game).
     bool queueInput(float wheelY, float wheelX);
     void tick(float dt, ScrollDispatchFn const& dispatch);
 
-    // Signed, normalized wheel steps. A normal wheel notch sums to +/-1 even
-    // while its continuous delta is split across many replay frames.
+    // Signed normalized steps: one notch sums to +/-1 across replay frames.
     float replayedWheelSteps() const;
     float replayedZoomSteps() const;
     float filteredWheelSteps(float wheelY, float wheelX) const;

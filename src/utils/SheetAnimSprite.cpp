@@ -5,7 +5,6 @@ using namespace cocos2d;
 
 namespace {
 
-// Delays from assets load/paim_PaimonSheet.json (original paimon.gif).
 constexpr int kPaimonFrameW = 200;
 constexpr int kPaimonFrameH = 129;
 constexpr int kPaimonCols = 7;
@@ -77,9 +76,8 @@ bool SheetAnimSprite::initSheet(
         return false;
     }
 
-    // setTextureRect works in points, not source pixels: Geode ships -hd/low
-    // variants of the sheet, so derive the frame size from whichever texture
-    // actually loaded instead of the original pixel dimensions.
+    // textureRect is in points: derive frame size from the loaded texture,
+    // not the original pixels (-hd/low variants differ).
     int rows = (frameCount + cols - 1) / cols;
     auto sheetSize = this->getContentSize();
     m_frameW = sheetSize.width / static_cast<float>(cols);

@@ -3,7 +3,7 @@
 #include <vector>
 #include <cstdint>
 
-// Lightweight GIF frame decoder for basic animated files.
+// lightweight GIF frame decoder.
 class GIFDecoder {
 public:
     struct Frame {
@@ -22,7 +22,7 @@ public:
         bool isAnimated;
     };
 
-    // maxFrames=1 is enough for a placeholder and avoids main-thread stutter.
+    // maxFrames=1 suffices for a placeholder; avoids main-thread stutter.
     static GIFData decode(uint8_t const* data, size_t size, int maxFrames = 0);
 
     static bool isGIF(uint8_t const* data, size_t size);
@@ -36,6 +36,6 @@ private:
         std::vector<uint8_t> pixels;
         int width, height, left, top;
     };
-    
+
     static bool parseFrame(uint8_t const*& ptr, uint8_t const* end, RawFrame& frame, std::vector<uint8_t> const& globalPalette, int transparentIndex, bool hasTransparency);
 };

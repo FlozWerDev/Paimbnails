@@ -31,8 +31,7 @@ inline bool        sBool(char const* k) { return Mod::get()->getSettingValue<boo
 inline int64_t     sInt(char const* k)  { return Mod::get()->getSettingValue<int64_t>(k); }
 inline std::string sStr(char const* k)  { return Mod::get()->getSettingValue<std::string>(k); }
 
-// Decodes URL-safe base64 (GD comments use '-' and '_').
-// Also tolerates the standard '+' '/' alphabet and padding/whitespace.
+// URL-safe base64 (GD uses -/_); also tolerates +/ and padding.
 std::string base64UrlDecode(std::string const& in) {
     static int8_t const* T = [] {
         static int8_t arr[256];
@@ -228,8 +227,7 @@ private:
                 }
 
                 if (found.empty()) return;
-                // If playing and not allowed, skip marking seen so they
-                // are re-detected when the user returns to the menu.
+                // If playing and hidden, skip seen-marking so menu return re-detects.
                 if (!sBool("mentions-show-while-playing") && PlayLayer::get()) return;
 
                 for (auto const& id : seenNow) markSeen(id);

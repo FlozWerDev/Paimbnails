@@ -37,7 +37,7 @@ enum class Motion {
     Dynamic,
     Static,
     // Moves exactly where its velocity says and pushes everyone else without
-    // ever being pushed back: lifts, saws and moving platforms.
+    // being pushed back: lifts, saws and moving platforms.
     Kinematic,
 };
 

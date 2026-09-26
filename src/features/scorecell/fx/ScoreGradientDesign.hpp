@@ -6,8 +6,7 @@
 
 namespace paimon::scorecell {
 
-// HSL-locked gradient design for score cells: each icon's hue is kept while
-// saturation/lightness are clamped into a band that survives as a background.
+// HSL-locked gradient: hue kept, sat/light clamped into a background-safe band.
 
 namespace detail {
 inline void rgbToHsl(float r, float g, float b, float& h, float& s, float& l) {
@@ -61,8 +60,7 @@ harmonizePair(cocos2d::ccColor3B a, cocos2d::ccColor3B b) {
     rgbToHsl(a.r / 255.f, a.g / 255.f, a.b / 255.f, h1, s1, l1);
     rgbToHsl(b.r / 255.f, b.g / 255.f, b.b / 255.f, h2, s2, l2);
 
-    // Achromatic stops have no hue (h=0 reads as red): keep neutrals neutral,
-    // only chromatic stops get the vivid band.
+    // Achromatic stops have no hue: neutrals stay neutral, only chromatic get vivid.
     bool c1 = s1 >= 0.08f;
     bool c2 = s2 >= 0.08f;
     s1 = c1 ? std::clamp(s1, 0.38f, 0.80f) : std::min(s1, 0.12f);
@@ -70,13 +68,12 @@ harmonizePair(cocos2d::ccColor3B a, cocos2d::ccColor3B b) {
     l1 = std::clamp(l1, 0.30f, 0.62f);
     l2 = std::clamp(l2, 0.30f, 0.62f);
 
-    // Same or near-analogous pair becomes an analogous duo (A's hue is sacred,
-    // only B moves); B still darkens on neutrals so gray keeps a direction.
+    // Near-analogous pair becomes a duo (A's hue sacred, only B moves); B still darkens on neutrals.
     float dh = std::fabs(h1 - h2);
     dh = std::min(dh, 360.f - dh);
     if (dh < 20.f) {
         if (c1 && c2) h2 = h1 + 28.f;
-        // Push B slightly darker so the gradient has a direction.
+        // Push B darker so the gradient keeps a direction.
         l2 = std::clamp(l2 - 0.07f, 0.28f, 0.62f);
     }
 
@@ -84,14 +81,13 @@ harmonizePair(cocos2d::ccColor3B a, cocos2d::ccColor3B b) {
 }
 } // namespace detail
 
-// Same helper at scorecell scope for call sites outside detail.
+// Scorecell-scope alias for call sites outside detail.
 inline std::pair<cocos2d::ccColor3B, cocos2d::ccColor3B>
 designScoreGradient(cocos2d::ccColor3B a, cocos2d::ccColor3B b) {
     return detail::harmonizePair(a, b);
 }
 
-// Overlays painted once per cell above the gradient. CCLayerGradient IS-A
-// CCLayerColor, so they carry paimon IDs and are never demoted behind.
+// Per-cell overlays above the gradient. CCLayerGradient IS-A CCLayerColor, so paimon IDs never demote behind.
 inline void attachCellOverlays(cocos2d::CCNode* clip, cocos2d::CCSize cs) {
     if (!clip) return;
     if (cs.width <= 1.f || cs.height <= 1.f) return;

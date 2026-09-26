@@ -27,15 +27,13 @@ public:
 
     bool enabled() const;
 
-    // GameStatsManager for the live six, the last synced score for everything
-    // the save file doesn't track (demon breakdown, creator points, rank).
+    // Live six from the save; rest from the last synced score.
     BadgeContext ownContext();
 
-    // Keeps the parts of a score the local save can't rebuild.
+    // The local save can't rebuild these parts.
     void rememberOwnScore(GJUserScore* score);
 
-    // Diffs live numbers against the stored snapshot; nullopt on the first
-    // call or when nothing moved.
+    // Nullopt on first call or when nothing moved.
     std::optional<ProgressDelta> consumeDelta();
 
     void commitSnapshot();

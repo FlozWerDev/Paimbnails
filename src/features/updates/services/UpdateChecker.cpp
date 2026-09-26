@@ -1,11 +1,13 @@
 #include "UpdateChecker.hpp"
-#include "../../../utils/WebHelper.hpp"
-#include "../../../core/Settings.hpp"
-#include "../../../core/RuntimeLifecycle.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/utils/web.hpp>
 #include <Geode/utils/file.hpp>
+
+#include "../../../utils/WebHelper.hpp"
+#include "../../../core/Settings.hpp"
+#include "../../../core/RuntimeLifecycle.hpp"
+
 #include <matjson.hpp>
 #include <filesystem>
 #include <algorithm>
@@ -24,7 +26,6 @@ constexpr auto kReleaseListUrl =
     "https://api.github.com/repos/FlozWerDev/Paimbnails/releases?per_page=60";
 constexpr auto kAssetName = "flozwer.paimbnails2.geode";
 
-// Strip 'v'/'V' prefix and surrounding whitespace from a version string.
 std::string sanitizeVersion(std::string v) {
     while (!v.empty() && (v.front() == ' ' || v.front() == '\t')) v.erase(v.begin());
     while (!v.empty() && (v.back() == ' ' || v.back() == '\t')) v.pop_back();
@@ -37,8 +38,8 @@ std::string jsonString(matjson::Value const& obj, char const* key) {
     return obj[key].asString().unwrapOr("");
 }
 
-// Older releases were published under other asset names, so fall back to any
-// .geode in the release rather than dropping it from the history.
+// older releases shipped under other asset names, so fall back to any
+// .geode instead of dropping them from the history.
 std::string pickGeodeAsset(matjson::Value const& release, uint64_t& outSize) {
     if (!release["assets"].isArray()) return "";
 
@@ -76,7 +77,6 @@ UpdateChecker& UpdateChecker::get() {
     return s;
 }
 
-// Hierarchical semver comparison.
 int UpdateChecker::compareVersions(std::string const& baseStr, std::string const& otherStr) {
     auto base  = sanitizeVersion(baseStr);
     auto other = sanitizeVersion(otherStr);
@@ -194,12 +194,8 @@ void UpdateChecker::onCheckResponse(web::WebResponse& res) {
     }
 
     int cmp = compareVersions(m_localVersion, m_remoteVersion);
-    log::info("[UpdateChecker] local={} remote={} cmp={}",
-        m_localVersion, m_remoteVersion, cmp);
-
     if (cmp > 0) {
         m_state.store(State::UpdateAvailable);
-        // If auto-update is on, start the silent download now.
         if (paimon::settings::general::autoUpdate()) {
             Loader::get()->queueInMainThread([]() {
                 UpdateChecker::get().autoDownloadIfNeeded();
@@ -211,13 +207,10 @@ void UpdateChecker::onCheckResponse(web::WebResponse& res) {
 }
 
 void UpdateChecker::fetchReleasesAsync(std::function<void(bool, std::string)> onDone) {
-    if (m_releasesLoading) {
-        if (onDone) m_releaseWaiters.push_back(std::move(onDone));
-        return;
-    }
+    if (onDone) m_releaseWaiters.push_back(std::move(onDone));
+    if (m_releasesLoading) return;
 
     m_releasesLoading = true;
-    if (onDone) m_releaseWaiters.push_back(std::move(onDone));
 
     auto req = web::WebRequest()
         .timeout(std::chrono::seconds(20))
@@ -263,7 +256,7 @@ void UpdateChecker::onReleasesResponse(web::WebResponse& res) {
         info.prerelease = entry["prerelease"].isBool()
             && entry["prerelease"].asBool().unwrapOr(false);
 
-        // published_at is ISO-8601; only the day matters in the picker.
+        // published_at is ISO-8601; the picker shows the day only.
         auto published = jsonString(entry, "published_at");
         info.date = published.size() >= 10 ? published.substr(0, 10) : published;
 
@@ -271,15 +264,14 @@ void UpdateChecker::onReleasesResponse(web::WebResponse& res) {
         list.push_back(std::move(info));
     }
 
-    // The API sorts by creation date, which drifts from version order once a
-    // patch for an older branch is published late.
+    // API order is by creation date, which drifts once an older branch ships
+    // a late patch.
     std::stable_sort(list.begin(), list.end(), [](ReleaseInfo const& a, ReleaseInfo const& b) {
         return compareVersions(a.version, b.version) < 0;
     });
 
     m_releases = std::move(list);
     m_releasesLoaded = true;
-    log::info("[UpdateChecker] {} releases listed", m_releases.size());
     this->finishReleasesFetch(true, "");
 }
 
@@ -319,7 +311,7 @@ void UpdateChecker::downloadRelease(
     m_installedPendingRestart.store(false);
     m_pendingVersion.clear();
 
-    // Progress callback dispatches to the main thread before touching UI.
+    // progress hops to the main thread before touching UI.
     auto progressShared = std::make_shared<std::function<void(uint64_t, uint64_t)>>(std::move(onProgress));
     auto doneShared     = std::make_shared<std::function<void(bool, std::string)>>(std::move(onDone));
 
@@ -366,8 +358,8 @@ void UpdateChecker::downloadRelease(
                 return;
             }
 
-            // Same trick as Geode's own updater: the .geode isn't locked while
-            // running, so overwriting it in place applies on next restart.
+            // like Geode's own updater: the .geode isn't locked while running,
+            // so overwriting it in place applies on next restart.
             auto packagePath = Mod::get()->getPackagePath();
             if (packagePath.empty()) {
                 fail("no package path");
@@ -397,17 +389,12 @@ bool UpdateChecker::hasPendingInstall() const {
 }
 
 bool UpdateChecker::restartToApplyPendingUpdate() const {
-    if (!this->hasPendingInstall()) {
-        return false;
-    }
-    // The new .geode is already on disk; restarting loads it on all platforms.
+    if (!this->hasPendingInstall()) return false;
     geode::utils::game::restart(true);
     return true;
 }
 
 bool UpdateChecker::applyPendingUpdateInPlace() const {
-    // The update is written in place as soon as it's downloaded, so there's
-    // nothing to do on exit: the new version loads on the next launch.
     return this->hasPendingInstall();
 }
 
@@ -417,14 +404,12 @@ void UpdateChecker::autoDownloadIfNeeded() {
     if (this->hasPendingInstall()) return;
 
     bool expected = false;
-    if (!m_autoDownloadStarted.compare_exchange_strong(expected, true)) {
-        return;
-    }
+    if (!m_autoDownloadStarted.compare_exchange_strong(expected, true)) return;
 
     log::info("[UpdateChecker] Auto-update triggered: downloading {} silently", m_remoteVersion);
 
     this->downloadUpdate(
-        // Log at 25% intervals to avoid spamming the log.
+        // log at 25% steps to avoid spam.
         [](uint64_t received, uint64_t total) {
             if (total == 0) return;
             static std::atomic<int> lastBucket{-1};

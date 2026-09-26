@@ -29,12 +29,11 @@ constexpr float kMaxSpeed = 2.5f;
 std::atomic<bool> s_suppressArmed{false};
 std::chrono::steady_clock::time_point s_suppressUntil{};
 
-// One-shot fire: se corta el anterior si se spamea el radial.
+// One-shot fire: spamming the radial cuts the previous one.
 FMOD::Sound* s_fireSound = nullptr;
 FMOD::Channel* s_fireChannel = nullptr;
 
-// Generacion del disparo en curso: las lambdas capturan la suya por valor, asi
-// un timer rezagado no corta ni retoca el volumen del sonido nuevo.
+// Current fire generation: lambdas capture theirs by value, so a lagging timer can't cut the new sound.
 std::atomic<unsigned> s_fireGen{0};
 
 bool channelAlive(FMOD::Channel* ch) {
@@ -54,8 +53,7 @@ void stopFire() {
     }
 }
 
-// Rampa de volumen en 5 pasos desde `from` hasta `to`, empezando en
-// startDelaySec y durando fadeSec. Solo la generacion vigente toca el canal.
+// 5-step volume ramp from `from` to `to`; only the live generation touches the channel.
 void rampVolume(float from, float to, float startDelaySec, float fadeSec, unsigned gen) {
     if (fadeSec <= 0.001f) return;
     constexpr int kSteps = 5;
@@ -72,7 +70,7 @@ void rampVolume(float from, float to, float startDelaySec, float fadeSec, unsign
 
 void scheduleFireStop(float delaySec, float fadeOutMs, float baseVolume, unsigned gen) {
     if (delaySec < 0.f) delaySec = 0.f;
-    // Fade-out en 5 pasos antes del stop; fade-in se aplica al arrancar.
+    // 5-step fade-out before stop; fade-in applies at start.
     if (fadeOutMs > 0.f && delaySec > 0.01f) {
         float fadeSec = std::min(fadeOutMs / 1000.f, delaySec);
         rampVolume(baseVolume, 0.f, delaySec - fadeSec, fadeSec, gen);
@@ -179,7 +177,7 @@ bool playQuickButtonSfx(CustomQuickButton const& b) {
         return false;
     }
 
-    // Fade-in: arrancar bajo y rampear al volumen objetivo.
+    // Fade-in: start low, ramp to target volume.
     float fadeInMs = static_cast<float>(std::max(0, b.sfxFadeInMs));
     float fadeOutMs = static_cast<float>(std::max(0, b.sfxFadeOutMs));
     if (fadeInMs > 0.f) channel->setVolume(0.f);
@@ -198,7 +196,7 @@ bool playQuickButtonSfx(CustomQuickButton const& b) {
     if (endMs > startMs) {
         scheduleFireStop(static_cast<float>(endMs - startMs) / 1000.f, fadeOutMs, volume, gen);
     } else if (fadeOutMs > 0.f) {
-        // Sin fin explicito: fundir al final real del archivo.
+        // No explicit end: fade at the real end of file.
         unsigned int lenMs = 0;
         if (sound->getLength(&lenMs, FMOD_TIMEUNIT_MS) == FMOD_OK && lenMs > static_cast<unsigned int>(startMs) + 200) {
             float totalSec = static_cast<float>(lenMs - static_cast<unsigned int>(startMs)) / 1000.f;
@@ -209,8 +207,7 @@ bool playQuickButtonSfx(CustomQuickButton const& b) {
 }
 
 void stopQuickButtonSfx() {
-    // Invalidar primero: las lambdas pendientes de un disparo anterior se
-    // vuelven no-ops aunque el canal FMOD se reutilice para otro sonido.
+    // Invalidate first: pending lambdas from the old fire become no-ops even if FMOD reuses the channel.
     ++s_fireGen;
     stopFire();
 }
@@ -242,8 +239,7 @@ void activateItemWithQuickButtonSfx(cocos2d::CCMenuItem* item, CustomQuickButton
     }
     beginQuickButtonSfxSuppress();
     item->activate();
-    // Un solo consumo: lo que el activate disparo ya cayo en el hook.
-    // Lo que quede armado se desarma para no tragarse SFX ajenos.
+    // Single consume: what activate fired already fell in the hook; disarm the rest so other SFX survive.
     (void)consumeQuickButtonSfxSuppress();
     clearQuickButtonSfxSuppress();
     playQuickButtonSfx(def);

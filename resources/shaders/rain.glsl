@@ -20,7 +20,6 @@ float rainLayer(vec2 uv, float speed, float density, float layer) {
 void main() {
     vec4 color = texture2D(u_texture, v_texCoord);
     float str = u_intensity * 0.15;
-    // 3 layers unrolled
     float rain = rainLayer(v_texCoord, 4.0, 80.0, 0.0)
                + rainLayer(v_texCoord, 6.0, 120.0, 1.0) * 0.75
                + rainLayer(v_texCoord, 8.0, 160.0, 2.0) * 0.5;

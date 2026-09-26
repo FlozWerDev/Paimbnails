@@ -1,7 +1,7 @@
 #pragma once
 
-// Popup del boton "Avisos": enciende el aviso de request nuevo y deja verlo en
-// una pantalla de mentira (sitio, tamano y segundos) antes de salir al stream.
+// popup behind the "Notices" button: toggles the new-request notice and
+// previews it on a fake screen (spot, size, seconds) before it hits the stream.
 
 #include <Geode/Geode.hpp>
 
@@ -19,9 +19,9 @@ protected:
     void buildPreview(cocos2d::CCPoint origin, cocos2d::CCSize size);
     void buildOptions(cocos2d::CCPoint origin, cocos2d::CCSize size);
 
-    // Vuelve a crear la tarjeta del previsualizador (cambio de contenido).
+    // rebuilds the preview card (content change).
     void rebuildCard(bool replayEnter);
-    // Solo la recoloca y refresca los textos (cambio de sitio o de medidas).
+    // only repositions and refreshes texts (spot or size change).
     void syncCard(bool replayEnter);
     void replayExit();
     cocos2d::CCPoint cardRestPoint() const;
@@ -34,7 +34,7 @@ protected:
     cocos2d::CCLabelBMFont* m_spotLabel = nullptr;
     cocos2d::CCLabelBMFont* m_sizeLabel = nullptr;
     cocos2d::CCLabelBMFont* m_animLabel = nullptr;
-    // Cuanto mide la pantalla de mentira comparada con la de verdad.
+    // fake screen size relative to the real one.
     float m_ratio = 1.f;
     float m_infoWidth = 240.f;
     geode::ScrollLayer* m_scroll = nullptr;

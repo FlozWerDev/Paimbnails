@@ -4,10 +4,9 @@
 
 namespace paimon::gifimport {
 
-// Distancia perceptual entre dos colores de la paleta por debajo de la cual
-// dos entradas se consideran el mismo color a efectos del dibujo: de lejos no
-// se distinguen y solo consiguen partir el dibujo en mas objetos. En OkLab el
-// negro y el blanco estan a 1, y un paso apenas visible ronda 0.02.
+// Perceptual distance below which two palette entries read as one color: apart
+// they only split the drawing into more objects. In OkLab black-to-white is 1
+// and a barely-visible step is ~0.02.
 constexpr float kPaletteMinDistance = 0.025f;
 
 struct OkLab {

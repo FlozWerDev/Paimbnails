@@ -27,8 +27,7 @@ namespace {
     constexpr float kMinHit = 26.f;
     constexpr float kOutlinePad = 6.f;
     constexpr float kGripSize = 18.f;
-    // Poco mas que el cuadrado dibujado (18/2 = 9), lo justo para el dedo. Con
-    // 22 la zona de escalado se comia la esquina del boton y no se podia mover.
+    // just above the drawn square (18/2 = 9) for touch; 22 swallowed the button corner.
     constexpr float kGripHit = 12.f;
     constexpr float kCanvasBottom = 84.f;
     constexpr std::size_t kHistoryLimit = 50;
@@ -173,8 +172,7 @@ void MainMenuLayoutEditor::buildUI() {
     m_status->setPosition({ winSize.width / 2.f, winSize.height - 16.f });
     this->addChild(m_status, 31);
 
-    // La barra vive en un contenedor colapsable para liberar la zona
-    // inferior y poder mover los botones que queden debajo.
+    // collapsible so buttons underneath stay movable.
     m_barContainer = CCNode::create();
     m_barContainer->setPosition({ 0.f, 0.f });
     this->addChild(m_barContainer, 30);
@@ -185,7 +183,7 @@ void MainMenuLayoutEditor::buildUI() {
         m_barContainer->addChild(barBg, 0);
     }
 
-    // Opacity slider: oculto hasta que haya algo seleccionado.
+    // shown only with a selection.
     m_opacitySlider = Slider::create(this, menu_selector(MainMenuLayoutEditor::onOpacityChanged));
     m_opacitySlider->setScale(0.7f);
     m_opacitySlider->setPosition({ winSize.width / 2.f, kCanvasBottom - 18.f });
@@ -216,15 +214,14 @@ void MainMenuLayoutEditor::buildUI() {
 
     m_bar->updateLayout();
 
-    // Flecha unica para colapsar/expandir la barra (siempre visible, fuera
-    // del contenedor que se baja). Centro-inferior, justo sobre la barra.
+    // single toggle arrow, always visible outside the lowered container.
     auto* toggleMenu = CCMenu::create();
     toggleMenu->setPosition({ 0.f, 0.f });
     this->addChild(toggleMenu, 33);
     m_collapseArrow = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
     if (m_collapseArrow) {
         m_collapseArrow->setScale(0.7f);
-        m_collapseArrow->setRotation(-90.f); // apunta hacia abajo (bajar)
+        m_collapseArrow->setRotation(-90.f);
         m_collapseBtn = CCMenuItemSpriteExtra::create(m_collapseArrow, this, menu_selector(MainMenuLayoutEditor::onToggleBar));
         m_collapseBtn->setPosition({ winSize.width / 2.f, kCanvasBottom + 12.f });
         toggleMenu->addChild(m_collapseBtn);
@@ -610,14 +607,13 @@ bool MainMenuLayoutEditor::ccTouchBegan(CCTouch* touch, CCEvent*) {
     if (m_closing || m_interfaceElapsed < kTransitionDuration) return true;
     auto wp = touch->getLocation();
 
-    // La flecha de colapso siempre es accesible.
+    // collapse arrow stays tappable.
     if (m_collapseBtn && m_collapseBtn->getParent()) {
         auto c = m_collapseBtn->getParent()->convertToWorldSpace(m_collapseBtn->getPosition());
         if (ccpDistanceSQ(wp, c) <= 24.f * 24.f) return false;
     }
 
-    // Franja inferior de controles → la maneja el menu/slider. Si la barra
-    // esta colapsada, toda la pantalla es lienzo para mover botones de abajo.
+    // bottom strip belongs to menu/slider; collapsed, the screen is canvas.
     float strip = m_collapsed ? 0.f : kCanvasBottom;
     if (wp.y <= strip) return false;
     if (!m_transitions.empty()) return true;
@@ -737,8 +733,7 @@ void MainMenuLayoutEditor::update(float dt) {
     auto* root = this->getTargetRoot();
     if (!root) { this->removeFromParent(); return; }
 
-    // Si la escena cambio (ej. entrar a un nivel con el editor abierto),
-    // cerramos para evitar use-after-free sobre nodos liberados.
+    // scene changed with editor open: close to avoid use-after-free.
     auto* scene = CCDirector::get()->getRunningScene();
     bool attached = false;
     for (CCNode* p = this->getParent(); p; p = p->getParent()) {

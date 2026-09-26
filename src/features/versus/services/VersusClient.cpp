@@ -25,21 +25,6 @@ std::string trimSlash(std::string url) {
     return url;
 }
 
-int64_t intField(matjson::Value const& v, char const* key, int64_t fallback = 0) {
-    if (!v.contains(key)) return fallback;
-    return v[key].asInt().unwrapOr(fallback);
-}
-
-std::string stringField(matjson::Value const& v, char const* key) {
-    if (!v.contains(key)) return {};
-    return v[key].asString().unwrapOr("");
-}
-
-bool boolField(matjson::Value const& v, char const* key, bool fallback = false) {
-    if (!v.contains(key)) return fallback;
-    return v[key].asBool().unwrapOr(fallback);
-}
-
 PlayerRef parsePlayer(matjson::Value const& v) {
     PlayerRef ref;
     ref.accountId = static_cast<int>(intField(v, "accountId"));
@@ -91,6 +76,21 @@ matjson::Value sideToJson(SideState const& side) {
 }
 
 } // namespace
+
+int64_t intField(matjson::Value const& v, char const* key, int64_t fallback) {
+    if (!v.contains(key)) return fallback;
+    return v[key].asInt().unwrapOr(fallback);
+}
+
+std::string stringField(matjson::Value const& v, char const* key) {
+    if (!v.contains(key)) return {};
+    return v[key].asString().unwrapOr("");
+}
+
+bool boolField(matjson::Value const& v, char const* key, bool fallback) {
+    if (!v.contains(key)) return fallback;
+    return v[key].asBool().unwrapOr(fallback);
+}
 
 VersusClient& VersusClient::get() {
     static VersusClient instance;

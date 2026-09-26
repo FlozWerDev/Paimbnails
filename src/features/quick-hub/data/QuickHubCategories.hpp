@@ -7,7 +7,7 @@
 
 namespace paimon::quickhub {
 
-// Discord RPC solo en escritorio; en movil se ocultan sin romper ids.
+// Discord RPC desktop-only; hidden on mobile without breaking ids.
 inline bool discordSupported() {
     auto* mod = geode::Mod::get();
     return mod && mod->hasSetting("discord-rpc-enabled");
@@ -17,9 +17,9 @@ struct RadialOptionDef {
     std::string id;
     std::string name;
     std::string icon;
-    cocos2d::ccColor3B color; // glow en hover
-    bool custom = false;     // de la UI del juego
-    // Accion resuelta en runtime por id.
+    cocos2d::ccColor3B color; // hover glow
+    bool custom = false;     // from game UI
+    // Action resolved at runtime by id.
     std::string imagePath;   // "" = usar icon
     float imageScale = 1.f;  // clamp 0.2..3.0
     float imageRotation = 0.f; // clamp -180..180
@@ -29,10 +29,10 @@ struct RadialOptionDef {
 
 enum class RadialButtonShape { Circle, Square, Icon };
 
-// int en disco para unwrapOr trivial.
+// Int on disk for trivial unwrapOr.
 enum class QuickButtonSfxKind : int { None = 0, Game = 1, File = 2, Online = 3 };
 
-// Direccion del boton original para reencontrarlo.
+// Original button address, to find it again.
 struct CustomQuickButton {
     std::string id;
     std::string name;
@@ -40,36 +40,36 @@ struct CustomQuickButton {
     std::string labelText;
     std::string targetNodeId;
     std::string parentId;
-    std::vector<int> nodePath; // fallback si no hay ids
+    std::vector<int> nodePath; // fallback without ids
     std::vector<std::string> idPath;
     std::string ownerClass;
     std::string sceneClass;
     std::string itemClass;
     std::string listenerClass;
-    float relX = -1.f;         // normalizada 0..1
+    float relX = -1.f;         // normalized 0..1
     float relY = -1.f;
     int tag = 0;
     cocos2d::ccColor3B color{120, 200, 255};
     RadialButtonShape shape = RadialButtonShape::Circle;
-    // Defaults = comportamiento anterior
+    // Defaults = previous behavior
     std::string imagePath;              // "" = usar icon
     float imageScale = 1.f;             // 0.2..3.0
     float imageRotation = 0.f;          // -180..180
     bool imageFlipX = false;
     bool imageFlipY = false;
-    // 0 = sin SFX
+    // 0 = no SFX
     int sfxKind = 0;
-    std::string sfxPath;                // Game: nombre; File: ruta; Online: usar sfxId
+    std::string sfxPath;                // Game: name; File: path; Online: use sfxId
     int sfxId = 0;
     float sfxVolume = 1.f;              // 0..1
     float sfxSpeed = 1.f;               // 0.4..2.5
     int sfxStartMs = 0;
-    int sfxEndMs = 0;                   // 0 = hasta el fin
+    int sfxEndMs = 0;                   // 0 = to the end
     int sfxFadeInMs = 0;
     int sfxFadeOutMs = 0;
 };
 
-// "Mi Boton!" -> "mi-boton"; vacio -> "button".
+// "Mi Boton!" -> "mi-boton"; empty -> "button".
 inline std::string slugify(std::string const& id) {
     std::string stem;
     for (char c : id) {
@@ -127,7 +127,7 @@ inline bool isNavigableScreen(std::string const& cls) {
            cls == "LevelSelectLayer" || cls == "GauntletSelectLayer";
 }
 
-// Nuevas opciones aparecen solas en el config.
+// New options show up in config on their own.
 inline std::vector<RadialOptionDef> getAllAvailableOptions() {
     std::vector<RadialOptionDef> opts = {
         {"settings-general",     "General",          "GJ_optionsBtn_001.png",     {120, 255, 120}},

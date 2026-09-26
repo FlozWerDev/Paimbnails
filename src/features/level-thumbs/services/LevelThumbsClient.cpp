@@ -3,7 +3,6 @@
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
-#include "../../../utils/Debug.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/ThreadPool.hpp"
 
@@ -29,7 +28,7 @@ char const* qualitySuffix(Quality quality) {
     return "high";
 }
 
-// Heap pool with no atexit destructor, same as paimon::asyncimg.
+// heap pool: no atexit destructor, same as paimon::asyncimg.
 paimon::ThreadPool& pool() {
     static auto* p = new paimon::ThreadPool(2, "PaimonLevelThumbs");
     return *p;
@@ -52,7 +51,7 @@ bool readCacheFile(std::filesystem::path const& path, std::vector<uint8_t>& out)
     return true;
 }
 
-// Write tmp then rename so a crash cannot leave a partial cache file.
+// tmp + rename so a crash never leaves a partial cache file.
 void writeCacheFile(std::filesystem::path const& path, std::vector<uint8_t> const& data) {
     std::error_code ec;
     std::filesystem::create_directories(path.parent_path(), ec);
@@ -154,8 +153,7 @@ std::string LevelThumbsClient::thumbnailUrl(int levelID, Quality quality) const 
 }
 
 std::filesystem::path LevelThumbsClient::cacheDir() const {
-    // Keyed by host: pointing the API somewhere else must not keep serving
-    // images cached from the previous one.
+    // keyed by host: a new API must not serve the previous one's images.
     return Mod::get()->getSaveDir() / "levelthumbs"
         / fmt::to_string(std::hash<std::string>{}(apiBaseUrl()));
 }
@@ -197,8 +195,7 @@ void LevelThumbsClient::fetchThumbnail(int levelID, Quality quality, DataCallbac
 }
 
 void LevelThumbsClient::pump() {
-    // A rejected URL answers synchronously and re-enters through finish(); the
-    // guard keeps that from unwinding the whole queue on one stack.
+    // rejected URLs answer synchronously via finish(); guard against stack unwind.
     if (m_pumping) return;
     m_pumping = true;
 
@@ -249,10 +246,7 @@ void LevelThumbsClient::startRequest(std::shared_ptr<Request> request) {
 
 void LevelThumbsClient::download(std::shared_ptr<Request> request, std::string const& url,
                                  std::filesystem::path const& path) {
-    PaimonDebug::log("[LevelThumbs] fetching {} for level {}", url, request->levelID);
-
-    // The status tells "no thumbnail" (404/410, worth caching) apart from a
-    // dropped connection (worth retrying next time).
+    // status separates "no thumbnail" (404/410, cached) from dropped connections (retried).
     HttpClient::get().performBinaryRequestEx(url, {},
         [this, request, path](bool success, std::vector<uint8_t> const& data, int status) {
             if (!success || data.empty()) {

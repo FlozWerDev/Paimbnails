@@ -168,17 +168,15 @@ bool CommentTextSelector::init(
     this->setPosition({0.f, 0.f});
     this->setID("paimon-text-selector"_spr);
 
-    // Touch handling — must NOT swallow touches (see registerWithTouchDispatcher)
+    // must NOT swallow touches (see registerWithTouchDispatcher).
     this->setTouchEnabled(true);
     this->setTouchMode(kCCTouchesOneByOne);
     this->setTouchPriority(-90);
 
-    // Highlight overlay (drawn dynamically)
     m_highlight = PaimonDrawNode::create();
     m_highlight->setVisible(false);
     this->addChild(m_highlight, 50);
 
-    // Copy button menu (hidden until selection is made)
     m_copyMenu = CCMenu::create();
     m_copyMenu->setPosition({0.f, 0.f});
     m_copyMenu->setContentSize(cellSize);

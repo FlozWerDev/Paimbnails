@@ -7,32 +7,32 @@ namespace paimon::menuphysics {
 
 struct Body {
     geode::Ref<cocos2d::CCNode> node = nullptr;
-    cocos2d::CCPoint pos {0.f, 0.f};      // centro, espacio mundo
+    cocos2d::CCPoint pos {0.f, 0.f};      // center, world space
     cocos2d::CCPoint vel {0.f, 0.f};      // px/s
-    float angle = 0.f;                    // grados (giro visual)
+    float angle = 0.f;                    // degrees (visual spin)
     float angularVel = 0.f;               // deg/s
     float halfW = 0.f;
     float halfH = 0.f;
-    float invMass = 1.f;                  // 0 = estatico (arrastrado)
-    float invInertia = 1.f;               // 1/I, momento de inercia inverso
+    float invMass = 1.f;                  // 0 = static (dragged)
+    float invInertia = 1.f;               // 1/I
     bool asleep = false;
     float sleepTimer = 0.f;
-    // Escala base + deformacion de impacto (squash/stretch)
+    // base scale + impact deform (squash/stretch)
     float baseScaleX = 1.f;
     float baseScaleY = 1.f;
-    float squash = 0.f;                   // 0..1, se decae cada frame
-    float stretchAxis = 0.f;              // grados: eje del impacto
+    float squash = 0.f;                   // 0..1, decays per frame
+    float stretchAxis = 0.f;              // degrees: impact axis
     float supportOffsetY = 0.f;
 };
 
 struct PhysicsConfig {
-    float gravity = -30.f;       // unidades (negativo = abajo); se escala a px/s^2
+    float gravity = -30.f;       // units (negative = down); scaled to px/s^2
     float bounciness = 0.35f;    // 0..1
-    float friction = 0.45f;      // 0..1, friccion tangencial en contactos
-    float airDrag = 0.08f;       // 0..1, amortiguacion lineal en aire
-    float angularDrag = 0.35f;   // 0..2, amortiguacion de giro
+    float friction = 0.45f;      // 0..1, tangential contact friction
+    float airDrag = 0.08f;       // 0..1, linear air damping
+    float angularDrag = 0.35f;   // 0..2, spin damping
     bool removeCeiling = false;
-    bool massBySize = true;      // masa proporcional al area
+    bool massBySize = true;      // mass scales with area
 };
 
 class PhysicsWorld {
@@ -75,7 +75,7 @@ private:
     PhysicsConfig m_cfg;
 
     int m_dragIndex = -1;
-    cocos2d::CCPoint m_dragOffset {0.f, 0.f};   // offset centro->cursor al agarrar
+    cocos2d::CCPoint m_dragOffset {0.f, 0.f};   // center->cursor offset on grab
     cocos2d::CCPoint m_prevDragPos {0.f, 0.f};
     cocos2d::CCPoint m_dragVel {0.f, 0.f};
 };

@@ -758,7 +758,7 @@ void PetManager::releaseSharedResources() {
 
 void PetManager::onGLContextReload() {
     detachFromScene();
-    // release (no take): el contexto viejo sigue activo, el glDelete es limpio.
+    // release (no take): old context still live, so glDelete is clean.
     whiteTrailTexture() = nullptr;
     m_staticTextureCache.clear();
 }
@@ -797,10 +797,7 @@ void PetManager::update(float dt) {
 
     auto mousePos = geode::cocos::getMousePos();
 #if defined(GEODE_IS_MOBILE)
-    // No mouse on touch screens: the cursor service tracks the finger via the
-    // touch dispatcher hook, so the pet keeps following continuously. Negative
-    // means no finger has landed yet: keep the spawn target instead of flying
-    // offscreen.
+    // touch has no mouse: cursor service tracks the finger; negative means no touch yet.
     CCPoint touchPos = CursorManager::get().pointerPos();
     if (touchPos.x >= 0.f && touchPos.y >= 0.f) mousePos = touchPos;
 #endif

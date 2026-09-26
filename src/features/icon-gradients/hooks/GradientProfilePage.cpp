@@ -1,10 +1,5 @@
-// Profile icon shading, rethought for Paimbnails.
-//
-// Idea credit: "Icon Gradients" by zilko
-// (https://github.com/zilko144/icon-gradients-geode, unlicensed —
-// all rights reserved). Independent implementation: same behavior (shade
-// each icon slot on your own profile by slot index, Ship slot doubling
-// as Jetpack, re-shade on 1P/2P toggle), own expression.
+// Shades each own-profile slot by index (Ship doubles as Jetpack; re-shade on
+// 1P/2P toggle), after zilko's "Icon Gradients" (independent implementation; idea credit zilko144, unlicensed).
 
 #include "GradientProfilePage.hpp"
 #include "../GradientCache.hpp"

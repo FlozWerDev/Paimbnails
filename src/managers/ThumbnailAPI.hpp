@@ -5,7 +5,6 @@
 #include "../features/moderation/services/PendingQueue.hpp"
 #include "../features/thumbnails/services/ThumbnailTransportClient.hpp"
 
-struct ProfileConfig;
 #include "../features/thumbnails/services/ThumbnailSubmissionService.hpp"
 #include "../features/moderation/services/ModerationService.hpp"
 #include "../features/profiles/services/ProfileImageService.hpp"
@@ -13,7 +12,7 @@ struct ProfileConfig;
 #include <optional>
 #include <chrono>
 
-// Compatibility facade; delegates to the per-domain services. Prefer the services directly in new code.
+// facade over the per-domain services; new code prefers the services directly.
 class ThumbnailAPI {
 public:
     using UploadCallback = geode::CopyableFunction<void(bool success, std::string const& message)>;
@@ -62,7 +61,6 @@ public:
     void downloadFromUrlData(std::string const& url, DownloadDataCallback callback); // raw bytes, not a texture
 
 
-    
     void uploadProfileConfig(int accountID, ProfileConfig const& config, ActionCallback callback);
     void downloadProfileConfig(int accountID, geode::CopyableFunction<void(bool success, ProfileConfig const& config)> callback);
 
@@ -70,11 +68,10 @@ public:
     void downloadSuggestionImage(std::string const& filename, DownloadCallback callback);
     void downloadUpdate(int levelId, DownloadCallback callback);
     void downloadReported(int levelId, DownloadCallback callback);
-    // pending profile background, for the moderator verification center
+    // pending background for the verification center
     void downloadPendingProfile(int accountID, DownloadCallback callback);
 
 
-    // voting system
     void getRating(int levelId, std::string const& username, std::string const& thumbnailId, geode::CopyableFunction<void(bool success, float average, int count, int userVote)> callback);
     void submitVote(int levelId, int stars, std::string const& username, std::string const& thumbnailId, ActionCallback callback);
 
@@ -83,7 +80,6 @@ public:
     void checkExists(int levelId, ExistsCallback callback);
     
     void checkModerator(std::string const& username, ModeratorCallback callback);
-    // moderator check requiring accountID > 0
     void checkModeratorAccount(std::string const& username, int accountID, ModeratorCallback callback);
     
     void checkUserStatus(std::string const& username, ModeratorCallback callback);

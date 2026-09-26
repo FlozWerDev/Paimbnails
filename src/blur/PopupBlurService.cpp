@@ -30,7 +30,6 @@ struct RegistryEntry {
     bool fadingOut = false;
 };
 
-// Return the blur only while its WeakRef proves it is alive.
 static CCNode* liveBlur(RegistryEntry const& e) {
     return e.blurWeak.lock().data();
 }
@@ -116,11 +115,8 @@ static bool popupStillChildOf(CCNode* parent, CCNode* popupPtr) {
     if (!parent || !popupPtr) return false;
     auto* children = parent->getChildren();
     if (!children) return false;
-    int count = children->count();
-    for (int i = 0; i < count; ++i) {
-        if (children->objectAtIndex(i) == static_cast<cocos2d::CCObject*>(popupPtr)) {
-            return true;
-        }
+    for (auto* child : CCArrayExt<CCObject*>(children)) {
+        if (child == popupPtr) return true;
     }
     return false;
 }
@@ -143,11 +139,11 @@ void WatchdogTarget::tick(float dt) {
         entry.ageSeconds += dt;
 
         CCNode* blur = liveBlur(entry);
-        if (!blur) {                                       // freed
+        if (!blur) {
             toRemoveFromRegistry.push_back(popupKey);
             continue;
         }
-        if (!parentAlive(entry) || !blur->getParent()) {   // orphaned: drop it
+        if (!parentAlive(entry) || !blur->getParent()) {
             toRemoveFromRegistry.push_back(popupKey);
             continue;
         }
@@ -277,7 +273,6 @@ static void cleanupImpl(CCNode* popup, float fadeDuration) {
     reg.erase(it);
     unscheduleWatchdogIfIdle();
 
-    // Restore sibling blurs hidden behind this one.
     for (auto& [key, other] : reg) {
         CCNode* prevBlur = liveBlur(other);
         if (prevBlur && !prevBlur->isVisible() && !other.fadingOut) {

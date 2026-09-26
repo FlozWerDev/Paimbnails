@@ -4,7 +4,7 @@
 #include <vector>
 #include <string>
 
-// Decodes .cur/.ico/.ani to RGBA.
+// decodes .cur/.ico/.ani to RGBA.
 
 namespace paimon::cursor_ico {
 
@@ -30,7 +30,7 @@ bool isAni(uint8_t const* data, size_t size);
 
 bool isSupported(uint8_t const* data, size_t size);
 
-// Elige la imagen mas grande.
+// picks the largest image.
 DecodeResult decodeIco(uint8_t const* data, size_t size);
 
 DecodeResult decodeAni(uint8_t const* data, size_t size);

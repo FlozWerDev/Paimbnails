@@ -2,7 +2,7 @@
 #include <Geode/Geode.hpp>
 #include "../services/TransitionManager.hpp"
 
-// TransitionConfigPopup — UI completa para configurar transiciones
+// full UI for configuring transitions
 
 class TransitionConfigPopup : public geode::Popup {
 protected:

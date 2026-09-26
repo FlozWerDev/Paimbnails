@@ -36,7 +36,7 @@ std::vector<std::uint8_t> readBytes(std::filesystem::path const& path, std::size
     std::error_code ec;
     auto size = std::filesystem::file_size(path, ec);
     if (ec || size == 0 || size > limit) return {};
-    // Bound the allocation even if an external editor grows the file after stat.
+    // bound the allocation even if an external editor grows the file after stat.
     std::ifstream stream(path, std::ios::binary);
     if (!stream) return {};
     std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
@@ -177,8 +177,8 @@ Decoded importMedia(std::string const& source, std::filesystem::path const& root
         page.rgba.resize(static_cast<std::size_t>(page.width) * page.height * 4);
         for (int i = 0; i < count; ++i) {
             auto& frame = animation->frames[first + i];
-            // Filter premultiplied pixels so transparent borders cannot inject
-            // their hidden RGB into the resized image.
+            // filter premultiplied pixels so transparent borders can't leak
+            // hidden RGB into the resize.
             for (std::size_t p = 0; p < frame.rgba.size(); p += 4)
                 for (int c = 0; c < 3; ++c) frame.rgba[p + c] = (frame.rgba[p + c] * frame.rgba[p + 3] + 127) / 255;
             std::vector<std::uint8_t> resized;
@@ -192,7 +192,7 @@ Decoded importMedia(std::string const& source, std::filesystem::path const& root
                 pixels = resized.data();
             }
             int x0 = (i % out.columns) * (out.width + 2), y0 = (i / out.columns) * (out.height + 2);
-            // Extrude one texel around every frame to prevent linear-filter bleeding.
+            // extrude one texel per frame against linear-filter bleeding.
             for (int y = -1; y <= out.height; ++y) for (int x = -1; x <= out.width; ++x) {
                 int sx = std::clamp(x, 0, out.width - 1);
                 int sy = std::clamp(y, 0, out.height - 1);
@@ -211,7 +211,7 @@ Decoded importMedia(std::string const& source, std::filesystem::path const& root
     json["delays"] = delays;
     auto temp = dir / "animation.tmp";
     if (!utils::file::writeString(temp, json.dump())) { out.error = "No se pudo guardar el indice."; return out; }
-    // Publish only after every page is complete. A missing manifest is rebuilt.
+    // publish only after every page is complete; a missing manifest rebuilds.
     std::filesystem::remove(manifest, ec);
     std::filesystem::rename(temp, manifest, ec);
     if (ec) { out.error = "No se pudo publicar el indice."; return out; }
@@ -282,8 +282,8 @@ public:
                 for (auto& callback : callbacks) if (callback) callback(media, decoded->error);
                 if (!media) log::warn("[Transitions] Media import: {}", decoded->error);
             });
-            // At most one decoded animation may wait for a GPU upload, even
-            // when a large legacy script requests many assets at startup.
+            // at most one decoded animation waits for GPU upload, even when a
+            // legacy script requests many assets at startup.
             while (!delivered->load() && !stopping.load())
                 std::this_thread::sleep_for(std::chrono::milliseconds(20));
             if (stopping.load()) return;

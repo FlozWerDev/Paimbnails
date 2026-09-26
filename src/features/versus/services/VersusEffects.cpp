@@ -117,8 +117,6 @@ void VersusEffects::apply(CardId card, bool fromRival) {
 }
 
 void VersusEffects::begin(CardId card, bool fromRival) {
-    auto const winSize = CCDirector::get()->getWinSize();
-
     switch (card) {
         case CardId::Fog:
             addBand(0.28f, {12, 14, 24, 235}, kFogTopId);
@@ -191,8 +189,6 @@ void VersusEffects::begin(CardId card, bool fromRival) {
         default:
             break;
     }
-
-    (void) winSize;
 }
 
 void VersusEffects::end(CardId card) {
@@ -264,11 +260,9 @@ void VersusEffects::update(float dt) {
 
     for (auto& effect : m_active) effect.remaining -= dt;
 
-    std::vector<CardId> expired;
     for (auto const& effect : m_active) {
-        if (effect.remaining <= 0.f) expired.push_back(effect.card);
+        if (effect.remaining <= 0.f) end(effect.card);
     }
-    for (auto card : expired) end(card);
     std::erase_if(m_active, [](ActiveEffect const& effect) { return effect.remaining <= 0.f; });
 
     if (m_bombTimer > 0.f) {
@@ -297,8 +291,7 @@ void VersusEffects::applyCameraTransforms() {
     }
 
     // The level writes its own zoom triggers into this same scale, so ours comes
-    // back out first; a remembered baseline would freeze a trigger fired mid-card.
-    // Y is the axis to read: mirror is the only thing that touches the sign.
+    // back out first; Y is the axis to read since mirror owns the sign.
     float const level = objects->getScaleY() / m_cameraFactor;
 
     // Written after the level's own update, so ours is what ends up on screen.

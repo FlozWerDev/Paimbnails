@@ -1,8 +1,5 @@
 #pragma once
-// Content hashing for PackGen v2: FNV-1a64 over bytes plus normalized
-// parameter fingerprints. Floats are quantized before hashing so the same
-// logical params always produce the same key (no float-to-string drift),
-// which keeps PackGraph pruning and PackCache hits stable across runs.
+// PackGen v2 content hashing: FNV-1a64 plus quantized param fingerprints, stable across runs.
 
 #include <cmath>
 #include <cstddef>
@@ -45,8 +42,7 @@ inline std::uint64_t hashString(std::string_view s) {
     return fnv1a64(s.data(), s.size());
 }
 
-// Quantize a float to 1/1024 steps before hashing. NaN maps to 0 so it
-// hashes deterministically instead of poisoning the key.
+// Quantize to 1/1024 steps; NaN maps to 0 instead of poisoning the key.
 inline std::int32_t normalizeFloat(float v) {
     if (!std::isfinite(v)) return 0;
     float q = std::lround(v * 1024.0f);
@@ -62,8 +58,7 @@ inline std::uint64_t hashFloat(float v, std::uint64_t seed = kFnvOffsetBasis) {
     return fnv1a64(buf, sizeof(buf), seed);
 }
 
-// Cache/graph key: content hash plus the pipeline version that produced it.
-// Bumping the version (see PackGen.hpp) invalidates every stored entry.
+// Key: content hash plus producing pipeline version; bumping the version (see PackGen.hpp) invalidates all.
 struct NodeKey {
     std::uint64_t hash = kFnvOffsetBasis;
     int version = 0;
@@ -81,8 +76,7 @@ struct NodeKeyHasher {
     }
 };
 
-// Canonical tint parameter fingerprint shared by the pipeline, the graph
-// and the cache so all three agree on what "same job" means.
+// Canonical tint fingerprint shared by pipeline, graph and cache: one definition of "same job".
 struct TintParams {
     std::uint8_t c1r = 0, c1g = 0, c1b = 0;
     std::uint8_t c2r = 0, c2g = 0, c2b = 0;

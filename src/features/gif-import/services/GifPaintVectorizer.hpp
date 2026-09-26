@@ -20,8 +20,8 @@ void prunePaintObjects(
     bool gridExact = true
 );
 
-// Solo las fusiones exactas (bloques y rectangulos cuya union no pinta ni un
-// pixel nuevo): lo que cose `repairPaintSeams` despues de la ultima poda.
+// Exact merges only (blocks and rectangles whose union paints zero new pixels):
+// what `repairPaintSeams` sews after the last prune.
 void mergePaintSolids(std::vector<Primitive>& objects, bool gridExact = true);
 
 void prunePaintObjectsByVisibility(

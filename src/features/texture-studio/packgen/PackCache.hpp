@@ -1,6 +1,5 @@
 #pragma once
-// PackCache: byte-budgeted LRU blob cache (memory + disk). Entries validate
-// by (hash, version, schema), so stale caches read as misses, never poison.
+// Byte-budgeted LRU blob cache (memory + disk). Stale entries read as misses, never poison.
 
 #include <cstddef>
 #include <cstdint>

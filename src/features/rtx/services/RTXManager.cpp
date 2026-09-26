@@ -12,17 +12,17 @@ using namespace geode::prelude;
 
 namespace paimon::rtx {
 
-// Solo si cambia el sentido de un campo guardado.
+// Only when a saved field flips meaning.
 constexpr int kConfigSchema = 3;
 
 void applyPreset(RTXConfig& cfg, Preset preset) {
-    // El preset caro sube filtro a la vez: 8 rayos no bastan solos.
+    // Pricey presets raise filter too: 8 rays alone aren't enough.
     switch (preset) {
         case Preset::Performance:
             cfg.renderScale = 0.35f; cfg.rayCount = 2; cfg.raySteps = 10;
             cfg.rayDistance = 0.24f; cfg.stepGrowth = 1.35f; cfg.bloomPasses = 3;
             cfg.denoise = 2.60f; cfg.atrousPasses = 2;
-            // Temporal bajo: con frameSkip=1 el 0.90 dejaba estelas.
+            // Low temporal: with frameSkip=1, 0.90 left trails.
             cfg.temporal = 0.85f; cfg.frameSkip = 1;
             break;
         case Preset::Balanced:
@@ -93,8 +93,7 @@ void RTXManager::loadConfig() {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) {
 #if defined(GEODE_IS_MOBILE)
-        // Fresh install on a phone: start from Performance so the first enable
-        // doesn't melt the GPU (HDR still probes at runtime, LDR fallback).
+        // Fresh phone install: start at Performance so first enable doesn't melt the GPU.
         applyPreset(m_config, Preset::Performance);
 #endif
         return;
@@ -198,12 +197,12 @@ void RTXManager::loadConfig() {
 
     int const schema = getInt("schema", 1);
 
-    // Esquema 1 invertia el filtro: se reaplica el preset guardado.
+    // Schema 1 inverted the filter: reapply the saved preset.
     if (schema < 2 && c.preset != static_cast<int>(Preset::Custom)) {
         applyPreset(c, static_cast<Preset>(c.preset));
     }
 
-    // Esquema 3 paso a luz lineal: se restaura el look por defecto.
+    // Schema 3 moved to linear light: restore the default look.
     if (schema < 3) {
         RTXConfig const fresh{};
         c.giStrength      = fresh.giStrength;

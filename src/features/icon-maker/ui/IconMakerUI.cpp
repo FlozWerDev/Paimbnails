@@ -174,7 +174,7 @@ CCNode* makeZoneChips(float width, std::vector<ZoneChip> const& zones,
             holder->addChild(face);
         }
 
-// La esquina dice de un vistazo si la zona tiene algo y con que pinta.
+// corner chip shows at a glance whether the zone has content and what it paints with.
         if (zone.layerCount > 0) {
             auto faceSize = face ? face->getScaledContentSize() : CCSize{chipW, kChipH};
             CCPoint const corner{chipW / 2.f + faceSize.width / 2.f - 9.f,

@@ -21,8 +21,8 @@ float saturation(Color const& color) {
     return static_cast<float>(high - low) / high;
 }
 
-// Solo brillan los colores que de verdad se leen como luz: los claros y los
-// saturados. Poner glow debajo de un gris medio solo ensucia el dibujo.
+// Only colors reading as light glow: brights and saturateds. Glow under a
+// mid gray only dirties the drawing.
 std::vector<std::uint16_t> glowingColors(std::vector<Color> const& palette) {
     std::vector<std::uint16_t> colors;
     for (std::size_t i = 0; i < palette.size(); ++i) {
@@ -112,8 +112,8 @@ void applyGlow(ImportPlan& plan, GlowMode mode, std::size_t objectBudget) {
         auto const& source = (*candidate.owner)[candidate.index];
         halos[candidate.owner].push_back(halo(source, map[source.color], ring));
     }
-    // Delante en el vector es detras en el dibujo: en modo bloques el orden del
-    // payload es el unico que decide quien tapa a quien.
+    // front of vector is back of drawing: in blocks mode payload order alone
+    // decides who covers whom.
     for (auto& [owner, glow] : halos) {
         owner->insert(owner->begin(), glow.begin(), glow.end());
     }

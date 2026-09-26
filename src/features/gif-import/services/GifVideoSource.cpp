@@ -84,7 +84,7 @@ void convertFrame(
     rotateRgba(rgba, outputWidth, outputHeight, rotation);
 }
 
-// Ralea a la mitad quedandose con los pares para ensanchar el paso cubierto.
+// Thins to half keeping even frames, widening the covered stride.
 void thinCaptured(std::vector<SourceFrame>& frames, std::vector<double>& stamps) {
     std::size_t kept = 0;
     for (std::size_t i = 0; i < frames.size(); i += 2) {
@@ -98,7 +98,7 @@ void thinCaptured(std::vector<SourceFrame>& frames, std::vector<double>& stamps)
     stamps.resize(kept);
 }
 
-// Ultimo delay sin cabecera: mediana de los saltos reales.
+// headerless tail delay: median of the real gaps.
 double medianGap(std::vector<double> const& stamps, double fallback) {
     if (stamps.size() < 2) return fallback;
     std::vector<double> gaps;
@@ -157,7 +157,7 @@ std::shared_ptr<SourceAnimation> decodeVideo(
     }
 
     int const rotation = ((decoder->getRotationDegrees() % 360) + 360) % 360;
-    // Vertical tumbado: el frame viene apaisado con flag de giro.
+    // sideways portrait: landscape frame plus rotation flag.
     bool const portrait = rotation == 90 || rotation == 270;
     int const codedWidth = portrait ? sourceHeight : sourceWidth;
     int const codedHeight = portrait ? sourceWidth : sourceHeight;
@@ -165,16 +165,16 @@ std::shared_ptr<SourceAnimation> decodeVideo(
     int const longest = std::max(codedWidth, codedHeight);
     double const shrink = longest > kMaxVideoSide
         ? static_cast<double>(kMaxVideoSide) / longest : 1.0;
-    // Croma va de 2 en 2: un lado impar rompe el escalado en libyuv.
+    // chroma runs 2x2: an odd side breaks libyuv scaling.
     int const outputWidth = std::max(2, static_cast<int>(std::lround(codedWidth * shrink)) & ~1);
     int const outputHeight = std::max(2, static_cast<int>(std::lround(codedHeight * shrink)) & ~1);
 
-    // La matriz se mide en nativo: el decoder puede venir reducido.
+    // matrix is measured native: the decoder may come downscaled.
     int const nativeWidth = decoder->getNativeWidth();
     int const nativeHeight = decoder->getNativeHeight();
     bool const wideGamut = (nativeWidth > 0 ? nativeWidth : sourceWidth) >= 1280 ||
         (nativeHeight > 0 ? nativeHeight : sourceHeight) >= 720;
-    // HD es BT.709; leerla como BT.601 vira los colores.
+    // HD is BT.709; reading it as BT.601 shifts colors.
     VideoColorMatrix matrix = decoder->getColorMatrix();
     if (matrix == VideoColorMatrix::Auto) {
         matrix = wideGamut ? VideoColorMatrix::BT709 : VideoColorMatrix::BT601;
@@ -193,12 +193,12 @@ std::shared_ptr<SourceAnimation> decodeVideo(
     auto lastFrame = std::chrono::steady_clock::now();
     auto deadline = lastFrame + std::chrono::seconds(45);
     bool stalled = false;
-    // PTS corrupto se salta; el tope evita girar sin fin.
+    // corrupt PTS is skipped; the cap stops endless spinning.
     int badPtsStreak = 0;
     constexpr int kMaxBadPtsStreak = 600;
     bool aborted = false;
-    // Se decodifica hasta EOS: parar al llenar sesga al inicio si la cabecera
-    // infravalora; el doblado de abajo ralea para cubrir todo el rango.
+    // decode through EOS: stopping at full skews to the start when the header
+    // undercounts; the doubling below thins to cover the whole range.
     for (;;) {
         if (progress && progress->cancelled.load(std::memory_order_relaxed)) { aborted = true; break; }
         if (paimon::isRuntimeShuttingDown()) { aborted = true; break; }
@@ -211,7 +211,7 @@ std::shared_ptr<SourceAnimation> decodeVideo(
             continue;
         }
         lastFrame = std::chrono::steady_clock::now();
-        // La cabecera puede infravalorar; el techo cede con lo ya aceptado.
+        // headers may undercount; the ceiling yields to what's accepted.
         double const ptsCeil = stamps.empty()
             ? duration + 1.0
             : std::max(duration + 1.0, stamps.back() + 30.0);
@@ -223,13 +223,13 @@ std::shared_ptr<SourceAnimation> decodeVideo(
             continue;
         }
         badPtsStreak = 0;
-        // Sin paso de cabecera se arranca del ritmo observado.
+        // no header step: start from the observed pace.
         if (step <= 0.0 && stamps.size() > 1) {
             step = medianGap(stamps, 0.04);
             nextWanted = stamps.back() + step;
         }
-        // Cabecera infravalorada: el video supera el plan; se ensancha el paso
-        // y se ralea lo capturado para seguir cubriendo todo el rango.
+        // undercounted header: video outruns the plan; widen the step and thin
+        // captures to keep covering the whole range.
         while (step > 0.0 && !stamps.empty() &&
                frame->pts > stamps.front() + step * wanted &&
                animation->frames.size() > 1) {
@@ -271,7 +271,7 @@ std::shared_ptr<SourceAnimation> decodeVideo(
         if (partialOut) *partialOut = true;
     }
 
-    // El ritmo sale de los timestamps reales.
+    // pace comes from real timestamps.
     double const lastStep = medianGap(stamps, step > 0.0 ? step : 0.04);
     for (std::size_t i = 0; i < animation->frames.size(); ++i) {
         double const next = i + 1 < stamps.size() ? stamps[i + 1] - stamps[i] : lastStep;

@@ -1,8 +1,5 @@
-// Avoid underflow on empty scene.
-
 #include <Geode/Geode.hpp>
 #include <Geode/modify/CCScene.hpp>
-#include "../blur/PopupBlurService.hpp"
 
 using namespace geode::prelude;
 
@@ -13,15 +10,10 @@ class $modify(PaimonSafeCCScene, CCScene) {
 
     int getHighestChildZ() {
         auto* children = this->getChildren();
+        // empty scene underflows the vanilla max loop
         if (!children || children->count() == 0) {
             return 0;
         }
         return CCScene::getHighestChildZ();
-    }
-
-// No fades during destruction.
-    void destructor() {
-        paimon::popupblur::cleanupAllActive(0.0f);
-        CCScene::~CCScene();
     }
 };

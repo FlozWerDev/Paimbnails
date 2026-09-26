@@ -17,8 +17,7 @@ namespace paimon {
 
 namespace {
 
-// Retry OpenClipboard briefly; clipboard managers, antivirus, or RDP may hold it.
-// Called from workers and protected by the process-wide clipboard mutex.
+// retry OpenClipboard briefly; clipboard managers, AV or RDP may hold it.
 bool openClipboardWithRetry(HWND owner) {
     static constexpr int kBackoffMs[] = {2, 4, 8, 16, 30, 30, 30, 30};
     static constexpr int kAttempts = sizeof(kBackoffMs) / sizeof(kBackoffMs[0]);
@@ -29,7 +28,7 @@ bool openClipboardWithRetry(HWND owner) {
     return false;
 }
 
-// Allocate a movable block for SetClipboardData; the caller owns failure cleanup.
+// movable block for SetClipboardData; caller frees on failure.
 HGLOBAL allocAndFill(void const* data, size_t size) {
     HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, size);
     if (!hMem) return nullptr;
@@ -78,7 +77,7 @@ std::vector<uint8_t> buildDIBV5(uint8_t const* rgba, int width, int height) {
     return buf;
 }
 
-// Build a legacy CF_DIB buffer: 24bpp bottom-up BGR for broad compatibility.
+// legacy CF_DIB: 24bpp bottom-up BGR for broad compatibility.
 std::vector<uint8_t> buildDIBClassic(uint8_t const* rgba, int width, int height) {
     int const rowStride = ((width * 3 + 3) & ~3); // pad to 4 bytes
     size_t const pixelBytes = static_cast<size_t>(rowStride) * height;
@@ -93,7 +92,7 @@ std::vector<uint8_t> buildDIBClassic(uint8_t const* rgba, int width, int height)
     h->biCompression = BI_RGB;
     h->biSizeImage   = static_cast<DWORD>(pixelBytes);
 
-    // bottom-up: DIB row 0 = last source row
+    // bottom-up: DIB row 0 is the last source row.
     uint8_t* dst = buf.data() + sizeof(BITMAPINFOHEADER);
     for (int y = 0; y < height; ++y) {
         int const srcY = height - 1 - y;
@@ -114,11 +113,10 @@ std::vector<uint8_t> buildDIBClassic(uint8_t const* rgba, int width, int height)
 
 bool copyRGBAToClipboard(uint8_t const* rgba, int width, int height) {
     if (!rgba || width <= 0 || height <= 0) {
-        geode::log::warn("[ClipboardImage] parametros invalidos: rgba={} {}x{}",
+        geode::log::warn("[ClipboardImage] invalid params: rgba={} {}x{}",
                          (void*)rgba, width, height);
         return false;
     }
-
 
     auto dibv5Buf  = buildDIBV5(rgba, width, height);
     auto dibClassicBuf = buildDIBClassic(rgba, width, height);
@@ -142,17 +140,16 @@ bool copyRGBAToClipboard(uint8_t const* rgba, int width, int height) {
         if (hDIBV5) GlobalFree(hDIBV5);
         if (hDIB)   GlobalFree(hDIB);
         if (hPNG)   GlobalFree(hPNG);
-        geode::log::warn("[ClipboardImage] no se pudo alocar memoria para ningun formato");
+        geode::log::warn("[ClipboardImage] could not allocate memory for any format");
         return false;
     }
 
-    // Register a custom PNG format for Discord and browsers.
-
+    // custom PNG format for Discord and browsers.
     UINT const cfPng = RegisterClipboardFormatA("PNG");
 
     HWND owner = GetForegroundWindow();
     if (!openClipboardWithRetry(owner)) {
-        geode::log::warn("[ClipboardImage] OpenClipboard fallo (GetLastError={})",
+        geode::log::warn("[ClipboardImage] OpenClipboard failed (GetLastError={})",
                          GetLastError());
         if (hDIBV5) GlobalFree(hDIBV5);
         if (hDIB)   GlobalFree(hDIB);
@@ -161,7 +158,7 @@ bool copyRGBAToClipboard(uint8_t const* rgba, int width, int height) {
     }
 
     if (!EmptyClipboard()) {
-        geode::log::warn("[ClipboardImage] EmptyClipboard fallo (GetLastError={})",
+        geode::log::warn("[ClipboardImage] EmptyClipboard failed (GetLastError={})",
                          GetLastError());
         CloseClipboard();
         if (hDIBV5) GlobalFree(hDIBV5);
@@ -177,7 +174,7 @@ bool copyRGBAToClipboard(uint8_t const* rgba, int width, int height) {
             hDIBV5 = nullptr; // ownership transferred
             anySet = true;
         } else {
-            geode::log::warn("[ClipboardImage] SetClipboardData(CF_DIBV5) fallo: {}",
+            geode::log::warn("[ClipboardImage] SetClipboardData(CF_DIBV5) failed: {}",
                              GetLastError());
         }
     }
@@ -186,7 +183,7 @@ bool copyRGBAToClipboard(uint8_t const* rgba, int width, int height) {
             hDIB = nullptr;
             anySet = true;
         } else {
-            geode::log::warn("[ClipboardImage] SetClipboardData(CF_DIB) fallo: {}",
+            geode::log::warn("[ClipboardImage] SetClipboardData(CF_DIB) failed: {}",
                              GetLastError());
         }
     }
@@ -195,7 +192,7 @@ bool copyRGBAToClipboard(uint8_t const* rgba, int width, int height) {
             hPNG = nullptr;
             anySet = true;
         } else {
-            geode::log::warn("[ClipboardImage] SetClipboardData(\"PNG\") fallo: {}",
+            geode::log::warn("[ClipboardImage] SetClipboardData(\"PNG\") failed: {}",
                              GetLastError());
         }
     }
@@ -207,7 +204,7 @@ bool copyRGBAToClipboard(uint8_t const* rgba, int width, int height) {
     if (hPNG)   GlobalFree(hPNG);
 
     if (anySet) {
-        geode::log::info("[ClipboardImage] {}x{} copiado al portapapeles "
+        geode::log::info("[ClipboardImage] {}x{} copied to clipboard "
                          "(DIBV5={} DIB={} PNG={})",
                          width, height,
                          (hDIBV5 == nullptr) ? "ok" : "skip",
@@ -221,7 +218,6 @@ bool copyRGBAToClipboard(uint8_t const* rgba, int width, int height) {
 #else // !GEODE_IS_WINDOWS
 
 bool copyRGBAToClipboard(uint8_t const* /*rgba*/, int /*width*/, int /*height*/) {
-    // TODO: macOS (NSPasteboard / NSImage), Android (ClipboardManager).
     return false;
 }
 

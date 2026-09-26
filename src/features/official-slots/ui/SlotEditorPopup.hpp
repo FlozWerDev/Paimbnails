@@ -81,15 +81,12 @@ protected:
     bool m_isNew = true;
     std::function<void()> m_onSaved;
 
-    // 1-based spot inside the visible pages. Only applied on save for
-    // appended slots, and only moved when new or touched: a disabled slot
-    // has no visible spot, so an untouched edit must not relocate it.
+    // 1-based visible spot, applied on save; untouched edits must not relocate a spotless slot.
     std::size_t m_position = 1;
     std::size_t m_positionMax = 1;
     bool m_positionDirty = false;
 
-    // A picked .gmd waits here until Save (or Test) imports it into our folder,
-    // so browsing never touches the store until the user commits.
+    // picked .gmd waits here until Save/Test imports it; browsing never touches the store.
     std::filesystem::path m_pendingGmd;
 
     geode::TextInput* m_idInput = nullptr;

@@ -21,8 +21,7 @@ struct MainThreadDelayTask final : cocos2d::CCObject {
     }
 
     static std::unordered_set<MainThreadDelayTask*>& registry() {
-        // Deliberately process-lifetime: a static container could destroy
-        // callbacks containing Ref/WeakRef after Cocos' pools are gone.
+        // process-lifetime: statics could destroy Ref/WeakRef callbacks after Cocos pools.
         static auto* tasks = new std::unordered_set<MainThreadDelayTask*>();
         return *tasks;
     }
@@ -76,7 +75,7 @@ inline void scheduleMainThreadDelay(float delay, geode::CopyableFunction<void()>
     );
 }
 
-// Must run while CCDirector, CCScheduler and WeakRefPool are still alive.
+// CCDirector, CCScheduler and WeakRefPool must still be alive.
 inline void cancelAllMainThreadDelays() {
     std::vector<detail::MainThreadDelayTask*> tasks;
     {

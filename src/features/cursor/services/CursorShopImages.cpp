@@ -11,13 +11,11 @@ namespace paimon::cursorshop {
 
 namespace {
 
-// Descargas simultaneas. Con las 40 de una pagina a la vez la mayoria se
-// quedaba sin resolver.
+// Concurrent downloads; 40 at once left most unresolved.
 constexpr int kMaxConcurrent = 4;
-// Un corte suelto se reintenta una vez antes de marcar la URL como fallida.
+// One retry before marking a URL failed.
 constexpr int kMaxAttempts = 2;
-// Al pasarse se tira el mapa entero: los sprites ya montados retienen su propia
-// textura, asi que lo unico que se pierde es el atajo de cache.
+// Clearing drops only the cache shortcut; mounted sprites keep their texture.
 constexpr std::size_t kMaxCachedTextures = 400;
 
 constexpr int kPlaceholderTag = 0x5401;
@@ -36,7 +34,7 @@ CCTexture2D* ShopImages::fetch(std::string const& url, Callback cb) {
         return found->second.data();
     }
     if (m_failed.count(url)) {
-        // Se responde ya para que quien pidio la imagen pueda marcar el fallo.
+        // Answer now so the requester can mark the failure.
         if (cb) cb(nullptr);
         return nullptr;
     }
@@ -57,7 +55,7 @@ void ShopImages::pump() {
         auto url = m_queue.front();
         m_queue.pop_front();
 
-        // Pudo resolverse o descartarse mientras esperaba turno.
+        // May have resolved or been dropped while queued.
         if (!m_pending.count(url) || m_cache.count(url)) continue;
 
         ++m_active;
@@ -75,7 +73,7 @@ void ShopImages::pump() {
                     if (self.m_cache.size() >= kMaxCachedTextures) self.m_cache.clear();
                     self.m_cache[url] = image.texture;
                     texture = image.texture;
-                    // El mapa se queda con su propia referencia.
+                    // Map keeps its own reference.
                     image.texture->release();
                 }
             }
@@ -111,7 +109,7 @@ void ShopImages::finish(std::string const& url, CCTexture2D* texture) {
 }
 
 void ShopImages::clear() {
-    // m_active no se toca: las descargas en vuelo lo bajaran al volver.
+    // m_active untouched: in-flight downloads decrement on return.
     m_cache.clear();
     m_failed.clear();
     m_pending.clear();
@@ -128,8 +126,7 @@ void mountThumb(CCNode* holder, std::string const& url, float maxWidth, float ma
 
     auto box = holder->getContentSize();
 
-    // El marcador va antes de pedir la imagen: si la URL ya se dio por fallida,
-    // fetch responde en el acto y hace falta que exista para poder marcarlo.
+    // Placeholder first: a known-failed URL answers synchronously and needs it present.
     if (auto* placeholder = CCLabelBMFont::create("...", "bigFont.fnt")) {
         placeholder->setTag(kPlaceholderTag);
         placeholder->setScale(0.3f);

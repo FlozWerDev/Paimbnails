@@ -20,8 +20,7 @@ using namespace paimon::progression;
 
 namespace {
 
-// One chip per profile: mini tier badge plus the level, sized to sit in the
-// username row next to the role badges.
+// One chip per profile: tier badge plus level, sized for the username row.
 CCNode* buildLevelChip(BadgeContext const& ctx, float height) {
     auto const& tier = tierForLevel(ctx.level);
 
@@ -96,8 +95,7 @@ class $modify(ProgressionProfilePage, ProfilePage) {
         if (!this->m_ownProfile && score) topUpVersusExp(score->m_accountID);
     }
 
-    // Versus XP is unpublished, so the chip draws twice: short now, again
-    // when the duel server answers.
+    // Versus XP is unpublished: draw now, redraw when the server answers.
     void topUpVersusExp(int accountId) {
         if (accountId <= 0) return;
         if (!paimon::modules::isEnabled("paimbnails.versus.menu")) return;
@@ -121,8 +119,7 @@ class $modify(ProgressionProfilePage, ProfilePage) {
         auto* menu = typeinfo_cast<CCMenu*>(this->getChildByIDRecursive("username-menu"));
         if (!menu) return;
 
-        // The redesign relocates the chip into its own header, so a stale one
-        // is not necessarily still under username-menu.
+        // Redesign moves the chip to its own header; a stale one may live elsewhere.
         std::string const id = "paimon-level-badge"_spr;
         while (auto* existing = this->getChildByIDRecursive(id)) {
             existing->removeFromParent();
@@ -146,8 +143,7 @@ class $modify(ProgressionProfilePage, ProfilePage) {
     }
 };
 
-// The very first snapshot has to be taken before any level is beaten, or the
-// next completion would report a whole account's worth of XP as one gain.
+// First snapshot before any completion, or the next one reports a whole account as one gain.
 class $modify(ProgressionMenuLayer, MenuLayer) {
     $override
     bool init() {

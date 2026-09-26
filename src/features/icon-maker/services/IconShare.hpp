@@ -1,6 +1,6 @@
 #pragma once
-// Compartir iconos: empaqueta un proyecto (project.json + images/) como un
-// archivo .paimbicon (zip) e importa los de otras personas como slot nuevo.
+// Icon sharing: packs a project (project.json + images/) as a .paimbicon (zip)
+// and imports other people's as a new slot.
 
 #include <Geode/Geode.hpp>
 

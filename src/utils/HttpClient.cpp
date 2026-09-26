@@ -60,9 +60,8 @@ std::string getSafeAccountUsername() {
     return "";
 }
 
-// Solo estos codigos significan "esto no existe" y valen para cachear el negativo. Un 0
-// (timeout o corte de red), un 5xx o un 429 son transitorios: tratarlos como ausencia
-// dejaba el nivel en blanco durante NOT_FOUND_TTL_SECONDS por un hipo del servidor.
+// only these mean "missing" for negative caching. 0 (timeout), 5xx and 429
+// are transient: treating them as absent blanked the level on server hiccups.
 bool isMissingStatus(int status) {
     return status == 404 || status == 410;
 }
@@ -223,10 +222,8 @@ void HttpClient::completeModCodeSetup(std::string const& challengeToken, Generic
     postWithoutModCode("/api/mod-auth/complete", body.dump(), std::move(callback));
 }
 
-// Cabeceras que identifican o autentican al usuario. Varios metodos publicos aceptan una
-// URL completa (get, post, postWithAuth) y metian estas a mano en la lista, asi que apuntar
-// uno de ellos al CDN o al servidor del foro mandaba la credencial a un tercero. Se filtran
-// en el unico sitio por el que pasan todas.
+// identifying/auth headers. public methods take full URLs and hand-listed these,
+// so pointing one at the CDN/forum leaked credentials; filter at the single chokepoint.
 static bool isCredentialHeader(std::string const& key) {
     static constexpr std::string_view kCredentialKeys[] = {
         "x-mod-code", "x-viewer-token", "x-api-key",
@@ -261,11 +258,8 @@ static void applyHeaderList(web::WebRequest& req, std::vector<std::string> const
     }
 }
 
-// Que hosts pueden recibir credenciales. Son los dos backends propios: el worker y el
-// servidor del foro, que necesita el mod code para autenticar acciones de moderacion.
-// Todo lo demas queda fuera: performRequest se usa tambien contra el CDN de Bunny y
-// contra URLs que vienen en respuestas del servidor, y mandarles la cabecera dejaba el
-// mod code (una credencial de 180 dias) en los logs de un tercero.
+// credential-worthy hosts: our two backends only (worker, forum). performRequest
+// also hits the Bunny CDN and response URLs; the mod code must never land there.
 bool HttpClient::isTrustedBackendUrl(std::string const& url) const {
     if (url.empty()) return false;
     if (!url.starts_with("http://") && !url.starts_with("https://")) return true;  // ruta relativa
@@ -295,8 +289,7 @@ void HttpClient::performRequest(
     if (includeStoredModCode && !hasExplicitModCodeHeader && !m_modCode.empty() && trustedHost) {
         req.header("X-Mod-Code", m_modCode);
     }
-    // Prueba de propiedad de la cuenta de GD; el servidor la exige para votar y para
-    // cambiar el fondo de perfil cuando REQUIRE_VERIFIED_IDENTITY esta activado.
+    // GD account ownership proof; required for votes and profile backgrounds.
     if (trustedHost && !m_viewerToken.empty()) {
         req.header("X-Viewer-Token", m_viewerToken);
     }
@@ -358,8 +351,7 @@ void HttpClient::performRequest(
     });
 }
 
-// Reenvia a la version con codigo de estado. La mayoria de llamantes solo miran si fue
-// bien, pero la cadena de descarga necesita distinguir un 404 real de un fallo pasajero.
+// forward to the status-code variant; downloads need 404 vs transient.
 void HttpClient::performBinaryRequest(
     std::string const& url,
     std::vector<std::string> const& headers,
@@ -1490,9 +1482,8 @@ void HttpClient::downloadThumbnail(int levelId, DownloadCallback callback) {
                         removeManifestEntry(levelId);
                         resolveInflight(levelId, false, {});
                     } else {
-                        // Timeout, 5xx, 429 o corte de red: no es "no existe". Cachear el
-                        // negativo aqui dejaba el nivel en blanco cinco minutos y ademas
-                        // tiraba la entrada buena del manifiesto.
+                        // timeout/5xx/429/net-cut is not "missing": negative caching
+                        // blanked the level and dropped the good manifest entry.
                         PaimonDebug::warn("[HttpClient] Transient failure for level {} (HTTP {}), not caching as missing", levelId, status);
                         resolveInflight(levelId, false, {});
                     }
@@ -2909,10 +2900,8 @@ std::string buildBatchIdsJson(std::string const& key, std::vector<int> const& id
 }
 }
 
-// El servidor lee un objeto de Bunny por id y cada lectura cuenta contra el limite de 50
-// subrequests por invocacion, asi que el tamano del lote es un contrato entre las dos
-// partes: estos numeros son los mismos que MAX_BATCH_ASSET_FETCHES y
-// MAX_BATCH_LIST_FETCHES del worker. Pasarse hacia fallar el lote entero con un 500.
+// each Bunny object read costs one of 50 subrequests per invocation: batch sizes
+// mirror the worker MAX_BATCH_*_FETCHES. overshooting 500s the whole batch.
 static constexpr size_t MAX_ASSET_BATCH = 15;
 static constexpr size_t MAX_PROFILE_BATCH = 10;
 

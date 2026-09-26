@@ -11,8 +11,8 @@
 
 namespace paimon::volscroll {
 
-// Geode keybind editor extended with mouse buttons and optional wheel capture.
-// Keyboard saves to KeybindSettingV3; mouse/wheel saves to ExtendedKeybind.
+// keybind editor with mouse buttons and optional wheel capture.
+// keyboard saves to KeybindSettingV3; mouse/wheel to ExtendedKeybind.
 
 class ExtendedKeybindEditPopup : public geode::Popup {
 public:
@@ -32,7 +32,7 @@ public:
 
     bool isRecording() const { return m_isRecording; }
 
-    // Called by global listeners; true means the event was consumed.
+    // true means the event was consumed.
     bool captureKeyboard(cocos2d::enumKeyCodes key, geode::KeyboardModifier mods);
     bool captureMouse(paimon::keybinds::MouseButton btn, geode::KeyboardModifier mods);
     bool captureScroll(bool up, geode::KeyboardModifier mods);
@@ -56,14 +56,13 @@ protected:
     void enterRecordingMode();
     void exitRecordingMode();
     void refreshDisplay();
-    // Show the recording state with the vanilla button sprites.
     void updateRecordButtonAppearance();
 
     std::string m_title;
     SaveCallback m_onSave;
     bool m_allowScroll = true;
 
-    // Pending edits, committed by Save.
+    // pending edits, committed by Save.
     std::optional<geode::Keybind> m_pendingKeyboard;
     paimon::keybinds::ExtendedKeybind m_pendingExtended;
 

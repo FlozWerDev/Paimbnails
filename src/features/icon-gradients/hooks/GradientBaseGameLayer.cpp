@@ -1,9 +1,5 @@
-// Dual-exit doll shading, rethought for Paimbnails.
-//
-// Idea credit: "Icon Gradients" by zilko
-// (https://github.com/zilko144/icon-gradients-geode, unlicensed —
-// all rights reserved). Independent implementation: same behavior (re-shade
-// the stashed dual doll when the dual effect plays), own expression.
+// Re-shades the stashed dual doll when the dual effect plays, after zilko's
+// "Icon Gradients" (independent implementation; idea credit zilko144, unlicensed).
 
 #include "GradientBaseGameLayer.hpp"
 #include "GradientSimplePlayer.hpp"

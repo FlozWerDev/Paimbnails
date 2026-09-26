@@ -121,11 +121,11 @@ public:
     void loadAllThumbnails() {
         if (m_loadingStarted) return;
         m_loadingStarted = true;
-        log::info("[GauntletLayer] loadAllThumbnails: {} levels", m_levelIDs.size());
 
         Ref<GauntletThumbnailNode> self = this;
         for (int id : m_levelIDs) {
-            ThumbnailLoader::get().requestLoad(id, "", [self](CCTexture2D* tex, bool success) {
+            // warm the cache; the display path loads when ready
+            ThumbnailLoader::get().requestLoad(id, "", [self](CCTexture2D*, bool) {
             }, 10, false);
         }
     }
@@ -137,9 +137,8 @@ public:
 
         if (m_transitioning) {
             m_transitionTime += dt;
-            if (m_transitionTime >= 0.6f) { // buffer fade
-                onTransitionFinished();
-            }
+            // past the 0.5s fade
+            if (m_transitionTime >= 0.6f) onTransitionFinished();
         }
 
         if (m_firstLoad && m_timer > 0.1f) {
@@ -234,15 +233,12 @@ public:
         nextSprite->setOpacity(0);
         nextSprite->setZOrder(1);
 
-        if (currentSprite) {
-            currentSprite->setZOrder(0);
-        }
-
         nextSprite->stopAllActions();
         nextSprite->runAction(CCFadeIn::create(0.5f));
         nextSprite->runAction(CCEaseSineOut::create(CCScaleTo::create(3.5f, scale * 1.05f)));
 
         if (currentSprite) {
+            currentSprite->setZOrder(0);
             currentSprite->stopAllActions();
             currentSprite->runAction(CCFadeOut::create(0.5f));
         } else {
@@ -273,7 +269,7 @@ class $modify(PaimonGauntletLayer, GauntletLayer) {
         if (!GauntletLayer::init(type)) return false;
         log::info("[GauntletLayer] init: type={}", static_cast<int>(type));
 
-        // Idempotent: don't stack backgrounds if init runs more than once.
+        // init can re-run; don't stack backgrounds
         if (this->getChildByID("paimon-gauntlet-background"_spr)) {
             return true;
         }
@@ -288,9 +284,7 @@ class $modify(PaimonGauntletLayer, GauntletLayer) {
         std::vector<int> ids;
         if (mapPack && mapPack->m_levels) {
             for (auto* str : CCArrayExt<CCString*>(mapPack->m_levels)) {
-                if (str) {
-                    ids.push_back(str->intValue());
-                }
+                if (str) ids.push_back(str->intValue());
             }
         }
 

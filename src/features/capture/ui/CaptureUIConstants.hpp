@@ -36,15 +36,13 @@ namespace preview {
 
     constexpr float RECAPTURE_TIMEOUT_SEC = 5.0f;
 
-    // Offscreen size of the live thumbnail shown by the editor popups. 16:9,
-    // same framing as the real capture.
+    // Live-thumb offscreen size; 16:9, same framing as the real capture.
     constexpr int MINI_RT_WIDTH  = 480;
     constexpr int MINI_RT_HEIGHT = 270;
 }
 
-// Shared chrome for the two editor popups (layer editor / asset browser): a
-// header band with the live preview on the left and tools on the right, then a
-// full-width list, then the action row.
+// Shared chrome for the two editor popups: header band with live preview,
+// then full-width list, then action row.
 namespace theme {
     // Single palette for both editor popups (was copy-pasted per file).
     constexpr cocos2d::ccColor3B kAccent    {255, 215, 90};
@@ -56,8 +54,7 @@ namespace theme {
 }
 
 namespace editor {
-    // The popup title sits ~20pt from the top and is ~20pt tall, so the header
-    // band starts below that. PREVIEW_W/H keep the 16:9 framing of the capture.
+    // Header band starts below the ~20pt title; PREVIEW_W/H keep 16:9 capture framing.
     constexpr float HEADER_TOP_PAD  = 33.f;
     constexpr float SIDE_PAD        = 10.f;
     constexpr float PREVIEW_W       = 128.f;

@@ -154,8 +154,8 @@ bool PaimonModulesLayer::init() {
     m_searchInput->setMaxCharCount(32);
     m_searchInput->setPosition({panelLeft + panelW - 18.f - searchW / 2.f, filterY});
     m_searchInput->setScale(0.74f);
-    // Plain `this`: el input es hijo propio y no nos sobrevive. Un WeakRef
-    // nos mantendria vivos hasta soltarse dentro de lock(), mid-callback.
+    // plain this: the input is our child and cannot outlive us;
+    // a WeakRef would keep us alive into lock(), mid-callback.
     m_searchInput->setCallback([this](std::string const& text) {
         if (!this->getParent()) return;
         m_query = text;
@@ -256,7 +256,6 @@ void PaimonModulesLayer::buildList() {
         if (header != lastHeader) { headerCount++; lastHeader = header; }
     }
 
-    // Banner shown when another mod is holding some of the visible modules back.
     int cededVisible = 0;
     for (auto const* mod : m_visible) {
         if (paimon::info::compat::isCeded(mod->key)) cededVisible++;
@@ -456,8 +455,7 @@ void PaimonModulesLayer::refreshRow(int index, bool updateToggler) {
     bool on = selfOn && available && !row.ceded;
 
     if (row.toggler) {
-        // La fila clicada ya volteo su sprite en el click nativo; voltearla
-        // aqui de nuevo deja el checkbox atascado en el estado viejo.
+        // the clicked row already flipped its sprite; flipping again sticks the checkbox.
         if (updateToggler) row.toggler->toggle(selfOn);
         row.toggler->setEnabled(available);
     }
@@ -489,8 +487,7 @@ void PaimonModulesLayer::onToggle(CCObject* sender) {
     if (!mod) return;
 
     mods::setEnabled(*mod, !mods::isSelfEnabled(*mod));
-    // A master flips the whole subtree, so repaint everything except the
-    // toggler that was just clicked (see refreshRow's updateToggler note).
+    // a master flips its subtree; repaint all but the just-clicked toggler.
     refreshAllRows(tag);
 }
 

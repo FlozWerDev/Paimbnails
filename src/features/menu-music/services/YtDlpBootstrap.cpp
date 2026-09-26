@@ -150,9 +150,7 @@ void YtDlpBootstrap::ensureInstalled(
             }
 
             auto data = res.data();
-            // yt-dlp.exe pesa entre 14 y 20 MB tipicamente. Si vemos algo
-            // debajo de 1MB asumimos que es un redirect roto o una pagina
-            // de error HTML camuflada.
+            // yt-dlp.exe is ~14-20MB; under 1MB means broken redirect or HTML error page.
             if (data.size() < 1'000'000) {
                 fail(fmt::format("Downloaded file is suspiciously small ({} bytes). "
                                  "The binary may have failed to fetch.", data.size()));

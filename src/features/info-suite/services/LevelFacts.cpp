@@ -139,8 +139,8 @@ std::string difficultyFaceName(int face) {
 std::string difficultyName(GJGameLevel* level) {
     if (!level) return "";
 
-    // Un demon sin subtipo es un demon duro; la cara generica solo aparece
-    // cuando la dificultad se dedujo de las estrellas.
+    // an unsubtyped demon is a hard demon; the generic face only shows when
+    // difficulty came from stars.
     if (level->m_demon.value() > 0 && difficultyValue(level) == 6) return "Demon Duro";
     return difficultyFaceName(difficultyValue(level));
 }

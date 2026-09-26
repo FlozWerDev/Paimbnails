@@ -51,8 +51,7 @@ ImageBuffer makeSyntheticSprite() {
     return img;
 }
 
-// Ground-truth masks derived from known geometry (not the classifier), used as
-// the PSNR reference to verify the classifier + mask builder reproduced roles.
+// Ground-truth masks from known geometry (not the classifier): PSNR reference for role reproduction.
 MaskSet makeGroundTruthMasks(ImageBuffer const& sprite) {
     int W = sprite.width();
     int H = sprite.height();
@@ -179,8 +178,7 @@ bool engineSelfTest() {
         ok = false;
     }
 
-    // Regression guard: a former global dark-pixel guard wrongly preserved all
-    // dark details; the dark Color2 accent must actually become blue.
+    // Guard: a former dark-pixel rule kept all dark details; dark Color2 must still turn blue.
     auto inner = tinted.at(7, 7);
     if (!(inner.b > inner.r && inner.b > inner.g)) {
         log::error("[texture-studio] selfTest FAIL: dark Color2 pixel did not become blue-dominant");
@@ -195,7 +193,7 @@ bool engineSelfTest() {
         ok = false;
     }
 
-    // >~30 dB PSNR is visually indistinguishable for this palette.
+    // ~30 dB PSNR is visually indistinguishable here.
     auto gtMasks = makeGroundTruthMasks(sprite);
     auto expected = LuminanceTinter::apply(sprite, gtMasks, tc);
     double psnr = computePsnr(tinted, expected);
@@ -241,8 +239,7 @@ bool engineSelfTest() {
         }
     }
 
-    // PackGen v2 pure core self-check (headless, millisecond-scale): tint
-    // kernel values, alpha LUT, packer invariants, cache/graph roundtrip.
+    // PackGen v2 core self-check (headless): kernel, LUT, packer, cache/graph roundtrip.
     {
         auto core = packgen::runSelfCheck();
         if (!core.ok) {

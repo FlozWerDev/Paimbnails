@@ -16,7 +16,6 @@ namespace {
     constexpr float kPopupW = 360.f;
     constexpr float kPopupH = 220.f;
 
-    // Store modifier-only keys as modifiers with KEY_None.
     bool isModifierKey(enumKeyCodes k) {
         switch (k) {
             case KEY_Control: case KEY_LeftControl: case KEY_RightContol:
@@ -54,7 +53,7 @@ ExtendedKeybindEditPopup* ExtendedKeybindEditPopup::create(
 }
 
 bool ExtendedKeybindEditPopup::init(
-    std::string /*settingKey*/,
+    std::string,
     std::string title,
     std::optional<Keybind> currentKeyboard,
     ExtendedKeybind currentExtended,
@@ -135,7 +134,7 @@ void ExtendedKeybindEditPopup::refreshDisplay() {
     if (m_pendingKeyboard.has_value() &&
         (m_pendingKeyboard->key != KEY_None || m_pendingKeyboard->modifiers != KeyboardModifier::None))
     {
-    // Modifier-only binds display as "Ctrl", not "Ctrl+Unknown".
+        // modifier-only binds read as "Ctrl", not "Ctrl+Unknown".
         text = paimon::keybinds::formatKeyboardKeybind(*m_pendingKeyboard);
     }
     if (!m_pendingExtended.isEmpty()) {
@@ -182,14 +181,12 @@ void ExtendedKeybindEditPopup::onSave(CCObject*) {
     this->onClose(nullptr);
 }
 
-    // Recording mode owns the global recorder pointer.
-
+    // single active recorder, owned by recording mode.
 namespace {
-    // Only one popup records at a time.
     ExtendedKeybindEditPopup* g_activeRecorder = nullptr;
 }
 
-    // Global listeners are installed once and stay dormant without a recorder.
+    // installed once; dormant without a recorder.
 $execute {
     KeyboardInputEvent().listen(+[](KeyboardInputData& data) {
         if (g_activeRecorder == nullptr) return false;
@@ -225,7 +222,7 @@ void ExtendedKeybindEditPopup::enterRecordingMode() {
     m_isRecording = true;
     this->updateRecordButtonAppearance();
 
-    // VolumeScrollHook forwards scroll events here before applying the action.
+    // the hook forwards scroll here before applying it.
     if (m_allowScroll) {
         paimon::keybinds::setScrollCaptor(
             [this](double y, KeyboardModifier mods) -> bool {
@@ -257,7 +254,7 @@ void ExtendedKeybindEditPopup::updateRecordButtonAppearance() {
     if (!newSpr) return;
     m_recordButton->setNormalImage(newSpr);
 
-    // Reflow the parent menu because the label changes size.
+    // reflow the parent menu; the label changes size.
     if (auto* parent = m_recordButton->getParent()) {
         if (parent->getLayout()) {
             parent->updateLayout();
@@ -267,7 +264,7 @@ void ExtendedKeybindEditPopup::updateRecordButtonAppearance() {
 
 bool ExtendedKeybindEditPopup::captureKeyboard(enumKeyCodes key, KeyboardModifier mods) {
     if (key == KEY_Escape) {
-        // Escape leaves recording mode; pending edits survive until Save.
+        // escape exits recording; pending edits survive until Save.
         exitRecordingMode();
         this->refreshDisplay();
         return true;
@@ -278,7 +275,7 @@ bool ExtendedKeybindEditPopup::captureKeyboard(enumKeyCodes key, KeyboardModifie
         kb.key = KEY_None;
         kb.modifiers = mods;
         if (kb.modifiers == KeyboardModifier::None) {
-            // Recover the modifier when the key event omitted its modifier flags.
+            // recover the modifier when the event omitted its flags.
             if (key == KEY_Control || key == KEY_LeftControl || key == KEY_RightContol) {
                 kb.modifiers = KeyboardModifier(KeyboardModifier::Control);
             } else if (key == KEY_Shift || key == KEY_LeftShift || key == KEY_RightShift) {
@@ -292,13 +289,11 @@ bool ExtendedKeybindEditPopup::captureKeyboard(enumKeyCodes key, KeyboardModifie
         kb.modifiers = mods;
     }
 
-    // Ignore a completely empty keyboard bind.
     if (kb.key == KEY_None && kb.modifiers == KeyboardModifier::None) {
         return false;
     }
 
     m_pendingKeyboard = kb;
-    // A keyboard bind replaces the extended bind.
     m_pendingExtended = ExtendedKeybind{};
     exitRecordingMode();
     this->refreshDisplay();
@@ -312,7 +307,6 @@ bool ExtendedKeybindEditPopup::captureMouse(MouseButton btn, KeyboardModifier mo
     ext.modifiers = mods;
 
     m_pendingExtended = ext;
-    // A mouse bind replaces the keyboard bind.
     m_pendingKeyboard.reset();
     exitRecordingMode();
     this->refreshDisplay();

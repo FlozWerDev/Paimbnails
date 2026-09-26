@@ -13,7 +13,7 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// Backdrop for native transitions, which may expose the raw GL clear color
+// backdrop for native transitions, which may expose the raw GL clear color
 // while neither scene covers the screen.
 static void attachTransitionBackdrop(CCScene* trans) {
     if (!trans) return;
@@ -670,7 +670,6 @@ void TransitionManager::loadConfig() {
 
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) {
-        log::info("[TransitionManager] No config found, using defaults");
         m_loaded = true;
         saveConfig();
         return;
@@ -729,7 +728,6 @@ void TransitionManager::loadConfig() {
     if (migratedImages) {
         saveConfig();
     }
-    log::info("[TransitionManager] Config loaded (enabled={}, hasLevelEntry={})", m_enabled, m_hasLevelEntryConfig);
 }
 
 void TransitionManager::saveConfig() {
@@ -749,7 +747,6 @@ void TransitionManager::saveConfig() {
     auto str = root.dump(matjson::TAB_INDENTATION);
     auto res = geode::utils::file::writeString(getConfigPath(), str);
     if (!res) log::warn("[TransitionManager] Failed to save: {}", res.unwrapErr());
-    else log::info("[TransitionManager] Config saved");
 }
 
 
@@ -758,14 +755,12 @@ TransitionConfig TransitionManager::getLevelEntryConfig() const {
 }
 
 void TransitionManager::setGlobalConfig(TransitionConfig const& cfg) {
-    log::info("[TransitionManager] setGlobalConfig: type={} dur={}", typeToString(cfg.type), cfg.duration);
     m_globalConfig = cfg;
     sanitizeConfig(m_globalConfig);
     migrateConfigImages(m_globalConfig);
 }
 
 void TransitionManager::setLevelEntryConfig(TransitionConfig const& cfg) {
-    log::info("[TransitionManager] setLevelEntryConfig: type={} dur={}", typeToString(cfg.type), cfg.duration);
     m_levelEntryConfig = cfg;
     sanitizeConfig(m_levelEntryConfig);
     migrateConfigImages(m_levelEntryConfig);
@@ -773,13 +768,12 @@ void TransitionManager::setLevelEntryConfig(TransitionConfig const& cfg) {
 }
 
 void TransitionManager::clearLevelEntryConfig() {
-    log::info("[TransitionManager] clearLevelEntryConfig");
     m_hasLevelEntryConfig = false;
     m_levelEntryConfig = TransitionConfig{};
 }
 
-// Presets compile through the same timeline as the command editor. Independent
-// tracks run together and the total time matches the configured duration.
+// presets compile through the same timeline as the command editor:
+// independent tracks run together within the configured duration.
 std::vector<TransitionCommand> TransitionManager::buildPreviewCommands(TransitionType type, float dur) const {
     dur = paimon::transitions::bounded(dur, .5f, .05f, 30.f);
     float half = dur * .5f;
@@ -959,7 +953,6 @@ CCScene* TransitionManager::createTransition(
     return dest;
 }
 
-// Apply the global transition when enabled; otherwise navigate directly.
 void TransitionManager::replaceScene(CCScene* dest) {
     if (!dest) return;
 
@@ -1051,7 +1044,6 @@ CCTransitionScene* TransitionManager::createNativeTransition(TransitionConfig co
 
 
 std::vector<TransitionCommand> TransitionManager::parseScriptFile(std::string const& scriptPath) const {
-    log::info("[TransitionManager] parseScriptFile: {}", scriptPath);
     std::vector<TransitionCommand> commands;
     auto fullPath = Mod::get()->getSaveDir() / scriptPath;
     std::error_code ec;

@@ -8,7 +8,7 @@
 #include <cctype>
 #include <memory>
 
-// Non-blocking Geode web dispatch; callbacks run on the main thread.
+// non-blocking web dispatch; callbacks on main thread.
 namespace WebHelper {
 
 inline std::string normalizeMethod(std::string method) {

@@ -157,8 +157,7 @@ bool pickSpot(CCLayer* layer, bool guideOn, float spriteH, Spot& out) {
         CCRect face;
         if (!hideUnder(layer, button, rect, spriteH, candidate, face)) continue;
 
-// A neighbour swallowing the part that is supposed to stick out would leave
-// her invisible instead of hidden.
+        // neighbour covering the peeking part would leave her invisible.
         float area = face.size.width * face.size.height;
         bool buried = false;
         for (auto const& [other, otherRect] : rects) {
@@ -188,8 +187,7 @@ void playLater(CCNode* host, float delay, char const* file, float pitch, float v
     ));
 }
 
-// Variety comes from pitching and stacking the only two blast files GD ships;
-// the crack leads by a frame so the pair never phase-aligns into a flat hit.
+// variety from pitching the two stock blast files; crack leads so the pair never phase-aligns.
 void playBlast(CCNode* host) {
     auto* engine = FMODAudioEngine::sharedEngine();
     if (!engine) return;
@@ -328,10 +326,7 @@ void attach(CCLayer* layer) {
     if (spriteH <= 0.f) return;
 
     Spot spot;
-    if (!pickSpot(layer, guideOn, spriteH, spot)) {
-        log::debug("[HiddenPaimon] No button with room to hide under");
-        return;
-    }
+    if (!pickSpot(layer, guideOn, spriteH, spot)) return;
 
     sprite->setScale(spot.scale);
     sprite->setFlipX(spot.flipX);
@@ -355,8 +350,8 @@ void attach(CCLayer* layer) {
     menu->setID(menuId);
     menu->addChild(button);
 
-// Her hitbox hides under the button, so one step below menu priority keeps the
-// button clickable and leaves her only the part poking out.
+// hitbox hides under the button, so one step below menu priority keeps the
+// button clickable and leaves her only the peeking part.
     menu->setTouchPriority(kCCMenuHandlerPriority + 1);
 
     if (guideOn) {

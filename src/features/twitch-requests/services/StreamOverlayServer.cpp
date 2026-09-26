@@ -320,8 +320,8 @@ Ref<StreamOverlayTicker> g_ticker;
 struct StreamOverlayServer::Impl {
     std::atomic_bool stopping = false;
     std::atomic_bool running = false;
-    // Un thread terminado sigue joinable: completion va aparte de running para
-    // recoger un arranque fallido sin bloquear jamas.
+    // a finished thread stays joinable: completion sits apart from running so
+    // a failed start is reaped without ever blocking.
     std::atomic_bool finished = true;
     std::thread worker;
     mutable std::mutex mutex;
@@ -596,8 +596,8 @@ void StreamOverlayServer::tick(float dt) {
     }
 
 #if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_MACOS)
-    // El puerto puede seguir ocupado por un proceso anterior: recoge el hilo
-    // terminado y reintenta con calma.
+    // the port may still be held by a previous process: reap the finished
+    // thread and retry calmly.
     if (!m_impl->running) {
         if (m_impl->finished && m_impl->worker.joinable()) {
             m_impl->worker.join();

@@ -11,19 +11,19 @@ namespace paimon::gifimport {
 
 bool isVideoFile(std::filesystem::path const& path);
 
-// 768 conserva el borde fino; mas resolucion solo gasta memoria.
+// 768 keeps the thin edge; more resolution only spends memory.
 inline constexpr int kMaxVideoSide = 768;
 
-// Buzon de progreso de decodeVideo; el hilo de carga escribe, la UI lee.
+// decodeVideo progress mailbox; loader thread writes, UI reads.
 struct VideoProgress {
     std::atomic<bool> cancelled = false;
     std::atomic<int> framesSeen = 0;
     std::atomic<int> framesKept = 0;
 };
 
-// Reparte capturas por toda la duracion del video y las devuelve en RGBA como si
-// vinieran de un GIF. Bloquea mientras decodifica, asi que va en el hilo de carga.
-// Si partialOut no es nulo, marca si hubo corte por stall/deadline.
+// Spreads captures across the video length and returns them RGBA as if from a
+// GIF. Blocks while decoding, so it runs on the loader thread.
+// Non-null partialOut reports stall/deadline trims.
 std::shared_ptr<SourceAnimation> decodeVideo(
     std::filesystem::path const& path,
     int maxFrames,

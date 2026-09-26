@@ -89,9 +89,7 @@ void SlotDownloads::startNext() {
     m_pending = std::move(m_queue.front());
     m_queue.erase(m_queue.begin());
 
-    // Borrow the single download delegate slot; vanilla layers overwrite it
-    // again for their own requests, which is fine — our timeout-free fetch
-    // just resolves whenever its own result arrives or fails.
+    // borrow the single download delegate slot; vanilla overwrites it back, ours resolves on its own result.
     m_previous = glm->m_levelDownloadDelegate;
     glm->m_levelDownloadDelegate = this;
     glm->downloadLevel(m_pending->levelId, false, 0);

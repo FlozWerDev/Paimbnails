@@ -112,7 +112,7 @@ static int runWindowsProcess(const std::wstring& wideCmdLine,
 
     PROCESS_INFORMATION pi{};
 
-    // CreateProcessW puede modificar wideCmdLine — necesita buffer mutable.
+    // CreateProcessW may mutate the command line: needs a mutable buffer.
     std::wstring mutableCmd = wideCmdLine;
     BOOL ok = CreateProcessW(
         nullptr,
@@ -220,7 +220,7 @@ static int runAndCapture(const std::string& cmdLine,
     return runWindowsProcess(wide, onLine, 0);
 }
 #else
-// POSIX: fork+execvp con argv (sin shell) — evita command injection.
+// POSIX: fork+execvp with argv (no shell), so no command injection.
 static int runAndCaptureArgv(const std::vector<std::string>& argv,
                              const std::function<void(const std::string&)>& onLine,
                              int timeoutMs = 0) {

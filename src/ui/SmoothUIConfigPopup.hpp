@@ -4,13 +4,9 @@
 
 namespace paimon::ui {
 
-// Aplica un preset global de Smooth UI (popups, botones, scroll, blur y
-// transiciones de golpe). Ids: balanced, subtle, silky, bouncy, cinematic, off.
 void applySmoothUIPreset(std::string const& preset);
 void setGlobalTransitionDuration(float duration);
 
-// Popup dedicado de Smooth UI montado sobre PaiConfigKit: preset rapido
-// arriba y tarjetas por area (popups, botones, scroll, blur/transiciones).
 class SmoothUIConfigPopup : public geode::Popup {
 public:
     static SmoothUIConfigPopup* create();
@@ -22,7 +18,7 @@ protected:
     void scheduleRebuild();
 
     geode::ScrollLayer* m_scroll = nullptr;
-    int m_tab = 0; // 0 = Basico, 1 = Avanzado
+    int m_tab = 0; // 0 basic, 1 advanced
 };
 
 } // namespace paimon::ui

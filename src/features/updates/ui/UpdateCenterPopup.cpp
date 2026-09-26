@@ -249,9 +249,7 @@ void UpdateCenterPopup::onPrimary(CCObject*) {
     auto& checker = UpdateChecker::get();
 
     if (checker.hasPendingInstall()) {
-        if (!checker.restartToApplyPendingUpdate()) {
-            geode::utils::game::restart(true);
-        }
+        checker.restartToApplyPendingUpdate();
         return;
     }
 

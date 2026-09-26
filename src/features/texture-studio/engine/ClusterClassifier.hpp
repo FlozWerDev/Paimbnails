@@ -34,8 +34,7 @@ public:
     static ClassifiedSet classify(ClusterSet const& set,
                                   ImageBuffer const& sprite);
 
-    // Of all pixels assigned to this cluster, the fraction (0..1) with at
-    // least one fully-transparent 4-neighbour. Public for tests.
+    // Fraction (0..1) with a fully-transparent 4-neighbor. Public for tests.
     static float computeBorderRatio(ImageBuffer const& sprite,
                                     ColorCluster const& cluster,
                                     ColorCluster const* allClusters,

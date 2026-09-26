@@ -101,22 +101,19 @@ public:
     virtual bool skipFrame() = 0;
 
     virtual double peekNextPTS() const = 0;
-
-    // Second frame PTS or DBL_MAX if none.
     virtual double peekSecondPTS() const { return DBL_MAX; }
 
-    // Borrowed until releaseFrame(); no consuming/seek/stop calls in between.
+    // Borrowed until releaseFrame(); no seek/stop calls in between.
     virtual const Frame* peekFrame() { return nullptr; }
 
     virtual void releaseFrame() {}
 
-    // Loops in decode thread; PTS restarts at 0, false = must seek.
+    // PTS restarts at 0, false = must seek.
     virtual bool setLooping(bool) { return false; }
 
     static std::unique_ptr<IVideoDecoder> create(const std::string& path);
 };
 
-// Lock-free SPSC ring with adaptive capacity.
 class VideoRingBuffer {
 public:
     using Frame = VideoFrame;
@@ -141,8 +138,7 @@ public:
         int uvW = (w + 1) / 2;
 
         int alignedStrideY  = Frame::alignedStride(w);
-        int alignedStrideCb = Frame::alignedStride(uvW);
-        int alignedStrideCr = Frame::alignedStride(uvW);
+        int alignedStrideUV = Frame::alignedStride(uvW);
 
         m_slots = std::make_unique<Frame[]>(m_capacity);
         for (int i = 0; i < m_capacity; ++i) {
@@ -154,8 +150,8 @@ public:
                 return false;
             }
             m_slots[i].strideY  = alignedStrideY;
-            m_slots[i].strideCb = alignedStrideCb;
-            m_slots[i].strideCr = alignedStrideCr;
+            m_slots[i].strideCb = alignedStrideUV;
+            m_slots[i].strideCr = alignedStrideUV;
             m_slots[i].width    = w;
             m_slots[i].height   = h;
             m_slots[i].ready.store(false, std::memory_order_release);
@@ -164,9 +160,9 @@ public:
     }
 
     Frame* nextWrite() {
-        int next = (m_writeIdx.load(std::memory_order_relaxed) + 1) % m_capacity;
-        if (next == m_readIdx.load(std::memory_order_acquire)) return nullptr;
-        return &m_slots[m_writeIdx.load(std::memory_order_relaxed)];
+        int w = m_writeIdx.load(std::memory_order_relaxed);
+        if ((w + 1) % m_capacity == m_readIdx.load(std::memory_order_acquire)) return nullptr;
+        return &m_slots[w];
     }
 
     void commitWrite() {
@@ -235,7 +231,7 @@ public:
         return next == m_readIdx.load(std::memory_order_acquire);
     }
 
-    // Wait for writable space or shutdown; re-check isFull()/nextWrite() after.
+    // Re-check isFull()/nextWrite() after waiting.
     bool waitForWritable(int timeoutMs, const std::atomic<bool>* aliveFlag = nullptr) {
         if (!isFull()) return true;
         std::unique_lock<std::mutex> lk(m_writableMtx);

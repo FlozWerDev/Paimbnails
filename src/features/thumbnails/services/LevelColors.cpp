@@ -15,7 +15,7 @@ using namespace geode::prelude;
 using namespace cocos2d;
 
 LevelColors& LevelColors::get() {
-    // Kept alive intentionally: avoids destructor-order issues during shutdown (RuntimeLifecycle flushes on exit).
+    // Leaked on purpose: dodges destructor-order issues at shutdown (RuntimeLifecycle flushes on exit).
     static auto* lc = new LevelColors();
     return *lc;
 }
@@ -109,7 +109,7 @@ void LevelColors::preloadIndexFromDisk() {
 
 std::optional<LevelColorPair> LevelColors::getPair(int32_t levelID) const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    // Nunca leer/parsear el CSV en el main thread durante scroll o init de celdas.
+    // Never parse on the main thread during scroll or cell init.
     if (!m_loaded) {
         if (paimon::isMainThread()) {
             return std::nullopt;

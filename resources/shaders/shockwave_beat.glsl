@@ -1,6 +1,4 @@
 // shockwave_beat.glsl — radial ring shockwaves emitted on beat onset.
-// Several rings travel outward from the screen center, distorting UVs.
-// Bass keeps a steady ambient ripple, beat fires sharp transient waves.
 #ifdef GL_ES
 precision mediump float;
 #endif
@@ -22,12 +20,9 @@ void main() {
     vec2 dir = normalize(c + 1e-5);
 
     float ambient = 0.0;
-    // Ambient radial wobble from bass.
     ambient += sin(r * 22.0 - u_time * 5.0) * u_bass * 0.012;
     ambient += sin(r * 40.0 - u_time * 9.0) * u_mid  * 0.008;
 
-    // Beat-fired transient ring: a fast-traveling pulse with falloff.
-    // Phase fract gives a moving 0..1 ring; we shape it sharply.
     float phase = fract(u_time * 0.9);
     float ringR = phase * 0.9;
     float ringWidth = 0.05;
@@ -39,10 +34,8 @@ void main() {
 
     vec4 col = texture2D(u_texture, uv);
 
-    // Ring foreground tint — boosts brightness along the ring.
     col.rgb += vec3(0.6, 0.7, 1.0) * ring * 0.35 * u_intensity;
 
-    // Treble shimmer on edges.
     col.rgb *= 1.0 + u_treble * u_intensity * 0.18;
 
     gl_FragColor = col * v_fragmentColor;

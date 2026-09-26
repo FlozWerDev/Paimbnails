@@ -76,7 +76,6 @@ void FeatureInfoPopup::buildContent(
     m_scroll->setPosition({scrollX, scrollY});
     m_mainLayer->addChild(m_scroll);
 
-    // compute total content height up-front so the ScrollLayer can size itself
     float lineH = 16.f;
     float titleH = 24.f;
     float gapH = 12.f;

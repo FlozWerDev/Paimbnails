@@ -103,7 +103,7 @@ geode::Result<> StyleStore::add(std::string name, FillSpec const& fill) {
     style.id = makeStyleId();
     style.name = std::move(name);
     style.fill = fill;
-    // El ultimo guardado va primero, que es el que se suele querer.
+    // newest save first; usually the wanted one.
     m_styles.insert(m_styles.begin(), std::move(style));
     return save();
 }

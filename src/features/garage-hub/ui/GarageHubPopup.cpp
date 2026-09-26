@@ -19,7 +19,7 @@ constexpr float kCellHeight = 76.f;
 constexpr int kMaxColumns = 4;
 constexpr float kTopPad = 46.f;
 constexpr float kBottomPad = 10.f;
-// Distancia desde el borde superior de la celda al centro del icono y al texto.
+// Cell edge to icon center and to label.
 constexpr float kIconDrop = 26.f;
 constexpr float kLabelDrop = 60.f;
 
@@ -106,10 +106,9 @@ bool GarageHubPopup::init(GJGarageLayer* garage) {
 void GarageHubPopup::borrow(CCMenuItem* btn, CCPoint const& spot) {
     if (!btn) return;
 
-    // El Ref de la lista es lo que lo mantiene vivo mientras cambia de padre.
+    // list Ref keeps it alive across reparenting.
     m_borrowed.push_back({btn, btn->m_pListener, btn->m_pfnSelector});
-    // El popup se queda de intermediario para poder cerrarse antes de que el
-    // boton haga lo suyo; casi todos abren otra pantalla encima.
+    // popup intercepts to close first; most entries open another screen.
     btn->setTarget(this, menu_selector(GarageHubPopup::onEntry));
 
     btn->removeFromParentAndCleanup(false);
@@ -150,8 +149,7 @@ void GarageHubPopup::onEntry(CCObject* sender) {
         break;
     }
 
-    // A partir de aqui el popup ya puede estar destruido, asi que solo se tocan
-    // las copias locales.
+    // past this point the popup may be gone, so touch locals only.
     this->onClose(nullptr);
 
     CCObject* target = listener;

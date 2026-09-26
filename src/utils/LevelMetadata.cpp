@@ -6,8 +6,7 @@
 using namespace geode::prelude;
 
 namespace {
-// gd::string -> std::string (Geode provides an implicit conversion, but this
-// keeps the intent explicit and avoids dangling temporaries).
+// explicit gd::string conversion; avoids dangling temporaries.
 inline std::string s(gd::string const& v) { return std::string(v); }
 } // namespace
 

@@ -1,15 +1,11 @@
 #ifdef GL_ES
-// NOTE: #extension must come before any non-preprocessor token (including
-// the precision statement) or strict drivers reject the shader.
+// NOTE: #extension first; strict drivers reject it after any other token.
 #extension GL_OES_standard_derivatives : enable
 #ifndef GL_OES_standard_derivatives
 #define PAIMON_NO_DERIVATIVES 1
 #endif
 precision mediump float;
-// fwidth() needs OES_standard_derivatives on OpenGL ES 2.0: strict drivers
-// (iOS) reject the shader when it is used without the extension. Where the
-// extension is missing, PAIMON_NO_DERIVATIVES falls back to a texel-size
-// anti-alias floor computed from u_texSize.
+// fwidth needs the ext on ES 2.0; without it use a texel-size floor.
 #endif
 varying vec4 v_fragmentColor;
 varying vec2 v_texCoord;

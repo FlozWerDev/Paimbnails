@@ -78,7 +78,6 @@ class $modify(PaimonMenuMusicMenuLayer, MenuLayer) {
             }
         }
 
-// Show one Now Playing toast when entering with an active track.
         auto* current = player.currentTrack();
         if (current && current->id != s_lastToastTrackId) {
             s_lastToastTrackId = current->id;
@@ -136,7 +135,6 @@ class $modify(PaimonMenuMusicMenuLayer, MenuLayer) {
         bool isPlaying = false;
         ch->isPlaying(&isPlaying);
         if (!isPlaying) {
-// Advance when the current song ends.
             if (player.playNext()) {
                 NowPlayingToast::showForCurrent(this);
             }

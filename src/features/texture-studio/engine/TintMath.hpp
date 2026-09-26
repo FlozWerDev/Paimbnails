@@ -1,6 +1,5 @@
 #pragma once
-// Luminance tinting after Asterveila's PackGen (via ravexcode's TexturePackWeb).
-// Independent implementation with Rec.601 weights; no code copied from either.
+// Luminance tinting after PackGen (independent Rec.601 implementation, no code copied).
 
 #include <Geode/cocos/include/ccTypes.h>
 

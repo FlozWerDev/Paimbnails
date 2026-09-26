@@ -19,30 +19,28 @@ namespace paimon::gifimport {
 
 namespace {
 
-// Cada objeto se dibuja en su celda de un atlas y se lee la lamina entera de una
-// vez: mil objetos son cuatro lecturas de la GPU en vez de mil, que es la
-// diferencia entre un parpadeo y medio minuto.
+// Each object draws into one atlas cell and the whole sheet reads at once:
+// a thousand objects cost four GPU reads instead of a thousand (a blink vs half a minute).
 constexpr int kCellSide = kStampMaskSide;
 constexpr int kAtlasCells = 16;
 constexpr int kAtlasSide = kCellSide * kAtlasCells;
 constexpr int kBatch = kAtlasCells * kAtlasCells;
 constexpr unsigned char kAlphaFloor = 96;
-// Por debajo de esto el objeto es un contorno o una chispa: como molde solo sabe
-// dejar huecos, y el trazado de pintura ya cubre ese tamano mejor.
+// below this the object is trim or sparkle: as a mold it only leaves holes,
+// and paint tracing already covers that size better.
 constexpr float kMinCoverage = 0.12f;
-// Umbrales de aceptacion directa por forma (radial, vertical, cuartos). Por
-// encima el mejor sigue quedando como degradado antes que el repuesto.
+// direct-accept thresholds per shape (radial, vertical, quarters). Past them
+// the best still stays as fallback before the spare.
 constexpr std::array<double, 3> kSoftThresholds{0.05, 0.08, 0.08};
-// Repuesto determinista: circulo con blending como glow, bloque solo si el
-// circulo no existe en esta version de GD.
+// deterministic spare: circle-with-blending as glow, block only when this GD
+// build has no circle.
 constexpr int kFallbackGlowCircle = 3637;
 constexpr int kFallbackBlock = 211;
 
 bool g_ready = false;
 
-// Una tanda crea cientos de objetos y sus laminas: sin piscina propia no se
-// sueltan hasta el final del fotograma y el pico de memoria es el de la
-// biblioteca entera a la vez.
+// one batch spawns hundreds of objects and sheets: without its own pool they
+// release at frame end and peak memory is the whole library at once.
 struct BatchPool {
     BatchPool() { CCPoolManager::sharedPoolManager()->push(); }
     ~BatchPool() { CCPoolManager::sharedPoolManager()->pop(); }
@@ -56,9 +54,8 @@ struct Pending {
 bool usableObject(GameObject* object, bool strict = true) {
     if (!object) return false;
     if (object->m_objectType != GameObjectType::Decoration) return false;
-    // En la pasada de repuesto el tinte no filtra: un nativo parecido aunque no
-    // acepte color sigue dibujando mejor que el repuesto, y el emisor avisa si
-    // el tinte no entra.
+    // spare pass ignores tint: a close native that takes no color still draws
+    // better than the spare, and the emitter warns when tint won't apply.
     if (strict && !object->m_isSolidColorBlock && !object->canChangeMainColor()) {
         return false;
     }
@@ -67,8 +64,8 @@ bool usableObject(GameObject* object, bool strict = true) {
         size.width < 512.f && size.height < 512.f;
 }
 
-// Recorta la celda a lo que pinta y la devuelve como molde, con el corrimiento
-// que hace falta para que ese recorte caiga donde el plan lo pida.
+// Trims the cell to what paints and returns it as a mold, with the shift
+// landing that trim where the plan asks.
 bool cutStamp(
     unsigned char const* pixels,
     int stride,
@@ -140,8 +137,7 @@ void drawBatch(
         sprite->setAnchorPoint({0.5f, 0.5f});
         sprite->setScaleX(kCellSide / content.width);
         sprite->setScaleY(kCellSide / content.height);
-        // La lamina se lee con las filas de arriba abajo, asi que la fila 0 del
-        // atlas se dibuja arriba del todo para que los indices cuadren.
+        // sheets read top-down, so atlas row 0 draws at the very top to keep indices straight.
         sprite->setPosition({
             (column + 0.5f) * kCellSide,
             kAtlasSide - (row + 0.5f) * kCellSide
@@ -200,8 +196,7 @@ SoftStampLibrary buildSoftStampLibrary() {
         stamp.mask = std::move(mask);
     };
 
-    // El tinte no cambia el alfa: lo estricto solo decide si el objeto se
-    // considera, no como sale su molde.
+    // tint never changes alpha: strict only filters candidates, not mold output.
     auto scanObject = [&](int id, bool relaxed) {
         BatchPool const pool;
         auto* object = GameObject::createWithKey(id);
@@ -288,9 +283,8 @@ SoftStampLibrary buildSoftStampLibrary() {
     }
     bool const found =
         best[0].objectId || best[1].objectId || best[3].objectId;
-    // Segunda pasada exhaustiva sobre TODA la decoracion si el filtro no
-    // encontro nada: el nombre del frame no es fiable entre packs de texturas
-    // y versiones de GD, y el tinte ya no filtra aqui.
+    // exhaustive second pass over ALL decoration when the filter found nothing:
+// frame names lie across texture packs and GD versions, and tint stops filtering here.
     if (!found) {
         for (auto const& [id, name] : toolbox->m_allKeys) {
             (void)name;
@@ -298,8 +292,8 @@ SoftStampLibrary buildSoftStampLibrary() {
             scanObject(id, true);
         }
     }
-    // El mejor se queda aunque supere el umbral, como degradado: un nativo
-    // parecido sigue dibujando mejor que el repuesto analitico.
+    // best stays past the threshold as fallback: a close native still draws
+    // better than the analytic spare.
     for (int kind = 0; kind < 3; ++kind) {
         int const slot = kind == 2 ? 3 : kind;
         if (best[slot].objectId || !overall[kind].id) continue;
@@ -326,8 +320,8 @@ SoftStampLibrary buildSoftStampLibrary() {
             stamp.mask.coverage[y * side + x] = best[3].mask.coverage[sy * side + sx];
         }
     }
-    // Repuesto determinista con IDs fijos cuando no hay nativo. El 2903 no
-    // sirve por celda: es un quad a pantalla completa, solo dice CUANDO dispara.
+    // deterministic spare with fixed IDs when no native. 2903 is useless per
+    // cell: a full-screen quad, only telling WHEN it fires.
     {
         int fallbackId = 0;
         CCSize fallbackSize{50.f, 50.f};
@@ -383,9 +377,8 @@ SoftStampLibrary buildSoftStampLibrary() {
     log::info("[GifImport] Native soft shapes: round={} ({}), vert={} ({}), quarter={} ({}){}",
         best[0].objectId, errors[0], best[1].objectId, errors[1], best[3].objectId, errors[2],
         fallbackUsed ? " +repuesto analitico" : "");
-    // Se cachea solo si quedo completa (nativos + repuesto): si GL o el
-    // toolbox aun no estaban listos se reintenta en el proximo procesado,
-    // como antes.
+    // caches only when complete (natives + spare): unready GL/toolbox retries
+    // on the next process, as before.
     bool complete = best.size() == 7;
     for (auto const& stamp : best) complete = complete && stamp.objectId > 0;
     if (complete) cached = library;
@@ -407,9 +400,8 @@ std::size_t buildStampLibrary() {
 
     std::vector<CatalogEntry> entries;
     for (std::size_t start = 0; start < ids.size(); start += kBatch) {
-        // displayFrame() devuelve una lamina nueva cada vez y se va con la
-        // piscina, asi que la tanda se dibuja dentro del mismo ambito en el que
-        // se pidieron los objetos.
+        // displayFrame() returns a fresh sheet each call, owned by the pool, so
+        // the batch draws in the same scope the objects came from.
         BatchPool const pool;
         std::vector<Pending> batch;
         std::vector<CCSpriteFrame*> frames;
@@ -428,7 +420,7 @@ std::size_t buildStampLibrary() {
     g_ready = true;
     setStampCatalog(std::move(entries));
     auto const variants = stampVariants().size();
-    log::info("[GifImport] Biblioteca de moldes: {} orientaciones", variants);
+    log::info("[GifImport] Mold library: {} orientations", variants);
     return variants;
 }
 

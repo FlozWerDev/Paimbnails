@@ -4,8 +4,7 @@
 #include <memory>
 #include <vector>
 
-// CCLayer (not Popup) so it can hide entirely for a clean screenshot.
-// After capture, plays a fly-to-corner animation and shows download/open buttons.
+// CCLayer, not Popup: hides fully for clean screenshots, then flies to corner with actions.
 class CaptureOverlay : public cocos2d::CCLayer {
 public:
     static void show();

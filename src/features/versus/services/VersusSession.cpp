@@ -36,8 +36,7 @@ constexpr float kWatchPoll = 4.0f;
 // decides what that costs them.
 constexpr float kRivalTimeout = 30.f;
 
-// Closer than this and the two runs are called a dead heat, whether the gap is
-// in seconds or in points.
+// closer than this and both runs are a dead heat, in seconds or points.
 constexpr float kDeadHeat = 0.05f;
 
 int64_t nowSeconds() {
@@ -196,12 +195,13 @@ void VersusSession::poll() {
     }
 
     VersusClient::get().pollLobby([this](bool ok, MatchInfo const& info) {
+        float const next = m_phase == Phase::Queued ? kLobbyPoll : kFoundPoll;
         if (!ok || info.id.empty()) {
-            schedulePoll(m_phase == Phase::Queued ? kLobbyPoll : kFoundPoll);
+            schedulePoll(next);
             return;
         }
         applyLobby(info);
-        schedulePoll(m_phase == Phase::Queued ? kLobbyPoll : kFoundPoll);
+        schedulePoll(next);
     });
 }
 
@@ -239,9 +239,8 @@ void VersusSession::applyLobby(MatchInfo const& info) {
         setPhase(Phase::Loading);
         return;
     }
-    // The lobby keeps answering with the countdown while we are still outside,
-    // and that is the only clock there is out here; once the level is up
-    // onLevelTick owns it and a late answer would wind it back.
+    // the lobby countdown is the only clock out here; once the level is up
+    // onLevelTick owns it, so a late answer would rewind it.
     if (info.countdownMs > 0 && !m_inLevel && m_phase != Phase::Running) {
         m_startsIn = info.countdownMs / 1000.f;
         setPhase(Phase::Countdown);
@@ -692,9 +691,8 @@ void VersusSession::evaluate() {
     }
 }
 
-// The four segments are claimed once each and never handed to the second one
-// there, so a run that died at 90% still holds the ones it took on the way: the
-// player who closes the last one is not necessarily the one who wins.
+// segments are claimed once and never handed over, so a 90% run keeps what
+// it took: closing the last one doesn't always win.
 void VersusSession::evaluateRelay() {
     int own = 0, rival = 0;
     for (int i = 0; i < kLadderSegments; i++) {
@@ -731,9 +729,8 @@ void VersusSession::finish(Outcome outcome) {
 
     int const before = VersusStore::get().profile(m_match.mode).elo;
 
-    // Everything the record needs is read here: reset() can run while the
-    // request is in the air, and it would leave the callback writing a row for
-    // a duel that no longer exists.
+    // read everything the record needs here: reset() may run mid-request and
+    // orphan the callback's row.
     MatchRecord record;
     record.id = m_match.id;
     record.rival = m_match.rival.name;

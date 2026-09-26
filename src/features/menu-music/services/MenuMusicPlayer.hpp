@@ -56,7 +56,7 @@ private:
 
     PlaybackState m_state;
     bool m_paused = false;
-    // Canal concreto que pausamos, para no tocar el resto de la musica.
+    // the one channel we pause; the rest of the mix is untouched.
     FMOD::Channel* m_pausedChannel = nullptr;
 
     std::deque<std::string> m_history;

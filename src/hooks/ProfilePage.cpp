@@ -85,25 +85,9 @@
 
 using namespace geode::prelude;
 
-// CCScale9Sprite::create crashes on missing sprites; use safeCreateScale9().
-
-// The cache lives in ProfileImageCache; keep its refs out of static destruction.
-
-
-// Extract cached refs during shutdown; CCPoolManager may already be gone.
-
-
-
-
-
-
-    // MP4 detection scans the first 12 bytes because ftyp may be offset.
-
-
-
 class $modify(PaimonProfilePage, ProfilePage) {
     static void onModify(auto& self) {
-        // Depends on stable node IDs
+        // needs stable node IDs
         paimon::hooks::afterNodeIdsOrLate(self, "ProfilePage::loadPageFromUserInfo");
     }
 
@@ -133,26 +117,26 @@ class $modify(PaimonProfilePage, ProfilePage) {
         bool m_leaveForClose = false;
         bool m_pausedForTemporaryExit = false;
         bool m_audioCleanedUp = false;
-        // statsMenu can be rebuilt by other mods, so don't keep a raw label pointer.
+        // statsMenu can be rebuilt by other mods; no raw label pointer
         WeakRef<CCLabelBMFont> m_thumbCountLabel;
         int64_t m_statusLastSeen = 0;
         bool m_statusOnline = false;
 
-        // Snapshot the icon set; m_score may be rebuilt before the copy popup opens.
+        // snapshot the icon set; m_score may be rebuilt before the popup opens
         paimon::iconcopy::IconSet m_iconSet;
 
-        // Ref is intentional: WeakRef assignment can leave this cache untracked.
+        // Ref is intentional; WeakRef assignment can leave this untracked
         Ref<CCMenu> m_usernameMenuCached = nullptr;
 
-        // These targets come from a tree walk; cache them until vanilla relayout.
-        // Keep strong refs because duplicate IDs can confuse WeakRef tracking.
+        // tree-walk targets; cached until vanilla relayout
+        // strong refs: duplicate IDs confuse WeakRef tracking
         Ref<GJCommentListLayer> m_commentListCached = nullptr;
         Ref<CCNode> m_iconBackgroundCached = nullptr;
         Ref<CCNode> m_specialBorderCached = nullptr;
         bool m_styleTargetsResolved = false;
     };
 
-    // Cache the recursive lookup, but discard the node if another mod rebuilt it.
+    // cache the recursive lookup; discard if another mod rebuilt the node
     CCMenu* getUsernameMenu() {
         if (auto* cached = m_fields->m_usernameMenuCached.data()) {
             if (cached->getParent() && cached->hasAncestor(this)) {
@@ -267,7 +251,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (!m_fields->m_banBtn || !m_fields->m_banBtn->getParent()) {
             createBanButtonInto(leftMenu);
             needsLayout = true;
-            log::debug("[ProfilePage] Boton de ban recreado por verificador de integridad");
         }
 
         {
@@ -279,17 +262,13 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         }
 
-        if (ensureReviewsButton(leftMenu)) {
-            needsLayout = true;
-            log::debug("[ProfilePage] Boton de reviews recreado por verificador de integridad");
-        }
+        if (ensureReviewsButton(leftMenu)) needsLayout = true;
 
         if (this->m_ownProfile && (m_fields->m_isApprovedMod || m_fields->m_isAdmin)) {
             if (!m_fields->m_gearBtn || !m_fields->m_gearBtn->getParent()) {
                 m_fields->m_gearBtn = nullptr;
                 ensureGearButton(leftMenu);
                 needsLayout = true;
-                log::debug("[ProfilePage] Boton gear recreado por verificador de integridad");
             }
         }
 
@@ -298,7 +277,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                 m_fields->m_addModBtn = nullptr;
                 ensureAddModeratorButton(leftMenu);
                 needsLayout = true;
-                log::debug("[ProfilePage] Boton add-mod recreado por verificador de integridad");
             }
         }
 
@@ -357,7 +335,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         if (!badgeSprite) return;
 
-        log::info("Adding badge (Clickable) - Admin: {}, Mod: {}", isAdmin, isMod);
 
         float targetHeight = 20.0f;
         float scale = targetHeight / badgeSprite->getContentSize().height;
@@ -513,7 +490,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             return;
         }
         
-        log::info("[ProfilePage] Opening thumbnails layer for user: {} (accountID: {})", username, accountID);
         
         auto scene = UserThumbnailsLayer::scene(username, accountID);
         CCDirector::sharedDirector()->pushScene(CCTransitionFade::create(0.5f, scene));
@@ -524,7 +500,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         auto* statsMenu = this->m_mainLayer->getChildByIDRecursive("stats-menu");
         if (!statsMenu) {
-            log::debug("[ProfilePage] stats-menu not found, skipping thumbnail count badge");
             return;
         }
 
@@ -574,7 +549,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         statsMenuCC->updateLayout();
 
         m_fields->m_thumbCountLabel = countLabel;
-        log::debug("[ProfilePage] Added clickable thumbnail count badge: {} uploads", uploadCount);
     }
 
     std::string getViewedUsername() {
@@ -780,7 +754,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         video->setAnchorPoint(ccp(0.5f, 0.5f));
         video->setPosition(ccp(imgArea.width * 0.5f, imgArea.height * 0.5f));
 
-        // Avoid scaling the 1×1 placeholder; use decoder metadata until the first frame.
+        // don't scale the 1x1 placeholder; use decoder metadata until the first frame
         if (video->hasVisibleFrame()) {
             applyCoverScale(video);
         } else {
@@ -1071,8 +1045,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         }
 
-        // Do not show media until config is known; otherwise the ScoreCell image can flash as the backdrop.
-        // (hasConfig == true and not "none"/"icon-gradient" — those were handled
+        // don't show media until config is known; ScoreCell image would flash as backdrop
         auto cachedCfgForMedia = ProfileThumbs::get().getProfileConfig(accountID);
         bool configAllowsMedia = cachedCfgForMedia.hasConfig &&
             cachedCfgForMedia.backgroundType != "none" &&
@@ -1300,9 +1273,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         refreshProfileBackdropAfterVanillaLayout();
 
         if (m_fields->m_hasProfileBackdrop) {
-            if (auto* layer = this->m_mainLayer) {
-                styleProfileInternalBgs(layer);
-            }
+            if (auto* layer = this->m_mainLayer) styleProfileInternalBgs(layer);
         }
 
         if (this->m_accountID > 0 && !shouldBlockServerBackdropOverride(this->m_accountID)) {
@@ -1380,7 +1351,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     void cleanPaimonButtons(CCMenu* menu) {
         if (!menu) return;
-// Remove relocated copies tree-wide before rebuilding the page.
+        // remove relocated copies before rebuilding
         static std::string const relocatableIDs[] = {
             "profile-reviews-btn"_spr,
             "ban-user-button"_spr,
@@ -1467,9 +1438,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
 
         if (m_fields->m_hasProfileBackdrop) {
-            if (auto* layer = this->m_mainLayer) {
-                styleProfileInternalBgs(layer);
-            }
+            if (auto* layer = this->m_mainLayer) styleProfileInternalBgs(layer);
         }
 
         if (!this->m_mainLayer) return;
@@ -1514,6 +1483,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (!this->m_ownProfile && paimonProfilesEnabled()) {
             if (auto bottomMenu = this->m_mainLayer->getChildByIDRecursive("bottom-menu")) {
                 if (!this->getChildByIDRecursive("rate-profile-btn"_spr)) {
+                    // vanilla create crashes on missing sprites
                     auto bg = paimon::SpriteHelper::safeCreateScale9("GJ_button_04.png");
                     if (!bg) bg = paimon::SpriteHelper::safeCreateScale9("GJ_button_01.png");
                     if (bg) {
@@ -1744,8 +1714,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         });
                     }
 
-// The edge-cached profile bundle can lag after a music change; use the
-// authoritative music endpoint for the local profile.
+// edge-cached bundle can lag after a music change; use the authoritative endpoint
                     bool isOwnProfileMusic = false;
                     if (auto* am = GJAccountManager::get()) {
                         isOwnProfileMusic = (am->m_accountID == viewedAccountID);
@@ -2103,9 +2072,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         ProfileMusicManager::get().deleteProfileMusic(accountID, username,
                             [accountID](bool delOk, std::string const& delMsg) {
                                 if (delOk) {
-                                    log::info("[ProfileBg] Cleared configured music after Audio Video for account {}", accountID);
                                 } else {
-                                    log::info("[ProfileBg] deleteProfileMusic returned: {}", delMsg);
                                 }
                             });
                         ProfileMusicManager::get().invalidateCache(accountID);
@@ -2616,7 +2583,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
                 updatePauseButtonSprite(!musicMgr.isPaused());
             }
         } else if (useVideoAudioOverride && cachedConfig.videoAudioPath.empty()) {
-            log::info("[ProfilePage] useVideoAudio set but video not yet cached for {}", accountID);
         }
 
         Ref<ProfilePage> self = this;

@@ -20,12 +20,18 @@ namespace paimon::keybinds {
 
 namespace {
 
-// Keep a local modifier mirror, resynced from keyboard and mouse events.
+bool modsMatchSubset(KeyboardModifier required, KeyboardModifier current) {
+    return (current.value & required.value) == required.value;
+}
+
+// local modifier mirror, resynced from keyboard and mouse events.
 KeyboardModifier g_currentMods{};
 
 std::array<bool, 5> g_mouseDown = { false, false, false, false, false };
 
 bool g_systemInitialized = false;
+
+ScrollCaptureCallback g_scrollCaptor = nullptr;
 
 constexpr char const* kPrefix = "paimon-extkb-";
 
@@ -37,7 +43,7 @@ std::string makeSavedKey(std::string_view settingKey) {
     return out;
 }
 
-// Keybind settings handled by the trigger dispatcher; keep this in sync with mod.json.
+// handled by the trigger dispatcher; keep in sync with mod.json.
 std::vector<std::string> const& managedList() {
     static std::vector<std::string> const kKeys = {
         "capture-keybind",
@@ -57,7 +63,7 @@ std::vector<std::string> const& managedList() {
     return kKeys;
 }
 
-// Keybinds with instant trigger events; volume-scroll uses hold + scroll instead.
+// instant trigger events; volume-scroll uses hold + scroll instead.
 std::vector<std::string> const& triggerOnlyList() {
     static std::vector<std::string> const kKeys = {
         "capture-keybind",
@@ -137,7 +143,7 @@ std::string formatKeyboardKeybind(Keybind const& kb) {
     if (!hasKey && !hasMods) return "";
 
     if (!hasKey) {
-        // Omit Geode's trailing "+Unknown" for modifier-only KEY_None binds.
+        // drop Geode's trailing "+Unknown" on modifier-only KEY_None binds.
         std::string out = modifiersPrefix(kb.modifiers);
         if (!out.empty() && out.back() == '+') out.pop_back();
         return out;
@@ -185,7 +191,7 @@ void saveExtendedKeybind(std::string_view settingKey, ExtendedKeybind const& bin
     auto savedKey = makeSavedKey(settingKey);
 
     if (bind.kind == ExtendedKind::None) {
-        // Geode cannot delete saved values; an empty object is treated as absent.
+        // Geode cannot delete saved values; empty object reads as absent.
         auto empty = matjson::Value::object();
         empty["kind"] = static_cast<int>(ExtendedKind::None);
         mod->setSavedValue<matjson::Value>(savedKey, empty);
@@ -205,8 +211,7 @@ bool isMouseButtonHeld(MouseButton button) {
     if (!isMouseButtonIndexValid(idx)) return false;
 
 #ifdef GEODE_IS_WINDOWS
-    // Focus loss can drop Release events, so resync the OS state or
-    // volume-scroll may remain held forever.
+    // focus loss drops Release events; resync OS state or holds stick forever.
     int vk = 0;
     switch (button) {
         case MouseButton::Left:    vk = VK_LBUTTON;  break;
@@ -227,12 +232,6 @@ KeyboardModifier currentModifiers() {
     return g_currentMods;
 }
 
-namespace {
-    bool modsMatchSubset(KeyboardModifier required, KeyboardModifier current) {
-        return (current.value & required.value) == required.value;
-    }
-}
-
 bool isExtendedHeld(ExtendedKeybind const& bind) {
     if (bind.isEmpty()) return false;
     if (bind.isScrollTrigger()) return false;
@@ -243,7 +242,7 @@ bool isExtendedHeld(ExtendedKeybind const& bind) {
         return true;
     }
 
-    // VolumeScrollHook owns keyboard hold state; this helper handles mouse binds.
+    // VolumeScrollHook owns keyboard hold state; this helper covers mouse binds.
     return false;
 }
 
@@ -275,11 +274,9 @@ std::vector<std::string> const& allManagedKeybinds() {
 }
 
 void emitExtendedTrigger(std::string_view settingKey, double timestamp) {
-    // Notify local listeners first.
     ExtendedKeybindTriggerEvent(std::string(settingKey)).send(timestamp);
 
-    // Mirror Geode's native event with a synthetic keybind so existing setting
-    // listeners react too.
+    // mirror as a synthetic Geode event so existing setting listeners react too.
     auto* mod = Mod::get();
     if (!mod) return;
 
@@ -297,7 +294,7 @@ void emitExtendedTrigger(std::string_view settingKey, double timestamp) {
         timestamp
     );
 
-    // Send the matching release so reset-on-release listeners stay symmetric.
+    // matching release keeps reset-on-release listeners symmetric.
     KeybindSettingPressedEventV3(modID, settingKeyStr).send(
         synthetic,
         /*down=*/false,
@@ -324,8 +321,7 @@ void initExtendedKeybindSystem() {
         bool isPress = (data.action == MouseInputData::Action::Press);
         g_mouseDown[idx] = isPress;
 
-        // Do not filter Press by the previous local state: focus loss can drop
-        // Release events and leave a button marked down.
+        // ignore stale local state: focus loss drops Release events.
         if (!isPress) return false;
 
         auto button = fromGeodeMouseButton(data.button);
@@ -356,11 +352,6 @@ bool dispatchScrollAsTrigger(double y, double timestamp) {
         }
     }
     return anyMatch;
-}
-
-
-namespace {
-    ScrollCaptureCallback g_scrollCaptor = nullptr;
 }
 
 void setScrollCaptor(ScrollCaptureCallback callback) {

@@ -27,8 +27,7 @@ struct MaskBuffer {
     }
 };
 
-// Masks per role plus detail pixels: enclosed glow components moved out of the
-// outer ring so they keep their original color.
+// Per-role masks plus detail: enclosed glow components leave the outer ring to keep original color.
 struct MaskSet {
     MaskBuffer color1;
     MaskBuffer color2;
@@ -40,8 +39,7 @@ struct MaskSet {
     MaskBuffer const& get(ClusterRole r) const;
 };
 
-// Per-mask grayscale opening removes isolated AA specks without shifting large
-// contours. Off by default to keep exports bit-exact with PackGen.
+// Grayscale opening kills isolated AA specks; off keeps PackGen bit-exact exports.
 struct MaskMorphology {
     int erode  = 0;
     int dilate = 0;
@@ -50,19 +48,17 @@ struct MaskMorphology {
 };
 
 struct MaskBuilderOptions {
-// 0 = hard, 1 = full soft; ambiguity scales the split so clear pixels stay pure.
+    // 0 = hard, 1 = full soft; clear pixels stay pure.
     float softness = 0.0f;
 
     int alphaCutoff = 16;
 
     MaskMorphology morphology{};
 
-// Edge-aware 3x3 refinement absorbs flat-region speckles while preserving color
-// edges and pixel-alpha coverage.
+    // Edge-aware 3x3: absorbs flat speckles, keeps color edges and alpha coverage.
     int edgeRefine = 0;
 
-// Move enclosed glow components to detail; the glow color should not repaint
-// inner white glyphs.
+    // Enclosed glow goes to detail: glow must not repaint inner white glyphs.
     bool separateInteriorGlow = true;
 };
 

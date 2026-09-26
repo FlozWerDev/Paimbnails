@@ -71,7 +71,7 @@ MaskBuildResult SpritePreviewRenderer::renderMasks(
     result.stats.glowCoverage = coverage(result.masks.glow);
     result.stats.outlineCoverage = coverage(result.masks.outline);
 
-    // Flag tiny Color1 coverage for review even when the classifier was confident.
+    // Tiny Color1 coverage flags review even when confident.
     if (visiblePixels > 0 && result.stats.color1Coverage < 0.01f) {
         result.stats.needsReview = true;
     }
@@ -118,7 +118,7 @@ ImageBuffer SpritePreviewRenderer::renderCustomImage(ImageBuffer const& userImag
     float fw   = static_cast<float>(frameW);
     float fh   = static_cast<float>(frameH);
 
-    // Base scale per fit mode, then the user multiplier on top.
+    // Fit base scale first, user multiplier on top.
     float sx = 1.0f, sy = 1.0f;
     switch (transform.fitMode) {
         case ImageFitMode::Fill:
@@ -138,8 +138,7 @@ ImageBuffer SpritePreviewRenderer::renderCustomImage(ImageBuffer const& userImag
     sy *= userScale;
     if (sx <= 0.0f || sy <= 0.0f) return ImageBuffer();
 
-    // Image centre in canvas space. offsetY is "positive = up" in the UI;
-    // pixel rows grow downward, hence the minus. Clamp ±2 = full frame shift.
+    // UI offsetY is positive-up; pixel rows grow down, hence minus. ±2 clamps to full-frame shift.
     float cx = fw * 0.5f + std::clamp(transform.offsetX, -2.0f, 2.0f) * fw * 0.5f
              + pixelOffsetX;
     float cy = fh * 0.5f - std::clamp(transform.offsetY, -2.0f, 2.0f) * fh * 0.5f
@@ -160,9 +159,7 @@ ImageBuffer SpritePreviewRenderer::renderCustomImage(ImageBuffer const& userImag
     int iw = userImage.width();
     int ih = userImage.height();
 
-    // Inverse mapping: for each canvas pixel, un-rotate/un-scale back into
-    // image space and bilinear-sample. No intermediate resize → one single
-    // resampling step, maximum sharpness.
+    // Inverse-map each canvas pixel back and bilinear-sample: one resampling step, max sharpness.
     for (int y = 0; y < frameH; ++y) {
         for (int x = 0; x < frameW; ++x) {
             float dx = (static_cast<float>(x) + 0.5f) - cx;
@@ -191,8 +188,7 @@ ImageBuffer SpritePreviewRenderer::renderCustomImage(ImageBuffer const& userImag
                 auto const* p = src +
                     (static_cast<std::size_t>(py) * iw + px) * ImageBuffer::kBytesPerPixel;
                 float a = static_cast<float>(p[3]) * weight;
-                // Alpha-weighted color accumulation avoids dark halos where
-                // opaque pixels border fully transparent ones.
+                // Alpha-weighted accumulation: no dark halos at transparency borders.
                 acc[0] += static_cast<float>(p[0]) * a;
                 acc[1] += static_cast<float>(p[1]) * a;
                 acc[2] += static_cast<float>(p[2]) * a;

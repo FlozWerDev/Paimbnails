@@ -15,19 +15,15 @@ public:
 
     void setCallback(std::function<void(std::string const&)> cb);
 
-    // Fired when the user presses Enter while the input is focused.
     void setOnSubmit(std::function<void()> cb);
     std::string getString() const;
     void setString(std::string const& s);
     void clear();
-
-    // Visual feedback explicit triggers
     void playSendSweep();
     void playTypingPulse();
 
     void onExit() override;
 
-    // Access the underlying input for further customization.
     geode::TextInput* getInput() const { return m_input; }
 
 protected:

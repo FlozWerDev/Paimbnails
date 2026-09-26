@@ -22,8 +22,7 @@ class $modify(ProgressionEndLevelLayer, EndLevelLayer) {
         auto& service = ProgressionService::get();
         if (!service.enabled()) return;
 
-        // GameStatsManager is still settling while the end screen builds; read
-        // once the stack unwinds so the toast has a scene to slide into.
+        // Stats settle while the end screen builds; defer so the toast has a scene.
         paimon::scheduleMainThreadDelay(0.45f, []() {
             if (paimon::isRuntimeShuttingDown()) return;
 

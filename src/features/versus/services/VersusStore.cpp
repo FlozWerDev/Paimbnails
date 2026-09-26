@@ -1,4 +1,5 @@
 #include "VersusStore.hpp"
+#include "VersusClient.hpp"
 #include "../data/VersusModes.hpp"
 
 #include <Geode/Geode.hpp>
@@ -19,16 +20,6 @@ constexpr char const* kFormatKeyC = "versus-format-classic";
 constexpr char const* kFormatKeyP = "versus-format-platformer";
 constexpr char const* kHudKey     = "versus-hud";
 constexpr char const* kFriendsKey = "versus-friends-only";
-
-int64_t intField(matjson::Value const& v, char const* key, int64_t fallback = 0) {
-    if (!v.contains(key)) return fallback;
-    return v[key].asInt().unwrapOr(fallback);
-}
-
-std::string stringField(matjson::Value const& v, char const* key) {
-    if (!v.contains(key)) return {};
-    return v[key].asString().unwrapOr("");
-}
 
 matjson::Value profileToJson(ModeProfile const& p) {
     return matjson::makeObject({

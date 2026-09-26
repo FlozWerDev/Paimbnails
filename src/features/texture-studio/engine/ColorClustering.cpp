@@ -9,15 +9,12 @@ namespace paimon::texture_studio {
 
 namespace {
 
-// Sentinel "infinity": the project compiles with fast-math, so
-// std::numeric_limits<float>::infinity() is UB. HSV distances are bounded
-// by ~1.0, so 1e30 is effectively "as far as it gets".
+// Fast-math makes infinity() UB; HSV distances cap ~1.0, so 1e30 is "infinity".
 constexpr float kFarAway = 1.0e30f;
 constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
 constexpr float kRadToDeg = 180.0f / 3.14159265358979323846f;
 
-// SplitMix64 — same constants as IconColorMath::splitMix64, re-implemented
-// to avoid pulling in unrelated headers.
+// SplitMix64, re-implemented to skip unrelated headers.
 std::uint64_t splitMix64(std::uint64_t z) {
     z += 0x9E3779B97F4A7C15ULL;
     z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
@@ -34,8 +31,7 @@ paimon::icons::math::HSV pixelToHSV(std::uint8_t r, std::uint8_t g, std::uint8_t
     return paimon::icons::math::toHSV(cocos2d::ccColor3B{r, g, b});
 }
 
-// One weighted sample. `w` in (0,1]: alpha-weighting keeps anti-aliased edge
-// pixels from dragging centroids toward background-blended colors.
+// Weighted sample: w in (0,1]; alpha keeps AA edges off the centroids.
 struct Point {
     float h, s, v;
     float w;
@@ -58,7 +54,7 @@ float runKMeans(std::vector<Point> const& pts, int k,
     outCentroids.clear();
     outCentroids.reserve(k);
 
-// k-means++ seeding, weighted by w * d².
+    // k-means++ seeding, weighted by w * d2.
     {
         // First centroid: weighted random pick.
         float totalW = 0.0f;
@@ -75,7 +71,7 @@ float runKMeans(std::vector<Point> const& pts, int k,
 
     std::vector<float> nearestD(pts.size(), kFarAway);
     for (int c = 1; c < k; ++c) {
-        // Incremental: only the latest centroid can lower a point's distance.
+        // Incremental: only the latest centroid can lower a distance.
         auto const& last = outCentroids.back();
         float total = 0.0f;
         for (std::size_t i = 0; i < pts.size(); ++i) {
@@ -99,7 +95,7 @@ float runKMeans(std::vector<Point> const& pts, int k,
         outCentroids.push_back({pts[pickIdx].h, pts[pickIdx].s, pts[pickIdx].v, 0.0f});
     }
 
-// Lloyd iterations with weighted circular hue means.
+    // Lloyd iterations with weighted circular hue means.
     std::vector<int> assignment(pts.size(), 0);
     std::vector<float> sumHueX(k), sumHueY(k), sumS(k), sumV(k), sumW(k);
 
@@ -133,8 +129,7 @@ float runKMeans(std::vector<Point> const& pts, int k,
         float maxDrift = 0.0f;
         for (int c = 0; c < k; ++c) {
             if (sumW[c] <= 0.0f) {
-                // Re-seed empty cluster from the point furthest from any
-                // centroid, keeping k stable on pathological inputs.
+                // Re-seed empties from the furthest point; keeps k stable on pathological inputs.
                 std::size_t worstIdx = 0;
                 float worstD = -1.0f;
                 for (std::size_t i = 0; i < pts.size(); ++i) {
@@ -176,9 +171,7 @@ float runKMeans(std::vector<Point> const& pts, int k,
     return inertia;
 }
 
-// Merge centroid pairs closer than mergeThreshold. k-means with a fixed k
-// happily splits one visual color into two clusters; downstream that makes
-// the classifier hand the same surface to two different roles.
+// Merge sub-threshold pairs: fixed-k splits one color in two and confuses role assignment.
 void mergeCloseCentroids(std::vector<Centroid>& cents,
                          ClusteringOptions const& options) {
     if (options.mergeThreshold <= 0.0f) return;
@@ -225,8 +218,7 @@ float ColorClustering::hsvDistance(float h1, float s1, float v1,
     if (dh_raw > 180.0f) dh_raw = 360.0f - dh_raw;
     float dh = dh_raw / 180.0f;
 
-    // Hue is meaningless for near-grey points: damp it by min saturation so
-    // two greys with random hues aren't pushed apart.
+    // Near-grey hue is noise: damp by min saturation so greys don't repel.
     float satFactor = std::min(s1, s2);
     dh *= satFactor;
 
@@ -275,8 +267,7 @@ ClusterSet ColorClustering::compute(ImageBuffer const& sprite, ClusteringOptions
 
     if (points.empty()) return out;
 
-    // Deterministic stride subsample for the iteration phase: same centroids,
-    // fraction of the cost on large sprites.
+    // Deterministic stride subsample: same centroids, cheaper on big sprites.
     std::vector<Point> sampled;
     std::vector<Point> const* iterPts = &points;
     if (options.maxSamples > 0 &&
@@ -296,8 +287,7 @@ ClusterSet ColorClustering::compute(ImageBuffer const& sprite, ClusteringOptions
                            ^ static_cast<std::uint64_t>(H) * 19349663u
                            ^ static_cast<std::uint64_t>(points.size()) * 83492791u;
 
-    // Best-of-N restarts: a bad k-means++ draw can wedge a centroid between
-    // two real colors; the lowest-inertia run avoids it.
+    // Best-of-N: lowest inertia wins over wedged k-means++ draws.
     std::vector<Centroid> best;
     float bestInertia = kFarAway;
     int restarts = std::max(1, options.restarts);
@@ -314,8 +304,7 @@ ClusterSet ColorClustering::compute(ImageBuffer const& sprite, ClusteringOptions
 
     mergeCloseCentroids(best, options);
 
-    // Final pass over ALL pixels: exact per-cluster counts and one polished
-    // weighted mean per centroid (the iteration phase may have subsampled).
+    // Final full-pixel pass: exact counts plus one polished mean per centroid.
     int n = static_cast<int>(best.size());
     std::vector<int>   counts(n, 0);
     std::vector<float> sumHueX(n, 0.0f), sumHueY(n, 0.0f);

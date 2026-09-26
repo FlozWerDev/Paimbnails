@@ -1,7 +1,6 @@
 #pragma once
 
-// Estado compartido de Paimon RTX: carga/guarda la config y decide si el
-// postproceso corre en la escena actual (el renderer lo consulta por fotograma).
+// Shared RTX state: loads/saves config and gates postfx per scene (renderer polls each frame).
 
 #include "RTXConfig.hpp"
 
@@ -21,11 +20,11 @@ public:
     void saveConfig();
     void resetToDefaults();
 
-    // Interruptor propio, sin mirar el modulo ni la escena.
+    // Own switch, ignoring module and scene.
     bool isEnabled() const;
     void setEnabled(bool enabled);
 
-    // Lo que consulta el renderer: modulo + interruptor + ambito de la escena.
+    // What the renderer asks: module + switch + scene scope.
     bool shouldRender() const;
 
 private:

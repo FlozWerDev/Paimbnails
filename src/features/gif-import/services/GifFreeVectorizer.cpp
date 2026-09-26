@@ -14,13 +14,13 @@ namespace paimon::gifimport {
 
 namespace {
 
-// Firma gruesa: por debajo no compensa revisar celda a celda.
+// coarse signature: below this, cell-by-cell review doesn't pay.
 constexpr float kStampFloor = 0.5f;
-// Casi llena: lo hace mejor pintura y funde vecinos.
+// near-full: paint does it better and merges neighbors.
 constexpr float kRectCoverage = 0.93f;
-// La firma ordena pero es gruesa: no basta la primera.
+// signature sorts but stays coarse: first alone never suffices.
 constexpr int kExactTries = 6;
-// Debe ahorrar 2: no ve fusiones de rectangulos del plan.
+// must save 2: blind to plan rectangle merges.
 constexpr std::size_t kStampSaving = 2;
 constexpr int kSplitDepth = 5;
 constexpr std::size_t kMinStampCells = 8;
@@ -84,7 +84,7 @@ struct Evaluation {
     bool clean = true;
 };
 
-// La firma no ve puntas de media celda: descarta si asoma.
+// signature misses half-cell tips: discard on spill.
 Evaluation evaluate(FreeContext const& context, ShapeXform const& shape) {
     Evaluation result;
     auto const box = xformBox(shape, context.width, context.height);
@@ -195,7 +195,7 @@ void fitBlob(
         auto const evaluation = evaluate(context, shape);
         if (!evaluation.clean || evaluation.covered <= 0) continue;
 
-        // Solo entra si molde + resto cuesta menos que pintar todo.
+        // only in when mold + rest costs less than painting everything.
         auto const shadow = coveredCells(context, shape);
         std::vector<int> rest;
         rest.reserve(cells.size());
@@ -223,7 +223,7 @@ void fitBlob(
         return;
     }
 
-    // Sin molde rentable: parte por el lado largo y reintenta.
+    // no paying mold: split along the long side and retry.
     std::vector<int> first;
     std::vector<int> second;
     if (boxWidth >= boxHeight) {
@@ -298,7 +298,7 @@ std::vector<Primitive> vectorizeFree(
             leftover, width, height, color, rank, blocked, empty, gridExact);
         output.insert(output.end(), rest.begin(), rest.end());
     }
-    // El modo libre nunca sale mas caro que pintura.
+    // free mode never costs more than paint.
     return output.size() < plain.size() ? output : plain;
 }
 

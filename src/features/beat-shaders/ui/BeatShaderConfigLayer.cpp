@@ -65,8 +65,7 @@ bool BeatShaderConfigLayer::init() {
             for (auto const& key : m_layerKeys) {
                 BeatShaderManager::get().setLayerEnabled(key, true);
             }
-            // Reconstruimos la UI y el fondo fuera del touch dispatcher (ver
-            // persistAndRefresh para la explicacion del crash).
+            // Rebuild UI and background outside touch dispatch (see persistAndRefresh).
             Ref<BeatShaderConfigLayer> self = this;
             Loader::get()->queueInMainThread([self] {
                 if (paimon::isRuntimeShuttingDown()) return;
@@ -218,8 +217,7 @@ void BeatShaderConfigLayer::rebuild() {
 
 void BeatShaderConfigLayer::persistAndRefresh(bool shaderChanged) {
     BeatShaderManager::get().saveConfig(m_cfg);
-    // Defer scene mutation: these callbacks run inside the touch dispatcher's
-    // loop, and mutating the graph mid-iteration crashes ~CCTargetedTouchHandler.
+    // Callbacks run inside touch dispatch; mutating the graph mid-iteration crashes ~CCTargetedTouchHandler.
     if (shaderChanged) {
         Loader::get()->queueInMainThread([] {
             if (paimon::isRuntimeShuttingDown()) return;

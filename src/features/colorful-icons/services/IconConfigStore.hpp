@@ -1,5 +1,5 @@
 #pragma once
-// Wraps load/save of PaimonIconConfig. Broadcasts IconConfigChangedEvent on mutation.
+// Broadcasts IconConfigChangedEvent on mutation.
 
 #include "../PaimonIconsConfig.hpp"
 

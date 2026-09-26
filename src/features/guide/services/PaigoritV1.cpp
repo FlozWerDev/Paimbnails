@@ -258,21 +258,16 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
                 auto pToks = tokenizeKw(phrase);
                 if (pToks.size() >= 2 && keywordAppearsAsCompound(tokenForms, pToks)) {
                     scored.bestSearchFuzzy = std::max(scored.bestSearchFuzzy, kSearchPhraseCap);
-                    markCoveredTokens(tokenForms, pToks, covered);
-                } else {
-                    markCoveredTokens(tokenForms, pToks, covered);
                 }
+                markCoveredTokens(tokenForms, pToks, covered);
             }
             if (scored.bestSearchFuzzy >= kSearchPhraseFloor) {
                 scored.hasSearchPhraseMatch = true;
-                // Include phrase score without exceeding the cap.
+                // include phrase score without exceeding the cap; strong phrases anchor.
                 scored.bestKeywordFuzzy = std::max(scored.bestKeywordFuzzy, scored.bestSearchFuzzy);
-                // Strong phrases may anchor qualification.
-                if (scored.bestSearchFuzzy >= kSearchPhraseFloor) {
-                    scored.bestAnchoredFuzzy = std::max(
-                        scored.bestAnchoredFuzzy,
-                        std::min(scored.bestSearchFuzzy, 88.0));
-                }
+                scored.bestAnchoredFuzzy = std::max(
+                    scored.bestAnchoredFuzzy,
+                    std::min(scored.bestSearchFuzzy, 88.0));
             }
         }
 

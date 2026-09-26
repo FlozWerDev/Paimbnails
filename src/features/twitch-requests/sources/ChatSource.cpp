@@ -24,6 +24,15 @@ constexpr char const* kUserAgent =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0.0.0 Safari/537.36";
 
+web::WebRequest baseRequest() {
+    web::WebRequest request;
+    request.userAgent(kUserAgent)
+        .acceptEncoding("gzip, deflate")
+        .followRedirects(true)
+        .timeout(std::chrono::seconds(15));
+    return request;
+}
+
 std::string trimmed(std::string value) {
     auto first = std::ranges::find_if(value, [](unsigned char ch) { return !std::isspace(ch); });
     value.erase(value.begin(), first);
@@ -158,16 +167,12 @@ std::string normalizeChannel(Platform platform, std::string value) {
     if (value.empty()) return {};
 
     switch (platform) {
-        case Platform::Twitch: {
-            value = lowered(std::move(value));
-            if (value.contains('/')) value = lastSegment(value);
-            auto clean = keepChars(value, "_");
-            return clean == value ? clean : std::string{};
-        }
+        case Platform::Twitch:
         case Platform::Kick: {
             value = lowered(std::move(value));
             if (value.contains('/')) value = lastSegment(value);
-            auto clean = keepChars(value, "_-");
+            std::string_view const extra = platform == Platform::Twitch ? "_" : "_-";
+            auto clean = keepChars(value, extra);
             return clean == value ? clean : std::string{};
         }
         case Platform::YouTube: {
@@ -274,11 +279,7 @@ void ChatSourceBase::httpGet(
     std::function<void(bool, std::string)> handler
 ) {
     std::weak_ptr<uint8_t> life = m_life;
-    web::WebRequest request;
-    request.userAgent(kUserAgent)
-        .acceptEncoding("gzip, deflate")
-        .followRedirects(true)
-        .timeout(std::chrono::seconds(15));
+    auto request = baseRequest();
     WebHelper::dispatch(std::move(request), "GET", url,
         [life, handler = std::move(handler)](web::WebResponse response) mutable {
             if (paimon::isRuntimeShuttingDown() || life.expired()) return;
@@ -291,11 +292,7 @@ void ChatSourceBase::httpGetBinary(
     std::function<void(bool, std::vector<uint8_t>)> handler
 ) {
     std::weak_ptr<uint8_t> life = m_life;
-    web::WebRequest request;
-    request.userAgent(kUserAgent)
-        .acceptEncoding("gzip, deflate")
-        .followRedirects(true)
-        .timeout(std::chrono::seconds(15));
+    auto request = baseRequest();
     WebHelper::dispatch(std::move(request), "GET", url,
         [life, handler = std::move(handler)](web::WebResponse response) mutable {
             if (paimon::isRuntimeShuttingDown() || life.expired()) return;
@@ -309,11 +306,8 @@ void ChatSourceBase::httpPostJson(
     std::function<void(bool, std::string)> handler
 ) {
     std::weak_ptr<uint8_t> life = m_life;
-    web::WebRequest request;
-    request.userAgent(kUserAgent)
-        .acceptEncoding("gzip, deflate")
-        .header("Content-Type", "application/json")
-        .timeout(std::chrono::seconds(15))
+    auto request = baseRequest();
+    request.header("Content-Type", "application/json")
         .bodyString(std::move(body));
     WebHelper::dispatch(std::move(request), "POST", url,
         [life, handler = std::move(handler)](web::WebResponse response) mutable {

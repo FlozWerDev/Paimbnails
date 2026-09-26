@@ -10,7 +10,7 @@ bool CustomTransitionScene::isActive() {
 }
 CustomTransitionScene* CustomTransitionScene::create(CCScene* from, CCScene* to,
     std::vector<TransitionCommand> const& commands, bool) {
-    // CCDirector owns push/replace/pop semantics; never edit its scene pointers.
+    // CCDirector owns push/replace/pop; never touch its scene pointers.
     if (!from || from == to || from != CCDirector::get()->getRunningScene()) return nullptr;
     auto* result = new CustomTransitionScene();
     if (result->initialize(to, commands)) { result->autorelease(); return result; }
@@ -42,7 +42,7 @@ bool CustomTransitionScene::initialize(CCScene* to, std::vector<TransitionComman
         auto const& command = m_commands[m_timeline.clips[i].command];
         if (command.action == CommandAction::Image) {
             m_media[i] = findTransitionMedia(command.imagePath);
-            // No synchronous decode or invisible partial transition.
+            // no sync decode or half-invisible transition.
             if (!m_media[i]) { prepareTransitionMedia(command.imagePath); return false; }
         }
     }
@@ -52,8 +52,8 @@ bool CustomTransitionScene::capture(CCScene* scene, Ref<CCRenderTexture>& surfac
     auto size = CCDirector::get()->getWinSize();
     surface = CCRenderTexture::create(static_cast<int>(size.width), static_cast<int>(size.height));
     if (!surface || !surface->getSprite()) return false;
-    // Both scenes stay attached exactly where GD put them. Only their pixels
-    // enter this hierarchy; transform/opacity commands cannot affect gameplay.
+    // scenes stay where GD put them; only their pixels enter here, so
+    // commands can't touch gameplay.
     surface->beginWithClear(0, 0, 0, 1);
     scene->visit();
     surface->end();
@@ -101,13 +101,13 @@ void CustomTransitionScene::onEnter() {
 }
 void CustomTransitionScene::draw() {
     if (m_stinger) {
-        // Cut is independent of overlay playback length, as in an OBS stinger.
+        // cut ignores overlay length, like an OBS stinger.
         auto* scene = m_elapsed < m_fDuration * m_cutPoint ? m_pOutScene : m_pInScene;
         if (scene) scene->visit();
     } else if (!m_captured) CCTransitionScene::draw();
 }
 void CustomTransitionScene::onExit() {
-    // Also cancel a native finish callback if navigation interrupted the scene.
+    // navigation may interrupt the scene; cancel the native finish callback too.
     unscheduleAllSelectors();
     CCTransitionScene::onExit();
 }
@@ -133,7 +133,7 @@ void CustomTransitionScene::complete() {
     if (m_finished) return;
     m_finished = true;
     unscheduleUpdate();
-    // Native finish schedules the director handoff and preserves stack cleanup.
+    // native finish keeps the director handoff and stack cleanup.
     finish();
 }
 void CustomTransitionScene::apply(std::size_t i, float t, float elapsed) {
@@ -177,7 +177,7 @@ void CustomTransitionScene::apply(std::size_t i, float t, float elapsed) {
         case CommandAction::Color:
             target->setColor({static_cast<GLubyte>(command.r), static_cast<GLubyte>(command.g), static_cast<GLubyte>(command.b)}); break;
         case CommandAction::Shake: {
-            // Deterministic offsets, zero at both endpoints, independent of rand().
+            // deterministic offsets, zero at both ends, no rand().
             float amplitude = command.intensity * std::sin(t * 3.14159265f);
             target->setPosition({m_origins[i].x + amplitude * std::sin(elapsed * 91.f),
                 m_origins[i].y + amplitude * std::sin(elapsed * 113.f)}); break;

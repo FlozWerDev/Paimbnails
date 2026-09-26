@@ -64,8 +64,7 @@ SearchRequestCoordinator::Token SearchRequestCoordinator::request(
         return 0;
     }
 
-    // 2. GD's own store, which already holds anything the game fetched this
-    //    session. Only levels are reliably keyed this way.
+    // GD's own store already holds anything fetched this session. Levels only.
     if (kind == SearchKind::Levels) {
         if (auto* manager = GameLevelManager::get()) {
             if (auto* stored = manager->getStoredOnlineLevels(key.c_str())) {
@@ -82,7 +81,7 @@ SearchRequestCoordinator::Token SearchRequestCoordinator::request(
 
     auto token = m_nextToken++;
 
-    // 3. Join an identical request that is already running or queued.
+    // Join an identical request already running or queued.
     if (m_inFlight && m_current.key == key && m_current.kind == kind) {
         m_current.waiters.push_back({token, std::move(callback)});
         return token;

@@ -12,11 +12,9 @@ uniform float u_click;
 void main() {
     vec2 uv = v_texCoord;
     
-    // Heat rises from cursor position
     float heatDist = length(v_texCoord - u_cursor);
     float heatMask = smoothstep(0.5, 0.0, heatDist) * (0.4 + u_click * 0.6);
     
-    // Wavy distortion that rises upward
     float rise = (u_cursor.y - v_texCoord.y);
     float riseMask = smoothstep(0.0, 0.4, rise) * smoothstep(0.8, 0.3, rise);
     
@@ -29,13 +27,11 @@ void main() {
     
     vec4 color = texture2D(u_texture, uv);
     
-    // Warm color shift in heat zone
     float warmth = heatMask * riseMask * u_intensity * 0.08;
     color.r += warmth * 0.3;
     color.g += warmth * 0.1;
     color.b -= warmth * 0.2;
     
-    // Shimmer highlights
     float shimmer = pow(max(wave1 * wave2, 0.0), 4.0) * heatMask * riseMask;
     color.rgb += vec3(1.0, 0.9, 0.7) * shimmer * u_intensity * 0.05;
     

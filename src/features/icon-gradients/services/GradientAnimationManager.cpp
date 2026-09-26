@@ -154,9 +154,7 @@ void GradientAnimationManager::setReverse(bool reverse) {
 }
 
 void GradientAnimationManager::reset() {
-    // The custom stack survives: it's work the user built by hand, and this
-    // button is labelled "Reset", not "Delete my animation". The editor has its
-    // own Clear for that.
+    // custom stack survives: "Reset" is not "Delete my animation" (editor has Clear).
     auto custom = std::move(m_config.custom);
     m_config = {};
     m_config.custom = std::move(custom);

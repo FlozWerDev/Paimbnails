@@ -120,7 +120,7 @@ private:
 
     bool m_isPlaying = false;
     bool m_isPaused = false;
-    // Canal concreto que pausamos, para no tocar el resto de la musica.
+    // the one channel we pause; the rest of the mix is untouched.
     FMOD::Channel* m_pausedChannel = nullptr;
     int m_currentProfileID = 0;
     uint32_t m_profileSessionToken = 0;
@@ -156,7 +156,7 @@ private:
 
     bool isCacheValid(int accountID, ProfileMusicConfig const& config);
 
-    // `version` (config updatedAt) is appended as a cache-buster so a changed clip is fetched fresh, not a stale CDN/edge copy.
+    // version appended as cache-buster: changed clips fetch fresh, not stale CDN copies.
     void downloadMusicFragment(int accountID, std::string const& version, DownloadCallback callback);
 
     std::vector<float> analyzeWaveform(std::string const& filePath, int numPeaks, int& outDurationMs);

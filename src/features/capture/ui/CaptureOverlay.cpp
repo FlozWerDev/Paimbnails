@@ -26,9 +26,8 @@ using namespace geode::prelude;
 CaptureOverlay* CaptureOverlay::s_instance = nullptr;
 
 void CaptureOverlay::show() {
-// A second capture while the old card is still on screen replaces it: close
-// the old overlay synchronously (its in-flight capture callback is
-// WeakRef-guarded and becomes a no-op) instead of dropping the new request.
+// A second capture replaces the on-screen card: close the old overlay
+// synchronously (its in-flight callback is WeakRef-guarded and no-ops).
     if (s_instance) {
         s_instance->finishClose();
     }
@@ -173,8 +172,7 @@ void CaptureOverlay::registerWithTouchDispatcher() {
 
 bool CaptureOverlay::ccTouchBegan(CCTouch* touch, CCEvent* event) {
     if (m_isClosing) return false;
-// Before the capture lands the overlay is invisible: never swallow touches
-// meant for the game or the pause menu underneath.
+// Invisible until the capture lands: never swallow game/pause touches underneath.
     if (!this->isVisible()) return false;
     auto touchPos = touch->getLocation();
 
@@ -258,8 +256,7 @@ void CaptureOverlay::triggerCaptureProcess(float) {
         [weakSelf](bool success, cocos2d::CCTexture2D* texture, std::shared_ptr<uint8_t> rgba, int w, int h) {
             auto self = weakSelf.lock();
             if (!self) return;
-// The overlay may have been replaced (second capture) or removed (scene
-// change) while the capture was in flight: never resurrect it.
+// Replaced or scene-changed mid-flight: never resurrect the overlay.
             if (self->m_isClosing || !self->getParent()) return;
             self->setVisible(true);
 
@@ -547,8 +544,7 @@ void CaptureOverlay::onOpenFolder(CCObject* sender) {
     std::error_code ec;
     std::filesystem::create_directories(capturesDir, ec);
 
-    // openFolder keeps the path wide: ShellExecuteA mangles save dirs under a
-    // Windows user name with non-ASCII characters and silently opens nothing.
+    // openFolder keeps the path wide: ShellExecuteA mangles non-ASCII user dirs silently.
     if (ec || !geode::utils::file::openFolder(capturesDir)) {
         PaimonNotify::create("No se pudo abrir la carpeta de capturas.",
             NotificationIcon::Error)->show();

@@ -221,8 +221,7 @@ void scheduleLayerBgSave() {
     });
 }
 
-// Poster frames only cover decoder warmup, so they are stored downscaled:
-// a full-res RGBA readback/upload would stall the layer transition.
+// Posters only cover decoder warmup: store downscaled, full-res RGBA would stall transitions.
 
 // Longest edge of a stored poster frame.
 constexpr int kVideoPreviewMaxDim = 512;
@@ -558,8 +557,7 @@ struct VideoBackgroundUpdateNode : public CCNode {
                 m_visibleSprite->setOpacity(0);
                 m_visibleSprite->runAction(CCFadeTo::create(0.15f, 255));
 
-                // Poster readback costs a full GPU stall, so it waits until
-                // playback has settled instead of grabbing the first frames.
+                // Poster readback stalls the GPU; wait for settled playback, not first frames.
                 if (!m_previewSaved && !m_videoPath.empty()
                     && !LayerBackgroundManager::hasVideoBgPreview(m_videoPath)) {
                     m_previewCaptureCountdown = kPreviewCaptureDelay;
@@ -607,8 +605,7 @@ CCTexture2D* LayerBackgroundManager::getVideoBgPreviewTexture(std::string const&
         return it->second.data();
     }
 
-    // Remember misses too, so a layer without a cached poster frame does not
-    // stat the disk on every entry.
+    // Remember misses too; uncached layers never stat the disk per entry.
     Ref<CCTexture2D> texture = nullptr;
 
     std::vector<uint8_t> pixels;
@@ -633,7 +630,6 @@ void LayerBackgroundManager::saveVideoBgPreview(std::string const& videoPath,
     if (!player || videoPath.empty()) return;
 
     auto previewPath = getVideoBgPreviewPath(videoPath);
-    // A fresh preview means the GPU readback below can be skipped entirely.
     if (videoPreviewIsFresh(videoPath, previewPath)) return;
 
     std::vector<uint8_t> pixels;
@@ -1544,8 +1540,7 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
 
     layer->addChild(container);
 
-    // Reuse-only: falling through to the async path is far better than building
-    // a decoder here, which would freeze the layer transition.
+    // Reuse-only: async fallback beats building a decoder that freezes the transition.
     {
         auto shared = acquireExistingSharedVideo(path);
         if (shared) {
@@ -2036,7 +2031,7 @@ bool LayerBackgroundManager::applyBackground(CCLayer* layer, std::string const& 
         return false;
     }
 
-    // Download missing ID textures asynchronously.
+    // Fetch ID textures without blocking layer entry.
     if (resolvedCfg.type == "id" && resolvedCfg.levelId > 0) {
         Ref<CCLayer> layerRef = layer;
         CCLayer* layerRaw = layer;
@@ -2383,8 +2378,7 @@ void LayerBackgroundManager::releaseSharedVideo(std::string const& path) {
             playerToHalt = std::move(it->second.player);
             m_sharedVideos.erase(it);
 #else
-            // Park it: the decode thread stalls on the full ring by itself, and
-            // keeping the GPU resolve cache is what makes a return instant.
+            // Park it: the decode thread stalls on the full ring; kept GPU cache makes return instant.
             it->second.stale = true;
             it->second.expiry = std::chrono::steady_clock::now() + kSharedVideoTTL;
 

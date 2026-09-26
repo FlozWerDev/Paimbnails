@@ -4,9 +4,6 @@
 #include <string>
 #include <vector>
 
-// FeatureInfoPopup: scrollable popup explaining a mod feature.
-// Each section has a colored title and a descriptive body; used from the Paimon Hub.
-
 namespace paimon::ui {
 
 struct InfoSection {

@@ -42,8 +42,7 @@ struct UserRoles {
     }
 };
 
-// Small LRU + TTL cache of the full role set per username, with in-flight
-// coalescing so the badge renderers in comment cells don't spam the server.
+// Per-username LRU+TTL role cache with in-flight coalescing; no server spam from cells.
 class RoleService {
 public:
     using Callback = geode::CopyableFunction<void(UserRoles)>;
@@ -82,8 +81,7 @@ public:
         m_orderSet.clear();
     }
 
-    // Resolve the full role set for a username. The callback always runs on the
-    // main thread. Coalesces concurrent requests for the same user.
+    // Full role set per username on main thread; concurrent requests coalesce.
     void fetch(std::string const& username, Callback cb) {
         if (username.empty()) { dispatch(std::move(cb), {}); return; }
 
@@ -103,8 +101,7 @@ public:
             m_inflight[key].push_back(std::move(cb));
         }
 
-        // The server keys roles purely by username; accountID is only needed for
-        // mod-code issuance, so the viewer's own accountID is enough for auth.
+        // Server keys roles by username; viewer's accountID suffices for mod-code auth.
         int viewerAccountID = 0;
         if (auto* am = GJAccountManager::get()) viewerAccountID = am->m_accountID;
 

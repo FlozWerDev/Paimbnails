@@ -109,16 +109,16 @@ void appendPrimitive(
     auto const& stamp = stamped ? stamps[object.stamp] : PlanStamp{};
     float const boxWidth = object.width * pixelSize;
     float const boxHeight = object.height * pixelSize;
-    // El molde va recortado a lo que pinta, asi que el objeto entero se corre
-    // para que ese recorte caiga donde el plan lo dejo.
+    // the mold is trimmed to what paints, so the whole object shifts to land
+    // that trim where the plan left it.
     float x = origin.x + (object.x + stamp.offsetX * object.width + 0.5f) * pixelSize;
     float y = origin.y +
         (imageHeight - object.y - stamp.offsetY * object.height - 0.5f) * pixelSize;
     float scaleX = boxWidth / shape.width;
     float scaleY = boxHeight / shape.height;
     if (stamped) {
-        // GD escala antes de girar, asi que a un cuarto de vuelta los dos ejes
-        // se cruzan: lo ancho de la caja lo da el alto del arte.
+        // GD scales before rotating, so at a quarter turn the axes cross:
+        // box width comes from art height.
         bool const quarter =
             std::abs(std::fmod(std::abs(stamp.rotation), 180.f) - 90.f) < 0.5f;
         scaleX = (quarter ? boxHeight : boxWidth) /
@@ -201,9 +201,8 @@ void appendMove(
     payload += ';';
 }
 
-// Wash a pantalla completa del VertX en modo normal (207 ausente): las
-// esquinas van duplicadas arriba/abajo y la rampa sale vertical sin depender
-// de como interprete el juego el vertexMode.
+// Full-screen VertX wash in normal mode (no 207): corners duplicated top/bottom
+// and the ramp runs vertical regardless of how the game reads vertexMode.
 void appendGradient(
     std::string& payload,
     float x,
@@ -259,9 +258,9 @@ bool measureShape(LevelEditorLayer* editor, ObjectShape& shape) {
     return true;
 }
 
-// El orden Z (25) solo ordena dentro de una misma capa Z, asi que las figuras
-// que traen otra capa por defecto se dibujarian encima de los cuadrados pase lo
-// que pase. Si alguna no coincide, las mandamos todas a la capa del cuadrado.
+// Z order (25) sorts within one Z layer only, so figures with a different
+// default layer would paint over squares no matter what. On any mismatch,
+// everything goes to the square layer.
 int sharedZLayer(ShapeTable const& shapes, bool stamped) {
     int const block = shapes[shapeIndex(PrimitiveKind::Block)].zLayer;
     if (stamped) return block != 0 ? block : static_cast<int>(ZLayer::B1);
@@ -273,9 +272,8 @@ int sharedZLayer(ShapeTable const& shapes, bool stamped) {
     return 0;
 }
 
-// El save de GD guarda el Move en unidades suyas, no en pixeles. En vez de dar
-// por buena la constante se crea un trigger de prueba con un valor conocido y se
-// le pregunta al propio juego en cuanto lo tradujo.
+// GD saves Move in its own units, not pixels. Instead of trusting the constant,
+// a probe trigger with a known value asks the game itself what it translated to.
 float moveUnitScale(LevelEditorLayer* editor) {
     float scale = 3.f;
     auto* created = editor->createObjectsFromString(
@@ -308,10 +306,10 @@ bool resolveShapes(LevelEditorLayer* editor, ImportMode mode, ShapeTable& shapes
     return true;
 }
 
-// La pasada relajada de la biblioteca acepta decoracion sin exigir tinte, asi
-// que se verifica aqui: el blending sale del canal de color (toda la paleta
-// suave es glow con glowPaletteStart=0) y vale igual para nativos y repuesto,
-// pero un objeto que no acepta tinte pintaria su color original.
+// the relaxed library pass accepts decoration without tint, so verify here:
+// blending comes from the color channel (the whole soft palette is glow with
+// glowPaletteStart=0) for natives and spares alike, but a tint-refusing object
+// would paint its original color.
 void verifySoftStamps(LevelEditorLayer* editor, ImportPlan const& plan) {
     if (!usesSoftGeometry(plan.mode) || plan.stamps.empty()) return;
     if (plan.glowPaletteStart != 0) {
@@ -470,9 +468,9 @@ Result<PreparedImport> prepareImport(
             return options.loop ? eventGroups[frame] : eventGroups[frame - 1];
         };
 
-        // Mover la figura a la pose del frame siguiente durante lo que dura el
-        // actual la deja donde toca justo cuando ese frame entra, y de paso el
-        // salto entre poses se ve como un desplazamiento y no como un parpadeo.
+        // moving the figure to the next frame's pose for the current one's
+        // duration lands it right as that frame starts, and pose jumps read
+        // as slides instead of blinks.
         auto appendMotionStep = [&](std::size_t frame, std::size_t next, int eventGroup) {
             for (std::size_t i = 0; i < plan.motionTracks.size(); ++i) {
                 auto const& track = plan.motionTracks[i];
@@ -505,8 +503,8 @@ Result<PreparedImport> prepareImport(
         appendSpawn(
             payload, startX, triggerY, eventGroupForFrame(1),
             std::max(plan.frames.front().delayMs, 10) / 1000.f, 0);
-        // Sin loop el frame cero no tiene grupo de evento propio: su movimiento
-        // sale suelto y arranca con el nivel, igual que los apagados iniciales.
+        // without loop frame zero has no event group of its own: its motion
+        // goes loose and starts with the level, like the initial offs.
         if (!options.loop) appendMotionStep(0, 1, 0);
         std::size_t const firstTransition = options.loop ? 0 : 1;
         for (std::size_t frame = firstTransition; frame < plan.frames.size(); ++frame) {

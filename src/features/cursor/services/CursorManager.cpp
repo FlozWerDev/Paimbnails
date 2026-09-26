@@ -89,7 +89,7 @@ bool containsVisibleLayerMatch(CCNode* node, std::set<std::string> const& filter
 bool sampleCursorPosition(CCPoint& outPos, bool& outInsideWindow) {
     auto winSize = CCDirector::get()->getWinSize();
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-    // No hay raton en movil: el sprite sigue al dedo via el hook de CCTouchDispatcher.
+    // No mouse on mobile: the sprite follows the finger via the CCTouchDispatcher hook.
     auto touchPos = CursorManager::get().pointerPos();
     outInsideWindow = touchPos.x >= 0.f && touchPos.y >= 0.f &&
         touchPos.x <= winSize.width && touchPos.y <= winSize.height;
@@ -1004,7 +1004,7 @@ std::vector<std::string> CursorManager::importZipData(std::vector<uint8_t> const
         return {};
     }
 
-    // file::Unzip solo abre ficheros, asi que el .zip pasa por disco.
+    // file::Unzip only opens files, so the .zip goes through disk.
     auto tmpPath = Mod::get()->getSaveDir() / "cursor_shop_download.zip";
     auto writeRes = file::writeBinary(tmpPath, geode::ByteVector(data.begin(), data.end()));
     if (!writeRes) {
@@ -1013,7 +1013,7 @@ std::vector<std::string> CursorManager::importZipData(std::vector<uint8_t> const
         return {};
     }
 
-    // El nombre del pack sale del stem del fichero, asi que conviene renombrarlo.
+    // Pack name comes from the file stem.
     auto stem = sanitizeAsciiStem(displayName);
     if (stem.empty()) stem = "pack";
 
@@ -1220,9 +1220,8 @@ CCSprite* CursorManager::createFallbackSprite() {
         if (newTex->initWithData(pixels.data(), kCCTexture2DPixelFormat_RGBA8888, kW, kH, CCSizeMake(kW, kH))) {
             ccTexParams params{GL_NEAREST, GL_NEAREST, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
             newTex->setTexParameters(&params);
-            // Ref::adopt takes ownership of the existing refcount=1 without
-            // adding an extra retain. Without adopt, Ref::operator= retains,
-            // leaving refcount=2 — permanent leak.
+            // Ref::adopt takes the existing refcount=1; without it Ref::operator=
+            // retains again, leaving refcount=2 — permanent leak.
             fallbackTex = geode::Ref<CCTexture2D>::adopt(newTex);
         } else {
             newTex->release();
@@ -1314,7 +1313,6 @@ bool CursorManager::isCursorOverButton(CCPoint const& worldPos) const {
 }
 
 CursorState CursorManager::resolveActiveState(CCPoint const& mouseWorld) const {
-    // Priority: Click > Disabled > Text > Hover > Move > Idle.
     if (m_config.clickEnabled && m_mouseDown && spriteForState(CursorState::Click)) {
         return CursorState::Click;
     }
@@ -1458,8 +1456,7 @@ void CursorManager::syncSystemCursorVisibility(bool hideSystemCursor) {
 }
 
 void CursorManager::update(float dt) {
-    // Narrowing the layer list drops this into a recursive walk of the whole
-    // node tree, so sample it a few times a second instead of every frame.
+    // Sampling the narrowed layer list walks the whole node tree, so only a few times a second.
     if (--m_sceneVisibleCooldown <= 0) {
         m_sceneVisibleCooldown = 6;
         m_sceneVisible = shouldShowOnCurrentScene();
@@ -1497,8 +1494,7 @@ void CursorManager::update(float dt) {
         hideInGameplay = (nativeHide || modHide) && !inMenuOverlay;
     }
 
-    // cursor without destroying and rebuilding the trail — which is what
-    // produced the per-frame flicker before.
+    // Hide instead of destroying: rebuilding the trail each time flickered per frame.
     bool show = insideWindow && !hideInGameplay &&
                 m_sceneVisible && hasLoadedCursorVisual();
 

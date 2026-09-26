@@ -1,6 +1,5 @@
 #pragma once
-// Editor del Creador de Iconos: icono vivo a la izquierda, zonas y pestanas a
-// la derecha.
+// Icon Maker editor: live icon left, zones and tabs right.
 
 #include "IconMakerUI.hpp"
 #include "../data/IconAnatomy.hpp"
@@ -67,15 +66,13 @@ protected:
     void selectPiece(int index);
     void selectTab(Tab tab);
 
-    // Entrada desde el lienzo: cambia zona y capa a la vez y deja la
-    // reconstruccion del panel para el siguiente frame, porque llega desde
-    // dentro del reparto de toques.
+    // canvas entry: swaps zone+layer at once, panel rebuild deferred a frame
+    // (arrives inside touch dispatch).
     void selectFromCanvas(std::string const& zoneKey, int pieceIndex);
     void pushCanvasSelection();
 
-    // Envuelve una modificacion para que deshacer, autoguardado y vista previa
-    // queden en su sitio. `coalesceKey` junta una rafaga de cambios (arrastrar
-    // un slider) en un solo paso de deshacer.
+    // wraps a mutation so undo, autosave and preview stay consistent.
+    // `coalesceKey` merges a burst (slider drag) into one undo step.
     void edit(std::string coalesceKey, std::function<void()> mutate);
     void applyRestoredProject();
 
@@ -104,15 +101,14 @@ protected:
     void alignSelected(ui::AlignMode mode);
     void pickColor(cocos2d::ccColor3B color);
 
-    // Los tres avisos de la primera vez, sobre las zonas del editor.
+    // first-run hints over the editor zones.
     void maybeShowTour();
 
     void saveProject(bool notify);
     void setStatus(std::string const& text, bool good = true);
 
-    // -- preview -------------------------------------------------------------
-    // `fast` re-dibuja solo la zona activa, que es lo unico que cambia
-    // mientras se arrastra en el lienzo.
+    // -- preview ------------------------------------------------------------
+    // `fast` repaints the active zone only (all that changes mid-drag).
     void schedulePreview(bool fast);
     void kickPreviewJob();
     void applyPreview(std::vector<std::pair<std::string, SlotRender>> rendered,
@@ -152,7 +148,7 @@ protected:
     cocos2d::CCLabelBMFont* m_titleLabel = nullptr;
     cocos2d::CCNode* m_partsHost = nullptr;
 
-    // Los botones de vista dicen en su texto en que estado estan.
+    // view buttons carry their state in their text.
     cocos2d::CCLabelBMFont* m_bgToolLabel = nullptr;
     cocos2d::CCLabelBMFont* m_guideToolLabel = nullptr;
     cocos2d::CCLabelBMFont* m_isolateToolLabel = nullptr;

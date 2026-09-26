@@ -7,8 +7,7 @@
 
 namespace paimon::compat_mods {
 
-// Rounded avatar: the remote image when there is one, otherwise the initial on a
-// colour derived from the name, same as the site's colorAvatar fallback.
+// Rounded avatar: remote image or initial on name-derived color (site colorAvatar fallback).
 cocos2d::CCNode* createAvatar(std::string const& url, bool hasImage,
                               std::string const& name, float size, float radius = 0.f);
 
@@ -16,12 +15,10 @@ cocos2d::CCNode* createAvatar(std::string const& url, bool hasImage,
 cocos2d::CCNode* createImageSlot(std::string const& url, float width, float height,
                                  float radius, cocos2d::ccColor4B placeholder);
 
-// Sealed check the site draws next to verified names: red for admin/"rojo",
-// green for "verde", blue for plain verified. Empty when the user has no rank.
+// Verified seal: red admin/rojo, green verde, blue verified; empty when unranked.
 std::optional<cocos2d::ccColor3B> rankBadgeColor(ModlyUser const& user);
 
-// The seal itself, tinted. Returns nullptr when the user has no rank, so
-// callers can skip advancing their layout cursor.
+// Tinted seal, nullptr when unranked so callers skip layout advance.
 cocos2d::CCNode* createRankSeal(ModlyUser const& user, float size = 14.f);
 
 // Tags are always stored in Spanish; translate for the English UI.

@@ -7,8 +7,7 @@
 
 namespace paimon::compat_mods {
 
-// Read-only view of a project's comments. Posting needs a Modly Firebase Auth
-// account, which the mod does not have, so this only lists them.
+// Read-only comment view; posting needs Modly Firebase Auth the mod lacks.
 class ModlyCommentsPopup : public geode::Popup {
 public:
     static ModlyCommentsPopup* create(ModlyMod const& mod);

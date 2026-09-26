@@ -11,7 +11,7 @@
 using namespace geode::prelude;
 
 ListThumbnailCarousel::~ListThumbnailCarousel() {
-    // safety-net only; lifecycle cleanup should happen in onExit
+    // safety net; real cleanup lives in onExit.
     if (m_alive) *m_alive = false;
 }
 
@@ -39,13 +39,13 @@ ListThumbnailCarousel* ListThumbnailCarousel::create(std::vector<int> const& lev
 
 bool ListThumbnailCarousel::init(std::vector<int> const& levelIDs, CCSize size) {
     if (!CCNode::init()) return false;
-    
+
     m_alive = std::make_shared<bool>(true);
     m_levelIDs = levelIDs;
     m_size = size;
     this->setContentSize(size);
     this->setAnchorPoint({0.5f, 0.5f});
-    
+
     m_loadingSpinner = geode::LoadingSpinner::create(16.f);
     if (m_loadingSpinner) {
         m_loadingSpinner->setPosition({size.width - 85.0f, size.height / 2});
@@ -57,7 +57,7 @@ bool ListThumbnailCarousel::init(std::vector<int> const& levelIDs, CCSize size) 
 
 void ListThumbnailCarousel::startCarousel() {
     if (m_levelIDs.empty()) return;
-    
+
     tryShowNextImage();
 }
 
@@ -67,29 +67,29 @@ void ListThumbnailCarousel::updateCarousel(float dt) {
 
 void ListThumbnailCarousel::updatePan(float dt) {
     if (!m_currentSprite) return;
-    
+
     m_panElapsed += dt;
     float duration = 5.0f;
-    
+
     float t = m_panElapsed / duration;
     if (t > 1.0f) t = 1.0f;
-    
+
     float easeT = 0.5f * (1.0f - std::cos(t * M_PI));
-    
+
     float currentX = m_panStartRect.origin.x + (m_panEndRect.origin.x - m_panStartRect.origin.x) * easeT;
     float currentY = m_panStartRect.origin.y + (m_panEndRect.origin.y - m_panStartRect.origin.y) * easeT;
-    
+
     CCRect currentRect = m_panStartRect;
     currentRect.origin.x = currentX;
     currentRect.origin.y = currentY;
-    
+
     m_currentSprite->setTextureRect(currentRect);
 }
 
 void ListThumbnailCarousel::tryShowNextImage() {
     if (paimon::isRuntimeShuttingDown()) return;
     if (m_levelIDs.empty()) return;
-    
+
     int foundIndex = -1;
     size_t listSize = m_levelIDs.size();
     int triggeredDownloads = 0;
@@ -121,11 +121,11 @@ void ListThumbnailCarousel::tryShowNextImage() {
 
     if (foundIndex != -1) {
         int levelID = m_levelIDs[foundIndex];
-        
+
         auto alive = m_alive;
         auto* self = this;
         std::string fileName = fmt::format("{}.png", levelID);
-        
+
         ThumbnailLoader::get().requestLoad(levelID, fileName, [self, alive, levelID](CCTexture2D* tex, bool) {
             if (!alive || !*alive) return;
             if (!self->getParent()) return;
@@ -141,9 +141,9 @@ void ListThumbnailCarousel::tryShowNextImage() {
             }
             if (tex) self->onImageLoaded(tex, levelID);
         }, ThumbnailLoader::PriorityVisibleCell);
-        
+
         m_currentIndex = (foundIndex + 1) % listSize;
-        
+
         this->unschedule(schedule_selector(ListThumbnailCarousel::updateCarousel));
         this->schedule(schedule_selector(ListThumbnailCarousel::updateCarousel), 3.0f);
     } else {
@@ -195,67 +195,67 @@ void ListThumbnailCarousel::onImageLoaded(CCTexture2D* texture, int index) {
     if (!ThumbnailLoader::isTextureSane(texture)) {
         return;
     }
-    
+
     CCSprite* sprite = nullptr;
-    
+
     sprite = CCSprite::createWithTexture(texture);
 
     if (!sprite) return;
-    
+
     float targetAspect = m_size.width / m_size.height;
     float texWidth = texture->getContentSize().width;
     float texHeight = texture->getContentSize().height;
-    
+
     float maxW = texWidth;
     float maxH = texWidth / targetAspect;
-    
+
     if (maxH > texHeight) {
         maxH = texHeight;
         maxW = texHeight * targetAspect;
     }
-    
+
     float zoom = 1.06f;
     float visibleW = maxW / zoom;
     float visibleH = maxH / zoom;
-    
+
     float totalSlackW = texWidth - visibleW;
-    
-    // limit move 10% width
+
+    // pan at most 10% of width.
     float maxPan = visibleW * 0.10f;
     float travelX = std::min(totalSlackW, maxPan);
-    
+
     float unusedSlackX = totalSlackW - travelX;
     float offsetX = unusedSlackX / 2.0f;
-    
+
     bool panRight = (rand() % 2) == 0;
-    
+
     float startX = panRight ? offsetX : (offsetX + travelX);
     float endX = panRight ? (offsetX + travelX) : offsetX;
-    
+
     float startY = (texHeight - visibleH) / 2.0f;
     float endY = startY;
-    
+
     m_panStartRect = CCRect(startX, startY, visibleW, visibleH);
     m_panEndRect = CCRect(endX, endY, visibleW, visibleH);
     m_panElapsed = 0.0f;
-    
+
     sprite->setTextureRect(m_panStartRect);
-    
+
     float scale = m_size.width / visibleW;
     sprite->setScale(scale);
-    
+
     sprite->setPosition(m_size / 2);
     sprite->setOpacity(0);
-    
-    // set shader if missing (mod compat)
+
+    // missing shader: another mod stripped it.
     if (!sprite->getShaderProgram()) {
         sprite->setShaderProgram(CCShaderCache::sharedShaderCache()->programForKey(kCCShader_PositionTextureColor));
     }
 
     this->addChild(sprite);
-    
+
     sprite->runAction(CCFadeTo::create(0.5f, m_opacity));
-    
+
     if (m_currentSprite) {
         m_currentSprite->runAction(CCSequence::create(
             CCFadeOut::create(0.5f),
@@ -263,10 +263,10 @@ void ListThumbnailCarousel::onImageLoaded(CCTexture2D* texture, int index) {
             nullptr
         ));
     }
-    
+
     m_currentSprite = sprite;
-    
-    // schedule updatePan at 30Hz (visual panning doesn't need 60fps precision)
+
+    // 30Hz pan; 60fps precision unneeded.
     this->unschedule(schedule_selector(ListThumbnailCarousel::updatePan));
     this->schedule(schedule_selector(ListThumbnailCarousel::updatePan), 1.f / 30.f);
 }

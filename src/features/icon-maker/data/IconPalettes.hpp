@@ -27,8 +27,7 @@ std::vector<cocos2d::ccColor3B> playerColors();
 
 constexpr std::size_t kRecentColorCount = 10;
 
-// Los ultimos colores elegidos a mano, para no tener que volver a buscarlos en
-// la rueda. Se guardan entre sesiones.
+// last hand-picked colors, so the wheel search happens once. Persisted.
 std::vector<cocos2d::ccColor3B> const& recentColors();
 void rememberColor(cocos2d::ccColor3B color);
 

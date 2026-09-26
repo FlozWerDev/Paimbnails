@@ -1,7 +1,6 @@
 #pragma once
 
-// reloadAll() mata el contexto GL (los names creados por el mod quedan muertos):
-// liberar en onBeforeGameReload() con el contexto viejo activo y recrear lazy.
+// reloadAll kills the GL context: release under the old context, recreate lazily.
 namespace paimon::glreload {
 
 void onBeforeGameReload();

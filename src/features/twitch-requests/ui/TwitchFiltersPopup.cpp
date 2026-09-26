@@ -39,7 +39,7 @@ void applyFilters(std::function<void(RequestFilters&)> const& change) {
     manager.setFilters(filters);
 }
 
-// Marcado = color normal; sin marcar = gris y translucido.
+// checked reads full color; unchecked grey and translucent.
 void tintIcon(CCNode* node, bool on) {
     if (!node) return;
     if (auto* sprite = typeinfo_cast<CCSprite*>(node)) {
@@ -73,7 +73,7 @@ CCLabelBMFont* makeDesc(char const* text, float wrapWidth) {
     return label;
 }
 
-// Etiqueta suelta con area de toque comoda, para los chips de longitud.
+// loose label with a comfortable touch area, for the length chips.
 CCNode* makeChip(char const* text) {
     auto* label = CCLabelBMFont::create(text, "bigFont.fnt");
     label->setScale(0.5f);
@@ -102,7 +102,7 @@ std::string formatCooldown(double value) {
     return fmt::format("{}m {}s", seconds / 60, seconds % 60);
 }
 
-// Fila de opciones marcables: los iconos ya vienen creados y sin escalar.
+// row of checkable options: icons arrive built and unscaled.
 CCNode* makeMultiRow(
     float width,
     char const* title,
@@ -167,7 +167,7 @@ CCNode* makeMultiRow(
         auto* button = CCMenuItemExt::createSpriteExtra(icon,
             [state, items, restyle, onChange, slot](CCMenuItemSpriteExtra*) {
                 uint32_t const all = (1u << items->size()) - 1;
-                // Vacio se dibuja como todo marcado, asi que aqui vale lo mismo.
+                // empty draws as all checked, so it counts the same here.
                 uint32_t next = (*state == 0 ? all : *state & all) ^ (1u << slot);
                 if (next == 0) next = all;
                 *state = next;
@@ -299,11 +299,11 @@ void TwitchFiltersPopup::rebuild() {
 
     std::vector<CCNode*> faces;
     for (int slot = 0; slot < kDifficultySlotCount; ++slot) {
-        // Short: la unica variante que existe para NA y Auto, y en demon dice
-        // "Demon" en vez de un tier concreto.
+        // Short: the only variant for NA and Auto, and on demon it says
+        // "Demon" instead of a concrete tier.
         CCNode* icon = GJDifficultySprite::create(
             difficultySlotSprite(slot), GJDifficultyName::Short);
-        // El indice es el bit, asi que ningun slot puede faltar.
+        // the index is the bit, so no slot may be missing.
         if (!icon) icon = makeChip(difficultySlotName(slot));
         faces.push_back(icon);
     }
@@ -470,7 +470,7 @@ void TwitchFiltersPopup::onRemoveFiltered() {
     PaimonNotify::show(
         fmt::format("{} pedidos quitados", removed), NotificationIcon::Success);
 
-    // Nunca desde el callback: rebuild() borra el menu que se esta tocando.
+    // never from the callback: rebuild() deletes the menu being touched.
     Ref<TwitchFiltersPopup> self = this;
     Loader::get()->queueInMainThread([self] {
         if (self && self->getParent()) self->rebuild();

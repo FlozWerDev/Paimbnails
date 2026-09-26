@@ -191,7 +191,6 @@ void setButtonTexture(CCMenuItemSpriteExtra* btn, char const* texture) {
     }
 }
 
-// Per-screen colors make tabs easy to identify.
 ccColor3B screenColor(std::string const& key) {
     if (key == "menu")         return {110, 235, 130};
     if (key == "levelinfo")    return {120, 200, 255};
@@ -416,8 +415,7 @@ CCNode* PaiConfigLayer::makeCardWindow(CCRect area, char const* title) {
     return card;
 }
 
-// Bobbing arrow that tells the user a card scrolls. It lives in the strip the
-// cards leave free below their list, so it never lands on top of a row.
+// bobbing arrow in the free strip below the list; never covers a row.
 CCNode* PaiConfigLayer::addScrollHint(CCNode* card, CCSize cardSize) {
     auto* hint = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_02_001.png");
     if (!hint) return nullptr;
@@ -569,7 +567,6 @@ CCNode* PaiConfigLayer::buildPreviewCard(CCRect area) {
         card->addChild(lbl, 3);
     }
 
-// Keep the expand button inside the card: it sits on the bottom-right corner.
     float const zoomX = area.size.width - 18.f;
     if (auto* zoomSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_zoomInBtn_001.png")) {
         float const raw = std::max(zoomSpr->getContentSize().width, 1.f);
@@ -634,7 +631,6 @@ CCNode* PaiConfigLayer::buildControlsCard(CCRect area) {
     if (m_controlsScroll) {
         m_controlsScroll->setPosition({7.f, C::LIST_BOTTOM});
         card->addChild(m_controlsScroll, 2);
-// relayoutControls() decides whether the hint applies to the active rows.
         m_controlsHint = addScrollHint(card, area.size);
     }
     return card;
@@ -1127,8 +1123,7 @@ void PaiConfigLayer::relayoutControls() {
     constexpr float kGap = 4.f;
     auto* content = m_controlsScroll->m_contentLayer;
 
-// The scroll layer hides off-screen children with setVisible(), so a row that
-// the config does not want has to leave the content layer entirely.
+// the scroll layer culls with setVisible(), so unwanted rows must leave the layer.
     std::string signature;
     float total = 0.f;
     std::vector<CCNode*> active;
@@ -1171,8 +1166,7 @@ void PaiConfigLayer::relayoutControls() {
         m_controlsScroll->moveToTop();
         return;
     }
-// Same rows: keep the scroll where it was, but re-run the scroll layer's
-// culling so the rows that just moved get the right visibility.
+// same rows: keep the scroll offset and let the scroll layer re-cull moved rows.
     float const minY = std::min(0.f, viewH - contentH);
     content->setPositionY(std::clamp(content->getPositionY(), minY, 0.f));
 }
@@ -1253,7 +1247,6 @@ void PaiConfigLayer::onUseRandom() {
 }
 
 void PaiConfigLayer::onUseDynamicShader() {
-// Dynamic mode chooses a procedural background on each press.
     std::vector<std::string> names;
     names.reserve(PROCEDURAL_BGS.size());
     for (auto const& [key, label] : PROCEDURAL_BGS) names.push_back(key);
@@ -1679,8 +1672,7 @@ void PaiConfigLayer::buildExtrasTab() {
     };
 
     float const startY = cardSize.height - 44.f;
-    // El paso se encoge cuando entran mas acciones para que la ultima no acabe
-    // fuera de la tarjeta.
+    // row gap shrinks as actions grow so the last one stays on the card.
     float const spans = std::max<float>(1.f, static_cast<float>(actions.size()) - 1.f);
     float const rowGap = std::min(34.f, (startY - 18.f) / spans);
     for (int i = 0; i < static_cast<int>(actions.size()); ++i) {

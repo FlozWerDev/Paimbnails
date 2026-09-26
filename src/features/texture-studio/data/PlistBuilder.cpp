@@ -126,7 +126,7 @@ geode::Result<std::string> PlistBuilder::buildString(ParsedSpritesheet const& sh
     w.key("frames");
     w.openDict();
 
-    // Emit in insertion order; re-sorting would invalidate the computed rects.
+    // Insertion order: re-sorting would invalidate computed rects.
     for (auto const& f : sheet.frames) {
         w.key(f.name);
         w.openDict();

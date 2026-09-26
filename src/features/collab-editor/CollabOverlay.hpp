@@ -12,8 +12,7 @@ class LevelEditorLayer;
 
 namespace paimon::collab {
 
-// HUD strip docks above the build toolbar, clear of the editor's top row,
-// and hides with the editor UI and during playtest.
+// HUD strip docks above the build toolbar; hides with editor UI and playtest.
 class CollabEditorOverlay : public cocos2d::CCNode {
 public:
     static CollabEditorOverlay* create(LevelEditorLayer* editor);
@@ -71,8 +70,7 @@ private:
         geode::Ref<cocos2d::CCDrawNode> trail;
         geode::Ref<cocos2d::CCLabelBMFont> label;
         std::deque<cocos2d::CCPoint> trailPts;
-        // Network samples only update the target. The rendered position chases
-        // it every frame so a 5 Hz presence stream still looks continuous.
+        // Rendered position chases the network target each frame, smoothing 5 Hz presence.
         float x = 0.f;
         float y = 0.f;
         float targetX = 0.f;
@@ -96,16 +94,14 @@ private:
     void redrawHeatmap();
     void updateStatusBanner();
 
-    // Edit flashes, tracked by hand: relying on the fade action alone leaves
-    // squares stuck on the canvas whenever it doesn't get to run.
+    // Edit flashes tracked by hand: fade action alone leaves stuck squares.
     struct EditFlash {
         geode::Ref<cocos2d::CCSprite> node;
         float age = 0.f;
     };
     void sweepFlashes(float dt);
 
-    // Places the chat button / banner / voice chips above the build toolbar.
-    // Re-runs when the toolbar height or the window size changes.
+    // Docks chat/banner/voice above the build toolbar; re-runs on toolbar/resize change.
     void layoutHudBar();
     float hudRowY() const;
     // Editor UI hidden (Hide UI toggle, playtest) => hide our chrome too.

@@ -1,6 +1,5 @@
 #pragma once
-// PackScheduler: tiny pool + parallelFor; pools are job-local and joined
-// before return so Geode unload never strands a worker thread.
+// Tiny pool + parallelFor; job-local pools joined before return so unload never strands workers.
 
 #include <algorithm>
 #include <atomic>
@@ -22,7 +21,7 @@ public:
             threads = std::thread::hardware_concurrency();
             if (threads == 0) threads = 2;
         }
-        // Cap: export jobs are memory-bound past ~8 tint threads.
+        // Cap: export jobs go memory-bound past ~8 tint threads.
         threads = std::min<std::size_t>(threads, 8);
         m_stop = false;
         for (std::size_t i = 0; i < threads; ++i) {
@@ -58,8 +57,7 @@ public:
         }
     }
 
-    // Parallel for over [begin, end). `grain` bounds task count so tiny jobs
-    // stay inline. Throws on empty fn; runs inline when 1 thread.
+    // Grain bounds task count so tiny jobs stay inline; empty fn throws, 1 thread runs inline.
     template <typename Index, typename Fn>
     void parallelFor(Index begin, Index end, Fn&& fn, std::size_t grain = 1) {
         if (end <= begin) return;

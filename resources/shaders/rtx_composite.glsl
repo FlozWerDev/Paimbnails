@@ -1,4 +1,4 @@
-// Composicion final: expandir/comprimir se cancelan sin efectos.
+// final composite; inverse pairs cancel with no other effects.
 
 varying vec2 v_texCoord;
 
@@ -31,7 +31,7 @@ uniform float u_vignette;
 uniform float u_grain;
 uniform float u_sharpen;
 
-// CAS: atenua en extremos para no crear halos.
+// CAS eases at extremes to avoid halos.
 vec3 sharpenCAS(vec2 uv, vec3 c, float amount) {
     vec3 n = texture2D(u_scene, uv + vec2(0.0,  u_texel.y)).rgb;
     vec3 s = texture2D(u_scene, uv - vec2(0.0,  u_texel.y)).rgb;
@@ -41,13 +41,13 @@ vec3 sharpenCAS(vec2 uv, vec3 c, float amount) {
     vec3 mn = min(min(min(n, s), min(e, w)), c);
     vec3 mx = max(max(max(n, s), max(e, w)), c);
     vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, 0.0001), 0.0, 1.0));
-    // Recorta amount: evita anular el denominador.
+    // clamp amount to keep the denominator alive.
     vec3 k = -amp * min(amount, 3.0) * 0.2;
 
     return ((c + (n + s + e + w) * k) / max(1.0 + 4.0 * k, vec3(0.2))) - c;
 }
 
-// Upsample bilateral del GI: evita sangrado en bordes.
+// bilateral GI upsample avoids edge bleed.
 vec4 giUpsample(vec2 uv, vec3 guideC) {
     float guideL = luma(guideC);
     vec2 o = max(u_giTexel, vec2(0.0000001)) * 0.5;
@@ -70,7 +70,6 @@ void main() {
 
     vec3 shown = original;
     if (u_ca > 0.0) {
-        // CA cuadratica: solo abre en esquinas.
         vec2 d = uv - 0.5;
         vec2 off = d * dot(d, d) * u_ca * 0.24;
         shown.r = texture2D(u_scene, uv + off).r;
@@ -82,15 +81,15 @@ void main() {
 
     vec4 traced = giUpsample(uv, original);
 
-    // AO no atenua emisores, solo rincones.
+    // AO skips emitters, corners only.
     float aoMask = 1.0 - safeSmoothstep(0.35, 1.0, luma(lin));
     hdr *= mix(1.0, clamp(traced.a, 0.0, 1.0), clamp(u_aoStrength * aoMask, 0.0, 1.0));
-    // Recorte suave >1 contra fireflies.
+    // soft >1 rolloff kills fireflies.
     hdr += softClampHi(traced.rgb) * u_giStrength;
     hdr += texture2D(u_bloom, uv).rgb * u_bloomStrength;
     hdr += texture2D(u_rays, uv).rgb * u_rayStrength;
 
-    // Acota exp2: evita Inf/NaN en GPUs.
+    // clamp exp2 against Inf/NaN.
     float ev = exp2(clamp(u_exposure, -8.0, 8.0));
     if (u_adaptKey > 0.0) {
         ev *= clamp(u_adaptKey / max(texture2D(u_adapt, vec2(0.5)).r, 0.0005), 0.35, 3.0);
@@ -112,12 +111,11 @@ void main() {
 
     if (u_vignette > 0.0) {
         vec2 vd = (uv - 0.5) * 2.0 * vec2(u_texel.y / max(u_texel.x, 0.000001), 1.0);
-        // safeSmoothstep: smoothstep invertido falla en ANGLE.
+        // inverted smoothstep fails on ANGLE.
         col *= 1.0 - safeSmoothstep(0.30, 1.55, length(vd)) * min(u_vignette, 1.6) * 0.55;
     }
 
     if (u_grain > 0.0) {
-        // Grano solo en medios tonos.
         float fr = floor(u_time * 60.0);
         vec2 goff = vec2(halton(mod(fr, 1024.0) + 1.0, 2.0),
                          halton(mod(fr, 1024.0) + 1.0, 3.0)) * 1024.0;
@@ -127,7 +125,7 @@ void main() {
 
     col = mix(original, col, clamp(u_mix, 0.0, 1.0));
 
-    // Dither de 1 LSB: evita bandas en degradados.
+    // 1-LSB dither kills gradient banding.
     col += (hash12(gl_FragCoord.xy + 0.5) - hash12(gl_FragCoord.yx + 7.3)) * 0.0039;
 
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);

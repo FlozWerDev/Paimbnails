@@ -1,7 +1,6 @@
 #pragma once
 
-// On-screen card for a new live thumbnail. Carries level data like the GDUtils
-// rate notifications, with the uploaded thumbnail as its background.
+// On-screen card for a new live thumbnail: GDUtils-style level data over the uploaded thumbnail.
 
 #include <Geode/DefaultInclude.hpp>
 #include <string>
@@ -78,18 +77,15 @@ Config readConfig();
 // Scenes where the card would get in the way more than it helps.
 bool alertsAllowedHere(Config const& config);
 
-// Queues the card. The thumbnail is downloaded first, so the card already
-// carries its background when it slides in.
+// Queues the card; thumbnail downloads first so the background is there on slide-in.
 void showThumbAlert(NewThumb item);
 
-// The uploader's own card, built from the upload response: the only instant
-// path, since an HTTP reply reaches just its caller. `levelMeta` is the upload JSON.
+// Uploader's own card from the upload response: the only instant path (HTTP replies reach only their caller).
 void showThumbAlertForUpload(int levelId, std::string const& uploader,
                              std::string const& levelMeta,
                              std::string const& serverMessage);
 
-// The settings "Preview" button: same card, ignoring the toggle and the scene
-// filters.
+// Settings "Preview": same card, ignoring toggle and scene filters.
 void showThumbAlertPreview();
 
 } // namespace paimon::thumbalerts

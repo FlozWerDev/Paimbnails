@@ -28,7 +28,7 @@ protected:
 
 private:
     DynamicVolumeConfig m_cfg{};
-    int m_tab = 0; // 0 = Basico, 1 = Curva, 2 = Avanzado
+    int m_tab = 0; // 0 = basic, 1 = curve, 2 = advanced
 
     geode::ScrollLayer* m_scroll = nullptr;
     cocos2d::CCLabelBMFont* m_modeDescLabel = nullptr;

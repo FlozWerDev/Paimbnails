@@ -12,7 +12,6 @@ namespace paimon::editorcp {
 
 inline constexpr int kFormatCount = 4;
 
-// Short display name for the format selector.
 inline const char* formatName(int index) {
     switch (index) {
         case 1:  return "RGB";

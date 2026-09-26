@@ -834,8 +834,7 @@ void CapturePreviewPopup::onAcceptBtn(CCObject* sender) {
     m_callbackExecuted = true;
     ThumbnailLoader::get().invalidateLevel(m_levelID);
 
-    // Cache the accepted thumbnail so LevelInfoLayer can show it before upload
-    // propagation reaches the server.
+    // Cache the accepted thumbnail so LevelInfoLayer shows it pre-upload.
     if (m_buffer && m_width > 0 && m_height > 0) {
         auto* tex = new CCTexture2D();
         if (tex->initWithData(m_buffer.get(), kCCTexture2DPixelFormat_RGBA8888,
@@ -951,8 +950,7 @@ void CapturePreviewPopup::onCycleResolution(CCObject* sender) {
     if (pos != std::string::npos) msg.replace(pos, 2, next);
     PaimonNotify::create(msg.c_str(), NotificationIcon::Info)->show();
 
-// Same routing as the player/HDR toggles: inside the level recapture, outside
-// it the owner (editor thumbnail flow) re-renders, otherwise render locally.
+// Same routing as player/HDR toggles: recapture in-level, owner re-renders outside, else local.
     if (PlayLayer::get()) {
         recapture();
     } else if (m_recaptureCallback) {
@@ -964,8 +962,7 @@ void CapturePreviewPopup::onCycleResolution(CCObject* sender) {
 
 void CapturePreviewPopup::onCancelBtn(CCObject* sender) {
     if (!sender) return;
-// onClose already fires the cancel callback exactly once, after restoring
-// layers/assets and resuming music: cleanup runs before the caller resumes.
+// onClose fires cancel exactly once after restore/resume; cleanup precedes the caller.
     this->onClose(nullptr);
 }
 
@@ -1083,9 +1080,8 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
     ss << "thumbnail_" << m_levelID << "_" << std::put_time(&tmBuf, "%Y%m%d_%H%M%S") << ".png";
     auto filePath = downloadDir / ss.str();
 
-    // The buffer is never mutated in place (updateContent replaces the
-    // shared_ptr), so the worker can share ownership instead of copying
-    // 8-33MB on the main thread.
+    // Buffer is never mutated in place, so the worker shares ownership
+    // instead of copying 8-33MB on main.
     std::shared_ptr<uint8_t> bufCopy = m_buffer;
     int w = m_width, h = m_height;
     int levelID = m_levelID;
@@ -1119,7 +1115,7 @@ void CapturePreviewPopup::onOpenDownloadsFolder(CCObject*) {
         return;
     }
 
-    // openFolder puede devolver false aunque la carpeta si se abra; por eso no se muestra error.
+    // openFolder may report false on success, so never show an error here.
     if (!geode::utils::file::openFolder(downloadDir)) {
         log::warn("[CapturePreview] openFolder devolvio false para {}",
             geode::utils::string::pathToString(downloadDir));
@@ -1197,8 +1193,7 @@ void CapturePreviewPopup::clampSpritePositionAnimated() {
 }
 
 bool CapturePreviewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
-    // Invisible only while a recapture hides the popup: swallow the touch so
-    // it does not fall through to the game/pause underneath mid-capture.
+    // Hidden only during recapture: swallow the touch so it never falls through mid-capture.
     if (!this->isVisible()) return m_recapturePending;
 
     auto findTouchedItem = [](CCMenu* menu, CCTouch* t) -> CCMenuItem* {

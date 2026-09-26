@@ -9,8 +9,7 @@
 
 namespace paimon::collab {
 
-// Single source of truth — pasting into settings tends to mangle the URL.
-// Plain HTTP supports direct server ports; prefer HTTPS in production.
+// Single source of truth (settings pastes mangle URLs); plain HTTP allows direct ports, prefer HTTPS.
 constexpr char const* kServerBaseUrl = "http://node.akiomae.xyz:4401";
 
 // Bump on any wire-incompatible change.
@@ -21,8 +20,7 @@ constexpr size_t kMaxCursorDataLength = ((kMaxCursorAssetBytes + 2) / 3) * 4;
 
 constexpr size_t kMaxOpsPerFlush = 2048;
 
-// Ordered, acknowledged chunks avoid silently dropping edits; v3 servers may
-// advertise tighter limits in join_ok.
+// Ordered acknowledged chunks avoid silent edit loss; v3 may tighten limits via join_ok.
 constexpr size_t kDefaultOpsPerRequest = 500;
 constexpr size_t kMaxSaveBytesPerRequest = 1'400'000;
 constexpr float kDefaultOpsPerSecond = 500.f;

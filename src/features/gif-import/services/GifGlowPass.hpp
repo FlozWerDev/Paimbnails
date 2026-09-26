@@ -4,10 +4,9 @@
 
 namespace paimon::gifimport {
 
-// Duplica las figuras de los colores que brillan un poco mas grandes y detras,
-// con su propio canal mezclado y a media opacidad. Es el mismo truco con el que
-// se hace el glow a mano en el editor, asi que no depende de que exista un
-// objeto de glow concreto en la version de GD que tenga el jugador.
+// Duplicates glowing colors' figures slightly bigger and behind, on their own
+// blended half-opacity channel. Same trick as hand-made editor glow, so it
+// needs no concrete glow object in the player's GD version.
 void applyGlow(ImportPlan& plan, GlowMode mode, std::size_t objectBudget);
 
 } // namespace paimon::gifimport

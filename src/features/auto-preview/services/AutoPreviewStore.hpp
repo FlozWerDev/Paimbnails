@@ -21,12 +21,11 @@ public:
     static AutoPreviewStore& get();
     bool has(int32_t levelID);
     std::filesystem::path dir() const;
-    // generated preview for this level. Converts to RGB888 internally. Atomic
-    // write (tmp + rename). Thread-safe; returns false on any failure.
+    // Thread-safe atomic (tmp+rename) RGB888 write; false on failure.
     bool save(int32_t levelID, uint8_t const* rgba, uint32_t width, uint32_t height);
     cocos2d::CCTexture2D* loadTexture(int32_t levelID);
     void clearAll();
-    // Solo texturas RAM (mueren con el contexto GL); los .rgb en disco quedan.
+    // RAM textures only (die with the GL context); .rgb files on disk stay.
     void clearRamCache();
     bool wasAttempted(int32_t levelID) const;
     void markAttempted(int32_t levelID);
@@ -46,8 +45,7 @@ private:
     bool m_scanned = false;
     std::unordered_set<int32_t> m_present;
     std::unordered_set<int32_t> m_attempted;
-    // Atomic: noteGenerated() is called from the AutoPreview background worker
-    // (AutoPreviewGenerator) while the main-thread queue reads/resets it.
+    // noteGenerated() runs on the AutoPreview worker while the main queue reads/resets.
     std::atomic<int> m_generatedThisSession{0};
 
     static constexpr size_t MAX_TEX_CACHE = 6;

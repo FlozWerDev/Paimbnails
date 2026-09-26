@@ -65,8 +65,7 @@ protected:
     cocos2d::CCPoint m_scrollArrowBasePos = {0.f, 0.f};
     bool m_scrollArrowBouncing = false;
 
-    // Durante el drag el chrome se oculta para que la lista detras quede como
-    // preview viva; el slider arrastrado se queda quieto e interactivo.
+    // During drag chrome hides so the list behind is a live preview; the dragged slider stays put and live.
     struct SliderRow {
         Slider* slider = nullptr;
         cocos2d::CCLabelBMFont* valueLabel = nullptr;
@@ -77,8 +76,7 @@ protected:
     bool m_dragHiding = false;
     Slider* m_activeDragSlider = nullptr;
     GLubyte m_dimOriginalOpacity = 0;
-    // BlurAPI blurea independiente de Paiblur: hay que soltar su marcador o la
-    // lista queda ilegible.
+    // BlurAPI blurs independently of Paiblur: drop its marker or the list goes unreadable.
     geode::Ref<cocos2d::CCObject> m_savedBlurApiOptions = nullptr;
 
     cocos2d::CCNodeRGBA* m_dragCaptionPill = nullptr;

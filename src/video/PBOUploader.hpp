@@ -26,8 +26,7 @@ typedef struct __GLsync* GLsync;
 
 namespace paimon::video {
 
-// Async PBO uploads use fenced rotating slots. Busy slots are skipped and the
-// upload is deferred; all methods run on the GL thread.
+// Fenced rotating slots, GL thread only; busy slots defer the upload.
 
 struct PBOSlot {
     GLuint pboY    = 0;
@@ -59,8 +58,7 @@ public:
 
     bool uploadRGBA(GLuint texId, const uint8_t* rgbaData, int width, int height);
 
-    // Zero-copy: tryBeginRGBAUpload → fill mapped bytes → endRGBAUpload, with
-    // no other calls between them; nullptr means use uploadRGBA.
+    // Zero-copy: no calls between begin/end; nullptr means use uploadRGBA.
     uint8_t* tryBeginRGBAUpload(int width, int height);
     void endRGBAUpload(GLuint texId, int width, int height);
 
@@ -70,6 +68,7 @@ public:
     void clearFences() { deleteAllFences(); }
 
 private:
+    int claimReadySlot();
     bool isSlotReady(int idx);
     bool checkAndClearFence(int idx);
     void deleteAllFences();
@@ -87,7 +86,6 @@ private:
     bool m_rgbaMode = false;
 
     int m_uploadIdx = 0;
-    // Slot currently in a tryBegin→end sequence (-1 = none).
     int m_mappedSlotIdx = -1;
     bool m_initialized = false;
 

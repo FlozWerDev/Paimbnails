@@ -50,15 +50,14 @@ struct SpriteSetting {
     // False replaces the sprite; true composites over it.
     bool imageOverlay = false;
 
-    // Fusion region-fill; mask/texture live under SlotPaths::fusionsDir and are
-    // stamped without pack recoloring.
+    // Fusion region-fill; mask/texture stamped without pack recoloring.
     bool hasFusion = false;
     bool fusionAnimated = false;
-    // Replace keeps texture colors pure; Luma/Overlay are optional.
+    // Replace keeps texture colors pure; Luma/Overlay optional.
     FusionBlendMode fusionBlend = FusionBlendMode::Replace;
     // Paint-bucket color radius; typical range 90–140.
     int   fusionTolerance = 110;
-    // Grow into same-color neighbors to cover AA fringes; 0 disables it.
+    // Grow into same-color neighbors for AA fringes; 0 disables.
     int   fusionExpandRadius = 1;
     float fusionOpacity = 1.0f;
     ImageTransform fusionTransform{};
@@ -108,8 +107,7 @@ struct TextureProject {
     bool colorGradientBg         = false;
     bool colorMainMenu           = false;
 
-    // Local-extras options; usePackGenAssets is a deprecated name kept so
-    // old projects still parse. See PackExportConfig.
+    // Deprecated name kept so old projects still parse.
     bool usePackGenAssets   = true;
     bool tintGoldFont       = false;
     bool colorGoldTitles    = false;

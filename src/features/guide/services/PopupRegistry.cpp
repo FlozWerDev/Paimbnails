@@ -1350,37 +1350,6 @@ void PopupRegistry::registerAll() {
     }
     {
         PopupEntry e;
-        e.id = "computeruse";
-        e.category = PopupCategory::Editor;
-        e.weight = 86;
-        e.displayNameByLang["english"] = "Computer Use";
-        e.displayNameByLang["spanish"] = "Computer Use";
-        e.aliasesByLang["english"] = {
-            "computer use", "agent", "ai builder", "virtual cursor", "mcp",
-            "ctrl b", "drive the editor"
-        };
-        e.aliasesByLang["spanish"] = {
-            "computer use", "agente", "cursor virtual", "mcp", "ctrl b",
-            "construir con ia"
-        };
-        e.searchPhrasesByLang["english"] = {
-            "let the ai build", "ai moves the cursor", "computer use panel",
-            "mcp agent control"
-        };
-        e.searchPhrasesByLang["spanish"] = {
-            "que la ia construya", "la ia mueve el cursor", "panel de computer use",
-            "control del agente mcp"
-        };
-        e.descriptionByLang["english"] =
-            "<cy>Computer Use!</c> Chat with the AI about your level: it proposes each step, "
-            "you approve, it builds inside the editor. Open it with <cy>Ctrl+B</c>.";
-        e.descriptionByLang["spanish"] =
-            "<cy>Computer Use!</c> Habla con la IA de tu nivel: propone cada paso, "
-            "tu apruebas y construye dentro del editor. Abrelo con <cy>Ctrl+B</c>.";
-        m_entries.push_back(std::move(e));
-    }
-    {
-        PopupEntry e;
         e.id = "editor-colorpicker";
         e.category = PopupCategory::Editor;
         e.weight = 78;

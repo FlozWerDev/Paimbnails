@@ -59,7 +59,6 @@ protected:
 
         CCSize previewSize = {300.f, 120.f};
         auto previewNode = ProfileThumbs::get().createProfileNode(texture, config, previewSize);
-        
         if (previewNode) {
             previewNode->setAnchorPoint({0.5f, 0.5f});
             previewNode->ignoreAnchorPointForPosition(false);
@@ -151,11 +150,9 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
         std::vector<std::string> tabIDs = {"top-100-menu", "global-menu", "creators-menu", "friends-menu"};
 
         for (size_t i = 0; i < tabIDs.size(); ++i) {
-            if (auto menu = getTabMenu(tabIDs[i], i)) {
-                if (auto btn = menu->getChildByType<CCMenuItemSpriteExtra>(0)) {
-                    btn->setColor({255, 255, 255});
-                }
-            }
+            auto* menu = getTabMenu(tabIDs[i], i);
+            auto* btn = menu ? menu->getChildByType<CCMenuItemSpriteExtra>(0) : nullptr;
+            if (btn) btn->setColor({255, 255, 255});
         }
 
         std::string activeID;
@@ -170,11 +167,9 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
         if (!activeID.empty()) {
             auto it = std::find(tabIDs.begin(), tabIDs.end(), activeID);
             size_t idx = it == tabIDs.end() ? 0 : static_cast<size_t>(std::distance(tabIDs.begin(), it));
-            if (auto menu = getTabMenu(activeID, idx)) {
-                if (auto btn = menu->getChildByType<CCMenuItemSpriteExtra>(0)) {
-                    btn->setColor({0, 255, 0});
-                }
-            }
+            auto* menu = getTabMenu(activeID, idx);
+            auto* btn = menu ? menu->getChildByType<CCMenuItemSpriteExtra>(0) : nullptr;
+            if (btn) btn->setColor({0, 255, 0});
         }
     }
 
@@ -197,10 +192,8 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     }
 
     void createPaimonButtons() {
-        // Idempotent: don't duplicate the menu if init runs more than once.
-        if (this->getChildByID("paimon-leaderboards-side-menu"_spr)) {
-            return;
-        }
+        // init can re-run; don't duplicate the menu
+        if (this->getChildByID("paimon-leaderboards-side-menu"_spr)) return;
 
         auto menu = CCMenu::create();
         menu->setID("paimon-leaderboards-side-menu"_spr);
@@ -233,7 +226,7 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
         uploadBtn->setPosition({0, -35}); 
         menu->addChild(uploadBtn);
 
-        // Square gear button: opens the GJScoreCell FX settings popup.
+        // gear button opens the GJScoreCell FX settings popup
         if (paimon::modules::isEnabled("paimbnails.leaderboardcells.browser")) {
             constexpr float S = 30.f;
             auto gearContainer = CCNode::create();
@@ -278,13 +271,10 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     }
 
     void onOpenModerators(CCObject*) {
-        if (auto* scene = CommunityHubLayer::scene()) {
-            TransitionManager::get().pushScene(scene);
-        }
+        if (auto* scene = CommunityHubLayer::scene()) TransitionManager::get().pushScene(scene);
     }
 
     void onUploadBanner(CCObject*) {
-        log::info("[LeaderboardsLayer] onUploadBanner");
         bool canUploadGIF = Mod::get()->getSavedValue<bool>("is-verified-vip", false)
                          || paimon::modauth::isVerified()
                          || paimon::modauth::isVerified(true);
@@ -397,16 +387,16 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
                 std::string username = accountManager->m_username;
 
                 CCTexture2D* texture = nullptr;
-                if (px && w > 0 && h > 0) {
-                    auto* tex = new CCTexture2D();
-                    if (tex->initWithData(px, kCCTexture2DPixelFormat_RGBA8888, w, h, CCSize(static_cast<float>(w), static_cast<float>(h)))) {
-                        texture = tex;
-                        texture->autorelease();
-                    } else {
-                        tex->release();
+                if (px) {
+                    if (w > 0 && h > 0) {
+                        auto* tex = new CCTexture2D();
+                        if (tex->initWithData(px, kCCTexture2DPixelFormat_RGBA8888, w, h, CCSize(static_cast<float>(w), static_cast<float>(h)))) {
+                            texture = tex;
+                            texture->autorelease();
+                        } else {
+                            tex->release();
+                        }
                     }
-                    stbi_image_free(px);
-                } else if (px) {
                     stbi_image_free(px);
                 }
 
@@ -453,8 +443,6 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     $override
     void onExit() {
         ProfileThumbs::get().clearAllCache();
-        log::info("[LeaderboardsLayer] Profile cache cleared on exit");
-        
         LeaderboardsLayer::onExit();
     }
 };

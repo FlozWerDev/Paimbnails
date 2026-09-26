@@ -13,8 +13,7 @@
 
 namespace paimon::video {
 
-// Decode the first audio track to interleaved 16-bit PCM via MediaCodec;
-// output is ENCODING_PCM_16BIT by default, so the WAV is always 16-bit.
+// MediaCodec output is 16-bit PCM by default.
 AudioPcm extractAudioToPcm(const std::string& videoPath) {
     std::lock_guard lock(detail::audioExtractorMutex());
 
@@ -60,8 +59,7 @@ AudioPcm extractAudioToPcm(const std::string& videoPath) {
         return {};
     }
 
-    // Fallback sample-rate / channel-count from the input track format, in case
-    // the codec produces output before emitting INFO_OUTPUT_FORMAT_CHANGED.
+    // Track-format fallback until INFO_OUTPUT_FORMAT_CHANGED arrives.
     int32_t sampleRate = 0;
     int32_t channels = 0;
     AMediaFormat_getInt32(trackFmt, AMEDIAFORMAT_KEY_SAMPLE_RATE, &sampleRate);

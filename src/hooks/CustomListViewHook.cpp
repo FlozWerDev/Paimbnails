@@ -7,12 +7,11 @@
 
 using namespace geode::prelude;
 
-// Vanilla and compact heights used when GD returns no value.
+// fallback when GD returns no value
 static constexpr float NORMAL_LEVEL_CELL_HEIGHT = 90.f;
 static constexpr float COMPACT_LEVEL_CELL_HEIGHT = 45.f;
 
-// Cached compact mode value — avoids mutex-locked getSettingValue() on every
-// getCellHeight call (hot path during scrolling/layout, called many times/frame).
+// cached: getSettingValue() locks, and getCellHeight runs per frame while scrolling
 static bool s_cachedCompactMode = false;
 static int s_cachedCompactVersion = -1;
 
@@ -27,30 +26,29 @@ static bool getCachedCompactMode() {
     return s_cachedCompactMode;
 }
 
+static bool isLevelListType(BoomListType type) {
+    return type == BoomListType::Level || type == BoomListType::Level2 ||
+        type == BoomListType::Level3 || type == BoomListType::Level4;
+}
+
 class $modify(PaimonCustomListView, CustomListView) {
-    // Compact mode: GD renders Level4 as half-height, so swap Level→Level4 at
-    // create time; mod enhancements stay excluded in the LevelCell hook.
+    // compact mode: GD renders Level4 half-height, so swap Level→Level4 at create time
     static CustomListView* create(cocos2d::CCArray* entries, TableViewCellDelegate* delegate,
                                    float width, float height, int count, BoomListType type,
                                    float cellHeight) {
-        bool isLevelType = type == BoomListType::Level ||
-                           type == BoomListType::Level2 ||
-                           type == BoomListType::Level3 ||
-                           type == BoomListType::Level4;
-
         bool forceCompact = paimon::hooks::g_forceCompactLevelCells;
 
-        // CompactLists already performs the swap; avoid applying it twice.
+        // CompactLists already swaps; avoid applying it twice
         if (paimon::compat::ModCompat::isCompactListsLoaded()) {
             return CustomListView::create(entries, delegate, width, height, count, type, cellHeight);
         }
 
-        // The suppress flag only skips LevelCell enhancements, not this swap.
-        bool compactEnabled = isLevelType && (getCachedCompactMode() || forceCompact);
+        // the suppress flag only skips LevelCell enhancements, not this swap
+        bool compactEnabled = isLevelListType(type) && (getCachedCompactMode() || forceCompact);
 
         if (compactEnabled && type == BoomListType::Level) {
             type = BoomListType::Level4;
-            // Some lists pass an explicit height; halve it too.
+            // some lists pass an explicit height; halve it too
             if (cellHeight > 0.f && cellHeight <= 200.f) {
                 cellHeight *= 0.5f;
             }
@@ -59,7 +57,7 @@ class $modify(PaimonCustomListView, CustomListView) {
         return CustomListView::create(entries, delegate, width, height, count, type, cellHeight);
     }
 
-    // Cover lists that were created before the setting changed.
+    // covers lists created before the setting changed
     static float getCellHeight(BoomListType type) {
         float original = CustomListView::getCellHeight(type);
 
@@ -70,18 +68,12 @@ class $modify(PaimonCustomListView, CustomListView) {
         bool compactEnabled = getCachedCompactMode() || paimon::hooks::g_forceCompactLevelCells;
         bool contextSuppressCompact = paimon::hooks::g_suppressCompactLevelCellsInContext;
 
-        bool isLevelType = type == BoomListType::Level ||
-                           type == BoomListType::Level2 ||
-                           type == BoomListType::Level3 ||
-                           type == BoomListType::Level4;
-
         if (contextSuppressCompact) {
             return original;
         }
 
-        if (isLevelType && compactEnabled) {
-            // Level4 is already compact (create() swaps Level→Level4).
-            // Don't halve it again or cells become ~22px (unusable).
+        if (isLevelListType(type) && compactEnabled) {
+            // Level4 already compact; halving again gives ~22px cells
             if (type == BoomListType::Level4) {
                 return original > 0.f ? original : COMPACT_LEVEL_CELL_HEIGHT;
             }

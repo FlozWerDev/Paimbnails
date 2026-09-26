@@ -12,8 +12,7 @@
 
 namespace paimon::menumusic {
 
-// Extrae un Newgrounds / GD song ID del stem de un archivo.
-// Soporta "851118.mp3" y prefijos tipo "DL_1_851118".
+// parses a Newgrounds / GD song ID from a file stem ("851118.mp3", "DL_1_851118").
 inline std::optional<int> tryParseGDSongIdFromStem(std::string const& stem) {
     if (stem.empty()) return std::nullopt;
 
@@ -90,7 +89,7 @@ inline std::string fallbackPathLabel(
     return geode::utils::string::pathToString(std::filesystem::path(path).stem());
 }
 
-// Valor a copiar al portapapeles: ID si existe, si no el nombre visible.
+// clipboard value: ID when known, else the visible name.
 inline std::string resolveTrackCopyValue(MusicTrack const& track) {
     if (auto id = resolveGDSongId(track.audioPath, track.sourceUrl)) {
         return std::to_string(*id);
@@ -115,7 +114,7 @@ inline bool isVanillaMenuLoopPath(std::string const& path) {
     return filename == "menuLoop.mp3";
 }
 
-// Lo que realmente suena ahora (hook de getMenuMusicFile incluido).
+// what actually plays now (getMenuMusicFile hook included).
 inline std::string resolveActiveMenuMusicPath() {
     if (auto* gm = GameManager::get()) {
         std::string file = gm->getMenuMusicFile();

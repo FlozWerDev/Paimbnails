@@ -111,6 +111,15 @@ public:
     }
 
 private:
+    // plm planes have no stride; width is the row stride.
+    static void copyPlane(const plm_plane_t& plane, uint8_t* dst, int dstStride) {
+        int rowBytes = std::min(dstStride, plane.width);
+        for (int r = 0; r < plane.height; ++r) {
+            std::memcpy(dst + r * dstStride,
+                        plane.data + r * plane.width, rowBytes);
+        }
+    }
+
     void decodeLoop() {
         plm_set_video_decode_callback(m_plm, nullptr, nullptr);
 
@@ -141,30 +150,9 @@ private:
                 continue;
             }
 
-            // Copy Y plane (plm_plane_t has no stride; width is the row stride)
-            int yRows = frame->y.height;
-            int yStride = frame->y.width;
-            for (int r = 0; r < yRows; ++r) {
-                std::memcpy(slot->planeY + r * slot->strideY,
-                            frame->y.data  + r * yStride,
-                            std::min(slot->strideY, yStride));
-            }
-
-            int cbRows = frame->cb.height;
-            int cbStride = frame->cb.width;
-            for (int r = 0; r < cbRows; ++r) {
-                std::memcpy(slot->planeCb + r * slot->strideCb,
-                            frame->cb.data  + r * cbStride,
-                            std::min(slot->strideCb, cbStride));
-            }
-
-            int crRows = frame->cr.height;
-            int crStride = frame->cr.width;
-            for (int r = 0; r < crRows; ++r) {
-                std::memcpy(slot->planeCr + r * slot->strideCr,
-                            frame->cr.data  + r * crStride,
-                            std::min(slot->strideCr, crStride));
-            }
+            copyPlane(frame->y, slot->planeY, slot->strideY);
+            copyPlane(frame->cb, slot->planeCb, slot->strideCb);
+            copyPlane(frame->cr, slot->planeCr, slot->strideCr);
 
             slot->pts = frame->time;
             m_ring.commitWrite();

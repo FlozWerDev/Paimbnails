@@ -75,7 +75,6 @@ CCNode* createRoleBadgeNode(std::string const& roleId, float targetHeight) {
     auto const* v = visualFor(roleId);
     if (!v) return nullptr;
 
-    // Prefer real art if it ships with the mod.
     std::string assetName = Mod::get()->expandSpriteName(v->asset);
     if (auto* spr = paimon::SpriteHelper::safeCreate(assetName.c_str())) {
         float sh = std::max(1.f, spr->getContentSize().height);

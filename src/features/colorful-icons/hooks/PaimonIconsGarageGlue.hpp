@@ -5,12 +5,10 @@ class GJGarageLayer;
 
 namespace paimon::icons::garage {
 
-// Called from PaimonGJGarageLayer::init AFTER the original ran. Adds the
-// gear button + recolors the visible button bar.
+// Runs after PaimonGJGarageLayer::init: adds gear button, recolors button bar.
 void onGarageInit(GJGarageLayer* layer);
 
-// Called from PaimonGJGarageLayer::playerColorChanged AFTER the original.
-// Re-runs the recolor pass on the visible button bar.
+// Runs after playerColorChanged: re-runs recolor on the button bar.
 void onPlayerColorChanged(GJGarageLayer* layer);
 
 }  // namespace paimon::icons::garage

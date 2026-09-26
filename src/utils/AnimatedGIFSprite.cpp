@@ -20,7 +20,7 @@
 using namespace geode::prelude;
 
 static float getContentScaleFactorSafe() {
-    // Keep GIF frames in point-space; UI containers already apply scaling.
+    // point-space; UI containers already scale.
     return 1.0f;
 }
 
@@ -54,7 +54,7 @@ std::shared_mutex AnimatedGIFSprite::s_cacheMutex;
 size_t AnimatedGIFSprite::s_currentCacheSize = 0;
 
 size_t AnimatedGIFSprite::getMaxCacheMem() {
-    // Snapshot settings once per settings-version bump (eviction can run often).
+    // snapshot settings per version bump; eviction runs often.
     static size_t s_cachedMax = 0;
     static uint64_t s_cachedVer = UINT64_MAX;
     uint64_t ver = paimon::settings::internal::g_settingsVersion.load(std::memory_order_relaxed);
@@ -127,7 +127,7 @@ static constexpr uint32_t DISK_CACHE_VERSION = 2;
 
 void AnimatedGIFSprite::evictIfNeeded() {
     size_t maxMem = getMaxCacheMem();
-    // Evict to 90% of the limit to leave headroom.
+    // evict to 90% for headroom.
     size_t targetMem = maxMem * 9 / 10;
     while (s_currentCacheSize > targetMem && !s_lruList.empty()) {
         std::string toRemove = s_lruList.front();
@@ -174,23 +174,23 @@ AnimatedGIFSprite* AnimatedGIFSprite::create(std::string const& filename) {
     if (ret && ret->init()) {
         ret->autorelease();
         ret->m_filename = filename;
-        
+
         if (ret->initFromCache(filename)) {
             return ret;
         }
-        
+
         auto data = readGifFile(filename);
         if (!GIFDecoder::isGIF(data.data(), data.size())) return nullptr;
-        
+
         auto gifData = GIFDecoder::decode(data.data(), data.size());
         if (gifData.frames.empty()) return nullptr;
 
         float sf = getContentScaleFactorSafe();
-        
+
         SharedGIFData sharedData;
         sharedData.width = gifData.width;
         sharedData.height = gifData.height;
-        
+
         for (auto const& frame : gifData.frames) {
             auto texture = new CCTexture2D();
             if (!texture->initWithData(
@@ -204,13 +204,13 @@ AnimatedGIFSprite* AnimatedGIFSprite::create(std::string const& filename) {
                 continue;
             }
             texture->setAntiAliasTexParameters();
-            
+
             sharedData.textures.push_back(texture);
             sharedData.delays.push_back(frame.delayMs / 1000.0f);
             sharedData.frameRects.push_back(CCRect(0, 0, gifData.width, gifData.height));
         }
         if (sharedData.textures.empty()) return nullptr;
-        
+
         {
             std::unique_lock<std::shared_mutex> lock(s_cacheMutex);
             auto existingIt = s_gifCache.find(filename);
@@ -251,18 +251,18 @@ AnimatedGIFSprite* AnimatedGIFSprite::create(const void* data, size_t size) {
     if (ret && ret->init()) {
         ret->autorelease();
         ret->m_filename = "memory";
-        
+
         if (!GIFDecoder::isGIF(static_cast<uint8_t const*>(data), size)) return nullptr;
-        
+
         auto gifData = GIFDecoder::decode(static_cast<uint8_t const*>(data), size);
         if (gifData.frames.empty()) return nullptr;
-        
-        
+
+
         ret->m_canvasWidth = gifData.width;
         ret->m_canvasHeight = gifData.height;
 
         float sf = getContentScaleFactorSafe();
-        
+
         for (auto const& frame : gifData.frames) {
             auto texture = new CCTexture2D();
             if (!texture->initWithData(
@@ -276,20 +276,20 @@ AnimatedGIFSprite* AnimatedGIFSprite::create(const void* data, size_t size) {
                 continue;
             }
             texture->setAntiAliasTexParameters();
-            
+
             auto* gifFrame = new GIFFrame();
             gifFrame->texture = texture;
             gifFrame->delay = frame.delayMs / 1000.0f;
             gifFrame->rect = CCRect(0, 0, gifData.width, gifData.height);
             ret->m_frames.push_back(gifFrame);
-            
+
             ret->m_frameColors.push_back({ {0,0,0}, {255,255,255} });
         }
-        
+
         ret->setContentSize(CCSize(ret->m_canvasWidth / sf, ret->m_canvasHeight / sf));
         ret->setCurrentFrame(0);
         ret->scheduleUpdate();
-        
+
         return ret;
     }
     CC_SAFE_DELETE(ret);
@@ -299,18 +299,18 @@ AnimatedGIFSprite* AnimatedGIFSprite::create(const void* data, size_t size) {
 void AnimatedGIFSprite::updateTextureLoading(float dt) {
     if (m_pendingFrames.empty()) {
         this->unschedule(schedule_selector(AnimatedGIFSprite::updateTextureLoading));
-        
+
         SharedGIFData cacheEntry;
         cacheEntry.width = m_canvasWidth;
         cacheEntry.height = m_canvasHeight;
-        
+
         for (auto* frame : m_frames) {
             if (frame->texture) frame->texture->retain();
             cacheEntry.textures.push_back(frame->texture);
             cacheEntry.delays.push_back(frame->delay);
             cacheEntry.frameRects.push_back(frame->rect);
         }
-        
+
         {
             std::unique_lock<std::shared_mutex> lock(s_cacheMutex);
             auto existingIt = s_gifCache.find(m_filename);
@@ -323,7 +323,7 @@ void AnimatedGIFSprite::updateTextureLoading(float dt) {
                 else s_currentCacheSize = 0;
             }
             s_gifCache[m_filename] = cacheEntry;
-            
+
             s_currentCacheSize += getSharedGIFDataSize(cacheEntry);
 
             if (!s_pinnedGIFs.contains(m_filename)) {
@@ -341,7 +341,7 @@ void AnimatedGIFSprite::updateTextureLoading(float dt) {
         return;
     }
 
-    // Stream a bounded number of uploads per tick; always upload one to progress.
+    // bounded uploads per tick; always one to progress.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     int framesToProcess = 1;
 #else
@@ -363,7 +363,7 @@ void AnimatedGIFSprite::updateTextureLoading(float dt) {
 
         auto* gifFrame = new GIFFrame();
         auto* texture = new CCTexture2D();
-        
+
         bool success = texture->initWithData(
             frameData.pixels.data(),
             kCCTexture2DPixelFormat_RGBA8888,
@@ -384,7 +384,7 @@ void AnimatedGIFSprite::updateTextureLoading(float dt) {
             delete gifFrame;
             texture->release();
         }
-        
+
         m_pendingFrames.pop_front();
         framesToProcess--;
         uploadedThisTick++;
@@ -398,7 +398,7 @@ void AnimatedGIFSprite::updateTextureLoading(float dt) {
         this->setCurrentFrame(0);
     }
 
-    // Start once the first two valid frames are ready.
+    // start once two valid frames are ready.
     if (m_frames.size() == 2 && m_isPlaying &&
         m_frames[0] && m_frames[0]->texture &&
         m_frames[1] && m_frames[1]->texture) {
@@ -454,7 +454,7 @@ std::string AnimatedGIFSprite::getCachePath(std::string const& path) {
     if (!std::filesystem::exists(cacheDir, ec)) {
         std::filesystem::create_directories(cacheDir, ec);
     }
-    
+
     std::hash<std::string> hasher;
     auto hash = hasher(path);
     return geode::utils::string::pathToString(cacheDir / (std::to_string(hash) + ".bin"));
@@ -533,7 +533,7 @@ bool AnimatedGIFSprite::loadFromDiskCache(std::string const& path, DiskCacheEntr
     uint32_t frameCount = 0;
     if (!read(frameCount)) return false;
 
-    // Reject corrupt cache dimensions before allocating.
+    // reject corrupt cache dims before allocating.
     constexpr uint32_t kMaxFrames = 1024;
     constexpr uint32_t kMaxDim = 8192;
     constexpr uint32_t kMaxFrameBytes = 64 * 1024 * 1024;
@@ -604,7 +604,7 @@ void AnimatedGIFSprite::workerLoop() {
         }
     };
     while (true) {
-        // Do not touch static queues during runtime shutdown.
+        // no static-queue touches during shutdown.
         if (paimon::isRuntimeShuttingDown()) {
             s_workerRunning.store(false, std::memory_order_release);
             return;
@@ -629,13 +629,13 @@ void AnimatedGIFSprite::workerLoop() {
             task = std::move(s_taskQueue.front());
             s_taskQueue.pop_front();
         }
-        
+
         if (task.isData) {
             if (!GIFDecoder::isGIF(task.data.data(), task.data.size())) {
                 Loader::get()->queueInMainThread([cb = task.callback]() { if (cb) cb(nullptr); });
                 continue;
             }
-            
+
             auto gifResult = decode(task.data.data(), task.data.size());
             if (gifResult.frames.empty()) {
                 Loader::get()->queueInMainThread([cb = task.callback]() { if (cb) cb(nullptr); });
@@ -651,7 +651,7 @@ void AnimatedGIFSprite::workerLoop() {
                 pf.delayMs = frame.delayMs;
                 pendingFrames.push_back(std::move(pf));
             }
-            
+
             Loader::get()->queueInMainThread([key = task.key,
                                               pendingFrames = std::move(pendingFrames),
                                               canvasW = static_cast<int>(gifResult.width),
@@ -665,7 +665,7 @@ void AnimatedGIFSprite::workerLoop() {
                     if (cb) cb(nullptr);
                     return;
                 }
-                
+
                 auto ret = new AnimatedGIFSprite();
                 if (!ret) {
                     if (cb) cb(nullptr);
@@ -696,7 +696,7 @@ void AnimatedGIFSprite::workerLoop() {
 
                 if (cb) cb(ret);
             });
-            
+
         } else {
             DiskCacheEntry cachedEntry;
             if (loadFromDiskCache(task.path, cachedEntry)) {
@@ -710,17 +710,17 @@ void AnimatedGIFSprite::workerLoop() {
                         ret->m_filename = path;
                         ret->m_canvasWidth = cachedEntry.width;
                         ret->m_canvasHeight = cachedEntry.height;
-                        
+
                         if (!ret->init()) {
                             CC_SAFE_DELETE(ret);
                             if (cb) cb(nullptr);
                             return;
                         }
-                        
+
                         float sf = getContentScaleFactorSafe();
                         ret->setContentSize(CCSize(ret->m_canvasWidth / sf, ret->m_canvasHeight / sf));
 
-                        // Stream cached frames too; do not upload the whole GIF in one callback.
+                        // stream cached frames too; never a whole GIF per callback.
                         for (auto& frame : cachedEntry.frames) {
                             PendingFrame pf;
                             pf.pixels = std::move(frame.pixels);
@@ -763,7 +763,7 @@ void AnimatedGIFSprite::workerLoop() {
                 Loader::get()->queueInMainThread([cb = task.callback]() { if (cb) cb(nullptr); });
                 continue;
             }
-            
+
             DiskCacheEntry newCacheEntry;
             newCacheEntry.width = gifResult.width;
             newCacheEntry.height = gifResult.height;
@@ -786,7 +786,7 @@ void AnimatedGIFSprite::workerLoop() {
                 pf.delayMs = static_cast<int>(frame.delay * 1000.0f + 0.5f);
                 pendingFrames.push_back(std::move(pf));
             }
-            
+
             Loader::get()->queueInMainThread([path = task.path, pendingFrames = std::move(pendingFrames),
                                               canvasW = static_cast<int>(gifResult.width),
                                               canvasH = static_cast<int>(gifResult.height),
@@ -799,7 +799,7 @@ void AnimatedGIFSprite::workerLoop() {
                     if (cb) cb(nullptr);
                     return;
                 }
-                
+
                 auto ret = new AnimatedGIFSprite();
                 if (ret) {
                     ret->m_filename = path;
@@ -916,7 +916,7 @@ bool AnimatedGIFSprite::initFromCache(std::string const& cacheKey) {
 
     SharedGIFData cachedData;
     {
-        // Shared lock for read — allows concurrent cache hits without serialization
+        // shared read lock; concurrent hits don't serialize.
         std::shared_lock<std::shared_mutex> rlock(s_cacheMutex);
         auto it = s_gifCache.find(cacheKey);
         if (it == s_gifCache.end()) {
@@ -938,8 +938,8 @@ bool AnimatedGIFSprite::initFromCache(std::string const& cacheKey) {
     }
     m_canvasWidth = cachedData.width;
     m_canvasHeight = cachedData.height;
-    
-    PaimonDebug::log("[AnimatedGIFSprite] Cache hit for: {}, size: {}x{}, frames: {}", 
+
+    PaimonDebug::log("[AnimatedGIFSprite] Cache hit for: {}, size: {}x{}, frames: {}",
         cacheKey, m_canvasWidth, m_canvasHeight, cachedData.textures.size());
 
     for (size_t i = 0; i < cachedData.textures.size(); ++i) {
@@ -949,15 +949,15 @@ bool AnimatedGIFSprite::initFromCache(std::string const& cacheKey) {
         gifFrame->delay = (i < cachedData.delays.size()) ? cachedData.delays[i] : 0.1f;
         gifFrame->rect = (i < cachedData.frameRects.size()) ? cachedData.frameRects[i] : CCRect(0, 0, m_canvasWidth, m_canvasHeight);
         m_frames.push_back(gifFrame);
-        
+
         m_frameColors.push_back({ {0,0,0}, {255,255,255} });
     }
-    
+
     if (m_frames.empty()) {
         log::error("[AnimatedGIFSprite] Cached frames empty for: {}", cacheKey);
         return false;
     }
-    
+
     if (!CCSprite::init()) {
         log::error("[AnimatedGIFSprite] CCSprite::init failed");
         return false;
@@ -967,7 +967,7 @@ bool AnimatedGIFSprite::initFromCache(std::string const& cacheKey) {
     this->setContentSize(CCSize(m_canvasWidth / sf, m_canvasHeight / sf));
     this->setCurrentFrame(0);
     this->scheduleUpdate();
-    
+
     return true;
 }
 
@@ -982,7 +982,6 @@ AnimatedGIFSprite* AnimatedGIFSprite::createFromCache(std::string const& key) {
 }
 
 void AnimatedGIFSprite::createAsync(std::vector<uint8_t> const& data, std::string const& key, AsyncCallback callback) {
-    log::debug("[AnimatedGIFSprite] createAsync(data): key={} size={}", key, data.size());
     if (data.empty()) {
         if (callback) callback(nullptr);
         return;
@@ -1012,7 +1011,6 @@ void AnimatedGIFSprite::createAsync(std::vector<uint8_t> const& data, std::strin
 
 
 void AnimatedGIFSprite::createAsync(std::string const& path, AsyncCallback callback) {
-    log::debug("[AnimatedGIFSprite] createAsync(path): {}", path);
     if (!paimon::assets::exists(path)) {
         if (callback) callback(nullptr);
         return;
@@ -1050,13 +1048,13 @@ void AnimatedGIFSprite::updateAnimation(float dt) {
         }
         return;
     }
-    
+
     m_frameTimer += dt;
-    
-    // Carry leftover time across frame delays, including lag-spike skips.
+
+    // carry leftover time across delays, incl. lag spikes.
     bool frameChanged = false;
     int maxIterations = static_cast<int>(m_frames.size()) + 1;
-    
+
     while (maxIterations-- > 0) {
         float currentDelay = 0.1f;
         if (m_currentFrame < m_frames.size() && m_frames[m_currentFrame]) {
@@ -1065,15 +1063,15 @@ void AnimatedGIFSprite::updateAnimation(float dt) {
         if (currentDelay <= 0.0f) {
             currentDelay = 0.1f;
         }
-        
+
         if (m_frameTimer < currentDelay) {
             break;
         }
-        
+
         m_frameTimer -= currentDelay;
-        
+
         m_currentFrame++;
-        
+
         if (m_currentFrame >= m_frames.size()) {
             if (m_loop) {
                 m_currentFrame = 0;
@@ -1087,7 +1085,7 @@ void AnimatedGIFSprite::updateAnimation(float dt) {
         }
         frameChanged = true;
     }
-    
+
     if (frameChanged) {
         setCurrentFrame(m_currentFrame);
     }
@@ -1098,47 +1096,47 @@ void AnimatedGIFSprite::setCurrentFrame(unsigned int frame) {
         log::warn("[AnimatedGIFSprite] Invalid frame index: {}", frame);
         return;
     }
-    
+
     m_currentFrame = frame;
     m_frameTimer = 0.0f;
-    
+
     if (m_frames[m_currentFrame] && m_frames[m_currentFrame]->texture) {
         auto* gifFrame = m_frames[m_currentFrame];
 
         float sf = getContentScaleFactorSafe();
-        
+
         float left = gifFrame->rect.origin.x;
         float top = gifFrame->rect.origin.y;
         float w = gifFrame->rect.size.width;
         float h = gifFrame->rect.size.height;
-        
+
         float centerX = left + w / 2.0f;
         float centerY = (m_canvasHeight - top) - h / 2.0f;
-        
+
         float canvasCenterX = m_canvasWidth / 2.0f;
         float canvasCenterY = m_canvasHeight / 2.0f;
-        
+
         CCPoint offset((centerX - canvasCenterX) / sf, (centerY - canvasCenterY) / sf);
-        
+
         auto texPx = gifFrame->texture->getContentSizeInPixels();
         bool isPlaceholder = (texPx.width < w || texPx.height < h);
-        
+
         CCRect rectToUse = CCRect(0, 0, w, h);
         CCPoint offsetToUse = offset;
-        
+
         if (isPlaceholder) {
             rectToUse = CCRect(0, 0, texPx.width, texPx.height);
             offsetToUse = CCPoint(0, 0);
         }
 
         auto spriteFrame = CCSpriteFrame::createWithTexture(
-            gifFrame->texture, 
-            rectToUse, 
-            false, 
-            offsetToUse, 
+            gifFrame->texture,
+            rectToUse,
+            false,
+            offsetToUse,
             CCSize(m_canvasWidth / sf, m_canvasHeight / sf)
         );
-        
+
         this->setDisplayFrame(spriteFrame);
     }
 }

@@ -3,7 +3,7 @@
 #include <Geode/Geode.hpp>
 #include <vector>
 
-// Grid spritesheet animation on a single CCTexture2D (UV rect swap only).
+// grid spritesheet animation on one CCTexture2D (UV rect swap only).
 class SheetAnimSprite : public cocos2d::CCSprite {
 public:
     static SheetAnimSprite* create(
@@ -15,7 +15,6 @@ public:
         std::vector<float> delaysSec
     );
 
-    // Bundled Paimon loading mascot sheet (resources/paim_PaimonSheet.png).
     static SheetAnimSprite* createPaimonMascot();
 
     void play();

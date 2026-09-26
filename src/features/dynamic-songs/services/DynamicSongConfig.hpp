@@ -8,16 +8,16 @@
 namespace paimon::dynsong {
 
 enum class StartMode {
-    Random,     // Random point inside the configured window.
-    Beginning,  // Always from the top.
-    Resume,     // Resume that level's last position.
+    Random,  // Random point inside the configured window.
+    Beginning,
+    Resume,
     Count,
 };
 
 enum class RotationMode {
-    Rotate,  // Cycle once per visit.
-    Random,  // Pick one per visit.
-    First,   // Always the main song.
+    Rotate,
+    Random,
+    First,
     Count,
 };
 
@@ -35,7 +35,7 @@ struct SubmergeConfig {
     bool enabled = true;
     SubmergePreset preset = SubmergePreset::Underwater;
 
-    float cutoffHz = 520.f;    // Low-pass cutoff.
+    float cutoffHz = 520.f;
     float highpassHz = 20.f;   // 20 = off.
     float duckDb = -5.f;       // Gain while submerged.
     float reverbMix = 22.f;    // 0..100.
@@ -44,7 +44,7 @@ struct SubmergeConfig {
     float diveSeconds = 0.55f;     // Play to submerged.
     float surfaceSeconds = 1.10f;  // Submerged to clear.
 
-    bool onLevelExit = true;   // Surface when returning from a level.
+    bool onLevelExit = true;
     float holdSeconds = 0.7f;  // Grace before a cancelled play surfaces.
 };
 

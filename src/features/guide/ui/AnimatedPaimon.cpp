@@ -200,17 +200,16 @@ void AnimatedPaimon::pointAt(cocos2d::CCNode* target, float duration) {
         return;
     }
 
-    // Convert positions to world space and compute the angle.
     auto myWorld = this->convertToWorldSpace(this->getContentSize() * 0.5f);
     auto targetWorld = target->convertToWorldSpace(
         target->getContentSize() * 0.5f
     );
     auto delta = targetWorld - myWorld;
 
-    // Cocos rotates clockwise; compute atan2 and apply a -90 offset so "0 degrees" points up.
+    // cocos rotates clockwise: -90 offset so 0 degrees points up.
     float angleRad = std::atan2(delta.y, delta.x);
     float angleDeg = -CC_RADIANS_TO_DEGREES(angleRad);
-    // Clamp the angle to +-25 so it doesn't look forced.
+    // clamp to +-25 so it never looks forced.
     if (angleDeg > 25.f) angleDeg = 25.f;
     if (angleDeg < -25.f) angleDeg = -25.f;
 
@@ -226,7 +225,6 @@ void AnimatedPaimon::showBubble(std::string const& text, float duration) {
     hideBubble();
     if (text.empty()) return;
 
-    // Background: small dark dialog panel.
     auto bg = CCScale9Sprite::create("GJ_square01.png");
     bg->setColor({40, 50, 70});
     bg->setOpacity(220);
@@ -247,22 +245,19 @@ void AnimatedPaimon::showBubble(std::string const& text, float duration) {
     bg->setPosition(holder->getContentSize() * 0.5f);
     holder->addChild(bg);
 
-    // Position: top-right of the sprite.
     auto sz = this->getContentSize();
     holder->setAnchorPoint({0.f, 0.f});
     holder->setPosition({sz.width * 0.6f, sz.height + 4.f});
     holder->setScale(0.f);
     holder->setID("paimon-bubble"_spr);
 
-    // La Paimon del menu cuelga de un boton inclinado al azar. El texto se lee
-    // en horizontal siempre, asi que se deshace la rotacion de toda la cadena.
+    // menu sprite hangs tilted; text reads horizontal, so undo the chain rotation.
     float chainRotation = 0.f;
     for (CCNode* node = this; node; node = node->getParent()) {
         chainRotation += node->getRotation();
     }
     if (chainRotation != 0.f) holder->setRotation(-chainRotation);
 
-    // Appear (back-out) and exit (fade + scale) animation.
     auto popIn = CCEaseBackOut::create(CCScaleTo::create(0.18f, 1.f));
     auto stay  = CCDelayTime::create(duration);
     auto popOut = CCSpawn::create(

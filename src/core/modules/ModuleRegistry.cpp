@@ -162,9 +162,7 @@ std::vector<Module const*> search(std::string_view query) {
         return field && lower(field).find(needle) != std::string::npos;
     };
     for (auto const& mod : all()) {
-        // Se busca tambien sobre los textos traducidos: la lista muestra el
-        // nombre localizado, asi que "dinamico" tiene que encontrar el modulo
-        // que en ingles se llama "Dynamic Volume".
+        // the list shows localized names, so search those too.
         if (needle.empty()
             || hit(mod.id)
             || hit(mod.name)

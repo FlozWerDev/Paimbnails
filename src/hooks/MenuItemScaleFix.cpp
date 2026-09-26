@@ -83,66 +83,65 @@ class $modify(PaimonMenuItemScaleFix, CCMenuItemSpriteExtra) {
         CCMenuItemSpriteExtra::unselected();
 
         bool smooth = shouldSmoothThisButton();
+        if (!PaimonButtonHighlighter::isRegisteredButton(this) && !smooth) return;
+        if (!m_fields->m_scaleCaptured) return;
 
-        if (PaimonButtonHighlighter::isRegisteredButton(this) || smooth) {
-            if (m_fields->m_scaleCaptured) {
-                this->stopAllActions();
-                float speed = smooth ? smoothSpeed() : 1.f;
-                if (smooth && paimon::settings::smoothui::buttonReleaseBounce()) {
-                    auto strength = static_cast<float>(std::clamp(
-                        paimon::settings::smoothui::motionStrength(), 0.0, 2.0));
-                    float over = 1.f + 0.045f * strength;
-                    this->runAction(CCSequence::create(
-                        CCEaseSineOut::create(CCScaleTo::create(
-                            std::max(0.025f, 0.070f / speed),
-                            m_fields->m_originalScaleX * over,
-                            m_fields->m_originalScaleY * over
-                        )),
-                        CCEaseSineInOut::create(CCScaleTo::create(
-                            std::max(0.025f, 0.115f / speed),
-                            m_fields->m_originalScaleX,
-                            m_fields->m_originalScaleY
-                        )),
-                        nullptr
-                    ));
-                } else {
-                    auto scaleTo = CCScaleTo::create(
-                        std::max(0.025f, 0.16f / speed),
-                        m_fields->m_originalScaleX,
-                        m_fields->m_originalScaleY
-                    );
-                    this->runAction(CCEaseSineOut::create(scaleTo));
-                }
-            }
+        this->stopAllActions();
+        float speed = smooth ? smoothSpeed() : 1.f;
+        if (smooth && paimon::settings::smoothui::buttonReleaseBounce()) {
+            auto strength = static_cast<float>(std::clamp(
+                paimon::settings::smoothui::motionStrength(), 0.0, 2.0));
+            float over = 1.f + 0.045f * strength;
+            this->runAction(CCSequence::create(
+                CCEaseSineOut::create(CCScaleTo::create(
+                    std::max(0.025f, 0.070f / speed),
+                    m_fields->m_originalScaleX * over,
+                    m_fields->m_originalScaleY * over
+                )),
+                CCEaseSineInOut::create(CCScaleTo::create(
+                    std::max(0.025f, 0.115f / speed),
+                    m_fields->m_originalScaleX,
+                    m_fields->m_originalScaleY
+                )),
+                nullptr
+            ));
+        } else {
+            auto scaleTo = CCScaleTo::create(
+                std::max(0.025f, 0.16f / speed),
+                m_fields->m_originalScaleX,
+                m_fields->m_originalScaleY
+            );
+            this->runAction(CCEaseSineOut::create(scaleTo));
         }
     }
 
     $override
     void activate() {
-        if (PaimonButtonHighlighter::isRegisteredButton(this)) {
-            // Still call the original so we don't cut other mods' hook chain.
-            if ((!this->m_pListener || !this->m_pfnSelector) && this->m_nScriptTapHandler == 0) {
-                log::warn("[MenuItemScaleFix] Paimbnails button without target/selector - passing through to original");
-                CCMenuItemSpriteExtra::activate();
-                return;
-            }
-
-            // The button callback may close or rebuild the current popup; retain
-            // the item so restoring the scale doesn't touch freed memory.
-            bool restoreScale = m_fields->m_scaleCaptured;
-            float originalScaleX = m_fields->m_originalScaleX;
-            float originalScaleY = m_fields->m_originalScaleY;
-            this->retain();
+        if (!PaimonButtonHighlighter::isRegisteredButton(this)) {
             CCMenuItemSpriteExtra::activate();
-
-            if (restoreScale) {
-                this->stopAllActions();
-                this->setScaleX(originalScaleX);
-                this->setScaleY(originalScaleY);
-            }
-            this->release();
-        } else {
-            CCMenuItemSpriteExtra::activate();
+            return;
         }
+
+        // still call the original so we don't cut other mods' hook chain
+        if ((!this->m_pListener || !this->m_pfnSelector) && this->m_nScriptTapHandler == 0) {
+            log::warn("[MenuItemScaleFix] Paimbnails button without target/selector - passing through to original");
+            CCMenuItemSpriteExtra::activate();
+            return;
+        }
+
+        // the button callback may close or rebuild the current popup; retain
+        // the item so restoring the scale doesn't touch freed memory
+        bool restoreScale = m_fields->m_scaleCaptured;
+        float originalScaleX = m_fields->m_originalScaleX;
+        float originalScaleY = m_fields->m_originalScaleY;
+        this->retain();
+        CCMenuItemSpriteExtra::activate();
+
+        if (restoreScale) {
+            this->stopAllActions();
+            this->setScaleX(originalScaleX);
+            this->setScaleY(originalScaleY);
+        }
+        this->release();
     }
 };

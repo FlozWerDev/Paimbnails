@@ -20,9 +20,7 @@ struct FusionFrame {
     int delayMs = 100;
 };
 
-// Immutable, shared fusion source (static image or GIF). All frames are
-// owned RGBA buffers — no raw pointers, no external decoder ownership.
-// Safe to share across worker threads (read-only after construction).
+// Immutable shared fusion source (static or GIF): owned RGBA frames, read-only after build, thread-sharable.
 struct FusionAsset {
     std::vector<FusionFrame> frames;
     bool animated = false;
@@ -49,16 +47,13 @@ struct FusionAsset {
 
 class FusionAssetLoader final {
 public:
-    // Hard caps so a huge GIF cannot OOM the editor. Oversized frames are
-    // bilinear-downscaled so they still work as fusion textures.
+    // Hard caps against GIF OOMs; oversized frames downscale and still work.
     static constexpr int kMaxFrames     = 48;
     static constexpr int kMaxSide       = 512;
     static constexpr int kMinFrameDelay = 20;   // ms
     static constexpr int kMaxFrameDelay = 2000; // ms
 
-    // Decode from a file path. Supports PNG/JPG/WebP/etc via ImageBuffer
-    // (stb) and multi-frame GIFs via GIFDecoder. Always returns at least one
-    // frame on success.
+    // File decode: images via ImageBuffer, multi-frame GIFs via GIFDecoder; 1+ frames on success.
     static geode::Result<std::shared_ptr<FusionAsset>> loadFromFile(
         std::filesystem::path const& path);
 

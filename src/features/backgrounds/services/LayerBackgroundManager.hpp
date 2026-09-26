@@ -97,8 +97,7 @@ private:
     bool applyStaticBg(cocos2d::CCLayer* layer, cocos2d::CCTexture2D* tex, LayerBgConfig const& cfg);
     void applyGifBg(cocos2d::CCLayer* layer, std::string const& path, LayerBgConfig const& cfg);
 
-    // Unreferenced players linger briefly so revisiting a layer reuses
-    // the decoder instead of rebuilding it.
+    // Unreferenced players linger briefly; revisits reuse the decoder.
     static constexpr auto kSharedVideoTTL = std::chrono::seconds(10);
 
     struct SharedVideoEntry {
@@ -128,8 +127,7 @@ public:
     std::shared_ptr<paimon::video::VideoPlayer> acquireSharedVideo(
         std::string const& path, bool requireCanonicalAudio);
 
-    // Reuse-only acquire: never builds a decoder, so main-thread callers cannot
-    // stall on one. Returns null when nothing reusable is cached.
+    // Reuse-only acquire never builds decoders; main-thread callers can't stall. Null when empty.
     std::shared_ptr<paimon::video::VideoPlayer> acquireExistingSharedVideo(
         std::string const& path);
 
@@ -162,15 +160,13 @@ public:
 
     static std::filesystem::path getVideoBgPreviewPath(std::string const& videoPath);
 
-    // Downscaled poster frame, retained in RAM so repeat layer entries neither
-    // hit the disk nor re-upload a texture. Null when there is no preview yet.
+    // Downscaled poster in RAM; repeat entries skip disk and re-upload. Null when none.
     static cocos2d::CCTexture2D* getVideoBgPreviewTexture(std::string const& videoPath);
 
     // True when a preview newer than the video is already cached on disk.
     static bool hasVideoBgPreview(std::string const& videoPath);
 
-    // Reads back the current frame and writes the preview off-thread. No-op when
-    // a fresh preview already exists, so the GPU readback happens once per video.
+    // Off-thread current-frame readback; no-op when fresh, so one GPU stall per video.
     static void saveVideoBgPreview(std::string const& videoPath,
                                    paimon::video::VideoPlayer const* player);
 };

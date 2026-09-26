@@ -664,8 +664,7 @@ void ThumbnailOrderPopup::onSave(CCObject*) {
             ThumbnailTransportClient::parseThumbnailList(message, serverOrder) && !serverOrder.empty();
 
         if (!success) {
-            // A rejected save comes back with the list the server really holds, so taking
-            // it makes the retry work instead of failing on the same stale ids.
+            // Rejected save returns the server's real list: adopting it un-stales the retry.
             if (gotServerOrder) popup->adoptServerOrder(serverOrder, selectedKey);
             popup->updateUiState();
             PaimonNotify::create(reorderErrorText(message).c_str(), NotificationIcon::Error)->show();
@@ -675,7 +674,7 @@ void ThumbnailOrderPopup::onSave(CCObject*) {
         ThumbnailTransportClient::get().invalidateGalleryMetadata(popup->m_levelID);
         ThumbnailLoader::get().invalidateLevel(popup->m_levelID);
 
-        // Solo el primer slot sale de /t/<level>: al permutar tambien permutan las URLs.
+        // Only slot 1 serves from /t/<level>: permuting swaps URLs too.
         if (gotServerOrder) {
             popup->m_thumbnails = serverOrder;
         } else {

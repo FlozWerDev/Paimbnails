@@ -176,7 +176,7 @@ class $modify(BadgeCommentCell, CommentCell) {
 
         auto layout = getCommentBackgroundLayout(cellSize);
 
-        // Check config FIRST — custom bg always needs re-evaluation
+        // Custom bg always needs re-evaluation; check config first.
         bool hasCustomBg = false;
         ProfileConfig config;
         if (m_comment && m_comment->m_accountID > 0) {

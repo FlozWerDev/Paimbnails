@@ -1,6 +1,6 @@
 #pragma once
-// Fallback sin MoreIcons: aplica el icono creado via CCSpriteFrameCache. Con
-// MoreIcons instalado este servicio nunca toca sprites.
+// No-MoreIcons fallback: applies the built icon via CCSpriteFrameCache. With
+// MoreIcons installed this service never touches sprites.
 
 #include <Geode/Geode.hpp>
 

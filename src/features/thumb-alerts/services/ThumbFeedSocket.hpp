@@ -7,8 +7,7 @@ namespace paimon::net { class WebSocketClient; }
 
 namespace paimon::thumbalerts {
 
-// Live half of the feed: socket push with the poll as catch-up for anything
-// missed while down (and the only path where WebSocketClient is unimplemented).
+// Live half: socket push, poll as catch-up for downtime (and only path without WebSocketClient).
 class ThumbFeedSocket {
 public:
     static ThumbFeedSocket& get();

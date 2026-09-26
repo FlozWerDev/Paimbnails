@@ -114,9 +114,7 @@ private:
     };
 
     std::unordered_map<int, std::shared_ptr<Task>> m_tasks;
-    // Tasks handed to the Level Thumbnails fallback: already out of m_tasks and
-    // off the queue, but not resolved yet, so new requests wait on them instead
-    // of starting a second download for the same id.
+    // Fallback-handed tasks: out of m_tasks and off-queue but unresolved, so new requests wait instead of re-downloading.
     std::unordered_map<int, std::shared_ptr<Task>> m_fallbackTasks;
     std::unordered_map<std::string, std::shared_ptr<Task>> m_urlTasks;
     std::multimap<int, int, std::greater<int>> m_priorityQueue;
@@ -239,8 +237,7 @@ private:
     std::vector<BatchPending> m_batchPendingDownloads;
     std::mutex m_batchPendingMutex;
     std::atomic<bool> m_batchFlushScheduled{false};
-    // Atado al limite de 50 subrequests por invocacion del worker: con 40 se
-    // tumbaba el lote entero.
+    // Tied to the worker's 50-subrequest-per-invocation cap: 40 toppled the whole batch.
     static constexpr int BATCH_FLUSH_THRESHOLD = 15;
     static constexpr int BATCH_FLUSH_DELAY_MS = 50;
     void scheduleBatchFlush();

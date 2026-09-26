@@ -304,8 +304,7 @@ void CursorTrailNode::beginOverlayPass() {
 }
 
 void CursorTrailNode::visit() {
-// The cursor host is visited in both scene and overlay passes; skip the scene
-// pass once the overlay pass is known to run to avoid doubled additive glow.
+// Host is visited in scene and overlay passes; skip scene once overlay runs to avoid doubled glow.
     if (m_overlayPassSeen && !m_inOverlayPass) return;
     CCNode::visit();
 }
@@ -771,8 +770,7 @@ void CursorTrailNode::buildRibbonVerts() {
         m_ribbon.push_back(v);
     };
 
-// Catmull-Rom keeps the ribbon smooth across cursor jumps. Subdivision and
-// point skipping cap the cost on high-refresh displays.
+// Catmull-Rom smooths cursor jumps; subdivision and skipping cap high-refresh cost.
     constexpr size_t kMaxRibbonVerts = 128;
     size_t segs = n - 1;
     size_t stride = (segs + kMaxRibbonVerts - 1) / kMaxRibbonVerts;

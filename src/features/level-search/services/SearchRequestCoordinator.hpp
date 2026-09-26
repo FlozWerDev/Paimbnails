@@ -1,7 +1,6 @@
 #pragma once
 
-// Central request pipe for the realtime level search: one queue with a shared
-// cache, in-flight de-duplication, dispatch rate limiting and delegate save/restore.
+// Single queue for realtime level search: shared cache, in-flight dedup, rate limit.
 
 #include <Geode/Geode.hpp>
 
@@ -24,25 +23,22 @@ class SearchRequestCoordinator : public cocos2d::CCNode, public LevelManagerDele
 public:
     using Token = std::uint64_t;
 
-    // ok=false means the request failed or was dropped. items may be null.
+    // ok=false means failed or dropped. items may be null.
     using Callback = std::function<void(bool ok, cocos2d::CCArray* items, std::string const& pageInfo)>;
 
     static SearchRequestCoordinator& get();
 
-    // Queues a request, or serves it from cache. Returns 0 when the callback
-    // already ran synchronously (cache hit) and there is nothing to cancel.
+    // Queues a request or serves it from cache. Returns 0 on sync cache hit.
     Token request(SearchKind kind, GJSearchObject* object, Callback callback);
 
-    // Drops a waiter. The underlying request may still complete; its result is
-    // cached for the next caller instead of being thrown away.
+    // Drops a waiter; the result is still cached for the next caller.
     void cancel(Token token);
 
-    // A query whose prefix returned nothing cannot return anything itself, so
-    // we can answer locally while the user keeps typing.
+    // A prefix that returned nothing poisons longer queries, answered locally.
     bool isKnownEmpty(SearchKind kind, std::string const& query) const;
     void noteQueryOutcome(SearchKind kind, std::string const& query, int resultCount);
 
-    // Forgets cached pages and prefix knowledge. Called when leaving the layer.
+    // Drops cached pages and prefix knowledge on layer exit.
     void reset();
 
     // LevelManagerDelegate
@@ -71,8 +67,7 @@ private:
         double timestamp = 0.0;
     };
 
-    // Tuned so a full page of results survives normal back-and-forth paging
-    // without pinning much memory: 48 pages of <=10 rows.
+    // 48 pages of <=10 rows: survives back-and-forth paging without pinning memory.
     static constexpr std::size_t kMaxCacheEntries = 48;
     static constexpr double kCacheTtlSeconds = 90.0;
     static constexpr double kMinDispatchInterval = 0.40;

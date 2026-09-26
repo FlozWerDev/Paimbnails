@@ -97,7 +97,7 @@ geode::Result<std::vector<DetectedSheet>> GdResourcesLocator::detectInDirectory(
         ds.plistPath      = plistPath;
         ds.pngPath        = pngIt->second;
         ds.fileSize       = safeFileSize(pngIt->second);
-        // frameCount left at -1; sniffed lazily to avoid parsing every plist.
+        // frameCount stays -1: sniffed lazily instead of parsing every plist.
 
         bestByBase[baseName] = Candidate{std::move(ds), rank};
     }

@@ -1,9 +1,5 @@
-// Own-icon shading on level score cells, rethought for Paimbnails.
-//
-// Idea credit: "Icon Gradients" by zilko
-// (https://github.com/zilko144/icon-gradients-geode, unlicensed —
-// all rights reserved). Independent implementation: same behavior (shade
-// the player's own icon on score cells), own expression.
+// Shades the player's own icon on score cells, after zilko's "Icon Gradients"
+// (independent implementation; idea credit zilko144, unlicensed).
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/GJLevelScoreCell.hpp>

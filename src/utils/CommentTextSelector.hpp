@@ -7,8 +7,7 @@
 
 namespace paimon {
 
-// Click-and-drag text selection overlay for a comment cell; attach via
-// CommentTextSelector::attach() after loadFromComment finishes.
+// click-drag selection overlay; attach via attach() after loadFromComment.
 class CommentTextSelector : public cocos2d::CCLayer {
 protected:
     struct DisplaySegment {

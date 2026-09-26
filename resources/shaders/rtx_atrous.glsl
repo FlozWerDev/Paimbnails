@@ -1,4 +1,4 @@
-// A-trous con edge-stop luma+croma; la varianza modula phi.
+// edge-stopping A-trous; variance modulates phi.
 
 varying vec2 v_texCoord;
 
@@ -8,10 +8,10 @@ uniform sampler2D u_var;
 uniform vec2  u_texel;
 uniform float u_stride;
 uniform float u_phi;
-// u_wide: 1 usa kernel 5x5 en la ultima pasada.
+// u_wide: 1 uses a 5x5 kernel on the last pass.
 uniform float u_wide;
 
-// Varianza ~0 con historia estable, alta en desoclusiones.
+// variance ~0 on stable history, high on disocclusions.
 const float kVarCeil = 0.12;
 const float kVarGain = 7.0;
 

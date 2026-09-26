@@ -7,8 +7,7 @@
 
 namespace paimon::collab {
 
-// Invite panel in OverlayManager so it draws over popups and survives scene
-// changes; only its two buttons take touches.
+// Invite panel in OverlayManager (over popups, survives scenes); only buttons take touches.
 class CollabInviteBanner : public cocos2d::CCNode {
 public:
     static void present(std::string const& room, std::string const& fromName);

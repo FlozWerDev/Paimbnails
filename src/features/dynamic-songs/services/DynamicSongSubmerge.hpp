@@ -1,6 +1,6 @@
 #pragma once
 
-// Filtro "buceo": apaga la musica sin cortarla.
+// Dive filter: dulls the music without cutting it.
 
 #include <fmod.hpp>
 

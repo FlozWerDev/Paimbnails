@@ -25,7 +25,6 @@ protected:
     float m_clickScrollTargetY      = 0.f;
     bool  m_clickScrollTargetSet    = false;
 
-    // Slots for Idle, Move, Hover, Click, Text, and Disabled.
     static constexpr int kSlotCount = CURSOR_STATE_COUNT;
     static constexpr std::array<CursorState, kSlotCount> kSlotStates = {
         CursorState::Idle, CursorState::Move, CursorState::Hover,

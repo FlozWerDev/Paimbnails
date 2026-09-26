@@ -7,28 +7,25 @@
 
 namespace paimon::framebudget {
 
-// Per-frame microsecond budget for main-thread thumbnail/LevelCell work.
-// It limits total work per frame; unused capacity carries no state forward.
+// per-frame microsecond budget for main-thread thumbnail/LevelCell work.
+// unused capacity carries no state forward.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
 inline constexpr int64_t kFrameBudgetUs = 900;
 #else
-// ~2 ms per frame keeps large queues from stalling the game.
 inline constexpr int64_t kFrameBudgetUs = 2000;
 #endif
 
-// Each stage has a reserved slice plus unused shared capacity, so uploads,
-// callbacks, and GIF frames all advance within the same total budget.
+// each stage has a reserved slice plus unused shared capacity.
 enum class Stage : int {
-    Upload = 0,  // thumbnail GPU texture uploads
-    Callback,    // per-cell thumbnail load callbacks
-    GifFrame,    // animated GIF frame uploads
+    Upload = 0,
+    Callback,
+    GifFrame,
     Count
 };
 
 inline constexpr int kStageCount = static_cast<int>(Stage::Count);
 
-// Reservations sum below 100%; the remainder is shared. GIFs reserve least
-// because playback can fill in after the first frames.
+// reservations sum below 100%; the remainder is shared.
 inline constexpr int kStageReservePct[kStageCount] = { 30, 30, 10 };
 
 inline int64_t& usedUsRef() { static int64_t v = 0; return v; }
@@ -50,7 +47,7 @@ inline constexpr int64_t stageReserveUs(Stage stage) {
     return kFrameBudgetUs * kStageReservePct[static_cast<int>(stage)] / 100;
 }
 
-// Total microseconds left this frame; callers use it as a busy signal.
+// microseconds left this frame; callers use it as a busy signal.
 inline int64_t remainingUs() {
     refresh();
     return std::max<int64_t>(0, kFrameBudgetUs - usedUsRef());

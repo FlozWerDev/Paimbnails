@@ -27,8 +27,7 @@ namespace {
 constexpr float kPopupW = 400.f;
 constexpr float kPopupH = 312.f;
 
-// Los frames se validan al construir la lista, asi que un texture pack que
-// borre alguno simplemente lo omite en vez de dejar un hueco roto.
+// Frames validate at list build, so a texture pack missing one just skips it.
 std::vector<const char*> const& curatedIconFrames() {
     static const std::vector<const char*> frames = {
         "GJ_optionsBtn_001.png", "GJ_hammerIcon_001.png", "GJ_infoBtn_001.png",
@@ -103,7 +102,7 @@ protected:
         constexpr float cell = listW / cols; // 60
         const float iconBox = cell - 20.f;
 
-        // El icono capturado va primero: casi siempre es el que se quiere.
+        // Captured icon first: almost always the wanted one.
         std::vector<std::string> valid;
         if (!m_current.empty() && paimon::SpriteHelper::safeCreateWithFrameName(m_current.c_str())) {
             valid.push_back(m_current);
@@ -142,8 +141,7 @@ protected:
                           : ccc4f(0.30f, 0.35f, 0.45f, 0.7f),
                 1.2f);
             if (card) {
-                // createRoundedRect draws from its origin (0,0) to (w,h), so
-                // center the (cell-6) card inside the cell box: (cell-(cell-6))/2 = 3.
+                // Rounded rect draws from (0,0) to (w,h): center the (cell-6) card, offset 3.
                 card->setPosition({3.f, 3.f});
                 holder->addChild(card, 0);
             }
@@ -236,8 +234,7 @@ bool QuickButtonPopup::init() {
 
     addFieldLabel("Forma", 219.f);
 
-    // Los menus centran sus hijos en su propia y: separarlos de la etiqueta lo
-    // justo para que los botones no la tapen.
+    // Menus center children on their own y: offset just enough to clear the label.
     m_shapeMenu = CCMenu::create();
     m_shapeMenu->setPosition({kFieldX, 196.f});
     m_shapeMenu->setContentSize({kFieldW, 26.f});
@@ -294,10 +291,9 @@ void QuickButtonPopup::onExit() {
     Popup::onExit();
 }
 
-// Lo que se guardo del boton original, para que se vea que el acceso apunta
-// a algo concreto y no a "un boton cualquiera".
+// What got saved from the original button: proof the shortcut points at something concrete.
 void QuickButtonPopup::buildTargetInfo() {
-    // La tarjeta deja libre la esquina donde va el boton Guardar.
+    // Card leaves the Save-button corner free.
     constexpr float kCardX = 22.f;
     constexpr float kCardW = 278.f;
     constexpr float kTextW = kCardW - 16.f;
@@ -472,7 +468,7 @@ void QuickButtonPopup::rebuildPreview() {
     m_preview->removeAllChildren();
 
     auto badge = makeRadialBadge(toRadialDef(m_candidate), m_candidate.shape, 58.f);
-    // En la vista previa el aro es el punto: se ensena siempre.
+    // In preview the ring is the point: always shown.
     if (badge.ring) badge.ring->setVisible(true);
     m_preview->addChild(badge.root);
 }
@@ -508,8 +504,7 @@ void QuickButtonPopup::onSave(CCObject*) {
             "El fin era menor que el inicio: suena entero.", NotificationIcon::Warning)->show();
     }
 
-    // El id se deriva del nombre solo al crearlo; al editar se conserva para no
-    // romper el orden guardado ni los accesos ya colocados en la rueda.
+    // Id derives from the name at creation only; edits keep it so saved order and wheel slots survive.
     if (m_candidate.id.empty()) {
         m_candidate.id = QuickHubManager::get().makeUniqueCustomId(name);
     }

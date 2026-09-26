@@ -402,8 +402,7 @@ void FusionEditorLayer::buildTools() {
         panel->addChildAtPosition(bg, Anchor::Center);
     }
 
-// Keep the menu at panel origin; CCMenu ignores its anchor point when placing
-// children, so centering it offsets every control.
+    // Menu at panel origin: CCMenu ignores anchor when placing children, centering offsets every control.
     auto* menu = CCMenu::create();
     menu->setPosition({0, 0});
     menu->setContentSize({w, panelH});
@@ -902,8 +901,7 @@ SpriteSetting FusionEditorLayer::currentSetting() const {
 
 void FusionEditorLayer::storeSetting(SpriteSetting const& s) {
     if (!m_hasSelection) return;
-// Keep Fusion config while editing so color, expand, scale, and offsets survive
-// before a texture is loaded.
+    // Keep fusion config while editing so color/expand/scale/offsets survive pre-texture.
     m_project.spriteSettings[m_selected.frameName] = s;
     m_project.modifiedAt = nowUnixMs();
 }

@@ -18,16 +18,14 @@ class $modify(GradientMenuLayer, MenuLayer) {
             return true;
         }
 
-        if (CCNode* spr = getChildByIDRecursive("profile-icon")) {
-            if (SimplePlayer* icon = spr->getChildByType<SimplePlayer>(0)) {
-                IconType type = GradientUtils::getIconType(icon);
+        auto* spr = getChildByIDRecursive("profile-icon");
+        if (!spr) return true;
+        auto* icon = spr->getChildByType<SimplePlayer>(0);
+        if (!icon) return true;
 
-                Gradient gradient = GradientUtils::getGradient(type, false);
-
-                GradientUtils::applyGradient(icon, gradient, false, false, 2);
-            }
-        }
-
+        IconType type = GradientUtils::getIconType(icon);
+        Gradient gradient = GradientUtils::getGradient(type, false);
+        GradientUtils::applyGradient(icon, gradient, false, false, 2);
         return true;
     }
 };

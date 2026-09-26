@@ -1,7 +1,6 @@
 #pragma once
 
-// Rewritten from the behavior spec (no original code remains); save keys and
-// node IDs stay compatible so existing kits and icon-gradients keep working.
+// Rewritten from the behavior spec; keys/IDs stay compatible with shipped kits.
 
 #include <Geode/Geode.hpp>
 #include "../../core/modules/ModuleRegistry.hpp"
@@ -112,8 +111,7 @@ public:
     void setSpawning(bool spawning);
     bool isSpawning() const;
 
-    // First run: mirror the live kit into storage so dual mode looks
-    // normal until the user customizes the second player in the garage.
+    // First run: mirror the live kit so dual mode looks normal until player 2 is customized.
     void primeFromGame();
 
     // Swap the live game kit with the stored second-player kit.

@@ -1,10 +1,5 @@
-// Garage shading orchestration, rethought for Paimbnails.
-//
-// Idea credit: "Icon Gradients" by zilko
-// (https://github.com/zilko144/icon-gradients-geode, unlicensed —
-// all rights reserved). Independent implementation: same behavior (shade
-// the garage doll, the 2P doll and the page dolls; clear everything while
-// the module is off), own expression.
+// Shades the garage, 2P and page dolls (cleared while the module is off), after
+// zilko's "Icon Gradients" (independent implementation; idea credit zilko144, unlicensed).
 
 #include "GradientGarageLayer.hpp"
 #include "../GradientCache.hpp"

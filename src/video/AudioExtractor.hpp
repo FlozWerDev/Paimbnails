@@ -17,15 +17,12 @@ struct AudioPcm {
     }
 };
 
-// Decode the first audio track to interleaved PCM in memory. Implemented per
-// platform (Media Foundation / MediaNDK / AVFoundation).
+// First audio track to interleaved PCM; per-platform backend.
 AudioPcm extractAudioToPcm(const std::string& videoPath);
 
-// Same decode, persisted as a cached WAV. Only for consumers that need a file
-// path (profile music); playback goes through VideoAudioTrack instead.
+// Cached WAV for file-path consumers only; playback uses VideoAudioTrack.
 std::string extractAudioToWav(const std::string& videoPath);
 
-// Cached WAV path for a video, or empty when it has not been extracted.
 std::string getCachedWavPath(const std::string& videoPath);
 
 void cleanupAudioCache(const std::string& videoPath);

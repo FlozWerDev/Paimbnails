@@ -24,10 +24,6 @@ static SimplePlayer* findSimplePlayerRec(CCNode* node, int depth = 0) {
     return nullptr;
 }
 
-static CCPoint getGLMousePos() {
-    return geode::cocos::getMousePos();
-}
-
 struct LevelScoreCellHoverData {
     bool    wasHovered    = false;
     float   hoverLerp     = 0.f;
@@ -36,14 +32,14 @@ struct LevelScoreCellHoverData {
     Ref<CCNode>  cubeNode      = nullptr;
     float        cubeBaseScale = 1.f;
 
-    // Movable children that aren't rank/bg
+    // non-rank children to shift on hover
     struct Entry { CCNode* node; CCPoint base; };
     std::vector<Entry> movable;
 
     Ref<CCNode> gradient = nullptr;   // actual type: CCLayerGradient*
 };
 
-// Self-scheduled helper node for reliable updates
+// self-scheduled for reliable updates
 class PaimonLevelScoreCellHelper : public CCNode {
 public:
     GJLevelScoreCell* m_cell = nullptr;
@@ -75,7 +71,7 @@ public:
         shine->setID("paimon-lls-shine"_spr);
         shine->setZOrder(50);
 
-        // Subtle diagonal sheen, retriggered on every mouse-enter.
+        // subtle diagonal sheen on every mouse-enter
         constexpr float kW    = 28.f;
         constexpr float kSkew = 20.f;
         constexpr float kEdge = 12.f;
@@ -133,10 +129,9 @@ public:
 
         auto& d = m_data;
 
-        // Hit-test the mouse against the cell
         bool isHovered = false;
         {
-            CCPoint gl    = getGLMousePos();
+            CCPoint gl    = geode::cocos::getMousePos();
             CCPoint local = m_cell->convertToNodeSpace(gl);
             CCSize  cs    = m_cell->getContentSize();
             isHovered = (local.x >= 0.f && local.x <= cs.width &&
@@ -227,9 +222,8 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
             for (auto* child : CCArrayExt<CCNode*>(this->getChildren())) {
                 if (!child) continue;
                 std::string_view cid = child->getID();
-                // find(), not starts_with(): "_spr" IDs expand to
-                // "<mod-id>/paimon-...", so a prefix check never matches and
-                // reused cells would pile up stale gradient nodes.
+                // "_spr" expands to "<mod-id>/paimon-..."; a prefix check never
+                // matches and reused cells would pile up stale gradients
                 if (cid.find("paimon-") != std::string_view::npos) rem.push_back(child);
             }
             for (auto* n : rem) n->removeFromParent();
@@ -281,8 +275,7 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
             return;
         }
 
-        // Diagonal tint so wide cells blend instead of hard-stepping; wrapped
-        // in the same rounded clip as the full gradient.
+        // diagonal tint so wide cells blend instead of hard-stepping
         ccColor3B iconColor = {100, 150, 255};
         if (auto* gm = GameManager::get())
             iconColor = gm->colorForIdx(score->m_color1);
@@ -292,8 +285,8 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
         }
 
         auto* gradient = CCLayerGradient::create(
-            ccc4(iconColor.r, iconColor.g, iconColor.b, 255),  // left: subtle base
-            ccc4(iconColor.r, iconColor.g, iconColor.b, 0),    // right: transparent
+            ccc4(iconColor.r, iconColor.g, iconColor.b, 255),
+            ccc4(iconColor.r, iconColor.g, iconColor.b, 0),
             ccp(1.f, -0.35f)
         );
         gradient->setContentSize(cs);
@@ -343,13 +336,10 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
             if (id.find("paimon-") != std::string_view::npos) continue;
             if (typeinfo_cast<CCLayerColor*>(child) != nullptr) continue;
 
-            bool isRank = false;
-            if (!id.empty() &&
-                (id.find("rank")   != std::string_view::npos ||
-                 id.find("trophy") != std::string_view::npos ||
-                 id.find("medal")  != std::string_view::npos))
-                isRank = true;
-            if (!isRank && child->getPositionX() < 22.f) isRank = true;
+            bool isRank = child->getPositionX() < 22.f ||
+                (!id.empty() && (id.find("rank") != std::string_view::npos ||
+                    id.find("trophy") != std::string_view::npos ||
+                    id.find("medal") != std::string_view::npos));
             if (isRank) continue;
 
             d.movable.push_back({child, child->getPosition()});

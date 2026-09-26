@@ -215,8 +215,7 @@ void ModlyRepo::fetchComments(std::string const& modId, bool force, CommentsCall
 
                 auto& repo = ModlyRepo::get();
 
-                // Commenters are not necessarily authors, so the catalog does not
-                // carry them; the comments payload brings their profiles along.
+                // Commenters aren't authors; profiles ride the comments payload.
                 if (json["users"].isArray()) {
                     if (auto arr = json["users"].asArray(); arr.isOk()) {
                         for (auto const& item : arr.unwrap()) {

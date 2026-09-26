@@ -10,8 +10,7 @@
 
 namespace paimon::texture_studio {
 
-// One animated standalone sprite shipped next to the static sheets so that
-// ImagePlus / Happy Textures can play multi-frame fusions in-game.
+// Animated standalone sprite next to static sheets: multi-frame fusions play in ImagePlus/Happy Textures.
 struct AnimatedFusionExport {
     // Zip entry path, e.g. "GJ_playBtn_001.gif" (same basename as the frame).
     std::string entryName;
@@ -24,8 +23,7 @@ struct AnimatedFusionExport {
 
 class AnimatedFusionExporter final {
 public:
-    // Static fusions already live in the sheet. Per-sprite failures log and skip
-    // so the pack still exports.
+    // Statics already live in the sheet; per-sprite failures log-and-skip so export survives.
     static geode::Result<std::vector<AnimatedFusionExport>> exportAll(
         PackExportConfig const& cfg);
 

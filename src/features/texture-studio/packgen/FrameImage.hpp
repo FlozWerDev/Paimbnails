@@ -1,8 +1,5 @@
 #pragma once
-// FrameImage: minimal row-major RGBA8 value image for PackGen v2.
-// Pure C++ (no Geode/cocos/stb) so tests and benches compile with a bare
-// g++/clang++ in seconds. The engine adapts to/from ImageBuffer at the
-// boundary (see SheetTinter / LuminanceTinter call sites).
+// Minimal row-major RGBA8 value image. Pure C++ (no Geode/cocos/stb): benches build with bare g++ in seconds.
 
 #include <algorithm>
 #include <cstddef>
@@ -124,7 +121,7 @@ public:
         *this = std::move(rot);
     }
 
-    // 2x2 box average downscale by half (matches SheetTinter's 0.5 path).
+    // 2x2 box-average halve (matches SheetTinter's 0.5 path).
     FrameImage boxHalf() const {
         if (empty()) return {};
         int nw = std::max(1, m_w / 2), nh = std::max(1, m_h / 2);

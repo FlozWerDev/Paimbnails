@@ -122,7 +122,7 @@ bool filteredOut(LevelRequest const& request) {
 
 std::string requestNote(LevelRequest const& request) {
     if (request.platform != Platform::Web) return {};
-// Legacy queue filler is not a real note.
+    // Legacy queue filler is not a real note.
     if (request.message == fmt::format("Web request: {}", request.levelID)) return {};
     return trimCopy(request.message);
 }
@@ -143,7 +143,7 @@ TwitchRequestManager::Link const& TwitchRequestManager::link(Platform platform) 
 
 void TwitchRequestManager::init() {
     if (m_initialized) return;
-// Run before going live so setting listeners remain no-ops.
+    // Run before going live so setting listeners remain no-ops.
     migrateChannels();
 
     m_initialized = true;
@@ -196,7 +196,7 @@ void TwitchRequestManager::shutdown() {
     }
     stopWebRequests();
     saveQueue();
-    // Un load posterior en el mismo proceso debe poder inicializarlo todo de nuevo.
+    // a later load in the same process must init everything again.
     m_initialized = false;
 }
 
@@ -273,7 +273,7 @@ void TwitchRequestManager::setState(
 }
 
 std::string TwitchRequestManager::channelSetting(Platform platform) const {
-// Web's channel is the GD account and is not user-entered.
+    // Web's channel is the GD account and is not user-entered.
     if (platform == Platform::Web) return m_webUser;
     auto const* key = channelSettingKey(platform);
     if (!Mod::get()->hasSetting(key)) return {};
@@ -288,7 +288,7 @@ void TwitchRequestManager::setChannelSetting(Platform platform, std::string valu
     if (platform == Platform::Web) return;
     value = trimCopy(std::move(value));
     if (value == channelSetting(platform)) return;
-// Writing the setting restarts that platform through its listener.
+    // Writing the setting restarts that platform through its listener.
     Mod::get()->setSettingValue<std::string>(channelSettingKey(platform), value);
 }
 
@@ -428,7 +428,6 @@ void TwitchRequestManager::connectWebRequests() {
         m_webReconnectDelay = 3;
         m_webUser = std::move(user);
         setWebState(ConnectionState::Connected, "Tu pagina: " + webUrl());
-        log::info("[WebRequests] escuchando en {}", webUrl());
     };
     callbacks.onRequest = [this, generation](WebRequest incoming) {
         if (generation != m_webGeneration || m_shuttingDown) return std::string("disabled");
@@ -511,8 +510,8 @@ void TwitchRequestManager::scheduleMonitor() {
 void TwitchRequestManager::monitor() {
     if (!m_initialized || m_shuttingDown || !m_live) return;
 
-    // requestPasses() encola lookups sin UI abierta: hay que drenarla para que
-    // las reglas sigan valiendo en segundo plano.
+    // requestPasses() queues lookups with no UI open: drain it so rules
+    // still apply in the background.
     TwitchLevelBriefCache::get().tick();
 
     for (int index = 0; index < kPlatformCount; ++index) {
@@ -547,7 +546,7 @@ std::string TwitchRequestManager::addWebRequest(WebRequest incoming) {
     parsed.levelID = incoming.levelID;
     parsed.command = "web";
     parsed.url = std::move(incoming.video);
-// Empty notes hide the row's read button.
+    // empty notes hide the row's read button.
     return enqueueRequest(
         Platform::Web,
         std::move(incoming.requester),
@@ -605,7 +604,7 @@ std::string TwitchRequestManager::enqueueRequest(
     }
 
     if (static_cast<int>(m_requests.size()) >= maxQueueSize()) return "full";
-// Known levels that fail filters never enter the queue.
+    // Known levels that fail filters never enter the queue.
     if (auto passes = requestPasses(parsed.levelID, !parsed.url.empty()); passes && !*passes) return "filtered";
 
     LevelRequest request;
@@ -673,7 +672,7 @@ void TwitchRequestManager::setFilters(RequestFilters filters) {
     }
     Mod::get()->setSavedValue<matjson::Value>(kFilterVideoRulesKey, videoRulesArray);
 
-// The list watches queueRevision to rebuild.
+    // The list watches queueRevision to rebuild.
     ++m_queueRevision;
     paimon::requestDeferredModSave();
 }
@@ -759,12 +758,10 @@ void TwitchRequestManager::moveToFront(size_t index) {
 }
 
 void TwitchRequestManager::clear() {
-    if (m_requests.empty()) {
-        m_lastRequestAt.clear();
-        return;
-    }
+    bool const hadRequests = !m_requests.empty();
     m_requests.clear();
     m_lastRequestAt.clear();
+    if (!hadRequests) return;
     ++m_queueRevision;
     saveQueue();
 }

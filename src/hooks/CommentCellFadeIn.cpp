@@ -1,5 +1,3 @@
-// Debounce recycled cells so fast scrolling does not restart the fade.
-
 #include <Geode/Geode.hpp>
 #include <Geode/modify/CommentCell.hpp>
 #include "../framework/HookConventions.hpp"
@@ -24,16 +22,14 @@ class $modify(PaimonCommentFadeIn, CommentCell) {
 
         if (!comment || paimon::isRuntimeShuttingDown()) return;
 
-// The debounce covers a typical recycle interval without delaying initial display.
+        // recycled cells refire on fast scroll; debounce the fade
         auto now = std::chrono::steady_clock::now();
-        if (m_fields->m_faded) {
-            auto elapsed = std::chrono::duration<float>(now - m_fields->m_lastFade).count();
-            if (elapsed < 0.35f) return;
-        }
+        if (m_fields->m_faded &&
+            std::chrono::duration<float>(now - m_fields->m_lastFade).count() < 0.35f) return;
         m_fields->m_lastFade = now;
         m_fields->m_faded = true;
 
-// CommentCell is not CCRGBAProtocol; revealNode fades its RGBA descendants.
+        // CommentCell lacks CCRGBAProtocol; revealNode fades its RGBA children
         paimon::fluid::revealNode(this, {.fadeDuration = 0.14f});
     }
 };

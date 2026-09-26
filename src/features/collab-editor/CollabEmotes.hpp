@@ -6,8 +6,7 @@
 #include <Geode/Geode.hpp>
 #include <string>
 
-// Chat lines reuse the mod's emote system; lines without :emote: fall back to
-// a plain colored label.
+// Chat reuses the mod emote system; lines without :emote: get a plain label.
 namespace paimon::collab {
 
 inline cocos2d::CCNode* buildChatLine(ChatMessage const& msg, float textScale) {

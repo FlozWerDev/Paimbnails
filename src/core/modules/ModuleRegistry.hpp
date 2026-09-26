@@ -1,7 +1,6 @@
 #pragma once
 
-// Central module registry: stable canonical ids (paimbnails.<feature>.<section>)
-// over whatever storage each feature already used, so nothing is migrated.
+// stable ids over existing storage; nothing is migrated.
 
 #include <functional>
 #include <string>
@@ -69,8 +68,7 @@ std::vector<Section> const& sections();
 void registerAccessor(std::string_view id, std::function<bool()> get,
                       std::function<void(bool)> set);
 
-// Display name/description in the current language; English is used for the
-// "request" modules and when the mod is not running in Spanish.
+// localized display name; English for Requests modules and non-Spanish.
 char const* localizedName(Module const& mod);
 char const* localizedDescription(Module const& mod);
 

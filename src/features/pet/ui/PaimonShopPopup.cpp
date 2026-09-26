@@ -321,7 +321,6 @@ void PaimonShopPopup::onUploadPet(CCObject*) {
             return;
         }
 
-        // use the filename (without extension) as default name
         std::string defaultName = geode::utils::string::pathToString(filepath.stem());
 
         auto* accountManager = GJAccountManager::get();

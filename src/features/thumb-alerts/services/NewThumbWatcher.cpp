@@ -87,12 +87,11 @@ void NewThumbWatcher::pollNow() {
 
     auto const config = readConfig();
     if (!config.enabled) return;
-    // Nothing would be shown from here anyway, and the ids would be burned.
+    // Nothing shown from here anyway, and the ids would burn.
     if (!alertsAllowedHere(config)) return;
 
     m_inFlight = true;
-    // /api/latest-uploads has no route of its own any more; the feed only comes
-    // out through discovery, so the other lists are asked for at their minimum.
+    // latest-uploads has no route of its own; feed comes via discovery, other lists at minimum.
     HttpClient::get().fetchDiscovery(1, 1, kMaxUploads, [](bool ok, std::string const& body) {
         auto& watcher = NewThumbWatcher::get();
         watcher.m_inFlight = false;
@@ -147,12 +146,11 @@ bool NewThumbWatcher::acceptEntry(matjson::Value const& entry, NewThumb& out, bo
         out.eventId = fmt::format("thumbnail:{}:{}", out.levelId,
                                   stringField(entry, "thumbnailId"));
     }
-    // Whichever channel got here first already announced it.
+    // First channel here already announced it.
     if (!this->markSeen(out.eventId)) return false;
     marked = true;
 
-    // Our own upload already got its card off the upload reply; the feed keeps
-    // one entry per level, so one match consumes one suppression.
+    // Own upload already carded off the reply; one feed match consumes one suppression.
     if (auto self = std::ranges::find(m_selfUploads, out.levelId);
         self != m_selfUploads.end()) {
         m_selfUploads.erase(self);
@@ -177,8 +175,7 @@ void NewThumbWatcher::onPushMessage(std::string const& message) {
     if (paimon::isRuntimeShuttingDown()) return;
     if (!paimon::modules::isEnabled(kModuleId)) return;
 
-    // Dropped before recording the id, like the poll skipping these scenes: the
-    // catch-up poll shows it once the player is somewhere the card is welcome.
+    // Dropped pre-id like the poll's scene skip; catch-up poll shows it where welcome.
     auto const config = readConfig();
     if (!config.enabled || !alertsAllowedHere(config)) return;
 
@@ -197,8 +194,7 @@ void NewThumbWatcher::onPushMessage(std::string const& message) {
     }
     this->saveSeen();
 
-    // Before the first poll there is no baseline, and a pushed entry is new by
-    // definition, so it does not need one.
+    // Pre-first-poll pushed entries are new by definition: no baseline needed.
     if (!Mod::get()->getSavedValue<bool>(kSeededKey, false)) {
         Mod::get()->setSavedValue<bool>(kSeededKey, true);
     }
@@ -222,8 +218,7 @@ void NewThumbWatcher::onResponse(std::string const& body) {
     std::vector<NewThumb> fresh;
     bool marked = false;
 
-    // The feed is newest first; walk it backwards so several new thumbnails
-    // come out in the order they were published.
+    // Newest first: walk backwards so cards come out in publish order.
     size_t const count = std::min(entries.size(), kMaxUploads);
     for (size_t index = count; index-- > 0;) {
         auto const& entry = entries[index];
@@ -233,13 +228,11 @@ void NewThumbWatcher::onResponse(std::string const& body) {
         if (this->acceptEntry(entry, item, marked)) fresh.push_back(std::move(item));
     }
 
-    // Suppressed entries count too: they are new ids, and forgetting them would
-    // replay our own upload on the next launch.
+    // Suppressed ids count too, or our upload replays next launch.
     if (!marked) return;
     this->saveSeen();
 
-    // First run only records the baseline: everything already on the feed is
-    // old news, and 20 cards in a row would be a wall.
+    // First run records the baseline only: 20 cards in a row would be a wall.
     if (!Mod::get()->getSavedValue<bool>(kSeededKey, false)) {
         Mod::get()->setSavedValue<bool>(kSeededKey, true);
         paimon::requestDeferredModSave();

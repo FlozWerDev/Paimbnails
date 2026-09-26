@@ -32,7 +32,7 @@ bool looksLikeUrl(std::string_view token) {
     return scheme.starts_with("http://") || scheme.starts_with("https://");
 }
 
-// Los links del chat suelen venir con puntuacion pegada al final.
+// chat links often carry trailing punctuation.
 std::string cleanUrl(std::string_view token) {
     constexpr std::string_view junk = ",.;:!?)]}>\"'";
     while (!token.empty() && junk.find(token.back()) != std::string_view::npos) {
@@ -125,7 +125,7 @@ std::optional<ParsedRequest> parseRequest(
         ParsedRequest parsed;
         parsed.command = command;
 
-        // Por tokens: asi un link con numeros dentro no se cuela como ID.
+        // per token, so a link with digits never parses as ID.
         forEachToken(rest, [&parsed](std::string_view token) {
             if (looksLikeUrl(token)) {
                 if (parsed.url.empty()) parsed.url = cleanUrl(token);

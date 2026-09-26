@@ -34,8 +34,7 @@ bool CoverHero::init(const CCSize& size, float skew) {
     this->setContentSize(m_size);
     this->setAnchorPoint({0.f, 0.5f});
 
-    // Diagonal solo en el borde superior-derecho; las esquinas izquierdas
-    // se dejan rectas porque el content clipper del popup ya las redondea.
+    // diagonal on top-right only; left corners stay square, the popup clipper rounds them.
     auto stencil = PaimonDrawNode::create();
     if (stencil) {
         CCPoint poly[4] = {

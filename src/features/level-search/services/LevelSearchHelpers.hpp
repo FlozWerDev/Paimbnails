@@ -1,19 +1,15 @@
 #pragma once
 
-// Reusable helpers extracted from hooks/LevelSearchLayer.cpp's anonymous namespace.
-
 #include <cocos2d.h>
 #include <Geode/binding/LevelSearchLayer.hpp>
 #include <algorithm>
 
 namespace paimon::levelsearch {
 
-// Release the search input's focus state so no IME/keyboard listener survives a
-// scene change (otherwise the text input keeps eating keys in gameplay).
+// Releases search focus so no IME listener survives the scene change.
 void releaseSearchInputFocus(LevelSearchLayer* layer);
 
-// CCMenu that ignores touches outside a bounds node's world rect. CCClippingNode
-// only clips rendering, not input, so scrolled-off rows would still capture touches.
+// CCMenu ignoring touches outside a bounds node: CCClippingNode clips rendering only.
 class BoundedTouchMenu : public cocos2d::CCMenu {
 public:
     static BoundedTouchMenu* create() {
@@ -31,7 +27,7 @@ public:
         return true;
     }
 
-    // The menu doesn't retain the node; the caller must keep it alive.
+    // menu never retains the node; caller keeps it alive.
     void setBoundsNode(cocos2d::CCNode* bounds) { m_boundsNode = bounds; }
 
     bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override {

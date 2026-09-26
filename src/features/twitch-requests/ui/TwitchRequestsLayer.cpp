@@ -54,15 +54,6 @@ constexpr int kTintTag = 0x7a1;
 constexpr ccColor3B kGold = {255, 205, 61};
 constexpr ccColor3B kDesc = {171, 197, 232};
 
-bool motionOn() {
-    return !paimon::settings::smoothui::reducedMotion();
-}
-
-float animTime(float seconds) {
-    auto const speed = std::clamp(paimon::settings::smoothui::globalSpeed(), 0.35, 2.5);
-    return std::max(0.05f, seconds / static_cast<float>(speed));
-}
-
 void runEnter(CCNode* node, CCPoint target, float delay, bool bounce) {
     auto* move = CCMoveTo::create(animTime(bounce ? 0.4f : 0.5f), target);
     CCActionInterval* eased = bounce
@@ -243,13 +234,6 @@ CCMenuItemSpriteExtra* makeTextButton(
         });
 }
 
-std::string shorten(std::string text, size_t limit) {
-    if (text.size() <= limit) return text;
-    text.resize(limit > 3 ? limit - 3 : limit);
-    text += "...";
-    return text;
-}
-
 // Truncate text to its slot; shrinking below GD's readable scale is worse.
 bool fitLabel(CCLabelBMFont* label, std::string text, float room, float scale) {
     label->setScale(scale);
@@ -287,8 +271,8 @@ int levelPercent(int levelID) {
 }
 
 std::string firstCommand() {
-    auto commands = parseCommands(TwitchRequestManager::get().commandsSetting());
-    return commands.empty() ? "!req" : commands.front();
+    // parseCommands always yields at least !req.
+    return parseCommands(TwitchRequestManager::get().commandsSetting()).front();
 }
 
 bool popupOnTop() {

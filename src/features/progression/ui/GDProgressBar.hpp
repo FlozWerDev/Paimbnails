@@ -6,15 +6,12 @@
 
 namespace paimon::progression {
 
-// GJ_progressBar_001.png as a dark groove plus a tinted scale9 fill, which is
-// how the game draws its own bars: the caps stay round at any width and the
-// only per-frame work is a content size change.
+// Game-style bar: round caps at any width, per-frame work is one size change.
 class GDProgressBar : public cocos2d::CCNode {
 public:
     static GDProgressBar* create(float width, float height);
 
-    // The bar texture on its own, cap insets already set, for the places that
-    // want a plain GD capsule instead of a filled bar.
+    // Bare capsule with insets set, for plain (unfilled) bars.
     static cocos2d::extension::CCScale9Sprite* makeCapsule();
 
     void setFillColor(cocos2d::ccColor3B color);

@@ -188,8 +188,11 @@ void BlurDiskCache::lookupAsync(std::string const& key, ReadyCallback onReady) {
     }
 
     getBlurIOPool()->enqueue([this, key, onReady = std::move(onReady)]() {
-        if (m_shuttingDown.load(std::memory_order_acquire)) {
+        auto fail = [&onReady] {
             Loader::get()->queueInMainThread([onReady]() { onReady(nullptr); });
+        };
+        if (m_shuttingDown.load(std::memory_order_acquire)) {
+            fail();
             return;
         }
 
@@ -200,20 +203,20 @@ void BlurDiskCache::lookupAsync(std::string const& key, ReadyCallback onReady) {
                 std::unique_lock<std::shared_mutex> lock(m_mutex);
                 m_index.erase(key);
             }
-            Loader::get()->queueInMainThread([onReady]() { onReady(nullptr); });
+            fail();
             return;
         }
 
         std::ifstream f(path, std::ios::binary);
         if (!f) {
-            Loader::get()->queueInMainThread([onReady]() { onReady(nullptr); });
+            fail();
             return;
         }
 
         std::uint32_t header[5] = {0};
         f.read(reinterpret_cast<char*>(header), sizeof(header));
         if (!f || header[0] != MAGIC || header[1] != VERSION) {
-            Loader::get()->queueInMainThread([onReady]() { onReady(nullptr); });
+            fail();
             return;
         }
 
@@ -221,20 +224,20 @@ void BlurDiskCache::lookupAsync(std::string const& key, ReadyCallback onReady) {
         int h = static_cast<int>(header[3]);
         if (w <= 0 || h <= 0 || w > 8192 || h > 8192 ||
             static_cast<std::uint64_t>(w) * h > MAX_PIXEL_COUNT) {
-            Loader::get()->queueInMainThread([onReady]() { onReady(nullptr); });
+            fail();
             return;
         }
 
         std::size_t pixelBytes = static_cast<std::size_t>(w) * h * 4;
         auto const fileBytes = std::filesystem::file_size(path, ec);
         if (ec || fileBytes != HEADER_SIZE + pixelBytes) {
-            Loader::get()->queueInMainThread([onReady]() { onReady(nullptr); });
+            fail();
             return;
         }
         std::vector<uint8_t> pixels(pixelBytes);
         f.read(reinterpret_cast<char*>(pixels.data()), pixelBytes);
         if (!f) {
-            Loader::get()->queueInMainThread([onReady]() { onReady(nullptr); });
+            fail();
             return;
         }
 
@@ -365,8 +368,7 @@ void BlurDiskCache::clear() {
 
 void BlurDiskCache::shutdown() {
     m_shuttingDown.store(true, std::memory_order_release);
-    // Join the I/O worker here rather than leaving it to static destruction.
-    // Only touches the pool if something actually created it.
+    // join here, not in static destruction
     if (auto* pool = s_blurIOPool.load(std::memory_order_acquire)) {
         pool->shutdown();
     }

@@ -21,7 +21,7 @@ bool GIFDecoder::getDimensions(uint8_t const* data, size_t size, int& width, int
 GIFDecoder::GIFData GIFDecoder::decode(uint8_t const* data, size_t size, int maxFrames) {
     GIFData result;
     result.isAnimated = false;
-    
+
     if (!isGIF(data, size)) {
         log::error("[GIFDecoder] Not a valid GIF");
         return result;
@@ -35,7 +35,7 @@ GIFDecoder::GIFData GIFDecoder::decode(uint8_t const* data, size_t size, int max
         return result;
     }
 
-    // Cap the canvas to bound decoder memory.
+    // cap the canvas to bound decoder memory.
     constexpr int kMaxDimension = 4096;
     if (result.width <= 0 || result.height <= 0 ||
         result.width > kMaxDimension || result.height > kMaxDimension) {
@@ -68,10 +68,10 @@ GIFDecoder::GIFData GIFDecoder::decode(uint8_t const* data, size_t size, int max
     int transparentIndex = -1;
     bool hasTransparency = false;
     int disposalMethod = 0; // 0 none, 1 keep, 2 clear, 3 restore previous
-    
+
     std::vector<uint8_t> canvas(result.width * result.height * 4, 0);
     std::vector<uint8_t> backupCanvas = canvas;
-    
+
     int prevDisposal = 0;
     RawFrame prevRawFrame = {std::vector<uint8_t>(), 0, 0, 0, 0};
 
@@ -81,7 +81,7 @@ GIFDecoder::GIFData GIFDecoder::decode(uint8_t const* data, size_t size, int max
             ptr++;
             if (ptr >= end) break;
             uint8_t label = *ptr++;
-            
+
             if (label == 0xF9) {
                 if (ptr + 1 >= end) break;
                 uint8_t blockSize = *ptr++;
@@ -90,7 +90,7 @@ GIFDecoder::GIFData GIFDecoder::decode(uint8_t const* data, size_t size, int max
                     uint16_t delay = ptr[0] | (ptr[1] << 8);
                     uint8_t transIdx = ptr[2];
                     ptr += 3;
-                    
+
                     currentDelay = (delay == 0) ? 100 : delay * 10; // 10 ms units
                     hasTransparency = (packed & 1) != 0;
                     transparentIndex = transIdx;
@@ -111,8 +111,7 @@ GIFDecoder::GIFData GIFDecoder::decode(uint8_t const* data, size_t size, int max
         } else if (*ptr == 0x2C) {
             RawFrame rawFrame;
             if (parseFrame(ptr, end, rawFrame, globalPalette, transparentIndex, hasTransparency)) {
-                
-                // Apply the previous frame's disposal.
+                // apply the previous frame's disposal.
                 if (prevDisposal == 2) {
                     int x0 = std::max(0, prevRawFrame.left);
                     int y0 = std::max(0, prevRawFrame.top);
@@ -127,14 +126,14 @@ GIFDecoder::GIFData GIFDecoder::decode(uint8_t const* data, size_t size, int max
                 } else if (prevDisposal == 3) {
                     canvas = backupCanvas;
                 }
-                
-                // Save the canvas when this frame requests disposal 3.
+
+                // save the canvas when this frame requests disposal 3.
                 if (disposalMethod == 3) {
                     backupCanvas = canvas;
                 }
-                
+
                 if (!hasTransparency) {
-                    // Opaque frames can copy rows without an alpha test.
+                    // opaque frames copy rows without an alpha test.
                     int x0 = std::max(0, rawFrame.left);
                     int y0 = std::max(0, rawFrame.top);
                     int x1 = std::min(result.width, rawFrame.left + rawFrame.width);
@@ -156,7 +155,7 @@ GIFDecoder::GIFData GIFDecoder::decode(uint8_t const* data, size_t size, int max
                             if (cx >= 0 && cx < result.width && cy >= 0 && cy < result.height) {
                                 int rawIdx = (y * rawFrame.width + x) * 4;
                                 int canvasIdx = (cy * result.width + cx) * 4;
-                                
+
                                 if (rawFrame.pixels[rawIdx + 3] > 0) {
                                     canvas[canvasIdx] = rawFrame.pixels[rawIdx];
                                     canvas[canvasIdx+1] = rawFrame.pixels[rawIdx+1];
@@ -167,7 +166,7 @@ GIFDecoder::GIFData GIFDecoder::decode(uint8_t const* data, size_t size, int max
                         }
                     }
                 }
-                
+
                 Frame frame;
                 frame.left = 0;
                 frame.top = 0;
@@ -184,10 +183,10 @@ GIFDecoder::GIFData GIFDecoder::decode(uint8_t const* data, size_t size, int max
 
                 result.frames.push_back(frame);
                 frameCount++;
-                
+
                 prevDisposal = disposalMethod;
                 prevRawFrame = rawFrame;
-                
+
             } else {
                 break;
             }
@@ -199,29 +198,28 @@ GIFDecoder::GIFData GIFDecoder::decode(uint8_t const* data, size_t size, int max
     }
 
     result.isAnimated = result.frames.size() > 1;
-    log::debug("[GIFDecoder] Decodificados {} frames ({}x{})", result.frames.size(), result.width, result.height);
-    
+
     return result;
 }
 
 bool GIFDecoder::parseHeader(uint8_t const*& ptr, uint8_t const* end, int& width, int& height) {
     if (ptr + 13 > end) return false;
-    
+
     ptr += 6;
     width = ptr[0] | (ptr[1] << 8);
     height = ptr[2] | (ptr[3] << 8);
     ptr += 4;
-    
+
     return width > 0 && height > 0 && width <= 4096 && height <= 4096;
 }
 
 bool GIFDecoder::parseColorTable(uint8_t const*& ptr, uint8_t const* end, std::vector<uint8_t>& palette, int size) {
     if (ptr + size * 3 > end) return false;
-    
+
     palette.resize(size * 3);
     memcpy(palette.data(), ptr, size * 3);
     ptr += size * 3;
-    
+
     return true;
 }
 
@@ -238,26 +236,26 @@ static bool lzwDecode(std::vector<uint8_t> const& compressed, std::vector<uint8_
         int length = 0;
     };
     std::vector<DictEntry> dictionary(4096);
-    
+
     for (int i = 0; i < clearCode; ++i) {
         dictionary[i] = { -1, (uint8_t)i, 1 };
     }
-    
+
     int dictSize = eoiCode + 1;
     int oldCode = -1;
-    
-    // Read LZW codes from an LSB-first accumulator to avoid per-bit branches.
+
+    // read LZW codes from an LSB-first accumulator.
     uint32_t bitBuffer = 0;
     int bitCount = 0;
     size_t bytePos = 0;
     size_t const compressedSize = compressed.size();
-    
+
     output.reserve(pixelCount);
-    
-    // Reuse the sequence buffer to avoid per-code allocations.
+
+    // reused across codes; avoids per-code allocations.
     std::vector<uint8_t> sequence;
     sequence.reserve(4096);
-    
+
     while (output.size() < pixelCount) {
         while (bitCount < currentCodeSize) {
             if (bytePos >= compressedSize) break;
@@ -269,7 +267,7 @@ static bool lzwDecode(std::vector<uint8_t> const& compressed, std::vector<uint8_
         int code = static_cast<int>(bitBuffer & codeMask);
         bitBuffer >>= currentCodeSize;
         bitCount -= currentCodeSize;
-        
+
         if (code == clearCode) {
             currentCodeSize = minCodeSize + 1;
             codeMask = (1 << currentCodeSize) - 1;
@@ -278,9 +276,9 @@ static bool lzwDecode(std::vector<uint8_t> const& compressed, std::vector<uint8_
             oldCode = -1;
             continue;
         }
-        
+
         if (code == eoiCode) break;
-        
+
         if (oldCode == -1) {
             if (code < dictSize) {
                 output.push_back(dictionary[code].suffix);
@@ -288,10 +286,10 @@ static bool lzwDecode(std::vector<uint8_t> const& compressed, std::vector<uint8_
             }
             continue;
         }
-        
+
         int inCode = code;
         sequence.clear();
-        
+
         if (code >= dictSize) {
             if (code == dictSize) {
                 int temp = oldCode;
@@ -313,35 +311,35 @@ static bool lzwDecode(std::vector<uint8_t> const& compressed, std::vector<uint8_
             }
             std::reverse(sequence.begin(), sequence.end());
         }
-        
+
         if (sequence.empty()) return false;
         if (sequence.size() > static_cast<size_t>(pixelCount) - output.size()) return false;
         output.insert(output.end(), sequence.begin(), sequence.end());
-        
+
         if (dictSize < 4096) {
             int temp = oldCode;
-            
+
             uint8_t firstChar = sequence[0];
             dictionary[dictSize] = { oldCode, firstChar, dictionary[oldCode].length + 1 };
             dictSize++;
-            
+
             if (dictSize >= (1 << currentCodeSize) && currentCodeSize < 12) {
                 currentCodeSize++;
                 codeMask = (1 << currentCodeSize) - 1;
             }
         }
-        
+
         oldCode = inCode;
     }
-    
+
     return true;
 }
 
 bool GIFDecoder::parseFrame(uint8_t const*& ptr, uint8_t const* end, RawFrame& frame, std::vector<uint8_t> const& globalPalette, int transparentIndex, bool hasTransparency) {
     if (ptr + 10 > end) return false;
-    
+
     ptr++;
-    
+
     frame.left = ptr[0] | (ptr[1] << 8);
     frame.top = ptr[2] | (ptr[3] << 8);
     frame.width = ptr[4] | (ptr[5] << 8);
@@ -349,35 +347,35 @@ bool GIFDecoder::parseFrame(uint8_t const*& ptr, uint8_t const* end, RawFrame& f
     uint8_t flags = ptr[8];
     ptr += 9;
 
-    // Reject absurd frame sizes before allocation.
+    // reject absurd frame sizes before allocating.
     constexpr int kMaxFrameDim = 4096;
     if (frame.width <= 0 || frame.height <= 0 ||
         frame.width > kMaxFrameDim || frame.height > kMaxFrameDim) {
         return false;
     }
-    // Also reject width*height*4 overflow.
+    // also reject width*height*4 overflow.
     if (static_cast<int64_t>(frame.width) * frame.height >
         static_cast<int64_t>(kMaxFrameDim) * kMaxFrameDim) {
         return false;
     }
-    
+
     bool hasLocalColorTable = (flags & 0x80) != 0;
     int localColorTableSize = hasLocalColorTable ? (1 << ((flags & 0x07) + 1)) : 0;
     bool interlaced = (flags & 0x40) != 0;
-    
+
     std::vector<uint8_t> localPalette;
     if (hasLocalColorTable) {
         if (!parseColorTable(ptr, end, localPalette, localColorTableSize)) {
             return false;
         }
     }
-    
+
     std::vector<uint8_t> const& palette = hasLocalColorTable ? localPalette : globalPalette;
-    
+
     if (ptr >= end) return false;
     uint8_t lzwMinCodeSize = *ptr++;
     if (lzwMinCodeSize < 2 || lzwMinCodeSize > 11) return false;
-    
+
     std::vector<uint8_t> compressedData;
     while (ptr < end) {
         uint8_t blockSize = *ptr++;
@@ -386,15 +384,15 @@ bool GIFDecoder::parseFrame(uint8_t const*& ptr, uint8_t const* end, RawFrame& f
         compressedData.insert(compressedData.end(), ptr, ptr + blockSize);
         ptr += blockSize;
     }
-    
+
     std::vector<uint8_t> indices;
     if (!lzwDecode(compressedData, indices, lzwMinCodeSize, frame.width * frame.height)) {
-        log::error("[GIFDecoder] Error descomprimiendo LZW");
+        log::error("[GIFDecoder] LZW decompression failed");
         return false;
     }
-    
+
     frame.pixels.resize(frame.width * frame.height * 4);
-    
+
     std::vector<uint8_t> deinterlacedStorage;
     const std::vector<uint8_t>* finalIndices = &indices;
     if (interlaced) {
@@ -430,7 +428,7 @@ bool GIFDecoder::parseFrame(uint8_t const*& ptr, uint8_t const* end, RawFrame& f
         if (i >= static_cast<int>(finalIndices->size())) break;
 
         uint8_t colorIndex = (*finalIndices)[i];
-        
+
         if (hasTransparency && colorIndex == transparentIndex) {
             frame.pixels[i * 4 + 0] = 0;
             frame.pixels[i * 4 + 1] = 0;
@@ -451,6 +449,6 @@ bool GIFDecoder::parseFrame(uint8_t const*& ptr, uint8_t const* end, RawFrame& f
             }
         }
     }
-    
+
     return true;
 }

@@ -68,8 +68,7 @@ inline void deinterleaveNV12Row_AVF(const uint8_t* uv, uint8_t* cb, uint8_t* cr,
 
 } // anon namespace
 
-// preferredTransform components are exact 0/+-1 from the container matrix;
-// +X mapping to +Y (down) reads as clockwise on screen.
+// Container matrix maps +X to +Y (down): clockwise on screen.
 static int rotationFromTransform(CGAffineTransform t) {
     if (t.a == 0 && t.b == 1 && t.c == -1 && t.d == 0) return 90;
     if (t.a == 0 && t.b == -1 && t.c == 1 && t.d == 0) return 270;
@@ -276,7 +275,7 @@ void DecoderAVF::decodeLoop() {
             if (!sampleBuffer) {
                 bool ended = reader.status == AVAssetReaderStatusCompleted ||
                              reader.status == AVAssetReaderStatusFailed;
-// AVAssetReader cannot rewind, so a loop needs a fresh reader over the asset.
+// AVAssetReader cannot rewind; loops need a fresh reader over the asset.
                 if (ended && m_looping.load(std::memory_order_relaxed) &&
                     reader.status == AVAssetReaderStatusCompleted && buildReader(0.0)) {
                     trackOutput = (__bridge AVAssetReaderTrackOutput*)m_trackOutput;
@@ -309,7 +308,6 @@ void DecoderAVF::decodeLoop() {
 
             if (m_pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange ||
                 m_pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange) {
-                // ── NV12 bi-planar path ──
                 int yWidth   = static_cast<int>(CVPixelBufferGetWidthOfPlane(pixelBuffer, 0));
                 int yHeight  = static_cast<int>(CVPixelBufferGetHeightOfPlane(pixelBuffer, 0));
                 int uvWidth  = static_cast<int>(CVPixelBufferGetWidthOfPlane(pixelBuffer, 1));
@@ -335,7 +333,7 @@ void DecoderAVF::decodeLoop() {
                     }
                 }
             } else {
-                // ── Planar I420 path (legacy fallback) ──
+                // Planar fallback.
                 int yWidth   = static_cast<int>(CVPixelBufferGetWidthOfPlane(pixelBuffer, 0));
                 int yHeight  = static_cast<int>(CVPixelBufferGetHeightOfPlane(pixelBuffer, 0));
                 int cbWidth  = static_cast<int>(CVPixelBufferGetWidthOfPlane(pixelBuffer, 1));

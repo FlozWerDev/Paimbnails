@@ -8,7 +8,7 @@ class GJUserScore;
 
 namespace paimon::progression {
 
-// Per-unit EXP. Public so the popup can print the same numbers it awards.
+// Per-unit EXP, public so the popup prints the numbers it awards.
 namespace exp_values {
     inline constexpr int kStar          = 5;
     inline constexpr int kMoon          = 6;
@@ -17,7 +17,7 @@ namespace exp_values {
     inline constexpr int kSecretCoin    = 100;
     inline constexpr int kCreatorPoint  = 1500;
 
-    // Used when a player's demon breakdown never arrived (older cached scores).
+    // Missing breakdown in older cached scores.
     inline constexpr int kDemonFallback = 75;
 
     inline constexpr int kDemonEasy      = 100;
@@ -31,8 +31,7 @@ namespace exp_values {
     inline constexpr int kDemonInsanePlat  = 500;
     inline constexpr int kDemonExtremePlat = 1000;
 
-    // Weekly and gauntlet demons are already counted in the difficulty buckets,
-    // so they only add a bonus on top.
+    // Already counted in the buckets above; bonus only.
     inline constexpr int kDemonWeeklyBonus   = 75;
     inline constexpr int kDemonGauntletBonus = 40;
 
@@ -70,7 +69,7 @@ struct DemonBreakdown {
     int platformer() const;
 };
 
-// Shape shared by the classic (stars) and platformer (moons) info strings.
+// Shared shape of the star/moon info strings.
 struct DifficultyBreakdown {
     int autos = 0;
     int easy = 0;
@@ -95,7 +94,7 @@ struct PlayerStats {
     int creatorPoints = 0;
     int globalRank = 0;
 
-    // Filled from the versus server, not from anything the game publishes.
+    // From the versus server, not from the game.
     int64_t versusExp = 0;
     int versusWins = 0;
 
@@ -135,11 +134,10 @@ struct ExpReport {
 
 PlayerStats statsFromScore(GJUserScore* score);
 
-// Own profile only: GameStatsManager is live, the cached server score lags.
+// Own profile only: live save beats the lagging server cache.
 PlayerStats statsFromLocalSave();
 
-// The breakdown comes from the server and can outlive the account it was cached
-// for; the demon total the game counts itself decides whether it is usable.
+// Server breakdown can outlive its account; the game demon total decides.
 void reconcileDemons(PlayerStats& stats);
 
 ExpReport computeExp(PlayerStats const& stats);

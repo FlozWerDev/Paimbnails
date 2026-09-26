@@ -48,8 +48,8 @@ char const* featureCaption(GJFeatureState state) {
     }
 }
 
-// Las monedas de featured y epic cambiaron de nombre entre versiones, asi que
-// cada estado lleva su lista de recambios hasta algo que exista seguro.
+// featured/epic coin frames renamed across versions, so each state carries its
+// fallback list down to something guaranteed to exist.
 std::vector<char const*> featureFrames(GJFeatureState state) {
     switch (state) {
         case GJFeatureState::Mythic:
@@ -101,7 +101,7 @@ char const* milestoneButton(HistoryEntry const& entry, HistoryMilestone mileston
     }
 }
 
-// Icono + texto ya medidos, para poder encadenar chips en una fila.
+// Pre-measured icon + text, so chips chain in a row.
 CCNode* makeChip(std::vector<char const*> const& frames, std::string const& text,
                  ccColor3B color, float iconScale, float textScale, float maxTextWidth = 0.f) {
     constexpr float height = 13.f;
@@ -131,7 +131,7 @@ CCNode* makeChip(std::vector<char const*> const& frames, std::string const& text
     return chip;
 }
 
-// Coloca los chips de izquierda a derecha y descarta los que ya no entran.
+// Lays chips left to right, dropping what no longer fits.
 void flowChips(CCNode* parent, std::vector<CCNode*> const& chips, float x, float y,
                float maxWidth) {
     float cursor = 0.f;
@@ -157,7 +157,7 @@ CCNode* makeBadge(std::string const& text, char const* background) {
     return badge;
 }
 
-// Numero de estrellas (o lunas, en plataformas) centrado en un punto.
+// Star count (moons on platformer) centered on a point.
 void addStarBadge(CCNode* parent, int stars, bool platformer, CCPoint center,
                   float textScale, float iconScale) {
     if (stars <= 0) return;
@@ -188,8 +188,7 @@ void addStarBadge(CCNode* parent, int stars, bool platformer, CCPoint center,
     }
 }
 
-// Una de las cuatro casillas de la fila de hitos: dibujo arriba, de que va en
-// medio y cuando ocurrio abajo.
+// One of four milestone tiles: art on top, what in the middle, when below.
 void addTile(CCNode* parent, int slot, float width, float height, CCNode* icon,
              std::string const& caption, std::string const& value, ccColor3B valueColor,
              char const* valueFont) {
@@ -296,8 +295,8 @@ void LevelHistoryPopup::loadHistory() {
         if (auto popup = self.lock()) popup->applyHistory(std::move(root));
     });
 
-    // La fecha de subida no sale de los snapshots: es la estimacion aparte que
-    // publica GDHistory, y suele llegar despues que la lista.
+    // upload date never comes from snapshots: GDHistory's separate estimate,
+    // usually arriving after the list.
     gdhistory::requestLevelDate(levelID, [self](std::string const& date) {
         auto popup = self.lock();
         if (!popup || date.empty()) return;
@@ -333,11 +332,11 @@ void LevelHistoryPopup::applyHistory(matjson::Value root) {
 }
 
 void LevelHistoryPopup::refreshToolButtons() {
-    // Los botones dicen como esta la lista ahora, no lo que haria pulsarlos.
+    // buttons state the list as it is now, not what pressing would do.
     auto apply = [](ButtonSprite* sprite, char const* text) {
         if (!sprite) return;
         sprite->setString(text);
-        // El boton se quedaria con el area de toque del texto anterior.
+        // the button would keep the previous text's touch area.
         if (auto* item = typeinfo_cast<CCMenuItemSpriteExtra*>(sprite->getParent())) {
             item->setContentSize(sprite->getScaledContentSize());
         }
@@ -427,8 +426,7 @@ CCNode* LevelHistoryPopup::makeStateBlock(float width) {
         block->addChild(chip, 1);
     }
 
-    // Lo raro va primero: si la fila se queda sin sitio se cortan los ultimos,
-    // y un nivel borrado o un daily importan mas que la duracion.
+    // odd ones first: clipped rows cut the tail, and deleted/daily outranks length.
     std::vector<CCNode*> chips;
     if (history.deleted) {
         chips.push_back(makeChip({"GJ_deleteIcon_001.png", "GJ_deleteBtn_001.png"},
@@ -472,11 +470,9 @@ CCNode* LevelHistoryPopup::makeMilestoneBlock(float width) {
     auto* block = makeBlock(width, kMilesH, 85);
     float const tileW = width / 4.f;
 
-    // Las fechas exactas van en dorado; lo que solo se puede acotar ("antes
-    // de...") o nunca paso se queda en gris para no confundirlas.
+    // exact dates read gold; bounded ("before...") or never-happened stays gray.
     //
-    // Fecha de subida: la estimacion de GDHistory cuando llego, y si no el
-    // snapshot mas viejo que existe.
+    // Upload date: GDHistory's estimate once it lands, else the oldest snapshot.
     auto* uploadIcon = firstFrame({"GJ_timeIcon_001.png"});
     if (uploadIcon) uploadIcon->setScale(0.5f);
     addTile(block, 0, tileW, kMilesH, uploadIcon,
@@ -561,8 +557,8 @@ CCNode* LevelHistoryPopup::makeEntryCell(HistoryEntry const& entry, int index, f
     button->setPosition({width / 2.f, kCellH / 2.f});
     menu->addChild(button);
 
-    // El boton coloca el fondo a su manera; recolocarlo deja toda la fila en
-    // coordenadas de (0,0) a (ancho,alto), que es donde va el resto.
+    // the button lays its background its own way; relaying out puts the whole
+    // row in (0,0)-(w,h) coords, where the rest goes.
     panel->setAnchorPoint({0.f, 0.f});
     panel->setPosition({0.f, 0.f});
 

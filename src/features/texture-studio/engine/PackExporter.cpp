@@ -326,11 +326,9 @@ geode::Result<PackExportResult> PackExporter::exportPack(
                 if (pngPath && plistPath) {
                     req.sourcePng      = pngPath.unwrap();
                     req.sourcePlist    = plistPath.unwrap();
-                    // No overlay masks ship locally: null selects the
-                    // clustering fallback inside SheetTinter.
+                    // Null picks the clustering fallback inside SheetTinter.
                     req.overlaySources = nullptr;
-                    // Prefer live pixels captured on the main thread
-                    // (already-remapped sheets) over the disk file.
+                    // Prefer live main-thread pixels (already-remapped sheets) over disk.
                     if (auto snap = LocalBasePack::get().snapshotFor(pngRel)) {
                         req.sourcePng = *snap;
                     }
@@ -415,10 +413,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         req.colors                  = cfg.colors;
         req.brightness              = cfg.brightness;
         req.alternativeGlowOverlay  = cfg.alternativeGlowOverlay;
-        // UI-only like project sheets: only Button/Menu UI frames are
-        // tinted, so unselected gameplay sheets stay vanilla. (Mod sheets
-        // cannot be classified reliably by name; their frames fall back to
-        // Other and stay vanilla unless overridden per sprite.)
+        // UI-only like project sheets: unselected gameplay stays vanilla (mod frames fall back to Other).
         req.onlyTintUiSprites       = cfg.onlyTintUiSprites;
         req.tintScope               = cfg.tintScope;
         req.saturation              = cfg.saturation;
@@ -426,8 +421,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         req.spriteSkip              = cfg.spriteSkip;
         req.spriteImages            = cfg.spriteImages;
         req.spriteFusions           = cfg.spriteFusions;
-        // No overlay masks ship locally: null selects the clustering
-        // fallback, so every local sheet is tinted.
+        // No local overlay masks: null picks the clustering fallback.
         req.overlaySources          = nullptr;
 
         auto outRes = SheetTinter::process(req);
@@ -438,8 +432,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
         auto out = std::move(outRes).unwrap();
 
-        // The installed plist stays authoritative, so the PNG must use its
-        // layout; the local source can be a different version of the sheet.
+        // Installed plist stays authoritative: PNG must match its layout.
         auto conformed = SheetRetarget::conform(out.pngBytes, req.sourcePlist, autoSheet.pngRel);
         bool layoutDrifted = false;
         if (!conformed.message.empty()) logMessages.push_back(conformed.message);
@@ -449,7 +442,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
                 layoutDrifted = true;
                 break;
             case RetargetOutcome::Status::Failed:
-                // A mismatched atlas deforms every frame, so ship nothing.
+                // Mismatched atlas deforms every frame: ship nothing.
                 ++result.standaloneFailed;
                 continue;
             case RetargetOutcome::Status::NotInstalled:
@@ -467,8 +460,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         ++result.standaloneProcessed;
 
         if (cfg.includeMediumPort && layoutDrifted) {
-            // The port ships the source's plist, which would hide the frames
-            // the installed version added.
+            // Port ships the source plist, which would hide installed-added frames.
             logMessages.push_back(autoSheet.pngRel + " (hd): skipped, sheet is out of date");
         } else if (cfg.includeMediumPort && autoSheet.qualitySuffix == "-uhd") {
             // The -hd port re-packs the atlas, so it needs its own plist.
@@ -500,10 +492,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
         auto base = std::move(baseImg).unwrap();
 
-        // UI-only: vanilla loose textures tint only Button/Menu UI sprites
-        // (e.g. GJ_button_01-uhd.png); other loose art stays vanilla. Mod
-        // files keep their own opt-in (includeModTextures): name-based
-        // classification cannot tell mod gameplay apart from mod UI.
+        // UI-only: loose vanilla textures tint Button/Menu UI only; mod files keep their own opt-in.
         if (cfg.onlyTintUiSprites && rel.find('/') == std::string::npos) {
             auto kind = UiSpriteCatalog::classify(rel, "");
             if (!UiSpriteCatalog::shouldTint(kind, cfg.tintScope)) {
@@ -547,8 +536,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
         ++result.standaloneProcessed;
 
-        // Halve -uhd textures for medium ports unless excluded; fonts and
-        // pre-scaled atlases break when resized.
+        // Halve -uhd for medium ports unless excluded; fonts and pre-scaled atlases break on resize.
         if (cfg.includeMediumPort && endsWith(rel, "-uhd.png") &&
             !manifest.isNoScaling(rel)) {
             auto half = tinted.resizedBilinear(

@@ -3,11 +3,10 @@
 #include <Geode/Geode.hpp>
 #include <functional>
 
-// Historial de busqueda: tocar relanza, X elimina, "Clear" vacia.
+// Search history: tap reruns, X deletes, "Clear" empties.
 class SearchHistoryPopup : public geode::Popup {
 public:
-    // El callback recibe el indice de la entrada elegida en
-    // paimon::searchhistory::history.
+    // Callback gets the picked entry index into paimon::searchhistory::history.
     static SearchHistoryPopup* create(std::function<void(int)> callback);
 
 protected:

@@ -47,22 +47,9 @@ namespace {
 }
 
 extern void initPetTicker();
-
 extern void initCursorTicker();
-
 extern void initVolumeScrollTicker();
-
 extern void initDynamicVolumeTicker();
-
-static CCNode* buildProfileClipContainer(
-    CCNode* imageNode,
-    std::string const& /*shapeName*/,
-    float targetSize,
-    ProfilePicConfig const& picCfg
-) {
-    if (!imageNode) return nullptr;
-    return paimon::profile_pic::composeProfilePicture(imageNode, targetSize, picCfg);
-}
 
 class $modify(PaimonMenuLayer, MenuLayer) {
     static void onModify(auto& self) {
@@ -73,13 +60,13 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         Ref<CCSprite> m_bgSprite = nullptr;
         Ref<CCLayerColor> m_bgOverlay = nullptr;
         bool m_adaptiveColors = false;
-// Cache the button weakly; other mods may remove it.
+        // cache the button weakly; other mods may remove it
         WeakRef<CCNode> m_hubBtnCached;
         bool m_hubBtnSearched = false;
         int m_adaptiveFrameCounter = 0;
         ccColor3B m_lastAdaptiveColor = {255, 255, 255};
         int m_badgeFrameCounter = 0;
-// Decode custom backgrounds off-thread; the loader cancels on scene exit.
+        // decode custom backgrounds off-thread; the loader cancels on scene exit
         paimon::image::RetainedLazyTextureLoad m_bgStaticLoad;
     };
 
@@ -105,16 +92,10 @@ class $modify(PaimonMenuLayer, MenuLayer) {
 
     void applyAdaptiveColor(ccColor3B color) {
         auto tintNode = [color](CCNode* node) {
-             if (!node) return;
-             if (auto btn = typeinfo_cast<ButtonSprite*>(node)) {
-                 btn->setColor(color);
-             } 
-             else if (auto spr = typeinfo_cast<CCSprite*>(node)) {
-                 spr->setColor(color);
-             }
-             else if (auto lbl = typeinfo_cast<CCLabelBMFont*>(node)) {
-                 lbl->setColor(color);
-             }
+            if (!node) return;
+            if (auto btn = typeinfo_cast<ButtonSprite*>(node)) btn->setColor(color);
+            else if (auto spr = typeinfo_cast<CCSprite*>(node)) spr->setColor(color);
+            else if (auto lbl = typeinfo_cast<CCLabelBMFont*>(node)) lbl->setColor(color);
         };
 
         static char const* menuIDs[] = {
@@ -131,10 +112,8 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             }
         }
 
-        if (auto lbl = typeinfo_cast<CCLabelBMFont*>(this->getChildByID("player-username"))) {
-            lbl->setColor(color);
-        }
-    } 
+        if (auto lbl = typeinfo_cast<CCLabelBMFont*>(this->getChildByID("player-username"))) lbl->setColor(color);
+    }
 
     CCMenuItemSpriteExtra* createPaimonHubButton() {
         auto logoSpr = CCSprite::create("Logo.png"_spr);
@@ -158,12 +137,10 @@ class $modify(PaimonMenuLayer, MenuLayer) {
 
     $override
     bool init() {
-        if (!MenuLayer::init()) {
-            return false;
-        }
+        if (!MenuLayer::init()) return false;
         log::info("[MenuLayer] init");
 
-// Menu entry clears stale Paimon audio ownership.
+        // menu entry clears stale paimon audio ownership
         {
             using namespace paimon;
             bool anyStuck =
@@ -186,9 +163,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             this->scheduleOnce(schedule_selector(PaimonMenuLayer::deferredMenuServicesInit), 0.35f);
         }
 
-        paimon::forum::ForumApi::get().sendHeartbeat([](paimon::forum::Result<bool> result) {
-            log::debug("[Heartbeat] Initial heartbeat sent: {}", result.ok && result.data);
-        });
+        paimon::forum::ForumApi::get().sendHeartbeat([](paimon::forum::Result<bool>) {});
         this->schedule(schedule_selector(PaimonMenuLayer::tickHeartbeat), 60.f);
 
         paimon::SessionState::get().currentListID = 0;
@@ -237,21 +212,20 @@ class $modify(PaimonMenuLayer, MenuLayer) {
     $override
     void update(float dt) {
         MenuLayer::update(dt);
-        
-        if (m_fields->m_adaptiveColors && m_fields->m_bgSprite) {
-             if (++m_fields->m_adaptiveFrameCounter >= 4) {
-                 m_fields->m_adaptiveFrameCounter = 0;
-                 if (auto gif = typeinfo_cast<AnimatedGIFSprite*>(static_cast<CCSprite*>(m_fields->m_bgSprite))) {
-                     auto colors = gif->getCurrentFrameColors();
-                     ccColor3B newColor = {colors.first.r, colors.first.g, colors.first.b};
-                     if (newColor.r != m_fields->m_lastAdaptiveColor.r ||
-                         newColor.g != m_fields->m_lastAdaptiveColor.g ||
-                         newColor.b != m_fields->m_lastAdaptiveColor.b) {
-                         m_fields->m_lastAdaptiveColor = newColor;
-                         this->applyAdaptiveColor(newColor);
-                     }
-                 }
-             }
+
+        if (m_fields->m_adaptiveColors && m_fields->m_bgSprite &&
+            ++m_fields->m_adaptiveFrameCounter >= 4) {
+            m_fields->m_adaptiveFrameCounter = 0;
+            if (auto gif = typeinfo_cast<AnimatedGIFSprite*>(m_fields->m_bgSprite.data())) {
+                auto colors = gif->getCurrentFrameColors();
+                ccColor3B newColor = {colors.first.r, colors.first.g, colors.first.b};
+                if (newColor.r != m_fields->m_lastAdaptiveColor.r ||
+                    newColor.g != m_fields->m_lastAdaptiveColor.g ||
+                    newColor.b != m_fields->m_lastAdaptiveColor.b) {
+                    m_fields->m_lastAdaptiveColor = newColor;
+                    this->applyAdaptiveColor(newColor);
+                }
+            }
         }
 
         if (ProfilePicCustomizer::get().isDirty()) {
@@ -267,7 +241,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
     }
 
     void applyUpdateBadge() {
-// Cache the button weakly; it may be recreated with the scene.
+        // cache the button weakly; it may be recreated with the scene
         Ref<CCNode> btnRef;
         if (!m_fields->m_hubBtnSearched) {
             auto* found = this->getChildByIDRecursive("paimon-hub-btn"_spr);
@@ -299,9 +273,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                 layer->ignoreAnchorPointForPosition(false);
                 layer->setAnchorPoint({0.5f, 0.5f});
                 badgeNode = layer;
-            } else {
-                badge->setScale(0.45f);
-            }
+            } else badge->setScale(0.45f);
             badgeNode->setID("paimon-hub-update-badge"_spr);
             auto sz = btn->getContentSize();
             badgeNode->setPosition({sz.width - 4.f, sz.height - 4.f});
@@ -318,10 +290,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
     }
 
     void openVerificationQueue(float dt) {
-        auto scene = VerificationCenterLayer::scene();
-        if (scene) {
-            TransitionManager::get().pushScene(scene);
-        }
+        if (auto scene = VerificationCenterLayer::scene()) TransitionManager::get().pushScene(scene);
     }
 
     void deferredMenuServicesInit(float) {
@@ -339,7 +308,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         paimon::dynvol::DynamicVolumeManager::get().init();
         initDynamicVolumeTicker();
 
-// Load pet/cursor config off-thread; apply on the main thread.
+// load pet/cursor config off-thread; apply on the main thread
         paimon::ThreadTracker::get().spawn([]() {
             geode::utils::thread::setName("PaimonPetCursorLoad");
             if (paimon::isRuntimeShuttingDown()) return;
@@ -369,11 +338,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
     }
 
     void tickHeartbeat(float dt) {
-        paimon::forum::ForumApi::get().sendHeartbeat([](paimon::forum::Result<bool> result) {
-            if (!result.ok || !result.data) {
-                log::debug("[Heartbeat] Forum server heartbeat failed or offline");
-            }
-        });
+        paimon::forum::ForumApi::get().sendHeartbeat([](paimon::forum::Result<bool>) {});
     }
 
     $override
@@ -383,10 +348,8 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         if (!s_menuServicesInitialized) s_menuServicesScheduled = false;
         this->unschedule(schedule_selector(PaimonMenuLayer::openVerificationQueue));
         this->unscheduleUpdate();
-        if (m_fields->m_bgSprite) {
-            if (auto* shaderSpr = typeinfo_cast<Shaders::ShaderBgSprite*>(m_fields->m_bgSprite.data())) {
-                shaderSpr->unschedule(schedule_selector(Shaders::ShaderBgSprite::updateShaderTime));
-            }
+        if (auto* shaderSpr = typeinfo_cast<Shaders::ShaderBgSprite*>(m_fields->m_bgSprite.data())) {
+            shaderSpr->unschedule(schedule_selector(Shaders::ShaderBgSprite::updateShaderTime));
         }
         m_fields->m_bgStaticLoad.reset();
         MenuLayer::onExit();
@@ -402,12 +365,9 @@ class $modify(PaimonMenuLayer, MenuLayer) {
     }
 
     void updateBackground() {
-        log::info("[MenuLayer] updateBackground");
         auto cfg = LayerBackgroundManager::get().getConfig("menu");
 
-// Legacy background migration runs once at startup; the unified saved value is
-// the source of truth after that.
-
+        // legacy migration runs once at startup; the unified saved value is the source of truth after
         if (cfg.type == "default"
             || !paimon::modules::isEnabled("paimbnails.backgrounds.global")) {
             if (auto bg = this->getChildByID("main-menu-bg")) {
@@ -432,15 +392,15 @@ class $modify(PaimonMenuLayer, MenuLayer) {
 
         if (auto oldContainer = this->getChildByID("paimon-bg-container"_spr)) {
             oldContainer->removeFromParent();
-        }        bool nextOwnsVideoAudio =
-            LayerBackgroundManager::get().resolveConfig("menu").type == "video" &&
+        }
+
+        auto resolvedMenuCfg = LayerBackgroundManager::get().resolveConfig("menu");
+        bool nextOwnsVideoAudio =
+            resolvedMenuCfg.type == "video" &&
             paimon::settings::video::audioEnabled();
 
-        {
-            std::string nextResolvedType = LayerBackgroundManager::get().resolveConfig("menu").type;
-            if (nextResolvedType != "video") {
-                LayerBackgroundManager::get().cleanupOldVideoCache(this, "");
-            }
+        if (resolvedMenuCfg.type != "video") {
+            LayerBackgroundManager::get().cleanupOldVideoCache(this, "");
         }
 
         LayerBackgroundManager::get().clearAppliedBackground(this, nextOwnsVideoAudio);
@@ -717,7 +677,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         bool adaptive = Mod::get()->getSavedValue<bool>("bg-adaptive-colors", false);
         m_fields->m_adaptiveColors = adaptive;
         if (adaptive && resolvedType == "custom" && !resolvedPath.empty()) {
-// Use WeakRef across threads; lock it only on the main thread.
+            // WeakRef across threads; lock only on the main thread
             WeakRef<MenuLayer> safeThis = this;
             std::string pathCopy = resolvedPath;
             paimon::ThreadTracker::get().spawn([safeThis, pathCopy]() {
@@ -746,15 +706,11 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         } else {
             this->applyAdaptiveColor({255, 255, 255});
         }
-
-        log::debug("Updated menu background with unified config, type: {}", cfg.type);
     }
 
     void updateProfileButton() {
         auto profileMenu = this->getChildByID("profile-menu");
-        if (!profileMenu) {
-            profileMenu = this->getChildByIDRecursive("profile-menu");
-        }
+        if (!profileMenu) profileMenu = this->getChildByIDRecursive("profile-menu");
         if (!profileMenu) return;
 
         auto profileButton = typeinfo_cast<CCMenuItemSpriteExtra*>(profileMenu->getChildByID("profile-button"));
@@ -763,8 +719,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         float const targetSize = 48.0f;
 
         auto picCfg = ProfilePicCustomizer::get().getConfig();
-        std::string shapeName = picCfg.stencilSprite;
-        if (shapeName.empty()) shapeName = "circle";
 
         if (!picCfg.profileFont.empty()) {
             if (auto lbl = typeinfo_cast<CCLabelBMFont*>(this->getChildByID("player-username"))) {
@@ -787,13 +741,13 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             auto path = photo.path;
             AnimatedGIFSprite::pinGIF(path);
             Ref<CCMenuItemSpriteExtra> safeProfileBtn = profileButton;
-            AnimatedGIFSprite::createAsync(path, [safeProfileBtn, targetSize, shapeName, picCfg, path](AnimatedGIFSprite* anim) {
+            AnimatedGIFSprite::createAsync(path, [safeProfileBtn, targetSize, picCfg, path](AnimatedGIFSprite* anim) {
                 if (!anim || !safeProfileBtn->getParent()) {
                     AnimatedGIFSprite::unpinGIF(path);
                     return;
                 }
 
-                auto container = buildProfileClipContainer(anim, shapeName, targetSize, picCfg);
+                auto container = paimon::profile_pic::composeProfilePicture(anim, targetSize, picCfg);
                 if (container) {
                     safeProfileBtn->setNormalImage(container);
                 }
@@ -804,7 +758,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         auto imageNode = paimon::profile_pic::createResolvedPhotoNode(photo);
         if (!imageNode) return;
 
-        auto container = buildProfileClipContainer(imageNode, shapeName, targetSize, picCfg);
+        auto container = paimon::profile_pic::composeProfilePicture(imageNode, targetSize, picCfg);
         if (container) {
             profileButton->setNormalImage(container);
         }

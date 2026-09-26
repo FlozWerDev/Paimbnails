@@ -6,10 +6,9 @@ varying vec2 v_texCoord;
 uniform sampler2D u_texture;
 uniform float u_intensity;
 uniform float u_time;
-uniform vec2 u_cursor; // normalized 0..1 cursor/touch position
+uniform vec2 u_cursor;
 
 void main() {
-    // Cursor drives the chromatic direction and strength
     vec2 cursorDir = v_texCoord - u_cursor;
     float dist = length(cursorDir);
     float pulse = 1.0 + 0.3 * sin(u_time * 1.8);

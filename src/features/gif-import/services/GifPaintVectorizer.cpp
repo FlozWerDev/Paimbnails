@@ -18,48 +18,48 @@ namespace paimon::gifimport {
 namespace {
 
 constexpr float kBandWidth = 3.f;
-// Inglete de banda por lado: 0.0 devuelve picos en juntas sin extension.
+// band miter per side: 0.0 returns peaks at extension-less joints.
 constexpr float kBandMiter = 0.15f;
 constexpr float kOvershoot = 0.72f;
 constexpr float kFreeOvershoot = 0.2f;
 constexpr float kSmoothTolerance = 0.9f;
 constexpr float kThinRadius = 4.25f;
-// Ancho a partir del cual la mancha ya no es trazo sino zona maciza.
+// width past which the blob is solid area, not stroke.
 constexpr int kThickSpan = 5;
-// Fragmentos cortos van por cadena o reparos, no por losa.
+// short fragments go by chain or patches, not slab.
 constexpr int kLongSpan = 16;
-// Diagonal llena su caja; ele/ese dejan media caja vacia que tapa lo de abajo.
+// diagonals fill their box; L/S shapes leave half the box empty, covering below.
 constexpr float kPatchSlack = 1.7f;
-// Asomar sobre capa tapada cuesta menos que sobre el dibujo.
+// spilling over covered layers costs less than over the drawing.
 constexpr float kCoveredSpill = 0.35f;
-// Largo minimo en grosores para que compense trazar como trazo.
+// min length in thicknesses for stroke tracing to pay off.
 constexpr float kChainSlenderness = 3.f;
-// Tope de derrame de tira antes de tirarla.
+// strip spill cap before dropping it.
 constexpr float kChainSpill = 0.06f;
-// Suave pisa media celda vecina: derrame 15% y corte recta/girada a 14 grados.
+// Smooth steps on half a neighbor cell: 15% spill, straight/turned cut at 14 degrees.
 constexpr float kSmoothSpill = 0.15f;
 constexpr float kSmoothStraightAngle = 14.f;
-// Borrado final de cadena: 0.007 es el minimo de picos sin mover geometria.
+// final chain erase: 0.007 is the peak floor without moving geometry.
 constexpr float kChainEraseSpill = 0.007f;
-// Disco solo si el pico del bisel asoma 0.5 celdas sobre lo que el disco tapa.
+// disc only when the bevel peak clears 0.5 cells over what the disc covers.
 constexpr float kRoundJointExcess = 0.5f;
-// En trazos de 1 celda el disco entra antes, solo en curvas finas.
+// in 1-cell strokes the disc enters earlier, thin curves only.
 constexpr float kThinRoundJointExcess = 0.3f;
 constexpr float kRepairDiameter = 1.f;
-// Cuadrado girado deja punta al ampliar; el disco mantiene el trazo fino.
+// rotated squares peak when scaled; the disc keeps strokes thin.
 constexpr float kRoundCapDiameter = 1.f;
-// Bajo este grosor el parche recto es mas fiel que el circulo.
+// below this thickness the straight patch beats the circle.
 constexpr float kRoundCapMinThickness = 0.65f;
-// Frena puntas finas de hasta 1 celda.
+// brakes thin tips up to 1 cell.
 constexpr float kExposedCapGap = 0.65f;
-// Bajo 7 grados la recta gana: cae en rejilla y funde con vecinos.
+// under 7 degrees straight wins: lands on grid and merges with neighbors.
 constexpr float kBoxTilt = 0.12f;
-// Alcance de pareja de reparos: 4 baja picos sin romper diagonales de 2 celdas.
+// repair-pair reach: 4 lowers peaks without breaking 2-cell diagonals.
 constexpr int kRepairReach = 4;
 constexpr int kPadding = 2;
-// Caja estirada quita sitio a fusiones de la ronda siguiente.
+// stretched boxes steal room from next round's merges.
 constexpr float kAbsorbSlack = 0.6f;
-// Cada ronda remonta el dibujo entero; las ultimas apenas aportan.
+// each round re-climbs the whole drawing; late ones barely contribute.
 constexpr int kAbsorbRounds = 4;
 
 struct Region {
@@ -107,7 +107,7 @@ Region buildRegion(std::vector<int> const& component, int sourceWidth) {
     return region;
 }
 
-// Grosor con cuadrado, no circulo, para separar zona maciza de trazo.
+// square-step thickness, not circles, to split solid area from stroke.
 std::vector<int> boardDistance(
     std::vector<std::uint8_t> const& cells,
     int width,
@@ -149,7 +149,7 @@ std::vector<int> boardDistance(
     return distance;
 }
 
-// Separa zona maciza (a rectangulos) de trazo (a tiras) del mismo color.
+// Splits solid area (to rectangles) from stroke (to strips) of one color.
 std::vector<std::vector<int>> splitByThickness(
     std::vector<int> const& component,
     int width,
@@ -201,10 +201,10 @@ std::array<int, 4> shapeBox(Primitive const& shape, int width, int height) {
     return xformBox(xformOf(shape), width, height);
 }
 
-// 9 muestras del centro que deciden si pisa pixel ajeno.
+// 9 center samples deciding foreign-pixel hits.
 constexpr float kCenterOffsets[3] = {0.4f, 0.5f, 0.6f};
 
-// Franja subpixel libre; centro ajeno y area total limitados.
+// free subpixel fringe; foreign center and total area capped.
 bool fitsPaintBoundary(
     Primitive const& shape,
     std::vector<std::uint8_t> const& permitted,
@@ -229,7 +229,7 @@ bool fitsPaintBoundary(
         (gridExact ? kChainSpill : kSmoothSpill);
 }
 
-// Orla de 1 celda: abraza la mancha sin cruzar el dibujo.
+// 1-cell orla: hugs the blob without crossing the drawing.
 std::vector<std::uint8_t> nearCells(
     std::vector<int> const& positions, int width, int height) {
     std::vector<std::uint8_t> nearMask(
@@ -253,7 +253,7 @@ std::vector<std::uint8_t> nearCells(
     return nearMask;
 }
 
-// Orla no perdona vacio; sobre otro color sigue perdonada.
+// orla never forgives void; over another color it stays forgiven.
 void maskVoid(
     std::vector<std::uint8_t>& mask,
     std::vector<std::uint8_t> const& empty
@@ -264,7 +264,7 @@ void maskVoid(
     }
 }
 
-// Derrame real: fuera de permitido Y de orla.
+// true spill: outside permitted AND orla.
 float shapeFarSpill(
     Primitive const& shape,
     std::vector<std::uint8_t> const& permitted,
@@ -302,7 +302,7 @@ float shapeFarSpill(
     return covered > 0 ? static_cast<float>(spilled) / covered : 0.f;
 }
 
-// Orla cuenta como casa solo para tiras cortas de cadena/banda/reparos.
+// orla counts as home only for short chain/band/patch strips.
 bool fitsPaintNear(
     Primitive const& shape,
     std::vector<std::uint8_t> const& permitted,
@@ -332,7 +332,7 @@ bool fitsPaintNear(
         (gridExact ? kChainSpill : kSmoothSpill);
 }
 
-// Orla solo perdona en tiras giradas; en recta exige pixel exacto.
+// orla only forgives on turned strips; straight demands the exact pixel.
 bool fitsPaintOutline(
     Primitive const& shape,
     std::vector<std::uint8_t> const& permitted,
@@ -350,7 +350,7 @@ bool fitsPaintOutline(
     return fitsPaintNear(shape, permitted, nearMask, width, height, gridExact);
 }
 
-// El circulo flota arriba: no puede quedar bajo otro color.
+// circles float on top: never under another color.
 bool coversBlocked(
     Primitive const& shape,
     int sourceWidth,
@@ -533,14 +533,14 @@ float directionDot(Point const& incoming, Point const& outgoing) {
     return std::clamp(incoming.x * outgoing.x + incoming.y * outgoing.y, -1.f, 1.f);
 }
 
-// Tope corto en silueta: el pincho saldria sobre el color vecino.
+// short cap on silhouettes: the spike would land on the neighbor color.
 float miterExtension(float dot, float thickness, float limit) {
     limit = std::min(limit, thickness * 0.5f);
     if (dot <= 0.f) return limit;
     return std::min(limit, thickness * 0.5f * std::tan(std::acos(dot) * 0.5f));
 }
 
-// Disco solo si el pico del bisel asoma sobre lo que el disco taparia.
+// disc only when the bevel peak clears what the disc covers.
 bool needsRoundJoint(float dot, float thickness, float excess = kRoundJointExcess) {
     if (thickness <= 0.f) return false;
     float const clamped = std::clamp(dot, -1.f, 1.f);
@@ -550,7 +550,7 @@ bool needsRoundJoint(float dot, float thickness, float excess = kRoundJointExces
     return thickness * 0.5f * (1.f / cosHalf - 1.f) >= excess;
 }
 
-// Sin sitio para disco no se pone nada; el llamante alarga el trazo.
+// no room for a disc: place nothing, the caller lengthens the stroke.
 bool appendRoundCap(
     std::vector<Primitive>& output,
     Point const& position,
@@ -582,7 +582,7 @@ struct Segment {
     float length = 0.f;
 };
 
-// Grosor bajo el punto: camina hacia dentro hasta salir de la mancha.
+// thickness under the point: walks inward out of the blob.
 float inwardThickness(
     Region const& region,
     float x,
@@ -593,7 +593,7 @@ float inwardThickness(
     bool gridExact = true
 ) {
     constexpr float kStep = 0.25f;
-    // En Suave arranca en la primera muestra pintada (max 1 celda).
+    // Smooth starts at the first painted sample (max 1 cell).
     if (!gridExact) {
         float skipped = 0.f;
         while (skipped < 1.f && !region.filledAt(x, y)) {
@@ -628,7 +628,7 @@ std::vector<Segment> measure(std::vector<Point> const& points, std::size_t segme
     return output;
 }
 
-// Mediana del grosor: marca hasta donde recortar al simplificar.
+// thickness median: marks how far to trim when simplifying.
 float contourThickness(Region const& region, Contour const& contour, float limit,
                          bool gridExact = true) {
     auto const& loop = contour.points;
@@ -676,7 +676,7 @@ void appendBand(
     std::size_t const segments = contour.closed ? loop.size() : loop.size() - 1;
     auto const measured = measure(loop, segments);
 
-    // Pasarse compensa costura contra color, no contra vacio.
+    // overshoot pays seam against color, not against void.
     bool const hasBlocked =
         blocked.size() == static_cast<std::size_t>(sourceWidth) * sourceHeight;
     auto coveredOutside = [&](float x, float y) {
@@ -688,7 +688,7 @@ void appendBand(
         if (!hasBlocked) return false;
         return blocked[static_cast<std::size_t>(cellY) * sourceWidth + cellX] != 0;
     };
-    // El exceso solo vale si tapa a lo largo de toda la tira.
+    // excess only counts when it covers the whole strip length.
     auto coveredAlong = [&](Point const& from, Point const& to, float inwardX, float inwardY) {
         int const steps = std::max(
             2, static_cast<int>(std::ceil(pointDistance(from, to))) + 1);
@@ -722,7 +722,7 @@ void appendBand(
             inwardX = -inwardX;
             inwardY = -inwardY;
         }
-        // Grosor local: el maximo global engordaba el trazo y lo pintaba dos veces.
+        // local thickness: the global max fattened the stroke and painted it twice.
         float const rawThick =
             inwardThickness(region, midX, midY, inwardX, inwardY, band, gridExact);
         float const thickness = std::max(rawThick, 1.f);
@@ -734,7 +734,7 @@ void appendBand(
         geomValid[i] = 1;
     }
 
-    // Codos redondos como en cadena: disco donde el contorno dobla de verdad.
+    // round elbows as in chains: a disc where the outline truly bends.
     std::vector<int> bandStartJoint(segments, -1);
     std::vector<int> bandEndJoint(segments, -1);
     std::vector<Primitive> bandDiscs;
@@ -743,7 +743,7 @@ void appendBand(
         if (!geomValid[previous] || !geomValid[next]) return;
         float const diameter =
             std::max(geoms[previous].thickness, geoms[next].thickness);
-        // Giros en tramos de 1-2 celdas son escalon, no esquina.
+        // turns on 1-2 cell runs are stepping, not corners.
         if (measured[previous].length < 2.f || measured[next].length < 2.f) {
             return;
         }
@@ -756,7 +756,7 @@ void appendBand(
         }
         auto const& before = geoms[previous];
         auto const& after = geoms[next];
-        // Si el pico cae en permitido el inglete basta y el disco sobra.
+        // when the peak lands on permitted the miter suffices and the disc is spare.
         {
             float const prevExtent =
                 miterExtension(dot, before.thickness, kBandMiter);
@@ -883,7 +883,7 @@ void appendBand(
             ? miterExtension(endDot, thickness, kBandMiter) : thickness * 0.5f;
 
         float const shift = (endExtent - startExtent) * 0.5f;
-        // El exceso nunca llega a medio grosor en linea fina.
+        // excess never reaches half thickness on thin lines.
         float const offset = geoms[i].offset;
         output.push_back({
             midX + segment.direction.x * shift + inwardX * offset +
@@ -902,7 +902,7 @@ void appendBand(
     output.insert(output.end(), bandDiscs.begin(), bandDiscs.end());
 }
 
-// Sin trazo no dibuja nada: el llamante usa el camino del contorno.
+// Without a stroke it draws nothing: the caller uses the outline path.
 bool appendChain(
     std::vector<Primitive>& output,
     Region const& region,
@@ -919,14 +919,14 @@ bool appendChain(
 ) {
     auto const skeleton = thin(component, sourceWidth);
     auto const paths = skeletonPaths(skeleton);
-    // Eje limitado a medio grosor: si no, la tira cruza el dibujo.
+    // axis capped at half thickness, else the strip crosses the drawing.
     float const tolerance = std::clamp(radius * 0.5f, 0.6f, 1.3f);
 
     struct Line {
         std::vector<Point> points;
         std::array<bool, 2> joined{};
         std::array<bool, 2> terminal{};
-        // -1 = giro desconocido: remate cuadrado de medio grosor.
+        // -1 = unknown turn: half-thickness square cap.
         std::array<float, 2> jointDot{{-1.f, -1.f}};
     };
     std::vector<Line> lines;
@@ -1000,7 +1000,7 @@ bool appendChain(
     }
     if (lines.empty()) return false;
     auto nearMask = nearCells(component, sourceWidth, sourceHeight);
-    // Suave relaja el vacio; Pixel no perdona.
+    // Smooth relaxes void; Pixel never forgives.
     if (gridExact) maskVoid(nearMask, empty);
 
     for (std::size_t first = 0; first < lines.size(); ++first) {
@@ -1095,13 +1095,13 @@ bool appendChain(
         static_cast<float>(static_cast<double>(component.size()) / std::max(span, 0.001)),
         0.8f, radius * 2.4f);
 
-    // Eje corto = mancha compacta: va por contorno, no por tira.
+    // short axis = compact blob: outline path, not strip.
     if (span < nominal * kChainSlenderness) return false;
 
-    // Tiras aparte: el eje puede atajar por donde no hay color.
+    // strips aside: the axis may shortcut through colorless ground.
     std::vector<Primitive> strokes;
 
-    // Punta libre: disco si cabe, si no alarga medio grosor.
+    // free tip: disc when it fits, else lengthen half a thickness.
     auto terminalExtension = [&](Point const& point, float thickness) {
         if (appendRoundCap(
                 strokes, point, thickness, color, layer,
@@ -1111,7 +1111,7 @@ bool appendChain(
         return thickness * 0.5f;
     };
 
-    // Grosor previo para decidir que codos llevan disco.
+    // prior thickness, deciding which elbows get discs.
     std::vector<std::vector<float>> thicknessOf(lines.size());
     for (std::size_t slot = 0; slot < lines.size(); ++slot) {
         auto const& reduced = lines[slot].points;
@@ -1133,7 +1133,7 @@ bool appendChain(
         }
     }
 
-    // Codo redondo: disco si cabe sin tapar otro color; si no, bisel.
+    // round elbow: disc when it fits without covering another color, else miter.
     std::vector<std::vector<int>> startJoint(lines.size());
     std::vector<std::vector<int>> endJoint(lines.size());
     for (std::size_t slot = 0; slot < lines.size(); ++slot) {
@@ -1191,7 +1191,7 @@ bool appendChain(
             if (!line.joined[static_cast<std::size_t>(end)]) continue;
             std::size_t const segment = end ? segments - 1 : 0;
             std::size_t const vertex = end ? reduced.size() - 1 : 0;
-            // -1 es continuacion suave: el remate cuadrado ya la tapa.
+            // -1 is smooth continuation: the square cap already covers it.
             float const known =
                 line.jointDot[static_cast<std::size_t>(end)];
             if (known < -0.999f) continue;
@@ -1238,9 +1238,9 @@ bool appendChain(
             auto const& second = reduced[i + 1];
             float const midX = (first.x + second.x) * 0.5f;
             float const midY = (first.y + second.y) * 0.5f;
-            // Grosor por lo bajo para no salirse donde estrecha.
+            // low thickness so it never spills where it narrows.
             float const thickness = thicknessOf[slot][i];
-            // En codo redondo la tira corta a tope; en recto sigue el bisel.
+            // round elbows cut the strip flush; straight follows the miter.
             float const miter = thickness * 0.5f;
             float const startExtension = startJoint[slot][i] >= 0
                 ? 0.f
@@ -1283,7 +1283,7 @@ bool appendChain(
         });
     }
     if (strokes.empty()) return false;
-    // Caen tiras sueltas, no la cadena: el parche recoge lo sin tapar.
+    // loose strips drop, not the chain: the patch collects the uncovered.
     strokes.erase(std::remove_if(strokes.begin(), strokes.end(),
         [&](Primitive const& stroke) {
             return shapeFarSpill(
@@ -1295,7 +1295,7 @@ bool appendChain(
     return true;
 }
 
-// El circulo flota arriba: solo vale si nada pinta encima.
+// Circles float on top: only valid when nothing paints above.
 bool appendCircle(
     std::vector<Primitive>& output,
     Region const& region,
@@ -1332,7 +1332,7 @@ bool appendCircle(
 
     bool const hasBlocked =
         blocked.size() == static_cast<std::size_t>(sourceWidth) * sourceHeight;
-    // Cuantizar mueve el borde casi 1 celda: se busca en una vecindad.
+    // quantizing shifts the edge ~1 cell: search a neighborhood.
     struct Fit {
         Primitive shape;
         int covered = 0;
@@ -1382,7 +1382,7 @@ bool appendCircle(
         fit.covered = covered;
         fit.missing = missing;
         fit.spilled = spilled;
-        // Puntua cobertura ajustada; el area evita elipses grandes.
+        // scores fitted coverage; area vetoes big ellipses.
         float const candidateArea = candidate.width * candidate.height;
         fit.score = static_cast<float>(covered) - static_cast<float>(spilled) * 1.35f -
             candidateArea * 0.006f;
@@ -1395,7 +1395,7 @@ bool appendCircle(
         static_cast<std::int16_t>(layer)
     };
     if (auto fit = evaluate(exact)) {
-        // Mantiene el ajuste estricto cuando ya acierta.
+        // keeps the strict fit when it already hits.
         float const strictLimit = static_cast<float>(std::max(1, filledCount)) * 0.10f;
         if (static_cast<float>(fit->missing) <= strictLimit &&
             static_cast<float>(fit->spilled) <= strictLimit) {
@@ -1588,7 +1588,7 @@ float fitSimilarity(
         maxY = std::max(maxY, std::min(height - 1, static_cast<int>(std::ceil(shape.y + extentY))));
     }
 
-    // Asomar sobre capa tapada cuesta menos; orla perdona en trazo largo y fino.
+    // spilling over covered layers costs less; orla forgives on long thin strokes.
     int pieceMinX = width;
     int pieceMinY = height;
     int pieceMaxX = -1;
@@ -1636,7 +1636,7 @@ bool appendCapsule(
     if (positions.size() < 6) return false;
     std::vector<std::uint8_t> target(static_cast<std::size_t>(width) * height, 0);
     for (int position : positions) target[static_cast<std::size_t>(position)] = 1;
-    // La mancha y el hueco: lo unico contra lo que un borde recto puede partir.
+    // blob and void: the only ground a straight edge may split against.
     std::vector<std::uint8_t> unclaimed = target;
     if (empty.size() == unclaimed.size()) {
         for (std::size_t i = 0; i < unclaimed.size(); ++i) unclaimed[i] |= empty[i];
@@ -1679,7 +1679,7 @@ bool appendCapsule(
         bestSimilarity = similarity;
         best = shapes;
     };
-    // Eje de inercia no basta en manchas simetricas: suma giros de la envolvente.
+    // inertia axis fails on symmetric blobs: add hull turns.
     std::vector<float> angles;
     for (int offset = -6; offset <= 6; ++offset) {
         angles.push_back(principal + offset * kPi / 180.f);
@@ -1692,7 +1692,7 @@ bool appendCapsule(
         auto const& first = hull[i];
         auto const& second = hull[(i + 1) % hull.size()];
         float const edge = std::atan2(second.y - first.y, second.x - first.x);
-        // Rectangulo cada 90 grados: no probar giros duplicados.
+        // rectangle every 90 degrees: never try duplicate turns.
         float folded = std::fmod(edge, kPi * 0.5f);
         if (folded < 0.f) folded += kPi * 0.5f;
         if (std::none_of(angles.begin(), angles.end(), [&](float known) {
@@ -1728,7 +1728,7 @@ bool appendCapsule(
             for (float widthPadding : kWidthPadding) {
                 float const totalLength = maxMajor - minMajor + support * 2.f * lengthPadding;
                 float const diameter = maxMinor - minMinor + support * 2.f * widthPadding;
-                // Capsula exige eje largo; el rectangulo salva al rombo.
+                // capsule needs a long axis; the rectangle saves the diamond.
                 bool const slender = totalLength / std::max(diameter, 0.01f) >= 1.6f;
                 float const lineLength = std::max(totalLength - diameter, 0.05f);
                 float const middleMajor = (minMajor + maxMajor) * 0.5f;
@@ -1741,7 +1741,7 @@ bool appendCapsule(
                     cosine * lineLength * 0.5f,
                     sine * lineLength * 0.5f
                 };
-                // Rectangulo primero: si empata gana por usar menos objetos.
+                // rectangle first: ties win by using fewer objects.
                 std::vector<Primitive> squared{{
                     center.x, center.y, totalLength, diameter,
                     angle * 180.f / kPi, static_cast<std::uint16_t>(color),
@@ -1752,7 +1752,7 @@ bool appendCapsule(
                     angle * 180.f / kPi, static_cast<std::uint16_t>(color),
                     PrimitiveKind::Stroke, static_cast<std::int16_t>(layer)
                 }};
-                // Casi recto va por bloques: borde limpio y fundible.
+                // near-straight goes blocks: clean fusible edge.
                 if (slender || !upright) consider(squared, !slender);
                 if (!slender) continue;
                 bool const capped = appendRoundCap(
@@ -1892,7 +1892,7 @@ std::vector<std::uint8_t> coverageMask(
             covered[i] = samples[i] == full;
             continue;
         }
-        // Suave: basta media celda; 16/16 dejaba bloques sueltos en diagonales.
+        // Smooth: half a cell suffices; 16/16 left loose blocks on diagonals.
         covered[i] = std::popcount(samples[i]) >= 8;
     }
     return covered;
@@ -1990,7 +1990,7 @@ bool appendSmallPatch(
         (maxMajor - minMajor) * 0.5f + 0.5f, kRepairDiameter * 0.5f);
     float const halfHeight = std::max(
         (maxMinor - minMinor) * 0.5f + 0.5f, kRepairDiameter * 0.5f);
-    // Caja girada de ele/ese arrasa huecos: limita su sobrante.
+    // turned L/S boxes bulldoze voids: cap their spare.
     if (halfWidth * halfHeight * 4.f >
         static_cast<float>(positions.size()) * kPatchSlack) {
         return false;
@@ -2007,7 +2007,7 @@ bool appendSmallPatch(
         PrimitiveKind::Stroke,
         static_cast<std::int16_t>(layer)
     };
-    // Mota redonda va como ovalo si no queda bajo otro color.
+    // round specks go oval unless under another color.
     if (std::max(halfWidth, halfHeight) <= std::min(halfWidth, halfHeight) * 1.25f) {
         float scale = 1.f;
         for (int position : positions) {
@@ -2123,7 +2123,7 @@ bool anySample(Primitive const& object, int width, int height, Test test) {
     return anySample(xformOf(object), width, height, test);
 }
 
-// Sobra lo que no cambia el dibujo, de abajo arriba y de arriba abajo.
+// Drops what never changes the drawing, bottom-up and top-down.
 void markUsefulObjects(std::vector<PruneEntry> entries, int width, int height) {
     std::stable_sort(entries.begin(), entries.end(), [](auto const& left, auto const& right) {
         return left.object->layer < right.object->layer;
@@ -2134,7 +2134,7 @@ void markUsefulObjects(std::vector<PruneEntry> entries, int width, int height) {
     std::size_t const samples =
         static_cast<std::size_t>(width) * height * kPruneScale * kPruneScale;
 
-    // Aportes menores de media celda en borde se pueden quitar; nunca un centro.
+    // sub-half-cell edge contributions may drop; centers never.
     std::size_t const cells = static_cast<std::size_t>(width) * height;
     std::vector<std::int16_t> expected(cells, -1);
     std::vector<std::int16_t> centers(cells, -1);
@@ -2231,7 +2231,7 @@ void compactKept(std::vector<Primitive>& objects, std::vector<std::uint8_t> cons
     objects.resize(destination);
 }
 
-// Cuadrados juntos del mismo color se fusionan aunque cambien de capa.
+// Adjacent same-color squares merge even across layers.
 void mergePaintBlocks(std::vector<Primitive>& objects) {
     struct Box {
         int minX = 0;
@@ -2254,7 +2254,7 @@ void mergePaintBlocks(std::vector<Primitive>& objects) {
             index,
             true
         };
-        // Solo bloques en rejilla: el resto no suma sin mover el dibujo.
+        // grid blocks only: the rest never adds without moving the drawing.
         if (std::abs(static_cast<float>(box.maxX - box.minX) - object.width) > 0.001f ||
             std::abs(static_cast<float>(box.maxY - box.minY) - object.height) > 0.001f) {
             continue;
@@ -2263,7 +2263,7 @@ void mergePaintBlocks(std::vector<Primitive>& objects) {
     }
     if (boxes.size() < 2) return;
 
-    // Agrupa por color, lado de fondo y banda.
+    // groups by color, background side and band.
     auto group = [&](bool sideways) {
         std::map<std::array<int, 4>, std::vector<std::size_t>> groups;
         for (std::size_t slot = 0; slot < boxes.size(); ++slot) {
@@ -2336,7 +2336,7 @@ bool rectPairShapes(Primitive const& first, Primitive const& second) {
     return rectShape(first) && rectShape(second);
 }
 
-// Caja comun de dos rectangulos con su sobrante.
+// Shared box of two rectangles plus its spare.
 bool unitedRect(
     Primitive const& first,
     Primitive const& second,
@@ -2403,7 +2403,7 @@ bool unitedRect(
     return true;
 }
 
-// Mismo color nunca se intercala: juntar en capa baja no cambia nada.
+// Same color never interleaves: joining on a low layer changes nothing.
 bool mergeRectPair(
     Primitive const& first, Primitive const& second, Primitive& result,
     bool exactOnly = false
@@ -2415,7 +2415,7 @@ bool mergeRectPair(
     float extra = 0.f;
     float covered = 0.f;
     if (!unitedRect(first, second, result, extra, covered)) return false;
-    // Entre capas solo union exacta: sin mapa que avale el sobrante.
+    // cross-layer joins exact only: no map backing the spare.
     float const slack = exactOnly ? 0.01f
         : first.layer == second.layer ? std::max(0.01f, covered * 0.002f)
                                       : 0.01f;
@@ -2443,7 +2443,7 @@ void mergePaintRects(std::vector<Primitive>& objects, bool exactOnly = false) {
     }
 }
 
-// Sobrante gratis si mantiene dibujo; foreign limita encima.
+// Free spare when the drawing holds; foreign caps above.
 void absorbPaintRects(
     std::vector<Primitive>& objects,
     int width,
@@ -2504,10 +2504,10 @@ void absorbPaintRects(
                             objects[first], objects[second], candidate, extra, covered)) {
                         continue;
                     }
-                    // Hueco excesivo no es fusion: quita sitio a la ronda siguiente.
+                    // excessive void is no merge: steals next round's room.
                     if (extra > covered * kAbsorbSlack) continue;
 
-                    // Sobrante vale si mantiene el color o lo tapa capa superior.
+                    // spare counts when it keeps the color or an upper layer covers it.
                     bool safe = true;
                     auto const candidateForm = xformOf(candidate);
                     anySample(candidateForm, width, height, [&](std::size_t sample) {
@@ -2529,7 +2529,7 @@ void absorbPaintRects(
                     });
                     if (!safe) continue;
 
-                    // Fusiones de la ronda no pueden tocarse entre si.
+                    // same-round merges must never touch each other.
                     auto const box = shapeBox(candidate, width, height);
                     bool overlaps = false;
                     for (auto const& taken : claimed) {
@@ -2582,7 +2582,7 @@ void appendRepairs(
         permitted[static_cast<std::size_t>(position)] = 1;
         target[static_cast<std::size_t>(position)] = 1;
     }
-    // Pixel no perdona centros en vacio; Suave relaja el borde.
+    // Pixel never forgives void centers; Smooth relaxes the edge.
     for (auto const* mask : {&blocked}) {
         if (mask->size() != cells) continue;
         for (std::size_t position = 0; position < cells; ++position) {
@@ -2595,7 +2595,7 @@ void appendRepairs(
         }
     }
 
-    // spare: celdas que el rectangulo puede cruzar sin cambiar el dibujo.
+    // spare: cells the rectangle may cross without changing the drawing.
     std::vector<std::uint8_t> spare(cells, 0);
     for (int position : paint) spare[static_cast<std::size_t>(position)] = 1;
     if (blocked.size() == cells) {
@@ -2604,14 +2604,14 @@ void appendRepairs(
         }
     }
 
-    // Escalera une peldanos con tira girada; sin pareja va a rectangulo.
+    // stairs join steps with a turned strip; unpaired goes rectangle.
     auto diagonalStrokes = [&](std::vector<int> const& group) {
         std::vector<Primitive> strokes;
         std::vector<int> unpaired;
         std::vector<std::uint8_t> remaining(cells, 0);
         for (int position : group) remaining[static_cast<std::size_t>(position)] = 1;
         auto nearMask = nearCells(group, width, height);
-        // Suave relaja el vacio; Pixel no perdona.
+        // Smooth relaxes void; Pixel never forgives.
         if (gridExact) maskVoid(nearMask, empty);
         for (int first : group) {
             if (!remaining[static_cast<std::size_t>(first)]) continue;
@@ -2632,9 +2632,9 @@ void appendRepairs(
                         static_cast<float>(x - firstX), static_cast<float>(y - firstY));
                     if (length > kRepairReach) continue;
                     Primitive candidate = repairStroke(first, second, width, color, layer);
-                    // Diagonal suelta: disco en vez de tira para no dejar agujas.
+                    // loose diagonal: disc instead of strip, so no needles remain.
                     if (firstX != x && firstY != y && length <= 1.5f) {
-                        // 1.8 cubre ambos centros a escala 8 sin salirse de la orla.
+                        // 1.8 covers both centers at scale 8 without leaving the orla.
                         float const diameter = 1.8f;
                         Primitive round{
                             (static_cast<float>(firstX + x) + 1.f) * 0.5f,
@@ -2676,9 +2676,9 @@ void appendRepairs(
 
     std::vector<int> leftover;
     for (auto const& component : connectedComponents(positions, width, height)) {
-        // Mancha rectangular: va al empaquetado final.
+        // rectangular blob: goes to final packing.
         auto rectangle = packBlocks(component, width, height, color, spare);
-        // Girada de una pieza compensa si recta necesitaria varias.
+        // one turned piece pays when straight would need several.
         if (rectangle.size() >= 2 && component.size() >= 4 &&
             appendSmallPatch(
                 output, component, width, height, color, layer, permitted, blocked,
@@ -2698,7 +2698,7 @@ void appendRepairs(
     }
 }
 
-// Girada diminuta: se prueba disco, luego bloque recto, luego celda.
+// Tiny turned piece: try disc, then straight block, then cell.
 std::vector<int> normalizePaintSpikes(
     std::vector<Primitive>& objects,
     std::vector<int> const& target,
@@ -2709,13 +2709,13 @@ std::vector<int> normalizePaintSpikes(
     std::vector<std::uint8_t> const& permitted,
     bool gridExact = true
 ) {
-    // Suave admite lado 4 para cerrar curvas en disco; Pixel queda en 3.
+    // Smooth allows side 4 to close curves into discs; Pixel stays at 3.
     float const maxSpikeSide = gridExact ? 3.f : 4.f;
     constexpr float kStraightAngle = 7.f;
     std::vector<int> repairs;
     std::vector<Primitive> normalized;
     normalized.reserve(objects.size());
-    // Orla Suave: solo la usan las giradas, se calcula una vez.
+    // Smooth orla: turned strips only, computed once.
     std::vector<std::uint8_t> smoothNear;
     if (!gridExact) smoothNear = nearCells(target, width, height);
     for (auto const& object : objects) {
@@ -2731,7 +2731,7 @@ std::vector<int> normalizePaintSpikes(
             normalized.push_back(object);
             continue;
         }
-        // Suave conserva borde desde 2 celdas.
+        // Smooth keeps edges from 2 cells.
         constexpr float kSmoothKeepSide = 2.f;
         if (!gridExact &&
             std::max(object.width, object.height) >= kSmoothKeepSide &&
@@ -2755,7 +2755,7 @@ std::vector<int> normalizePaintSpikes(
             }
         }
         if (!replaced) {
-            // Varios tamanos: la astilla al borde no fuerza un cuadrado fuera.
+            // mixed sizes: the edge splinter never forces a square outside.
             for (float scale : {1.f, 0.9f, 0.75f, 0.6f}) {
                 Primitive block{
                     object.x, object.y, object.width * scale,
@@ -2772,7 +2772,7 @@ std::vector<int> normalizePaintSpikes(
         }
         if (replaced) continue;
 
-        // El centro se reempaqueta recto en la llamada siguiente.
+        // the center repacks straight on the next call.
         auto const targetForm = xformOf(object);
         for (int position : target) {
             float const px = static_cast<float>(position % width) + 0.5f;
@@ -2786,7 +2786,7 @@ std::vector<int> normalizePaintSpikes(
     return repairs;
 }
 
-// Solo la punta libre lleva disco; la union escondida no.
+// Only the free tip gets a disc; hidden joints don't.
 void roundExposedStrokeEnds(
     std::vector<Primitive>& objects,
     std::vector<int> const& target,
@@ -2807,7 +2807,7 @@ void roundExposedStrokeEnds(
         }
     }
     auto nearMask = nearCells(target, width, height);
-    // Pintura-Suave relaja el vacio para el borde continuo; en Pixel no perdona.
+    // Paint-Smooth relaxes void for the continuous edge; Pixel never forgives.
     if (gridExact) maskVoid(nearMask, empty);
     auto targetGap = [&](Point point) {
         int const centerX = static_cast<int>(std::floor(point.x));
@@ -2867,7 +2867,7 @@ void roundExposedStrokeEnds(
         folded = std::min(folded, 90.f - folded);
         float const thickness = std::min(object.width, object.height);
         float const length = std::max(object.width, object.height);
-        // Corta o cuadrada no lleva disco; banda curva con extra si.
+        // short or square takes no disc; curved bands earn extra.
         if (folded <= 10.f || thickness < kRoundCapMinThickness ||
             length <= thickness * 1.35f) {
             rounded.push_back(object);
@@ -2884,7 +2884,7 @@ void roundExposedStrokeEnds(
                 object.x + direction.x * sign * (length * 0.5f - thickness * 0.5f),
                 object.y + direction.y * sign * (length * 0.5f - thickness * 0.5f)
             };
-            // Celda del color delante: es continuacion y queda cubierta.
+            // color cell ahead: continuation, stays covered.
             if (continuesAlong(capCenter[end],
                               {direction.x * (end == 0 ? -1.f : 1.f),
                                direction.y * (end == 0 ? -1.f : 1.f)},
@@ -2901,7 +2901,7 @@ void roundExposedStrokeEnds(
                            edge.y + normal.y * thickness * 0.5f}),
                 targetGap({edge.x - normal.x * thickness * 0.5f,
                            edge.y - normal.y * thickness * 0.5f}));
-            // Solo remata el pico separado; al borde pegado le va el rectangulo.
+            // only the detached peak gets capped; glued edges take the rectangle.
             float const gapThreshold = thickness <= 1.6f
                 ? kExposedCapGap : 0.9f;
             if (cornerGap < gapThreshold) continue;
@@ -2953,7 +2953,7 @@ void roundExposedStrokeEnds(
                 object.layer
             });
         }
-        // El suavizado nunca quita un centro que la tira cubria.
+        // smoothing never drops a center the strip covered.
         bool preservesCenters = true;
         auto const original = xformOf(object);
         auto const substitutes = xformsOf(replacement);
@@ -2977,7 +2977,7 @@ void roundExposedStrokeEnds(
     objects = std::move(rounded);
 }
 
-// Carrera diagonal de bloques 1x1: se vuelve tira girada con discos.
+// Diagonal runs of 1x1 blocks: become a turned strip with discs.
 void smoothDiagonalBlockRuns(
     std::vector<Primitive>& objects,
     std::vector<int> const& target,
@@ -2989,7 +2989,7 @@ void smoothDiagonalBlockRuns(
     std::vector<std::uint8_t> const& empty,
     bool gridExact
 ) {
-    // Solo Pintura-Suave: Pixel no cambia cobertura por tira subpixel.
+    // Paint-Smooth only: Pixel never trades coverage for subpixel strips.
     if (gridExact || target.size() < 3 || objects.size() < 3 || width <= 0 || height <= 0) {
         return;
     }
@@ -3005,7 +3005,7 @@ void smoothDiagonalBlockRuns(
     auto nearMask = nearCells(target, width, height);
     if (gridExact) maskVoid(nearMask, empty);
 
-    // Solo piezas pequenas alineadas; la grande es relleno real.
+    // small aligned pieces only; the big one is true fill.
     std::vector<int> owner(cells, -1);
     std::vector<std::vector<int>> owned(objects.size());
     for (std::size_t index = 0; index < objects.size(); ++index) {
@@ -3023,7 +3023,7 @@ void smoothDiagonalBlockRuns(
                 auto const cell = static_cast<std::size_t>(y) * width + x;
                 if (!targetMask[cell] || !placed.contains(x + 0.5f, y + 0.5f)) continue;
                 if (owner[cell] >= 0) {
-                    // Solape de dos reparos: se deja intacto, no es carrera.
+                    // two-patch overlap: left alone, no run.
                     owner[cell] = -2;
                     continue;
                 }
@@ -3077,7 +3077,7 @@ void smoothDiagonalBlockRuns(
                 }
                 if (uniqueOwners.size() < 3) continue;
 
-                // Un bloque candidato no puede esconder otras celdas de su objeto.
+                // a candidate block can't hide sibling cells of its object.
                 bool ownsOnlyRun = true;
                 for (int index : uniqueOwners) {
                     for (int position : owned[static_cast<std::size_t>(index)]) {
@@ -3118,7 +3118,7 @@ void smoothDiagonalBlockRuns(
 
                 bool fits = fitsPaintOutline(
                     stroke, permitted, nearMask, width, height, gridExact);
-                // Suave: carrera corta roza la orla; Near la cose sin escalera.
+                // Smooth: short runs graze the orla; Near sews them stair-free.
                 if (!fits && !gridExact) {
                     fits = fitsPaintNear(
                         stroke, permitted, nearMask, width, height, gridExact);
@@ -3191,7 +3191,7 @@ void smoothDiagonalBlockRuns(
         }
     }
 
-    // Escalera alterna: una tira entre extremos si no se desvia.
+    // alternating stairs: one strip between ends unless it wanders.
     std::vector<std::uint8_t> componentSeen(cells, 0);
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
@@ -3225,7 +3225,7 @@ void smoothDiagonalBlockRuns(
                     }
                 }
             }
-            // Tope 256: el ajuste es cuadratico y la mancha grande no es escalera.
+            // 256 cap: fitting is quadratic and big blobs aren't stairs.
             if (component.size() < 4 || component.size() > 256) continue;
 
             std::vector<int> uniqueOwners;
@@ -3299,7 +3299,7 @@ void smoothDiagonalBlockRuns(
                 std::atan2(dy, dx) * 180.f / kPi,
                 static_cast<std::uint16_t>(color), PrimitiveKind::Stroke,
                 objects[static_cast<std::size_t>(uniqueOwners.front())].layer};
-            // Puerta de borde completo: el extra de grosor no invade al vecino.
+            // full-edge gate: thickness extra never invades the neighbor.
             bool fits = fitsPaintBoundary(stroke, permitted, width, height, gridExact);
             if (!fits && !gridExact) {
                 fits = fitsPaintNear(
@@ -3352,7 +3352,7 @@ void smoothDiagonalBlockRuns(
     objects = std::move(smoothed);
 }
 
-// Sobra el objeto que no cambia ningun pixel al borrarlo.
+// Drops objects erasing to zero pixel change.
 void dropRedundantObjects(std::vector<Primitive>& objects, int width, int height) {
     std::size_t const samples =
         static_cast<std::size_t>(width) * height * kPruneScale * kPruneScale;
@@ -3450,7 +3450,7 @@ std::vector<Primitive> paintSeamRepairs(
     for (int position : interior) {
         isInterior[static_cast<std::size_t>(position)] = 1;
     }
-    // Un solo color: el borde curvo es de la figura; costura solo entre colores.
+    // single color: curved edges belong to the figure; seams run between colors only.
     std::vector<int> repairTargets;
     repairTargets.reserve(targets.size());
     for (int position : targets) {
@@ -3544,7 +3544,7 @@ std::vector<Primitive> paintSeamRepairs(
             }
             object.color = static_cast<std::uint16_t>(std::distance(
                 usage.begin(), std::max_element(usage.begin(), usage.end())));
-            // Fondo por color bajo el dibujo: evita empates entre colores.
+            // per-color underpaint below the drawing: breaks ties between colors.
             object.layer = static_cast<std::int16_t>(
                 -1 - (static_cast<int>(ranks.size()) - 1 -
                       ranks[static_cast<std::size_t>(object.color)]));
@@ -3562,7 +3562,7 @@ std::vector<Primitive> paintSeamRepairs(
                 blockPositions.push_back(position);
                 continue;
             }
-            // Parche redondo: el bloque 1x1 lo parte la marca de agua.
+            // round patch: the watermark splits the 1x1 block.
             Primitive patch{
                 position % width + 0.5f,
                 position / width + 0.5f,
@@ -3589,7 +3589,7 @@ std::vector<Primitive> paintSeamRepairs(
     return repairs;
 }
 
-// Cose remates del mismo color y giro en rectangulo sin pintar de mas.
+// Sews same-color same-turn caps into rectangles without overpainting.
 void mergePaintSolids(std::vector<Primitive>& objects, bool gridExact) {
     (void)gridExact;
     if (objects.size() < 2) return;
@@ -3629,7 +3629,7 @@ void prunePaintObjectsByVisibility(
         keepTracks.emplace_back(track.objects.size(), 0);
     }
 
-    // El objeto se queda si hace falta en algun frame.
+    // objects stay when some frame needs them.
     for (int frame = 0; frame < frameCount; ++frame) {
         std::vector<PruneEntry> entries;
         entries.reserve(staticObjects.size());
@@ -3658,14 +3658,14 @@ void prunePaintObjectsByVisibility(
     mergePaintRects(staticObjects);
     for (std::size_t track = 0; track < tracks.size(); ++track) {
         compactKept(tracks[track].objects, keepTracks[track]);
-        // Cada pista se fusiona aparte: distinto frame no es lo mismo.
+        // each track merges apart: other frames aren't the same.
         mergePaintBlocks(tracks[track].objects);
         mergePaintRects(tracks[track].objects);
         absorbPaintRects(tracks[track].objects, width, height);
         dropRedundantObjects(tracks[track].objects, width, height);
     }
 
-    // Pistas como terreno prohibido: el fijo crecido no las pisa.
+    // tracks as forbidden ground: grown fixed objects never step on them.
     std::vector<Primitive const*> animated;
     for (auto const& track : tracks) {
         for (auto const& object : track.objects) animated.push_back(&object);
@@ -3707,7 +3707,7 @@ std::vector<int> paintOrder(
         }
     }
 
-    // Encerrado va encima; celda que cambia de color no restringe.
+    // enclosed goes on top; cells changing color don't constrain.
     std::vector<std::int16_t> owner(static_cast<std::size_t>(width) * height, -1);
     for (int color = 0; color < colors; ++color) {
         for (int position : masks[static_cast<std::size_t>(color)]) {
@@ -3746,7 +3746,7 @@ std::vector<int> paintOrder(
                     } else if (adjacent >= 0 && adjacent != color) {
                         neighbors[static_cast<std::size_t>(adjacent)] = 1;
                     } else if (adjacent < 0) {
-                        // -1 es transparencia/exterior; -2 es mezcla temporal.
+                        // -1 is transparency/outside; -2 is scratch blend.
                         touchesOutside = true;
                     }
                 }
@@ -3788,7 +3788,7 @@ std::vector<int> paintOrder(
         });
     }
 
-    // Topologico sobre heuristico; el ciclo se corta por prioridad.
+    // topology over heuristics; priority breaks the cycle.
     std::sort(entries.begin(), entries.end(), [](Entry const& left, Entry const& right) {
         if (left.background != right.background) return left.background;
         if (std::abs(left.depth - right.depth) > 0.001f) return left.depth > right.depth;
@@ -3859,7 +3859,7 @@ std::vector<Primitive> vectorizePaint(
 ) {
     std::vector<Primitive> output;
     int const base = rank * kPaintSublayers;
-    // spare: celdas que el rectangulo cruza sin cambiar el dibujo.
+    // spare: cells the rectangle crosses without changing the drawing.
     std::size_t const cells = static_cast<std::size_t>(width) * height;
     std::vector<std::uint8_t> spare(cells, 0);
     for (int position : positions) {
@@ -3872,7 +3872,7 @@ std::vector<Primitive> vectorizePaint(
             spare[position] |= blocked[position];
         }
     }
-    // Pixel no perdona el vacio; Suave lo relaja para el borde.
+    // Pixel never forgives void; Smooth relaxes it for the edge.
     std::vector<std::uint8_t> permitted = spare;
     if (!gridExact && empty.size() == cells) {
         for (std::size_t position = 0; position < cells; ++position) {
@@ -3912,7 +3912,7 @@ std::vector<Primitive> vectorizePaint(
     }
     std::vector<std::vector<int>> pieces;
     for (auto const& whole : connectedComponents(positions, width, height)) {
-        // Silueta antes que grosor: dos discos no hacen una elipse.
+        // silhouette before thickness: two discs make no ellipse.
         if (whole.size() >= 8 && whole.size() != positions.size()) {
             auto const region = buildRegion(whole, width);
             std::vector<Primitive> fitted;
@@ -3999,7 +3999,7 @@ std::vector<Primitive> vectorizePaint(
             appendCapsule(
                 shapes, component, width, height, color, base + 1, blocked, empty);
         if (!fitted) {
-            // Cadena solo si es trazo; si es compacta va por contorno.
+            // chains only for strokes; compact goes outline.
             chained = radius <= kThinRadius &&
                 appendChain(
                     shapes, region, component, width, height, radius, color, base + 1,
@@ -4009,7 +4009,7 @@ std::vector<Primitive> vectorizePaint(
                 std::vector<Contour> refined;
                 for (auto const& contour : traceContours(region)) {
                     if (contour.points.size() < 3) continue;
-                    // Tira fina: recortar poco o se ve pico.
+                    // thin strips: trim little or peaks show.
                     float const local =
                         contourThickness(region, contour, band, gridExact);
                     refined.push_back(refineContour(
@@ -4022,9 +4022,9 @@ std::vector<Primitive> vectorizePaint(
                         outline, region, contour, band, color, base + 1,
                         width, height, blocked, permitted, gridExact);
                 }
-                // Orla solo en giradas; en rectas solo suma derrame.
+                // orla on turned strips only; on straight it only adds spill.
                 auto nearMask = nearCells(component, width, height);
-                // Pintura-Suave relaja el vacio para el borde continuo; en Pixel no perdona.
+                // Paint-Smooth relaxes void for the continuous edge; Pixel never forgives.
                 if (gridExact) maskVoid(nearMask, empty);
                 outline.erase(std::remove_if(outline.begin(), outline.end(),
                     [&](Primitive const& stroke) {
@@ -4032,7 +4032,7 @@ std::vector<Primitive> vectorizePaint(
                             stroke, permitted, nearMask, width, height, gridExact);
                     }), outline.end());
                 inside = insideContours(region, refined);
-                // El relleno salido muerde al vecino: fuera solo si tapa otro.
+                // spilled fill bites the neighbor: out only when covering another.
                 for (int y = 0; y < region.height; ++y) {
                     for (int x = 0; x < region.width; ++x) {
                         std::size_t const index =
@@ -4061,13 +4061,13 @@ std::vector<Primitive> vectorizePaint(
 
         collectPlain(
             coverageMask(region, shapes, false), inside, true, chained ? 1.1f : 1.6f);
-        // Relleno bajo celdas a medio tapar; con cadena sobra.
+        // fill under half-covered cells; chains cover it already.
         if (!chained) {
             collectPlain(
                 coverageMask(region, shapes, true, gridExact), {}, true, 1.01f);
         }
         appendBlocks(shapes, plain, width, height, color, base, spare);
-        // Hueco aqui muestra al vecino: sin mascara para no dejar agujeros.
+        // voids here show the neighbor: no mask, so no holes remain.
         auto missing = selectCells(
             region, width, coverageMask(region, shapes, false), {}, true, 0.f);
         repairs.insert(repairs.end(), missing.begin(), missing.end());
@@ -4078,7 +4078,7 @@ std::vector<Primitive> vectorizePaint(
         output, repairs, width, height, color, base + 2, blocked, positions, empty,
         gridExact);
 
-    // Ultima barrera: los reparos tambien pueden dejar astillas.
+    // last barrier: patches can leave splinters too.
     roundExposedStrokeEnds(
         output, positions, width, height, color, blocked, permitted, empty, gridExact);
     auto spikeRepairs = normalizePaintSpikes(
@@ -4087,7 +4087,7 @@ std::vector<Primitive> vectorizePaint(
         appendRepairs(
             output, spikeRepairs, width, height, color, base + 2,
             blocked, spikeRepairs, empty, gridExact);
-        // Segunda pasada barata: idempotente para curvas pequenas.
+        // cheap second pass: idempotent for small curves.
         auto leftover = normalizePaintSpikes(
             output, spikeRepairs, width, height, color, blocked, permitted,
             gridExact);

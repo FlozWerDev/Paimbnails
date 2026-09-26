@@ -60,8 +60,7 @@ std::string lowered(std::string text) {
     return text;
 }
 
-// Un icono esta "en uso" cuando es el activo de su gamemode, sea por la via
-// de More Icons o por el aplicador propio.
+// an icon is "in use" when active for its gamemode, via More Icons or the own applier.
 bool isInUse(IconIndexEntry const& entry) {
     if (MoreIconsBridge::available()) {
         return MoreIconsBridge::activeOursSlotId(entry.type) == entry.id;
@@ -131,7 +130,7 @@ bool IconGalleryLayer::init() {
 void IconGalleryLayer::buildBackground() {
     auto win = CCDirector::get()->getWinSize();
 
-    // Mismo fondo que los menus del juego, para que la galeria no desentone.
+    // same backdrop as the game menus, so the gallery blends in.
     if (auto* bg = paimon::SpriteHelper::safeCreate("GJ_gradientBG.png")) {
         bg->setAnchorPoint({0.f, 0.f});
         bg->setScaleX(win.width / bg->getContentSize().width);
@@ -252,7 +251,7 @@ void IconGalleryLayer::buildHeader() {
 
     float toolX = win.width - 26.f - tabsW;
 
-    // El filtro por gamemode vive detras de un boton: diez chips no caben.
+    // gamemode filter hides behind a button: ten chips don't fit.
     auto* filterHolder = CCNode::create();
     filterHolder->setAnchorPoint({0.5f, 0.5f});
     filterHolder->setContentSize({64.f, 22.f});
@@ -356,7 +355,7 @@ void IconGalleryLayer::rebuildGrid() {
         entries.push_back(entry);
     }
 
-    // Los favoritos van arriba siempre; el orden elegido decide el resto.
+    // favorites always on top; chosen sort decides the rest.
     Sort const sort = m_sort;
     std::sort(entries.begin(), entries.end(),
         [sort](IconIndexEntry const& a, IconIndexEntry const& b) {

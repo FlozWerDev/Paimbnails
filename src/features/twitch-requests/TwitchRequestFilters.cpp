@@ -18,7 +18,6 @@ char const* modeName(ModeFilter mode) {
     }
 }
 
-// Slot al que cae la cara de un nivel.
 int difficultySlotOf(int difficulty) {
     if (difficulty < 0) return 7;                 // auto
     if (difficulty >= 6) return 6;                // cualquier demon
@@ -153,8 +152,7 @@ bool matchesFilters(
         if (!(filters.difficulties & bit)) return false;
     }
 
-    // Los niveles de plataformas no tienen longitud propia en el juego, asi que
-    // ahi solo manda el modo.
+    // platformer levels have no length of their own, so mode alone decides.
     if (!platformer && !filters.allLengths()) {
         uint32_t const bit = 1u << std::clamp(length, 0, kLengthSlotCount - 1);
         if (!(filters.lengths & bit)) return false;
@@ -166,7 +164,7 @@ bool matchesFilters(
         for (auto const& rule : filters.videoRules) {
             if (rule.mode == ModeFilter::Classic && platformer) continue;
             if (rule.mode == ModeFilter::Platformer && !platformer) continue;
-            // Mascara vacia == todo: asi las reglas viejas no exigen nada en silencio.
+            // empty mask matches all, so old rules require nothing.
             uint32_t const mask = rule.difficulties & kAllDifficulties;
             if (mask == 0 || (mask & bit)) return false;
         }
@@ -182,12 +180,11 @@ std::optional<bool> requestPasses(int levelID, bool hasVideo) {
     auto& cache = TwitchLevelBriefCache::get();
     auto const* brief = cache.peek(levelID);
     if (!brief) {
-        // Los filtros tambien resuelven con la UI cerrada: si no, el video no
-        // filtraria hasta que el streamer abriera la cola.
+        // filters resolve with the UI closed too, so background video filtering works.
         cache.request(levelID);
         return std::nullopt;
     }
-    // Una ID muerta no encaja en nada: se queda visible para poder borrarla.
+    // dead IDs stay visible so they can be deleted.
     if (!brief->found) return true;
 
     return matchesFilters(filters, brief->filterDifficulty, brief->length, brief->platformer, hasVideo);

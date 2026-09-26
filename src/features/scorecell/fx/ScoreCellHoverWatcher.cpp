@@ -58,8 +58,7 @@ void ScoreCellHoverWatcher::update(float) {
     if (!cell->getParent()) return;
 
 #if defined(GEODE_IS_MOBILE)
-    // No mouse on touch screens: taps highlight via the cursor service, and the
-    // highlight sticks on the last-tapped cell as selection feedback.
+    // No mouse on touch: taps highlight via cursor service, sticking on last-tapped as selection.
     CCPoint pointer = CursorManager::get().pointerPos();
 #else
     CCPoint pointer = geode::cocos::getMousePos();
@@ -153,8 +152,7 @@ void ScoreCellHoverWatcher::ensureGlow() {
     auto cs = cell->getContentSize();
     if (cs.width <= 1.f || cs.height <= 1.f) return;
 
-    // Rounded clip matching the cell gradient: a square overlay would flash
-    // white corners over the rounded background on every hover.
+    // Rounded clip matching the gradient: square would flash white corners on hover.
     auto stencil = paimon::SpriteHelper::createRoundedRectStencil(cs.width, cs.height, 7.f);
     if (!stencil) return;
     auto clip = CCClippingNode::create(stencil);
@@ -185,8 +183,7 @@ void ScoreCellHoverWatcher::startShine() {
 
     auto stencil = paimon::SpriteHelper::createRoundedRectStencil(cs.width, cs.height, 7.f);
     if (!stencil) return;
-    // Plain CCClippingNode: ScissorClipNode would take its scissor fast-path
-    // (axis-aligned rect) and ignore the rounded stencil.
+    // Plain CCClippingNode: ScissorClipNode fast-paths axis-aligned rects and ignores rounded stencils.
     auto clip = CCClippingNode::create(stencil);
     if (!clip) return;
     clip->setContentSize(cs);

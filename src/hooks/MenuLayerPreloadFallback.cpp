@@ -1,5 +1,5 @@
-// Reserve the deferred preload on first menu entry and show its progress.
-// Bootstrap shares the claim, so re-entry never duplicates the work.
+// claim the deferred preload on first menu entry and show its progress;
+// Bootstrap shares the claim, so re-entry never duplicates the work
 
 #include <Geode/modify/MenuLayer.hpp>
 
@@ -36,16 +36,13 @@ class $modify(PaimonMenuLayerPreload, MenuLayer) {
     };
 
     bool init() {
-        if (!MenuLayer::init()) {
-            return false;
-        }
-
+        if (!MenuLayer::init()) return false;
 
         if (paimon::preload::tryClaimPreload()) {
             paimon::preload::startFullPreload();
         }
 
-        // Show the label only if the preload started (total > 0) and hasn't finished.
+        // only when the preload started and hasn't finished
         if (paimon::preload::getTotalCount() > 0 && !paimon::preload::isFinished()) {
             this->createPreloadLabel();
             this->updatePreloadLabel(0.f);
@@ -59,16 +56,14 @@ class $modify(PaimonMenuLayerPreload, MenuLayer) {
     void onExit() {
         this->unschedule(schedule_selector(PaimonMenuLayerPreload::updatePreloadLabel));
         this->unschedule(schedule_selector(PaimonMenuLayerPreload::removePreloadLabel));
-        if (m_fields->progressLabel) {
-            m_fields->progressLabel = nullptr;
-        }
+        m_fields->progressLabel = nullptr;
         m_fields->updateScheduled = false;
         MenuLayer::onExit();
     }
 
     void createPreloadLabel() {
         if (m_fields->progressLabel) return;
-        // Also bail if another instance already added it (unlikely, defensive).
+        // another instance may have added it already
         if (this->getChildByID("paimbnails-menu-preload-progress"_spr)) return;
 
         auto label = cocos2d::CCLabelBMFont::create("Paimbnails: 0/0", "chatFont.fnt");
@@ -78,7 +73,7 @@ class $modify(PaimonMenuLayerPreload, MenuLayer) {
         label->setAnchorPoint({0.f, 1.f});
 
         auto winSize = cocos2d::CCDirector::get()->getWinSize();
-        // Top-left corner, clear of the username/control buttons.
+        // top-left, clear of the username/control buttons
         label->setPosition({6.f, winSize.height - 6.f});
         this->addChild(label, 1000);
         m_fields->progressLabel = label;
@@ -109,7 +104,7 @@ class $modify(PaimonMenuLayerPreload, MenuLayer) {
             text = fmt::format("Paimbnails: {}/{} listo!", loaded, total);
             this->unschedule(schedule_selector(PaimonMenuLayerPreload::updatePreloadLabel));
             m_fields->updateScheduled = false;
-            // Remove the label 2s after it reaches the done state so it doesn't linger.
+            // remove 2s after done so it doesn't linger
             this->scheduleOnce(
                 schedule_selector(PaimonMenuLayerPreload::removePreloadLabel),
                 2.0f

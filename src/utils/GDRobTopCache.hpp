@@ -1,6 +1,5 @@
 #pragma once
-// On-disk cache of RobTop reads (7-day TTL) to avoid rate limits.
-// Live polling (messages, friend requests) isn't cached.
+// on-disk RobTop cache (7-day TTL) against rate limits; live polling uncached.
 
 #include <Geode/Geode.hpp>
 #include <functional>

@@ -35,7 +35,7 @@ std::string resolve(std::string const& name) {
 }
 
 LiveSlotRuntime& LiveSlotRuntime::get() {
-    // Cocos can outlive static destruction; GL resources are released before reload.
+    // Leaked on purpose: cocos can outlive static destruction; GL frees before reload.
     static auto* runtime = new LiveSlotRuntime;
     return *runtime;
 }
@@ -225,7 +225,7 @@ void LiveSlotRuntime::prepareMasks() {
                     if (!loaded) error = loaded.unwrapErr();
                     else {
                         auto atlas = std::move(loaded).unwrap();
-                        // Large masks would retain excessive GPU memory for one UI sheet.
+                        // Big masks would pin too much GPU for one UI sheet.
                         if (atlas.width() > 4096 || atlas.height() > 4096) {
                             error = "UI atlas exceeds 4096 pixels";
                         } else if (input.plist.empty()) {
@@ -282,12 +282,12 @@ CCGLProgram* LiveSlotRuntime::prepareDraw(CCTexture2D* texture, CCGLProgram* ori
     auto const& source = m_sources[it->second];
     auto size = texture->getContentSizeInPixels();
     if (!source.mask || size.width != source.width || size.height != source.height) return nullptr;
-    // Custom shaders own their uniforms and samplers, including icon gradients.
+    // Custom shaders own uniforms/samplers, icon gradients included.
     if (original != CCShaderCache::sharedShaderCache()->programForKey(kCCShader_PositionTextureColor)) return nullptr;
     auto* shader = m_shader.data();
     if (!shader) return nullptr;
     shader->use();
-    // Some devices pad NPOT source textures; the role mask still uses image dimensions.
+    // Some devices pad NPOT sources; role mask still uses image dims.
     float maskScaleX = static_cast<float>(texture->getPixelsWide()) / source.width;
     float maskScaleY = static_cast<float>(texture->getPixelsHigh()) / source.height;
     if (m_uniformsDirty || m_premultiplied != texture->hasPremultipliedAlpha() ||

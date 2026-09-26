@@ -165,8 +165,7 @@ namespace video {
 // Longest-side decode cap in pixels; 0 keeps native size.
 // Decode-time scaling also reduces ring-buffer, GL texture, PBO, and FBO memory.
     inline int videoMaxDecodeDimension() {
-// Snapshot quality per settings version; decoders reuse it across opens.
-// Atomics with dim-published-before-version so concurrent opens never race.
+// snapshot per settings version; dim published before version so concurrent opens never race.
         static std::atomic<int> s_cachedDim{-1};
         static std::atomic<uint64_t> s_ver{UINT64_MAX};
         uint64_t ver = internal::g_settingsVersion.load(std::memory_order_relaxed);

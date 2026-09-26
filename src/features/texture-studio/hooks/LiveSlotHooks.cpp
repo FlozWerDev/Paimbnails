@@ -50,7 +50,7 @@ class $modify(PaimonLiveSlotTextures, CCTextureCache) {
 class $modify(PaimonLiveLevelCell, LevelCell) {
     void draw() {
         LevelCell::draw();
-        // Runs after the original so it wins over updateBGColor every frame.
+        // After the original: wins over updateBGColor every frame.
         if (!m_backgroundLayer) return;
         ccColor3B color;
         if (LiveSlotRuntime::get().cellColor(m_indexPath.m_row, &color)) {
@@ -62,7 +62,7 @@ class $modify(PaimonLiveLevelCell, LevelCell) {
 class $modify(PaimonLiveCommentCell, CommentCell) {
     void draw() {
         CommentCell::draw();
-        // Runs after the original so it wins over updateBGColor every frame.
+        // After the original: wins over updateBGColor every frame.
         if (!m_backgroundLayer) return;
         ccColor3B color;
         if (LiveSlotRuntime::get().cellColor(m_indexPath.m_row, &color)) {

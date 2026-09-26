@@ -127,10 +127,9 @@ bool decimalModifierHeld() {
     std::string mod = paimon::settings::input_scroll::decimalModifier();
     if (mod == "ctrl")  return kb->getControlKeyPressed();
     if (mod == "alt")   return kb->getAltKeyPressed();
-return kb->getShiftKeyPressed(); // Default modifier.
+    return kb->getShiftKeyPressed();
 }
 
-// Format a fixed-precision value and remove negative zero.
 std::string formatFloat(double value, int places) {
     if (std::abs(value) < std::pow(10.0, -(places + 3))) value = 0.0;
     char buf[64];
@@ -207,8 +206,7 @@ bool respectsMaxLen(CCTextInputNode* input, std::string const& newStr,
         return true;
     }
     if (!paimon::settings::input_scroll::wrap()) return false;
-
-// Wrap only pure integers; decimals are left unchanged.
+    // wrap only pure integers; decimals stay unchanged.
     if (newStr.find('.') != std::string::npos) return false;
 
     bool neg = !newStr.empty() && newStr[0] == '-';
@@ -243,8 +241,7 @@ void writeFloat(CCTextInputNode* input, double value, NumericProfile const& prof
 bool tryHandleInputScroll(float y) {
     if (!paimon::settings::input_scroll::enabled()) return false;
     if (y == 0.f) return false;
-
-// Ignore smooth-scroll replay ticks.
+    // ignore smooth-scroll replay ticks.
     if (paimon::smoothscroll::SmoothScrollController::get().isReplaying()) {
         return false;
     }
@@ -270,8 +267,7 @@ bool tryHandleInputScroll(float y) {
     } else {
         long long base = 0;
         if (!parseCurrentInt(target, base)) return false;
-        // parseCurrentInt saturates, so the step itself must too: adding past
-        // the limits is signed overflow.
+        // parseCurrentInt saturates, so the step must too: adding past the limits is signed overflow.
         long long bump = static_cast<long long>(dir) * std::max(1, paimon::settings::input_scroll::intStep());
         long long next = base;
         if (bump > 0 && base > std::numeric_limits<long long>::max() - bump) {
@@ -290,7 +286,7 @@ bool tryHandleInputScroll(float y) {
 
 class $modify(PaimonInputScrollDispatcher, CCMouseDispatcher) {
     static void onModify(auto& self) {
-// Run before volume/smooth scroll and consume owned ticks.
+        // before volume/smooth scroll; owned ticks are consumed.
         (void)self.setHookPriorityPre("cocos2d::CCMouseDispatcher::dispatchScrollMSG",
                                        geode::Priority::VeryEarly);
     }

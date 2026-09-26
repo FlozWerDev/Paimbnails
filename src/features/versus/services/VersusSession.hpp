@@ -44,8 +44,8 @@ public:
 
     void accept(bool yes);
     void ban(int levelId);
-    // Loads the level and pushes PlayLayer. Answers false if the level is not
-    // available, which voids the match rather than hanging on a download.
+    // loads the level and pushes PlayLayer; false voids the match instead of
+    // hanging on a download.
     bool enterLevel();
 
     void onLevelStarted(PlayLayer* layer);

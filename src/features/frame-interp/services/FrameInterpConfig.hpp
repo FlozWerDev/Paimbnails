@@ -1,12 +1,11 @@
 #pragma once
 
-// Configuracion de la interpolacion de fotogramas. Vive en su propio JSON
-// (frame_interp.json) igual que la de RTX.
+// Frame interpolation config. Own JSON (frame_interp.json), like RTX.
 
 namespace paimon::frameinterp {
 
-// Retraso de lo dibujado respecto a lo simulado, en pasos de fisica: un paso
-// entero nunca extrapola; cero dibuja el presente adivinando el ultimo tramo.
+// Draw lag behind simulation, in physics steps: a full step never
+// extrapolates; zero draws the present by guessing the last stretch.
 enum class Latency : int {
     Smooth   = 0,
     Balanced = 1,
@@ -28,7 +27,7 @@ struct FrameInterpConfig {
     bool  inEditor      = true;
 };
 
-// Fraccion de paso que se deja de retraso para cada modo.
+// Lag fraction kept per mode.
 double latencyLag(int latency);
 
 } // namespace paimon::frameinterp

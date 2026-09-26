@@ -1,5 +1,5 @@
-// Fallback de aplicación sin MoreIcons: tras updatePlayerFrame, inyecta los
-// frames compilados del icono activo en las capas del SimplePlayer.
+// No-MoreIcons fallback: after updatePlayerFrame, injects the active icon's
+// compiled frames into the SimplePlayer layers.
 
 #include "../services/IconApplier.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"

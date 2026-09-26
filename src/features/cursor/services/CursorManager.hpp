@@ -122,14 +122,13 @@ public:
     std::string addToGallery(std::filesystem::path const& srcPath);
     std::vector<std::string> importFromFile(std::filesystem::path const& srcPath);
 
-    // Importa bytes ya en memoria (descargas de la tienda). packName vacio deja
-    // el cursor en la galeria suelta.
+    // Imports in-memory bytes (shop downloads). Empty packName leaves it loose.
     std::string importData(std::vector<uint8_t> const& data,
                            std::string const& displayName,
                            std::string const& packName = "");
-    // Reserva una carpeta de pack con nombre libre y devuelve ese nombre.
+    // Reserves a free-named pack folder and returns that name.
     std::string createPack(std::string const& baseName);
-    // Importa un .zip descargado como pack nuevo.
+    // Imports a downloaded .zip as a new pack.
     std::vector<std::string> importZipData(std::vector<uint8_t> const& data,
                                            std::string const& displayName);
 
@@ -185,8 +184,7 @@ private:
     bool m_mouseDown = false;
     bool m_rightDown = false;
     bool m_fxHeld = false;
-    // Offscreen until the first touch: on mobile there is no pointer before
-    // a finger lands, and (0,0) would fake a bottom-left hover/cursor on boot.
+    // Offscreen until first touch: (0,0) would fake a bottom-left hover on boot.
     cocos2d::CCPoint m_touchPoint{-10000.f, -10000.f};
     bool m_sceneVisible = false;
     int  m_sceneVisibleCooldown = 0;

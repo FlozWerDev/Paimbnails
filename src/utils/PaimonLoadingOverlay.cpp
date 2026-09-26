@@ -35,8 +35,7 @@ static std::string getRandomFunFact() {
     return facts[dist(rng)];
 }
 
-// Status texts often arrive as "Loading..." — the dots are animated by the
-// overlay itself, so strip any trailing ones from the base string.
+// dots animate in-overlay; strip trailing ones from the base string.
 static std::string stripTrailingDots(std::string s) {
     while (!s.empty() && s.back() == '.') s.pop_back();
     return s;
@@ -113,7 +112,7 @@ bool PaimonLoadingOverlay::init(std::string const& statusText, float spinnerSize
         hasMascot = addStaticMascot() || addSheetMascot();
     }
 
-    // Fallback when both textures are missing (aggressive texture packs).
+    // both textures missing (aggressive packs).
     if (!m_ring && !hasMascot) {
         m_spinner = geode::LoadingSpinner::create(spinnerSize);
         m_spinner->setID("paimon-loading-spinner"_spr);
@@ -188,8 +187,7 @@ void PaimonLoadingOverlay::showAt(CCNode* parent, CCPoint const& position, CCSiz
 void PaimonLoadingOverlay::show(CCNode* parent, int zOrder) {
     if (!parent) return;
 
-    // Convert both corners to parent space so scaled/offset parents (e.g. popups
-    // mid-entrance-animation) leave no uncovered strips.
+    // parent-space corners; scaled/offset parents leave no gaps.
     auto winSize = CCDirector::get()->getWinSize();
     auto bl = parent->convertToNodeSpace({0.f, 0.f});
     auto tr = parent->convertToNodeSpace({winSize.width, winSize.height});
@@ -215,8 +213,7 @@ void PaimonLoadingOverlay::showLocal(CCNode* parent, int zOrder) {
 
 void PaimonLoadingOverlay::positionStatusLabel() {
     if (!m_statusLabel) return;
-    // Keep the base text centered while the animated dots grow to the right,
-    // so the label doesn't wiggle as dots are added.
+    // base text stays centered as dots grow; no wiggle.
     m_statusLabel->setString(m_baseText.c_str());
     float baseW = m_statusLabel->getScaledContentSize().width;
     m_statusLabel->setPosition({m_centerX - baseW / 2.f, m_statusY});
@@ -294,13 +291,13 @@ void PaimonLoadingOverlay::updateText(std::string const& text) {
 }
 
 void PaimonLoadingOverlay::registerWithTouchDispatcher() {
-    // high priority + swallow so buttons underneath can't be pressed mid-load
+    // high priority + swallow; buttons below stay unpressable mid-load.
     CCTouchDispatcher::get()->addTargetedDelegate(this, -512, true);
 }
 
 bool PaimonLoadingOverlay::ccTouchBegan(CCTouch* touch, CCEvent*) {
     if (m_dismissed) return false;
-    // only claim touches inside the covered area (showLocal may cover just a popup)
+    // only inside the covered area (showLocal may cover just a popup).
     auto p = this->convertToNodeSpace(touch->getLocation());
     auto s = this->getContentSize();
     return p.x >= 0.f && p.y >= 0.f && p.x <= s.width && p.y <= s.height;

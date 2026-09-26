@@ -4,8 +4,7 @@
 
 namespace paimon::ui {
 
-/// Detach IME/delegate before destroying the owner; avoids an AV in
-/// TextInput::textChanged when keys arrive after removeFromParent.
+// detach IME/delegate first; late key events AV in TextInput::textChanged otherwise.
 inline void detachGeodeTextInput(geode::TextInput* input) {
     if (!input) return;
 

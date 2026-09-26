@@ -58,8 +58,7 @@ constexpr float kCursorTeleportViewports = 2.5f;
 constexpr float kHeatRedrawEvery = 0.35f;
 constexpr int kMaxRemoteCursorDimension = 512;
 
-// CCDrawNode blends premultiplied, so unscaled rgb at low alpha reads as neon
-// glow instead of a soft tint. Scale rgb by alpha.
+// CCDrawNode blends premultiplied: scale rgb by alpha or low-alpha reads as neon glow.
 ccColor4F drawColor(ccColor3B c, float alpha) {
     float a = std::clamp(alpha, 0.f, 1.f);
     return {c.r / 255.f * a, c.g / 255.f * a, c.b / 255.f * a, a};
@@ -136,8 +135,7 @@ IconType peerIconTypeLocal(int raw) {
     }
 }
 
-// Fades every RGBA-capable node in the tree; plain container nodes in this
-// cocos fork don't cascade opacity, so each descendant animates itself.
+// Plain containers in this cocos fork don't cascade opacity; each descendant animates itself.
 void fadeOutTree(CCNode* node, float duration) {
     if (!node) return;
     if (typeinfo_cast<CCRGBAProtocol*>(node)) {
@@ -217,8 +215,7 @@ bool CollabEditorOverlay::init(LevelEditorLayer* editor) {
     );
     m_chatButton->setID("collab-chat-button"_spr);
     m_chatButton->setVisible(CollabManager::get().connected());
-    // Touch-friendly ping: middle-mouse doesn't exist on mobile, and this
-    // helps desktop trackpads too. Pings the center of the current view.
+    // No middle-mouse on mobile/trackpads: ping the current view center.
     auto* pingSprite = ButtonSprite::create("Ping", "goldFont.fnt", "GJ_button_02.png", 0.45f);
     m_pingButton = CCMenuItemExt::createSpriteExtra(
         pingSprite,
@@ -413,8 +410,7 @@ void CollabEditorOverlay::drainTrails(float dt) {
 }
 
 void CollabEditorOverlay::updatePresence(float dt) {
-    // Follow mode consumes the camera sample through the same per-frame path,
-    // instead of snapping the local view on the manager's 20 Hz logic tick.
+    // Follow mode samples through the per-frame path, not the 20 Hz logic tick.
     CollabManager::get().updateFollow(dt);
 
     auto* objectLayer = m_editor ? m_editor->m_objectLayer : nullptr;
@@ -555,8 +551,7 @@ void CollabEditorOverlay::onPeerCamera(int clientId, std::string const& name, fl
     bool const teleported = std::hypot(x - slot->x, y - slot->y) * zoom >
         viewportDiagonal * kCursorTeleportViewports;
 
-    // Do not draw a wake across the whole level after a camera teleport or
-    // while the cursor was outside the window. Ordinary samples are smoothed.
+    // No wake after camera teleports or off-window cursor; ordinary samples smooth.
     if (becameVisible || teleported) {
         slot->x = x;
         slot->y = y;
@@ -710,8 +705,7 @@ void CollabEditorOverlay::redrawHeatmap() {
     m_heatDraw->clear();
     auto samples = CollabManager::get().heatmapSamples(100);
     for (auto const& s : samples) {
-        // Warm gradient: yellow -> orange by intensity, kept as a faint haze so
-        // it never washes out the objects underneath.
+        // Warm yellow-orange haze, faint enough to never wash out objects.
         float t = s.intensity;
         ccColor3B warm{
             255,

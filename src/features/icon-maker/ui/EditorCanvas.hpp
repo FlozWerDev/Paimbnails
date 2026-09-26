@@ -1,5 +1,5 @@
 #pragma once
-// Superficie de trabajo tactil del editor (elige, mueve, estira y gira capas).
+// Editor touch surface (pick, move, stretch and rotate layers).
 
 #include "../engine/PieceRenderer.hpp"
 
@@ -17,16 +17,13 @@ class EditorCanvas : public cocos2d::CCLayer {
 public:
     struct Zone {
         std::string key;
-        // La textura la crea el editor una vez y la comparten el lienzo y las
-        // mini-vistas de la tira de zonas.
+        // editor-owned texture shared by canvas and zone strip thumbnails.
         cocos2d::CCTexture2D* texture = nullptr;
-        texture_studio::ImageBuffer composite;  // para el cuentagotas
+        texture_studio::ImageBuffer composite;  // eyedropper source
         std::vector<PieceRender> pieces;
     };
 
-    // Los desplazamientos llegan como fraccion de medio lienzo, que es la
-    // unidad en la que ImageTransform guarda el offset, asi que el editor los
-    // suma tal cual.
+    // nudges arrive in ImageTransform offset units (half-canvas fraction); summed as-is.
     struct Callbacks {
         std::function<void(std::string const& zoneKey, int pieceIndex)> onSelect;
         std::function<void(float dx, float dy)> onMove;
@@ -50,14 +47,13 @@ public:
     void setEyedropper(bool on);
     bool eyedropper() const { return m_eyedropper; }
 
-    // `viewportPoint` en el espacio del propio lienzo; el zoom se ancla ahi.
+    // zoom anchors at `viewportPoint`, in canvas space.
     void zoomAt(float factor, cocos2d::CCPoint const& viewportPoint);
     void nudgeZoom(float factor);
     void resetView();
     float zoomLevel() const { return m_zoom; }
 
-    // Punto de pantalla a coordenadas del lienzo; quien llama comprueba si
-    // cae dentro del marco.
+    // screen point to canvas coords; caller checks the frame.
     cocos2d::CCPoint viewportFromScreen(cocos2d::CCPoint const& screen);
 
 protected:
@@ -82,7 +78,7 @@ protected:
     bool pieceAt(cocos2d::CCPoint const& canvasPoint,
                  std::string& outZone, int& outPiece) const;
     cocos2d::ccColor4B sampleAt(cocos2d::CCPoint const& canvasPoint) const;
-    // 0..3 son las esquinas y 4 el tirador de giro; -1 si no toca ninguno.
+    // 0..3 corners, 4 rotate handle; -1 on miss.
     int corneredAt(cocos2d::CCPoint const& viewport) const;
     void endGesture();
 

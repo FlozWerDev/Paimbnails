@@ -41,8 +41,7 @@ bool ParamSliderRow::init(std::string const& label,
     this->setContentSize({width, kRowHeight});
     this->setAnchorPoint({0.f, 0.5f});
 
-    // Proportional layout so the row works from ~180 px side panels up to
-    // full-width popups.
+    // Proportional layout: works from ~180px side panels to full-width popups.
     float labelW = std::clamp(width * 0.34f, 56.f, 96.f);
     float valueW = std::clamp(width * 0.18f, 30.f, 46.f);
 
@@ -54,8 +53,7 @@ bool ParamSliderRow::init(std::string const& label,
     }
 
     float sliderW = std::max(50.f, width - labelW - valueW - 8.f);
-    // The stock groove is ~210 px at scale 1; pick the scale that fills the
-    // available space without dwarfing the 24 px row.
+    // Stock groove is ~210px at scale 1: fill space without dwarfing the 24px row.
     float scale = std::clamp(sliderW / 210.f, 0.3f, 0.62f);
     auto* slider = Slider::create(this, menu_selector(ParamSliderRow::onSlider), scale);
     if (slider) {

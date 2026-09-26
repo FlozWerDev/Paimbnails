@@ -132,7 +132,6 @@ bool UpdateProgressPopup::init(
 
     this->setKeyboardEnabled(true);
 
-    // Lanza la descarga al construir
     this->startDownload();
     return true;
 }
@@ -213,7 +212,6 @@ void UpdateProgressPopup::onDone(bool ok, std::string const& msgOrPath) {
             m_statusLabel->setColor({255, 110, 110});
         }
         if (m_cancelBtn) {
-            // re-etiquetamos cancelar como "cerrar"
             if (auto spr = typeinfo_cast<ButtonSprite*>(m_cancelBtn->getNormalImage())) {
                 spr->setString(tr("pai.update.close", "Close").c_str());
             }
@@ -231,7 +229,6 @@ void UpdateProgressPopup::onCancel(CCObject*) {
 }
 
 void UpdateProgressPopup::onRestart(CCObject*) {
-    log::info("[UpdateChecker] User requested restart");
     if (!UpdateChecker::get().restartToApplyPendingUpdate()) {
         geode::utils::game::restart(true);
     }

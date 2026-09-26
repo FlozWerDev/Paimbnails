@@ -28,7 +28,6 @@ constexpr float kPopupH = 290.f;
 constexpr float kRowW   = 420.f;
 constexpr float kRowH   = 26.f;
 
-// The creator strip is added only when the feature is enabled.
 constexpr float kMakerBandH   = 34.f;
 constexpr float kMakerBandPad = 6.f;
 constexpr float kMakerExtraH  = 28.f;

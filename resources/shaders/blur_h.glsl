@@ -1,7 +1,5 @@
-// Gaussian horizontal pass (13-tap linear-sampling, sigma tuned por radius).
-// Idéntico a `fragmentShaderHorizontal` del inline. Se usa en H+V Gaussian
-// blur (createBlurredSprite, createPopupBlurredSprite, ProgressiveBlurJob).
-// El uniform `u_screenSize` es el tamaño del RT destino, no de la textura.
+// gaussian horizontal pass; keep in sync with fragmentShaderHorizontal inline.
+// u_screenSize is the target RT size, not the texture size.
 #ifdef GL_ES
 precision mediump float;
 #endif
@@ -18,10 +16,8 @@ void main() {
     vec2 texOffset = 1.0 / u_screenSize;
     vec2 direction = vec2(texOffset.x, 0.0);
 
-    // 9-tap Gaussian via linear-sampling optimization
-    // Precomputed weights for sigma=3.0, scaled dynamically
-    float scale = sigma / 3.0;
-    scale = min(scale, 2.5); // evita artefactos cuadrados con radius extremo
+    // cap: extreme radius turns boxy.
+    float scale = min(sigma / 3.0, 2.5);
     float dx = direction.x * scale;
 
     vec3 result = texture2D(u_texture, v_texCoord).rgb * 0.227027027;

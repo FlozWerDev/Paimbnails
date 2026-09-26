@@ -1,6 +1,5 @@
 // Dual Kawase downsample: center(×4) + 4 diagonal half-pixel(×1) = ÷8.
-// Idéntico a `fragmentShaderPaimonBlurDown` del header — no cambies pesos
-// sin actualizar ambos lados durante la ventana de migración.
+// keep weights in sync with fragmentShaderPaimonBlurDown.
 #ifdef GL_ES
 precision mediump float;
 #endif

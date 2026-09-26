@@ -4,7 +4,6 @@
 #include "../core/RuntimeLifecycle.hpp"
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/GameLevelManager.hpp>
-#include <Geode/loader/Log.hpp>
 
 using namespace geode::prelude;
 
@@ -193,7 +192,6 @@ void UserThumbnailsLayer::showError(std::string const& message) {
 
 void UserThumbnailsLayer::onLevelClicked(CCObject* sender) {
     int levelId = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
-    log::info("Level clicked: {}", levelId);
 
     if (auto glm = GameLevelManager::sharedState()) {
         glm->getOnlineLevels(GJSearchObject::create(SearchType::Search, std::to_string(levelId)));

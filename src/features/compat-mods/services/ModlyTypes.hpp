@@ -4,8 +4,7 @@
 #include <string>
 #include <vector>
 
-// Mirror of the Firestore model; the worker strips base64 blobs into PNG URLs,
-// so everything here stays small enough to hold in memory.
+// Firestore mirror; worker strips base64 blobs to PNG URLs, stays memory-small.
 
 namespace paimon::compat_mods {
 

@@ -2,22 +2,21 @@
 
 namespace paimon::ui::constants {
 
-// PaiConfigLayer (editor de fondos). Todo se mide desde los bordes de la
-// pantalla para que aguante 16:9 y 4:3 sin tocar nada mas.
+// measured from screen edges; holds 16:9 and 4:3.
 namespace config {
-    constexpr float HEADER_Y       = 17.f;  // desde arriba: titulo / back / info
-    constexpr float TAB_Y          = 47.f;  // desde arriba: barra de pestanas
+    constexpr float HEADER_Y       = 17.f;  // top: title / back / info
+    constexpr float TAB_Y          = 47.f;  // top: tab bar
     constexpr float TAB_WIDTH      = 118.f;
 
-    constexpr float CONTENT_TOP    = 67.f;  // desde arriba: inicio del contenido
-    constexpr float CONTENT_BOTTOM = 42.f;  // desde abajo: fin del contenido
-    constexpr float FOOTER_Y       = 20.f;  // botones de la barra inferior
+    constexpr float CONTENT_TOP    = 67.f;  // top: content start
+    constexpr float CONTENT_BOTTOM = 42.f;  // bottom: content end
+    constexpr float FOOTER_Y       = 20.f;  // bottom bar buttons
 
-    constexpr float EDGE_PAD       = 6.f;   // margen lateral de las tarjetas
-    constexpr float GUTTER         = 6.f;   // separacion entre tarjetas
+    constexpr float EDGE_PAD       = 6.f;   // card side margin
+    constexpr float GUTTER         = 6.f;   // card gap
 
-    constexpr float LIST_BOTTOM    = 12.f;  // desde abajo de la tarjeta: base de la lista
-    constexpr float LIST_HINT_Y    = 6.f;   // flecha de "hay mas abajo", bajo la lista
+    constexpr float LIST_BOTTOM    = 12.f;  // list base inside card
+    constexpr float LIST_HINT_Y    = 6.f;   // "more below" arrow
 
     constexpr float PROFILE_THUMB_SIZE = 70.f;
 }

@@ -58,8 +58,7 @@ class $modify(PaimonLevelPage, LevelPage) {
         if (level->m_levelID <= 0) return;
         
         if (this->m_levelDisplay) {
-// Reset to the vanilla preview before each page rebuild. The replacement fades
-// in only after its assets are ready, which also handles recycled swipe pages.
+            // reset to vanilla preview first; replacement fades in when ready
             if (m_fields->m_thumbClipper) {
                 m_fields->m_thumbClipper->removeFromParent();
                 m_fields->m_thumbClipper = nullptr;
@@ -73,7 +72,7 @@ class $modify(PaimonLevelPage, LevelPage) {
                 }
             }
 
-// Apply the feature only after restoring the vanilla preview.
+            // restore vanilla first, then apply the feature
             if (!paimon::modules::isEnabled("paimbnails.thumbnails.browser")) return;
 
             int capturedLevelID = level->m_levelID;
@@ -140,8 +139,7 @@ class $modify(PaimonLevelPage, LevelPage) {
             if (success && tex) {
                 self->applyThumbnail(tex);
             } else if (self->m_fields->m_thumbnails.size() > 1) {
-                int next = (attemptIndex + 1) % static_cast<int>(self->m_fields->m_thumbnails.size());
-                if (next != attemptIndex) self->loadThumbnailAt(next);
+                self->loadThumbnailAt((attemptIndex + 1) % static_cast<int>(self->m_fields->m_thumbnails.size()));
             }
         });
     }
@@ -149,7 +147,7 @@ class $modify(PaimonLevelPage, LevelPage) {
     void applyThumbnail(CCTexture2D* tex) {
         if (!tex || !m_levelDisplay) return;
 
-// Keep the previous clipper until the new one fades in for a smooth cross-fade.
+        // keep the previous clipper until the new one fades in
         Ref<CCNode> oldClipper = m_fields->m_thumbClipper;
 
         auto sprite = CCSprite::createWithTexture(tex);
@@ -171,21 +169,21 @@ class $modify(PaimonLevelPage, LevelPage) {
         float scale = std::max(scaleX, scaleY);
 
         sprite->setScaleX(scale);
-sprite->setScaleY(scale * 0.985f); // Avoid one-pixel vertical overflow.
+        sprite->setScaleY(scale * 0.985f); // no one-pixel vertical overflow
         sprite->setPosition(boxSize / 2);
         sprite->setColor({255, 255, 255});
-sprite->setOpacity(0); // Fade over the original preview.
+        sprite->setOpacity(0);
 
         clipper->addChild(sprite);
 
         auto darkOverlay = CCSprite::create();
-darkOverlay->setTextureRect(CCRect(0, 0, boxSize.width, boxSize.height + 2.f)); // Cover edge pixels.
+        darkOverlay->setTextureRect(CCRect(0, 0, boxSize.width, boxSize.height + 2.f)); // cover edge pixels
         darkOverlay->setColor({0, 0, 0});
-darkOverlay->setOpacity(0);
+        darkOverlay->setOpacity(0);
         darkOverlay->setPosition(boxSize / 2);
         clipper->addChild(darkOverlay, 2);
 
-// Behind vanilla labels.
+        // behind vanilla labels
         clipper->setID("paimbnails-clipper"_spr);
         m_levelDisplay->addChild(clipper, -1);
 
@@ -196,7 +194,6 @@ darkOverlay->setOpacity(0);
         m_fields->m_thumbClipper = clipper;
         m_fields->m_thumbSprite = sprite;
 
-// Drop the previous clipper after the new thumbnail fades in.
         if (oldClipper) {
             clipper->runAction(CCSequence::create(
                 CCDelayTime::create(kFadeDur + 0.02f),

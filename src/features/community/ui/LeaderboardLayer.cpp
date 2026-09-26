@@ -205,7 +205,7 @@ bool LeaderboardLayer::init() {
     this->addChild(tabMenu);
     m_tabsMenu = tabMenu;
 
-    // Use GD assets for the tab pill and accent the active tab.
+    // Tab pill from GD assets; active tab accented.
     auto createTab = [&](char const* text, char const* id, char const* iconFrame,
                          ccColor3B accent, CCPoint pos) -> CCMenuItemToggler* {
         float pillW = 116.f;
@@ -350,7 +350,6 @@ bool LeaderboardLayer::init() {
 void LeaderboardLayer::onEnterTransitionDidFinish() {
     CCLayer::onEnterTransitionDidFinish();
 
-    // Restore the cave track after returning from a pushed scene.
     if (m_caveMusicShouldRestore && !m_musicPlaying && !m_leavingForGood) {
         startCaveMusic();
     }
@@ -402,7 +401,6 @@ void LeaderboardLayer::onBack(CCObject*) {
     m_leavingForGood = true;
     killCaveMusic();
 
-    // Restart suspended dynamic audio or let GD restore menu music.
     if (m_didSuspendDynSong) {
         auto* dsm = DynamicSongManager::get();
         if (dsm && dsm->hasSuspendedPlayback()) {
@@ -590,7 +588,7 @@ static int lbDifficultySpriteValue(GJGameLevel* level) {
     return diff;
 }
 
-// Rebuild the difficulty/stars chip when server data arrives.
+// Runs when server data arrives.
 static void lbFillDiffChip(CCNode* chip, GJGameLevel* level) {
     if (!chip || !level) return;
     chip->removeAllChildren();
@@ -2120,7 +2118,6 @@ void LeaderboardLayer::startCaveMusic() {
     // Replace the main channel through GD so volume changes cannot leak old audio.
     engine->playMusic(songPath, true, 0.0f, 0);
 
-    // Resume after a push; otherwise choose a random offset.
     auto* bgCh = lbGetMainBgChannel(engine);
     if (bgCh) {
         if (m_savedCaveMusicPosMs > 0) {

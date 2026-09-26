@@ -1,6 +1,6 @@
-#include "DeclarativeUI.hpp"
-
 #include <Geode/Geode.hpp>
+
+#include "DeclarativeUI.hpp"
 
 using namespace geode::prelude;
 using namespace cocos2d;

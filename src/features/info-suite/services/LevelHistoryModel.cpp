@@ -19,7 +19,7 @@ int64_t number(matjson::Value const& value, int64_t fallback = 0) {
     return value.asInt().unwrapOr(fallback);
 }
 
-// La API mezcla booleanos de verdad con los 0/1 que devolvia el servidor.
+// API mixes true booleans with the 0/1 the server used to return.
 bool truthy(matjson::Value const& value) {
     if (value.isBool()) return value.asBool().unwrapOr(false);
     return value.isNumber() && value.asInt().unwrapOr(0) != 0;
@@ -29,8 +29,7 @@ std::string dayOf(std::string const& iso) {
     return iso.size() >= 10 ? iso.substr(0, 10) : iso;
 }
 
-// Los snapshots que vienen de listados solo guardan el dia; los de descarga
-// traen la hora exacta y vale la pena ensenarla.
+// Listing snapshots keep the day only; downloads carry the exact hour, worth showing.
 std::string clockOf(std::string const& iso) {
     if (iso.size() < 19 || iso[10] != 'T') return "";
     if (iso.compare(11, 8, "00:00:00") == 0) return "";
@@ -51,7 +50,7 @@ std::string sourceName(std::string const& type) {
     return type.empty() ? "Registro" : type;
 }
 
-// Mismo mapa que usa el juego para pintar la cara de un nivel sin votos.
+// same map the game uses to paint an unrated level's face.
 int faceFromStars(int stars) {
     switch (stars) {
         case 1:  return -1;
@@ -77,8 +76,7 @@ int demonFace(int demonType) {
     }
 }
 
-// Los votos de dificultad llegan como numerador y denominador, igual que en la
-// respuesta del servidor de RobTop.
+// difficulty votes arrive as numerator and denominator, like RobTop's server reply.
 int faceOf(matjson::Value const& record, int stars) {
     if (truthy(record["auto"])) return -1;
     if (truthy(record["demon"])) return demonFace(static_cast<int>(number(record["demon_type"])));
@@ -93,9 +91,8 @@ int faceOf(matjson::Value const& record, int stars) {
     return faceFromStars(stars);
 }
 
-// Cierto solo cuando el snapshot guarda de verdad la dificultad, no cuando la
-// deducimos de las estrellas: comparar caras aproximadas invents cambios que
-// nunca ocurrieron.
+// true only when the snapshot really stores difficulty, not star-derived:
+// diffing approximate faces invents changes that never happened.
 bool faceIsExact(matjson::Value const& record) {
     if (truthy(record["demon"])) return record["demon_type"].isNumber();
     return number(record["rating"]) > 0;
@@ -111,15 +108,15 @@ GJFeatureState featureFromTiers(int64_t epic, int64_t featureScore) {
     return featureScore > 0 ? GJFeatureState::Featured : GJFeatureState::None;
 }
 
-// Hacen falta las dos mitades: sin el tier epic un nivel legendary pasaria por
-// featured, y sin la puntuacion un nivel featured pasaria por normal. A medias
-// sirven para pintar, no para decidir que cambio.
+// both halves needed: without the epic tier legendary passes as featured, and
+// without the score featured passes as normal. Half snapshots paint but never
+// decide what changed.
 bool featureIsExact(matjson::Value const& record) {
     return record["epic"].isNumber() && record["feature_score"].isNumber();
 }
 
-// Los volcados de GLM fechan la subida del volcado, no la mirada: se ensenan
-// en la lista pero no pueden decidir cuando cambio nada.
+// GLM dumps date the dump upload, not the sighting: listed but never deciding
+// when anything changed.
 bool isLiveSnapshot(matjson::Value const& record) {
     return text(record["record_type"]).rfind("glm_", 0) != 0;
 }
@@ -177,8 +174,8 @@ HistoryEntry buildEntry(matjson::Value const& record) {
     return entry;
 }
 
-// El primer snapshot no marca hitos: solo sabemos que el nivel ya estaba asi,
-// no cuando llego a estarlo. Marcarlo mentiria sobre la fecha del rate.
+// First snapshot marks no milestones: the level was already like that, with no
+// since-when. Marking it would lie about the rate date.
 void markMilestones(std::vector<matjson::Value> const& records, LevelHistory& history) {
     bool ratingSeeded = false;
     bool featureSeeded = false;
@@ -208,8 +205,8 @@ void markMilestones(std::vector<matjson::Value> const& records, LevelHistory& hi
             } else if (entry.stars != lastStars) {
                 entry.milestones.push_back(HistoryMilestone::Restarred);
             } else if (entry.stars > 0 && exact && lastFaceExact && entry.face != lastFace) {
-                // Solo cuenta despues del rate. En un nivel sin calificar la
-                // cara sale de los votos de la gente y baila sola cada dia.
+                // counts only past the rate. Unrated faces come from crowd votes
+                // and drift daily on their own.
                 entry.milestones.push_back(HistoryMilestone::Difficulty);
             }
             lastStars = entry.stars;
@@ -241,8 +238,8 @@ void markMilestones(std::vector<matjson::Value> const& records, LevelHistory& hi
     }
 }
 
-// Lo de hoy sale del cache propio de la API: los snapshots viejos que suben los
-// usuarios pueden llegar desordenados y con contadores atrasados.
+// Today comes from the API's own cache: user-uploaded old snapshots may arrive
+// out of order with stale counters.
 void fillCurrentState(matjson::Value const& root, LevelHistory& history) {
     history.levelName = text(root["cache_level_name"]);
     history.username = text(root["cache_username"]);
@@ -256,9 +253,8 @@ void fillCurrentState(matjson::Value const& root, LevelHistory& history) {
     history.deleted = truthy(root["is_deleted"]);
     history.deletedDate = dayOf(text(root["deleted_date"]));
 
-    // La cara necesita saber si es demon y de que tipo, y eso solo lo guardan
-    // los snapshots completos: el cache de la API se queda en las estrellas.
-    // Con un volcado de GLM nos conformamos si no hay nada en vivo.
+    // faces need demon kind, kept by full snapshots only; the API cache stops
+    // at stars. A GLM dump fills in when nothing live exists.
     auto newestExactFace = [&history](bool liveOnly) {
         for (auto it = history.entries.rbegin(); it != history.entries.rend(); ++it) {
             if (!it->hasRating || it->face == 0 || !faceIsExact(it->raw)) continue;
@@ -298,8 +294,7 @@ LevelHistory parseLevelHistory(matjson::Value const& root) {
     auto sorted = records.unwrap();
     if (sorted.empty()) return history;
 
-    // El formato ISO ordena bien comparando texto, y el id desempata los
-    // snapshots que cayeron el mismo dia.
+    // ISO sorts by plain text compare; id breaks same-day ties.
     std::stable_sort(sorted.begin(), sorted.end(),
         [](matjson::Value const& a, matjson::Value const& b) {
             auto left = timestampOf(a);

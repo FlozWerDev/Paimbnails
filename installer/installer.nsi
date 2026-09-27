@@ -8,11 +8,15 @@ OutFile "Paimbnails-Installer.exe"
 InstallDir "$PROGRAMFILES32\Steam\steamapps\common\Geometry Dash\geode\mods"
 RequestExecutionLevel admin
 
-VIProductVersion "2.3.1.0"
+!ifndef PAIMBNAILS_BUILD_NUMBER
+    !define PAIMBNAILS_BUILD_NUMBER "0"
+!endif
+
+VIProductVersion "1.2.0.${PAIMBNAILS_BUILD_NUMBER}"
 VIAddVersionKey "ProductName" "Paimbnails"
 VIAddVersionKey "CompanyName" "FlozWer"
 VIAddVersionKey "FileDescription" "Paimbnails - Thumbnails for Geometry Dash"
-VIAddVersionKey "FileVersion" "2.3.1"
+VIAddVersionKey "FileVersion" "1.2.0.${PAIMBNAILS_BUILD_NUMBER}"
 VIAddVersionKey "LegalCopyright" "FlozWer"
 
 !define MUI_ICON "paimbnails.ico"

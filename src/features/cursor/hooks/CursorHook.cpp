@@ -15,11 +15,13 @@ using namespace cocos2d;
 namespace {
 void feedTouch(CCSet* touches, int state) {
     if (!touches) return;
-    auto* touch = static_cast<CCTouch*>(touches->anyObject());
-    if (!touch) return;
 
     auto& cm = CursorManager::get();
-    cm.setTouchPoint(touch->getLocation());
+    for (auto it = touches->begin(); it != touches->end(); ++it) {
+        if (auto* touch = static_cast<CCTouch*>(*it)) {
+            cm.setTouchPoint(touch->getLocation());
+        }
+    }
     if (state >= 0) cm.setMouseDown(state != 0);
 }
 } // namespace
@@ -70,14 +72,14 @@ public:
     void update(float dt) override {
         auto& cm = CursorManager::get();
 
-        // El host vive en OverlayManager y persiste entre escenas.
+        // Overlay host outlives scenes.
         if (cm.config().enabled) {
             if (!cm.isAttached()) cm.attachToOverlay();
         } else if (cm.isAttached()) {
             cm.detachFromScene();
         }
 
-        // Los efectos de click funcionan aunque el cursor este apagado (en movil no hay cursor).
+        // Click FX run with the cursor off (mobile has none).
         cm.update(dt);
     }
 };

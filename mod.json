@@ -2,11 +2,9 @@
   "geode": "5.10.1",
   "gd": {
     "win": "2.2081",
-    "android": "2.2081",
-    "mac": "2.2081",
-    "ios": "2.2081"
+    "android": "2.2081"
   },
-  "version": "v1.1.3",
+  "version": "v1.2.0",
   "id": "flozwer.paimbnails2",
   "name": "Paimbnails",
   "developer": "FlozWer",
@@ -14,7 +12,7 @@
   "tags": ["interface", "online", "enhancement", "performance", "customization", "music"],
   "links": {
     "community": "https://discord.gg/5N5vpSfZwY",
-    "source": "https://github.com/FlozWerDev/Paimbnails"
+    "source": "https://github.com/Paimonteam/paimbnails-compilation"
   },
 
 

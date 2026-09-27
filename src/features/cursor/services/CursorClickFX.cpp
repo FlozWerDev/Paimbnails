@@ -642,24 +642,10 @@ void CursorClickNode::release(CCPoint const& pos) {
 }
 
 ccColor3B CursorClickNode::resolveColor(float t, float rnd) const {
-    switch (m_cfg.colorMode) {
-        case TrailColorMode::Solid:
-            return m_cfg.color1;
-        case TrailColorMode::Gradient:
-            return mixColor(m_cfg.color1, m_cfg.color2, t);
-        case TrailColorMode::RainbowCycle:
-            return hsv(m_time * m_cfg.hueSpeed * 0.18f, 0.85f, 1.f);
-        case TrailColorMode::RainbowTrail:
-            return hsv(m_time * m_cfg.hueSpeed * 0.18f + t * 0.85f, 0.85f, 1.f);
-        case TrailColorMode::Random:
-            return hsv(rnd, 0.80f, 1.f);
-        case TrailColorMode::Speed:
-// Click effects use hold duration rather than cursor speed.
-            return mixColor(m_cfg.color1, m_cfg.color2,
-                            std::clamp(m_holdTime / 1.2f, 0.f, 1.f));
-        default:
-            return m_cfg.color1;
-    }
+    // Click effects use hold duration rather than cursor speed.
+    return resolveFxColor(m_cfg.colorMode, m_cfg.color1, m_cfg.color2,
+                          t, rnd, std::clamp(m_holdTime / 1.2f, 0.f, 1.f),
+                          m_time, m_cfg.hueSpeed);
 }
 
 float CursorClickNode::holdTuneSize() const {
@@ -681,11 +667,9 @@ CursorClickNode::Particle* CursorClickNode::acquire(int texKind) {
         if (!reuse) reuse = &p;
     }
     if (!reuse) {
-        float worst = -1.f;
-        for (auto& p : m_particles) {
-            float t = p.life / std::max(0.01f, p.maxLife);
-            if (t > worst) { worst = t; reuse = &p; }
-        }
+        reuse = acquireOldest(m_particles, [](auto const& p) {
+            return p.life / std::max(0.01f, p.maxLife);
+        });
     }
     if (!reuse) return nullptr;
 
@@ -710,25 +694,15 @@ CursorClickNode::Particle* CursorClickNode::acquire(int texKind) {
 }
 
 CursorClickNode::Ring* CursorClickNode::acquireRing() {
-    Ring* oldest = nullptr;
-    float worst = -1.f;
-    for (auto& r : m_rings) {
-        if (!r.alive) return &r;
-        float t = r.age / std::max(0.01f, r.maxAge);
-        if (t > worst) { worst = t; oldest = &r; }
-    }
-    return oldest;
+    return acquireOldest(m_rings, [](auto const& r) {
+        return r.age / std::max(0.01f, r.maxAge);
+    });
 }
 
 CursorClickNode::Bolt* CursorClickNode::acquireBolt() {
-    Bolt* oldest = nullptr;
-    float worst = -1.f;
-    for (auto& b : m_bolts) {
-        if (!b.alive) return &b;
-        float t = b.age / std::max(0.01f, b.maxAge);
-        if (t > worst) { worst = t; oldest = &b; }
-    }
-    return oldest;
+    return acquireOldest(m_bolts, [](auto const& b) {
+        return b.age / std::max(0.01f, b.maxAge);
+    });
 }
 
 void CursorClickNode::spawnBurst(ClickBurst effect, CCPoint const& pos) {

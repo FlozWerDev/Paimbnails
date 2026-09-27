@@ -27,10 +27,6 @@ static void registerDefaultHooks() {
                             ctx.dataSize, limit)
             );
         }
-        return HookResult::allow();
-    });
-
-    hooks.addPreHook("upload", [](HookContext const& ctx) -> HookResult {
         if (ctx.format == "gif" || ctx.format == "mp4") {
             auto auth = PermissionPolicy::get().authorize(PermissionTier::Contributor);
             if (!auth) return HookResult::deny(auth.reason);

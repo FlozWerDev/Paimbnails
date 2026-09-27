@@ -68,6 +68,7 @@ private:
     void tick(float dt);
     void showBusy(std::string const& text);
     void hideBusy();
+    void onSpawnFailed();
 
     Options m_options;
     std::filesystem::path m_path;

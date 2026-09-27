@@ -70,7 +70,7 @@ public:
     void removeInvalidationListener(int listenerId);
 
     void setMaxConcurrentTasks(int max);
-    /// Do not call from ThumbnailLoader's constructor (reentry into get()).
+    // Do not call from ThumbnailLoader's constructor (reentry into get()).
     void applyConcurrentDownloadsSetting();
 
     int getActiveTaskCount() const { return m_activeTaskCount; }
@@ -221,6 +221,11 @@ private:
     void processQueue();
     void startTask(std::shared_ptr<Task> task);
     void finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2D* texture, bool success, int origW = 0, int origH = 0);
+    // Branch bodies; caller holds m_queueMutex. Returns true when the level fallback starts.
+    bool finishUrlTaskLocked(std::shared_ptr<Task> const& task, cocos2d::CCTexture2D* texture, bool success,
+                             bool shuttingDown, bool shouldNotify, std::vector<LoadCallback>& callbacks);
+    bool finishLevelTaskLocked(std::shared_ptr<Task> const& task, cocos2d::CCTexture2D* texture, bool success,
+                               int origW, int origH, bool shuttingDown, bool shouldNotify, std::vector<LoadCallback>& callbacks);
     
     void initDiskCache();
     
@@ -237,7 +242,7 @@ private:
     std::vector<BatchPending> m_batchPendingDownloads;
     std::mutex m_batchPendingMutex;
     std::atomic<bool> m_batchFlushScheduled{false};
-    // Tied to the worker's 50-subrequest-per-invocation cap: 40 toppled the whole batch.
+    // Worker allows 50 subrequests per invocation.
     static constexpr int BATCH_FLUSH_THRESHOLD = 15;
     static constexpr int BATCH_FLUSH_DELAY_MS = 50;
     void scheduleBatchFlush();

@@ -65,4 +65,5 @@ private:
     bool playDynamicForCurrentContext(bool ignoreProfileGate = false);
     bool restoreSuspendedDynamicSong();
     void restoreMenuMusic();
+    bool exitDiveIfHandingOff();
 };

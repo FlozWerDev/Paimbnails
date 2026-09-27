@@ -11,21 +11,14 @@ namespace internal {
 inline void applyDefaults(bool force) {
     auto* mod = geode::Mod::get();
 
-    auto setB = [&](const char* key, bool val) {
+    auto set = [&](const char* key, auto val) {
         if (force || !mod->hasSavedValue(key)) mod->setSavedValue(key, val);
     };
-    auto setI = [&](const char* key, int val) {
-        if (force || !mod->hasSavedValue(key)) mod->setSavedValue(key, val);
-    };
-    auto setF = [&](const char* key, float val) {
-        if (force || !mod->hasSavedValue(key)) mod->setSavedValue(key, val);
-    };
-    auto setD = [&](const char* key, double val) {
-        if (force || !mod->hasSavedValue(key)) mod->setSavedValue(key, val);
-    };
-    auto setS = [&](const char* key, std::string val) {
-        if (force || !mod->hasSavedValue(key)) mod->setSavedValue(key, val);
-    };
+    auto& setB = set;
+    auto& setI = set;
+    auto& setF = set;
+    auto& setD = set;
+    auto setS = [&](const char* key, std::string val) { set(key, val); };
 
     setB("discord-rpc-private-mode", false);
     setB("discord-rpc-idle-when-unfocused", true);
@@ -212,15 +205,6 @@ inline void runOneShotMigrations() {
                 }
             }
         }
-    }
-
-// Convert obsolete popup blur styles to the lightweight default.
-    if (!mod->hasSavedValue("popup-blur-style-migrated-to-paimonblur")) {
-        auto const style = mod->getSavedValue<std::string>("popup-blur-style");
-        if (style == "gaussian" || style == "paimonblur-dynamic") {
-            mod->setSavedValue<std::string>("popup-blur-style", "paiblur");
-        }
-        mod->setSavedValue<bool>("popup-blur-style-migrated-to-paimonblur", true);
     }
 
 // Migrate the old full-scene "paimonblur" default to the dynamic style.

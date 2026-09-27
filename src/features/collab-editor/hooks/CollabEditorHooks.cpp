@@ -153,15 +153,9 @@ class $modify(PaimonCollabLevelEditorLayer, LevelEditorLayer) {
         if (mgr.connected() && !mgr.isApplyingRemote()) {
             bool middle = paimon::keybinds::isMouseButtonHeld(paimon::keybinds::MouseButton::Middle);
             if (middle && !m_fields->m_wasMiddle) {
-                auto* director = CCDirector::get();
-                auto* glView = director ? director->getOpenGLView() : nullptr;
                 auto* layer = m_objectLayer;
-                if (glView && layer) {
-                    auto mouse = glView->getMousePosition();
-                    auto win = director->getWinSize();
-                    // GLFW y is top-down; Cocos is bottom-up.
-                    CCPoint glPos{mouse.x, win.height - mouse.y};
-                    auto world = layer->convertToNodeSpace(glPos);
+                if (layer) {
+                    auto world = layer->convertToNodeSpace(geode::cocos::getMousePos());
                     mgr.sendPing(world.x, world.y);
                 }
             }

@@ -68,6 +68,7 @@ private:
 
     void onPrevFormat(cocos2d::CCObject*);
     void onNextFormat(cocos2d::CCObject*);
+    void stepFormat(int delta);
     void onPrevColorID(cocos2d::CCObject*);
     void onNextColorID(cocos2d::CCObject*);
     void stepColorID(int delta);

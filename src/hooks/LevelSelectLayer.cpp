@@ -116,29 +116,31 @@ class $modify(PaimonFMODAudioEngine, FMODAudioEngine) {
         std::string menuTrack = gm ? std::string(gm->getMenuMusicFile()) : std::string();
         bool isMenuTrack = !menuTrack.empty() && requestedPath == menuTrack;
 
-        if (!DynamicSongManager::s_selfPlayMusic) {
-            auto* dsm = DynamicSongManager::get();
+        if (DynamicSongManager::s_selfPlayMusic) {
+            FMODAudioEngine::playMusic(path, shouldLoop, fadeInTime, channel);
+            return;
+        }
+        auto* dsm = DynamicSongManager::get();
 
-            if (paimon::isVideoAudioInteropActive() && isMenuTrack) {
+        if (paimon::isVideoAudioInteropActive() && isMenuTrack) {
+            return;
+        }
+
+        if (paimon::isProfileMusicInteropActive()) {
+            if (isMenuTrack) {
                 return;
             }
 
-            if (paimon::isProfileMusicInteropActive()) {
-                if (isMenuTrack) {
-                    return;
-                }
+            ProfileMusicManager::get().forceStop();
+            FMODAudioEngine::playMusic(path, shouldLoop, fadeInTime, channel);
+            return;
+        }
 
-                ProfileMusicManager::get().forceStop();
-                FMODAudioEngine::playMusic(path, shouldLoop, fadeInTime, channel);
-                return;
-            }
-
-            if (paimon::isDynamicSongInteropActive() && dsm->isInValidLayer()) {
-                return;
-            }
-            if (dsm->hasSuspendedPlayback() && isMenuTrack) {
-                return;
-            }
+        if (paimon::isDynamicSongInteropActive() && dsm->isInValidLayer()) {
+            return;
+        }
+        if (dsm->hasSuspendedPlayback() && isMenuTrack) {
+            return;
         }
         FMODAudioEngine::playMusic(path, shouldLoop, fadeInTime, channel);
     }

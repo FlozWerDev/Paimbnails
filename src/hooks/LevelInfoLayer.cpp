@@ -1440,9 +1440,6 @@ int m_fallbackOrigin = -1;
         }
     }
 
-    void installInheritedHooks() {
-    }
-
     bool ccTouchBegan(CCTouch* touch, CCEvent* event) {
         bool result = LevelInfoLayer::ccTouchBegan(touch, event);
         if (!m_fields->m_dynamicShaders) return result;
@@ -1715,13 +1712,10 @@ int m_fallbackOrigin = -1;
         showImageWarningIfNeeded(m_level ? m_level : level);
     }
 
-    $override
     bool init(GJGameLevel* level, bool challenge) {
         log::info("[LevelInfoLayer] init: levelID={} challenge={}", level ? level->m_levelID.value() : 0, challenge);
 
         if (!LevelInfoLayer::init(level, challenge)) return false;
-
-        installInheritedHooks();
 
         setActiveLevelInfoForOverlay(this);
         s_levelInfoOverlayPauseDepth = 0;

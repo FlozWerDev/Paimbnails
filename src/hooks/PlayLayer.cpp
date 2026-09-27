@@ -261,9 +261,7 @@ namespace {
 #ifdef GEODE_IS_WINDOWS
             m_isPanning = (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
 #else
-            // no GetAsyncKeyState outside Windows; the keybind tracker keeps
-            // OS-resynced button state on every platform (stays false on
-            // touch screens, where middle-drag pan has no meaning)
+            // no GetAsyncKeyState off Windows; keybind tracker keeps OS-resynced state.
             m_isPanning = paimon::keybinds::isMouseButtonHeld(paimon::keybinds::MouseButton::Middle);
 #endif
 
@@ -598,9 +596,7 @@ class $modify(PaimonPerformanceParticleSystemQuad, CCParticleSystemQuad) {
     }
 };
 
-// CCParticleBatchNode has no iOS address in the bindings, so hooking draw()
-// there is a static_assert. The CCParticleSystem/Quad hooks above already cover
-// the batched systems' particles, so iOS just keeps the batch node's own draw.
+// No iOS address for CCParticleBatchNode::draw; Quad/System hooks cover batched particles.
 #ifndef GEODE_IS_IOS
 class $modify(PaimonPerformanceParticleBatchNode, CCParticleBatchNode) {
     void draw() {

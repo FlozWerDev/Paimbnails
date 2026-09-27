@@ -71,6 +71,8 @@ private:
     void doCreate();
     void onJoinLikeSuccess(matjson::Value value);
     void poll();
+    enum class RetryAction : std::uint8_t { Join, Poll };
+    void scheduleDelayed(uint64_t gen, int ms, RetryAction action);
     void scheduleRetry(uint64_t gen, int ms);
     void scheduleJoinRetry(uint64_t gen, int ms);
     void dispatchStateJson(std::string channel, std::string suffix, matjson::Value body);

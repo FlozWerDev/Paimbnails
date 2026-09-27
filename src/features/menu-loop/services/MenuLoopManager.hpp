@@ -38,6 +38,7 @@ public:
     bool songSizeIsBad() const { return m_songs.empty() || m_songs.size() < 2; }
 
     void pickRandomSong();
+    std::vector<std::string> buildWeightedCandidates() const;
     std::string getCurrentSong() const;
     void setCurrentSong(const std::string& song);
     bool isOriginalMenuLoop() const { return m_isMenuLoop; }

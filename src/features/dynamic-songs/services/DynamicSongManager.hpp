@@ -5,6 +5,9 @@
 #include <string>
 #include <chrono>
 
+class MusicDownloadManager;
+class FMODAudioEngine;
+
 enum class DynSongLayer {
     None,
     LevelSelect,
@@ -56,6 +59,9 @@ public:
     bool isStreamingPreview() const { return m_streamingPreview; }
     void stopStreamingPreview();
     void checkPreviewSwap();
+    void checkDownloadSwap(MusicDownloadManager* mdm, FMODAudioEngine* engine);
+    void checkSongInfoSwap(MusicDownloadManager* mdm, FMODAudioEngine* engine);
+    void checkPendingStream(FMODAudioEngine* engine);
     void handoffWatchTick(float dt);
 
     float getDynamicVolume() const;
@@ -112,6 +118,8 @@ private:
 
     // Shared teardown for forceKill and gameplay handoff.
     void resetToIdle(bool stopOwnSound);
+    // Idle without fading; preserves m_currentLayer for suspend/resume.
+    void goIdle();
     bool isOurSoundPlaying() const;
     void startHandoffWatch();
     void stopHandoffWatch();

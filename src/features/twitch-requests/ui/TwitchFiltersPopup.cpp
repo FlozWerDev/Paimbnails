@@ -39,7 +39,6 @@ void applyFilters(std::function<void(RequestFilters&)> const& change) {
     manager.setFilters(filters);
 }
 
-// checked reads full color; unchecked grey and translucent.
 void tintIcon(CCNode* node, bool on) {
     if (!node) return;
     if (auto* sprite = typeinfo_cast<CCSprite*>(node)) {

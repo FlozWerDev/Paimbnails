@@ -13,6 +13,7 @@
 #include "../features/custom-slider/services/CustomSliderManager.hpp"
 #include "../features/updates/services/UpdateChecker.hpp"
 #include "../features/crash-reports/services/CrashReporter.hpp"
+#include "../features/onboarding/WelcomeFlow.hpp"
 #include "RuntimeLifecycle.hpp"
 #include "StartupIncompatibilityCheck.hpp"
 #include "ModCompatWarnings.hpp"
@@ -60,7 +61,7 @@ namespace paimon {
 void bootstrap() {
     log::info("[PaimonThumbnails][Init] Loaded event start");
 
-    // banned cache means no init; without cache this schedules a server check
+    // fail-open without cache; revalidates async
     if (paimon::ban::runStartupBanGate()) {
         log::warn("[PaimonThumbnails][Init] Aborting init: user is banned");
         return;
@@ -150,11 +151,13 @@ void bootstrap() {
 
     paimon::scheduleMainThreadDelay(8.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
+        if (!paimon::onboarding::isAccepted()) return;
         paimon::updates::UpdateChecker::get().checkAsync();
     });
 
     paimon::scheduleMainThreadDelay(15.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
+        if (!paimon::onboarding::isAccepted()) return;
         paimon::crash::reportPendingCrashes();
     });
 }

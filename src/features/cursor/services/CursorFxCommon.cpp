@@ -1,4 +1,5 @@
 #include "CursorFxCommon.hpp"
+#include "CursorTrailFX.hpp"
 
 #include <Geode/cocos/platform/CCGL.h>
 #include <Geode/cocos/shaders/CCShaderCache.h>
@@ -247,6 +248,26 @@ ccColor3B mixColor(ccColor3B a, ccColor3B b, float t) {
     return ccc3(static_cast<GLubyte>(a.r + (b.r - a.r) * t),
                 static_cast<GLubyte>(a.g + (b.g - a.g) * t),
                 static_cast<GLubyte>(a.b + (b.b - a.b) * t));
+}
+
+ccColor3B resolveFxColor(TrailColorMode mode, ccColor3B c1, ccColor3B c2,
+                         float t, float rnd, float speedMix, float time, float hueSpeed) {
+    switch (mode) {
+        case TrailColorMode::Solid:
+            return c1;
+        case TrailColorMode::Gradient:
+            return mixColor(c1, c2, t);
+        case TrailColorMode::RainbowCycle:
+            return hsv(time * hueSpeed * 0.18f, 0.85f, 1.f);
+        case TrailColorMode::RainbowTrail:
+            return hsv(time * hueSpeed * 0.18f + t * 0.85f, 0.85f, 1.f);
+        case TrailColorMode::Random:
+            return hsv(rnd, 0.80f, 1.f);
+        case TrailColorMode::Speed:
+            return mixColor(c1, c2, speedMix);
+        default:
+            return c1;
+    }
 }
 
 ccColor4F pma(ccColor3B c, float a) {

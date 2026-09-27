@@ -43,6 +43,9 @@ public:
 
     void uploadCustomProfileMusic(int accountID, std::string const& username, std::string const& filePath, const ProfileMusicConfig& config, UploadCallback callback);
 
+    void uploadFragment(int accountID, std::string const& username, std::string const& filePath,
+                        ProfileMusicConfig const& config, bool isCustom, UploadCallback callback);
+
     bool canUploadCustomMusic() const;
 
     void deleteProfileMusic(int accountID, std::string const& username, UploadCallback callback);

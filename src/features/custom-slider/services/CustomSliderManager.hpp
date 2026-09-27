@@ -88,6 +88,7 @@ private:
     cocos2d::CCNode* createIconNode(bool isSelected);
     cocos2d::CCNode* createImageNode();
     cocos2d::CCNode* createGifNode(bool isSelected);
+    cocos2d::CCNode* finishThumbNode(cocos2d::CCSprite* node);
 
     CustomSliderConfig m_config;
     geode::Ref<cocos2d::CCTexture2D> m_imageTexture;

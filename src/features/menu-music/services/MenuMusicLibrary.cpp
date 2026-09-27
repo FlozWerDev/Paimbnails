@@ -73,11 +73,7 @@ void MenuMusicLibrary::markDirty() {
 
 
 MusicTrack* MenuMusicLibrary::findTrack(const std::string& id) {
-    auto it = m_trackIndex.find(id);
-    if (it != m_trackIndex.end() && it->second < m_tracks.size()) {
-        return &m_tracks[it->second];
-    }
-    return nullptr;
+    return const_cast<MusicTrack*>(static_cast<MenuMusicLibrary const*>(this)->findTrack(id));
 }
 
 const MusicTrack* MenuMusicLibrary::findTrack(const std::string& id) const {
@@ -89,10 +85,7 @@ const MusicTrack* MenuMusicLibrary::findTrack(const std::string& id) const {
 }
 
 MusicTrack* MenuMusicLibrary::findTrackByAudioPath(const std::string& path) {
-    auto it = std::find_if(m_tracks.begin(), m_tracks.end(), [&](const MusicTrack& track) {
-        return track.audioPath == path;
-    });
-    return it == m_tracks.end() ? nullptr : &*it;
+    return const_cast<MusicTrack*>(static_cast<MenuMusicLibrary const*>(this)->findTrackByAudioPath(path));
 }
 
 const MusicTrack* MenuMusicLibrary::findTrackByAudioPath(const std::string& path) const {
@@ -156,25 +149,26 @@ std::size_t MenuMusicLibrary::importFolder(const std::filesystem::path& folder, 
             files.push_back(entry.path());
         }
     };
+    auto collectEntries = [&](auto first, auto last) {
+        for (auto it = first; it != last; ++it) {
+            if (ec) {
+                ec.clear();
+                continue;
+            }
+            collect(*it);
+        }
+    };
 
     if (recursive) {
-        for (const auto& entry : std::filesystem::recursive_directory_iterator(
-                 folder, std::filesystem::directory_options::skip_permission_denied, ec)) {
-            if (ec) {
-                ec.clear();
-                continue;
-            }
-            collect(entry);
-        }
+        collectEntries(
+            std::filesystem::recursive_directory_iterator(
+                folder, std::filesystem::directory_options::skip_permission_denied, ec),
+            std::filesystem::recursive_directory_iterator{});
     } else {
-        for (const auto& entry : std::filesystem::directory_iterator(
-                 folder, std::filesystem::directory_options::skip_permission_denied, ec)) {
-            if (ec) {
-                ec.clear();
-                continue;
-            }
-            collect(entry);
-        }
+        collectEntries(
+            std::filesystem::directory_iterator(
+                folder, std::filesystem::directory_options::skip_permission_denied, ec),
+            std::filesystem::directory_iterator{});
     }
 
     const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(

@@ -525,7 +525,7 @@ void VideoThumbnailSprite::saveFirstFrameToCache() {
 
     std::string cachePath = getFirstFrameCachePath(m_cacheKey.empty() ? "unknown" : m_cacheKey);
 
-// small I/O pool: discarded std::async futures block in their destructors.
+// First-frame encode stays off the main thread.
     auto* pool = firstFramePool();
     if (!pool || pool->isStopped()) return;
 

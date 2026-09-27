@@ -35,6 +35,7 @@
 #include "../features/hidden-paimon/services/HiddenPaimon.hpp"
 #include "../utils/ThreadTracker.hpp"
 #include "../core/RuntimeLifecycle.hpp"
+#include "../features/onboarding/WelcomeFlow.hpp"
 #include <random>
 #include <filesystem>
 #include <string>
@@ -163,7 +164,11 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             this->scheduleOnce(schedule_selector(PaimonMenuLayer::deferredMenuServicesInit), 0.35f);
         }
 
-        paimon::forum::ForumApi::get().sendHeartbeat([](paimon::forum::Result<bool>) {});
+        if (paimon::onboarding::isAccepted()) {
+            paimon::forum::ForumApi::get().sendHeartbeat([](paimon::forum::Result<bool>) {});
+        } else {
+            this->scheduleOnce(schedule_selector(PaimonMenuLayer::openWelcomeFlow), 1.0f);
+        }
         this->schedule(schedule_selector(PaimonMenuLayer::tickHeartbeat), 60.f);
 
         paimon::SessionState::get().currentListID = 0;
@@ -293,6 +298,12 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         if (auto scene = VerificationCenterLayer::scene()) TransitionManager::get().pushScene(scene);
     }
 
+    void openWelcomeFlow(float) {
+        this->unschedule(schedule_selector(PaimonMenuLayer::openWelcomeFlow));
+        if (paimon::onboarding::isAccepted()) return;
+        if (auto* popup = paimon::onboarding::WelcomePopup::create()) popup->show();
+    }
+
     void deferredMenuServicesInit(float) {
         s_menuServicesScheduled = false;
         if (s_menuServicesInitialized) return;
@@ -338,7 +349,9 @@ class $modify(PaimonMenuLayer, MenuLayer) {
     }
 
     void tickHeartbeat(float dt) {
-        paimon::forum::ForumApi::get().sendHeartbeat([](paimon::forum::Result<bool>) {});
+        if (paimon::onboarding::isAccepted()) {
+            paimon::forum::ForumApi::get().sendHeartbeat([](paimon::forum::Result<bool>) {});
+        }
     }
 
     $override
@@ -347,6 +360,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         this->unschedule(schedule_selector(PaimonMenuLayer::deferredMenuServicesInit));
         if (!s_menuServicesInitialized) s_menuServicesScheduled = false;
         this->unschedule(schedule_selector(PaimonMenuLayer::openVerificationQueue));
+        this->unschedule(schedule_selector(PaimonMenuLayer::openWelcomeFlow));
         this->unscheduleUpdate();
         if (auto* shaderSpr = typeinfo_cast<Shaders::ShaderBgSprite*>(m_fields->m_bgSprite.data())) {
             shaderSpr->unschedule(schedule_selector(Shaders::ShaderBgSprite::updateShaderTime));
@@ -360,6 +374,10 @@ class $modify(PaimonMenuLayer, MenuLayer) {
     }
 
     void onPaimonHub(CCObject*) {
+        if (!paimon::onboarding::isAccepted()) {
+            openWelcomeFlow(0.f);
+            return;
+        }
         auto scene = PaimonHubLayer::scene();
         CCDirector::get()->replaceScene(scene);
     }
@@ -681,6 +699,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             WeakRef<MenuLayer> safeThis = this;
             std::string pathCopy = resolvedPath;
             paimon::ThreadTracker::get().spawn([safeThis, pathCopy]() {
+                geode::utils::thread::setName("PaimonThumbDecode");
                 if (paimon::isRuntimeShuttingDown()) return;
                 auto imgDeleter = [](CCImage* p) { if (p) p->release(); };
                 std::unique_ptr<CCImage, decltype(imgDeleter)> img(

@@ -372,6 +372,12 @@ void GifImportPopup::loadSource(std::filesystem::path const& path) {
     loadStill(path, std::move(bytes));
 }
 
+void GifImportPopup::onSpawnFailed() {
+    m_sourceLoad.reset();
+    hideBusy();
+    PaimonNotify::show("El juego se esta cerrando.", NotificationIcon::Warning);
+}
+
 void GifImportPopup::loadAnimated(
     std::filesystem::path const& path,
     std::shared_ptr<std::vector<std::uint8_t>> bytes
@@ -406,9 +412,7 @@ void GifImportPopup::loadAnimated(
         state->result = std::move(loaded);
     });
     if (started) return;
-    m_sourceLoad.reset();
-    hideBusy();
-    PaimonNotify::show("El juego se esta cerrando.", NotificationIcon::Warning);
+    onSpawnFailed();
 }
 
 void GifImportPopup::loadStill(
@@ -461,9 +465,7 @@ void GifImportPopup::loadStill(
         state->result = std::move(loaded);
     });
     if (started) return;
-    m_sourceLoad.reset();
-    hideBusy();
-    PaimonNotify::show("El juego se esta cerrando.", NotificationIcon::Warning);
+    onSpawnFailed();
 }
 
 void GifImportPopup::loadVideo(std::filesystem::path const& path) {
@@ -489,9 +491,7 @@ void GifImportPopup::loadVideo(std::filesystem::path const& path) {
         state->result = std::move(loaded);
     });
     if (started) return;
-    m_sourceLoad.reset();
-    hideBusy();
-    PaimonNotify::show("El juego se esta cerrando.", NotificationIcon::Warning);
+    onSpawnFailed();
 }
 
 void GifImportPopup::applySource(

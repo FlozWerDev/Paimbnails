@@ -348,14 +348,8 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
                     return;
                 }
                 auto* w = static_cast<PaimonCustomSongWidget*>(widget);
-                if (!w->getParent()) {
-                    log::warn("[PaimonCSW] callback: widget no longer in scene");
-                    return;
-                }
-                if (w->m_fields->m_callbackGeneration != generation) {
-                    log::warn("[PaimonCSW] callback: stale generation");
-                    return;
-                }
+                if (!w->getParent()) return;
+                if (w->m_fields->m_callbackGeneration != generation) return;
                 if (w->m_fields->m_levelID != levelID) {
                     log::warn("[PaimonCSW] callback: levelID mismatch ({} vs {})",
                         levelID, w->m_fields->m_levelID);
@@ -364,7 +358,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
                 if (ok && tex) {
                     w->applyBlurredThumbnail(tex);
                 } else {
-                    log::warn("[PaimonCSW] async load FAILED for {} (ok={} tex={})",
+                    log::debug("[PaimonCSW] async load FAILED for {} (ok={} tex={})",
                         levelID, ok, (void*)tex);
                 }
             },

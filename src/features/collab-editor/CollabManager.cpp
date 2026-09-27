@@ -1133,12 +1133,10 @@ void CollabManager::teardownAndNotify(std::string const& text) {
         if (wasJoiner && LevelEditorLayer::get()) {
             CCDirector::sharedDirector()->popScene();
         }
-        queueInMainThread([text, wasJoiner]() {
-            if (wasJoiner) closeSessionPopups();
-            auto popup = PopupManager::get().alert("Collab Editor", text);
-            popup.setPriority(true);
-            popup.showQueue();
-        });
+        if (wasJoiner) closeSessionPopups();
+        auto popup = PopupManager::get().alert("Collab Editor", text);
+        popup.setPriority(true);
+        popup.showQueue();
     });
 }
 
@@ -1148,10 +1146,8 @@ void CollabManager::discardJoinerLevel() {
     m_joinerLevel = nullptr;
     m_joinerEditorOpened = false;
     queueInMainThread([level]() {
-        queueInMainThread([level]() {
-            if (LevelEditorLayer::get()) return;
-            if (auto* glm = GameLevelManager::get()) glm->deleteLevel(level);
-        });
+        if (LevelEditorLayer::get()) return;
+        if (auto* glm = GameLevelManager::get()) glm->deleteLevel(level);
     });
 }
 

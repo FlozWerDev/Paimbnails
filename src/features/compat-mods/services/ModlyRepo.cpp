@@ -122,52 +122,50 @@ void ModlyRepo::fetchCatalog(bool force, CatalogCallback callback) {
     m_catalogInFlight = true;
 
     HttpClient::get().get("/api/modly/catalog", [](bool success, std::string const& response) {
-        Loader::get()->queueInMainThread([success, response]() {
-            if (paimon::isRuntimeShuttingDown()) return;
-            auto& repo = ModlyRepo::get();
+        if (paimon::isRuntimeShuttingDown()) return;
+        auto& repo = ModlyRepo::get();
 
-            if (!success) {
-                log::warn("[Modly] catalog request failed: {}", response);
-                repo.deliverCatalog(false);
-                return;
-            }
+        if (!success) {
+            log::warn("[Modly] catalog request failed: {}", response);
+            repo.deliverCatalog(false);
+            return;
+        }
 
-            auto parsed = matjson::parse(response);
-            if (!parsed.isOk()) {
-                log::warn("[Modly] catalog is not valid JSON");
-                repo.deliverCatalog(false);
-                return;
-            }
+        auto parsed = matjson::parse(response);
+        if (!parsed.isOk()) {
+            log::warn("[Modly] catalog is not valid JSON");
+            repo.deliverCatalog(false);
+            return;
+        }
 
-            auto json = parsed.unwrap();
-            std::vector<ModlyMod> mods;
-            std::unordered_map<std::string, ModlyUser> users;
+        auto json = parsed.unwrap();
+        std::vector<ModlyMod> mods;
+        std::unordered_map<std::string, ModlyUser> users;
 
-            if (json["mods"].isArray()) {
-                if (auto arr = json["mods"].asArray(); arr.isOk()) {
-                    for (auto const& item : arr.unwrap()) {
-                        auto mod = parseMod(item);
-                        if (!mod.id.empty() && !mod.name.empty()) mods.push_back(std::move(mod));
-                    }
+        if (json["mods"].isArray()) {
+            if (auto arr = json["mods"].asArray(); arr.isOk()) {
+                for (auto const& item : arr.unwrap()) {
+                    auto mod = parseMod(item);
+                    if (!mod.id.empty() && !mod.name.empty()) mods.push_back(std::move(mod));
                 }
             }
+        }
 
-            if (json["users"].isArray()) {
-                if (auto arr = json["users"].asArray(); arr.isOk()) {
-                    for (auto const& item : arr.unwrap()) {
-                        auto user = parseUser(item);
-                        if (!user.uid.empty()) users.emplace(user.uid, std::move(user));
-                    }
+        if (json["users"].isArray()) {
+            if (auto arr = json["users"].asArray(); arr.isOk()) {
+                for (auto const& item : arr.unwrap()) {
+                    auto user = parseUser(item);
+                    if (!user.uid.empty()) users.emplace(user.uid, std::move(user));
                 }
             }
+        }
 
-            repo.m_mods = std::move(mods);
-            repo.m_users = std::move(users);
-            repo.m_hasCatalog = true;
-            repo.m_catalogFetchedAt = std::time(nullptr);
-            log::info("[Modly] catalog loaded: {} mods, {} profiles", repo.m_mods.size(), repo.m_users.size());
-            repo.deliverCatalog(true);
-        });
+        repo.m_mods = std::move(mods);
+        repo.m_users = std::move(users);
+        repo.m_hasCatalog = true;
+        repo.m_catalogFetchedAt = std::time(nullptr);
+        log::info("[Modly] catalog loaded: {} mods, {} profiles", repo.m_mods.size(), repo.m_users.size());
+        repo.deliverCatalog(true);
     });
 }
 
@@ -187,48 +185,46 @@ void ModlyRepo::fetchComments(std::string const& modId, bool force, CommentsCall
 
     HttpClient::get().get("/api/modly/comments/" + modId,
         [modId, callback = std::move(callback)](bool success, std::string const& response) {
-            Loader::get()->queueInMainThread([modId, callback, success, response]() {
-                if (paimon::isRuntimeShuttingDown()) return;
+        if (paimon::isRuntimeShuttingDown()) return;
 
-                if (!success) {
-                    log::warn("[Modly] comments request failed for {}: {}", modId, response);
-                    callback(false, {});
-                    return;
+        if (!success) {
+            log::warn("[Modly] comments request failed for {}: {}", modId, response);
+            callback(false, {});
+            return;
+        }
+
+        auto parsed = matjson::parse(response);
+        if (!parsed.isOk()) {
+            callback(false, {});
+            return;
+        }
+
+        std::vector<ModlyComment> comments;
+        auto json = parsed.unwrap();
+        if (json["comments"].isArray()) {
+            if (auto arr = json["comments"].asArray(); arr.isOk()) {
+                for (auto const& item : arr.unwrap()) {
+                    auto comment = parseComment(item);
+                    if (!comment.text.empty()) comments.push_back(std::move(comment));
                 }
+            }
+        }
 
-                auto parsed = matjson::parse(response);
-                if (!parsed.isOk()) {
-                    callback(false, {});
-                    return;
+        auto& repo = ModlyRepo::get();
+
+        // Commenters aren't authors; profiles ride the comments payload.
+        if (json["users"].isArray()) {
+            if (auto arr = json["users"].asArray(); arr.isOk()) {
+                for (auto const& item : arr.unwrap()) {
+                    auto user = parseUser(item);
+                    if (!user.uid.empty()) repo.m_users.insert_or_assign(user.uid, std::move(user));
                 }
+            }
+        }
 
-                std::vector<ModlyComment> comments;
-                auto json = parsed.unwrap();
-                if (json["comments"].isArray()) {
-                    if (auto arr = json["comments"].asArray(); arr.isOk()) {
-                        for (auto const& item : arr.unwrap()) {
-                            auto comment = parseComment(item);
-                            if (!comment.text.empty()) comments.push_back(std::move(comment));
-                        }
-                    }
-                }
-
-                auto& repo = ModlyRepo::get();
-
-                // Commenters aren't authors; profiles ride the comments payload.
-                if (json["users"].isArray()) {
-                    if (auto arr = json["users"].asArray(); arr.isOk()) {
-                        for (auto const& item : arr.unwrap()) {
-                            auto user = parseUser(item);
-                            if (!user.uid.empty()) repo.m_users.insert_or_assign(user.uid, std::move(user));
-                        }
-                    }
-                }
-
-                repo.m_comments[modId] = comments;
-                callback(true, comments);
-            });
-        });
+        repo.m_comments[modId] = comments;
+        callback(true, comments);
+    });
 }
 
 std::string ModlyRepo::logoUrl(ModlyMod const& mod) const {

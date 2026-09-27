@@ -45,6 +45,11 @@ float heightAt(vec2 uv) {
     return heightOf(texture2D(u_scene, uv).rgb);
 }
 
+// cone tolerance with slope bias against acne.
+float tolAt(float h0, float slopeMag, float thick, float nz, float t, float tN) {
+    return h0 + slopeMag * thick * 0.5 + nz * t * thick * (0.75 + 0.5 * tN);
+}
+
 float emissiveOf(vec3 c, float range) {
     return safeSmoothstep(u_lightThreshold, u_lightThreshold + range, luma(c));
 }
@@ -128,10 +133,8 @@ void main() {
             if (outside(p)) break;
 
             vec3 c = texture2D(u_scene, p).rgb;
-            // cone tolerance with slope bias against acne.
             float tN = t / dist;
-            float tol = h0 + slopeMag * thick * 0.5
-                      + n.z * t * thick * (0.75 + 0.5 * tN);
+            float tol = tolAt(h0, slopeMag, thick, n.z, t, tN);
             if (heightOf(c) > tol) {
                 float f = exp(-tN * fall);
                 vec3 lit = toLinear(c);
@@ -231,8 +234,7 @@ void main() {
 
                 vec3 c = texture2D(u_scene, p).rgb;
                 float tN = t / dist;
-                float tol = h0 + slopeMag * thick * 0.5
-                          + n.z * t * thick * (0.75 + 0.5 * tN);
+                float tol = tolAt(h0, slopeMag, thick, n.z, t, tN);
                 if (heightOf(c) > tol) {
                     specAcc += toLinear(c) * (1.0 - safeSmoothstep(0.0, fadeR, t)) * thru * w;
                     break;
@@ -278,8 +280,7 @@ void main() {
 
                 vec3 c = texture2D(u_scene, p).rgb;
                 float tN = t / dist;
-                float tol = h0 + slopeMag * thick * 0.5
-                          + n.z * t * thick * (0.75 + 0.5 * tN);
+                float tol = tolAt(h0, slopeMag, thick, n.z, t, tN);
                 if (heightOf(c) > tol) {
                     transHit = toLinear(c) * (1.0 - safeSmoothstep(0.0, fadeR, t));
                     break;

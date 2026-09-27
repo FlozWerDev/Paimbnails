@@ -104,8 +104,16 @@ void AudioContextCoordinator::activateLevelSelect(int levelID, bool playImmediat
     }
 }
 
-void AudioContextCoordinator::deactivateLevelSelect(bool stopSong) {
+// Backing out mid-dive: release the song, restore menu music.
+bool AudioContextCoordinator::exitDiveIfHandingOff() {
     auto* dsm = DynamicSongManager::get();
+    if (!dsm->isHandingOff()) return false;
+    m_gameplayActive = false;
+    dsm->stopSong();
+    return true;
+}
+
+void AudioContextCoordinator::deactivateLevelSelect(bool stopSong) {    auto* dsm = DynamicSongManager::get();
     dsm->exitLayer(DynSongLayer::LevelSelect);
 
     if (m_dynamicContextLayer == DynSongLayer::LevelSelect) {
@@ -114,12 +122,7 @@ void AudioContextCoordinator::deactivateLevelSelect(bool stopSong) {
 
     if (!stopSong || m_profileOpen) return;
 
-    // Backing out mid-dive: release the song, restore menu music.
-    if (dsm->isHandingOff()) {
-        m_gameplayActive = false;
-        dsm->stopSong();
-        return;
-    }
+    if (exitDiveIfHandingOff()) return;
 
     // PlayLayer already owns the audio.
     if (m_gameplayActive) return;
@@ -157,12 +160,7 @@ void AudioContextCoordinator::deactivateLevelInfo(bool returnsToLevelSelect) {
 
     if (m_profileOpen) return;
 
-    // Backing out mid-dive: release the song, restore menu music.
-    if (dsm->isHandingOff()) {
-        m_gameplayActive = false;
-        dsm->stopSong();
-        return;
-    }
+    if (exitDiveIfHandingOff()) return;
 
     // Level already took over; menu music here would talk over the level song.
     if (m_gameplayActive) return;

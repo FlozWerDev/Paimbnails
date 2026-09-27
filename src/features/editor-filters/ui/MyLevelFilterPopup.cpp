@@ -16,17 +16,18 @@ namespace {
     constexpr float kPopupH = 200.f;
 
     bool* boolForTag(int tag) {
-        auto& f = state();
-        switch (tag) {
-            case 1: return &f.tiny;
-            case 2: return &f.shortLen;
-            case 3: return &f.medium;
-            case 4: return &f.longLen;
-            case 5: return &f.xl;
-            case 6: return &f.verified;
-            case 7: return &f.unverified;
-            default: return nullptr;
-        }
+        static bool FilterState::* const kByTag[] = {
+            nullptr,
+            &FilterState::tiny,
+            &FilterState::shortLen,
+            &FilterState::medium,
+            &FilterState::longLen,
+            &FilterState::xl,
+            &FilterState::verified,
+            &FilterState::unverified,
+        };
+        if (tag < 1 || tag > 7) return nullptr;
+        return &(state().*kByTag[tag]);
     }
 
     CCScale9Sprite* makePanel(CCSize size) {

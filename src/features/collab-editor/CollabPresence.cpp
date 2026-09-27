@@ -151,6 +151,7 @@ void CollabPresence::poll() {
 void CollabPresence::scheduleRetry(uint64_t gen, int ms) {
     auto lifetime = std::weak_ptr<std::atomic<bool>>(m_lifetime);
     ThreadTracker::get().spawn([this, lifetime, gen, ms]() {
+        geode::utils::thread::setName("PaimonCollabPresence");
         std::this_thread::sleep_for(std::chrono::milliseconds(ms));
         if (auto alive = lifetime.lock(); !alive || !alive->load(std::memory_order_acquire)) return;
         Loader::get()->queueInMainThread([this, gen]() {

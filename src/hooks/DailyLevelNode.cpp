@@ -104,9 +104,8 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
         int m_levelID = 0;
     };
 
-    $override
-    bool init(GJGameLevel* level, DailyLevelPage* page, bool isTime) {
-        if (!DailyLevelNode::init(level, page, isTime)) return false;
+    bool init(GJGameLevel* level, DailyLevelPage* page, bool isNew) {
+        if (!DailyLevelNode::init(level, page, isNew)) return false;
 
         if (!paimon::modules::isEnabled("paimbnails.thumbnails.browser")) return true;
 

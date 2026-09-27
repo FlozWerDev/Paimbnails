@@ -24,7 +24,6 @@ class CCTouch;
 class CCEvent;
 }
 
-// Targeted type imports to avoid namespace pollution in headers
 using cocos2d::CCTexture2D;
 using cocos2d::CCNode;
 using cocos2d::CCPoint;

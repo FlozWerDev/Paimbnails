@@ -7,6 +7,8 @@
 
 #include <algorithm>
 #include <fstream>
+#include <type_traits>
+#include <variant>
 
 using namespace geode::prelude;
 
@@ -88,6 +90,124 @@ void RTXManager::init() {
               m_config.enabled, presetName(m_config.preset));
 }
 
+// One row per persisted field; load/save/sanitize all walk this table.
+struct RtxField {
+    char const* key;
+    std::variant<bool RTXConfig::*, int RTXConfig::*, float RTXConfig::*> member;
+    float lo = 0.f;
+    float hi = 0.f;
+};
+
+RtxField const kRtxFields[] = {
+    {"enabled",         &RTXConfig::enabled},
+    {"intensity",       &RTXConfig::intensity,       0.f,   1.f},
+
+    {"preset",          &RTXConfig::preset,          0.f,   4.f},
+    {"renderScale",     &RTXConfig::renderScale,     0.20f, 1.f},
+    {"rayCount",        &RTXConfig::rayCount,        1.f,  16.f},
+    {"raySteps",        &RTXConfig::raySteps,        4.f,  32.f},
+    {"rayDistance",     &RTXConfig::rayDistance,     0.02f, 1.f},
+    {"stepGrowth",      &RTXConfig::stepGrowth,      1.f,   1.5f},
+    {"adaptive",        &RTXConfig::adaptive},
+    {"targetFps",       &RTXConfig::targetFps,      30.f, 360.f},
+    {"frameSkip",       &RTXConfig::frameSkip,       0.f,   3.f},
+
+    {"hdrRange",        &RTXConfig::hdrRange,        1.f,  16.f},
+
+    {"giStrength",      &RTXConfig::giStrength,      0.f,   4.f},
+    {"giSaturation",    &RTXConfig::giSaturation,    0.f,   2.f},
+    {"lightThreshold",  &RTXConfig::lightThreshold,  0.f,   1.f},
+    {"lightRange",      &RTXConfig::lightRange,      0.01f, 1.f},
+    {"bounceFalloff",   &RTXConfig::bounceFalloff,   0.1f, 10.f},
+    {"normalStrength",  &RTXConfig::normalStrength,  0.5f, 24.f},
+    {"thickness",       &RTXConfig::thickness,       0.01f, 2.f},
+
+    {"aoStrength",      &RTXConfig::aoStrength,      0.f,   1.f},
+    {"aoRadius",        &RTXConfig::aoRadius,        0.01f, 1.f},
+    {"aoPower",         &RTXConfig::aoPower,         0.2f,  4.f},
+
+    {"reflectStrength", &RTXConfig::reflectStrength, 0.f,   2.f},
+    {"reflectRoughness",&RTXConfig::reflectRoughness,0.f,   1.f},
+    {"reflectFresnel",  &RTXConfig::reflectFresnel,  0.f,   1.f},
+    {"reflectFade",     &RTXConfig::reflectFade,     0.01f, 1.f},
+
+    {"bloomStrength",   &RTXConfig::bloomStrength,   0.f,   3.f},
+    {"bloomThreshold",  &RTXConfig::bloomThreshold,  0.f,   1.f},
+    {"bloomSoftKnee",   &RTXConfig::bloomSoftKnee,   0.f,   1.f},
+    {"bloomRadius",     &RTXConfig::bloomRadius,     0.5f,  6.f},
+    {"bloomBlend",      &RTXConfig::bloomBlend,      0.f,   1.f},
+    {"bloomAnamorphic", &RTXConfig::bloomAnamorphic, 0.f,   1.f},
+    {"bloomPasses",     &RTXConfig::bloomPasses,     1.f,   5.f},
+
+    {"godRayStrength",  &RTXConfig::godRayStrength,  0.f,   2.f},
+    {"godRayDecay",     &RTXConfig::godRayDecay,     0.5f,  0.995f},
+    {"godRayDensity",   &RTXConfig::godRayDensity,   0.05f, 2.f},
+    {"godRayX",         &RTXConfig::godRayX,         0.f,   1.f},
+    {"godRayY",         &RTXConfig::godRayY,         0.f,   1.f},
+
+    {"denoise",         &RTXConfig::denoise,         0.f,   4.f},
+    {"atrousPasses",    &RTXConfig::atrousPasses,    0.f,   5.f},
+    {"temporal",        &RTXConfig::temporal,        0.f,   0.97f},
+    {"ghostClamp",      &RTXConfig::ghostClamp},
+    {"clampSigma",      &RTXConfig::clampSigma,      0.f,   3.f},
+
+    {"tonemap",         &RTXConfig::tonemap,         0.f,   4.f},
+    {"exposure",        &RTXConfig::exposure,       -2.f,   2.f},
+    {"contrast",        &RTXConfig::contrast,        0.5f,  2.f},
+    {"saturation",      &RTXConfig::saturation,      0.f,   2.f},
+    {"temperature",     &RTXConfig::temperature,    -1.f,   1.f},
+    {"tint",            &RTXConfig::tint,           -1.f,   1.f},
+    {"gamma",           &RTXConfig::gamma,           0.5f,  2.f},
+
+    {"adaptEnabled",    &RTXConfig::adaptEnabled},
+    {"adaptKey",        &RTXConfig::adaptKey,        0.04f, 0.60f},
+    {"adaptSpeed",      &RTXConfig::adaptSpeed,      0.1f,  6.f},
+
+    {"chromatic",       &RTXConfig::chromatic,       0.f,   2.f},
+    {"vignette",        &RTXConfig::vignette,        0.f,   2.f},
+    {"grain",           &RTXConfig::grain,           0.f,   1.f},
+    {"sharpen",         &RTXConfig::sharpen,         0.f,   2.f},
+
+    {"inGameplay",      &RTXConfig::inGameplay},
+    {"inEditor",        &RTXConfig::inEditor},
+    {"inMenus",         &RTXConfig::inMenus},
+    {"skipWhenPaused",  &RTXConfig::skipWhenPaused},
+};
+
+void loadFields(RTXConfig& c, matjson::Value& j) {
+    for (auto const& f : kRtxFields) {
+        std::visit([&]<typename M>(M RTXConfig::* ptr) {
+            if constexpr (std::is_same_v<M, bool>) {
+                c.*ptr = j[f.key].asBool().unwrapOr(c.*ptr);
+            } else if constexpr (std::is_same_v<M, int>) {
+                c.*ptr = j[f.key].asInt().unwrapOr(c.*ptr);
+            } else {
+                c.*ptr = static_cast<float>(j[f.key].asDouble().unwrapOr(static_cast<double>(c.*ptr)));
+            }
+        }, f.member);
+    }
+}
+
+void saveFields(RTXConfig const& c, matjson::Value& j) {
+    for (auto const& f : kRtxFields) {
+        std::visit([&]<typename M>(M RTXConfig::* ptr) { j[f.key] = c.*ptr; }, f.member);
+    }
+}
+
+void sanitizeFields(RTXConfig& c) {
+    for (auto const& f : kRtxFields) {
+        std::visit([&]<typename M>(M RTXConfig::* ptr) {
+            if constexpr (std::is_same_v<M, bool>) {
+                return;
+            } else if constexpr (std::is_same_v<M, int>) {
+                c.*ptr = std::clamp(c.*ptr, static_cast<int>(f.lo), static_cast<int>(f.hi));
+            } else {
+                c.*ptr = std::clamp(c.*ptr, f.lo, f.hi);
+            }
+        }, f.member);
+    }
+}
+
 void RTXManager::loadConfig() {
     auto path = configPath();
     std::error_code ec;
@@ -112,90 +232,15 @@ void RTXManager::loadConfig() {
     }
     auto j = res.unwrap();
 
-    auto getBool = [&](char const* k, bool d)  { return j[k].asBool().unwrapOr(d); };
     auto getInt  = [&](char const* k, int d)   { return j[k].asInt().unwrapOr(d); };
-    auto getFlt  = [&](char const* k, float d) {
-        return static_cast<float>(j[k].asDouble().unwrapOr(static_cast<double>(d)));
-    };
 
-    RTXConfig& c = m_config;
-    c.enabled          = getBool("enabled", c.enabled);
-    c.intensity        = getFlt("intensity", c.intensity);
-
-    c.preset           = getInt("preset", c.preset);
-    c.renderScale      = getFlt("renderScale", c.renderScale);
-    c.rayCount         = getInt("rayCount", c.rayCount);
-    c.raySteps         = getInt("raySteps", c.raySteps);
-    c.rayDistance      = getFlt("rayDistance", c.rayDistance);
-    c.stepGrowth       = getFlt("stepGrowth", c.stepGrowth);
-    c.adaptive         = getBool("adaptive", c.adaptive);
-    c.targetFps        = getInt("targetFps", c.targetFps);
-    c.frameSkip        = getInt("frameSkip", c.frameSkip);
-
-    c.hdrRange         = getFlt("hdrRange", c.hdrRange);
-
-    c.giStrength       = getFlt("giStrength", c.giStrength);
-    c.giSaturation     = getFlt("giSaturation", c.giSaturation);
-    c.lightThreshold   = getFlt("lightThreshold", c.lightThreshold);
-    c.lightRange       = getFlt("lightRange", c.lightRange);
-    c.bounceFalloff    = getFlt("bounceFalloff", c.bounceFalloff);
-    c.normalStrength   = getFlt("normalStrength", c.normalStrength);
-    c.thickness        = getFlt("thickness", c.thickness);
-
-    c.aoStrength       = getFlt("aoStrength", c.aoStrength);
-    c.aoRadius         = getFlt("aoRadius", c.aoRadius);
-    c.aoPower          = getFlt("aoPower", c.aoPower);
-
-    c.reflectStrength  = getFlt("reflectStrength", c.reflectStrength);
-    c.reflectRoughness = getFlt("reflectRoughness", c.reflectRoughness);
-    c.reflectFresnel   = getFlt("reflectFresnel", c.reflectFresnel);
-    c.reflectFade      = getFlt("reflectFade", c.reflectFade);
-
-    c.bloomStrength    = getFlt("bloomStrength", c.bloomStrength);
-    c.bloomThreshold   = getFlt("bloomThreshold", c.bloomThreshold);
-    c.bloomSoftKnee    = getFlt("bloomSoftKnee", c.bloomSoftKnee);
-    c.bloomRadius      = getFlt("bloomRadius", c.bloomRadius);
-    c.bloomBlend       = getFlt("bloomBlend", c.bloomBlend);
-    c.bloomAnamorphic  = getFlt("bloomAnamorphic", c.bloomAnamorphic);
-    c.bloomPasses      = getInt("bloomPasses", c.bloomPasses);
-
-    c.godRayStrength   = getFlt("godRayStrength", c.godRayStrength);
-    c.godRayDecay      = getFlt("godRayDecay", c.godRayDecay);
-    c.godRayDensity    = getFlt("godRayDensity", c.godRayDensity);
-    c.godRayX          = getFlt("godRayX", c.godRayX);
-    c.godRayY          = getFlt("godRayY", c.godRayY);
-
-    c.denoise          = getFlt("denoise", c.denoise);
-    c.atrousPasses     = getInt("atrousPasses", c.atrousPasses);
-    c.temporal         = getFlt("temporal", c.temporal);
-    c.ghostClamp       = getBool("ghostClamp", c.ghostClamp);
-    c.clampSigma       = getFlt("clampSigma", c.clampSigma);
-
-    c.tonemap          = getInt("tonemap", c.tonemap);
-    c.exposure         = getFlt("exposure", c.exposure);
-    c.contrast         = getFlt("contrast", c.contrast);
-    c.saturation       = getFlt("saturation", c.saturation);
-    c.temperature      = getFlt("temperature", c.temperature);
-    c.tint             = getFlt("tint", c.tint);
-    c.gamma            = getFlt("gamma", c.gamma);
-
-    c.adaptEnabled     = getBool("adaptEnabled", c.adaptEnabled);
-    c.adaptKey         = getFlt("adaptKey", c.adaptKey);
-    c.adaptSpeed       = getFlt("adaptSpeed", c.adaptSpeed);
-
-    c.chromatic        = getFlt("chromatic", c.chromatic);
-    c.vignette         = getFlt("vignette", c.vignette);
-    c.grain            = getFlt("grain", c.grain);
-    c.sharpen          = getFlt("sharpen", c.sharpen);
-
-    c.inGameplay       = getBool("inGameplay", c.inGameplay);
-    c.inEditor         = getBool("inEditor", c.inEditor);
-    c.inMenus          = getBool("inMenus", c.inMenus);
-    c.skipWhenPaused   = getBool("skipWhenPaused", c.skipWhenPaused);
+    loadFields(m_config, j);
 
     sanitize();
 
     int const schema = getInt("schema", 1);
+
+    RTXConfig& c = m_config;
 
     // Schema 1 inverted the filter: reapply the saved preset.
     if (schema < 2 && c.preset != static_cast<int>(Preset::Custom)) {
@@ -236,79 +281,7 @@ void RTXManager::saveConfig() {
     RTXConfig const& c = m_config;
     matjson::Value j;
     j["schema"]           = kConfigSchema;
-    j["enabled"]          = c.enabled;
-    j["intensity"]        = c.intensity;
-
-    j["preset"]           = c.preset;
-    j["renderScale"]      = c.renderScale;
-    j["rayCount"]         = c.rayCount;
-    j["raySteps"]         = c.raySteps;
-    j["rayDistance"]      = c.rayDistance;
-    j["stepGrowth"]       = c.stepGrowth;
-    j["adaptive"]         = c.adaptive;
-    j["targetFps"]        = c.targetFps;
-    j["frameSkip"]        = c.frameSkip;
-
-    j["hdrRange"]         = c.hdrRange;
-
-    j["giStrength"]       = c.giStrength;
-    j["giSaturation"]     = c.giSaturation;
-    j["lightThreshold"]   = c.lightThreshold;
-    j["lightRange"]       = c.lightRange;
-    j["bounceFalloff"]    = c.bounceFalloff;
-    j["normalStrength"]   = c.normalStrength;
-    j["thickness"]        = c.thickness;
-
-    j["aoStrength"]       = c.aoStrength;
-    j["aoRadius"]         = c.aoRadius;
-    j["aoPower"]          = c.aoPower;
-
-    j["reflectStrength"]  = c.reflectStrength;
-    j["reflectRoughness"] = c.reflectRoughness;
-    j["reflectFresnel"]   = c.reflectFresnel;
-    j["reflectFade"]      = c.reflectFade;
-
-    j["bloomStrength"]    = c.bloomStrength;
-    j["bloomThreshold"]   = c.bloomThreshold;
-    j["bloomSoftKnee"]    = c.bloomSoftKnee;
-    j["bloomRadius"]      = c.bloomRadius;
-    j["bloomBlend"]       = c.bloomBlend;
-    j["bloomAnamorphic"]  = c.bloomAnamorphic;
-    j["bloomPasses"]      = c.bloomPasses;
-
-    j["godRayStrength"]   = c.godRayStrength;
-    j["godRayDecay"]      = c.godRayDecay;
-    j["godRayDensity"]    = c.godRayDensity;
-    j["godRayX"]          = c.godRayX;
-    j["godRayY"]          = c.godRayY;
-
-    j["denoise"]          = c.denoise;
-    j["atrousPasses"]     = c.atrousPasses;
-    j["temporal"]         = c.temporal;
-    j["ghostClamp"]       = c.ghostClamp;
-    j["clampSigma"]       = c.clampSigma;
-
-    j["tonemap"]          = c.tonemap;
-    j["exposure"]         = c.exposure;
-    j["contrast"]         = c.contrast;
-    j["saturation"]       = c.saturation;
-    j["temperature"]      = c.temperature;
-    j["tint"]             = c.tint;
-    j["gamma"]            = c.gamma;
-
-    j["adaptEnabled"]     = c.adaptEnabled;
-    j["adaptKey"]         = c.adaptKey;
-    j["adaptSpeed"]       = c.adaptSpeed;
-
-    j["chromatic"]        = c.chromatic;
-    j["vignette"]         = c.vignette;
-    j["grain"]            = c.grain;
-    j["sharpen"]          = c.sharpen;
-
-    j["inGameplay"]       = c.inGameplay;
-    j["inEditor"]         = c.inEditor;
-    j["inMenus"]          = c.inMenus;
-    j["skipWhenPaused"]   = c.skipWhenPaused;
+    saveFields(c, j);
 
     auto path = configPath();
     std::error_code ec;
@@ -331,71 +304,7 @@ void RTXManager::resetToDefaults() {
 }
 
 void RTXManager::sanitize() {
-    RTXConfig& c = m_config;
-
-    c.intensity        = std::clamp(c.intensity, 0.f, 1.f);
-    c.preset           = std::clamp(c.preset, 0, 4);
-    c.renderScale      = std::clamp(c.renderScale, 0.20f, 1.f);
-    c.rayCount         = std::clamp(c.rayCount, 1, 16);
-    c.raySteps         = std::clamp(c.raySteps, 4, 32);
-    c.rayDistance      = std::clamp(c.rayDistance, 0.02f, 1.f);
-    c.stepGrowth       = std::clamp(c.stepGrowth, 1.f, 1.5f);
-    c.targetFps        = std::clamp(c.targetFps, 30, 360);
-    c.frameSkip        = std::clamp(c.frameSkip, 0, 3);
-
-    c.hdrRange         = std::clamp(c.hdrRange, 1.f, 16.f);
-
-    c.giStrength       = std::clamp(c.giStrength, 0.f, 4.f);
-    c.giSaturation     = std::clamp(c.giSaturation, 0.f, 2.f);
-    c.lightThreshold   = std::clamp(c.lightThreshold, 0.f, 1.f);
-    c.lightRange       = std::clamp(c.lightRange, 0.01f, 1.f);
-    c.bounceFalloff    = std::clamp(c.bounceFalloff, 0.1f, 10.f);
-    c.normalStrength   = std::clamp(c.normalStrength, 0.5f, 24.f);
-    c.thickness        = std::clamp(c.thickness, 0.01f, 2.f);
-
-    c.aoStrength       = std::clamp(c.aoStrength, 0.f, 1.f);
-    c.aoRadius         = std::clamp(c.aoRadius, 0.01f, 1.f);
-    c.aoPower          = std::clamp(c.aoPower, 0.2f, 4.f);
-
-    c.reflectStrength  = std::clamp(c.reflectStrength, 0.f, 2.f);
-    c.reflectRoughness = std::clamp(c.reflectRoughness, 0.f, 1.f);
-    c.reflectFresnel   = std::clamp(c.reflectFresnel, 0.f, 1.f);
-    c.reflectFade      = std::clamp(c.reflectFade, 0.01f, 1.f);
-
-    c.bloomStrength    = std::clamp(c.bloomStrength, 0.f, 3.f);
-    c.bloomThreshold   = std::clamp(c.bloomThreshold, 0.f, 1.f);
-    c.bloomSoftKnee    = std::clamp(c.bloomSoftKnee, 0.f, 1.f);
-    c.bloomRadius      = std::clamp(c.bloomRadius, 0.5f, 6.f);
-    c.bloomBlend       = std::clamp(c.bloomBlend, 0.f, 1.f);
-    c.bloomAnamorphic  = std::clamp(c.bloomAnamorphic, 0.f, 1.f);
-    c.bloomPasses      = std::clamp(c.bloomPasses, 1, 5);
-
-    c.godRayStrength   = std::clamp(c.godRayStrength, 0.f, 2.f);
-    c.godRayDecay      = std::clamp(c.godRayDecay, 0.5f, 0.995f);
-    c.godRayDensity    = std::clamp(c.godRayDensity, 0.05f, 2.f);
-    c.godRayX          = std::clamp(c.godRayX, 0.f, 1.f);
-    c.godRayY          = std::clamp(c.godRayY, 0.f, 1.f);
-
-    c.denoise          = std::clamp(c.denoise, 0.f, 4.f);
-    c.atrousPasses     = std::clamp(c.atrousPasses, 0, 5);
-    c.temporal         = std::clamp(c.temporal, 0.f, 0.97f);
-    c.clampSigma       = std::clamp(c.clampSigma, 0.f, 3.f);
-
-    c.tonemap          = std::clamp(c.tonemap, 0, 4);
-    c.exposure         = std::clamp(c.exposure, -2.f, 2.f);
-    c.contrast         = std::clamp(c.contrast, 0.5f, 2.f);
-    c.saturation       = std::clamp(c.saturation, 0.f, 2.f);
-    c.temperature      = std::clamp(c.temperature, -1.f, 1.f);
-    c.tint             = std::clamp(c.tint, -1.f, 1.f);
-    c.gamma            = std::clamp(c.gamma, 0.5f, 2.f);
-
-    c.adaptKey         = std::clamp(c.adaptKey, 0.04f, 0.60f);
-    c.adaptSpeed       = std::clamp(c.adaptSpeed, 0.1f, 6.f);
-
-    c.chromatic        = std::clamp(c.chromatic, 0.f, 2.f);
-    c.vignette         = std::clamp(c.vignette, 0.f, 2.f);
-    c.grain            = std::clamp(c.grain, 0.f, 1.f);
-    c.sharpen          = std::clamp(c.sharpen, 0.f, 2.f);
+    sanitizeFields(m_config);
 }
 
 bool RTXManager::isEnabled() const {

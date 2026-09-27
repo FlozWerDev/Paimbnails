@@ -380,14 +380,11 @@ void ColorPickerOverlay::ccTouchCancelled(CCTouch*, CCEvent*) {
     m_dragging = false;
 }
 
-void ColorPickerOverlay::onPrevFormat(CCObject*) {
-    m_formatIndex = clampFormatIndex((m_formatIndex + kFormatCount - 1) % kFormatCount);
-    Mod::get()->setSavedValue<int64_t>("editor-cp-format", m_formatIndex);
-    this->updateReadout();
-}
+void ColorPickerOverlay::onPrevFormat(CCObject*) { this->stepFormat(-1); }
+void ColorPickerOverlay::onNextFormat(CCObject*) { this->stepFormat(+1); }
 
-void ColorPickerOverlay::onNextFormat(CCObject*) {
-    m_formatIndex = clampFormatIndex((m_formatIndex + 1) % kFormatCount);
+void ColorPickerOverlay::stepFormat(int delta) {
+    m_formatIndex = clampFormatIndex((m_formatIndex + delta + kFormatCount) % kFormatCount);
     Mod::get()->setSavedValue<int64_t>("editor-cp-format", m_formatIndex);
     this->updateReadout();
 }

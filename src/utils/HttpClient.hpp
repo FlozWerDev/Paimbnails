@@ -306,6 +306,8 @@ private:
     std::unordered_map<int, std::vector<DownloadCallback>> m_inflightDownloads;
     std::mutex m_inflightMutex;
     void resolveInflight(int levelId, bool success, std::vector<uint8_t> const& data);
+    // Worker fetch with missing-vs-transient classification; reports via resolveInflight.
+    void fetchViaWorker(int levelId, bool dropManifestEntry);
 
     // short-lived negative cache for downloads failed on both endpoints;
     // avoids retry loops while transient errors recover.

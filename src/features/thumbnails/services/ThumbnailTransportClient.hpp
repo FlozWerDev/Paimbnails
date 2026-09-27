@@ -5,6 +5,7 @@
 #include "../../../utils/ThumbnailTypes.hpp"
 #include "LocalThumbs.hpp"
 #include <string>
+#include <string_view>
 #include <chrono>
 #include <mutex>
 #include <atomic>
@@ -105,6 +106,10 @@ private:
     std::mutex m_uploadMutex;
     bool beginUpload(int levelId);
     void finishUpload(int levelId);
+    // Shared body for uploadThumbnail/GIF/Video; kind is "png", "gif" or "mp4".
+    void uploadMedia(int levelId, std::vector<uint8_t> const& data,
+                     std::string const& username, UploadCallback callback,
+                     std::string const& levelMeta, std::string_view kind, bool isGif);
 
     // Coalesces getThumbnails into one list-batch per short window: no request per level.
     static constexpr int BATCH_LIST_FLUSH_DELAY_MS = 50;

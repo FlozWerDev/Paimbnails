@@ -3,6 +3,7 @@
 #include "../../dynamic-songs/services/DynamicSongManager.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/ThreadTracker.hpp"
+#include "../../../utils/Base64.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../utils/AudioInterop.hpp"
 #include "../../../utils/HttpClient.hpp"
@@ -16,6 +17,7 @@
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/string.hpp>
 #include <Geode/utils/file.hpp>
+#include <Geode/utils/general.hpp>
 #include <memory>
 #include <cmath>
 #include <chrono>
@@ -278,6 +280,85 @@ void ProfileMusicManager::getProfileMusicConfig(int accountID, ConfigCallback ca
     });
 }
 
+void ProfileMusicManager::uploadFragment(int accountID, std::string const& username, std::string const& filePath,
+                                          ProfileMusicConfig const& config, bool isCustom, UploadCallback callback) {
+    auto token = m_lifetimeToken;
+    paimon::ThreadTracker::get().spawn([this, token, filePath, accountID, username, config, isCustom, callback]() {
+        geode::utils::thread::setName("PaimonProfileMusic");
+        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+            return;
+        }
+
+        auto fragmentData = extractAudioFragment(filePath, config.startMs, config.endMs);
+
+        if (fragmentData.empty()) {
+            Loader::get()->queueInMainThread([token, callback, isCustom]() {
+                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+                    return;
+                }
+
+                callback(false, isCustom ? "Could not extract audio fragment from file"
+                                         : "Could not extract audio fragment");
+            });
+            return;
+        }
+
+        char const* tag = isCustom ? "custom fragment" : "fragment";
+        log::info("[ProfileMusic] Extracted {}: {} bytes ({}ms - {}ms)",
+            tag, fragmentData.size(), config.startMs, config.endMs);
+
+        std::string base64 = paimon::base64Encode(fragmentData);
+        size_t size = fragmentData.size();
+
+        log::info("[ProfileMusic] Uploading {}: {} bytes ({} base64 chars)",
+            tag, size, base64.size());
+
+        matjson::Value payload;
+        payload["accountID"] = accountID;
+        payload["username"] = username;
+        payload["songID"] = config.songID;
+        payload["startMs"] = config.startMs;
+        payload["endMs"] = config.endMs;
+        payload["volume"] = config.volume;
+        payload["songName"] = config.songName;
+        payload["artistName"] = config.artistName;
+        payload["audioData"] = base64;
+        if (isCustom) payload["isCustom"] = true;
+
+        std::string jsonData = payload.dump();
+
+        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+            return;
+        }
+
+        Loader::get()->queueInMainThread([this, token, jsonData, accountID, config, isCustom, callback]() {
+            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+                return;
+            }
+
+            HttpClient::get().postWithAuth("/api/profile-music/upload", jsonData, [this, token, accountID, config, isCustom, callback](bool success, std::string const& response) {
+                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+                    return;
+                }
+
+                Loader::get()->queueInMainThread([this, token, accountID, config, isCustom, callback, success, response]() {
+                    if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+                        return;
+                    }
+
+                    if (success) {
+                        invalidateCache(accountID);
+                        callback(true, isCustom ? "Custom music uploaded successfully"
+                                               : "Music uploaded successfully");
+                    } else {
+                        callback(false, response);
+                    }
+                });
+            });
+        });
+    });
+}
+
 void ProfileMusicManager::uploadProfileMusic(int accountID, std::string const& username, const ProfileMusicConfig& config, UploadCallback callback) {
     auto token = m_lifetimeToken;
     downloadSongForPreview(config.songID, [this, token, accountID, username, config, callback](bool success, std::string const& localPath) {
@@ -289,88 +370,7 @@ void ProfileMusicManager::uploadProfileMusic(int accountID, std::string const& u
             return;
         }
 
-        paimon::ThreadTracker::get().spawn([this, token, localPath, accountID, username, config, callback]() {
-            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
-                return;
-            }
-
-            auto fragmentData = extractAudioFragment(localPath, config.startMs, config.endMs);
-
-            if (fragmentData.empty()) {
-                Loader::get()->queueInMainThread([token, callback]() {
-                    if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
-                        return;
-                    }
-
-                    callback(false, "Could not extract audio fragment");
-                });
-                return;
-            }
-
-            log::info("[ProfileMusic] Extracted fragment: {} bytes ({}ms - {}ms)",
-                fragmentData.size(), config.startMs, config.endMs);
-
-            static char const* base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-            std::string base64;
-            size_t size = fragmentData.size();
-            base64.reserve(((size + 2) / 3) * 4);
-
-            for (size_t i = 0; i < size; i += 3) {
-                unsigned int n = static_cast<unsigned char>(fragmentData[i]) << 16;
-                if (i + 1 < size) n |= static_cast<unsigned char>(fragmentData[i + 1]) << 8;
-                if (i + 2 < size) n |= static_cast<unsigned char>(fragmentData[i + 2]);
-
-                base64 += base64Chars[(n >> 18) & 0x3F];
-                base64 += base64Chars[(n >> 12) & 0x3F];
-                base64 += (i + 1 < size) ? base64Chars[(n >> 6) & 0x3F] : '=';
-                base64 += (i + 2 < size) ? base64Chars[n & 0x3F] : '=';
-            }
-
-            log::info("[ProfileMusic] Uploading fragment: {} bytes ({} base64 chars)",
-                size, base64.size());
-
-            matjson::Value payload;
-            payload["accountID"] = accountID;
-            payload["username"] = username;
-            payload["songID"] = config.songID;
-            payload["startMs"] = config.startMs;
-            payload["endMs"] = config.endMs;
-            payload["volume"] = config.volume;
-            payload["songName"] = config.songName;
-            payload["artistName"] = config.artistName;
-            payload["audioData"] = base64;
-
-            std::string jsonData = payload.dump();
-
-            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
-                return;
-            }
-
-            Loader::get()->queueInMainThread([this, token, jsonData, accountID, config, callback]() {
-                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
-                    return;
-                }
-
-                HttpClient::get().postWithAuth("/api/profile-music/upload", jsonData, [this, token, accountID, config, callback](bool success, std::string const& response) {
-                    if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
-                        return;
-                    }
-
-                    Loader::get()->queueInMainThread([this, token, accountID, config, callback, success, response]() {
-                        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
-                            return;
-                        }
-
-                        if (success) {
-                            invalidateCache(accountID);
-                            callback(true, "Music uploaded successfully");
-                        } else {
-                            callback(false, response);
-                        }
-                    });
-                });
-            });
-        });
+        uploadFragment(accountID, username, localPath, config, false, callback);
     });
 }
 
@@ -618,85 +618,13 @@ void ProfileMusicManager::uploadCustomProfileMusic(int accountID, std::string co
         return;
     }
 
-    paimon::ThreadTracker::get().spawn([this, token, filePath, accountID, username, config, callback]() {
-        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
-            return;
-        }
-
-        auto fragmentData = extractAudioFragment(filePath, config.startMs, config.endMs);
-
-        if (fragmentData.empty()) {
-            Loader::get()->queueInMainThread([token, callback]() {
-                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
-                callback(false, "Could not extract audio fragment from file");
-            });
-            return;
-        }
-
-        log::info("[ProfileMusic] Extracted custom fragment: {} bytes ({}ms - {}ms)",
-            fragmentData.size(), config.startMs, config.endMs);
-
-        static char const* base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        std::string base64;
-        size_t size = fragmentData.size();
-        base64.reserve(((size + 2) / 3) * 4);
-
-        for (size_t i = 0; i < size; i += 3) {
-            unsigned int n = static_cast<unsigned char>(fragmentData[i]) << 16;
-            if (i + 1 < size) n |= static_cast<unsigned char>(fragmentData[i + 1]) << 8;
-            if (i + 2 < size) n |= static_cast<unsigned char>(fragmentData[i + 2]);
-
-            base64 += base64Chars[(n >> 18) & 0x3F];
-            base64 += base64Chars[(n >> 12) & 0x3F];
-            base64 += (i + 1 < size) ? base64Chars[(n >> 6) & 0x3F] : '=';
-            base64 += (i + 2 < size) ? base64Chars[n & 0x3F] : '=';
-        }
-
-        log::info("[ProfileMusic] Uploading custom fragment: {} bytes ({} base64 chars)",
-            size, base64.size());
-
-        matjson::Value payload;
-        payload["accountID"] = accountID;
-        payload["username"] = username;
-        payload["songID"] = config.songID;
-        payload["startMs"] = config.startMs;
-        payload["endMs"] = config.endMs;
-        payload["volume"] = config.volume;
-        payload["songName"] = config.songName;
-        payload["artistName"] = config.artistName;
-        payload["audioData"] = base64;
-        payload["isCustom"] = true;
-
-        std::string jsonData = payload.dump();
-
-        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
-            return;
-        }
-
-        Loader::get()->queueInMainThread([this, token, jsonData, accountID, config, callback]() {
-            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
-
-            HttpClient::get().postWithAuth("/api/profile-music/upload", jsonData, [this, token, accountID, config, callback](bool success, std::string const& response) {
-                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
-
-                Loader::get()->queueInMainThread([this, token, accountID, config, callback, success, response]() {
-                    if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
-
-                    if (success) {
-                        invalidateCache(accountID);
-                        callback(true, "Custom music uploaded successfully");
-                    } else {
-                        callback(false, response);
-                    }
-                });
-            });
-        });
-    });
+    uploadFragment(accountID, username, filePath, config, true, callback);
 }
 
 void ProfileMusicManager::getLocalSongInfo(std::string const& filePath, SongInfoCallback callback) {
     auto token = m_lifetimeToken;
     paimon::ThreadTracker::get().spawn([token, filePath, callback]() {
+        geode::utils::thread::setName("PaimonProfileMusic");
         if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
 
         auto engine = FMODAudioEngine::sharedEngine();
@@ -740,6 +668,7 @@ void ProfileMusicManager::getLocalSongInfo(std::string const& filePath, SongInfo
 void ProfileMusicManager::getWaveformPeaksForFile(std::string const& filePath, WaveformCallback callback) {
     auto token = m_lifetimeToken;
     paimon::ThreadTracker::get().spawn([this, token, filePath, callback]() {
+        geode::utils::thread::setName("PaimonProfileMusic");
         if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
 
         int durationMs = 0;
@@ -916,6 +845,7 @@ void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusic
         paimon::setProfileMusicInteropActive(true);
         paimon::ThreadTracker::get().spawn(
             [this, accountID, videoPath, lifetime]() {
+                geode::utils::thread::setName("PaimonProfileMusic");
                 std::string extracted = paimon::video::extractAudioToWav(videoPath);
                 Loader::get()->queueInMainThread([this, accountID, extracted, lifetime]() {
                     if (!lifetime->load(std::memory_order_acquire)) return;
@@ -1200,8 +1130,6 @@ void ProfileMusicManager::stopOwnedAudioPlayback() {
     m_isPlaying = false;
     m_isPaused = false;
     m_pausedChannel = nullptr;
-    m_isFadingIn = false;
-    m_isFadingOut = false;
     m_currentProfileID = 0;
     m_currentAudioPath.clear();
     m_pendingStartMs = 0;
@@ -1378,6 +1306,7 @@ void ProfileMusicManager::getWaveformPeaks(int songID, WaveformCallback callback
         }
 
         paimon::ThreadTracker::get().spawn([this, token, path, callback]() {
+            geode::utils::thread::setName("PaimonProfileMusic");
             if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
                 return;
             }

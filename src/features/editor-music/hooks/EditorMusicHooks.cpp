@@ -32,6 +32,7 @@ class $modify(PaimonEditorMusicLayer, LevelEditorLayer) {
         return true;
     }
 
+    // Asymmetric on purpose: suspend before the engine takes the channel, resume after it gives it back.
     $override
     void onPlaytest() {
         paimon::editormusic::EditorMusicPlayer::get().suspend();

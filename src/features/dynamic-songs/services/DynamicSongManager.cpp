@@ -25,6 +25,22 @@ using namespace geode::prelude;
 namespace dynsong = paimon::dynsong;
 using dynsong::SubmergeEffect;
 
+namespace {
+
+std::string fileName(std::string const& path) {
+    auto pos = path.find_last_of("/\\");
+    return (pos != std::string::npos) ? path.substr(pos + 1) : path;
+}
+
+template <typename T>
+T nextRandomIn(T lo, T hi) {
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    return std::uniform_int_distribution<T>(lo, hi)(gen);
+}
+
+} // namespace
+
 static FMOD::Channel* getMainBgChannel(FMODAudioEngine* engine) {
     if (!engine) return nullptr;
     if (auto* channel = engine->getActiveMusicChannel(0)) {
@@ -284,10 +300,7 @@ void DynamicSongManager::applyRandomSeek(FMOD::Channel* existingCh) {
     unsigned int maxStart = static_cast<unsigned int>(lengthMs * (cfg.randomMaxPct / 100.f));
     if (maxStart <= minStart) return;
 
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    std::uniform_int_distribution<unsigned int> dist(minStart, maxStart);
-    bgCh->setPosition(dist(gen), FMOD_TIMEUNIT_MS);
+    bgCh->setPosition(nextRandomIn(minStart, maxStart), FMOD_TIMEUNIT_MS);
 }
 
 void DynamicSongManager::applyStartPosition(int levelID, FMOD::Channel* existingCh) {
@@ -400,10 +413,7 @@ std::string DynamicSongManager::getNextRotationSong(GJGameLevel* level) {
     case dynsong::RotationMode::First:
         return allPaths[0];
     case dynsong::RotationMode::Random: {
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
-        std::uniform_int_distribution<size_t> dist(0, allPaths.size() - 1);
-        return allPaths[dist(gen)];
+        return allPaths[nextRandomIn<size_t>(0, allPaths.size() - 1)];
     }
     case dynsong::RotationMode::Rotate:
     case dynsong::RotationMode::Count:
@@ -543,6 +553,15 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
     AudioContextCoordinator::get().claimDynamicAudio();
 }
 
+void DynamicSongManager::goIdle() {
+    stopStreamingPreview();
+    m_activeSongPath.clear();
+    m_currentPlayingLevelID = 0;
+    m_state = DynState::Idle;
+    paimon::setDynamicSongInteropActive(false);
+    AudioContextCoordinator::get().clearDynamicAudio();
+}
+
 void DynamicSongManager::stopSong() {
     if (!isActive()) return;
 
@@ -555,36 +574,21 @@ void DynamicSongManager::stopSong() {
 
     // Download-watch mode has no local channel to fade; stop polling and go idle.
     if (m_awaitingDownloadOnly) {
-        stopStreamingPreview();
-        m_activeSongPath.clear();
-        m_currentPlayingLevelID = 0;
+        goIdle();
         m_currentLayer = DynSongLayer::None;
-        m_state = DynState::Idle;
-        paimon::setDynamicSongInteropActive(false);
-        AudioContextCoordinator::get().clearDynamicAudio();
         return;
     }
 
     if (isStreamingPreviewPending() && !m_streamingPreview) {
-        stopStreamingPreview();
-        m_activeSongPath.clear();
-        m_currentPlayingLevelID = 0;
+        goIdle();
         m_currentLayer = DynSongLayer::None;
-        m_state = DynState::Idle;
-        paimon::setDynamicSongInteropActive(false);
-        AudioContextCoordinator::get().clearDynamicAudio();
         return;
     }
 
     if (m_state == DynState::Suspended) {
-        stopStreamingPreview();
+        goIdle();
         SubmergeEffect::get().release();
         loadMenuTrack(FMODAudioEngine::sharedEngine()->m_musicVolume);
-        m_activeSongPath.clear();
-        m_currentPlayingLevelID = 0;
-        m_state = DynState::Idle;
-        paimon::setDynamicSongInteropActive(false);
-        AudioContextCoordinator::get().clearDynamicAudio();
         return;
     }
 
@@ -610,24 +614,14 @@ void DynamicSongManager::fadeOutForLevelStart() {
 
     // No local channel in download-watch mode; stop polling.
     if (m_awaitingDownloadOnly) {
-        stopStreamingPreview();
-        m_activeSongPath.clear();
-        m_currentPlayingLevelID = 0;
+        goIdle();
         m_currentLayer = DynSongLayer::None;
-        m_state = DynState::Idle;
-        paimon::setDynamicSongInteropActive(false);
-        AudioContextCoordinator::get().clearDynamicAudio();
         return;
     }
 
     if (isStreamingPreviewPending() && !m_streamingPreview) {
-        stopStreamingPreview();
-        m_activeSongPath.clear();
-        m_currentPlayingLevelID = 0;
+        goIdle();
         m_currentLayer = DynSongLayer::None;
-        m_state = DynState::Idle;
-        paimon::setDynamicSongInteropActive(false);
-        AudioContextCoordinator::get().clearDynamicAudio();
         return;
     }
 
@@ -892,10 +886,6 @@ bool DynamicSongManager::isOurSoundPlaying() const {
     std::string currentName(nameBuffer);
     if (currentName.empty()) return false;
 
-    auto fileName = [](std::string const& path) -> std::string {
-        auto pos = path.find_last_of("/\\");
-        return (pos != std::string::npos) ? path.substr(pos + 1) : path;
-    };
     return fileName(m_activeSongPath) == fileName(currentName);
 }
 
@@ -906,12 +896,7 @@ void DynamicSongManager::suspendPlaybackForExternalAudio() {
     SubmergeEffect::get().release();
 
     if (m_streamingPreview || isStreamingPreviewPending() || m_awaitingDownloadOnly) {
-        stopStreamingPreview();
-        m_state = DynState::Idle;
-        m_activeSongPath.clear();
-        m_currentPlayingLevelID = 0;
-        paimon::setDynamicSongInteropActive(false);
-        AudioContextCoordinator::get().clearDynamicAudio();
+        goIdle();
         return;
     }
 
@@ -940,20 +925,14 @@ void DynamicSongManager::resumeSuspendedPlayback() {
 
     if (GameManager::get()->getGameVariable("0122")) {
         log::info("[DynSong] resumeSuspendedPlayback: music disabled (0122), idle");
-        m_state = DynState::Idle;
-        m_activeSongPath.clear();
-        paimon::setDynamicSongInteropActive(false);
-        AudioContextCoordinator::get().clearDynamicAudio();
+        goIdle();
         return;
     }
 
     auto* engine = FMODAudioEngine::sharedEngine();
     if (!engine || engine->m_musicVolume <= 0.0f) {
         log::info("[DynSong] resumeSuspendedPlayback: volume 0 or no engine, idle");
-        m_state = DynState::Idle;
-        m_activeSongPath.clear();
-        paimon::setDynamicSongInteropActive(false);
-        AudioContextCoordinator::get().clearDynamicAudio();
+        goIdle();
         return;
     }
 
@@ -1070,12 +1049,7 @@ bool DynamicSongManager::verifyPlayback() {
     std::string currentName(nameBuffer);
     if (currentName.empty()) return false;
 
-    auto getFileName = [](const std::string& path) -> std::string {
-        auto pos = path.find_last_of("/\\");
-        return (pos != std::string::npos) ? path.substr(pos + 1) : path;
-    };
-
-    return getFileName(m_activeSongPath) == getFileName(currentName);
+    return fileName(m_activeSongPath) == fileName(currentName);
 }
 
 // Streaming preview.
@@ -1237,6 +1211,147 @@ void DynamicSongManager::syncPreviewVolume() {
     m_previewChannel->setVolume(dynamicTargetVolume());
 }
 
+void DynamicSongManager::checkSongInfoSwap(MusicDownloadManager* mdm, FMODAudioEngine* engine) {
+    auto* songInfo = mdm->getSongInfoObject(m_previewSongID);
+    if (!songInfo || songInfo->m_songUrl.empty()) {
+        auto elapsed = std::chrono::steady_clock::now() - m_previewRequestStartTime;
+        if (elapsed > std::chrono::seconds(10)) {
+            log::warn("[DynSong] checkPreviewSwap: timeout waiting for song info for songID={}", m_previewSongID);
+            goIdle();
+        }
+        return;
+    }
+
+    FMOD::Sound* sound = nullptr;
+    FMOD_RESULT result = engine->m_system->createSound(
+        songInfo->m_songUrl.c_str(),
+        FMOD_CREATESTREAM | FMOD_NONBLOCKING | FMOD_LOOP_NORMAL | FMOD_2D,
+        nullptr,
+        &sound
+    );
+    if (result != FMOD_OK || !sound) {
+        log::warn("[DynSong] checkPreviewSwap: createSound failed after song info ({})", static_cast<int>(result));
+        goIdle();
+        return;
+    }
+
+    m_previewStreamSound = sound;
+    m_previewAwaitingSongInfo = false;
+    m_streamingPreviewPending = true;
+    m_previewRequestStartTime = std::chrono::steady_clock::now();
+    log::info("[DynSong] checkPreviewSwap: song info resolved, non-blocking open started for songID={}", m_previewSongID);
+}
+
+void DynamicSongManager::checkPendingStream(FMODAudioEngine* engine) {
+    if (!m_previewStreamSound) {
+        goIdle();
+        return;
+    }
+
+    FMOD_OPENSTATE openState = FMOD_OPENSTATE_READY;
+    unsigned int percentBuffered = 0;
+    bool starving = false;
+    bool diskBusy = false;
+    auto openResult = m_previewStreamSound->getOpenState(&openState, &percentBuffered, &starving, &diskBusy);
+    if (openResult != FMOD_OK) {
+        log::warn("[DynSong] checkPreviewSwap: getOpenState failed ({})", static_cast<int>(openResult));
+        goIdle();
+        return;
+    }
+
+    if (openState == FMOD_OPENSTATE_ERROR) {
+        log::warn("[DynSong] checkPreviewSwap: stream open state error for songID={}", m_previewSongID);
+        goIdle();
+        return;
+    }
+
+    if (openState != FMOD_OPENSTATE_READY) {
+        m_previewPlayAttemptSince = {};
+        auto elapsed = std::chrono::steady_clock::now() - m_previewRequestStartTime;
+        if (elapsed > std::chrono::seconds(15)) {
+            log::warn("[DynSong] checkPreviewSwap: timeout opening stream for songID={}", m_previewSongID);
+            goIdle();
+        }
+        return;
+    }
+
+    if (m_previewPlayAttemptSince.time_since_epoch().count() == 0) {
+        m_previewPlayAttemptSince = std::chrono::steady_clock::now();
+    }
+
+    if (engine->isMusicPlaying(0)) {
+        m_savedMenuPos = engine->getMusicTimeMS(0);
+    }
+
+    auto* currentCh = getMainBgChannel(engine);
+    if (currentCh) currentCh->stop();
+
+    FMOD::Channel* ch = nullptr;
+    auto playResult = engine->m_system->playSound(m_previewStreamSound, nullptr, true, &ch);
+    if (playResult == FMOD_ERR_NOTREADY) {
+        auto elapsed = std::chrono::steady_clock::now() - m_previewPlayAttemptSince;
+        if (elapsed > std::chrono::seconds(10)) {
+            log::warn("[DynSong] checkPreviewSwap: timeout FMOD_ERR_NOTREADY for songID={}", m_previewSongID);
+            goIdle();
+        }
+        return;
+    }
+    m_previewPlayAttemptSince = {};
+    if (playResult != FMOD_OK || !ch) {
+        log::warn("[DynSong] checkPreviewSwap: playSound failed ({})", static_cast<int>(playResult));
+        goIdle();
+        return;
+    }
+
+    ch->setVolume(0.0f);
+    ch->setPriority(0);
+    ch->setPaused(false);
+
+    m_previewChannel = ch;
+    m_streamingPreviewPending = false;
+    m_streamingPreview = true;
+
+    paimon::setDynamicSongInteropActive(true);
+    AudioContextCoordinator::get().claimDynamicAudio();
+
+    m_state = DynState::FadingIn;
+    fadeVolume(0.0f, dynamicTargetVolume(), getFadeDurationSec(), PostFadeAction::None);
+
+    log::info("[DynSong] checkPreviewSwap: streaming started for songID={} buffered={} starving={} diskBusy={}",
+              m_previewSongID, percentBuffered, starving, diskBusy);
+}
+
+void DynamicSongManager::checkDownloadSwap(MusicDownloadManager* mdm, FMODAudioEngine* engine) {
+    if (!isInValidLayer()) {
+        goIdle();
+        return;
+    }
+    if (!mdm->isSongDownloaded(m_previewSongID)) return;
+
+    std::string localPath = mdm->pathForSong(m_previewSongID);
+    if (localPath.empty()) return;
+
+    log::info("[DynSong] checkPreviewSwap: songID={} downloaded, starting playback", m_previewSongID);
+
+    int levelID = m_currentPlayingLevelID;
+    stopStreamingPreview();
+
+    m_activeSongPath = localPath;
+    m_currentPlayingLevelID = levelID;
+
+    if (engine->isMusicPlaying(0)) {
+        m_savedMenuPos = engine->getMusicTimeMS(0);
+    }
+
+    playOnMainChannel(localPath, 0.0f);
+    applyStartPosition(levelID);
+
+    paimon::setDynamicSongInteropActive(true);
+
+    m_state = DynState::FadingIn;
+    fadeVolume(0.0f, dynamicTargetVolume(), getFadeDurationSec(), PostFadeAction::None);
+}
+
 void DynamicSongManager::checkPreviewSwap() {
     if (paimon::isRuntimeShuttingDown()) {
         stopStreamingPreview();
@@ -1245,163 +1360,25 @@ void DynamicSongManager::checkPreviewSwap() {
     if (!m_streamingPreview && !isStreamingPreviewPending() && !m_awaitingDownloadOnly) return;
     if (m_previewSongID <= 0) return;
 
-    auto resetPreviewState = [this]() {
-        stopStreamingPreview();
-        m_state = DynState::Idle;
-        m_activeSongPath.clear();
-        m_currentPlayingLevelID = 0;
-        paimon::setDynamicSongInteropActive(false);
-        AudioContextCoordinator::get().clearDynamicAudio();
-    };
-
     auto* mdm = MusicDownloadManager::sharedState();
     auto* engine = FMODAudioEngine::sharedEngine();
     if (!mdm || !engine || !engine->m_system) {
-        resetPreviewState();
+        goIdle();
         return;
     }
 
     if (m_awaitingDownloadOnly) {
-        if (!isInValidLayer()) {
-            resetPreviewState();
-            return;
-        }
-        if (!mdm->isSongDownloaded(m_previewSongID)) return;
-
-        std::string localPath = mdm->pathForSong(m_previewSongID);
-        if (localPath.empty()) return;
-
-        log::info("[DynSong] checkPreviewSwap: songID={} downloaded, starting playback", m_previewSongID);
-
-        int levelID = m_currentPlayingLevelID;
-        stopStreamingPreview();
-
-        m_activeSongPath = localPath;
-        m_currentPlayingLevelID = levelID;
-
-        if (engine->isMusicPlaying(0)) {
-            m_savedMenuPos = engine->getMusicTimeMS(0);
-        }
-
-        playOnMainChannel(localPath, 0.0f);
-        applyStartPosition(levelID);
-
-        paimon::setDynamicSongInteropActive(true);
-
-        m_state = DynState::FadingIn;
-        fadeVolume(0.0f, dynamicTargetVolume(), getFadeDurationSec(), PostFadeAction::None);
+        checkDownloadSwap(mdm, engine);
         return;
     }
 
     if (m_previewAwaitingSongInfo) {
-        auto* songInfo = mdm->getSongInfoObject(m_previewSongID);
-        if (!songInfo || songInfo->m_songUrl.empty()) {
-            auto elapsed = std::chrono::steady_clock::now() - m_previewRequestStartTime;
-            if (elapsed > std::chrono::seconds(10)) {
-                log::warn("[DynSong] checkPreviewSwap: timeout waiting for song info for songID={}", m_previewSongID);
-                resetPreviewState();
-            }
-            return;
-        }
-
-        FMOD::Sound* sound = nullptr;
-        FMOD_RESULT result = engine->m_system->createSound(
-            songInfo->m_songUrl.c_str(),
-            FMOD_CREATESTREAM | FMOD_NONBLOCKING | FMOD_LOOP_NORMAL | FMOD_2D,
-            nullptr,
-            &sound
-        );
-        if (result != FMOD_OK || !sound) {
-            log::warn("[DynSong] checkPreviewSwap: createSound failed after song info ({})", static_cast<int>(result));
-            resetPreviewState();
-            return;
-        }
-
-        m_previewStreamSound = sound;
-        m_previewAwaitingSongInfo = false;
-        m_streamingPreviewPending = true;
-        m_previewRequestStartTime = std::chrono::steady_clock::now();
-        log::info("[DynSong] checkPreviewSwap: song info resolved, non-blocking open started for songID={}", m_previewSongID);
+        checkSongInfoSwap(mdm, engine);
         return;
     }
 
     if (m_streamingPreviewPending) {
-        if (!m_previewStreamSound) {
-            resetPreviewState();
-            return;
-        }
-
-        FMOD_OPENSTATE openState = FMOD_OPENSTATE_READY;
-        unsigned int percentBuffered = 0;
-        bool starving = false;
-        bool diskBusy = false;
-        auto openResult = m_previewStreamSound->getOpenState(&openState, &percentBuffered, &starving, &diskBusy);
-        if (openResult != FMOD_OK) {
-            log::warn("[DynSong] checkPreviewSwap: getOpenState failed ({})", static_cast<int>(openResult));
-            resetPreviewState();
-            return;
-        }
-
-        if (openState == FMOD_OPENSTATE_ERROR) {
-            log::warn("[DynSong] checkPreviewSwap: stream open state error para songID={}", m_previewSongID);
-            resetPreviewState();
-            return;
-        }
-
-        if (openState != FMOD_OPENSTATE_READY) {
-            m_previewPlayAttemptSince = {};
-            auto elapsed = std::chrono::steady_clock::now() - m_previewRequestStartTime;
-            if (elapsed > std::chrono::seconds(15)) {
-                log::warn("[DynSong] checkPreviewSwap: timeout opening stream for songID={}", m_previewSongID);
-                resetPreviewState();
-            }
-            return;
-        }
-
-        if (m_previewPlayAttemptSince.time_since_epoch().count() == 0) {
-            m_previewPlayAttemptSince = std::chrono::steady_clock::now();
-        }
-
-        if (engine->isMusicPlaying(0)) {
-            m_savedMenuPos = engine->getMusicTimeMS(0);
-        }
-
-        auto* currentCh = getMainBgChannel(engine);
-        if (currentCh) currentCh->stop();
-
-        FMOD::Channel* ch = nullptr;
-        auto playResult = engine->m_system->playSound(m_previewStreamSound, nullptr, true, &ch);
-        if (playResult == FMOD_ERR_NOTREADY) {
-            auto elapsed = std::chrono::steady_clock::now() - m_previewPlayAttemptSince;
-            if (elapsed > std::chrono::seconds(10)) {
-                log::warn("[DynSong] checkPreviewSwap: timeout FMOD_ERR_NOTREADY for songID={}", m_previewSongID);
-                resetPreviewState();
-            }
-            return;
-        }
-        m_previewPlayAttemptSince = {};
-        if (playResult != FMOD_OK || !ch) {
-            log::warn("[DynSong] checkPreviewSwap: playSound failed ({})", static_cast<int>(playResult));
-            resetPreviewState();
-            return;
-        }
-
-        ch->setVolume(0.0f);
-        ch->setPriority(0);
-        ch->setPaused(false);
-
-        m_previewChannel = ch;
-        m_streamingPreviewPending = false;
-        m_streamingPreview = true;
-
-        paimon::setDynamicSongInteropActive(true);
-        AudioContextCoordinator::get().claimDynamicAudio();
-
-        m_state = DynState::FadingIn;
-        fadeVolume(0.0f, dynamicTargetVolume(), getFadeDurationSec(), PostFadeAction::None);
-
-        log::info("[DynSong] checkPreviewSwap: streaming started for songID={} buffered={} starving={} diskBusy={}",
-                  m_previewSongID, percentBuffered, starving, diskBusy);
+        checkPendingStream(engine);
         return;
     }
 

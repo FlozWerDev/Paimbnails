@@ -14,6 +14,7 @@ public:
 
     void start();
     void stop();
+    void resumeAfterConsent();
 
 private:
     ThumbFeedSocket() = default;

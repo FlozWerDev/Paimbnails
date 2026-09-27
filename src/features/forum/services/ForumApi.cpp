@@ -1,4 +1,5 @@
 #include "ForumApi.hpp"
+#include "../../onboarding/WelcomeFlow.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include <Geode/binding/GameManager.hpp>
@@ -698,6 +699,10 @@ void ForumApi::getUserStatus(int accountID, UserStatusCallback cb) {
 }
 
 void ForumApi::sendHeartbeat(BoolCallback cb) {
+    if (!paimon::onboarding::isAccepted()) {
+        dispatchForumCallback(cb, makeOk(false));
+        return;
+    }
     if (!hasServer()) {
         dispatchForumCallback(cb, makeOk(true));
         return;

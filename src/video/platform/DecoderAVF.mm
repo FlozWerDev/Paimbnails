@@ -8,6 +8,7 @@
 #import <VideoToolbox/VideoToolbox.h>
 
 #include <Geode/loader/Log.hpp>
+#include <Geode/utils/general.hpp>
 #include "../../utils/JoinWithWarning.hpp"
 #include <cstring>
 #include <chrono>
@@ -260,6 +261,7 @@ void DecoderAVF::stopDecoding() {
 }
 
 void DecoderAVF::decodeLoop() {
+    geode::utils::thread::setName("PaimonDecodeAVF");
     auto* trackOutput = (__bridge AVAssetReaderTrackOutput*)m_trackOutput;
     auto* reader      = (__bridge AVAssetReader*)m_reader;
     if (!trackOutput || !reader) return;

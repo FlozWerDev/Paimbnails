@@ -65,6 +65,12 @@ class $modify(SmoothTextInput, CCTextInputNode) {
         return m_textLabel;
     }
 
+    CCArray* glyphSprites() {
+        if (m_textArea && m_textArea->m_label) return m_textArea->m_label->m_characters;
+        if (!m_textLabel) return nullptr;
+        return m_textLabel->getChildren();
+    }
+
     GLubyte fullOpacity() {
         if (m_textArea && m_textArea->m_label) return m_textArea->m_label->getOpacity();
         return m_textLabel ? m_textLabel->getOpacity() : 255;
@@ -76,7 +82,7 @@ class $modify(SmoothTextInput, CCTextInputNode) {
 
         if (m_textArea && m_textArea->m_label) {
             if (text[i] == '\n' || text[i] == '\r') return nullptr;
-            auto chars = m_textArea->m_label->m_characters;
+            auto* chars = glyphSprites();
             if (!chars) return nullptr;
             size_t slot = 0;
             for (size_t k = 0; k < i; ++k)
@@ -90,16 +96,10 @@ class $modify(SmoothTextInput, CCTextInputNode) {
     }
 
     void forEachGlyph(auto&& fn) {
-        if (m_textArea && m_textArea->m_label) {
-            if (auto chars = m_textArea->m_label->m_characters)
-                for (unsigned int i = 0; i < chars->count(); ++i)
-                    if (auto s = typeinfo_cast<CCSprite*>(chars->objectAtIndex(i))) fn(s);
-            return;
-        }
-        if (!m_textLabel) return;
-        if (auto kids = m_textLabel->getChildren())
-            for (unsigned int i = 0; i < kids->count(); ++i)
-                if (auto s = typeinfo_cast<CCSprite*>(kids->objectAtIndex(i))) fn(s);
+        auto* sprites = glyphSprites();
+        if (!sprites) return;
+        for (unsigned int i = 0; i < sprites->count(); ++i)
+            if (auto s = typeinfo_cast<CCSprite*>(sprites->objectAtIndex(i))) fn(s);
     }
 
     void snapshot() {
@@ -231,14 +231,12 @@ class $modify(SmoothTextInput, CCTextInputNode) {
         snapshot();
     }
 
-    $override
     void setString(gd::string text) {
         m_fields->programmatic = true;
         CCTextInputNode::setString(text);
         m_fields->programmatic = false;
     }
 
-    $override
     void refreshLabel() {
         if (m_fields->programmatic || !m_selected || getParentByType<SettingNodeV3>(0)) {
             plainRefresh();

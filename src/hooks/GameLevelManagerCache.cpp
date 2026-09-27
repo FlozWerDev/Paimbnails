@@ -21,7 +21,7 @@ void deliverCachedResponse(
     void (GameLevelManager::*handler)(gd::string, gd::string)
 ) {
     Loader::get()->queueInMainThread([self, response, tag, handler]() {
-        if (paimon::isRuntimeShuttingDown() || !self) return;
+        if (paimon::isRuntimeShuttingDown()) return;
         (self->*handler)(response, tag);
     });
 }
@@ -50,7 +50,6 @@ bool tryServeCached(
 
 // browse filters go stale and profiles carry relationship state; users only
 class $modify(PaimonRobTopCacheGameLevelManager, GameLevelManager) {
-    $override
     void getUsers(GJSearchObject* object) {
         if (shouldUseCache() && object &&
             tryServeCached(this, object->getKey(), "users",
@@ -60,7 +59,6 @@ class $modify(PaimonRobTopCacheGameLevelManager, GameLevelManager) {
         GameLevelManager::getUsers(object);
     }
 
-    $override
     void onGetUsersCompleted(gd::string response, gd::string tag) {
         maybeStore("users", static_cast<std::string>(tag), response, paimon::gd::kCacheTTLWeek);
         GameLevelManager::onGetUsersCompleted(response, tag);

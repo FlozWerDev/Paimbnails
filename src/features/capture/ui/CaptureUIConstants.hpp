@@ -44,7 +44,7 @@ namespace preview {
 // Shared chrome for the two editor popups: header band with live preview,
 // then full-width list, then action row.
 namespace theme {
-    // Single palette for both editor popups (was copy-pasted per file).
+    // Single palette for both editor popups.
     constexpr cocos2d::ccColor3B kAccent    {255, 215, 90};
     constexpr cocos2d::ccColor3B kTextOn    {255, 255, 255};
     constexpr cocos2d::ccColor3B kTextOff   {130, 130, 130};

@@ -452,28 +452,27 @@ void CollabNetClient::poll() {
         });
 }
 
-void CollabNetClient::scheduleJoinRetry(uint64_t gen, int ms) {
+void CollabNetClient::scheduleDelayed(uint64_t gen, int ms, RetryAction action) {
     auto lifetime = std::weak_ptr<uint8_t>(m_lifetime);
-    ThreadTracker::get().spawn([this, lifetime, gen, ms]() {
+    ThreadTracker::get().spawn([this, lifetime, gen, ms, action]() {
+        geode::utils::thread::setName("PaimonCollabRetry");
         std::this_thread::sleep_for(std::chrono::milliseconds(ms));
         if (lifetime.expired()) return;
-        Loader::get()->queueInMainThread([this, lifetime, gen]() {
+        Loader::get()->queueInMainThread([this, lifetime, gen, action]() {
             if (lifetime.expired()) return;
-            if (m_active && gen == m_gen) doJoin();
+            if (!m_active || gen != m_gen) return;
+            if (action == RetryAction::Join) doJoin();
+            else poll();
         });
     });
 }
 
+void CollabNetClient::scheduleJoinRetry(uint64_t gen, int ms) {
+    scheduleDelayed(gen, ms, RetryAction::Join);
+}
+
 void CollabNetClient::scheduleRetry(uint64_t gen, int ms) {
-    auto lifetime = std::weak_ptr<uint8_t>(m_lifetime);
-    ThreadTracker::get().spawn([this, lifetime, gen, ms]() {
-        std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-        if (lifetime.expired()) return;
-        Loader::get()->queueInMainThread([this, lifetime, gen]() {
-            if (lifetime.expired()) return;
-            if (m_active && gen == m_gen) poll();
-        });
-    });
+    scheduleDelayed(gen, ms, RetryAction::Poll);
 }
 
 void CollabNetClient::dispatchStateJson(std::string channel, std::string suffix,

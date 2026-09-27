@@ -18,6 +18,22 @@ using namespace paimon::slider;
 namespace {
 constexpr int kMaxThumbTextureSize = 256;
 
+struct IconMapEntry {
+    SliderIconType slider;
+    IconType gd;
+    int (GameManager::*playerGetter)();
+};
+
+IconMapEntry const kIconMap[] = {
+    {SliderIconType::Cube,   IconType::Cube,   &GameManager::getPlayerFrame},
+    {SliderIconType::Ship,   IconType::Ship,   &GameManager::getPlayerShip},
+    {SliderIconType::Ball,   IconType::Ball,   &GameManager::getPlayerBall},
+    {SliderIconType::Ufo,    IconType::Ufo,    &GameManager::getPlayerBird},
+    {SliderIconType::Wave,   IconType::Wave,   &GameManager::getPlayerDart},
+    {SliderIconType::Robot,  IconType::Robot,  &GameManager::getPlayerRobot},
+    {SliderIconType::Spider, IconType::Spider, &GameManager::getPlayerSpider},
+    {SliderIconType::Swing,  IconType::Swing,  &GameManager::getPlayerSwing},
+};
 // Slider-thumb shader namespace; never share uniforms with garage/icons.
 constexpr int kGradientExtra = 909;
 
@@ -236,29 +252,16 @@ CCNode* CustomSliderManager::createIconNode(bool isSelected) {
 
     int iconId = m_config.customIconId;
     IconType gdIconType = IconType::Cube;
-
-    switch (m_config.iconType) {
-        case SliderIconType::Cube:   gdIconType = IconType::Cube;   break;
-        case SliderIconType::Ship:   gdIconType = IconType::Ship;   break;
-        case SliderIconType::Ball:   gdIconType = IconType::Ball;   break;
-        case SliderIconType::Ufo:    gdIconType = IconType::Ufo;    break;
-        case SliderIconType::Wave:   gdIconType = IconType::Wave;   break;
-        case SliderIconType::Robot:  gdIconType = IconType::Robot;  break;
-        case SliderIconType::Spider: gdIconType = IconType::Spider; break;
-        case SliderIconType::Swing:  gdIconType = IconType::Swing;  break;
+    int (GameManager::*playerGetter)() = nullptr;
+    for (auto const& entry : kIconMap) {
+        if (entry.slider != m_config.iconType) continue;
+        gdIconType = entry.gd;
+        playerGetter = entry.playerGetter;
+        break;
     }
 
-    if (m_config.usePlayerIcon) {
-        switch (m_config.iconType) {
-            case SliderIconType::Cube:   iconId = gm->getPlayerFrame();  break;
-            case SliderIconType::Ship:   iconId = gm->getPlayerShip();   break;
-            case SliderIconType::Ball:   iconId = gm->getPlayerBall();   break;
-            case SliderIconType::Ufo:    iconId = gm->getPlayerBird();   break;
-            case SliderIconType::Wave:   iconId = gm->getPlayerDart();   break;
-            case SliderIconType::Robot:  iconId = gm->getPlayerRobot();  break;
-            case SliderIconType::Spider: iconId = gm->getPlayerSpider(); break;
-            case SliderIconType::Swing:  iconId = gm->getPlayerSwing();  break;
-        }
+    if (m_config.usePlayerIcon && playerGetter) {
+        iconId = (gm->*playerGetter)();
     }
 
     auto* player = SimplePlayer::create(iconId);
@@ -398,6 +401,26 @@ CCTexture2D* CustomSliderManager::imageTexture() {
     return m_imageTexture.data();
 }
 
+CCNode* CustomSliderManager::finishThumbNode(CCSprite* node) {
+    if (!node) return nullptr;
+    if (m_config.containerEnabled) {
+        node->setScale(1.f);
+        node->setRotation(0.f);
+        node->setOpacity(static_cast<GLubyte>(m_config.iconOpacity));
+        return wrapInShapeContainer(node, m_config);
+    }
+
+    float maxDim = std::max(node->getContentSize().width, node->getContentSize().height);
+    if (maxDim > 0.f) {
+        node->setScale(30.f / maxDim * m_config.iconScale);
+    } else {
+        node->setScale(m_config.iconScale);
+    }
+    node->setRotation(m_config.iconRotation);
+    node->setOpacity(static_cast<GLubyte>(m_config.iconOpacity));
+    return node;
+}
+
 CCNode* CustomSliderManager::createImageNode() {
     auto* texture = imageTexture();
     if (!texture) return nullptr;
@@ -405,21 +428,7 @@ CCNode* CustomSliderManager::createImageNode() {
     auto* spr = CCSprite::createWithTexture(texture);
     if (!spr) return nullptr;
 
-    if (m_config.containerEnabled) {
-        spr->setScale(1.f);
-        spr->setRotation(0.f);
-        spr->setOpacity(static_cast<GLubyte>(m_config.iconOpacity));
-        return wrapInShapeContainer(spr, m_config);
-    }
-
-    float maxDim = std::max(spr->getContentSize().width, spr->getContentSize().height);
-    float targetSize = 30.f;
-    float baseScale = targetSize / maxDim;
-    spr->setScale(baseScale * m_config.iconScale);
-    spr->setRotation(m_config.iconRotation);
-    spr->setOpacity(static_cast<GLubyte>(m_config.iconOpacity));
-
-    return spr;
+    return finishThumbNode(spr);
 }
 
 CCNode* CustomSliderManager::createGifNode(bool isSelected) {
@@ -437,25 +446,7 @@ CCNode* CustomSliderManager::createGifNode(bool isSelected) {
         return createImageNode();
     }
 
-    if (m_config.containerEnabled) {
-        gifSpr->setScale(1.f);
-        gifSpr->setRotation(0.f);
-        gifSpr->setOpacity(static_cast<GLubyte>(m_config.iconOpacity));
-        return wrapInShapeContainer(gifSpr, m_config);
-    }
-
-    float maxDim = std::max(gifSpr->getContentSize().width, gifSpr->getContentSize().height);
-    if (maxDim > 0.f) {
-        float targetSize = 30.f;
-        float baseScale = targetSize / maxDim;
-        gifSpr->setScale(baseScale * m_config.iconScale);
-    } else {
-        gifSpr->setScale(m_config.iconScale);
-    }
-    gifSpr->setRotation(m_config.iconRotation);
-    gifSpr->setOpacity(static_cast<GLubyte>(m_config.iconOpacity));
-
-    return gifSpr;
+    return finishThumbNode(gifSpr);
 }
 
 CCNode* CustomSliderManager::createThumbNode(bool isSelected) {

@@ -203,9 +203,6 @@ void execute() {
     auto configDir = mod->getConfigDir();
 
     std::error_code ec;
-    std::filesystem::remove(saveDir / "saved.json", ec);
-    ec.clear();
-
     wipeDirectoryContents(saveDir);
     wipeDirectoryContents(configDir);
 

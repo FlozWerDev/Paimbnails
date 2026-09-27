@@ -1550,7 +1550,7 @@ namespace {
         // Detach IME and freeze callbacks without removing nodes from a touch handler.
         void prepareForSceneTransition() {
             // Release IME focus so the next scene cannot receive keys through this input.
-            releaseSearchInputFocus(m_owner);
+            paimon::levelsearch::releaseSearchInputFocus(m_owner);
 
             m_shuttingDown = true;
             cancelPendingSearch();
@@ -1571,7 +1571,7 @@ namespace {
 
         // BoundedTouchMenu rejects touches outside the visible clip rect;
         // CCClippingNode only clips rendering.
-            auto menu = BoundedTouchMenu::create();
+            auto menu = paimon::levelsearch::BoundedTouchMenu::create();
             menu->setBoundsNode(m_resultsClip);
             menu->setPosition({0.f, 0.f});
             wrapper->addChild(menu, 5);

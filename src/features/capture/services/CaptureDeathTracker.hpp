@@ -20,7 +20,7 @@ inline void clearDeathTick() {
     lastDeathTickRef().store(-1, std::memory_order_relaxed);
 }
 
-// 240Hz fisica vs frames de render: la muerte puede llegar tarde a la lectura.
+// 240Hz physics vs render frames: death can arrive late to the read.
 constexpr uint32_t kDeathWindowTicks = 28;
 
 inline bool hasRecentDeath(uint32_t currentTick, uint32_t window = kDeathWindowTicks) {

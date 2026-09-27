@@ -1,4 +1,5 @@
 #include "DiscordPresenceManager.hpp"
+#include "../../../features/onboarding/WelcomeFlow.hpp"
 
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../core/Settings.hpp"
@@ -103,6 +104,7 @@ bool DiscordPresenceManager::isSupported() {
 
 void DiscordPresenceManager::ensureWorker() {
 #ifdef PAIMON_HAS_DISCORD_RPC
+    if (!paimon::onboarding::isAccepted()) return;
     if (m_shutdown || paimon::isRuntimeShuttingDown()) return;
     if (m_workerToken && m_workerToken->load(std::memory_order_acquire)) return;
     m_workerToken = std::make_shared<std::atomic<bool>>(true);
@@ -153,6 +155,13 @@ void DiscordPresenceManager::init() {
     refreshSoon();
 }
 
+void DiscordPresenceManager::resumeAfterConsent() {
+    if (!m_initialized) init();
+    if (!paimon::onboarding::isAccepted() || !isSupported()) return;
+    if (paimon::settings::discord_rpc::enabled()) ensureWorker();
+    refreshSoon();
+}
+
 void DiscordPresenceManager::shutdown() {
     if (m_shutdown) return;
     m_shutdown = true;
@@ -183,6 +192,7 @@ void DiscordPresenceManager::refreshSoon() {
 void DiscordPresenceManager::refreshNow(bool force) {
     try {
         if (m_shutdown || !m_initialized || paimon::isRuntimeShuttingDown()) return;
+        if (!paimon::onboarding::isAccepted()) return;
 
 #ifndef PAIMON_HAS_DISCORD_RPC
         return;

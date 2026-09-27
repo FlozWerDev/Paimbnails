@@ -508,7 +508,7 @@ void CaptureOverlay::onDownload(CCObject* sender) {
     ss << "screenshot_" << std::put_time(&tmBuf, "%Y%m%d_%H%M%S") << ".png";
     auto filePath = capturesDir / ss.str();
 
-// Copy the buffer before handing it to the worker thread.
+// Worker outlives this scope.
     size_t dataSize = static_cast<size_t>(m_captureWidth) * m_captureHeight * 4;
     std::shared_ptr<uint8_t> bufCopy(new uint8_t[dataSize], std::default_delete<uint8_t[]>());
     std::memcpy(bufCopy.get(), m_rgbaBuffer.get(), dataSize);

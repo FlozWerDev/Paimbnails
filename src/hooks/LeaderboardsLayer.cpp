@@ -305,6 +305,7 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
 
     void processProfileGIF(std::filesystem::path path) {
         paimon::ThreadTracker::get().spawn([path]() {
+            geode::utils::thread::setName("PaimonProfileGIF");
             std::ifstream file(path, std::ios::binary);
             if (!file) {
                 geode::Loader::get()->queueInMainThread([] {
@@ -349,6 +350,7 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
 
     void processProfileImage(std::filesystem::path path) {
         paimon::ThreadTracker::get().spawn([path]() {
+            geode::utils::thread::setName("PaimonProfileImage");
             std::ifstream file(path, std::ios::binary);
             if (!file) {
                 geode::Loader::get()->queueInMainThread([]{

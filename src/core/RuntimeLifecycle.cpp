@@ -116,7 +116,6 @@ $on_game(Exiting) {
     paimon::EventBus::get().beginShutdown();
 
     paimon::markRuntimeShuttingDown();
-    // release callbacks and async handles while CCScheduler, WeakRefPool and arc are alive.
     paimon::cancelAllMainThreadDelays();
     pt::cancelPendingFilePick();
     paimon::icon_maker::IconShare::cancelPendingPick();
@@ -143,17 +142,14 @@ $on_game(Exiting) {
     safeShutdownStep("foryou-save", []() {
         paimon::foryou::TasteProfile::get().save();
     });
-    log::info("[SHUTDOWN] 1/13 TasteProfile saved");
 
     safeShutdownStep("http-clean-tasks", []() {
         HttpClient::get().cleanTasks(false);
     });
-    log::info("[SHUTDOWN] 2/13 HttpClient tasks cleaned");
 
     safeShutdownStep("emote-shutdown", []() {
         paimon::emotes::EmoteCache::get().shutdown();
     });
-    log::info("[SHUTDOWN] 3/13 EmoteCache shutdown complete");
 
     safeShutdownStep("profile-thumbs-flag", []() {
         ProfileThumbs::s_shutdownMode.store(true, std::memory_order_release);
@@ -166,11 +162,9 @@ $on_game(Exiting) {
         paimon::menumusic::SongCoverCache::get().cleanup();
     });
 
-    log::info("[SHUTDOWN] 4/13 ThumbnailLoader cleanup starting...");
     safeShutdownStep("thumbnail-loader-cleanup", []() {
         ThumbnailLoader::get().cleanup();
     });
-    log::info("[SHUTDOWN] 4/13 ThumbnailLoader cleanup DONE");
     safeShutdownStep("blur-disk-cache-shutdown", []() {
         paimon::blur::BlurDiskCache::get().shutdown();
     });
@@ -185,19 +179,15 @@ $on_game(Exiting) {
             paimon::cache::ThumbnailCache::get().saveDiskIndex(true);
             (void)Mod::get()->saveData();
         });
-        log::info("[SHUTDOWN] 5/13 Disk index persisted");
     }
 
-    log::info("[SHUTDOWN] 6/13 LocalThumbs shutdown starting...");
     safeShutdownStep("local-thumbs-shutdown", []() {
         LocalThumbs::get().shutdown();
     });
-    log::info("[SHUTDOWN] 6/13 LocalThumbs shutdown DONE");
 
     safeShutdownStep("level-colors-flush", []() {
         LevelColors::get().flushIfDirty();
     });
-    log::info("[SHUTDOWN] 7/13 LevelColors flushed");
 
     safeShutdownStep("profile-thumbs-clear-cache", []() {
         ProfileThumbs::get().clearAllCache();
@@ -208,24 +198,18 @@ $on_game(Exiting) {
     safeShutdownStep("profile-thumbs-clear-pending", []() {
         ProfileThumbs::get().clearPendingDownloads();
     });
-    log::info("[SHUTDOWN] 8/13 ProfileThumbs caches cleared");
 
-    log::info("[SHUTDOWN] 9/13 AnimatedGIFSprite clearCache starting...");
     safeShutdownStep("animated-gif-clear", []() {
         AnimatedGIFSprite::clearCache();
     });
-    log::info("[SHUTDOWN] 9/13 AnimatedGIFSprite clearCache DONE");
 
-    log::info("[SHUTDOWN] 10/13 VideoThumbnailSprite clearCache starting...");
     safeShutdownStep("video-thumbnail-clear", []() {
         VideoThumbnailSprite::clearCache();
     });
-    log::info("[SHUTDOWN] 10/13 VideoThumbnailSprite clearCache DONE");
 
     safeShutdownStep("emote-cache-clear-ram", []() {
         paimon::emotes::EmoteCache::get().clearRam();
     });
-    log::info("[SHUTDOWN] 11/13 EmoteCache RAM cleared");
 
     safeShutdownStep("thumbnail-bg-event-clear", []() {
         paimon::ThumbnailBackgroundChangedEvent::s_lastLevelID = 0;
@@ -245,7 +229,6 @@ $on_game(Exiting) {
     safeShutdownStep("menu-music-effects-shutdown", []() {
         paimon::menumusic::MenuMusicEffects::get().shutdown();
     });
-    // Before the FMOD engine goes away: releases our fader/meter DSPs.
     safeShutdownStep("dynamic-volume-shutdown", []() {
         paimon::dynvol::DynamicVolumeManager::get().shutdown();
     });
@@ -258,14 +241,11 @@ $on_game(Exiting) {
     safeShutdownStep("cursor-release", []() {
         CursorManager::get().releaseSharedResources();
     });
-    log::info("[SHUTDOWN] 12/13 Audio + resources released");
 
     // release shared videos before MF dies; the static destructor crashes in msmpeg2vdec.dll.
-    log::info("[SHUTDOWN] 13/13 releaseAllSharedVideos starting...");
     safeShutdownStep("layer-bg-release-videos", []() {
         LayerBackgroundManager::get().releaseAllSharedVideos();
     });
-    log::info("[SHUTDOWN] 13/13 releaseAllSharedVideos DONE");
 
     safeShutdownStep("blur-system-destroy", []() {
         BlurSystem::getInstance()->destroy();
@@ -300,6 +280,5 @@ $on_game(Exiting) {
         removePathIfExists(saveDir / "profileimg_cache", "profile image cache");
     });
 
-    log::info("[PaimonThumbnails] All caches cleaned on exit");
     log::info("[SHUTDOWN] === EXIT SEQUENCE COMPLETE ===");
 }

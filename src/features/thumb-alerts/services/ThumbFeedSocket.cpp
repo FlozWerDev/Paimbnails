@@ -8,6 +8,7 @@
 #include "../../../utils/MainThreadDelay.hpp"
 #include "../../../utils/Debug.hpp"
 #include "../../../utils/WebSocketClient.hpp"
+#include "../../onboarding/WelcomeFlow.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -72,6 +73,11 @@ void ThumbFeedSocket::start() {
     this->connect();
 }
 
+void ThumbFeedSocket::resumeAfterConsent() {
+    if (!m_started) start();
+    else connect();
+}
+
 void ThumbFeedSocket::stop() {
     ++m_generation;
     m_connecting = false;
@@ -84,6 +90,7 @@ void ThumbFeedSocket::stop() {
 
 void ThumbFeedSocket::connect() {
     if (paimon::isRuntimeShuttingDown()) return;
+    if (!paimon::onboarding::isAccepted()) return;
     if (m_connecting || m_connected) return;
     if (!liveWanted()) return;
     if (!Mod::get()->getSettingValue<bool>("thumbalert-enabled")) return;

@@ -39,6 +39,23 @@ float hashNoise(unsigned int seed, int i);
 
 cocos2d::ccColor3B hsv(float h, float s, float v);
 cocos2d::ccColor3B mixColor(cocos2d::ccColor3B a, cocos2d::ccColor3B b, float t);
+// Shared color-mode switch (trail + click); speedMix is cursor speed or hold progress.
+enum class TrailColorMode : int;
+cocos2d::ccColor3B resolveFxColor(TrailColorMode mode, cocos2d::ccColor3B c1, cocos2d::ccColor3B c2,
+                                  float t, float rnd, float speedMix, float time, float hueSpeed);
+
+// Oldest-slot pools: a dead slot wins, else the furthest along.
+template <typename P, typename AgeFn>
+P* acquireOldest(std::vector<P>& pool, AgeFn age) {
+    P* oldest = nullptr;
+    float worst = -1.f;
+    for (auto& p : pool) {
+        if (!p.alive) return &p;
+        float t = age(p);
+        if (t > worst) { worst = t; oldest = &p; }
+    }
+    return oldest;
+}
 // Premultiplied blend requires RGB multiplied by alpha.
 cocos2d::ccColor4F pma(cocos2d::ccColor3B c, float a);
 

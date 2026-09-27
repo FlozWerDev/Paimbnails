@@ -11,14 +11,6 @@ using namespace geode::prelude;
 using namespace cocos2d;
 using namespace paimon::slider;
 
-#define PAIMON_SLIDER_KEY "paimon-slider-ref"
-
-class PaimonSliderRef : public CCObject {
-public:
-    Slider* m_slider = nullptr;
-    PaimonSliderRef(Slider* s) : m_slider(s) { this->autorelease(); }
-};
-
 class $modify(PaimonSlider, Slider) {
 public:
     static void onModify(auto& self) {
@@ -35,7 +27,6 @@ public:
         Ref<CCNode> m_selectedNode = nullptr;
     };
 
-    $override
     bool init(CCNode* target, SEL_MenuHandler handler, char const* bar,
               char const* groove, char const* thumb, char const* thumbSel,
               float scale) {
@@ -79,7 +70,6 @@ public:
             return;
         }
 
-        thumb->setUserObject(PAIMON_SLIDER_KEY, new PaimonSliderRef(this));
         upgradeSlider(thumb);
         m_fields->m_isAffected = true;
     }
@@ -101,24 +91,19 @@ public:
         if (m_fields->m_normalNode) m_fields->m_normalNode->stopAllActions();
         if (m_fields->m_selectedNode) m_fields->m_selectedNode->stopAllActions();
 
-        auto* normalBase = CCSprite::create();
-        normalBase->setContentSize(thumbSize);
-        auto* normalNode = CCSprite::create();
-        normalNode->setScale(0.9f);
-        normalBase->addChild(normalNode);
-        normalNode->setPosition(thumbSize / 2.f);
-        mgr.addIconToNode(normalNode, false);
-
-        auto* selectedBase = CCSprite::create();
-        selectedBase->setContentSize(thumbSize);
-        auto* selectedNode = CCSprite::create();
-        selectedNode->setScale(0.9f);
-        selectedBase->addChild(selectedNode);
-        selectedNode->setPosition(thumbSize / 2.f);
-        mgr.addIconToNode(selectedNode, true);
-
-        setCascadeOpacityDeep(normalBase);
-        setCascadeOpacityDeep(selectedBase);
+        auto makeBase = [&](bool selected) {
+            auto* base = CCSprite::create();
+            base->setContentSize(thumbSize);
+            auto* node = CCSprite::create();
+            node->setScale(0.9f);
+            base->addChild(node);
+            node->setPosition(thumbSize / 2.f);
+            mgr.addIconToNode(node, selected);
+            setCascadeOpacityDeep(base);
+            return std::pair(base, node);
+        };
+        auto [normalBase, normalNode] = makeBase(false);
+        auto [selectedBase, selectedNode] = makeBase(true);
 
         thumb->setNormalImage(normalBase);
         thumb->setSelectedImage(selectedBase);
@@ -222,52 +207,37 @@ void paimon::slider::refreshCustomSliders(CCNode* root) {
 
 class $modify(PaimonSliderTouch, SliderTouchLogic) {
     PaimonSlider* getMySlider() {
-        if (!m_thumb) return nullptr;
-        auto* ref = static_cast<PaimonSliderRef*>(m_thumb->getUserObject(PAIMON_SLIDER_KEY));
-        if (!ref || !ref->m_slider) return nullptr;
-        return static_cast<PaimonSlider*>(ref->m_slider);
+        if (!m_slider) return nullptr;
+        return static_cast<PaimonSlider*>(m_slider);
     }
 
     $override
     bool ccTouchBegan(CCTouch* touch, CCEvent* event) {
         bool result = SliderTouchLogic::ccTouchBegan(touch, event);
-        if (result) {
-            if (auto* slider = getMySlider()) {
-                if (slider->m_fields->m_isAffected) {
-                    slider->onDragBegin();
-                }
-            }
-        }
+        auto* slider = result ? getMySlider() : nullptr;
+        if (slider && slider->m_fields->m_isAffected) slider->onDragBegin();
         return result;
     }
 
     $override
     void ccTouchMoved(CCTouch* touch, CCEvent* event) {
         SliderTouchLogic::ccTouchMoved(touch, event);
-        if (auto* slider = getMySlider()) {
-            if (slider->m_fields->m_isAffected) {
-                slider->onDragMove();
-            }
-        }
+        auto* slider = getMySlider();
+        if (slider && slider->m_fields->m_isAffected) slider->onDragMove();
     }
 
     $override
     void ccTouchEnded(CCTouch* touch, CCEvent* event) {
         SliderTouchLogic::ccTouchEnded(touch, event);
-        if (auto* slider = getMySlider()) {
-            if (slider->m_fields->m_isAffected) {
-                slider->onDragEnd();
-            }
-        }
+        auto* slider = getMySlider();
+        if (slider && slider->m_fields->m_isAffected) slider->onDragEnd();
     }
 
+    // CCMenu::ccTouchCancelled is inline on win: binds mac/ios/android only.
     $override
     void ccTouchCancelled(CCTouch* touch, CCEvent* event) {
         SliderTouchLogic::ccTouchCancelled(touch, event);
-        if (auto* slider = getMySlider()) {
-            if (slider->m_fields->m_isAffected) {
-                slider->onDragEnd();
-            }
-        }
+        auto* slider = getMySlider();
+        if (slider && slider->m_fields->m_isAffected) slider->onDragEnd();
     }
 };

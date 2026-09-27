@@ -19,15 +19,12 @@ using namespace geode::prelude;
 
 namespace {
 
+// Both callers run after $on_game(Loaded) sets g_gameLoaded; no re-arm needed.
 void scheduleAfterGameLoaded(float delay, std::function<void()> fn) {
     if (paimon::isRuntimeShuttingDown()) return;
-    if (paimon::preload::g_gameLoaded.load(std::memory_order_acquire)) {
-        paimon::scheduleMainThreadDelay(delay, [fn]() { fn(); });
-        return;
-    }
-    paimon::scheduleMainThreadDelay(0.5f, [delay, fn]() {
+    paimon::scheduleMainThreadDelay(delay, [fn]() {
         if (paimon::isRuntimeShuttingDown()) return;
-        scheduleAfterGameLoaded(delay, fn);
+        fn();
     });
 }
 

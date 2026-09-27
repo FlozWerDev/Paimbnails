@@ -43,6 +43,9 @@ private:
     void const* m_scrollTarget = nullptr;
     bool m_replaying = false;
     bool m_editorZoomMode = false;
+
+    float replaySteps(bool negate) const;
+    float filteredSteps(float wheelY, float wheelX, bool negate) const;
 };
 
 bool shouldBypassSmoothScroll();

@@ -17,6 +17,7 @@ public:
     static bool isSupported();
 
     void init();
+    void resumeAfterConsent();
     void shutdown();
     void refreshSoon();
     void refreshNow(bool force = false);

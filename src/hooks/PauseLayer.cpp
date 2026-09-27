@@ -768,6 +768,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                     // extract dominant colors off-thread; LAB clustering is expensive
                     if (buf && w > 0 && h > 0) {
                         paimon::ThreadTracker::get().spawn([lvlID, buf, w, h]() {
+                            geode::utils::thread::setName("PaimonDominantColors");
                             if (paimon::isRuntimeShuttingDown()) return;
                             auto rgbBuf = convertRGBAtoRGB(buf.get(), w, h);
                             auto pair = DominantColors::extract(rgbBuf.data(), w, h);

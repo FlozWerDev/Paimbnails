@@ -30,6 +30,15 @@ bool isEditorContextActive() {
 }
 
 // capture before selected() (may destroy popup)
+static bool s_originCaptureEnabled = false;
+
+$execute {
+    s_originCaptureEnabled = Mod::get()->getSettingValue<bool>("dynamic-popup-enabled");
+    geode::listenForSettingChanges<bool>("dynamic-popup-enabled", [](bool v) {
+        s_originCaptureEnabled = v;
+    });
+}
+
 class $modify(PaimonButtonOriginCapture, CCMenuItemSpriteExtra) {
     static void onModify(auto& self) {
         // VeryEarly keeps original button position.
@@ -39,16 +48,7 @@ class $modify(PaimonButtonOriginCapture, CCMenuItemSpriteExtra) {
     $override
     void selected() {
         if (!isEditorContextActive()) {
-            // cache setting; runs on every press
-            static bool s_enabled = Mod::get()->getSettingValue<bool>("dynamic-popup-enabled");
-            static auto s_listener = []{
-                geode::listenForSettingChanges<bool>("dynamic-popup-enabled", [](bool v){
-                    s_enabled = v;
-                });
-                return 0;
-            }();
-            (void)s_listener;
-            if (s_enabled && this->getParent()) {
+            if (s_originCaptureEnabled && this->getParent()) {
                 auto sz = this->getContentSize();
                 if (sz.width > 0.f && sz.height > 0.f) {
                     paimon::storeButtonOrigin(

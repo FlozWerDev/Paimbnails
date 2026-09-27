@@ -3,6 +3,7 @@
 #include "../VideoDecoder.hpp"
 #include <pl_mpeg.h>
 #include <Geode/utils/string.hpp>
+#include <Geode/utils/general.hpp>
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -113,7 +114,7 @@ public:
 private:
     // plm planes have no stride; width is the row stride.
     static void copyPlane(const plm_plane_t& plane, uint8_t* dst, int dstStride) {
-        int rowBytes = std::min(dstStride, plane.width);
+        int rowBytes = std::min(dstStride, static_cast<int>(plane.width));
         for (int r = 0; r < plane.height; ++r) {
             std::memcpy(dst + r * dstStride,
                         plane.data + r * plane.width, rowBytes);
@@ -121,6 +122,7 @@ private:
     }
 
     void decodeLoop() {
+        geode::utils::thread::setName("PaimonDecodePLM");
         plm_set_video_decode_callback(m_plm, nullptr, nullptr);
 
         while (m_decoding.load(std::memory_order_relaxed)) {

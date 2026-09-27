@@ -265,6 +265,7 @@ void WebFeedbackPopup::send(std::string decision) {
     paimon::ThreadTracker::get().spawn([marks = std::move(marks), rgba, srcW, srcH,
         request, decision = std::move(decision), percent, note = std::move(note),
         reason = std::move(reason), weak]() mutable {
+        geode::utils::thread::setName("PaimonWebFeedback");
         float scale = std::min(1.f, std::sqrt(220000.f / (static_cast<float>(srcW) * srcH)));
         int w = std::max(1, static_cast<int>(srcW * scale));
         int h = std::max(1, static_cast<int>(srcH * scale));

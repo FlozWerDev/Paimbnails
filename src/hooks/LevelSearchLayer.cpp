@@ -41,9 +41,8 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
         return this->getChildByID("paimon-realtime-search-preview"_spr);
     }
 
-    $override
-    bool init(int searchType) {
-        if (!LevelSearchLayer::init(searchType)) return false;
+    bool init(int type) {
+        if (!LevelSearchLayer::init(type)) return false;
         m_fields->m_previewCallbacksSuspended = false;
 
         bool hasCustomBg = LayerBackgroundManager::get().applyBackground(this, "search");

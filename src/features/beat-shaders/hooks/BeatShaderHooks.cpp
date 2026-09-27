@@ -35,6 +35,10 @@ class $modify(PaimonBeatMenuHook, MenuLayer) {
     void deferredApply(float) {
         apply(this, "menu");
     }
+    void onExit() override {
+        this->unschedule(schedule_selector(PaimonBeatMenuHook::deferredApply));
+        MenuLayer::onExit();
+    }
 };
 
 class $modify(PaimonBeatCreatorHook, CreatorLayer) {
@@ -48,6 +52,10 @@ class $modify(PaimonBeatCreatorHook, CreatorLayer) {
     }
     void deferredApply(float) {
         apply(this, "creator");
+    }
+    void onExit() override {
+        this->unschedule(schedule_selector(PaimonBeatCreatorHook::deferredApply));
+        CreatorLayer::onExit();
     }
 };
 
@@ -63,6 +71,10 @@ class $modify(PaimonBeatLevelInfoHook, LevelInfoLayer) {
     void deferredApply(float) {
         apply(this, "levelinfo");
     }
+    void onExit() override {
+        this->unschedule(schedule_selector(PaimonBeatLevelInfoHook::deferredApply));
+        LevelInfoLayer::onExit();
+    }
 };
 
 class $modify(PaimonBeatLevelSelectHook, LevelSelectLayer) {
@@ -76,6 +88,10 @@ class $modify(PaimonBeatLevelSelectHook, LevelSelectLayer) {
     }
     void deferredApply(float) {
         apply(this, "levelselect");
+    }
+    void onExit() override {
+        this->unschedule(schedule_selector(PaimonBeatLevelSelectHook::deferredApply));
+        LevelSelectLayer::onExit();
     }
 };
 

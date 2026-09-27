@@ -72,7 +72,6 @@ class $modify(PaimonLevelPage, LevelPage) {
                 }
             }
 
-            // restore vanilla first, then apply the feature
             if (!paimon::modules::isEnabled("paimbnails.thumbnails.browser")) return;
 
             int capturedLevelID = level->m_levelID;

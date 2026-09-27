@@ -90,18 +90,15 @@ class $modify(BadgeCommentCell, CommentCell) {
     void clearCommentProfileBackground() {
         ++m_fields->m_commentBgToken;
 
-        if (m_fields->m_commentBgPanel) {
-            m_fields->m_commentBgPanel->removeFromParent();
-            m_fields->m_commentBgPanel = nullptr;
-        }
-        if (m_fields->m_commentBgClip) {
-            m_fields->m_commentBgClip->removeFromParent();
-            m_fields->m_commentBgClip = nullptr;
-        }
-        if (m_fields->m_commentBgDarkOverlay) {
-            m_fields->m_commentBgDarkOverlay->removeFromParent();
-            m_fields->m_commentBgDarkOverlay = nullptr;
-        }
+        auto clear = [](auto& ref) {
+            if (ref) {
+                ref->removeFromParent();
+                ref = nullptr;
+            }
+        };
+        clear(m_fields->m_commentBgPanel);
+        clear(m_fields->m_commentBgClip);
+        clear(m_fields->m_commentBgDarkOverlay);
     }
 
     void hideVanillaCommentBackgrounds() {
@@ -118,19 +115,13 @@ class $modify(BadgeCommentCell, CommentCell) {
                     continue;
                 }
 
-                if (typeinfo_cast<CCLayerColor*>(child)) {
+                if (typeinfo_cast<CCLayerColor*>(child) || typeinfo_cast<CCScale9Sprite*>(child)) {
                     child->setVisible(false);
                     continue;
                 }
 
-                if (typeinfo_cast<CCScale9Sprite*>(child)) {
-                    child->setVisible(false);
-                    continue;
-                }
-
-                if (!typeinfo_cast<CCMenu*>(child)) {
-                    self(self, child);
-                }
+                if (typeinfo_cast<CCMenu*>(child)) continue;
+                self(self, child);
             }
         };
 

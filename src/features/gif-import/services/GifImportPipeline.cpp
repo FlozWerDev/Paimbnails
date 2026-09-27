@@ -157,7 +157,7 @@ struct BucketKey {
 };
 
 // the UI sets the cap; here the range is only sanitized.
-Options sanitize(Options options, std::size_t) {
+Options sanitize(Options options) {
     options.maxDimension = std::clamp(options.maxDimension, 4, 320);
     options.minDimension = std::clamp(options.minDimension, 4, options.maxDimension);
     options.maxColors = std::clamp(options.maxColors, 1, 64);
@@ -2632,7 +2632,7 @@ BuildResult buildPlan(
         }
     }
 
-    Options const options = sanitize(rawOptions, source.frames.size());
+    Options const options = sanitize(rawOptions);
     if (usesSoftGeometry(options.mode)) {
         auto validStamp = [&](std::size_t index) {
             if (index >= options.softStamps.size()) return false;

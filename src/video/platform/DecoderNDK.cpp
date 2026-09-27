@@ -3,6 +3,7 @@
 #if defined(USE_MEDIA_NDK)
 
 #include <Geode/loader/Log.hpp>
+#include <Geode/utils/general.hpp>
 #include "../../utils/JoinWithWarning.hpp"
 #include <libyuv/planar_functions.h>
 #include <cstring>
@@ -371,6 +372,7 @@ void DecoderNDK::stopDecoding() {
 }
 
 void DecoderNDK::decodeLoop() {
+    geode::utils::thread::setName("PaimonDecodeNDK");
     bool inputDone = false;
     int frameCount = 0;
     int skippedBeforeFormat = 0;

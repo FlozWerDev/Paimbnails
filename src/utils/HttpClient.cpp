@@ -22,22 +22,6 @@
 using namespace geode::prelude;
 
 namespace {
-std::string urlEncodeParam(std::string_view input) {
-    std::ostringstream encoded;
-    encoded << std::uppercase << std::hex;
-
-    for (unsigned char ch : input) {
-        if (std::isalnum(ch) || ch == '-' || ch == '_' || ch == '.' || ch == '~') {
-            encoded << static_cast<char>(ch);
-            continue;
-        }
-
-        encoded << '%' << std::setw(2) << std::setfill('0') << static_cast<int>(ch);
-    }
-
-    return encoded.str();
-}
-
 GJAccountManager* getSafeAccountManager() {
     auto* accountManager = GJAccountManager::get();
     if (!accountManager) {
@@ -64,6 +48,41 @@ std::string getSafeAccountUsername() {
 // are transient: treating them as absent blanked the level on server hiccups.
 bool isMissingStatus(int status) {
     return status == 404 || status == 410;
+}
+
+// Shared account tail for upload form fields; callers prepend path/id keys.
+std::vector<std::pair<std::string, std::string>> accountFieldTail(std::string const& username) {
+    auto account = AccountVerifier::get().verify();
+    return {
+        {"username", username},
+        {"accountID", std::to_string(account.accountID)},
+        {"isOfficialServer", account.isOfficialServer ? "true" : "false"}
+    };
+}
+
+std::string uploadResponseMessage(std::string const& response, std::string const& fallback) {
+    auto parsed = matjson::parse(response);
+    if (parsed.isOk()) {
+        auto msgVal = parsed.unwrap()["message"].asString();
+        if (msgVal.isOk()) return msgVal.unwrap();
+    }
+    return fallback;
+}
+
+std::string profileUploadMessage(std::string const& response, std::string const& fallback) {
+    std::string result = fallback;
+    auto jsonRes = matjson::parse(response);
+    if (jsonRes.isOk()) {
+        auto json = jsonRes.unwrap();
+        if (json.contains("pendingVerification") && json["pendingVerification"].asBool().unwrapOr(false)) {
+            result = "pending_verification";
+        }
+        if (json.contains("message") && json["message"].isString()) {
+            auto serverMsg = json["message"].asString().unwrapOr("");
+            if (!serverMsg.empty()) result = serverMsg;
+        }
+    }
+    return result;
 }
 
 bool decodeBase64(std::string const& input, std::vector<uint8_t>& out) {
@@ -160,7 +179,19 @@ void HttpClient::setForumServerURL(std::string const& url) {
 }
 
 std::string HttpClient::encodeQueryParam(std::string const& value) {
-    return urlEncodeParam(value);
+    std::ostringstream encoded;
+    encoded << std::uppercase << std::hex;
+
+    for (unsigned char ch : value) {
+        if (std::isalnum(ch) || ch == '-' || ch == '_' || ch == '.' || ch == '~') {
+            encoded << static_cast<char>(ch);
+            continue;
+        }
+
+        encoded << '%' << std::setw(2) << std::setfill('0') << static_cast<int>(ch);
+    }
+
+    return encoded.str();
 }
 
 void HttpClient::setModCode(std::string const& code) {
@@ -483,13 +514,11 @@ void HttpClient::uploadProfile(int accountID, std::vector<uint8_t> const& pngDat
     std::string url = m_serverURL + "/api/backgrounds/upload";
     std::string filename = std::to_string(accountID) + ".png";
 
-    auto account = AccountVerifier::get().verify();
     std::vector<std::pair<std::string, std::string>> formFields = {
         {"levelId", std::to_string(accountID)},
-        {"username", username},
-        {"accountID", std::to_string(accountID)},
-        {"isOfficialServer", account.isOfficialServer ? "true" : "false"}
     };
+    auto tail = accountFieldTail(username);
+    formFields.insert(formFields.end(), tail.begin(), tail.end());
 
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey
@@ -505,19 +534,7 @@ void HttpClient::uploadProfile(int accountID, std::vector<uint8_t> const& pngDat
         [callback = std::move(callback), accountID](bool success, std::string const& response) {
             if (success) {
                 PaimonDebug::log("[HttpClient] Profile upload successful for account {}", accountID);
-                std::string resultMsg = "Profile upload successful";
-                auto jsonRes = matjson::parse(response);
-                if (jsonRes.isOk()) {
-                    auto json = jsonRes.unwrap();
-                    if (json.contains("pendingVerification") && json["pendingVerification"].asBool().unwrapOr(false)) {
-                        resultMsg = "pending_verification";
-                    }
-                    if (json.contains("message") && json["message"].isString()) {
-                        auto serverMsg = json["message"].asString().unwrapOr("");
-                        if (!serverMsg.empty()) resultMsg = serverMsg;
-                    }
-                }
-                callback(true, resultMsg);
+                callback(true, profileUploadMessage(response, "Profile upload successful"));
             } else {
                 log::error("[HttpClient] Profile upload failed for account {}: {}", accountID, response);
                 callback(false, "Profile upload failed: " + response);
@@ -533,13 +550,11 @@ void HttpClient::uploadProfileGIF(int accountID, std::vector<uint8_t> const& gif
     std::string url = m_serverURL + "/api/backgrounds/upload-gif";
     std::string filename = std::to_string(accountID) + ".gif";
 
-    auto account = AccountVerifier::get().verify();
     std::vector<std::pair<std::string, std::string>> formFields = {
         {"levelId", std::to_string(accountID)},
-        {"username", username},
-        {"accountID", std::to_string(accountID)},
-        {"isOfficialServer", account.isOfficialServer ? "true" : "false"}
     };
+    auto tail = accountFieldTail(username);
+    formFields.insert(formFields.end(), tail.begin(), tail.end());
 
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey
@@ -555,19 +570,7 @@ void HttpClient::uploadProfileGIF(int accountID, std::vector<uint8_t> const& gif
         [callback = std::move(callback), accountID](bool success, std::string const& response) {
             if (success) {
                 PaimonDebug::log("[HttpClient] Profile GIF upload successful for account {}", accountID);
-                std::string resultMsg = "Profile GIF upload successful";
-                auto jsonRes = matjson::parse(response);
-                if (jsonRes.isOk()) {
-                    auto json = jsonRes.unwrap();
-                    if (json.contains("pendingVerification") && json["pendingVerification"].asBool().unwrapOr(false)) {
-                        resultMsg = "pending_verification";
-                    }
-                    if (json.contains("message") && json["message"].isString()) {
-                        auto serverMsg = json["message"].asString().unwrapOr("");
-                        if (!serverMsg.empty()) resultMsg = serverMsg;
-                    }
-                }
-                callback(true, resultMsg);
+                callback(true, profileUploadMessage(response, "Profile GIF upload successful"));
             } else {
                 log::error("[HttpClient] Profile GIF upload failed for account {}: {}", accountID, response);
                 callback(false, "Profile GIF upload failed: " + response);
@@ -583,13 +586,11 @@ void HttpClient::uploadProfileVideo(int accountID, std::vector<uint8_t> const& m
     std::string url = m_serverURL + "/api/backgrounds/upload-video";
     std::string filename = std::to_string(accountID) + ".mp4";
 
-    auto account = AccountVerifier::get().verify();
     std::vector<std::pair<std::string, std::string>> formFields = {
         {"levelId", std::to_string(accountID)},
-        {"username", username},
-        {"accountID", std::to_string(accountID)},
-        {"isOfficialServer", account.isOfficialServer ? "true" : "false"}
     };
+    auto tail = accountFieldTail(username);
+    formFields.insert(formFields.end(), tail.begin(), tail.end());
 
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey
@@ -605,16 +606,7 @@ void HttpClient::uploadProfileVideo(int accountID, std::vector<uint8_t> const& m
         [callback = std::move(callback), accountID](bool success, std::string const& response) {
             if (success) {
                 PaimonDebug::log("[HttpClient] Profile video upload successful for account {}", accountID);
-                std::string resultMsg = "Profile video upload successful";
-                auto jsonRes = matjson::parse(response);
-                if (jsonRes.isOk()) {
-                    auto json = jsonRes.unwrap();
-                    if (json.contains("message") && json["message"].isString()) {
-                        auto serverMsg = json["message"].asString().unwrapOr("");
-                        if (!serverMsg.empty()) resultMsg = serverMsg;
-                    }
-                }
-                callback(true, resultMsg);
+                callback(true, uploadResponseMessage(response, "Profile video upload successful"));
             } else {
                 log::error("[HttpClient] Profile video upload failed for account {}: {}", accountID, response);
                 callback(false, "Profile video upload failed: " + response);
@@ -638,14 +630,12 @@ void HttpClient::uploadProfileImg(int accountID, std::vector<uint8_t> const& img
 
     std::string filename = "profileimg" + std::to_string(accountID) + "." + ext;
 
-    auto account = AccountVerifier::get().verify();
     std::vector<std::pair<std::string, std::string>> formFields = {
         {"path", "/profileimgs"},
         {"levelId", std::to_string(accountID)},
-        {"username", username},
-        {"accountID", std::to_string(accountID)},
-        {"isOfficialServer", account.isOfficialServer ? "true" : "false"}
     };
+    auto tail = accountFieldTail(username);
+    formFields.insert(formFields.end(), tail.begin(), tail.end());
 
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey
@@ -661,19 +651,7 @@ void HttpClient::uploadProfileImg(int accountID, std::vector<uint8_t> const& img
         [callback = std::move(callback), accountID](bool success, std::string const& response) {
             if (success) {
                 PaimonDebug::log("[HttpClient] Profile image upload successful for account {}", accountID);
-                std::string resultMsg = "Profile image upload successful";
-                auto jsonRes = matjson::parse(response);
-                if (jsonRes.isOk()) {
-                    auto json = jsonRes.unwrap();
-                    if (json.contains("pendingVerification") && json["pendingVerification"].asBool().unwrapOr(false)) {
-                        resultMsg = "pending_verification";
-                    }
-                    if (json.contains("message") && json["message"].isString()) {
-                        auto serverMsg = json["message"].asString().unwrapOr("");
-                        if (!serverMsg.empty()) resultMsg = serverMsg;
-                    }
-                }
-                callback(true, resultMsg);
+                callback(true, profileUploadMessage(response, "Profile image upload successful"));
             } else {
                 log::error("[HttpClient] Profile image upload failed for account {}: {}", accountID, response);
                 callback(false, "Profile image upload failed: " + response);
@@ -842,15 +820,12 @@ void HttpClient::uploadThumbnail(int levelId, std::vector<uint8_t> const& pngDat
     std::string url = m_serverURL + "/mod/upload";
     std::string filename = std::to_string(levelId) + ".png";
 
-    auto account = AccountVerifier::get().verify();
-
     std::vector<std::pair<std::string, std::string>> formFields = {
         {"path", "/thumbnails"},
         {"levelId", std::to_string(levelId)},
-        {"username", username},
-        {"accountID", std::to_string(account.accountID)},
-        {"isOfficialServer", account.isOfficialServer ? "true" : "false"}
     };
+    auto tail = accountFieldTail(username);
+    formFields.insert(formFields.end(), tail.begin(), tail.end());
     if (!levelMeta.empty()) formFields.push_back({"levelMeta", levelMeta});
 
     std::vector<std::string> headers = {
@@ -871,13 +846,7 @@ void HttpClient::uploadThumbnail(int levelId, std::vector<uint8_t> const& pngDat
         [callback = std::move(callback), levelId](bool success, std::string const& response) {
             if (success) {
                 PaimonDebug::log("[HttpClient] Upload successful for level {}", levelId);
-                std::string message = "Upload successful";
-                auto parsed = matjson::parse(response);
-                if (parsed.isOk()) {
-                    auto msgVal = parsed.unwrap()["message"].asString();
-                    if (msgVal.isOk()) message = msgVal.unwrap();
-                }
-                callback(true, message);
+                callback(true, uploadResponseMessage(response, "Upload successful"));
             } else {
                 log::error("[HttpClient] Upload failed for level {}: {}", levelId, response);
                 callback(false, "Upload failed: " + response);
@@ -893,15 +862,12 @@ void HttpClient::uploadGIF(int levelId, std::vector<uint8_t> const& gifData, std
     std::string url = m_serverURL + "/mod/upload-gif";
     std::string filename = std::to_string(levelId) + ".gif";
 
-    auto account = AccountVerifier::get().verify();
-
     std::vector<std::pair<std::string, std::string>> formFields = {
         {"path", "/thumbnails"},
         {"levelId", std::to_string(levelId)},
-        {"username", username},
-        {"accountID", std::to_string(account.accountID)},
-        {"isOfficialServer", account.isOfficialServer ? "true" : "false"}
     };
+    auto tail = accountFieldTail(username);
+    formFields.insert(formFields.end(), tail.begin(), tail.end());
     if (!levelMeta.empty()) formFields.push_back({"levelMeta", levelMeta});
 
     std::vector<std::string> headers = {
@@ -914,13 +880,7 @@ void HttpClient::uploadGIF(int levelId, std::vector<uint8_t> const& gifData, std
     performUpload(url, "image", filename, gifData, formFields, headers,
         [callback = std::move(callback), levelId](bool success, std::string const& response) {
             if (success) {
-                std::string message = "Upload successful";
-                auto parsed = matjson::parse(response);
-                if (parsed.isOk()) {
-                    auto msgVal = parsed.unwrap()["message"].asString();
-                    if (msgVal.isOk()) message = msgVal.unwrap();
-                }
-                callback(true, message);
+                callback(true, uploadResponseMessage(response, "Upload successful"));
             } else {
                 log::error("[HttpClient] GIF upload failed for level {}: {}", levelId, response);
                 callback(false, "GIF Upload failed: " + response);
@@ -936,15 +896,12 @@ void HttpClient::uploadVideo(int levelId, std::vector<uint8_t> const& mp4Data, s
     std::string url = m_serverURL + "/mod/upload-video";
     std::string filename = std::to_string(levelId) + ".mp4";
 
-    auto account = AccountVerifier::get().verify();
-
     std::vector<std::pair<std::string, std::string>> formFields = {
         {"path", "/thumbnails/video"},
         {"levelId", std::to_string(levelId)},
-        {"username", username},
-        {"accountID", std::to_string(account.accountID)},
-        {"isOfficialServer", account.isOfficialServer ? "true" : "false"}
     };
+    auto tail = accountFieldTail(username);
+    formFields.insert(formFields.end(), tail.begin(), tail.end());
     if (!levelMeta.empty()) formFields.push_back({"levelMeta", levelMeta});
 
     std::vector<std::string> headers = {
@@ -957,13 +914,7 @@ void HttpClient::uploadVideo(int levelId, std::vector<uint8_t> const& mp4Data, s
     performUpload(url, "image", filename, mp4Data, formFields, headers,
         [callback = std::move(callback), levelId](bool success, std::string const& response) {
             if (success) {
-                std::string message = "Upload successful";
-                auto parsed = matjson::parse(response);
-                if (parsed.isOk()) {
-                    auto msgVal = parsed.unwrap()["message"].asString();
-                    if (msgVal.isOk()) message = msgVal.unwrap();
-                }
-                callback(true, message);
+                callback(true, uploadResponseMessage(response, "Upload successful"));
             } else {
                 log::error("[HttpClient] Video upload failed for level {}: {}", levelId, response);
                 callback(false, "Video Upload failed: " + response);
@@ -1348,6 +1299,7 @@ void HttpClient::saveManifestToDisk() {
     }
 
     paimon::ThreadTracker::get().spawn([path, json = std::move(json), entryCount]() {
+        geode::utils::thread::setName("PaimonManifestSave");
         std::error_code ec;
         std::filesystem::create_directories(path.parent_path(), ec);
 
@@ -1422,12 +1374,44 @@ void HttpClient::downloadReported(int levelId, DownloadCallback callback) {
     downloadThumbnail(levelId, callback);
 }
 
+void HttpClient::fetchViaWorker(int levelId, bool dropManifestEntry) {
+    if (isWorkerExhausted()) {
+        // Worker exhaustion is transient; let ThumbnailLoader retry.
+        PaimonDebug::warn("[HttpClient] Worker exhausted, cannot fallback for level {} (will retry later)", levelId);
+        resolveInflight(levelId, false, {});
+        return;
+    }
+
+    auto headers = std::vector<std::string>{
+        "X-API-Key: " + m_apiKey,
+        "Connection: keep-alive"
+    };
+    std::string url = m_serverURL + "/t/" + std::to_string(levelId);
+
+    performBinaryRequestEx(url, headers, [this, levelId, dropManifestEntry](bool ws, std::vector<uint8_t> const& wd, int status) {
+        if (ws && !wd.empty()) {
+            PaimonDebug::log("[HttpClient] Worker fallback success for level {}: {} bytes", levelId, wd.size());
+            resolveInflight(levelId, true, wd);
+        } else if (isMissingStatus(status)) {
+            PaimonDebug::warn("[HttpClient] Level {} has no thumbnail (HTTP {})", levelId, status);
+            markThumbnailNotFound(levelId);
+            if (dropManifestEntry) removeManifestEntry(levelId);
+            resolveInflight(levelId, false, {});
+        } else {
+            // timeout/5xx/429/net-cut is not "missing": negative caching
+            // blanked the level and dropped the good manifest entry.
+            PaimonDebug::warn("[HttpClient] Transient failure for level {} (HTTP {}), not caching as missing", levelId, status);
+            resolveInflight(levelId, false, {});
+        }
+    });
+}
+
 void HttpClient::downloadThumbnail(int levelId, bool isGif, DownloadCallback callback) {
     downloadThumbnail(levelId, callback);
 }
 
 void HttpClient::downloadThumbnail(int levelId, DownloadCallback callback) {
-    PaimonDebug::log("[HttpClient] downloadThumbnail para level {} (formato unico, sin extension)", levelId);
+    PaimonDebug::log("[HttpClient] downloadThumbnail for level {} (single format, no extension)", levelId);
 
     {
         std::lock_guard<std::mutex> lock(m_inflightMutex);
@@ -1458,36 +1442,7 @@ void HttpClient::downloadThumbnail(int levelId, DownloadCallback callback) {
             } else {
                 // CDN miss: fall back to the Worker without invalidating the manifest.
                 PaimonDebug::warn("[HttpClient] CDN download failed for level {}, falling back to Worker", levelId);
-
-                if (isWorkerExhausted()) {
-                    // Worker exhaustion is transient; let ThumbnailLoader retry.
-                    PaimonDebug::warn("[HttpClient] Worker exhausted, cannot fallback for level {} (will retry later)", levelId);
-                    resolveInflight(levelId, false, {});
-                    return;
-                }
-
-                auto headers = std::vector<std::string>{
-                    "X-API-Key: " + m_apiKey,
-                    "Connection: keep-alive"
-                };
-                std::string url = m_serverURL + "/t/" + std::to_string(levelId);
-
-                performBinaryRequestEx(url, headers, [this, levelId](bool ws, std::vector<uint8_t> const& wd, int status) {
-                    if (ws && !wd.empty()) {
-                        PaimonDebug::log("[HttpClient] Worker fallback success for level {}: {} bytes", levelId, wd.size());
-                        resolveInflight(levelId, true, wd);
-                    } else if (isMissingStatus(status)) {
-                        PaimonDebug::warn("[HttpClient] Level {} has no thumbnail (HTTP {})", levelId, status);
-                        markThumbnailNotFound(levelId);
-                        removeManifestEntry(levelId);
-                        resolveInflight(levelId, false, {});
-                    } else {
-                        // timeout/5xx/429/net-cut is not "missing": negative caching
-                        // blanked the level and dropped the good manifest entry.
-                        PaimonDebug::warn("[HttpClient] Transient failure for level {} (HTTP {}), not caching as missing", levelId, status);
-                        resolveInflight(levelId, false, {});
-                    }
-                });
+                fetchViaWorker(levelId, true);
             }
         }, 4 /* CDN timeout; fall back quickly if slow */);
         return;
@@ -1506,32 +1461,7 @@ void HttpClient::downloadThumbnail(int levelId, DownloadCallback callback) {
                 resolveInflight(levelId, true, data);
             } else {
                 PaimonDebug::warn("[HttpClient] CDN best-effort failed for level {} (may not exist), falling back to Worker", levelId);
-
-                if (isWorkerExhausted()) {
-                    PaimonDebug::warn("[HttpClient] Worker exhausted, cannot fallback for level {} (will retry later)", levelId);
-                    resolveInflight(levelId, false, {});
-                    return;
-                }
-
-                auto headers = std::vector<std::string>{
-                    "X-API-Key: " + m_apiKey,
-                    "Connection: keep-alive"
-                };
-                std::string url = m_serverURL + "/t/" + std::to_string(levelId);
-
-                performBinaryRequestEx(url, headers, [this, levelId](bool ws, std::vector<uint8_t> const& wd, int status) {
-                    if (ws && !wd.empty()) {
-                        PaimonDebug::log("[HttpClient] Worker fallback success for level {}: {} bytes", levelId, wd.size());
-                        resolveInflight(levelId, true, wd);
-                    } else if (isMissingStatus(status)) {
-                        PaimonDebug::warn("[HttpClient] Level {} has no thumbnail (HTTP {})", levelId, status);
-                        markThumbnailNotFound(levelId);
-                        resolveInflight(levelId, false, {});
-                    } else {
-                        PaimonDebug::warn("[HttpClient] Transient failure for level {} (HTTP {}), not caching as missing", levelId, status);
-                        resolveInflight(levelId, false, {});
-                    }
-                });
+                fetchViaWorker(levelId, false);
             }
         }, 4 /* CDN timeout; jump to Worker if slow */);
         return;
@@ -2696,27 +2626,22 @@ bool HttpClient::isUrlSafe(std::string const& url) {
     if (host.starts_with("169.254.")) {
         return false;
     }
-    if (host.starts_with("100.")) {
+    // Second-octet range check for CGNAT (100.64/10) and private (172.16/12) blocks.
+    auto secondOctetIn = [&host](int lo, int hi) {
         size_t dot = host.find('.', 4);
-        if (dot != std::string::npos) {
-            std::string octet2Str = host.substr(4, dot - 4);
-            auto parsed = geode::utils::numFromString<int>(octet2Str);
-            if (parsed.isOk()) {
-                int octet2 = parsed.unwrap();
-                if (octet2 >= 64 && octet2 <= 127) return false;
-            }
+        if (dot == std::string::npos) return false;
+        auto parsed = geode::utils::numFromString<int>(host.substr(4, dot - 4));
+        if (parsed.isOk()) {
+            int octet2 = parsed.unwrap();
+            if (octet2 >= lo && octet2 <= hi) return true;
         }
+        return false;
+    };
+    if (host.starts_with("100.") && secondOctetIn(64, 127)) {
+        return false;
     }
-    if (host.starts_with("172.")) {
-        size_t dot = host.find('.', 4);
-        if (dot != std::string::npos) {
-            std::string octet2Str = host.substr(4, dot - 4);
-            auto parsed = geode::utils::numFromString<int>(octet2Str);
-            if (parsed.isOk()) {
-                int octet2 = parsed.unwrap();
-                if (octet2 >= 16 && octet2 <= 31) return false;
-            }
-        }
+    if (host.starts_with("172.") && secondOctetIn(16, 31)) {
+        return false;
     }
 
     auto hostNoBrackets = host;

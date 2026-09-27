@@ -2,6 +2,7 @@
 #include <Geode/loader/SettingV3.hpp>
 #include "../utils/PaimonNotification.hpp"
 #include "ModAuthFlow.hpp"
+#include "QualityConfig.hpp"
 #include <array>
 #include <filesystem>
 

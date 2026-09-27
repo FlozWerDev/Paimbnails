@@ -48,6 +48,11 @@ EditorMusicPlayer::EditorMusicPlayer() {
     m_repeat = repeat == 0 ? RepeatMode::Off : (repeat == 2 ? RepeatMode::One : RepeatMode::All);
 }
 
+bool EditorMusicPlayer::ensureQueue() {
+    if (m_queue.empty()) refreshQueue();
+    return !m_queue.empty();
+}
+
 void EditorMusicPlayer::refreshQueue() {
     auto& lib = MenuMusicLibrary::get();
     lib.load();
@@ -136,7 +141,7 @@ void EditorMusicPlayer::applyVolume() {
 }
 
 bool EditorMusicPlayer::play(std::string const& trackId) {
-    if (m_queue.empty()) refreshQueue();
+    ensureQueue();
 
     auto const* track = MenuMusicLibrary::get().findTrack(trackId);
     if (!track || !playable(*track)) return false;
@@ -165,14 +170,12 @@ std::size_t EditorMusicPlayer::nextIndex() const {
 }
 
 bool EditorMusicPlayer::playNext() {
-    if (m_queue.empty()) refreshQueue();
-    if (m_queue.empty()) return false;
+    if (!ensureQueue()) return false;
     return play(m_queue[nextIndex()]);
 }
 
 bool EditorMusicPlayer::playPrevious() {
-    if (m_queue.empty()) refreshQueue();
-    if (m_queue.empty()) return false;
+    if (!ensureQueue()) return false;
 
     // Restart the track first, like every other player does.
     if (positionMs() > 3000) {

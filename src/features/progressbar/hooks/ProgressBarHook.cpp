@@ -141,7 +141,6 @@ class $modify(PaimonProgressBarPlayLayer, PlayLayer) {
         return true;
     }
 
-    $override
     void onQuit() {
         // Baseline and custom textures from this level are no longer valid.
         auto& mgr = ProgressBarManager::get();

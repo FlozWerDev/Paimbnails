@@ -328,12 +328,16 @@ bool buildManifold(Shape const& a, Shape const& b, Manifold& manifold) {
 }
 
 // A fixture only overrides its body when it was given a value of its own.
+float layered(float bodyValue, float fixtureValue) {
+    return std::max(0.f, fixtureValue >= 0.f ? fixtureValue : bodyValue);
+}
+
 float frictionOf(BodySpec const& body, Fixture const& fixture) {
-    return std::max(0.f, fixture.friction >= 0.f ? fixture.friction : body.friction);
+    return layered(body.friction, fixture.friction);
 }
 
 float restitutionOf(BodySpec const& body, Fixture const& fixture) {
-    return std::max(0.f, fixture.restitution >= 0.f ? fixture.restitution : body.restitution);
+    return layered(body.restitution, fixture.restitution);
 }
 
 // Weight and spin resistance from the collided shape: a disc resists half of

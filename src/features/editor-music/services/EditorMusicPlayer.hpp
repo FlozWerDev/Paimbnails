@@ -18,6 +18,8 @@ public:
 
     // Rebuilds the queue from the library, keeping the current track selected.
     void refreshQueue();
+    // Refresh once when empty; false when still empty.
+    bool ensureQueue();
     std::vector<std::string> const& queue() const { return m_queue; }
 
     bool play(std::string const& trackId);

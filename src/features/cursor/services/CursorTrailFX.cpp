@@ -520,33 +520,14 @@ void CursorTrailNode::agePoints(float dt) {
 }
 
 ccColor3B CursorTrailNode::resolveColor(float t, float rnd, float speedNorm) const {
-    switch (m_cfg.colorMode) {
-        case TrailColorMode::Solid:
-            return m_cfg.color1;
-        case TrailColorMode::Gradient:
-            return mixColor(m_cfg.color1, m_cfg.color2, t);
-        case TrailColorMode::RainbowCycle:
-            return hsv(m_time * m_cfg.hueSpeed * 0.18f, 0.85f, 1.f);
-        case TrailColorMode::RainbowTrail:
-            return hsv(m_time * m_cfg.hueSpeed * 0.18f + t * 0.85f, 0.85f, 1.f);
-        case TrailColorMode::Random:
-            return hsv(rnd, 0.80f, 1.f);
-        case TrailColorMode::Speed:
-            return mixColor(m_cfg.color1, m_cfg.color2, speedNorm);
-        default:
-            return m_cfg.color1;
-    }
+    return resolveFxColor(m_cfg.colorMode, m_cfg.color1, m_cfg.color2,
+                          t, rnd, speedNorm, m_time, m_cfg.hueSpeed);
 }
 
 CursorTrailNode::Particle* CursorTrailNode::acquireParticle() {
-    Particle* oldest = nullptr;
-    float oldestT = -1.f;
-    for (auto& p : m_particles) {
-        if (!p.alive) return &p;
-        float t = p.life / std::max(0.01f, p.maxLife);
-        if (t > oldestT) { oldestT = t; oldest = &p; }
-    }
-    return oldest;
+    return acquireOldest(m_particles, [](auto const& p) {
+        return p.life / std::max(0.01f, p.maxLife);
+    });
 }
 
 void CursorTrailNode::emit(float dt, CCPoint const& from, CCPoint const& to) {
@@ -675,17 +656,9 @@ void CursorTrailNode::spawnEcho(CCPoint const& pos) {
     auto* src = m_echoSource.data();
     if (!src || !src->getTexture() || !m_echoes) return;
 
-    Echo* slot = nullptr;
-    for (auto& e : m_echoPool) {
-        if (!e.alive) { slot = &e; break; }
-    }
-    if (!slot) {
-        float worst = -1.f;
-        for (auto& e : m_echoPool) {
-            float t = e.life / std::max(0.01f, e.maxLife);
-            if (t > worst) { worst = t; slot = &e; }
-        }
-    }
+    Echo* slot = acquireOldest(m_echoPool, [](auto const& e) {
+        return e.life / std::max(0.01f, e.maxLife);
+    });
     if (!slot) return;
 
     if (slot->spr) {

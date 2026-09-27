@@ -254,13 +254,8 @@ void ThumbnailLoader::drainPendingCallbacks() {
             m_pendingCallbacks.begin() + static_cast<std::ptrdiff_t>(count));
     }
 
-#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     constexpr int64_t CALLBACK_FRAME_BUDGET_US = 2000;
     constexpr int64_t FRAME_TARGET_US = 16666;
-#else
-    constexpr int64_t CALLBACK_FRAME_BUDGET_US = 2000;
-    constexpr int64_t FRAME_TARGET_US = 16666;
-#endif
     
     int64_t effectiveBudgetUs = isFrameLag ? 1500 : CALLBACK_FRAME_BUDGET_US;
     effectiveBudgetUs = std::min<int64_t>(effectiveBudgetUs,
@@ -1211,6 +1206,75 @@ void ThumbnailLoader::processDownloadedData(std::shared_ptr<Task> task, std::vec
     });
 }
 
+bool ThumbnailLoader::finishUrlTaskLocked(std::shared_ptr<Task> const& task, cocos2d::CCTexture2D* texture,
+                                           bool success, bool shuttingDown, bool shouldNotify,
+                                           std::vector<LoadCallback>& callbacks) {
+    auto& cache = paimon::cache::ThumbnailCache::get();
+    if (!shuttingDown && success && texture) {
+        cache.addUrlToRam(task->urlCacheKey, texture);
+    } else if (!shuttingDown && !task->cancelled) {
+        cache.markFailed("url_" + task->urlCacheKey);
+    }
+    if (shouldNotify) callbacks = task->callbacks;
+    m_urlTasks.erase(task->urlCacheKey);
+
+    m_activeUrlTaskCount.fetch_sub(1, std::memory_order_relaxed);
+
+    if (!shuttingDown) {
+        processUrlQueue();
+    }
+    return false;
+}
+
+bool ThumbnailLoader::finishLevelTaskLocked(std::shared_ptr<Task> const& task, cocos2d::CCTexture2D* texture,
+                                            bool success, int origW, int origH, bool shuttingDown,
+                                            bool shouldNotify, std::vector<LoadCallback>& callbacks) {
+    auto& cache = paimon::cache::ThumbnailCache::get();
+    bool startFallback = false;
+    int rid = std::abs(task->levelID);
+    // Fallback reuses the task post-slot-release: second pass must not free the slot twice.
+    bool const fallbackPass = task->externalFallback;
+
+    if (!shuttingDown && success && texture) {
+        bool gf = task->levelID < 0;
+        cache.addToRam(rid, gf, texture, -1, origW, origH);
+    } else if (!shuttingDown && !task->cancelled) {
+        if (!fallbackPass && paimon::levelthumbs::shouldFallback(task->levelID)) {
+            // Missing only once Level Thumbnails also has nothing.
+            task->externalFallback = true;
+            startFallback = true;
+        } else {
+            std::string keyStr = paimon::cache::CacheKey::fromLegacy(task->levelID).toString();
+            if (task->wasNotFound || HttpClient::get().isThumbnailNotFound(rid)) {
+                cache.markNotFound(keyStr);
+            } else {
+                cache.markFailed(keyStr);
+            }
+        }
+        // Levels with no own upload don't count: they'd trip global cooldown and kill list prefetch.
+        if (!task->wasNotFound) {
+            recordDownloadFailure();
+        }
+    }
+
+    if (startFallback) {
+        m_fallbackTasks[task->levelID] = task;
+    } else {
+        m_fallbackTasks.erase(task->levelID);
+        if (shouldNotify) callbacks = task->callbacks;
+    }
+    m_tasks.erase(task->levelID);
+
+    if (!fallbackPass) {
+        m_activeTaskCount.fetch_sub(1, std::memory_order_relaxed);
+    }
+
+    if (!shuttingDown) {
+        processQueue();
+    }
+    return startFallback;
+}
+
 void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2D* texture, bool success, int origW, int origH) {
     if (task->startedAt.time_since_epoch().count() > 0) {
         auto pipelineUs = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -1226,67 +1290,13 @@ void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2
     bool shouldNotify = !task->cancelled && !shuttingDown;
     bool startFallback = false;
 
-    auto& cache = paimon::cache::ThumbnailCache::get();
-
     {
         std::unique_lock<std::shared_mutex> lock(m_queueMutex);
 
         if (task->isUrlTask) {
-            if (!shuttingDown && success && texture) {
-                cache.addUrlToRam(task->urlCacheKey, texture);
-            } else if (!shuttingDown && !task->cancelled) {
-                cache.markFailed("url_" + task->urlCacheKey);
-            }
-            if (shouldNotify) callbacks = task->callbacks;
-            m_urlTasks.erase(task->urlCacheKey);
-
-            m_activeUrlTaskCount.fetch_sub(1, std::memory_order_relaxed);
-
-            if (!shuttingDown) {
-                processUrlQueue();
-            }
+            startFallback = finishUrlTaskLocked(task, texture, success, shuttingDown, shouldNotify, callbacks);
         } else {
-            int rid = std::abs(task->levelID);
-            // Fallback reuses the task post-slot-release: second pass must not free the slot twice.
-            bool const fallbackPass = task->externalFallback;
-
-            if (!shuttingDown && success && texture) {
-                bool gf = task->levelID < 0;
-                cache.addToRam(rid, gf, texture, -1, origW, origH);
-            } else if (!shuttingDown && !task->cancelled) {
-                if (!fallbackPass && paimon::levelthumbs::shouldFallback(task->levelID)) {
-                    // Missing only once Level Thumbnails also has nothing.
-                    task->externalFallback = true;
-                    startFallback = true;
-                } else {
-                    std::string keyStr = paimon::cache::CacheKey::fromLegacy(task->levelID).toString();
-                    if (task->wasNotFound || HttpClient::get().isThumbnailNotFound(rid)) {
-                        cache.markNotFound(keyStr);
-                    } else {
-                        cache.markFailed(keyStr);
-                    }
-                }
-                // Levels with no own upload don't count: they'd trip global cooldown and kill list prefetch.
-                if (!task->wasNotFound) {
-                    recordDownloadFailure();
-                }
-            }
-
-            if (startFallback) {
-                m_fallbackTasks[task->levelID] = task;
-            } else {
-                m_fallbackTasks.erase(task->levelID);
-                if (shouldNotify) callbacks = task->callbacks;
-            }
-            m_tasks.erase(task->levelID);
-
-            if (!fallbackPass) {
-                m_activeTaskCount.fetch_sub(1, std::memory_order_relaxed);
-            }
-
-            if (!shuttingDown) {
-                processQueue();
-            }
+            startFallback = finishLevelTaskLocked(task, texture, success, origW, origH, shuttingDown, shouldNotify, callbacks);
         }
     }
 
@@ -1988,8 +1998,6 @@ void ThumbnailLoader::flushBatchDownloads() {
                 if (success && itemOk) {
                     for (auto& pending : pendings) {
                         if (!pending.task) continue;
-                        if (pending.task->cancelled) {
-                        }
                         std::vector<uint8_t> data = it->second.data;
                         self->processDownloadedData(pending.task, std::move(data), realID);
                     }

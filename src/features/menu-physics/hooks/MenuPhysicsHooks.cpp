@@ -17,6 +17,7 @@ namespace {
 }
 
 class $modify(PaimonMenuPhysicsMenuLayer, MenuLayer) {
+    $override
     bool init() {
         if (!MenuLayer::init()) return false;
         this->scheduleOnce(schedule_selector(PaimonMenuPhysicsMenuLayer::deferredApply), 0.f);
@@ -29,6 +30,7 @@ class $modify(PaimonMenuPhysicsMenuLayer, MenuLayer) {
 };
 
 class $modify(PaimonMenuPhysicsCreatorLayer, CreatorLayer) {
+    $override
     bool init() {
         if (!CreatorLayer::init()) return false;
         this->scheduleOnce(schedule_selector(PaimonMenuPhysicsCreatorLayer::deferredApply), 0.f);
@@ -53,6 +55,7 @@ class $modify(PaimonMenuPhysicsLevelSelectLayer, LevelSelectLayer) {
 };
 
 class $modify(PaimonMenuPhysicsGarageLayer, GJGarageLayer) {
+    $override
     bool init() {
         if (!GJGarageLayer::init()) return false;
         this->scheduleOnce(schedule_selector(PaimonMenuPhysicsGarageLayer::deferredApply), 0.f);
@@ -65,6 +68,7 @@ class $modify(PaimonMenuPhysicsGarageLayer, GJGarageLayer) {
 };
 
 class $modify(PaimonMenuPhysicsBrowserLayer, LevelBrowserLayer) {
+    $override
     void onEnterTransitionDidFinish() {
         LevelBrowserLayer::onEnterTransitionDidFinish();
         apply(this);

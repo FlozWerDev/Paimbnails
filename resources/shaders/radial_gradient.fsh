@@ -144,8 +144,7 @@ vec4 pointColor(int index, vec2 imageUV) {
     return texture2D(u_image, (tile + imageUV) / u_imageAtlasGrid);
 }
 
-void main()
-{
+void main() {
     vec4 texColor = texture2D(u_texture, v_texCoord);
     if (texColor.a <= 0.0) {
         gl_FragColor = vec4(0.0);

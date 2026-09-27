@@ -23,6 +23,19 @@ namespace MenuLoopControl {
         }
     }
 
+    // Store the outgoing track unless blacklisted, then advance to a random pick.
+    inline void storePreviousAndAdvance(MenuLoopManager& sm) {
+        stopMenuMusic();
+        const std::string& songToBeStored = sm.getCurrentSong();
+        if (!songToBeStored.empty()) {
+            if (sm.getSongToSongDataEntries().contains(songToBeStored) &&
+                sm.getSongToSongDataEntries()[songToBeStored].type != SongType::Blacklisted) {
+                sm.setPreviousSong(songToBeStored);
+            }
+        }
+        sm.pickRandomSong();
+    }
+
     inline void woahThereBuddy(const std::string& reason) {
         PopupManager::get().quickPopup(
             "Menu Loop", reason,
@@ -50,15 +63,7 @@ namespace MenuLoopControl {
             return;
         }
 
-        stopMenuMusic();
-        const std::string& songToBeStored = sm.getCurrentSong();
-        if (!songToBeStored.empty()) {
-            if (sm.getSongToSongDataEntries().contains(songToBeStored) &&
-                sm.getSongToSongDataEntries()[songToBeStored].type != SongType::Blacklisted) {
-                sm.setPreviousSong(songToBeStored);
-            }
-        }
-        sm.pickRandomSong();
+        storePreviousAndAdvance(sm);
         if (!sm.isOverride()) Mod::get()->setSavedValue<std::string>("lastMenuLoop", sm.getCurrentSong());
         GameManager::sharedState()->playMenuMusic();
     }
@@ -77,15 +82,7 @@ namespace MenuLoopControl {
             return;
         }
 
-        stopMenuMusic();
-        const std::string& songToBeStored = sm.getCurrentSong();
-        if (!songToBeStored.empty()) {
-            if (sm.getSongToSongDataEntries().contains(songToBeStored) &&
-                sm.getSongToSongDataEntries()[songToBeStored].type != SongType::Blacklisted) {
-                sm.setPreviousSong(songToBeStored);
-            }
-        }
-        sm.pickRandomSong();
+        storePreviousAndAdvance(sm);
         if (sm.getCalledOnce() || !Mod::get()->getSettingValue<bool>("menuLoopSaveSongOnGameClose")) {
             if (sm.getAdvancedLogs()) log::info("playing song as normal");
             if (!sm.isOverride()) Mod::get()->setSavedValue<std::string>("lastMenuLoop", sm.getCurrentSong());

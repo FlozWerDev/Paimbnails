@@ -135,7 +135,7 @@ void addLine(CCNodeRGBA* card, CCLabelBMFont* label, float x, float y) {
     card->addChild(label, 2);
 }
 
-// Add a card to the overlay and schedule its exit; copy config for stability.
+// Copy config: the overlay outlives the caller.
 void presentCard(CCNodeRGBA* card, NotifyConfig config) {
     auto* overlay = OverlayManager::get();
     if (!card || !overlay || paimon::isRuntimeShuttingDown()) return;

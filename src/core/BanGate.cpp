@@ -3,6 +3,7 @@
 #include "../utils/HttpClient.hpp"
 #include "../utils/ThreadTracker.hpp"
 #include "../utils/MainThreadDelay.hpp"
+#include "../features/onboarding/WelcomeFlow.hpp"
 #include "../features/moderation/ui/BannedPopup.hpp"
 #include <Geode/Geode.hpp>
 #include <matjson.hpp>
@@ -114,6 +115,14 @@ bool runStartupBanGate() {
         return false;
     }
 
+    if (!paimon::onboarding::isAccepted()) {
+        if (haveCache && cachedBanned) {
+            enforceBan(cachedReason);
+            return true;
+        }
+        return false;
+    }
+
     // no cache or older than 7 days: revalidate async; a stale ban plus no server fails closed.
     bool staleBanned = haveCache && cachedBanned;
     std::string staleReason = cachedReason;
@@ -135,11 +144,10 @@ bool runStartupBanGate() {
 
         HttpClient::get().checkBanned([staleBanned, staleReason](bool ok, bool banned, std::string const& reason) {
             if (!ok) {
+                if (!staleBanned) return;
                 // unreachable server: a stale ban stays.
-                if (staleBanned) {
-                    log::warn("[BanGate] Revalidation failed; keeping stale ban.");
-                    enforceBan(staleReason);
-                }
+                log::warn("[BanGate] Revalidation failed; keeping stale ban.");
+                enforceBan(staleReason);
                 return;
             }
             writeBanCache(banned, reason);

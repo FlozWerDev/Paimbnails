@@ -6,9 +6,8 @@
 using namespace geode::prelude;
 
 class $modify(PaimonLoadingLayer, LoadingLayer) {
-    $override
-    bool init(bool fromReload) {
-        if (!LoadingLayer::init(fromReload)) return false;
+    bool init(bool refresh) {
+        if (!LoadingLayer::init(refresh)) return false;
         paimon::captureMainThread();
         LayerBackgroundManager::get().applyVanillaBackgroundTintFix(this);
         return true;

@@ -7,6 +7,7 @@
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
 #include "../../../utils/PaimonNotification.hpp"
+#include "../../onboarding/WelcomeFlow.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/loader/SettingV3.hpp>
@@ -83,6 +84,7 @@ void NewThumbWatcher::scheduleNextPoll() {
 
 void NewThumbWatcher::pollNow() {
     if (m_inFlight || paimon::isRuntimeShuttingDown()) return;
+    if (!paimon::onboarding::isAccepted()) return;
     if (!paimon::modules::isEnabled(kModuleId)) return;
 
     auto const config = readConfig();

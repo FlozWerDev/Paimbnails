@@ -430,16 +430,16 @@ std::string ThumbnailTransportClient::getThumbnailURL(int levelId) {
     return HttpClient::get().getServerURL() + "/t/" + std::to_string(levelId) + ".webp";
 }
 
-void ThumbnailTransportClient::uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData,
-                                               std::string const& username, UploadCallback callback,
-                                               std::string const& levelMeta) {
+void ThumbnailTransportClient::uploadMedia(int levelId, std::vector<uint8_t> const& data,
+                                            std::string const& username, UploadCallback callback,
+                                            std::string const& levelMeta, std::string_view kind, bool isGif) {
     if (GJAccountManager::get()->m_accountID <= 0) {
         callback(false, "Debes estar logueado para subir miniaturas.");
         return;
     }
     if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
 
-    paimon::HookContext ctx{"upload", levelId, username, "png", pngData.size(), &pngData};
+    paimon::HookContext ctx{"upload", levelId, username, std::string(kind), data.size(), &data};
     auto hookRes = paimon::HookInterceptor::get().runPreHooks(
         ctx, {"upload", "validate", "security-check"}
     );
@@ -449,90 +449,40 @@ void ThumbnailTransportClient::uploadThumbnail(int levelId, std::vector<uint8_t>
         return;
     }
 
-    log::info("[ThumbTransport] subiendo miniatura nivel {} ({} bytes)", levelId, pngData.size());
+    log::info("[ThumbTransport] subiendo {} nivel {} ({} bytes)", kind, levelId, data.size());
 
-    HttpClient::get().uploadThumbnail(levelId, pngData, username,
-        [this, callback, levelId, username](bool success, std::string const& message) {
-            finishUpload(levelId);
-            if (success) {
-                m_uploadCount++;
-                ThumbnailLoader::get().invalidateLevel(levelId);
-                ThumbnailLoader::get().requestLoad(levelId, std::to_string(levelId), [](cocos2d::CCTexture2D*, bool){}, 0, false);
-            }
-            paimon::HookContext postCtx{"upload", levelId, username, "png", 0, nullptr};
-            paimon::HookInterceptor::get().runPostHooks(postCtx, success);
-            callback(success, message);
-        }, levelMeta);
+    auto onDone = [this, callback, levelId, username, kind = std::string(kind), isGif](bool success, std::string const& message) {
+        finishUpload(levelId);
+        if (success) {
+            m_uploadCount++;
+            ThumbnailLoader::get().invalidateLevel(levelId);
+            ThumbnailLoader::get().requestLoad(levelId, std::to_string(levelId), [](cocos2d::CCTexture2D*, bool){}, 0, isGif);
+        }
+        paimon::HookContext postCtx{"upload", levelId, username, kind, 0, nullptr};
+        paimon::HookInterceptor::get().runPostHooks(postCtx, success);
+        callback(success, message);
+    };
+    if (kind == "gif") HttpClient::get().uploadGIF(levelId, data, username, onDone, levelMeta);
+    else if (kind == "mp4") HttpClient::get().uploadVideo(levelId, data, username, onDone, levelMeta);
+    else HttpClient::get().uploadThumbnail(levelId, data, username, onDone, levelMeta);
+}
+
+void ThumbnailTransportClient::uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData,
+                                               std::string const& username, UploadCallback callback,
+                                               std::string const& levelMeta) {
+    uploadMedia(levelId, pngData, username, callback, levelMeta, "png", false);
 }
 
 void ThumbnailTransportClient::uploadGIF(int levelId, std::vector<uint8_t> const& gifData,
                                          std::string const& username, UploadCallback callback,
                                          std::string const& levelMeta) {
-    if (GJAccountManager::get()->m_accountID <= 0) {
-        callback(false, "Debes estar logueado para subir miniaturas.");
-        return;
-    }
-    if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
-
-    paimon::HookContext ctx{"upload", levelId, username, "gif", gifData.size(), &gifData};
-    auto hookRes = paimon::HookInterceptor::get().runPreHooks(
-        ctx, {"upload", "validate", "security-check"}
-    );
-    if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
-    if (!beginUpload(levelId)) {
-        callback(false, "Ya hay una miniatura subiendose para este nivel.");
-        return;
-    }
-
-    log::info("[ThumbTransport] subiendo gif nivel {} ({} bytes)", levelId, gifData.size());
-
-    HttpClient::get().uploadGIF(levelId, gifData, username,
-        [this, callback, levelId, username](bool success, std::string const& message) {
-            finishUpload(levelId);
-            if (success) {
-                m_uploadCount++;
-                ThumbnailLoader::get().invalidateLevel(levelId);
-                ThumbnailLoader::get().requestLoad(levelId, std::to_string(levelId), [](cocos2d::CCTexture2D*, bool){}, 0, true);
-            }
-            paimon::HookContext postCtx{"upload", levelId, username, "gif", 0, nullptr};
-            paimon::HookInterceptor::get().runPostHooks(postCtx, success);
-            callback(success, message);
-        }, levelMeta);
+    uploadMedia(levelId, gifData, username, callback, levelMeta, "gif", true);
 }
 
 void ThumbnailTransportClient::uploadVideo(int levelId, std::vector<uint8_t> const& mp4Data,
                                            std::string const& username, UploadCallback callback,
                                            std::string const& levelMeta) {
-    if (GJAccountManager::get()->m_accountID <= 0) {
-        callback(false, "Debes estar logueado para subir miniaturas.");
-        return;
-    }
-    if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
-
-    paimon::HookContext ctx{"upload", levelId, username, "mp4", mp4Data.size(), &mp4Data};
-    auto hookRes = paimon::HookInterceptor::get().runPreHooks(
-        ctx, {"upload", "validate", "security-check"}
-    );
-    if (!hookRes.isAllowed()) { callback(false, hookRes.reason); return; }
-    if (!beginUpload(levelId)) {
-        callback(false, "Ya hay una miniatura subiendose para este nivel.");
-        return;
-    }
-
-    log::info("[ThumbTransport] subiendo video nivel {} ({} bytes)", levelId, mp4Data.size());
-
-    HttpClient::get().uploadVideo(levelId, mp4Data, username,
-        [this, callback, levelId, username](bool success, std::string const& message) {
-            finishUpload(levelId);
-            if (success) {
-                m_uploadCount++;
-                ThumbnailLoader::get().invalidateLevel(levelId);
-                ThumbnailLoader::get().requestLoad(levelId, std::to_string(levelId), [](cocos2d::CCTexture2D*, bool){}, 0, false);
-            }
-            paimon::HookContext postCtx{"upload", levelId, username, "mp4", 0, nullptr};
-            paimon::HookInterceptor::get().runPostHooks(postCtx, success);
-            callback(success, message);
-        }, levelMeta);
+    uploadMedia(levelId, mp4Data, username, callback, levelMeta, "mp4", false);
 }
 
 void ThumbnailTransportClient::downloadThumbnail(int levelId, DownloadCallback callback, bool isGif) {

@@ -5,7 +5,7 @@
 
 namespace paimon::rtx {
 
-// Five tabs on PaiConfigKit. Sliders write live config; disk flush stays separate so drags don't rewrite JSON.
+// Sliders write live config; disk flush stays separate so drags don't rewrite JSON.
 class RTXConfigLayer : public geode::Popup {
 public:
     static RTXConfigLayer* create();

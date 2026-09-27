@@ -37,40 +37,50 @@ void MenuLoopManager::removeSong(const std::string& path) {
 }
 
 
+std::vector<std::string> MenuLoopManager::buildWeightedCandidates() const {
+    std::vector<std::string> candidates;
+    for (const auto& song : m_songs) {
+        std::error_code existsEc;
+        if (!std::filesystem::is_regular_file(toProblematicString(song), existsEc) || existsEc) {
+            continue;
+        }
+        if (std::ranges::find(m_blacklist, song) != m_blacklist.end()) continue;
+        candidates.push_back(song);
+        if (std::ranges::find(m_favorites, song) != m_favorites.end()) {
+            candidates.push_back(song);
+        }
+    }
+    return candidates;
+}
+
 void MenuLoopManager::pickRandomSong() {
     if (m_isOverride) {
         m_isMenuLoop = false;
         m_currentSong = m_overrideSong;
-    } else if (!m_songs.empty()) {
-        m_isMenuLoop = false;
-        std::vector<std::string> candidates;
-        for (const auto& song : m_songs) {
-            std::error_code existsEc;
-            if (!std::filesystem::is_regular_file(toProblematicString(song), existsEc) || existsEc) {
-                continue;
-            }
-            if (std::ranges::find(m_blacklist, song) != m_blacklist.end()) continue;
-            candidates.push_back(song);
-            if (std::ranges::find(m_favorites, song) != m_favorites.end()) {
-                candidates.push_back(song);
-            }
-        }
-
-        const bool hasAlternative = std::ranges::any_of(candidates, [&](const std::string& song) {
-            return song != m_currentSong;
-        });
-        if (hasAlternative) std::erase(candidates, m_currentSong);
-
-        if (candidates.empty()) {
-            m_isMenuLoop = true;
-            m_currentSong = "menuLoop.mp3";
-        } else {
-            m_currentSong = candidates[randomIndex(static_cast<int>(candidates.size()))];
-            if (getAdvancedLogs()) log::info("[MenuLoop] new song: {}", m_currentSong);
-        }
-    } else {
+        updateCurrentSongMetadata();
+        return;
+    }
+    if (m_songs.empty()) {
         m_isMenuLoop = true;
         m_currentSong = "menuLoop.mp3";
+        updateCurrentSongMetadata();
+        return;
+    }
+
+    m_isMenuLoop = false;
+    auto candidates = buildWeightedCandidates();
+
+    const bool hasAlternative = std::ranges::any_of(candidates, [&](const std::string& song) {
+        return song != m_currentSong;
+    });
+    if (hasAlternative) std::erase(candidates, m_currentSong);
+
+    if (candidates.empty()) {
+        m_isMenuLoop = true;
+        m_currentSong = "menuLoop.mp3";
+    } else {
+        m_currentSong = candidates[randomIndex(static_cast<int>(candidates.size()))];
+        if (getAdvancedLogs()) log::info("[MenuLoop] new song: {}", m_currentSong);
     }
     updateCurrentSongMetadata();
 }

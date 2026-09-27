@@ -35,6 +35,11 @@ namespace {
 std::atomic<uint32_t> g_layerBgSaveGeneration{0};
 std::atomic<bool> g_layerBgShutdown{false};
 
+// saveData is nodiscard; these paths don't branch on the result.
+void saveDataQuiet() {
+    (void)Mod::get()->saveData();
+}
+
 // Cache custom textures by path, mtime, and size; keep the cache alive through GL shutdown.
 struct CustomBgCacheEntry {
     geode::Ref<CCTexture2D> texture;
@@ -837,7 +842,7 @@ void LayerBackgroundManager::migrateFromLegacy() {
     }
 
     Mod::get()->setSavedValue("layerbg-migrated-v2", true);
-    (void)Mod::get()->saveData();
+    saveDataQuiet();
     log::info("[LayerBackgroundManager] Legacy settings migrated to v2 format");
 
     migrateToGlobalMusic();
@@ -899,10 +904,10 @@ void LayerBackgroundManager::migrateExternalAssetsToManagedStorage() {
 
     Mod::get()->setSavedValue("layerbg-assets-migrated-v1", true);
     if (changed) {
-        (void)Mod::get()->saveData();
+        saveDataQuiet();
         log::info("[LayerBackgroundManager] Migrated external local assets to managed storage");
     } else {
-        (void)Mod::get()->saveData();
+        saveDataQuiet();
     }
 }
 
@@ -924,7 +929,7 @@ void LayerBackgroundManager::migrateToGlobalMusic() {
     }
 
     Mod::get()->setSavedValue("layermusic-migrated-global", true);
-    (void)Mod::get()->saveData();
+    saveDataQuiet();
 }
 
 void LayerBackgroundManager::hideOriginalBg(CCLayer* layer) {

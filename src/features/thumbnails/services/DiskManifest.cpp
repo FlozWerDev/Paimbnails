@@ -181,8 +181,6 @@ DiskManifestEntry const* DiskManifest::getEntry(int levelID, bool isGif) const {
     return getEntryLocked(levelID, isGif);
 }
 
-// Lock-free queries (caller MUST hold mutex)
-
 bool DiskManifest::containsLocked(int levelID, bool isGif) const {
     return m_entries.count(makeKey(levelID, isGif)) > 0;
 }
@@ -363,7 +361,6 @@ void DiskManifest::rebuildFromDirectory(std::filesystem::path const& cacheDir) {
         auto ext = geode::utils::string::toLower(
             geode::utils::string::pathToString(entry.path().extension()));
 
-        // clean orphaned .tmp files from interrupted atomic writes
         if (ext == ".tmp") {
             std::error_code rmEc;
             std::filesystem::remove(entry.path(), rmEc);

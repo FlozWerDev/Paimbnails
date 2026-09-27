@@ -3,6 +3,7 @@
 #if defined(USE_MEDIA_FOUNDATION)
 
 #include <Geode/loader/Log.hpp>
+#include <Geode/utils/general.hpp>
 #include <cstring>
 #include <algorithm>
 #include <chrono>
@@ -701,6 +702,7 @@ void DecoderMF::stopDecoding() {
 }
 
 void DecoderMF::decodeLoop() {
+    geode::utils::thread::setName("PaimonDecodeMF");
     // COM must be initialized on the decode thread.
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 

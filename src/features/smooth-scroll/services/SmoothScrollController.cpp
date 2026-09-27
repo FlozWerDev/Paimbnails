@@ -213,41 +213,40 @@ bool SmoothScrollController::hasMomentum() const {
     return m_filter.active();
 }
 
-float SmoothScrollController::replayedWheelSteps() const {
-    if (!m_replaying) return 0.f;
-    if (std::abs(m_replayActions.y) >= 0.000001) {
-        return static_cast<float>(m_replayActions.y);
-    }
-    return static_cast<float>(m_replayActions.x);
-}
-
-float SmoothScrollController::replayedZoomSteps() const {
+float SmoothScrollController::replaySteps(bool negate) const {
     if (!m_replaying) return 0.f;
     if (std::abs(m_replayActions.y) >= 0.000001) {
         // Cocos' vertical wheel sign is opposite to the visual zoom direction.
-        return static_cast<float>(-m_replayActions.y);
+        float const y = static_cast<float>(m_replayActions.y);
+        return negate ? -y : y;
     }
     return static_cast<float>(m_replayActions.x);
 }
 
-float SmoothScrollController::filteredWheelSteps(float wheelY, float wheelX) const {
-    if (m_replaying) return replayedWheelSteps();
+float SmoothScrollController::replayedWheelSteps() const {
+    return replaySteps(false);
+}
+
+float SmoothScrollController::replayedZoomSteps() const {
+    return replaySteps(true);
+}
+
+float SmoothScrollController::filteredSteps(float wheelY, float wheelX, bool negate) const {
+    if (m_replaying) return replaySteps(negate);
     if (paimon::compat::ModCompat::isPrevterSmoothScrollLoaded()) {
         float const y = externalSmoothStep(wheelY);
-        return y != 0.f ? y : externalSmoothStep(wheelX);
+        return y != 0.f ? (negate ? -y : y) : externalSmoothStep(wheelX);
     }
     float const y = signUnit(wheelY);
-    return y != 0.f ? y : signUnit(wheelX);
+    return y != 0.f ? (negate ? -y : y) : signUnit(wheelX);
+}
+
+float SmoothScrollController::filteredWheelSteps(float wheelY, float wheelX) const {
+    return filteredSteps(wheelY, wheelX, false);
 }
 
 float SmoothScrollController::filteredZoomSteps(float wheelY, float wheelX) const {
-    if (m_replaying) return replayedZoomSteps();
-    if (paimon::compat::ModCompat::isPrevterSmoothScrollLoaded()) {
-        float const y = externalSmoothStep(wheelY);
-        return y != 0.f ? -y : externalSmoothStep(wheelX);
-    }
-    float const y = signUnit(wheelY);
-    return y != 0.f ? -y : signUnit(wheelX);
+    return filteredSteps(wheelY, wheelX, true);
 }
 
 void SmoothScrollController::stop() {

@@ -2031,6 +2031,7 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
             bool isRgb = (srcFs.extension() == ".rgb");
 
             paimon::ThreadTracker::get().spawn([weakRef, srcPath, savePath, isRgb, fromCache, notifyResult]() {
+                geode::utils::thread::setName("PaimonThumbExport");
                 if (paimon::isRuntimeShuttingDown()) return;
                 bool ok = false;
                 if (isRgb) {
@@ -2109,6 +2110,7 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
                 std::shared_ptr<uint8_t> buffer(new uint8_t[dataSize], std::default_delete<uint8_t[]>());
                 std::memcpy(buffer.get(), data.get(), dataSize);
                 paimon::ThreadTracker::get().spawn([weakRef, buffer, w, h, savePath, notifyResult]() {
+                    geode::utils::thread::setName("PaimonThumbSave");
                     if (paimon::isRuntimeShuttingDown()) return;
                     bool ok = ImageConverter::saveRGBAToPNG(buffer.get(), static_cast<uint32_t>(w), static_cast<uint32_t>(h), savePath);
                     if (paimon::isRuntimeShuttingDown()) return;

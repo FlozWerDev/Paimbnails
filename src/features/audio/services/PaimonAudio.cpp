@@ -5,6 +5,20 @@
 
 using namespace geode::prelude;
 
+namespace {
+
+// Bins assume 512-point FFT at 44.1kHz.
+float bandAverage(float const* spectrum, int numBins, int lo, int hi) {
+    int start = std::min(lo, numBins);
+    int end = std::min(hi, numBins);
+    if (end <= start) return 0.f;
+    float sum = 0.f;
+    for (int i = start; i < end; i++) sum += spectrum[i];
+    return sum / (end - start);
+}
+
+} // namespace
+
 PaimonAudio& PaimonAudio::get() {
     static PaimonAudio instance;
     return instance;
@@ -93,31 +107,9 @@ void PaimonAudio::update(float dt) {
     float const* spectrum = fftData->spectrum[0];
 
 
-    // Bass: bins 0-8 (~0-350 Hz)
-    float bassSum = 0.f;
-    int bassBins = std::min(8, numBins);
-    for (int i = 0; i < bassBins; i++) {
-        bassSum += spectrum[i];
-    }
-    float rawBass = (bassBins > 0) ? bassSum / bassBins : 0.f;
-
-    // Mid: bins 8-48 (~350-2100 Hz)
-    float midSum = 0.f;
-    int midStart = std::min(8, numBins);
-    int midEnd   = std::min(48, numBins);
-    for (int i = midStart; i < midEnd; i++) {
-        midSum += spectrum[i];
-    }
-    float rawMid = (midEnd > midStart) ? midSum / (midEnd - midStart) : 0.f;
-
-    // Treble: bins 48-128 (~2100-5600 Hz)
-    float trebleSum = 0.f;
-    int trebStart = std::min(48, numBins);
-    int trebEnd   = std::min(128, numBins);
-    for (int i = trebStart; i < trebEnd; i++) {
-        trebleSum += spectrum[i];
-    }
-    float rawTreble = (trebEnd > trebStart) ? trebleSum / (trebEnd - trebStart) : 0.f;
+    float rawBass = bandAverage(spectrum, numBins, 0, 8);
+    float rawMid = bandAverage(spectrum, numBins, 8, 48);
+    float rawTreble = bandAverage(spectrum, numBins, 48, 128);
 
     // Adaptive peak tracking (slow decay, fast attack)
     m_peakBass   = std::max(m_peakBass   * (1.f - dt * 0.3f), rawBass   + 0.001f);

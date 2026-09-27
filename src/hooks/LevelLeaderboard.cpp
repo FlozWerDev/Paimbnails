@@ -227,7 +227,6 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
 
             if (auto* ch = cell->getChildren()) {
                 for (auto* child : CCArrayExt<CCNode*>(ch)) {
-                    // m_backgroundLayer stays hidden
                     if (child == static_cast<CCNode*>(cell->m_backgroundLayer)) continue;
                     if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(child)) {
                         child->runAction(CCSequence::create(

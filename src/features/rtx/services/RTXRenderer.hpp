@@ -162,7 +162,6 @@ private:
     Target m_traceSrc;
     Target m_traceRT;
     Target m_history[2];
-    // m_variance[i] tracks m_history[i].
     Target m_variance[2];
     Target m_atrous[2];
     Target m_bloomDown[kBloomLevels];

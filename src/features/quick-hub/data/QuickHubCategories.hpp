@@ -7,7 +7,7 @@
 
 namespace paimon::quickhub {
 
-// Discord RPC desktop-only; hidden on mobile without breaking ids.
+// discord rpc desktop-only; hidden on mobile without breaking ids.
 inline bool discordSupported() {
     auto* mod = geode::Mod::get();
     return mod && mod->hasSetting("discord-rpc-enabled");
@@ -18,8 +18,8 @@ struct RadialOptionDef {
     std::string name;
     std::string icon;
     cocos2d::ccColor3B color; // hover glow
-    bool custom = false;     // from game UI
-    // Action resolved at runtime by id.
+    bool custom = false;     // from game ui
+    // action resolved at runtime by id.
     std::string imagePath;   // "" = usar icon
     float imageScale = 1.f;  // clamp 0.2..3.0
     float imageRotation = 0.f; // clamp -180..180
@@ -29,10 +29,10 @@ struct RadialOptionDef {
 
 enum class RadialButtonShape { Circle, Square, Icon };
 
-// Int on disk for trivial unwrapOr.
+// int on disk for trivial unwrapor.
 enum class QuickButtonSfxKind : int { None = 0, Game = 1, File = 2, Online = 3 };
 
-// Original button address, to find it again.
+// original button address, to find it again.
 struct CustomQuickButton {
     std::string id;
     std::string name;
@@ -51,15 +51,15 @@ struct CustomQuickButton {
     int tag = 0;
     cocos2d::ccColor3B color{120, 200, 255};
     RadialButtonShape shape = RadialButtonShape::Circle;
-    // Defaults = previous behavior
+    // defaults = previous behavior
     std::string imagePath;              // "" = usar icon
     float imageScale = 1.f;             // 0.2..3.0
     float imageRotation = 0.f;          // -180..180
     bool imageFlipX = false;
     bool imageFlipY = false;
-    // 0 = no SFX
+    // 0 = no sfx
     int sfxKind = 0;
-    std::string sfxPath;                // Game: name; File: path; Online: use sfxId
+    std::string sfxPath;                // game: name; file: path; online: use sfxid
     int sfxId = 0;
     float sfxVolume = 1.f;              // 0..1
     float sfxSpeed = 1.f;               // 0.4..2.5
@@ -69,7 +69,7 @@ struct CustomQuickButton {
     int sfxFadeOutMs = 0;
 };
 
-// "Mi Boton!" -> "mi-boton"; empty -> "button".
+// "mi boton!" -> "mi-boton"; empty -> "button".
 inline std::string slugify(std::string const& id) {
     std::string stem;
     for (char c : id) {
@@ -127,7 +127,7 @@ inline bool isNavigableScreen(std::string const& cls) {
            cls == "LevelSelectLayer" || cls == "GauntletSelectLayer";
 }
 
-// New options show up in config on their own.
+// new options show up in config on their own.
 inline std::vector<RadialOptionDef> getAllAvailableOptions() {
     std::vector<RadialOptionDef> opts = {
         {"settings-general",     "General",          "GJ_optionsBtn_001.png",     {120, 255, 120}},

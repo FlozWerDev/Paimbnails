@@ -1,6 +1,6 @@
 #pragma once
 
-// MenuMusic data model: tracks, playlists, sources, and playback state.
+// menumusic data model: tracks, playlists, sources, and playback state.
 
 #include <string>
 #include <vector>
@@ -9,16 +9,16 @@
 
 namespace paimon::menumusic {
 
-// Track source controls display and deletion behavior.
+// track source controls display and deletion behavior.
 enum class TrackSource : std::uint8_t {
     Unknown = 0,
-    Local,          // User-imported; not managed.
+    Local,          // user-imported; not managed.
     Downloaded,     // yt-dlp; can re-download/delete.
-    Vanilla,        // GD built-in; not listed.
-    GeometryDash,   // Newgrounds/Music Library download.
+    Vanilla,        // gd built-in; not listed.
+    GeometryDash,   // newgrounds/music library download.
 };
 
-// Library track; paths are absolute and durationMs=0 means unknown.
+// library track; paths are absolute and durationms=0 means unknown.
 struct MusicTrack {
     std::string id;
     std::string audioPath;
@@ -33,7 +33,7 @@ struct MusicTrack {
     bool blacklisted = false;
 };
 
-// Playlist of track IDs.
+// playlist of track ids.
 struct MusicPlaylist {
     std::string id;
     std::string name;
@@ -41,7 +41,7 @@ struct MusicPlaylist {
     std::int64_t createdUnixMs = 0;
 };
 
-// Library/Playlist/Queue override GD's menu loop; Disabled leaves it untouched.
+// library/playlist/queue override gd's menu loop; disabled leaves it untouched.
 enum class PlaybackMode : std::uint8_t {
     Disabled = 0,
     Library,
@@ -49,7 +49,7 @@ enum class PlaybackMode : std::uint8_t {
     Queue,
 };
 
-// State reported by MenuMusicPlayer.
+// state reported by menumusicplayer.
 struct PlaybackState {
     std::string currentTrackId;
     std::string currentAudioPath;

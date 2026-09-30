@@ -33,7 +33,7 @@ protected:
 
     Mode m_mode = Mode::Classic;
     std::string m_scope = "global";
-    // Only the newest request may paint; the rest answer into a tab that has
+    // only the newest request may paint; the rest answer into a tab that has
     // already been left.
     uint32_t m_request = 0;
     std::vector<LeaderboardRow> m_rows;

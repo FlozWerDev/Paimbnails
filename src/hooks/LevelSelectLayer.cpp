@@ -27,7 +27,7 @@ using namespace geode::prelude;
 using namespace Shaders;
 
 namespace {
-    // Separate fade actions from the persistent slow zoom.
+    // separate fade actions from the persistent slow zoom.
     constexpr int kBgFadeActionTag = 0x50A1;
 
     inline void restoreMenuLoopPositionIfNeeded() {
@@ -53,7 +53,7 @@ namespace {
     }
 }
 
-// Keep GameManager from overriding dynamic/profile songs while allowing later observers.
+// keep gamemanager from overriding dynamic/profile songs while allowing later observers.
 class $modify(PaimonGameManager, GameManager) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityPre("GameManager::fadeInMenuMusic", geode::Priority::Late);
@@ -98,7 +98,7 @@ class $modify(PaimonGameManager, GameManager) {
     }
 };
 
-// block GD music restarts on transitions; Late (not Last) keeps later observers working
+// block gd music restarts on transitions; late (not last) keeps later observers working
 class $modify(PaimonFMODAudioEngine, FMODAudioEngine) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityPre("FMODAudioEngine::playMusic", geode::Priority::Late);
@@ -193,7 +193,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         m_fields->m_soundtrackButton = soundtrackButton;
         m_fields->m_waitingForSoundtrack = this->isVisibleInTree(soundtrackButton);
         
-        // keep GD bg until the thumbnail is ready
+        // keep gd bg until the thumbnail is ready
         this->updateThumbnailBackground(levelID);
 
         if (m_scrollLayer) {
@@ -312,7 +312,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     $override
     void onEnterTransitionDidFinish() {
         LevelSelectLayer::onEnterTransitionDidFinish();
-        // render blur only after the transition; RAM hits apply immediately
+        // render blur only after the transition; ram hits apply immediately
         m_fields->m_transitionFinished = true;
         this->updateThumbnailBackground(m_fields->m_currentLevelID);
     }
@@ -746,7 +746,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         AudioContextCoordinator::get().deactivateLevelSelect(true);
     }
 
-    // ease our UI out with GD's outgoing scene transition
+    // ease our ui out with gd's outgoing scene transition
     void animateExit() {
         if (m_fields->m_exitAnimated) return;
         m_fields->m_exitAnimated = true;

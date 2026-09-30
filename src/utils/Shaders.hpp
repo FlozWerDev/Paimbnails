@@ -189,7 +189,7 @@ void main() {
     gl_FragColor = vec4(col, center.a) * v_fragmentColor;
 })";
 
-// Sprite that reapplies custom uniforms every frame.
+// sprite that reapplies custom uniforms every frame.
 
 class ShaderBgSprite : public cocos2d::CCSprite {
 public:

@@ -1,4 +1,4 @@
-// edge-stopping A-trous; variance modulates phi.
+// edge-stopping a-trous; variance modulates phi.
 
 varying vec2 v_texCoord;
 

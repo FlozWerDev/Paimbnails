@@ -1,4 +1,4 @@
-// After zilko's "Icon Gradients" (independent implementation; idea credit zilko144, unlicensed).
+// after zilko's "icon gradients" (independent implementation; idea credit zilko144, unlicensed).
 
 #include "ColorPicker.hpp"
 #include "../GradientUtils.hpp"
@@ -53,7 +53,7 @@ void ColorPicker::setDelegate(ColorPickerDelegate* delegate) {
 void ColorPicker::setColor(const ccColor3B& color) {
     m_picker->setColorValue(color);
 
-    // Grayscale has no hue to speak of; without forcing it to zero the
+    // grayscale has no hue to speak of; without forcing it to zero the
     // hue dragger keeps its stale angle and the picker looks broken.
     if (color.r != color.g || color.r != color.b) return;
 

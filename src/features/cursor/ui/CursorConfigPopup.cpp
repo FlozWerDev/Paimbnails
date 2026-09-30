@@ -389,7 +389,7 @@ void CursorConfigPopup::buildGalleryTab() {
     m_thumbScroll = ScrollLayer::create({scrollW, scrollH});
     m_thumbScroll->setPosition({(content.width - scrollW) / 2.f, scrollBottom});
     m_galleryTab->addChild(m_thumbScroll, 1);
-    // Cells live in Geode's contentLayer.
+    // cells live in geode's contentlayer.
 
     m_emptyGalleryLabel = CCLabelBMFont::create(
         "Aun no hay cursores aqui.\nUsa + Anadir para importar imagenes, cursores .cur/.ani o un pack .zip.",
@@ -582,7 +582,7 @@ void CursorConfigPopup::refreshGallery() {
 
     grid->updateLayout();
 
-    // Use Geode's scrollToTop(); GD's moveToTop() leaves the content misplaced.
+    // use geode's scrolltotop(); gd's movetotop() leaves the content misplaced.
     m_thumbScroll->scrollToTop();
     m_thumbScrollTargetSet = false;
     updateSlotPreviews();
@@ -714,7 +714,7 @@ void CursorConfigPopup::onSelectImage(CCObject* sender) {
     bool wasEnabled = CursorManager::get().config().enabled;
     CursorManager::get().setImageForState(m_activeSlot, filename);
 
-    // Keep the toggle in sync when the first image enables the cursor.
+    // keep the toggle in sync when the first image enables the cursor.
     bool nowEnabled = CursorManager::get().config().enabled;
     syncEnableUI(nowEnabled);
 

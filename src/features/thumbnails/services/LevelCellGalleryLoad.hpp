@@ -12,7 +12,7 @@ using GalleryListResult = ThumbnailGalleryResult;
 
 using GalleryListCallback = geode::CopyableFunction<void(GalleryListResult)>;
 
-// Level gallery list; cancels on expired token (cell recycled).
+// level gallery list; cancels on expired token (cell recycled).
 void requestGalleryList(
     int32_t levelID,
     std::shared_ptr<std::monostate> cancelToken,

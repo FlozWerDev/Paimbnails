@@ -4,7 +4,7 @@
 
 namespace paimon::frameinterp {
 
-// Interpolation popup on PaiConfigKit. Controls write the live config;
+// interpolation popup on paiconfigkit. controls write the live config;
 // disk flush stays separate so drags don't rewrite each frame.
 class FrameInterpPopup : public geode::Popup {
 public:

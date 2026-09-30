@@ -10,7 +10,7 @@
 
 namespace paimon::updates {
 
-// One published release of the mod, as listed by the GitHub Releases API.
+// one published release of the mod, as listed by the github releases api.
 struct ReleaseInfo {
     std::string tag;
     std::string version;
@@ -46,13 +46,13 @@ public:
     std::string const& downloadUrl() const { return m_downloadUrl; }
     std::string const& lastError() const { return m_lastError; }
 
-    // newest first; empty until fetchReleasesAsync runs.
+    // newest first; empty until fetchreleasesasync runs.
     void fetchReleasesAsync(std::function<void(bool, std::string)> onDone);
     std::vector<ReleaseInfo> const& releases() const { return m_releases; }
     bool releasesLoaded() const { return m_releasesLoaded; }
     bool releasesLoading() const { return m_releasesLoading; }
 
-    // main-thread progress; onDone fires once.
+    // main-thread progress; ondone fires once.
     void downloadUpdate(
         std::function<void(uint64_t, uint64_t)> onProgress,
         std::function<void(bool, std::string)> onDone
@@ -78,7 +78,7 @@ public:
 
     void cancelDownload();
 
-    // release async handles before Geode teardown.
+    // release async handles before geode teardown.
     void shutdown();
 
     // >0 when other is newer than base, 0 when equal, <0 when older.

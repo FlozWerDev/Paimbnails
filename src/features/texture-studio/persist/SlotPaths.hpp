@@ -22,14 +22,14 @@ public:
 
     static std::filesystem::path overridesDir(std::string_view slotId);
 
-    // The sprite name is sanitized (slashes / colons → underscores).
+    // the sprite name is sanitized (slashes / colons → underscores).
     static std::filesystem::path overrideFile(std::string_view slotId,
                                               std::string_view spriteName);
 
     static std::filesystem::path spriteImageFile(std::string_view slotId,
                                                  std::string_view spriteName);
 
-    // Fusion mode: region mask + imported texture (png/gif).
+    // fusion mode: region mask + imported texture (png/gif).
     static std::filesystem::path fusionsDir(std::string_view slotId);
     static std::filesystem::path fusionMaskFile(std::string_view slotId,
                                                 std::string_view spriteName);
@@ -43,7 +43,7 @@ public:
 
     static std::string sanitizeFilename(std::string_view name);
 
-    // Safe to call multiple times.
+    // safe to call multiple times.
     static geode::Result<> ensureSlotDirs(std::string_view slotId);
 
 private:

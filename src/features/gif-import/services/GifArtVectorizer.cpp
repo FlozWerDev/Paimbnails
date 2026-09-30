@@ -403,7 +403,7 @@ std::vector<Primitive> packBlocks(
     };
 
     std::vector<Rect> best;
-    // The greedy sweep is directional, so try every mirrored and transposed view.
+    // the greedy sweep is directional, so try every mirrored and transposed view.
     for (int transform = 0; transform < 8; ++transform) {
         bool const transpose = transform >= 4;
         bool const flipX = (transform & 1) != 0;
@@ -558,7 +558,10 @@ std::vector<std::uint8_t> renderPlanFrame(
     auto draw = [&](Primitive const& object) {
         if (object.color >= plan.palette.size()) return;
         auto const& color = plan.palette[object.color];
-        float const opacity = object.color >= plan.glowPaletteStart ? plan.glowOpacity : 1.f;
+        float const opacityScale = object.color < plan.glowOpacityScales.size()
+            ? plan.glowOpacityScales[object.color] : 1.f;
+        float const opacity = object.color >= plan.glowPaletteStart
+            ? std::clamp(plan.glowOpacity * opacityScale, 0.f, 1.f) : 1.f;
         if (usesSoftGeometry(plan.mode) && object.kind == PrimitiveKind::Stamp &&
             object.stamp < plan.stamps.size()) {
             auto const& mask = plan.stamps[object.stamp].mask;
@@ -632,7 +635,7 @@ std::vector<std::uint8_t> renderPlanFrame(
                 std::min<int>(kPreviewSamples * kPreviewSamples, count + 1));
             return false;
         });
-        float const opacityScale = std::clamp(opacity, 0.f, 1.f);
+        float const coverageOpacity = std::clamp(opacity, 0.f, 1.f);
         for (int y = minY; y <= maxY; ++y) {
             for (int x = minX; x <= maxX; ++x) {
                 auto const count = previewCoverage[
@@ -641,7 +644,7 @@ std::vector<std::uint8_t> renderPlanFrame(
                 float const sourceAlpha =
                     (static_cast<float>(count) /
                      static_cast<float>(kPreviewSamples * kPreviewSamples)) *
-                    opacityScale;
+                    coverageOpacity;
                 std::size_t const index =
                     (static_cast<std::size_t>(y) * outputWidth + x) * 4;
                 float const destinationAlpha = pixels[index + 3] / 255.f;

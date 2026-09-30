@@ -4,7 +4,7 @@
 #include "../services/TransitionTimeline.hpp"
 #include "../services/TransitionMedia.hpp"
 
-// Native scene lifecycle, private render surfaces, no reparenting of GD nodes.
+// native scene lifecycle, private render surfaces, no reparenting of gd nodes.
 class CustomTransitionScene : public cocos2d::CCTransitionScene {
 public:
     static bool isActive();

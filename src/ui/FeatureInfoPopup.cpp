@@ -7,7 +7,7 @@ using namespace geode::prelude;
 
 namespace paimon::ui {
 
-// builds a top-left-anchored CCLabelBMFont through the declarative engine
+// builds a top-left-anchored cclabelbmfont through the declarative engine
 static cocos2d::CCNode* decLabel(cocos2d::CCNode* parent, std::string const& text,
                                  char const* font, float scale,
                                  cocos2d::ccColor3B color, cocos2d::CCPoint pos) {
@@ -63,7 +63,7 @@ bool FeatureInfoPopup::init(
 }
 
 void FeatureInfoPopup::buildContent(
-    std::string const& /*mainTitle*/,
+    std::string const& /*maintitle*/,
     std::vector<InfoSection> const& sections
 ) {
     auto winSize = m_mainLayer->getContentSize();

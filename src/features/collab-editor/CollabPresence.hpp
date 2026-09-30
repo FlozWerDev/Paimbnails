@@ -7,12 +7,12 @@
 
 namespace paimon::collab {
 
-// Account-keyed presence for inviting online friends; Globed-style, only while signed in.
+// account-keyed presence for inviting online friends; globed-style, only while signed in.
 class CollabPresence {
 public:
     static CollabPresence& get();
 
-    // Idempotent. Registers the local GD account and starts the invite poll.
+    // idempotent. registers the local gd account and starts the invite poll.
     void start();
     void stop();
 

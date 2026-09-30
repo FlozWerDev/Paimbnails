@@ -10,7 +10,7 @@ using namespace geode::prelude;
 namespace paimon::levelsearch {
 
 SearchRequestCoordinator& SearchRequestCoordinator::get() {
-    // Intentionally never released: it outlives every LevelSearchLayer and
+    // intentionally never released: it outlives every levelsearchlayer and
     // holds the cache that makes re-entering the layer free.
     static SearchRequestCoordinator* instance = nullptr;
     if (!instance) {
@@ -31,14 +31,6 @@ std::string SearchRequestCoordinator::cacheKey(SearchKind kind, std::string cons
     return fmt::format("{}|{}", static_cast<int>(kind), searchKey);
 }
 
-std::string SearchRequestCoordinator::emptyKey(SearchKind kind, std::string const& query) {
-    std::string lowered = query;
-    std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-    return fmt::format("{}|{}", static_cast<int>(kind), lowered);
-}
-
 SearchRequestCoordinator::Token SearchRequestCoordinator::request(
     SearchKind kind,
     GJSearchObject* object,
@@ -56,7 +48,7 @@ SearchRequestCoordinator::Token SearchRequestCoordinator::request(
         return 0;
     }
 
-    // Copy the entry out first: the callback may re-enter and rehash m_cache, dangling a reference into it.
+    // copy the entry out first: the callback may re-enter and rehash m_cache, dangling a reference into it.
     if (auto const* entry = lookup(kind, key)) {
         auto items = entry->items;
         auto pageInfo = entry->pageInfo;
@@ -64,7 +56,7 @@ SearchRequestCoordinator::Token SearchRequestCoordinator::request(
         return 0;
     }
 
-    // GD's own store already holds anything fetched this session. Levels only.
+    // gd's own store already holds anything fetched this session. levels only.
     if (kind == SearchKind::Levels) {
         if (auto* manager = GameLevelManager::get()) {
             if (auto* stored = manager->getStoredOnlineLevels(key.c_str())) {
@@ -81,7 +73,7 @@ SearchRequestCoordinator::Token SearchRequestCoordinator::request(
 
     auto token = m_nextToken++;
 
-    // Join an identical request already running or queued.
+    // join an identical request already running or queued.
     if (m_inFlight && m_current.key == key && m_current.kind == kind) {
         m_current.waiters.push_back({token, std::move(callback)});
         return token;
@@ -122,40 +114,12 @@ void SearchRequestCoordinator::cancel(Token token) {
     }
 }
 
-bool SearchRequestCoordinator::isKnownEmpty(SearchKind kind, std::string const& query) const {
-    if (query.size() < kMinPrefixLength) return false;
-
-    auto const now = nowSeconds();
-    for (std::size_t len = kMinPrefixLength; len <= query.size(); ++len) {
-        auto it = m_emptyQueries.find(emptyKey(kind, query.substr(0, len)));
-        if (it == m_emptyQueries.end()) continue;
-        if (now - it->second <= kEmptyPrefixTtlSeconds) return true;
-    }
-    return false;
-}
-
-void SearchRequestCoordinator::noteQueryOutcome(SearchKind kind, std::string const& query, int resultCount) {
-    if (query.size() < kMinPrefixLength) return;
-
-    auto key = emptyKey(kind, query);
-    if (resultCount > 0) {
-        m_emptyQueries.erase(key);
-        return;
-    }
-    m_emptyQueries[key] = nowSeconds();
-
-    // Keep the map small; it is only a hint.
-    if (m_emptyQueries.size() > 256) {
-        m_emptyQueries.clear();
-    }
-}
-
 void SearchRequestCoordinator::reset() {
     m_queue.clear();
     m_current.waiters.clear();
     m_cache.clear();
     m_cacheOrder.clear();
-    m_emptyQueries.clear();
+    m_delegateWaitStart = -1.0;
 }
 
 void SearchRequestCoordinator::schedulePump(double delay) {
@@ -183,7 +147,7 @@ void SearchRequestCoordinator::pump(float) {
     if (paimon::isRuntimeShuttingDown()) return;
     if (m_inFlight) return;
 
-    // Drop entries whose only waiters cancelled while queued.
+    // drop entries whose only waiters cancelled while queued.
     while (!m_queue.empty() && m_queue.front().waiters.empty()) {
         m_queue.pop_front();
     }
@@ -204,20 +168,27 @@ void SearchRequestCoordinator::pump(float) {
         return;
     }
 
+    // the delegate is shared with gd and other lookup clients.
+    if (manager->m_levelManagerDelegate && manager->m_levelManagerDelegate != this) {
+        if (m_delegateWaitStart < 0.0) m_delegateWaitStart = now;
+        if (now - m_delegateWaitStart < kRequestTimeout) {
+            schedulePump(0.1);
+            return;
+        }
+        m_current = std::move(m_queue.front());
+        m_queue.pop_front();
+        finishCurrent(false, nullptr);
+        return;
+    }
+    m_delegateWaitStart = -1.0;
     m_current = std::move(m_queue.front());
     m_queue.pop_front();
     m_currentPageInfo.clear();
 
-    // Remember whoever owned the delegate so the layer we interrupted keeps
-    // receiving its own callbacks once we are done.
-    m_previousDelegate = manager->m_levelManagerDelegate;
-    if (m_previousDelegate == this) m_previousDelegate = nullptr;
     manager->m_levelManagerDelegate = this;
 
     m_inFlight = true;
     m_lastDispatch = now;
-    dispatch(manager, m_current);
-
     if (auto* scheduler = CCDirector::get() ? CCDirector::get()->getScheduler() : nullptr) {
         scheduler->scheduleSelector(
             schedule_selector(SearchRequestCoordinator::onTimeout),
@@ -228,11 +199,13 @@ void SearchRequestCoordinator::pump(float) {
             false
         );
     }
+    // gd can complete a cached request inside dispatch and cancel this timeout.
+    dispatch(manager, m_current);
 }
 
 void SearchRequestCoordinator::onTimeout(float) {
     if (!m_inFlight) return;
-    // A dropped callback would otherwise wedge the queue forever.
+    // a dropped callback would otherwise wedge the queue forever.
     log::warn("[realtime-search] request timed out: {}", m_current.key);
     finishCurrent(false, nullptr);
 }
@@ -254,13 +227,13 @@ void SearchRequestCoordinator::dispatch(GameLevelManager* manager, Request const
     }
 }
 
-void SearchRequestCoordinator::restoreDelegate() {
+void SearchRequestCoordinator::clearDelegate() {
     if (auto* manager = GameLevelManager::get()) {
         if (manager->m_levelManagerDelegate == this) {
-            manager->m_levelManagerDelegate = m_previousDelegate;
+            manager->m_levelManagerDelegate = nullptr;
         }
     }
-    m_previousDelegate = nullptr;
+    m_delegateWaitStart = -1.0;
 }
 
 void SearchRequestCoordinator::finishCurrent(bool ok, CCArray* items) {
@@ -268,7 +241,7 @@ void SearchRequestCoordinator::finishCurrent(bool ok, CCArray* items) {
         scheduler->unscheduleSelector(schedule_selector(SearchRequestCoordinator::onTimeout), this);
     }
 
-    restoreDelegate();
+    clearDelegate();
     m_inFlight = false;
 
     auto request = std::move(m_current);
@@ -278,12 +251,11 @@ void SearchRequestCoordinator::finishCurrent(bool ok, CCArray* items) {
 
     if (ok) {
         store(request.kind, request.key, items, pageInfo);
-        noteQueryOutcome(request.kind, request.object ? std::string(request.object->m_searchQuery) : std::string(),
-            items ? static_cast<int>(items->count()) : 0);
     }
 
+    geode::Ref<CCArray> retainedItems = items;
     for (auto& waiter : request.waiters) {
-        if (waiter.callback) waiter.callback(ok, items, pageInfo);
+        if (waiter.callback) waiter.callback(ok, retainedItems.data(), pageInfo);
     }
 
     schedulePump(0.0);
@@ -297,7 +269,7 @@ void SearchRequestCoordinator::store(
 ) {
     if (searchKey.empty()) return;
 
-    // Copy so a later GD refresh of the same array cannot mutate our snapshot.
+    // copy so a later gd refresh of the same array cannot mutate our snapshot.
     auto snapshot = CCArray::create();
     if (items) {
         for (auto* object : CCArrayExt<CCObject*>(items)) {
@@ -327,7 +299,7 @@ SearchRequestCoordinator::CacheEntry const* SearchRequestCoordinator::lookup(
         return nullptr;
     }
 
-    // Touch for LRU.
+    // touch for lru.
     m_cacheOrder.erase(std::remove(m_cacheOrder.begin(), m_cacheOrder.end(), key), m_cacheOrder.end());
     m_cacheOrder.push_back(key);
     return &it->second;

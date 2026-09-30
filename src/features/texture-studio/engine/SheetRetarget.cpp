@@ -128,13 +128,13 @@ RetargetOutcome SheetRetarget::conform(std::vector<std::uint8_t> const& processe
     for (auto const& dst : installedSheet.frames) {
         auto it = byName.find(dst.name);
         if (it == byName.end()) {
-            // Added by a newer version; the installed pixels stay untinted.
+            // added by a newer version; the installed pixels stay untinted.
             ++outcome.missingFrames;
             continue;
         }
         auto const& src = *it->second;
         if (src.rectW != dst.rectW || src.rectH != dst.rectH) {
-            // Redrawn at another size; stretching it would distort the sprite.
+            // redrawn at another size; stretching it would distort the sprite.
             ++outcome.missingFrames;
             continue;
         }
@@ -144,7 +144,7 @@ RetargetOutcome SheetRetarget::conform(std::vector<std::uint8_t> const& processe
             ++outcome.missingFrames;
             continue;
         }
-        // Packing rotation belongs to the slot: follow the installed plist, not the snapshot.
+        // packing rotation belongs to the slot: follow the installed plist, not the snapshot.
         if (dst.rotated) pixels.rotateCW90();
         out.blitOverwrite(dst.rectX, dst.rectY, pixels);
         ++outcome.matchedFrames;

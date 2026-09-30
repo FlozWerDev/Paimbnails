@@ -12,7 +12,7 @@ struct LevelRequest;
 
 class TwitchMessagePopup : public geode::Popup {
 public:
-    // `levelName` and `author` are what the level is known by; empty while
+    // `levelname` and `author` are what the level is known by; empty while
     // still loading.
     static TwitchMessagePopup* create(
         LevelRequest const& request, std::string levelName, std::string author);

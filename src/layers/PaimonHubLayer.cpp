@@ -74,7 +74,7 @@ std::string tr(char const* key, char const* fallback = "") {
 }
 
 std::string toLower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return s;
 }
 
@@ -174,7 +174,7 @@ void eraseOne(std::vector<T>& v, T const& x) {
     if (it != v.end()) v.erase(it);
 }
 
-// Narrow spacing when 8+ rows would hit shortcuts.
+// narrow spacing when 8+ rows would hit shortcuts.
 float sidebarRowSpacing(size_t categoryCount) {
     return categoryCount > 7 ? 24.f : 27.f;
 }
@@ -182,7 +182,7 @@ float sidebarRowSpacing(size_t categoryCount) {
 
 namespace paimon::hubdata {
 
-// Mobile lacks the setting; hasSetting is the safe check.
+// mobile lacks the setting; hassetting is the safe check.
 bool discordSupported() {
     auto* mod = geode::Mod::get();
     return mod && mod->hasSetting("discord-rpc-enabled");
@@ -205,7 +205,7 @@ std::vector<HubCategoryMeta> getHubCategories() {
 }
 
 std::vector<HubActionMeta> getHubActions(int categoryIndex) {
-    // Dev index shifts without Discord; resolve it dynamically.
+    // dev index shifts without discord; resolve it dynamically.
     const bool discord = discordSupported();
     const int devIndex = discord ? 7 : 6;
     if (categoryIndex == devIndex) {
@@ -302,7 +302,7 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
                 }, 5, "Luz trazada en todo el juego"},
                 {"Perfil", "GJ_button_05.png", [](PaimonHubLayer* self) { self->onOpenProfiles(nullptr); }, 5, "Editor de foto de perfil"},
             };
-        case 6: // Unreachable without Discord.
+        case 6: // unreachable without discord.
             if (!discord) return {};
             return {
                 {"Configurar", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = paimon::discord::DiscordConfigPopup::create()) popup->show(); }, 6, "Rich Presence a tu gusto"},
@@ -390,7 +390,7 @@ std::vector<GranularSettingMeta> getGranularSettings() {
         {"Open Thumbnails Folder", "Abrir Carpeta de Miniaturas", 5},
 
     };
-    // Hide Discord rows on mobile to keep indices stable.
+    // hide discord rows on mobile to keep indices stable.
     if (discordSupported()) {
         settings.push_back({"Enable Discord Rich Presence", "Activar Discord Rich Presence", 6});
         settings.push_back({"Configure Discord RPC", "Configurar Discord RPC", 6});
@@ -563,7 +563,7 @@ void PaimonHubLayer::keyBackClicked() {
             return;
         }
     }
-    // scene(false) avoids black screen on Escape.
+    // scene(false) avoids black screen on escape.
     CCDirector::get()->replaceScene(MenuLayer::scene(false));
 }
 
@@ -577,7 +577,7 @@ void PaimonHubLayer::onToggleUIStyle(CCObject*) {
 
 void PaimonHubLayer::onTabSwitch(CCObject* sender) {
     int idx = static_cast<CCNode*>(sender)->getTag();
-    // Sidebar buttons use tag 100+i.
+    // sidebar buttons use tag 100+i.
     if (idx >= 100) {
         switchHomeCategory(idx - 100);
         return;
@@ -1582,7 +1582,7 @@ void PaimonHubLayer::buildForumTab() {
 }
 
 void PaimonHubLayer::onOpenConfig(CCObject*) {
-    // No transition avoids black screen on return.
+    // no transition avoids black screen on return.
     if (auto scene = PaiConfigLayer::scene()) CCDirector::get()->pushScene(scene);
 }
 
@@ -1591,7 +1591,7 @@ void PaimonHubLayer::onOpenProfiles(CCObject*) {
 }
 
 void PaimonHubLayer::onOpenBackgrounds(CCObject*) {
-    // Kept for compatibility; backgrounds use PaiConfigLayer.
+    // kept for compatibility; backgrounds use paiconfiglayer.
     onOpenConfig(nullptr);
 }
 
@@ -1601,7 +1601,7 @@ void PaimonHubLayer::onOpenPaiDraw(CCObject*) {
 }
 
 void PaimonHubLayer::onOpenSupport(CCObject*) {
-    // pushScene keeps back-stack to avoid black screen.
+    // pushscene keeps back-stack to avoid black screen.
     if (auto scene = PaimonSupportLayer::scene()) CCDirector::get()->pushScene(scene);
 }
 

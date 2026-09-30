@@ -143,7 +143,7 @@ std::string formatKeyboardKeybind(Keybind const& kb) {
     if (!hasKey && !hasMods) return "";
 
     if (!hasKey) {
-        // drop Geode's trailing "+Unknown" on modifier-only KEY_None binds.
+        // drop geode's trailing "+unknown" on modifier-only key_none binds.
         std::string out = modifiersPrefix(kb.modifiers);
         if (!out.empty() && out.back() == '+') out.pop_back();
         return out;
@@ -191,7 +191,7 @@ void saveExtendedKeybind(std::string_view settingKey, ExtendedKeybind const& bin
     auto savedKey = makeSavedKey(settingKey);
 
     if (bind.kind == ExtendedKind::None) {
-        // Geode cannot delete saved values; empty object reads as absent.
+        // geode cannot delete saved values; empty object reads as absent.
         auto empty = matjson::Value::object();
         empty["kind"] = static_cast<int>(ExtendedKind::None);
         mod->setSavedValue<matjson::Value>(savedKey, empty);
@@ -211,7 +211,7 @@ bool isMouseButtonHeld(MouseButton button) {
     if (!isMouseButtonIndexValid(idx)) return false;
 
 #ifdef GEODE_IS_WINDOWS
-    // focus loss drops Release events; resync OS state or holds stick forever.
+    // focus loss drops release events; resync os state or holds stick forever.
     int vk = 0;
     switch (button) {
         case MouseButton::Left:    vk = VK_LBUTTON;  break;
@@ -242,7 +242,7 @@ bool isExtendedHeld(ExtendedKeybind const& bind) {
         return true;
     }
 
-    // VolumeScrollHook owns keyboard hold state; this helper covers mouse binds.
+    // volumescrollhook owns keyboard hold state; this helper covers mouse binds.
     return false;
 }
 
@@ -276,7 +276,7 @@ std::vector<std::string> const& allManagedKeybinds() {
 void emitExtendedTrigger(std::string_view settingKey, double timestamp) {
     ExtendedKeybindTriggerEvent(std::string(settingKey)).send(timestamp);
 
-    // mirror as a synthetic Geode event so existing setting listeners react too.
+    // mirror as a synthetic geode event so existing setting listeners react too.
     auto* mod = Mod::get();
     if (!mod) return;
 
@@ -321,7 +321,7 @@ void initExtendedKeybindSystem() {
         bool isPress = (data.action == MouseInputData::Action::Press);
         g_mouseDown[idx] = isPress;
 
-        // ignore stale local state: focus loss drops Release events.
+        // ignore stale local state: focus loss drops release events.
         if (!isPress) return false;
 
         auto button = fromGeodeMouseButton(data.button);

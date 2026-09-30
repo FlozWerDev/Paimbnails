@@ -20,8 +20,8 @@ namespace {
 
 constexpr float kDegreesToRadians = 0.01745329251994329577f;
 
-// Orbs, rings, pads and portals are EffectGameObject subclasses too, so class
-// filtering threw them out with the triggers; only m_isTrigger is excluded.
+// orbs, rings, pads and portals are effectgameobject subclasses too, so class
+// filtering threw them out with the triggers; only m_istrigger is excluded.
 bool isPhysicalObject(GameObject* object) {
     return object && !object->m_isTrigger;
 }
@@ -181,7 +181,7 @@ Result<std::vector<ResolvedBody>> PhysicsWorkspace::resolve(
         auto const& material = captured.material;
         body.spec.motion = captured.motion;
         body.native = captured.native;
-        // A body with its own launch is launched whatever its gravity does; the
+        // a body with its own launch is launched whatever its gravity does; the
         // lab velocity still only reaches the ones gravity is pulling on.
         bool const driven = captured.motion == Motion::Dynamic &&
             std::abs(material.gravityScale) > 0.0001f;
@@ -221,8 +221,8 @@ Result<std::vector<ResolvedBody>> PhysicsWorkspace::resolve(
             return Err("No se pudo medir uno de los cuerpos.");
         }
 
-        // The origin is the area weighted centroid: the box middle put the pivot
-        // outside an L shape and made a slope spin like the block it fills.
+        // the origin is the area weighted centroid: the box middle put the pivot
+        // outside an l shape and made a slope spin like the block it fills.
         float area = 0.f;
         Vec2 weighted{};
         for (auto const& shape : shapes) {
@@ -248,7 +248,7 @@ Result<std::vector<ResolvedBody>> PhysicsWorkspace::resolve(
             BodyVisual visual;
             visual.object = object;
             visual.objectID = object->m_objectID;
-            // The art hangs off the object's own position, not off its hitbox
+            // the art hangs off the object's own position, not off its hitbox
             // centre, which are different things for slopes and extended blocks.
             visual.offset = {
                 object->getPositionX() - body.spec.position.x,

@@ -1,6 +1,6 @@
 #pragma once
 
-// Visual primitives shared by the two info popups (level stats and level info),
+// visual primitives shared by the two info popups (level stats and level info),
 // so both read as one system: same panels, same fonts, same colors.
 
 #include <Geode/Geode.hpp>
@@ -18,14 +18,14 @@ cocos2d::CCLabelBMFont* addText(cocos2d::CCNode* parent, char const* text, char 
                                 float scale, cocos2d::ccColor3B color, cocos2d::CCPoint pos,
                                 cocos2d::CCPoint anchor, float maxWidth = 0.f);
 
-// First frame that actually exists in the loaded sheets. Frame names have moved
-// between GD versions, so every icon lists its alternatives.
+// first frame that actually exists in the loaded sheets. frame names have moved
+// between gd versions, so every icon lists its alternatives.
 cocos2d::CCSprite* firstFrame(std::vector<char const*> const& candidates);
 
 void addBar(cocos2d::CCNode* parent, float x, float y, float width, float height,
             float fill, cocos2d::ccColor3B color);
 
-// Blurred thumbnail as popup backdrop, dimmed for panel contrast. The caller
+// blurred thumbnail as popup backdrop, dimmed for panel contrast. the caller
 // places it and picks the z.
 cocos2d::CCNode* makeBackdrop(cocos2d::CCSprite* blurred, cocos2d::CCSize const& area,
                               GLubyte darkness, bool fadeIn);

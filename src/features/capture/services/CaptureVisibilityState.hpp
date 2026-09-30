@@ -5,7 +5,7 @@
 #include <algorithm>
 
 namespace paimon::capture {
-    // User-VISIBLE nodes capture must not hide; WeakRefs + prune on write
+    // user-visible nodes capture must not hide; weakrefs + prune on write
     // (raw pointers went stale when the level exited under the popup).
     inline std::vector<geode::WeakRef<cocos2d::CCNode>>& userShownNodes() {
         static auto& s = *new std::vector<geode::WeakRef<cocos2d::CCNode>>();

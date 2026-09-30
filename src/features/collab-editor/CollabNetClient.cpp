@@ -15,7 +15,7 @@ using namespace geode::prelude;
 namespace paimon::collab {
 
 namespace {
-// Covers the short host-startup/reconnect window without hiding a bad room code.
+// covers the short host-startup/reconnect window without hiding a bad room code.
 constexpr int kJoinMaxRetries = 3;
 constexpr int kJoinRetryMs = 2500;
 constexpr int kHostReconnectMaxRetries = 40;
@@ -44,7 +44,7 @@ std::string normalizeRoomCode(std::string const& value) {
 }
 
 CollabNetClient::~CollabNetClient() {
-    // Invalidate callbacks before stop() dispatches its best-effort leave.
+    // invalidate callbacks before stop() dispatches its best-effort leave.
     m_lifetime.reset();
     stop();
     m_onMessage = {};
@@ -70,7 +70,7 @@ void CollabNetClient::beginStart(std::string baseUrl, std::string roomCode, std:
                                  PeerAppearance appearance, ConnectMode mode,
                                  bool preserveResumeToken) {
     std::string resumeToken = preserveResumeToken ? m_resumeToken : "";
-    // Host recovery keeps the old room alive until create-room replaces its session.
+    // host recovery keeps the old room alive until create-room replaces its session.
     stopInternal(!(preserveResumeToken && mode == ConnectMode::Create));
     m_base = normalizeBaseUrl(std::move(baseUrl));
     m_room = normalizeRoomCode(roomCode);
@@ -119,9 +119,9 @@ void CollabNetClient::stopInternal(bool notifyServer) {
     m_hostReconnectRetries = 0;
     m_stateRequestsInFlight.clear();
     m_pendingStateRequests.clear();
-    ++m_gen; // Invalidate in-flight callbacks.
+    ++m_gen; // invalidate in-flight callbacks.
 
-    // Best-effort leave so the server frees the slot promptly.
+    // best-effort leave so the server frees the slot promptly.
     if (notifyServer && !paimon::isRuntimeShuttingDown() &&
         wasJoined && clientId > 0 && !base.empty()) {
         auto body = matjson::makeObject({
@@ -139,7 +139,7 @@ void CollabNetClient::stopInternal(bool notifyServer) {
 
 void CollabNetClient::restart(ConnectMode mode) {
     if (m_base.empty() || m_room.empty()) return;
-    // Copy because start() moves its arguments into these members.
+    // copy because start() moves its arguments into these members.
     beginStart(std::string(m_base), std::string(m_room), std::string(m_user),
                m_appearance, mode, true);
 }
@@ -158,7 +158,7 @@ void CollabNetClient::closeRoom() {
     WebHelper::dispatch(std::move(req), "POST", apiUrl("/api/close-room"),
         [](web::WebResponse) {});
 
-    // Server closes the room; invalidate local state so poll/ops/leave stop.
+    // server closes the room; invalidate local state so poll/ops/leave stop.
     m_active = false;
     m_joined = false;
     m_clientId = 0;
@@ -266,7 +266,7 @@ void CollabNetClient::doJoin() {
     }
 
     auto req = web::WebRequest();
-    // Allow slow VPS startup or a temporarily busy host.
+    // allow slow vps startup or a temporarily busy host.
     req.timeout(std::chrono::seconds(45));
     req.header("Content-Type", "application/json");
     req.bodyString(body.dump(matjson::NO_INDENTATION));
@@ -294,7 +294,7 @@ void CollabNetClient::doJoin() {
                 }
             }
 
-            // Join never auto-creates; retry startup/reconnect 404s first.
+            // join never auto-creates; retry startup/reconnect 404s first.
             if (res.code() == 404 && code == "room_not_found") {
                 if (m_joinRetries < kJoinMaxRetries) {
                     ++m_joinRetries;
@@ -339,7 +339,7 @@ void CollabNetClient::doCreate() {
     uint64_t gen = m_gen;
     auto lifetime = std::weak_ptr<uint8_t>(m_lifetime);
 
-    // Empty initial snapshot; the host streams objects via bulk /api/seed after.
+    // empty initial snapshot; the host streams objects via bulk /api/seed after.
     auto body = matjson::makeObject({
         {"roomCode", m_room},
         {"username", m_user},
@@ -362,7 +362,7 @@ void CollabNetClient::doCreate() {
     }
 
     auto req = web::WebRequest();
-    // Same slow-start allowance as join.
+    // same slow-start allowance as join.
     req.timeout(std::chrono::seconds(45));
     req.header("Content-Type", "application/json");
     req.bodyString(body.dump(matjson::NO_INDENTATION));
@@ -390,7 +390,7 @@ void CollabNetClient::doCreate() {
                 }
             }
 
-            // Create mode never silently joins another room; a taken code asks for a new one.
+            // create mode never silently joins another room; a taken code asks for a new one.
             if (res.code() == 409 && code == "room_exists") {
                 emitError("room_exists", "Ese codigo ya esta en uso. Genera uno nuevo.");
                 return;
@@ -542,7 +542,7 @@ void CollabNetClient::sendJson(matjson::Value const& value) {
         });
         suffix = "/api/voice";
     } else if (t == "select") {
-        // Ephemeral peer-selection presence (not part of level LWW state).
+        // ephemeral peer-selection presence (not part of level lww state).
         body = matjson::makeObject({
             {"room", m_room},
             {"client", static_cast<int64_t>(m_clientId)},
@@ -609,7 +609,7 @@ void CollabNetClient::sendJson(matjson::Value const& value) {
     }
 
     auto req = web::WebRequest();
-    // Voice/pings/claims are perishable: short timeout caps slow-connection pileup.
+    // voice/pings/claims are perishable: short timeout caps slow-connection pileup.
     bool ephemeral = (t == "voice" || t == "ping" || t == "claim_layer");
     req.timeout(std::chrono::seconds(ephemeral ? 6 : 15));
     req.header("Content-Type", "application/json");
@@ -642,7 +642,7 @@ void CollabNetClient::sendOps(matjson::Value const& ops, OpsCb cb) {
     WebHelper::dispatch(std::move(req), "POST", apiUrl("/api/ops"),
         [this, lifetime, gen, cb = std::move(cb)](web::WebResponse res) {
             if (!cb) return;
-            // New generation means stop()/start() ran mid-flight; outbox reset too, stay silent.
+            // new generation means stop()/start() ran mid-flight; outbox reset too, stay silent.
             if (lifetime.expired() || gen != m_gen) return;
             int accepted = 0;
             if (auto parsed = matjson::parse(res.string().unwrapOr(""))) {
@@ -668,7 +668,7 @@ void CollabNetClient::sendSeed(matjson::Value const& objects, bool finalChunk, S
     });
 
     auto req = web::WebRequest();
-    // Big levels: a chunk can be ~1MB of JSON; give the host time to upload.
+    // big levels: a chunk can be ~1mb of json; give the host time to upload.
     req.timeout(std::chrono::seconds(45));
     req.header("Content-Type", "application/json");
     req.header("Authorization", "Bearer " + m_sessionToken);

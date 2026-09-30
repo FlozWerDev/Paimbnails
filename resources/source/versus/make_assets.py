@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""Draws the Versus button, badge, card and mode art into resources/.
-
-Same recipe as the progression assets: white/grey bodies over a pure black
-outline, so a runtime setColor() multiply keeps the outline black and turns the
-body into the rank, rarity or mode colour. One card plate covers four rarities
-and one glyph sheet covers every card in the deck.
-
-    python3 resources/source/versus/make_assets.py
-"""
+"""grayscale bodies keep black outlines when the runtime multiplies the tint."""
 
 import math
 import os
@@ -89,7 +81,7 @@ def star_points(cx, cy, outer, inner, spikes=5, start=math.pi * 0.5):
 
 
 def outlined(img, width):
-    """Grows the alpha into a black rim under the shape."""
+    """grows the alpha into a black rim under the shape."""
     radius = max(1, int(width))
     grown = img.getchannel("A").filter(ImageFilter.MaxFilter(radius * 2 + 1))
     rim = Image.new("RGBA", img.size, BLACK)
@@ -100,8 +92,8 @@ def outlined(img, width):
 
 # ---------------------------------------------------------------- glyph deck
 
-# Every glyph draws into a unit square (0..1, y down) so the same code renders
-# them at card size and at HUD size.
+# every glyph draws into a unit square (0..1, y down) so the same code renders
+# them at card size and at hud size.
 def glyph_canvas(size):
     return Image.new("RGBA", (size * SS, size * SS), (0, 0, 0, 0))
 
@@ -210,7 +202,7 @@ def g_freeze(d, s):
 
 
 def g_mask(d, s):
-    # Domino mask: a wide band with two cut eyes and a dip in the middle.
+    # domino mask: a wide band with two cut eyes and a dip in the middle.
     d.polygon([(U(0.08, s), U(0.34, s)), (U(0.36, s), U(0.28, s)),
                (U(0.50, s), U(0.36, s)), (U(0.64, s), U(0.28, s)),
                (U(0.92, s), U(0.34, s)), (U(0.86, s), U(0.62, s)),
@@ -415,7 +407,7 @@ def make_glyphs():
 # ------------------------------------------------------------------ lettering
 
 def vs_letters(size, height=0.46):
-    """The VS wordmark, drawn as two slanted polygons so it reads at 24px."""
+    """the vs wordmark, drawn as two slanted polygons so it reads at 24px."""
     img = canvas(size)
     d = ImageDraw.Draw(img)
     u = size * SS
@@ -424,7 +416,7 @@ def vs_letters(size, height=0.46):
     slant = h * 0.20
     stroke = h * 0.30
 
-    # V: two legs meeting at the bottom.
+    # v: two legs meeting at the bottom.
     vx = u * 0.30
     d.polygon([(vx - h * 0.46 + slant, cy - h / 2),
                (vx - h * 0.46 + slant + stroke, cy - h / 2),
@@ -435,7 +427,7 @@ def vs_letters(size, height=0.46):
                (vx - stroke * 0.4, cy + h / 2),
                (vx + stroke * 0.4, cy + h / 2)], fill=GLOSS)
 
-    # S: three bars plus two connectors, the blocky arcade shape.
+    # s: three bars plus two connectors, the blocky arcade shape.
     sx = u * 0.68
     w = h * 0.44
     for y in (cy - h / 2, cy - stroke / 2, cy + h / 2 - stroke):
@@ -463,7 +455,7 @@ def make_logo():
 
 # ------------------------------------------------------------------- swords
 
-# Sword profile in blade lengths, with the origin on the guard: that is the
+# sword profile in blade lengths, with the origin on the guard: that is the
 # point the two blades cross at, so rotating each copy about it gives the
 # emblem its long blades up and short grips down.
 SWORD = {
@@ -477,9 +469,9 @@ SWORD_TOP, SWORD_BOTTOM = -1.00, 0.64
 
 
 def draw_swords(d, center, span, angle=math.radians(30)):
-    """Crossed swords centred on `center`, `span` tall before rotation."""
+    """crossed swords centred on `center`, `span` tall before rotation."""
     scale = span / (SWORD_BOTTOM - SWORD_TOP)
-    # Rotating about the guard leaves the emblem top-heavy; nudge it back down.
+    # rotating about the guard leaves the emblem top-heavy; nudge it back down.
     cx = center[0]
     cy = center[1] - (SWORD_TOP + SWORD_BOTTOM) * 0.5 * scale
 
@@ -502,7 +494,7 @@ def make_swords():
 
 
 def make_badge_frame():
-    """Crossed swords + laurel arc that sits behind a progression tier medal."""
+    """crossed swords + laurel arc that sits behind a progression tier medal."""
     size = 288
     img = canvas(size)
     d = ImageDraw.Draw(img)
@@ -511,7 +503,7 @@ def make_badge_frame():
 
     draw_swords(d, c, u * 0.94, math.radians(32))
 
-    # Laurel: a stem arc down each side with leaves alternating off it. The
+    # laurel: a stem arc down each side with leaves alternating off it. the
     # medal covers the middle, so the wreath only has to read at the edges.
     stem_r = u * 0.415
     for sign in (-1, 1):
@@ -567,7 +559,7 @@ def button_plate(size, with_face=True):
 
 
 def make_button():
-    """The CreatorLayer tile: plate, crossed swords, VS wordmark on top."""
+    """the creatorlayer tile: plate, crossed swords, vs wordmark on top."""
     size = 192
     img = button_plate(size)
     u = size * SS
@@ -586,7 +578,7 @@ def make_button():
 
     save(img, "paim_vsBtn.png", size)
 
-    # Flat variant without the recessed face, for the hub tabs and toolbars.
+    # flat variant without the recessed face, for the hub tabs and toolbars.
     plain = button_plate(size, with_face=False)
     letters = vs_letters(size, 0.44)
     plain.alpha_composite(outlined(letters, u * 0.024))
@@ -594,7 +586,7 @@ def make_button():
 
 
 def make_chip():
-    """Rank chip pinned to the button corner: small plate for a tier glyph."""
+    """rank chip pinned to the button corner: small plate for a tier glyph."""
     size = 96
     img = canvas(size)
     d = ImageDraw.Draw(img)
@@ -609,7 +601,7 @@ def make_chip():
 
 
 def make_pip():
-    """Division pip: one filled diamond, tinted per division."""
+    """division pip: one filled diamond, tinted per division."""
     size = 48
     img = canvas(size)
     d = ImageDraw.Draw(img)
@@ -649,7 +641,7 @@ def make_card():
     shade.putalpha(ImageChops.multiply(ramp, body.getchannel("A")))
     img.alpha_composite(shade)
 
-    # Recessed art window in the upper two thirds; the name banner sits below.
+    # recessed art window in the upper two thirds; the name banner sits below.
     win = rounded_rect_points(c[0], c[1] - u * 0.07, u * 0.25, u * 0.27,
                               u * 0.05)
     d.polygon(scaled(win, (c[0], c[1] - u * 0.06), 1.06), fill=BLACK)
@@ -668,7 +660,7 @@ def make_card_fill():
 
 
 def make_card_ring():
-    """Rarity rim drawn on the card footprint, so it lines up when scaled."""
+    """rarity rim drawn on the card footprint, so it lines up when scaled."""
     size = 256
     img = canvas(size)
     d = ImageDraw.Draw(img)
@@ -703,7 +695,7 @@ def make_card_back():
 # ------------------------------------------------------------------- duel bar
 
 def make_bar():
-    """Two-sided duel bar for the in-level HUD: rim, and a separate fill."""
+    """two-sided duel bar for the in-level hud: rim, and a separate fill."""
     size = 512
     u = size * SS
 
@@ -734,7 +726,7 @@ def make_bar():
 
 
 def make_versus_burst():
-    """Radial speed lines behind the match-found portraits."""
+    """radial speed lines behind the match-found portraits."""
     size = 256
     img = canvas(size)
     d = ImageDraw.Draw(img)

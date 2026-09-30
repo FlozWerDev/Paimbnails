@@ -26,7 +26,7 @@ using namespace cocos2d;
 
 using paimon::capture::ui::ClippedMenu;
 
-// Heap-allocated to avoid destruction-order problems during game shutdown.
+// heap-allocated to avoid destruction-order problems during game shutdown.
 static auto& s_originalVisibilities = *new std::vector<paimon::capture::VisibilityRecord>();
 
 namespace {
@@ -136,7 +136,7 @@ bool CaptureLayerEditorPopup::init() {
         return true;
     }
 
-    // Sub-branches start folded; flat tree opened on a hundred trail/particle rows.
+    // sub-branches start folded; flat tree opened on a hundred trail/particle rows.
     for (auto& entry : m_layers) {
         if (entry.isGroup && entry.depth >= 1) entry.collapsed = true;
     }
@@ -354,7 +354,7 @@ void CaptureLayerEditorPopup::populateLayers() {
             for (auto* obj : CCArrayExt<CCObject*>(children)) {
                 auto* nd = typeinfo_cast<CCNode*>(obj);
                 if (!nd) continue;
-// Dual mode can nest either player under the other; keep each out of the other's tree.
+// dual mode can nest either player under the other; keep each out of the other's tree.
                 if (auto* otherPlayer = typeinfo_cast<PlayerObject*>(nd)) {
                     if (otherPlayer != player) continue;
                 }
@@ -509,7 +509,7 @@ bool CaptureLayerEditorPopup::isEntryVisible(int idx) const {
     if (idx < 0 || idx >= static_cast<int>(m_layers.size())) return false;
     auto const& entry = m_layers[idx];
 
-// A group is visible only when all children are visible; its checkbox controls all.
+// a group is visible only when all children are visible; its checkbox controls all.
     if (!entry.childIndices.empty()) {
         for (int child : entry.childIndices) {
             if (!isEntryVisible(child)) return false;
@@ -565,7 +565,7 @@ void CaptureLayerEditorPopup::setEntryVisible(int idx, bool visible, bool cascad
         entry.currentVisibility = visible;
         if (auto locked = entry.node.lock()) {
             locked->setVisible(visible);
-// Preserve explicit choices so capture's hide pass cannot override them.
+// preserve explicit choices so capture's hide pass cannot override them.
             paimon::capture::setUserShown(locked.data(), visible);
         }
         if (cascadeChildren) {
@@ -581,13 +581,13 @@ void CaptureLayerEditorPopup::refreshRowVisuals(int idx) {
     auto& entry = m_layers[idx];
 
     bool vis = isEntryVisible(idx);
-// Single leaf-count pass feeds the toggler, the counter and the label.
+// single leaf-count pass feeds the toggler, the counter and the label.
     auto [visibleLeaves, totalLeaves] = visibleLeafCount(idx);
 
     if (entry.toggler) {
         bool desired = vis;
         if (entry.isGroup) {
-            // Half-lit groups stay checked but amber; folding never reads as fully hidden.
+            // half-lit groups stay checked but amber; folding never reads as fully hidden.
             bool const partial = visibleLeaves > 0 && visibleLeaves < totalLeaves;
             desired = vis || partial;
             if (auto* onButton = entry.toggler->m_onButton) {
@@ -746,7 +746,7 @@ void CaptureLayerEditorPopup::buildList() {
         float labelScale = entry.isGroup ? C::LABEL_SCALE_GROUP
                          : (entry.depth >= 2 ? C::LABEL_SCALE_LEAF_D2 : C::LABEL_SCALE_LEAF_D0);
         float const labelX = C::LABEL_X_BASE + indent;
-        // Long mod node ids and shader names slide under counter and checkbox.
+        // long mod node ids and shader names slide under counter and checkbox.
         label->limitLabelWidth(
             listW - C::CHECK_X_FROM_RIGHT - (entry.isGroup ? 44.f : 22.f) - labelX,
             labelScale, 0.16f);
@@ -792,7 +792,7 @@ void CaptureLayerEditorPopup::refreshPreview() {
 }
 
 void CaptureLayerEditorPopup::rebuildListDeferred() {
-    // Rebuilding destroys the menu the touch dispatcher is still unwinding.
+    // rebuilding destroys the menu the touch dispatcher is still unwinding.
     Ref<CaptureLayerEditorPopup> self = this;
     Loader::get()->queueInMainThread([self]() {
         if (paimon::isRuntimeShuttingDown()) return;
@@ -815,7 +815,7 @@ void CaptureLayerEditorPopup::onToggleLayer(CCObject* sender) {
     log::info("[LayerEditor] '{}' -> {}", m_layers[idx].name,
         newVisible ? "visible" : "hidden");
 
-// Refresh this entry and related groups in place; avoid rebuilding the list.
+// refresh this entry and related groups in place; avoid rebuilding the list.
     refreshRowVisuals(idx);
     refreshAncestors(idx);
     refreshSubtree(idx);
@@ -954,7 +954,7 @@ void CaptureLayerEditorPopup::onFilterSelect(CCObject* sender) {
         m_filterLabel->setString(name.c_str());
     }
 
-    // Defer: inline dropdown destroy kills the CCMenu mid touch-dispatch unwind.
+    // defer: inline dropdown destroy kills the ccmenu mid touch-dispatch unwind.
     Ref<CaptureLayerEditorPopup> self = this;
     Loader::get()->queueInMainThread([self]() {
         if (paimon::isRuntimeShuttingDown()) return;
@@ -986,7 +986,7 @@ void CaptureLayerEditorPopup::onDoneBtn(CCObject* sender) {
 void CaptureLayerEditorPopup::onRestoreAllBtn(CCObject* sender) {
     if (!sender) return;
 
-// Baseline lives in s_originalVisibilities; restoreVisibility skips dead nodes via WeakRef.
+// baseline lives in s_originalvisibilities; restorevisibility skips dead nodes via weakref.
     paimon::capture::restoreVisibility(s_originalVisibilities);
     paimon::capture::clearUserShown();
 

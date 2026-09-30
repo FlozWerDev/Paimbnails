@@ -13,7 +13,7 @@ using namespace geode::prelude;
 namespace paimon::compat_mods {
 
 namespace {
-    // HSV -> RGB with saturation and value fixed, which is all avatarColor needs.
+    // hsv -> rgb with saturation and value fixed, which is all avatarcolor needs.
     ccColor3B hueToColor(float hue) {
         float s = 0.55f, v = 0.78f;
         float c = v * s;
@@ -69,7 +69,7 @@ CCNode* createImageSlot(std::string const& url, float width, float height,
         if (!res.isOk() || !safeSprite || !safeSprite->getParent()) return;
         auto size = safeSprite->getContentSize();
         if (size.width <= 0.f || size.height <= 0.f) return;
-        // Cover the slot, letting the stencil crop the overflow.
+        // cover the slot, letting the stencil crop the overflow.
         safeSprite->setScale(std::max(width / size.width, height / size.height));
         safeSprite->runAction(CCFadeIn::create(0.25f));
     });
@@ -99,7 +99,7 @@ CCNode* createAvatar(std::string const& url, bool hasImage,
         container->addChild(disc, 0);
     }
 
-    // Copy the whole first UTF-8 codepoint; toupper only understands ASCII bytes.
+    // copy the whole first utf-8 codepoint; toupper only understands ascii bytes.
     std::string initial = "?";
     if (!name.empty()) {
         auto c0 = static_cast<unsigned char>(name[0]);
@@ -130,7 +130,7 @@ CCNode* createRankSeal(ModlyUser const& user, float size) {
     seal->setContentSize({size, size});
     seal->setAnchorPoint({0.f, 0.5f});
 
-    // bigFont has no check glyph: tick from GD sprite frame, tinted disc fallback.
+    // bigfont has no check glyph: tick from gd sprite frame, tinted disc fallback.
     if (auto* check = CCSprite::createWithSpriteFrameName("GJ_completesIcon_001.png")) {
         check->setColor(*color);
         float scale = size / std::max(check->getContentSize().width, check->getContentSize().height);
@@ -153,7 +153,7 @@ CCNode* createRankSeal(ModlyUser const& user, float size) {
 std::string translateTag(std::string const& tag) {
     if (Localization::get().getLanguage() != Localization::Language::ENGLISH) return tag;
 
-    // Spanish keys matched as raw UTF-8 bytes, as they arrive from the server.
+    // spanish keys matched as raw utf-8 bytes, as they arrive from the server.
     static std::unordered_map<std::string, std::string> const translations = {
         {"Desarrollador", "Developer"},
         {"Dise\xC3\xB1" "ador", "Designer"},

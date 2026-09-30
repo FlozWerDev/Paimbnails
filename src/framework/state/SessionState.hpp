@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-// Transient state reset on game close; persistent keys stay in SavedValue.
+// transient state reset on game close; persistent keys stay in savedvalue.
 
 namespace paimon {
 
@@ -11,7 +11,7 @@ struct VerificationContext {
     bool reopenQueue          = false;
     bool fromReportPopup      = false;
     int  queueLevelID         = -1;
-    int  queueCategory        = -1;   // PendingCategory enum
+    int  queueCategory        = -1;   // pendingcategory enum
     int  verificationCategory = -1;   // for popups
 };
 

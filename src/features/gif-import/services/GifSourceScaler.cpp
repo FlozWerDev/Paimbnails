@@ -17,14 +17,10 @@ namespace paimon::gifimport {
 
 namespace {
 
-// Finest grid tracing ever looks at is twice requested (render mode compares
-// detail at 2x) and area sampling wants a couple pixels per cell. At four times
-// the grid nothing visible gets lost.
+// four pixels per grid cell cover the finest tracing grid and its area samples.
 constexpr int kWorkingFactor = 4;
 constexpr int kMinWorking = 128;
-// The importer ignores alpha below this value by default. If the GPU path
-// returns only weaker alpha, the next stage reports a perfectly good image as
-// completely transparent, so treat that result as unusable and retry on CPU.
+// retry on the cpu when gpu alpha falls below the importer threshold.
 constexpr std::uint8_t kImportAlphaThreshold = 96;
 
 bool hasVisibleAlpha(SourceAnimation const& animation) {
@@ -36,9 +32,7 @@ bool hasVisibleAlpha(SourceAnimation const& animation) {
     return false;
 }
 
-// each frame leaks half a dozen render targets. Without their own pool they
-// release at frame end, and a whole video eats memory at once before the
-// collector runs.
+// a local autorelease pool frees render targets between frames instead of after the whole video.
 struct FramePool {
     FramePool() { CCPoolManager::sharedPoolManager()->push(); }
     ~FramePool() { CCPoolManager::sharedPoolManager()->pop(); }
@@ -193,9 +187,7 @@ bool reduceOnGpu(
         image->release();
         if (!usable) return false;
     }
-    // Some drivers/FBO combinations can complete the render pass while
-    // returning a transparent readback. Do not let that poison every large
-    // image: the caller will replace the target with the CPU reduction.
+    // some drivers return transparent readback from a completed pass; retry with cpu reduction.
     if (hasVisibleAlpha(source) && !hasVisibleAlpha(target)) {
         log::warn("[GifImport] GPU downscale returned no visible alpha; using CPU fallback");
         return false;
@@ -236,7 +228,7 @@ std::shared_ptr<SourceAnimation> blurSource(
         if (!gpu) break;
     }
     if (gpu && (!hasVisibleAlpha(*source) || hasVisibleAlpha(*target))) return target;
-    // Same kernel and clamp-to-edge sampling if GL is unavailable.
+    // same kernel and clamp-to-edge sampling if gl is unavailable.
     parallelFor(source->frames.size(), [&](std::size_t index) {
         auto input = source->frames[index].rgba;
         auto& output = target->frames[index].rgba;

@@ -509,7 +509,7 @@ void PaimonHubLayer::gdShowCategory(int idx) {
                         : Localization::get().getString("pai.guide.toggle.off"),
                     newState ? NotificationIcon::Success : NotificationIcon::None
                 )->show();
-                hub->gdShowCategory(0); // refresh the ON/OFF label
+                hub->gdShowCategory(0); // refresh the on/off label
             },
             0, "Asistente Paimon en el menu"
         });
@@ -585,7 +585,7 @@ void PaimonHubLayer::gdShowSearchResults(std::string const& query) {
     auto categories = getHubCategories();
 
     auto toLower = [](std::string s) {
-        std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         return s;
     };
     std::string lowerQuery = toLower(query);

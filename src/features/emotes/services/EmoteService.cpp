@@ -13,7 +13,7 @@
 using namespace geode::prelude;
 using namespace paimon::emotes;
 
-// Default API host; override at runtime via the paimon-emote-server-url saved value.
+// default api host; override at runtime via the paimon-emote-server-url saved value.
 static constexpr auto DEFAULT_EMOTE_SERVER = "https://paimbnailsbot.onrender.com";
 
 static std::string resolveEmoteServer() {
@@ -84,7 +84,7 @@ void EmoteService::fetchAllEmotes(CatalogCallback callback) {
         }
         callbacks = std::make_shared<std::vector<CatalogCallback>>();
         if (callback) callbacks->push_back(std::move(callback));
-        // The web request owns callbacks so shutdown cannot strand UI refs in the singleton.
+        // the web request owns callbacks so shutdown cannot strand ui refs in the singleton.
         m_catalogCallbacks = callbacks;
         m_fetching.store(true, std::memory_order_release);
         generation = m_catalogGeneration;
@@ -220,7 +220,7 @@ static std::string toLowerStr(std::string const& s) {
 }
 
 void EmoteService::buildIndex() {
-    // Must be called with m_mutex held
+    // must be called with m_mutex held
     m_nameIndex.clear();
     m_gifEmotes.clear();
     m_staticEmotes.clear();

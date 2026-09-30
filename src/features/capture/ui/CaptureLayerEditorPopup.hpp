@@ -35,7 +35,7 @@ private:
     bool m_allCollapsed = false;
 
     struct LayerEntry {
-        // WeakRef: level can die under the popup; lock before every read.
+        // weakref: level can die under the popup; lock before every read.
         geode::WeakRef<cocos2d::CCNode> node;
         std::string name;
         bool currentVisibility = true;

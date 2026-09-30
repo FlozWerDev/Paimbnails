@@ -13,7 +13,7 @@ namespace paimon::gifimport {
 
 namespace {
 
-// angles tried when stretching the ellipse. Sixteen split the half-turn for
+// angles tried when stretching the ellipse. sixteen split the half-turn for
 // diagonal strokes.
 constexpr int kAngles = 16;
 // waists tried: full circle down to a 0.22 spindle for thin lines.
@@ -64,7 +64,7 @@ Primitive ellipse(
 }
 
 // missing cells the ellipse takes plus already-painted ones it repeats.
-// Repeats don't hurt (same color), but ties break toward less overlap.
+// repeats don't hurt (same color), but ties break toward less overlap.
 struct Gain {
     int fresh = 0;
     int repeated = 0;
@@ -232,9 +232,7 @@ std::vector<Primitive> vectorizeCircles(
             target[static_cast<std::size_t>(position)] = 1;
         }
     }
-    // where the ellipse may grow unseen: its own cells plus ones an upper layer
-    // covers later. Void excluded (growth only fattens the silhouette), except
-    // corner peaks.
+    // growth may cover same-color cells or cells hidden by later layers; void would enlarge the silhouette.
     std::vector<std::uint8_t> room = target;
     if (blocked.size() == cells) {
         for (std::size_t position = 0; position < cells; ++position) {
@@ -330,9 +328,7 @@ std::vector<Primitive> vectorizeCircles(
                 }
             }
             if (bestGain.fresh <= 0) {
-                // a cell no ellipse reaches without covering another color keeps
-                // its own, just big enough to paint its center. Without this
-                // the loop never ends.
+                // an unreachable cell needs its own ellipse to guarantee progress.
                 best = ellipse(seed, kMinRadius, kMinRadius, 0.f, color, layer);
                 remaining[static_cast<std::size_t>(seedCell)] = 0;
             }

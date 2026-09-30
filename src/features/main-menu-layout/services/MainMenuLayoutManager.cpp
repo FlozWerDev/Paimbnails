@@ -1,4 +1,5 @@
 #include "MainMenuLayoutManager.hpp"
+#include "MainMenuLayoutSerialization.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
 
 #include "../ui/MainMenuDrawShapeNode.hpp"
@@ -77,21 +78,6 @@ namespace {
         container->setContentSize(CCDirector::get()->getWinSize());
         root->addChild(container, 0);
         return container;
-    }
-
-    std::string shapeKindToString(DrawShapeKind kind) {
-        switch (kind) {
-            case DrawShapeKind::Rectangle: return "rect";
-            case DrawShapeKind::RoundedRect: return "round";
-            case DrawShapeKind::Circle: return "circle";
-        }
-        return "round";
-    }
-
-    DrawShapeKind shapeKindFromString(std::string const& value) {
-        if (value == "rect") return DrawShapeKind::Rectangle;
-        if (value == "circle") return DrawShapeKind::Circle;
-        return DrawShapeKind::RoundedRect;
     }
 
     bool approximatelyEqual(MenuButtonLayout const& a, MenuButtonLayout const& b) {
@@ -270,7 +256,7 @@ namespace {
                           std::unordered_set<CCNode*> const& claimed) {
         if (!node) return;
 
-    // Skip the animated player layer; it is not editable.
+    // skip the animated player layer; it is not editable.
         if (node != root && typeinfo_cast<MenuGameLayer*>(node)) return;
 
         if (node != root && !shouldSkipDecorNode(node) && !claimed.count(node)) {
@@ -291,7 +277,7 @@ namespace {
         }
     }
 
-    // Adjacent BMFont labels sharing parent and line go in one entry.
+    // adjacent bmfont labels sharing parent and line go in one entry.
     void emitGroupedDecorLabels(CCNode* root, std::vector<EditableMenuButton>& out, int& decorCount,
                                 std::unordered_set<CCNode*> const& claimed) {
         if (!root) return;
@@ -367,15 +353,15 @@ namespace {
                                       std::unordered_set<CCNode*> const& claimed) {
         if (!node || decorCount >= 300) return;
 
-    // Skip the animated player layer; it is not editable.
+    // skip the animated player layer; it is not editable.
         if (node != root && typeinfo_cast<MenuGameLayer*>(node)) return;
 
-    // Skip per-glyph BMFont children.
+    // skip per-glyph bmfont children.
         if (typeinfo_cast<CCLabelBMFont*>(node)) {
             return;
         }
 
-    // Do not recurse into batched sprites.
+    // do not recurse into batched sprites.
         bool isBatchNode = typeinfo_cast<CCSpriteBatchNode*>(node) != nullptr;
 
         if (node != root && !shouldSkipDecorNode(node) && !claimed.count(node)) {
@@ -421,7 +407,7 @@ namespace {
         }
     }
 
-    // LevelInfo layouts use non-empty IDs so entries survive level changes.
+    // levelinfo layouts use non-empty ids so entries survive level changes.
     void collectStableRecursive(CCNode* node, CCNode* root, std::vector<EditableMenuButton>& out, std::unordered_set<std::string>& keys) {
         if (!node) return;
 
@@ -468,90 +454,7 @@ namespace {
         }
     }
 
-    MenuButtonLayout parseLayout(matjson::Value const& value) {
-        MenuButtonLayout layout;
-        layout.position.x = static_cast<float>(value["x"].asDouble().unwrapOr(0.0));
-        layout.position.y = static_cast<float>(value["y"].asDouble().unwrapOr(0.0));
-        layout.scale = static_cast<float>(value["scale"].asDouble().unwrapOr(1.0));
-        layout.scaleX = static_cast<float>(value["scaleX"].asDouble().unwrapOr(layout.scale));
-        layout.scaleY = static_cast<float>(value["scaleY"].asDouble().unwrapOr(layout.scale));
-        layout.opacity = static_cast<float>(value["opacity"].asDouble().unwrapOr(1.0));
-        layout.hidden = value["hidden"].asBool().unwrapOr(false);
-        layout.layer = static_cast<int>(value["layer"].asInt().unwrapOr(0));
-        layout.linkGroup = value["linkGroup"].asString().unwrapOr("");
-        layout.hasColor = value["hasColor"].asBool().unwrapOr(false);
-        layout.color.r = static_cast<GLubyte>(value["r"].asInt().unwrapOr(255));
-        layout.color.g = static_cast<GLubyte>(value["g"].asInt().unwrapOr(255));
-        layout.color.b = static_cast<GLubyte>(value["b"].asInt().unwrapOr(255));
-        layout.fontFile = value["fontFile"].asString().unwrapOr("");
-        return layout;
-    }
 
-    matjson::Value toJson(std::string const& key, MenuButtonLayout const& layout) {
-        matjson::Value value = matjson::makeObject({});
-        value["key"] = key;
-        value["x"] = layout.position.x;
-        value["y"] = layout.position.y;
-        value["scale"] = layout.scale;
-        value["scaleX"] = layout.scaleX;
-        value["scaleY"] = layout.scaleY;
-        value["opacity"] = layout.opacity;
-        value["hidden"] = layout.hidden;
-        value["layer"] = layout.layer;
-        value["linkGroup"] = layout.linkGroup;
-        value["hasColor"] = layout.hasColor;
-        value["r"] = layout.color.r;
-        value["g"] = layout.color.g;
-        value["b"] = layout.color.b;
-        value["fontFile"] = layout.fontFile;
-        return value;
-    }
-
-    DrawShapeLayout parseShape(matjson::Value const& value) {
-        DrawShapeLayout layout;
-        layout.id = value["id"].asString().unwrapOr("");
-        layout.kind = shapeKindFromString(value["kind"].asString().unwrapOr("round"));
-        layout.position.x = static_cast<float>(value["x"].asDouble().unwrapOr(0.0));
-        layout.position.y = static_cast<float>(value["y"].asDouble().unwrapOr(0.0));
-        layout.scale = static_cast<float>(value["scale"].asDouble().unwrapOr(1.0));
-        layout.scaleX = static_cast<float>(value["scaleX"].asDouble().unwrapOr(layout.scale));
-        layout.scaleY = static_cast<float>(value["scaleY"].asDouble().unwrapOr(layout.scale));
-        layout.opacity = static_cast<float>(value["opacity"].asDouble().unwrapOr(0.75));
-        layout.hidden = value["hidden"].asBool().unwrapOr(false);
-        layout.width = static_cast<float>(value["width"].asDouble().unwrapOr(110.0));
-        layout.height = static_cast<float>(value["height"].asDouble().unwrapOr(70.0));
-        layout.cornerRadius = static_cast<float>(value["cornerRadius"].asDouble().unwrapOr(18.0));
-        layout.color.r = static_cast<GLubyte>(value["r"].asInt().unwrapOr(90));
-        layout.color.g = static_cast<GLubyte>(value["g"].asInt().unwrapOr(220));
-        layout.color.b = static_cast<GLubyte>(value["b"].asInt().unwrapOr(255));
-        layout.zOrder = static_cast<int>(value["zOrder"].asInt().unwrapOr(0));
-        layout.layer = static_cast<int>(value["layer"].asInt().unwrapOr(0));
-        layout.linkGroup = value["linkGroup"].asString().unwrapOr("");
-        return layout;
-    }
-
-    matjson::Value shapeToJson(DrawShapeLayout const& layout) {
-        matjson::Value value = matjson::makeObject({});
-        value["id"] = layout.id;
-        value["kind"] = shapeKindToString(layout.kind);
-        value["x"] = layout.position.x;
-        value["y"] = layout.position.y;
-        value["scale"] = layout.scale;
-        value["scaleX"] = layout.scaleX;
-        value["scaleY"] = layout.scaleY;
-        value["opacity"] = layout.opacity;
-        value["hidden"] = layout.hidden;
-        value["width"] = layout.width;
-        value["height"] = layout.height;
-        value["cornerRadius"] = layout.cornerRadius;
-        value["r"] = layout.color.r;
-        value["g"] = layout.color.g;
-        value["b"] = layout.color.b;
-        value["zOrder"] = layout.zOrder;
-        value["layer"] = layout.layer;
-        value["linkGroup"] = layout.linkGroup;
-        return value;
-    }
 }
 
 MainMenuLayoutManager& MainMenuLayoutManager::get() {
@@ -595,7 +498,7 @@ void MainMenuLayoutManager::load() {
         for (auto const& entry : defaults.unwrap()) {
             auto key = entry["key"].asString().unwrapOr("");
             if (key.empty()) continue;
-            m_defaults[key] = parseLayout(entry);
+            m_defaults[key] = layoutFromJson(entry);
         }
     }
 
@@ -603,14 +506,14 @@ void MainMenuLayoutManager::load() {
         for (auto const& entry : custom.unwrap()) {
             auto key = entry["key"].asString().unwrapOr("");
             if (key.empty()) continue;
-            m_custom[key] = parseLayout(entry);
+            m_custom[key] = layoutFromJson(entry);
         }
     }
 
     m_shapes.clear();
     if (auto shapes = root["shapes"].asArray()) {
         for (auto const& entry : shapes.unwrap()) {
-            auto shape = parseShape(entry);
+            auto shape = shapeFromJson(entry);
             if (!shape.id.empty()) {
                 m_shapes.push_back(std::move(shape));
             }
@@ -642,13 +545,13 @@ void MainMenuLayoutManager::save() {
 
     matjson::Value defaults = matjson::Value::array();
     for (auto const& [key, layout] : m_defaults) {
-        defaults.push(toJson(key, layout));
+        defaults.push(layoutToJson(key, layout));
     }
     root["defaults"] = defaults;
 
     matjson::Value custom = matjson::Value::array();
     for (auto const& [key, layout] : m_custom) {
-        custom.push(toJson(key, layout));
+        custom.push(layoutToJson(key, layout));
     }
     root["custom"] = custom;
 
@@ -693,7 +596,7 @@ std::vector<EditableMenuButton> MainMenuLayoutManager::collectButtons(CCNode* ro
     std::vector<EditableMenuButton> buttons;
     if (!root) return buttons;
 
-    // LevelInfo varies by level; use stable IDs only.
+    // levelinfo varies by level; use stable ids only.
     if (rootClassName(root) == "LevelInfoLayer") {
         std::unordered_set<std::string> keys;
         collectStableRecursive(root, root, buttons, keys);
@@ -704,7 +607,7 @@ std::vector<EditableMenuButton> MainMenuLayoutManager::collectButtons(CCNode* ro
     addStandaloneNode(root, buttons, "main-title", "Geometry Dash Title");
     addStandaloneNode(root, buttons, "player-username", "Profile Username");
 
-    // Claim existing buttons so decoration collectors cannot duplicate them.
+    // claim existing buttons so decoration collectors cannot duplicate them.
     std::unordered_set<CCNode*> claimed;
     claimed.reserve(buttons.size() * 2);
     for (auto const& b : buttons) {
@@ -728,7 +631,7 @@ void MainMenuLayoutManager::captureDefaultsAndApply(CCNode* root) {
     auto buttons = this->collectButtons(root);
     bool changed = false;
 
-    // Capture vanilla button positions once per session for Reset.
+    // capture vanilla button positions once per session for reset.
     for (auto const& button : buttons) {
         if (!button.node) continue;
         if (m_sessionDefaults.find(button.key) == m_sessionDefaults.end()) {
@@ -736,7 +639,7 @@ void MainMenuLayoutManager::captureDefaultsAndApply(CCNode* root) {
         }
     }
 
-    // MenuLayer and PauseLayer are stable; no dynamic-scene path is needed.
+    // menulayer and pauselayer are stable; no dynamic-scene path is needed.
 
     for (auto const& button : buttons) {
         if (!button.node) continue;
@@ -777,7 +680,7 @@ void MainMenuLayoutManager::captureDefaultsAndApply(CCNode* root) {
         this->save();
     }
 
-    // Disable AxisLayout or later updateLayout() calls will reset custom positions.
+    // disable axislayout or later updatelayout() calls will reset custom positions.
     std::unordered_set<CCMenu*> menusWithCustom;
     for (auto const& button : buttons) {
         if (!button.node) continue;
@@ -803,7 +706,7 @@ void MainMenuLayoutManager::captureDefaultsAndApply(CCNode* root) {
         MainMenuLayoutManager::applyLayout(button, effective);
     }
 
-    // Shapes belong to MenuLayer/PauseLayer, not LevelInfoLayer.
+    // shapes belong to menulayer/pauselayer, not levelinfolayer.
     if (rootClassName(root) != "LevelInfoLayer") {
         this->syncShapes(root, m_shapes);
     }
@@ -884,7 +787,7 @@ void MainMenuLayoutManager::commit(std::vector<EditableMenuButton> const& button
             continue;
         }
 
-    // Stable scenes can store the live position directly.
+    // stable scenes can store the live position directly.
         MenuButtonLayout toStore = current;
 
         if (approximatelyEqual(toStore, defaultIt->second)) {
@@ -1052,7 +955,7 @@ void MainMenuLayoutManager::applyLayout(CCNode* node, MenuButtonLayout const& la
 
     auto opacityByte = static_cast<GLubyte>(std::clamp(layout.opacity, 0.f, 1.f) * 255.f);
 
-    // Propagate opacity through composite buttons whose children do not inherit it.
+    // propagate opacity through composite buttons whose children do not inherit it.
     std::function<void(CCNode*, GLubyte)> setOpacityRecursive = [&](CCNode* n, GLubyte opacity) {
         if (!n) return;
         if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(n)) {

@@ -1,4 +1,4 @@
-// PaimonBlur realtime single pass for GIFs; keep in sync with fragmentShaderPaimonBlurRT.
+// paimonblur realtime single pass for gifs; keep in sync with fragmentshaderpaimonblurrt.
 #ifdef GL_ES
 precision mediump float;
 #endif

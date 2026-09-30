@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Geode/Geode.hpp>
+#include <Geode/utils/string.hpp>
 #include "FormatDetect.hpp"
 #include <filesystem>
 #include <fstream>
@@ -13,8 +14,9 @@
 #include <new>
 #include "ImageConverter.hpp"
 #include "LocalAssetStore.hpp"
+#include "BoundedFileRead.hpp"
 
-// stb_image handles formats outside CCImage's usual PNG/JPEG path.
+// stb_image handles formats outside ccimage's usual png/jpeg path.
 #include "stb_image.h"
 
 using cocos2d::CCTexture2D;
@@ -23,31 +25,61 @@ using cocos2d::CCImage;
 using cocos2d::ccTexParams;
 using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
 
-    namespace ImageLoadHelper {
+namespace ImageLoadHelper {
+
+    // main thread only: the snapshot reads gl state.
+    inline bool saveTextureToPng(CCTexture2D* texture, std::filesystem::path const& path) {
+        if (!texture || texture->getPixelsWide() <= 0 || texture->getPixelsHigh() <= 0) return false;
+        std::error_code ec;
+        if (!path.parent_path().empty()) std::filesystem::create_directories(path.parent_path(), ec);
+        if (ec) return false;
+        auto* sprite = cocos2d::CCSprite::createWithTexture(texture);
+        if (!sprite) return false;
+        sprite->setAnchorPoint({0.f, 0.f});
+        sprite->setPosition({0.f, 0.f});
+        auto* target = cocos2d::CCRenderTexture::create(texture->getPixelsWide(), texture->getPixelsHigh());
+        if (!target) return false;
+        target->beginWithClear(0.f, 0.f, 0.f, 0.f);
+        sprite->visit();
+        target->end();
+        auto* image = target->newCCImage(false);
+        if (!image) return false;
+        auto const filename = geode::utils::string::pathToString(path);
+        bool const saved = image->saveToFile(filename.c_str(), false);
+        image->release();
+        return saved && std::filesystem::exists(path, ec) && !ec;
+    }
 
     struct LoadedImage {
-        CCTexture2D* texture = nullptr;     // Retained; caller releases.
-        std::shared_ptr<uint8_t> buffer;    // RGBA data.
+        CCTexture2D* texture = nullptr;     // retained; caller releases.
+        std::shared_ptr<uint8_t> buffer;    // rgba data.
         int width = 0;
         int height = 0;
         bool success = false;
         std::string error;
     };
 
-    // Reject dimensions above 4096² (64 MB RGBA).
+    // reject dimensions above 4096² (64 mb rgba).
     static constexpr int kMaxImageDim = 4096;
+
+    inline std::vector<uint8_t> readBinaryFile(std::filesystem::path const& path, size_t maxSizeMB = 10) {
+        constexpr uintmax_t megabyte = 1024ull * 1024ull;
+        auto limit = std::numeric_limits<uintmax_t>::max();
+        if (maxSizeMB > 0 && maxSizeMB <= limit / megabyte) limit = static_cast<uintmax_t>(maxSizeMB) * megabyte;
+        return paimon::file::readBytes(path, limit);
+    }
 
     inline LoadedImage createFromRGBA(uint8_t const* rgba, int w, int h, bool copyBuffer = true) {
         LoadedImage result;
 
-        if (w <= 0 || h <= 0 || w > kMaxImageDim || h > kMaxImageDim) {
+        if (!rgba || w <= 0 || h <= 0 || w > kMaxImageDim || h > kMaxImageDim) {
             result.error = "invalid_dimensions";
             return result;
         }
 
         size_t rgbaSize = static_cast<size_t>(w) * static_cast<size_t>(h) * 4;
 
-        auto* tex = new (std::nothrow) CCTexture2D();
+        auto tex = geode::Ref<CCTexture2D>::adopt(new (std::nothrow) CCTexture2D());
         if (!tex) {
             geode::log::error("[ImageLoadHelper] bad_alloc creating {}x{} texture ({} bytes)", w, h, rgbaSize);
             result.error = "out_of_memory";
@@ -55,7 +87,6 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
         }
 
         if (!tex->initWithData(rgba, kCCTexture2DPixelFormat_RGBA8888, w, h, CCSize(w, h))) {
-            tex->release();
             result.error = "texture_error";
             return result;
         }
@@ -66,7 +97,6 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
         if (copyBuffer) {
             auto* rawBuffer = new (std::nothrow) uint8_t[rgbaSize];
             if (!rawBuffer) {
-                tex->release();
                 geode::log::error("[ImageLoadHelper] bad_alloc creating {}x{} texture buffer ({} bytes)", w, h, rgbaSize);
                 result.error = "out_of_memory";
                 return result;
@@ -77,7 +107,7 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
             result.buffer = buffer;
         }
 
-        result.texture = tex;
+        result.texture = tex.take();
         result.width = w;
         result.height = h;
         result.success = true;
@@ -94,20 +124,24 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
 
         int w = 0, h = 0, channels = 0;
         int const dataSize = static_cast<int>(fileSize);
-        if (!stbi_info_from_memory(fileData, dataSize, &w, &h, &channels)
-            || w <= 0 || h <= 0 || w > kMaxImageDim || h > kMaxImageDim) {
-            result.error = "invalid_image_data";
+        if (!stbi_info_from_memory(fileData, dataSize, &w, &h, &channels)) {
+            result.error = "unsupported_image_format";
+            return result;
+        }
+        if (w <= 0 || h <= 0 || w > kMaxImageDim || h > kMaxImageDim) {
+            result.error = "invalid_dimensions";
             return result;
         }
 
-        unsigned char* data = stbi_load_from_memory(fileData, dataSize, &w, &h, &channels, 4);
+        std::unique_ptr<unsigned char, decltype(&stbi_image_free)> data(
+            stbi_load_from_memory(fileData, dataSize, &w, &h, &channels, 4), stbi_image_free
+        );
         if (!data) {
             result.error = "image_open_error";
             return result;
         }
 
-        result = createFromRGBA(data, w, h, copyBuffer);
-        stbi_image_free(data);
+        result = createFromRGBA(data.get(), w, h, copyBuffer);
 
         if (!result.success) {
             result.error = "texture_error";
@@ -118,13 +152,7 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
     inline LoadedImage loadWithSTB(std::filesystem::path const& path) {
         LoadedImage result;
 
-        auto readRes = geode::utils::file::readBinary(path);
-        if (readRes.isErr()) {
-            result.error = "image_open_error";
-            return result;
-        }
-        auto& fileData = readRes.unwrap();
-
+        auto fileData = readBinaryFile(path, 0);
         if (fileData.empty()) {
             result.error = "image_open_error";
             return result;
@@ -133,8 +161,8 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
         return loadWithSTBFromMemory(fileData.data(), fileData.size());
     }
 
-    // decode a static image, stb_image first, then CCImage.
-    // maxSizeMB=0 disables the file-size limit.
+    // decode a static image, stb_image first, then ccimage.
+    // maxsizemb=0 disables the file-size limit.
     inline LoadedImage loadStaticImage(std::filesystem::path const& path, size_t maxSizeMB = 10) {
         LoadedImage result;
 
@@ -145,20 +173,15 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
                 result.error = "image_open_error";
                 return result;
             }
-            if (fileSize > maxSizeMB * 1024 * 1024) {
+            if (maxSizeMB <= std::numeric_limits<uintmax_t>::max() / (1024ull * 1024ull) &&
+                fileSize > static_cast<uintmax_t>(maxSizeMB) * 1024ull * 1024ull) {
                 result.error = fmt::format("Image too large (max {}MB)", maxSizeMB);
                 return result;
             }
         }
 
-        auto readRes = geode::utils::file::readBinary(path);
-        if (readRes.isErr()) {
-            result.error = "image_open_error";
-            return result;
-        }
-        auto& fileData = readRes.unwrap();
-
-        if (fileData.empty()) {
+        auto fileData = readBinaryFile(path, maxSizeMB);
+        if (fileData.empty() || fileData.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
             result.error = "image_open_error";
             return result;
         }
@@ -166,16 +189,16 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
         {
             auto stbResult = loadWithSTBFromMemory(fileData.data(), fileData.size());
             if (stbResult.success) return stbResult;
-            if (stbResult.error == "invalid_image_data") return stbResult;
+            if (stbResult.error == "invalid_image_data" || stbResult.error == "invalid_dimensions") return stbResult;
         }
 
         {
             CCImage img;
-            if (img.initWithImageData(const_cast<uint8_t*>(fileData.data()), fileData.size())) {
+            if (img.initWithImageData(fileData.data(), static_cast<int>(fileData.size()))) {
                 int w = img.getWidth();
                 int h = img.getHeight();
                 auto raw = img.getData();
-                if (raw && w > 0 && h > 0 && w <= kMaxImageDim && h <= kMaxImageDim) {
+                if (raw && w > 0 && h > 0 && w <= kMaxImageDim && h <= kMaxImageDim && img.getBitsPerComponent() == 8) {
                     int bpp = img.hasAlpha() ? 4 : 3;
 
                     size_t rgbaSize = static_cast<size_t>(w) * static_cast<size_t>(h) * 4;
@@ -197,25 +220,7 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
         return result;
     }
 
-    inline std::vector<uint8_t> readBinaryFile(std::filesystem::path const& path, size_t maxSizeMB = 10) {
-        if (maxSizeMB > 0) {
-            std::error_code ec;
-            auto fileSize = std::filesystem::file_size(path, ec);
-            if (ec || fileSize > maxSizeMB * 1024 * 1024) return {};
-        }
-
-        auto readRes = geode::utils::file::readBinary(path);
-        if (readRes.isErr()) return {};
-
-        auto& data = readRes.unwrap();
-        if (maxSizeMB > 0 && data.size() > maxSizeMB * 1024 * 1024) {
-            return {};
-        }
-
-        return std::move(data);
-    }
-
-    // Detect GIF/APNG from the first 64 bytes, then fall back to .gif.
+    // detect gif/apng from the first 64 bytes, then fall back to .gif.
     inline bool isGIF(std::filesystem::path const& path) {
         {
             std::ifstream file(path, std::ios::binary);
@@ -229,7 +234,7 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
             }
         }
         std::string ext = geode::utils::string::pathToString(path.extension());
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         return ext == ".gif";
     }
 
@@ -319,7 +324,7 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
         return loadAnimatedOrStatic(paimon::assets::pathFromUtf8(pathStr), maxSizeMB, createAnimated);
     }
 
-    // CPU bilinear fallback for cache downsampling when GPU rendering is unavailable.
+    // cpu bilinear fallback for cache downsampling when gpu rendering is unavailable.
     struct DownsampleResult {
         std::vector<uint8_t> pixels;
         int width = 0;

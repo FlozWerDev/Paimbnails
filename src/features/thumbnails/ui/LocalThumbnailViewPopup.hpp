@@ -31,7 +31,7 @@ using cocos2d::CCLabelBMFont;
 using cocos2d::CCSize;
 using cocos2d::CCObject;
 
-// Zoom/pan touch thumbnail popup with gallery; split from the heavy hook.
+// zoom/pan touch thumbnail popup with gallery; split from the heavy hook.
 class LocalThumbnailViewPopup : public geode::Popup, public FLAlertLayerProtocol {
 public:
     enum class NavDirection : uint8_t { None = 0, Left, Right };
@@ -77,7 +77,7 @@ protected:
     int m_invalidationListenerId = 0;
     geode::async::TaskHolder<geode::utils::web::WebResponse> m_ytRequestHolder;
 
-    // Local gallery (multi-thumbnail)
+    // local gallery (multi-thumbnail)
     std::vector<std::string> m_localThumbPaths;
     int m_localCurrentIndex = 0;
     bool m_viewingLocal = false; // true = browsing local, false = browsing remote
@@ -149,12 +149,12 @@ protected:
     void onOrderEdit(CCObject*);
     void updatePlayButton();
 
-    // Declared here, implemented in LevelInfoLayer.cpp (needs PaimonLevelInfoLayer).
+    // declared here, implemented in levelinfolayer.cpp (needs paimonlevelinfolayer).
     void onSettings(CCObject*);
 
     void onRecenter(CCObject*);
 
-    // FLAlertLayerProtocol - handles Copy ID button in onInfo popup
+    // flalertlayerprotocol - handles copy id button in oninfo popup
     void FLAlert_Clicked(FLAlertLayer* alert, bool btn2) override;
 
     static float clamp(float value, float min, float max);
@@ -177,5 +177,5 @@ public:
     static LocalThumbnailViewPopup* create(int32_t levelID, bool canAcceptUpload);
 };
 
-// Exported function, used from VerificationCenterLayer and others.
+// exported function, used from verificationcenterlayer and others.
 CCNode* createThumbnailViewPopup(int32_t levelID, bool canAcceptUpload, std::vector<Suggestion> const& suggestions);

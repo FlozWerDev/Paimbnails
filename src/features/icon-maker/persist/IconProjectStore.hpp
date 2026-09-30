@@ -1,9 +1,5 @@
 #pragma once
-//
-// Threading: all IconProjectStore methods MUST be called from the main thread.
-// The compiler runs off-thread but sends results back through
-// `Loader::queueInMainThread` before mutating store state.
-//
+// main thread only: compiler workers queue results before changing store state.
 
 #include "../data/IconProject.hpp"
 
@@ -16,7 +12,7 @@
 
 namespace paimon::icon_maker {
 
-// Lightweight summary kept in icons.json so the gallery renders without
+// lightweight summary kept in icons.json so the gallery renders without
 // parsing every project.json.
 struct IconIndexEntry {
     std::string  id;
@@ -32,14 +28,14 @@ class IconProjectStore final {
 public:
     static IconProjectStore& get();
 
-    // Idempotent — safe to call multiple times.
+    // idempotent — safe to call multiple times.
     void loadIndex();
 
     geode::Result<> saveIndex();
 
     std::vector<IconIndexEntry> const& list() const { return m_index; }
 
-    // Returns the assigned id (derived from name, made unique on collision).
+    // returns the assigned id (derived from name, made unique on collision).
     geode::Result<std::string> createProject(IconProject seed);
 
     geode::Result<IconProject> loadProject(std::string_view id);

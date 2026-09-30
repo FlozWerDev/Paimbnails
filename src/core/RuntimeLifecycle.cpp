@@ -1,5 +1,10 @@
 #include <Geode/Geode.hpp>
 #include "../features/profiles/services/ProfileThumbs.hpp"
+#include "../features/profiles/services/ProfileImageCache.hpp"
+#include "../features/profiles/services/ProfileImageService.hpp"
+#include "../features/icon-gradients/services/GradientImage.hpp"
+#include "../features/icon-gradients/services/GradientAnimationManager.hpp"
+#include "../features/twitch-requests/services/TwitchLevelBriefCache.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 #include "../features/dynamic-songs/services/DynamicSongManager.hpp"
 #include "../features/dynamic-songs/services/DynamicSongSubmerge.hpp"
@@ -61,7 +66,7 @@ void removePathIfExists(std::filesystem::path const& path, char const* label) {
     }
 }
 
-// Swallow exceptions so a failure in one phase doesn't abort the rest of shutdown.
+// swallow exceptions so a failure in one phase doesn't abort the rest of shutdown.
 template <typename Fn>
 void safeShutdownStep(char const* stepName, Fn&& fn) {
     try {
@@ -113,7 +118,7 @@ void cleanupDiskCache(char const* context) {
 }
 
 $on_game(Exiting) {
-    // EventBus first: subscriber lambdas crash in atexit once the WeakRefPool is gone.
+    // eventbus first: subscriber lambdas crash in atexit once the weakrefpool is gone.
     paimon::EventBus::get().beginShutdown();
 
     paimon::markRuntimeShuttingDown();
@@ -122,6 +127,21 @@ $on_game(Exiting) {
     paimon::icon_maker::IconShare::cancelPendingPick();
     paimon::collab::CollabManager::get().disconnect();
     FramebufferCapture::cancelPending();
+    safeShutdownStep("profile-image-service-shutdown", []() {
+        ProfileImageService::get().shutdown();
+    });
+    safeShutdownStep("profile-image-cache-shutdown", []() {
+        shutdownProfileImgCache();
+    });
+    safeShutdownStep("gradient-animation-shutdown", []() {
+        paimon::icon_gradients::GradientAnimationManager::get().shutdown();
+    });
+    safeShutdownStep("gradient-image-cache-shutdown", []() {
+        paimon::icon_gradients::shutdownGradientImageCache();
+    });
+    safeShutdownStep("twitch-level-cache-shutdown", []() {
+        paimon::twitch::TwitchLevelBriefCache::get().shutdown();
+    });
     paimon::ThreadTracker::get().shutdown();
     log::info("[SHUTDOWN] === BEGIN EXIT SEQUENCE ===");
 
@@ -195,7 +215,7 @@ $on_game(Exiting) {
         ProfileThumbs::get().clearNoProfileCache();
     });
 
-    // drop pending callbacks holding Refs; statics dying after CCPoolManager crash.
+    // drop pending callbacks holding refs; statics dying after ccpoolmanager crash.
     safeShutdownStep("profile-thumbs-clear-pending", []() {
         ProfileThumbs::get().clearPendingDownloads();
     });
@@ -220,7 +240,7 @@ $on_game(Exiting) {
     safeShutdownStep("dynamic-song-kill", []() {
         DynamicSongManager::get()->forceKill();
     });
-    // Before the FMOD engine goes away: releases the dive filter's DSPs.
+    // before the fmod engine goes away: releases the dive filter's dsps.
     safeShutdownStep("dynamic-song-submerge-shutdown", []() {
         paimon::dynsong::SubmergeEffect::get().shutdown();
     });
@@ -243,7 +263,7 @@ $on_game(Exiting) {
         CursorManager::get().releaseSharedResources();
     });
 
-    // release shared videos before MF dies; the static destructor crashes in msmpeg2vdec.dll.
+    // release shared videos before mf dies; the static destructor crashes in msmpeg2vdec.dll.
     safeShutdownStep("layer-bg-release-videos", []() {
         LayerBackgroundManager::get().releaseAllSharedVideos();
     });

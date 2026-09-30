@@ -1,4 +1,4 @@
-// Speculative preloads start from MenuLayer/Bootstrap, after Geode loads assets.
+// speculative preloads start from menulayer/bootstrap, after geode loads assets.
 #include <Geode/modify/LoadingLayer.hpp>
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../utils/MainThread.hpp"

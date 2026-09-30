@@ -4,14 +4,14 @@
 #include <Geode/cocos/extensions/GUI/CCControlExtension/CCScale9Sprite.h>
 #include <string>
 
-// hides vanilla brown CommentCell backgrounds (InfoLayer + ProfilePage).
+// hides vanilla brown commentcell backgrounds (infolayer + profilepage).
 // `using namespace prelude` stays in function bodies, not the header.
 namespace paimon::commentbg {
 
 inline bool shouldHideVanillaCommentBgNode(cocos2d::CCNode* node) {
     using namespace geode::prelude;
     if (!node) return false;
-    // getID() returns a view; converting to std::string allocated once per node.
+    // getid() returns a view; converting to std::string allocated once per node.
     auto const nodeID = node->getID();
     if (!nodeID.empty()) {
         if (nodeID.view().find("paimon-") != std::string_view::npos) return false;
@@ -42,11 +42,11 @@ inline void hideCommentCellBgs(cocos2d::CCNode* listNode) {
                     child->getChildByID("paimon-comment-bg-panel"_spr) ||
                     child->getChildByID("paimon-comment-bg-clip"_spr);
                 if (!hasPaimonBg) {
-                    // no nested CommentCells inside a cell; skip subtree.
+                    // no nested commentcells inside a cell; skip subtree.
                     continue;
                 }
 
-                // skip if already processed (loadFromComment clears this).
+                // skip if already processed (loadfromcomment clears this).
                 if (child->getUserObject("paimon-comment-bgs-hidden"_spr)) {
                     continue;
                 }

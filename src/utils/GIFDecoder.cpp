@@ -244,7 +244,7 @@ static bool lzwDecode(std::vector<uint8_t> const& compressed, std::vector<uint8_
     int dictSize = eoiCode + 1;
     int oldCode = -1;
 
-    // read LZW codes from an LSB-first accumulator.
+    // read lzw codes from an lsb-first accumulator.
     uint32_t bitBuffer = 0;
     int bitCount = 0;
     size_t bytePos = 0;
@@ -441,7 +441,7 @@ bool GIFDecoder::parseFrame(uint8_t const*& ptr, uint8_t const* end, RawFrame& f
                 frame.pixels[i * 4 + 2] = palette[colorIndex * 3 + 2];
                 frame.pixels[i * 4 + 3] = 255;
             } else {
-                // Out-of-range indices remain opaque black.
+                // out-of-range indices remain opaque black.
                 frame.pixels[i * 4 + 0] = 0;
                 frame.pixels[i * 4 + 1] = 0;
                 frame.pixels[i * 4 + 2] = 0;

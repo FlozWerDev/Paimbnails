@@ -11,7 +11,7 @@ inline constexpr int kMaxLevel = 200;
 inline constexpr int kLevelsPerTier = 10;
 inline constexpr int kTierCount = kMaxLevel / kLevelsPerTier;
 
-// Silhouette alone reads as progress from across the screen.
+// silhouette alone reads as progress from across the screen.
 enum class TierFrame {
     Pill,
     Shield,
@@ -39,11 +39,11 @@ struct Tier {
     uint32_t effects;
 };
 
-// Curve: 50(L-1)^2 + 150(L-1). Maxed accounts land ~150, L200 stays out of reach.
+// curve: 50(l-1)^2 + 150(l-1). maxed accounts land ~150, l200 stays out of reach.
 int64_t expForLevel(int level);
 int levelForExp(int64_t exp);
 
-// Span and offset of exp inside its own level.
+// span and offset of exp inside its own level.
 int64_t expSpanOfLevel(int level);
 int64_t expIntoLevel(int64_t exp);
 float levelProgress(int64_t exp);
@@ -53,7 +53,7 @@ Tier const& tierAt(int index);
 Tier const& tierForLevel(int level);
 int tierIndexForLevel(int level);
 
-// First level of the next tier, or kMaxLevel.
+// first level of the next tier, or kmaxlevel.
 int nextTierLevel(int index);
 
 } // namespace paimon::progression

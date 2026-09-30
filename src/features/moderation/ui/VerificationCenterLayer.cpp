@@ -506,7 +506,7 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
         btnX -= btnGap;
     }
 
-    // Several submitters can share one level; "ALL" only shows for bulk galleries.
+    // several submitters can share one level; "all" only shows for bulk galleries.
     if (m_current == PendingCategory::Verify && item.suggestions.size() > 1) {
         auto spr = ButtonSprite::create("ALL", 42, true, "bigFont.fnt", "GJ_button_02.png", 18.f, 0.45f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this,
@@ -860,7 +860,7 @@ std::string VerificationCenterLayer::selectedSuggestionFilename(int levelID) con
     return {};
 }
 
-// Accept one / all / reject share the same auth and reload.
+// accept one / all / reject share the same auth and reload.
 void VerificationCenterLayer::runQueueAction(int levelID, bool acceptAll, bool reject) {
     if (m_actionPending) return;
     if (!paimon::modauth::isVerified()) { paimon::modauth::showPanel(); return; }
@@ -877,7 +877,7 @@ void VerificationCenterLayer::runQueueAction(int levelID, bool acceptAll, bool r
         return;
     }
 
-    // acceptAll carries no filename on purpose: the server publishes the whole
+    // acceptall carries no filename on purpose: the server publishes the whole
     // gallery when it sees the flag (only the verify queue keeps one).
     std::string targetFilename;
     if (!acceptAll && m_current == PendingCategory::Verify) {
@@ -920,7 +920,7 @@ void VerificationCenterLayer::runQueueAction(int levelID, bool acceptAll, bool r
 
             if (success) {
                 PaimonNotify::create(Localization::get().getString(okKey).c_str(), okIcon)->show();
-                // Reload from the server: a level whose gallery still holds
+                // reload from the server: a level whose gallery still holds
                 // other submissions must stay in the list.
                 if (layer->getParent()) layer->switchTo(cat);
             } else {
@@ -939,15 +939,15 @@ void VerificationCenterLayer::runQueueAction(int levelID, bool acceptAll, bool r
 }
 
 void VerificationCenterLayer::onAccept(CCObject* sender) {
-    runQueueAction(static_cast<CCNode*>(sender)->getTag(), /*acceptAll=*/false, /*reject=*/false);
+    runQueueAction(static_cast<CCNode*>(sender)->getTag(), /*acceptall=*/false, /*reject=*/false);
 }
 
 void VerificationCenterLayer::onAcceptAll(CCObject* sender) {
-    runQueueAction(static_cast<CCNode*>(sender)->getTag(), /*acceptAll=*/true, /*reject=*/false);
+    runQueueAction(static_cast<CCNode*>(sender)->getTag(), /*acceptall=*/true, /*reject=*/false);
 }
 
 void VerificationCenterLayer::onReject(CCObject* sender) {
-    runQueueAction(static_cast<CCNode*>(sender)->getTag(), /*acceptAll=*/false, /*reject=*/true);
+    runQueueAction(static_cast<CCNode*>(sender)->getTag(), /*acceptall=*/false, /*reject=*/true);
 }
 
 void VerificationCenterLayer::onClaimLevel(CCObject* sender) {

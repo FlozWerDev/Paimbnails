@@ -12,7 +12,7 @@
 namespace paimon::volscroll {
 
 // keybind editor with mouse buttons and optional wheel capture.
-// keyboard saves to KeybindSettingV3; mouse/wheel to ExtendedKeybind.
+// keyboard saves to keybindsettingv3; mouse/wheel to extendedkeybind.
 
 class ExtendedKeybindEditPopup : public geode::Popup {
 public:
@@ -62,7 +62,7 @@ protected:
     SaveCallback m_onSave;
     bool m_allowScroll = true;
 
-    // pending edits, committed by Save.
+    // pending edits, committed by save.
     std::optional<geode::Keybind> m_pendingKeyboard;
     paimon::keybinds::ExtendedKeybind m_pendingExtended;
 

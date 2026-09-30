@@ -20,7 +20,7 @@ using namespace paimon::progression;
 
 namespace {
 
-// One chip per profile: tier badge plus level, sized for the username row.
+// one chip per profile: tier badge plus level, sized for the username row.
 CCNode* buildLevelChip(BadgeContext const& ctx, float height) {
     auto const& tier = tierForLevel(ctx.level);
 
@@ -66,7 +66,7 @@ CCNode* buildLevelChip(BadgeContext const& ctx, float height) {
 
 class $modify(ProgressionProfilePage, ProfilePage) {
     static void onModify(auto& self) {
-        // After the redesign so the username menu is already in its final shape.
+        // after the redesign so the username menu is already in its final shape.
         paimon::hooks::veryLatePost(self, "ProfilePage::loadPageFromUserInfo");
     }
 
@@ -95,7 +95,7 @@ class $modify(ProgressionProfilePage, ProfilePage) {
         if (!this->m_ownProfile && score) topUpVersusExp(score->m_accountID);
     }
 
-    // Versus XP is unpublished: draw now, redraw when the server answers.
+    // versus xp is unpublished: draw now, redraw when the server answers.
     void topUpVersusExp(int accountId) {
         if (accountId <= 0) return;
         if (!paimon::modules::isEnabled("paimbnails.versus.menu")) return;
@@ -119,7 +119,7 @@ class $modify(ProgressionProfilePage, ProfilePage) {
         auto* menu = typeinfo_cast<CCMenu*>(this->getChildByIDRecursive("username-menu"));
         if (!menu) return;
 
-        // Redesign moves the chip to its own header; a stale one may live elsewhere.
+        // redesign moves the chip to its own header; a stale one may live elsewhere.
         std::string const id = "paimon-level-badge"_spr;
         while (auto* existing = this->getChildByIDRecursive(id)) {
             existing->removeFromParent();
@@ -143,7 +143,7 @@ class $modify(ProgressionProfilePage, ProfilePage) {
     }
 };
 
-// First snapshot before any completion, or the next one reports a whole account as one gain.
+// first snapshot before any completion, or the next one reports a whole account as one gain.
 class $modify(ProgressionMenuLayer, MenuLayer) {
     $override
     bool init() {

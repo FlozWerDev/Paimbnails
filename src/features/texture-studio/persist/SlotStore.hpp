@@ -1,6 +1,6 @@
 #pragma once
 
-// Main thread only; exporter hops back via queueInMainThread before mutating slots.
+// main thread only; exporter hops back via queueinmainthread before mutating slots.
 
 #include "TextureProject.hpp"
 
@@ -13,7 +13,7 @@
 
 namespace paimon::texture_studio {
 
-// Summary entry in slots.json: grid renders without parsing every project.json.
+// summary entry in slots.json: grid renders without parsing every project.json.
 struct SlotIndexEntry {
     std::string  id;
     std::string  name;
@@ -26,7 +26,7 @@ class SlotStore final {
 public:
     static SlotStore& get();
 
-    // Idempotent — safe to call multiple times.
+    // idempotent — safe to call multiple times.
     void loadIndex();
 
     geode::Result<> saveIndex();
@@ -36,7 +36,7 @@ public:
     std::string const& activeSlotId() const { return m_activeSlotId; }
     geode::Result<> setActiveSlot(std::string id);
 
-    // makeUniqueId() suffixes on collision.
+    // makeuniqueid() suffixes on collision.
     geode::Result<std::string> createSlot(TextureProject seed);
 
     geode::Result<TextureProject> loadSlot(std::string_view id);

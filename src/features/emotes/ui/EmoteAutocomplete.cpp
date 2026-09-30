@@ -46,7 +46,7 @@ bool EmoteAutocomplete::init(
     m_menu->setVisible(false);
     this->addChild(m_menu, 1);
 
-    // Callers add this node without checking for null, so with the module off it
+    // callers add this node without checking for null, so with the module off it
     // just stays idle instead of polling the input.
     if (paimon::modules::isEnabled("paimbnails.emotes.social")) {
         this->scheduleUpdate();
@@ -137,7 +137,7 @@ void EmoteAutocomplete::rebuildSuggestions(
 
         Ref<CCNode> phRef = emotePh;
         EmoteCache::get().loadEmote(info, [phRef, EMOTE_SZ](CCTexture2D* tex, bool isGif, std::vector<uint8_t> const& gifData) {
-            // Same evict-before-run hazard as EmoteRenderer; hold a Ref.
+            // same evict-before-run hazard as emoterenderer; hold a ref.
             geode::Ref<CCTexture2D> texRef = tex;
             Loader::get()->queueInMainThread([phRef, texRef, isGif, gifData, EMOTE_SZ]() {
                 if (paimon::isRuntimeShuttingDown()) return;
@@ -173,7 +173,7 @@ void EmoteAutocomplete::rebuildSuggestions(
             btn->stopAllActions();
             btn->setScale(0.55f);
             btn->setOpacity(0);
-            // CCMenuItemSpriteExtra forwards opacity to its sprite.
+            // ccmenuitemspriteextra forwards opacity to its sprite.
             float delay = 0.025f * static_cast<float>(i);
             btn->runAction(CCSequence::create(
                 CCDelayTime::create(delay),

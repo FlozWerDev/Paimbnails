@@ -20,7 +20,7 @@ protected:
     void scheduleRebuild();
     void persist();
 
-    // Runs the dive and the surface back to back on whatever is playing, so
+    // runs the dive and the surface back to back on whatever is playing, so
     // the sliders can be judged by ear instead of by number.
     void previewDive();
     void previewSurface(float dt);

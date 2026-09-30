@@ -16,7 +16,7 @@ using namespace geode::prelude;
 
 namespace {
 
-// walks GJCommentListLayer -> BoomListView -> TableView -> CCContentLayer
+// walks gjcommentlistlayer -> boomlistview -> tableview -> cccontentlayer
 // (the node holding the cells); null when the hierarchy isn't built yet
 template <typename T>
 T findChildOfType(CCNode* parent) {
@@ -66,7 +66,7 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         int levelID = level->m_levelID.value();
         m_fields->m_levelID = levelID;
 
-        // reuse LevelInfoLayer's live thumbnail when available
+        // reuse levelinfolayer's live thumbnail when available
         if (paimon::ThumbnailBackgroundChangedEvent::s_lastLevelID == levelID &&
             paimon::ThumbnailBackgroundChangedEvent::getLastTexture()) {
             applyBlurredBackground(paimon::ThumbnailBackgroundChangedEvent::getLastTexture());
@@ -263,8 +263,8 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         LevelLeaderboard::keyBackClicked();
     }
 
-    // safety net: unsubscribe if the layer dies via scene-replace/popScene or
-    // any path skipping keyBackClicked; otherwise the listener leaks as a zombie
+    // safety net: unsubscribe if the layer dies via scene-replace/popscene or
+    // any path skipping keybackclicked; otherwise the listener leaks as a zombie
     $override
     void onExit() {
         unsubscribeBg();

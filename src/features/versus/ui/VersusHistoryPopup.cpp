@@ -41,7 +41,7 @@ char const* outcomeLetter(Outcome outcome) {
     }
 }
 
-// Days since the match, which reads better than a date in a list this short.
+// days since the match, which reads better than a date in a list this short.
 std::string agoLabel(int64_t playedAt) {
     if (playedAt <= 0) return {};
     auto const now = static_cast<int64_t>(std::time(nullptr));
@@ -155,7 +155,7 @@ void VersusHistoryPopup::buildRows() {
         rival->setPosition({44.f, y + 7.f});
         m_scroll->m_contentLayer->addChild(rival, 1);
 
-        // Rows written before the duel kept the score have none to show.
+        // rows written before the duel kept the score have none to show.
         std::string score;
         if (record.ownPercent > 0.f || record.rivalPercent > 0.f) {
             score = fmt::format("{}% / {}% - ", static_cast<int>(record.ownPercent),

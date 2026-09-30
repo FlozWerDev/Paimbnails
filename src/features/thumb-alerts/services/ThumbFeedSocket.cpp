@@ -26,7 +26,7 @@ constexpr float kKeepaliveSeconds = 45.f;
 constexpr float kFirstRetrySeconds = 5.f;
 constexpr float kMaxRetrySeconds = 300.f;
 
-// Server URL is a full origin; socket needs the bare host.
+// server url is a full origin; socket needs the bare host.
 std::string hostOf(std::string const& url) {
     std::string host = url;
     if (auto scheme = host.find("://"); scheme != std::string::npos) {
@@ -43,7 +43,7 @@ int pickShard() {
     return std::uniform_int_distribution<int>(0, kShards - 1)(rng);
 }
 
-// Setting exists on Windows only, the sole platform with a WebSocketClient.
+// setting exists on windows only, the sole platform with a websocketclient.
 bool liveWanted() {
 #ifdef GEODE_IS_WINDOWS
     return Mod::get()->getSettingValue<bool>("thumbalert-live");
@@ -110,7 +110,7 @@ void ThumbFeedSocket::connect() {
     m_connecting = true;
     auto const generation = ++m_generation;
 
-    // Callbacks land on the reader thread: hop to main before touching cocos or saves.
+    // callbacks land on the reader thread: hop to main before touching cocos or saves.
     bool const started = socket->connect(
         std::move(options),
         [generation] {
@@ -144,7 +144,7 @@ void ThumbFeedSocket::connect() {
     );
 
     if (!started) {
-        // No implementation or dead handshake; the poll already covers it.
+        // no implementation or dead handshake; the poll already covers it.
         m_connecting = false;
         PaimonDebug::log("[ThumbFeed] live feed unavailable, staying on the poll");
         return;
@@ -159,7 +159,7 @@ void ThumbFeedSocket::scheduleKeepalive() {
         auto& self = ThumbFeedSocket::get();
         if (generation != self.m_generation || !self.m_connected) return;
         if (paimon::isRuntimeShuttingDown()) return;
-        // Answered by the runtime without waking the Durable Object.
+        // answered by the runtime without waking the durable object.
         if (self.m_socket && self.m_socket->send("ping")) self.scheduleKeepalive();
     });
 }

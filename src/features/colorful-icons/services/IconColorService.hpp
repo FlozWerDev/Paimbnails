@@ -1,5 +1,5 @@
 #pragma once
-// Stateless: (desc + config + player colors) → color triple.
+// stateless: (desc + config + player colors) → color triple.
 
 #include "../PaimonIconsConfig.hpp"
 
@@ -8,10 +8,10 @@
 namespace paimon::icons {
 
 struct IconDescriptor {
-    int unlockTypeRaw = 0;  // GJItemIcon::m_unlockType, raw int (UnlockType enum class)
+    int unlockTypeRaw = 0;  // gjitemicon::m_unlocktype, raw int (unlocktype enum class)
     int iconID        = 1;
-    int displayIndex  = 0;  // Position in the visible list - used by Gradient mode
-    int totalCount    = 1;  // Total visible icons - used by Gradient mode
+    int displayIndex  = 0;  // position in the visible list - used by gradient mode
+    int totalCount    = 1;  // total visible icons - used by gradient mode
 };
 
 struct IconColorTriple {

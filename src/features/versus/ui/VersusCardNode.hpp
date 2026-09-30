@@ -6,9 +6,6 @@
 
 namespace paimon::versus {
 
-// One card: plate tinted by rarity, rim in the lighter shade, glyph in the
-// recessed window, name on the banner. Three sprites sharing one footprint, so
-// a new rarity is a colour and not another PNG.
 class VersusCardNode : public cocos2d::CCNode {
 public:
     static VersusCardNode* create(CardId id, float width);

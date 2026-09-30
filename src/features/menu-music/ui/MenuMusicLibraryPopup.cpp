@@ -308,8 +308,8 @@ void MenuMusicLibraryPopup::rebuildList() {
 
     auto qLower = geode::utils::string::toLower(m_query);
 
-    // ScrollLayer children grow in +Y, so accumulate the total height first
-    // and place each card at (totalH - y) to render newest-on-top.
+    // scrolllayer children grow in +y, so accumulate the total height first
+    // and place each card at (totalh - y) to render newest-on-top.
     std::vector<std::string> visibleIds;
     for (const auto& tid : orderedIds) {
         auto* track = lib.findTrack(tid);
@@ -708,7 +708,7 @@ void MenuMusicLibraryPopup::onRemoveTrack(CCObject* sender) {
             if (!confirm) return;
             auto& library = MenuMusicLibrary::get();
             if (!keepFavorite) {
-                library.removeTrack(id, /*deleteFiles=*/true);
+                library.removeTrack(id, /*deletefiles=*/true);
                 return;
             }
             if (library.deleteLocalAudio(id)) {

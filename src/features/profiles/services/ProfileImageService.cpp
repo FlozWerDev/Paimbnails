@@ -10,26 +10,21 @@
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/ThreadPool.hpp"
 #include "ProfileThumbs.hpp"
+#include "ProfileConfigSerialization.hpp"
 #include <Geode/loader/Log.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
 #include <algorithm>
 #include <chrono>
-#include <fstream>
+#include <memory>
+#include <limits>
+#include <stdexcept>
+#include <utility>
 #include <vector>
 
 using namespace geode::prelude;
 
 namespace {
 constexpr auto PROFILE_IMG_CACHE_MAX_AGE = std::chrono::hours(24 * 14);
-
-std::mutex& getProfileImgCachePruneMutex() {
-    static std::mutex mutex;
-    return mutex;
-}
-
-std::filesystem::path getProfileImgCacheDir() {
-    return Mod::get()->getSaveDir() / "profileimg_cache";
-}
 
 size_t getProfileImgCacheMaxBytes() {
     return std::clamp<size_t>(
@@ -39,10 +34,9 @@ size_t getProfileImgCacheMaxBytes() {
     );
 }
 
-void pruneProfileImgCache() {
-    std::lock_guard<std::mutex> lock(getProfileImgCachePruneMutex());
-
-    auto cacheDir = getProfileImgCacheDir();
+void pruneProfileImgCache(std::filesystem::path const& cacheDir, size_t maxBytes) {
+    std::lock_guard lock(profileImgDiskMutex());
+    if (paimon::isRuntimeShuttingDown()) return;
     std::error_code ec;
     if (!std::filesystem::exists(cacheDir, ec)) {
         return;
@@ -58,10 +52,10 @@ void pruneProfileImgCache() {
     uintmax_t totalBytes = 0;
     auto now = std::filesystem::file_time_type::clock::now();
 
-    for (auto const& entry : std::filesystem::directory_iterator(cacheDir, ec)) {
-        if (ec || !entry.is_regular_file()) {
-            continue;
-        }
+    for (std::filesystem::directory_iterator it(cacheDir, ec), end; !ec && it != end; it.increment(ec)) {
+        auto const& entry = *it;
+        std::error_code typeEc;
+        if (!entry.is_regular_file(typeEc) || typeEc || entry.path().extension() != ".dat") continue;
 
         std::error_code sizeEc;
         auto fileSize = entry.file_size(sizeEc);
@@ -77,15 +71,13 @@ void pruneProfileImgCache() {
 
         if (now - mtime > PROFILE_IMG_CACHE_MAX_AGE) {
             std::error_code rmEc;
-            std::filesystem::remove(entry.path(), rmEc);
-            continue;
+            if (std::filesystem::remove(entry.path(), rmEc) && !rmEc) continue;
         }
 
         totalBytes += fileSize;
         entries.push_back({entry.path(), mtime, fileSize});
     }
 
-    auto maxBytes = getProfileImgCacheMaxBytes();
     if (totalBytes <= maxBytes) {
         return;
     }
@@ -107,22 +99,19 @@ void pruneProfileImgCache() {
     }
 }
 
-int getProfileVariantSlot(int accountID) {
-    return accountID * 4;
-}
-
 std::string makeProfileGifKey(char const* prefix, int accountID) {
     return fmt::format("{}_{}", prefix, accountID);
 }
 
-std::filesystem::path getProfileImgCachePath(int accountID) {
-    return getProfileImgCacheDir() /
-           fmt::format("{}.dat", accountID);
-}
+paimon::ThreadPool* s_profileImagePool = nullptr;
+std::mutex s_profileImagePoolMutex;
+std::vector<std::weak_ptr<ProfileImageService::DownloadCallback>> s_profileImageCompletions;
 
 paimon::ThreadPool& profileImagePool() {
-    static auto* pool = new paimon::ThreadPool(2, "PaimonProfileImg");
-    return *pool;
+    std::lock_guard lock(s_profileImagePoolMutex);
+    if (paimon::isRuntimeShuttingDown()) throw std::runtime_error("profile image service is shutting down");
+    if (!s_profileImagePool) s_profileImagePool = new paimon::ThreadPool(2, "PaimonProfileImg");
+    return *s_profileImagePool;
 }
 
 int profileImageMaxDim() {
@@ -135,62 +124,78 @@ int profileImageMaxDim() {
 
 void decodeStaticProfileImageAsync(std::shared_ptr<std::vector<uint8_t>> data,
                                    ProfileImageService::DownloadCallback callback) {
-    if (!data || data->empty()) {
-        queueInMainThread([callback]() {
+    if (!callback || paimon::isRuntimeShuttingDown()) return;
+    auto completion = std::make_shared<ProfileImageService::DownloadCallback>(std::move(callback));
+    std::erase_if(s_profileImageCompletions, [](auto const& item) { return item.expired(); });
+    s_profileImageCompletions.emplace_back(completion);
+    auto fail = [completion]() {
+        queueInMainThread([completion]() {
+            if (paimon::isRuntimeShuttingDown()) return;
+            auto callback = std::exchange(*completion, nullptr);
             if (callback) callback(false, nullptr);
         });
+    };
+    if (!data || data->empty() || data->size() > 64ull * 1024 * 1024 ||
+        data->size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        fail();
         return;
     }
-
-    profileImagePool().enqueue([data = std::move(data), callback = std::move(callback)]() mutable {
-        if (paimon::isRuntimeShuttingDown()) return;
-
-        int w = 0;
-        int h = 0;
-        int channels = 0;
-        unsigned char* pixels = stbi_load_from_memory(
-            data->data(), static_cast<int>(data->size()), &w, &h, &channels, 4);
-
-        if (!pixels || w <= 0 || h <= 0 || w > 4096 || h > 4096) {
-            if (pixels) stbi_image_free(pixels);
-            queueInMainThread([callback = std::move(callback)]() mutable {
-                if (paimon::isRuntimeShuttingDown()) return;
-                if (callback) callback(false, nullptr);
-            });
-            return;
-        }
-
-        std::vector<uint8_t> rgba;
-        int outW = w;
-        int outH = h;
-        int maxDim = profileImageMaxDim();
-        if (w > maxDim || h > maxDim) {
-            auto ds = ImageLoadHelper::downsampleForCache(pixels, w, h, maxDim);
-            if (!ds.pixels.empty() && ds.width > 0 && ds.height > 0) {
-                rgba = std::move(ds.pixels);
-                outW = ds.width;
-                outH = ds.height;
-            }
-        }
-        if (rgba.empty()) {
-            rgba.assign(pixels, pixels + static_cast<size_t>(w) * static_cast<size_t>(h) * 4);
-        }
-        stbi_image_free(pixels);
-
-        queueInMainThread([rgba = std::move(rgba), outW, outH, callback = std::move(callback)]() mutable {
+    try {
+        profileImagePool().enqueue([data = std::move(data), completion, fail]() {
             if (paimon::isRuntimeShuttingDown()) return;
-            auto loaded = ImageLoadHelper::createFromRGBA(rgba.data(), outW, outH, false);
-            if (!loaded.success || !loaded.texture) {
-                if (callback) callback(false, nullptr);
-                return;
+            try {
+                int w = 0, h = 0, channels = 0;
+                auto length = static_cast<int>(data->size());
+                if (!stbi_info_from_memory(data->data(), length, &w, &h, &channels) ||
+                    w <= 0 || h <= 0 || w > ImageLoadHelper::kMaxImageDim || h > ImageLoadHelper::kMaxImageDim) {
+                    fail();
+                    return;
+                }
+                std::shared_ptr<unsigned char> pixels(
+                    stbi_load_from_memory(data->data(), length, &w, &h, &channels, 4), stbi_image_free);
+                if (!pixels || w <= 0 || h <= 0 || w > ImageLoadHelper::kMaxImageDim || h > ImageLoadHelper::kMaxImageDim) {
+                    fail();
+                    return;
+                }
+                std::shared_ptr<std::vector<uint8_t>> resized;
+                auto maxDim = profileImageMaxDim();
+                if (w > maxDim || h > maxDim) {
+                    auto smaller = ImageLoadHelper::downsampleForCache(pixels.get(), w, h, maxDim);
+                    if (smaller.pixels.empty() || smaller.width <= 0 || smaller.height <= 0) {
+                        fail();
+                        return;
+                    }
+                    w = smaller.width;
+                    h = smaller.height;
+                    resized = std::make_shared<std::vector<uint8_t>>(std::move(smaller.pixels));
+                    pixels.reset();
+                }
+                if (paimon::isRuntimeShuttingDown()) return;
+                queueInMainThread([pixels = std::move(pixels), resized = std::move(resized), w, h, completion]() {
+                    if (paimon::isRuntimeShuttingDown()) return;
+                    auto callback = std::exchange(*completion, nullptr);
+                    if (!callback) return;
+                    ImageLoadHelper::LoadedImage loaded;
+                    try {
+                        loaded = ImageLoadHelper::createFromRGBA(resized ? resized->data() : pixels.get(), w, h, false);
+                    } catch (...) {
+                        callback(false, nullptr);
+                        return;
+                    }
+                    if (loaded.texture) loaded.texture->autorelease();
+                    callback(loaded.success && loaded.texture, loaded.texture);
+                });
+            } catch (...) {
+                fail();
             }
-            loaded.texture->autorelease();
-            if (callback) callback(true, loaded.texture);
         });
-    });
+    } catch (...) {
+        fail();
+    }
 }
 
 void pruneProfileImgCacheVariants(int accountID) {
+    std::lock_guard lock(profileImgDiskMutex());
     auto cacheDir = getProfileImgCacheDir();
     std::error_code ec;
     if (!std::filesystem::exists(cacheDir, ec)) {
@@ -198,10 +203,10 @@ void pruneProfileImgCacheVariants(int accountID) {
     }
 
     auto activeName = getProfileImgCachePath(accountID).filename();
-    for (auto const& entry : std::filesystem::directory_iterator(cacheDir, ec)) {
-        if (ec || !entry.is_regular_file()) {
-            continue;
-        }
+    for (std::filesystem::directory_iterator it(cacheDir, ec), end; !ec && it != end; it.increment(ec)) {
+        auto const& entry = *it;
+        std::error_code typeEc;
+        if (!entry.is_regular_file(typeEc) || typeEc || entry.path().extension() != ".dat") continue;
 
         auto stem = geode::utils::string::pathToString(entry.path().stem());
         if (stem != std::to_string(accountID) && stem.rfind(std::to_string(accountID) + "_", 0) != 0) {
@@ -219,12 +224,46 @@ void pruneProfileImgCacheVariants(int accountID) {
 }
 
 ProfileImageService::ProfileImageService() {
-    pruneProfileImgCache();
+    auto cacheDir = getProfileImgCacheDir();
+    auto maxBytes = getProfileImgCacheMaxBytes();
+    if (!paimon::isRuntimeShuttingDown()) {
+        profileImagePool().enqueue([cacheDir, maxBytes]() { pruneProfileImgCache(cacheDir, maxBytes); });
+    }
+}
+
+void ProfileImageService::shutdown() {
+    // queued main-thread deliveries can outlive the weakref pool during exit.
+    for (auto const& weak : s_profileImageCompletions) {
+        if (auto completion = weak.lock()) *completion = nullptr;
+    }
+    s_profileImageCompletions.clear();
+    paimon::ThreadPool* pool = nullptr;
+    {
+        std::lock_guard lock(s_profileImagePoolMutex);
+        pool = s_profileImagePool;
+    }
+    if (pool) pool->shutdown();
+    std::lock_guard lock(m_profileImgGifMutex);
+    m_profileImgGifKeys.clear();
+}
+
+ProfileImageService::UploadCallback ProfileImageService::uploadCompletion(
+    int accountID, UploadCallback callback, bool background) {
+    return [this, accountID, callback = std::move(callback), background](bool success, std::string const& message) {
+        if (paimon::isRuntimeShuttingDown()) return;
+        if (success) {
+            if (background) ProfileThumbs::get().deleteProfile(accountID);
+            invalidateProfileImgCache(accountID);
+            invalidateProfileImgDiskCache(accountID);
+            clearProfileImgGifKey(accountID);
+        }
+        if (callback) callback(success, message);
+    };
 }
 
 std::string ProfileImageService::getProfileImgGifKey(int accountID) const {
     std::lock_guard<std::mutex> lock(m_profileImgGifMutex);
-    auto it = m_profileImgGifKeys.find(getProfileVariantSlot(accountID));
+    auto it = m_profileImgGifKeys.find(accountID);
     if (it == m_profileImgGifKeys.end()) return "";
     return it->second;
 }
@@ -232,17 +271,18 @@ std::string ProfileImageService::getProfileImgGifKey(int accountID) const {
 void ProfileImageService::rememberProfileImgGifKey(int accountID, std::string const& gifKey) {
     if (gifKey.empty()) return;
     std::lock_guard<std::mutex> lock(m_profileImgGifMutex);
-    m_profileImgGifKeys[getProfileVariantSlot(accountID)] = gifKey;
+    m_profileImgGifKeys[accountID] = gifKey;
 }
 
 void ProfileImageService::clearProfileImgGifKey(int accountID) {
     std::lock_guard<std::mutex> lock(m_profileImgGifMutex);
-    m_profileImgGifKeys.erase(getProfileVariantSlot(accountID));
+    m_profileImgGifKeys.erase(accountID);
 }
 
 
 void ProfileImageService::uploadProfile(int accountID, std::vector<uint8_t> const& pngData,
                                         std::string const& username, UploadCallback callback) {
+    if (!callback || paimon::isRuntimeShuttingDown()) return;
     auto* accountManager = GJAccountManager::get();
     if (!accountManager || accountManager->m_accountID <= 0) {
         callback(false, "Debes estar logueado para subir miniaturas.");
@@ -251,24 +291,12 @@ void ProfileImageService::uploadProfile(int accountID, std::vector<uint8_t> cons
     if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
 
     HttpClient::get().uploadProfile(accountID, pngData, username,
-        [this, callback, accountID](bool success, std::string const& message) {
-            if (success) {
-                ProfileThumbs::get().deleteProfile(accountID);
-                invalidateProfileImgCache(accountID);
-                std::error_code ec;
-                auto cachePath = ::getProfileImgCachePath(accountID);
-                if (std::filesystem::exists(cachePath, ec)) {
-                    std::filesystem::remove(cachePath, ec);
-                    log::info("[ProfileImageService] Invalidated disk cache after profile upload for accountID={}", accountID);
-                }
-                clearProfileImgGifKey(accountID);
-            }
-            callback(success, message);
-        });
+        uploadCompletion(accountID, std::move(callback), true));
 }
 
 void ProfileImageService::uploadProfileGIF(int accountID, std::vector<uint8_t> const& gifData,
                                            std::string const& username, UploadCallback callback) {
+    if (!callback || paimon::isRuntimeShuttingDown()) return;
     auto* accountManager = GJAccountManager::get();
     if (!accountManager || accountManager->m_accountID <= 0) {
         callback(false, "Debes estar logueado para subir miniaturas.");
@@ -277,24 +305,12 @@ void ProfileImageService::uploadProfileGIF(int accountID, std::vector<uint8_t> c
     if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
 
     HttpClient::get().uploadProfileGIF(accountID, gifData, username,
-        [this, callback, accountID](bool success, std::string const& message) {
-            if (success) {
-                ProfileThumbs::get().deleteProfile(accountID);
-                invalidateProfileImgCache(accountID);
-                std::error_code ec;
-                auto cachePath = ::getProfileImgCachePath(accountID);
-                if (std::filesystem::exists(cachePath, ec)) {
-                    std::filesystem::remove(cachePath, ec);
-                    log::info("[ProfileImageService] Invalidated disk cache after GIF upload for accountID={}", accountID);
-                }
-                clearProfileImgGifKey(accountID);
-            }
-            callback(success, message);
-        });
+        uploadCompletion(accountID, std::move(callback), true));
 }
 
 void ProfileImageService::uploadProfileVideo(int accountID, std::vector<uint8_t> const& mp4Data,
                                              std::string const& username, UploadCallback callback) {
+    if (!callback || paimon::isRuntimeShuttingDown()) return;
     auto* accountManager = GJAccountManager::get();
     if (!accountManager || accountManager->m_accountID <= 0) {
         callback(false, "Debes estar logueado para subir miniaturas.");
@@ -303,29 +319,18 @@ void ProfileImageService::uploadProfileVideo(int accountID, std::vector<uint8_t>
     if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
 
     HttpClient::get().uploadProfileVideo(accountID, mp4Data, username,
-        [this, callback, accountID](bool success, std::string const& message) {
-            if (success) {
-                ProfileThumbs::get().deleteProfile(accountID);
-                invalidateProfileImgCache(accountID);
-                std::error_code ec;
-                auto cachePath = ::getProfileImgCachePath(accountID);
-                if (std::filesystem::exists(cachePath, ec)) {
-                    std::filesystem::remove(cachePath, ec);
-                    log::info("[ProfileImageService] Invalidated disk cache after video upload for accountID={}", accountID);
-                }
-                clearProfileImgGifKey(accountID);
-            }
-            callback(success, message);
-        });
+        uploadCompletion(accountID, std::move(callback), true));
 }
 
 
 void ProfileImageService::downloadProfile(int accountID, std::string const& username,
                                           DownloadCallback callback) {
+    if (!callback || paimon::isRuntimeShuttingDown()) return;
     if (!m_serverEnabled) { callback(false, nullptr); return; }
 
     HttpClient::get().downloadProfile(accountID, username,
         [profileAccountID = accountID, callback](bool success, std::vector<uint8_t> const& data, int, int) {
+            if (paimon::isRuntimeShuttingDown()) return;
             if (!success || data.empty()) { callback(false, nullptr); return; }
             ProfileImageService::processProfileBackgroundBytes(profileAccountID, data, callback);
         });
@@ -334,10 +339,10 @@ void ProfileImageService::downloadProfile(int accountID, std::string const& user
 void ProfileImageService::processProfileBackgroundBytes(int profileAccountID,
                                                         std::vector<uint8_t> const& data,
                                                         DownloadCallback callback) {
-    if (data.empty()) { callback(false, nullptr); return; }
+    if (!callback || paimon::isRuntimeShuttingDown()) return;
+    if (profileAccountID <= 0 || data.empty() || data.size() > 64ull * 1024 * 1024) { callback(false, nullptr); return; }
 
-    bool isMP4 = data.size() > 8 &&
-        data[4]=='f' && data[5]=='t' && data[6]=='y' && data[7]=='p';
+    bool isMP4 = paimon::format::isMp4(data.data(), data.size());
 
     if (isMP4) {
         std::string cacheKey = fmt::format("profile_video_{}", profileAccountID);
@@ -359,6 +364,7 @@ void ProfileImageService::processProfileBackgroundBytes(int profileAccountID,
         std::string gifKey = makeProfileGifKey("profile_gif", profileAccountID);
         AnimatedGIFSprite::createAsync(data, gifKey,
             [profileAccountID, gifKey, callback](AnimatedGIFSprite* sprite) {
+                if (paimon::isRuntimeShuttingDown()) return;
                 if (sprite) {
                     ProfileThumbs::get().cacheProfileGIF(profileAccountID, gifKey,
                         {255,255,255}, {255,255,255}, 0.6f);
@@ -375,29 +381,31 @@ void ProfileImageService::processProfileBackgroundBytes(int profileAccountID,
 
 
 void ProfileImageService::batchCheckProfiles(std::vector<int> const& accountIDs, BatchCheckCallback callback) {
+    if (!callback || paimon::isRuntimeShuttingDown()) return;
     if (!m_serverEnabled || accountIDs.empty()) {
         callback(false, {}, {});
         return;
     }
 
     HttpClient::get().batchCheckProfiles(accountIDs,
-        [callback](bool success, std::string const& response) {
+        [callback, requested = std::unordered_set<int>(accountIDs.begin(), accountIDs.end())](bool success, std::string const& response) {
+            if (paimon::isRuntimeShuttingDown()) return;
             if (!success || response.empty()) {
                 callback(false, {}, {});
                 return;
             }
 
             auto res = matjson::parse(response);
-            if (!res.isOk()) {
+            if (!res.isOk() || !res.unwrap().isObject()) {
                 callback(false, {}, {});
                 return;
             }
-            auto json = res.unwrap();
+            auto const& json = res.unwrap();
 
             std::unordered_set<int> found;
             paimon::json::forEachInArray(json["found"], [&](matjson::Value const& v) {
-                auto id = v.asInt();
-                if (id.isOk()) found.insert(id.unwrap());
+                auto id = paimon::json::integerOr<int>(v);
+                if (id > 0 && requested.contains(id)) found.insert(id);
             });
 
             std::unordered_map<int, ProfileConfig> configs;
@@ -408,53 +416,8 @@ void ProfileImageService::batchCheckProfiles(std::vector<int> const& accountIDs,
                     if (!accountIDRes) continue;
                     accountID = accountIDRes.unwrap();
 
-                    ProfileConfig config;
-                    config.hasConfig = true;
-                    if (val.contains("backgroundType")) config.backgroundType = val["backgroundType"].asString().unwrapOr("gradient");
-                    if (val.contains("blurIntensity"))  config.blurIntensity  = (float)val["blurIntensity"].asDouble().unwrapOr(3.0);
-                    if (val.contains("darkness"))       config.darkness       = (float)val["darkness"].asDouble().unwrapOr(0.2);
-                    if (val.contains("useGradient"))    config.useGradient    = val["useGradient"].asBool().unwrapOr(false);
-                    if (val.contains("colorA")) {
-                        auto c = val["colorA"];
-                        config.colorA.r = (GLubyte)c["r"].asInt().unwrapOr(255);
-                        config.colorA.g = (GLubyte)c["g"].asInt().unwrapOr(255);
-                        config.colorA.b = (GLubyte)c["b"].asInt().unwrapOr(255);
-                    }
-                    if (val.contains("colorB")) {
-                        auto c = val["colorB"];
-                        config.colorB.r = (GLubyte)c["r"].asInt().unwrapOr(255);
-                        config.colorB.g = (GLubyte)c["g"].asInt().unwrapOr(255);
-                        config.colorB.b = (GLubyte)c["b"].asInt().unwrapOr(255);
-                    }
-                    if (val.contains("separatorColor")) {
-                        auto c = val["separatorColor"];
-                        config.separatorColor.r = (GLubyte)c["r"].asInt().unwrapOr(0);
-                        config.separatorColor.g = (GLubyte)c["g"].asInt().unwrapOr(0);
-                        config.separatorColor.b = (GLubyte)c["b"].asInt().unwrapOr(0);
-                    }
-                    if (val.contains("separatorOpacity")) config.separatorOpacity = val["separatorOpacity"].asInt().unwrapOr(50);
-                    if (val.contains("widthFactor"))      config.widthFactor      = (float)val["widthFactor"].asDouble().unwrapOr(0.60);
-
-                    if (val.contains("gradientEffect")) config.gradientEffect = val["gradientEffect"].asString().unwrapOr("none");
-                    if (val.contains("gradientSpeed"))  config.gradientSpeed  = (float)val["gradientSpeed"].asDouble().unwrapOr(1.0);
-
-                    if (val.contains("useVideoAudio")) config.useVideoAudio = val["useVideoAudio"].asBool().unwrapOr(false);
-
-                    if (val.contains("commentBgType"))        config.commentBgType        = val["commentBgType"].asString().unwrapOr("none");
-                    if (val.contains("commentBgThumbnailId")) config.commentBgThumbnailId = val["commentBgThumbnailId"].asString().unwrapOr("");
-                    if (val.contains("commentBgThumbnailPos")) config.commentBgThumbnailPos = val["commentBgThumbnailPos"].asInt().unwrapOr(1);
-                    if (val.contains("commentBgBannerMode"))  config.commentBgBannerMode  = val["commentBgBannerMode"].asString().unwrapOr("background");
-                    if (val.contains("commentBgBlurType"))  config.commentBgBlurType  = val["commentBgBlurType"].asString().unwrapOr("gaussian");
-                    if (val.contains("commentBgBlur"))       config.commentBgBlur       = (float)val["commentBgBlur"].asDouble().unwrapOr(5.0);
-                    if (val.contains("commentBgDarkness"))    config.commentBgDarkness    = (float)val["commentBgDarkness"].asDouble().unwrapOr(0.35);
-                    if (val.contains("commentBgSolidOpacity")) config.commentBgSolidOpacity = val["commentBgSolidOpacity"].asInt().unwrapOr(128);
-                    if (val.contains("commentBgSolidColor")) {
-                        auto c = val["commentBgSolidColor"];
-                        config.commentBgSolidColor.r = (GLubyte)c["r"].asInt().unwrapOr(30);
-                        config.commentBgSolidColor.g = (GLubyte)c["g"].asInt().unwrapOr(30);
-                        config.commentBgSolidColor.b = (GLubyte)c["b"].asInt().unwrapOr(30);
-                    }
-
+                    if (accountID <= 0 || !requested.contains(accountID) || !val.isObject()) continue;
+                    auto config = paimon::profiles::parseConfig(val);
                     configs[accountID] = config;
                 }
             }
@@ -470,6 +433,7 @@ void ProfileImageService::uploadProfileImg(int accountID, std::vector<uint8_t> c
                                            std::string const& username,
                                            std::string const& contentType,
                                            UploadCallback callback) {
+    if (!callback || paimon::isRuntimeShuttingDown()) return;
     auto* accountManager = GJAccountManager::get();
     if (!accountManager || accountManager->m_accountID <= 0) {
         callback(false, "Debes estar logueado para subir imagen de perfil.");
@@ -478,19 +442,7 @@ void ProfileImageService::uploadProfileImg(int accountID, std::vector<uint8_t> c
     if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
 
     HttpClient::get().uploadProfileImg(accountID, imgData, username, contentType,
-        [this, callback, accountID](bool success, std::string const& message) {
-            if (success) {
-                invalidateProfileImgCache(accountID);
-                std::error_code ec;
-                auto cachePath = ::getProfileImgCachePath(accountID);
-                if (std::filesystem::exists(cachePath, ec)) {
-                    std::filesystem::remove(cachePath, ec);
-                    log::info("[ProfileImageService] Invalidated disk cache for accountID={}", accountID);
-                }
-                clearProfileImgGifKey(accountID);
-            }
-            callback(success, message);
-        });
+        uploadCompletion(accountID, std::move(callback), false));
 }
 
 void ProfileImageService::uploadProfileImgGIF(int accountID, std::vector<uint8_t> const& gifData,
@@ -500,31 +452,25 @@ void ProfileImageService::uploadProfileImgGIF(int accountID, std::vector<uint8_t
 
 
 void ProfileImageService::downloadProfileImg(int accountID, DownloadCallback callback, bool isSelf) {
+    if (!callback || paimon::isRuntimeShuttingDown()) return;
     if (!m_serverEnabled) { callback(false, nullptr); return; }
 
     HttpClient::get().downloadProfileImg(accountID,
         [this, profileAccountID = accountID, callback](bool success, std::vector<uint8_t> const& data, int, int) {
-            if (!success || data.empty()) {
+            if (paimon::isRuntimeShuttingDown()) return;
+            if (!success || data.empty() || data.size() > 64ull * 1024 * 1024) {
                 clearProfileImgGifKey(profileAccountID);
                 callback(false, nullptr);
                 return;
             }
 
-            {
-                auto cacheDir = getProfileImgCacheDir();
-                std::error_code ec;
-                std::filesystem::create_directories(cacheDir, ec);
-                pruneProfileImgCacheVariants(profileAccountID);
-                auto cachePath = ::getProfileImgCachePath(profileAccountID);
-                std::ofstream cacheFile(cachePath, std::ios::binary);
-                if (cacheFile) {
-                    cacheFile.write(reinterpret_cast<char const*>(data.data()), data.size());
-                }
-                pruneProfileImgCache();
-            }
+            pruneProfileImgCacheVariants(profileAccountID);
+            saveProfileImgToDisk(profileAccountID, data);
+            auto cacheDir = getProfileImgCacheDir();
+            auto maxBytes = getProfileImgCacheMaxBytes();
+            profileImagePool().enqueue([cacheDir, maxBytes]() { pruneProfileImgCache(cacheDir, maxBytes); });
 
-            bool isMP4img = data.size() > 8 &&
-                data[4]=='f' && data[5]=='t' && data[6]=='y' && data[7]=='p';
+            bool isMP4img = paimon::format::isMp4(data.data(), data.size());
             if (isMP4img) {
                 std::string videoKey = fmt::format("profileimg_video_{}", profileAccountID);
                 auto* videoSprite = VideoThumbnailSprite::createFromData(data, videoKey);
@@ -542,20 +488,14 @@ void ProfileImageService::downloadProfileImg(int accountID, DownloadCallback cal
             if (isGIF) {
                 std::string gifKey = makeProfileGifKey("profileimg_gif", profileAccountID);
                 AnimatedGIFSprite::createAsync(data, gifKey, [this, profileAccountID, gifKey, callback](AnimatedGIFSprite* sprite) {
+                    if (paimon::isRuntimeShuttingDown()) return;
                     if (!sprite || !sprite->getTexture()) {
-                        queueInMainThread([this, profileAccountID, callback]() {
-                            if (paimon::isRuntimeShuttingDown()) return;
-                            clearProfileImgGifKey(profileAccountID);
-                            callback(false, nullptr);
-                        });
+                        clearProfileImgGifKey(profileAccountID);
+                        callback(false, nullptr);
                         return;
                     }
-                    Ref<CCTexture2D> texture = sprite->getTexture();
-                    queueInMainThread([this, profileAccountID, gifKey, callback, texture]() {
-                        if (paimon::isRuntimeShuttingDown()) return;
-                        rememberProfileImgGifKey(profileAccountID, gifKey);
-                        callback(true, texture.data());
-                    });
+                    rememberProfileImgGifKey(profileAccountID, gifKey);
+                    callback(true, sprite->getTexture());
                 });
                 return;
             }
@@ -568,6 +508,7 @@ void ProfileImageService::downloadProfileImg(int accountID, DownloadCallback cal
 
 
 void ProfileImageService::downloadPendingProfile(int accountID, DownloadCallback callback) {
+    if (!callback || paimon::isRuntimeShuttingDown()) return;
     if (!m_serverEnabled) { callback(false, nullptr); return; }
 
     std::string url = HttpClient::get().getServerURL()
@@ -575,7 +516,8 @@ void ProfileImageService::downloadPendingProfile(int accountID, DownloadCallback
 
     HttpClient::get().downloadFromUrl(url,
         [callback](bool success, std::vector<uint8_t> const& data, int, int) {
-            if (!success || data.empty()) { callback(false, nullptr); return; }
+            if (paimon::isRuntimeShuttingDown()) return;
+            if (!success || data.empty() || data.size() > 64ull * 1024 * 1024) { callback(false, nullptr); return; }
             decodeStaticProfileImageAsync(std::make_shared<std::vector<uint8_t>>(data), callback);
         });
 }
@@ -583,55 +525,15 @@ void ProfileImageService::downloadPendingProfile(int accountID, DownloadCallback
 
 void ProfileImageService::uploadProfileConfig(int accountID, ProfileConfig const& config,
                                               ActionCallback callback) {
+    if (!callback || paimon::isRuntimeShuttingDown()) return;
     if (!m_serverEnabled) { callback(false, "Server disabled"); return; }
 
-    matjson::Value json;
-    json["backgroundType"] = config.backgroundType;
-    json["blurIntensity"]  = config.blurIntensity;
-    json["darkness"]       = config.darkness;
-    json["useGradient"]    = config.useGradient;
-
-    matjson::Value colorA;
-    colorA["r"] = (int)config.colorA.r; colorA["g"] = (int)config.colorA.g; colorA["b"] = (int)config.colorA.b;
-    json["colorA"] = colorA;
-
-    matjson::Value colorB;
-    colorB["r"] = (int)config.colorB.r; colorB["g"] = (int)config.colorB.g; colorB["b"] = (int)config.colorB.b;
-    json["colorB"] = colorB;
-
-    matjson::Value sepColor;
-    sepColor["r"] = (int)config.separatorColor.r;
-    sepColor["g"] = (int)config.separatorColor.g;
-    sepColor["b"] = (int)config.separatorColor.b;
-    json["separatorColor"] = sepColor;
-
-    json["separatorOpacity"] = config.separatorOpacity;
-    json["widthFactor"]      = config.widthFactor;
-
-    json["gradientEffect"] = config.gradientEffect;
-    json["gradientSpeed"]  = config.gradientSpeed;
-
-    json["useVideoAudio"] = config.useVideoAudio;
-
-    json["commentBgType"]        = config.commentBgType;
-    json["commentBgThumbnailId"] = config.commentBgThumbnailId;
-    json["commentBgThumbnailPos"] = config.commentBgThumbnailPos;
-    json["commentBgBannerMode"]  = config.commentBgBannerMode;
-    json["commentBgBlurType"]   = config.commentBgBlurType;
-    json["commentBgBlur"]       = config.commentBgBlur;
-    json["commentBgDarkness"]    = config.commentBgDarkness;
-    json["commentBgSolidOpacity"] = config.commentBgSolidOpacity;
-
-    matjson::Value commentBgSolidColor;
-    commentBgSolidColor["r"] = (int)config.commentBgSolidColor.r;
-    commentBgSolidColor["g"] = (int)config.commentBgSolidColor.g;
-    commentBgSolidColor["b"] = (int)config.commentBgSolidColor.b;
-    json["commentBgSolidColor"] = commentBgSolidColor;
-
+    auto json = paimon::profiles::serializeConfig(config);
     std::string jsonStr = json.dump(matjson::NO_INDENTATION);
 
     HttpClient::get().uploadProfileConfig(accountID, jsonStr,
         [callback, accountID, config](bool success, std::string const& msg) {
+            if (paimon::isRuntimeShuttingDown()) return;
             if (success) {
                 ProfileThumbs::get().deleteProfile(accountID);
                 ProfileThumbs::get().cacheProfileConfig(accountID, config);
@@ -642,64 +544,20 @@ void ProfileImageService::uploadProfileConfig(int accountID, ProfileConfig const
 
 void ProfileImageService::downloadProfileConfig(int accountID,
     geode::CopyableFunction<void(bool, ProfileConfig const&)> callback) {
+    if (!callback || paimon::isRuntimeShuttingDown()) return;
     if (!m_serverEnabled) { callback(false, ProfileConfig()); return; }
 
     HttpClient::get().downloadProfileConfig(accountID,
         [callback](bool success, std::string const& response) {
+            if (paimon::isRuntimeShuttingDown()) return;
             if (!success || response.empty()) { callback(false, ProfileConfig()); return; }
 
             auto res = matjson::parse(response);
             if (!res.isOk()) { callback(false, ProfileConfig()); return; }
-            auto json = res.unwrap();
+            auto const& json = res.unwrap();
 
-            ProfileConfig config;
-            config.hasConfig = true;
-
-            if (json.contains("backgroundType")) config.backgroundType = json["backgroundType"].asString().unwrapOr("gradient");
-            if (json.contains("blurIntensity"))  config.blurIntensity  = (float)json["blurIntensity"].asDouble().unwrapOr(3.0);
-            if (json.contains("darkness"))       config.darkness       = (float)json["darkness"].asDouble().unwrapOr(0.2);
-            if (json.contains("useGradient"))    config.useGradient    = json["useGradient"].asBool().unwrapOr(false);
-
-            if (json.contains("colorA")) {
-                auto c = json["colorA"];
-                config.colorA.r = (GLubyte)c["r"].asInt().unwrapOr(255);
-                config.colorA.g = (GLubyte)c["g"].asInt().unwrapOr(255);
-                config.colorA.b = (GLubyte)c["b"].asInt().unwrapOr(255);
-            }
-            if (json.contains("colorB")) {
-                auto c = json["colorB"];
-                config.colorB.r = (GLubyte)c["r"].asInt().unwrapOr(255);
-                config.colorB.g = (GLubyte)c["g"].asInt().unwrapOr(255);
-                config.colorB.b = (GLubyte)c["b"].asInt().unwrapOr(255);
-            }
-            if (json.contains("separatorColor")) {
-                auto c = json["separatorColor"];
-                config.separatorColor.r = (GLubyte)c["r"].asInt().unwrapOr(0);
-                config.separatorColor.g = (GLubyte)c["g"].asInt().unwrapOr(0);
-                config.separatorColor.b = (GLubyte)c["b"].asInt().unwrapOr(0);
-            }
-            if (json.contains("separatorOpacity")) config.separatorOpacity = json["separatorOpacity"].asInt().unwrapOr(50);
-            if (json.contains("widthFactor"))      config.widthFactor      = (float)json["widthFactor"].asDouble().unwrapOr(0.60);
-
-            if (json.contains("gradientEffect")) config.gradientEffect = json["gradientEffect"].asString().unwrapOr("none");
-            if (json.contains("gradientSpeed"))  config.gradientSpeed  = (float)json["gradientSpeed"].asDouble().unwrapOr(1.0);
-
-            if (json.contains("useVideoAudio")) config.useVideoAudio = json["useVideoAudio"].asBool().unwrapOr(false);
-
-            if (json.contains("commentBgType"))        config.commentBgType        = json["commentBgType"].asString().unwrapOr("none");
-            if (json.contains("commentBgThumbnailId")) config.commentBgThumbnailId = json["commentBgThumbnailId"].asString().unwrapOr("");
-            if (json.contains("commentBgThumbnailPos")) config.commentBgThumbnailPos = json["commentBgThumbnailPos"].asInt().unwrapOr(1);
-            if (json.contains("commentBgBannerMode"))  config.commentBgBannerMode  = json["commentBgBannerMode"].asString().unwrapOr("background");
-            if (json.contains("commentBgBlurType"))  config.commentBgBlurType  = json["commentBgBlurType"].asString().unwrapOr("gaussian");
-            if (json.contains("commentBgBlur"))       config.commentBgBlur       = (float)json["commentBgBlur"].asDouble().unwrapOr(5.0);
-            if (json.contains("commentBgDarkness"))    config.commentBgDarkness    = (float)json["commentBgDarkness"].asDouble().unwrapOr(0.35);
-            if (json.contains("commentBgSolidOpacity")) config.commentBgSolidOpacity = json["commentBgSolidOpacity"].asInt().unwrapOr(128);
-            if (json.contains("commentBgSolidColor")) {
-                auto c = json["commentBgSolidColor"];
-                config.commentBgSolidColor.r = (GLubyte)c["r"].asInt().unwrapOr(30);
-                config.commentBgSolidColor.g = (GLubyte)c["g"].asInt().unwrapOr(30);
-                config.commentBgSolidColor.b = (GLubyte)c["b"].asInt().unwrapOr(30);
-            }
+            auto config = paimon::profiles::parseConfig(json);
+            if (!config.hasConfig) { callback(false, config); return; }
 
             callback(true, config);
         });

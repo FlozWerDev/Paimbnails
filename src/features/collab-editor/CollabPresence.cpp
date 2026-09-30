@@ -165,7 +165,7 @@ void CollabPresence::scheduleRetry(uint64_t gen, int ms) {
 void CollabPresence::handleInvite(std::string const& room, std::string const& fromName) {
     if (room.empty()) return;
 
-    // Ignore self-invites to our own room; never interrupt an active session.
+    // ignore self-invites to our own room; never interrupt an active session.
     auto& mgr = CollabManager::get();
     if (mgr.connected() && mgr.roomCode() == room) return;
 

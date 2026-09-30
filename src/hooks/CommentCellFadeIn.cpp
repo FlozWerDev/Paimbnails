@@ -29,7 +29,7 @@ class $modify(PaimonCommentFadeIn, CommentCell) {
         m_fields->m_lastFade = now;
         m_fields->m_faded = true;
 
-        // CommentCell lacks CCRGBAProtocol; revealNode fades its RGBA children
+        // commentcell lacks ccrgbaprotocol; revealnode fades its rgba children
         paimon::fluid::revealNode(this, {.fadeDuration = 0.14f});
     }
 };

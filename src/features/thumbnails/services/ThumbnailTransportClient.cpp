@@ -49,8 +49,8 @@ std::string buildThumbnailRevisionToken(std::vector<TransportThumbnailInfo> cons
 }
 
 bool parseThumbnailResponse(std::string const& response, std::vector<TransportThumbnailInfo>& thumbnails) {
-    // Cap response size against memory exhaustion.
-    constexpr size_t kMaxResponseSize = 2 * 1024 * 1024; // 2 MB
+    // cap response size against memory exhaustion.
+    constexpr size_t kMaxResponseSize = 2 * 1024 * 1024; // 2 mb
     if (response.size() > kMaxResponseSize) {
         return false;
     }
@@ -72,7 +72,7 @@ bool parseThumbnailResponse(std::string const& response, std::vector<TransportTh
     }
 
     for (auto const& item : arrRes.unwrap()) {
-        // Cap count against rogue servers.
+        // cap count against rogue servers.
         constexpr size_t kMaxThumbnails = 200;
         if (thumbnails.size() >= kMaxThumbnails) break;
 
@@ -216,7 +216,7 @@ void ThumbnailTransportClient::getThumbnails(int levelId, ThumbnailListCallback 
             auto& callbacks = m_galleryInFlight[levelId];
             joinedInFlight = !callbacks.empty();
             callbacks.push_back(std::move(callback));
-            // Touch the entry so the flush captures the current generation.
+            // touch the entry so the flush captures the current generation.
             (void)m_galleryGenerations[levelId];
         }
     }
@@ -296,7 +296,7 @@ void ThumbnailTransportClient::flushBatchList() {
         return;
     }
 
-    // Snapshot generations: catch invalidations between dispatch and response.
+    // snapshot generations: catch invalidations between dispatch and response.
     std::unordered_map<int, uint64_t> generations;
     {
         std::lock_guard<std::mutex> lock(m_galleryMutex);
@@ -402,7 +402,7 @@ void ThumbnailTransportClient::flushBatchList() {
         });
 
     if (moreLeft) {
-        // Defensive re-schedule for a never-firing callback; compare_exchange dedups.
+        // defensive re-schedule for a never-firing callback; compare_exchange dedups.
         m_batchListFlushScheduled.store(false, std::memory_order_release);
         scheduleBatchListFlush();
     }
@@ -422,7 +422,7 @@ void ThumbnailTransportClient::getThumbnailInfo(int levelId, ActionCallback call
 }
 
 std::string ThumbnailTransportClient::getThumbnailURL(int levelId) {
-    // Direct CDN URL from the manifest first: zero Worker invocations.
+    // direct cdn url from the manifest first: zero worker invocations.
     auto manifest = HttpClient::get().getManifestEntry(levelId);
     if (manifest.has_value() && !manifest->cdnUrl.empty()) {
         return manifest->cdnUrl;
@@ -514,7 +514,7 @@ void ThumbnailTransportClient::downloadFromUrl(std::string const& url, DownloadC
             log::debug("[ThumbTransport] downloadFromUrl callback: OK bytes={}", data.size());
             callback(success, bytesToTexture(data));
         } else if (success && data.empty()) {
-            // CCTextureCache is main-thread only.
+            // cctexturecache is main-thread only.
             Loader::get()->queueInMainThread([callback, url]() {
                 auto* tex = CCTextureCache::sharedTextureCache()->textureForKey(url.c_str());
                 if (tex) {

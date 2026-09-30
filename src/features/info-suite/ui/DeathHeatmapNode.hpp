@@ -7,7 +7,7 @@ namespace paimon::info {
 
 class DeathHeatmapNode : public cocos2d::CCNode {
 public:
-    // Returns nullptr when the level has no deaths recorded yet.
+    // returns nullptr when the level has no deaths recorded yet.
     static DeathHeatmapNode* create(LevelProgress const& progress, bool practice,
                                     float width, float height);
 

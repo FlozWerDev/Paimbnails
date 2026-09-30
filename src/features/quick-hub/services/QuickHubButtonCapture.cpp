@@ -52,7 +52,7 @@ std::string classNameOf(CCObject* obj) {
     return name;
 }
 
-// CCMenu and scroll containers inherit CCLayer: discard explicitly, they live inside a screen.
+// ccmenu and scroll containers inherit cclayer: discard explicitly, they live inside a screen.
 bool isGenericLayerClass(std::string const& cls) {
     return cls.empty() || cls == "CCLayer" || cls == "CCLayerColor" ||
            cls == "CCLayerRGBA" || cls == "CCLayerGradient" || cls == "CCNode" ||
@@ -61,7 +61,7 @@ bool isGenericLayerClass(std::string const& cls) {
            cls == "BoomScrollLayer" || cls == "ListLayer" || cls == "TableView";
 }
 
-// Outermost GD layer owning the button; inner one is usually a scroll body.
+// outermost gd layer owning the button; inner one is usually a scroll body.
 std::string ownerLayerClass(CCNode* node) {
     std::string outermost;
     for (auto* current = node; current; current = current->getParent()) {
@@ -72,7 +72,7 @@ std::string ownerLayerClass(CCNode* node) {
     return outermost;
 }
 
-// Main scene layer: first CCLayer with its own class.
+// main scene layer: first cclayer with its own class.
 std::string sceneLayerClass(CCScene* scene) {
     if (!scene) return {};
     auto* children = scene->getChildren();
@@ -86,7 +86,7 @@ std::string sceneLayerClass(CCScene* scene) {
     return {};
 }
 
-// Early captures stored "CCMenu" as screen; ignoring those keeps the filter from dropping them.
+// early captures stored "ccmenu" as screen; ignoring those keeps the filter from dropping them.
 std::string usableOwnerClass(CustomQuickButton const& def) {
     return isGenericLayerClass(def.ownerClass) ? std::string() : def.ownerClass;
 }
@@ -96,7 +96,7 @@ std::string currentSceneClass() {
     return sceneLayerClass(director ? director->getRunningScene() : nullptr);
 }
 
-// Several names can point at one atlas crop; always pick the same (shortest, then alpha).
+// several names can point at one atlas crop; always pick the same (shortest, then alpha).
 bool betterFrameName(std::string_view candidate, std::string_view current) {
     if (current.empty()) return true;
     bool candGD = candidate.ends_with("_001.png");
@@ -106,7 +106,7 @@ bool betterFrameName(std::string_view candidate, std::string_view current) {
     return candidate < current;
 }
 
-// Crop -> name reverse index: sweep would query it hundreds of times, so build once per sheet load.
+// crop -> name reverse index: sweep would query it hundreds of times, so build once per sheet load.
 struct FrameKey {
     CCTexture2D* texture = nullptr;
     int x = 0, y = 0, w = 0, h = 0;
@@ -159,7 +159,7 @@ std::string frameNameForSprite(CCSprite* sprite) {
     return found == index.end() ? std::string() : found->second;
 }
 
-// Own sprite wins; else largest child area, so the item returns its icon, not a nine-slice corner.
+// own sprite wins; else largest child area, so the item returns its icon, not a nine-slice corner.
 void collectIconCandidate(CCNode* node, std::string& bestName, float& bestArea) {
     if (!node || typeinfo_cast<CCLabelBMFont*>(node)) return;
 
@@ -225,7 +225,7 @@ bool isActuallyVisible(CCNode* node) {
     return true;
 }
 
-// Disabled CCMenu ignores touches for all its children.
+// disabled ccmenu ignores touches for all its children.
 bool isInteractable(CCMenuItem* item) {
     if (!item || !item->isEnabled()) return false;
     if (!isActuallyVisible(item)) return false;
@@ -251,7 +251,7 @@ std::vector<int> makeNodePath(CCNode* node, CCScene* scene) {
     return reversePath;
 }
 
-// Node id path. Id-less levels stay empty as wildcards, so other mods can insert containers.
+// node id path. id-less levels stay empty as wildcards, so other mods can insert containers.
 std::vector<std::string> makeIdPath(CCNode* node, CCScene* scene) {
     std::vector<std::string> reversePath;
     for (auto* current = node; current && current != scene; current = current->getParent()) {
@@ -272,7 +272,7 @@ CCNode* resolvePath(CCScene* scene, std::vector<int> const& path) {
     return current;
 }
 
-// Depth-first search for the button matching idPath; dead ends keep searching other branches.
+// depth-first search for the button matching idpath; dead ends keep searching other branches.
 CCMenuItem* resolveIdPath(CCNode* root, std::vector<std::string> const& path, size_t depth) {
     if (!root) return nullptr;
     if (depth >= path.size()) {
@@ -287,7 +287,7 @@ CCMenuItem* resolveIdPath(CCNode* root, std::vector<std::string> const& path, si
     for (unsigned int i = 0; i < children->count(); ++i) {
         auto* child = typeinfo_cast<CCNode*>(children->objectAtIndex(i));
         if (!child) continue;
-        // Empty stretch in the original path accepts any middle node.
+        // empty stretch in the original path accepts any middle node.
         if (!want.empty() && child->getID() != want) continue;
         if (auto* found = resolveIdPath(child, path, depth + 1)) return found;
     }
@@ -307,7 +307,7 @@ CCPoint normalizedCenterOf(CCNode* node) {
     return ccp(world.x / win.width, world.y / win.height);
 }
 
-// Topmost wins: children walk in reverse since cocos orders by z, so a popup button beats the layer below.
+// topmost wins: children walk in reverse since cocos orders by z, so a popup button beats the layer below.
 CCMenuItem* findButtonAt(CCNode* node, CCPoint worldPoint) {
     if (!node || !node->isVisible()) return nullptr;
 
@@ -326,7 +326,7 @@ CCMenuItem* findButtonAt(CCNode* node, CCPoint worldPoint) {
     return CCRect(0.f, 0.f, size.width, size.height).containsPoint(local) ? item : nullptr;
 }
 
-// Two scores: identity tells THIS button from siblings, total adds shared context; both required.
+// two scores: identity tells this button from siblings, total adds shared context; both required.
 constexpr long kMinIdentity = 140;
 constexpr long kMinConfidence = 320;
 
@@ -341,7 +341,7 @@ Score evaluateCandidate(CCMenuItem* item, CustomQuickButton const& def) {
     Score score;
     auto addIdentity = [&](long points) { score.identity += points; score.total += points; };
 
-    // Buttons don't change screen type; node ids repeat across layers, so discard before scoring.
+    // buttons don't change screen type; node ids repeat across layers, so discard before scoring.
     if (auto wanted = usableOwnerClass(def); !wanted.empty()) {
         auto owner = ownerLayerClass(item);
         if (owner.empty()) score.total -= 60;
@@ -359,7 +359,7 @@ Score evaluateCandidate(CCMenuItem* item, CustomQuickButton const& def) {
     if (!def.icon.empty() && iconFrameOfItem(item) == def.icon) addIdentity(200);
     if (def.tag != 0 && item->getTag() == def.tag) addIdentity(140);
 
-    // Position breaks ties between twins (arrows, list rows).
+    // position breaks ties between twins (arrows, list rows).
     if (def.relX >= 0.f && def.relY >= 0.f) {
         auto rel = normalizedCenterOf(item);
         float dx = rel.x - def.relX;
@@ -386,7 +386,7 @@ Score evaluateCandidate(CCMenuItem* item, CustomQuickButton const& def) {
     return score;
 }
 
-// Signals evaluateCandidate can score. Without any, a scene sweep can't be trusted.
+// signals evaluatecandidate can score. without any, a scene sweep can't be trusted.
 bool hasAnyIdentity(CustomQuickButton const& def) {
     return !def.targetNodeId.empty() || !def.labelText.empty() || !def.icon.empty() ||
            def.tag != 0 || (def.relX >= 0.f && def.relY >= 0.f);
@@ -421,26 +421,26 @@ CCMenuItem* locateButton(CustomQuickButton const& def) {
     auto* scene = director ? director->getRunningScene() : nullptr;
     if (!scene) return nullptr;
 
-    // Id path first: survives nodes other mods add/remove, needs the button to have an id.
+    // id path first: survives nodes other mods add/remove, needs the button to have an id.
     if (!def.idPath.empty() && !def.idPath.back().empty()) {
         if (auto* item = resolveIdPath(scene, def.idPath, 0)) {
-            // Ids repeat across screens; check the layer matches.
+            // ids repeat across screens; check the layer matches.
             auto wanted = usableOwnerClass(def);
             if (wanted.empty() || ownerLayerClass(item) == wanted) return item;
         }
     }
 
-    // 2. Full sweep scoring all saved identity.
+    // 2. full sweep scoring all saved identity.
     if (hasAnyIdentity(def)) {
         ButtonMatch best;
         scanBestButton(scene, def, best);
         if (best.item && best.score.accepted()) return best.item;
     }
 
-    // 3. Last resort: original index path.
+    // 3. last resort: original index path.
     if (auto* item = typeinfo_cast<CCMenuItem*>(resolvePath(scene, def.nodePath))) {
         if (isInteractable(item)) {
-            // No saved identity: nothing to verify; else the node there must be the same button.
+            // no saved identity: nothing to verify; else the node there must be the same button.
             if (!hasAnyIdentity(def) || evaluateCandidate(item, def).accepted()) return item;
         }
     }
@@ -457,7 +457,7 @@ CCScene* buildSceneForClass(std::string const& cls) {
     return nullptr;
 }
 
-// After a scene change the button doesn't exist until the transition ends; retry a few frames first.
+// after a scene change the button doesn't exist until the transition ends; retry a few frames first.
 class PendingActivation : public CCNode {
 public:
     static void start(CustomQuickButton def) {
@@ -532,7 +532,7 @@ std::string humanName(std::string value) {
     for (char& ch : value) {
         if (ch == '-' || ch == '_') ch = ' ';
     }
-    // GD ids end in "_001"; noise in a display name.
+    // gd ids end in "_001"; noise in a display name.
     if (value.ends_with(" 001")) value.resize(value.size() - 4);
     while (!value.empty() && value.back() == ' ') value.pop_back();
     if (value.empty()) return "Boton rapido";
@@ -601,7 +601,7 @@ bool activateCustomQuickButton(std::string const& id) {
         return true;
     }
 
-    // Not here: if we can build its screen, go there and press it.
+    // not here: if we can build its screen, go there and press it.
     if (isNavigableScreen(definition->sceneClass) &&
         currentSceneClass() != definition->sceneClass) {
         if (auto* scene = buildSceneForClass(definition->sceneClass)) {

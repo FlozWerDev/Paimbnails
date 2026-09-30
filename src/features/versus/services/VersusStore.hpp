@@ -42,7 +42,7 @@ public:
     void setProfile(Mode mode, ModeProfile const& profile);
     RankInfo rank(Mode mode) const;
 
-    // What the two ladders have paid into the main progression bar so far.
+    // what the two ladders have paid into the main progression bar so far.
     int64_t versusExp() const;
 
     std::vector<MatchRecord> const& history() const { return m_history; }
@@ -52,8 +52,8 @@ public:
     Mode preferredMode() const { return m_mode; }
     void setPreferredMode(Mode mode);
 
-    // Never answers a format the queue no longer offers: the hub, the challenge
-    // and beginQueue all read this and would otherwise disagree on the rules.
+    // never answers a format the queue no longer offers: the hub, the challenge
+    // and beginqueue all read this and would otherwise disagree on the rules.
     Format preferredFormat(Mode mode) const;
     void setPreferredFormat(Mode mode, Format format);
 

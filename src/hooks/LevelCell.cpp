@@ -2666,7 +2666,7 @@ return;
         {
             auto fields = m_fields.self();
             if (!fields || fields->m_isBeingDestroyed || !fields->m_gradientLayer) return;
-            // non-PSG backgrounds never animate
+            // non-psg backgrounds never animate
             if (!fields->m_gradientIsPSG) return;
 
             // heal a stale type flag instead of casting an invalid node
@@ -3263,7 +3263,7 @@ return;
                     if (f && f->m_loadedInvalidationVersion != capturedVersion) return;
                 }
                 if (!success || !tex) {
-                    // no thumbnail anywhere; Tier-1 generates one in the background
+                    // no thumbnail anywhere; tier-1 generates one in the background
                     if (cell->m_level) paimon::autopreview::AutoPreviewQueue::get().enqueueIfEligible(cell->m_level);
                     auto f = cell->m_fields.self();
                     if (!f || !f->m_thumbnailFailed) {
@@ -3361,7 +3361,7 @@ return;
 
         if (fields->m_isBeingDestroyed) return;
 
-        // advance video on the GL thread
+        // advance video on the gl thread
         if (fields->m_hasVideo && fields->m_videoPlayer && fields->m_videoPlayer->isPlaying()) {
             fields->m_videoPlayer->update(dt);
 
@@ -3613,8 +3613,8 @@ return;
         if (paimon::hooks::g_suppressLevelCellEnhancements) {
             return;
         }
-        // same as loadCustomLevelCell: without this the cell stays compact
-        // with unadjusted vanilla layout, breaking ProfilePage cells
+        // same as loadcustomlevelcell: without this the cell stays compact
+        // with unadjusted vanilla layout, breaking profilepage cells
         if (!isInsideLevelListLayerContext()) {
             applyCompactLayoutAdjustments();
         }

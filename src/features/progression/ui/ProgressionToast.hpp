@@ -7,10 +7,10 @@
 
 namespace paimon::progression {
 
-// Slides over the running layer: XP gained plus one card per new badge.
+// slides over the running layer: xp gained plus one card per new badge.
 class ProgressionToast : public cocos2d::CCNode {
 public:
-    // Queues the celebration onto the running scene.
+    // queues the celebration onto the running scene.
     static void present(ProgressDelta const& delta, BadgeContext const& ctx);
 
 protected:

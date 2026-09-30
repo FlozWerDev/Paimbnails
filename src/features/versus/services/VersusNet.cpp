@@ -21,7 +21,7 @@ namespace {
 int s_rival = 0;
 Handlers s_handlers;
 
-// Token bucket. Globed asks not to spam and we promised a hard ceiling, so the
+// token bucket. globed asks not to spam and we promised a hard ceiling, so the
 // cap lives here rather than in every caller.
 constexpr float kBudgetPerSecond = 8.f;
 float s_budget = kBudgetPerSecond;
@@ -95,7 +95,7 @@ struct VsTick : globed::ServerEvent<VsTick, globed::EventServer::Game> {
         out.data.alive = flags & (1u << 0);
         out.data.practice = flags & (1u << 1);
         out.data.shielded = flags & (1u << 2);
-        // The hand was added after the tick shipped, so a client from before it
+        // the hand was added after the tick shipped, so a client from before it
         // simply never shows one.
         if (data.size() >= 9) {
             out.data.hand[0] = cardOrNone(data[7]);
@@ -202,8 +202,8 @@ bool fromRival(globed::EventOptions const& opts) {
 
 void registerEvents() {
 #ifdef PAIMON_VERSUS_GLOBED
-    // Touching each type is enough: ServerEvent registers itself on first use
-    // and waits for Globed on its own.
+    // touching each type is enough: serverevent registers itself on first use
+    // and waits for globed on its own.
     VsTick::_register();
     VsCard::_register();
     VsState::_register();
@@ -225,7 +225,7 @@ int rival() {
 }
 
 void listen(Handlers handlers) {
-    // stopListening clears the handlers too, so it goes first or it would wipe
+    // stoplistening clears the handlers too, so it goes first or it would wipe
     // the ones we were just given.
     stopListening();
     s_handlers = std::move(handlers);

@@ -42,17 +42,17 @@ void FfmpegBootstrap::uninstall() {
 
 std::string FfmpegBootstrap::releaseUrl() {
 #ifdef GEODE_IS_WINDOWS
-    // BtbN essentials build.
+    // btbn essentials build.
     return "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/"
            "ffmpeg-master-latest-win64-gpl.zip";
 #elif defined(GEODE_IS_MACOS)
-    // Evermeet redirects to the latest macOS build.
+    // evermeet redirects to the latest macos build.
     return "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip";
 #elif defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-    // Mobile downloads are unsupported.
+    // mobile downloads are unsupported.
     return "";
 #else
-    // BtbN Linux zip build.
+    // btbn linux zip build.
     return "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/"
            "ffmpeg-master-latest-linux64-gpl.zip";
 #endif
@@ -181,7 +181,7 @@ void FfmpegBootstrap::ensureInstalled(
                         data.size() / 1'048'576.0)});
             }
 
-            // Write the archive to disk for Geode::Unzip.
+            // write the archive to disk for geode::unzip.
             auto zipPath = destDir / "ffmpeg-download.zip";
             auto writeRes = geode::utils::file::writeBinary(zipPath, data);
             if (!writeRes) {
@@ -190,7 +190,7 @@ void FfmpegBootstrap::ensureInstalled(
                 return;
             }
 
-            // Find the binary entry; mirror layouts vary.
+            // find the binary entry; mirror layouts vary.
             auto unzipRes = geode::utils::file::Unzip::create(zipPath);
             if (!unzipRes) {
                 fail(fmt::format("Failed to open ffmpeg zip: {}",
@@ -204,11 +204,11 @@ void FfmpegBootstrap::ensureInstalled(
                 auto entryStr = geode::utils::string::pathToString(entry);
                 auto entryLower = geode::utils::string::toLower(entryStr);
                 auto needle = geode::utils::string::toLower(archiveEntryName);
-                // Match the requested filename case-insensitively.
+                // match the requested filename case-insensitively.
                 if (entryLower.size() >= needle.size() &&
                     entryLower.compare(entryLower.size() - needle.size(),
                                        needle.size(), needle) == 0) {
-                    // Prefer /bin/ entries over documentation copies.
+                    // prefer /bin/ entries over documentation copies.
                     if (entryToExtract.empty() ||
                         entryLower.find("/bin/") != std::string::npos) {
                         entryToExtract = entry;

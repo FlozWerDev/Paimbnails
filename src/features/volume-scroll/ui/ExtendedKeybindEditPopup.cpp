@@ -134,7 +134,7 @@ void ExtendedKeybindEditPopup::refreshDisplay() {
     if (m_pendingKeyboard.has_value() &&
         (m_pendingKeyboard->key != KEY_None || m_pendingKeyboard->modifiers != KeyboardModifier::None))
     {
-        // modifier-only binds read as "Ctrl", not "Ctrl+Unknown".
+        // modifier-only binds read as "ctrl", not "ctrl+unknown".
         text = paimon::keybinds::formatKeyboardKeybind(*m_pendingKeyboard);
     }
     if (!m_pendingExtended.isEmpty()) {
@@ -264,7 +264,7 @@ void ExtendedKeybindEditPopup::updateRecordButtonAppearance() {
 
 bool ExtendedKeybindEditPopup::captureKeyboard(enumKeyCodes key, KeyboardModifier mods) {
     if (key == KEY_Escape) {
-        // escape exits recording; pending edits survive until Save.
+        // escape exits recording; pending edits survive until save.
         exitRecordingMode();
         this->refreshDisplay();
         return true;

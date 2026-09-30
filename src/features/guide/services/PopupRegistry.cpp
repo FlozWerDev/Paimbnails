@@ -3,7 +3,7 @@
 #include "../../../utils/Localization.hpp"
 #include "../ui/PaimonGuideChatPopup.hpp"
 
-// Keep popup includes and their open() lambdas in sync when moving entries.
+// keep popup includes and their open() lambdas in sync when moving entries.
 #include "../../cursor/ui/CursorConfigPopup.hpp"
 #include "../../discord-presence/ui/DiscordConfigPopup.hpp"
 #include "../../pet/ui/PetConfigPopup.hpp"
@@ -174,11 +174,11 @@ void PopupRegistry::rebuild() {
 
 void PopupRegistry::registerAll() {
     {
-        // Cannot open without an account ID; point users to the profile editor.
+        // cannot open without an account id; point users to the profile editor.
         PopupEntry e;
         e.id = "profile-background";
         e.category = PopupCategory::Profile;
-        e.weight = 130;  // Most specific profile match.
+        e.weight = 130;  // most specific profile match.
         e.displayNameByLang["english"] = "Profile Background";
         e.displayNameByLang["spanish"] = "Fondo de Perfil";
         e.aliasesByLang["english"]     = {"profile bg", "profile wallpaper", "pfp background"};
@@ -195,7 +195,7 @@ void PopupRegistry::registerAll() {
         e.descriptionByLang["spanish"] =
             "<cy>Fondo de Perfil!</c> Elige el fondo que aparece en tu perfil. "
             "Abre primero el <cy>editor de foto de perfil</c>; la opcion esta ahi.";
-        // No action: requires accountID
+        // no action: requires accountid
         m_entries.push_back(std::move(e));
     }
     {
@@ -241,7 +241,7 @@ void PopupRegistry::registerAll() {
         e.descriptionByLang["spanish"] =
             "<cy>Ajustes de Perfil!</c> Privacidad, musica, badges y demas opciones del perfil. "
             "Abre el <cy>editor de foto de perfil</c> y toca el engranaje.";
-        // No action: requires accountID
+        // no action: requires accountid
         m_entries.push_back(std::move(e));
     }
     {
@@ -265,11 +265,11 @@ void PopupRegistry::registerAll() {
         e.descriptionByLang["spanish"] =
             "<cy>Musica de Perfil!</c> La cancion que suena cuando alguien visita tu perfil. "
             "Abre primero los <cy>Ajustes de Perfil</c>.";
-        // No action: requires accountID
+        // no action: requires accountid
         m_entries.push_back(std::move(e));
     }
     {
-        // Requires account ID and ProfileConfig, so it is description-only here.
+        // requires account id and profileconfig, so it is description-only here.
         PopupEntry e;
         e.id = "comment-background";
         e.category = PopupCategory::Profile;
@@ -290,7 +290,7 @@ void PopupRegistry::registerAll() {
         e.descriptionByLang["spanish"] =
             "<cy>Fondo de Comentarios!</c> Personaliza el fondo de los comentarios. "
             "Abrelo desde el <cy>editor de foto de perfil</c>.";
-        // No action: requires accountID
+        // no action: requires accountid
         m_entries.push_back(std::move(e));
     }
     {
@@ -314,7 +314,7 @@ void PopupRegistry::registerAll() {
         e.descriptionByLang["spanish"] =
             "<cy>Badge Personalizado!</c> Elige un icono que aparece al lado de tu nombre. "
             "Abrelo desde el <cy>editor de foto de perfil</c>.";
-        // No action: requires accountID
+        // no action: requires accountid
         m_entries.push_back(std::move(e));
     }
     {
@@ -338,7 +338,7 @@ void PopupRegistry::registerAll() {
         e.descriptionByLang["spanish"] =
             "<cy>Resenas de Perfil!</c> Mira y escribe resenas en perfiles. "
             "Abre un perfil y toca el icono de resenas.";
-        // No action: requires accountID
+        // no action: requires accountid
         m_entries.push_back(std::move(e));
     }
     {
@@ -362,7 +362,7 @@ void PopupRegistry::registerAll() {
         e.descriptionByLang["spanish"] =
             "<cy>Visitas de Perfil!</c> Mira quien visito tu perfil. "
             "Abre tu propio perfil y toca el icono de visitas.";
-        // No action: requires accountID
+        // no action: requires accountid
         m_entries.push_back(std::move(e));
     }
 
@@ -370,7 +370,7 @@ void PopupRegistry::registerAll() {
         PopupEntry e;
         e.id = "scene-background";
         e.category = PopupCategory::Background;
-        e.weight = 70; // Keep profile-background ahead of this generic match.
+        e.weight = 70; // keep profile-background ahead of this generic match.
         e.displayNameByLang["english"] = "Scene Background";
         e.displayNameByLang["spanish"] = "Fondo de Escena";
         e.aliasesByLang["english"]     = {
@@ -396,7 +396,7 @@ void PopupRegistry::registerAll() {
         e.descriptionByLang["spanish"] =
             "<cy>Fondo de Escena!</c> Configura el fondo por pantalla "
             "(menu, busqueda, gauntlet, level select). Imagenes, gradientes, video, shaders.";
-        // Background editor, opened on its Backgrounds tab.
+        // background editor, opened on its backgrounds tab.
         e.open = openPaiConfig();
         m_entries.push_back(std::move(e));
     }
@@ -679,7 +679,7 @@ void PopupRegistry::registerAll() {
         e.descriptionByLang["spanish"] =
             "<cy>Orden de Miniaturas!</c> Reordena las miniaturas de un nivel. "
             "Abre un nivel y toca el icono de orden.";
-        // No action: requires levelID + thumbnails
+        // no action: requires levelid + thumbnails
         m_entries.push_back(std::move(e));
     }
     {
@@ -749,7 +749,7 @@ void PopupRegistry::registerAll() {
         e.descriptionByLang["spanish"] =
             "<cy>Preferencias Para Ti!</c> Ajusta el feed de contenido recomendado. "
             "Encuentralo en la seccion Para Ti del Hub.";
-        // No action: requires an onConfirm callback
+        // no action: requires an onconfirm callback
         m_entries.push_back(std::move(e));
     }
 
@@ -1150,7 +1150,7 @@ void PopupRegistry::registerAll() {
         e.descriptionByLang["spanish"] =
             "<cy>Emotes!</c> Agrega emotes y stickers en comentarios y chat. Toca el boton de emote "
             "al lado de cualquier caja de texto de comentario.";
-        // No action: the picker is bound to a specific text input.
+        // no action: the picker is bound to a specific text input.
         m_entries.push_back(std::move(e));
     }
     {
@@ -1174,7 +1174,7 @@ void PopupRegistry::registerAll() {
         e.descriptionByLang["spanish"] =
             "<cy>Fuentes Personalizadas!</c> Inserta texto con fuentes personalizadas. Usa el boton de "
             "fuente al lado de las cajas de texto compatibles.";
-        // No action: bound to a specific text input.
+        // no action: bound to a specific text input.
         m_entries.push_back(std::move(e));
     }
     {
@@ -1220,7 +1220,7 @@ void PopupRegistry::registerAll() {
         e.descriptionByLang["spanish"] =
             "<cy>Layout del Menu Principal!</c> Arrastra y reestiliza los botones del menu. Abrelo con "
             "la tecla del Editor de Layout (configurala en Ajustes del Mod).";
-        // No action: lives on the main menu via keybind.
+        // no action: lives on the main menu via keybind.
         m_entries.push_back(std::move(e));
     }
     {
@@ -2061,7 +2061,7 @@ GuideIntent PopupRegistry::toIntent(PopupEntry const& entry) {
     intent.animation = entry.animation;
     intent.categoryId = categoryIdString(entry.category);
 
-    // Keywords combine the displayed name and aliases.
+    // keywords combine the displayed name and aliases.
     auto buildList = [&](std::string const& lang) {
         std::vector<std::string> kws;
         auto dnIt = entry.displayNameByLang.find(lang);
@@ -2078,7 +2078,7 @@ GuideIntent PopupRegistry::toIntent(PopupEntry const& entry) {
     intent.keywordsByLang["english"] = buildList("english");
     intent.keywordsByLang["spanish"] = buildList("spanish");
 
-    // Natural-language problem and how-to phrases.
+    // natural-language problem and how-to phrases.
     auto copyPhrases = [&](std::string const& lang) {
         auto it = entry.searchPhrasesByLang.find(lang);
         if (it != entry.searchPhrasesByLang.end()) {
@@ -2088,7 +2088,7 @@ GuideIntent PopupRegistry::toIntent(PopupEntry const& entry) {
     copyPhrases("english");
     copyPhrases("spanish");
 
-    // Response and description text used for matching.
+    // response and description text used for matching.
     if (entry.descriptionByLang.count("english")) {
         intent.responseByLang["english"] = entry.descriptionByLang.at("english");
         intent.descriptionByLang["english"] = entry.descriptionByLang.at("english");
@@ -2112,7 +2112,7 @@ std::string PopupRegistry::displayNameFor(std::string const& id,
         if (it != e.displayNameByLang.end()) return it->second;
         break;
     }
-    // Use a readable ID when no localized display name exists.
+    // use a readable id when no localized display name exists.
     std::string pretty = id;
     std::replace(pretty.begin(), pretty.end(), '-', ' ');
     if (!pretty.empty()) pretty[0] = static_cast<char>(std::toupper(

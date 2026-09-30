@@ -5,7 +5,7 @@
 
 namespace paimon::progression {
 
-// Grid tile, reused larger in the detail popup and level-up overlay.
+// grid tile, reused larger in the detail popup and level-up overlay.
 class BadgeIconNode : public cocos2d::CCNode {
 public:
     static BadgeIconNode* create(BadgeDef const& badge, BadgeContext const& ctx, float size);

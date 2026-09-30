@@ -4,9 +4,7 @@
 #include <Geode/loader/Event.hpp>
 #include <string>
 
-// Events for the "Paimon Guide" system. Emitted when the Guide toggle changes
-// (PaimonHubLayer / PaimonGuideService::setEnabled); MenuLayer listens to
-// enable/disable the dynamic Paimon without reloading the scene.
+// menu listeners update guide visibility without reloading the scene.
 
 namespace paimon::guide {
 
@@ -17,7 +15,7 @@ public:
     using Event::Event;
 };
 
-// Shared filter string for the global guide event.
+// shared filter string for the global guide event.
 inline char const* kGuideEventFilter = "guide.toggle";
 
 } // namespace paimon::guide

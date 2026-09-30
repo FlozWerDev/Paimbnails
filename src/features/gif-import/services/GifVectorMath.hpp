@@ -19,7 +19,7 @@ std::vector<Point> simplify(std::vector<Point> const& points, float tolerance);
 
 std::array<int, 4> bounds(std::vector<int> const& positions, int width);
 
-// Exact euclidean distance from each filled cell to the nearest empty one,
+// exact euclidean distance from each filled cell to the nearest empty one,
 // in two passes over the parabolas' lower envelope.
 std::vector<float> distanceField(
     std::vector<std::uint8_t> const& cells,

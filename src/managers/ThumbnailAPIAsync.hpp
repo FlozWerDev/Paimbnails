@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-// Future-based facade; prefer these in new code.
+// future-based facade; prefer these in new code.
 namespace paimon::thumb_api {
 
 using namespace geode::prelude;

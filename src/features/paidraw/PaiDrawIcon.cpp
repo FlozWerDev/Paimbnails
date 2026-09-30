@@ -7,7 +7,7 @@ using namespace geode::prelude;
 
 namespace paidraw {
 
-// GD's own paint frames so the icon matches vanilla art; each step degrades gracefully.
+// gd's own paint frames so the icon matches vanilla art; each step degrades gracefully.
 cocos2d::CCNode* createPaiDrawIcon(float targetSize) {
     auto* container = cocos2d::CCNode::create();
     container->setContentSize({targetSize, targetSize});

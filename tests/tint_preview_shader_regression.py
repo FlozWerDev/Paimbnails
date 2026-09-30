@@ -1,12 +1,4 @@
-"""Headless GLES2 regression for tint_preview.glsl. Run with python3 tests/tint_preview_shader_regression.py.
-
-Requires Mesa EGL/GLES2 shared libraries; no third-party Python packages.
-Compiles the real cell_vertex.glsl + tint_preview.glsl, draws crafted
-base/mask texels through every tint path, and checks pixels against a Python
-mirror of packgen::tintPixelFast/blendPixelFast (tolerance 2 LSB; verbatim
-passthrough pixels must match exactly). Also pins every uniform name the C++
-node pushes, so .glsl/C++ drift fails here instead of rendering black.
-"""
+"""gles2 tint pixel regression; requires mesa egl/gles2 shared libraries."""
 import ctypes as ct
 import math
 import os
@@ -88,7 +80,7 @@ def reference(src, m, colors, bright, sat, con, thresh, replace, apply_detail):
 
 
 W = 8
-# Bottom-up rows: readback pixel (x, y) samples texel row y from this array.
+# bottom-up rows: readback pixel (x, y) samples texel row y from this array.
 BASE = [
     [(200, 100, 50, 255), (100, 150, 200, 255), (180, 180, 180, 255), (90, 90, 200, 255),
      (10, 10, 10, 255), (123, 45, 67, 0), (150, 150, 150, 255), (77, 88, 99, 255)],
@@ -104,7 +96,7 @@ WHITE = (255, 255, 255)
 GLOW = (0, 255, 255)
 
 CASES = [
-    # name, colors(C1,C2,detail,glow), bright, sat, con, thresh, replace, applyDetail
+    # name, colors(c1,c2,detail,glow), bright, sat, con, thresh, replace, applydetail
     ("base", (C1, C2, WHITE, GLOW), 160, 1.0, 0.0, 0, False, False),
     ("detail", (C1, C2, (255, 0, 0), GLOW), 160, 1.0, 0.0, 0, False, True),
     ("replace", (C1, C2, WHITE, GLOW), 160, 1.0, 0.0, 0, True, False),

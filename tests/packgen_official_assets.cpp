@@ -1,16 +1,13 @@
-// Tests de PackGen v2 con los assets OFICIALES del juego.
-//
-// Lee las hojas reales de Geometry Dash (PNG + .plist) y comprueba el
+// tests de packgen v2 con los assets oficiales del juego.
+// lee las hojas reales de geometry dash (png + .plist) y comprueba el
 // nucleo sobre pixeles y marcos de verdad: tinte de iconos de jugador,
 // overlay con un glow oficial y re-empaquetado de los 1698 marcos de
-// GJ_GameSheetIcons. Tambien vuelca PPMs de antes/despues a la carpeta
+// gj_gamesheeticons. tambien vuelca ppms de antes/despues a la carpeta
 // de salida para inspeccion visual.
-//
-// Compila sin Geode (nucleo puro + stub de ccTypes + stb_image):
-//   g++ -std=c++17 -O2 -I tests/packgen_stubs -o /tmp/pgoff tests/packgen_official_assets.cpp
-//   /tmp/pgoff [dir-Resources] [dir-salida]
-//
-// Cada prueba es una funcion bool. main() las ejecuta todas y devuelve 0 si
+// compila sin geode (nucleo puro + stub de cctypes + stb_image):
+//   g++ -std=c++17 -o2 -i tests/packgen_stubs -o /tmp/pgoff tests/packgen_official_assets.cpp
+//   /tmp/pgoff [dir-resources] [dir-salida]
+// cada prueba es una funcion bool. main() las ejecuta todas y devuelve 0 si
 // pasan o 1 si alguna falla.
 
 #include <cstdint>
@@ -42,18 +39,16 @@ namespace {
     } \
 } while (0)
 
-// ---------------------------------------------------------------------------
-// Plist minimo: solo marcos, rect, rotacion y tamano fuente.
-// Soporta formato TexturePacker (textureRect/textureRotated/spriteSourceSize)
-// y formato cocos2d clasico (frame/rotated/sourceSize).
-// ---------------------------------------------------------------------------
+// plist minimo: solo marcos, rect, rotacion y tamano fuente.
+// soporta formato texturepacker (texturerect/texturerotated/spritesourcesize)
+// y formato cocos2d clasico (frame/rotated/sourcesize).
 
 struct PlistFrame {
     std::string name;
     int x = 0, y = 0, w = 0, h = 0;
     bool rotated = false;
-    int trimW = 0, trimH = 0;  // spriteSize: sprite recortado (enderezado)
-    int srcW = 0, srcH = 0;    // spriteSourceSize: original (metadata ruidosa)
+    int trimW = 0, trimH = 0;  // spritesize: sprite recortado (enderezado)
+    int srcW = 0, srcH = 0;    // spritesourcesize: original (metadata ruidosa)
 };
 
 std::string readFile(std::string const& path) {
@@ -109,7 +104,7 @@ std::vector<PlistFrame> parsePlist(std::string const& xml) {
         pos = ke + 6;
         if (key.size() < 5 || key.compare(key.size() - 4, 4, ".png") != 0)
             continue;
-        // El dict del marco termina en el primer </dict> (sin dicts anidados).
+        // el dict del marco termina en el primer </dict> (sin dicts anidados).
         std::size_t de = xml.find("</dict>", pos);
         if (de == std::string::npos) break;
         std::string chunk = xml.substr(pos, de - pos);
@@ -140,9 +135,7 @@ std::vector<PlistFrame> parsePlist(std::string const& xml) {
     return out;
 }
 
-// ---------------------------------------------------------------------------
-// Hoja oficial: PNG decodificado + marcos.
-// ---------------------------------------------------------------------------
+// hoja oficial: png decodificado + marcos.
 
 struct Sheet {
     std::string label;
@@ -173,11 +166,11 @@ struct Sheet {
     }
 };
 
-// Extrae el marco a FrameImage enderezado. Convencion verificada pixel a
+// extrae el marco a frameimage enderezado. convencion verificada pixel a
 // pixel sobre la hoja real (bird_01_001: caja 16x37 en (842,276) con el ovni
-// completo y margenes transparentes): `textureRect` trae las dimensiones del
-// sprite enderezado SIEMPRE; si `rotated` es true la caja guardada es
-// (x,y,h,w) con los pixeles girados 90 CCW, y se endereza con un CW90.
+// completo y margenes transparentes): `texturerect` trae las dimensiones del
+// sprite enderezado siempre; si `rotated` es true la caja guardada es
+// (x,y,h,w) con los pixeles girados 90 ccw, y se endereza con un cw90.
 FrameImage extractFrame(Sheet const& s, PlistFrame const& f) {
     if (f.w <= 0 || f.h <= 0) return {};
     int sw = f.rotated ? f.h : f.w;  // dims guardadas (caja real en la hoja)
@@ -192,11 +185,11 @@ FrameImage extractFrame(Sheet const& s, PlistFrame const& f) {
             tmp.setAt(x, y, {p[0], p[1], p[2], p[3]});
         }
     }
-    if (f.rotated) tmp.rotateCW90();  // guardado CCW -> enderezado
+    if (f.rotated) tmp.rotateCW90();  // guardado ccw -> enderezado
     return tmp;
 }
 
-// Dimensiones enderezadas = las listadas (el swap solo afecta a la caja
+// dimensiones enderezadas = las listadas (el swap solo afecta a la caja
 // guardada, nunca al sprite).
 int frameW(PlistFrame const& f) { return f.w; }
 int frameH(PlistFrame const& f) { return f.h; }
@@ -235,9 +228,7 @@ std::size_t opaqueCount(FrameImage const& img) {
     return n;
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// tests
 
 bool official_plist_parse() {
     CHECK(!g_icons.frames.empty() && !g_glow.frames.empty() &&
@@ -246,17 +237,17 @@ bool official_plist_parse() {
               << " glow=" << g_glow.frames.size()
               << " game=" << g_game.frames.size() << "]\n";
 
-    // Marcos conocidos que el test necesita mas abajo.
+    // marcos conocidos que el test necesita mas abajo.
     CHECK(g_icons.find("player_01_001.png") != nullptr);
     CHECK(g_icons.find("player_01_2_001.png") != nullptr);
     CHECK(g_icons.find("ship_01_001.png") != nullptr);
     CHECK(g_glow.find("blackCogwheel_01_glow_001.png") != nullptr);
 
-    // Cada marco cabe en su textura, con la caja GUARDADA (swap si rotado,
-    // misma convencion que extractFrame). Ademas el marco enderezado debe
-    // coincidir con spriteSize (recortado): se cumple en los 3542 marcos y
+    // cada marco cabe en su textura, con la caja guardada (swap si rotado,
+    // misma convencion que extractframe). ademas el marco enderezado debe
+    // coincidir con spritesize (recortado): se cumple en los 3542 marcos y
     // valida la convencion de rotacion en toda la hoja, no solo en el ovni.
-    // El sourceSize trae metadata rota en 5 marcos (p. ej. spider_07_04 con
+    // el sourcesize trae metadata rota en 5 marcos (p. ej. spider_07_04 con
     // fuente {1,1} para un sprite de 3x3): se cuenta como aviso, no es fallo.
     int srcWarnings = 0;
     for (Sheet const* s : {&g_icons, &g_glow, &g_game}) {
@@ -286,7 +277,7 @@ bool official_plist_parse() {
 }
 
 bool official_rotation_geometry() {
-    // Las naves miran a la derecha: mas anchas que altas. Si el marco viniera
+    // las naves miran a la derecha: mas anchas que altas. si el marco viniera
     // rotado y lo enderezaramos mal, saldria alto y esto fallaria.
     auto const* ship = g_icons.find("ship_01_001.png");
     CHECK(ship != nullptr);
@@ -296,15 +287,15 @@ bool official_rotation_geometry() {
     CHECK(img.width() >= img.height());
     CHECK(opaqueCount(img) > 0);
 
-    // Marco rotado: bird_01_001 lista {{842,276},{37,16}} + rotated. El ovni
+    // marco rotado: bird_01_001 lista {{842,276},{37,16}} + rotated. el ovni
     // es mas ancho que alto enderezado; con la convencion contraria (caja
-    // listada como guardada + CCW) saldria un 16x37 recortado de otro sprite.
+    // listada como guardada + ccw) saldria un 16x37 recortado de otro sprite.
     auto const* bird = g_icons.find("bird_01_001.png");
     CHECK(bird != nullptr && bird->rotated);
     FrameImage bimg = extractFrame(g_icons, *bird);
     CHECK(bimg.width() == 37 && bimg.height() == 16);
     CHECK(opaqueCount(bimg) > 100);
-    // Simetria vertical del ovni (cupula centrada): mitad izq ~= mitad der.
+    // simetria vertical del ovni (cupula centrada): mitad izq ~= mitad der.
     int left = 0, right = 0;
     for (int y = 0; y < bimg.height(); ++y)
         for (int x = 0; x < bimg.width(); ++x)
@@ -351,13 +342,13 @@ bool official_tint_player_icon() {
             src.data(), dst.data(), src.width(), src.height(), mask.data(),
             nullptr, nullptr, nullptr, spec, spec, spec, spec,
             false, false, 0, lut);
-        // Cada pixel opaco se tintea exactamente una vez.
+        // cada pixel opaco se tintea exactamente una vez.
         CHECK(n == opaqueCount(src));
 
-        // Referencia pixel a pixel con TintMath directo (tinte + overlay con
-        // el valor de mascara como alfa). El kernel delega en las mismas
-        // formulas: el alfa resultante es max(original, mascara), NO el
-        // original preservado — LuminanceTinter usa este mismo kernel, asi
+        // referencia pixel a pixel con tintmath directo (tinte + overlay con
+        // el valor de mascara como alfa). el kernel delega en las mismas
+        // formulas: el alfa resultante es max(original, mascara), no el
+        // original preservado — luminancetinter usa este mismo kernel, asi
         // que esa es la conducta bit-exacta del motor, no un bug.
         cocos2d::ccColor3B tint(c.tr, c.tg, c.tb);
         for (int y = 0; y < src.height(); ++y) {
@@ -381,7 +372,7 @@ bool official_tint_player_icon() {
         std::cout << "  [" << c.name << ": " << src.width() << "x"
                   << src.height() << ", " << n << " px]\n";
 
-        // Vuelco visual con los colores del caso.
+        // vuelco visual con los colores del caso.
         std::string base = g_outDir + "/" + c.name;
         base.replace(base.end() - 4, base.end(), "");
         writePpm(base + "_original.ppm", src);
@@ -391,7 +382,7 @@ bool official_tint_player_icon() {
 }
 
 bool official_overlay_real_glow() {
-    // El glow oficial mas grande como tinta de overlay sobre base oscura.
+    // el glow oficial mas grande como tinta de overlay sobre base oscura.
     PlistFrame const* best = nullptr;
     for (auto const& f : g_glow.frames) {
         if (f.w > 0 && f.h > 0 &&
@@ -416,7 +407,7 @@ bool official_overlay_real_glow() {
         PrecomputedTint::make(255, 220, 160, 160.0f, 1.0f, 0.0f);
     applyOverlayBand(dst.data(), W, ov.data(), W, 0, H, W, spec, lut, false);
 
-    // Referencia pixel a pixel con TintMath directo.
+    // referencia pixel a pixel con tintmath directo.
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
             auto o = ov.at(x, y);
@@ -455,7 +446,7 @@ bool official_packer_icons() {
     CHECK(r.fits);
     CHECK(r.placements.size() == rects.size());
 
-    // Sin solapes y contenidos.
+    // sin solapes y contenidos.
     for (std::size_t i = 0; i < r.placements.size(); ++i) {
         auto const& a = r.placements[i];
         int aw = a.rotated ? a.h : a.w, ah = a.rotated ? a.w : a.h;
@@ -488,7 +479,7 @@ bool official_packer_icons() {
 }
 
 bool official_repack_roundtrip() {
-    // Re-empaqueta los marcos reales y verifica que cada sprite sale
+    // re-empaqueta los marcos reales y verifica que cada sprite sale
     // pixel a pixel identico al extraido de la hoja oficial.
     std::vector<PackRect> rects;
     std::vector<std::size_t> idx;

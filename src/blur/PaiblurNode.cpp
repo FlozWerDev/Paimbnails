@@ -22,7 +22,7 @@
 #define GL_DRAW_FRAMEBUFFER 0x8CA9
 #endif
 
-// Resolve glBlitFramebuffer at runtime on Android GLES2; disable blur if absent.
+// resolve glblitframebuffer at runtime on android gles2; disable blur if absent.
 #ifndef GL_APIENTRY
 #define GL_APIENTRY
 #endif
@@ -47,7 +47,7 @@ inline bool paimonBlitFramebuffer(
     fn(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1, mask, filter);
     return true;
 #elif defined(GEODE_IS_IOS)
-// no blit symbol or loader on iOS
+// no blit symbol or loader on ios
     (void)sx0; (void)sy0; (void)sx1; (void)sy1;
     (void)dx0; (void)dy0; (void)dx1; (void)dy1; (void)mask; (void)filter;
     return false;
@@ -65,9 +65,9 @@ namespace paimon::paiblur {
 
 namespace {
 
-// Half-resolution blur FBO, capped for 4K performance.
+// half-resolution blur fbo, capped for 4k performance.
 constexpr int kMaxBlurLongEdge = 1280;
-// Refresh a steady backdrop periodically instead of re-blurring every frame.
+// refresh a steady backdrop periodically instead of re-blurring every frame.
 constexpr int kSteadyRefreshInterval = 2;
 float intensityToEclipseRadius(float intensity) {
     float t = std::clamp((intensity - 0.5f) / 9.5f, 0.0f, 1.0f);
@@ -84,7 +84,7 @@ void main() {
 }
 )";
 
-// EclipseMenu "fast" blur kernel; darkness baked into u_colorMul.
+// eclipsemenu "fast" blur kernel; darkness baked into u_colormul.
 constexpr char kFragSrc[] = R"(
 #ifdef GL_ES
 precision mediump float;
@@ -168,7 +168,7 @@ bool ensureProgram() {
     GLuint prog = glCreateProgram();
     glAttachShader(prog, vs);
     glAttachShader(prog, fs);
-// Use Cocos attribute slots so its GL state cache stays coherent.
+// use cocos attribute slots so its gl state cache stays coherent.
     glBindAttribLocation(prog, kCCVertexAttrib_Position, "aPosition");
     glBindAttribLocation(prog, kCCVertexAttrib_TexCoords, "aTexCoord");
     glLinkProgram(prog);
@@ -216,7 +216,7 @@ bool PaiblurNode::initWithWinSize(CCSize const& winSize, float intensity, float 
     m_intensity = std::clamp(intensity, 0.1f, 10.0f);
     m_darkness = std::clamp(darkness, 0.0f, 1.0f);
 
-// Failure falls back to static blur.
+// failure falls back to static blur.
     if (!ensureProgram()) {
         log::warn("[Paiblur] blur shader unavailable - Paiblur disabled");
         return false;
@@ -254,7 +254,7 @@ bool PaiblurNode::initWithWinSize(CCSize const& winSize, float intensity, float 
 }
 
 PaiblurNode::~PaiblurNode() {
-// During shutdown the GL context may already be gone; avoid deleting GL objects.
+// during shutdown the gl context may already be gone; avoid deleting gl objects.
     if (paimon::isRuntimeShuttingDown()) return;
     releaseRenderTargets();
     if (m_vbo) {
@@ -348,7 +348,7 @@ void PaiblurNode::visit() {
     float eased = 0.5f * (1.f - std::cos(3.14159265f * progress));
     if (eased < 0.01f) return;
 
-// Viewport is the letterboxed window in real pixels.
+// viewport is the letterboxed window in real pixels.
     GLint vp[4] = {0, 0, 0, 0};
     glGetIntegerv(GL_VIEWPORT, vp);
     int srcW = vp[2];
@@ -369,8 +369,8 @@ void PaiblurNode::visit() {
     float radius = intensityToEclipseRadius(m_intensity) * eased;
     bool steady = (op >= 254);
 
-// Re-run capture/horizontal blur only when fading, radius, or refresh requires it.
-// Otherwise reuse m_texB and re-composite.
+// re-run capture/horizontal blur only when fading, radius, or refresh requires it.
+// otherwise reuse m_texb and re-composite.
     bool needFull = !m_hasCachedBlur || !steady || std::abs(radius - m_lastRadius) > 0.001f;
     if (!needFull) {
         if (++m_steadyFrames >= kSteadyRefreshInterval) {

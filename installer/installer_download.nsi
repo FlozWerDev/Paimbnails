@@ -1,17 +1,17 @@
-; Paimbnails Mod Installer for Geometry Dash
-; NSIS Script - Auto download from GitHub
+; paimbnails mod installer for geometry dash
+; nsis script - auto download from github
 
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
 !include "FileFunc.nsh"
 
-; General
+; general
 Name "Paimbnails"
 OutFile "..\Paimbnails-Setup-Download.exe"
 InstallDir "$LOCALAPPDATA\GeometryDash\geode\mods"
 RequestExecutionLevel user
 
-; Version info
+; version info
 VIProductVersion "2.3.1.0"
 VIAddVersionKey "ProductName" "Paimbnails"
 VIAddVersionKey "CompanyName" "FlozWer"
@@ -19,26 +19,26 @@ VIAddVersionKey "FileDescription" "Paimbnails - Thumbnails for Geometry Dash"
 VIAddVersionKey "FileVersion" "2.3.1"
 VIAddVersionKey "LegalCopyright" "FlozWer"
 
-; Interface
+; interface
 !define MUI_ICON "paimbnails.ico"
 !define MUI_ABORTWARNING
 
-; Pages
+; pages
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 
-; Languages
+; languages
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "Spanish"
 
-; Variables
+; variables
 Var GDFolder
 
-; Auto-detect function
+; auto-detect function
 Function .onInit
-  ; Auto-detect Geometry Dash
+  ; auto-detect geometry dash
   StrCpy $GDFolder ""
 
   ${If} ${FileExists} "$LOCALAPPDATA\GeometryDash\GeometryDash.exe"
@@ -61,22 +61,22 @@ Function .onInit
     StrCpy $GDFolder "E:\SteamLibrary\steamapps\common\Geometry Dash"
   ${EndIf}
 
-  ; If found, set as default install dir
+  ; if found, set as default install dir
   ${If} $GDFolder != ""
     StrCpy $INSTDIR "$GDFolder\geode\mods"
   ${EndIf}
 FunctionEnd
 
 Section "Install"
-  ; Check if geode\mods folder exists
+  ; check if geode\mods folder exists
   ${If} ${FileExists} "$INSTDIR\*.*"
-    ; Download latest .geode from GitHub
+    ; download latest .geode from github
     DetailPrint "Downloading Paimbnails from GitHub..."
 
-    ; Download from latest release
+    ; download from latest release
     NSISdl::download "https://github.com/Fl0zWer/Paimbnails/releases/latest/download/flozwer.paimbnails2.geode" "$INSTDIR\flozwer.paimbnails2.geode"
 
-    ; Verify installation
+    ; verify installation
     ${If} ${FileExists} "$INSTDIR\flozwer.paimbnails2.geode"
       DetailPrint "Installation complete!"
     ${Else}

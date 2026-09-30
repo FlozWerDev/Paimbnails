@@ -1,5 +1,5 @@
-// Color-grid popup: every GD color index as a tappable swatch, in the game's own
-// blocks. After zilko's "Icon Gradients" (independent implementation; idea credit zilko144, unlicensed).
+// color-grid popup: every gd color index as a tappable swatch, in the game's own
+// blocks. after zilko's "icon gradients" (independent implementation; idea credit zilko144, unlicensed).
 
 #include "ColorSelectLayer.hpp"
 #include "GradientLayer.hpp"
@@ -9,7 +9,7 @@ using namespace paimon::icon_gradients;
 
 namespace {
 
-// The grid is four blocks of four columns: 24px steps inside a block,
+// the grid is four blocks of four columns: 24px steps inside a block,
 // 36px across the gutter between blocks.
 float columnX(int col) {
     return 17.f + 24.f * col + 12.f * (col / 4);
@@ -28,7 +28,7 @@ constexpr int kColorRows[][16] = {
     {33, 21, 81, 82, 34, 85, 86, 87, 49, 95, 96, 97, 43, 99, 100, 101},
 };
 
-// Ragged bottom row: four slots aligned with the second block, then a
+// ragged bottom row: four slots aligned with the second block, then a
 // tail of seven shifted right.
 constexpr int kBottomRow[] = {106, 88, 89, 90};
 constexpr float kBottomRowY = 63.399994f;

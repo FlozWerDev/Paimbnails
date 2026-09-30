@@ -18,7 +18,7 @@ $execute {
         manager.load();
         manager.resetAll();
 
-        // Re-apply defaults only in supported scenes (MenuLayer and PauseLayer).
+        // re-apply defaults only in supported scenes (menulayer and pauselayer).
         if (auto* scene = CCDirector::get()->getRunningScene()) {
             if (auto* menuLayer = scene->getChildByType<MenuLayer>(0)) {
                 manager.applyDefaults(menuLayer);

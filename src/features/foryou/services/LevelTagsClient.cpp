@@ -40,7 +40,7 @@ LevelTagsClient& LevelTagsClient::get() {
 }
 
 bool LevelTagsClient::isAvailable() {
-    // Queried on each call rather than cached: the user can toggle the mod at
+    // queried on each call rather than cached: the user can toggle the mod at
     // runtime and the feed has to notice.
     return Loader::get()->isModLoaded(kModID);
 }
@@ -49,7 +49,7 @@ std::string LevelTagsClient::serverURL() {
     auto* mod = Loader::get()->getLoadedMod(kModID);
     if (mod && mod->hasSetting("serverUrl")) {
         auto url = mod->getSettingValue<std::string>("serverUrl");
-        // Trailing slashes would produce "…//get"; the server tolerates it but
+        // trailing slashes would produce "…//get"; the server tolerates it but
         // our own cache keys would differ per user, so normalize.
         while (!url.empty() && url.back() == '/') url.pop_back();
         if (!url.empty()) return url;
@@ -118,14 +118,14 @@ void LevelTagsClient::loadCatalog(std::function<void(bool)> callback) {
         if (m_catalogLoaded) {
             alreadyLoaded = true;
         } else {
-            // Concurrent callers queue up behind the single in-flight request.
+            // concurrent callers queue up behind the single in-flight request.
             if (callback) m_catalogWaiters.push_back(std::move(callback));
             startRequest = !m_catalogPending;
             m_catalogPending = true;
         }
     }
 
-    // Answered outside the lock so the callback is free to re-enter us.
+    // answered outside the lock so the callback is free to re-enter us.
     if (alreadyLoaded) {
         if (callback) callback(true);
         return;
@@ -205,7 +205,7 @@ LevelTagMap LevelTagsClient::parseLevelTags(matjson::Value const& root) const {
                 });
             }
         }
-        // An empty vector is a real answer ("this level has no tags") and is
+        // an empty vector is a real answer ("this level has no tags") and is
         // cached as such, so we never re-request it.
         out[idResult.unwrap()] = std::move(tags);
     }
@@ -229,7 +229,7 @@ void LevelTagsClient::fetchTags(std::vector<int> const& levelIDs, std::function<
         }
     }
 
-    // Duplicate IDs in the input would otherwise be requested twice.
+    // duplicate ids in the input would otherwise be requested twice.
     std::sort(missing.begin(), missing.end());
     missing.erase(std::unique(missing.begin(), missing.end()), missing.end());
 
@@ -274,7 +274,7 @@ void LevelTagsClient::fetchTags(std::vector<int> const& levelIDs, std::function<
                         (*results)[id] = tags;
                         m_dirty = true;
                     }
-                    // IDs the server omitted entirely are untagged; record that
+                    // ids the server omitted entirely are untagged; record that
                     // so a feed refresh doesn't ask again.
                     for (int id : chunk) {
                         if (!m_levelTags.count(id)) {
@@ -325,7 +325,7 @@ void LevelTagsClient::searchByTags(
             if (res.ok()) {
                 auto json = matjson::parse(res.string().unwrapOr(""));
                 if (json.isOk()) {
-                    // The server answers with an array of ID strings.
+                    // the server answers with an array of id strings.
                     paimon::json::forEachInArray(json.unwrap(), [&](matjson::Value const& entry) {
                         int id = 0;
                         if (entry.isString()) {
@@ -370,7 +370,7 @@ void LevelTagsClient::loadDiskCache() {
     if (!parsed.isOk()) return;
     auto root = parsed.unwrap();
 
-    // Tags get edited upstream; a month-old snapshot is refetched rather than trusted.
+    // tags get edited upstream; a month-old snapshot is refetched rather than trusted.
     constexpr int64_t kMaxAge = 30LL * 24 * 60 * 60;
     auto savedAt = static_cast<int64_t>(root["savedAt"].asInt().unwrapOr(0));
     if (savedAt > 0 && std::time(nullptr) - savedAt > kMaxAge) return;

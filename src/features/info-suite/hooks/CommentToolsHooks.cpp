@@ -1,4 +1,4 @@
-// Comment Tools: estimated dates on cells, jump-to-page, usable green profiles.
+// comment tools: estimated dates on cells, jump-to-page, usable green profiles.
 
 #include "../InfoModule.hpp"
 #include "../services/CommentDates.hpp"
@@ -42,7 +42,7 @@ class $modify(PaimonInfoSuiteCommentTools, CommentCell) {
         CommentCell::loadFromComment(comment);
         if (!comment) return;
 
-        // Remembering the name is what later lets a blank green name be filled
+        // remembering the name is what later lets a blank green name be filled
         // in, so it runs for that module rather than for comment tools.
         if (paimon::info::moduleEnabled("info-mod-green-users")) {
             std::string name(comment->m_userName);
@@ -69,8 +69,8 @@ class $modify(PaimonInfoSuiteCommentTools, CommentCell) {
         this->addChild(badge, 100);
     }
 
-    // Tapping a green player's name does nothing in vanilla, since there is no
-    // account to open. Show what we can instead of a dead button.
+    // tapping a green player's name does nothing in vanilla, since there is no
+    // account to open. show what we can instead of a dead button.
     void onViewProfile(CCObject* sender) {
         if (unregProfilesEnabled() && m_comment && m_comment->m_accountID <= 0
             && m_comment->m_userID > 0) {
@@ -85,7 +85,7 @@ class $modify(PaimonInfoSuiteCommentTools, CommentCell) {
     }
 };
 
-// Jump to page for the comment list on the level / profile info screen.
+// jump to page for the comment list on the level / profile info screen.
 class $modify(PaimonInfoSuiteCommentPages, InfoLayer) {
     static void onModify(auto& self) {
         paimon::hooks::veryLatePost(self, "InfoLayer::init");
@@ -103,7 +103,7 @@ class $modify(PaimonInfoSuiteCommentPages, InfoLayer) {
 
     void loadPage(int page, bool noSetup) {
         InfoLayer::loadPage(page, noSetup);
-        // The page size is only knowable once a page has been laid out.
+        // the page size is only knowable once a page has been laid out.
         int perPage = m_pageEndIdx - m_pageStartIdx + 1;
         if (perPage > 0) m_fields->m_perPage = perPage;
     }
@@ -124,7 +124,7 @@ class $modify(PaimonInfoSuiteCommentPages, InfoLayer) {
 
         auto menu = CCMenu::create();
         menu->setID("info-suite-comment-jump"_spr);
-        // Right beside the page counter, wherever the layer put it.
+        // right beside the page counter, wherever the layer put it.
         menu->setPosition({m_pageLabel->getPositionX() + 46.f, m_pageLabel->getPositionY()});
         menu->addChild(btn);
 

@@ -10,7 +10,7 @@ namespace paimon::texture_studio {
 
 namespace {
 
-// Rec.601 luminance in the same 0..255 scale the tinter divides by.
+// rec.601 luminance in the same 0..255 scale the tinter divides by.
 float luminance601(std::uint8_t r, std::uint8_t g, std::uint8_t b) {
     return 0.30f * static_cast<float>(r)
          + 0.59f * static_cast<float>(g)
@@ -30,7 +30,7 @@ AutoTuner::Suggestion AutoTuner::tuneForSprite(ImageBuffer const& framePixels,
     auto classified = ClusterClassifier::classify(clusters, framePixels);
     if (classified.clusters.empty()) return result;
 
-    // Center on the brightest colored role, weighted to dominant Color1; outline never tints.
+    // center on the brightest colored role, weighted to dominant color1; outline never tints.
     float targetLum = -1.0f;
     bool  haveColored = false;
     for (auto const& c : classified.clusters) {
@@ -49,7 +49,7 @@ AutoTuner::Suggestion AutoTuner::tuneForSprite(ImageBuffer const& framePixels,
     }
     if (!haveColored || targetLum < 0.0f) return result;
 
-    // brightness == target maps the dominant fill to factor ~1.0 (PackGen range ~100..300).
+    // brightness == target maps the dominant fill to factor ~1.0 (packgen range ~100..300).
     int tuned = std::clamp(static_cast<int>(std::lround(targetLum)), 100, 300);
 
     result.suggestedBrightness = tuned;

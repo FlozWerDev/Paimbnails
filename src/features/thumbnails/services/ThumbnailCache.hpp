@@ -80,13 +80,13 @@ public:
     };
 
     std::optional<geode::Ref<cocos2d::CCTexture2D>> getFromRam(int levelID, bool isGif);
-    // Level RAM map only (no URL fallback, no access touch); unlike isLoaded, default-URL hits don't count.
+    // level ram map only (no url fallback, no access touch); unlike isloaded, default-url hits don't count.
     bool hasInRam(int levelID, bool isGif) const;
     bool isRamEntrySuitable(int levelID, bool isGif, int requestedMaxDim) const;
     void addToRam(int levelID, bool isGif, cocos2d::CCTexture2D* texture, int version = -1, int origW = 0, int origH = 0);
     void removeFromRam(int levelID, bool isGif);
     void evictRamIfNeeded();
-    // Frees retainCount==1 textures (nobody showing them).
+    // frees retaincount==1 textures (nobody showing them).
     void purgeUnusedTextures();
     size_t ramEntryCount() const;
 
@@ -116,7 +116,7 @@ public:
     void clearAllFailed();
     void purgeExpiredFailed();
 
-    // Server-confirmed missing; no practical TTL, cleared via clearNotFound()/invalidateLevel().
+    // server-confirmed missing; no practical ttl, cleared via clearnotfound()/invalidatelevel().
     bool isNotFound(std::string const& key) const;
     void markNotFound(std::string const& key);
     void clearNotFound(std::string const& key);
@@ -129,7 +129,7 @@ public:
     void clearDisk();
     void clearAll();
 
-    // Safe teardown: take() without release() survives static destruction.
+    // safe teardown: take() without release() survives static destruction.
     void takeAllTextures();
 
     CacheStats& stats() { return m_stats; }
@@ -139,7 +139,7 @@ public:
     static constexpr size_t URL_CACHE_MAX_BYTES = 32ull * 1024 * 1024;
 
     static constexpr auto FAILED_CACHE_TTL = std::chrono::minutes(5);
-    // Staggered backoff 15s → 30s → 60s → 300s; first step isn't 2s to avoid hammering on mass failures.
+    // staggered backoff 15s → 30s → 60s → 300s; first step isn't 2s to avoid hammering on mass failures.
     static constexpr int FAILED_BACKOFF_STEPS[] = {15, 30, 60, 300};
     static constexpr int FAILED_BACKOFF_MAX_STEP = 3;
 
@@ -150,7 +150,7 @@ public:
 #endif
 
     static constexpr auto PURGE_INTERVAL = std::chrono::seconds(2);
-    // Grace period: fresh entries immune to purge so pending callbacks keep the texture (2s covers stress peaks).
+    // grace period: fresh entries immune to purge so pending callbacks keep the texture (2s covers stress peaks).
     static constexpr auto PURGE_GRACE_PERIOD = std::chrono::milliseconds(2000);
 
     static constexpr auto NOT_FOUND_TTL = std::chrono::hours(24 * 365);
@@ -160,7 +160,7 @@ private:
     ~ThumbnailCache();
 
     static size_t estimateTextureBytes(cocos2d::CCTexture2D* tex);
-    // Integer RAM key: levelID for static, -levelID for GIF (no string alloc on hit path).
+    // integer ram key: levelid for static, -levelid for gif (no string alloc on hit path).
     static int makeRamKey(int levelID, bool isGif);
     static int64_t nowEpoch();
 

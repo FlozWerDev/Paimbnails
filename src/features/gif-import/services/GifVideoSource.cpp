@@ -23,6 +23,7 @@ namespace paimon::gifimport {
 namespace {
 
 constexpr auto kStallTimeout = std::chrono::seconds(12);
+constexpr size_t kFrameBudget = 96 * 1024 * 1024;
 
 std::string extensionOf(std::filesystem::path const& path) {
     auto extension = geode::utils::string::pathToString(path.extension());
@@ -31,7 +32,7 @@ std::string extensionOf(std::filesystem::path const& path) {
     return extension;
 }
 
-// Phone clips store landscape frames plus a display rotation flag.
+// phone clips store landscape frames plus a display rotation flag.
 void rotateRgba(std::vector<std::uint8_t>& rgba, int w, int h, int rotation) {
     if (rotation != 90 && rotation != 180 && rotation != 270) return;
     std::vector<std::uint8_t> dst(rgba.size());
@@ -47,7 +48,7 @@ void rotateRgba(std::vector<std::uint8_t>& rgba, int w, int h, int rotation) {
     rgba = std::move(dst);
 }
 
-void convertFrame(
+bool convertFrame(
     VideoFrame const& frame,
     int outputWidth,
     int outputHeight,
@@ -56,16 +57,22 @@ void convertFrame(
     int rotation,
     std::vector<std::uint8_t>& rgba
 ) {
-    auto const convert = fullRange ? libyuv::J420ToABGR
-        : (matrix == VideoColorMatrix::BT709 ? libyuv::H420ToABGR : libyuv::I420ToABGR);
+    if (frame.width <= 0 || frame.height <= 0 || !frame.planeY || !frame.planeCb || !frame.planeCr) return false;
+    auto const* constants = matrix == VideoColorMatrix::BT709
+        ? (fullRange ? &libyuv::kYvuF709Constants : &libyuv::kYvuH709Constants)
+        : (fullRange ? &libyuv::kYvuJPEGConstants : &libyuv::kYvuI601Constants);
+    auto convert = [&](uint8_t const* y, int strideY, uint8_t const* u, int strideU, uint8_t const* v, int strideV) {
+        // swapped chroma and yvu constants produce libyuv's abgr (rgba bytes).
+        return libyuv::I420ToARGBMatrix(y, strideY, v, strideV, u, strideU,
+            rgba.data(), outputWidth * 4, constants, outputWidth, outputHeight) == 0;
+    };
     rgba.assign(static_cast<std::size_t>(outputWidth) * outputHeight * 4, 0);
     if (frame.width == outputWidth && frame.height == outputHeight) {
-        convert(
+        if (!convert(
             frame.planeY, frame.strideY, frame.planeCb, frame.strideCb,
-            frame.planeCr, frame.strideCr, rgba.data(), outputWidth * 4,
-            outputWidth, outputHeight);
+            frame.planeCr, frame.strideCr)) return false;
         rotateRgba(rgba, outputWidth, outputHeight, rotation);
-        return;
+        return true;
     }
 
     int const uvWidth = (outputWidth + 1) / 2;
@@ -73,18 +80,17 @@ void convertFrame(
     std::vector<std::uint8_t> luma(static_cast<std::size_t>(outputWidth) * outputHeight);
     std::vector<std::uint8_t> blue(static_cast<std::size_t>(uvWidth) * uvHeight);
     std::vector<std::uint8_t> red(static_cast<std::size_t>(uvWidth) * uvHeight);
-    libyuv::I420Scale(
+    if (libyuv::I420Scale(
         frame.planeY, frame.strideY, frame.planeCb, frame.strideCb,
         frame.planeCr, frame.strideCr, frame.width, frame.height,
         luma.data(), outputWidth, blue.data(), uvWidth, red.data(), uvWidth,
-        outputWidth, outputHeight, libyuv::kFilterBox);
-    convert(
-        luma.data(), outputWidth, blue.data(), uvWidth, red.data(), uvWidth,
-        rgba.data(), outputWidth * 4, outputWidth, outputHeight);
+        outputWidth, outputHeight, libyuv::kFilterBox) != 0) return false;
+    if (!convert(luma.data(), outputWidth, blue.data(), uvWidth, red.data(), uvWidth)) return false;
     rotateRgba(rgba, outputWidth, outputHeight, rotation);
+    return true;
 }
 
-// Thins to half keeping even frames, widening the covered stride.
+// thins to half keeping even frames, widening the covered stride.
 void thinCaptured(std::vector<SourceFrame>& frames, std::vector<double>& stamps) {
     std::size_t kept = 0;
     for (std::size_t i = 0; i < frames.size(); i += 2) {
@@ -142,13 +148,14 @@ std::shared_ptr<SourceAnimation> decodeVideo(
         return nullptr;
     }
 
-    double const duration = decoder->getDuration();
-    bool const finiteDuration = (std::bit_cast<std::uint64_t>(duration) & 0x7ff0000000000000ull) != 0x7ff0000000000000ull;
+    double const reportedDuration = decoder->getDuration();
+    bool const finiteDuration = (std::bit_cast<std::uint64_t>(reportedDuration) & 0x7ff0000000000000ull) != 0x7ff0000000000000ull;
     if (maxDurationSeconds > 0.0 &&
-        (!finiteDuration || !(duration > 0.0) || duration > maxDurationSeconds)) {
+        (!finiteDuration || !(reportedDuration > 0.0) || reportedDuration > maxDurationSeconds)) {
         error = "El video debe tener duracion conocida y no superar 30 segundos.";
         return nullptr;
     }
+    double const duration = finiteDuration && reportedDuration > 0.0 ? reportedDuration : 0.0;
     int const sourceWidth = decoder->getWidth();
     int const sourceHeight = decoder->getHeight();
     if (sourceWidth <= 0 || sourceHeight <= 0) {
@@ -165,7 +172,7 @@ std::shared_ptr<SourceAnimation> decodeVideo(
     int const longest = std::max(codedWidth, codedHeight);
     double const shrink = longest > kMaxVideoSide
         ? static_cast<double>(kMaxVideoSide) / longest : 1.0;
-    // chroma runs 2x2: an odd side breaks libyuv scaling.
+    // align the output sides with the 2x2 chroma grid.
     int const outputWidth = std::max(2, static_cast<int>(std::lround(codedWidth * shrink)) & ~1);
     int const outputHeight = std::max(2, static_cast<int>(std::lround(codedHeight * shrink)) & ~1);
 
@@ -174,13 +181,14 @@ std::shared_ptr<SourceAnimation> decodeVideo(
     int const nativeHeight = decoder->getNativeHeight();
     bool const wideGamut = (nativeWidth > 0 ? nativeWidth : sourceWidth) >= 1280 ||
         (nativeHeight > 0 ? nativeHeight : sourceHeight) >= 720;
-    // HD is BT.709; reading it as BT.601 shifts colors.
+    // hd is bt.709; reading it as bt.601 shifts colors.
     VideoColorMatrix matrix = decoder->getColorMatrix();
     if (matrix == VideoColorMatrix::Auto) {
         matrix = wideGamut ? VideoColorMatrix::BT709 : VideoColorMatrix::BT601;
     }
     bool const fullRange = decoder->isFullRange();
-    int const wanted = std::clamp(maxFrames, 1, 120);
+    auto const frameBytes = static_cast<size_t>(outputWidth) * outputHeight * 4;
+    int const wanted = std::min(std::clamp(maxFrames, 1, 120), static_cast<int>(kFrameBudget / frameBytes));
     double step = duration > 0.1 ? duration / wanted : 0.0;
 
     auto animation = std::make_shared<SourceAnimation>();
@@ -193,11 +201,12 @@ std::shared_ptr<SourceAnimation> decodeVideo(
     auto lastFrame = std::chrono::steady_clock::now();
     auto deadline = lastFrame + std::chrono::seconds(45);
     bool stalled = false;
-    // corrupt PTS is skipped; the cap stops endless spinning.
+    // corrupt pts is skipped; the cap stops endless spinning.
     int badPtsStreak = 0;
     constexpr int kMaxBadPtsStreak = 600;
     bool aborted = false;
-    // decode through EOS: stopping at full skews to the start when the header
+    bool conversionFailed = false;
+    // decode through eos: stopping at full skews to the start when the header
     // undercounts; the doubling below thins to cover the whole range.
     for (;;) {
         if (progress && progress->cancelled.load(std::memory_order_relaxed)) { aborted = true; break; }
@@ -215,9 +224,8 @@ std::shared_ptr<SourceAnimation> decodeVideo(
         double const ptsCeil = stamps.empty()
             ? duration + 1.0
             : std::max(duration + 1.0, stamps.back() + 30.0);
-        if (maxDurationSeconds > 0.0 &&
-            ((std::bit_cast<std::uint64_t>(frame->pts) & 0x7ff0000000000000ull) == 0x7ff0000000000000ull ||
-             frame->pts < 0.0 || frame->pts > ptsCeil)) {
+        if ((std::bit_cast<std::uint64_t>(frame->pts) & 0x7ff0000000000000ull) == 0x7ff0000000000000ull ||
+            frame->pts < 0.0 || (maxDurationSeconds > 0.0 && frame->pts > ptsCeil)) {
             decoder->releaseFrame();
             if (++badPtsStreak > kMaxBadPtsStreak) { stalled = true; break; }
             continue;
@@ -240,7 +248,11 @@ std::shared_ptr<SourceAnimation> decodeVideo(
         if (static_cast<int>(animation->frames.size()) < wanted &&
             frame->pts + 1e-6 >= nextWanted) {
             SourceFrame captured;
-            convertFrame(*frame, outputWidth, outputHeight, matrix, fullRange, rotation, captured.rgba);
+            if (!convertFrame(*frame, outputWidth, outputHeight, matrix, fullRange, rotation, captured.rgba)) {
+                decoder->releaseFrame();
+                conversionFailed = true;
+                break;
+            }
             animation->frames.push_back(std::move(captured));
             stamps.push_back(frame->pts);
             nextWanted = step > 0.0 ? nextWanted + step : frame->pts;
@@ -253,8 +265,11 @@ std::shared_ptr<SourceAnimation> decodeVideo(
         }
     }
     decoder->stopDecoding();
-    // Cancelado o cerrando: se descarta en silencio, sin error ni parcial.
     if (aborted) return nullptr;
+    if (conversionFailed) {
+        error = "No se pudo convertir un fotograma del video.";
+        return nullptr;
+    }
     if (animation->frames.empty()) {
         if (maxDurationSeconds > 0.0 && stalled) {
             error = "El decodificador no pudo completar el video.";
@@ -264,7 +279,6 @@ std::shared_ptr<SourceAnimation> decodeVideo(
         return nullptr;
     }
     if (maxDurationSeconds > 0.0 && stalled) {
-        // Corte tardio: se devuelve lo capturado con aviso.
         geode::log::warn(
             "[GifImport] video parcial: {} frames antes del corte",
             animation->frames.size());
@@ -276,13 +290,14 @@ std::shared_ptr<SourceAnimation> decodeVideo(
     for (std::size_t i = 0; i < animation->frames.size(); ++i) {
         double const next = i + 1 < stamps.size() ? stamps[i + 1] - stamps[i] : lastStep;
         if (maxDurationSeconds > 0.0) {
-            // Redondear acumulado: evita que 60fps degrade a 50fps por el clamp.
-            long const startMs = i == 0 ? 0 : std::lround(stamps[i] * 1000.0);
-            long const endMs = std::lround((stamps[i] + next) * 1000.0);
-            animation->frames[i].delayMs = static_cast<int>(std::clamp(endMs - startMs, 1L, 30000L));
+            // rounding endpoints preserves fractional frame periods.
+            double const startMs = i == 0 ? 0.0 : std::round(stamps[i] * 1000.0);
+            double const endMs = std::round((stamps[i] + next) * 1000.0);
+            double const delayMs = std::isfinite(endMs - startMs) ? endMs - startMs : 40.0;
+            animation->frames[i].delayMs = static_cast<int>(std::lround(std::clamp(delayMs, 1.0, 30000.0)));
         } else {
-            animation->frames[i].delayMs = std::clamp(
-                static_cast<int>(std::lround(next * 1000.0)), 20, 2000);
+            double const delayMs = std::isfinite(next) ? std::clamp(next * 1000.0, 20.0, 2000.0) : 40.0;
+            animation->frames[i].delayMs = static_cast<int>(std::lround(delayMs));
         }
     }
     geode::log::info(

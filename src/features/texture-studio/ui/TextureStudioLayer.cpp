@@ -154,7 +154,7 @@ void TextureStudioLayer::buildBackground() {
 
 void TextureStudioLayer::onEnter() {
     CCLayer::onEnter();
-    // Refresh on return: project may have changed in editor.
+    // refresh on return: project may have changed in editor.
     if (m_enteredOnce) {
         if (m_grid) m_grid->refresh();
         refreshFooter();

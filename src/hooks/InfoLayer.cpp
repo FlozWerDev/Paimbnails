@@ -103,7 +103,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
     void removeAllInfoLayerBgClips() {
         auto layer = this->m_mainLayer;
         if (!layer) return;
-        // remove every bg clip; delayed single-ID cleanup could leak duplicates
+        // remove every bg clip; delayed single-id cleanup could leak duplicates
         auto* children = layer->getChildren();
         if (!children) return;
         std::vector<CCNode*> toRemove;
@@ -263,7 +263,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         m_fields->m_bgSettled = false;
 
         WeakRef<PaimonInfoLayer> safeRef = this;
-// Use an empty key so BlurSystem keys by texture pointer; level-based keys
+// use an empty key so blursystem keys by texture pointer; level-based keys
 // collided when gallery textures changed.
         BlurSystem::getInstance()->buildPaimonBlurPriority(
             tex,
@@ -417,7 +417,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         }
     }
 
-// GD rebuilds the list on setup/response/paging; skip when no paimon bg is installed
+// gd rebuilds the list on setup/response/paging; skip when no paimon bg is installed
     void styleCommentsNow() {
         if (!m_fields->m_bgClip) return;
         if (auto* layer = this->m_mainLayer) styleInfoLayerBgs(layer);

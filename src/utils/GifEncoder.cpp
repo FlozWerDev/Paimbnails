@@ -8,12 +8,12 @@ namespace paimon::gif {
 
 namespace {
 
-// LSB-first bit packer for LZW codes.
+// lsb-first bit packer for lzw codes.
 struct BitWriter {
     std::vector<uint8_t>& out;
     uint32_t bitBuffer = 0;
     int bitCount = 0;
-    std::vector<uint8_t> block; // GIF sub-block (max 255 bytes)
+    std::vector<uint8_t> block; // gif sub-block (max 255 bytes)
 
     explicit BitWriter(std::vector<uint8_t>& o) : out(o) {}
 
@@ -56,7 +56,7 @@ void lzwEncode(std::vector<uint8_t> const& indices, int minCodeSize,
     out.push_back(static_cast<uint8_t>(minCodeSize));
     BitWriter writer(out);
 
-    // key (prefix << 8) | byte; reset after Clear.
+    // key (prefix << 8) | byte; reset after clear.
     std::unordered_map<uint32_t, int> dict;
     dict.reserve(4096);
 
@@ -122,7 +122,7 @@ std::vector<uint8_t> encode(std::vector<EncodeFrame> const& frames, uint8_t alph
     freq.reserve(1024);
     for (auto const& f : frames) {
         if (f.width != W || f.height != H) continue; // ignore odd sizes
-        if (f.rgba.size() < static_cast<size_t>(W) * H * 4) continue; // avoid OOB
+        if (f.rgba.size() < static_cast<size_t>(W) * H * 4) continue; // avoid oob
         size_t n = static_cast<size_t>(W) * H;
         for (size_t i = 0; i < n; ++i) {
             uint8_t a = f.rgba[i * 4 + 3];
@@ -149,7 +149,7 @@ std::vector<uint8_t> encode(std::vector<EncodeFrame> const& frames, uint8_t alph
         });
     }
 
-    // GIF palettes need a power-of-two size (2..256).
+    // gif palettes need a power-of-two size (2..256).
     int palBits = 1;
     while ((1 << palBits) < static_cast<int>(palette.size())) palBits++;
     if (palBits < 1) palBits = 1;
@@ -208,7 +208,7 @@ std::vector<uint8_t> encode(std::vector<EncodeFrame> const& frames, uint8_t alph
 
     for (auto const& f : frames) {
         if (f.width != W || f.height != H) continue;
-        if (f.rgba.size() < static_cast<size_t>(W) * H * 4) continue; // avoid OOB
+        if (f.rgba.size() < static_cast<size_t>(W) * H * 4) continue; // avoid oob
 
         int delayCs = std::max(2, f.delayMs / 10); // centiseconds, min 2
         out.insert(out.end(), {0x21, 0xF9, 0x04});

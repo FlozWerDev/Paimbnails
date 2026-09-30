@@ -14,9 +14,9 @@
 
 namespace paimon::foryou {
 
-// Index is GJ difficulty / 10 (0 = NA, 6 = Demon).
+// index is gj difficulty / 10 (0 = na, 6 = demon).
 constexpr size_t kDifficultyBuckets = 7;
-// 0..4 = Tiny..XL; 5 = Platformer.
+// 0..4 = tiny..xl; 5 = platformer.
 constexpr size_t kLengthBuckets = 6;
 
 struct LevelInteraction {
@@ -48,9 +48,9 @@ struct LevelInteraction {
 };
 
 struct TasteSnapshot {
-    // Signed affinity, roughly [-1, 1].
+    // signed affinity, roughly [-1, 1].
     std::unordered_map<std::string, float> tagAffinity;
-    // Strongest first; negatives drive exclusion.
+    // strongest first; negatives drive exclusion.
     std::vector<std::string> topTags;
     std::vector<std::string> avoidedTags;
 
@@ -61,18 +61,18 @@ struct TasteSnapshot {
 
     std::array<float, kDifficultyBuckets> difficultyHistogram{};
     std::array<float, kLengthBuckets> lengthHistogram{};
-    std::array<float, 6> demonHistogram{};   // Index 0 unused.
+    std::array<float, 6> demonHistogram{};   // index 0 unused.
 
     float starRatedRatio = 0.f;
     float featuredRatio = 0.f;
     float epicRatio = 0.f;
     float platformerRatio = 0.f;
 
-    int preferredDifficulty = 0;   // Histogram mode, GD units.
+    int preferredDifficulty = 0;   // histogram mode, gd units.
     int preferredLength = 5;       // 5 = no preference.
     int preferredDemonDifficulty = 0;
 
-    // Meaningful interaction count used for confidence.
+    // meaningful interaction count used for confidence.
     int signalCount = 0;
     int likeCount = 0;
     int dislikeCount = 0;
@@ -81,7 +81,7 @@ struct TasteSnapshot {
     std::unordered_set<int> favoriteCreators;
     std::unordered_set<int> favoriteLevels;
 
-    // Manual choices outrank inferred history; values are +1/-1.
+    // manual choices outrank inferred history; values are +1/-1.
     std::unordered_map<std::string, int> pinnedTags;
 };
 
@@ -114,7 +114,7 @@ public:
     TasteSnapshot snapshot() const;
     bool isWarm() const;
     bool isKnownLevel(int levelID) const;
-    // Best positive level for similarity, or 0.
+    // best positive level for similarity, or 0.
     int favouriteLevelIDForSimilarity() const;
     std::unordered_set<int> knownLevelIDs() const;
 
@@ -124,16 +124,16 @@ public:
 private:
     TasteProfile();
 
-    // Events mark the snapshot stale; reads rebuild it off the event path.
+    // events mark the snapshot stale; reads rebuild it off the event path.
     void rebuildLocked() const;
     void ensureSnapshotLocked() const;
-    // Apply onboarding priors while history is sparse.
+    // apply onboarding priors while history is sparse.
     void applySeedLocked(TasteSnapshot& snapshot) const;
     float interactionWeightLocked(LevelInteraction const& rec) const;
 
     matjson::Value toJson(LevelInteraction const& rec) const;
     LevelInteraction fromJson(matjson::Value const& value) const;
-    // Migrate v2 liked values and missing dismissals.
+    // migrate v2 liked values and missing dismissals.
     LevelInteraction fromLegacyJson(matjson::Value const& value) const;
 
     std::filesystem::path profilePath() const;
@@ -146,7 +146,7 @@ private:
     std::unordered_set<int> m_favoriteLevels;
     std::unordered_map<std::string, int> m_pinnedTags;
 
-    // Preserve seed values so reloads do not drift.
+    // preserve seed values so reloads do not drift.
     bool m_seeded = false;
     int m_seedDifficulty = 30;
     float m_seedPlatformerRatio = 0.f;

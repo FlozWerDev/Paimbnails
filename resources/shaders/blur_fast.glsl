@@ -1,5 +1,5 @@
-// fixed 3.5px blur for ProfileThumbs backgrounds.
-// keep in sync with fragmentShaderFastBlur inline.
+// fixed 3.5px blur for profilethumbs backgrounds.
+// keep in sync with fragmentshaderfastblur inline.
 #ifdef GL_ES
 precision mediump float;
 #endif

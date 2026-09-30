@@ -1,6 +1,6 @@
 #pragma once
 
-// Node trees built from Spec through per-type factories.
+// node trees built from spec through per-type factories.
 
 #include <matjson.hpp>
 #include <functional>
@@ -22,7 +22,7 @@ struct Spec {
 
 using Creator = std::function<cocos2d::CCNode*(matjson::Value const& attrs)>;
 
-// Default types register on first use.
+// default types register on first use.
 class Factory {
 public:
     static Factory& get();
@@ -35,7 +35,7 @@ private:
     std::unordered_map<std::string, Creator> m_creators;
 };
 
-// Anchored positions fall back to the screen when parent is null.
+// anchored positions fall back to the screen when parent is null.
 void applyAttributes(cocos2d::CCNode* node, matjson::Value const& attrs,
                      cocos2d::CCNode* parent = nullptr);
 

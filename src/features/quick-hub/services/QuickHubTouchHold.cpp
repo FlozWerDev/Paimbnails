@@ -56,7 +56,7 @@ void resetTouch() {
     syncTouchTicking();
 }
 
-// Cocos runs first: a tracking menu means an intentional UI touch.
+// cocos runs first: a tracking menu means an intentional ui touch.
 bool hasTrackingMenu(CCNode* node) {
     if (!node || !node->isVisible()) return false;
 
@@ -213,12 +213,12 @@ void syncTouchTicking() {
 
 }
 
-// handleTouches* lives on CCEGLViewProtocol, not CCEGLView.
+// handletouches* lives on cceglviewprotocol, not cceglview.
 #include <Geode/modify/CCEGLViewProtocol.hpp>
 
 class $modify(TouchHoldView, CCEGLViewProtocol) {
     static void onModify(auto& self) {
-        // Gestures first, pet clicks after.
+        // gestures first, pet clicks after.
         (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesBegin", geode::Priority::Normal);
         (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesMove", geode::Priority::Normal);
         (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesEnd", geode::Priority::Normal);

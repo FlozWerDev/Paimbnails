@@ -18,7 +18,7 @@ std::string formatInt(int v) {
     return std::string(buf);
 }
 
-// Numbers without trailing zeros, GD-style.
+// numbers without trailing zeros, gd-style.
 std::string formatNumber(float v) {
     float rounded = std::round(v * 100.0f) / 100.0f;
     if (rounded == std::floor(rounded)) {
@@ -84,7 +84,7 @@ public:
     void openArray() { line("<array>"); ++m_depth; }
     void closeArray() { --m_depth; line("</array>"); }
 
-    // GD emits empty arrays self-closing; match for byte-compat.
+    // gd emits empty arrays self-closing; match for byte-compat.
     void emptyArray() { line("<array/>"); }
 
     void key(std::string_view k) {
@@ -126,7 +126,7 @@ geode::Result<std::string> PlistBuilder::buildString(ParsedSpritesheet const& sh
     w.key("frames");
     w.openDict();
 
-    // Insertion order: re-sorting would invalidate computed rects.
+    // insertion order: re-sorting would invalidate computed rects.
     for (auto const& f : sheet.frames) {
         w.key(f.name);
         w.openDict();

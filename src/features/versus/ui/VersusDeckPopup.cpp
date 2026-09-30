@@ -141,7 +141,7 @@ void VersusDeckPopup::rebuildGrid() {
         tag->setPosition({kListW - 10.f, y + 12.f});
         m_scroll->m_contentLayer->addChild(tag, 1);
 
-        // Cards that only exist in one mode say so, or the odds table looks
+        // cards that only exist in one mode say so, or the odds table looks
         // wrong the first time a platformer card never shows up in classic.
         if (def->modes != ModeAny) {
             auto* only = CCLabelBMFont::create(

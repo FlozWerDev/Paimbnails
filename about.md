@@ -6,6 +6,16 @@ Paimbnails transforms Geometry Dash into a <cl>fully visual experience</c>. Thum
 
 \---
 
+## Level Requests
+
+Connect Twitch, YouTube, Kick and TikTok chats or your public web request page. Viewers send `!req 12345 description`, optionally with a video URL; the description is saved and can be read in the request list. Each chat can use its own commands, or inherit the default commands from settings.
+
+Open **Origenes** in the request screen to choose a default queue for each platform and add rules for individual commands or Twitch rewards. For example, send `!req` to **General**, one reward to **Priority** and another to **Challenges**. Give multiple rules the same queue name to combine them. **Cola** switches between a named queue and **Todas**; the list, next level, navigation arrows, clearing and OBS queue follow that selection. Existing requests keep their saved destination.
+
+For Twitch channel points, enable **Pedir texto** on a custom reward. Connect Twitch, open **Origenes > Vincular un canje > Detectar siguiente**, redeem that reward with `12345 description`, then save its name and destination. Enable **Aceptar canjes vinculados**; disable Twitch commands if you want requests only through points. Each reward is matched by its ID. Unlinked rewards are ignored. This chat integration requires a text redemption while connected; it does not fulfill or refund rewards on Twitch.
+
+Duplicate levels, user limits and cooldowns apply within each queue. Storage capacity and level filters are shared. Replayed chat messages are deduplicated by their event IDs. The **Solo usuarios verificados** filter accepts verified GD web users; live chat accounts cannot verify a GD account. The live chat connectors retain their platform support and network requirements.
+
 ## Thumbnails
 
 <cb>**Level Thumbnails**</c> appear on every level cell: in search results, lists, gauntlets, map packs, daily/weekly/event and official levels. Profile pages also get their own <cb>thumbnail visuals</c>. Browse all thumbnails for a level in the <cb>**Thumbnail Gallery**</c> or capture your own using the <co>**In-Game Capture**</c> system with full scene detection and the <co>**Layer Editor**</c> to compose the perfect shot. Thumbnails support <cb>PNG, GIF, WebP and MP4 video</c>.

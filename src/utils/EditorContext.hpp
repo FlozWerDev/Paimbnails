@@ -1,6 +1,6 @@
 #pragma once
 
-// Editor isolation switch: detect by running scene, not typeid (fragile with $modify).
+// editor isolation switch: detect by running scene, not typeid (fragile with $modify).
 
 #include <Geode/Geode.hpp>
 

@@ -12,10 +12,10 @@ class ChannelGroup;
 
 namespace paimon::video {
 
-// Own FMOD channel per video; GD music keeps playing alongside video sound.
+// own fmod channel per video; gd music keeps playing alongside video sound.
 class VideoAudioTrack {
 public:
-    // Null when the file has no audio; safe off the main thread.
+    // null when the file has no audio; safe off the main thread.
     static std::unique_ptr<VideoAudioTrack> create(std::string const& videoPath);
 
     ~VideoAudioTrack();
@@ -33,7 +33,7 @@ public:
     float getVolume() const { return m_volume; }
 
     bool isPlaying() const;
-    // Seconds, or negative when not playing.
+    // seconds, or negative when not playing.
     double positionSeconds() const;
     double durationSeconds() const { return m_duration; }
 

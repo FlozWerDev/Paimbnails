@@ -7,7 +7,7 @@
 namespace paimon::editorfilters {
 
 struct FilterState {
-    // Length buckets (GJGameLevel::m_levelLength: 0..4).
+    // length buckets (gjgamelevel::m_levellength: 0..4).
     bool tiny = false;
     bool shortLen = false;
     bool medium = false;

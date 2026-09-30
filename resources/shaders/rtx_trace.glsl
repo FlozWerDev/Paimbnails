@@ -1,4 +1,4 @@
-// screen trace: height from luma+saturation, IGN strata, geometric steps.
+// screen trace: height from luma+saturation, ign strata, geometric steps.
 
 varying vec2 v_texCoord;
 
@@ -54,7 +54,7 @@ float emissiveOf(vec3 c, float range) {
     return safeSmoothstep(u_lightThreshold, u_lightThreshold + range, luma(c));
 }
 
-// per-frame IGN offset.
+// per-frame ign offset.
 float ign(vec2 p, float frame) {
     p += 5.588238 * mod(frame, 64.0);
     return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
@@ -67,7 +67,7 @@ bool outside(vec2 p) {
 void main() {
     vec2 uv = v_texCoord;
 
-    // clamp: hand-written JSON must not inject NaN/Inf.
+    // clamp: hand-written json must not inject nan/inf.
     float steps = clamp(u_raySteps, 1.0, float(kMaxSteps));
     float dist  = max(u_rayDistance, 0.001);
     float range = max(u_lightRange, 0.0001);
@@ -90,7 +90,7 @@ void main() {
                             1.0));
     float slopeMag = (abs(hR - hL) + abs(hU - hD)) * 0.5;
 
-    // separate IGN streams for diffuse vs specular.
+    // separate ign streams for diffuse vs specular.
     vec2 frag = gl_FragCoord.xy;
     float rotA   = ign(frag, u_frame);
     float rPhase = ign(frag + 11.31, u_frame + 57.0);
@@ -195,7 +195,7 @@ void main() {
             if (ndl <= 0.0) continue;
             float ndlc = clamp(ndl, 0.0, 1.0);
 
-            // D cancels with the pdf to bound energy.
+            // d cancels with the pdf to bound energy.
             float ggxD = alpha2 / max(kPi * pow(ndh * ndh * (alpha2 - 1.0) + 1.0, 2.0), 0.0000001);
             float kk = alpha * 0.5;
             float gV = ndv / max(ndv * (1.0 - kk) + kk, 0.0001);
@@ -242,7 +242,7 @@ void main() {
             }
         }
 
-        // packs (gi+refl+trans, AO) for the composite.
+        // packs (gi+refl+trans, ao) for the composite.
         refl = specAcc * (1.0 / float(kSpecTaps)) * rStr;
 
         float sat0 = max(max(c0.r, c0.g), c0.b) - min(min(c0.r, c0.g), c0.b);
@@ -251,7 +251,7 @@ void main() {
         float fPix = mix(1.0, kF0 + (1.0 - kF0) * pow(max(1.0 - ndv, 0.0), 5.0), fresAmt);
         float transK = clamp(transMask * (1.0 - fPix), 0.0, 1.0);
         if (transK > 0.001) {
-            // no TIR possible (eta < 1); stable fallbacks.
+            // no tir possible (eta < 1); stable fallbacks.
             vec3 refr3 = refract(-vDir, n, 1.0 / kGlassIor);
             vec2 refrD = refr3.xy;
             float refrL = length(refrD);

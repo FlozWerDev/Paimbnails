@@ -13,7 +13,7 @@ class $modify(PaimonSeparateDualPlayer, PlayerObject) {
         return this == m_gameLayer->m_player1 || this == m_gameLayer->m_player2;
     }
 
-    // Second kit: player 2, or anything but fighter 1 while spawning.
+    // second kit: player 2, or anything but fighter 1 while spawning.
     bool drivesSecondKit() {
         return drivesSecondKit(m_gameLayer);
     }
@@ -52,7 +52,7 @@ class $modify(PaimonSeparateDualPlayer, PlayerObject) {
         gm->m_playerStreak = liveStreak;
         gm->m_playerShipFire = liveFire;
 
-        // Keep the streak node alive for dressFighter's ship-fire fitting.
+        // keep the streak node alive for dressfighter's ship-fire fitting.
         if (vault->leadIsSecondary() != (side == Side::Secondary)) {
             vault->m_exhaustSecond = this->m_shipStreak;
         } else {
@@ -93,7 +93,7 @@ class $modify(PaimonSeparateDualPlayer, PlayerObject) {
         if (!moduleEnabled()) return PlayerObject::init(player, ship, gameLayer, layer, playLayer);
         auto vault = DualKitVault::get();
         if (!vault->isSpawning()) return PlayerObject::init(player, ship, gameLayer, layer, playLayer);
-        // Spawned player 2 starts from the stored kit, player 1 from the args.
+        // spawned player 2 starts from the stored kit, player 1 from the args.
         bool second = drivesSecondKit(gameLayer);
         return PlayerObject::init(
             second ? vault->slotIcon(paimon::separate_dual::IconSlot::Cube, Side::Secondary) : player,

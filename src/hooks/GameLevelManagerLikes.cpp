@@ -1,4 +1,4 @@
-// likeItem funnels every like/dislike, catching paths the old tracker missed
+// likeitem funnels every like/dislike, catching paths the old tracker missed
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/GameLevelManager.hpp>

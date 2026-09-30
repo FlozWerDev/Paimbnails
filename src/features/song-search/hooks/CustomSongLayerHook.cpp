@@ -40,7 +40,7 @@ class $modify(PaimonSongSearchLayer, CustomSongLayer) {
 
         std::string query = this->m_songIDInput->getString();
 
-        // Numeric (or empty) input -> normal song-id lookup.
+        // numeric (or empty) input -> normal song-id lookup.
         if (query.empty() || paimon::songsearch::isNumericID(query)) {
             CustomSongLayer::onSearch(sender);
             return;

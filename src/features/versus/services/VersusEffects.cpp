@@ -124,7 +124,7 @@ void VersusEffects::begin(CardId card, bool fromRival) {
             break;
 
         case CardId::Quake:
-            // GD's own shake, so it reads exactly like a level trigger and
+            // gd's own shake, so it reads exactly like a level trigger and
             // costs nothing to undo.
             m_layer->shakeCamera(cardAt(card).duration, 8.f, 0.04f);
             break;
@@ -136,7 +136,7 @@ void VersusEffects::begin(CardId card, bool fromRival) {
 
         case CardId::Noise:
             if (auto* engine = FMODAudioEngine::sharedEngine(); engine && !m_audioMuted) {
-                // Whatever they were playing at is what they get back; muting
+                // whatever they were playing at is what they get back; muting
                 // first would restore everyone to full volume.
                 m_musicVolume = engine->getBackgroundMusicVolume();
                 m_effectsVolume = engine->getEffectsVolume();
@@ -159,7 +159,7 @@ void VersusEffects::begin(CardId card, bool fromRival) {
             break;
 
         case CardId::Ghost:
-            // Cast on ourselves, but it is the rival's client that has to stop
+            // cast on ourselves, but it is the rival's client that has to stop
             // drawing us, so the receiving side is the one that acts.
             if (fromRival) gl::setRivalHidden(true);
             break;
@@ -226,7 +226,7 @@ void VersusEffects::end(CardId card) {
         case CardId::ZoomIn:
         case CardId::ZoomOut:
         case CardId::Mirror:
-            // applyCameraTransforms puts the layer back on the next frame, once
+            // applycameratransforms puts the layer back on the next frame, once
             // it can see that nothing is left holding it.
             break;
 
@@ -247,7 +247,7 @@ void VersusEffects::restoreCamera() {
     if (m_cameraFactor == 1.f && !m_cameraMirrored) return;
 
     if (m_layer && m_layer->m_objectLayer) {
-        // Puts both axes back, so a mirrored layer loses its sign here too.
+        // puts both axes back, so a mirrored layer loses its sign here too.
         m_layer->m_objectLayer->setScale(
             m_layer->m_objectLayer->getScaleY() / m_cameraFactor);
     }
@@ -290,11 +290,11 @@ void VersusEffects::applyCameraTransforms() {
         return;
     }
 
-    // The level writes its own zoom triggers into this same scale, so ours comes
-    // back out first; Y is the axis to read since mirror owns the sign.
+    // the level writes its own zoom triggers into this same scale, so ours comes
+    // back out first; y is the axis to read since mirror owns the sign.
     float const level = objects->getScaleY() / m_cameraFactor;
 
-    // Written after the level's own update, so ours is what ends up on screen.
+    // written after the level's own update, so ours is what ends up on screen.
     objects->setScale(level * factor);
     if (mirror) objects->setScaleX(-level * factor);
 

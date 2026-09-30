@@ -1,7 +1,7 @@
 #pragma once
 
-// Your attempts, jumps and best runs over the level thumbnail, plus the two
-// charts the game never draws. The rest lives in ExtendedInfoPopup.
+// your attempts, jumps and best runs over the level thumbnail, plus the two
+// charts the game never draws. the rest lives in extendedinfopopup.
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/GJGameLevel.hpp>
@@ -17,7 +17,7 @@ protected:
     bool init(GJGameLevel* level);
 
     void buildTiles();
-    // Both charts and their captions; rebuilt when the practice toggle flips.
+    // both charts and their captions; rebuilt when the practice toggle flips.
     void buildCharts();
 
     cocos2d::CCNode* makeTile(float width, float height, std::vector<char const*> const& frames,

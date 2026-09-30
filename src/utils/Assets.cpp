@@ -19,8 +19,8 @@ std::filesystem::path cfgPathFor(std::string const& key) {
     return base / (key + ".txt");
 }
 
-// Scale the sprite to a target dimension (keeping aspect ratio) so buttons look
-// uniform regardless of the source PNG resolution.
+// scale the sprite to a target dimension (keeping aspect ratio) so buttons look
+// uniform regardless of the source png resolution.
 void normalizeSpriteSize(CCSprite* spr, float targetDim = 45.0f) {
     if (!spr) return;
     float currentSize = std::max(spr->getContentWidth(), spr->getContentHeight());
@@ -64,7 +64,7 @@ CCSprite* loadButtonSprite(
     }
 
     if (!directive.empty()) {
-        // format: frame:Name
+        // format: frame:name
         constexpr std::string_view framePrefix = "frame:";
         constexpr std::string_view filePrefix = "file:";
         if (directive.rfind(framePrefix.data(), 0) == 0) {
@@ -76,7 +76,7 @@ CCSprite* loadButtonSprite(
                 }
             }
         } else {
-            // file:PATH or a bare path
+            // file:path or a bare path
             std::string pathStr = directive;
             if (directive.rfind(filePrefix.data(), 0) == 0) {
                 pathStr = directive.substr(filePrefix.size());
@@ -115,5 +115,5 @@ CCSprite* loadButtonSprite(
     return fallback();
 }
 
-} // namespace Assets
+} // namespace assets
 

@@ -12,7 +12,7 @@ using namespace cocos2d;
 static constexpr int kGaussianBucketOffset = 1000;
 
 BlurSystem::BlurKey BlurSystem::makeBlurKey(CCTexture2D* source, CCSize const& targetSize, float intensity, std::string const& cacheKey) {
-    // Bucket intensity in 0.5 steps to avoid thrashing the cache on small slider deltas.
+    // bucket intensity in 0.5 steps to avoid thrashing the cache on small slider deltas.
     int intensityBucket = paimon::cache::blurIntensityBucket(intensity);
     std::string sourceKey = cacheKey;
     if (sourceKey.empty()) {
@@ -26,7 +26,7 @@ BlurSystem::BlurKey BlurSystem::makeBlurKey(CCTexture2D* source, CCSize const& t
     };
 }
 
-// Returns empty for pointer-based ("tex:") source keys, which don't survive across sessions.
+// returns empty for pointer-based ("tex:") source keys, which don't survive across sessions.
 static std::string makeDiskKey(BlurSystem::BlurKey const& k, BlurSystem::BlurFlavor flavor) {
     if (k.sourceKey.empty() || k.sourceKey.rfind("tex:", 0) == 0) {
         return {};
@@ -134,7 +134,7 @@ bool BlurSystem::tryDispatchFromDisk(BlurKey const& key, BlurFlavor flavor, Queu
                 }
                 drainPendingJobs();
             } else {
-                // disk miss; fall back to a GPU job
+                // disk miss; fall back to a gpu job
                 if (m_activeJobCount < MAX_CONCURRENT_BLUR_JOBS) {
                     dispatchJob(fallbackJob);
                 } else {
@@ -146,7 +146,7 @@ bool BlurSystem::tryDispatchFromDisk(BlurKey const& key, BlurFlavor flavor, Queu
 }
 
 void BlurSystem::dispatchJob(QueuedJob const& jobDesc) {
-    // Reserve slot up-front so onJobCompleted() balances the counter on every exit path.
+    // reserve slot up-front so onjobcompleted() balances the counter on every exit path.
     ++m_activeJobCount;
     auto* src = jobDesc.source.data();
     if (!src) {
@@ -184,7 +184,7 @@ void BlurSystem::onJobCompleted(BlurKey const& key, CCSprite* result) {
     }
     if (m_activeJobCount > 0) --m_activeJobCount;
 
-    // Purge finished jobs so retained Ref<> don't pin FBO textures.
+    // purge finished jobs so retained ref<> don't pin fbo textures.
     m_runningJobs.erase(
         std::remove_if(m_runningJobs.begin(), m_runningJobs.end(),
             [](geode::Ref<Shaders::ProgressiveBlurJob> const& j) {
@@ -207,7 +207,7 @@ void BlurSystem::onJobCompleted(BlurKey const& key, CCSprite* result) {
         if (cachedTex) {
             insertBlur(key, cachedTex);
 
-            // Persist to disk (fire-and-forget), only for persistent keys.
+            // persist to disk (fire-and-forget), only for persistent keys.
             BlurFlavor flavor = (key.intensityBucket >= kGaussianBucketOffset) ? BlurFlavor::Gaussian : BlurFlavor::Paimon;
             std::string diskKey = makeDiskKey(key, flavor);
             if (!diskKey.empty() && !paimon::blur::BlurDiskCache::get().hasEntry(diskKey)) {
@@ -217,7 +217,7 @@ void BlurSystem::onJobCompleted(BlurKey const& key, CCSprite* result) {
         }
     }
 
-    // Each callback gets its own sprite (a CCSprite can only have one parent).
+    // each callback gets its own sprite (a ccsprite can only have one parent).
     for (auto& cb : callbacks) {
         if (!cb) continue;
         if (cachedTex) {
@@ -271,7 +271,7 @@ void BlurSystem::enqueueBuild(
     m_inFlight[key].push_back(std::move(onReady));
     QueuedJob job{key, geode::Ref<CCTexture2D>(source), targetSize, intensity, flavor, fastMode};
 
-    // disk hit beats a GPU job even on the priority path
+    // disk hit beats a gpu job even on the priority path
     if (tryDispatchFromDisk(key, flavor, job)) return;
 
     if (priority || m_activeJobCount < MAX_CONCURRENT_BLUR_JOBS) {

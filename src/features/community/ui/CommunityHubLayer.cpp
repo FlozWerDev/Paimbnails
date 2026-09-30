@@ -1,4 +1,5 @@
 #include "CommunityHubLayer.hpp"
+#include "../../audio/services/CaveAudio.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../utils/HttpClient.hpp"
@@ -47,7 +48,7 @@ namespace {
         int accountID = 0;
     };
     static std::vector<CachedModEntry> s_cachedModEntries;
-    // Intentionally heap-allocated to avoid atexit destructor crash (Ref<> releasing CCObject after CCPoolManager is gone)
+    // intentionally heap-allocated to avoid atexit destructor crash (ref<> releasing ccobject after ccpoolmanager is gone)
     static Ref<CCArray>& getCachedModScores() {
         static auto* s_ptr = new Ref<CCArray>();
         return *s_ptr;
@@ -60,7 +61,7 @@ namespace {
         return geode::utils::string::toLower(value);
     }
 
-    // Shares the score cache lifetime: both hold the same GJUserScore objects.
+    // shares the score cache lifetime: both hold the same gjuserscore objects.
     std::unordered_set<std::string>& iconReadyNames() {
         static auto* names = new std::unordered_set<std::string>();
         return *names;
@@ -70,7 +71,7 @@ namespace {
         return iconReadyNames().count(key) > 0;
     }
 
-    // GJUserScore::create() leaves fields untouched; set every field the cell reads.
+    // gjuserscore::create() leaves fields untouched; set every field the cell reads.
     void fillPlaceholderScore(GJUserScore* score, std::string const& username, bool admin, int accountID) {
         score->m_userName = username;
         score->m_userID = 0;
@@ -417,48 +418,22 @@ void CommunityHubLayer::update(float dt) {
 }
 
 void CommunityHubLayer::applyCaveEffect() {
+    if (m_caveApplied) return;
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_system || !engine->m_backgroundMusicChannel) return;
-    if (m_caveApplied) return;
+    if (engine->m_backgroundMusicChannel->getVolume(&m_savedBgVolume) != FMOD_OK) return;
 
-    engine->m_backgroundMusicChannel->getVolume(&m_savedBgVolume);
-    float caveVol = engine->m_musicVolume * 0.55f;
-    engine->m_backgroundMusicChannel->setVolume(caveVol);
-
-    if (!m_lowpassDSP) {
-        engine->m_system->createDSPByType(FMOD_DSP_TYPE_LOWPASS, &m_lowpassDSP);
-        if (m_lowpassDSP) {
-            m_lowpassDSP->setParameterFloat(FMOD_DSP_LOWPASS_CUTOFF, 1200.f);
-            m_lowpassDSP->setParameterFloat(FMOD_DSP_LOWPASS_RESONANCE, 2.0f);
-        }
-    }
-
-    if (!m_reverbDSP) {
-        engine->m_system->createDSPByType(FMOD_DSP_TYPE_SFXREVERB, &m_reverbDSP);
-        if (m_reverbDSP) {
-            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_DECAYTIME, 2500.f);
-            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_EARLYDELAY, 20.f);
-            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_LATEDELAY, 40.f);
-            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_HFREFERENCE, 3000.f);
-            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_DRYLEVEL, -4.f);
-            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_WETLEVEL, -8.f);
-        }
-    }
-
-    if (m_lowpassDSP) engine->m_backgroundMusicChannel->addDSP(0, m_lowpassDSP);
-    if (m_reverbDSP) engine->m_backgroundMusicChannel->addDSP(1, m_reverbDSP);
+    engine->m_backgroundMusicChannel->setVolume(engine->m_musicVolume * 0.55f);
+    paimon::audio::attachCaveEffects(engine, m_lowpassDSP, m_reverbDSP);
     m_caveApplied = true;
 }
 
 void CommunityHubLayer::removeCaveEffect() {
     auto engine = FMODAudioEngine::sharedEngine();
-    if (engine && engine->m_backgroundMusicChannel) {
-        if (m_lowpassDSP) engine->m_backgroundMusicChannel->removeDSP(m_lowpassDSP);
-        if (m_reverbDSP) engine->m_backgroundMusicChannel->removeDSP(m_reverbDSP);
+    paimon::audio::releaseCaveEffects(engine, m_lowpassDSP, m_reverbDSP);
+    if (m_caveApplied && engine && engine->m_backgroundMusicChannel) {
         engine->m_backgroundMusicChannel->setVolume(m_savedBgVolume);
     }
-    if (m_lowpassDSP) { m_lowpassDSP->release(); m_lowpassDSP = nullptr; }
-    if (m_reverbDSP) { m_reverbDSP->release(); m_reverbDSP = nullptr; }
     m_caveApplied = false;
 }
 
@@ -493,7 +468,7 @@ void CommunityHubLayer::onTab(CCObject* sender) {
         return;
     }
 
-    // Leaving thumbnails tab: drop pending downloads to free loader slots.
+    // leaving thumbnails tab: drop pending downloads to free loader slots.
     if (m_currentTab == Tab::TopThumbnails) {
         for (auto& entry : m_thumbnailEntries) {
             if (entry.levelId > 0) ThumbnailLoader::get().cancelLoad(entry.levelId);
@@ -518,7 +493,7 @@ void CommunityHubLayer::onTab(CCObject* sender) {
         }
     }
 
-    // Let the outgoing list shrink away instead of popping out of existence.
+    // let the outgoing list shrink away instead of popping out of existence.
     if (m_listContainer) {
         auto* leaving = m_listContainer;
         m_listContainer = nullptr;
@@ -596,7 +571,7 @@ CCLayerColor* CommunityHubLayer::addCell(CCNode* content, float height, int inde
     auto cell = CCLayerColor::create(ccc4(0, 0, 0, index % 2 == 0 ? 110 : 55));
     cell->setContentSize({m_listW, height});
     cell->setPosition({0.f, totalHeight - static_cast<float>(index + 1) * height});
-    // Only row background fades; labels/icons ride at full opacity so late arrivals never half-draw.
+    // only row background fades; labels/icons ride at full opacity so late arrivals never half-draw.
     cell->setCascadeOpacityEnabled(false);
     content->addChild(cell);
     return cell;
@@ -633,7 +608,7 @@ void CommunityHubLayer::showEmptyState() {
 }
 
 void CommunityHubLayer::loadTab(Tab tab) {
-    // Unschedule first: a stale retry timer would refire for the previous tab.
+    // unschedule first: a stale retry timer would refire for the previous tab.
     this->unschedule(schedule_selector(CommunityHubLayer::onRetryTimer));
     ++m_retryTag;
 
@@ -887,7 +862,7 @@ CommunityHubLayer::IconSlot* CommunityHubLayer::findIconSlot(std::string const& 
     return nullptr;
 }
 
-// Same build GJScoreCell uses: icon-type frame, palette colors, glow per profile.
+// same build gjscorecell uses: icon-type frame, palette colors, glow per profile.
 SimplePlayer* CommunityHubLayer::createIcon(GJUserScore* score, bool hasData) {
     if (!score) return nullptr;
 
@@ -1115,7 +1090,7 @@ void CommunityHubLayer::startIconPipeline() {
     }
     if (!pending) return;
 
-    // m_iconClock runs for the layer lifetime; resetting would push backoffs forward on rebuild.
+    // m_iconclock runs for the layer lifetime; resetting would push backoffs forward on rebuild.
     this->schedule(schedule_selector(CommunityHubLayer::onIconTick), kIconTickInterval);
     this->onIconTick(0.f);
 }
@@ -1146,7 +1121,7 @@ void CommunityHubLayer::onIconTick(float dt) {
         if (it == m_iconStates.end() || it->second.done) continue;
         pending = true;
         if (it->second.inFlight || it->second.readyAt > m_iconClock) continue;
-        // Re-checked per iteration: disk hits finish synchronously and free slots.
+        // re-checked per iteration: disk hits finish synchronously and free slots.
         if (inFlightCount() >= kMaxIconsInFlight) continue;
         it->second.inFlight = true;
         it->second.attempts++;
@@ -1172,7 +1147,7 @@ void CommunityHubLayer::beginIconRequest(std::string const& key) {
         }
     }
 
-    // Same source ProfilePage reads: reuse parsed account info, skip the round trip.
+    // same source profilepage reads: reuse parsed account info, skip the round trip.
     if (score->m_accountID > 0) {
         auto* glm = GameLevelManager::get();
         auto* known = glm ? glm->userInfoForAccountID(score->m_accountID) : nullptr;
@@ -1270,7 +1245,7 @@ void CommunityHubLayer::finishIconRequest(std::string const& key, bool success) 
         return;
     }
 
-    // RobTop rate-limits bursts, so back off instead of hammering.
+    // robtop rate-limits bursts, so back off instead of hammering.
     state.readyAt = m_iconClock + 0.9f * static_cast<float>(state.attempts);
 }
 
@@ -1555,7 +1530,7 @@ void CommunityHubLayer::buildCompatibleModsList() {
     float totalH = std::max(m_listH, cellH * static_cast<float>(m_compatMods.size()));
     auto* content = addScrollList(totalH);
 
-    // One menu over the content layer; each row's button opens its project anywhere tapped.
+    // one menu over the content layer; each row's button opens its project anywhere tapped.
     auto* menu = CCMenu::create();
     menu->setPosition(CCPointZero);
     menu->setContentSize({m_listW, totalH});

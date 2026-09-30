@@ -19,7 +19,7 @@ ImageBuffer SpritesheetReader::extractFrame(ImageBuffer const& atlas, SpriteFram
         return atlas.subRect(f.rectX, f.rectY, f.rectW, f.rectH);
     }
 
-    // rectW/H are logical size, so the atlas slot is their transpose; one CCW90 undoes the CW pack.
+    // rectw/h are logical size, so the atlas slot is their transpose; one ccw90 undoes the cw pack.
     auto rotated = atlas.subRect(f.rectX, f.rectY, f.rectH, f.rectW);
     rotated.rotateCCW90();
     return rotated;
@@ -36,7 +36,7 @@ ImageBuffer SpritesheetReader::composeLogicalFrame(ImageBuffer const& pixels,
         return pixels;
     }
 
-    // Cocos offset is +Y up from centre; ImageBuffer is top-left, hence -offsetY.
+    // cocos offset is +y up from centre; imagebuffer is top-left, hence -offsety.
     int dstX = static_cast<int>(std::lround(
         (sourceW - pixels.width()) * 0.5f + f.offsetX));
     int dstY = static_cast<int>(std::lround(

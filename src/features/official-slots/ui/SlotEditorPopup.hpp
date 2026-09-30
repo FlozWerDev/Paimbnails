@@ -1,7 +1,7 @@
 #pragma once
 
-// Graphical editor for one cosmetic official slot: fixed 440x320 two-column
-// popup, no scroll. Everything here is paint over a local unrated stand-in.
+// graphical editor for one cosmetic official slot: fixed 440x320 two-column
+// popup, no scroll. everything here is paint over a local unrated stand-in.
 
 #include "../OfficialSlots.hpp"
 
@@ -17,8 +17,8 @@ namespace paimon::officialslots::ui {
 
 class SlotEditorPopup : public geode::Popup {
 public:
-    // replacesOfficialId turns the form into "replace official N" mode (0 appends).
-    // onSaved runs after save/hide so the caller can redraw its own list.
+    // replacesofficialid turns the form into "replace official n" mode (0 appends).
+    // onsaved runs after save/hide so the caller can redraw its own list.
     static SlotEditorPopup* create(
         std::optional<std::string> slotId,
         int replacesOfficialId,
@@ -33,8 +33,8 @@ protected:
     );
     void onExit() override;
 
-    // Builders run once; selections restyle in place so typing in a
-    // TextInput never loses focus to a rebuild.
+    // builders run once; selections restyle in place so typing in a
+    // textinput never loses focus to a rebuild.
     void buildSourceRow();
     void buildDataRows();
     void buildDifficultyRow();
@@ -42,7 +42,7 @@ protected:
     void buildStarsRow();
     void buildPreviewCard();
     void buildFooter();
-    // Exact visible position, append mode only: replacements ride the
+    // exact visible position, append mode only: replacements ride the
     // official page, so there is nothing to place.
     void buildPositionRow(cocos2d::CCMenu* menu);
 
@@ -68,11 +68,11 @@ protected:
     void onHideOfficial(cocos2d::CCObject*);
 
     void prefillFromLevel(GJGameLevel* level);
-    // Also arms the pending import.
+    // also arms the pending import.
     void prefillFromGmd(std::filesystem::path const& path);
 
-    // Persist the draft. Returns the stored slot id, empty on failure (toast
-    // already shown). Imports a pending .gmd and discards the replaced file.
+    // persist the draft. returns the stored slot id, empty on failure (toast
+    // already shown). imports a pending .gmd and discards the replaced file.
     std::string saveDraft();
 
     void showSpinner(bool show);
@@ -86,7 +86,7 @@ protected:
     std::size_t m_positionMax = 1;
     bool m_positionDirty = false;
 
-    // picked .gmd waits here until Save/Test imports it; browsing never touches the store.
+    // picked .gmd waits here until save/test imports it; browsing never touches the store.
     std::filesystem::path m_pendingGmd;
 
     geode::TextInput* m_idInput = nullptr;

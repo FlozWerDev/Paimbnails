@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <cstdint>
 #include <cstddef>
 
@@ -15,14 +15,13 @@ enum class ImageFormat {
     QOI,
     TIFF,
     MP4,
-    APNG    // animated PNG (detected as PNG first)
+    APNG    // animated png (detected as png first)
 };
 
-// callers must pass at least the first 12 bytes.
 inline ImageFormat detect(uint8_t const* data, size_t size) {
-    if (!data || size < 4) return ImageFormat::Unknown;
+    if (!data || size < 2) return ImageFormat::Unknown;
 
-    if (data[0] == 0x89 && data[1] == 'P' && data[2] == 'N' && data[3] == 'G')
+    if (size >= 4 && data[0] == 0x89 && data[1] == 'P' && data[2] == 'N' && data[3] == 'G')
         return ImageFormat::PNG;
 
     if (size >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF)
@@ -39,11 +38,11 @@ inline ImageFormat detect(uint8_t const* data, size_t size) {
     if (data[0] == 'B' && data[1] == 'M')
         return ImageFormat::BMP;
 
-    if (data[0] == 'q' && data[1] == 'o' && data[2] == 'i' && data[3] == 'f')
+    if (size >= 4 && data[0] == 'q' && data[1] == 'o' && data[2] == 'i' && data[3] == 'f')
         return ImageFormat::QOI;
 
-    if ((data[0] == 'I' && data[1] == 'I' && data[2] == 0x2A && data[3] == 0x00)
-        || (data[0] == 'M' && data[1] == 'M' && data[2] == 0x00 && data[3] == 0x2A))
+    if (size >= 4 && ((data[0] == 'I' && data[1] == 'I' && data[2] == 0x2A && data[3] == 0x00)
+        || (data[0] == 'M' && data[1] == 'M' && data[2] == 0x00 && data[3] == 0x2A)))
         return ImageFormat::TIFF;
 
     if (size >= 8 && data[4] == 'f' && data[5] == 't' && data[6] == 'y' && data[7] == 'p')
@@ -53,29 +52,29 @@ inline ImageFormat detect(uint8_t const* data, size_t size) {
 }
 
 inline bool isGif(uint8_t const* data, size_t size) {
-    return size >= 6
+    return data && size >= 6
         && data[0] == 'G' && data[1] == 'I' && data[2] == 'F' && data[3] == '8'
         && (data[4] == '7' || data[4] == '9') && data[5] == 'a';
 }
 
 inline bool isPng(uint8_t const* data, size_t size) {
-    return size >= 4
+    return data && size >= 4
         && data[0] == 0x89 && data[1] == 'P' && data[2] == 'N' && data[3] == 'G';
 }
 
 inline bool isJpeg(uint8_t const* data, size_t size) {
-    return size >= 3
+    return data && size >= 3
         && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF;
 }
 
 inline bool isWebp(uint8_t const* data, size_t size) {
-    return size >= 12
+    return data && size >= 12
         && data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F'
         && data[8] == 'W' && data[9] == 'E' && data[10] == 'B' && data[11] == 'P';
 }
 
 inline bool isMp4(uint8_t const* data, size_t size) {
-    return size >= 8
+    return data && size >= 8
         && data[4] == 'f' && data[5] == 't' && data[6] == 'y' && data[7] == 'p';
 }
 

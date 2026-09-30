@@ -1,5 +1,5 @@
 #pragma once
-// One text field: names a styling when you save it, and renames it later.
+// one text field: names a styling when you save it, and renames it later.
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
@@ -14,7 +14,7 @@ class IconSetNamePopup : public geode::Popup {
 public:
     using Callback = std::function<void(std::string const&)>;
 
-    // The callback runs after the popup closes and never with an empty name.
+    // the callback runs after the popup closes and never with an empty name.
     static IconSetNamePopup* create(std::string title, std::string initial, Callback onConfirm);
 
 protected:

@@ -4,7 +4,7 @@
 
 namespace paimon::ui {
 
-// detach IME/delegate first; late key events AV in TextInput::textChanged otherwise.
+// detach ime/delegate first; late key events av in textinput::textchanged otherwise.
 inline void detachGeodeTextInput(geode::TextInput* input) {
     if (!input) return;
 

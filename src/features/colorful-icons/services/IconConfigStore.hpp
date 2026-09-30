@@ -1,5 +1,5 @@
 #pragma once
-// Broadcasts IconConfigChangedEvent on mutation.
+// broadcasts iconconfigchangedevent on mutation.
 
 #include "../PaimonIconsConfig.hpp"
 
@@ -9,7 +9,7 @@
 
 namespace paimon::icons {
 
-// Filter: empty string (single global broadcast).
+// filter: empty string (single global broadcast).
 class IconConfigChangedEvent
     : public geode::Event<IconConfigChangedEvent, bool(), std::string>
 {
@@ -17,7 +17,7 @@ public:
     using Event::Event;
 };
 
-// Do not retain references across save() calls.
+// do not retain references across save() calls.
 class IconConfigStore final {
 public:
     static IconConfigStore& get();
@@ -30,7 +30,7 @@ public:
 
     void load();
 
-    // Master switch, backed by the "colorful-icons-enabled" mod setting.
+    // master switch, backed by the "colorful-icons-enabled" mod setting.
     bool isFeatureEnabled() const;
     void setFeatureEnabled(bool enabled);
 

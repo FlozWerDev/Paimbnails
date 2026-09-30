@@ -10,14 +10,14 @@ namespace paimon::versus {
 
 namespace {
 
-// Lower bound of every tier. Paimon has none: the server grants it to the top
+// lower bound of every tier. paimon has none: the server grants it to the top
 // twenty of each mode and takes it away when they drop out.
 constexpr std::array<int, 20> kFloor = {
        0,  800,  900, 1000, 1100, 1200, 1300, 1400, 1500, 1600,
     1700, 1800, 1900, 2000, 2125, 2250, 2375, 2500, 2700, 2700,
 };
 
-// Divisions stop at Paragon; above it the ladder is a single list per tier.
+// divisions stop at paragon; above it the ladder is a single list per tier.
 constexpr int kLastDividedTier = 12;
 
 int ceilingOf(int tier) {

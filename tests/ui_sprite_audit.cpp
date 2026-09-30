@@ -1,15 +1,12 @@
-// Auditoria UI-only sobre los Resources OFICIALES del juego.
-//
-// Recorre todos los .plist de Resources, clasifica cada marco con el
-// UiSpriteCatalog real y vuelca por hoja: cuantos marcos caerian en cada
-// SpriteKind (es decir, que se pintaria con cada TintScope). Tambien
-// clasifica los PNGs sueltos (no-hoja).
-//
-// Compila sin Geode:
-//   g++ -std=c++17 -O2 -o /tmp/uiaudit tests/ui_sprite_audit.cpp
-//   /tmp/uiaudit [dir-Resources] [archivo-salida]
-//
-// Solo necesita los NOMBRES de marco, asi que el parser plist es minimo:
+// auditoria ui-only sobre los resources oficiales del juego.
+// recorre todos los .plist de resources, clasifica cada marco con el
+// uispritecatalog real y vuelca por hoja: cuantos marcos caerian en cada
+// spritekind (es decir, que se pintaria con cada tintscope). tambien
+// clasifica los pngs sueltos (no-hoja).
+// compila sin geode:
+//   g++ -std=c++17 -o2 -o /tmp/uiaudit tests/ui_sprite_audit.cpp
+//   /tmp/uiaudit [dir-resources] [archivo-salida]
+// solo necesita los nombres de marco, asi que el parser plist es minimo:
 // toma las <key>*.png</key> del dict de frames.
 
 #include <algorithm>
@@ -38,8 +35,8 @@ std::string readFile(fs::path const& p) {
     return ss.str();
 }
 
-// Nombres de marco: claves que terminan en .png dentro del plist.
-// (Las claves de metadata no terminan en .png; los valores .png van en
+// nombres de marco: claves que terminan en .png dentro del plist.
+// (las claves de metadata no terminan en .png; los valores .png van en
 // <string>, no en <key>.)
 std::vector<std::string> frameNames(std::string const& xml) {
     std::vector<std::string> out;
@@ -96,7 +93,7 @@ int main(int argc, char** argv) {
         out = &fout;
     }
 
-    // Familia de hoja -> marcos unicos (todas las calidades).
+    // familia de hoja -> marcos unicos (todas las calidades).
     std::map<std::string, std::set<std::string>> families;
     std::size_t plistCount = 0;
     for (auto const& e : fs::directory_iterator(res)) {
@@ -107,7 +104,7 @@ int main(int argc, char** argv) {
             families[sheetBase(e.path().filename().string())].insert(n);
     }
 
-    // PNGs sueltos: sin plist de ninguna calidad.
+    // pngs sueltos: sin plist de ninguna calidad.
     std::set<std::string> sheetPngs;
     for (auto const& [base, names] : families) {
         for (auto q : {"-uhd.png", "-hd.png", ".png"})

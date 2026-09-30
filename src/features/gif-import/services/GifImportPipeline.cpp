@@ -156,7 +156,6 @@ struct BucketKey {
     }
 };
 
-// the UI sets the cap; here the range is only sanitized.
 Options sanitize(Options options) {
     options.maxDimension = std::clamp(options.maxDimension, 4, 320);
     options.minDimension = std::clamp(options.minDimension, 4, options.maxDimension);
@@ -167,7 +166,7 @@ Options sanitize(Options options) {
     options.backgroundTolerance = std::clamp(options.backgroundTolerance, 0, 120);
     options.pixelSize = std::clamp(options.pixelSize, 1.f, 30.f);
     options.blurGlowDiameter = std::clamp(options.blurGlowDiameter, 2.f, 20.f);
-    // Pixel follows the popup's Smooth/Pixel; default Smooth.
+    // pixel follows the popup's smooth/pixel; default smooth.
     // dither off: loses source-resolution analysis.
     if (options.mode == ImportMode::Paint || options.mode == ImportMode::Render ||
         options.mode == ImportMode::Free) {
@@ -393,7 +392,84 @@ Pixel sampleArea(
     };
 }
 
-// Analyzes at true resolution with a per-frame sample cap.
+float paintResolutionLoss(SourceAnimation const& source, int dimension) {
+    int const longest = std::max(source.width, source.height);
+    int const width = std::max(1, source.width * dimension / longest);
+    int const height = std::max(1, source.height * dimension / longest);
+    int const stride = std::max(1, (dimension + 159) / 160);
+    std::array<std::size_t, 3> const frames{
+        0, source.frames.size() / 2, source.frames.size() - 1};
+    float worst = 0.f;
+    std::size_t previous = source.frames.size();
+    for (auto const frameIndex : frames) {
+        if (frameIndex == previous) continue;
+        previous = frameIndex;
+        auto const& frame = source.frames[frameIndex];
+        double loss = 0.0;
+        std::size_t samples = 0;
+        for (int y = 0; y < height; y += stride) {
+            for (int x = (y / stride) % stride; x < width; x += stride) {
+                int const x0 = x * source.width / width;
+                int const x1 = std::min(source.width,
+                    ((x + 1) * source.width + width - 1) / width);
+                int const y0 = y * source.height / height;
+                int const y1 = std::min(source.height,
+                    ((y + 1) * source.height + height - 1) / height);
+                std::array<double, 4> sum{};
+                std::array<int, 4> low{255, 255, 255, 255}, high{};
+                int const count = (x1 - x0) * (y1 - y0);
+                for (int sy = y0; sy < y1; ++sy) {
+                    for (int sx = x0; sx < x1; ++sx) {
+                        auto const p = sourcePixel(frame,
+                            static_cast<std::size_t>(sy) * source.width + sx);
+                        std::array<int, 4> const value{
+                            p.r * p.a / 255, p.g * p.a / 255, p.b * p.a / 255, p.a};
+                        for (int channel = 0; channel < 4; ++channel) {
+                            sum[channel] += value[channel];
+                            low[channel] = std::min(low[channel], value[channel]);
+                            high[channel] = std::max(high[channel], value[channel]);
+                        }
+                    }
+                }
+                samples += static_cast<std::size_t>(count);
+                int contrast = 0;
+                for (int channel = 0; channel < 4; ++channel) {
+                    contrast = std::max(contrast, high[channel] - low[channel]);
+                    sum[channel] /= count;
+                }
+                // Low-contrast texture should not force a larger object grid.
+                if (contrast <= 32) continue;
+                for (int sy = y0; sy < y1; ++sy) {
+                    for (int sx = x0; sx < x1; ++sx) {
+                        auto const p = sourcePixel(frame,
+                            static_cast<std::size_t>(sy) * source.width + sx);
+                        std::array<int, 4> const value{
+                            p.r * p.a / 255, p.g * p.a / 255, p.b * p.a / 255, p.a};
+                        double error = 0.0;
+                        for (int channel = 0; channel < 4; ++channel) {
+                            error = std::max(error, std::abs(value[channel] - sum[channel]));
+                        }
+                        loss += std::max(0.0, error - 8.0);
+                    }
+                }
+            }
+        }
+        if (samples > 0) worst = std::max(worst, static_cast<float>(loss / samples));
+    }
+    return worst;
+}
+
+int autoPaintDimension(SourceAnimation const& source) {
+    int const ceiling = std::min(680, std::max(source.width, source.height));
+    if (ceiling <= 320) return 320;
+    for (int const candidate : {320, 480}) {
+        if (candidate >= ceiling) return ceiling;
+        if (paintResolutionLoss(source, candidate) <= 2.f) return candidate;
+    }
+    return ceiling;
+}
+
+// analyzes at true resolution with a per-frame sample cap.
 constexpr std::size_t kMaxAnalysisSamples = 4u << 20;
 
 int analysisStride(int width, int height) {
@@ -633,7 +709,7 @@ std::vector<Color> medianCut(Histogram const& histogram, int maxColors) {
     return palette;
 }
 
-// Snaps each entry to the most-repeated flat tone and fuses equals.
+// snaps each entry to the most-repeated flat tone and fuses equals.
 std::vector<Color> refinePalette(Histogram const& histogram, std::vector<Color> palette) {
     if (palette.size() < 2) return palette;
 
@@ -740,7 +816,7 @@ int nearestColor(float r, float g, float b, std::vector<OkLab> const& paletteLab
     return best;
 }
 
-// Single table quantizing every source pixel.
+// single table quantizing every source pixel.
 std::vector<std::int16_t> paletteLookup(std::vector<Color> const& palette) {
     std::vector<OkLab> labs;
     labs.reserve(palette.size());
@@ -767,7 +843,7 @@ std::vector<std::int16_t> paletteLookup(std::vector<Color> const& palette) {
     return lookup;
 }
 
-// Votes the dominant color; averaging invents edge tones.
+// votes the dominant color; averaging invents edge tones.
 std::vector<GridFrame> quantizeFromSource(
     SourceAnimation const& source,
     std::vector<SelectedFrame> const& selected,
@@ -900,7 +976,7 @@ std::vector<GridFrame> quantize(
     return output;
 }
 
-// Source histogram; in Paint flatness weighs, not orla.
+// source histogram; in paint flatness weighs, not orla.
 std::vector<Color> buildPalette(
     SourceAnimation const& source,
     std::vector<SelectedFrame> const& selected,
@@ -968,15 +1044,15 @@ std::vector<Color> buildPalette(
 constexpr int kSpeckleColorDistance = 50;
 constexpr int kSmallPaletteSpeckleDistance = 65;
 
-// Cost = distance over area: melts noise, keeps detail.
+// cost = distance over area: melts noise, keeps detail.
 constexpr float kSpeckBudget = 0.25f;
-// glow melts neighbor cells: Vert swallows specks that would show in flat.
-// At x4 it eats eyes; x2 trims without touching them.
+// glow melts neighbor cells: vert swallows specks that would show in flat.
+// at x4 it eats eyes; x2 trims without touching them.
 constexpr float kVertSpeckScale = 2.f;
 // area cap: long thin lines survive.
 constexpr int kSpeckArea = 12;
 
-// Small blobs are dear: one object each while splitting the neighbor; melted.
+// small blobs are dear: one object each while splitting the neighbor; melted.
 void mergeFaintSpecks(
     std::vector<GridFrame>& frames,
     std::vector<Color> const& palette,
@@ -1071,7 +1147,7 @@ void mergeFaintSpecks(
     }
 }
 
-// Only fully-surrounded drops; the drawing edge shows.
+// only fully-surrounded drops; the drawing edge shows.
 void dissolveSpecks(
     std::vector<GridFrame>& frames,
     std::vector<Color> const& palette,
@@ -1189,7 +1265,7 @@ void dissolveSpecks(
     }
 }
 
-// Melts the speck into its most-present near-equal neighbor.
+// melts the speck into its most-present near-equal neighbor.
 int nearbyReplacement(
     std::vector<int> const& votes,
     std::vector<Color> const& palette,
@@ -1218,7 +1294,7 @@ int nearbyReplacement(
     return replacement;
 }
 
-// Melts only when the color lands on the line between its neighbors.
+// melts only when the color lands on the line between its neighbors.
 int blendReplacement(
     std::vector<int> const& votes,
     std::vector<Color> const& palette,
@@ -1475,13 +1551,185 @@ void compactPaintSpeckles(
 struct GeometryContext {
     ImportMode mode = ImportMode::Blocks;
     bool quarterGlow = false;
+    int blurSourceColors = 0;
+    int blurStride = 1;
+    std::vector<float> blurPositionOffsets;
     float glowDiameter = 4.f;
-    // sampling lends color; never turns Paint into pixel output.
+    // sampling lends color; never turns paint into pixel output.
     bool gridExact = true;
     std::vector<std::vector<std::uint8_t>> obstacles;
     std::vector<int> ranks;
     std::vector<std::uint8_t> empty;
 };
+
+constexpr int kBlurMaxStride = 3;
+
+int blurSamplingStride(float glowDiameter) {
+    return glowDiameter >= 16.f ? kBlurMaxStride : glowDiameter >= 10.f ? 2 : 1;
+}
+
+void compactBlurFrames(
+    std::vector<GridFrame>& frames,
+    std::vector<Color>& palette,
+    int width,
+    int height,
+    int stride,
+    std::vector<float>& opacityScales,
+    std::vector<float>& positionOffsets
+) {
+    opacityScales.assign(palette.size(), 1.f);
+    positionOffsets.assign(palette.size(), 0.f);
+    for (auto& frame : frames) {
+        for (auto& cell : frame.cells) {
+            if (cell < 0) continue;
+            auto const& color = palette[static_cast<std::size_t>(cell)];
+            // black contributes no light through an additive channel.
+            if (color.r == 0 && color.g == 0 && color.b == 0) cell = -1;
+        }
+    }
+    if (stride < 2 || frames.empty() || palette.empty()) return;
+
+    std::size_t const sourceColors = palette.size();
+    constexpr int maxColorDeviationSq = 56 * 56 * 3;
+    auto nearestPaletteColor = [&](Color const& average) {
+        int bestColor = 0;
+        int bestDistance = colorDistanceSq(average, palette.front());
+        for (std::size_t color = 1; color < sourceColors; ++color) {
+            int const distance = colorDistanceSq(average, palette[color]);
+            if (distance < bestDistance) {
+                bestColor = static_cast<int>(color);
+                bestDistance = distance;
+            }
+        }
+        return bestColor;
+    };
+
+    struct Group {
+        int x = 0;
+        int y = 0;
+        int size = 0;
+    };
+    std::vector<std::uint8_t> reserved(
+        static_cast<std::size_t>(width) * height, 0);
+    auto eligible = [&](int x, int y, int size) {
+        for (int blockY = 0; blockY < size; ++blockY) {
+            for (int blockX = 0; blockX < size; ++blockX) {
+                if (reserved[static_cast<std::size_t>(y + blockY) * width + x + blockX]) {
+                    return false;
+                }
+            }
+        }
+        for (auto const& frame : frames) {
+            int count = 0, sumR = 0, sumG = 0, sumB = 0;
+            std::array<Color, 4 * 4> colors{};
+            for (int blockY = 0; blockY < size; ++blockY) {
+                for (int blockX = 0; blockX < size; ++blockX) {
+                    std::size_t const cell =
+                        static_cast<std::size_t>(y + blockY) * width + x + blockX;
+                    int const colorIndex = frame.cells[cell];
+                    if (colorIndex < 0 || colorIndex >= static_cast<int>(sourceColors)) {
+                        return false;
+                    }
+                    auto const& color = palette[static_cast<std::size_t>(colorIndex)];
+                    colors[static_cast<std::size_t>(count++)] = color;
+                    sumR += color.r;
+                    sumG += color.g;
+                    sumB += color.b;
+                }
+            }
+            Color const average{
+                static_cast<std::uint8_t>(sumR / count),
+                static_cast<std::uint8_t>(sumG / count),
+                static_cast<std::uint8_t>(sumB / count)};
+            int const allowedDeviation = size == 4
+                ? 40 * 40 * 3 : maxColorDeviationSq;
+            for (int index = 0; index < count; ++index) {
+                if (colorDistanceSq(colors[static_cast<std::size_t>(index)], average) >
+                    allowedDeviation) {
+                    return false;
+                }
+            }
+            auto const& nearest = palette[
+                static_cast<std::size_t>(nearestPaletteColor(average))];
+            if (nearest.r == 0 && nearest.g == 0 && nearest.b == 0) return false;
+        }
+        return true;
+    };
+
+    auto selectGroups = [&](int size) {
+        std::vector<Group> selected;
+        int bestCount = -1;
+        for (int phaseY = 0; phaseY < size; ++phaseY) {
+            for (int phaseX = 0; phaseX < size; ++phaseX) {
+                std::vector<Group> candidate;
+                for (int y = phaseY; y + size <= height; y += size) {
+                    for (int x = phaseX; x + size <= width; x += size) {
+                        if (eligible(x, y, size)) candidate.push_back({x, y, size});
+                    }
+                }
+                if (static_cast<int>(candidate.size()) > bestCount) {
+                    bestCount = static_cast<int>(candidate.size());
+                    selected = std::move(candidate);
+                }
+            }
+        }
+        for (auto const& group : selected) {
+            for (int y = 0; y < group.size; ++y) {
+                for (int x = 0; x < group.size; ++x) {
+                    reserved[static_cast<std::size_t>(group.y + y) * width + group.x + x] = 1;
+                }
+            }
+        }
+        return selected;
+    };
+
+    auto const largestGroups = selectGroups(4);
+    auto const largeGroups = selectGroups(3);
+    auto const smallGroups = selectGroups(2);
+    std::vector<int> variants(sourceColors * 3, -1);
+    auto variantFor = [&](int colorIndex, int groupSize) {
+        std::size_t const sizeSlot = groupSize == 4 ? 2 : groupSize == 3 ? 1 : 0;
+        std::size_t const key = static_cast<std::size_t>(colorIndex) * 3 + sizeSlot;
+        int& variant = variants[key];
+        if (variant >= 0) return variant;
+        Color const color = palette[static_cast<std::size_t>(colorIndex)];
+        variant = static_cast<int>(palette.size());
+        palette.push_back(color);
+        opacityScales.push_back(static_cast<float>(groupSize * groupSize));
+        positionOffsets.push_back(groupSize % 2 == 0 ? -0.5f : 0.f);
+        return variant;
+    };
+
+    auto compact = [&](Group const& group) {
+        for (auto& frame : frames) {
+            int sumR = 0, sumG = 0, sumB = 0;
+            for (int y = 0; y < group.size; ++y) {
+                for (int x = 0; x < group.size; ++x) {
+                    std::size_t const cell =
+                        static_cast<std::size_t>(group.y + y) * width + group.x + x;
+                    auto const& color = palette[static_cast<std::size_t>(frame.cells[cell])];
+                    sumR += color.r;
+                    sumG += color.g;
+                    sumB += color.b;
+                    frame.cells[cell] = -1;
+                }
+            }
+            int const count = group.size * group.size;
+            Color const average{
+                static_cast<std::uint8_t>(sumR / count),
+                static_cast<std::uint8_t>(sumG / count),
+                static_cast<std::uint8_t>(sumB / count)};
+            int const color = nearestPaletteColor(average);
+            std::size_t const center =
+                static_cast<std::size_t>(group.y + group.size / 2) * width +
+                group.x + group.size / 2;
+            frame.cells[center] = variantFor(color, group.size);
+        }
+    };
+    for (auto const& group : largestGroups) compact(group);
+    for (auto const& group : largeGroups) compact(group);
+    for (auto const& group : smallGroups) compact(group);
+}
 
 inline bool paintPathIsGridExact(ImportMode mode, SamplingMode sampling) {
     (void)sampling;
@@ -1520,8 +1768,17 @@ std::vector<Primitive> buildGeometry(
             float const size = context.glowDiameter;
             objects.reserve(positions.size() * (context.quarterGlow ? 4 : 1));
             for (int position : positions) {
-                float const x = position % width + 0.5f;
-                float const y = position / width + 0.5f;
+                float x = position % width + 0.5f;
+                float y = position / width + 0.5f;
+                if (context.blurStride > 1 && color >= context.blurSourceColors) {
+                    int const blockX = (position % width) / context.blurStride;
+                    int const blockY = (position / width) / context.blurStride;
+                    x = blockX * context.blurStride + context.blurStride * 0.5f;
+                    y = blockY * context.blurStride + context.blurStride * 0.5f;
+                } else if (color < context.blurPositionOffsets.size()) {
+                    x += context.blurPositionOffsets[color];
+                    y += context.blurPositionOffsets[color];
+                }
                 if (context.quarterGlow) {
                     float const half = size * 0.5f;
                     float const off = half * 0.5f;
@@ -1656,7 +1913,7 @@ std::vector<std::vector<std::uint8_t>> paintObstacles(
     return result;
 }
 
-// Cells free in every frame: diagonal caps land peak-free.
+// cells free in every frame: diagonal caps land peak-free.
 std::vector<std::uint8_t> paintVoid(std::vector<GridFrame> const& frames, int cells) {
     std::vector<std::uint8_t> empty(static_cast<std::size_t>(cells), 1);
     for (auto const& frame : frames) {
@@ -1915,7 +2172,7 @@ Candidate frameCandidate(
     return candidate;
 }
 
-// Only the starting pose is traced; Moves carry the rest.
+// only the starting pose is traced; moves carry the rest.
 std::vector<MotionTrack> buildMotionTracks(
     std::vector<MotionGroup> const& groups,
     int width,
@@ -1945,7 +2202,7 @@ std::vector<MotionTrack> buildMotionTracks(
     return tracks;
 }
 
-// Moving pays when the total drops under the trigger cap.
+// moving pays when the total drops under the trigger cap.
 bool worthMoving(Candidate const& plain, Candidate const& moved, std::size_t objectBudget) {
     if (moved.triggers > kPlaybackTriggerLimit) return false;
     if (moved.total() > objectBudget) return false;
@@ -1976,9 +2233,9 @@ Candidate chooseCandidate(Candidate temporal, Candidate perFrame, std::size_t ob
     return temporal.total() <= perFrame.total() ? std::move(temporal) : std::move(perFrame);
 }
 
-// Reindexes used molds so the library isn't dragged along.
+// reindexes used molds so the library isn't dragged along.
 void collectStamps(ImportPlan& plan) {
-    // Free alone uses molds; the library is global.
+    // free alone uses molds; the library is global.
     if (plan.mode != ImportMode::Free) return;
     auto const& variants = stampVariants();
     std::map<std::uint16_t, std::uint16_t> slots;
@@ -2140,8 +2397,21 @@ BuildResult buildAt(
         preview->publish(gridPreviewImage(frames.front().cells, palette, width, height));
     }
     auto const referenceFrames = frames;
+    std::vector<float> glowOpacityScales;
+    std::vector<float> blurPositionOffsets;
+    int const sourceColorCount = static_cast<int>(palette.size());
+    int const blurStride = options.mode == ImportMode::Blur
+        ? blurSamplingStride(options.blurGlowDiameter) : 1;
+    if (options.mode == ImportMode::Blur) {
+        compactBlurFrames(
+            frames, palette, width, height, blurStride, glowOpacityScales,
+            blurPositionOffsets);
+    }
     GeometryContext context;
     context.mode = options.mode;
+    context.blurSourceColors = sourceColorCount;
+    context.blurStride = options.mode == ImportMode::Blur ? 1 : blurStride;
+    context.blurPositionOffsets = std::move(blurPositionOffsets);
     context.gridExact = paintPathIsGridExact(options.mode, options.sampling);
     context.quarterGlow = options.mode == ImportMode::Blur &&
         options.softStamps.size() == 7 && !options.softStamps[0].objectId;
@@ -2212,6 +2482,10 @@ BuildResult buildAt(
                 // stitched seams merge with their strips too.
                 mergePaintSolids(chosen.staticObjects);
             }
+            if (context.mode == ImportMode::Paint) {
+                smoothPaintFragments(chosen.staticObjects, frames.front().cells,
+                    context.ranks, width, height);
+            }
         }
     } else {
         auto plan = [&](std::vector<GridFrame> const& source) {
@@ -2246,8 +2520,10 @@ BuildResult buildAt(
     plan.height = height;
     plan.sourceFrames = static_cast<int>(source.frames.size());
     plan.actualDimension = std::max(width, height);
+    plan.sourceColorCount = sourceColorCount;
     plan.mode = options.mode;
     plan.palette = std::move(palette);
+    plan.glowOpacityScales = std::move(glowOpacityScales);
     plan.frames = std::move(frames);
     plan.staticObjects = std::move(chosen.staticObjects);
     plan.tracks = std::move(chosen.tracks);
@@ -2581,7 +2857,7 @@ BuildResult buildRegularPlan(
     return {{}, "No cabe en el presupuesto ni con la resolucion y frames minimos."};
 }
 
-// Motion goes last: its edge would poison the search.
+// motion goes last: its edge would poison the search.
 BuildResult tryMotionPlan(
     SourceAnimation const& source,
     Options const& options,
@@ -2691,6 +2967,9 @@ BuildResult buildPlan(
     int frameLimit = std::min(options.maxFrames, static_cast<int>(source.frames.size()));
     Options searchOptions = options;
     searchOptions.motion = false;
+    if (options.mode == ImportMode::Paint && options.autoResolution) {
+        searchOptions.maxDimension = autoPaintDimension(source);
+    }
     PreviewThrottle throttle{std::move(preview)};
     // no callback means nobody to notify: pass null and skip the raster.
     PreviewThrottle* previewPtr = throttle.callback ? &throttle : nullptr;

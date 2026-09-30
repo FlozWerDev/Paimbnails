@@ -14,7 +14,7 @@ struct Body {
     float halfW = 0.f;
     float halfH = 0.f;
     float invMass = 1.f;                  // 0 = static (dragged)
-    float invInertia = 1.f;               // 1/I
+    float invInertia = 1.f;               // 1/i
     bool asleep = false;
     float sleepTimer = 0.f;
     // base scale + impact deform (squash/stretch)

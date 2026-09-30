@@ -33,15 +33,15 @@ cocos2d::ccColor3B colorFromJson(matjson::Value const& v, cocos2d::ccColor3B fal
     };
 }
 
-// Old saves may hold modes/styles that the redesign removed; snap them to the
+// old saves may hold modes/styles that the redesign removed; snap them to the
 // closest surviving value so the enums never carry an out-of-range int.
 paimon::icons::ColorMode sanitizeMode(int v) {
     using paimon::icons::ColorMode;
     switch (v) {
         case 0: case 1: case 2: case 4: case 5: case 6: case 8: case 9:
             return static_cast<ColorMode>(v);
-        case 3:  return ColorMode::HueShift;  // legacy SatBoost
-        default: return ColorMode::Player;    // legacy PerGamemode & unknown
+        case 3:  return ColorMode::HueShift;  // legacy satboost
+        default: return ColorMode::Player;    // legacy pergamemode & unknown
     }
 }
 
@@ -50,13 +50,13 @@ paimon::icons::LockStyle sanitizeLockStyle(int v) {
     switch (v) {
         case 0: case 1: case 2: case 3: case 5:
             return static_cast<LockStyle>(v);
-        case 4:  return LockStyle::ShowDimmed;  // legacy CustomMix
+        case 4:  return LockStyle::ShowDimmed;  // legacy custommix
         default: return LockStyle::Default;
     }
 }
 
 paimon::icons::RandomPalette sanitizePalette(int v) {
-    // 4 was the legacy Monoschemed palette.
+    // 4 was the legacy monoschemed palette.
     return v >= 0 && v <= 3
         ? static_cast<paimon::icons::RandomPalette>(v)
         : paimon::icons::RandomPalette::Vibrant;
@@ -134,7 +134,7 @@ struct matjson::Serialize<paimon::icons::PaimonIconConfig> {
 namespace paimon::icons {
 
 namespace {
-// Kept from before the redesign: old saves simply carry extra keys we ignore.
+// kept from before the redesign: old saves simply carry extra keys we ignore.
 constexpr char const* kSaveKey = "paimon-icons.config.v1";
 }  // namespace
 

@@ -155,8 +155,8 @@ struct RoundState {
     std::string correctWord;
     int timeLeftSeconds = 0;
     bool localPlayerIsDrawer = false;
-    // Absolute local deadline (epoch ms). 0 = no active timer.
-    // Used to interpolate the countdown between server snapshots.
+    // absolute local deadline (epoch ms). 0 = no active timer.
+    // used to interpolate the countdown between server snapshots.
     uint64_t endsAtLocalMs = 0;
 };
 

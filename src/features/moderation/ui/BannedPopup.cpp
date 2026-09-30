@@ -13,7 +13,7 @@ bool BannedPopup::init(std::string const& reason) {
 
     this->setTitle("Banned");
 
-    // No way out except disabling the mod.
+    // no way out except disabling the mod.
     if (m_closeBtn) m_closeBtn->setVisible(false);
     this->setKeypadEnabled(false);
 

@@ -25,7 +25,7 @@ private:
     std::vector<BeatShaderManager::ShaderEntry> m_shaders;
     int m_shaderIdx = 0;
     std::vector<std::string> m_layerKeys;
-    int m_tab = 0; // 0 = Basico, 1 = Avanzado
+    int m_tab = 0; // 0 = basico, 1 = avanzado
 
     geode::ScrollLayer* m_scroll = nullptr;
     cocos2d::CCLabelBMFont* m_shaderDescLabel = nullptr;

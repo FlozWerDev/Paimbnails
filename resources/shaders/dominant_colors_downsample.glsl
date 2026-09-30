@@ -1,4 +1,4 @@
-// sRGB to LAB downsample for CPU readback; A=0 drops the pixel.
+// srgb to lab downsample for cpu readback; a=0 drops the pixel.
 
 #ifdef GL_ES
 precision mediump float;
@@ -60,7 +60,7 @@ void main() {
     float minC = min(rgb.r, min(rgb.g, rgb.b));
     float maxC = max(rgb.r, max(rgb.g, rgb.b));
     
-    // thresholds mirror CPU-side 15/255 and 240/255.
+    // thresholds mirror cpu-side 15/255 and 240/255.
     bool isBlack = maxC < 0.059;
     bool isWhite = minC > 0.941;
     

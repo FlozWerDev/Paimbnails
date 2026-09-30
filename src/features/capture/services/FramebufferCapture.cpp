@@ -1,4 +1,4 @@
-// Offscreen level capture with an async back-buffer fallback.
+// offscreen level capture with an async back-buffer fallback.
 
 #include "FramebufferCapture.hpp"
 #include "SceneCapture.hpp"
@@ -64,7 +64,7 @@ using paimon::compat::ModCompat;
 #define GL_MAX_RENDERBUFFER_SIZE 0x84E8
 #endif
 
-// Retargeted render owns the camera; background-art helpers may deref stale state.
+// retargeted render owns the camera; background-art helpers may deref stale state.
 static std::atomic<bool> s_suppressCameraArt{false};
 
 struct SuppressCameraArtGuard {
@@ -86,13 +86,13 @@ class $modify(PaimonCaptureBGArtGuard, GJBaseGameLayer) {
     }
 };
 
-// Best-effort recalc during retarget; raw pointers keep destructors out of __try.
+// best-effort recalc during retarget; raw pointers keep destructors out of __try.
 #ifdef GEODE_IS_WINDOWS
 static bool sehGuardedCall(void (*fn)(PlayLayer*), PlayLayer* pl) noexcept {
     __try {
         fn(pl);
         return true;
-    } __except (GetExceptionCode() == 0xC0000005L /* EXCEPTION_ACCESS_VIOLATION */
+    } __except (GetExceptionCode() == 0xC0000005L /* exception_access_violation */
                     ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
         return false;
     }
@@ -245,12 +245,12 @@ void hideKnownModNodes(PlayLayer* pl, HiddenNodeList& hidden) {
     }
 }
 
-// Scene classification vs dangling children; raw pointers stay out of __try.
+// scene classification vs dangling children; raw pointers stay out of __try.
 #ifdef GEODE_IS_WINDOWS
 bool sehClassify(bool (*fn)(void*), void* ctx, bool* faulted) noexcept {
     __try {
         return fn(ctx);
-    } __except (GetExceptionCode() == 0xC0000005L /* EXCEPTION_ACCESS_VIOLATION */
+    } __except (GetExceptionCode() == 0xC0000005L /* exception_access_violation */
                     ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
         if (faulted) *faulted = true;
         return false;
@@ -451,7 +451,7 @@ HiddenNodeList hideNonVanillaUI() {
     return hidden;
 }
 
-// WYSIWYG except the mod's own chrome, which lives in the notification node.
+// wysiwyg except the mod's own chrome, which lives in the notification node.
 HiddenNodeList hideCaptureChrome() {
     HiddenNodeList hidden;
 
@@ -548,7 +548,7 @@ void restoreHiddenState() {
 }
 
 bool pixelBufferHasContent(uint8_t const* pixels, size_t bytes) {
-    // Black levels are valid captures: heuristics caused false negatives and fallback loops.
+    // black levels are valid captures: heuristics caused false negatives and fallback loops.
     return pixels != nullptr && bytes >= 4;
 }
 
@@ -874,7 +874,7 @@ bool issuePboRead(int W, int H) {
     if (origFBO != 0) glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, nullptr); // → PBO, async
+    glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, nullptr); // → pbo, async
     glPixelStorei(GL_PACK_ALIGNMENT, 4);
 
     if (origFBO != 0) glBindFramebuffer(GL_FRAMEBUFFER, origFBO);
@@ -917,7 +917,7 @@ int FramebufferCapture::getMaxTextureSize() {
 CaptureValidation FramebufferCapture::validateCaptureConditions() {
     CaptureValidation result;
 #if !defined(GEODE_IS_WINDOWS) && !defined(GEODE_IS_ANDROID)
-    // No swapBuffers hook pumps the state machine here; fail so callers
+    // no swapbuffers hook pumps the state machine here; fail so callers
     // show a reason instead of hanging with the busy flag set.
     result.canCapture = false;
     result.reason = Localization::get().getString("capture.unsupported_platform");
@@ -983,7 +983,7 @@ void FramebufferCapture::finishPendingFailure() {
     deletePboIfAny();
 #endif
 
-    // Never re-enter capture callers from the state machine; failure paths may reopen layers.
+    // never re-enter capture callers from the state machine; failure paths may reopen layers.
     if (requestCallback) {
         s_deferredCallbacks.push_back(
             {std::move(requestCallback), false, nullptr, nullptr, 0, 0}
@@ -1014,7 +1014,7 @@ void FramebufferCapture::requestCapture(
     if (paimon::isRuntimeShuttingDown()) return;
 
 #if !defined(GEODE_IS_WINDOWS) && !defined(GEODE_IS_ANDROID)
-    // Same: fail synchronously so callers release busy flags instead of hanging.
+    // same: fail synchronously so callers release busy flags instead of hanging.
     if (callback) callback(false, nullptr, nullptr, 0, 0);
     return;
 #endif
@@ -1051,7 +1051,7 @@ void FramebufferCapture::requestCapture(
     g_waitingTicks = 0;
     g_phase.store(Phase::ArmedHide);
 
-    // Displaced callbacks defer: synchronous invoke let old UI mutate the new state.
+    // displaced callbacks defer: synchronous invoke let old ui mutate the new state.
     if (previousRequestCallback) {
         s_deferredCallbacks.push_back(
             {std::move(previousRequestCallback), false, nullptr, nullptr, 0, 0}
@@ -1126,8 +1126,8 @@ void FramebufferCapture::executeIfPending() {
             return;
         }
 
-        // levelID 0 = plain screenshot; anything else is a level thumbnail and
-        // wants the aggressive UI/HUD strip.
+        // levelid 0 = plain screenshot; anything else is a level thumbnail and
+        // wants the aggressive ui/hud strip.
         bool const wysiwyg = (s_request.levelID == 0);
 
         g_prep = {};
@@ -1184,7 +1184,7 @@ void FramebufferCapture::executeIfPending() {
 
             auto [targetW, targetH] = resolveRenderTargetSize();
 
-    // HDR uses supersampling plus worker-side SIMD scaling; skip large shader FBOs.
+    // hdr uses supersampling plus worker-side simd scaling; skip large shader fbos.
             int renderW = targetW;
             int renderH = targetH;
             bool shaderActive = pl->m_shaderLayer && pl->m_shaderLayer->getParent();
@@ -1226,7 +1226,7 @@ void FramebufferCapture::executeIfPending() {
     }
 
     if (phase == Phase::WaitingFrame) {
-        // Re-hide UI before reading in case another scheduler revealed it.
+        // re-hide ui before reading in case another scheduler revealed it.
         bool const wysiwyg = (s_request.levelID == 0);
         auto extraNodes = wysiwyg ? hideCaptureChrome() : hideNonVanillaUI();
         std::vector<HiddenGameObjectState> extraGameObj;

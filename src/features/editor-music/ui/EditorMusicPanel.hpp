@@ -1,7 +1,7 @@
 #pragma once
 
-// Pinned editor widget on Ctrl+M; swallows its own touches so panel clicks
-// never drop objects on the canvas, and hides during playtest or hidden UI.
+// pinned editor widget on ctrl+m; swallows its own touches so panel clicks
+// never drop objects on the canvas, and hides during playtest or hidden ui.
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
@@ -18,7 +18,7 @@ public:
     static EditorMusicPanel* create(LevelEditorLayer* editor);
     static EditorMusicPanel* get();
 
-    // Ctrl+M. Returns the new open state.
+    // ctrl+m. returns the new open state.
     bool toggleOpen();
 
     void refreshTrackInfo();

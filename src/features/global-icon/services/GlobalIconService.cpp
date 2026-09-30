@@ -18,8 +18,8 @@ using namespace geode::prelude;
 namespace paimon::globalicon {
 
 namespace {
-    constexpr int64_t kMaxFileBytes = 4 * 1024 * 1024;   // 4 MB (server limit)
-    constexpr int64_t kMaxSyncBytes = 20 * 1024 * 1024;  // 20 MB (server limit)
+    constexpr int64_t kMaxFileBytes = 4 * 1024 * 1024;   // 4 mb (server limit)
+    constexpr int64_t kMaxSyncBytes = 20 * 1024 * 1024;  // 20 mb (server limit)
 
     std::optional<std::vector<uint8_t>> readFile(std::filesystem::path const& p) {
         if (p.empty()) return std::nullopt;
@@ -52,7 +52,7 @@ void GlobalIconService::setEnabledLocally(bool enabled) {
 std::string GlobalIconService::describeSyncError(std::string const& response) {
     auto const& loc = Localization::get();
 
-    // HttpClient formats failures as "HTTP <code>: <body>".
+    // httpclient formats failures as "http <code>: <body>".
     int status = 0;
     if (response.rfind("HTTP ", 0) == 0) {
         auto colon = response.find(':');
@@ -68,7 +68,7 @@ std::string GlobalIconService::describeSyncError(std::string const& response) {
             return loc.getString("globalicon.err_unauthorized");
         case 404:
         case 405:
-            // The route isn't there: the deployed server predates /api/icons/sync.
+            // the route isn't there: the deployed server predates /api/icons/sync.
             return loc.getString("globalicon.err_outdated");
         case 413:
             return loc.getString("globalicon.err_too_large");
@@ -166,7 +166,7 @@ void GlobalIconService::uploadActiveIcons(int accountID, std::string const& user
             if (!success) {
                 log::warn("[GlobalIcon] sync failed: {}", resp);
             }
-            // The cached document is stale either way: a success replaced it,
+            // the cached document is stale either way: a success replaced it,
             // and a failure may have left the server mid-change.
             GlobalIconClient::get().invalidate(accountID);
             if (cb) cb(success, resp);

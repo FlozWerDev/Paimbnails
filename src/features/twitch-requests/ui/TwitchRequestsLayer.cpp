@@ -4,6 +4,7 @@
 #include "TwitchMessagePopup.hpp"
 #include "TwitchNotifyPopup.hpp"
 #include "StreamOverlayPopup.hpp"
+#include "RequestSourcesPopup.hpp"
 #include "../TwitchRequestFilters.hpp"
 #include "../TwitchRequestManager.hpp"
 #include "../TwitchRequestNotify.hpp"
@@ -42,7 +43,7 @@ namespace {
 
 constexpr float kMargin = 12.f;
 constexpr float kSideWidth = 196.f;
-constexpr float kRowHeight = 46.f;
+constexpr float kRowHeight = 60.f;
 constexpr float kRowGap = 6.f;
 constexpr float kSideBtnScale = 0.52f;
 
@@ -234,7 +235,7 @@ CCMenuItemSpriteExtra* makeTextButton(
         });
 }
 
-// Truncate text to its slot; shrinking below GD's readable scale is worse.
+// truncate text to its slot; shrinking below gd's readable scale is worse.
 bool fitLabel(CCLabelBMFont* label, std::string text, float room, float scale) {
     label->setScale(scale);
     label->setString(text.c_str());
@@ -244,10 +245,13 @@ bool fitLabel(CCLabelBMFont* label, std::string text, float room, float scale) {
     size_t keep = std::min<size_t>(text.size(), static_cast<size_t>(
         static_cast<float>(text.size()) * room
             / std::max(label->getScaledContentSize().width, 1.f)));
+    while (keep > 0 && keep < text.size()
+        && (static_cast<unsigned char>(text[keep]) & 0xC0) == 0x80) --keep;
     while (keep > 2) {
         label->setString((text.substr(0, keep) + "...").c_str());
         if (label->getScaledContentSize().width <= room) return true;
         --keep;
+        while (keep > 0 && (static_cast<unsigned char>(text[keep]) & 0xC0) == 0x80) --keep;
     }
     return false;
 }
@@ -271,8 +275,8 @@ int levelPercent(int levelID) {
 }
 
 std::string firstCommand() {
-    // parseCommands always yields at least !req.
-    return parseCommands(TwitchRequestManager::get().commandsSetting()).front();
+    auto& manager = TwitchRequestManager::get();
+    return parseCommands(routedCommands(manager.routing(), manager.selected(), manager.commandsSetting())).front();
 }
 
 bool popupOnTop() {
@@ -534,15 +538,15 @@ void TwitchRequestsLayer::buildSidePanel() {
     panel->addChild(m_webUrlLabel, 3);
     y -= 32.f;
 
-    m_commandCaption = makeCaption("Comandos del chat");
+    m_commandCaption = makeCaption("Comandos de esta plataforma");
     m_commandCaption->setPosition({14.f, y});
     panel->addChild(m_commandCaption, 2);
     y -= 22.f;
 
-    m_commandInput = TextInput::create(inner, "!req,!request", "chatFont.fnt");
+    m_commandInput = TextInput::create(inner, "Vacio: comandos generales", "chatFont.fnt");
     if (m_commandInput) {
-        m_commandInput->setMaxCharCount(60);
-        m_commandInput->setString(manager.commandsSetting());
+        m_commandInput->setMaxCharCount(400);
+        m_commandInput->setString(manager.commandsSetting(platform));
         m_commandInput->setPosition({kSideWidth / 2.f, y - 3.f});
         panel->addChild(m_commandInput, 3);
     }
@@ -624,6 +628,16 @@ void TwitchRequestsLayer::buildQueuePanel() {
     m_queueLabel->setPosition({14.f, height - 15.f});
     panel->addChild(m_queueLabel, 2);
 
+    auto* queueMenu = CCMenu::create();
+    queueMenu->setPosition({0.f, 0.f});
+    queueMenu->setTouchPriority(childTouchPrio());
+    panel->addChild(queueMenu, 5);
+    if (auto* select = makeTextButton("Cola: Todas", "GJ_button_04.png", .42f,
+            [this] { onQueueSelection(); }, &m_queueSelectorSprite)) {
+        select->setPosition({width - 65.f, height - 15.f});
+        queueMenu->addChild(select);
+    }
+
     m_listWidth = width - 20.f;
     m_listHeight = height - 32.f;
 
@@ -643,19 +657,21 @@ void TwitchRequestsLayer::buildFooter() {
     menu->setPosition({win.width / 2.f, 22.f});
     addChild(menu, 10);
 
-    if (auto* next = makeTextButton("Jugar siguiente", "GJ_button_01.png", 0.6f,
+    if (auto* next = makeTextButton("Jugar siguiente", "GJ_button_01.png", 0.5f,
             [this] { this->onPlayNext(); })) {
         menu->addChild(next);
     }
-    if (auto* filters = makeTextButton("Filtros", "GJ_button_02.png", 0.6f,
+    if (auto* filters = makeTextButton("Filtros", "GJ_button_02.png", 0.5f,
             [this] { this->onFilters(); })) {
         menu->addChild(filters);
     }
-    if (auto* clear = makeTextButton("Vaciar requests", "GJ_button_06.png", 0.6f,
+    if (auto* sources = makeTextButton("Origenes", "GJ_button_04.png", .5f,
+            [this] { onSources(); })) menu->addChild(sources);
+    if (auto* clear = makeTextButton("Vaciar requests", "GJ_button_06.png", 0.5f,
             [this] { this->onClearQueue(); })) {
         menu->addChild(clear);
     }
-    if (auto* reconnect = makeTextButton("Reconectar", "GJ_button_05.png", 0.6f,
+    if (auto* reconnect = makeTextButton("Reconectar", "GJ_button_05.png", 0.5f,
             [this] {
                 TwitchRequestManager::get().restart();
                 this->refreshStatus();
@@ -664,7 +680,7 @@ void TwitchRequestsLayer::buildFooter() {
     }
 
     menu->setLayout(RowLayout::create()
-        ->setGap(10.f)
+        ->setGap(8.f)
         ->setAutoScale(false)
         ->setAxisAlignment(AxisAlignment::Center));
 
@@ -719,10 +735,9 @@ void TwitchRequestsLayer::refreshStatus() {
 
     if (m_queueLabel) {
         auto text = fmt::format(
-            "Requests: {}/{}  -  {} sin revisar",
-            manager.requestCount(),
-            manager.maxQueueSize(),
-            manager.pendingCount()
+            "Requests: {}  -  {} sin revisar  ({}/{} total)",
+            manager.selectedRequestCount(),
+            manager.pendingCount(), manager.requestCount(), manager.maxQueueSize()
         );
         if (auto summary = filterSummary(manager.filters()); !summary.empty()) {
             text += "  -  " + summary;
@@ -737,9 +752,14 @@ void TwitchRequestsLayer::refreshStatus() {
             m_lastQueueText = text;
             m_queueLabel->stopAllActions();
             m_queueLabel->setString(text.c_str());
-            m_queueLabel->limitLabelWidth(std::max(80.f, m_listWidth), 0.42f, 0.24f);
+            m_queueLabel->limitLabelWidth(std::max(80.f, m_listWidth - 135.f), 0.42f, 0.2f);
             pulse(m_queueLabel, m_queueLabel->getScale());
         }
+    }
+
+    if (m_queueSelectorSprite) {
+        auto name = manager.selectedQueue().empty() ? "Todas" : manager.selectedQueue();
+        m_queueSelectorSprite->setString(("Cola: " + shorten(name, 14)).c_str());
     }
 
     if (m_platformSprite) {
@@ -792,7 +812,9 @@ void TwitchRequestsLayer::refreshStatus() {
                 ? "Comparte tu link: los niveles entran en esta cola"
                 : "Activa la pagina para recibir niveles desde la web";
         } else if (manager.isActive(platform)) {
-            hint = fmt::format("Tu chat escribe {} 12345", firstCommand());
+            auto const& config = manager.routing().platforms[static_cast<size_t>(platform)];
+            hint = config.commandsEnabled ? fmt::format("{} 12345 descripcion", firstCommand())
+                : "Comandos apagados; configura canjes en Origenes";
         } else {
             hint = fmt::format("Vacio: {} no se lee", platformName(platform));
         }
@@ -829,13 +851,14 @@ void TwitchRequestsLayer::rebuildRows() {
 
     std::vector<size_t> visible;
     for (size_t index = 0; index < requests.size(); ++index) {
+        if (!manager.inSelectedQueue(requests[index])) continue;
         auto passes = requestPasses(requests[index].levelID, !requests[index].videoUrl.empty());
         if (passes && !*passes) continue;
         visible.push_back(index);
     }
 
     if (visible.empty()) {
-        bool const allFiltered = !requests.empty();
+        bool const allFiltered = manager.selectedRequestCount() > 0;
         auto* empty = CCLabelBMFont::create(
             allFiltered ? "Nada pasa el filtro" : "Todavia no hay requests", "bigFont.fnt");
         empty->setScale(0.5f);
@@ -845,7 +868,7 @@ void TwitchRequestsLayer::rebuildRows() {
         pulse(empty, 0.5f);
 
         auto const hintText = allFiltered
-            ? fmt::format("{} pedidos ocultos; toca Filtros para cambiarlos", requests.size())
+            ? fmt::format("{} pedidos ocultos; toca Filtros para cambiarlos", manager.selectedRequestCount())
             : fmt::format("Escribe {} y una ID en tu chat", firstCommand());
         auto* hint = CCLabelBMFont::create(hintText.c_str(), "chatFont.fnt");
         hint->setScale(0.4f);
@@ -970,7 +993,7 @@ CCNode* TwitchRequestsLayer::buildRow(
         }
     }
 
-    float const metaY = 14.f;
+    float const metaY = 27.f;
 
     auto requesterText = "@" + shorten(
         request.requester, request.platform == Platform::Web ? 11 : 16);
@@ -1002,6 +1025,16 @@ CCNode* TwitchRequestsLayer::buildRow(
             authorLabel->setPosition({authorX, metaY});
             row->addChild(authorLabel, 2);
         }
+    }
+
+    auto details = request.queue + " / " + (request.sourceName.empty() ? shortPlatform(request.platform) : request.sourceName);
+    if (!note.empty()) details += " - " + note;
+    auto* detailsLabel = CCLabelBMFont::create("", "chatFont.fnt");
+    detailsLabel->setAnchorPoint({0.f, .5f});
+    detailsLabel->setColor(kDesc);
+    if (fitLabel(detailsLabel, details, textWidth, .31f)) {
+        detailsLabel->setPosition({textLeft, 10.f});
+        row->addChild(detailsLabel, 2);
     }
 
     auto* menu = CCMenu::create();
@@ -1047,7 +1080,7 @@ CCNode* TwitchRequestsLayer::buildRow(
     return row;
 }
 
-// Web mode has no editable channel fields.
+// web mode has no editable channel fields.
 bool TwitchRequestsLayer::inputsDiffer() const {
     auto& manager = TwitchRequestManager::get();
     if (manager.selected() == Platform::Web) return false;
@@ -1055,7 +1088,7 @@ bool TwitchRequestsLayer::inputsDiffer() const {
         && std::string(m_channelInput->getString()) != manager.channelSetting(manager.selected())) {
         return true;
     }
-    if (m_commandInput && std::string(m_commandInput->getString()) != manager.commandsSetting()) {
+    if (m_commandInput && std::string(m_commandInput->getString()) != manager.commandsSetting(manager.selected())) {
         return true;
     }
     return false;
@@ -1065,12 +1098,12 @@ void TwitchRequestsLayer::applyInputs() {
     auto& manager = TwitchRequestManager::get();
     auto const platform = manager.selected();
     if (platform == Platform::Web) return;
-    if (m_commandInput) manager.setCommandsSetting(std::string(m_commandInput->getString()));
+    if (m_commandInput) manager.setCommandsSetting(platform, std::string(m_commandInput->getString()));
     if (m_channelInput) {
         manager.setChannelSetting(platform, std::string(m_channelInput->getString()));
         m_channelInput->setString(manager.channelSetting(platform));
     }
-    if (m_commandInput) m_commandInput->setString(manager.commandsSetting());
+    if (m_commandInput) m_commandInput->setString(manager.commandsSetting(platform));
 }
 
 void TwitchRequestsLayer::onPrimary() {
@@ -1142,6 +1175,7 @@ void TwitchRequestsLayer::applyPlatformSkin() {
         m_channelInput->setEnabled(!web);
     }
     if (m_commandInput) {
+        m_commandInput->setString(manager.commandsSetting(platform));
         m_commandInput->setVisible(!web);
         m_commandInput->setEnabled(!web);
     }
@@ -1249,7 +1283,7 @@ void TwitchRequestsLayer::onPlayNext() {
     auto index = manager.nextPendingIndex();
     if (!index) {
         char const* reason = "No quedan pedidos sin revisar";
-        if (manager.requestCount() == 0) {
+        if (manager.selectedRequestCount() == 0) {
             reason = "No hay requests";
         } else if (manager.filteredCount() > 0) {
             reason = "Lo que queda esta fuera del filtro";
@@ -1275,11 +1309,13 @@ void TwitchRequestsLayer::refreshPercents() {
 }
 
 void TwitchRequestsLayer::onClearQueue() {
-    if (TwitchRequestManager::get().requestCount() == 0) return;
+    auto& manager = TwitchRequestManager::get();
+    if (manager.selectedRequestCount() == 0) return;
     Ref<TwitchRequestsLayer> self = this;
     geode::createQuickPopup(
         "Vaciar requests",
-        "Eliminar <cr>todos</c> los niveles pedidos?",
+        manager.selectedQueue().empty() ? "Eliminar <cr>todos</c> los niveles de todas las colas?"
+            : fmt::format("Eliminar los niveles de la cola <cy>{}</c>?", manager.selectedQueue()),
         "Cancelar", "Vaciar",
         [self](auto, bool confirmed) {
             if (!confirmed) return;
@@ -1289,6 +1325,15 @@ void TwitchRequestsLayer::onClearQueue() {
             self->refreshStatus();
         }
     );
+}
+
+void TwitchRequestsLayer::onSources() {
+    if (inputsDiffer()) applyInputs();
+    if (auto* popup = RequestSourcesPopup::create()) popup->show();
+}
+
+void TwitchRequestsLayer::onQueueSelection() {
+    if (auto* popup = createRequestQueueSelector()) popup->show();
 }
 
 void TwitchRequestsLayer::onSettings() {

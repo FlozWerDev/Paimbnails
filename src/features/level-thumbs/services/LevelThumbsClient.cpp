@@ -153,7 +153,7 @@ std::string LevelThumbsClient::thumbnailUrl(int levelID, Quality quality) const 
 }
 
 std::filesystem::path LevelThumbsClient::cacheDir() const {
-    // keyed by host: a new API must not serve the previous one's images.
+    // keyed by host: a new api must not serve the previous one's images.
     return Mod::get()->getSaveDir() / "levelthumbs"
         / fmt::to_string(std::hash<std::string>{}(apiBaseUrl()));
 }
@@ -195,7 +195,7 @@ void LevelThumbsClient::fetchThumbnail(int levelID, Quality quality, DataCallbac
 }
 
 void LevelThumbsClient::pump() {
-    // rejected URLs answer synchronously via finish(); guard against stack unwind.
+    // rejected urls answer synchronously via finish(); guard against stack unwind.
     if (m_pumping) return;
     m_pumping = true;
 

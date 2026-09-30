@@ -133,7 +133,7 @@ void resetLayerBackgrounds() {
     mod->setSavedValue("video-max-chunk-memory-mb", 512);
     mod->setSavedValue("video-max-concurrent", 4);
 #endif
-    // Drop decoder snapshots so next open uses factory defaults.
+    // drop decoder snapshots so next open uses factory defaults.
     paimon::settings::internal::invalidateSettingsCache();
 
     mod->setSavedValue("thumbnail-disk-cache", matjson::Value::object());

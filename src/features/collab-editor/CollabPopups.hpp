@@ -21,13 +21,13 @@ class ScrollLayer;
 
 namespace paimon::collab {
 
-// Display name: collab setting, GD player name, or "editor".
+// display name: collab setting, gd player name, or "editor".
 std::string defaultDisplayName();
 
-// Close room popups before scene swaps to avoid stale touch priority.
+// close room popups before scene swaps to avoid stale touch priority.
 void closeSessionPopups();
 
-// Connect/create a room; setup, connecting, and connected states rebuild in place.
+// connect/create a room; setup, connecting, and connected states rebuild in place.
 class CollabRoomPopup : public geode::Popup {
 public:
     static CollabRoomPopup* create(GJGameLevel* hostLevel = nullptr);
@@ -74,7 +74,7 @@ private:
     geode::Ref<GJGameLevel> m_hostLevel;
 };
 
-// Host-only friend invite flow.
+// host-only friend invite flow.
 class CollabInvitePopup : public geode::Popup, public UserListDelegate {
 public:
     static CollabInvitePopup* create();
@@ -86,7 +86,7 @@ public:
     void forceReloadList(UserListType) override {}
 
 private:
-    // Row snapshot used while filtering without retaining GJUserScore objects.
+    // row snapshot used while filtering without retaining gjuserscore objects.
     struct FriendEntry {
         int accountID = 0;
         std::string name;

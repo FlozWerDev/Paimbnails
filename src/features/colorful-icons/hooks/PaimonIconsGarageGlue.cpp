@@ -25,7 +25,7 @@ void requestRecolor(GJGarageLayer* layer) {
         IconRecolorEngine::get().recolorListBar(bar, RecolorArea::IconKit);
     }
 
-// Walk the garage once to cover previews and secondary mod menus.
+// walk the garage once to cover previews and secondary mod menus.
     IconRecolorEngine::get().recolorSubtree(layer, RecolorArea::IconKit);
 }
 
@@ -89,7 +89,7 @@ public:
             m_acc = 0.0f;
             return;
         }
-// Rainbow repaints constantly; static modes only need periodic sweeps.
+// rainbow repaints constantly; static modes only need periodic sweeps.
         const float interval =
             store.config().mode == ColorMode::Rainbow ? 0.1f : 0.5f;
         if (m_acc < interval) return;
@@ -136,7 +136,7 @@ private:
 
 constexpr float kColumnStep = 40.f;
 
-// Left-column menu used by the icon kit and other mods.
+// left-column menu used by the icon kit and other mods.
 CCMenu* colorColumnOf(GJGarageLayer* layer) {
     auto* anchor = layer->getChildByIDRecursive("player-color-1-button");
     if (!anchor) anchor = layer->getChildByIDRecursive("player-color-2-button");
@@ -144,12 +144,12 @@ CCMenu* colorColumnOf(GJGarageLayer* layer) {
     return typeinfo_cast<CCMenu*>(anchor->getParent());
 }
 
-// Return the button's mini SimplePlayer for ticker updates.
+// return the button's mini simpleplayer for ticker updates.
 SimplePlayer* installPaimonIconsButton(GJGarageLayer* layer) {
     if (!layer) return nullptr;
     if (layer->getChildByID("paimbnails/paimon-icons-btn"_spr)) return nullptr;
 
-// SimplePlayer has zero content size; wrap or BasedButtonSprite scales infinitely.
+// simpleplayer has zero content size; wrap or basedbuttonsprite scales infinitely.
     auto* mini = SimplePlayer::create(1);
     if (!mini) return nullptr;
     auto* wrap = CCNode::create();
@@ -172,7 +172,7 @@ SimplePlayer* installPaimonIconsButton(GJGarageLayer* layer) {
     btn->setID("paimbnails/paimon-icons-btn"_spr);
     btn->setScale(0.7f);
 
-// No Node IDs for category/currency menus; place below color buttons, clear of stats-menu.
+// no node ids for category/currency menus; place below color buttons, clear of stats-menu.
     if (auto* column = colorColumnOf(layer)) {
         float lowestY = 1e9f;
         float x = 0.f;
@@ -193,7 +193,7 @@ SimplePlayer* installPaimonIconsButton(GJGarageLayer* layer) {
         }
     }
 
-// Fallback menu in the lower-left, away from stats-menu.
+// fallback menu in the lower-left, away from stats-menu.
     auto* host = CCMenu::create();
     host->setID("paimbnails/colorful-icons-host-menu"_spr);
     host->setPosition({0, 0});
@@ -214,7 +214,7 @@ void ensureConfigListenerRegistered() {
     });
     listener.leak();
 
-// Geode's settings UI bypasses IconConfigStore, so it needs this repaint path.
+// geode's settings ui bypasses iconconfigstore, so it needs this repaint path.
     listenForSettingChanges<bool>("colorful-icons-enabled", [](bool) {
         refreshVisibleGarage();
     });
@@ -228,7 +228,7 @@ void onGarageInit(GJGarageLayer* layer) {
     ensureConfigListenerRegistered();
     SimplePlayer* buttonIcon = installPaimonIconsButton(layer);
 
-// Periodic ticker keeps pages, tabs, sub-popups, and the button icon in sync.
+// periodic ticker keeps pages, tabs, sub-popups, and the button icon in sync.
     if (!layer->getChildByID("paimbnails/colorful-icons-ticker"_spr)) {
         auto* ticker = GarageRecolorTicker::create(layer, buttonIcon);
         ticker->setID("paimbnails/colorful-icons-ticker"_spr);
@@ -236,7 +236,7 @@ void onGarageInit(GJGarageLayer* layer) {
         layer->addChild(ticker, -100);
     }
 
-// Defer the first recolor until bar children finish initializing.
+// defer the first recolor until bar children finish initializing.
     Ref<GJGarageLayer> ref = layer;
     Loader::get()->queueInMainThread([ref]() {
         if (paimon::isRuntimeShuttingDown()) return;

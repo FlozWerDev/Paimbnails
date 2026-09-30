@@ -73,7 +73,7 @@ bool ConversationMemory::looksLikeFollowUp(std::string const& normalized) {
     // so a short query like "fondos" matches normally but "y?" or "como?" don't.
     if (wordCount > 2) return false;
 
-    // Small fixed set of common follow-up tokens (ES + EN).
+    // small fixed set of common follow-up tokens (es + en).
     static char const* const kFollowUpTokens[] = {
         "y", "como", "donde", "cuando", "porque", "y como", "y donde",
         "y eso", "y ahora", "mas", "otra vez", "explicame",

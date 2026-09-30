@@ -27,7 +27,7 @@ namespace paimon::officialslots::ui {
 
 namespace {
 
-// Popup size. Fixed on purpose: every control stays on screen next to the
+// popup size. fixed on purpose: every control stays on screen next to the
 // live preview, so there is no scroll position to lose while typing.
 constexpr float kWidth = 460.f;
 constexpr float kHeight = 360.f;
@@ -35,7 +35,7 @@ constexpr float kHeight = 360.f;
 constexpr ccColor3B kOnColor = {255, 255, 255};
 constexpr ccColor3B kOffColor = {96, 102, 120};
 
-// Dimmed = not picked. Same trick as the request filter rows: white vs grey
+// dimmed = not picked. same trick as the request filter rows: white vs grey
 // reads as selected/unselected without rebuilding any sprite.
 void tintIcon(CCNode* node, bool on) {
     if (!node) return;
@@ -59,7 +59,7 @@ void toast(std::string const& text, NotificationIcon icon) {
     PaimonNotify::show(text, icon);
 }
 
-// Slider callback wrapper; Slider::create wants a CCNode target with a
+// slider callback wrapper; slider::create wants a ccnode target with a
 // selector, same shape as the config kit's own wrapper.
 class StarsSliderCallback : public CCNode {
 public:
@@ -99,7 +99,7 @@ Difficulty difficultyFromFace(int face) {
     return static_cast<Difficulty>(clampFace(face));
 }
 
-// Mirrors the community leaderboard mapping so an import prefill draws the
+// mirrors the community leaderboard mapping so an import prefill draws the
 // face the game itself would draw.
 int levelFaceValue(GJGameLevel* level) {
     if (!level) return 0;
@@ -118,7 +118,7 @@ int levelFaceValue(GJGameLevel* level) {
 
 Tier levelTier(GJGameLevel* level) {
     if (!level) return Tier::None;
-    // m_isEpic is a tier, not a flag: 1 epic, 2 legendary, 3 mythic.
+    // m_isepic is a tier, not a flag: 1 epic, 2 legendary, 3 mythic.
     switch (level->m_isEpic) {
         case 1: return Tier::Epic;
         case 2: return Tier::Legendary;
@@ -214,7 +214,7 @@ void SlotEditorPopup::buildSourceRow() {
     m_sourceRow->setID("source-row"_spr);
     layer->addChild(m_sourceRow, 3);
 
-    // Source chips: two text buttons, the inactive one dimmed in place.
+    // source chips: two text buttons, the inactive one dimmed in place.
     auto* menu = CCMenu::create();
     menu->setPosition({134.f, 100.f});
     menu->setContentSize({268.f, 28.f});
@@ -238,7 +238,7 @@ void SlotEditorPopup::buildSourceRow() {
         m_sourceChips.push_back(spr);
     }
 
-    // Level-id input + import button.
+    // level-id input + import button.
     m_idInput = TextInput::create(150.f, tr("slot.editor.level_id_hint").c_str());
     if (m_idInput) {
         m_idInput->setCommonFilter(geode::CommonFilter::Uint);
@@ -298,7 +298,7 @@ void SlotEditorPopup::restyleSourceChips() {
         Source const chipSource = (i == 0) ? Source::LevelId : Source::Gmd;
         tintIcon(m_sourceChips[i], m_draft.source == chipSource);
     }
-    // The rows stay mounted (no focus loss); the inactive one is dimmed and
+    // the rows stay mounted (no focus loss); the inactive one is dimmed and
     // its buttons stop responding.
     bool const isId = m_draft.source == Source::LevelId;
     if (m_idInput) {
@@ -387,7 +387,7 @@ void SlotEditorPopup::buildDifficultyRow() {
         layer->addChild(title, 3);
     }
 
-    // Two rows of six vanilla faces. Positions are computed from the real
+    // two rows of six vanilla faces. positions are computed from the real
     // sprite size so a texture pack never breaks the layout.
     auto const& diffs = allDifficulties();
     std::vector<CCNode*> faces;
@@ -496,7 +496,7 @@ void SlotEditorPopup::buildTierRow() {
     }
     if (faces.empty()) return;
 
-    // The tier row shows the current difficulty face under each rate glow, so
+    // the tier row shows the current difficulty face under each rate glow, so
     // rebuilding it here is what keeps the glow preview honest.
     float const baseW = faces.front()->getContentSize().width;
     float const baseH = faces.front()->getContentSize().height;
@@ -742,7 +742,7 @@ void SlotEditorPopup::buildPositionRow(CCMenu* menu) {
     if (m_positionMax < 1) m_positionMax = 1;
     if (m_position < 1 || m_position > m_positionMax) m_position = m_positionMax;
 
-    // Stepper hugs the title; the footer buttons start past x150.
+    // stepper hugs the title; the footer buttons start past x150.
     float labelW = 40.f;
     if (auto* title = CCLabelBMFont::create(tr("slot.editor.position").c_str(), "goldFont.fnt")) {
         title->setScale(0.45f);
@@ -868,7 +868,7 @@ void SlotEditorPopup::prefillFromGmd(std::filesystem::path const& path) {
         toast(tr("slot.editor.import_failed"), NotificationIcon::Error);
         return;
     }
-    // The file is only copied into our folder on Save/Test; until then the
+    // the file is only copied into our folder on save/test; until then the
     // pending path is just a draft field, so cancelling costs nothing.
     m_pendingGmd = path;
     m_draft.source = Source::Gmd;
@@ -890,11 +890,11 @@ void SlotEditorPopup::onSurprise(CCObject*) {
     static std::mt19937 rng{std::random_device{}()};
 
     auto const& diffs = allDifficulties();
-    // Easy..ExtremeDemon: the surprise should always draw a real face.
+    // easy..extremedemon: the surprise should always draw a real face.
     std::uniform_int_distribution<size_t> diffDist(2, diffs.size() - 1);
     m_draft.difficulty = diffs[diffDist(rng)];
 
-    // Weighted towards unrated tiers so mythic stays special.
+    // weighted towards unrated tiers so mythic stays special.
     std::array<Tier, 8> const tierBag = {
         Tier::None, Tier::None, Tier::None,
         Tier::Featured, Tier::Featured,
@@ -903,7 +903,7 @@ void SlotEditorPopup::onSurprise(CCObject*) {
     std::uniform_int_distribution<size_t> tierDist(0, tierBag.size() - 1);
     m_draft.tier = tierBag[tierDist(rng)];
 
-    // Vanilla-ish star ranges per difficulty, with a little jitter.
+    // vanilla-ish star ranges per difficulty, with a little jitter.
     int low = 2, high = 3;
     switch (m_draft.difficulty) {
         case Difficulty::Easy:         low = 2;  high = 3;  break;
@@ -973,7 +973,7 @@ std::string SlotEditorPopup::saveDraft() {
     } else {
         slot.id = id;
         if (!store.update(slot)) {
-            // Deleted elsewhere while we edited; re-add instead of losing it.
+            // deleted elsewhere while we edited; re-add instead of losing it.
             slot.id.clear();
             if (slot.replacesOfficialId == 0) {
                 id = store.add(slot, store.orderIndexForVisiblePos(m_position));
@@ -999,8 +999,8 @@ std::string SlotEditorPopup::saveDraft() {
 }
 
 void SlotEditorPopup::onTest(CCObject*) {
-    // Test plays the saved slot: an unsaved draft has no cache entry for the
-    // download callback to find, so commit first. The toast says so.
+    // test plays the saved slot: an unsaved draft has no cache entry for the
+    // download callback to find, so commit first. the toast says so.
     std::string const id = this->saveDraft();
     if (id.empty()) return;
     toast(tr("slot.editor.saved"), NotificationIcon::Success);
@@ -1022,7 +1022,7 @@ void SlotEditorPopup::onHideOfficial(CCObject*) {
         return;
     }
     auto& store = SlotStore::get();
-    // Hiding wins over replacing: drop the replacement so no orphan slot
+    // hiding wins over replacing: drop the replacement so no orphan slot
     // lingers behind the hidden page.
     if (auto existing = store.slotForOfficial(officialId)) {
         if (!existing->gmdFile.empty()) store.discardGmd(existing->gmdFile);

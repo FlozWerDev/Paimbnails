@@ -60,7 +60,7 @@ protected:
 
     int m_lazyLoadFrameSkip = 0;
 
-    // Bumped on grid rebuild so stale thumbnail callbacks drop themselves.
+    // bumped on grid rebuild so stale thumbnail callbacks drop themselves.
     uint32_t m_gridGeneration = 0;
 
     float m_gridX = 0.f;

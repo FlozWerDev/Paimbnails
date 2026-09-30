@@ -83,7 +83,7 @@ void GlobalIconStorage::pruneSlotDir(std::filesystem::path const& dir, SlotFiles
 bool GlobalIconStorage::registerWithMoreIcons(std::string const& regName, GlobalIconSlot const& slot,
                                               IconType type, std::filesystem::path const& png,
                                               std::filesystem::path const& plist, bool wrapRefresh) {
-    // Wrap external icon edits in pre/refresh (API requirement).
+    // wrap external icon edits in pre/refresh (api requirement).
     if (wrapRefresh) more_icons::preRefreshIcons();
     auto* info = more_icons::addIcon(
         regName, slot.name, type, png, plist,
@@ -163,7 +163,7 @@ void GlobalIconStorage::ensureIcon(int accountID, GlobalIconSlot const& slot, En
         return;
     }
 
-    // A download for this exact icon is already running.
+    // a download for this exact icon is already running.
     auto pendingIt = m_pending.find(regName);
     if (pendingIt != m_pending.end()) {
         if (cb) pendingIt->second.push_back(std::move(cb));
@@ -236,7 +236,7 @@ void GlobalIconStorage::ensureIcons(int accountID, std::vector<GlobalIconSlot> c
         return;
     }
 
-    // One refresh for the whole batch, once every download has settled.
+    // one refresh for the whole batch, once every download has settled.
     auto finish = [state]() {
         auto& self = GlobalIconStorage::get();
         int succeeded = 0;

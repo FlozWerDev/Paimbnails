@@ -1,4 +1,4 @@
-// Runs after every other Paimbnails hook so the badge lands on top of the finished cell,
+// runs after every other paimbnails hook so the badge lands on top of the finished cell,
 // re-anchored to whatever the name label ended up being instead of vanilla coordinates.
 
 #include "../InfoModule.hpp"
@@ -29,7 +29,7 @@ bool inlinePlacement() {
     return paimon::info::moduleSetting<std::string>("info-ids-position", "inline") != "corner";
 }
 
-// The name label has no member in the bindings. node-ids names it, and if that
+// the name label has no member in the bindings. node-ids names it, and if that
 // mod is missing we fall back to the label whose text is the title.
 CCLabelBMFont* findTitleLabel(CCNode* cell, std::string const& title) {
     for (auto const* id : {"level-name", "list-name", "pack-name"}) {
@@ -48,7 +48,7 @@ CCLabelBMFont* findTitleLabel(CCNode* cell, std::string const& title) {
     return nullptr;
 }
 
-// Keep the badge under the cell so recycling removes it with the other content.
+// keep the badge under the cell so recycling removes it with the other content.
 void attachBadge(CCNode* cell, std::string const& title, int id) {
     if (!cell || id <= 0) return;
     if (cell->getChildByID(kBadgeID)) return;

@@ -7,21 +7,19 @@
 
 namespace DominantColorsGPU {
 
-// GPU path: render to a 32x32 LAB FBO, then cluster the readback on CPU.
-// falls back to DominantColors::extract when GL, shader or input is missing.
-// main/GL thread only.
+// main thread only: gpu readback falls back to cpu extraction when the gl path is unavailable.
 std::pair<DCColor, DCColor> extractFromTexture(cocos2d::CCTexture2D* texture);
 
-// extract from RGB24 via a temporary texture; falls back to CPU.
+// extract from rgb24 via a temporary texture; falls back to cpu.
 std::pair<DCColor, DCColor> extractFromRGB(const uint8_t* rgb, int width, int height);
 
-// extract from RGBA32 via a temporary texture; falls back to CPU.
+// extract from rgba32 via a temporary texture; falls back to cpu.
 std::pair<DCColor, DCColor> extractFromRGBA(const uint8_t* rgba, int width, int height);
 
-// whether shader and GL context are available; result is cached.
+// whether shader and gl context are available; result is cached.
 bool isAvailable();
 
-// invalidate the cached readback FBO before GD recreates the GL context.
+// invalidate the cached readback fbo before gd recreates the gl context.
 void onGLContextReload();
 
 }

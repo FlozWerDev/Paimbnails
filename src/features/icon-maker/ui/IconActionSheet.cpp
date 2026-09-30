@@ -80,7 +80,7 @@ bool IconActionSheet::init(std::string title, std::vector<Action> actions) {
             CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2);
         row->addChild(menu, 5);
 
-        // Invisible full-width hit area: the whole row is the button.
+        // invisible full-width hit area: the whole row is the button.
         auto* hit = CCNode::create();
         hit->setAnchorPoint({0.5f, 0.5f});
         hit->setContentSize({rowW, kRowH});
@@ -89,7 +89,7 @@ bool IconActionSheet::init(std::string title, std::vector<Action> actions) {
         auto* btn = CCMenuItemExt::createSpriteExtra(hit,
             [self, run](CCMenuItemSpriteExtra*) {
                 if (self) self->onClose(nullptr);
-                // Out of the touch dispatcher: the action may rebuild the scene.
+                // out of the touch dispatcher: the action may rebuild the scene.
                 Loader::get()->queueInMainThread([run] {
                     if (paimon::isRuntimeShuttingDown()) return;
                     if (run) run();

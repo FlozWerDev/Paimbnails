@@ -10,7 +10,7 @@ namespace {
 
 constexpr char const* kGdSecret = "Wmfd2893gb7";
 
-// "k:v:k:v..." -> map. GD user entries are colon separated.
+// "k:v:k:v..." -> map. gd user entries are colon separated.
 std::map<std::string, std::string> parseKV(std::string const& s) {
     auto parts = geode::utils::string::split(s, ":");
     std::map<std::string, std::string> m;
@@ -42,7 +42,7 @@ void resolveUsername(
                 return;
             }
 
-            // Ranked search: prefer an exact name match, else the first result.
+            // ranked search: prefer an exact name match, else the first result.
             auto entries = geode::utils::string::split(response, "|");
             std::string wantLower = geode::utils::string::toLower(trimmed);
 

@@ -20,7 +20,7 @@ namespace paimon::twitch {
 
 namespace {
 
-// one session per account: switching GD accounts must not reuse the old
+// one session per account: switching gd accounts must not reuse the old
 // token, and the legacy key (one for all) reads as fallback.
 constexpr char const* kLegacyTokenKey = "web-requests-host-token";
 
@@ -28,7 +28,7 @@ std::string tokenKey(int accountID) {
     return fmt::format("web-requests-host-token-{}", accountID);
 }
 
-// how the user reads in the URL: the server sends its own, this only keeps
+// how the user reads in the url: the server sends its own, this only keeps
 // something to show when the response comes up short.
 std::string slugify(std::string const& value) {
     std::string slug;
@@ -139,8 +139,8 @@ std::string WebRequestSource::savedToken() const {
 }
 
 void WebRequestSource::registerHost() {
-    // the server checks the account against RobTop's servers, so send the
-    // name as is: it decides the URL one.
+    // the server checks the account against robtop's servers, so send the
+    // name as is: it decides the url one.
     auto token = savedToken();
     auto body = matjson::makeObject({
         {"username", m_username},
@@ -174,7 +174,7 @@ void WebRequestSource::registerHost() {
                 fail("El servidor no entrego una sesion segura para requests");
                 return;
             }
-            // the server sends the URL-ready user already cleaned.
+            // the server sends the url-ready user already cleaned.
             auto slug = parsed.unwrap()["slug"].asString().unwrapOr("");
             if (!slug.empty()) m_slug = std::move(slug);
             Mod::get()->setSavedValue<std::string>(tokenKey(m_accountID), newToken);

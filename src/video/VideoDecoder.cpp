@@ -20,7 +20,7 @@
 namespace paimon {
 
 std::unique_ptr<IVideoDecoder> IVideoDecoder::create(const std::string& path) {
-    // Native backends first; pl_mpeg handles MPEG-1 only, so it stays last.
+    // native backends first; pl_mpeg handles mpeg-1 only, so it stays last.
 #if defined(USE_MEDIA_FOUNDATION)
     {
         auto dec = std::make_unique<DecoderMF>();

@@ -1,3 +1,4 @@
+#include "../../utils/Base64.hpp"
 #include "CollabVoice.hpp"
 
 #include "CollabManager.hpp"
@@ -15,7 +16,7 @@ namespace paimon::collab {
 
 namespace {
 
-constexpr int kSampleRate = 12000;             // Mono Hz.
+constexpr int kSampleRate = 12000;             // mono hz.
 constexpr int kFrameSamples = kSampleRate / 4;  // 250 ms.
 constexpr int kGateHoldFrames = 3;              // ~750 ms hold.
 constexpr size_t kFifoMaxSamples = kSampleRate * 2;     // 2 s cap.
@@ -47,63 +48,6 @@ int16_t muLawDecode(uint8_t code) {
     return static_cast<int16_t>(sign ? -s : s);
 }
 
-constexpr char kB64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-std::string b64Encode(std::vector<uint8_t> const& in) {
-    std::string out;
-    out.reserve(((in.size() + 2) / 3) * 4);
-    size_t i = 0;
-    while (i + 2 < in.size()) {
-        uint32_t v = (in[i] << 16) | (in[i + 1] << 8) | in[i + 2];
-        out.push_back(kB64[(v >> 18) & 63]);
-        out.push_back(kB64[(v >> 12) & 63]);
-        out.push_back(kB64[(v >> 6) & 63]);
-        out.push_back(kB64[v & 63]);
-        i += 3;
-    }
-    size_t rem = in.size() - i;
-    if (rem == 1) {
-        uint32_t v = in[i] << 16;
-        out.push_back(kB64[(v >> 18) & 63]);
-        out.push_back(kB64[(v >> 12) & 63]);
-        out.push_back('=');
-        out.push_back('=');
-    } else if (rem == 2) {
-        uint32_t v = (in[i] << 16) | (in[i + 1] << 8);
-        out.push_back(kB64[(v >> 18) & 63]);
-        out.push_back(kB64[(v >> 12) & 63]);
-        out.push_back(kB64[(v >> 6) & 63]);
-        out.push_back('=');
-    }
-    return out;
-}
-
-std::vector<uint8_t> b64Decode(std::string const& in) {
-    static int8_t table[256];
-    static bool init = false;
-    if (!init) {
-        for (auto& v : table) v = -1;
-        for (int i = 0; i < 64; ++i) table[static_cast<uint8_t>(kB64[i])] = static_cast<int8_t>(i);
-        init = true;
-    }
-    std::vector<uint8_t> out;
-    out.reserve((in.size() / 4) * 3);
-    uint32_t acc = 0;
-    int bits = 0;
-    for (char c : in) {
-        if (c == '=') break;
-        int8_t v = table[static_cast<uint8_t>(c)];
-        if (v < 0) continue;
-        acc = (acc << 6) | static_cast<uint32_t>(v);
-        bits += 6;
-        if (bits >= 8) {
-            bits -= 8;
-            out.push_back(static_cast<uint8_t>((acc >> bits) & 0xFF));
-        }
-    }
-    return out;
-}
-
 FMOD::System* fmodSystem() {
     auto* engine = FMODAudioEngine::sharedEngine();
     return engine ? engine->m_system : nullptr;
@@ -120,7 +64,7 @@ float vadThreshold() {
     return static_cast<float>(v);
 }
 
-// Perceptual 0..1 loudness; sqrt keeps normal speech visible without clipping.
+// perceptual 0..1 loudness; sqrt keeps normal speech visible without clipping.
 float levelFromPeak(int peak) {
     float linear = std::min(1.f, static_cast<float>(peak) / 26000.f);
     return std::sqrt(linear);
@@ -145,7 +89,7 @@ struct CollabVoice::Speaker {
 
 namespace {
 
-// FMOD mixer callback: drain the peer FIFO and silence underruns.
+// fmod mixer callback: drain the peer fifo and silence underruns.
 FMOD_RESULT F_CALLBACK voicePcmRead(FMOD_SOUND* sound, void* data, unsigned int datalen) {
     void* userdata = nullptr;
     reinterpret_cast<FMOD::Sound*>(sound)->getUserData(&userdata);
@@ -274,7 +218,7 @@ void CollabVoice::update(float) {
         std::vector<int16_t> frame(m_capture.begin(), m_capture.begin() + kFrameSamples);
         m_capture.erase(m_capture.begin(), m_capture.begin() + kFrameSamples);
 
-        // Energy VAD with a short hold so word tails are not clipped.
+        // energy vad with a short hold so word tails are not clipped.
         int peak = 0;
         for (int16_t s : frame) peak = std::max(peak, std::abs(static_cast<int>(s)));
         bool voiced = peak > static_cast<int>(vadThreshold() * 32767.f);
@@ -287,7 +231,7 @@ void CollabVoice::update(float) {
         if (m_gateOpenTicks > 0) emitFrame(frame);
     }
 
-    // Drop excessive backlog after a stall.
+    // drop excessive backlog after a stall.
     if (m_capture.size() > static_cast<size_t>(kFrameSamples * 4)) m_capture.clear();
 }
 
@@ -295,7 +239,7 @@ void CollabVoice::emitFrame(std::vector<int16_t> const& samples) {
     std::vector<uint8_t> encoded;
     encoded.reserve(samples.size());
     for (int16_t s : samples) encoded.push_back(muLawEncode(s));
-    CollabManager::get().sendVoiceFrame(++m_txSeq, b64Encode(encoded));
+    CollabManager::get().sendVoiceFrame(++m_txSeq, paimon::base64Encode(encoded));
 }
 
 CollabVoice::Speaker* CollabVoice::speakerFor(int clientId, std::string const& name) {
@@ -338,12 +282,14 @@ CollabVoice::Speaker* CollabVoice::speakerFor(int clientId, std::string const& n
 }
 
 void CollabVoice::onRemoteFrame(int from, std::string const& name, std::string const& b64) {
-    if (!Mod::get()->getSettingValue<bool>("collab-voice")) return;
+    if (!Mod::get()->getSettingValue<bool>("collab-voice") || from <= 0 ||
+        b64.size() > ((kFifoMaxSamples + 2) / 3) * 4) return;
+
+    std::vector<uint8_t> bytes;
+    if (!paimon::base64Decode(b64, bytes)) return;
+    if (bytes.empty() || bytes.size() > kFifoMaxSamples) return;
     auto* speaker = speakerFor(from, name);
     if (!speaker) return;
-
-    auto bytes = b64Decode(b64);
-    if (bytes.empty()) return;
 
     int peak = 0;
     {
@@ -353,7 +299,7 @@ void CollabVoice::onRemoteFrame(int from, std::string const& name, std::string c
             peak = std::max(peak, std::abs(static_cast<int>(s)));
             speaker->fifo.push_back(s);
         }
-    // Trim accumulated FIFO latency after slow poll bursts.
+        // trim accumulated fifo latency after slow poll bursts.
         if (speaker->fifo.size() > kFifoMaxSamples) {
             while (speaker->fifo.size() > kFifoCatchupSamples) speaker->fifo.pop_front();
         }
@@ -369,7 +315,7 @@ std::vector<SpeakingInfo> CollabVoice::speakingNow() const {
     for (auto const& [id, speaker] : m_speakers) {
         double age = t - speaker->lastFrameAt;
         if (age >= 0.6) continue;
-    // Fade stale levels so speaking bars fall smoothly.
+    // fade stale levels so speaking bars fall smoothly.
         float fade = age > 0.3 ? static_cast<float>((0.6 - age) / 0.3) : 1.f;
         out.push_back({id, speaker->name, speaker->level * fade});
     }

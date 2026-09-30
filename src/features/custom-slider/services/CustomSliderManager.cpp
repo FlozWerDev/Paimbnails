@@ -34,7 +34,7 @@ IconMapEntry const kIconMap[] = {
     {SliderIconType::Spider, IconType::Spider, &GameManager::getPlayerSpider},
     {SliderIconType::Swing,  IconType::Swing,  &GameManager::getPlayerSwing},
 };
-// Slider-thumb shader namespace; never share uniforms with garage/icons.
+// slider-thumb shader namespace; never share uniforms with garage/icons.
 constexpr int kGradientExtra = 909;
 
 ImageLoadHelper::LoadedImage loadThumbTexture(std::filesystem::path const& path) {
@@ -465,7 +465,7 @@ bool CustomSliderManager::shouldAffectSlider(CCNode* slider) {
     if (!slider) return false;
     if (!slider->getParent()) return false;
 
-    // Native editor sliders rebuild color state on close; skinning corrupts pointers, walk parents.
+    // native editor sliders rebuild color state on close; skinning corrupts pointers, walk parents.
     if (paimon::isEditorScene()) {
         for (auto* p = slider->getParent(); p; p = p->getParent()) {
             if (std::string(typeid(*p).name()).find("CustomSliderPopup") != std::string::npos) {
@@ -475,7 +475,7 @@ bool CustomSliderManager::shouldAffectSlider(CCNode* slider) {
         return false;
     }
 
-    // Native color/HSV editors stay excluded even with every target on.
+    // native color/hsv editors stay excluded even with every target on.
     for (auto* p = slider->getParent(); p; p = p->getParent()) {
         if (typeinfo_cast<CustomizeObjectLayer*>(p) ||
             typeinfo_cast<ColorSelectPopup*>(p) ||

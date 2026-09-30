@@ -59,7 +59,7 @@ public:
     }
 };
 
-// Ref<> keeps the node alive so the scheduler doesn't free it.
+// ref<> keeps the node alive so the scheduler doesn't free it.
 static Ref<PetTickerNode> s_petTicker = nullptr;
 
 void shutdownPetTicker() {
@@ -81,8 +81,8 @@ void initPetTicker() {
     auto* scheduler = director->getScheduler();
     if (!scheduler) return;
     s_petTicker = PetTickerNode::create();
-    // Register with the global scheduler directly (paused=false);
-    // CCNode::scheduleUpdate() requires the node to be in a running scene.
+    // register with the global scheduler directly (paused=false);
+    // ccnode::scheduleupdate() requires the node to be in a running scene.
     scheduler->scheduleUpdateForTarget(s_petTicker.data(), 0, false);
 }
 
@@ -90,7 +90,7 @@ $on_game(Exiting) {
     shutdownPetTicker();
 }
 
-// Defer the reaction to the next main-thread tick for a clean stack.
+// defer the reaction to the next main-thread tick for a clean stack.
 static void deferPetReaction(std::string eventType) {
     Loader::get()->queueInMainThread([eventType = std::move(eventType)]() {
         if (paimon::isRuntimeShuttingDown()) return;
@@ -100,7 +100,7 @@ static void deferPetReaction(std::string eventType) {
 
 class $modify(PetPlayLayerHook, PlayLayer) {
     static void onModify(auto& self) {
-        // Run late, out of the notifyAchievement/AchievementBar stack.
+        // run late, out of the notifyachievement/achievementbar stack.
         (void)self.setHookPriorityPost("PlayLayer::levelComplete", geode::Priority::Late);
     }
 
@@ -120,7 +120,7 @@ class $modify(PetPlayerObjectHook, PlayerObject) {
         auto* pl = PlayLayer::get();
         if (!pl) return;
 
-        // Trigger once per death sequence (primary player only in dual mode).
+        // trigger once per death sequence (primary player only in dual mode).
         if (this == pl->m_player1) {
             deferPetReaction("death");
         }

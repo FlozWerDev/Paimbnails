@@ -4,7 +4,7 @@
 
 namespace paimon::icons {
 
-// Int-stored JSON; values frozen for save-compat (gaps are removed legacy modes).
+// int-stored json; values frozen for save-compat (gaps are removed legacy modes).
 enum class ColorMode : int {
     Player       = 0,
     CustomRGB    = 1,
@@ -16,7 +16,7 @@ enum class ColorMode : int {
     Monochrome   = 9,
 };
 
-// The gap (4 = CustomMix) is a legacy style folded into ShowDimmed.
+// the gap (4 = custommix) is a legacy style folded into showdimmed.
 enum class LockStyle : int {
     Default    = 0,
     ShowDimmed = 1,
@@ -32,7 +32,7 @@ enum class RandomPalette : int {
     Earthy  = 3,
 };
 
-// Only areas that actually have a recolor hook (garage kit, shops).
+// only areas that actually have a recolor hook (garage kit, shops).
 struct ApplyToFlags {
     bool kit   = true;
     bool shops = true;

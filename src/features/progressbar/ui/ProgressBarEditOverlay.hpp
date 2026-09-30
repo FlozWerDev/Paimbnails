@@ -7,14 +7,14 @@ public:
 
     static void enterEditMode();
 
-    // Restores previously-detached nodes.
+    // restores previously-detached nodes.
     static void exitEditMode();
 
     enum class Target {
         None,
         Bar,
         Label,
-        Decoration,   // uses m_selectedDecoIndex
+        Decoration,   // uses m_selecteddecoindex
     };
 
     enum class Action {
@@ -45,13 +45,13 @@ protected:
     void onResetPosition(cocos2d::CCObject*);
     void onAddImage(cocos2d::CCObject*);
 
-    // Capture current values of the selected element so drags are
+    // capture current values of the selected element so drags are
     // additive (delta-based) rather than absolute.
     void storeOrigValues();
 
     void validateSelection();
 
-    // Selection shows native GD buttons.
+    // selection shows native gd buttons.
     Target m_selectedTarget = Target::None;
     int    m_selectedDecoIndex = -1;
 

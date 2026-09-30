@@ -142,7 +142,7 @@ void UpdateProgressPopup::startDownload() {
         return;
     }
 
-    // WeakRef, not Ref: progress runs off the main thread, where cocos2d's
+    // weakref, not ref: progress runs off the main thread, where cocos2d's
     // non-atomic release() must never run.
     WeakRef<UpdateProgressPopup> self = this;
 
@@ -153,7 +153,7 @@ void UpdateProgressPopup::startDownload() {
             if (auto p = self.lock()) p->onProgress(received, total);
         },
         [self](bool ok, std::string msg) {
-            // A sync response may land before init finishes: re-enqueue it.
+            // a sync response may land before init finishes: re-enqueue it.
             Loader::get()->queueInMainThread([self, ok, msg]() {
                 if (paimon::isRuntimeShuttingDown()) return;
                 if (auto p = self.lock()) p->onDone(ok, msg);
@@ -235,7 +235,7 @@ void UpdateProgressPopup::onRestart(CCObject*) {
 }
 
 void UpdateProgressPopup::onClose(CCObject* sender) {
-    // ESC/back key lands here instead of onCancel: stop the download too.
+    // esc/back key lands here instead of oncancel: stop the download too.
     if (!m_finished) UpdateChecker::get().cancelDownload();
     Popup::onClose(sender);
 }

@@ -2,6 +2,8 @@
 
 #include "WebHelper.hpp"
 #include "ThreadTracker.hpp"
+#include "JsonHelper.hpp"
+#include "AtomicFileWrite.hpp"
 #include "../core/RuntimeLifecycle.hpp"
 
 #include <Geode/loader/Log.hpp>
@@ -11,7 +13,8 @@
 #include <chrono>
 #include <cstdio>
 #include <fstream>
-#include <shared_mutex>
+#include <algorithm>
+#include <limits>
 #include <system_error>
 
 using namespace geode::prelude;
@@ -140,8 +143,8 @@ void GDRobTopCache::init() {
 
     log::info("[GDRobTopCache] initialized at {}", utils::string::pathToString(dir));
 
-    // pruneExpired() does heavy disk I/O (once froze startup); background only.
-    // lookup/readDisk tolerate entries vanishing mid-prune.
+    // pruneexpired() does heavy disk i/o (once froze startup); background only.
+    // lookup/readdisk tolerate entries vanishing mid-prune.
     paimon::ThreadTracker::get().spawn([this]() {
         geode::utils::thread::setName("PaimonRobTopPrune");
         if (m_shuttingDown.load(std::memory_order_acquire)) return;
@@ -151,8 +154,13 @@ void GDRobTopCache::init() {
 
 void GDRobTopCache::shutdown() {
     m_shuttingDown.store(true, std::memory_order_release);
-    std::lock_guard lock(m_mutex);
-    m_ram.clear();
+    {
+        std::lock_guard lock(m_mutex);
+        m_ram.clear();
+        m_ramBytes = 0;
+    }
+    std::lock_guard lock(pendingMutex());
+    pendingRequests().clear();
 }
 
 std::optional<std::string> GDRobTopCache::lookup(std::string const& category, std::string const& key) {
@@ -162,16 +170,18 @@ std::optional<std::string> GDRobTopCache::lookup(std::string const& category, st
 
     auto fullKey = entryKey(category, key);
     auto now = std::time(nullptr);
+    if (now < 0) return std::nullopt;
 
     {
         std::lock_guard lock(m_mutex);
         auto it = m_ram.find(fullKey);
         if (it != m_ram.end()) {
             if (it->second.expiresAt >= now) {
-                it->second.lastAccess = now;
+                it->second.lastAccess = std::chrono::steady_clock::now();
                 m_ramHits.fetch_add(1, std::memory_order_relaxed);
                 return it->second.body;
             }
+            m_ramBytes -= it->second.body.size();
             m_ram.erase(it);
         }
     }
@@ -197,44 +207,30 @@ void GDRobTopCache::store(
     }
     if (!isCacheableResponse(response) || response.size() > kMaxCachedResponseBytes) return;
 
+    auto now = std::time(nullptr);
+    ttl = std::min(ttl, kCacheTTLWeek);
+    if (now < 0 || ttl > (std::numeric_limits<std::time_t>::max)() - now) return;
     auto fullKey = entryKey(category, key);
-    auto expiresAt = std::time(nullptr) + ttl;
-
-    {
-        std::lock_guard lock(m_mutex);
-        m_ram[fullKey] = RamEntry{response, expiresAt, std::time(nullptr)};
-        if (m_ram.size() > kMaxRamEntries) {
-            evictLRU();
-        }
-    }
+    auto expiresAt = now + ttl;
+    touchRam(fullKey, response, expiresAt);
 
     writeDisk(pathForEntry(category, key), response, ttl);
 }
 
 void GDRobTopCache::evictLRU() {
-    if (m_ram.size() <= kMaxRamEntries) return;
-
-    size_t toRemove = m_ram.size() - kMaxRamEntries;
-    std::vector<std::pair<std::string, std::time_t>> candidates;
-    candidates.reserve(m_ram.size());
-
-    for (auto const& [key, entry] : m_ram) {
-        candidates.emplace_back(key, entry.lastAccess);
-    }
-
-    std::partial_sort(candidates.begin(),
-                      candidates.begin() + toRemove,
-                      candidates.end(),
-                      [](auto const& a, auto const& b) { return a.second < b.second; });
-
-    for (size_t i = 0; i < toRemove; ++i) {
-        m_ram.erase(candidates[i].first);
+    while (!m_ram.empty() && (m_ram.size() > kMaxRamEntries || m_ramBytes > kMaxRamBytes)) {
+        auto oldest = std::min_element(m_ram.begin(), m_ram.end(), [](auto const& a, auto const& b) {
+            return a.second.lastAccess < b.second.lastAccess;
+        });
+        m_ramBytes -= oldest->second.body.size();
+        m_ram.erase(oldest);
     }
 }
 
 std::optional<GDRobTopCache::DiskEntry> GDRobTopCache::readDisk(
     std::filesystem::path const& path
 ) const {
+    std::lock_guard lock(m_diskMutex);
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return std::nullopt;
 
@@ -248,22 +244,26 @@ std::optional<GDRobTopCache::DiskEntry> GDRobTopCache::readDisk(
     if (!in.read(content.data(), size)) return std::nullopt;
 
     auto parsed = matjson::parse(content);
-    if (!parsed.isOk()) return std::nullopt;
+    if (!parsed.isOk() || !parsed.unwrap().isObject()) return std::nullopt;
 
-    auto json = parsed.unwrap();
+    auto const& json = parsed.unwrap();
     if (!json.contains("response") || !json["response"].isString()) return std::nullopt;
     auto body = json["response"].asString().unwrapOr("");
     if (!isCacheableResponse(body) || body.size() > kMaxCachedResponseBytes) return std::nullopt;
 
-    auto cachedAt = static_cast<std::time_t>(json["cachedAt"].asDouble().unwrapOr(0.0));
-    auto ttl = static_cast<std::time_t>(json["ttl"].asDouble().unwrapOr(
-        static_cast<double>(kCacheTTLWeek)));
-    if (cachedAt <= 0 || ttl <= 0) return std::nullopt;
+    auto cachedAtValue = paimon::json::integerOr<int64_t>(json["cachedAt"]);
+    auto ttlValue = paimon::json::integerOr<int64_t>(json["ttl"], kCacheTTLWeek);
+    if (cachedAtValue <= 0 || ttlValue <= 0 || ttlValue > kCacheTTLWeek ||
+        static_cast<uintmax_t>(cachedAtValue) > static_cast<uintmax_t>((std::numeric_limits<std::time_t>::max)())) return std::nullopt;
+    auto cachedAt = static_cast<std::time_t>(cachedAtValue);
+    auto ttl = static_cast<std::time_t>(ttlValue);
+    if (ttl > (std::numeric_limits<std::time_t>::max)() - cachedAt) return std::nullopt;
 
     auto expiresAt = cachedAt + ttl;
-    if (std::time(nullptr) > expiresAt) return std::nullopt;
+    auto now = std::time(nullptr);
+    if (now < 0 || cachedAt > now || now > expiresAt) return std::nullopt;
 
-    return DiskEntry{body, expiresAt};
+    return DiskEntry{std::move(body), expiresAt};
 }
 
 void GDRobTopCache::writeDisk(
@@ -271,9 +271,6 @@ void GDRobTopCache::writeDisk(
     std::string const& response,
     std::time_t ttl
 ) const {
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-
     matjson::Value json = matjson::Value::object();
     json["cachedAt"] = static_cast<double>(std::time(nullptr));
     json["ttl"] = static_cast<double>(ttl);
@@ -281,17 +278,20 @@ void GDRobTopCache::writeDisk(
     auto content = json.dump();
     if (content.size() > static_cast<size_t>(kMaxCachedFileBytes)) return;
 
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out) return;
-    out << content;
+    std::lock_guard lock(m_diskMutex);
+    if (m_shuttingDown.load(std::memory_order_acquire)) return;
+    (void)paimon::file::writeAtomically(path, std::string_view(content));
 }
 
 void GDRobTopCache::touchRam(std::string const& entryKey, std::string response, std::time_t expiresAt) {
     std::lock_guard lock(m_mutex);
-    m_ram[entryKey] = RamEntry{std::move(response), expiresAt, std::time(nullptr)};
-    if (m_ram.size() > kMaxRamEntries) {
-        evictLRU();
-    }
+    if (m_shuttingDown.load(std::memory_order_acquire)) return;
+    auto old = m_ram.find(entryKey);
+    if (old != m_ram.end()) m_ramBytes -= old->second.body.size();
+    auto bytes = response.size();
+    m_ram[entryKey] = RamEntry{std::move(response), expiresAt, std::chrono::steady_clock::now()};
+    m_ramBytes += bytes;
+    evictLRU();
 }
 
 void GDRobTopCache::pruneExpired() {
@@ -300,10 +300,14 @@ void GDRobTopCache::pruneExpired() {
     if (!std::filesystem::exists(dir, ec)) return;
 
     int removed = 0;
-    for (auto const& entry : std::filesystem::recursive_directory_iterator(dir, ec)) {
+    for (std::filesystem::recursive_directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
+        auto const& entry = *it;
         if (m_shuttingDown.load(std::memory_order_acquire)) break;
         if (ec) break;
-        if (!entry.is_regular_file() || entry.path().extension() != ".json") continue;
+        std::error_code typeEc;
+        if (!entry.is_regular_file(typeEc) || typeEc || entry.path().extension() != ".json") continue;
+        // keep a fresh replacement from being removed after reading an expired entry.
+        std::lock_guard lock(m_diskMutex);
         if (!readDisk(entry.path())) {
             std::filesystem::remove(entry.path(), ec);
             if (!ec) ++removed;
@@ -321,9 +325,9 @@ std::size_t GDRobTopCache::entryCount() const {
     std::size_t count = 0;
     auto dir = cacheDir();
     if (!std::filesystem::exists(dir, ec)) return 0;
-    for (auto const& entry : std::filesystem::recursive_directory_iterator(dir, ec)) {
-        if (ec) break;
-        if (entry.is_regular_file() && entry.path().extension() == ".json") ++count;
+    for (std::filesystem::recursive_directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
+        std::error_code typeEc;
+        if (it->is_regular_file(typeEc) && !typeEc && it->path().extension() == ".json") ++count;
     }
     return count;
 }
@@ -343,7 +347,6 @@ void postCached(
     CachePolicy policy
 ) {
     if (paimon::isRuntimeShuttingDown()) {
-        if (cb) cb(false, "");
         return;
     }
 
@@ -355,7 +358,7 @@ void postCached(
         req.bodyString(body);
         WebHelper::dispatch(std::move(req), "POST", std::string(kRobTopBaseUrl) + endpoint,
             [cb = std::move(cb)](web::WebResponse res) {
-                if (!cb) return;
+                if (!cb || paimon::isRuntimeShuttingDown()) return;
                 if (!res.ok()) { cb(false, ""); return; }
                 std::string response = res.string().unwrapOr("");
                 trimResponseTail(response);
@@ -387,7 +390,8 @@ void postCached(
     req.bodyString(body);
 
     WebHelper::dispatch(std::move(req), "POST", std::string(kRobTopBaseUrl) + endpoint,
-        [endpoint, body, category, key, dedupeKey, policy](web::WebResponse res) {
+        [category, key, dedupeKey, policy](web::WebResponse res) {
+            if (paimon::isRuntimeShuttingDown()) return;
             bool ok = false;
             std::string response;
             if (res.ok()) {

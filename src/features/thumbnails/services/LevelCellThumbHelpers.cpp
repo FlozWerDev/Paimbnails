@@ -152,7 +152,7 @@ PaimonGalleryTransition parseGalleryTransition(std::string const& s) {
 
 PaimonGalleryTransition resolveRandomTransition() {
     thread_local std::mt19937 rng(std::random_device{}());
-    std::uniform_int_distribution<int> dist(0, 19); // Excluye Random
+    std::uniform_int_distribution<int> dist(0, 19); // excluye random
     return static_cast<PaimonGalleryTransition>(dist(rng));
 }
 

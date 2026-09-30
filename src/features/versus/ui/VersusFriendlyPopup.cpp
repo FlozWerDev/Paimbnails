@@ -205,7 +205,7 @@ void VersusFriendlyPopup::setStatus(std::string const& text, bool error) {
 }
 
 void VersusFriendlyPopup::onFormatStep(CCObject* sender) {
-    // Stepping back is one short of a full lap, which keeps the index unsigned.
+    // stepping back is one short of a full lap, which keeps the index unsigned.
     size_t const step = sender->getTag() == kStepTag ? m_formats.size() - 1 : 1;
     m_formatIndex = (m_formatIndex + step) % m_formats.size();
     refreshFormat();
@@ -238,7 +238,7 @@ void VersusFriendlyPopup::send(std::string const& target) {
                 return;
             }
 
-            // The duel is already open on the server; the hub's watch picks it
+            // the duel is already open on the server; the hub's watch picks it
             // up and this closes out of the way of the lobby modal.
             self->setStatus(Localization::get().getString("versus.challenge-sent"));
         });
@@ -267,7 +267,7 @@ void VersusFriendlyPopup::onJoin(CCObject*) {
 void VersusFriendlyPopup::onEnter() {
     Popup::onEnter();
 
-    // The lobby modal takes over the moment the duel exists, so this steps out
+    // the lobby modal takes over the moment the duel exists, so this steps out
     // instead of sitting behind it.
     auto self = Ref<VersusFriendlyPopup>(this);
     VersusSession::get().addListener(this, [self]() {

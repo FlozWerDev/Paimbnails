@@ -1,9 +1,7 @@
-// Tests de pintado de PackGen v2: el kernel de tinte contra TintMath.
-//
-// Compila sin Geode (nucleo puro + stub de ccTypes):
-//   g++ -std=c++17 -O2 -I tests/packgen_stubs -o /tmp/pgpaint tests/packgen_paint_regression.cpp && /tmp/pgpaint
-//
-// Cada prueba es una funcion bool. main() las ejecuta todas y devuelve 0 si
+// tests de pintado de packgen v2: el kernel de tinte contra tintmath.
+// compila sin geode (nucleo puro + stub de cctypes):
+//   g++ -std=c++17 -o2 -i tests/packgen_stubs -o /tmp/pgpaint tests/packgen_paint_regression.cpp && /tmp/pgpaint
+// cada prueba es una funcion bool. main() las ejecuta todas y devuelve 0 si
 // pasan o 1 si alguna falla.
 
 #include <cmath>
@@ -21,7 +19,7 @@ using namespace paimon::texture_studio::tintmath;
 
 namespace {
 
-// LCG determinista: los mismos "aleatorios" en cada run y plataforma.
+// lcg determinista: los mismos "aleatorios" en cada run y plataforma.
 struct Rng {
     std::uint64_t s;
     explicit Rng(std::uint64_t seed) : s(seed) {}
@@ -44,7 +42,7 @@ int g_failures = 0;
     } \
 } while (0)
 
-// Mismos numeros que el SelfTest del motor: gris 200 con brillo 160
+// mismos numeros que el selftest del motor: gris 200 con brillo 160
 // (factor 1.25) a traves de tinte (160,80,40) da (200,100,50).
 bool tint_scale_known_value() {
     PrecomputedTint spec = PrecomputedTint::make(160, 80, 40, 160.0f, 1.0f, 0.0f);
@@ -66,13 +64,13 @@ bool tint_red_clamps() {
     tintPixelFast(200, 200, 200, spec, r, g, b);
     CHECK(r == 255 && g == 0 && b == 0);
 
-    // Negro puro: luminancia 0 -> factor 0 -> negro.
+    // negro puro: luminancia 0 -> factor 0 -> negro.
     tintPixelFast(0, 0, 0, spec, r, g, b);
     CHECK(r == 0 && g == 0 && b == 0);
     return true;
 }
 
-// Sin mascaras el kernel no toca nada (passthrough de orla/fondo).
+// sin mascaras el kernel no toca nada (passthrough de orla/fondo).
 bool outline_passthrough() {
     constexpr int W = 8, H = 8;
     FrameImage src(W, H), dst(W, H);
@@ -92,7 +90,7 @@ bool outline_passthrough() {
     return true;
 }
 
-// Pixeles transparentes y bajo el umbral oscuro se saltan sin contar.
+// pixeles transparentes y bajo el umbral oscuro se saltan sin contar.
 bool transparent_and_dark_skipped() {
     constexpr int W = 4, H = 2;
     FrameImage src(W, H), dst(W, H);
@@ -121,7 +119,7 @@ bool transparent_and_dark_skipped() {
     return true;
 }
 
-// Circulo sintetico: interior tintado, esquinas intactas, particion C1/C2.
+// circulo sintetico: interior tintado, esquinas intactas, particion c1/c2.
 bool circle_coverage_and_partition() {
     constexpr int W = 32, H = 32, CX = 16, CY = 16, R = 12;
     FrameImage src(W, H), dst(W, H);
@@ -148,17 +146,17 @@ bool circle_coverage_and_partition() {
                                    c1, c2, c1, c2, false, false, 0, lut);
     CHECK(n == static_cast<std::size_t>(ink));
 
-    // Particion: cada pixel de tinta contado exactamente una vez.
+    // particion: cada pixel de tinta contado exactamente una vez.
     CHECK(left + right == ink);
     CHECK(left > 0 && right > 0);
 
-    // El centro-izquierda debe ser rojo-dominante, el centro-derecha azul.
+    // el centro-izquierda debe ser rojo-dominante, el centro-derecha azul.
     auto l = dst.at(CX - 4, CY);
     CHECK(l.r > l.g && l.r > l.b);
     auto r = dst.at(CX + 4, CY);
     CHECK(r.b > r.r && r.b > r.g);
 
-    // Esquinas fuera del circulo: transparentes e intactas.
+    // esquinas fuera del circulo: transparentes e intactas.
     for (auto [x, y] : {std::pair<int,int>{0,0}, {W-1,0}, {0,H-1}, {W-1,H-1}}) {
         auto p = dst.at(x, y);
         CHECK(p.a == 0 && p.r == 0 && p.g == 0 && p.b == 0);
@@ -166,12 +164,12 @@ bool circle_coverage_and_partition() {
     return true;
 }
 
-// Diagonal fina y larga (Bresenham): sin huecos, vecinos intactos.
+// diagonal fina y larga (bresenham): sin huecos, vecinos intactos.
 bool thin_diagonal_no_gaps() {
     constexpr int W = 128, H = 16;
     FrameImage src(W, H), dst(W, H);
     std::vector<std::uint8_t> mask(W * H, 0);
-    // Bresenham de (0,0) a (W-1,H-1).
+    // bresenham de (0,0) a (w-1,h-1).
     int dx = W - 1, dy = H - 1, err = dx - dy, x = 0, y = 0, lineLen = 0;
     while (true) {
         src.setAt(x, y, {180, 180, 180, 255});
@@ -191,7 +189,7 @@ bool thin_diagonal_no_gaps() {
                                    c, c, c, c, false, false, 0, lut);
     CHECK(n == static_cast<std::size_t>(lineLen));
 
-    // Sin escalera visible como hueco: cada columna con tinta tiene el pixel
+    // sin escalera visible como hueco: cada columna con tinta tiene el pixel
     // tintado (no se quedo con el color original).
     for (int cx = 0; cx < W; ++cx) {
         bool found = false;
@@ -203,14 +201,14 @@ bool thin_diagonal_no_gaps() {
         }
         CHECK(found);
     }
-    // Vecinos fuera de la mascara intactos (transparentes).
+    // vecinos fuera de la mascara intactos (transparentes).
     CHECK(dst.at(0, H - 1).a == 0);
     CHECK(dst.at(W - 1, 0).a == 0);
     return true;
 }
 
-// Diferencial aleatorio kernel vs TintMath (mismas formulas, otro camino).
-// Rango restringido al dominio con clamp (brillo [1,1000], sat [0,3],
+// diferencial aleatorio kernel vs tintmath (mismas formulas, otro camino).
+// rango restringido al dominio con clamp (brillo [1,1000], sat [0,3],
 // contraste [-1,1]) donde ambos deben coincidir bit a bit.
 bool randomized_tint_differential() {
     Rng rng(123456789ULL);
@@ -236,7 +234,7 @@ bool randomized_tint_differential() {
             return false;
         }
     }
-    // El LUT guarda exactamente a/255.0f.
+    // el lut guarda exactamente a/255.0f.
     for (int a = 0; a < 256; ++a) {
         if (lut.v[a] != static_cast<float>(a) / 255.0f) {
             std::cout << "FAIL alpha lut entry " << a << "\n";
@@ -270,7 +268,7 @@ bool randomized_blend_differential() {
     return true;
 }
 
-// Banda de overlay sobre imagen completa: paridad con OverlayTinter.
+// banda de overlay sobre imagen completa: paridad con overlaytinter.
 bool overlay_band_full_image() {
     constexpr int W = 16, H = 8;
     FrameImage dst(W, H), ov(W, H);
@@ -288,7 +286,7 @@ bool overlay_band_full_image() {
 
     applyOverlayBand(dst.data(), W, ov.data(), W, 0, H, W, spec, lut, false);
 
-    // Referencia pixel a pixel con TintMath directo.
+    // referencia pixel a pixel con tintmath directo.
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
             auto o = ov.at(x, y);

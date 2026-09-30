@@ -11,11 +11,11 @@ namespace paimon::cursorshop {
 
 namespace {
 
-// Concurrent downloads; 40 at once left most unresolved.
+// concurrent downloads; 40 at once left most unresolved.
 constexpr int kMaxConcurrent = 4;
-// One retry before marking a URL failed.
+// one retry before marking a url failed.
 constexpr int kMaxAttempts = 2;
-// Clearing drops only the cache shortcut; mounted sprites keep their texture.
+// clearing drops only the cache shortcut; mounted sprites keep their texture.
 constexpr std::size_t kMaxCachedTextures = 400;
 
 constexpr int kPlaceholderTag = 0x5401;
@@ -34,7 +34,7 @@ CCTexture2D* ShopImages::fetch(std::string const& url, Callback cb) {
         return found->second.data();
     }
     if (m_failed.count(url)) {
-        // Answer now so the requester can mark the failure.
+        // answer now so the requester can mark the failure.
         if (cb) cb(nullptr);
         return nullptr;
     }
@@ -55,7 +55,7 @@ void ShopImages::pump() {
         auto url = m_queue.front();
         m_queue.pop_front();
 
-        // May have resolved or been dropped while queued.
+        // may have resolved or been dropped while queued.
         if (!m_pending.count(url) || m_cache.count(url)) continue;
 
         ++m_active;
@@ -73,7 +73,7 @@ void ShopImages::pump() {
                     if (self.m_cache.size() >= kMaxCachedTextures) self.m_cache.clear();
                     self.m_cache[url] = image.texture;
                     texture = image.texture;
-                    // Map keeps its own reference.
+                    // map keeps its own reference.
                     image.texture->release();
                 }
             }
@@ -126,7 +126,7 @@ void mountThumb(CCNode* holder, std::string const& url, float maxWidth, float ma
 
     auto box = holder->getContentSize();
 
-    // Placeholder first: a known-failed URL answers synchronously and needs it present.
+    // placeholder first: a known-failed url answers synchronously and needs it present.
     if (auto* placeholder = CCLabelBMFont::create("...", "bigFont.fnt")) {
         placeholder->setTag(kPlaceholderTag);
         placeholder->setScale(0.3f);

@@ -69,7 +69,7 @@ constexpr std::array<cocos2d::ccColor3B, 16> kDrawPalette = {{
     {175, 0, 255}, {255, 0, 175}, {255, 105, 165}, {165, 100, 60},
 }};
 
-void addNativeBackground(CCLayer* layer, cocos2d::ccColor4B /*fallbackColor*/ = ccc4(0, 0, 0, 255)) {
+void addNativeBackground(CCLayer* layer, cocos2d::ccColor4B /*fallbackcolor*/ = ccc4(0, 0, 0, 255)) {
     if (auto* bg = MenuGameLayer::create()) {
         layer->addChild(bg, -10);
         return;

@@ -1,11 +1,11 @@
 #ifdef GL_ES
-// NOTE: #extension first; strict drivers reject it after any other token.
+// note: #extension first; strict drivers reject it after any other token.
 #extension GL_OES_standard_derivatives : enable
 #ifndef GL_OES_standard_derivatives
 #define PAIMON_NO_DERIVATIVES 1
 #endif
 precision mediump float;
-// fwidth needs the ext on ES 2.0; without it use a texel-size floor.
+// fwidth needs the ext on es 2.0; without it use a texel-size floor.
 #endif
 varying vec4 v_fragmentColor;
 varying vec2 v_texCoord;

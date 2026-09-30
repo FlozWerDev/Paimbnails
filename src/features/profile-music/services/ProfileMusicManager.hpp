@@ -97,6 +97,7 @@ public:
     bool tryGetImmediateConfig(int accountID, ProfileMusicConfig& outConfig);
 
     void injectBundleConfig(int accountID, const ProfileMusicConfig& config);
+    static ProfileMusicConfig parseConfig(matjson::Value const& json);
 
     std::filesystem::path getCachePath(int accountID);
 
@@ -159,7 +160,7 @@ private:
 
     bool isCacheValid(int accountID, ProfileMusicConfig const& config);
 
-    // version appended as cache-buster: changed clips fetch fresh, not stale CDN copies.
+    // version appended as cache-buster: changed clips fetch fresh, not stale cdn copies.
     void downloadMusicFragment(int accountID, std::string const& version, DownloadCallback callback);
 
     std::vector<float> analyzeWaveform(std::string const& filePath, int numPeaks, int& outDurationMs);
@@ -182,5 +183,4 @@ private:
                                     float freqFrom, float freqTo, float volFrom, float volTo, bool applying,
                                     uint32_t generation);
 };
-
 

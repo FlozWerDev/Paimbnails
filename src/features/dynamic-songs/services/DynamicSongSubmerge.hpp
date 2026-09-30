@@ -1,6 +1,6 @@
 #pragma once
 
-// Dive filter: dulls the music without cutting it.
+// dive filter: dulls the music without cutting it.
 
 #include <fmod.hpp>
 
@@ -12,13 +12,13 @@ class SubmergeEffect {
 public:
     static SubmergeEffect& get();
 
-    // Switches channel, dropping the previous one.
+    // switches channel, dropping the previous one.
     void bindTarget(FMOD::ChannelControl* target);
 
     void rampTo(float wet, float seconds);
     void snapTo(float wet);
 
-    // Straight back to dry and detached.
+    // straight back to dry and detached.
     void release();
     void shutdown();
 

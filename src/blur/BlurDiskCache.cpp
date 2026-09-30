@@ -19,8 +19,8 @@ using namespace geode::prelude;
 
 namespace paimon::blur {
 
-// Dedicated 1-thread I/O pool. Heap-leaked on purpose: joining during atexit
-// hung exit for seconds; shutdownBlurIOPool() joins it on Exiting instead.
+// dedicated 1-thread i/o pool. heap-leaked on purpose: joining during atexit
+// hung exit for seconds; shutdownbluriopool() joins it on exiting instead.
 static std::atomic<paimon::ThreadPool*> s_blurIOPool{nullptr};
 
 static paimon::ThreadPool* getBlurIOPool() {
@@ -33,7 +33,7 @@ static paimon::ThreadPool* getBlurIOPool() {
 }
 
 BlurDiskCache& BlurDiskCache::get() {
-    // Heap leak is intentional: avoids destructor running during atexit while I/O
+    // heap leak is intentional: avoids destructor running during atexit while i/o
     // workers may still touch the index. shutdown() flips the atomic flag.
     static BlurDiskCache* instance = new BlurDiskCache();
     return *instance;
@@ -262,7 +262,7 @@ void BlurDiskCache::storeFromTextureAsync(std::string const& key, CCTexture2D* t
         if (m_index.find(key) != m_index.end()) return;
     }
 
-    // glReadPixels needs the GL main thread; render to a temp RT and read back via newCCImage.
+    // glreadpixels needs the gl main thread; render to a temp rt and read back via newccimage.
     int w = width;
     int h = height;
     auto* rt = CCRenderTexture::create(w, h);
@@ -324,8 +324,8 @@ void BlurDiskCache::persistPixelsAsync(std::string key, std::shared_ptr<std::vec
         ie.width = w;
         ie.height = h;
         ie.byteSize = static_cast<std::int64_t>(HEADER_SIZE + pixels->size());
-        // Index with the file's own mtime: steady_clock and file_clock have
-        // different epochs, which broke LRU eviction ordering across sessions.
+        // index with the file's own mtime: steady_clock and file_clock have
+        // different epochs, which broke lru eviction ordering across sessions.
         std::error_code mtEc;
         auto ftime = std::filesystem::last_write_time(path, mtEc);
         ie.mtimeEpoch = mtEc ? 0 : std::chrono::duration_cast<std::chrono::seconds>(
@@ -357,7 +357,7 @@ void BlurDiskCache::clear() {
         }
     };
 
-    // A stopped pool drops enqueued jobs, so wipe inline when it is gone.
+    // a stopped pool drops enqueued jobs, so wipe inline when it is gone.
     auto* pool = getBlurIOPool();
     if (!pool || pool->isStopped()) {
         wipe();

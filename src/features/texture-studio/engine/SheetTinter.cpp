@@ -27,7 +27,7 @@ namespace paimon::texture_studio {
 
 namespace {
 
-// Downscale by scale; 0.5 uses a 2×2 box average, others use nearest-neighbor.
+// downscale by scale; 0.5 uses a 2×2 box average, others use nearest-neighbor.
 ImageBuffer resizeImage(ImageBuffer const& src, float scale) {
     if (scale <= 0.0f || scale == 1.0f || src.empty()) return src;
     int newW = std::max(1, static_cast<int>(std::floor(src.width()  * scale)));
@@ -87,7 +87,7 @@ TinterOptions makeTintOptions(SheetTinterRequest const& req) {
     return topts;
 }
 
-// Auto-detected tint for one logical frame.
+// auto-detected tint for one logical frame.
 ImageBuffer clusterTintFrame(ImageBuffer const& logical, SheetTinterRequest const& req,
                              TintColors const& colors, int& needsReviewCount) {
     ClusteringOptions copts;
@@ -104,7 +104,7 @@ ImageBuffer clusterTintFrame(ImageBuffer const& logical, SheetTinterRequest cons
     return LuminanceTinter::apply(logical, masks, colors, makeTintOptions(req));
 }
 
-// Render an override into a frame-sized canvas, or return an empty buffer.
+// render an override into a frame-sized canvas, or return an empty buffer.
 ImageBuffer loadCustomCanvas(SheetTinterRequest const& req, std::string const& frameName,
                              int frameW, int frameH, bool& overlayMode) {
     overlayMode = false;
@@ -123,7 +123,7 @@ ImageBuffer loadCustomCanvas(SheetTinterRequest const& req, std::string const& f
         custom.unwrap(), frameW, frameH, it->second.transform);
 }
 
-// Apply a stored fusion in place; export uses the first GIF frame as static PNG.
+// apply a stored fusion in place; export uses the first gif frame as static png.
 bool applyFusionIfAny(SheetTinterRequest const& req, std::string const& frameName,
                       ImageBuffer& frame) {
     if (frame.empty()) return false;
@@ -155,7 +155,7 @@ bool applyFusionIfAny(SheetTinterRequest const& req, std::string const& frameNam
     }
 
     FusionApplyOptions opts;
-// Stamp the texture as-is; pack colors do not recolor it.
+// stamp the texture as-is; pack colors do not recolor it.
     opts.blendMode = it->second.blendMode;
     opts.opacity   = it->second.opacity > 0.f ? it->second.opacity : payload.opacity;
     opts.transform = it->second.transform.isDefault()
@@ -166,7 +166,7 @@ bool applyFusionIfAny(SheetTinterRequest const& req, std::string const& frameNam
     return true;
 }
 
-// Reinsert a logical frame at its atlas slot, restoring Cocos' packing rotation.
+// reinsert a logical frame at its atlas slot, restoring cocos' packing rotation.
 void blitLogicalBack(ImageBuffer& atlas, SpriteFrameInfo const& f, ImageBuffer logical) {
     if (logical.empty()) return;
     if (f.rotated) logical.rotateCW90();
@@ -208,7 +208,7 @@ geode::Result<SheetTinterOutput> buildOutput(ImageBuffer const& atlas,
     return Ok(std::move(out));
 }
 
-// UHD: tint in place, preserve atlas layout, and emit the plist unchanged.
+// uhd: tint in place, preserve atlas layout, and emit the plist unchanged.
 geode::Result<SheetTinterOutput> processInPlace(SheetTinterRequest const& req,
                                                 ParsedSpritesheet const& parsed,
                                                 ImageBuffer const& atlas) {
@@ -218,7 +218,7 @@ geode::Result<SheetTinterOutput> processInPlace(SheetTinterRequest const& req,
     int tintedCount = 0;
     int needsReviewCount = 0;
 
-    // Whole-sheet overlay covers every frame at once.
+    // whole-sheet overlay covers every frame at once.
     if (overlayPath) {
         auto const& s = *req.overlaySources;
         OverlayImages ov;
@@ -240,7 +240,7 @@ geode::Result<SheetTinterOutput> processInPlace(SheetTinterRequest const& req,
         bool hasImage = req.spriteImages.find(info.name) != req.spriteImages.end();
         bool hasFusion = req.spriteFusions.find(info.name) != req.spriteFusions.end();
 
-    // Per-frame work is limited to explicit overrides or tint reversals.
+    // per-frame work is limited to explicit overrides or tint reversals.
         if (overlayPath && !skip && !hasColor && !hasImage && !hasFusion) continue;
 
         ImageBuffer orig = SpritesheetReader::extractFrame(atlas, info);
@@ -260,16 +260,16 @@ geode::Result<SheetTinterOutput> processInPlace(SheetTinterRequest const& req,
             resultFrame = std::move(customCanvas);
             ++tintedCount;
         } else if (hasColor) {
-    // Explicit per-sprite colors override the sheet tint.
+    // explicit per-sprite colors override the sheet tint.
             resultFrame = clusterTintFrame(orig, req, colorsIt->second, needsReviewCount);
             ++tintedCount;
             if (!customCanvas.empty()) SpritePreviewRenderer::compositeOver(resultFrame, customCanvas);
         } else if (overlayPath) {
-    // Composite custom images over the tinted region.
+    // composite custom images over the tinted region.
             resultFrame = SpritesheetReader::extractFrame(out, info);
             if (!customCanvas.empty()) SpritePreviewRenderer::compositeOver(resultFrame, customCanvas);
         } else {
-    // Auto-detection fallback when no overlay pack is available.
+    // auto-detection fallback when no overlay pack is available.
             auto kind = UiSpriteCatalog::classify(info.name, req.outputBaseName);
             bool tintThis = !req.onlyTintUiSprites
                          || UiSpriteCatalog::shouldTint(kind, req.tintScope);
@@ -292,7 +292,7 @@ geode::Result<SheetTinterOutput> processInPlace(SheetTinterRequest const& req,
         blitLogicalBack(out, info, std::move(resultFrame));
     }
 
-    // Preserve original frame layout; normalize metadata only.
+    // preserve original frame layout; normalize metadata only.
     ParsedSpritesheet outSheet;
     outSheet.metadata = parsed.metadata;
     outSheet.metadata.format              = 3;
@@ -300,7 +300,7 @@ geode::Result<SheetTinterOutput> processInPlace(SheetTinterRequest const& req,
     outSheet.metadata.sizeH               = out.height();
     outSheet.metadata.textureFileName     = outputTextureName(req);
     outSheet.metadata.realTextureFileName = outSheet.metadata.textureFileName;
-    // PNGs use straight RGBA, like GD's sheets.
+    // pngs use straight rgba, like gd's sheets.
     outSheet.metadata.premultiplyAlpha    = false;
     outSheet.frames = parsed.frames;
 
@@ -311,7 +311,7 @@ geode::Result<SheetTinterOutput> processInPlace(SheetTinterRequest const& req,
                        needsReviewCount);
 }
 
-// Phase-2 unit: per-frame inputs plus outputs. frameColors is a 12-byte copy so workers skip request maps.
+// phase-2 unit: per-frame inputs plus outputs. framecolors is a 12-byte copy so workers skip request maps.
 struct RepackJob {
     SpriteFrameInfo info;
     ImageBuffer origPixels;
@@ -326,7 +326,7 @@ struct RepackJob {
     int reviewDelta = 0;
 };
 
-// Pure per-frame recolor: no I/O, logging or shared state, pool-safe.
+// pure per-frame recolor: no i/o, logging or shared state, pool-safe.
 void computeRepackJob(RepackJob& job, SheetTinterRequest const& req) {
     if (!job.customCanvas.empty() && !job.imageOverlay) {
         job.recolored = std::move(job.customCanvas);
@@ -383,7 +383,7 @@ void computeRepackJob(RepackJob& job, SheetTinterRequest const& req) {
     }
 }
 
-// HD port: downscale and re-pack each frame; only the optional half-res copy changes layout.
+// hd port: downscale and re-pack each frame; only the optional half-res copy changes layout.
 geode::Result<SheetTinterOutput> processRepack(SheetTinterRequest const& req,
                                                ParsedSpritesheet const& parsed,
                                                ImageBuffer const& atlas) {
@@ -398,7 +398,7 @@ geode::Result<SheetTinterOutput> processRepack(SheetTinterRequest const& req,
     std::vector<Tinted> tinted;
     tinted.reserve(parsed.frames.size());
 
-    // Phase 1 (serial, frame order): pixels, flags, custom-canvas I/O; warnings keep order.
+    // phase 1 (serial, frame order): pixels, flags, custom-canvas i/o; warnings keep order.
     std::vector<RepackJob> jobs;
     jobs.reserve(parsed.frames.size());
 
@@ -436,7 +436,7 @@ geode::Result<SheetTinterOutput> processRepack(SheetTinterRequest const& req,
         jobs.push_back(std::move(job));
     }
 
-    // Phase 2 (parallel): pool owned and joined here, so unload never strands threads.
+    // phase 2 (parallel): pool owned and joined here, so unload never strands threads.
     if (jobs.size() == 1) {
         computeRepackJob(jobs.front(), req);
     } else if (!jobs.empty()) {
@@ -446,7 +446,7 @@ geode::Result<SheetTinterOutput> processRepack(SheetTinterRequest const& req,
         });
     }
 
-    // Phase 3 (serial, frame order): fusion I/O, resize, assemble.
+    // phase 3 (serial, frame order): fusion i/o, resize, assemble.
     for (auto& job : jobs) {
         if (applyFusionIfAny(req, job.info.name, job.recolored)) {
             ++job.tintedDelta;

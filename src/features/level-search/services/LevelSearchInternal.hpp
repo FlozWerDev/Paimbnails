@@ -1,10 +1,10 @@
-// Anonymous-namespace body for hooks/LevelSearchLayer.cpp; it depends on that hook's context.
+// anonymous-namespace body for hooks/levelsearchlayer.cpp; it depends on that hook's context.
 
 #include "SearchRequestCoordinator.hpp"
 
 namespace {
-    // Keep this preview scoped to normal level search. List search uses
-    // different result objects and should continue using GD's normal flow.
+    // keep this preview scoped to normal level search. list search uses
+    // different result objects and should continue using gd's normal flow.
     bool kEnableRealtimeSearchPreview() {
         return Mod::get()->getSettingValue<bool>("realtime-search-preview");
     }
@@ -13,16 +13,14 @@ namespace {
     constexpr int kRealtimeSearchMinDelayMs = 250;
     constexpr int kRealtimeSearchMaxDelayMs = 1000;
 
-    // Below this length a text query matches so much that the response is
-    // useless and the request is pure waste. Numeric IDs are exempt because a
-    // 2-digit level ID is a legitimate exact lookup.
+    // short text queries are too broad; numeric ids still allow exact lookup.
     constexpr std::size_t kRealtimeMinQueryChars = 3;
 
-    // Wildcard searches expand into one request per digit. Only this many are
+    // wildcard searches expand into one request per digit. only this many are
     // fetched up front; the rest arrive as the user scrolls.
     constexpr std::size_t kSmartInitialBatch = 2;
 
-    // Guards the per-frame auto-load poll so a short page cannot re-request in
+    // guards the per-frame auto-load poll so a short page cannot re-request in
     // consecutive frames.
     constexpr float kAutoLoadCooldown = 0.75f;
     constexpr float kPreviewFallbackWidth = 356.f;
@@ -259,7 +257,7 @@ namespace {
         return wildcardCount == 1;
     }
 
-    // Packed integer pair: same identity as the old per-row string, no allocation.
+    // packed integer pair: same identity as the old per-row string, no allocation.
     struct ResultKey {
         int kind = 0;
         std::int64_t id = 0;
@@ -282,7 +280,7 @@ namespace {
         if (auto score = typeinfo_cast<GJUserScore*>(object)) {
             if (score->m_accountID > 0) return {1, static_cast<std::int64_t>(score->m_accountID)};
             if (score->m_userID > 0) return {2, static_cast<std::int64_t>(score->m_userID)};
-            // Anonymous entries can only be told apart by name.
+            // anonymous entries can only be told apart by name.
             return {3, static_cast<std::int64_t>(
                 std::hash<std::string>{}(toLowerCopy(static_cast<std::string>(score->m_userName)))
             )};
@@ -488,7 +486,7 @@ namespace {
                 return;
             }
 
-            // Below the minimum length nothing is dispatched, so say so instead
+            // below the minimum length nothing is dispatched, so say so instead
             // of leaving a spinner that will never resolve.
             if (queryRequiredForCurrentMode() && !queryLongEnough(m_pendingQuery)) {
                 cancelActiveRequest();
@@ -501,7 +499,7 @@ namespace {
                 return;
             }
 
-            // Abandon the in-flight request for the previous keystroke; its
+            // abandon the in-flight request for the previous keystroke; its
             // result is still cached by the coordinator if it lands.
             cancelActiveRequest();
             setStatus("Searching...");
@@ -588,7 +586,7 @@ namespace {
             TransitionManager::get().pushScene(LevelBrowserLayer::scene(object));
         }
 
-        // The preview no longer implements LevelManagerDelegate; the coordinator
+        // the preview no longer implements levelmanagerdelegate; the coordinator
         // owns the delegate slot and hands results back through callbacks.
 
         void update(float dt) override {
@@ -597,7 +595,7 @@ namespace {
                 m_autoLoadCooldown = std::max(0.f, m_autoLoadCooldown - dt);
             }
             if (m_smartSearchActive && !m_isLoading && m_smartQueryIndex < m_smartQueries.size()) {
-                // Remaining wildcard variants are only fetched once the user
+                // remaining wildcard variants are only fetched once the user
                 // scrolls to the end of what we already have.
                 if (isNearBottom()) {
                     m_smartDispatched = 0;
@@ -713,15 +711,15 @@ namespace {
             auto rightPageX = rightNextX - kPagerStep;
             auto rightPrevX = rightPageX - kPagerStep;
 
-            // These four values define the level row geometry and are deliberately
+            // these four values define the level row geometry and are deliberately
             // unchanged by the redesign: the list keeps its current size.
             auto resultsBottomY = -frameH / 2.f + 4.f;
             auto resultsHeight = std::max(64.f, frameH - 8.f);
             auto countY = resultsBottomY + 7.f;
             auto resultsCenterY = resultsBottomY + resultsHeight / 2.f;
 
-            // Vanilla GD panel instead of a hand-drawn rounded rect, so the
-            // preview matches the surrounding search UI.
+            // vanilla gd panel instead of a hand-drawn rounded rect, so the
+            // preview matches the surrounding search ui.
             if (auto* panel = paimon::SpriteHelper::safeCreateScale9(
                 "GJ_square05.png", CCRectMake(14.f, 14.f, 12.f, 12.f)
             )) {
@@ -785,7 +783,7 @@ namespace {
                 m_controlsMenu->addChild(m_pageJumpBtn);
             }
 
-            // The magnifier reads as "see all results" without needing a label.
+            // the magnifier reads as "see all results" without needing a label.
             if (auto* findIcon = paimon::SpriteHelper::safeCreateWithFrameName("gj_findBtn_001.png")) {
                 findIcon->setScale(0.65f);
                 m_openAllBtn = CCMenuItemSpriteExtra::create(findIcon, this, menu_selector(RealtimeSearchBrowserPreview::onOpenAll));
@@ -809,7 +807,7 @@ namespace {
             m_statusLabel->setPosition({0.f, resultsCenterY});
             m_container->addChild(m_statusLabel, 4);
 
-            // Spinner for background page loads, so appending a page no longer
+            // spinner for background page loads, so appending a page no longer
             // needs to blank the list to show progress.
             if (auto* spinner = paimon::SpriteHelper::safeCreate("loadingCircle.png")) {
                 spinner->setScale(0.38f);
@@ -820,7 +818,7 @@ namespace {
                 m_loadingIndicator = spinner;
             }
 
-            // Unchanged: same clip size, so level rows keep their current width
+            // unchanged: same clip size, so level rows keep their current width
             // and the 45px cell height still fits exactly as before.
             auto resultsSize = CCSize{
                 std::max(1.f, frameW - 18.f),
@@ -855,7 +853,7 @@ namespace {
             updateControlLabels();
         }
 
-        // Vanilla GD pager arrow rather than a "<"/">" ButtonSprite.
+        // vanilla gd pager arrow rather than a "<"/">" buttonsprite.
         CCMenuItemSpriteExtra* makeArrowButton(bool forward, SEL_MenuHandler handler) {
             if (auto* arrow = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_03_001.png")) {
                 arrow->setScale(0.55f);
@@ -881,7 +879,7 @@ namespace {
             return btn;
         }
 
-        // Reuse the label inside the existing sprite: rebuilding it per response is wasteful.
+        // reuse the label inside the existing sprite: rebuilding it per response is wasteful.
         void setButtonText(CCMenuItemSpriteExtra* btn, char const* text, float width) {
             if (!btn || !text) return;
 
@@ -904,7 +902,7 @@ namespace {
         SmartSearchKind classifySmartSearch(std::string const& query) const {
             if (query.empty()) return SmartSearchKind::None;
 
-            // GD's user search already prefix-matches: one request plus client-side ranking replaces the old 37-request fan-out.
+            // gd's user search already prefix-matches: one request plus client-side ranking replaces the old 37-request fan-out.
             if (m_primaryMode != PreviewPrimaryMode::Levels) {
                 return SmartSearchKind::None;
             }
@@ -944,15 +942,15 @@ namespace {
         }
 
         float currentDebounceDelay() const {
-            // The wildcard path issues several requests, so give the user longer
+            // the wildcard path issues several requests, so give the user longer
             // to finish typing before committing to it.
             return classifySmartSearch(m_pendingQuery) == SmartSearchKind::LevelWildcard
                 ? std::max(0.8f, getRealtimeSearchDelay())
                 : getRealtimeSearchDelay();
         }
 
-        // A text query has to be long enough to be worth a round trip. Numeric
-        // IDs bypass this because they are exact lookups.
+        // a text query has to be long enough to be worth a round trip. numeric
+        // ids bypass this because they are exact lookups.
         bool queryLongEnough(std::string const& query) const {
             if (query.empty()) return false;
             if (isNumericQuery(query) || isDigitWildcardQuery(query)) return true;
@@ -1033,8 +1031,8 @@ namespace {
         void requestNextSmartQuery() {
             if (m_shuttingDown || paimon::isRuntimeShuttingDown()) return;
 
-            // Only fetch a bounded batch up front; the rest is pulled in by
-            // maybeAutoLoadMore() when the user actually scrolls that far.
+            // only fetch a bounded batch up front; the rest is pulled in by
+            // maybeautoloadmore() when the user actually scrolls that far.
             if (m_smartQueryIndex >= m_smartQueries.size() ||
                 (!m_smartLoadAll && m_smartDispatched >= kSmartInitialBatch)) {
                 finalizeSmartSearch();
@@ -1183,21 +1181,10 @@ namespace {
                 return;
             }
 
-            // Too short to be worth a round trip.
+            // too short to be worth a round trip.
             if (queryRequiredForCurrentMode() && !queryLongEnough(m_pendingQuery)) {
                 clearCachedResults();
                 setStatus("Keep typing...");
-                return;
-            }
-
-            // If a prefix of this query already came back empty, this one
-            // cannot match anything either, so answer locally.
-            auto& coordinator = paimon::levelsearch::SearchRequestCoordinator::get();
-            if (queryRequiredForCurrentMode() &&
-                coordinator.isKnownEmpty(coordinatorKind(), m_pendingQuery)) {
-                clearCachedResults();
-                m_activeQuery = m_pendingQuery;
-                setStatus("No results");
                 return;
             }
 
@@ -1236,7 +1223,7 @@ namespace {
                 return;
             }
 
-            // Local page cache first: paging back is free.
+            // local page cache first: paging back is free.
             if (auto cached = m_pageCache.find(page); cached != m_pageCache.end() && cached->second) {
                 m_isLoading = false;
                 storePage(page, cached->second);
@@ -1259,9 +1246,7 @@ namespace {
             requestPage(page, searchObject);
         }
 
-        // Single entry point to the network. Everything is funnelled through the
-        // coordinator so the cache, de-duplication and rate limit apply
-        // uniformly, and so m_levelManagerDelegate is restored afterwards.
+        // the coordinator shares caching and rate limits, then restores the game delegate.
         void requestPage(int page, GJSearchObject* object) {
             cancelActiveRequest();
 
@@ -1346,7 +1331,7 @@ namespace {
                 std::sort(m_loadedPageOrder.begin(), m_loadedPageOrder.end());
             }
 
-            // The old eviction loop never dropped anything (infinite scroll marks every
+            // the old eviction loop never dropped anything (infinite scroll marks every
             // page loaded), so evict by age and keep the merged list consistent.
             while (static_cast<int>(m_cachedPageOrder.size()) > kPreviewMaxCachedPages) {
                 int pageToDrop = m_cachedPageOrder.front();
@@ -1416,7 +1401,7 @@ namespace {
             m_renderedTotalHeight = 0.f;
         }
 
-        // Merged rows are append-only within a query, so a rebuild that only
+        // merged rows are append-only within a query, so a rebuild that only
         // adds to the tail can reuse the nodes already rendered.
         void rebuildMergedRows() {
             std::size_t previous = m_mergedRows.size();
@@ -1430,7 +1415,7 @@ namespace {
                 }
             }
 
-            // Eviction can shrink the merged list; rendered nodes no longer
+            // eviction can shrink the merged list; rendered nodes no longer
             // line up with it, so start over in that case.
             if (m_mergedRows.size() < previous) {
                 clearRenderedRows();
@@ -1450,7 +1435,7 @@ namespace {
             auto clipSize = m_resultsClip ? m_resultsClip->getContentSize() : CCSize{300.f, 200.f};
             auto rowH = previewRowHeightForMode(m_primaryMode);
 
-            // Rows are immutable once built: keep rendered ones, only create the new tail.
+            // rows are immutable once built: keep rendered ones, only create the new tail.
             std::size_t existing = m_renderedRowCount;
             if (existing > m_mergedRows.size()) {
                 clearRenderedRows();
@@ -1465,7 +1450,7 @@ namespace {
             m_content->setContentSize({clipSize.width, totalH});
             m_scrollLayer->m_contentLayer->setContentSize({clipSize.width, totalH});
 
-            // Existing rows are positioned relative to the old total height, so
+            // existing rows are positioned relative to the old total height, so
             // shift them by the delta rather than rebuilding them.
             if (existing > 0 && m_renderedTotalHeight > 0.f && totalH != m_renderedTotalHeight) {
                 float shift = totalH - m_renderedTotalHeight;
@@ -1513,7 +1498,7 @@ namespace {
             auto scene = CCScene::create();
             scene->addChild(layer);
 
-            // Release IME focus and freeze callbacks before changing scenes;
+            // release ime focus and freeze callbacks before changing scenes;
             // defer node removal until the touch handler unwinds.
             prepareForSceneTransition();
 
@@ -1547,9 +1532,9 @@ namespace {
             }
         }
 
-        // Detach IME and freeze callbacks without removing nodes from a touch handler.
+        // detach ime and freeze callbacks without removing nodes from a touch handler.
         void prepareForSceneTransition() {
-            // Release IME focus so the next scene cannot receive keys through this input.
+            // release ime focus so the next scene cannot receive keys through this input.
             paimon::levelsearch::releaseSearchInputFocus(m_owner);
 
             m_shuttingDown = true;
@@ -1569,8 +1554,8 @@ namespace {
         void addRowOpenButton(CCNode* wrapper, int index, float width, float height) {
             if (!wrapper) return;
 
-        // BoundedTouchMenu rejects touches outside the visible clip rect;
-        // CCClippingNode only clips rendering.
+        // boundedtouchmenu rejects touches outside the visible clip rect;
+        // ccclippingnode only clips rendering.
             auto menu = paimon::levelsearch::BoundedTouchMenu::create();
             menu->setBoundsNode(m_resultsClip);
             menu->setPosition({0.f, 0.f});
@@ -1698,7 +1683,7 @@ namespace {
 
             int nextPage = m_loadedPageOrder.back() + 1;
 
-            // Without this, a page that comes back shorter than expected keeps
+            // without this, a page that comes back shorter than expected keeps
             // matching the scroll condition and re-requests every frame.
             if (nextPage == m_lastAutoLoadedPage) return;
 
@@ -1756,7 +1741,7 @@ namespace {
             updateControlLabels();
         }
 
-        // Clears the status without wiping rendered rows. setStatus() tears the
+        // clears the status without wiping rendered rows. setstatus() tears the
         // list down, which is wrong when results are already on screen.
         void hideStatus() {
             if (m_statusLabel) {
@@ -1815,7 +1800,7 @@ namespace {
         void setQuickSearchTitleVisible(bool visible) {
             if (!m_owner) return;
 
-            // Resolved once: the walk compares the text of every label in the
+            // resolved once: the walk compares the text of every label in the
             // layer, so repeating it on each state change is wasteful.
             if (!m_quickSearchTitle) {
                 visitNodeTree(m_owner, [this](CCNode* node) {

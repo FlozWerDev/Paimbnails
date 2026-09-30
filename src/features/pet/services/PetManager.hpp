@@ -49,7 +49,7 @@ inline bool isPetGameplayLayer(std::string const& layerName) {
 }
 
 enum class PetIconState : int {
-    Default = 0,   // selectedImage (fallback for all)
+    Default = 0,   // selectedimage (fallback for all)
     Idle    = 1,   // standing still
     Walk    = 2,   // moving
     Sleep   = 3,   // idle for too long
@@ -92,7 +92,7 @@ struct PetConfig {
     bool allLayers = true;
     bool showInGameplay = true;
 
-    // Empty with allLayers off hides the pet everywhere.
+    // empty with alllayers off hides the pet everywhere.
     std::set<std::string> visibleLayers = {
         "MenuLayer", "LevelBrowserLayer", "LevelInfoLayer",
         "CreatorLayer", "LevelSearchLayer", "GauntletSelectLayer",
@@ -116,7 +116,7 @@ struct PetConfig {
         "GJLevelScoreCell"
     };
 
-    // Empty state images fall back to selectedImage.
+    // empty state images fall back to selectedimage.
     std::string idleImage;
     std::string walkImage;
     std::string sleepImage;
@@ -183,7 +183,7 @@ public:
     void detachFromScene();
     void refreshVisibility();
     void releaseSharedResources();
-    // Release GL-owned resources before GameManager::reloadAll recreates the context.
+    // release gl-owned resources before gamemanager::reloadall recreates the context.
     void onGLContextReload();
 
     PetConfig& config() { return m_config; }

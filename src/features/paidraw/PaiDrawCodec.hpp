@@ -1,8 +1,7 @@
 ﻿#pragma once
 
 #include "PaiDrawModels.hpp"
-#include <array>
-#include <cstring>
+#include <bit>
 #include <span>
 
 namespace paidraw::codec {
@@ -95,11 +94,7 @@ public:
 
     void floating(double value) {
         m_bytes.push_back(0xCB);
-        std::array<uint8_t, sizeof(double)> raw {};
-        std::memcpy(raw.data(), &value, sizeof(double));
-        for (int i = static_cast<int>(raw.size()) - 1; i >= 0; --i) {
-            m_bytes.push_back(raw[static_cast<size_t>(i)]);
-        }
+        pushU64(m_bytes, std::bit_cast<uint64_t>(value));
     }
 
     void string(std::string const& value) {
@@ -166,7 +161,10 @@ class MsgPackReader {
 public:
     explicit MsgPackReader(std::span<uint8_t const> bytes) : m_bytes(bytes) {}
 
-    geode::Result<matjson::Value> readValue() {
+    geode::Result<matjson::Value> readValue(size_t depth = 0) {
+        if (depth >= 64) {
+            return geode::Err("PaiDraw msgpack nesting too deep");
+        }
         if (m_offset >= m_bytes.size()) {
             return geode::Err("PaiDraw msgpack EOF");
         }
@@ -182,10 +180,22 @@ public:
             return readString(prefix & 0x1F);
         }
         if ((prefix & 0xF0) == 0x90) {
-            return readArray(prefix & 0x0F);
+            return readArray(prefix & 0x0F, depth);
         }
         if ((prefix & 0xF0) == 0x80) {
-            return readMap(prefix & 0x0F);
+            return readMap(prefix & 0x0F, depth);
+        }
+
+        size_t required = 0;
+        switch (prefix) {
+            case 0xCC: case 0xD0: case 0xD9: case 0xC4: required = 1; break;
+            case 0xCD: case 0xD1: case 0xDA: case 0xDC: case 0xDE: case 0xC5: required = 2; break;
+            case 0xCE: case 0xD2: case 0xDB: case 0xDD: case 0xDF: case 0xC6: required = 4; break;
+            case 0xCF: case 0xD3: case 0xCB: required = 8; break;
+            default: break;
+        }
+        if (!canRead(required)) {
+            return geode::Err("PaiDraw msgpack truncated value");
         }
 
         switch (prefix) {
@@ -195,19 +205,19 @@ public:
             case 0xCC: return geode::Ok(matjson::Value(static_cast<int64_t>(readByte())));
             case 0xCD: return geode::Ok(matjson::Value(static_cast<int64_t>(readUnsigned16())));
             case 0xCE: return geode::Ok(matjson::Value(static_cast<int64_t>(readUnsigned32())));
-            case 0xCF: return geode::Ok(matjson::Value(static_cast<double>(readUnsigned64())));
+            case 0xCF: return geode::Ok(matjson::Value(readUnsigned64()));
             case 0xD0: return geode::Ok(matjson::Value(static_cast<int64_t>(static_cast<int8_t>(readByte()))));
             case 0xD1: return geode::Ok(matjson::Value(static_cast<int64_t>(static_cast<int16_t>(readUnsigned16()))));
             case 0xD2: return geode::Ok(matjson::Value(static_cast<int64_t>(static_cast<int32_t>(readUnsigned32()))));
-            case 0xD3: return geode::Ok(matjson::Value(static_cast<double>(static_cast<int64_t>(readUnsigned64()))));
+            case 0xD3: return geode::Ok(matjson::Value(static_cast<int64_t>(readUnsigned64())));
             case 0xCB: return geode::Ok(matjson::Value(readDouble()));
             case 0xD9: return readString(readByte());
             case 0xDA: return readString(readUnsigned16());
             case 0xDB: return readString(readUnsigned32());
-            case 0xDC: return readArray(readUnsigned16());
-            case 0xDD: return readArray(readUnsigned32());
-            case 0xDE: return readMap(readUnsigned16());
-            case 0xDF: return readMap(readUnsigned32());
+            case 0xDC: return readArray(readUnsigned16(), depth);
+            case 0xDD: return readArray(readUnsigned32(), depth);
+            case 0xDE: return readMap(readUnsigned16(), depth);
+            case 0xDF: return readMap(readUnsigned32(), depth);
             case 0xC4: return readBinary(readByte());
             case 0xC5: return readBinary(readUnsigned16());
             case 0xC6: return readBinary(readUnsigned32());
@@ -217,8 +227,8 @@ public:
 
 private:
     // caps vs malformed msgpack frames claiming huge counts; normal payloads are far smaller.
-    static constexpr size_t kMaxStringSize = 1 * 1024 * 1024;     // 1 MB string
-    static constexpr size_t kMaxBinarySize = 4 * 1024 * 1024;     // 4 MB blob
+    static constexpr size_t kMaxStringSize = 1 * 1024 * 1024;     // 1 mb string
+    static constexpr size_t kMaxBinarySize = 4 * 1024 * 1024;     // 4 mb blob
     static constexpr size_t kMaxArrayElements = 100000;            // 100k items
     static constexpr size_t kMaxMapEntries    = 100000;            // 100k pairs
 
@@ -249,17 +259,17 @@ private:
         return geode::Ok(arr);
     }
 
-    geode::Result<matjson::Value> readArray(size_t size) {
+    geode::Result<matjson::Value> readArray(size_t size, size_t depth) {
         if (size > kMaxArrayElements) {
             return geode::Err("PaiDraw msgpack array too large");
         }
-        // Each element is at least 1 byte; reject huge bogus counts early.
+        // each element is at least 1 byte; reject huge bogus counts early.
         if (size > m_bytes.size() - m_offset) {
             return geode::Err("PaiDraw msgpack array exceeds buffer");
         }
         matjson::Value arr = matjson::Value::array();
         for (size_t i = 0; i < size; ++i) {
-            auto value = readValue();
+            auto value = readValue(depth + 1);
             if (!value) {
                 return geode::Err(value.unwrapErr());
             }
@@ -268,22 +278,25 @@ private:
         return geode::Ok(arr);
     }
 
-    geode::Result<matjson::Value> readMap(size_t size) {
+    geode::Result<matjson::Value> readMap(size_t size, size_t depth) {
         if (size > kMaxMapEntries) {
             return geode::Err("PaiDraw msgpack map too large");
         }
-        // Each (key, value) pair is at least 2 bytes; reject huge bogus counts early.
+        // each (key, value) pair is at least 2 bytes; reject huge bogus counts early.
         if (size > (m_bytes.size() - m_offset) / 2) {
             return geode::Err("PaiDraw msgpack map exceeds buffer");
         }
         matjson::Value obj = matjson::Value::object();
         for (size_t i = 0; i < size; ++i) {
-            auto keyValue = readValue();
+            auto keyValue = readValue(depth + 1);
             if (!keyValue) {
                 return geode::Err(keyValue.unwrapErr());
             }
+            if (!keyValue.unwrap().isString()) {
+                return geode::Err("PaiDraw msgpack map key is not a string");
+            }
             auto key = keyValue.unwrap().asString().unwrapOr("");
-            auto value = readValue();
+            auto value = readValue(depth + 1);
             if (!value) {
                 return geode::Err(value.unwrapErr());
             }
@@ -293,7 +306,7 @@ private:
     }
 
     bool canRead(size_t count) const {
-        return m_offset + count <= m_bytes.size();
+        return m_offset <= m_bytes.size() && count <= m_bytes.size() - m_offset;
     }
 
     uint8_t readByte() {
@@ -317,14 +330,7 @@ private:
 
     double readDouble() {
         if (!canRead(8)) return 0.0;
-        std::array<uint8_t, sizeof(double)> raw {};
-        for (size_t i = 0; i < raw.size(); ++i) {
-            raw[raw.size() - 1 - i] = m_bytes[m_offset + i];
-        }
-        m_offset += raw.size();
-        double value = 0.0;
-        std::memcpy(&value, raw.data(), sizeof(double));
-        return value;
+        return std::bit_cast<double>(readUnsigned64());
     }
 
     std::span<uint8_t const> m_bytes;

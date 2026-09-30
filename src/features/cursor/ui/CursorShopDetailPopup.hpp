@@ -1,6 +1,6 @@
 #pragma once
 
-// Ficha del set/pack: las descargas salen de aqui, nunca del listado (las tiendas piden no rastrear).
+// ficha del set/pack: las descargas salen de aqui, nunca del listado (las tiendas piden no rastrear).
 
 #include <Geode/Geode.hpp>
 #include "../services/CursorShopClient.hpp"
@@ -12,7 +12,7 @@
 
 class CursorShopDetailPopup : public geode::Popup {
 public:
-    // `onInstalled` avisa a la galeria para que se repinte.
+    // `oninstalled` avisa a la galeria para que se repinte.
     static CursorShopDetailPopup* create(paimon::cursorshop::Listing listing,
                                          std::function<void()> onInstalled);
 
@@ -46,7 +46,7 @@ private:
     cocos2d::CCLabelBMFont* m_subtitle = nullptr;
     CCMenuItemSpriteExtra* m_animateButton = nullptr;
 
-    // Un .ani ya descargado y decodificado.
+    // un .ani ya descargado y decodificado.
     struct Animation {
         std::vector<geode::Ref<cocos2d::CCTexture2D>> frames;
         float step = 0.1f;   // segundos por fotograma
@@ -54,7 +54,7 @@ private:
     std::map<std::string, Animation> m_animations;
     bool m_animating = false;
 
-    // Cola de descargas de "Instalar todo".
+    // cola de descargas de "instalar todo".
     std::vector<int> m_queue;
     std::size_t m_queueIndex = 0;
     std::string m_queuePack;
@@ -76,10 +76,10 @@ private:
     void onInstallAssign(cocos2d::CCObject*);
     void onInstallAll(cocos2d::CCObject*);
     void onAnimate(cocos2d::CCObject*);
-    // Opens the set/pack source page in-browser to credit shop and author.
+    // opens the set/pack source page in-browser to credit shop and author.
     void onViewSource(cocos2d::CCObject*);
 
-    // Baja el .ani, lo decodifica y lo reproduce en la vista previa.
+    // baja el .ani, lo decodifica y lo reproduce en la vista previa.
     void playAnimation(std::string const& url);
     void showAnimation(std::string const& url);
 

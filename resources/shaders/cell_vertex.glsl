@@ -1,4 +1,4 @@
-// shared vertex for all cell shaders; keep in sync with vertexShaderCell inline.
+// shared vertex for all cell shaders; keep in sync with vertexshadercell inline.
 attribute vec4 a_position;
 attribute vec4 a_color;
 attribute vec2 a_texCoord;

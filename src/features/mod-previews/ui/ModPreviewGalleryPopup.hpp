@@ -5,14 +5,14 @@
 #include <Geode/utils/cocos.hpp>
 #include <string>
 
-// fullscreen preview viewer with prev/next (see THIRD-PARTY-NOTICES.md).
-// strip idea compatible with "Mod Previews" by Alphalaneous; layout our own.
+// fullscreen preview viewer with prev/next (see third-party-notices.md).
+// strip idea compatible with "mod previews" by alphalaneous; layout our own.
 
 namespace paimon::mod_previews {
 
 class ModPreviewGalleryPopup : public geode::Popup {
 public:
-    // index: initial image (1-based); full URL is base + "<n>.png".
+    // index: initial image (1-based); full url is base + "<n>.png".
     static ModPreviewGalleryPopup* create(int index, int total, std::string base);
 
 protected:

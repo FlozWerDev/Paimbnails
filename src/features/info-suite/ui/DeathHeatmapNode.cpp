@@ -49,7 +49,7 @@ bool DeathHeatmapNode::init(LevelProgress const& progress, bool practice,
     m_width = width;
     m_height = height;
     this->setContentSize({width, height});
-    // A plain CCNode ignores its anchor point unless told otherwise, and callers
+    // a plain ccnode ignores its anchor point unless told otherwise, and callers
     // position this strip by its centre.
     this->ignoreAnchorPointForPosition(false);
     this->setAnchorPoint({0.5f, 0.5f});
@@ -90,7 +90,7 @@ void DeathHeatmapNode::rebuild(LevelProgress const& progress, bool practice) {
     for (int i = 0; i < kPercentBuckets; i++) {
         if (buckets[i] == 0) continue;
 
-        // Square root keeps a single brutal percent from flattening everything
+        // square root keeps a single brutal percent from flattening everything
         // else into invisibility.
         float ratio = std::sqrt(static_cast<float>(buckets[i]) / static_cast<float>(peak));
         float columnH = std::max(2.f, usableH * ratio);

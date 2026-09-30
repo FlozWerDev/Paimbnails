@@ -10,7 +10,7 @@
 #include "../../features/rtx/services/RTXManager.hpp"
 #include "../../features/frame-interp/services/FrameInterpolator.hpp"
 
-// Custom modules live in manager configs, so each needs a getter/setter pair.
+// custom modules live in manager configs, so each needs a getter/setter pair.
 
 namespace paimon::modules {
 

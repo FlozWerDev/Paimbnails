@@ -16,13 +16,13 @@ namespace paimon::foryou {
 
 namespace {
 
-// Support shrinkage keeps rare tags from dominating.
+// support shrinkage keeps rare tags from dominating.
 constexpr float kTagShrinkage = 2.5f;
-// A pinned tag is worth roughly two positive interactions.
+// a pinned tag is worth roughly two positive interactions.
 constexpr float kPinnedTagWeight = 4.f;
-// Smaller magnitudes count as noise.
+// smaller magnitudes count as noise.
 constexpr float kSignalThreshold = 0.75f;
-// Interaction half-life in days.
+// interaction half-life in days.
 constexpr float kHalfLifeDays = 120.f;
 
 constexpr int kMaxRankedTags = 8;
@@ -103,7 +103,7 @@ void TasteProfile::onLevelEnter(GJGameLevel* level) {
     rec.bestPercent = std::max<int>(rec.bestPercent, level->m_normalPercent);
     rec.lastSeen = static_cast<int64_t>(std::time(nullptr));
 
-    // Mirror GD's favourite flag as a positive signal.
+    // mirror gd's favourite flag as a positive signal.
     if (level->m_levelFavorited) {
         rec.favoriteLevel = true;
         m_favoriteLevels.insert(id);
@@ -162,7 +162,7 @@ void TasteProfile::onLevelVote(int levelID, bool liked) {
     auto& rec = m_levels[levelID];
     rec.vote = liked ? 1 : -1;
     rec.lastSeen = static_cast<int64_t>(std::time(nullptr));
-    // A like after exclusion is a change of mind.
+    // a like after exclusion is a change of mind.
     if (liked) rec.dismissed = false;
     m_dirty = true;
     m_snapshotStale = true;
@@ -183,7 +183,7 @@ void TasteProfile::onTagsResolved(int levelID, std::vector<std::string> const& t
 
     std::lock_guard lock(m_mutex);
     auto it = m_levels.find(levelID);
-    // Only touched levels enter the model.
+    // only touched levels enter the model.
     if (it == m_levels.end()) return;
     if (it->second.tags == tags) return;
 
@@ -274,7 +274,7 @@ void TasteProfile::applySeedLocked(TasteSnapshot& snapshot) const {
 
     snapshot.difficultyHistogram.fill(0.f);
     int diffIdx = std::clamp(m_seedDifficulty / 10, 0, static_cast<int>(kDifficultyBuckets) - 1);
-    // Keep neighboring difficulties plausible instead of collapsing to one band.
+    // keep neighboring difficulties plausible instead of collapsing to one band.
     snapshot.difficultyHistogram[diffIdx] = 0.6f;
     if (diffIdx > 0) snapshot.difficultyHistogram[diffIdx - 1] = 0.2f;
     if (diffIdx + 1 < static_cast<int>(kDifficultyBuckets)) snapshot.difficultyHistogram[diffIdx + 1] = 0.2f;
@@ -324,14 +324,14 @@ void TasteProfile::seedPreferences(int difficulty, float platformerRatio, int le
 float TasteProfile::interactionWeightLocked(LevelInteraction const& rec) const {
     float w = 0.f;
 
-    // Explicit signals dominate.
+    // explicit signals dominate.
     if (rec.vote > 0)      w += 6.f;
     else if (rec.vote < 0) w -= 8.f;
     if (rec.favoriteLevel) w += 7.f;
     if (rec.dismissed)     w -= 5.f;
     if (rec.thumbnailRating > 0) w += static_cast<float>(rec.thumbnailRating - 3) * 1.2f;
 
-    // Implicit signals capture progress and time spent.
+    // implicit signals capture progress and time spent.
     if (rec.completed)             w += 4.f;
     else if (rec.bestPercent >= 70) w += 2.f;
     else if (rec.bestPercent >= 40) w += 0.8f;
@@ -343,14 +343,14 @@ float TasteProfile::interactionWeightLocked(LevelInteraction const& rec) const {
         w += std::min(2.f, std::log2(static_cast<float>(rec.attempts)) * 0.5f);
     }
 
-    // An immediate quit is a mild negative signal.
+    // an immediate quit is a mild negative signal.
     bool bounced = !rec.completed && rec.playCount <= 1 &&
                    rec.playSeconds < 8.f && rec.bestPercent < 15;
     if (bounced) w -= 1.5f;
 
     if (rec.creatorID > 0 && m_favoriteCreators.count(rec.creatorID)) w += 3.f;
 
-    // Age magnitude, not sign; old tastes fade instead of inverting.
+    // age magnitude, not sign; old tastes fade instead of inverting.
     if (rec.lastSeen > 0) {
         float ageDays = static_cast<float>(std::time(nullptr) - rec.lastSeen) / 86400.f;
         if (ageDays > 0.f) w *= std::pow(0.5f, ageDays / kHalfLifeDays);
@@ -407,7 +407,7 @@ void TasteProfile::rebuildLocked() const {
             songSupport[rec.songID] += 1.f;
         }
 
-        // Only positive interactions shape the preference histograms.
+        // only positive interactions shape the preference histograms.
         if (w <= 0.f) continue;
 
         int diffIdx = std::clamp(rec.difficulty / 10, 0, static_cast<int>(kDifficultyBuckets) - 1);
@@ -451,7 +451,7 @@ void TasteProfile::rebuildLocked() const {
         snap.preferredDemonDifficulty = demonMode > 0 ? demonMode : 0;
     }
 
-    // Use onboarding shape priors until the profile has enough signal.
+    // use onboarding shape priors until the profile has enough signal.
     if (m_seeded && snap.signalCount < 3) {
         applySeedLocked(snap);
     }
@@ -460,18 +460,18 @@ void TasteProfile::rebuildLocked() const {
     normalize(snap.lengthHistogram.data(), snap.lengthHistogram.size());
     normalize(snap.demonHistogram.data(), snap.demonHistogram.size());
 
-    // Shrink means so rare tags cannot outrank consistent preferences.
+    // shrink means so rare tags cannot outrank consistent preferences.
     for (auto const& [tag, sum] : tagSum) {
         snap.tagAffinity[tag] = sum / (tagSupport[tag] + kTagShrinkage);
     }
-    // Pinned tags outrank inferred values without erasing them.
+    // pinned tags outrank inferred values without erasing them.
     for (auto const& [tag, vote] : m_pinnedTags) {
         float pinned = static_cast<float>(vote) * kPinnedTagWeight;
         auto it = snap.tagAffinity.find(tag);
         snap.tagAffinity[tag] = it != snap.tagAffinity.end() ? it->second * 0.5f + pinned : pinned;
     }
 
-    // Normalize to [-1, 1] so weights are history-independent.
+    // normalize to [-1, 1] so weights are history-independent.
     float maxAbs = 0.f;
     for (auto const& [tag, affinity] : snap.tagAffinity) {
         maxAbs = std::max(maxAbs, std::fabs(affinity));
@@ -648,7 +648,7 @@ void TasteProfile::load() {
         log::warn("[ForYou] Taste profile is not valid JSON: {}", parsed.unwrapErr());
         return;
     }
-    // Avoid operator[] here; probing must not insert null entries.
+    // avoid operator[] here; probing must not insert null entries.
     auto document = parsed.unwrap();
     matjson::Value const& root = document;
 
@@ -679,7 +679,7 @@ void TasteProfile::load() {
         }
     }
 
-    // v2 used the old preferencesSeeded/seededPreferences names.
+    // v2 used the old preferencesseeded/seededpreferences names.
     m_seeded = root["seeded"].asBool().unwrapOr(false) ||
                root["preferencesSeeded"].asBool().unwrapOr(false);
     auto const& seed = root.contains("seed") ? root["seed"] : root["seededPreferences"];
@@ -694,7 +694,7 @@ void TasteProfile::load() {
     }
 
     rebuildLocked();
-    m_dirty = legacy; // Rewrite migrated data on the next save.
+    m_dirty = legacy; // rewrite migrated data on the next save.
     log::info("[ForYou] Loaded {} tracked levels (v{}, {} likes, {} dislikes)",
               m_levels.size(), version, m_snapshot.likeCount, m_snapshot.dislikeCount);
 }

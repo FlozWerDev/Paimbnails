@@ -17,10 +17,10 @@ struct AudioPcm {
     }
 };
 
-// First audio track to interleaved PCM; per-platform backend.
+// first audio track to interleaved pcm; per-platform backend.
 AudioPcm extractAudioToPcm(const std::string& videoPath);
 
-// Cached WAV for file-path consumers only; playback uses VideoAudioTrack.
+// cached wav for file-path consumers only; playback uses videoaudiotrack.
 std::string extractAudioToWav(const std::string& videoPath);
 
 std::string getCachedWavPath(const std::string& videoPath);

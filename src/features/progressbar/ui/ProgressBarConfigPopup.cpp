@@ -691,14 +691,14 @@ void ProgressBarConfigPopup::onPickPctColor(CCObject*) {
 void ProgressBarConfigPopup::onResetDefaults(CCObject*) {
     ProgressBarManager::get().resetToDefaults();
     PaimonNotify::create("Progress bar reset", NotificationIcon::Success)->show();
-    // Rebuild the UI with defaults on the next open.
+    // rebuild the ui with defaults on the next open.
     this->onClose(nullptr);
 }
 
 void ProgressBarConfigPopup::onPickFont(CCObject*) {
     auto* picker = paimon::fonts::FontPickerPopup::create(
         [](std::string const& fontTag) {
-            // FontPickerPopup already formats the tag; pass it through unchanged.
+            // fontpickerpopup already formats the tag; pass it through unchanged.
             auto res = paimon::fonts::parseFontTag(fontTag);
             std::string fntFile = res.hasTag ? res.fontFile : std::string("bigFont.fnt");
             ProgressBarManager::get().config().percentageFont = fntFile;

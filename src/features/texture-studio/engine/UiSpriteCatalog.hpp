@@ -8,7 +8,7 @@ namespace paimon::texture_studio {
 enum class TintScope : int {
     ButtonsOnly     = 0,
     ButtonsAndMenuUi = 1,
-    // Legacy 2: maps to ButtonsAndMenuUi (loader clamps); kept so saved ints parse.
+    // legacy 2: maps to buttonsandmenuui (loader clamps); kept so saved ints parse.
     Everything      = 2,
 };
 

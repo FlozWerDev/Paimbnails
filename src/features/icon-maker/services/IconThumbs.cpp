@@ -17,7 +17,7 @@ namespace {
 
 constexpr int kThumbSize = 128;
 
-// Back to front, so the glow sits behind the body and the white details on top.
+// back to front, so the glow sits behind the body and the white details on top.
 std::vector<std::string> composeOrder(AnatomyDef const& def) {
     int part = def.partCount > 1 ? 1 : 0;
     std::vector<std::string> keys;
@@ -44,7 +44,7 @@ void IconThumbs::request(std::string const& projectId, ReadyCallback onReady) {
         return;
     }
 
-    // A render is already in flight: ride along instead of doing it twice.
+    // a render is already in flight: ride along instead of doing it twice.
     if (auto it = m_pending.find(projectId); it != m_pending.end()) {
         it->second.push_back(std::move(onReady));
         return;

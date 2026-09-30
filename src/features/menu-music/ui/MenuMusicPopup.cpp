@@ -56,7 +56,7 @@ static constexpr float kPopupH = 225.f;
 static constexpr float kHeroWidthRatio = 0.44f;
 static constexpr float kHeroSkew = 20.f;
 
-// Use a geometric fallback so the button never has a 0x0 size.
+// use a geometric fallback so the button never has a 0x0 size.
 static CCSprite* createIconSpriteWithFallback(
     std::initializer_list<const char*> frames,
     float fallbackSize,
@@ -239,7 +239,7 @@ void MenuMusicPopup::buildFullscreenBackdrop() {
 void MenuMusicPopup::applyFullscreenCover(const std::string& coverPath) {
     if (!m_fullscreenBackdrop) return;
 
-    // Invalidate in-flight blur jobs.
+    // invalidate in-flight blur jobs.
     m_fullscreenBlurGen++;
     auto gen = m_fullscreenBlurGen;
 
@@ -267,7 +267,7 @@ void MenuMusicPopup::applyFullscreenCover(const std::string& coverPath) {
         static_cast<int>(winSize.width),
         static_cast<int>(winSize.height));
 
-    // Generation and backdrop existence reject stale callbacks.
+    // generation and backdrop existence reject stale callbacks.
     BlurSystem::getInstance()->buildPaimonBlurPriority(
         source, winSize, intensity, cacheKey,
         [this, gen](CCSprite* blurred) {
@@ -386,7 +386,7 @@ void MenuMusicPopup::buildVinyl() {
     m_hero->setID("music-hero"_spr);
     m_contentClip->addChild(m_hero, 5);
 
-    // Keep the play/pause menu outside CCClippingNode so it receives touches.
+    // keep the play/pause menu outside ccclippingnode so it receives touches.
     if (auto* disc = m_hero->getDisc()) {
         auto dummy = cocos2d::CCSprite::create();
         if (dummy) {
@@ -475,7 +475,7 @@ void MenuMusicPopup::buildTransport() {
     {
         auto spr = createIconSpriteWithFallback(
             {"GJ_arrow_02_001.png"},
-            22.f, ccc4f(1.f, 1.f, 1.f, 1.f), /*triangle*/true, /*flipX*/false);
+            22.f, ccc4f(1.f, 1.f, 1.f, 1.f), /*triangle*/true, /*flipx*/false);
         if (spr) {
             spr->setScale(0.7f);
             auto btn = CCMenuItemSpriteExtra::create(
@@ -528,7 +528,7 @@ void MenuMusicPopup::buildTransport() {
     {
         auto spr = createIconSpriteWithFallback(
             {"GJ_arrow_02_001.png"},
-            22.f, ccc4f(1.f, 1.f, 1.f, 1.f), /*triangle*/true, /*flipX*/true);
+            22.f, ccc4f(1.f, 1.f, 1.f, 1.f), /*triangle*/true, /*flipx*/true);
         if (spr) {
             spr->setScale(0.7f);
             auto btn = CCMenuItemSpriteExtra::create(
@@ -601,7 +601,7 @@ void MenuMusicPopup::buildSeekBar() {
         m_seekSlider->setPosition({sliderZoneX + sliderZoneW / 2.f, barY});
         m_seekSlider->setValue(0.f);
         m_seekSlider->setID("seek-slider"_spr);
- // Give the slider priority over the close button and main menu.
+ // give the slider priority over the close button and main menu.
         m_seekSlider->setTouchEnabled(true);
         if (m_seekSlider->m_touchLogic) {
             m_seekSlider->m_touchLogic->setTouchPriority(-600);
@@ -768,7 +768,7 @@ void MenuMusicPopup::updateModeSelector() {
         if (spr->m_label) spr->m_label->setColor(c);
     };
 
- // A manual queue counts as active custom music and displays as "All Songs".
+ // a manual queue counts as active custom music and displays as "all songs".
     tint(m_modeOffSpr, mode == PlaybackMode::Disabled);
     tint(m_modeAllSpr, mode == PlaybackMode::Library || mode == PlaybackMode::Queue);
     tint(m_modePlaylistSpr, mode == PlaybackMode::Playlist);
@@ -1335,7 +1335,7 @@ void MenuMusicPopup::onSeekSliderChanged(CCObject*) {
     paimon::menuloop::MenuLoopControl::setSongPercentage(pct);
 }
 
- // Hold -/+ to repeat seek after 0.5 s, then every 0.125 s.
+ // hold -/+ to repeat seek after 0.5 s, then every 0.125 s.
 void MenuMusicPopup::pressAndHoldSeek(float dt) {
     m_seekHoldTime += dt;
     if (!m_seekFwrdBtn || !m_seekBkwdBtn) {

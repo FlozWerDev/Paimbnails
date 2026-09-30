@@ -25,7 +25,7 @@ void buildInPlace(
     bool commentsLoaded
 );
 
-// True when a relocatable button/badge sits outside the rd-* containers;
+// true when a relocatable button/badge sits outside the rd-* containers;
 // cheap check to rebuild only when actually needed.
 bool needsSettlePass(
     cocos2d::CCLayer* mainLayer,

@@ -8,7 +8,7 @@ namespace paimon::gifimport {
 
 namespace {
 
-// sRGB->linear is a 256-value single-channel function: the table saves three
+// srgb->linear is a 256-value single-channel function: the table saves three
 // pow()s per pixel of quantization.
 const std::array<float, 256>& linearTable() {
     static const std::array<float, 256> table = [] {

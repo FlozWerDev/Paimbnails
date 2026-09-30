@@ -9,11 +9,11 @@
 
 using namespace geode::prelude;
 
-// Preserves buttons' original scale. Stays a hook (not MenuItemActivatedEvent):
+// preserves buttons' original scale. stays a hook (not menuitemactivatedevent):
 // that event is observational only, this modifies behavior.
 class $modify(PaimonMenuItemScaleFix, CCMenuItemSpriteExtra) {
     static void onModify(auto& self) {
-        // VeryLate so we don't clobber other mods.
+        // verylate so we don't clobber other mods.
         (void)self.setHookPriorityPost("CCMenuItemSpriteExtra::selected", geode::Priority::VeryLate);
         (void)self.setHookPriorityPost("CCMenuItemSpriteExtra::unselected", geode::Priority::VeryLate);
         (void)self.setHookPriorityPost("CCMenuItemSpriteExtra::activate", geode::Priority::VeryLate);

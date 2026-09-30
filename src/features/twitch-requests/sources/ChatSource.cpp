@@ -19,7 +19,7 @@ namespace paimon::twitch {
 
 namespace {
 
-// Every platform we read is a website first, so we ask like a browser.
+// every platform we read is a website first, so we ask like a browser.
 constexpr char const* kUserAgent =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0.0.0 Safari/537.36";
@@ -55,7 +55,7 @@ bool allDigits(std::string_view value) {
     });
 }
 
-// Last non-empty path segment of a url, without query or fragment.
+// last non-empty path segment of a url, without query or fragment.
 std::string lastSegment(std::string_view value) {
     if (auto cut = value.find_first_of("?#"); cut != std::string_view::npos) {
         value = value.substr(0, cut);
@@ -77,7 +77,7 @@ std::string keepChars(std::string value, std::string_view extra) {
     return result;
 }
 
-// youtube.com/watch?v=ID, youtu.be/ID, youtube.com/live/ID
+// youtube.com/watch?v=id, youtu.be/id, youtube.com/live/id
 std::string youtubeVideoId(std::string const& url) {
     auto pick = [&](size_t start) {
         std::string id;
@@ -245,10 +245,17 @@ void ChatSourceBase::ready(std::string text) const {
 }
 
 void ChatSourceBase::deliver(std::string requester, std::string text) const {
-    if (alive() && m_callbacks.onMessage) m_callbacks.onMessage(std::move(requester), std::move(text));
+    ChatMessage message;
+    message.requester = std::move(requester);
+    message.text = std::move(text);
+    deliver(std::move(message));
 }
 
-// One error per source. The transport goes down right away: the retry builds a
+void ChatSourceBase::deliver(ChatMessage message) const {
+    if (alive() && m_callbacks.onMessage) m_callbacks.onMessage(std::move(message));
+}
+
+// one error per source. the transport goes down right away: the retry builds a
 // new source, and we do not want two live connections during the backoff.
 void ChatSourceBase::fail(std::string error) {
     if (m_stopped) return;

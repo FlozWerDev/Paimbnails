@@ -8,8 +8,8 @@
 #include <string>
 #include <vector>
 
-// Thumbnail ribbon on mod popups whose repo carries previews (see
-// THIRD-PARTY-NOTICES.md).
+// thumbnail ribbon on mod popups whose repo carries previews (see
+// third-party-notices.md).
 
 using namespace geode::prelude;
 using namespace paimon::mod_previews;
@@ -22,7 +22,7 @@ constexpr float kThumbH = 46.f;
 constexpr float kCellGap = 6.f;
 constexpr float kEdgePad = 6.f;
 
-// Horizontal thumbnail ribbon. Child of "description-container", so its
+// horizontal thumbnail ribbon. child of "description-container", so its
 // visibility follows the active tab automatically.
 class PreviewRibbon : public CCNode {
 public:
@@ -125,7 +125,7 @@ void handleModPopup(FLAlertLayer* popup) {
     if (!popup) return;
     if (!Mod::get()->getSettingValue<bool>("mod-previews-enable")) return;
 
-    // Event fires multiple times per popup; dedupe with a marker.
+    // event fires multiple times per popup; dedupe with a marker.
     if (popup->getUserObject("mod-images-init"_spr)) return;
 
     auto siteBtn = popup->getChildByIDRecursive("github");
@@ -141,7 +141,7 @@ void handleModPopup(FLAlertLayer* popup) {
 
     popup->setUserObject("mod-images-init"_spr, CCBool::create(true));
 
-    // Default-branch probe: most repos use "main", older ones "master".
+    // default-branch probe: most repos use "main", older ones "master".
     Ref<FLAlertLayer> popupRef = popup;
     std::string assetBase = source.assetBase;
     WebHelper::dispatch(web::WebRequest(), "GET", assetBase + "/main/mod.json",

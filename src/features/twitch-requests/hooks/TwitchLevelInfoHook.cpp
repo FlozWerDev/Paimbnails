@@ -1,4 +1,4 @@
-// queue navigation arrows inside LevelInfoLayer: one on each side of the
+// queue navigation arrows inside levelinfolayer: one on each side of the
 // level name to jump to the previous/next request.
 
 #include "../TwitchRequestManager.hpp"
@@ -60,10 +60,6 @@ class $modify(PaimonTwitchLevelInfo, LevelInfoLayer) {
         if (!navigationEnabled() || !m_level) return;
         if (this->getChildByID("twitch-requests-nav-menu"_spr)) return;
 
-        auto& manager = paimon::twitch::TwitchRequestManager::get();
-        size_t const count = manager.requestCount();
-        if (count < 2) return;
-
         auto index = paimon::twitch::indexOfRequest(m_level->m_levelID);
         if (!index) return;
 
@@ -81,15 +77,13 @@ class $modify(PaimonTwitchLevelInfo, LevelInfoLayer) {
         menu->setPosition({0.f, 0.f});
         this->addChild(menu, 100);
 
-        bool const hasPrevious = *index > 0;
-        bool const hasNext = *index + 1 < count;
-        makeQueueArrow(menu, {local.x - gap, local.y}, false, hasPrevious,
-            hasPrevious ? *index - 1 : 0);
-        makeQueueArrow(menu, {local.x + gap, local.y}, true, hasNext,
-            hasNext ? *index + 1 : 0);
+        auto previous = paimon::twitch::adjacentRequestIndex(m_level->m_levelID, false);
+        auto next = paimon::twitch::adjacentRequestIndex(m_level->m_levelID, true);
+        makeQueueArrow(menu, {local.x - gap, local.y}, false, previous.has_value());
+        makeQueueArrow(menu, {local.x + gap, local.y}, true, next.has_value());
     }
 
-    void makeQueueArrow(CCMenu* menu, CCPoint position, bool forward, bool enabled, size_t target) {
+    void makeQueueArrow(CCMenu* menu, CCPoint position, bool forward, bool enabled) {
         auto* sprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_01_001.png");
         if (!sprite) return;
         sprite->setScale(0.6f);
@@ -98,8 +92,10 @@ class $modify(PaimonTwitchLevelInfo, LevelInfoLayer) {
         if (!enabled) sprite->setOpacity(110);
 
         auto* button = CCMenuItemExt::createSpriteExtra(sprite,
-            [target](CCMenuItemSpriteExtra*) {
-                paimon::twitch::playRequestAt(target, true);
+            [levelID = m_level->m_levelID.value(), forward](CCMenuItemSpriteExtra*) {
+                if (auto target = paimon::twitch::adjacentRequestIndex(levelID, forward)) {
+                    paimon::twitch::playRequestAt(*target, true);
+                }
             });
         button->setPosition(position);
         button->setEnabled(enabled);

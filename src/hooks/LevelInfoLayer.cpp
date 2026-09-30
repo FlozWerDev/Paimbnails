@@ -148,7 +148,7 @@ class $modify(PaimonGameplayPerformanceOptions, GameLevelOptionsLayer) {
 };
 
 namespace {
-// raw pointer avoids WeakRefPool key reuse across sessions; clear on exit
+// raw pointer avoids weakrefpool key reuse across sessions; clear on exit
 std::atomic<LevelInfoLayer*> s_activeLevelInfoForOverlay{nullptr};
 int s_levelInfoOverlayPauseDepth = 0;
 
@@ -416,7 +416,7 @@ int m_fallbackOrigin = -1;
         bool m_overlayHadCursor = false;
         bool m_overlayHadVideo = false;
 
-// Windows doesn't reliably bind onExit; clean listeners/audio here too
+// windows doesn't reliably bind onexit; clean listeners/audio here too
         ~Fields() {
             if (paimon::isRuntimeShuttingDown()) return;
             if (m_invalidationListenerId != 0) {
@@ -1491,8 +1491,8 @@ int m_fallbackOrigin = -1;
 #ifdef GEODE_IS_WINDOWS
         m_fields->m_targetClickState = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) ? 1.0f : 0.0f;
 #else
-        // Mac has a real mouse but no GetAsyncKeyState; the keybind tracker
-        // keeps OS-resynced button state instead
+        // mac has a real mouse but no getasynckeystate; the keybind tracker
+        // keeps os-resynced button state instead
         m_fields->m_targetClickState =
             paimon::keybinds::isMouseButtonHeld(paimon::keybinds::MouseButton::Left) ? 1.0f : 0.0f;
 #endif

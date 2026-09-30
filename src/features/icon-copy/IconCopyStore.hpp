@@ -1,5 +1,5 @@
 #pragma once
-// Copied icon sets. The profile button snapshots the icons of whoever you are
+// copied icon sets. the profile button snapshots the icons of whoever you are
 // looking at, and the garage list puts one of those snapshots back on.
 
 #include <Geode/Enums.hpp>
@@ -30,7 +30,7 @@ struct IconSet {
     int deathEffect = 0;
     int color1 = 0;
     int color2 = 3;
-    int glowColor = -1;  // -1 = no custom glow, GD falls back to color2
+    int glowColor = -1;  // -1 = no custom glow, gd falls back to color2
     bool glow = false;
 
     int iconFor(IconType type) const;
@@ -41,10 +41,10 @@ bool enabled();
 
 IconSet snapshot(GJUserScore* score);
 
-// Hands the set over to GameManager: from here on it is the player's selection.
+// hands the set over to gamemanager: from here on it is the player's selection.
 void apply(IconSet const& set);
 
-// Stored sets, newest first.
+// stored sets, newest first.
 std::vector<IconSet> const& entries();
 void add(IconSet set);
 void removeUser(IconSet const& set);

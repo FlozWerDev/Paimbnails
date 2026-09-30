@@ -251,7 +251,7 @@ geode::Result<std::string> IconProjectStore::duplicateProject(std::string_view i
     if (!created) return created;
     auto newId = created.unwrap();
 
-    // Copy imported images so the duplicate is fully independent.
+    // copy imported images so the duplicate is fully independent.
     std::error_code ec;
     auto srcImages = sourceDir / "images";
     if (std::filesystem::exists(srcImages, ec)) {
@@ -275,7 +275,7 @@ geode::Result<> IconProjectStore::deleteProject(std::string_view id) {
             [&](IconIndexEntry const& e) { return e.id == id; }),
         m_index.end());
 
-    // Tolerate failure (e.g. file held open); next saveIndex forgets it anyway.
+    // tolerate failure (e.g. file held open); next saveindex forgets it anyway.
     auto dir = IconPaths::slotDir(id);
     std::error_code ec;
     if (std::filesystem::exists(dir, ec)) {

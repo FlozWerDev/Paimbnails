@@ -1,8 +1,11 @@
 #pragma once
-// on-disk RobTop cache (7-day TTL) against rate limits; live polling uncached.
+// on-disk robtop cache (7-day ttl) against rate limits; live polling uncached.
 
 #include <Geode/Geode.hpp>
 #include <functional>
+#include <atomic>
+#include <chrono>
+#include <ctime>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -61,16 +64,19 @@ private:
                    std::time_t ttl) const;
 
     mutable std::mutex m_mutex;
+    mutable std::recursive_mutex m_diskMutex;
     std::atomic<bool> m_initialized{false};
     std::atomic<bool> m_shuttingDown{false};
 
     struct RamEntry {
         std::string body;
         std::time_t expiresAt = 0;
-        std::time_t lastAccess = 0;
+        std::chrono::steady_clock::time_point lastAccess;
     };
     std::unordered_map<std::string, RamEntry> m_ram;
     static constexpr size_t kMaxRamEntries = 500;
+    static constexpr size_t kMaxRamBytes = 64ull * 1024 * 1024;
+    size_t m_ramBytes = 0;
 
     std::atomic<std::size_t> m_ramHits{0};
     std::atomic<std::size_t> m_diskHits{0};

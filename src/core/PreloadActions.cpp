@@ -19,7 +19,7 @@ using namespace geode::prelude;
 
 namespace {
 
-// Both callers run after $on_game(Loaded) sets g_gameLoaded; no re-arm needed.
+// both callers run after $on_game(loaded) sets g_gameloaded; no re-arm needed.
 void scheduleAfterGameLoaded(float delay, std::function<void()> fn) {
     if (paimon::isRuntimeShuttingDown()) return;
     paimon::scheduleMainThreadDelay(delay, [fn]() {
@@ -31,7 +31,7 @@ void scheduleAfterGameLoaded(float delay, std::function<void()> fn) {
 void schedulePrefetchMainLevels() {
     using namespace paimon::preload;
 
-    // All startup entry points share this claim, including late mod loading.
+    // all startup entry points share this claim, including late mod loading.
     if (!paimon::tryClaimMainLevelsPrefetch()) return;
 
     std::vector<int> mainLevels;
@@ -68,7 +68,7 @@ void schedulePrefetchMainLevels() {
 namespace paimon::preload {
 
 void startFullPreload() {
-    // Geode is still loading: publish the total now for the menu label, nothing else.
+    // geode is still loading: publish the total now for the menu label, nothing else.
     g_thumbsTotal.store(paimon::kMainLevelMaxID - paimon::kMainLevelMinID + 1,
         std::memory_order_release);
     scheduleAfterGameLoaded(1.0f, []() {

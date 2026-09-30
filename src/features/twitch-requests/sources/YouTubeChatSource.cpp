@@ -13,7 +13,7 @@ namespace {
 
 constexpr int kMaxFailures = 4;
 
-// First "key":"value" in the page, unescaped: every field we read here is ASCII.
+// first "key":"value" in the page, unescaped: every field we read here is ascii.
 std::string jsonField(std::string const& html, std::string_view key) {
     auto needle = std::string("\"") + std::string(key) + "\":\"";
     auto pos = html.find(needle);
@@ -36,7 +36,7 @@ std::string runsText(matjson::Value const& message) {
     std::string text;
     for (auto const& run : runs.unwrap()) {
         text += run["text"].asString().unwrapOr("");
-        // Emojis come as a shortcut like :face-blue-smiling:; the label is enough.
+        // emojis come as a shortcut like :face-blue-smiling:; the label is enough.
         if (auto emoji = run["emoji"]["shortcuts"].asArray(); emoji && !emoji.unwrap().empty()) {
             text += emoji.unwrap().front().asString().unwrapOr("");
         }
@@ -57,7 +57,7 @@ void YouTubeChatSource::start() {
     m_primed = false;
     m_failures = 0;
 
-    // A link already points at one video; a handle needs a lookup.
+    // a link already points at one video; a handle needs a lookup.
     if (auto slash = m_channel.rfind('/'); slash != std::string::npos) {
         m_video = m_channel.substr(slash + 1);
         loadChatPage();
@@ -160,7 +160,7 @@ void YouTubeChatSource::handlePoll(std::string const& body) {
     if (auto continuations = chat["continuations"].asArray(); continuations) {
         for (auto const& entry : continuations.unwrap()) {
             if (!entry.isObject()) continue;
-            // The wrapper key changes (invalidation/timed/reload), the shape does not.
+            // the wrapper key changes (invalidation/timed/reload), the shape does not.
             for (auto const& data : entry) {
                 if (auto token = data["continuation"].asString(); token) next = token.unwrap();
                 if (auto timeout = data["timeoutMs"].asInt(); timeout) {
@@ -178,12 +178,17 @@ void YouTubeChatSource::handlePoll(std::string const& body) {
                 auto author = runsText(item["authorName"]);
                 auto text = runsText(item["message"]);
                 if (text.empty()) continue;
-                deliver(author.empty() ? "YouTube" : std::move(author), std::move(text));
+                ChatMessage incoming;
+                incoming.requester = author.empty() ? "YouTube" : std::move(author);
+                incoming.text = std::move(text);
+                incoming.messageID = item["id"].asString().unwrapOr("");
+                incoming.userID = item["authorExternalChannelId"].asString().unwrapOr("");
+                deliver(std::move(incoming));
                 if (stopped()) return;
             }
         }
     } else {
-        // The first page is the backlog; the queue only wants what comes next.
+        // the first page is the backlog; the queue only wants what comes next.
         m_primed = true;
         ready("Escuchando el chat de YouTube");
     }

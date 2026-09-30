@@ -64,7 +64,7 @@ CCRect nodeAABB(CCNode* n) {
     auto tr = parent->convertToWorldSpace(ccp(bb.getMaxX(), bb.getMaxY()));
     float x0 = std::min(bl.x, tr.x), x1 = std::max(bl.x, tr.x);
     float y0 = std::min(bl.y, tr.y), y1 = std::max(bl.y, tr.y);
-// Ensure a minimum 24×24 hitbox for small nodes.
+// ensure a minimum 24×24 hitbox for small nodes.
     const float kMin = 24.f;
     if (x1 - x0 < kMin) {
         float cx = (x0 + x1) * 0.5f;
@@ -220,7 +220,7 @@ void ProgressBarEditOverlay::rebuildSelectionUI() {
 
 void ProgressBarEditOverlay::update(float) {
     validateSelection();
-// Rebuild selection UI while idle so handles follow the selected element.
+// rebuild selection ui while idle so handles follow the selected element.
     if (m_dragAction == Action::None) rebuildSelectionUI();
 }
 
@@ -249,7 +249,7 @@ bool ProgressBarEditOverlay::ccTouchBegan(CCTouch* touch, CCEvent*) {
                 int tag = c->getTag();
                 switch (tag) {
                     case Tag_Delete:
-// validateSelection() clears stale indices.
+// validateselection() clears stale indices.
                         if (m_selectedTarget == Target::Decoration) {
                             ProgressBarManager::get().removeDecoration(m_selectedDecoIndex);
                             m_selectedTarget = Target::None;
@@ -321,7 +321,7 @@ bool ProgressBarEditOverlay::ccTouchBegan(CCTouch* touch, CCEvent*) {
             m_origPos = ccp(cfg.decorations[decoIdx].posX,
                             cfg.decorations[decoIdx].posY);
         } else {
-// Decoration index went stale; abort the drag.
+// decoration index went stale; abort the drag.
             m_dragTarget = Target::None;
             m_dragAction = Action::None;
             m_dragDecoIndex = -1;
@@ -442,7 +442,7 @@ void ProgressBarEditOverlay::ccTouchMoved(CCTouch* touch, CCEvent*) {
                         m_origUniformSc + delta.x / 150.f, 0.2f, 5.f);
                     break;
                 case Action::Rotate:
-// Label rotation is not persisted yet.
+// label rotation is not persisted yet.
                     break;
                 case Action::None: break;
             }
@@ -451,7 +451,7 @@ void ProgressBarEditOverlay::ccTouchMoved(CCTouch* touch, CCEvent*) {
         case Target::Decoration: {
             if (m_dragDecoIndex < 0 ||
                 m_dragDecoIndex >= static_cast<int>(cfg.decorations.size())) {
-// Decoration was removed mid-drag.
+// decoration was removed mid-drag.
                 m_dragTarget = Target::None;
                 m_dragAction = Action::None;
                 return;
@@ -597,7 +597,7 @@ void ProgressBarEditOverlay::enterEditMode() {
 
     s_detached.clear();
 
-// Detach scene children other than PlayLayer (popups, alerts, transitions).
+// detach scene children other than playlayer (popups, alerts, transitions).
     std::vector<CCNode*> toDetach;
     if (auto* children = scene->getChildren()) {
         for (auto* obj : CCArrayExt<CCNode*>(children)) {
@@ -608,7 +608,7 @@ void ProgressBarEditOverlay::enterEditMode() {
     }
     for (auto* n : toDetach) detachNode(n);
 
-// Also hide pause/popup nodes nested in PlayLayer.
+// also hide pause/popup nodes nested in playlayer.
     if (auto* pl = PlayLayer::get()) {
         std::vector<CCNode*> plToDetach;
         if (auto* cs = pl->getChildren()) {
@@ -628,7 +628,7 @@ void ProgressBarEditOverlay::enterEditMode() {
     s_activeOverlay = ProgressBarEditOverlay::create();
     if (!s_activeOverlay) {
         log::error("[ProgressBar] Failed to create edit overlay");
-// Re-attach detached nodes when aborting.
+// re-attach detached nodes when aborting.
         for (auto it = s_detached.rbegin(); it != s_detached.rend(); ++it) {
             auto parent = it->parent.lock();
             if (it->node && parent && !it->node->getParent()) {

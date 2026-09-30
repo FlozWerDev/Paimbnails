@@ -9,8 +9,8 @@ namespace paimon::twitch {
 namespace {
 
 constexpr char const* kHost = "irc-ws.chat.twitch.tv";
-// Twitch drops us silently when the channel does not exist, so the JOIN gets
-// this many seconds to answer with a ROOMSTATE before we call it a bad name.
+// twitch drops us silently when the channel does not exist, so the join gets
+// this many seconds to answer with a roomstate before we call it a bad name.
 constexpr float kJoinTimeout = 12.f;
 
 std::string anonymousNick() {
@@ -144,22 +144,30 @@ void TwitchIrcSource::handleLine(std::string_view line) {
         return;
     }
 
-    // Chat first: otherwise a viewer typing RECONNECT or ROOMSTATE in the chat
+    // chat first: otherwise a viewer typing reconnect or roomstate in the chat
     // would look like a server command and drop the connection.
     size_t commandPos = line.find(" PRIVMSG #");
     if (commandPos != std::string_view::npos) {
         size_t messagePos = line.find(" :", commandPos);
         if (messagePos == std::string_view::npos) return;
+        if (line.substr(commandPos + 10, messagePos - commandPos - 10) != m_channel) return;
 
         std::string requester;
+        ChatMessage message;
         if (!line.empty() && line.front() == '@') {
             size_t tagsEnd = line.find(' ');
             if (tagsEnd != std::string_view::npos) {
-                requester = tagValue(line.substr(1, tagsEnd - 1), "display-name");
+                auto tags = line.substr(1, tagsEnd - 1);
+                requester = tagValue(tags, "display-name");
+                message.messageID = tagValue(tags, "id");
+                message.userID = tagValue(tags, "user-id");
+                message.rewardID = tagValue(tags, "custom-reward-id");
+                auto sourceRoom = tagValue(tags, "source-room-id");
+                if (!sourceRoom.empty() && sourceRoom != tagValue(tags, "room-id")) return;
             }
         }
         if (requester.empty()) {
-            // :nick!user@host PRIVMSG ... , with the tags block skipped if present.
+            // :nick!user@host privmsg ... , with the tags block skipped if present.
             size_t prefix = 0;
             if (line.front() == '@') {
                 auto tagged = line.find(" :");
@@ -174,7 +182,9 @@ void TwitchIrcSource::handleLine(std::string_view line) {
         }
         if (requester.empty()) requester = "Twitch";
 
-        deliver(std::move(requester), std::string(line.substr(messagePos + 2)));
+        message.requester = std::move(requester);
+        message.text = std::string(line.substr(messagePos + 2));
+        deliver(std::move(message));
         return;
     }
 
@@ -194,8 +204,8 @@ void TwitchIrcSource::handleLine(std::string_view line) {
         }
     }
 
-    // ROOMSTATE only arrives for channels that really exist, so it is what
-    // confirms the username. The JOIN echo comes back even for a bad name.
+    // roomstate only arrives for channels that really exist, so it is what
+    // confirms the username. the join echo comes back even for a bad name.
     if (line.find(" ROOMSTATE #" + m_channel) != std::string_view::npos) {
         m_joined = true;
         ready("Escuchando el chat de #" + m_channel);

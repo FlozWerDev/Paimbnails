@@ -10,8 +10,8 @@ using namespace cocos2d;
 
 namespace paimon::volscroll {
 
-// parented to OverlayManager, the top-most host shared with the custom
-// cursor: renders above scenes and popups, below the INT_MAX cursor.
+// parented to overlaymanager, the top-most host shared with the custom
+// cursor: renders above scenes and popups, below the int_max cursor.
 
 namespace {
     constexpr float kPanelHeight   =  34.f;
@@ -51,7 +51,7 @@ namespace {
         {110, 225, 110},
     };
 
-    // easeOutBack: overshoot then settle, the GD popup feel. Softened c1
+    // easeoutback: overshoot then settle, the gd popup feel. softened c1
     // caps the slide/width overshoot at ~6%.
     inline float easeOutBack(float t) {
         t = std::clamp(t, 0.f, 1.f);
@@ -61,13 +61,13 @@ namespace {
         return 1.f + c3 * u * u * u + c1 * u * u;
     }
 
-    // easeInQuad for exits: accelerating away, no abrupt cut.
+    // easeinquad for exits: accelerating away, no abrupt cut.
     inline float easeInQuad(float t) {
         t = std::clamp(t, 0.f, 1.f);
         return t * t;
     }
 
-    // easeOutQuint for the extras fade-in.
+    // easeoutquint for the extras fade-in.
     inline float easeOutQuint(float t) {
         t = std::clamp(t, 0.f, 1.f);
         float u = 1.f - t;
@@ -114,7 +114,7 @@ void VolumeScrollManager::ensureOverlayBuilt() {
     }
     m_pillNode = bg;
 
-    // MUS/SFX chip in goldFont, tinted by kind; pinned to the right edge so
+    // mus/sfx chip in goldfont, tinted by kind; pinned to the right edge so
     // it drifts right as the panel expands.
     auto icon = CCLabelBMFont::create("MUS", "goldFont.fnt");
     icon->setScale(0.42f);
@@ -133,7 +133,7 @@ void VolumeScrollManager::ensureOverlayBuilt() {
     }
     m_barDraw = fill;
 
-    // percent label, bigFont, visible only when expanded.
+    // percent label, bigfont, visible only when expanded.
     auto pctLabel = CCLabelBMFont::create("0%", "bigFont.fnt");
     pctLabel->setScale(0.32f);
     pctLabel->setAnchorPoint({0.f, 0.5f});

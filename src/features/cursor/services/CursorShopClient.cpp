@@ -12,7 +12,7 @@ namespace paimon::cursorshop {
 
 namespace {
 
-// Cloudflare rejects generic user agents on custom-cursor.com, so send a full browser one.
+// cloudflare rejects generic user agents on custom-cursor.com, so send a full browser one.
 constexpr char const* kUserAgent =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -26,13 +26,13 @@ constexpr std::size_t kMaxDownloadBytes = 24u * 1024 * 1024;
 constexpr int kRwSetsPerPage  = 40;
 constexpr int kRwLoosePerPage = 100;
 constexpr int kRwSearchPerPage = 50;
-// Search counts include icon sets, so tail pages may hold no cursors; stop here.
+// search counts include icon sets, so tail pages may hold no cursors; stop here.
 constexpr int kMaxSearchPages = 40;
 
-// Synthetic search-category prefix.
+// synthetic search-category prefix.
 constexpr std::string_view kSearchPrefix = "search:";
 
-// Large custom-cursor collections pass 600 packs; cap keeps the grid finite.
+// large custom-cursor collections pass 600 packs; cap keeps the grid finite.
 constexpr std::size_t kMaxListingItems = 600;
 
 web::WebRequest makeRequest(int timeoutSeconds) {
@@ -88,7 +88,7 @@ std::string stripTags(std::string_view raw) {
     return out;
 }
 
-// Game .fnt files only carry printable ASCII; the rest is dropped before labeling.
+// game .fnt files only carry printable ascii; the rest is dropped before labeling.
 std::string cleanLabel(std::string_view raw, std::size_t maxLen = 58) {
     auto decoded = htmlDecode(raw);
     std::string out;
@@ -113,7 +113,7 @@ std::string cleanLabel(std::string_view raw, std::size_t maxLen = 58) {
     return out;
 }
 
-// Value of `key="..."` from `from`, never past `limit`.
+// value of `key="..."` from `from`, never past `limit`.
 std::string rawAttr(std::string const& h, std::size_t from, std::size_t limit, std::string_view key) {
     std::string needle(key);
     needle += "=\"";
@@ -125,7 +125,7 @@ std::string rawAttr(std::string const& h, std::size_t from, std::size_t limit, s
     return h.substr(start, end - start);
 }
 
-// Cuts at the same-tag close; nested elements need stripTags.
+// cuts at the same-tag close; nested elements need striptags.
 std::string rawTagText(std::string const& h, std::size_t from, std::size_t limit, std::string_view openPrefix) {
     if (openPrefix.size() < 2 || openPrefix.front() != '<') return "";
     auto at = h.find(openPrefix, from);
@@ -158,7 +158,7 @@ std::string absolute(char const* base, std::string const& path) {
     return std::string(base) + "/" + path;
 }
 
-// Only .ani files carry frames; the rest is static.
+// only .ani files carry frames; the rest is static.
 bool looksAnimated(std::string const& url) {
     auto end = url.find_last_of("?#");
     auto path = end == std::string::npos ? url : url.substr(0, end);
@@ -176,7 +176,7 @@ bool suggestedForRwRole(std::string_view role, CursorState& out) {
     return false;
 }
 
-// Last rw-designer page, from the largest linked offset.
+// last rw-designer page, from the largest linked offset.
 int rwPageCount(std::string const& html, std::string_view prefix, int step) {
     std::string needle = "href=\"/cursor-library/";
     needle += prefix;
@@ -323,7 +323,7 @@ Detail parseRwDetail(std::string const& html, std::string const& slug) {
     return out;
 }
 
-// Matches "Showing items 1-50 of N..." or "Showing all N...".
+// matches "showing items 1-50 of n..." or "showing all n...".
 int rwSearchPageCount(std::string const& html) {
     auto at = html.find("Showing items");
     if (at == std::string::npos) return 1;
@@ -341,7 +341,7 @@ int rwSearchPageCount(std::string const& html) {
     return std::clamp(pages, 1, kMaxSearchPages);
 }
 
-// Search mixes sets, singles and icon sets; icon sets are dropped.
+// search mixes sets, singles and icon sets; icon sets are dropped.
 ListingPage parseRwMixed(std::string const& html, int page) {
     ListingPage out;
     out.page = page;
@@ -380,7 +380,7 @@ ListingPage parseRwMixed(std::string const& html, int page) {
             continue;
         }
 
-        // No download link means not a cursor (icon sets, e.g.).
+        // no download link means not a cursor (icon sets, e.g.).
         auto dlAt = html.find(kDlRef, blockStart);
         if (dlAt == std::string::npos || dlAt >= limit) continue;
 
@@ -490,7 +490,7 @@ std::vector<Category> parseCcCollections(std::string const& html) {
     return out;
 }
 
-// Some pack art also exists full-size; drop the /32/ path segment.
+// some pack art also exists full-size; drop the /32/ path segment.
 std::string ccLargeVariant(std::string const& url) {
     if (url.find("/db/") == std::string::npos) return "";
     auto at = url.find("/32/");
@@ -498,7 +498,7 @@ std::string ccLargeVariant(std::string const& url) {
     return url.substr(0, at) + "/" + url.substr(at + 4);
 }
 
-// Demo block paints arrow on the box, pointer on the inner button: HTML order gives each role.
+// demo block paints arrow on the box, pointer on the inner button: html order gives each role.
 Detail parseCcDetail(std::string const& html, std::string const& fallbackName) {
     Detail out;
     out.name = cleanLabel(stripTags(rawTagText(html, 0, html.size(), "<h1")));
@@ -721,11 +721,11 @@ void ShopClient::fetchListing(Store store, Category const& category, int page, L
 }
 
 void ShopClient::fetchDetail(Listing const& listing, DetailCallback cb) {
-    // A single already carries everything needed.
+    // a single already carries everything needed.
     if (listing.single && !listing.directUrl.empty()) {
         Detail detail;
         detail.name = listing.name;
-        // Singles have no detail page; link the store section so authors get the visit.
+        // singles have no detail page; link the store section so authors get the visit.
         detail.sourceUrl = listing.store == Store::CustomCursor
             ? std::string(kCcBase)
             : std::string(kRwBase) + "/cursor-library";

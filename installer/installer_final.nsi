@@ -1,5 +1,5 @@
-﻿; Paimbnails Mod Installer for Geometry Dash
-; Bundles the .geode file directly — no runtime PowerShell or downloads
+﻿; paimbnails mod installer for geometry dash
+; bundles the .geode file directly — no runtime powershell or downloads
 
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
@@ -43,7 +43,7 @@ FunctionEnd
 Section "Install"
   DetailPrint "Installing Paimbnails mod..."
   
-  ; Copy the bundled .geode file directly — no PowerShell, no network calls
+  ; copy the bundled .geode file directly — no powershell, no network calls
   SetOutPath "$INSTDIR"
   File "flozwer.paimbnails2.geode"
   

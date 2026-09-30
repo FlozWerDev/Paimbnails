@@ -14,7 +14,7 @@
 
 class HttpClient {
 public:
-    // Geode v5 uses CopyableFunction for ABI compatibility.
+    // geode v5 uses copyablefunction for abi compatibility.
     using UploadCallback = geode::CopyableFunction<void(bool success, std::string const& message)>;
     using DownloadCallback = geode::CopyableFunction<void(bool success, std::vector<uint8_t> const& data, int width, int height)>;
     using CheckCallback = geode::CopyableFunction<void(bool exists)>;
@@ -57,7 +57,7 @@ public:
     void completeModCodeSetup(std::string const& challengeToken, GenericCallback callback);
 
     // ownership proof for non-moderators: the signed token proves the account
-    // is yours; a public GD server lookup proves nothing.
+    // is yours; a public gd server lookup proves nothing.
     std::string getViewerToken() const { return m_viewerToken; }
     void setViewerToken(std::string const& token);
     bool hasViewerToken() const { return !m_viewerToken.empty(); }
@@ -113,7 +113,7 @@ public:
     void downloadThumbnail(int levelId, DownloadCallback callback);
     void downloadThumbnail(int levelId, bool isGif, DownloadCallback callback);
 
-    // batch result keyed by level/account ID; data empty on failure.
+    // batch result keyed by level/account id; data empty on failure.
     struct BatchItem {
         bool ok = false;
         std::string format;
@@ -188,7 +188,7 @@ public:
 
     void downloadProfileBundle(int accountID, std::string const& username, GenericCallback callback);
 
-    // cached CDN URLs from /api/manifest, bypassing the Worker.
+    // cached cdn urls from /api/manifest, bypassing the worker.
     struct ManifestEntry {
         std::string format;
         std::string cdnUrl;
@@ -229,10 +229,10 @@ public:
     using BatchBundleCallback = geode::CopyableFunction<void(bool success, std::string const& json)>;
     void fetchBatchProfileBundle(std::vector<std::pair<int, std::string>> const& accounts, BatchBundleCallback callback);
 
-    // public CDN pull zone used when the Worker is exhausted.
+    // public cdn pull zone used when the worker is exhausted.
     std::string m_cdnBaseURL;
 
-    // after repeated 503/429s, reads route through the CDN for 30 seconds.
+    // after repeated 503/429s, reads route through the cdn for 30 seconds.
     std::atomic<bool> m_workerExhausted{false};
     std::atomic<int64_t> m_exhaustedAt{0};
     std::atomic<int> m_consecutiveWorkerFailures{0};
@@ -248,7 +248,7 @@ public:
     void saveManifestToDisk();
     void loadManifestFromDisk();
 
-    // like performBinaryRequest plus HTTP status: 404 caches negative,
+    // like performbinaryrequest plus http status: 404 caches negative,
     // transient failures retry.
     using BinaryStatusCallback = geode::CopyableFunction<void(bool, std::vector<uint8_t> const&, int status)>;
     void performBinaryRequestEx(
@@ -256,7 +256,9 @@ public:
         std::vector<std::string> const& headers,
         BinaryStatusCallback callback,
         int timeoutSeconds = 15,
-        bool includeModCode = false
+        bool includeModCode = false,
+        bool validateImage = true,
+        unsigned redirectsLeft = 5
     );
 
 private:
@@ -273,7 +275,7 @@ private:
     std::string m_viewerToken;
 
     // credentials only leave toward our own backends (worker, forum), never
-    // toward the CDN or URLs from a response.
+    // toward the cdn or urls from a response.
     bool isTrustedBackendUrl(std::string const& url) const;
 
     struct ExistsCacheEntry {
@@ -302,11 +304,11 @@ private:
     bool isWorkerExhausted();
     void markWorkerExhausted();
 
-    // coalesce concurrent downloads for the same level ID.
+    // coalesce concurrent downloads for the same level id.
     std::unordered_map<int, std::vector<DownloadCallback>> m_inflightDownloads;
     std::mutex m_inflightMutex;
     void resolveInflight(int levelId, bool success, std::vector<uint8_t> const& data);
-    // Worker fetch with missing-vs-transient classification; reports via resolveInflight.
+    // worker fetch with missing-vs-transient classification; reports via resolveinflight.
     void fetchViaWorker(int levelId, bool dropManifestEntry);
 
     // short-lived negative cache for downloads failed on both endpoints;

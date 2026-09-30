@@ -15,7 +15,7 @@ namespace paimon::versus::gl {
 
 namespace {
 
-// The shield is granted through Globed but its lifetime is ours: the API has no
+// the shield is granted through globed but its lifetime is ours: the api has no
 // way to ask whether safe mode is still armed for our own reason.
 bool s_shield = false;
 bool s_isolated = false;

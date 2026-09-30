@@ -19,20 +19,20 @@ namespace paimon::shaders {
 
 namespace {
 
-// RAM cache of file contents, populated lazily. shared_mutex: reads dominate.
+// ram cache of file contents, populated lazily. shared_mutex: reads dominate.
 struct ShaderSourceCache {
     std::shared_mutex mutex;
     std::unordered_map<std::string, std::string> contents;
 };
 
 ShaderSourceCache& sourceCache() {
-    // heap-allocated: no destructors at exit, dodges static-order crashes across DLLs.
+    // heap-allocated: no destructors at exit, dodges static-order crashes across dlls.
     static auto* cache = new ShaderSourceCache();
     return *cache;
 }
 
 std::filesystem::path shadersDir() {
-    // Dev layout: src/../resources/shaders/<name>.glsl
+    // dev layout: src/../resources/shaders/<name>.glsl
     return geode::Mod::get()->getResourcesDir() / "shaders";
 }
 
@@ -82,7 +82,7 @@ std::string readShaderFile(std::string_view relName) {
 
 namespace {
 
-// mod keys inside CCShaderCache. main thread only; heap-allocated like sourceCache().
+// mod keys inside ccshadercache. main thread only; heap-allocated like sourcecache().
 std::unordered_set<std::string>& trackedShaderKeys() {
     static auto* keys = new std::unordered_set<std::string>();
     return *keys;
@@ -177,123 +177,51 @@ CCGLProgram* loadShader(
 // all pass nullptr fallback: fail fast when the .glsl is missing.
 
 CCGLProgram* getBlurHorizontalShader() {
-    return loadShader(
-        "paimon-blur-h-v3",
-        "cell_vertex.glsl",
-        "blur_h.glsl",
-        nullptr,
-        nullptr
-    );
+    return loadShader("paimon-blur-h-v3", "cell_vertex.glsl", "blur_h.glsl", nullptr, nullptr);
 }
 
 CCGLProgram* getBlurVerticalShader() {
-    return loadShader(
-        "paimon-blur-v-v3",
-        "cell_vertex.glsl",
-        "blur_v.glsl",
-        nullptr,
-        nullptr
-    );
+    return loadShader("paimon-blur-v-v3", "cell_vertex.glsl", "blur_v.glsl", nullptr, nullptr);
 }
 
 CCGLProgram* getKawaseDownShader() {
-    return loadShader(
-        "paimon-kawase-down-v3",
-        "cell_vertex.glsl",
-        "kawase_down.glsl",
-        nullptr,
-        nullptr
-    );
+    return loadShader("paimon-kawase-down-v3", "cell_vertex.glsl", "kawase_down.glsl", nullptr, nullptr);
 }
 
 CCGLProgram* getKawaseUpShader() {
-    return loadShader(
-        "paimon-kawase-up-v3",
-        "cell_vertex.glsl",
-        "kawase_up.glsl",
-        nullptr,
-        nullptr
-    );
+    return loadShader("paimon-kawase-up-v3", "cell_vertex.glsl", "kawase_up.glsl", nullptr, nullptr);
 }
 
 CCGLProgram* getKawaseRealtimeShader() {
-    return loadShader(
-        "paimon-kawase-rt-v3",
-        "cell_vertex.glsl",
-        "kawase_realtime.glsl",
-        nullptr,
-        nullptr
-    );
+    return loadShader("paimon-kawase-rt-v3", "cell_vertex.glsl", "kawase_realtime.glsl", nullptr, nullptr);
 }
 
 CCGLProgram* getBlurCellShader() {
-    return loadShader(
-        "paimon-blur-cell-v3",
-        "cell_vertex.glsl",
-        "kawase_cell.glsl",
-        nullptr,
-        nullptr
-    );
+    return loadShader("paimon-blur-cell-v3", "cell_vertex.glsl", "kawase_cell.glsl", nullptr, nullptr);
 }
 
 CCGLProgram* getBlurSinglePassShader() {
-    return loadShader(
-        "paimon-blur-single-v3",
-        "cell_vertex.glsl",
-        "blur_single.glsl",
-        nullptr,
-        nullptr
-    );
+    return loadShader("paimon-blur-single-v3", "cell_vertex.glsl", "blur_single.glsl", nullptr, nullptr);
 }
 
 CCGLProgram* getBlurFastShader() {
-    return loadShader(
-        "paimon-blur-fast-v3",
-        "cell_vertex.glsl",
-        "blur_fast.glsl",
-        nullptr,
-        nullptr
-    );
+    return loadShader("paimon-blur-fast-v3", "cell_vertex.glsl", "blur_fast.glsl", nullptr, nullptr);
 }
 
 CCGLProgram* getYUVShader() {
-    return loadShader(
-        "paimon-yuv-v1",
-        "yuv_vertex.glsl",
-        "yuv_fragment.glsl",
-        nullptr,
-        nullptr
-    );
+    return loadShader("paimon-yuv-v1", "yuv_vertex.glsl", "yuv_fragment.glsl", nullptr, nullptr);
 }
 
 CCGLProgram* getYUVBlitShader() {
-    return loadShader(
-        "paimon-yuv-blit-v1",
-        "yuv_vertex.glsl",
-        "yuv_to_rgba_blit.glsl",
-        nullptr,
-        nullptr
-    );
+    return loadShader("paimon-yuv-blit-v1", "yuv_vertex.glsl", "yuv_to_rgba_blit.glsl", nullptr, nullptr);
 }
 
 CCGLProgram* getDominantColorsDownsampleShader() {
-    return loadShader(
-        "paimon-dc-downsample-v1",
-        "cell_vertex.glsl",
-        "dominant_colors_downsample.glsl",
-        nullptr,
-        nullptr
-    );
+    return loadShader("paimon-dc-downsample-v1", "cell_vertex.glsl", "dominant_colors_downsample.glsl", nullptr, nullptr);
 }
 
 CCGLProgram* getGifDownscaleShader() {
-    return loadShader(
-        "paimon-gif-downscale-v1",
-        "cell_vertex.glsl",
-        "gif_downscale.glsl",
-        nullptr,
-        nullptr
-    );
+    return loadShader("paimon-gif-downscale-v1", "cell_vertex.glsl", "gif_downscale.glsl", nullptr, nullptr);
 }
 
 CCGLProgram* getGifBlurShader() {

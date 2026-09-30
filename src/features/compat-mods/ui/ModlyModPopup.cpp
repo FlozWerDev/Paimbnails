@@ -199,7 +199,7 @@ CCNode* ModlyModPopup::buildPreviewStrip(float width) {
     menu->setContentSize({x, kPreviewH});
     strip->addChild(menu);
 
-    // Tells the reader there are more shots than the row can hold.
+    // tells the reader there are more shots than the row can hold.
     if (shown < m_mod.previewCount) {
         auto more = CCLabelBMFont::create(fmt::format("+{}", m_mod.previewCount - shown).c_str(), "bigFont.fnt");
         more->setScale(0.32f);

@@ -8,7 +8,7 @@
 
 namespace paimon::quickhub {
 
-// Edits *target live, fires onChanged; parent keeps ownership.
+// edits *target live, fires onchanged; parent keeps ownership.
 class QuickButtonImagePopup : public geode::Popup {
 public:
     static QuickButtonImagePopup* create(

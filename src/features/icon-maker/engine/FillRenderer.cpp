@@ -17,7 +17,7 @@ namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
 
-// Matches texture-studio's default tint brightness so shading response feels
+// matches texture-studio's default tint brightness so shading response feels
 // identical across both features.
 constexpr float kBrightness = 160.f;
 
@@ -33,7 +33,7 @@ void writePixel(std::uint8_t* p, float rF, float gF, float bF, int alpha) {
     p[3] = tmath::clampByte(alpha);
 }
 
-// Bilinear sample with optional wrap (Tile). Returns straight-alpha RGBA.
+// bilinear sample with optional wrap (tile). returns straight-alpha rgba.
 void sampleImage(ts::ImageBuffer const& img, float sxf, float syf, bool wrap,
                  float out[4]) {
     int iw = img.width();
@@ -113,14 +113,14 @@ ts::ImageBuffer FillRenderer::renderOutline(ts::ImageBuffer const& shape,
     int const h = shape.height();
     float const radius = std::min(outline.width, static_cast<float>(std::min(w, h)) / 2.f);
 
-    // The piece opacity is already multiplied into `shape`, so the silhouette
+    // the piece opacity is already multiplied into `shape`, so the silhouette
     // threshold has to scale with it or a faded layer would grow no outline.
     int const opacity = std::clamp(layerOpacity, 0, 255);
     if (opacity <= 0) return ts::ImageBuffer();
     auto const seedThreshold = static_cast<std::uint8_t>(
         std::max(8, opacity / 2));
 
-    // Chamfer distance transform: two sweeps, O(w*h), close enough to a true
+    // chamfer distance transform: two sweeps, o(w*h), close enough to a true
     // euclidean distance that the contour reads as round at icon sizes.
     constexpr float kOrtho = 1.f;
     constexpr float kDiag = 1.41421356f;
@@ -169,7 +169,7 @@ ts::ImageBuffer FillRenderer::renderOutline(ts::ImageBuffer const& shape,
     for (std::size_t idx = 0; idx < dist.size(); ++idx) {
         float d = dist[idx];
         if (d > radius + 0.5f) continue;
-        // One-pixel feather at the outer edge so the contour is not stair-stepped.
+        // one-pixel feather at the outer edge so the contour is not stair-stepped.
         float coverage = std::clamp(radius + 0.5f - d, 0.f, 1.f);
         int alpha = static_cast<int>(std::lround(255.f * coverage * colorA));
         if (alpha <= 0) continue;
@@ -196,7 +196,7 @@ geode::Result<ts::ImageBuffer> FillRenderer::apply(ts::ImageBuffer const& shape,
     auto const* src = shape.data();
     auto* dst = out.data();
 
-    // Chroma renders plain white; the runtime ticker cycles the hue live.
+    // chroma renders plain white; the runtime ticker cycles the hue live.
     if (fill.type == FillType::Flat || fill.chroma) {
         cocos2d::ccColor4B flat = fill.chroma
             ? cocos2d::ccColor4B{255, 255, 255, 255} : fill.flat;
@@ -232,9 +232,6 @@ geode::Result<ts::ImageBuffer> FillRenderer::apply(ts::ImageBuffer const& shape,
         return Ok(std::move(out));
     }
 
-    // Image fill: inverse-map every shape pixel into the fill image, honoring
-    // fit mode (incl. Tile = wrap), scale, offset and rotation over the
-    // shape's bounding box.
     if (fill.image.file.empty()) {
         return Err("El relleno de imagen no tiene archivo");
     }

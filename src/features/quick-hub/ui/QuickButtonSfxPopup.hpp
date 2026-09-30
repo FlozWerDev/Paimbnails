@@ -8,7 +8,7 @@
 
 namespace paimon::quickhub {
 
-// Live editor for the button SFX; parent keeps CustomQuickButton ownership.
+// live editor for the button sfx; parent keeps customquickbutton ownership.
 class QuickButtonSfxPopup : public geode::Popup {
 public:
     static QuickButtonSfxPopup* create(
@@ -37,7 +37,7 @@ private:
     void changed();
     void refresh();
     void updateDuration();
-    // Reads visible TextInputs into the candidate before rebuild or close.
+    // reads visible textinputs into the candidate before rebuild or close.
     void syncInputs();
     void onChooseAudio();
     void importAudio(std::filesystem::path const& src);

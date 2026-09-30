@@ -8,11 +8,11 @@ namespace paimon::gifimport {
 
 namespace {
 
-// Slack so the span never eats a sample the inside/outside test would take.
-// Half a pixel of the finest grid in use: free, and settles every edge doubt.
+// slack so the span never eats a sample the inside/outside test would take.
+// half a pixel of the finest grid in use: free, and settles every edge doubt.
 constexpr float kSpanSlack = 0.002f;
 
-// Preview and fine audit run 8 samples per cell. Fitting outlines at four let
+// preview and fine audit run 8 samples per cell. fitting outlines at four let
 // a quarter-cell corner through that showed as a peak when scaled up.
 constexpr int kFitSamples = 8;
 
@@ -32,9 +32,7 @@ ShapeXform xformOf(Primitive const& object) {
     shape.extentY = std::abs(shape.sine) * object.width * 0.5f +
         std::abs(shape.cosine) * object.height * 0.5f;
     shape.kind = object.kind;
-    // while tracing, a figure's `stamp` is its library slot; the plan keeps
-    // used ones only and reindexes at the end, so resolve from the plan list
-    // past that point.
+    // stamp indices address the library during tracing and the compact list after plan collection.
     if (object.kind == PrimitiveKind::Stamp) {
         auto const& variants = stampVariants();
         if (object.stamp < variants.size()) {
@@ -68,7 +66,7 @@ std::array<int, 4> xformBox(ShapeXform const& shape, int width, int height) {
     };
 }
 
-// All four figure families are convex, so a row enters and exits once:
+// all four figure families are convex, so a row enters and exits once:
 // straight sides intersect the row, circles solve the rotated-ellipse quadratic.
 bool xformSpan(ShapeXform const& shape, float y, float& fromX, float& toX) {
     if (shape.width <= 0.f || shape.height <= 0.f) return false;

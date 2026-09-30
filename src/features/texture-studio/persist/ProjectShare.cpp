@@ -26,7 +26,7 @@ geode::Result<> ProjectShare::exportTo(std::filesystem::path const& dst,
         }
     }
 
-    // Same serializer as slot project.json.
+    // same serializer as slot project.json.
     auto json = matjson::Value(project);
     auto wr = file::writeString(dst, json.dump());
     if (!wr) {
@@ -58,7 +58,7 @@ geode::Result<std::string> ProjectShare::importFrom(
         return SlotStore::get().createSlot(project);
     }
 
-    // Foreign file: drop build state, re-resolve sheets locally.
+    // foreign file: drop build state, re-resolve sheets locally.
     project.hasBuiltOnce = false;
     project.lastBuiltAt  = 0;
     project.lastZipRelPath.clear();

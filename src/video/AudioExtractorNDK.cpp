@@ -13,7 +13,7 @@
 
 namespace paimon::video {
 
-// MediaCodec output is 16-bit PCM by default.
+// mediacodec output is 16-bit pcm by default.
 AudioPcm extractAudioToPcm(const std::string& videoPath) {
     std::lock_guard lock(detail::audioExtractorMutex());
 
@@ -59,7 +59,7 @@ AudioPcm extractAudioToPcm(const std::string& videoPath) {
         return {};
     }
 
-    // Track-format fallback until INFO_OUTPUT_FORMAT_CHANGED arrives.
+    // track-format fallback until info_output_format_changed arrives.
     int32_t sampleRate = 0;
     int32_t channels = 0;
     AMediaFormat_getInt32(trackFmt, AMEDIAFORMAT_KEY_SAMPLE_RATE, &sampleRate);
@@ -123,7 +123,7 @@ AudioPcm extractAudioToPcm(const std::string& videoPath) {
                 AMediaFormat_delete(outFmt);
             }
         }
-        // INFO_TRY_AGAIN_LATER / BUFFERS_CHANGED: just loop.
+        // info_try_again_later / buffers_changed: just loop.
     }
 
     AMediaCodec_stop(codec);
@@ -148,4 +148,4 @@ AudioPcm extractAudioToPcm(const std::string& videoPath) {
 
 } // namespace paimon::video
 
-#endif // USE_MEDIA_NDK
+#endif // use_media_ndk

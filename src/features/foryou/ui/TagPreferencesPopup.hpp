@@ -1,6 +1,6 @@
 #pragma once
 
-// Manual tag pins outrank anything inferred from play history.
+// manual tag pins outrank anything inferred from play history.
 #include <Geode/Geode.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/Popup.hpp>
@@ -25,7 +25,7 @@ protected:
     struct Chip {
         std::string tag;
         cocos2d::ccColor3B color{255, 255, 255};
-        // A real GD ButtonSprite, so the three states recolour the same way the
+        // a real gd buttonsprite, so the three states recolour the same way the
         // game tints its own buttons.
         ButtonSprite* pill = nullptr;
     };

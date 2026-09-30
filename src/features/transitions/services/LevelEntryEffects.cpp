@@ -30,7 +30,7 @@ enum class TransitionDirection {
 
 class LevelEffectsTransitionScene;
 
-// Not parented to either scene on purpose: GD can pause the transition scene
+// not parented to either scene on purpose: gd can pause the transition scene
 // itself, freezing the completing selector into a permanent lock.
 class LevelTransitionWatchdog final : public CCNode {
 public:
@@ -48,7 +48,7 @@ public:
         if (!transition) return;
 
         m_transition = transition;
-        // Normal completion happens at duration. The extra second tolerates a
+        // normal completion happens at duration. the extra second tolerates a
         // slow scene construction frame without making a real lock noticeable.
         auto timeout = std::max(1.5f, duration + 1.f);
         m_deadline = std::chrono::steady_clock::now() +
@@ -173,7 +173,7 @@ public:
         if (!node || !action) return;
         action->setTag(m_tag);
         node->runAction(action);
-        // Paused targets freeze newly added actions; resume so the exit
+        // paused targets freeze newly added actions; resume so the exit
         // animation advances (no-op when not paused).
         if (auto* manager = node->getActionManager()) manager->resumeTarget(node);
         m_actions.push_back({node, action});
@@ -195,7 +195,7 @@ private:
     std::vector<TrackedAction> m_actions;
 };
 
-// Enter fakes running instead of calling onEnter: nodes attached mid-transition
+// enter fakes running instead of calling onenter: nodes attached mid-transition
 // must enter, while the scene itself enters for real at the deferred switch.
 void setRunningRecursive(CCNode* node, bool running) {
     if (!node) return;
@@ -246,8 +246,8 @@ void centerMenu(CCNode* menu, bool useScreenCenter = true) {
 }
 
 class LevelEffectsTransitionScene final : public CCTransitionScene {
-// manual handoff, not CCTransitionScene's: the switch defers to
-// switchToIncoming, so base enter/exit are skipped.
+// manual handoff, not cctransitionscene's: the switch defers to
+// switchtoincoming, so base enter/exit are skipped.
 public:
     static LevelEffectsTransitionScene* create(
         CCScene* destination,
@@ -345,7 +345,7 @@ public:
         unscheduleUpdate();
         unschedule(schedule_selector(LevelEffectsTransitionScene::switchToIncoming));
         CCScene::onExit();
-        // CCTransitionScene leaves input enabled on exit; never restore a
+        // cctransitionscene leaves input enabled on exit; never restore a
         // stale `false` from an overlapping transition.
         CCTouchDispatcher::get()->setDispatchEvents(true);
 
@@ -992,7 +992,7 @@ private:
         }
     }
 
-    // Cascade opacity is not guaranteed on GD's layers, so the layer and each
+    // cascade opacity is not guaranteed on gd's layers, so the layer and each
     // child fade on their own.
     void animateOverlayMenu(CCNode* overlay) {
         if (!overlay) return;
@@ -1061,7 +1061,7 @@ void LevelTransitionWatchdog::check(float) {
     }
     if (std::chrono::steady_clock::now() < m_deadline) return;
 
-    // drop the watchdog's ownership first; the local Ref keeps the transition valid.
+    // drop the watchdog's ownership first; the local ref keeps the transition valid.
     disarm(active.data());
     if (auto* transition = typeinfo_cast<LevelEffectsTransitionScene*>(active.data())) {
         transition->recoverFromWatchdog();

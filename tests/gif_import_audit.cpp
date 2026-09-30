@@ -1,12 +1,10 @@
-// Auditoria objeto por objeto del plan que sale del importador. El banco de al
+// auditoria objeto por objeto del plan que sale del importador. el banco de al
 // lado puntua el dibujo entero; este mira cada objeto y dice que aporta: cuanto
 // se ve de el, si lo que pinta ya estaba pintado del mismo color debajo, si con
 // el de al lado sale un solo rectangulo, y si su capa lo deja donde toca.
-//
-// La marca de agua parte objetos en dos a proposito, asi que aqui se deshace
+// la marca de agua parte objetos en dos a proposito, asi que aqui se deshace
 // antes de medir: contarla como desperdicio tapaba el desperdicio de verdad.
-//
-//   g++ -std=c++23 -O2 -o audit tests/gif_import_audit.cpp
+//   g++ -std=c++23 -o2 -o audit tests/gif_import_audit.cpp
 //   ./audit <carpeta-o-imagen> [--mode paint|render|art|blocks] [--dim 64]
 //           [--colors 16] [--budget 12000] [--top 8] [--dump /tmp/previews]
 
@@ -44,7 +42,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-// La rejilla de muestreo con la que se juzga si un objeto aporta. Es la misma que
+// la rejilla de muestreo con la que se juzga si un objeto aporta. es la misma que
 // usa la criba del vectorizador, para que lo que aqui salga sobrando sea de
 // verdad algo que la criba dejo pasar y no un desacuerdo de resolucion.
 constexpr int kAuditScale = 8;
@@ -59,8 +57,8 @@ void writePreview(
     if (!file) return;
     file << "P6\n" << width << ' ' << height << "\n255\n";
     for (std::size_t index = 0; index + 3 < rgba.size(); index += 4) {
-        // Transparent pixels are exported as black so ImageMagick and simple
-        // viewers can inspect the geometry without needing an alpha-aware UI.
+        // transparent pixels are exported as black so imagemagick and simple
+        // viewers can inspect the geometry without needing an alpha-aware ui.
         auto const alpha = rgba[index + 3] / 255.f;
         file.put(static_cast<char>(rgba[index] * alpha));
         file.put(static_cast<char>(rgba[index + 1] * alpha));
@@ -123,8 +121,8 @@ bool sameFloat(float left, float right, float tolerance = 0.002f) {
     return std::abs(left - right) <= tolerance;
 }
 
-// Deshace el marcado: las vueltas de mas del giro y los pares partidos por
-// `splitPrimitive`. Lo que queda es el plan que la geometria produjo de verdad,
+// deshace el marcado: las vueltas de mas del giro y los pares partidos por
+// `splitprimitive`. lo que queda es el plan que la geometria produjo de verdad,
 // que es lo unico que tiene sentido auditar.
 std::size_t undoWatermark(std::vector<Primitive>& objects) {
     for (auto& object : objects) {
@@ -188,8 +186,8 @@ struct Composite {
     int height = 0;
 };
 
-// Pinta de abajo arriba guardando quien manda en cada muestra y quien mandaba
-// justo antes. Con esas dos capas se responde lo unico que importa de un objeto:
+// pinta de abajo arriba guardando quien manda en cada muestra y quien mandaba
+// justo antes. con esas dos capas se responde lo unico que importa de un objeto:
 // que se veria si no estuviera.
 Composite composite(std::vector<Primitive> const& objects, int width, int height) {
     Composite result;
@@ -200,7 +198,7 @@ Composite composite(std::vector<Primitive> const& objects, int width, int height
     result.top.assign(samples, -1);
     result.under.assign(samples, -1);
 
-    // La lista del plan deja de ir ordenada por capa en cuanto absorbPaintRects
+    // la lista del plan deja de ir ordenada por capa en cuanto absorbpaintrects
     // saca las fusiones al principio; el juego dibuja por capa, asi que aqui hay
     // que ordenar igual o el de abajo acaba contado como el de arriba.
     std::vector<std::size_t> order(objects.size());
@@ -253,8 +251,8 @@ struct PlanAudit {
     std::vector<ObjectAudit> perObject;
 };
 
-// Dos rectangulos rectos del mismo color pegados por un lado entero son uno
-// solo. No mira la capa: entre objetos del mismo color el orden no cambia nada.
+// dos rectangulos rectos del mismo color pegados por un lado entero son uno
+// solo. no mira la capa: entre objetos del mismo color el orden no cambia nada.
 bool joinable(Primitive const& first, Primitive const& second) {
     if (first.color != second.color) return false;
     if (first.kind == PrimitiveKind::Circle || second.kind == PrimitiveKind::Circle) {
@@ -283,7 +281,7 @@ bool joinable(Primitive const& first, Primitive const& second) {
     return alongWidth || alongHeight;
 }
 
-// Solape de verdad, no de cajas: dos rectangulos pegados comparten la celda del
+// solape de verdad, no de cajas: dos rectangulos pegados comparten la celda del
 // borde y por caja parecen pisarse, pero ahi no hay nada que ordenar.
 bool shapesOverlap(Primitive const& first, Primitive const& second, int width, int height) {
     auto const a = shapeBox(first, width, height);
@@ -307,8 +305,8 @@ bool shapesOverlap(Primitive const& first, Primitive const& second, int width, i
     return false;
 }
 
-// Prueba de fusion fuerte: `joinable` solo ve dos rectangulos calcados pegados
-// por un lado, y eso casi nunca pasa. Lo que de verdad sobra es la pareja cuya
+// prueba de fusion fuerte: `joinable` solo ve dos rectangulos calcados pegados
+// por un lado, y eso casi nunca pasa. lo que de verdad sobra es la pareja cuya
 // caja comun se puede pintar entera sin ensuciar nada, porque ahi los dos son un
 // rectangulo mas grande aunque no midan lo mismo ni se toquen.
 bool absorbable(
@@ -331,7 +329,7 @@ bool absorbable(
     float const maxX = std::max(first.x + first.width * 0.5f, second.x + second.width * 0.5f);
     float const minY = std::min(first.y - first.height * 0.5f, second.y - second.height * 0.5f);
     float const maxY = std::max(first.y + first.height * 0.5f, second.y + second.height * 0.5f);
-    // Una caja mucho mas grande que lo que los dos ocupan no es una fusion, es
+    // una caja mucho mas grande que lo que los dos ocupan no es una fusion, es
     // pintar de mas: solo cuenta si el hueco que se traga es pequeno.
     float const united = (maxX - minX) * (maxY - minY);
     float const owned = first.width * first.height + second.width * second.height;
@@ -365,7 +363,7 @@ PlanAudit audit(
         ++report.perObject[static_cast<std::size_t>(owner)].visible;
     }
 
-    // Un objeto repite cuando en todo lo que se ve de el ya habia debajo su mismo
+    // un objeto repite cuando en todo lo que se ve de el ya habia debajo su mismo
     // color: quitarlo deja el dibujo identico y se lleva un objeto del nivel.
     std::vector<std::uint8_t> onlyRepeat(objects.size(), 1);
     for (std::size_t sample = 0; sample < view.top.size(); ++sample) {
@@ -401,7 +399,7 @@ PlanAudit audit(
         }
     }
 
-    // Cada objeto solo se puede fundir una vez, asi que se cuentan fusiones y no
+    // cada objeto solo se puede fundir una vez, asi que se cuentan fusiones y no
     // parejas: un rectangulo que casa con cuatro vecinos ahorra uno, no cuatro.
     std::vector<std::uint8_t> fused(objects.size(), 0);
     for (std::size_t i = 0; i < objects.size(); ++i) {
@@ -431,7 +429,7 @@ PlanAudit audit(
     for (auto const& object : objects) ++layerUse[object.layer];
     report.layers = layerUse.size();
 
-    // Empate de capa entre colores distintos que se pisan: el orden 25 no los
+    // empate de capa entre colores distintos que se pisan: el orden 25 no los
     // separa, asi que el juego elige y la previsualizacion no manda.
     for (std::size_t i = 0; i < objects.size(); ++i) {
         for (std::size_t j = i + 1; j < objects.size(); ++j) {
@@ -442,8 +440,8 @@ PlanAudit audit(
         }
     }
 
-    // Inversion: donde manda un color que no es el de la rejilla habiendo debajo
-    // un objeto con el color bueno. Ahi el dibujo esta, pero la capa lo entierra.
+    // inversion: donde manda un color que no es el de la rejilla habiendo debajo
+    // un objeto con el color bueno. ahi el dibujo esta, pero la capa lo entierra.
     auto const& cells = plan.frames.front().cells;
     for (std::size_t sample = 0; sample < view.top.size(); ++sample) {
         auto const owner = view.top[sample];
@@ -606,8 +604,8 @@ int main(int argc, char** argv) {
         std::size_t const before = objects.size();
         std::size_t const rejoined = undoWatermark(objects);
 
-        // Por donde un rectangulo de cada color puede crecer sin cambiar el
-        // dibujo: sus propias celdas y las que otro color tapa despues. El hueco
+        // por donde un rectangulo de cada color puede crecer sin cambiar el
+        // dibujo: sus propias celdas y las que otro color tapa despues. el hueco
         // vacio queda fuera a proposito, que ahi crecer engorda la silueta.
         auto const ranks = paintOrder(
             plan.frames, static_cast<int>(plan.palette.size()), plan.width, plan.height);

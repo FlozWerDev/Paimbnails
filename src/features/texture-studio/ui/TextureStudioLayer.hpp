@@ -8,7 +8,7 @@ namespace paimon::texture_studio {
 
 class SlotsGridView;
 
-// Full-screen pack manager, pushed as its own scene.
+// full-screen pack manager, pushed as its own scene.
 class TextureStudioLayer : public cocos2d::CCLayer {
 public:
     static TextureStudioLayer* create();

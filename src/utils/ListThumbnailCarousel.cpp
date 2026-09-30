@@ -11,7 +11,7 @@
 using namespace geode::prelude;
 
 ListThumbnailCarousel::~ListThumbnailCarousel() {
-    // safety net; real cleanup lives in onExit.
+    // safety net; real cleanup lives in onexit.
     if (m_alive) *m_alive = false;
 }
 
@@ -266,7 +266,7 @@ void ListThumbnailCarousel::onImageLoaded(CCTexture2D* texture, int index) {
 
     m_currentSprite = sprite;
 
-    // 30Hz pan; 60fps precision unneeded.
+    // 30hz pan; 60fps precision unneeded.
     this->unschedule(schedule_selector(ListThumbnailCarousel::updatePan));
     this->schedule(schedule_selector(ListThumbnailCarousel::updatePan), 1.f / 30.f);
 }

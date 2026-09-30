@@ -155,7 +155,7 @@ bool PaimonModulesLayer::init() {
     m_searchInput->setPosition({panelLeft + panelW - 18.f - searchW / 2.f, filterY});
     m_searchInput->setScale(0.74f);
     // plain this: the input is our child and cannot outlive us;
-    // a WeakRef would keep us alive into lock(), mid-callback.
+    // a weakref would keep us alive into lock(), mid-callback.
     m_searchInput->setCallback([this](std::string const& text) {
         if (!this->getParent()) return;
         m_query = text;
@@ -219,7 +219,7 @@ void PaimonModulesLayer::collectVisible() {
         [&](mods::Module const* a, mods::Module const* b) {
             int ra = rank(a->section), rb = rank(b->section);
             if (ra != rb) return ra < rb;
-            // Master rows lead their section.
+            // master rows lead their section.
             bool ma = *a->parent == '\0', mb = *b->parent == '\0';
             if (ma != mb) return ma;
             return std::string_view(a->group) < std::string_view(b->group);

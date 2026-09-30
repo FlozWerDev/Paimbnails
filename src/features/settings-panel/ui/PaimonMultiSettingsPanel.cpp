@@ -52,7 +52,7 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
 
     m_panelBg = paimon::SpriteHelper::safeCreateScale9("GJ_square06.png");
     if (!m_panelBg) {
-        // Fallback when the GD panel texture is unavailable.
+        // fallback when the gd panel texture is unavailable.
         m_panelBg = paimon::SpriteHelper::createColorPanel(
             PANEL_W, PANEL_H, cocos2d::ccColor3B{255, 255, 255}, 255, CORNER_RADIUS
         );
@@ -138,7 +138,7 @@ void PaimonMultiSettingsPanel::buildSidebar() {
     float startY = CONTENT_H - 22.f;
     float spacing = 28.f;
 
-    // Keep this order aligned with the settings groups.
+    // keep this order aligned with the settings groups.
     static const CircleBaseColor catColors[] = {
         CircleBaseColor::Gray,
         CircleBaseColor::Blue,
@@ -287,7 +287,7 @@ void PaimonMultiSettingsPanel::relayoutContent() {
     auto children = contentLayer->getChildren();
     if (!children) return;
 
-    // Virtualized children may be hidden, so use their content sizes directly.
+    // virtualized children may be hidden, so use their content sizes directly.
     float totalH = 0.f;
     for (auto* child : CCArrayExt<CCNode*>(children)) {
         totalH += child->getContentSize().height;

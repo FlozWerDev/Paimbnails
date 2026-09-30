@@ -66,7 +66,7 @@ void VersusSeasonPopup::buildSeason() {
     auto const& season = VersusClient::get().season();
     auto& store = VersusStore::get();
 
-    // The best of the two ladders is the one worth showing as the season badge.
+    // the best of the two ladders is the one worth showing as the season badge.
     auto const& classic = store.profile(Mode::Classic);
     auto const& platformer = store.profile(Mode::Platformer);
     auto const& best = classic.best >= platformer.best ? classic : platformer;

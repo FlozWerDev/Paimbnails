@@ -43,7 +43,7 @@ void ModlyProfilePopup::buildHeader() {
     auto& repo = ModlyRepo::get();
     auto& loc = Localization::get();
 
-    // No banner: placeholder color plays the site's name-gradient role.
+    // no banner: placeholder color plays the site's name-gradient role.
     auto nameColor = avatarColor(m_user.name);
     auto banner = createImageSlot(
         m_user.hasBanner ? repo.bannerUrl(m_user) : "",

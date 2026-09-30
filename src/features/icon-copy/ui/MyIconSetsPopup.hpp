@@ -1,5 +1,5 @@
 #pragma once
-// Your own stylings: the plus saves whatever you are wearing right now, and the
+// your own stylings: the plus saves whatever you are wearing right now, and the
 // list puts any of them back on later.
 
 #include <Geode/Geode.hpp>

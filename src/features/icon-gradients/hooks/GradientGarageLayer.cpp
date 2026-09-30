@@ -1,5 +1,5 @@
-// Shades the garage, 2P and page dolls (cleared while the module is off), after
-// zilko's "Icon Gradients" (independent implementation; idea credit zilko144, unlicensed).
+// shades the garage, 2p and page dolls (cleared while the module is off), after
+// zilko's "icon gradients" (independent implementation; idea credit zilko144, unlicensed).
 
 #include "GradientGarageLayer.hpp"
 #include "../GradientCache.hpp"
@@ -15,7 +15,7 @@ using namespace paimon::icon_gradients;
 
 namespace {
 
-// One gradient channel: which config slot it lives in and which color
+// one gradient channel: which config slot it lives in and which color
 // kind its emptiness is tested against.
 struct GradientLane {
     GradientConfig Gradient::* config;
@@ -39,7 +39,7 @@ void paintEach(std::vector<SimplePlayer*> const& dolls, Gradient const& gradient
         GradientUtils::applyGradient(doll, gradient, false, second, tag);
 }
 
-// Dolls hidden inside a preview (opacity-gated) must not be painted.
+// dolls hidden inside a preview (opacity-gated) must not be painted.
 bool dollShown(SimplePlayer* doll) {
     CCSprite* spr = doll->getChildByType<CCSprite>(0);
     return spr && spr->getOpacity() > 120;
@@ -144,7 +144,7 @@ void GradientGarageLayer::updateGradient() {
         }
     }
 
-    // One-shot re-enable: the module just came back on, repaint the page.
+    // one-shot re-enable: the module just came back on, repaint the page.
     if (std::exchange(f->m_isDisabled, false))
         updatePageIcons();
 
@@ -206,7 +206,7 @@ bool GradientGarageLayer::init() {
 
         if (!sdiEnabled()) return;
 
-        // The 2P swap button lives in the hub rail, hung during the
+        // the 2p swap button lives in the hub rail, hung during the
         // separate-dual init, i.e. before this deferred pass.
         CCNode* menu = paimon::garage_hub::rail(self);
         auto swap = menu ? static_cast<CCMenuItemSpriteExtra*>(menu->getChildByID("swap-2p-button"_spr)) : nullptr;

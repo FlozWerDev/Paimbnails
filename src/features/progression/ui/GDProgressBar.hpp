@@ -6,19 +6,19 @@
 
 namespace paimon::progression {
 
-// Game-style bar: round caps at any width, per-frame work is one size change.
+// game-style bar: round caps at any width, per-frame work is one size change.
 class GDProgressBar : public cocos2d::CCNode {
 public:
     static GDProgressBar* create(float width, float height);
 
-    // Bare capsule with insets set, for plain (unfilled) bars.
+    // bare capsule with insets set, for plain (unfilled) bars.
     static cocos2d::extension::CCScale9Sprite* makeCapsule();
 
     void setFillColor(cocos2d::ccColor3B color);
     void setProgress(float progress);
     void animateTo(float progress, float delay, float duration);
 
-    // Centred caption, created on first use.
+    // centred caption, created on first use.
     void setText(std::string const& text, float scale, cocos2d::ccColor3B color);
 
     void update(float dt) override;

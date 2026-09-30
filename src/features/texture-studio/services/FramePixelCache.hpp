@@ -31,7 +31,7 @@ public:
                                            std::filesystem::path const& pngPath,
                                            std::string const& frameName);
 
-    // Clamped to a 1 MB floor so a misconfiguration can't disable caching.
+    // clamped to a 1 mb floor so a misconfiguration can't disable caching.
     void setByteBudget(std::size_t bytes);
     std::size_t byteBudget() const;
 

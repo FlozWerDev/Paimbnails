@@ -190,7 +190,7 @@ bool SmoothUIConfigPopup::init() {
 }
 
 void SmoothUIConfigPopup::scheduleRebuild() {
-// The triggering control still lives in the current scroll, so rebuild next frame.
+// the triggering control still lives in the current scroll, so rebuild next frame.
     this->retain();
     Loader::get()->queueInMainThread([this] {
         if (this->getParent()) this->rebuild();

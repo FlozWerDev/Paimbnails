@@ -1,6 +1,6 @@
 #pragma once
 
-// Editor playback on its own FMOD channel, so it never fights the level song
+// editor playback on its own fmod channel, so it never fights the level song
 // or the menu loop for the game channel.
 
 #include <fmod.hpp>
@@ -16,9 +16,9 @@ class EditorMusicPlayer {
 public:
     static EditorMusicPlayer& get();
 
-    // Rebuilds the queue from the library, keeping the current track selected.
+    // rebuilds the queue from the library, keeping the current track selected.
     void refreshQueue();
-    // Refresh once when empty; false when still empty.
+    // refresh once when empty; false when still empty.
     bool ensureQueue();
     std::vector<std::string> const& queue() const { return m_queue; }
 
@@ -45,12 +45,12 @@ public:
     int positionMs() const;
     int lengthMs() const;
 
-    // A playtest silences the panel; ending it drops the song back where it was.
+    // a playtest silences the panel; ending it drops the song back where it was.
     void suspend();
     void resumeFromSuspend();
     bool isSuspended() const { return m_suspended; }
 
-    // Advances the queue when a track ends. Driven by the panel tick.
+    // advances the queue when a track ends. driven by the panel tick.
     void tick();
 
 private:
@@ -78,7 +78,7 @@ private:
 
     bool m_paused = false;
     bool m_suspended = false;
-    // Position kept while suspended: the channel dies with the sound if the
+    // position kept while suspended: the channel dies with the sound if the
     // playtest outlives it, so resuming needs somewhere to seek back to.
     int m_suspendedPosMs = 0;
 };

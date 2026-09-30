@@ -34,7 +34,7 @@ char const* difficultySprite(int difficulty) {
     }
 }
 
-// One side of the card: badge, name and the record under it, drawn the same for
+// one side of the card: badge, name and the record under it, drawn the same for
 // both players so the modal reads as a mirror.
 CCNode* buildSide(std::string const& name, RankInfo const& rank, int wins, int losses) {
     auto* side = CCNode::create();
@@ -103,13 +103,13 @@ void VersusMatchPopup::onExit() {
 void VersusMatchPopup::rebuild() {
     auto const phase = VersusSession::get().phase();
 
-    // The level takes over from here; idle and finished have no modal.
+    // the level takes over from here; idle and finished have no modal.
     if (phase == Phase::Countdown || phase == Phase::Running ||
         phase == Phase::Idle || phase == Phase::Finished) {
         Popup::onClose(nullptr);
         return;
     }
-    // A veto lands without the phase moving, so the offers are part of what
+    // a veto lands without the phase moving, so the offers are part of what
     // counts as already drawn.
     uint32_t const offers = offerStamp();
     if (phase == m_drawn && offers == m_drawnOffers && m_page) return;
@@ -348,7 +348,7 @@ void VersusMatchPopup::onBan(CCObject* sender) {
 }
 
 void VersusMatchPopup::onPlay(CCObject*) {
-    // Close first: pushing the scene while the modal is still animating out
+    // close first: pushing the scene while the modal is still animating out
     // leaves the fade running over the level.
     Popup::onClose(nullptr);
     VersusSession::get().enterLevel();

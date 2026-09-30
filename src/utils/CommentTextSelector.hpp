@@ -7,7 +7,7 @@
 
 namespace paimon {
 
-// click-drag selection overlay; attach via attach() after loadFromComment.
+// click-drag selection overlay; attach via attach() after loadfromcomment.
 class CommentTextSelector : public cocos2d::CCLayer {
 protected:
     struct DisplaySegment {
@@ -26,7 +26,7 @@ protected:
 
     std::string m_fullText;
     std::string m_fontFile = "chatFont.fnt";
-    cocos2d::CCNode* m_textNode = nullptr;       // the emote overlay or TextArea/label
+    cocos2d::CCNode* m_textNode = nullptr;       // the emote overlay or textarea/label
 
     bool m_selecting = false;
     cocos2d::CCPoint m_startPos{0.f, 0.f};

@@ -87,7 +87,7 @@ void cleanupAudioCache(const std::string& videoPath) {
     }
 }
 
-// Fallback for platforms with no native audio backend (e.g. Linux).
+// fallback for platforms with no native audio backend (e.g. linux).
 #if !defined(USE_MEDIA_FOUNDATION) && !defined(USE_MEDIA_NDK) && !defined(USE_AV_FOUNDATION)
 AudioPcm extractAudioToPcm(const std::string&) { return {}; }
 #endif

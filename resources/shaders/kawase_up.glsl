@@ -1,5 +1,5 @@
-// Dual Kawase upsample: 4 cardinal(×2) + 4 diagonal(×1) = ÷12.
-// keep weights in sync with fragmentShaderPaimonBlurUp.
+// dual kawase upsample: 4 cardinal(×2) + 4 diagonal(×1) = ÷12.
+// keep weights in sync with fragmentshaderpaimonblurup.
 #ifdef GL_ES
 precision mediump float;
 #endif

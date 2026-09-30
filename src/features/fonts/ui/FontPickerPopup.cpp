@@ -463,7 +463,7 @@ void FontPickerPopup::onCustomApply(CCObject*) {
 }
 
 void FontPickerPopup::onRemoveFont(CCObject*) {
-    // Empty tag removes the current font.
+    // empty tag removes the current font.
     if (m_onSelect) m_onSelect("");
 
     if (m_previewFontSprite) {

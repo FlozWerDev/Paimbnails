@@ -10,14 +10,14 @@
 
 namespace paimon::editorphysics {
 
-// Both backends below compile to vanilla Geometry Dash objects, with no
+// both backends below compile to vanilla geometry dash objects, with no
 // custom runtime.
 enum class PhysicsBackend {
     Baked,
     Reactive,
 };
 
-// Advanced Follow counts speed in blocks per second while the solver works in
+// advanced follow counts speed in blocks per second while the solver works in
 // pixels, so every speed the graph writes goes through this.
 constexpr float kPixelsPerSpeedUnit = 30.f;
 
@@ -44,7 +44,7 @@ char const* backendName(PhysicsBackend backend);
 char const* presetName(NativePreset preset);
 NativePreset cyclePreset(NativePreset preset, int direction);
 
-// The axis-aligned box the graph builds its Collision Blocks and its four
+// the axis-aligned box the graph builds its collision blocks and its four
 // sensors around.
 struct NativeBounds {
     float minX = 0.f;
@@ -98,8 +98,8 @@ enum class CollisionPeer {
 
 constexpr std::size_t kNativeAllObjects = std::numeric_limits<std::size_t>::max();
 
-// Small, serializable IR: only fields present in GD 2.2081's native save format,
-// so the emitter needs no PlayLayer hook or custom runtime object.
+// small, serializable ir: only fields present in gd 2.2081's native save format,
+// so the emitter needs no playlayer hook or custom runtime object.
 struct NativeNode {
     NativeNodeKind kind = NativeNodeKind::Spawn;
     Vec2 position;
@@ -126,8 +126,8 @@ struct NativeNode {
     float duration = 0.f;
     float rotationDegrees = 0.f;
     int times360 = 0;
-    // Advanced Follow mode 2 exposes velocity, acceleration and friction.
-    // Start mode follows GD's Init(0), Set(1), Add(2) selector.
+    // advanced follow mode 2 exposes velocity, acceleration and friction.
+    // start mode follows gd's init(0), set(1), add(2) selector.
     int followMode = 1;
     int startMode = 1;
 

@@ -12,9 +12,7 @@
 
 namespace paimon::versus {
 
-// The friendly side of the mode: open a room and hand the code out, or type
-// somebody's code or name and go straight at them. Nothing here touches Elo,
-// which is the whole reason it exists next to the ladder.
+// friendly rooms leave ladder ratings unchanged.
 class VersusFriendlyPopup : public geode::Popup {
 public:
     static VersusFriendlyPopup* create(Mode mode);

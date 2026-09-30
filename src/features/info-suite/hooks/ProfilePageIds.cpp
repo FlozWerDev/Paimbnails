@@ -1,5 +1,5 @@
-// Visible IDs on the profile page: the user id and account id under the
-// username, which is where GD already leaves a gap before the stat row.
+// visible ids on the profile page: the user id and account id under the
+// username, which is where gd already leaves a gap before the stat row.
 
 #include "../InfoModule.hpp"
 #include "../services/IdBadge.hpp"
@@ -34,7 +34,7 @@ class $modify(PaimonInfoSuiteProfilePage, ProfilePage) {
         if (!layer) return;
         if (auto* old = layer->getChildByID(kBadgeID)) old->removeFromParent();
 
-        // An account id of 0 means an unregistered (green) player: only the
+        // an account id of 0 means an unregistered (green) player: only the
         // user id exists, so do not print a misleading "acc 0".
         std::string text = score->m_accountID > 0
             ? fmt::format("user {}  -  acc {}", score->m_userID, score->m_accountID)

@@ -69,12 +69,12 @@ std::string tr(char const* key, char const* fallback = "") {
     return value;
 }
 
-// Only https:// and mp: count; http:// auto-upgrades.
+// only https:// and mp: count; http:// auto-upgrades.
 bool isExternalUrl(std::string const& v) {
     return v.rfind("https://", 0) == 0 || v.rfind("mp:", 0) == 0;
 }
 
-// Asset keys: ^[a-z0-9_]{2,32}$ (no regex).
+// asset keys: ^[a-z0-9_]{2,32}$ (no regex).
 bool isValidAssetKey(std::string const& v) {
     if (v.size() < 2 || v.size() > 32) return false;
     for (auto ch : v) {
@@ -598,7 +598,7 @@ bool DiscordConfigPopup::init() {
 
     std::vector<CCNode*> cards;
 
-    // Idle detection is Windows-only.
+    // idle detection is windows-only.
     std::string idleDesc = tr("discord.idle_desc", "Switch to idle when the game loses focus")
         + " " + tr("discord.windows_only", "(Windows only)");
 
@@ -626,7 +626,7 @@ bool DiscordConfigPopup::init() {
     m_settingTogglers.push_back(tIdle);
     m_settingToggleKeys.push_back("discord-rpc-idle-when-unfocused");
 
-    // Older builds saved other values; clamp to a valid activity type.
+    // older builds saved other values; clamp to a valid activity type.
     {
         auto savedType = gset<std::string>("discord-rpc-activity-type");
         if (savedType != "Playing" && savedType != "Listening"
@@ -690,7 +690,7 @@ bool DiscordConfigPopup::init() {
     m_settingToggleKeys.push_back("discord-rpc-override-state");
 
     auto makePickHandler = [this, touch](bool isLarge) {
-        // Keep popup alive during async pick.
+        // keep popup alive during async pick.
         this->retain();
         auto* self = this;
         pt::pickImage([self, isLarge, touch](geode::Result<std::optional<std::filesystem::path>> result) {
@@ -741,7 +741,7 @@ bool DiscordConfigPopup::init() {
                     }
                     return;
                 }
-                // Discord fetches this HTTPS URL as external image.
+                // discord fetches this https url as external image.
                 sset<std::string>(key.c_str(), urlOrErr);
                 if (targetInput) targetInput->setString(urlOrErr);
                 touch();
@@ -865,7 +865,7 @@ void DiscordConfigPopup::updatePreview() {
     if (!enabled) {
         details = tr("discord.preview_disabled", "Rich Presence is disabled");
     } else if (priv) {
-        // Private mode runs before overrides (mirrors manager).
+        // private mode runs before overrides (mirrors manager).
         details = tr("discord.preview_private", "Playing Geometry Dash");
         state = tr("discord.preview_private_state", "(private mode: no extra info)");
     } else {
@@ -878,7 +878,7 @@ void DiscordConfigPopup::updatePreview() {
             state = gset<std::string>("discord-rpc-custom-state");
         }
         if (state.empty() && gset<bool>("discord-rpc-show-progress")) {
-            // Static example: only best % is sent, never attempts.
+            // static example: only best % is sent, never attempts.
             state = "Stereo Madness (Best 34%)";
         }
     }
@@ -931,7 +931,7 @@ void DiscordConfigPopup::onExit() {
 }
 
 void DiscordConfigPopup::scrollWheel(float x, float y) {
-    // Lower speed so global smooth scroll doesn't amplify it.
+    // lower speed so global smooth scroll doesn't amplify it.
     if (paimon::configkit::queueWheelScroll(m_scroll, x, y, m_scrollTargetY, m_scrollTargetSet, 12.f)) return;
 }
 
@@ -1003,7 +1003,7 @@ void DiscordConfigPopup::onResetDefaults(CCObject*) {
             if (m_smallImageKeyInput) m_smallImageKeyInput->setString("");
             if (m_smallTextInput) m_smallTextInput->setString("");
 
-            // Sync widgets to defaults; toggle() only flips visual state.
+            // sync widgets to defaults; toggle() only flips visual state.
             auto defaultFor = [](std::string const& key) {
                 if (key == "discord-rpc-private-mode") return false;
                 if (key == "discord-rpc-override-details") return false;

@@ -5,7 +5,7 @@
 
 namespace paimon::quickhub {
 
-// Ctrl-hold radial menu: angular sectors select, center cancels.
+// ctrl-hold radial menu: angular sectors select, center cancels.
 
 class QuickHubRadial : public cocos2d::CCLayer {
 public:

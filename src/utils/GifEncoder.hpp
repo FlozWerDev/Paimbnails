@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <vector>
 
-// minimal animated GIF for .ani cursors.
+// minimal animated gif for .ani cursors.
 
 namespace paimon::gif {
 
@@ -11,7 +11,7 @@ struct EncodeFrame {
     int width = 0;
     int height = 0;
     int delayMs = 100;
-    std::vector<uint8_t> rgba;   // width*height*4 RGBA8888 (top-down)
+    std::vector<uint8_t> rgba;   // width*height*4 rgba8888 (top-down)
 };
 
 // empty on failure.

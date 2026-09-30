@@ -9,7 +9,7 @@ namespace {
 
 constexpr uint64_t kMul = 6364136223846793005ULL;
 
-// Milestones live between these two, so nobody gets a card off the start line
+// milestones live between these two, so nobody gets a card off the start line
 // and nobody gets one they cannot reach.
 constexpr float kFirstMilestone = 8.f;
 constexpr float kLastMilestone = 94.f;
@@ -52,8 +52,8 @@ std::vector<float> rollMilestones(uint64_t seed) {
     float const span = kLastMilestone - kFirstMilestone;
     float const slack = span - kMilestoneGap * static_cast<float>(count - 1);
 
-    // Hand each gap a share of the slack, then walk them out from the first
-    // milestone: every pair ends up at least kMilestoneGap apart by construction.
+    // hand each gap a share of the slack, then walk them out from the first
+    // milestone: every pair ends up at least kmilestonegap apart by construction.
     std::vector<float> shares(count);
     float total = 0.f;
     for (auto& share : shares) {
@@ -92,7 +92,7 @@ CardId rollCard(uint64_t seed, int milestone, uint8_t modeMask, float deficit, b
         }
     }
 
-    // A rarity can end up empty for this mode (Skull and Beacon are platformer
+    // a rarity can end up empty for this mode (skull and beacon are platformer
     // only), so walk down until something is playable.
     for (int step = 0; step < 4; step++) {
         std::vector<CardDef const*> pool;

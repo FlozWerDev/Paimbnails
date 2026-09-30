@@ -16,7 +16,7 @@ class $modify(ForYouEndLevelLayer, EndLevelLayer) {
     void customSetup() {
         EndLevelLayer::customSetup();
 
-        // next tick: stay out of the levelComplete achievement stack
+        // next tick: stay out of the levelcomplete achievement stack
         int levelID = 0;
         if (auto* pl = PlayLayer::get(); pl && pl->m_level) {
             levelID = pl->m_level->m_levelID.value();

@@ -1,8 +1,4 @@
-"""Headless GLES2 regression. Run with python3 tests/death_animation_shader_regression.py.
-
-Requires Mesa EGL/GLES2 shared libraries; no third-party Python packages.
-Checks actual shader compilation, linking, and pixels for every animation.
-"""
+"""gles2 pixel regression; requires mesa egl/gles2 shared libraries."""
 import ctypes as ct
 import os
 from pathlib import Path
@@ -42,7 +38,7 @@ def shader(kind, source):
 def run():
     display = api(egl, "eglGetDisplay", Pointer, Pointer)(None)
     assert api(egl, "eglInitialize", UInt, Pointer, Pointer, Pointer)(display, None, None)
-    # Pbuffer surface, GLES2, RGBA8 (alpha must not be discarded).
+    # pbuffer surface, gles2, rgba8 (alpha must not be discarded).
     attributes = (Int * 13)(0x3033, 1, 0x3040, 4, 0x3024, 8, 0x3023, 8,
                             0x3022, 8, 0x3021, 8, 0x3038)
     config, count = Pointer(), Int()
@@ -86,7 +82,7 @@ def run():
     api(gl, "glUniform3f", None, Int, Float, Float, Float)(
         location(program, b"u_tint"), 0.4, 0.8, 1.0
     )
-    # Retain client-side vertex arrays until rendering has finished.
+    # retain client-side vertex arrays until rendering has finished.
     arrays = []
     for name, size, data in [
         (b"a_position", 2, [-1, -1, 1, -1, -1, 1, 1, 1]),

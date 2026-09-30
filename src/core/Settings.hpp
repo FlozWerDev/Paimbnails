@@ -12,7 +12,7 @@ namespace paimon::settings {
 namespace internal {
     inline std::atomic<uint64_t> g_settingsVersion{0};
 
-// Bump after writes mirrored by hot-path caches; otherwise changes stay stale
+// bump after writes mirrored by hot-path caches; otherwise changes stay stale
 // until restart.
     inline void invalidateSettingsCache() {
         g_settingsVersion.fetch_add(1, std::memory_order_relaxed);
@@ -158,19 +158,19 @@ namespace video {
     inline bool disableVideoChunks() {
         return geode::Mod::get()->getSavedValue<bool>("disable-video-chunks", true);
     }
-// 0=Auto, 50=Low, 75=Medium, 100=High.
+// 0=auto, 50=low, 75=medium, 100=high.
     inline int videoQuality() {
         return geode::Mod::get()->getSavedValue<int>("video-quality", 0);
     }
-// Longest-side decode cap in pixels; 0 keeps native size.
-// Decode-time scaling also reduces ring-buffer, GL texture, PBO, and FBO memory.
+// longest-side decode cap in pixels; 0 keeps native size.
+// decode-time scaling also reduces ring-buffer, gl texture, pbo, and fbo memory.
     inline int videoMaxDecodeDimension() {
 // snapshot per settings version; dim published before version so concurrent opens never race.
         static std::atomic<int> s_cachedDim{-1};
         static std::atomic<uint64_t> s_ver{UINT64_MAX};
         uint64_t ver = internal::g_settingsVersion.load(std::memory_order_relaxed);
         if (ver == s_ver.load(std::memory_order_acquire)) return s_cachedDim.load(std::memory_order_relaxed);
-// Keep the mapping local to avoid a Settings.hpp/video include cycle.
+// keep the mapping local to avoid a settings.hpp/video include cycle.
         int q = videoQuality();
         int dim = 1920;
         switch (q) {
@@ -189,11 +189,11 @@ namespace video {
     inline float videoBlurIntensity() {
         return geode::Mod::get()->getSavedValue<float>("video-blur-intensity", 0.5f);
     }
-// Degrees: 0, 90, 180, 270.
+// degrees: 0, 90, 180, 270.
     inline int videoRotation() {
         return geode::Mod::get()->getSavedValue<int>("video-rotation", 0);
     }
-// 512 MB allows roughly 2–3 concurrent 4K players.
+// 512 mb allows roughly 2–3 concurrent 4k players.
     inline int maxChunkMemoryMB() {
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
         return geode::Mod::get()->getSavedValue<int>("video-max-chunk-memory-mb", 256);
@@ -210,7 +210,7 @@ namespace video {
 #endif
     }
 
-// Effective FPS = clamp(fpsLimit() / activeCount, minVideoFPS(), fpsLimit()).
+// effective fps = clamp(fpslimit() / activecount, minvideofps(), fpslimit()).
     inline bool adaptiveFPS() {
         return geode::Mod::get()->getSavedValue<bool>("video-adaptive-fps", true);
     }

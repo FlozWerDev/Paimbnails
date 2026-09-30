@@ -6,7 +6,7 @@
 
 namespace paimon::versus {
 
-// What a duel looks like while it is being played: two bars at the top with the
+// what a duel looks like while it is being played: two bars at the top with the
 // icons, the rival's number, the countdown, and the latency of the fast channel.
 class VersusHUDNode : public cocos2d::CCNode {
 public:

@@ -51,7 +51,7 @@ struct ParentChange {
 struct LastEmission {
     WeakRef<LevelEditorLayer> editor;
     std::vector<WeakRef<GameObject>> objects;
-    // Every captured object identifies the authored system. Controlled keeps
+    // every captured object identifies the authored system. controlled keeps
     // only the objects that were dynamic in this particular compilation.
     std::vector<WeakRef<GameObject>> sources;
     std::vector<WeakRef<GameObject>> controlled;
@@ -216,7 +216,7 @@ CCArray* changedSourcesArray(
     return array;
 }
 
-// GD turns a group around its group parent, so a spinning body is traced around
+// gd turns a group around its group parent, so a spinning body is traced around
 // it and not around the centre of mass the solver sampled.
 GameObject* pivotObject(LevelEditorLayer* editor, ResolvedBody const& body, int group) {
     if (auto* parent = editor->tryGetGroupParent(group)) return parent;
@@ -416,9 +416,7 @@ std::optional<std::size_t> matchingEmissionIndex(
     LevelEditorLayer* editor,
     std::vector<ResolvedBody> const& bodies
 ) {
-    // Prefer an exact workspace match. If bodies were added or their motion
-    // roles changed, reusing an object controlled by an older graph still
-    // means that graph must be replaced to avoid two systems moving it.
+    // replace an older motion graph when its objects are reused, so two graphs cannot move the same object.
     for (std::size_t index = g_history.size(); index > 0; --index) {
         auto current = g_history[index - 1].editor.lock();
         if (current && current.data() == editor && sameSources(g_history[index - 1], bodies)) {
@@ -520,7 +518,7 @@ Result<EmitReport> emitToEditor(
         nativeInputs, config.gravity, config.airDrag
     );
 
-    // Nothing moves once every dynamic body fell asleep, so the bake stops
+    // nothing moves once every dynamic body fell asleep, so the bake stops
     // there instead of spending a keyframe per sample on a still scene.
     std::size_t samples = trace.frames.size();
     if (!bakedBodies.empty() && trace.settleTime >= 0.f && samples > 2) {
@@ -685,8 +683,8 @@ Result<EmitReport> emitToEditor(
     report.groups = requiredGroups;
     report.reactiveBodies = reactiveBodies.size();
 
-    // Built through the editor's create path: a loose probe reached
-    // GJEffectManager::getColorSprite with no colour channels and GD crashed.
+    // built through the editor's create path: a loose probe reached
+    // gjeffectmanager::getcolorsprite with no colour channels and gd crashed.
     auto* created = CCArray::create();
     auto abort = [&](std::string message) -> Result<EmitReport> {
         for (auto* item : CCArrayExt<CCObject*>(created)) {
@@ -719,7 +717,7 @@ Result<EmitReport> emitToEditor(
         bool spins = false;
         for (std::size_t sample = 0; sample < samples; ++sample) {
             auto const& pose = trace.frames[sample].poses[index];
-            // Solver angles are counter-clockwise; cocos rotation grows clockwise.
+            // solver angles are counter-clockwise; cocos rotation grows clockwise.
             float const degrees = -pose.angle * kRadiansToDegrees;
             spins = spins || std::abs(degrees) > 0.002f;
 
@@ -735,7 +733,7 @@ Result<EmitReport> emitToEditor(
             if (!keyframe) return abort("Esta version de GD no expone el sistema de keyframes.");
             created->addObject(keyframe);
 
-            // The create path drops the object on the editor grid, so the sampled
+            // the create path drops the object on the editor grid, so the sampled
             // position goes back over it.
             keyframe->setPosition(position);
             keyframe->setRotation(degrees);
@@ -745,8 +743,8 @@ Result<EmitReport> emitToEditor(
             keyframe->m_keyframeGroup = animationID;
             keyframe->m_keyframeIndex = static_cast<int>(sample);
             keyframe->m_targetGroupID = targetGroups[index];
-            // GD stores the duration of the segment LEAVING this keyframe.
-            // Keep the actual timestamps, including a shorter final segment.
+            // gd stores the duration of the segment leaving this keyframe.
+            // keep the actual timestamps, including a shorter final segment.
             keyframe->m_duration = sample + 1 < samples
                 ? trace.frames[sample + 1].time - trace.frames[sample].time : 0.f;
             keyframe->m_spawnDelay = 0.f;
@@ -761,8 +759,8 @@ Result<EmitReport> emitToEditor(
             keyframe->m_lineOpacity = 1.f;
             keyframe->m_easingType = EasingType::None;
             keyframe->m_easingRate = 2.f;
-            // The keyframe format is not documented anywhere, so the first one of
-            // a bake is logged to be read back against what GD stored.
+            // the keyframe format is not documented anywhere, so the first one of
+            // a bake is logged to be read back against what gd stored.
             if (report.keyframes == 0) {
                 log::info("[PhysicsLab] keyframe: {}", std::string(keyframe->getSaveString(editor)));
             }
@@ -783,7 +781,7 @@ Result<EmitReport> emitToEditor(
         animTrigger->setPosition(triggerPosition);
         animTrigger->m_targetGroupID = targetGroups[index];
         animTrigger->m_animationID = animGroups[index];
-        // The animation lasts what the baked slice lasted. Left at whatever a fresh
+        // the animation lasts what the baked slice lasted. left at whatever a fresh
         // trigger carries, the whole fall replayed in a fraction of the time.
         animTrigger->m_duration = trace.frames[samples - 1].time - trace.frames.front().time;
         animTrigger->m_centerGroupID = 0;
@@ -792,7 +790,7 @@ Result<EmitReport> emitToEditor(
         animTrigger->m_timeMod = 1.f;
         animTrigger->m_positionXMod = 1.f;
         animTrigger->m_positionYMod = 1.f;
-        // A body with no spin keeps whatever rotation it already had in the editor.
+        // a body with no spin keeps whatever rotation it already had in the editor.
         animTrigger->m_rotationMod = spins ? 1.f : 0.f;
         animTrigger->m_scaleXMod = 1.f;
         animTrigger->m_scaleYMod = 1.f;

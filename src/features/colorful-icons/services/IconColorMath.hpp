@@ -104,7 +104,7 @@ inline cocos2d::ccColor3B complement(cocos2d::ccColor3B c) {
     return fromHSV(hsv);
 }
 
-// Same (type, id) always maps to the same color (SplitMix64 seed).
+// same (type, id) always maps to the same color (splitmix64 seed).
 inline std::uint64_t splitMix64(std::uint64_t z) {
     z += 0x9E3779B97F4A7C15ULL;
     z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;

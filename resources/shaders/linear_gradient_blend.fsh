@@ -29,7 +29,7 @@ uniform float u_animSpeed;
 uniform float u_animIntensity;
 uniform float u_animDirection;
 
-// layer enums mirror GradientAnimationManager.hpp; don't renumber.
+// layer enums mirror gradientanimationmanager.hpp; don't renumber.
 uniform int u_customCount;
 uniform vec4 u_customLayers[4];
 uniform float u_customPhase[4];

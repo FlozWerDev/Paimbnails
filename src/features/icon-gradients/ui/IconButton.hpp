@@ -24,10 +24,10 @@ private:
 
     bool init(CCObject*, SEL_MenuHandler);
 
-    // Shade the status dot straight from a config; the extra tag picks
+    // shade the status dot straight from a config; the extra tag picks
     // the phase (121 unlocking, 123 settled, 124 fading echo).
     void paintDot(GradientConfig const&, int, bool, int);
-    // Fire onAnimationEnded once the fade settles.
+    // fire onanimationended once the fade settles.
     void settleDot(float);
 
     void onAnimationEnded();

@@ -1,6 +1,6 @@
-// Sonda de fusion: ¿cuantos objetos se ahorran uniendo tiras/bloques
+// sonda de fusion: ¿cuantos objetos se ahorran uniendo tiras/bloques
 // colineales del mismo color sin cambiar ni un pixel cubierto?
-// Uso: g++ -std=c++23 -O2 -o /tmp/merge_probe tests/merge_probe.cpp && /tmp/merge_probe [dims...]
+// uso: g++ -std=c++23 -o2 -o /tmp/merge_probe tests/merge_probe.cpp && /tmp/merge_probe [dims...]
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -33,7 +33,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-// Solo rectangulos rectos del mismo color y capa cuyo envolvente es tambien
+// solo rectangulos rectos del mismo color y capa cuyo envolvente es tambien
 // rectangulo y no tapa centros de otro color: fusion sin cambiar un pixel.
 bool tryMergeBlocks(
     Primitive const& a,
@@ -50,7 +50,7 @@ bool tryMergeBlocks(
     float ay0 = a.y - a.height / 2, ay1 = a.y + a.height / 2;
     float bx0 = b.x - b.width / 2, bx1 = b.x + b.width / 2;
     float by0 = b.y - b.height / 2, by1 = b.y + b.height / 2;
-    // Adyacentes o solapados en ambos ejes (tolerancia de costura).
+    // adyacentes o solapados en ambos ejes (tolerancia de costura).
     if (ax1 < bx0 - 0.05f || bx1 < ax0 - 0.05f) return false;
     if (ay1 < by0 - 0.05f || by1 < ay0 - 0.05f) return false;
     float x0 = std::min(ax0, bx0), x1 = std::max(ax1, bx1);
@@ -58,7 +58,7 @@ bool tryMergeBlocks(
     float areaBox = (x1 - x0) * (y1 - y0);
     float areaSum =
         (ax1 - ax0) * (ay1 - ay0) + (bx1 - bx0) * (by1 - by0);
-    // El envolvente no puede crecer mas de un 5%: nada de pintar de mas.
+    // el envolvente no puede crecer mas de un 5%: nada de pintar de mas.
     if (areaBox > areaSum * 1.05f) return false;
     Primitive m{
         (x0 + x1) / 2, (y0 + y1) / 2, x1 - x0, y1 - y0, 0.f, a.color,
@@ -77,7 +77,7 @@ bool tryMergeBlocks(
     return true;
 }
 
-// Tiras giradas iguales (mismo angulo y grosor), colineales y contiguas: una
+// tiras giradas iguales (mismo angulo y grosor), colineales y contiguas: una
 // sola tira las cubre a las dos si el hueco entre ellas es del mismo color.
 bool tryMergeStrips(
     Primitive const& a,
@@ -100,7 +100,7 @@ bool tryMergeStrips(
     float dx = std::abs(std::cos(ang)), dy = std::abs(std::sin(ang));
     float ux = alongX ? dx : dy;  // eje largo unitario (1er cuadrante)
     float uy = alongX ? dy : dx;
-    // Eje corto: distancia entre centros proyectada; debe ser ~0.
+    // eje corto: distancia entre centros proyectada; debe ser ~0.
     float nx = -uy, ny = ux;
     float relX = b.x - a.x, relY = b.y - a.y;
     if (std::abs(relX * nx + relY * ny) > thickA * 0.5f + 0.05f) return false;

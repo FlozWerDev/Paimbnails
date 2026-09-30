@@ -47,7 +47,7 @@ bool AnimatedTextInput::init(float width, std::string const& placeholder) {
         });
         this->addChild(m_input, 1);
 
-        // Relay Enter presses to onSubmit; everything else keeps flowing to geode.
+        // relay enter presses to onsubmit; everything else keeps flowing to geode.
         if (auto* node = m_input->getInputNode()) {
             m_enterRelay.forward = node->m_delegate;
             geode::WeakRef<AnimatedTextInput> weakSelf = this;
@@ -63,7 +63,7 @@ bool AnimatedTextInput::init(float width, std::string const& placeholder) {
 
     m_typingDot = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
     if (!m_typingDot) {
-        // Robust fallback: a blank CCSprite.
+        // robust fallback: a blank ccsprite.
         m_typingDot = CCSprite::create();
     }
     m_typingDot->setColor({255, 220, 100});
@@ -120,7 +120,7 @@ void AnimatedTextInput::startGlowPulse() {
     if (!m_glow) return;
     m_glow->stopActionByTag(kGlowPulseTag);
 
-    // Pulse: opacity 0 -> 110 -> 60 -> 0 over 0.6s
+    // pulse: opacity 0 -> 110 -> 60 -> 0 over 0.6s
     auto a = CCFadeTo::create(0.10f, 110);
     auto b = CCFadeTo::create(0.20f, 60);
     auto c = CCFadeTo::create(0.30f, 0);
@@ -153,7 +153,7 @@ void AnimatedTextInput::playSendSweep() {
     big->setTag(kGlowPulseTag);
     m_glow->runAction(big);
 
-    // Light streak crossing the input left to right.
+    // light streak crossing the input left to right.
     auto sz = this->getContentSize();
     auto sweep = CCLayerColor::create({150, 220, 255, 100}, 6.f, sz.height);
     sweep->setPosition({-6.f, 0.f});

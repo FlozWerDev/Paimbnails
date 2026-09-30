@@ -7,7 +7,7 @@ inline constexpr std::array<char const*, 12> kAnimationNames = {
     "Supernova", "Vortex", "Prism", "Shockwave", "Embers", "Frost",
     "Glitch", "Solar Flare", "Lotus", "Atom", "Rift", "Stardust"
 };
-// -1: original; 12: random. Invalid saved values fall back to original.
+// -1: original; 12: random. invalid saved values fall back to original.
 int selectedAnimation();
 int resolveAnimation(int selection);
 void prewarmAnimation();

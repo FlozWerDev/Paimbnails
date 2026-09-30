@@ -110,7 +110,7 @@ geode::Result<std::shared_ptr<FusionAsset>> FusionAssetLoader::loadFromMemory(
         asset->animated = gif.frames.size() > 1;
         asset->frames.reserve(gif.frames.size());
 
-        // GIFDecoder already composited disposal: frames are full-canvas.
+        // gifdecoder already composited disposal: frames are full-canvas.
         for (auto const& gf : gif.frames) {
             std::size_t need = static_cast<std::size_t>(gif.width) * gif.height * 4;
             if (gf.pixels.size() < need || gif.width <= 0 || gif.height <= 0) continue;
@@ -132,7 +132,7 @@ geode::Result<std::shared_ptr<FusionAsset>> FusionAssetLoader::loadFromMemory(
         return Ok(std::move(asset));
     }
 
-    // Static path: stb via ImageBuffer (PNG/JPG/WebP/BMP/TGA/…).
+    // static path: stb via imagebuffer (png/jpg/webp/bmp/tga/…).
     auto imgRes = ImageBuffer::loadFromMemory(bytes);
     if (!imgRes) {
         return Err("FusionAsset: {}", imgRes.unwrapErr());

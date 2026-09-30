@@ -1,4 +1,4 @@
-// dual Kawase 12-tap single pass for GIFs; keep in sync with fragmentShaderBlurSinglePass inline.
+// dual kawase 12-tap single pass for gifs; keep in sync with fragmentshaderblursinglepass inline.
 #ifdef GL_ES
 precision mediump float;
 #endif

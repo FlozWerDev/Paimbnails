@@ -30,7 +30,7 @@ protected:
     cocos2d::CCLabelBMFont* m_endConvLabel = nullptr;
     cocos2d::CCNode* m_waveformContainer = nullptr;
 
-    // Guards so the two-way sync between the draggable selection and the
+    // guards so the two-way sync between the draggable selection and the
     // editable time inputs doesn't fight the user while they type.
     bool m_suppressTimeInput = false;
     bool m_editingTimeInput  = false;

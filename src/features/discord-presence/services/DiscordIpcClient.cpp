@@ -29,32 +29,32 @@ constexpr uint32_t kOpHandshake = 0;
 constexpr uint32_t kOpFrame = 1;
 constexpr uint32_t kOpClose = 2;
 
-// Reconnect throttle: don't hammer the IPC endpoint when Discord is closed.
+// reconnect throttle: don't hammer the ipc endpoint when discord is closed.
 constexpr std::chrono::seconds kReconnectCooldown(15);
 
-// POSIX send: bound EAGAIN spinning with poll() in short slices.
+// posix send: bound eagain spinning with poll() in short slices.
 constexpr int kSendSliceMs = 100;
 constexpr int kSendBudgetMs = 500;
-// Windows overlapped I/O timeouts: writes must never hang the main thread.
+// windows overlapped i/o timeouts: writes must never hang the main thread.
 constexpr int kPipeWriteTimeoutMs = 500;
 constexpr int kPipeReadTimeoutMs = 100;
-// Cap drained replies so a chatty peer can't spin us forever.
+// cap drained replies so a chatty peer can't spin us forever.
 constexpr size_t kMaxDrainBytes = 64 * 1024;
 constexpr size_t kLogSnippetLen = 200;
 
-// Replies are async; reconnect on ERROR/CLOSE if seen.
+// replies are async; reconnect on error/close if seen.
 constexpr char const* kEvtErrorMarker = "\"evt\":\"ERROR\"";
 constexpr char const* kCloseMarker = "\"CLOSE\"";
 
 #ifndef GEODE_IS_WINDOWS
 #ifdef MSG_NOSIGNAL
-constexpr int kSendFlags = MSG_NOSIGNAL; // survive Discord closing the socket (no SIGPIPE)
+constexpr int kSendFlags = MSG_NOSIGNAL; // survive discord closing the socket (no sigpipe)
 #else
 constexpr int kSendFlags = 0;
 #endif
 #endif
 
-// Explicit little-endian opcode+length header (never rely on host endianness).
+// explicit little-endian opcode+length header (never rely on host endianness).
 std::string buildHeader(uint32_t opcode, uint32_t length) {
     std::string header;
     header.resize(8);
@@ -187,7 +187,7 @@ bool DiscordIpcClient::tryConnect() {
         }
         DWORD err = GetLastError();
         if (err == ERROR_PIPE_BUSY) {
-            // Pipe busy: skip it, the 15s reconnect cooldown retries.
+            // pipe busy: skip it, the 15s reconnect cooldown retries.
             if (WaitNamedPipeA(name.c_str(), NMPWAIT_NOWAIT)) {
                 h = CreateFileA(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
                                 OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
@@ -245,7 +245,7 @@ bool DiscordIpcClient::tryConnect() {
                     int flags = fcntl(fd, F_GETFL, 0);
                     if (flags >= 0) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 #ifdef __APPLE__
-                    int noSigPipe = 1; // SO_NOSIGNAL equivalent: survive Discord restarts
+                    int noSigPipe = 1; // so_nosignal equivalent: survive discord restarts
                     (void)::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, sizeof(noSigPipe));
 #endif
                     m_socket = fd;
@@ -270,7 +270,7 @@ bool DiscordIpcClient::writeFrame(uint32_t opcode, std::string const& payload) {
         size_t left = size;
         while (left > 0) {
             DWORD chunk = left > 65536 ? 65536 : static_cast<DWORD>(left);
-            // Heap alloc: kernel may use OVERLAPPED after timeout.
+            // heap alloc: kernel may use overlapped after timeout.
             OVERLAPPED* ov = new OVERLAPPED{};
             ov->hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
             if (!ov->hEvent) {
@@ -284,7 +284,7 @@ bool DiscordIpcClient::writeFrame(uint32_t opcode, std::string const& payload) {
                 return false;
             }
             if (WaitForSingleObject(ov->hEvent, static_cast<DWORD>(kPipeWriteTimeoutMs)) != WAIT_OBJECT_0) {
-                // Timeout: cancel, tear down, leak ov to avoid use-after-free.
+                // timeout: cancel, tear down, leak ov to avoid use-after-free.
                 CancelIoEx(pipe, ov);
                 CloseHandle(ov->hEvent);
                 geode::log::warn("[DiscordIPC] pipe write timed out, leaking OVERLAPPED on purpose");
@@ -329,7 +329,7 @@ bool DiscordIpcClient::writeFrame(uint32_t opcode, std::string const& payload) {
                 if (errno == EPIPE || errno == ECONNRESET) return false;
                 if (errno != EAGAIN && errno != EWOULDBLOCK) return false;
             }
-            // EAGAIN: wait writable in short slices, bounded budget.
+            // eagain: wait writable in short slices, bounded budget.
             pollfd pfd{};
             pfd.fd = m_socket;
             pfd.events = POLLOUT;
@@ -349,7 +349,7 @@ bool DiscordIpcClient::writeFrame(uint32_t opcode, std::string const& payload) {
 }
 
 bool DiscordIpcClient::drainReads() {
-    // Drain replies so OS buffer doesn't fill; false means peer dead.
+    // drain replies so os buffer doesn't fill; false means peer dead.
     std::string drained;
     char buf[2048];
 #ifdef GEODE_IS_WINDOWS
@@ -362,7 +362,7 @@ bool DiscordIpcClient::drainReads() {
         }
         if (avail == 0) break;
         DWORD toRead = avail < static_cast<DWORD>(sizeof(buf)) ? avail : static_cast<DWORD>(sizeof(buf));
-        // Heap alloc: same leak-on-timeout as writeFrame.
+        // heap alloc: same leak-on-timeout as writeframe.
         OVERLAPPED* ov = new OVERLAPPED{};
         ov->hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
         if (!ov->hEvent) {
@@ -380,7 +380,7 @@ bool DiscordIpcClient::drainReads() {
         if (WaitForSingleObject(ov->hEvent, static_cast<DWORD>(kPipeReadTimeoutMs)) != WAIT_OBJECT_0) {
             CancelIoEx(pipe, ov);
             CloseHandle(ov->hEvent);
-            // Leak ov on purpose (see writeFrame).
+            // leak ov on purpose (see writeframe).
             geode::log::warn("[DiscordIPC] pipe read timed out, leaking OVERLAPPED on purpose");
             return false;
         }
@@ -399,12 +399,12 @@ bool DiscordIpcClient::drainReads() {
         if (n < 0) {
             if (errno == EINTR) continue;
             if (errno == ECONNRESET || errno == EPIPE) return false;
-            break; // EAGAIN means drained.
+            break; // eagain means drained.
         }
         drained.append(buf, static_cast<size_t>(n));
     }
 #endif
-    // Force reconnect on ERROR/CLOSE reply.
+    // force reconnect on error/close reply.
     if (drained.find(kEvtErrorMarker) != std::string::npos) {
         geode::log::warn("[DiscordIPC] Discord replied ERROR, forcing reconnect: {}",
                          drained.substr(0, kLogSnippetLen));
@@ -424,7 +424,7 @@ bool DiscordIpcClient::ensureConnected() {
     if (m_connected) return true;
     if (m_clientID.empty()) return false;
 
-    // steady_clock: wall-clock jumps (NTP/sleep) must not change the throttle.
+    // steady_clock: wall-clock jumps (ntp/sleep) must not change the throttle.
     auto now = std::chrono::steady_clock::now();
     if (m_lastConnectAttempt != std::chrono::steady_clock::time_point{} &&
         now - m_lastConnectAttempt < kReconnectCooldown) {
@@ -483,7 +483,7 @@ void DiscordIpcClient::close() {
 #ifdef GEODE_IS_WINDOWS
     if (m_pipe) {
         if (m_connected) writeFrame(kOpClose, "{}");
-        // writeFrame may already have torn the pipe down on a write timeout.
+        // writeframe may already have torn the pipe down on a write timeout.
         if (m_pipe) {
             CloseHandle(static_cast<HANDLE>(m_pipe));
             m_pipe = nullptr;
@@ -496,7 +496,7 @@ void DiscordIpcClient::close() {
         m_socket = -1;
     }
 #endif
-    // Only tearing down a live connection counts as a generation change.
+    // only tearing down a live connection counts as a generation change.
     if (m_connected) {
         ++m_connectionGeneration;
     }

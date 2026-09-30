@@ -33,7 +33,7 @@ CCMenu* rowMenu(CCNode* row) {
     return menu;
 }
 
-// Row on a GD-style plate.
+// row on a gd-style plate.
 CCNode* plateRow(float width, float height) {
     auto* row = CCNode::create();
     row->setAnchorPoint({0.f, 0.f});
@@ -45,7 +45,7 @@ CCNode* plateRow(float width, float height) {
     return row;
 }
 
-// Level-editor arrow with a common fallback.
+// level-editor arrow with a common fallback.
 CCSprite* editorArrow(char const* editorFrame, float rotationFallback) {
     if (auto* spr = paimon::SpriteHelper::safeCreateWithFrameName(editorFrame)) {
         return spr;
@@ -96,7 +96,7 @@ CCTexture2D* checkerTexture() {
     return s_checker;
 }
 
-// Drop the board on GL reload; the texture dies with the context.
+// drop the board on gl reload; the texture dies with the context.
 void resetCheckerTexture() {
     s_checker = nullptr;
 }
@@ -167,7 +167,7 @@ CCNode* makeZoneChips(float width, std::vector<ZoneChip> const& zones,
         holder->setAnchorPoint({0.5f, 0.5f});
         holder->setContentSize({chipW, kChipH});
 
-// Vanilla-style zone tabs.
+// vanilla-style zone tabs.
         auto* face = kit::makeTabFace(zone.label.c_str(), isSelected, chipW, kChipH);
         if (face) {
             face->setPosition({chipW / 2.f, kChipH / 2.f});
@@ -218,7 +218,7 @@ CCNode* makeLayerRow(float width, LayerRowSpec spec) {
     row->setAnchorPoint({0.f, 0.f});
     row->setContentSize({width, kRowH});
 
-// Green marks the active layer, matching GD's active-state color.
+// green marks the active layer, matching gd's active-state color.
     if (auto* panel = kit::makePlate(width, kRowH,
             spec.selected ? ccColor3B{150, 240, 160} : ccColor3B{255, 255, 255},
             spec.selected ? 255 : 200)) {
@@ -228,7 +228,7 @@ CCNode* makeLayerRow(float width, LayerRowSpec spec) {
 
     auto* menu = rowMenu(row);
 
-// Eye toggle compares with and without the layer.
+// eye toggle compares with and without the layer.
     float x = 15.f;
     if (auto* eye = CCSprite::createWithSpriteFrameName(
             spec.visible ? "GJ_checkOn_001.png" : "GJ_checkOff_001.png")) {
@@ -240,7 +240,7 @@ CCNode* makeLayerRow(float width, LayerRowSpec spec) {
     }
     x += 17.f;
 
-// Thumbnail and name share one large selection target.
+// thumbnail and name share one large selection target.
     float const nameW = std::max(24.f, width - x - kThumb - 92.f);
     auto* hit = CCNode::create();
     hit->setAnchorPoint({0.f, 0.5f});
@@ -274,7 +274,7 @@ CCNode* makeLayerRow(float width, LayerRowSpec spec) {
     selectBtn->setPosition({x, kRowH / 2.f});
     menu->addChild(selectBtn);
 
-// Right-aligned lock, order arrows and overflow menu.
+// right-aligned lock, order arrows and overflow menu.
     if (auto* lock = paimon::SpriteHelper::safeCreateWithFrameName(
             spec.locked ? "GJ_lock_001.png" : "GJ_lock_open_001.png")) {
         lock->setScale(0.34f);
@@ -320,7 +320,7 @@ CCNode* makeSwatchGrid(float width, std::vector<ccColor3B> const& colors,
 
     int perRow = std::max(1, static_cast<int>(
         (width - kPadX * 2.f + kGap) / (kSwatch + kGap)));
-    int total = static_cast<int>(colors.size()) + 1;  // Includes "Other".
+    int total = static_cast<int>(colors.size()) + 1;  // includes "other".
     int rows = (total + perRow - 1) / perRow;
 
     float rowH = static_cast<float>(rows) * (kSwatch + kGap) - kGap + 12.f;
@@ -339,7 +339,7 @@ CCNode* makeSwatchGrid(float width, std::vector<ccColor3B> const& colors,
         float cy = rowH - 6.f - kSwatch / 2.f - static_cast<float>(line) * (kSwatch + kGap);
 
         if (i == static_cast<int>(colors.size())) {
-// Open the full color wheel.
+// open the full color wheel.
             auto* holder = CCNode::create();
             holder->setAnchorPoint({0.5f, 0.5f});
             holder->setContentSize({kSwatch, kSwatch});
@@ -416,7 +416,7 @@ CCNode* makeGradientRow(float width, GradientSpec const& spec, char const* butto
 
     auto* row = plateRow(width, kRowH);
 
-// Draw the strip left-to-right so it reflects color order, not gradient angle.
+// draw the strip left-to-right so it reflects color order, not gradient angle.
     GradientSpec stripSpec = spec;
     stripSpec.kind = GradientKind::Linear;
     stripSpec.angleDeg = 0.f;
@@ -512,7 +512,7 @@ CCNode* makeNudgePad(float width, char const* title, char const* desc,
                      std::function<void(float, float)> onNudge,
                      std::function<void()> onCenter) {
     constexpr float kRowH = 78.f;
-// Nudge by one sixtieth of the canvas per tap.
+// nudge by one sixtieth of the canvas per tap.
     constexpr float kStep = 1.f / 60.f;
 
     auto* row = plateRow(width, kRowH);
@@ -533,7 +533,7 @@ CCNode* makeNudgePad(float width, char const* title, char const* desc,
     float const padCX = width - 44.f;
     float const padCY = kRowH / 2.f;
 
-// Reuse the editor's movement arrows.
+// reuse the editor's movement arrows.
     struct Arrow { float dx, dy; char const* frame; float fallbackRotation; };
     constexpr Arrow kArrows[] = {
         {-1.f,  0.f, "edit_leftBtn_001.png",    0.f},

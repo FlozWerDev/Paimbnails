@@ -35,10 +35,10 @@ protected:
     float m_intensity = 4.0f;
     float m_darkness = 0.28f;
 
-    // set on unrecoverable GL failure; visit() no-ops
+    // set on unrecoverable gl failure; visit() no-ops
     bool m_broken = false;
 
-    // steady-state throttle: reuse m_texB, full pass every Nth frame
+    // steady-state throttle: reuse m_texb, full pass every nth frame
     bool m_hasCachedBlur = false;
     float m_lastRadius = -1.f;
     int m_steadyFrames = 0;

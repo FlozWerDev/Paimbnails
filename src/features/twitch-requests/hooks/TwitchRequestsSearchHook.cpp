@@ -35,7 +35,7 @@ class $modify(PaimonTwitchRequestsSearchLayer, LevelSearchLayer) {
             iconName, 1.f, CircleBaseColor::DarkPurple, CircleBaseSize::MediumAlt);
         if (!base) return true;
 
-        // row buttons are ~35px; the MediumAlt base runs larger.
+        // row buttons are ~35px; the mediumalt base runs larger.
         float const baseWidth = base->getContentSize().width;
         if (baseWidth > 0.f) base->setScale(36.f / baseWidth);
 

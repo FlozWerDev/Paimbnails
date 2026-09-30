@@ -124,8 +124,8 @@ CCNode* VersusHUDNode::buildBar(bool own, float y) {
     return row;
 }
 
-// Tug of war is decided by a number nobody can see otherwise, so the rope gets
-// its own strip. Every other format leaves it hidden.
+// tug of war is decided by a number nobody can see otherwise, so the rope gets
+// its own strip. every other format leaves it hidden.
 void VersusHUDNode::buildRope(float y) {
     auto const winSize = CCDirector::get()->getWinSize();
 
@@ -152,7 +152,7 @@ void VersusHUDNode::refresh() {
     auto const& own = session.own();
     auto const& rival = session.rival();
 
-    // Blackout takes both bars away; the Eye is what buys the rival's back.
+    // blackout takes both bars away; the eye is what buys the rival's back.
     auto const& effects = VersusEffects::get();
     bool const blackout = effects.barsHidden();
     if (m_ownRow) m_ownRow->setVisible(!blackout);
@@ -164,7 +164,7 @@ void VersusHUDNode::refresh() {
     if (m_ownLabel) m_ownLabel->setString(fmt::format("{}%", static_cast<int>(own.percent)).c_str());
     if (m_rivalLabel) {
         m_rivalLabel->setString(fmt::format("{}%", static_cast<int>(rival.percent)).c_str());
-        // Dim the rival's bar while they are dead or practising, so the lead
+        // dim the rival's bar while they are dead or practising, so the lead
         // reads at a glance instead of looking like they simply stopped.
         GLubyte const opacity = rival.alive && !rival.practice ? 255 : 120;
         m_rivalLabel->setOpacity(opacity);

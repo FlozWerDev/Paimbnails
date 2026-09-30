@@ -10,9 +10,9 @@
 
 namespace paimon::texture_studio {
 
-// Animated standalone sprite next to static sheets: multi-frame fusions play in ImagePlus/Happy Textures.
+// animated standalone sprite next to static sheets: multi-frame fusions play in imageplus/happy textures.
 struct AnimatedFusionExport {
-    // Zip entry path, e.g. "GJ_playBtn_001.gif" (same basename as the frame).
+    // zip entry path, e.g. "gj_playbtn_001.gif" (same basename as the frame).
     std::string entryName;
     std::vector<std::uint8_t> gifBytes;
     int frameCount = 0;
@@ -23,11 +23,11 @@ struct AnimatedFusionExport {
 
 class AnimatedFusionExporter final {
 public:
-    // Statics already live in the sheet; per-sprite failures log-and-skip so export survives.
+    // statics already live in the sheet; per-sprite failures log-and-skip so export survives.
     static geode::Result<std::vector<AnimatedFusionExport>> exportAll(
         PackExportConfig const& cfg);
 
-    // Encode a single sprite. Empty frames → Err.
+    // encode a single sprite. empty frames → err.
     static geode::Result<AnimatedFusionExport> exportOne(
         PackExportConfig const& cfg,
         std::string const& frameName,
@@ -37,7 +37,7 @@ private:
     AnimatedFusionExporter() = delete;
 };
 
-// Zip entry for a frame name: "foo_001.png" → "foo_001.gif".
+// zip entry for a frame name: "foo_001.png" → "foo_001.gif".
 std::string fusionGifEntryName(std::string const& frameName);
 
 }  // namespace paimon::texture_studio

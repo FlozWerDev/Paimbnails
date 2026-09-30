@@ -9,13 +9,13 @@
 
 namespace paimon::scorecell {
 
-// Icon-color gradient background. Vector/opacity-only: quad never moves, no uncovered corners.
+// icon-color gradient background. vector/opacity-only: quad never moves, no uncovered corners.
 class ScoreGradientLayer : public cocos2d::CCLayerGradient {
     float m_hover = 0.f;
     double m_time = 0.0;
     GLubyte m_baseOpacity = 125;
     float m_idleSpeed = 1.f;
-    // Retriggered pulse: 1 on every mouse-enter rising edge, then exponential decay.
+    // retriggered pulse: 1 on every mouse-enter rising edge, then exponential decay.
     float m_burst = 0.f;
     bool m_wasHovered = false;
 
@@ -39,7 +39,7 @@ class ScoreGradientLayer : public cocos2d::CCLayerGradient {
                 hovered = false;
                 break;
             }
-            // Respect the viewport of scrollable leaderboard lists.
+            // respect the viewport of scrollable leaderboard lists.
             if (geode::cast::typeinfo_cast<cocos2d::CCLayer*>(node) && node != cell) {
                 auto bounds = node->getContentSize();
                 if (bounds.width > 0.f && bounds.height > 0.f) {
@@ -53,13 +53,13 @@ class ScoreGradientLayer : public cocos2d::CCLayerGradient {
         m_hover += (target - m_hover) * (1.f - std::exp(-10.f * dt));
         if (std::abs(m_hover - target) < 0.001f) m_hover = target;
 
-        // Rising edge: restart the pulse so each pass animates.
+        // rising edge: restart the pulse so each pass animates.
         if (hovered && !m_wasHovered) m_burst = 1.f;
         m_wasHovered = hovered;
         m_burst *= std::exp(-3.2f * dt);
         if (m_burst < 0.01f) m_burst = 0.f;
 
-        // Idle sheen: direction sway + faint breath, fading as hover takes over.
+        // idle sheen: direction sway + faint breath, fading as hover takes over.
         constexpr double kTwoPi = 6.283185307179586;
         double ph = std::fmod(m_time * m_idleSpeed * kTwoPi / 5.0, kTwoPi);
         float sway = static_cast<float>(std::sin(ph)) * (1.f - m_hover);

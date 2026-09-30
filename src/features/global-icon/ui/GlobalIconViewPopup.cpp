@@ -20,13 +20,13 @@ namespace {
     constexpr float kCellStride  = 59.f;
     constexpr int   kColumns     = 5;
 
-    // Canonical gamemode order, so everyone's grid reads the same way.
+    // canonical gamemode order, so everyone's grid reads the same way.
     constexpr std::string_view kTypeOrder[] = {
         "cube", "ship", "ball", "ufo", "wave", "robot",
         "spider", "swing", "jetpack", "trail", "death", "fire",
     };
 
-    // GD shows these names untranslated in the garage, so they stay as-is.
+    // gd shows these names untranslated in the garage, so they stay as-is.
     std::string_view typeLabel(std::string_view type) {
         if (type == "cube")    return "Cube";
         if (type == "ship")    return "Ship";
@@ -43,7 +43,7 @@ namespace {
         return "Icon";
     }
 
-    // Types a SimplePlayer can actually draw; the rest get a generic sprite.
+    // types a simpleplayer can actually draw; the rest get a generic sprite.
     bool isPreviewable(IconType type) {
         switch (type) {
             case IconType::Special:
@@ -158,7 +158,7 @@ void GlobalIconViewPopup::buildGrid(CCMenu* menu, std::vector<GlobalIconSlot> co
     for (int i = 0; i < count; i++) {
         int row = i / kColumns;
         int col = i % kColumns;
-        // The last row is centred on its own item count, not on kColumns.
+        // the last row is centred on its own item count, not on kcolumns.
         int inRow = std::min(kColumns, count - row * kColumns);
         float rowWidth = inRow * kCellStride - (kCellStride - kCellSize);
         float startX = (content.width - rowWidth) / 2.f + kCellSize / 2.f;
@@ -225,7 +225,7 @@ void GlobalIconViewPopup::buildGrid(CCMenu* menu, std::vector<GlobalIconSlot> co
         ring->setContentSize({kCellSize + 6.f, kCellSize + 6.f});
         ring->setOpacity(0);
         ring->setColor({255, 226, 120});
-        // Behind the grid menu: a highlight backdrop, not a veil over the icon.
+        // behind the grid menu: a highlight backdrop, not a veil over the icon.
         m_mainLayer->addChild(ring, -1);
         m_selectionRing = ring;
     }
@@ -239,7 +239,7 @@ void GlobalIconViewPopup::selectCell(int index) {
         auto* container = m_cells[index].container;
         auto* item = container ? container->getParent() : nullptr;
         if (item) {
-            // The ring lives on m_mainLayer, the cells on the grid menu; the
+            // the ring lives on m_mainlayer, the cells on the grid menu; the
             // menu sits at the origin so the item position maps straight over.
             m_selectionRing->setPosition(item->getPosition());
             m_selectionRing->setOpacity(200);
@@ -260,7 +260,7 @@ void GlobalIconViewPopup::updateCaption() {
         caption += " - " + slot.packName;
     }
     m_captionLabel->setString(caption.c_str());
-    // Long pack names would otherwise run past the popup edge.
+    // long pack names would otherwise run past the popup edge.
     float maxWidth = kPopupWidth - 40.f;
     float width = m_captionLabel->getContentSize().width;
     m_captionLabel->setScale(width > 0.f ? std::min(0.5f, maxWidth / width) : 0.5f);

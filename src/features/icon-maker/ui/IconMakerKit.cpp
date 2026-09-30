@@ -24,7 +24,7 @@ namespace paimon::icon_maker::gdkit {
 
 namespace {
 
-// child-control priority, compatible with Geode popups' force-priority.
+// child-control priority, compatible with geode popups' force-priority.
 int childTouchPrio() {
     return CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2;
 }
@@ -70,7 +70,7 @@ CCNode* makeRow(float width, float height) {
     return row;
 }
 
-// CCObject wrapper for the vanilla toggle callback.
+// ccobject wrapper for the vanilla toggle callback.
 class ToggleCallback : public CCObject {
 public:
     std::function<void(bool)> m_callback;
@@ -84,12 +84,12 @@ public:
     }
 
     void onToggle(CCObject*) {
-        // isToggled() reports the state BEFORE the click.
+        // istoggled() reports the state before the click.
         if (m_callback && m_toggler) m_callback(!m_toggler->isToggled());
     }
 };
 
-// Slider::create requires a CCNode* target.
+// slider::create requires a ccnode* target.
 class SliderCallback : public CCNode {
 public:
     std::function<void(double)> m_callback;
@@ -132,7 +132,7 @@ std::string formatNumber(double value, int decimals) {
     return fmt::format("{:.{}f}", value, decimals);
 }
 
-// makeNumberRow shared state: slider, box and arrows write the same value.
+// makenumberrow shared state: slider, box and arrows write the same value.
 struct NumberState {
     Slider* slider = nullptr;
     geode::TextInput* input = nullptr;
@@ -644,8 +644,8 @@ geode::ScrollLayer* makeScrollStack(
 
 namespace {
 
-// Each tab holds both faces (green on / gray off) and swaps visibility:
-// ButtonSprite can't re-tint live.
+// each tab holds both faces (green on / gray off) and swaps visibility:
+// buttonsprite can't re-tint live.
 struct TabBarState {
     std::vector<CCNode*> onSprites;
     std::vector<CCNode*> offSprites;

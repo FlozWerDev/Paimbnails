@@ -1,6 +1,6 @@
 #pragma once
 
-// Shared gate for the editor features: featureEnabled(key) reads the mod.json
+// shared gate for the editor features: featureenabled(key) reads the mod.json
 // bool without assuming the setting exists (older configs, stripped builds).
 
 #include <Geode/loader/Mod.hpp>

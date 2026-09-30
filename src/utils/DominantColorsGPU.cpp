@@ -20,10 +20,10 @@ using namespace cocos2d;
 
 namespace {
 
-// file-scope readback FBO so context reload can invalidate it.
+// file-scope readback fbo so context reload can invalidate it.
 GLuint s_readbackFBO = 0;
 
-// k-means on GPU-reduced LAB (32x32, 1024px max).
+// k-means on gpu-reduced lab (32x32, 1024px max).
 
 struct LABPixel {
     float L, a, b;
@@ -152,7 +152,7 @@ static std::pair<DCColor, DCColor> runMiniKMeans(std::vector<LABPixel> const& pi
     DCColor color1 = labToRGB(clusters[0].centroid.L, clusters[0].centroid.a, clusters[0].centroid.b);
 
     // second cluster needs a useful perceptual distance.
-    const float DELTA_THRESHOLD_SQ = 20.0f * 20.0f; // deltaE² ≈ 400
+    const float DELTA_THRESHOLD_SQ = 20.0f * 20.0f; // deltae² ≈ 400
     DCColor color2 = color1;
     for (int i = 1; i < K; ++i) {
         if (clusters[i].count == 0) continue;

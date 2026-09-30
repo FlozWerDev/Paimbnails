@@ -3,7 +3,7 @@
 #include <Geode/cocos/platform/CCGL.h>
 #include <limits>
 
-// GLES2 lacks packed depth-stencil; use OES_packed_depth_stencil.
+// gles2 lacks packed depth-stencil; use oes_packed_depth_stencil.
 #ifndef GL_DEPTH24_STENCIL8
   #ifdef GL_DEPTH24_STENCIL8_OES
     #define GL_DEPTH24_STENCIL8 GL_DEPTH24_STENCIL8_OES
@@ -78,12 +78,12 @@ RenderTexture::RenderTexture(uint32_t width, uint32_t height) : m_width(width), 
 }
 
 RenderTexture::~RenderTexture() {
-    // destructor may run after GL teardown (atexit, hot-reload): handles invalid,
-    // glDelete* can crash some drivers.
+    // destructor may run after gl teardown (atexit, hot-reload): handles invalid,
+    // gldelete* can crash some drivers.
     auto* director = cocos2d::CCDirector::get();
     bool glAlive = director && director->getOpenGLView();
     if (!glAlive) {
-        // context dead: leak the handles, the OS frees them. better than crashing.
+        // context dead: leak the handles, the os frees them. better than crashing.
         return;
     }
 

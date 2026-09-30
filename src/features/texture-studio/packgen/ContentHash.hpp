@@ -1,5 +1,5 @@
 #pragma once
-// PackGen v2 content hashing: FNV-1a64 plus quantized param fingerprints, stable across runs.
+// packgen v2 content hashing: fnv-1a64 plus quantized param fingerprints, stable across runs.
 
 #include <cmath>
 #include <cstddef>
@@ -31,7 +31,7 @@ inline std::uint64_t hashBytes(std::uint8_t const* data, std::size_t size) {
 }
 
 inline std::uint64_t hashCombine(std::uint64_t a, std::uint64_t b) {
-    // SplitMix64-style avalanche on the pair; order-sensitive.
+    // splitmix64-style avalanche on the pair; order-sensitive.
     std::uint64_t z = a + 0x9E3779B97F4A7C15ULL + (b << 6) + (b >> 2);
     z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
     z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
@@ -42,7 +42,7 @@ inline std::uint64_t hashString(std::string_view s) {
     return fnv1a64(s.data(), s.size());
 }
 
-// Quantize to 1/1024 steps; NaN maps to 0 instead of poisoning the key.
+// quantize to 1/1024 steps; nan maps to 0 instead of poisoning the key.
 inline std::int32_t normalizeFloat(float v) {
     if (!std::isfinite(v)) return 0;
     float q = std::lround(v * 1024.0f);
@@ -58,7 +58,7 @@ inline std::uint64_t hashFloat(float v, std::uint64_t seed = kFnvOffsetBasis) {
     return fnv1a64(buf, sizeof(buf), seed);
 }
 
-// Key: content hash plus producing pipeline version; bumping the version (see PackGen.hpp) invalidates all.
+// key: content hash plus producing pipeline version; bumping the version (see packgen.hpp) invalidates all.
 struct NodeKey {
     std::uint64_t hash = kFnvOffsetBasis;
     int version = 0;
@@ -76,7 +76,7 @@ struct NodeKeyHasher {
     }
 };
 
-// Canonical tint fingerprint shared by pipeline, graph and cache: one definition of "same job".
+// canonical tint fingerprint shared by pipeline, graph and cache: one definition of "same job".
 struct TintParams {
     std::uint8_t c1r = 0, c1g = 0, c1b = 0;
     std::uint8_t c2r = 0, c2g = 0, c2b = 0;

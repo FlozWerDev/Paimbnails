@@ -1476,7 +1476,7 @@
     },
     "twitch-requests-title": {
       "name": "Level Requests (Web / Twitch / YouTube / Kick / TikTok)",
-      "description": "Receive level requests from your public web page and configurable live chats. Every enabled source feeds the same local queue.",
+      "description": "Receive level IDs with descriptions from your web page, live chat commands and Twitch rewards. Use Origins in the request screen to route commands, rewards and platforms to separate or shared named queues.",
       "type": "title"
     },
     "twitch-requests-enabled": {
@@ -1530,14 +1530,14 @@
     "twitch-requests-commands": {
       "type": "string",
       "name": "Request Commands",
-      "description": "Commands separated by commas, for example: !req,!request,!sr. Shared by every platform.",
+      "description": "Default commands separated by commas, for example: !req,!request,!sr. Viewers write !req <ID> <description> [video URL]. A platform's command field can override these defaults; leave it empty to inherit them.",
       "default": "!req,!request",
       "enable-if": "twitch-requests-enabled"
     },
     "twitch-requests-max-queue": {
       "type": "int",
       "name": "Maximum Queue Size",
-      "description": "New requests are ignored while the queue is full. Shared by every platform.",
+      "description": "Maximum stored requests across all named queues and platforms, including reviewed requests. New requests are ignored while storage is full. Lowering this limit preserves requests already saved.",
       "default": 100,
       "min": 1,
       "max": 500,

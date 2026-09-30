@@ -1,6 +1,6 @@
 #pragma once
 
-// Runtime gates for the suite; queried live, so toggles apply the next time a screen opens.
+// runtime gates for the suite; queried live, so toggles apply the next time a screen opens.
 
 #include "InfoCompat.hpp"
 #include <Geode/loader/Mod.hpp>
@@ -31,7 +31,7 @@ inline T moduleSetting(std::string_view key, T fallback = T{}) {
     return mod->getSettingValue<T>(std::string(key));
 }
 
-// Detail toggle: only meaningful while its owning module is on.
+// detail toggle: only meaningful while its owning module is on.
 inline bool subEnabled(std::string_view moduleKey, std::string_view key,
                        bool fallback = true) {
     if (!moduleEnabled(moduleKey)) return false;

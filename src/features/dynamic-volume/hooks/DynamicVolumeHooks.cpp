@@ -8,8 +8,8 @@
 using namespace geode::prelude;
 using paimon::dynvol::DynamicVolumeManager;
 
-// A late pre-priority puts us innermost: we only fire once the other playMusic
-// hook (LevelSelectLayer.cpp, Late) lets the call through.
+// a late pre-priority puts us innermost: we only fire once the other playmusic
+// hook (levelselectlayer.cpp, late) lets the call through.
 class $modify(PaimonDynVolFMOD, FMODAudioEngine) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityPre("FMODAudioEngine::playMusic", geode::Priority::VeryLate);
@@ -75,7 +75,7 @@ void shutdownDynamicVolumeTicker() {
         }
     }
     DynamicVolumeManager::get().shutdown();
-    // Leak the Ref on purpose: releasing a CCNode during atexit tears down
+    // leak the ref on purpose: releasing a ccnode during atexit tears down
     // scheduler state that cocos has already destroyed.
     (void)s_dynamicVolumeTicker.take();
 }

@@ -87,7 +87,7 @@ uint32_t addPreset(std::string name, IconSet set) {
     preset.set = std::move(set);
     preset.set.username = trimmed(std::move(name));
     preset.set.copiedAt = preset.savedAt;
-    // Nobody's snapshot, so the row keeps its profile button to itself.
+    // nobody's snapshot, so the row keeps its profile button to itself.
     preset.set.accountID = 0;
 
     uint32_t const id = preset.id;

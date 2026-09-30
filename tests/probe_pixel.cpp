@@ -1,4 +1,4 @@
-// Compara Smooth vs Pixel por imagen (objs/F/H).
+// compara smooth vs pixel por imagen (objs/f/h).
 #include <filesystem>
 #include <iostream>
 #include <string>

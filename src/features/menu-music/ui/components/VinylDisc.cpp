@@ -6,7 +6,7 @@ using namespace cocos2d;
 
 namespace paimon::menumusic {
 
-// drawDot() emits a quad, not a circle: rings use many-segment polygons.
+// drawdot() emits a quad, not a circle: rings use many-segment polygons.
 static void drawFilledCircle(PaimonDrawNode* node, CCPoint center, float radius, ccColor4F color, int segments = 64) {
     if (!node || radius <= 0.f) return;
     std::vector<CCPoint> verts;

@@ -40,14 +40,14 @@ private:
     // m_asset must already be set.
     bool buildReader(double startTimeSeconds);
     void readTrackMetadata();
-    // Reader only, never the asset; used by seekTo().
+    // reader only, never the asset; used by seekto().
     void releaseReaderOnly();
 
-    // Opaque pointers to Obj-C objects (managed with ARC in .mm)
-    void* m_asset       = nullptr; // AVAsset*
-    void* m_reader      = nullptr; // AVAssetReader*
-    void* m_trackOutput = nullptr; // AVAssetReaderTrackOutput*
-    void* m_videoTrack  = nullptr; // AVAssetTrack* (weak ref into asset)
+    // opaque pointers to obj-c objects (managed with arc in .mm)
+    void* m_asset       = nullptr; // avasset*
+    void* m_reader      = nullptr; // avassetreader*
+    void* m_trackOutput = nullptr; // avassetreadertrackoutput*
+    void* m_videoTrack  = nullptr; // avassettrack* (weak ref into asset)
 
     VideoRingBuffer  m_ring;
     int              m_width  = 0;
@@ -66,4 +66,4 @@ private:
 
 } // namespace paimon
 
-#endif // USE_AV_FOUNDATION
+#endif // use_av_foundation

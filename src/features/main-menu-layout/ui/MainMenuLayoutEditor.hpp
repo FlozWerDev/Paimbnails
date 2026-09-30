@@ -57,7 +57,7 @@ private:
     Item* selectedItem();
     void selectIndex(int index);
     cocos2d::CCRect itemRect(Item const& item) const;
-    // itemRect plus outline margin: grip draw zone.
+    // itemrect plus outline margin: grip draw zone.
     cocos2d::CCRect outlineRect(Item const& item) const;
     cocos2d::CCPoint gripPos(Item const& item) const;
     Item* findItemAt(cocos2d::CCPoint worldPos);

@@ -1,10 +1,8 @@
-// Bench de PackGen v2: MPix/s del kernel de tinte y del packer.
-//
-// Compila sin Geode (nucleo puro):
-//   g++ -std=c++17 -O2 -pthread -o /tmp/pgbench tests/packgen_bench.cpp && /tmp/pgbench
-//
-// No falla nunca (devuelve 0): imprime numeros para comparar antes/despues.
-// Pasale un multiplicador opcional de carga: /tmp/pgbench [1].
+// bench de packgen v2: mpix/s del kernel de tinte y del packer.
+// compila sin geode (nucleo puro):
+//   g++ -std=c++17 -o2 -pthread -o /tmp/pgbench tests/packgen_bench.cpp && /tmp/pgbench
+// no falla nunca (devuelve 0): imprime numeros para comparar antes/despues.
+// pasale un multiplicador opcional de carga: /tmp/pgbench [1].
 
 #include <chrono>
 #include <cstdint>
@@ -26,7 +24,7 @@ double secondsSince(std::chrono::steady_clock::time_point t0) {
         std::chrono::steady_clock::now() - t0).count();
 }
 
-// Sprite rugoso determinista: barre el RGB para que la luminancia varie.
+// sprite rugoso determinista: barre el rgb para que la luminancia varie.
 void fillRough(FrameImage& img, std::vector<std::uint8_t>& mask) {
     int W = img.width(), H = img.height();
     mask.assign(static_cast<std::size_t>(W) * H, 0);
@@ -52,7 +50,7 @@ void benchTint(int W, int H, int iters) {
     PrecomputedTint c1 = PrecomputedTint::make(255, 64, 64, 160.0f, 1.1f, 0.05f);
     PrecomputedTint c2 = PrecomputedTint::make(64, 64, 255, 160.0f, 0.9f, -0.05f);
 
-    // Calentar caches antes de medir.
+    // calentar caches antes de medir.
     tintStackImage(src.data(), dst.data(), W, H, mC1.data(), mC2.data(),
                    nullptr, nullptr, c1, c2, c1, c2, false, false, 0, lut);
 
@@ -74,7 +72,7 @@ void benchTintParallel(int W, int H, int iters) {
     std::vector<std::uint8_t> mC1;
     fillRough(src, mC1);
 
-    // Un FrameImage por hilo (el kernel escribe su propio dst).
+    // un frameimage por hilo (el kernel escribe su propio dst).
     PackScheduler pool;
     std::size_t T = pool.threadCount();
     std::vector<FrameImage> dsts;

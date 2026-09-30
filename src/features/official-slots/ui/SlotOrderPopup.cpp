@@ -94,7 +94,7 @@ void SlotOrderPopup::buildControls() {
     menu->setID("order-controls-menu"_spr);
     m_mainLayer->addChild(menu, 3);
 
-    // Same glyphs as the manager rows, plus jumps to either end.
+    // same glyphs as the manager rows, plus jumps to either end.
     std::vector<std::tuple<char const*, int, int>> defs = {
         {"|^", 40, 0},
         {"^", 36, 1},
@@ -175,7 +175,7 @@ void SlotOrderPopup::rebuild() {
         y -= kRowGap;
     }
     m_scroll->m_contentLayer->setContentHeight(totalH);
-    // Moves keep the count, so the offset stays valid; only added or removed
+    // moves keep the count, so the offset stays valid; only added or removed
     // rows (done from the manager behind) snap back to the top.
     if (rows.size() != m_rows) m_scroll->scrollToTop();
     m_rows = rows.size();
@@ -204,7 +204,7 @@ CCNode* SlotOrderPopup::buildRow(
         nameLbl->setPosition({56.f, kRowH / 2.f});
         nameLbl->setScale(0.42f);
         nameLbl->limitLabelWidth(width - 68.f, 0.42f, 0.1f);
-        // Dimmed rows keep their layout; the grey label says hidden/off.
+        // dimmed rows keep their layout; the grey label says hidden/off.
         if (dimmed) nameLbl->setColor({130, 130, 145});
         row->addChild(nameLbl, 2);
     }
@@ -254,7 +254,7 @@ void SlotOrderPopup::onJumpBottom() {
 }
 
 void SlotOrderPopup::refresh() {
-    // Same as the manager: rebuild on the next frame, because this often runs
+    // same as the manager: rebuild on the next frame, because this often runs
     // inside the menu being rebuilt.
     geode::WeakRef<SlotOrderPopup> weak(this);
     geode::Loader::get()->queueInMainThread([weak] {

@@ -49,7 +49,7 @@ namespace paimon::forum {
         int reportCount = 0;
         bool pinned = false;
         bool locked = false;
-        std::vector<Reply> replies; // only filled in getPost
+        std::vector<Reply> replies; // only filled in getpost
 
         matjson::Value toJson() const;
         static Post fromJson(matjson::Value const& v);

@@ -1,5 +1,5 @@
 #pragma once
-// PackGen v2 tint kernel, bit-exact with TintMath; speed from hoisted invariants, not new math.
+// packgen v2 tint kernel, bit-exact with tintmath; speed from hoisted invariants, not new math.
 
 #include <algorithm>
 #include <cmath>
@@ -8,7 +8,7 @@
 
 namespace paimon::texture_studio::packgen {
 
-// 0.30/0.59/0.11 Rec.601 weights, matching TintMath::luminance601.
+// 0.30/0.59/0.11 rec.601 weights, matching tintmath::luminance601.
 inline float luminance601f(float r, float g, float b) {
     return 0.30f * r + 0.59f * g + 0.11f * b;
 }
@@ -17,7 +17,7 @@ inline std::uint8_t clampByteFast(int v) {
     return static_cast<std::uint8_t>(std::clamp(v, 0, 255));
 }
 
-// Same expression as per-pixel a/255 once: bit-identical blend via table lookup.
+// same expression as per-pixel a/255 once: bit-identical blend via table lookup.
 struct AlphaLut {
     float v[256];
     static AlphaLut make() {
@@ -29,7 +29,7 @@ struct AlphaLut {
     }
 };
 
-// Everything about one tint role resolved once, outside the pixel loop.
+// everything about one tint role resolved once, outside the pixel loop.
 struct PrecomputedTint {
     float tintR = 0.0f, tintG = 0.0f, tintB = 0.0f;
     float brightness = 160.0f;
@@ -55,7 +55,7 @@ struct PrecomputedTint {
     }
 };
 
-// Same op order as TintMath::tintByLuminance.
+// same op order as tintmath::tintbyluminance.
 inline void tintPixelFast(std::uint8_t srcR, std::uint8_t srcG, std::uint8_t srcB,
                           PrecomputedTint const& t,
                           std::uint8_t& outR, std::uint8_t& outG, std::uint8_t& outB) {
@@ -85,7 +85,7 @@ inline void tintPixelFast(std::uint8_t srcR, std::uint8_t srcG, std::uint8_t src
     outB = clampByteFast(static_cast<int>(std::lround(fB)));
 }
 
-// Same op order as TintMath::overlayPixel / replacePixel.
+// same op order as tintmath::overlaypixel / replacepixel.
 inline void blendPixelFast(std::uint8_t& baseR, std::uint8_t& baseG,
                            std::uint8_t& baseB, std::uint8_t& baseA,
                            std::uint8_t ovR, std::uint8_t ovG, std::uint8_t ovB,
@@ -106,7 +106,7 @@ inline void blendPixelFast(std::uint8_t& baseR, std::uint8_t& baseG,
     baseA = std::max(baseA, ovA);
 }
 
-// Fused multi-role kernel mirroring LuminanceTinter::apply. dst starts as a src copy; null rows mean role absent.
+// fused multi-role kernel mirroring luminancetinter::apply. dst starts as a src copy; null rows mean role absent.
 inline std::size_t tintStackImage(std::uint8_t const* src, std::uint8_t* dst,
                                   int w, int h,
                                   std::uint8_t const* maskC1,
@@ -179,7 +179,7 @@ inline std::size_t tintStackImage(std::uint8_t const* src, std::uint8_t* dst,
     return tinted;
 }
 
-// One overlay pass over row band [y0, y1), mirroring OverlayTinter::applyOne with the top-left overlap rule.
+// one overlay pass over row band [y0, y1), mirroring overlaytinter::applyone with the top-left overlap rule.
 inline void applyOverlayBand(std::uint8_t* dst, int dstW,
                              std::uint8_t const* ov, int ovW,
                              int y0, int y1, int bandW,

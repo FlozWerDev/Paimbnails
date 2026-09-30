@@ -1,4 +1,4 @@
-// Renderiza el plan de pintura de una imagen a PNG (escala 8) para comparar.
+// renderiza el plan de pintura de una imagen a png (escala 8) para comparar.
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
         std::cerr << "no se pudo escribir " << argv[2] << "\n";
         return 1;
     }
-    // Ideal de celdas: cada celda pintada plana con su color de paleta. El
+    // ideal de celdas: cada celda pintada plana con su color de paleta. el
     // render contra este ideal aisla el error de ajuste geometrico (la forma
     // no sigue sus celdas); el ideal contra el original aisla el de
     // cuantizacion (la celda no puede decir dos colores a la vez).

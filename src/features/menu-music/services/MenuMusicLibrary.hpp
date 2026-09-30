@@ -1,7 +1,7 @@
 ﻿#pragma once
 
-// Persistent track/playlist store at [saveDir]/menu-music/library.json. Paths
-// are absolute UTF-8 strings; the library is independent of FMOD and UI.
+// persistent track/playlist store at [savedir]/menu-music/library.json. paths
+// are absolute utf-8 strings; the library is independent of fmod and ui.
 
 #include "../model/MenuMusicTypes.hpp"
 #include <Geode/Geode.hpp>
@@ -23,7 +23,7 @@ public:
     std::filesystem::path getCoversDir() const;
     std::filesystem::path getLibraryFile() const;
 
-void load();                     // Idempotent.
+void load();                     // idempotent.
     void save();
     bool isLoaded() const { return m_loaded; }
 
@@ -36,14 +36,14 @@ void load();                     // Idempotent.
     void addTrack(const MusicTrack& track);
     void updateTrack(const MusicTrack& track);
     bool deleteLocalAudio(const std::string& id);
-// removeTrack optionally deletes downloaded audio/cover files; local tracks stay.
+// removetrack optionally deletes downloaded audio/cover files; local tracks stay.
     void removeTrack(const std::string& id, bool deleteFiles);
     void setFavorite(const std::string& id, bool favorite);
     void setBlacklisted(const std::string& id, bool blacklisted);
     bool hasTracks() const { return !m_tracks.empty(); }
 
     std::size_t importFolder(const std::filesystem::path& folder, bool recursive = true);
-// force=false skips the scan while GD's downloaded-song count is unchanged.
+// force=false skips the scan while gd's downloaded-song count is unchanged.
     std::size_t syncDownloadedSongs(bool force = true);
 
     std::vector<MusicPlaylist>& playlists() { return m_playlists; }
@@ -68,7 +68,7 @@ void load();                     // Idempotent.
     static bool isAudioExtension(const std::filesystem::path& p);
     static bool isImageExtension(const std::filesystem::path& p);
 
-// Notify listeners after persisted changes; safe to re-enter.
+// notify listeners after persisted changes; safe to re-enter.
     using Listener = std::function<void()>;
     std::size_t addListener(Listener cb);
     void removeListener(std::size_t token);
@@ -91,7 +91,7 @@ private:
     std::string m_activePlaylistId;
     std::string m_lastTrackId;
     std::uint64_t m_idCounter = 0;
-    // GD downloaded-song count at the last sync; SIZE_MAX means never synced.
+    // gd downloaded-song count at the last sync; size_max means never synced.
     std::size_t m_syncedSongCount = static_cast<std::size_t>(-1);
     bool m_loaded = false;
     bool m_savePending = false;

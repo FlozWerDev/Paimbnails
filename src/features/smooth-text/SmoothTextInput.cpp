@@ -9,7 +9,7 @@
 
 using namespace geode::prelude;
 
-// Per-character fade/rise for GD text fields; off for Geode's own settings inputs.
+// per-character fade/rise for gd text fields; off for geode's own settings inputs.
 namespace {
 
 constexpr int kInTag    = 0x9A11;
@@ -38,7 +38,7 @@ bool cfgAnimates(Cfg const& c) {
     return c.on && (c.fadeIn > 0.f || c.fadeOut > 0.f || c.rise > 0.f || c.pop);
 }
 
-// Frozen glyph copy used for a fading deletion ghost.
+// frozen glyph copy used for a fading deletion ghost.
 struct GlyphShot {
     CCTexture2D* tex = nullptr;
     CCRect       rect;
@@ -76,7 +76,7 @@ class $modify(SmoothTextInput, CCTextInputNode) {
         return m_textLabel ? m_textLabel->getOpacity() : 255;
     }
 
-    // Raw text index to glyph slot; newlines have no sprite.
+    // raw text index to glyph slot; newlines have no sprite.
     CCSprite* glyphAt(std::string const& text, size_t i) {
         if (i >= text.size()) return nullptr;
 
@@ -128,7 +128,7 @@ class $modify(SmoothTextInput, CCTextInputNode) {
     void popIn(CCSprite* s, Cfg const& c) {
         s->stopActionByTag(kInTag);
 
-        // Rest pose after createFontChars settles.
+        // rest pose after createfontchars settles.
         CCPoint dest = s->getPosition();
         float   fx = s->getScaleX(), fy = s->getScaleY();
         GLubyte full = fullOpacity();
@@ -139,7 +139,7 @@ class $modify(SmoothTextInput, CCTextInputNode) {
         steps->addObject(CCFadeTo::create(dur, full));
 
         if (c.rise > 0.f) {
-            // MoveBy keeps the rise relative if the label recenters mid-animation.
+            // moveby keeps the rise relative if the label recenters mid-animation.
             s->setPosition(dest - CCPoint(0.f, c.rise));
             steps->addObject(CCEaseSineOut::create(CCMoveBy::create(dur, CCPoint(0.f, c.rise))));
         }
@@ -211,13 +211,13 @@ class $modify(SmoothTextInput, CCTextInputNode) {
         }
     }
 
-    // Stop entrances and restore state after refreshLabel rewrites layout (BMFont reuses letters as-is).
+    // stop entrances and restore state after refreshlabel rewrites layout (bmfont reuses letters as-is).
     void settle() {
         GLubyte full = fullOpacity();
         forEachGlyph([&](CCSprite* s) {
             s->stopActionByTag(kInTag);
             s->setOpacity(full);
-            // createFontChars leaves letter scale alone; residuals are ours.
+            // createfontchars leaves letter scale alone; residuals are ours.
             s->setScaleX(1.f);
             s->setScaleY(1.f);
         });
@@ -257,7 +257,7 @@ class $modify(SmoothTextInput, CCTextInputNode) {
             return;
         }
 
-        // Animate only the changed range via common prefix/suffix.
+        // animate only the changed range via common prefix/suffix.
         size_t bound = std::min(oldStr.size(), newStr.size());
         size_t p = 0;
         while (p < bound && oldStr[p] == newStr[p]) ++p;

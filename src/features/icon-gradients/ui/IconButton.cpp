@@ -103,7 +103,7 @@ void IconButton::applyGradient(bool /*force*/, ColorType colorType, bool transit
         GradientUtils::applyGradient(m_icon, m_currentConfig, colorType, false, secondPlayer, 121);
     }
 
-    // An empty slot shows the raw player color; a filled one stays white.
+    // an empty slot shows the raw player color; a filled one stays white.
     ccColor3B dot = m_currentConfig.isEmpty(colorType, secondPlayer)
         ? GradientUtils::getPlayerColor(colorType, secondPlayer)
         : ccc3(255, 255, 255);

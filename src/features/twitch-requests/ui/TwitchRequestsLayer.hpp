@@ -56,13 +56,15 @@ private:
     void applyPlatformSkin();
     void onToggleQueue();
     void onToggleOrder();
-    // page mode: toggle and share your URL.
+    // page mode: toggle and share your url.
     void onToggleWebPage();
     void onCopyWebUrl();
     void onOpenWebUrl();
     void onFilters();
     void onNotify();
     void onStreamOverlay();
+    void onSources();
+    void onQueueSelection();
     void onPlayNext();
     void playRequest(size_t index);
     void openMessage(size_t index);
@@ -89,6 +91,7 @@ private:
     ButtonSprite* m_platformSprite = nullptr;
     ButtonSprite* m_queueSprite = nullptr;
     ButtonSprite* m_orderSprite = nullptr;
+    ButtonSprite* m_queueSelectorSprite = nullptr;
     cocos2d::CCNode* m_rowsHost = nullptr;
     geode::ScrollLayer* m_scroll = nullptr;
 

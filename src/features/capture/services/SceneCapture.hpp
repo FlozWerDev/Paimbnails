@@ -16,7 +16,7 @@ struct ScreenSize {
     float height = 0.f;
 };
 
-// Enables capture context for sprites with manual draw() (PaimonShader*).
+// enables capture context for sprites with manual draw() (paimonshader*).
 class ActiveGuard {
 public:
     explicit ActiveGuard(cocos2d::CCSize const& logicalSize);

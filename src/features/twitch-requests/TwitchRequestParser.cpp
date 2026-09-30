@@ -42,35 +42,35 @@ std::string cleanUrl(std::string_view token) {
     return std::string(token);
 }
 
-std::optional<int> firstNumber(std::string_view token) {
-    size_t start = 0;
-    while (start < token.size() && !std::isdigit(static_cast<unsigned char>(token[start]))) {
-        ++start;
+std::optional<int> levelNumber(std::string_view token) {
+    if (lowerCopy(token).starts_with("id:") || lowerCopy(token).starts_with("id=")) {
+        token.remove_prefix(3);
     }
-    size_t end = start;
-    while (end < token.size() && std::isdigit(static_cast<unsigned char>(token[end]))) {
-        ++end;
+    while (!token.empty() && (token.ends_with(':') || token.ends_with(',') || token.ends_with(';'))) token.remove_suffix(1);
+    if (token.size() >= 2 && ((token.front() == '<' && token.back() == '>')
+        || (token.front() == '[' && token.back() == ']') || (token.front() == '(' && token.back() == ')'))) {
+        token = token.substr(1, token.size() - 2);
     }
-    if (start == end) return std::nullopt;
+    if (token.starts_with('#')) token.remove_prefix(1);
+    if (token.empty() || !std::ranges::all_of(token, [](unsigned char ch) {
+        return ch >= '0' && ch <= '9';
+    })) return std::nullopt;
 
     long long id = 0;
-    auto [stop, error] = std::from_chars(token.data() + start, token.data() + end, id);
-    if (error != std::errc{} || stop != token.data() + end || id <= 0 || id > INT_MAX) {
+    auto [stop, error] = std::from_chars(token.data(), token.data() + token.size(), id);
+    if (error != std::errc{} || stop != token.data() + token.size() || id <= 0 || id > INT_MAX) {
         return std::nullopt;
     }
     return static_cast<int>(id);
 }
 
-template <class Fn>
-void forEachToken(std::string_view text, Fn&& handle) {
-    size_t start = 0;
-    for (size_t i = 0; i <= text.size(); ++i) {
-        bool const separator = i == text.size()
-            || std::isspace(static_cast<unsigned char>(text[i]));
-        if (!separator) continue;
-        if (i > start) handle(text.substr(start, i - start));
-        start = i + 1;
-    }
+std::string_view takeToken(std::string_view& text) {
+    text = trim(text);
+    size_t end = 0;
+    while (end < text.size() && !std::isspace(static_cast<unsigned char>(text[end]))) ++end;
+    auto token = text.substr(0, end);
+    text.remove_prefix(end);
+    return token;
 }
 
 } // namespace
@@ -85,6 +85,10 @@ std::vector<std::string> parseCommands(std::string_view configured) {
 
         std::string command = lowerCopy(token);
         if (command.front() != '!') command.insert(command.begin(), '!');
+        if (command.size() < 2 || command.size() > 40 || commands.size() >= 256) return;
+        if (!std::ranges::all_of(std::string_view(command).substr(1), [](unsigned char ch) {
+            return std::isalnum(ch) || ch == '_' || ch == '-' || ch == '+';
+        })) return;
         if (std::ranges::find(commands, command) == commands.end()) {
             commands.push_back(std::move(command));
         }
@@ -109,6 +113,7 @@ std::optional<ParsedRequest> parseRequest(
     std::string_view message,
     std::string_view configuredCommands
 ) {
+    if (message.size() > 4096) return std::nullopt;
     message = trim(message);
     std::string lower = lowerCopy(message);
 
@@ -121,26 +126,52 @@ std::optional<ParsedRequest> parseRequest(
             }
         }
 
-        std::string_view rest = message.substr(command.size());
-        ParsedRequest parsed;
-        parsed.command = command;
-
-        // per token, so a link with digits never parses as ID.
-        forEachToken(rest, [&parsed](std::string_view token) {
-            if (looksLikeUrl(token)) {
-                if (parsed.url.empty()) parsed.url = cleanUrl(token);
-                return;
-            }
-            if (parsed.levelID == 0) {
-                if (auto id = firstNumber(token)) parsed.levelID = *id;
-            }
-        });
-
-        if (parsed.levelID == 0) return std::nullopt;
+        auto rest = message.substr(command.size());
+        if (rest.starts_with(':')) rest.remove_prefix(1);
+        auto parsed = parseRequestBody(rest);
+        if (parsed) parsed->command = command;
         return parsed;
     }
 
     return std::nullopt;
+}
+
+std::optional<ParsedRequest> parseRequestBody(std::string_view body) {
+    if (body.size() > 4096) return std::nullopt;
+    ParsedRequest parsed;
+    auto token = takeToken(body);
+    if (looksLikeUrl(token)) {
+        parsed.url = cleanUrl(token);
+        if (parsed.url.empty()) return std::nullopt;
+        token = takeToken(body);
+    }
+    auto label = lowerCopy(token);
+    if (label == "id" || label == "id:" || label == "id=") token = takeToken(body);
+    auto id = levelNumber(token);
+    if (!id) return std::nullopt;
+    parsed.levelID = *id;
+
+    body = trim(body);
+    size_t start = 0;
+    while (start < body.size()) {
+        size_t end = start;
+        while (end < body.size() && !std::isspace(static_cast<unsigned char>(body[end]))) ++end;
+        auto url = cleanUrl(body.substr(start, end - start));
+        if (parsed.url.empty() && !url.empty()) {
+            parsed.url = std::move(url);
+            parsed.description = std::string(trim(body.substr(0, start)));
+            auto tail = trim(body.substr(end));
+            if (!tail.empty()) {
+                if (!parsed.description.empty()) parsed.description += ' ';
+                parsed.description += tail;
+            }
+            return parsed;
+        }
+        start = end;
+        while (start < body.size() && std::isspace(static_cast<unsigned char>(body[start]))) ++start;
+    }
+    parsed.description = std::string(body);
+    return parsed;
 }
 
 bool isValidVideoUrl(std::string_view url) {

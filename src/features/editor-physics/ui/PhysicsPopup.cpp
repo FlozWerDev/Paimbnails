@@ -52,7 +52,7 @@ constexpr float kWorldGroundHeight = 6000.f;
 constexpr int kCircleSegments = 18;
 constexpr float kTapSlack = 6.f;
 
-// A level whose background or ground colour is nearly black leaves the panel
+// a level whose background or ground colour is nearly black leaves the panel
 // unreadable, so the darkest tints are lifted just enough to tell them apart.
 ccColor3B liftDark(ccColor3B color) {
     unsigned char const peak = std::max({color.r, color.g, color.b});
@@ -66,7 +66,7 @@ ccColor3B liftDark(ccColor3B color) {
     };
 }
 
-// Picking runs on the fixture's bounds: at preview scale that is as precise as
+// picking runs on the fixture's bounds: at preview scale that is as precise as
 // a finger gets, and it still tells two stacked objects apart.
 bool containsPoint(Fixture const& fixture, CCPoint point, float slack) {
     float const dx = std::abs(point.x - fixture.offset.x);
@@ -222,7 +222,7 @@ bool PhysicsPopup::init() {
         float y;
         float factor;
     };
-    // The strip between the preview and the option column, so the controls never
+    // the strip between the preview and the option column, so the controls never
     // cover the simulation.
     for (auto const& control : std::array<ViewControl, 3>{{
         {"GJ_zoomInBtn_001.png", 200.f, kZoomStep},
@@ -462,7 +462,7 @@ void PhysicsPopup::preview() {
         shapes.rounds += body.shapes.rounds;
         shapes.hulls += body.shapes.hulls;
     }
-    // A body on the trigger backend is drawn with the graph's own model, and a
+    // a body on the trigger backend is drawn with the graph's own model, and a
     // preset that waits for the player has nothing to move it in the lab.
     std::size_t const waiting = std::ranges::count_if(m_resolved, [&](auto const& body) {
         return body.spec.motion == Motion::Dynamic &&
@@ -628,12 +628,12 @@ void PhysicsPopup::refreshBodies() {
     }
 }
 
-// Backgrounds are loose files and colours come from the editor's own nodes, so
+// backgrounds are loose files and colours come from the editor's own nodes, so
 // the panel matches the level being built.
 void PhysicsPopup::buildPreviewScenery(CCNode* clip, float width, float height) {
     auto* editor = LevelEditorLayer::get();
     auto* gameManager = GameManager::sharedState();
-    // GD numbers its backgrounds from one; index zero asks for a file that does
+    // gd numbers its backgrounds from one; index zero asks for a file that does
     // not exist and the panel stayed black waiting for it.
     int const backgroundIndex = std::max(
         1, editor && editor->m_levelSettings ? editor->m_levelSettings->m_backgroundIndex : 1
@@ -662,7 +662,7 @@ void PhysicsPopup::buildPreviewScenery(CCNode* clip, float width, float height) 
     clip->addChild(CCLayerColor::create({0, 0, 0, 45}, width, height), 2);
 }
 
-// The ground sits at y = 0 in level coordinates so it scrolls with the camera;
+// the ground sits at y = 0 in level coordinates so it scrolls with the camera;
 // glued to the panel bottom, bodies fell straight through it.
 void PhysicsPopup::addWorldGround() {
     auto* fill = CCLayerColor::create(
@@ -672,8 +672,8 @@ void PhysicsPopup::addWorldGround() {
     fill->setPosition({-kWorldGroundWidth * 0.5f, -kWorldGroundHeight});
     m_previewWorld->addChild(fill, -3);
 
-    // The level's own ground tile repeated across the world. It is a loose
-    // texture rather than a sheet frame, so GL_REPEAT tiles it directly.
+    // the level's own ground tile repeated across the world. it is a loose
+    // texture rather than a sheet frame, so gl_repeat tiles it directly.
     auto* editor = LevelEditorLayer::get();
     auto* source = editor && editor->m_groundLayer
         ? editor->m_groundLayer->m_ground1Sprite
@@ -748,7 +748,7 @@ void PhysicsPopup::refreshCameraScale() {
             maxY = std::max(maxY, spec.position.y + fixture.offset.y + fixture.halfSize.y);
         }
     }
-    // The fit covers the bodies' own size only; the trajectory length (and thus
+    // the fit covers the bodies' own size only; the trajectory length (and thus
     // the duration) must never shrink the view.
     float const width = std::max(maxX - minX, 1.f);
     float const height = std::max(maxY - minY, 1.f);
@@ -781,7 +781,7 @@ void PhysicsPopup::resetView() {
     drawPreview(playbackTime(), 0.f);
 }
 
-// Widths are divided by the view scale to stay a constant thickness on screen.
+// widths are divided by the view scale to stay a constant thickness on screen.
 void PhysicsPopup::refreshOverlays() {
     for (std::size_t i = 0; i < m_outlineNodes.size(); ++i) drawBodyOutline(i);
     drawTrajectory();
@@ -803,7 +803,7 @@ void PhysicsPopup::toggleHitboxes() {
     );
 }
 
-// The gear reaches the same switch, but flipping a body while watching it fall
+// the gear reaches the same switch, but flipping a body while watching it fall
 // is the thing you want one tap away.
 void PhysicsPopup::toggleFocusedMotion() {
     if (m_focusIndex < 0 || static_cast<std::size_t>(m_focusIndex) >= m_resolved.size()) {
@@ -853,7 +853,7 @@ void PhysicsPopup::openBodyEditor() {
     if (popup) popup->show();
 }
 
-// Bodies are drawn where the simulation left them, so the pick runs against the
+// bodies are drawn where the simulation left them, so the pick runs against the
 // containers rather than the captured positions.
 void PhysicsPopup::selectAt(CCPoint const& location) {
     if (m_bodyContainers.size() != m_resolved.size()) return;
@@ -910,7 +910,7 @@ void PhysicsPopup::drawBodyOutline(std::size_t index) {
     draw->clear();
     bool const dynamic = m_resolved[index].spec.motion == Motion::Dynamic;
     bool const focused = m_focusIndex == static_cast<int>(index);
-    // With the hitboxes hidden the preview is nothing but the game's own art,
+    // with the hitboxes hidden the preview is nothing but the game's own art,
     // so the only outline left is the one marking what the user picked.
     if (!m_showHitboxes && !focused) return;
 
@@ -1045,7 +1045,7 @@ void PhysicsPopup::drawPreview(float time, float dt) {
     if (!m_previewWorld) return;
     if (m_bodyContainers.size() != m_resolved.size() || m_resolved.empty()) return;
 
-    // Without a trace the bodies are drawn where the editor has them, so opening
+    // without a trace the bodies are drawn where the editor has them, so opening
     // the lab already shows what was captured instead of an empty panel.
     bool const animated = !m_trace.frames.empty();
     std::size_t next = 1;
@@ -1089,7 +1089,7 @@ void PhysicsPopup::drawPreview(float time, float dt) {
             ++tracked;
         }
     }
-    // Dragging the preview takes the camera off the bodies until the reset button
+    // dragging the preview takes the camera off the bodies until the reset button
     // hands it back.
     if (tracked && !m_manualCamera) {
         float const blend = dt > 0.f ? std::min(1.f, dt * kCamFollow) : 1.f;
@@ -1133,7 +1133,7 @@ void PhysicsPopup::ccTouchMoved(CCTouch* touch, CCEvent* event) {
 void PhysicsPopup::ccTouchEnded(CCTouch* touch, CCEvent* event) {
     if (m_panning) {
         m_panning = false;
-        // A finger that never left where it started is picking an object, not
+        // a finger that never left where it started is picking an object, not
         // dragging the view.
         if (ccpDistance(touch->getLocation(), touch->getStartLocation()) <= kTapSlack) {
             selectAt(touch->getLocation());

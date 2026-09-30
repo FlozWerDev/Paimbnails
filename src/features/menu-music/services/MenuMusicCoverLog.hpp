@@ -1,5 +1,5 @@
 #pragma once
-// cover diagnostics: always goes to cover-debug.log, forces Geode console.
+// cover diagnostics: always goes to cover-debug.log, forces geode console.
 
 #include <Geode/Geode.hpp>
 #include <filesystem>

@@ -9,7 +9,7 @@
 #include "AnimatedTextInput.hpp"
 #include "../services/GuideIntents.hpp"
 
-// Paimon chat popup with an animated character, scrollable history, text input,
+// paimon chat popup with an animated character, scrollable history, text input,
 // suggestion chips, and an optional action button.
 
 namespace paimon::guide {
@@ -32,14 +32,14 @@ protected:
     void onHelpButton(cocos2d::CCObject* sender);
     void onToggleMode(cocos2d::CCObject* sender);
 
-    // async Max reply lands here, already on the main thread.
+    // async max reply lands here, already on the main thread.
     void onMaxReply(GuideAnswer const& ans);
 
     void setRecommendationChips(std::vector<GuideRecommendation> const& recs);
     void restoreDefaultChips();
     void updateTopicLabel(std::string const& topicId);
 
-    // enter arrives via both IME and keyDown; debounced.
+    // enter arrives via both ime and keydown; debounced.
     void trySubmitFromEnter();
 
     void displayMessage(std::string const& message);
@@ -52,11 +52,11 @@ protected:
     AnimatedPaimon* m_paimon = nullptr;
     AnimatedTextInput* m_input = nullptr;
     geode::ScrollLayer* m_scroll = nullptr;
-    cocos2d::CCLabelBMFont* m_responseLabel = nullptr; // newest Paimon bubble.
+    cocos2d::CCLabelBMFont* m_responseLabel = nullptr; // newest paimon bubble.
     CCMenuItemSpriteExtra* m_takeMeBtn = nullptr;
     cocos2d::CCMenu* m_takeMeMenu = nullptr;
     cocos2d::CCMenu* m_suggestionsMenu = nullptr;
-    cocos2d::CCLabelBMFont* m_lastBubbleLabel = nullptr; // set by makeBubble.
+    cocos2d::CCLabelBMFont* m_lastBubbleLabel = nullptr; // set by makebubble.
     cocos2d::CCLabelBMFont* m_topicLabel = nullptr;      // current topic.
 
     std::string m_pendingMessage;

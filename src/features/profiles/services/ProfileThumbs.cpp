@@ -352,11 +352,17 @@ void ProfileThumbs::clearAllCache() {
 }
 
 void ProfileThumbs::markNoProfile(int accountID) {
+    if (accountID <= 0) return;
     std::lock_guard<std::mutex> lock(m_cacheMutex);
-    if (m_noProfileCache.size() >= MAX_NO_PROFILE_CACHE_SIZE && !m_noProfileCache.empty()) {
-        m_noProfileCache.erase(m_noProfileCache.begin());
+    auto now = std::chrono::steady_clock::now();
+    std::erase_if(m_noProfileCache, [&](auto const& entry) { return now - entry.second >= NO_PROFILE_CACHE_DURATION; });
+    m_noProfileCache[accountID] = now;
+    if (m_noProfileCache.size() > MAX_NO_PROFILE_CACHE_SIZE) {
+        auto oldest = std::min_element(m_noProfileCache.begin(), m_noProfileCache.end(), [](auto const& a, auto const& b) {
+            return a.second < b.second;
+        });
+        m_noProfileCache.erase(oldest);
     }
-    m_noProfileCache.insert(accountID);
 }
 
 void ProfileThumbs::removeFromNoProfileCache(int accountID) {
@@ -365,7 +371,9 @@ void ProfileThumbs::removeFromNoProfileCache(int accountID) {
 
 bool ProfileThumbs::isNoProfile(int accountID) const {
     std::lock_guard<std::mutex> lock(m_cacheMutex);
-    return m_noProfileCache.find(accountID) != m_noProfileCache.end();
+    auto found = m_noProfileCache.find(accountID);
+    return found != m_noProfileCache.end() &&
+        std::chrono::steady_clock::now() - found->second < NO_PROFILE_CACHE_DURATION;
 }
 
 void ProfileThumbs::clearNoProfileCache() {
@@ -380,6 +388,7 @@ void ProfileThumbs::clearPendingDownloads() {
     m_batchConfigs.clear();
     m_batchInFlight = false;
     m_usernameMap.clear();
+    m_visibilityMap.clear();
     m_activeDownloads = 0;
 }
 
@@ -641,7 +650,16 @@ void ProfileThumbs::queueLoad(int accountID, std::string const& username, geode:
 }
 
 void ProfileThumbs::notifyVisible(int accountID) {
-    m_visibilityMap[accountID] = std::chrono::steady_clock::now();
+    if (accountID <= 0 || profileThumbsShouldAbort()) return;
+    auto now = std::chrono::steady_clock::now();
+    std::erase_if(m_visibilityMap, [&](auto const& entry) { return now - entry.second >= VISIBILITY_DURATION; });
+    m_visibilityMap[accountID] = now;
+    if (m_visibilityMap.size() > MAX_VISIBILITY_ENTRIES) {
+        auto oldest = std::min_element(m_visibilityMap.begin(), m_visibilityMap.end(), [](auto const& a, auto const& b) {
+            return a.second < b.second;
+        });
+        m_visibilityMap.erase(oldest);
+    }
 }
 
 void ProfileThumbs::processQueue() {
@@ -655,9 +673,11 @@ void ProfileThumbs::processQueue() {
 
     if (m_downloadQueue.empty()) return;
 
+    auto now = std::chrono::steady_clock::now();
     std::stable_partition(m_downloadQueue.begin(), m_downloadQueue.end(),
-        [this](int id) {
-            return m_visibilityMap.find(id) != m_visibilityMap.end();
+        [this, now](int id) {
+            auto found = m_visibilityMap.find(id);
+            return found != m_visibilityMap.end() && now - found->second < VISIBILITY_DURATION;
         });
 
     static constexpr int MAX_BATCH_SIZE = 16;

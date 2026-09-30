@@ -22,7 +22,7 @@ namespace {
         return static_cast<int64_t>(std::time(nullptr));
     }
 
-    // HttpClient reports non-2xx as success=false with the status baked into
+    // httpclient reports non-2xx as success=false with the status baked into
     // the body, so "not sharing" has to be recovered from the message.
     bool isNotFound(std::string const& response) {
         return response.rfind("HTTP 404", 0) == 0;
@@ -37,7 +37,7 @@ GlobalIconMeta parseMetaJson(matjson::Value const& v) {
 
     auto const& icons = v["icons"];
     if (icons.isObject()) {
-        // Iterate known types; const operator[] returns null if missing.
+        // iterate known types; const operator[] returns null if missing.
         for (auto const& typeName : {
             "cube", "ship", "ball", "ufo", "wave", "robot",
             "spider", "swing", "jetpack", "death", "trail", "fire"
@@ -85,7 +85,7 @@ bool GlobalIconClient::lookup(int accountID, CacheEntry& out) const {
 
 void GlobalIconClient::store(int accountID, GlobalIconMeta const& meta, bool found) {
     if (m_cache.size() >= kMaxCacheEntries && !m_cache.count(accountID)) {
-        // Cheap bound: drop everything already past its TTL, and if that frees
+        // cheap bound: drop everything already past its ttl, and if that frees
         // nothing, clear outright rather than grow without limit.
         int64_t now = nowSeconds();
         for (auto it = m_cache.begin(); it != m_cache.end();) {
@@ -113,7 +113,7 @@ void GlobalIconClient::getMetadata(int accountID, MetaCallback cb) {
         return;
     }
 
-    // A request is already in flight for this account: ride along with it.
+    // a request is already in flight for this account: ride along with it.
     auto inflightIt = m_inflight.find(accountID);
     if (inflightIt != m_inflight.end()) {
         if (cb) inflightIt->second.push_back(std::move(cb));
@@ -157,7 +157,7 @@ void GlobalIconClient::downloadFile(std::string const& url, FileCallback cb) {
         if (cb) cb(false, {});
         return;
     }
-    // downloadFromUrlRaw validates the URL (anti-SSRF) and never sends X-API-Key to external hosts; blobs are public.
+    // downloadfromurlraw validates the url (anti-ssrf) and never sends x-api-key to external hosts; blobs are public.
     HttpClient::get().downloadFromUrlRaw(url,
         [cb = std::move(cb)](bool success, std::vector<uint8_t> const& data, int, int) {
             if (cb) cb(success, data);
@@ -166,7 +166,7 @@ void GlobalIconClient::downloadFile(std::string const& url, FileCallback cb) {
 
 void GlobalIconClient::syncIcons(std::string const& jsonBody, SyncCallback cb) {
     std::string url = baseUrl() + "/api/icons/sync";
-    // post() already includes the X-API-Key header the server requires.
+    // post() already includes the x-api-key header the server requires.
     HttpClient::get().post(url, jsonBody, [cb = std::move(cb)](bool success, std::string const& resp) {
         if (cb) cb(success, resp);
     });

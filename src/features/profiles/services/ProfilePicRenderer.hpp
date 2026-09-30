@@ -12,15 +12,15 @@ cocos2d::CCNode* composeProfilePicture(
     ProfilePicConfig const& config
 );
 
-// Resolved source for the profile photo, shared by editor, MenuLayer button,
+// resolved source for the profile photo, shared by editor, menulayer button,
 // and config-layer preview so all three render exactly the same image.
 struct ResolvedProfilePhoto {
     enum class Kind {
         None,        // nothing available
         StaticFile,  // path -> static image on disk
-        GifFile,     // path -> animated GIF on disk
-        GifCacheKey, // gifKey -> AnimatedGIFSprite RAM cache
-        Texture      // texture -> profileimg RAM/disk cache
+        GifFile,     // path -> animated gif on disk
+        GifCacheKey, // gifkey -> animatedgifsprite ram cache
+        Texture      // texture -> profileimg ram/disk cache
     };
     // for status/debug display
     enum class Source { None, Custom, OwnProfile, LegacyBackground };
@@ -36,8 +36,8 @@ struct ResolvedProfilePhoto {
 
 ResolvedProfilePhoto resolveProfilePhoto(ProfilePicConfig const& config);
 
-// Builds the image node for a resolved photo synchronously (static files are
-// decoded on the calling thread). Returns nullptr for Kind::None or on failure.
+// builds the image node for a resolved photo synchronously (static files are
+// decoded on the calling thread). returns nullptr for kind::none or on failure.
 cocos2d::CCNode* createResolvedPhotoNode(ResolvedProfilePhoto const& photo);
 
 }

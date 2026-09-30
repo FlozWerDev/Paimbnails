@@ -53,7 +53,7 @@ void NewgroundsBrowserPopup::buildHeader() {
     m_searchInput = TextInput::create(235.f, "Song name, artist, ID or URL", "chatFont.fnt");
     if (m_searchInput) {
         m_searchInput->setCommonFilter(CommonFilter::Any);
-        // Any doesn't include ':' '/' in some Geode builds; URLs need them.
+        // any doesn't include ':' '/' in some geode builds; urls need them.
         if (auto* inner = m_searchInput->getInputNode()) {
             inner->m_allowedChars = geode::getCommonFilterAllowedChars(CommonFilter::Any);
         }

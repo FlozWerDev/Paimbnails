@@ -21,7 +21,7 @@ namespace {
 
 constexpr char const* kActiveKey = "icon-maker.active";
 
-// Output basename suffix for the current texture quality, with the pixel
+// output basename suffix for the current texture quality, with the pixel
 // scale the sheet was authored at.
 std::string qualitySuffix() {
     float factor = CCDirector::sharedDirector()->getContentScaleFactor();
@@ -99,7 +99,7 @@ IconApplier::LoadedSheet* IconApplier::ensureLoaded(std::string const& slotId) {
         return it->second.valid ? &it->second : nullptr;
     }
 
-    // Insert first so repeated failures don't re-hit the disk every frame.
+    // insert first so repeated failures don't re-hit the disk every frame.
     auto& sheet = m_sheets[slotId];
 
     auto suffix = qualitySuffix();
@@ -171,8 +171,8 @@ void IconApplier::onUpdatePlayerFrame(SimplePlayer* player, int iconId, IconType
     loadSelection();
     auto slotId = activeFor(type);
 
-    // Exact colors apply on both paths (MoreIcons draws the frames, GD still
-    // tints them). Deferred a frame so it lands after the init-flow setColors.
+    // exact colors apply on both paths (moreicons draws the frames, gd still
+    // tints them). deferred a frame so it lands after the init-flow setcolors.
     bool oursEquipped = false;
     auto* gm = GameManager::get();
     if (gm && gm->activeIconForType(type) == iconId) {
@@ -189,15 +189,15 @@ void IconApplier::onUpdatePlayerFrame(SimplePlayer* player, int iconId, IconType
         });
     }
 
-    // With MoreIcons installed, selection and frame rendering belong to it.
+    // with moreicons installed, selection and frame rendering belong to it.
     if (MoreIconsBridge::available()) return;
 
     if (slotId.empty()) return;
 
-    // Only the equipped icon gets replaced; garage lists keep vanilla art.
+    // only the equipped icon gets replaced; garage lists keep vanilla art.
     if (!gm || gm->activeIconForType(type) != iconId) return;
 
-    // Robot/spider render through a GJRobotSprite child.
+    // robot/spider render through a gjrobotsprite child.
     if (def->partCount > 1) {
         auto* robot = type == IconType::Robot
             ? player->m_robotSprite : player->m_spiderSprite;
@@ -234,7 +234,7 @@ void IconApplier::applyExactColors(SimplePlayer* player, IconType type) {
     if (!player) return;
     if (!paimon::settings::icon_maker::enabled()) return;
 
-    // Which of our icons is showing?
+    // which of our icons is showing?
     std::string slotId;
     if (MoreIconsBridge::available()) {
         slotId = MoreIconsBridge::activeOursSlotId(type);
@@ -269,7 +269,7 @@ void IconApplier::applyExactColors(SimplePlayer* player, IconType type) {
     }
 }
 
-// Transcribed from MoreIcons' updateRobotSprite (MIT): detach the batch node,
+// transcribed from moreicons' updaterobotsprite (mit): detach the batch node,
 // point everything at our texture and swap each animated part's frames.
 void IconApplier::applyToRobotSprite(GJRobotSprite* sprite, IconType type,
                                      std::string const& slotId) {

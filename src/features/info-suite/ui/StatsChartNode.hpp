@@ -1,7 +1,7 @@
 #pragma once
 
-// Stats chart rendered with separate grid and bar nodes. Colors are premultiplied
-// for CCDrawNode's (GL_ONE, GL_ONE_MINUS_SRC_ALPHA) blending.
+// stats chart rendered with separate grid and bar nodes. colors are premultiplied
+// for ccdrawnode's (gl_one, gl_one_minus_src_alpha) blending.
 
 #include <Geode/Geode.hpp>
 #include <string>
@@ -11,29 +11,29 @@ namespace paimon::info {
 
 struct ChartOptions {
     cocos2d::ccColor3B color{120, 190, 255};
-    bool heat = false;       // Color bars by height.
-    bool stretch = true;     // Use the full width instead of right-pinning bars.
-    bool average = false;    // Draw the mean line.
-    bool showScale = false;  // Show the maximum above the plot.
-    int highlight = -1;      // Bar index, or -1 for the tallest.
+    bool heat = false;       // color bars by height.
+    bool stretch = true;     // use the full width instead of right-pinning bars.
+    bool average = false;    // draw the mean line.
+    bool showScale = false;  // show the maximum above the plot.
+    int highlight = -1;      // bar index, or -1 for the tallest.
     std::vector<float> tints;
-    float marker = -1.f;                    // Vertical reference, as width fraction.
-    std::vector<std::string> axisLabels;    // Labels along the bottom.
-    std::string axisNote;                   // Right-aligned bottom hint.
-    std::string emptyText;                  // Text shown when all values are zero.
+    float marker = -1.f;                    // vertical reference, as width fraction.
+    std::vector<std::string> axisLabels;    // labels along the bottom.
+    std::string axisNote;                   // right-aligned bottom hint.
+    std::string emptyText;                  // text shown when all values are zero.
 };
 
 class StatsChartNode : public cocos2d::CCNode {
 public:
-    // Zero-valued data still draws the grid and emptyText.
+    // zero-valued data still draws the grid and emptytext.
     static StatsChartNode* create(std::vector<float> const& values,
                                   cocos2d::CCSize const& size, ChartOptions const& options);
 
 protected:
-    // Shared column geometry for the grid and bar passes.
+    // shared column geometry for the grid and bar passes.
     struct Geometry {
         int count = 0;
-        float slot = 0.f;    // Bar plus gap.
+        float slot = 0.f;    // bar plus gap.
         float barW = 0.f;
         float startX = 0.f;
     };
@@ -43,7 +43,7 @@ protected:
 
     void drawGrid(cocos2d::CCDrawNode* draw, cocos2d::CCRect const& plot,
                   Geometry const& geo, bool ghost);
-    // The bar node is parked on the baseline; heights start at y = 0.
+    // the bar node is parked on the baseline; heights start at y = 0.
     void drawBars(cocos2d::CCDrawNode* draw, std::vector<float> const& values,
                   ChartOptions const& options, cocos2d::CCRect const& plot,
                   Geometry const& geo, float peak);

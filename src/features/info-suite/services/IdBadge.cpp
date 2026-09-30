@@ -11,7 +11,7 @@ namespace {
 
 bool g_shiftHeld = false;
 
-// Badges alive right now. Entries whose node lost its parent are dropped on the
+// badges alive right now. entries whose node lost its parent are dropped on the
 // next sweep, so cells recycled by the table view do not pile up.
 std::vector<Ref<CCLabelBMFont>>& badges() {
     static std::vector<Ref<CCLabelBMFont>> list;
@@ -73,7 +73,7 @@ CCLabelBMFont* makeIdBadge(std::string const& text, float scale) {
 }
 
 void applyAdaptiveIdBadgeContrast(CCLabelBMFont* label) {
-    // Difference blending needs premultiplied glyph RGB to preserve transparent pixels.
+    // difference blending needs premultiplied glyph rgb to preserve transparent pixels.
     if (!label || !label->isOpacityModifyRGB()) return;
 
     label->setColor({255, 255, 255});
@@ -83,9 +83,7 @@ void applyAdaptiveIdBadgeContrast(CCLabelBMFont* label) {
 
 } // namespace paimon::info
 
-// Use Geode's portable input event instead of modifying CCKeyboardDispatcher.
-// The generated dispatcher modify header has no constructor/destructor address
-// on iOS, so merely including it makes the arm64 build fail.
+// use the portable key event; the dispatcher modify header lacks lifecycle addresses on ios.
 $execute {
     KeyboardInputEvent().listen(+[](KeyboardInputData& data) {
         switch (data.key) {

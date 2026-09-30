@@ -544,7 +544,7 @@ void EditorCanvas::ccTouchMoved(CCTouch* touch, CCEvent*) {
         case Grab::Rotate: {
             float const angle = std::atan2(canvasPoint.y - m_grabCenter.y,
                                            canvasPoint.x - m_grabCenter.x) * 180.f / kPi;
-            // atan2 grows CCW, GD rotation the other way.
+            // atan2 grows ccw, gd rotation the other way.
             float step = m_lastAngle - angle;
             while (step > 180.f) step -= 360.f;
             while (step < -180.f) step += 360.f;

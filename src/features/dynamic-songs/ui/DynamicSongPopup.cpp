@@ -111,7 +111,7 @@ bool DynamicSongPopup::init() {
 
 void DynamicSongPopup::onExit() {
     this->unschedule(schedule_selector(DynamicSongPopup::previewSurface));
-    // A preview left half way down would leave the menu music muffled.
+    // a preview left half way down would leave the menu music muffled.
     if (m_previewing) {
         m_previewing = false;
         SubmergeEffect::get().rampTo(0.f, m_cfg.submerge.surfaceSeconds);
@@ -143,7 +143,7 @@ void DynamicSongPopup::scheduleRebuild() {
 
 void DynamicSongPopup::persist() {
     saveConfig(m_cfg);
-    // saveConfig normalises and lets a named preset overwrite its tone knobs;
+    // saveconfig normalises and lets a named preset overwrite its tone knobs;
     // mirror the result back so the sliders never show a discarded value.
     m_cfg = config();
 }

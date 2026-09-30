@@ -15,7 +15,7 @@ constexpr int64_t kMinute = 60;
 constexpr int64_t kHour = 60 * kMinute;
 constexpr int64_t kDay = 24 * kHour;
 constexpr int64_t kWeek = 7 * kDay;
-constexpr int64_t kMonth = 30 * kDay;   // GD's own approximation
+constexpr int64_t kMonth = 30 * kDay;   // gd's own approximation
 constexpr int64_t kYear = 365 * kDay;
 
 int64_t nowSeconds() {
@@ -35,7 +35,7 @@ int64_t parseRelativeAge(std::string const& text) {
 
     auto lowered = lower(text);
 
-    // Leading number, then a unit word. Anything else (an absolute date from a
+    // leading number, then a unit word. anything else (an absolute date from a
     // private server, for instance) is not ours to guess at.
     size_t i = 0;
     while (i < lowered.size() && std::isspace(static_cast<unsigned char>(lowered[i]))) i++;
@@ -68,7 +68,7 @@ void noteComment(int64_t commentID, std::string const& relativeAge) {
     int64_t age = parseRelativeAge(relativeAge);
     if (age <= 0) return;
 
-    // A "3 months" comment is only accurate to the month, but between two such
+    // a "3 months" comment is only accurate to the month, but between two such
     // anchors the ids in the middle land far closer than the game's own text.
     InfoStore::get().addCommentSample(commentID, nowSeconds() - age);
 }

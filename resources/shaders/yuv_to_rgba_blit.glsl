@@ -1,4 +1,4 @@
-// same as yuv_fragment.glsl but renders to an RGBA FBO.
+// same as yuv_fragment.glsl but renders to an rgba fbo.
 #ifdef GL_ES
 precision mediump float;
 #endif

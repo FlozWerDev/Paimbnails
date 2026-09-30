@@ -6,8 +6,7 @@ using namespace geode::prelude;
 namespace {
 constexpr auto imageStateKey = "gradient-image-state"_spr;
 class ImageState;
-// Raw observer entries: the sprite's user object owns each state. Keep the
-// small registry alive through cocos shutdown so destructors can unregister.
+// sprites own these observers; the registry must survive cocos shutdown.
 auto& imageStates() {
     static auto* states = new std::unordered_map<CCSprite*, ImageState*>;
     return *states;
@@ -28,8 +27,7 @@ public:
 
 class $modify(GradientImageSprite, CCSprite) {
     void draw() {
-        // Never ask Geode for node metadata on unrelated sprites: that lookup
-        // can allocate metadata and used to run for every sprite in a level.
+        // metadata lookup allocates even for sprites without an image gradient.
         auto& states = imageStates();
         if (states.empty()) return CCSprite::draw();
         auto found = states.find(this);
@@ -39,7 +37,7 @@ class $modify(GradientImageSprite, CCSprite) {
             auto program = getShaderProgram();
             program->use();
             ccGLBindTexture2DN(1, fields->atlas->texture->getName());
-            // Use the actual quad so packed rotation and flipped frames map
+            // use the actual quad so packed rotation and flipped frames map
             // the image consistently, without allocating a sprite frame.
             auto const& quad = m_sQuad;
             auto origin = quad.tl.texCoords;
@@ -56,10 +54,11 @@ class $modify(GradientImageSprite, CCSprite) {
 };
 
 void paimon::icon_gradients::setGradientImage(CCSprite* sprite, std::shared_ptr<GradientImageAtlas> atlas) {
+    if (!sprite) return;
     auto& states = imageStates();
     auto found = states.find(sprite);
     auto fields = found == states.end() ? nullptr : found->second;
-    if (!atlas) {
+    if (!atlas || !atlas->texture || !sprite->getShaderProgram()) {
         if (fields) sprite->setUserObject(imageStateKey, nullptr);
         return;
     }

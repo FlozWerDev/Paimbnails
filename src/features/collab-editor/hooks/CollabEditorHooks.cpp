@@ -48,7 +48,7 @@ void showBlocked(std::string const& name) {
     popup.showQueue();
 }
 
-// Duo-player button; wrapper gives SimplePlayer size.
+// duo-player button; wrapper gives simpleplayer size.
 CCMenuItemSpriteExtra* makeCollabButton(std::function<void()> onClick) {
     auto* wrap = CCNode::create();
     CCSize const sz{38.f, 34.f};
@@ -95,7 +95,7 @@ class $modify(PaimonCollabEditLevelLayer, EditLevelLayer) {
         auto* folderMenu = typeinfo_cast<CCMenu*>(this->getChildByID("folder-menu"));
         if (!folderMenu) return true;
 
-        // Custom asset first, fallback to duo-cube icon.
+        // custom asset first, fallback to duo-cube icon.
         CCMenuItemSpriteExtra* btn = nullptr;
         if (paimon::editor::assets::hasCustom(paimon::editor::assets::files::collab)) {
             btn = paimon::editor::assets::circleButton(
@@ -123,7 +123,7 @@ class $modify(PaimonCollabEditLevelLayer, EditLevelLayer) {
 
 class $modify(PaimonCollabLevelEditorLayer, LevelEditorLayer) {
     struct Fields {
-        // Pointer from init; get() is null during teardown.
+        // pointer from init; get() is null during teardown.
         LevelEditorLayer* m_self = nullptr;
         bool m_wasMiddle = false;
         ~Fields() {
@@ -149,7 +149,7 @@ class $modify(PaimonCollabLevelEditorLayer, LevelEditorLayer) {
         auto& mgr = paimon::collab::CollabManager::get();
         mgr.tick();
 #if defined(GEODE_IS_DESKTOP)
-        // Middle-click pings the cursor; touch uses the overlay Ping button.
+        // middle-click pings the cursor; touch uses the overlay ping button.
         if (mgr.connected() && !mgr.isApplyingRemote()) {
             bool middle = paimon::keybinds::isMouseButtonHeld(paimon::keybinds::MouseButton::Middle);
             if (middle && !m_fields->m_wasMiddle) {
@@ -183,7 +183,7 @@ class $modify(PaimonCollabLevelEditorLayer, LevelEditorLayer) {
     }
 };
 
-// Color popups may skip levelSettingsUpdated; push full metadata on close.
+// color popups may skip levelsettingsupdated; push full metadata on close.
 class $modify(PaimonCollabColorSelectPopup, ColorSelectPopup) {
     $override
     bool init(EffectGameObject* object, CCArray* objects, ColorAction* action) {
@@ -231,7 +231,7 @@ class $modify(PaimonCollabEditorUI, EditorUI) {
                 paimon::collab::CollabManager::get().followClientId() > 0) {
                 paimon::collab::CollabManager::get().clearFollow();
                 Notification::create("Follow off", NotificationIcon::Info)->show();
-                // Fall through so pause still handles Escape.
+                // fall through so pause still handles escape.
             }
 
             if (key == cocos2d::KEY_E && !paimon::editor::focusedTextInput() &&
@@ -252,7 +252,7 @@ class $modify(PaimonCollabEditorUI, EditorUI) {
         if (!collabActive()) return object;
         auto& mgr = paimon::collab::CollabManager::get();
         if (object && !mgr.canEditObjectLayer(object)) {
-            // Local-only placement, skip cross-layer sync.
+            // local-only placement, skip cross-layer sync.
             Notification::create("No es tu layer", NotificationIcon::Warning)->show();
         } else {
             mgr.sendCreatedObject(object);
@@ -455,7 +455,7 @@ class $modify(PaimonCollabLevelSettingsLayer, LevelSettingsLayer) {
     $override
     void onClose(CCObject* sender) {
         LevelSettingsLayer::onClose(sender);
-        // Song, art, and mode changes apply on close.
+        // song, art, and mode changes apply on close.
         auto& mgr = paimon::collab::CollabManager::get();
         if (mgr.connected() && !mgr.isApplyingRemote()) {
             mgr.sendLevelSettings(false);

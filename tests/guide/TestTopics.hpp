@@ -4,9 +4,9 @@
 #include <string>
 #include <vector>
 
-// Test fixture mirroring GuideTopicKnowledge.cpp (hand-curated topics) so the
-// conversation harness can exercise ConversationalEngine host-side without
-// the Geode SDK. Keep in sync if the knowledge table changes.
+// test fixture mirroring guidetopicknowledge.cpp (hand-curated topics) so the
+// conversation harness can exercise conversationalengine host-side without
+// the geode sdk. keep in sync if the knowledge table changes.
 
 namespace paimon::guide::test {
 

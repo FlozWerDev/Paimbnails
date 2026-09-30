@@ -18,6 +18,8 @@
 #include <string_view>
 #include <filesystem>
 #include "FormatDetect.hpp"
+#include "Base64.hpp"
+#include "HttpUrl.hpp"
 
 using namespace geode::prelude;
 
@@ -50,7 +52,7 @@ bool isMissingStatus(int status) {
     return status == 404 || status == 410;
 }
 
-// Shared account tail for upload form fields; callers prepend path/id keys.
+// shared account tail for upload form fields; callers prepend path/id keys.
 std::vector<std::pair<std::string, std::string>> accountFieldTail(std::string const& username) {
     auto account = AccountVerifier::get().verify();
     return {
@@ -85,39 +87,13 @@ std::string profileUploadMessage(std::string const& response, std::string const&
     return result;
 }
 
-bool decodeBase64(std::string const& input, std::vector<uint8_t>& out) {
-    static int8_t const* T = []() {
-        static int8_t arr[256];
-        for (int i = 0; i < 256; ++i) arr[i] = -1;
-        char const* alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        for (int i = 0; i < 64; ++i) arr[(unsigned char)alphabet[i]] = (int8_t)i;
-        return arr;
-    }();
-
-    out.clear();
-    out.reserve((input.size() / 4) * 3);
-
-    int bits = 0, value = 0;
-    for (unsigned char c : input) {
-        if (c == '=' || c == '\r' || c == '\n' || c == ' ' || c == '\t') continue;
-        int8_t v = T[c];
-        if (v < 0) return false;
-        value = (value << 6) | v;
-        bits += 6;
-        if (bits >= 8) {
-            bits -= 8;
-            out.push_back((uint8_t)((value >> bits) & 0xFF));
-        }
-    }
-    return true;
-}
 }
 
 HttpClient::HttpClient() {
     m_serverURL = "https://api.flozwer.org";
     m_forumServerURL = "https://paimbnailsbot.onrender.com";
 
-    // The client key is shipped and never persisted.
+    // the client key is shipped and never persisted.
     m_apiKey = "074b91c9-6631-4670-a6f08a2ce970-0183-471b";
 
     m_modCode = Mod::get()->getSavedValue<std::string>("mod-code", "");
@@ -183,7 +159,8 @@ std::string HttpClient::encodeQueryParam(std::string const& value) {
     encoded << std::uppercase << std::hex;
 
     for (unsigned char ch : value) {
-        if (std::isalnum(ch) || ch == '-' || ch == '_' || ch == '.' || ch == '~') {
+        if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+            (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.' || ch == '~') {
             encoded << static_cast<char>(ch);
             continue;
         }
@@ -253,8 +230,8 @@ void HttpClient::completeModCodeSetup(std::string const& challengeToken, Generic
     postWithoutModCode("/api/mod-auth/complete", body.dump(), std::move(callback));
 }
 
-// identifying/auth headers. public methods take full URLs and hand-listed these,
-// so pointing one at the CDN/forum leaked credentials; filter at the single chokepoint.
+// identifying/auth headers. public methods take full urls and hand-listed these,
+// so pointing one at the cdn/forum leaked credentials; filter at the single chokepoint.
 static bool isCredentialHeader(std::string const& key) {
     static constexpr std::string_view kCredentialKeys[] = {
         "x-mod-code", "x-viewer-token", "x-api-key",
@@ -269,7 +246,7 @@ static bool isCredentialHeader(std::string const& key) {
     return false;
 }
 
-// Apply headers and detect an explicit X-Mod-Code.
+// apply headers and detect an explicit x-mod-code.
 static void applyHeaderList(web::WebRequest& req, std::vector<std::string> const& headers,
                             bool* outHasModCode = nullptr, bool allowCredentials = true) {
     for (auto const& header : headers) {
@@ -289,14 +266,15 @@ static void applyHeaderList(web::WebRequest& req, std::vector<std::string> const
     }
 }
 
-// credential-worthy hosts: our two backends only (worker, forum). performRequest
-// also hits the Bunny CDN and response URLs; the mod code must never land there.
+// credentials are restricted to configured backend origins.
 bool HttpClient::isTrustedBackendUrl(std::string const& url) const {
-    if (url.empty()) return false;
-    if (!url.starts_with("http://") && !url.starts_with("https://")) return true;  // ruta relativa
-    if (!m_serverURL.empty() && url.starts_with(m_serverURL)) return true;
-    if (!m_forumServerURL.empty() && url.starts_with(m_forumServerURL)) return true;
-    return url.find("://api.flozwer.org") != std::string::npos;
+    auto target = paimon::net::parseHttpUrl(url);
+    if (!target) return false;
+    for (auto const& backend : {m_serverURL, m_forumServerURL, std::string("https://api.flozwer.org")}) {
+        auto trusted = paimon::net::parseHttpUrl(backend);
+        if (trusted && target->sameOrigin(*trusted)) return true;
+    }
+    return false;
 }
 
 void HttpClient::performRequest(
@@ -314,13 +292,14 @@ void HttpClient::performRequest(
 
     bool hasExplicitModCodeHeader = false;
     bool trustedHost = isTrustedBackendUrl(url);
+    if (trustedHost) req.followRedirects(false);
 
     applyHeaderList(req, headers, &hasExplicitModCodeHeader, trustedHost);
 
     if (includeStoredModCode && !hasExplicitModCodeHeader && !m_modCode.empty() && trustedHost) {
         req.header("X-Mod-Code", m_modCode);
     }
-    // GD account ownership proof; required for votes and profile backgrounds.
+    // gd account ownership proof; required for votes and profile backgrounds.
     if (trustedHost && !m_viewerToken.empty()) {
         req.header("X-Viewer-Token", m_viewerToken);
     }
@@ -329,7 +308,7 @@ void HttpClient::performRequest(
         req.bodyString(postData);
     }
 
-    // Capture stable state; workers may outlive the singleton.
+    // capture stable state; workers may outlive the singleton.
     auto workerExhaustedRef = &m_workerExhausted;
     auto exhaustedAtRef = &m_exhaustedAt;
     auto consecutiveFailuresRef = &m_consecutiveWorkerFailures;
@@ -352,23 +331,20 @@ void HttpClient::performRequest(
             }
         }
 
-        // Count repeated server failures, but keep app rate limits transient.
-        bool failureCounted = false;
+        // count repeated server failures, but keep app rate limits transient.
         if (!success && res.code() == 503) {
             int newCount = consecutiveFailuresRef->fetch_add(1, std::memory_order_acq_rel) + 1;
-            failureCounted = true;
             if (newCount >= EXHAUSTION_THRESHOLD) {
                 workerExhaustedRef->store(true, std::memory_order_release);
                 exhaustedAtRef->store(static_cast<int64_t>(std::time(nullptr)), std::memory_order_release);
                 PaimonDebug::warn("[HttpClient] Worker marked exhausted after {} consecutive 503s", newCount);
             }
         } else if (!success && res.code() == 429) {
-            // Distinguish the app limiter from a platform quota failure.
+            // distinguish the app limiter from a platform quota failure.
             bool isAppRateLimit = body.find("RATE_LIMITED") != std::string::npos
                 || body.find("Rate limit exceeded") != std::string::npos;
             if (!isAppRateLimit) {
                 int newCount = consecutiveFailuresRef->fetch_add(1, std::memory_order_acq_rel) + 1;
-                failureCounted = true;
                 if (newCount >= EXHAUSTION_THRESHOLD) {
                     workerExhaustedRef->store(true, std::memory_order_release);
                     exhaustedAtRef->store(static_cast<int64_t>(std::time(nullptr)), std::memory_order_release);
@@ -402,7 +378,9 @@ void HttpClient::performBinaryRequestEx(
     std::vector<std::string> const& headers,
     BinaryStatusCallback callback,
     int timeoutSeconds,
-    bool includeModCode
+    bool includeModCode,
+    bool validateImage,
+    unsigned redirectsLeft
 ) {
     auto callbackGate = m_callbackGate;
     auto req = web::WebRequest();
@@ -410,9 +388,10 @@ void HttpClient::performBinaryRequestEx(
     req.userAgent("Paimbnails/2.x (Geode)");
     req.acceptEncoding("gzip, deflate");
 
-    req.header("Accept", "image/webp,image/png,image/gif,*/*");
+    req.header("Accept", validateImage ? "image/webp,image/png,image/gif,*/*" : "*/*");
 
     bool trustedHost = isTrustedBackendUrl(url);
+    req.followRedirects(false);
     applyHeaderList(req, headers, nullptr, trustedHost);
 
     if (includeModCode && !m_modCode.empty() && trustedHost) {
@@ -421,8 +400,24 @@ void HttpClient::performBinaryRequestEx(
 
     std::string urlCopy = url;
 
-    WebHelper::dispatch(std::move(req), "GET", url, [callbackGate, callback, urlCopy](web::WebResponse res) {
+    WebHelper::dispatch(std::move(req), "GET", url,
+        [this, callbackGate, callback, urlCopy, headers, timeoutSeconds, includeModCode,
+         validateImage, redirectsLeft](web::WebResponse res) {
         if (!callbackGate || !callbackGate->load(std::memory_order_acquire)) {
+            return;
+        }
+        if (paimon::isRuntimeShuttingDown()) return;
+        int const code = res.code();
+        if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+            auto const location = res.header("Location");
+            auto next = location ? paimon::net::resolveHttpRedirect(urlCopy, std::string(*location)) : std::nullopt;
+            if (redirectsLeft && next && isUrlSafe(*next)) {
+                // each hop rechecks the origin before attaching credentials.
+                performBinaryRequestEx(*next, headers, callback, timeoutSeconds, includeModCode,
+                                       validateImage, redirectsLeft - 1);
+            } else if (callback) {
+                callback(false, {}, code);
+            }
             return;
         }
         bool success = res.ok();
@@ -444,7 +439,7 @@ void HttpClient::performBinaryRequestEx(
                 data.clear();
             }
 
-            if (success && data.size() >= 4) {
+            if (success && validateImage) {
                 auto fmt = paimon::format::detect(data.data(), data.size());
                 bool validImage = (fmt != paimon::format::ImageFormat::Unknown);
 
@@ -486,6 +481,7 @@ void HttpClient::performUpload(
     req.acceptEncoding("gzip, deflate");
 
     bool trustedHost = isTrustedBackendUrl(url);
+    if (trustedHost) req.followRedirects(false);
     applyHeaderList(req, headers, nullptr, trustedHost);
 
     if (trustedHost && !m_viewerToken.empty()) {
@@ -713,6 +709,7 @@ void HttpClient::uploadProfileConfig(int accountID, std::string const& jsonConfi
 
     auto req = web::WebRequest();
     req.acceptEncoding("gzip, deflate");
+    req.followRedirects(false);
     req.header("X-API-Key", m_apiKey);
     if (!m_modCode.empty()) {
         req.header("X-Mod-Code", m_modCode);
@@ -831,7 +828,7 @@ void HttpClient::uploadThumbnail(int levelId, std::vector<uint8_t> const& pngDat
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey
     };
-    // X-Mod-Code sends moderator uploads directly; others use the pending queue.
+    // x-mod-code sends moderator uploads directly; others use the pending queue.
     if (!m_modCode.empty()) {
         headers.push_back("X-Mod-Code: " + m_modCode);
     }
@@ -1268,7 +1265,7 @@ void HttpClient::removeExistsEntry(int levelId) {
 void HttpClient::saveManifestToDisk() {
     if (!paimon::settings::general::enableDiskCache()) return;
 
-    // Serialize under the lock; disk I/O stays off the main thread.
+    // serialize under the lock; disk i/o stays off the main thread.
     std::string json;
     size_t entryCount = 0;
     auto path = Mod::get()->getSaveDir() / "manifest_cache.json";
@@ -1376,7 +1373,7 @@ void HttpClient::downloadReported(int levelId, DownloadCallback callback) {
 
 void HttpClient::fetchViaWorker(int levelId, bool dropManifestEntry) {
     if (isWorkerExhausted()) {
-        // Worker exhaustion is transient; let ThumbnailLoader retry.
+        // worker exhaustion is transient; let thumbnailloader retry.
         PaimonDebug::warn("[HttpClient] Worker exhausted, cannot fallback for level {} (will retry later)", levelId);
         resolveInflight(levelId, false, {});
         return;
@@ -1440,15 +1437,15 @@ void HttpClient::downloadThumbnail(int levelId, DownloadCallback callback) {
                 PaimonDebug::log("[HttpClient] CDN download success for level {}: {} bytes", levelId, data.size());
                 resolveInflight(levelId, true, data);
             } else {
-                // CDN miss: fall back to the Worker without invalidating the manifest.
+                // cdn miss: fall back to the worker without invalidating the manifest.
                 PaimonDebug::warn("[HttpClient] CDN download failed for level {}, falling back to Worker", levelId);
                 fetchViaWorker(levelId, true);
             }
-        }, 4 /* CDN timeout; fall back quickly if slow */);
+        }, 4 /* cdn timeout; fall back quickly if slow */);
         return;
     }
 
-    // On a cold manifest, try CDN before the Worker.
+    // on a cold manifest, try cdn before the worker.
     if (!m_cdnBaseURL.empty()) {
         std::string cdnUrl = m_cdnBaseURL + "/thumbnails/thumbnails/" + std::to_string(levelId) + ".webp";
         PaimonDebug::log("[HttpClient] Manifest miss for level {}, trying CDN best-effort first: {}", levelId, cdnUrl);
@@ -1463,7 +1460,7 @@ void HttpClient::downloadThumbnail(int levelId, DownloadCallback callback) {
                 PaimonDebug::warn("[HttpClient] CDN best-effort failed for level {} (may not exist), falling back to Worker", levelId);
                 fetchViaWorker(levelId, false);
             }
-        }, 4 /* CDN timeout; jump to Worker if slow */);
+        }, 4 /* cdn timeout; jump to worker if slow */);
         return;
     }
 
@@ -1714,14 +1711,14 @@ void HttpClient::getBanList(BanListCallback callback) {
     PaimonDebug::log("[HttpClient] Getting ban list");
     std::string reqUser = getSafeAccountUsername();
     int reqAccountID = getSafeAccountID();
-    // URL-encode usernames to prevent parameter injection.
+    // url-encode usernames to prevent parameter injection.
     std::string url = m_serverURL + "/api/admin/banlist?username=" + encodeQueryParam(reqUser)
         + "&accountID=" + std::to_string(reqAccountID);
     std::vector<std::string> headers = {
         "X-API-Key: " + m_apiKey,
         "Accept: application/json"
     };
-    // Omit empty X-Mod-Code; the server treats it as invalid auth.
+    // omit empty x-mod-code; the server treats it as invalid auth.
     if (!m_modCode.empty()) {
         headers.push_back("X-Mod-Code: " + m_modCode);
     }
@@ -2024,9 +2021,9 @@ void HttpClient::downloadFromUrl(std::string const& url, DownloadCallback callba
         return;
     }
 
-    // Do not send the API key to arbitrary hosts.
+    // do not send the api key to arbitrary hosts.
     std::vector<std::string> headers;
-    if (url.find(m_serverURL) == 0 || url.find("api.flozwer.org") != std::string::npos) {
+    if (isTrustedBackendUrl(url)) {
         headers.push_back("X-API-Key: " + m_apiKey);
     }
     performBinaryRequest(url, headers, [callback = std::move(callback)](bool success, std::vector<uint8_t> const& data) {
@@ -2044,48 +2041,12 @@ void HttpClient::downloadFromUrlRaw(std::string const& url, DownloadCallback cal
         if (callback) callback(false, {}, 0, 0);
         return;
     }
-    auto req = web::WebRequest();
-    req.timeout(std::chrono::seconds(30));
-    req.acceptEncoding("gzip, deflate");
-
-    if (url.find(m_serverURL) == 0 || url.find("api.flozwer.org") != std::string::npos) {
-        req.header("X-API-Key", m_apiKey);
-    }
-
-    std::string urlCopy = url;
-
-    auto callbackGate = m_callbackGate;
-    WebHelper::dispatch(std::move(req), "GET", url, [callbackGate, callback, urlCopy](web::WebResponse res) {
-        if (!callbackGate || !callbackGate->load(std::memory_order_acquire)) {
-            return;
-        }
-        bool success = res.ok();
-        std::vector<uint8_t> data = success ? res.data() : std::vector<uint8_t>{};
-
-        int statusCode = res.code();
-        PaimonDebug::log("[HttpClient] Raw binary GET {} -> status={}, size={}", urlCopy, statusCode, data.size());
-
-        if (success && !data.empty()) {
-            auto ct = res.header("Content-Type");
-            std::string contentType = ct.has_value() ? std::string(ct.value()) : "";
-
-            if (contentType.find("application/json") != std::string::npos ||
-                contentType.find("text/html") != std::string::npos) {
-                std::string body(data.begin(), data.begin() + std::min(data.size(), (size_t)500));
-                PaimonDebug::log("[HttpClient] Raw binary request got error response: {}", body);
-                success = false;
-                data.clear();
-            }
-        }
-
-        if (callback) {
-            if (success && !data.empty()) {
-                callback(true, data, 0, 0);
-            } else {
-                callback(false, {}, 0, 0);
-            }
-        }
-    });
+    std::vector<std::string> headers;
+    if (isTrustedBackendUrl(url)) headers.push_back("X-API-Key: " + m_apiKey);
+    performBinaryRequestEx(url, headers,
+        [callback = std::move(callback)](bool success, std::vector<uint8_t> const& data, int) {
+            if (callback) callback(success && !data.empty(), data, 0, 0);
+        }, 30, false, false);
 }
 
 void HttpClient::get(std::string const& endpoint, GenericCallback callback) {
@@ -2131,7 +2092,7 @@ void HttpClient::getProfileStats(int accountID, GenericCallback callback) {
     PaimonDebug::log("[HttpClient] Fetching profile stats for account {}", accountID);
 
     if (isWorkerExhausted() && !m_cdnBaseURL.empty()) {
-        // Profile stats are private; there is no CDN fallback.
+        // profile stats are private; there is no cdn fallback.
         PaimonDebug::warn("[HttpClient] Worker exhausted, cannot fetch profile stats for account {}", accountID);
         callback(false, "Worker quota exhausted");
         return;
@@ -2572,37 +2533,9 @@ void HttpClient::removeFromWhitelist(std::string const& targetUsername, std::str
 
 
 bool HttpClient::isUrlSafe(std::string const& url) {
-    if (url.empty()) return false;
-
-    std::string lower = url;
-    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-    if (lower.starts_with("file://") || lower.starts_with("ftp://") ||
-        lower.starts_with("gopher://") || lower.starts_with("data:")) {
-        return false;
-    }
-
-    if (!lower.starts_with("http://") && !lower.starts_with("https://")) {
-        return false;
-    }
-
-    size_t hostStart = lower.find("://");
-    if (hostStart == std::string::npos) return false;
-    hostStart += 3;
-
-    size_t atPos = lower.find('@', hostStart);
-    size_t slashPos = lower.find('/', hostStart);
-    if (atPos != std::string::npos && (slashPos == std::string::npos || atPos < slashPos)) {
-        return false;
-    }
-
-    std::string hostPort = (slashPos != std::string::npos)
-        ? lower.substr(hostStart, slashPos - hostStart)
-        : lower.substr(hostStart);
-
-    size_t colonPos = hostPort.rfind(':');
-    std::string host = (colonPos != std::string::npos)
-        ? hostPort.substr(0, colonPos)
-        : hostPort;
+    auto parsed = paimon::net::parseHttpUrl(url);
+    if (!parsed) return false;
+    auto const& host = parsed->host;
 
     if (host.empty()) return false;
 
@@ -2626,7 +2559,7 @@ bool HttpClient::isUrlSafe(std::string const& url) {
     if (host.starts_with("169.254.")) {
         return false;
     }
-    // Second-octet range check for CGNAT (100.64/10) and private (172.16/12) blocks.
+    // second-octet range check for cgnat (100.64/10) and private (172.16/12) blocks.
     auto secondOctetIn = [&host](int lo, int hi) {
         size_t dot = host.find('.', 4);
         if (dot == std::string::npos) return false;
@@ -2644,10 +2577,7 @@ bool HttpClient::isUrlSafe(std::string const& url) {
         return false;
     }
 
-    auto hostNoBrackets = host;
-    if (hostNoBrackets.size() >= 2 && hostNoBrackets.front() == '[' && hostNoBrackets.back() == ']') {
-        hostNoBrackets = hostNoBrackets.substr(1, hostNoBrackets.size() - 2);
-    }
+    auto const& hostNoBrackets = host;
     if (hostNoBrackets.starts_with("fe80:") || hostNoBrackets.starts_with("fe80::")) {
         return false;
     }
@@ -2690,6 +2620,7 @@ void HttpClient::uploadCustomBadge(int accountID, std::string const& emoteName, 
 
     auto req = web::WebRequest();
     req.acceptEncoding("gzip, deflate");
+    req.followRedirects(false);
     req.header("X-API-Key", m_apiKey);
     req.bodyMultipart(form);
 
@@ -2729,6 +2660,7 @@ void HttpClient::deleteCustomBadge(int accountID, GenericCallback callback) {
 
     auto req = web::WebRequest();
     req.acceptEncoding("gzip, deflate");
+    req.followRedirects(false);
     req.header("X-API-Key", m_apiKey);
     req.bodyMultipart(form);
 
@@ -2797,7 +2729,7 @@ bool parseBatchResponse(std::string const& body,
             std::string b64 = val["data"].asString().unwrapOr("");
             if (!b64.empty()) {
                 std::vector<uint8_t> bytes;
-                if (decodeBase64(b64, bytes) && !bytes.empty()) {
+                if (paimon::base64Decode(b64, bytes) && !bytes.empty()) {
                     item.data = std::move(bytes);
                 } else {
                     item.ok = false;
@@ -2825,8 +2757,8 @@ std::string buildBatchIdsJson(std::string const& key, std::vector<int> const& id
 }
 }
 
-// each Bunny object read costs one of 50 subrequests per invocation: batch sizes
-// mirror the worker MAX_BATCH_*_FETCHES. overshooting 500s the whole batch.
+// each bunny object read costs one of 50 subrequests per invocation: batch sizes
+// mirror the worker max_batch_*_fetches. overshooting 500s the whole batch.
 static constexpr size_t MAX_ASSET_BATCH = 15;
 static constexpr size_t MAX_PROFILE_BATCH = 10;
 

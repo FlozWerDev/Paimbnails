@@ -16,7 +16,7 @@ CCSprite* tryModSprite(char const* preferredPaim) {
     if (!preferredPaim || !*preferredPaim) return nullptr;
     auto* mod = Mod::get();
     if (!mod) return nullptr;
-    // expandSpriteName -> "flozwer.paimbnails2/paim_....png"
+    // expandspritename -> "flozwer.paimbnails2/paim_....png"
     std::string expanded = mod->expandSpriteName(preferredPaim);
     if (auto* spr = paimon::SpriteHelper::safeCreate(expanded.c_str())) {
         return spr;
@@ -24,7 +24,7 @@ CCSprite* tryModSprite(char const* preferredPaim) {
     if (auto* spr = paimon::SpriteHelper::safeCreateWithFrameName(expanded.c_str())) {
         return spr;
     }
-    // Bare filename (dev / loose file)
+    // bare filename (dev / loose file)
     if (auto* spr = paimon::SpriteHelper::safeCreate(preferredPaim)) {
         return spr;
     }
@@ -50,7 +50,7 @@ CCSprite* lastResort() {
     }
     auto* spr = CCSprite::create("square02_001.png");
     if (spr && paimon::SpriteHelper::isValidSprite(spr)) return spr;
-    // Absolute last: empty node-sized sprite so callers never null-deref
+    // absolute last: empty node-sized sprite so callers never null-deref
     auto* empty = CCSprite::create();
     if (empty) empty->setContentSize({20.f, 20.f});
     return empty;
@@ -76,8 +76,8 @@ CircleButtonSprite* circleIcon(
     auto* icon = loadIcon(preferredPaim, fallbacks);
     if (!icon) return nullptr;
 
-    // CircleButtonSprite needs a sized top node with a centered anchor —
-    // BasedButtonSprite positions the top by center assuming anchor 0.5.
+    // circlebuttonsprite needs a sized top node with a centered anchor —
+    // basedbuttonsprite positions the top by center assuming anchor 0.5.
     auto* wrap = CCNode::create();
     auto sz = icon->getContentSize();
     if (sz.width < 1.f || sz.height < 1.f) sz = CCSize{20.f, 20.f};

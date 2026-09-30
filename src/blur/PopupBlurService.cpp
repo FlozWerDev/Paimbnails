@@ -2,6 +2,7 @@
 
 #include <Geode/Geode.hpp>
 #include "../core/Settings.hpp"
+#include "../utils/EditorContext.hpp"
 #include "../core/RuntimeLifecycle.hpp"
 #include "../framework/compat/ModCompat.hpp"
 #include "PaiblurNode.hpp"
@@ -14,12 +15,7 @@ using namespace geode::prelude;
 namespace paimon::popupblur {
 
 bool isEditorContextActive() {
-    auto* director = CCDirector::get();
-    if (!director) return false;
-    auto* scene = director->getRunningScene();
-    if (!scene) return false;
-    return scene->getChildByType<LevelEditorLayer>(0) != nullptr ||
-           scene->getChildByType<EditorUI>(0) != nullptr;
+    return paimon::isEditorScene();
 }
 
 struct RegistryEntry {
@@ -34,7 +30,7 @@ static CCNode* liveBlur(RegistryEntry const& e) {
     return e.blurWeak.lock().data();
 }
 
-// Parent liveness guard: never walk or detach a node after its parent dies.
+// parent liveness guard: never walk or detach a node after its parent dies.
 static bool parentAlive(RegistryEntry const& e) {
     return e.parentWeak.valid();
 }
@@ -268,7 +264,7 @@ static void cleanupImpl(CCNode* popup, float fadeDuration) {
     auto it = reg.find(popup);
     if (it == reg.end()) return;
 
-    // Move the entry out before erasing so its Ref stays valid.
+    // move the entry out before erasing so its ref stays valid.
     RegistryEntry entry = std::move(it->second);
     reg.erase(it);
     unscheduleWatchdogIfIdle();
@@ -281,7 +277,7 @@ static void cleanupImpl(CCNode* popup, float fadeDuration) {
     }
 
     CCNode* blurNode = liveBlur(entry);
-    // Drop freed/orphaned nodes without touching their dangling parent.
+    // drop freed/orphaned nodes without touching their dangling parent.
     if (!blurNode || !parentAlive(entry) || !blurNode->getParent()) return;
 
     if (fadeDuration <= 0.01f) {
@@ -315,7 +311,7 @@ void cleanupAllActive(float fadeDuration) {
     auto& reg = blurRegistry();
     if (reg.empty()) return;
 
-    // Fade only live parents; reg.clear() disposes orphaned entries safely.
+    // fade only live parents; reg.clear() disposes orphaned entries safely.
     std::vector<Ref<CCNode>> toFade;
     toFade.reserve(reg.size());
     for (auto& [_, entry] : reg) {
@@ -337,7 +333,7 @@ static void fadeBlurNode(CCNode* blur, bool hide, float duration) {
     GLubyte target = hide ? 0 : 255;
     float dur = std::max(0.f, duration);
 
-    // Fade opacity; PaiblurNode derives blur radius from it. Avoid dynamic_cast.
+    // fade opacity; paiblurnode derives blur radius from it. avoid dynamic_cast.
     if (auto* rgba = typeinfo_cast<CCNodeRGBA*>(blur)) {
         rgba->stopAllActions();
         if (dur <= 0.01f) {
@@ -366,7 +362,7 @@ void setLivePreviewMode(CCNode* popup, bool active, float duration) {
         }
     }
 
-    // Also hunt sibling/scene children to cover reparent races and external keys.
+    // also hunt sibling/scene children to cover reparent races and external keys.
     auto fadeMatching = [&](CCNode* parent) {
         if (!parent) return;
         auto* kids = parent->getChildren();

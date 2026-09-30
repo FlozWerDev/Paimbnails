@@ -226,7 +226,7 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
         uploadBtn->setPosition({0, -35}); 
         menu->addChild(uploadBtn);
 
-        // gear button opens the GJScoreCell FX settings popup
+        // gear button opens the gjscorecell fx settings popup
         if (paimon::modules::isEnabled("paimbnails.leaderboardcells.browser")) {
             constexpr float S = 30.f;
             auto gearContainer = CCNode::create();

@@ -17,7 +17,7 @@ constexpr char const* kKeyRotation    = "dynsong-rotation-mode";
 constexpr char const* kKeyVolume      = "dynsong-volume-pct";
 constexpr char const* kKeyFade        = "dynsong-fade-seconds";
 constexpr char const* kKeyLevelSelect = "dynsong-in-level-select";
-// Kept from the first version of the feature so nobody loses their choice.
+// kept from the first version of the feature so nobody loses their choice.
 constexpr char const* kKeyStream      = "dynamic-song-stream-preview";
 
 constexpr char const* kKeySubEnabled  = "dynsong-submerge-enabled";
@@ -38,7 +38,7 @@ bool g_loaded = false;
 void normalize(DynamicSongConfig& cfg) {
     cfg.randomMinPct = std::clamp(cfg.randomMinPct, 0, 90);
     cfg.randomMaxPct = std::clamp(cfg.randomMaxPct, 5, 100);
-    // A window that closed on itself would seek to a single fixed point.
+    // a window that closed on itself would seek to a single fixed point.
     if (cfg.randomMaxPct <= cfg.randomMinPct) {
         cfg.randomMaxPct = std::min(100, cfg.randomMinPct + 5);
         if (cfg.randomMaxPct <= cfg.randomMinPct) cfg.randomMinPct = cfg.randomMaxPct - 5;
@@ -129,7 +129,7 @@ SubmergeConfig submergePresetConfig(SubmergePreset preset) {
             cfg.pitch = 0.94f;
             break;
         case SubmergePreset::Muffled:
-            // Behind a door rather than under water: no pitch bend, barely wet.
+            // behind a door rather than under water: no pitch bend, barely wet.
             cfg.cutoffHz = 900.f;
             cfg.highpassHz = 20.f;
             cfg.duckDb = -4.f;
@@ -144,7 +144,7 @@ SubmergeConfig submergePresetConfig(SubmergePreset preset) {
             cfg.pitch = 0.87f;
             break;
         case SubmergePreset::Radio:
-            // Band-limited both ends, which reads as a small speaker.
+            // band-limited both ends, which reads as a small speaker.
             cfg.cutoffHz = 2600.f;
             cfg.highpassHz = 500.f;
             cfg.duckDb = -3.f;
@@ -178,8 +178,8 @@ void loadConfig() {
     sub.preset  = submergePresetFromId(
         mod->getSavedValue<std::string>(kKeySubPreset, submergePresetId(sub.preset)));
 
-    // A named preset owns its tone knobs: reading the stored ones back would
-    // resurrect whatever a Custom session left behind.
+    // a named preset owns its tone knobs: reading the stored ones back would
+    // resurrect whatever a custom session left behind.
     bool const custom = sub.preset == SubmergePreset::Custom;
     SubmergeConfig const tone = custom ? SubmergeConfig{}
                                        : submergePresetConfig(sub.preset);
@@ -190,7 +190,7 @@ void loadConfig() {
     sub.reverbMix  = custom ? mod->getSavedValue<float>(kKeySubReverb, tone.reverbMix) : tone.reverbMix;
     sub.pitch      = custom ? mod->getSavedValue<float>(kKeySubPitch, tone.pitch) : tone.pitch;
 
-    // Timing is the user's either way: a preset is a tone, not a tempo.
+    // timing is the user's either way: a preset is a tone, not a tempo.
     sub.diveSeconds    = mod->getSavedValue<float>(kKeySubDive, sub.diveSeconds);
     sub.surfaceSeconds = mod->getSavedValue<float>(kKeySubSurface, sub.surfaceSeconds);
     sub.onLevelExit    = mod->getSavedValue<bool>(kKeySubOnExit, sub.onLevelExit);

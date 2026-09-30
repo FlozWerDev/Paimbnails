@@ -1,5 +1,5 @@
 #pragma once
-// locked/unobtainable icon visibility/opacity only, no CCRenderTexture.
+// locked/unobtainable icon visibility/opacity only, no ccrendertexture.
 
 #include "../PaimonIconsConfig.hpp"
 
@@ -15,10 +15,10 @@ class IconLockStyler final {
 public:
     static IconLockStyler& get();
 
-    // Pre: GJItemIcon::changeToLockedState has run; SimplePlayer not yet hidden by us.
+    // pre: gjitemicon::changetolockedstate has run; simpleplayer not yet hidden by us.
     void apply(GJItemIcon* icon);
 
-    // Shared helpers, also used by the popup preview and the vanilla restore.
+    // shared helpers, also used by the popup preview and the vanilla restore.
     static cocos2d::CCSprite* findLockSprite(GJItemIcon* icon);
     static void tintAllParts(SimplePlayer* sp, cocos2d::ccColor3B tint);
     static void fadeAllParts(SimplePlayer* sp, unsigned char opacity);

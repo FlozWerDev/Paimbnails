@@ -12,10 +12,10 @@ class $modify(RedesignProfilePage, ProfilePage) {
         float m_watchTime = 0.f;
         Ref<CCArray> m_comments = nullptr;
         bool m_commentsLoaded = false;
-        // Coalesce rapid rebuild requests (comments + latecomer badges + SWR
+        // coalesce rapid rebuild requests (comments + latecomer badges + swr
         // userinfo refresh can all land within a few frames).
         bool m_rebuildQueued = false;
-        // Sentinel so the first comments paint is never treated as a no-op.
+        // sentinel so the first comments paint is never treated as a no-op.
         int m_lastCommentSig = std::numeric_limits<int>::min();
     };
 
@@ -35,15 +35,15 @@ class $modify(RedesignProfilePage, ProfilePage) {
         ProfilePage::loadPageFromUserInfo(score);
         if (!paimon::settings::profiles::redesignEnabled()) return;
 
-        // Immediate first paint so vanilla layout never flashes for a frame.
+        // immediate first paint so vanilla layout never flashes for a frame.
         doRedesign();
-        // Latecomers land async in hidden menus; rebuild only when one appears.
+        // latecomers land async in hidden menus; rebuild only when one appears.
         m_fields->m_watchTime = 0.f;
         this->unschedule(schedule_selector(RedesignProfilePage::watchLatecomers));
         this->schedule(schedule_selector(RedesignProfilePage::watchLatecomers), 0.25f);
     }
 
-    // This path can skip loadPageFromUserInfo, so the strip rebuilds here.
+    // this path can skip loadpagefromuserinfo, so the strip rebuilds here.
     $override
     void updateUserScoreFinished() {
         ProfilePage::updateUserScoreFinished();
@@ -55,7 +55,7 @@ class $modify(RedesignProfilePage, ProfilePage) {
     void userInfoChanged(GJUserScore* score) {
         ProfilePage::userInfoChanged(score);
         if (!paimon::settings::profiles::redesignEnabled()) return;
-        // Can stack with SWR getUserInfoFinished → loadPageFromUserInfo; coalesce.
+        // can stack with swr getuserinfofinished → loadpagefromuserinfo; coalesce.
         scheduleRedesign();
     }
 
@@ -76,8 +76,8 @@ class $modify(RedesignProfilePage, ProfilePage) {
         } else {
             m_fields->m_comments = nullptr;
         }
-        // Skip a full redesign if we already painted this exact comments set
-        // (SWR userinfo refresh can re-enter without new comments).
+        // skip a full redesign if we already painted this exact comments set
+        // (swr userinfo refresh can re-enter without new comments).
         int const sig = (count << 16) ^ commentId0;
         if (m_fields->m_lastCommentSig == sig) {
             if (this->m_mainLayer &&
@@ -92,7 +92,7 @@ class $modify(RedesignProfilePage, ProfilePage) {
         scheduleRedesign();
     }
 
-    // The fresh list comes back visible; rebuild so it hides behind the cards.
+    // the fresh list comes back visible; rebuild so it hides behind the cards.
     $override
     void setupCommentsBrowser(CCArray* comments) {
         ProfilePage::setupCommentsBrowser(comments);
@@ -118,7 +118,7 @@ class $modify(RedesignProfilePage, ProfilePage) {
                 this->m_mainLayer, this->m_buttonMenu, this->m_ownProfile)) {
             scheduleRedesign();
         }
-        // Async buttons (roles, badges, thumbnail count) arrive well within
+        // async buttons (roles, badges, thumbnail count) arrive well within
         // this window; afterwards stop polling entirely.
         if (m_fields->m_watchTime >= 4.f) {
             this->unschedule(schedule_selector(RedesignProfilePage::watchLatecomers));
@@ -129,7 +129,7 @@ class $modify(RedesignProfilePage, ProfilePage) {
         if (!paimon::settings::profiles::redesignEnabled()) return;
         if (m_fields->m_rebuildQueued) return;
         m_fields->m_rebuildQueued = true;
-        // One rebuild per frame max — collapses SWR + comments + badge storms.
+        // one rebuild per frame max — collapses swr + comments + badge storms.
         Ref<ProfilePage> self = this;
         Loader::get()->queueInMainThread([self]() {
             if (!self || !self->getParent()) return;

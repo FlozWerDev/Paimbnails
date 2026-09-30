@@ -1,11 +1,9 @@
-// Tests de regresion para el modo pintura y el modo circulos del convertidor de
-// imagen a objetos de GD.
-//
-// Pintura combina bloques, diagonales y circulos cuando respetan las fronteras
-// de color. Los parches deben mantener los bordes suaves sin dejar huecos ni
+// tests de regresion para el modo pintura y el modo circulos del convertidor de
+// imagen a objetos de gd.
+// pintura combina bloques, diagonales y circulos cuando respetan las fronteras
+// de color. los parches deben mantener los bordes suaves sin dejar huecos ni
 // tapar capas superiores con circulos de otra hoja de sprites.
-//
-// Cada prueba es una funcion bool que devuelve true si pasa. main() las ejecuta
+// cada prueba es una funcion bool que devuelve true si pasa. main() las ejecuta
 // todas y devuelve 0 si pasan o 1 si alguna falla.
 
 #include <algorithm>
@@ -35,9 +33,7 @@ using namespace paimon::gifimport;
 
 namespace {
 
-// ---------------------------------------------------------------------------
-// Utilidades de construccion de imagenes sinteticas
-// ---------------------------------------------------------------------------
+// utilidades de construccion de imagenes sinteticas
 
 SourceAnimation animation(int width, int height, int frames, std::uint8_t r = 0,
                           std::uint8_t g = 0, std::uint8_t b = 0, std::uint8_t a = 255) {
@@ -95,7 +91,7 @@ Options circleOptions(int dimension) {
     return options;
 }
 
-// Deshace la marca de agua para poder contar objetos y medir geometria limpia.
+// deshace la marca de agua para poder contar objetos y medir geometria limpia.
 std::vector<Primitive> unmarked(ImportPlan const& plan) {
     auto objects = plan.staticObjects;
     for (auto& object : objects) {
@@ -105,14 +101,14 @@ std::vector<Primitive> unmarked(ImportPlan const& plan) {
     return objects;
 }
 
-// Mascara de celdas vacias: 1 donde no hay nada pintado, 0 donde si.
+// mascara de celdas vacias: 1 donde no hay nada pintado, 0 donde si.
 std::vector<std::uint8_t> emptyOutside(std::vector<int> const& positions, int cells) {
     std::vector<std::uint8_t> empty(static_cast<std::size_t>(cells), 1);
     for (int position : positions) empty[static_cast<std::size_t>(position)] = 0;
     return empty;
 }
 
-// Cuenta cuantos objetos de cada tipo hay.
+// cuenta cuantos objetos de cada tipo hay.
 struct PrimitiveStats {
     int blocks = 0;
     int strokes = 0;
@@ -140,7 +136,7 @@ PrimitiveStats countPrimitives(std::vector<Primitive> const& objects) {
     return stats;
 }
 
-// Verifica si cada celda pintada tiene cobertura subpixel suficiente.
+// verifica si cada celda pintada tiene cobertura subpixel suficiente.
 struct CoverageResult {
     int missing = 0;
     int minimumCoverage = 0;
@@ -167,7 +163,7 @@ CoverageResult measureCoverage(ImportPlan const& plan, int scale) {
         }
         result.minimumCoverage = std::min(result.minimumCoverage, visible);
         if (visible == 0) ++result.missing;
-        // Huecos interiores: solo en celdas rodeadas del mismo color.
+        // huecos interiores: solo en celdas rodeadas del mismo color.
         if (cellX == 0 || cellY == 0 || cellX + 1 == plan.width ||
             cellY + 1 == plan.height) continue;
         int const color = cells[position];
@@ -179,18 +175,14 @@ CoverageResult measureCoverage(ImportPlan const& plan, int scale) {
     return result;
 }
 
-// =========================================================================
-//  TESTS DE MODO CIRCULOS
-// =========================================================================
+//  tests de modo circulos
 
-// -------------------------------------------------------------------------
-// 1. El modo circulos solo produce PrimitiveKind::Circle. Nada de cuadrados,
-//    trazos ni triangulos, que estarian en otra hoja de sprites y GD los
+// 1. el modo circulos solo produce primitivekind::circle. nada de cuadrados,
+//    trazos ni triangulos, que estarian en otra hoja de sprites y gd los
 //    pondria debajo de todos los circulos sin importar la capa.
-// -------------------------------------------------------------------------
 bool circleModeNeverEmitsSquares() {
     auto source = animation(48, 48, 1, 0, 0, 0, 0);
-    // Un circulo grande y un rectangulo: los dos deben acabar hechos de circulos.
+    // un circulo grande y un rectangulo: los dos deben acabar hechos de circulos.
     for (int y = 0; y < 48; ++y) {
         for (int x = 0; x < 48; ++x) {
             float const dx = x + 0.5f - 24.f;
@@ -220,10 +212,8 @@ bool circleModeNeverEmitsSquares() {
     return allCircles;
 }
 
-// -------------------------------------------------------------------------
-// 2. El modo circulos cubre todas las celdas sin dejar huecos. Cada celda
+// 2. el modo circulos cubre todas las celdas sin dejar huecos. cada celda
 //    pintada debe tener al menos un circulo/elipse que la toque.
-// -------------------------------------------------------------------------
 bool circleModeCoversAllCells() {
     auto source = animation(40, 40, 1, 0, 0, 0, 0);
     for (int y = 4; y < 36; ++y) {
@@ -250,13 +240,11 @@ bool circleModeCoversAllCells() {
     return missing == 0;
 }
 
-// -------------------------------------------------------------------------
-// 3. El modo circulos produce tanto discos gordos (W y H > 4) como husos
-//    estirados (W > 2*H) para cubrir zonas macizas y lineas finas.
-// -------------------------------------------------------------------------
+// 3. el modo circulos produce tanto discos gordos (w y h > 4) como husos
+//    estirados (w > 2*h) para cubrir zonas macizas y lineas finas.
 bool circleModeProducesDiscsAndSpindles() {
     auto source = animation(48, 48, 1, 0, 0, 0, 0);
-    // Un disco macizo.
+    // un disco macizo.
     for (int y = 0; y < 48; ++y) {
         for (int x = 0; x < 48; ++x) {
             float const dx = x + 0.5f - 24.f;
@@ -264,7 +252,7 @@ bool circleModeProducesDiscsAndSpindles() {
             if (dx * dx + dy * dy <= 100.f) setPixel(source, 0, x, y, 90, 200, 240);
         }
     }
-    // Una barra horizontal fina.
+    // una barra horizontal fina.
     for (int y = 36; y < 40; ++y) {
         for (int x = 4; x < 44; ++x) setPixel(source, 0, x, y, 235, 120, 90);
     }
@@ -290,14 +278,12 @@ bool circleModeProducesDiscsAndSpindles() {
     return plump && stretched;
 }
 
-// -------------------------------------------------------------------------
-// 4. El modo circulos no deja que un circulo invada celdas de otro color
-//    (blocked). Cada circulo solo puede crecer sobre sus propias celdas o
+// 4. el modo circulos no deja que un circulo invada celdas de otro color
+//    (blocked). cada circulo solo puede crecer sobre sus propias celdas o
 //    las que quedan tapadas por capas superiores.
-// -------------------------------------------------------------------------
 bool circleModeRespectsColorBoundaries() {
     auto source = animation(40, 40, 1, 0, 0, 0, 0);
-    // Dos bloques de distinto color, adyacentes.
+    // dos bloques de distinto color, adyacentes.
     for (int y = 10; y < 30; ++y) {
         for (int x = 4; x < 20; ++x) setPixel(source, 0, x, y, 200, 60, 60);
         for (int x = 20; x < 36; ++x) setPixel(source, 0, x, y, 60, 60, 200);
@@ -307,15 +293,15 @@ bool circleModeRespectsColorBoundaries() {
         std::cout << "circle-boundaries: " << result.error << '\n';
         return false;
     }
-    // Verificar que ningun pixel central de una celda bien interior (al menos 2
-    // celdas desde la frontera) tenga el color del otro lado. Las celdas justo en
-    // la frontera pueden tener un pico de spill legitimo (kSpill = 14%).
+    // verificar que ningun pixel central de una celda bien interior (al menos 2
+    // celdas desde la frontera) tenga el color del otro lado. las celdas justo en
+    // la frontera pueden tener un pico de spill legitimo (kspill = 14%).
     auto const preview = renderPlanFrame(result.plan, 0, 4);
     int const scale = 4;
     int bleeds = 0;
     for (int y = 12; y < 28; ++y) {
         for (int x = 4; x < 36; ++x) {
-            // Saltar las 2 columnas junto a la frontera (x=18,19,20,21).
+            // saltar las 2 columnas junto a la frontera (x=18,19,20,21).
             if (x >= 18 && x <= 21) continue;
             std::size_t const pixel =
                 (static_cast<std::size_t>(y * scale + scale / 2) * result.plan.width * scale +
@@ -334,15 +320,13 @@ bool circleModeRespectsColorBoundaries() {
     return bleeds == 0;
 }
 
-// -------------------------------------------------------------------------
-// 5. Los circulos en modo circulos usan cuadrados (bloques axis-aligned o
-//    circulos sin giro) en las curvas, no rectangulos girados. Es decir,
+// 5. los circulos en modo circulos usan cuadrados (bloques axis-aligned o
+//    circulos sin giro) en las curvas, no rectangulos girados. es decir,
 //    los circulos salen con rotation==0 o girados, pero siempre como
-//    PrimitiveKind::Circle. Si son Stroke girados, algo esta mal.
-// -------------------------------------------------------------------------
+//    primitivekind::circle. si son stroke girados, algo esta mal.
 bool circleModeCurvesUseCirclesNotRotatedRects() {
     auto source = animation(48, 48, 1, 0, 0, 0, 0);
-    // Un anillo: circulo exterior menos circulo interior.
+    // un anillo: circulo exterior menos circulo interior.
     for (int y = 0; y < 48; ++y) {
         for (int x = 0; x < 48; ++x) {
             float const dx = x + 0.5f - 24.f;
@@ -375,9 +359,7 @@ bool circleModeCurvesUseCirclesNotRotatedRects() {
     return allCircles && rotatedRects == 0;
 }
 
-// -------------------------------------------------------------------------
-// 6. Un solo pixel debe cubrirse con un circulo minimo, no con un bloque.
-// -------------------------------------------------------------------------
+// 6. un solo pixel debe cubrirse con un circulo minimo, no con un bloque.
 bool circleModeHandlesSinglePixel() {
     auto source = animation(12, 12, 1, 0, 0, 0, 0);
     setPixel(source, 0, 6, 6, 200, 120, 80);
@@ -391,7 +373,7 @@ bool circleModeHandlesSinglePixel() {
         objects.begin(), objects.end(), [](Primitive const& object) {
             return object.kind == PrimitiveKind::Circle;
         });
-    // Debe haber al menos 1 circulo y debe cubrir el pixel.
+    // debe haber al menos 1 circulo y debe cubrir el pixel.
     auto const preview = renderPlanFrame(result.plan, 0, 1);
     std::size_t const center = (6 * static_cast<std::size_t>(result.plan.width) + 6) * 4;
     bool const covered = preview[center + 3] != 0;
@@ -403,10 +385,8 @@ bool circleModeHandlesSinglePixel() {
     return allCircles && covered && !objects.empty();
 }
 
-// -------------------------------------------------------------------------
-// 7. Una linea diagonal fina en modo circulos debe cubrirse enteramente
+// 7. una linea diagonal fina en modo circulos debe cubrirse enteramente
 //    con circulos/elipses estiradas, sin dejar huecos.
-// -------------------------------------------------------------------------
 bool circleModeCoversDiagonalLine() {
     auto source = animation(32, 32, 1, 0, 0, 0, 0);
     for (int i = 2; i < 30; ++i) {
@@ -437,17 +417,15 @@ bool circleModeCoversDiagonalLine() {
     return allCircles && missing == 0;
 }
 
-// -------------------------------------------------------------------------
-// 8. En modo circulos, una forma en L (no convexa) debe cubrirse sin que
+// 8. en modo circulos, una forma en l (no convexa) debe cubrirse sin que
 //    ningun circulo se salga demasiado sobre el fondo.
-// -------------------------------------------------------------------------
 bool circleModeHandlesLShape() {
     auto source = animation(32, 32, 1, 0, 0, 0, 0);
-    // Pata vertical de la L.
+    // pata vertical de la l.
     for (int y = 4; y < 28; ++y) {
         for (int x = 4; x < 10; ++x) setPixel(source, 0, x, y, 60, 180, 220);
     }
-    // Pata horizontal de la L.
+    // pata horizontal de la l.
     for (int y = 22; y < 28; ++y) {
         for (int x = 10; x < 28; ++x) setPixel(source, 0, x, y, 60, 180, 220);
     }
@@ -461,7 +439,7 @@ bool circleModeHandlesLShape() {
         objects.begin(), objects.end(), [](Primitive const& object) {
             return object.kind == PrimitiveKind::Circle;
         });
-    // Cobertura.
+    // cobertura.
     auto const preview = renderPlanFrame(result.plan, 0, 1);
     int missing = 0;
     for (int position = 0; position < result.plan.width * result.plan.height; ++position) {
@@ -476,18 +454,16 @@ bool circleModeHandlesLShape() {
     return allCircles && missing == 0;
 }
 
-// -------------------------------------------------------------------------
-// 9. En modo circulos con dos colores, el de arriba no puede quedar debajo
-//    del de abajo. Dado que todos son circulos del mismo sprite, el Z si
+// 9. en modo circulos con dos colores, el de arriba no puede quedar debajo
+//    del de abajo. dado que todos son circulos del mismo sprite, el z si
 //    manda y el orden de emision importa.
-// -------------------------------------------------------------------------
 bool circleModePreservesLayerOrder() {
     auto source = animation(32, 32, 1, 0, 0, 0, 0);
-    // Color de fondo: verde grande.
+    // color de fondo: verde grande.
     for (int y = 4; y < 28; ++y) {
         for (int x = 4; x < 28; ++x) setPixel(source, 0, x, y, 60, 200, 80);
     }
-    // Color de arriba: punto rojo centrado.
+    // color de arriba: punto rojo centrado.
     for (int y = 12; y < 20; ++y) {
         for (int x = 12; x < 20; ++x) setPixel(source, 0, x, y, 230, 60, 60);
     }
@@ -496,7 +472,7 @@ bool circleModePreservesLayerOrder() {
         std::cout << "circle-layers: " << result.error << '\n';
         return false;
     }
-    // El rojo tiene que ser visible en el centro.
+    // el rojo tiene que ser visible en el centro.
     auto const preview = renderPlanFrame(result.plan, 0, 4);
     int const scale = 4;
     int const cx = 16 * scale + scale / 2;
@@ -510,10 +486,8 @@ bool circleModePreservesLayerOrder() {
     return redVisible;
 }
 
-// -------------------------------------------------------------------------
-// 10. vectorizeCircles directamente: una fila horizontal de 20 celdas debe
+// 10. vectorizecircles directamente: una fila horizontal de 20 celdas debe
 //     cubrirse con unas pocas elipses estiradas, no con 20 circulos individuales.
-// -------------------------------------------------------------------------
 bool circleVectorizerMergesHorizontalRow() {
     constexpr int width = 24;
     constexpr int height = 6;
@@ -522,7 +496,7 @@ bool circleVectorizerMergesHorizontalRow() {
     auto objects = vectorizeCircles(
         positions, width, height, 0, 0, {},
         emptyOutside(positions, width * height));
-    // Con 20 celdas en fila, deberian ser pocas elipses (no una por celda).
+    // con 20 celdas en fila, deberian ser pocas elipses (no una por celda).
     std::cout << "circle-merge-row: objects=" << objects.size() << '\n';
     bool const merged = objects.size() <= 6;
     bool const allCircles = std::all_of(
@@ -534,9 +508,7 @@ bool circleVectorizerMergesHorizontalRow() {
     return merged && allCircles;
 }
 
-// -------------------------------------------------------------------------
-// 11. vectorizeCircles: un cuadrado macizo de 10x10 debe cubrirse sin huecos.
-// -------------------------------------------------------------------------
+// 11. vectorizecircles: un cuadrado macizo de 10x10 debe cubrirse sin huecos.
 bool circleVectorizerCoversSolidSquare() {
     constexpr int width = 16;
     constexpr int height = 16;
@@ -547,7 +519,7 @@ bool circleVectorizerCoversSolidSquare() {
     auto objects = vectorizeCircles(
         positions, width, height, 0, 0, {},
         emptyOutside(positions, width * height));
-    // Verificar cobertura.
+    // verificar cobertura.
     int missing = 0;
     for (int position : positions) {
         int const px = position % width;
@@ -564,23 +536,21 @@ bool circleVectorizerCoversSolidSquare() {
     return missing == 0;
 }
 
-// -------------------------------------------------------------------------
-// 12. Spill en circulos con dos colores: los circulos de un color no deben
-//     asomar sobre las celdas de otro color vecino. Se verifica que cuando
+// 12. spill en circulos con dos colores: los circulos de un color no deben
+//     asomar sobre las celdas de otro color vecino. se verifica que cuando
 //     la region vecina no es hueco (empty=0) ni esta tapada por capas
 //     superiores (blocked=0), los circulos respetan el limite y no invaden
 //     las celdas interiores del otro color.
-// -------------------------------------------------------------------------
 bool circleVectorizerControlsSpillWithBlocked() {
     constexpr int width = 24;
     constexpr int height = 24;
     constexpr std::size_t cells = static_cast<std::size_t>(width) * height;
-    // Color A: mitad izquierda [2, 12).
+    // color a: mitad izquierda [2, 12).
     std::vector<int> positionsA;
     for (int y = 4; y < 20; ++y) {
         for (int x = 2; x < 12; ++x) positionsA.push_back(y * width + x);
     }
-    // Color B: mitad derecha [12, 22). No es hueco (empty=0) ni capa superior (blocked=0).
+    // color b: mitad derecha [12, 22). no es hueco (empty=0) ni capa superior (blocked=0).
     std::vector<std::uint8_t> empty(cells, 1);
     for (int y = 4; y < 20; ++y) {
         for (int x = 2; x < 22; ++x) {
@@ -592,7 +562,7 @@ bool circleVectorizerControlsSpillWithBlocked() {
     auto objects = vectorizeCircles(
         positionsA, width, height, 0, 0, blocked, empty);
 
-    // Verificar que ningun circulo cubre el centro de celdas interiores de B (x >= 14).
+    // verificar que ningun circulo cubre el centro de celdas interiores de b (x >= 14).
     int invasions = 0;
     for (auto const& object : objects) {
         auto const placed = xformOf(object);
@@ -614,14 +584,10 @@ bool circleVectorizerControlsSpillWithBlocked() {
     return pass;
 }
 
-// =========================================================================
-//  TESTS DE MODO PINTURA - ENFOQUE EN CURVAS Y CIRCULOS
-// =========================================================================
+//  tests de modo pintura - enfoque en curvas y circulos
 
-// -------------------------------------------------------------------------
-// 13. En modo pintura, un circulo grande debe usar PrimitiveKind::Circle,
+// 13. en modo pintura, un circulo grande debe usar primitivekind::circle,
 //     no una pila de cuadraditos.
-// -------------------------------------------------------------------------
 bool paintModeDetectsCircle() {
     auto source = animation(40, 40, 1, 0, 0, 0, 0);
     for (int y = 0; y < 40; ++y) {
@@ -644,10 +610,8 @@ bool paintModeDetectsCircle() {
     return hasCircle;
 }
 
-// -------------------------------------------------------------------------
-// 14. En modo pintura, un circulo pequeno (4-6 celdas de diametro) aun
-//     debe caber como Circle y no se descompone en bloques.
-// -------------------------------------------------------------------------
+// 14. en modo pintura, un circulo pequeno (4-6 celdas de diametro) aun
+//     debe caber como circle y no se descompone en bloques.
 bool paintModeDetectsSmallCircle() {
     auto source = animation(20, 20, 1, 0, 0, 0, 0);
     for (int y = 0; y < 20; ++y) {
@@ -669,14 +633,12 @@ bool paintModeDetectsSmallCircle() {
     return hasCircle;
 }
 
-// -------------------------------------------------------------------------
-// 15. Las curvas en modo pintura usan cuadrados/trazos (bloques y strokes)
-//     y NO rectangulos girados pequenos que dejan picos. Un arco suave
+// 15. las curvas en modo pintura usan cuadrados/trazos (bloques y strokes)
+//     y no rectangulos girados pequenos que dejan picos. un arco suave
 //     debe cubrirse con pocos objetos sin picos subpixel.
-// -------------------------------------------------------------------------
 bool paintModeCurvesUseBlocksNotRotatedSlivers() {
     auto source = animation(48, 48, 1, 0, 0, 0, 0);
-    // Un arco grueso: semicirculo exterior - semicirculo interior.
+    // un arco grueso: semicirculo exterior - semicirculo interior.
     for (int y = 0; y < 48; ++y) {
         for (int x = 0; x < 48; ++x) {
             float const dx = x + 0.5f - 24.f;
@@ -703,7 +665,7 @@ bool paintModeCurvesUseBlocksNotRotatedSlivers() {
     };
     int const rawSpikes = countSpikes(result.plan.staticObjects);
     auto const objects = unmarked(result.plan);
-    // Contar picos: objetos girados mas pequeños que 1.6 celdas.
+    // contar picos: objetos girados mas pequeños que 1.6 celdas.
     int const spikes = countSpikes(objects);
     std::cout << "paint-curve-blocks: raw=" << rawSpikes
               << " spikes=" << spikes
@@ -715,15 +677,13 @@ bool paintModeCurvesUseBlocksNotRotatedSlivers() {
     return rawSpikes == 0 && spikes == 0 && result.plan.similarity >= 93.f;
 }
 
-// -------------------------------------------------------------------------
-// 16. Un circulo en pintura no puede invadir celdas de otro color.
-//     GD pinta los circulos en otra hoja de sprites, asi que un circulo
+// 16. un circulo en pintura no puede invadir celdas de otro color.
+//     gd pinta los circulos en otra hoja de sprites, asi que un circulo
 //     que asoma sobre otro color se ve porque el cuadrado de debajo siempre
 //     queda abajo.
-// -------------------------------------------------------------------------
 bool paintModeCircleDoesNotBleedOverForeground() {
     auto source = animation(32, 32, 1, 0, 0, 0, 0);
-    // Circulo rojo.
+    // circulo rojo.
     for (int y = 0; y < 32; ++y) {
         for (int x = 0; x < 32; ++x) {
             float const dx = x + 0.5f - 12.f;
@@ -731,13 +691,13 @@ bool paintModeCircleDoesNotBleedOverForeground() {
             if (dx * dx + dy * dy <= 64.f) setPixel(source, 0, x, y, 230, 60, 60);
         }
     }
-    // Banda azul superpuesta.
+    // banda azul superpuesta.
     for (int y = 12; y < 20; ++y) {
         for (int x = 16; x < 30; ++x) setPixel(source, 0, x, y, 60, 60, 230);
     }
     auto result = buildPlan(source, paintOptions(32));
     if (!result) return false;
-    // Verificar que en las celdas azules no se vea rojo.
+    // verificar que en las celdas azules no se vea rojo.
     auto const preview = renderPlanFrame(result.plan, 0, 4);
     int const scale = 4;
     int bleeds = 0;
@@ -756,10 +716,8 @@ bool paintModeCircleDoesNotBleedOverForeground() {
     return bleeds == 0;
 }
 
-// -------------------------------------------------------------------------
-// 17. Una elipse (no circulo perfecto) en pintura debe encajar como Circle
+// 17. una elipse (no circulo perfecto) en pintura debe encajar como circle
 //     si el aspecto es <= 1.8.
-// -------------------------------------------------------------------------
 bool paintModeDetectsEllipse() {
     auto source = animation(48, 48, 1, 0, 0, 0, 0);
     for (int y = 0; y < 48; ++y) {
@@ -782,9 +740,7 @@ bool paintModeDetectsEllipse() {
     return hasCircle;
 }
 
-// -------------------------------------------------------------------------
-// 18. En modo pintura un semicirculo debe cubrirse con cobertura >= 93%.
-// -------------------------------------------------------------------------
+// 18. en modo pintura un semicirculo debe cubrirse con cobertura >= 93%.
 bool paintModeSemicircleCoverage() {
     auto source = animation(40, 40, 1, 0, 0, 0, 0);
     for (int y = 0; y < 40; ++y) {
@@ -805,14 +761,12 @@ bool paintModeSemicircleCoverage() {
     return coverage.missing == 0 && result.plan.similarity >= 93.f;
 }
 
-// -------------------------------------------------------------------------
-// 19. Las costuras entre dos colores en una frontera curva no deben dejar
-//     huecos. Esto prueba la reparacion de costuras del modo pintura en
+// 19. las costuras entre dos colores en una frontera curva no deben dejar
+//     huecos. esto prueba la reparacion de costuras del modo pintura en
 //     bordes curvos.
-// -------------------------------------------------------------------------
 bool paintModeClosesSeamsOnCurvedBoundary() {
     auto source = animation(40, 40, 1, 238, 231, 218);
-    // Frontera curva sinusoidal.
+    // frontera curva sinusoidal.
     for (int y = 0; y < 40; ++y) {
         int const edge = 20 + static_cast<int>(std::lround(std::sin(y * 0.45f) * 6.f));
         for (int x = edge; x < 40; ++x) {
@@ -837,11 +791,9 @@ bool paintModeClosesSeamsOnCurvedBoundary() {
     return holes == 0 && result.plan.similarity >= 95.f;
 }
 
-// -------------------------------------------------------------------------
-// 20. El modo circulos es estrictamente circulos: incluso una imagen que
+// 20. el modo circulos es estrictamente circulos: incluso una imagen que
 //     seria perfecta como un bloque (cuadrado macizo) debe convertirse en
 //     circulos, no bloques.
-// -------------------------------------------------------------------------
 bool circleModeConvertsSquareToCircles() {
     auto source = animation(20, 20, 1, 0, 0, 0, 0);
     for (int y = 4; y < 16; ++y) {
@@ -870,10 +822,8 @@ bool circleModeConvertsSquareToCircles() {
     return allCircles && missing == 0;
 }
 
-// -------------------------------------------------------------------------
-// 21. Modo pintura con un disco sobre fondo pintado: el disco debe usar
-//     Circle y usar menos objetos que el modo bloques.
-// -------------------------------------------------------------------------
+// 21. modo pintura con un disco sobre fondo pintado: el disco debe usar
+//     circle y usar menos objetos que el modo bloques.
 bool paintModeCircleBeatsBlocks() {
     auto source = animation(40, 40, 1, 0, 0, 0, 0);
     for (int y = 0; y < 40; ++y) {
@@ -893,9 +843,7 @@ bool paintModeCircleBeatsBlocks() {
     return pass;
 }
 
-// -------------------------------------------------------------------------
-// 22. Modo circulos con animacion: los objetos no deben exceder el presupuesto.
-// -------------------------------------------------------------------------
+// 22. modo circulos con animacion: los objetos no deben exceder el presupuesto.
 bool circleModeAnimationStaysInBudget() {
     auto source = animation(20, 16, 4, 0, 0, 0, 0);
     for (int frame = 0; frame < 4; ++frame) {
@@ -912,7 +860,7 @@ bool circleModeAnimationStaysInBudget() {
     options.objectBudget = 3000;
     auto result = buildPlan(source, options);
     bool const pass = result && result.plan.totalObjects <= 3000;
-    // Verificar que todos los objetos visuales sean circulos.
+    // verificar que todos los objetos visuales sean circulos.
     bool allCircles = true;
     if (result) {
         for (auto const& object : result.plan.staticObjects) {
@@ -931,10 +879,8 @@ bool circleModeAnimationStaysInBudget() {
     return pass && allCircles;
 }
 
-// -------------------------------------------------------------------------
-// 23. Dos circulos de distinto color en modo circulos: cada uno mantiene
+// 23. dos circulos de distinto color en modo circulos: cada uno mantiene
 //     su color, y los dos estan cubiertos.
-// -------------------------------------------------------------------------
 bool circleModeTwoColorCircles() {
     auto source = animation(40, 40, 1, 0, 0, 0, 0);
     for (int y = 0; y < 40; ++y) {
@@ -955,7 +901,7 @@ bool circleModeTwoColorCircles() {
     bool const allCircles = std::all_of(
         result.plan.staticObjects.begin(), result.plan.staticObjects.end(),
         [](Primitive const& object) { return object.kind == PrimitiveKind::Circle; });
-    // Cobertura.
+    // cobertura.
     auto const preview = renderPlanFrame(result.plan, 0, 1);
     int missing = 0;
     for (int position = 0; position < result.plan.width * result.plan.height; ++position) {
@@ -970,10 +916,8 @@ bool circleModeTwoColorCircles() {
     return allCircles && missing == 0;
 }
 
-// -------------------------------------------------------------------------
-// 24. Una onda sinusoidal gruesa en modo pintura: la cobertura y la fidelidad
+// 24. una onda sinusoidal gruesa en modo pintura: la cobertura y la fidelidad
 //     deben ser buenas, y no debe haber picos diminutos.
-// -------------------------------------------------------------------------
 bool paintModeSineWaveCoverage() {
     auto source = animation(40, 24, 1, 0, 0, 0, 0);
     for (int y = 0; y < 24; ++y) {
@@ -1006,14 +950,12 @@ bool paintModeSineWaveCoverage() {
     return spikes <= 2 && coverage.missing == 0 && result.plan.similarity >= 78.f;
 }
 
-// -------------------------------------------------------------------------
-// 25. En modo circulos, el contorno de un circulo grande no debe tener
+// 25. en modo circulos, el contorno de un circulo grande no debe tener
 //     huecos visibles entre elipses: al nivel de 1 muestra/celda, cada
 //     celda debe estar cubierta.
-// -------------------------------------------------------------------------
 bool circleModeNoPerimeterGaps() {
     auto source = animation(48, 48, 1, 0, 0, 0, 0);
-    // Solo el anillo perimetral (sin interior macizo).
+    // solo el anillo perimetral (sin interior macizo).
     for (int y = 0; y < 48; ++y) {
         for (int x = 0; x < 48; ++x) {
             float const dx = x + 0.5f - 24.f;
@@ -1046,19 +988,17 @@ bool circleModeNoPerimeterGaps() {
     return allCircles && missing == 0;
 }
 
-// -------------------------------------------------------------------------
-// 26. vectorizeCircles: componentes desconectados deben procesarse todos.
-//     Dos manchas separadas, las dos cubiertas.
-// -------------------------------------------------------------------------
+// 26. vectorizecircles: componentes desconectados deben procesarse todos.
+//     dos manchas separadas, las dos cubiertas.
 bool circleVectorizerHandlesDisconnectedComponents() {
     constexpr int width = 20;
     constexpr int height = 10;
     std::vector<int> positions;
-    // Mancha 1: izquierda.
+    // mancha 1: izquierda.
     for (int y = 2; y < 5; ++y) {
         for (int x = 2; x < 6; ++x) positions.push_back(y * width + x);
     }
-    // Mancha 2: derecha.
+    // mancha 2: derecha.
     for (int y = 5; y < 8; ++y) {
         for (int x = 14; x < 18; ++x) positions.push_back(y * width + x);
     }
@@ -1081,13 +1021,11 @@ bool circleVectorizerHandlesDisconnectedComponents() {
     return missing == 0;
 }
 
-// -------------------------------------------------------------------------
-// 27. En modo pintura, un rombo (cuadrado girado 45 grados) debe encajar
-//     como una pieza girada, no como 50 bloques axis-aligned. El modo
+// 27. en modo pintura, un rombo (cuadrado girado 45 grados) debe encajar
+//     como una pieza girada, no como 50 bloques axis-aligned. el modo
 //     pintura debe detectar el angulo principal por la envolvente convexa.
-// -------------------------------------------------------------------------
-// Un fondo opaco tambien debe permitir lados diagonales, sin reconstruir la
-// escalera con parches. Se mide el resultado del pipeline, incluidas costuras.
+// un fondo opaco tambien debe permitir lados diagonales, sin reconstruir la
+// escalera con parches. se mide el resultado del pipeline, incluidas costuras.
 bool paintPrunesBoundaryTeeth() {
     std::vector<Primitive> objects{
         {16.f, 16.f, 20.f, 20.f, 0.f, 0, PrimitiveKind::Circle, 0},
@@ -1096,7 +1034,7 @@ bool paintPrunesBoundaryTeeth() {
     prunePaintObjects(objects, 32, 32);
     std::cout << "paint-boundary-teeth: objects=" << objects.size() << '\n';
     if (objects.size() != 1 || objects.front().kind != PrimitiveKind::Circle) return false;
-    // Un detalle de otro color en el mismo punto debe conservarse.
+    // un detalle de otro color en el mismo punto debe conservarse.
     objects.push_back({23.5f, 22.5f, 1.f, 1.f, 0.f, 1, PrimitiveKind::Block, 2});
     prunePaintObjects(objects, 32, 32);
     return objects.size() == 2;
@@ -1207,14 +1145,12 @@ bool paintModeFitsDiamondAsTiltedBox() {
     std::cout << "paint-diamond: objects=" << objects.size()
               << " tilted=" << tilted << '\n';
     if (!tilted) std::cerr << "FAIL: paint mode did not tilt any object for a diamond\n";
-    // Con un buen ajuste, no deberian ser mas de 4 objetos.
+    // con un buen ajuste, no deberian ser mas de 4 objetos.
     return tilted && objects.size() <= 6;
 }
 
-// -------------------------------------------------------------------------
-// 28. En modo circulos un rombo tambien debe quedar cubierto solo con
+// 28. en modo circulos un rombo tambien debe quedar cubierto solo con
 //     circulos, nunca con bloques.
-// -------------------------------------------------------------------------
 bool circleModeCoversDiamond() {
     auto source = animation(32, 32, 1, 0, 0, 0, 0);
     for (int y = 0; y < 32; ++y) {
@@ -1246,10 +1182,8 @@ bool circleModeCoversDiamond() {
     return allCircles && missing == 0;
 }
 
-// -------------------------------------------------------------------------
-// 29. Modo pintura con multiples colores en curvas: la frontera entre los
+// 29. modo pintura con multiples colores en curvas: la frontera entre los
 //     colores no debe dejar huecos ni sangrado cruzado.
-// -------------------------------------------------------------------------
 bool paintModeMulticolorCurvesNoGaps() {
     auto source = animation(48, 48, 1, 0, 0, 0, 0);
     for (int y = 0; y < 48; ++y) {
@@ -1258,7 +1192,7 @@ bool paintModeMulticolorCurvesNoGaps() {
             float const dy = y + 0.5f - 24.f;
             float const dist = std::sqrt(dx * dx + dy * dy);
             if (dist <= 20.f) {
-                // Sector por angulo.
+                // sector por angulo.
                 float const angle = std::atan2(dy, dx);
                 if (angle < -1.f) setPixel(source, 0, x, y, 230, 60, 60);
                 else if (angle < 1.f) setPixel(source, 0, x, y, 60, 200, 60);
@@ -1277,7 +1211,7 @@ bool paintModeMulticolorCurvesNoGaps() {
         if (cells[position] < 0) continue;
         int const cx = static_cast<int>(position % result.plan.width);
         int const cy = static_cast<int>(position / result.plan.width);
-        // Revisar el centro de la celda.
+        // revisar el centro de la celda.
         std::size_t const pixel =
             (static_cast<std::size_t>(cy * scale + scale / 2) * result.plan.width * scale +
              cx * scale + scale / 2) * 4;
@@ -1300,16 +1234,13 @@ bool paintModeMulticolorCurvesNoGaps() {
     return holes == 0 && result.plan.similarity >= 90.f;
 }
 
-// =========================================================================
-//  TESTS DE CODOS EN REDONDO (round joints del modo pintura)
-// =========================================================================
-//
-// Las tiras que giran con angulo se cortan a tope en el vertice y un disco
-// del grosor del trazo tapa el pico de fuera. Sin el disco, la esquina del
+//  tests de codos en redondo (round joints del modo pintura)
+// las tiras que giran con angulo se cortan a tope en el vertice y un disco
+// del grosor del trazo tapa el pico de fuera. sin el disco, la esquina del
 // bisel asoma (hasta medio grosor sobre el vertice); en un giro suave, en
 // cambio, el disco sobresaldria mas que el pico y el codo sigue con bisel.
 
-// Esquina exterior maxima de tiras y discos fuera de la mancha, en celdas.
+// esquina exterior maxima de tiras y discos fuera de la mancha, en celdas.
 float maxPaintSpike(
     std::vector<Primitive> const& objects,
     std::vector<std::uint8_t> const& mask,
@@ -1361,7 +1292,7 @@ float maxPaintSpike(
     return worst;
 }
 
-// Celdas de la mancha cuyo centro no tapa ningun objeto.
+// celdas de la mancha cuyo centro no tapa ningun objeto.
 int paintMissingCells(
     std::vector<Primitive> const& objects,
     std::vector<int> const& positions,
@@ -1396,10 +1327,8 @@ std::vector<std::uint8_t> paintMask(std::vector<int> const& cells, int size) {
     return mask;
 }
 
-// -------------------------------------------------------------------------
-// 31. Un codo de 90 grados lleva disco y el pico exterior baja de 1 celda
+// 31. un codo de 90 grados lleva disco y el pico exterior baja de 1 celda
 //     (sin disco pasa de 1.4), sin dejar huecos ni disparar los objetos.
-// -------------------------------------------------------------------------
 bool paintRoundJointCapsElbow() {
     constexpr int size = 40;
     std::vector<int> cells;
@@ -1422,11 +1351,9 @@ bool paintRoundJointCapsElbow() {
     return pass;
 }
 
-// -------------------------------------------------------------------------
-// 32. Una curva suave (anillo) no lleva ningun disco: los empalmes de
+// 32. una curva suave (anillo) no lleva ningun disco: los empalmes de
 //     trazado son continuaciones, no horquillas, y el remate cuadrado las
-//     tapa. Cualquier disco aqui seria bulto sobre la curva.
-// -------------------------------------------------------------------------
+//     tapa. cualquier disco aqui seria bulto sobre la curva.
 bool paintRoundJointLeavesRingClean() {
     constexpr int size = 40;
     std::vector<int> cells;
@@ -1448,11 +1375,9 @@ bool paintRoundJointLeavesRingClean() {
     return pass;
 }
 
-// -------------------------------------------------------------------------
-// 33. Un zigzag de codos de 90 pone discos en los codos y el pico maximo
-//     baja, sin dejar huecos. Los empalmes con angulo conocido tambien
+// 33. un zigzag de codos de 90 pone discos en los codos y el pico maximo
+//     baja, sin dejar huecos. los empalmes con angulo conocido tambien
 //     licitan aunque el punto sea muy agudo.
-// -------------------------------------------------------------------------
 bool paintRoundJointCoversZigzag() {
     constexpr int size = 40;
     std::vector<int> cells;
@@ -1479,11 +1404,9 @@ bool paintRoundJointCoversZigzag() {
     return pass;
 }
 
-// -------------------------------------------------------------------------
-// 30. Modo circulos: el tamaño total de objetos debe ser razonable. Un
+// 30. modo circulos: el tamaño total de objetos debe ser razonable. un
 //     circulo simple de ~14 celdas de diametro no necesita cientos de
 //     ellipses diminutas.
-// -------------------------------------------------------------------------
 bool circleModeObjectCountIsReasonable() {
     auto source = animation(32, 32, 1, 0, 0, 0, 0);
     for (int y = 0; y < 32; ++y) {
@@ -1498,7 +1421,7 @@ bool circleModeObjectCountIsReasonable() {
         std::cout << "circle-object-count: " << result.error << '\n';
         return false;
     }
-    // Un circulo de ~14px diametro tiene ~150 celdas; deberian ser muchas menos
+    // un circulo de ~14px diametro tiene ~150 celdas; deberian ser muchas menos
     // elipses que celdas (el punto del vectorizador es justamente reducir).
     int const targetCells = static_cast<int>(std::count_if(
         result.plan.frames.front().cells.begin(),
@@ -1515,10 +1438,226 @@ bool circleModeObjectCountIsReasonable() {
     return reasonable;
 }
 
+bool fragmentCentersMatch(
+    std::vector<Primitive> const& objects,
+    std::vector<std::int32_t> const& cells,
+    int width,
+    int height
+) {
+    auto const forms = xformsOf(objects);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            int color = -1;
+            for (std::size_t index = 0; index < objects.size(); ++index) {
+                if (forms[index].contains(x + 0.5f, y + 0.5f)) color = objects[index].color;
+            }
+            if (color != cells[static_cast<std::size_t>(y) * width + x]) return false;
+        }
+    }
+    return true;
+}
+
+bool paintFragmentsJoinShallowSteps() {
+    constexpr int width = 48, height = 32;
+    std::vector<std::int32_t> cells(width * height, -1);
+    std::vector<Primitive> objects;
+    for (int x = 4; x < 36; ++x) {
+        int const y = 4 + x / 2;
+        cells[y * width + x] = 0;
+        objects.push_back({x + 0.5f, y + 0.5f, 1.f, 1.f, 0.f, 0, PrimitiveKind::Block, 2});
+    }
+    smoothPaintFragments(objects, cells, {0}, width, height);
+    int const strokes = static_cast<int>(std::count_if(objects.begin(), objects.end(), [](auto const& object) {
+        return object.kind == PrimitiveKind::Stroke && std::abs(object.rotation) > 10.f;
+    }));
+    std::cout << "paint-fragment-shallow: objects=" << objects.size() << " strokes=" << strokes << '\n';
+    return objects.size() <= 8 && strokes > 0 && fragmentCentersMatch(objects, cells, width, height);
+}
+
+bool paintFragmentsJoinSteepSteps() {
+    constexpr int size = 48;
+    std::vector<std::int32_t> cells(size * size, -1);
+    std::vector<int> positions;
+    for (int y = 4; y < 36; ++y) {
+        int const position = y * size + 4 + y / 3;
+        cells[position] = 0;
+        positions.push_back(position);
+    }
+    auto objects = packBlocks(positions, size, size, 0);
+    std::size_t const before = objects.size();
+    smoothPaintFragments(objects, cells, {0}, size, size);
+    bool const rotated = std::any_of(objects.begin(), objects.end(), [](auto const& object) {
+        return object.kind == PrimitiveKind::Stroke &&
+            std::abs(std::sin(object.rotation * kPi / 90.f)) > 0.1f;
+    });
+    std::cout << "paint-fragment-steep: before=" << before << " after=" << objects.size() << '\n';
+    return objects.size() < before && rotated && fragmentCentersMatch(objects, cells, size, size);
+}
+
+bool paintFragmentsKeepCurveContacts() {
+    constexpr int size = 48;
+    std::vector<std::int32_t> cells(size * size, -1);
+    std::vector<Primitive> objects;
+    std::vector<Point> centers;
+    for (int x = 4; x < 36; ++x) {
+        int const y = 10 + static_cast<int>(std::lround(6.f * std::sin(x / 7.f)));
+        cells[y * size + x] = 0;
+        centers.push_back({x + 0.5f, y + 0.5f});
+        objects.push_back({x + 0.5f, y + 0.5f, 1.f, 1.f, 0.f, 0, PrimitiveKind::Block, 2});
+    }
+    smoothPaintFragments(objects, cells, {0}, size, size);
+    auto const forms = xformsOf(objects);
+    for (std::size_t index = 1; index < centers.size(); ++index) {
+        Point const contact{(centers[index - 1].x + centers[index].x) * 0.5f,
+                            (centers[index - 1].y + centers[index].y) * 0.5f};
+        if (std::none_of(forms.begin(), forms.end(), [&](auto const& form) {
+                return form.contains(contact.x, contact.y);
+            })) {
+            return false;
+        }
+    }
+    std::cout << "paint-fragment-contacts: objects=" << objects.size() << '\n';
+    return objects.size() < centers.size() && fragmentCentersMatch(objects, cells, size, size);
+}
+
+bool paintFragmentsKeepIsolatedDetails() {
+    constexpr int size = 24;
+    std::vector<std::int32_t> cells(size * size, -1);
+    cells[8 * size + 8] = cells[8 * size + 10] = 0;
+    std::vector<Primitive> objects{
+        {8.5f, 8.5f, 1.f, 1.f, 0.f, 0, PrimitiveKind::Block, 2},
+        {10.5f, 8.5f, 1.f, 1.f, 0.f, 0, PrimitiveKind::Block, 2}
+    };
+    smoothPaintFragments(objects, cells, {0}, size, size);
+    return objects.size() == 2 && fragmentCentersMatch(objects, cells, size, size);
+}
+
+bool paintFragmentsUseRoundPatches() {
+    constexpr int size = 32;
+    std::vector<std::int32_t> cells(size * size, -1);
+    std::vector<Primitive> objects;
+    for (int y = 10; y < 18; ++y) {
+        for (int x = 10; x < 18; ++x) {
+            float const dx = x + 0.5f - 14.f, dy = y + 0.5f - 14.f;
+            if (dx * dx + dy * dy > 12.f) continue;
+            cells[y * size + x] = 0;
+            objects.push_back({x + 0.5f, y + 0.5f, 1.f, 1.f, 0.f, 0, PrimitiveKind::Block, 2});
+        }
+    }
+    smoothPaintFragments(objects, cells, {0}, size, size);
+    bool const round = std::any_of(objects.begin(), objects.end(), [](auto const& object) {
+        return object.kind == PrimitiveKind::Circle;
+    });
+    return objects.size() < 8 && round && fragmentCentersMatch(objects, cells, size, size);
+}
+
+bool paintFragmentsPreserveInteriorAndForeground() {
+    constexpr int size = 32;
+    std::vector<std::int32_t> cells(size * size, 0);
+    std::vector<Primitive> objects{{16.f, 16.f, 32.f, 32.f, 0.f, 0, PrimitiveKind::Block, 0}};
+    for (int y = 8; y < 24; ++y) {
+        for (int x = 8; x < 24; ++x) {
+            cells[y * size + x] = 1;
+            objects.push_back({x + 0.5f, y + 0.5f, 1.f, 1.f, 0.f, 1, PrimitiveKind::Block, 5});
+        }
+    }
+    for (int y = 12; y < 20; ++y) {
+        for (int x = 12; x < 20; ++x) cells[y * size + x] = 2;
+    }
+    objects.push_back({16.f, 16.f, 8.f, 8.f, 0.f, 2, PrimitiveKind::Block, 8});
+    objects.push_back({16.f, 16.f, 32.f, 32.f, 0.f, 0, PrimitiveKind::Block, -1});
+    smoothPaintFragments(objects, cells, {0, 1, 2}, size, size);
+    if (!fragmentCentersMatch(objects, cells, size, size)) return false;
+    auto const forms = xformsOf(objects);
+    for (int y = 9; y < 23; ++y) {
+        for (int x = 9; x < 23; ++x) {
+            int const cell = y * size + x;
+            int const expected = cells[cell];
+            if (cells[cell - 1] != expected || cells[cell + 1] != expected ||
+                cells[cell - size] != expected || cells[cell + size] != expected) {
+                continue;
+            }
+            for (int sy = 0; sy < 8; ++sy) {
+                for (int sx = 0; sx < 8; ++sx) {
+                    int color = -1;
+                    for (std::size_t index = 0; index < objects.size(); ++index) {
+                        if (forms[index].contains(x + (sx + 0.5f) / 8.f, y + (sy + 0.5f) / 8.f)) {
+                            color = objects[index].color;
+                        }
+                    }
+                    if (color != expected) return false;
+                }
+            }
+        }
+    }
+    for (std::size_t index = 0; index < objects.size(); ++index) {
+        if (objects[index].kind != PrimitiveKind::Circle) continue;
+        for (int y = 0; y < size; ++y) {
+            for (int x = 0; x < size; ++x) {
+                if (forms[index].contains(x + 0.5f, y + 0.5f) &&
+                    cells[y * size + x] != objects[index].color) {
+                    return false;
+                }
+            }
+        }
+    }
+    return std::any_of(objects.begin(), objects.end(), [](auto const& object) {
+        return object.layer == -1 && object.width == 32.f && object.height == 32.f;
+    });
+}
+
+bool autoPaintKeepsSmallAndFlatSources() {
+    auto const small = animation(290, 290, 1, 180, 180, 180);
+    auto const flat = animation(736, 736, 1, 180, 180, 180);
+    auto hidden = animation(736, 736, 1, 0, 0, 0, 0);
+    for (int y = 0; y < hidden.height; ++y) {
+        for (int x = 0; x < hidden.width; ++x) {
+            if ((x + y) % 2) setPixel(hidden, 0, x, y, 255, 255, 255, 0);
+        }
+    }
+    return autoPaintDimension(small) == 320 && autoPaintDimension(flat) == 320 &&
+        autoPaintDimension(hidden) == 320;
+}
+
+bool autoPaintRaisesDetailedSources() {
+    auto source = animation(736, 736, 1);
+    for (int y = 0; y < source.height; ++y) {
+        for (int x = 0; x < source.width; ++x) {
+            if ((x + y) % 2) setPixel(source, 0, x, y, 255, 255, 255);
+        }
+    }
+    auto medium = animation(400, 200, 1);
+    for (int y = 0; y < medium.height; ++y) {
+        for (int x = 0; x < medium.width; ++x) {
+            if ((x + y) % 2) setPixel(medium, 0, x, y, 255, 255, 255);
+        }
+    }
+    return autoPaintDimension(source) == 680 && autoPaintDimension(medium) == 400;
+}
+
+bool autoPaintChecksMiddleFrame() {
+    auto source = animation(736, 736, 3);
+    for (int y = 0; y < source.height; ++y) {
+        for (int x = 0; x < source.width; ++x) {
+            if ((x + y) % 2) setPixel(source, 1, x, y, 255, 255, 255);
+        }
+    }
+    return autoPaintDimension(source) == 680;
+}
+
+bool autoPaintPreservesResolutionDuringSourceScaling() {
+    auto options = paintOptions(320);
+    if (sourceResolutionLimit(options) != 320) return false;
+    options.autoResolution = true;
+    if (sourceResolutionLimit(options) != 680) return false;
+    options.mode = ImportMode::Blocks;
+    return sourceResolutionLimit(options) == 320;
+}
+
 } // namespace
 
 int main() {
-    // Circulos
+    // circulos
     bool const c01 = circleModeNeverEmitsSquares();
     bool const c02 = circleModeCoversAllCells();
     bool const c03 = circleModeProducesDiscsAndSpindles();
@@ -1539,7 +1678,7 @@ int main() {
     bool const c18 = circleModeCoversDiamond();
     bool const c19 = circleModeObjectCountIsReasonable();
 
-    // Pintura + circulos
+    // pintura + circulos
     bool const p01 = paintModeDetectsCircle();
     bool const p02 = paintModeDetectsSmallCircle();
     bool const p03 = paintModeCurvesUseBlocksNotRotatedSlivers();
@@ -1558,6 +1697,16 @@ int main() {
     bool const p14 = paintSeparateDiscsStayRound();
     bool const p13 = paintRepairsKeepLongDiagonal();
     bool const p12 = paintModeSmoothDiamondOverBackground();
+    bool const f01 = paintFragmentsJoinShallowSteps();
+    bool const f02 = paintFragmentsJoinSteepSteps();
+    bool const f03 = paintFragmentsKeepCurveContacts();
+    bool const f04 = paintFragmentsKeepIsolatedDetails();
+    bool const f05 = paintFragmentsUseRoundPatches();
+    bool const f06 = paintFragmentsPreserveInteriorAndForeground();
+    bool const a01 = autoPaintKeepsSmallAndFlatSources();
+    bool const a02 = autoPaintRaisesDetailedSources();
+    bool const a03 = autoPaintChecksMiddleFrame();
+    bool const a04 = autoPaintPreservesResolutionDuringSourceScaling();
 
     if (!c01) std::cerr << "FAIL: circleModeNeverEmitsSquares\n";
     if (!c02) std::cerr << "FAIL: circleModeCoversAllCells\n";
@@ -1602,5 +1751,15 @@ int main() {
         c10 && c11 && c12 && c13 && c14 && c15 && c16 && c17 && c18 && c19 &&
         p01 && p02 && p03 && p04 && p05 && p06 && p07 && p08 && p09 &&
         p10 && p11 && p12 && p13 && p14 && p15 && p16 && p17 && p18;
-    return pass ? 0 : 1;
+    if (!f01) std::cerr << "FAIL: paintFragmentsJoinShallowSteps\n";
+    if (!f02) std::cerr << "FAIL: paintFragmentsJoinSteepSteps\n";
+    if (!f03) std::cerr << "FAIL: paintFragmentsKeepCurveContacts\n";
+    if (!f04) std::cerr << "FAIL: paintFragmentsKeepIsolatedDetails\n";
+    if (!f05) std::cerr << "FAIL: paintFragmentsUseRoundPatches\n";
+    if (!f06) std::cerr << "FAIL: paintFragmentsPreserveInteriorAndForeground\n";
+    if (!a01) std::cerr << "FAIL: autoPaintKeepsSmallAndFlatSources\n";
+    if (!a02) std::cerr << "FAIL: autoPaintRaisesDetailedSources\n";
+    if (!a03) std::cerr << "FAIL: autoPaintChecksMiddleFrame\n";
+    if (!a04) std::cerr << "FAIL: autoPaintPreservesResolutionDuringSourceScaling\n";
+    return pass && f01 && f02 && f03 && f04 && f05 && f06 && a01 && a02 && a03 && a04 ? 0 : 1;
 }

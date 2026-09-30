@@ -8,10 +8,10 @@
 
 namespace paimon::updates {
 
-// popup with .geode download progress + "Restart" button when done.
+// popup with .geode download progress + "restart" button when done.
 class UpdateProgressPopup : public geode::Popup {
 public:
-    // downloads one version from the history; onInstalled tells the update
+    // downloads one version from the history; oninstalled tells the update
     // center to refresh its buttons.
     static UpdateProgressPopup* create(
         std::string url, std::string version, std::function<void()> onInstalled = nullptr

@@ -2,10 +2,12 @@
 
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/HttpClient.hpp"
+#include "../../../utils/JsonHelper.hpp"
 
 #include <Geode/Geode.hpp>
 
 #include <fmt/format.h>
+#include <algorithm>
 
 using namespace geode::prelude;
 
@@ -20,7 +22,7 @@ std::string stringField(matjson::Value const& item, char const* key) {
 }
 
 int intField(matjson::Value const& item, char const* key) {
-    return item.contains(key) ? static_cast<int>(item[key].asInt().unwrapOr(0)) : 0;
+    return paimon::json::integerOr<int>(item[key]);
 }
 
 Status statusOf(std::string const& name) {
@@ -64,40 +66,43 @@ int difficultyFace(std::string const& name) {
 }
 
 void RequestFeed::fetch(std::string const& status, ListCallback callback) {
+    if (!callback || paimon::isRuntimeShuttingDown()) return;
     std::string endpoint = fmt::format("/api/requests/list?limit={}", kMaxRequests);
-    if (!status.empty()) endpoint += "&status=" + status;
+    if (!status.empty()) endpoint += "&status=" + HttpClient::encodeQueryParam(status);
 
-    HttpClient::get().get(endpoint, [callback](bool ok, std::string const& body) {
+    HttpClient::get().get(endpoint, [status, callback = std::move(callback)](bool ok, std::string const& body) {
         auto& feed = RequestFeed::get();
         if (paimon::isRuntimeShuttingDown()) return;
 
         if (!ok) {
             log::warn("[ThumbRequests] Could not load the request list");
-            callback(false, feed.m_cached);
+            callback(false, feed.m_cached[status]);
             return;
         }
 
         auto parsed = matjson::parse(body);
         if (!parsed) {
             log::warn("[ThumbRequests] Malformed request list: {}", parsed.unwrapErr());
-            callback(false, feed.m_cached);
+            callback(false, feed.m_cached[status]);
             return;
         }
 
         auto const& root = parsed.unwrap();
-        if (!root.contains("requests") || !root["requests"].isArray()) {
-            callback(false, feed.m_cached);
+        if (!root.isObject() || !root["requests"].isArray()) {
+            callback(false, feed.m_cached[status]);
             return;
         }
 
         std::vector<Request> requests;
-        for (auto const& entry : root["requests"].asArray().unwrapOr(std::vector<matjson::Value>{})) {
+        requests.reserve(std::min(kMaxRequests, root["requests"].size()));
+        for (auto const& entry : root["requests"]) {
+            if (requests.size() >= kMaxRequests) break;
             Request request;
             if (acceptEntry(entry, request)) requests.push_back(std::move(request));
         }
 
-        feed.m_cached = requests;
-        callback(true, feed.m_cached);
+        feed.m_cached[status] = std::move(requests);
+        callback(true, feed.m_cached[status]);
     });
 }
 

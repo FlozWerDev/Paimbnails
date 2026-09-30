@@ -4,7 +4,7 @@
 #include <memory>
 #include <vector>
 
-// CCLayer, not Popup: hides fully for clean screenshots, then flies to corner with actions.
+// cclayer, not popup: hides fully for clean screenshots, then flies to corner with actions.
 class CaptureOverlay : public cocos2d::CCLayer {
 public:
     static void show();
@@ -37,10 +37,10 @@ private:
     cocos2d::CCClippingNode* m_flyClipNode = nullptr;
     cocos2d::CCNodeRGBA* m_flyCardBg = nullptr;
     bool m_isClosing = false;
-    // OverlayManager outlives scenes: drop the card on scene change, the old one may be freed.
+    // overlaymanager outlives scenes: drop the card on scene change, the old one may be freed.
     geode::WeakRef<cocos2d::CCScene> m_ownerScene;
     bool m_docked = false;
-    // Alerts visible at dock (identity only): an unknown popup means the user moved on.
+    // alerts visible at dock (identity only): an unknown popup means the user moved on.
     std::vector<geode::WeakRef<cocos2d::CCNode>> m_alertsAtDock;
 
     void onClose(cocos2d::CCObject* sender);

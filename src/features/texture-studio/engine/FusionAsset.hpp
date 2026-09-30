@@ -14,13 +14,13 @@
 
 namespace paimon::texture_studio {
 
-// One decoded animation frame. `delayMs` is the display duration.
+// one decoded animation frame. `delayms` is the display duration.
 struct FusionFrame {
     ImageBuffer image;
     int delayMs = 100;
 };
 
-// Immutable shared fusion source (static or GIF): owned RGBA frames, read-only after build, thread-sharable.
+// immutable shared fusion source (static or gif): owned rgba frames, read-only after build, thread-sharable.
 struct FusionAsset {
     std::vector<FusionFrame> frames;
     bool animated = false;
@@ -47,22 +47,22 @@ struct FusionAsset {
 
 class FusionAssetLoader final {
 public:
-    // Hard caps against GIF OOMs; oversized frames downscale and still work.
+    // hard caps against gif ooms; oversized frames downscale and still work.
     static constexpr int kMaxFrames     = 48;
     static constexpr int kMaxSide       = 512;
     static constexpr int kMinFrameDelay = 20;   // ms
     static constexpr int kMaxFrameDelay = 2000; // ms
 
-    // File decode: images via ImageBuffer, multi-frame GIFs via GIFDecoder; 1+ frames on success.
+    // file decode: images via imagebuffer, multi-frame gifs via gifdecoder; 1+ frames on success.
     static geode::Result<std::shared_ptr<FusionAsset>> loadFromFile(
         std::filesystem::path const& path);
 
-    // Decode from already-loaded bytes (used after a slot-local copy).
+    // decode from already-loaded bytes (used after a slot-local copy).
     static geode::Result<std::shared_ptr<FusionAsset>> loadFromMemory(
         std::span<std::uint8_t const> bytes,
         std::string_view extHint = {});
 
-    // First frame only — cheap path for export / thumbnails.
+    // first frame only — cheap path for export / thumbnails.
     static geode::Result<ImageBuffer> loadStaticFrame(
         std::filesystem::path const& path);
 

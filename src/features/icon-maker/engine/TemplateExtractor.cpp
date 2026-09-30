@@ -61,8 +61,8 @@ geode::Result<SheetPick> pickSheet(std::string const& base) {
     return Err("No se encontro la hoja de '{}' en los recursos de GD", base);
 }
 
-// Embed `logical` centered into a canvasSize square, upscaling low-quality
-// sources so every template lands at UHD pixel scale.
+// embed `logical` centered into a canvassize square, upscaling low-quality
+// sources so every template lands at uhd pixel scale.
 ts::ImageBuffer embedCentered(ts::ImageBuffer logical, int upscale, int canvasSize) {
     if (upscale > 1 && !logical.empty()) {
         logical = logical.resizedBilinear(
@@ -72,7 +72,7 @@ ts::ImageBuffer embedCentered(ts::ImageBuffer logical, int upscale, int canvasSi
     if (logical.empty()) return canvas;
 
     if (logical.width() > canvasSize || logical.height() > canvasSize) {
-        // Extremely large art (shouldn't happen with vanilla icons): scale to fit.
+        // extremely large art (shouldn't happen with vanilla icons): scale to fit.
         float s = std::min(
             static_cast<float>(canvasSize) / logical.width(),
             static_cast<float>(canvasSize) / logical.height());

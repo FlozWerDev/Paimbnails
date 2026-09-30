@@ -4,19 +4,19 @@
 #include <string_view>
 #include <vector>
 
-// repo page URL -> raw-file base for preview images (see THIRD-PARTY-NOTICES.md).
-// strip idea compatible with "Mod Previews" by Alphalaneous; parsing our own.
+// repo page url -> raw-file base for preview images (see third-party-notices.md).
+// strip idea compatible with "mod previews" by alphalaneous; parsing our own.
 
 namespace paimon::mod_previews {
 
-// Raw-file base for one repository, branch still unresolved.
+// raw-file base for one repository, branch still unresolved.
 struct PreviewSource {
     bool ok = false;
-    // host raw base WITHOUT branch; manifest/thumbs append "<branch>/..." below.
+    // host raw base without branch; manifest/thumbs append "<branch>/..." below.
     std::string assetBase;
 };
 
-// Split a URL into lowercase host + path segments, dropping empty
+// split a url into lowercase host + path segments, dropping empty
 // segments, a leading "www." and a trailing ".git" suffix.
 inline bool parseHttpUrl(std::string_view url, std::string& hostOut,
                          std::vector<std::string>& segmentsOut) {
@@ -44,7 +44,7 @@ inline bool parseHttpUrl(std::string_view url, std::string& hostOut,
         }
     }
     if (!cur.empty() && cur != ".") segmentsOut.push_back(cur);
-    // trailing ".git" is a clone suffix (bare ".git" only on degenerate URLs).
+    // trailing ".git" is a clone suffix (bare ".git" only on degenerate urls).
     if (!segmentsOut.empty()) {
         auto& last = segmentsOut.back();
         if (last == ".git") segmentsOut.pop_back();

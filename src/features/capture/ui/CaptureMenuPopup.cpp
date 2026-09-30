@@ -33,7 +33,7 @@ constexpr float kInvertY  = 42.f;
 constexpr float kPhysicsY = 6.f;
 constexpr float kSmoothY  = -30.f;
 
-// Flag for popups opened from this menu: only those block right-click toggle.
+// flag for popups opened from this menu: only those block right-click toggle.
 std::string const& captureChildFlag() {
     static const std::string flag = Mod::get()->getID() + "/capture-menu-child";
     return flag;
@@ -54,7 +54,7 @@ ButtonSprite* makeHoldCtrlButtonSprite(bool enabled) {
 CaptureMenuPopup* CaptureMenuPopup::s_instance = nullptr;
 
 void CaptureMenuPopup::toggle() {
-    // Only this menu's child popups block right-click toggle.
+    // only this menu's child popups block right-click toggle.
     if (auto* scene = CCDirector::get()->getRunningScene()) {
         for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
             auto* alert = typeinfo_cast<FLAlertLayer*>(child);
@@ -176,7 +176,7 @@ bool CaptureMenuPopup::initContents() {
         menu->addChild(gearBtn);
     }
 
-    // Opt-in to the mod's theme/animations/dynamic blur (DynamicPopupHook).
+    // opt-in to the mod's theme/animations/dynamic blur (dynamicpopuphook).
     paimon::markDynamicPopup(this);
 
     return true;
@@ -196,7 +196,7 @@ void CaptureMenuPopup::onCapture(CCObject*) {
             NotificationIcon::Info)->show();
         return;
     }
-    // Hide popup and drop only its blur; underneath popups keep theirs for the shot.
+    // hide popup and drop only its blur; underneath popups keep theirs for the shot.
     this->setVisible(false);
     paimon::popupblur::cleanup(this);
     CaptureOverlay::show();
@@ -204,7 +204,7 @@ void CaptureMenuPopup::onCapture(CCObject*) {
 }
 
 void CaptureMenuPopup::onOpenShortcuts(CCObject*) {
-    // Queue on main thread to avoid modifying scene during touch dispatch.
+    // queue on main thread to avoid modifying scene during touch dispatch.
     geode::Loader::get()->queueInMainThread([]() {
         if (auto* popup = paimon::volscroll::ScrollKeybindsPopup::create()) {
             markCaptureChild(popup);
@@ -226,7 +226,7 @@ void CaptureMenuPopup::onToggleInvert(CCObject*) {
 void CaptureMenuPopup::onTogglePhysics(CCObject*) {
     bool const now = !Mod::get()->getSettingValue<bool>("menu-physics-enable");
     Mod::get()->setSettingValue<bool>("menu-physics-enable", now);
-    // Apply live to scene visible after this popup closes.
+    // apply live to scene visible after this popup closes.
     if (now) {
         paimon::menuphysics::MenuPhysicsManager::get().applyToCurrentScene();
     } else {

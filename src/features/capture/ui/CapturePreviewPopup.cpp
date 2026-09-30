@@ -111,7 +111,7 @@ CapturePreviewPopup::~CapturePreviewPopup() {
 }
 
 void CapturePreviewPopup::registerWithTouchDispatcher() {
-    // Use getTargetPrio() so other mod popups stack correctly.
+    // use gettargetprio() so other mod popups stack correctly.
     auto* dispatcher = CCDirector::get()->getTouchDispatcher();
     dispatcher->addTargetedDelegate(this, dispatcher->getTargetPrio() - 1, true);
 }
@@ -185,7 +185,7 @@ bool CapturePreviewPopup::init() {
     m_viewWidth  = maxWidth;
     m_viewHeight = maxHeight;
 
-// Use a geometric stencil to avoid conflicts with HappyTextures/TextureLdr.
+// use a geometric stencil to avoid conflicts with happytextures/textureldr.
     auto stencil = PaimonDrawNode::create();
     CCPoint rect[4] = { ccp(0,0), ccp(maxWidth,0), ccp(maxWidth,maxHeight), ccp(0,maxHeight) };
     ccColor4F white = {1,1,1,1};
@@ -391,7 +391,7 @@ bool CapturePreviewPopup::init() {
         m_editMenu->addChild(cropBtn);
     }
 
-// HDR supersamples internally, then downsamples to the same output size.
+// hdr supersamples internally, then downsamples to the same output size.
     {
         m_hdrMode = FramebufferCapture::isHDRMode();
         auto bg = CCSprite::createWithSpriteFrameName("GJ_plainBtn_001.png");
@@ -659,10 +659,10 @@ void CapturePreviewPopup::onClose(CCObject* sender) {
     CaptureLayerEditorPopup::restoreAllLayers();
     CaptureAssetBrowserPopup::restoreAllAssets();
 
-    // Cancel pending recapture callbacks before closing.
+    // cancel pending recapture callbacks before closing.
     FramebufferCapture::cancelPending();
 
-    // Resume music only if keybind capture paused it.
+    // resume music only if keybind capture paused it.
     if (m_pausedMusic) {
         if (auto* engine = FMODAudioEngine::sharedEngine()) {
             if (engine->m_backgroundMusicChannel) {
@@ -675,7 +675,7 @@ void CapturePreviewPopup::onClose(CCObject* sender) {
     m_activatedItem = nullptr;
     m_wasZooming = false;
 
-    // Popup::onClose removes the touch delegate.
+    // popup::onclose removes the touch delegate.
 
     if (!m_callbackExecuted && m_callback) {
         m_callback(false, m_levelID, m_buffer, m_width, m_height, "", "");
@@ -834,7 +834,7 @@ void CapturePreviewPopup::onAcceptBtn(CCObject* sender) {
     m_callbackExecuted = true;
     ThumbnailLoader::get().invalidateLevel(m_levelID);
 
-    // Cache the accepted thumbnail so LevelInfoLayer shows it pre-upload.
+    // cache the accepted thumbnail so levelinfolayer shows it pre-upload.
     if (m_buffer && m_width > 0 && m_height > 0) {
         auto* tex = new CCTexture2D();
         if (tex->initWithData(m_buffer.get(), kCCTexture2DPixelFormat_RGBA8888,
@@ -950,7 +950,7 @@ void CapturePreviewPopup::onCycleResolution(CCObject* sender) {
     if (pos != std::string::npos) msg.replace(pos, 2, next);
     PaimonNotify::create(msg.c_str(), NotificationIcon::Info)->show();
 
-// Same routing as player/HDR toggles: recapture in-level, owner re-renders outside, else local.
+// same routing as player/hdr toggles: recapture in-level, owner re-renders outside, else local.
     if (PlayLayer::get()) {
         recapture();
     } else if (m_recaptureCallback) {
@@ -962,7 +962,7 @@ void CapturePreviewPopup::onCycleResolution(CCObject* sender) {
 
 void CapturePreviewPopup::onCancelBtn(CCObject* sender) {
     if (!sender) return;
-// onClose fires cancel exactly once after restore/resume; cleanup precedes the caller.
+// onclose fires cancel exactly once after restore/resume; cleanup precedes the caller.
     this->onClose(nullptr);
 }
 
@@ -1080,13 +1080,13 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
     ss << "thumbnail_" << m_levelID << "_" << std::put_time(&tmBuf, "%Y%m%d_%H%M%S") << ".png";
     auto filePath = downloadDir / ss.str();
 
-    // Buffer is never mutated in place, so the worker shares ownership
-    // instead of copying 8-33MB on main.
+    // buffer is never mutated in place, so the worker shares ownership
+    // instead of copying 8-33mb on main.
     std::shared_ptr<uint8_t> bufCopy = m_buffer;
     int w = m_width, h = m_height;
     int levelID = m_levelID;
 
-    // ImageConverter and std::ofstream keep Windows paths Unicode-safe.
+    // imageconverter and std::ofstream keep windows paths unicode-safe.
     paimon::ThreadTracker::get().spawn([bufCopy, w, h, filePath, levelID]() {
         if (ImageConverter::saveRGBAToPNG(bufCopy.get(), w, h, filePath)) {
             geode::Loader::get()->queueInMainThread([filePath, levelID]() {
@@ -1115,7 +1115,7 @@ void CapturePreviewPopup::onOpenDownloadsFolder(CCObject*) {
         return;
     }
 
-    // openFolder may report false on success, so never show an error here.
+    // openfolder may report false on success, so never show an error here.
     if (!geode::utils::file::openFolder(downloadDir)) {
         log::warn("[CapturePreview] openFolder devolvio false para {}",
             geode::utils::string::pathToString(downloadDir));
@@ -1193,7 +1193,7 @@ void CapturePreviewPopup::clampSpritePositionAnimated() {
 }
 
 bool CapturePreviewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
-    // Hidden only during recapture: swallow the touch so it never falls through mid-capture.
+    // hidden only during recapture: swallow the touch so it never falls through mid-capture.
     if (!this->isVisible()) return m_recapturePending;
 
     auto findTouchedItem = [](CCMenu* menu, CCTouch* t) -> CCMenuItem* {
@@ -1219,7 +1219,7 @@ bool CapturePreviewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
         return true;
     }
 
-// The resolution badge menu lives on m_mainLayer, not in the toolbars.
+// the resolution badge menu lives on m_mainlayer, not in the toolbars.
     if (auto* badgeMenu = typeinfo_cast<CCMenu*>(m_mainLayer->getChildByID("res-badge-menu"_spr))) {
         if (auto* item = findTouchedItem(badgeMenu, touch)) {
             m_activatedItem = item;

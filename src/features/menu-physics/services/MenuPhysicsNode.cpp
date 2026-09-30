@@ -199,7 +199,7 @@ void MenuPhysicsNode::updateReturnAnimation(float dt) {
         float const rotationDelta = std::remainder(
             o.rotation - o.returnStartRotation, 360.f
         );
-        // Overshoot de giro al reacomodarse
+        // overshoot de giro al reacomodarse
         float overshoot = (t < 0.85f) ? std::sin(t * kPi) * 8.f * (1.f - t) : 0.f;
         o.node->setRotation(o.returnStartRotation + rotationDelta * easeRot + overshoot);
 
@@ -235,7 +235,7 @@ bool MenuPhysicsNode::ccTouchBegan(CCTouch* touch, CCEvent*) {
     if (push > 0.f) {
         m_world.pushExplosion(p, push);
     }
-    return false;  // touch must pass through so GD buttons stay clickable
+    return false;  // touch must pass through so gd buttons stay clickable
 }
 
 void MenuPhysicsNode::ccTouchMoved(CCTouch* touch, CCEvent*) {
@@ -251,7 +251,7 @@ void MenuPhysicsNode::ccTouchMoved(CCTouch* touch, CCEvent*) {
 }
 
 void MenuPhysicsNode::ccTouchEnded(CCTouch*, CCEvent*) {
-    // A quick tap activates the button; a hold/drag just releases it.
+    // a quick tap activates the button; a hold/drag just releases it.
     if (m_world.isDragging() && !m_dragMoved) {
         if (auto* item = typeinfo_cast<CCMenuItem*>(m_world.draggedNode())) {
             if (item->isEnabled()) item->activate();

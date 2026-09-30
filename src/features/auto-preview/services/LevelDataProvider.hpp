@@ -12,7 +12,7 @@ namespace paimon::autopreview {
 class LevelDataProvider : public LevelDownloadDelegate {
 public:
     static LevelDataProvider& get();
-    // nullptr on failure/timeout. Main thread only.
+    // nullptr on failure/timeout. main thread only.
     using Callback = geode::CopyableFunction<void(GJGameLevel*)>;
 
     void request(int levelID, Callback cb);

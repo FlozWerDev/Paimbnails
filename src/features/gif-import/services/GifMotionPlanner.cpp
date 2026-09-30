@@ -9,7 +9,7 @@ namespace paimon::gifimport {
 
 namespace {
 
-// Below this a silhouette isn't worth a group plus its triggers:
+// below this a silhouette isn't worth a group plus its triggers:
 // repeating it per frame costs less than tracking it.
 constexpr std::size_t kMinTrackedCells = 8;
 constexpr int kMinTrackedFrames = 3;
@@ -27,9 +27,7 @@ struct Component {
     bool taken = false;
 };
 
-// Reference pose is frame 0; each frame stores its offset against it. `alive`
-// unchecks cells some frame drops, so the moving silhouette ends up as what
-// every frame shares and the rest stays on the grid, painted as usual.
+// only cells shared by every frame belong to the moving silhouette.
 struct Chain {
     std::vector<int> positions;
     std::vector<std::int32_t> colors;
@@ -57,7 +55,7 @@ std::vector<std::uint8_t> dynamicCells(
     return dynamic;
 }
 
-// The most-covering color is the background. Its blobs fit anywhere, so a
+// the most-covering color is the background. its blobs fit anywhere, so a
 // chain following one would jump senselessly and waste a group.
 std::int32_t dominantColor(GridFrame const& frame) {
     std::int32_t highest = 0;
@@ -225,9 +223,7 @@ MotionAnalysis analyzeMotion(
                 velocityY = last.y - previous.y;
             }
 
-            // search starts where it should be if it kept course, plus neighbors:
-            // a cell-and-quarter drift never lands on a blob center, and without
-            // this sweep the chain stuck to its old spot.
+            // search adjacent candidates because fractional-cell drift can miss a blob center.
             std::vector<std::pair<int, int>> offsets;
             for (int dy = -kSearchRadius; dy <= kSearchRadius; ++dy) {
                 for (int dx = -kSearchRadius; dx <= kSearchRadius; ++dx) {
@@ -305,9 +301,7 @@ MotionAnalysis analyzeMotion(
     std::vector<MotionGroup> merged;
     std::vector<std::vector<std::int64_t>> signatures;
     for (auto const& chain : chains) {
-        // only what every frame shares is tracked. The fill the silhouette
-        // leaves on the grid holds for the whole animation; a missing frame
-        // would show background there instead.
+        // track only cells shared by every frame; a missing frame would expose the background fill.
         if (static_cast<int>(chain.keys.size()) != frameCount) continue;
         if (chain.aliveCount < kMinTrackedCells) continue;
         // untracked leftovers get eaten by the background, so track only while
@@ -367,9 +361,7 @@ MotionAnalysis analyzeMotion(
         analysis.groups.push_back(std::move(merged[index]));
     }
 
-    // background under the silhouette rebuilds from each cell's color in clear
-    // frames: uniform again everywhere, painted by fixed objects instead of
-    // one track per frame.
+    // rebuild exposed background from clear frames so it can use fixed objects.
     analysis.residual = frames;
     std::int32_t highest = 0;
     for (auto const& frame : frames) {
@@ -397,10 +389,7 @@ MotionAnalysis analyzeMotion(
             best = count;
         }
 
-        // fill lands in every frame, not just under the silhouette: that's what
-        // stops the cell changing so a fixed object paints it. The cost is the
-        // silhouette edge, reading as background on shifted frames; plan
-        // comparison decides whether that trade pays.
+        // fill every frame to permit fixed objects; plan comparison accounts for lost silhouette edges.
         for (auto& frame : analysis.residual) frame.cells[position] = plate;
     }
     return analysis;

@@ -60,8 +60,8 @@ struct ProfilePicConfig {
     float size = 120.f;
     float rotation = 0.f;
 
-    // Custom photo picked specifically for the profile button redesign.
-    // Kept completely separate from the profile popup's backdrop.
+    // custom photo picked specifically for the profile button redesign.
+    // kept completely separate from the profile popup's backdrop.
     std::string photoSource = "custom";
     std::string photoPath = "";
 

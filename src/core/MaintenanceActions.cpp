@@ -5,38 +5,20 @@
 #include "QualityConfig.hpp"
 #include <array>
 #include <filesystem>
-
-#ifdef GEODE_IS_WINDOWS
-#include <shellapi.h>
-#endif
+#include <Geode/utils/file.hpp>
 
 using namespace geode::prelude;
 
 namespace {
-void openFolderNative(std::string const& pathStr) {
-#ifdef GEODE_IS_WINDOWS
-    ShellExecuteA(nullptr, "open", pathStr.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-#elif defined(GEODE_IS_MACOS)
-    std::string cmd = "open \"" + pathStr + "\"";
-    std::system(cmd.c_str());
-#else
-    (void)pathStr;
-#endif
-}
-
 void revealFolder(std::filesystem::path const& dir, char const* doneMsg) {
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     auto pathStr = geode::utils::string::pathToString(dir);
-#if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_MACOS)
-    openFolderNative(pathStr);
-    PaimonNotify::create(doneMsg, NotificationIcon::Success)->show();
-#else
-    PaimonNotify::create("Carpeta: " + pathStr, NotificationIcon::Info)->show();
-#ifndef GEODE_IS_ANDROID
-    PaimonNotify::create(doneMsg, NotificationIcon::Success)->show();
-#endif
-#endif
+    if (!ec && geode::utils::file::openFolder(dir)) {
+        PaimonNotify::create(doneMsg, NotificationIcon::Success)->show();
+    } else {
+        PaimonNotify::create("Carpeta: " + pathStr, NotificationIcon::Info)->show();
+    }
 }
 
 } // namespace

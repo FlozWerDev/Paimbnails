@@ -36,7 +36,7 @@ void fitTo(CCNode* node, float target) {
     if (dim > 0.f) node->setScale(target / dim);
 }
 
-// Read where the folder sits before the touch handler tears anything down: the
+// read where the folder sits before the touch handler tears anything down: the
 // mod's entrance animation grows the new card out of it.
 void openMySets(CCNode* button) {
     CCPoint origin{-1.f, -1.f};
@@ -78,7 +78,7 @@ bool CopiedIconsPopup::init() {
     m_body->setPosition({(content.width - kBodyWidth) / 2.f, 52.f});
     m_mainLayer->addChild(m_body);
 
-    // The sets you built yourself live in their own list; the folder is the way
+    // the sets you built yourself live in their own list; the folder is the way
     // in, since this one only ever holds other people's icons.
     auto* folderSpr = paimon::SpriteHelper::safeCreateWithFrameName("gj_folderBtn_001.png");
     if (!folderSpr) folderSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plusBtn_001.png");
@@ -208,7 +208,7 @@ void CopiedIconsPopup::onClearAll(CCObject*) {
         });
 }
 
-// Rebuilding tears down the buttons we are being called from, so wait until the
+// rebuilding tears down the buttons we are being called from, so wait until the
 // touch dispatcher is done with them.
 void CopiedIconsPopup::queueRebuild() {
     WeakRef<CopiedIconsPopup> self = this;

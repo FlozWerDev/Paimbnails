@@ -20,7 +20,7 @@
 #include <filesystem>
 #include <chrono>
 
-// animated GIF with shared cache and incremental loading.
+// animated gif with shared cache and incremental loading.
 class AnimatedGIFSprite : public cocos2d::CCSprite {
 public:
     static AnimatedGIFSprite* create(std::string const& filename);
@@ -65,7 +65,7 @@ protected:
     static void evictIfNeeded();
 
     std::vector<GIFFrame*> m_frames;
-    std::vector<std::pair<cocos2d::ccColor3B, cocos2d::ccColor3B>> m_frameColors; // per frame: {A, B}.
+    std::vector<std::pair<cocos2d::ccColor3B, cocos2d::ccColor3B>> m_frameColors; // per frame: {a, b}.
 
     unsigned int m_currentFrame = 0;
     float m_frameTimer = 0.0f;
@@ -107,7 +107,7 @@ public:
     cocos2d::CCGLProgram* m_cachedShaderProgram = nullptr;
 
     static void clearCache();
-    // drop GL textures on reload; worker keeps running.
+    // drop gl textures on reload; worker keeps running.
     static void clearCacheForReload();
     static void remove(std::string const& filename);
     static bool isCached(std::string const& filename);
@@ -180,7 +180,7 @@ public:
     }
 
     void onExit() override {
-        // recycled off-tree GIFs must not keep a global schedule.
+        // recycled off-tree gifs must not keep a global schedule.
         this->unscheduleUpdate();
         this->unschedule(schedule_selector(AnimatedGIFSprite::updateTextureLoading));
         CCSprite::onExit();

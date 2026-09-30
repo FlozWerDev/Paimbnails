@@ -5,15 +5,15 @@
 #include <optional>
 #include <ctime>
 
-// Volatile chat memory for repeats and contextual follow-ups.
+// volatile chat memory for repeats and contextual follow-ups.
 
 namespace paimon::guide {
 
 struct ConversationTurn {
-    std::string userQuery;       // Original text.
-    std::string matchedIntentId; // Empty for fallback.
-    std::string topicId;         // Follow-up topic.
-    bool wasFunctional = false;  // Intent kind at match time.
+    std::string userQuery;       // original text.
+    std::string matchedIntentId; // empty for fallback.
+    std::string topicId;         // follow-up topic.
+    bool wasFunctional = false;  // intent kind at match time.
     std::time_t timestamp = 0;
 };
 

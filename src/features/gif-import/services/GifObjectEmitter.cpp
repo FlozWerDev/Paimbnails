@@ -59,7 +59,7 @@ struct PreparedImport {
     std::size_t objects = 0;
 };
 
-// WeakRef's pool is main-thread-only, so the worker hands back plain C++ state.
+// weakref's pool is main-thread-only, so the worker hands back plain c++ state.
 struct AsyncProgress {
     std::atomic<float> value{0.f};
     std::atomic<int> stage{static_cast<int>(BuildStage::Preparing)};
@@ -101,7 +101,8 @@ void appendPrimitive(
     int imageHeight,
     int group,
     bool layered,
-    int zLayer
+    int zLayer,
+    int backdropZLayer
 ) {
     auto const& shape = shapes[shapeIndex(object.kind)];
     bool const stamped =
@@ -117,7 +118,7 @@ void appendPrimitive(
     float scaleX = boxWidth / shape.width;
     float scaleY = boxHeight / shape.height;
     if (stamped) {
-        // GD scales before rotating, so at a quarter turn the axes cross:
+        // gd scales before rotating, so at a quarter turn the axes cross:
         // box width comes from art height.
         bool const quarter =
             std::abs(std::fmod(std::abs(stamp.rotation), 180.f) - 90.f) < 0.5f;
@@ -126,7 +127,7 @@ void appendPrimitive(
         scaleY = (quarter ? boxWidth : boxHeight) /
             (quarter ? stamp.baseWidth : stamp.baseHeight);
     }
-    // Skipping a stray colour index would desync the object count the import
+    // skipping a stray colour index would desync the object count the import
     // checks against, so the last channel takes it instead.
     int const color = colors[std::min<std::size_t>(object.color, colors.size() - 1)];
     float const rotation = stamped ? stamp.rotation : object.rotation +
@@ -142,7 +143,9 @@ void appendPrimitive(
     if (stamped && stamp.flipX) payload += ",4,1";
     if (layered) {
         payload += fmt::format(",25,{}", std::clamp<int>(object.layer, -999, 999));
-        if (zLayer != 0) payload += fmt::format(",24,{}", zLayer);
+        int const objectZLayer = backdropZLayer != 0 && object.layer == -999
+            ? backdropZLayer : zLayer;
+        if (objectZLayer != 0) payload += fmt::format(",24,{}", objectZLayer);
     }
     appendGroups(payload, group);
     payload += ';';
@@ -201,8 +204,8 @@ void appendMove(
     payload += ';';
 }
 
-// Full-screen VertX wash in normal mode (no 207): corners duplicated top/bottom
-// and the ramp runs vertical regardless of how the game reads vertexMode.
+// full-screen vertx wash in normal mode (no 207): corners duplicated top/bottom
+// and the ramp runs vertical regardless of how the game reads vertexmode.
 void appendGradient(
     std::string& payload,
     float x,
@@ -258,9 +261,7 @@ bool measureShape(LevelEditorLayer* editor, ObjectShape& shape) {
     return true;
 }
 
-// Z order (25) sorts within one Z layer only, so figures with a different
-// default layer would paint over squares no matter what. On any mismatch,
-// everything goes to the square layer.
+// z order applies within one layer; mixed defaults must use the square layer.
 int sharedZLayer(ShapeTable const& shapes, bool stamped) {
     int const block = shapes[shapeIndex(PrimitiveKind::Block)].zLayer;
     if (stamped) return block != 0 ? block : static_cast<int>(ZLayer::B1);
@@ -272,7 +273,7 @@ int sharedZLayer(ShapeTable const& shapes, bool stamped) {
     return 0;
 }
 
-// GD saves Move in its own units, not pixels. Instead of trusting the constant,
+// gd saves move in its own units, not pixels. instead of trusting the constant,
 // a probe trigger with a known value asks the game itself what it translated to.
 float moveUnitScale(LevelEditorLayer* editor) {
     float scale = 3.f;
@@ -306,10 +307,7 @@ bool resolveShapes(LevelEditorLayer* editor, ImportMode mode, ShapeTable& shapes
     return true;
 }
 
-// the relaxed library pass accepts decoration without tint, so verify here:
-// blending comes from the color channel (the whole soft palette is glow with
-// glowPaletteStart=0) for natives and spares alike, but a tint-refusing object
-// would paint its original color.
+// the relaxed library accepts untintable decoration; reject it before applying palette colors.
 void verifySoftStamps(LevelEditorLayer* editor, ImportPlan const& plan) {
     if (!usesSoftGeometry(plan.mode) || plan.stamps.empty()) return;
     if (plan.glowPaletteStart != 0) {
@@ -407,26 +405,30 @@ Result<PreparedImport> prepareImport(
     float const moveScale = plan.motionTracks.empty() ? 3.f : moveUnitScale(editor);
 
     bool const layered = usesPaintGeometry(plan.mode) || usesSoftGeometry(plan.mode);
-    int const zLayer = layered ? sharedZLayer(shapes, !plan.stamps.empty()) : 0;
+    int const zLayer = plan.mode == ImportMode::Blur
+        ? static_cast<int>(ZLayer::T1)
+        : layered ? sharedZLayer(shapes, !plan.stamps.empty()) : 0;
+    int const backdropZLayer = plan.mode == ImportMode::Blur
+        ? static_cast<int>(ZLayer::B2) : 0;
     std::string payload;
     payload.reserve(plan.totalObjects * 112);
     for (auto const& object : plan.staticObjects) {
         appendPrimitive(
             payload, object, shapes, plan.stamps, channels, options.pixelSize, origin,
-            plan.height, 0, layered, zLayer);
+            plan.height, 0, layered, zLayer, backdropZLayer);
     }
     for (std::size_t i = 0; i < plan.tracks.size(); ++i) {
         for (auto const& object : plan.tracks[i].objects) {
             appendPrimitive(
                 payload, object, shapes, plan.stamps, channels, options.pixelSize, origin,
-                plan.height, stateGroups[i], layered, zLayer);
+                plan.height, stateGroups[i], layered, zLayer, backdropZLayer);
         }
     }
     for (std::size_t i = 0; i < plan.motionTracks.size(); ++i) {
         for (auto const& object : plan.motionTracks[i].objects) {
             appendPrimitive(
                 payload, object, shapes, plan.stamps, channels, options.pixelSize, origin,
-                plan.height, motionGroups[i], layered, zLayer);
+                plan.height, motionGroups[i], layered, zLayer, backdropZLayer);
         }
     }
 
@@ -468,9 +470,7 @@ Result<PreparedImport> prepareImport(
             return options.loop ? eventGroups[frame] : eventGroups[frame - 1];
         };
 
-        // moving the figure to the next frame's pose for the current one's
-        // duration lands it right as that frame starts, and pose jumps read
-        // as slides instead of blinks.
+        // move towards the next pose during the current frame so the pose lands at the next frame boundary.
         auto appendMotionStep = [&](std::size_t frame, std::size_t next, int eventGroup) {
             for (std::size_t i = 0; i < plan.motionTracks.size(); ++i) {
                 auto const& track = plan.motionTracks[i];
@@ -561,7 +561,10 @@ Result<> installPalette(
         auto const& color = plan.palette[i];
         bool const glow = i >= plan.glowPaletteStart &&
             static_cast<int>(i) != plan.softBackdropColor;
-        float const opacity = glow ? plan.glowOpacity : 1.f;
+        float const opacityScale = i < plan.glowOpacityScales.size()
+            ? plan.glowOpacityScales[i] : 1.f;
+        float const opacity = glow
+            ? std::clamp(plan.glowOpacity * opacityScale, 0.f, 1.f) : 1.f;
         ccColor3B const gdColor{color.r, color.g, color.b};
         auto* action = ColorAction::create(gdColor, glow, 0);
         if (!action) {

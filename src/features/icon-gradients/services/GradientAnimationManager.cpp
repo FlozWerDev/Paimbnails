@@ -1,10 +1,13 @@
 #include "GradientAnimationManager.hpp"
 
 #include "../../../core/modules/ModuleRegistry.hpp"
+#include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
+#include "../../../utils/JsonHelper.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 using namespace geode::prelude;
 
@@ -19,7 +22,13 @@ constexpr char const* kIntensityKey = "gradient-animation-intensity";
 constexpr char const* kReverseKey = "gradient-animation-reverse";
 constexpr char const* kCustomKey = "gradient-animation-custom";
 
-GradientAnimationType validType(int value) {
+float bounded(double value, float fallback, float low, float high) {
+    return std::isfinite(value)
+        ? static_cast<float>(std::clamp(value, static_cast<double>(low), static_cast<double>(high)))
+        : fallback;
+}
+
+GradientAnimationType validType(int64_t value) {
     if (value < static_cast<int>(GradientAnimationType::Flow)
         || value > static_cast<int>(GradientAnimationType::Custom)) {
         return GradientAnimationType::Flow;
@@ -27,12 +36,12 @@ GradientAnimationType validType(int value) {
     return static_cast<GradientAnimationType>(value);
 }
 
-GradientMotion validMotion(int value) {
+GradientMotion validMotion(int64_t value) {
     if (value < 0 || value >= kGradientMotionCount) return GradientMotion::SlideX;
     return static_cast<GradientMotion>(value);
 }
 
-GradientWave validWave(int value) {
+GradientWave validWave(int64_t value) {
     if (value < 0 || value >= kGradientWaveCount) return GradientWave::Smooth;
     return static_cast<GradientWave>(value);
 }
@@ -40,9 +49,9 @@ GradientWave validWave(int value) {
 GradientAnimationLayer clampLayer(GradientAnimationLayer layer) {
     layer.motion = validMotion(static_cast<int>(layer.motion));
     layer.wave = validWave(static_cast<int>(layer.wave));
-    layer.amount = std::clamp(layer.amount, 0.f, 1.f);
-    layer.speed = std::clamp(layer.speed, kLayerSpeedMin, kLayerSpeedMax);
-    layer.phase = std::clamp(layer.phase, 0.f, 1.f);
+    layer.amount = bounded(layer.amount, 0.5f, 0.f, 1.f);
+    layer.speed = bounded(layer.speed, 1.f, kLayerSpeedMin, kLayerSpeedMax);
+    layer.phase = bounded(layer.phase, 0.f, 0.f, 1.f);
     return layer;
 }
 
@@ -59,14 +68,14 @@ GradientAnimationManager::GradientAnimationManager() {
 
 void GradientAnimationManager::load() {
     auto mod = Mod::get();
-    m_config.type = validType(static_cast<int>(
-        mod->getSavedValue<int64_t>(kTypeKey, static_cast<int64_t>(GradientAnimationType::Flow))
+    m_config.type = validType(paimon::json::integerOr<int64_t>(
+        mod->getSavedValue<matjson::Value>(kTypeKey), static_cast<int64_t>(GradientAnimationType::Flow)
     ));
-    m_config.speed = std::clamp(
-        static_cast<float>(mod->getSavedValue<double>(kSpeedKey, 1.0)), 0.1f, 4.f
+    m_config.speed = bounded(
+        mod->getSavedValue<double>(kSpeedKey, 1.0), 1.f, 0.1f, 4.f
     );
-    m_config.intensity = std::clamp(
-        static_cast<float>(mod->getSavedValue<double>(kIntensityKey, 0.6)), 0.f, 1.f
+    m_config.intensity = bounded(
+        mod->getSavedValue<double>(kIntensityKey, 0.6), 0.6f, 0.f, 1.f
     );
     m_config.reverse = mod->getSavedValue<bool>(kReverseKey, false);
 
@@ -80,11 +89,11 @@ void GradientAnimationManager::load() {
         if (!entry.isObject()) continue;
 
         m_config.custom.push_back(clampLayer({
-            validMotion(static_cast<int>(entry["motion"].asInt().unwrapOr(0))),
-            validWave(static_cast<int>(entry["wave"].asInt().unwrapOr(0))),
-            static_cast<float>(entry["amount"].asDouble().unwrapOr(0.5)),
-            static_cast<float>(entry["speed"].asDouble().unwrapOr(1.0)),
-            static_cast<float>(entry["phase"].asDouble().unwrapOr(0.0)),
+            validMotion(paimon::json::integerOr<int64_t>(entry["motion"])),
+            validWave(paimon::json::integerOr<int64_t>(entry["wave"])),
+            bounded(entry["amount"].asDouble().unwrapOr(0.5), 0.5f, 0.f, 1.f),
+            bounded(entry["speed"].asDouble().unwrapOr(1.0), 1.f, kLayerSpeedMin, kLayerSpeedMax),
+            bounded(entry["phase"].asDouble().unwrapOr(0.0), 0.f, 0.f, 1.f),
         }));
     }
 }
@@ -136,13 +145,13 @@ void GradientAnimationManager::setType(GradientAnimationType type) {
 }
 
 void GradientAnimationManager::setSpeed(float speed) {
-    m_config.speed = std::clamp(speed, 0.1f, 4.f);
+    m_config.speed = bounded(speed, 1.f, 0.1f, 4.f);
     save();
     refreshPrograms();
 }
 
 void GradientAnimationManager::setIntensity(float intensity) {
-    m_config.intensity = std::clamp(intensity, 0.f, 1.f);
+    m_config.intensity = bounded(intensity, 0.6f, 0.f, 1.f);
     save();
     refreshPrograms();
 }
@@ -154,7 +163,7 @@ void GradientAnimationManager::setReverse(bool reverse) {
 }
 
 void GradientAnimationManager::reset() {
-    // custom stack survives: "Reset" is not "Delete my animation" (editor has Clear).
+    // keep the custom stack when resetting playback settings.
     auto custom = std::move(m_config.custom);
     m_config = {};
     m_config.custom = std::move(custom);
@@ -209,8 +218,8 @@ void GradientAnimationManager::removeCustomLayer(size_t index) {
 size_t GradientAnimationManager::moveCustomLayer(size_t index, int delta) {
     if (index >= m_config.custom.size()) return index;
 
-    auto target = static_cast<ptrdiff_t>(index) + delta;
-    if (target < 0 || target >= static_cast<ptrdiff_t>(m_config.custom.size())) return index;
+    auto target = static_cast<int64_t>(index) + delta;
+    if (target < 0 || target >= static_cast<int64_t>(m_config.custom.size())) return index;
 
     std::swap(m_config.custom[index], m_config.custom[static_cast<size_t>(target)]);
     saveCustom();
@@ -237,15 +246,28 @@ void GradientAnimationManager::clearCustomLayers() {
 }
 
 void GradientAnimationManager::track(CCGLProgram* program) {
-    if (!program) return;
-    m_programs.emplace(program);
+    if (!program || m_stopped || paimon::isRuntimeShuttingDown()) return;
+    auto found = m_programs.find(program);
+    if (found != m_programs.end() && !found->second.lock()) m_programs.erase(found);
+    m_programs.try_emplace(program, program);
     apply(program);
 }
 
 void GradientAnimationManager::refreshPrograms() {
-    for (auto program : m_programs) {
-        apply(program);
+    if (m_stopped || paimon::isRuntimeShuttingDown()) return;
+    for (auto it = m_programs.begin(); it != m_programs.end();) {
+        if (auto program = it->second.lock()) {
+            apply(program.data());
+            ++it;
+        } else {
+            it = m_programs.erase(it);
+        }
     }
+}
+
+void GradientAnimationManager::shutdown() {
+    m_stopped = true;
+    m_programs.clear();
 }
 
 void GradientAnimationManager::apply(CCGLProgram* program) const {
@@ -253,7 +275,7 @@ void GradientAnimationManager::apply(CCGLProgram* program) const {
 
     program->use();
 
-    // Raw GL locations like applyGradient: the getUniformLocationForName API only
+    // raw gl locations like applygradient: the getuniformlocationforname api only
     // knows the builtin uniforms, so a custom one through it can clobber another slot.
     auto programId = program->getProgram();
 

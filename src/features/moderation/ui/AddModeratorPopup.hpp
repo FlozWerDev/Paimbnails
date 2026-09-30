@@ -6,8 +6,8 @@
 
 class PaimonLoadingOverlay;
 
-// Admin-only role manager; users resolve to a real GD accountID before upload.
-// Class name kept for the existing ProfilePage call site.
+// admin-only role manager; users resolve to a real gd accountid before upload.
+// class name kept for the existing profilepage call site.
 class AddModeratorPopup : public geode::Popup {
 protected:
     geode::TextInput* m_usernameInput = nullptr;

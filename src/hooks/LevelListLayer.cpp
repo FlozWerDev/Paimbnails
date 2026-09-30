@@ -151,7 +151,7 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
     }
 
     void addCompactToggleButton() {
-        if (!Mod::get()->getSettingValue<bool>("compact-list-show-toggle")) {
+        if (!Mod::get()->getSavedValue<bool>("compact-list-show-toggle", true)) {
             return;
         }
 
@@ -221,7 +221,7 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
 
     $override
     void setupLevelBrowser(CCArray* array) {
-        // lists and MyLevels use vanilla compact behavior
+        // lists and mylevels use vanilla compact behavior
         bool isLevelList = typeinfo_cast<LevelListLayer*>(this) != nullptr;
         bool suppressCompactForThisBrowser =
             isLevelList ||
@@ -236,7 +236,7 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         setCompactButtonColor();
 
         if (auto* existing = getChildByIDRecursive("paimon-compact-list-toggle"_spr)) {
-            existing->setVisible(Mod::get()->getSettingValue<bool>("compact-list-show-toggle"));
+            existing->setVisible(Mod::get()->getSavedValue<bool>("compact-list-show-toggle", true));
         }
     }
 
@@ -351,7 +351,7 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
             return;
         }
 
-    // stop the 1s tick when detached; Windows may skip onExit here
+    // stop the 1s tick when detached; windows may skip onexit here
         auto* running = CCDirector::get()->getRunningScene();
         CCNode* root = this;
         while (root->getParent()) root = root->getParent();
@@ -411,10 +411,10 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
             loader.prefetchLevels(predictiveIDs, ThumbnailLoader::PriorityPredictivePrefetch);
         }
 
-    // warm the hero URL only on cell cache miss
+    // warm the hero url only on cell cache miss
         for (int levelID : levelIDs) {
             if (loader.isLoaded(levelID, false)) continue;
-            // without a manifest, warming the URL would repeat a 404
+            // without a manifest, warming the url would repeat a 404
             if (!HttpClient::get().getManifestEntry(levelID).has_value()) continue;
             std::string url = ThumbnailAPI::get().getThumbnailURL(levelID);
             if (url.empty()) continue;

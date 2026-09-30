@@ -1,6 +1,6 @@
 #pragma once
 
-// Two small popups over the same list: picking a saved search to load, and
+// two small popups over the same list: picking a saved search to load, and
 // naming the current one to save it.
 
 #include <Geode/Geode.hpp>

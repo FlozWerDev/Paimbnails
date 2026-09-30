@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-// FfmpegInstallPopup — modal progress popup for the initial ffmpeg download.
+// ffmpeginstallpopup — modal progress popup for the initial ffmpeg download.
 
 #include <Geode/Geode.hpp>
 #include <atomic>
@@ -36,7 +36,7 @@ protected:
 
     std::function<void(bool)> m_onFinished;
     bool m_finished = false;
-    // Alive-token shared with async callbacks: captured by value so they can
+    // alive-token shared with async callbacks: captured by value so they can
     // check liveness after the popup is destroyed.
     std::shared_ptr<std::atomic<bool>> m_alive = std::make_shared<std::atomic<bool>>(true);
 };

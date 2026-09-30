@@ -16,7 +16,7 @@ bool GeminiClient::available() {
 }
 
 void GeminiClient::complete(std::vector<ChatMessage> const& /*history*/,
-                            std::string const& /*systemPrompt*/,
+                            std::string const& /*systemprompt*/,
                             ReplyCallback callback)
 {
     if (!callback) return;

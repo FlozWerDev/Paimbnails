@@ -76,7 +76,7 @@ std::string wrapText(std::string const& text, std::size_t maxChars) {
     return out;
 }
 
-// Strip GD color tags; CCLabelBMFont would render them literally.
+// strip gd color tags; cclabelbmfont would render them literally.
 std::string stripGDColorTags(std::string const& in) {
     std::string out;
     out.reserve(in.size());
@@ -135,7 +135,7 @@ bool PaimonGuideChatPopup::init() {
     {
         int featureCount = static_cast<int>(PopupRegistry::get().entries().size());
         std::string version = "?";
-        // format below already prints the "v"; toVString would give "vv1.1.0".
+        // format below already prints the "v"; tovstring would give "vv1.1.0".
         if (auto* mod = Mod::get()) version = mod->getVersion().toNonVString(false);
 
         auto featuresWord = tr("pai.guide.subtitle", "features");
@@ -243,7 +243,7 @@ bool PaimonGuideChatPopup::init() {
 
         geode::WeakRef<PaimonGuideChatPopup> weak = this;
         m_input->setOnSubmit([weak]() {
-            // defer mutation out of the IME callback.
+            // defer mutation out of the ime callback.
             Loader::get()->queueInMainThread([weak]() {
                 if (paimon::isRuntimeShuttingDown()) return;
                 if (auto self = weak.lock()) {
@@ -381,7 +381,7 @@ void PaimonGuideChatPopup::keyDown(cocos2d::enumKeyCodes key, double p1) {
 }
 
 void PaimonGuideChatPopup::trySubmitFromEnter() {
-// Ignore duplicate Enter delivery from IME and keyboard dispatch.
+// ignore duplicate enter delivery from ime and keyboard dispatch.
     auto now = std::chrono::steady_clock::now();
     if (now - m_lastEnterSubmit < std::chrono::milliseconds(250)) return;
     m_lastEnterSubmit = now;
@@ -410,7 +410,7 @@ cocos2d::CCNode* PaimonGuideChatPopup::makeBubble(std::string const& wrapped, bo
     bg->setPosition(fromUser ? CCPoint{kChatRowW, 0.f} : CCPoint{0.f, 0.f});
     row->addChild(bg);
 
-// Anchor top-left so typewriter updates do not shift existing lines.
+// anchor top-left so typewriter updates do not shift existing lines.
     label->setAnchorPoint({0.f, 1.f});
     label->setPosition({kBubblePadX, bubbleH - kBubblePadY});
     bg->addChild(label);
@@ -463,7 +463,7 @@ void PaimonGuideChatPopup::appendUserMessage(std::string const& message) {
 void PaimonGuideChatPopup::displayMessage(std::string const& message) {
     if (!m_scroll) return;
 
-// Finish the previous bubble before starting a new one.
+// finish the previous bubble before starting a new one.
     finishTypewriter();
 
     auto* content = m_scroll->m_contentLayer;
@@ -475,7 +475,7 @@ void PaimonGuideChatPopup::displayMessage(std::string const& message) {
     auto cleaned = stripGDColorTags(message);
     m_pendingMessage = wrapText(cleaned, kWrapChars);
 
-// Size bubbles for full text; typewriter only controls label content.
+// size bubbles for full text; typewriter only controls label content.
     content->addChild(makeBubble(m_pendingMessage, false));
     m_responseLabel = m_lastBubbleLabel;
     m_responseLabel->setString("");
@@ -543,7 +543,7 @@ void PaimonGuideChatPopup::onSubmitButton(cocos2d::CCObject* /*sender*/) {
 
     appendUserMessage(query);
 
-// Max mode answers asynchronously; drop the result if the popup is gone.
+// max mode answers asynchronously; drop the result if the popup is gone.
     geode::WeakRef<PaimonGuideChatPopup> weak = this;
     auto answer = PaimonGuideService::get().ask(query, [weak](GuideAnswer const& ans) {
         Loader::get()->queueInMainThread([weak, ans]() {
@@ -601,7 +601,7 @@ void PaimonGuideChatPopup::setRecommendationChips(
     int idx = 0;
     for (auto const& rec : m_pendingRecommendations) {
         if (rec.label.empty()) continue;
-// Truncate long chip labels.
+// truncate long chip labels.
         std::string chipText = rec.label;
         if (chipText.size() > 16) chipText = chipText.substr(0, 14) + "..";
 
@@ -650,7 +650,7 @@ void PaimonGuideChatPopup::onRecommendationChip(cocos2d::CCObject* sender) {
 
     auto rec = m_pendingRecommendations[static_cast<std::size_t>(idx)];
     if (rec.action) {
-// Close the chat before opening the feature.
+// close the chat before opening the feature.
         m_pendingAction = nullptr;
         this->onClose(nullptr);
         Loader::get()->queueInMainThread([action = rec.action]() {
@@ -659,7 +659,7 @@ void PaimonGuideChatPopup::onRecommendationChip(cocos2d::CCObject* sender) {
         });
         return;
     }
-// Without an open action, re-ask with the feature name.
+// without an open action, re-ask with the feature name.
     if (!rec.label.empty()) {
         submitQuery(rec.label);
     }
@@ -668,11 +668,11 @@ void PaimonGuideChatPopup::onRecommendationChip(cocos2d::CCObject* sender) {
 void PaimonGuideChatPopup::onTakeMeThere(cocos2d::CCObject* /*sender*/) {
     if (!m_pendingAction) return;
 
-// Capture the action before closing; it targets the current scene.
+// capture the action before closing; it targets the current scene.
     auto action = m_pendingAction;
     m_pendingAction = nullptr;
 
-// Run the action after closing; the popup may already be destroyed.
+// run the action after closing; the popup may already be destroyed.
     this->onClose(nullptr);
     Loader::get()->queueInMainThread([action]() {
         if (paimon::isRuntimeShuttingDown()) return;
@@ -761,7 +761,7 @@ void PaimonGuideChatPopup::onMaxReply(GuideAnswer const& ans) {
     updateTopicLabel(ans.matchedIntentId);
     restoreDefaultChips();
 
-// Max mode may request a feature action; close first, then open it.
+// max mode may request a feature action; close first, then open it.
     if (ans.action) {
         auto action = ans.action;
         this->onClose(nullptr);

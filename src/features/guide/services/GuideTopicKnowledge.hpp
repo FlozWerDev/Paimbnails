@@ -3,7 +3,7 @@
 #include "ConversationalEngine.hpp"
 #include <vector>
 
-// Hand-curated sub-aspects per feature for short follow-ups; ids kept in sync with PopupRegistry by hand.
+// hand-curated sub-aspects per feature for short follow-ups; ids kept in sync with popupregistry by hand.
 
 namespace paimon::guide {
 

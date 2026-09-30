@@ -10,7 +10,7 @@ public:
 
 namespace PaimonInfo {
 
-    // Info button for popups.
+    // info button for popups.
     inline CCMenuItemSpriteExtra* createInfoBtn(
         std::string const& title,
         std::string const& desc,
@@ -37,7 +37,7 @@ namespace PaimonInfo {
         return btn;
     }
 
-} // namespace PaimonInfo
+} // namespace paimoninfo
 
 
 

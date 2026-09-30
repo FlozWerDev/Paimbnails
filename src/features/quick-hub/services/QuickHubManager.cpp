@@ -76,7 +76,7 @@ std::vector<CustomQuickButton> QuickHubManager::getCustomButtons() const {
         b.relY          = static_cast<float>(v["relY"].asDouble().unwrapOr(-1.0));
         b.tag           = static_cast<int>(v["tag"].asInt().unwrapOr(0));
         b.shape         = static_cast<RadialButtonShape>(static_cast<int>(v["shape"].asInt().unwrapOr(0)));
-        // Skin/SFX: missing keys = old defaults.
+        // skin/sfx: missing keys = old defaults.
         b.imagePath     = v["imagePath"].asString().unwrapOr("");
         b.imageScale    = static_cast<float>(v["imageScale"].asDouble().unwrapOr(1.0));
         b.imageRotation = static_cast<float>(v["imageRotation"].asDouble().unwrapOr(0.0));
@@ -226,10 +226,10 @@ bool QuickHubManager::canOpenInCurrentContext() {
     auto* director = cocos2d::CCDirector::get();
     if (!director || !director->getRunningScene()) return false;
 
-    // Overlays don't make a scene safe: PlayLayer still owns touches below.
+    // overlays don't make a scene safe: playlayer still owns touches below.
     if (PlayLayer::get()) return false;
 
-    // Editor keeps its layer while playtesting: playback state tells editing from gameplay.
+    // editor keeps its layer while playtesting: playback state tells editing from gameplay.
     if (auto* editor = LevelEditorLayer::get()) {
         return editor->m_playbackMode == PlaybackMode::Not;
     }

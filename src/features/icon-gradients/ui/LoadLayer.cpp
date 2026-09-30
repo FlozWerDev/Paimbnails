@@ -33,7 +33,7 @@ void LoadLayer::updateGradient(float) {
 
         ColorToggle* toggle = m_toggles[m_updatedIndex++];
 
-        // Single lookup instead of contains() + at().
+        // single lookup instead of contains() + at().
         auto it = m_toggleGradients.find(toggle);
         if (it != m_toggleGradients.end())
             toggle->applyGradient(it->second, false, false);
@@ -90,7 +90,7 @@ void LoadLayer::onDelete(CCObject*) {
     fresh->show();
 }
 
-// Bottom-bar action button, dimmed when there is nothing to load.
+// bottom-bar action button, dimmed when there is nothing to load.
 CCMenuItemSpriteExtra* LoadLayer::makeActionButton(const char* label, SEL_MenuHandler callback, const CCPoint& pos, bool usable) {
     auto sprite = ButtonSprite::create(label);
     sprite->setScale(0.625f);
@@ -148,7 +148,7 @@ bool LoadLayer::init() {
     CCSize size = {30, 30};
     float scale = 1.1f;
 
-    // The first entries paint eagerly; the rest follow lazily on a timer.
+    // the first entries paint eagerly; the rest follow lazily on a timer.
     int eager = 0;
     for (auto const& gradient : gradients) {
         auto toggle = ColorToggle::create(this, menu_selector(LoadLayer::onSelect), ColorType::Main, m_layer, false, scale, false);
@@ -184,7 +184,7 @@ bool LoadLayer::init() {
         m_mainLayer->addChild(scrollbar);
     }
 
-    // Beyond the eager batch, entries paint a few per frame.
+    // beyond the eager batch, entries paint a few per frame.
     bool lazy = m_toggles.size() > 100;
     if (lazy)
         schedule(schedule_selector(LoadLayer::updateGradient), 0, kCCRepeatForever, 0);

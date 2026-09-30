@@ -81,7 +81,7 @@ std::string shortFrameName(std::string name) {
     return name;
 }
 
-// Show the painted region before a texture is selected or after Clear.
+// show the painted region before a texture is selected or after clear.
 void highlightMask(ImageBuffer& img, MaskBuffer const& mask) {
     if (img.empty() || mask.empty()) return;
     if (img.width() != mask.width || img.height() != mask.height) return;
@@ -402,7 +402,7 @@ void FusionEditorLayer::buildTools() {
         panel->addChildAtPosition(bg, Anchor::Center);
     }
 
-    // Menu at panel origin: CCMenu ignores anchor when placing children, centering offsets every control.
+    // menu at panel origin: ccmenu ignores anchor when placing children, centering offsets every control.
     auto* menu = CCMenu::create();
     menu->setPosition({0, 0});
     menu->setContentSize({w, panelH});
@@ -575,14 +575,14 @@ void FusionEditorLayer::buildTools() {
          [](SpriteSetting const& s) { return s.fusionOpacity; },
          [](SpriteSetting& s, float v) { s.fusionOpacity = v; },
          pct, &m_opacRow},
-// Colour radius controls how far the fill spreads across nearby shades.
+// colour radius controls how far the fill spreads across nearby shades.
         {"Color R", 20.f, 220.f, 1.f,
          [](SpriteSetting const& s) { return static_cast<float>(s.fusionTolerance); },
          [](SpriteSetting& s, float v) {
              s.fusionTolerance = static_cast<int>(std::lround(v));
          },
          [](float v) { return fmt::format("{:.0f}", v); }, &m_tolRow},
-// Expand only into same-colour neighbors.
+// expand only into same-colour neighbors.
         {"Expand", 0.f, 8.f, 1.f,
          [](SpriteSetting const& s) {
              return static_cast<float>(s.fusionExpandRadius);
@@ -601,7 +601,7 @@ void FusionEditorLayer::buildTools() {
                 auto s = currentSetting();
                 set(s, v);
                 storeSetting(s);
-// Rebuild the stamp once after transform/opacity changes.
+// rebuild the stamp once after transform/opacity changes.
                 invalidateStampCache();
                 if (s.hasFusion) persistMask();
                 ensureStampCache();
@@ -901,7 +901,7 @@ SpriteSetting FusionEditorLayer::currentSetting() const {
 
 void FusionEditorLayer::storeSetting(SpriteSetting const& s) {
     if (!m_hasSelection) return;
-    // Keep fusion config while editing so color/expand/scale/offsets survive pre-texture.
+    // keep fusion config while editing so color/expand/scale/offsets survive pre-texture.
     m_project.spriteSettings[m_selected.frameName] = s;
     m_project.modifiedAt = nowUnixMs();
 }
@@ -1002,7 +1002,7 @@ void FusionEditorLayer::ensureStampCache() {
     auto s = currentSetting();
     ImageTransform t = s.fusionTransform;
     if (t.isDefault()) t.fitMode = ImageFitMode::Fill;
-// Apply pixel offsets at composite time, not when building the stamp.
+// apply pixel offsets at composite time, not when building the stamp.
     int fi = static_cast<int>(m_frameIndex);
     int w = m_pixels->width(), h = m_pixels->height();
     bool same =
@@ -1027,7 +1027,7 @@ void FusionEditorLayer::ensureStampCache() {
     if (same) return;
 
     m_cachedCoverage = FusionEngine::softCoverage(*m_mask);
-// Fit the stamp to mask bounds rather than the whole frame.
+// fit the stamp to mask bounds rather than the whole frame.
     m_cachedStamp = FusionEngine::buildStampCanvas(
         m_asset->frameAt(static_cast<std::size_t>(fi)), w, h, t, m_mask.get(),
         s.fusionPixelX, s.fusionPixelY);
@@ -1043,7 +1043,7 @@ void FusionEditorLayer::ensureStampCache() {
 }
 
 void FusionEditorLayer::renderPreviewFast() {
-    // Main-thread composite uses a cached stamp shifted by the pixel offset.
+    // main-thread composite uses a cached stamp shifted by the pixel offset.
     m_fastPreviewPending = false;
     if (!m_pixels || m_pixels->empty()) return;
 
@@ -1054,7 +1054,7 @@ void FusionEditorLayer::renderPreviewFast() {
             ensureStampCache();
             if (m_cacheValid) {
                 auto opts = makeFusionOptions(s);
-// Bake placement into the stamp so moved images retain pixels beyond the mask.
+// bake placement into the stamp so moved images retain pixels beyond the mask.
                 opts.pixelOffsetX = 0;
                 opts.pixelOffsetY = 0;
                 FusionEngine::applyCached(out, m_cachedCoverage, m_cachedStamp, opts);
@@ -1079,7 +1079,7 @@ void FusionEditorLayer::refreshPreview() {
 void FusionEditorLayer::renderPreview(float) {
     if (!m_pixels || m_pixels->empty()) return;
 
-// Prefer the cached path when it produces the same visual result.
+// prefer the cached path when it produces the same visual result.
     auto s = currentSetting();
     if (m_mask && !m_mask->empty() && m_asset && !m_asset->empty()) {
         ensureStampCache();
@@ -1515,7 +1515,7 @@ bool FusionEditorLayer::mapTouchToSpriteFloatOn(CCSprite* spr, CCTouch* touch,
         }
     }
 
-// Do not clamp an active Result drag; the pointer may leave the preview box.
+// do not clamp an active result drag; the pointer may leave the preview box.
     float lx = requireInside
         ? std::clamp(local.x, 0.f, sz.width - 0.001f) : local.x;
     float ly = requireInside
@@ -1573,7 +1573,7 @@ bool FusionEditorLayer::ccTouchBegan(CCTouch* touch, CCEvent*) {
 
 void FusionEditorLayer::ccTouchMoved(CCTouch* touch, CCEvent*) {
     if (!m_touchActive || !m_touchOnResult) return;
-// Without a texture, keep the gesture as a tap so release still paints.
+// without a texture, keep the gesture as a tap so release still paints.
     if (!m_asset || m_asset->empty()) return;
     float fx = 0.f, fy = 0.f;
     if (!mapTouchToSpriteFloatOn(m_resultSpr, touch, fx, fy, false)) return;
@@ -1589,12 +1589,12 @@ void FusionEditorLayer::ccTouchMoved(CCTouch* touch, CCEvent*) {
     if (s.fusionPixelX == newPx && s.fusionPixelY == newPy) return;
     s.fusionPixelX = newPx;
     s.fusionPixelY = newPy;
-// Keep drag updates in memory; avoid UI rebuilds and disk I/O.
+// keep drag updates in memory; avoid ui rebuilds and disk i/o.
     m_project.spriteSettings[m_selected.frameName] = s;
     if (m_pixelLbl) {
         m_pixelLbl->setString(fmt::format("px {:+d}, {:+d}", newPx, newPy).c_str());
     }
-// Re-sample the original asset so movement never exposes a clipped old edge.
+// re-sample the original asset so movement never exposes a clipped old edge.
     renderPreviewFast();
 }
 
@@ -1629,12 +1629,12 @@ void FusionEditorLayer::endGesture(CCTouch* touch, bool cancelled) {
         if (s.hasFusion) persistMask();
         m_fastPreviewPending = false;
         refreshToolsUi();
-// Composite once after drag; the cache is already warm.
+// composite once after drag; the cache is already warm.
         renderPreviewFast();
         setStatus(fmt::format("Moved px {:+d}, {:+d}", s.fusionPixelX, s.fusionPixelY));
         return;
     }
-// A tap paints either preview; both boxes use the same gesture.
+// a tap paints either preview; both boxes use the same gesture.
     if (!m_paintArmed) {
         setStatus("Paint OFF - toggle it on to fill regions.");
         return;
@@ -1658,7 +1658,7 @@ void FusionEditorLayer::applyFill(int pixelX, int pixelY) {
     int colorR = s.fusionTolerance > 0 ? s.fusionTolerance : 110;
     int expand = std::clamp(s.fusionExpandRadius, 0, 12);
     MaskBuffer region = FusionEngine::floodFill(
-        *m_pixels, pixelX, pixelY, colorR, /*alphaCutoff=*/12, expand);
+        *m_pixels, pixelX, pixelY, colorR, /*alphacutoff=*/12, expand);
     bool any = false;
     for (auto v : region.data) if (v) { any = true; break; }
     log::info("[fusion] fill at ({},{}) frame {}x{} tol={} expand={} -> {}",

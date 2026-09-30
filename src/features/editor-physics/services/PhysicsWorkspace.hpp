@@ -21,7 +21,7 @@ enum class CaptureRole {
     AddStatic,
 };
 
-// Negative friction or restitution hands the decision back to the lab sliders,
+// negative friction or restitution hands the decision back to the lab sliders,
 // and a mass of zero keeps the one derived from the captured area.
 struct BodyMaterial {
     float mass = 0.f;
@@ -47,7 +47,7 @@ struct CapturedBody {
     std::vector<ObjectMaterial> materials;
 };
 
-// Enough to rebuild the object in the preview with its own art instead of a
+// enough to rebuild the object in the preview with its own art instead of a
 // stretched copy of its main frame.
 struct BodyVisual {
     GameObject* object = nullptr;

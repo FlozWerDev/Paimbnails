@@ -29,16 +29,16 @@ ccColor4B toByte(ccColor4F const& c) {
     return {to255(c.r), to255(c.g), to255(c.b), to255(c.a)};
 }
 
-// Texture alpha at normalized x,y in [-1, 1].
+// texture alpha at normalized x,y in [-1, 1].
 float texAlpha(int kind, float x, float y) {
     float d = std::sqrt(x * x + y * y);
     switch (kind) {
         case TexDot: {
-            // Solid dot, barely feathered edge.
+            // solid dot, barely feathered edge.
             return std::clamp((1.f - d) * 3.2f, 0.f, 1.f);
         }
         case TexGlow: {
-            // Wide soft halo, no edge: fire and bright heads.
+            // wide soft halo, no edge: fire and bright heads.
             float a = std::max(0.f, 1.f - d);
             return std::min(1.f, std::pow(a, 2.0f) * 0.85f + std::pow(a, 6.f) * 0.5f);
         }
@@ -83,7 +83,7 @@ float texAlpha(int kind, float x, float y) {
             return std::clamp(m * 5.f, 0.f, 1.f);
         }
         case TexPuff: {
-            // Fuzzy ball, slightly wavy edge: smoke cloud.
+            // fuzzy ball, slightly wavy edge: smoke cloud.
             float ang = std::atan2(y, x);
             float lobes = 0.90f + 0.10f * std::sin(ang * 3.f + 1.1f) + 0.05f * std::sin(ang * 5.f - 0.4f);
             float a = std::max(0.f, 1.f - d / lobes);
@@ -102,7 +102,7 @@ float texAlpha(int kind, float x, float y) {
             return std::clamp((edge - d) * 11.f, 0.f, 1.f);
         }
         case TexNote: {
-            // Eighth note: tilted oval head + stem + curved flag.
+            // eighth note: tilted oval head + stem + curved flag.
             float hx = x + 0.34f, hy = y + 0.46f;
             constexpr float c = 0.906f, s = -0.423f;
             float rx = hx * c - hy * s, ry = hx * s + hy * c;
@@ -117,7 +117,7 @@ float texAlpha(int kind, float x, float y) {
             return std::max(head, std::max(stem, flag));
         }
         case TexCoin: {
-            // Disc with marked rim and a top highlight.
+            // disc with marked rim and a top highlight.
             float disc = std::clamp((0.95f - d) * 8.f, 0.f, 1.f);
             float groove = 1.f - 0.55f * std::max(0.f, 1.f - std::fabs(d - 0.66f) / 0.10f);
             float hx = x + 0.28f, hy = y - 0.30f;
@@ -125,7 +125,7 @@ float texAlpha(int kind, float x, float y) {
             return std::min(1.f, disc * groove + hl * hl * 0.55f * disc);
         }
         case TexSplat: {
-            // Blotch with uneven lobes and three loose drops.
+            // blotch with uneven lobes and three loose drops.
             float ang = std::atan2(y, x);
             float lobes = 0.62f + 0.16f * std::sin(ang * 3.f + 0.7f)
                         + 0.10f * std::sin(ang * 5.f - 1.3f)
@@ -142,14 +142,14 @@ float texAlpha(int kind, float x, float y) {
             return a;
         }
         case TexPetal: {
-            // Leaf: widest mid, tips top and bottom.
+            // leaf: widest mid, tips top and bottom.
             float yy = (y + 1.f) * 0.5f;
             if (yy <= 0.f || yy >= 1.f) return 0.f;
             float w = 0.62f * std::sin(std::pow(yy, 0.75f) * kPi);
             return std::clamp((w - std::fabs(x)) * 9.f, 0.f, 1.f);
         }
         case TexDrop: {
-            // Drop: semicircle below tapering to the top tip.
+            // drop: semicircle below tapering to the top tip.
             float w = y < 0.f
                 ? std::sqrt(std::max(0.f, 0.62f * 0.62f - y * y))
                 : 0.62f * std::pow(std::max(0.f, 1.f - y / 0.95f), 0.85f);
@@ -193,7 +193,7 @@ CCTexture2D* fxTexture(int kind) {
     auto* tex = new CCTexture2D();
     if (tex->initWithData(pixels.data(), kCCTexture2DPixelFormat_RGBA8888,
                           kSize, kSize, CCSizeMake(kSize, kSize))) {
-        // adopt: initWithData leaves refcount=1; plain Ref would retain again.
+        // adopt: initwithdata leaves refcount=1; plain ref would retain again.
         slot = geode::Ref<CCTexture2D>::adopt(tex);
         return slot.data();
     }
@@ -288,7 +288,7 @@ FxDrawBatch* FxDrawBatch::create() {
 
 bool FxDrawBatch::init() {
     if (!CCNode::init()) return false;
-    // Untextured: position + vertex color is enough.
+    // untextured: position + vertex color is enough.
     auto* cache = CCShaderCache::sharedShaderCache();
     if (!cache) return false;
     auto* program = cache->programForKey(kCCShader_PositionColor);
@@ -299,7 +299,7 @@ bool FxDrawBatch::init() {
 }
 
 void FxDrawBatch::setAdditive(bool additive) {
-    // Colors arrive premultiplied by alpha.
+    // colors arrive premultiplied by alpha.
     m_blend = additive ? ccBlendFunc{GL_ONE, GL_ONE}
                        : ccBlendFunc{GL_ONE, GL_ONE_MINUS_SRC_ALPHA};
 }
@@ -363,7 +363,7 @@ void FxDrawBatch::draw() {
 
     CC_NODE_DRAW_SETUP();
     ccGLBlendFunc(m_blend.src, m_blend.dst);
-    // Client arrays: with no VBO bound, nothing external can clobber them.
+    // client arrays: with no vbo bound, nothing external can clobber them.
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     ccGLEnableVertexAttribs(kCCVertexAttribFlag_Position | kCCVertexAttribFlag_Color);
     glVertexAttribPointer(kCCVertexAttrib_Position, 2, GL_FLOAT, GL_FALSE,

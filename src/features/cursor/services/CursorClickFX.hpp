@@ -162,7 +162,7 @@ public:
     void step(float dt, cocos2d::CCPoint const& pos, bool held);
     void reset();
 
-    // Draw only during the overlay pass to avoid doubling additive glow.
+    // draw only during the overlay pass to avoid doubling additive glow.
     void beginOverlayPass();
     void endOverlayPass() { m_inOverlayPass = false; }
     void visit() override;

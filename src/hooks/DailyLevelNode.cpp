@@ -81,7 +81,7 @@ public:
             prog->use();
             prog->setUniformsForBuiltins();
             prog->setUniformLocationWith1f(prog->getUniformLocationForName("u_intensity"), m_intensity);
-            // Support both shader uniform names.
+            // support both shader uniform names.
             GLint sizeLoc = prog->getUniformLocationForName("u_texSize");
             if (sizeLoc == -1) sizeLoc = prog->getUniformLocationForName("u_screenSize");
             if (sizeLoc != -1) {
@@ -163,7 +163,7 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
             auto* node = static_cast<PaimonDailyLevelNode*>(self.data());
             if (!node) return;
             auto* fields = node->m_fields.self();
-            // cache hit can fire before addChild; the Ref keeps the clipper alive
+            // cache hit can fire before addchild; the ref keeps the clipper alive
             if (!fields || !fields->m_paimonClipper) return;
             if (fields->m_levelID != levelID) return;
 

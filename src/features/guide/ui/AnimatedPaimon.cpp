@@ -10,7 +10,7 @@ namespace paimon::guide {
 
 namespace {
 
-// Shared lightweight RNG for jittering blinks/bubbles; lazy-initialized.
+// shared lightweight rng for jittering blinks/bubbles; lazy-initialized.
 std::mt19937& rng() {
     static std::mt19937 instance{ std::random_device{}() };
     return instance;
@@ -273,7 +273,7 @@ void AnimatedPaimon::showBubble(std::string const& text, float duration) {
 }
 
 void AnimatedPaimon::hideBubble() {
-    // m_bubble is a WeakRef: lock() is null if the node was already removed, avoiding a dangling pointer.
+    // m_bubble is a weakref: lock() is null if the node was already removed, avoiding a dangling pointer.
     if (auto bubble = m_bubble.lock()) {
         bubble->removeFromParent();
     }

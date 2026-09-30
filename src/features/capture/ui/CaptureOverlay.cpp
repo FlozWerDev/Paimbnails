@@ -26,8 +26,8 @@ using namespace geode::prelude;
 CaptureOverlay* CaptureOverlay::s_instance = nullptr;
 
 void CaptureOverlay::show() {
-// A second capture replaces the on-screen card: close the old overlay
-// synchronously (its in-flight callback is WeakRef-guarded and no-ops).
+// a second capture replaces the on-screen card: close the old overlay
+// synchronously (its in-flight callback is weakref-guarded and no-ops).
     if (s_instance) {
         s_instance->finishClose();
     }
@@ -35,7 +35,7 @@ void CaptureOverlay::show() {
     auto* overlay = CaptureOverlay::create();
     overlay->setID("CaptureOverlay"_spr);
 
-// Render above the scene but below the custom cursor.
+// render above the scene but below the custom cursor.
     if (auto* host = geode::OverlayManager::get()) {
         host->addChild(overlay, 999000);
     } else if (auto* scene = cocos2d::CCDirector::get()->getRunningScene()) {
@@ -50,7 +50,7 @@ void CaptureOverlay::hideOverlay() {
 }
 
 namespace {
-// The docked preview auto-dismisses so it cannot cover later popups.
+// the docked preview auto-dismisses so it cannot cover later popups.
 constexpr float kAutoDismissSeconds = 6.f;
 constexpr float kSceneCheckInterval = 0.25f;
 }
@@ -62,7 +62,7 @@ bool CaptureOverlay::init() {
     this->setTouchEnabled(true);
     this->setKeypadEnabled(true);
 
-// Remove the card when the scene changes; OverlayManager outlives scenes.
+// remove the card when the scene changes; overlaymanager outlives scenes.
     if (auto* director = CCDirector::get()) {
         m_ownerScene = director->getRunningScene();
         if (auto* scheduler = director->getScheduler()) {
@@ -142,14 +142,14 @@ void CaptureOverlay::checkSceneChanged(float) {
     auto* director = CCDirector::get();
     if (!director) return;
     auto* running = director->getRunningScene();
-// WeakRef comparison: the old scene may already be freed, never touch it.
+// weakref comparison: the old scene may already be freed, never touch it.
     if (running != m_ownerScene.lock().data()) {
         m_isClosing = true;
         this->removeFromParent();
         return;
     }
 
-// Yield to a popup opened after the card docks.
+// yield to a popup opened after the card docks.
     if (m_docked && !m_isClosing) {
         std::vector<geode::WeakRef<cocos2d::CCNode>> alerts;
         collectVisibleAlerts(running, alerts);
@@ -172,7 +172,7 @@ void CaptureOverlay::registerWithTouchDispatcher() {
 
 bool CaptureOverlay::ccTouchBegan(CCTouch* touch, CCEvent* event) {
     if (m_isClosing) return false;
-// Invisible until the capture lands: never swallow game/pause touches underneath.
+// invisible until the capture lands: never swallow game/pause touches underneath.
     if (!this->isVisible()) return false;
     auto touchPos = touch->getLocation();
 
@@ -256,7 +256,7 @@ void CaptureOverlay::triggerCaptureProcess(float) {
         [weakSelf](bool success, cocos2d::CCTexture2D* texture, std::shared_ptr<uint8_t> rgba, int w, int h) {
             auto self = weakSelf.lock();
             if (!self) return;
-// Replaced or scene-changed mid-flight: never resurrect the overlay.
+// replaced or scene-changed mid-flight: never resurrect the overlay.
             if (self->m_isClosing || !self->getParent()) return;
             self->setVisible(true);
 
@@ -465,7 +465,7 @@ void CaptureOverlay::revealPreviewControls() {
     fadeInBtn(dlBtn, fadeDelay + 0.05f);
     fadeInBtn(folderBtn, fadeDelay + 0.1f);
 
-// Once docked, release the fullscreen dim; the card behaves like a toast.
+// once docked, release the fullscreen dim; the card behaves like a toast.
     if (m_dimBg) {
         m_dimBg->stopAllActions();
         m_dimBg->runAction(CCFadeTo::create(0.3f, 0));
@@ -508,7 +508,7 @@ void CaptureOverlay::onDownload(CCObject* sender) {
     ss << "screenshot_" << std::put_time(&tmBuf, "%Y%m%d_%H%M%S") << ".png";
     auto filePath = capturesDir / ss.str();
 
-// Worker outlives this scope.
+// worker outlives this scope.
     size_t dataSize = static_cast<size_t>(m_captureWidth) * m_captureHeight * 4;
     std::shared_ptr<uint8_t> bufCopy(new uint8_t[dataSize], std::default_delete<uint8_t[]>());
     std::memcpy(bufCopy.get(), m_rgbaBuffer.get(), dataSize);
@@ -544,7 +544,7 @@ void CaptureOverlay::onOpenFolder(CCObject* sender) {
     std::error_code ec;
     std::filesystem::create_directories(capturesDir, ec);
 
-    // openFolder keeps the path wide: ShellExecuteA mangles non-ASCII user dirs silently.
+    // openfolder keeps the path wide: shellexecutea mangles non-ascii user dirs silently.
     if (ec || !geode::utils::file::openFolder(capturesDir)) {
         PaimonNotify::create("No se pudo abrir la carpeta de capturas.",
             NotificationIcon::Error)->show();

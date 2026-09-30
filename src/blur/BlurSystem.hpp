@@ -24,7 +24,7 @@ public:
         return Shaders::createBlurredSprite(texture, targetSize, intensity);
     }
 
-    // DEPRECATED: synchronous — freezes when many cells blur at once. Prefer buildPaimonBlurAsync().
+    // deprecated: synchronous — freezes when many cells blur at once. prefer buildpaimonblurasync().
     cocos2d::CCSprite* createPaimonBlurSprite(
         cocos2d::CCTexture2D* texture,
         cocos2d::CCSize const& targetSize,
@@ -45,7 +45,7 @@ public:
         std::function<void(cocos2d::CCSprite*)> onReady
     );
 
-    // Bypasses the concurrency limit.
+    // bypasses the concurrency limit.
     void buildPaimonBlurPriority(
         cocos2d::CCTexture2D* source,
         cocos2d::CCSize const& targetSize,
@@ -62,7 +62,7 @@ public:
         std::function<void(cocos2d::CCSprite*)> onReady
     );
 
-    // Bypasses the concurrency limit.
+    // bypasses the concurrency limit.
     void buildGaussianBlurPriority(
         cocos2d::CCTexture2D* source,
         cocos2d::CCSize const& targetSize,
@@ -72,7 +72,7 @@ public:
     );
 
     void clearBlurCache();
-    // drops jobs and textures on GL reload; blurs rebuild lazily
+    // drops jobs and textures on gl reload; blurs rebuild lazily
     void onGLContextReload();
     void onWindowResized(int /*w*/, int /*h*/) {}
     void destroy();
@@ -113,17 +113,17 @@ private:
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     static constexpr std::size_t MAX_BLUR_CACHE_ENTRIES = 48;
 #else
-    // Each entry is a CCTexture2D ~100-400KB (~40-80MB total at 192 entries).
+    // each entry is a cctexture2d ~100-400kb (~40-80mb total at 192 entries).
     static constexpr std::size_t MAX_BLUR_CACHE_ENTRIES = 192;
 #endif
 
     std::list<BlurKey> m_blurLru;
     std::unordered_map<BlurKey, Entry, BlurKeyHash> m_blurCache;
 
-    // Consolidate duplicate callbacks for in-flight jobs.
+    // consolidate duplicate callbacks for in-flight jobs.
     std::unordered_map<BlurKey, std::vector<std::function<void(cocos2d::CCSprite*)>>, BlurKeyHash> m_inFlight;
 
-    // Cap on parallel blur jobs to prevent GPU saturation during fast scroll.
+    // cap on parallel blur jobs to prevent gpu saturation during fast scroll.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     static constexpr std::size_t MAX_CONCURRENT_BLUR_JOBS = 1;
 #else

@@ -1,5 +1,5 @@
 #pragma once
-// Pure-C++ pack core, zero Geode/cocos. Version every behavioral change: NodeKey invalidates stale disk caches.
+// pure-c++ pack core, zero geode/cocos. version every behavioral change: nodekey invalidates stale disk caches.
 namespace paimon::texture_studio::packgen {
 
 inline constexpr int kTintPipelineVersion = 2;

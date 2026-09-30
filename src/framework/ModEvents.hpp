@@ -16,12 +16,12 @@ struct ThumbnailBackgroundChangedEvent {
     int levelID = 0;
     geode::Ref<cocos2d::CCTexture2D> texture = nullptr;
 
-// Read by InfoLayer on open, no wait for next cycle.
-// Raw pointer with manual retain: a static with destructor would break at exit.
+// read by infolayer on open, no wait for next cycle.
+// raw pointer with manual retain: a static with destructor would break at exit.
     static inline int s_lastLevelID = 0;
     static inline cocos2d::CCTexture2D* s_lastTextureRaw = nullptr;
 
-    // Main thread only.
+    // main thread only.
     static void setLastTexture(cocos2d::CCTexture2D* tex) {
         if (s_lastTextureRaw == tex) return;
         if (tex) tex->retain();

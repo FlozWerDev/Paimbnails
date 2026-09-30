@@ -6,7 +6,7 @@
 #include <vector>
 
 namespace paimon::transitions {
-// bit validation stays correct under the project's -ffast-math build.
+// inspect ieee exponent bits independently of compiler floating-point assumptions.
 inline bool finite(float value) {
     return (std::bit_cast<std::uint32_t>(value) & 0x7f800000u) != 0x7f800000u;
 }
@@ -22,7 +22,7 @@ struct Timeline {
     std::vector<TimelineClip> clips;
     float duration = 0.f;
 };
-// spawn eats the next N commands as a parallel group. Delays are relative
+// spawn eats the next n commands as a parallel group. delays are relative
 // to the group start; followers wait for its last end.
 template<class Commands, class IsSpawn>
 Timeline compileTimeline(Commands const& commands, IsSpawn isSpawn) {

@@ -7,7 +7,7 @@ namespace paimon::settings {
 
 namespace internal {
 
-// Single source for saved-value defaults, used by startup migration and reset.
+// single source for saved-value defaults, used by startup migration and reset.
 inline void applyDefaults(bool force) {
     auto* mod = geode::Mod::get();
 
@@ -138,9 +138,9 @@ inline void applyDefaults(bool force) {
 
     setB("for-you-use-tags", true);
     setI("for-you-feed-size", 12);
-// Searches per refresh: tag lookups first, GD search for the rest.
+// searches per refresh: tag lookups first, gd search for the rest.
     setI("for-you-query-budget", 6);
-// Feed share reserved for uncertain recommendations.
+// feed share reserved for uncertain recommendations.
     setD("for-you-exploration", 0.2);
 
     setD("custom-cursor-scale", 0.3);
@@ -204,11 +204,11 @@ inline void applyDefaults(bool force) {
     setI("profile-img-zlayer", -1);
 }
 
-// Idempotent migrations that rewrite existing values, guarded when needed.
+// idempotent migrations that rewrite existing values, guarded when needed.
 inline void runOneShotMigrations() {
     auto* mod = geode::Mod::get();
 
-// Move saved URLs from retired hosts to the Render endpoint.
+// move saved urls from retired hosts to the render endpoint.
     {
         constexpr const char* NEW_URL = "https://paimbnailsbot.onrender.com";
         const char* legacyHosts[] = {
@@ -232,7 +232,7 @@ inline void runOneShotMigrations() {
         }
     }
 
-// Migrate the old full-scene "paimonblur" default to the dynamic style.
+// migrate the old full-scene "paimonblur" default to the dynamic style.
     if (!mod->hasSavedValue("popup-blur-style-migrated-to-paiblur")) {
         auto const style = mod->getSavedValue<std::string>("popup-blur-style", "paiblur");
         if (style == "gaussian" || style == "paimonblur" || style == "paimonblur-dynamic") {
@@ -241,7 +241,7 @@ inline void runOneShotMigrations() {
         mod->setSavedValue<bool>("popup-blur-style-migrated-to-paiblur", true);
     }
 
-// Keep migrated profile backgrounds behind comments.
+// keep migrated profile backgrounds behind comments.
     if (!mod->hasSavedValue("profile-img-zlayer-fixed-default")) {
         if (mod->getSavedValue<int>("profile-img-zlayer", -1) == 1) {
             mod->setSavedValue<int>("profile-img-zlayer", -1);

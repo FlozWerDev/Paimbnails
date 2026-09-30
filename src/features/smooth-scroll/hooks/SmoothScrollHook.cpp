@@ -3,7 +3,7 @@
 
 using namespace geode::prelude;
 
-// Desktop-only: on iOS dispatchScrollMSG is inlined and there is no wheel.
+// desktop-only: on ios dispatchscrollmsg is inlined and there is no wheel.
 #if defined(GEODE_IS_DESKTOP)
 
 #include <Geode/modify/CCMouseDispatcher.hpp>
@@ -91,10 +91,10 @@ class $modify(PaimonSmoothScrollDispatcher, CCMouseDispatcher) {
     }
 };
 
-// scrollWheel ignores magnitude, so replay feeds this frame's fraction of one step.
+// scrollwheel ignores magnitude, so replay feeds this frame's fraction of one step.
 class $modify(PaimonFilteredEditorZoom, EditorUI) {
     static void onModify(auto& self) {
-        // Normalize the requested zoom before later hooks observe it.
+        // normalize the requested zoom before later hooks observe it.
         (void)self.setHookPriorityPre("EditorUI::updateZoom", geode::Priority::VeryEarly);
     }
 
@@ -124,13 +124,13 @@ class $modify(PaimonFilteredEditorZoom, EditorUI) {
     }
 };
 
-#endif // GEODE_IS_DESKTOP
+#endif // geode_is_desktop
 
 #if defined(GEODE_IS_WINDOWS)
 #include <Geode/modify/CCEGLView.hpp>
 #include <Geode/cocos/CCDirector.h>
 
-// $modify needs a binary-unique name: "CaptureView" collided with src/hooks/CCEGLView.cpp (ODR).
+// $modify needs a binary-unique name: "captureview" collided with src/hooks/cceglview.cpp (odr).
 class $modify(SmoothScrollEGLView, CCEGLView) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityPre(

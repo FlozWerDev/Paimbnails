@@ -8,7 +8,7 @@ namespace paimon::separate_dual {
 
 namespace {
 
-// Storage row for one icon slot: save key plus first-run fallback.
+// storage row for one icon slot: save key plus first-run fallback.
 struct SlotRow {
     IconSlot slot;
     char const* key;
@@ -30,7 +30,7 @@ constexpr SlotRow kSlotRows[] = {
     {IconSlot::Death, "death", 1},
 };
 
-// Live-game read for one slot (GD getters, dispatched on our own enum).
+// live-game read for one slot (gd getters, dispatched on our own enum).
 int readLiveIcon(GameManager* gm, IconSlot slot) {
     switch (slot) {
         case IconSlot::Cube: return gm->getPlayerFrame();
@@ -63,7 +63,7 @@ int64_t fallbackOf(IconSlot slot) {
     return 1;
 }
 
-// Vanilla trail look per trail id 1..7 (GD tuning, kept as data).
+// vanilla trail look per trail id 1..7 (gd tuning, kept as data).
 constexpr TrailLook kTrailLooks[] = {
     {0.3f, 10.0f, true, false, false},
     {0.3f, 14.0f, false, false, false},
@@ -74,7 +74,7 @@ constexpr TrailLook kTrailLooks[] = {
     {0.3f, 14.0f, false, false, false},
 };
 
-// Ship-fire animation per exhaust id 2..6 (GD tuning, kept as data).
+// ship-fire animation per exhaust id 2..6 (gd tuning, kept as data).
 constexpr ExhaustAnim kExhaustAnims[] = {
     {3.0f / 96.0f, 9},
     {3.0f / 96.0f, 10},
@@ -248,7 +248,7 @@ int DualKitVault::haloOf(Side side) {
     int64_t halo = usesStored(m_secondLeads, side)
         ? load<int64_t>(save_key::kHalo, 0)
         : gm->getPlayerGlowColor();
-    // GD records -1 while the glow channel tracks color 2.
+    // gd records -1 while the glow channel tracks color 2.
     if (halo == -1) {
         return usesStored(m_secondLeads, side)
             ? static_cast<int>(load<int64_t>(save_key::kTrim, 0))
@@ -351,7 +351,7 @@ void DualKitVault::dressFighter(PlayerObject* player, Side side) {
     player->m_originalMainColor = gm->colorForIdx(inkOf(side));
     player->m_originalSecondColor = gm->colorForIdx(trimOf(side));
 
-    // Jetpack/ship/bird pair their vehicle frame with the cube frame.
+    // jetpack/ship/bird pair their vehicle frame with the cube frame.
     if (player->m_isShip && player->m_isPlatformer) {
         player->updatePlayerJetpackFrame(slotIcon(IconSlot::Jetpack, side));
         player->updatePlayerFrame(slotIcon(IconSlot::Cube, side));
@@ -376,7 +376,7 @@ void DualKitVault::dressFighter(PlayerObject* player, Side side) {
 
 void DualKitVault::dressDoll(SimplePlayer* player, IconType type, Side side) {
     if (!player) return;
-    // Trail and death previews stay vanilla on garage dolls.
+    // trail and death previews stay vanilla on garage dolls.
     if (type == IconType::Special || type == IconType::DeathEffect) return;
 
     int iconId = slotIconForPreview(type, side);

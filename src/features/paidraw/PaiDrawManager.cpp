@@ -164,7 +164,7 @@ void PaiDrawManager::loadSavedState() {
     std::lock_guard lock(m_mutex);
     m_state.authToken = mod->getSavedValue<std::string>("paidraw_auth_token", "");
     m_state.serverURL = mod->getSavedValue<std::string>("paidraw_server_url", "https://paimbnailsbot.onrender.com");
-    // Migrate stale saved URLs to the live Render server.
+    // migrate stale saved urls to the live render server.
     {
         constexpr const char* kCanonicalURL = "https://paimbnailsbot.onrender.com";
         static constexpr std::string_view kLegacyHosts[] = {
@@ -236,7 +236,7 @@ void PaiDrawManager::seedWordBank() {
 }
 
 void PaiDrawManager::configureOfflinePreview() {
-    // Init local identity from the GD account; lobby is populated from the live server.
+    // init local identity from the gd account; lobby is populated from the live server.
     auto account = AccountVerifier::get().verify();
 
     std::lock_guard lock(m_mutex);
@@ -364,7 +364,7 @@ geode::ByteVector PaiDrawManager::encodeJson(matjson::Value const& value) const 
         }
 
         if (reparsed.isObject()) {
-            // Iterate via matjson; comma-splitting corrupts values with ':' or quotes.
+            // iterate via matjson; comma-splitting corrupts values with ':' or quotes.
             std::vector<std::pair<std::string, matjson::Value>> entries;
             for (auto const& [key, value] : reparsed) {
                 entries.emplace_back(std::string(key), value);
@@ -426,7 +426,7 @@ void PaiDrawManager::authenticate() {
                     m_state.authToken = token;
                     shouldSaveSession = true;
                 }
-                // Don't seed m_lobbyVersion from auth; force the first refreshLobby() to fetch a full snapshot.
+                // don't seed m_lobbyversion from auth; force the first refreshlobby() to fetch a full snapshot.
                 m_lobbyVersion.clear();
                 if (response.contains("player") && response["player"].isObject()) {
                     auto player = parsePlayer(response["player"]);
@@ -533,7 +533,7 @@ void PaiDrawManager::joinRoom(uint32_t roomId, std::string const& password) {
 void PaiDrawManager::leaveRoom() {
     auto roomId = snapshot().currentRoomId;
     if (!roomId) return;
-    // Flush pending strokes before leaving so the rest of the room sees the complete canvas.
+    // flush pending strokes before leaving so the rest of the room sees the complete canvas.
     queueStrokeFlush();
     auto payload = matjson::makeObject({{"type", "leave"}});
     requestJson("POST", fmt::format("/api/paidraw/rooms/{}/action", roomId), &payload, true,
@@ -664,7 +664,7 @@ void PaiDrawManager::sendStroke(StrokeSegment const& stroke) {
         }
         m_pendingStrokes.push_back(stroke);
     }
-    // Render locally immediately; strokes are batched and sent when the round ends.
+    // render locally immediately; strokes are batched and sent when the round ends.
     publishStroke(stroke);
 }
 
@@ -692,7 +692,7 @@ WordEntry PaiDrawManager::currentWord() const {
     if (m_wordBank.empty()) {
         return {"Orb", WordDifficulty::Easy, "GD"};
     }
-    // currentRound is 1-based; clamp to 0 so we don't underflow to (size_t)(-1) before the first RoundSync.
+    // currentround is 1-based; clamp to 0 so we don't underflow to (size_t)(-1) before the first roundsync.
     int roundIdx = std::max(snapshot().currentRound.currentRound - 1, 0);
     size_t index = static_cast<size_t>(roundIdx) % m_wordBank.size();
     return m_wordBank[index];
@@ -766,7 +766,7 @@ void PaiDrawManager::handleRoomHttpSnapshot(matjson::Value const& payload) {
         round.timeLeftSeconds = jsonInt(roundValue, "timeLeftSeconds", 0);
         round.localPlayerIsDrawer = jsonBool(roundValue, "localPlayerIsDrawer", false);
 
-        // Convert server timestamps to a local absolute deadline; falls back to timeLeftSeconds.
+        // convert server timestamps to a local absolute deadline; falls back to timeleftseconds.
         uint64_t serverNow = jsonUInt64(roundValue, "serverNowMs", 0);
         uint64_t serverEndsAt = jsonUInt64(roundValue, "endsAtMs", 0);
         if (serverEndsAt > 0 && serverNow > 0) {
@@ -784,7 +784,7 @@ void PaiDrawManager::handleRoomHttpSnapshot(matjson::Value const& payload) {
         results = parseResults(payload["results"]);
     }
 
-    // Detect end-of-round transitions to flush buffered strokes once.
+    // detect end-of-round transitions to flush buffered strokes once.
     bool shouldFlushStrokes = false;
     {
         auto previous = snapshot();
@@ -829,7 +829,7 @@ void PaiDrawManager::handleRoomHttpSnapshot(matjson::Value const& payload) {
         }
     }
 
-    // Flush buffered strokes once round transition is confirmed (coalesced via 80ms scheduler).
+    // flush buffered strokes once round transition is confirmed (coalesced via 80ms scheduler).
     if (shouldFlushStrokes) {
         queueStrokeFlush();
     }

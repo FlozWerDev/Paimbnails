@@ -1,4 +1,5 @@
 #include "LeaderboardHistoryLayer.hpp"
+#include "../../audio/services/CaveAudio.hpp"
 #include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/Localization.hpp"
@@ -165,48 +166,22 @@ void LeaderboardHistoryLayer::update(float dt) {
 }
 
 void LeaderboardHistoryLayer::applyCaveEffect() {
+    if (m_caveApplied) return;
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_system || !engine->m_backgroundMusicChannel) return;
-    if (m_caveApplied) return;
+    if (engine->m_backgroundMusicChannel->getVolume(&m_savedBgVolume) != FMOD_OK) return;
 
-    engine->m_backgroundMusicChannel->getVolume(&m_savedBgVolume);
-    float caveVol = engine->m_musicVolume * 0.55f;
-    engine->m_backgroundMusicChannel->setVolume(caveVol);
-
-    if (!m_lowpassDSP) {
-        engine->m_system->createDSPByType(FMOD_DSP_TYPE_LOWPASS, &m_lowpassDSP);
-        if (m_lowpassDSP) {
-            m_lowpassDSP->setParameterFloat(FMOD_DSP_LOWPASS_CUTOFF, 1200.f);
-            m_lowpassDSP->setParameterFloat(FMOD_DSP_LOWPASS_RESONANCE, 2.0f);
-        }
-    }
-
-    if (!m_reverbDSP) {
-        engine->m_system->createDSPByType(FMOD_DSP_TYPE_SFXREVERB, &m_reverbDSP);
-        if (m_reverbDSP) {
-            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_DECAYTIME, 2500.f);
-            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_EARLYDELAY, 20.f);
-            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_LATEDELAY, 40.f);
-            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_HFREFERENCE, 3000.f);
-            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_DRYLEVEL, -4.f);
-            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_WETLEVEL, -8.f);
-        }
-    }
-
-    if (m_lowpassDSP) engine->m_backgroundMusicChannel->addDSP(0, m_lowpassDSP);
-    if (m_reverbDSP) engine->m_backgroundMusicChannel->addDSP(1, m_reverbDSP);
+    engine->m_backgroundMusicChannel->setVolume(engine->m_musicVolume * 0.55f);
+    paimon::audio::attachCaveEffects(engine, m_lowpassDSP, m_reverbDSP);
     m_caveApplied = true;
 }
 
 void LeaderboardHistoryLayer::removeCaveEffect() {
     auto engine = FMODAudioEngine::sharedEngine();
-    if (engine && engine->m_backgroundMusicChannel) {
-        if (m_lowpassDSP) engine->m_backgroundMusicChannel->removeDSP(m_lowpassDSP);
-        if (m_reverbDSP) engine->m_backgroundMusicChannel->removeDSP(m_reverbDSP);
+    paimon::audio::releaseCaveEffects(engine, m_lowpassDSP, m_reverbDSP);
+    if (m_caveApplied && engine && engine->m_backgroundMusicChannel) {
         engine->m_backgroundMusicChannel->setVolume(m_savedBgVolume);
     }
-    if (m_lowpassDSP) { m_lowpassDSP->release(); m_lowpassDSP = nullptr; }
-    if (m_reverbDSP) { m_reverbDSP->release(); m_reverbDSP = nullptr; }
     m_caveApplied = false;
 }
 

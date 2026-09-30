@@ -44,7 +44,7 @@ class $modify(PaimonVersusCreatorLayer, CreatorLayer) {
             return true;
         }
 
-        // another mod may take the button, or a future GD may move it; add
+        // another mod may take the button, or a future gd may move it; add
         // our own so the entry point never disappears.
         auto* face = paimon::SpriteHelper::safeCreateWithFrameName("GJ_versusBtn_001.png");
         if (!face) return true;

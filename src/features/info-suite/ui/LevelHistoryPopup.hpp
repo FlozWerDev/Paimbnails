@@ -1,7 +1,7 @@
 #pragma once
 
-// Linea de tiempo del nivel segun history.geometrydash.eu: estado actual, rate/feature y snapshots.
-// Cada fila abre su ficha completa.
+// linea de tiempo del nivel segun history.geometrydash.eu: estado actual, rate/feature y snapshots.
+// cada fila abre su ficha completa.
 
 #include "../services/LevelHistoryModel.hpp"
 
@@ -43,7 +43,7 @@ protected:
     ButtonSprite* m_filterSprite = nullptr;
 
     LevelHistory m_history;
-    std::string m_uploadDate;   // estimacion de GDHistory, mejor que el primer snapshot
+    std::string m_uploadDate;   // estimacion de gdhistory, mejor que el primer snapshot
     bool m_loaded = false;
     bool m_newestFirst = false;
     bool m_onlyMilestones = false;

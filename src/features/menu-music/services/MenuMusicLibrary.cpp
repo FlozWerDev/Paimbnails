@@ -201,7 +201,7 @@ std::size_t MenuMusicLibrary::syncDownloadedSongs(bool force) {
     auto* songs = manager ? manager->getDownloadedSongs() : nullptr;
     if (!manager || !songs) return 0;
 
-    // one stat() per song adds up on MenuLayer entry; force=false skips when the set is unchanged.
+    // one stat() per song adds up on menulayer entry; force=false skips when the set is unchanged.
     const auto songCount = static_cast<std::size_t>(songs->count());
     if (!force && m_syncedSongCount == songCount) return 0;
     m_syncedSongCount = songCount;
@@ -411,7 +411,7 @@ std::string MenuMusicLibrary::generateId(const std::string& prefix) {
 
 bool MenuMusicLibrary::isAudioExtension(const std::filesystem::path& p) {
     auto ext = geode::utils::string::toLower(geode::utils::string::pathToString(p.extension()));
-    // FMOD 2.02+ decodes Opus only in Ogg; downloader remuxes on Opus request.
+    // fmod 2.02+ decodes opus only in ogg; downloader remuxes on opus request.
     static const std::array<std::string, 7> ok = {
         ".mp3", ".ogg", ".wav", ".flac", ".oga", ".m4a", ".opus"
     };

@@ -31,7 +31,7 @@ public:
     static bool isHoldCtrlEnabled();
     static void setHoldCtrlEnabled(bool enabled);
 
-    // Navigation tool: never over real gameplay or editor playtest.
+    // navigation tool: never over real gameplay or editor playtest.
     static bool canOpenInCurrentContext();
 
     static void abortActiveHold();

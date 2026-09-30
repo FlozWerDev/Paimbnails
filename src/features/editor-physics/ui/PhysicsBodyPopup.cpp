@@ -38,7 +38,7 @@ char const* const kFieldNames[FieldCount] = {
     "Friccion del objeto", "Rebote del objeto",
 };
 
-// Below zero the value goes back to whatever the lab sliders say, which is the
+// below zero the value goes back to whatever the lab sliders say, which is the
 // state a body starts in.
 float stepMaterial(float value, int direction, float step) {
     float const next = (value < 0.f ? (direction > 0 ? 0.f : -1.f) : value + direction * step);

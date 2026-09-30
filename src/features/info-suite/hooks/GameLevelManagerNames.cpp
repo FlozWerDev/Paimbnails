@@ -1,4 +1,4 @@
-// GD forgets the name behind a user id on restart and renders blank/"-"
+// gd forgets the name behind a user id on restart and renders blank/"-"
 // names; every resolved name is cached here and handed back when empty.
 
 #include "../InfoModule.hpp"
@@ -43,7 +43,7 @@ class $modify(PaimonInfoSuiteNames, GameLevelManager) {
 
         auto cached = paimon::info::InfoStore::get().username(id);
         if (cached.empty()) {
-            // Nothing local. If the user opted into GDHistory, ask so the next
+            // nothing local. if the user opted into gdhistory, ask so the next
             // time this id shows up it already has a name.
             paimon::info::gdhistory::requestUsername(id);
             return result;

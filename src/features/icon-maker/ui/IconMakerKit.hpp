@@ -1,6 +1,6 @@
 #pragma once
-// Geometry Dash-styled controls for the icon maker, using the same row/card API
-// as configkit and vanilla GD assets.
+// geometry dash-styled controls for the icon maker, using the same row/card api
+// as configkit and vanilla gd assets.
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
@@ -21,22 +21,22 @@ constexpr cocos2d::ccColor3B kGoldColor  = {255, 205, 61};
 constexpr cocos2d::ccColor3B kPlateColor = {255, 255, 255};
 constexpr GLubyte            kPlateAlpha = 255;
 
-// Usable row width inside a card.
+// usable row width inside a card.
 constexpr float cardInnerWidth(float cardWidth) { return cardWidth - 16.f; }
 
-// Large GD window frame (GJ_square01).
+// large gd window frame (gj_square01).
 cocos2d::CCNode* makeWindow(cocos2d::CCSize size);
 
-// Row plate (GJ_square05).
+// row plate (gj_square05).
 cocos2d::CCNode* makePlate(float width, float height,
                            cocos2d::ccColor3B color = kPlateColor,
                            GLubyte opacity = kPlateAlpha);
 
-// Scaled action button using ButtonSprite + goldFont.
+// scaled action button using buttonsprite + goldfont.
 CCMenuItemSpriteExtra* makeButton(char const* text, char const* sprite,
                                   float scale, std::function<void()> onPress);
 
-// Scaled list-style tab face.
+// scaled list-style tab face.
 cocos2d::CCSprite* makeTabFace(char const* text, bool selected,
                                float maxW, float maxH);
 
@@ -47,7 +47,7 @@ cocos2d::CCNode* makeToggleRow(
     std::function<void(bool)> onChange,
     CCMenuItemToggler** outToggle = nullptr);
 
-// Title/value row with a full-width slider below.
+// title/value row with a full-width slider below.
 cocos2d::CCNode* makeSliderRow(
     float width,
     char const* title, char const* desc,
@@ -57,7 +57,7 @@ cocos2d::CCNode* makeSliderRow(
     Slider** outSlider = nullptr,
     cocos2d::CCLabelBMFont** outValue = nullptr);
 
-// like makeSliderRow but with a writable box and step arrows, for exact values.
+// like makesliderrow but with a writable box and step arrows, for exact values.
 cocos2d::CCNode* makeNumberRow(
     float width,
     char const* title, char const* desc,
@@ -77,22 +77,22 @@ cocos2d::CCNode* makeButtonRow(
     char const* buttonText,
     std::function<void()> onPress);
 
-// Standalone informational text.
+// standalone informational text.
 cocos2d::CCNode* makeHint(float width, char const* text);
 
-// Card with a gold title, accent dot, separator, and rows.
+// card with a gold title, accent dot, separator, and rows.
 cocos2d::CCNode* makeCard(
     float width,
     char const* title, cocos2d::ccColor3B accent,
     std::vector<cocos2d::CCNode*> const& rows);
 
-// Stack rows/cards vertically inside a ScrollLayer.
+// stack rows/cards vertically inside a scrolllayer.
 geode::ScrollLayer* makeScrollStack(
     cocos2d::CCSize size,
     std::vector<cocos2d::CCNode*> const& items,
     float gap = 8.f);
 
-// GD-style tabs with selected/unselected states.
+// gd-style tabs with selected/unselected states.
 constexpr float kTabBarHeight = 30.f;
 cocos2d::CCNode* makeTabBar(
     float width,
@@ -100,7 +100,7 @@ cocos2d::CCNode* makeTabBar(
     int selected,
     std::function<void(int)> onSelect);
 
-// Smooth wheel scrolling shared by the other popups.
+// smooth wheel scrolling shared by the other popups.
 bool queueWheelScroll(geode::ScrollLayer* scrollLayer, float x, float y,
                       float& targetY, bool& targetSet, float speed = 16.f);
 void stepWheelScroll(geode::ScrollLayer* scrollLayer,

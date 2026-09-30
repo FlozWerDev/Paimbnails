@@ -32,14 +32,14 @@ public:
         auto* gm = GameManager::get();
         if (!gm) return result;
 
-        // AccountManager and GameManager must agree.
+        // accountmanager and gamemanager must agree.
         std::string gmName(gm->m_playerName);
         if (result.username.empty()) result.username = gmName;
 
-        // GameManager userID (SeedValue).
+        // gamemanager userid (seedvalue).
         result.userID = gm->m_playerUserID;
 
-        // m_scoreValid is true only on official servers with valid scores.
+        // m_scorevalid is true only on official servers with valid scores.
         result.isOfficialServer = gm->m_scoreValid;
 
         result.isValid = result.accountID > 0 && !result.username.empty();

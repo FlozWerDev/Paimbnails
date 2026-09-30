@@ -40,7 +40,7 @@ IconTheme themeOf(std::string name, FillSpec main, FillSpec secondary, FillSpec 
     theme.name = std::move(name);
     theme.main = std::move(main);
     theme.secondary = std::move(secondary);
-    // UFO dome follows detail unless stated otherwise.
+    // ufo dome follows detail unless stated otherwise.
     theme.tertiary = theme.secondary;
     theme.glow = std::move(glow);
     return theme;

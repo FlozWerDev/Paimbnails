@@ -34,8 +34,8 @@ public:
     const PlaybackState& state() const { return m_state; }
     const MusicTrack* currentTrack() const;
 
-    // Clears the tracked library track (used when an external, non-library
-    // override starts playing so the UI stops showing the stale track).
+    // clears the tracked library track (used when an external, non-library
+    // override starts playing so the ui stops showing the stale track).
     void forgetCurrentTrack();
 
     using TrackChangedListener = std::function<void(const std::string& trackId)>;

@@ -21,12 +21,12 @@ namespace paimon::icon_maker {
 
 namespace {
 
-// A rendered frame trimmed out of its authoring canvas. Trim sizes are kept
+// a rendered frame trimmed out of its authoring canvas. trim sizes are kept
 // multiples of 4 so the ÷2 (hd) and ÷4 (sd) variants stay integral.
 struct RenderedFrame {
     std::string name;        // final frame name, e.g. "micubo_glow_001.png"
     ts::ImageBuffer pixels;  // trimmed
-    float centerOffX = 0.f;  // trimmed-center − canvas-center, +Y up (plist)
+    float centerOffX = 0.f;  // trimmed-center − canvas-center, +y up (plist)
     float centerOffY = 0.f;
     int canvasSize = 0;
     bool placeholder = false;
@@ -36,8 +36,8 @@ int ceil4(int v) {
     return (v + 3) & ~3;
 }
 
-// Trim `canvas` to its alpha bbox expanded to multiples of 4, staying inside
-// the canvas. Returns false when fully transparent.
+// trim `canvas` to its alpha bbox expanded to multiples of 4, staying inside
+// the canvas. returns false when fully transparent.
 bool trimFrame(ts::ImageBuffer const& canvas, ts::ImageBuffer& outPixels,
                float& outOffX, float& outOffY) {
     int bx = 0, by = 0, bw = 0, bh = 0;
@@ -61,7 +61,7 @@ bool trimFrame(ts::ImageBuffer const& canvas, ts::ImageBuffer& outPixels,
     float frameCy = static_cast<float>(ty) + static_cast<float>(th) * 0.5f;
 
     outOffX = frameCx - canvasCx;
-    // Pixel rows grow downward; plist offsets are +Y up.
+    // pixel rows grow downward; plist offsets are +y up.
     outOffY = canvasCy - frameCy;
     return true;
 }
@@ -76,7 +76,7 @@ geode::Result<CompiledQuality> writeQuality(
         float factor, int gap,
         std::filesystem::path const& pngPath,
         std::filesystem::path const& plistPath) {
-    // Scale every frame for this quality; multiples of 4 guarantee integers.
+    // scale every frame for this quality; multiples of 4 guarantee integers.
     std::vector<ts::ImageBuffer> scaled;
     scaled.reserve(frames.size());
     std::vector<ts::RectPackInput> inputs;

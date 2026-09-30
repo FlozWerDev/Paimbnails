@@ -10,7 +10,7 @@ namespace paimon::gifimport {
 namespace {
 
 constexpr std::uint8_t kMaskFloor = 128;
-// past this search gains nothing and only costs: GD's library repeats many
+// past this search gains nothing and only costs: gd's library repeats many
 // silhouettes and signature filtering eats them.
 constexpr std::size_t kMaxVariants = 3072;
 
@@ -236,9 +236,7 @@ void setStampCatalog(std::vector<CatalogEntry> entries) {
 
 std::vector<StampVariant> const& stampVariants() {
     if (!g_variants.empty()) return g_variants;
-    // tracing asks from several threads at once, and the spare builds on first
-    // call: as a local static the language serializes init, which is what makes
-    // that race safe.
+    // local static initialization serializes the first call from tracing workers.
     static std::vector<StampVariant> const fallback = buildVariants(builtinStampCatalog());
     return fallback;
 }

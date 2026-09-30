@@ -5,8 +5,8 @@
 
 namespace paimon::foryou {
 
-// Quality tier used by the cycling rating button (bottom-left of the popup).
-// Each tier is a superset of the previous one when seeded into the tracker.
+// quality tier used by the cycling rating button (bottom-left of the popup).
+// each tier is a superset of the previous one when seeded into the tracker.
 enum class RatingTier : int {
     StarRated = 0,
     Featured  = 1,
@@ -39,11 +39,11 @@ protected:
     void refreshDemonRowVisibility();
 
     std::function<void()> m_onConfirm;
-    int m_difficulty  = 30; // 10=Easy,20=Normal,30=Hard,40=Harder,50=Insane,60=Demon
-    int m_demonDiff   = 0;  // 0=Any,1=Easy,2=Medium,3=Hard,4=Insane,5=Extreme
-    int m_gameMode    = 0;  // 0=Classic,1=Platformer,2=Both
-    int m_length      = 2;  // 0=Tiny,1=Short,2=Medium,3=Long,4=XL,5=Any
-    int m_ratingTier  = 0;  // RatingTier: 0..4
+    int m_difficulty  = 30; // 10=easy,20=normal,30=hard,40=harder,50=insane,60=demon
+    int m_demonDiff   = 0;  // 0=any,1=easy,2=medium,3=hard,4=insane,5=extreme
+    int m_gameMode    = 0;  // 0=classic,1=platformer,2=both
+    int m_length      = 2;  // 0=tiny,1=short,2=medium,3=long,4=xl,5=any
+    int m_ratingTier  = 0;  // ratingtier: 0..4
 
     std::vector<CCMenuItemSpriteExtra*> m_diffButtons;
     std::vector<CCMenuItemSpriteExtra*> m_demonButtons;
@@ -51,7 +51,7 @@ protected:
     std::vector<CCMenuItemSpriteExtra*> m_lengthButtons;
     std::vector<cocos2d::CCSprite*>     m_ratingSprites; // one per tier, stacked
     cocos2d::CCNode*      m_demonRow      = nullptr;
-    // Fills the demon row's slot while a non-demon difficulty is selected.
+    // fills the demon row's slot while a non-demon difficulty is selected.
     cocos2d::CCLabelBMFont* m_demonHint   = nullptr;
     cocos2d::CCLabelBMFont* m_ratingName  = nullptr;
 };

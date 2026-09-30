@@ -1,5 +1,5 @@
 #pragma once
-// One icon of a copied set, blown up: the icon on the left, everything the game
+// one icon of a copied set, blown up: the icon on the left, everything the game
 // asks of you before it hands it over on the right.
 
 #include <Geode/Geode.hpp>

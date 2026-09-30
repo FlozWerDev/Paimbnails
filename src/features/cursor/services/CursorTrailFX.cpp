@@ -14,10 +14,10 @@ namespace paimon::cursorfx {
 
 namespace {
 
-// Cap live particles to keep dense 240 Hz effects bounded.
+// cap live particles to keep dense 240 hz effects bounded.
 constexpr int kMaxParticles = 220;
 constexpr int kMaxEchoes    = 24;
-// History is time-based, with a hard cap for high frame rates.
+// history is time-based, with a hard cap for high frame rates.
 constexpr size_t kMaxPoints = 220;
 
 
@@ -34,7 +34,7 @@ struct EmitterSpec {
     float growth     = 1.f;    // end-of-life scale
     float spin       = 0.f;    // degrees/s
     float sway       = 0.f;    // px/s lateral motion
-    float twinkle    = 0.f;    // flicker Hz
+    float twinkle    = 0.f;    // flicker hz
     float spiral     = 0.f;    // degrees/s around the origin
     float lifeMul    = 1.f;
     float inheritVel = 0.f;
@@ -115,7 +115,7 @@ bool usesParticles(TrailEffect e) {
            e == TrailEffect::Orbit;
 }
 
-// Only fire/smoke update color with age; other effects resolve it at spawn.
+// only fire/smoke update color with age; other effects resolve it at spawn.
 bool colorsByAge(TrailEffect e) {
     return e == TrailEffect::Fire || e == TrailEffect::Smoke;
 }
@@ -304,7 +304,7 @@ void CursorTrailNode::beginOverlayPass() {
 }
 
 void CursorTrailNode::visit() {
-// Host is visited in scene and overlay passes; skip scene once overlay runs to avoid doubled glow.
+// host is visited in scene and overlay passes; skip scene once overlay runs to avoid doubled glow.
     if (m_overlayPassSeen && !m_inOverlayPass) return;
     CCNode::visit();
 }
@@ -338,7 +338,7 @@ void CursorTrailNode::rebuildForEffect() {
                                          : ccBlendFunc{GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA};
     if (m_draw) m_draw->setAdditive(m_cfg.glow);
 
-// Batch particles by effect texture into one draw call.
+// batch particles by effect texture into one draw call.
     int wanted = usesParticles(m_cfg.effect) ? spec.tex : -1;
     if (wanted != m_batchTexKind) {
         for (auto& p : m_particles) { p.spr = nullptr; p.alive = false; }
@@ -398,7 +398,7 @@ void CursorTrailNode::reset() {
         p.alive = false;
         if (p.spr) p.spr->setVisible(false);
     }
-// Ghosts are one-shot clones rather than pooled sprites.
+// ghosts are one-shot clones rather than pooled sprites.
     for (auto& e : m_echoPool) {
         e.alive = false;
         if (e.spr) {
@@ -418,7 +418,7 @@ void CursorTrailNode::setEchoSource(CCSprite* src) {
 void CursorTrailNode::step(float dt, CCPoint const& pos) {
     dt = std::clamp(dt, 0.f, 0.05f);   // prevent a lag spike from jumping the trail
     m_time += dt;
-// Wrap long-running time to keep float precision stable without a visible seam.
+// wrap long-running time to keep float precision stable without a visible seam.
     if (m_time > 3600.f) m_time -= 3600.f;
 
     CCPoint prev = m_hasLastPos ? m_lastPos : pos;
@@ -431,14 +431,14 @@ void CursorTrailNode::step(float dt, CCPoint const& pos) {
     CCPoint delta = ccp(pos.x - prev.x, pos.y - prev.y);
     float dist = ccpLength(delta);
     float inst = dt > 0.0001f ? dist / dt : 0.f;
-// Smooth speed so velocity-based color and width do not jitter.
+// smooth speed so velocity-based color and width do not jitter.
     float k = std::min(1.f, dt * 12.f);
     m_smoothVel.x += (delta.x / std::max(dt, 0.0001f) - m_smoothVel.x) * k;
     m_smoothVel.y += (delta.y / std::max(dt, 0.0001f) - m_smoothVel.y) * k;
     m_speedNorm = std::clamp(inst / 1400.f, 0.f, 1.f);
 
     if (usesHistory(m_cfg.effect)) {
-// Add points only after movement; duplicates break ribbon normals.
+// add points only after movement; duplicates break ribbon normals.
         if (dist > 0.9f || m_points.empty()) {
             pushPoint(pos, m_speedNorm);
         } else if (!m_points.empty()) {
@@ -550,7 +550,7 @@ void CursorTrailNode::emit(float dt, CCPoint const& from, CCPoint const& to) {
         Particle* p = acquireParticle();
         if (!p) return;
 
-// Distribute spawns across the traveled segment so fast motion stays continuous.
+// distribute spawns across the traveled segment so fast motion stays continuous.
         float f = count > 1 ? static_cast<float>(i) / static_cast<float>(count) : frand();
         p->pos = ccp(from.x + delta.x * f, from.y + delta.y * f);
 
@@ -587,7 +587,7 @@ void CursorTrailNode::emit(float dt, CCPoint const& from, CCPoint const& to) {
 
         if (!p->spr && m_batch) {
             if (auto* tex = fxTexture(m_batchTexKind)) {
-// Create outside the batch; setTexture cannot recalculate the blend function in it.
+// create outside the batch; settexture cannot recalculate the blend function in it.
                 auto* spr = CCSprite::createWithTexture(tex);
                 if (spr) {
                     spr->setAnchorPoint({0.5f, 0.5f});
@@ -743,7 +743,7 @@ void CursorTrailNode::buildRibbonVerts() {
         m_ribbon.push_back(v);
     };
 
-// Catmull-Rom smooths cursor jumps; subdivision and skipping cap high-refresh cost.
+// catmull-rom smooths cursor jumps; subdivision and skipping cap high-refresh cost.
     constexpr size_t kMaxRibbonVerts = 128;
     size_t segs = n - 1;
     size_t stride = (segs + kMaxRibbonVerts - 1) / kMaxRibbonVerts;

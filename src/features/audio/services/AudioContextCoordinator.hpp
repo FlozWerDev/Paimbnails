@@ -51,7 +51,7 @@ private:
     int m_levelSelectLevelID = 0;
     geode::Ref<GJGameLevel> m_levelInfoLevel = nullptr;
     DynSongLayer m_dynamicContextLayer = DynSongLayer::None;
-    // Layer to restore if a play never reaches gameplay.
+    // layer to restore if a play never reaches gameplay.
     DynSongLayer m_preGameplayLayer = DynSongLayer::None;
     bool m_profileOpen = false;
     int m_profileAccountID = 0;

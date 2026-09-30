@@ -3,7 +3,7 @@
 #include <vector>
 #include <cstdint>
 
-// lightweight GIF frame decoder.
+// lightweight gif frame decoder.
 class GIFDecoder {
 public:
     struct Frame {
@@ -11,8 +11,8 @@ public:
         int top;
         int width;
         int height;
-        int delayMs; // Frame duration in milliseconds
-        std::vector<uint8_t> pixels; // RGBA data
+        int delayMs; // frame duration in milliseconds
+        std::vector<uint8_t> pixels; // rgba data
     };
 
     struct GIFData {
@@ -22,7 +22,7 @@ public:
         bool isAnimated;
     };
 
-    // maxFrames=1 suffices for a placeholder; avoids main-thread stutter.
+    // maxframes=1 suffices for a placeholder; avoids main-thread stutter.
     static GIFData decode(uint8_t const* data, size_t size, int maxFrames = 0);
 
     static bool isGIF(uint8_t const* data, size_t size);

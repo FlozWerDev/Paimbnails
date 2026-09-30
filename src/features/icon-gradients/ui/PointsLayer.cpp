@@ -48,7 +48,7 @@ bool PointsLayer::init(CCSize size, CCPoint previewCenter) {
     setContentSize(size);
     setAnchorPoint({0, 0});
 
-    // Single-finger dragging only.
+    // single-finger dragging only.
     setTouchEnabled(true); registerWithTouchDispatcher();
     setTouchMode(kCCTouchesOneByOne);
 
@@ -105,7 +105,7 @@ void PointsLayer::addPoint() {
     CCSize size = m_icon->getContentSize() * m_icon->getScale();
     CCPoint position = m_icon->getPosition();
 
-    // First free icon corner, scanned top row first.
+    // first free icon corner, scanned top row first.
     std::vector<CCPoint> corners;
     for (float dy : {1.f, -1.f})
         for (float dx : {-1.f, 1.f})
@@ -188,7 +188,7 @@ bool PointsLayer::ccTouchBegan(CCTouch* touch, CCEvent* event) {
 
     CCPoint pos = touch->getLocation();
 
-    // Reap finished ghosts; the index only advances past live ones so no
+    // reap finished ghosts; the index only advances past live ones so no
     // entry is skipped after an erase.
     for (size_t i = 0; i < m_removingPoints.size();) {
         ColorNode* ghost = m_removingPoints[i];

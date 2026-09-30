@@ -1,6 +1,6 @@
 #pragma once
 
-// Globed is optional and only soft-linked, so without the headers or the mod
+// globed is optional and only soft-linked, so without the headers or the mod
 // every call is a no-op and progress falls back to the server.
 
 #include <cstdint>
@@ -11,7 +11,7 @@ namespace paimon::versus::gl {
 
 // headers were available at build time.
 bool compiled();
-// installed, enabled, and its API table answered.
+// installed, enabled, and its api table answered.
 bool present();
 bool connected();
 // in a level with an active session, which is what the fast channel needs.
@@ -23,13 +23,13 @@ bool rivalInSession(int accountId);
 std::string rivalName(int accountId);
 
 // hide everyone except the rival, so a global-room duel still looks like a
-// duel. Undone on level exit.
+// duel. undone on level exit.
 void isolateRival(int accountId);
 void restoreVisibility();
-// the Wraith card: the caster asks us to stop drawing them for a few seconds.
+// the wraith card: the caster asks us to stop drawing them for a few seconds.
 void setRivalHidden(bool hidden);
 
-// the Shield card: survives the next death without desyncing the session.
+// the shield card: survives the next death without desyncing the session.
 void grantShield();
 bool shieldActive();
 void clearShield();

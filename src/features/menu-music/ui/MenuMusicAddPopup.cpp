@@ -92,7 +92,7 @@ void MenuMusicAddPopup::buildUrlSection() {
     m_urlInput = TextInput::create(size.width * 0.6f, "Paste a YouTube/SoundCloud link");
     if (m_urlInput) {
         m_urlInput->setCommonFilter(geode::CommonFilter::Any);
-// Preserve URL punctuation that some Geode builds omit from setCommonFilter.
+// preserve url punctuation that some geode builds omit from setcommonfilter.
         if (auto* inner = m_urlInput->getInputNode()) {
             inner->m_allowedChars = geode::getCommonFilterAllowedChars(geode::CommonFilter::Any);
         }
@@ -224,7 +224,7 @@ void MenuMusicAddPopup::buildLocalSection() {
 void MenuMusicAddPopup::buildProgressBar() {
     auto size = m_mainLayer->getContentSize();
 
-// Place the progress row between the URL input and local-file separator; hide
+// place the progress row between the url input and local-file separator; hide
 // it until a download starts.
     const float barW = size.width - 60.f;
     const float barH = 12.f;
@@ -410,7 +410,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
         return;
     }
 
-// Newgrounds links/IDs use GD's downloader, then register the resulting MP3.
+// newgrounds links/ids use gd's downloader, then register the resulting mp3.
     if (auto songId = parseNewgroundsSongId(url); songId > 0) {
         m_busy = true;
         if (m_statusLabel) {
@@ -452,7 +452,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
                             ? typeinfo_cast<MenuMusicAddPopup*>(ref.data())
                             : nullptr;
                         if (!self || !self->m_alive.load()) {
-// The service already registered the track.
+// the service already registered the track.
                             return;
                         }
 
@@ -504,7 +504,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
                     return;
                 }
 
-// m_alive and WeakRef guard UI access during install.
+// m_alive and weakref guard ui access during install.
                 auto installPopup = YtDlpInstallPopup::create(
                     [weakThis](bool ok) {
                         auto ref = weakThis.lock();
@@ -528,7 +528,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
         return;
     }
 
-// ffmpeg converts AAC/Opus to MP3 for FMOD.
+// ffmpeg converts aac/opus to mp3 for fmod.
     auto& ffmpeg = FfmpegBootstrap::get();
     if (!ffmpeg.exists()) {
         if (m_statusLabel) {
@@ -618,7 +618,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
             auto ref = weakThis.lock();
             auto* self = typeinfo_cast<MenuMusicAddPopup*>(ref.data());
             if (!self || !self->m_alive.load()) {
-                // The track still counts even if the popup closed first.
+                // the track still counts even if the popup closed first.
                 if (result.success) {
                     MusicTrack t;
                     t.id = result.trackId;
@@ -689,7 +689,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
 
 void MenuMusicAddPopup::onPasteUrl(CCObject*) {
     if (!m_urlInput) return;
-    // Bypasses the input filter.
+    // bypasses the input filter.
     auto clip = geode::utils::clipboard::read();
     auto isSpace = [](unsigned char c) {
         return c == ' ' || c == '\t' || c == '\r' || c == '\n';

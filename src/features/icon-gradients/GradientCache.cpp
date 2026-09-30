@@ -9,7 +9,7 @@ constexpr char const* kSeparate2PMigration = "icon-gradients-separate-2p-default
 using namespace geode::prelude;
 using namespace paimon::icon_gradients;
 
-// Plain on/off settings mirrored straight into the cache snapshot.
+// plain on/off settings mirrored straight into the cache snapshot.
 struct SettingMirror {
     char const* key;
     void (*setter)(bool);

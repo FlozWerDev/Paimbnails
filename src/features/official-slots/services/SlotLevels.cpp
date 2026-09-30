@@ -111,15 +111,15 @@ void SlotDownloads::finishPending(GJGameLevel* level) {
 
 void SlotDownloads::levelDownloadFinished(GJGameLevel* level) {
     if (!m_pending) return;
-    // A vanilla request that started before we borrowed the delegate: ignore it
+    // a vanilla request that started before we borrowed the delegate: ignore it
     // and keep waiting for ours (m_previous has no ownership, never call it back).
     if (!level || level->m_levelID != m_pending->levelId) return;
     this->finishPending(level);
 }
 
 void SlotDownloads::levelDownloadFailed(int response) {
-    // The failure carries no level id, so it may be ours or a vanilla one
-    // that raced us. Fail our fetch — the user can retry with one tap.
+    // the failure carries no level id, so it may be ours or a vanilla one
+    // that raced us. fail our fetch — the user can retry with one tap.
     if (m_pending) this->finishPending(nullptr);
 }
 
@@ -163,7 +163,7 @@ GJGameLevel* SlotLevelCache::build(Slot const& slot, int fakeId) {
     auto* level = GJGameLevel::create();
     if (!level) return nullptr;
 
-    // Local and unrated on purpose: with 0 stars/coins there is no reward
+    // local and unrated on purpose: with 0 stars/coins there is no reward
     // path in the game that can pay out for this level.
     level->m_levelID = fakeId;
     level->m_levelType = GJLevelType::Saved;
@@ -185,7 +185,7 @@ GJGameLevel* SlotLevelCache::build(Slot const& slot, int fakeId) {
     level->m_isUploaded = false;
     applyDisplayFields(level, slot);
 
-    // A replacement keeps the official page's song and length so the row
+    // a replacement keeps the official page's song and length so the row
     // still feels like it belongs to the list.
     if (isOfficialId(slot.replacesOfficialId)) {
         if (auto* glm = GameLevelManager::get()) {
@@ -209,8 +209,8 @@ GJGameLevel* SlotLevelCache::build(Slot const& slot, int fakeId) {
         level->m_levelString = str.c_str();
         level->m_levelNotDownloaded = str.empty();
     } else if (slot.source == Source::LevelId && slot.levelId > 0) {
-        // An already-downloaded copy opens instantly; otherwise the string
-        // arrives through SlotDownloads when the player presses play.
+        // an already-downloaded copy opens instantly; otherwise the string
+        // arrives through slotdownloads when the player presses play.
         if (auto* glm = GameLevelManager::get()) {
             if (auto* saved = glm->getSavedLevel(slot.levelId)) {
                 std::string str = gdString(saved->m_levelString);
@@ -270,7 +270,7 @@ void openSlotLevel(Slot const& slot) {
         if (!current) return;
         auto* fresh = SlotLevelCache::get().levelForSlot(*current);
         if (!fresh || levelStringEmpty(fresh)) {
-            // The download landed after our stand-in was built; copy the
+            // the download landed after our stand-in was built; copy the
             // string over instead of rebuilding the level mid-flight.
             if (fresh) {
                 fresh->m_levelString = downloaded->m_levelString.c_str();

@@ -239,7 +239,7 @@ void ProfilePicEditorPopup::rebuildCurrentTab() {
 }
 
 
-// Shared slider row with fixed columns so labels never overlap the groove:
+// shared slider row with fixed columns so labels never overlap the groove:
 // [label 8..80] [slider ~92..210] [value ..area.width-8]
 namespace {
     void addSliderRow(

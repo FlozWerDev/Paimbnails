@@ -1,5 +1,5 @@
 #pragma once
-// Icon Maker editor: live icon left, zones and tabs right.
+// icon maker editor: live icon left, zones and tabs right.
 
 #include "IconMakerUI.hpp"
 #include "../data/IconAnatomy.hpp"
@@ -72,7 +72,7 @@ protected:
     void pushCanvasSelection();
 
     // wraps a mutation so undo, autosave and preview stay consistent.
-    // `coalesceKey` merges a burst (slider drag) into one undo step.
+    // `coalescekey` merges a burst (slider drag) into one undo step.
     void edit(std::string coalesceKey, std::function<void()> mutate);
     void applyRestoredProject();
 

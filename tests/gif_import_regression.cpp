@@ -70,8 +70,8 @@ Options exactOptions(int dimension) {
     return options;
 }
 
-// La marca de agua parte objetos en dos a proposito y le suma vueltas enteras al
-// giro de otros. Estas pruebas miran la geometria, no la marca, asi que antes de
+// la marca de agua parte objetos en dos a proposito y le suma vueltas enteras al
+// giro de otros. estas pruebas miran la geometria, no la marca, asi que antes de
 // contar se vuelven a juntar los trozos: el mismo empaquetado que usa el propio
 // modo pintura deshace justo esas parejas.
 std::vector<Primitive> unmarked(ImportPlan const& plan) {
@@ -474,7 +474,7 @@ SourceAnimation paintReferenceImage(int image) {
     return source;
 }
 
-// El plan puede venir a menos resolucion que la imagen de referencia; se compara
+// el plan puede venir a menos resolucion que la imagen de referencia; se compara
 // sobre su propia rejilla y la escala del muestreo lo acompana.
 double paintSimilarity(ImportPlan const& plan, int image) {
     constexpr int scale = 8;
@@ -561,10 +561,10 @@ bool paintModePaintsEveryCell() {
               << " minimum=" << minimumVisible << "/" << scale * scale
               << " interior-holes=" << interiorHoles
               << " review=" << result.plan.similarity << "%\n";
-    // La revision se mide contra la rejilla recien quantizada, no contra la que
+    // la revision se mide contra la rejilla recien quantizada, no contra la que
     // queda despues de limpiar motas, asi que el numero es mas bajo que antes sin
     // que el plan haya empeorado: aqui lo que baja del 95 es la banda en diagonal,
-    // cuyo trazo deja media celda sin tapar en un lado. Lo que este caso vigila es
+    // cuyo trazo deja media celda sin tapar en un lado. lo que este caso vigila es
     // la cobertura, y esa sigue entera.
     return missing == 0 && minimumVisible >= 24 && interiorHoles == 0 &&
         result.plan.similarity >= 93.f;
@@ -685,7 +685,7 @@ bool paintModeMergesDiagonalDetails() {
     return covered && objects.size() == 3;
 }
 
-// El hueco vacio se pasa igual que lo hace el pipeline: sobre lienzo transparente
+// el hueco vacio se pasa igual que lo hace el pipeline: sobre lienzo transparente
 // la diagonal puede rematarse girada porque asomar ahi no ensucia ningun color.
 std::vector<std::uint8_t> emptyOutside(std::vector<int> const& positions, int cells) {
     std::vector<std::uint8_t> empty(static_cast<std::size_t>(cells), 1);
@@ -698,7 +698,7 @@ bool paintRepairsMergeLongRuns() {
     std::vector<int> positions;
     for (int i = 3; i < 21; ++i) positions.push_back(i * size + i);
 
-    // Suave relaja el vacio para el borde continuo, Pixel no perdona: dos
+    // suave relaja el vacio para el borde continuo, pixel no perdona: dos
     // caminos, dos expectativas.
     auto runRepairs = [&](bool gridExact) {
         std::vector<Primitive> repairs;
@@ -755,7 +755,7 @@ bool paintModeDoesNotDotEveryJoin() {
                   << " strokes=" << strokes << " circles=" << circles << '\n';
         return std::tuple{objects.size(), strokes, circles};
     };
-    // Suave cose la ola con tiras giradas, Pixel la deja en bloques grid-exact.
+    // suave cose la ola con tiras giradas, pixel la deja en bloques grid-exact.
     auto const [smoothObjects, smoothStrokes, smoothCircles] = runJoins(false);
     auto const [pixelObjects, pixelStrokes, pixelCircles] = runJoins(true);
     (void)pixelStrokes;
@@ -845,7 +845,7 @@ bool paintModeClosesColorSeams() {
         result.plan.similarity >= 95.f;
 }
 
-// Un dibujo con el borde antialiaseado: una banda oscura curva sobre un relleno
+// un dibujo con el borde antialiaseado: una banda oscura curva sobre un relleno
 // claro y un fondo casi blanco, con la orla de tintas intermedias que deja el
 // suavizado del original.
 SourceAnimation paintAntialiasedScene() {
@@ -913,8 +913,8 @@ bool paintModeKeepsDarkLineColors() {
     return dark;
 }
 
-// El pico es un objeto girado que mide menos de una celda: asoma casi media celda
-// por cada punta, sobre el color de al lado. Y la orla del antialias, dibujada tal
+// el pico es un objeto girado que mide menos de una celda: asoma casi media celda
+// por cada punta, sobre el color de al lado. y la orla del antialias, dibujada tal
 // cual, es un objeto por pixel de las tintas intermedias.
 bool paintModeLeavesNoSpikes() {
     auto options = paintOptions(48);
@@ -961,7 +961,7 @@ bool paintModeKeepsEnclosedHighlightsAboveFill() {
     for (int y = 8; y < 24; ++y) {
         for (int x = 10; x < 22; ++x) setPixel(source, 0, x, y, 10, 20, 60);
     }
-    // Un brillo pequeño completamente rodeado por el relleno oscuro. Su color
+    // un brillo pequeño completamente rodeado por el relleno oscuro. su color
     // debe quedar encima aunque el relleno tenga mas area y profundidad media.
     for (int y = 12; y <= 16; ++y) {
         for (int x = 14; x <= 18; ++x) {
@@ -1011,12 +1011,12 @@ bool paintModeBeatsBlocksOnCurves() {
     return pass;
 }
 
-// El modo libre suelta objetos de decoracion donde encajan y pinta el resto como
+// el modo libre suelta objetos de decoracion donde encajan y pinta el resto como
 // siempre, asi que nunca puede costar mas que el modo de pintura ni dibujar peor.
-// Sin biblioteca del juego lo unico que tiene son las cuatro figuras de siempre,
+// sin biblioteca del juego lo unico que tiene son las cuatro figuras de siempre,
 // que es justo el caso en el que mas facil seria salirse.
-// Un rombo es un cuadrado girado, o sea el borde en diagonal de cualquier silueta
-// cerrada. Sin buscar el giro por los lados de la envolvente convexa se quedaba en
+// un rombo es un cuadrado girado, o sea el borde en diagonal de cualquier silueta
+// cerrada. sin buscar el giro por los lados de la envolvente convexa se quedaba en
 // la caja del cuadro, que acierta la mitad, y la mancha acababa en sesenta
 // cuadraditos apilados en escalera.
 bool paintModeFitsRotatedBoxes() {
@@ -1039,10 +1039,10 @@ bool paintModeFitsRotatedBoxes() {
     return result && tilted && objects.size() <= 4;
 }
 
-// El modo circulos vive del estilo, asi que lo que hay que vigilar es que no se le
+// el modo circulos vive del estilo, asi que lo que hay que vigilar es que no se le
 // cuele ninguna otra figura: un cuadrado entre los circulos se dibuja en otra hoja
-// de sprites y GD lo manda debajo de todos ellos, se le ponga la capa que se le
-// ponga. Y que haya de los dos tipos, discos y husos, que es lo que lo distingue
+// de sprites y gd lo manda debajo de todos ellos, se le ponga la capa que se le
+// ponga. y que haya de los dos tipos, discos y husos, que es lo que lo distingue
 // de una trama de puntos.
 bool circleModeOnlyDrawsCircles() {
     auto source = animation(40, 40, 1, 0, 0, 0, 0);
@@ -1104,7 +1104,7 @@ bool freeModeNeverCostsMoreThanPaint() {
     return pass;
 }
 
-// Cada figura de molde tiene que apuntar a una entrada real del plan, porque el
+// cada figura de molde tiene que apuntar a una entrada real del plan, porque el
 // emisor saca de ahi el id del objeto y su tamano: un indice suelto pondria en el
 // nivel un objeto que no es.
 bool freeModeStampsResolve() {
@@ -1379,7 +1379,7 @@ bool renderAnimationStaysIncrementalSized() {
     return pass;
 }
 
-// Runtime IDs are deliberately synthetic: the planner must use the supplied
+// runtime ids are deliberately synthetic: the planner must use the supplied
 // masks, never silently replace missing glow assets with a square.
 std::vector<PlanStamp> softFixtures(bool quarters) {
     std::vector<PlanStamp> stamps(7);
@@ -1451,6 +1451,58 @@ bool softModesPreserveLightAndBudget() {
         }
     }
     return true;
+}
+
+bool blurCompactionPreservesCoverageAndCenters() {
+    auto source = animation(16, 16, 1, 80, 120, 160);
+    auto options = exactOptions(16);
+    options.mode = ImportMode::Blur;
+    options.motion = false;
+    options.softStamps = softFixtures(false);
+    options.blurGlowDiameter = 8.f;
+    auto const dense = buildPlan(source, options);
+    options.blurGlowDiameter = 12.f;
+    auto const compacted = buildPlan(source, options);
+    if (!dense || !compacted || compacted.plan.totalObjects * 8 >= dense.plan.totalObjects) {
+        return false;
+    }
+
+    std::vector<std::pair<float, float>> centers;
+    for (auto const& object : compacted.plan.staticObjects) {
+        if (object.kind != PrimitiveKind::Stamp ||
+            object.color >= compacted.plan.glowOpacityScales.size() ||
+            compacted.plan.glowOpacityScales[object.color] != 16.f) {
+            continue;
+        }
+        centers.emplace_back(object.x, object.y);
+    }
+    std::sort(centers.begin(), centers.end());
+    std::vector<std::pair<float, float>> expected;
+    for (float y : {2.f, 6.f, 10.f, 14.f}) {
+        for (float x : {2.f, 6.f, 10.f, 14.f}) expected.emplace_back(x, y);
+    }
+    std::sort(expected.begin(), expected.end());
+    if (centers != expected) return false;
+
+    auto animated = animation(16, 16, 2, 80, 120, 160);
+    for (int y = 0; y < 16; ++y) {
+        for (int x = 8; x < 16; ++x) setPixel(animated, 1, x, y, 80, 120, 160, 0);
+    }
+    auto const plan = buildPlan(animated, options);
+    if (!plan || plan.plan.frames.size() != 2) return false;
+    std::size_t const sharedCell = 2 * 16 + 2;
+    int const firstGroup = plan.plan.frames[0].cells[sharedCell];
+    int const secondGroup = plan.plan.frames[1].cells[sharedCell];
+    std::size_t const changingCell = 2 * 16 + 10;
+    bool const pass = firstGroup >= plan.plan.sourceColorCount &&
+        firstGroup == secondGroup &&
+        plan.plan.glowOpacityScales[static_cast<std::size_t>(firstGroup)] == 16.f &&
+        plan.plan.frames[0].cells[changingCell] >= 0 &&
+        plan.plan.frames[1].cells[changingCell] < 0;
+    std::cout << "blur-compactado: denso=" << dense.plan.totalObjects
+              << " compacto=" << compacted.plan.totalObjects
+              << " grupos4=" << centers.size() << '\n';
+    return pass;
 }
 
 } // namespace
@@ -1531,6 +1583,8 @@ bool glowAddsBlendedHalos() {
 int main() {
     bool const softModes = softModesPreserveLightAndBudget();
     if (!softModes) std::cerr << "FAIL: soft modes lost light, native masks or object budget\n";
+    bool const blurCompaction = blurCompactionPreservesCoverageAndCenters();
+    if (!blurCompaction) std::cerr << "FAIL: blur compaction changed coverage or group centers\n";
     bool const solid = solidAreaBecomesOneRect();
     bool const watermark = imageWatermarkIsDistributedAndDetectable();
     bool const blockSweeps = blockPackingAvoidsDirectionBias();
@@ -1626,7 +1680,7 @@ int main() {
     if (!render) std::cerr << "FAIL: render mode did not refine within its object budget\n";
     if (!renderBalance) std::cerr << "FAIL: render mode kept adding objects after reaching its target\n";
     if (!renderAnimation) std::cerr << "FAIL: render animation exceeded its object budget\n";
-    return softModes && solid && watermark && blockSweeps && background && backgroundSolid && temporal && duplicates && schedule && noLoop && playback &&
+    return softModes && blurCompaction && solid && watermark && blockSweeps && background && backgroundSolid && temporal && duplicates && schedule && noLoop && playback &&
         budget && circle && stroke && triangle && curve && colors && artAnimation &&
         motion && motionFrames && glow &&
         paintCoverage && paintStrokes && paintRepairs && paintSolidRect && paintMergedRects &&

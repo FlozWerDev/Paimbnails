@@ -36,7 +36,7 @@ constexpr float kRankW = 150.f;
 constexpr float kMoreW = 112.f;
 constexpr float kRowH = 44.f;
 
-// What the format costs you in time or in tries, which is the one thing the
+// what the format costs you in time or in tries, which is the one thing the
 // win condition never says.
 std::string limitText(FormatDef const& def) {
     auto& loc = Localization::get();
@@ -173,7 +173,7 @@ void VersusHubLayer::buildChrome() {
     backBtn->setPosition(25.f, winSize.height - 25.f);
     m_menu->addChild(backBtn);
 
-    // The fast channel is a rule of the ladder, so it says so up here instead
+    // the fast channel is a rule of the ladder, so it says so up here instead
     // of only turning up as an error the moment somebody presses play.
     m_globedLabel = ui::makeText("", "chatFont.fnt", 0.42f,
                                  {winSize.width - 14.f, winSize.height - 22.f});
@@ -195,7 +195,7 @@ void VersusHubLayer::buildRankPanel(CCRect const& area) {
 
     auto const body = ui::panelBody(area.size);
 
-    // The two ladders never mix, so the toggle lives inside the panel it
+    // the two ladders never mix, so the toggle lives inside the panel it
     // rewrites rather than floating above it.
     char const* labels[] = {"Classic", "Platformer"};
     float const tabW = (body.size.width - 4.f) / 2.f;
@@ -422,7 +422,7 @@ void VersusHubLayer::onEnterTransitionDidFinish() {
         setStatus(formatName(def) + " - " + formatWinCondition(def));
     }
 
-    // Nothing happens without a token, and the invite that arrives while the
+    // nothing happens without a token, and the invite that arrives while the
     // hub sits idle needs one as much as the queue does.
     if (!VersusClient::get().authenticated()) {
         authenticateThen([]() {});
@@ -485,8 +485,8 @@ void VersusHubLayer::onSessionChanged() {
     auto& session = VersusSession::get();
     auto const phase = session.phase();
 
-    // A friendly joined by code lands past the accept step, so the modal opens
-    // for any of the three lobby phases and not only for Found.
+    // a friendly joined by code lands past the accept step, so the modal opens
+    // for any of the three lobby phases and not only for found.
     bool const inLobby = phase == Phase::Found || phase == Phase::Banning ||
                          phase == Phase::Loading;
     if (inLobby && !m_matchPopupOpen) {
@@ -511,14 +511,14 @@ void VersusHubLayer::onSessionChanged() {
 void VersusHubLayer::onPlay(CCObject*) {
     if (m_busy) return;
 
-    // Already queued: this button cancels instead of stacking a second search.
+    // already queued: this button cancels instead of stacking a second search.
     if (VersusSession::get().phase() == Phase::Queued) {
         VersusSession::get().cancelQueue();
         setStatus(Localization::get().getString("versus.cancelled"));
         return;
     }
 
-    // Ranked needs the fast channel: the Roulette feels like mud without it,
+    // ranked needs the fast channel: the roulette feels like mud without it,
     // and a ladder with two qualities of experience is worse than one rule.
     if (!gl::connected()) {
         refreshGlobed();

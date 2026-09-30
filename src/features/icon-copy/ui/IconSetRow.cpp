@@ -18,13 +18,13 @@ namespace paimon::iconcopy {
 
 namespace {
 
-// The big icon sits at the right end of the row and dissolves into the card as
+// the big icon sits at the right end of the row and dissolves into the card as
 // it goes left, so it reads as artwork instead of a second thumbnail.
 constexpr float kMarkSize = 41.f;
 constexpr float kMarkRight = 32.f;
 constexpr float kFadeWidth = 58.f;
 
-// Buttons stop here, clear of the artwork.
+// buttons stop here, clear of the artwork.
 constexpr float kButtonGap = 8.f;
 constexpr float kSmallButton = 26.f;
 
@@ -60,7 +60,7 @@ CCNode* makeSetRow(IconSet const& set, std::string const& subtitle, std::size_t 
         row->addChild(mark);
     }
 
-    // Same colour as the card, opaque on the left and clear on the right, so the
+    // same colour as the card, opaque on the left and clear on the right, so the
     // icon under it dissolves towards the middle of the row.
     if (auto* fade = CCLayerGradient::create(
             ccc4(card.r, card.g, card.b, 255), ccc4(card.r, card.g, card.b, 0), ccp(1.f, 0.f))) {
@@ -87,7 +87,7 @@ CCNode* makeSetRow(IconSet const& set, std::string const& subtitle, std::size_t 
     menu->setContentSize(row->getContentSize());
     row->addChild(menu, 2);
 
-    // Collect first, place after: ButtonSprite rounds its absolute width up, so
+    // collect first, place after: buttonsprite rounds its absolute width up, so
     // the only way to keep real gaps is to measure what came out.
     std::vector<CCMenuItemSpriteExtra*> buttons;
     for (auto const& action : actions) {

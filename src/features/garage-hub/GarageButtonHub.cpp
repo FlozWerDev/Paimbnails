@@ -19,7 +19,7 @@ constexpr auto kHubButtonID = "garage-hub-btn"_spr;
 constexpr auto kLabelKey = "hub-label"_spr;
 constexpr auto kOrderKey = "hub-order"_spr;
 
-// Shared hub icon size inside the popup.
+// shared hub icon size inside the popup.
 constexpr float kIconSize = 42.f;
 
 int orderOf(CCNode* btn) {
@@ -34,7 +34,7 @@ void fitButton(CCMenuItem* btn) {
 
     float const scale = kIconSize / dim;
     btn->setScale(scale);
-    // touch animation runs against m_baseScale; keep it in sync.
+    // touch animation runs against m_basescale; keep it in sync.
     if (auto* extra = typeinfo_cast<CCMenuItemSpriteExtra*>(btn)) extra->m_baseScale = scale;
 }
 
@@ -44,7 +44,7 @@ CCMenu* ensureRail(GJGarageLayer* layer) {
     auto* menu = CCMenu::create();
     menu->setID(kRailID);
     menu->setPosition({0.f, 0.f});
-    // hidden on purpose: invisible CCMenu ignores touches.
+    // hidden on purpose: invisible ccmenu ignores touches.
     menu->setVisible(false);
     layer->addChild(menu);
     return menu;

@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-// Widget factories returning a CCNode of fixed height (ROW_HEIGHT) with label + control.
+// widget factories returning a ccnode of fixed height (row_height) with label + control.
 
 namespace paimon::settings_ui {
 
@@ -80,7 +80,7 @@ cocos2d::CCNode* createHintRow(
 
 cocos2d::CCNode* createSectionHeader(const char* title, float width);
 
-// Collapsible header: toggles contentContainer on tap.
+// collapsible header: toggles contentcontainer on tap.
 cocos2d::CCNode* createCollapsibleHeader(
     const char* title,
     float width,

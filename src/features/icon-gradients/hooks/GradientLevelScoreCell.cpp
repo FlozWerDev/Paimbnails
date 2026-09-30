@@ -1,4 +1,4 @@
-// Shades the player's own icon on score cells, after zilko's "Icon Gradients"
+// shades the player's own icon on score cells, after zilko's "icon gradients"
 // (independent implementation; idea credit zilko144, unlicensed).
 
 #include <Geode/Geode.hpp>

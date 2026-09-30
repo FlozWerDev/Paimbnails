@@ -10,7 +10,7 @@ namespace paimon::progression {
 
 class GDProgressBar;
 
-// Cross-level gains split into one segment per level so the fill never snaps back.
+// cross-level gains split into one segment per level so the fill never snaps back.
 class XPBarNode : public cocos2d::CCNode {
 public:
     static XPBarNode* create(float width, float height);
@@ -18,7 +18,7 @@ public:
     void setTier(Tier const& tier);
     void setExp(int64_t exp);
     void animateTo(int64_t exp, float duration);
-    // Fires the moment the fill crosses into the next level.
+    // fires the moment the fill crosses into the next level.
     void setLevelUpCallback(std::function<void(int)> callback);
 
     void update(float dt) override;

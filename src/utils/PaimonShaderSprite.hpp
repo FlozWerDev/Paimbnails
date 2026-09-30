@@ -97,7 +97,7 @@ public:
             ccGLBindTexture2D(0);
         }
 
-        // Avoid driver crashes from a stale active VBO.
+        // avoid driver crashes from a stale active vbo.
         glBindBuffer(GL_ARRAY_BUFFER, 0);
 
         ccGLEnableVertexAttribs(kCCVertexAttribFlag_PosColorTex);
@@ -255,7 +255,7 @@ public:
     }
 };
 
-// blur sprite synced to an animated GIF via geode::Ref.
+// blur sprite synced to an animated gif via geode::ref.
 class PaimonBlurSprite : public CCSprite {
 public:
     float m_intensity = 0.0f;

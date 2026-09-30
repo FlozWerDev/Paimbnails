@@ -47,7 +47,7 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
 
         bool hasCustomBg = LayerBackgroundManager::get().applyBackground(this, "search");
 
-        // with a custom bg, hide GD's decorative sprites
+        // with a custom bg, hide gd's decorative sprites
         if (hasCustomBg) {
             static char const* hideIDs[] = {
                 "level-search-bg",
@@ -150,7 +150,7 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
     $override
     void cleanup() {
         m_fields->m_previewCallbacksSuspended = true;
-        // replaceScene() fires cleanup() mid-transition; onEnter() re-activates after
+        // replacescene() fires cleanup() mid-transition; onenter() re-activates after
         LevelSearchLayer::cleanup();
     }
 

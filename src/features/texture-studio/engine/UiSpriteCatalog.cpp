@@ -35,7 +35,7 @@ bool containsAny(std::string const& haystack,
         "shipfireicon",
         "gjitem_",
         "chompo_",
-        // Object outlines/glow (.bro: GameObject::addGlow). "block" contains "lock": keep ahead of the MenuUi lock token.
+        // object outlines/glow (.bro: gameobject::addglow). "block" contains "lock": keep ahead of the menuui lock token.
         "blockoutline",
     });
 }
@@ -44,15 +44,15 @@ bool isColorMeaningfulFrame(std::string const& lower) {
     return containsAny(lower, {
         "difficulty_",
         "difficon_",
-        // Red demon face: difficulty identity, not chrome.
+        // red demon face: difficulty identity, not chrome.
         "demonicon",
-        // Vault-guardian faces: character art, not the neutral secretLock padlocks (tintable via "lock" below).
+        // vault-guardian faces: character art, not the neutral secretlock padlocks (tintable via "lock" below).
         "gj_secretlock",
-        // Reward art baked in: tinting would recolor the advertised shards/gems/faces.
+        // reward art baked in: tinting would recolor the advertised shards/gems/faces.
         "shardsbtn",
         "normalbtn",
         "videoreward",
-        // Baked-content buttons: chrome and content share one frame, stays vanilla; anchored tokens skip editor buttons.
+        // baked-content buttons: chrome and content share one frame, stays vanilla; anchored tokens skip editor buttons.
         "ratediff",
         "starbtn",
         "garagebtn",
@@ -106,7 +106,7 @@ bool isCuratedButtonFrame(std::string const& lower) {
 }
 
 bool isMenuUiFrame(std::string const& lower) {
-    // Neutral chrome, tintable. No "sideart" (decoration) and no bare "icon" (reward art); tintable icons allowlisted below.
+    // neutral chrome, tintable. no "sideart" (decoration) and no bare "icon" (reward art); tintable icons allowlisted below.
     return containsAny(lower, {
         "txt",
         "label",
@@ -119,14 +119,14 @@ bool isMenuUiFrame(std::string const& lower) {
         "uidot",
         "levelcomplete", "practicecomplete", "newbest",
         "checkpoint",
-        // Difficulty-filter selection outline (white chrome).
+        // difficulty-filter selection outline (white chrome).
         "difficultyselected",
-        // Options chrome. No GJ_square07/square01: the game recolors them at runtime (double-tint).
+        // options chrome. no gj_square07/square01: the game recolors them at runtime (double-tint).
         "slider",
         "loadingcircle",
         "smalldot",
         "progressbar",
-        // Furniture icons: menu controls and containers.
+        // furniture icons: menu controls and containers.
         "foldericon",
         "deleteicon", "deleteallicon",
         "filtericon",
@@ -134,11 +134,11 @@ bool isMenuUiFrame(std::string const& lower) {
         "sorticon",
         "slikeicon", "srecenticon", "sdownloadicon", "sfollowedicon",
         "sfriendsicon", "smagicicon", "smodicon", "strendingicon",
-        "gj_musicicon",  // (newMusicIcon "NEW" badges stay vanilla)
+        "gj_musicicon",  // (newmusicicon "new" badges stay vanilla)
         "noteicon",
         "timeicon",
         "extendedicon",
-        // Neutral browser/editor chrome missed by the icon allowlist above.
+        // neutral browser/editor chrome missed by the icon allowlist above.
         "deletefilter_",
         "edit_vline",
         "hearton", "heartoff",
@@ -185,7 +185,7 @@ SpriteKind UiSpriteCatalog::classify(std::string_view frameName,
 bool UiSpriteCatalog::shouldTint(SpriteKind kind, TintScope scope) {
     switch (scope) {
         case TintScope::Everything:
-            // Legacy: maps to ButtonsAndMenuUi (loader clamps 2 to 1).
+            // legacy: maps to buttonsandmenuui (loader clamps 2 to 1).
             return kind == SpriteKind::Button || kind == SpriteKind::MenuUi;
         case TintScope::ButtonsAndMenuUi:
             return kind == SpriteKind::Button || kind == SpriteKind::MenuUi;

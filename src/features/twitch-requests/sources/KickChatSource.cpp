@@ -12,13 +12,13 @@ namespace paimon::twitch {
 
 namespace {
 
-// Public Pusher app the kick.com frontend uses for chat.
+// public pusher app the kick.com frontend uses for chat.
 constexpr char const* kPusherHost = "ws-us2.pusher.com";
 constexpr char const* kPusherPath =
     "/app/32cbd69e4b950bf97679?protocol=7&client=js&version=8.4.0-rc2&flash=false";
 constexpr float kSubscribeTimeout = 15.f;
 
-// Kick sends emotes inline as [emote:1730794:emojiLol]; the digits inside would
+// kick sends emotes inline as [emote:1730794:emojilol]; the digits inside would
 // look like a level id to the parser, so they become the emote name.
 std::string stripEmotes(std::string const& content) {
     std::string result;
@@ -124,7 +124,7 @@ void KickChatSource::connectSocket() {
     );
     if (!started) fail("El chat de Kick solo funciona en Windows");
 
-    // Pusher accepts the subscribe silently when something is off, so give the
+    // pusher accepts the subscribe silently when something is off, so give the
     // confirmation a deadline instead of sitting in "connecting" forever.
     later(kSubscribeTimeout, [this] {
         if (stopped() || m_listening) return;
@@ -154,10 +154,10 @@ void KickChatSource::handleFrame(std::string frame) {
         ready("Escuchando el chat de kick/" + m_channel);
         return;
     }
-    // Event name arrives as App\Events\ChatMessageEvent.
+    // event name arrives as app\events\chatmessageevent.
     if (event.find("ChatMessageEvent") == std::string::npos) return;
 
-    // data is a JSON document inside a JSON string.
+    // data is a json document inside a json string.
     if (auto data = value["data"].asString(); data) {
         handleChatMessage(data.unwrap());
     }
@@ -172,7 +172,13 @@ void KickChatSource::handleChatMessage(std::string const& payload) {
     if (content.empty()) return;
     auto requester = message["sender"]["username"].asString().unwrapOr("Kick");
 
-    deliver(std::move(requester), stripEmotes(content));
+    ChatMessage incoming;
+    incoming.requester = std::move(requester);
+    incoming.text = stripEmotes(content);
+    incoming.messageID = message["id"].asString().unwrapOr("");
+    if (auto id = message["id"].asInt(); id) incoming.messageID = std::to_string(id.unwrap());
+    if (auto id = message["sender"]["id"].asInt(); id) incoming.userID = std::to_string(id.unwrap());
+    deliver(std::move(incoming));
 }
 
 } // namespace paimon::twitch

@@ -5,7 +5,7 @@
 
 namespace paimon::rgba {
 
-// tightly packed RGBA8888; caller owns the result. libyuv when present,
+// tightly packed rgba8888; caller owns the result. libyuv when present,
 // fallback otherwise (keeps host-side tests working).
 std::unique_ptr<uint8_t[]> scale(
     uint8_t const* src,

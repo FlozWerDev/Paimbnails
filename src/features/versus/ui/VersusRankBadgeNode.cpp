@@ -70,7 +70,7 @@ void VersusRankBadgeNode::rebuild() {
 
     if (auto* frame = paimon::SpriteHelper::safeCreate("paim_vsFrame.png"_spr)) {
         fitSquare(frame, m_size);
-        // The laurel stays gold at every tier so the badge reads as "VS" first
+        // the laurel stays gold at every tier so the badge reads as "vs" first
         // and as a rank second; grey while the placements are still running.
         frame->setColor(placing ? ccColor3B{130, 136, 152} : ccColor3B{250, 200, 60});
         m_content->addChild(frame, 0);
@@ -102,7 +102,7 @@ void VersusRankBadgeNode::rebuild() {
 
     float const pipSize = m_size * 0.13f;
     float const gap = pipSize * 1.25f;
-    int const filled = 5 - m_rank.division;   // division I lights all four
+    int const filled = 5 - m_rank.division;   // division i lights all four
     for (int i = 0; i < 4; i++) {
         auto* pip = paimon::SpriteHelper::safeCreate("paim_vsPip.png"_spr);
         if (!pip) continue;

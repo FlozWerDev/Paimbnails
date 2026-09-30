@@ -30,7 +30,7 @@ bool CoverBlurBackground::init(CCSize const& size) {
 }
 
 void CoverBlurBackground::setCoverFromPath(const std::string& absolutePath) {
-    // Invalida cualquier blur async aun en vuelo.
+    // invalida cualquier blur async aun en vuelo.
     m_generation++;
     auto gen = m_generation;
     m_lastPath = absolutePath;
@@ -57,7 +57,7 @@ void CoverBlurBackground::setCoverFromPath(const std::string& absolutePath) {
         if (!blurred) return;
         auto ref = weakThis.lock();
         auto* self = ref ? typeinfo_cast<CoverBlurBackground*>(ref.data()) : nullptr;
-        // Nodo destruido u otro setCoverFromPath posterior => blur obsoleto.
+        // nodo destruido u otro setcoverfrompath posterior => blur obsoleto.
         if (!self || gen != self->m_generation) return;
         self->applyBlurFromTexture(blurred->getTexture(), gen);
     };

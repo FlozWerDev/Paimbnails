@@ -31,7 +31,7 @@ namespace {
 ResolvedProfilePhoto resolveProfilePhoto(ProfilePicConfig const& cfg) {
     ResolvedProfilePhoto out;
 
-    // The profile button has its own configuration and must not borrow the
+    // the profile button has its own configuration and must not borrow the
     // profile popup's backdrop (profileimg / profile-bg-path).
     if (cfg.photoSource != "none" && !cfg.photoPath.empty() && resolveFileSource(cfg.photoPath, out)) {
         out.source = ResolvedProfilePhoto::Source::Custom;

@@ -1,6 +1,6 @@
 #pragma once
 
-// Shared drawing pieces for wheel, preview and config lists: one look everywhere.
+// shared drawing pieces for wheel, preview and config lists: one look everywhere.
 
 #include <Geode/Geode.hpp>
 #include "../data/QuickHubCategories.hpp"
@@ -21,7 +21,7 @@ inline cocos2d::ccColor4F accentColor(cocos2d::ccColor3B c, float alpha) {
     return {c.r / 255.f, c.g / 255.f, c.b / 255.f, alpha};
 }
 
-// GD sprites run 20-120px; fitting to a fixed box keeps cards consistent.
+// gd sprites run 20-120px; fitting to a fixed box keeps cards consistent.
 inline cocos2d::CCSprite* makeFittedIcon(std::string const& frame, float box) {
     auto* icon = paimon::SpriteHelper::safeCreateWithFrameName(frame.c_str());
     if (!icon) icon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn_001.png");
@@ -34,7 +34,7 @@ inline cocos2d::CCSprite* makeFittedIcon(std::string const& frame, float box) {
     return icon;
 }
 
-// TextureCache load (cache only), no new frames registered.
+// texturecache load (cache only), no new frames registered.
 inline cocos2d::CCSprite* makeBadgeIcon(RadialOptionDef const& def, float box) {
     if (!def.imagePath.empty()) {
         std::error_code ec;
@@ -67,7 +67,7 @@ inline float wrapBadgeRotation(float v) {
     while (v < -180.f) v += 360.f;
     return v;
 }
-// Rounded rect, not a fan: at the center vertex opposite edges leave CCDrawNode extrusion unfilled.
+// rounded rect, not a fan: at the center vertex opposite edges leave ccdrawnode extrusion unfilled.
 inline cocos2d::CCDrawNode* makeCircle(
     float radius,
     cocos2d::ccColor4F fill,
@@ -85,7 +85,7 @@ struct RadialBadge {
     cocos2d::CCNode* ring = nullptr; // accent ring: aim only
 };
 
-// Flat disc with icon, centered on returned (0,0); zero size/anchor since centered anchors shift local origin.
+// flat disc with icon, centered on returned (0,0); zero size/anchor since centered anchors shift local origin.
 inline RadialBadge makeRadialBadge(
     RadialOptionDef const& def,
     RadialButtonShape shape,
@@ -137,7 +137,7 @@ struct RadialGeometry {
     float badgeSize = 48.f;
 };
 
-// Fits count badges on screen: largest radius that fits, then arc-sized badges.
+// fits count badges on screen: largest radius that fits, then arc-sized badges.
 inline RadialGeometry radialGeometryFor(int count, cocos2d::CCSize winSize) {
     constexpr float kMaxBadge = 48.f;
     constexpr float kMinRadius = 80.f;
@@ -150,13 +150,13 @@ inline RadialGeometry radialGeometryFor(int count, cocos2d::CCSize winSize) {
     float needed = (kMaxBadge + 14.f) * static_cast<float>(std::max(count, 1)) / kTwoPi;
     geometry.radius = std::min(std::max(needed, kMinRadius), maxRadius);
 
-    // Accent ring overflows 6px, so per-badge gap discounts it plus neighbor air.
+    // accent ring overflows 6px, so per-badge gap discounts it plus neighbor air.
     float arc = count > 1 ? kTwoPi * geometry.radius / static_cast<float>(count) : kMaxBadge * 4.f;
     geometry.badgeSize = std::clamp(arc - 14.f, 26.f, kMaxBadge);
     return geometry;
 }
 
-// Item 1 on top, clockwise: reads like a list.
+// item 1 on top, clockwise: reads like a list.
 inline float radialAngleFor(int index, int count) {
     if (count <= 0) return 90.f;
     return 90.f - (360.f / static_cast<float>(count)) * static_cast<float>(index);

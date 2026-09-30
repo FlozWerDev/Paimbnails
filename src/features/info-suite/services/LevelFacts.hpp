@@ -1,6 +1,6 @@
 #pragma once
 
-// Flat, tab-grouped rows for ExtendedInfoPopup; shared extraction so the
+// flat, tab-grouped rows for extendedinfopopup; shared extraction so the
 // popup only deals with layout.
 
 #include <Geode/binding/GJGameLevel.hpp>
@@ -18,7 +18,7 @@ enum class FactTab {
     Count
 };
 
-// Rows that do more than show text when tapped.
+// rows that do more than show text when tapped.
 enum class FactAction {
     None = 0,
     OpenOriginal,  // jump to the level this one was copied from
@@ -36,22 +36,22 @@ struct Fact {
     bool accent = false;    // draw the value in the highlight color
 };
 
-// Every readable field of the level, in display order. Empty/unknown fields are
+// every readable field of the level, in display order. empty/unknown fields are
 // skipped so a local level does not show a wall of zeroes.
 std::vector<Fact> collectFacts(GJGameLevel* level);
 
 char const* tabName(FactTab tab);
 
-// Human readable helpers, shared with the cells and history browsers.
+// human readable helpers, shared with the cells and history browsers.
 
-// Rating as GJDifficultySprite counts it: -1 auto, 0 unrated, 1-5 easy..insane,
+// rating as gjdifficultysprite counts it: -1 auto, 0 unrated, 1-5 easy..insane,
 // 6-10 the demon tiers.
 int difficultyValue(GJGameLevel* level);
-// Same scale, but from the stars the creator requested: what an unrated level
+// same scale, but from the stars the creator requested: what an unrated level
 // has instead of a rating. 0 when nothing was requested.
 int requestedDifficultyValue(GJGameLevel* level);
-// Nombre de una cara suelta, para lo que no viene de un GJGameLevel (el
-// historial del nivel trabaja con caras sacadas de la API, no con niveles).
+// nombre de una cara suelta, para lo que no viene de un gjgamelevel (el
+// historial del nivel trabaja con caras sacadas de la api, no con niveles).
 std::string difficultyFaceName(int face);
 std::string difficultyName(GJGameLevel* level);
 std::string lengthName(int length);

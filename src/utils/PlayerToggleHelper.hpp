@@ -6,7 +6,7 @@
 #include <utility>
 #include <set>
 
-// Targeted type imports to avoid namespace pollution in headers
+// targeted type imports to avoid namespace pollution in headers
 using cocos2d::CCNode;
 using cocos2d::CCObject;
 
@@ -40,7 +40,7 @@ struct PlayerVisState {
     bool swingFireTop = true;
     bool dashSpritesContainer = true;
 
-    // WeakRef: state outlives frames; mod-added descendants may die meanwhile.
+    // weakref: state outlives frames; mod-added descendants may die meanwhile.
     std::vector<std::pair<geode::WeakRef<CCNode>, bool>> otherParticles;
 };
 

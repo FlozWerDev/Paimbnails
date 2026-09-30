@@ -42,8 +42,8 @@ jobs:
           sdk: given
           target: ${{ matrix.config.target }}
           combine: true
-          # Warm caches across runs: sccache recompiles only changed TUs,
-          # CPM skips re-downloading third-party sources.
+          # warm caches across runs: sccache recompiles only changed tus,
+          # cpm skips re-downloading third-party sources.
           ccache-variant: sccache
           use-cpm-cache: true
 

@@ -15,7 +15,7 @@ static std::string resolveId(std::string const& id) {
     if (id == "chat") return "chatFont.fnt";
     if (id == "gold") return "goldFont.fnt";
 
-    // Numeric IDs: 01-59 → gjFontXX.fnt
+    // numeric ids: 01-59 → gjfontxx.fnt
     if (id.size() == 2 && std::isdigit(static_cast<unsigned char>(id[0]))
                        && std::isdigit(static_cast<unsigned char>(id[1]))) {
         auto numResult = geode::utils::numFromString<int>(id);

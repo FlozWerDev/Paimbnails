@@ -1,3 +1,4 @@
+#include "../../../utils/MusicChannel.hpp"
 #include "DynamicSongManager.hpp"
 #include "DynamicSongConfig.hpp"
 #include "DynamicSongSubmerge.hpp"
@@ -42,17 +43,7 @@ T nextRandomIn(T lo, T hi) {
 } // namespace
 
 static FMOD::Channel* getMainBgChannel(FMODAudioEngine* engine) {
-    if (!engine) return nullptr;
-    if (auto* channel = engine->getActiveMusicChannel(0)) {
-        return channel;
-    }
-    if (!engine->m_backgroundMusicChannel) return nullptr;
-    int numCh = 0;
-    engine->m_backgroundMusicChannel->getNumChannels(&numCh);
-    if (numCh <= 0) return nullptr;
-    FMOD::Channel* ch = nullptr;
-    if (engine->m_backgroundMusicChannel->getChannel(0, &ch) != FMOD_OK) return nullptr;
-    return ch;
+    return paimon::audio::mainMusicChannel(engine);
 }
 
 class DynSongFadeNode : public cocos2d::CCNode {
@@ -172,7 +163,7 @@ float DynamicSongManager::dynamicTargetVolume() const {
     return std::clamp(base * (dynsong::config().volumePct / 100.f), 0.0f, 1.0f);
 }
 
-// Streaming previews use their own channel; local songs use the shared group.
+// streaming previews use their own channel; local songs use the shared group.
 FMOD::ChannelControl* DynamicSongManager::currentChannelControl() const {
     if (m_streamingPreview && m_previewChannel) {
         return static_cast<FMOD::ChannelControl*>(m_previewChannel);
@@ -328,7 +319,7 @@ void DynamicSongManager::applyStartPosition(int levelID, FMOD::Channel* existing
         unsigned int lengthMs = 0;
         if (currentSound) currentSound->getLength(&lengthMs, FMOD_TIMEUNIT_MS);
 
-        // Clamp positions saved by older versions.
+        // clamp positions saved by older versions.
         if (lengthMs > 0 && it->second < lengthMs) {
             bgCh->setPosition(it->second, FMOD_TIMEUNIT_MS);
         } else {
@@ -444,7 +435,7 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
     if (paimon::isVideoAudioInteropActive()) return;
     auto* engine = FMODAudioEngine::sharedEngine();
     if (!engine || engine->m_musicVolume <= 0.0f) {
-        // The stream never joined the music group, so slider silence can't stop
+        // the stream never joined the music group, so slider silence can't stop
         // it: tear it down instead of leaving it buffering.
         if (m_streamingPreview || isStreamingPreviewPending() || m_awaitingDownloadOnly) {
             cancelFade();
@@ -572,7 +563,7 @@ void DynamicSongManager::stopSong() {
     m_handoffLayer = DynSongLayer::None;
     m_handoffLevelID = 0;
 
-    // Download-watch mode has no local channel to fade; stop polling and go idle.
+    // download-watch mode has no local channel to fade; stop polling and go idle.
     if (m_awaitingDownloadOnly) {
         goIdle();
         m_currentLayer = DynSongLayer::None;
@@ -612,7 +603,7 @@ void DynamicSongManager::fadeOutForLevelStart() {
     cancelFade();
     rememberPosition();
 
-    // No local channel in download-watch mode; stop polling.
+    // no local channel in download-watch mode; stop polling.
     if (m_awaitingDownloadOnly) {
         goIdle();
         m_currentLayer = DynSongLayer::None;
@@ -645,7 +636,7 @@ void DynamicSongManager::fadeOutForLevelStart() {
 
 namespace {
 
-// Watch for the level to start, cancellation, or leaving the screen.
+// watch for the level to start, cancellation, or leaving the screen.
 class DynHandoffWatchNode : public CCNode {
 public:
     static DynHandoffWatchNode* create() {
@@ -1009,22 +1000,22 @@ bool DynamicSongManager::verifyPlayback() {
 
     if (isStreamingPreviewPending() || m_streamingPreview) return true;
 
-    // Suspension is intentional external audio, not a hijack.
+    // suspension is intentional external audio, not a hijack.
     if (m_state == DynState::Suspended) {
         return true;
     }
 
-    // Gameplay handoff temporarily gives ownership up while audio remains audible.
+    // gameplay handoff temporarily gives ownership up while audio remains audible.
     if (m_state == DynState::Handoff) {
         return true;
     }
 
-    // FMOD metadata is transient during crossfades.
+    // fmod metadata is transient during crossfades.
     if (m_state == DynState::FadingIn || m_state == DynState::FadingOut) {
         return true;
     }
 
-    // Allow FMOD time to propagate metadata after a fade.
+    // allow fmod time to propagate metadata after a fade.
     auto elapsed = std::chrono::steady_clock::now() - m_lastFadeCompleteTime;
     if (elapsed < std::chrono::milliseconds(500)) {
         return true;
@@ -1052,9 +1043,9 @@ bool DynamicSongManager::verifyPlayback() {
     return fileName(m_activeSongPath) == fileName(currentName);
 }
 
-// Streaming preview.
+// streaming preview.
 
-// Poll for the local download and swap to it when ready.
+// poll for the local download and swap to it when ready.
 class DynStreamPollNode : public CCNode {
 public:
     static DynStreamPollNode* create() {
@@ -1068,7 +1059,7 @@ public:
     }
 
     void startPolling() {
-        // The detached node would be paused by CCNode::schedule(); register it
+        // the detached node would be paused by ccnode::schedule(); register it
         // directly with paused=false.
         auto* scheduler = cocos2d::CCDirector::get()->getScheduler();
         scheduler->unscheduleSelector(schedule_selector(DynStreamPollNode::pollTick), this);
@@ -1104,7 +1095,7 @@ void DynamicSongManager::startStreamingPreview(GJGameLevel* level) {
     if (!mdm || !engine || !engine->m_system) return;
     if (engine->m_musicVolume <= 0.0f) return;
 
-    // Watch for the local download even when streaming is disabled.
+    // watch for the local download even when streaming is disabled.
     if (!dynsong::config().streamPreview) {
         m_previewSongID = songID;
         m_currentPlayingLevelID = level->m_levelID.value();
@@ -1202,7 +1193,7 @@ void DynamicSongManager::stopStreamingPreview() {
     m_previewPlayAttemptSince = {};
 }
 
-// The stream owns a channel outside m_backgroundMusicChannel, so slider moves
+// the stream owns a channel outside m_backgroundmusicchannel, so slider moves
 // never reach it; re-apply the target whenever the fade isn't driving it.
 void DynamicSongManager::syncPreviewVolume() {
     if (!m_streamingPreview || !m_previewChannel) return;

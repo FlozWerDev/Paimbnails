@@ -10,6 +10,7 @@
 #include <chrono>
 #include <mutex>
 #include <condition_variable>
+#include <new>
 
 #ifdef _WIN32
 #include <malloc.h>
@@ -35,7 +36,7 @@ struct VideoFrame {
     double   pts      = 0.0;
     std::atomic<bool> ready{false};
 
-    // 32-byte aligned for SIMD.
+    // 32-byte aligned for simd.
     static size_t alignedSize(int w, int h) {
         int alignedStride = ((w + 31) / 32) * 32;
         return static_cast<size_t>(alignedStride) * h;
@@ -88,14 +89,14 @@ public:
     virtual int getHeight() const = 0;
     virtual bool isFinished() const = 0;
 
-    // Coded size before backend downscale; picks BT.709 vs BT.601.
+    // coded size before backend downscale; picks bt.709 vs bt.601.
     virtual int getNativeWidth() const { return getWidth(); }
     virtual int getNativeHeight() const { return getHeight(); }
 
-    // Content color description; Auto keeps the size-based BT.709 heuristic.
+    // content color description; auto keeps the size-based bt.709 heuristic.
     virtual VideoColorMatrix getColorMatrix() const { return VideoColorMatrix::Auto; }
     virtual bool isFullRange() const { return false; }
-    // Clockwise display rotation in degrees (0/90/180/270).
+    // clockwise display rotation in degrees (0/90/180/270).
     virtual int getRotationDegrees() const { return 0; }
 
     virtual bool skipFrame() = 0;
@@ -103,12 +104,12 @@ public:
     virtual double peekNextPTS() const = 0;
     virtual double peekSecondPTS() const { return DBL_MAX; }
 
-    // Borrowed until releaseFrame(); no seek/stop calls in between.
+    // borrowed until releaseframe(); no seek/stop calls in between.
     virtual const Frame* peekFrame() { return nullptr; }
 
     virtual void releaseFrame() {}
 
-    // PTS restarts at 0, false = must seek.
+    // pts restarts at 0, false = must seek.
     virtual bool setLooping(bool) { return false; }
 
     static std::unique_ptr<IVideoDecoder> create(const std::string& path);
@@ -131,6 +132,8 @@ public:
     }
 
     bool init(int w, int h) {
+        freeSlots();
+        if (w <= 0 || h <= 0 || w > 8192 || h > 8192) return false;
         m_width = w;
         m_height = h;
         m_capacity = computeSlotCount(w, h);
@@ -140,7 +143,11 @@ public:
         int alignedStrideY  = Frame::alignedStride(w);
         int alignedStrideUV = Frame::alignedStride(uvW);
 
-        m_slots = std::make_unique<Frame[]>(m_capacity);
+        m_slots.reset(new (std::nothrow) Frame[m_capacity]);
+        if (!m_slots) {
+            freeSlots();
+            return false;
+        }
         for (int i = 0; i < m_capacity; ++i) {
             m_slots[i].planeY  = Frame::allocAligned(Frame::alignedSize(w, h));
             m_slots[i].planeCb = Frame::allocAligned(Frame::alignedSize(uvW, uvH));
@@ -160,12 +167,14 @@ public:
     }
 
     Frame* nextWrite() {
+        if (!m_slots) return nullptr;
         int w = m_writeIdx.load(std::memory_order_relaxed);
         if ((w + 1) % m_capacity == m_readIdx.load(std::memory_order_acquire)) return nullptr;
         return &m_slots[w];
     }
 
     void commitWrite() {
+        if (!m_slots) return;
         auto idx = m_writeIdx.load(std::memory_order_relaxed);
         m_slots[idx].ready.store(true, std::memory_order_release);
         m_writeIdx.store((idx + 1) % m_capacity, std::memory_order_release);
@@ -173,6 +182,7 @@ public:
     }
 
     Frame* nextRead() {
+        if (!m_slots) return nullptr;
         int r = m_readIdx.load(std::memory_order_relaxed);
         if (r == m_writeIdx.load(std::memory_order_acquire)) return nullptr;
         if (!m_slots[r].ready.load(std::memory_order_acquire)) return nullptr;
@@ -180,6 +190,7 @@ public:
     }
 
     const Frame* peekRead() const {
+        if (!m_slots) return nullptr;
         int r = m_readIdx.load(std::memory_order_relaxed);
         if (r == m_writeIdx.load(std::memory_order_acquire)) return nullptr;
         if (!m_slots[r].ready.load(std::memory_order_acquire)) return nullptr;
@@ -187,6 +198,7 @@ public:
     }
 
     void commitRead() {
+        if (!m_slots) return;
         auto idx = m_readIdx.load(std::memory_order_relaxed);
         m_slots[idx].ready.store(false, std::memory_order_release);
         m_readIdx.store((idx + 1) % m_capacity, std::memory_order_release);
@@ -210,7 +222,7 @@ public:
         return m_slots[r].pts;
     }
 
-    // Second readable PTS or DBL_MAX if none.
+    // second readable pts or dbl_max if none.
     double peekSecondPTS() const {
         int r = m_readIdx.load(std::memory_order_acquire);
         int w = m_writeIdx.load(std::memory_order_acquire);
@@ -227,11 +239,12 @@ public:
     }
 
     bool isFull() const {
+        if (!m_slots) return true;
         int next = (m_writeIdx.load(std::memory_order_relaxed) + 1) % m_capacity;
         return next == m_readIdx.load(std::memory_order_acquire);
     }
 
-    // Re-check isFull()/nextWrite() after waiting.
+    // re-check isfull()/nextwrite() after waiting.
     bool waitForWritable(int timeoutMs, const std::atomic<bool>* aliveFlag = nullptr) {
         if (!isFull()) return true;
         std::unique_lock<std::mutex> lk(m_writableMtx);
@@ -253,7 +266,7 @@ public:
 
 private:
     void freeSlots() {
-        for (int i = 0; i < m_capacity; ++i) {
+        for (int i = 0; m_slots && i < m_capacity; ++i) {
             Frame::freeAligned(m_slots[i].planeY);
             Frame::freeAligned(m_slots[i].planeCb);
             Frame::freeAligned(m_slots[i].planeCr);
@@ -261,6 +274,10 @@ private:
             m_slots[i].ready.store(false, std::memory_order_release);
         }
         m_slots.reset();
+        m_capacity = 0;
+        m_width = m_height = 0;
+        m_writeIdx.store(0, std::memory_order_relaxed);
+        m_readIdx.store(0, std::memory_order_relaxed);
     }
 
     std::unique_ptr<Frame[]> m_slots;
@@ -270,7 +287,7 @@ private:
     int m_width  = 0;
     int m_height = 0;
 
-    // Waiters are notified without locking the ring's fast path.
+    // waiters are notified without locking the ring's fast path.
     mutable std::mutex m_readableMtx;
     mutable std::mutex m_writableMtx;
     mutable std::condition_variable m_readableCv;

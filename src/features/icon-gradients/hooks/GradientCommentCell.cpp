@@ -1,4 +1,4 @@
-// Own-comment icon shading, after zilko's "Icon Gradients" (independent implementation, own expression).
+// own-comment icon shading, after zilko's "icon gradients" (independent implementation, own expression).
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/CommentCell.hpp>

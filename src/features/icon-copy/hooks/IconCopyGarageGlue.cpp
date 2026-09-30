@@ -60,14 +60,14 @@ void syncGarage(GJGarageLayer* garage) {
         preview->updatePlayerFrame(std::max(selectedIcon(gm, previewType), 1), previewType);
     }
     garage->updatePlayerColors();
-    // Moves the selection cursor onto the icons we just switched to.
+    // moves the selection cursor onto the icons we just switched to.
     garage->selectTab(tab);
 }
 
 void installButton(GJGarageLayer* layer) {
     if (layer->getChildByIDRecursive("copied-icons-btn"_spr)) return;
 
-    // Already a full button sprite (base included), so it goes in as-is.
+    // already a full button sprite (base included), so it goes in as-is.
     auto* spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_profileButton_001.png");
     if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plusBtn_001.png");
     if (!spr) return;

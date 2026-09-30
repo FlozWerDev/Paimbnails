@@ -83,7 +83,7 @@ bool spawnAnimation(CCNode* parent, CCPoint position, int style, ccColor3B color
         container->setID(kContainer);
         parent->addChild(container,1000);
     }
-    // Dual mode and rapid deaths cannot grow the effect population unboundedly.
+    // dual mode and rapid deaths cannot grow the effect population unboundedly.
     if (container->getChildrenCount() >= 4) container->removeAllChildrenWithCleanup(true);
     effect->setPosition(position);
     effect->setScale(180.f*scale);

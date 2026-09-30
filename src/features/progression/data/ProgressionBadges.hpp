@@ -61,7 +61,7 @@ struct BadgeCategory {
     cocos2d::ccColor3B color;
 };
 
-// Built once per profile, evaluated against everything.
+// built once per profile, evaluated against everything.
 struct BadgeContext {
     PlayerStats stats;
     int level = 1;
@@ -73,7 +73,7 @@ BadgeContext makeContext(PlayerStats const& stats);
 std::vector<BadgeDef> const& allBadges();
 std::vector<BadgeCategory> const& allCategories();
 
-// Global rank counts down, everything else counts up.
+// global rank counts down, everything else counts up.
 bool metricIsInverted(BadgeMetric metric);
 int64_t metricValue(BadgeContext const& ctx, BadgeMetric metric);
 
@@ -82,7 +82,7 @@ float badgeProgress(BadgeDef const& badge, BadgeContext const& ctx);
 int unlockedCount(BadgeContext const& ctx);
 
 cocos2d::ccColor3B rarityColor(BadgeRarity rarity);
-// Rarity paints the frame, the category paints the face behind the glyph.
+// rarity paints the frame, the category paints the face behind the glyph.
 cocos2d::ccColor3B categoryColor(std::string_view categoryId);
 char const* rarityId(BadgeRarity rarity);
 
@@ -90,7 +90,7 @@ std::string metricLabel(BadgeMetric metric);
 std::string rarityLabel(BadgeRarity rarity);
 std::string categoryLabel(std::string_view categoryId);
 std::string badgeRequirement(BadgeDef const& badge);
-// Two or three characters for the tile: "35K", "#100".
+// two or three characters for the tile: "35k", "#100".
 std::string badgeShortGoal(BadgeDef const& badge);
 std::string badgeProgressText(BadgeDef const& badge, BadgeContext const& ctx);
 

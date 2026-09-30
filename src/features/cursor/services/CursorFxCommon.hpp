@@ -7,7 +7,7 @@ namespace paimon::cursorfx {
 
 constexpr float kPi = 3.14159265358979323846f;
 
-// Particle shapes; order is the texture-cache index.
+// particle shapes; order is the texture-cache index.
 enum FxTex : int {
     TexDot = 0,
     TexGlow,
@@ -27,24 +27,24 @@ enum FxTex : int {
 };
 
 cocos2d::CCTexture2D* fxTexture(int kind);
-// Release while the GL context is alive.
+// release while the gl context is alive.
 void releaseFxTextures();
-// Abandon during shutdown; leaking avoids touching destroyed GL state.
+// abandon during shutdown; leaking avoids touching destroyed gl state.
 void abandonFxTextures();
 
-// Private RNG; do not disturb GD gameplay randomness.
+// private rng; do not disturb gd gameplay randomness.
 float frand();
 float frand(float a, float b);
 float hashNoise(unsigned int seed, int i);
 
 cocos2d::ccColor3B hsv(float h, float s, float v);
 cocos2d::ccColor3B mixColor(cocos2d::ccColor3B a, cocos2d::ccColor3B b, float t);
-// Shared color-mode switch (trail + click); speedMix is cursor speed or hold progress.
+// shared color-mode switch (trail + click); speedmix is cursor speed or hold progress.
 enum class TrailColorMode : int;
 cocos2d::ccColor3B resolveFxColor(TrailColorMode mode, cocos2d::ccColor3B c1, cocos2d::ccColor3B c2,
                                   float t, float rnd, float speedMix, float time, float hueSpeed);
 
-// Oldest-slot pools: a dead slot wins, else the furthest along.
+// oldest-slot pools: a dead slot wins, else the furthest along.
 template <typename P, typename AgeFn>
 P* acquireOldest(std::vector<P>& pool, AgeFn age) {
     P* oldest = nullptr;
@@ -56,10 +56,10 @@ P* acquireOldest(std::vector<P>& pool, AgeFn age) {
     }
     return oldest;
 }
-// Premultiplied blend requires RGB multiplied by alpha.
+// premultiplied blend requires rgb multiplied by alpha.
 cocos2d::ccColor4F pma(cocos2d::ccColor3B c, float a);
 
-// Vertex-capacity batch; unbound-VBO client arrays avoid draw-hook conflicts.
+// vertex-capacity batch; unbound-vbo client arrays avoid draw-hook conflicts.
 class FxDrawBatch : public cocos2d::CCNode {
 public:
     static FxDrawBatch* create();

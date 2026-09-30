@@ -37,7 +37,7 @@ protected:
     cocos2d::CCLabelBMFont* m_statusLabel = nullptr;
     cocos2d::CCLabelBMFont* m_ytDlpLabel = nullptr;
 
-    // Visible progress bar for yt-dlp downloads. Many users didn't realize
+    // visible progress bar for yt-dlp downloads. many users didn't realize
     // the download was running because we only updated a small text label.
     cocos2d::CCLayerColor* m_progressBarBg = nullptr;
     cocos2d::CCLayerColor* m_progressBarFill = nullptr;

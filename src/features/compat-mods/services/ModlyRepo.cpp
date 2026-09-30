@@ -1,26 +1,23 @@
 #include "ModlyRepo.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/HttpClient.hpp"
+#include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/Localization.hpp"
 #include <Geode/Geode.hpp>
 #include <matjson.hpp>
 #include <algorithm>
+#include <utility>
 
 using namespace geode::prelude;
 
 namespace paimon::compat_mods {
 
 namespace {
-    // Re-entering the tab within this window reuses what is already in memory.
-    constexpr std::time_t kCatalogTTL = 600;
+    // re-entering the tab within this window reuses what is already in memory.
+    constexpr auto kCatalogTTL = std::chrono::minutes(10);
 
     std::string jsonStr(matjson::Value const& v, std::string const& def = "") {
         if (v.isString()) return v.asString().unwrapOr(def);
-        return def;
-    }
-
-    int64_t jsonInt(matjson::Value const& v, int64_t def = 0) {
-        if (v.isNumber()) return static_cast<int64_t>(v.asDouble().unwrapOr(static_cast<double>(def)));
         return def;
     }
 
@@ -30,6 +27,7 @@ namespace {
     }
 
     ModlyMod parseMod(matjson::Value const& v) {
+        if (!v.isObject()) return {};
         ModlyMod mod;
         mod.id = jsonStr(v["id"]);
         mod.name = jsonStr(v["name"]);
@@ -44,14 +42,15 @@ namespace {
         mod.state = jsonStr(v["state"]);
         mod.authorUid = jsonStr(v["authorUid"]);
         mod.authorName = jsonStr(v["authorName"]);
-        mod.downloads = static_cast<int>(jsonInt(v["downloads"]));
-        mod.date = jsonInt(v["date"]);
-        mod.previewCount = static_cast<int>(jsonInt(v["previewCount"]));
+        mod.downloads = std::max(0, paimon::json::integerOr<int>(v["downloads"]));
+        mod.date = paimon::json::integerOr<int64_t>(v["date"]);
+        mod.previewCount = std::max(0, paimon::json::integerOr<int>(v["previewCount"]));
         mod.hasLogo = jsonBool(v["hasLogo"]);
         return mod;
     }
 
     ModlyUser parseUser(matjson::Value const& v) {
+        if (!v.isObject()) return {};
         ModlyUser user;
         user.uid = jsonStr(v["uid"]);
         user.name = jsonStr(v["name"]);
@@ -60,23 +59,20 @@ namespace {
         user.verified = jsonBool(v["verified"]);
         user.hasPhoto = jsonBool(v["hasPhoto"]);
         user.hasBanner = jsonBool(v["hasBanner"]);
-        if (v["tags"].isArray()) {
-            if (auto arr = v["tags"].asArray(); arr.isOk()) {
-                for (auto const& tag : arr.unwrap()) {
-                    auto text = jsonStr(tag);
-                    if (!text.empty()) user.tags.push_back(text);
-                }
-            }
-        }
+        paimon::json::forEachInArray(v["tags"], [&](auto const& tag) {
+            auto text = jsonStr(tag);
+            if (!text.empty()) user.tags.push_back(std::move(text));
+        });
         return user;
     }
 
     ModlyComment parseComment(matjson::Value const& v) {
+        if (!v.isObject()) return {};
         ModlyComment comment;
         comment.text = jsonStr(v["text"]);
         comment.authorUid = jsonStr(v["authorUid"]);
         comment.authorName = jsonStr(v["authorName"]);
-        comment.date = jsonInt(v["date"]);
+        comment.date = paimon::json::integerOr<int64_t>(v["date"]);
         return comment;
     }
 } // namespace
@@ -112,7 +108,8 @@ void ModlyRepo::deliverCatalog(bool ok) {
 }
 
 void ModlyRepo::fetchCatalog(bool force, CatalogCallback callback) {
-    if (!force && m_hasCatalog && std::time(nullptr) - m_catalogFetchedAt < kCatalogTTL) {
+    if (!callback || paimon::isRuntimeShuttingDown()) return;
+    if (!force && m_hasCatalog && std::chrono::steady_clock::now() - m_catalogFetchedAt < kCatalogTTL) {
         callback(true);
         return;
     }
@@ -138,38 +135,35 @@ void ModlyRepo::fetchCatalog(bool force, CatalogCallback callback) {
             return;
         }
 
-        auto json = parsed.unwrap();
+        auto const& json = parsed.unwrap();
+        if (!json.isObject() || !json["mods"].isArray() ||
+            (json.contains("users") && !json["users"].isArray())) {
+            repo.deliverCatalog(false);
+            return;
+        }
         std::vector<ModlyMod> mods;
         std::unordered_map<std::string, ModlyUser> users;
 
-        if (json["mods"].isArray()) {
-            if (auto arr = json["mods"].asArray(); arr.isOk()) {
-                for (auto const& item : arr.unwrap()) {
-                    auto mod = parseMod(item);
-                    if (!mod.id.empty() && !mod.name.empty()) mods.push_back(std::move(mod));
-                }
-            }
-        }
-
-        if (json["users"].isArray()) {
-            if (auto arr = json["users"].asArray(); arr.isOk()) {
-                for (auto const& item : arr.unwrap()) {
-                    auto user = parseUser(item);
-                    if (!user.uid.empty()) users.emplace(user.uid, std::move(user));
-                }
-            }
-        }
+        paimon::json::forEachInArray(json["mods"], [&](auto const& item) {
+            auto mod = parseMod(item);
+            if (!mod.id.empty() && !mod.name.empty()) mods.push_back(std::move(mod));
+        });
+        paimon::json::forEachInArray(json["users"], [&](auto const& item) {
+            auto user = parseUser(item);
+            if (!user.uid.empty()) users.emplace(user.uid, std::move(user));
+        });
 
         repo.m_mods = std::move(mods);
         repo.m_users = std::move(users);
         repo.m_hasCatalog = true;
-        repo.m_catalogFetchedAt = std::time(nullptr);
+        repo.m_catalogFetchedAt = std::chrono::steady_clock::now();
         log::info("[Modly] catalog loaded: {} mods, {} profiles", repo.m_mods.size(), repo.m_users.size());
         repo.deliverCatalog(true);
     });
 }
 
 void ModlyRepo::fetchComments(std::string const& modId, bool force, CommentsCallback callback) {
+    if (!callback || paimon::isRuntimeShuttingDown()) return;
     if (modId.empty()) {
         callback(false, {});
         return;
@@ -183,7 +177,7 @@ void ModlyRepo::fetchComments(std::string const& modId, bool force, CommentsCall
         }
     }
 
-    HttpClient::get().get("/api/modly/comments/" + modId,
+    HttpClient::get().get("/api/modly/comments/" + HttpClient::encodeQueryParam(modId),
         [modId, callback = std::move(callback)](bool success, std::string const& response) {
         if (paimon::isRuntimeShuttingDown()) return;
 
@@ -200,27 +194,24 @@ void ModlyRepo::fetchComments(std::string const& modId, bool force, CommentsCall
         }
 
         std::vector<ModlyComment> comments;
-        auto json = parsed.unwrap();
-        if (json["comments"].isArray()) {
-            if (auto arr = json["comments"].asArray(); arr.isOk()) {
-                for (auto const& item : arr.unwrap()) {
-                    auto comment = parseComment(item);
-                    if (!comment.text.empty()) comments.push_back(std::move(comment));
-                }
-            }
+        auto const& json = parsed.unwrap();
+        if (!json.isObject() || !json["comments"].isArray() ||
+            (json.contains("users") && !json["users"].isArray())) {
+            callback(false, {});
+            return;
         }
+        paimon::json::forEachInArray(json["comments"], [&](auto const& item) {
+            auto comment = parseComment(item);
+            if (!comment.text.empty()) comments.push_back(std::move(comment));
+        });
 
         auto& repo = ModlyRepo::get();
 
-        // Commenters aren't authors; profiles ride the comments payload.
-        if (json["users"].isArray()) {
-            if (auto arr = json["users"].asArray(); arr.isOk()) {
-                for (auto const& item : arr.unwrap()) {
-                    auto user = parseUser(item);
-                    if (!user.uid.empty()) repo.m_users.insert_or_assign(user.uid, std::move(user));
-                }
-            }
-        }
+        // commenters aren't authors; profiles ride the comments payload.
+        paimon::json::forEachInArray(json["users"], [&](auto const& item) {
+            auto user = parseUser(item);
+            if (!user.uid.empty()) repo.m_users.insert_or_assign(user.uid, std::move(user));
+        });
 
         repo.m_comments[modId] = comments;
         callback(true, comments);
@@ -228,7 +219,7 @@ void ModlyRepo::fetchComments(std::string const& modId, bool force, CommentsCall
 }
 
 std::string ModlyRepo::logoUrl(ModlyMod const& mod) const {
-    return apiBase() + "/img/mod/" + mod.id + "/logo.png";
+    return apiBase() + "/img/mod/" + HttpClient::encodeQueryParam(mod.id) + "/logo.png";
 }
 
 std::string ModlyRepo::previewUrl(ModlyMod const& mod, int index) const {
@@ -236,19 +227,19 @@ std::string ModlyRepo::previewUrl(ModlyMod const& mod, int index) const {
 }
 
 std::string ModlyRepo::previewUrlBase(ModlyMod const& mod) const {
-    return apiBase() + "/img/mod/" + mod.id + "/preview/";
+    return apiBase() + "/img/mod/" + HttpClient::encodeQueryParam(mod.id) + "/preview/";
 }
 
 std::string ModlyRepo::photoUrl(ModlyUser const& user) const {
-    return apiBase() + "/img/user/" + user.uid + "/photo.png";
+    return apiBase() + "/img/user/" + HttpClient::encodeQueryParam(user.uid) + "/photo.png";
 }
 
 std::string ModlyRepo::bannerUrl(ModlyUser const& user) const {
-    return apiBase() + "/img/user/" + user.uid + "/banner.png";
+    return apiBase() + "/img/user/" + HttpClient::encodeQueryParam(user.uid) + "/banner.png";
 }
 
 std::string formatModlyDate(int64_t epoch) {
-    if (epoch <= 0) return "";
+    if (epoch <= 0 || !std::in_range<std::time_t>(epoch)) return "";
 
     static char const* monthsEs[] = {"ene", "feb", "mar", "abr", "may", "jun",
                                      "jul", "ago", "sep", "oct", "nov", "dic"};
@@ -258,14 +249,14 @@ std::string formatModlyDate(int64_t epoch) {
     std::time_t t = static_cast<std::time_t>(epoch);
     std::tm tm{};
 #ifdef _WIN32
-    localtime_s(&tm, &t);
+    if (localtime_s(&tm, &t) != 0) return "";
 #else
-    localtime_r(&t, &tm);
+    if (!localtime_r(&t, &tm)) return "";
 #endif
 
     int month = std::clamp(tm.tm_mon, 0, 11);
     bool spanish = Localization::get().getLanguage() == Localization::Language::SPANISH;
-    return fmt::format("{} {} {}", tm.tm_mday, spanish ? monthsEs[month] : monthsEn[month], tm.tm_year + 1900);
+    return fmt::format("{} {} {}", tm.tm_mday, spanish ? monthsEs[month] : monthsEn[month], static_cast<int64_t>(tm.tm_year) + 1900);
 }
 
 } // namespace paimon::compat_mods

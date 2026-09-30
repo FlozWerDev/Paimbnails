@@ -209,7 +209,7 @@ void CreatePostPopup::enterPressed(CCTextInputNode* node) {
 }
 
 void CreatePostPopup::FLAlert_Clicked(FLAlertLayer* alert, bool isAdd) {
-    // alert frees m_newTagInput on dismiss, either button closes it
+    // alert frees m_newtaginput on dismiss, either button closes it
     if (!isAdd) {
         m_newTagInput = nullptr;
         return;

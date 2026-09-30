@@ -77,7 +77,7 @@ bool reactiveBodyLeavesTheSolverPath() {
     float const drift = std::abs(
         pose.position.y - solver.frames.back().poses.front().position.y
     );
-    // The sensors stop it over the floor like the graph does, but the discrete
+    // the sensors stop it over the floor like the graph does, but the discrete
     // gravity loop and the entry-only rebound never land on the solver's curve.
     bool const stopped = pose.position.y > 10.f && pose.position.y < 90.f;
     std::cout << "reactive-path: y=" << pose.position.y << " drift=" << drift << '\n';

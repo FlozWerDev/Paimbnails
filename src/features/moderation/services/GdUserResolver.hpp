@@ -5,7 +5,7 @@
 
 namespace paimon::moderation {
 
-// Callback always runs on the main thread;
+// callback always runs on the main thread;
 // ok=false means the user wasn't found or the request failed.
 void resolveUsername(
     std::string const& username,

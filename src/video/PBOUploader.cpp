@@ -6,11 +6,11 @@
 #include <cstring>
 #include <thread>
 
-// Load GL sync functions dynamically on Windows.
+// load gl sync functions dynamically on windows.
 #if defined(GEODE_IS_WINDOWS)
 #include <windows.h>
 
-// MSVC's GL header exposes only GL 1.1 types;
+// msvc's gl header exposes only gl 1.1 types;
 typedef GLsync  (GLAPIENTRY* PFN_FENCESYNC)(GLenum, GLbitfield);
 typedef GLenum  (GLAPIENTRY* PFN_CLIENTWAITSYNC)(GLsync, GLbitfield, GLuint64);
 typedef void    (GLAPIENTRY* PFN_DELETESYNC)(GLsync);
@@ -88,7 +88,7 @@ static PFN_glFenceSync     pglFenceSync        = nullptr;
 static PFN_glClientWaitSync pglClientWaitSync  = nullptr;
 static PFN_glDeleteSync    pglDeleteSync       = nullptr;
 
-// PBO uploads are GLES3-only; function pointers alone are not a reliable gate,
+// pbo uploads are gles3-only; function pointers alone are not a reliable gate,
 // so check the actual context version.
 static bool isGLES3Context() {
     static int cached = -1;
@@ -271,12 +271,12 @@ bool PBOUploader::init(int ySize, int cbSize, int crSize) {
     while (glGetError() != GL_NO_ERROR) {}
 
 #if defined(GEODE_IS_ANDROID)
-// GLES2 PBO uploads can silently no-op and produce black textures; use direct upload.
+// gles2 pbo uploads can silently no-op and produce black textures; use direct upload.
     if (!isGLES3Context() || !pglMapBufferRange || !pglUnmapBuffer) {
         return false;
     }
 #elif defined(GEODE_IS_MACOS)
-// uploadSinglePBO maps unconditionally, so reject legacy contexts here.
+// uploadsinglepbo maps unconditionally, so reject legacy contexts here.
     if (!pglMapBufferRange || !pglUnmapBuffer) {
         geode::log::info("PBOUploader: glMapBufferRange unavailable on this macOS GL context - "
                          "using direct texture upload");
@@ -377,7 +377,7 @@ bool PBOUploader::init(int rgbaSize) {
         if (glGetError() != GL_NO_ERROR) {
             geode::log::warn("PBOUploader: glBufferData failed for RGBA PBO {}", i);
             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-// Free names created before m_initialized was set.
+// free names created before m_initialized was set.
             glDeleteBuffers(m_activeSlots, pboRGBA);
             return false;
         }
@@ -403,7 +403,7 @@ bool PBOUploader::init(int rgbaSize) {
 void PBOUploader::shutdown() {
     if (!m_initialized) return;
 
-// GL deletion requires the owner thread and a live context.
+// gl deletion requires the owner thread and a live context.
     bool isMainThread = std::this_thread::get_id() == m_ownerThread;
     bool glContextAlive = cocos2d::CCDirector::get()
         && cocos2d::CCDirector::get()->getOpenGLView();
@@ -538,7 +538,7 @@ uint8_t* PBOUploader::tryBeginRGBAUpload(int width, int height) {
         return nullptr;
     }
 
-// Keep size math 64-bit to prevent allocation overflow.
+// keep size math 64-bit to prevent allocation overflow.
     int64_t needed64 = static_cast<int64_t>(width) * static_cast<int64_t>(height) * 4;
     if (needed64 <= 0 || needed64 > static_cast<int64_t>(m_rgbaSize)) return nullptr;
 

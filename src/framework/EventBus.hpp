@@ -41,7 +41,7 @@ public:
     }
 
     void dispatch(Event const& event) const {
-        // Handlers may unsubscribe mid-dispatch.
+        // handlers may unsubscribe mid-dispatch.
         auto copy = snapshot();
         for (auto const& entry : copy) {
             entry.callback(event);
@@ -63,7 +63,7 @@ private:
     std::vector<Entry> m_entries;
 };
 
-// Typed pub/sub; every operation takes the lock.
+// typed pub/sub; every operation takes the lock.
 class EventBus {
 public:
     static EventBus& get() {
@@ -95,7 +95,7 @@ public:
     void beginShutdown() {
         std::lock_guard lock(m_mutex);
         m_shuttingDown.store(true, std::memory_order_release);
-        // WeakRef<CCNode> captured in lambdas die in atexit; clear them here instead.
+        // weakref<ccnode> captured in lambdas die in atexit; clear them here instead.
         m_subscribers.clear();
         m_handleToType.clear();
     }

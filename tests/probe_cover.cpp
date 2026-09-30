@@ -1,4 +1,4 @@
-// Probe: lista primitivas que cubren cada celda F, de mayor a menor capa.
+// probe: lista primitivas que cubren cada celda f, de mayor a menor capa.
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
@@ -57,7 +57,7 @@ int main() {
         auto const preview = renderPlanFrame(plan, 0, 1);
         auto const& cells = plan.frames.front().cells;
         auto const& objs = plan.staticObjects;
-        // Ascendente: la visible es la ultima que cubre.
+        // ascendente: la visible es la ultima que cubre.
         std::vector<std::size_t> order(objs.size());
         for (std::size_t i = 0; i < objs.size(); ++i) order[i] = i;
         std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {

@@ -19,7 +19,7 @@ IconColorService& IconColorService::get() {
 
 float IconColorService::globalTime() {
     if (auto* d = CCDirector::sharedDirector()) {
-        // Per-call accumulator backed by a static so value monotonically increases.
+        // per-call accumulator backed by a static so value monotonically increases.
         static float acc = 0.0f;
         static float lastTotalFrames = -1.0f;
         const float frames = static_cast<float>(d->getTotalFrames());
@@ -111,7 +111,7 @@ IconColorTriple IconColorService::resolveRandom(IconDescriptor const& desc, Paim
 }
 
 IconColorTriple IconColorService::resolveRainbow(IconDescriptor const& desc, PaimonIconConfig const& cfg, float t) const {
-    // Phase offset per (unlockType, iconID) so rows sweep instead of flashing together.
+    // phase offset per (unlocktype, iconid) so rows sweep instead of flashing together.
     const float baseHue = std::fmod(t * cfg.rainbowSpeed * 60.0f, 360.0f);
     const float phase   = static_cast<float>((desc.iconID * 17 + desc.unlockTypeRaw * 53) % 360);
     const float spread  = cfg.rainbowSpread;
@@ -126,7 +126,7 @@ IconColorTriple IconColorService::resolveRainbow(IconDescriptor const& desc, Pai
 
 IconColorTriple IconColorService::resolveGradient(IconDescriptor const& desc, PaimonIconConfig const& cfg) const {
     const float total = std::max(1, desc.totalCount);
-    // Guard total==1: displayIndex/0 is NaN, and clamp(NaN) reaches float->int cast (UB).
+    // guard total==1: displayindex/0 is nan, and clamp(nan) reaches float->int cast (ub).
     const float denom = total - 1.0f;
     const float progress = denom > 0.0f
         ? std::clamp(static_cast<float>(desc.displayIndex) / denom, 0.0f, 1.0f)

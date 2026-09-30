@@ -980,7 +980,7 @@ void Localization::initTranslations() {
             {"garage-hub.gradients", "Degradados"},
             {"garage-hub.swap-2p", "Kit del P2"},
 
-            // Profile levels
+            // profile levels
             {"progression.title", "Progresion"},
             {"progression.tab.overview", "Resumen"},
             {"progression.tab.sources", "Fuentes"},
@@ -2261,7 +2261,7 @@ void Localization::initTranslations() {
             {"garage-hub.gradients", "Gradients"},
             {"garage-hub.swap-2p", "Swap 2P Kit"},
 
-            // Profile levels
+            // profile levels
             {"progression.title", "Progression"},
             {"progression.tab.overview", "Overview"},
             {"progression.tab.sources", "Sources"},

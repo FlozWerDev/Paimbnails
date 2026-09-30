@@ -48,7 +48,7 @@ private:
     ~EmoteCache() {
         shutdownDecodeWorker();
 
-        // Detach textures without release() to avoid crashing when CCPoolManager is already dead.
+        // detach textures without release() to avoid crashing when ccpoolmanager is already dead.
         std::lock_guard lock(m_ramMutex);
         for (auto& [_, entry] : m_ramCache) {
             if (entry.texture) {
@@ -103,7 +103,7 @@ private:
         TextureCallback callback;
     };
 
-    void initDecodeWorker();
+    bool initDecodeWorker();
     void shutdownDecodeWorker();
     void enqueueDecode(DecodeTask task);
     static void decodeWorkerLoop(EmoteCache* self);
@@ -114,6 +114,7 @@ private:
                                           TextureCallback callback);
 
     std::deque<DecodeTask> m_decodeQueue;
+    std::mutex m_decodeLifecycleMutex;
     std::mutex m_decodeMutex;
     std::condition_variable m_decodeCV;
     std::vector<std::thread> m_decodeWorkers;

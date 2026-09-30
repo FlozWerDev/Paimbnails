@@ -11,7 +11,7 @@ namespace paimon::autopreview::config {
 inline bool enabled() {
     return paimon::modules::isEnabled("paimbnails.autopreview.browser");
 }
-// Heavy path: downloads + instantiates the level offscreen. Forced OFF on mobile.
+// heavy path: downloads + instantiates the level offscreen. forced off on mobile.
 inline bool browserGenEnabled() {
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     return false;

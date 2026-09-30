@@ -9,7 +9,7 @@ using namespace geode::prelude;
 
 class $modify(PaimonMenuLoopFMODHook, FMODAudioEngine) {
     static void onModify(auto& self) {
-        // stopAllMusic is non-virtual (hooked by address); a GD offset change would silently leave it unhooked.
+        // stopallmusic is non-virtual (hooked by address); a gd offset change would silently leave it unhooked.
         if (auto h = self.getHook("FMODAudioEngine::stopAllMusic"); !h) {
             log::warn("[MenuLoop] failed to install hook on FMODAudioEngine::stopAllMusic - "
                       "seek pause-tracking will be inactive ({})", h.unwrapErr());
@@ -22,7 +22,7 @@ class $modify(PaimonMenuLoopFMODHook, FMODAudioEngine) {
 
     $override
     void stopAllMusic(bool p0) {
-        // Guard against atexit: the singleton may be shutting down.
+        // guard against atexit: the singleton may be shutting down.
         if (!paimon::isRuntimeShuttingDown()) {
             if (!GJBaseGameLayer::get()) {
                 paimon::menuloop::MenuLoopManager::get().setPauseSongPositionTracking(true);
@@ -35,7 +35,7 @@ class $modify(PaimonMenuLoopFMODHook, FMODAudioEngine) {
     void update(float dt) {
         FMODAudioEngine::update(dt);
 
-        // Early-out during shutdown: touching channel/singleton state here could be UAF.
+        // early-out during shutdown: touching channel/singleton state here could be uaf.
         if (paimon::isRuntimeShuttingDown()) return;
 
         auto& sm = paimon::menuloop::MenuLoopManager::get();

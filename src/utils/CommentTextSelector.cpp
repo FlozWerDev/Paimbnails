@@ -168,7 +168,7 @@ bool CommentTextSelector::init(
     this->setPosition({0.f, 0.f});
     this->setID("paimon-text-selector"_spr);
 
-    // must NOT swallow touches (see registerWithTouchDispatcher).
+    // must not swallow touches (see registerwithtouchdispatcher).
     this->setTouchEnabled(true);
     this->setTouchMode(kCCTouchesOneByOne);
     this->setTouchPriority(-90);
@@ -226,7 +226,7 @@ void CommentTextSelector::refresh(
 }
 
 void CommentTextSelector::registerWithTouchDispatcher() {
-    // Keep propagation for clickable mentions; movement is locked while selecting.
+    // keep propagation for clickable mentions; movement is locked while selecting.
     CCDirector::get()->getTouchDispatcher()
         ->addTargetedDelegate(this, getTouchPriority(), false);
 }

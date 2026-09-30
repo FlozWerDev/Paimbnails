@@ -288,7 +288,7 @@ void MenuMusicEffects::saveConfig(MusicEffectsConfig config) {
     mod->setSavedValue(kKeySpatialRoom, config.spatialRoom);
     mod->setSavedValue(kKeySpatialMotionSpeed, config.spatialMotionSpeed);
 
-    // paimbnails.spatialaudio.menu reads this key, and ModuleRegistry caches
+    // paimbnails.spatialaudio.menu reads this key, and moduleregistry caches
     // module state until the settings version moves.
     paimon::settings::internal::invalidateSettingsCache();
 

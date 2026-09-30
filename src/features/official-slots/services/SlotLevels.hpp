@@ -1,6 +1,6 @@
 #pragma once
 
-// Stand-ins are local, unrated (0 stars/coins) and dontSave: never handed
+// stand-ins are local, unrated (0 stars/coins) and dontsave: never handed
 // to currency code, so misses grant nothing.
 
 #include "../OfficialSlots.hpp"
@@ -14,13 +14,13 @@
 
 namespace paimon::officialslots {
 
-// One LevelDownloadDelegate at a time: a fetch briefly borrows
-// GameLevelManager::m_levelDownloadDelegate and restores it on completion.
+// one leveldownloaddelegate at a time: a fetch briefly borrows
+// gamelevelmanager::m_leveldownloaddelegate and restores it on completion.
 class SlotDownloads : public LevelDownloadDelegate {
 public:
     static SlotDownloads& get();
 
-    // Null level on failure (network error, deleted level, ...).
+    // null level on failure (network error, deleted level, ...).
     using FetchCallback = std::function<void(GJGameLevel*)>;
     void fetch(int levelId, FetchCallback callback);
 
@@ -42,7 +42,7 @@ private:
     LevelDownloadDelegate* m_previous = nullptr;
 };
 
-// Cache keyed by slot id; rebuilt when the stored slot changes.
+// cache keyed by slot id; rebuilt when the stored slot changes.
 class SlotLevelCache {
 public:
     static SlotLevelCache& get();
@@ -63,7 +63,7 @@ private:
     int m_nextFakeId = 0;
 };
 
-// Undownloaded level-id slots show the game's spinner; GMD slots without
+// undownloaded level-id slots show the game's spinner; gmd slots without
 // level data toast and stay cosmetic-only.
 void openSlotLevel(Slot const& slot);
 

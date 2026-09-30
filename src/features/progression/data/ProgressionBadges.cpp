@@ -17,7 +17,7 @@ constexpr char const* kDiamond  = "GJ_diamondsIcon_001.png";
 constexpr char const* kCoin     = "GJ_coinsIcon_001.png";
 constexpr char const* kUserCoin = "GJ_coinsIcon2_001.png";
 constexpr char const* kDemon    = "GJ_demonIcon_001.png";
-// Caption baked into diffIcon faces turns to mush at tile size; faces alone differ.
+// caption baked into difficon faces turns to mush at tile size; faces alone differ.
 constexpr char const* kEasyD    = "diffIcon_07_btn_001.png";
 constexpr char const* kMedD     = "diffIcon_08_btn_001.png";
 constexpr char const* kHardD    = "diffIcon_06_btn_001.png";
@@ -268,7 +268,7 @@ float badgeProgress(BadgeDef const& badge, BadgeContext const& ctx) {
 
     int64_t const value = metricValue(ctx, badge.metric);
     if (metricIsInverted(badge.metric)) {
-        // Unranked: nothing to interpolate from.
+        // unranked: nothing to interpolate from.
         if (value <= 0) return 0.f;
         return std::clamp(static_cast<float>(badge.threshold) / static_cast<float>(value), 0.f, 1.f);
     }
@@ -358,7 +358,7 @@ std::string badgeRequirement(BadgeDef const& badge) {
 }
 
 std::string badgeShortGoal(BadgeDef const& badge) {
-    // Rank counts down, so it needs the hash to not read as a total.
+    // rank counts down, so it needs the hash to not read as a total.
     if (badge.metric == BadgeMetric::GlobalRank) return "#" + shortCount(badge.threshold);
     return shortCount(badge.threshold);
 }

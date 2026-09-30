@@ -53,12 +53,12 @@ public:
     bool isFailed(int levelID, bool isGif = false) const;
     bool isNotFound(int levelID, bool isGif = false) const;
 
-    // Synchronous RAM-only fast path; no disk or callback queue on miss.
+    // synchronous ram-only fast path; no disk or callback queue on miss.
     cocos2d::CCTexture2D* tryGetCachedTexture(int levelID, bool isGif = false);
 
     void clearCache();
     void clearFailedCache();
-    // Release RAM textures and pending old-context callbacks before GL reload;
+    // release ram textures and pending old-context callbacks before gl reload;
     // disk and worker pools remain intact.
     void onGLContextReload();
     void invalidateLevel(int levelID, bool isGif = false);
@@ -70,7 +70,7 @@ public:
     void removeInvalidationListener(int listenerId);
 
     void setMaxConcurrentTasks(int max);
-    // Do not call from ThumbnailLoader's constructor (reentry into get()).
+    // do not call from thumbnailloader's constructor (reentry into get()).
     void applyConcurrentDownloadsSetting();
 
     int getActiveTaskCount() const { return m_activeTaskCount; }
@@ -79,7 +79,7 @@ public:
     static bool isTextureSane(cocos2d::CCTexture2D* tex);
     std::filesystem::path getCachePath(int levelID, bool isGif = false);
 
-    // Strip cache-busting params for a stable key.
+    // strip cache-busting params for a stable key.
     static std::string normalizeUrlKey(std::string const& url);
     
     void updateSessionCache(int levelID, cocos2d::CCTexture2D* texture);
@@ -114,7 +114,7 @@ private:
     };
 
     std::unordered_map<int, std::shared_ptr<Task>> m_tasks;
-    // Fallback-handed tasks: out of m_tasks and off-queue but unresolved, so new requests wait instead of re-downloading.
+    // fallback-handed tasks: out of m_tasks and off-queue but unresolved, so new requests wait instead of re-downloading.
     std::unordered_map<int, std::shared_ptr<Task>> m_fallbackTasks;
     std::unordered_map<std::string, std::shared_ptr<Task>> m_urlTasks;
     std::multimap<int, int, std::greater<int>> m_priorityQueue;
@@ -139,10 +139,10 @@ private:
     std::unordered_set<int> m_revisionCheckedThisSession;
     void triggerBackgroundRevisionCheck(int levelID);
 
-    // TTL for manifest requests, including levels absent from the manifest.
+    // ttl for manifest requests, including levels absent from the manifest.
     std::unordered_map<int, std::chrono::steady_clock::time_point> m_manifestRequestedAt;
 
-    // Global cooldown after a burst of failures.
+    // global cooldown after a burst of failures.
     std::atomic<int> m_recentFailureCount{0};
     std::chrono::steady_clock::time_point m_failureWindowStart{};
     std::chrono::steady_clock::time_point m_globalCooldownUntil{};
@@ -167,9 +167,9 @@ private:
     std::vector<PendingCallback> m_pendingCallbacks;
     std::mutex m_pendingMutex;
     std::atomic<bool> m_drainScheduled{false};
-    // Timestamp used to re-arm a drain stalled over 100 ms.
+    // timestamp used to re-arm a drain stalled over 100 ms.
     std::atomic<int64_t> m_drainScheduledAtUs{0};
-    // Per-drain cap; the frame budget remains the real limiter.
+    // per-drain cap; the frame budget remains the real limiter.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     static constexpr int MAX_CALLBACKS_PER_FRAME = 8;
 #else
@@ -179,7 +179,7 @@ private:
     void drainPendingCallbacks();
     void scheduleDrain();
 
-    // Pending upload uses CCImage or raw RGBA pixels.
+    // pending upload uses ccimage or raw rgba pixels.
     struct PendingUpload {
         std::shared_ptr<Task> task;
         cocos2d::CCImage* image = nullptr;
@@ -201,7 +201,7 @@ private:
     static constexpr int MAX_UPLOADS_PER_FRAME = 8;
     static constexpr int64_t UPLOAD_FRAME_BUDGET_US = 2500;
 #endif
-    // Maximum dimensions for RAM-cached thumbnails.
+    // maximum dimensions for ram-cached thumbnails.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     static constexpr int RAM_CACHE_SMALL_MAX_DIM = 512;
     static constexpr int RAM_CACHE_HIGH_MAX_DIM = 1024;
@@ -221,7 +221,7 @@ private:
     void processQueue();
     void startTask(std::shared_ptr<Task> task);
     void finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2D* texture, bool success, int origW = 0, int origH = 0);
-    // Branch bodies; caller holds m_queueMutex. Returns true when the level fallback starts.
+    // branch bodies; caller holds m_queuemutex. returns true when the level fallback starts.
     bool finishUrlTaskLocked(std::shared_ptr<Task> const& task, cocos2d::CCTexture2D* texture, bool success,
                              bool shuttingDown, bool shouldNotify, std::vector<LoadCallback>& callbacks);
     bool finishLevelTaskLocked(std::shared_ptr<Task> const& task, cocos2d::CCTexture2D* texture, bool success,
@@ -242,7 +242,7 @@ private:
     std::vector<BatchPending> m_batchPendingDownloads;
     std::mutex m_batchPendingMutex;
     std::atomic<bool> m_batchFlushScheduled{false};
-    // Worker allows 50 subrequests per invocation.
+    // worker allows 50 subrequests per invocation.
     static constexpr int BATCH_FLUSH_THRESHOLD = 15;
     static constexpr int BATCH_FLUSH_DELAY_MS = 50;
     void scheduleBatchFlush();
@@ -255,8 +255,8 @@ private:
     void waitBackgroundWorkers();
 
     struct DecodeResult {
-        std::vector<uint8_t> pixels;        // Preferred raw RGBA.
-        cocos2d::CCImage* image = nullptr;  // Fallback; caller owns it.
+        std::vector<uint8_t> pixels;        // preferred raw rgba.
+        cocos2d::CCImage* image = nullptr;  // fallback; caller owns it.
         int width = 0;
         int height = 0;
         int originalWidth = 0;

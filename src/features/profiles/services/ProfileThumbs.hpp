@@ -124,11 +124,14 @@ private:
     std::unordered_map<int, std::list<int>::iterator> m_lruMap;
     mutable std::mutex m_cacheMutex;
     std::unordered_map<int, std::chrono::steady_clock::time_point> m_visibilityMap;
-    std::unordered_set<int> m_noProfileCache;
+    std::unordered_map<int, std::chrono::steady_clock::time_point> m_noProfileCache;
     std::unordered_map<int, std::string> m_usernameMap;
     static constexpr auto CACHE_DURATION = std::chrono::hours(24 * 14);
     static constexpr size_t MAX_PROFILE_CACHE_SIZE = 100;
     static constexpr size_t MAX_NO_PROFILE_CACHE_SIZE = 1024;
+    static constexpr auto NO_PROFILE_CACHE_DURATION = std::chrono::minutes(5);
+    static constexpr auto VISIBILITY_DURATION = std::chrono::seconds(30);
+    static constexpr size_t MAX_VISIBILITY_ENTRIES = 1024;
     int m_insertsSinceCleanup = 0;
     static constexpr int CLEANUP_INTERVAL = 20;
 

@@ -17,7 +17,7 @@ protected:
     geode::ScrollLayer* m_scroll = nullptr;
 };
 
-// Routes a granular setting to its dedicated popup, else the settings panel.
+// routes a granular setting to its dedicated popup, else the settings panel.
 void openFeatureConfigFor(std::string const& englishGranularName,
                           int fallbackCategoryIndex);
 

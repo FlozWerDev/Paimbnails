@@ -46,7 +46,7 @@ static bool jsonBool(matjson::Value const& v, bool def = false) {
     return def;
 }
 
-// Extracts HTTP status code from HttpClient error strings like "HTTP 429: ..."
+// extracts http status code from httpclient error strings like "http 429: ..."
 static int extractHttpStatus(std::string const& resp) {
     if (resp.rfind("HTTP ", 0) == 0) {
         size_t space = resp.find(' ', 5);
@@ -307,9 +307,9 @@ void ForumApi::listPosts(ListFilter const& filter, ListCallback cb) {
             }
             if (!filter.query.empty()) {
                 std::string q = filter.query;
-                for (auto& c : q) c = static_cast<char>(std::tolower(c));
+                for (auto& c : q) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                 std::string title = p.title;
-                for (auto& c : title) c = static_cast<char>(std::tolower(c));
+                for (auto& c : title) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                 if (title.find(q) == std::string::npos) continue;
             }
             out.push_back(p);

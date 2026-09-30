@@ -11,6 +11,7 @@
 #include <fmt/format.h>
 #include <array>
 #include <chrono>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -52,8 +53,8 @@ static bool fileExists(const std::filesystem::path& p) {
     return std::filesystem::is_regular_file(p, ec);
 }
 
-// Runs on a worker, streams merged stdout/stderr, and returns -1 on launch
-// failure. Use argv for user data; shell mode is reserved for fixed probes.
+// runs on a worker, streams merged stdout/stderr, and returns -1 on launch
+// failure. use argv for user data; shell mode is reserved for fixed probes.
 #ifdef GEODE_IS_WINDOWS
 static std::string winQuoteArg(const std::string& arg) {
     if (!arg.empty() && arg.find_first_of(" \t\n\v\"") == std::string::npos) {
@@ -112,7 +113,7 @@ static int runWindowsProcess(const std::wstring& wideCmdLine,
 
     PROCESS_INFORMATION pi{};
 
-    // CreateProcessW may mutate the command line: needs a mutable buffer.
+    // createprocessw may mutate the command line: needs a mutable buffer.
     std::wstring mutableCmd = wideCmdLine;
     BOOL ok = CreateProcessW(
         nullptr,
@@ -220,11 +221,16 @@ static int runAndCapture(const std::string& cmdLine,
     return runWindowsProcess(wide, onLine, 0);
 }
 #else
-// POSIX: fork+execvp with argv (no shell), so no command injection.
+// posix: fork+execvp with argv (no shell), so no command injection.
 static int runAndCaptureArgv(const std::vector<std::string>& argv,
                              const std::function<void(const std::string&)>& onLine,
                              int timeoutMs = 0) {
     if (argv.empty()) return -1;
+
+    std::vector<char*> cargv;
+    cargv.reserve(argv.size() + 1);
+    for (auto const& argument : argv) cargv.push_back(const_cast<char*>(argument.c_str()));
+    cargv.push_back(nullptr);
 
     int pipefd[2];
     if (pipe(pipefd) != 0) return -1;
@@ -242,11 +248,6 @@ static int runAndCaptureArgv(const std::vector<std::string>& argv,
         dup2(pipefd[1], STDERR_FILENO);
         close(pipefd[1]);
 
-        std::vector<char*> cargv;
-        cargv.reserve(argv.size() + 1);
-        for (auto& s : argv) cargv.push_back(const_cast<char*>(s.c_str()));
-        cargv.push_back(nullptr);
-
         execvp(cargv[0], cargv.data());
         _exit(127);
     }
@@ -257,6 +258,8 @@ static int runAndCaptureArgv(const std::vector<std::string>& argv,
     std::string buffer;
     char chunk[1024];
     bool timedOut = false;
+    bool childReaped = false;
+    int status = 0;
 
     int flags = fcntl(pipefd[0], F_GETFL, 0);
     if (flags >= 0) fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
@@ -278,9 +281,9 @@ static int runAndCaptureArgv(const std::vector<std::string>& argv,
         } else if (n == 0) {
             break;
         } else {
-            int status = 0;
             pid_t w = waitpid(pid, &status, WNOHANG);
             if (w == pid) {
+                childReaped = true;
                 while ((n = read(pipefd[0], chunk, sizeof(chunk))) > 0) {
                     buffer.append(chunk, n);
                 }
@@ -311,8 +314,13 @@ static int runAndCaptureArgv(const std::vector<std::string>& argv,
     if (!buffer.empty()) onLine(buffer);
     close(pipefd[0]);
 
-    int status = 0;
-    waitpid(pid, &status, 0);
+    if (!childReaped) {
+        pid_t waited;
+        do {
+            waited = waitpid(pid, &status, 0);
+        } while (waited < 0 && errno == EINTR);
+        if (waited != pid) return -1;
+    }
     if (timedOut) return -2;
     if (WIFEXITED(status)) return WEXITSTATUS(status);
     return -1;
@@ -320,7 +328,7 @@ static int runAndCaptureArgv(const std::vector<std::string>& argv,
 
 static int runAndCapture(const std::string& cmdLine,
                          const std::function<void(const std::string&)>& onLine) {
-    // Shell path for fixed probes only; downloads must use runAndCaptureArgv().
+    // shell path for fixed probes only; downloads must use runandcaptureargv().
     std::string full = cmdLine + " 2>&1";
     FILE* fp = popen(full.c_str(), "r");
     if (!fp) return -1;
@@ -457,7 +465,7 @@ void YtDlpDownloader::download(
         return;
     }
 
-    // Audio conversion requires the bundled ffmpeg path.
+    // audio conversion requires the bundled ffmpeg path.
     auto& ffmpeg = FfmpegBootstrap::get();
     if (!ffmpeg.exists()) {
         Loader::get()->queueInMainThread([onComplete, trackId]() {
@@ -477,7 +485,7 @@ void YtDlpDownloader::download(
 
     std::string formatChoice = Mod::get()->getSavedValue<std::string>(
         "menuMusicDownloadFormat", "mp3");
-    // This mod exposes only the formats supported by its FMOD path.
+    // this mod exposes only the formats supported by its fmod path.
     if (formatChoice != "mp3" && formatChoice != "m4a") {
         formatChoice = "mp3";
     }
@@ -502,7 +510,7 @@ void YtDlpDownloader::download(
     std::string templatePath =
         geode::utils::string::pathToString(tracksDir / (trackId + ".%(ext)s"));
 
-    // Keep user-controlled values in argv; neither platform path invokes a shell.
+    // keep user-controlled values in argv; neither platform path invokes a shell.
     std::vector<std::string> argv = {
         binary,
         "--no-playlist",
@@ -544,7 +552,7 @@ void YtDlpDownloader::download(
                    line.compare(0, prefix.size(), prefix) == 0;
         };
 
-        // Prevent a hung yt-dlp process from blocking shutdown.
+        // prevent a hung yt-dlp process from blocking shutdown.
         constexpr int kDownloadTimeoutMs = 5 * 60 * 1000;
         int exitCode = runAndCaptureArgv(argv, [&](const std::string& line) {
             log::debug("[yt-dlp] {}", line);
@@ -602,7 +610,7 @@ void YtDlpDownloader::download(
                 }
                 if (!e.is_regular_file()) continue;
                 const auto& entryPath = e.path();
-                // pathToString preserves non-ASCII names on Windows.
+                // pathtostring preserves non-ascii names on windows.
                 auto stem = geode::utils::string::pathToString(entryPath.stem());
                 bool stemMatches =
                     (stem == trackId) ||
@@ -708,7 +716,7 @@ void YtDlpDownloader::download(
             return out;
         };
 
-        // Route through UTF-16 on Windows so non-ASCII names survive.
+        // route through utf-16 on windows so non-ascii names survive.
         auto utf8ToPath = [](const std::string& s) -> std::filesystem::path {
 #ifdef GEODE_IS_WINDOWS
             return std::filesystem::path(geode::utils::string::utf8ToWide(s));
@@ -795,7 +803,7 @@ void YtDlpDownloader::download(
                 geode::utils::string::pathToString(foundIntermediate));
         }
 
-        // A valid output file counts as success despite nonzero warning exits.
+        // a valid output file counts as success despite nonzero warning exits.
         std::error_code finalEc;
         const bool audioExists = !foundAudio.empty() &&
             std::filesystem::exists(foundAudio, finalEc);

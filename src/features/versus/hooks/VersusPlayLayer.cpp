@@ -70,7 +70,7 @@ class $modify(PaimonVersusPlayLayer, PlayLayer) {
     }
 
     // keys stay rebindable via settings; the listener holds a raw pointer,
-    // since a Ref would leak the level per duel.
+    // since a ref would leak the level per duel.
     void bindCardKeys() {
         for (int slot = 0; slot < 2; slot++) {
             auto const key = slot == 0 ? "versus-card-1-keybind" : "versus-card-2-keybind";

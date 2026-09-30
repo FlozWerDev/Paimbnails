@@ -3,7 +3,7 @@
 #include <string_view>
 #include <unordered_map>
 
-// Spanish display names; English stays the fallback except Requests modules.
+// spanish display names; english stays the fallback except requests modules.
 
 namespace paimon::modules {
 

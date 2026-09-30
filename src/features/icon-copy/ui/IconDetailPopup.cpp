@@ -92,7 +92,7 @@ CCNode* makeStatusPill(bool owned) {
     return pill;
 }
 
-// Smaller sibling of the status pill, for a state that is a footnote to it.
+// smaller sibling of the status pill, for a state that is a footnote to it.
 CCNode* makeTinyPill(char const* text, ccColor3B color) {
     auto* pill = CCNode::create();
     auto* label = CCLabelBMFont::create(text, "chatFont.fnt");
@@ -127,8 +127,8 @@ ccColor3B fillColor(bool owned) {
     return owned ? ccColor3B{83, 214, 121} : ccColor3B{255, 181, 61};
 }
 
-// One copy of GD's capsule, cropped from the left to `drawn` points the way
-// PlayLayer grows m_progressFill, then squashed into a track box.
+// one copy of gd's capsule, cropped from the left to `drawn` points the way
+// playlayer grows m_progressfill, then squashed into a track box.
 CCSprite* makeCapsule(CCSize const& tex, float drawn, float boxWidth, float boxHeight) {
     auto* spr = paimon::SpriteHelper::safeCreate(kBarSprite);
     if (!spr) return nullptr;
@@ -141,7 +141,7 @@ CCSprite* makeCapsule(CCSize const& tex, float drawn, float boxWidth, float boxH
     return spr;
 }
 
-// Flat rounded rects, for texture packs that drop the capsule out from under us.
+// flat rounded rects, for texture packs that drop the capsule out from under us.
 CCNode* makeFlatProgressBar(float width, int value, bool owned) {
     auto* bar = CCNode::create();
     bar->setContentSize({width, kBarHeight});
@@ -163,7 +163,7 @@ CCNode* makeFlatProgressBar(float width, int value, bool owned) {
     return bar;
 }
 
-// Vanilla progress bar recipe (groove + tinted fill), plus rim and gloss so it sits on a card.
+// vanilla progress bar recipe (groove + tinted fill), plus rim and gloss so it sits on a card.
 CCNode* makeProgressBar(float width, int progress, bool owned) {
     int const value = std::clamp(progress, 0, 100);
 
@@ -196,7 +196,7 @@ CCNode* makeProgressBar(float width, int progress, bool owned) {
     float const trackW = width - kBarInset * 2.f;
     float const trackH = kBarHeight - kBarInset * 2.f;
 
-    // Quarter marks stay under the fill, so a finished bar goes solid.
+    // quarter marks stay under the fill, so a finished bar goes solid.
     for (int step = 1; step < 4; ++step) {
         if (auto* tick = paimon::SpriteHelper::createColorPanel(
                 1.f, trackH, {255, 255, 255}, 38, 0.f)) {
@@ -207,7 +207,7 @@ CCNode* makeProgressBar(float width, int progress, bool owned) {
 
     if (value <= 0) return bar;
 
-    // Never thinner than the cap is round, so 1% still reads as a nub.
+    // never thinner than the cap is round, so 1% still reads as a nub.
     float const filled = std::max(trackW * static_cast<float>(value) / 100.f, trackH);
     if (auto* fill = makeCapsule(tex, filled, trackW, trackH)) {
         fill->setColor(fillColor(owned));
@@ -215,7 +215,7 @@ CCNode* makeProgressBar(float width, int progress, bool owned) {
         bar->addChild(fill, 3);
     }
 
-    // Highlight along the top of the fill, the shine GD puts on its buttons.
+    // highlight along the top of the fill, the shine gd puts on its buttons.
     if (auto* gloss = makeCapsule(tex, filled - 3.f, trackW, trackH * 0.42f)) {
         gloss->setOpacity(60);
         gloss->setPosition({kBarInset + 1.5f, midY + trackH * 0.22f});
@@ -238,7 +238,7 @@ std::string statusNote(UnlockInfo const& info) {
     return "This unlock method does not expose tracked progress.";
 }
 
-// The line under the bar. The shop fills it in with what you are carrying; the
+// the line under the bar. the shop fills it in with what you are carrying; the
 // rest of the time it only speaks up when there is no bar to explain.
 std::string progressHint(UnlockInfo const& info) {
     if (!info.hint.empty()) return info.hint;
@@ -298,7 +298,7 @@ bool IconDetailPopup::init(IconSet const& set, IconType type) {
     mode->setPosition({kPreviewX + kPreviewWidth / 2.f, 58.f});
     m_mainLayer->addChild(mode, 1);
 
-    // Where this one sits in the gamemode's catalogue, which says more than the
+    // where this one sits in the gamemode's catalogue, which says more than the
     // bare id: #15 of 169 tells you how much of the tab is still ahead of it.
     auto const place = info.total > 0
         ? fmt::format("ICON {} OF {}", iconID, info.total)
@@ -325,7 +325,7 @@ bool IconDetailPopup::init(IconSet const& set, IconType type) {
     state->setPosition({stateX, summaryY + 8.f});
     m_mainLayer->addChild(state, 2);
 
-    // Owning an icon and wearing it are different answers, so they get their
+    // owning an icon and wearing it are different answers, so they get their
     // own badges instead of one pill trying to say both.
     float sourceEnd = stateX;
     if (info.equipped) {
@@ -394,7 +394,7 @@ bool IconDetailPopup::init(IconSet const& set, IconType type) {
     progressLabel->setPosition({kInfoX + kInfoWidth - 10.f, progressY + 39.f});
     m_mainLayer->addChild(progressLabel, 1);
 
-    // The bar drops down a row to make space when there is a line to sit under
+    // the bar drops down a row to make space when there is a line to sit under
     // it, and centres itself in the card when there is not.
     auto const hint = progressHint(info);
     if (info.progress >= 0) {

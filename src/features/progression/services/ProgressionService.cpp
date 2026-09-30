@@ -93,7 +93,7 @@ void ProgressionService::rememberOwnScore(GJUserScore* score) {
         changed = true;
     }
 
-    // Empty field: server skipped it, keep the last good one.
+    // empty field: server skipped it, keep the last good one.
     auto keep = [&](char const* key, std::string const& value) {
         if (value.empty()) return;
         if (mod->getSavedValue<std::string>(key, "") == value) return;
@@ -104,7 +104,7 @@ void ProgressionService::rememberOwnScore(GJUserScore* score) {
     keep(kKeyStarsInfo, std::string(score->m_starsInfo));
     keep(kKeyPlatInfo, std::string(score->m_platformerInfo));
 
-    // A fresh breakdown re-prices old demons; commit so the next gain skips it.
+    // a fresh breakdown re-prices old demons; commit so the next gain skips it.
     if (changed && hasSnapshot()) commitSnapshot();
 }
 

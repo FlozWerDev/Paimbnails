@@ -10,7 +10,7 @@ namespace paimon::info {
 
 class JumpToPagePopup : public geode::Popup {
 public:
-    // `currentPage` and `pageCount` are 1 based. `pageCount` may be 0 when the
+    // `currentpage` and `pagecount` are 1 based. `pagecount` may be 0 when the
     // server never reported a total, in which case the scrubber is hidden.
     static JumpToPagePopup* create(int currentPage, int pageCount,
                                    std::function<void(int)> onJump);

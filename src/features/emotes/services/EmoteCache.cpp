@@ -7,6 +7,7 @@
 #include <Geode/Geode.hpp>
 #include "../../../utils/stb_image.h"
 #include <fstream>
+#include <exception>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -56,18 +57,18 @@ DecodedPixels decodeStaticPixels(std::vector<uint8_t> const& data) {
         w <= 0 || h <= 0 || w > 4096 || h > 4096) {
         return out;
     }
-    unsigned char* px = stbi_load_from_memory(data.data(), static_cast<int>(data.size()), &w, &h, &ch, 4);
+    std::unique_ptr<unsigned char, decltype(&stbi_image_free)> px(
+        stbi_load_from_memory(data.data(), static_cast<int>(data.size()), &w, &h, &ch, 4),
+        &stbi_image_free);
     if (!px || w <= 0 || h <= 0 || w > 4096 || h > 4096) {
-        if (px) stbi_image_free(px);
         return out;
     }
 
     size_t bytes = static_cast<size_t>(w) * static_cast<size_t>(h) * 4;
-    out.rgba.assign(px, px + bytes);
+    out.rgba.assign(px.get(), px.get() + bytes);
     out.width = w;
     out.height = h;
     out.ok = true;
-    stbi_image_free(px);
     return out;
 }
 
@@ -185,7 +186,7 @@ void EmoteCache::touchLru(std::string const& name) {
 }
 
 void EmoteCache::evictRamIfNeeded() {
-    // Must be called with m_ramMutex held
+    // must be called with m_rammutex held
     while ((m_ramCache.size() > MAX_RAM_ENTRIES || m_currentRamBytes > MAX_RAM_BYTES)
            && !m_lruOrder.empty()) {
         auto oldest = m_lruOrder.front();
@@ -358,7 +359,7 @@ void EmoteCache::preloadAllToDisk(PreloadCallback callback, PreloadProgressCallb
     auto skipped = std::make_shared<size_t>(0);
     auto downloaded = std::make_shared<size_t>(0);
     auto completed = std::make_shared<size_t>(0);
-    // Preload entry points and HTTP continuations run on the main thread.
+    // preload entry points and http continuations run on the main thread.
     auto listeners = std::make_shared<PreloadListeners>();
     if (callback) listeners->callbacks.push_back(std::move(callback));
     if (progressCallback) listeners->progressCallbacks.push_back(std::move(progressCallback));
@@ -424,7 +425,7 @@ void EmoteCache::preloadAllToDisk(PreloadCallback callback, PreloadProgressCallb
         auto url = info.url;
         ++(*idx);
 
-        // Strong ref held only by the in-flight download + its main-thread
+        // strong ref held only by the in-flight download + its main-thread
         // re-invoke; the closure itself holds a weak self-ref (avoids leak cycle).
         auto strongNext = weakDownloadNext.lock();
         if (!strongNext) return;
@@ -455,27 +456,40 @@ void EmoteCache::preloadAllToDisk(PreloadCallback callback, PreloadProgressCallb
     (*downloadNext)();
 }
 
-void EmoteCache::initDecodeWorker() {
-    // Check-then-spawn runs on per-emote workers, so hold the mutex or two
-    // threads spawn duplicate pools and race on the vector.
-    std::lock_guard<std::mutex> lock(m_decodeMutex);
-    if (m_decodeRunning.load(std::memory_order_acquire)) return;
-
-    m_decodeRunning.store(true, std::memory_order_release);
+bool EmoteCache::initDecodeWorker() {
+    std::lock_guard<std::mutex> lock(m_decodeLifecycleMutex);
+    if (paimon::isRuntimeShuttingDown()) return false;
+    if (m_decodeRunning.load(std::memory_order_acquire)) return true;
 
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     constexpr int NUM_DECODE_WORKERS = 1;
 #else
     constexpr int NUM_DECODE_WORKERS = 2;
 #endif
-    m_decodeWorkers.reserve(NUM_DECODE_WORKERS);
-    for (int i = 0; i < NUM_DECODE_WORKERS; ++i) {
-        m_decodeWorkers.emplace_back(&EmoteCache::decodeWorkerLoop, this);
+    try {
+        m_decodeWorkers.reserve(NUM_DECODE_WORKERS);
+        m_decodeRunning.store(true, std::memory_order_release);
+        for (int i = 0; i < NUM_DECODE_WORKERS; ++i) {
+            m_decodeWorkers.emplace_back(&EmoteCache::decodeWorkerLoop, this);
+        }
+    } catch (...) {
+        {
+            std::lock_guard<std::mutex> queueLock(m_decodeMutex);
+            m_decodeRunning.store(false, std::memory_order_release);
+        }
+        m_decodeCV.notify_all();
+        for (auto& thread : m_decodeWorkers) {
+            paimon::joinWithWarning(thread, std::chrono::seconds(5));
+        }
+        m_decodeWorkers.clear();
+        log::error("[EmoteCache] Unable to start decode workers");
+        return false;
     }
+    return true;
 }
 
 void EmoteCache::shutdownDecodeWorker() {
-    if (!m_decodeRunning.load(std::memory_order_acquire)) return;
+    std::lock_guard<std::mutex> lock(m_decodeLifecycleMutex);
 
     {
         std::lock_guard<std::mutex> lock(m_decodeMutex);
@@ -491,12 +505,19 @@ void EmoteCache::shutdownDecodeWorker() {
 }
 
 void EmoteCache::enqueueDecode(DecodeTask task) {
-    initDecodeWorker();
+    if (!initDecodeWorker()) {
+        dispatchTextureCallback(std::move(task.callback), nullptr, false, {});
+        return;
+    }
     {
         std::lock_guard<std::mutex> lock(m_decodeMutex);
-        m_decodeQueue.push_back(std::move(task));
+        if (m_decodeRunning.load(std::memory_order_acquire) && !paimon::isRuntimeShuttingDown()) {
+            m_decodeQueue.push_back(std::move(task));
+            m_decodeCV.notify_one();
+            return;
+        }
     }
-    m_decodeCV.notify_one();
+    dispatchTextureCallback(std::move(task.callback), nullptr, false, {});
 }
 
 void EmoteCache::decodeWorkerLoop(EmoteCache* self) {
@@ -519,75 +540,83 @@ void EmoteCache::decodeWorkerLoop(EmoteCache* self) {
             self->m_decodeQueue.pop_front();
         }
 
-        int imageW = 0, imageH = 0, channels = 0;
-        if (stbi_info_from_memory(task.data.data(), static_cast<int>(task.data.size()),
-                &imageW, &imageH, &channels) &&
-            (imageW <= 0 || imageH <= 0 || imageW > 4096 || imageH > 4096)) {
-            std::error_code ec;
-            if (auto path = self->getDiskPath(task.info.filename); !path.empty()) {
-                std::filesystem::remove(path, ec);
+        try {
+            int imageW = 0, imageH = 0, channels = 0;
+            if (stbi_info_from_memory(task.data.data(), static_cast<int>(task.data.size()),
+                    &imageW, &imageH, &channels) &&
+                (imageW <= 0 || imageH <= 0 || imageW > 4096 || imageH > 4096)) {
+                std::error_code ec;
+                if (auto path = self->getDiskPath(task.info.filename); !path.empty()) {
+                    std::filesystem::remove(path, ec);
+                }
+                dispatchTextureCallback(std::move(task.callback), nullptr, false, {});
+                continue;
             }
-            dispatchTextureCallback(std::move(task.callback), nullptr, false, {});
-            continue;
-        }
 
-        auto decoded = decodeStaticPixels(task.data);
-        if (!decoded.ok) {
-            EmoteInfo info = std::move(task.info);
-            size_t rawBytesSize = task.data.size();
-            auto cb = std::move(task.callback);
+            auto decoded = decodeStaticPixels(task.data);
+            if (!decoded.ok) {
+                EmoteInfo info = std::move(task.info);
+                size_t rawBytesSize = task.data.size();
+                auto cb = std::move(task.callback);
 
-            Loader::get()->queueInMainThread(
-                [self, info = std::move(info), rawBytesSize, cb = std::move(cb),
-                 data = std::move(task.data)]() mutable {
-                    if (paimon::isRuntimeShuttingDown()) return;
+                Loader::get()->queueInMainThread(
+                    [self, info = std::move(info), rawBytesSize, cb = std::move(cb),
+                     data = std::move(task.data)]() mutable {
+                        if (paimon::isRuntimeShuttingDown()) return;
 
-                    auto* ccImg = new CCImage();
-                    bool valid = ccImg->initWithImageData(data.data(), data.size()) &&
-                        ccImg->getWidth() > 0 && ccImg->getHeight() > 0 &&
-                        ccImg->getWidth() <= 4096 && ccImg->getHeight() <= 4096;
-                    if (!valid) {
-                        ccImg->release();
-                        log::warn("[EmoteCache] Static decode failed for emote '{}', purging cached file", info.name);
-                        std::error_code ec;
-                        if (auto path = self->getDiskPath(info.filename); !path.empty()) {
-                            std::filesystem::remove(path, ec);
+                        auto* ccImg = new CCImage();
+                        bool valid = ccImg->initWithImageData(data.data(), data.size()) &&
+                            ccImg->getWidth() > 0 && ccImg->getHeight() > 0 &&
+                            ccImg->getWidth() <= 4096 && ccImg->getHeight() <= 4096;
+                        if (!valid) {
+                            ccImg->release();
+                            log::warn("[EmoteCache] Static decode failed for emote '{}', purging cached file", info.name);
+                            std::error_code ec;
+                            if (auto path = self->getDiskPath(info.filename); !path.empty()) {
+                                std::filesystem::remove(path, ec);
+                            }
+                            if (cb) cb(nullptr, false, {});
+                            return;
                         }
-                        if (cb) cb(nullptr, false, {});
-                        return;
-                    }
 
-                    auto* tex = new CCTexture2D();
-                    if (!tex->initWithImage(ccImg)) {
-                        tex->release();
+                        auto* tex = new CCTexture2D();
+                        if (!tex->initWithImage(ccImg)) {
+                            tex->release();
+                            ccImg->release();
+                            if (cb) cb(nullptr, false, {});
+                            return;
+                        }
+                        tex->setAntiAliasTexParameters();
                         ccImg->release();
-                        if (cb) cb(nullptr, false, {});
-                        return;
-                    }
-                    tex->setAntiAliasTexParameters();
-                    ccImg->release();
-                    tex->autorelease();
+                        tex->autorelease();
 
-                    RamEntry entry;
-                    entry.type = EmoteType::Static;
-                    entry.texture = tex;
-                    entry.byteSize = rawBytesSize;
-                    entry.cachedAt = std::chrono::steady_clock::now();
-                    self->addToRam(info.name, std::move(entry));
-                    if (cb) cb(tex, false, {});
-                });
+                        RamEntry entry;
+                        entry.type = EmoteType::Static;
+                        entry.texture = tex;
+                        entry.byteSize = rawBytesSize;
+                        entry.cachedAt = std::chrono::steady_clock::now();
+                        self->addToRam(info.name, std::move(entry));
+                        if (cb) cb(tex, false, {});
+                    });
+                continue;
+            }
+
+            size_t origSize = task.data.size();
+            EmoteInfo info = std::move(task.info);
+            auto cb = std::move(task.callback);
+            std::vector<uint8_t> rgba = std::move(decoded.rgba);
+            int w = decoded.width;
+            int h = decoded.height;
+
+            self->finalizeStaticDecodeOnMainThread(
+                std::move(info), std::move(rgba), w, h, origSize, std::move(cb));
             continue;
+        } catch (std::exception const& error) {
+            log::warn("[EmoteCache] Decode job failed: {}", error.what());
+        } catch (...) {
+            log::warn("[EmoteCache] Decode job failed with an unknown exception");
         }
-
-        size_t origSize = task.data.size();
-        EmoteInfo info = std::move(task.info);
-        auto cb = std::move(task.callback);
-        std::vector<uint8_t> rgba = std::move(decoded.rgba);
-        int w = decoded.width;
-        int h = decoded.height;
-
-        self->finalizeStaticDecodeOnMainThread(
-            std::move(info), std::move(rgba), w, h, origSize, std::move(cb));
+        dispatchTextureCallback(std::move(task.callback), nullptr, false, {});
     }
 }
 

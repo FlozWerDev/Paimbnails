@@ -33,8 +33,8 @@ public:
     void claimQueueItem(int levelId, PendingCategory category,
                         std::string const& username, ActionCallback callback,
                         std::string const& type = "");
-    // targetFilename picks one entry out of a level's review gallery; leaving
-    // it empty acts on the newest. acceptAll publishes the whole gallery.
+    // targetfilename picks one entry out of a level's review gallery; leaving
+    // it empty acts on the newest. acceptall publishes the whole gallery.
     void acceptQueueItem(int levelId, PendingCategory category,
                          std::string const& username, ActionCallback callback,
                          std::string const& targetFilename = "",

@@ -1,4 +1,4 @@
-// Uso: /tmp/prev <img> [dim] [colors] [pixel] [scale]
+// uso: /tmp/prev <img> [dim] [colors] [pixel] [scale]
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -58,7 +58,7 @@ int main(int argc, char** argv) {
     auto r = buildPlan(src, op);
     if (!r) return 1;
     auto const& plan = r.plan;
-    // Escala solo la vista, no la rejilla.
+    // escala solo la vista, no la rejilla.
     int const scale = displayScale;
     int const W = plan.width * scale, H = plan.height * scale;
     auto const rgba = renderPlanFrame(plan, 0, scale, true);

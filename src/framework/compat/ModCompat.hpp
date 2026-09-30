@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-// Detect active mods at call time so runtime toggles are respected.
+// detect active mods at call time so runtime toggles are respected.
 
 #include <Geode/loader/Loader.hpp>
 
@@ -11,19 +11,19 @@ struct ModCompat {
         return geode::Loader::get()->isModLoaded("hiimjustin000.more_icons");
     }
 
-// Known conflicts: lower hook priority or cede UI ownership.
+// known conflicts: lower hook priority or cede ui ownership.
 
-// CDC level thumbnails are incompatible.
+// cdc level thumbnails are incompatible.
     static bool isCDCLevelThumbnailsLoaded() {
         return geode::Loader::get()->isModLoaded("cdc.level_thumbnails");
     }
 
-// CompactLists owns compact mode when active.
+// compactlists owns compact mode when active.
     static bool isCompactListsLoaded() {
         return geode::Loader::get()->isModLoaded("cvolton.compactlists-geode");
     }
 
-// Compact Pause Menu requires our song-widget hook to run after it.
+// compact pause menu requires our song-widget hook to run after it.
     static bool isCompactPauseMenuLoaded() {
         return geode::Loader::get()->isModLoaded("prevter.compact-pause-menu");
     }
@@ -36,25 +36,25 @@ struct ModCompat {
         return geode::Loader::get()->isModLoaded("hjfod.quick-volume-controls");
     }
 
-// BetterInfo is compatible, but overlapping buttons must be left alone.
+// betterinfo is compatible, but overlapping buttons must be left alone.
     static bool isBetterInfoLoaded() {
         return geode::Loader::get()->isModLoaded("cvolton.betterinfo");
     }
 
-// EclipseMenu owns its ImGui popup/blur layer.
+// eclipsemenu owns its imgui popup/blur layer.
     static bool isEclipseMenuLoaded() {
         return geode::Loader::get()->isModLoaded("eclipse.eclipse-menu") ||
                geode::Loader::get()->isModLoaded("eclipsemenu.eclipse-menu") ||
                geode::Loader::get()->isModLoaded("prevter.eclipsemenu");
     }
 
-// Globed shares popup parents with our blur and has a known crash path.
+// globed shares popup parents with our blur and has a known crash path.
     static bool isGlobedLoaded() {
         return geode::Loader::get()->isModLoaded("dankmeme.globed2") ||
                geode::Loader::get()->isModLoaded("dankmeme.globed");
     }
 
-// These mods render from their hooks; revisiting PlayLayer in our FBO
+// these mods render from their hooks; revisiting playlayer in our fbo
 // would re-enter them with a foreign viewport.
     static bool isTinkerLoaded() {
         return geode::Loader::get()->isModLoaded("alphalaneous.tinker");
@@ -69,7 +69,7 @@ struct ModCompat {
                isEclipseMenuLoaded() || isTinkerLoaded() || isMegaHackLoaded();
     }
 
-// Editor UI owners from the crash corpus; hooks stay no-op unless we own an operation.
+// editor ui owners from the crash corpus; hooks stay no-op unless we own an operation.
     static bool isBetterEditLoaded() {
         return geode::Loader::get()->isModLoaded("hjfod.betteredit");
     }
@@ -83,12 +83,12 @@ struct ModCompat {
                geode::Loader::get()->isModLoaded("alk.editor-collab-ui");
     }
 
-// Menu Loop Randomizer overlaps with Menu Music.
+// menu loop randomizer overlaps with menu music.
     static bool isMenuLoopRandomizerLoaded() {
         return geode::Loader::get()->isModLoaded("fleym.menuloop_randomizer");
     }
 
-// Active blur mods disable ours to avoid duplicate FBO passes.
+// active blur mods disable ours to avoid duplicate fbo passes.
     static bool isBlurBGLoaded() {
         return geode::Loader::get()->isModLoaded("alphalaneous.blur_bg");
     }

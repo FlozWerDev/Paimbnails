@@ -17,7 +17,7 @@ std::string formatTune(double value) {
     return fmt::format("x{:.2f}", value);
 }
 
-// Slider::setValue works in 0..1.
+// slider::setvalue works in 0..1.
 float normTune(float value) {
     return std::clamp((value - fx::kClickTuneMin) / (fx::kClickTuneMax - fx::kClickTuneMin),
                       0.f, 1.f);
@@ -82,7 +82,7 @@ bool ClickEffectTunePopup::init() {
             [this] { resetToDefault(); }),
     });
 
-    // Footer reserves room for the test button; scroll stops above it.
+    // footer reserves room for the test button; scroll stops above it.
     auto* stack = kit::makeScrollStack({cardW, content.height - 92.f}, {
         kit::makeHint(cardW, m_descText.c_str()),
         card,
@@ -90,7 +90,7 @@ bool ClickEffectTunePopup::init() {
     stack->setPosition({15.f, 42.f});
     m_mainLayer->addChild(stack, 5);
 
-    // Footer test button: preview changes without closing.
+    // footer test button: preview changes without closing.
     auto* menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
     auto* testSpr = ButtonSprite::create("Probar");

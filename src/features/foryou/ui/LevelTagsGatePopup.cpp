@@ -30,7 +30,7 @@ LevelTagsGatePopup* LevelTagsGatePopup::create(std::function<void()> onContinue)
 }
 
 void LevelTagsGatePopup::openModPage() {
-    // Geode shows its own error popup when the servers don't know the ID.
+    // geode shows its own error popup when the servers don't know the id.
     geode::openInfoPopup(std::string(kLevelTagsModID));
 }
 
@@ -45,7 +45,7 @@ bool LevelTagsGatePopup::init(std::function<void()> onContinue) {
 
     this->setTitle(Localization::get().getString("foryou.tags_gate_title").c_str());
 
-    // The explanation sits in a recessed GD panel rather than floating on the
+    // the explanation sits in a recessed gd panel rather than floating on the
     // brown backdrop, matching how the rest of the game frames body text.
     float const panelW = kPopupWidth - 40.f;
     float const panelH = 86.f;
@@ -77,7 +77,7 @@ bool LevelTagsGatePopup::init(std::function<void()> onContinue) {
         m_mainLayer->addChild(body);
     }
 
-    // Install leads, so the recommended path is the obvious one.
+    // install leads, so the recommended path is the obvious one.
     auto installSpr = ButtonSprite::create(
         Localization::get().getString("foryou.tags_gate_install").c_str(),
         110, true, "bigFont.fnt", "GJ_button_01.png", 26.f, 0.6f);
@@ -105,7 +105,7 @@ bool LevelTagsGatePopup::init(std::function<void()> onContinue) {
 }
 
 void LevelTagsGatePopup::onInstall(CCObject*) {
-    // Close first so the mod page isn't stacked behind our popup.
+    // close first so the mod page isn't stacked behind our popup.
     auto continueCallback = m_onContinue;
     this->onClose(nullptr);
     openModPage();

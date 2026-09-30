@@ -19,12 +19,12 @@ ColorNode* ColorNode::create(bool invis, int opacity) {
 
 namespace {
 
-// Endless slow spin for the selection ring.
+// endless slow spin for the selection ring.
 CCRepeatForever* spinForever() {
     return CCRepeatForever::create(CCRotateBy::create(8, 360));
 }
 
-// One channel dimmed for the hover state.
+// one channel dimmed for the hover state.
 int dimChannel(int channel) {
     return std::clamp(channel - 55, 0, 255);
 }
@@ -32,7 +32,7 @@ int dimChannel(int channel) {
 } // namespace
 
 bool ColorNode::init(bool invis) {
-    // Base transform shared by every point.
+    // base transform shared by every point.
     setAnchorPoint({0.5f, 0.5f});
     setScale(0.8f);
 
@@ -44,7 +44,7 @@ bool ColorNode::init(bool invis) {
 
     setContentSize(m_dot->getContentSize());
 
-    // Every child shares the dot's center.
+    // every child shares the dot's center.
     CCPoint middle = getContentSize() / 2.f;
     m_dot->setPosition(middle);
     m_circle->setPosition(middle);
@@ -77,7 +77,7 @@ void ColorNode::setSelected(bool selected) {
 
     m_select->stopAllActions();
     m_select->setVisible(selected);
-    // A hidden node only ghosts the ring, so the selection stays findable.
+    // a hidden node only ghosts the ring, so the selection stays findable.
     m_select->setOpacity(m_isHidden ? 20 : m_opacity);
     m_select->runAction(spinForever());
 }
@@ -154,7 +154,7 @@ void ColorNode::flash(float time) {
     settleAfter(time);
 }
 
-// Delayed reconcile after a fade finishes.
+// delayed reconcile after a fade finishes.
 void ColorNode::settleAfter(float time) {
     auto wait = CCDelayTime::create(time);
     auto done = CCCallFunc::create(this, callfunc_selector(ColorNode::onAnimationEnded));

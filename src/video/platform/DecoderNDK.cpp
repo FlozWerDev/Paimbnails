@@ -16,7 +16,7 @@ namespace paimon {
 
 namespace {
 
-// AImageReader is API 24 but Geode targets minSdk 23, so bind at runtime
+// aimagereader is api 24 but geode targets minsdk 23, so bind at runtime
 // instead of link time.
 struct ImageReaderApi {
     media_status_t (*newReader)(int32_t, int32_t, int32_t, int32_t, AImageReader**) = nullptr;
@@ -54,7 +54,7 @@ const ImageReaderApi& imageReaderApi() {
     return api;
 }
 
-// Pixel stride 2 means interleaved NV12 samples.
+// pixel stride 2 means interleaved nv12 samples.
 void copyChromaPlane(const uint8_t* src, int rowStride, int pixelStride,
                      uint8_t* dst, int dstStride, int w, int h) {
     if (pixelStride == 1) {
@@ -74,15 +74,15 @@ void copyChromaPlane(const uint8_t* src, int rowStride, int pixelStride,
 
 }
 
-// Local copies of OMX color formats; the NDK header is not available everywhere.
-static constexpr int kCF_YUV420Planar           = 19;   // OMX_COLOR_FormatYUV420Planar (I420)
-static constexpr int kCF_YUV420SemiPlanar       = 21;   // OMX_COLOR_FormatYUV420SemiPlanar (NV12)
-static constexpr int kCF_YUV420PackedPlanar     = 20;   // OMX_COLOR_FormatYUV420PackedPlanar
-static constexpr int kCF_YUV420PackedSemiPlanar = 39;   // OMX_COLOR_FormatYUV420PackedSemiPlanar
-static constexpr int kCF_YUV420Flexible         = 0x7F420888; // COLOR_FormatYUV420Flexible — semi-planar in practice
-static constexpr int kCF_QCOM_YUV420SemiPlanar  = 0x7FA30C00; // Qualcomm vendor NV12
-static constexpr int kCF_QCOM_YUV420SP32m       = 0x7FA30C04; // Qualcomm tiled
-static constexpr int kCF_AndroidOpaque          = 0x7F000789; // NOT CPU-readable
+// local copies of omx color formats; the ndk header is not available everywhere.
+static constexpr int kCF_YUV420Planar           = 19;   // omx_color_formatyuv420planar (i420)
+static constexpr int kCF_YUV420SemiPlanar       = 21;   // omx_color_formatyuv420semiplanar (nv12)
+static constexpr int kCF_YUV420PackedPlanar     = 20;   // omx_color_formatyuv420packedplanar
+static constexpr int kCF_YUV420PackedSemiPlanar = 39;   // omx_color_formatyuv420packedsemiplanar
+static constexpr int kCF_YUV420Flexible         = 0x7F420888; // color_formatyuv420flexible — semi-planar in practice
+static constexpr int kCF_QCOM_YUV420SemiPlanar  = 0x7FA30C00; // qualcomm vendor nv12
+static constexpr int kCF_QCOM_YUV420SP32m       = 0x7FA30C04; // qualcomm tiled
+static constexpr int kCF_AndroidOpaque          = 0x7F000789; // not cpu-readable
 
 static int getFormatInt32(AMediaFormat* fmt, const char* key, int fallback) {
     int32_t value = fallback;
@@ -112,7 +112,7 @@ bool DecoderNDK::isReadableColorFormat(int colorFormat) const {
         case kCF_QCOM_YUV420SemiPlanar:
             return true;
         case kCF_QCOM_YUV420SP32m:  // tiled — not trivially readable
-        case kCF_AndroidOpaque:     // opaque — would need GL reading
+        case kCF_AndroidOpaque:     // opaque — would need gl reading
             return false;
         default:
             return false;
@@ -164,6 +164,10 @@ bool DecoderNDK::open(const std::string& path) {
     }
 
     AMediaFormat* trackFmt = AMediaExtractor_getTrackFormat(m_extractor, m_trackIdx);
+    if (!trackFmt) {
+        closeInternal();
+        return false;
+    }
     const char* mime = nullptr;
     AMediaFormat_getString(trackFmt, AMEDIAFORMAT_KEY_MIME, &mime);
     if (!mime) {
@@ -180,17 +184,17 @@ bool DecoderNDK::open(const std::string& path) {
         return false;
     }
 
-    // Static container metadata; read before trackFmt is consumed by configure.
+    // static container metadata; read before trackfmt is consumed by configure.
     m_rotation = ((getFormatInt32(trackFmt, "rotation-degrees", 0) % 360) + 360) % 360;
     readColorAspects(trackFmt);
 
-// Prefer AImageReader; it normalises the output layout across vendors.
+// prefer aimagereader; it normalises the output layout across vendors.
     m_useImageReader = setupImageReader();
 
     ANativeWindow* target = nullptr;
     if (m_useImageReader) target = m_readerWindow;
 
-// Avoid opaque output: the raw-buffer path needs CPU-readable planes.
+// avoid opaque output: the raw-buffer path needs cpu-readable planes.
     if (!target) {
         AMediaFormat_setInt32(trackFmt, "color-format", kCF_YUV420Flexible);
     }
@@ -235,7 +239,7 @@ bool DecoderNDK::setupImageReader() {
     const auto& api = imageReaderApi();
     if (!api.ok || m_width <= 0 || m_height <= 0) return false;
 
-    // Four slots: enough for the codec to stay ahead without holding the ring.
+    // four slots: enough for the codec to stay ahead without holding the ring.
     if (api.newReader(m_width, m_height, AIMAGE_FORMAT_YUV_420_888, 4, &m_imageReader) != AMEDIA_OK
         || !m_imageReader) {
         m_imageReader = nullptr;
@@ -266,7 +270,7 @@ bool DecoderNDK::drainImageReader(int64_t presentationTimeUs) {
     if (!m_imageReader) return false;
 
     AImage* image = nullptr;
-    // The buffer lands a moment after releaseOutputBuffer; give it a few tries.
+    // the buffer lands a moment after releaseoutputbuffer; give it a few tries.
     for (int attempt = 0; attempt < 8 && !image; ++attempt) {
         if (api.acquireNext(m_imageReader, &image) == AMEDIA_OK && image) break;
         image = nullptr;
@@ -305,14 +309,27 @@ bool DecoderNDK::drainImageReader(int64_t presentationTimeUs) {
     int uvW = (m_width + 1) / 2;
     int uvH = (m_height + 1) / 2;
 
-    int yCopy = std::min(m_width, yRow);
-    for (int r = 0; r < m_height; ++r) {
-        std::memcpy(slot->planeY + r * slot->strideY,
-                    yData + static_cast<size_t>(r) * yRow, yCopy);
+    auto validPlane = [](int length, int rowStride, int pixelStride, int width, int height) {
+        if (length <= 0 || rowStride <= 0 || pixelStride <= 0 || width <= 0 || height <= 0) return false;
+        auto rowBytes = static_cast<int64_t>(width - 1) * pixelStride + 1;
+        auto required = static_cast<int64_t>(height - 1) * rowStride + rowBytes;
+        return rowBytes <= rowStride && required <= length;
+    };
+    if (!validPlane(yLen, yRow, 1, m_width, m_height)
+        || !validPlane(uLen, uRow, uPix, uvW, uvH)
+        || !validPlane(vLen, vRow, vPix, uvW, uvH)) {
+        api.imageDelete(image);
+        return false;
     }
 
-    // NV12-backed images expose V as U+1 in one buffer; libyuv splits that fast.
-    if (uPix == 2 && vPix == 2 && vData == uData + 1) {
+    for (int r = 0; r < m_height; ++r) {
+        std::memcpy(slot->planeY + r * slot->strideY,
+                    yData + static_cast<size_t>(r) * yRow, m_width);
+    }
+
+    // nv12-backed images expose v as u+1 in one buffer; libyuv splits that fast.
+    if (uPix == 2 && vPix == 2 && uRow == vRow && vData == uData + 1
+        && static_cast<int64_t>(uvH - 1) * uRow + static_cast<int64_t>(uvW) * 2 <= uLen) {
         libyuv::SplitUVPlane(uData, uRow,
                              slot->planeCb, slot->strideCb,
                              slot->planeCr, slot->strideCr,
@@ -332,6 +349,7 @@ bool DecoderNDK::findVideoTrack() {
     size_t numTracks = AMediaExtractor_getTrackCount(m_extractor);
     for (size_t i = 0; i < numTracks; ++i) {
         AMediaFormat* fmt = AMediaExtractor_getTrackFormat(m_extractor, i);
+        if (!fmt) continue;
         const char* mime = nullptr;
         AMediaFormat_getString(fmt, AMEDIAFORMAT_KEY_MIME, &mime);
         if (mime && (strncmp(mime, "video/", 6) == 0)) {
@@ -386,7 +404,7 @@ void DecoderNDK::decodeLoop() {
                 if (inputBuf) {
                     int sampleSize = AMediaExtractor_readSampleData(m_extractor, inputBuf, bufSize);
                     if (sampleSize < 0 && m_looping.load(std::memory_order_relaxed)) {
-// Rewind instead of draining; PTS restarts at 0.
+                        // rewind instead of draining; pts restarts at 0.
                         AMediaExtractor_seekTo(m_extractor, 0, AMEDIAEXTRACTOR_SEEK_CLOSEST_SYNC);
                         sampleSize = AMediaExtractor_readSampleData(m_extractor, inputBuf, bufSize);
                     }
@@ -432,10 +450,10 @@ void DecoderNDK::decodeLoop() {
                 continue;
             }
 
-// Do not touch buffers until the output layout is known.
+            // do not touch buffers until the output layout is known.
             if (!m_outputFormatValid.load(std::memory_order_acquire)) {
                 ++skippedBeforeFormat;
-// Some drivers omit INFO_OUTPUT_FORMAT_CHANGED; query after a few buffers.
+                // some drivers omit info_output_format_changed; query after a few buffers.
                 if (skippedBeforeFormat >= 3) {
                     geode::log::info("DecoderNDK: no FORMAT_CHANGED after {} buffers, "
                                      "force-querying output format", skippedBeforeFormat);
@@ -460,8 +478,10 @@ void DecoderNDK::decodeLoop() {
                 break;
             }
 
-            size_t outSize = 0;
-            uint8_t* outBuf = AMediaCodec_getOutputBuffer(m_codec, outputIdx, &outSize);
+            // older ndk versions return an invalid capacity; bufferinfo.size is the payload length.
+            size_t reportedCapacity = 0;
+            uint8_t* outBuf = AMediaCodec_getOutputBuffer(m_codec, outputIdx, &reportedCapacity);
+            size_t const outSize = info.size > 0 ? static_cast<size_t>(info.size) : 0;
             if (!outBuf || outSize == 0) {
                 AMediaCodec_releaseOutputBuffer(m_codec, outputIdx, false);
                 continue;
@@ -480,11 +500,12 @@ void DecoderNDK::decodeLoop() {
             int uvW = (m_width + 1) / 2;
             bool semiPlanar = isSemiPlanar(m_outputColorFormat);
 
-            size_t yPlaneBytes = static_cast<size_t>(stride) * sliceHeight;
-            size_t minYBytes   = static_cast<size_t>(stride) * m_height;
-            size_t neededSemi  = yPlaneBytes + static_cast<size_t>(stride) * uvH;
-            int planarUvStride = std::max(uvW, stride / 2);
-            size_t neededPlanar = yPlaneBytes + static_cast<size_t>(planarUvStride) * uvH * 2;
+            auto const yPlaneBytes = static_cast<uint64_t>(stride) * sliceHeight;
+            auto const minYBytes = static_cast<uint64_t>(stride) * m_height;
+            auto const neededSemi = yPlaneBytes + static_cast<uint64_t>(stride) * (uvH - 1) + uvW * 2;
+            auto const planarUvStride = (static_cast<uint64_t>(stride) + 1) / 2;
+            auto const planarUvRows = (static_cast<uint64_t>(sliceHeight) + 1) / 2;
+            auto const neededPlanar = yPlaneBytes + planarUvStride * (planarUvRows + uvH - 1) + uvW;
 
             if (outSize < minYBytes) {
                 geode::log::warn("DecoderNDK: output buffer too small ({} < {})",
@@ -493,7 +514,7 @@ void DecoderNDK::decodeLoop() {
                 continue;
             }
 
-// Some Samsung/Mali drivers report semi-planar for planar-sized buffers.
+            // some samsung/mali drivers report semi-planar for planar-sized buffers.
             if (semiPlanar && outSize < neededSemi && outSize >= neededPlanar) {
                 semiPlanar = false;
             }
@@ -509,21 +530,21 @@ void DecoderNDK::decodeLoop() {
                 }
             }
 
-            if (semiPlanar && outSize >= neededSemi) {
-                libyuv::SplitUVPlane(outBuf + yPlaneBytes, stride,
+            if (semiPlanar && stride >= uvW * 2 && outSize >= neededSemi) {
+                libyuv::SplitUVPlane(outBuf + static_cast<size_t>(yPlaneBytes), stride,
                                      slot->planeCb, slot->strideCb,
                                      slot->planeCr, slot->strideCr,
                                      uvW, uvH);
-            } else if (outSize >= neededPlanar) {
-// Planar formats use I420 order (Y, Cb, Cr).
-                const uint8_t* uStart = outBuf + yPlaneBytes;
-                const uint8_t* vStart = uStart + static_cast<size_t>(planarUvStride) * uvH;
+            } else if (!semiPlanar && outSize >= neededPlanar) {
+                // planar formats use i420 order (y, cb, cr).
+                const uint8_t* uStart = outBuf + static_cast<size_t>(yPlaneBytes);
+                const uint8_t* vStart = uStart + static_cast<size_t>(planarUvStride * planarUvRows);
                 for (int r = 0; r < uvH; ++r) {
                     std::memcpy(slot->planeCb + r * slot->strideCb,
-                                uStart + static_cast<size_t>(r) * planarUvStride,
+                                uStart + static_cast<size_t>(static_cast<uint64_t>(r) * planarUvStride),
                                 uvW);
                     std::memcpy(slot->planeCr + r * slot->strideCr,
-                                vStart + static_cast<size_t>(r) * planarUvStride,
+                                vStart + static_cast<size_t>(static_cast<uint64_t>(r) * planarUvStride),
                                 uvW);
                 }
             } else {
@@ -578,15 +599,15 @@ bool DecoderNDK::isFullRange() const { return m_fullRange; }
 int DecoderNDK::getRotationDegrees() const { return m_rotation; }
 
 void DecoderNDK::readColorAspects(AMediaFormat* fmt) {
-    // Numeric AColorStandard/AColorRange values; the NDK enum needs API 28 headers.
+    // mediaformat values also work with ndk headers for older api levels.
     switch (getFormatInt32(fmt, "color-standard", 0)) {
-        case 1: case 2: m_colorMatrix = VideoColorMatrix::BT601; break;
-        case 3:         m_colorMatrix = VideoColorMatrix::BT709; break;
+        case 1:         m_colorMatrix = VideoColorMatrix::BT709; break;
+        case 2: case 4: m_colorMatrix = VideoColorMatrix::BT601; break;
         default: break;
     }
     switch (getFormatInt32(fmt, "color-range", 0)) {
-        case 1: m_fullRange = false; break;
-        case 2: m_fullRange = true;  break;
+        case 1: m_fullRange = true;  break;
+        case 2: m_fullRange = false; break;
         default: break;
     }
 }
@@ -628,6 +649,9 @@ void DecoderNDK::closeInternal() {
     m_codecConfigured = false;
     m_codecStarted = false;
     m_trackIdx = -1;
+    m_colorMatrix = VideoColorMatrix::Auto;
+    m_fullRange = false;
+    m_rotation = 0;
     m_outputFormatValid.store(false, std::memory_order_release);
 }
 

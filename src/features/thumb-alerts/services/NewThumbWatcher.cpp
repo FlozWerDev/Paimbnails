@@ -89,7 +89,7 @@ void NewThumbWatcher::pollNow() {
 
     auto const config = readConfig();
     if (!config.enabled) return;
-    // Nothing shown from here anyway, and the ids would burn.
+    // nothing shown from here anyway, and the ids would burn.
     if (!alertsAllowedHere(config)) return;
 
     m_inFlight = true;
@@ -148,11 +148,11 @@ bool NewThumbWatcher::acceptEntry(matjson::Value const& entry, NewThumb& out, bo
         out.eventId = fmt::format("thumbnail:{}:{}", out.levelId,
                                   stringField(entry, "thumbnailId"));
     }
-    // First channel here already announced it.
+    // first channel here already announced it.
     if (!this->markSeen(out.eventId)) return false;
     marked = true;
 
-    // Own upload already carded off the reply; one feed match consumes one suppression.
+    // own upload already carded off the reply; one feed match consumes one suppression.
     if (auto self = std::ranges::find(m_selfUploads, out.levelId);
         self != m_selfUploads.end()) {
         m_selfUploads.erase(self);
@@ -177,7 +177,7 @@ void NewThumbWatcher::onPushMessage(std::string const& message) {
     if (paimon::isRuntimeShuttingDown()) return;
     if (!paimon::modules::isEnabled(kModuleId)) return;
 
-    // Dropped pre-id like the poll's scene skip; catch-up poll shows it where welcome.
+    // dropped pre-id like the poll's scene skip; catch-up poll shows it where welcome.
     auto const config = readConfig();
     if (!config.enabled || !alertsAllowedHere(config)) return;
 
@@ -196,7 +196,7 @@ void NewThumbWatcher::onPushMessage(std::string const& message) {
     }
     this->saveSeen();
 
-    // Pre-first-poll pushed entries are new by definition: no baseline needed.
+    // pre-first-poll pushed entries are new by definition: no baseline needed.
     if (!Mod::get()->getSavedValue<bool>(kSeededKey, false)) {
         Mod::get()->setSavedValue<bool>(kSeededKey, true);
     }
@@ -220,7 +220,7 @@ void NewThumbWatcher::onResponse(std::string const& body) {
     std::vector<NewThumb> fresh;
     bool marked = false;
 
-    // Newest first: walk backwards so cards come out in publish order.
+    // newest first: walk backwards so cards come out in publish order.
     size_t const count = std::min(entries.size(), kMaxUploads);
     for (size_t index = count; index-- > 0;) {
         auto const& entry = entries[index];
@@ -230,11 +230,11 @@ void NewThumbWatcher::onResponse(std::string const& body) {
         if (this->acceptEntry(entry, item, marked)) fresh.push_back(std::move(item));
     }
 
-    // Suppressed ids count too, or our upload replays next launch.
+    // suppressed ids count too, or our upload replays next launch.
     if (!marked) return;
     this->saveSeen();
 
-    // First run records the baseline only: 20 cards in a row would be a wall.
+    // first run records the baseline only: 20 cards in a row would be a wall.
     if (!Mod::get()->getSavedValue<bool>(kSeededKey, false)) {
         Mod::get()->setSavedValue<bool>(kSeededKey, true);
         paimon::requestDeferredModSave();

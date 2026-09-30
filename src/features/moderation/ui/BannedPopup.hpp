@@ -14,6 +14,6 @@ public:
 };
 
 namespace paimon::ban {
-    // Shows the non-dismissable banned popup. Safe to call from the main thread.
+    // shows the non-dismissable banned popup. safe to call from the main thread.
     void showBannedPopup(std::string const& reason);
 }

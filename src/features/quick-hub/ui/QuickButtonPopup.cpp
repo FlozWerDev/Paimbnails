@@ -27,7 +27,7 @@ namespace {
 constexpr float kPopupW = 400.f;
 constexpr float kPopupH = 312.f;
 
-// Frames validate at list build, so a texture pack missing one just skips it.
+// frames validate at list build, so a texture pack missing one just skips it.
 std::vector<const char*> const& curatedIconFrames() {
     static const std::vector<const char*> frames = {
         "GJ_optionsBtn_001.png", "GJ_hammerIcon_001.png", "GJ_infoBtn_001.png",
@@ -102,7 +102,7 @@ protected:
         constexpr float cell = listW / cols; // 60
         const float iconBox = cell - 20.f;
 
-        // Captured icon first: almost always the wanted one.
+        // captured icon first: almost always the wanted one.
         std::vector<std::string> valid;
         if (!m_current.empty() && paimon::SpriteHelper::safeCreateWithFrameName(m_current.c_str())) {
             valid.push_back(m_current);
@@ -141,7 +141,7 @@ protected:
                           : ccc4f(0.30f, 0.35f, 0.45f, 0.7f),
                 1.2f);
             if (card) {
-                // Rounded rect draws from (0,0) to (w,h): center the (cell-6) card, offset 3.
+                // rounded rect draws from (0,0) to (w,h): center the (cell-6) card, offset 3.
                 card->setPosition({3.f, 3.f});
                 holder->addChild(card, 0);
             }
@@ -234,7 +234,7 @@ bool QuickButtonPopup::init() {
 
     addFieldLabel("Forma", 219.f);
 
-    // Menus center children on their own y: offset just enough to clear the label.
+    // menus center children on their own y: offset just enough to clear the label.
     m_shapeMenu = CCMenu::create();
     m_shapeMenu->setPosition({kFieldX, 196.f});
     m_shapeMenu->setContentSize({kFieldW, 26.f});
@@ -291,9 +291,9 @@ void QuickButtonPopup::onExit() {
     Popup::onExit();
 }
 
-// What got saved from the original button: proof the shortcut points at something concrete.
+// what got saved from the original button: proof the shortcut points at something concrete.
 void QuickButtonPopup::buildTargetInfo() {
-    // Card leaves the Save-button corner free.
+    // card leaves the save-button corner free.
     constexpr float kCardX = 22.f;
     constexpr float kCardW = 278.f;
     constexpr float kTextW = kCardW - 16.f;
@@ -468,7 +468,7 @@ void QuickButtonPopup::rebuildPreview() {
     m_preview->removeAllChildren();
 
     auto badge = makeRadialBadge(toRadialDef(m_candidate), m_candidate.shape, 58.f);
-    // In preview the ring is the point: always shown.
+    // in preview the ring is the point: always shown.
     if (badge.ring) badge.ring->setVisible(true);
     m_preview->addChild(badge.root);
 }
@@ -504,7 +504,7 @@ void QuickButtonPopup::onSave(CCObject*) {
             "El fin era menor que el inicio: suena entero.", NotificationIcon::Warning)->show();
     }
 
-    // Id derives from the name at creation only; edits keep it so saved order and wheel slots survive.
+    // id derives from the name at creation only; edits keep it so saved order and wheel slots survive.
     if (m_candidate.id.empty()) {
         m_candidate.id = QuickHubManager::get().makeUniqueCustomId(name);
     }

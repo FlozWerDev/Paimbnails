@@ -19,7 +19,7 @@ namespace paimon::twitch {
 namespace {
 
 constexpr float kWidth = 380.f;
-constexpr float kHeight = 200.f;
+constexpr float kHeight = 230.f;
 constexpr float kPad = 18.f;
 
 constexpr ccColor3B kDesc = {171, 197, 232};
@@ -91,7 +91,16 @@ bool TwitchMessagePopup::init(
         m_mainLayer->addChild(by);
     }
 
-    float const panelTop = levelY - 16.f;
+    auto source = fmt::format("{} / {} / Cola: {}", platformName(request.platform),
+        request.sourceName.empty() ? request.command : request.sourceName, request.queue);
+    auto* sourceLabel = CCLabelBMFont::create(source.c_str(), "chatFont.fnt");
+    sourceLabel->setAnchorPoint({0.f, .5f});
+    sourceLabel->setColor(kDesc);
+    sourceLabel->limitLabelWidth(inner, .4f, .25f);
+    sourceLabel->setPosition({kPad, levelY - 20.f});
+    m_mainLayer->addChild(sourceLabel);
+
+    float const panelTop = levelY - 36.f;
     float const panelHeight = panelTop - 14.f;
     if (auto* panel = paimon::SpriteHelper::createColorPanel(
             inner, panelHeight, {8, 12, 26}, 150, 6.f)) {

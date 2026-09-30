@@ -20,7 +20,7 @@
 using namespace geode::prelude;
 
 static float getContentScaleFactorSafe() {
-    // point-space; UI containers already scale.
+    // point-space; ui containers already scale.
     return 1.0f;
 }
 
@@ -92,15 +92,30 @@ bool AnimatedGIFSprite::initWorker() {
     if (paimon::isRuntimeShuttingDown()) return false;
     s_shutdownMode.store(false, std::memory_order_release);
     if (!s_workerRunning.load(std::memory_order_acquire)) {
-        s_workerRunning.store(true, std::memory_order_release);
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
         constexpr int NUM_GIF_WORKERS = 1;
 #else
         constexpr int NUM_GIF_WORKERS = 3;
 #endif
-        s_workerThreads.reserve(NUM_GIF_WORKERS);
-        for (int i = 0; i < NUM_GIF_WORKERS; ++i) {
-            s_workerThreads.emplace_back(workerLoop);
+        try {
+            s_workerThreads.reserve(NUM_GIF_WORKERS);
+            s_workerRunning.store(true, std::memory_order_release);
+            for (int i = 0; i < NUM_GIF_WORKERS; ++i) {
+                s_workerThreads.emplace_back(workerLoop);
+            }
+        } catch (...) {
+            {
+                std::lock_guard<std::mutex> queueLock(s_queueMutex);
+                s_workerRunning.store(false, std::memory_order_release);
+                s_taskQueue.clear();
+            }
+            s_queueCV.notify_all();
+            for (auto& thread : s_workerThreads) {
+                paimon::joinWithWarning(thread, std::chrono::seconds(3));
+            }
+            s_workerThreads.clear();
+            log::error("[AnimatedGIFSprite] Unable to start GIF workers");
+            return false;
         }
         PaimonDebug::log("[AnimatedGIFSprite] Worker pool started ({} threads)", NUM_GIF_WORKERS);
     }
@@ -630,179 +645,49 @@ void AnimatedGIFSprite::workerLoop() {
             s_taskQueue.pop_front();
         }
 
-        if (task.isData) {
-            if (!GIFDecoder::isGIF(task.data.data(), task.data.size())) {
-                Loader::get()->queueInMainThread([cb = task.callback]() { if (cb) cb(nullptr); });
-                continue;
-            }
-
-            auto gifResult = decode(task.data.data(), task.data.size());
-            if (gifResult.frames.empty()) {
-                Loader::get()->queueInMainThread([cb = task.callback]() { if (cb) cb(nullptr); });
-                continue;
-            }
-
-            std::deque<PendingFrame> pendingFrames;
-            for (auto& frame : gifResult.frames) {
-                PendingFrame pf;
-                pf.pixels = std::move(frame.pixels);
-                pf.width = frame.width;
-                pf.height = frame.height;
-                pf.delayMs = frame.delayMs;
-                pendingFrames.push_back(std::move(pf));
-            }
-
-            Loader::get()->queueInMainThread([key = task.key,
-                                              pendingFrames = std::move(pendingFrames),
-                                              canvasW = static_cast<int>(gifResult.width),
-                                              canvasH = static_cast<int>(gifResult.height),
-                                              cb = task.callback]() mutable {
-                if (s_shutdownMode.load(std::memory_order_acquire)) {
-                    if (cb) cb(nullptr);
-                    return;
-                }
-                if (pendingFrames.empty()) {
-                    if (cb) cb(nullptr);
-                    return;
+        try {
+            if (task.isData) {
+                if (!GIFDecoder::isGIF(task.data.data(), task.data.size())) {
+                    Loader::get()->queueInMainThread([cb = task.callback]() { if (cb) cb(nullptr); });
+                    continue;
                 }
 
-                auto ret = new AnimatedGIFSprite();
-                if (!ret) {
-                    if (cb) cb(nullptr);
-                    return;
-                }
-                ret->m_filename = key;
-                ret->m_canvasWidth = canvasW;
-                ret->m_canvasHeight = canvasH;
-                ret->m_pendingFrames = std::move(pendingFrames);
-
-                if (!ret->init()) {
-                    CC_SAFE_DELETE(ret);
-                    if (cb) cb(nullptr);
-                    return;
+                auto gifResult = decode(task.data.data(), task.data.size());
+                if (gifResult.frames.empty()) {
+                    Loader::get()->queueInMainThread([cb = task.callback]() { if (cb) cb(nullptr); });
+                    continue;
                 }
 
-                float sf = getContentScaleFactorSafe();
-                ret->setContentSize(CCSize(ret->m_canvasWidth / sf, ret->m_canvasHeight / sf));
-
-                ret->processNextPendingFrame();
-
-                if (!ret->m_pendingFrames.empty()) {
-                    ret->schedule(schedule_selector(AnimatedGIFSprite::updateTextureLoading));
-                } else {
-                    ret->scheduleUpdate();
+                std::deque<PendingFrame> pendingFrames;
+                for (auto& frame : gifResult.frames) {
+                    PendingFrame pf;
+                    pf.pixels = std::move(frame.pixels);
+                    pf.width = frame.width;
+                    pf.height = frame.height;
+                    pf.delayMs = frame.delayMs;
+                    pendingFrames.push_back(std::move(pf));
                 }
-                ret->autorelease();
 
-                if (cb) cb(ret);
-            });
-
-        } else {
-            DiskCacheEntry cachedEntry;
-            if (loadFromDiskCache(task.path, cachedEntry)) {
-                Loader::get()->queueInMainThread([path = task.path, cachedEntry = std::move(cachedEntry), cb = task.callback]() mutable {
+                Loader::get()->queueInMainThread([key = task.key,
+                                                  pendingFrames = std::move(pendingFrames),
+                                                  canvasW = static_cast<int>(gifResult.width),
+                                                  canvasH = static_cast<int>(gifResult.height),
+                                                  cb = task.callback]() mutable {
                     if (s_shutdownMode.load(std::memory_order_acquire)) {
                         if (cb) cb(nullptr);
                         return;
                     }
-                    auto ret = new AnimatedGIFSprite();
-                    if (ret) {
-                        ret->m_filename = path;
-                        ret->m_canvasWidth = cachedEntry.width;
-                        ret->m_canvasHeight = cachedEntry.height;
-
-                        if (!ret->init()) {
-                            CC_SAFE_DELETE(ret);
-                            if (cb) cb(nullptr);
-                            return;
-                        }
-
-                        float sf = getContentScaleFactorSafe();
-                        ret->setContentSize(CCSize(ret->m_canvasWidth / sf, ret->m_canvasHeight / sf));
-
-                        // stream cached frames too; never a whole GIF per callback.
-                        for (auto& frame : cachedEntry.frames) {
-                            PendingFrame pf;
-                            pf.pixels = std::move(frame.pixels);
-                            pf.width = frame.width;
-                            pf.height = frame.height;
-                            pf.delayMs = static_cast<int>(frame.delay * 1000.0f + 0.5f);
-                            ret->m_pendingFrames.push_back(std::move(pf));
-                        }
-
-                        ret->processNextPendingFrame();
-
-                        if (!ret->m_pendingFrames.empty()) {
-                            ret->schedule(schedule_selector(AnimatedGIFSprite::updateTextureLoading));
-                        } else {
-                            ret->scheduleUpdate();
-                        }
-
-                        ret->autorelease();
-                        if (cb) cb(ret);
-                    } else {
+                    if (pendingFrames.empty()) {
                         if (cb) cb(nullptr);
+                        return;
                     }
-                });
-                continue;
-            }
 
-            auto data = readGifFile(task.path);
-            if (data.empty()) {
-                Loader::get()->queueInMainThread([cb = task.callback]() { if (cb) cb(nullptr); });
-                continue;
-            }
-
-            if (!GIFDecoder::isGIF(data.data(), data.size())) {
-                Loader::get()->queueInMainThread([cb = task.callback]() { if (cb) cb(nullptr); });
-                continue;
-            }
-
-            auto gifResult = decode(data.data(), data.size());
-            if (gifResult.frames.empty()) {
-                Loader::get()->queueInMainThread([cb = task.callback]() { if (cb) cb(nullptr); });
-                continue;
-            }
-
-            DiskCacheEntry newCacheEntry;
-            newCacheEntry.width = gifResult.width;
-            newCacheEntry.height = gifResult.height;
-            for (auto& frame : gifResult.frames) {
-                DiskCacheEntry::Frame cacheFrame;
-                cacheFrame.pixels = std::move(frame.pixels);
-                cacheFrame.delay = frame.delayMs / 1000.0f;
-                cacheFrame.width = frame.width;
-                cacheFrame.height = frame.height;
-                newCacheEntry.frames.push_back(std::move(cacheFrame));
-            }
-            saveToDiskCache(task.path, newCacheEntry);
-
-            std::deque<PendingFrame> pendingFrames;
-            for (auto& frame : newCacheEntry.frames) {
-                PendingFrame pf;
-                pf.pixels = std::move(frame.pixels);
-                pf.width = frame.width;
-                pf.height = frame.height;
-                pf.delayMs = static_cast<int>(frame.delay * 1000.0f + 0.5f);
-                pendingFrames.push_back(std::move(pf));
-            }
-
-            Loader::get()->queueInMainThread([path = task.path, pendingFrames = std::move(pendingFrames),
-                                              canvasW = static_cast<int>(gifResult.width),
-                                              canvasH = static_cast<int>(gifResult.height),
-                                              cb = task.callback]() mutable {
-                if (s_shutdownMode.load(std::memory_order_acquire)) {
-                    if (cb) cb(nullptr);
-                    return;
-                }
-                if (pendingFrames.empty()) {
-                    if (cb) cb(nullptr);
-                    return;
-                }
-
-                auto ret = new AnimatedGIFSprite();
-                if (ret) {
-                    ret->m_filename = path;
+                    auto ret = new AnimatedGIFSprite();
+                    if (!ret) {
+                        if (cb) cb(nullptr);
+                        return;
+                    }
+                    ret->m_filename = key;
                     ret->m_canvasWidth = canvasW;
                     ret->m_canvasHeight = canvasH;
                     ret->m_pendingFrames = std::move(pendingFrames);
@@ -826,11 +711,151 @@ void AnimatedGIFSprite::workerLoop() {
                     ret->autorelease();
 
                     if (cb) cb(ret);
-                } else {
-                    if (cb) cb(nullptr);
+                });
+
+            } else {
+                DiskCacheEntry cachedEntry;
+                if (loadFromDiskCache(task.path, cachedEntry)) {
+                    Loader::get()->queueInMainThread([path = task.path, cachedEntry = std::move(cachedEntry), cb = task.callback]() mutable {
+                        if (s_shutdownMode.load(std::memory_order_acquire)) {
+                            if (cb) cb(nullptr);
+                            return;
+                        }
+                        auto ret = new AnimatedGIFSprite();
+                        if (ret) {
+                            ret->m_filename = path;
+                            ret->m_canvasWidth = cachedEntry.width;
+                            ret->m_canvasHeight = cachedEntry.height;
+
+                            if (!ret->init()) {
+                                CC_SAFE_DELETE(ret);
+                                if (cb) cb(nullptr);
+                                return;
+                            }
+
+                            float sf = getContentScaleFactorSafe();
+                            ret->setContentSize(CCSize(ret->m_canvasWidth / sf, ret->m_canvasHeight / sf));
+
+                            // stream cached frames too; never a whole gif per callback.
+                            for (auto& frame : cachedEntry.frames) {
+                                PendingFrame pf;
+                                pf.pixels = std::move(frame.pixels);
+                                pf.width = frame.width;
+                                pf.height = frame.height;
+                                pf.delayMs = static_cast<int>(frame.delay * 1000.0f + 0.5f);
+                                ret->m_pendingFrames.push_back(std::move(pf));
+                            }
+
+                            ret->processNextPendingFrame();
+
+                            if (!ret->m_pendingFrames.empty()) {
+                                ret->schedule(schedule_selector(AnimatedGIFSprite::updateTextureLoading));
+                            } else {
+                                ret->scheduleUpdate();
+                            }
+
+                            ret->autorelease();
+                            if (cb) cb(ret);
+                        } else {
+                            if (cb) cb(nullptr);
+                        }
+                    });
+                    continue;
                 }
-            });
+
+                auto data = readGifFile(task.path);
+                if (data.empty()) {
+                    Loader::get()->queueInMainThread([cb = task.callback]() { if (cb) cb(nullptr); });
+                    continue;
+                }
+
+                if (!GIFDecoder::isGIF(data.data(), data.size())) {
+                    Loader::get()->queueInMainThread([cb = task.callback]() { if (cb) cb(nullptr); });
+                    continue;
+                }
+
+                auto gifResult = decode(data.data(), data.size());
+                if (gifResult.frames.empty()) {
+                    Loader::get()->queueInMainThread([cb = task.callback]() { if (cb) cb(nullptr); });
+                    continue;
+                }
+
+                DiskCacheEntry newCacheEntry;
+                newCacheEntry.width = gifResult.width;
+                newCacheEntry.height = gifResult.height;
+                for (auto& frame : gifResult.frames) {
+                    DiskCacheEntry::Frame cacheFrame;
+                    cacheFrame.pixels = std::move(frame.pixels);
+                    cacheFrame.delay = frame.delayMs / 1000.0f;
+                    cacheFrame.width = frame.width;
+                    cacheFrame.height = frame.height;
+                    newCacheEntry.frames.push_back(std::move(cacheFrame));
+                }
+                saveToDiskCache(task.path, newCacheEntry);
+
+                std::deque<PendingFrame> pendingFrames;
+                for (auto& frame : newCacheEntry.frames) {
+                    PendingFrame pf;
+                    pf.pixels = std::move(frame.pixels);
+                    pf.width = frame.width;
+                    pf.height = frame.height;
+                    pf.delayMs = static_cast<int>(frame.delay * 1000.0f + 0.5f);
+                    pendingFrames.push_back(std::move(pf));
+                }
+
+                Loader::get()->queueInMainThread([path = task.path, pendingFrames = std::move(pendingFrames),
+                                                  canvasW = static_cast<int>(gifResult.width),
+                                                  canvasH = static_cast<int>(gifResult.height),
+                                                  cb = task.callback]() mutable {
+                    if (s_shutdownMode.load(std::memory_order_acquire)) {
+                        if (cb) cb(nullptr);
+                        return;
+                    }
+                    if (pendingFrames.empty()) {
+                        if (cb) cb(nullptr);
+                        return;
+                    }
+
+                    auto ret = new AnimatedGIFSprite();
+                    if (ret) {
+                        ret->m_filename = path;
+                        ret->m_canvasWidth = canvasW;
+                        ret->m_canvasHeight = canvasH;
+                        ret->m_pendingFrames = std::move(pendingFrames);
+
+                        if (!ret->init()) {
+                            CC_SAFE_DELETE(ret);
+                            if (cb) cb(nullptr);
+                            return;
+                        }
+
+                        float sf = getContentScaleFactorSafe();
+                        ret->setContentSize(CCSize(ret->m_canvasWidth / sf, ret->m_canvasHeight / sf));
+
+                        ret->processNextPendingFrame();
+
+                        if (!ret->m_pendingFrames.empty()) {
+                            ret->schedule(schedule_selector(AnimatedGIFSprite::updateTextureLoading));
+                        } else {
+                            ret->scheduleUpdate();
+                        }
+                        ret->autorelease();
+
+                        if (cb) cb(ret);
+                    } else {
+                        if (cb) cb(nullptr);
+                    }
+                });
+            }
+            continue;
+        } catch (std::exception const& error) {
+            log::warn("[AnimatedGIFSprite] Worker job failed: {}", error.what());
+        } catch (...) {
+            log::warn("[AnimatedGIFSprite] Worker job failed with an unknown exception");
         }
+        Loader::get()->queueInMainThread([cb = std::move(task.callback)]() {
+            if (!paimon::isRuntimeShuttingDown() && cb) cb(nullptr);
+        });
     }
 }
 
@@ -993,7 +1018,10 @@ void AnimatedGIFSprite::createAsync(std::vector<uint8_t> const& data, std::strin
         return;
     }
 
-    if (!initWorker()) return;
+    if (!initWorker()) {
+        if (callback && !paimon::isRuntimeShuttingDown()) callback(nullptr);
+        return;
+    }
 
     {
         std::lock_guard<std::mutex> lock(s_queueMutex);
@@ -1022,7 +1050,10 @@ void AnimatedGIFSprite::createAsync(std::string const& path, AsyncCallback callb
         return;
     }
 
-    if (!initWorker()) return;
+    if (!initWorker()) {
+        if (callback && !paimon::isRuntimeShuttingDown()) callback(nullptr);
+        return;
+    }
 
     {
         std::lock_guard<std::mutex> lock(s_queueMutex);

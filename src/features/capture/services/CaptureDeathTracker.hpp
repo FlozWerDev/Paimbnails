@@ -3,7 +3,7 @@
 #include <atomic>
 #include <cstdint>
 
-// Deaths via destroyPlayer progress tick, not m_isDead (noclip clears it);
+// deaths via destroyplayer progress tick, not m_isdead (noclip clears it);
 // progress resets per attempt, so stale ticks fail the guard.
 namespace paimon::capture {
 
@@ -20,7 +20,7 @@ inline void clearDeathTick() {
     lastDeathTickRef().store(-1, std::memory_order_relaxed);
 }
 
-// 240Hz physics vs render frames: death can arrive late to the read.
+// 240hz physics vs render frames: death can arrive late to the read.
 constexpr uint32_t kDeathWindowTicks = 28;
 
 inline bool hasRecentDeath(uint32_t currentTick, uint32_t window = kDeathWindowTicks) {

@@ -30,8 +30,8 @@ std::unordered_map<std::string_view, Module const*> const& byId() {
     return map;
 }
 
-// isEnabled by id runs in per-frame hooks; slots cache it by position in all().
-// Relaxed atomics: racing readers just compute twice, cheaper than locking.
+// isenabled by id runs in per-frame hooks; slots cache it by position in all().
+// relaxed atomics: racing readers just compute twice, cheaper than locking.
 enum : uint8_t { kCacheUnknown = 0, kCacheOff = 1, kCacheOn = 2 };
 
 std::vector<std::atomic<uint8_t>>& enabledSlots() {
@@ -104,8 +104,8 @@ bool isEnabled(std::string_view id) {
     auto* mod = find(id);
     if (!mod) return false;
 
-    // Custom modules read a manager's config from memory, which moves without touching
-    // the settings version; no parent is Custom, so the cached chain stays exact.
+    // custom modules read a manager's config from memory, which moves without touching
+    // the settings version; no parent is custom, so the cached chain stays exact.
     if (mod->backing == Backing::Custom) return isEnabled(*mod);
 
     uint64_t const version = settings::internal::g_settingsVersion.load(std::memory_order_relaxed);
@@ -130,7 +130,7 @@ void setEnabled(Module const& mod, bool enabled) {
     auto* geodeMod = Mod::get();
     if (!geodeMod) return;
 
-    // Hot-path caches (cell height, video quality, …) snapshot settings, so any
+    // hot-path caches (cell height, video quality, …) snapshot settings, so any
     // module flip has to invalidate them or the change lands only on restart.
     settings::internal::invalidateSettingsCache();
 

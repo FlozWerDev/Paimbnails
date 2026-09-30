@@ -5,13 +5,14 @@
 #include <Geode/Geode.hpp>
 #include <atomic>
 #include <filesystem>
-#include <fstream>
 #include <list>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
 #include "../../../utils/FormatDetect.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
+#include "../../../utils/BoundedFileRead.hpp"
+#include "../../../utils/AtomicFileWrite.hpp"
 
 using namespace geode::prelude;
 
@@ -43,6 +44,7 @@ void cacheProfileImgTexture(int accountID, CCTexture2D* texture) {
     if (!texture) return;
     if (s_profileImgShutdown.load(std::memory_order_acquire)) return;
     std::lock_guard<std::mutex> lock(s_profileImgMutex);
+    if (s_profileImgShutdown.load(std::memory_order_acquire)) return;
 
     size_t incomingBytes = estimateTextureBytes(texture);
 
@@ -71,12 +73,9 @@ void cacheProfileImgTexture(int accountID, CCTexture2D* texture) {
     }
 }
 
-$on_game(Exiting) {
+void shutdownProfileImgCache() {
     s_profileImgShutdown.store(true, std::memory_order_release);
     std::lock_guard<std::mutex> lock(s_profileImgMutex);
-    for (auto& [id, ref] : s_profileImgCache) {
-        (void)ref.take();
-    }
     s_profileImgCache.clear();
     s_profileImgCacheBytes = 0;
     s_profileImgLru.clear();
@@ -94,8 +93,19 @@ CCTexture2D* getProfileImgCachedTexture(int accountID) {
     return nullptr;
 }
 
-static std::filesystem::path getProfileImgCacheDir() {
+std::filesystem::path getProfileImgCacheDir() {
     return Mod::get()->getSaveDir() / "profileimg_cache";
+}
+
+std::mutex& profileImgDiskMutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+
+void invalidateProfileImgDiskCache(int accountID) {
+    std::lock_guard lock(profileImgDiskMutex());
+    std::error_code ec;
+    std::filesystem::remove(getProfileImgCachePath(accountID), ec);
 }
 
 std::filesystem::path getProfileImgCachePath(int accountID) {
@@ -111,11 +121,14 @@ std::string getProfileImgGifCacheKey(int accountID) {
 }
 
 void clearProfileImgCache() {
-    std::lock_guard<std::mutex> lock(s_profileImgMutex);
-    s_profileImgCache.clear();
-    s_profileImgCacheBytes = 0;
-    s_profileImgLru.clear();
-    s_profileImgLruMap.clear();
+    {
+        std::lock_guard<std::mutex> lock(s_profileImgMutex);
+        s_profileImgCache.clear();
+        s_profileImgCacheBytes = 0;
+        s_profileImgLru.clear();
+        s_profileImgLruMap.clear();
+    }
+    std::lock_guard diskLock(profileImgDiskMutex());
     std::error_code ec;
     auto dir = getProfileImgCacheDir();
     if (std::filesystem::exists(dir, ec)) {
@@ -152,15 +165,9 @@ CCTexture2D* decodeProfileImgBytes(uint8_t const* data, size_t size) {
         return nullptr;
     }
 
-    if (size > 12) {
-        for (size_t i = 0; i + 3 < size && i < 12; ++i) {
-            if (data[i]=='f' && data[i+1]=='t' && data[i+2]=='y' && data[i+3]=='p') {
-                return nullptr;
-            }
-        }
-    }
+    if (paimon::format::isMp4(data, size)) return nullptr;
 
-    auto loaded = ImageLoadHelper::loadWithSTBFromMemory(data, size);
+    auto loaded = ImageLoadHelper::loadWithSTBFromMemory(data, size, false);
     if (!loaded.success || !loaded.texture) {
         return nullptr;
     }
@@ -169,33 +176,18 @@ CCTexture2D* decodeProfileImgBytes(uint8_t const* data, size_t size) {
 }
 
 CCTexture2D* loadProfileImgFromDisk(int accountID) {
-    auto path = getProfileImgCachePath(accountID);
-
-    // Open first and size via the stream: the separate exists() was one more
-    // main-thread stat, and a failed open covers the missing-file case anyway.
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file) return nullptr;
-
-    std::streamoff const size = file.tellg();
-    if (size <= 0 || size > MAX_PROFILEIMG_FILE_BYTES) return nullptr;
-    file.seekg(0, std::ios::beg);
-
-    std::vector<uint8_t> data(static_cast<size_t>(size));
-    if (!file.read(reinterpret_cast<char*>(data.data()), size)) return nullptr;
-    file.close();
-
+    if (s_profileImgShutdown.load(std::memory_order_acquire)) return nullptr;
+    std::vector<uint8_t> data;
+    {
+        std::lock_guard lock(profileImgDiskMutex());
+        data = paimon::file::readBytes(getProfileImgCachePath(accountID), MAX_PROFILEIMG_FILE_BYTES);
+    }
     return decodeProfileImgBytes(data.data(), data.size());
 }
 
 void saveProfileImgToDisk(int accountID, std::vector<uint8_t> const& data) {
-    if (data.empty() || data.size() > static_cast<size_t>(MAX_PROFILEIMG_FILE_BYTES)) return;
-    auto cacheDir = getProfileImgCacheDir();
-    std::error_code ec;
-    std::filesystem::create_directories(cacheDir, ec);
-    auto cachePath = getProfileImgCachePath(accountID);
-    std::ofstream cacheFile(cachePath, std::ios::binary);
-    if (cacheFile) {
-        cacheFile.write(reinterpret_cast<char const*>(data.data()), data.size());
-        cacheFile.close();
-    }
+    if (accountID <= 0 || data.empty() || data.size() > static_cast<size_t>(MAX_PROFILEIMG_FILE_BYTES)) return;
+    std::lock_guard lock(profileImgDiskMutex());
+    if (s_profileImgShutdown.load(std::memory_order_acquire)) return;
+    (void)paimon::file::writeAtomically(getProfileImgCachePath(accountID), data);
 }

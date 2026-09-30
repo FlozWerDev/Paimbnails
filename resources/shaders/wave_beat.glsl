@@ -1,4 +1,4 @@
-// wave_beat.glsl — sine-wave UV displacement reactive to bass + treble.
+// wave_beat.glsl — sine-wave uv displacement reactive to bass + treble.
 #ifdef GL_ES
 precision mediump float;
 #endif

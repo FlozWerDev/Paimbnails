@@ -4,7 +4,7 @@
 
 namespace paimon::gifimport {
 
-// One silhouette tracked across frames, with each reference-pose cell's color
+// one silhouette tracked across frames, with each reference-pose cell's color
 // and where that pose lands per frame.
 struct MotionGroup {
     std::vector<std::uint64_t> mask;
@@ -31,9 +31,7 @@ inline MotionKey const* keyAt(MotionTrack const& track, int frame) {
     return nullptr;
 }
 
-// Finds silhouettes the next frame repeats shifted. Hits land in `groups` and
-// leave `residual`, where their gap refills with the background they covered:
-// background turns uniform again and stops costing an object per frame.
+// tracked silhouettes leave background-filled gaps that can share fixed objects across frames.
 MotionAnalysis analyzeMotion(
     std::vector<GridFrame> const& frames,
     int width,

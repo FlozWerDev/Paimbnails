@@ -44,12 +44,12 @@ private:
     void closeInternal();
     bool findVideoTrack();
     void updateOutputFormat();
-    // Container keys first, codec output format refines; unknown keys keep Auto.
+    // container keys first, codec output format refines; unknown keys keep auto.
     void readColorAspects(AMediaFormat* fmt);
     bool isReadableColorFormat(int colorFormat) const;
     bool isSemiPlanar(int colorFormat) const;
 
-    // YUV_420_888 sidesteps vendor color-format guessing.
+    // yuv_420_888 sidesteps vendor color-format guessing.
     bool setupImageReader();
     void releaseImageReader();
     bool drainImageReader(int64_t presentationTimeUs);
@@ -57,7 +57,7 @@ private:
     AMediaExtractor* m_extractor = nullptr;
     AMediaCodec*     m_codec     = nullptr;
     AImageReader*    m_imageReader = nullptr;
-    ANativeWindow*   m_readerWindow = nullptr; // owned by m_imageReader
+    ANativeWindow*   m_readerWindow = nullptr; // owned by m_imagereader
     bool             m_useImageReader = false;
     int              m_trackIdx  = -1;
 
@@ -72,11 +72,11 @@ private:
     int              m_rotation = 0;
     double           m_duration = 0.0;
 
-    // Never stop an unstarted codec; crashes some Mali/PowerVR drivers.
+    // never stop an unstarted codec; crashes some mali/powervr drivers.
     bool             m_codecConfigured = false;
     bool             m_codecStarted    = false;
 
-    // Some drivers emit a dummy buffer before format-change.
+    // some drivers emit a dummy buffer before format-change.
     std::atomic<bool> m_outputFormatValid{false};
 
     std::atomic<bool> m_decoding{false};
@@ -87,4 +87,4 @@ private:
 
 } // namespace paimon
 
-#endif // USE_MEDIA_NDK
+#endif // use_media_ndk

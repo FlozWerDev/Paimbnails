@@ -15,8 +15,8 @@ struct FormatDef {
     uint8_t modes;
     int timeLimit;      // seconds, 0 when the format has no clock
     int attemptLimit;   // 0 when attempts are unlimited
-    bool ranked;        // Friendly is the only one that never moves Elo
-    bool cards;         // only Roulette deals
+    bool ranked;        // friendly is the only one that never moves elo
+    bool cards;         // only roulette deals
 };
 
 inline constexpr size_t kFormatCount = 10;
@@ -25,12 +25,12 @@ std::array<FormatDef, kFormatCount> const& allFormats();
 FormatDef const& formatAt(Format format);
 FormatDef const* findFormat(std::string const& key);
 
-// Formats that can be queued for in this mode, Friendly excluded.
+// formats that can be queued for in this mode, friendly excluded.
 std::vector<FormatDef const*> rankedFormats(Mode mode);
-// The same list minus the ones a disabled module would turn into a race under
-// another name. Everything that opens a queue asks this, not rankedFormats.
+// the same list minus the ones a disabled module would turn into a race under
+// another name. everything that opens a queue asks this, not rankedformats.
 std::vector<FormatDef const*> queueableFormats(Mode mode);
-// What a friendly may be played under: the queueable set plus Friendly, which
+// what a friendly may be played under: the queueable set plus friendly, which
 // has no rules of its own and is the point of the whole thing for some people.
 std::vector<FormatDef const*> friendlyFormats(Mode mode);
 
@@ -38,18 +38,16 @@ std::string formatName(FormatDef const& def);
 std::string formatWinCondition(FormatDef const& def);
 std::string formatSprite(FormatDef const& def);
 
-// Ladder cuts the level at 25/50/75/100; the bit for a segment is set once
-// somebody crosses it, and it is never handed to the second one there. Relay
-// runs on the same four and is read when all of them are closed.
+// each quarter segment is claimed once; relay results require all four segments to close.
 inline constexpr int kLadderSegments = 4;
 inline constexpr int kLadderToWin = 3;
 int segmentForPercent(float percent);
 
-// King of the hill: how long the lead has to hold.
+// king of the hill: how long the lead has to hold.
 inline constexpr float kHillSeconds = 45.f;
 
-// Tug of war: the rope sits at 0 and is won at 1 or -1. A steady lead of this
-// many points pulls it all the way in kRopeSeconds.
+// tug of war: the rope sits at 0 and is won at 1 or -1. a steady lead of this
+// many points pulls it all the way in kropeseconds.
 inline constexpr float kRopeLead = 25.f;
 inline constexpr float kRopeSeconds = 16.f;
 

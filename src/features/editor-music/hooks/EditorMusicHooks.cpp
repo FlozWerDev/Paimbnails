@@ -1,4 +1,4 @@
-// Editor entry point for the music panel: the Ctrl+M keybind and the playtest
+// editor entry point for the music panel: the ctrl+m keybind and the playtest
 // bridge that silences the panel while the level runs and brings it back after.
 
 #include <Geode/Geode.hpp>
@@ -32,7 +32,7 @@ class $modify(PaimonEditorMusicLayer, LevelEditorLayer) {
         return true;
     }
 
-    // Asymmetric on purpose: suspend before the engine takes the channel, resume after it gives it back.
+    // asymmetric on purpose: suspend before the engine takes the channel, resume after it gives it back.
     $override
     void onPlaytest() {
         paimon::editormusic::EditorMusicPlayer::get().suspend();

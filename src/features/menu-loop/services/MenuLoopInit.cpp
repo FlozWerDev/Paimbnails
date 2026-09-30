@@ -30,7 +30,7 @@ void startSongScan() {
     input.savedPath = menuLoopPathString(mod->getSavedValue<std::filesystem::path>("lastMenuLoopPath"));
 
     auto& manager = MenuLoopManager::get();
-    // Opening Menu Music before/during this task must never lose live edits.
+    // opening menu music before/during this task must never lose live edits.
     if (!manager.getSongs().empty()) {
         manager.setFinishedCalculatingSongLengths(true);
         return;
@@ -80,7 +80,7 @@ void startSongScan() {
             log::info("[MenuLoop] Scanned {} songs in {} ms off the main thread",
                 sm.getSongsSize(), elapsed);
 
-            // Only switch audio if the user is still at the menu. Gameplay and
+            // only switch audio if the user is still at the menu. gameplay and
             // editor music must not be interrupted by a late disk scan.
             auto* scene = CCDirector::get()->getRunningScene();
             if (selectSong && result.selectedSong != "menuLoop.mp3"
@@ -98,7 +98,7 @@ void startSongScan() {
 
 $on_mod(Loaded) {
     auto& sm = MenuLoopManager::get();
-    // Menu Music can autoplay before the async scan completes. Its filters
+    // menu music can autoplay before the async scan completes. its filters
     // must already be available; only these two small lists are read here.
     auto configDir = sm.getConfigDir();
     std::unordered_set<std::string> blocked, favorites;

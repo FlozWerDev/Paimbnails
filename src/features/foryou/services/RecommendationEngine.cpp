@@ -19,7 +19,7 @@ using namespace geode::prelude;
 
 namespace {
 
-// Tag affinity is dominant; the remaining signals refine the feed.
+// tag affinity is dominant; the remaining signals refine the feed.
 constexpr float kWeightTag        = 5.0f;
 constexpr float kWeightDifficulty = 1.8f;
 constexpr float kWeightLength     = 0.9f;
@@ -28,14 +28,14 @@ constexpr float kWeightSong       = 1.1f;
 constexpr float kWeightQuality    = 1.2f;
 constexpr float kWeightPopularity = 0.8f;
 
-// Untagged levels can surface, but tagged matches rank higher.
+// untagged levels can surface, but tagged matches rank higher.
 constexpr float kUntaggedPenalty = 0.6f;
-// Avoidance outweighs a single positive signal.
+// avoidance outweighs a single positive signal.
 constexpr float kAvoidMultiplier = 1.6f;
-// Diversity penalty for candidates resembling existing picks.
+// diversity penalty for candidates resembling existing picks.
 constexpr float kDiversityLambda = 1.2f;
 
-// Type19 lookups need ten-ID pages.
+// type19 lookups need ten-id pages.
 constexpr size_t kIDsPerQuery = 10;
 constexpr int kMaxTagQueries = 4;
 
@@ -64,7 +64,7 @@ std::mt19937& rng() {
     return engine;
 }
 
-// Gameplay tags predict taste more strongly than style or theme tags.
+// gameplay tags predict taste more strongly than style or theme tags.
 float categoryWeight(paimon::foryou::TagCategory category) {
     switch (category) {
         case paimon::foryou::TagCategory::Gameplay: return 1.0f;
@@ -75,7 +75,7 @@ float categoryWeight(paimon::foryou::TagCategory category) {
     }
 }
 
-// Map GD difficulty (10..60) to the search filter's 1..6.
+// map gd difficulty (10..60) to the search filter's 1..6.
 std::string difficultyFilter(int preferredDifficulty) {
     int bucket = preferredDifficulty / 10;
     if (bucket < 1 || bucket > 6) return "-1";
@@ -99,7 +99,7 @@ int demonFilter(int preferredDifficulty, int preferredDemonDifficulty) {
     }
 }
 
-// Avoid the 22-argument create overload; its binding can corrupt gd::string fields.
+// avoid the 22-argument create overload; its binding can corrupt gd::string fields.
 GJSearchObject* makeSearchObject(
     SearchType type,
     gd::string query,
@@ -171,7 +171,7 @@ std::vector<FeedQuery> RecommendationEngine::buildTagQueries(
         ids += std::to_string(pool[i]);
     }
 
-    // Type19 ignores filters; request every supplied ID for scoring.
+    // type19 ignores filters; request every supplied id for scoring.
     auto obj = makeSearchObject(SearchType::Type19, ids, "-1", "-1", 0,
                                 false, false, false, 0, false, 0);
     if (obj) queries.push_back({obj});
@@ -267,7 +267,7 @@ FeedQuery RecommendationEngine::buildSongMatch(TasteSnapshot const& taste) {
 }
 
 FeedQuery RecommendationEngine::buildExplore(TasteSnapshot const& taste) {
-    // Add an off-profile difficulty band for exploration.
+    // add an off-profile difficulty band for exploration.
     int bucket = std::clamp(taste.preferredDifficulty / 10, 1, 6);
     std::uniform_int_distribution<int> shiftDist(0, 1);
     int shifted = shiftDist(rng()) ? std::min(6, bucket + 2) : std::max(1, bucket - 2);
@@ -284,7 +284,7 @@ std::vector<FeedQuery> RecommendationEngine::buildNativeQueries(
 ) {
     if (budget <= 0) return {};
 
-    // Rotate the first strategy so consecutive refreshes differ.
+    // rotate the first strategy so consecutive refreshes differ.
     using Builder = FeedQuery (RecommendationEngine::*)(TasteSnapshot const&);
     std::vector<Builder> builders = {
         &RecommendationEngine::buildDifficultyMatch,
@@ -301,12 +301,12 @@ std::vector<FeedQuery> RecommendationEngine::buildNativeQueries(
     for (size_t offset = 0; offset < builders.size() && static_cast<int>(queries.size()) < budget; offset++) {
         auto builder = builders[(start + offset) % builders.size()];
         auto query = (this->*builder)(taste);
-        // Unsupported profile signals produce an empty query.
+        // unsupported profile signals produce an empty query.
         if (query.searchObj) queries.push_back(std::move(query));
     }
     m_strategyCursor = start + 1;
 
-    // Reserve the last slot for exploration.
+    // reserve the last slot for exploration.
     if (static_cast<int>(queries.size()) < budget && explorationRate() > 0.f) {
         auto explore = buildExplore(taste);
         if (explore.searchObj) queries.push_back(std::move(explore));
@@ -332,7 +332,7 @@ void RecommendationEngine::planQueries(std::function<void(std::vector<FeedQuery>
         return;
     }
 
-    // `include` is an AND: pairs are precise, single tags are broad.
+    // `include` is an and: pairs are precise, single tags are broad.
     std::vector<std::vector<std::string>> includeSets;
     std::vector<FeedSource> sources;
 
@@ -348,7 +348,7 @@ void RecommendationEngine::planQueries(std::function<void(std::vector<FeedQuery>
         sources.push_back(FeedSource::TagMatch);
     }
 
-    // Explore an adjacent tag without history to avoid a filter bubble.
+    // explore an adjacent tag without history to avoid a filter bubble.
     if (explorationRate() > 0.f) {
         auto category = LevelTagsClient::get().categoryOf(top[0]);
         auto neighbours = LevelTagsClient::get().catalogFor(category);
@@ -373,7 +373,7 @@ void RecommendationEngine::planQueries(std::function<void(std::vector<FeedQuery>
         if (exclude.size() >= 2) break;
         exclude.push_back(tag);
     }
-    // Explicitly avoided tags are never negotiable.
+    // explicitly avoided tags are never negotiable.
     for (auto const& [tag, vote] : taste->pinnedTags) {
         if (vote < 0 && std::find(exclude.begin(), exclude.end(), tag) == exclude.end()) {
             exclude.push_back(tag);
@@ -388,7 +388,7 @@ void RecommendationEngine::planQueries(std::function<void(std::vector<FeedQuery>
     for (size_t i = 0; i < includeSets.size(); i++) {
         LevelTagsClient::get().searchByTags(includeSets[i], exclude,
             [this, i, pools, pending, known, sourceList, taste, shared, budget](std::vector<int> ids) {
-                // Exclude seen levels and shuffle the remaining tag pool.
+                // exclude seen levels and shuffle the remaining tag pool.
                 std::erase_if(ids, [&known](int id) { return known->count(id) > 0; });
                 std::shuffle(ids.begin(), ids.end(), rng());
                 if (ids.size() > kIDsPerQuery) ids.resize(kIDsPerQuery);
@@ -405,7 +405,7 @@ void RecommendationEngine::planQueries(std::function<void(std::vector<FeedQuery>
                     }
                 }
 
-                // Give unused budget to GD search for levels outside the tag database.
+                // give unused budget to gd search for levels outside the tag database.
                 int remaining = std::max(2, budget - static_cast<int>(queries.size()));
                 for (auto& query : buildNativeQueries(*taste, remaining)) {
                     queries.push_back(std::move(query));
@@ -438,7 +438,7 @@ RecommendationEngine::Scored RecommendationEngine::scoreLevel(
         return out;
     }
 
-    // Explicitly avoided tags are hard exclusions.
+    // explicitly avoided tags are hard exclusions.
     for (auto const& tag : out.tags) {
         auto pinned = taste.pinnedTags.find(tag);
         if (pinned != taste.pinnedTags.end() && pinned->second < 0) {
@@ -476,10 +476,10 @@ RecommendationEngine::Scored RecommendationEngine::scoreLevel(
     }
 
     if (out.tags.empty()) {
-        // Untagged levels remain playable but cannot beat a tag match.
+        // untagged levels remain playable but cannot beat a tag match.
         out.tagScore = -kUntaggedPenalty;
     } else if (matched > 0) {
-        // Normalize by tag count and scale by recognized-tag coverage.
+        // normalize by tag count and scale by recognized-tag coverage.
         float coverage = static_cast<float>(matched) / static_cast<float>(out.tags.size());
         out.tagScore = rawTag / std::sqrt(static_cast<float>(out.tags.size()))
                      * (0.55f + 0.45f * coverage);
@@ -488,7 +488,7 @@ RecommendationEngine::Scored RecommendationEngine::scoreLevel(
     int diffBucket = std::clamp(static_cast<int>(level->m_difficulty) / 10, 0,
                                 static_cast<int>(kDifficultyBuckets) - 1);
     float difficultyFit = taste.difficultyHistogram[diffBucket];
-    // Neighboring difficulties still contribute to the score.
+    // neighboring difficulties still contribute to the score.
     if (diffBucket > 0) difficultyFit += 0.35f * taste.difficultyHistogram[diffBucket - 1];
     if (diffBucket + 1 < static_cast<int>(kDifficultyBuckets)) {
         difficultyFit += 0.35f * taste.difficultyHistogram[diffBucket + 1];
@@ -527,7 +527,7 @@ RecommendationEngine::Scored RecommendationEngine::scoreLevel(
     if (platformer) qualityFit += (taste.platformerRatio - 0.5f) * 0.6f;
     else            qualityFit += (0.5f - taste.platformerRatio) * 0.6f;
 
-    // Community likes provide a mild quality prior.
+    // community likes provide a mild quality prior.
     float popularity = std::min(1.f, std::log10(1.f + static_cast<float>(level->m_likes)) / 5.f);
 
     out.base = kWeightTag * out.tagScore
@@ -538,7 +538,7 @@ RecommendationEngine::Scored RecommendationEngine::scoreLevel(
              + kWeightQuality * qualityFit
              + kWeightPopularity * popularity;
 
-    // Small noise prevents identical tie ordering across refreshes.
+    // small noise prevents identical tie ordering across refreshes.
     float jitter = explorationRate();
     if (jitter > 0.f) {
         std::uniform_real_distribution<float> dist(0.f, jitter * 2.f);
@@ -578,7 +578,7 @@ std::vector<Recommendation> RecommendationEngine::diversify(
     std::vector<bool> taken(scored.size(), false);
     std::vector<size_t> chosen;
 
-    // Penalize similarity to already selected levels for feed diversity.
+    // penalize similarity to already selected levels for feed diversity.
     while (static_cast<int>(chosen.size()) < limit) {
         size_t bestIndex = scored.size();
         float bestValue = -std::numeric_limits<float>::infinity();
@@ -630,7 +630,7 @@ void RecommendationEngine::rank(
 
     auto shared = std::make_shared<std::function<void(std::vector<Recommendation>)>>(std::move(callback));
 
-    // Featured and Trending often return the same level.
+    // featured and trending often return the same level.
     std::unordered_set<int> seen;
     std::vector<Ref<GJGameLevel>> unique;
     unique.reserve(candidates.size());
@@ -678,7 +678,7 @@ void RecommendationEngine::rank(
     ids.reserve(pool->size());
     for (auto const& level : *pool) ids.push_back(level->m_levelID);
 
-    // One batched request covers the feed; cached IDs cost nothing.
+    // one batched request covers the feed; cached ids cost nothing.
     LevelTagsClient::get().fetchTags(ids, [finish](LevelTagMap tagMap) {
         finish(tagMap);
     });

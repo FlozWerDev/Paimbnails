@@ -21,7 +21,7 @@ public:
         return nullptr;
     }
 
-    // stencil-less variant (create() + later setStencil() pattern)
+    // stencil-less variant (create() + later setstencil() pattern)
     static ScissorClipNode* create() {
         auto ret = new (std::nothrow) ScissorClipNode();
         if (ret && ret->init()) {
@@ -39,7 +39,7 @@ public:
         auto* director = cocos2d::CCDirector::get();
         auto* view = director ? director->getOpenGLView() : nullptr;
 
-        // no valid size or GL view: classic clipping
+        // no valid size or gl view: classic clipping
         if (!view || size.width <= 0.f || size.height <= 0.f) {
             cocos2d::CCClippingNode::visit();
             return;

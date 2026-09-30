@@ -1,11 +1,10 @@
-// Banco de pruebas del importador de imagenes contra dibujos de verdad, no
-// contra figuras sinteticas. Carga cada imagen de una carpeta, la pasa por el
-// mismo buildPlan que usa el editor y mide lo que se ve mal en el nivel: cuantos
+// banco de pruebas del importador de imagenes contra dibujos de verdad, no
+// contra figuras sinteticas. carga cada imagen de una carpeta, la pasa por el
+// mismo buildplan que usa el editor y mide lo que se ve mal en el nivel: cuantos
 // objetos cuesta, cuanto se parece de cerca, cuanto se parece de lejos, cuantas
 // entradas de la paleta son el mismo color a la vista y cuantos trazos finos hay
 // apilados donde tendria que haber uno gordo.
-//
-//   g++ -std=c++23 -O2 -o bench tests/gif_import_bench.cpp
+//   g++ -std=c++23 -o2 -o bench tests/gif_import_bench.cpp
 //   ./bench <carpeta-o-imagen> [--mode paint|render|art|blocks|free|blur|vert|vertx] [--dim 64]
 //           [--colors 16] [--budget 12000] [--glow-scale 4] [--dump <carpeta>]
 
@@ -74,7 +73,7 @@ SourceAnimation toAnimation(Image const& image) {
     return source;
 }
 
-// Media de la imagen sobre la caja de una celda del plan. Es lo que la celda
+// media de la imagen sobre la caja de una celda del plan. es lo que la celda
 // tendria que valer, y sirve de referencia tanto de cerca como de lejos.
 Image resample(Image const& image, int width, int height) {
     Image output;
@@ -123,7 +122,7 @@ Image renderPlan(ImportPlan const& plan, int scale) {
     return image;
 }
 
-// Distancia perceptual media entre dos imagenes del mismo tamano, contando el
+// distancia perceptual media entre dos imagenes del mismo tamano, contando el
 // hueco como un color mas: dejar transparente lo que tenia color es un fallo tan
 // grande como pintarlo de otro tono.
 double meanDelta(Image const& first, Image const& second) {
@@ -147,9 +146,9 @@ double meanDelta(Image const& first, Image const& second) {
     return count > 0 ? total / static_cast<double>(count) : 0.0;
 }
 
-// De lejos el ojo promedia: las dos se reducen hasta que cada muestra vale por
+// de lejos el ojo promedia: las dos se reducen hasta que cada muestra vale por
 // cuatro celdas del plan, que es como se ve el nivel desde la distancia a la que
-// se juega. Un tono de mas que no se distingue apenas mueve este numero; una
+// se juega. un tono de mas que no se distingue apenas mueve este numero; una
 // silueta mal puesta lo hunde. `cells` es el lado de la rejilla del plan, no el
 // de la imagen, porque lo que se difumina son celdas y no pixeles del render.
 double farDelta(Image const& first, Image const& second, int cells) {
@@ -158,8 +157,8 @@ double farDelta(Image const& first, Image const& second, int cells) {
     return meanDelta(resample(first, width, height), resample(second, width, height));
 }
 
-// Lo que la geometria acierta de la rejilla que le mandaron pintar, mirando
-// dentro de la celda y no solo su centro. El plan se puntua a si mismo con una
+// lo que la geometria acierta de la rejilla que le mandaron pintar, mirando
+// dentro de la celda y no solo su centro. el plan se puntua a si mismo con una
 // muestra por celda, y ahi cualquier tira girada que pase por el centro cuenta
 // como acierto aunque deje las esquinas del color de debajo: en el juego el
 // dibujo es continuo, asi que lo que se ve es este numero.
@@ -188,7 +187,7 @@ double gridFidelity(ImportPlan const& plan, int scale) {
     return compared > 0 ? 100.0 * static_cast<double>(correct) / compared : 100.0;
 }
 
-// Entradas de la paleta que a la vista son la misma: cada una arrastra su propia
+// entradas de la paleta que a la vista son la misma: cada una arrastra su propia
 // familia de objetos sin anadir nada al dibujo.
 int microColors(std::vector<Color> const& palette) {
     std::vector<OkLab> labs;
@@ -208,9 +207,9 @@ struct StrokeStats {
     int strokes = 0;
 };
 
-// Dos objetos que se podrian cambiar por uno solo sin tocar ni un pixel: mismo
+// dos objetos que se podrian cambiar por uno solo sin tocar ni un pixel: mismo
 // color, mismo giro y pegados por un lado entero, de forma que su union es otra
-// vez un rectangulo. Cada pareja asi es un objeto tirado, y es exactamente el
+// vez un rectangulo. cada pareja asi es un objeto tirado, y es exactamente el
 // defecto de trazar una linea gruesa a base de tiras finas apiladas.
 StrokeStats mergeablePairs(std::vector<Primitive> const& objects) {
     StrokeStats stats;
@@ -245,7 +244,7 @@ StrokeStats mergeablePairs(std::vector<Primitive> const& objects) {
             };
             auto const a = project(first);
             auto const b = project(second);
-            // Pegados por un lado y con ese lado del mismo largo: la union es un
+            // pegados por un lado y con ese lado del mismo largo: la union es un
             // rectangulo justo y no se lleva por delante nada de alrededor.
             bool const alongMajor = std::abs(a[2] - b[2]) < 0.01f &&
                 std::abs(a[3] - b[3]) < 0.01f &&
@@ -286,8 +285,8 @@ char const* modeName(ImportMode mode) {
     return "?";
 }
 
-// En el juego la biblioteca del modo libre sale de los objetos de decoracion de
-// GD. Aqui no hay GD, asi que para medir el algoritmo se le da una tanda de
+// en el juego la biblioteca del modo libre sale de los objetos de decoracion de
+// gd. aqui no hay gd, asi que para medir el algoritmo se le da una tanda de
 // siluetas analiticas —cunas, cuartos de circulo, medias lunas, chaflanes— con
 // id 0: el banco no emite nada, solo mide cuanto cubren y a que precio.
 std::vector<CatalogEntry> syntheticCatalog() {
@@ -328,7 +327,7 @@ std::vector<CatalogEntry> syntheticCatalog() {
     return entries;
 }
 
-// Los modos suaves necesitan sus 7 moldes: aqui son las mascaras analiticas de
+// los modos suaves necesitan sus 7 moldes: aqui son las mascaras analiticas de
 // verdad (gaussiana/rampa), asi que el banco mide el trazado, no la emision.
 std::vector<PlanStamp> syntheticSoftStamps() {
     std::vector<PlanStamp> stamps(7);
@@ -506,7 +505,7 @@ int main(int argc, char** argv) {
             stbi_write_png(
                 source.c_str(), reference.width, reference.height, 4,
                 reference.rgba.data(), reference.width * 4);
-            // La rejilla cuantizada es lo que la geometria tiene que reproducir:
+            // la rejilla cuantizada es lo que la geometria tiene que reproducir:
             // separarla del plan dice si lo que falla es el color o el dibujo.
             Image grid;
             grid.width = plan.width;

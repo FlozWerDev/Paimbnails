@@ -7,7 +7,7 @@ protected:
     cocos2d::CCSprite* m_blurBg = nullptr;
     cocos2d::CCLayerColor* m_darkOverlay = nullptr;
 
-    // Main panel (drags whole)
+    // main panel (drags whole)
     cocos2d::CCNode* m_panelContainer = nullptr;
     cocos2d::CCNodeRGBA* m_panelBg = nullptr;
     cocos2d::CCNodeRGBA* m_titleBarBg = nullptr;
@@ -28,7 +28,7 @@ protected:
 
     bool m_isClosing = false;
 
-    // Touch priority computed at open (force-priority aware)
+    // touch priority computed at open (force-priority aware)
     int m_touchPrio = -600;
     int m_childTouchPrio = -601;
 

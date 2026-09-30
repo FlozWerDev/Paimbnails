@@ -89,7 +89,7 @@ bool containsVisibleLayerMatch(CCNode* node, std::set<std::string> const& filter
 bool sampleCursorPosition(CCPoint& outPos, bool& outInsideWindow) {
     auto winSize = CCDirector::get()->getWinSize();
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-    // No mouse on mobile: the sprite follows the finger via the CCTouchDispatcher hook.
+    // no mouse on mobile: the sprite follows the finger via the cctouchdispatcher hook.
     auto touchPos = CursorManager::get().pointerPos();
     outInsideWindow = touchPos.x >= 0.f && touchPos.y >= 0.f &&
         touchPos.x <= winSize.width && touchPos.y <= winSize.height;
@@ -1004,7 +1004,7 @@ std::vector<std::string> CursorManager::importZipData(std::vector<uint8_t> const
         return {};
     }
 
-    // file::Unzip only opens files, so the .zip goes through disk.
+    // file::unzip only opens files, so the .zip goes through disk.
     auto tmpPath = Mod::get()->getSaveDir() / "cursor_shop_download.zip";
     auto writeRes = file::writeBinary(tmpPath, geode::ByteVector(data.begin(), data.end()));
     if (!writeRes) {
@@ -1013,7 +1013,7 @@ std::vector<std::string> CursorManager::importZipData(std::vector<uint8_t> const
         return {};
     }
 
-    // Pack name comes from the file stem.
+    // pack name comes from the file stem.
     auto stem = sanitizeAsciiStem(displayName);
     if (stem.empty()) stem = "pack";
 
@@ -1098,23 +1098,23 @@ int CursorManager::cleanupInvalidImages() {
         if (bytesRead < 4) { removeFromGallery(img); removed++; continue; }
 
         bool valid = false;
-        // PNG: 89 50 4E 47
+        // png: 89 50 4e 47
         if (header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47) valid = true;
-        // JPEG: FF D8 FF
+        // jpeg: ff d8 ff
         else if (header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF) valid = true;
-        // GIF: GIF8
+        // gif: gif8
         else if (header[0] == 'G' && header[1] == 'I' && header[2] == 'F' && header[3] == '8') valid = true;
-        // WEBP: RIFF....WEBP
+        // webp: riff....webp
         else if (bytesRead >= 12 && header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F'
                  && header[8] == 'W' && header[9] == 'E' && header[10] == 'B' && header[11] == 'P') valid = true;
-        // BMP: BM
+        // bmp: bm
         else if (header[0] == 'B' && header[1] == 'M') valid = true;
-        // TIFF: II (little-endian) or MM (big-endian)
+        // tiff: ii (little-endian) or mm (big-endian)
         else if ((header[0] == 'I' && header[1] == 'I' && header[2] == 0x2A && header[3] == 0x00)
               || (header[0] == 'M' && header[1] == 'M' && header[2] == 0x00 && header[3] == 0x2A)) valid = true;
-        // QOI: qoif
+        // qoi: qoif
         else if (header[0] == 'q' && header[1] == 'o' && header[2] == 'i' && header[3] == 'f') valid = true;
-        // JXL: \x00\x00\x00\x0C JXL \x20\x0C (12 bytes)
+        // jxl: \x00\x00\x00\x0c jxl \x20\x0c (12 bytes)
         else if (bytesRead >= 12 && header[0] == 0x00 && header[1] == 0x00 && header[2] == 0x00 && header[3] == 0x0C
                  && header[4] == 'J' && header[5] == 'X' && header[6] == 'L' && header[7] == 0x20
                  && header[8] == 0x0C) valid = true;
@@ -1220,7 +1220,7 @@ CCSprite* CursorManager::createFallbackSprite() {
         if (newTex->initWithData(pixels.data(), kCCTexture2DPixelFormat_RGBA8888, kW, kH, CCSizeMake(kW, kH))) {
             ccTexParams params{GL_NEAREST, GL_NEAREST, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
             newTex->setTexParameters(&params);
-            // Ref::adopt takes the existing refcount=1; without it Ref::operator=
+            // ref::adopt takes the existing refcount=1; without it ref::operator=
             // retains again, leaving refcount=2 — permanent leak.
             fallbackTex = geode::Ref<CCTexture2D>::adopt(newTex);
         } else {
@@ -1422,7 +1422,7 @@ void CursorManager::renderOverlay() {
     if (!m_cursorNode->isVisible()) return;
     if (!hasLoadedCursorVisual()) return;
 
-    // The host uses window coordinates and restores its own GL state.
+    // the host uses window coordinates and restores its own gl state.
     if (m_trail) m_trail->beginOverlayPass();
     m_cursorNode->visit();
     if (m_trail) m_trail->endOverlayPass();
@@ -1438,7 +1438,7 @@ void CursorManager::releaseSharedResources() {
 void CursorManager::onGLContextReload() {
     detachClickOverlay();
     detachFromScene();
-    // Release while the old GL context is still active.
+    // release while the old gl context is still active.
     paimon::cursorfx::CursorTrailNode::releaseSharedTextures();
     fallbackCursorTexture() = nullptr;
 }
@@ -1456,7 +1456,7 @@ void CursorManager::syncSystemCursorVisibility(bool hideSystemCursor) {
 }
 
 void CursorManager::update(float dt) {
-    // Sampling the narrowed layer list walks the whole node tree, so only a few times a second.
+    // sampling the narrowed layer list walks the whole node tree, so only a few times a second.
     if (--m_sceneVisibleCooldown <= 0) {
         m_sceneVisibleCooldown = 6;
         m_sceneVisible = shouldShowOnCurrentScene();
@@ -1481,7 +1481,7 @@ void CursorManager::update(float dt) {
         static bool s_modHide = false;
         if (s_hideFlagsCooldown-- <= 0) {
             s_hideFlagsCooldown = 30;
-            s_nativeHide = !GameManager::get()->getGameVariable("0024"); // GameVar::ShowCursor
+            s_nativeHide = !GameManager::get()->getGameVariable("0024"); // gamevar::showcursor
             s_modHide = paimon::settings::cursor::hideInGameplay();
         }
         bool nativeHide = s_nativeHide;
@@ -1494,7 +1494,7 @@ void CursorManager::update(float dt) {
         hideInGameplay = (nativeHide || modHide) && !inMenuOverlay;
     }
 
-    // Hide instead of destroying: rebuilding the trail each time flickered per frame.
+    // hide instead of destroying: rebuilding the trail each time flickered per frame.
     bool show = insideWindow && !hideInGameplay &&
                 m_sceneVisible && hasLoadedCursorVisual();
 
@@ -1523,7 +1523,7 @@ void CursorManager::update(float dt) {
             if (lastChild != m_cursorNode) {
                 m_cursorNode->retain();
                 m_cursorNode->removeFromParentAndCleanup(false);
-                parent->addChild(m_cursorNode, INT_MAX);  // Re-add with max z-order
+                parent->addChild(m_cursorNode, INT_MAX);  // re-add with max z-order
                 m_cursorNode->release();
             }
         }

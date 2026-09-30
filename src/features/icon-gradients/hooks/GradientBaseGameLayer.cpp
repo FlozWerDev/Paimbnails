@@ -1,5 +1,5 @@
-// Re-shades the stashed dual doll when the dual effect plays, after zilko's
-// "Icon Gradients" (independent implementation; idea credit zilko144, unlicensed).
+// re-shades the stashed dual doll when the dual effect plays, after zilko's
+// "icon gradients" (independent implementation; idea credit zilko144, unlicensed).
 
 #include "GradientBaseGameLayer.hpp"
 #include "GradientSimplePlayer.hpp"

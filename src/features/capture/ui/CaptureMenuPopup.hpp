@@ -5,10 +5,10 @@
 
 class ButtonSprite;
 
-// Right-click screenshot menu. Closes on capture and delegates to CaptureOverlay.
+// right-click screenshot menu. closes on capture and delegates to captureoverlay.
 class CaptureMenuPopup : public geode::Popup {
 public:
-    // Toggle: close the open menu or open a new one; not show(), which clashes with FLAlertLayer::show().
+    // toggle: close the open menu or open a new one; not show(), which clashes with flalertlayer::show().
     static void toggle();
 
 protected:

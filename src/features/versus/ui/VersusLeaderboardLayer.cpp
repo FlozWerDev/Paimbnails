@@ -130,7 +130,7 @@ void VersusLeaderboardLayer::buildTabs() {
         m_modeButtons.push_back(btn);
     }
 
-    // The two rows of tabs answer different questions, and side by side with no
+    // the two rows of tabs answer different questions, and side by side with no
     // gap they read as one row of five that happens to have two lit.
     auto* split = CCLayerColor::create(ccColor4B{255, 255, 255, 60}, 1.f, 22.f);
     split->setPosition({winSize.width / 2.f - 6.f, rowY - 11.f});
@@ -147,7 +147,7 @@ void VersusLeaderboardLayer::buildTabs() {
 }
 
 void VersusLeaderboardLayer::load() {
-    // Switching tabs mid-request has to win: the answer to the old one is
+    // switching tabs mid-request has to win: the answer to the old one is
     // dropped rather than painted under the new tab.
     uint32_t const request = ++m_request;
     m_rows.clear();

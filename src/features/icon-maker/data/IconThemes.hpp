@@ -21,7 +21,7 @@ struct IconTheme {
 
 std::vector<IconTheme> const& iconThemes();
 
-// theme from the current player colors. False when GameManager isn't up yet.
+// theme from the current player colors. false when gamemanager isn't up yet.
 bool currentKitTheme(IconTheme& out);
 
 // fill for a zone; false when the theme leaves it unpainted.

@@ -34,14 +34,14 @@ constexpr char const* kShowLevelKey = "twitch-notify-show-level";
 constexpr char const* kShowRequesterKey = "twitch-notify-show-requester";
 constexpr char const* kOverLayerKey = "twitch-notify-over-layer";
 
-// Fixed width keeps previews and live cards aligned.
+// fixed width keeps previews and live cards aligned.
 constexpr float kCardWidth = 226.f;
 constexpr float kCardPad = 8.f;
 constexpr float kIconZone = 40.f;
 constexpr float kLineGap = 3.f;
 constexpr float kScreenMargin = 10.f;
 constexpr float kStackGap = 6.f;
-// Keep at most three stacked notices; evict the oldest without animation.
+// keep at most three stacked notices; evict the oldest without animation.
 constexpr int kMaxLive = 3;
 
 constexpr ccColor3B kDescColor = {171, 197, 232};
@@ -68,7 +68,7 @@ float savedFloat(char const* key, float fallback, float minV, float maxV) {
     return std::clamp(static_cast<float>(value), minV, maxV);
 }
 
-// Live notices in display order. OverlayManager owns the pointers; cards release
+// live notices in display order. overlaymanager owns the pointers; cards release
 // their slot on destruction, and the list is filtered before teardown can race it.
 std::vector<CCNode*>& liveCards() {
     static auto* cards = new std::vector<CCNode*>();
@@ -95,7 +95,7 @@ int claimSlot(CCNode* card) {
     return static_cast<int>(cards.size() - 1);
 }
 
-// Notice card that releases its stack slot on destruction.
+// notice card that releases its stack slot on destruction.
 class NotifyCard : public CCNodeRGBA {
 public:
     static NotifyCard* create() {
@@ -111,7 +111,7 @@ public:
     ~NotifyCard() override { releaseSlot(this); }
 };
 
-// Entry/exit direction follows the card's side of the screen.
+// entry/exit direction follows the card's side of the screen.
 CCPoint edgeOffset(NotifySpot spot, CCSize scaled) {
     int const index = static_cast<int>(spot);
     int const column = index % 3;
@@ -135,7 +135,7 @@ void addLine(CCNodeRGBA* card, CCLabelBMFont* label, float x, float y) {
     card->addChild(label, 2);
 }
 
-// Copy config: the overlay outlives the caller.
+// copy config: the overlay outlives the caller.
 void presentCard(CCNodeRGBA* card, NotifyConfig config) {
     auto* overlay = OverlayManager::get();
     if (!card || !overlay || paimon::isRuntimeShuttingDown()) return;
@@ -147,7 +147,7 @@ void presentCard(CCNodeRGBA* card, NotifyConfig config) {
         ++alive;
         if (!oldest) oldest = entry;
     }
-    // Evict the oldest immediately when the stack is full.
+    // evict the oldest immediately when the stack is full.
     if (alive >= kMaxLive && oldest) {
         releaseSlot(oldest);
         oldest->removeFromParent();
@@ -168,7 +168,7 @@ void presentCard(CCNodeRGBA* card, NotifyConfig config) {
     paimon::scheduleMainThreadDelay(notifyEnterSeconds(config) + hold, [ref, config, rest] {
         if (!ref || !ref->getParent()) return;
         runNotifyExit(ref, config, rest, [ref] {
-            // Run outside the action callback so the active node is not removed mid-walk.
+            // run outside the action callback so the active node is not removed mid-walk.
             Loader::get()->queueInMainThread([ref] {
                 if (!ref) return;
                 releaseSlot(ref);
@@ -196,7 +196,9 @@ float animTime(float seconds) {
 
 std::string shorten(std::string text, size_t limit) {
     if (text.size() <= limit) return text;
-    text.resize(limit > 3 ? limit - 3 : limit);
+    size_t cut = limit > 3 ? limit - 3 : limit;
+    while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80) --cut;
+    text.resize(cut);
     text += "...";
     return text;
 }
@@ -289,7 +291,7 @@ CCNodeRGBA* buildNotifyCard(
     if (!card) return nullptr;
     card->setAnchorPoint({0.5f, 0.5f});
     card->ignoreAnchorPointForPosition(false);
-    // Fade the whole card contents together.
+    // fade the whole card contents together.
     card->setCascadeOpacityEnabled(true);
 
     auto const accent = platformAccent(platform);
@@ -298,7 +300,7 @@ CCNodeRGBA* buildNotifyCard(
 
     std::vector<CCLabelBMFont*> lines;
 
-    // Keep the source chat ID when multiple chats are active.
+    // keep the source chat id when multiple chats are active.
     auto const heading = TwitchRequestManager::get().activeCount() > 1
         ? fmt::format("Nuevo request - {}", platformName(platform))
         : std::string("Nuevo request");
@@ -315,7 +317,7 @@ CCNodeRGBA* buildNotifyCard(
 
     if (config.showRequester) {
         auto meta = "@" + shorten(requester, 18);
-        // The ID is needed only when the level name is shown.
+        // the id is needed only when the level name is shown.
         if (config.showLevel && !levelName.empty()) meta += fmt::format("  -  ID {}", levelID);
         auto* who = CCLabelBMFont::create(meta.c_str(), "chatFont.fnt");
         who->limitLabelWidth(textWidth, 0.36f, 0.2f);
@@ -382,7 +384,7 @@ CCPoint notifyRestPoint(NotifyConfig const& config, CCSize card, int slot) {
         : row == 1 ? win.height / 2.f
         : kScreenMargin + halfH;
 
-    // Fine positioning must keep the card on screen.
+    // fine positioning must keep the card on screen.
     x = std::clamp(x + config.offsetX, halfW, std::max(halfW, win.width - halfW));
     y = std::clamp(y + config.offsetY, halfH, std::max(halfH, win.height - halfH));
 
@@ -528,10 +530,10 @@ void playNotifySound(NotifyConfig const& config) {
 void showRequestNotify(LevelRequest const& request) {
     auto const& config = notifyConfig();
     if (!config.enabled || paimon::isRuntimeShuttingDown()) return;
-    // The notice covers only the existing list.
+    // the notice covers only the existing list.
     if (!config.overLayer && requestsLayerOnScreen()) return;
 
-    // Use cached data; fetching here would steal GameLevelManager's delegate.
+    // use cached data; fetching here would steal gamelevelmanager's delegate.
     std::string name;
     if (auto const* brief = TwitchLevelBriefCache::get().peek(request.levelID);
         brief && brief->found) {

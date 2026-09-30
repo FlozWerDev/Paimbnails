@@ -1,7 +1,7 @@
-// Bucle de bordes del modo pintura: mide fidelidad SOLO en bordes
+// bucle de bordes del modo pintura: mide fidelidad solo en bordes
 // (celdas junto a otro color + anillo de 1px) y parecido cromatico en ellos,
 // barriendo dimensiones para la curva calidad vs objetos.
-// Uso: g++ -std=c++23 -O2 -o /tmp/edge_sweep tests/edge_sweep.cpp && /tmp/edge_sweep [dims...]
+// uso: g++ -std=c++23 -o2 -o /tmp/edge_sweep tests/edge_sweep.cpp && /tmp/edge_sweep [dims...]
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -34,7 +34,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-// Mascara de borde a escala de render: pixel cuyo indice de celda difiere de
+// mascara de borde a escala de render: pixel cuyo indice de celda difiere de
 // algun 4-vecino, dilatada con un anillo de 1px para pillar derrames.
 std::vector<char> edgeMask(ImportPlan const& plan, int scale) {
     int const W = plan.width * scale, H = plan.height * scale;
@@ -52,7 +52,7 @@ std::vector<char> edgeMask(ImportPlan const& plan, int scale) {
                 (y > 0 && idx(x, y - 1) != c))
                 edge[static_cast<std::size_t>(y) * W + x] = 1;
         }
-    // Dilatar 1px.
+    // dilatar 1px.
     std::vector<char> out = edge;
     for (int y = 0; y < H; ++y)
         for (int x = 0; x < W; ++x) {
@@ -73,7 +73,7 @@ struct EdgeScore {
     double cover = 0.0;    // % pixeles de borde que mide
     double spill = 0.0;    // % borde con color equivocado (derrame vecino)
     double gap = 0.0;      // % borde sin cubrir (hueco/transparente)
-    double parecido = 0.0;  // distancia rgb media vs ORIGINAL en borde
+    double parecido = 0.0;  // distancia rgb media vs original en borde
     double cerca = 0.0;    // % borde: derrame con su color al lado (suavizado)
     double lejos = 0.0;    // % borde: derrame sin su color al lado (invasion)
 };
@@ -113,8 +113,8 @@ EdgeScore edgeFidelity(
             if (dr == 0 && dg == 0 && db == 0) ++hit;
             else {
                 ++spill;
-                // ¿El color pintado tiene alguna celda vecina (8) con ese
-                // mismo color? Si no, es invasion lejos del borde, no
+                // ¿el color pintado tiene alguna celda vecina (8) con ese
+                // mismo color? si no, es invasion lejos del borde, no
                 // suavizado de la orla.
                 int painted = -1;
                 for (std::size_t k = 0; k < plan.palette.size(); ++k) {
@@ -142,7 +142,7 @@ EdgeScore edgeFidelity(
                 if (nearColor) ++nearCount;
                 else ++farCount;
             }
-            // Parecido al original: muestra la fuente a tamaño de render.
+            // parecido al original: muestra la fuente a tamaño de render.
             int sx = std::min(srcW - 1, x * srcW / W);
             int sy = std::min(srcH - 1, y * srcH / H);
             std::size_t const sp =
@@ -150,7 +150,7 @@ EdgeScore edgeFidelity(
             int sr = (int)preview[p] - srcRgba[sp];
             int sg = (int)preview[p + 1] - srcRgba[sp + 1];
             int sb = (int)preview[p + 2] - srcRgba[sp + 2];
-            // Pixel sin cubrir: se veria el fondo, penaliza como negro.
+            // pixel sin cubrir: se veria el fondo, penaliza como negro.
             if (index < 0 || !visible) {
                 sr = 0 - (int)srcRgba[sp];
                 sg = 0 - (int)srcRgba[sp + 1];

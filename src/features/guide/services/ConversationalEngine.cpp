@@ -8,7 +8,7 @@ namespace paimon::guide {
 
 namespace {
 
-// Tokens that refer to the current topic.
+// tokens that refer to the current topic.
 bool isPureReferenceToken(std::string const& t) {
     static std::vector<std::string> const kRef = {
         "that", "this", "it", "those", "these", "same", "there", "what", "about",
@@ -18,7 +18,7 @@ bool isPureReferenceToken(std::string const& t) {
     return std::find(kRef.begin(), kRef.end(), t) != kRef.end();
 }
 
-// Detect "what else?"/"que mas?" prompts.
+// detect "what else?"/"que mas?" prompts.
 bool looksLikeMore(std::string const& normalized) {
     static std::vector<std::string> const kMore = {
         "que mas", "y que mas", "mas", "que mas hay", "algo mas", "algo mas de eso",
@@ -31,7 +31,7 @@ bool looksLikeMore(std::string const& normalized) {
     return false;
 }
 
-// Action verbs signal a fresh query, not a follow-up.
+// action verbs signal a fresh query, not a follow-up.
 bool isActionVerb(std::string const& t) {
     static std::vector<std::string> const kVerb = {
         "change", "set", "make", "open", "enable", "disable", "configure",
@@ -43,14 +43,14 @@ bool isActionVerb(std::string const& t) {
     return std::find(kVerb.begin(), kVerb.end(), t) != kVerb.end();
 }
 
-// Fuzzy token similarity using LightLemmatizer stems.
+// fuzzy token similarity using lightlemmatizer stems.
 bool tokensSimilar(std::string const& a, std::string const& b) {
     if (a == b) return true;
     if (a.size() < 3 || b.size() < 3) return false;
     auto sa = LightLemmatizer::stem(a);
     auto sb = LightLemmatizer::stem(b);
     if (!sa.empty() && sa == sb) return true;
-    // Require a three-character prefix covering half the shorter token.
+    // require a three-character prefix covering half the shorter token.
     std::size_t n = std::min(a.size(), b.size());
     std::size_t match = 0;
     while (match < n && a[match] == b[match]) ++match;
@@ -86,7 +86,7 @@ Resolution ConversationalEngine::resolve(
     auto const* top = topic(currentTopicId);
     if (!top) return res;
 
-    // "What else?" resolves to the topic's more answer.
+    // "what else?" resolves to the topic's more answer.
     if (looksLikeMore(normalized)) {
         res.isFollowUp = true;
         res.topicId = currentTopicId;
@@ -94,7 +94,7 @@ Resolution ConversationalEngine::resolve(
         return res;
     }
 
-    // Pure references resolve to the current topic unless they contain an action verb.
+    // pure references resolve to the current topic unless they contain an action verb.
     {
         bool hasVerb = false;
         for (auto const& t : contentTokens) {
@@ -108,7 +108,7 @@ Resolution ConversationalEngine::resolve(
         }
     }
 
-    // Short (<=4 token) queries with <=2 non-reference tokens may resolve to a subtopic.
+    // short (<=4 token) queries with <=2 non-reference tokens may resolve to a subtopic.
     std::size_t totalTokens = 1 + std::count(normalized.begin(), normalized.end(), ' ');
     if (contentTokens.size() <= 2 && contentTokens.size() >= 1 && totalTokens <= 4) {
         bool hasVerb = false;

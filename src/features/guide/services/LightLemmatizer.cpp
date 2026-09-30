@@ -4,7 +4,7 @@
 
 namespace paimon::guide {
 
-// Shared normalized EN/ES stopwords.
+// shared normalized en/es stopwords.
 
 std::unordered_set<std::string> const& LightLemmatizer::stopwords() {
     static const std::unordered_set<std::string> kStopwords = {
@@ -23,7 +23,7 @@ std::unordered_set<std::string> const& LightLemmatizer::stopwords() {
         "cuanto", "cuantos", "cuanta", "cuantas",
         "hay", "tiene", "tengo", "tienes", "puedo", "puede", "puedes",
         "sabes", "quiero", "quieres", "necesito", "ayuda",
-        // Keep topic-bearing registry aliases out of this generic list.
+        // keep topic-bearing registry aliases out of this generic list.
         "configure", "change", "set", "enable", "disable", "open", "find",
         "use", "want", "need", "show", "make", "give", "tell",
         "configurar", "cambiar", "poner", "activar", "desactivar", "abrir",
@@ -35,7 +35,7 @@ std::unordered_set<std::string> const& LightLemmatizer::stopwords() {
     return kStopwords;
 }
 
-// Canonical synonym map.
+// canonical synonym map.
 
 std::unordered_map<std::string, std::string> const& LightLemmatizer::synonyms() {
     static const std::unordered_map<std::string, std::string> kSyn = {
@@ -254,7 +254,7 @@ bool LightLemmatizer::isStopword(std::string const& tokenLower) {
     return stopwords().contains(tokenLower);
 }
 
-// Trim one common EN/ES suffix; this is intentionally lighter than a full stemmer.
+// trim one common en/es suffix; this is intentionally lighter than a full stemmer.
 std::string LightLemmatizer::stem(std::string const& t) {
     if (t.size() < 4) return t;
 
@@ -298,7 +298,7 @@ std::vector<std::string> LightLemmatizer::expand(std::string const& token) {
         add(stem(it->second));
     }
 
-    // Also resolve the stem as a synonym key.
+    // also resolve the stem as a synonym key.
     auto stemmed = stem(token);
     if (stemmed != token) {
         auto it2 = syn.find(stemmed);

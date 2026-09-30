@@ -13,8 +13,8 @@
 
 namespace paimon::keybinds {
 
-// mouse buttons and scroll triggers beside Geode's keyboard-only keybinds.
-// extended bindings live in saved values as paimon-extkb-{settingKey}.
+// mouse buttons and scroll triggers beside geode's keyboard-only keybinds.
+// extended bindings live in saved values as paimon-extkb-{settingkey}.
 
 enum class ExtendedKind : int {
     None      = 0,

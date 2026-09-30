@@ -30,7 +30,7 @@ constexpr float kVolumeX = 126.f;
 constexpr float kVolumeW = kPanelW - kPad - kVolumeX;
 constexpr float kVolumeY = 14.f;
 
-// Touch slack around the thin bars so they are not impossible to grab.
+// touch slack around the thin bars so they are not impossible to grab.
 constexpr float kGrabSlack = 6.f;
 
 constexpr int kMenuPriority = -260;
@@ -98,7 +98,7 @@ bool EditorMusicPanel::init(LevelEditorLayer* editor) {
 
 EditorMusicPanel::~EditorMusicPanel() {
     if (s_instance == this) s_instance = nullptr;
-    // Leaving the editor takes the music with it; nothing else owns the channel.
+    // leaving the editor takes the music with it; nothing else owns the channel.
     EditorMusicPlayer::get().stop();
 }
 
@@ -108,7 +108,7 @@ void EditorMusicPanel::onExit() {
 }
 
 void EditorMusicPanel::registerWithTouchDispatcher() {
-    // After our own menu (so buttons win) but before the editor canvas.
+    // after our own menu (so buttons win) but before the editor canvas.
     CCDirector::get()->getTouchDispatcher()->addTargetedDelegate(this, kPanelPriority, true);
 }
 
@@ -270,7 +270,7 @@ bool EditorMusicPanel::toggleOpen() {
 }
 
 void EditorMusicPanel::applyVisibility() {
-    // Paused counts as playtesting too, or the panel would pop back up over the
+    // paused counts as playtesting too, or the panel would pop back up over the
     // pause menu halfway through a run.
     bool playtesting = m_editor && m_editor->m_playbackMode != PlaybackMode::Not;
     bool uiHidden = m_editor && m_editor->m_editorUI && !m_editor->m_editorUI->isVisible();
@@ -333,7 +333,7 @@ void EditorMusicPanel::tick(float) {
     auto& player = EditorMusicPlayer::get();
     player.tick();
 
-    // Backstop for the playtest hooks: whatever put the editor in playback mode,
+    // backstop for the playtest hooks: whatever put the editor in playback mode,
     // the level's own audio owns the room until it drops back out.
     bool levelRunning = m_editor && m_editor->m_playbackMode != PlaybackMode::Not;
     if (levelRunning && !player.isSuspended()) player.suspend();

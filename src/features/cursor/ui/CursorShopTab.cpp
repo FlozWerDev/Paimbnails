@@ -21,11 +21,11 @@ namespace kit = paimon::configkit;
 constexpr float kCellWidth  = 108.f;
 constexpr float kCellHeight = 86.f;
 constexpr float kCellGap    = 6.f;
-// Cards per view; each drags a thumb download, so keep it low even when the request brings more.
+// cards per view; each drags a thumb download, so keep it low even when the request brings more.
 constexpr int kPageSize = 20;
-// Grid shows ~2 rows; at default speed (16) each wheel notch skipped a whole one.
+// grid shows ~2 rows; at default speed (16) each wheel notch skipped a whole one.
 constexpr float kScrollSpeed = 5.f;
-// Deep-search page cap.
+// deep-search page cap.
 constexpr int kDeepSearchRequests = 12;
 
 std::string toLower(std::string value) {
@@ -107,7 +107,7 @@ void CursorShopTab::buildChrome(CCSize size) {
         m_query = toLower(text);
         m_localPage = 0;
 
-        // Clearing search returns to the previous category.
+        // clearing search returns to the previous category.
         if (m_query.empty() && m_searchResults) {
             m_searchResults = false;
             m_loadedKey.clear();
@@ -352,7 +352,7 @@ void CursorShopTab::fetchListing() {
 
         tab->m_loading = false;
 
-        // User may have switched store/category while loading.
+        // user may have switched store/category while loading.
         if (key != tab->listingKey()) return;
 
         if (!res) {
@@ -367,7 +367,7 @@ void CursorShopTab::fetchListing() {
         tab->m_serverPageCount = std::max(1, listing.pageCount);
         tab->m_loadedKey = key;
         tab->applyFilter();
-        // Stepping back a page enters at the block end.
+        // stepping back a page enters at the block end.
         tab->m_localPage = tab->m_pendingLocalPage < 0
             ? tab->localPageCount() - 1
             : std::clamp(tab->m_pendingLocalPage, 0, tab->localPageCount() - 1);
@@ -403,14 +403,14 @@ void CursorShopTab::rebuildGrid() {
     int visible = std::max(0, last - first);
 
     auto viewSize = m_grid->getContentSize();
-    // Same split RowLayout does; shorting it left ghost rows and shifted content.
+    // same split rowlayout does; shorting it left ghost rows and shifted content.
     int columns = std::max(1, static_cast<int>((viewSize.width + kCellGap) / (kCellWidth + kCellGap)));
     int rows = (visible + columns - 1) / columns;
     float gridHeight = std::max(viewSize.height, rows * (kCellHeight + kCellGap) + kCellGap);
     layer->setContentSize({viewSize.width, gridHeight});
 
     if (visible == 0) {
-        // stepDeepSearch owns the message while scanning.
+        // stepdeepsearch owns the message while scanning.
         if (!m_scanning && !m_loading && !m_items.empty()) {
             setOverlay("Nada coincide en esta pagina.", kit::kDescColor);
             setOverlayAction("Buscar en la tienda", !m_query.empty());
@@ -591,7 +591,7 @@ void CursorShopTab::startDeepSearch() {
     m_scanning = true;
     m_searchCategory = ShopClient::searchCategory(m_store, m_query);
     m_searchResults = true;
-    // Leaving search must reload the category.
+    // leaving search must reload the category.
     m_loadedKey.clear();
     ShopImages::get().forgetFailures();
     m_items.clear();
@@ -634,7 +634,7 @@ void CursorShopTab::stepDeepSearch() {
                 if (known) continue;
                 tab->m_items.push_back(std::move(item));
             }
-            // Build the grid at the end so progress never paints over cards.
+            // build the grid at the end so progress never paints over cards.
             tab->applyFilter();
         }
 

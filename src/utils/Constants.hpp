@@ -7,7 +7,7 @@ namespace PaimonConstants {
     constexpr float MIN_THUMB_WIDTH_FACTOR = 0.2f;
     constexpr float MAX_THUMB_WIDTH_FACTOR = 0.95f;
 
-    // fallback when LevelCell has no background layer.
+    // fallback when levelcell has no background layer.
     constexpr float LEVELCELL_SPINNER_FALLBACK_X = 280.0f;
     constexpr float LEVELCELL_SPINNER_FALLBACK_Y = 30.0f;
 

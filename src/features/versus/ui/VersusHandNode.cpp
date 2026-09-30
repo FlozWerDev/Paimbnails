@@ -20,7 +20,7 @@ constexpr float kSlotGap = 54.f;
 constexpr float kSpyGap = 36.f;
 constexpr float kEffectSize = 22.f;
 
-// The colour is the owner's, so a card that changes hands is a different glyph.
+// the colour is the owner's, so a card that changes hands is a different glyph.
 bool sameEffects(std::vector<ActiveEffect> const& active, std::vector<ActiveEffect> const& drawn) {
     return std::equal(active.begin(), active.end(), drawn.begin(), drawn.end(),
         [](ActiveEffect const& a, ActiveEffect const& b) {
@@ -50,7 +50,7 @@ bool VersusHandNode::init() {
     m_slots->setPosition({winSize.width - 46.f, 52.f});
     this->addChild(m_slots, 1);
 
-    // Under the rival's bar, so what the Eye shows sits next to whose it is.
+    // under the rival's bar, so what the eye shows sits next to whose it is.
     m_rivalSlots = CCNode::create();
     m_rivalSlots->setPosition({winSize.width - 34.f, winSize.height - 78.f});
     m_rivalSlots->setVisible(false);
@@ -88,7 +88,7 @@ void VersusHandNode::refresh() {
         rebuildHand();
     }
 
-    // Their hand is only ours to look at while the Eye is up.
+    // their hand is only ours to look at while the eye is up.
     bool const spying = effects.seesRival();
     m_rivalSlots->setVisible(spying);
     if (spying && session.rivalHand() != m_drawnRival) {
@@ -114,9 +114,7 @@ void VersusHandNode::refresh() {
 void VersusHandNode::rebuildHand() {
     m_slots->removeAllChildren();
 
-    // Touch menu wrapping the cards: on mobile there are no Q/E keybinds,
-    // so tapping the card itself is the only way to play it. On desktop the
-    // keybinds keep working and the tap is an extra path.
+    // mobile players need touch controls because desktop card keybinds are unavailable.
     auto* menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
     menu->setID("versus-hand-touch-menu"_spr);
@@ -183,7 +181,7 @@ void VersusHandNode::rebuildEffects(std::vector<ActiveEffect> const& active) {
         if (!glyph) continue;
         glyph->setScale(kEffectSize / std::max(1.f, glyph->getContentSize().width));
         glyph->setPosition({0.f, static_cast<float>(i) * (kEffectSize + 6.f)});
-        // Incoming cards are the rival's doing, so they read in his colour.
+        // incoming cards are the rival's doing, so they read in his colour.
         glyph->setColor(effect.fromRival ? ccColor3B{240, 120, 140} : ccColor3B{140, 220, 250});
         m_effects->addChild(glyph, 1);
 

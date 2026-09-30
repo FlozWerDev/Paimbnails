@@ -1,4 +1,4 @@
-// Texture Studio button on MenuLayer's bottom-menu; runs after geode.node-ids so the ID exists.
+// texture studio button on menulayer's bottom-menu; runs after geode.node-ids so the id exists.
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/MenuLayer.hpp>

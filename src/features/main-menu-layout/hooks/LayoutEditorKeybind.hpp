@@ -8,7 +8,7 @@
 
 namespace paimon::menu_layout {
 
-// True when `layer` is the topmost interactive CCLayer: keeps the editor from
+// true when `layer` is the topmost interactive cclayer: keeps the editor from
 // opening while a modal/popup is on top.
 inline bool isTopInteractiveLayer(cocos2d::CCLayer* layer) {
     if (!layer) return false;
@@ -26,7 +26,7 @@ inline bool isTopInteractiveLayer(cocos2d::CCLayer* layer) {
     return false;
 }
 
-// Only from supported scenes (main menu and pause menu).
+// only from supported scenes (main menu and pause menu).
 inline void registerLayoutEditorKeybind(cocos2d::CCLayer* layer) {
     if (!layer) return;
 

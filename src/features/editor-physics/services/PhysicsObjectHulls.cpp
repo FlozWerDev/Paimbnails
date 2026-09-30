@@ -17,10 +17,10 @@ namespace {
 
 constexpr int kSampleSize = 48;
 constexpr unsigned char kAlphaFloor = 40;
-// Above this the outline is the bounding box itself, and a plain box is both
+// above this the outline is the bounding box itself, and a plain box is both
 // cheaper and steadier for the solver than a hull with rounding error in it.
 constexpr float kBoxCoverage = 0.92f;
-// A corner enclosing less than this is the sampling grid stepping around a
+// a corner enclosing less than this is the sampling grid stepping around a
 // diagonal, not a face the object actually has.
 constexpr float kFlatCorner = 0.002f * kSampleSize * kSampleSize;
 
@@ -58,7 +58,7 @@ std::vector<CCPoint> convexHull(std::vector<CCPoint> points) {
     return hull;
 }
 
-// Drop the corner that encloses the least area until the hull fits a fixture,
+// drop the corner that encloses the least area until the hull fits a fixture,
 // and keep going while a corner is barely a corner at all.
 void simplify(std::vector<CCPoint>& hull) {
     while (hull.size() > 3) {
@@ -107,7 +107,7 @@ std::vector<CCPoint> extremePixels(unsigned char const* rgba, int width, int hei
         }
     }
 
-    // The image rows run top down, so the y axis is flipped back here.
+    // the image rows run top down, so the y axis is flipped back here.
     std::vector<CCPoint> points;
     points.reserve(static_cast<std::size_t>(width + height) * 2);
     for (int y = 0; y < height; ++y) {

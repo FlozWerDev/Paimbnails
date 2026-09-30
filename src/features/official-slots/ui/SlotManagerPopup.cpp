@@ -239,7 +239,7 @@ CCNode* SlotManagerPopup::buildSlotRow(Slot const& slot, float width) {
     row->addChild(menu, 1);
 
     std::string const onOff = slot.enabled ? tr("slot.manager.on") : tr("slot.manager.off");
-    // Order matches the row: play, edit, reorder, toggle, delete.
+    // order matches the row: play, edit, reorder, toggle, delete.
     std::vector<std::tuple<std::string, int, char const*, int>> defs = {
         {tr("slot.manager.test"), 62, "GJ_button_01.png", 0},
         {tr("slot.manager.edit"), 58, "GJ_button_01.png", 1},
@@ -273,8 +273,8 @@ CCNode* SlotManagerPopup::buildSlotRow(Slot const& slot, float width) {
         menu->addChild(item);
         x += w + 6.f;
     }
-    // Disabled rows keep their layout and say Inactivo on the toggle; dimming
-    // the whole row would need an RGBA container, so the label does the job.
+    // disabled rows keep their layout and say inactivo on the toggle; dimming
+    // the whole row would need an rgba container, so the label does the job.
     return row;
 }
 
@@ -290,7 +290,7 @@ CCNode* SlotManagerPopup::buildHiddenRow(int officialId, float width) {
 
     if (auto* label = CCLabelBMFont::create(
             fmt::format("{} (#{})", officialName(officialId), officialId).c_str(), "bigFont.fnt")) {
-        // The "#id" suffix stays even when the name resolves, so two officials
+        // the "#id" suffix stays even when the name resolves, so two officials
         // with similar names are still told apart.
         label->setAnchorPoint({0.f, 0.5f});
         label->setPosition({12.f, kRowH / 2.f});
@@ -316,7 +316,7 @@ CCNode* SlotManagerPopup::buildHiddenRow(int officialId, float width) {
 }
 
 void SlotManagerPopup::mutated() {
-    // The store changed under our own menu: rebuild on the next frame, like the
+    // the store changed under our own menu: rebuild on the next frame, like the
     // request filters do, because this call often runs inside the touched menu.
     geode::WeakRef<SlotManagerPopup> weak(this);
     geode::Loader::get()->queueInMainThread([weak] {

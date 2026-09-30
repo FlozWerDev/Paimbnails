@@ -36,7 +36,7 @@ void onBeforeGameReload() {
     log::info("[GLContextReload] GameManager::reloadAll - soltando texturas y "
               "shaders del mod antes de que se recree el contexto GL");
 
-    // thumbnails: RAM cache and pending queues hold dead textures.
+    // thumbnails: ram cache and pending queues hold dead textures.
     ThumbnailLoader::get().onGLContextReload();
     LocalThumbs::get().clearTextureCache();
 
@@ -70,14 +70,14 @@ void onBeforeGameReload() {
     PaimonDrawNode::invalidateWhiteTextureCache();
     DominantColorsGPU::onGLContextReload();
 
-    // mod shaders die with the context; CCShaderCache only rebuilds cocos defaults.
+    // mod shaders die with the context; ccshadercache only rebuilds cocos defaults.
     paimon::shaders::purgeTrackedShaders();
 }
 
 } // namespace paimon::glreload
 
-// reloadAll rebuilds GLFW and purges CCTextureCache: run before the original
-// so releases still see the old GL context.
+// reloadall rebuilds glfw and purges cctexturecache: run before the original
+// so releases still see the old gl context.
 class $modify(PaimonGLReloadHook, GameManager) {
     void reloadAll(bool switchingModes, bool toFullscreen, bool borderless, bool fix, bool unused) {
         paimon::glreload::onBeforeGameReload();

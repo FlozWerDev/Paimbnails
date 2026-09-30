@@ -1,6 +1,6 @@
 #pragma once
 
-// Shared dynamic-song storage. config()/saveConfig() make UI changes live.
+// shared dynamic-song storage. config()/saveconfig() make ui changes live.
 
 #include <string>
 #include <string_view>
@@ -8,7 +8,7 @@
 namespace paimon::dynsong {
 
 enum class StartMode {
-    Random,  // Random point inside the configured window.
+    Random,  // random point inside the configured window.
     Beginning,
     Resume,
     Count,
@@ -30,22 +30,22 @@ enum class SubmergePreset {
     Count,
 };
 
-// Fully submerged filter values; the manager interpolates toward them.
+// fully submerged filter values; the manager interpolates toward them.
 struct SubmergeConfig {
     bool enabled = true;
     SubmergePreset preset = SubmergePreset::Underwater;
 
     float cutoffHz = 520.f;
     float highpassHz = 20.f;   // 20 = off.
-    float duckDb = -5.f;       // Gain while submerged.
+    float duckDb = -5.f;       // gain while submerged.
     float reverbMix = 22.f;    // 0..100.
     float pitch = 0.94f;       // 1.0 = unchanged.
 
-    float diveSeconds = 0.55f;     // Play to submerged.
-    float surfaceSeconds = 1.10f;  // Submerged to clear.
+    float diveSeconds = 0.55f;     // play to submerged.
+    float surfaceSeconds = 1.10f;  // submerged to clear.
 
     bool onLevelExit = true;
-    float holdSeconds = 0.7f;  // Grace before a cancelled play surfaces.
+    float holdSeconds = 0.7f;  // grace before a cancelled play surfaces.
 };
 
 struct DynamicSongConfig {
@@ -55,7 +55,7 @@ struct DynamicSongConfig {
 
     RotationMode rotationMode = RotationMode::Rotate;
 
-    int volumePct = 100;       // Relative to GD's music slider.
+    int volumePct = 100;       // relative to gd's music slider.
     float fadeSeconds = 0.35f;
 
     bool inLevelSelect = true;
@@ -64,7 +64,7 @@ struct DynamicSongConfig {
     SubmergeConfig submerge{};
 };
 
-// Cached config, loaded on first use.
+// cached config, loaded on first use.
 DynamicSongConfig const& config();
 void loadConfig();
 void saveConfig(DynamicSongConfig cfg);

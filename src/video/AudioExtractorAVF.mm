@@ -145,4 +145,4 @@ AudioPcm extractAudioToPcm(const std::string& videoPath) {
 
 } // namespace paimon::video
 
-#endif // USE_AV_FOUNDATION
+#endif // use_av_foundation

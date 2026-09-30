@@ -41,7 +41,7 @@ inline bool usesPaintGeometry(ImportMode mode) {
         mode == ImportMode::Free || mode == ImportMode::Circles;
 }
 
-// Circles mode draws with the shape, not the grid: GD paints it on another
+// circles mode draws with the shape, not the grid: gd paints it on another
 // sprite sheet and the seam patch would land underneath.
 inline bool matchesGridExactly(ImportMode mode) {
     return usesPaintGeometry(mode) && mode != ImportMode::Circles;
@@ -88,14 +88,14 @@ struct Color {
     bool operator==(Color const&) const = default;
 };
 
-// Each cell is a palette index, or -1 where there is nothing to paint.
+// each cell is a palette index, or -1 where there is nothing to paint.
 struct GridFrame {
     int delayMs = 100;
     std::vector<std::int32_t> cells;
 };
 
-// A decoration-library figure reduced to what tracing needs: which part of
-// its box paints. Rows run top-down, like the grid's.
+// a decoration-library figure reduced to what tracing needs: which part of
+// its box paints. rows run top-down, like the grid's.
 struct StampMask {
     int width = 0;
     int height = 0;
@@ -104,27 +104,25 @@ struct StampMask {
     bool empty() const { return coverage.empty(); }
 };
 
-// Each orientation is its own entry so the plan skips the emitter trigonometry.
+// each orientation is its own entry so the plan skips the emitter trigonometry.
 struct PlanStamp {
     int objectId = 0;
     float baseWidth = 30.f;
     float baseHeight = 30.f;
-    // Object art rarely fills its frame, so the mold box is the painting part
+    // object art rarely fills its frame, so the mold box is the painting part
     // only; this shifts the object (in box fractions) to land that part right.
     float offsetX = 0.f;
     float offsetY = 0.f;
     float rotation = 0.f;
     bool flipX = false;
-    // Code-generated spare molds (analytic gaussian/ramp) for missing native glow:
+    // code-generated spare molds (analytic gaussian/ramp) for missing native glow:
     // same blending and opacity as natives, but blending fakes the halo.
     bool analyticFallback = false;
     StampMask mask;
 };
 
 struct Options {
-    // Paint needs a finer grid to keep eyes, tips and diagonals. 128 stays in
-    // budget and lets the user trade resolution for speed.
-    int maxDimension = 128;
+    int maxDimension = 320;
     int minDimension = 6;
     int maxColors = 24;
     int maxFrames = 90;
@@ -139,17 +137,23 @@ struct Options {
     bool dither = false;
     bool loop = true;
     bool motion = true;
+    bool autoResolution = false;
     float blurRadius = 1.f;
     float blurGlowDiameter = 4.f;
     bool softBackdrop = true;
-    // VertX drops a 2903 wash with the image's vertical flow.
+    // vertx drops a 2903 wash with the image's vertical flow.
     bool gradientWash = true;
-    // snapshot of native alpha masks, prepared on the GL thread.
+    // snapshot of native alpha masks, prepared on the gl thread.
     std::vector<PlanStamp> softStamps;
     // best native match errors (radial, vertical, quarter) from the last
-    // buildSoftStampLibrary() run; only explains a soft-mode failure.
+    // buildsoftstamplibrary() run; only explains a soft-mode failure.
     std::array<double, 3> softMatchErrors{1.0, 1.0, 1.0};
 };
+
+inline int sourceResolutionLimit(Options const& options) {
+    return options.autoResolution && options.mode == ImportMode::Paint
+        ? 680 : options.maxDimension;
+}
 
 inline bool usesSoftGeometry(ImportMode mode) {
     return mode == ImportMode::Blur || mode == ImportMode::Vert ||
@@ -177,7 +181,7 @@ struct Primitive {
     std::uint16_t color = 0;
     PrimitiveKind kind = PrimitiveKind::Block;
     std::int16_t layer = 0;
-    // Stamp figures only: index into `ImportPlan::stamps`. Trailing so list
+    // stamp figures only: index into `importplan::stamps`. trailing so list
     // initializers keep working.
     std::uint16_t stamp = 0;
 };
@@ -187,15 +191,15 @@ struct VisibilityTrack {
     std::vector<Primitive> objects;
 };
 
-// Where the figure sits in a frame, in cells, against the reference pose.
+// where the figure sits in a frame, in cells, against the reference pose.
 struct MotionKey {
     int frame = 0;
     int x = 0;
     int y = 0;
 };
 
-// A silhouette repeated across frames at shifting spots. Drawn once and run
-// by Move triggers instead of paying a full copy per frame.
+// a silhouette repeated across frames at shifting spots. drawn once and run
+// by move triggers instead of paying a full copy per frame.
 struct MotionTrack {
     std::vector<std::uint64_t> mask;
     std::vector<Primitive> objects;
@@ -208,6 +212,7 @@ struct ImportPlan {
     int sourceFrames = 0;
     int requestedDimension = 0;
     int actualDimension = 0;
+    int sourceColorCount = 0;
     ImportMode mode = ImportMode::Blocks;
     std::string strategy;
     std::vector<Color> palette;
@@ -219,8 +224,9 @@ struct ImportPlan {
     // from here the palette is glow channels: blended at half opacity.
     std::size_t glowPaletteStart = static_cast<std::size_t>(-1);
     float glowOpacity = 1.f;
+    std::vector<float> glowOpacityScales;
     int softBackdropColor = -1;
-    // VertX 2903 wash: palette indices for top and bottom.
+    // vertx 2903 wash: palette indices for top and bottom.
     bool gradientWash = false;
     int washTop = -1;
     int washBottom = -1;
@@ -249,7 +255,7 @@ struct BuildResult {
     explicit operator bool() const { return error.empty(); }
 };
 
-// One rasterized frame for the progressive preview: produced by the worker,
+// one rasterized frame for the progressive preview: produced by the worker,
 // the popup only uploads it to texture.
 struct PreviewImage {
     int width = 0;

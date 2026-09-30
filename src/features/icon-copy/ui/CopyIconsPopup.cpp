@@ -29,12 +29,12 @@ constexpr float kButtonWidth = 104.f;
 constexpr float kButtonScale = 0.9f;
 constexpr float kButtonGap = 10.f;
 
-// Strip: the touch box is wider than the drawing so neighbours stay tappable.
+// strip: the touch box is wider than the drawing so neighbours stay tappable.
 constexpr float kSlot = 32.f;
 constexpr float kSlotGap = 2.f;
 constexpr float kIconBox = 26.f;
 
-// One dot per color the set carries, so you can tell two similar icon sets
+// one dot per color the set carries, so you can tell two similar icon sets
 // apart before applying one.
 CCNode* makeColorDots(IconSet const& set) {
     auto* gm = GameManager::get();
@@ -87,7 +87,7 @@ bool CopyIconsPopup::init(IconSet const& set, bool saved) {
     float const cx = content.width / 2.f;
     float const plateX = cx - kPlateWidth / 2.f;
 
-    // Header card: who the set belongs to, plus its colors.
+    // header card: who the set belongs to, plus its colors.
     if (auto* plate = paimon::SpriteHelper::createDarkPanel(kPlateWidth, 34.f, 90, 6.f)) {
         plate->setPosition({plateX, 176.f});
         m_mainLayer->addChild(plate);
@@ -104,7 +104,7 @@ bool CopyIconsPopup::init(IconSet const& set, bool saved) {
         m_mainLayer->addChild(dots);
     }
 
-    // The set itself, framed so it reads as one thing instead of loose icons.
+    // the set itself, framed so it reads as one thing instead of loose icons.
     if (auto* plate = paimon::SpriteHelper::createDarkPanel(kPlateWidth, 46.f, 90, 6.f)) {
         plate->setPosition({plateX, 112.f});
         m_mainLayer->addChild(plate);
@@ -132,7 +132,7 @@ bool CopyIconsPopup::init(IconSet const& set, bool saved) {
          menu_selector(CopyIconsPopup::onUse), "use-button"_spr, false},
     };
 
-    // Same width for all three; ButtonSprite rounds width up, so lay out from the actual size.
+    // same width for all three; buttonsprite rounds width up, so lay out from the actual size.
     std::vector<CCMenuItemSpriteExtra*> buttons;
     float total = 0.f;
     for (auto const& action : actions) {
@@ -201,7 +201,7 @@ void CopyIconsPopup::buildStrip(float centreX, float centreY) {
 void CopyIconsPopup::openDetail(IconType type, CCNode* slot) {
     if (!slot || !slot->getParent()) return;
 
-    // Read the icon's spot on screen before the touch handler tears anything
+    // read the icon's spot on screen before the touch handler tears anything
     // down: the mod's popup entrance animation grows the card out of it.
     auto const origin = slot->getParent()->convertToWorldSpace(slot->getPosition());
     auto const set = m_set;

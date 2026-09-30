@@ -21,7 +21,7 @@ namespace paimon::texture_studio {
 
 namespace {
 
-// Third-party asset gates mirror PackGen's compat set so packs stay interchangeable.
+// third-party asset gates mirror packgen's compat set so packs stay interchangeable.
 constexpr std::string_view kDibBaseFiles[] = {
     "hiimjustin000.demons_in_between/DIB_IconSheet-uhd.png",
     "hiimjustin000.demons_in_between/DIB_IconSheet-uhd.plist",
@@ -75,7 +75,7 @@ geode::ByteVector toByteVector(std::vector<std::uint8_t> const& v) {
     return geode::ByteVector(v.begin(), v.end());
 }
 
-// file::Zip requires each parent folder before nested entries.
+// file::zip requires each parent folder before nested entries.
 geode::Result<> ensureZipFolders(file::Zip& zip, std::string const& entryPath,
                                  std::set<std::string>& created) {
     std::size_t pos = 0;
@@ -91,8 +91,8 @@ geode::Result<> ensureZipFolders(file::Zip& zip, std::string const& entryPath,
     return Ok();
 }
 
-// Ship PNG+plist only for stable vanilla sheets and re-packed -hd atlases.
-// Mod/Geode auto-sheets keep the installed plist via addSheetPngToZip.
+// ship png+plist only for stable vanilla sheets and re-packed -hd atlases.
+// mod/geode auto-sheets keep the installed plist via addsheetpngtozip.
 geode::Result<> addSheetToZip(file::Zip& zip,
                               std::set<std::string>& createdFolders,
                               std::string const& baseName,
@@ -112,7 +112,7 @@ geode::Result<> addSheetToZip(file::Zip& zip,
     return Ok();
 }
 
-// Auto-sheets ship PNG-only so the installed plist remains authoritative;
+// auto-sheets ship png-only so the installed plist remains authoritative;
 // in-place tinting does not change their atlas layout.
 geode::Result<> addSheetPngToZip(file::Zip& zip,
                                  std::set<std::string>& createdFolders,
@@ -145,8 +145,8 @@ ImageBuffer loadOptionalOverlay(std::string const& relativePath,
     return std::move(img).unwrap();
 }
 
-// Split "Base-uhd.png" / "modid/Base-hd.png" into (entryBase, qualitySuffix).
-// The entry base keeps any modid/ prefix so mod sheets land in their folder.
+// split "base-uhd.png" / "modid/base-hd.png" into (entrybase, qualitysuffix).
+// the entry base keeps any modid/ prefix so mod sheets land in their folder.
 std::pair<std::string, std::string> splitSheetRel(std::string const& pngRel) {
     std::string noExt = endsWith(pngRel, ".png")
         ? pngRel.substr(0, pngRel.size() - 4)
@@ -159,8 +159,8 @@ std::pair<std::string, std::string> splitSheetRel(std::string const& pngRel) {
     return {noExt, std::string()};
 }
 
-// PackGen inclusion rules for files not explicitly selected. geode.loader/*
-// is included; those sheets ship without a plist, so Geode keeps its own.
+// packgen inclusion rules for files not explicitly selected. geode.loader/*
+// is included; those sheets ship without a plist, so geode keeps its own.
 bool standaloneAllowed(std::string const& rel, PackExportConfig const& cfg) {
     if (rel == "pack.png") return false;
     if (startsWith(rel, "goldFont")) return cfg.tintGoldFont;
@@ -316,7 +316,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         req.resizeScale               = 1.0f;
         req.preserveOffsetForTableSide = true;
 
-        // Use the local base-pack copy so all sheets share one atlas layout.
+        // use the local base-pack copy so all sheets share one atlas layout.
         if (precision) {
             std::string pngRel   = sel.baseName + sel.qualitySuffix + ".png";
             std::string plistRel = sel.baseName + sel.qualitySuffix + ".plist";
@@ -326,9 +326,9 @@ geode::Result<PackExportResult> PackExporter::exportPack(
                 if (pngPath && plistPath) {
                     req.sourcePng      = pngPath.unwrap();
                     req.sourcePlist    = plistPath.unwrap();
-                    // Null picks the clustering fallback inside SheetTinter.
+                    // null picks the clustering fallback inside sheettinter.
                     req.overlaySources = nullptr;
-                    // Prefer live main-thread pixels (already-remapped sheets) over disk.
+                    // prefer live main-thread pixels (already-remapped sheets) over disk.
                     if (auto snap = LocalBasePack::get().snapshotFor(pngRel)) {
                         req.sourcePng = *snap;
                     }
@@ -413,7 +413,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         req.colors                  = cfg.colors;
         req.brightness              = cfg.brightness;
         req.alternativeGlowOverlay  = cfg.alternativeGlowOverlay;
-        // UI-only like project sheets: unselected gameplay stays vanilla (mod frames fall back to Other).
+        // ui-only like project sheets: unselected gameplay stays vanilla (mod frames fall back to other).
         req.onlyTintUiSprites       = cfg.onlyTintUiSprites;
         req.tintScope               = cfg.tintScope;
         req.saturation              = cfg.saturation;
@@ -421,7 +421,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         req.spriteSkip              = cfg.spriteSkip;
         req.spriteImages            = cfg.spriteImages;
         req.spriteFusions           = cfg.spriteFusions;
-        // No local overlay masks: null picks the clustering fallback.
+        // no local overlay masks: null picks the clustering fallback.
         req.overlaySources          = nullptr;
 
         auto outRes = SheetTinter::process(req);
@@ -432,7 +432,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
         auto out = std::move(outRes).unwrap();
 
-        // Installed plist stays authoritative: PNG must match its layout.
+        // installed plist stays authoritative: png must match its layout.
         auto conformed = SheetRetarget::conform(out.pngBytes, req.sourcePlist, autoSheet.pngRel);
         bool layoutDrifted = false;
         if (!conformed.message.empty()) logMessages.push_back(conformed.message);
@@ -442,7 +442,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
                 layoutDrifted = true;
                 break;
             case RetargetOutcome::Status::Failed:
-                // Mismatched atlas deforms every frame: ship nothing.
+                // mismatched atlas deforms every frame: ship nothing.
                 ++result.standaloneFailed;
                 continue;
             case RetargetOutcome::Status::NotInstalled:
@@ -450,7 +450,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
                 break;
         }
 
-        // PNG only: the installed mod/Geode plist stays authoritative.
+        // png only: the installed mod/geode plist stays authoritative.
         if (auto r = addSheetPngToZip(zip, zipFolders, autoSheet.baseName,
                                       autoSheet.qualitySuffix, out); !r) {
             ++result.standaloneFailed;
@@ -460,10 +460,10 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         ++result.standaloneProcessed;
 
         if (cfg.includeMediumPort && layoutDrifted) {
-            // Port ships the source plist, which would hide installed-added frames.
+            // port ships the source plist, which would hide installed-added frames.
             logMessages.push_back(autoSheet.pngRel + " (hd): skipped, sheet is out of date");
         } else if (cfg.includeMediumPort && autoSheet.qualitySuffix == "-uhd") {
-            // The -hd port re-packs the atlas, so it needs its own plist.
+            // the -hd port re-packs the atlas, so it needs its own plist.
             if (auto hdOutRes = MediumPort::generate(req)) {
                 auto hdOut = std::move(hdOutRes).unwrap();
                 if (auto r = addSheetToZip(zip, zipFolders, autoSheet.baseName, "-hd", hdOut); !r) {
@@ -492,7 +492,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
         auto base = std::move(baseImg).unwrap();
 
-        // UI-only: loose vanilla textures tint Button/Menu UI only; mod files keep their own opt-in.
+        // ui-only: loose vanilla textures tint button/menu ui only; mod files keep their own opt-in.
         if (cfg.onlyTintUiSprites && rel.find('/') == std::string::npos) {
             auto kind = UiSpriteCatalog::classify(rel, "");
             if (!UiSpriteCatalog::shouldTint(kind, cfg.tintScope)) {
@@ -510,7 +510,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
 
         if (!ov.anyUsable(base.width(), base.height())) {
-            // The game already has the untinted base texture.
+            // the game already has the untinted base texture.
             logMessages.push_back(rel + ": no overlays, skipped");
             continue;
         }
@@ -536,7 +536,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
         ++result.standaloneProcessed;
 
-        // Halve -uhd for medium ports unless excluded; fonts and pre-scaled atlases break on resize.
+        // halve -uhd for medium ports unless excluded; fonts and pre-scaled atlases break on resize.
         if (cfg.includeMediumPort && endsWith(rel, "-uhd.png") &&
             !manifest.isNoScaling(rel)) {
             auto half = tinted.resizedBilinear(
@@ -575,7 +575,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
     }
 
-    // Multi-frame fusion textures also ship as standalone GIFs for ImagePlus.
+    // multi-frame fusion textures also ship as standalone gifs for imageplus.
     if (cfg.exportAnimatedFusions && !cfg.spriteFusions.empty()) {
         if (progress) {
             progress(workIndex, totalWork + 1, "Animated fusions...");
@@ -648,7 +648,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         return Err(result.errorMessage);
     }
 
-    // LoadingLayer.json resolves the custom background's -uhd/-hd variants.
+    // loadinglayer.json resolves the custom background's -uhd/-hd variants.
     if (!cfg.customLoadingBgPng.empty()) {
         if (auto r = zip.add("LoadingLayerBG-uhd.png",
                              toByteVector(cfg.customLoadingBgPng)); !r) {
@@ -712,7 +712,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         log::warn("[texture-studio] log add failed: {}", r.unwrapErr());
     }
 
-    // Flush the zip before measuring it.
+    // flush the zip before measuring it.
     {
         auto _ = std::move(zip);
     }
@@ -723,7 +723,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         result.outputZipSizeBytes = static_cast<std::int64_t>(sz);
     }
 
-    // Keep exporting other sheets after a per-sheet failure.
+    // keep exporting other sheets after a per-sheet failure.
     bool anySuccess = std::any_of(
         result.sheetResults.begin(), result.sheetResults.end(),
         [](SheetExportResult const& sr) { return sr.success; });

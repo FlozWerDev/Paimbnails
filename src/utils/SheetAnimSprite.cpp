@@ -76,7 +76,7 @@ bool SheetAnimSprite::initSheet(
         return false;
     }
 
-    // textureRect is in points: derive frame size from the loaded texture,
+    // texturerect is in points: derive frame size from the loaded texture,
     // not the original pixels (-hd/low variants differ).
     int rows = (frameCount + cols - 1) / cols;
     auto sheetSize = this->getContentSize();

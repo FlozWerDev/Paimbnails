@@ -28,7 +28,7 @@ constexpr std::array kEffects = {
     GradientAnimationType::Custom,
 };
 
-// Effect buttons share one row, so the spacing follows the count.
+// effect buttons share one row, so the spacing follows the count.
 constexpr float kEffectFirstX = 50.f;
 constexpr float kEffectStepX = 66.f;
 
@@ -315,7 +315,7 @@ void GradientAnimationPopup::onEffect(CCObject* sender) {
     GradientAnimationManager::get().setType(type);
     refreshEffectSelection();
 
-    // Custom is the only effect that shows nothing until it's been built, so
+    // custom is the only effect that shows nothing until it's been built, so
     // picking it goes straight to the editor.
     if (type == GradientAnimationType::Custom) openCustomEditor();
 }
@@ -332,7 +332,7 @@ void GradientAnimationPopup::openCustomEditor() {
         refreshEffectSelection();
     }
 
-    // Both popups write the same config, so pull the sliders back in sync once
+    // both popups write the same config, so pull the sliders back in sync once
     // the editor closes.
     Ref<GradientAnimationPopup> self = this;
     auto popup = CustomAnimationPopup::create(

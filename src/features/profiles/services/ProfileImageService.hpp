@@ -1,12 +1,13 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/Geode.hpp>
 #include <string>
-
-struct ProfileConfig;
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <mutex>
+
+struct ProfileConfig;
 
 class ProfileImageService {
 public:
@@ -18,6 +19,8 @@ public:
         static ProfileImageService instance;
         return instance;
     }
+
+    void shutdown();
 
     void setServerEnabled(bool enabled) { m_serverEnabled = enabled; }
 
@@ -55,6 +58,7 @@ public:
         geode::CopyableFunction<void(bool, ProfileConfig const&)> callback);
 
 private:
+    UploadCallback uploadCompletion(int accountID, UploadCallback callback, bool background);
     ProfileImageService();
     ProfileImageService(ProfileImageService const&) = delete;
     ProfileImageService& operator=(ProfileImageService const&) = delete;

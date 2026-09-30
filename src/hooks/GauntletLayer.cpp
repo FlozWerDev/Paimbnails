@@ -29,7 +29,7 @@ static char const* g_vertexShader = R"(
     }
 )";
 
-// Dual Kawase blur
+// dual kawase blur
 static char const* g_fragmentShaderDualKawase = R"(
     #ifdef GL_ES
     precision highp float;

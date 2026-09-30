@@ -16,7 +16,7 @@ struct TransitionMedia {
     void apply(cocos2d::CCSprite* sprite, double seconds) const;
 };
 using MediaCallback = std::function<void(std::shared_ptr<TransitionMedia>, std::string)>;
-// Main-thread API. Import/decode/disk work is serialized on a worker. GPU
+// main-thread api. import/decode/disk work is serialized on a worker. gpu
 // uploads and callbacks run on the main thread, never inside a scene hook.
 void prepareTransitionMedia(std::string const& path, MediaCallback callback = {});
 std::shared_ptr<TransitionMedia> findTransitionMedia(std::string const& path);

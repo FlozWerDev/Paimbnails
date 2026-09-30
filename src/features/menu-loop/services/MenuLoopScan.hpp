@@ -11,7 +11,7 @@
 
 namespace paimon::menuloop {
 
-// Disk-only input/output: no Mod settings or live manager access on the worker.
+// disk-only input/output: no mod settings or live manager access on the worker.
 struct MenuLoopScanInput {
     std::filesystem::path configDir, extraFolder, playlistFile;
     bool usePlaylist = false;
@@ -83,13 +83,13 @@ MenuLoopScanResult scanMenuLoopSongs(MenuLoopScanInput const& input, Cancelled c
                 std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
                     return static_cast<char>(std::tolower(c));
                 });
-                // Reject non-audio entries before querying their file status.
+                // reject non-audio entries before querying their file status.
                 if (ext == ".mp3" || ext == ".ogg" || ext == ".wav" || ext == ".flac"
                     || ext == ".oga" || ext == ".m4a" || ext == ".opus") {
                     std::error_code statusError;
                     if (it->is_regular_file(statusError)) add(menuLoopPathString(it->path()));
                 }
-                it.increment(ec); // Nonthrowing if a folder disappears mid-scan.
+                it.increment(ec); // nonthrowing if a folder disappears mid-scan.
             }
         };
         scan(input.configDir);
@@ -104,7 +104,7 @@ MenuLoopScanResult scanMenuLoopSongs(MenuLoopScanInput const& input, Cancelled c
         else if (seen.contains(input.savedPath) && !blocked.contains(input.savedPath))
             result.selectedSong = input.savedPath;
     } else if (!result.songs.empty()) {
-        // Favorites retain their double weight. No second filesystem pass.
+        // favorites retain their double weight. no second filesystem pass.
         std::vector<size_t> candidates;
         candidates.reserve(result.songs.size() * 2);
         for (size_t i = 0; i < result.songs.size(); ++i) {

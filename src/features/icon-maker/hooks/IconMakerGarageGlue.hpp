@@ -4,9 +4,9 @@ class GJGarageLayer;
 
 namespace paimon::icon_maker::garage {
 
-// No own garage button; entry is the Paimon Icons popup bottom strip.
+// no own garage button; entry is the paimon icons popup bottom strip.
 
-// Re-applies exact colors on the garage's main preview after GD re-tints it.
+// re-applies exact colors on the garage's main preview after gd re-tints it.
 void onPlayerColorChanged(GJGarageLayer* layer);
 
 }  // namespace paimon::icon_maker::garage

@@ -1,3 +1,4 @@
+#include "../../utils/Base64.hpp"
 #include "CollabManager.hpp"
 
 #include "CollabOverlay.hpp"
@@ -123,23 +124,6 @@ std::string normalizeBaseUrl(std::string base) {
     return base;
 }
 
-std::string encodeBase64(std::vector<uint8_t> const& data) {
-    static constexpr char kAlphabet[] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string out;
-    out.reserve(((data.size() + 2) / 3) * 4);
-    for (size_t i = 0; i < data.size(); i += 3) {
-        uint32_t n = static_cast<uint32_t>(data[i]) << 16;
-        if (i + 1 < data.size()) n |= static_cast<uint32_t>(data[i + 1]) << 8;
-        if (i + 2 < data.size()) n |= static_cast<uint32_t>(data[i + 2]);
-        out.push_back(kAlphabet[(n >> 18) & 0x3f]);
-        out.push_back(kAlphabet[(n >> 12) & 0x3f]);
-        out.push_back(i + 1 < data.size() ? kAlphabet[(n >> 6) & 0x3f] : '=');
-        out.push_back(i + 2 < data.size() ? kAlphabet[n & 0x3f] : '=');
-    }
-    return out;
-}
-
 void addLocalCursorAppearance(PeerAppearance& appearance) {
     if (!paimon::editor::featureEnabled("collab-custom-cursors")) return;
 
@@ -155,7 +139,7 @@ void addLocalCursorAppearance(PeerAppearance& appearance) {
     auto data = file::readBinary(path);
     if (!data || data.unwrap().empty() || data.unwrap().size() > kMaxCursorAssetBytes) return;
 
-    appearance.cursorData = encodeBase64(data.unwrap());
+    appearance.cursorData = paimon::base64Encode(data.unwrap());
     appearance.cursorScale = std::clamp(config.scale, CURSOR_SCALE_MIN, CURSOR_SCALE_MAX);
     appearance.cursorOpacity = std::clamp(config.opacity, 0, 255);
     appearance.hasCustomCursor = true;
@@ -194,7 +178,7 @@ PeerAppearance CollabManager::localAppearance() {
 }
 
 CollabManager& CollabManager::get() {
-    // RuntimeLifecycle disconnects; a CRT destructor would run after Geode's async runtime is gone.
+    // runtimelifecycle disconnects; a crt destructor would run after geode's async runtime is gone.
     static auto* instance = new CollabManager();
     return *instance;
 }
@@ -435,7 +419,7 @@ void CollabManager::clearEditor(LevelEditorLayer* editor) {
     m_overlay = nullptr;
     CollabVoice::get().stopAll();
 
-    // Hosts keep the room alive outside the editor; joiners disconnect.
+    // hosts keep the room alive outside the editor; joiners disconnect.
     if (connected() && m_isHost) {
         resetEditorState();
         m_needsResyncOnEntry = true;
@@ -546,7 +530,7 @@ void CollabManager::tick() {
         }
     }
 
-    // Apply remote ops only with an editor and within the frame budget.
+    // apply remote ops only with an editor and within the frame budget.
     if (m_editor) {
         if (m_seeding) {
             seedFromEditor();
@@ -605,7 +589,7 @@ void CollabManager::tick() {
         }
         tickPings(kTickInterval);
         tickHeatmap(kTickInterval);
-        // Fallback if overlay creation failed; normally it updates follow mode every frame.
+        // fallback if overlay creation failed; normally it updates follow mode every frame.
         if (!m_overlay) updateFollow(kTickInterval);
 
         bool playtesting = m_editor->m_playbackMode == PlaybackMode::Playing;
@@ -937,7 +921,7 @@ void CollabManager::handleMessage(matjson::Value const& msg) {
         std::string code = msg["code"].asString().unwrapOr("");
         std::string message = msg["message"].asString().unwrapOr("Error");
 
-        // Recover before tearing down; hosts reseed and peers rebuild.
+        // recover before tearing down; hosts reseed and peers rebuild.
         if (code == "not_joined") {
             if (m_state == ConnState::Disconnected) return;
             if (tryRecoverSession()) return;
@@ -1079,7 +1063,7 @@ void CollabManager::sendVoiceFrame(uint32_t seq, std::string const& b64) {
 }
 
 bool CollabManager::tryRecoverSession() {
-    // Hosts can recover outside the editor; peers need one to rebuild.
+    // hosts can recover outside the editor; peers need one to rebuild.
     if (!m_isHost && !m_editor) return false;
 
     auto nowTp = std::chrono::steady_clock::now();
@@ -1265,7 +1249,7 @@ void CollabManager::flushOutgoing() {
 
 void CollabManager::pumpOutbox() {
     if (m_state != ConnState::Connected || !m_net.isOpen()) return;
-    // One in-flight chunk preserves operation order.
+    // one in-flight chunk preserves operation order.
     if (!m_inflight.empty() || m_outbox.empty()) return;
 
     size_t budget = static_cast<size_t>(m_opTokens);
@@ -1337,7 +1321,7 @@ void CollabManager::onOpsAck(bool ok, int status) {
         return;
     }
 
-    // Keep the chunk in flight while retrying with backoff.
+    // keep the chunk in flight while retrying with backoff.
     ++m_sendFailures;
     float delay = 0.5f * static_cast<float>(1 << std::min(m_sendFailures - 1, 4));
     if (status == 429) delay = std::max(delay, 2.f);
@@ -1727,7 +1711,7 @@ void CollabManager::sendObjectState(GameObject* object, LocalEditKind kind) {
 
     auto it = m_uidToGid.find(object->m_uniqueID);
     if (it == m_uidToGid.end()) {
-    // Untracked objects are registered as adds.
+    // untracked objects are registered as adds.
         claimObjectLayer(object);
         std::string gid = makeLocalGid();
         mapGid(gid, object);
@@ -1739,7 +1723,7 @@ void CollabManager::sendObjectState(GameObject* object, LocalEditKind kind) {
     }
     std::string gid = it->second;
 
-    // Reconcile callbacks often repeat unchanged updates; skip no-ops.
+    // reconcile callbacks often repeat unchanged updates; skip no-ops.
     auto last = m_lastSentSave.find(gid);
     if (last != m_lastSentSave.end() && last->second == save) return;
 
@@ -1807,7 +1791,7 @@ void CollabManager::reconcileObjects(CCArray* objects) {
 }
 
 void CollabManager::sendSelection(CCArray* selected) {
-    // Selection presence is allowed in view-only, but not during remote apply.
+    // selection presence is allowed in view-only, but not during remote apply.
     if (m_state != ConnState::Connected || m_clientId <= 0 || m_applyingRemote || !m_editor) return;
 
     auto rects = matjson::Value::array();
@@ -1835,7 +1819,7 @@ void CollabManager::sendSelection(CCArray* selected) {
             }));
         }
     } else {
-    // Large selections use one union AABB.
+    // large selections use one union aabb.
         float minX = 1e30f, minY = 1e30f, maxX = -1e30f, maxY = -1e30f;
         for (unsigned int i = 0; i < static_cast<unsigned int>(count); ++i) {
             auto* o = typeinfo_cast<GameObject*>(selected->objectAtIndex(i));
@@ -1865,7 +1849,7 @@ void CollabManager::sendSelection(CCArray* selected) {
 
 void CollabManager::pollLocalSelection() {
     if (!connected() || m_applyingRemote || !m_editor || !m_editor->m_editorUI) return;
-    // Polling dodges EditorUI select/deselect/undo hooks, collision points for BetterEdit/Tinker/tabs.
+    // polling dodges editorui select/deselect/undo hooks, collision points for betteredit/tinker/tabs.
     if (++m_selectionPollTicks < 2) return;
     m_selectionPollTicks = 0;
 
@@ -2005,7 +1989,7 @@ void CollabManager::sweepEditor() {
 }
 
 void CollabManager::handleDigest(matjson::Value const& msg) {
-    // Compare digests only when both sides are quiescent.
+    // compare digests only when both sides are quiescent.
     if (!m_editor || !connected()) return;
     if (m_seeding || !m_snapshotComplete) return;
     if (!m_applyQueue.empty() || !m_deferredCreates.empty() || !m_deferredEdits.empty() ||
@@ -2023,7 +2007,7 @@ void CollabManager::handleDigest(matjson::Value const& msg) {
         return;
     }
 
-    // Two quiet mismatches indicate divergence; rebuild automatically.
+    // two quiet mismatches indicate divergence; rebuild automatically.
     if (++m_digestStrikes < 2) return;
     m_digestStrikes = 0;
     m_digestCooldown = m_isHost ? 60.f : 20.f;
@@ -2075,7 +2059,7 @@ void CollabManager::applyRemoteAdd(ApplyObj const& op) {
 
     m_versionByGid[op.gid] = op.version;
     if (mapped) {
-    // Keep the local form so reconcile does not echo remote edits.
+    // keep the local form so reconcile does not echo remote edits.
         m_lastSentSave[op.gid] = saveObject(mapped);
         setWireHash(op.gid, objectSyncHash(op.gid, op.version, op.save));
     } else {
@@ -2101,7 +2085,7 @@ void CollabManager::applyRemoteUpdate(ApplyObj const& op) {
     {
         TrackerGuard guard(m_applyingRemote);
         if (existing && existing->getParent()) {
-    // Drop the EditorUI pointer before freeing the object.
+    // drop the editorui pointer before freeing the object.
             if (m_editor->m_editorUI) m_editor->m_editorUI->deselectObject(existing);
             m_editor->removeObject(existing, true);
         }
@@ -2162,7 +2146,7 @@ void CollabManager::applyRemoteMove(ApplyObj const& op) {
 
     m_versionByGid[op.gid] = op.version;
     if (!op.save.empty()) {
-    // Hash the wire save for reconcile no-op checks.
+    // hash the wire save for reconcile no-op checks.
         m_lastSentSave[op.gid] = saveObject(existing);
         setWireHash(op.gid, objectSyncHash(op.gid, op.version, op.save));
     } else {
@@ -2246,7 +2230,7 @@ void CollabManager::applyRemoteDelete(ApplyObj const& op) {
     }
 
     unmapGid(op.gid);
-    m_versionByGid[op.gid] = op.version; // Reject stale re-adds.
+    m_versionByGid[op.gid] = op.version; // reject stale re-adds.
 }
 
 void CollabManager::setHostPermissions(HostPermissions permissions) {

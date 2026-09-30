@@ -1,6 +1,6 @@
 #pragma once
-// Local GameStatsManager wins over RobTop's cached score: the server value
-// lags until the next updateUserScore round-trip (frozen for days by disk cache).
+// local gamestatsmanager wins over robtop's cached score: the server value
+// lags until the next updateuserscore round-trip (frozen for days by disk cache).
 
 #include <Geode/binding/GameStatsManager.hpp>
 #include <Geode/binding/GJUserScore.hpp>
@@ -9,7 +9,7 @@
 
 namespace paimon::profiles {
 
-// GSM keys used by GD for the main profile stats strip.
+// gsm keys used by gd for the main profile stats strip.
 inline void applyLiveOwnProfileStats(GJUserScore* score) {
     if (!score) return;
     auto* gsm = GameStatsManager::sharedState();
@@ -22,7 +22,7 @@ inline void applyLiveOwnProfileStats(GJUserScore* score) {
     score->m_secretCoins = gsm->getStat("8");
 }
 
-// Force visible numbers to match the patched score; safe no-op when another
+// force visible numbers to match the patched score; safe no-op when another
 // mod or the redesign hid/rebuilt stats-menu.
 inline void refreshVanillaStatsLabels(cocos2d::CCNode* mainLayer, GJUserScore* score) {
     if (!mainLayer || !score) return;

@@ -1,6 +1,6 @@
 #pragma once
 
-// Interpolates between steps to remove micro-stutter. Restores all on draw.
+// interpolates between steps to remove micro-stutter. restores all on draw.
 
 #include "FrameInterpConfig.hpp"
 
@@ -38,7 +38,7 @@ public:
     bool isEnabled() const;
     void setEnabled(bool enabled);
 
-    // Stores the leftover without simulating; nothing arrives while paused.
+    // stores the leftover without simulating; nothing arrives while paused.
     void onStepped(double stepped, double leftover);
 
     void beginVisit(GJBaseGameLayer* layer);
@@ -90,7 +90,7 @@ private:
     FrameInterpConfig m_config;
     bool m_loaded = false;
 
-    // Identity check for the current level; never dereferenced.
+    // identity check for the current level; never dereferenced.
     GJBaseGameLayer* m_layer = nullptr;
     std::vector<Slot> m_tracked;
     std::vector<cocos2d::CCNode*> m_wanted;

@@ -45,7 +45,7 @@ static constexpr ccColor4F COL_CAT_HL      = {0.20f, 0.20f, 0.20f, 0.7f};
 static constexpr ccColor4F COL_DIVIDER     = {0.22f, 0.22f, 0.22f, 0.5f};
 static constexpr ccColor4F COL_SEPARATOR   = {0.18f, 0.18f, 0.18f, 0.6f};
 
-// Action tags used to cancel entrance/exit animations.
+// action tags used to cancel entrance/exit animations.
 static constexpr int kDimActionTag  = 8801;
 static constexpr int kBodyActionTag = 8802;
 
@@ -305,7 +305,7 @@ bool EmotePickerPopup::init(
     updateTabHighlights();
     switchTab(Tab::All);
 
-    // Preserve the base popup's dim level for the cross-fade.
+    // preserve the base popup's dim level for the cross-fade.
     m_dimOpacity = this->getOpacity();
 
     this->scheduleUpdate();
@@ -505,7 +505,7 @@ void EmotePickerPopup::buildEmoteGrid(
 
     m_hoverCells.reserve(emotes.size());
     for (size_t i = 0; i < emotes.size(); ++i) {
-    // Manual placement avoids RowLayout cells disappearing in this popup.
+    // manual placement avoids rowlayout cells disappearing in this popup.
         int col = static_cast<int>(i % static_cast<size_t>(cols));
         int row = static_cast<int>(i / static_cast<size_t>(cols));
         float x = static_cast<float>(col) * (CELL_SIZE + CELL_GAP) + CELL_SIZE / 2.f;
@@ -539,7 +539,7 @@ void EmotePickerPopup::buildEmoteGrid(
     m_scroll->moveToTop();
     m_countLabel->setString(fmt::format("{}", emotes.size()).c_str());
 
-    // Wait one tick so world-space positions are valid before loading thumbnails.
+    // wait one tick so world-space positions are valid before loading thumbnails.
     WeakRef<EmotePickerPopup> selfWeak = this;
     Loader::get()->queueInMainThread([selfWeak]() {
         if (paimon::isRuntimeShuttingDown()) return;
@@ -581,7 +581,7 @@ void EmotePickerPopup::buildAllEmotesGrid() {
 
     m_hoverCells.reserve(totalEmotes);
 
-    // One menu owns all cells; positions are assigned per category.
+    // one menu owns all cells; positions are assigned per category.
     auto menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
     menu->setContentSize({gridW, totalH});
@@ -643,7 +643,7 @@ void EmotePickerPopup::buildAllEmotesGrid() {
     m_scroll->moveToTop();
     m_countLabel->setString(fmt::format("{}", totalEmotes).c_str());
 
-    // Wait one tick before resolving thumbnail positions.
+    // wait one tick before resolving thumbnail positions.
     WeakRef<EmotePickerPopup> selfWeak = this;
     Loader::get()->queueInMainThread([selfWeak]() {
         if (paimon::isRuntimeShuttingDown()) return;
@@ -930,8 +930,8 @@ void EmotePickerPopup::requestVisibleThumbnails() {
     }
 }
 
-    // Load by cell index while the popup animates; viewport coordinates are not
-    // reliable yet, and EmoteCache de-duplicates repeated requests.
+    // load by cell index while the popup animates; viewport coordinates are not
+    // reliable yet, and emotecache de-duplicates repeated requests.
 void EmotePickerPopup::requestAllThumbnails() {
     for (size_t i = 0; i < m_hoverCells.size(); ++i) {
         loadCellThumbnail(i);
@@ -984,7 +984,7 @@ void EmotePickerPopup::attachLoadedThumbnail(size_t cellIdx,
         size_t idx = cellIdx;
         std::string key = hc.info.filename;
         uint32_t gen = m_gridGeneration;
-    hc.loaded = true; // Keep the cell marked loaded while the sprite resolves.
+    hc.loaded = true; // keep the cell marked loaded while the sprite resolves.
         AnimatedGIFSprite::createAsync(gifData, key,
             [selfWeak, idx, gen](AnimatedGIFSprite* gifSprite) {
                 auto self = selfWeak.lock();
@@ -996,7 +996,7 @@ void EmotePickerPopup::attachLoadedThumbnail(size_t cellIdx,
                     return;
                 }
                 if (!gifSprite) {
-    cell.loaded = false; // Allow retry while the grid remains alive.
+    cell.loaded = false; // allow retry while the grid remains alive.
                     return;
                 }
                 float maxD = CELL_SIZE - 6.f;
@@ -1061,7 +1061,7 @@ void EmotePickerPopup::positionCentered() {
 void EmotePickerPopup::show() {
     FLAlertLayer::show();
 
-    // Mark blur directly so the shared popup animation does not fight this one.
+    // mark blur directly so the shared popup animation does not fight this one.
     paimon::popupblur::captureAndApply(this);
 
     this->stopActionByTag(kDimActionTag);

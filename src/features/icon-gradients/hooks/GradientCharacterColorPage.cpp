@@ -1,5 +1,5 @@
-// Shades each color-page doll by slot index (Ship doubles as Jetpack), after
-// zilko's "Icon Gradients" (independent implementation; idea credit zilko144, unlicensed).
+// shades each color-page doll by slot index (ship doubles as jetpack), after
+// zilko's "icon gradients" (independent implementation; idea credit zilko144, unlicensed).
 
 #include "GradientCharacterColorPage.hpp"
 #include "GradientGarageLayer.hpp"
@@ -18,7 +18,7 @@ void GradientCharacterColorPage::updateGradient() {
         CCArrayExt<SimplePlayer*> dolls = CCArrayExt<SimplePlayer*>(self->m_playerObjects);
 
         for (int i = 0; i < dolls.size(); i++) {
-            // Slot 1 is the Ship doll, or the Jetpack one when toggled.
+            // slot 1 is the ship doll, or the jetpack one when toggled.
             IconType kind = (i == 1 && !self->m_fields->m_isShip)
                 ? IconType::Jetpack
                 : static_cast<IconType>(i);

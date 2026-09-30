@@ -39,7 +39,7 @@ float NowPlayingToast::easeInOutCubic(float t) {
     return 0.5f * p * p * p + 1.f;
 }
 
-// Pill with radius height/2 for smooth circle-to-pill transition.
+// pill with radius height/2 for smooth circle-to-pill transition.
 
 void NowPlayingToast::redrawPill(float width) {
     if (!m_pill) return;
@@ -82,7 +82,7 @@ void NowPlayingToast::redrawPill(float width) {
             ccc4FFromccc4B({80, 85, 105, 90}));
     }
 
-    // CCDrawNode draws from (0,0); center so the pill grows symmetric.
+    // ccdrawnode draws from (0,0); center so the pill grows symmetric.
     const CCSize parentSize = this->getContentSize();
     paimonPill->setContentSize({w, h});
     paimonPill->setAnchorPoint({0.f, 0.f});
@@ -96,7 +96,7 @@ void NowPlayingToast::setContentOpacity(float op) {
     if (!m_contentHolder) return;
     const GLubyte a = static_cast<GLubyte>(std::clamp(op, 0.f, 1.f) * 255.f);
 
-    // manual recursion: cascadeOpacity is unreliable on CCLabelBMFont in cocos 2.x.
+    // manual recursion: cascadeopacity is unreliable on cclabelbmfont in cocos 2.x.
     std::function<void(CCNode*)> apply = [&](CCNode* n) {
         if (!n) return;
         if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(n)) {
@@ -174,7 +174,7 @@ bool NowPlayingToast::init(const std::string& title, const std::string& subtitle
         }
     }
 
-    // Contenido arranca invisible; se revelara durante Expand.
+    // contenido arranca invisible; se revelara durante expand.
     this->setContentOpacity(0.f);
 
     float holdDuration = 1.5f;

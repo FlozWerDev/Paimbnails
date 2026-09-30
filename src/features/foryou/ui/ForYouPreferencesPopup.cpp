@@ -35,7 +35,7 @@ int difficultySpriteValueFor(int difficulty) {
     }
 }
 
-// Try fallbacks so older GD installs still show rating icons.
+// try fallbacks so older gd installs still show rating icons.
 struct RatingTierInfo {
     const char* labelKey;
     std::vector<const char*> spriteFrames;
@@ -76,7 +76,7 @@ CCSprite* createRatingSprite(int tier) {
     return spr;
 }
 
-// Keep labels readable on tinted buttons.
+// keep labels readable on tinted buttons.
 static void resetLabelsWhite(CCNode* node) {
     if (!node) return;
     if (auto* lbl = typeinfo_cast<CCLabelBMFont*>(node)) {

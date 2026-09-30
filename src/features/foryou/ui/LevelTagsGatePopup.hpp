@@ -8,13 +8,13 @@ namespace paimon::foryou {
 
 class LevelTagsGatePopup : public geode::Popup {
 public:
-    // `onContinue` runs when the user chooses to browse without tags.
+    // `oncontinue` runs when the user chooses to browse without tags.
     static LevelTagsGatePopup* create(std::function<void()> onContinue);
 
     static constexpr char const* kLevelTagsModID = "kampwski.level_tags";
 
-    // Opens the mod's page in Geode's mods list. Geode shows its own error
-    // popup when the servers don't know the ID.
+    // opens the mod's page in geode's mods list. geode shows its own error
+    // popup when the servers don't know the id.
     static void openModPage();
 
 protected:

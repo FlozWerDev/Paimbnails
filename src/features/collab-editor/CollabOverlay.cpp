@@ -1,3 +1,4 @@
+#include "../../utils/Base64.hpp"
 #include "CollabOverlay.hpp"
 
 #include "CollabEmotes.hpp"
@@ -58,7 +59,7 @@ constexpr float kCursorTeleportViewports = 2.5f;
 constexpr float kHeatRedrawEvery = 0.35f;
 constexpr int kMaxRemoteCursorDimension = 512;
 
-// CCDrawNode blends premultiplied: scale rgb by alpha or low-alpha reads as neon glow.
+// ccdrawnode blends premultiplied: scale rgb by alpha or low-alpha reads as neon glow.
 ccColor4F drawColor(ccColor3B c, float alpha) {
     float a = std::clamp(alpha, 0.f, 1.f);
     return {c.r / 255.f * a, c.g / 255.f * a, c.b / 255.f * a, a};
@@ -75,25 +76,9 @@ bool customCursorsEnabled() {
 }
 
 std::vector<uint8_t> decodeBase64(std::string const& input) {
-    static constexpr char kAlphabet[] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     std::vector<uint8_t> out;
     if (input.empty() || input.size() > kMaxCursorDataLength) return out;
-    out.reserve(input.size() * 3 / 4);
-    uint32_t value = 0;
-    int bits = -8;
-    for (unsigned char c : input) {
-        if (c == '=') break;
-        auto* found = std::find(std::begin(kAlphabet), std::end(kAlphabet) - 1, static_cast<char>(c));
-        if (found == std::end(kAlphabet) - 1) return {};
-        value = (value << 6) | static_cast<uint32_t>(found - kAlphabet);
-        bits += 6;
-        if (bits >= 0) {
-            out.push_back(static_cast<uint8_t>((value >> bits) & 0xff));
-            bits -= 8;
-            if (out.size() > kMaxCursorAssetBytes) return {};
-        }
-    }
+    if (!paimon::base64Decode(input, out) || out.size() > kMaxCursorAssetBytes) return {};
     return out;
 }
 
@@ -135,7 +120,7 @@ IconType peerIconTypeLocal(int raw) {
     }
 }
 
-// Plain containers in this cocos fork don't cascade opacity; each descendant animates itself.
+// plain containers in this cocos fork don't cascade opacity; each descendant animates itself.
 void fadeOutTree(CCNode* node, float duration) {
     if (!node) return;
     if (typeinfo_cast<CCRGBAProtocol*>(node)) {
@@ -215,7 +200,7 @@ bool CollabEditorOverlay::init(LevelEditorLayer* editor) {
     );
     m_chatButton->setID("collab-chat-button"_spr);
     m_chatButton->setVisible(CollabManager::get().connected());
-    // No middle-mouse on mobile/trackpads: ping the current view center.
+    // no middle-mouse on mobile/trackpads: ping the current view center.
     auto* pingSprite = ButtonSprite::create("Ping", "goldFont.fnt", "GJ_button_02.png", 0.45f);
     m_pingButton = CCMenuItemExt::createSpriteExtra(
         pingSprite,
@@ -254,7 +239,7 @@ bool CollabEditorOverlay::init(LevelEditorLayer* editor) {
 }
 
 CollabEditorOverlay::~CollabEditorOverlay() {
-    // Unregister before teardown; messages can arrive during playtest or polling.
+    // unregister before teardown; messages can arrive during playtest or polling.
     m_uiShowListener.destroy();
     CollabManager::get().clearOverlay(this);
 
@@ -410,7 +395,7 @@ void CollabEditorOverlay::drainTrails(float dt) {
 }
 
 void CollabEditorOverlay::updatePresence(float dt) {
-    // Follow mode samples through the per-frame path, not the 20 Hz logic tick.
+    // follow mode samples through the per-frame path, not the 20 hz logic tick.
     CollabManager::get().updateFollow(dt);
 
     auto* objectLayer = m_editor ? m_editor->m_objectLayer : nullptr;
@@ -551,7 +536,7 @@ void CollabEditorOverlay::onPeerCamera(int clientId, std::string const& name, fl
     bool const teleported = std::hypot(x - slot->x, y - slot->y) * zoom >
         viewportDiagonal * kCursorTeleportViewports;
 
-    // No wake after camera teleports or off-window cursor; ordinary samples smooth.
+    // no wake after camera teleports or off-window cursor; ordinary samples smooth.
     if (becameVisible || teleported) {
         slot->x = x;
         slot->y = y;
@@ -705,7 +690,7 @@ void CollabEditorOverlay::redrawHeatmap() {
     m_heatDraw->clear();
     auto samples = CollabManager::get().heatmapSamples(100);
     for (auto const& s : samples) {
-        // Warm yellow-orange haze, faint enough to never wash out objects.
+        // warm yellow-orange haze, faint enough to never wash out objects.
         float t = s.intensity;
         ccColor3B warm{
             255,

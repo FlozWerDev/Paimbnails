@@ -1,7 +1,7 @@
-// Barrido de picos del modo pintura: construye el plan una vez por imagen y
-// evalua N variantes runtime del normalizador de astillas sobre copias de los
+// barrido de picos del modo pintura: construye el plan una vez por imagen y
+// evalua n variantes runtime del normalizador de astillas sobre copias de los
 // objetos, puntuando picos restantes vs fidelidad de rejilla vs nº objetos.
-// Uso: g++ -std=c++23 -O2 -o /tmp/spike_sweep tests/spike_sweep.cpp && /tmp/spike_sweep
+// uso: g++ -std=c++23 -o2 -o /tmp/spike_sweep tests/spike_sweep.cpp && /tmp/spike_sweep
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -39,8 +39,8 @@ float foldedAngle(float rotation) {
     return std::min(folded, 90.f - folded);
 }
 
-// Picos: tiras/triangulos girados con algun lado <= sideCap (la punta asoma por
-// las esquinas del cuadrado que los representa). Definicion base del test
+// picos: tiras/triangulos girados con algun lado <= sidecap (la punta asoma por
+// las esquinas del cuadrado que los representa). definicion base del test
 // paint-spikes: ambos lados <= 1.6; aqui se parametriza para ver la cola.
 int countSpikes(std::vector<Primitive> const& objects, float sideCap, float angleLo = 5.f) {
     int spikes = 0;
@@ -107,7 +107,7 @@ std::vector<Primitive> normalizeVariant(
             output.push_back(object);
             continue;
         }
-        // Centros de su color que cubria el original: hay que conservarlos.
+        // centros de su color que cubria el original: hay que conservarlos.
         std::vector<std::pair<float, float>> centers;
         {
             auto const placed = xformOf(object);
@@ -217,8 +217,8 @@ int main(int argc, char** argv) {
     std::vector<float> angleGates{3.f, 5.f, 7.f, 10.f, 15.f};
     std::vector<float> diaMins{0.5f, 0.65f, 0.75f, 0.9f};
     if (census) {
-        // Censo de picos restantes: una fila por tira/triangulo girado con
-        // lado fino <= 2.5 (los <=3.0 ya pasaron por normalizePaintSpikes).
+        // censo de picos restantes: una fila por tira/triangulo girado con
+        // lado fino <= 2.5 (los <=3.0 ya pasaron por normalizepaintspikes).
         std::cout << "imagen,kind,maxSide,minSide,folded\n";
         for (auto const& c : cases) {
             for (auto const& object : c.plan.staticObjects) {
@@ -262,7 +262,7 @@ int main(int argc, char** argv) {
                               << "," << c.plan.staticObjects.size() << "," << objects.size()
                               << "\n";
                     ++total;
-                    // Puntuacion: cada pico quitado vale 1, cada 0.1 de rejilla
+                    // puntuacion: cada pico quitado vale 1, cada 0.1 de rejilla
                     // perdida resta 2, cada objeto de mas resta 0.05.
                     double const score = (spikes0 - spikes1) -
                         20.0 * std::max(0.0, grid0 - grid1) -

@@ -14,7 +14,7 @@ public:
     using PickedCallback = std::function<void(int iconId)>;
     using ProjectCallback = std::function<void(std::string const& projectId)>;
 
-    // with `onProject` the "My icons" tab appears, listing same-gamemode projects only.
+    // with `onproject` the "my icons" tab appears, listing same-gamemode projects only.
     static TemplatePickerPopup* create(IconType type, PickedCallback onPicked,
                                        ProjectCallback onProject = nullptr);
 

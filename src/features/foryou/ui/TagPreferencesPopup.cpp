@@ -67,7 +67,7 @@ bool TagPreferencesPopup::init() {
     hint->setPosition({cx, content.height - 46.f});
     m_mainLayer->addChild(hint);
 
-    // State legend, so the three-way chip cycle is discoverable without
+    // state legend, so the three-way chip cycle is discoverable without
     // trial and error.
     {
         auto legend = CCNode::create();
@@ -122,7 +122,7 @@ bool TagPreferencesPopup::init() {
 
     if (!LevelTagsClient::isAvailable()) return true;
 
-    // The catalog is what gives us tag names and their colours; fetch it if the
+    // the catalog is what gives us tag names and their colours; fetch it if the
     // feed hasn't already.
     if (!LevelTagsClient::get().hasCatalog()) {
         Ref<TagPreferencesPopup> self = this;
@@ -175,7 +175,7 @@ void TagPreferencesPopup::buildContent() {
         return;
     }
 
-    // Measure everything first so the content layer can be sized before the
+    // measure everything first so the content layer can be sized before the
     // chips are placed — the scroll layer works top-down.
     struct Row { std::vector<TagInfo> tags; };
     struct Section { TagCategory category; std::vector<Row> rows; };
@@ -266,7 +266,7 @@ void TagPreferencesPopup::refreshChip(Chip const& chip) const {
 
     int vote = TasteProfile::get().pinnedTagVote(chip.tag);
     if (vote > 0) {
-        // Loved: the tag's own Level Tags colour, at full strength.
+        // loved: the tag's own level tags colour, at full strength.
         chip.pill->setColor(chip.color);
         chip.pill->setOpacity(255);
     } else if (vote < 0) {

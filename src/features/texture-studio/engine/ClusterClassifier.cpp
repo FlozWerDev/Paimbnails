@@ -26,7 +26,7 @@ int nearestCluster(float h, float s, float v,
     return best;
 }
 
-// Single shared pass, values identical to per-cluster passes.
+// single shared pass, values identical to per-cluster passes.
 std::vector<float> computeAllBorderRatios(ImageBuffer const& sprite,
                                           ColorCluster const* allClusters,
                                           int clusterCount) {
@@ -96,7 +96,7 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
         return out;
     }
 
-    // Step 1: single shared border-ratio pass.
+    // step 1: single shared border-ratio pass.
     int n = static_cast<int>(set.clusters.size());
     auto ratios = computeAllBorderRatios(sprite, set.clusters.data(), n);
     out.clusters.reserve(n);
@@ -115,7 +115,7 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
         return out;
     }
 
-    // Weighted median: thresholds follow asset exposure.
+    // weighted median: thresholds follow asset exposure.
     std::vector<std::pair<float, int>> values;
     values.reserve(out.clusters.size());
     for (auto const& c : out.clusters) {
@@ -152,7 +152,7 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
         float darkness   = std::clamp((darkRef - v) / darkRef, 0.0f, 1.0f);
         float brightness = std::clamp((v - glowFloor) / brightRef, 0.0f, 1.0f);
 
-        // Outline must touch the silhouette or dark interior Color2 gets eaten.
+        // outline must touch the silhouette or dark interior color2 gets eaten.
         outlineScore[i] = (border > 0.02f)
             ? 0.50f * darkness + 0.35f * (1.0f - s) + 0.15f * border
             : 0.0f;
@@ -162,7 +162,7 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
             : 0.0f;
     }
 
-    // Step 2a: outline (multiple ok); all-dark sprite keeps only the darkest for Color1.
+    // step 2a: outline (multiple ok); all-dark sprite keeps only the darkest for color1.
     constexpr float kOutlineBar = 0.45f;
     int outlineCount = 0;
     int darkestIdx = -1;
@@ -185,7 +185,7 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
         }
     }
 
-    // Step 3: Glow (at most one) — highest glow score above the bar.
+    // step 3: glow (at most one) — highest glow score above the bar.
     constexpr float kGlowBar = 0.42f;
     int glowIdx = -1;
     for (int i = 0; i < n; ++i) {
@@ -198,7 +198,7 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
         out.clusters[glowIdx].confidence = std::clamp(glowScore[glowIdx], 0.0f, 1.0f);
     }
 
-    // Step 4: Color 1 (primary) — most salient remaining cluster.
+    // step 4: color 1 (primary) — most salient remaining cluster.
     int c1Idx = -1;
     float c1Score = -1.0f;
     for (int i = 0; i < n; ++i) {
@@ -217,7 +217,7 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
         out.clusters[c1Idx].confidence = 0.80f;
     }
 
-    // Step 5: Color2 — hue-distant from Color1, else largest remaining.
+    // step 5: color2 — hue-distant from color1, else largest remaining.
     int c2Idx = -1;
     float c2Score = -1.0f;
     if (c1Idx >= 0) {
@@ -249,7 +249,7 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
         out.clusters[c2Idx].confidence = 0.65f;
     }
 
-    // Step 6: fold leftovers into the closest role by hue+value.
+    // step 6: fold leftovers into the closest role by hue+value.
     int leftover = 0;
     auto roleHueDist = [&](int idx, ClusterRole role) -> float {
         for (int j = 0; j < n; ++j) {
@@ -279,7 +279,7 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
         ++leftover;
     }
 
-    // Step 7: review when Color1 missing, mostly folded, or low confidence (flat icons lack outline+glow legitimately).
+    // step 7: review when color1 missing, mostly folded, or low confidence (flat icons lack outline+glow legitimately).
     bool hasC1 = false;
     float confidenceSum = 0.f;
     for (auto const& c : out.clusters) {

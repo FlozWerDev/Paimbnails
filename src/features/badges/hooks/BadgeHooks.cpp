@@ -25,7 +25,7 @@
 
 using namespace geode::prelude;
 
-// Wrappers used by ProfilePage/RoleService; storage lives in ModeratorCache.
+// wrappers used by profilepage/roleservice; storage lives in moderatorcache.
 
 void moderatorCacheInsert(std::string const& username, bool isMod, bool isAdmin) {
     ModeratorCache::get().insert(username, isMod, isAdmin);
@@ -43,7 +43,7 @@ void showBadgeInfoPopup(CCNode* sender) {
     paimon::badges::showRoleBadgeInfoPopup(sender);
 }
 
-// Defined after $modify because it needs BadgeCommentCell.
+// defined after $modify because it needs badgecommentcell.
 static void deferEmoteRetry(WeakRef<CommentCell> weakSelf,
                             std::string text, std::string font, int retries);
 
@@ -167,7 +167,7 @@ class $modify(BadgeCommentCell, CommentCell) {
 
         auto layout = getCommentBackgroundLayout(cellSize);
 
-        // Custom bg always needs re-evaluation; check config first.
+        // custom bg always needs re-evaluation; check config first.
         bool hasCustomBg = false;
         ProfileConfig config;
         if (m_comment && m_comment->m_accountID > 0) {
@@ -413,7 +413,7 @@ class $modify(BadgeCommentCell, CommentCell) {
             clipRef->addChild(bgNode, -1);
         };
 
-        // Blur asynchronously and cache the result to keep scrolling responsive.
+        // blur asynchronously and cache the result to keep scrolling responsive.
         std::string cacheKey = fmt::format("cbg:{}:{}:{}", accountID,
             config.commentBgType == "thumbnail"
                 ? fmt::format("t{}_{}", config.commentBgThumbnailId, config.commentBgThumbnailPos)
@@ -456,7 +456,7 @@ class $modify(BadgeCommentCell, CommentCell) {
 
         CCNode* bgNode = nullptr;
 
-        // Prefer a static frame; per-cell realtime blur/video is too expensive.
+        // prefer a static frame; per-cell realtime blur/video is too expensive.
         if (VideoThumbnailSprite::isCached(gifKey)) {
             auto bgVideo = VideoThumbnailSprite::createFromCache(gifKey);
             if (bgVideo) {
@@ -564,7 +564,7 @@ class $modify(BadgeCommentCell, CommentCell) {
         CommentCell::onExit();
     }
 
-    // Briefly re-hide GD's background after updateBGColor().
+    // briefly re-hide gd's background after updatebgcolor().
     void hideVanillaBgLayerTick(float) {
         if (!(m_fields->m_commentBgPanel || m_fields->m_commentBgClip)) {
             this->unschedule(schedule_selector(BadgeCommentCell::hideVanillaBgLayerTick));
@@ -603,7 +603,7 @@ class $modify(BadgeCommentCell, CommentCell) {
         this->unschedule(schedule_selector(BadgeCommentCell::hideVanillaBgLayerTick));
         clearCommentProfileBackground();
         this->setUserObject("paimon-comment-bgs-hidden"_spr, nullptr);
-        // Drop old emotes before GD rebuilds recycled text.
+        // drop old emotes before gd rebuilds recycled text.
         if (m_mainLayer) {
             if (auto* oldEmote = m_mainLayer->getChildByID("paimon-emote-overlay"_spr)) {
                 oldEmote->removeFromParent();
@@ -821,7 +821,7 @@ class $modify(BadgeCommentCell, CommentCell) {
 
         if (!targetNode) return;
 
-        // Reduce font size for long comments so emotes still fit.
+        // reduce font size for long comments so emotes still fit.
         float adjustedFontSize = fontSize;
         size_t textLen = commentText.size();
         if (textLen > 80) {
@@ -832,7 +832,7 @@ class $modify(BadgeCommentCell, CommentCell) {
         bool isCustomFont = (fontFile != "chatFont.fnt");
         auto emoteNode = paimon::emotes::EmoteRenderer::renderComment(
             commentText, 0.f, maxWidth, fontFile.c_str(), adjustedFontSize, isCustomFont,
-            /*animateGifs=*/false
+            /*animategifs=*/false
         );
         if (!emoteNode) return;
 
@@ -863,7 +863,7 @@ class $modify(BadgeCommentCell, CommentCell) {
     }
 };
 
-// Retry until emotes load, aborting if the recycled cell's text changes.
+// retry until emotes load, aborting if the recycled cell's text changes.
 static void deferEmoteRetry(WeakRef<CommentCell> weakSelf,
                             std::string text, std::string font, int retries) {
     paimon::scheduleMainThreadDelay(0.5f,
@@ -890,4 +890,4 @@ static void deferEmoteRetry(WeakRef<CommentCell> weakSelf,
         });
 }
 
-// ProfilePage owns the merged badge hook.
+// profilepage owns the merged badge hook.

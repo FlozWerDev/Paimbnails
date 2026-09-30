@@ -13,7 +13,7 @@
 
 namespace paimon::profilebg {
 
-// Vector/opacity-only: animating the transform uncovered cell corners and
+// vector/opacity-only: animating the transform uncovered cell corners and
 // accumulated offsets when switching effects, so only direction/color move.
 class AnimatedGradientLayer : public cocos2d::CCLayerGradient {
 public:
@@ -49,7 +49,7 @@ public:
         m_speed   = std::clamp(speed, 0.1f, 5.0f);
         m_time    = 0.0;
 
-        // Full reset: no transform or color drift may survive a switch.
+        // full reset: no transform or color drift may survive a switch.
         this->stopAllActions();
         if (!m_hasBase) {
             m_basePos = this->getPosition();
@@ -63,13 +63,13 @@ public:
         this->setEndColor(m_baseB);
         this->setVector({1.f, kDiagY});
 
-        // Snapshot the live opacity (callers setOpacity before setEffect):
+        // snapshot the live opacity (callers setopacity before seteffect):
         // pulse/hover breathe around the real value, not init-time 255.
         m_baseOpacity = this->getOpacity();
         m_hover = 0.f;
         m_burst = 0.f;
         m_wasHovered = false;
-        // Always update-driven, even for "none": the hover burst must fire
+        // always update-driven, even for "none": the hover burst must fire
         // on every mouse-enter regardless of the idle effect.
         this->scheduleUpdate();
     }
@@ -85,7 +85,7 @@ public:
         constexpr double kTwoPi = 6.283185307179586;
         m_time += static_cast<double>(dt) * m_speed;
 
-        // Hover state (desktop only): smooth lift + retriggered burst on
+        // hover state (desktop only): smooth lift + retriggered burst on
         // every rising edge, so each pass over the cell animates.
         bool hovered = false;
 #if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_MACOS)
@@ -99,7 +99,7 @@ public:
                     hovered = false;
                     break;
                 }
-                // Respect the viewport of scrollable leaderboard lists.
+                // respect the viewport of scrollable leaderboard lists.
                 if (geode::cast::typeinfo_cast<cocos2d::CCLayer*>(node) && node != cell) {
                     auto bounds = node->getContentSize();
                     if (bounds.width > 0.f && bounds.height > 0.f) {
@@ -126,14 +126,14 @@ public:
         };
 
         if (m_effect == "none") {
-            // Static gradient, but the hover burst still plays.
+            // static gradient, but the hover burst still plays.
             this->setOpacity(hoveredOpacity(static_cast<float>(m_baseOpacity)));
             this->setVector({1.f, kDiagY + kick});
             return;
         }
 
         if (m_effect == "rotate") {
-            // Sweep the gradient direction instead of rotating the quad:
+            // sweep the gradient direction instead of rotating the quad:
             // corners can never be uncovered.
             double ang = m_time * 0.55;
             this->setVector({static_cast<float>(std::cos(ang)),
@@ -141,7 +141,7 @@ public:
             this->setOpacity(hoveredOpacity(static_cast<float>(m_baseOpacity)));
         }
         else if (m_effect == "pulse") {
-            // Breathe in brightness, not in size.
+            // breathe in brightness, not in size.
             double ph = std::fmod(m_time * kTwoPi / 2.4, kTwoPi);
             float k = static_cast<float>(0.5 - 0.5 * std::cos(ph));
             this->setOpacity(hoveredOpacity(
@@ -149,7 +149,7 @@ public:
             this->setVector({1.f, kDiagY + 0.10f * (k - 0.5f) + kick});
         }
         else if (m_effect == "slide") {
-            // Flowing sheen: sway direction + shimmer, quad stays put.
+            // flowing sheen: sway direction + shimmer, quad stays put.
             double ph = std::fmod(m_time * kTwoPi / 3.2, kTwoPi);
             float s = static_cast<float>(std::sin(ph));
             this->setVector({1.f, kDiagY + 0.55f * s + kick});
@@ -157,7 +157,7 @@ public:
                 static_cast<float>(m_baseOpacity) + 12.f * s));
         }
         else if (m_effect == "shift") {
-            // Cosine ping-pong A->B->A: smooth at the mirrors, and the
+            // cosine ping-pong a->b->a: smooth at the mirrors, and the
             // period wrap keeps m_time bounded (no fmod precision decay).
             double period = 3.0;
             double ph = std::fmod(m_time * kTwoPi / period, kTwoPi);

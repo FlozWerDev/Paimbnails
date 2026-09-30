@@ -2,7 +2,7 @@
 
 #include <Geode/Geode.hpp>
 
-#include <unordered_set>
+#include <unordered_map>
 #include <vector>
 
 namespace paimon::icon_gradients {
@@ -18,8 +18,8 @@ enum class GradientAnimationType {
     Custom,
 };
 
-// A custom layer is one movement applied to the gradient. These values go
-// straight into the shader (animMotion), so don't renumber them.
+// a custom layer is one movement applied to the gradient. these values go
+// straight into the shader (animmotion), so don't renumber them.
 enum class GradientMotion {
     SlideX = 0,
     SlideY,
@@ -31,7 +31,7 @@ enum class GradientMotion {
     Twist,
 };
 
-// How the layer's value travels over time (animWave in the shader). Same rule:
+// how the layer's value travels over time (animwave in the shader). same rule:
 // the value is the shader's branch index.
 enum class GradientWave {
     Smooth = 0,
@@ -45,7 +45,7 @@ enum class GradientWave {
 constexpr int kGradientMotionCount = 8;
 constexpr int kGradientWaveCount = 6;
 
-// Matches the uniform array size in the gradient shaders.
+// matches the uniform array size in the gradient shaders.
 constexpr size_t kMaxCustomLayers = 4;
 
 constexpr float kLayerSpeedMin = 0.05f;
@@ -59,7 +59,7 @@ struct GradientAnimationLayer {
     float phase = 0.f;   // 0..1 offset inside the layer's own cycle
 };
 
-// A ready-made stack the user can load into the editor and then tweak.
+// a ready-made stack the user can load into the editor and then tweak.
 struct GradientAnimationPreset {
     char const* name;
     char const* description;
@@ -89,20 +89,21 @@ public:
     void setReverse(bool reverse);
     void reset();
 
-    // Custom stack. Every mutation persists and pushes the new uniforms, so the
+    // custom stack. every mutation persists and pushes the new uniforms, so the
     // preview in the editor reacts on the same frame.
     std::vector<GradientAnimationLayer> const& customLayers() const;
     bool addCustomLayer();
     bool duplicateCustomLayer(size_t index);
     void updateCustomLayer(size_t index, GradientAnimationLayer const& layer);
     void removeCustomLayer(size_t index);
-    // Returns where the layer ended up (unchanged when it can't move).
+    // returns where the layer ended up (unchanged when it can't move).
     size_t moveCustomLayer(size_t index, int delta);
     void setCustomLayers(std::vector<GradientAnimationLayer> layers);
     void clearCustomLayers();
 
     void track(cocos2d::CCGLProgram* program);
     void refreshPrograms();
+    void shutdown();
 
     static char const* nameFor(GradientAnimationType type);
     static char const* descriptionFor(GradientAnimationType type);
@@ -122,7 +123,8 @@ private:
     void apply(cocos2d::CCGLProgram* program) const;
 
     GradientAnimationConfig m_config;
-    std::unordered_set<cocos2d::CCGLProgram*> m_programs;
+    std::unordered_map<cocos2d::CCGLProgram*, geode::WeakRef<cocos2d::CCGLProgram>> m_programs;
+    bool m_stopped = false;
 };
 
 } // namespace paimon::icon_gradients

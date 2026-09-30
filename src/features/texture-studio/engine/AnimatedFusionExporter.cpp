@@ -36,7 +36,7 @@ TinterOptions makeTintOptions(PackExportConfig const& cfg) {
     return o;
 }
 
-// Same tint as SheetTinter; no overlay path (rare for fusions, clustering covers it).
+// same tint as sheettinter; no overlay path (rare for fusions, clustering covers it).
 ImageBuffer tintFrame(ImageBuffer const& orig,
                       PackExportConfig const& cfg,
                       std::string const& frameName,
@@ -132,7 +132,7 @@ bool isAnimatedTexture(std::filesystem::path const& path) {
 }  // namespace
 
 std::string fusionGifEntryName(std::string const& frameName) {
-    // Frame names end in ".png"; swap the extension.
+    // frame names end in ".png"; swap the extension.
     std::string base = frameName;
     auto dot = base.rfind('.');
     if (dot != std::string::npos) {
@@ -191,7 +191,7 @@ geode::Result<AnimatedFusionExport> AnimatedFusionExporter::exportOne(
             loc.pixels.width(), loc.pixels.height());
     }
 
-    // Tint base once, then stamp each fusion frame.
+    // tint base once, then stamp each fusion frame.
     ImageBuffer baseTinted = tintFrame(loc.pixels, cfg, frameName, loc.sheetBaseName);
     if (baseTinted.empty()) {
         return Err("tint produced empty image");
@@ -210,7 +210,7 @@ geode::Result<AnimatedFusionExport> AnimatedFusionExporter::exportOne(
         ImageBuffer composed = baseTinted;
         FusionEngine::apply(composed, payload.mask, asset->frameAt(i), opts);
 
-        // Logical source-frame canvas: overrides match the sheet-baked first frame in-game.
+        // logical source-frame canvas: overrides match the sheet-baked first frame in-game.
         ImageBuffer logical = SpritesheetReader::composeLogicalFrame(
             composed, loc.info);
 
@@ -227,7 +227,7 @@ geode::Result<AnimatedFusionExport> AnimatedFusionExporter::exportOne(
         return Err("fewer than 2 usable frames after compose");
     }
 
-    auto bytes = paimon::gif::encode(gifFrames, /*alphaThreshold=*/16);
+    auto bytes = paimon::gif::encode(gifFrames, /*alphathreshold=*/16);
     if (bytes.empty()) {
         return Err("GIF encode failed");
     }

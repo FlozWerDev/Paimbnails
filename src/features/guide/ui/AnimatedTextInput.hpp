@@ -4,8 +4,8 @@
 #include <functional>
 #include <string>
 
-// Animated wrapper over geode::TextInput (glow, typing dot, send sweep).
-// No native Enter callback: a relay delegate forwards to geode's and fires onSubmit.
+// animated wrapper over geode::textinput (glow, typing dot, send sweep).
+// no native enter callback: a relay delegate forwards to geode's and fires onsubmit.
 
 namespace paimon::guide {
 
@@ -35,8 +35,8 @@ protected:
     static constexpr int kGlowPulseTag = 2001;
     static constexpr int kSweepTag     = 2002;
 
-    // Delegate interposed between the CCTextInputNode and geode's TextInput:
-    // forwards everything to the original delegate and reports Enter presses.
+    // delegate interposed between the cctextinputnode and geode's textinput:
+    // forwards everything to the original delegate and reports enter presses.
     class EnterRelayDelegate : public TextInputDelegate {
     public:
         TextInputDelegate* forward = nullptr;

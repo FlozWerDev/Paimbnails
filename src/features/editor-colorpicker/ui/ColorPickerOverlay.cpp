@@ -34,7 +34,7 @@ namespace {
     constexpr float kHudH         = 66.f;
     constexpr int   kPickerZOrder = 999500;
 
-// Priority: text input, HUD menu, picker, then editor.
+// priority: text input, hud menu, picker, then editor.
     constexpr int kMenuPriority = -300;
     constexpr int kPickPriority = -200;
 }
@@ -66,7 +66,7 @@ bool ColorPickerOverlay::init() {
     this->setTouchEnabled(true);
     this->setKeypadEnabled(true);
 
-// Transparent overlay; the editor remains visible while the framebuffer is sampled live.
+// transparent overlay; the editor remains visible while the framebuffer is sampled live.
     this->buildUI();
     this->scheduleUpdate();
     m_ready = true;
@@ -93,7 +93,7 @@ void ColorPickerOverlay::onEnter() {
 }
 
 void ColorPickerOverlay::registerWithTouchDispatcher() {
-// Run after HUD input but before the editor so the overlay is modal.
+// run after hud input but before the editor so the overlay is modal.
     CCDirector::get()->getTouchDispatcher()->addTargetedDelegate(this, kPickPriority, true);
 }
 

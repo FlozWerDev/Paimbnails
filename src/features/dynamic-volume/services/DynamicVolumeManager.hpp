@@ -1,4 +1,4 @@
-// Dynamic Volume uses a private FMOD meter/fader/limiter chain so it does not
+// dynamic volume uses a private fmod meter/fader/limiter chain so it does not
 // fight other features that drive the music channel volume.
 #pragma once
 
@@ -35,7 +35,7 @@ public:
 
     void update(float dt);
 
-    // Notify a new track; songKey may be empty when detected by polling.
+    // notify a new track; songkey may be empty when detected by polling.
     void notifySongChanged(std::string const& songKey);
 
     bool isSafeDropEnabled() const;
@@ -83,7 +83,7 @@ private:
     FMOD::Sound* m_lastSound = nullptr;
     float m_songClock = 0.0f;     // seconds since current song started
     float m_pollClock = 0.0f;     // monotonic poll clock
-    // Suppress duplicate polling after playMusic and level restarts.
+    // suppress duplicate polling after playmusic and level restarts.
     float m_suppressPollUntil = 0.0f;
     bool  m_analyzing = false;
     bool  m_hasSong   = false;

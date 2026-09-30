@@ -19,7 +19,7 @@ namespace {
 constexpr float kDegreesToRadians = 0.01745329251994329577f;
 constexpr float kPi = 3.14159265358979323846f;
 
-// Every orb, ring and pickup GD collides against with a radius instead of a box.
+// every orb, ring and pickup gd collides against with a radius instead of a box.
 bool isRoundType(GameObjectType type) {
     switch (type) {
         case GameObjectType::YellowJumpRing:
@@ -52,7 +52,7 @@ float signedArea(Vec2 const* vertices, int count) {
     return area * 0.5f;
 }
 
-// The solver reads edge normals as outward facing, which only holds for
+// the solver reads edge normals as outward facing, which only holds for
 // counter-clockwise winding.
 void makeCounterClockwise(ObjectShape& shape) {
     if (shape.vertexCount < 3 || signedArea(shape.vertices, shape.vertexCount) >= 0.f) return;
@@ -101,7 +101,7 @@ bool orientedCorners(GameObject* object, ObjectShape& shape) {
     return true;
 }
 
-// A GD slope is the right triangle inside its rect: the hypotenuse follows the
+// a gd slope is the right triangle inside its rect: the hypotenuse follows the
 // walkable surface and the solid mass sits on the side the floor faces.
 void buildRamp(GameObject* object, ObjectShape& shape) {
     float const hx = shape.halfSize.x;
@@ -123,7 +123,7 @@ void buildRamp(GameObject* object, ObjectShape& shape) {
     makeCounterClockwise(shape);
 }
 
-// The hitbox says how far the object reaches; the traced outline says what it
+// the hitbox says how far the object reaches; the traced outline says what it
 // looks like inside, turning a spike into a triangle instead of a 30x30 block.
 bool applySilhouette(GameObject* object, ObjectShape& shape, float rotation, bool oriented) {
     auto const& outline = silhouetteOf(object);
@@ -139,7 +139,7 @@ bool applySilhouette(GameObject* object, ObjectShape& shape, float rotation, boo
             std::hypot(first.x, first.y) * 0.5f,
             std::hypot(second.x, second.y) * 0.5f,
         };
-        // Which corner comes first is GD's business, so the pair is matched to
+        // which corner comes first is gd's business, so the pair is matched to
         // the art's own aspect instead of to an assumed winding.
         float const artWidth = object->getContentSize().width * std::abs(object->m_scaleX);
         float const artHeight = object->getContentSize().height * std::abs(object->m_scaleY);
@@ -152,7 +152,7 @@ bool applySilhouette(GameObject* object, ObjectShape& shape, float rotation, boo
     }
     if (half.x < 0.5f || half.y < 0.5f) return false;
 
-    // Cocos rotations run clockwise, the solver's angles counter-clockwise.
+    // cocos rotations run clockwise, the solver's angles counter-clockwise.
     float const radians = -rotation * kDegreesToRadians;
     float const cosine = std::cos(radians);
     float const sine = std::sin(radians);
@@ -197,8 +197,8 @@ ObjectShape shapeOf(LevelEditorLayer* editor, GameObject* object) {
         return shape;
     }
 
-    // Off-axis rotations make the rect far larger than the object, so borrow the
-    // corners GD already keeps for its own collision.
+    // off-axis rotations make the rect far larger than the object, so borrow the
+    // corners gd already keeps for its own collision.
     float const rotation = object->getRotation();
     bool const oriented = std::abs(std::remainder(rotation, 90.f)) > 0.5f;
     if (applySilhouette(object, shape, rotation, oriented)) return shape;

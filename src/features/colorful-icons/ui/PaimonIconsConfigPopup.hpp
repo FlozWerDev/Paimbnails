@@ -18,7 +18,7 @@ public:
 protected:
     enum class Tab { Colors = 0, Locks = 1, Areas = 2 };
 
-    // What a preview slot demonstrates.
+    // what a preview slot demonstrates.
     enum class SlotRole { Colored, Locked, Unobtainable };
 
     struct PreviewSlot {
@@ -31,10 +31,10 @@ protected:
 
     bool init();
 
-    void buildHeader();   // master ON/OFF switch + reset button
+    void buildHeader();   // master on/off switch + reset button
     void buildPreview();  // panel background + "disabled" overlay
     void buildTabs();
-    void buildIconMakerSection();  // banda inferior que abre el Creador de Iconos
+    void buildIconMakerSection();  // banda inferior que abre el creador de iconos
 
     void switchTab(Tab tab);
     void rebuildPreviewSlots();  // slots depend on the active tab

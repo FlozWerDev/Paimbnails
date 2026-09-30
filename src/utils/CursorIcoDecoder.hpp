@@ -4,7 +4,7 @@
 #include <vector>
 #include <string>
 
-// decodes .cur/.ico/.ani to RGBA.
+// decodes .cur/.ico/.ani to rgba.
 
 namespace paimon::cursor_ico {
 
@@ -12,7 +12,7 @@ struct DecodedFrame {
     int width = 0;
     int height = 0;
     int delayMs = 100;            // frame duration (only relevant for .ani)
-    std::vector<uint8_t> rgba;    // width*height*4 RGBA8888 (top-down)
+    std::vector<uint8_t> rgba;    // width*height*4 rgba8888 (top-down)
 };
 
 struct DecodeResult {
@@ -22,10 +22,8 @@ struct DecodeResult {
     std::string error;
 };
 
-// .ico = "00 00 01 00", .cur = "00 00 02 00"
 bool isIco(uint8_t const* data, size_t size);
 bool isCur(uint8_t const* data, size_t size);
-// .ani = "RIFF" .... "ACON"
 bool isAni(uint8_t const* data, size_t size);
 
 bool isSupported(uint8_t const* data, size_t size);

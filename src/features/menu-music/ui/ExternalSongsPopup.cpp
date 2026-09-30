@@ -300,7 +300,7 @@ void ExternalSongsPopup::playSongPath(const std::string& path) {
         return;
     }
 
-    // library paths go through the player (history/listeners); else menu-loop override like "Random All".
+    // library paths go through the player (history/listeners); else menu-loop override like "random all".
     for (const auto& t : MenuMusicLibrary::get().tracks()) {
         if (t.audioPath == path) {
             MenuMusicPlayer::get().playSpecific(t.id);

@@ -9,7 +9,7 @@
 
 namespace paimon::twitch {
 
-// The server decides whether the requester's GD identity was verified.
+// the server decides whether the requester's gd identity was verified.
 struct WebRequest {
     std::string requestID;
     std::string requester;
@@ -22,7 +22,7 @@ struct WebRequest {
 
 struct WebRequestCallbacks {
     std::function<void(std::string)> onStatus;
-    std::function<void(std::string)> onReady;   // usuario con el que quedo la URL
+    std::function<void(std::string)> onReady;   // usuario con el que quedo la url
     std::function<std::string(WebRequest)> onRequest;
     std::function<void(std::string)> onError;
 };
@@ -57,8 +57,8 @@ private:
     bool m_stopped = false;
     bool m_retriedWithoutToken = false;
     int m_accountID = 0;
-    std::string m_username;  // como se llama tu cuenta de GD
-    std::string m_slug;      // como se escribe en la URL
+    std::string m_username;  // como se llama tu cuenta de gd
+    std::string m_slug;      // como se escribe en la url
     std::string m_serverBase;
 };
 

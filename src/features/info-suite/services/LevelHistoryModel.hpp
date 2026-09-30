@@ -1,6 +1,6 @@
 #pragma once
 
-// Snapshots de history.geometrydash.eu a linea de tiempo: se ordenan, se deduce
+// snapshots de history.geometrydash.eu a linea de tiempo: se ordenan, se deduce
 // lo que falta y se marcan los cambios reales (rate, feature, versiones).
 
 #include <Geode/Enums.hpp>
@@ -25,8 +25,8 @@ enum class HistoryMilestone {
 
 struct HistoryEntry {
     matjson::Value raw;      // el registro tal cual, para la ficha de detalle
-    std::string date;        // YYYY-MM-DD
-    std::string clock;       // HH:MM, vacio cuando el snapshot solo guarda el dia
+    std::string date;        // yyyy-mm-dd
+    std::string clock;       // hh:mm, vacio cuando el snapshot solo guarda el dia
     std::string levelName;
     std::string username;
     std::string song;
@@ -37,7 +37,7 @@ struct HistoryEntry {
     int64_t objects = -1;
     int version = 0;
     int stars = 0;
-    int face = 0;            // valor que entiende GJDifficultySprite
+    int face = 0;            // valor que entiende gjdifficultysprite
     int length = -1;
     int coins = -1;
     GJFeatureState feature = GJFeatureState::None;
@@ -50,7 +50,7 @@ struct HistoryEntry {
 struct LevelHistory {
     std::vector<HistoryEntry> entries;  // cronologico, del mas viejo al mas nuevo
 
-    // Estado de hoy, tal como lo tiene cacheado la API.
+    // estado de hoy, tal como lo tiene cacheado la api.
     std::string levelName;
     std::string username;
     std::string song;
@@ -66,7 +66,7 @@ struct LevelHistory {
     GJFeatureState feature = GJFeatureState::None;
     bool deleted = false;
 
-    // Indices dentro de `entries`. -1 cuando el momento no quedo registrado:
+    // indices dentro de `entries`. -1 cuando el momento no quedo registrado:
     // pasa cuando el nivel ya llegaba rateado al primer snapshot.
     int rateIndex = -1;
     int featureIndex = -1;
@@ -79,14 +79,14 @@ struct HistoryField {
     bool accent = false;
 };
 
-// Devuelve una historia vacia si la respuesta no trae registros.
+// devuelve una historia vacia si la respuesta no trae registros.
 LevelHistory parseLevelHistory(matjson::Value const& root);
 
-// Texto corto del hito, ya con sus numeros ("RATE 10", "v3", "LEGENDARY").
+// texto corto del hito, ya con sus numeros ("rate 10", "v3", "legendary").
 std::string milestoneLabel(HistoryEntry const& entry, HistoryMilestone milestone);
 
-// Todo lo que ese snapshot llego a guardar, en orden de lectura y sin los
-// campos vacios. Es lo que dibuja la ficha de detalle.
+// todo lo que ese snapshot llego a guardar, en orden de lectura y sin los
+// campos vacios. es lo que dibuja la ficha de detalle.
 std::vector<HistoryField> describeEntry(HistoryEntry const& entry);
 
 } // namespace paimon::info

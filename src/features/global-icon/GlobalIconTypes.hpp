@@ -1,7 +1,7 @@
 #pragma once
 
-// Shared types and mappings for the Global Icons feature; depends only on GD's
-// IconType enum (no More Icons), so it compiles even when More Icons is absent.
+// shared types and mappings for the global icons feature; depends only on gd's
+// icontype enum (no more icons), so it compiles even when more icons is absent.
 
 #include <Geode/Geode.hpp>
 #include <string>
@@ -12,10 +12,10 @@
 
 namespace paimon::globalicon {
 
-// Global Icon server base URL; override at runtime via the "global-icon-server-url" setting.
+// global icon server base url; override at runtime via the "global-icon-server-url" setting.
 inline constexpr std::string_view GLOBAL_ICON_BASE = "https://global-icons.vercel.app";
 
-// Server string <-> GD IconType mapping. (Special = trail, ShipFire = fire.)
+// server string <-> gd icontype mapping. (special = trail, shipfire = fire.)
 inline std::string_view iconTypeToString(IconType type) {
     switch (type) {
         case IconType::Cube:        return "cube";
@@ -50,7 +50,7 @@ inline std::optional<IconType> iconTypeFromString(std::string_view s) {
     return std::nullopt;
 }
 
-// Icon types synced by default; death/trail/fire need JSON and are handled later.
+// icon types synced by default; death/trail/fire need json and are handled later.
 inline std::vector<IconType> const& syncableIconTypes() {
     static std::vector<IconType> const types = {
         IconType::Cube, IconType::Ship, IconType::Ball, IconType::Ufo,
@@ -60,20 +60,20 @@ inline std::vector<IconType> const& syncableIconTypes() {
     return types;
 }
 
-// A synced icon entry (mirrors server metadata.icons[<type>]).
+// a synced icon entry (mirrors server metadata.icons[<type>]).
 struct GlobalIconSlot {
     std::string type;       // server type id ("cube", "ship", ...)
     std::string name;
     std::string packID;
     std::string packName;
-    int quality = 3;        // 1=SD 2=HD 3=UHD
+    int quality = 3;        // 1=sd 2=hd 3=uhd
     std::string pngFile;
     std::string pngUrl;
     std::string plistFile;
     std::string plistUrl;
 };
 
-// Per-account metadata document (GET /api/icons/<accountID>).
+// per-account metadata document (get /api/icons/<accountid>).
 struct GlobalIconMeta {
     int accountID = 0;
     std::string username;

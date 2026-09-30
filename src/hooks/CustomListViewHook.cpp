@@ -7,16 +7,16 @@
 
 using namespace geode::prelude;
 
-// fallback when GD returns no value
+// fallback when gd returns no value
 static constexpr float NORMAL_LEVEL_CELL_HEIGHT = 90.f;
 static constexpr float COMPACT_LEVEL_CELL_HEIGHT = 45.f;
 
-// cached: getSettingValue() locks, and getCellHeight runs per frame while scrolling
+// cached: getsettingvalue() locks, and getcellheight runs per frame while scrolling
 static bool s_cachedCompactMode = false;
 static int s_cachedCompactVersion = -1;
 
 static bool getCachedCompactMode() {
-    // Both version counters only grow, so their sum detects changes.
+    // both version counters only grow, so their sum detects changes.
     int ver = LevelCellSettingsPopup::s_settingsVersion + static_cast<int>(
         paimon::settings::internal::g_settingsVersion.load(std::memory_order_relaxed));
     if (ver != s_cachedCompactVersion) {
@@ -32,18 +32,18 @@ static bool isLevelListType(BoomListType type) {
 }
 
 class $modify(PaimonCustomListView, CustomListView) {
-    // compact mode: GD renders Level4 half-height, so swap Level→Level4 at create time
+    // compact mode: gd renders level4 half-height, so swap level→level4 at create time
     static CustomListView* create(cocos2d::CCArray* entries, TableViewCellDelegate* delegate,
                                    float width, float height, int count, BoomListType type,
                                    float cellHeight) {
         bool forceCompact = paimon::hooks::g_forceCompactLevelCells;
 
-        // CompactLists already swaps; avoid applying it twice
+        // compactlists already swaps; avoid applying it twice
         if (paimon::compat::ModCompat::isCompactListsLoaded()) {
             return CustomListView::create(entries, delegate, width, height, count, type, cellHeight);
         }
 
-        // the suppress flag only skips LevelCell enhancements, not this swap
+        // the suppress flag only skips levelcell enhancements, not this swap
         bool compactEnabled = isLevelListType(type) && (getCachedCompactMode() || forceCompact);
 
         if (compactEnabled && type == BoomListType::Level) {
@@ -73,7 +73,7 @@ class $modify(PaimonCustomListView, CustomListView) {
         }
 
         if (isLevelListType(type) && compactEnabled) {
-            // Level4 already compact; halving again gives ~22px cells
+            // level4 already compact; halving again gives ~22px cells
             if (type == BoomListType::Level4) {
                 return original > 0.f ? original : COMPACT_LEVEL_CELL_HEIGHT;
             }

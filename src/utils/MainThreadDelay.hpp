@@ -4,6 +4,7 @@
 #include "../core/RuntimeLifecycle.hpp"
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <mutex>
 #include <unordered_set>
 #include <vector>
@@ -21,7 +22,7 @@ struct MainThreadDelayTask final : cocos2d::CCObject {
     }
 
     static std::unordered_set<MainThreadDelayTask*>& registry() {
-        // process-lifetime: statics could destroy Ref/WeakRef callbacks after Cocos pools.
+        // process-lifetime: statics could destroy ref/weakref callbacks after cocos pools.
         static auto* tasks = new std::unordered_set<MainThreadDelayTask*>();
         return *tasks;
     }
@@ -45,14 +46,10 @@ struct MainThreadDelayTask final : cocos2d::CCObject {
             }
         }
         untrack(this);
-        if (isRuntimeShuttingDown()) {
-            fn = nullptr;
-            this->release();
-            return;
-        }
-        if (auto callback = std::move(fn)) callback();
+        auto callback = std::move(fn);
         fn = nullptr;
         this->release();
+        if (!isRuntimeShuttingDown() && callback) callback();
     }
 };
 
@@ -66,16 +63,23 @@ inline void scheduleMainThreadDelay(float delay, geode::CopyableFunction<void()>
     auto* sched = director->getScheduler();
     if (!sched) return;
 
-    auto* t = new detail::MainThreadDelayTask();
+    auto t = geode::Ref<detail::MainThreadDelayTask>::adopt(new detail::MainThreadDelayTask());
     t->fn = std::move(callback);
-    detail::MainThreadDelayTask::track(t);
-    sched->scheduleSelector(
-        schedule_selector(detail::MainThreadDelayTask::fire), t,
-        0.f, 0, std::max(0.f, delay), false
-    );
+    detail::MainThreadDelayTask::track(t.data());
+    try {
+        sched->scheduleSelector(
+            schedule_selector(detail::MainThreadDelayTask::fire), t.data(),
+            0.f, 0, std::isfinite(delay) ? std::max(0.f, delay) : 0.f, false
+        );
+    } catch (...) {
+        sched->unscheduleSelector(schedule_selector(detail::MainThreadDelayTask::fire), t.data());
+        detail::MainThreadDelayTask::untrack(t.data());
+        throw;
+    }
+    t.take();
 }
 
-// CCDirector, CCScheduler and WeakRefPool must still be alive.
+// ccdirector, ccscheduler and weakrefpool must still be alive.
 inline void cancelAllMainThreadDelays() {
     std::vector<detail::MainThreadDelayTask*> tasks;
     {

@@ -9,7 +9,7 @@
 #include <cstring>
 
 #include "PreviewZonePicker.hpp"
-#include "AutoPreviewGenerator.hpp"   // downscaleRGBA
+#include "AutoPreviewGenerator.hpp"   // downscalergba
 #include "../AutoPreviewConfig.hpp"
 #include "../../../utils/RenderTexture.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
@@ -21,8 +21,8 @@ namespace paimon::autopreview {
 
 namespace {
 
-constexpr float kDesignH = 320.f;          // GD camera height in world units (zoom 1)
-constexpr int   kSupersample = 2;          // render at Nx then downscale for AA/sharpness
+constexpr float kDesignH = 320.f;          // gd camera height in world units (zoom 1)
+constexpr int   kSupersample = 2;          // render at nx then downscale for aa/sharpness
 
 bool bufferHasContent(std::vector<uint8_t> const& px) {
     if (px.size() < 16) return false;
@@ -58,7 +58,7 @@ float measureLevelLength(PlayLayer* pl) {
     }
     return maxX;
 }
-// Only objects inside the capture window (FBO has no camera progress to unhide mid-level ones).
+// only objects inside the capture window (fbo has no camera progress to unhide mid-level ones).
 int setupWindow(PlayLayer* pl, float zoneX, float designW) {
     float const camLeftX = zoneX - designW * 0.5f;
     float const marginX = 90.f;
@@ -122,7 +122,7 @@ OffscreenRenderResult result;
     if (PlayLayer::get() != nullptr) return result;
     if (level->m_levelString.empty()) return result;
 
-    // PlayLayer::create runs every mod's init hook; skip or Globed announces the level online.
+    // playlayer::create runs every mod's init hook; skip or globed announces the level online.
     if (paimon::compat::ModCompat::isGlobedLoaded()) {
         static bool warned = false;
         if (!warned) {
@@ -170,7 +170,7 @@ OffscreenRenderResult result;
             }
         }
 
-        // Attempt 2 (fallback): start of the level.
+        // attempt 2 (fallback): start of the level.
         if (!got) {
             setupWindow(pl, designW * 0.5f, designW);
             buf.clear();

@@ -31,7 +31,7 @@ constexpr int kFilterTag = 8400;
 constexpr int kLevelTag = 8500;
 constexpr auto kVideoKey = "request-video"_spr;
 
-// Filter -> server query. First sends "" and fetches all.
+// filter -> server query. first sends "" and fetches all.
 char const* filterQuery(int filter) {
     switch (filter) {
         case 1: return "pending";
@@ -210,7 +210,7 @@ CCNode* ThumbRequestsPopup::createRow(Request const& request, float y, bool odd)
     strip->setPosition({0.f, -(kRowH - 2.f) / 2.f});
     row->addChild(strip, 0);
 
-    // Face carries its own rate glow: hand-hung coins doubled it vs the difficulty.
+    // face carries its own rate glow: hand-hung coins doubled it vs the difficulty.
     if (auto* face = GJDifficultySprite::create(difficultyFace(request.shownDifficulty()),
                                                 GJDifficultyName::Short)) {
         face->updateFeatureState(featureState(request.status == Status::Sent ? request.sentTier : 0));

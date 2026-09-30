@@ -21,7 +21,7 @@ float saturation(Color const& color) {
     return static_cast<float>(high - low) / high;
 }
 
-// Only colors reading as light glow: brights and saturateds. Glow under a
+// only colors reading as light glow: brights and saturateds. glow under a
 // mid gray only dirties the drawing.
 std::vector<std::uint16_t> glowingColors(std::vector<Color> const& palette) {
     std::vector<std::uint16_t> colors;

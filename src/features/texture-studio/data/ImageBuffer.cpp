@@ -61,9 +61,9 @@ void ImageBuffer::reset(int width, int height) {
         m_pixels.clear();
         return;
     }
+    m_pixels.assign(static_cast<std::size_t>(width) * height * kBytesPerPixel, 0);
     m_width = width;
     m_height = height;
-    m_pixels.assign(pixelCount() * kBytesPerPixel, 0);
 }
 
 void ImageBuffer::clear(Pixel color) {
@@ -72,15 +72,11 @@ void ImageBuffer::clear(Pixel color) {
         std::memset(m_pixels.data(), 0, m_pixels.size());
         return;
     }
-    std::uint32_t packed =
-        static_cast<std::uint32_t>(color.r)
-        | (static_cast<std::uint32_t>(color.g) << 8)
-        | (static_cast<std::uint32_t>(color.b) << 16)
-        | (static_cast<std::uint32_t>(color.a) << 24);
+    std::uint8_t const packed[] = {color.r, color.g, color.b, color.a};
     auto* dst = m_pixels.data();
     auto count = pixelCount();
     for (std::size_t i = 0; i < count; ++i) {
-        std::memcpy(dst + i * kBytesPerPixel, &packed, sizeof(packed));
+        std::memcpy(dst + i * kBytesPerPixel, packed, sizeof(packed));
     }
 }
 
@@ -110,6 +106,11 @@ ImageBuffer ImageBuffer::subRect(int x, int y, int w, int h) const {
 
 void ImageBuffer::blitOverwrite(int dstX, int dstY, ImageBuffer const& src) {
     if (src.empty() || empty()) return;
+    if (&src == this) {
+        auto copy = src;
+        blitOverwrite(dstX, dstY, copy);
+        return;
+    }
 
     int srcX0 = static_cast<int>(std::clamp<std::int64_t>(-static_cast<std::int64_t>(dstX), 0, src.width()));
     int srcY0 = static_cast<int>(std::clamp<std::int64_t>(-static_cast<std::int64_t>(dstY), 0, src.height()));
@@ -160,12 +161,14 @@ ImageBuffer ImageBuffer::resizedBilinear(int width, int height) const {
     float scaleX = static_cast<float>(m_width) / static_cast<float>(width);
     float scaleY = static_cast<float>(m_height) / static_cast<float>(height);
     for (int y = 0; y < height; ++y) {
-        float sourceY = (static_cast<float>(y) + 0.5f) * scaleY - 0.5f;
+        float sourceY = std::clamp((static_cast<float>(y) + 0.5f) * scaleY - 0.5f,
+                                   0.f, static_cast<float>(m_height - 1));
         int y0 = std::clamp(static_cast<int>(std::floor(sourceY)), 0, m_height - 1);
         int y1 = std::min(y0 + 1, m_height - 1);
         float fy = std::clamp(sourceY - std::floor(sourceY), 0.f, 1.f);
         for (int x = 0; x < width; ++x) {
-            float sourceX = (static_cast<float>(x) + 0.5f) * scaleX - 0.5f;
+            float sourceX = std::clamp((static_cast<float>(x) + 0.5f) * scaleX - 0.5f,
+                                       0.f, static_cast<float>(m_width - 1));
             int x0 = std::clamp(static_cast<int>(std::floor(sourceX)), 0, m_width - 1);
             int x1 = std::min(x0 + 1, m_width - 1);
             float fx = std::clamp(sourceX - std::floor(sourceX), 0.f, 1.f);

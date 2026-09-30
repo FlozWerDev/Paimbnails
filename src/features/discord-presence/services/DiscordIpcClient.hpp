@@ -6,7 +6,7 @@
 
 namespace paimon::discord {
 
-// Discord activity types (matches Discord's numeric enum).
+// discord activity types (matches discord's numeric enum).
 enum class DiscordActivityType : int {
     Playing = 0,
     Listening = 2,
@@ -27,7 +27,7 @@ struct DiscordActivity {
     std::string button2Label, button2Url;
 };
 
-// Best-effort IPC client: lazy connect, no-ops if Discord is absent.
+// best-effort ipc client: lazy connect, no-ops if discord is absent.
 class DiscordIpcClient {
 public:
     static DiscordIpcClient& get();
@@ -35,11 +35,11 @@ public:
     void setClientID(std::string id) { m_clientID = std::move(id); }
 
     void update(DiscordActivity const& activity);
-    // Clears presence, keeps connection.
+    // clears presence, keeps connection.
     void clear();
     void close();
 
-    // Bumped on (re)connect/teardown; lets manager detect reconnects.
+    // bumped on (re)connect/teardown; lets manager detect reconnects.
     uint64_t connectionGeneration() const { return m_connectionGeneration; }
 
 private:
@@ -51,7 +51,7 @@ private:
     bool ensureConnected();
     bool tryConnect();
     bool writeFrame(uint32_t opcode, std::string const& payload);
-    // False if peer closed or sent ERROR/CLOSE (caller disconnects).
+    // false if peer closed or sent error/close (caller disconnects).
     bool drainReads();
     void handleDisconnect();
 
@@ -62,7 +62,7 @@ private:
     uint64_t m_connectionGeneration = 0;
 
 #ifdef GEODE_IS_WINDOWS
-    void* m_pipe = nullptr; // HANDLE
+    void* m_pipe = nullptr; // handle
 #else
     int m_socket = -1;
 #endif

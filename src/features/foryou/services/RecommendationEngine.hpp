@@ -25,7 +25,7 @@ enum class FeedSource {
 };
 
 struct FeedQuery {
-    // Keep the search object alive while queued work drains across frames.
+    // keep the search object alive while queued work drains across frames.
     geode::Ref<GJSearchObject> searchObj = nullptr;
 };
 
@@ -34,7 +34,7 @@ struct Recommendation {
     float score = 0.f;
     float tagScore = 0.f;
     std::vector<std::string> tags;
-    // Localization key and its single argument.
+    // localization key and its single argument.
     std::string reasonKey;
     std::string reasonArg;
 };
@@ -43,17 +43,17 @@ class RecommendationEngine {
 public:
     static RecommendationEngine& get();
 
-    // Build the candidate plan; callback runs on the main thread.
+    // build the candidate plan; callback runs on the main thread.
     void planQueries(std::function<void(std::vector<FeedQuery>)> callback);
 
-    // Score candidates and return up to limit picks; callback runs on the main thread.
+    // score candidates and return up to limit picks; callback runs on the main thread.
     void rank(std::vector<geode::Ref<GJGameLevel>> candidates, int limit,
               std::function<void(std::vector<Recommendation>)> callback);
 
 private:
     RecommendationEngine() = default;
 
-    // Type19 searches are paged in groups of ten IDs.
+    // type19 searches are paged in groups of ten ids.
     std::vector<FeedQuery> buildTagQueries(std::vector<int> const& pool, FeedSource source);
     std::vector<FeedQuery> buildNativeQueries(TasteSnapshot const& taste, int budget);
 

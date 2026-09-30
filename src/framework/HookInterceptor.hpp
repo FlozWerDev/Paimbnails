@@ -36,7 +36,7 @@ struct HookContext {
 using PreHookFn  = std::function<HookResult(HookContext const&)>;
 using PostHookFn = std::function<void(HookContext const&, bool success)>;
 
-// Pre/post interceptors for uploads and validation only.
+// pre/post interceptors for uploads and validation only.
 
 class HookInterceptor {
 public:
@@ -60,7 +60,7 @@ public:
         auto it = m_preHooks.find(ctx.action);
         if (it == m_preHooks.end()) return HookResult::allow();
 
-        // Copy so hooks can register during execution.
+        // copy so hooks can register during execution.
         auto hooks = it->second;
         lock.unlock();
 

@@ -6,8 +6,8 @@
 
 namespace paimon::versus {
 
-// Where the season stands: the number, what is left of it, what it does to your
-// Elo when it closes, and which mutators the queue is running this week.
+// where the season stands: the number, what is left of it, what it does to your
+// elo when it closes, and which mutators the queue is running this week.
 class VersusSeasonPopup : public geode::Popup {
 public:
     static VersusSeasonPopup* create();

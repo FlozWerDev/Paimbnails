@@ -29,7 +29,7 @@ constexpr float kBodyWidth = 390.f;
 constexpr float kBodyHeight = 190.f;
 constexpr float kAddButton = 36.f;
 
-// Naming happens next frame: the button that asked for it is still being
+// naming happens next frame: the button that asked for it is still being
 // handled by the touch dispatcher right now.
 void askName(char const* title, std::string initial, IconSetNamePopup::Callback onConfirm) {
     Loader::get()->queueInMainThread(
@@ -200,7 +200,7 @@ void MyIconSetsPopup::erase(IconPreset const& preset) {
         });
 }
 
-// Rebuilding tears down the buttons we are being called from, so wait until the
+// rebuilding tears down the buttons we are being called from, so wait until the
 // touch dispatcher is done with them.
 void MyIconSetsPopup::queueRebuild() {
     WeakRef<MyIconSetsPopup> self = this;

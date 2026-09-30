@@ -6,15 +6,15 @@
 #include <filesystem>
 #include <Geode/Geode.hpp>
 
-// Image conversion helpers; file I/O uses Unicode-safe filesystem paths.
+// image conversion helpers; file i/o uses unicode-safe filesystem paths.
 class ImageConverter {
 public:
     static std::vector<uint8_t> rgbToRgba(std::vector<uint8_t> const& rgbData, uint32_t width, uint32_t height);
 
-    // RGB24 → RGBA32, writing into a pre-allocated pixelCount*4 buffer.
+    // rgb24 → rgba32, writing into a pre-allocated pixelcount*4 buffer.
     static void rgbToRgbaFast(uint8_t const* rgb, uint8_t* rgbaOut, size_t pixelCount);
 
-    // RGBA32 → RGB24, writing into a pre-allocated pixelCount*3 buffer.
+    // rgba32 → rgb24, writing into a pre-allocated pixelcount*3 buffer.
     static void rgbaToRgbFast(uint8_t const* rgba, uint8_t* rgbOut, size_t pixelCount);
     
     static bool rgbToPng(std::vector<uint8_t> const& rgbData, uint32_t width, uint32_t height, std::vector<uint8_t>& outPngData);

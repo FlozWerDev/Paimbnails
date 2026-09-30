@@ -937,7 +937,7 @@ void ProjectEditorLayer::buildExtraTab(CCNode* tab, float w, float h) {
                                               "bigFont.fnt", "GJ_button_04.png", 0.28f)) {
         if (auto* scopeBtn = CCMenuItemExt::createSpriteExtra(scopeSpr,
                 [this](CCMenuItemSpriteExtra* btn) {
-                    // Everything scope is legacy, cycle 0/1 only.
+                    // everything scope is legacy, cycle 0/1 only.
                     int next = (static_cast<int>(m_project.tintScope) + 1) % 2;
                     m_project.tintScope = static_cast<TintScope>(next);
                     if (auto* spr = typeinfo_cast<ButtonSprite*>(btn->getNormalImage())) {
@@ -1162,7 +1162,7 @@ void ProjectEditorLayer::buildSpriteTab(CCNode* tab, float w, float h) {
         m_imageStateLbl = stateLbl;
     }
 
-    // Flip applies to custom image only.
+    // flip applies to custom image only.
     auto* flipRow = CCMenu::create();
     flipRow->setContentSize({w - 16.f, 20.f});
     flipRow->setAnchorPoint({0.5f, 0.5f});
@@ -1437,7 +1437,7 @@ void ProjectEditorLayer::onClearImage() {
 
 FusionApplyOptions ProjectEditorLayer::makeFusionOptions(SpriteSetting const& s) const {
     FusionApplyOptions opts;
-    // Pack tint must not recolor user GIF/PNG, only Luma multiplies.
+    // pack tint must not recolor user gif/png, only luma multiplies.
     opts.blendMode = s.fusionBlend;
     opts.opacity   = s.fusionOpacity;
     opts.transform = s.fusionTransform;
@@ -2021,7 +2021,7 @@ void ProjectEditorLayer::startSelectionPixelLoad() {
 }
 
 void ProjectEditorLayer::refreshPreviewTint() {
-    // Color-only edit with live GPU card: push uniforms, skip worker.
+    // color-only edit with live gpu card: push uniforms, skip worker.
     if (m_gpuAttached && m_resultSpr && m_previewPixels && !m_previewPixels->empty()
         && m_previewPixels == m_gpuPixels) {
         SpriteSetting setting = currentSetting();
@@ -2138,7 +2138,7 @@ void ProjectEditorLayer::renderPreviewAfterDelay(float) {
             if (!packed.empty()) {
                 payload->mask = SpritesheetReader::composeLogicalFrame(packed, frameInfo);
             }
-            // Same white-detail rule as LuminanceTinter::apply.
+            // same white-detail rule as luminancetinter::apply.
             payload->hasDetail =
                 !(effColors.detail.r == 255 && effColors.detail.g == 255 &&
                   effColors.detail.b == 255) &&
@@ -2396,7 +2396,7 @@ void ProjectEditorLayer::onGenerate(CCObject*) {
     auto outPath = SlotPaths::outputZipFile(m_project.id);
     setStatus("Generating...");
 
-    // Snapshot on main thread, export thread reuses live pixels.
+    // snapshot on main thread, export thread reuses live pixels.
     {
         std::vector<std::string> pngRels;
         pngRels.reserve(cfg.sheets.size());
@@ -2409,7 +2409,7 @@ void ProjectEditorLayer::onGenerate(CCObject*) {
     m_generating->store(true, std::memory_order_release);
     setBusy(true);
 
-    // Capture by value, layer may be gone when export finishes.
+    // capture by value, layer may be gone when export finishes.
     WeakRef<ProjectEditorLayer> weakSelf(this);
     auto generating = m_generating;
     std::string projectId = m_project.id;

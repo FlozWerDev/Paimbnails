@@ -25,14 +25,14 @@ namespace paimon::versus {
 
 namespace {
 
-// Four a second while running, once every two while waiting in the lobby.
+// four a second while running, once every two while waiting in the lobby.
 constexpr float kTickInterval = 0.25f;
 constexpr float kLobbyPoll = 2.0f;
 constexpr float kFoundPoll = 1.0f;
-// Watching for an incoming friendly, which is nobody's hurry.
+// watching for an incoming friendly, which is nobody's hurry.
 constexpr float kWatchPoll = 4.0f;
 
-// A rival that stops ticking for this long is treated as gone; the server still
+// a rival that stops ticking for this long is treated as gone; the server still
 // decides what that costs them.
 constexpr float kRivalTimeout = 30.f;
 
@@ -61,7 +61,7 @@ void VersusSession::removeListener(void const* owner) {
 }
 
 void VersusSession::notifyListeners() {
-    // A listener can close a popup, which unregisters it mid-walk, so the list
+    // a listener can close a popup, which unregisters it mid-walk, so the list
     // is copied before firing.
     auto const snapshot = m_listeners;
     for (auto const& [owner, listener] : snapshot) {
@@ -154,7 +154,7 @@ void VersusSession::scheduleWatch(float delay) {
 }
 
 void VersusSession::watchTick() {
-    // The queue and the duel run their own poll; doubling it here would only
+    // the queue and the duel run their own poll; doubling it here would only
     // spend requests, so the watch idles until they are done.
     if (!idle() || !VersusClient::get().authenticated()) {
         scheduleWatch(kWatchPoll);
@@ -162,12 +162,12 @@ void VersusSession::watchTick() {
     }
 
     VersusClient::get().pollLobby([this](bool ok, MatchInfo const& info) {
-        // Past the veto it is a duel we already walked out of; adopting it would
+        // past the veto it is a duel we already walked out of; adopting it would
         // reopen the lobby on top of a match that is over for us.
         bool const joinable = info.serverPhase == "found" || info.serverPhase == "banning";
         if (ok && !info.id.empty() && joinable && idle()) {
             applyLobby(info);
-            // From here the duel owns the lobby: the watch stands down and only
+            // from here the duel owns the lobby: the watch stands down and only
             // the fast poll moves the phase on.
             schedulePoll(kFoundPoll);
         }
@@ -187,7 +187,7 @@ void VersusSession::schedulePoll(float delay) {
 void VersusSession::poll() {
     if (m_phase == Phase::Idle || m_phase == Phase::Finished) return;
 
-    // Once the level is running the fast channel carries everything; polling
+    // once the level is running the fast channel carries everything; polling
     // the lobby there would only spend requests.
     if (m_phase == Phase::Running) {
         schedulePoll(kLobbyPoll * 3.f);
@@ -208,8 +208,8 @@ void VersusSession::poll() {
 void VersusSession::applyLobby(MatchInfo const& info) {
     bool const isNew = m_match.id != info.id;
 
-    // The server closed it without us: a dodge, a void, or a rival that walked
-    // before the level opened. Nothing to submit, just drop back to the hub.
+    // the server closed it without us: a dodge, a void, or a rival that walked
+    // before the level opened. nothing to submit, just drop back to the hub.
     if (info.serverPhase == "done" && m_phase != Phase::Finished) {
         reset();
         notifyListeners();
@@ -221,7 +221,7 @@ void VersusSession::applyLobby(MatchInfo const& info) {
     if (isNew) {
         net::setRival(info.rival.accountId);
         wireNet();
-        // A friendly opened with a code is already a yes from both sides, so it
+        // a friendly opened with a code is already a yes from both sides, so it
         // arrives past the accept step and there is nothing to agree to.
         setPhase(info.serverPhase == "banning" ? Phase::Banning
                  : info.levelId != 0           ? Phase::Loading
@@ -240,7 +240,7 @@ void VersusSession::applyLobby(MatchInfo const& info) {
         return;
     }
     // the lobby countdown is the only clock out here; once the level is up
-    // onLevelTick owns it, so a late answer would rewind it.
+    // onleveltick owns it, so a late answer would rewind it.
     if (info.countdownMs > 0 && !m_inLevel && m_phase != Phase::Running) {
         m_startsIn = info.countdownMs / 1000.f;
         setPhase(Phase::Countdown);
@@ -277,8 +277,8 @@ bool VersusSession::enterLevel() {
     auto* glm = GameLevelManager::get();
     if (!glm) return false;
 
-    // The starting pool is main levels, so nothing has to be downloaded before
-    // the countdown. Online levels come with the curated rotation.
+    // the starting pool is main levels, so nothing has to be downloaded before
+    // the countdown. online levels come with the curated rotation.
     auto* level = glm->getMainLevel(m_match.levelId, false);
     if (!level) level = glm->getSavedLevel(m_match.levelId);
     if (!level) {
@@ -379,7 +379,7 @@ void VersusSession::onLevelStarted(PlayLayer* layer) {
     buildMilestones();
 
     if (m_match.rival.accountId != 0) {
-        // A duel in the global room still has to look like a duel.
+        // a duel in the global room still has to look like a duel.
         gl::isolateRival(m_match.rival.accountId);
     }
     setPhase(m_startsIn > 0.f ? Phase::Countdown : Phase::Running);
@@ -409,7 +409,7 @@ void VersusSession::onLevelTick(float dt, float percent, int attempt, bool pract
         }
     }
 
-    // Practice runs and spent attempts park the percent, but the shared state keeps
+    // practice runs and spent attempts park the percent, but the shared state keeps
     // moving: frozen numbers would let one side call the duel on its own.
     m_practice = practice;
     bool const counts = !practice && !m_own.spent;
@@ -426,7 +426,7 @@ void VersusSession::onLevelTick(float dt, float percent, int attempt, bool pract
     } else if (def.id == Format::KingOfTheHill) {
         m_hillHeld = m_own.percent > m_rival.percent ? m_hillHeld + dt : 0.f;
     } else if (def.id == Format::TugOfWar) {
-        // Both clients run this off the same two percentages, so the rope lands
+        // both clients run this off the same two percentages, so the rope lands
         // on the same side without anything having to be sent.
         float const pull = (m_own.percent - m_rival.percent) / kRopeLead / kRopeSeconds;
         m_rope = std::clamp(m_rope + pull * dt, -1.f, 1.f);
@@ -461,7 +461,7 @@ void VersusSession::buildMilestones() {
 void VersusSession::checkMilestones() {
     if (m_milestones.empty() || m_nextMilestone >= m_milestones.size()) return;
 
-    // Spark pulls the next one closer, the Hourglass halves what is left to
+    // spark pulls the next one closer, the hourglass halves what is left to
     // every one of them; both only ever move our own copy of the list.
     float threshold = m_milestones[m_nextMilestone] - m_milestoneShift;
     if (m_hourglass > 0.f) {
@@ -482,7 +482,7 @@ void VersusSession::drawCard() {
                                modeMask, deficit, m_match.catchUp);
 
     m_hand.push_back(card);
-    // A third card pushes the oldest out, which is what makes holding a
+    // a third card pushes the oldest out, which is what makes holding a
     // legendary through a hard section an actual decision.
     if (static_cast<int>(m_hand.size()) > kHandSize) m_hand.erase(m_hand.begin());
     notifyListeners();
@@ -499,7 +499,7 @@ bool VersusSession::playCard(int slot) {
     auto const& def = cardAt(card);
     switch (def.target) {
         case CardTarget::Self:
-            // Heart is bookkeeping, not an effect: the attempt limit is the session's
+            // heart is bookkeeping, not an effect: the attempt limit is the session's
             // to move, and played on the spending death it hands the run back.
             if (card == CardId::Heart) {
                 m_extraAttempts++;
@@ -530,7 +530,7 @@ void VersusSession::receiveCard(CardId card, bool alreadyReflected) {
     auto const& def = cardAt(card);
 
     if (def.target == CardTarget::Rival) {
-        // Rebound sends it straight back instead of eating it, and a card that
+        // rebound sends it straight back instead of eating it, and a card that
         // has already bounced once cannot bounce again.
         if (!alreadyReflected && VersusEffects::get().consumeReflect()) {
             net::sendCard({card, 0, true, m_levelTime});
@@ -548,7 +548,7 @@ void VersusSession::receiveCard(CardId card, bool alreadyReflected) {
         return;
     }
 
-    // Wraith is cast on themselves but acted on here: we are the ones who have
+    // wraith is cast on themselves but acted on here: we are the ones who have
     // to stop drawing them.
     if (card == CardId::Ghost) VersusEffects::get().apply(card, true);
 }
@@ -578,7 +578,7 @@ int VersusSession::attemptLimit() const {
 
 void VersusSession::onDeath() {
     if (!m_inLevel || m_phase != Phase::Running) return;
-    // Past the limit the run is already over; what follows is the player
+    // past the limit the run is already over; what follows is the player
     // restarting, and announcing it again would only flood the rival.
     if (m_own.spent) return;
 
@@ -586,7 +586,7 @@ void VersusSession::onDeath() {
     m_own.alive = false;
     net::sendState({net::StateKind::Death, 0, static_cast<uint16_t>(m_own.deaths), m_levelTime});
 
-    // One life each, so the death is the whole result. It goes before the
+    // one life each, so the death is the whole result. it goes before the
     // attempt limit or the limit of one would swallow it.
     if (format().id == Format::SuddenDeath) {
         finish(m_rival.alive ? Outcome::Loss : Outcome::Draw);
@@ -614,7 +614,7 @@ void VersusSession::claimSegment(int segment) {
 void VersusSession::onComplete() {
     if (!m_inLevel) return;
 
-    // The last segment is the finish line itself, and the tick does not always
+    // the last segment is the finish line itself, and the tick does not always
     // report a clean 100 before the level ends.
     auto const& def = format();
     if (def.id == Format::Ladder || def.id == Format::Relay) claimSegment(kLadderSegments - 1);
@@ -632,7 +632,7 @@ void VersusSession::evaluate() {
 
     auto const& def = format();
 
-    // Walking out hands the duel over whatever else is on the board.
+    // walking out hands the duel over whatever else is on the board.
     if (m_rival.forfeited) {
         finish(Outcome::Win);
         return;
@@ -648,7 +648,7 @@ void VersusSession::evaluate() {
         return;
     }
     if (m_rival.finished && !m_own.finished) {
-        // Time attack is the one format where finishing second can still win.
+        // time attack is the one format where finishing second can still win.
         if (def.id != Format::TimeAttack) finish(Outcome::Loss);
         return;
     }
@@ -680,8 +680,8 @@ void VersusSession::evaluate() {
         return;
     }
 
-    // Both sides out of attempts, or the clock ran out: whoever got further
-    // takes it. Nothing else can move now.
+    // both sides out of attempts, or the clock ran out: whoever got further
+    // takes it. nothing else can move now.
     if (m_own.spent && m_rival.spent) {
         finishOnPercent();
         return;
@@ -751,7 +751,7 @@ void VersusSession::finish(Outcome outcome) {
             record.eloDelta = VersusStore::get().profile(record.mode).elo - before;
             VersusStore::get().pushRecord(record);
 
-            // The duel is still on screen only if nobody has left it yet.
+            // the duel is still on screen only if nobody has left it yet.
             if (m_match.id != record.id) return;
             m_eloDelta = record.eloDelta;
             notifyListeners();
@@ -780,7 +780,7 @@ void VersusSession::onLevelLeft() {
     gl::restoreVisibility();
     gl::clearShield();
 
-    // Leaving a paired duel forfeits; the server would rule it one once the rival
+    // leaving a paired duel forfeits; the server would rule it one once the rival
     // submits, and the countdown counts or the next entry inherits a claimed match.
     if ((m_phase == Phase::Running || m_phase == Phase::Countdown) && !m_submitted) forfeit();
 }

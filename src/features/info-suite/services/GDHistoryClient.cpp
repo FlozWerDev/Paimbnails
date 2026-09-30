@@ -16,7 +16,7 @@ namespace {
 constexpr char const* kBase = "https://history.geometrydash.eu/api/v1";
 constexpr int kTimeoutSeconds = 8;
 
-// One request per id per session, whatever the answer was.
+// one request per id per session, whatever the answer was.
 std::unordered_set<int>& levelsAsked() {
     static std::unordered_set<int> set;
     return set;
@@ -27,9 +27,7 @@ std::unordered_set<int>& usersAsked() {
     return set;
 }
 
-// GDPS setups answer on a different host, where these ids mean nothing. There
-// is no binding that exposes the active server, so we go by the switcher mods
-// people actually use.
+// official ids do not apply on private servers; detect known switchers because bindings expose no server.
 bool onPrivateServer() {
     auto* loader = Loader::get();
     if (!loader) return false;
@@ -44,7 +42,7 @@ std::string asString(matjson::Value const& value) {
     return res.isOk() ? res.unwrap() : std::string{};
 }
 
-// The API returns an ISO timestamp; only the date part is worth showing.
+// the api returns an iso timestamp; only the date part is worth showing.
 std::string dateOnly(std::string const& iso) {
     if (iso.size() < 10) return iso;
     return iso.substr(0, 10);

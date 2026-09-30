@@ -1,9 +1,8 @@
-// Host-side test harness for Paimon's matcher (PaigoritV1 + LightLemmatizer).
-// Compiles the real algorithm sources directly (unity build) and runs a labeled
-// query set, reporting accuracy per category. This is the loop that lets us tune
+// host-side test harness for paimon's matcher (paigoritv1 + lightlemmatizer).
+// compiles the real algorithm sources directly (unity build) and runs a labeled
+// query set, reporting accuracy per category. this is the loop that lets us tune
 // the algorithm with evidence instead of guessing.
-//
-// Build: tests/guide/run_tests.bat
+// build: tests/guide/run_tests.bat
 
 #include "../../src/features/guide/services/LightLemmatizer.cpp"
 #include "../../src/features/guide/services/PaigoritV1.cpp"
@@ -16,8 +15,8 @@
 
 using namespace paimon::guide;
 
-// Mirror of PaimonGuideService::stripBasicAccents + normalize + tokenize, so the
-// harness feeds PaigoritV1 exactly what the service would.
+// mirror of paimonguideservice::stripbasicaccents + normalize + tokenize, so the
+// harness feeds paigoritv1 exactly what the service would.
 namespace {
 
 std::string stripBasicAccents(std::string const& in) {
@@ -102,7 +101,7 @@ int main() {
     auto intents = test::makeIntents();
 
     std::vector<Case> cases = {
-        // --- exact display names (EN) ---
+        // --- exact display names (en) ---
         {"custom cursor", "english", {"custom-cursor"}, "exact"},
         {"menu music", "english", {"menu-music"}, "exact"},
         {"discord rich presence", "english", {"discord-rich-presence"}, "exact"},
@@ -131,7 +130,7 @@ int main() {
         {"soundtrack", "english", {"menu-music", "music-library", "music-playlists"}, "synonym"},
         {"companion", "english", {"pet"}, "synonym"},
 
-        // --- natural language phrasing (EN) ---
+        // --- natural language phrasing (en) ---
         {"where do i configure the cursor", "english", {"custom-cursor"}, "natural"},
         {"how do i set menu music", "english", {"menu-music"}, "natural"},
         {"i want to change my profile picture", "english", {"profile-photo-editor"}, "natural"},
@@ -155,13 +154,13 @@ int main() {
         {"bye", "english", {"goodbye"}, "conv"},
         {"how are you", "english", {"how-are-you"}, "conv"},
 
-        // --- non-matches (should fall back, NOT a false positive) ---
+        // --- non-matches (should fall back, not a false positive) ---
         {"asdfghjkl", "english", {FALLBACK}, "nomatch"},
         {"buy me a pizza", "english", {FALLBACK}, "nomatch"},
         {"the weather is nice today", "english", {FALLBACK}, "nomatch"},
         {"123456", "english", {FALLBACK}, "nomatch"},
 
-        // --- Spanish: aliases / names ---
+        // --- spanish: aliases / names ---
         {"cursor", "spanish", {"custom-cursor"}, "es-alias"},
         {"raton", "spanish", {"custom-cursor"}, "es-synonym"},
         {"fondos", "spanish", {"scene-background"}, "es-alias"},
@@ -171,24 +170,24 @@ int main() {
         {"volumen", "spanish", {"scroll-keybinds"}, "es-alias"},
         {"vinilo", "spanish", {"menu-music"}, "es-synonym"},
 
-        // --- Spanish: natural phrasing ---
+        // --- spanish: natural phrasing ---
         {"donde configuro el cursor", "spanish", {"custom-cursor"}, "es-natural"},
         {"como pongo musica de menu", "spanish", {"menu-music"}, "es-natural"},
         {"donde cambio los fondos", "spanish", {"scene-background"}, "es-natural"},
         {"quiero cambiar mi foto de perfil", "spanish", {"profile-photo-editor"}, "es-natural"},
         {"como activo el discord", "spanish", {"discord-rich-presence"}, "es-natural"},
 
-        // --- Spanish: conversational ---
+        // --- spanish: conversational ---
         {"hola", "spanish", {"greeting"}, "es-conv"},
         {"gracias", "spanish", {"thanks"}, "es-conv"},
         {"quien eres", "spanish", {"who-are-you"}, "es-conv"},
         {"cuentame un chiste", "spanish", {"joke"}, "es-conv"},
         {"adios", "spanish", {"goodbye"}, "es-conv"},
 
-        // --- Spanish: non-match ---
+        // --- spanish: non-match ---
         {"comprame una pizza", "spanish", {FALLBACK}, "es-nomatch"},
 
-        // ===== Hardening round 2 =====
+        // ===== hardening round 2 =====
         // category lead: bare "music" should land on the main music popup
         {"music", "english", {"menu-music"}, "category"},
         {"playlist", "english", {"music-playlists"}, "alias2"},
@@ -212,7 +211,7 @@ int main() {
         {"CURSOR", "english", {"custom-cursor"}, "case"},
         {"Discord Rich Presence", "english", {"discord-rich-presence"}, "case"},
 
-        // accented Spanish (exercises the accent stripper)
+        // accented spanish (exercises the accent stripper)
         {"m\xC3\xBAsica", "spanish", {"menu-music"}, "es-accent"},
         {"configuraci\xC3\xB3n de perfil", "spanish", {"profile-settings"}, "es-accent"},
         {"rese\xC3\xB1" "as", "spanish", {"profile-reviews"}, "es-accent"},
@@ -223,7 +222,7 @@ int main() {
         {"delete my account", "english", {FALLBACK}, "nomatch2"},
         {"random gibberish words here", "english", {FALLBACK}, "nomatch2"},
 
-        // ===== Hardening round 3 =====
+        // ===== hardening round 3 =====
         // "background" alone is the scene one, not the profile one
         {"background", "english", {"scene-background"}, "precision"},
         {"fondo", "spanish", {"scene-background"}, "precision"},
@@ -239,7 +238,7 @@ int main() {
         {"what time is it", "english", {FALLBACK}, "nomatch3"},
         {"open the door", "english", {FALLBACK}, "nomatch3"},
 
-        // ===== Round 4: extensive per-intent coverage (EN) =====
+        // ===== round 4: extensive per-intent coverage (en) =====
         {"profile background", "english", {"profile-background"}, "cov-en"},
         {"profile wallpaper", "english", {"profile-background"}, "cov-en"},
         {"profile photo editor", "english", {"profile-photo-editor"}, "cov-en"},
@@ -296,7 +295,7 @@ int main() {
         {"snap", "english", {"capture"}, "cov-en"},
         {"thumbnail capture", "english", {"capture"}, "cov-en"},
 
-        // ===== Round 4: extensive per-intent coverage (ES) =====
+        // ===== round 4: extensive per-intent coverage (es) =====
         {"fondo de perfil", "spanish", {"profile-background"}, "cov-es"},
         {"editor de foto de perfil", "spanish", {"profile-photo-editor"}, "cov-es"},
         {"imagen de perfil", "spanish", {"profile-photo-editor"}, "cov-es"},
@@ -334,7 +333,7 @@ int main() {
         {"version", "spanish", {"mod-updates"}, "cov-es"},
         {"actualizar", "spanish", {"mod-updates"}, "cov-es"},
 
-        // ===== Round 4: more typos (single-edit, longer words) =====
+        // ===== round 4: more typos (single-edit, longer words) =====
         {"backgound", "english", {"scene-background"}, "typo2"},
         {"transtion", "english", {"transition-settings"}, "typo2"},
         {"playlst", "english", {"music-playlists"}, "typo2"},
@@ -342,7 +341,7 @@ int main() {
         {"progres bar", "english", {"progress-bar"}, "typo2"},
         {"discrd", "english", {"discord-rich-presence"}, "typo2"},
 
-        // ===== Round 4: natural language (EN) =====
+        // ===== round 4: natural language (en) =====
         {"how do i change my cursor", "english", {"custom-cursor"}, "nat-en"},
         {"i want to set up discord rich presence", "english", {"discord-rich-presence"}, "nat-en"},
         {"where can i find the menu music", "english", {"menu-music"}, "nat-en"},
@@ -353,7 +352,7 @@ int main() {
         {"how do i use the pet", "english", {"pet"}, "nat-en"},
         {"where are my profile views", "english", {"profile-views"}, "nat-en"},
 
-        // ===== Round 4: natural language (ES) =====
+        // ===== round 4: natural language (es) =====
         {"como cambio el cursor", "spanish", {"custom-cursor"}, "nat-es"},
         {"donde esta la musica del menu", "spanish", {"menu-music"}, "nat-es"},
         {"quiero personalizar mi cursor", "spanish", {"custom-cursor"}, "nat-es"},
@@ -363,7 +362,7 @@ int main() {
         {"quiero un chiste", "spanish", {"joke"}, "nat-es"},
         {"muchas gracias paimon", "spanish", {"thanks"}, "nat-es"},
 
-        // ===== Round 4: conversational coverage =====
+        // ===== round 4: conversational coverage =====
         {"help", "english", {"help-general"}, "conv2"},
         {"guide", "english", {"help-general"}, "conv2"},
         {"tutorial", "english", {"help-general"}, "conv2"},
@@ -395,20 +394,20 @@ int main() {
         {"que puedes hacer", "spanish", {"what-can-you-do", "help-general"}, "conv2"},
         {"your features", "english", {"what-can-you-do"}, "conv2"},
 
-        // ===== Round 4: punctuation / whitespace / case =====
+        // ===== round 4: punctuation / whitespace / case =====
         {"Cursor!", "english", {"custom-cursor"}, "fmt"},
         {"discord?", "english", {"discord-rich-presence"}, "fmt"},
         {"MENU MUSIC", "english", {"menu-music"}, "fmt"},
         {"  cursor  ", "english", {"custom-cursor"}, "fmt"},
         {"quick-hub", "english", {"quick-hub"}, "fmt"},
 
-        // ===== Round 4: more non-matches =====
+        // ===== round 4: more non-matches =====
         {"i hate this game", "english", {FALLBACK}, "nomatch4"},
         {"lorem ipsum dolor", "english", {FALLBACK}, "nomatch4"},
         {"zzzzzz xxxxxx", "english", {FALLBACK}, "nomatch4"},
         {"el clima esta feo hoy", "spanish", {FALLBACK}, "nomatch4"},
 
-        // ===== Round 5: newly added features =====
+        // ===== round 5: newly added features =====
         {"smooth scroll", "english", {"smooth-scroll"}, "newfeat"},
         {"scroll suave", "spanish", {"smooth-scroll"}, "newfeat"},
         {"slider", "english", {"custom-slider"}, "newfeat"},
@@ -462,7 +461,7 @@ int main() {
         {"como actualizo el mod", "spanish", {"mod-updates"}, "newfeat-nat"},
         {"where is the texture pack editor", "english", {"texture-studio"}, "newfeat-nat"},
 
-        // ===== Round 6: mod-knowledge (the "small AI" info layer) =====
+        // ===== round 6: mod-knowledge (the "small ai" info layer) =====
         {"what is paimbnails", "english", {"mod-about"}, "knowledge"},
         {"about the mod", "english", {"mod-about"}, "knowledge"},
         {"what does this mod do", "english", {"mod-about"}, "knowledge"},
@@ -487,7 +486,7 @@ int main() {
         {"who are you", "english", {"who-are-you"}, "knowledge"},
         {"paimbnails cursor", "english", {"custom-cursor"}, "knowledge"},
 
-        // ===== Round 7: problem / search phrases (soft NLU) =====
+        // ===== round 7: problem / search phrases (soft nlu) =====
         {"thumbnails not showing", "english", {"thumbnail-settings"}, "problem"},
         {"thumbnails not loading", "english", {"thumbnail-settings"}, "problem"},
         {"no se ven miniaturas", "spanish", {"thumbnail-settings"}, "problem-es"},
@@ -509,7 +508,7 @@ int main() {
         {"discord", "english", {"discord-rich-presence"}, "problem-prec"},
         {"miniaturas", "spanish", {"thumbnail-settings"}, "problem-prec"},
 
-        // ===== Round 8: full mod coverage (new entries) =====
+        // ===== round 8: full mod coverage (new entries) =====
         {"collab", "english", {"collab-editor"}, "modfull"},
         {"collab editor", "english", {"collab-editor"}, "modfull"},
         {"editor multijugador", "spanish", {"collab-editor"}, "modfull"},
@@ -544,7 +543,7 @@ int main() {
         {"search songs by name", "english", {"song-search"}, "modfull-nat"},
         {"buscar canciones por nombre", "spanish", {"song-search"}, "modfull-nat"},
 
-        // ===== Round 9: new features (icons, dual, requests, perf...) =====
+        // ===== round 9: new features (icons, dual, requests, perf...) =====
         {"icon maker", "english", {"icon-maker"}, "newfeat9"},
         {"icon creator", "english", {"icon-maker"}, "newfeat9"},
         {"make icons", "english", {"icon-maker"}, "newfeat9"},
@@ -594,7 +593,7 @@ int main() {
         {"even out song volumes", "english", {"dynamic-volume"}, "newfeat9-nat"},
         {"como veo las estadisticas del nivel", "spanish", {"info-suite"}, "newfeat9-nat"},
 
-        // ===== Round 9: small-talk (conversational) =====
+        // ===== round 9: small-talk (conversational) =====
         {"what is the weather", "english", {"weather"}, "smalltalk"},
         {"weather", "english", {"weather"}, "smalltalk"},
         {"is it raining", "english", {"weather"}, "smalltalk"},
@@ -652,7 +651,7 @@ int main() {
     std::printf("\n%d/%d passed (%.1f%%), %d failed\n",
                 pass, total, total ? 100.0 * pass / total : 0.0, fail);
 
-    // ---- Multi-topic detection (splitTopics) ----
+    // ---- multi-topic detection (splittopics) ----
     struct MultiCase {
         std::string query;
         std::string lang;

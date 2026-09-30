@@ -1,4 +1,6 @@
+#include "../../../utils/MusicChannel.hpp"
 #include "LeaderboardLayer.hpp"
+#include "../../audio/services/CaveAudio.hpp"
 #include "LeaderboardHistoryLayer.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
@@ -107,20 +109,9 @@ static LeaderboardPaimonSprite* createLeaderboardBlurredSprite(CCTexture2D* text
     return finalSprite;
 }
 
-// Return the active background channel, or nullptr when silent.
+// return the active background channel, or nullptr when silent.
 static FMOD::Channel* lbGetMainBgChannel(FMODAudioEngine* engine) {
-    if (!engine) return nullptr;
-    if (auto* channel = engine->getActiveMusicChannel(0)) {
-        return channel;
-    }
-    if (!engine->m_backgroundMusicChannel) return nullptr;
-
-    int numCh = 0;
-    engine->m_backgroundMusicChannel->getNumChannels(&numCh);
-    if (numCh <= 0) return nullptr;
-    FMOD::Channel* ch = nullptr;
-    if (engine->m_backgroundMusicChannel->getChannel(0, &ch) != FMOD_OK) return nullptr;
-    return ch;
+    return paimon::audio::mainMusicChannel(engine);
 }
 
 LeaderboardLayer* LeaderboardLayer::create(BackTarget backTarget) {
@@ -205,7 +196,7 @@ bool LeaderboardLayer::init() {
     this->addChild(tabMenu);
     m_tabsMenu = tabMenu;
 
-    // Tab pill from GD assets; active tab accented.
+    // tab pill from gd assets; active tab accented.
     auto createTab = [&](char const* text, char const* id, char const* iconFrame,
                          ccColor3B accent, CCPoint pos) -> CCMenuItemToggler* {
         float pillW = 116.f;
@@ -324,7 +315,7 @@ bool LeaderboardLayer::init() {
 
     this->setKeypadEnabled(true);
 
-    // Stop the old channel; GD may restore its volume during slider changes.
+    // stop the old channel; gd may restore its volume during slider changes.
     {
         auto* dsm = DynamicSongManager::get();
         if (dsm && dsm->isActive()) {
@@ -369,7 +360,7 @@ void LeaderboardLayer::onExit() {
         GameLevelManager::get()->m_levelManagerDelegate = nullptr;
     }
 
-    // Keep cave audio alive while pushing a child scene.
+    // keep cave audio alive while pushing a child scene.
     if (m_leavingForGood) {
         killCaveMusic();
     }
@@ -380,7 +371,7 @@ void LeaderboardLayer::onExit() {
 void LeaderboardLayer::onExitTransitionDidStart() {
     CCLayer::onExitTransitionDidStart();
 
-    // Save playback position for a pushed scene; leave the channel for GD to replace.
+    // save playback position for a pushed scene; leave the channel for gd to replace.
     if (!m_leavingForGood && m_musicPlaying) {
         auto engine = FMODAudioEngine::sharedEngine();
         if (engine) {
@@ -568,7 +559,7 @@ void LeaderboardLayer::loadLeaderboard(std::string type) {
     });
 }
 
-// Difficulty value understood by GJDifficultySprite (7-10 = demon tiers, -1 = auto).
+// difficulty value understood by gjdifficultysprite (7-10 = demon tiers, -1 = auto).
 static int lbDifficultySpriteValue(GJGameLevel* level) {
     if (!level) return 0;
     if (level->m_autoLevel) return -1;
@@ -588,7 +579,7 @@ static int lbDifficultySpriteValue(GJGameLevel* level) {
     return diff;
 }
 
-// Runs when server data arrives.
+// runs when server data arrives.
 static void lbFillDiffChip(CCNode* chip, GJGameLevel* level) {
     if (!chip || !level) return;
     chip->removeAllChildren();
@@ -632,7 +623,7 @@ static void lbFillDiffChip(CCNode* chip, GJGameLevel* level) {
     }
 }
 
-// Keeps very dark thumbnail-derived accents visible against the dark card.
+// keeps very dark thumbnail-derived accents visible against the dark card.
 static ccColor3B lbBrightenAccent(ccColor3B c) {
     int maxC = std::max({static_cast<int>(c.r), static_cast<int>(c.g), static_cast<int>(c.b)});
     if (maxC == 0) return {255, 195, 60};
@@ -671,7 +662,7 @@ void LeaderboardLayer::createList(std::string type) {
     int levelID = level->m_levelID;
     bool isDaily = (type == "daily");
 
-// Use cached level colors, with daily/weekly fallbacks.
+// use cached level colors, with daily/weekly fallbacks.
     ccColor3B accA, accB;
     if (auto colors = LevelColors::get().getPair(levelID); colors.has_value()) {
         accA = lbBrightenAccent(colors->a);
@@ -760,7 +751,7 @@ void LeaderboardLayer::createList(std::string type) {
         clipper->addChild(shine, 12);
         shine->runAction(CCRepeatForever::create(CCSequence::create(
             CCDelayTime::create(1.0f),
-            // CCMoveTo with 0s instead of CCPlace: CCPlace has no iOS binding.
+            // ccmoveto with 0s instead of ccplace: ccplace has no ios binding.
             CCMoveTo::create(0.f, {-70.f, cardH / 2.f}),
             CCFadeTo::create(0.f, 55),
             CCEaseSineInOut::create(CCMoveTo::create(1.3f, {cardW + 70.f, cardH / 2.f})),
@@ -1067,7 +1058,7 @@ void LeaderboardLayer::createList(std::string type) {
                 CCEaseElasticOut::create(CCScaleTo::create(0.6f, 1.f), 0.7f),
                 nullptr));
 
-            // Pulse without interfering with the click-scale animation.
+            // pulse without interfering with the click-scale animation.
             playSpr->runAction(CCRepeatForever::create(CCSequence::create(
                 CCEaseSineInOut::create(CCScaleTo::create(0.9f, playSpr->getScale() * 1.05f)),
                 CCEaseSineInOut::create(CCScaleTo::create(0.9f, playSpr->getScale())),
@@ -1228,7 +1219,7 @@ static CCNode* lbStatChip(char const* frameName, std::string const& value, float
     return node;
 }
 
-// Keep large counts from widening the row.
+// keep large counts from widening the row.
 static std::string lbShortCount(int value) {
     if (value >= 1000000) return fmt::format("{:.1f}M", value / 1000000.f);
     if (value >= 10000) return fmt::format("{}K", value / 1000);
@@ -1272,7 +1263,7 @@ void LeaderboardLayer::createForYouList() {
         topMenu->addChild(prefsBtn);
     }
 
-    // Shared frame geometry for empty and populated states.
+    // shared frame geometry for empty and populated states.
     float const listW = std::min(392.f, winSize.width - 40.f);
     float const listH = winSize.height - 92.f;
     float const listCX = winSize.width / 2.f;
@@ -2115,7 +2106,7 @@ void LeaderboardLayer::startCaveMusic() {
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_system) return;
 
-    // Replace the main channel through GD so volume changes cannot leak old audio.
+    // replace the main channel through gd so volume changes cannot leak old audio.
     engine->playMusic(songPath, true, 0.0f, 0);
 
     auto* bgCh = lbGetMainBgChannel(engine);
@@ -2168,7 +2159,7 @@ void LeaderboardLayer::killCaveMusic() {
 
     removeCaveEffect();
 
-    // Stop the channel so menu music cannot leak during a scene transition.
+    // stop the channel so menu music cannot leak during a scene transition.
     auto engine = FMODAudioEngine::sharedEngine();
     if (engine && engine->m_backgroundMusicChannel) {
         engine->m_backgroundMusicChannel->stop();
@@ -2216,47 +2207,20 @@ void LeaderboardLayer::executeCaveFade(int step, int totalSteps, float from, flo
 }
 
 void LeaderboardLayer::applyCaveEffect() {
-    auto engine = FMODAudioEngine::sharedEngine();
-    if (!engine || !engine->m_system || !engine->m_backgroundMusicChannel) return;
-
-    if (!m_lowpassDSP) {
-        engine->m_system->createDSPByType(FMOD_DSP_TYPE_LOWPASS, &m_lowpassDSP);
-        if (m_lowpassDSP) {
-            m_lowpassDSP->setParameterFloat(FMOD_DSP_LOWPASS_CUTOFF, 1200.f);
-            m_lowpassDSP->setParameterFloat(FMOD_DSP_LOWPASS_RESONANCE, 2.0f);
-        }
-    }
-
-    if (!m_reverbDSP) {
-        engine->m_system->createDSPByType(FMOD_DSP_TYPE_SFXREVERB, &m_reverbDSP);
-        if (m_reverbDSP) {
-            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_DECAYTIME, 2500.f);
-            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_EARLYDELAY, 20.f);
-            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_LATEDELAY, 40.f);
-            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_HFREFERENCE, 3000.f);
-            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_DRYLEVEL, -4.f);
-            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_WETLEVEL, -8.f);
-        }
-    }
-
-    if (m_lowpassDSP) engine->m_backgroundMusicChannel->addDSP(0, m_lowpassDSP);
-    if (m_reverbDSP) engine->m_backgroundMusicChannel->addDSP(1, m_reverbDSP);
+    paimon::audio::attachCaveEffects(FMODAudioEngine::sharedEngine(), m_lowpassDSP, m_reverbDSP);
 }
 
 void LeaderboardLayer::removeCaveEffect() {
     auto engine = FMODAudioEngine::sharedEngine();
-    if (engine && engine->m_backgroundMusicChannel) {
-        if (m_lowpassDSP) engine->m_backgroundMusicChannel->removeDSP(m_lowpassDSP);
-        if (m_reverbDSP) engine->m_backgroundMusicChannel->removeDSP(m_reverbDSP);
-        if (m_fftDSP) engine->m_backgroundMusicChannel->removeDSP(m_fftDSP);
+    paimon::audio::releaseCaveEffects(engine, m_lowpassDSP, m_reverbDSP);
+    if (engine && engine->m_backgroundMusicChannel && m_fftDSP) {
+        engine->m_backgroundMusicChannel->removeDSP(m_fftDSP);
     }
-    if (m_lowpassDSP) { m_lowpassDSP->release(); m_lowpassDSP = nullptr; }
-    if (m_reverbDSP) { m_reverbDSP->release(); m_reverbDSP = nullptr; }
     if (m_fftDSP) { m_fftDSP->release(); m_fftDSP = nullptr; }
 }
 
 LeaderboardLayer::~LeaderboardLayer() {
-    // Restore dynamic audio if the scene was replaced unexpectedly.
+    // restore dynamic audio if the scene was replaced unexpectedly.
     if (m_didSuspendDynSong) {
         auto* dsm = DynamicSongManager::get();
         if (dsm && dsm->hasSuspendedPlayback()) {

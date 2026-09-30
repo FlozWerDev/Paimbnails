@@ -8,12 +8,15 @@
 #include <functional>
 #include <atomic>
 #include <memory>
+#include <algorithm>
+#include <exception>
+#include <string>
 #include <Geode/loader/Log.hpp>
 #include "JoinWithWarning.hpp"
 
 namespace paimon {
 
-// fixed pool; bounds concurrent disk I/O.
+// fixed pool; bounds concurrent disk i/o.
 class ThreadPool {
 public:
     struct SharedState {
@@ -30,14 +33,19 @@ public:
         numThreads = std::max(1, numThreads);
         geode::log::info("[ThreadPool] creating '{}' with {} threads", m_name, numThreads);
         m_workers.reserve(numThreads);
-        for (int i = 0; i < numThreads; ++i) {
-            auto state = m_state;
-            auto nameCopy = m_name;
-            m_workers.emplace_back([state, nameCopy, i]() {
-                geode::utils::thread::setName(
-                    fmt::format("{} #{}", nameCopy, i));
-                workerLoop(std::move(state));
-            });
+        try {
+            for (int i = 0; i < numThreads; ++i) {
+                auto state = m_state;
+                auto nameCopy = m_name;
+                m_workers.emplace_back([state, nameCopy, i]() {
+                    geode::utils::thread::setName(
+                        fmt::format("{} #{}", nameCopy, i));
+                    workerLoop(std::move(state));
+                });
+            }
+        } catch (...) {
+            shutdown();
+            throw;
         }
     }
 
@@ -87,7 +95,6 @@ public:
             if (t.joinable()) paimon::joinWithWarning(t, std::chrono::seconds(3));
         }
         m_workers.clear();
-        m_state.reset();
         geode::log::info("[ThreadPool] '{}' shut down", m_name);
     }
 
@@ -100,7 +107,7 @@ public:
         auto state = m_state;
         if (!state) return 0;
         std::lock_guard<std::mutex> lock(state->mutex);
-        return static_cast<int>(state->jobs.size());
+        return static_cast<int>(state->jobs.size() + state->priorityJobs.size());
     }
 
 private:
@@ -110,8 +117,7 @@ private:
             std::function<void()> job;
             {
                 std::unique_lock<std::mutex> lock(state->mutex);
-                // 200ms idle timeout; notify still wakes instantly.
-                state->cv.wait_for(lock, std::chrono::milliseconds(200), [state]() {
+                state->cv.wait(lock, [state]() {
                     return state->stopped.load(std::memory_order_acquire) ||
                            !state->priorityJobs.empty() ||
                            !state->jobs.empty();
@@ -125,10 +131,16 @@ private:
                     job = std::move(state->jobs.front());
                     state->jobs.pop();
                 } else {
-                    continue; // timeout expired, thread can keep sleeping
+                    continue;
                 }
             }
-            job();
+            try {
+                job();
+            } catch (std::exception const& e) {
+                geode::log::error("[ThreadPool] Job failed: {}", e.what());
+            } catch (...) {
+                geode::log::error("[ThreadPool] Job failed with an unknown exception");
+            }
         }
     }
 

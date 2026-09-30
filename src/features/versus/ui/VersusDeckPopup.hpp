@@ -10,7 +10,7 @@
 
 namespace paimon::versus {
 
-// The deck browser, which doubles as the place you learn the mode: every card
+// the deck browser, which doubles as the place you learn the mode: every card
 // with its full text, filtered by rarity.
 class VersusDeckPopup : public geode::Popup {
 public:

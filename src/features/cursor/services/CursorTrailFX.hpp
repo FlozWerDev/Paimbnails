@@ -94,7 +94,7 @@ public:
 
     void setEchoSource(cocos2d::CCSprite* src);
 
-    // Draw only during the overlay pass to avoid doubling additive glow.
+    // draw only during the overlay pass to avoid doubling additive glow.
     void beginOverlayPass();
     void endOverlayPass() { m_inOverlayPass = false; }
 

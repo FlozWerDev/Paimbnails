@@ -1,4 +1,4 @@
-// Probe: clasifica pares fusionables de pintura por causa de rechazo.
+// probe: clasifica pares fusionables de pintura por causa de rechazo.
 #include <algorithm>
 #include <cmath>
 #include <cstdint>

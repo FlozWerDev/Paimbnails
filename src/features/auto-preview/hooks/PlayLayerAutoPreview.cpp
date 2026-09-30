@@ -87,7 +87,7 @@ class $modify(PaimonAutoPreviewPlayLayer, PlayLayer) {
         int const levelID = level->m_levelID.value();
         if (levelID <= 0) return true;
         if (paimon::autopreview::AutoPreviewStore::get().wasAttempted(levelID)) return true;
-        // Quick pre-check (re-checked again right before capture).
+        // quick pre-check (re-checked again right before capture).
         if (!levelHasNoThumbnail(levelID)) return true;
 
         paimon::autopreview::AutoPreviewStore::get().markAttempted(levelID);

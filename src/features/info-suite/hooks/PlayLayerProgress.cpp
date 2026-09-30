@@ -1,4 +1,4 @@
-// Feeds ProgressTracker with gameplay deaths, attempts, jumps, completions, and
+// feeds progresstracker with gameplay deaths, attempts, jumps, completions, and
 // play time while keeping practice runs separate.
 
 #include "../InfoModule.hpp"
@@ -30,7 +30,7 @@ class $modify(PaimonInfoSuitePlayLayer, PlayLayer) {
     };
 
     int trackedLevelID() {
-        // Unsaved editor tests have no stable ID to track.
+        // unsaved editor tests have no stable id to track.
         return m_level ? m_level->m_levelID.value() : 0;
     }
 
@@ -38,7 +38,7 @@ class $modify(PaimonInfoSuitePlayLayer, PlayLayer) {
         int levelID = trackedLevelID();
         if (levelID <= 0) return;
 
-        // Recover if resetLevel was skipped, but ignore inputs during death.
+        // recover if resetlevel was skipped, but ignore inputs during death.
         if (!m_fields->m_attemptOpen) {
             if (m_fields->m_everOpened) return;
             beginAttempt();
@@ -60,14 +60,14 @@ class $modify(PaimonInfoSuitePlayLayer, PlayLayer) {
         }
     }
 
-    // The flag prevents repeated destroyPlayer calls from ending one death twice.
+    // the flag prevents repeated destroyplayer calls from ending one death twice.
     void endAttempt(int percent, bool practice) {
         if (!m_fields->m_attemptOpen) return;
         m_fields->m_attemptOpen = false;
 
         int levelID = trackedLevelID();
         if (levelID > 0) {
-            // Keep zero-jump attempts so the chart matches the attempt count.
+            // keep zero-jump attempts so the chart matches the attempt count.
             paimon::info::ProgressTracker::get().recordRun(
                 levelID, m_fields->m_runJumps, percent, practice);
         }
@@ -85,11 +85,11 @@ class $modify(PaimonInfoSuitePlayLayer, PlayLayer) {
     }
 
     void destroyPlayer(PlayerObject* player, GameObject* object) {
-        // The anticheat spike calls destroyPlayer without a real death.
+        // the anticheat spike calls destroyplayer without a real death.
         bool realDeath = progressEnabled() && object != this->m_anticheatSpike
             && m_fields->m_attemptOpen;
 
-        // Read percent before the base call resets the player.
+        // read percent before the base call resets the player.
         int percent = realDeath ? this->getCurrentPercentInt() : 0;
         int levelID = realDeath ? trackedLevelID() : 0;
         bool practice = m_isPracticeMode;
@@ -108,7 +108,7 @@ class $modify(PaimonInfoSuitePlayLayer, PlayLayer) {
                 paimon::info::ProgressTracker::get().recordBest(
                     levelID, this->getCurrentPercentInt(), m_isPracticeMode);
             }
-            // A restart without death closes the current run.
+            // a restart without death closes the current run.
             endAttempt(this->getCurrentPercentInt(), m_isPracticeMode);
             beginAttempt();
         }
@@ -138,14 +138,14 @@ class $modify(PaimonInfoSuitePlayLayer, PlayLayer) {
                     levelID, this->getCurrentPercentInt(), m_isPracticeMode);
             }
             endAttempt(this->getCurrentPercentInt(), m_isPracticeMode);
-            // Flush on exit instead of writing after every death.
+            // flush on exit instead of writing after every death.
             paimon::info::ProgressTracker::get().save();
         }
         PlayLayer::onQuit();
     }
 };
 
-// Count jumps at the input hook; GJBaseGameLayer also handles editor playtests.
+// count jumps at the input hook; gjbasegamelayer also handles editor playtests.
 class $modify(PaimonInfoSuiteJumps, GJBaseGameLayer) {
     void handleButton(bool down, int button, bool isPlayer1) {
         GJBaseGameLayer::handleButton(down, button, isPlayer1);

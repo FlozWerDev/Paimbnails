@@ -35,7 +35,7 @@ inline std::atomic<bool>& videoAudioInteropState() {
     return active;
 }
 
-// During teardown the scene is mid-destruction, don't touch it.
+// during teardown the scene is mid-destruction, don't touch it.
 inline std::atomic<bool>& interopSceneTeardownGuard() {
     static std::atomic<bool> inTeardown{false};
     return inTeardown;
@@ -47,7 +47,7 @@ struct InteropSceneTeardownScope {
 };
 
 inline void syncAudioInteropFlags() {
-    // Mirror atomics only; skip if the scene can't be touched.
+    // mirror atomics only; skip if the scene can't be touched.
     if (interopSceneTeardownGuard().load(std::memory_order_acquire)) {
         return;
     }
@@ -57,7 +57,7 @@ inline void syncAudioInteropFlags() {
         return;
     }
 
-    // Scene transition in progress: previous scene is being released.
+    // scene transition in progress: previous scene is being released.
     if (director->getNextScene() != nullptr || director->isSendCleanupToScene()) {
         return;
     }
@@ -67,7 +67,7 @@ inline void syncAudioInteropFlags() {
         return;
     }
 
-    // If retain is 0 the scene is being destroyed.
+    // if retain is 0 the scene is being destroyed.
     if (scene->retainCount() <= 0) {
         return;
     }

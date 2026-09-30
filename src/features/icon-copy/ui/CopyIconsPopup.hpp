@@ -1,6 +1,6 @@
 #pragma once
-// Profile side of the icon clipboard: preview the set before taking it.
-// Each icon in the strip opens its source card.
+// profile side of the icon clipboard: preview the set before taking it.
+// each icon in the strip opens its source card.
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>

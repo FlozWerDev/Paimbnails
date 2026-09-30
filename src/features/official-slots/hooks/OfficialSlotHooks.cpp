@@ -1,4 +1,4 @@
-// Paint layer for the cosmetic official slots: every vanilla page stays in
+// paint layer for the cosmetic official slots: every vanilla page stays in
 // place and is repainted (never rebuilt, so background/music/swipe can't desync).
 
 #include <Geode/modify/LevelSelectLayer.hpp>
@@ -55,7 +55,7 @@ void refresh() {
 
 namespace paimon::officialslots {
 
-// Pages carrying one of ours; vanilla pages are keyed by official id.
+// pages carrying one of ours; vanilla pages are keyed by official id.
 constexpr char const* kSlotPagePrefix = "paimon-slot:"_spr;
 
 std::string pageIdentity(LevelPage* page) {
@@ -79,8 +79,8 @@ std::optional<Slot> slotForPage(LevelPage* page) {
 
 void syncDots(BoomScrollLayer* scroll);
 
-// Reconciles the live pages with the store order: appended slots get real
-// pages, hidden officials lose theirs. Runs on open and after every mutation.
+// reconciles the live pages with the store order: appended slots get real
+// pages, hidden officials lose theirs. runs on open and after every mutation.
 void syncPages(LevelSelectLayer* select) {
     if (!select || !slotsEnabled()) return;
     auto* scroll = select->m_scrollLayer;
@@ -96,7 +96,7 @@ void syncPages(LevelSelectLayer* select) {
             desired.push_back(key);
         }
     }
-    // LevelSelect with no page at all is outside what the game handles.
+    // levelselect with no page at all is outside what the game handles.
     if (desired.empty()) return;
 
     std::string current;
@@ -152,7 +152,7 @@ void syncDots(BoomScrollLayer* scroll) {
         }
         dots->removeObjectAtIndex(last);
     }
-    // Clone the vanilla dot texture so the row keeps its look at any count.
+    // clone the vanilla dot texture so the row keeps its look at any count.
     if (dots->count() > 0) {
         if (auto* tpl = typeinfo_cast<CCSprite*>(dots->objectAtIndex(0))) {
             CCNode* parent = tpl->getParent();
@@ -199,8 +199,8 @@ class $modify(PaimonOfficialSlotPage, LevelPage) {
     }
 
     struct Fields {
-        // Every node our paint added to this page. Dropped and rebuilt on each
-        // update because BoomScrollLayer recycles pages across swipes.
+        // every node our paint added to this page. dropped and rebuilt on each
+        // update because boomscrolllayer recycles pages across swipes.
         std::vector<Ref<CCNode>> m_slotNodes;
     };
 
@@ -219,7 +219,7 @@ class $modify(PaimonOfficialSlotPage, LevelPage) {
     void updateDynamicPage(GJGameLevel* level) {
         LevelPage::updateDynamicPage(level);
 
-        // Drop our previous paint first: this page object may have shown a
+        // drop our previous paint first: this page object may have shown a
         // different official a moment ago.
         this->clearSlotPaint();
         if (m_levelDisplay) m_levelDisplay->setColor({255, 255, 255});
@@ -228,7 +228,7 @@ class $modify(PaimonOfficialSlotPage, LevelPage) {
         if (!level) return;
         if (!slotsEnabled()) return;
 
-        // Appended slots live on their own page, tagged at creation.
+        // appended slots live on their own page, tagged at creation.
         if (auto slot = paimon::officialslots::slotForPage(this)) {
             if (slot->enabled) this->paintSlot(*slot);
             return;
@@ -239,7 +239,7 @@ class $modify(PaimonOfficialSlotPage, LevelPage) {
 
         auto& store = paimon::officialslots::SlotStore::get();
         if (auto slot = store.slotForOfficial(id)) {
-            // A disabled replacement steps aside and shows the vanilla page.
+            // a disabled replacement steps aside and shows the vanilla page.
             if (slot->enabled) this->paintSlot(*slot);
         }
     }
@@ -251,7 +251,7 @@ class $modify(PaimonOfficialSlotPage, LevelPage) {
         if (m_nameLabel) {
             if (!slot.name.empty()) {
                 m_nameLabel->setString(slot.name.c_str());
-                // Shrink only when too long; the vanilla update reset the
+                // shrink only when too long; the vanilla update reset the
                 // scale just before, so this never accumulates.
                 m_nameLabel->limitLabelWidth(320.f, m_nameLabel->getScale(), 0.1f);
             }
@@ -285,7 +285,7 @@ class $modify(PaimonOfficialSlotPage, LevelPage) {
             m_starsSprite->setVisible(false);
         }
         if (starParent) {
-            // Scale 1 matches the editor preview (0.5 label, 0.8 icon).
+            // scale 1 matches the editor preview (0.5 label, 0.8 icon).
             if (auto* badge = createStarBadge(slot.stars, 1.f)) {
                 badge->setPosition(starPos);
                 starParent->addChild(badge);
@@ -293,7 +293,7 @@ class $modify(PaimonOfficialSlotPage, LevelPage) {
             }
         }
 
-        // The slot owns the coin row completely: vanilla coins are always
+        // the slot owns the coin row completely: vanilla coins are always
         // hidden on a replacement, ours appear only when the slot has them.
         CCNode* coinParent = nullptr;
         CCPoint coinPos{0.f, 0.f};
@@ -329,7 +329,7 @@ class $modify(PaimonOfficialSlotPage, LevelPage) {
     bool handleSlotTap() {
         if (!slotsEnabled()) return false;
 
-        // Our own pages never reach vanilla: the stand-in level would break
+        // our own pages never reach vanilla: the stand-in level would break
         // the flows that key off the id.
         if (auto slot = paimon::officialslots::slotForPage(this)) {
             if (slot->enabled) paimon::officialslots::openSlotLevel(*slot);
@@ -378,7 +378,7 @@ class $modify(PaimonOfficialSlotSelect, LevelSelectLayer) {
         return true;
     }
 
-    // Current page read at click time, so the buttons never track swipes.
+    // current page read at click time, so the buttons never track swipes.
     LevelPage* currentPage() {
         if (!m_scrollLayer || !m_scrollLayer->m_extendedLayer || !m_scrollLayer->m_pages) {
             return nullptr;
@@ -462,7 +462,7 @@ class $modify(PaimonOfficialSlotSelect, LevelSelectLayer) {
 
     void onSlotEdit() {
         using namespace paimon::officialslots::ui;
-        // A slot page edits that slot; an official edits its replacement.
+        // a slot page edits that slot; an official edits its replacement.
         if (!this->currentSlotId().empty()) {
             if (auto* editor = SlotEditorPopup::create(this->currentSlotId(), 0, [] { refresh(); })) {
                 editor->show();

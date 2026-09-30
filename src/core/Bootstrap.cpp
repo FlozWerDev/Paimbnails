@@ -51,7 +51,7 @@ void applyLanguageSetting(std::string const& langStr) {
     Localization::get().setLanguage(Localization::languageFromId(langStr), false);
 }
 
-// atomic: MenuLayer::init can re-enter when the scene reloads
+// atomic: menulayer::init can re-enter when the scene reloads
 std::atomic<bool> g_languageListenerRegistered{false};
 
 }
@@ -106,7 +106,7 @@ void bootstrap() {
             auto saveDir = Mod::get()->getSaveDir();
             std::error_code ec;
             std::filesystem::remove(saveDir / "manifest_cache.json", ec);
-            // Geode state must update on the main thread.
+            // geode state must update on the main thread.
             geode::queueInMainThread([]() {
                 if (paimon::isRuntimeShuttingDown()) return;
                 Mod::get()->setSavedValue("thumbnail-disk-cache", matjson::Value::object());
@@ -131,7 +131,7 @@ void bootstrap() {
             log::info("[PaimonThumbnails][Language] Changed to '{}'", value);
         });
 
-        // Geode can fire setting callbacks on any thread.
+        // geode can fire setting callbacks on any thread.
         static std::atomic<bool> s_cursorSyncGuard{false};
         geode::listenForSettingChanges<bool>("custom-cursor-enable", +[](bool value) {
             if (s_cursorSyncGuard.exchange(true, std::memory_order_acq_rel)) return;
@@ -140,7 +140,7 @@ void bootstrap() {
             s_cursorSyncGuard.store(false, std::memory_order_release);
         });
 
-        // settings panel bypasses setEnabled: invalidate the settings cache.
+        // settings panel bypasses setenabled: invalidate the settings cache.
         geode::listenForAllSettingChanges(
             +[](std::string_view, std::shared_ptr<geode::SettingV3>) {
                 paimon::settings::internal::invalidateSettingsCache();

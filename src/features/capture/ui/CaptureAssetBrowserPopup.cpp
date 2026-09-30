@@ -28,9 +28,9 @@ using namespace cocos2d;
 
 using paimon::capture::ui::ClippedMenu;
 
-// Intentionally leaked to avoid destruction-order crashes at DLL unload.
+// intentionally leaked to avoid destruction-order crashes at dll unload.
 static auto& s_originalAssetVisibilities = *new std::vector<paimon::capture::VisibilityRecord>();
-// Lazy per-type snapshot: avoids walking thousands of objects on open.
+// lazy per-type snapshot: avoids walking thousands of objects on open.
 static auto& s_snapshottedIDs = *new std::unordered_set<int>();
 
 namespace {
@@ -189,7 +189,7 @@ bool CaptureAssetBrowserPopup::init() {
         m_mainLayer->addChild(m_miniPreview, 1);
     }
 
-    // Right column: search, live counters, collapse-all.
+    // right column: search, live counters, collapse-all.
     const float colX = E::SIDE_PAD + E::PREVIEW_W + E::TOOLS_GAP;
 
     auto* toolMenu = CCMenu::create();
@@ -199,7 +199,7 @@ bool CaptureAssetBrowserPopup::init() {
 
     m_search = TextInput::create(C::SEARCH_WIDTH, loc("assets.search_hint").c_str(), "bigFont.fnt");
     if (m_search) {
-        // Numeric queries match object IDs; text also matches localized category names.
+        // numeric queries match object ids; text also matches localized category names.
         m_search->setMaxCharCount(12);
         m_search->setTextAlign(TextInputAlign::Left);
         m_search->setScale(C::SEARCH_SCALE);
@@ -334,7 +334,7 @@ void CaptureAssetBrowserPopup::scanObjects() {
             auto& group = m_groups[it->second];
             group.count++;
             group.objects.push_back(obj);
-            // A type counts as visible while any of its instances is on screen.
+            // a type counts as visible while any of its instances is on screen.
             if (obj->isVisible()) group.visible = true;
         }
     }
@@ -382,9 +382,9 @@ bool CaptureAssetBrowserPopup::groupMatchesSearch(int groupIdx) const {
     if (m_searchQuery.empty()) return true;
     if (groupIdx < 0 || groupIdx >= static_cast<int>(m_groups.size())) return false;
     auto const& group = m_groups[groupIdx];
-    // Numeric query: substring of the object ID (previous behavior).
+    // numeric query: substring of the object id (previous behavior).
     if (std::to_string(group.objectID).find(m_searchQuery) != std::string::npos) return true;
-    // Text query: substring of the localized category name, case-insensitive.
+    // text query: substring of the localized category name, case-insensitive.
     auto lowered = m_searchQuery;
     std::transform(lowered.begin(), lowered.end(), lowered.begin(),
         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -405,7 +405,7 @@ bool CaptureAssetBrowserPopup::categoryHasMatches(int catIdx) const {
 CaptureAssetBrowserPopup::TriState CaptureAssetBrowserPopup::categoryState(int catIdx) const {
     if (catIdx < 0 || catIdx >= static_cast<int>(m_categories.size())) return TriState::Visible;
 
-    // Searching: header reflects only matching groups, the set its toggle affects.
+    // searching: header reflects only matching groups, the set its toggle affects.
     bool const filtering = !m_searchQuery.empty();
     bool anyVisible = false;
     bool anyHidden  = false;
@@ -447,7 +447,7 @@ void CaptureAssetBrowserPopup::buildList() {
     const float viewH   = listTop - listBot;
     const float viewX   = E::SIDE_PAD;
 
-    // Flatten to visual rows first so scroll height always matches the drawing.
+    // flatten to visual rows first so scroll height always matches the drawing.
     struct VisualRow { int categoryIdx; int groupIdx; };
     std::vector<VisualRow> rows;
     for (int ci = 0; ci < static_cast<int>(m_categories.size()); ++ci) {
@@ -529,7 +529,7 @@ void CaptureAssetBrowserPopup::buildList() {
             rowNode->addChild(label, 2);
             cat.label = label;
 
-            // Tap anywhere on the header (except the checkbox) to fold it.
+            // tap anywhere on the header (except the checkbox) to fold it.
             if (auto* hit = paimon::capture::ui::makeRowHitArea(
                     listW - 34.f, rowH, this,
                     menu_selector(CaptureAssetBrowserPopup::onToggleCollapse), catIdx)) {
@@ -744,7 +744,7 @@ void CaptureAssetBrowserPopup::soloGroup(int groupIdx) {
     if (groupIdx < 0 || groupIdx >= static_cast<int>(m_groups.size())) return;
     if (!playLayerStillValid()) return;
 
-    // Solo again on the only visible type means "bring everything back".
+    // solo again on the only visible type means "bring everything back".
     bool alreadySolo = m_groups[groupIdx].visible;
     for (int gi = 0; alreadySolo && gi < static_cast<int>(m_groups.size()); ++gi) {
         if (gi != groupIdx && m_groups[gi].visible) alreadySolo = false;
@@ -821,7 +821,7 @@ void CaptureAssetBrowserPopup::onToggleCollapse(CCObject* sender) {
 
     m_categories[catIdx].collapsed = !m_categories[catIdx].collapsed;
 
-    // Rebuilding destroys the menu that is dispatching this touch.
+    // rebuilding destroys the menu that is dispatching this touch.
     Ref<CaptureAssetBrowserPopup> self = this;
     Loader::get()->queueInMainThread([self]() {
         if (paimon::isRuntimeShuttingDown()) return;
@@ -867,7 +867,7 @@ void CaptureAssetBrowserPopup::onClearSearchBtn(CCObject*) {
 }
 
 void CaptureAssetBrowserPopup::onSearchChanged(std::string const& text) {
-    // Debounced: per-keystroke rebuilds drop frames on big levels; applies 150ms after last key.
+    // debounced: per-keystroke rebuilds drop frames on big levels; applies 150ms after last key.
     std::string query = text;
     query.erase(0, query.find_first_not_of(" \t"));
     query.erase(query.find_last_not_of(" \t") + 1);

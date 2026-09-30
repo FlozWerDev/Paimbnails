@@ -8,7 +8,7 @@ class GJUserScore;
 
 namespace paimon::progression {
 
-// Per-unit EXP, public so the popup prints the numbers it awards.
+// per-unit exp, public so the popup prints the numbers it awards.
 namespace exp_values {
     inline constexpr int kStar          = 5;
     inline constexpr int kMoon          = 6;
@@ -17,7 +17,7 @@ namespace exp_values {
     inline constexpr int kSecretCoin    = 100;
     inline constexpr int kCreatorPoint  = 1500;
 
-    // Missing breakdown in older cached scores.
+    // missing breakdown in older cached scores.
     inline constexpr int kDemonFallback = 75;
 
     inline constexpr int kDemonEasy      = 100;
@@ -31,7 +31,7 @@ namespace exp_values {
     inline constexpr int kDemonInsanePlat  = 500;
     inline constexpr int kDemonExtremePlat = 1000;
 
-    // Already counted in the buckets above; bonus only.
+    // already counted in the buckets above; bonus only.
     inline constexpr int kDemonWeeklyBonus   = 75;
     inline constexpr int kDemonGauntletBonus = 40;
 
@@ -69,7 +69,7 @@ struct DemonBreakdown {
     int platformer() const;
 };
 
-// Shared shape of the star/moon info strings.
+// shared shape of the star/moon info strings.
 struct DifficultyBreakdown {
     int autos = 0;
     int easy = 0;
@@ -94,7 +94,7 @@ struct PlayerStats {
     int creatorPoints = 0;
     int globalRank = 0;
 
-    // From the versus server, not from the game.
+    // from the versus server, not from the game.
     int64_t versusExp = 0;
     int versusWins = 0;
 
@@ -134,10 +134,10 @@ struct ExpReport {
 
 PlayerStats statsFromScore(GJUserScore* score);
 
-// Own profile only: live save beats the lagging server cache.
+// own profile only: live save beats the lagging server cache.
 PlayerStats statsFromLocalSave();
 
-// Server breakdown can outlive its account; the game demon total decides.
+// server breakdown can outlive its account; the game demon total decides.
 void reconcileDemons(PlayerStats& stats);
 
 ExpReport computeExp(PlayerStats const& stats);
@@ -145,13 +145,13 @@ ExpReport computeExp(PlayerStats const& stats);
 char const* sourceId(ExpSource source);
 char const* sourceIconFrame(ExpSource source);
 
-// Thousand-grouped number for labels ("1,204,500").
+// thousand-grouped number for labels ("1,204,500").
 std::string formatCount(int64_t value);
 
-// Same number squeezed into a badge tile ("500", "35K", "2M").
+// same number squeezed into a badge tile ("500", "35k", "2m").
 std::string shortCount(int64_t value);
 
-// Comma separated GD info strings; missing trailing fields stay at zero.
+// comma separated gd info strings; missing trailing fields stay at zero.
 DemonBreakdown parseDemonInfo(std::string const& raw, bool* ok = nullptr);
 DifficultyBreakdown parseDifficultyInfo(std::string const& raw, bool* ok = nullptr);
 

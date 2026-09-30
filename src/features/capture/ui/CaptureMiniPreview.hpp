@@ -5,16 +5,16 @@
 
 namespace paimon::capture {
 
-// Live capture thumbnail shared by layer editor and asset browser; toggle
+// live capture thumbnail shared by layer editor and asset browser; toggle
 // bursts coalesce into one render.
 class MiniPreview : public cocos2d::CCNode {
 public:
     static MiniPreview* create(float width, float height);
 
-    // Mirror the popup's hidden players so the thumb matches the upload.
+    // mirror the popup's hidden players so the thumb matches the upload.
     void setPlayersHidden(bool hideP1, bool hideP2);
 
-    // Coalesced: several calls in the same frame render once.
+    // coalesced: several calls in the same frame render once.
     void requestRefresh();
 
     void refreshNow();

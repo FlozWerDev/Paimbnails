@@ -2,22 +2,22 @@
 
 #include <atomic>
 #include <cstddef>
+#include <exception>
+#include <mutex>
 #include <thread>
 #include <vector>
 
 namespace paimon::gifimport {
 
-// Tracing thread cap. 0 lets the machine decide.
+// tracing thread cap. 0 lets the machine decide.
 unsigned int workerLimit();
 
-// Split threads are born and joined inside one call, so they skip ThreadTracker:
-// nothing to close at game exit beyond the import thread, which is tracked and
-// waits on these.
+// the tracked import thread joins all local workers before returning.
 unsigned int parallelThreads(std::size_t count);
 void enterParallelRegion();
 void leaveParallelRegion();
 
-// Splits [0, count) across threads. Never nested: render passes already take
+// splits [0, count) across threads. never nested: render passes already take
 // the whole machine and nesting only oversubscribes.
 template <typename Fn>
 void parallelFor(std::size_t count, Fn body) {
@@ -28,27 +28,39 @@ void parallelFor(std::size_t count, Fn body) {
     }
 
     std::atomic<std::size_t> next{0};
+    std::atomic<bool> failed{false};
+    std::exception_ptr error;
+    std::mutex errorMutex;
     auto consume = [&] {
-        for (;;) {
-            std::size_t const index = next.fetch_add(1, std::memory_order_relaxed);
-            if (index >= count) return;
-            body(index);
+        enterParallelRegion();
+        try {
+            while (!failed.load(std::memory_order_relaxed)) {
+                std::size_t const index = next.fetch_add(1, std::memory_order_relaxed);
+                if (index >= count) break;
+                body(index);
+            }
+        } catch (...) {
+            std::lock_guard lock(errorMutex);
+            if (!error) error = std::current_exception();
+            failed.store(true, std::memory_order_relaxed);
         }
+        leaveParallelRegion();
     };
 
     std::vector<std::thread> workers;
     workers.reserve(threads - 1);
-    for (unsigned int worker = 1; worker < threads; ++worker) {
-        workers.emplace_back([&consume] {
-            enterParallelRegion();
-            consume();
-            leaveParallelRegion();
-        });
+    try {
+        for (unsigned int worker = 1; worker < threads; ++worker) {
+            workers.emplace_back(consume);
+        }
+    } catch (...) {
+        failed.store(true, std::memory_order_relaxed);
+        for (auto& worker : workers) worker.join();
+        throw;
     }
-    enterParallelRegion();
     consume();
-    leaveParallelRegion();
     for (auto& worker : workers) worker.join();
+    if (error) std::rethrow_exception(error);
 }
 
 } // namespace paimon::gifimport

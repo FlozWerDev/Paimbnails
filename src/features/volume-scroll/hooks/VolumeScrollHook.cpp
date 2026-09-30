@@ -12,7 +12,7 @@
 #include <unordered_set>
 
 #ifdef GEODE_IS_WINDOWS
-// GetAsyncKeyState re-syncs modifiers after focus loss drops Release events.
+// getasynckeystate re-syncs modifiers after focus loss drops release events.
     #include <windows.h>
 #endif
 
@@ -21,7 +21,7 @@ using namespace cocos2d;
 using paimon::volscroll::VolumeKind;
 using paimon::volscroll::VolumeScrollManager;
 
-// lets QuickHubKeybind cancel Ctrl-hold when Ctrl+Scroll changes volume.
+// lets quickhubkeybind cancel ctrl-hold when ctrl+scroll changes volume.
 
 namespace paimon::quickhub {
     void notifyVolumeScrollUsed();
@@ -95,7 +95,7 @@ constexpr float kVolumeStep = 0.05f;
         }
     }
 
-    // normalize Geode's bind shapes, then require its key and modifier subset.
+    // normalize geode's bind shapes, then require its key and modifier subset.
     bool isKeybindActive(Keybind bind) {
         auto extra = keyToModifier(bind.key);
         if (extra != KeyboardModifier::None) {
@@ -122,7 +122,7 @@ constexpr float kVolumeStep = 0.05f;
         return true;
     }
 
-    // re-sync modifiers from the OS on Windows; no-op elsewhere.
+    // re-sync modifiers from the os on windows; no-op elsewhere.
     void resyncModifiersFromOS() {
 #ifdef GEODE_IS_WINDOWS
         g_ctrlDown  = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
@@ -131,7 +131,7 @@ constexpr float kVolumeStep = 0.05f;
 #endif
     }
 
-    // whether the current-context music/SFX bind is held.
+    // whether the current-context music/sfx bind is held.
     bool matchVolumeGesture(VolumeKind& outKind) {
         bool editor = isInEditor();
         char const* musicKey = editor ? kMusicEditorKey : kMusicGameKey;
@@ -205,7 +205,7 @@ $execute {
     }).leak();
 }
 
-// hookable on desktop; on iOS it is inlined, so the touch gestures below cover mobile.
+// hookable on desktop; on ios it is inlined, so the touch gestures below cover mobile.
 
 #if defined(GEODE_IS_DESKTOP)
 class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
@@ -229,7 +229,7 @@ class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
 
         if (y == 0.f) return passthrough();
 
-        // let ExtendedKeybind capture scroll while a recording popup is open.
+        // let extendedkeybind capture scroll while a recording popup is open.
         if (paimon::keybinds::hasScrollCaptor()) {
             auto const& captor = paimon::keybinds::currentScrollCaptor();
             if (captor) {
@@ -241,7 +241,7 @@ class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
 
         if (!paimon::modules::isEnabled("paimbnails.volumescroll.global")) return notOurs();
 
-        // refresh OS modifiers here, so dropped Releases can't fake volume scroll.
+        // refresh os modifiers here, so dropped releases can't fake volume scroll.
         resyncModifiersFromOS();
 
         bool editor = isInEditor();
@@ -302,13 +302,13 @@ class $modify(PaimonPauseZoomMouseHook, CCMouseDispatcher) {
 };
 #endif
 
-// three-finger drag replaces the wheel; touches are only observed (Post,
+// three-finger drag replaces the wheel; touches are only observed (post,
 // never consumed) and stay out of unpaused gameplay.
 #if defined(GEODE_IS_MOBILE)
 #include <Geode/modify/CCEGLViewProtocol.hpp>
 
 namespace {
-// raw handleTouches coords are view pixels with y down, so dragging UP
+// raw handletouches coords are view pixels with y down, so dragging up
 // on screen decreases the average y.
 constexpr float kTouchDeadzonePx = 36.f; // drift before the first step
 constexpr float kTouchStepPx     = 28.f; // pixels per volume step
@@ -348,7 +348,7 @@ void volumeTouchSyncCount() {
     }
 }
 
-// feed one axis: deadzone first, then one step per kTouchStepPx.
+// feed one axis: deadzone first, then one step per ktouchsteppx.
 void volumeTouchPush(VolumeKind kind, float deltaPixels, float& acc) {
     acc += deltaPixels;
     float sign = (acc < 0.f) ? -1.f : 1.f;
@@ -434,7 +434,7 @@ class $modify(VolumeScrollTouchView, CCEGLViewProtocol) {
         volumeTouchReset();
     }
 };
-#endif // defined(GEODE_IS_MOBILE)
+#endif // defined(geode_is_mobile)
 
 
 class VolumeScrollTickerNode : public CCNode {

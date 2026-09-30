@@ -17,8 +17,8 @@ namespace {
 constexpr float kPopupW = 300.f;
 constexpr float kPopupH = 180.f;
 
-// The server tops out well below this; the cap only exists so a pasted number
-// cannot overflow the int sent to loadPage().
+// the server tops out well below this; the cap only exists so a pasted number
+// cannot overflow the int sent to loadpage().
 constexpr int kHardMaxPage = 1000000;
 
 } // namespace
@@ -64,7 +64,7 @@ bool JumpToPagePopup::init(int currentPage, int pageCount, std::function<void(in
     m_rangeLabel->setPosition({cx, content.height - 86.f});
     m_mainLayer->addChild(m_rangeLabel);
 
-    // A scrubber only makes sense once we know how many pages there are.
+    // a scrubber only makes sense once we know how many pages there are.
     if (m_pageCount > 1) {
         m_slider = Slider::create(this, menu_selector(JumpToPagePopup::onSlider), 0.85f);
         m_slider->setPosition({cx, content.height - 108.f});

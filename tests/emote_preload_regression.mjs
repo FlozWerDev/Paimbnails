@@ -34,7 +34,7 @@ assert.ok(page.indexOf("isRuntimeShuttingDown()") < page.indexOf("if (!res.ok())
 assert.ok(page.indexOf("generation != m_catalogGeneration") < page.indexOf("if (!res.ok())"));
 assert.match(page, /fetchPage\(page \+ 1, limit, "", std::move\(accumulator\), generation,/);
 
-// Compile the production functions, replacing only Geode, transport and disk I/O.
+// compile the production functions, replacing only geode, transport and disk i/o.
 const source = `
 #include <algorithm>
 #include <atomic>

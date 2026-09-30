@@ -261,7 +261,7 @@ void PaimonShopPopup::onDownload(CCObject* sender) {
                 }
             }
 
-            // refresh list so button changes to "Downloaded"
+            // refresh list so button changes to "downloaded"
             popup->fetchShopList();
         });
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-// popup behind the "Notices" button: toggles the new-request notice and
+// popup behind the "notices" button: toggles the new-request notice and
 // previews it on a fake screen (spot, size, seconds) before it hits the stream.
 
 #include <Geode/Geode.hpp>

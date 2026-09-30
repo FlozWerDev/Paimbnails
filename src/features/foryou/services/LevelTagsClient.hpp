@@ -1,7 +1,7 @@
 #pragma once
 
-// Client for kampwski.level_tags. Uses /tags, /get, and /search; the base URL
-// follows Level Tags' setting with the published server as fallback.
+// client for kampwski.level_tags. uses /tags, /get, and /search; the base url
+// follows level tags' setting with the published server as fallback.
 
 #include <Geode/Geode.hpp>
 #include <matjson.hpp>
@@ -38,22 +38,22 @@ class LevelTagsClient {
 public:
     static LevelTagsClient& get();
 
-    // True only when Level Tags is installed and enabled.
+    // true only when level tags is installed and enabled.
     static bool isAvailable();
-    // Configured server URL or the published default.
+    // configured server url or the published default.
     static std::string serverURL();
 
-    // Fetch once per session; cached calls invoke the callback immediately.
+    // fetch once per session; cached calls invoke the callback immediately.
     void loadCatalog(std::function<void(bool ok)> callback = nullptr);
     bool hasCatalog() const;
     std::vector<TagInfo> catalogFor(TagCategory category) const;
     TagCategory categoryOf(std::string const& tag) const;
     std::optional<TagInfo> infoFor(std::string const& tag) const;
 
-    // Batch uncached IDs; cached tags are answered from memory.
+    // batch uncached ids; cached tags are answered from memory.
     void fetchTags(std::vector<int> const& levelIDs, std::function<void(LevelTagMap)> callback);
 
-    // Find IDs with every include tag and none of the excludes.
+    // find ids with every include tag and none of the excludes.
     void searchByTags(std::vector<std::string> const& include,
                       std::vector<std::string> const& exclude,
                       std::function<void(std::vector<int>)> callback);
@@ -71,7 +71,7 @@ private:
 
     std::filesystem::path cachePath() const;
 
-    // Bound /get URL length.
+    // bound /get url length.
     static constexpr size_t kFetchChunkSize = 50;
     static constexpr char const* kDefaultServer = "https://leveltags.up.railway.app";
     static constexpr char const* kModID = "kampwski.level_tags";

@@ -9,7 +9,7 @@
 
 namespace paimon::versus {
 
-// A player's two ladders side by side. Opened from the chip in the username
+// a player's two ladders side by side. opened from the chip in the username
 // row, on your own profile and on anybody else's.
 class VersusProfilePopup : public geode::Popup {
 public:

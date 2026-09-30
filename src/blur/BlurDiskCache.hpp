@@ -43,10 +43,10 @@ private:
 
     cocos2d::CCTexture2D* uploadRawRGBA(std::vector<uint8_t> const& pixels, int w, int h);
 
-    // Writes the finished RGBA blob on the I/O pool and indexes it.
+    // writes the finished rgba blob on the i/o pool and indexes it.
     void persistPixelsAsync(std::string key, std::shared_ptr<std::vector<uint8_t>> pixels, int w, int h);
 
-    // Requires unique_lock on m_mutex.
+    // requires unique_lock on m_mutex.
     void evictIndexIfNeededLocked();
 
     mutable std::shared_mutex m_mutex;
@@ -54,14 +54,14 @@ private:
     std::atomic<bool> m_initialized{false};
     std::atomic<bool> m_shuttingDown{false};
 
-    // Raw 512x288 blurs are ~576KB each (256MB = ~450 entries).
+    // raw 512x288 blurs are ~576kb each (256mb = ~450 entries).
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     static constexpr std::int64_t MAX_DISK_SIZE_BYTES = 64LL * 1024 * 1024;
 #else
     static constexpr std::int64_t MAX_DISK_SIZE_BYTES = 256LL * 1024 * 1024;
 #endif
 
-    // Format: magic(4) + version(4) + width(4) + height(4) + reserved(4) + raw RGBA8888.
+    // format: magic(4) + version(4) + width(4) + height(4) + reserved(4) + raw rgba8888.
     static constexpr std::uint32_t MAGIC = 0x504C4255u;
     static constexpr std::uint32_t VERSION = 1u;
     static constexpr std::size_t HEADER_SIZE = 20;

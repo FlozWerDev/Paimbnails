@@ -16,19 +16,19 @@ ImageBuffer LuminanceTinter::apply(ImageBuffer const& source,
     int W = source.width();
     int H = source.height();
 
-    // Masks must match source size; else fail soft as empty.
+    // masks must match source size; else fail soft as empty.
     auto maskMatches = [W, H](MaskBuffer const& m) {
         return m.width == W && m.height == H && !m.data.empty();
     };
     bool hasC1   = maskMatches(masks.color1);
     bool hasC2   = maskMatches(masks.color2);
     bool hasGlow = maskMatches(masks.glow);
-    // White detail = neutral: interiors keep vanilla unless the user picks a color.
+    // white detail = neutral: interiors keep vanilla unless the user picks a color.
     bool hasDetail = maskMatches(masks.detail) &&
                      !(colors.detail.r == 255 && colors.detail.g == 255 &&
                        colors.detail.b == 255);
 
-    // Initial copy keeps outline/unmasked correct.
+    // initial copy keeps outline/unmasked correct.
     ImageBuffer out(W, H, source.data());
 
     float brightness = static_cast<float>(std::clamp(options.brightness, 1, 1000));
@@ -37,7 +37,7 @@ ImageBuffer LuminanceTinter::apply(ImageBuffer const& source,
 
     auto const* src = source.data();
     auto* dst = out.data();
-    // Fail soft on pixel-less buffers; the old loop dereferenced null here.
+    // fail soft on pixel-less buffers; the old loop dereferenced null here.
     if (!src || !dst) return out;
 
     auto maskPtr = [](MaskBuffer const& m, bool has) -> std::uint8_t const* {
@@ -58,10 +58,10 @@ ImageBuffer LuminanceTinter::apply(ImageBuffer const& source,
         colors.glow.r, colors.glow.g, colors.glow.b,
         brightness, saturation, contrast);
 
-    // Shared read-only table; magic statics are thread-safe.
+    // shared read-only table; magic statics are thread-safe.
     static const packgen::AlphaLut kLut = packgen::AlphaLut::make();
 
-    // Bit-exact with the old loop (same op order/clamps); kernel touches masked pixels only.
+    // bit-exact with the old loop (same op order/clamps); kernel touches masked pixels only.
     packgen::tintStackImage(src, dst, W, H,
                             maskPtr(masks.color1, hasC1),
                             maskPtr(masks.color2, hasC2),

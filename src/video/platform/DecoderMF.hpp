@@ -30,7 +30,7 @@ public:
     double getDuration() const override;
     int getWidth() const override;
     int getHeight() const override;
-    // Coded size; getWidth/Height return downscaled output.
+    // coded size; getwidth/height return downscaled output.
     int getNativeWidth() const override;
     int getNativeHeight() const override;
     VideoColorMatrix getColorMatrix() const override { return m_colorMatrix; }
@@ -53,7 +53,7 @@ private:
     bool setupReader(const std::string& path);
     bool setOutputFormat();
     void refreshLinearStride();
-    // False drops the frame.
+    // false drops the frame.
     bool copyPlanesToSlot2D(BYTE* scanline0, LONG lStride, Frame& slot, size_t bufferSize = 0);
     bool copyPlanesToSlotLinear(BYTE* data, DWORD bufLen, Frame& slot);
     bool createStagingTexture();
@@ -71,24 +71,24 @@ private:
     bool               m_dxvaEnabled = false;
     int                m_dxvaReadbackFailures = 0;
     UINT               m_resetToken = 0;
-    // Shared: release via releaseSharedD3D11(), never Release().
+    // shared: release via releasesharedd3d11(), never release().
     bool               m_sharedD3D = false;
-    std::mutex         m_d3dCtxMutex;  // serialises context ops vs DXVA decode (AMD fix)
+    std::mutex         m_d3dCtxMutex;  // serialises context ops vs dxva decode (amd fix)
 
     VideoRingBuffer    m_ring;
     std::string        m_videoPath;
     int                m_width  = 0;
     int                m_height = 0;
-    // Post-downscale output; native when factor == 1.
+    // post-downscale output; native when factor == 1.
     int                m_outWidth  = 0;
     int                m_outHeight = 0;
     int                m_downscaleFactor = 1;
-    // MF padded stride (e.g. 854 -> 856).
+    // mf padded stride (e.g. 854 -> 856).
     int                m_linearStride = 0;
     VideoColorMatrix   m_colorMatrix = VideoColorMatrix::Auto;
     bool               m_fullRange = false;
     int                m_rotation = 0;
-    // Native-size scratch, downscale only.
+    // native-size scratch, downscale only.
     Frame              m_scratch;
     double             m_duration = 0.0;
     GUID               m_pixelFormat = GUID_NULL;
@@ -101,4 +101,4 @@ private:
 
 } // namespace paimon
 
-#endif // USE_MEDIA_FOUNDATION
+#endif // use_media_foundation

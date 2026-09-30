@@ -9,11 +9,11 @@ class Slider;
 
 namespace paimon::texture_studio {
 
-// Compact label-slider-value row. Values are floats in [min,max]; step snaps (1.0 = int, 0 = continuous).
+// compact label-slider-value row. values are floats in [min,max]; step snaps (1.0 = int, 0 = continuous).
 class ParamSliderRow : public cocos2d::CCNode {
 public:
     using ChangeCallback = std::function<void(float)>;
-    // Raw value to right-side text (e.g. "35%").
+    // raw value to right-side text (e.g. "35%").
     using Formatter = std::function<std::string(float)>;
 
     static ParamSliderRow* create(std::string const& label,
@@ -22,7 +22,7 @@ public:
                                   ChangeCallback onChange,
                                   Formatter formatter = nullptr);
 
-    // Does NOT fire the callback.
+    // does not fire the callback.
     void setValue(float v);
     float value() const { return m_value; }
 

@@ -4,7 +4,7 @@
 
 namespace paimon::mentions {
 
-// Async request; safe to call from the main thread.
+// async request; safe to call from the main thread.
 void openProfile(std::string const& username);
 
 } // namespace paimon::mentions

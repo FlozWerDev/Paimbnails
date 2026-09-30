@@ -17,7 +17,7 @@ namespace paimon {
 
 namespace {
 
-// retry OpenClipboard briefly; clipboard managers, AV or RDP may hold it.
+// retry openclipboard briefly; clipboard managers, av or rdp may hold it.
 bool openClipboardWithRetry(HWND owner) {
     static constexpr int kBackoffMs[] = {2, 4, 8, 16, 30, 30, 30, 30};
     static constexpr int kAttempts = sizeof(kBackoffMs) / sizeof(kBackoffMs[0]);
@@ -28,7 +28,7 @@ bool openClipboardWithRetry(HWND owner) {
     return false;
 }
 
-// movable block for SetClipboardData; caller frees on failure.
+// movable block for setclipboarddata; caller frees on failure.
 HGLOBAL allocAndFill(void const* data, size_t size) {
     HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, size);
     if (!hMem) return nullptr;
@@ -77,7 +77,7 @@ std::vector<uint8_t> buildDIBV5(uint8_t const* rgba, int width, int height) {
     return buf;
 }
 
-// legacy CF_DIB: 24bpp bottom-up BGR for broad compatibility.
+// legacy cf_dib: 24bpp bottom-up bgr for broad compatibility.
 std::vector<uint8_t> buildDIBClassic(uint8_t const* rgba, int width, int height) {
     int const rowStride = ((width * 3 + 3) & ~3); // pad to 4 bytes
     size_t const pixelBytes = static_cast<size_t>(rowStride) * height;
@@ -92,7 +92,7 @@ std::vector<uint8_t> buildDIBClassic(uint8_t const* rgba, int width, int height)
     h->biCompression = BI_RGB;
     h->biSizeImage   = static_cast<DWORD>(pixelBytes);
 
-    // bottom-up: DIB row 0 is the last source row.
+    // bottom-up: dib row 0 is the last source row.
     uint8_t* dst = buf.data() + sizeof(BITMAPINFOHEADER);
     for (int y = 0; y < height; ++y) {
         int const srcY = height - 1 - y;
@@ -144,7 +144,7 @@ bool copyRGBAToClipboard(uint8_t const* rgba, int width, int height) {
         return false;
     }
 
-    // custom PNG format for Discord and browsers.
+    // custom png format for discord and browsers.
     UINT const cfPng = RegisterClipboardFormatA("PNG");
 
     HWND owner = GetForegroundWindow();
@@ -215,7 +215,7 @@ bool copyRGBAToClipboard(uint8_t const* rgba, int width, int height) {
     return anySet;
 }
 
-#else // !GEODE_IS_WINDOWS
+#else // !geode_is_windows
 
 bool copyRGBAToClipboard(uint8_t const* /*rgba*/, int /*width*/, int /*height*/) {
     return false;

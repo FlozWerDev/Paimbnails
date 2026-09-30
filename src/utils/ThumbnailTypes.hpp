@@ -18,7 +18,7 @@ struct ThumbnailInfo {
     bool isStatic() const { return !isVideo() && !isGif(); }
 };
 
-// Typed results for async APIs (arc::Future).
+// typed results for async apis (arc::future).
 struct ThumbnailGalleryResult {
     bool success = false;
     std::vector<ThumbnailInfo> thumbnails;

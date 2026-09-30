@@ -10,7 +10,7 @@ namespace paimon::net { class WebSocketClient; }
 
 namespace paimon::twitch {
 
-// Anonymous read-only IRC over WebSocket: any nick of the form justinfan<digits>
+// anonymous read-only irc over websocket: any nick of the form justinfan<digits>
 // is accepted without a token, so only the channel name is needed.
 class TwitchIrcSource final : public ChatSourceBase {
 public:

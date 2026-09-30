@@ -26,7 +26,7 @@ std::string tr(char const* key, char const* fallback = "") {
     return value;
 }
 
-// Minimal "accented -> plain letter" map to normalize user queries (common ES/PT/FR, UTF-8 0xC3 0xXX).
+// minimal "accented -> plain letter" map to normalize user queries (common es/pt/fr, utf-8 0xc3 0xxx).
 std::string stripBasicAccents(std::string const& in) {
     std::string out;
     out.reserve(in.size());
@@ -796,7 +796,7 @@ std::optional<GuideAnswer> PaimonGuideService::tryCategoryBrowse(
     }
     if (found == PopupCategory::None) return std::nullopt;
 
-    // Browse requires explicit phrasing; bare terms use precise alias matching.
+    // browse requires explicit phrasing; bare terms use precise alias matching.
     if (!browsePhrase) return std::nullopt;
 
     auto members = PopupRegistry::get().entriesInCategory(found);
@@ -889,7 +889,7 @@ GuideAnswer PaimonGuideService::makeFallback(
 
 namespace {
 
-// Rotate variants for repeated intents within 60 seconds.
+// rotate variants for repeated intents within 60 seconds.
 std::string pickResponseString(GuideIntent const& intent,
                                std::string const& langId,
                                int repeatCount) {
@@ -915,7 +915,7 @@ std::string pickResponseString(GuideIntent const& intent,
     return str;
 }
 
-// Combine topics, opening the first and suggesting the rest.
+// combine topics, opening the first and suggesting the rest.
 GuideAnswer makeMultiTopicAnswer(std::vector<GuideIntent const*> const& topics,
                                  std::string const& langId) {
     auto& reg = PopupRegistry::get();
@@ -1039,7 +1039,7 @@ GuideAnswer PaimonGuideService::buildContextualAnswer(
 
     // "que mas?" / "what else?" → the topic's more reply.
     if (res.subTopicId.empty()) {
-        // Pure reference: "y eso?" — answer with the topic's more reply.
+        // pure reference: "y eso?" — answer with the topic's more reply.
         ans.message = (es ? "Siguiendo con <cy>" : "Following up on <cy>")
             + topicName + "</c>: ";
         if (top && !top->esMoreReply.empty() && es) {
@@ -1056,7 +1056,7 @@ GuideAnswer PaimonGuideService::buildContextualAnswer(
             + topicName + "</c>: ";
         ans.message += es ? sub->esReply : sub->enReply;
     } else {
-        // Sub-topic not found in knowledge: fall back to the topic itself.
+        // sub-topic not found in knowledge: fall back to the topic itself.
         ans.message = (es ? "Sobre <cy>" : "About <cy>") + topicName + "</c>: "
             + (top ? (es ? top->esMoreReply : top->enMoreReply)
                    : (es ? "Preguntame sus opciones." : "Ask me about its options."));
@@ -1088,7 +1088,7 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery, AskCallback ca
         return makeFallback({}, langId);
     }
 
-    // Max mode sends the thread to Gemini asynchronously.
+    // max mode sends the thread to gemini asynchronously.
     if (getMode() == GuideMode::Max) {
         std::vector<GeminiClient::ChatMessage> history;
         auto const& turns = m_memory.history();

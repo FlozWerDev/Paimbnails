@@ -75,7 +75,7 @@ public:
         if (enIt != m_english.end()) {
             return enIt->second;
         }
-        return key; // Fallback to key if not found
+        return key; // fallback to key if not found
     }
 
     void loadFromSettings() {

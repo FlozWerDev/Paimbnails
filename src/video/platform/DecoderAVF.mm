@@ -69,7 +69,7 @@ inline void deinterleaveNV12Row_AVF(const uint8_t* uv, uint8_t* cb, uint8_t* cr,
 
 } // anon namespace
 
-// Container matrix maps +X to +Y (down): clockwise on screen.
+// container matrix maps +x to +y (down): clockwise on screen.
 static int rotationFromTransform(CGAffineTransform t) {
     if (t.a == 0 && t.b == 1 && t.c == -1 && t.d == 0) return 90;
     if (t.a == 0 && t.b == -1 && t.c == 1 && t.d == 0) return 270;
@@ -277,7 +277,7 @@ void DecoderAVF::decodeLoop() {
             if (!sampleBuffer) {
                 bool ended = reader.status == AVAssetReaderStatusCompleted ||
                              reader.status == AVAssetReaderStatusFailed;
-// AVAssetReader cannot rewind; loops need a fresh reader over the asset.
+// avassetreader cannot rewind; loops need a fresh reader over the asset.
                 if (ended && m_looping.load(std::memory_order_relaxed) &&
                     reader.status == AVAssetReaderStatusCompleted && buildReader(0.0)) {
                     trackOutput = (__bridge AVAssetReaderTrackOutput*)m_trackOutput;
@@ -335,7 +335,7 @@ void DecoderAVF::decodeLoop() {
                     }
                 }
             } else {
-                // Planar fallback.
+                // planar fallback.
                 int yWidth   = static_cast<int>(CVPixelBufferGetWidthOfPlane(pixelBuffer, 0));
                 int yHeight  = static_cast<int>(CVPixelBufferGetHeightOfPlane(pixelBuffer, 0));
                 int cbWidth  = static_cast<int>(CVPixelBufferGetWidthOfPlane(pixelBuffer, 1));
@@ -442,4 +442,4 @@ void DecoderAVF::closeInternal() {
 
 } // namespace paimon
 
-#endif // USE_AV_FOUNDATION
+#endif // use_av_foundation

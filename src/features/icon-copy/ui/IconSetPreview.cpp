@@ -14,13 +14,13 @@ namespace paimon::iconcopy {
 
 namespace {
 
-// Every gamemode the profile response carries, in garage tab order.
+// every gamemode the profile response carries, in garage tab order.
 constexpr IconType kGamemodes[] = {
     IconType::Cube, IconType::Ship, IconType::Ball, IconType::Ufo, IconType::Wave,
     IconType::Robot, IconType::Spider, IconType::Swing, IconType::Jetpack,
 };
 
-// SimplePlayer content size is often zero; measure the painted layer, guess only as last resort.
+// simpleplayer content size is often zero; measure the painted layer, guess only as last resort.
 float drawnSize(SimplePlayer* player) {
     if (auto* first = player->m_firstLayer) {
         auto const size = first->getScaledContentSize();
@@ -55,7 +55,7 @@ CCNode* makePreview(IconSet const& set, IconType type, float box) {
 
     player->setScale(box / drawnSize(player));
 
-    // The wrapper is positioned by its centre, like a sprite: CircleButtonSprite
+    // the wrapper is positioned by its centre, like a sprite: circlebuttonsprite
     // and friends drop their top node at the centre of the base.
     auto* wrap = CCNode::create();
     wrap->setContentSize({box, box});

@@ -9,12 +9,12 @@
 
 using namespace geode::prelude;
 
-// Filter capture/restore ported from "Search History" by hiimjasmine00 (MIT); see THIRD-PARTY-NOTICES.md.
+// filter capture/restore ported from "search history" by hiimjasmine00 (mit); see third-party-notices.md.
 
-// Separate from the main LevelSearchLayer hook: Geode chains both $modifies without conflict.
+// separate from the main levelsearchlayer hook: geode chains both $modifies without conflict.
 class $modify(PaimonSearchHistoryLayer, LevelSearchLayer) {
     static void onModify(auto& self) {
-        // Run after node-ids assigns "other-filter-menu".
+        // run after node-ids assigns "other-filter-menu".
         paimon::hooks::afterNodeIdsOrLate(self, "LevelSearchLayer::init");
     }
 
@@ -30,10 +30,10 @@ class $modify(PaimonSearchHistoryLayer, LevelSearchLayer) {
     bool init(int type) {
         if (!LevelSearchLayer::init(type)) return false;
 
-        // Module off or incognito mode: don't show the button or save anything.
+        // module off or incognito mode: don't show the button or save anything.
         if (historyOn()) {
             if (auto menu = this->getChildByID("search-button-menu")) {
-                // Same square style as rate-profile-btn.
+                // same square style as rate-profile-btn.
                 auto bg = CCScale9Sprite::create("GJ_button_04.png");
                 if (!bg) bg = CCScale9Sprite::create("GJ_button_01.png");
                 if (bg) {
@@ -78,7 +78,7 @@ class $modify(PaimonSearchHistoryLayer, LevelSearchLayer) {
                 glm->setBoolForKey(object.noStar, "nostar_filter");
                 glm->setBoolForKey(object.featured, "featured_filter");
                 glm->setBoolForKey(object.epic, "epic_filter");
-                // GD swaps these two keys internally.
+                // gd swaps these two keys internally.
                 glm->setBoolForKey(object.mythic, "legendary_filter");
                 glm->setBoolForKey(object.legendary, "mythic_filter");
                 glm->setBoolForKey(object.customSong, "customsong_filter");
@@ -107,7 +107,7 @@ class $modify(PaimonSearchHistoryLayer, LevelSearchLayer) {
 
             m_searchInput->setString(object.query);
 
-            // Fire the search directly instead of just filling the form.
+            // fire the search directly instead of just filling the form.
             if (object.type == 2) this->onSearchUser(nullptr);
             else this->onSearch(nullptr);
         })->show();

@@ -88,7 +88,7 @@ struct matjson::Serialize<paimon::texture_studio::AutoCacheRef> {
     static matjson::Value toJson(paimon::texture_studio::AutoCacheRef const& r) {
         auto obj = matjson::Value::object();
         obj["sprite"]   = r.spriteName;
-        // Hash stored signed; sign bit meaningless for hashing.
+        // hash stored signed; sign bit meaningless for hashing.
         obj["hash"]     = static_cast<std::int64_t>(r.spriteHash);
         obj["clusters"] = r.clusterCount;
         return obj;
@@ -383,7 +383,7 @@ struct matjson::Serialize<paimon::texture_studio::TextureProject> {
                 }
             }
         }
-        // Legacy Everything (2) painted the whole game; now ButtonsAndMenuUi, so clamp to 0..1.
+        // legacy everything (2) painted the whole game; now buttonsandmenuui, so clamp to 0..1.
         p.tintScope = static_cast<TintScope>(std::clamp<std::int64_t>(
             v["tintScope"].asInt().unwrapOr(0), 0, 1));
 

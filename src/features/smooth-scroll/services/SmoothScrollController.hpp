@@ -8,13 +8,13 @@ namespace paimon::smoothscroll {
 using ScrollDispatchFn = geode::CopyableFunction<void(float y, float x)>;
 
 #if defined(GEODE_IS_WINDOWS)
-// One wheel notch in dispatcher units; the GLFW hook and queueInput must agree.
+// one wheel notch in dispatcher units; the glfw hook and queueinput must agree.
 inline constexpr double kInputUnitsPerStep = 5.0;
 #else
 inline constexpr double kInputUnitsPerStep = 12.0;
 #endif
 
-// Smooth scrolling for lists/menus with exponential decay momentum.
+// smooth scrolling for lists/menus with exponential decay momentum.
 class SmoothScrollController {
 public:
     static SmoothScrollController& get();
@@ -23,11 +23,11 @@ public:
     bool isReplaying() const { return m_replaying; }
     bool isEditorZoomReplay() const { return m_replaying && m_editorZoomMode; }
 
-    // True = consume the event (no instant scroll reaches the game).
+    // true = consume the event (no instant scroll reaches the game).
     bool queueInput(float wheelY, float wheelX);
     void tick(float dt, ScrollDispatchFn const& dispatch);
 
-    // Signed normalized steps: one notch sums to +/-1 across replay frames.
+    // signed normalized steps: one notch sums to +/-1 across replay frames.
     float replayedWheelSteps() const;
     float replayedZoomSteps() const;
     float filteredWheelSteps(float wheelY, float wheelX) const;

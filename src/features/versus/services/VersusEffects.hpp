@@ -1,7 +1,7 @@
 #pragma once
 
 // card effects never touch physics, hitboxes, geometry or speed, so a run
-// with cards stays legitimate and Globed's synced state stays clean.
+// with cards stays legitimate and globed's synced state stays clean.
 
 #include "../data/VersusCards.hpp"
 
@@ -28,7 +28,7 @@ public:
     void detach();
     bool attached() const { return m_layer != nullptr; }
 
-    // `fromRival` separates thrown cards from self-cast ones; only thrown
+    // `fromrival` separates thrown cards from self-cast ones; only thrown
     // cards can be reflected or dispelled.
     void apply(CardId card, bool fromRival);
     void update(float dt);
@@ -36,7 +36,7 @@ public:
     void dispelAll();
     bool has(CardId card) const;
     bool cardsLocked() const;
-    // Eye lets the duel bar and rival hand through; Blackout takes the bar
+    // eye lets the duel bar and rival hand through; blackout takes the bar
     // from both.
     bool seesRival() const;
     bool barsHidden() const;

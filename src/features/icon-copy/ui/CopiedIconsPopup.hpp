@@ -1,5 +1,5 @@
 #pragma once
-// Garage side of the icon clipboard: every set you copied, with the name of the
+// garage side of the icon clipboard: every set you copied, with the name of the
 // user it came from.
 
 #include <Geode/Geode.hpp>

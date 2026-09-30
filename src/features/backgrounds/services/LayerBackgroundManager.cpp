@@ -35,12 +35,12 @@ namespace {
 std::atomic<uint32_t> g_layerBgSaveGeneration{0};
 std::atomic<bool> g_layerBgShutdown{false};
 
-// saveData is nodiscard; these paths don't branch on the result.
+// savedata is nodiscard; these paths don't branch on the result.
 void saveDataQuiet() {
     (void)Mod::get()->saveData();
 }
 
-// Cache custom textures by path, mtime, and size; keep the cache alive through GL shutdown.
+// cache custom textures by path, mtime, and size; keep the cache alive through gl shutdown.
 struct CustomBgCacheEntry {
     geode::Ref<CCTexture2D> texture;
     std::filesystem::file_time_type mtime{};
@@ -128,7 +128,7 @@ bool tintVanillaBackgroundNode(CCNode* node) {
     return false;
 }
 
-// Heap-owned so GL-context reload can reset it without static destruction.
+// heap-owned so gl-context reload can reset it without static destruction.
 Ref<CCTexture2D>& proceduralBaseTextureSlot() {
     static auto* s_texture = new Ref<CCTexture2D>();
     return *s_texture;
@@ -151,7 +151,7 @@ CCTexture2D* createProceduralBaseTexture() {
     return slot.data();
 }
 
-// Async video callbacks check this flag before touching a container.
+// async video callbacks check this flag before touching a container.
 std::unordered_map<cocos2d::CCNode*, std::shared_ptr<std::atomic<bool>>> g_containerAliveFlags;
 std::mutex g_containerAliveMutex;
 
@@ -226,15 +226,15 @@ void scheduleLayerBgSave() {
     });
 }
 
-// Posters only cover decoder warmup: store downscaled, full-res RGBA would stall transitions.
+// posters only cover decoder warmup: store downscaled, full-res rgba would stall transitions.
 
-// Longest edge of a stored poster frame.
+// longest edge of a stored poster frame.
 constexpr int kVideoPreviewMaxDim = 512;
 
-// Delay between the first visible frame and the poster-frame readback.
+// delay between the first visible frame and the poster-frame readback.
 constexpr float kPreviewCaptureDelay = 1.5f;
 
-// Header tag; also invalidates the old headerless full-res format.
+// header tag; also invalidates the old headerless full-res format.
 constexpr char kVideoPreviewMagic[] = "PAIMPV02";
 
 std::unordered_map<std::string, Ref<CCTexture2D>>& videoPreviewCache() {
@@ -278,7 +278,7 @@ bool loadVideoPreviewFile(std::filesystem::path const& previewPath,
     return true;
 }
 
-// Box-average by an integer factor; returns src unchanged when it already fits.
+// box-average by an integer factor; returns src unchanged when it already fits.
 std::vector<uint8_t> downscaleRGBA(std::vector<uint8_t> const& src, int w, int h,
                                    int maxDim, int& outW, int& outH) {
     int factor = (std::max(w, h) + maxDim - 1) / maxDim;
@@ -327,7 +327,7 @@ struct VideoBackgroundUpdateNode : public CCNode {
     bool m_shutdown = false;
     bool m_firstVisibleFrameShown = false;
     bool m_previewSaved = false;
-    // Seconds left before capturing the poster frame; 0 means nothing pending.
+    // seconds left before capturing the poster frame; 0 means nothing pending.
     float m_previewCaptureCountdown = 0.f;
     bool m_audioFadeOutPending = false;
     std::string m_videoPath;
@@ -421,7 +421,7 @@ struct VideoBackgroundUpdateNode : public CCNode {
     }
 
     void onExit() override {
-        // Reparenting can call onExit() temporarily.
+        // reparenting can call onexit() temporarily.
         CCNode::onExit();
     }
 
@@ -526,7 +526,7 @@ struct VideoBackgroundUpdateNode : public CCNode {
         if (p->isPlaying()) {
             p->update(dt);
 
-            // Restore game audio if video audio initialization fails.
+            // restore game audio if video audio initialization fails.
             if (m_ownsVideoAudioFlag && p->didAudioInitFail()) {
                 log::warn("[VideoBg] Video audio init failed - restoring game music");
                 paimon::setVideoAudioInteropActive(false);
@@ -562,7 +562,7 @@ struct VideoBackgroundUpdateNode : public CCNode {
                 m_visibleSprite->setOpacity(0);
                 m_visibleSprite->runAction(CCFadeTo::create(0.15f, 255));
 
-                // Poster readback stalls the GPU; wait for settled playback, not first frames.
+                // poster readback stalls the gpu; wait for settled playback, not first frames.
                 if (!m_previewSaved && !m_videoPath.empty()
                     && !LayerBackgroundManager::hasVideoBgPreview(m_videoPath)) {
                     m_previewCaptureCountdown = kPreviewCaptureDelay;
@@ -581,7 +581,7 @@ struct VideoBackgroundUpdateNode : public CCNode {
     }
 
     ~VideoBackgroundUpdateNode() override {
-        // Avoid scene-flag access while CCNode teardown runs.
+        // avoid scene-flag access while ccnode teardown runs.
         paimon::InteropSceneTeardownScope teardownGuard;
         shutdown(true, m_suppressResume);
     }
@@ -610,7 +610,7 @@ CCTexture2D* LayerBackgroundManager::getVideoBgPreviewTexture(std::string const&
         return it->second.data();
     }
 
-    // Remember misses too; uncached layers never stat the disk per entry.
+    // remember misses too; uncached layers never stat the disk per entry.
     Ref<CCTexture2D> texture = nullptr;
 
     std::vector<uint8_t> pixels;
@@ -669,7 +669,7 @@ void LayerBackgroundManager::saveVideoBgPreview(std::string const& videoPath,
             log::info("[LayerBgMgr] Saved video background preview: {}x{} (from {}x{})",
                       outW, outH, w, h);
 
-            // Let the next layer entry pick up the freshly written file.
+            // let the next layer entry pick up the freshly written file.
             geode::Loader::get()->queueInMainThread([videoPath]() {
                 videoPreviewCache().erase(videoPath);
             });
@@ -681,7 +681,7 @@ void LayerBackgroundManager::saveVideoBgPreview(std::string const& videoPath,
 }
 
 LayerBackgroundManager& LayerBackgroundManager::get() {
-    // Detached video teardown may still be active at process exit.
+    // detached video teardown may still be active at process exit.
     static auto* s_instance = new LayerBackgroundManager();
     return *s_instance;
 }
@@ -1051,7 +1051,7 @@ CCTexture2D* LayerBackgroundManager::loadTextureForConfig(LayerBgConfig const& c
         auto normalizedPath = paimon::assets::normalizePath(cfg.customPath);
         if (std::filesystem::exists(normalizedPath, ec)) {
             auto ext = geode::utils::string::pathToString(normalizedPath.extension());
-            for (auto& c : ext) c = (char)std::tolower(c);
+            for (auto& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
             if (ext == ".gif") return nullptr;
 
             if (auto* cached = customBgCacheGet(normalizedPath)) {
@@ -1239,7 +1239,7 @@ bool LayerBackgroundManager::applyProceduralShaderBg(CCLayer* layer, LayerBgConf
     return true;
 }
 
-// Blur node with render targets allocated once.
+// blur node with render targets allocated once.
 struct VideoBlurNode : public CCNode {
     std::shared_ptr<paimon::video::VideoPlayer> m_player;
 
@@ -1497,7 +1497,7 @@ struct VideoBlurNode : public CCNode {
         doDown(m_pSpr1,  m_pD1,    m_hp1x,  m_hp1y);
         doDown(m_pSpr2,  m_pD2,    m_hp2x,  m_hp2y);
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-        // Mobile tile GPUs need a barrier between downsample and upsample.
+        // mobile tile gpus need a barrier between downsample and upsample.
         glFlush();
 #endif
         doUp(m_pSprU2, m_pU1,    m_hpu2x, m_hpu2y);
@@ -1508,7 +1508,7 @@ struct VideoBlurNode : public CCNode {
     ~VideoBlurNode() override = default;
 };
 
-// Apply saved rotation without losing screen coverage.
+// apply saved rotation without losing screen coverage.
 static void applyVideoRotation(CCNode* sprite, CCSize const& winSize) {
     if (!sprite) return;
     int rot = paimon::settings::video::videoRotation();
@@ -1545,7 +1545,7 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
 
     layer->addChild(container);
 
-    // Reuse-only: async fallback beats building a decoder that freezes the transition.
+    // reuse-only: async fallback beats building a decoder that freezes the transition.
     {
         auto shared = acquireExistingSharedVideo(path);
         if (shared) {
@@ -1727,7 +1727,7 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
         }
     }
 
-    // Show a cached first frame while the decoder initializes.
+    // show a cached first frame while the decoder initializes.
     if (auto* previewTex = LayerBackgroundManager::getVideoBgPreviewTexture(path)) {
         if (auto* previewSprite = cocos2d::CCSprite::createWithTexture(previewTex)) {
             float scX = winSize.width  / previewSprite->getContentWidth();
@@ -1841,7 +1841,7 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                         LayerBackgroundManager::get().hideOriginalBg(parentLayer);
                     }
                 }
-                // Let the update node fade in the first frame.
+                // let the update node fade in the first frame.
                 self->m_visibleSprite = visibleSprite;
                 applyVideoRotation(visibleSprite, winSize);
             };
@@ -1852,7 +1852,7 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
 #if defined(GEODE_IS_ANDROID)
     finishSharedSetup(container, LayerBackgroundManager::get().acquireSharedVideo(path, videoAudio));
 #else
-    // Keep cocos2d retain/release on the main thread.
+    // keep cocos2d retain/release on the main thread.
     Ref<CCNode> containerRef = container;
     CCNode* containerRaw = container;
     auto containerAlive = registerContainerAliveFlag(container);
@@ -1886,7 +1886,7 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
 void LayerBackgroundManager::clearAppliedBackground(CCLayer* layer, bool suppressAudioResume) {
     if (!layer) return;
 
-    // Cancel callbacks targeting this layer before removing its container.
+    // cancel callbacks targeting this layer before removing its container.
     clearContainerAliveFlag(layer, nullptr, true);
 
     if (auto oldContainer = layer->getChildByID("paimon-layerbg-container"_spr)) {
@@ -1920,7 +1920,7 @@ bool LayerBackgroundManager::applyBackground(CCLayer* layer, std::string const& 
         return false;
     }
 
-    // Resolve layer references with a bounded cycle guard.
+    // resolve layer references with a bounded cycle guard.
     std::string resolvedPath = cfg.customPath;
     std::string resolvedType = cfg.type;
     LayerBgConfig resolvedCfg = cfg;
@@ -2000,7 +2000,7 @@ bool LayerBackgroundManager::applyBackground(CCLayer* layer, std::string const& 
 
     if (resolvedType == "custom" && !resolvedPath.empty()) {
         auto ext = geode::utils::string::pathToString(paimon::assets::pathFromUtf8(resolvedPath).extension());
-        for (auto& c : ext) c = (char)std::tolower(c);
+        for (auto& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         if (ext == ".gif" && paimon::assets::exists(resolvedPath)) {
             applyGifBg(layer, resolvedPath, cfg);
             return true;
@@ -2036,7 +2036,7 @@ bool LayerBackgroundManager::applyBackground(CCLayer* layer, std::string const& 
         return false;
     }
 
-    // Fetch ID textures without blocking layer entry.
+    // fetch id textures without blocking layer entry.
     if (resolvedCfg.type == "id" && resolvedCfg.levelId > 0) {
         Ref<CCLayer> layerRef = layer;
         CCLayer* layerRaw = layer;
@@ -2070,7 +2070,7 @@ bool LayerBackgroundManager::applyBackground(CCLayer* layer, std::string const& 
     return false;
 }
 
-// Stop decoders off-thread; release GL resources on the main thread.
+// stop decoders off-thread; release gl resources on the main thread.
 static void scheduleSharedVideoTeardown(std::shared_ptr<paimon::video::VideoPlayer> player) {
     if (!player) return;
     paimon::ThreadTracker::get().spawn([player]() mutable {
@@ -2256,9 +2256,9 @@ std::shared_ptr<paimon::video::VideoPlayer> LayerBackgroundManager::acquireShare
         m_pendingSharedVideoCreates[path]++;
     }
 
-    // Decoder setup can take seconds, so create outside the lock.
+    // decoder setup can take seconds, so create outside the lock.
 
-    // Apply concurrent-video and platform RAM budgets.
+    // apply concurrent-video and platform ram budgets.
     std::shared_ptr<paimon::video::VideoPlayer> evictedPlayer;
     std::vector<std::shared_ptr<paimon::video::VideoPlayer>> lruEvicted;
     {
@@ -2301,7 +2301,7 @@ std::shared_ptr<paimon::video::VideoPlayer> LayerBackgroundManager::acquireShare
             }
         }
     }
-    // Tear down evicted players outside the lock.
+    // tear down evicted players outside the lock.
     for (auto& p : lruEvicted) {
         if (p) scheduleSharedVideoTeardown(std::move(p));
     }
@@ -2324,7 +2324,7 @@ std::shared_ptr<paimon::video::VideoPlayer> LayerBackgroundManager::acquireShare
         return nullptr;
     }
 
-    // Double-check the cache before inserting a concurrently-created player.
+    // double-check the cache before inserting a concurrently-created player.
     {
         std::lock_guard lk(m_sharedVideosMutex);
         auto pendingIt = m_pendingSharedVideoCreates.find(path);
@@ -2383,7 +2383,7 @@ void LayerBackgroundManager::releaseSharedVideo(std::string const& path) {
             playerToHalt = std::move(it->second.player);
             m_sharedVideos.erase(it);
 #else
-            // Park it: the decode thread stalls on the full ring; kept GPU cache makes return instant.
+            // park it: the decode thread stalls on the full ring; kept gpu cache makes return instant.
             it->second.stale = true;
             it->second.expiry = std::chrono::steady_clock::now() + kSharedVideoTTL;
 
@@ -2475,7 +2475,7 @@ void LayerBackgroundManager::forceEvictAllStaleVideos() {
 }
 
 void LayerBackgroundManager::releaseAllVideoAudio() {
-    // Snapshot under the lock; fadeAudioOut may re-enter the scheduler.
+    // snapshot under the lock; fadeaudioout may re-enter the scheduler.
     std::vector<std::shared_ptr<paimon::video::VideoPlayer>> players;
     {
         std::lock_guard lk(m_sharedVideosMutex);
@@ -2579,7 +2579,7 @@ void LayerBackgroundManager::broadcastFPSUpdate(int newFPS) {
 }
 
 void LayerBackgroundManager::broadcastRotationUpdate(int newRotationDegrees) {
-    // Rotate the visual child, not the container or update node.
+    // rotate the visual child, not the container or update node.
     auto* scene = CCDirector::get()->getRunningScene();
     if (!scene) return;
 

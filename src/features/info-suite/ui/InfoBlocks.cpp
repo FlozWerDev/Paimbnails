@@ -59,7 +59,7 @@ void addBar(CCNode* parent, float x, float y, float width, float height,
 CCNode* makeBackdrop(CCSprite* blurred, CCSize const& area, GLubyte darkness, bool fadeIn) {
     if (!blurred) return nullptr;
 
-    // Just enough radius to follow the frame without leaving brown corners.
+    // just enough radius to follow the frame without leaving brown corners.
     auto* stencil = paimon::SpriteHelper::createRoundedRectStencil(area.width, area.height, 5.f);
     auto* clip = CCClippingNode::create();
     if (!stencil || !clip) return nullptr;

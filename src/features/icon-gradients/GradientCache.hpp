@@ -1,6 +1,6 @@
 #pragma once
 
-// Settings snapshot so hooks never read mod.json mid-frame. The module toggle
+// settings snapshot so hooks never read mod.json mid-frame. the module toggle
 // is backed by icon-gradients-enabled; the cache keeps the inverse disabled bit.
 
 #include "GradientTypes.hpp"
@@ -10,7 +10,7 @@ namespace paimon::icon_gradients {
 
 constexpr char const* kModuleId = "paimbnails.icongradients.global";
 
-// Master module toggle; every hook entry point checks this first.
+// master module toggle; every hook entry point checks this first.
 inline bool moduleEnabled() {
     return paimon::modules::isEnabled(kModuleId);
 }
@@ -55,7 +55,7 @@ public:
 
     static bool isMenuGradientsEnabled();
 
-    // separate only sticks while neither the module nor the 2P doll is disabled.
+    // separate only sticks while neither the module nor the 2p doll is disabled.
     static void set2PDisabled(bool);
 
     static bool is2PDisabled();

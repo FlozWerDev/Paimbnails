@@ -37,7 +37,7 @@ bool UnregisteredProfilePopup::init(int userID, std::string userName) {
     m_userID = userID;
     m_userName = std::move(userName);
 
-    // Fall back to whatever name we saw for this id before.
+    // fall back to whatever name we saw for this id before.
     if (m_userName.empty() || m_userName == "-") {
         m_userName = InfoStore::get().username(userID);
     }
@@ -86,7 +86,7 @@ void UnregisteredProfilePopup::onLevels(CCObject*) {
     int userID = m_userID;
     this->onClose(nullptr);
 
-    // UsersLevels takes the plain user id as its query, the same call the game
+    // userslevels takes the plain user id as its query, the same call the game
     // makes when you tap a creator's name.
     SearchFilters filters;
     filters.query = std::to_string(userID);

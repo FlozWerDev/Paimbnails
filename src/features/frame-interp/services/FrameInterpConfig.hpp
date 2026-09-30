@@ -1,10 +1,10 @@
 #pragma once
 
-// Frame interpolation config. Own JSON (frame_interp.json), like RTX.
+// frame interpolation config. own json (frame_interp.json), like rtx.
 
 namespace paimon::frameinterp {
 
-// Draw lag behind simulation, in physics steps: a full step never
+// draw lag behind simulation, in physics steps: a full step never
 // extrapolates; zero draws the present by guessing the last stretch.
 enum class Latency : int {
     Smooth   = 0,
@@ -27,7 +27,7 @@ struct FrameInterpConfig {
     bool  inEditor      = true;
 };
 
-// Lag fraction kept per mode.
+// lag fraction kept per mode.
 double latencyLag(int latency);
 
 } // namespace paimon::frameinterp

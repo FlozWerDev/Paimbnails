@@ -18,7 +18,7 @@ protected:
     void scheduleRebuild();
     void persist();
 
-    // Curve preview: the ramp from the ducked floor back to full volume, plus a
+    // curve preview: the ramp from the ducked floor back to full volume, plus a
     // playhead when a song is actually ramping right now.
     cocos2d::CCNode* makeCurvePreview(float width);
     void redrawCurve();
@@ -40,7 +40,7 @@ private:
     cocos2d::CCLabelBMFont* m_meterMain = nullptr;
     cocos2d::CCLabelBMFont* m_meterSub  = nullptr;
 
-    // The live parts only need a few refreshes per second; redrawing 64 curve
+    // the live parts only need a few refreshes per second; redrawing 64 curve
     // segments and rebuilding two labels every frame is pure waste.
     float m_uiClock          = 0.f;
     float m_lastMeterRefresh = -1.f;

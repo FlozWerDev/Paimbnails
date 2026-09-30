@@ -31,7 +31,7 @@ uniform float u_vignette;
 uniform float u_grain;
 uniform float u_sharpen;
 
-// CAS eases at extremes to avoid halos.
+// cas eases at extremes to avoid halos.
 vec3 sharpenCAS(vec2 uv, vec3 c, float amount) {
     vec3 n = texture2D(u_scene, uv + vec2(0.0,  u_texel.y)).rgb;
     vec3 s = texture2D(u_scene, uv - vec2(0.0,  u_texel.y)).rgb;
@@ -47,7 +47,7 @@ vec3 sharpenCAS(vec2 uv, vec3 c, float amount) {
     return ((c + (n + s + e + w) * k) / max(1.0 + 4.0 * k, vec3(0.2))) - c;
 }
 
-// bilateral GI upsample avoids edge bleed.
+// bilateral gi upsample avoids edge bleed.
 vec4 giUpsample(vec2 uv, vec3 guideC) {
     float guideL = luma(guideC);
     vec2 o = max(u_giTexel, vec2(0.0000001)) * 0.5;
@@ -81,7 +81,7 @@ void main() {
 
     vec4 traced = giUpsample(uv, original);
 
-    // AO skips emitters, corners only.
+    // ao skips emitters, corners only.
     float aoMask = 1.0 - safeSmoothstep(0.35, 1.0, luma(lin));
     hdr *= mix(1.0, clamp(traced.a, 0.0, 1.0), clamp(u_aoStrength * aoMask, 0.0, 1.0));
     // soft >1 rolloff kills fireflies.
@@ -89,7 +89,7 @@ void main() {
     hdr += texture2D(u_bloom, uv).rgb * u_bloomStrength;
     hdr += texture2D(u_rays, uv).rgb * u_rayStrength;
 
-    // clamp exp2 against Inf/NaN.
+    // clamp exp2 against inf/nan.
     float ev = exp2(clamp(u_exposure, -8.0, 8.0));
     if (u_adaptKey > 0.0) {
         ev *= clamp(u_adaptKey / max(texture2D(u_adapt, vec2(0.5)).r, 0.0005), 0.35, 3.0);
@@ -111,7 +111,7 @@ void main() {
 
     if (u_vignette > 0.0) {
         vec2 vd = (uv - 0.5) * 2.0 * vec2(u_texel.y / max(u_texel.x, 0.000001), 1.0);
-        // inverted smoothstep fails on ANGLE.
+        // inverted smoothstep fails on angle.
         col *= 1.0 - safeSmoothstep(0.30, 1.55, length(vd)) * min(u_vignette, 1.6) * 0.55;
     }
 
@@ -125,7 +125,7 @@ void main() {
 
     col = mix(original, col, clamp(u_mix, 0.0, 1.0));
 
-    // 1-LSB dither kills gradient banding.
+    // 1-lsb dither kills gradient banding.
     col += (hash12(gl_FragCoord.xy + 0.5) - hash12(gl_FragCoord.yx + 7.3)) * 0.0039;
 
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);

@@ -7,7 +7,7 @@ using namespace geode::prelude;
 
 namespace {
 
-// The upload reply is the one moment this client knows about a thumbnail
+// the upload reply is the one moment this client knows about a thumbnail
 // before the feed does, so the uploader's card comes straight off it.
 ThumbnailAPI::UploadCallback withAlert(int levelId, std::string username,
                                        std::string levelMeta,

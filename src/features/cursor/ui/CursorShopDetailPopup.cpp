@@ -176,7 +176,7 @@ void CursorShopDetailPopup::buildBody() {
     previewBg->setPosition({0.f, 0.f});
     m_previewBox->addChild(previewBg, 0);
 
-    // Large thumb lives on its own node so switching cursors clears it, not the backdrop.
+    // large thumb lives on its own node so switching cursors clears it, not the backdrop.
     m_previewSlot = CCNode::create();
     m_previewSlot->setContentSize(m_previewBox->getContentSize());
     m_previewSlot->setPosition({0.f, 0.f});
@@ -248,7 +248,7 @@ void CursorShopDetailPopup::buildBody() {
         m_sideMenu->addChild(allBtn);
     }
 
-    // Link to the source page: content belongs to the shop and its author.
+    // link to the source page: content belongs to the shop and its author.
     if (!m_detail.sourceUrl.empty()) {
         auto* srcSpr = ButtonSprite::create(
             "Ver original", "goldFont.fnt", "GJ_button_04.png", 0.7f);
@@ -353,7 +353,7 @@ void CursorShopDetailPopup::updateSelection() {
         m_animating = false;
         m_previewSlot->removeAllChildren();
 
-        // Already downloaded resumes without refetching.
+        // already downloaded resumes without refetching.
         if (cursor.animated && m_animations.count(cursor.downloadUrl)) {
             showAnimation(cursor.downloadUrl);
         } else {
@@ -420,7 +420,7 @@ void CursorShopDetailPopup::playAnimation(std::string const& url) {
                 frame.rgba.data(), frame.width, frame.height, false);
             if (!image.success || !image.texture) continue;
             animation.frames.emplace_back(image.texture);
-            // Ref keeps its own reference.
+            // ref keeps its own reference.
             image.texture->release();
             totalDelay += std::max(10, frame.delayMs);
         }
@@ -429,7 +429,7 @@ void CursorShopDetailPopup::playAnimation(std::string const& url) {
             return;
         }
 
-        // Single pace for all frames: .ani rarely varies, so plain CCAnimation fits.
+        // single pace for all frames: .ani rarely varies, so plain ccanimation fits.
         animation.step = std::clamp(
             static_cast<float>(totalDelay) / animation.frames.size() / 1000.f, 0.03f, 0.5f);
 
@@ -592,7 +592,7 @@ void CursorShopDetailPopup::stepQueue() {
             if (!imported.empty()) {
                 ++popup->m_queueDone;
                 bool assign = popup->m_queueAssign;
-                // In a long queue only store-tagged roles get assigned.
+                // in a long queue only store-tagged roles get assigned.
                 if (assign && popup->m_queue.size() > 1 && !source.hasSuggested) assign = false;
                 if (assign) {
                     auto state = popup->m_queue.size() > 1 ? source.suggested : popup->m_assignState;
@@ -614,7 +614,7 @@ void CursorShopDetailPopup::finishQueue() {
     m_queueIndex = 0;
 
     if (m_queueDone == 0) {
-        // On empty queue drop the reserved folder; it would only litter the gallery.
+        // on empty queue drop the reserved folder; it would only litter the gallery.
         if (!m_queuePack.empty()) {
             CursorManager::get().removePack(m_queuePack);
             m_queuePack.clear();

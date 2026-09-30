@@ -29,7 +29,7 @@ public:
     Outcome outcome() const { return m_outcome; }
     int eloDelta() const { return m_eloDelta; }
 
-    // The hub and the duel modal are both on screen at once, so listeners are
+    // the hub and the duel modal are both on screen at once, so listeners are
     // keyed by owner instead of being a single slot one of them would clobber.
     void addListener(void const* owner, std::function<void()> listener);
     void removeListener(void const* owner);
@@ -38,13 +38,13 @@ public:
     QueueTicket const& ticket() const { return m_ticket; }
     void cancelQueue();
 
-    // Slow polling catches incoming friendlies only while no other request is active.
+    // slow polling catches incoming friendlies only while no other request is active.
     void beginWatch();
     void endWatch();
 
     void accept(bool yes);
     void ban(int levelId);
-    // loads the level and pushes PlayLayer; false voids the match instead of
+    // loads the level and pushes playlayer; false voids the match instead of
     // hanging on a download.
     bool enterLevel();
 
@@ -54,16 +54,16 @@ public:
     void onComplete();
     void onLevelLeft();
 
-    // Roulette: the milestone list comes from the server seed, so both clients
+    // roulette: the milestone list comes from the server seed, so both clients
     // build the same one and a card lands with no round trip.
     std::vector<CardId> const& hand() const { return m_hand; }
-    // What the rival is holding, as of their last tick. Only the Eye card is
+    // what the rival is holding, as of their last tick. only the eye card is
     // allowed to draw it.
     std::vector<CardId> const& rivalHand() const { return m_rivalHand; }
     std::vector<float> const& milestones() const { return m_milestones; }
     bool playCard(int slot);
     bool dealsCards() const;
-    // Only the two the duel actually enforces are ever sent; listing one the
+    // only the two the duel actually enforces are ever sent; listing one the
     // client ignores would be a rule that is not a rule.
     bool hasMutator(std::string const& id) const;
 
@@ -72,9 +72,9 @@ public:
 
     float countdownLeft() const;
     bool countingDown() const { return m_phase == Phase::Countdown; }
-    // Seconds left on the format's clock, 0 when it has none or it ran out.
+    // seconds left on the format's clock, 0 when it has none or it ran out.
     float timeLeft() const;
-    // Tug of war, -1 on the rival's side and 1 on ours.
+    // tug of war, -1 on the rival's side and 1 on ours.
     float rope() const { return m_rope; }
     std::string statusLine() const;
 
@@ -89,15 +89,15 @@ private:
     void applyLobby(MatchInfo const& info);
     void wireNet();
     void pushTick(bool force);
-    // Ladder and Relay: takes the segment for us if neither side holds it yet.
+    // ladder and relay: takes the segment for us if neither side holds it yet.
     void claimSegment(int segment);
     void evaluate();
-    // Relay is the one format the finish line does not settle, so it gets its
+    // relay is the one format the finish line does not settle, so it gets its
     // own reading of the four segments.
     void evaluateRelay();
-    // Closes a duel nobody won outright: the better run takes it.
+    // closes a duel nobody won outright: the better run takes it.
     void finishOnPercent();
-    // Positive is our side. Under a hair the two runs are called a dead heat.
+    // positive is our side. under a hair the two runs are called a dead heat.
     void finishOnGap(float gap);
     int attemptLimit() const;
     void finish(Outcome outcome);

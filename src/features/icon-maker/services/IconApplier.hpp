@@ -1,6 +1,6 @@
 #pragma once
-// No-MoreIcons fallback: applies the built icon via CCSpriteFrameCache. With
-// MoreIcons installed this service never touches sprites.
+// no-moreicons fallback: applies the built icon via ccspriteframecache. with
+// moreicons installed this service never touches sprites.
 
 #include <Geode/Geode.hpp>
 
@@ -16,29 +16,27 @@ class IconApplier final {
 public:
     static IconApplier& get();
 
-    // Persisted selection (savedValue "icon-maker.active").
+    // persisted selection (savedvalue "icon-maker.active").
     void setActive(IconType type, std::string slotId);
     void clearActive(IconType type);
     std::string activeFor(IconType type);
 
-    // Hook entry: runs after SimplePlayer::updatePlayerFrame.
+    // hook entry: runs after simpleplayer::updateplayerframe.
     void onUpdatePlayerFrame(SimplePlayer* player, int iconId, IconType type);
 
-    // Robot/spider: swap the animated part sprites (transcribed from
-    // MoreIcons' updateRobotSprite, MIT).
+    // robot/spider: swap the animated part sprites (transcribed from
+    // moreicons' updaterobotsprite, mit).
     void applyToRobotSprite(GJRobotSprite* sprite, IconType type,
                             std::string const& slotId);
 
-    // GD multiplies player colors onto icon layers; when the active project
-    // asks for exact colors, re-whiten them so baked gradients/images show
-    // as designed. Safe to call any time; no-op when not applicable.
+    // re-whitening bypasses the player tint for projects that request exact colors.
     void applyExactColors(SimplePlayer* player, IconType type);
 
-    // Drop every cached texture/frame; called before GameManager::reloadAll
-    // recreates the GL context (registered in core/GLContextReload.cpp).
+    // drop every cached texture/frame; called before gamemanager::reloadall
+    // recreates the gl context (registered in core/glcontextreload.cpp).
     void onGLContextReload();
 
-    // Forget the cached sheet of one icon (after recompiling it).
+    // forget the cached sheet of one icon (after recompiling it).
     void invalidate(std::string_view slotId);
 
 private:
@@ -46,7 +44,7 @@ private:
 
     struct LoadedSheet {
         geode::Ref<cocos2d::CCTexture2D> texture;
-        std::vector<std::string> frameNames;  // registered in CCSpriteFrameCache
+        std::vector<std::string> frameNames;  // registered in ccspriteframecache
         bool valid = false;
     };
 
@@ -56,8 +54,8 @@ private:
     void unloadSheet(LoadedSheet& sheet);
 
     bool m_selectionLoaded = false;
-    std::map<int, std::string> m_active;          // IconType raw -> slotId
-    std::map<std::string, LoadedSheet> m_sheets;  // slotId -> loaded sheet
+    std::map<int, std::string> m_active;          // icontype raw -> slotid
+    std::map<std::string, LoadedSheet> m_sheets;  // slotid -> loaded sheet
 };
 
 }  // namespace paimon::icon_maker

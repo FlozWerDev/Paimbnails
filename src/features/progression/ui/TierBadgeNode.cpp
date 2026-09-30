@@ -32,7 +32,7 @@ char const* plateFile(TierFrame frame) {
     return "paim_progTierRound.png"_spr;
 }
 
-// Square canvas: one factor fits every shape.
+// square canvas: one factor fits every shape.
 void fitSquare(CCSprite* sprite, float size) {
     float const source = std::max(sprite->getContentSize().width, sprite->getContentSize().height);
     sprite->setScale(size / std::max(1.f, source));
@@ -117,7 +117,7 @@ void TierBadgeNode::buildFrame(Tier const& tier) {
         }
     }
 
-    // Light plate over black: accent lands on body, face keeps number readable.
+    // light plate over black: accent lands on body, face keeps number readable.
     if (auto* plate = makeTierPlate(tier.frame)) {
         fitSquare(plate, m_size);
         plate->setColor(tier.accent);
@@ -125,12 +125,12 @@ void TierBadgeNode::buildFrame(Tier const& tier) {
         m_content->addChild(plate, 0);
     }
 
-    // Chip size: number unreadable, and the chip prints it anyway.
+    // chip size: number unreadable, and the chip prints it anyway.
     if (m_size < 26.f) return;
 
     m_levelLabel = CCLabelBMFont::create(std::to_string(m_level).c_str(), "bigFont.fnt");
     if (m_levelLabel) {
-        // Crown recesses a base band, not a middle: number sits lower, smaller.
+        // crown recesses a base band, not a middle: number sits lower, smaller.
         bool const crown = tier.frame == TierFrame::Crown;
         float const target = m_size * (crown ? 0.20f : (m_level >= 100 ? 0.30f : 0.38f));
         m_levelLabel->limitLabelWidth(
@@ -145,7 +145,7 @@ void TierBadgeNode::buildFrame(Tier const& tier) {
 void TierBadgeNode::buildEffects(Tier const& tier) {
     float const r = m_size * 0.5f;
 
-    // White plate flashing on/off reads as shine, no clipped light bar needed.
+    // white plate flashing on/off reads as shine, no clipped light bar needed.
     if (tier.effects & TierEffectSweep) {
         if (auto* shine = makeTierPlate(tier.frame)) {
             fitSquare(shine, m_size);

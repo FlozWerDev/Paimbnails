@@ -282,7 +282,7 @@ void VideoSettingsPopup::updateFpsLabel() {
 void VideoSettingsPopup::onQualityPrev(CCObject*) {
     if (--m_qualityIndex < 0) m_qualityIndex = (int)QUALITY_OPTIONS.size() - 1;
     Mod::get()->setSavedValue("video-quality", QUALITY_OPTIONS[m_qualityIndex]);
-        // Invalidate decode/FPS snapshots so new slots see changes immediately.
+        // invalidate decode/fps snapshots so new slots see changes immediately.
     paimon::settings::internal::invalidateSettingsCache();
     paimon::requestDeferredModSave();
     updateQualityLabel();

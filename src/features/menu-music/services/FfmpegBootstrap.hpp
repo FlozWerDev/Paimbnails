@@ -1,7 +1,7 @@
 ﻿#pragma once
 
-// Downloads and caches a platform ffmpeg build for yt-dlp conversion because
-// GD's FMOD path does not reliably decode AAC, Opus, or WebM.
+// downloads and caches a platform ffmpeg build for yt-dlp conversion because
+// gd's fmod path does not reliably decode aac, opus, or webm.
 
 #include <Geode/Geode.hpp>
 #include <filesystem>
@@ -25,19 +25,19 @@ class FfmpegBootstrap {
 public:
     static FfmpegBootstrap& get();
 
-    // Cached binary path.
+    // cached binary path.
     std::filesystem::path bundledPath() const;
 
-    // Whether the cached binary exists.
+    // whether the cached binary exists.
     bool exists() const;
 
-    // Download if needed; callbacks run on the main thread.
+    // download if needed; callbacks run on the main thread.
     void ensureInstalled(
         FfmpegBootstrapProgressCallback onProgress,
         FfmpegBootstrapCompleteCallback onComplete
     );
 
-    // Remove the cached binary.
+    // remove the cached binary.
     void uninstall();
 
     bool isDownloading() const { return m_downloading; }
@@ -46,7 +46,7 @@ private:
     FfmpegBootstrap() = default;
     static std::string releaseUrl();
 
-    // Archive member to extract.
+    // archive member to extract.
     static std::string archiveEntry();
 
     std::atomic<bool> m_downloading{false};

@@ -1,5 +1,5 @@
-// Opens the editor color-picker eyedropper via a keybind (default Ctrl+G).
-// Gated behind the "editor-color-picker-enable" setting. Editor only.
+// opens the editor color-picker eyedropper via a keybind (default ctrl+g).
+// gated behind the "editor-color-picker-enable" setting. editor only.
 
 #include <Geode/Geode.hpp>
 #include <Geode/loader/SettingV3.hpp>

@@ -36,15 +36,15 @@ namespace preview {
 
     constexpr float RECAPTURE_TIMEOUT_SEC = 5.0f;
 
-    // Live-thumb offscreen size; 16:9, same framing as the real capture.
+    // live-thumb offscreen size; 16:9, same framing as the real capture.
     constexpr int MINI_RT_WIDTH  = 480;
     constexpr int MINI_RT_HEIGHT = 270;
 }
 
-// Shared chrome for the two editor popups: header band with live preview,
+// shared chrome for the two editor popups: header band with live preview,
 // then full-width list, then action row.
 namespace theme {
-    // Single palette for both editor popups.
+    // single palette for both editor popups.
     constexpr cocos2d::ccColor3B kAccent    {255, 215, 90};
     constexpr cocos2d::ccColor3B kTextOn    {255, 255, 255};
     constexpr cocos2d::ccColor3B kTextOff   {130, 130, 130};
@@ -54,7 +54,7 @@ namespace theme {
 }
 
 namespace editor {
-    // Header band starts below the ~20pt title; PREVIEW_W/H keep 16:9 capture framing.
+    // header band starts below the ~20pt title; preview_w/h keep 16:9 capture framing.
     constexpr float HEADER_TOP_PAD  = 33.f;
     constexpr float SIDE_PAD        = 10.f;
     constexpr float PREVIEW_W       = 128.f;

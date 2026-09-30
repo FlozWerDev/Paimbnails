@@ -36,7 +36,7 @@ public:
         const char* font = "chatFont.fnt",
         float fontSize = 0.45f,
         bool forceRender = false,
-        // false in long comment lists (InfoLayer AFK): first frame only.
+        // false in long comment lists (infolayer afk): first frame only.
         bool animateGifs = true
     );
 };

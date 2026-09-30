@@ -7,13 +7,13 @@
 
 namespace paimon::versus {
 
-// The VS ladder reuses the twenty progression tiers by name and colour, so a
+// the vs ladder reuses the twenty progression tiers by name and colour, so a
 // new tier there is still one row and shows up here for free.
 inline constexpr int kStartElo = 1000;
 inline constexpr int kPlacementMatches = 5;
 
-// Paimon is handed out by the server to the top twenty of each mode, not
-// reached by Elo, so it has no floor of its own.
+// paimon is handed out by the server to the top twenty of each mode, not
+// reached by elo, so it has no floor of its own.
 inline constexpr int kPaimonTier = 19;
 
 struct RankInfo {

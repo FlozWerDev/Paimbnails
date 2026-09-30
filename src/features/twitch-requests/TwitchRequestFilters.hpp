@@ -1,7 +1,7 @@
 #pragma once
 
-// Queue filters: accepted mode, difficulty faces and lengths.
-// Requests that miss stay stored but out of the list.
+// queue filters: accepted mode, difficulty faces and lengths.
+// requests that miss stay stored but out of the list.
 
 #include <cstdint>
 #include <optional>
@@ -59,7 +59,7 @@ std::string videoRuleSummary(VideoRequirementRule const& rule);
 // short summary for the queue header; empty without filters.
 std::string filterSummary(RequestFilters const& filters);
 
-// difficulty uses GJDifficultySprite values: -1 auto, 0 unrated,
+// difficulty uses gjdifficultysprite values: -1 auto, 0 unrated,
 // 1-5 easy..insane, 6+ demon.
 bool matchesFilters(
     RequestFilters const& filters,

@@ -157,11 +157,11 @@ public:
     void clearCanvas();
     void addStroke(StrokeSegment const& stroke);
 
-    // Local undo/redo (not network-synced in test mode)
+    // local undo/redo (not network-synced in test mode)
     void undoLast();
     void redoLast();
 
-    // Releases the groups retained by the redo stack (detached from the scene).
+    // releases the groups retained by the redo stack (detached from the scene).
     ~PaiDrawCanvasNode();
 
 protected:

@@ -7,7 +7,7 @@ using namespace paimon::menuloop;
 namespace fs = std::filesystem;
 
 int main(int argc, char** argv) {
-    assert(argc == 2); // Runner provides a fresh temporary directory.
+    assert(argc == 2); // runner provides a fresh temporary directory.
     fs::path root = argv[1];
     fs::create_directories(root / "nested");
     auto write = [](fs::path const& path, std::string const& value = "audio") {
@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
     write(root / "ignore.png");
     write(root / "blacklist.txt", blocked + "\r\n" + blocked + "\n");
     write(root / "favorites.txt", " # comment\n  " + second + " \r\n" + second + "\n");
-    // An audio-looking directory and a symlink loop must not become songs.
+    // an audio-looking directory and a symlink loop must not become songs.
     fs::create_directory(root / "directory.mp3");
     std::error_code ec;
     fs::create_directory_symlink(root, root / "nested" / "loop", ec);
@@ -70,7 +70,7 @@ int main(int argc, char** argv) {
     input.configDir = input.extraFolder = root / "missing-folder";
     assert(scan().songs.empty());
 
-    // Large playlists exercise deduplication/filtering without quadratic scans.
+    // large playlists exercise deduplication/filtering without quadratic scans.
     input.configDir = root;
     input.usePlaylist = true;
     std::string playlist;

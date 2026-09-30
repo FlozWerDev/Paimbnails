@@ -12,7 +12,7 @@ class $modify(PaimonSeparateDualPlay, PlayLayer) {
         if (player && !(player == m_player1 || player == m_player2)) {
             return PlayLayer::destroyPlayer(player, object);
         }
-        // Dying must not rotate the lead side: disarm the exit swap for this call only.
+        // dying must not rotate the lead side: disarm the exit swap for this call only.
         DualKitVault::get()->setExitSwap(false);
         PlayLayer::destroyPlayer(player, object);
         DualKitVault::get()->setExitSwap(true);

@@ -9,9 +9,7 @@
 
 namespace paimon::versus {
 
-// No card touches physics, hitboxes, geometry or game speed: only camera,
-// overlays, audio, HUD, checkpoints and shields. A duel with cards is still a
-// legitimate run, and the state Globed syncs stays clean.
+// cards affect presentation and duel state while preserving physics and the state synchronized by globed.
 struct CardDef {
     CardId id;
     char const* key;      // sprite suffix and wire name
@@ -24,7 +22,7 @@ struct CardDef {
 
 inline constexpr size_t kCardCount = static_cast<size_t>(CardId::Count);
 
-// Two in hand. A third one pushes the oldest out with a second of warning, so
+// two in hand. a third one pushes the oldest out with a second of warning, so
 // holding a legendary through a hard section is an actual decision.
 inline constexpr int kHandSize = 2;
 
@@ -33,7 +31,7 @@ CardDef const& cardAt(CardId id);
 
 std::vector<CardDef const*> cardsOfRarity(Rarity rarity);
 
-// Localized one-liner, e.g. "Rival - fog top and bottom - 6s".
+// localized one-liner, e.g. "rival - fog top and bottom - 6s".
 std::string cardEffectText(CardDef const& def);
 std::string cardTargetName(CardTarget target);
 std::string rarityName(Rarity rarity);
@@ -41,13 +39,13 @@ std::string rarityName(Rarity rarity);
 cocos2d::ccColor3B rarityBody(Rarity rarity);
 cocos2d::ccColor3B rarityRim(Rarity rarity);
 
-// Sprite frame names, already expanded with the mod id.
+// sprite frame names, already expanded with the mod id.
 std::string cardGlyphSprite(CardDef const& def);
 std::string cardPlateSprite();
 std::string cardRingSprite();
 std::string cardBackSprite();
 
-// Rarity weights in tenths of a percent, shifted toward the player who is
+// rarity weights in tenths of a percent, shifted toward the player who is
 // behind. `deficit` is how far back they are in percent points, 0 when ahead.
 std::array<int, 4> rarityWeights(float deficit, bool catchUp);
 

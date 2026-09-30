@@ -2,6 +2,7 @@
 
 #include "../data/GdResourcesLocator.hpp"
 #include "../persist/SlotPaths.hpp"
+#include "../../../utils/ImageLoadHelper.hpp"
 
 #include <Geode/utils/cocos.hpp>
 #include <Geode/utils/string.hpp>
@@ -15,7 +16,7 @@ namespace paimon::texture_studio {
 
 namespace {
 
-// Reject paths that escape the indexed directories.
+// reject paths that escape the indexed directories.
 bool isSafeRelativePath(std::string const& rel) {
     if (rel.empty() || rel.front() == '/' || rel.find(':') != std::string::npos) {
         return false;
@@ -41,7 +42,7 @@ std::string lowerExt(std::filesystem::path const& p) {
     return ext;
 }
 
-// Filenames are safe for one flat snapshot directory.
+// filenames are safe for one flat snapshot directory.
 std::string snapshotFileName(std::string const& pngRel) {
     std::string out = pngRel;
     for (auto& c : out) {
@@ -106,7 +107,7 @@ void LocalBasePack::rebuildIndexLocked() {
         addFile(prefix + s.baseName + s.qualitySuffix + ".plist", s.plistPath);
     };
 
-    // Loose files the pair scanner skips: fonts and atlas-less PNGs.
+    // loose files the pair scanner skips: fonts and atlas-less pngs.
     auto sweepLooseFiles = [&](std::filesystem::path const& dir,
                                std::string const& prefix) {
         std::error_code ec;
@@ -130,13 +131,13 @@ void LocalBasePack::rebuildIndexLocked() {
         }
     };
 
-    // Vanilla sheets: best quality per base name, rels are bare filenames.
+    // vanilla sheets: best quality per base name, rels are bare filenames.
     if (auto vanilla = GdResourcesLocator::detectVanillaSheets()) {
         for (auto const& s : vanilla.unwrap()) addPaired("", s);
     }
     sweepLooseFiles(GdResourcesLocator::resourcesDir(), "");
 
-    // Mod + Geode sheets, rels prefixed so SheetRetarget::locate resolves them.
+    // mod + geode sheets, rels prefixed so sheetretarget::locate resolves them.
     std::string ownId;
     try {
         if (auto* self = Mod::get()) ownId = std::string(self->getID());
@@ -225,38 +226,7 @@ geode::Result<std::optional<std::filesystem::path>> LocalBasePack::ensureOptiona
 }
 
 bool LocalBasePack::snapshotTexture(cocos2d::CCTexture2D* tex, std::filesystem::path const& dst) {
-    if (!tex || tex->getPixelsWide() <= 0 || tex->getPixelsHigh() <= 0) {
-        return false;
-    }
-
-    std::error_code ec;
-    std::filesystem::create_directories(dst.parent_path(), ec);
-
-    auto const size = CCSize(
-        static_cast<float>(tex->getPixelsWide()),
-        static_cast<float>(tex->getPixelsHigh())
-    );
-
-    auto* sprite = CCSprite::createWithTexture(tex);
-    if (!sprite) return false;
-    sprite->setAnchorPoint({0.f, 0.f});
-    sprite->setPosition({0.f, 0.f});
-
-    auto* rt = CCRenderTexture::create(size.width, size.height);
-    if (!rt) return false;
-
-    rt->beginWithClear(0.f, 0.f, 0.f, 0.f);
-    sprite->visit();
-    rt->end();
-
-    CCImage* img = rt->newCCImage(false);
-    if (!img) return false;
-
-    auto const pathStr = geode::utils::string::pathToString(dst);
-    bool const ok = img->saveToFile(pathStr.c_str(), false);
-    img->release();
-
-    return ok && std::filesystem::exists(dst, ec) && !ec;
+    return ImageLoadHelper::saveTextureToPng(tex, dst);
 }
 
 geode::Result<int> LocalBasePack::captureLoadedSnapshots(
@@ -272,7 +242,7 @@ geode::Result<int> LocalBasePack::captureLoadedSnapshots(
     for (auto const& rel : pngRels) {
         CCTexture2D* tex = cache->textureForKey(rel.c_str());
         if (!tex) {
-            // Runtime keys are usually bare filenames even for mod sheets.
+            // runtime keys are usually bare filenames even for mod sheets.
             auto slash = rel.find_last_of('/');
             if (slash != std::string::npos) {
                 tex = cache->textureForKey(rel.substr(slash + 1).c_str());

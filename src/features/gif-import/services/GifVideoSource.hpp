@@ -14,16 +14,14 @@ bool isVideoFile(std::filesystem::path const& path);
 // 768 keeps the thin edge; more resolution only spends memory.
 inline constexpr int kMaxVideoSide = 768;
 
-// decodeVideo progress mailbox; loader thread writes, UI reads.
+// decodevideo progress mailbox; loader thread writes, ui reads.
 struct VideoProgress {
     std::atomic<bool> cancelled = false;
     std::atomic<int> framesSeen = 0;
     std::atomic<int> framesKept = 0;
 };
 
-// Spreads captures across the video length and returns them RGBA as if from a
-// GIF. Blocks while decoding, so it runs on the loader thread.
-// Non-null partialOut reports stall/deadline trims.
+// loader thread only: decoding blocks. partial output reports deadline or stall trims.
 std::shared_ptr<SourceAnimation> decodeVideo(
     std::filesystem::path const& path,
     int maxFrames,

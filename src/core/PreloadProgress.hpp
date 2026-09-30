@@ -9,7 +9,7 @@ inline std::atomic<int> g_thumbsLoaded{0};
 
 inline std::atomic<bool> g_preloadStarted{false};
 
-// set on $on_game(Loaded); deferred work waits so preload never races game loading.
+// set on $on_game(loaded); deferred work waits so preload never races game loading.
 inline std::atomic<bool> g_gameLoaded{false};
 
 inline int getTotalLoaded() {

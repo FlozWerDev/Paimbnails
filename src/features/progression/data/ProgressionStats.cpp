@@ -114,12 +114,12 @@ PlayerStats statsFromScore(GJUserScore* score) {
 }
 
 void reconcileDemons(PlayerStats& stats) {
-    // Zeroed breakdown next to a real count: field never arrived, use fallback.
+    // zeroed breakdown next to a real count: field never arrived, use fallback.
     if (stats.demonInfo.counted() == 0) {
         stats.hasDemonInfo = false;
     }
 
-    // Breakdown bigger than the count is bogus; drop it whole.
+    // breakdown bigger than the count is bogus; drop it whole.
     if (stats.demonInfo.counted() > stats.demons) {
         stats.demonInfo = {};
         stats.hasDemonInfo = false;
@@ -171,7 +171,7 @@ ExpReport computeExp(PlayerStats const& stats) {
                  + static_cast<int64_t>(d.weekly)            * kDemonWeeklyBonus
                  + static_cast<int64_t>(d.gauntlet)          * kDemonGauntletBonus;
 
-        // Breakdown can trail the total right after a completion syncs.
+        // breakdown can trail the total right after a completion syncs.
         int const missing = stats.demons - stats.demonInfo.counted();
         if (missing > 0) demonExp += static_cast<int64_t>(missing) * kDemonFallback;
     } else {
@@ -186,7 +186,7 @@ ExpReport computeExp(PlayerStats const& stats) {
     int64_t const masteryCount = stats.classicInfo.counted() + stats.platformerInfo.counted();
     set(7, ExpSource::Mastery, mastery, masteryCount);
 
-    // Only source the game doesn't publish; zero without a queued duel.
+    // only source the game doesn't publish; zero without a queued duel.
     set(8, ExpSource::Versus, stats.versusExp, stats.versusWins);
 
     return report;
@@ -208,7 +208,7 @@ std::string formatCount(int64_t value) {
 
 std::string shortCount(int64_t value) {
     auto trim = [](double scaled, char suffix) {
-        // One decimal only while it fits in three characters.
+        // one decimal only while it fits in three characters.
         if (scaled < 10.0 && std::fabs(scaled - std::round(scaled)) > 0.05) {
             return fmt::format("{:.1f}{}", scaled, suffix);
         }

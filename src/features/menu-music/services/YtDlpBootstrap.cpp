@@ -48,7 +48,7 @@ std::string YtDlpBootstrap::releaseUrl() {
 #elif defined(GEODE_IS_MACOS)
     return "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos";
 #elif defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-    // Mobile: yt-dlp requiere python; no es practico bundlearlo.
+    // mobile: yt-dlp requiere python; no es practico bundlearlo.
     return "";
 #else
     return "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux";
@@ -112,8 +112,8 @@ void YtDlpBootstrap::ensureInstalled(
         .timeout(std::chrono::minutes(5))
         .userAgent("Paimbnails-MenuMusic/1.0 (yt-dlp-bootstrap)");
 
-    // Geode despacha onProgress en un worker thread, asi que re-encolamos
-    // en main thread antes de tocar UI.
+    // geode despacha onprogress en un worker thread, asi que re-encolamos
+    // en main thread antes de tocar ui.
     req.onProgress([progressShared](web::WebProgress const& p) {
         if (!progressShared || !*progressShared) return;
         auto downloaded = static_cast<uint64_t>(p.downloaded());
@@ -150,7 +150,7 @@ void YtDlpBootstrap::ensureInstalled(
             }
 
             auto data = res.data();
-            // yt-dlp.exe is ~14-20MB; under 1MB means broken redirect or HTML error page.
+            // yt-dlp.exe is ~14-20mb; under 1mb means broken redirect or html error page.
             if (data.size() < 1'000'000) {
                 fail(fmt::format("Downloaded file is suspiciously small ({} bytes). "
                                  "The binary may have failed to fetch.", data.size()));

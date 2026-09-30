@@ -1,5 +1,5 @@
-// Player icon gradients, after zilko's "Icon Gradients" (independent implementation, own expression).
-// Compat surface kept on purpose: "{}-gradient-{}" node ids, shader seeds, mod-id strings, -9038, "0060".
+// player icon gradients, after zilko's "icon gradients" (independent implementation, own expression).
+// compat surface kept on purpose: "{}-gradient-{}" node ids, shader seeds, mod-id strings, -9038, "0060".
 
 #include "GradientPlayerObject.hpp"
 
@@ -101,7 +101,7 @@ void GradientPlayerObject::updateSprite(CCSprite* live, Ref<CCSprite>& copy, Spr
     copy->setVisible(true);
 }
 
-// Line art draws over its host, so only the other slots restore the stock shader.
+// line art draws over its host, so only the other slots restore the stock shader.
 void GradientPlayerObject::paintSet(Gradient const& gradient, SpriteType kind, int extra,
         PaintLane const* lanes, size_t count, Fields* f) {
     IconType type = getIconType();
@@ -150,7 +150,7 @@ void GradientPlayerObject::updateVehicleSprite(Gradient const& gradient, Fields*
     paintSet(gradient, SpriteType::Vehicle, 44, kLanes, std::size(kLanes), f);
 }
 
-// Single sprites keep a fixed shader seed and node ID; lists advance from the base seed.
+// single sprites keep a fixed shader seed and node id; lists advance from the base seed.
 void GradientPlayerObject::shadeAnimSection(auto&& hosts, GradientConfig const& config, IconType type,
         ColorType color, int seedBase, bool line, bool single, Fields* f) {
     if (config.isEmpty(color, m_isSecondPlayer)) return;
@@ -203,7 +203,7 @@ void GradientPlayerObject::updateAnimSprite(IconType type, Gradient const& gradi
     shadeAnimSection(extra, gradient.line, type, ColorType::Line, 700, true, true, f);
 }
 
-// Robot and spider share the whole refresh dance; only the icon kind differs.
+// robot and spider share the whole refresh dance; only the icon kind differs.
 void GradientPlayerObject::refreshMech(IconType type) {
     GJBaseGameLayer* layer = m_gameLayer ? m_gameLayer : GJBaseGameLayer::get();
     if (!layer || (this != layer->m_player1 && this != layer->m_player2)) return;
@@ -226,7 +226,7 @@ void GradientPlayerObject::refreshMech(IconType type) {
 void GradientPlayerObject::updateGradient() {
     GJBaseGameLayer* layer = GJBaseGameLayer::get();
     if (shouldReturn(layer)) return;
-    // Remote multiplayer dolls are PlayerObjects too; only the local pair wears this kit.
+    // remote multiplayer dolls are playerobjects too; only the local pair wears this kit.
     if (layer && this != layer->m_player1 && this != layer->m_player2) return;
     auto f = m_fields.self();
 
@@ -239,7 +239,7 @@ void GradientPlayerObject::updateGradient() {
 
     Gradient gradient = GradientUtils::getGradient(type, m_isSecondPlayer);
 
-    // Compat with the UFO/ship/cube replacer mod: its sprites win while it
+    // compat with the ufo/ship/cube replacer mod: its sprites win while it
     // is around, so ours step aside (hidden) and the stock ones come back.
     static constexpr Ref<CCSprite> Fields::* kCopies[] = {
         &Fields::m_iconSprite, &Fields::m_iconSpriteSecondary, &Fields::m_iconGlow,

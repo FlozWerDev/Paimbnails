@@ -1,5 +1,5 @@
 ﻿#pragma once
-// load GLSL programs from resources/shaders/, with optional inline fallbacks.
+// load glsl programs from resources/shaders/, with optional inline fallbacks.
 
 #include <Geode/cocos/shaders/CCGLProgram.h>
 #include <string>
@@ -16,13 +16,13 @@ cocos2d::CCGLProgram* loadShader(
     char const* fragmentFallback
 );
 
-// read and cache resources/shaders/<relName>; empty means missing/unreadable.
+// read and cache resources/shaders/<relname>; empty means missing/unreadable.
 std::string readShaderFile(std::string_view relName);
 
-// track a mod-owned CCShaderCache key for later purging. main thread only.
+// track a mod-owned ccshadercache key for later purging. main thread only.
 void trackShaderKey(std::string const& key);
 
-// purge mod programs before GL context recreation; rebuilt lazily.
+// purge mod programs before gl context recreation; rebuilt lazily.
 void purgeTrackedShaders();
 
 // typed helpers wrap cache keys and shader files.
@@ -39,26 +39,26 @@ cocos2d::CCGLProgram* getBlurCellShader();
 // cheaper single-pass dual-kawase blur for animated sprites.
 cocos2d::CCGLProgram* getBlurSinglePassShader();
 
-// fixed 3.5px fallback blur for ProfileThumbs.
+// fixed 3.5px fallback blur for profilethumbs.
 cocos2d::CCGLProgram* getBlurFastShader();
 
-// PaiblurNode embeds its dynamic shader and bypasses this loader.
+// paiblurnode embeds its dynamic shader and bypasses this loader.
 
-// VideoPlayer three-plane YUV->RGB shader.
+// videoplayer three-plane yuv->rgb shader.
 cocos2d::CCGLProgram* getYUVShader();
 
-// blit YUV planes into an RGBA FBO for VideoPlayer.
+// blit yuv planes into an rgba fbo for videoplayer.
 cocos2d::CCGLProgram* getYUVBlitShader();
 
-// pre-reduce sRGB->LAB into a small FBO for CPU-side k-means.
+// pre-reduce srgb->lab into a small fbo for cpu-side k-means.
 cocos2d::CCGLProgram* getDominantColorsDownsampleShader();
 
-// halve a frame with an alpha-weighted box filter for the GIF importer.
+// halve a frame with an alpha-weighted box filter for the gif importer.
 cocos2d::CCGLProgram* getGifDownscaleShader();
 cocos2d::CCGLProgram* getGifBlurShader();
 
-// live PackGen tint for the texture-studio preview. null when
-// tint_preview.glsl is missing; the editor falls back to CPU render.
+// live packgen tint for the texture-studio preview. null when
+// tint_preview.glsl is missing; the editor falls back to cpu render.
 cocos2d::CCGLProgram* getTintPreviewShader();
 
 }

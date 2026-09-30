@@ -13,11 +13,11 @@
 #include "GuideTopicKnowledge.hpp"
 #include "GeminiClient.hpp"
 
-// Local guide service with conversation memory and an optional Gemini mode.
+// local guide service with conversation memory and an optional gemini mode.
 
 namespace paimon::guide {
 
-// Assistant uses the local matcher; Max uses Gemini.
+// assistant uses the local matcher; max uses gemini.
 enum class GuideMode {
     Assistant,
     Max,
@@ -27,17 +27,17 @@ class PaimonGuideService {
 public:
     static PaimonGuideService& get();
 
-    // Returns immediately in Assistant mode; Max completes through callback.
+    // returns immediately in assistant mode; max completes through callback.
     using AskCallback = geode::CopyableFunction<void(GuideAnswer const&)>;
     GuideAnswer ask(std::string const& userQuery, AskCallback callback = nullptr);
 
     GuideMode getMode() const;
     void setMode(GuideMode mode);
 
-    // False keeps the guide on Assistant no matter what the saved mode says.
+    // false keeps the guide on assistant no matter what the saved mode says.
     bool isMaxAvailable() const;
 
-    // Up to six {chip text, query} pairs in the active language.
+    // up to six {chip text, query} pairs in the active language.
     std::vector<std::pair<std::string, std::string>> getSuggestions();
 
     bool isEnabled() const;
@@ -45,7 +45,7 @@ public:
 
     std::size_t intentCount() const { return m_intents.size(); }
 
-    // The popup clears this memory on close.
+    // the popup clears this memory on close.
     ConversationMemory& memory() { return m_memory; }
     void resetMemory() { m_memory.clear(); }
 
@@ -53,37 +53,37 @@ private:
     PaimonGuideService();
     void registerIntents();
 
-    // Lowercase, collapse spaces, and strip common ES/PT/FR accents.
+    // lowercase, collapse spaces, and strip common es/pt/fr accents.
     static std::string normalize(std::string s);
 
-    // Split normalized text on whitespace and basic ASCII punctuation.
+    // split normalized text on whitespace and basic ascii punctuation.
     static std::vector<std::string> tokenize(std::string const& normalized);
 
-    // Build a localized fallback with close matches and recommendations.
+    // build a localized fallback with close matches and recommendations.
     GuideAnswer makeFallback(std::vector<GuideIntent const*> const& suggestions,
                              std::string const& langId) const;
 
-    // Build a response, varying its text on repeats.
+    // build a response, varying its text on repeats.
     GuideAnswer buildAnswerFor(GuideIntent const& intent,
                                std::string const& langId);
 
-    // Reuse the last functional intent for a follow-up.
+    // reuse the last functional intent for a follow-up.
     GuideAnswer buildFollowUpAnswer(GuideIntent const& intent,
                                     std::string const& langId);
 
-    // Resolve sub-topic, "more", or reference follow-ups with chips.
+    // resolve sub-topic, "more", or reference follow-ups with chips.
     GuideAnswer buildContextualAnswer(Resolution const& res,
                                       std::string const& langId);
 
     std::string currentTopicId() const { return m_memory.lastTopicId(); }
 
-    // Handle category browsing; returns nullopt for normal questions.
+    // handle category browsing; returns nullopt for normal questions.
     std::optional<GuideAnswer> tryCategoryBrowse(
         std::string const& normalized,
         std::vector<std::string> const& tokens,
         std::string const& langId) const;
 
-    // Add same-category or runner-up recommendations.
+    // add same-category or runner-up recommendations.
     void attachRelatedRecommendations(
         GuideAnswer& ans,
         GuideIntent const& primary,
@@ -91,7 +91,7 @@ private:
         std::string const& langId,
         int maxExtra = 2) const;
 
-    // Build a recommendation from an intent ID.
+    // build a recommendation from an intent id.
     GuideRecommendation makeRecommendation(
         std::string const& intentId,
         std::string const& langId) const;

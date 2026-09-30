@@ -11,7 +11,7 @@ private:
 
     bool init(bool);
 
-    // Sprites: dot, flash ring, selection ring.
+    // sprites: dot, flash ring, selection ring.
     CCSprite* m_dot = nullptr;
     CCSprite* m_circle = nullptr;
     CCSprite* m_select = nullptr;
@@ -23,40 +23,40 @@ private:
     bool m_isHovered = false;
     bool m_isSelected = false;
 
-    // Visibility state.
+    // visibility state.
     bool m_isHidden = false;
     bool m_isAnimating = false;
 
     int m_opacity = 255;
 
-    // Delayed reconcile shared by the fade paths.
+    // delayed reconcile shared by the fade paths.
     void settleAfter(float);
 
 public:
 
     static ColorNode* create(bool, int = 255);
 
-    // Appearance.
+    // appearance.
     void setColor(const ccColor3B&, float = 0.f);
     void setOpacity(int);
     void setImagePath(std::string const&);
     std::string const& getImagePath() const { return m_imagePath; }
 
-    // Interaction state.
+    // interaction state.
     void setSelected(bool);
     void setHovered(bool);
     void setHidden(bool, float, bool = false);
 
-    // Point queries.
+    // point queries.
     ccColor3B getColor();
     CCSprite* getSprite();
 
-    // Flag queries.
+    // flag queries.
     bool isSelected();
     bool isHidden();
     bool isAnimating();
 
-    // Effects.
+    // effects.
     void flash(float = 0.3f);
 
     void onAnimationEnded();

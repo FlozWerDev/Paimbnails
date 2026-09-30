@@ -149,7 +149,7 @@ void DynamicVolumePopup::scheduleRebuild() {
 
 void DynamicVolumePopup::persist() {
     DynamicVolumeManager::get().saveConfig(m_cfg);
-    // saveConfig normalises the mode presets; mirror them back so the sliders
+    // saveconfig normalises the mode presets; mirror them back so the sliders
     // don't show values the manager already discarded.
     m_cfg = DynamicVolumeManager::get().getConfig();
     m_curveDirty = true;
@@ -286,11 +286,11 @@ void DynamicVolumePopup::redrawCurve() {
         prev = cur;
     }
 
-    // Playhead: where the current song sits on this curve right now.
+    // playhead: where the current song sits on this curve right now.
     auto const st = DynamicVolumeManager::get().liveState();
     if (st.active && !flat && st.rampProgress < 1.f) {
         float const p = std::clamp(st.rampProgress, 0.f, 1.f);
-        // rampProgress is the curve output; invert visually by sampling time.
+        // rampprogress is the curve output; invert visually by sampling time.
         float t = 0.f;
         for (int i = 0; i <= kSamples; ++i) {
             float const tt = static_cast<float>(i) / kSamples;
@@ -422,7 +422,7 @@ void DynamicVolumePopup::rebuild() {
                 "los margenes y el tiempo de medida."));
         }
     } else if (m_tab == 1) {
-        // Only Custom keeps these: the other modes pin them, and a slider that
+        // only custom keeps these: the other modes pin them, and a slider that
         // snaps back on release is worse than no slider.
         if (m_cfg.mode == Mode::Custom) {
             items.push_back(kit::makeCard(scrollW, "Curva de volumen", {170, 190, 255}, {

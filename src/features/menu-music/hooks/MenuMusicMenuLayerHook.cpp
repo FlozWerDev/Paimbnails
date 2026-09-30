@@ -1,5 +1,5 @@
-// MenuLayer hook for the vinyl button, now-playing toast, and auto-next.
-// Kept separate from menu-loop override so the features can be disabled independently.
+// menulayer hook for the vinyl button, now-playing toast, and auto-next.
+// kept separate from menu-loop override so the features can be disabled independently.
 
 #include <Geode/modify/MenuLayer.hpp>
 #include "../../../core/modules/ModuleRegistry.hpp"
@@ -25,7 +25,7 @@ namespace {
 
 class $modify(PaimonMenuMusicMenuLayer, MenuLayer) {
     static void onModify(auto& self) {
-// Run after node IDs so right-side-menu exists.
+// run after node ids so right-side-menu exists.
         paimon::hooks::afterNodeIdsOrLate(self, "MenuLayer::init");
     }
 
@@ -47,8 +47,8 @@ class $modify(PaimonMenuMusicMenuLayer, MenuLayer) {
                 "menuMusicAutoplayOnBoot", false);
             if (lib.mode() != paimon::menumusic::PlaybackMode::Disabled
                 && (remember || autoplay)) {
-                // Sync only when startup playback needs candidates. Opening
-                // Menu Music also syncs; an unused player needs no disk scan.
+                // sync only when startup playback needs candidates. opening
+                // menu music also syncs; an unused player needs no disk scan.
                 lib.syncDownloadedSongs(/*force=*/false);
                 if (!remember || lib.lastTrackId().empty()
                     || !player.playSpecific(lib.lastTrackId())) {
@@ -60,7 +60,7 @@ class $modify(PaimonMenuMusicMenuLayer, MenuLayer) {
 
         auto* rightMenu = typeinfo_cast<CCMenu*>(this->getChildByID("right-side-menu"));
         if (rightMenu) {
-// Avoid duplicate injection.
+// avoid duplicate injection.
             if (!rightMenu->getChildByID("menu-music-btn"_spr)) {
                 auto spr = CCSprite::createWithSpriteFrameName("GJ_musicOnBtn_001.png");
                 if (!spr) spr = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
@@ -81,7 +81,7 @@ class $modify(PaimonMenuMusicMenuLayer, MenuLayer) {
         auto* current = player.currentTrack();
         if (current && current->id != s_lastToastTrackId) {
             s_lastToastTrackId = current->id;
-// Defer one frame until MenuLayer finishes building.
+// defer one frame until menulayer finishes building.
             this->scheduleOnce(
                 schedule_selector(PaimonMenuMusicMenuLayer::showToastNextFrame), 0.f);
         }
@@ -111,7 +111,7 @@ class $modify(PaimonMenuMusicMenuLayer, MenuLayer) {
         NowPlayingToast::showForCurrent(this);
     }
 
-// Check once per second and advance in the final two seconds or after end.
+// check once per second and advance in the final two seconds or after end.
     void tickAutoNext(float) {
         MenuMusicEffects::get().update();
         auto& player = MenuMusicPlayer::get();

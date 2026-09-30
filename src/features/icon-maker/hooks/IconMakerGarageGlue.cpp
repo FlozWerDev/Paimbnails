@@ -14,7 +14,7 @@ void onPlayerColorChanged(GJGarageLayer* layer) {
     if (!layer) return;
     if (!paimon::settings::icon_maker::enabled()) return;
 
-    // Defer one frame so it lands after GD's own re-tint of the preview.
+    // defer one frame so it lands after gd's own re-tint of the preview.
     Ref<GJGarageLayer> ref = layer;
     Loader::get()->queueInMainThread([ref]() {
         if (paimon::isRuntimeShuttingDown() || !ref) return;

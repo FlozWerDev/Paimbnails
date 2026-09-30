@@ -6,7 +6,7 @@
 
 namespace paimon::globalicon {
 
-// Popup opened from a profile's custom icon: shows every icon that player
+// popup opened from a profile's custom icon: shows every icon that player
 // shares (cube, ship, ball, ...) and lets you download one or wear it.
 class GlobalIconViewPopup : public geode::Popup {
 protected:
@@ -36,7 +36,7 @@ protected:
     void onDownload(cocos2d::CCObject*);
     void onDownloadUse(cocos2d::CCObject*);
 
-    // Runs `action` once the selected slot is on disk and registered.
+    // runs `action` once the selected slot is on disk and registered.
     void withSelectedIcon(geode::CopyableFunction<void(std::string const& iconName, IconType type)> action);
 
 public:

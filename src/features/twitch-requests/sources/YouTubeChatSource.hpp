@@ -7,7 +7,7 @@
 namespace paimon::twitch {
 
 // reads chat like the watch page: innertube key + /live_chat continuation,
-// no Google account or quota.
+// no google account or quota.
 class YouTubeChatSource final : public ChatSourceBase {
 public:
     YouTubeChatSource(std::string channel, ChatCallbacks callbacks);

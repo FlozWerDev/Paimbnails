@@ -37,7 +37,7 @@ namespace paimon::thumbnails {
 
             Ref<GJSearchObject> search = browser->m_searchObject;
 
-            // Fade like GD; transition hook overrides when enabled.
+            // fade like gd; transition hook overrides when enabled.
             auto* scene = LevelBrowserLayer::scene(search);
             if (!scene) {
                 return;

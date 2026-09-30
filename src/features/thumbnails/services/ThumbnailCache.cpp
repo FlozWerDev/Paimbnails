@@ -24,7 +24,7 @@ namespace paimon::cache {
 static std::atomic<bool> s_cacheInstanceAlive{false};
 
 ThumbnailCache& ThumbnailCache::get() {
-    // Intentional leak: post-Geode-shutdown dtor crashes (Bunny reports).
+    // intentional leak: post-geode-shutdown dtor crashes (bunny reports).
     static auto* instance = new ThumbnailCache();
     s_cacheInstanceAlive = true;
     return *instance;
@@ -35,7 +35,7 @@ bool ThumbnailCache::isAlive() {
 }
 
 ThumbnailCache::~ThumbnailCache() {
-    // Detach without release() if CCPoolManager already died in teardown.
+    // detach without release() if ccpoolmanager already died in teardown.
     takeAllTextures();
     s_cacheInstanceAlive = false;
 }
@@ -67,7 +67,7 @@ std::optional<geode::Ref<cocos2d::CCTexture2D>> ThumbnailCache::getFromRam(int l
         }
     }
     
-    // Probe URL cache only when it can match.
+    // probe url cache only when it can match.
     if (!isGif) {
         bool urlCacheEmpty = false;
         {
@@ -108,7 +108,7 @@ bool ThumbnailCache::isRamEntrySuitable(int levelID, bool isGif, int requestedMa
     int texLong = std::max(tex->getPixelsWide(), tex->getPixelsHigh());
     int originalLong = std::max(it->second.originalWidth, it->second.originalHeight);
 
-    // Unknown source dims stay usable; no disk/network churn to upgrade them.
+    // unknown source dims stay usable; no disk/network churn to upgrade them.
     if (originalLong <= 0) return true;
 
     int targetLong = std::min(requestedMaxDim, originalLong);
@@ -178,14 +178,14 @@ void ThumbnailCache::evictRamLocked() {
             : maxBytes / 2;
     }
 
-    // Partial-sort the k oldest instead of scanning O(k*n).
+    // partial-sort the k oldest instead of scanning o(k*n).
     if (m_ramCache.size() <= maxEntries && m_ramBytes <= effectiveMaxBytes) return;
 
     struct EvictCandidate { int key; int64_t accessUs; size_t bytes; };
     std::vector<EvictCandidate> candidates;
     candidates.reserve(m_ramCache.size());
     for (auto const& [k, e] : m_ramCache) {
-        // Main levels 1-22 pinned for instant LevelSelect backgrounds.
+        // main levels 1-22 pinned for instant levelselect backgrounds.
         int id = paimon::cache::levelIdFromRamKey(k);
         if (paimon::isMainLevelID(id)) continue;
         candidates.push_back({k, e.lastAccessUs.load(std::memory_order_relaxed), e.byteSize});
@@ -242,7 +242,7 @@ constexpr int64_t intervalUs = 2'000'000; // 2 s.
             toPurge.reserve(std::min(m_ramCache.size() / 4, kMaxPurgeCandidates));
             for (auto const& [key, entry] : m_ramCache) {
                 if (toPurge.size() >= kMaxPurgeCandidates) break;
-                // Main levels 1-22 never purge after preload.
+                // main levels 1-22 never purge after preload.
                 if (paimon::isMainLevelID(paimon::cache::levelIdFromRamKey(key))) continue;
                 if (now - entry.addedAt < PURGE_GRACE_PERIOD) continue;
                 if (entry.texture && entry.texture->retainCount() <= 1) {
@@ -255,7 +255,7 @@ constexpr int64_t intervalUs = 2'000'000; // 2 s.
             for (int key : toPurge) {
                 auto it = m_ramCache.find(key);
                 if (it != m_ramCache.end()) {
-                    // Recheck under exclusive lock; entry may have changed.
+                    // recheck under exclusive lock; entry may have changed.
                     if (now - it->second.addedAt >= PURGE_GRACE_PERIOD &&
                         it->second.texture && it->second.texture->retainCount() <= 1) {
                         if (m_ramBytes >= it->second.byteSize) m_ramBytes -= it->second.byteSize;
@@ -370,7 +370,7 @@ void ThumbnailCache::evictUrlRamLocked() {
 
 void ThumbnailCache::clearUrlsForLevel(int levelID) {
     if (levelID <= 0) return;
-    // Match the id only at URL separator/query boundaries.
+    // match the id only at url separator/query boundaries.
     std::string idStr = std::to_string(levelID);
     std::string n1 = "/" + idStr + ".";
     std::string n2 = "/" + idStr + "_";
@@ -387,7 +387,7 @@ void ThumbnailCache::clearUrlsForLevel(int levelID) {
             it->first.find(n2) != std::string::npos ||
             it->first.find(n3) != std::string::npos ||
             it->first.find(n4) != std::string::npos ||
-            // Trailing "=<id>" suffix is already boundary-safe.
+            // trailing "=<id>" suffix is already boundary-safe.
             (it->first.size() >= n5.size() &&
              it->first.compare(it->first.size() - n5.size(), n5.size(), n5) == 0);
 
@@ -473,7 +473,7 @@ void ThumbnailCache::loadDiskIndex() {
         m_manifest.load(cacheDir);
     }
 
-    // One-time SavedValues migration while the manifest is empty.
+    // one-time savedvalues migration while the manifest is empty.
     if (m_manifest.entryCount() == 0) {
         auto savedCache = Mod::get()->getSavedValue<matjson::Value>("thumbnail-disk-cache");
         if (savedCache.isObject()) {
@@ -521,7 +521,7 @@ void ThumbnailCache::saveDiskIndex(bool allowDuringShutdown) {
 }
 
 $on_mod(DataSaved) {
-    // allowDuringShutdown keeps the pending flush from being lost.
+    // allowduringshutdown keeps the pending flush from being lost.
     ThumbnailCache::get().saveDiskIndex(true);
 }
 
@@ -532,10 +532,10 @@ bool ThumbnailCache::isFailed(std::string const& key) const {
 
     int step = std::min(it->second.retryStep, FAILED_BACKOFF_MAX_STEP);
 
-    // Backoff grows the TTL; the 5-minute step stays temporary.
+    // backoff grows the ttl; the 5-minute step stays temporary.
     auto ttl = std::chrono::seconds(FAILED_BACKOFF_STEPS[step]);
     if (std::chrono::steady_clock::now() - it->second.timestamp >= ttl) {
-        // Expired entries retry unerased so markFailed() can grow backoff.
+        // expired entries retry unerased so markfailed() can grow backoff.
         return false;
     }
     return true;
@@ -636,7 +636,7 @@ void ThumbnailCache::clearRam() {
 
 void ThumbnailCache::clearDisk() {
     auto dir = paimon::quality::cacheDir();
-    // Main levels 1-22 and gifs/ survive.
+    // main levels 1-22 and gifs/ survive.
     auto [preserved, removed] = paimon::clearCachePreservingMainLevels(dir, {"gifs"});
     log::info("[ThumbnailCache] clearDisk: preserved {} entries, removed {}",
         preserved, removed);

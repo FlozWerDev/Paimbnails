@@ -11,7 +11,7 @@ namespace {
 
 constexpr char const* kModuleId = "paimbnails.goldenbest.gameplay";
 
-// Frames between label searches while none has been found yet.
+// frames between label searches while none has been found yet.
 constexpr int kLabelSearchInterval = 30;
 
 bool moduleEnabled() {
@@ -70,7 +70,7 @@ class $modify(PaimonGoldenBestPlayLayer, PlayLayer) {
         return true;
     }
 
-    // Levels with a hidden progress bar never produce a percentage label, so the
+    // levels with a hidden progress bar never produce a percentage label, so the
     // child scan would otherwise run on every frame for the whole attempt.
     bool ensureInitialized() {
         if (m_fields->m_initialized) return true;

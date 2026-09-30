@@ -67,7 +67,7 @@ bool MiniPreview::init(float width, float height) {
 
 void MiniPreview::onEnter() {
     CCNode::onEnter();
-    // First render here, not init(): owner applies setPlayersHidden() first, scheduler live.
+    // first render here, not init(): owner applies setplayershidden() first, scheduler live.
     requestRefresh();
 }
 
@@ -107,7 +107,7 @@ void MiniPreview::refreshNow() {
     namespace C = paimon::capture::preview;
     if (!m_sprite) return;
 
-    // Needs a live PlayLayer; without one retries would spin, so fail fast.
+    // needs a live playlayer; without one retries would spin, so fail fast.
     if (!this->getParent() || !PlayLayer::get()) {
         showStatus(Localization::get().getString("preview.mini_unavailable").c_str());
         return;
@@ -117,7 +117,7 @@ void MiniPreview::refreshNow() {
         C::MINI_RT_WIDTH, C::MINI_RT_HEIGHT, m_hideP1, m_hideP2);
 
     if (!tex) {
-        // Real captures own GL state; retry the frame after instead of showing nothing.
+        // real captures own gl state; retry the frame after instead of showing nothing.
         if (m_busyRetries < kMaxBusyRetries) {
             ++m_busyRetries;
             m_pending = true;
@@ -135,8 +135,8 @@ void MiniPreview::refreshNow() {
 
     m_busyRetries = 0;
 
-    // Texture size is pixels but sprites use points (GD scale factor 4);
-    // point size keeps UVs matched to the whole image.
+    // texture size is pixels but sprites use points (gd scale factor 4);
+    // point size keeps uvs matched to the whole image.
     auto sizeInPoints = tex->getContentSize();
     if (sizeInPoints.width <= 0.f || sizeInPoints.height <= 0.f) {
         showStatus(Localization::get().getString("preview.mini_unavailable").c_str());

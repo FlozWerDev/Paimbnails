@@ -32,6 +32,9 @@ public:
         }
 
         cleanupNoLock();
+        if (m_threads.size() == m_threads.capacity()) {
+            m_threads.reserve(m_threads.empty() ? 4 : m_threads.size() * 2);
+        }
 
         auto completed = std::make_shared<std::atomic<bool>>(false);
 

@@ -11,16 +11,16 @@ Ref<PaimonInfoTarget> s_infoTarget = nullptr;
 
 constexpr float kAlertWidth = 340.f;
 
-// TextArea wraps at 2 * width but the frame fits ~1.33 * width, so 0.6
+// textarea wraps at 2 * width but the frame fits ~1.33 * width, so 0.6
 // keeps a 10% margin below the 0.66 spill point.
 constexpr float kTextScale    = 0.6f;
 constexpr float kScrollHeight = 170.f;
 
-// The screen is 320 units tall; title bar + OK button eat ~105. Taller text
+// the screen is 320 units tall; title bar + ok button eat ~105. taller text
 // gets a scroller instead of a popup running off the top.
 constexpr float kMaxTextHeight = 185.f;
 
-// chatFont.fnt metrics.
+// chatfont.fnt metrics.
 constexpr float kAvgAdvance = 7.3f;
 constexpr float kLineHeight = 18.f;
 

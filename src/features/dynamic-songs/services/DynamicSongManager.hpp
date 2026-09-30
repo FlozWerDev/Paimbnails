@@ -46,11 +46,11 @@ public:
     void fadeOutForLevelStart();
     void forceKill();
 
-    // Muffle while the game decides whether the level can start.
+    // muffle while the game decides whether the level can start.
     void submergeForLevelStart();
-    // Return the channel to gameplay; levelID enables resurfacing on revisit.
+    // return the channel to gameplay; levelid enables resurfacing on revisit.
     void finishGameplayHandoff(int levelID = 0);
-    // Restore the song when the level never started.
+    // restore the song when the level never started.
     void cancelGameplayHandoff();
 
     void suspendPlaybackForExternalAudio();
@@ -100,7 +100,7 @@ private:
     int m_handoffLevelID = 0;
     float m_handoffClock = 0.f;
     cocos2d::CCNode* m_handoffWatchNode = nullptr;
-    // Deferred resurfacing request; menu detours must not consume it.
+    // deferred resurfacing request; menu detours must not consume it.
     int m_surfaceLevelID = 0;
     std::chrono::steady_clock::time_point m_surfaceRequestTime{};
 
@@ -116,9 +116,9 @@ private:
     void fadeVolume(float from, float to, float durationSec, PostFadeAction action);
     void cancelFade();
 
-    // Shared teardown for forceKill and gameplay handoff.
+    // shared teardown for forcekill and gameplay handoff.
     void resetToIdle(bool stopOwnSound);
-    // Idle without fading; preserves m_currentLayer for suspend/resume.
+    // idle without fading; preserves m_currentlayer for suspend/resume.
     void goIdle();
     bool isOurSoundPlaying() const;
     void startHandoffWatch();
@@ -130,7 +130,7 @@ private:
     bool m_previewAwaitingSongInfo = false;
     bool m_streamingPreviewPending = false;
     bool m_streamingPreview = false;
-    // Keep polling a disabled preview until its download finishes.
+    // keep polling a disabled preview until its download finishes.
     bool m_awaitingDownloadOnly = false;
     FMOD::Sound* m_previewStreamSound = nullptr;
     FMOD::Channel* m_previewChannel = nullptr;

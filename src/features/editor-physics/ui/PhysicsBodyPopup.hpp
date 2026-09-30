@@ -14,7 +14,7 @@ namespace paimon::editorphysics {
 
 std::string bodyName(std::size_t index);
 
-// Per body and per object materials: what the lab sliders set for everyone, one
+// per body and per object materials: what the lab sliders set for everyone, one
 // captured body (and one of its objects) can override here.
 class PhysicsBodyPopup : public geode::Popup {
 public:

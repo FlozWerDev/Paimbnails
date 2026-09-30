@@ -9,10 +9,10 @@
 
 namespace paimon::collab {
 
-// Single source of truth (settings pastes mangle URLs); plain HTTP allows direct ports, prefer HTTPS.
+// single source of truth (settings pastes mangle urls); plain http allows direct ports, prefer https.
 constexpr char const* kServerBaseUrl = "http://node.akiomae.xyz:4401";
 
-// Bump on any wire-incompatible change.
+// bump on any wire-incompatible change.
 constexpr uint32_t kProtocolVersion = 10;
 
 constexpr size_t kMaxCursorAssetBytes = 128 * 1024;
@@ -20,13 +20,13 @@ constexpr size_t kMaxCursorDataLength = ((kMaxCursorAssetBytes + 2) / 3) * 4;
 
 constexpr size_t kMaxOpsPerFlush = 2048;
 
-// Ordered acknowledged chunks avoid silent edit loss; v3 may tighten limits via join_ok.
+// ordered acknowledged chunks avoid silent edit loss; v3 may tighten limits via join_ok.
 constexpr size_t kDefaultOpsPerRequest = 500;
 constexpr size_t kMaxSaveBytesPerRequest = 1'400'000;
 constexpr float kDefaultOpsPerSecond = 500.f;
 
-// FNV-1a over "gid|version|save" in two lanes, XOR-aggregated per room to
-// detect divergence. Must match objectSyncHash() in server.js exactly.
+// fnv-1a over "gid|version|save" in two lanes, xor-aggregated per room to
+// detect divergence. must match objectsynchash() in server.js exactly.
 inline uint32_t fnv1a32(std::string const& s, uint32_t seed) {
     uint32_t h = seed;
     for (unsigned char c : s) {
@@ -58,7 +58,7 @@ enum class ConnectMode {
     Join,
 };
 
-// Cosmetic peer data only; permissions remain keyed by clientId.
+// cosmetic peer data only; permissions remain keyed by clientid.
 struct PeerAppearance {
     int accountID = 0;
     int iconID = 0;
@@ -134,7 +134,7 @@ struct HostPermissions {
     }
 };
 
-// RAII guard for nested remote-apply scopes.
+// raii guard for nested remote-apply scopes.
 class TrackerGuard {
 public:
     explicit TrackerGuard(bool& flag) : m_flag(flag), m_prev(flag) {
@@ -149,7 +149,7 @@ private:
     bool m_prev;
 };
 
-// Ephemeral selection presence, separate from LWW object state.
+// ephemeral selection presence, separate from lww object state.
 struct PeerSelection {
     int clientId = 0;
     std::string name;

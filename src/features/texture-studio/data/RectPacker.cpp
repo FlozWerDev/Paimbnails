@@ -11,7 +11,7 @@ namespace paimon::texture_studio {
 
 namespace {
 
-// Opt-in MaxRects path: no rotation, shelf-compatible orientation, new arrangement only.
+// opt-in maxrects path: no rotation, shelf-compatible orientation, new arrangement only.
 PackResult packBestFit(std::vector<RectPackInput> const& rects,
                        PackerOptions const& options) {
     using packgen::MaxRectsPacker;
@@ -62,7 +62,7 @@ PackResult RectPacker::pack(std::vector<RectPackInput> rects, PackerOptions opti
         return packBestFit(rects, options);
     }
 
-    // Sort indices, not string-heavy inputs: visit order (hence placements) unchanged.
+    // sort indices, not string-heavy inputs: visit order (hence placements) unchanged.
     std::vector<std::size_t> order(rects.size());
     for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
     std::sort(order.begin(), order.end(),
@@ -71,7 +71,7 @@ PackResult RectPacker::pack(std::vector<RectPackInput> rects, PackerOptions opti
             return rects[a].id < rects[b].id;
         });
 
-    // Shelf layout matching PackGen.
+    // shelf layout matching packgen.
     struct Bin {
         int x         = 0;
         int y         = 0;
@@ -144,7 +144,7 @@ PackResult RectPacker::pack(std::vector<RectPackInput> rects, PackerOptions opti
             maxBinW = std::max(maxBinW, bin.width);
             maxBinB = std::max(maxBinB, bin.y + bin.maxHeight);
         }
-        // Drop trailing gap to match sheet size.
+        // drop trailing gap to match sheet size.
         result.sheetWidth  = std::max(0, maxBinW - gap);
         result.sheetHeight = maxBinB;
     }

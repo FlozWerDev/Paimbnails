@@ -1,7 +1,7 @@
 #pragma once
 
-// Newgrounds discovery uses search/RSS results; song info, streams, and
-// downloads go through GD's infrastructure to avoid anti-bot blocks.
+// newgrounds discovery uses search/rss results; song info, streams, and
+// downloads go through gd's infrastructure to avoid anti-bot blocks.
 
 #include <functional>
 #include <string>
@@ -14,14 +14,14 @@ struct NewgroundsTrack {
     std::string title;
     std::string artist;
     float sizeMb = 0.f;       // 0 = unknown.
-    std::string streamUrl;    // Decoded URL; empty if unavailable.
-    bool gdAvailable = false; // Known to GD for info/download.
+    std::string streamUrl;    // decoded url; empty if unavailable.
+    bool gdAvailable = false; // known to gd for info/download.
 };
 
 struct NewgroundsListResult {
     bool success = false;
     std::string error;
-    std::string listTitle;    // Display title.
+    std::string listTitle;    // display title.
     std::vector<NewgroundsTrack> tracks;
 };
 
@@ -41,23 +41,23 @@ using NewgroundsListCallback = std::function<void(NewgroundsListResult)>;
 using NewgroundsSongCallback = std::function<void(NewgroundsSongResult)>;
 using NewgroundsDownloadCallback = std::function<void(NewgroundsDownloadResult)>;
 
-// Weekly Audio Top 5 (RSS), hydrated through GD.
+// weekly audio top 5 (rss), hydrated through gd.
 void fetchWeeklyPicks(NewgroundsListCallback callback);
 
-// Search by song name/artist.
+// search by song name/artist.
 void searchNewgroundsSongs(std::string const& query, NewgroundsListCallback callback);
 
-// Session-cached song info by ID.
+// session-cached song info by id.
 void fetchNewgroundsSongInfo(int songId, NewgroundsSongCallback callback);
 
-// Download through MusicDownloadManager, register in the library, and continue
+// download through musicdownloadmanager, register in the library, and continue
 // after the calling popup closes.
 void downloadNewgroundsSong(int songId, NewgroundsDownloadCallback callback);
 bool isNewgroundsSongDownloading(int songId);
 bool isNewgroundsSongDownloaded(int songId);
 std::string newgroundsSongLocalPath(int songId);
 
-// Extract a song ID from a number or Newgrounds audio URL; return 0 if absent.
+// extract a song id from a number or newgrounds audio url; return 0 if absent.
 int parseNewgroundsSongId(std::string const& text);
 
 }

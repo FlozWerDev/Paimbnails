@@ -6,7 +6,7 @@
 namespace paimon::video {
 namespace fs = std::filesystem;
 
-// Keep in sync with getAudioCacheDir() in AudioExtractor.cpp.
+// keep in sync with getaudiocachedir() in audioextractor.cpp.
 static fs::path audioCacheDir() {
     return fs::temp_directory_path() / "paimbnails_audio_cache";
 }

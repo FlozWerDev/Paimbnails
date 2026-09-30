@@ -1,4 +1,4 @@
-// two-way blur ported from EclipseMenu (EPL-2.0); fast mode uses linear weights.
+// two-way blur ported from eclipsemenu (epl-2.0); fast mode uses linear weights.
 
 #version 120
 
@@ -12,10 +12,10 @@ uniform sampler2D CC_Texture0;
 uniform vec2 u_textureSize;
 uniform float u_blurRadius;
 
-// u_blurDirection is (1,0) for H, (0,1) for V.
+// u_blurdirection is (1,0) for h, (0,1) for v.
 uniform vec2 u_blurDirection;
 
-// u_blurFast: 1 linear weights, 0 classic gaussian.
+// u_blurfast: 1 linear weights, 0 classic gaussian.
 uniform float u_blurFast;
 
 void main() {

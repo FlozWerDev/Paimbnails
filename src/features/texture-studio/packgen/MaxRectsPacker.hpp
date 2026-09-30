@@ -1,5 +1,5 @@
 #pragma once
-// BSSF rect packer; (y, x, index) tie-breaks keep output thread-schedule independent. No rotation keeps shelf A/B.
+// bssf rect packer; (y, x, index) tie-breaks keep output thread-schedule independent. no rotation keeps shelf a/b.
 
 #include <algorithm>
 #include <cstddef>
@@ -12,7 +12,7 @@ namespace paimon::texture_studio::packgen {
 struct PackRect {
     int w = 0;
     int h = 0;
-    int id = -1;  // caller tag, preserved in PackPlacement
+    int id = -1;  // caller tag, preserved in packplacement
 };
 
 struct PackPlacement {
@@ -53,7 +53,7 @@ public:
             return out;
         }
 
-        // Deterministic input order: taller first, then wider, then id.
+        // deterministic input order: taller first, then wider, then id.
         std::vector<std::size_t> order(rects.size());
         for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
         std::sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
@@ -62,7 +62,7 @@ public:
             return rects[a].id < rects[b].id;
         });
 
-        // Growing atlas: expand only when the next rect stops fitting; squarer wins, less UV waste.
+        // growing atlas: expand only when the next rect stops fitting; squarer wins, less uv waste.
         int curW = 0, curH = 0;
         for (std::size_t oi : order) {
             int rw = rects[oi].w + m_opts.padding;
@@ -111,7 +111,7 @@ public:
         out.atlasW = std::max(1, usedW);
         out.atlasH = std::max(1, usedH);
         out.fits = true;
-        // Deterministic output order: by id.
+        // deterministic output order: by id.
         std::sort(out.placements.begin(), out.placements.end(),
                   [](PackPlacement const& a, PackPlacement const& b) { return a.id < b.id; });
         return out;
@@ -135,7 +135,7 @@ private:
     Placement findBest(int rw, int rh) const {
         Placement best;
         for (auto const& f : m_free) {
-            // Without rotation.
+            // without rotation.
             if (rw <= f.w && rh <= f.h) {
                 int leftoverH = f.w - rw;
                 int leftoverV = f.h - rh;
@@ -145,7 +145,7 @@ private:
                     best = {f.x, f.y, false, shortFit, longFit};
                 }
             }
-            // With rotation.
+            // with rotation.
             if (m_opts.allowRotate && rh <= f.w && rw <= f.h) {
                 int leftoverH = f.w - rh;
                 int leftoverV = f.h - rw;
@@ -167,12 +167,12 @@ private:
     }
 
     bool grow(int& curW, int& curH, int rw, int rh) {
-        // Right then down; squarer growth wins, either may hit maxSize.
+        // right then down; squarer growth wins, either may hit maxsize.
         bool canRight = curW < m_opts.maxSize;
         bool canDown = curH < m_opts.maxSize;
         int growRightW = std::min(m_opts.maxSize, curW * 2);
         int growDownH = std::min(m_opts.maxSize, curH * 2);
-        // Score squareness of each candidate.
+        // score squareness of each candidate.
         auto squareness = [](int w, int h) {
             return w > h ? (w - h) : (h - w);
         };
@@ -206,7 +206,7 @@ private:
     }
 
     void placeRect(int x, int y, int w, int h) {
-        // Guillotine-split intersecting free rects (shorter axis first), then prune contained.
+        // guillotine-split intersecting free rects (shorter axis first), then prune contained.
         std::vector<FreeRect> next;
         next.reserve(m_free.size() + 2);
         for (auto const& f : m_free) {
@@ -214,15 +214,15 @@ private:
                 next.push_back(f);
                 continue;
             }
-            // Left slab.
+            // left slab.
             if (x > f.x) next.push_back({f.x, f.y, x - f.x, f.h});
-            // Right slab.
+            // right slab.
             if (x + w < f.x + f.w) next.push_back({x + w, f.y, f.x + f.w - (x + w), f.h});
-            // Top slab (within the horizontal overlap).
+            // top slab (within the horizontal overlap).
             int ox0 = std::max(f.x, x);
             int ox1 = std::min(f.x + f.w, x + w);
             if (y > f.y && ox1 > ox0) next.push_back({ox0, f.y, ox1 - ox0, y - f.y});
-            // Bottom slab.
+            // bottom slab.
             if (y + h < f.y + f.h && ox1 > ox0)
                 next.push_back({ox0, y + h, ox1 - ox0, f.y + f.h - (y + h)});
         }

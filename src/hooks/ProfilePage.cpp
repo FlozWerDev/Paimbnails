@@ -55,6 +55,7 @@
 #include <Geode/binding/FLAlertLayer.hpp>
 #include "../features/moderation/services/ModeratorCache.hpp"
 #include "../features/profiles/services/ProfileThumbs.hpp"
+#include "../features/profiles/services/ProfileConfigSerialization.hpp"
 #include "../utils/SpriteHelper.hpp"
 #include "../utils/CommentBgHider.hpp"
 #include "../framework/compat/SceneLocators.hpp"
@@ -87,7 +88,7 @@ using namespace geode::prelude;
 
 class $modify(PaimonProfilePage, ProfilePage) {
     static void onModify(auto& self) {
-        // needs stable node IDs
+        // needs stable node ids
         paimon::hooks::afterNodeIdsOrLate(self, "ProfilePage::loadPageFromUserInfo");
     }
 
@@ -117,7 +118,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         bool m_leaveForClose = false;
         bool m_pausedForTemporaryExit = false;
         bool m_audioCleanedUp = false;
-        // statsMenu can be rebuilt by other mods; no raw label pointer
+        // statsmenu can be rebuilt by other mods; no raw label pointer
         WeakRef<CCLabelBMFont> m_thumbCountLabel;
         int64_t m_statusLastSeen = 0;
         bool m_statusOnline = false;
@@ -125,11 +126,11 @@ class $modify(PaimonProfilePage, ProfilePage) {
         // snapshot the icon set; m_score may be rebuilt before the popup opens
         paimon::iconcopy::IconSet m_iconSet;
 
-        // Ref is intentional; WeakRef assignment can leave this untracked
+        // ref is intentional; weakref assignment can leave this untracked
         Ref<CCMenu> m_usernameMenuCached = nullptr;
 
         // tree-walk targets; cached until vanilla relayout
-        // strong refs: duplicate IDs confuse WeakRef tracking
+        // strong refs: duplicate ids confuse weakref tracking
         Ref<GJCommentListLayer> m_commentListCached = nullptr;
         Ref<CCNode> m_iconBackgroundCached = nullptr;
         Ref<CCNode> m_specialBorderCached = nullptr;
@@ -1045,7 +1046,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         }
 
-        // don't show media until config is known; ScoreCell image would flash as backdrop
+        // don't show media until config is known; scorecell image would flash as backdrop
         auto cachedCfgForMedia = ProfileThumbs::get().getProfileConfig(accountID);
         bool configAllowsMedia = cachedCfgForMedia.hasConfig &&
             cachedCfgForMedia.backgroundType != "none" &&
@@ -1652,11 +1653,11 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         return;
                     }
                     auto parsed = matjson::parse(response);
-                    if (!parsed.isOk()) {
+                    if (!parsed.isOk() || !parsed.unwrap().isObject()) {
                         queueMusicFallback();
                         return;
                     }
-                    auto json = parsed.unwrap();
+                    auto const& json = parsed.unwrap();
 
                     bool isMod = json["isModerator"].asBool().unwrapOr(false);
                     std::string role = json["role"].asString().unwrapOr("");
@@ -1685,36 +1686,18 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
                     int uploadCount = 0;
                     if (json.contains("stats") && json["stats"].isObject()) {
-                        uploadCount = json["stats"]["uploadCount"].asInt().unwrapOr(0);
+                        uploadCount = std::max(0, paimon::json::integerOr<int>(json["stats"]["uploadCount"]));
                     }
 
                     if (json.contains("config") && json["config"].isObject()) {
-                        auto& cfgJson = json["config"];
-                        ProfileConfig pcfg;
-                        pcfg.hasConfig = true;
-                        if (cfgJson.contains("backgroundType"))
-                            pcfg.backgroundType = cfgJson["backgroundType"].asString().unwrapOr("gradient");
-                        if (cfgJson.contains("blurIntensity"))
-                            pcfg.blurIntensity = static_cast<float>(cfgJson["blurIntensity"].asDouble().unwrapOr(3.0));
-                        if (cfgJson.contains("darkness"))
-                            pcfg.darkness = static_cast<float>(cfgJson["darkness"].asDouble().unwrapOr(0.2));
-                        if (cfgJson.contains("useGradient"))
-                            pcfg.useGradient = cfgJson["useGradient"].asBool().unwrapOr(false);
-                        if (cfgJson.contains("widthFactor"))
-                            pcfg.widthFactor = static_cast<float>(cfgJson["widthFactor"].asDouble().unwrapOr(0.60));
-                        if (cfgJson.contains("gradientEffect"))
-                            pcfg.gradientEffect = cfgJson["gradientEffect"].asString().unwrapOr("none");
-                        if (cfgJson.contains("gradientSpeed"))
-                            pcfg.gradientSpeed = static_cast<float>(cfgJson["gradientSpeed"].asDouble().unwrapOr(1.0));
-                        if (cfgJson.contains("useVideoAudio"))
-                            pcfg.useVideoAudio = cfgJson["useVideoAudio"].asBool().unwrapOr(false);
+                        auto pcfg = paimon::profiles::parseConfig(json["config"]);
                         Loader::get()->queueInMainThread([viewedAccountID, pcfg]() {
                             if (paimon::isRuntimeShuttingDown()) return;
                             ProfileThumbs::get().cacheProfileConfig(viewedAccountID, pcfg);
                         });
                     }
 
-// edge-cached bundle can lag after a music change; use the authoritative endpoint
+                    // edge-cached bundle can lag after a music change; use the authoritative endpoint.
                     bool isOwnProfileMusic = false;
                     if (auto* am = GJAccountManager::get()) {
                         isOwnProfileMusic = (am->m_accountID == viewedAccountID);
@@ -1723,17 +1706,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
                     std::optional<ProfileMusicManager::ProfileMusicConfig> bundleMusicConfig;
                     bool hasBundleMusicConfig = json.contains("music");
                     if (hasBundleMusicConfig && json["music"].isObject()) {
-                        auto& musicJson = json["music"];
-                        ProfileMusicManager::ProfileMusicConfig musicCfg;
-                        musicCfg.songID = musicJson["songID"].asInt().unwrapOr(0);
-                        musicCfg.startMs = musicJson["startMs"].asInt().unwrapOr(0);
-                        musicCfg.endMs = musicJson["endMs"].asInt().unwrapOr(20000);
-                        musicCfg.volume = static_cast<float>(musicJson["volume"].asDouble().unwrapOr(0.7));
-                        musicCfg.enabled = musicJson["enabled"].asBool().unwrapOr(true);
-                        musicCfg.songName = musicJson["songName"].asString().unwrapOr("");
-                        musicCfg.artistName = musicJson["artistName"].asString().unwrapOr("");
-                        musicCfg.updatedAt = musicJson["updatedAt"].asString().unwrapOr("");
-                        musicCfg.isCustom = musicJson["isCustom"].asBool().unwrapOr(false);
+                        auto musicCfg = ProfileMusicManager::parseConfig(json["music"]);
                         if (!isOwnProfileMusic) {
                             ProfileMusicManager::get().injectBundleConfig(viewedAccountID, musicCfg);
                             bundleMusicConfig = musicCfg;
@@ -2206,7 +2179,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     void processProfileImg(std::filesystem::path path) {
         std::string ext = geode::utils::string::pathToString(path.extension());
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         bool isVideo = (ext == ".mp4" || ext == ".mov" || ext == ".m4v");
 
         if (isVideo) {

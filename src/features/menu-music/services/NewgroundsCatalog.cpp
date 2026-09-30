@@ -123,7 +123,7 @@ int parseDigitsAt(std::string const& text, std::size_t pos) {
     return parsed.isOk() && parsed.unwrap() > 0 ? parsed.unwrap() : 0;
 }
 
-// Session cache: songId -> track (gdAvailable=false entries cache misses too).
+// session cache: songid -> track (gdavailable=false entries cache misses too).
 std::unordered_map<int, NewgroundsTrack>& infoCache() {
     static std::unordered_map<int, NewgroundsTrack> cache;
     return cache;
@@ -186,7 +186,7 @@ void fetchSongInfoUncached(int songId, NewgroundsSongCallback callback) {
 
             auto parsed = parseSongInfoResponse(songId, response.string().unwrapOr(""));
             if (!parsed) {
-                // Negative-cache so hydration doesn't re-ask this session.
+                // negative-cache so hydration doesn't re-ask this session.
                 infoCache().insert_or_assign(songId, result.track);
                 result.error = "This song is not registered on GD's servers.";
                 if (callback) callback(std::move(result));
@@ -205,7 +205,7 @@ struct SeedTrack {
     std::string title;
 };
 
-// parallel GD info fetch, merged in seed order; unknown seeds keep feed title.
+// parallel gd info fetch, merged in seed order; unknown seeds keep feed title.
 void hydrateSeeds(
     std::vector<SeedTrack> seeds,
     std::string listTitle,
@@ -453,7 +453,7 @@ void downloadNewgroundsSong(int songId, NewgroundsDownloadCallback callback) {
 
     mdm->downloadSong(songId);
 
-    // GD downloads in the background with no completion callback, so poll.
+    // gd downloads in the background with no completion callback, so poll.
     auto attempts = std::make_shared<int>(0);
     auto sharedCallback = std::make_shared<NewgroundsDownloadCallback>(std::move(callback));
     auto poll = std::make_shared<geode::CopyableFunction<void()>>();

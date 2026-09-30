@@ -9,13 +9,13 @@ namespace geode { class TextInput; }
 
 namespace paimon::editorcp {
 
-// Live eyedropper: samples one framebuffer pixel before swap, so the HUD
+// live eyedropper: samples one framebuffer pixel before swap, so the hud
 // stays at the bottom where it cannot contaminate the sample.
 class ColorPickerOverlay : public cocos2d::CCLayer {
 public:
     static void show();
 
-    // Called by the pre-swap hook before the custom cursor is drawn.
+    // called by the pre-swap hook before the custom cursor is drawn.
     static void onPreSwapSample();
 
     bool init() override;

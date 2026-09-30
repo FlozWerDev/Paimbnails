@@ -11,7 +11,7 @@ using paimon::separate_dual::moduleEnabled;
 
 namespace {
 
-// Profile doll node id -> preview type (page layout, kept as data).
+// profile doll node id -> preview type (page layout, kept as data).
 struct ProfileDollRow {
     char const* nodeId;
     IconType type;

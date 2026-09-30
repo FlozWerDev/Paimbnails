@@ -7,7 +7,7 @@ using namespace geode::prelude;
 
 namespace {
 
-// Bins assume 512-point FFT at 44.1kHz.
+// bins assume 512-point fft at 44.1khz.
 float bandAverage(float const* spectrum, int numBins, int lo, int hi) {
     int start = std::min(lo, numBins);
     int end = std::min(hi, numBins);
@@ -58,7 +58,7 @@ void PaimonAudio::activate() {
     FMOD_RESULT res = engine->m_backgroundMusicChannel->addDSP(2, m_fftDSP);
     if (res != FMOD_OK) {
         log::warn("[PaimonAudio] Failed to add FFT DSP to channel (result={})", static_cast<int>(res));
-        // DSP may already be attached — continue anyway
+        // dsp may already be attached — continue anyway
     }
 
     resetValues();
@@ -111,12 +111,12 @@ void PaimonAudio::update(float dt) {
     float rawMid = bandAverage(spectrum, numBins, 8, 48);
     float rawTreble = bandAverage(spectrum, numBins, 48, 128);
 
-    // Adaptive peak tracking (slow decay, fast attack)
+    // adaptive peak tracking (slow decay, fast attack)
     m_peakBass   = std::max(m_peakBass   * (1.f - dt * 0.3f), rawBass   + 0.001f);
     m_peakMid    = std::max(m_peakMid    * (1.f - dt * 0.3f), rawMid    + 0.001f);
     m_peakTreble = std::max(m_peakTreble * (1.f - dt * 0.3f), rawTreble + 0.001f);
 
-    // Normalize relative to running peak (keeps full 0-1 range at any volume)
+    // normalize relative to running peak (keeps full 0-1 range at any volume)
     float normBass   = rawBass   / m_peakBass;
     float normMid    = rawMid    / m_peakMid;
     float normTreble = rawTreble / m_peakTreble;
@@ -125,7 +125,7 @@ void PaimonAudio::update(float dt) {
     m_smoothMid    += (normMid - m_smoothMid)       * std::min(1.f, dt * 12.f);
     m_smoothTreble += (normTreble - m_smoothTreble) * std::min(1.f, dt * 14.f);
 
-    // Beat detection (onset relative to smoothed value, not absolute)
+    // beat detection (onset relative to smoothed value, not absolute)
     float delta = normBass - m_prevBass;
     m_prevBass = normBass;
 

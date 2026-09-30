@@ -88,7 +88,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
     void pushGameColorLayersBehind(CCNode* node, int maxDepth = 3) {
         if (!node || maxDepth <= 0) return;
         std::string_view id = node->getID();
-        // NOTE: match with find(), not starts_with(): IDs set via "_spr"
+        // note: match with find(), not starts_with(): ids set via "_spr"
         // expand to "<mod-id>/paimon-...", so a prefix check never matches.
         if (!id.empty() && id.find("paimon-") != std::string_view::npos) return;
 

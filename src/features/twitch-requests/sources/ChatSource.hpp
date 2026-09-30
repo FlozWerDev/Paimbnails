@@ -13,7 +13,7 @@ enum class Platform { Twitch, YouTube, Kick, TikTok, Web };
 // chats with a typed channel: the ones walking the reconnect loops.
 constexpr int kPlatformCount = 4;
 // the above plus the web page, which is what the screen offers.
-// web has no channel or ChatSource: the GD account already names your URL.
+// web has no channel or chatsource: the gd account already names your url.
 constexpr int kSelectableCount = 5;
 
 char const* platformKey(Platform platform);
@@ -23,21 +23,29 @@ char const* platformPlaceholder(Platform platform);
 Platform platformFromKey(std::string_view key);
 Platform platformFromIndex(int index);
 
-// Cleans what the user typed: handle, slug, url or numeric room id.
+// cleans what the user typed: handle, slug, url or numeric room id.
 std::string normalizeChannel(Platform platform, std::string value);
-// A TikTok room id instead of a handle (they are long numbers).
+// a tiktok room id instead of a handle (they are long numbers).
 bool looksLikeRoomId(std::string_view channel);
-// How the channel reads in the status pill.
+// how the channel reads in the status pill.
 std::string channelLabel(Platform platform, std::string const& channel);
+
+struct ChatMessage {
+    std::string requester;
+    std::string text;
+    std::string messageID;
+    std::string userID;
+    std::string rewardID;
+};
 
 struct ChatCallbacks {
     std::function<void(std::string)> onStatus;               // working on it
     std::function<void(std::string)> onReady;                // reading chat now
-    std::function<void(std::string, std::string)> onMessage;  // requester, text
+    std::function<void(ChatMessage)> onMessage;
     std::function<void(std::string)> onError;                // manager retries
 };
 
-// One live chat connection. Everything downstream only needs onMessage.
+// one live chat connection. everything downstream only needs onmessage.
 class ChatSource {
 public:
     virtual ~ChatSource() = default;
@@ -47,8 +55,8 @@ public:
     virtual bool isOpen() const = 0;
 };
 
-// Shared plumbing: callbacks on the main thread, guarded so nothing fires after
-// the source dies, plus the HTTP calls the polling platforms need.
+// shared plumbing: callbacks on the main thread, guarded so nothing fires after
+// the source dies, plus the http calls the polling platforms need.
 class ChatSourceBase : public ChatSource {
 public:
     void stop() override;
@@ -59,6 +67,7 @@ protected:
     void status(std::string text) const;
     void ready(std::string text) const;
     void deliver(std::string requester, std::string text) const;
+    void deliver(ChatMessage message) const;
     void fail(std::string error);
 
     bool stopped() const { return m_stopped; }

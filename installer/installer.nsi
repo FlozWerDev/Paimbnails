@@ -1,5 +1,5 @@
-; Paimbnails Mod Installer for Geometry Dash
-; Minimal installer - copies .geode to geode\mods
+; paimbnails mod installer for geometry dash
+; minimal installer - copies .geode to geode\mods
 
 !include "MUI2.nsh"
 
@@ -24,9 +24,9 @@ VIAddVersionKey "LegalCopyright" "FlozWer"
 !define MUI_FINISHPAGE_NOAUTOCLOSE
 BrandingText "Paimbnails by FlozWer"
 
-; Custom welcome/finish banner (banner.bmp) is optional and not tracked in the
-; repo (6 MB). If present next to this script, use it; otherwise fall back to
-; NSIS's default wizard bitmap so the installer still builds in CI.
+; custom welcome/finish banner (banner.bmp) is optional and not tracked in the
+; repo (6 mb). if present next to this script, use it; otherwise fall back to
+; nsis's default wizard bitmap so the installer still builds in ci.
 !if /FileExists "banner.bmp"
     !define MUI_WELCOMEFINISHPAGE_BITMAP "banner.bmp"
     !define MUI_UNWELCOMEFINISHPAGE_BITMAP "banner.bmp"
@@ -43,7 +43,7 @@ BrandingText "Paimbnails by FlozWer"
 Var GDPath
 
 Function .onInit
-    ; Try to detect geode\mods automatically
+    ; try to detect geode\mods automatically
     StrCpy $GDPath "$PROGRAMFILES32\Steam\steamapps\common\Geometry Dash\geode\mods"
     IfFileExists $GDPath 0 tryNext
         StrCpy $INSTDIR $GDPath
@@ -71,7 +71,7 @@ Function .onInit
 FunctionEnd
 
 Function .onVerifyInstDir
-    ; Verify this is a geode\mods folder by checking parent is Geometry Dash
+    ; verify this is a geode\mods folder by checking parent is geometry dash
     IfFileExists "$INSTDIR\..\GeometryDash.exe" 0 check2
         Return
     check2:

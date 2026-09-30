@@ -22,7 +22,7 @@ class $modify(ProgressionEndLevelLayer, EndLevelLayer) {
         auto& service = ProgressionService::get();
         if (!service.enabled()) return;
 
-        // Stats settle while the end screen builds; defer so the toast has a scene.
+        // stats settle while the end screen builds; defer so the toast has a scene.
         paimon::scheduleMainThreadDelay(0.45f, []() {
             if (paimon::isRuntimeShuttingDown()) return;
 

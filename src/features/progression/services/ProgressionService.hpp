@@ -27,13 +27,13 @@ public:
 
     bool enabled() const;
 
-    // Live six from the save; rest from the last synced score.
+    // live six from the save; rest from the last synced score.
     BadgeContext ownContext();
 
-    // The local save can't rebuild these parts.
+    // the local save can't rebuild these parts.
     void rememberOwnScore(GJUserScore* score);
 
-    // Nullopt on first call or when nothing moved.
+    // nullopt on first call or when nothing moved.
     std::optional<ProgressDelta> consumeDelta();
 
     void commitSnapshot();

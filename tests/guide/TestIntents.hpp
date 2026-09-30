@@ -4,10 +4,10 @@
 #include <vector>
 #include <string>
 
-// Test fixture mirroring PopupRegistry (functional intents) and
-// PaimonGuideService (conversational intents). Kept in sync by hand; it exists
-// so PaigoritV1 can be exercised host-side without the Geode SDK or real popups.
-// If the registry weights/keywords change, update this table.
+// test fixture mirroring popupregistry (functional intents) and
+// paimonguideservice (conversational intents). kept in sync by hand; it exists
+// so paigoritv1 can be exercised host-side without the geode sdk or real popups.
+// if the registry weights/keywords change, update this table.
 
 namespace paimon::guide::test {
 
@@ -50,7 +50,7 @@ inline GuideIntent conv(std::string id, int weight,
 inline std::vector<GuideIntent> makeIntents() {
     std::vector<GuideIntent> v;
 
-    // ---- Functional (mirrors PopupRegistry::registerAll) ----
+    // ---- functional (mirrors popupregistry::registerall) ----
     v.push_back(func("profile-background", 130,
         "Profile Background", {"profile bg", "profile wallpaper", "pfp background"},
         "Fondo de Perfil", {"fondo perfil", "wallpaper perfil", "fondo del perfil"}));
@@ -164,7 +164,7 @@ inline std::vector<GuideIntent> makeIntents() {
         "Mod Settings", {"settings", "preferences", "options", "language", "translate"},
         "Ajustes del Mod", {"ajustes", "preferencias", "opciones", "idioma", "lenguaje"}));
 
-    // New feature intents (mirror PopupRegistry round added for full coverage)
+    // new feature intents (mirror popupregistry round added for full coverage)
     v.push_back(func("smooth-scroll", 80,
         "Smooth Scroll", {"smooth scroll", "smooth scrolling", "scroll suave", "list scrolling"},
         "Scroll Suave", {"scroll suave", "desplazamiento suave", "scroll fluido"},
@@ -240,7 +240,7 @@ inline std::vector<GuideIntent> makeIntents() {
         {"blur level info screen", "style level info background"},
         {"blur en pantalla de info", "estilo del fondo de info del nivel"}));
 
-    // ---- Editor + misc (full mod coverage) ----
+    // ---- editor + misc (full mod coverage) ----
     v.push_back(func("editor-history", 88,
         "Editor History", {"editor history", "undo history", "redo", "undo browser", "object history", "ctrl h"},
         "Historial del Editor", {"historial del editor", "historial de undo", "deshacer", "rehacer", "historial de objetos"},
@@ -314,7 +314,7 @@ inline std::vector<GuideIntent> makeIntents() {
         {"softer popups", "smooth button animations", "enable smooth ui"},
         {"popups mas suaves", "animaciones suaves de botones", "activar ui suave"}));
 
-    // ---- Round 9: new features (mirror PopupRegistry additions) ----
+    // ---- round 9: new features (mirror popupregistry additions) ----
     v.push_back(func("icon-maker", 95,
         "Icon Maker", {"icon maker", "icon creator", "make icons", "create icons", "custom icon editor", "draw icons", "icon editor"},
         "Creador de Iconos", {"creador de iconos", "hacer iconos", "crear iconos", "editor de iconos", "dibujar iconos", "icono personalizado"},
@@ -382,7 +382,7 @@ inline std::vector<GuideIntent> makeIntents() {
         {"see hidden level info", "jump to a page in the browser", "track my progress", "see where i die most"},
         {"ver info oculta del nivel", "saltar a una pagina del browser", "seguir mi progreso", "ver donde muero mas"}));
 
-    // ---- Conversational (mirrors PaimonGuideService::registerIntents) ----
+    // ---- conversational (mirrors paimonguideservice::registerintents) ----
     v.push_back(conv("help-general", 40,
         {"help", "guide", "tutorial", "what can you do", "options"},
         {"ayuda", "guia", "tutorial", "que puedes hacer", "opciones"}));
@@ -411,7 +411,7 @@ inline std::vector<GuideIntent> makeIntents() {
         {"what can you do", "what do you do", "your features", "your capabilities"},
         {"que sabes hacer", "que puedes hacer", "tus funciones", "que opciones hay"}));
 
-    // Mod-knowledge intents (mirror PaimonGuideService step 3)
+    // mod-knowledge intents (mirror paimonguideservice step 3)
     v.push_back(conv("mod-about", 42,
         {"what is paimbnails", "about paimbnails", "about the mod", "what is this mod",
          "tell me about paimbnails", "what does this mod do", "paimbnails"},
@@ -438,7 +438,7 @@ inline std::vector<GuideIntent> makeIntents() {
         {"support", "contact", "report a bug", "report bug", "get help", "i found a bug", "need support"},
         {"soporte", "contacto", "reportar un error", "reportar bug", "encontre un error", "necesito soporte"}));
 
-    // Small-talk intents (mirror PaimonGuideService step 4)
+    // small-talk intents (mirror paimonguideservice step 4)
     v.push_back(conv("weather", 22,
         {"what is the weather", "is it cold", "is it hot", "is it raining", "temperature"},
         {"que tiempo hace", "hace frio", "hace calor", "esta lloviendo", "temperatura"}));

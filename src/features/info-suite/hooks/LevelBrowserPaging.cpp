@@ -1,4 +1,4 @@
-// Jump To Page: replaces the vanilla capped SetIDPopup with our own, and
+// jump to page: replaces the vanilla capped setidpopup with our own, and
 // optionally returns to the page you left a search on.
 
 #include "../InfoModule.hpp"
@@ -35,7 +35,7 @@ class $modify(PaimonInfoSuiteBrowser, LevelBrowserLayer) {
     }
 
     bool init(GJSearchObject* object) {
-        // Restore before the base init so the first request already asks for the
+        // restore before the base init so the first request already asks for the
         // remembered page instead of loading page 1 and then jumping.
         if (object && rememberEnabled() && object->m_page == 0) {
             if (auto stored = paimon::info::InfoStore::get().lastPage(searchKey(object))) {
@@ -54,7 +54,7 @@ class $modify(PaimonInfoSuiteBrowser, LevelBrowserLayer) {
     }
 
     void onBack(CCObject* sender) {
-        // Flush here rather than on every page turn: leaving the browser is the
+        // flush here rather than on every page turn: leaving the browser is the
         // natural checkpoint and keeps the file off the hot path.
         if (rememberEnabled()) paimon::info::InfoStore::get().save();
         LevelBrowserLayer::onBack(sender);
@@ -66,7 +66,7 @@ class $modify(PaimonInfoSuiteBrowser, LevelBrowserLayer) {
             return;
         }
 
-        // m_lastPage is the last index the server reported; 0 means "unknown",
+        // m_lastpage is the last index the server reported; 0 means "unknown",
         // which happens on searches that never return a total.
         int pageCount = std::max(0, m_lastPage + 1);
         int current = m_searchObject->m_page + 1;

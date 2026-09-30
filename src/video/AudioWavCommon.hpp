@@ -4,16 +4,16 @@
 #include <mutex>
 #include <string>
 
-// WAV-cache helpers shared by all audio backends.
+// wav-cache helpers shared by all audio backends.
 namespace paimon::video::detail {
 
-// Recursive: extractAudioToWav wraps extractAudioToPcm.
+// recursive: extractaudiotowav wraps extractaudiotopcm.
 std::recursive_mutex& audioExtractorMutex();
 
-// Stable hash of the video path.
+// stable hash of the video path.
 std::string makeWavPath(const std::string& videoPath);
 
-// Canonical 44-byte PCM WAV header. Sizes are patched after the data is known.
+// canonical 44-byte pcm wav header. sizes are patched after the data is known.
 #pragma pack(push, 1)
 struct WavHeader {
     char     riff[4]        = {'R', 'I', 'F', 'F'};
@@ -21,7 +21,7 @@ struct WavHeader {
     char     wave[4]        = {'W', 'A', 'V', 'E'};
     char     fmt[4]         = {'f', 'm', 't', ' '};
     uint32_t fmtSize        = 16;
-    uint16_t audioFormat    = 1;  // PCM
+    uint16_t audioFormat    = 1;  // pcm
     uint16_t numChannels    = 0;
     uint32_t sampleRate     = 0;
     uint32_t byteRate       = 0;
@@ -34,7 +34,7 @@ struct WavHeader {
 
 static_assert(sizeof(WavHeader) == 44, "WAV header must be 44 bytes");
 
-// Removes any partial file on failure.
+// removes any partial file on failure.
 bool writeWavFile(const std::string& wavPath,
                   const uint8_t* pcm, size_t pcmBytes,
                   uint16_t numChannels, uint32_t sampleRate,

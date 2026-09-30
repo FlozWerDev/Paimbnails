@@ -28,7 +28,7 @@ constexpr std::array<CardDef, kCardCount> kCards = {{
     {C::Checkpoint, "checkpoint", "Beacon",     R::Rare,      T::Self,  0.0f,  ModePlatformer},
     {C::Dispel,     "dispel",     "Purge",      R::Rare,      T::Self,  0.0f,  ModeAny},
     {C::Bolt,       "bolt",       "Spark",      R::Rare,      T::Self,  0.0f,  ModeAny},
-    // Inverting inputs is unplayable in classic, so the mirror only flips the
+    // inverting inputs is unplayable in classic, so the mirror only flips the
     // camera; the read is scrambled without making the level impossible.
     {C::Mirror,     "mirror",     "Mirror",     R::Epic,      T::Rival, 5.0f,  ModeAny},
     {C::Freeze,     "freeze",     "Frost",      R::Epic,      T::Rival, 0.35f, ModeAny},
@@ -122,7 +122,7 @@ std::array<int, 4> rarityWeights(float deficit, bool catchUp) {
     std::array<int, 4> weights = {520, 300, 140, 40};
     if (!catchUp || deficit <= 0.f) return weights;
 
-    // Full swing at a 25 point gap; past that it stops helping, or a blowout
+    // full swing at a 25 point gap; past that it stops helping, or a blowout
     // would hand the loser a legendary every milestone.
     float const t = std::min(deficit / 25.f, 1.f) * 0.35f;
     int const moved = static_cast<int>(weights[0] * t);

@@ -15,12 +15,12 @@ namespace paimon::icon_maker {
 
 namespace {
 
-// Keep the TaskHolder alive so Geode 5.4+ doesn't garbage-collect the pending
-// pick before the OS dialog returns (same pattern as utils/FileDialog.cpp).
+// keep the taskholder alive so geode 5.4+ doesn't garbage-collect the pending
+// pick before the os dialog returns (same pattern as utils/filedialog.cpp).
 using PickHolder =
     geode::async::TaskHolder<Result<std::optional<std::filesystem::path>>>;
-// See FileDialog.cpp: do not let TaskHolder's destructor race Geode's runtime
-// destructor. RuntimeLifecycle explicitly cancels the pending operation.
+// see filedialog.cpp: do not let taskholder's destructor race geode's runtime
+// destructor. runtimelifecycle explicitly cancels the pending operation.
 PickHolder& s_pickHolder = *new PickHolder();
 
 gfile::FilePickOptions::Filter paimbiconFilter() {

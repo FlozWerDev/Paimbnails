@@ -13,7 +13,7 @@ using namespace cocos2d;
 
 class $modify(PaimonShareComment, ShareCommentLayer) {
     struct Fields {
-        // WeakRef avoids dangling toolbar nodes during teardown
+        // weakref avoids dangling toolbar nodes during teardown
         WeakRef<CCMenu> m_toolMenu;
         WeakRef<CCMenuItemSpriteExtra> m_copyBtn;
         WeakRef<CCMenuItemSpriteExtra> m_pasteBtn;

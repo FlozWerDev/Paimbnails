@@ -17,13 +17,13 @@ namespace paimon::video {
 struct VideoPlayerCreateOptions {
     bool requireCanonicalAudio = false;
     bool enableAudio = false;
-    // legacy CPU path; GPU YUV resolves via FBO on demand.
+    // legacy cpu path; gpu yuv resolves via fbo on demand.
     bool forceRGBA = false;
 };
 
 class VideoPlayer {
 public:
-    // Call once from mod bootstrap on the Cocos main thread.
+    // call once from mod bootstrap on the cocos main thread.
     static void bindMainThreadId();
 
     static std::unique_ptr<VideoPlayer> create(const std::string& videoPath);
@@ -50,7 +50,7 @@ public:
 
     cocos2d::CCTexture2D* getResolvedRGBATexture();
 
-    // GPU YUV mode: caller binds Cb/Cr with the shader.
+    // gpu yuv mode: caller binds cb/cr with the shader.
     cocos2d::CCGLProgram* getYUVShaderProgram() const;
     cocos2d::CCTexture2D* getTextureCb() const;
     cocos2d::CCTexture2D* getTextureCr() const;
@@ -71,7 +71,7 @@ public:
 
     void releaseGPUResolveCache();
 
-    // Audio API kept for LayerBackgroundManager compatibility.
+    // audio api kept for layerbackgroundmanager compatibility.
     void fadeAudioIn(float duration = 0.5f);
     void fadeAudioOut(float duration = 0.5f, std::function<void()> onComplete = nullptr);
     bool hasAudio() const;
@@ -84,7 +84,7 @@ private:
 
     void initTexture(int width, int height);
     void initYUVTextures(int width, int height);
-    // GL thread only.
+    // gl thread only.
     void prepareGPUPipeline();
     bool uploadFrameGPU(const IVideoDecoder::Frame& frame);
     bool uploadFrame(const IVideoDecoder::Frame& frame);
@@ -96,7 +96,7 @@ private:
 
     std::unique_ptr<IVideoDecoder> m_decoder;
 
-    // PBO-uploaded RGBA texture; manual retain/release keeps shared sprites safe.
+    // pbo-uploaded rgba texture; manual retain/release keeps shared sprites safe.
     cocos2d::CCTexture2D* m_texture = nullptr;
     uint8_t* m_rgbaBuffer = nullptr;
 
@@ -109,7 +109,7 @@ private:
     PBOUploader m_pboUploader;
     PBOUploader m_pboUploaderYUV;
     bool m_pboInitAttempted = false;
-    // Outlives the player so deferred GPU-init lambdas cannot use freed state.
+    // outlives the player so deferred gpu-init lambdas cannot use freed state.
     std::shared_ptr<std::atomic<uint64_t>> m_gpuInitGate =
         std::make_shared<std::atomic<uint64_t>>(0);
 
@@ -124,7 +124,7 @@ private:
     bool   m_hasVisibleFrame = false;
     bool   m_pendingUpload = false;
     bool   m_decoderStalled = false;
-    // Decoder rewinds itself at EOS; playback time follows the PTS jump.
+    // decoder rewinds itself at eos; playback time follows the pts jump.
     bool   m_decoderLoops = false;
 
     std::string m_filePath;
@@ -133,7 +133,7 @@ private:
     double m_timeSincePlay = 0.0;
     uint64_t m_frameCounter = 0;
 
-    // Avoid duplicate updates when several nodes share a player.
+    // avoid duplicate updates when several nodes share a player.
     unsigned int m_lastUpdateFrame = 0;
 
     std::function<void()> m_onFinished;
@@ -151,7 +151,7 @@ private:
     GLint m_locCr = -1;
     GLint m_locY  = -1;
     GLint m_locCS = -1;
-    float m_colorSpace = 0.0f;  // 0=BT.601, 1=BT.709
+    float m_colorSpace = 0.0f;  // 0=bt.601, 1=bt.709
     uint64_t m_resolvedAtFrame = 0;
     mutable GLuint m_readbackFBO = 0;
     bool ensureResolveTarget();

@@ -17,13 +17,13 @@ namespace {
 
 constexpr float kDryCutoffHz = 22000.f;
 
-// SFXREVERB takes its wet level in dB; -80 is silence.
+// sfxreverb takes its wet level in db; -80 is silence.
 float wetLevelDb(float percent) {
     if (percent <= 0.01f) return -80.f;
     return std::clamp(20.f * std::log10(percent / 100.f), -80.f, 0.f);
 }
 
-// Frequency reads logarithmically, so a linear slide from 22 kHz to 500 Hz
+// frequency reads logarithmically, so a linear slide from 22 khz to 500 hz
 // spends almost the whole ramp in a range nobody can hear moving.
 float glideHz(float dry, float wetHz, float t) {
     if (t <= 0.f) return dry;
@@ -31,7 +31,7 @@ float glideHz(float dry, float wetHz, float t) {
     return dry * std::pow(wetHz / dry, t);
 }
 
-// Ticker for the wetness ramp. Registered straight with the scheduler because
+// ticker for the wetness ramp. registered straight with the scheduler because
 // the node never joins the scene tree (same trick the fade node uses).
 class SubmergeTickerNode : public cocos2d::CCNode {
 public:
@@ -75,7 +75,7 @@ SubmergeEffect& SubmergeEffect::get() {
 
 void SubmergeEffect::bindTarget(FMOD::ChannelControl* target) {
     if (m_target == target) return;
-    // Whatever was playing through the old target keeps its dry signal.
+    // whatever was playing through the old target keeps its dry signal.
     if (m_attached && m_attached != target) detachDsps();
     m_target = target;
     if (m_target && m_wet > 0.0001f && ensureDsps()) applyWetness(m_wet);
@@ -97,7 +97,7 @@ void SubmergeEffect::rampTo(float wet, float seconds) {
     m_ramping = true;
 
     if (m_to > m_from && !ensureDsps()) {
-        // No DSPs available: stay dry rather than pretend.
+        // no dsps available: stay dry rather than pretend.
         m_ramping = false;
         return;
     }
@@ -150,7 +150,7 @@ void SubmergeEffect::tick(float dt) {
 
     m_elapsed += dt;
     float const t = std::clamp(m_elapsed / std::max(m_duration, 0.016f), 0.f, 1.f);
-    // Quadratic ease-in-out, same shape as the volume fade so a dive that runs
+    // quadratic ease-in-out, same shape as the volume fade so a dive that runs
     // alongside one moves with it.
     float const eased = (t < 0.5f) ? (2.f * t * t) : (1.f - std::pow(-2.f * t + 2.f, 2.f) / 2.f);
 
@@ -173,7 +173,7 @@ bool SubmergeEffect::ensureDsps() {
     auto* engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_system) return false;
 
-    // No explicit target means the shared music group, which is where a local
+    // no explicit target means the shared music group, which is where a local
     // song plays.
     auto* target = m_target ? m_target
                             : static_cast<FMOD::ChannelControl*>(engine->m_backgroundMusicChannel);
@@ -196,7 +196,7 @@ bool SubmergeEffect::ensureDsps() {
         return false;
     }
 
-    // Added head-first, so the last one in (gain) is applied last.
+    // added head-first, so the last one in (gain) is applied last.
     FMOD::DSP* chain[] = {m_lowpassDsp, m_highpassDsp, m_reverbDsp, m_gainDsp};
     for (auto* dsp : chain) {
         if (target->addDSP(FMOD_CHANNELCONTROL_DSP_HEAD, dsp) != FMOD_OK) {
@@ -273,7 +273,7 @@ void SubmergeEffect::startTicker() {
 }
 
 void SubmergeEffect::stopTicker() {
-    // Runs during shutdown too: the scheduler is still alive there, and an
+    // runs during shutdown too: the scheduler is still alive there, and an
     // orphaned selector is exactly what we are trying to avoid.
     if (!m_ticker) return;
     static_cast<SubmergeTickerNode*>(m_ticker)->stop();
@@ -282,7 +282,7 @@ void SubmergeEffect::stopTicker() {
 void SubmergeEffect::destroyTicker() {
     if (!m_ticker) return;
 
-    // ~CCNode unschedules itself, so it needs the scheduler to still exist. If
+    // ~ccnode unschedules itself, so it needs the scheduler to still exist. if
     // cocos is already gone we drop the pointer instead of touching dead state.
     auto* director = cocos2d::CCDirector::get();
     if (!director || !director->getScheduler()) {

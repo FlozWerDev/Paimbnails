@@ -101,7 +101,7 @@ char const* milestoneButton(HistoryEntry const& entry, HistoryMilestone mileston
     }
 }
 
-// Pre-measured icon + text, so chips chain in a row.
+// pre-measured icon + text, so chips chain in a row.
 CCNode* makeChip(std::vector<char const*> const& frames, std::string const& text,
                  ccColor3B color, float iconScale, float textScale, float maxTextWidth = 0.f) {
     constexpr float height = 13.f;
@@ -131,7 +131,7 @@ CCNode* makeChip(std::vector<char const*> const& frames, std::string const& text
     return chip;
 }
 
-// Lays chips left to right, dropping what no longer fits.
+// lays chips left to right, dropping what no longer fits.
 void flowChips(CCNode* parent, std::vector<CCNode*> const& chips, float x, float y,
                float maxWidth) {
     float cursor = 0.f;
@@ -157,7 +157,7 @@ CCNode* makeBadge(std::string const& text, char const* background) {
     return badge;
 }
 
-// Star count (moons on platformer) centered on a point.
+// star count (moons on platformer) centered on a point.
 void addStarBadge(CCNode* parent, int stars, bool platformer, CCPoint center,
                   float textScale, float iconScale) {
     if (stars <= 0) return;
@@ -188,7 +188,7 @@ void addStarBadge(CCNode* parent, int stars, bool platformer, CCPoint center,
     }
 }
 
-// One of four milestone tiles: art on top, what in the middle, when below.
+// one of four milestone tiles: art on top, what in the middle, when below.
 void addTile(CCNode* parent, int slot, float width, float height, CCNode* icon,
              std::string const& caption, std::string const& value, ccColor3B valueColor,
              char const* valueFont) {
@@ -295,7 +295,7 @@ void LevelHistoryPopup::loadHistory() {
         if (auto popup = self.lock()) popup->applyHistory(std::move(root));
     });
 
-    // upload date never comes from snapshots: GDHistory's separate estimate,
+    // upload date never comes from snapshots: gdhistory's separate estimate,
     // usually arriving after the list.
     gdhistory::requestLevelDate(levelID, [self](std::string const& date) {
         auto popup = self.lock();
@@ -470,9 +470,7 @@ CCNode* LevelHistoryPopup::makeMilestoneBlock(float width) {
     auto* block = makeBlock(width, kMilesH, 85);
     float const tileW = width / 4.f;
 
-    // exact dates read gold; bounded ("before...") or never-happened stays gray.
-    //
-    // Upload date: GDHistory's estimate once it lands, else the oldest snapshot.
+    // exact dates use gold; estimates use gray. prefer server history over the oldest snapshot.
     auto* uploadIcon = firstFrame({"GJ_timeIcon_001.png"});
     if (uploadIcon) uploadIcon->setScale(0.5f);
     addTile(block, 0, tileW, kMilesH, uploadIcon,

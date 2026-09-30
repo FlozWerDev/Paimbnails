@@ -27,7 +27,7 @@ Vec2 rotate(Vec2 value, float angle) {
 
 float directionOf(Vec2 velocity) {
     if (std::abs(velocity.x) < 0.0001f && std::abs(velocity.y) < 0.0001f) return 0.f;
-    // Advanced Follow uses 0 = up, 90 = right, 180 = down, 270 = left.
+    // advanced follow uses 0 = up, 90 = right, 180 = down, 270 = left.
     float degrees = std::atan2(velocity.x, velocity.y) * kRadiansToDegrees;
     if (degrees < 0.f) degrees += 360.f;
     return degrees;
@@ -38,7 +38,7 @@ float lengthOf(Vec2 velocity) {
 }
 
 std::array<float, 4> sideDirections() {
-    // A hit on the left pushes right, a hit on the right pushes left, etc.
+    // a hit on the left pushes right, a hit on the right pushes left, etc.
     return {90.f, 270.f, 0.f, 180.f};
 }
 
@@ -47,7 +47,7 @@ void addManifestGroup(NativeNode& node, int manifestGroup) {
 }
 
 Vec2 triggerPosition(NativeLayout const& layout, std::size_t& slot) {
-    // Six columns avoid producing a several-screen-tall trigger stack for a
+    // six columns avoid producing a several-screen-tall trigger stack for a
     // body with all four player and world sensors enabled.
     std::size_t const column = slot % 6;
     std::size_t const row = slot / 6;
@@ -59,8 +59,8 @@ Vec2 triggerPosition(NativeLayout const& layout, std::size_t& slot) {
 }
 
 void addNode(TriggerGraph& graph, NativeLayout const& layout, NativeNode node) {
-    // Position-triggered nodes must start on the same player crossing. The
-    // display grid is only safe for nodes activated through Spawn/Collision.
+    // position-triggered nodes must start on the same player crossing. the
+    // display grid is only safe for nodes activated through spawn/collision.
     if (node.kind != NativeNodeKind::CollisionBlock && !node.spawnTriggered) {
         node.position.x = layout.triggerOrigin.x;
     }
@@ -159,7 +159,7 @@ NativeProfile nativeProfile(
 ) {
     float const strength = clampStrength(rawSettings.strength);
     float const gravity = std::abs(worldGravity * body.gravityScale);
-    // Mass changes how strongly contacts alter velocity. Square root keeps
+    // mass changes how strongly contacts alter velocity. square root keeps
     // very large compound bodies usable while still making them feel heavier.
     float const massResponse = 1.f / std::clamp(
         std::sqrt(std::max(0.1f, body.mass)), 0.5f, 4.f
@@ -260,7 +260,7 @@ NativeRequirements estimateNativeRequirements(
         } else {
             ++result.groups; // root group; an existing exact group may replace this later
             ++result.controls;
-            ++result.estimatedObjects; // Advanced Follow
+            ++result.estimatedObjects; // advanced follow
         }
         bool const playerSensors = profile.collideWithPlayer &&
             (body.settings.targetPlayer1 || body.settings.targetPlayer2);
@@ -280,8 +280,8 @@ NativeRequirements estimateNativeRequirements(
         }
         if (profile.gravityImpulse > 0.f) {
             ++result.groups;
-            // One additive velocity edit per Advanced Follow channel, plus the
-            // recursive Spawn and its non-spawn-triggered starter.
+            // one additive velocity edit per advanced follow channel, plus the
+            // recursive spawn and its non-spawn-triggered starter.
             result.estimatedObjects += motionChannels + 2;
         }
         if (profile.useAnchor) {
@@ -314,9 +314,7 @@ TriggerGraph buildNativeTriggerGraph(
     if (layout.bodies.size() != bodies.size()) return graph;
     std::size_t triggerSlot = 0;
 
-    // All fixed fixtures share one Block ID. GD permits several Collision
-    // Blocks with the same ID, which keeps every dynamic body at four world
-    // collision registrations instead of four per static fixture.
+    // sharing one block id keeps world collisions at four registrations per dynamic body.
     if (layout.staticWorldBlockID > 0) {
         for (auto const& body : bodies) {
             if (body.spec.motion != Motion::Static) continue;
@@ -440,7 +438,7 @@ TriggerGraph buildNativeTriggerGraph(
             float const height = std::max(6.f, bounds.maxY - bounds.minY);
             float const centerX = (bounds.minX + bounds.maxX) * 0.5f;
             float const centerY = (bounds.minY + bounds.maxY) * 0.5f;
-            // Sensors straddle the body's edge: hung outside, the padding became
+            // sensors straddle the body's edge: hung outside, the padding became
             // the gap the body kept with the floor.
             std::array<Vec2, 4> positions{{
                 {bounds.minX, centerY},
@@ -579,7 +577,7 @@ TriggerGraph buildNativeTriggerGraph(
 
         if (std::abs(body.spec.angularVelocity) > 0.001f && !profile.rotateToDirection) {
             constexpr float duration = 600.f;
-            // Solver angles grow counter-clockwise; GD/Cocos rotations grow clockwise.
+            // solver angles grow counter-clockwise; gd/cocos rotations grow clockwise.
             float const rotations = -body.spec.angularVelocity * duration /
                 (2.f * std::numbers::pi_v<float>);
             NativeNode rotateNode;

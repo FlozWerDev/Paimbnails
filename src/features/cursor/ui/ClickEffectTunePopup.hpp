@@ -7,7 +7,7 @@
 
 class ClickEffectTunePopup : public geode::Popup {
 public:
-    // `onChange` gets (size, speed) per slider move; `onTest` previews behind.
+    // `onchange` gets (size, speed) per slider move; `ontest` previews behind.
     static ClickEffectTunePopup* create(
         std::string title, std::string desc,
         float size, float speed,

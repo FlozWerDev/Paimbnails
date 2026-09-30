@@ -1,5 +1,5 @@
-// Shades SimplePlayer preview dolls, skipping in-game ones, after zilko's
-// "Icon Gradients" (independent implementation; idea credit zilko144, unlicensed).
+// shades simpleplayer preview dolls, skipping in-game ones, after zilko's
+// "icon gradients" (independent implementation; idea credit zilko144, unlicensed).
 
 #include "GradientSimplePlayer.hpp"
 #include "../GradientCache.hpp"
@@ -14,7 +14,7 @@ void GradientSimplePlayer::updatePlayerFrame(int p0, IconType type) {
 
     m_fields->m_type = type;
 
-    // Stash the doll for the dual-exit effect while in-game.
+    // stash the doll for the dual-exit effect while in-game.
     if (GJBaseGameLayer* bgl = GJBaseGameLayer::get()) {
         auto f = static_cast<GradientBaseGameLayer*>(bgl)->m_fields.self();
         if (f->isExitingDual) f->dualSimplePlayer = this;

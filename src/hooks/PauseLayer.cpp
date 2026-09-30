@@ -66,7 +66,7 @@ static std::vector<uint8_t> convertRGBAtoRGB(const uint8_t* rgba, int w, int h) 
     return rgb;
 }
 
-// Encode and analyze off-thread; call onMainDone on the main thread.
+// encode and analyze off-thread; call onmaindone on the main thread.
 static void processAcceptedCaptureAsync(
     std::shared_ptr<uint8_t> buf, int w, int h, bool extractColors,
     std::function<void(bool encoded, std::vector<uint8_t> pngData,
@@ -167,7 +167,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             if (auto byId = typeinfo_cast<CCMenu*>(this->getChildByID(id))) {
                 return byId;
             }
-            // fallback to the side menu containing known PauseLayer buttons
+            // fallback to the side menu containing known pauselayer buttons
             auto winSize = CCDirector::get()->getWinSize();
             static char const* const kRightSideKnownIDs[] = {
                 "resume-button", "practice-button", "quit-button", nullptr
@@ -225,7 +225,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
         if (!Mod::get()->getSettingValue<bool>("enable-thumbnail-taking")) return;
 
-        // customSetup may repeat; do not duplicate the button
+        // customsetup may repeat; do not duplicate the button
         if (rightMenu->getChildByID("thumbnail-capture-button"_spr)) return;
 
         auto spr = tryCreateIcon();
@@ -307,7 +307,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             rewireScreenshotInMenu(findButtonMenu("left-button-menu", false));
     }
 
-    // PlayLayer's CCNode hook filters this layer because PauseLayer has no visit hook
+    // playlayer's ccnode hook filters this layer because pauselayer has no visit hook
 
     void onWebRequestFeedback(CCObject*) {
         auto* play = PlayLayer::get();
@@ -386,7 +386,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             return;
         }
 
-        // avoid racing PlayLayer's capture keybind or orphaning its callback
+        // avoid racing playlayer's capture keybind or orphaning its callback
         if (paimon::isCaptureInProgress()) {
             log::warn("[PauseLayer] Captura por keybind ya en curso, ignorando boton");
             PaimonNotify::create(
@@ -405,12 +405,12 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
         bool const visBefore = this->isVisible();
         this->setVisible(false);
-        // Prevent the zoom ticker from restoring it before swapBuffers().
+        // prevent the zoom ticker from restoring it before swapbuffers().
         paimon::setCaptureInProgress(true);
         m_fields->m_captureInProgress = true;
 
         showLoadingOverlay();
-        // restore the UI if the callback never returns
+        // restore the ui if the callback never returns
         this->scheduleOnce(schedule_selector(PaimonPauseLayer::captureSafetyRestore), 8.0f);
 
         auto* director = CCDirector::get();
@@ -504,7 +504,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             schedule_selector(PaimonPauseLayer::performCaptureAndRestore), this
         );
 
-        // Restart may detach the pause menu during the delay.
+        // restart may detach the pause menu during the delay.
         if (!this->getParent()) {
             log::warn("[PauseLayer] performCaptureAndRestore called on orphaned PauseLayer");
             m_fields->m_captureInProgress = false;
@@ -547,7 +547,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             this, 0.0f, 0, 0.0f, false
         );
 
-        // WeakRef avoids reviving a destroyed layer
+        // weakref avoids reviving a destroyed layer
         WeakRef<PauseLayer> weakRef = this;
 
             FramebufferCapture::requestCapture(levelID, [weakRef, levelID](bool success, CCTexture2D* texture, std::shared_ptr<uint8_t> rgbData, int width, int height) {
@@ -606,7 +606,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
                                 PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
 
-                                processAcceptedCaptureAsync(buf, w, h, /*extractColors=*/false,
+                                processAcceptedCaptureAsync(buf, w, h, /*extractcolors=*/false,
                                     [lvlID, username](bool encoded, std::vector<uint8_t> pngData, ccColor3B, ccColor3B) {
                                         if (!encoded) {
                                             log::error("[PauseLayer] Failed to encode PNG in memory");
@@ -645,14 +645,14 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
     $override
     void onExit() {
-        // cover exits that skip onResume() before the ticker runs again
+        // cover exits that skip onresume() before the ticker runs again
         paimon::notifyPauseClosing();
         paimon::clearActivePauseLayer(this);
         paimon::setPauseZoomHidden(false);
         m_fields->m_fileDialogOpen = false;
 
         // only tear down a capture this layer started: an unrelated flow
-        // (PlayLayer keybind, overlay) may own the global flag right now
+        // (playlayer keybind, overlay) may own the global flag right now
         if (m_fields->m_captureInProgress) {
             m_fields->m_captureInProgress = false;
             paimon::setCaptureInProgress(false);
@@ -669,7 +669,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
     void processSelectedFile(std::filesystem::path selectedPath, int levelID) {
         std::string ext = geode::utils::string::pathToString(selectedPath.extension());
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
         if (ext == ".mp4" || ext == ".mov" || ext == ".m4v") {
             std::error_code fileError;
@@ -765,7 +765,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                         return;
                     }
 
-                    // extract dominant colors off-thread; LAB clustering is expensive
+                    // extract dominant colors off-thread; lab clustering is expensive
                     if (buf && w > 0 && h > 0) {
                         paimon::ThreadTracker::get().spawn([lvlID, buf, w, h]() {
                             geode::utils::thread::setName("PaimonDominantColors");
@@ -838,7 +838,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
                 PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
 
-                processAcceptedCaptureAsync(buf, w, h, /*extractColors=*/true,
+                processAcceptedCaptureAsync(buf, w, h, /*extractcolors=*/true,
                     [lvlID, username](bool encoded, std::vector<uint8_t> pngData, ccColor3B A, ccColor3B B) {
                         LevelColors::get().set(lvlID, A, B);
                         ThumbsRegistry::get().mark(ThumbKind::Level, lvlID, false);
@@ -909,10 +909,10 @@ class $modify(PaimonPauseLayer, PauseLayer) {
     }
 
     void onResume(CCObject* sender) {
-        // PlayLayer may be gone during a scene transition.
+        // playlayer may be gone during a scene transition.
         if (!requirePlayLayer("onResume")) return;
 
-        // Clear zoom so its ticker cannot restart the closing menu.
+        // clear zoom so its ticker cannot restart the closing menu.
         paimon::notifyPauseClosing();
         PauseLayer::onResume(sender);
     }

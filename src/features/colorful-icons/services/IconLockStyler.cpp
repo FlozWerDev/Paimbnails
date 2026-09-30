@@ -21,7 +21,7 @@ bool IconLockStyler::isUnobtainable(GJItemIcon* icon) const {
 
 cocos2d::CCSprite* IconLockStyler::findLockSprite(GJItemIcon* icon) {
     if (!icon) return nullptr;
-    // GJItemIcon::changeToLockedState adds "GJ_lock_001.png" as a direct child.
+    // gjitemicon::changetolockedstate adds "gj_lock_001.png" as a direct child.
     auto* children = icon->getChildren();
     if (!children) return nullptr;
     for (int i = 0; i < children->count(); ++i) {
@@ -50,7 +50,7 @@ void IconLockStyler::tintAllParts(SimplePlayer* sp, ccColor3B tint) {
                 if (part) part->setColor(tint);
             }
         }
-        // The front anim sprite hangs off the vehicle as a child by index.
+        // the front anim sprite hangs off the vehicle as a child by index.
         if (auto* anim = vehicle->getChildByType<CCPartAnimSprite>(0)) {
             anim->setColor(tint);
         }

@@ -36,7 +36,7 @@ int64_t nowSeconds() {
     return duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
 }
 
-// Two snapshots belong to the same user. Account ids win; names are the
+// two snapshots belong to the same user. account ids win; names are the
 // fallback for entries copied before the id was known.
 bool sameUser(IconSet const& a, IconSet const& b) {
     if (a.accountID > 0 && b.accountID > 0) return a.accountID == b.accountID;
@@ -117,7 +117,7 @@ void apply(IconSet const& set) {
     // out-of-palette index into the save, so leave ours alone in that case.
     if (set.glowColor >= 0) gm->setPlayerColor3(set.glowColor);
 
-    // Trails don't travel in the profile response, so they usually stay at 0.
+    // trails don't travel in the profile response, so they usually stay at 0.
     if (set.trail > 0) gm->setPlayerStreak(set.trail);
     if (set.deathEffect > 0) {
         gm->setPlayerDeathEffect(set.deathEffect);
@@ -134,7 +134,7 @@ void add(IconSet set) {
     ensureLoaded();
     if (set.copiedAt == 0) set.copiedAt = nowSeconds();
 
-    // One entry per user: copying again refreshes the old snapshot.
+    // one entry per user: copying again refreshes the old snapshot.
     auto const dupe = [&](IconSet const& other) { return sameUser(set, other); };
     g_sets.erase(std::remove_if(g_sets.begin(), g_sets.end(), dupe), g_sets.end());
 

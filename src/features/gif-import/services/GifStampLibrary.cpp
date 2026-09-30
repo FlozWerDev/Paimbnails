@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -19,8 +20,8 @@ namespace paimon::gifimport {
 
 namespace {
 
-// Each object draws into one atlas cell and the whole sheet reads at once:
-// a thousand objects cost four GPU reads instead of a thousand (a blink vs half a minute).
+// each object draws into one atlas cell and the whole sheet reads at once:
+// a thousand objects cost four gpu reads instead of a thousand (a blink vs half a minute).
 constexpr int kCellSide = kStampMaskSide;
 constexpr int kAtlasCells = 16;
 constexpr int kAtlasSide = kCellSide * kAtlasCells;
@@ -29,10 +30,10 @@ constexpr unsigned char kAlphaFloor = 96;
 // below this the object is trim or sparkle: as a mold it only leaves holes,
 // and paint tracing already covers that size better.
 constexpr float kMinCoverage = 0.12f;
-// direct-accept thresholds per shape (radial, vertical, quarters). Past them
+// direct-accept thresholds per shape (radial, vertical, quarters). past them
 // the best still stays as fallback before the spare.
 constexpr std::array<double, 3> kSoftThresholds{0.05, 0.08, 0.08};
-// deterministic spare: circle-with-blending as glow, block only when this GD
+// deterministic spare: circle-with-blending as glow, block only when this gd
 // build has no circle.
 constexpr int kFallbackGlowCircle = 3637;
 constexpr int kFallbackBlock = 211;
@@ -64,7 +65,7 @@ bool usableObject(GameObject* object, bool strict = true) {
         size.width < 512.f && size.height < 512.f;
 }
 
-// Trims the cell to what paints and returns it as a mold, with the shift
+// trims the cell to what paints and returns it as a mold, with the shift
 // landing that trim where the plan asks.
 bool cutStamp(
     unsigned char const* pixels,
@@ -165,6 +166,88 @@ void drawBatch(
     image->release();
 }
 
+struct SoftMaskSample {
+    int objectId = 0;
+    CCSize content{30.f, 30.f};
+    StampMask mask;
+};
+
+std::vector<SoftMaskSample> drawSoftBatch(
+    std::vector<int> const& objectIds,
+    std::size_t begin,
+    std::size_t end,
+    bool relaxed
+) {
+    constexpr int side = 32;
+    constexpr int atlasCells = 8;
+    constexpr int atlasSide = side * atlasCells;
+    BatchPool const pool;
+    auto* canvas = CCRenderTexture::create(
+        atlasSide, atlasSide, kCCTexture2DPixelFormat_RGBA8888);
+    if (!canvas) return {};
+
+    struct DrawnObject {
+        int id = 0;
+        CCSize content{30.f, 30.f};
+    };
+    std::vector<DrawnObject> drawn;
+    drawn.reserve(end - begin);
+    canvas->beginWithClear(0.f, 0.f, 0.f, 0.f);
+    for (std::size_t index = begin; index < end; ++index) {
+        int const id = objectIds[index];
+        auto* object = GameObject::createWithKey(id);
+        if (!usableObject(object, !relaxed)) continue;
+        auto* frame = object->displayFrame();
+        auto* sprite = frame ? CCSprite::createWithSpriteFrame(frame) : nullptr;
+        if (!sprite) continue;
+        auto const spriteSize = sprite->getContentSize();
+        if (spriteSize.width < 1.f || spriteSize.height < 1.f) continue;
+
+        std::size_t const slot = drawn.size();
+        int const column = static_cast<int>(slot) % atlasCells;
+        int const row = static_cast<int>(slot) / atlasCells;
+        sprite->setAnchorPoint({0.5f, 0.5f});
+        sprite->setScaleX(side / spriteSize.width);
+        sprite->setScaleY(side / spriteSize.height);
+        sprite->setPosition({
+            (column + 0.5f) * side,
+            atlasSide - (row + 0.5f) * side
+        });
+        sprite->setBlendFunc({GL_ONE, GL_ZERO});
+        sprite->visit();
+        drawn.push_back({id, object->getContentSize()});
+    }
+    canvas->end();
+
+    auto* image = canvas->newCCImage(true);
+    if (!image) return {};
+    auto const* pixels = image->getData();
+    int const stride = image->getWidth();
+    if (!pixels || stride < atlasSide ||
+        image->getHeight() < atlasSide) {
+        image->release();
+        return {};
+    }
+
+    std::vector<SoftMaskSample> samples;
+    samples.reserve(drawn.size());
+    for (std::size_t slot = 0; slot < drawn.size(); ++slot) {
+        int const column = static_cast<int>(slot) % atlasCells;
+        int const row = static_cast<int>(slot) / atlasCells;
+        StampMask mask{side, side, std::vector<std::uint8_t>(side * side)};
+        for (int y = 0; y < side; ++y) for (int x = 0; x < side; ++x) {
+            std::size_t const pixel =
+                (static_cast<std::size_t>(row * side + y) * stride +
+                    column * side + x) * 4;
+            mask.coverage[static_cast<std::size_t>(y) * side + x] =
+                pixels[pixel + 3];
+        }
+        samples.push_back({drawn[slot].id, drawn[slot].content, std::move(mask)});
+    }
+    image->release();
+    return samples;
+}
+
 } // namespace
 
 SoftStampLibrary buildSoftStampLibrary() {
@@ -186,6 +269,22 @@ SoftStampLibrary buildSoftStampLibrary() {
         CCSize content{30.f, 30.f};
     };
     std::array<Overall, 3> overall;
+    std::array<float, side * side> radialTarget{};
+    std::array<float, side * side> verticalTarget{};
+    std::array<float, side * side> quarterTarget{};
+    float const radialEdge = std::exp(-4.f);
+    for (int y = 0; y < side; ++y) for (int x = 0; x < side; ++x) {
+        std::size_t const index = static_cast<std::size_t>(y) * side + x;
+        float const u = (x + 0.5f) / side;
+        float const v = (y + 0.5f) / side;
+        float const radius2 = 4.f * ((u - 0.5f) * (u - 0.5f) +
+            (v - 0.5f) * (v - 0.5f));
+        radialTarget[index] = std::max(0.f, (std::exp(-4.f * radius2) -
+            radialEdge) / (1.f - radialEdge));
+        verticalTarget[index] = 1.f - v;
+        quarterTarget[index] = std::pow(std::max(0.f, 1.f -
+            std::sqrt((1.f - u) * (1.f - u) + (1.f - v) * (1.f - v))), 1.3f);
+    }
 
     auto install = [&](int kind, int id, int quarter, StampMask mask, CCSize content) {
         auto& stamp = best[kind == 2 ? 3 : kind];
@@ -196,101 +295,78 @@ SoftStampLibrary buildSoftStampLibrary() {
         stamp.mask = std::move(mask);
     };
 
-    // tint never changes alpha: strict only filters candidates, not mold output.
-    auto scanObject = [&](int id, bool relaxed) {
-        BatchPool const pool;
-        auto* object = GameObject::createWithKey(id);
-        if (!usableObject(object, !relaxed)) return false;
-        auto* frame = object->displayFrame();
-        if (!frame) return false;
-        auto* sprite = CCSprite::createWithSpriteFrame(frame);
-        auto* canvas = CCRenderTexture::create(side, side, kCCTexture2DPixelFormat_RGBA8888);
-        if (!sprite || !canvas) return false;
-        auto const size = sprite->getContentSize();
-        if (size.width < 1.f || size.height < 1.f) return false;
-        sprite->setScaleX(side / size.width);
-        sprite->setScaleY(side / size.height);
-        sprite->setPosition({side * 0.5f, side * 0.5f});
-        sprite->setBlendFunc({GL_ONE, GL_ZERO});
-        canvas->beginWithClear(0.f, 0.f, 0.f, 0.f);
-        sprite->visit();
-        canvas->end();
-        auto* image = canvas->newCCImage(true);
-        if (!image) return false;
-        if (!image->getData() || image->getWidth() < side || image->getHeight() < side) {
-            image->release();
-            return false;
-        }
-        StampMask original{side, side, std::vector<std::uint8_t>(side * side)};
-        for (int y = 0; y < side; ++y) for (int x = 0; x < side; ++x) {
-            original.coverage[y * side + x] = image->getData()[
-                (y * image->getWidth() + x) * 4 + 3];
-        }
-        image->release();
-        auto const content = object->getContentSize();
+    auto scoreSample = [&](SoftMaskSample const& sample) {
         for (int quarter = 0; quarter < 4; ++quarter) {
-            StampMask mask = original;
+            StampMask mask = sample.mask;
             for (int y = 0; y < side; ++y) for (int x = 0; x < side; ++x) {
                 int sx = x, sy = y;
                 if (quarter == 1) { sx = y; sy = side - 1 - x; }
                 if (quarter == 2) { sx = side - 1 - x; sy = side - 1 - y; }
                 if (quarter == 3) { sx = side - 1 - y; sy = x; }
-                mask.coverage[y * side + x] = original.coverage[sy * side + sx];
+                mask.coverage[y * side + x] = sample.mask.coverage[sy * side + sx];
             }
             double radialError = 0., verticalError = 0., quarterError = 0.;
             for (int y = 0; y < side; ++y) for (int x = 0; x < side; ++x) {
-                float const u = (x + 0.5f) / side;
-                float const v = (y + 0.5f) / side;
-                float const radius2 = 4.f * ((u - 0.5f) * (u - 0.5f) +
-                    (v - 0.5f) * (v - 0.5f));
-                float const alpha = mask.coverage[y * side + x] / 255.f;
-                float const radial = std::max(0.f, (std::exp(-4.f * radius2) -
-                    std::exp(-4.f)) / (1.f - std::exp(-4.f)));
-                float const corner = std::pow(std::max(0.f, 1.f -
-                    std::sqrt((1.f - u) * (1.f - u) + (1.f - v) * (1.f - v))), 1.3f);
-                quarterError += (alpha - corner) * (alpha - corner);
-                radialError += (alpha - radial) * (alpha - radial);
-                verticalError += (alpha - (1.f - v)) * (alpha - (1.f - v));
+                std::size_t const index = static_cast<std::size_t>(y) * side + x;
+                float const alpha = mask.coverage[index] / 255.f;
+                float const radialDelta = alpha - radialTarget[index];
+                float const verticalDelta = alpha - verticalTarget[index];
+                float const quarterDelta = alpha - quarterTarget[index];
+                quarterError += quarterDelta * quarterDelta;
+                radialError += radialDelta * radialDelta;
+                verticalError += verticalDelta * verticalDelta;
             }
             std::array<double, 3> const scores{
                 radialError / (side * side), verticalError / (side * side), quarterError / (side * side)};
             for (int kind = 0; kind < 3; ++kind) {
                 if (scores[kind] < errors[kind]) errors[kind] = scores[kind];
                 if (scores[kind] < overall[kind].score) {
-                    overall[kind] = {scores[kind], id, quarter, mask, content};
+                    overall[kind] = {
+                        scores[kind], sample.objectId, quarter, mask, sample.content};
                 }
                 if (scores[kind] >= accepted[kind]) continue;
                 accepted[kind] = scores[kind];
-                install(kind, id, quarter, mask, content);
+                install(kind, sample.objectId, quarter, mask, sample.content);
             }
         }
-        return true;
     };
 
     auto nameMatches = [](std::string const& frameName) {
-        // The bindings expose the runtime key/frame map, not a fixed glow ID.
-        // Match the actual alpha field, including texture packs and sprite quality.
+        // the bindings expose the runtime key/frame map, not a fixed glow id.
+        // match the actual alpha field, including texture packs and sprite quality.
         return frameName.find("light") != std::string::npos ||
             frameName.find("glow") != std::string::npos ||
             frameName.find("gradient") != std::string::npos ||
             frameName.find("particle") != std::string::npos;
     };
     std::unordered_set<int> considered;
+    std::vector<int> namedObjects;
+    std::vector<int> allObjects;
     for (auto const& [id, name] : toolbox->m_allKeys) {
+        allObjects.push_back(id);
         std::string const frameName(name.c_str());
-        if (!nameMatches(frameName)) continue;
-        if (scanObject(id, false)) considered.insert(id);
+        if (nameMatches(frameName)) namedObjects.push_back(id);
     }
+    auto scanBatches = [&](std::vector<int> const& objectIds, bool relaxed) {
+        constexpr std::size_t batchSize = 64;
+        for (std::size_t begin = 0; begin < objectIds.size(); begin += batchSize) {
+            auto const end = std::min(begin + batchSize, objectIds.size());
+            for (auto const& sample : drawSoftBatch(objectIds, begin, end, relaxed)) {
+                if (!relaxed) considered.insert(sample.objectId);
+                scoreSample(sample);
+            }
+        }
+    };
+    scanBatches(namedObjects, false);
     bool const found =
         best[0].objectId || best[1].objectId || best[3].objectId;
-    // exhaustive second pass over ALL decoration when the filter found nothing:
-// frame names lie across texture packs and GD versions, and tint stops filtering here.
+    // exhaustive second pass over all decoration when the filter found nothing:
+    // frame names lie across texture packs and gd versions, and tint stops filtering here.
     if (!found) {
-        for (auto const& [id, name] : toolbox->m_allKeys) {
-            (void)name;
-            if (considered.count(id)) continue;
-            scanObject(id, true);
-        }
+        std::vector<int> remaining;
+        remaining.reserve(allObjects.size() - std::min(allObjects.size(), considered.size()));
+        for (int id : allObjects) if (!considered.count(id)) remaining.push_back(id);
+        scanBatches(remaining, true);
     }
     // best stays past the threshold as fallback: a close native still draws
     // better than the analytic spare.
@@ -305,8 +381,8 @@ SoftStampLibrary buildSoftStampLibrary() {
         best[2].rotation = std::fmod(best[1].rotation + 180.f, 360.f);
         std::reverse(best[2].mask.coverage.begin(), best[2].mask.coverage.end());
     }
-    // Some GD catalogs expose the radial glow as four quarter-circle pieces.
-    // Assemble those native pieces around one centre, without a solid stand-in.
+    // some gd catalogs expose the radial glow as four quarter-circle pieces.
+    // assemble those native pieces around one centre, without a solid stand-in.
     if (best[3].objectId) for (int q = 1; q < 4; ++q) {
         best[3 + q] = best[3];
         auto& stamp = best[3 + q];
@@ -320,8 +396,8 @@ SoftStampLibrary buildSoftStampLibrary() {
             stamp.mask.coverage[y * side + x] = best[3].mask.coverage[sy * side + sx];
         }
     }
-    // deterministic spare with fixed IDs when no native. 2903 is useless per
-    // cell: a full-screen quad, only telling WHEN it fires.
+    // deterministic spare with fixed ids when no native. 2903 is useless per
+    // cell: a full-screen quad, only telling when it fires.
     {
         int fallbackId = 0;
         CCSize fallbackSize{50.f, 50.f};
@@ -377,7 +453,7 @@ SoftStampLibrary buildSoftStampLibrary() {
     log::info("[GifImport] Native soft shapes: round={} ({}), vert={} ({}), quarter={} ({}){}",
         best[0].objectId, errors[0], best[1].objectId, errors[1], best[3].objectId, errors[2],
         fallbackUsed ? " +repuesto analitico" : "");
-    // caches only when complete (natives + spare): unready GL/toolbox retries
+    // caches only when complete (natives + spare): unready gl/toolbox retries
     // on the next process, as before.
     bool complete = best.size() == 7;
     for (auto const& stamp : best) complete = complete && stamp.objectId > 0;
@@ -400,7 +476,7 @@ std::size_t buildStampLibrary() {
 
     std::vector<CatalogEntry> entries;
     for (std::size_t start = 0; start < ids.size(); start += kBatch) {
-        // displayFrame() returns a fresh sheet each call, owned by the pool, so
+        // displayframe() returns a fresh sheet each call, owned by the pool, so
         // the batch draws in the same scope the objects came from.
         BatchPool const pool;
         std::vector<Pending> batch;

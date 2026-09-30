@@ -1,7 +1,7 @@
 #pragma once
 
-// Pause LevelInfoLayer's heavy background work under full-screen overlays;
-// without this InfoLayer re-blurs on every cycle — progressive lag.
+// pause levelinfolayer's heavy background work under full-screen overlays;
+// without this infolayer re-blurs on every cycle — progressive lag.
 
 namespace paimon {
 

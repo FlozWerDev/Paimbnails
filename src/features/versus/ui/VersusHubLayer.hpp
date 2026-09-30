@@ -33,7 +33,7 @@ protected:
     void refreshFormats();
     void refreshPlayButton();
     void refreshGlobed();
-    // Globed can drop or come back while the hub sits open, and the pill is the
+    // globed can drop or come back while the hub sits open, and the pill is the
     // only place that says whether the ladder will let you in.
     void tickChrome(float dt);
     void setStatus(std::string const& text, bool error = false);

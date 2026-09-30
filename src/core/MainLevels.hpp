@@ -20,7 +20,7 @@ inline bool isMainLevelID(int levelID) {
     return levelID >= kMainLevelMinID && levelID <= kMainLevelMaxID;
 }
 
-// Accepts only "<id>.png"/"<id>.gif" with id in [1, 22].
+// accepts only "<id>.png"/"<id>.gif" with id in [1, 22].
 inline bool isMainLevelCacheFile(std::filesystem::path const& filename) {
     auto ext = geode::utils::string::toLower(
         geode::utils::string::pathToString(filename.extension()));
@@ -32,7 +32,7 @@ inline bool isMainLevelCacheFile(std::filesystem::path const& filename) {
     return isMainLevelID(idResult.unwrap());
 }
 
-// Clear <cacheDir> while keeping protected subdirs and main-level thumbnails (1-22).
+// clear <cachedir> while keeping protected subdirs and main-level thumbnails (1-22).
 inline std::pair<int, int> clearCachePreservingMainLevels(
     std::filesystem::path const& cacheDir,
     std::initializer_list<std::string_view> preservedSubdirs = {}

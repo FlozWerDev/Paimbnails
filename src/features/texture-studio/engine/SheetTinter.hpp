@@ -25,7 +25,7 @@ struct SheetTinterOutput {
     int   tintedFrameCount = 0;
 };
 
-// PackGen overlays aligned to the source atlas; empty buffers mean unavailable.
+// packgen overlays aligned to the source atlas; empty buffers mean unavailable.
 struct SheetOverlaySources {
     ImageBuffer overlay1;  // color1.
     ImageBuffer overlay2;  // color2.
@@ -46,37 +46,37 @@ struct SheetTinterRequest {
     std::string outputBaseName;
     std::string outputQualitySuffix;
 
-    // Overlays tint pixel-exact PackGen-style; uncovered frames stay vanilla, per-sprite overrides use clustering.
+    // overlays tint pixel-exact packgen-style; uncovered frames stay vanilla, per-sprite overrides use clustering.
     std::shared_ptr<SheetOverlaySources const> overlaySources;
 
     TintColors    colors{};
     int           brightness = 160;
     bool          alternativeGlowOverlay = false;
 
-    // True: tint menu/button UI sprites only, for readability.
+    // true: tint menu/button ui sprites only, for readability.
     bool onlyTintUiSprites = true;
     TintScope tintScope = TintScope::ButtonsOnly;
 
     // 0 = hard, 1 = fully soft on ambiguous cluster edges.
     float maskSoftness = 0.35f;
 
-    // Segmentation/grading params; see SpritePreviewOptions.
+    // segmentation/grading params; see spritepreviewoptions.
     int   clusterPrecision = 5;
     int   edgeCleanup = 1;
     int   outlineProtect = 0;
     float saturation = 1.0f;
     float contrast   = 0.0f;
 
-    // spriteSkip bypasses; spriteColors override globals and filters.
+    // spriteskip bypasses; spritecolors override globals and filters.
     std::unordered_set<std::string> spriteSkip;
     std::unordered_map<std::string, TintColors> spriteColors;
     std::unordered_map<std::string, SpriteImageOverride> spriteImages;
     std::unordered_map<std::string, SpriteFusionOverride> spriteFusions;
 
-    // Downscale before repacking; 1.0 = none.
+    // downscale before repacking; 1.0 = none.
     float resizeScale = 1.0f;
 
-    // PackGen compat: never scale GJ_table_side_001's offset.
+    // packgen compat: never scale gj_table_side_001's offset.
     bool preserveOffsetForTableSide = true;
 };
 

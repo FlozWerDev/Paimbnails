@@ -3,18 +3,22 @@
 #include "TransitionTimeline.hpp"
 #include "../ui/CustomTransitionScene.hpp"
 #include "../../../utils/LocalAssetStore.hpp"
+#include "../../../utils/BoundedFileRead.hpp"
+#include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include <Geode/utils/file.hpp>
 #include <Geode/loader/Log.hpp>
 #include <matjson.hpp>
 #include <filesystem>
+#include <algorithm>
 #include <cmath>
 #include <random>
+#include <sstream>
 
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// backdrop for native transitions, which may expose the raw GL clear color
+// backdrop for native transitions, which may expose the raw gl clear color
 // while neither scene covers the screen.
 static void attachTransitionBackdrop(CCScene* trans) {
     if (!trans) return;
@@ -553,43 +557,44 @@ std::filesystem::path TransitionManager::getConfigPath() const {
 static TransitionCommand parseCommand(matjson::Value const& obj) {
     TransitionCommand cmd;
     if (!obj.isObject()) return cmd;
-    if (obj.contains("action"))   cmd.action   = TransitionManager::actionFromString(obj["action"].asString().unwrapOr("wait"));
-    if (obj.contains("target"))   cmd.target   = obj["target"].asString().unwrapOr("from");
-    if (obj.contains("duration")) cmd.duration = static_cast<float>(obj["duration"].asDouble().unwrapOr(0.3));
-    if (obj.contains("from_x"))   cmd.fromX    = static_cast<float>(obj["from_x"].asDouble().unwrapOr(0));
-    if (obj.contains("from_y"))   cmd.fromY    = static_cast<float>(obj["from_y"].asDouble().unwrapOr(0));
-    if (obj.contains("to_x"))     cmd.toX      = static_cast<float>(obj["to_x"].asDouble().unwrapOr(0));
-    if (obj.contains("to_y"))     cmd.toY      = static_cast<float>(obj["to_y"].asDouble().unwrapOr(0));
-    if (obj.contains("from_val")) cmd.fromVal  = static_cast<float>(obj["from_val"].asDouble().unwrapOr(1));
-    if (obj.contains("to_val"))   cmd.toVal    = static_cast<float>(obj["to_val"].asDouble().unwrapOr(1));
-    if (obj.contains("r")) cmd.r = static_cast<int>(obj["r"].asInt().unwrapOr(0));
-    if (obj.contains("g")) cmd.g = static_cast<int>(obj["g"].asInt().unwrapOr(0));
-    if (obj.contains("b")) cmd.b = static_cast<int>(obj["b"].asInt().unwrapOr(0));
-    if (obj.contains("image"))      cmd.imagePath  = obj["image"].asString().unwrapOr("");
-    if (obj.contains("spawn_count")) cmd.spawnCount = static_cast<int>(obj["spawn_count"].asInt().unwrapOr(0));
-    if (obj.contains("delay"))      cmd.delay      = static_cast<float>(obj["delay"].asDouble().unwrapOr(0));
-    if (obj.contains("intensity"))  cmd.intensity  = static_cast<float>(obj["intensity"].asDouble().unwrapOr(5));
+    cmd.action = TransitionManager::actionFromString(obj["action"].asString().unwrapOr("wait"));
+    cmd.target = obj["target"].asString().unwrapOr("from");
+    cmd.duration = paimon::json::floatOr(obj["duration"], cmd.duration);
+    cmd.fromX = paimon::json::floatOr(obj["from_x"], cmd.fromX);
+    cmd.fromY = paimon::json::floatOr(obj["from_y"], cmd.fromY);
+    cmd.toX = paimon::json::floatOr(obj["to_x"], cmd.toX);
+    cmd.toY = paimon::json::floatOr(obj["to_y"], cmd.toY);
+    cmd.fromVal = paimon::json::floatOr(obj["from_val"], cmd.fromVal);
+    cmd.toVal = paimon::json::floatOr(obj["to_val"], cmd.toVal);
+    cmd.r = paimon::json::integerOr<int>(obj["r"]);
+    cmd.g = paimon::json::integerOr<int>(obj["g"]);
+    cmd.b = paimon::json::integerOr<int>(obj["b"]);
+    cmd.imagePath = obj["image"].asString().unwrapOr("");
+    cmd.spawnCount = paimon::json::integerOr<int>(obj["spawn_count"]);
+    cmd.delay = paimon::json::floatOr(obj["delay"], cmd.delay);
+    cmd.intensity = paimon::json::floatOr(obj["intensity"], cmd.intensity);
     return cmd;
 }
 
 static TransitionConfig parseConfig(matjson::Value const& obj) {
     TransitionConfig cfg;
     if (!obj.isObject()) return cfg;
-    if (obj.contains("type"))     cfg.type     = TransitionManager::typeFromString(obj["type"].asString().unwrapOr("fade"));
-    if (obj.contains("duration")) cfg.duration = static_cast<float>(obj["duration"].asDouble().unwrapOr(0.5));
-    if (obj.contains("color") && obj["color"].isArray()) {
-        auto arr = obj["color"].asArray().unwrapOr(std::vector<matjson::Value>{});
-        if (arr.size() >= 3) {
-            cfg.colorR = static_cast<int>(arr[0].asInt().unwrapOr(0));
-            cfg.colorG = static_cast<int>(arr[1].asInt().unwrapOr(0));
-            cfg.colorB = static_cast<int>(arr[2].asInt().unwrapOr(0));
-        }
+    cfg.type = TransitionManager::typeFromString(obj["type"].asString().unwrapOr("fade"));
+    cfg.duration = paimon::json::floatOr(obj["duration"], cfg.duration);
+    auto const& color = obj["color"];
+    if (color.isArray() && color.size() >= 3) {
+        cfg.colorR = paimon::json::integerOr<int>(color[0]);
+        cfg.colorG = paimon::json::integerOr<int>(color[1]);
+        cfg.colorB = paimon::json::integerOr<int>(color[2]);
     }
     cfg.mediaPath = obj["media"].asString().unwrapOr("");
-    cfg.cutPoint = static_cast<float>(obj["cut_point"].asDouble().unwrapOr(.5));
-    if (obj.contains("script"))   cfg.scriptPath = obj["script"].asString().unwrapOr("");
-    if (obj.contains("commands") && obj["commands"].isArray()) {
-        for (auto const& c : obj["commands"].asArray().unwrapOr(std::vector<matjson::Value>{})) {
+    cfg.cutPoint = paimon::json::floatOr(obj["cut_point"], cfg.cutPoint);
+    cfg.scriptPath = obj["script"].asString().unwrapOr("");
+    if (obj["commands"].isArray()) {
+        cfg.commands.reserve(std::min<size_t>(256, obj["commands"].size()));
+        for (auto const& c : obj["commands"]) {
+            if (cfg.commands.size() >= 256) break;
+            if (!c.isObject()) continue;
             cfg.commands.push_back(parseCommand(c));
         }
     }
@@ -600,7 +605,9 @@ static bool migrateConfigImages(TransitionConfig& cfg) {
     bool changed = false;
 
     for (auto& cmd : cfg.commands) {
-        if (cmd.imagePath.empty() || std::filesystem::path(cmd.imagePath).extension() == ".pttransition") continue;
+        if (cmd.imagePath.empty()) continue;
+        auto extension = geode::utils::string::pathToString(paimon::assets::pathFromUtf8(cmd.imagePath).extension());
+        if (geode::utils::string::toLower(extension) == ".pttransition") continue;
         auto imported = paimon::assets::importStoredPath(cmd.imagePath, "transitions", paimon::assets::Kind::Image);
         if (imported.success && !imported.path.empty()) {
             auto normalized = paimon::assets::normalizePathString(imported.path);
@@ -676,13 +683,12 @@ void TransitionManager::loadConfig() {
         return;
     }
 
-    auto readRes = geode::utils::file::readString(path);
-    if (!readRes) { m_loaded = true; return; }
-
-    auto parseRes = matjson::parse(readRes.unwrap());
+    auto bytes = paimon::file::readBytes(path, 4 * 1024 * 1024);
+    if (bytes.empty()) { m_loaded = true; return; }
+    auto parseRes = matjson::parse(std::string(bytes.begin(), bytes.end()));
     if (!parseRes) { m_loaded = true; return; }
 
-    auto root = parseRes.unwrap();
+    auto const& root = parseRes.unwrap();
     if (!root.isObject()) {
         m_loaded = true;
         warmMedia();
@@ -1054,17 +1060,16 @@ CCTransitionScene* TransitionManager::createNativeTransition(TransitionConfig co
 
 std::vector<TransitionCommand> TransitionManager::parseScriptFile(std::string const& scriptPath) const {
     std::vector<TransitionCommand> commands;
-    auto fullPath = Mod::get()->getSaveDir() / scriptPath;
+    auto fullPath = Mod::get()->getSaveDir() / paimon::assets::pathFromUtf8(scriptPath);
     std::error_code ec;
     if (!std::filesystem::exists(fullPath, ec)) { log::warn("[TransitionManager] parseScriptFile: file not found"); return commands; }
 
-    auto readRes = geode::utils::file::readString(fullPath);
-    if (!readRes) return commands;
-
-    std::istringstream stream(readRes.unwrap());
+    auto bytes = paimon::file::readBytes(fullPath, 1024 * 1024);
+    if (bytes.empty()) return commands;
+    std::istringstream stream(std::string(bytes.begin(), bytes.end()));
     std::string line;
 
-    while (std::getline(stream, line)) {
+    while (commands.size() < 256 && std::getline(stream, line)) {
         auto first = line.find_first_not_of(" \t\r\n");
         if (first == std::string::npos) continue;
         line.erase(0, first);

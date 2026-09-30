@@ -1,5 +1,5 @@
-// Channel toggle: color swatch previewing one gradient channel, optional index
-// badge, crossfade sprite for transitions. After zilko's "Icon Gradients" (independent implementation; idea credit zilko144, unlicensed).
+// channel toggle: color swatch previewing one gradient channel, optional index
+// badge, crossfade sprite for transitions. after zilko's "icon gradients" (independent implementation; idea credit zilko144, unlicensed).
 
 #include "ColorToggle.hpp"
 #include "GradientLayer.hpp"
@@ -33,7 +33,7 @@ void ColorToggle::fitToSprite() {
 
 namespace {
 
-// Fresh color-button swatch at the toggle's scale.
+// fresh color-button swatch at the toggle's scale.
 CCSprite* makeSwatch(float scale) {
     CCSprite* swatch = CCSprite::createWithSpriteFrameName("GJ_colorBtn_001.png");
     swatch->setScale(0.6f * scale);
@@ -53,7 +53,7 @@ void ColorToggle::addSelectOverlay(float scale) {
     addChild(m_select);
 }
 
-// Index badge shown on numbered channel buttons.
+// index badge shown on numbered channel buttons.
 static CCLabelBMFont* makeIndexBadge(std::string const& text, float scale) {
     CCLabelBMFont* badge = CCLabelBMFont::create(text.c_str(), "bigFont.fnt");
     badge->setScale(0.315f * scale);
@@ -74,7 +74,7 @@ bool ColorToggle::init(CCObject* target, SEL_MenuHandler callback, bool number, 
         return CCMenuItemSpriteExtra::init(m_sprite, nullptr, target, callback);
     }
 
-    // The White/Line channels display each other's index.
+    // the white/line channels display each other's index.
     std::string numberStr = std::to_string(static_cast<int>(m_colorType));
     if (numberStr == "4") {
         numberStr = "5";
@@ -95,7 +95,7 @@ bool ColorToggle::init(CCObject* target, SEL_MenuHandler callback, bool number, 
 
     fitToSprite();
 
-    // Capture first: a failed init discards the button, so positioning the
+    // capture first: a failed init discards the button, so positioning the
     // crossfade sprite before checking is unobservable.
     bool ok = CCMenuItemSpriteExtra::init(m_sprite, nullptr, target, callback);
 
@@ -106,7 +106,7 @@ bool ColorToggle::init(CCObject* target, SEL_MenuHandler callback, bool number, 
 }
 
 void ColorToggle::setSelected(bool selected) {
-    // Order is free: setEnabled reads neither flag nor overlay.
+    // order is free: setenabled reads neither flag nor overlay.
     m_isSelected = selected;
     m_select->setVisible(selected);
     setEnabled(!m_isSelected);
@@ -131,7 +131,7 @@ void ColorToggle::paintSlot(CCSprite* slot, GradientConfig const& config, bool b
 void ColorToggle::applyGradient(GradientConfig config, bool /*force*/, bool transition) {
     if (m_secondSprite && config == m_currentConfig) return;
 
-    // Read once: nothing below flips the player side mid-call.
+    // read once: nothing below flips the player side mid-call.
     bool second = m_layer->isSecondPlayer();
 
     if (config.isEmpty(m_colorType, second))
@@ -154,7 +154,7 @@ void ColorToggle::applyGradient(GradientConfig config, bool /*force*/, bool tran
     if (m_secondSprite && (!animate || empty))
         m_secondSprite->setColor(targetColor);
 
-    // Taken by value; nothing below reads the parameter again.
+    // taken by value; nothing below reads the parameter again.
     m_currentConfig = std::move(config);
 
     m_sprite->setOpacity(255);

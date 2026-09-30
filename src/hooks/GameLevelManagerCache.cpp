@@ -1,4 +1,4 @@
-// Disk-cache user searches; browse filters and profiles stay native and fresh.
+// disk-cache user searches; browse filters and profiles stay native and fresh.
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/GameLevelManager.hpp>

@@ -1,5 +1,5 @@
 #pragma once
-// Fully local base-sheet pack (idea credit: PackGen); no network calls anywhere.
+// fully local base-sheet pack (idea credit: packgen); no network calls anywhere.
 
 #include <Geode/Geode.hpp>
 
@@ -13,9 +13,9 @@
 namespace paimon::texture_studio {
 
 struct LocalBaseManifest {
-    // Pack-convention rels: "Sheet-uhd.png" vanilla, "<modid>/<file>" mod/Geode sheets.
+    // pack-convention rels: "sheet-uhd.png" vanilla, "<modid>/<file>" mod/geode sheets.
     std::vector<std::string> files;
-    // No local noscaling equivalent; kept for call-site parity, always empty.
+    // no local noscaling equivalent; kept for call-site parity, always empty.
     std::vector<std::string> noScalingFiles;
 
     bool empty() const { return files.empty(); }
@@ -23,32 +23,32 @@ struct LocalBaseManifest {
     bool isNoScaling(std::string const& relativePath) const;
 };
 
-// Old network service's 3-method surface over local enumeration. Sync, one background thread, mutex-guarded.
+// old network service's 3-method surface over local enumeration. sync, one background thread, mutex-guarded.
 class LocalBasePack final {
 public:
     static LocalBasePack& get();
 
     bool isManifestLoaded() const;
 
-    // Valid only after ensureManifest succeeded (copy under lock).
+    // valid only after ensuremanifest succeeded (copy under lock).
     LocalBaseManifest manifest() const;
 
-    // Rebuilds the index; also deletes the orphaned packgen-cache dir once per process.
+    // rebuilds the index; also deletes the orphaned packgen-cache dir once per process.
     geode::Result<> ensureManifest();
 
     geode::Result<std::filesystem::path> ensureFile(std::string const& relativePath);
 
-    // No overlay variants locally: always nullopt, callers fall back to clustering.
+    // no overlay variants locally: always nullopt, callers fall back to clustering.
     geode::Result<std::optional<std::filesystem::path>> ensureOptionalFile(
         std::string const& relativePath);
 
-    // Main thread ONLY: snapshot loaded sheets so export prefers live pixels. Best-effort, clears previous.
+    // main thread only: snapshot loaded sheets so export prefers live pixels. best-effort, clears previous.
     geode::Result<int> captureLoadedSnapshots(std::vector<std::string> const& pngRels);
 
-    // Snapshot file captured for pngRel, if still on disk. Thread-safe.
+    // snapshot file captured for pngrel, if still on disk. thread-safe.
     std::optional<std::filesystem::path> snapshotFor(std::string const& pngRel) const;
 
-    // Main thread ONLY: GPU pixels aren't CPU-readable, so round-trip through a render texture.
+    // main thread only: gpu pixels aren't cpu-readable, so round-trip through a render texture.
     static bool snapshotTexture(cocos2d::CCTexture2D* tex, std::filesystem::path const& dst);
 
 private:
@@ -65,7 +65,7 @@ private:
     bool m_cacheCleaned = false;
 };
 
-// Overlay-file suffix convention (pure filename mapping, no network).
+// overlay-file suffix convention (pure filename mapping, no network).
 namespace packgen_suffix {
 std::string overlay1(std::string const& pngRelPath);
 std::string overlay2(std::string const& pngRelPath);

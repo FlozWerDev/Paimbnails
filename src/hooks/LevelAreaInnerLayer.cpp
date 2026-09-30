@@ -19,7 +19,7 @@ namespace {
 void mountDoorThumbnail(CCNode* door, CCTexture2D* tex, int levelID,
                         std::unordered_map<int, Ref<CCSprite>>& thumbsMap) {
     if (!tex || !door) return;
-    // RAM hit and requestLoad can race; don't duplicate
+    // ram hit and requestload can race; don't duplicate
     if (thumbsMap.find(levelID) != thumbsMap.end()) return;
 
     auto* thumbSprite = CCSprite::createWithTexture(tex);
@@ -149,7 +149,7 @@ class $modify(PaimonLevelAreaInnerLayer, LevelAreaInnerLayer) {
         }
 
 
-        // sync fast path: RAM-preloaded textures apply this frame
+        // sync fast path: ram-preloaded textures apply this frame
         if (auto* cached = ThumbnailLoader::get().tryGetCachedTexture(levelID, false)) {
             mountDoorThumbnail(doorNode, cached, levelID, fields->m_doorThumbnails);
             return;
@@ -192,7 +192,7 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
     }
 
     struct Fields {
-        // translated alert titles are unreliable; read the saved level ID
+        // translated alert titles are unreliable; read the saved level id
         int m_capturedLevelID = -1;
     };
 

@@ -24,8 +24,8 @@ public:
         int count = 0;
         bool visible = true;
         cocos2d::CCSpriteFrame* representativeFrame = nullptr; // retained; released in dtor
-        // WeakRefs: objects can be removed mid-level while the popup is open.
-        std::vector<geode::WeakRef<GameObject>> objects;      // every instance of this ID
+        // weakrefs: objects can be removed mid-level while the popup is open.
+        std::vector<geode::WeakRef<GameObject>> objects;      // every instance of this id
         CCMenuItemToggler* toggler = nullptr;                  // rebuilt with the list
         cocos2d::CCLabelBMFont* label = nullptr;
     };

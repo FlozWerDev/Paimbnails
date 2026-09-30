@@ -7,7 +7,7 @@
 #include <Geode/cocos/misc_nodes/CCRenderTexture.h>
 #include "../utils/MainThreadDelay.hpp"
 #include "../core/RuntimeLifecycle.hpp"
-#include <cfloat>   // DBL_MAX
+#include <cfloat>   // dbl_max
 #include <cmath>
 #include <algorithm>
 #include <thread>
@@ -30,7 +30,7 @@ namespace paimon::video {
 
 namespace {
 
-// Backwards PTS jump past this means the decoder rewound for a loop.
+// backwards pts jump past this means the decoder rewound for a loop.
 constexpr double kLoopWrapGuard = 0.5;
 
 static std::thread::id s_mainThreadId;
@@ -102,7 +102,7 @@ VideoPlayer::~VideoPlayer() {
         m_resolvedRGBA = nullptr;
         delete[] m_rgbaBuffer;
         m_rgbaBuffer = nullptr;
-        // PBO shutdown stays on the GL thread; context teardown reclaims them.
+        // pbo shutdown stays on the gl thread; context teardown reclaims them.
         return;
     }
     
@@ -217,7 +217,7 @@ void VideoPlayer::initTexture(int width, int height) {
             width, height,
             cocos2d::CCSize(static_cast<float>(width),
                             static_cast<float>(height)));
-        // The player owns the texture; shared-video sprites may outlive it.
+        // the player owns the texture; shared-video sprites may outlive it.
         glBindTexture(GL_TEXTURE_2D, m_texture->getName());
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -239,7 +239,7 @@ void VideoPlayer::initYUVTextures(int width, int height) {
         if (!tex) return nullptr;
         auto* data = new (std::nothrow) uint8_t[w * h]();
         if (!data) { tex->release(); return nullptr; }
-        // I8 keeps the plane in .r for the YUV shader.
+        // i8 keeps the plane in .r for the yuv shader.
         tex->initWithData(data, cocos2d::kCCTexture2DPixelFormat_I8, w, h,
                           cocos2d::CCSize(static_cast<float>(w), static_cast<float>(h)));
         delete[] data;
@@ -322,12 +322,12 @@ bool VideoPlayer::uploadFrameGPU(const IVideoDecoder::Frame& frame) {
     m_hasVisibleFrame = true;
     return true;
 }
-// ABGR bytes match GL_RGBA memory order.
+// abgr bytes match gl_rgba memory order.
 static inline void yuvToRgba(const uint8_t* planeY, int strideY,
                               const uint8_t* planeCb, int strideCb,
                               const uint8_t* planeCr, int strideCr,
                               uint8_t* rgba, int width, int height) {
-    // Width catches widescreen videos whose height is below 720.
+    // width catches widescreen videos whose height is below 720.
     auto convert = (width >= 1280 || height >= 720) ? libyuv::H420ToABGR
                                                     : libyuv::I420ToABGR;
     convert(planeY, strideY, planeCb, strideCb, planeCr, strideCr,
@@ -364,7 +364,7 @@ void VideoPlayer::prepareGPUPipeline() {
                     geode::log::warn("VideoPlayer: PBO init failed, falling back to direct upload");
                 }
             } else {
-                // Without staging data there is no CPU-upload fallback.
+                // without staging data there is no cpu-upload fallback.
                 geode::log::warn("[VideoPlayer] RGBA staging buffer alloc failed in pre-warm "
                                  "({}x{}), will retry on first frame", m_texWidth, m_texHeight);
             }
@@ -407,7 +407,7 @@ bool VideoPlayer::uploadFrame(const IVideoDecoder::Frame& frame) {
     int w = frame.width;
     int h = frame.height;
 
-    // Defer conversion during a busy frame.
+    // defer conversion during a busy frame.
     auto* director = cocos2d::CCDirector::get();
     if (!director) return false;
     float dt = director->getDeltaTime();
@@ -483,7 +483,7 @@ void VideoPlayer::update(float dt) {
     if (currentFrame == m_lastUpdateFrame) return;
     m_lastUpdateFrame = currentFrame;
 
-    // Anchor the clock to the first PTS so warm-up does not skip a frame burst.
+    // anchor the clock to the first pts so warm-up does not skip a frame burst.
     if (!m_hasVisibleFrame) {
         if (!m_decoderStalled && !m_pendingUpload) {
             m_timeSincePlay += static_cast<double>(dt);
@@ -522,11 +522,11 @@ void VideoPlayer::update(float dt) {
         return;
     }
 
-    // Cap clock advance after a hitch.
+    // cap clock advance after a hitch.
     double advance = std::min(static_cast<double>(dt), 0.1);
     m_timeSinceLastUpload += advance;
 
-    // Slave video to the audio clock; drift drops frames instead of audible re-seeks.
+    // slave video to the audio clock; drift drops frames instead of audible re-seeks.
     double audioPos = m_audio ? m_audio->positionSeconds() : -1.0;
     if (audioPos >= 0.0 && m_audio->isPlaying()) {
         m_playbackTime = audioPos;
@@ -705,7 +705,7 @@ uint64_t VideoPlayer::getFrameCounter() const { return m_frameCounter; }
 
 cocos2d::CCTexture2D* VideoPlayer::getCurrentFrameTexture() const {
     if (!m_hasVisibleFrame) return nullptr;
-    if (m_useGPUYuv) return m_texY;  // caller must apply the YUV shader
+    if (m_useGPUYuv) return m_texY;  // caller must apply the yuv shader
     return m_texture;
 }
 
@@ -764,7 +764,7 @@ bool VideoPlayer::ensureResolveTarget() {
 
     m_colorSpace = (w >= 1280 || h >= 720) ? 1.0f : 0.0f;
 
-    // Sampler units stay fixed; avoid setting them every frame.
+    // sampler units stay fixed; avoid setting them every frame.
     m_blitShader->use();
     if (m_locY  != -1) m_blitShader->setUniformLocationWith1i(m_locY,  0);
     if (m_locCb != -1) m_blitShader->setUniformLocationWith1i(m_locCb, 1);
@@ -804,7 +804,7 @@ cocos2d::CCGLProgram* VideoPlayer::getYUVShaderProgram() const {
 void VideoPlayer::releaseGPUResolveCache() {
     if (!m_useGPUYuv) return;
 
-    // GL releases stay on the main thread.
+    // gl releases stay on the main thread.
     if (!isOnMainThread()) {
         geode::log::warn("[VideoPlayer] releaseGPUResolveCache called off main thread - skipping");
         return;
@@ -916,7 +916,7 @@ void VideoPlayer::fadeAudioIn(float duration) {
     auto fadeStep = std::make_shared<std::function<void(int)>>();
     std::weak_ptr<std::function<void(int)>> weakFadeStep = fadeStep;
     *fadeStep = [generation, totalSteps, targetVolume, weakFadeStep, track, fadeGeneration](int step) {
-        // A newer fade (or a stop) bumps the generation and owns the track from then on.
+        // a newer fade (or a stop) bumps the generation and owns the track from then on.
         if (generation != fadeGeneration->load(std::memory_order_acquire)) return;
 
         float t = static_cast<float>(step) / static_cast<float>(totalSteps);

@@ -65,7 +65,7 @@ void collectButtons(CCNode* node, std::vector<CCMenuItem*>& out) {
     }
 }
 
-// Draw order is per top-level child of the layer, so a spot behind a button
+// draw order is per top-level child of the layer, so a spot behind a button
 // means one step under whatever menu that button lives in.
 int zBehind(CCNode* anchor, CCLayer* layer) {
     auto* node = anchor;
@@ -82,7 +82,7 @@ float overlap(CCRect const& a, CCRect const& b) {
     return w * h;
 }
 
-// Tucked under the button: her crown stays covered and only the face shows.
+// tucked under the button: her crown stays covered and only the face shows.
 bool hideUnder(CCLayer* layer, CCNode* anchor, CCRect const& rect, float spriteH,
                Spot& out, CCRect& face) {
     auto win = CCDirector::get()->getWinSize();
@@ -113,7 +113,7 @@ bool hideUnder(CCLayer* layer, CCNode* anchor, CCRect const& rect, float spriteH
     return true;
 }
 
-// Guide mode: she stops hiding and pops up behind the hub button.
+// guide mode: she stops hiding and pops up behind the hub button.
 bool perchAbove(CCLayer* layer, CCNode* anchor, CCRect const& rect, float spriteH, Spot& out) {
     auto win = CCDirector::get()->getWinSize();
 

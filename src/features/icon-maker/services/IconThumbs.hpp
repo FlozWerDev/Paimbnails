@@ -15,8 +15,8 @@ public:
 
     static IconThumbs& get();
 
-    // Cache hits call back immediately; misses render in the background.
-    // Invalidation drops pending callbacks.
+    // cache hits call back immediately; misses render in the background.
+    // invalidation drops pending callbacks.
     void request(std::string const& projectId, ReadyCallback onReady);
 
     void invalidate(std::string const& projectId);

@@ -1,15 +1,15 @@
-; Paimbnails Mod Installer for Geometry Dash
-; NSIS Script - Fully Automatic
+; paimbnails mod installer for geometry dash
+; nsis script - fully automatic
 
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
 
-; General
+; general
 Name "Paimbnails"
 OutFile "Paimbnails-Setup.exe"
 RequestExecutionLevel user
 
-; Version info
+; version info
 VIProductVersion "2.3.1.0"
 VIAddVersionKey "ProductName" "Paimbnails"
 VIAddVersionKey "CompanyName" "FlozWer"
@@ -17,23 +17,23 @@ VIAddVersionKey "FileDescription" "Paimbnails - Thumbnails for Geometry Dash"
 VIAddVersionKey "FileVersion" "2.3.1"
 VIAddVersionKey "LegalCopyright" "FlozWer"
 
-; Interface
+; interface
 !define MUI_ICON "paimbnails.ico"
 !define MUI_ABORTWARNING
 !define MUI_QUIETWINDOW
 
-; Silent install
+; silent install
 RequestExecutionLevel user
 
-; Variables
+; variables
 Var GDFolder
 
-; Auto-install section
+; auto-install section
 Section "Install"
-  ; Auto-detect Geometry Dash
+  ; auto-detect geometry dash
   StrCpy $GDFolder ""
 
-  ; Check all possible locations
+  ; check all possible locations
   ${If} ${FileExists} "$LOCALAPPDATA\GeometryDash\GeometryDash.exe"
     StrCpy $GDFolder "$LOCALAPPDATA\GeometryDash"
   ${ElseIf} ${FileExists} "$PROGRAMFILES64\Steam\steamapps\common\Geometry Dash\GeometryDash.exe"
@@ -54,22 +54,22 @@ Section "Install"
     StrCpy $GDFolder "E:\SteamLibrary\steamapps\common\Geometry Dash"
   ${EndIf}
 
-  ; Check if Geometry Dash was found
+  ; check if geometry dash was found
   ${If} $GDFolder == ""
     MessageBox MB_OK "Geometry Dash not found! Please install Geometry Dash with Geode first."
     Abort
   ${EndIf}
 
-  ; Set target folder
+  ; set target folder
   StrCpy $INSTDIR "$GDFolder\geode\mods"
 
-  ; Check if geode\mods exists
+  ; check if geode\mods exists
   ${If} ${FileExists} "$INSTDIR\*.*"
-    ; Install mod
+    ; install mod
     SetOutPath "$INSTDIR"
     File "flozwer.paimbnails2.geode"
 
-    ; Verify
+    ; verify
     ${If} ${FileExists} "$INSTDIR\flozwer.paimbnails2.geode"
       MessageBox MB_OK "Paimbnails installed successfully!$\n$\nLocation: $INSTDIR$\n$\nRestart Geometry Dash to use the mod."
     ${Else}

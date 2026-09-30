@@ -39,7 +39,7 @@ constexpr int kListFadeActionTag = 0x504D01;
 constexpr int kListMoveActionTag = 0x504D02;
 constexpr int kListSwapActionTag = 0x504D03;
 
-// Cached: this runs per cell load; getSettingValue takes a mutex.
+// cached: this runs per cell load; getsettingvalue takes a mutex.
 bool redesignOn() {
     static bool s_enabled = Mod::get()->getSettingValue<bool>("messages-redesign-enabled");
     static auto s_listener = [] {
@@ -166,8 +166,8 @@ class $modify(PaimonMessagesPage, MessagesProfilePage) {
         bool m_searchDetached = false;
         bool m_selectLatch = false;
 
-        // keyBackClicked/onClose are the normal path; this is the guaranteed
-        // one (onExit hooks never install on Windows).
+        // keybackclicked/onclose are the normal path; this is the guaranteed
+        // one (onexit hooks never install on windows).
         ~Fields() {
             if (paimon::isRuntimeShuttingDown()) return;
             if (m_search && !m_searchDetached) {
@@ -256,7 +256,7 @@ class $modify(PaimonMessagesPage, MessagesProfilePage) {
         return contains(msg->m_title) || contains(msg->m_username);
     }
 
-    // The setting can flip while the page is open; the box follows it instead of
+    // the setting can flip while the page is open; the box follows it instead of
     // staying orphaned from init.
     void syncSearchBox() {
         if (redesignOn()) {
@@ -519,7 +519,7 @@ class $modify(PaimonMessageCell, GJMessageCell) {
         float const W = m_width;
         float const H = m_height;
 
-        // Cells are reused while scrolling; drop our previous nodes first.
+        // cells are reused while scrolling; drop our previous nodes first.
         if (auto* old = main->getChildByID("paimon-msg-avatar"_spr)) old->removeFromParent();
         if (auto* children = main->getChildren()) {
             for (auto* child : CCArrayExt<CCNode*>(children)) {
@@ -556,7 +556,7 @@ class $modify(PaimonMessageCell, GJMessageCell) {
         }
         float const replyCx = std::max(W * 0.55f, rightClusterLeft - 16.f);
 
-        // Cell reuse: labels already past contentLeft are shifted, so this is a no-op.
+        // cell reuse: labels already past contentleft are shifted, so this is a no-op.
         std::vector<CCLabelBMFont*> leftLabels;
         float leftEdge = W;
         if (auto* children = main->getChildren()) {

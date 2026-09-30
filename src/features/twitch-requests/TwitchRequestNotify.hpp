@@ -74,7 +74,7 @@ void loadNotifyConfig();
 cocos2d::ccColor3B platformAccent(Platform platform);
 
 // the card as seen, unscaled and unplaced (center anchor).
-// empty `levelName` leaves the level line on the ID.
+// empty `levelname` leaves the level line on the id.
 cocos2d::CCNodeRGBA* buildNotifyCard(
     NotifyConfig const& config,
     Platform platform,
@@ -99,7 +99,7 @@ void playNotifySound(NotifyConfig const& config);
 
 // real notice, from the queue.
 void showRequestNotify(LevelRequest const& request);
-// fake one from the "Try" button; shows even with notices off.
+// fake one from the "try" button; shows even with notices off.
 void showNotifyDemo();
 
 } // namespace paimon::twitch

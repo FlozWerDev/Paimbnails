@@ -7,7 +7,7 @@
 
 namespace paimon {
 
-// validate sprites; reject Geode's missing-asset fallback.
+// validate sprites; reject geode's missing-asset fallback.
 struct SpriteHelper {
 
     static cocos2d::CCDrawNode* createRectStencil(float width, float height) {

@@ -65,7 +65,7 @@ using namespace geode::prelude;
 
 namespace {
     // keybind-capture flow guard (keypress until popup close), distinct from
-    // isCaptureInProgress() (GPU flight only); both are checked on acquire
+    // iscaptureinprogress() (gpu flight only); both are checked on acquire
     std::atomic_bool s_captureFlowActive{false};
     constexpr float kPauseZoomStep = 0.18f;
     constexpr float kPauseZoomMin = 1.0f;
@@ -186,7 +186,7 @@ namespace {
     void resetPlayLayerZoom(CCNode* playLayer);
     void clampPlayLayerZoomPosition(CCNode* playLayer);
 
-    // PauseLayer appears a few frames after pausing. Require a grace period
+    // pauselayer appears a few frames after pausing. require a grace period
     // before treating a missing layer as resume, or pause-zoom can reset early.
 
     class PauseZoomManager {
@@ -226,14 +226,14 @@ namespace {
             m_isPanning = false;
             m_menuForcedHidden = false;
             m_pauseLayerMissingFrames = 0;
-            // Do not carry a hidden-pause flag into the next level.
+            // do not carry a hidden-pause flag into the next level.
             paimon::setPauseZoomHidden(false);
         }
 
         void update(float dt) {
-            // Use the PauseLayer itself; other mods may bypass pauseGame().
+            // use the pauselayer itself; other mods may bypass pausegame().
             auto* playLayer = PlayLayer::get();
-            // Outside gameplay the scan can only ever lose, and it walks the
+            // outside gameplay the scan can only ever lose, and it walks the
             // scene's children with a typeinfo_cast each.
             auto* pauseLayer = playLayer ? getPauseLayer() : nullptr;
             bool pauseLayerPresent = (playLayer && pauseLayer);
@@ -261,7 +261,7 @@ namespace {
 #ifdef GEODE_IS_WINDOWS
             m_isPanning = (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
 #else
-            // no GetAsyncKeyState off Windows; keybind tracker keeps OS-resynced state.
+            // no getasynckeystate off windows; keybind tracker keeps os-resynced state.
             m_isPanning = paimon::keybinds::isMouseButtonHeld(paimon::keybinds::MouseButton::Middle);
 #endif
 
@@ -372,7 +372,7 @@ namespace {
         CCPoint m_lastMousePos = ccp(0.f, 0.f);
         CCPoint m_deltaMousePos = ccp(0.f, 0.f);
 
-    // PauseLayer is destroyed on resume, so resolve it every frame.
+    // pauselayer is destroyed on resume, so resolve it every frame.
         PauseLayer* getPauseLayer() {
             auto* scene = CCDirector::get() ? CCDirector::get()->getRunningScene() : nullptr;
             if (!scene) return nullptr;
@@ -428,7 +428,7 @@ namespace {
             auto* pauseLayer = getPauseLayer();
             if (pauseLayer) {
                 if (pauseLayer->isVisible()) pauseLayer->setVisible(false);
-                // the visit filter keeps this hidden because GD may restore visibility
+                // the visit filter keeps this hidden because gd may restore visibility
                 paimon::setPauseZoomHidden(true);
                 pauseLayer->setTouchEnabled(false);
                 m_menuForcedHidden = true;
@@ -596,7 +596,7 @@ class $modify(PaimonPerformanceParticleSystemQuad, CCParticleSystemQuad) {
     }
 };
 
-// No iOS address for CCParticleBatchNode::draw; Quad/System hooks cover batched particles.
+// no ios address for ccparticlebatchnode::draw; quad/system hooks cover batched particles.
 #ifndef GEODE_IS_IOS
 class $modify(PaimonPerformanceParticleBatchNode, CCParticleBatchNode) {
     void draw() {
@@ -676,7 +676,7 @@ static void uploadCapturedThumbnail(int levelID, std::shared_ptr<uint8_t> const&
 static std::atomic<bool> s_hideP1ForCapture{false};
 static std::atomic<bool> s_hideP2ForCapture{false};
 
-// the preview popup pauses gameplay; resume only when no PauseLayer took over
+// the preview popup pauses gameplay; resume only when no pauselayer took over
 static void resumePlayLayerAfterPopup() {
     if (paimon::isRuntimeShuttingDown()) return;
     auto* pl = PlayLayer::get();
@@ -699,7 +699,7 @@ static void ensurePauseZoomTicker();
 class $modify(PaimonCapturePlayLayer, PlayLayer) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityPre("PlayLayer::init", geode::Priority::VeryLate);
-    // record deaths before noclip hooks can cancel destroyPlayer
+    // record deaths before noclip hooks can cancel destroyplayer
         (void)self.setHookPriorityPre("PlayLayer::destroyPlayer", geode::Priority::VeryEarly);
     }
 
@@ -768,7 +768,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                     if (!down || repeat) return;
                     if (PlayLayer::get() != this) return;
                     if (this->m_isPaused) return;
-    // don't open capture over a PauseLayer created in the same frame
+    // don't open capture over a pauselayer created in the same frame
                     if (paimon::hasPauseLayerInScene()) return;
                     if (!this->m_level || this->m_level->m_levelID <= 0) return;
 
@@ -834,7 +834,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                                 return;
                             }
 
-                            // abort if Esc opened PauseLayer while the request was in flight
+                            // abort if esc opened pauselayer while the request was in flight
                             if (paimon::hasPauseLayerInScene() || self->m_isPaused) {
                                 cleanup();
                                 return;
@@ -864,7 +864,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                                     s_hideP1ForCapture = hideP1; s_hideP2ForCapture = hideP2;
                                     if (popup) popup->setVisible(false);
                                     s_captureFlowActive.store(false);
-    // the popup may close before the queued callback; keep only a WeakRef
+    // the popup may close before the queued callback; keep only a weakref
                                     WeakRef<CapturePreviewPopup> weakPopup = popup;
                                     Loader::get()->queueInMainThread([weakRef, weakPopup]() {
                                         if (paimon::isRuntimeShuttingDown()) return;
@@ -1062,7 +1062,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                         return;
                     }
 
-                    // don't open recapture over a newly created PauseLayer
+                    // don't open recapture over a newly created pauselayer
                     if (paimon::hasPauseLayerInScene() || layer->m_isPaused) return;
 
                     bool pausedByPopup = false;
@@ -1176,7 +1176,7 @@ $on_game(Exiting) {
     shutdownPauseZoomTicker();
 }
 
-    // filter PauseLayer in CCNode::visit; the atomic flag survives GD visibility restores
+    // filter pauselayer in ccnode::visit; the atomic flag survives gd visibility restores
 class $modify(PaimonPauseZoomVisitFilter, CCNode) {
     static void onModify(auto& self) {
         // run late so other visit hooks see the original first

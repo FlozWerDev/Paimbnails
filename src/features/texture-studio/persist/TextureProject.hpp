@@ -13,7 +13,7 @@
 
 namespace paimon::texture_studio {
 
-// Re-open slots after GD moves resources by re-resolving paths.
+// re-open slots after gd moves resources by re-resolving paths.
 struct ProjectSheetRef {
     std::string baseName;
     std::string qualitySuffix;
@@ -31,7 +31,7 @@ struct ManualOverrideRef {
 
 struct AutoCacheRef {
     std::string  spriteName;
-    std::uint64_t spriteHash = 0;  // FNV-1a of source RGBA.
+    std::uint64_t spriteHash = 0;  // fnv-1a of source rgba.
     int          clusterCount = 0;
 };
 
@@ -44,24 +44,24 @@ struct SpriteSetting {
     cocos2d::ccColor3B colorGlow{255, 255, 255};
     cocos2d::ccColor3B colorDetail{255, 255, 255};
 
-    // Placement used when hasCustomImage is set.
+    // placement used when hascustomimage is set.
     ImageTransform imageTransform{};
 
-    // False replaces the sprite; true composites over it.
+    // false replaces the sprite; true composites over it.
     bool imageOverlay = false;
 
-    // Fusion region-fill; mask/texture stamped without pack recoloring.
+    // fusion region-fill; mask/texture stamped without pack recoloring.
     bool hasFusion = false;
     bool fusionAnimated = false;
-    // Replace keeps texture colors pure; Luma/Overlay optional.
+    // replace keeps texture colors pure; luma/overlay optional.
     FusionBlendMode fusionBlend = FusionBlendMode::Replace;
-    // Paint-bucket color radius; typical range 90–140.
+    // paint-bucket color radius; typical range 90–140.
     int   fusionTolerance = 110;
-    // Grow into same-color neighbors for AA fringes; 0 disables.
+    // grow into same-color neighbors for aa fringes; 0 disables.
     int   fusionExpandRadius = 1;
     float fusionOpacity = 1.0f;
     ImageTransform fusionTransform{};
-    // Pixel placement; +Y is down.
+    // pixel placement; +y is down.
     int fusionPixelX = 0;
     int fusionPixelY = 0;
 
@@ -89,11 +89,11 @@ struct TextureProject {
     cocos2d::ccColor3B color1{149, 226, 3};
     cocos2d::ccColor3B color2{28, 233, 255};
     cocos2d::ccColor3B colorGlow{255, 255, 255};
-    // Interior glyph color; pure white keeps vanilla.
+    // interior glyph color; pure white keeps vanilla.
     cocos2d::ccColor3B colorDetail{255, 255, 255};
     int  brightness = 160;
 
-    // Tint engine parameters; see SpritePreviewOptions.
+    // tint engine parameters; see spritepreviewoptions.
     float maskSoftness     = 0.35f;
     int   clusterPrecision = 5;
     int   edgeCleanup      = 1;
@@ -107,14 +107,14 @@ struct TextureProject {
     bool colorGradientBg         = false;
     bool colorMainMenu           = false;
 
-    // Deprecated name kept so old projects still parse.
+    // deprecated name kept so old projects still parse.
     bool usePackGenAssets   = true;
     bool tintGoldFont       = false;
     bool colorGoldTitles    = false;
     bool colorDemonFaces    = false;
     bool mythicCompat       = false;
     bool includeModTextures = true;
-    // Export animated fusion GIFs alongside static sheets.
+    // export animated fusion gifs alongside static sheets.
     bool exportAnimatedFusions = true;
 
     std::map<std::string, ManualOverrideRef> overrides;
@@ -131,7 +131,7 @@ struct TextureProject {
 
 std::int64_t nowUnixMs();
 
-// False only when no selected plist contains a usable UI sprite.
+// false only when no selected plist contains a usable ui sprite.
 bool ensureRepresentativeFrame(TextureProject& project);
 
 }

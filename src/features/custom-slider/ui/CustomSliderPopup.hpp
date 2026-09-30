@@ -6,7 +6,7 @@
 
 namespace paimon::slider {
 
-// Slider config popup on PaiConfigKit; mode-dependent options rebuild content.
+// slider config popup on paiconfigkit; mode-dependent options rebuild content.
 class CustomSliderPopup : public geode::Popup {
 public:
     static CustomSliderPopup* create();
@@ -19,16 +19,16 @@ protected:
     cocos2d::CCNode*        m_previewNode    = nullptr;
     cocos2d::CCNode*        m_previewContent = nullptr;
     cocos2d::CCMenu*        m_shapeGridMenu  = nullptr;
-    int                     m_tab            = 0; // 0 = Basico, 1 = Avanzado
+    int                     m_tab            = 0; // 0 = basico, 1 = avanzado
     float                   m_previewScalePerUnit = 1.f;
     bool                    m_sliderRefreshPending = false;
 
-    // Rebuilds scroll content (mode/frame changes).
+    // rebuilds scroll content (mode/frame changes).
     void rebuild();
-    // One card per tab; only the visible one builds.
+    // one card per tab; only the visible one builds.
     std::vector<cocos2d::CCNode*> buildBasicCards(float scrollW, float innerW);
     std::vector<cocos2d::CCNode*> buildAdvancedCards(float scrollW, float innerW);
-    // Same as rebuild() but next tick: never mutate the scene inside touch dispatch.
+    // same as rebuild() but next tick: never mutate the scene inside touch dispatch.
     void scheduleRebuild();
     void scheduleSliderRefresh();
     void applySliderRefresh(float);

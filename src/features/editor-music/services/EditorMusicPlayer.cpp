@@ -62,7 +62,7 @@ void EditorMusicPlayer::refreshQueue() {
         if (playable(track)) m_queue.push_back(track.id);
     }
 
-    // Nothing queued yet: preselect last session's track so the play button
+    // nothing queued yet: preselect last session's track so the play button
     // has something to start without going through the picker first.
     if (m_trackId.empty()) {
         auto last = Mod::get()->getSavedValue<std::string>(kLastKey, "");
@@ -95,7 +95,7 @@ bool EditorMusicPlayer::openFile(std::string const& path) {
         return false;
     }
 
-    // Started paused so volume and loop mode land before the first sample.
+    // started paused so volume and loop mode land before the first sample.
     result = engine->m_system->playSound(m_sound, nullptr, true, &m_channel);
     if (result != FMOD_OK || !m_channel) {
         log::warn("[EditorMusic] playSound failed ({})", static_cast<int>(result));
@@ -177,7 +177,7 @@ bool EditorMusicPlayer::playNext() {
 bool EditorMusicPlayer::playPrevious() {
     if (!ensureQueue()) return false;
 
-    // Restart the track first, like every other player does.
+    // restart the track first, like every other player does.
     if (positionMs() > 3000) {
         seekMs(0);
         return true;
@@ -264,7 +264,7 @@ void EditorMusicPlayer::resumeFromSuspend() {
     m_suspended = false;
 
     if (!channelAlive()) {
-        // The channel died while the playtest ran; reopen where we left off.
+        // the channel died while the playtest ran; reopen where we left off.
         m_channel = nullptr;
         if (m_trackId.empty()) return;
         auto pos = m_suspendedPosMs;
@@ -278,7 +278,7 @@ void EditorMusicPlayer::tick() {
     if (m_suspended || m_paused || m_trackId.empty()) return;
     if (!m_channel || channelAlive()) return;
 
-    // The channel went quiet on its own: the track finished.
+    // the channel went quiet on its own: the track finished.
     m_channel = nullptr;
     if (m_repeat == RepeatMode::Off && m_index + 1 >= m_queue.size() && !m_shuffle) {
         stop();

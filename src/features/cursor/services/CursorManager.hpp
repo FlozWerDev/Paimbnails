@@ -19,11 +19,11 @@ inline std::vector<std::string> CURSOR_LAYER_OPTIONS = {
 inline constexpr float CURSOR_SCALE_MIN = 0.10f;
 inline constexpr float CURSOR_SCALE_MAX = 3.0f;
 inline constexpr float CURSOR_SCALE_DEFAULT = 0.30f;
-// Keep the sprite's top-left hotspot aligned with the pointer.
+// keep the sprite's top-left hotspot aligned with the pointer.
 inline constexpr float CURSOR_HOTSPOT_X = 0.f;
 inline constexpr float CURSOR_HOTSPOT_Y = 1.0f;
 
-// Priority: Click > Disabled > Text > Hover > Move > Idle.
+// priority: click > disabled > text > hover > move > idle.
 enum class CursorState {
     Idle     = 0,
     Move     = 1,
@@ -113,7 +113,7 @@ public:
     void setTouchPoint(cocos2d::CCPoint const& point) { m_touchPoint = point; }
     cocos2d::CCPoint pointerPos() const;
 
-    // Gallery paths are relative to galleryDir() and double as state IDs.
+    // gallery paths are relative to gallerydir() and double as state ids.
 
     std::vector<std::string> getPacks() const;
     std::vector<std::string> getImagesInPack(std::string const& packName) const;
@@ -122,13 +122,13 @@ public:
     std::string addToGallery(std::filesystem::path const& srcPath);
     std::vector<std::string> importFromFile(std::filesystem::path const& srcPath);
 
-    // Imports in-memory bytes (shop downloads). Empty packName leaves it loose.
+    // imports in-memory bytes (shop downloads). empty packname leaves it loose.
     std::string importData(std::vector<uint8_t> const& data,
                            std::string const& displayName,
                            std::string const& packName = "");
-    // Reserves a free-named pack folder and returns that name.
+    // reserves a free-named pack folder and returns that name.
     std::string createPack(std::string const& baseName);
-    // Imports a downloaded .zip as a new pack.
+    // imports a downloaded .zip as a new pack.
     std::vector<std::string> importZipData(std::vector<uint8_t> const& data,
                                            std::string const& displayName);
 
@@ -146,7 +146,7 @@ public:
     bool isAttached() const { return m_cursorNode && m_cursorNode->getParent(); }
     bool shouldShowOnCurrentScene() const;
 
-    // Draw after ImGui at VeryLate priority so the cursor stays on top.
+    // draw after imgui at verylate priority so the cursor stays on top.
     void renderOverlay();
 
     void applyTrailPreset(int index);
@@ -184,7 +184,7 @@ private:
     bool m_mouseDown = false;
     bool m_rightDown = false;
     bool m_fxHeld = false;
-    // Offscreen until first touch: (0,0) would fake a bottom-left hover on boot.
+    // offscreen until first touch: (0,0) would fake a bottom-left hover on boot.
     cocos2d::CCPoint m_touchPoint{-10000.f, -10000.f};
     bool m_sceneVisible = false;
     int  m_sceneVisibleCooldown = 0;

@@ -3,8 +3,8 @@
 #include <Geode/Geode.hpp>
 #include <string>
 
-// Chainable animations over the paim_Paimon.png sprite; one-shots run over Idle
-// via CCAction tags so Idle + Blink + Talk don't cancel each other.
+// chainable animations over the paim_paimon.png sprite; one-shots run over idle
+// via ccaction tags so idle + blink + talk don't cancel each other.
 
 namespace paimon::guide {
 
@@ -22,17 +22,17 @@ public:
 
     static AnimatedPaimon* create(float spriteScale = 1.0f);
 
-    // Play an animation. Idle/Blink loop; the rest are one-shot and return to Idle when done.
+    // play an animation. idle/blink loop; the rest are one-shot and return to idle when done.
     void play(Animation anim);
 
-    // Point at a target node (computes the angle and rotates the sprite). Null target resets to 0.
+    // point at a target node (computes the angle and rotates the sprite). null target resets to 0.
     void pointAt(cocos2d::CCNode* target, float duration = 0.3f);
 
-    // In "lively" mode Paimon does continuous Idle+Blink and reacts more to chat
-    // animations. When false, the sprite stays semi-static (e.g. guide disabled).
+    // in "lively" mode paimon does continuous idle+blink and reacts more to chat
+    // animations. when false, the sprite stays semi-static (e.g. guide disabled).
     void setLively(bool lively);
 
-    // Optional chat bubble ("Ask me!") at top-right. Empty text hides it.
+    // optional chat bubble ("ask me!") at top-right. empty text hides it.
     void showBubble(std::string const& text, float duration = 3.0f);
     void hideBubble();
 
@@ -45,7 +45,7 @@ protected:
     void scheduleNextBlink();
     void onBlinkTimer(float dt);
 
-    // Action tags to keep states from interfering.
+    // action tags to keep states from interfering.
     static constexpr int kIdleTag  = 1001;
     static constexpr int kBlinkTag = 1002;
     static constexpr int kStateTag = 1003;

@@ -19,7 +19,7 @@ constexpr float kCellHeight = 76.f;
 constexpr int kMaxColumns = 4;
 constexpr float kTopPad = 46.f;
 constexpr float kBottomPad = 10.f;
-// Cell edge to icon center and to label.
+// cell edge to icon center and to label.
 constexpr float kIconDrop = 26.f;
 constexpr float kLabelDrop = 60.f;
 
@@ -106,7 +106,7 @@ bool GarageHubPopup::init(GJGarageLayer* garage) {
 void GarageHubPopup::borrow(CCMenuItem* btn, CCPoint const& spot) {
     if (!btn) return;
 
-    // list Ref keeps it alive across reparenting.
+    // list ref keeps it alive across reparenting.
     m_borrowed.push_back({btn, btn->m_pListener, btn->m_pfnSelector});
     // popup intercepts to close first; most entries open another screen.
     btn->setTarget(this, menu_selector(GarageHubPopup::onEntry));

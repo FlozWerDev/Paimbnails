@@ -9,6 +9,7 @@
 #include "../utils/DynamicPopupRegistry.hpp"
 #include "../blur/PopupBlurService.hpp"
 #include "../core/Settings.hpp"
+#include "../utils/EditorContext.hpp"
 #include "../core/RuntimeLifecycle.hpp"
 #include "../features/transitions/services/DynamicTransitionManager.hpp"
 #include "../features/transitions/services/DynamicPanelTransitions.hpp"
@@ -20,14 +21,7 @@ using namespace cocos2d;
 
 namespace {
 bool isEditorContextActive() {
-    auto* director = CCDirector::get();
-    if (!director) return false;
-
-    auto* scene = director->getRunningScene();
-    if (!scene) return false;
-
-    return scene->getChildByType<LevelEditorLayer>(0) != nullptr ||
-           scene->getChildByType<EditorUI>(0) != nullptr;
+    return paimon::isEditorScene();
 }
 }
 
@@ -43,7 +37,7 @@ $execute {
 
 class $modify(PaimonButtonOriginCapture, CCMenuItemSpriteExtra) {
     static void onModify(auto& self) {
-        // VeryEarly keeps original button position.
+        // veryearly keeps original button position.
         (void)self.setHookPriorityPre("CCMenuItemSpriteExtra::selected", geode::Priority::VeryEarly);
     }
 
@@ -73,7 +67,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         Ref<CCNode> m_blurNode = nullptr;
         FLAlertLayer* m_self = nullptr;
 
-        // blur cleanup here: onExit not bound on FLAlertLayer
+        // blur cleanup here: onexit not bound on flalertlayer
         ~Fields() {
             if (paimon::isRuntimeShuttingDown()) return;
             if (Ref<CCNode> blur = m_blurNode) {
@@ -628,14 +622,14 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
 };
 
 
-    // show() hooks cover classes bypassing FLAlertLayer::show
+    // show() hooks cover classes bypassing flalertlayer::show
 
 #include <Geode/binding/SetupShaderEffectPopup.hpp>
 
 namespace {
 bool isShaderRelatedPopup(cocos2d::CCNode* popup) {
     if (!popup) return false;
-    // keep the live gameplay background for SetupShaderEffectPopup
+    // keep the live gameplay background for setupshadereffectpopup
     if (typeinfo_cast<SetupShaderEffectPopup*>(popup)) return true;
     return false;
 }

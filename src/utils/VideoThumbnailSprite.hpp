@@ -12,7 +12,7 @@
 #include <chrono>
 #include <atomic>
 
-// CCSprite wrapper around VideoPlayer; muted autoplay, zero-alloc frame uploads.
+// ccsprite wrapper around videoplayer; muted autoplay, zero-alloc frame uploads.
 class VideoThumbnailSprite : public cocos2d::CCSprite {
 public:
     using FrameReadyCallback = std::function<void(VideoThumbnailSprite*)>;
@@ -87,7 +87,7 @@ private:
     static void pruneRecentFailuresLocked(std::chrono::steady_clock::time_point now);
     static void pumpAsyncQueues();
     static void handleDownloadResponse(std::string requestKey, geode::utils::web::WebResponse&& response);
-    // decoder opens off main thread, then finishCreateJob takes the player.
+    // decoder opens off main thread, then finishcreatejob takes the player.
     static void handleCreateJob(CreateJob job);
     // main thread: wrap the player in a sprite and settle queue bookkeeping.
     static void finishCreateJob(CreateJob job, std::unique_ptr<paimon::video::VideoPlayer> player);
@@ -105,7 +105,7 @@ private:
     bool loadFirstFrameFromCache(std::string const& videoPath);
 
     static std::mutex s_cacheMutex;
-    static std::unordered_map<std::string, std::string> s_tempFiles; // cacheKey → path
+    static std::unordered_map<std::string, std::string> s_tempFiles; // cachekey → path
     static std::unordered_map<std::string, std::shared_ptr<DownloadRequest>> s_downloadRequests;
     static std::deque<std::string> s_downloadQueue;
     static std::deque<CreateJob> s_createQueue;
@@ -122,7 +122,7 @@ private:
     static constexpr size_t MAX_FIRST_FRAME_BYTES = 30ULL * 1024 * 1024;
 #else
     static constexpr int MAX_CONCURRENT_DOWNLOADS = 2;
-    // Disk hits are decoder opens, so allow two in parallel.
+    // disk hits are decoder opens, so allow two in parallel.
     static constexpr int MAX_CONCURRENT_CREATES = 2;
     static constexpr int MAX_CACHED_PLAYERS = 3;
     static constexpr int  MAX_TEMP_FILES = 80;
@@ -132,7 +132,7 @@ private:
     static constexpr auto FAILED_REQUEST_TTL = std::chrono::minutes(2);
     static std::string getTempPath(std::string const& cacheKey);
 
-    // enforce the MP4 count/size budget; caller holds s_cacheMutex.
+    // enforce the mp4 count/size budget; caller holds s_cachemutex.
     static void enforceTempFilesBudgetLocked();
 
     // remove unreferenced runtime cache files once per session; no locks held.

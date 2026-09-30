@@ -15,16 +15,16 @@
 namespace paimon::icon_maker {
 
 struct PieceShape {
-    // Frozen values.
+    // frozen values.
     enum class Kind : int { Import = 0, Template = 1 };
 
     Kind kind = Kind::Import;
 
-    // Import: filename inside the project's images/ dir.
+    // import: filename inside the project's images/ dir.
     std::string file;
 
-    // Template: vanilla icon reference; the shape is extracted lazily from
-    // GD's sheets and cached in images/ under `file`.
+    // template: vanilla icon reference; the shape is extracted lazily from
+    // gd's sheets and cached in images/ under `file`.
     int templateIconId = 1;
     std::string templateFrameSuffix;  // full suffix incl. robot part, e.g. "_02_glow_001"
 };
@@ -33,14 +33,12 @@ struct IconPiece {
     std::string id;    // short unique id inside the project
     std::string name;  // user-visible layer name
     bool visible = true;
-    // Editor-only: the canvas refuses to drag or resize a locked layer, so a
+    // editor-only: the canvas refuses to drag or resize a locked layer, so a
     // finished background piece stops getting nudged by accident.
     bool locked = false;
     texture_studio::ImageTransform transform{};
 
-    // Non-uniform stretch applied before the transform's uniform scale. Kept
-    // apart from ImageTransform because that struct is shared with
-    // texture-studio, which has no use for per-axis scaling.
+    // per-axis stretch belongs to icons; texture studio shares the uniform transform.
     float scaleX = 1.f;
     float scaleY = 1.f;
 
@@ -65,12 +63,10 @@ struct IconProject {
     bool hasBuiltOnce = false;
     std::int64_t lastBuiltAt = 0;
 
-    // GD multiplies the player's colors onto the icon layers; with this on
-    // (default) the mod re-whitens them so gradients/images show their true
-    // colors. Off = classic behavior (grayscale art tinted by player colors).
+    // exact colors bypass the player tint so gradients and images retain their baked colors.
     bool exactColors = true;
 
-    // Keyed by IconAnatomy::slotStorageKey ("main", "glow", "p2.main"...).
+    // keyed by iconanatomy::slotstoragekey ("main", "glow", "p2.main"...).
     std::map<std::string, IconSlotContent> slots;
 
     std::string makePieceId() const;

@@ -22,11 +22,11 @@ constexpr char const* kStoreFile = "official-slots.json";
 constexpr char const* kGmdFolder = "official-slots-gmd";
 constexpr size_t kMaxSlots = 60;
 
-// Reject oversized imports before copying arbitrary files into the save directory.
+// reject oversized imports before copying arbitrary files into the save directory.
 constexpr std::uintmax_t kMaxGmdBytes = 32ull * 1024 * 1024;
 
 std::string newSlotId() {
-    // Enough entropy for a local list. Not security relevant, so the cheap
+    // enough entropy for a local list. not security relevant, so the cheap
     // clock + mt19937 pair is fine and avoids pulling in a uuid dependency.
     static std::mt19937_64 rng{static_cast<uint64_t>(
         std::chrono::steady_clock::now().time_since_epoch().count())};
@@ -96,7 +96,7 @@ std::optional<Slot> slotFromJson(matjson::Value const& entry) {
     slot.levelId = std::max(0, intField(entry, "levelId"));
     slot.gmdFile = stringField(entry, "gmdFile");
 
-    // A slot that lost its payload can never be drawn, so drop it instead of
+    // a slot that lost its payload can never be drawn, so drop it instead of
     // keeping a card that opens onto nothing.
     if (slot.source == Source::LevelId && slot.levelId <= 0) return std::nullopt;
     if (slot.source == Source::Gmd && slot.gmdFile.empty()) return std::nullopt;
@@ -222,7 +222,7 @@ void SlotStore::loadOrder(matjson::Value const& root) {
         }
     }
 
-    // Anything unknown to the saved order keeps working: officials hold
+    // anything unknown to the saved order keeps working: officials hold
     // their vanilla spot, appended slots go last in list order.
     for (int id = 1; id <= 22; ++id) pushOnce(officialKey(id));
     for (auto const& slot : m_slots) {
@@ -286,7 +286,7 @@ std::string SlotStore::add(Slot slot, std::optional<std::size_t> orderIndex) {
     slot.stars = std::clamp(slot.stars, kMinStars, kMaxStars);
     if (!isOfficialId(slot.replacesOfficialId)) slot.replacesOfficialId = 0;
 
-    // Two slots on the same page would fight over one draw, so the newest wins
+    // two slots on the same page would fight over one draw, so the newest wins
     // and the previous one goes back to being appended.
     if (slot.replacesOfficialId != 0) {
         for (auto& existing : m_slots) {
@@ -338,7 +338,7 @@ bool SlotStore::update(Slot const& slot) {
         }
     }
 
-    // The .gmd is ours to keep only while a slot points at it.
+    // the .gmd is ours to keep only while a slot points at it.
     if (!it->gmdFile.empty() && it->gmdFile != updated.gmdFile) {
         this->discardGmd(it->gmdFile);
     }
@@ -531,7 +531,7 @@ std::optional<std::string> SlotStore::importGmd(std::filesystem::path const& sou
     }
 
     auto stem = utils::string::pathToString(source.stem());
-    // The name ends up as a path, so keep it to characters that behave on every
+    // the name ends up as a path, so keep it to characters that behave on every
     // platform we ship on.
     std::string safe;
     safe.reserve(stem.size());
@@ -558,7 +558,7 @@ std::optional<std::string> SlotStore::importGmd(std::filesystem::path const& sou
 void SlotStore::discardGmd(std::string const& fileName) {
     if (fileName.empty()) return;
 
-    // Never let a stored name walk out of our folder.
+    // never let a stored name walk out of our folder.
     std::filesystem::path name{fileName};
     if (name.has_parent_path() || name.filename() != name) {
         log::warn("[OfficialSlots] Ignoring a suspicious .gmd name");

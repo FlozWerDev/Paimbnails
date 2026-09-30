@@ -83,7 +83,7 @@ namespace {
         if (kb.has_value() &&
             (kb->key != KEY_None || kb->modifiers != KeyboardModifier::None))
         {
-            // modifier-only binds must not read as "Ctrl+Unknown".
+            // modifier-only binds must not read as "ctrl+unknown".
             text = paimon::keybinds::formatKeyboardKeybind(*kb);
         }
         if (!ext.isEmpty()) {
@@ -91,7 +91,7 @@ namespace {
             text += ext.toDisplayString();
         }
         if (text.empty()) return "(unset)";
-        // volume gestures read as "<bind> + Scroll".
+        // volume gestures read as "<bind> + scroll".
         if (appendScrollHint) {
             text += " + Scroll";
         }
@@ -147,12 +147,12 @@ bool ScrollKeybindsPopup::init() {
     auto addRow = [&](CCNode* n) { if (n) rows.push_back(n); };
 
     addRow(makeSectionHeader("Scroll de Volumen - Juego", scrollW));
-    addRow(makeKeybindRow(kMusicGameKey, "Music Volume", scrollW, /*allowScroll=*/false));
-    addRow(makeKeybindRow(kSFXGameKey,   "SFX Volume",   scrollW, /*allowScroll=*/false));
+    addRow(makeKeybindRow(kMusicGameKey, "Music Volume", scrollW, /*allowscroll=*/false));
+    addRow(makeKeybindRow(kSFXGameKey,   "SFX Volume",   scrollW, /*allowscroll=*/false));
 
     addRow(makeSectionHeader("Scroll de Volumen - Editor", scrollW));
-    addRow(makeKeybindRow(kMusicEditorKey, "Music Volume", scrollW, /*allowScroll=*/false));
-    addRow(makeKeybindRow(kSFXEditorKey,   "SFX Volume",   scrollW, /*allowScroll=*/false));
+    addRow(makeKeybindRow(kMusicEditorKey, "Music Volume", scrollW, /*allowscroll=*/false));
+    addRow(makeKeybindRow(kSFXEditorKey,   "SFX Volume",   scrollW, /*allowscroll=*/false));
 
 #if defined(GEODE_IS_MOBILE)
     // no wheel on touch screens; the three-finger drag replaces it.
@@ -177,8 +177,8 @@ bool ScrollKeybindsPopup::init() {
 #endif
 
     addRow(makeSectionHeader("Captura", scrollW));
-    addRow(makeKeybindRow("capture-keybind", "Capturar", scrollW, /*allowScroll=*/true));
-    addRow(makeKeybindRow("capture-menu-keybind", "Abrir Menu Captura", scrollW, /*allowScroll=*/true));
+    addRow(makeKeybindRow("capture-keybind", "Capturar", scrollW, /*allowscroll=*/true));
+    addRow(makeKeybindRow("capture-menu-keybind", "Abrir Menu Captura", scrollW, /*allowscroll=*/true));
 
     addRow(makeSectionHeader("Pause Zoom", scrollW));
     addRow(makeKeybindRow("zoom-in-keybind",          "Zoom In",      scrollW, true));
@@ -260,7 +260,7 @@ CCNode* ScrollKeybindsPopup::makeKeybindRow(
     auto kb = getFirstKeyboardKeybind(settingKey);
     auto ext = loadExtendedKeybind(settingKey);
     bool const isVolumeRow = isVolumeKey(settingKey);
-    auto bindingText = buildBindingLabel(kb, ext, /*appendScrollHint=*/isVolumeRow);
+    auto bindingText = buildBindingLabel(kb, ext, /*appendscrollhint=*/isVolumeRow);
 
     auto bindingLabel = CCLabelBMFont::create(bindingText.c_str(), "chatFont.fnt");
     bindingLabel->setScale(0.48f);
@@ -323,7 +323,7 @@ void ScrollKeybindsPopup::openEditPopup(
 
             if (auto* l = labelRef.data()) {
                 bool const isVolumeRow = isVolumeKey(settingKey);
-                auto text = buildBindingLabel(newKb, newExt, /*appendScrollHint=*/isVolumeRow);
+                auto text = buildBindingLabel(newKb, newExt, /*appendscrollhint=*/isVolumeRow);
                 l->setString(text.c_str());
             }
         }
@@ -363,7 +363,7 @@ void ScrollKeybindsPopup::onResetVolumeDefaults(CCObject*) {
                 auto kb = getFirstKeyboardKeybind(settingKey.c_str());
                 auto ext = loadExtendedKeybind(settingKey);
                 bool const isVolumeRow = isVolumeKey(settingKey);
-                label->setString(buildBindingLabel(kb, ext, /*appendScrollHint=*/isVolumeRow).c_str());
+                label->setString(buildBindingLabel(kb, ext, /*appendscrollhint=*/isVolumeRow).c_str());
             }
         }
     }

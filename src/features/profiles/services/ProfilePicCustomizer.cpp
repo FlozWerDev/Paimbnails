@@ -1,5 +1,6 @@
 #include "ProfilePicCustomizer.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../utils/ShapeStencil.hpp"
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/string.hpp>
@@ -245,28 +246,7 @@ void ProfilePicCustomizer::load() {
 }
 
 std::vector<std::pair<std::string, std::string>> ProfilePicCustomizer::getAvailableStencils() {
-    return {
-        {"circle", "Circle"},
-        {"rounded", "Rounded"},
-        {"square", "Square"},
-        {"rectangle", "Rect"},
-        {"pill", "Pill"},
-        {"triangle", "Triangle"},
-        {"diamond", "Diamond"},
-        {"pentagon", "Pentagon"},
-        {"hexagon", "Hexagon"},
-        {"octagon", "Octagon"},
-        {"arch", "Arch"},
-        {"teardrop", "Drop"},
-        {"cloud", "Cloud"},
-        {"cross", "Cross"},
-        {"moon", "Moon"},
-        {"shield", "Shield"},
-        {"badge", "Badge"},
-        {"star", "Star 5"},
-        {"star6", "Star 6"},
-        {"heart", "Heart"},
-    };
+    return getGeometricShapes();
 }
 
 std::vector<DecorationCategory> ProfilePicCustomizer::getDecorationCategories() {

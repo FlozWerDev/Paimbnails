@@ -108,8 +108,8 @@ void VersusEndPopup::buildRankStrip() {
     name->setPosition({64.f, 50.f});
     m_mainLayer->addChild(name, 2);
 
-    // The server, not the format, decides whether this moved anything: a
-    // friendly played under Race is still a friendly.
+    // the server, not the format, decides whether this moved anything: a
+    // friendly played under race is still a friendly.
     int const delta = session.eloDelta();
     auto* eloLabel = CCLabelBMFont::create(
         session.match().ranked
@@ -181,7 +181,7 @@ void VersusEndPopup::onRematch(CCObject*) {
 
     VersusSession::get().reset();
 
-    // A friendly goes back to the same person; the queue would hand it to a
+    // a friendly goes back to the same person; the queue would hand it to a
     // stranger under rules it never offers.
     if (!ranked && !rival.empty()) {
         VersusClient::get().challenge(rival, mode, format,

@@ -20,8 +20,8 @@ struct CaptureValidation {
 
 class FramebufferCapture {
 public:
-    // Callback (success, texture, rgba, w, h); texture +1 released on return,
-    // retain to keep. May run off-thread: marshal to main for UI.
+    // callback (success, texture, rgba, w, h); texture +1 released on return,
+    // retain to keep. may run off-thread: marshal to main for ui.
     static void requestCapture(
         int levelID,
         geode::CopyableFunction<void(bool success, cocos2d::CCTexture2D* texture, std::shared_ptr<uint8_t> rgbaData, int width, int height)> callback,
@@ -32,13 +32,13 @@ public:
 
     static void cancelPending();
 
-    // Called from CCEGLView pre-swap hook to drive capture state machine.
+    // called from cceglview pre-swap hook to drive capture state machine.
     static void executeIfPending();
 
     static bool hasPendingCapture();
     static bool isCapturing();
 
-    // Call after the full frame.
+    // call after the full frame.
     static void processDeferredCallbacks();
 
     static int getMaxTextureSize();
@@ -48,19 +48,19 @@ public:
 
     static CaptureValidation validateCaptureConditions();
 
-    // Same pipeline as a real capture; autoreleased texture, player hiding mirrors the accepted shot.
+    // same pipeline as a real capture; autoreleased texture, player hiding mirrors the accepted shot.
     static cocos2d::CCTexture2D* renderPreviewTexture(
         int width, int height, bool hidePlayer1 = false, bool hidePlayer2 = false);
 
-    // Internal: don't call from outside the capture service.
+    // internal: don't call from outside the capture service.
     static void clearCaptureFlags();
 
 private:
     struct CaptureRequest {
         int levelID;
         geode::CopyableFunction<void(bool, cocos2d::CCTexture2D*, std::shared_ptr<uint8_t>, int, int)> callback;
-        // Keep a one-frame ownership token so another mod cannot remove and
-        // destroy the requested node between the UI event and pre-swap.
+        // keep a one-frame ownership token so another mod cannot remove and
+        // destroy the requested node between the ui event and pre-swap.
         geode::Ref<cocos2d::CCNode> nodeToCapture;
         bool hidePlayer1 = false;
         bool hidePlayer2 = false;
@@ -77,11 +77,11 @@ private:
     };
 
     static CaptureRequest s_request;
-    // Kept outside s_request while CPU processing is in flight so cancellation
+    // kept outside s_request while cpu processing is in flight so cancellation
     // can still complete the caller exactly once.
     static geode::CopyableFunction<void(bool, cocos2d::CCTexture2D*, std::shared_ptr<uint8_t>, int, int)>
         s_processingCallback;
-    // Supersede detection uses the g_generation counter captured in the worker
+    // supersede detection uses the g_generation counter captured in the worker
     // lambda; no separate generation member is kept.
     static std::vector<DeferredCallback> s_deferredCallbacks;
     static bool s_isCapturing;

@@ -9,9 +9,7 @@ namespace paimon::info::compat {
 
 namespace {
 
-// Modules whose UI lands in the same place as BetterInfo's. Advanced Search,
-// Search Presets and the progress modules are absent on purpose: BetterInfo has
-// no equivalent, so running both is fine.
+// disable modules whose controls overlap betterinfo; independent search and progress modules can coexist.
 constexpr std::string_view kOverlapping[] = {
     "info-mod-extended",
     "info-mod-ids",

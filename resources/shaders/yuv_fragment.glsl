@@ -1,4 +1,4 @@
-// video-range YUV to RGB; u_colorSpace: 0 = BT.601, 1 = BT.709.
+// video-range yuv to rgb; u_colorspace: 0 = bt.601, 1 = bt.709.
 #ifdef GL_ES
 precision mediump float;
 #endif

@@ -18,12 +18,12 @@ public:
         m_coalesceKey.clear();
     }
 
-    // Save before editing; coalesceKey groups slider drags into one undo step.
+    // save before editing; coalescekey groups slider drags into one undo step.
     void push(IconProject const& before, std::string coalesceKey = {}) {
         if (!coalesceKey.empty() && coalesceKey == m_coalesceKey) return;
         m_coalesceKey = std::move(coalesceKey);
 
-        // A new edit after undoing discards the redo tail.
+        // a new edit after undoing discards the redo tail.
         if (m_cursor + 1 < m_entries.size()) {
             m_entries.resize(m_cursor + 1);
         }
@@ -37,7 +37,7 @@ public:
         }
     }
 
-    // Call whenever the current project state should become the tip, e.g.
+    // call whenever the current project state should become the tip, e.g.
     // after the edit that followed push() finished mutating it.
     void commit(IconProject const& current) {
         if (m_entries.empty()) {
@@ -53,7 +53,7 @@ public:
     bool canUndo() const { return m_cursor > 0; }
     bool canRedo() const { return m_cursor + 1 < m_entries.size(); }
 
-    // Returns the state to restore, or nullptr when there is nothing to do.
+    // returns the state to restore, or nullptr when there is nothing to do.
     IconProject const* undo() {
         if (!canUndo()) return nullptr;
         m_coalesceKey.clear();

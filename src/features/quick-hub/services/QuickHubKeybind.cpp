@@ -7,7 +7,7 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// Hold Ctrl to open the radial; key dispatch only cancels the hold when Ctrl is a shortcut.
+// hold ctrl to open the radial; key dispatch only cancels the hold when ctrl is a shortcut.
 
 namespace {
 
@@ -82,7 +82,7 @@ void resetHold() {
     syncHoldTicking();
 }
 
-// Never-freed singleton: outlives scene changes; the tick registers only for the hold window.
+// never-freed singleton: outlives scene changes; the tick registers only for the hold window.
 class QuickHubScheduler : public CCNode {
 public:
     static QuickHubScheduler* get() {
@@ -95,7 +95,7 @@ public:
         return s_instance;
     }
 
-    // onUpdate only advances the hold timer: register for that window, not the whole session.
+    // onupdate only advances the hold timer: register for that window, not the whole session.
     static void setTicking(bool on) {
         auto* self = get();
         if (self->m_ticking == on) return;
@@ -154,7 +154,7 @@ void syncHoldTicking() {
 
 }
 
-// Volume-scroll cancels an in-progress Ctrl hold.
+// volume-scroll cancels an in-progress ctrl hold.
 namespace paimon::quickhub {
     void notifyVolumeScrollUsed() {
         if (s_hold.ctrlDown && !s_hold.radialOpened) {
@@ -177,7 +177,7 @@ namespace paimon::volscroll {
 }
 
 $execute {
-    // Geode input event works on every target; the generated CCKeyboardDispatcher header is invalid on iOS.
+    // geode input event works on every target; the generated cckeyboarddispatcher header is invalid on ios.
     KeyboardInputEvent().listen(+[](KeyboardInputData& data) {
         auto const modifiers = data.modifiers.value;
         bool shft = (modifiers & uint8_t(KeyboardModifier::Shift)) != 0;
@@ -186,7 +186,7 @@ $execute {
         bool cmd = (modifiers & uint8_t(KeyboardModifier::Super)) != 0;
         paimon::volscroll::onModifierKeysChanged(shft, ctrl, alt, cmd);
 
-        // Super is Cmd on Apple platforms.
+        // super is cmd on apple platforms.
         bool ctrlOrCmd = ctrl || cmd;
 
         if (!paimon::modules::isEnabled("paimbnails.quickhub.global") ||

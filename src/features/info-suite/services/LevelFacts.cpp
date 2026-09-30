@@ -24,7 +24,7 @@ void addAction(std::vector<Fact>& out, FactTab tab, std::string label, std::stri
     out.push_back({std::move(label), std::move(value), "", tab, action, arg, true});
 }
 
-// Only emit numeric rows that carry information. Zero downloads on a local
+// only emit numeric rows that carry information. zero downloads on a local
 // level is noise; zero likes on an online level is a fact.
 void addNumber(std::vector<Fact>& out, FactTab tab, std::string label, int64_t value,
                bool keepZero = false, bool accent = false) {
@@ -96,13 +96,13 @@ int difficultyValue(GJGameLevel* level) {
             default: return 6;
         }
     }
-    // Online levels ship m_difficulty unset, the rating is what the browser
-    // reads. Main levels are the other way around.
+    // online levels ship m_difficulty unset, the rating is what the browser
+    // reads. main levels are the other way around.
     if (level->m_levelType == GJLevelType::Main) return static_cast<int>(level->m_difficulty);
     return level->getAverageDifficulty();
 }
 
-// Stars the creator asked for, mapped onto the same face values. 0 when the
+// stars the creator asked for, mapped onto the same face values. 0 when the
 // level carries no request at all.
 int requestedDifficultyValue(GJGameLevel* level) {
     if (!level) return 0;
@@ -205,7 +205,7 @@ std::vector<Fact> collectFacts(GJGameLevel* level) {
     addNumber(out, FactTab::Level, "Version del nivel", level->m_levelVersion, true);
 
     if (level->m_gameVersion > 0) {
-        // RobTop stores 2.0 as 20, 2.1 as 21… anything below 10 is a 1.x build.
+        // robtop stores 2.0 as 20, 2.1 as 21… anything below 10 is a 1.x build.
         int gv = level->m_gameVersion;
         std::string pretty = gv < 10
             ? fmt::format("1.{}", gv)
@@ -292,8 +292,8 @@ std::vector<Fact> collectFacts(GJGameLevel* level) {
     addFlag(out, FactTab::Stats, "Feature sugerido", level->m_rateFeature);
     add(out, FactTab::Stats, "Sugerido por", s(level->m_rateUser));
 
-    // Personal records the game keeps per level. Attempts, jumps and the two
-    // best percentages are not here: LevelStatsPopup owns those, with charts.
+    // personal records the game keeps per level. attempts, jumps and the two
+    // best percentages are not here: levelstatspopup owns those, with charts.
     addNumber(out, FactTab::Stats, "Clics", level->m_clicks.value());
     add(out, FactTab::Stats, "Tiempo jugado", formatDuration(level->m_attemptTime.value()));
     addNumber(out, FactTab::Stats, "Orbes obtenidos", level->m_orbCompletion.value());

@@ -65,7 +65,7 @@ protected:
     cocos2d::CCPoint m_scrollArrowBasePos = {0.f, 0.f};
     bool m_scrollArrowBouncing = false;
 
-    // During drag chrome hides so the list behind is a live preview; the dragged slider stays put and live.
+    // during drag chrome hides so the list behind is a live preview; the dragged slider stays put and live.
     struct SliderRow {
         Slider* slider = nullptr;
         cocos2d::CCLabelBMFont* valueLabel = nullptr;
@@ -76,7 +76,7 @@ protected:
     bool m_dragHiding = false;
     Slider* m_activeDragSlider = nullptr;
     GLubyte m_dimOriginalOpacity = 0;
-    // BlurAPI blurs independently of Paiblur: drop its marker or the list goes unreadable.
+    // blurapi blurs independently of paiblur: drop its marker or the list goes unreadable.
     geode::Ref<cocos2d::CCObject> m_savedBlurApiOptions = nullptr;
 
     cocos2d::CCNodeRGBA* m_dragCaptionPill = nullptr;
@@ -123,6 +123,6 @@ public:
     static LevelCellSettingsPopup* create();
     void setOnSettingsChanged(geode::CopyableFunction<void()> cb) { m_onSettingsChanged = std::move(cb); }
 
-    // Incremented on every setting change; LevelCell::update() checks this to invalidate cache
+    // incremented on every setting change; levelcell::update() checks this to invalidate cache
     static inline int s_settingsVersion = 0;
 };

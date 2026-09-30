@@ -28,9 +28,9 @@ struct PackResult {
 
 struct PackerOptions {
     int gap      = 2;
-    int maxWidth = 4096;  // sheet width budget (cocos2d / GL hard limit)
+    int maxWidth = 4096;  // sheet width budget (cocos2d / gl hard limit)
 
-    // Opt-in MaxRects (BSSF): tighter atlases, different arrangement. Off keeps PackGen byte-identical exports.
+    // opt-in maxrects (bssf): tighter atlases, different arrangement. off keeps packgen byte-identical exports.
     bool bestFit = false;
 };
 

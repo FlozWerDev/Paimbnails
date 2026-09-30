@@ -3,7 +3,7 @@
 #include <Geode/Geode.hpp>
 #include <vector>
 
-// grid spritesheet animation on one CCTexture2D (UV rect swap only).
+// grid spritesheet animation on one cctexture2d (uv rect swap only).
 class SheetAnimSprite : public cocos2d::CCSprite {
 public:
     static SheetAnimSprite* create(

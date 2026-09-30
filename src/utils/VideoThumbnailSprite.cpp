@@ -97,7 +97,7 @@ std::string VideoThumbnailSprite::getTempPath(std::string const& cacheKey) {
 }
 
 std::string VideoThumbnailSprite::makeRequestKey(std::string const& url, std::string const& cacheKey) {
-// cache-busted URLs share one asset.
+// cache-busted urls share one asset.
     if (!cacheKey.empty()) {
         return paimon::video::makeVideoRequestKey({}, cacheKey);
     }
@@ -224,7 +224,7 @@ void VideoThumbnailSprite::cleanupOrphanedDiskFiles() {
             ffTotal += sz;
             ffFiles.push_back({p, sz, entry.last_write_time(ec)});
         } else if (name.starts_with("video_") && name.ends_with(".mp4")) {
-// drop MP4s unreferenced by s_tempFiles; map rebuilds from disk.
+// drop mp4s unreferenced by s_tempfiles; map rebuilds from disk.
             if (known.find(geode::utils::string::pathToString(p)) == known.end()) {
                 std::error_code rmEc;
                 fs::remove(p, rmEc);
@@ -493,7 +493,7 @@ void VideoThumbnailSprite::finishCreateJob(CreateJob job,
 }
 
 namespace {
-// pool lives until clearCache() joins it at shutdown.
+// pool lives until clearcache() joins it at shutdown.
 std::atomic<paimon::ThreadPool*> s_videoFFPool{nullptr};
 
 paimon::ThreadPool* firstFramePool() {
@@ -525,7 +525,7 @@ void VideoThumbnailSprite::saveFirstFrameToCache() {
 
     std::string cachePath = getFirstFrameCachePath(m_cacheKey.empty() ? "unknown" : m_cacheKey);
 
-// First-frame encode stays off the main thread.
+// first-frame encode stays off the main thread.
     auto* pool = firstFramePool();
     if (!pool || pool->isStopped()) return;
 
@@ -779,7 +779,7 @@ void VideoThumbnailSprite::createAsync(std::string const& url, std::string const
 bool VideoThumbnailSprite::initWithPlayer(std::unique_ptr<paimon::video::VideoPlayer> player) {
     if (!player) return false;
 
-// plain sprites need resolved RGBA, not the luma plane.
+// plain sprites need resolved rgba, not the luma plane.
     auto* tex = player->hasVisibleFrame() ? player->getResolvedRGBATexture() : nullptr;
     if (!tex) {
         if (!CCSprite::init()) return false;
@@ -791,7 +791,7 @@ bool VideoThumbnailSprite::initWithPlayer(std::unique_ptr<paimon::video::VideoPl
     m_player = std::move(player);
     m_player->setLoop(true);
 
-// no textureRect until the real frame; placeholder would stretch.
+// no texturerect until the real frame; placeholder would stretch.
     int vw = m_player->getVideoWidth();
     int vh = m_player->getVideoHeight();
     if (vw > 0 && vh > 0) {
@@ -957,7 +957,7 @@ void VideoThumbnailSprite::update(float dt) {
             if (m_player->isPlaying()) {
                 m_player->pause();
             }
-// free the resolve FBO off-screen; recreated on demand.
+// free the resolve fbo off-screen; recreated on demand.
             m_player->releaseGPUResolveCache();
         }
         return;
@@ -1169,7 +1169,7 @@ void VideoThumbnailSprite::returnPlayerToCache(std::string const& cacheKey, std:
 
     player->pause();
 
-// free the resolve FBO until displayed again.
+// free the resolve fbo until displayed again.
     player->releaseGPUResolveCache();
 
     constexpr auto kPlayerCacheTTL = std::chrono::seconds(45);

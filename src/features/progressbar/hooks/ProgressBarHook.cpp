@@ -11,7 +11,7 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// Registered with the global scheduler so it keeps ticking even while gameplay is paused.
+// registered with the global scheduler so it keeps ticking even while gameplay is paused.
 class ProgressBarTicker : public CCNode {
 public:
     static ProgressBarTicker* create() {
@@ -85,7 +85,7 @@ public:
     }
 
     void registerWithTouchDispatcher() override {
-        // Priority just above PauseLayer (typically -128).
+        // priority just above pauselayer (typically -128).
         CCDirector::get()->getTouchDispatcher()
             ->addTargetedDelegate(this, -129, true);
     }
@@ -136,13 +136,13 @@ class $modify(PaimonProgressBarPlayLayer, PlayLayer) {
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
         if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
         ensureProgressBarTicker();
-        // Reset baseline so it's re-sampled on first enable.
+        // reset baseline so it's re-sampled on first enable.
         ProgressBarManager::get().invalidateBaseline();
         return true;
     }
 
     void onQuit() {
-        // Baseline and custom textures from this level are no longer valid.
+        // baseline and custom textures from this level are no longer valid.
         auto& mgr = ProgressBarManager::get();
         mgr.invalidateBaseline();
         mgr.releaseCustomTextures();
@@ -175,11 +175,11 @@ class $modify(PaimonProgressBarPauseLayer, PauseLayer) {
     }
 
     void addProgressBarConfigButton() {
-        // Avoid duplicates if customSetup runs multiple times.
+        // avoid duplicates if customsetup runs multiple times.
         if (this->getChildByID("paimon-progressbar-config-button"_spr)) return;
         auto winSize = CCDirector::get()->getWinSize();
 
-        // Find a suitable menu (prefer geode.node-ids id, fall back to side-detection).
+        // find a suitable menu (prefer geode.node-ids id, fall back to side-detection).
         auto pickMenu = [&](char const* id, bool leftSide) -> CCMenu* {
             if (auto byId = typeinfo_cast<CCMenu*>(this->getChildByID(id))) return byId;
             CCMenu* best = nullptr;
@@ -210,7 +210,7 @@ class $modify(PaimonProgressBarPauseLayer, PauseLayer) {
             return;
         }
 
-        // Icon: try GD bar/settings frames, fall back to a generic button.
+        // icon: try gd bar/settings frames, fall back to a generic button.
         CCSprite* iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_percentagesBtn_001.png");
         if (!iconSprite) iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn_001.png");
         if (!iconSprite) iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_button_01.png");

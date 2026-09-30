@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace paimon::texture_studio {
@@ -20,9 +21,19 @@ public:
     ImageBuffer(int width, int height, std::uint8_t const* rgbaPixels);
 
     ImageBuffer(ImageBuffer const&) = default;
-    ImageBuffer(ImageBuffer&&) noexcept = default;
+    ImageBuffer(ImageBuffer&& other) noexcept
+        : m_width(std::exchange(other.m_width, 0)),
+          m_height(std::exchange(other.m_height, 0)),
+          m_pixels(std::move(other.m_pixels)) {}
     ImageBuffer& operator=(ImageBuffer const&) = default;
-    ImageBuffer& operator=(ImageBuffer&&) noexcept = default;
+    ImageBuffer& operator=(ImageBuffer&& other) noexcept {
+        if (this != &other) {
+            m_pixels = std::move(other.m_pixels);
+            m_width = std::exchange(other.m_width, 0);
+            m_height = std::exchange(other.m_height, 0);
+        }
+        return *this;
+    }
     ~ImageBuffer() = default;
 
     int  width()  const { return m_width; }

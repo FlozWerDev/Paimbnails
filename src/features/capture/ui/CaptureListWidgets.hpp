@@ -4,10 +4,10 @@
 #include <Geode/binding/CCMenuItemToggler.hpp>
 #include "../../../utils/SpriteHelper.hpp"
 
-// Row building blocks shared by the layer editor and the asset browser lists.
+// row building blocks shared by the layer editor and the asset browser lists.
 namespace paimon::capture::ui {
 
-// Clip touch tests to the ScrollLayer's visible rect; scrolled-out rows can't steal taps.
+// clip touch tests to the scrolllayer's visible rect; scrolled-out rows can't steal taps.
 class ClippedMenu : public cocos2d::CCMenu {
 public:
     static ClippedMenu* create(cocos2d::CCNode* clipParent) {
@@ -51,7 +51,7 @@ inline cocos2d::CCLayerColor* makeRowFill(float width, float height, cocos2d::cc
     return fill;
 }
 
-// Checkbox for a list row. `tint` marks a group that is only partly visible.
+// checkbox for a list row. `tint` marks a group that is only partly visible.
 inline CCMenuItemToggler* makeCheck(
     float scale, cocos2d::CCObject* target, cocos2d::SEL_MenuHandler selector,
     int tag, bool on, cocos2d::ccColor3B tint = {255, 255, 255}
@@ -71,7 +71,7 @@ inline CCMenuItemToggler* makeCheck(
     return toggler;
 }
 
-// Disclosure triangle: rotated sprite, GD fonts lack arrows; "+"/"-" fallback.
+// disclosure triangle: rotated sprite, gd fonts lack arrows; "+"/"-" fallback.
 inline cocos2d::CCNode* makeDisclosure(bool expanded, float scale) {
     if (auto* arrow = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_03_001.png")) {
         arrow->setScale(scale);
@@ -84,7 +84,7 @@ inline cocos2d::CCNode* makeDisclosure(bool expanded, float scale) {
     return label;
 }
 
-// Invisible full-row hit area, so a row reacts to a tap anywhere on it.
+// invisible full-row hit area, so a row reacts to a tap anywhere on it.
 inline CCMenuItemSpriteExtra* makeRowHitArea(
     float width, float height, cocos2d::CCObject* target,
     cocos2d::SEL_MenuHandler selector, int tag

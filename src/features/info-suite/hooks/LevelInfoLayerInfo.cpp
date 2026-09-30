@@ -1,5 +1,5 @@
-// Merged into the level screen's own info button: no extra button, off restores the original.
-// onLevelInfo, not onInfo — onInfo is the comments button (see InfoLayerLevelInfo.cpp).
+// merged into the level screen's own info button: no extra button, off restores the original.
+// onlevelinfo, not oninfo — oninfo is the comments button (see infolayerlevelinfo.cpp).
 
 #include "../InfoModule.hpp"
 #include "../services/ProgressTracker.hpp"
@@ -55,7 +55,7 @@ class $modify(PaimonInfoSuiteLevelInfo, LevelInfoLayer) {
         popup->show();
     }
 
-    // The creator of a level can be a green player too, and tapping their name
+    // the creator of a level can be a green player too, and tapping their name
     // does nothing in vanilla when there is no account behind it.
     void onViewProfile(CCObject* sender) {
         if (unregProfilesEnabled() && m_level
@@ -70,7 +70,7 @@ class $modify(PaimonInfoSuiteLevelInfo, LevelInfoLayer) {
         LevelInfoLayer::onViewProfile(sender);
     }
 
-    // Skip the strip without a named progress bar; guessing can overlap other UI.
+    // skip the strip without a named progress bar; guessing can overlap other ui.
     void addHeatmapStrip() {
         if (!heatmapEnabled() || !m_level) return;
         if (this->getChildByID("info-suite-heatmap"_spr)) return;

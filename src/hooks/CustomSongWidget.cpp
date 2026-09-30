@@ -21,7 +21,7 @@ using namespace geode::prelude;
 using namespace cocos2d;
 
 namespace {
-// Vanilla frame kept; blur fills inner area.
+// vanilla frame kept; blur fills inner area.
 constexpr float kPlateBorderInset = 2.5f;
 constexpr float kPlateInnerRadius = 5.f;
 }
@@ -29,7 +29,7 @@ constexpr float kPlateInnerRadius = 5.f;
 class $modify(PaimonCustomSongWidget, CustomSongWidget) {
     static void onModify(auto& self) {
         paimon::hooks::afterNodeIdsOrLate(self, "CustomSongWidget::init");
-        // After node-ids, without claiming Last.
+        // after node-ids, without claiming last.
         paimon::hooks::afterModOrElseNodeIdsLate(
             self, "CustomSongWidget::updateSongInfo", "prevter.compact-pause-menu"
         );
@@ -150,7 +150,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         return clip;
     }
 
-    // m_bgSpr is recreated; verify it is still mounted.
+    // m_bgspr is recreated; verify it is still mounted.
     bool isValidChild(CCNode* child) {
         if (!child) return false;
         auto* children = this->getChildren();
@@ -323,7 +323,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         if (alreadyBound && hasBlur) return;
         m_fields->m_levelID = levelID;
 
-        // reuse LevelInfoLayer texture to stay in sync
+        // reuse levelinfolayer texture to stay in sync
         if (paimon::ThumbnailBackgroundChangedEvent::s_lastLevelID == levelID) {
             if (auto* lastTex = paimon::ThumbnailBackgroundChangedEvent::getLastTexture()) {
                 applyBlurredThumbnail(lastTex);
@@ -471,7 +471,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             return;
         }
 
-        // GD calls this from init() before parenting
+        // gd calls this from init() before parenting
         CustomSongWidget::updateSongInfo();
 
         auto* widget = asBase();
@@ -501,7 +501,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
 
         tryApplyBlur();
 
-        // Retry lives here, not in onEnter().
+        // retry lives here, not in onenter().
         if (m_fields->m_levelID <= 0 && !m_fields->m_retryScheduled) {
             m_fields->m_retryScheduled = true;
             this->scheduleOnce(

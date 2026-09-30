@@ -13,7 +13,7 @@ set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
 project(Paimbnails VERSION 1.2.0)
 
-# CPM
+# cpm
 set(CPM_DOWNLOAD_VERSION 0.40.2)
 set(CPM_DOWNLOAD_LOCATION "${CMAKE_BINARY_DIR}/cmake/CPM_${CPM_DOWNLOAD_VERSION}.cmake")
 
@@ -27,7 +27,7 @@ endif()
 
 include(${CPM_DOWNLOAD_LOCATION})
 
-# pl_mpeg — header-only MPEG-1 decoder (.mpg/.mpeg only)
+# pl_mpeg — header-only mpeg-1 decoder (.mpg/.mpeg only)
 CPMAddPackage(
     NAME pl_mpeg
     GITHUB_REPOSITORY phoboslab/pl_mpeg
@@ -40,7 +40,7 @@ if (pl_mpeg_ADDED)
     target_include_directories(pl_mpeg INTERFACE ${pl_mpeg_SOURCE_DIR})
 endif()
 
-# RapidFuzz — fuzzy string matching for Paimon guide NLP (MIT)
+# rapidfuzz — fuzzy string matching for paimon guide nlp (mit)
 CPMAddPackage(
     NAME rapidfuzz
     GITHUB_REPOSITORY rapidfuzz/rapidfuzz-cpp
@@ -53,7 +53,7 @@ if (rapidfuzz_ADDED)
     target_include_directories(rapidfuzz INTERFACE ${rapidfuzz_SOURCE_DIR})
 endif()
 
-# libyuv — SIMD YUV conversion and scaling (BSD-3)
+# libyuv — simd yuv conversion and scaling (bsd-3)
 CPMAddPackage(
     NAME libyuv
     GIT_REPOSITORY https://chromium.googlesource.com/libyuv/libyuv
@@ -65,7 +65,7 @@ if (libyuv_ADDED)
     file(GLOB LIBYUV_SOURCES ${libyuv_SOURCE_DIR}/source/*.cc)
     add_library(yuv STATIC ${LIBYUV_SOURCES})
     target_include_directories(yuv PUBLIC ${libyuv_SOURCE_DIR}/include)
-    # No libjpeg here, and SME/SVE need toolchains newer than the Android NDK's.
+    # no libjpeg here, and sme/sve need toolchains newer than the android ndk's.
     target_compile_definitions(yuv PUBLIC
         LIBYUV_DISABLE_JPEG
         LIBYUV_DISABLE_SME
@@ -78,11 +78,7 @@ if (libyuv_ADDED)
         target_compile_options(yuv PRIVATE -w)
     endif()
 
-    # row_neon64.cc and compare_neon64.cc use sdot/udot/usdot, which the
-    # assembler rejects unless dotprod and i8mm are enabled. Upstream builds the
-    # *_neon64.cc files as their own object library with these flags; we glob
-    # every source into one target, so they have to be set per file instead.
-    # ThinLTO defers inline asm to the link, which is where iOS reports it.
+    # per-file arm64 features match upstream; thinlto emits this asm at link time.
     if (ANDROID)
         if (ANDROID_ABI STREQUAL "arm64-v8a")
             set(LIBYUV_NEON64_FLAGS -march=armv8.2-a+dotprod+i8mm)
@@ -90,7 +86,7 @@ if (libyuv_ADDED)
     elseif (APPLE)
         if (CMAKE_OSX_ARCHITECTURES MATCHES "x86_64")
             # mac builds both slices in one clang pass, so the flag has to be
-            # scoped to arm64 or the Intel one fails to parse it.
+            # scoped to arm64 or the intel one fails to parse it.
             set(LIBYUV_NEON64_FLAGS -Xarch_arm64 -march=armv8.2-a+dotprod+i8mm)
         else()
             set(LIBYUV_NEON64_FLAGS -march=armv8.2-a+dotprod+i8mm)
@@ -110,7 +106,7 @@ if (libyuv_ADDED)
     endif()
 endif()
 
-# Sources
+# sources
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.cpp)
 if (APPLE)
     file(GLOB_RECURSE OBJCPP_SOURCES CONFIGURE_DEPENDS src/*.mm)
@@ -119,21 +115,21 @@ endif()
 
 add_library(${PROJECT_NAME} SHARED ${SOURCES})
 
-# Optimizaciones
+# preserve nan/inf checks used to validate decoded and user-provided values.
 if (MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE
         /bigobj
         /O2
-        /fp:fast
+        /fp:precise
     )
-    # /GL + /LTCG disabled: breaks Geode $modify linking (LNK2001 on
-    # undefined GD functions). ICF also disabled to preserve function
+    # /gl + /ltcg disabled: breaks geode $modify linking (lnk2001 on
+    # undefined gd functions). icf also disabled to preserve function
     # addresses for hook identity and crash symbolication.
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         target_link_options(${PROJECT_NAME} PRIVATE LINKER:/OPT:NOICF)
     endif()
 
-    # Workaround: MSVC v180 ICE on /O2 for these TUs; /O1 has no measurable cost
+    # workaround: msvc v180 ice on /o2 for these tus; /o1 has no measurable cost
     if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND MSVC_VERSION GREATER_EQUAL 1950)
         set_source_files_properties(
             src/features/community/ui/LeaderboardHistoryLayer.cpp
@@ -156,7 +152,7 @@ if (MSVC)
 else()
     target_compile_options(${PROJECT_NAME} PRIVATE
         -O3
-        -ffast-math
+        -fno-fast-math
         -fvisibility=hidden
         -ffunction-sections
         -fdata-sections
@@ -166,13 +162,13 @@ else()
             -Wl,--gc-sections
         )
     endif()
-    # ARM32 Android: enable NEON.  arm64 always has NEON.
+    # arm32 android: enable neon.  arm64 always has neon.
     if (ANDROID AND ANDROID_ABI STREQUAL "armeabi-v7a")
         target_compile_options(${PROJECT_NAME} PRIVATE -mfpu=neon)
     endif()
 endif()
 
-# Defines
+# defines
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     VIDEO_RING_BUFFER_SIZE=8
     $<$<PLATFORM_ID:Windows>:USE_MEDIA_FOUNDATION=1>
@@ -180,7 +176,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     $<$<BOOL:${APPLE}>:USE_AV_FOUNDATION=1>
 )
 
-# Libraries
+# libraries
 if (WIN32)
     target_link_libraries(${PROJECT_NAME}
         mfplat.lib
@@ -206,7 +202,7 @@ elseif (ANDROID)
         android
         log
     )
-    # AAudio requires API level 26+; skip it on older targets (e.g. armv7 API 23)
+    # aaudio requires api level 26+; skip it on older targets (e.g. armv7 api 23)
     if (ANDROID_NATIVE_API_LEVEL GREATER_EQUAL 26)
         target_link_libraries(${PROJECT_NAME} aaudio)
     endif()
@@ -236,16 +232,16 @@ target_link_libraries(${PROJECT_NAME} pl_mpeg)
 target_link_libraries(${PROJECT_NAME} rapidfuzz)
 target_link_libraries(${PROJECT_NAME} yuv)
 
-# Discord Rich Presence uses our own self-contained IPC client
-# (src/features/discord-presence/services/DiscordIpcClient.*), so there's no
-# external dependency to fetch. Enabled on desktop platforms only.
-# APPLE is also true for iOS, where there is no Discord client to open the
-# local IPC socket to, so the desktop check has to exclude it explicitly.
+# discord rich presence uses our own self-contained ipc client
+# (src/features/discord-presence/services/discordipcclient.*), so there's no
+# external dependency to fetch. enabled on desktop platforms only.
+# apple is also true for ios, where there is no discord client to open the
+# local ipc socket to, so the desktop check has to exclude it explicitly.
 if (WIN32 OR (APPLE AND NOT IOS))
     target_compile_definitions(${PROJECT_NAME} PRIVATE PAIMON_HAS_DISCORD_RPC=1)
 endif()
 
-# Geode SDK
+# geode sdk
 if (NOT DEFINED ENV{GEODE_SDK})
     message(FATAL_ERROR "Unable to find Geode SDK! Please define GEODE_SDK environment variable to point to Geode")
 else()
@@ -256,8 +252,8 @@ add_subdirectory($ENV{GEODE_SDK} ${CMAKE_CURRENT_BINARY_DIR}/geode)
 
 setup_geode_mod(${PROJECT_NAME})
 
-# Globed is an optional dependency; its headers are only needed for the soft
-# link API, and every use of them is behind __has_include so the mod still
+# globed is an optional dependency; its headers are only needed for the soft
+# link api, and every use of them is behind __has_include so the mod still
 # builds if the dependency is not fetched.
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/geode-deps/dankmeme.globed2/include)

@@ -44,7 +44,7 @@ public:
         std::vector<Ref<CCSprite>> m_animSprites;
         std::unordered_map<CCSprite*, Ref<CCSprite>> m_animSpriteParents;
 
-        // Compat with the "Custom UFO N Ship Cube" doll-replacement mod:
+        // compat with the "custom ufo n ship cube" doll-replacement mod:
         // while it is loaded the menu doll needs its shaded copies shown.
         bool m_menuDollPatchLoaded = false;
         bool m_swingFlipLoaded = false;

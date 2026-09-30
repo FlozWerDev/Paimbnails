@@ -8,7 +8,7 @@ namespace paimon::editorphysics {
 
 namespace {
 
-// A Collision Trigger fires when the sensor enters the block, not once per
+// a collision trigger fires when the sensor enters the block, not once per
 // frame while it stays inside, so a contact has to be remembered.
 struct NativeState {
     Vec2 position;
@@ -44,7 +44,7 @@ Rect around(Vec2 center, Vec2 size) {
     };
 }
 
-// Every fixed capture turns into an axis-aligned Collision Block, so a slope
+// every fixed capture turns into an axis-aligned collision block, so a slope
 // stops a reactive body with the full square it spans and not with its face.
 std::vector<Rect> worldBlocks(std::vector<BodySpec> const& bodies) {
     std::vector<Rect> blocks;
@@ -91,9 +91,7 @@ void applyWorldHit(
     NativeProfile const& profile,
     float restitution
 ) {
-    // The Edit Advanced Follow behind each sensor multiplies the axis it hit by
-    // minus the rebound and adds a short push, which is only what gets the
-    // sensor back out of the block.
+    // a brief rebound push moves each sensor back out of its collision block.
     float const kick = profile.bounceImpulse * kPixelsPerSpeedUnit;
     switch (side) {
         case 0: state.velocity.x = -restitution * state.velocity.x + kick; break;
@@ -112,7 +110,7 @@ std::size_t advance(
     float gravitySign,
     float dt
 ) {
-    // Gravity arrives as a Spawn loop, so the speed only changes on the tick and
+    // gravity arrives as a spawn loop, so the speed only changes on the tick and
     // the fall comes out as straight segments instead of the solver's curve.
     if (profile.gravityImpulse > 0.f) {
         state.gravityTimer += dt;
@@ -121,8 +119,8 @@ std::size_t advance(
             state.velocity.y += gravitySign * profile.gravityImpulse * kPixelsPerSpeedUnit;
         }
     }
-    // Advanced Follow friction is read here as the share of the speed it takes
-    // away in a second. GD's own scale for it is only known from playing.
+    // advanced follow friction is read here as the share of the speed it takes
+    // away in a second. gd's own scale for it is only known from playing.
     if (profile.friction > 0.f) {
         float const keep = std::exp(-profile.friction * dt);
         state.velocity = {state.velocity.x * keep, state.velocity.y * keep};
@@ -194,7 +192,7 @@ SimulationTrace simulateWorkspace(
         if (specs[i].motion != Motion::Dynamic ||
             settings[i].backend != PhysicsBackend::Reactive) continue;
         reactive.push_back(i);
-        // In the level this body only collides with the player and with the
+        // in the level this body only collides with the player and with the
         // fixed captures, so it must not push the baked ones around here.
         specs[i].motion = Motion::Static;
         specs[i].velocity = {};

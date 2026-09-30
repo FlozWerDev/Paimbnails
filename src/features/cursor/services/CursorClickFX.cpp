@@ -11,12 +11,12 @@ namespace paimon::cursorfx {
 
 namespace {
 
-// Bound pools for dense clicks layered over hold effects.
+// bound pools for dense clicks layered over hold effects.
 constexpr int kMaxClickParticles = 260;
 constexpr int kMaxRings          = 12;
 constexpr int kMaxBolts          = 24;
 
-// Burst recipe; rings, flashes, and bolts are requested separately.
+// burst recipe; rings, flashes, and bolts are requested separately.
 struct BurstSpec {
     int   tex      = TexDot;
     int   count    = 16;      // base particle count
@@ -28,7 +28,7 @@ struct BurstSpec {
     float growth   = 1.f;     // end-of-life scale
     float spin     = 0.f;     // degrees/s
     float sway     = 0.f;
-    float twinkle  = 0.f;     // flicker Hz
+    float twinkle  = 0.f;     // flicker hz
     float spiral   = 0.f;
     float lifeMul  = 1.f;
     float fadeIn   = 0.05f;
@@ -130,7 +130,7 @@ BurstSpec const& burstSpecFor(ClickBurst effect) {
     return kSpecs[static_cast<size_t>(i)];
 }
 
-// Hold-effect recipe; mode selects particles, per-frame geometry, or rings.
+// hold-effect recipe; mode selects particles, per-frame geometry, or rings.
 struct HoldSpec {
     int   mode     = 0;
     int   tex      = TexDot;
@@ -510,7 +510,7 @@ TransitionFrame sampleClickAnim(ClickAnim anim, float t, float duration,
             frame.rotation = 14.f * s * stay;
             break;
         case ClickAnim::Spin:
-// One cycle on press and release always returns to neutral.
+// one cycle on press and release always returns to neutral.
             frame.rotation = 360.f * easeOut(raw);
             frame.scaleX = frame.scaleY = 1.f - 0.08f * s * std::sin(raw * kPi);
             break;
@@ -642,7 +642,7 @@ void CursorClickNode::release(CCPoint const& pos) {
 }
 
 ccColor3B CursorClickNode::resolveColor(float t, float rnd) const {
-    // Click effects use hold duration rather than cursor speed.
+    // click effects use hold duration rather than cursor speed.
     return resolveFxColor(m_cfg.colorMode, m_cfg.color1, m_cfg.color2,
                           t, rnd, std::clamp(m_holdTime / 1.2f, 0.f, 1.f),
                           m_time, m_cfg.hueSpeed);
@@ -662,7 +662,7 @@ CursorClickNode::Particle* CursorClickNode::acquire(int texKind) {
     Particle* reuse = nullptr;
     for (auto& p : m_particles) {
         if (p.alive) continue;
-// Prefer a batch that already owns this texture; switching batches recreates it.
+// prefer a batch that already owns this texture; switching batches recreates it.
         if (p.texKind == texKind && p.spr) return &p;
         if (!reuse) reuse = &p;
     }
@@ -682,7 +682,7 @@ CursorClickNode::Particle* CursorClickNode::acquire(int texKind) {
         auto* batch = ensureBatch(texKind);
         auto* tex = fxTexture(texKind);
         if (!batch || !tex) return nullptr;
-// Create outside the batch; setTexture cannot recalculate its blend function there.
+// create outside the batch; settexture cannot recalculate its blend function there.
         auto* spr = CCSprite::createWithTexture(tex);
         if (!spr) return nullptr;
         spr->setAnchorPoint({0.5f, 0.5f});
@@ -823,7 +823,7 @@ void CursorClickNode::stepHold(float dt) {
     }
 
     if (spec.mode == 1) {
-// Geometry-only effects draw from m_holdTime; electric refreshes its seed.
+// geometry-only effects draw from m_holdtime; electric refreshes its seed.
         if (m_cfg.hold == ClickHold::Electric) {
             m_pulseTimer -= dt;
             if (m_pulseTimer <= 0.f) {

@@ -1,5 +1,5 @@
 #pragma once
-// Single text field. Renames icons and layers.
+// single text field. renames icons and layers.
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
@@ -14,7 +14,7 @@ class IconNamePopup : public geode::Popup {
 public:
     using ConfirmCallback = std::function<void(std::string const&)>;
 
-    // The callback runs after the popup closes and never with an empty name.
+    // the callback runs after the popup closes and never with an empty name.
     static IconNamePopup* create(std::string title, std::string placeholder,
                                  std::string initial, ConfirmCallback onConfirm);
 

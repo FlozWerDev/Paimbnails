@@ -60,7 +60,7 @@ std::string lowered(std::string text) {
     return text;
 }
 
-// an icon is "in use" when active for its gamemode, via More Icons or the own applier.
+// an icon is "in use" when active for its gamemode, via more icons or the own applier.
 bool isInUse(IconIndexEntry const& entry) {
     if (MoreIconsBridge::available()) {
         return MoreIconsBridge::activeOursSlotId(entry.type) == entry.id;
@@ -209,7 +209,7 @@ void IconGalleryLayer::buildHeader() {
         menu->addChild(help);
     }
 
-    // Search + sort share the second row so the grid keeps the whole width.
+    // search + sort share the second row so the grid keeps the whole width.
     float const searchW = std::min(240.f, win.width * 0.42f);
     m_search = TextInput::create(searchW, "Buscar por nombre...", "chatFont.fnt");
     if (m_search) {
@@ -218,7 +218,7 @@ void IconGalleryLayer::buildHeader() {
         m_search->setCallback([self](std::string const& value) {
             if (paimon::isRuntimeShuttingDown() || !self) return;
             self->m_query = lowered(value);
-            // Out of the input's own callback: rebuilding tears down the
+            // out of the input's own callback: rebuilding tears down the
             // scroll layer the touch dispatcher may still be walking.
             Loader::get()->queueInMainThread([self] {
                 if (paimon::isRuntimeShuttingDown() || !self) return;
@@ -439,7 +439,7 @@ CCNode* IconGalleryLayer::buildCard(std::string const& id, float width) {
         card->addChild(well);
     }
 
-    // The real icon, rendered in the background; until it lands the card shows
+    // the real icon, rendered in the background; until it lands the card shows
     // the vanilla default of the gamemode so the grid never looks broken.
     auto* placeholder = SimplePlayer::create(1);
     if (placeholder) {
@@ -503,7 +503,7 @@ CCNode* IconGalleryLayer::buildCard(std::string const& id, float width) {
         CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2);
     card->addChild(menu, 5);
 
-    // The card body opens the editor; the corner button holds everything else.
+    // the card body opens the editor; the corner button holds everything else.
     auto* hit = CCNode::create();
     hit->setAnchorPoint({0.5f, 0.5f});
     hit->setContentSize({width, kCardH - 22.f});
@@ -535,7 +535,7 @@ CCNode* IconGalleryLayer::buildCard(std::string const& id, float width) {
 
 void IconGalleryLayer::onEnter() {
     CCLayer::onEnter();
-    // Names, dates and thumbnails may have changed while we were in the editor.
+    // names, dates and thumbnails may have changed while we were in the editor.
     if (m_enteredOnce) rebuildGrid();
     m_enteredOnce = true;
 }

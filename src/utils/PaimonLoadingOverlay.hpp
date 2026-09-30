@@ -2,8 +2,8 @@
 
 #include <Geode/Geode.hpp>
 
-// loading overlay: GD circle + Paimon mascot, status text, fun facts.
-// falls back to LoadingSpinner under texture packs.
+// loading overlay: gd circle + paimon mascot, status text, fun facts.
+// falls back to loadingspinner under texture packs.
 class PaimonLoadingOverlay : public cocos2d::CCLayerColor {
 protected:
     cocos2d::CCNode* m_badge = nullptr;          // ring + mascot cluster
@@ -14,7 +14,7 @@ protected:
 
     std::string m_baseText;      // status text without the animated dots
     float m_spinnerSize = 40.f;
-    float m_centerX = 0.f;       // layout anchors set in showAt()
+    float m_centerX = 0.f;       // layout anchors set in showat()
     float m_statusY = 0.f;
     int m_dotCount = 0;
     bool m_dismissed = false;

@@ -5,12 +5,12 @@
 
 namespace paimon::cache {
 
-// volatile per-request query params; excluded from the URL RAM key.
+// volatile per-request query params; excluded from the url ram key.
 inline bool isVolatileUrlParam(std::string_view key) {
     return key == "_pv" || key == "_cb" || key == "ts" || key == "v" || key == "t";
 }
 
-// strip volatile cache-busters so equivalent URLs share one RAM entry.
+// strip volatile cache-busters so equivalent urls share one ram entry.
 inline std::string normalizeUrlKey(std::string const& url) {
     size_t q = url.find('?');
     if (q == std::string::npos) return url;
@@ -47,8 +47,8 @@ inline std::string normalizeUrlKey(std::string const& url) {
     return out;
 }
 
-// level thumbnail RAM key: positive = static, negative = GIF.
-// matches CacheKey::toLegacy() / fromLegacy() conventions.
+// level thumbnail ram key: positive = static, negative = gif.
+// matches cachekey::tolegacy() / fromlegacy() conventions.
 inline int makeLevelRamKey(int levelID, bool isGif) {
     return isGif ? -levelID : levelID;
 }
@@ -61,7 +61,7 @@ inline bool isGifRamKey(int key) {
     return key < 0;
 }
 
-// intensity bucket in 0.5 steps, shared by BlurSystem / LevelCell blur keys.
+// intensity bucket in 0.5 steps, shared by blursystem / levelcell blur keys.
 inline int blurIntensityBucket(float intensity) {
     if (intensity <= 0.f) return 0;
     int bucket = static_cast<int>(intensity * 2.0f + 0.5f); // round
@@ -70,7 +70,7 @@ inline int blurIntensityBucket(float intensity) {
     return bucket;
 }
 
-// RAM presence check without I/O or locks; only static thumbs use the URL layer.
+// ram presence check without i/o or locks; only static thumbs use the url layer.
 inline bool isLevelTextureLoadedInRam(bool hasLevelRamKey, bool isGif, bool hasDefaultUrlInUrlRam) {
     if (hasLevelRamKey) return true;
     if (isGif) return false;

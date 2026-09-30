@@ -11,7 +11,7 @@ namespace paimon::officialslots {
 
 namespace {
 
-// Values sit right after their <k>key</k>; scanning for that pair avoids
+// values sit right after their <k>key</k>; scanning for that pair avoids
 // parsing the whole document, most of which is the level string.
 std::optional<std::string> valueAfterKey(
     std::string const& xml, std::string_view key, std::string_view openTag,
@@ -24,7 +24,7 @@ std::optional<std::string> valueAfterKey(
     auto valueStart = xml.find(openTag, keyPos + keyPattern.size());
     if (valueStart == std::string::npos) return std::nullopt;
 
-    // The value has to be the next tag, otherwise we are reading a later key's.
+    // the value has to be the next tag, otherwise we are reading a later key's.
     auto nextKey = xml.find("<k>", keyPos + keyPattern.size());
     if (nextKey != std::string::npos && nextKey < valueStart) return std::nullopt;
 
@@ -98,11 +98,11 @@ std::string readGmdLevelString(std::filesystem::path const& path) {
         return {};
     }
 
-    // Same <s>text</s> pair as every other key; k4 is just much longer.
+    // same <s>text</s> pair as every other key; k4 is just much longer.
     auto raw = stringValue(contents.unwrap(), "k4");
     if (!raw || raw->empty()) return {};
 
-    // Base64 carries no entities, but decoding is harmless and keeps .gmd files
+    // base64 carries no entities, but decoding is harmless and keeps .gmd files
     // with a raw (uncompressed) level string working too.
     return decodeEntities(*raw);
 }

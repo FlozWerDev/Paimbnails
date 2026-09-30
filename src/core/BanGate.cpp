@@ -59,7 +59,7 @@ void terminateModProcesses() {
     HttpClient::get().cleanTasks(false);
 }
 
-// MainThreadDelay drops callbacks during shutdown, so the ban popup schedules its own task.
+// mainthreaddelay drops callbacks during shutdown, so the ban popup schedules its own task.
 void showBannedPopupForced(std::string const& reason, float delay) {
     auto* director = CCDirector::get();
     if (!director) return;
@@ -105,7 +105,7 @@ bool runStartupBanGate() {
         expired = checkedAt <= 0 || (nowEpochSeconds() - checkedAt) >= kCacheTtlSeconds;
     }
 
-    // Fresh cache (< 7 days): trust it, no server request.
+    // fresh cache (< 7 days): trust it, no server request.
     if (haveCache && !expired) {
         if (cachedBanned) {
             log::warn("[BanGate] User is banned (cached). Aborting mod init.");

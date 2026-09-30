@@ -10,7 +10,7 @@ namespace paimon::rgba {
 namespace {
 
 bool validDimensions(int width, int height) {
-    if (width <= 0 || height <= 0) return false;
+    if (width <= 0 || height <= 0 || width > std::numeric_limits<int>::max() / 4) return false;
     auto const pixels = static_cast<uint64_t>(width) * static_cast<uint64_t>(height);
     return pixels <= std::numeric_limits<size_t>::max() / 4;
 }
@@ -79,7 +79,7 @@ std::unique_ptr<uint8_t[]> scale(
         return result;
     }
 
-    // ARGBScale treats channels independently: exactly right for packed RGBA8888.
+    // argbscale treats channels independently: exactly right for packed rgba8888.
     auto const filter = (dstWidth < srcWidth || dstHeight < srcHeight)
         ? libyuv::kFilterBox
         : libyuv::kFilterBilinear;

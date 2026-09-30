@@ -32,7 +32,7 @@ bool featureEnabled(BeatShaderConfig const& cfg) {
     return cfg.enabled && paimon::modules::isEnabled("paimbnails.beatshaders.global");
 }
 
-// Swaps fullscreen vanilla sprites for ShaderBgSprite and restores them on detach.
+// swaps fullscreen vanilla sprites for shaderbgsprite and restores them on detach.
 class BeatShaderVanillaSwap : public CCNode {
 public:
     struct SwappedSprite {

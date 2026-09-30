@@ -55,4 +55,4 @@ inline void dispatchOwned(
     });
 }
 
-} // namespace WebHelper
+} // namespace webhelper

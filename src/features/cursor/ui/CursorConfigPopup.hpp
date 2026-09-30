@@ -11,7 +11,7 @@ protected:
     void onExit() override;
     void scrollWheel(float x, float y) override;
 
-    // Smooth-scroll targets for each scrollable area.
+    // smooth-scroll targets for each scrollable area.
     float m_thumbScrollTargetY      = 0.f;
     bool  m_thumbScrollTargetSet    = false;
     float m_settingsScrollTargetY   = 0.f;
@@ -40,7 +40,7 @@ protected:
     };
     std::array<SlotWidgets, kSlotCount> m_slots{};
 
-    // m_packList[0] is the loose-image pack; the rest are pack names.
+    // m_packlist[0] is the loose-image pack; the rest are pack names.
     std::vector<std::string> m_packList;
     int m_currentPackIdx = 0;
     cocos2d::CCLabelBMFont* m_packLabel = nullptr;
@@ -56,7 +56,7 @@ protected:
     cocos2d::CCLabelBMFont* m_enableStateLabel = nullptr;
     cocos2d::CCLabelBMFont* m_presetLabel      = nullptr;
 
-    // Refresh the toggle when gallery code changes enabled state.
+    // refresh the toggle when gallery code changes enabled state.
     void syncEnableUI(bool enabled);
 
     geode::ScrollLayer*     m_trailScroll   = nullptr;
@@ -66,7 +66,7 @@ protected:
     cocos2d::CCNode*        m_previewArea   = nullptr;
     cocos2d::CCSize         m_previewSize{};
     float m_previewDemoTime = 0.f;
-    // Debounced save for slider changes.
+    // debounced save for slider changes.
     float m_trailSaveTimer  = 0.f;
     bool  m_trailDirty      = false;
 
@@ -93,11 +93,11 @@ protected:
     cocos2d::CCPoint m_clickCursorBaseScale{1.f, 1.f};
     cocos2d::CCLabelBMFont* m_clickPresetLabel = nullptr;
     cocos2d::CCLabelBMFont* m_clickHintLabel = nullptr;
-    // Preview button state, independent of the real cursor.
+    // preview button state, independent of the real cursor.
     bool  m_clickPreviewHeld = false;
     float m_clickPreviewAnimTime = 999.f;
     bool  m_clickPreviewAnimHeld = false;
-    // Test timer keeps the release animation visible.
+    // test timer keeps the release animation visible.
     float m_clickTestTimer = 0.f;
     float m_clickSaveTimer = 0.f;
     bool  m_clickDirty     = false;
@@ -139,7 +139,7 @@ protected:
 
     void buildTrailTab();
     void rebuildTrailControls();
-    // Defer rebuilding so a control callback can finish safely.
+    // defer rebuilding so a control callback can finish safely.
     void queueRebuildTrailControls();
     void applyTrailLive();
     void flushTrailSave();

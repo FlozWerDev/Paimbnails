@@ -15,7 +15,7 @@ A Geode mod for Geometry Dash packed with thumbnails, visual effects, community 
 - Custom progress bar
 - Custom cursor
 - Community leaderboard
-- Physics Lab: compile fixed/dynamic editor bodies to native GD trigger graphs or keyframes
+- [Physics Lab](docs/EDITOR_PHYSICS_NATIVE.md): compile fixed/dynamic editor bodies to native GD trigger graphs or keyframes
 - Pet companion
 - Discord Rich Presence
 - And much more

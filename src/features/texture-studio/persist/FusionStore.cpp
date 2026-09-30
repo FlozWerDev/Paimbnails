@@ -73,29 +73,29 @@ bool maskNonEmpty(MaskBuffer const& m) {
     return false;
 }
 
-// Header layout (48 bytes):
+// header layout (48 bytes):
 //  0  magic u32
 //  4  version u16
 //  6  flags u16          bit0 = animated
 //  8  width u32
 // 12  height u32
-// 16  blendMode u8
-// 17  colorTolerance u8
+// 16  blendmode u8
+// 17  colortolerance u8
 // 18  opacity u8         (0..255)
-// 19  fitMode u8
+// 19  fitmode u8
 // 20  scale f32
-// 24  offsetX f32
-// 28  offsetY f32
-// 32  rotationDeg f32
-// 36  transformOpacity u8
-// 37  flipX u8
-// 38  flipY u8
+// 24  offsetx f32
+// 28  offsety f32
+// 32  rotationdeg f32
+// 36  transformopacity u8
+// 37  flipx u8
+// 38  flipy u8
 // 39  reserved u8
-// 40  extLen u16         (0 or 4 typical: ".png"/".gif")
+// 40  extlen u16         (0 or 4 typical: ".png"/".gif")
 // 42  reserved2 u16
 // 44  reserved3 u32
-// 48  ext bytes (extLen)
-//     mask R8 data (W*H)
+// 48  ext bytes (extlen)
+//     mask r8 data (w*h)
 constexpr std::size_t kHeaderSize = 48;
 
 }  // anonymous namespace
@@ -293,7 +293,7 @@ geode::Result<> FusionStore::deleteForSlot(std::string_view slotId,
         return Ok();
     };
 
-    // Mask plus every texture extension.
+    // mask plus every texture extension.
     if (auto r = deleteMaskForSlot(slotId, spriteName); !r) return r;
     for (auto const* ext : {".png", ".gif", ".jpg", ".jpeg", ".webp"}) {
         auto p = SlotPaths::fusionTextureFile(slotId, spriteName, ext);
@@ -328,9 +328,9 @@ geode::Result<std::filesystem::path> FusionStore::importTexture(
 
     std::filesystem::path dst;
     if (isGif) {
-        // Keep original GIF bytes: multi-frame animation survives.
+        // keep original gif bytes: multi-frame animation survives.
         dst = SlotPaths::fusionTextureFile(slotId, spriteName, ".gif");
-        // Drop the stale static sibling.
+        // drop the stale static sibling.
         std::error_code ec;
         std::filesystem::remove(
             SlotPaths::fusionTextureFile(slotId, spriteName, ".png"), ec);
@@ -342,7 +342,7 @@ geode::Result<std::filesystem::path> FusionStore::importTexture(
         return Ok(std::move(dst));
     }
 
-    // Re-encode statics as PNG: stable on-disk format.
+    // re-encode statics as png: stable on-disk format.
     auto imgRes = ImageBuffer::loadFromMemory(
         std::span<std::uint8_t const>(bytes.unwrap().data(), bytes.unwrap().size()));
     if (!imgRes) {

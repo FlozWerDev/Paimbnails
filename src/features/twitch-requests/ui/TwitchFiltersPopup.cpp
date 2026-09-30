@@ -298,8 +298,8 @@ void TwitchFiltersPopup::rebuild() {
 
     std::vector<CCNode*> faces;
     for (int slot = 0; slot < kDifficultySlotCount; ++slot) {
-        // Short: the only variant for NA and Auto, and on demon it says
-        // "Demon" instead of a concrete tier.
+        // short: the only variant for na and auto, and on demon it says
+        // "demon" instead of a concrete tier.
         CCNode* icon = GJDifficultySprite::create(
             difficultySlotSprite(slot), GJDifficultyName::Short);
         // the index is the bit, so no slot may be missing.

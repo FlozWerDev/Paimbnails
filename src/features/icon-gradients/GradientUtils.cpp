@@ -12,8 +12,8 @@
 #include <numeric>
 #include <vector>
 
-// Gradient rendering core, after zilko's "Icon Gradients" (independent implementation, own expression).
-// Save schema, program key format, node ids and sentinels (-4732, SDI keys) preserved for compatibility.
+// gradient rendering core, after zilko's "icon gradients" (independent implementation, own expression).
+// save schema, program key format, node ids and sentinels (-4732, sdi keys) preserved for compatibility.
 
 using namespace geode::prelude;
 using namespace paimon::icon_gradients;
@@ -67,13 +67,13 @@ constexpr char const* kIconNames[] = {
     "cube", "ship", "ball", "ufo", "wave", "robot", "spider", "swing", "jetpack",
 };
 
-// One sprite plus the id its shader program is cached under.
+// one sprite plus the id its shader program is cached under.
 struct PaintTarget {
     CCSprite* sprite;
     int shaderId;
 };
 
-// Robot/spider icons animate through a GJRobotSprite; whichever form is
+// robot/spider icons animate through a gjrobotsprite; whichever form is
 // currently visible owns the paint.
 GJRobotSprite* visibleMech(SimplePlayer* icon) {
     GJRobotSprite* mech = nullptr;
@@ -82,8 +82,8 @@ GJRobotSprite* visibleMech(SimplePlayer* icon) {
     return mech;
 }
 
-// Finds the line overlay hosted on a sprite, creating and fitting it on first
-// use. The overlay always mirrors the host frame afterwards.
+// finds the line overlay hosted on a sprite, creating and fitting it on first
+// use. the overlay always mirrors the host frame afterwards.
 CCSprite* lineOverlay(CCSprite* host, char const* nodeId, bool keepVisible) {
     CCSprite* overlay = typeinfo_cast<CCSprite*>(host->getChildByID(nodeId));
     if (!overlay) {
@@ -102,7 +102,7 @@ CCSprite* lineOverlay(CCSprite* host, char const* nodeId, bool keepVisible) {
     return overlay;
 }
 
-// Farthest point from a reference, starting the search at the origin so an
+// farthest point from a reference, starting the search at the origin so an
 // empty/all-identical set still yields a deterministic axis.
 CCPoint farthestFrom(std::vector<SimplePoint> const& points, CCPoint from) {
     CCPoint best = {0.f, 0.f};
@@ -117,7 +117,7 @@ CCPoint farthestFrom(std::vector<SimplePoint> const& points, CCPoint from) {
     return best;
 }
 
-// Line-shader edge threshold from the texture quality setting.
+// line-shader edge threshold from the texture quality setting.
 float lineThreshold() {
     if (GradientCache::get().m_increaseLineTolerance) return 1.f;
     static constexpr float levels[] = {-10.f, -1.25f, -2.5f};
@@ -218,7 +218,7 @@ int64_t currentIconID(IconType type) {
     }
 }
 
-// These shader IDs are part of the program cache key scheme.
+// these shader ids are part of the program cache key scheme.
 void collectMechTargets(GJRobotSprite* mech, ColorType color, bool lineVisible,
         std::vector<PaintTarget>& out) {
     switch (color) {
@@ -268,7 +268,7 @@ void collectMechTargets(GJRobotSprite* mech, ColorType color, bool lineVisible,
     }
 }
 
-// The ball keeps its outline visible when Fine Outline is installed.
+// the ball keeps its outline visible when fine outline is installed.
 void collectIconTargets(SimplePlayer* icon, IconType kind, ColorType color, bool lineVisible,
         std::vector<PaintTarget>& out) {
     switch (color) {
@@ -368,7 +368,7 @@ ccColor3B GradientUtils::getPlayerColor(ColorType colorType, bool secondPlayer) 
     if (colorType == ColorType::White) return ccWHITE;
     if (colorType == ColorType::Line) return ccBLACK;
 
-    // The second player mirrors the primary palette unless it has its own kit.
+    // the second player mirrors the primary palette unless it has its own kit.
     if (secondPlayer && colorType != ColorType::Glow)
         colorType = colorType == ColorType::Main ? ColorType::Secondary : ColorType::Main;
 
@@ -580,7 +580,7 @@ void GradientUtils::migrateLegacyStorage() {
         if (!mod->hasSavedValue(globalKey)) continue;
         matjson::Value global = mod->getSavedValue<matjson::Value>(globalKey);
         if (!isGradientContainer(global)) continue;
-        // The old shared kit becomes each icon's own starting point; later edits stay per icon.
+        // the old shared kit becomes each icon's own starting point; later edits stay per icon.
         for (size_t i = 1; i < types.size(); ++i) {
             std::string key = getConfigKey(types[i], secondPlayer);
             if (!mod->hasSavedValue(key))
@@ -639,7 +639,7 @@ void GradientUtils::applyGradient(SimplePlayer* icon, GradientConfig config, Col
 }
 
 CCGLProgram* GradientUtils::createShader(const std::string& key, bool linear, bool blend, bool line) {
-    // Geode's filename loader misses packaged mod resources; readShaderFile
+    // geode's filename loader misses packaged mod resources; readshaderfile
     // handles both the source tree and flattened install paths.
     std::string fragName = fragmentName(linear, blend, line);
 
@@ -649,8 +649,8 @@ CCGLProgram* GradientUtils::createShader(const std::string& key, bool linear, bo
         return paimon::shaders::loadShader(key, "position.vert", fragName, nullptr, nullptr);
     }
 
-    // Uncacheable programs: each ColorToggle gets its own instance so
-    // uniforms don't clobber each other. Compiled fresh every call.
+    // uncacheable programs: each colortoggle gets its own instance so
+    // uniforms don't clobber each other. compiled fresh every call.
     std::string vertSrc = paimon::shaders::readShaderFile("position.vert");
     std::string fragSrc = paimon::shaders::readShaderFile(fragName);
     if (vertSrc.empty() || fragSrc.empty()) return nullptr;
@@ -666,17 +666,18 @@ CCGLProgram* GradientUtils::createShader(const std::string& key, bool linear, bo
 
 void GradientUtils::applyGradient(CCSprite* sprite, GradientConfig config, IconType iconType, ColorType colorType, int id, bool blend, bool secondPlayer, bool playerObject, int extra, bool line) {
     if (!sprite) return;
+    if (config.isEmpty(colorType, secondPlayer)) {
+        setGradientImage(sprite, nullptr);
+        sprite->setShaderProgram(
+            CCShaderCache::sharedShaderCache()->programForKey(kCCShader_PositionTextureColor));
+        return;
+    }
 
-    // The shaders take at most 24 stops; extra points never reach the GPU.
+    // the shaders take at most 24 stops; extra points never reach the gpu.
     if (config.points.size() > 24) config.points.resize(24);
     auto atlas = getGradientImageAtlas(config.points);
     bool image = atlas && atlas->texture;
     if (!atlas) setGradientImage(sprite, nullptr);
-
-    if (config.isEmpty(colorType, secondPlayer)) {
-        return sprite->setShaderProgram(
-            CCShaderCache::sharedShaderCache()->programForKey(kCCShader_PositionTextureColor));
-    }
 
     CCGLProgram* program = nullptr;
 
@@ -690,6 +691,7 @@ void GradientUtils::applyGradient(CCSprite* sprite, GradientConfig config, IconT
     }
 
     if (!program) {
+        setGradientImage(sprite, nullptr);
         sprite->setShaderProgram(
             CCShaderCache::sharedShaderCache()->programForKey(kCCShader_PositionTextureColor));
         return;
@@ -698,7 +700,7 @@ void GradientUtils::applyGradient(CCSprite* sprite, GradientConfig config, IconT
     sprite->setShaderProgram(program);
     setGradientImage(sprite, atlas);
 
-    // The program caches uniform names to avoid driver lookups on every repaint.
+    // the program caches uniform names to avoid driver lookups on every repaint.
     program->use();
     program->setUniformsForBuiltins();
 
@@ -749,7 +751,7 @@ void GradientUtils::applyGradient(CCSprite* sprite, GradientConfig config, IconT
         for (size_t i = 0; i < count; ++i)
             stops[i] = span > 0.f ? ccpDistance(config.points[i].pos, start) / span : 0.f;
 
-        // Order stops along the axis, keeping the original order on ties.
+        // order stops along the axis, keeping the original order on ties.
         std::stable_sort(order.begin(), order.end(),
             [&](size_t a, size_t b) { return stops[a] < stops[b]; });
 

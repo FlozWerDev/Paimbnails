@@ -330,7 +330,7 @@ void TwitchNotifyPopup::apply(
 ) {
     change(m_config);
     setNotifyConfig(m_config);
-    // setNotifyConfig clamps what overshoots; keep reading the stored one.
+    // setnotifyconfig clamps what overshoots; keep reading the stored one.
     m_config = notifyConfig();
 
     if (rebuild) {

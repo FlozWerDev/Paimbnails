@@ -73,7 +73,7 @@ enum class CardId : uint8_t {
     Count,
 };
 
-// the server drives up to Countdown; the level drives the rest.
+// the server drives up to countdown; the level drives the rest.
 enum class Phase : uint8_t {
     Idle,
     Queued,
@@ -103,7 +103,7 @@ struct PlayerRef {
     int placementsLeft = 0;
 };
 
-// Live state of one side. Both sides use the same struct so the HUD can draw
+// live state of one side. both sides use the same struct so the hud can draw
 // them with one function and the win checks read symmetrically.
 struct SideState {
     float percent = 0.f;

@@ -14,14 +14,14 @@ namespace pt {
     geode::utils::file::FilePickOptions::Filter mediaFilter();
     geode::utils::file::FilePickOptions::Filter pngFilter();
     geode::utils::file::FilePickOptions::Filter gifFilter();
-    // Images + Windows cursors (.cur/.ico/.ani) + .zip packs.
+    // images + windows cursors (.cur/.ico/.ani) + .zip packs.
     geode::utils::file::FilePickOptions::Filter cursorAssetFilter();
-    // Geometry Dash level exports for the official slots.
+    // geometry dash level exports for the official slots.
     geode::utils::file::FilePickOptions::Filter gmdFilter();
-    // Texture Studio shared packs.
+    // texture studio shared packs.
     geode::utils::file::FilePickOptions::Filter jsonFilter();
 
-    // Fire-and-forget pickers.
+    // fire-and-forget pickers.
     void pickImage(FilePickCallback callback);
     void pickCursorAsset(FilePickCallback callback);
     void pickGif(FilePickCallback callback);

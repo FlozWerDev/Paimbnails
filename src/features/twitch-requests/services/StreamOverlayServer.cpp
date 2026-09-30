@@ -5,6 +5,7 @@
 #include "StreamOverlayServer.hpp"
 
 #include "TwitchLevelBriefCache.hpp"
+#include "TwitchLevelOpen.hpp"
 #include "../TwitchRequestFilters.hpp"
 #include "../TwitchRequestManager.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
@@ -224,9 +225,9 @@ const hexRgb=hex=>{const value=parseInt((hex||'#000000').slice(1),16);return `${
 function applyConfig(c){const key=JSON.stringify(c);if(key===lastConfig)return;lastConfig=key;root.style.setProperty('--accent',c.accent);root.style.setProperty('--accent-rgb',hexRgb(c.accent));root.style.setProperty('--panel-rgb',hexRgb(c.background));root.style.setProperty('--text',c.text);root.style.setProperty('--alpha',c.opacity);root.style.setProperty('--radius',`${c.roundness}px`);root.style.setProperty('--scale',c.scale);overlay.className=`overlay layout-${c.layout} anim-${c.animation}`;}
 function metaSpan(label,value,cls=''){const span=node('span',cls);span.append(label,node('strong','',value));return span}
 function fillNow(s){now.replaceChildren();const p=s.playing;if(!p.active){now.className='now glass waiting swap-in';now.append(node('div','eyebrow','En espera'),node('h1','level-name','Esperando el proximo nivel…'),node('div','waiting-orb'));return}now.className='now glass swap-in';now.append(node('div','eyebrow','Jugando ahora'));const title=node('h1','level-name',p.name||`Nivel ${p.id}`);now.append(title);const meta=node('div','meta');if(s.config.showAuthor&&p.author)meta.append(metaSpan('por ',p.author));if(s.config.showLevelID)meta.append(metaSpan('ID ',String(p.id)));if(s.config.showRequester&&p.requester)meta.append(metaSpan('pedido por ',p.requester,'platform'));now.append(meta);if(s.config.showProgress){const wrap=node('div','progress-wrap');const head=node('div','progress-head');head.append(node('span','', 'Progreso'),node('span','percent',`${p.percent}%`));const bar=node('div','progress');const fill=node('i');fill.style.width=`${p.percent}%`;bar.append(fill);wrap.append(head,bar);now.append(wrap)}}
-function fillQueue(s){queue.replaceChildren();if(!s.queue.length){queue.append(node('li','empty glass','La cola esta lista para recibir nuevos niveles'));return}s.queue.forEach((item,index)=>{const li=node('li','queue-item glass swap-in');li.style.animationDelay=`${Math.min(index*55,260)}ms`;li.append(node('span','number',String(index+1)));const copy=node('div','queue-copy');copy.append(node('div','queue-name',item.name||`Nivel ${item.id}`));const bits=[];if(s.config.showAuthor&&item.author)bits.push(`por ${item.author}`);if(s.config.showLevelID)bits.push(`ID ${item.id}`);copy.append(node('div','queue-meta',bits.join('  -  ')));li.append(copy);if(s.config.showRequester&&item.requester)li.append(node('span','requester',item.requester));queue.append(li)})}
+function fillQueue(s){queue.replaceChildren();if(!s.queue.length){queue.append(node('li','empty glass','La cola esta lista para recibir nuevos niveles'));return}s.queue.forEach((item,index)=>{const li=node('li','queue-item glass swap-in');li.style.animationDelay=`${Math.min(index*55,260)}ms`;li.append(node('span','number',String(index+1)));const copy=node('div','queue-copy');copy.append(node('div','queue-name',item.name||`Nivel ${item.id}`));const bits=[];if(s.config.showAuthor&&item.author)bits.push(`por ${item.author}`);if(s.config.showLevelID)bits.push(`ID ${item.id}`);if(item.queue)bits.push(item.queue);copy.append(node('div','queue-meta',bits.join('  -  ')));li.append(copy);if(s.config.showRequester&&item.requester)li.append(node('span','requester',item.requester));queue.append(li)})}
 function demo(s){if(!preview||s.playing.active||s.queue.length)return s;return {...s,playing:{active:true,id:128451093,name:'Celestial Drift',author:'PaimonCreator',requester:'tu_chat',percent:67},pending:12,queue:[{id:112358132,name:'Neon Reverie',author:'Nova',requester:'viewer_one'},{id:314159265,name:'Afterglow',author:'Luma',requester:'gd_player'},{id:271828182,name:'Skyline Rush',author:'Kairo',requester:'stream_chat'}]}}
-function update(raw){const s=demo(raw);applyConfig(s.config);document.body.classList.toggle('offline',false);document.getElementById('queue-count').hidden=!s.config.showQueueCount;document.getElementById('queue-count').textContent=`${s.pending} en cola`;document.getElementById('next-label').textContent=s.random?'Cola aleatoria':'Siguientes niveles';document.getElementById('order-label').textContent=s.random?'el orden se elige al jugar':'';const nextCurrent=JSON.stringify([s.playing.active,s.playing.id,s.playing.name,s.playing.author,s.playing.requester,s.config.showAuthor,s.config.showLevelID,s.config.showRequester,s.config.showProgress]);if(nextCurrent!==currentKey){currentKey=nextCurrent;fillNow(s)}else if(s.playing.active&&s.config.showProgress){const percent=now.querySelector('.percent'),fill=now.querySelector('.progress i');if(percent)percent.textContent=`${s.playing.percent}%`;if(fill)fill.style.width=`${s.playing.percent}%`}const nextQueue=JSON.stringify([s.queue,s.config.showAuthor,s.config.showLevelID,s.config.showRequester]);if(nextQueue!==queueKey){queueKey=nextQueue;fillQueue(s)}}
+function update(raw){const s=demo(raw);applyConfig(s.config);document.body.classList.toggle('offline',false);document.getElementById('queue-count').hidden=!s.config.showQueueCount;document.getElementById('queue-count').textContent=`${s.pending} en cola - ${s.queueName||'Todas'}`;document.getElementById('next-label').textContent=s.random?'Cola aleatoria':'Siguientes niveles';document.getElementById('order-label').textContent=s.random?'el orden se elige al jugar':'';const nextCurrent=JSON.stringify([s.playing.active,s.playing.id,s.playing.name,s.playing.author,s.playing.requester,s.config.showAuthor,s.config.showLevelID,s.config.showRequester,s.config.showProgress]);if(nextCurrent!==currentKey){currentKey=nextCurrent;fillNow(s)}else if(s.playing.active&&s.config.showProgress){const percent=now.querySelector('.percent'),fill=now.querySelector('.progress i');if(percent)percent.textContent=`${s.playing.percent}%`;if(fill)fill.style.width=`${s.playing.percent}%`}const nextQueue=JSON.stringify([s.queue,s.config.showAuthor,s.config.showLevelID,s.config.showRequester]);if(nextQueue!==queueKey){queueKey=nextQueue;fillQueue(s)}}
 async function poll(){try{const response=await fetch('/api/state',{cache:'no-store'});if(!response.ok)throw new Error();update(await response.json())}catch{document.body.classList.add('offline')}finally{setTimeout(poll,650)}}poll();
 </script>
 </body>
@@ -635,11 +636,10 @@ void StreamOverlayServer::refreshSnapshot() {
         currentID = level->m_levelID.value();
         std::string requester;
         std::string platform;
-        for (auto const& request : manager.requests()) {
-            if (request.levelID != currentID) continue;
-            requester = request.requester;
-            platform = platformKey(request.platform);
-            break;
+        auto const requests = manager.requests();
+        if (auto index = indexOfRequest(currentID); index && *index < requests.size()) {
+            requester = requests[*index].requester;
+            platform = platformKey(requests[*index].platform);
         }
         playing = matjson::makeObject({
             {"active", true},
@@ -655,7 +655,8 @@ void StreamOverlayServer::refreshSnapshot() {
     auto queue = matjson::Value::array();
     size_t pending = 0;
     for (auto const& request : manager.requests()) {
-        if (request.played || request.levelID == currentID) continue;
+        if (!manager.inSelectedQueue(request)) continue;
+        if (request.played) continue;
         if (auto passes = requestPasses(request.levelID, !request.videoUrl.empty()); passes && !*passes) continue;
         ++pending;
         if (queue.size() >= static_cast<size_t>(g_config.nextCount)) continue;
@@ -668,6 +669,8 @@ void StreamOverlayServer::refreshSnapshot() {
             {"author", brief && brief->found ? brief->author : ""},
             {"requester", request.requester},
             {"platform", platformKey(request.platform)},
+            {"queue", request.queue},
+            {"description", requestNote(request)},
         }));
     }
 
@@ -678,6 +681,7 @@ void StreamOverlayServer::refreshSnapshot() {
         {"revision", static_cast<int64_t>(++m_revision)},
         {"playing", playing},
         {"queue", queue},
+        {"queueName", manager.selectedQueue()},
         {"pending", static_cast<int64_t>(pending)},
         {"random", manager.isRandomOrder()},
         {"accepting", manager.isAccepting()},

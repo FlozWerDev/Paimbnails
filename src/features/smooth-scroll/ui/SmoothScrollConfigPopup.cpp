@@ -33,7 +33,7 @@ bool SmoothScrollConfigPopup::init() {
 
     rebuild();
 
-    // Pinned bottom button: restore defaults
+    // pinned bottom button: restore defaults
     auto* resetSpr = ButtonSprite::create("Restaurar", "goldFont.fnt", "GJ_button_06.png", 0.7f);
     resetSpr->setScale(0.55f);
     auto* resetBtn = CCMenuItemExt::createSpriteExtra(resetSpr,
@@ -55,7 +55,7 @@ bool SmoothScrollConfigPopup::init() {
 }
 
 void SmoothScrollConfigPopup::scheduleRebuild() {
-    // Deferred a tick so the firing control isn't destroyed while the dispatcher uses it.
+    // deferred a tick so the firing control isn't destroyed while the dispatcher uses it.
     Ref<SmoothScrollConfigPopup> self = this;
     Loader::get()->queueInMainThread([self] {
         if (self && self->getParent()) self->rebuild();
@@ -88,7 +88,7 @@ void SmoothScrollConfigPopup::rebuild() {
             scheduleRebuild();
         });
 
-    // Card: menu behavior
+    // card: menu behavior
     auto* menusCard = kit::makeCard(scrollW, "En los menus", {120, 210, 255}, {
         kit::makeSliderRow(innerW,
             "Velocidad",
@@ -102,7 +102,7 @@ void SmoothScrollConfigPopup::rebuild() {
             [](double v) { (void)Mod::get()->setSavedValue<double>("smooth-scroll-smoothness", v); }),
     });
 
-    // Card: editor behavior
+    // card: editor behavior
     auto* editorCard = kit::makeCard(scrollW, "En el editor", {130, 240, 170}, {
         kit::makeToggleRow(innerW,
             "Zoom suave",

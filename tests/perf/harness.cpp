@@ -1,13 +1,12 @@
-// Host-side harness for pure hot-path helpers used by the shipped mod.
-// Compiles real headers from src/ (no mocks of the SUT).
-//
-// Build: tests/perf/run_tests.bat
+// host-side harness for pure hot-path helpers used by the shipped mod.
+// compiles real headers from src/ (no mocks of the sut).
+// build: tests/perf/run_tests.bat
 
 #include "../../src/utils/UrlKeyNormalize.hpp"
 #include "../../src/utils/FormatDetect.hpp"
 #include "../../src/video/VideoLoadHelpers.hpp"
 #include "../../src/features/thumbnails/services/CacheModels.hpp"
-// Unity-include the real evaluation body (header is declaration-only).
+// unity-include the real evaluation body (header is declaration-only).
 #include "../../src/features/thumbnails/services/LevelCellMaintenance.cpp"
 
 #include <chrono>
@@ -91,7 +90,7 @@ void testNormalizeUrlKey() {
         "https://cdn.example/a.png?keep=1&also=2",
         "volatile in middle"
     );
-    // Same logical asset with different bust params maps to one key.
+    // same logical asset with different bust params maps to one key.
     auto a = normalizeUrlKey("https://x/y.png?id=5&_cb=aaa");
     auto b = normalizeUrlKey("https://x/y.png?id=5&_cb=bbb");
     expect(a == b, "cache-buster variants collide to same key");
@@ -105,7 +104,7 @@ void testRamKeys() {
     expectEqInt(levelIdFromRamKey(-42), 42, "levelIdFrom gif");
     expect(!isGifRamKey(42), "static is not gif");
     expect(isGifRamKey(-42), "negative is gif");
-    // Matches CacheKey legacy convention used by ThumbnailLoader.
+    // matches cachekey legacy convention used by thumbnailloader.
     auto ck = paimon::cache::CacheKey::fromLegacy(-7);
     expectEqInt(ck.toLegacy(), makeLevelRamKey(7, true), "CacheKey legacy == gif ram key");
     expectEqInt(paimon::cache::CacheKey::fromLegacy(9).toLegacy(), makeLevelRamKey(9, false),
@@ -119,7 +118,7 @@ void testBlurBucket() {
     expectEqInt(blurIntensityBucket(3.0f), 6, "3.0 -> 6");
     expectEqInt(blurIntensityBucket(10.0f), 20, "10.0 -> 20");
     expectEqInt(blurIntensityBucket(100.0f), 20, "clamp high");
-    // Small deltas that round to the same bucket share a cache entry.
+    // small deltas that round to the same bucket share a cache entry.
     expect(blurIntensityBucket(3.0f) == blurIntensityBucket(3.2f), "3.0 and 3.2 same bucket");
     expect(blurIntensityBucket(3.0f) != blurIntensityBucket(3.5f), "3.0 and 3.5 different bucket");
 }
@@ -145,14 +144,14 @@ void testFormatDetect() {
 
 void testVideoLoadHelpers() {
     std::printf("\n[VideoLoadHelpers]\n");
-    // Quality → decode cap (must match Settings::videoMaxDecodeDimension mapping)
+    // quality → decode cap (must match settings::videomaxdecodedimension mapping)
     expectEqInt(maxDecodeDimensionForQuality(100), 0, "High = native (0)");
     expectEqInt(maxDecodeDimensionForQuality(75), 1280, "Medium = 1280");
     expectEqInt(maxDecodeDimensionForQuality(50), 854, "Low = 854");
     expectEqInt(maxDecodeDimensionForQuality(0), 1920, "Auto = 1920");
     expectEqInt(maxDecodeDimensionForQuality(999), 1920, "unknown quality = Auto");
 
-    // Request key prefers stable cacheKey over raw URL (dedupe)
+    // request key prefers stable cachekey over raw url (dedupe)
     expectEq(makeVideoRequestKey("https://x/a.mp4?_cb=1", "thumb_video_5"),
              "cache:thumb_video_5", "request key uses cacheKey");
     expectEq(makeVideoRequestKey("https://x/a.mp4", ""),
@@ -160,31 +159,31 @@ void testVideoLoadHelpers() {
     expectEq(makeVideoRequestKey("", "gallery_video_1_0"),
              "cache:gallery_video_1_0", "gallery key");
 
-    // Disk create priority
+    // disk create priority
     expect(shouldPrioritizeDiskCreate(true, false), "disk hit prioritized");
     expect(!shouldPrioritizeDiskCreate(false, true), "network pending not prioritized");
     expect(!shouldPrioritizeDiskCreate(false, false), "no file no prioritize");
 
-    // Adaptive FPS
+    // adaptive fps
     expectEqInt(adaptiveSpriteFpsFromBase(30, 12, true, 1), 30, "1 sprite = base");
     expectEqInt(adaptiveSpriteFpsFromBase(30, 12, true, 3), 12, "3 sprites floor at min");
     expectEqInt(adaptiveSpriteFpsFromBase(30, 12, false, 5), 30, "adaptive off keeps base");
     expectEqInt(adaptiveSpriteFpsFromBase(30, 12, true, 2), 15, "2 sprites = base/2");
 
-    // Player cache key: path wins so create(path) reclaims warm player
+    // player cache key: path wins so create(path) reclaims warm player
     expectEq(playerCacheStoreKey("C:/v/video_1.mp4", "thumb_video_1"),
              "C:/v/video_1.mp4", "store key prefers path");
     expectEq(playerCacheStoreKey("", "thumb_video_1"),
              "thumb_video_1", "store key falls back to logical");
 
-    // MP4 magic (createFromData gate)
+    // mp4 magic (createfromdata gate)
     uint8_t mp4[] = {0, 0, 0, 0x18, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'};
     uint8_t notMp4[] = {0x89, 'P', 'N', 'G', 0, 0, 0, 0};
     expect(isMp4(mp4, sizeof(mp4)), "isMp4 ftyp");
     expect(!isMp4(notMp4, sizeof(notMp4)), "png is not mp4");
 
-    // Version-gated decode-dim snapshot (mirrors Settings::videoMaxDecodeDimension).
-    // Mid-session quality change MUST bump version or the old dim sticks.
+    // version-gated decode-dim snapshot (mirrors settings::videomaxdecodedimension).
+    // mid-session quality change must bump version or the old dim sticks.
     DecodeDimSnapshot snap;
     expectEqInt(snap.get(/*quality*/0, /*ver*/1), 1920, "snapshot Auto dim");
     expectEqInt(snap.get(/*quality*/50, /*ver*/1), 1920, "same ver keeps stale dim (cache hit)");
@@ -195,14 +194,14 @@ void testVideoLoadHelpers() {
 
 void testIsLoadedSemantics() {
     std::printf("\n[isLevelTextureLoadedInRam] (isLoaded contract)\n");
-    // Mirrors ThumbnailLoader::isLoaded -> getFromRam:
-    // level key OR (static only) default-URL URL-RAM hit.
+    // mirrors thumbnailloader::isloaded -> getfromram:
+    // level key or (static only) default-url url-ram hit.
     expect(isLevelTextureLoadedInRam(true, false, false), "level key static loaded");
     expect(isLevelTextureLoadedInRam(true, true, false), "level key gif loaded");
     expect(isLevelTextureLoadedInRam(false, false, true), "URL-RAM fallback static loaded");
     expect(!isLevelTextureLoadedInRam(false, true, true), "GIF never uses URL fallback");
     expect(!isLevelTextureLoadedInRam(false, false, false), "cold miss not loaded");
-    // hasInRam-only would wrongly report this as false — regression guard.
+    // hasinram-only would wrongly report this as false — regression guard.
     expect(isLevelTextureLoadedInRam(false, false, true) != false || true,
         "URL hit must count (tautology force path)");
     expect(isLevelTextureLoadedInRam(false, false, true) == true,

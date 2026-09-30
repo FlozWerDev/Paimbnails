@@ -114,7 +114,7 @@ void QuickHubRadial::onExit() {
 
 void QuickHubRadial::update(float dt) {
 #ifdef GEODE_IS_DESKTOP
-    // getMousePos already comes in design space.
+    // getmousepos already comes in design space.
     updateHover(getHoveredIndex(geode::cocos::getMousePos()));
 #endif
 }
@@ -169,7 +169,7 @@ void QuickHubRadial::buildRadialItems() {
         this->addChild(itemNode, 5);
         item.node = itemNode;
 
-        // Hover scales the child so the container animation isn't cut.
+        // hover scales the child so the container animation isn't cut.
         auto badge = makeRadialBadge(*def, shape, m_badgeSize, !item.reachable);
         badge.root->setScale(0.f);
         itemNode->addChild(badge.root);
@@ -180,7 +180,7 @@ void QuickHubRadial::buildRadialItems() {
     }
 }
 
-// No plate: the blur already separates the wheel.
+// no plate: the blur already separates the wheel.
 void QuickHubRadial::buildBackdrop() {
     if (m_items.empty()) return;
 
@@ -216,7 +216,7 @@ void QuickHubRadial::animateOpen() {
         m_hub->runAction(CCEaseBackOut::create(CCScaleTo::create(0.28f, 1.f)));
     }
 
-    // Move container, scale child: hover doesn't interrupt the opening.
+    // move container, scale child: hover doesn't interrupt the opening.
     for (size_t i = 0; i < m_items.size(); i++) {
         auto& item = m_items[i];
         float delay = 0.025f * static_cast<float>(i);
@@ -281,7 +281,7 @@ void QuickHubRadial::animateClose() {
     ));
 }
 
-    // Only ccTouchEnded fires an option.
+    // only cctouchended fires an option.
 
 bool QuickHubRadial::ccTouchBegan(CCTouch* touch, CCEvent* event) {
     return true;
@@ -312,7 +312,7 @@ void QuickHubRadial::keyBackClicked() {
 }
 
 
-// Sector selection: aim direction matters, not hitting the icon.
+// sector selection: aim direction matters, not hitting the icon.
 int QuickHubRadial::getHoveredIndex(CCPoint const& worldPos) {
     int count = static_cast<int>(m_items.size());
     if (count == 0) return -1;
@@ -327,7 +327,7 @@ int QuickHubRadial::getHoveredIndex(CCPoint const& worldPos) {
     float angleDeg = std::atan2(dy, dx) * (180.f / static_cast<float>(M_PI));
     float step = 360.f / static_cast<float>(count);
 
-    // Items run backwards from 90 degrees; convert to clockwise turns.
+    // items run backwards from 90 degrees; convert to clockwise turns.
     float fromTop = std::fmod(90.f - angleDeg + 360.f, 360.f);
     int index = static_cast<int>(std::floor(fromTop / step + 0.5f)) % count;
     return index;
@@ -403,7 +403,7 @@ void QuickHubRadial::executeOption(int index) {
             return;
         }
         if (id == "discord")      {
-            // A desktop-saved radial may still reference this id on mobile.
+            // a desktop-saved radial may still reference this id on mobile.
             if (!discordSupported()) return;
             if (auto popup = paimon::discord::DiscordConfigPopup::create()) popup->show();
             return;
@@ -420,7 +420,7 @@ void QuickHubRadial::executeOption(int index) {
             return;
         }
         if (id == "discord-config") {
-            // A desktop-saved radial may still reference this id on mobile.
+            // a desktop-saved radial may still reference this id on mobile.
             if (!discordSupported()) return;
             if (auto popup = paimon::discord::DiscordConfigPopup::create()) popup->show();
             return;

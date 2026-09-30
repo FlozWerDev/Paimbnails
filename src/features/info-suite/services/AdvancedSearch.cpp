@@ -204,9 +204,7 @@ bool passesRefine(AdvancedQuery const& q, GJGameLevel* level) {
     if (q.minGameVersion > 0 && version < q.minGameVersion) return false;
     if (q.maxGameVersion > 0 && version > q.maxGameVersion) return false;
 
-    // Object count is 0 on levels the game has not downloaded yet. Dropping
-    // those would empty the list on a fresh search, so an unknown count only
-    // fails when a minimum was asked for.
+    // zero means an undownloaded object count; only an explicit minimum rejects unknown counts.
     int objects = level->m_objectCount.value();
     if (q.minObjects > 0 && objects < q.minObjects) return false;
     if (q.maxObjects > 0 && objects > 0 && objects > q.maxObjects) return false;

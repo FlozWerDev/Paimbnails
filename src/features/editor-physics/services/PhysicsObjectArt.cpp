@@ -8,7 +8,7 @@ namespace paimon::editorphysics {
 
 namespace {
 
-// Text and counter objects need a font texture handed to them, so they never go
+// text and counter objects need a font texture handed to them, so they never go
 // through the create-by-key path.
 constexpr int kTextObjectID = 914;
 constexpr int kCounterObjectID = 1615;
@@ -27,7 +27,7 @@ void applyTransform(GameObject* object, BodyVisual const& visual) {
     }
 }
 
-// The real art via the editor's own create path; detail and glow sprites belong
+// the real art via the editor's own create path; detail and glow sprites belong
 // to batch layers that only exist inside a level.
 CCNode* spawnObject(BodyVisual const& visual) {
     if (visual.objectID <= 0 || visual.objectID == kTextObjectID ||
@@ -47,7 +47,7 @@ CCNode* spawnObject(BodyVisual const& visual) {
     return clone;
 }
 
-// Whatever the object draws on screen, sprite by sprite: GD keeps base, detail
+// whatever the object draws on screen, sprite by sprite: gd keeps base, detail
 // and glow sprites in sibling batch layers sharing the object's space.
 CCNode* mirrorLiveArt(BodyVisual const& visual) {
     auto* object = visual.object;
@@ -79,7 +79,7 @@ CCNode* mirrorLiveArt(BodyVisual const& visual) {
     return group->getChildrenCount() > 0 ? group : nullptr;
 }
 
-// Last resort: the main frame stretched over the hitbox.
+// last resort: the main frame stretched over the hitbox.
 CCNode* stretchedArt(BodyVisual const& visual) {
     if (!visual.object) return nullptr;
     auto* frame = visual.object->displayFrame();

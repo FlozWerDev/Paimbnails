@@ -58,8 +58,8 @@ void InfoStore::load() {
     }
     auto root = parsed.unwrap();
 
-    // Iterating a matjson object yields the entries themselves; the key comes
-    // from getKey() on each one.
+    // iterating a matjson object yields the entries themselves; the key comes
+    // from getkey() on each one.
     if (root["lastPages"].isObject()) {
         for (auto const& entry : root["lastPages"]) {
             if (m_lastPages.size() >= kMaxPages) break;
@@ -144,7 +144,7 @@ std::optional<int> InfoStore::lastPage(std::string const& searchKey) const {
 void InfoStore::setLastPage(std::string const& searchKey, int page) {
     if (searchKey.empty()) return;
     if (page <= 0) {
-        // Page 0 is the default, so storing it would only waste a slot.
+        // page 0 is the default, so storing it would only waste a slot.
         if (m_lastPages.erase(searchKey) > 0) m_dirty = true;
         return;
     }
@@ -200,7 +200,7 @@ void InfoStore::addCommentSample(int64_t commentID, int64_t epochSeconds) {
 
     m_commentSamples.insert(it, {commentID, epochSeconds});
     if (m_commentSamples.size() > kMaxCommentSamples) {
-        // Thin out the oldest half of the ids; the newest range is the one
+        // thin out the oldest half of the ids; the newest range is the one
         // people actually browse.
         m_commentSamples.erase(m_commentSamples.begin(),
                                m_commentSamples.begin() + kMaxCommentSamples / 4);
@@ -213,7 +213,7 @@ int64_t InfoStore::estimateCommentTime(int64_t commentID) const {
 
     auto upper = std::lower_bound(m_commentSamples.begin(), m_commentSamples.end(),
                                   std::pair<int64_t, int64_t>{commentID, 0});
-    // Needs a sample on each side; extrapolating past the ends is guesswork.
+    // needs a sample on each side; extrapolating past the ends is guesswork.
     if (upper == m_commentSamples.begin() || upper == m_commentSamples.end()) return 0;
 
     auto lower = std::prev(upper);

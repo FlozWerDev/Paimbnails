@@ -552,7 +552,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                         }
                         self->finalizeBackgroundWithTexture(safeContainer, loadedTex, cfgCopy, "custom", pathCopy);
                     },
-                    /*ignoreCache=*/true);
+                    /*ignorecache=*/true);
                 return;
             }
         } else if (resolvedType == "id" && resolvedId > 0) {
@@ -601,7 +601,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         this->finalizeBackgroundWithTexture(container, tex, cfg, resolvedType, resolvedPath);
     }
 
-// Decode thumbnail backgrounds off-thread; upload on the main thread.
+// decode thumbnail backgrounds off-thread; upload on the main thread.
     void loadThumbBackgroundAsync(
         CCNode* container, LayerBgConfig const& cfg,
         std::string const& resolvedType, std::string const& resolvedPath, int32_t levelID
@@ -695,7 +695,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         bool adaptive = Mod::get()->getSavedValue<bool>("bg-adaptive-colors", false);
         m_fields->m_adaptiveColors = adaptive;
         if (adaptive && resolvedType == "custom" && !resolvedPath.empty()) {
-            // WeakRef across threads; lock only on the main thread
+            // weakref across threads; lock only on the main thread
             WeakRef<MenuLayer> safeThis = this;
             std::string pathCopy = resolvedPath;
             paimon::ThreadTracker::get().spawn([safeThis, pathCopy]() {
@@ -787,7 +787,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
 
 
 
-// Keep the hidden Paimon in sync with the guide toggle.
+// keep the hidden paimon in sync with the guide toggle.
 $execute {
     using namespace paimon::guide;
 

@@ -1,5 +1,5 @@
-// No-MoreIcons fallback: after updatePlayerFrame, injects the active icon's
-// compiled frames into the SimplePlayer layers.
+// no-moreicons fallback: after updateplayerframe, injects the active icon's
+// compiled frames into the simpleplayer layers.
 
 #include "../services/IconApplier.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"

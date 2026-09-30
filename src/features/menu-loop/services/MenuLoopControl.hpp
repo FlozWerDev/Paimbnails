@@ -23,7 +23,7 @@ namespace MenuLoopControl {
         }
     }
 
-    // Store the outgoing track unless blacklisted, then advance to a random pick.
+    // store the outgoing track unless blacklisted, then advance to a random pick.
     inline void storePreviousAndAdvance(MenuLoopManager& sm) {
         stopMenuMusic();
         const std::string& songToBeStored = sm.getCurrentSong();
@@ -240,7 +240,7 @@ namespace MenuLoopControl {
         Notification::create(fmt::format("Copied: {}", toCopy), NotificationIcon::Success)->show();
     }
 
-// Seek by the configured milliseconds; Shift doubles and Ctrl+Shift triples.
+// seek by the configured milliseconds; shift doubles and ctrl+shift triples.
     inline int getJumpAmountMs() {
         int base = static_cast<int>(Mod::get()->getSettingValue<int64_t>("menuLoopSeekAmountMs"));
         if (base < 100) base = 100;
@@ -283,7 +283,7 @@ namespace MenuLoopControl {
         sm.setPauseSongPositionTracking(false);
     }
 
-// Seek backward, wrapping or clamping according to constant shuffle mode.
+// seek backward, wrapping or clamping according to constant shuffle mode.
     inline void skipBackward() {
         if (isVanillaMenuLoopDisabled()) return;
         auto& sm = MenuLoopManager::get();
@@ -318,7 +318,7 @@ namespace MenuLoopControl {
         sm.setPauseSongPositionTracking(false);
     }
 
-// Seek forward; shuffle past the end in constant-shuffle mode.
+// seek forward; shuffle past the end in constant-shuffle mode.
     inline void skipForward() {
         if (isVanillaMenuLoopDisabled()) return;
         auto& sm = MenuLoopManager::get();

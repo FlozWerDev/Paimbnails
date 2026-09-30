@@ -36,7 +36,7 @@ public:
         auto& mgr = CustomSliderManager::get();
         if (!mgr.config().enabled) return true;
 
-        // Schedule for next frame so the slider is fully parented
+        // schedule for next frame so the slider is fully parented
         this->scheduleOnce(
             schedule_selector(PaimonSlider::applyIconDeferred), 0.f);
 
@@ -233,7 +233,7 @@ class $modify(PaimonSliderTouch, SliderTouchLogic) {
         if (slider && slider->m_fields->m_isAffected) slider->onDragEnd();
     }
 
-    // CCMenu::ccTouchCancelled is inline on win: binds mac/ios/android only.
+    // ccmenu::cctouchcancelled is inline on win: binds mac/ios/android only.
     $override
     void ccTouchCancelled(CCTouch* touch, CCEvent* event) {
         SliderTouchLogic::ccTouchCancelled(touch, event);

@@ -10,10 +10,10 @@
 namespace paimon::fluid {
 
 struct RevealOpts {
-    float fadeDuration = 0.18f;  // Per-node fade.
-    float startDelay   = 0.0f;   // Delay before the first node.
-    float stagger      = 0.05f;  // Gap between nodes.
-    bool  recurse      = true;   // Animate RGBA descendants when needed.
+    float fadeDuration = 0.18f;  // per-node fade.
+    float startDelay   = 0.0f;   // delay before the first node.
+    float stagger      = 0.05f;  // gap between nodes.
+    bool  recurse      = true;   // animate rgba descendants when needed.
 };
 
 namespace detail {
@@ -21,7 +21,7 @@ namespace detail {
 // tag to avoid stacking fades on one node.
 inline constexpr int kFadeActionTag = 0x46414445;
 
-// hide immediately, recursing to the first RGBA descendant when needed.
+// hide immediately, recursing to the first rgba descendant when needed.
 inline void prehide(cocos2d::CCNode* node, bool recurse, int depth) {
     if (!node || depth > 10) return;
 

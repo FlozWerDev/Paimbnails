@@ -7,7 +7,7 @@
 
 using namespace geode::prelude;
 
-// Hide the list fill while keeping its frame.
+// hide the list fill while keeping its frame.
 class $modify(PaimonGJListLayer, GJListLayer) {
     static void onModify(auto& self) {
         paimon::hooks::afterNodeIdsOrLate(self, "GJListLayer::init");

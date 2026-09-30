@@ -78,7 +78,7 @@ std::vector<FormatDef const*> rankedFormats(Mode mode) {
     return out;
 }
 
-// The deck is the whole of Roulette; with the cards module off it would be a
+// the deck is the whole of roulette; with the cards module off it would be a
 // race under another name, so it leaves the queue instead.
 std::vector<FormatDef const*> queueableFormats(Mode mode) {
     auto formats = rankedFormats(mode);
@@ -102,7 +102,7 @@ std::string formatWinCondition(FormatDef const& def) {
 }
 
 std::string formatSprite(FormatDef const& def) {
-    // Friendly has no glyph of its own; it borrows the emblem.
+    // friendly has no glyph of its own; it borrows the emblem.
     if (def.id == Format::Friendly) {
         return geode::Mod::get()->expandSpriteName("paim_vsSwords.png");
     }

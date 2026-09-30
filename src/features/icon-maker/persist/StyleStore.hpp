@@ -1,5 +1,5 @@
 #pragma once
-// Fill library: stores layer paints for reuse. Main thread only, like IconProjectStore.
+// fill library: stores layer paints for reuse. main thread only, like iconprojectstore.
 
 #include "../data/FillSpec.hpp"
 

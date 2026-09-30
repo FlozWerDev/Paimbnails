@@ -8,7 +8,7 @@
 
 namespace paimon::texture_studio {
 
-// Logical role of a cluster.
+// logical role of a cluster.
 enum class ClusterRole : std::uint8_t {
     Unassigned = 0,
     Outline,
@@ -17,7 +17,7 @@ enum class ClusterRole : std::uint8_t {
     Glow,
 };
 
-// Classified cluster — same fields as ColorCluster + the assigned role.
+// classified cluster — same fields as colorcluster + the assigned role.
 struct ClassifiedCluster {
     ColorCluster source;
     ClusterRole  role = ClusterRole::Unassigned;
@@ -34,7 +34,7 @@ public:
     static ClassifiedSet classify(ClusterSet const& set,
                                   ImageBuffer const& sprite);
 
-    // Fraction (0..1) with a fully-transparent 4-neighbor. Public for tests.
+    // fraction (0..1) with a fully-transparent 4-neighbor. public for tests.
     static float computeBorderRatio(ImageBuffer const& sprite,
                                     ColorCluster const& cluster,
                                     ColorCluster const* allClusters,

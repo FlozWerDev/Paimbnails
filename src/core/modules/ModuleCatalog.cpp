@@ -37,7 +37,7 @@ Module infoMod(char const* id, char const* name, char const* desc, char const* k
 
 std::vector<Module> buildCatalog() {
     return {
-        // Interface — active everywhere
+        // interface — active everywhere
         setting("paimbnails.smoothui.global", "Smooth UI",
                 "Eased popup transitions and button presses.",
                 "smooth-ui-enabled", "Motion", S::Global, true),
@@ -239,7 +239,7 @@ std::vector<Module> buildCatalog() {
               "Editable cosmetic levels in the official list: any id or .gmd, painted difficulty and stars.",
               "module-official-slots", "Visual", S::Level, true),
 
-        // Info Suite — master first
+        // info suite — master first
         setting(kInfoSuite, "Info Suite",
                 "Master switch for every info and history module.",
                 "info-suite-enable", "Master", S::Info, true),
@@ -377,7 +377,7 @@ std::vector<Module> buildCatalog() {
               "Copy someone's icon set from their profile and wear it from the garage.",
               "module-icon-copy", "Social", S::Profile, true),
 
-        // Social — comments and messages
+        // social — comments and messages
         saved("paimbnails.emotes.social", "Emotes",
               "Emote picker and rendering in comments.",
               "module-emotes", "Comments", S::Social, true),

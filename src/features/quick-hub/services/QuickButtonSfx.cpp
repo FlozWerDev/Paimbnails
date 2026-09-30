@@ -29,11 +29,11 @@ constexpr float kMaxSpeed = 2.5f;
 std::atomic<bool> s_suppressArmed{false};
 std::chrono::steady_clock::time_point s_suppressUntil{};
 
-// One-shot fire: spamming the radial cuts the previous one.
+// one-shot fire: spamming the radial cuts the previous one.
 FMOD::Sound* s_fireSound = nullptr;
 FMOD::Channel* s_fireChannel = nullptr;
 
-// Current fire generation: lambdas capture theirs by value, so a lagging timer can't cut the new sound.
+// current fire generation: lambdas capture theirs by value, so a lagging timer can't cut the new sound.
 std::atomic<unsigned> s_fireGen{0};
 
 bool channelAlive(FMOD::Channel* ch) {
@@ -177,7 +177,7 @@ bool playQuickButtonSfx(CustomQuickButton const& b) {
         return false;
     }
 
-    // Fade-in: start low, ramp to target volume.
+    // fade-in: start low, ramp to target volume.
     float fadeInMs = static_cast<float>(std::max(0, b.sfxFadeInMs));
     float fadeOutMs = static_cast<float>(std::max(0, b.sfxFadeOutMs));
     if (fadeInMs > 0.f) channel->setVolume(0.f);
@@ -196,7 +196,7 @@ bool playQuickButtonSfx(CustomQuickButton const& b) {
     if (endMs > startMs) {
         scheduleFireStop(static_cast<float>(endMs - startMs) / 1000.f, fadeOutMs, volume, gen);
     } else if (fadeOutMs > 0.f) {
-        // No explicit end: fade at the real end of file.
+        // no explicit end: fade at the real end of file.
         unsigned int lenMs = 0;
         if (sound->getLength(&lenMs, FMOD_TIMEUNIT_MS) == FMOD_OK && lenMs > static_cast<unsigned int>(startMs) + 200) {
             float totalSec = static_cast<float>(lenMs - static_cast<unsigned int>(startMs)) / 1000.f;
@@ -207,7 +207,7 @@ bool playQuickButtonSfx(CustomQuickButton const& b) {
 }
 
 void stopQuickButtonSfx() {
-    // Invalidate first: pending lambdas from the old fire become no-ops even if FMOD reuses the channel.
+    // invalidate first: pending lambdas from the old fire become no-ops even if fmod reuses the channel.
     ++s_fireGen;
     stopFire();
 }
@@ -239,7 +239,7 @@ void activateItemWithQuickButtonSfx(cocos2d::CCMenuItem* item, CustomQuickButton
     }
     beginQuickButtonSfxSuppress();
     item->activate();
-    // Single consume: what activate fired already fell in the hook; disarm the rest so other SFX survive.
+    // single consume: what activate fired already fell in the hook; disarm the rest so other sfx survive.
     (void)consumeQuickButtonSfxSuppress();
     clearQuickButtonSfxSuppress();
     playQuickButtonSfx(def);

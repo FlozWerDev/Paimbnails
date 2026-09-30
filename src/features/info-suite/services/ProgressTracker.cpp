@@ -35,7 +35,7 @@ int maxLevels() {
     return static_cast<int>(std::clamp<int64_t>(value, 50, 5000));
 }
 
-// Buckets are stored as a flat "percent:count" list so an untouched level costs
+// buckets are stored as a flat "percent:count" list so an untouched level costs
 // nothing; writing 101 zeroes per level would bloat the file for no reason.
 matjson::Value bucketsToJson(std::array<uint32_t, kPercentBuckets> const& buckets) {
     auto list = matjson::Value::array();
@@ -60,7 +60,7 @@ void bucketsFromJson(matjson::Value const& value, std::array<uint32_t, kPercentB
     });
 }
 
-// Runs are triplets [jumps, percent, practice] for the same reason as buckets:
+// runs are triplets [jumps, percent, practice] for the same reason as buckets:
 // one short array instead of an object per attempt.
 matjson::Value runsToJson(std::vector<RunRecord> const& runs) {
     auto list = matjson::Value::array();
@@ -144,7 +144,7 @@ void ProgressTracker::load() {
     auto root = parsed.unwrap();
     if (!root["levels"].isObject()) return;
 
-    // Object entries carry their own key; see InfoStore::load for the same shape.
+    // object entries carry their own key; see infostore::load for the same shape.
     for (auto const& value : root["levels"]) {
         auto key = value.getKey();
         if (!key) continue;
@@ -216,7 +216,7 @@ void ProgressTracker::enforceLimit() {
     int limit = maxLevels();
     if (static_cast<int>(m_levels.size()) <= limit) return;
 
-    // Drop the least recently played levels first.
+    // drop the least recently played levels first.
     std::vector<std::pair<int64_t, int>> byAge;
     byAge.reserve(m_levels.size());
     for (auto const& [id, progress] : m_levels) byAge.emplace_back(progress.lastPlayed, id);

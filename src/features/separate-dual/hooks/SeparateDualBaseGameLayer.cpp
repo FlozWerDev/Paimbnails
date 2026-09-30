@@ -9,14 +9,14 @@ using paimon::separate_dual::Side;
 using paimon::separate_dual::moduleEnabled;
 
 class $modify(PaimonSeparateDualBase, GJBaseGameLayer) {
-    // Dress both live fighters from their own side of the vault.
+    // dress both live fighters from their own side of the vault.
     void refreshFighters() {
         auto vault = DualKitVault::get();
         vault->dressFighter(m_player1, Side::Primary);
         vault->dressFighter(m_player2, Side::Secondary);
     }
 
-    // Refresh the dual-exit preview doll for the fighter that just left.
+    // refresh the dual-exit preview doll for the fighter that just left.
     void refreshExitDoll(PlayerObject* fighter) {
         auto vault = DualKitVault::get();
         auto doll = findFirstChildRecursive<SimplePlayer>(

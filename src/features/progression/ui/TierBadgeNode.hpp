@@ -5,13 +5,13 @@
 
 namespace paimon::progression {
 
-// Tier medal: effects are plain sprites, a new tier is one table row.
+// tier medal: effects are plain sprites, a new tier is one table row.
 class TierBadgeNode : public cocos2d::CCNode {
 public:
     static TierBadgeNode* create(int level, float size);
 
     void setLevel(int level);
-    // Ring around the medal. Negative hides it.
+    // ring around the medal. negative hides it.
     void setProgress(float progress);
     void playIntro(float delay);
     void playLevelUp();
@@ -34,10 +34,10 @@ protected:
     cocos2d::CCLabelBMFont* m_levelLabel = nullptr;
 };
 
-// Tinted glow sprite, already set to additive blend.
+// tinted glow sprite, already set to additive blend.
 cocos2d::CCSprite* makeRadialGlow(cocos2d::ccColor3B color, float radius, float peakAlpha);
 
-// Medal plate for a tier, unscaled and untinted.
+// medal plate for a tier, unscaled and untinted.
 cocos2d::CCSprite* makeTierPlate(TierFrame frame);
 
 } // namespace paimon::progression

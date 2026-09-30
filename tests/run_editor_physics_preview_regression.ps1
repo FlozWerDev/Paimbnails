@@ -5,7 +5,7 @@ $source = Join-Path $PSScriptRoot 'editor_physics_preview_regression.cpp'
 $output = Join-Path $env:TEMP 'paimon-editor-physics-preview-regression.exe'
 $cache = Join-Path $root 'build\CMakeCache.txt'
 
-# The three units keep their own anonymous namespaces, so they are compiled
+# the three units keep their own anonymous namespaces, so they are compiled
 # side by side instead of being included into the test the way the other banks
 # do it.
 $units = @(

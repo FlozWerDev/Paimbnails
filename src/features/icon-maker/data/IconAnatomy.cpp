@@ -8,8 +8,8 @@ namespace paimon::icon_maker {
 
 namespace {
 
-// Zone wording is aimed at someone who has never opened an icon editor: what
-// the zone *is* on screen first, what GD calls it second.
+// zone wording is aimed at someone who has never opened an icon editor: what
+// the zone *is* on screen first, what gd calls it second.
 constexpr SlotDef kMain      {"main",      "_001",
     "Cuerpo",  "El relleno grande. Toma el Color 1 del jugador.", {96, 170, 255}};
 constexpr SlotDef kSecondary {"secondary", "_2_001",
@@ -29,8 +29,8 @@ std::vector<SlotDef> simpleSlots(bool ufo) {
     return slots;
 }
 
-// Robot/spider parts: main/secondary/glow per part; "extra" exists only on
-// part 1 (matches vanilla sheets and MoreIcons' required-frame list).
+// robot/spider parts: main/secondary/glow per part; "extra" exists only on
+// part 1 (matches vanilla sheets and moreicons' required-frame list).
 std::vector<SlotDef> partSlots() {
     return {kMain, kSecondary, kGlow, kExtra};
 }

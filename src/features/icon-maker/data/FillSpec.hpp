@@ -7,7 +7,7 @@
 
 namespace paimon::icon_maker {
 
-// Numeric values are frozen for save compatibility.
+// numeric values are frozen for save compatibility.
 enum class FillType : int {
     Flat     = 0,
     Gradient = 1,
@@ -36,8 +36,8 @@ struct GradientSpec {
     };
 };
 
-// How the fill image maps onto the piece before scale/offset/rotation.
-// Frozen values; Tile has no counterpart in texture-studio's ImageFitMode.
+// how the fill image maps onto the piece before scale/offset/rotation.
+// frozen values; tile has no counterpart in texture-studio's imagefitmode.
 enum class FillFitMode : int {
     Fit     = 0,
     Fill    = 1,
@@ -55,23 +55,23 @@ struct ImageFillSpec {
     int opacity = 255;
 };
 
-// Contour drawn *under* the painted shape, grown outwards from its alpha.
+// contour drawn *under* the painted shape, grown outwards from its alpha.
 struct OutlineSpec {
     bool enabled = false;
-    // Thickness in authoring-canvas pixels (the 240px UHD square), so the same
+    // thickness in authoring-canvas pixels (the 240px uhd square), so the same
     // number holds up across the -uhd / -hd / sd exports.
     float width = 6.f;
     cocos2d::ccColor4B color{0, 0, 0, 255};
 };
 
-// The "paint bucket": what gets painted through the piece's alpha mask.
+// the "paint bucket": what gets painted through the piece's alpha mask.
 struct FillSpec {
     FillType type = FillType::Flat;
 
-    // Multiply the fill by the shape's luminance so shading survives.
+    // multiply the fill by the shape's luminance so shading survives.
     bool keepLuminance = true;
 
-    // Render white and let a runtime ticker hue-cycle the result (garage only).
+    // render white and let a runtime ticker hue-cycle the result (garage only).
     bool chroma = false;
 
     cocos2d::ccColor4B flat{255, 255, 255, 255};

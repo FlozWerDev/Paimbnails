@@ -50,7 +50,7 @@ public:
     LevelEditorLayer* editor() const { return m_editor; }
     GJGameLevel* hostLevel() const { return m_hostLevel.data(); }
 
-    // Non-owning overlay for the current editor scene.
+    // non-owning overlay for the current editor scene.
     void setOverlay(CollabEditorOverlay* overlay);
     void clearOverlay(CollabEditorOverlay* overlay);
 
@@ -58,7 +58,7 @@ public:
     void sendCreatedObjects(cocos2d::CCArray* objects);
     void sendUpdatedObject(GameObject* object);
     void sendUpdatedObjects(cocos2d::CCArray* objects);
-    // Full saves feed digests; remote transforms apply in place to avoid flicker.
+    // full saves feed digests; remote transforms apply in place to avoid flicker.
     void sendMovedObject(GameObject* object);
     void sendMovedObjects(cocos2d::CCArray* objects);
     void sendRotatedObject(GameObject* object);
@@ -83,7 +83,7 @@ public:
     std::string cycleFollowPeer();
     void clearFollow();
     int followClientId() const { return m_followClientId; }
-    // Called by the overlay every rendered frame; does not send network data.
+    // called by the overlay every rendered frame; does not send network data.
     void updateFollow(float dt);
     struct HeatSample { float x = 0.f; float y = 0.f; float intensity = 0.f; };
     std::vector<HeatSample> heatmapSamples(size_t maxCount = 120) const;
@@ -198,7 +198,7 @@ private:
     void flushOutgoing();
     void pumpOutbox();
     void sendInflightChunk();
-    // Acknowledge the in-flight chunk and retry failures in order.
+    // acknowledge the in-flight chunk and retry failures in order.
     void onOpsAck(bool ok, int status);
     void handleDigest(matjson::Value const& msg);
     void sweepEditor();
@@ -252,30 +252,30 @@ private:
 
     HostPermissions m_permissions;
 
-    // GID mapping keeps remote lookups alive and O(1).
+    // gid mapping keeps remote lookups alive and o(1).
     std::unordered_map<int, std::string> m_uidToGid;
     std::unordered_map<std::string, geode::Ref<GameObject>> m_gidToObj;
     std::unordered_map<std::string, uint32_t> m_versionByGid;
-    // Last wire save per GID, used to skip no-op resends.
+    // last wire save per gid, used to skip no-op resends.
     std::unordered_map<std::string, std::string> m_lastSentSave;
     uint64_t m_localSeq = 1;
 
-    // Bulk hooks stage refs; saves are generated within the frame budget.
+    // bulk hooks stage refs; saves are generated within the frame budget.
     std::deque<geode::Ref<GameObject>> m_deferredCreates;
     std::deque<int> m_deferredEditOrder;
     std::unordered_map<int, DeferredEdit> m_deferredEdits;
 
     std::vector<OutOp> m_pendingOps;
     std::unordered_map<std::string, size_t> m_pendingIndexByGid;
-    // Throttle updates; structural edits flush on the next tick.
+    // throttle updates; structural edits flush on the next tick.
     float m_sinceFlush = 0.f;
     bool m_pendingStructural = false;
 
-    // Ordered acknowledged outbox with token-bucket pacing.
+    // ordered acknowledged outbox with token-bucket pacing.
     std::list<OutOp> m_outbox;
     std::unordered_map<std::string, std::list<OutOp>::iterator> m_outboxByGid;
     std::vector<OutOp> m_inflight;
-    // Invalidates stale callbacks after a reset.
+    // invalidates stale callbacks after a reset.
     uint64_t m_sendEpoch = 0;
     float m_retryTimer = 0.f;
     int m_sendFailures = 0;
@@ -284,26 +284,26 @@ private:
     size_t m_maxOpsPerRequest = kDefaultOpsPerRequest;
     size_t m_syncTotal = 0;
 
-    // Local GID/version/save digest for periodic server comparison.
+    // local gid/version/save digest for periodic server comparison.
     std::unordered_map<std::string, uint64_t> m_wireHash;
     uint64_t m_wireDigest = 0;
     int m_digestStrikes = 0;
     float m_digestCooldown = 0.f;
 
-    // Rotating cursors keep large updates within the frame budget.
+    // rotating cursors keep large updates within the frame budget.
     size_t m_reconcileCursor = 0;
     int m_sweepTicks = 0;
     size_t m_sweepObjectCursor = 0;
     size_t m_sweepBucketCursor = 0;
 
-    // Ordered remote queue, drained once the editor exists.
+    // ordered remote queue, drained once the editor exists.
     std::list<ApplyObj> m_applyQueue;
     std::unordered_map<std::string, std::list<ApplyObj>::iterator> m_queuedRemoteByGid;
     size_t m_snapshotReceived = 0;
     bool m_snapshotComplete = false;
     bool m_seeded = false;
 
-    // Host snapshot seed, serialized in slices with one request in flight.
+    // host snapshot seed, serialized in slices with one request in flight.
     bool m_seeding = false;
     size_t m_seedCursor = 0;
     size_t m_seedTotal = 0;

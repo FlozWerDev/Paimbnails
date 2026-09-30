@@ -1,7 +1,7 @@
 #pragma once
 
-// GJSearchObject::create's 22-argument overload can corrupt its gd::string fields and crash in getKey().
-// Everything builds through the two-argument overload and assigns fields afterwards.
+// gjsearchobject::create's 22-argument overload can corrupt its gd::string fields and crash in getkey().
+// everything builds through the two-argument overload and assigns fields afterwards.
 
 #include <Geode/binding/GJSearchObject.hpp>
 #include <Geode/binding/GameLevelManager.hpp>
@@ -12,7 +12,7 @@ namespace paimon::info {
 
 struct SearchFilters {
     gd::string query;
-    // "-1" is what the game itself sends for "any"; see RecommendationEngine.
+    // "-1" is what the game itself sends for "any"; see recommendationengine.
     gd::string difficulty = "-1";
     gd::string length = "-1";
     int page = 0;
@@ -62,9 +62,7 @@ inline GJSearchObject* buildSearchObject(SearchType type, SearchFilters const& f
     return obj;
 }
 
-// GJSearchObject::getKey() folds the page into the string because the game uses
-// it as a per page cache key. Anything that wants to identify "the same search"
-// across pages needs this page independent digest instead.
+// the game cache key includes the page; cross-page search identity needs an independent digest.
 inline std::string searchKey(GJSearchObject* obj) {
     if (!obj) return {};
     return fmt::format(
@@ -88,7 +86,7 @@ inline std::string searchKey(GJSearchObject* obj) {
         obj->m_songFilter ? "m" : "");
 }
 
-// Pushes the level browser for a search object, with the usual GD fade.
+// pushes the level browser for a search object, with the usual gd fade.
 inline void pushBrowser(GJSearchObject* obj) {
     if (!obj) return;
     auto* scene = LevelBrowserLayer::scene(obj);
@@ -97,7 +95,7 @@ inline void pushBrowser(GJSearchObject* obj) {
         cocos2d::CCTransitionFade::create(0.5f, scene));
 }
 
-// "Open level #id" — the same thing typing an id into the search box does.
+// "open level #id" — the same thing typing an id into the search box does.
 inline void openLevelByID(int levelID) {
     if (levelID <= 0) return;
     SearchFilters filters;
@@ -105,7 +103,7 @@ inline void openLevelByID(int levelID) {
     pushBrowser(buildSearchObject(SearchType::Search, filters));
 }
 
-// "Levels that use this song".
+// "levels that use this song".
 inline void openLevelsWithSong(int songID) {
     if (songID <= 0) return;
     SearchFilters filters;

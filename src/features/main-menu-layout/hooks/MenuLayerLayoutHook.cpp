@@ -25,7 +25,7 @@ class $modify(PaimonMainMenuLayoutHook, MenuLayer) {
 
         paimon::menu_layout::registerLayoutEditorKeybind(this);
 
-        // Three distinct selectors: scheduleOnce with the same selector only
+        // three distinct selectors: scheduleonce with the same selector only
         // updates the existing timer (cocos2d-x), firing just one pass.
         this->scheduleOnce(schedule_selector(PaimonMainMenuLayoutHook::applyDeferredMenuLayout), 0.f);
         this->scheduleOnce(schedule_selector(PaimonMainMenuLayoutHook::applyDeferredMenuLayout2), 0.15f);

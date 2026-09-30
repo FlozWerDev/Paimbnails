@@ -1,4 +1,4 @@
-// Confusion por color del modo pintura.
+// confusion por color del modo pintura.
 #include <cstdint>
 #include <filesystem>
 #include <iostream>

@@ -1,5 +1,5 @@
 #pragma once
-// Editor touch surface (pick, move, stretch and rotate layers).
+// editor touch surface (pick, move, stretch and rotate layers).
 
 #include "../engine/PieceRenderer.hpp"
 
@@ -23,7 +23,7 @@ public:
         std::vector<PieceRender> pieces;
     };
 
-    // nudges arrive in ImageTransform offset units (half-canvas fraction); summed as-is.
+    // nudges arrive in imagetransform offset units (half-canvas fraction); summed as-is.
     struct Callbacks {
         std::function<void(std::string const& zoneKey, int pieceIndex)> onSelect;
         std::function<void(float dx, float dy)> onMove;
@@ -47,7 +47,7 @@ public:
     void setEyedropper(bool on);
     bool eyedropper() const { return m_eyedropper; }
 
-    // zoom anchors at `viewportPoint`, in canvas space.
+    // zoom anchors at `viewportpoint`, in canvas space.
     void zoomAt(float factor, cocos2d::CCPoint const& viewportPoint);
     void nudgeZoom(float factor);
     void resetView();

@@ -41,7 +41,7 @@ namespace {
         return out;
     }
 
-// Parse m:ss, :ss, m:, or decimal seconds into milliseconds.
+// parse m:ss, :ss, m:, or decimal seconds into milliseconds.
     std::optional<int> parseClockToMs(std::string const& raw) {
         if (raw.empty()) return std::nullopt;
 
@@ -81,7 +81,7 @@ namespace {
         auto destDir = Mod::get()->getSaveDir() / "profile-music-import";
         std::filesystem::create_directories(destDir, ec);
 
-// Best-effort cleanup; FMOD-locked preview files are left for later.
+// best-effort cleanup; fmod-locked preview files are left for later.
         std::error_code iterEc;
         if (std::filesystem::is_directory(destDir, iterEc)) {
             for (auto const& entry : std::filesystem::directory_iterator(destDir, iterEc)) {
@@ -1017,7 +1017,7 @@ void ProfileMusicPopup::syncTimeInputsFromSelection() {
     if (!m_startTimeInput || !m_endTimeInput) return;
 
     m_suppressTimeInput = true;
-// Inputs hold seconds; the conversion label shows m:ss.
+// inputs hold seconds; the conversion label shows m:ss.
     m_startTimeInput->setString(formatSeconds(m_startMs));
     m_endTimeInput->setString(formatSeconds(m_endMs));
     m_suppressTimeInput = false;
@@ -1068,7 +1068,7 @@ void ProfileMusicPopup::onStartTimeChanged(std::string const& text) {
         m_endTimeInput->setString(formatSeconds(m_endMs));
         m_suppressTimeInput = false;
     }
-// Correct the start field when the typed end is clamped.
+// correct the start field when the typed end is clamped.
     if (m_startTimeInput && m_startMs != requested) {
         m_suppressTimeInput = true;
         m_startTimeInput->setString(formatSeconds(m_startMs));

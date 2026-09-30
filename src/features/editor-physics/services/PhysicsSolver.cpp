@@ -112,8 +112,8 @@ bool isMovable(State const& state) {
     return state.motion != Motion::Static;
 }
 
-// A fixture placed in the world: convex polygon of `count` vertices, or a
-// circle when `count` is zero. From here the solver only collides the real shape.
+// a fixture placed in the world: convex polygon of `count` vertices, or a
+// circle when `count` is zero. from here the solver only collides the real shape.
 struct Shape {
     Vec2 center;
     Vec2 points[kMaxVertices];
@@ -161,7 +161,7 @@ Shape worldFixture(State const& state, Fixture const& fixture) {
     return shape;
 }
 
-// Deepest overlap along the edge normals of `shape`, in the separating-axis
+// deepest overlap along the edge normals of `shape`, in the separating-axis
 // sense: positive means the two are apart along that axis.
 struct FaceQuery {
     float separation = -std::numeric_limits<float>::max();
@@ -217,15 +217,15 @@ int clipSegment(Vec2 const in[2], Vec2 normal, float limit, Vec2 out[2]) {
     return count;
 }
 
-// SAT plus reference/incident face clipping, so a flat box reports both of its
-// corners instead of rocking on one point. The normal always points `a` to `b`.
+// sat plus reference/incident face clipping, so a flat box reports both of its
+// corners instead of rocking on one point. the normal always points `a` to `b`.
 bool collidePolygons(Shape const& a, Shape const& b, Manifold& manifold) {
     FaceQuery const queryA = deepestFace(a, b);
     if (queryA.separation > 0.f) return false;
     FaceQuery const queryB = deepestFace(b, a);
     if (queryB.separation > 0.f) return false;
 
-    // Ties go to A so a body sliding along a flat floor keeps the same reference
+    // ties go to a so a body sliding along a flat floor keeps the same reference
     // face frame by frame instead of flickering between the two.
     bool const referenceIsB = queryB.separation > queryA.separation + 0.001f;
     Shape const& reference = referenceIsB ? b : a;
@@ -286,7 +286,7 @@ bool collideCirclePolygon(
     Vec2 const from = polygon.points[deepest];
     Vec2 const to = polygon.points[(deepest + 1) % polygon.count];
     Vec2 const contact = closestPointOnSegment(from, to, circle.center);
-    // Inside the polygon the closest edge point is the only stable direction;
+    // inside the polygon the closest edge point is the only stable direction;
     // pushing along the face normal keeps a sunken orb from popping out wrong.
     Vec2 normal = faceNormalOf(polygon, deepest);
     float penetration = circle.radius - separation;
@@ -327,7 +327,7 @@ bool buildManifold(Shape const& a, Shape const& b, Manifold& manifold) {
     return collidePolygons(a, b, manifold);
 }
 
-// A fixture only overrides its body when it was given a value of its own.
+// a fixture only overrides its body when it was given a value of its own.
 float layered(float bodyValue, float fixtureValue) {
     return std::max(0.f, fixtureValue >= 0.f ? fixtureValue : bodyValue);
 }
@@ -340,7 +340,7 @@ float restitutionOf(BodySpec const& body, Fixture const& fixture) {
     return layered(body.restitution, fixture.restitution);
 }
 
-// Weight and spin resistance from the collided shape: a disc resists half of
+// weight and spin resistance from the collided shape: a disc resists half of
 // its bounding box, and a slope holds its mass in the corner it fills.
 struct MassShape {
     float area = 0.f;
@@ -404,7 +404,7 @@ float bodyInertia(BodySpec const& body, float mass) {
 
 float fixtureReach(Fixture const& fixture) {
     if (fixture.radius > 0.f) return fixture.radius;
-    // A silhouette hull carries up to eight corners; stopping at four used to
+    // a silhouette hull carries up to eight corners; stopping at four used to
     // leave the last ones outside the bounding radius and drop their contacts.
     if (fixture.vertexCount < 3) return length(fixture.halfSize);
     float reach = 0.f;
@@ -422,7 +422,7 @@ float boundingRadius(BodySpec const& body) {
     return radius;
 }
 
-// Rotation-invariant, so a body that spins never needs its bounds rebuilt.
+// rotation-invariant, so a body that spins never needs its bounds rebuilt.
 struct Bounds {
     Vec2 min;
     Vec2 max;
@@ -458,7 +458,7 @@ struct ContactPoint {
     std::uint64_t key = 0;
 };
 
-// Built once per substep, then relaxed over several iterations: rebuilding
+// built once per substep, then relaxed over several iterations: rebuilding
 // inside the loop made restitution decay against its own output and killed bounces.
 struct Constraint {
     std::size_t a = 0;
@@ -471,7 +471,7 @@ struct Constraint {
     float surfaceVelocity = 0.f;
 };
 
-// Carrying last substep's impulses into the next one is what lets a stack stand
+// carrying last substep's impulses into the next one is what lets a stack stand
 // still instead of sinking a little further on every rebuild.
 struct CachedImpulse {
     float normalImpulse = 0.f;
@@ -508,7 +508,7 @@ void prepareConstraint(Constraint& constraint, State const& a, State const& b) {
         Vec2 const radiusB = contact.point - b.position;
         float const approach =
             dot(relativeVelocityAt(a, b, radiusA, radiusB), constraint.normal);
-        // Restitution is locked in from the approach speed before any impulse lands,
+        // restitution is locked in from the approach speed before any impulse lands,
         // and a body that is merely settling gets none so it can come to rest.
         contact.bias = -approach > kRestingSpeed ? -constraint.restitution * approach : 0.f;
     }
@@ -561,7 +561,7 @@ float solveConstraint(Constraint& constraint, State& a, State& b) {
             radiusTangentB * radiusTangentB * b.inverseInertia;
         if (tangentDenominator <= 0.00001f) continue;
 
-        // A conveyor face does not brake what it touches, it drags it towards the
+        // a conveyor face does not brake what it touches, it drags it towards the
         // belt speed, so the target the friction aims at is shifted instead of zero.
         float const slide = dot(relativeVelocityAt(a, b, radiusA, radiusB), tangent) -
             constraint.surfaceVelocity;
@@ -589,7 +589,7 @@ void separateConstraint(Constraint const& constraint, State& a, State& b) {
     b.position += correction * b.inverseMass;
 }
 
-// Where a joint end sits right now, and the arm from the body centre to it. A
+// where a joint end sits right now, and the arm from the body centre to it. a
 // world anchor has no body, so its arm is zero and it never moves.
 struct JointEnd {
     State* state = nullptr;
@@ -619,7 +619,7 @@ Vec2 jointVelocity(JointEnd const& end) {
     return end.state->velocity + angularVelocityAt(end.state->angularVelocity, end.arm);
 }
 
-// Both ends pulled onto one point: a 2x2 effective mass, because the two axes of
+// both ends pulled onto one point: a 2x2 effective mass, because the two axes of
 // a pin are coupled through each body's inertia.
 void solvePinAxes(JointEnd& a, JointEnd& b, Vec2 target) {
     float const inverseMassA = a.state ? a.state->inverseMass : 0.f;
@@ -657,7 +657,7 @@ void solveAngularAxis(State* a, State* b, float targetSpeed, float limit) {
     if (b) b->angularVelocity += impulse * inertiaB;
 }
 
-// Along the line between the two ends only, which is what separates a rope that
+// along the line between the two ends only, which is what separates a rope that
 // may go slack from a pin that never does.
 void solveDistanceAxis(JointEnd& a, JointEnd& b, float bias, bool pullOnly) {
     Vec2 const axis = normalized(b.point - a.point);
@@ -682,7 +682,7 @@ void solveDistanceAxis(JointEnd& a, JointEnd& b, float bias, bool pullOnly) {
 
 } // namespace
 
-// A hash grid over everything that never moves, built once. Without it a body
+// a hash grid over everything that never moves, built once. without it a body
 // falling through a captured level walked all of its fixtures on every substep.
 struct StaticGrid {
     float cellSize = 120.f;
@@ -749,7 +749,7 @@ struct WorldData {
 
 namespace {
 
-// Wind, blasts, whirlpools and water all end up here as an acceleration plus an
+// wind, blasts, whirlpools and water all end up here as an acceleration plus an
 // extra damping, which is all the integrator needs to know about them.
 struct FieldSample {
     Vec2 acceleration;
@@ -790,7 +790,7 @@ FieldSample sampleField(
             return sample;
         }
         case FieldKind::Buoyancy: {
-            // How much of the body's bounding box is under the surface, which is
+            // how much of the body's bounding box is under the surface, which is
             // enough to float a crate without integrating over its real outline.
             float const top = field.position.y + field.halfSize.y;
             float const bottom = field.position.y - field.halfSize.y;
@@ -843,8 +843,8 @@ void wakeState(State& state) {
     state.sleepTimer = 0.f;
 }
 
-// Rare, but a body whose impulses overflowed hands the preview a pose cocos
-// cannot draw, and every contact it takes part in inherits the NaN.
+// rare, but a body whose impulses overflowed hands the preview a pose cocos
+// cannot draw, and every contact it takes part in inherits the nan.
 bool diverged(State const& state) {
     return !std::isfinite(state.position.x) || !std::isfinite(state.position.y) ||
         !std::isfinite(state.angle) || !std::isfinite(state.velocity.x) ||
@@ -852,7 +852,7 @@ bool diverged(State const& state) {
 }
 
 // `fastest` reaches infinity before the divergence guard parks a body, and
-// casting that to int is undefined; the comparison order keeps NaN out too.
+// casting that to int is undefined; the comparison order keeps nan out too.
 int substepsFor(float travel) {
     if (!(travel > 1.f)) return 1;
     if (!(travel < static_cast<float>(kMaxSubsteps))) return kMaxSubsteps;
@@ -1021,9 +1021,7 @@ void solveSpringAxis(
     float const speed = dot(jointVelocity(b) - jointVelocity(a), axis);
     float const bias = distanceError * std::clamp(stiffness, 0.f, 1.f) /
         std::max(dt, 0.000001f);
-    // Relax towards the spring's corrective velocity. Applying the damping to
-    // the whole error keeps repeated solver iterations convergent instead of
-    // adding the positional bias again on every pass.
+    // damp the full corrective velocity so repeated solver passes do not accumulate positional bias.
     float const relaxation = std::clamp(damping, 0.05f, 1.f);
     float const impulse = -(speed + bias) * relaxation / denominator;
     Vec2 const applied = axis * impulse;
@@ -1325,7 +1323,7 @@ void PhysicsWorld::step(float dt) {
     auto const& bodies = data.bodies;
     data.events.clear();
 
-    // Split the step so no body can travel past the thinnest fixture in one go,
+    // split the step so no body can travel past the thinnest fixture in one go,
     // which is what let fast bodies pass straight through static geometry.
     float fastest = 0.f;
     for (auto const& state : states) {
@@ -1367,7 +1365,7 @@ void PhysicsWorld::step(float dt) {
         for (std::size_t i = 0; i < bodies.size(); ++i) {
             if (!isMovable(states[i])) continue;
 
-            // Static geometry comes out of the grid; everything that moves is
+            // static geometry comes out of the grid; everything that moves is
             // paired the plain way, because there are never many of those.
             for (std::size_t j = i + 1; j < bodies.size(); ++j) {
                 if (!isMovable(states[j])) continue;
@@ -1471,7 +1469,7 @@ void PhysicsWorld::step(float dt) {
         state.asleep = isDynamic(state);
         parked = true;
     }
-    // The warm start would feed the same overflowed impulses back in.
+    // the warm start would feed the same overflowed impulses back in.
     if (parked) data.cache.clear();
 
     data.time += dt;

@@ -75,7 +75,7 @@ private:
     std::unordered_map<int, std::vector<CoversCallback>> m_deferredCallbacks;
     std::vector<PendingBatch> m_queue;
     bool m_searchInFlight = false;
-    // Ref, never added to the scene: searches must survive scene changes
+    // ref, never added to the scene: searches must survive scene changes
     // with their delegate slot intact.
     geode::Ref<cocos2d::CCNode> m_searchNode = nullptr;
     double m_cooldownUntil = 0.0;

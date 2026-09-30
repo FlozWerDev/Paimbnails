@@ -148,7 +148,7 @@ CCLabelBMFont* gdLabel(char const* text, char const* font, float maxWidth, float
     return lbl;
 }
 
-// Fixed-size game buttons keep grid cells aligned and shrink text to fit.
+// fixed-size game buttons keep grid cells aligned and shrink text to fit.
 CCMenuItemSpriteExtra* gdFixedButton(char const* text, char const* sprite,
                                      float width, float height, float textScale,
                                      std::function<void()> onPress) {
@@ -160,7 +160,7 @@ CCMenuItemSpriteExtra* gdFixedButton(char const* text, char const* sprite,
         float const raw = spr->getContentSize().width;
         if (raw > 1.f) spr->setScale(std::min(0.6f, width / raw));
     }
-// ButtonSprite does not shrink overflowing text automatically.
+// buttonsprite does not shrink overflowing text automatically.
     if (auto* label = spr->m_label) {
         float const maxW = width - 10.f;
         float const raw = label->getContentSize().width;
@@ -583,7 +583,7 @@ CCNode* PaiConfigLayer::buildPreviewCard(CCRect area) {
         menu->addChild(zoom);
     }
 
-// Level Info may override this background with its own thumbnail.
+// level info may override this background with its own thumbnail.
     m_blockedOverlay = CCLayerColor::create({0, 0, 0, 190});
     if (m_blockedOverlay) {
         m_blockedOverlay->setContentSize(area.size);
@@ -991,7 +991,7 @@ void PaiConfigLayer::mutateConfig(std::function<void(LayerBgConfig&)> const& fn,
 void PaiConfigLayer::refreshAll() {
     auto const cfg = currentConfig();
 
-// Level Info may override this background with a thumbnail.
+// level info may override this background with a thumbnail.
     bool blocked = false;
     if (m_selectedKey == "levelinfo") {
         auto const style = Mod::get()->getSettingValue<std::string>("levelinfo-background-style");
@@ -1124,7 +1124,7 @@ void PaiConfigLayer::relayoutControls() {
     constexpr float kGap = 4.f;
     auto* content = m_controlsScroll->m_contentLayer;
 
-// the scroll layer culls with setVisible(), so unwanted rows must leave the layer.
+// the scroll layer culls with setvisible(), so unwanted rows must leave the layer.
     std::string signature;
     float total = 0.f;
     std::vector<CCNode*> active;
@@ -1161,7 +1161,7 @@ void PaiConfigLayer::relayoutControls() {
 
     if (m_controlsHint) m_controlsHint->setVisible(contentH > viewH + 1.f);
 
-// Reset scroll only when the active rows change; sliders should not jump.
+// reset scroll only when the active rows change; sliders should not jump.
     if (signature != m_controlsSignature) {
         m_controlsSignature = signature;
         m_controlsScroll->moveToTop();
@@ -1215,7 +1215,7 @@ void PaiConfigLayer::onPickVideo() {
         }
         auto const pathStr = paimon::assets::normalizePathString(imported.path);
 
-// Release the previous player before starting a new video.
+// release the previous player before starting a new video.
         auto const oldCfg = LayerBackgroundManager::get().getConfig(key);
         if (oldCfg.type == "video" && !oldCfg.customPath.empty() && oldCfg.customPath != pathStr) {
             LayerBackgroundManager::get().forceReleaseSharedVideoByPath(oldCfg.customPath);

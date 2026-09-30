@@ -1,10 +1,8 @@
-// Tests de imagen e infraestructura de PackGen v2: FrameImage, MaxRects,
-// ContentHash, PackCache, PackGraph y PackScheduler.
-//
-// Compila sin Geode (nucleo puro):
-//   g++ -std=c++17 -O2 -pthread -o /tmp/pgimg tests/packgen_image_regression.cpp && /tmp/pgimg
-//
-// Cada prueba es una funcion bool. main() las ejecuta todas y devuelve 0 si
+// tests de imagen e infraestructura de packgen v2: frameimage, maxrects,
+// contenthash, packcache, packgraph y packscheduler.
+// compila sin geode (nucleo puro):
+//   g++ -std=c++17 -o2 -pthread -o /tmp/pgimg tests/packgen_image_regression.cpp && /tmp/pgimg
+// cada prueba es una funcion bool. main() las ejecuta todas y devuelve 0 si
 // pasan o 1 si alguna falla.
 
 #include <atomic>
@@ -35,7 +33,7 @@ namespace {
     } \
 } while (0)
 
-// --- FrameImage ---
+// --- frameimage ---
 
 bool frame_subrect_roundtrip() {
     FrameImage img(6, 6);
@@ -49,7 +47,7 @@ bool frame_subrect_roundtrip() {
     CHECK(sub.at(0, 0).r == 20 && sub.at(0, 0).g == 10);
     CHECK(sub.at(2, 3).r == 40 && sub.at(2, 3).g == 40);
 
-    // Fuera de limites -> transparente, sin crash.
+    // fuera de limites -> transparente, sin crash.
     FrameImage oob = img.subRect(-2, -2, 4, 4);
     CHECK(oob.width() == 4 && oob.height() == 4);
     CHECK(oob.at(0, 0).a == 0);
@@ -65,7 +63,7 @@ bool frame_blit_overwrite() {
     CHECK(dst.at(2, 5).r == 9 && dst.at(4, 7).b == 7);
     CHECK(dst.at(1, 5).r == 1 && dst.at(5, 5).r == 1);
 
-    // Blit recortado por los bordes no escribe fuera ni falla.
+    // blit recortado por los bordes no escribe fuera ni falla.
     dst.blitOverwrite(-1, -1, tile);
     CHECK(dst.at(0, 0).r == 9);
     dst.blitOverwrite(7, 7, tile);
@@ -81,7 +79,7 @@ bool frame_rotate_roundtrip() {
             img.setAt(x, y, {static_cast<std::uint8_t>(y * 4 + x), 0, 0, 255});
     img.rotateCW90();
     CHECK(img.width() == 2 && img.height() == 4);
-    // (0,0) original -> (1,0) tras CW90 en un 4x2.
+    // (0,0) original -> (1,0) tras cw90 en un 4x2.
     CHECK(img.at(1, 0).r == 0);
     CHECK(img.at(0, 3).r == 7 || img.at(1, 3).r == 7);
     for (int k = 0; k < 3; ++k) img.rotateCW90();
@@ -99,7 +97,7 @@ bool frame_box_half() {
     CHECK(half.width() == 2 && half.height() == 2);
     CHECK(half.at(0, 0).r == 100 && half.at(1, 1).b == 200);
 
-    // Promedio real de bloque 2x2 mixto.
+    // promedio real de bloque 2x2 mixto.
     img.setAt(0, 0, {0, 0, 0, 255});
     img.setAt(1, 0, {100, 0, 0, 255});
     img.setAt(0, 1, {200, 0, 0, 255});
@@ -120,7 +118,7 @@ bool frame_ink_and_equality() {
     return true;
 }
 
-// --- MaxRectsPacker ---
+// --- maxrectspacker ---
 
 namespace packer {
 
@@ -155,7 +153,7 @@ bool packer_invariants() {
     CHECK(r.placements.size() == rects.size());
     CHECK(packer::noOverlapContained(r));
 
-    // Vacio: atlas 0x0 que encaja.
+    // vacio: atlas 0x0 que encaja.
     auto empty = MaxRectsPacker().pack({});
     CHECK(empty.fits && empty.atlasW == 0 && empty.atlasH == 0);
     return true;
@@ -179,7 +177,7 @@ bool packer_deterministic() {
 }
 
 bool packer_utilization_and_overflow() {
-    // Set homogeneo: MaxRects debe aprovechar bien el atlas.
+    // set homogeneo: maxrects debe aprovechar bien el atlas.
     std::vector<PackRect> rects;
     for (int i = 0; i < 16; ++i) rects.push_back({64, 64, i});
     MaxRectsPacker::Options opts;
@@ -192,7 +190,7 @@ bool packer_utilization_and_overflow() {
     double atlas = static_cast<double>(r.atlasW) * r.atlasH;
     CHECK(atlas > 0 && used / atlas >= 0.5);
 
-    // Un rect mayor que maxSize no cabe nunca.
+    // un rect mayor que maxsize no cabe nunca.
     MaxRectsPacker::Options tiny;
     tiny.maxSize = 64;
     auto bad = MaxRectsPacker(tiny).pack({{128, 128, 0}});
@@ -200,7 +198,7 @@ bool packer_utilization_and_overflow() {
     return true;
 }
 
-// --- ContentHash ---
+// --- contenthash ---
 
 bool hash_stable_and_sensitive() {
     TintParams p, q;
@@ -214,7 +212,7 @@ bool hash_stable_and_sensitive() {
     q.saturation = 1.5f;
     CHECK(p.fingerprint() != q.fingerprint());
 
-    // NaN no envenena la clave.
+    // nan no envenena la clave.
     CHECK(normalizeFloat(std::numeric_limits<float>::quiet_NaN()) == 0);
     float inf = std::numeric_limits<float>::infinity();
     CHECK(normalizeFloat(inf) == normalizeFloat(inf));
@@ -226,7 +224,7 @@ bool hash_stable_and_sensitive() {
     return true;
 }
 
-// --- PackCache ---
+// --- packcache ---
 
 bool cache_hit_miss_and_versioning() {
     PackCache cache(1u << 20);
@@ -237,7 +235,7 @@ bool cache_hit_miss_and_versioning() {
     CHECK(hit && hit->size() == 3 && (*hit)[0] == 7);
     CHECK(cache.stats().hits == 1 && cache.stats().misses == 1);
 
-    // Otra version = otra entrada (invalida lo viejo al bump).
+    // otra version = otra entrada (invalida lo viejo al bump).
     CHECK(cache.lookup(k2) == nullptr);
     cache.store(k2, PackCache::Bytes{1});
     CHECK(cache.lookup(k2)->size() == 1);
@@ -272,7 +270,7 @@ bool cache_disk_tier() {
         cache.store(k, PackCache::Bytes{4, 5, 6, 7});
         CHECK(cache.lookup(k) != nullptr);
     }
-    // Nueva instancia: el disco rescata la entrada (miss de memoria).
+    // nueva instancia: el disco rescata la entrada (miss de memoria).
     {
         PackCache cache(1u << 20);
         cache.setDiskDir(dir);
@@ -280,7 +278,7 @@ bool cache_disk_tier() {
         auto hit = cache.lookup(k);
         CHECK(hit && hit->size() == 4 && (*hit)[3] == 7);
         CHECK(cache.stats().diskHits == 1);
-        // Version distinta no se rescata del disco.
+        // version distinta no se rescata del disco.
         NodeKey stale{0xDEADBEEF, 2};
         CHECK(cache.lookup(stale) == nullptr);
     }
@@ -288,7 +286,7 @@ bool cache_disk_tier() {
     return true;
 }
 
-// --- PackGraph ---
+// --- packgraph ---
 
 bool graph_pruning_and_topo() {
     PackCache cache(1u << 20);
@@ -332,7 +330,7 @@ bool graph_pruning_and_topo() {
     auto res = g.result(root);
     CHECK(res && res->size() == 3 && (*res)[2] == 3);
 
-    // Cambiar una entrada invalida solo la rama afectada.
+    // cambiar una entrada invalida solo la rama afectada.
     order.clear();
     g.setInputs(leaf, {999});
     g.markDirty(leaf);
@@ -344,7 +342,7 @@ bool graph_pruning_and_topo() {
 }
 
 bool graph_cycle_rejected() {
-    // Ciclo real x->y->x: las deps son ids, asi que declarar x con dep
+    // ciclo real x->y->x: las deps son ids, asi que declarar x con dep
     // futura {1} y luego y con dep {0} cierra el ciclo.
     PackGraph cyc;
     auto x = cyc.addNode("x", [] { return PackCache::Bytes{1}; }, {1});
@@ -352,12 +350,12 @@ bool graph_cycle_rejected() {
     (void)y;
     CHECK(!cyc.evaluate());  // ciclo detectado
 
-    // Dependencia fuera de rango tambien se rechaza.
+    // dependencia fuera de rango tambien se rechaza.
     PackGraph bad;
     bad.addNode("lonely", [] { return PackCache::Bytes{1}; }, {7});
     CHECK(!bad.evaluate());
 
-    // Un DAG sano con el mismo contenido evalua bien.
+    // un dag sano con el mismo contenido evalua bien.
     PackGraph g;
     auto a = g.addNode("a", [] { return PackCache::Bytes{1}; });
     auto b = g.addNode("b", [] { return PackCache::Bytes{2}; }, {a});
@@ -367,7 +365,7 @@ bool graph_cycle_rejected() {
     return true;
 }
 
-// --- PackScheduler ---
+// --- packscheduler ---
 
 bool scheduler_parallel_for() {
     PackScheduler pool(4);
@@ -376,7 +374,7 @@ bool scheduler_parallel_for() {
     pool.parallelFor(0, N, [&](int i) { v[i] = i * 2; });
     for (int i = 0; i < N; ++i) CHECK(v[i] == i * 2);
 
-    // Rango vacio: no hace nada, no falla.
+    // rango vacio: no hace nada, no falla.
     pool.parallelFor(5, 5, [&](int) { CHECK(false); });
 
     std::atomic<int> sum{0};
@@ -405,7 +403,7 @@ bool scheduler_exceptions_propagate() {
         caught2 = true;
     }
     CHECK(caught2);
-    // La piscina sigue usable tras una excepcion.
+    // la piscina sigue usable tras una excepcion.
     std::atomic<int> n{0};
     pool.parallelFor(0, 100, [&](int) { n.fetch_add(1); });
     CHECK(n.load() == 100);

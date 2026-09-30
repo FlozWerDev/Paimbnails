@@ -12,18 +12,18 @@
 
 namespace paimon::texture_studio {
 
-// The copy of <modid>/<file> the game reads today.
+// the copy of <modid>/<file> the game reads today.
 struct InstalledSheet {
     std::filesystem::path pngPath;
     std::filesystem::path plistPath;
 };
 
-// Mod updates repack without renaming, so stored rects go stale; retargeting moves frames to the installed layout.
+// mod updates repack without renaming, so stored rects go stale; retargeting moves frames to the installed layout.
 struct RetargetOutcome {
     enum class Status {
         NotInstalled,   // nothing to compare against; ship as-is.
         LayoutMatches,  // snapshot and installed sheet agree; ship as-is.
-        Retargeted,     // pngBytes rebuilt in the installed layout.
+        Retargeted,     // pngbytes rebuilt in the installed layout.
         Failed,         // installed sheet unreadable; caller should drop the sheet.
     };
 
@@ -36,7 +36,7 @@ struct RetargetOutcome {
 
 class SheetRetarget final {
 public:
-    // Empty for vanilla sheets (no modid prefix) and uninstalled mods.
+    // empty for vanilla sheets (no modid prefix) and uninstalled mods.
     static std::optional<InstalledSheet> locate(std::string const& pngRel);
 
     static bool sameLayout(ParsedSpritesheet const& a, ParsedSpritesheet const& b);

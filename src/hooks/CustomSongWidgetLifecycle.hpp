@@ -5,7 +5,7 @@
 #include <mutex>
 #include <unordered_set>
 
-// FMOD may call back during onStopPlaytest; liveness + teardown window guard UAF
+// fmod may call back during onstopplaytest; liveness + teardown window guard uaf
 
 namespace paimon::csw {
 

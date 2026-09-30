@@ -142,7 +142,7 @@ std::string buttonKey(CCNode* node) {
             if (auto* parent = current->getParent(); parent && parent->getChildren()) {
                 index = parent->getChildren()->indexOfObject(current);
             }
-            // Type names differ across compilers, so anonymous nodes use their sibling index.
+            // type names differ across compilers, so anonymous nodes use their sibling index.
             id = fmt::format("node[{}]", index);
         }
         key = fmt::format("{}/{}{}", id.size(), id, key);

@@ -40,7 +40,7 @@ bool EmoteButton::init(EmoteInputContext context) {
     m_context = std::move(context);
     this->setID("paimon-emote-btn"_spr);
 
-    // Most callers add the button without checking for null, so when the module
+    // most callers add the button without checking for null, so when the module
     // is off keep the node alive but hidden and unclickable.
     if (!paimon::modules::isEnabled("paimbnails.emotes.social")) {
         this->setVisible(false);

@@ -25,15 +25,15 @@ struct DynamicVolumeConfig {
     bool enabled = false;
     Mode mode    = Mode::Adaptive;
 
-// Ramp back to full volume.
+// ramp back to full volume.
     float rampSeconds   = 8.0f;   // 1 .. 60
     Curve curve         = Curve::EaseOut;
     float curveStrength = 2.0f;   // 1 .. 6
 
-// Initial attenuation before the meter has enough signal.
+// initial attenuation before the meter has enough signal.
     float initialDuckDb = -7.0f;  // -24 .. 0
 
-// Match-gain clamps in positive dB magnitudes.
+// match-gain clamps in positive db magnitudes.
     float maxCutDb   = 18.0f;     // 0 .. 30
     float maxBoostDb = 0.0f;      // 0 .. 12  (0 = never make quiet songs louder)
 
@@ -41,9 +41,9 @@ struct DynamicVolumeConfig {
 
     float targetLufs = -14.0f;    // -30 .. -6
 
-// Measurement window before locking loudness.
+// measurement window before locking loudness.
     float analysisSeconds = 0.9f; // 0.4 .. 5
-// Gain slew time; avoids clicks.
+// gain slew time; avoids clicks.
     float smoothingSeconds = 0.35f; // 0.05 .. 2
 
     bool inMenus    = true;
@@ -53,7 +53,7 @@ struct DynamicVolumeConfig {
     bool reduckSameSong = false;
 };
 
-// Treat lower readings as silence.
+// treat lower readings as silence.
 inline constexpr float kInvalidLufs = -70.0f;
 
 inline bool isValidLufs(float lufs) {
@@ -99,7 +99,7 @@ inline float matchGainDb(DynamicVolumeConfig const& cfg, float songLufs, float r
     float const diff = referenceLufs - songLufs;
     if (std::abs(diff) < std::max(0.0f, cfg.thresholdDb)) return 0.0f;
 
-// Remove the dead zone while keeping correction continuous.
+// remove the dead zone while keeping correction continuous.
     float const trimmed = diff > 0.0f ? diff - cfg.thresholdDb : diff + cfg.thresholdDb;
 
     return std::clamp(trimmed,
@@ -107,7 +107,7 @@ inline float matchGainDb(DynamicVolumeConfig const& cfg, float songLufs, float r
                       std::abs(cfg.maxBoostDb));
 }
 
-// Gain after elapsed seconds; Fixed mode never climbs above floorDb.
+// gain after elapsed seconds; fixed mode never climbs above floordb.
 inline float rampGainDb(DynamicVolumeConfig const& cfg, float floorDb, float elapsed) {
     if (cfg.mode == Mode::Fixed) return floorDb;
 
@@ -116,7 +116,7 @@ inline float rampGainDb(DynamicVolumeConfig const& cfg, float floorDb, float ela
     return floorDb * (1.0f - curveProgress(cfg.curve, t, cfg.curveStrength));
 }
 
-// Pin hidden mode-specific knobs without overwriting UI values.
+// pin hidden mode-specific knobs without overwriting ui values.
 inline void applyModeDefaults(DynamicVolumeConfig& cfg) {
     switch (cfg.mode) {
         case Mode::Adaptive:

@@ -1,6 +1,6 @@
 #pragma once
 
-// On-screen card for a new live thumbnail: GDUtils-style level data over the uploaded thumbnail.
+// on-screen card for a new live thumbnail: gdutils-style level data over the uploaded thumbnail.
 
 #include <Geode/DefaultInclude.hpp>
 #include <string>
@@ -9,14 +9,14 @@ namespace paimon::thumbalerts {
 
 constexpr char const* kModuleId = "paimbnails.thumbalerts.social";
 
-// One freshly published thumbnail, as /api/latest-uploads reports it.
+// one freshly published thumbnail, as /api/latest-uploads reports it.
 struct NewThumb {
     int levelId = 0;
     std::string eventId;
     std::string levelName;
     std::string creator;   // level author
     std::string uploader;  // who uploaded the thumbnail
-    std::string difficulty;  // server side name: "Easy", "Extreme Demon"...
+    std::string difficulty;  // server side name: "easy", "extreme demon"...
     std::string length;
     int stars = 0;
     int coins = 0;
@@ -74,18 +74,18 @@ constexpr float kMaxScale = 1.6f;
 
 Config readConfig();
 
-// Scenes where the card would get in the way more than it helps.
+// scenes where the card would get in the way more than it helps.
 bool alertsAllowedHere(Config const& config);
 
-// Queues the card; thumbnail downloads first so the background is there on slide-in.
+// queues the card; thumbnail downloads first so the background is there on slide-in.
 void showThumbAlert(NewThumb item);
 
-// Uploader's own card from the upload response: the only instant path (HTTP replies reach only their caller).
+// uploader's own card from the upload response: the only instant path (http replies reach only their caller).
 void showThumbAlertForUpload(int levelId, std::string const& uploader,
                              std::string const& levelMeta,
                              std::string const& serverMessage);
 
-// Settings "Preview": same card, ignoring toggle and scene filters.
+// settings "preview": same card, ignoring toggle and scene filters.
 void showThumbAlertPreview();
 
 } // namespace paimon::thumbalerts

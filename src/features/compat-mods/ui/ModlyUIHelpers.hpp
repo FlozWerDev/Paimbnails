@@ -7,30 +7,30 @@
 
 namespace paimon::compat_mods {
 
-// Rounded avatar: remote image or initial on name-derived color (site colorAvatar fallback).
+// rounded avatar: remote image or initial on name-derived color (site coloravatar fallback).
 cocos2d::CCNode* createAvatar(std::string const& url, bool hasImage,
                               std::string const& name, float size, float radius = 0.f);
 
-// Rounded image slot that keeps its box and crops whatever loads into it.
+// rounded image slot that keeps its box and crops whatever loads into it.
 cocos2d::CCNode* createImageSlot(std::string const& url, float width, float height,
                                  float radius, cocos2d::ccColor4B placeholder);
 
-// Verified seal: red admin/rojo, green verde, blue verified; empty when unranked.
+// verified seal: red admin/rojo, green verde, blue verified; empty when unranked.
 std::optional<cocos2d::ccColor3B> rankBadgeColor(ModlyUser const& user);
 
-// Tinted seal, nullptr when unranked so callers skip layout advance.
+// tinted seal, nullptr when unranked so callers skip layout advance.
 cocos2d::CCNode* createRankSeal(ModlyUser const& user, float size = 14.f);
 
-// Tags are always stored in Spanish; translate for the English UI.
+// tags are always stored in spanish; translate for the english ui.
 std::string translateTag(std::string const& tag);
 
-// Deterministic colour from a name, mirroring colorAvatar in app.js.
+// deterministic colour from a name, mirroring coloravatar in app.js.
 cocos2d::ccColor3B avatarColor(std::string const& name);
 
-// Shrinks a label until it fits maxWidth, never scaling it up.
+// shrinks a label until it fits maxwidth, never scaling it up.
 void fitLabelWidth(cocos2d::CCLabelBMFont* label, float maxWidth);
 
-// Pill with a coloured background, used for alpha/beta/GDPS/tags.
+// pill with a coloured background, used for alpha/beta/gdps/tags.
 cocos2d::CCNode* createPill(std::string const& text, cocos2d::ccColor3B color, float scale = 0.34f);
 
 } // namespace paimon::compat_mods

@@ -180,11 +180,11 @@ std::optional<bool> requestPasses(int levelID, bool hasVideo) {
     auto& cache = TwitchLevelBriefCache::get();
     auto const* brief = cache.peek(levelID);
     if (!brief) {
-        // filters resolve with the UI closed too, so background video filtering works.
+        // filters resolve with the ui closed too, so background video filtering works.
         cache.request(levelID);
         return std::nullopt;
     }
-    // dead IDs stay visible so they can be deleted.
+    // dead ids stay visible so they can be deleted.
     if (!brief->found) return true;
 
     return matchesFilters(filters, brief->filterDifficulty, brief->length, brief->platformer, hasVideo);

@@ -88,7 +88,7 @@ bool AudioContextCoordinator::isCurrentProfileSession(uint32_t sessionToken) con
 void AudioContextCoordinator::activateLevelSelect(int levelID, bool playImmediately) {
     m_gameplayActive = false;
     m_levelSelectLevelID = levelID;
-    // LevelSelect never reads it; don't hold the old level across the switch.
+    // levelselect never reads it; don't hold the old level across the switch.
     m_levelInfoLevel = nullptr;
     m_dynamicContextLayer = DynSongLayer::LevelSelect;
 
@@ -104,7 +104,7 @@ void AudioContextCoordinator::activateLevelSelect(int levelID, bool playImmediat
     }
 }
 
-// Backing out mid-dive: release the song, restore menu music.
+// backing out mid-dive: release the song, restore menu music.
 bool AudioContextCoordinator::exitDiveIfHandingOff() {
     auto* dsm = DynamicSongManager::get();
     if (!dsm->isHandingOff()) return false;
@@ -124,7 +124,7 @@ void AudioContextCoordinator::deactivateLevelSelect(bool stopSong) {    auto* ds
 
     if (exitDiveIfHandingOff()) return;
 
-    // PlayLayer already owns the audio.
+    // playlayer already owns the audio.
     if (m_gameplayActive) return;
 
     dsm->stopSong();
@@ -139,7 +139,7 @@ void AudioContextCoordinator::activateLevelInfo(GJGameLevel* level, bool playImm
         clearProfileContext();
     }
 
-    // Release the previous layer's video audio so playSong's interop guard doesn't bail
+    // release the previous layer's video audio so playsong's interop guard doesn't bail
     LayerBackgroundManager::get().releaseAllVideoAudio();
 
     auto* dsm = DynamicSongManager::get();
@@ -162,7 +162,7 @@ void AudioContextCoordinator::deactivateLevelInfo(bool returnsToLevelSelect) {
 
     if (exitDiveIfHandingOff()) return;
 
-    // Level already took over; menu music here would talk over the level song.
+    // level already took over; menu music here would talk over the level song.
     if (m_gameplayActive) return;
 
     if (dsm->isActive()) {
@@ -177,7 +177,7 @@ void AudioContextCoordinator::beginGameplayTransition() {
     m_gameplayActive = true;
     m_preGameplayLayer = m_dynamicContextLayer;
     m_dynamicContextLayer = DynSongLayer::None;
-    // Keep song filtered until the level is up; downloads/popups never hit silence.
+    // keep song filtered until the level is up; downloads/popups never hit silence.
     DynamicSongManager::get()->submergeForLevelStart();
 }
 
@@ -234,7 +234,7 @@ void AudioContextCoordinator::activateProfile(int accountID, ProfileMusicManager
 }
 
 void AudioContextCoordinator::updateProfileMusicConfig(int accountID, ProfileMusicManager::ProfileMusicConfig const& config) {
-    // Update config without bumping the session token to avoid double-activation desync
+    // update config without bumping the session token to avoid double-activation desync
     m_profileOpen = true;
     m_profileAccountID = accountID;
     suspendDynamicForProfileMusicIfNeeded();
@@ -265,7 +265,7 @@ bool AudioContextCoordinator::restoreSuspendedDynamicSong() {
 
     dsm->resumeSuspendedPlayback();
 
-    // resumeSuspendedPlayback can bail on internal guards without starting audio
+    // resumesuspendedplayback can bail on internal guards without starting audio
     return dsm->isActive();
 }
 

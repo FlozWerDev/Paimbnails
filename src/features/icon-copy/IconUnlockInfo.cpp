@@ -24,7 +24,7 @@ std::string lowered(std::string_view text) {
     return out;
 }
 
-// Goal text, ordered longest-first so "secret coin" beats "coin".
+// goal text, ordered longest-first so "secret coin" beats "coin".
 struct StatArt {
     char const* needle;
     char const* frame;
@@ -87,7 +87,7 @@ char const* shopName(ShopType type) {
     return "A shop";
 }
 
-// Shop currency and its balance key.
+// shop currency and its balance key.
 struct ShopCurrency {
     char const* frame;
     char const* name;
@@ -102,7 +102,7 @@ ShopCurrency shopCurrency(ShopType type) {
     }
 }
 
-// Walk GD's startup table; GJStoreItem lookup is inlined on Windows.
+// walk gd's startup table; gjstoreitem lookup is inlined on windows.
 GJStoreItem* findStoreItem(int iconID, UnlockType unlock) {
     auto* stats = GameStatsManager::sharedState();
     if (!stats || !stats->m_storeItemArray) return nullptr;
@@ -118,7 +118,7 @@ GJStoreItem* findStoreItem(int iconID, UnlockType unlock) {
     return nullptr;
 }
 
-// Match achievement keys by meaning because GD changes their names.
+// match achievement keys by meaning because gd changes their names.
 struct AchievementText {
     std::string title;
     std::string goal;
@@ -153,7 +153,7 @@ AchievementText readAchievement(CCDictionary* dict) {
 
     if (text.goal.empty()) text.goal = spare;
     if (text.goal.empty()) {
-// Unknown keys still show a title, but omit goal text and sprite.
+// unknown keys still show a title, but omit goal text and sprite.
         std::string names;
         for (auto* object : CCArrayExt<CCObject*>(keys)) {
             auto* key = typeinfo_cast<CCString*>(object);
@@ -196,7 +196,7 @@ bool fillFromShop(UnlockInfo& info, int iconID, UnlockType unlock) {
     info.detail = fmt::format("Purchase this icon from {}.", info.source);
     info.requirement = {currency.frame, price};
 
-// Shop progress is the amount of its price currently owned.
+// shop progress is the amount of its price currently owned.
     auto* stats = GameStatsManager::sharedState();
     if (!stats || price <= 0) return true;
 
@@ -209,7 +209,7 @@ bool fillFromShop(UnlockInfo& info, int iconID, UnlockType unlock) {
     return true;
 }
 
-// Handle chests, the vault, and other one-off unlocks.
+// handle chests, the vault, and other one-off unlocks.
 bool fillFromSpecial(UnlockInfo& info, int iconID, UnlockType unlock) {
     auto* stats = GameStatsManager::sharedState();
     if (!stats) return false;
@@ -239,13 +239,13 @@ UnlockInfo unlockInfoFor(int iconID, IconType type) {
 
     auto const unlock = manager->iconTypeToUnlockType(type);
 
-// Combine the store/chest table with GameManager's achievement and milestone
-// unlock records; GameStatsManager alone misses the latter.
+// combine the store/chest table with gamemanager's achievement and milestone
+// unlock records; gamestatsmanager alone misses the latter.
     info.owned = manager->isIconUnlocked(iconID, type);
     info.equipped = manager->activeIconForType(type) == iconID;
     info.total = manager->countForType(type);
 
-// Default starter icons are not recorded in either table.
+// default starter icons are not recorded in either table.
     if (iconID < (type == IconType::Cube ? 5 : 2)) {
         info.source = "Starter";
         info.name = "Starter icon";
@@ -262,7 +262,7 @@ UnlockInfo unlockInfoFor(int iconID, IconType type) {
         info.detail = "The game lists no source for this one";
     }
 
-// Ownership settles the question even if achievement progress or orb balance
+// ownership settles the question even if achievement progress or orb balance
 // no longer matches the original unlock route.
     if (info.owned) info.progress = 100;
     return info;

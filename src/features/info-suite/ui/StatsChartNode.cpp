@@ -15,12 +15,12 @@ constexpr float kPadX = 5.f;
 constexpr float kPadTop = 4.f;
 constexpr float kPadBottom = 4.f;
 constexpr float kLaneH = 11.f;      // room for the axis labels
-constexpr float kScaleLaneH = 11.f; // room for the "max N" caption
+constexpr float kScaleLaneH = 11.f; // room for the "max n" caption
 constexpr float kMaxBarW = 15.f;    // keeps two attempts from filling the chart
-// Empty-state columns preserve the chart silhouette.
+// empty-state columns preserve the chart silhouette.
 constexpr int kGhostSlots = 24;
 
-// CCDrawNode draws premultiplied, so the rgb has to carry the alpha.
+// ccdrawnode draws premultiplied, so the rgb has to carry the alpha.
 ccColor4F rgba(ccColor3B color, float alpha) {
     return {color.r / 255.f * alpha, color.g / 255.f * alpha, color.b / 255.f * alpha, alpha};
 }
@@ -85,14 +85,14 @@ bool StatsChartNode::init(std::vector<float> const& values, CCSize const& size,
     if (size.width <= 0.f || size.height <= 0.f) return false;
 
     this->setContentSize(size);
-    // Callers place charts by center.
+    // callers place charts by center.
     this->ignoreAnchorPointForPosition(false);
     this->setAnchorPoint({0.5f, 0.5f});
 
     if (auto bg = paimon::SpriteHelper::safeCreateScale9("square02_001.png")) {
         bg->setContentSize(size);
         bg->setColor({0, 0, 0});
-        // Darker than stat tiles for thumbnail contrast.
+        // darker than stat tiles for thumbnail contrast.
         bg->setOpacity(145);
         bg->setAnchorPoint({0.f, 0.f});
         this->addChild(bg, -1);
@@ -116,7 +116,7 @@ bool StatsChartNode::init(std::vector<float> const& values, CCSize const& size,
 
     float const gap = std::clamp(geo.slot * 0.2f, 0.6f, 3.f);
     geo.barW = std::max(2.f, geo.slot - gap);
-    // Unused columns stay left so the newest attempt stays aligned.
+    // unused columns stay left so the newest attempt stays aligned.
     geo.startX = plot.origin.x
         + std::max(0.f, plot.size.width - geo.slot * static_cast<float>(geo.count));
 
@@ -135,7 +135,7 @@ bool StatsChartNode::init(std::vector<float> const& values, CCSize const& size,
     }
 
     auto* bars = CCDrawNode::create();
-    // Grow from the baseline so animation stays above the axis.
+    // grow from the baseline so animation stays above the axis.
     bars->setPosition({0.f, plot.origin.y});
     this->addChild(bars, 1);
     drawBars(bars, values, options, plot, geo, peak);

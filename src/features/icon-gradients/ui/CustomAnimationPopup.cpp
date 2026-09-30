@@ -25,7 +25,7 @@ namespace kit = paimon::configkit;
 constexpr float kPopupW = 440.f;
 constexpr float kPopupH = 300.f;
 
-// Fixed band on top: the icon on the left, the layer stack on the right.
+// fixed band on top: the icon on the left, the layer stack on the right.
 constexpr float kBandX = 12.f;
 constexpr float kBandY = 190.f;
 constexpr float kBandW = 416.f;
@@ -42,8 +42,8 @@ constexpr float kScrollY = 14.f;
 constexpr float kScrollW = 416.f;
 constexpr float kScrollH = 168.f;
 
-// The preview icon needs its own shader cache slot so it never shares uniforms
-// with the one in GradientAnimationPopup.
+// the preview icon needs its own shader cache slot so it never shares uniforms
+// with the one in gradientanimationpopup.
 constexpr int kPreviewShaderTag = 808;
 
 constexpr ccColor3B kLayerAccent = {255, 165, 210};
@@ -130,8 +130,8 @@ bool CustomAnimationPopup::init(
         }
     }
 
-    // Starting from a blank stack shows nothing at all, which reads as broken.
-    // One layer gives the user something to move around immediately.
+    // starting from a blank stack shows nothing at all, which reads as broken.
+    // one layer gives the user something to move around immediately.
     if (GradientAnimationManager::get().customLayers().empty()) {
         GradientAnimationManager::get().addCustomLayer();
     }

@@ -1,6 +1,6 @@
 #pragma once
 
-// Shared RTX state: loads/saves config and gates postfx per scene (renderer polls each frame).
+// shared rtx state: loads/saves config and gates postfx per scene (renderer polls each frame).
 
 #include "RTXConfig.hpp"
 
@@ -20,11 +20,11 @@ public:
     void saveConfig();
     void resetToDefaults();
 
-    // Own switch, ignoring module and scene.
+    // own switch, ignoring module and scene.
     bool isEnabled() const;
     void setEnabled(bool enabled);
 
-    // What the renderer asks: module + switch + scene scope.
+    // what the renderer asks: module + switch + scene scope.
     bool shouldRender() const;
 
 private:

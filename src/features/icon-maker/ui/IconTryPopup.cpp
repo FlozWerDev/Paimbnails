@@ -35,7 +35,7 @@ constexpr float kStageH = 138.f;
 constexpr float kSizes[] = {0.55f, 0.9f, 1.5f};
 constexpr char const* kSizeNames[] = {"Mini", "En juego", "Garaje"};
 
-// what GD multiplies over each icon layer.
+// what gd multiplies over each icon layer.
 ccColor3B tintFor(std::string_view slotKey, bool exactColors) {
     if (exactColors) return {255, 255, 255};
 

@@ -23,7 +23,7 @@ constexpr float kTabH = 168.f;
 constexpr ccColor3B kOn{255, 255, 255};
 constexpr ccColor3B kOff{115, 115, 115};
 
-// 1..6 are the values the search API expects for Easy..Demon.
+// 1..6 are the values the search api expects for easy..demon.
 struct DiffDef { int value; char const* label; };
 constexpr DiffDef kDifficulties[] = {
     {1, "Ez"}, {2, "Nm"}, {3, "Hd"}, {4, "Hr"}, {5, "In"}, {6, "Dm"},
@@ -36,7 +36,7 @@ constexpr char const* kDemonNames[] = {
     "Demon: duro", "Demon: insano", "Demon: extremo",
 };
 
-// GJDifficulty values for each demon sub type, indexed like kDemonNames.
+// gjdifficulty values for each demon sub type, indexed like kdemonnames.
 constexpr int kDemonValues[] = {
     0,
     static_cast<int>(GJDifficulty::DemonEasy),
@@ -118,8 +118,8 @@ bool AdvancedSearchPopup::init() {
 
     buildTabs(cx, content.height - 54.f);
 
-    // Both tabs are positioned by their bottom left corner so their children can
-    // be laid out in plain 0..kTabW / 0..kTabH coordinates.
+    // both tabs are positioned by their bottom left corner so their children can
+    // be laid out in plain 0..ktabw / 0..ktabh coordinates.
     float tabOriginX = cx - kTabW / 2.f;
     float tabOriginY = content.height - 70.f - kTabH;
 
@@ -240,7 +240,7 @@ void AdvancedSearchPopup::buildServerTab(CCNode* parent, float width) {
 
     m_songInput = makeNumberInput(parent, 90.f, "Song ID", width - 62.f, top - 92.f);
 
-    // Flags, two per row inside a scroll so the popup never has to grow.
+    // flags, two per row inside a scroll so the popup never has to grow.
     float scrollH = 62.f;
     auto scroll = ScrollLayer::create({width - 20.f, scrollH});
     scroll->setPosition({10.f, top - 92.f - 14.f - scrollH});
@@ -394,7 +394,7 @@ void AdvancedSearchPopup::onFlag(CCObject* sender) {
     int index = toggler->getTag();
     if (index < 0 || index >= static_cast<int>(std::size(kFlags))) return;
 
-    // CCMenuItemToggler reports the state before the toggle, so invert it.
+    // ccmenuitemtoggler reports the state before the toggle, so invert it.
     m_query.*(kFlags[index].field) = !toggler->isToggled();
 }
 

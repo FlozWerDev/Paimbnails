@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-// Centralized scene locators using ID -> type -> heuristic fallbacks.
+// centralized scene locators using id -> type -> heuristic fallbacks.
 
 #include <Geode/Geode.hpp>
 
@@ -9,7 +9,7 @@ using namespace geode::prelude;
 namespace paimon::compat {
 
 struct LevelBrowserLocator {
-    // search-menu ID, then the uppermost CCMenu.
+    // search-menu id, then the uppermost ccmenu.
     static cocos2d::CCMenu* findSearchMenu(cocos2d::CCNode* layer) {
         if (!layer) return nullptr;
 
@@ -36,7 +36,7 @@ struct InfoLayerLocator {
         bool found = false;
     };
 
-    // background ID, then the first CCScale9Sprite.
+    // background id, then the first ccscale9sprite.
     static PopupGeometry findPopupGeometry(cocos2d::CCNode* mainLayer) {
         if (!mainLayer) return {};
 
@@ -65,7 +65,7 @@ struct InfoLayerLocator {
 };
 
 struct LevelSelectLocator {
-    // Foreign mod nodes stay visible.
+    // foreign mod nodes stay visible.
     static bool isForeignModNode(cocos2d::CCNode* node) {
         if (!node) return false;
         std::string id = node->getID();
@@ -91,7 +91,7 @@ struct LevelSelectLocator {
         return false;
     }
 
-    // Hide vanilla backdrops; leave other mods alone.
+    // hide vanilla backdrops; leave other mods alone.
     static void hideVanillaBackground(cocos2d::CCNode* layer) {
         if (!layer) return;
 

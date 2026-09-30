@@ -9,7 +9,7 @@
 
 namespace paimon::texture_studio {
 
-// One R8 mask in ImageBuffer's row-major, top-left layout.
+// one r8 mask in imagebuffer's row-major, top-left layout.
 struct MaskBuffer {
     int width  = 0;
     int height = 0;
@@ -27,7 +27,7 @@ struct MaskBuffer {
     }
 };
 
-// Per-role masks plus detail: enclosed glow components leave the outer ring to keep original color.
+// per-role masks plus detail: enclosed glow components leave the outer ring to keep original color.
 struct MaskSet {
     MaskBuffer color1;
     MaskBuffer color2;
@@ -39,7 +39,7 @@ struct MaskSet {
     MaskBuffer const& get(ClusterRole r) const;
 };
 
-// Grayscale opening kills isolated AA specks; off keeps PackGen bit-exact exports.
+// grayscale opening kills isolated aa specks; off keeps packgen bit-exact exports.
 struct MaskMorphology {
     int erode  = 0;
     int dilate = 0;
@@ -55,10 +55,10 @@ struct MaskBuilderOptions {
 
     MaskMorphology morphology{};
 
-    // Edge-aware 3x3: absorbs flat speckles, keeps color edges and alpha coverage.
+    // edge-aware 3x3: absorbs flat speckles, keeps color edges and alpha coverage.
     int edgeRefine = 0;
 
-    // Enclosed glow goes to detail: glow must not repaint inner white glyphs.
+    // enclosed glow goes to detail: glow must not repaint inner white glyphs.
     bool separateInteriorGlow = true;
 };
 

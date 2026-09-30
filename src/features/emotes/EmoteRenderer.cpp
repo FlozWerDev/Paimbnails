@@ -337,7 +337,7 @@ CCNode* EmoteRenderer::renderComment(
                 auto phRef = Ref(placeholder);
                 std::string emoteKey = et->name;
                 EmoteCache::get().loadEmote(*info, [phRef, emoteSize, emoteKey, animateGifs](CCTexture2D* tex, bool isGif, std::vector<uint8_t> const& gifData) {
-                    // RAM evict can free tex before the queued task runs; keep a Ref or it dangles.
+                    // ram evict can free tex before the queued task runs; keep a ref or it dangles.
                     geode::Ref<CCTexture2D> texRef = tex;
                     Loader::get()->queueInMainThread([phRef, texRef, isGif, gifData, emoteSize, emoteKey, animateGifs]() {
                         if (paimon::isRuntimeShuttingDown()) return;
@@ -372,7 +372,7 @@ CCNode* EmoteRenderer::renderComment(
             auto label = CCLabelBMFont::create(display.c_str(), font);
             if (label) {
                 label->setColor({90, 170, 255});
-                // Pre-scale the label, not the menu item: CCMenuItemSpriteExtra resets item scale on press.
+                // pre-scale the label, not the menu item: ccmenuitemspriteextra resets item scale on press.
                 label->setScale(fontScale);
 
                 float labelW = label->getContentSize().width * fontScale;

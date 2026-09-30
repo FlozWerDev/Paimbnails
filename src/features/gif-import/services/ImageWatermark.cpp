@@ -19,9 +19,7 @@ constexpr float kPi = 3.14159265358979323846f;
 constexpr float kSolidObjectSize = 30.f;
 constexpr float kSplitA = 0.381966f;
 constexpr float kSplitB = 0.438447f;
-// Marking splits rectangles in two. On a short rotated curve strip that turned
-// one valid piece into two sub-1.6-cell splinters, each peaking in preview and
-// harder to audit. Long pieces still mark the same.
+// splitting short rotated strips creates visible splinters; only longer pieces carry the mark.
 constexpr float kMinimumMarkedPart = 1.6f;
 constexpr float kTurnsA = 2160.f;
 constexpr float kTurnsB = 3960.f;
@@ -36,7 +34,7 @@ bool canSplit(Primitive const& object) {
     float folded = std::fmod(std::abs(object.rotation), 90.f);
     folded = std::min(folded, 90.f - folded);
     if (folded <= 7.f) return true;
-    // splitPrimitive picks the major axis (hash on squares). kSplitA is the
+    // splitprimitive picks the major axis (hash on squares). ksplita is the
     // smaller of the two ratios, so this floor keeps no marked half a splinter.
     return std::max(object.width, object.height) * kSplitA >=
         kMinimumMarkedPart;
@@ -126,9 +124,7 @@ bool parseInt(std::string_view token, int& value) {
 bool parseFloat(std::string_view token, float& value) {
     if (token.empty()) return false;
 
-    // libc++ only exposes floating-point from_chars starting with iOS 26,
-    // while Paimbnails targets iOS 14. strtof is available on every supported
-    // target; the copied string supplies its required null terminator.
+    // floating-point parsing must support ios 14; the copied string supplies the terminator for strtof.
     std::string const owned(token);
     char* end = nullptr;
     errno = 0;

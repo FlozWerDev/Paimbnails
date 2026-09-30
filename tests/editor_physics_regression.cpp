@@ -28,8 +28,8 @@ BodySpec circle(Motion motion, Vec2 position, float radius) {
     return body;
 }
 
-// A right triangle filling the given box, with the walkable surface running from
-// the bottom-left up to the top-right, like GD's slope 289.
+// a right triangle filling the given box, with the walkable surface running from
+// the bottom-left up to the top-right, like gd's slope 289.
 BodySpec ramp(Motion motion, Vec2 position, Vec2 halfSize) {
     BodySpec body;
     body.motion = motion;
@@ -174,7 +174,7 @@ bool tiltedBoxTipsFlat() {
     floor.friction = 0.9f;
     auto trace = simulate({tilted, floor}, options(3.f));
     auto const& pose = trace.frames.back().poses.front();
-    // An inflated AABB holds a 20-degree box at ~22.8 and never lets it tip; a real
+    // an inflated aabb holds a 20-degree box at ~22.8 and never lets it tip; a real
     // corner contact rotates it flat and settles the centre at ~20.
     bool const pass = pose.position.y > 18.f && pose.position.y < 21.5f &&
         std::abs(pose.angle) < 0.1f;
@@ -212,7 +212,7 @@ bool spinKeepsAccumulating() {
         biggestJump = std::max(biggestJump, std::abs(angle - previous));
         previous = angle;
     }
-    // Wrapping into -pi..pi used to produce ~6.28 jumps, which snap a baked rotation.
+    // wrapping into -pi..pi used to produce ~6.28 jumps, which snap a baked rotation.
     bool const pass = biggestJump < 1.f && std::abs(previous) > 30.f;
     std::cout << "spin: angle=" << previous << " jump=" << biggestJump << '\n';
     return pass;
@@ -227,8 +227,8 @@ bool rampSlidesInsteadOfBlocking() {
     slope.friction = 0.05f;
     auto trace = simulate({falling, slope}, options(0.7f));
     auto const& pose = trace.frames.back().poses.front();
-    // The hypotenuse runs y = x/2, so a body riding it stays near that line and
-    // drifts to the left. An axis-aligned box would have parked it at y=68.
+    // the hypotenuse runs y = x/2, so a body riding it stays near that line and
+    // drifts to the left. an axis-aligned box would have parked it at y=68.
     float const surface = pose.position.x * 0.5f;
     bool const pass = trace.impacts > 0 && pose.position.x < -10.f &&
         std::abs(pose.position.y - surface) < 20.f;
@@ -238,7 +238,7 @@ bool rampSlidesInsteadOfBlocking() {
 }
 
 bool rampKeepsItsEmptyCornerEmpty() {
-    // Sitting inside the missing corner of the triangle: a box hitbox would have
+    // sitting inside the missing corner of the triangle: a box hitbox would have
     // pushed this body out, a triangle leaves it where it is.
     auto inside = box(Motion::Dynamic, {-40.f, 40.f}, {6.f, 6.f});
     inside.gravityScale = 0.f;
@@ -285,7 +285,7 @@ bool circlesPushEachOtherApart() {
 }
 
 bool circleRollsOffAnOrb() {
-    // Dropped just off-centre onto a static orb: a round hitbox deflects it
+    // dropped just off-centre onto a static orb: a round hitbox deflects it
     // sideways, a square one would have balanced it on a flat top.
     auto ball = circle(Motion::Dynamic, {4.f, 80.f}, 10.f);
     ball.restitution = 0.2f;

@@ -21,7 +21,7 @@ namespace paimon::texture_studio {
 class ImageBuffer;
 class ParamSliderRow;
 
-// Own scene (not a pack-editor tab). Mask paints first; fill runs on ORIGINAL colors, never pack-tinted.
+// own scene (not a pack-editor tab). mask paints first; fill runs on original colors, never pack-tinted.
 class FusionEditorLayer : public cocos2d::CCLayer {
 public:
     static FusionEditorLayer* create(std::string slotId, std::string frameName = {});
@@ -70,7 +70,7 @@ protected:
     void unloadFusion();
     void refreshPreview();
     void renderPreview(float);
-    // Drag preview on the main thread via stamp/mask caches.
+    // drag preview on the main thread via stamp/mask caches.
     void invalidateStampCache();
     void ensureStampCache();
     void renderPreviewFast();
@@ -144,7 +144,7 @@ private:
     float m_touchStartX = 0.f, m_touchStartY = 0.f;
     int m_dragStartPx = 0, m_dragStartPy = 0;
 
-    // Live-drag caches: rebuilt on mask/texture/transform/placement change.
+    // live-drag caches: rebuilt on mask/texture/transform/placement change.
     std::vector<float> m_cachedCoverage;
     ImageBuffer m_cachedStamp;
     bool m_cacheValid = false;
@@ -154,7 +154,7 @@ private:
     ImageTransform m_cacheTransform{};
     float m_cacheOpacity = -1.f;
     FusionBlendMode m_cacheBlend = FusionBlendMode::Replace;
-    // Fast preview throttled to ~60 Hz, no stacked work.
+    // fast preview throttled to ~60 hz, no stacked work.
     bool m_fastPreviewPending = false;
 
     CCMenuItemSpriteExtra* m_blendBtn = nullptr;

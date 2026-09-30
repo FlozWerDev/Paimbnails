@@ -1,4 +1,4 @@
-// bloom: prefilter/down/up/god-rays/brightness via Jimenez filters.
+// bloom: prefilter/down/up/god-rays/brightness via jimenez filters.
 
 varying vec2 v_texCoord;
 
@@ -21,10 +21,10 @@ uniform float u_adaptRate;
 uniform float u_frame;
 
 const int kRaySamples = 24;
-// luma-approx shadows, no G-buffer.
+// luma-approx shadows, no g-buffer.
 const float kVolBlock = 0.35;
 
-// mip 0 is sRGB; rest already linear.
+// mip 0 is srgb; rest already linear.
 vec3 tap(vec2 uv, float prefilter) {
     vec3 c = texture2D(u_src, uv).rgb;
     if (prefilter > 0.5) c = min(tonemapInverse(toLinear(c), u_tonemap), vec3(max(u_hdrRange, 1.0)));

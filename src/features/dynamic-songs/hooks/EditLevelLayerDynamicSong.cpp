@@ -5,7 +5,7 @@
 
 using namespace geode::prelude;
 
-// Reuse LevelInfo audio context for dynamic song.
+// reuse levelinfo audio context for dynamic song.
 class $modify(PaimonDynamicSongEditLevelLayer, EditLevelLayer) {
     struct Fields {
         bool m_audioActivated = false;

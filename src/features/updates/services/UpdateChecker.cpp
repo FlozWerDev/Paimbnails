@@ -3,6 +3,7 @@
 #include <Geode/Geode.hpp>
 #include <Geode/utils/web.hpp>
 #include <Geode/utils/file.hpp>
+#include <Geode/loader/ModMetadata.hpp>
 
 #include "../../../utils/WebHelper.hpp"
 #include "../../../core/Settings.hpp"
@@ -256,7 +257,7 @@ void UpdateChecker::onReleasesResponse(web::WebResponse& res) {
         info.prerelease = entry["prerelease"].isBool()
             && entry["prerelease"].asBool().unwrapOr(false);
 
-        // published_at is ISO-8601; the picker shows the day only.
+        // published_at is iso-8601; the picker shows the day only.
         auto published = jsonString(entry, "published_at");
         info.date = published.size() >= 10 ? published.substr(0, 10) : published;
 
@@ -264,7 +265,7 @@ void UpdateChecker::onReleasesResponse(web::WebResponse& res) {
         list.push_back(std::move(info));
     }
 
-    // API order is by creation date, which drifts once an older branch ships
+    // api order is by creation date, which drifts once an older branch ships
     // a late patch.
     std::stable_sort(list.begin(), list.end(), [](ReleaseInfo const& a, ReleaseInfo const& b) {
         return compareVersions(a.version, b.version) < 0;
@@ -311,7 +312,7 @@ void UpdateChecker::downloadRelease(
     m_installedPendingRestart.store(false);
     m_pendingVersion.clear();
 
-    // progress hops to the main thread before touching UI.
+    // progress hops to the main thread before touching ui.
     auto progressShared = std::make_shared<std::function<void(uint64_t, uint64_t)>>(std::move(onProgress));
     auto doneShared     = std::make_shared<std::function<void(bool, std::string)>>(std::move(onDone));
 
@@ -348,8 +349,8 @@ void UpdateChecker::downloadRelease(
             }
 
             auto bytes = std::move(res).data();
-            if (bytes.empty()) {
-                fail("empty payload");
+            if (bytes.empty() || bytes.size() > 256ULL * 1024 * 1024) {
+                fail("invalid payload size");
                 return;
             }
 
@@ -358,17 +359,51 @@ void UpdateChecker::downloadRelease(
                 return;
             }
 
-            // like Geode's own updater: the .geode isn't locked while running,
-            // so overwriting it in place applies on next restart.
             auto packagePath = Mod::get()->getPackagePath();
             if (packagePath.empty()) {
                 fail("no package path");
                 return;
             }
 
-            auto writeRes = geode::utils::file::writeBinary(packagePath, bytes);
+            // stage beside the package so a failed write leaves the installed version intact.
+            auto stagedPath = packagePath;
+            stagedPath += ".update.tmp";
+            auto failPackage = [&](std::string error) {
+                std::error_code cleanupError;
+                std::filesystem::remove(stagedPath, cleanupError);
+                fail(std::move(error));
+            };
+            auto writeRes = geode::utils::file::writeBinary(stagedPath, bytes);
             if (!writeRes) {
-                fail(fmt::format("cannot write update: {}", writeRes.unwrapErr()));
+                failPackage(fmt::format("cannot write update: {}", writeRes.unwrapErr()));
+                return;
+            }
+
+            auto metadata = ModMetadata::createFromGeodeFile(stagedPath);
+            auto expected = VersionInfo::parse("v" + sanitizeVersion(version));
+            if (metadata.hasErrors() || metadata.getID() != Mod::get()->getID() ||
+                !expected || metadata.getVersion() != expected.unwrap()) {
+                failPackage("downloaded package does not match the requested mod and version");
+                return;
+            }
+            auto compatible = metadata.checkTargetVersions();
+            if (!compatible) {
+                failPackage(compatible.unwrapErr());
+                return;
+            }
+            bool hasBinary = false;
+            {
+                auto archive = geode::utils::file::Unzip::create(stagedPath);
+                hasBinary = archive && archive.unwrap().hasEntry(metadata.getBinaryName().data());
+            }
+            if (!hasBinary || m_downloadCancelled.load()) {
+                failPackage(hasBinary ? "cancelled" : "package has no binary for this platform");
+                return;
+            }
+            std::error_code renameError;
+            std::filesystem::rename(stagedPath, packagePath, renameError);
+            if (renameError) {
+                failPackage("cannot replace package: " + renameError.message());
                 return;
             }
 

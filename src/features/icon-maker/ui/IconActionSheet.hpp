@@ -18,7 +18,7 @@ public:
         bool destructive = false;
     };
 
-    // The sheet closes before running the action, so callbacks are free to
+    // the sheet closes before running the action, so callbacks are free to
     // open another popup or rebuild the scene behind it.
     static IconActionSheet* create(std::string title, std::vector<Action> actions);
 

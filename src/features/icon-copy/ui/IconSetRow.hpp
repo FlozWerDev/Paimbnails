@@ -1,5 +1,5 @@
 #pragma once
-// The card both icon lists are built from: artwork on the right, name and
+// the card both icon lists are built from: artwork on the right, name and
 // subtitle on the left, and whatever buttons the list hands over in between.
 
 #include <Geode/Geode.hpp>
@@ -14,7 +14,7 @@ namespace paimon::iconcopy {
 
 struct IconSet;
 
-// A button in the row. A null face is dropped, so a missing sprite frame costs
+// a button in the row. a null face is dropped, so a missing sprite frame costs
 // the row nothing but its button.
 struct RowAction {
     cocos2d::CCNode* face = nullptr;

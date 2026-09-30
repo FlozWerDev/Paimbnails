@@ -64,7 +64,7 @@ void applyBlurPass(CCSprite* input, CCRenderTexture* output, CCGLProgram* progra
         program->setUniformLocationWith1f(locRadius, radius);
     }
 
-    // begin() does not clear the FBO; transparent sources would blend with
+    // begin() does not clear the fbo; transparent sources would blend with
     // uninitialized memory and produce driver-dependent white artifacts.
     output->beginWithClear(0.f, 0.f, 0.f, 0.f);
     input->visit();
@@ -73,7 +73,7 @@ void applyBlurPass(CCSprite* input, CCRenderTexture* output, CCGLProgram* progra
 
 float intensityToBlurRadius(float intensity) {
     float normalized = std::clamp((intensity - 1.0f) / 9.0f, 0.0f, 1.0f);
-    // Smoothstep avoids an abrupt blur jump at low intensity.
+    // smoothstep avoids an abrupt blur jump at low intensity.
     float curved = normalized * normalized * (3.0f - 2.0f * normalized);
     return 0.03f + (curved * 0.27f);
 }
@@ -89,7 +89,7 @@ CCSprite* createBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, fl
     ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
     texture->setTexParameters(&params);
 
-    // Blur is low-frequency, so cap the working texture at 1024px.
+    // blur is low-frequency, so cap the working texture at 1024px.
     constexpr float kMaxBlurDim = 1024.f;
     CCSize blurSize = targetSize;
     float downFactor = 1.f;
@@ -168,7 +168,7 @@ CCSprite* createBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, fl
 }
 
 CCSprite* createPopupBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, float intensity) {
-    // Blur at reduced resolution and restore target size with bilinear sampling.
+    // blur at reduced resolution and restore target size with bilinear sampling.
     if (!texture) return nullptr;
     if (targetSize.width <= 0.f || targetSize.height <= 0.f ||
         targetSize.width > 4096.f || targetSize.height > 4096.f) return nullptr;
@@ -179,7 +179,7 @@ CCSprite* createPopupBlurredSprite(CCTexture2D* texture, CCSize const& targetSiz
     ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
     texture->setTexParameters(&params);
 
-    // Bound the internal target; blur hides the downsample aliasing.
+    // bound the internal target; blur hides the downsample aliasing.
     constexpr float kInternalBlurDim = 960.f;
     CCSize blurSize = targetSize;
     if (blurSize.width > kInternalBlurDim || blurSize.height > kInternalBlurDim) {
@@ -191,7 +191,7 @@ CCSprite* createPopupBlurredSprite(CCTexture2D* texture, CCSize const& targetSiz
         if (blurSize.height < 16.f) blurSize.height = 16.f;
     }
 
-    // Preserve edge coverage with independent scaling.
+    // preserve edge coverage with independent scaling.
     {
         float texW = std::max(1.0f, srcSprite->getContentSize().width);
         float texH = std::max(1.0f, srcSprite->getContentSize().height);
@@ -243,7 +243,7 @@ CCSprite* createPopupBlurredSprite(CCTexture2D* texture, CCSize const& targetSiz
     applyBlurPass(mid1, rtB, blurV, blurSize, radius);
 
     if (intensity >= 4.0f) {
-        // Deferred mobile renderers need a barrier between passes; desktop does not.
+        // deferred mobile renderers need a barrier between passes; desktop does not.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
         glFlush();
 #endif
@@ -286,13 +286,13 @@ CCSprite* createPopupBlurredSprite(CCTexture2D* texture, CCSize const& targetSiz
 }
 
 CCSprite* createPopupPaimonBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, float intensity) {
-    // Popups need the exact target size, so blit through a target FBO.
+    // popups need the exact target size, so blit through a target fbo.
     auto* base = createPaimonBlurSprite(texture, targetSize, intensity);
     if (!base) return nullptr;
 
     auto baseSize = base->getContentSize();
 
-    // Restore the exact target size with one bilinear pass.
+    // restore the exact target size with one bilinear pass.
     auto rt = CCRenderTexture::create(
         static_cast<int>(std::round(targetSize.width)),
         static_cast<int>(std::round(targetSize.height)));
@@ -304,8 +304,8 @@ CCSprite* createPopupPaimonBlurredSprite(CCTexture2D* texture, CCSize const& tar
     ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
     rt->getSprite()->getTexture()->setTexParameters(&params);
 
-    // The captured FBO is Y-inverted. Flip the base before rendering to the
-    // target FBO, then flip the result when reading it back.
+    // the captured fbo is y-inverted. flip the base before rendering to the
+    // target fbo, then flip the result when reading it back.
     base->setFlipY(true);
     base->setAnchorPoint({0.5f, 0.5f});
     base->setPosition(targetSize * 0.5f);
@@ -326,7 +326,7 @@ CCSprite* createPopupPaimonBlurredSprite(CCTexture2D* texture, CCSize const& tar
         return base;
     }
     finalSprite->setAnchorPoint({0.5f, 0.5f});
-    finalSprite->setFlipY(true);  // FBO inverts Y.
+    finalSprite->setFlipY(true);  // fbo inverts y.
     finalSprite->setContentSize(targetSize);
     finalSprite->getTexture()->setTexParameters(&params);
     return finalSprite;
@@ -355,7 +355,7 @@ CCSprite* createPaimonBlurSprite(CCTexture2D* texture, CCSize const& targetSize,
     ccTexParams linearParams{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
     texture->setTexParameters(&linearParams);
 
-    // Blur is low-frequency, so cap the working texture at 1024px.
+    // blur is low-frequency, so cap the working texture at 1024px.
     constexpr float kMaxBlurDim = 1024.f;
     CCSize blurSize = targetSize;
     float downFactor = 1.f;
@@ -526,7 +526,7 @@ CCGLProgram* getBgShaderProgram(std::string const& shaderName) {
     if (shaderName == "underwater") return paimon::shaders::loadShader("layerbg-underwater-dyn"_spr, "cell_vertex.glsl", "underwater_dynamic.glsl", nullptr, nullptr);
     if (shaderName == "neon-trail") return paimon::shaders::loadShader("layerbg-neon-trail-dyn"_spr, "cell_vertex.glsl", "neon_trail_dynamic.glsl", nullptr, nullptr);
 
-    // beat shaders read FFT uniforms; zeroed keeps them static when off.
+    // beat shaders read fft uniforms; zeroed keeps them static when off.
     if (shaderName == "glitch-beat")      return paimon::shaders::loadShader("beat-glitch"_spr,      "cell_vertex.glsl", "glitch_beat.glsl",      nullptr, nullptr);
     if (shaderName == "wave-beat")        return paimon::shaders::loadShader("beat-wave"_spr,        "cell_vertex.glsl", "wave_beat.glsl",        nullptr, nullptr);
     if (shaderName == "chromatic-beat")   return paimon::shaders::loadShader("beat-chromatic"_spr,   "cell_vertex.glsl", "chromatic_beat.glsl",   nullptr, nullptr);
@@ -643,7 +643,7 @@ void runStaggeredPrewarm(
         }
 
         if (state->index < state->steps.size()) {
-            // Strong ref only in the pending continuation; the closure holds a weak
+            // strong ref only in the pending continuation; the closure holds a weak
             // self-ref to avoid a self-owning shared_ptr cycle (permanent leak).
             if (auto strong = weakTick.lock()) {
                 paimon::scheduleMainThreadDelay(state->delay, [strong]() { (*strong)(); });
@@ -845,7 +845,7 @@ void ProgressiveBlurJob::start() {
     director->getScheduler()->scheduleSelector(
         schedule_selector(ProgressiveBlurJob::tick), this, 0.0f, false);
 
-    // Fast jobs get their first tick immediately; batch jobs stay frame-budgeted.
+    // fast jobs get their first tick immediately; batch jobs stay frame-budgeted.
     if (m_fastMode && !m_cancelled && !m_done) {
         tick(0.0f);
     }
@@ -1025,7 +1025,7 @@ void ProgressiveBlurJob::tickPaimonBlur() {
         m_currentSize = CCSize{std::round(m_targetSize.width), std::round(m_targetSize.height)};
 
         m_phase = Phase::Downsample;
-        if (!m_fastMode) return; // Batch mode yields after setup.
+        if (!m_fastMode) return; // batch mode yields after setup.
     }
 
     if (m_phase == Phase::Downsample) {
@@ -1090,7 +1090,7 @@ void ProgressiveBlurJob::tickPaimonBlur() {
         if (m_currentPass >= m_totalPasses || m_mips.empty()) {
             m_currentPass = static_cast<int>(m_mips.size()) - 1;
             m_phase = Phase::Upsample;
-            // Avoid an FBO burst in batch mode.
+            // avoid an fbo burst in batch mode.
             if (!m_fastMode) return;
         } else {
             return;
@@ -1151,7 +1151,7 @@ void ProgressiveBlurJob::tickPaimonBlur() {
 }
 
 namespace {
-    // Update audio analysis once per frame across all sprites.
+    // update audio analysis once per frame across all sprites.
     uint64_t g_lastShaderAudioFrame = 0;
 
     std::atomic<bool> g_beatShadersGloballyEnabled{false};
@@ -1197,7 +1197,7 @@ void ShaderBgSprite::draw() {
         loc = shader->getUniformLocationForName("u_click");
         if (loc != -1) shader->setUniformLocationWith1f(loc, m_clickState);
 
-        // Disabled beat shaders receive zeroed audio uniforms.
+        // disabled beat shaders receive zeroed audio uniforms.
         bool audioGate = g_beatShadersGloballyEnabled.load(std::memory_order_relaxed);
         float bass = 0.f, mid = 0.f, treble = 0.f, beat = 0.f, energy = 0.f;
         if (audioGate) {
@@ -1215,7 +1215,7 @@ void ShaderBgSprite::draw() {
             treble = audio.treble()    * m_trebleMult;
             beat   = audio.beatPulse() * m_beatMult;
             energy = audio.energy()    * m_energyMult;
-            // Keep peaks within the shader's stable range.
+            // keep peaks within the shader's stable range.
             if (bass   > 2.f) bass   = 2.f;
             if (mid    > 2.f) mid    = 2.f;
             if (treble > 2.f) treble = 2.f;
@@ -1244,7 +1244,7 @@ void ShaderBgSprite::draw() {
 void ShaderBgSprite::updateShaderTime(float dt) {
     m_shaderTime += dt;
 
-    // Cocos does not expose mouse coordinates consistently on mobile targets.
+    // cocos does not expose mouse coordinates consistently on mobile targets.
 #if defined(GEODE_IS_WINDOWS)
     auto* director = CCDirector::get();
     auto* glView = director ? director->getOpenGLView() : nullptr;
@@ -1260,7 +1260,7 @@ void ShaderBgSprite::updateShaderTime(float dt) {
     }
 #endif
 
-    // Multiple sprites can coexist during transitions; update audio once per frame.
+    // multiple sprites can coexist during transitions; update audio once per frame.
     if (g_beatShadersGloballyEnabled.load(std::memory_order_relaxed)) {
         uint64_t frame = currentFrameForAudio();
         if (frame != g_lastShaderAudioFrame) {

@@ -260,7 +260,7 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
         }
     }
 
-    // Stores a player-2 pick; false means vanilla already showed the unlock popup.
+    // stores a player-2 pick; false means vanilla already showed the unlock popup.
     bool storeSecondPick(IconType kind, int picked) {
         auto vault = DualKitVault::get();
         GaragePickRow const* row = nullptr;
@@ -271,7 +271,7 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
             }
         }
         if (!row) return true;
-        // One shared page with vanilla icons: unlock state still checked per button.
+        // one shared page with vanilla icons: unlock state still checked per button.
         if ((kind == IconType::Special || kind == IconType::ShipFire)
             && !GameManager::get()->isIconUnlocked(picked, kind)) {
             GJGarageLayer::showUnlockPopup(picked, row->unlock);

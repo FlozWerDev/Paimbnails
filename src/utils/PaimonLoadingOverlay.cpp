@@ -297,7 +297,7 @@ void PaimonLoadingOverlay::registerWithTouchDispatcher() {
 
 bool PaimonLoadingOverlay::ccTouchBegan(CCTouch* touch, CCEvent*) {
     if (m_dismissed) return false;
-    // only inside the covered area (showLocal may cover just a popup).
+    // only inside the covered area (showlocal may cover just a popup).
     auto p = this->convertToNodeSpace(touch->getLocation());
     auto s = this->getContentSize();
     return p.x >= 0.f && p.y >= 0.f && p.x <= s.width && p.y <= s.height;

@@ -10,9 +10,7 @@
 
 namespace paimon::gifimport {
 
-// One object's rotation solved once. Point-in-shape is the importer's hottest
-// query (hundreds of millions on a big image); per-query sin/cos measured at
-// three quarters of import time.
+// cache rotation once; repeated trigonometry dominates shape queries.
 struct ShapeXform {
     float x = 0.f;
     float y = 0.f;
@@ -62,13 +60,10 @@ ShapeXform xformOf(Primitive const& object);
 ShapeXform xformOf(Primitive const& object, std::vector<PlanStamp> const& stamps);
 std::vector<ShapeXform> xformsOf(std::vector<Primitive> const& objects);
 
-// Bounding-box cells, clipped to the grid. Empty box (max < min) when outside.
+// bounding-box cells, clipped to the grid. empty box (max < min) when outside.
 std::array<int, 4> xformBox(ShapeXform const& shape, int width, int height);
 
-// A figure may only poke out where it doesn't show: same-color cells, cells a
-// later color covers, or void no frame paints. Poking over the color below is
-// when the peak shows, and center-sampling misses it (peaks enter under half
-// a cell).
+// center sampling misses peaks extending less than half a cell into a lower color.
 bool shapeStaysInside(
     Primitive const& shape,
     std::vector<std::uint8_t> const& permitted,
@@ -76,9 +71,7 @@ bool shapeStaysInside(
     int height
 );
 
-// How much of the figure falls outside permitted. For a strip, demanding zero
-// overshoots: a good strip's bevel and cap poke a peak unseen, but dropping it
-// sends the blob to outline, which overshoots far worse.
+// allow small strip bevels and caps; rejecting them can produce a worse outline.
 float shapeSpill(
     Primitive const& shape,
     std::vector<std::uint8_t> const& permitted,
@@ -86,12 +79,12 @@ float shapeSpill(
     int height
 );
 
-// X span a figure can touch in a row. Deliberately a hair wide both sides,
+// x span a figure can touch in a row. deliberately a hair wide both sides,
 // so outside it the point reads as rejected without asking.
 bool xformSpan(ShapeXform const& shape, float y, float& fromX, float& toX);
 
-// Walks the samples a figure covers on a `scale`-samples-per-cell grid, in
-// sample coords. Returning true from `fn` cuts.
+// walks the samples a figure covers on a `scale`-samples-per-cell grid, in
+// sample coords. returning true from `fn` cuts.
 template <typename Fn>
 bool forEachSample(ShapeXform const& shape, int width, int height, int scale, Fn&& fn) {
     auto const box = xformBox(shape, width, height);

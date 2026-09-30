@@ -20,7 +20,7 @@ cocos2d::ccColor4B GradientRasterizer::sample(GradientSpec const& spec, float t)
     if (spec.stops.empty()) return {255, 255, 255, 255};
     t = std::clamp(t, 0.f, 1.f);
 
-    // Stops are kept sorted by pos (enforced on deserialize and by the editor).
+    // stops are kept sorted by pos (enforced on deserialize and by the editor).
     if (t <= spec.stops.front().pos) return spec.stops.front().color;
     if (t >= spec.stops.back().pos) return spec.stops.back().color;
 
@@ -54,7 +54,7 @@ float GradientRasterizer::paramAt(GradientSpec const& spec, float x, float y,
         return std::sqrt(dx * dx + dy * dy) / radius;
     }
 
-    // Linear: project onto the angle axis, normalized so the region's extent
+    // linear: project onto the angle axis, normalized so the region's extent
     // along that axis maps to 0..1. angle 0 = left→right, 90 = top→bottom.
     float rad = spec.angleDeg * (kPi / 180.f);
     float dirX = std::cos(rad);

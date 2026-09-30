@@ -56,7 +56,7 @@ bool GradientEditorPopup::init(GradientSpec initial, ChangedCallback onChanged) 
 
     auto size = m_mainLayer->getContentSize();
 
-    // Square preview: a strip cannot show what "radial" means.
+    // square preview: a strip cannot show what "radial" means.
     if (auto* frame = paimon::SpriteHelper::createColorPanel(
             kPreviewSide + 6.f, kPreviewSide + 6.f, {0, 0, 0}, 140, 6.f)) {
         frame->setAnchorPoint({0.f, 0.f});
@@ -99,7 +99,7 @@ void GradientEditorPopup::rebuildBody() {
     float const left = 16.f + kPreviewSide + 16.f;
     float const bodyW = size.width - left - 16.f;
 
-    // Kind picker stays pinned next to the preview: it is the one choice that
+    // kind picker stays pinned next to the preview: it is the one choice that
     // changes what every control below means.
     auto* tabs = kit::makeTabBar(bodyW, {"Lineal", "Radial"},
         m_spec.kind == GradientKind::Radial ? 1 : 0,
@@ -148,7 +148,7 @@ void GradientEditorPopup::rebuildBody() {
         menu->addChild(btn);
     }
 
-    // Everything else scrolls: parameters first, then one row per color.
+    // everything else scrolls: parameters first, then one row per color.
     std::vector<CCNode*> rows;
 
     if (m_spec.kind == GradientKind::Linear) {

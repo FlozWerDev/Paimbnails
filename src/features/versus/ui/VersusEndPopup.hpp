@@ -8,7 +8,7 @@
 
 namespace paimon::versus {
 
-// What a duel leaves behind: the result, the Elo that moved, the tier if it
+// what a duel leaves behind: the result, the elo that moved, the tier if it
 // changed, and the two ways out.
 class VersusEndPopup : public geode::Popup {
 public:

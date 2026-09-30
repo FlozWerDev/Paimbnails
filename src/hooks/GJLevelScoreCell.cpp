@@ -36,7 +36,7 @@ struct LevelScoreCellHoverData {
     struct Entry { CCNode* node; CCPoint base; };
     std::vector<Entry> movable;
 
-    Ref<CCNode> gradient = nullptr;   // actual type: CCLayerGradient*
+    Ref<CCNode> gradient = nullptr;   // actual type: cclayergradient*
 };
 
 // self-scheduled for reliable updates

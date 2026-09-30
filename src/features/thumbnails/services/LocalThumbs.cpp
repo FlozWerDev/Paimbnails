@@ -83,7 +83,7 @@ void LocalThumbs::initCache() {
 }
 
 LocalThumbs& LocalThumbs::get() {
-    // Leaked on purpose: un-awaited initCache would race destruction (shutdown owns teardown).
+    // leaked on purpose: un-awaited initcache would race destruction (shutdown owns teardown).
     static auto* inst = new LocalThumbs();
     static std::once_flag loadFlag;
     static std::once_flag initFlag;
@@ -96,7 +96,7 @@ LocalThumbs& LocalThumbs::get() {
             geode::utils::thread::setName("PaimonLocalThumbs");
             self->initCache();
         });
-        // Rejected spawn in shutdown: nobody would set initialized, and shutdown would burn its timeout on a never-ran thread.
+        // rejected spawn in shutdown: nobody would set initialized, and shutdown would burn its timeout on a never-ran thread.
         if (!started) {
             self->m_cacheInitialized.store(true, std::memory_order_release);
         }
@@ -232,7 +232,7 @@ std::optional<std::string> LocalThumbs::findAnyThumbnail(int32_t levelID) const 
         if (std::filesystem::exists(p, ecFind)) return store(geode::utils::string::pathToString(p));
     }
 
-    // Browser previews share the auto-preview store and .rgb format.
+    // browser previews share the auto-preview store and .rgb format.
     auto previewPath = paimon::autopreview::AutoPreviewStore::get().dir() / (std::to_string(levelID) + ".rgb");
     if (std::filesystem::exists(previewPath, ecFind)) return store(geode::utils::string::pathToString(previewPath));
 
@@ -460,7 +460,7 @@ CCTexture2D* LocalThumbs::loadTexture(int32_t levelID) const {
         return tex;
     }
 
-    // Same store, own reader + RAM cache.
+    // same store, own reader + ram cache.
     if (auto tex = paimon::autopreview::AutoPreviewStore::get().loadTexture(levelID)) {
         cacheTexture(levelID, tex);
         return tex;
@@ -617,7 +617,7 @@ void LocalThumbs::loadMappings() {
 void LocalThumbs::shutdown() {
     log::info("[LocalThumbs] shutdown");
     m_shuttingDown.store(true, std::memory_order_release);
-    // initCache bails within one entry on m_shuttingDown; 1s is plenty (3s only mattered when the flag was unsettable).
+    // initcache bails within one entry on m_shuttingdown; 1s is plenty (3s only mattered when the flag was unsettable).
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
     while (!m_cacheInitialized.load(std::memory_order_acquire)) {
         if (std::chrono::steady_clock::now() >= deadline) {

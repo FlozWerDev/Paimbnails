@@ -20,7 +20,7 @@ public:
         if (!btn) return false;
         if (btn->getUserFlag(buttonFlag())) return true;
 
-        // Compat with older versions that marked the button by mutating the ID.
+        // compat with older versions that marked the button by mutating the id.
         std::string id = btn->getID();
         return id.find("paimon-mod-btn") == 0;
     }

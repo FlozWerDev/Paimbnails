@@ -34,11 +34,11 @@ constexpr char const* kKeyInGameplay  = "dynamic-volume-in-gameplay";
 constexpr char const* kKeyInEditor    = "dynamic-volume-in-editor";
 constexpr char const* kKeyReduckSame  = "dynamic-volume-reduck-same-song";
 
-// Keep the fader below FMOD's roughly +10 dB ceiling.
+// keep the fader below fmod's roughly +10 db ceiling.
 constexpr float kMinGainDb = -60.0f;
 constexpr float kMaxGainDb = 9.0f;
 
-// Compare incoming analysis peaks against a decaying peak, not an average.
+// compare incoming analysis peaks against a decaying peak, not an average.
 constexpr float kPeakDecayDbPerSec = 0.6f;
 
 constexpr char const* kSafeDropModule = "paimbnails.safedrop.global";
@@ -100,7 +100,7 @@ void DynamicVolumeManager::loadConfig() {
     cfg.inEditor       = mod->getSavedValue<bool>(kKeyInEditor, cfg.inEditor);
     cfg.reduckSameSong = mod->getSavedValue<bool>(kKeyReduckSame, cfg.reduckSameSong);
 
-    // Adaptive/Fixed ignore the fine knobs; prevent Custom values leaking in.
+    // adaptive/fixed ignore the fine knobs; prevent custom values leaking in.
     applyModeDefaults(cfg);
 
     cfg.rampSeconds      = std::clamp(cfg.rampSeconds, 1.0f, 60.0f);
@@ -202,7 +202,7 @@ bool DynamicVolumeManager::ensureDsps() {
 
     auto* group = engine->m_backgroundMusicChannel;
 
-    // Re-attach if an audio-device reset replaced the channel group.
+    // re-attach if an audio-device reset replaced the channel group.
     if (m_attachedGroup && m_attachedGroup != group) {
         detachDsps();
     }
@@ -228,7 +228,7 @@ bool DynamicVolumeManager::ensureDsps() {
 
     m_attachedGroup = group;
 
-    // Keep Safe Drop's limiter after meter and gain so it caps the final signal.
+    // keep safe drop's limiter after meter and gain so it caps the final signal.
     if (group->addDSP(FMOD_CHANNELCONTROL_DSP_HEAD, m_meterDsp) != FMOD_OK
         || group->addDSP(FMOD_CHANNELCONTROL_DSP_HEAD, m_gainDsp) != FMOD_OK
         || group->addDSP(FMOD_CHANNELCONTROL_DSP_HEAD, m_limiterDsp) != FMOD_OK) {
@@ -273,7 +273,7 @@ void DynamicVolumeManager::ensureOutputOrder() {
         return;
     }
 
-    // Restore our chain order if another feature inserted a DSP.
+    // restore our chain order if another feature inserted a dsp.
     m_attachedGroup->setDSPIndex(m_meterDsp, FMOD_CHANNELCONTROL_DSP_HEAD);
     m_attachedGroup->setDSPIndex(m_gainDsp, FMOD_CHANNELCONTROL_DSP_HEAD);
     m_attachedGroup->setDSPIndex(m_limiterDsp, FMOD_CHANNELCONTROL_DSP_HEAD);
@@ -348,7 +348,7 @@ float DynamicVolumeManager::readWindowPeakLufs() const {
         return kInvalidLufs;
     }
     if (!info) return kInvalidLufs;
-    // Peak momentary loudness survives fade-ins; averages would under-duck drops.
+    // peak momentary loudness survives fade-ins; averages would under-duck drops.
     return isValidLufs(info->maxmomentaryloudness)
         ? info->maxmomentaryloudness - readGroupGainDb() : kInvalidLufs;
 }
@@ -418,7 +418,7 @@ bool DynamicVolumeManager::pollForSongChange() {
 
     m_lastSound = sound;
 
-    // Ignore the poll echo of a recent playMusic notification.
+    // ignore the poll echo of a recent playmusic notification.
     if (m_pollClock < m_suppressPollUntil) return false;
 
     notifySongChanged({});
@@ -429,17 +429,17 @@ void DynamicVolumeManager::notifySongChanged(std::string const& songKey) {
     if (m_shuttingDown || paimon::isRuntimeShuttingDown()) return;
     if (!m_cfg.enabled || !moduleOn()) return;
 
-    // Give the channel group time to catch up before polling again.
+    // give the channel group time to catch up before polling again.
     m_suppressPollUntil = m_pollClock + 0.35f;
 
     bool const sameSong = m_hasSong && !songKey.empty() && songKey == m_songKey;
     if (sameSong && !m_cfg.reduckSameSong) {
-        // A restart keeps the gain already reached by the ramp.
+        // a restart keeps the gain already reached by the ramp.
         m_songKey = songKey;
         return;
     }
 
-    // The outgoing settled level becomes the new reference.
+    // the outgoing settled level becomes the new reference.
     if (isValidLufs(m_settledLufs)) {
         m_referenceLufs = m_settledLufs;
     }
@@ -452,7 +452,7 @@ void DynamicVolumeManager::notifySongChanged(std::string const& songKey) {
     m_analysisPeak = kInvalidLufs;
     m_settledLufs  = kInvalidLufs;
 
-    // Duck immediately while the meter warms up; without a reference, start at unity.
+    // duck immediately while the meter warms up; without a reference, start at unity.
     bool const haveReference = m_cfg.mode == Mode::Fixed || isValidLufs(m_referenceLufs);
     m_floorDb = haveReference
         ? std::clamp(m_cfg.initialDuckDb, -std::abs(m_cfg.maxCutDb), 0.0f)
@@ -466,7 +466,7 @@ void DynamicVolumeManager::update(float dt) {
     if (m_performancePaused) return;
     if (!m_loaded) loadConfig();
 
-    // Sample the module registry twice per second; a per-frame lookup is expensive.
+    // sample the module registry twice per second; a per-frame lookup is expensive.
     if (m_moduleCheckCooldown-- <= 0) {
         m_moduleCheckCooldown = 30;
         m_moduleOnCached = moduleOn();
@@ -483,13 +483,13 @@ void DynamicVolumeManager::update(float dt) {
 
     if (!ensureDsps()) return;
 
-    // Advance before guards so the playMusic suppression window always expires.
+    // advance before guards so the playmusic suppression window always expires.
     m_pollClock += dt;
 
     auto* engine = FMODAudioEngine::sharedEngine();
     float const musicVolume = engine ? engine->m_musicVolume : 0.0f;
 
-    // Disabled contexts glide to unity and stop measuring.
+    // disabled contexts glide to unity and stop measuring.
     if (musicVolume <= 0.0f || !contextAllowed()) {
         m_targetDb = 0.0f;
         m_appliedDb = approach(m_appliedDb, m_targetDb, dt, m_cfg.smoothingSeconds);
@@ -509,7 +509,7 @@ void DynamicVolumeManager::update(float dt) {
     };
 
     if (!m_hasSong) {
-        // Seed the first reference from the already-playing track.
+        // seed the first reference from the already-playing track.
         trackPeak(m_settledLufs);
         m_targetDb = 0.0f;
     } else {
@@ -527,26 +527,26 @@ void DynamicVolumeManager::update(float dt) {
                 m_settledLufs  = m_measuredLufs;
                 m_analyzing    = false;
             } else if (isValidLufs(m_analysisPeak)) {
-                // Converge on the measured floor instead of holding the blind duck.
+                // converge on the measured floor instead of holding the blind duck.
                 m_measuredLufs = m_analysisPeak;
             }
         } else {
-            // Follow the song so the next track matches its settled loudness.
+            // follow the song so the next track matches its settled loudness.
             trackPeak(m_settledLufs);
-            // Fixed keeps correcting; ramping modes lock the floor so the climb ends.
+            // fixed keeps correcting; ramping modes lock the floor so the climb ends.
             if (m_cfg.mode == Mode::Fixed && isValidLufs(m_settledLufs)) {
                 m_measuredLufs = m_settledLufs;
             }
         }
 
-        // Fixed always uses its target; ramping modes leave the first track unchanged.
+        // fixed always uses its target; ramping modes leave the first track unchanged.
         bool const fixed = m_cfg.mode == Mode::Fixed;
         float const reference = fixed ? m_cfg.targetLufs : m_referenceLufs;
         bool const canMatch = (fixed || isValidLufs(m_referenceLufs))
                            && isValidLufs(m_measuredLufs);
 
         float const matched = canMatch ? matchGainDb(m_cfg, m_measuredLufs, reference) : 0.0f;
-        // Ease the floor into place during analysis.
+        // ease the floor into place during analysis.
         float const floorRate = m_analyzing ? std::min(1.0f, dt * 4.0f) : std::min(1.0f, dt * 8.0f);
         m_floorDb += (matched - m_floorDb) * floorRate;
 

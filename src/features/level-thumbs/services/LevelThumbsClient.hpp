@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
-// Same public API as cdc.level_thumbnails, so levels with no Paimbnails
+// same public api as cdc.level_thumbnails, so levels with no paimbnails
 // thumbnail still show one without requiring both mods.
 
 namespace paimon::levelthumbs {
@@ -27,7 +27,7 @@ public:
 
     static LevelThumbsClient& get();
 
-    // Main thread only; the callback lands on the main thread too and never
+    // main thread only; the callback lands on the main thread too and never
     // before this returns.
     void fetchThumbnail(int levelID, Quality quality, DataCallback callback);
 
@@ -49,7 +49,7 @@ private:
         std::vector<DataCallback> callbacks;
     };
 
-    // Resolved from the other mod's settings, so both are main thread only.
+    // resolved from the other mod's settings, so both are main thread only.
     std::filesystem::path cacheDir() const;
     std::filesystem::path entryPath(int levelID, Quality quality) const;
 
@@ -60,8 +60,8 @@ private:
     void finish(std::shared_ptr<Request> const& request, bool success, std::vector<uint8_t> const& data);
     void markNotFound(int levelID);
 
-    // Queue state stays on the main thread: fetchThumbnail runs from
-    // ThumbnailLoader::finishTask and every web callback lands there too.
+    // queue state stays on the main thread: fetchthumbnail runs from
+    // thumbnailloader::finishtask and every web callback lands there too.
     std::unordered_map<int, std::shared_ptr<Request>> m_inflight;
     std::deque<std::shared_ptr<Request>> m_queue;
     int m_activeRequests = 0;
@@ -79,7 +79,7 @@ private:
 };
 
 bool fallbackEnabled();
-// Whether the fallback may answer for this id at all; GIF keys and levels we
+// whether the fallback may answer for this id at all; gif keys and levels we
 // already know the database has nothing for are excluded.
 bool shouldFallback(int levelID);
 Quality qualityForThumbnail(bool highQuality);

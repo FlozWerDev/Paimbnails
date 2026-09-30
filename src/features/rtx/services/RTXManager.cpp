@@ -14,17 +14,17 @@ using namespace geode::prelude;
 
 namespace paimon::rtx {
 
-// Only when a saved field flips meaning.
+// only when a saved field flips meaning.
 constexpr int kConfigSchema = 3;
 
 void applyPreset(RTXConfig& cfg, Preset preset) {
-    // Pricey presets raise filter too: 8 rays alone aren't enough.
+    // pricey presets raise filter too: 8 rays alone aren't enough.
     switch (preset) {
         case Preset::Performance:
             cfg.renderScale = 0.35f; cfg.rayCount = 2; cfg.raySteps = 10;
             cfg.rayDistance = 0.24f; cfg.stepGrowth = 1.35f; cfg.bloomPasses = 3;
             cfg.denoise = 2.60f; cfg.atrousPasses = 2;
-            // Low temporal: with frameSkip=1, 0.90 left trails.
+            // low temporal: with frameskip=1, 0.90 left trails.
             cfg.temporal = 0.85f; cfg.frameSkip = 1;
             break;
         case Preset::Balanced:
@@ -90,7 +90,7 @@ void RTXManager::init() {
               m_config.enabled, presetName(m_config.preset));
 }
 
-// One row per persisted field; load/save/sanitize all walk this table.
+// one row per persisted field; load/save/sanitize all walk this table.
 struct RtxField {
     char const* key;
     std::variant<bool RTXConfig::*, int RTXConfig::*, float RTXConfig::*> member;
@@ -213,7 +213,7 @@ void RTXManager::loadConfig() {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) {
 #if defined(GEODE_IS_MOBILE)
-        // Fresh phone install: start at Performance so first enable doesn't melt the GPU.
+        // fresh phone install: start at performance so first enable doesn't melt the gpu.
         applyPreset(m_config, Preset::Performance);
 #endif
         return;
@@ -242,12 +242,12 @@ void RTXManager::loadConfig() {
 
     RTXConfig& c = m_config;
 
-    // Schema 1 inverted the filter: reapply the saved preset.
+    // schema 1 inverted the filter: reapply the saved preset.
     if (schema < 2 && c.preset != static_cast<int>(Preset::Custom)) {
         applyPreset(c, static_cast<Preset>(c.preset));
     }
 
-    // Schema 3 moved to linear light: restore the default look.
+    // schema 3 moved to linear light: restore the default look.
     if (schema < 3) {
         RTXConfig const fresh{};
         c.giStrength      = fresh.giStrength;

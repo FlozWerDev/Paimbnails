@@ -1,6 +1,6 @@
 #pragma once
 
-// Track chooser for the editor music panel. Reads the same library the menu
+// track chooser for the editor music panel. reads the same library the menu
 // music player uses, so anything imported or downloaded there shows up here.
 
 #include <Geode/Geode.hpp>

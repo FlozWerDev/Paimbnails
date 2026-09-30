@@ -14,7 +14,7 @@ namespace paimon::icon_maker {
 
 namespace {
 
-// squash direction is free (renderCustomImage refits either way); shrinking keeps the buffer small.
+// squash direction is free (rendercustomimage refits either way); shrinking keeps the buffer small.
 ts::ImageBuffer applyAxisScale(ts::ImageBuffer source, float scaleX, float scaleY) {
     float const longest = std::max(scaleX, scaleY);
     if (longest <= 0.f) return source;
@@ -29,7 +29,7 @@ ts::ImageBuffer applyAxisScale(ts::ImageBuffer source, float scaleX, float scale
 }
 
 std::vector<std::uint8_t> alphaMask(ts::ImageBuffer const& pixels, int maskSize) {
-    // "small" is a Windows headers macro; never name a local that.
+    // "small" is a windows headers macro; never name a local that.
     auto scaled = pixels.resizedBilinear(maskSize, maskSize);
     std::vector<std::uint8_t> mask(static_cast<std::size_t>(maskSize) * maskSize, 0);
     auto const* src = scaled.data();
@@ -68,7 +68,7 @@ geode::Result<ts::ImageBuffer> PieceRenderer::renderPiece(
     auto filled = FillRenderer::apply(placed, piece.fill, imagesDir);
     if (!filled) return filled;
 
-    // The contour is grown from the same silhouette and sits behind the paint.
+    // the contour is grown from the same silhouette and sits behind the paint.
     auto outline = FillRenderer::renderOutline(
         placed, piece.fill.outline, transform.opacity);
     if (outline.empty()) return filled;

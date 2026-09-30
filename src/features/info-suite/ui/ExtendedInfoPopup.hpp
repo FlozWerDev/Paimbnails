@@ -1,7 +1,7 @@
 #pragma once
 
-// Replaces the vanilla "Level Info" alert, so GD's description stays on the first tab.
-// Tab 0 is the dashboard; the rest are raw fields, tapping a row copies it.
+// replaces the vanilla "level info" alert, so gd's description stays on the first tab.
+// tab 0 is the dashboard; the rest are raw fields, tapping a row copies it.
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/GJGameLevel.hpp>
@@ -25,7 +25,7 @@ protected:
     void refreshTabButtons();
     void buildActionRow(float centerX);
 
-    // Geometry of the list, which depends on the filter and on the drawer.
+    // geometry of the list, which depends on the filter and on the drawer.
     bool filterActive() const;
     float listTop() const;
     float listBottom() const;
@@ -80,7 +80,7 @@ protected:
     float m_drawer = 0.f;
     float m_drawerTarget = 0.f;
 
-    // -1 is the visual summary; 0.. map onto FactTab.
+    // -1 is the visual summary; 0.. map onto facttab.
     int m_tab = -1;
     std::string m_query;
 };

@@ -144,7 +144,7 @@ class $modify(PaimonDeathEffectsPlayLayer, PlayLayer) {
     }
 };
 
-// Hook the visual emission itself: cancelled collisions (noclip) never emit it.
+// hook the visual emission itself: cancelled collisions (noclip) never emit it.
 class $modify(PaimonDeathAnimationPlayer, PlayerObject) {
     void playDeathEffect() {
         auto play = PlayLayer::get();

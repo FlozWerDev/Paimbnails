@@ -1,5 +1,5 @@
-// Shades the icon preview when Better Unlock Info is around, after zilko's
-// "Icon Gradients" (independent implementation; idea credit zilko144, unlicensed).
+// shades the icon preview when better unlock info is around, after zilko's
+// "icon gradients" (independent implementation; idea credit zilko144, unlicensed).
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/ItemInfoPopup.hpp>

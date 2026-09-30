@@ -6,10 +6,10 @@
 
 namespace paimon::levelsearch {
 
-// Releases search focus so no IME listener survives the scene change.
+// releases search focus so no ime listener survives the scene change.
 void releaseSearchInputFocus(LevelSearchLayer* layer);
 
-// CCMenu ignoring touches outside a bounds node: CCClippingNode clips rendering only.
+// ccmenu ignoring touches outside a bounds node: ccclippingnode clips rendering only.
 class BoundedTouchMenu : public cocos2d::CCMenu {
 public:
     static BoundedTouchMenu* create() {

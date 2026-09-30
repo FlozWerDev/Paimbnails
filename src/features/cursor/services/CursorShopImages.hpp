@@ -1,5 +1,5 @@
 #pragma once
-// Queued remote thumbs with a concurrency cap: 40 at once left cells blank.
+// queued remote thumbs with a concurrency cap: 40 at once left cells blank.
 
 #include <Geode/Geode.hpp>
 
@@ -17,7 +17,7 @@ public:
 
     static ShopImages& get();
 
-    // Cached texture, else queued download; cb gets nullptr on failure.
+    // cached texture, else queued download; cb gets nullptr on failure.
     cocos2d::CCTexture2D* fetch(std::string const& url, Callback cb);
 
     void clear();
@@ -37,7 +37,7 @@ private:
     int m_active = 0;
 };
 
-// Mounts the thumb on `holder` when it arrives; placeholder until then, "?" on failure.
+// mounts the thumb on `holder` when it arrives; placeholder until then, "?" on failure.
 void mountThumb(cocos2d::CCNode* holder, std::string const& url,
                 float maxWidth, float maxHeight);
 

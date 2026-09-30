@@ -8,7 +8,7 @@ namespace paimon::icon_gradients {
 
 inline constexpr char kSavedGradientsKey[] = "icon-gradients-saved-gradients";
 
-// Separate Dual Icons lives inside Paimbnails now: its saved values live on
+// separate dual icons lives inside paimbnails now: its saved values live on
 // this mod and its module toggle is the "is it loaded" check.
 inline bool sdiEnabled() {
     return paimon::modules::isEnabled("paimbnails.separatedual.global");
@@ -57,7 +57,7 @@ public:
     static void applyGradient(SimplePlayer*, GradientConfig, ColorType, bool, bool, int);
     static void applyGradient(CCSprite*, GradientConfig, IconType, ColorType, int, bool, bool, bool, int, bool = false);
 
-    // One-call menu-doll paint: resolves the icon's kind, fetches its
+    // one-call menu-doll paint: resolves the icon's kind, fetches its
     // gradient and shades it. `extra` selects the shader variant.
     static void paintMenuIcon(SimplePlayer*, bool, int);
 

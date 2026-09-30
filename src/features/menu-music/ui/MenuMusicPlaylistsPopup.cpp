@@ -370,7 +370,7 @@ void MenuMusicPlaylistsPopup::onCreatePlaylist(CCObject*) {
     pl.createdUnixMs = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
     lib.addPlaylist(pl);
-    // first playlist becomes active so "Playlist" mode works with no extra step.
+    // first playlist becomes active so "playlist" mode works with no extra step.
     if (lib.activePlaylistId().empty()) {
         lib.setActivePlaylistId(pl.id);
     }

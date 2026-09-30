@@ -32,7 +32,7 @@ public:
     void setServerEnabled(bool enabled) { m_serverEnabled = enabled; }
 
     void getThumbnails(int levelId, ThumbnailListCallback callback, bool forceRefresh = false);
-    // Reorder answers with the list just written; parsing beats re-reading (edge caches lag).
+    // reorder answers with the list just written; parsing beats re-reading (edge caches lag).
     static bool parseThumbnailList(std::string const& response, std::vector<ThumbnailInfo>& out);
     arc::Future<ThumbnailGalleryResult> fetchThumbnailsFuture(int levelId, bool forceRefresh = false);
     void getThumbnailInfo(int levelId, ActionCallback callback);
@@ -71,7 +71,7 @@ public:
 
     bool hasGalleryMetadataCached(int levelId);
 
-    // PNG/JPG/WebP/GIF/QOI/JXL via ImagePlus; JPEG fallback via CCImage.
+    // png/jpg/webp/gif/qoi/jxl via imageplus; jpeg fallback via ccimage.
     static cocos2d::CCTexture2D* webpToTexture(std::vector<uint8_t> const& data);
     static cocos2d::CCTexture2D* bytesToTexture(std::vector<uint8_t> const& data);
     static bool isGIFData(std::vector<uint8_t> const& data);
@@ -106,12 +106,12 @@ private:
     std::mutex m_uploadMutex;
     bool beginUpload(int levelId);
     void finishUpload(int levelId);
-    // Shared body for uploadThumbnail/GIF/Video; kind is "png", "gif" or "mp4".
+    // shared body for uploadthumbnail/gif/video; kind is "png", "gif" or "mp4".
     void uploadMedia(int levelId, std::vector<uint8_t> const& data,
                      std::string const& username, UploadCallback callback,
                      std::string const& levelMeta, std::string_view kind, bool isGif);
 
-    // Coalesces getThumbnails into one list-batch per short window: no request per level.
+    // coalesces getthumbnails into one list-batch per short window: no request per level.
     static constexpr int BATCH_LIST_FLUSH_DELAY_MS = 50;
     static constexpr size_t BATCH_LIST_MAX_IDS = 40;
     std::vector<int> m_batchListPending;

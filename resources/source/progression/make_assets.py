@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""Draws the progression medals, plates and overlays into resources/.
-
-Everything is rendered in white/grey over a pure black outline so the runtime
-can recolour a sprite with setColor(): a multiply keeps the outline black and
-turns the body into the tier or rarity colour.
-
-    python3 resources/source/progression/make_assets.py
-"""
+"""grayscale bodies keep black outlines when the runtime multiplies the tint."""
 
 import math
 import os
@@ -21,7 +14,7 @@ BODY = (196, 196, 196, 255)
 FACE = (232, 232, 232, 255)
 GLOSS = (255, 255, 255, 255)
 SHADE = (150, 150, 150, 255)
-# The recessed face stays dark after the tint, so a white number or a game icon
+# the recessed face stays dark after the tint, so a white number or a game icon
 # on top of it always has contrast.
 DARK = (84, 84, 92, 255)
 
@@ -102,7 +95,7 @@ def quad(a, ctrl, b, steps=14):
 
 
 def shield_points(cx, cy, half):
-    # y grows downwards in PIL, so the tip is at +y.
+    # y grows downwards in pil, so the tip is at +y.
     left = (cx - half, cy - half * 0.42)
     right = (cx + half, cy - half * 0.42)
     tip = (cx, cy + half)
@@ -136,7 +129,7 @@ def hexagon_points(cx, cy, r):
 
 def medal(points, center, size, face=0.60, face_points=None, face_center=None,
           gloss_top=True):
-    """Black rim, lit body, recessed dark face - the GD medal recipe."""
+    """black rim, lit body, recessed dark face - the gd medal recipe."""
     img = canvas(size)
     d = ImageDraw.Draw(img)
 
@@ -163,7 +156,7 @@ def medal(points, center, size, face=0.60, face_points=None, face_center=None,
     return img
 
 
-# Geode treats these files as the UHD variant and downscales the rest, so the
+# geode treats these files as the uhd variant and downscales the rest, so the
 # canvas is four times the biggest size the medal is ever drawn at.
 def make_tier_frames():
     size = 288
@@ -174,7 +167,7 @@ def make_tier_frames():
     save(medal(hexagon_points(c[0], c[1], half), c, size), "paim_progTierHex.png", size)
     save(medal(shield_points(c[0], c[1], half * 0.92), c, size), "paim_progTierShield.png", size)
     save(medal(star_points(c[0], c[1], half, half * 0.72, 8), c, size), "paim_progTierStar.png", size)
-    # The crown has no middle to recess, so its face is the band across the
+    # the crown has no middle to recess, so its face is the band across the
     # base where the level number sits.
     band_c = (c[0], c[1] + size * SS * 0.24)
     save(medal(crown_points(c[0], c[1], half), c, size,
@@ -202,7 +195,7 @@ def make_ring():
     save(img, "paim_progRing.png", size)
 
 
-# The tile is one flat rounded square: black rim, body tinted with the rarity at
+# the tile is one flat rounded square: black rim, body tinted with the rarity at
 # runtime, and a separate ring and fill drawn on the same footprint so the three
 # sprites line up when scaled to the same size.
 TILE_HALF = 0.44
@@ -226,7 +219,7 @@ def make_tile(size=288):
     d.polygon(outer, fill=BLACK)
     d.polygon(inner, fill=GLOSS)
 
-    # Vertical falloff, so a flat tint still has a top edge to read against.
+    # vertical falloff, so a flat tint still has a top edge to read against.
     body = canvas(size)
     ImageDraw.Draw(body).polygon(inner, fill=BLACK)
     ramp = Image.linear_gradient("L").resize((U, U)).point(lambda v: int(v * 0.34))
@@ -238,7 +231,7 @@ def make_tile(size=288):
 
 
 def make_tile_fill(size=288):
-    """Body without the rim, for the CCProgressTimer that fills a locked tile."""
+    """body without the rim, for the ccprogresstimer that fills a locked tile."""
     img = canvas(size)
     U = size * SS
     c = (U / 2, U / 2)
@@ -257,7 +250,7 @@ def make_tile_ring(size=288):
 
 
 def make_glow():
-    # A smooth falloff gains nothing from supersampling, so it is drawn 1:1.
+    # a smooth falloff gains nothing from supersampling, so it is drawn 1:1.
     size = 192
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     px = img.load()

@@ -35,7 +35,7 @@ protected:
     void loadForYou();
     void startForYouQueries();
     void fireNextForYouQuery();
-    // Called once every planned query has answered: ranks what came back.
+    // called once every planned query has answered: ranks what came back.
     void finishForYouQueries();
     void createForYouList();
     void onForYouPlayLevel(cocos2d::CCObject* sender);
@@ -72,13 +72,13 @@ protected:
     uint32_t m_pendingLevelGeneration = 0;
 
     bool m_forYouActive = false;
-    // Everything the planned queries returned, before scoring.
+    // everything the planned queries returned, before scoring.
     std::vector<geode::Ref<GJGameLevel>> m_forYouCandidates;
-    // The ranked feed actually rendered.
+    // the ranked feed actually rendered.
     std::vector<paimon::foryou::Recommendation> m_forYouFeed;
     std::vector<paimon::foryou::FeedQuery> m_forYouQueryQueue;
     int m_forYouQueryIndex = 0;
-    // Guards against a second load while planning or ranking is in flight.
+    // guards against a second load while planning or ranking is in flight.
     bool m_forYouBusy = false;
 
     cocos2d::CCSprite* m_bgSprite = nullptr;
@@ -99,7 +99,7 @@ protected:
     FMOD::DSP* m_lowpassDSP = nullptr;
     FMOD::DSP* m_reverbDSP = nullptr;
 
-    // Push/pop position save so cave music resumes after pushed scenes.
+    // push/pop position save so cave music resumes after pushed scenes.
     unsigned int m_savedCaveMusicPosMs = 0;
     bool m_caveMusicShouldRestore = false;
     bool m_musicPlaying = false;

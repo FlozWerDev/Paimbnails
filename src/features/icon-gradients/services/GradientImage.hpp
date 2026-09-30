@@ -13,6 +13,7 @@ struct GradientImageAtlas {
     size_t textureBytes = 0;
 };
 std::shared_ptr<GradientImageAtlas> getGradientImageAtlas(std::vector<SimplePoint> const& points);
-// The draw hook binds the atlas per sprite, including during preview fades.
+void shutdownGradientImageCache();
+// the draw hook binds the atlas per sprite, including during preview fades.
 void setGradientImage(cocos2d::CCSprite* sprite, std::shared_ptr<GradientImageAtlas> atlas);
 }

@@ -33,7 +33,7 @@ using namespace geode::prelude;
 
 namespace paimon::gifimport {
 
-// Workers fill mailboxes; tick applies them on Cocos thread.
+// workers fill mailboxes; tick applies them on cocos thread.
 struct ProcessingProgress {
     std::atomic<float> value = 0.f;
     std::atomic<int> stage = static_cast<int>(BuildStage::Preparing);
@@ -275,7 +275,9 @@ bool GifImportPopup::init() {
 
 void GifImportPopup::loadOptions() {
     auto* mod = Mod::get();
-    m_options.maxDimension = static_cast<int>(mod->getSavedValue<int64_t>("gif-import-resolution", 128));
+    m_options.maxDimension = std::clamp(static_cast<int>(
+        mod->getSavedValue<int64_t>("gif-import-resolution", 320)), 4, 320);
+    m_options.autoResolution = mod->getSavedValue<bool>("gif-import-auto-resolution", false);
     m_options.maxColors = static_cast<int>(mod->getSavedValue<int64_t>("gif-import-colors", 24));
     m_options.objectBudget = static_cast<int>(mod->getSavedValue<int64_t>("gif-import-budget", 12000));
     m_options.maxFrames = static_cast<int>(mod->getSavedValue<int64_t>("gif-import-frames", 90));
@@ -316,6 +318,7 @@ void GifImportPopup::loadOptions() {
 void GifImportPopup::saveOptions() const {
     auto* mod = Mod::get();
     mod->setSavedValue<int64_t>("gif-import-resolution", m_options.maxDimension);
+    mod->setSavedValue<bool>("gif-import-auto-resolution", m_options.autoResolution);
     mod->setSavedValue<int64_t>("gif-import-colors", m_options.maxColors);
     mod->setSavedValue<int64_t>("gif-import-budget", m_options.objectBudget);
     mod->setSavedValue<int64_t>("gif-import-frames", m_options.maxFrames);
@@ -539,16 +542,17 @@ void GifImportPopup::startProcess() {
 
     // free mode may arrive saved without touching the button.
     if (m_options.mode == ImportMode::Free && !stampLibraryReady()) buildStampLibrary();
-    // downscaling touches GL: here, not on the thread.
+    // downscaling touches gl: here, not on the thread.
     if (usesSoftGeometry(m_options.mode)) {
         auto library = buildSoftStampLibrary();
         m_options.softStamps = std::move(library.stamps);
         m_options.softMatchErrors = library.errors;
     }
     float const blur = m_options.mode == ImportMode::Blur ? m_options.blurRadius : 0.f;
-    if (!m_scaled || m_scaledFor != m_options.maxDimension || m_scaledBlur != blur) {
-        m_scaled = prescaleSource(m_source, m_options.maxDimension, blur);
-        m_scaledFor = m_options.maxDimension;
+    int const resolutionLimit = sourceResolutionLimit(m_options);
+    if (!m_scaled || m_scaledFor != resolutionLimit || m_scaledBlur != blur) {
+        m_scaled = prescaleSource(m_source, resolutionLimit, blur);
+        m_scaledFor = resolutionLimit;
         m_scaledBlur = blur;
     }
     auto source = m_scaled;
@@ -602,7 +606,9 @@ void GifImportPopup::applyProcessed(BuildResult result) {
 }
 
 void GifImportPopup::refreshControls() {
-    m_resolutionValue->setString(fmt::format("{} px", m_options.maxDimension).c_str());
+    bool const autoResolution = m_options.autoResolution && m_options.mode == ImportMode::Paint;
+    m_resolutionValue->setString(autoResolution ? "Auto"
+        : fmt::format("{} px", m_options.maxDimension).c_str());
     m_colorsValue->setString(std::to_string(m_options.maxColors).c_str());
     m_budgetValue->setString(fmt::format("{}k", m_options.objectBudget / 1000.f).c_str());
     m_framesValue->setString(std::to_string(m_options.maxFrames).c_str());
@@ -679,7 +685,8 @@ void GifImportPopup::refreshControls() {
         "{} formas ({} blq, {} traz, {} circ, {} tri{}) + {} triggers = {}{}",
         m_plan->width, m_plan->height, m_plan->frames.size(),
         fps > 0.0 ? fmt::format(" ({:.1f} fps)", fps) : "",
-        m_plan->palette.size(),
+        m_plan->sourceColorCount > 0
+            ? m_plan->sourceColorCount : static_cast<int>(m_plan->palette.size()),
         m_plan->strategy, review,
         m_plan->visualObjects, m_plan->blockObjects, m_plan->strokeObjects,
         m_plan->circleObjects, m_plan->triangleObjects, extra,
@@ -865,9 +872,10 @@ void GifImportPopup::runBackground() {
         m_options.softMatchErrors = library.errors;
     }
     float const blur = m_options.mode == ImportMode::Blur ? m_options.blurRadius : 0.f;
-    if (!m_scaled || m_scaledFor != m_options.maxDimension || m_scaledBlur != blur) {
-        m_scaled = prescaleSource(m_source, m_options.maxDimension, blur);
-        m_scaledFor = m_options.maxDimension;
+    int const resolutionLimit = sourceResolutionLimit(m_options);
+    if (!m_scaled || m_scaledFor != resolutionLimit || m_scaledBlur != blur) {
+        m_scaled = prescaleSource(m_source, resolutionLimit, blur);
+        m_scaledFor = resolutionLimit;
         m_scaledBlur = blur;
     }
     auto result = startBackgroundImport(ui, m_scaled, m_options, center);
@@ -940,9 +948,18 @@ void GifImportPopup::importObjects() {
 }
 
 void GifImportPopup::adjustResolution(int direction) {
-    int const from = direction < 0 ? m_options.maxDimension - 1 : m_options.maxDimension;
-    int const step = from >= 160 ? 16 : from >= 64 ? 8 : 4;
-    m_options.maxDimension = std::clamp(m_options.maxDimension + direction * step, 4, 320);
+    if (m_options.mode == ImportMode::Paint && m_options.autoResolution) {
+        if (direction >= 0) return;
+        m_options.autoResolution = false;
+        m_options.maxDimension = 320;
+    } else if (m_options.mode == ImportMode::Paint && direction > 0 &&
+               m_options.maxDimension >= 320) {
+        m_options.autoResolution = true;
+    } else {
+        int const from = direction < 0 ? m_options.maxDimension - 1 : m_options.maxDimension;
+        int const step = from >= 160 ? 16 : from >= 64 ? 8 : 4;
+        m_options.maxDimension = std::clamp(m_options.maxDimension + direction * step, 4, 320);
+    }
     requestProcess();
 }
 
@@ -989,7 +1006,7 @@ void GifImportPopup::toggleMode() {
         : m_options.mode == ImportMode::Vert ? ImportMode::VertX
         : m_options.mode == ImportMode::VertX ? ImportMode::Blocks
         : ImportMode::Free;
-    // decoration touches GL: warn; with an active plan it rides in startProcess.
+    // decoration touches gl: warn; with an active plan it rides in startprocess.
     if (m_options.mode == ImportMode::Free && !stampLibraryReady() && !m_processing) {
         refreshControls();
         showBusy("Leyendo la decoracion de GD");

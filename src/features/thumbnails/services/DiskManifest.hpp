@@ -18,7 +18,7 @@ public:
     bool contains(int levelID, bool isGif) const;
     DiskManifestEntry const* getEntry(int levelID, bool isGif) const;
 
-    // Lock-free queries (caller MUST hold mutex)
+    // lock-free queries (caller must hold mutex)
     bool containsLocked(int levelID, bool isGif) const;
     DiskManifestEntry const* getEntryLocked(int levelID, bool isGif) const;
 
@@ -27,7 +27,7 @@ public:
     void clear();
     void clearPreservingMainLevels();
 
-    // touch lastAccess without marking the whole manifest dirty
+    // touch lastaccess without marking the whole manifest dirty
     void touchAccess(int levelID, bool isGif);
 
     struct PruneResult {
@@ -38,13 +38,13 @@ public:
     void applyPrune(PruneResult const& result);
 
     size_t totalBytes() const;
-    size_t totalBytesLocked() const; // caller MUST hold mutex
+    size_t totalBytesLocked() const; // caller must hold mutex
     size_t entryCount() const;
 
     mutable std::recursive_mutex mutex;
 
 private:
-    // key = "levelID" or "-levelID" for gif, or "url:<hash>" for gallery
+    // key = "levelid" or "-levelid" for gif, or "url:<hash>" for gallery
     std::unordered_map<std::string, DiskManifestEntry> m_entries;
     std::unordered_map<std::string, std::string> m_urlToKey;
     std::filesystem::path m_cacheDir;

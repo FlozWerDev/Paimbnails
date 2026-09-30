@@ -62,8 +62,8 @@ namespace {
         sp->addChild(menu, 100);
     }
 
-    // Paints the profile icon with the player's shared cube and wires the tap
-    // target. Assumes the cube is already registered in More Icons.
+    // paints the profile icon with the player's shared cube and wires the tap
+    // target. assumes the cube is already registered in more icons.
     void applyToProfile(CCNode* root, int accountID, GlobalIconMeta const& meta) {
         auto it = meta.icons.find("cube");
         if (it == meta.icons.end()) return;
@@ -95,7 +95,7 @@ void renderProfileCube(cocos2d::CCNode* searchRoot, int accountID) {
             auto root = rootWeak.lock();
             if (!root) return;
 
-            // Already downloaded and registered: skip straight to drawing, which
+            // already downloaded and registered: skip straight to drawing, which
             // is the common path once the cache is warm.
             if (GlobalIconStorage::get().isReady(accountID, it->second)) {
                 applyToProfile(root.data(), accountID, meta);

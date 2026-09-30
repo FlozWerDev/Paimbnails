@@ -162,12 +162,12 @@ CCNode* SlotsGridView::makeSlotCard(std::string const& id,
         previewHost->addChildAtPosition(placeholder, Anchor::Center);
     }
 
-    // CCMenu ignores anchor: position is the menu centre, children are offsets. No addChildAtPosition (AnchorLayout piles items).
+    // ccmenu ignores anchor: position is the menu centre, children are offsets. no addchildatposition (anchorlayout piles items).
     auto* menu = CCMenu::create();
     if (!menu) return card;
     menu->setPosition({kCardW * 0.5f, kCardH * 0.5f});
 
-    // Local Y of the card's bottom edge, relative to the menu centre.
+    // local y of the card's bottom edge, relative to the menu centre.
     constexpr float kBottom = -kCardH * 0.5f;
 
     if (auto* applySpr = ButtonSprite::create(SlotStore::get().activeSlotId() == id ? "Disable" : "Apply", "goldFont.fnt", "GJ_button_01.png", 0.42f)) {
@@ -186,7 +186,7 @@ CCNode* SlotsGridView::makeSlotCard(std::string const& id,
             [action = std::move(action)](CCMenuItemSpriteExtra*) { if (action) action(); });
     };
 
-    // Bottom side-by-side; ~100px apart so sprites don't touch.
+    // bottom side-by-side; ~100px apart so sprites don't touch.
     if (auto* editBtn = makeMini("Edit", "GJ_button_04.png",
             [this, id]() { if (m_onEdit) m_onEdit(id); })) {
         editBtn->setPosition({-50.f, kBottom + 18.f});

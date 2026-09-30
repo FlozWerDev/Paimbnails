@@ -48,10 +48,10 @@ struct DrawShapeLayout {
 
 struct EditableMenuButton {
     cocos2d::CCMenu* menu = nullptr;
-    // Retained via Ref<>: nodes can be freed (unloading scenes, PlayLayer entry)
+    // retained via ref<>: nodes can be freed (unloading scenes, playlayer entry)
     // while the editor is alive with in-flight scheduler updates.
     geode::Ref<cocos2d::CCNode> node;
-    // Extra labels on the same line following anchor `node`.
+    // extra labels on the same line following anchor `node`.
     std::vector<geode::Ref<cocos2d::CCNode>> labelGroupFollowers;
     std::string key;
     std::string label;
@@ -75,14 +75,14 @@ public:
     void applySnapshot(std::vector<EditableMenuButton> const& buttons, LayoutSnapshot const& snapshot, cocos2d::CCNode* root);
     void commit(std::vector<EditableMenuButton> const& buttons, cocos2d::CCNode* root);
     void resetAll();
-    // Merge: update only the given keys, erase from custom when == default.
-    // Leaves other scenes and shapes alone; used by the editor on save.
+    // merge: update only the given keys, erase from custom when == default.
+    // leaves other scenes and shapes alone; used by the editor on save.
     void mergeCustomFromButtons(std::unordered_map<std::string, MenuButtonLayout> const& buttons);
     void syncShapes(cocos2d::CCNode* root, std::vector<DrawShapeLayout> const& shapes);
 
     std::optional<MenuButtonLayout> getDefaultLayout(std::string const& key) const;
     std::optional<MenuButtonLayout> getCustomLayout(std::string const& key) const;
-    // Session default (dynamic scenes); nullopt when not captured.
+    // session default (dynamic scenes); nullopt when not captured.
     std::optional<MenuButtonLayout> getSessionDefaultLayout(std::string const& key) const;
 
     static std::vector<DrawShapeLayout> captureShapes(cocos2d::CCNode* root);
@@ -107,7 +107,7 @@ private:
     std::unordered_map<std::string, MenuButtonLayout> m_custom;
     std::vector<DrawShapeLayout> m_shapes;
     std::unordered_map<std::string, std::vector<cocos2d::CCPoint>> m_labelFollowerOffsets;
-    // Not persisted; keeps custom offsets right when GD reorders buttons.
+    // not persisted; keeps custom offsets right when gd reorders buttons.
     std::unordered_map<std::string, MenuButtonLayout> m_sessionDefaults;
 };
 

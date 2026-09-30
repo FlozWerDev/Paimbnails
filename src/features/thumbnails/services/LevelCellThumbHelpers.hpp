@@ -35,7 +35,7 @@ inline constexpr int LEVELCELL_GALLERY_SEARCH_WINDOW = 3;
 inline constexpr size_t LEVELCELL_GALLERY_MAX_PENDING = 3;
 inline constexpr float LEVELCELL_GALLERY_RETRY_DELAY = 8.0f;
 inline constexpr int LEVELCELL_GALLERY_MAX_MISSES = 2;
-// Re-enter stagger: avoids FPS spikes with N visible cells.
+// re-enter stagger: avoids fps spikes with n visible cells.
 inline constexpr float LEVELCELL_GALLERY_REENTER_STAGGER = 0.05f;
 inline constexpr int LEVELCELL_GALLERY_REENTER_STAGGER_SLOTS = 12;
 // 0.0f = scheduler runs every frame with real dt (same speed, native-fps smooth).

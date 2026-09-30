@@ -43,7 +43,7 @@ namespace {
             else               player->disableGlowOutline();
         }
         float maxDim = std::max(player->getContentSize().width, player->getContentSize().height);
-        // SimplePlayer contentSize is unreliable (glow/hitbox/empty areas); use a ~30px reference to avoid tiny icons.
+        // simpleplayer contentsize is unreliable (glow/hitbox/empty areas); use a ~30px reference to avoid tiny icons.
         float gdRefSize = 30.f;
         float scale = (maxDim > 10.f && maxDim < 80.f) ? (targetSize / maxDim) : (targetSize / gdRefSize);
         player->setScale(std::max(scale, 0.55f));
@@ -95,7 +95,7 @@ void PostDetailPopup::rebuild() {
         for (auto* c : toRemove) c->removeFromParent();
     }
 
-    // Freed above and only recreated when unlocked; null them so update()/submit don't dangle.
+    // freed above and only recreated when unlocked; null them so update()/submit don't dangle.
     m_replyInput = nullptr;
     m_cooldownLabel = nullptr;
 

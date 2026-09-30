@@ -88,7 +88,7 @@ std::string trimExternalUrl(std::string value) {
 }
 
 DiscordPresenceManager& DiscordPresenceManager::get() {
-    // Never freed: worker can outlive Cocos teardown.
+    // never freed: worker can outlive cocos teardown.
     static auto* instance = new DiscordPresenceManager();
     return *instance;
 }
@@ -620,7 +620,7 @@ bool DiscordPresenceManager::isFocused() const {
     GetWindowThreadProcessId(hwnd, &pid);
     return pid == GetCurrentProcessId();
 #else
-    // Windows-only check: other platforms always report focused.
+    // windows-only check: other platforms always report focused.
     return true;
 #endif
 }

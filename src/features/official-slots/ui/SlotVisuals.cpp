@@ -29,7 +29,7 @@ GJFeatureState featureStateOf(Tier tier) {
 } // namespace
 
 CCNode* createDifficultyBadge(Difficulty difficulty, Tier tier, float scale) {
-    // tier via updateFeatureState: hand-mounted coins doubled the glow in the request list.
+    // tier via updatefeaturestate: hand-mounted coins doubled the glow in the request list.
     auto* face = GJDifficultySprite::create(difficultyFace(difficulty), GJDifficultyName::Short);
     if (!face) return nullptr;
 

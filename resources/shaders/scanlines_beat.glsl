@@ -1,4 +1,4 @@
-// scanlines_beat.glsl — CRT scanlines pulsing with treble + beat.
+// scanlines_beat.glsl — crt scanlines pulsing with treble + beat.
 #ifdef GL_ES
 precision mediump float;
 #endif

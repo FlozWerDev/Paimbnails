@@ -1,5 +1,5 @@
 // claim the deferred preload on first menu entry and show its progress;
-// Bootstrap shares the claim, so re-entry never duplicates the work
+// bootstrap shares the claim, so re-entry never duplicates the work
 
 #include <Geode/modify/MenuLayer.hpp>
 

@@ -51,7 +51,7 @@ ImageBuffer makeSyntheticSprite() {
     return img;
 }
 
-// Ground-truth masks from known geometry (not the classifier): PSNR reference for role reproduction.
+// ground-truth masks from known geometry (not the classifier): psnr reference for role reproduction.
 MaskSet makeGroundTruthMasks(ImageBuffer const& sprite) {
     int W = sprite.width();
     int H = sprite.height();
@@ -178,7 +178,7 @@ bool engineSelfTest() {
         ok = false;
     }
 
-    // Guard: a former dark-pixel rule kept all dark details; dark Color2 must still turn blue.
+    // guard: a former dark-pixel rule kept all dark details; dark color2 must still turn blue.
     auto inner = tinted.at(7, 7);
     if (!(inner.b > inner.r && inner.b > inner.g)) {
         log::error("[texture-studio] selfTest FAIL: dark Color2 pixel did not become blue-dominant");
@@ -193,7 +193,7 @@ bool engineSelfTest() {
         ok = false;
     }
 
-    // ~30 dB PSNR is visually indistinguishable here.
+    // ~30 db psnr is visually indistinguishable here.
     auto gtMasks = makeGroundTruthMasks(sprite);
     auto expected = LuminanceTinter::apply(sprite, gtMasks, tc);
     double psnr = computePsnr(tinted, expected);
@@ -206,13 +206,13 @@ bool engineSelfTest() {
         ok = false;
     }
 
-// OverlayTinter/PackGen parity on a known pixel.
+// overlaytinter/packgen parity on a known pixel.
     {
         ImageBuffer base(2, 1);
         base.setAt(0, 0, {10, 10, 10, 255});
         base.setAt(1, 0, {10, 10, 10, 255});
 
-        // Overlay ink only on x=0: grey 200 (lum = 200) at full alpha.
+        // overlay ink only on x=0: grey 200 (lum = 200) at full alpha.
         OverlayImages ov;
         ov.overlay1 = ImageBuffer(2, 1);
         ov.overlay1.setAt(0, 0, {200, 200, 200, 255});
@@ -224,14 +224,14 @@ bool engineSelfTest() {
 
         auto out = OverlayTinter::apply(base, ov, otc, topts);
 
-        // PackGen: tinted = color * 1.25 → (200, 100, 50), hard replace at a=255.
+        // packgen: tinted = color * 1.25 → (200, 100, 50), hard replace at a=255.
         auto covered = out.at(0, 0);
         if (covered.r != 200 || covered.g != 100 || covered.b != 50) {
             log::error("[texture-studio] selfTest FAIL: overlay tint = ({},{},{}), "
                        "expected (200,100,50)", covered.r, covered.g, covered.b);
             ok = false;
         }
-        // No ink at x=1: PackGen leaves the base pixel untouched.
+        // no ink at x=1: packgen leaves the base pixel untouched.
         auto bare = out.at(1, 0);
         if (bare.r != 10 || bare.g != 10 || bare.b != 10 || bare.a != 255) {
             log::error("[texture-studio] selfTest FAIL: uncovered pixel changed");
@@ -239,7 +239,7 @@ bool engineSelfTest() {
         }
     }
 
-    // PackGen v2 core self-check (headless): kernel, LUT, packer, cache/graph roundtrip.
+    // packgen v2 core self-check (headless): kernel, lut, packer, cache/graph roundtrip.
     {
         auto core = packgen::runSelfCheck();
         if (!core.ok) {

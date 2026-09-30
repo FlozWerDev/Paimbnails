@@ -11,7 +11,7 @@ namespace paimon::icon_maker {
 
 namespace {
 
-// File + MoreIcons quality flag for the current texture quality.
+// file + moreicons quality flag for the current texture quality.
 void pickQuality(CompiledIcon const& compiled,
                  std::filesystem::path& outPng, std::filesystem::path& outPlist,
                  cocos2d::TextureQuality& outQuality) {
@@ -51,7 +51,7 @@ geode::Result<> MoreIconsBridge::registerIcon(IconProject const& project,
 
     auto regName = registeredName(project.id);
 
-    // Wrap external icon edits in pre/refresh (API requirement).
+    // wrap external icon edits in pre/refresh (api requirement).
     more_icons::preRefreshIcons();
     auto* existing = more_icons::getIcon(regName, project.type);
     if (existing) {

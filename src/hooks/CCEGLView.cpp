@@ -17,9 +17,9 @@
 
 using namespace geode::prelude;
 
-// MouseInputEvent keeps right-click handling cross-platform.
+// mouseinputevent keeps right-click handling cross-platform.
 
-// Leak the global listener for the session; Geode frees it on unload.
+// leak the global listener for the session; geode frees it on unload.
 $execute {
     MouseInputEvent().listen(+[](MouseInputData& data) -> bool {
         if (data.button != MouseInputData::Button::Right) return false;
@@ -29,17 +29,17 @@ $execute {
         auto* pl = PlayLayer::get();
         bool const playing = pl && !pl->m_isPaused;
 
-        // During play, right-click is jump; consume it after handling.
+        // during play, right-click is jump; consume it after handling.
         if (playing && Mod::get()->getSavedValue<bool>("invert-mouse-inputs", false)) {
             pl->handleButton(isPress, 1, true);
             return true;
         }
 
-        // Alt+right-click stays with the editor.
+        // alt+right-click stays with the editor.
         if (isPress && !(data.modifiers & KeyboardModifier::Alt)
             && (!pl || pl->m_isPaused)
             && Mod::get()->getSettingValue<bool>("capture-menu-rightclick")) {
-            // Quick Hub owns clicks over its buttons.
+            // quick hub owns clicks over its buttons.
             if (paimon::quickhub::handleQuickButtonRightClick()) return true;
 
             Loader::get()->queueInMainThread([]() {
@@ -68,12 +68,12 @@ $execute {
     ).leak();
 }
 
-// swapBuffers only exists on Windows/Android views; other platforms use other classes.
+// swapbuffers only exists on windows/android views; other platforms use other classes.
 #if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_ANDROID)
 
 class $modify(CaptureView, CCEGLView) {
     static void onModify(auto& self) {
-        // Capture before swap; leave Last available to other frame-capture mods.
+        // capture before swap; leave last available to other frame-capture mods.
         (void)self.setHookPriorityPre("cocos2d::CCEGLView::swapBuffers", geode::Priority::VeryLate);
     }
 
@@ -82,11 +82,11 @@ class $modify(CaptureView, CCEGLView) {
             log::debug("[CaptureView] Executing capture in swapBuffers (back buffer)");
             FramebufferCapture::executeIfPending();
         } else {
-            // Sample before drawing the cursor so the picker never sees it.
+            // sample before drawing the cursor so the picker never sees it.
             paimon::editorcp::ColorPickerOverlay::onPreSwapSample();
         }
 
-        // RTX before cursor
+        // rtx before cursor
         paimon::rtx::RTXRenderer::get().renderFrame();
 
         // cursor last: visible but out of screenshots
@@ -105,8 +105,8 @@ class $modify(CaptureView, CCEGLView) {
 
 };
 
-// CCEGLViewProtocol::handleTouchesBegin has addresses on both Android and iOS.
-#endif // defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_ANDROID)
+// cceglviewprotocol::handletouchesbegin has addresses on both android and ios.
+#endif // defined(geode_is_windows) || defined(geode_is_android)
 #if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_MOBILE)
 
 class $modify(CaptureTouchView, CCEGLViewProtocol) {
@@ -125,4 +125,4 @@ class $modify(CaptureTouchView, CCEGLViewProtocol) {
     }
 };
 
-#endif // defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_MOBILE)
+#endif // defined(geode_is_windows) || defined(geode_is_mobile)

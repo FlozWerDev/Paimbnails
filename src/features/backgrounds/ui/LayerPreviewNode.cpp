@@ -56,7 +56,7 @@ CCLabelBMFont* addLabel(CCNode* parent, char const* text, char const* font,
     return lbl;
 }
 
-// Game window (GJ_square01) centered on `center`.
+// game window (gj_square01) centered on `center`.
 CCNode* addWindow(CCNode* parent, CCPoint center, CCSize size, int z = 0,
                   GLubyte opacity = 255) {
     CCNode* window = paimon::SpriteHelper::safeCreateNineSliceFromFile("GJ_square01.png");
@@ -75,7 +75,7 @@ CCNode* addWindow(CCNode* parent, CCPoint center, CCSize size, int z = 0,
     return window;
 }
 
-// List-style cell rows inside a window.
+// list-style cell rows inside a window.
 void addListRows(CCNode* parent, CCPoint windowCenter, CCSize windowSize,
                  int rows, int z = 2) {
     float const rowW = windowSize.width - 22.f;
@@ -110,13 +110,13 @@ void addListRows(CCNode* parent, CCPoint windowCenter, CCSize windowSize,
     }
 }
 
-// Typical game bottom bar (arrows + center button).
+// typical game bottom bar (arrows + center button).
 void addBottomBar(CCNode* parent, CCSize win) {
     addSpr(parent, "GJ_arrow_01_001.png", {28.f, 28.f}, 0.9f, 3);
     addSpr(parent, "GJ_infoIcon_001.png", {win.width - 26.f, 28.f}, 0.9f, 3);
 }
 
-// Player icon exactly as the user configured it.
+// player icon exactly as the user configured it.
 CCNode* makePlayerIcon(float scale) {
     auto* gm = GameManager::sharedState();
     if (!gm) return nullptr;
@@ -352,7 +352,7 @@ bool LayerPreviewNode::initWithBox(CCSize box, std::string const& layerKey) {
 
     m_key = layerKey.empty() ? "menu" : layerKey;
 
-    // Fit the box to the real game aspect so the mockup stays exact scale.
+    // fit the box to the real game aspect so the mockup stays exact scale.
     auto win = CCDirector::get()->getWinSize();
     float const aspect = win.height > 0.f ? win.width / win.height : 16.f / 9.f;
     float w = box.width;
@@ -478,7 +478,7 @@ void LayerPreviewNode::rebuildBackground() {
 
     auto const cfg = LayerBackgroundManager::get().resolveConfig(m_key);
 
-    // Vanilla backdrop: the game's blue gradient, as the player sees it.
+    // vanilla backdrop: the game's blue gradient, as the player sees it.
     if (cfg.type == "default") {
         if (auto* grad = paimon::SpriteHelper::safeCreate("GJ_gradientBG.png")) {
             auto const size = grad->getContentSize();
@@ -495,7 +495,7 @@ void LayerPreviewNode::rebuildBackground() {
         return;
     }
 
-    // Procedural shader: drawn live and animated.
+    // procedural shader: drawn live and animated.
     if (cfg.type == "shader") {
         auto* program = Shaders::getProceduralBgShaderProgram(cfg.shader);
         auto* sprite = PaimonShaderGradient::create({255, 255, 255, 255}, {255, 255, 255, 255});

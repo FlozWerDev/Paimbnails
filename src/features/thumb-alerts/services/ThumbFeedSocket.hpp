@@ -7,7 +7,7 @@ namespace paimon::net { class WebSocketClient; }
 
 namespace paimon::thumbalerts {
 
-// Live half: socket push, poll as catch-up for downtime (and only path without WebSocketClient).
+// live half: socket push, poll as catch-up for downtime (and only path without websocketclient).
 class ThumbFeedSocket {
 public:
     static ThumbFeedSocket& get();
@@ -28,7 +28,7 @@ private:
     bool m_connecting = false;
     bool m_connected = false;
     int m_attempt = 0;
-    // Invalidates the timers of a connection that has already been replaced.
+    // invalidates the timers of a connection that has already been replaced.
     uint64_t m_generation = 0;
 };
 

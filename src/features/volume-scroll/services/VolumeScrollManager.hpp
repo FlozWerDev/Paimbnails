@@ -5,11 +5,11 @@
 namespace paimon::volscroll {
 
 enum class VolumeKind {
-    Music,  // Ctrl + scroll
-    SFX     // Shift + scroll
+    Music,  // ctrl + scroll
+    SFX     // shift + scroll
 };
 
-// volume overlay, FMOD updates, auto-hide, and the scroll-held state Quick Hub reads.
+// volume overlay, fmod updates, auto-hide, and the scroll-held state quick hub reads.
 
 class VolumeScrollManager {
 public:
@@ -25,7 +25,7 @@ public:
 private:
     VolumeScrollManager() = default;
 
-    // Hidden -> SlidingIn -> Expanding -> Visible -> Collapsing -> SlidingOut.
+    // hidden -> slidingin -> expanding -> visible -> collapsing -> slidingout.
     enum class State {
         Hidden,
         SlidingIn,

@@ -35,7 +35,7 @@ namespace {
 
     float crossZ(CCPoint r, CCPoint v) { return r.x * v.y - r.y * v.x; }
 
-    // 2D cross with angular velocity, in radians per second.
+    // 2d cross with angular velocity, in radians per second.
     CCPoint angularVelAt(CCPoint r, float angVelDeg) {
         float w = angVelDeg * kDegToRad;
         return CCPoint{-r.y * w, r.x * w};
@@ -118,7 +118,7 @@ void PhysicsWorld::wake(Body& b) {
 void PhysicsWorld::applyImpulse(Body& b, CCPoint impulse, CCPoint r) {
     if (b.invMass <= 0.f) return;
     b.vel += impulse * b.invMass;
-    // L = r x J; convert angular impulse back to degrees per second.
+    // l = r x j; convert angular impulse back to degrees per second.
     float angImpulse = crossZ(r, impulse) * b.invInertia * kRadToDeg;
     b.angularVel += angImpulse;
     clampVel(b);
@@ -135,7 +135,7 @@ void PhysicsWorld::registerImpact(Body& b, float speed, float normalAngleDeg) {
 
 void PhysicsWorld::integrate(float dt) {
     float g = m_cfg.gravity * kGravityScale;
-    // Reduce air drag to preserve spin and flight.
+    // reduce air drag to preserve spin and flight.
     float linDamp = std::exp(-m_cfg.airDrag * dt * 2.4f);
     float angDamp = std::exp(-m_cfg.angularDrag * dt * 2.2f);
 
@@ -207,12 +207,12 @@ void PhysicsWorld::collideWalls(Body& b) {
             float oldVx = b.vel.x;
             b.vel.y = bounce(b.vel.y, m_cfg.bounciness);
             float radius = b.halfH;
-            // Tangential contact speed includes rotation.
+            // tangential contact speed includes rotation.
             float omegaRad = b.angularVel * kDegToRad;
             float vContact = oldVx + omegaRad * radius;
             float mu = m_cfg.friction;
             float jF = -vContact * mu / std::max(1e-4f, b.invMass + radius * radius * b.invInertia);
-            // Bound friction by the normal impulse.
+            // bound friction by the normal impulse.
             float jN = std::abs(impact) * (1.f + m_cfg.bounciness) * 0.5f;
             float maxF = mu * jN * 2.5f;
             jF = std::clamp(jF, -maxF, maxF);
@@ -246,7 +246,7 @@ void PhysicsWorld::applyRolling(Body& b, float dt) {
     if (b.supportOffsetY == 0.f || b.asleep) return;
     if (b.invMass <= 0.f) return;
 
-    // Use the actual supporting side so floor and ceiling rolling share one formula.
+    // use the actual supporting side so floor and ceiling rolling share one formula.
     float const contactY = b.supportOffsetY;
     float slip = b.vel.x + angularVelAt({0.f, contactY}, b.angularVel).x;
 
@@ -300,7 +300,7 @@ void PhysicsWorld::resolveBodyPair(Body& a, Body& b, int idxA, int idxB) {
         else if (n.y < 0.f) b.supportOffsetY = b.halfH;
     }
 
-    // Baumgarte positional correction.
+    // baumgarte positional correction.
     float corr = pen / invSum * 0.85f;
     if (!aFixed) a.pos -= n * (corr * ima);
     if (!bFixed) b.pos += n * (corr * imb);
@@ -327,7 +327,7 @@ void PhysicsWorld::resolveBodyPair(Body& a, Body& b, int idxA, int idxB) {
     if (!aFixed) applyImpulse(a, impulse * -1.f, ra);
     if (!bFixed) applyImpulse(b, impulse, rb);
 
-    // Tangential impulse with a Coulomb friction limit.
+    // tangential impulse with a coulomb friction limit.
     CCPoint t = CCPoint{n.y, -n.x};
     CCPoint va2 = a.vel + angularVelAt(ra, a.angularVel);
     CCPoint vb2 = b.vel + angularVelAt(rb, b.angularVel);
@@ -382,7 +382,7 @@ void PhysicsWorld::updateSleep(Body& b, float dt) {
     if (b.asleep) return;
     float speed = len(b.vel);
     bool slow = (speed < kSleepVel) && (std::abs(b.angularVel) < kSleepAngVel);
-    // With zero gravity, a stationary body may sleep anywhere.
+    // with zero gravity, a stationary body may sleep anywhere.
     bool const supported = b.supportOffsetY != 0.f || std::abs(m_cfg.gravity) < 1e-4f;
     if (slow && supported) {
         b.sleepTimer += dt;
@@ -450,7 +450,7 @@ void PhysicsWorld::syncNodes() {
         node->setPosition(parent->convertToNodeSpace(b.pos));
         node->setRotation(-b.angle);
 
-        // Apply impact squash along the collision axis.
+        // apply impact squash along the collision axis.
         if (b.squash > 0.01f) {
             float s = b.squash;
             float axis = b.stretchAxis * kDegToRad;
@@ -478,7 +478,7 @@ bool PhysicsWorld::beginDrag(CCPoint p) {
             m_prevDragPos = p;
             m_dragVel = CCPoint{0.f, 0.f};
             b.vel = CCPoint{0.f, 0.f};
-            b.angularVel *= 0.3f; // Preserve some spin while grabbing.
+            b.angularVel *= 0.3f; // preserve some spin while grabbing.
             b.squash = 0.f;
             wake(b);
             return true;
@@ -511,7 +511,7 @@ void PhysicsWorld::moveDrag(CCPoint p, float dt) {
         b.vel.x = std::lerp(b.vel.x, targetVel.x, kDragVelLerp);
         b.vel.y = std::lerp(b.vel.y, targetVel.y, kDragVelLerp);
 
-        // Offset dragging produces torque and swing spin.
+        // offset dragging produces torque and swing spin.
         float torque = crossZ(m_dragOffset, delta) * 0.0022f;
         float spinFromSwing = crossZ(m_dragOffset, m_dragVel) * 0.0015f;
         float targetSpin = torque + spinFromSwing;
@@ -525,7 +525,7 @@ void PhysicsWorld::moveDrag(CCPoint p, float dt) {
 void PhysicsWorld::endDrag() {
     if (m_dragIndex >= 0 && m_dragIndex < static_cast<int>(m_bodies.size())) {
         auto& b = m_bodies[m_dragIndex];
-        // Release inherits drag velocity and adds offset-based spin.
+        // release inherits drag velocity and adds offset-based spin.
         b.vel = m_dragVel;
         float releaseSpin = crossZ(m_dragOffset, m_dragVel) * 0.004f;
         b.angularVel += releaseSpin;
@@ -549,7 +549,7 @@ void PhysicsWorld::pushExplosion(CCPoint worldPoint, float strength) {
         if (dist >= kPushRadius) continue;
 
         if (dist < 1e-3f) {
-            // Center hits get a vertical kick and random spin.
+            // center hits get a vertical kick and random spin.
             b.vel.y += 380.f * strength * b.invMass;
             b.vel.x += (static_cast<float>(std::rand() % 200) - 100.f) * strength * 0.8f;
             b.angularVel += (static_cast<float>(std::rand() % 700) - 350.f) * strength;
@@ -559,7 +559,7 @@ void PhysicsWorld::pushExplosion(CCPoint worldPoint, float strength) {
         }
 
         float falloff = 1.f - dist / kPushRadius;
-        falloff *= falloff; // Bias force toward the click.
+        falloff *= falloff; // bias force toward the click.
         CCPoint dir = delta / dist;
         float impulseMag = strength * falloff * 720.f;
         CCPoint impulse = dir * impulseMag;

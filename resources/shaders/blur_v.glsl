@@ -1,5 +1,5 @@
-// gaussian vertical pass; keep in sync with fragmentShaderVertical inline.
-// u_screenSize is the target RT size, not the texture size.
+// gaussian vertical pass; keep in sync with fragmentshadervertical inline.
+// u_screensize is the target rt size, not the texture size.
 #ifdef GL_ES
 precision mediump float;
 #endif

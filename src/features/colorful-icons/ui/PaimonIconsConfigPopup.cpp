@@ -35,7 +35,7 @@ constexpr float kMakerExtraH  = 28.f;
 constexpr ccColor3B kVanilla1{175, 175, 175};
 constexpr ccColor3B kVanilla2{255, 255, 255};
 
-// Keep mode metadata in one list; controls are derived from it.
+// keep mode metadata in one list; controls are derived from it.
 
 struct ModeInfo {
     ColorMode mode;
@@ -80,7 +80,7 @@ int lockIndexOf(LockStyle s) {
     return 0;
 }
 
-// Small row builders use centered {kRowW x kRowH} nodes.
+// small row builders use centered {kroww x krowh} nodes.
 
 CCLabelBMFont* makeLabel(std::string const& text, const char* font = "bigFont.fnt", float scale = 0.45f) {
     auto* lbl = CCLabelBMFont::create(text.c_str(), font);
@@ -154,7 +154,7 @@ CCNode* makeSliderRow(std::string const& label, float minVal, float maxVal, floa
         slider->setPosition({260.f, kRowH / 2});
         row->addChild(slider);
 
-        // Slider has no change callback, so poll at 15 Hz.
+        // slider has no change callback, so poll at 15 hz.
         struct Watcher : public CCNode {
             std::function<void(float)> cb;
             Ref<Slider> slider;
@@ -470,7 +470,7 @@ void PaimonIconsConfigPopup::buildIconMakerSection() {
 
 void PaimonIconsConfigPopup::switchTab(Tab tab) {
     m_tab = tab;
-    // Update the active tab in place; the buttons are never rebuilt.
+    // update the active tab in place; the buttons are never rebuilt.
     for (int i = 0; i < static_cast<int>(m_tabSprites.size()); ++i) {
         if (m_tabSprites[i]) {
             m_tabSprites[i]->updateBGImage(
@@ -584,7 +584,7 @@ void PaimonIconsConfigPopup::rebuildSelector() {
         }
     };
 
-    // Arrow callbacks update labels and controls, not the selector row.
+    // arrow callbacks update labels and controls, not the selector row.
     std::function<void(int)> step;
     if (m_tab == Tab::Colors) {
         auto idx = std::make_shared<int>(modeIndexOf(cfg.mode));
@@ -806,7 +806,7 @@ void PaimonIconsConfigPopup::refreshPreview(float) {
             continue;
         }
 
-        // Locked samples mirror IconLockStyler on plain preview nodes.
+        // locked samples mirror iconlockstyler on plain preview nodes.
         sp->setColors(kVanilla1, kVanilla2);
         sp->disableGlowOutline();
         bool const unob = slot.role == SlotRole::Unobtainable && cfg.dimUnobtainable;

@@ -20,7 +20,7 @@ public:
     bool open(const std::string& path) override {
         closeInternal();
 #ifdef _WIN32
-        // fopen takes ANSI paths, so a UTF-8 folder (accents/CJK) never opens.
+        // fopen takes ansi paths, so a utf-8 folder (accents/cjk) never opens.
         FILE* fh = nullptr;
         if (_wfopen_s(&fh, geode::utils::string::utf8ToWide(path).c_str(), L"rb") != 0) return false;
         m_plm = plm_create_with_file(fh, TRUE);
@@ -51,6 +51,7 @@ public:
 
     void startDecoding() override {
         if (m_decoding.load(std::memory_order_relaxed)) return;
+        if (!m_plm) return;
         m_decoding.store(true, std::memory_order_relaxed);
         m_finished.store(false, std::memory_order_relaxed);
         m_thread = std::thread(&DecoderPLM::decodeLoop, this);
@@ -82,7 +83,7 @@ public:
     double getDuration() const override { return m_duration; }
     int getWidth()  const override { return m_ring.getWidth(); }
     int getHeight() const override { return m_ring.getHeight(); }
-    // MPEG-1 streams are BT.601 limited; range/rotation defaults already fit.
+    // mpeg-1 streams are bt.601 limited; range/rotation defaults already fit.
     VideoColorMatrix getColorMatrix() const override { return VideoColorMatrix::BT601; }
 
     bool isFinished() const override {
@@ -102,7 +103,7 @@ public:
     }
 
     void releaseFrame() override {
-        // Guard so releaseFrame() on an empty ring doesn't advance read idx.
+        // guard so releaseframe() on an empty ring doesn't advance read idx.
         if (m_ring.peekRead()) m_ring.commitRead();
     }
 
@@ -113,9 +114,10 @@ public:
 
 private:
     // plm planes have no stride; width is the row stride.
-    static void copyPlane(const plm_plane_t& plane, uint8_t* dst, int dstStride) {
-        int rowBytes = std::min(dstStride, static_cast<int>(plane.width));
-        for (int r = 0; r < plane.height; ++r) {
+    static void copyPlane(const plm_plane_t& plane, uint8_t* dst, int dstStride, int width, int height) {
+        int rowBytes = std::min(width, static_cast<int>(plane.width));
+        int rows = std::min(height, static_cast<int>(plane.height));
+        for (int r = 0; r < rows; ++r) {
             std::memcpy(dst + r * dstStride,
                         plane.data + r * plane.width, rowBytes);
         }
@@ -126,7 +128,7 @@ private:
         plm_set_video_decode_callback(m_plm, nullptr, nullptr);
 
         while (m_decoding.load(std::memory_order_relaxed)) {
-        // Block briefly if the ring is full, then re-check m_decoding.
+        // block briefly if the ring is full, then re-check m_decoding.
         if (m_ring.isFull()) {
                 m_ring.waitForWritable(50, &m_decoding);
                 continue;
@@ -152,9 +154,12 @@ private:
                 continue;
             }
 
-            copyPlane(frame->y, slot->planeY, slot->strideY);
-            copyPlane(frame->cb, slot->planeCb, slot->strideCb);
-            copyPlane(frame->cr, slot->planeCr, slot->strideCr);
+            // mpeg planes include macroblock padding beyond the visible frame.
+            copyPlane(frame->y, slot->planeY, slot->strideY, slot->width, slot->height);
+            int const uvWidth = (slot->width + 1) / 2;
+            int const uvHeight = (slot->height + 1) / 2;
+            copyPlane(frame->cb, slot->planeCb, slot->strideCb, uvWidth, uvHeight);
+            copyPlane(frame->cr, slot->planeCr, slot->strideCr, uvWidth, uvHeight);
 
             slot->pts = frame->time;
             m_ring.commitWrite();

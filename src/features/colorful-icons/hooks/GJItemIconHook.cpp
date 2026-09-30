@@ -1,4 +1,4 @@
-// Recolor at construction/lock transitions, no ticker; Win64 unlockColor reads unsafe, pass {}.
+// recolor at construction/lock transitions, no ticker; win64 unlockcolor reads unsafe, pass {}.
 
 #include "../services/IconColorService.hpp"
 #include "../services/IconConfigStore.hpp"
@@ -23,20 +23,20 @@ class $modify(PaimonGJItemIcon, GJItemIcon) {
         paimon::hooks::afterNodeIdsOrLate(self, "GJItemIcon::changeToLockedState");
     }
 
-    // Never hook GJItemIcon::init: Win64 passes trailing ccColor3B via dangling pointer; recolor subtrees.
+    // never hook gjitemicon::init: win64 passes trailing cccolor3b via dangling pointer; recolor subtrees.
 
     $override
     void changeToLockedState(float p0) {
         GJItemIcon::changeToLockedState(p0);
-        // Use a durable marker instead of testing vanilla opacity.
+        // use a durable marker instead of testing vanilla opacity.
         this->setUserObject(paimon::icons::kIconLockedKey, CCBool::create(true));
-        // Snapshot vanilla locked colors before styling.
+        // snapshot vanilla locked colors before styling.
         IconRecolorEngine::get().snapshotLockedVanilla(this);
         IconLockStyler::get().apply(this);
     }
 };
 
-// Recolor shop subtree once items exist; init has no unsafe by-value params.
+// recolor shop subtree once items exist; init has no unsafe by-value params.
 class $modify(PaimonGJShopLayer, GJShopLayer) {
     static void onModify(auto& self) {
         paimon::hooks::afterNodeIdsOrLate(self, "GJShopLayer::init");

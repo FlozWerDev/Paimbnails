@@ -5,7 +5,7 @@
 
 namespace paimon::texture_studio {
 
-// PackGen asset overlays, base-sized or empty. Tint recolors overlay pixels by luminance, then composites — PackGen's algorithm.
+// packgen asset overlays, base-sized or empty. tint recolors overlay pixels by luminance, then composites — packgen's algorithm.
 struct OverlayImages {
     ImageBuffer overlay1;  // tinted with color1
     ImageBuffer overlay2;  // tinted with color2
@@ -19,7 +19,7 @@ struct OverlayImages {
 
 class OverlayTinter final {
 public:
-    // PackGen drawImage(img, 0, 0): mismatches paint top-left overlap, in generatePack() order.
+    // packgen drawimage(img, 0, 0): mismatches paint top-left overlap, in generatepack() order.
     static ImageBuffer apply(ImageBuffer const& base,
                              OverlayImages const& overlays,
                              TintColors const& colors,

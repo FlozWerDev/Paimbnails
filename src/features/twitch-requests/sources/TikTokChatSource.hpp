@@ -8,8 +8,8 @@
 
 namespace paimon::twitch {
 
-// TikTok only signs its own webcast: chat comes from a public relay with the
-// raw protobuf; the URL is a fallback setting.
+// tiktok only signs its own webcast: chat comes from a public relay with the
+// raw protobuf; the url is a fallback setting.
 class TikTokChatSource final : public ChatSourceBase {
 public:
     TikTokChatSource(std::string channel, ChatCallbacks callbacks);

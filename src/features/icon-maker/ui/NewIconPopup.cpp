@@ -25,7 +25,7 @@ constexpr float kPopupH = 275.f;
 constexpr char const* kNameFilter =
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -_";
 
-// Prefills every zone of a fresh project with the pieces of a vanilla icon, so
+// prefills every zone of a fresh project with the pieces of a vanilla icon, so
 // a beginner lands on something that already looks like an icon.
 void seedFromTemplate(std::string const& slotId, int iconId) {
     auto loaded = IconProjectStore::get().loadProject(slotId);
@@ -123,7 +123,7 @@ bool NewIconPopup::init(CreatedCallback onCreated) {
     for (std::size_t i = 0; i < types.size(); ++i) {
         IconType type = types[i];
 
-        // SimplePlayer has no content size of its own; it always rides inside a
+        // simpleplayer has no content size of its own; it always rides inside a
         // sized wrapper so the button gets a real touch box.
         auto* wrap = CCNode::create();
         wrap->setContentSize({kCell - 6.f, kCell - 6.f});
@@ -195,7 +195,7 @@ bool NewIconPopup::init(CreatedCallback onCreated) {
         m_mainLayer->addChild(m_startLabel);
     }
 
-    // Row that shows which official icon is being copied.
+    // row that shows which official icon is being copied.
     m_templateRow = CCNode::create();
     m_templateRow->setPosition({rightX, 46.f});
     m_mainLayer->addChild(m_templateRow);
@@ -268,7 +268,7 @@ void NewIconPopup::selectType(IconType type) {
             m_typeLabel->setString(std::string(def->displayName).c_str());
         }
     }
-    // The template belongs to a gamemode, so the preview follows the choice.
+    // the template belongs to a gamemode, so the preview follows the choice.
     m_templateIcon = 1;
     if (m_templatePreview) m_templatePreview->updatePlayerFrame(m_templateIcon, type);
 }

@@ -6,7 +6,7 @@
 struct DCColor { uint8_t r, g, b; };
 
 namespace DominantColors {
-    // two dominant colors from RGB24; identical when only one exists.
+    // two dominant colors from rgb24; identical when only one exists.
     std::pair<DCColor, DCColor> extract(const uint8_t* rgb, int width, int height);
 
     // re-run on a reduced overview; keep the most representative pair.

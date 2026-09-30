@@ -3,7 +3,7 @@
 #include <Geode/Geode.hpp>
 #include <string>
 
-// Forward decl for the cocos Slider class from Geode bindings.
+// forward decl for the cocos slider class from geode bindings.
 class Slider;
 class ButtonSprite;
 
@@ -107,7 +107,7 @@ protected:
     float m_trackClipWidth = 0.f;
     cocos2d::CCLabelBMFont* m_subtitleLabel = nullptr;
 
-    // mode selector (Off / All Songs / Playlist); active one highlighted.
+    // mode selector (off / all songs / playlist); active one highlighted.
     ButtonSprite* m_modeOffSpr = nullptr;
     ButtonSprite* m_modeAllSpr = nullptr;
     ButtonSprite* m_modePlaylistSpr = nullptr;

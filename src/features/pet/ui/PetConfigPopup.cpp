@@ -1380,7 +1380,7 @@ void PetConfigPopup::applyLive() {
 
     auto scene = CCDirector::get()->getRunningScene();
     if (pet.config().enabled && scene) {
-        // Reattach to refresh visibility in the current scene.
+        // reattach to refresh visibility in the current scene.
         pet.attachToScene(scene);
     } else {
         pet.detachFromScene();

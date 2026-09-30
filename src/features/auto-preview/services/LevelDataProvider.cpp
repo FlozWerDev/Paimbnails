@@ -23,7 +23,7 @@ void LevelDataProvider::request(int levelID, Callback cb) {
     auto* glm = GameLevelManager::get();
     if (!glm) { if (cb) cb(nullptr); return; }
 
-    // If GD already has the full level cached, use it directly.
+    // if gd already has the full level cached, use it directly.
     if (auto* saved = glm->getSavedLevel(levelID)) {
         if (!saved->m_levelString.empty()) {
             if (cb) cb(saved);

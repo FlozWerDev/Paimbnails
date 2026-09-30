@@ -65,7 +65,7 @@ bool BeatShaderConfigLayer::init() {
             for (auto const& key : m_layerKeys) {
                 BeatShaderManager::get().setLayerEnabled(key, true);
             }
-            // Rebuild UI and background outside touch dispatch (see persistAndRefresh).
+            // rebuild ui and background outside touch dispatch (see persistandrefresh).
             Ref<BeatShaderConfigLayer> self = this;
             Loader::get()->queueInMainThread([self] {
                 if (paimon::isRuntimeShuttingDown()) return;
@@ -217,14 +217,14 @@ void BeatShaderConfigLayer::rebuild() {
 
 void BeatShaderConfigLayer::persistAndRefresh(bool shaderChanged) {
     BeatShaderManager::get().saveConfig(m_cfg);
-    // Callbacks run inside touch dispatch; mutating the graph mid-iteration crashes ~CCTargetedTouchHandler.
+    // callbacks run inside touch dispatch; mutating the graph mid-iteration crashes ~cctargetedtouchhandler.
     if (shaderChanged) {
         Loader::get()->queueInMainThread([] {
             if (paimon::isRuntimeShuttingDown()) return;
             BeatShaderManager::get().rebuildBackgrounds();
         });
     } else {
-        // Just uniforms — push them onto live sprites without rebuilding.
+        // just uniforms — push them onto live sprites without rebuilding.
         Loader::get()->queueInMainThread([] {
             if (paimon::isRuntimeShuttingDown()) return;
             BeatShaderManager::get().refreshLiveSpriteUniforms();

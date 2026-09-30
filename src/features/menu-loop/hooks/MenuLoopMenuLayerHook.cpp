@@ -13,8 +13,8 @@ namespace {
     bool s_shownWarning = false;
 }
 
-// Hook GameManager: hook getMenuMusicFile() to return the custom path rather than
-// reimplementing playMenuMusic(), so GD's channel-0 load/resume logic is reused.
+// hook gamemanager: hook getmenumusicfile() to return the custom path rather than
+// reimplementing playmenumusic(), so gd's channel-0 load/resume logic is reused.
 class $modify(PaimonMenuLoopGameManager, GameManager) {
     $override
     gd::string getMenuMusicFile() {
@@ -23,7 +23,7 @@ class $modify(PaimonMenuLoopGameManager, GameManager) {
         if (song.empty() || song == "menuLoop.mp3") {
             return GameManager::getMenuMusicFile();
         }
-        // Cache existence by path with a 5s TTL to avoid blocking the main thread on every call.
+        // cache existence by path with a 5s ttl to avoid blocking the main thread on every call.
         static std::string s_cachedPath;
         static bool s_cachedValid = false;
         static std::chrono::steady_clock::time_point s_cachedAt{};
@@ -84,7 +84,7 @@ class $modify(PaimonMenuLoopMenuLayer, MenuLayer) {
             sm.setColonMenuLoopStartTime(colonStartTime);
         }
 
-        // Conflict warning — queue so it survives MenuLayer init / transitions
+        // conflict warning — queue so it survives menulayer init / transitions
         if (!s_shownWarning && sm.getVibecodedVentilla() && loader->isModLoaded("joseii.ventilla")) {
             auto popup = PopupManager::get().alert(
                 "Uh oh!",

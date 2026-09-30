@@ -19,11 +19,11 @@ namespace paimon::frameinterp {
 
 namespace {
 
-// GD 2.2 ticks at 240 steps per second. Only feeds the lag math,
+// gd 2.2 ticks at 240 steps per second. only feeds the lag math,
 // so a tickrate-changing mod skews latency, not smoothing.
 constexpr double kPhysicsStep = 1.0 / 240.0;
 
-// Past this it's a jump, not motion (teleport, checkpoint...):
+// past this it's a jump, not motion (teleport, checkpoint...):
 // drawn as-is that frame, no interpolation.
 constexpr float kSnapSpeed = 4000.f;
 constexpr float kSnapSpin  = 2000.f;
@@ -304,7 +304,7 @@ void FrameInterpolator::syncObjects(GJBaseGameLayer* layer, bool advanced) {
         if (slot.hasPrev) applyNode(object, slot.cur, slot.prev);
     }
 
-    // A stopped object stays in the map; swept periodically
+    // a stopped object stays in the map; swept periodically
     // so long sessions don't grow it.
     if (m_frame % 600 != 0) return;
     for (auto it = m_objects.begin(); it != m_objects.end();) {
@@ -350,7 +350,7 @@ void FrameInterpolator::beginVisit(GJBaseGameLayer* layer) {
         m_layer = layer;
     }
 
-    // No update means no new step: paused, loading or stopped scheduler
+    // no update means no new step: paused, loading or stopped scheduler
     // draws the true state and touches nothing.
     if (!m_stepPending) return;
     m_stepPending = false;
@@ -360,8 +360,8 @@ void FrameInterpolator::beginVisit(GJBaseGameLayer* layer) {
     if (advanced) m_span = m_stepped;
     m_stepsPerFrame = m_stepsPerFrame * 0.85f + static_cast<float>(m_stepped / kPhysicsStep) * 0.15f;
 
-    // Draws t_B + leftover minus lag, as a fraction of the snapshot span.
-    // Leaving [0, 1] is fine: the prev-cur line is the velocity.
+    // draws t_b + leftover minus lag, as a fraction of the snapshot span.
+    // leaving [0, 1] is fine: the prev-cur line is the velocity.
     double const span = m_span > 0.0 ? m_span : kPhysicsStep;
     double const raw = 1.0 + (m_leftover - kPhysicsStep * latencyLag(m_config.latency)) / span;
     double const eased = 1.0 + (std::clamp(raw, -0.5, 1.5) - 1.0)

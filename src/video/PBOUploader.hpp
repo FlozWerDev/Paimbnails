@@ -5,18 +5,18 @@
 
 #if defined(GEODE_IS_WINDOWS)
 #include <gl/gl.h>
-// MSVC's GL header may omit GLsync.
+// msvc's gl header may omit glsync.
 #ifndef GL_SYNC_GPU_COMMANDS_COMPLETE
 typedef struct __GLsync* GLsync;
 #endif
 #elif defined(GEODE_IS_ANDROID)
 #include <GLES2/gl2.h>
-// GLES2 has no GLsync type.
+// gles2 has no glsync type.
 typedef struct __GLsync* GLsync;
 #elif defined(GEODE_IS_IOS)
 #include <OpenGLES/ES2/gl.h>
 #include <OpenGLES/ES2/glext.h>
-// Fall back if the Apple extension header omits GLsync.
+// fall back if the apple extension header omits glsync.
 #ifndef GL_SYNC_GPU_COMMANDS_COMPLETE
 typedef struct __GLsync* GLsync;
 #endif
@@ -26,7 +26,7 @@ typedef struct __GLsync* GLsync;
 
 namespace paimon::video {
 
-// Fenced rotating slots, GL thread only; busy slots defer the upload.
+// fenced rotating slots, gl thread only; busy slots defer the upload.
 
 struct PBOSlot {
     GLuint pboY    = 0;
@@ -58,13 +58,13 @@ public:
 
     bool uploadRGBA(GLuint texId, const uint8_t* rgbaData, int width, int height);
 
-    // Zero-copy: no calls between begin/end; nullptr means use uploadRGBA.
+    // zero-copy: no calls between begin/end; nullptr means use uploadrgba.
     uint8_t* tryBeginRGBAUpload(int width, int height);
     void endRGBAUpload(GLuint texId, int width, int height);
 
     bool isInitialized() const { return m_initialized; }
 
-    // Clear pending fences, e.g. after a seek.
+    // clear pending fences, e.g. after a seek.
     void clearFences() { deleteAllFences(); }
 
 private:
@@ -89,7 +89,7 @@ private:
     int m_mappedSlotIdx = -1;
     bool m_initialized = false;
 
-    // Owner thread; shutdown refuses GL calls from another thread.
+    // owner thread; shutdown refuses gl calls from another thread.
     std::thread::id m_ownerThread{};
 };
 

@@ -20,11 +20,11 @@ using cocos2d::kCCVertexAttrib_TexCoords;
 using cocos2d::kCCVertexAttrib_Color;
 using cocos2d::kCCVertexAttribFlag_PosColorTex;
 
-/* client arrays: other mods corrupt VBO state, so GL_ARRAY_BUFFER stays
+/* client arrays: other mods corrupt vbo state, so gl_array_buffer stays
  * unbound and the draw buffer is revalidated each draw. */
 class PaimonDrawNode : public CCDrawNode {
 public:
-    // retained 1x1 white texture; reset after GL context reloads.
+    // retained 1x1 white texture; reset after gl context reloads.
     static inline CCTexture2D* s_cached = nullptr;
 
     static CCTexture2D* getWhiteTexture() {
@@ -34,7 +34,7 @@ public:
         auto* cache = CCTextureCache::sharedTextureCache();
         if (!cache) return nullptr;
         constexpr char const* kKey = "paimon-draw-node-white";
-        // extra retain: removeUnusedTextures() must not dangle the cached pointer.
+        // extra retain: removeunusedtextures() must not dangle the cached pointer.
         if (auto* existing = cache->textureForKey(kKey)) {
             existing->retain();
             s_cached = existing;
@@ -189,7 +189,7 @@ public:
         CC_INCREMENT_GL_DRAWS(1);
 #endif
 
-// leave the VBO unbound; later nodes bind their own. reading the previous
-// binding with glGetIntegerv stalls dense UIs.
+// leave the vbo unbound; later nodes bind their own. reading the previous
+// binding with glgetintegerv stalls dense uis.
     }
 };

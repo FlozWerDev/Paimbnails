@@ -1,4 +1,4 @@
-// Advanced Search entry point on the search screen, and the client side refine
+// advanced search entry point on the search screen, and the client side refine
 // pass applied to each page the browser loads.
 
 #include "../InfoModule.hpp"
@@ -56,7 +56,7 @@ class $modify(PaimonInfoSuiteSearchLayer, LevelSearchLayer) {
         btn->setID("info-suite-advanced-button"_spr);
         PaimonButtonHighlighter::registerButton(btn);
 
-        // Bottom left, next to the back button, where GD leaves free space on
+        // bottom left, next to the back button, where gd leaves free space on
         // every search screen variant.
         auto menu = CCMenu::create();
         menu->setID("info-suite-advanced-menu"_spr);
@@ -86,7 +86,7 @@ class $modify(PaimonInfoSuiteRefine, LevelBrowserLayer) {
         auto* filtered = CCArray::create();
         for (auto* item : CCArrayExt<CCObject*>(base)) {
             auto* level = typeinfo_cast<GJGameLevel*>(item);
-            // Anything that is not a level (lists, users) passes through: the
+            // anything that is not a level (lists, users) passes through: the
             // refine filters only describe levels.
             if (!level || paimon::info::passesRefine(*refine, level)) {
                 filtered->addObject(item);

@@ -351,7 +351,7 @@ namespace {
 std::pair<DCColor, DCColor> DominantColors::extract(const uint8_t* rgb, int width, int height) {
     if (!rgb || width <= 0 || height <= 0) return { DCColor{0,0,0}, DCColor{0,0,0} };
 
-    // LAB sample; UI colors filtered, borders favored.
+    // lab sample; ui colors filtered, borders favored.
     std::vector<LABColor> labPixels;
     std::vector<DCColor> rgbPixels;
 

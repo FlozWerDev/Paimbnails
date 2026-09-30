@@ -7,7 +7,7 @@
 
 namespace paimon::framebudget {
 
-// per-frame microsecond budget for main-thread thumbnail/LevelCell work.
+// per-frame microsecond budget for main-thread thumbnail/levelcell work.
 // unused capacity carries no state forward.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
 inline constexpr int64_t kFrameBudgetUs = 900;

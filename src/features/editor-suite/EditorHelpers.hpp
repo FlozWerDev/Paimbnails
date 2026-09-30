@@ -10,7 +10,7 @@ namespace paimon::editor {
 cocos2d::CCMenu* hostToolbarMenu(EditorUI* ui);
 void focusCameraOnPoint(LevelEditorLayer* lel, cocos2d::CCPoint objectSpace);
 
-// Keybinds check this so they don't fire while typing.
+// keybinds check this so they don't fire while typing.
 void setFocusedTextInput(CCTextInputNode* node);
 geode::Ref<CCTextInputNode> focusedTextInput();
 

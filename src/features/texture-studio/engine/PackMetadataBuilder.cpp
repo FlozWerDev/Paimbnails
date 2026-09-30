@@ -9,7 +9,7 @@ namespace paimon::texture_studio {
 
 namespace {
 
-// PackGen-compatible slug: [a-z0-9] only, everything else → "_".
+// packgen-compatible slug: [a-z0-9] only, everything else → "_".
 std::string slugify(std::string_view name) {
     std::string out;
     out.reserve(name.size());
@@ -29,7 +29,7 @@ struct Rgb {
     int r = 0, g = 0, b = 0;
 };
 
-// PackGen's darkenColor: Math.floor(channel * factor).
+// packgen's darkencolor: math.floor(channel * factor).
 Rgb darken(cocos2d::ccColor3B c, float factor) {
     return {
         static_cast<int>(c.r * factor),
@@ -38,7 +38,7 @@ Rgb darken(cocos2d::ccColor3B c, float factor) {
     };
 }
 
-// colors.json entries are {r,g,b,a} objects, matching PackGen/HappyTextures.
+// colors.json entries are {r,g,b,a} objects, matching packgen/happytextures.
 matjson::Value rgbaObj(int r, int g, int b, int a) {
     auto obj = matjson::Value::object();
     obj["r"] = r;
@@ -50,7 +50,7 @@ matjson::Value rgbaObj(int r, int g, int b, int a) {
 
 matjson::Value rgbaObj(Rgb c, int a) { return rgbaObj(c.r, c.g, c.b, a); }
 
-// Layer-json "color" attributes carry no alpha; opacity is a sibling key.
+// layer-json "color" attributes carry no alpha; opacity is a sibling key.
 matjson::Value rgbObj(int r, int g, int b) {
     auto obj = matjson::Value::object();
     obj["r"] = r;
@@ -59,7 +59,7 @@ matjson::Value rgbObj(int r, int g, int b) {
     return obj;
 }
 
-// Wrap content as children/node/name: HappyTextures node-by-ID nesting.
+// wrap content as children/node/name: happytextures node-by-id nesting.
 matjson::Value nodeChild(std::string_view name, matjson::Value content) {
     auto node = matjson::Value::object();
     node[std::string(name)] = std::move(content);
@@ -72,7 +72,7 @@ matjson::Value nodeChild(std::string_view name, matjson::Value content) {
 
 }  // namespace
 
-// JSON layouts mirror PackGen: packs stay interchangeable.
+// json layouts mirror packgen: packs stay interchangeable.
 
 std::string PackMetadataBuilder::buildPackId(std::string_view packName) {
     return std::string("paimbnails.texture_studio.") + slugify(packName);
@@ -81,7 +81,7 @@ std::string PackMetadataBuilder::buildPackId(std::string_view packName) {
 std::string PackMetadataBuilder::buildPackJson(std::string_view packName,
                                                std::string_view author) {
     auto obj = matjson::Value::object();
-    // Target loader version: newer than installed trips its check.
+    // target loader version: newer than installed trips its check.
     obj["textureldr"] = "1.6.2";
     obj["name"]    = std::string("Paimon Studio - ") + std::string(packName);
     obj["id"]      = buildPackId(packName);
@@ -90,7 +90,7 @@ std::string PackMetadataBuilder::buildPackJson(std::string_view packName,
     return obj.dump(4);
 }
 
-// UI colors.
+// ui colors.
 std::string PackMetadataBuilder::buildUiColorsJson(PackExportConfig const& cfg) {
     auto primary   = cfg.colors.color1;
     auto secondary = cfg.colors.color2;
@@ -158,7 +158,7 @@ std::string PackMetadataBuilder::buildUiColorsJson(PackExportConfig const& cfg) 
     return obj.dump(4);
 }
 
-// Mods layer json.
+// mods layer json.
 std::string PackMetadataBuilder::buildModsLayerJson(PackExportConfig const& cfg) {
     auto frameBg = matjson::Value::object();
     {
@@ -186,7 +186,7 @@ std::string PackMetadataBuilder::buildModsLayerJson(PackExportConfig const& cfg)
         nodeChild("search-menu",
             nodeChild("search-id", std::move(searchId))));
 
-    // frame-bg and ModList are siblings under mod-list-frame's node map.
+    // frame-bg and modlist are siblings under mod-list-frame's node map.
     auto innerNode = matjson::Value::object();
     innerNode["frame-bg"] = std::move(frameBg);
     innerNode["ModList"]  = std::move(modList);
@@ -198,7 +198,7 @@ std::string PackMetadataBuilder::buildModsLayerJson(PackExportConfig const& cfg)
     return nodeChild("mod-list-frame", std::move(modListFrame)).dump(4);
 }
 
-// Loading layer json.
+// loading layer json.
 std::string PackMetadataBuilder::buildLoadingLayerJson(PackExportConfig const& cfg) {
     auto bgTexture = matjson::Value::object();
     auto attrs = matjson::Value::object();

@@ -79,7 +79,7 @@ bool VideoAudioTrack::init(AudioPcm&& pcm) {
     exinfo.defaultfrequency  = pcm.sampleRate;
     exinfo.format            = format;
 
-    // FMOD_OPENMEMORY copies the buffer; ours dies with this call.
+    // fmod_openmemory copies the buffer; ours dies with this call.
     FMOD_MODE mode = FMOD_OPENMEMORY | FMOD_OPENRAW | FMOD_CREATESAMPLE |
                      FMOD_2D | FMOD_LOOP_OFF;
 

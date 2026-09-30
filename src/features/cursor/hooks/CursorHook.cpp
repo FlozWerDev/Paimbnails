@@ -11,7 +11,7 @@ using namespace geode::prelude;
 using namespace cocos2d;
 
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-// No mouse on mobile: press/release comes from touches, hooked before buttons swallow them.
+// no mouse on mobile: press/release comes from touches, hooked before buttons swallow them.
 namespace {
 void feedTouch(CCSet* touches, int state) {
     if (!touches) return;
@@ -50,7 +50,7 @@ class $modify(PaimonClickTouchDispatcher, CCTouchDispatcher) {
 };
 #endif
 
-// Avoids hooking CCScheduler::update directly, which Geode discourages.
+// avoids hooking ccscheduler::update directly, which geode discourages.
 class CursorTickerNode : public CCNode {
 public:
     static CursorTickerNode* create() {
@@ -72,31 +72,31 @@ public:
     void update(float dt) override {
         auto& cm = CursorManager::get();
 
-        // Overlay host outlives scenes.
+        // overlay host outlives scenes.
         if (cm.config().enabled) {
             if (!cm.isAttached()) cm.attachToOverlay();
         } else if (cm.isAttached()) {
             cm.detachFromScene();
         }
 
-        // Click FX run with the cursor off (mobile has none).
+        // click fx run with the cursor off (mobile has none).
         cm.update(dt);
     }
 };
 
-// Ref<> keeps the node alive so the scheduler never releases it prematurely
+// ref<> keeps the node alive so the scheduler never releases it prematurely
 static Ref<CursorTickerNode> s_cursorTicker = nullptr;
 static bool s_mouseListenerRegistered = false;
 
 void initCursorTicker() {
     if (s_cursorTicker) return;
     s_cursorTicker = CursorTickerNode::create();
-    // Global scheduler (paused=false) so the node ticks outside a running scene.
+    // global scheduler (paused=false) so the node ticks outside a running scene.
     CCDirector::get()->getScheduler()->scheduleUpdateForTarget(
         s_cursorTicker.data(), 0, false
     );
 
-    // Global click-hold for Click state/effects (Ecuet's Custom Cursor idea); intentional session .leak().
+    // global click-hold for click state/effects (ecuet's custom cursor idea); intentional session .leak().
     if (!s_mouseListenerRegistered) {
         s_mouseListenerRegistered = true;
         MouseInputEvent().listen(+[](MouseInputData& data) {

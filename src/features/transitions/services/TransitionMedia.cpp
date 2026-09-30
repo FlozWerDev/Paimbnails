@@ -3,6 +3,10 @@
 #include "../../gif-import/services/GifVideoSource.hpp"
 #include "../../../utils/GIFDecoder.hpp"
 #include "../../../utils/ImageConverter.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
+#include "../../../utils/JsonHelper.hpp"
+#include "../../../utils/BoundedFileRead.hpp"
+#include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/stb_image.h"
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/string.hpp>
@@ -10,7 +14,6 @@
 #include <atomic>
 #include <chrono>
 #include <deque>
-#include <fstream>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -31,23 +34,11 @@ struct Decoded {
 };
 std::unordered_map<std::string, std::shared_ptr<TransitionMedia>> cache;
 std::unordered_map<std::string, std::vector<MediaCallback>> pending;
-
-std::vector<std::uint8_t> readBytes(std::filesystem::path const& path, std::size_t limit = kBudget) {
-    std::error_code ec;
-    auto size = std::filesystem::file_size(path, ec);
-    if (ec || size == 0 || size > limit) return {};
-    // bound the allocation even if an external editor grows the file after stat.
-    std::ifstream stream(path, std::ios::binary);
-    if (!stream) return {};
-    std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
-    stream.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-    if (stream.gcount() != static_cast<std::streamsize>(bytes.size())) return {};
-    return bytes;
-}
+bool mediaStopped = false;
 
 Page readImage(std::filesystem::path const& path) {
     Page page;
-    auto bytes = readBytes(path);
+    auto bytes = paimon::file::readBytes(path, kBudget);
     int channels = 0;
     if (bytes.empty() || !stbi_info_from_memory(bytes.data(), static_cast<int>(bytes.size()), &page.width, &page.height, &channels)
         || page.width < 1 || page.height < 1 || page.width > 4096 || page.height > 4096) return {};
@@ -59,23 +50,23 @@ Page readImage(std::filesystem::path const& path) {
     return page;
 }
 bool loadManifest(std::filesystem::path const& path, Decoded& out) {
-    auto bytes = readBytes(path, 65536);
+    auto bytes = paimon::file::readBytes(path, 65536);
     if (bytes.empty()) return false;
     auto parsed = matjson::parse(std::string(bytes.begin(), bytes.end()));
     if (!parsed) return false;
     auto const& json = parsed.unwrap();
-    if (json["version"].asInt().unwrapOr(0) != 1) return false;
-    auto width = json["width"].asInt().unwrapOr(0);
-    auto height = json["height"].asInt().unwrapOr(0);
+    if (!json.isObject() || paimon::json::integerOr<int>(json["version"]) != 1) return false;
+    auto width = paimon::json::integerOr<int>(json["width"]);
+    auto height = paimon::json::integerOr<int>(json["height"]);
     if (width < 1 || height < 1 || width > 1024 || height > 1024) return false;
     out.width = static_cast<int>(width); out.height = static_cast<int>(height);
     out.columns = kPage / (out.width + 2);
     out.perPage = out.columns * (kPage / (out.height + 2));
-    auto delays = json["delays"].asArray().unwrapOr(std::vector<matjson::Value>{});
-    if (delays.empty() || delays.size() > 240) return false;
+    auto const& delays = json["delays"];
+    if (!delays.isArray() || delays.size() == 0 || delays.size() > 240) return false;
     int total = 0;
     for (auto const& delay : delays) {
-        auto ms = delay.asInt().unwrapOr(0);
+        auto ms = paimon::json::integerOr<int64_t>(delay);
         if (ms < 1 || ms > 30000 || total + ms > 30000) return false;
         total += static_cast<int>(ms);
         out.ends.push_back(total);
@@ -97,12 +88,8 @@ bool loadManifest(std::filesystem::path const& path, Decoded& out) {
 }
 Decoded importMedia(std::string const& source, std::filesystem::path const& root) {
     Decoded out;
-#if defined(GEODE_IS_WINDOWS)
-    auto path = std::filesystem::path(utils::string::utf8ToWide(source));
-#else
-    auto path = std::filesystem::path(source);
-#endif
-    if (path.extension() == ".pttransition") {
+    auto path = paimon::assets::pathFromUtf8(source);
+    if (utils::string::toLower(utils::string::pathToString(path.extension())) == ".pttransition") {
         if (!loadManifest(path, out)) { out = {}; out.error = "Sheet invalido o incompleto. Importa el original de nuevo."; }
         return out;
     }
@@ -111,8 +98,7 @@ Decoded importMedia(std::string const& source, std::filesystem::path const& root
     if (ec || size > kBudget) { out.error = "Archivo ausente o mayor de 96 MB."; return out; }
     auto stamp = std::filesystem::last_write_time(path, ec);
     if (ec) { out.error = "No se pudo leer el archivo."; return out; }
-    auto identity = source + std::to_string(static_cast<unsigned long long>(size)) +
-        std::to_string(static_cast<long long>(stamp.time_since_epoch().count())) + "sheet-export-v2";
+    auto identity = fmt::format("{}|{}|{}|sheet-export-v2", source, size, stamp.time_since_epoch().count());
     std::uint64_t hash = 14695981039346656037ull;
     for (unsigned char c : identity) { hash ^= c; hash *= 1099511628211ull; }
     auto dir = root / fmt::format("{:016x}", hash);
@@ -124,7 +110,7 @@ Decoded importMedia(std::string const& source, std::filesystem::path const& root
         animation = gifimport::decodeVideo(path, 120, out.error, 30.0);
         if (!animation) return out;
     } else {
-        auto bytes = readBytes(path);
+        auto bytes = paimon::file::readBytes(path, kBudget);
         if (GIFDecoder::isGIF(bytes.data(), bytes.size())) {
             int w = 0, h = 0;
             if (!GIFDecoder::getDimensions(bytes.data(), bytes.size(), w, h) || w < 1 || h < 1 || w > 4096 || h > 4096) {
@@ -178,7 +164,7 @@ Decoded importMedia(std::string const& source, std::filesystem::path const& root
         for (int i = 0; i < count; ++i) {
             auto& frame = animation->frames[first + i];
             // filter premultiplied pixels so transparent borders can't leak
-            // hidden RGB into the resize.
+            // hidden rgb into the resize.
             for (std::size_t p = 0; p < frame.rgba.size(); p += 4)
                 for (int c = 0; c < 3; ++c) frame.rgba[p + c] = (frame.rgba[p + c] * frame.rgba[p + 3] + 127) / 255;
             std::vector<std::uint8_t> resized;
@@ -218,6 +204,66 @@ Decoded importMedia(std::string const& source, std::filesystem::path const& root
     out.manifest = utils::string::pathToString(manifest);
     return out;
 }
+std::shared_ptr<TransitionMedia> uploadMedia(Decoded& decoded) {
+    if (!decoded.error.empty()) return nullptr;
+    if (auto existing = cache.find(decoded.manifest); existing != cache.end()) return existing->second;
+
+    std::size_t incoming = 0, total = 0;
+    for (auto const& page : decoded.pages) incoming += page.rgba.size();
+    for (auto const& entry : cache) total += entry.second->bytes;
+    for (auto it = cache.begin(); it != cache.end() && total + incoming > 2 * kBudget;) {
+        if (it->second.use_count() == 1) {
+            total -= it->second->bytes;
+            it = cache.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    if (total + incoming > 2 * kBudget) {
+        decoded.error = "Demasiadas transiciones en uso.";
+        return nullptr;
+    }
+
+    auto media = std::make_shared<TransitionMedia>();
+    media->manifest = decoded.manifest;
+    media->width = decoded.width;
+    media->height = decoded.height;
+    media->columns = decoded.columns;
+    media->perPage = decoded.perPage;
+    media->endsMs = decoded.ends;
+    for (auto const& page : decoded.pages) {
+        auto texture = Ref<CCTexture2D>::adopt(new CCTexture2D());
+        if (!texture->initWithData(page.rgba.data(), kCCTexture2DPixelFormat_RGBA8888,
+            page.width, page.height, CCSize(page.width, page.height))) {
+            decoded.error = "La GPU no pudo cargar las hojas.";
+            return nullptr;
+        }
+        texture->setAntiAliasTexParameters();
+        media->pages.push_back(std::move(texture));
+        media->bytes += page.rgba.size();
+    }
+    cache[media->manifest] = media;
+    return media;
+}
+
+void deliverMedia(std::string const& path, Decoded& decoded) {
+    if (mediaStopped || paimon::isRuntimeShuttingDown()) return;
+    std::shared_ptr<TransitionMedia> media;
+    try {
+        media = uploadMedia(decoded);
+    } catch (std::exception const& error) {
+        decoded.error = error.what();
+    } catch (...) {
+        decoded.error = "No se pudo cargar el medio.";
+    }
+    auto it = pending.find(path);
+    if (it == pending.end()) return;
+    auto callbacks = std::move(it->second);
+    pending.erase(it);
+    for (auto& callback : callbacks) if (callback) callback(media, decoded.error);
+    if (!media) log::warn("[Transitions] Media import: {}", decoded.error);
+}
+
 struct Job { std::string path; std::filesystem::path root; };
 class ImportWorker {
     std::mutex mutex;
@@ -239,50 +285,17 @@ public:
             auto decoded = std::make_shared<Decoded>();
             try { *decoded = importMedia(job.path, job.root); }
             catch (std::exception const& e) { decoded->error = e.what(); }
+            catch (...) { decoded->error = "No se pudo importar el medio."; }
+            if (stopping.load() || paimon::isRuntimeShuttingDown()) return;
             auto delivered = std::make_shared<std::atomic<bool>>(false);
             Loader::get()->queueInMainThread([path = job.path, decoded, delivered] {
                 struct Completion {
                     std::shared_ptr<std::atomic<bool>> flag;
                     ~Completion() { flag->store(true); }
                 } completion{delivered};
-                std::shared_ptr<TransitionMedia> media;
-                auto existing = cache.find(decoded->manifest);
-                if (decoded->error.empty() && existing != cache.end()) media = existing->second;
-                if (decoded->error.empty() && !media) {
-                    std::size_t incoming = 0, total = 0;
-                    for (auto const& page : decoded->pages) incoming += page.rgba.size();
-                    for (auto const& entry : cache) total += entry.second->bytes;
-                    for (auto it = cache.begin(); it != cache.end() && total + incoming > 2 * kBudget;) {
-                        if (it->second.use_count() == 1) { total -= it->second->bytes; it = cache.erase(it); }
-                        else ++it;
-                    }
-                    if (total + incoming > 2 * kBudget) decoded->error = "Demasiadas transiciones en uso.";
-                }
-                if (decoded->error.empty() && !media) {
-                    media = std::make_shared<TransitionMedia>();
-                    media->manifest = decoded->manifest;
-                    media->width = decoded->width; media->height = decoded->height;
-                    media->columns = decoded->columns; media->perPage = decoded->perPage;
-                    media->endsMs = decoded->ends;
-                    for (auto const& page : decoded->pages) {
-                        auto* texture = new CCTexture2D();
-                        bool ok = texture->initWithData(page.rgba.data(), kCCTexture2DPixelFormat_RGBA8888,
-                            page.width, page.height, CCSize(page.width, page.height));
-                        if (ok) {
-                            texture->setAntiAliasTexParameters();
-                            media->pages.emplace_back(texture);
-                            media->bytes += page.rgba.size();
-                        }
-                        texture->release();
-                        if (!ok) { media.reset(); decoded->error = "La GPU no pudo cargar las hojas."; break; }
-                    }
-                }
-                if (media) cache[media->manifest] = media;
-                auto callbacks = std::move(pending[path]); pending.erase(path);
-                for (auto& callback : callbacks) if (callback) callback(media, decoded->error);
-                if (!media) log::warn("[Transitions] Media import: {}", decoded->error);
+                deliverMedia(path, *decoded);
             });
-            // at most one decoded animation waits for GPU upload, even when a
+            // at most one decoded animation waits for gpu upload, even when a
             // legacy script requests many assets at startup.
             while (!delivered->load() && !stopping.load())
                 std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -302,11 +315,13 @@ std::unordered_map<std::string, std::string> aliases;
 std::unique_ptr<ImportWorker> worker;
 } // namespace
 std::shared_ptr<TransitionMedia> findTransitionMedia(std::string const& path) {
+    if (mediaStopped || paimon::isRuntimeShuttingDown()) return nullptr;
     auto alias = aliases.find(path);
     auto it = cache.find(alias == aliases.end() ? path : alias->second);
     return it == cache.end() ? nullptr : it->second;
 }
 void prepareTransitionMedia(std::string const& path, MediaCallback callback) {
+    if (mediaStopped || paimon::isRuntimeShuttingDown()) return;
     if (path.empty()) { if (callback) callback(nullptr, "Elige un medio primero."); return; }
     if (auto media = findTransitionMedia(path)) { if (callback) callback(media, {}); return; }
     auto [it, inserted] = pending.try_emplace(path);
@@ -315,15 +330,26 @@ void prepareTransitionMedia(std::string const& path, MediaCallback callback) {
         if (callback) callback(std::move(media), std::move(error));
     });
     if (!inserted) return;
-    if (!worker) worker = std::make_unique<ImportWorker>();
-    worker->enqueue({path, Mod::get()->getSaveDir() / "transitions" / "sheets"});
+    try {
+        if (!worker) worker = std::make_unique<ImportWorker>();
+        worker->enqueue({path, Mod::get()->getSaveDir() / "transitions" / "sheets"});
+    } catch (std::exception const& error) {
+        Decoded failed;
+        failed.error = error.what();
+        deliverMedia(path, failed);
+    }
 }
 void shutdownTransitionMedia() {
+    mediaStopped = true;
     worker.reset();
+    pending.clear();
+    aliases.clear();
+    cache.clear();
 }
 void TransitionMedia::apply(CCSprite* sprite, double seconds) const {
-    if (!sprite || pages.empty() || endsMs.empty()) return;
+    if (!sprite || pages.empty() || endsMs.empty() || perPage <= 0 || columns <= 0) return;
     auto index = frameAt(endsMs, std::max(0.0, seconds) * 1000.0);
+    if (index / perPage >= pages.size()) return;
     auto cell = index % perPage;
     auto* texture = pages[index / perPage].data();
     bool changedPage = sprite->getTexture() != texture;

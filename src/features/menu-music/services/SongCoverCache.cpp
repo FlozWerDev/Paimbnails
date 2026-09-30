@@ -4,6 +4,7 @@
 #include "../../thumbnails/services/ThumbnailLoader.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
+#include "../../../utils/ImageLoadHelper.hpp"
 
 #include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/binding/GJGameLevel.hpp>
@@ -34,7 +35,7 @@ constexpr int kMaxSearchAttempts = 2;
 constexpr float kDebounceSec = 2.5f;
 constexpr float kMinSearchGapSec = 4.0f;
 constexpr float kRateLimitCooldownSec = 300.0f;
-// GD level browser: 0=relevance, 1=downloads, 2=most liked (approx).
+// gd level browser: 0=relevance, 1=downloads, 2=most liked (approx).
 constexpr int kSearchModeMostLiked = 2;
 
 GJSearchObject* makeSongSearchObject(int songID, bool customSong) {
@@ -70,41 +71,6 @@ bool shouldUseCustomSongFilter(int songID, int searchAttempt) {
         if (mdm->isResourceSong(songID)) return false;
     }
     return true;
-}
-
-bool saveTextureToPngFile(CCTexture2D* tex, std::filesystem::path const& dst) {
-    if (!tex || tex->getPixelsWide() <= 0 || tex->getPixelsHigh() <= 0) {
-        return false;
-    }
-
-    std::error_code ec;
-    std::filesystem::create_directories(dst.parent_path(), ec);
-
-    auto const size = CCSize(
-        static_cast<float>(tex->getPixelsWide()),
-        static_cast<float>(tex->getPixelsHigh())
-    );
-
-    auto* sprite = CCSprite::createWithTexture(tex);
-    if (!sprite) return false;
-    sprite->setAnchorPoint({0.f, 0.f});
-    sprite->setPosition({0.f, 0.f});
-
-    auto* rt = CCRenderTexture::create(size.width, size.height);
-    if (!rt) return false;
-
-    rt->beginWithClear(0.f, 0.f, 0.f, 0.f);
-    sprite->visit();
-    rt->end();
-
-    CCImage* img = rt->newCCImage(false);
-    if (!img) return false;
-
-    auto const pathStr = geode::utils::string::pathToString(dst);
-    bool const ok = img->saveToFile(pathStr.c_str(), false);
-    img->release();
-
-    return ok && std::filesystem::exists(dst, ec) && !ec;
 }
 
 bool copyThumbnailFileToSongCover(int songID, int levelID) {
@@ -150,7 +116,7 @@ bool persistLevelCover(int songID, int levelID, CCTexture2D* tex) {
     }
     if (!tex) return false;
     auto dst = SongCoverCache::get().getSongDir(songID) / fmt::format("{}.png", levelID);
-    return saveTextureToPngFile(tex, dst);
+    return ImageLoadHelper::saveTextureToPng(tex, dst);
 }
 
 std::vector<int> collectTopLevelIds(cocos2d::CCArray* levels, int songID, int maxCount) {
@@ -211,8 +177,8 @@ public:
         m_pendingKey = key;
     }
 
-    // Takes the global LevelManager delegate slot, remembering whoever owned
-    // it so clearDelegate() hands the slot back instead of dropping theirs.
+    // takes the global levelmanager delegate slot, remembering whoever owned
+    // it so cleardelegate() hands the slot back instead of dropping theirs.
     void stealDelegate() {
         if (auto manager = GameLevelManager::get()) {
             if (manager->m_levelManagerDelegate != this)

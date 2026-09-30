@@ -1,5 +1,5 @@
-// Dual Kawase downsample: center(×4) + 4 diagonal half-pixel(×1) = ÷8.
-// keep weights in sync with fragmentShaderPaimonBlurDown.
+// dual kawase downsample: center(×4) + 4 diagonal half-pixel(×1) = ÷8.
+// keep weights in sync with fragmentshaderpaimonblurdown.
 #ifdef GL_ES
 precision mediump float;
 #endif

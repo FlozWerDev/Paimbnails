@@ -20,9 +20,16 @@ void prunePaintObjects(
     bool gridExact = true
 );
 
-// Exact merges only (blocks and rectangles whose union paints zero new pixels):
-// what `repairPaintSeams` sews after the last prune.
+// Seam repairs may only merge when their union adds no paint.
 void mergePaintSolids(std::vector<Primitive>& objects, bool gridExact = true);
+
+void smoothPaintFragments(
+    std::vector<Primitive>& objects,
+    std::vector<std::int32_t> const& cells,
+    std::vector<int> const& ranks,
+    int width,
+    int height
+);
 
 void prunePaintObjectsByVisibility(
     std::vector<Primitive>& staticObjects,

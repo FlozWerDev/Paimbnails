@@ -130,7 +130,7 @@ private:
     std::unordered_map<int, ProfileCacheEntry> m_profileCache;
     std::unordered_map<int, std::vector<ProfileCallback>> m_profileWaiters;
 
-    // the server may drop a session; allowRetry stops recursive re-auth on a rejected token.
+    // the server may drop a session; allowretry stops recursive re-auth on a rejected token.
     void send(std::string const& method, std::string const& path,
               matjson::Value const& body,
               geode::CopyableFunction<void(bool ok, matjson::Value const& json,

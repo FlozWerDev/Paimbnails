@@ -1,6 +1,6 @@
 #pragma once
 
-// Minimal .gmd reader: parses the handful of plist keys it cares about
+// minimal .gmd reader: parses the handful of plist keys it cares about
 // instead of pulling in a full plist dependency.
 
 #include <filesystem>
@@ -15,12 +15,12 @@ struct GmdInfo {
     int songId = 0;
 };
 
-// Reads the display fields of a .gmd. Returns nullopt when the file cannot be
+// reads the display fields of a .gmd. returns nullopt when the file cannot be
 // read or does not look like a plist at all.
 std::optional<GmdInfo> readGmdInfo(std::filesystem::path const& path);
 
-// Level string (k4) as the game keeps it in GJGameLevel::m_levelString.
-// Empty when the file has none: a cosmetic-only slot.
+// level string (k4) as the game keeps it in gjgamelevel::m_levelstring.
+// empty when the file has none: a cosmetic-only slot.
 std::string readGmdLevelString(std::filesystem::path const& path);
 
 } // namespace paimon::officialslots

@@ -101,7 +101,7 @@ std::string VersusClient::baseUrl() const {
     auto configured = trimSlash(
         Mod::get()->getSavedValue<std::string>("versus-server-url", "")
     );
-    // Migrate the old hidden override as well as fresh installs. Otherwise a
+    // migrate the old hidden override as well as fresh installs. otherwise a
     // player who connected before the rename would keep using the dead host.
     if (configured.empty() || configured == kLegacyBase) return kDefaultBase;
     return configured;

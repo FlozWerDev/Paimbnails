@@ -64,7 +64,7 @@ void runThumbnailLoadPipeline(
             fields.thumbnailFailed = false;
             bool const enableSpinners = true;
             ops.applyStatic(input.levelID, cachedRequestId, cachedTex, enableSpinners);
-            // Gallery metadata for on-screen only; prefetch defers to the maintenance tick on scroll-in.
+            // gallery metadata for on-screen only; prefetch defers to the maintenance tick on scroll-in.
             if (input.isOnScreen) {
                 ops.requestGallery(input.levelID);
             }
@@ -72,7 +72,7 @@ void runThumbnailLoadPipeline(
         }
     }
 
-    // Same for the uncached path: prefetch skips gallery until visible.
+    // same for the uncached path: prefetch skips gallery until visible.
     if (input.isOnScreen) {
         ops.requestGallery(input.levelID);
     }
@@ -89,7 +89,7 @@ void runThumbnailLoadPipeline(
     fields.lastRequestedLevelID = input.levelID;
     fields.hasGif = ThumbnailLoader::get().hasGIFData(input.levelID);
 
-    // No spinner off-screen: skips a node + fade per cell while fast-scrolling.
+    // no spinner off-screen: skips a node + fade per cell while fast-scrolling.
     bool const enableSpinners = input.isOnScreen;
 
     if (ops.tryLocalVideo(input.levelID, enableSpinners)) {

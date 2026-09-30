@@ -6,7 +6,7 @@
 
 namespace paimon::image {
 
-// CCTextureCache never releases; only the last `budget` entries stay.
+// cctexturecache never releases; only the last `budget` entries stay.
 
 // for lists with many covers.
 inline constexpr std::size_t kDiskTextureBudget = 24;

@@ -1,4 +1,5 @@
 #include "MainMenuLayoutPresetManager.hpp"
+#include "MainMenuLayoutSerialization.hpp"
 
 #include <Geode/utils/file.hpp>
 
@@ -10,91 +11,7 @@ namespace paimon::menu_layout {
 namespace {
     constexpr int kPresetConfigVersion = 1;
 
-    matjson::Value layoutToJson(std::string const& key, MenuButtonLayout const& layout) {
-        matjson::Value value = matjson::makeObject({});
-        value["key"] = key;
-        value["x"] = layout.position.x;
-        value["y"] = layout.position.y;
-        value["scale"] = layout.scale;
-        value["scaleX"] = layout.scaleX;
-        value["scaleY"] = layout.scaleY;
-        value["opacity"] = layout.opacity;
-        value["hidden"] = layout.hidden;
-        value["layer"] = layout.layer;
-        value["linkGroup"] = layout.linkGroup;
-        value["hasColor"] = layout.hasColor;
-        value["r"] = layout.color.r;
-        value["g"] = layout.color.g;
-        value["b"] = layout.color.b;
-        value["fontFile"] = layout.fontFile;
-        return value;
-    }
 
-    MenuButtonLayout layoutFromJson(matjson::Value const& value) {
-        MenuButtonLayout layout;
-        layout.position.x = static_cast<float>(value["x"].asDouble().unwrapOr(0.0));
-        layout.position.y = static_cast<float>(value["y"].asDouble().unwrapOr(0.0));
-        layout.scale = static_cast<float>(value["scale"].asDouble().unwrapOr(1.0));
-        layout.scaleX = static_cast<float>(value["scaleX"].asDouble().unwrapOr(layout.scale));
-        layout.scaleY = static_cast<float>(value["scaleY"].asDouble().unwrapOr(layout.scale));
-        layout.opacity = static_cast<float>(value["opacity"].asDouble().unwrapOr(1.0));
-        layout.hidden = value["hidden"].asBool().unwrapOr(false);
-        layout.layer = static_cast<int>(value["layer"].asInt().unwrapOr(0));
-        layout.linkGroup = value["linkGroup"].asString().unwrapOr("");
-        layout.hasColor = value["hasColor"].asBool().unwrapOr(false);
-        layout.color.r = static_cast<GLubyte>(value["r"].asInt().unwrapOr(255));
-        layout.color.g = static_cast<GLubyte>(value["g"].asInt().unwrapOr(255));
-        layout.color.b = static_cast<GLubyte>(value["b"].asInt().unwrapOr(255));
-        layout.fontFile = value["fontFile"].asString().unwrapOr("");
-        return layout;
-    }
-
-    matjson::Value shapeToJson(DrawShapeLayout const& layout) {
-        matjson::Value value = matjson::makeObject({});
-        value["id"] = layout.id;
-        value["kind"] = layout.kind == DrawShapeKind::Rectangle ? "rect" : layout.kind == DrawShapeKind::Circle ? "circle" : "round";
-        value["x"] = layout.position.x;
-        value["y"] = layout.position.y;
-        value["scale"] = layout.scale;
-        value["scaleX"] = layout.scaleX;
-        value["scaleY"] = layout.scaleY;
-        value["opacity"] = layout.opacity;
-        value["hidden"] = layout.hidden;
-        value["width"] = layout.width;
-        value["height"] = layout.height;
-        value["cornerRadius"] = layout.cornerRadius;
-        value["r"] = layout.color.r;
-        value["g"] = layout.color.g;
-        value["b"] = layout.color.b;
-        value["zOrder"] = layout.zOrder;
-        value["layer"] = layout.layer;
-        value["linkGroup"] = layout.linkGroup;
-        return value;
-    }
-
-    DrawShapeLayout shapeFromJson(matjson::Value const& value) {
-        DrawShapeLayout layout;
-        layout.id = value["id"].asString().unwrapOr("");
-        auto kind = value["kind"].asString().unwrapOr("round");
-        layout.kind = kind == "rect" ? DrawShapeKind::Rectangle : kind == "circle" ? DrawShapeKind::Circle : DrawShapeKind::RoundedRect;
-        layout.position.x = static_cast<float>(value["x"].asDouble().unwrapOr(0.0));
-        layout.position.y = static_cast<float>(value["y"].asDouble().unwrapOr(0.0));
-        layout.scale = static_cast<float>(value["scale"].asDouble().unwrapOr(1.0));
-        layout.scaleX = static_cast<float>(value["scaleX"].asDouble().unwrapOr(layout.scale));
-        layout.scaleY = static_cast<float>(value["scaleY"].asDouble().unwrapOr(layout.scale));
-        layout.opacity = static_cast<float>(value["opacity"].asDouble().unwrapOr(0.75));
-        layout.hidden = value["hidden"].asBool().unwrapOr(false);
-        layout.width = static_cast<float>(value["width"].asDouble().unwrapOr(110.0));
-        layout.height = static_cast<float>(value["height"].asDouble().unwrapOr(70.0));
-        layout.cornerRadius = static_cast<float>(value["cornerRadius"].asDouble().unwrapOr(18.0));
-        layout.color.r = static_cast<GLubyte>(value["r"].asInt().unwrapOr(90));
-        layout.color.g = static_cast<GLubyte>(value["g"].asInt().unwrapOr(220));
-        layout.color.b = static_cast<GLubyte>(value["b"].asInt().unwrapOr(255));
-        layout.zOrder = static_cast<int>(value["zOrder"].asInt().unwrapOr(0));
-        layout.layer = static_cast<int>(value["layer"].asInt().unwrapOr(0));
-        layout.linkGroup = value["linkGroup"].asString().unwrapOr("");
-        return layout;
-    }
 }
 
 MainMenuLayoutPresetManager& MainMenuLayoutPresetManager::get() {

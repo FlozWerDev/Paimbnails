@@ -10,7 +10,7 @@ bool CustomTransitionScene::isActive() {
 }
 CustomTransitionScene* CustomTransitionScene::create(CCScene* from, CCScene* to,
     std::vector<TransitionCommand> const& commands, bool) {
-    // CCDirector owns push/replace/pop; never touch its scene pointers.
+    // ccdirector owns push/replace/pop; never touch its scene pointers.
     if (!from || from == to || from != CCDirector::get()->getRunningScene()) return nullptr;
     auto* result = new CustomTransitionScene();
     if (result->initialize(to, commands)) { result->autorelease(); return result; }
@@ -52,7 +52,7 @@ bool CustomTransitionScene::capture(CCScene* scene, Ref<CCRenderTexture>& surfac
     auto size = CCDirector::get()->getWinSize();
     surface = CCRenderTexture::create(static_cast<int>(size.width), static_cast<int>(size.height));
     if (!surface || !surface->getSprite()) return false;
-    // scenes stay where GD put them; only their pixels enter here, so
+    // scenes stay where gd put them; only their pixels enter here, so
     // commands can't touch gameplay.
     surface->beginWithClear(0, 0, 0, 1);
     scene->visit();
@@ -101,7 +101,7 @@ void CustomTransitionScene::onEnter() {
 }
 void CustomTransitionScene::draw() {
     if (m_stinger) {
-        // cut ignores overlay length, like an OBS stinger.
+        // cut ignores overlay length, like an obs stinger.
         auto* scene = m_elapsed < m_fDuration * m_cutPoint ? m_pOutScene : m_pInScene;
         if (scene) scene->visit();
     } else if (!m_captured) CCTransitionScene::draw();

@@ -4,6 +4,7 @@
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/ThreadTracker.hpp"
 #include "../../../utils/Base64.hpp"
+#include "../../../utils/JsonHelper.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../utils/AudioInterop.hpp"
 #include "../../../utils/HttpClient.hpp"
@@ -18,14 +19,41 @@
 #include <Geode/utils/string.hpp>
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/general.hpp>
+#include <algorithm>
+#include <bit>
 #include <memory>
 #include <cmath>
 #include <chrono>
+#include <limits>
 
 using namespace geode::prelude;
 
 namespace {
 constexpr auto PROFILE_MUSIC_CACHE_MAX_AGE = std::chrono::hours(24 * 30);
+
+void releaseSound(FMOD::Sound* sound) {
+    sound->release();
+}
+
+int pcmBits(FMOD_SOUND_FORMAT format) {
+    switch (format) {
+        case FMOD_SOUND_FORMAT_PCM8: return 8;
+        case FMOD_SOUND_FORMAT_PCM16: return 16;
+        case FMOD_SOUND_FORMAT_PCM24: return 24;
+        case FMOD_SOUND_FORMAT_PCM32: case FMOD_SOUND_FORMAT_PCMFLOAT: return 32;
+        default: return 0;
+    }
+}
+
+uint32_t readPcm32(uint8_t const* source) {
+    return static_cast<uint32_t>(source[0]) | (static_cast<uint32_t>(source[1]) << 8)
+        | (static_cast<uint32_t>(source[2]) << 16) | (static_cast<uint32_t>(source[3]) << 24);
+}
+
+int16_t readPcm16(uint8_t const* source) {
+    auto const bits = static_cast<uint16_t>(source[0] | (static_cast<uint16_t>(source[1]) << 8));
+    return std::bit_cast<int16_t>(bits);
+}
 
 std::mutex& getProfileMusicCachePruneMutex() {
     static std::mutex mutex;
@@ -159,6 +187,24 @@ void ProfileMusicManager::injectBundleConfig(int accountID, const ProfileMusicCo
     }
 }
 
+ProfileMusicManager::ProfileMusicConfig ProfileMusicManager::parseConfig(matjson::Value const& json) {
+    ProfileMusicConfig config;
+    if (!json.isObject()) {
+        config.enabled = false;
+        return config;
+    }
+    config.songID = std::max(0, paimon::json::integerOr<int>(json["songID"]));
+    config.startMs = std::max(0, paimon::json::integerOr<int>(json["startMs"]));
+    config.endMs = std::max(0, paimon::json::integerOr<int>(json["endMs"], config.endMs));
+    config.volume = std::clamp(paimon::json::floatOr(json["volume"], config.volume), 0.f, 1.f);
+    config.enabled = json["enabled"].asBool().unwrapOr(config.enabled);
+    config.songName = json["songName"].asString().unwrapOr("");
+    config.artistName = json["artistName"].asString().unwrapOr("");
+    config.updatedAt = json["updatedAt"].asString().unwrapOr("");
+    config.isCustom = json["isCustom"].asBool().unwrapOr(config.isCustom);
+    return config;
+}
+
 bool ProfileMusicManager::tryGetImmediateConfig(int accountID, ProfileMusicConfig& outConfig) {
     if (auto it = m_configCache.find(accountID); it != m_configCache.end()) {
         outConfig = it->second;
@@ -245,29 +291,20 @@ void ProfileMusicManager::getProfileMusicConfig(int accountID, ConfigCallback ca
             log::info("[ProfileMusic] Received response for account {}: {}", accountID, response.substr(0, 200));
 
             auto parsed = matjson::parse(response);
-            if (!parsed.isOk()) {
+            if (!parsed.isOk() || !parsed.unwrap().isObject()) {
                 log::error("[ProfileMusic] Failed to parse JSON for account {}", accountID);
                 callback(false, ProfileMusicConfig{});
                 return;
             }
 
-            auto root = parsed.unwrap();
+            auto const& root = parsed.unwrap();
             if (root.contains("error") || !root.contains("songID")) {
                 log::warn("[ProfileMusic] No music config found for account {}", accountID);
                 callback(false, ProfileMusicConfig{});
                 return;
             }
 
-            ProfileMusicConfig config;
-            config.songID = root["songID"].asInt().unwrapOr(0);
-            config.startMs = root["startMs"].asInt().unwrapOr(0);
-            config.endMs = root["endMs"].asInt().unwrapOr(20000);
-            config.volume = static_cast<float>(root["volume"].asDouble().unwrapOr(0.7));
-            config.enabled = root["enabled"].asBool().unwrapOr(true);
-            config.songName = root["songName"].asString().unwrapOr("");
-            config.artistName = root["artistName"].asString().unwrapOr("");
-            config.updatedAt = root["updatedAt"].asString().unwrapOr("");
-            config.isCustom = root["isCustom"].asBool().unwrapOr(false);
+            auto config = parseConfig(root);
 
             log::info("[ProfileMusic] Config loaded for account {}: songID={}, enabled={}", accountID, config.songID, config.enabled);
 
@@ -384,88 +421,74 @@ std::vector<uint8_t> ProfileMusicManager::extractAudioFragment(std::string const
     }
 
     FMOD::Sound* sound = nullptr;
-    FMOD_RESULT res = engine->m_system->createSound(filePath.c_str(), FMOD_CREATESAMPLE, nullptr, &sound);
+    FMOD_RESULT res = engine->m_system->createSound(
+        filePath.c_str(), FMOD_OPENONLY | FMOD_ACCURATETIME, nullptr, &sound);
     if (res != FMOD_OK || !sound) {
         log::error("[ProfileMusic] Cannot decode sound: FMOD error {}", static_cast<int>(res));
         return result;
     }
+    std::unique_ptr<FMOD::Sound, decltype(&releaseSound)> heldSound(sound, &releaseSound);
 
     unsigned int totalDurationMs = 0;
-    sound->getLength(&totalDurationMs, FMOD_TIMEUNIT_MS);
-    if (totalDurationMs == 0) {
-        sound->release();
-        return result;
-    }
+    if (sound->getLength(&totalDurationMs, FMOD_TIMEUNIT_MS) != FMOD_OK
+        || totalDurationMs == 0 || totalDurationMs > static_cast<unsigned int>(std::numeric_limits<int>::max())) return {};
 
     if (endMs > static_cast<int>(totalDurationMs) || endMs <= 0) endMs = static_cast<int>(totalDurationMs);
     if (startMs < 0) startMs = 0;
     if (startMs >= endMs) {
-        sound->release();
         return result;
     }
 
-    FMOD_SOUND_TYPE sndType;
-    FMOD_SOUND_FORMAT sndFormat;
+    FMOD_SOUND_FORMAT sndFormat = FMOD_SOUND_FORMAT_NONE;
     int channels = 0, bits = 0;
-    sound->getFormat(&sndType, &sndFormat, &channels, &bits);
+    if (sound->getFormat(nullptr, &sndFormat, &channels, &bits) != FMOD_OK
+        || channels <= 0 || channels > 32) return {};
+    int const expectedBits = pcmBits(sndFormat);
+    if (!expectedBits || bits != expectedBits) return {};
 
     float frequency = 44100.f;
-    sound->getDefaults(&frequency, nullptr);
+    if (sound->getDefaults(&frequency, nullptr) != FMOD_OK
+        || !std::isfinite(frequency) || frequency < 1.f || frequency > 768000.f) return {};
 
     int sampleRate = static_cast<int>(frequency);
     int bytesPerSample = channels * (bits / 8);
 
     unsigned int totalPcmBytes = 0;
-    sound->getLength(&totalPcmBytes, FMOD_TIMEUNIT_PCMBYTES);
+    if (sound->getLength(&totalPcmBytes, FMOD_TIMEUNIT_PCMBYTES) != FMOD_OK
+        || totalPcmBytes == 0) return {};
 
     unsigned int startByte = static_cast<unsigned int>(
         static_cast<double>(startMs) / totalDurationMs * totalPcmBytes);
     unsigned int endByte = static_cast<unsigned int>(
         static_cast<double>(endMs) / totalDurationMs * totalPcmBytes);
 
-    if (bytesPerSample > 0) {
-        startByte = (startByte / bytesPerSample) * bytesPerSample;
-        endByte = (endByte / bytesPerSample) * bytesPerSample;
-    }
+    startByte = (startByte / bytesPerSample) * bytesPerSample;
+    endByte = (endByte / bytesPerSample) * bytesPerSample;
 
     if (endByte <= startByte || endByte > totalPcmBytes) {
-        sound->release();
         return result;
     }
 
     unsigned int fragmentBytes = endByte - startByte;
-
-    void* ptr1 = nullptr, *ptr2 = nullptr;
-    unsigned int len1 = 0, len2 = 0;
-    res = sound->lock(startByte, fragmentBytes, &ptr1, &ptr2, &len1, &len2);
-    if (res != FMOD_OK) {
-        log::error("[ProfileMusic] Cannot lock sound buffer: FMOD error {}", static_cast<int>(res));
-        sound->release();
-        return result;
-    }
-
+    if (sound->seekData(startByte / bytesPerSample) != FMOD_OK) return {};
     std::vector<uint8_t> pcmData(fragmentBytes);
     size_t written = 0;
-    if (ptr1 && len1 > 0) {
-        std::memcpy(pcmData.data() + written, ptr1, len1);
-        written += len1;
+    auto const chunkBytes = static_cast<unsigned int>(65536 / bytesPerSample * bytesPerSample);
+    while (written < pcmData.size()) {
+        auto const requested = static_cast<unsigned int>(std::min<size_t>(chunkBytes, pcmData.size() - written));
+        unsigned int read = 0;
+        res = sound->readData(pcmData.data() + written, requested, &read);
+        if ((res != FMOD_OK && res != FMOD_ERR_FILE_EOF)
+            || read > requested || read % bytesPerSample != 0) return {};
+        written += read;
+        if (!read || res == FMOD_ERR_FILE_EOF) break;
     }
-    if (ptr2 && len2 > 0) {
-        std::memcpy(pcmData.data() + written, ptr2, len2);
-        written += len2;
-    }
-    pcmData.resize(written);
-
-    sound->unlock(ptr1, ptr2, len1, len2);
-    sound->release();
-
-    if (pcmData.empty()) {
-        log::error("[ProfileMusic] No PCM data extracted");
-        return result;
-    }
+    if (written != pcmData.size()) return {};
+    heldSound.reset();
 
     std::vector<int16_t> samples16;
     auto pushFloatSample = [&samples16](float f) {
+        if (!std::isfinite(f)) f = 0.f;
         if (f > 1.0f) f = 1.0f;
         else if (f < -1.0f) f = -1.0f;
         samples16.push_back(static_cast<int16_t>(std::lround(f * 32767.0f)));
@@ -474,16 +497,14 @@ std::vector<uint8_t> ProfileMusicManager::extractAudioFragment(std::string const
         case FMOD_SOUND_FORMAT_PCM16: {
             size_t count = pcmData.size() / 2;
             samples16.resize(count);
-            if (count > 0) std::memcpy(samples16.data(), pcmData.data(), count * 2);
+            for (size_t i = 0; i < count; ++i) samples16[i] = readPcm16(pcmData.data() + i * 2);
             break;
         }
         case FMOD_SOUND_FORMAT_PCMFLOAT: {
             size_t count = pcmData.size() / 4;
             samples16.reserve(count);
             for (size_t i = 0; i < count; ++i) {
-                float f;
-                std::memcpy(&f, pcmData.data() + i * 4, 4);
-                pushFloatSample(f);
+                pushFloatSample(std::bit_cast<float>(readPcm32(pcmData.data() + i * 4)));
             }
             break;
         }
@@ -491,7 +512,7 @@ std::vector<uint8_t> ProfileMusicManager::extractAudioFragment(std::string const
             samples16.reserve(pcmData.size());
             for (size_t i = 0; i < pcmData.size(); ++i) {
                 int8_t s = static_cast<int8_t>(pcmData[i]);
-                samples16.push_back(static_cast<int16_t>(s << 8));
+                samples16.push_back(static_cast<int16_t>(static_cast<int>(s) * 256));
             }
             break;
         }
@@ -512,18 +533,12 @@ std::vector<uint8_t> ProfileMusicManager::extractAudioFragment(std::string const
             size_t count = pcmData.size() / 4;
             samples16.reserve(count);
             for (size_t i = 0; i < count; ++i) {
-                int32_t s;
-                std::memcpy(&s, pcmData.data() + i * 4, 4);
+                int32_t s = std::bit_cast<int32_t>(readPcm32(pcmData.data() + i * 4));
                 samples16.push_back(static_cast<int16_t>(s >> 16));
             }
             break;
         }
-        default: {
-            size_t count = pcmData.size() / 2;
-            samples16.resize(count);
-            if (count > 0) std::memcpy(samples16.data(), pcmData.data(), count * 2);
-            break;
-        }
+        default: return {};
     }
 
     if (samples16.empty()) {
@@ -542,7 +557,9 @@ std::vector<uint8_t> ProfileMusicManager::extractAudioFragment(std::string const
         result.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
     };
 
+    if (samples16.size() > (std::numeric_limits<uint32_t>::max() - 44) / sizeof(int16_t)) return {};
     uint32_t dataSize = static_cast<uint32_t>(samples16.size() * sizeof(int16_t));
+    result.reserve(static_cast<size_t>(dataSize) + 44);
     uint16_t numChannels = static_cast<uint16_t>(channels);
     uint16_t bitsPerSample = 16;
     uint32_t byteRate = static_cast<uint32_t>(sampleRate) * numChannels * (bitsPerSample / 8);
@@ -564,8 +581,12 @@ std::vector<uint8_t> ProfileMusicManager::extractAudioFragment(std::string const
     result.push_back('d'); result.push_back('a'); result.push_back('t'); result.push_back('a');
     writeU32(dataSize);
 
-    const uint8_t* sampleBytes = reinterpret_cast<const uint8_t*>(samples16.data());
-    result.insert(result.end(), sampleBytes, sampleBytes + dataSize);
+    if constexpr (std::endian::native == std::endian::little) {
+        auto const* sampleBytes = reinterpret_cast<uint8_t const*>(samples16.data());
+        result.insert(result.end(), sampleBytes, sampleBytes + dataSize);
+    } else {
+        for (auto sample : samples16) writeU16(static_cast<uint16_t>(sample));
+    }
 
     log::info("[ProfileMusic] Created WAV fragment: {} bytes ({}ms-{}ms, {}Hz, {}ch, 16bit out, src {}bit fmt {})",
         result.size(), startMs, endMs, sampleRate, channels, bits, static_cast<int>(sndFormat));
@@ -838,8 +859,8 @@ void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusic
             return;
         }
 
-        // No cached WAV yet; extract in the background so we don't block profile render.
-        // Capture the lifetime token to avoid post-shutdown callbacks.
+        // no cached wav yet; extract in the background so we don't block profile render.
+        // capture the lifetime token to avoid post-shutdown callbacks.
         log::info("[ProfileMusic] Extracting video-audio in background for account {}: {}", accountID, videoPath);
         auto lifetime = m_lifetimeToken;
         paimon::setProfileMusicInteropActive(true);
@@ -1119,7 +1140,7 @@ void ProfileMusicManager::stopOwnedAudioPlayback() {
 
     forceRemoveCaveEffect();
 
-    // Stopping the shared group during exit notifies stale GD editor delegates.
+    // stopping the shared group during exit notifies stale gd editor delegates.
     if (!paimon::isRuntimeShuttingDown()) {
         auto engine = FMODAudioEngine::sharedEngine();
         if (engine && engine->m_backgroundMusicChannel) {
@@ -1330,93 +1351,86 @@ void ProfileMusicManager::getWaveformPeaks(int songID, WaveformCallback callback
 }
 
 std::vector<float> ProfileMusicManager::analyzeWaveform(std::string const& filePath, int numPeaks, int& outDurationMs) {
-    std::vector<float> peaks(numPeaks, 0.0f);
     outDurationMs = 0;
+    if (numPeaks <= 0 || numPeaks > 10000) return {};
 
-    auto engine = FMODAudioEngine::sharedEngine();
-    if (!engine || !engine->m_system) return peaks;
+    auto* engine = FMODAudioEngine::sharedEngine();
+    if (!engine || !engine->m_system) return {};
 
-    FMOD::System* system = engine->m_system;
     FMOD::Sound* sound = nullptr;
-
-    FMOD_RESULT result = system->createSound(filePath.c_str(), FMOD_DEFAULT | FMOD_OPENONLY, nullptr, &sound);
-    if (result != FMOD_OK || !sound) {
-        return peaks;
-    }
+    auto result = engine->m_system->createSound(filePath.c_str(), FMOD_DEFAULT | FMOD_OPENONLY, nullptr, &sound);
+    if (result != FMOD_OK || !sound) return {};
+    std::unique_ptr<FMOD::Sound, decltype(&releaseSound)> heldSound(sound, &releaseSound);
 
     unsigned int lengthMs = 0;
-    sound->getLength(&lengthMs, FMOD_TIMEUNIT_MS);
-    outDurationMs = static_cast<int>(lengthMs);
-
     unsigned int length = 0;
-    sound->getLength(&length, FMOD_TIMEUNIT_PCMBYTES);
+    FMOD_SOUND_FORMAT format = FMOD_SOUND_FORMAT_NONE;
+    int channels = 0;
+    int bits = 0;
+    if (sound->getLength(&lengthMs, FMOD_TIMEUNIT_MS) != FMOD_OK
+        || sound->getLength(&length, FMOD_TIMEUNIT_PCMBYTES) != FMOD_OK
+        || sound->getFormat(nullptr, &format, &channels, &bits) != FMOD_OK
+        || length == 0 || channels <= 0 || channels > 32) return {};
 
-    FMOD_SOUND_FORMAT format;
-    int channels, bits;
-    sound->getFormat(nullptr, &format, &channels, &bits);
+    int const expectedBits = pcmBits(format);
+    if (!expectedBits || bits != expectedBits) return {};
+    size_t const bytesPerSample = static_cast<size_t>(bits / 8);
+    size_t const frameBytes = bytesPerSample * static_cast<size_t>(channels);
+    uint64_t const totalSamples = length / frameBytes;
+    if (!totalSamples) return {};
 
-    if (length == 0 || bits == 0) {
-        sound->release();
-        return peaks;
-    }
+    std::vector<float> peaks(static_cast<size_t>(numPeaks), 0.f);
+    std::vector<uint8_t> buffer(65536 / frameBytes * frameBytes);
+    uint64_t sampleIndex = 0;
+    while (sampleIndex < totalSamples) {
+        unsigned int read = 0;
+        result = sound->readData(buffer.data(), static_cast<unsigned int>(buffer.size()), &read);
+        if (result != FMOD_OK && result != FMOD_ERR_FILE_EOF) return {};
+        if (!read) break;
+        if (read > buffer.size() || read % frameBytes != 0) return {};
 
-    unsigned int bytesPerSample = bits / 8;
-    unsigned int totalSamples = length / (bytesPerSample * channels);
-    unsigned int samplesPerPeak = totalSamples / numPeaks;
-
-    if (samplesPerPeak == 0) samplesPerPeak = 1;
-
-    std::vector<char> buffer(length);
-    unsigned int read = 0;
-    result = sound->readData(buffer.data(), length, &read);
-
-    if (result != FMOD_OK && result != FMOD_ERR_FILE_EOF) {
-        sound->release();
-        return peaks;
-    }
-
-    for (int i = 0; i < numPeaks && static_cast<unsigned int>(i) * samplesPerPeak < totalSamples; i++) {
-        float maxSample = 0.0f;
-
-        unsigned int startSample = i * samplesPerPeak;
-        unsigned int endSample = std::min(startSample + samplesPerPeak, totalSamples);
-
-        for (unsigned int s = startSample; s < endSample; s++) {
-            for (int c = 0; c < channels; c++) {
-                unsigned int byteIndex = (s * channels + c) * bytesPerSample;
-                if (byteIndex + bytesPerSample > read) continue;
-
-                float sample = 0.0f;
-                if (bits == 16) {
-                    int16_t* ptr = reinterpret_cast<int16_t*>(&buffer[byteIndex]);
-                    sample = std::abs(static_cast<float>(*ptr) / 32768.0f);
-                } else if (bits == 8) {
-                    sample = std::abs((static_cast<float>(buffer[byteIndex]) - 128.0f) / 128.0f);
-                } else if (bits == 32) {
-                    float* ptr = reinterpret_cast<float*>(&buffer[byteIndex]);
-                    sample = std::abs(*ptr);
+        for (size_t offset = 0; offset < read && sampleIndex < totalSamples; offset += frameBytes, ++sampleIndex) {
+            auto peakIndex = static_cast<size_t>(sampleIndex * static_cast<uint64_t>(numPeaks) / totalSamples);
+            for (int channel = 0; channel < channels; ++channel) {
+                auto const* source = buffer.data() + offset + static_cast<size_t>(channel) * bytesPerSample;
+                float sample = 0.f;
+                switch (format) {
+                    case FMOD_SOUND_FORMAT_PCM8:
+                        sample = static_cast<float>(static_cast<int8_t>(*source)) / 128.f;
+                        break;
+                    case FMOD_SOUND_FORMAT_PCM16: {
+                        int16_t value = readPcm16(source);
+                        sample = static_cast<float>(value) / 32768.f;
+                        break;
+                    }
+                    case FMOD_SOUND_FORMAT_PCM24: {
+                        int32_t value = source[0] | (static_cast<int32_t>(source[1]) << 8)
+                            | (static_cast<int32_t>(source[2]) << 16);
+                        if (value & 0x800000) value -= 0x1000000;
+                        sample = static_cast<float>(value) / 8388608.f;
+                        break;
+                    }
+                    case FMOD_SOUND_FORMAT_PCM32: {
+                        int32_t value = std::bit_cast<int32_t>(readPcm32(source));
+                        sample = static_cast<float>(value) / 2147483648.f;
+                        break;
+                    }
+                    case FMOD_SOUND_FORMAT_PCMFLOAT:
+                        sample = std::bit_cast<float>(readPcm32(source));
+                        break;
+                    default: break;
                 }
-
-                if (sample > maxSample) maxSample = sample;
+                if (std::isfinite(sample)) peaks[peakIndex] = std::max(peaks[peakIndex], std::abs(sample));
             }
         }
-
-        peaks[i] = maxSample;
+        if (result == FMOD_ERR_FILE_EOF) break;
     }
-
-    sound->release();
-
-    float maxPeak = 0.0f;
-    for (float p : peaks) {
-        if (p > maxPeak) maxPeak = p;
+    if (!sampleIndex) return {};
+    outDurationMs = static_cast<int>(std::min<unsigned int>(lengthMs, std::numeric_limits<int>::max()));
+    float const maxPeak = *std::max_element(peaks.begin(), peaks.end());
+    if (maxPeak > 0.f) {
+        for (float& peak : peaks) peak /= maxPeak;
     }
-
-    if (maxPeak > 0.0f) {
-        for (float& p : peaks) {
-            p /= maxPeak;
-        }
-    }
-
     return peaks;
 }
 
@@ -1534,7 +1548,7 @@ bool ProfileMusicManager::isCacheValid(int accountID, ProfileMusicConfig const& 
 }
 
 void ProfileMusicManager::applyCaveEffect() {
-    // no reentrancy: toggling one DSP mid-transition destabilizes FMOD on fast layer changes.
+    // no reentrancy: toggling one dsp mid-transition destabilizes fmod on fast layer changes.
     if (m_caveEffectActive || m_caveTransitioning) return;
     if (!m_isPlaying) return;
 
@@ -1730,4 +1744,3 @@ void ProfileMusicManager::forceStop() {
     stopOwnedAudioPlayback();
     log::info("[ProfileMusic] forceStop complete, all state cleared");
 }
-

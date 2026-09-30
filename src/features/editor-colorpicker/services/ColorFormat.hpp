@@ -1,7 +1,7 @@
 #pragma once
 
-// Color strings for the picker; GD hex drops '#' so the value pastes straight
-// into GD's color hex field.
+// color strings for the picker; gd hex drops '#' so the value pastes straight
+// into gd's color hex field.
 
 #include <Geode/Geode.hpp>
 #include <string>
@@ -22,7 +22,7 @@ inline const char* formatName(int index) {
     }
 }
 
-// Convert an RGB triplet to an "H, S%, V%" string (hue 0-360, sat/val 0-100).
+// convert an rgb triplet to an "h, s%, v%" string (hue 0-360, sat/val 0-100).
 inline std::string formatHsv(cocos2d::ccColor3B c) {
     const float r = c.r / 255.f, g = c.g / 255.f, b = c.b / 255.f;
     const float mx = std::max({r, g, b});

@@ -4,7 +4,7 @@
 
 using namespace geode::prelude;
 
-// smart-enter that preserves other mods' enterPressed observers
+// smart-enter that preserves other mods' enterpressed observers
 class $modify(PaimonShareCommentSmartEnter, ShareCommentLayer) {
     $override
     void enterPressed(CCTextInputNode* node) {

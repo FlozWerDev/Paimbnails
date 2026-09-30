@@ -1,6 +1,6 @@
 #pragma once
 
-// Shop tab: reads listings and thumbs only; downloads happen in the detail popup.
+// shop tab: reads listings and thumbs only; downloads happen in the detail popup.
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -16,12 +16,12 @@ class CursorShopTab : public cocos2d::CCNode {
 public:
     static CursorShopTab* create(cocos2d::CCSize size, std::function<void()> onInstalled);
 
-    // Catalog loads on first tab entry; re-entry retries a failed load.
+    // catalog loads on first tab entry; re-entry retries a failed load.
     void onShown();
-    // Container popup forwards wheel and smooth-scroll ticks.
+    // container popup forwards wheel and smooth-scroll ticks.
     void handleScrollWheel(float x, float y);
     void stepScroll(float dt);
-    // Releases IME before the popup is destroyed.
+    // releases ime before the popup is destroyed.
     void shutdown();
 
 private:
@@ -29,7 +29,7 @@ private:
     using Category = paimon::cursorshop::Category;
     using Listing  = paimon::cursorshop::Listing;
 
-    // One pending search-crawl request.
+    // one pending search-crawl request.
     struct ScanTarget {
         Category category;
         int page = 0;
@@ -46,7 +46,7 @@ private:
     std::vector<int> m_filtered;
     std::string m_query;
 
-    // Tags the loaded listing so local paging never refetches.
+    // tags the loaded listing so local paging never refetches.
     std::string m_loadedKey;
     int m_serverPage = 0;
     int m_serverPageCount = 1;
@@ -57,7 +57,7 @@ private:
 
     // m_items holds search results instead of a category page.
     bool m_searchResults = false;
-    // Synthetic category for the search in flight.
+    // synthetic category for the search in flight.
     Category m_searchCategory;
     bool m_scanning = false;
     std::vector<ScanTarget> m_scanTargets;
@@ -74,7 +74,7 @@ private:
     cocos2d::CCLabelBMFont* m_creditLabel = nullptr;
     cocos2d::CCLabelBMFont* m_overlayLabel = nullptr;
     CCMenuItemSpriteExtra* m_overlayButton = nullptr;
-    // Fires search when the local filter hit but the center overlay never showed.
+    // fires search when the local filter hit but the center overlay never showed.
     CCMenuItemSpriteExtra* m_searchButton = nullptr;
     ButtonSprite* m_overlayButtonSprite = nullptr;
     std::array<ButtonSprite*, paimon::cursorshop::kStoreCount> m_storeSprites{};
@@ -85,9 +85,9 @@ private:
     Category const& currentCategory() const;
     std::string listingKey() const;
     int storeIndex() const { return static_cast<int>(m_store); }
-    // Local pages fitting one fetch.
+    // local pages fitting one fetch.
     int localPagesPerFetch() const;
-    // Local pages the loaded items span.
+    // local pages the loaded items span.
     int localPageCount() const;
 
     void selectStore(Store store);

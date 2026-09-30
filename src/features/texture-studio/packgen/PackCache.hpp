@@ -1,5 +1,5 @@
 #pragma once
-// Byte-budgeted LRU blob cache (memory + disk). Stale entries read as misses, never poison.
+// byte-budgeted lru blob cache (memory + disk). stale entries read as misses, never poison.
 
 #include <cstddef>
 #include <cstdint>

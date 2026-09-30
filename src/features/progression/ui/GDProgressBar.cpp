@@ -39,7 +39,7 @@ bool GDProgressBar::init(float width, float height) {
     if (!CCNode::init()) return false;
 
     m_width = width;
-    // Below natural height squash caps instead of resizing them.
+    // below natural height squash caps instead of resizing them.
     m_artHeight = std::max(height, kBarH);
     m_squash = height / m_artHeight;
 

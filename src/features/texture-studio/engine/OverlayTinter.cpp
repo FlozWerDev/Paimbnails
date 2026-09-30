@@ -8,7 +8,7 @@ namespace paimon::texture_studio {
 
 namespace {
 
-// PackGen drawImage rule: mismatch still paints the top-left overlap (rejecting stranded whole files).
+// packgen drawimage rule: mismatch still paints the top-left overlap (rejecting stranded whole files).
 void applyOne(ImageBuffer& dst, ImageBuffer const& overlay,
               cocos2d::ccColor3B color, float brightness,
               float saturation, float contrast, bool replace) {
@@ -26,7 +26,7 @@ void applyOne(ImageBuffer& dst, ImageBuffer const& overlay,
         color.r, color.g, color.b, brightness, saturation, contrast);
     static const packgen::AlphaLut kLut = packgen::AlphaLut::make();
 
-    // Same overlap rule and op order as the old loop; per-pixel clamps hoisted into spec.
+    // same overlap rule and op order as the old loop; per-pixel clamps hoisted into spec.
     packgen::applyOverlayBand(d, dst.width(), o, overlay.width(),
                               0, H, W, spec, kLut, replace);
 }
@@ -34,7 +34,7 @@ void applyOne(ImageBuffer& dst, ImageBuffer const& overlay,
 }  // namespace
 
 bool OverlayImages::anyUsable(int width, int height) const {
-    // Any non-empty overlay contributes at least its top-left overlap.
+    // any non-empty overlay contributes at least its top-left overlap.
     (void)width;
     (void)height;
     return !overlay1.empty() || !overlay2.empty() || !gold.empty()

@@ -1,5 +1,5 @@
 #pragma once
-// Icon Maker gallery: card grid with true thumbnails, search and sort. Full scene, like Texture Studio.
+// icon maker gallery: card grid with true thumbnails, search and sort. full scene, like texture studio.
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/TextInput.hpp>
@@ -52,7 +52,7 @@ protected:
 
     std::string m_query;
     Sort m_sort = Sort::Recent;
-    // -1 = all gamemodes; else index into supportedTypes().
+    // -1 = all gamemodes; else index into supportedtypes().
     int m_typeFilter = -1;
     bool m_onlyFavorites = false;
     cocos2d::CCLabelBMFont* m_filterLabel = nullptr;

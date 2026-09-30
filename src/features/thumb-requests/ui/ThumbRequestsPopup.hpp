@@ -10,7 +10,7 @@
 
 namespace paimon::thumbreq {
 
-// The request queue as the team left it: asked, sent, with which difficulty and rate.
+// the request queue as the team left it: asked, sent, with which difficulty and rate.
 class ThumbRequestsPopup : public geode::Popup {
 public:
     static ThumbRequestsPopup* create();
@@ -27,7 +27,7 @@ protected:
     cocos2d::CCNode* createRow(Request const& request, float y, bool odd);
 
     int m_filter = 0;
-    // Bumped per reload: a stale filter's reply can't clobber the current list.
+    // bumped per reload: a stale filter's reply can't clobber the current list.
     int m_generation = 0;
     bool m_loading = true;
     bool m_failed = false;

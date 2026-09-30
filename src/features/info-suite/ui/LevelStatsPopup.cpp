@@ -38,14 +38,14 @@ constexpr float kJumpHeaderY = 87.f;
 constexpr float kJumpChartY = 27.f;
 constexpr float kToggleY = 15.f;
 
-// Five bars span each 20% axis interval.
+// five bars span each 20% axis interval.
 constexpr int kDeathBins = 25;
-// Keep the thumbnail recognizable behind the panels.
+// keep the thumbnail recognizable behind the panels.
 constexpr float kBlurIntensity = 2.f;
 
 constexpr ccColor3B kJumpColor{120, 190, 255};
 
-// Shared percent binning keeps bars and highlight aligned.
+// shared percent binning keeps bars and highlight aligned.
 int deathBin(int percent) {
     return std::clamp(percent * kDeathBins / 100, 0, kDeathBins - 1);
 }
@@ -124,12 +124,12 @@ CCNode* LevelStatsPopup::makeTile(float width, float height, std::vector<char co
 void LevelStatsPopup::buildTiles() {
     auto* level = m_level.data();
 
-    // GD counts practice attempts in this total; the next tile shows their share.
+    // gd counts practice attempts in this total; the next tile shows their share.
     int64_t attempts = std::max<int64_t>(level->m_attempts.value(),
                             static_cast<int64_t>(m_progress.attempts) + m_progress.practiceAttempts);
     int bestNormal = std::max(level->m_normalPercent.value(), m_progress.bestNormal);
     int bestPractice = std::max(level->m_practicePercent, m_progress.bestPractice);
-    // Use GD's jump total only when the mod has no level-specific value.
+    // use gd's jump total only when the mod has no level-specific value.
     bool trackedJumps = m_progress.jumpsNormal > 0 || m_progress.jumpsPractice > 0;
     int jumpsNormal = trackedJumps ? m_progress.jumpsNormal : level->m_jumps.value();
 
@@ -183,7 +183,7 @@ void LevelStatsPopup::buildCharts() {
         addText(m_chartLayer, right.c_str(), "chatFont.fnt", 0.4f, kValue,
                 {kPopupW - kMargin, headerY}, {1.f, 0.5f}, kInnerW * 0.54f);
 
-    // The chart owns its empty state.
+    // the chart owns its empty state.
         if (auto* chart = StatsChartNode::create(values, {kInnerW, kChartH}, options)) {
             chart->setPosition({kPopupW / 2.f, chartBottom + kChartH / 2.f});
             m_chartLayer->addChild(chart);
@@ -203,7 +203,7 @@ void LevelStatsPopup::buildCharts() {
     deathOpts.highlight = worst.percent >= 0 ? deathBin(worst.percent) : -1;
     deathOpts.emptyText = noData;
 
-    // Reference line marks progress through the level.
+    // reference line marks progress through the level.
     int best = m_practice
         ? std::max(m_level->m_practicePercent, m_progress.bestPractice)
         : std::max(m_level->m_normalPercent.value(), m_progress.bestNormal);
@@ -236,7 +236,7 @@ void LevelStatsPopup::buildCharts() {
     for (auto const& run : runs) {
         runValues.push_back(static_cast<float>(run.jumps));
         totalJumps += run.jumps;
-    // Dim early exits so longer runs remain visually distinct.
+    // dim early exits so longer runs remain visually distinct.
         jumpOpts.tints.push_back(static_cast<float>(run.percent) / 100.f);
     }
 
@@ -265,7 +265,7 @@ void LevelStatsPopup::requestThumbnail() {
     int levelID = m_level ? m_level->m_levelID.value() : 0;
     if (levelID <= 0) return;
 
-    // Reuse the level screen's already-loaded thumbnail.
+    // reuse the level screen's already-loaded thumbnail.
     if (paimon::ThumbnailBackgroundChangedEvent::s_lastLevelID == levelID) {
         if (auto* shown = paimon::ThumbnailBackgroundChangedEvent::getLastTexture()) {
             applyThumbnail(shown);
@@ -297,7 +297,7 @@ void LevelStatsPopup::applyThumbnail(CCTexture2D* texture) {
 
     CCSize area{kPopupW - 6.f, kPopupH - 6.f};
 
-    // Try the synchronous cached blur first to avoid a flash.
+    // try the synchronous cached blur first to avoid a flash.
     if (auto* blurred = Shaders::createPopupPaimonBlurredSprite(texture, area, kBlurIntensity)) {
         installThumbnail(blurred, area, false);
         return;
@@ -305,13 +305,13 @@ void LevelStatsPopup::applyThumbnail(CCTexture2D* texture) {
 
     Ref<CCTexture2D> raw = texture;
     auto self = WeakRef<LevelStatsPopup>(this);
-    // BlurSystem keys by texture so gallery/re-upload changes invalidate naturally.
+    // blursystem keys by texture so gallery/re-upload changes invalidate naturally.
     BlurSystem::getInstance()->buildPaimonBlurPriority(
         texture, area, kBlurIntensity, std::string{},
         [self, area, raw](CCSprite* blurred) {
             auto ref = self.lock();
             if (!ref) return;
-    // Fall back to the unblurred thumbnail.
+    // fall back to the unblurred thumbnail.
             auto* sprite = blurred ? blurred : CCSprite::createWithTexture(raw);
             if (!sprite) return;
             static_cast<LevelStatsPopup*>(ref.data())->installThumbnail(sprite, area, true);

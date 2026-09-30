@@ -15,7 +15,7 @@
 
 namespace paimon::roles {
 
-// Canonical role identifiers. Kept in sync with the server's role keys.
+// canonical role identifiers. kept in sync with the server's role keys.
 inline constexpr char const* kAdmin  = "admin";
 inline constexpr char const* kMod    = "mod";
 inline constexpr char const* kVip    = "vip";
@@ -42,7 +42,7 @@ struct UserRoles {
     }
 };
 
-// Per-username LRU+TTL role cache with in-flight coalescing; no server spam from cells.
+// per-username lru+ttl role cache with in-flight coalescing; no server spam from cells.
 class RoleService {
 public:
     using Callback = geode::CopyableFunction<void(UserRoles)>;
@@ -69,7 +69,7 @@ public:
             std::lock_guard<std::mutex> lock(m_mutex);
             insertLocked(key, roles);
         }
-        // Keep the legacy mod/admin caches consistent.
+        // keep the legacy mod/admin caches consistent.
         moderatorCacheInsert(username, roles.mod, roles.admin);
         ModerationService::get().updateUserStatusCache(username, roles.mod, roles.admin);
     }
@@ -81,7 +81,7 @@ public:
         m_orderSet.clear();
     }
 
-    // Full role set per username on main thread; concurrent requests coalesce.
+    // full role set per username on main thread; concurrent requests coalesce.
     void fetch(std::string const& username, Callback cb) {
         if (username.empty()) { dispatch(std::move(cb), {}); return; }
 
@@ -101,7 +101,7 @@ public:
             m_inflight[key].push_back(std::move(cb));
         }
 
-        // Server keys roles by username; viewer's accountID suffices for mod-code auth.
+        // server keys roles by username; viewer's accountid suffices for mod-code auth.
         int viewerAccountID = 0;
         if (auto* am = GJAccountManager::get()) viewerAccountID = am->m_accountID;
 

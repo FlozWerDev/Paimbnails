@@ -24,9 +24,9 @@ namespace {
 
 constexpr float kPopupW = 380.f;
 constexpr float kPopupH = 250.f;
-// stb writes the whole sheet in one image; keep it within common GPU limits.
+// stb writes the whole sheet in one image; keep it within common gpu limits.
 constexpr long long kMaxSheetSide = 16384;
-// 4096x4096 RGBA = 64 MiB; the side cap alone still allows a 1 GiB sheet.
+// 4096x4096 rgba = 64 mib; the side cap alone still allows a 1 gib sheet.
 constexpr long long kMaxSheetPixels = 4096LL * 4096;
 
 std::string sheetJson(GIFDecoder::GIFData const& gif, int cols, int rows) {
@@ -220,7 +220,7 @@ void GifToSheetPopup::applyDecoded(std::filesystem::path const& path, std::share
     m_gif = std::move(gif);
 
     int count = static_cast<int>(m_gif->frames.size());
-    // Near-square sheet by default: cols*frameW ~ rows*frameH.
+    // near-square sheet by default: cols*framew ~ rows*frameh.
     double ideal = std::sqrt(
         static_cast<double>(count) * m_gif->height / std::max(1, m_gif->width));
     m_autoCols = std::clamp(static_cast<int>(std::lround(ideal)), 1, count);

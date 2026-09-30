@@ -9,7 +9,7 @@
 
 namespace paimon::thumbalerts {
 
-// Polls latest-uploads into the alert queue; announced ids persist so reopening replays nothing.
+// polls latest-uploads into the alert queue; announced ids persist so reopening replays nothing.
 class NewThumbWatcher {
 public:
     static NewThumbWatcher& get();
@@ -17,10 +17,10 @@ public:
     void startup();
     void pollNow();
 
-    // Just-uploaded level: card already shown off the reply, feed entry records silently.
+    // just-uploaded level: card already shown off the reply, feed entry records silently.
     void suppressLevel(int levelId);
 
-    // Live socket frame: same dedup as the poll, second arrival dropped. Main thread only.
+    // live socket frame: same dedup as the poll, second arrival dropped. main thread only.
     void onPushMessage(std::string const& message);
 
 private:
@@ -28,7 +28,7 @@ private:
 
     void scheduleNextPoll();
     void onResponse(std::string const& body);
-    // False for malformed, known, or own entries.
+    // false for malformed, known, or own entries.
     bool acceptEntry(matjson::Value const& entry, NewThumb& out, bool& marked);
     void loadSeen();
     void saveSeen();

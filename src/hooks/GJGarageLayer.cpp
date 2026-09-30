@@ -30,12 +30,12 @@ class $modify(PaimonGJGarageLayer, GJGarageLayer) {
     bool init() {
         if (!GJGarageLayer::init()) return false;
         LayerBackgroundManager::get().applyBackground(this, "garage");
-        // gear button + re-color on config change; Icon Maker hangs off the same popup
+        // gear button + re-color on config change; icon maker hangs off the same popup
         paimon::icons::garage::onGarageInit(this);
         paimon::iconcopy::garage::onGarageInit(this);
         // accesses hang off the hub; this is the only visible button
         paimon::garage_hub::installHubButton(this);
-        // Stats Display API lays out one frame late with the anchor at the edge
+        // stats display api lays out one frame late with the anchor at the edge
         this->scheduleOnce(schedule_selector(PaimonGJGarageLayer::fixStatsMenuPosition), 0.f);
         return true;
     }

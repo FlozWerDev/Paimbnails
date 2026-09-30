@@ -511,7 +511,7 @@ void buildPerformanceGroup(CCNode* c, float w) {
 
     c->addChild(createLinkRow("Open Thumbnails Folder",
         []() {
-// Folder opens via the "button" setting handler in MaintenanceActions.
+// folder opens via the "button" setting handler in maintenanceactions.
             openNativeSettings();
         },
         w));
@@ -734,8 +734,8 @@ std::unordered_map<std::string, FeatureGroup> const& featureGroupRegistry() {
 }
 
 struct GranularRoute {
-    std::string groupKey;                    // Opens a FeatureConfigPopup.
-    std::function<void()> dedicatedAction;   // Takes priority over groupKey.
+    std::string groupKey;                    // opens a featureconfigpopup.
+    std::function<void()> dedicatedAction;   // takes priority over groupkey.
 };
 
 GranularRoute routeForGranular(std::string const& englishName) {

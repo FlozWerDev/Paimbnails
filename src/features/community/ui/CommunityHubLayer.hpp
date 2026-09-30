@@ -56,7 +56,7 @@ protected:
     void buildCompatibleModsList();
     void sortModerators();
 
-    // GD-style chrome, built once and kept across tabs
+    // gd-style chrome, built once and kept across tabs
     void buildChrome();
     CCMenuItemToggler* createTabButton(std::string const& text, char const* id, cocos2d::CCPoint pos);
     void playIntro();
@@ -67,7 +67,7 @@ protected:
     void showEmptyState();
     void finishTabLoad();
 
-    // Moderator profiles (username -> accountID -> GD, throttled); cells update in place, never rebuilt.
+    // moderator profiles (username -> accountid -> gd, throttled); cells update in place, never rebuilt.
     void startIconPipeline();
     void beginIconRequest(std::string const& key);
     void requestUserInfo(std::string const& key, int accountID);
@@ -149,7 +149,7 @@ protected:
     };
     std::vector<ThumbnailEntry> m_thumbnailEntries;
 
-    // Snapshot of the Modly catalog for the tab; index into it is the row tag.
+    // snapshot of the modly catalog for the tab; index into it is the row tag.
     std::vector<paimon::compat_mods::ModlyMod> m_compatMods;
     bool m_compatLoadFailed = false;
 

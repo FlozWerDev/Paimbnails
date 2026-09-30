@@ -8,14 +8,14 @@
 
 namespace paimon::net {
 
-// WinHTTP WebSocket client over TLS. Only Windows has an implementation;
+// winhttp websocket client over tls. only windows has an implementation;
 // elsewhere connect() returns false so the caller can report it.
 class WebSocketClient {
 public:
     struct Options {
         std::string host;
         std::string path = "/";  // may carry a query string
-        std::string label;       // shown in error messages ("Twitch", "Kick", ...)
+        std::string label;       // shown in error messages ("twitch", "kick", ...)
         std::vector<std::pair<std::string, std::string>> headers;
     };
 

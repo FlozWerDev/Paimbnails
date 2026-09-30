@@ -1,4 +1,4 @@
-// SVGF-lite temporal accumulation with layer-transform reprojection.
+// svgf-lite temporal accumulation with layer-transform reprojection.
 
 varying vec2 v_texCoord;
 
@@ -13,14 +13,14 @@ uniform vec2  u_reprojPrev;
 uniform float u_reprojScale;
 // 0 = invalid history, 1 = valid reprojection.
 uniform float u_historyValid;
-// 0 = color, 1 = writes variance to R.
+// 0 = color, 1 = writes variance to r.
 uniform float u_outVariance;
 
-// LDR ceiling; reset on converged noise.
+// ldr ceiling; reset on converged noise.
 const float kVarMax   = 4.0;
 const float kVarReset = 1.0;
 
-// equal(c,c) detects NaN; if avoids mix propagation.
+// equal(c,c) detects nan; if avoids mix propagation.
 vec3 sanitizeColor(vec3 c) {
     if (!all(equal(c, c))) return vec3(0.0);
     return clamp(c, vec3(0.0), vec3(kVarMax));

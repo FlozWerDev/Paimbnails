@@ -45,7 +45,7 @@ Ref<CCTextInputNode> focusedTextInput() {
 
 } // namespace paimon::editor
 
-// Only the editor asks for the focused input, so don't track anywhere else.
+// only the editor asks for the focused input, so don't track anywhere else.
 class $modify(PaimonFocusedInputNode, CCTextInputNode) {
     $override
     bool onTextFieldAttachWithIME(CCTextFieldTTF* t) {

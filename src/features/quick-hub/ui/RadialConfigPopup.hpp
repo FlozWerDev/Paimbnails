@@ -12,7 +12,7 @@ public:
 protected:
     bool init() override;
 
-    // Working copy
+    // working copy
     std::vector<std::string> m_activeIds;
     int m_tab = 0;
 

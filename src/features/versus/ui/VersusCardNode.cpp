@@ -10,7 +10,7 @@ namespace paimon::versus {
 
 namespace {
 
-// The plate art is 0.66 wide by 0.92 tall inside its square canvas.
+// the plate art is 0.66 wide by 0.92 tall inside its square canvas.
 constexpr float kAspect = 1.36f;
 
 void fitWidth(CCSprite* sprite, float width) {
@@ -56,7 +56,7 @@ void VersusCardNode::setCard(CardId id) {
 void VersusCardNode::rebuild() {
     m_content->removeAllChildren();
 
-    // The plate art lives in a square canvas, so it is scaled by that canvas
+    // the plate art lives in a square canvas, so it is scaled by that canvas
     // width and not by the visible card width.
     float const canvas = m_width / 0.66f;
 

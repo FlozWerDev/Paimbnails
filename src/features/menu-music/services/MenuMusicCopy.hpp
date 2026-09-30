@@ -12,7 +12,7 @@
 
 namespace paimon::menumusic {
 
-// parses a Newgrounds / GD song ID from a file stem ("851118.mp3", "DL_1_851118").
+// parses a newgrounds / gd song id from a file stem ("851118.mp3", "dl_1_851118").
 inline std::optional<int> tryParseGDSongIdFromStem(std::string const& stem) {
     if (stem.empty()) return std::nullopt;
 
@@ -89,7 +89,7 @@ inline std::string fallbackPathLabel(
     return geode::utils::string::pathToString(std::filesystem::path(path).stem());
 }
 
-// clipboard value: ID when known, else the visible name.
+// clipboard value: id when known, else the visible name.
 inline std::string resolveTrackCopyValue(MusicTrack const& track) {
     if (auto id = resolveGDSongId(track.audioPath, track.sourceUrl)) {
         return std::to_string(*id);
@@ -114,7 +114,7 @@ inline bool isVanillaMenuLoopPath(std::string const& path) {
     return filename == "menuLoop.mp3";
 }
 
-// what actually plays now (getMenuMusicFile hook included).
+// what actually plays now (getmenumusicfile hook included).
 inline std::string resolveActiveMenuMusicPath() {
     if (auto* gm = GameManager::get()) {
         std::string file = gm->getMenuMusicFile();

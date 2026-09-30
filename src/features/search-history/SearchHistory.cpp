@@ -12,7 +12,7 @@ namespace paimon::searchhistory {
 std::vector<Entry> history;
 
 bool Entry::operator==(const Entry& o) const {
-    // Same day, ignoring exact time: no same-day duplicates.
+    // same day, ignoring exact time: no same-day duplicates.
     return (time - time % 86400) == (o.time - o.time % 86400)
         && type == o.type && query == o.query
         && difficulties == o.difficulties && lengths == o.lengths
@@ -40,7 +40,7 @@ std::string Entry::summary() const {
         else if (d == -3) parts.push_back("N/A");
         else if (d >= 1 && d <= 5) parts.push_back(kDiffNames[d - 1]);
     }
-    // Demon kind only applies when Demon difficulty was selected.
+    // demon kind only applies when demon difficulty was selected.
     if (hasDemon) {
         parts.push_back(kDemonNames[(demonFilter >= 1 && demonFilter <= 5) ? demonFilter : 0]);
     }
@@ -86,7 +86,7 @@ void add(GJSearchObject* search, std::vector<int> difficulties, std::vector<int>
     obj.song = search->m_songFilter;
     obj.customSong = search->m_customSongFilter;
     obj.songID = search->m_songID;
-    // m_demonFilter keeps its last pick after Demon is deselected; store only while active.
+    // m_demonfilter keeps its last pick after demon is deselected; store only while active.
     bool hasDemon = std::find(obj.difficulties.begin(), obj.difficulties.end(), -2) != obj.difficulties.end();
     obj.demonFilter = hasDemon ? (int)search->m_demonFilter : 0;
     obj.noStar = search->m_noStarFilter;

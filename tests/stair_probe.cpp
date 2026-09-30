@@ -1,8 +1,8 @@
-// Sonda escalera->tira: ¿cuantos bloques/discos pequenos forman carreras en
+// sonda escalera->tira: ¿cuantos bloques/discos pequenos forman carreras en
 // diagonal que una sola tira girada cubriria sin cambiar ningun centro de celda?
-// La sonda anterior (merge_probe) solo unia tira-tira y bloque-bloque rectos;
-// esta prueba la conversion que falta: N peldanos -> 1 diagonal.
-// Uso: g++ -std=c++23 -O2 -o /tmp/stair_probe tests/stair_probe.cpp && /tmp/stair_probe [dims...]
+// la sonda anterior (merge_probe) solo unia tira-tira y bloque-bloque rectos;
+// esta prueba la conversion que falta: n peldanos -> 1 diagonal.
+// uso: g++ -std=c++23 -o2 -o /tmp/stair_probe tests/stair_probe.cpp && /tmp/stair_probe [dims...]
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -51,7 +51,7 @@ bool stepCandidate(Primitive const& o) {
     return false;
 }
 
-// Tira por los centros extremos; valida: cubre los centros de la carrera y no
+// tira por los centros extremos; valida: cubre los centros de la carrera y no
 // cubre ningun centro de otro color (estricto: sin orla en la sonda).
 bool fitRunStrip(
     std::vector<Step> const& run,
@@ -76,13 +76,13 @@ bool fitRunStrip(
         std::atan2(dy, dx) * 180.f / kPi, seed.color, PrimitiveKind::Stroke,
         seed.layer};
     auto placed = xformOf(m);
-    // Todos los centros de la carrera dentro (holgura de costura).
+    // todos los centros de la carrera dentro (holgura de costura).
     for (auto const& s : run) {
         // contiene con margen: prueba el centro y 4 puntos a 0.2 celdas.
         bool inside = placed.contains(s.x, s.y);
         if (!inside) return false;
     }
-    // Ningun centro ajeno dentro.
+    // ningun centro ajeno dentro.
     auto box = xformBox(placed, width, height);
     for (int y = box[1]; y <= box[3]; ++y)
         for (int x = box[0]; x <= box[2]; ++x) {
@@ -121,11 +121,11 @@ StairResult stairPass(
     result.merged = objects;
     std::vector<char> drop(objects.size(), 0);
     std::vector<Primitive> add;
-    // Direcciones diagonales unitarias.
+    // direcciones diagonales unitarias.
     constexpr float kDirs[4][2] = {{1, 1}, {1, -1}, {-1, 1}, {-1, -1}};
     for (auto const& seed : steps) {
         if (used[seed.objIndex]) continue;
-        // Mejor carrera de las 4 direcciones (solo 2 ejes unicos, pero barato).
+        // mejor carrera de las 4 direcciones (solo 2 ejes unicos, pero barato).
         std::vector<Step> best{seed};
         for (auto const& d : kDirs) {
             std::vector<Step> run{seed};
@@ -144,7 +144,7 @@ StairResult stairPass(
                         }
                     if (inRun) continue;
                     if (std::hypot(s.x - ex, s.y - ey) > 0.75f) continue;
-                    // Mismo color y capa que la semilla.
+                    // mismo color y capa que la semilla.
                     if (objects[s.objIndex].color != objects[seed.objIndex].color ||
                         objects[s.objIndex].layer != objects[seed.objIndex].layer)
                         continue;

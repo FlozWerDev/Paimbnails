@@ -11,7 +11,7 @@ void releaseSearchInputFocus(LevelSearchLayer* layer) {
 
     auto* input = layer->m_searchInput;
 
-    // order matters: detach IME first so keys stop routing, then clear flags.
+    // order matters: detach ime first so keys stop routing, then clear flags.
     if (input->m_textField) {
         input->m_textField->detachWithIME();
     }

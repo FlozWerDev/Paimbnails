@@ -32,7 +32,7 @@ std::string trim(std::string value) {
     return value;
 }
 
-// Displayed codes use hyphens (missing from some fonts): strip and uppercase before matching.
+// displayed codes use hyphens (missing from some fonts): strip and uppercase before matching.
 std::string normRoomCode(std::string value) {
     std::string out;
     for (char c : value) {
@@ -53,7 +53,7 @@ void showAlert(std::string const& message) {
 }
 
 std::string randomRoomCode() {
-    // 60-bit codes resist guessing; skip I/L/O/U lookalikes.
+    // 60-bit codes resist guessing; skip i/l/o/u lookalikes.
     auto code = geode::utils::random::generateString(12, "0123456789ABCDEFGHJKMNPQRSTVWXYZ");
     std::string out = "PAIM-";
     for (size_t i = 0; i < code.size(); ++i) {
@@ -91,7 +91,7 @@ void collectRGBANodes(CCNode* root, std::vector<std::pair<CCNode*, GLubyte>>& ou
     for (auto* child : CCArrayExt<CCNode*>(root->getChildren())) collectRGBANodes(child, out);
 }
 
-// Fade each node from its authored opacity; capture targets before mutating parents.
+// fade each node from its authored opacity; capture targets before mutating parents.
 void fadeInTree(CCNode* root, float duration) {
     std::vector<std::pair<CCNode*, GLubyte>> nodes;
     collectRGBANodes(root, nodes);
@@ -270,7 +270,7 @@ void CollabRoomPopup::rebuild() {
 }
 
 void CollabRoomPopup::scheduleRebuild() {
-    // Defer rebuilds triggered by a button callback.
+    // defer rebuilds triggered by a button callback.
     Ref<CollabRoomPopup> self = this;
     queueInMainThread([self]() {
         if (self->getParent()) self->rebuild();

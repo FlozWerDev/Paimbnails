@@ -15,7 +15,7 @@
 #include <limits>
 #include <string>
 
-// Desktop wheel steps numeric fields; shares the CCMouseDispatcher hook point
+// desktop wheel steps numeric fields; shares the ccmousedispatcher hook point
 // with smooth-scroll.
 
 #if defined(GEODE_IS_DESKTOP)
@@ -27,7 +27,7 @@ using namespace cocos2d;
 
 namespace {
 
-// CCEGLView negates GLFW yoffset: positive means physical wheel down.
+// cceglview negates glfw yoffset: positive means physical wheel down.
 int scrollDirection(float y) {
     if (y < 0.f) return +1;
     if (y > 0.f) return -1;
@@ -267,7 +267,7 @@ bool tryHandleInputScroll(float y) {
     } else {
         long long base = 0;
         if (!parseCurrentInt(target, base)) return false;
-        // parseCurrentInt saturates, so the step must too: adding past the limits is signed overflow.
+        // parsecurrentint saturates, so the step must too: adding past the limits is signed overflow.
         long long bump = static_cast<long long>(dir) * std::max(1, paimon::settings::input_scroll::intStep());
         long long next = base;
         if (bump > 0 && base > std::numeric_limits<long long>::max() - bump) {
@@ -299,4 +299,4 @@ class $modify(PaimonInputScrollDispatcher, CCMouseDispatcher) {
     }
 };
 
-#endif // GEODE_IS_DESKTOP
+#endif // geode_is_desktop

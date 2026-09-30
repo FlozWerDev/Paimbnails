@@ -1,6 +1,6 @@
 #pragma once
 
-// Cosmetic slots layered over RobTop's official level list: paint-only
+// cosmetic slots layered over robtop's official level list: paint-only
 // descriptions, never handed to currency code, so misses grant nothing.
 
 #include <Geode/DefaultInclude.hpp>
@@ -12,8 +12,8 @@ namespace paimon::officialslots {
 
 constexpr char const* kModuleId = "paimbnails.officialslots.level";
 
-// Values match GJDifficultySprite::create so the faces are the game's own;
-// Auto is -1 there, hence the explicit values.
+// values match gjdifficultysprite::create so the faces are the game's own;
+// auto is -1 there, hence the explicit values.
 enum class Difficulty : int {
     Auto = -1,
     Unrated = 0,
@@ -29,7 +29,7 @@ enum class Difficulty : int {
     ExtremeDemon = 10,
 };
 
-// Rate tier, drawn through GJDifficultySprite::updateFeatureState so the glow
+// rate tier, drawn through gjdifficultysprite::updatefeaturestate so the glow
 // is the vanilla one rather than a coin we mount by hand at the wrong scale.
 enum class Tier : int {
     None = 0,
@@ -51,8 +51,8 @@ struct Slot {
     std::string id;            // our own uuid, stable across reorders
     Source source = Source::LevelId;
 
-    int levelId = 0;           // Source::LevelId
-    std::string gmdFile;       // Source::Gmd, filename inside our gmd folder
+    int levelId = 0;           // source::levelid
+    std::string gmdFile;       // source::gmd, filename inside our gmd folder
 
     std::string name;          // shown on the card and the official page
     std::string author;
@@ -62,21 +62,21 @@ struct Slot {
     int stars = 0;             // cosmetic only, never granted
     bool coins = false;        // draws the three silver coins
 
-    // Official page this slot replaces, or 0 to append after the vanilla ones.
+    // official page this slot replaces, or 0 to append after the vanilla ones.
     int replacesOfficialId = 0;
 
     bool enabled = true;
 };
 
-// Difficulty <-> the value GJDifficultySprite wants. Kept as a function instead
-// of a cast so the Auto = -1 hole stays in one place.
+// difficulty <-> the value gjdifficultysprite wants. kept as a function instead
+// of a cast so the auto = -1 hole stays in one place.
 int difficultyFace(Difficulty difficulty);
 
-// Every difficulty in picker order.
+// every difficulty in picker order.
 std::vector<Difficulty> const& allDifficulties();
 std::vector<Tier> const& allTiers();
 
-// True for RobTop's official levels (1..22). Mirrors paimon::isMainLevelID
+// true for robtop's official levels (1..22). mirrors paimon::ismainlevelid
 // without dragging in the thumbnail cache helpers.
 bool isOfficialId(int levelId);
 

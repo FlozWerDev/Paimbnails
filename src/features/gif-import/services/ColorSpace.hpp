@@ -4,9 +4,7 @@
 
 namespace paimon::gifimport {
 
-// Perceptual distance below which two palette entries read as one color: apart
-// they only split the drawing into more objects. In OkLab black-to-white is 1
-// and a barely-visible step is ~0.02.
+// near-identical palette colors add objects without visible detail; perceptual steps are about 0.02.
 constexpr float kPaletteMinDistance = 0.025f;
 
 struct OkLab {

@@ -6,7 +6,7 @@
 
 namespace paimon {
 
-// no stable Geode API: captured once at mod load; false until then.
+// no stable geode api: captured once at mod load; false until then.
 inline std::thread::id& getMainThreadId() {
     // heap-allocated; no exit destructor.
     static auto* id = new std::thread::id{};

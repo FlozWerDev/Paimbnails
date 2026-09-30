@@ -10,7 +10,7 @@ NC='\033[0m'
 echo -e "${BLUE}Paimbnails Installer for macOS${NC}"
 echo ""
 
-# Find Geometry Dash mod directory
+# find geometry dash mod directory
 GD_MODS_DIR="$HOME/Library/Application Support/Geometry Dash/geode/mods"
 
 if [ ! -d "$GD_MODS_DIR" ]; then
@@ -19,7 +19,7 @@ if [ ! -d "$GD_MODS_DIR" ]; then
     exit 1
 fi
 
-# Find the .geode file next to this script
+# find the .geode file next to this script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GEODE_FILE=$(find "$SCRIPT_DIR" -maxdepth 1 -name "*.geode" | head -n 1)
 

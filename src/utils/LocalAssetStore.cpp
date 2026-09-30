@@ -4,6 +4,8 @@
 #include <Geode/utils/string.hpp>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 
 using namespace geode::prelude;
 
@@ -50,6 +52,7 @@ std::string sanitizeFilenameStem(std::string stem) {
 }
 
 std::string makeUniqueFilename(std::filesystem::path const& source, std::string const& bucket) {
+    static std::atomic<uint64_t> sequence = 0;
     auto stem = sanitizeFilenameStem(geode::utils::string::pathToString(source.stem()));
     auto ext = geode::utils::string::toLower(geode::utils::string::pathToString(source.extension()));
 
@@ -58,11 +61,12 @@ std::string makeUniqueFilename(std::filesystem::path const& source, std::string 
     size = std::filesystem::file_size(source, sizeEc);
 
     auto stamp = static_cast<unsigned long long>(std::hash<std::string>{}(
-        fmt::format("{}|{}|{}|{}",
+        fmt::format("{}|{}|{}|{}|{}",
             bucket,
             geode::utils::string::pathToString(source),
             sizeEc ? 0ull : static_cast<unsigned long long>(size),
-            static_cast<unsigned long long>(std::time(nullptr))
+            std::chrono::steady_clock::now().time_since_epoch().count(),
+            sequence.fetch_add(1, std::memory_order_relaxed)
         )
     ));
 
@@ -110,9 +114,19 @@ std::filesystem::path dirForBucket(std::string const& bucket) {
 bool isManagedPath(std::filesystem::path const& path) {
     auto normalized = normalizePath(path);
     auto root = normalizePath(rootDir());
-    auto normStr = geode::utils::string::toLower(geode::utils::string::pathToString(normalized));
-    auto rootStr = geode::utils::string::toLower(geode::utils::string::pathToString(root));
-    return !normStr.empty() && !rootStr.empty() && normStr.rfind(rootStr, 0) == 0;
+    if (normalized.empty() || root.empty()) return false;
+    auto candidate = normalized.begin();
+    for (auto const& component : root) {
+        if (candidate == normalized.end()) return false;
+#ifdef GEODE_IS_WINDOWS
+        if (geode::utils::string::toLower(geode::utils::string::pathToString(*candidate))
+            != geode::utils::string::toLower(geode::utils::string::pathToString(component))) return false;
+#else
+        if (*candidate != component) return false;
+#endif
+        ++candidate;
+    }
+    return true;
 }
 
 std::filesystem::path normalizePath(std::filesystem::path const& path) {
@@ -165,6 +179,10 @@ ImportResult importToBucket(std::filesystem::path const& source, std::string con
         result.error = "file_not_found";
         return result;
     }
+    if (!std::filesystem::is_regular_file(normalizedSource, ec) || ec) {
+        result.error = "not_a_file";
+        return result;
+    }
 
     auto ext = geode::utils::string::pathToString(normalizedSource.extension());
     if (!kindAllowsExtension(kind, ext)) {
@@ -179,18 +197,21 @@ ImportResult importToBucket(std::filesystem::path const& source, std::string con
     }
 
     auto targetDir = dirForBucket(bucket);
-    auto filename = makeUniqueFilename(normalizedSource, bucket);
-    auto target = targetDir / filename;
-
-    std::filesystem::copy_file(normalizedSource, target, std::filesystem::copy_options::overwrite_existing, ec);
-    if (ec) {
-        result.error = ec.message();
-        return result;
+    for (int attempt = 0; attempt < 16; ++attempt) {
+        auto target = targetDir / makeUniqueFilename(normalizedSource, bucket);
+        // imported paths may already be referenced by other settings.
+        if (std::filesystem::copy_file(normalizedSource, target, std::filesystem::copy_options::none, ec)) {
+            result.success = true;
+            result.changed = true;
+            result.path = normalizePath(target);
+            return result;
+        }
+        if (ec != std::errc::file_exists) {
+            result.error = ec ? ec.message() : "copy_failed";
+            return result;
+        }
     }
-
-    result.success = true;
-    result.changed = true;
-    result.path = normalizePath(target);
+    result.error = "filename_collision";
     return result;
 }
 

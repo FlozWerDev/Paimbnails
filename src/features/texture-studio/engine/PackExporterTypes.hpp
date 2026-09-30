@@ -17,7 +17,7 @@
 
 namespace paimon::texture_studio {
 
-// The plist and PNG must belong to the same sheet and quality.
+// the plist and png must belong to the same sheet and quality.
 struct SheetSelection {
     std::string baseName;
     std::string qualitySuffix;
@@ -28,11 +28,11 @@ struct SheetSelection {
 struct SpriteImageOverride {
     std::filesystem::path path;
     ImageTransform transform{};
-    // False replaces the sprite; true composites over it.
+    // false replaces the sprite; true composites over it.
     bool overlay = false;
 };
 
-// Region fill after tint/image overrides. Sheets bake frame 0; animated fusions optionally ship as GIFs.
+// region fill after tint/image overrides. sheets bake frame 0; animated fusions optionally ship as gifs.
 struct SpriteFusionOverride {
     std::filesystem::path maskPath;
     std::filesystem::path texturePath;
@@ -51,48 +51,48 @@ struct PackExportConfig {
     int           brightness = 160;
     bool          alternativeGlowOverlay = false;
 
-    // Gameplay tint hurts readability: UI-only by default.
+    // gameplay tint hurts readability: ui-only by default.
     bool onlyTintUiSprites = true;
     TintScope tintScope = TintScope::ButtonsOnly;
 
     float maskSoftness = 0.35f;
 
-    // Must match SpritePreviewOptions so exports match the editor.
+    // must match spritepreviewoptions so exports match the editor.
     int   clusterPrecision = 5;
     int   edgeCleanup = 1;
     int   outlineProtect = 0;
     float saturation = 1.0f;
     float contrast   = 0.0f;
 
-    // Per-sprite colors override the global tint and UI filter.
+    // per-sprite colors override the global tint and ui filter.
     std::unordered_set<std::string> spriteSkip;
     std::unordered_map<std::string, TintColors> spriteColors;
     std::unordered_map<std::string, SpriteImageOverride> spriteImages;
     std::unordered_map<std::string, SpriteFusionOverride> spriteFusions;
 
-    // Export animated fusions as standalone GIFs; sheets still contain frame 0.
+    // export animated fusions as standalone gifs; sheets still contain frame 0.
     bool exportAnimatedFusions = true;
 
     bool includeMediumPort = false;
 
-    // Order is used for progress reporting.
+    // order is used for progress reporting.
     std::vector<SheetSelection> sheets;
 
     bool transparentLists = false;
     bool colorGradientBg  = false;
     bool colorMainMenu    = false;
 
-    // Local-extras mode: also export unselected local sheets via clustering fallback. Deprecated name, kept for parsing.
+    // local-extras mode: also export unselected local sheets via clustering fallback. deprecated name, kept for parsing.
     bool usePackGenAssets = true;
 
-    // These options apply only when local extras are enabled.
+    // these options apply only when local extras are enabled.
     bool tintGoldFont       = false;
     bool colorGoldTitles    = false;
     bool colorDemonFaces    = false;
     bool mythicCompat       = false;
     bool includeModTextures = true;
 
-    // Empty uses GD's default loading background.
+    // empty uses gd's default loading background.
     std::vector<std::uint8_t> customLoadingBgPng;
 };
 
@@ -115,7 +115,7 @@ struct PackExportResult {
     std::vector<SheetExportResult> sheetResults;
     std::string                 packId;
 
-    // Local-extras result; false means only project sheets were exported.
+    // local-extras result; false means only project sheets were exported.
     bool precisionUsed        = false;
     int  standaloneProcessed  = 0;
     int  standaloneFailed     = 0;

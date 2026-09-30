@@ -56,7 +56,7 @@ CCMenuItemSpriteExtra* hit(CCNode* node, CCPoint point, int& budget, bool& block
             blocked = true;
             return nullptr;
         }
-        // Open dialogs block buttons behind them, including their empty area.
+        // open dialogs block buttons behind them, including their empty area.
         if (child->isVisible() && typeinfo_cast<FLAlertLayer*>(child)) {
             blocked = true;
             return nullptr;

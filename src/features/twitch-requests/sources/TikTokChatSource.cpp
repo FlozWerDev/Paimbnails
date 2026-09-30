@@ -18,7 +18,7 @@ constexpr char const* kRelayFallback = "https://tiktok.eulerstream.com/webcast/f
 constexpr int kMaxFailures = 4;
 constexpr int kLiveStatus = 2;
 
-// Just enough protobuf to walk WebcastResponse: varints and length delimited
+// just enough protobuf to walk webcastresponse: varints and length delimited
 // fields, everything else is skipped.
 class Wire {
 public:
@@ -77,7 +77,7 @@ private:
     size_t m_pos = 0;
 };
 
-// First length delimited field with this tag.
+// first length delimited field with this tag.
 std::string_view subMessage(std::string_view message, uint32_t tag) {
     Wire wire(message);
     uint32_t field = 0;
@@ -90,6 +90,22 @@ std::string_view subMessage(std::string_view message, uint32_t tag) {
             continue;
         }
         if (!wire.skip(type)) break;
+    }
+    return {};
+}
+
+std::string integerField(std::string_view message, uint32_t tag) {
+    Wire wire(message);
+    uint32_t field = 0;
+    uint32_t type = 0;
+    while (wire.next(field, type)) {
+        if (type == 0) {
+            uint64_t value = 0;
+            if (!wire.varint(value)) break;
+            if (field == tag) return value == 0 ? "" : std::to_string(value);
+        } else if (!wire.skip(type)) {
+            break;
+        }
     }
     return {};
 }
@@ -183,7 +199,7 @@ void TikTokChatSource::handleResponse(std::vector<uint8_t> const& body) {
     uint32_t type = 0;
     std::string cursor;
     float wait = 1.5f;
-    std::vector<std::pair<std::string, std::string>> messages;
+    std::vector<ChatMessage> messages;
 
     while (wire.next(field, type)) {
         if (type == 2) {
@@ -192,7 +208,7 @@ void TikTokChatSource::handleResponse(std::vector<uint8_t> const& body) {
             if (field == 2) {
                 cursor.assign(payload);
             } else if (field == 1) {
-                // Message { 1: type name, 2: payload }
+                // message { 1: type name, 2: payload }
                 if (subMessage(payload, 1) != "WebcastChatMessage") continue;
                 auto chat = subMessage(payload, 2);
                 auto text = subMessage(chat, 3);
@@ -200,15 +216,19 @@ void TikTokChatSource::handleResponse(std::vector<uint8_t> const& body) {
                 auto user = subMessage(chat, 2);
                 auto handle = subMessage(user, 38);
                 if (handle.empty()) handle = subMessage(user, 3);
-                messages.emplace_back(
-                    handle.empty() ? "TikTok" : std::string(handle), std::string(text));
+                ChatMessage incoming;
+                incoming.requester = handle.empty() ? "TikTok" : std::string(handle);
+                incoming.text = std::string(text);
+                incoming.messageID = integerField(payload, 3);
+                incoming.userID = integerField(user, 1);
+                messages.push_back(std::move(incoming));
             }
             continue;
         }
         if (type == 0) {
             uint64_t value = 0;
             if (!wire.varint(value)) break;
-            // fetchInterval, in milliseconds
+            // fetchinterval, in milliseconds
             if (field == 3 && value > 0) {
                 wait = std::clamp(static_cast<float>(value) / 1000.f, 1.f, 5.f);
             }
@@ -217,7 +237,7 @@ void TikTokChatSource::handleResponse(std::vector<uint8_t> const& body) {
         if (!wire.skip(type)) break;
     }
 
-    // No cursor means the relay did not hand us a WebcastResponse; polling the
+    // no cursor means the relay did not hand us a webcastresponse; polling the
     // same window again would just replay it forever.
     if (cursor.empty()) {
         if (++m_failures >= kMaxFailures) {
@@ -230,12 +250,12 @@ void TikTokChatSource::handleResponse(std::vector<uint8_t> const& body) {
     m_cursor = std::move(cursor);
 
     if (m_primed) {
-        for (auto& [requester, text] : messages) {
-            deliver(std::move(requester), std::move(text));
+        for (auto& message : messages) {
+            deliver(std::move(message));
             if (stopped()) return;
         }
     } else {
-        // The relay replays what happened before we joined; skip that batch.
+        // the relay replays what happened before we joined; skip that batch.
         m_primed = true;
         ready("Escuchando el chat de TikTok");
     }

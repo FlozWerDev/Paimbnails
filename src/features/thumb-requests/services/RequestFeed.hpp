@@ -4,6 +4,7 @@
 
 #include <Geode/Geode.hpp>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace paimon::thumbreq {
@@ -23,7 +24,7 @@ public:
 private:
     RequestFeed() = default;
 
-    std::vector<Request> m_cached;
+    std::unordered_map<std::string, std::vector<Request>> m_cached;
 };
 
 } // namespace paimon::thumbreq

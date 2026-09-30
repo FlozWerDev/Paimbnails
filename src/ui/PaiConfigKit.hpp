@@ -17,7 +17,7 @@ constexpr cocos2d::ccColor3B kValueColor = {255, 222, 120};
 constexpr cocos2d::ccColor3B kOnColor    = {120, 255, 140};
 constexpr cocos2d::ccColor3B kOffColor   = {150, 155, 170};
 
-// Usable row width inside a card.
+// usable row width inside a card.
 constexpr float cardInnerWidth(float cardWidth) { return cardWidth - 20.f; }
 
 cocos2d::CCNode* makeToggleRow(
@@ -84,7 +84,7 @@ bool queueWheelScroll(geode::ScrollLayer* scrollLayer, float x, float y,
 void stepWheelScroll(geode::ScrollLayer* scrollLayer,
     float& targetY, bool& targetSet, float dt);
 
-// FLAlertLayer::show uses the scene m_ZOrder, so a popup alert can end up underneath.
+// flalertlayer::show uses the scene m_zorder, so a popup alert can end up underneath.
 void showAbove(FLAlertLayer* alert, cocos2d::CCNode* owner);
 
 constexpr float kTabBarHeight = 26.f;

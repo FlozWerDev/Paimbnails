@@ -15,7 +15,7 @@ namespace paimon::video {
 
 struct LayerBgConfig {
     std::string type = "default";   // default, custom, random, menu, id, video, shader
-    std::string customPath;         // image/GIF/video
+    std::string customPath;         // image/gif/video
     int levelId = 0;
     bool darkMode = false;
     float darkIntensity = 0.5f;
@@ -37,10 +37,10 @@ class LayerBackgroundManager {
 public:
     static LayerBackgroundManager& get();
 
-    // Release GL-owned textures before GameManager::reloadAll recreates the context.
+    // release gl-owned textures before gamemanager::reloadall recreates the context.
     void onGLContextReload();
 
-    // Call after super::init(); returns whether custom UI should be hidden.
+    // call after super::init(); returns whether custom ui should be hidden.
     bool applyBackground(cocos2d::CCLayer* layer, std::string const& layerKey);
 
     void applyVanillaBackgroundTintFix(cocos2d::CCLayer* layer);
@@ -70,10 +70,10 @@ public:
         {"garage",       "Garage"},
     };
 
-    // Migrate legacy background keys once.
+    // migrate legacy background keys once.
     void migrateFromLegacy();
 
-    // Move external assets into managed storage.
+    // move external assets into managed storage.
     void migrateExternalAssetsToManagedStorage();
 
     void migrateToGlobalMusic();
@@ -87,7 +87,7 @@ public:
 private:
     LayerBackgroundManager() = default;
 
-    // Cache entries are invalidated by saveConfig.
+    // cache entries are invalidated by saveconfig.
     mutable std::unordered_map<std::string, LayerBgConfig> m_configCache;
     mutable std::mutex m_configCacheMutex;
 
@@ -97,13 +97,13 @@ private:
     bool applyStaticBg(cocos2d::CCLayer* layer, cocos2d::CCTexture2D* tex, LayerBgConfig const& cfg);
     void applyGifBg(cocos2d::CCLayer* layer, std::string const& path, LayerBgConfig const& cfg);
 
-    // Unreferenced players linger briefly; revisits reuse the decoder.
+    // unreferenced players linger briefly; revisits reuse the decoder.
     static constexpr auto kSharedVideoTTL = std::chrono::seconds(10);
 
     struct SharedVideoEntry {
         std::shared_ptr<paimon::video::VideoPlayer> player;
         int refCount = 0;
-        // Unreferenced and awaiting eviction; revived on re-acquire.
+        // unreferenced and awaiting eviction; revived on re-acquire.
         bool stale = false;
         std::chrono::steady_clock::time_point expiry =
             std::chrono::steady_clock::time_point::max();
@@ -127,7 +127,7 @@ public:
     std::shared_ptr<paimon::video::VideoPlayer> acquireSharedVideo(
         std::string const& path, bool requireCanonicalAudio);
 
-    // Reuse-only acquire never builds decoders; main-thread callers can't stall. Null when empty.
+    // reuse-only acquire never builds decoders; main-thread callers can't stall. null when empty.
     std::shared_ptr<paimon::video::VideoPlayer> acquireExistingSharedVideo(
         std::string const& path);
 
@@ -135,14 +135,14 @@ public:
 
     void evictExpiredSharedVideos();
 
-    // Call during $on_game(Exiting), before Media Foundation shuts down.
+    // call during $on_game(exiting), before media foundation shuts down.
     void releaseAllSharedVideos();
 
     void forceReleaseSharedVideoByPath(std::string const& path);
 
     void forceEvictAllStaleVideos();
 
-    // Stop video audio without destroying players or visuals.
+    // stop video audio without destroying players or visuals.
     void releaseAllVideoAudio();
 
     bool hasSharedVideo(std::string const& path) const;
@@ -155,18 +155,18 @@ public:
 
     void cleanupOldVideoCache(cocos2d::CCLayer* layer, std::string const& nextVideoPath);
 
-    // First-frame preview cache for video backgrounds.
+    // first-frame preview cache for video backgrounds.
     static std::filesystem::path getVideoBgPreviewDir();
 
     static std::filesystem::path getVideoBgPreviewPath(std::string const& videoPath);
 
-    // Downscaled poster in RAM; repeat entries skip disk and re-upload. Null when none.
+    // downscaled poster in ram; repeat entries skip disk and re-upload. null when none.
     static cocos2d::CCTexture2D* getVideoBgPreviewTexture(std::string const& videoPath);
 
-    // True when a preview newer than the video is already cached on disk.
+    // true when a preview newer than the video is already cached on disk.
     static bool hasVideoBgPreview(std::string const& videoPath);
 
-    // Off-thread current-frame readback; no-op when fresh, so one GPU stall per video.
+    // off-thread current-frame readback; no-op when fresh, so one gpu stall per video.
     static void saveVideoBgPreview(std::string const& videoPath,
                                    paimon::video::VideoPlayer const* player);
 };

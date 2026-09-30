@@ -29,7 +29,7 @@ namespace paimon::thumbalerts {
 
 namespace {
 
-// Above the pause menu and popups, below the capture overlay (999000).
+// above the pause menu and popups, below the capture overlay (999000).
 constexpr int kZOrder = 998500;
 constexpr float kScreenMargin = 10.f;
 constexpr float kThumbWait = 4.f;
@@ -84,7 +84,7 @@ std::deque<NewThumb>& queue() {
 }
 
 bool g_showing = false;
-// Reset bumps this so a late download can't push a moved-past card.
+// reset bumps this so a late download can't push a moved-past card.
 uint64_t g_generation = 0;
 
 void pump();
@@ -150,7 +150,7 @@ void present(NewThumb const& item, CCTexture2D* thumbnail, Config const& config,
     card->setOnFinished([config, generation] { finishCurrent(config, generation); });
     overlay->addChild(card, kZOrder);
 
-    // No-exit teardown (scene wipe, GL reload) would wedge the queue for the session: backstop it.
+    // no-exit teardown (scene wipe, gl reload) would wedge the queue for the session: backstop it.
     float const lifetime = config.enterTime + config.hold + config.exitTime + 5.f;
     paimon::scheduleMainThreadDelay(lifetime, [config, generation] {
         if (generation != g_generation || !g_showing) return;
@@ -185,7 +185,7 @@ void pump() {
         return;
     }
 
-    // Download or patience cut-off, whichever first; card still beats a plain plate.
+    // download or patience cut-off, whichever first; card still beats a plain plate.
     auto shown = std::make_shared<bool>(false);
     auto reveal = [item, config, generation, shown](CCTexture2D* texture) {
         if (*shown || generation != g_generation || paimon::isRuntimeShuttingDown()) return;
@@ -217,7 +217,7 @@ void enqueue(NewThumb item, bool ignoreSceneFilter) {
     pump();
 }
 
-// Same star/demon mapping as the server's normalizeLevelMeta: uploader card matches everyone else's.
+// same star/demon mapping as the server's normalizelevelmeta: uploader card matches everyone else's.
 std::string difficultyName(bool autoLevel, bool demon, int demonDifficulty, int stars) {
     if (autoLevel) return "Auto";
     if (demon) {
@@ -272,7 +272,7 @@ NewThumb thumbFromLevelMeta(int levelId, std::string const& levelMeta) {
     if (length >= 0 && length < static_cast<int>(kLengths.size())) item.length = kLengths[length];
     if (flag("isPlatformer")) item.length = "Plat.";
 
-    // m_isEpic is a tier, not a flag: 1 epic, 2 legendary, 3 mythic.
+    // m_isepic is a tier, not a flag: 1 epic, 2 legendary, 3 mythic.
     int const epicTier = num("isEpic");
     if (epicTier >= 1 && epicTier <= 3) item.rateTier = epicTier + 1;
     else if (num("featured") > 0) item.rateTier = 1;
@@ -312,7 +312,7 @@ Config readConfig() {
     config.whilePlaying = Mod::get()->getSettingValue<bool>("thumbalert-while-playing");
     config.whileEditing = Mod::get()->getSettingValue<bool>("thumbalert-while-editing");
 
-    // Honour the accessibility switch the rest of the mod already respects.
+    // honour the accessibility switch the rest of the mod already respects.
     if (Mod::get()->getSavedValue<bool>("smooth-ui-reduced-motion", false)) {
         config.enter = Enter::None;
         config.exit = Exit::Fade;
@@ -338,7 +338,7 @@ void showThumbAlertForUpload(int levelId, std::string const& uploader,
                              std::string const& levelMeta,
                              std::string const& serverMessage) {
     if (levelId <= 0) return;
-    // Pending suggestions publish only after mod approval: announcing one here would lie.
+    // pending suggestions publish only after mod approval: announcing one here would lie.
     if (serverMessage.find("pending") != std::string::npos ||
         serverMessage.find("verification") != std::string::npos) {
         return;
@@ -346,9 +346,9 @@ void showThumbAlertForUpload(int levelId, std::string const& uploader,
 
     auto item = thumbFromLevelMeta(levelId, levelMeta);
     item.uploader = uploader;
-    // Suppress: poll would show this upload twice.
+    // suppress: poll would show this upload twice.
     NewThumbWatcher::get().suppressLevel(levelId);
-    // Requested by the user: not the interruption scene filters guard against.
+    // requested by the user: not the interruption scene filters guard against.
     enqueue(std::move(item), true);
 }
 
@@ -371,7 +371,7 @@ void showThumbAlertPreview() {
     demo.likes = 92310;
     demo.rateTier = 3;
 
-    // Borrow an on-disk thumbnail so the preview shows the real thing.
+    // borrow an on-disk thumbnail so the preview shows the real thing.
     auto const owned = LocalThumbs::get().getAllLevelIDs();
     if (!owned.empty()) demo.levelId = owned.front();
 

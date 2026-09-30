@@ -248,7 +248,7 @@ void ProfilePicIconsDetailPopup::rebuild() {
     m_speedLabel = spVal;
 
     y -= 24.f;
-    // Only Icon Mode: image rendered behind the icon.
+    // only icon mode: image rendered behind the icon.
     auto iiMenu = CCMenu::create();
     iiMenu->setPosition({20.f, y});
     m_contentNode->addChild(iiMenu);

@@ -1,5 +1,5 @@
 #pragma once
-// Headless runtime self-check (no assets); SelfTest and regressions assert per sub-check.
+// headless runtime self-check (no assets); selftest and regressions assert per sub-check.
 
 #include <cstdint>
 #include <string>
@@ -24,7 +24,7 @@ struct SelfCheckResult {
 inline SelfCheckResult runSelfCheck() {
     SelfCheckResult r;
 
-    // 1. Tint kernel: grey 200 at brightness 160 (factor 1.25) through pure red gives (255,0,0).
+    // 1. tint kernel: grey 200 at brightness 160 (factor 1.25) through pure red gives (255,0,0).
     {
         PrecomputedTint spec = PrecomputedTint::make(255, 0, 0, 160.0f, 1.0f, 0.0f);
         std::uint8_t oR, oG, oB;
@@ -34,7 +34,7 @@ inline SelfCheckResult runSelfCheck() {
             r.detail = "expected (255,0,0)";
             return r;
         }
-        // Same numbers as the SelfTest overlay case: cross-validates the kernel with TintMath.
+        // same numbers as the selftest overlay case: cross-validates the kernel with tintmath.
         PrecomputedTint scaled = PrecomputedTint::make(160, 80, 40, 160.0f, 1.0f, 0.0f);
         tintPixelFast(200, 200, 200, scaled, oR, oG, oB);
         if (oR != 200 || oG != 100 || oB != 50) {
@@ -44,7 +44,7 @@ inline SelfCheckResult runSelfCheck() {
         }
     }
 
-    // 2. Alpha LUT endpoints + midpoint value match `a/255.0f`.
+    // 2. alpha lut endpoints + midpoint value match `a/255.0f`.
     {
         AlphaLut lut = AlphaLut::make();
         if (lut.v[0] != 0.0f || lut.v[255] != 1.0f ||
@@ -54,7 +54,7 @@ inline SelfCheckResult runSelfCheck() {
         }
     }
 
-    // 3. Packer: fixed set packs, no overlaps, contained, deterministic.
+    // 3. packer: fixed set packs, no overlaps, contained, deterministic.
     {
         MaxRectsPacker packer;
         std::vector<PackRect> rects = {
@@ -98,7 +98,7 @@ inline SelfCheckResult runSelfCheck() {
         }
     }
 
-    // 4. Cache roundtrip + graph pruning (second evaluate computes 0).
+    // 4. cache roundtrip + graph pruning (second evaluate computes 0).
     {
         PackCache cache(1u << 20);
         PackGraph g;
@@ -140,7 +140,7 @@ inline SelfCheckResult runSelfCheck() {
         }
     }
 
-    // 5. FrameImage sanity: blit + subrect roundtrip.
+    // 5. frameimage sanity: blit + subrect roundtrip.
     {
         FrameImage img(4, 4);
         img.clear({10, 20, 30, 255});

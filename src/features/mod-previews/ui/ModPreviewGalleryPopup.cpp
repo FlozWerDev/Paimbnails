@@ -8,7 +8,7 @@ namespace paimon::mod_previews {
 
 namespace {
 
-// Viewer geometry (own layout, not derived from any other mod).
+// viewer geometry (own layout, not derived from any other mod).
 constexpr float kViewW = 400.f;
 constexpr float kViewH = 260.f;
 constexpr float kPhotoW = 360.f;

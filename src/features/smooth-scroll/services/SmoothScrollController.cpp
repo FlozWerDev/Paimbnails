@@ -13,7 +13,7 @@ using namespace geode::prelude;
 namespace paimon::smoothscroll {
 
 namespace {
-    // User-scaled base values: gain = base * sensitivity, decay = base / smoothness
+    // user-scaled base values: gain = base * sensitivity, decay = base / smoothness
     constexpr double kBaseWheelGain = 3.5;
     constexpr double kBaseDecayRate = 12.0;
 
@@ -28,7 +28,7 @@ namespace {
         auto* handlers = dispatcher ? dispatcher->m_pMouseHandlers : nullptr;
         if (!handlers) return nullptr;
 
-        // Match dispatcher first-live-delegate order so momentum can't leak into an unintended view.
+        // match dispatcher first-live-delegate order so momentum can't leak into an unintended view.
         for (unsigned i = 0; i < handlers->count(); ++i) {
             auto* handler = static_cast<CCMouseHandler*>(handlers->objectAtIndex(i));
             if (handler && handler->m_pDelegate) return handler->m_pDelegate;
@@ -43,7 +43,7 @@ namespace {
 
     float externalSmoothStep(float value) {
         if (!std::isfinite(value) || std::abs(value) < 0.0001f) return 0.f;
-        // Prevter spreads one event over frames: keep fractions, not full actions per frame.
+        // prevter spreads one event over frames: keep fractions, not full actions per frame.
         constexpr float kExternalUnitsPerStep = 12.f;
         return std::clamp(value / kExternalUnitsPerStep, -8.f, 8.f);
     }
@@ -105,7 +105,7 @@ bool SmoothScrollController::isActive() const {
 }
 
 bool shouldBypassSmoothScroll() {
-    // Volume applies 5% per step: replayed momentum would jump to top on one tiny scroll.
+    // volume applies 5% per step: replayed momentum would jump to top on one tiny scroll.
     if (paimon::volscroll::isVolumeGestureActive()) {
         return true;
     }
@@ -129,7 +129,7 @@ bool isEditorZoomGesture() {
     auto* kb = CCKeyboardDispatcher::get();
     if (!kb || !kb->getControlKeyPressed()) return false;
 
-    // Ctrl may hover over a popup/list above the editor: only EditorUI-as-sink counts as zoom.
+    // ctrl may hover over a popup/list above the editor: only editorui-as-sink counts as zoom.
     auto* editorTarget = static_cast<CCMouseDelegate*>(editorLayer->m_editorUI);
     return currentScrollTarget() == editorTarget;
 }
@@ -143,7 +143,7 @@ bool SmoothScrollController::queueInput(float wheelY, float wheelX) {
         return false;
     }
 
-    // Never reinterpret old momentum across modes, nor deliver to a different delegate.
+    // never reinterpret old momentum across modes, nor deliver to a different delegate.
     if (m_filter.active() &&
         (m_editorZoomMode != editorZoom || m_scrollTarget != target)) {
         stop();
@@ -180,7 +180,7 @@ void SmoothScrollController::tick(float dt, ScrollDispatchFn const& dispatch) {
         return;
     }
 
-    // Drop momentum when the zoom gesture flips mid-flight so it never bleeds into plain scroll.
+    // drop momentum when the zoom gesture flips mid-flight so it never bleeds into plain scroll.
     if (paimon::settings::smoothscroll::fixEditorScroll()) {
         bool const zoomGestureNow = isEditorZoomGesture()
             && paimon::settings::smoothscroll::editorZoomEnabled();
@@ -216,7 +216,7 @@ bool SmoothScrollController::hasMomentum() const {
 float SmoothScrollController::replaySteps(bool negate) const {
     if (!m_replaying) return 0.f;
     if (std::abs(m_replayActions.y) >= 0.000001) {
-        // Cocos' vertical wheel sign is opposite to the visual zoom direction.
+        // cocos' vertical wheel sign is opposite to the visual zoom direction.
         float const y = static_cast<float>(m_replayActions.y);
         return negate ? -y : y;
     }

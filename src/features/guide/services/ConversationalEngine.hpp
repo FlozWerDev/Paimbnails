@@ -3,47 +3,47 @@
 #include <string>
 #include <vector>
 
-// Pure-std engine that resolves short follow-ups against the last topic.
+// pure-std engine that resolves short follow-ups against the last topic.
 
 namespace paimon::guide {
 
-// A topic sub-aspect matched by normalized keywords and fuzzy similarity.
+// a topic sub-aspect matched by normalized keywords and fuzzy similarity.
 struct SubTopic {
     std::string id;
     std::vector<std::string> enKeywords;
     std::vector<std::string> esKeywords;
-    std::string enReply;                  // GD tags allowed.
+    std::string enReply;                  // gd tags allowed.
     std::string esReply;
-    std::string enHint;                   // Chip label.
+    std::string enHint;                   // chip label.
     std::string esHint;
 };
 
 struct TopicKnowledge {
-    std::string topicId;                  // Functional intent ID.
-    std::string enName;                   // Display name.
+    std::string topicId;                  // functional intent id.
+    std::string enName;                   // display name.
     std::string esName;
     std::vector<SubTopic> subtopics;
-    std::string enMoreReply;              // "What else?" response.
+    std::string enMoreReply;              // "what else?" response.
     std::string esMoreReply;
 };
 
 struct Resolution {
-    bool isFollowUp = false;              // Query uses the current context.
-    std::string topicId;                  // Empty if unresolved.
-    std::string subTopicId;               // Empty means the topic itself.
-    bool pureReference = false;           // No new entity was named.
+    bool isFollowUp = false;              // query uses the current context.
+    std::string topicId;                  // empty if unresolved.
+    std::string subTopicId;               // empty means the topic itself.
+    bool pureReference = false;           // no new entity was named.
 };
 
 class ConversationalEngine {
 public:
-    // Install the knowledge table once at startup.
+    // install the knowledge table once at startup.
     void setTopics(std::vector<TopicKnowledge> const& topics);
 
-    // Detect empty, pure-reference, or "what else?" queries.
+    // detect empty, pure-reference, or "what else?" queries.
     static bool looksLikeReference(std::string const& normalized,
                                    std::vector<std::string> const& contentTokens);
 
-    // Resolve against the current topic; false delegates to the normal matcher.
+    // resolve against the current topic; false delegates to the normal matcher.
     Resolution resolve(std::string const& normalized,
                        std::vector<std::string> const& contentTokens,
                        std::string const& langId,

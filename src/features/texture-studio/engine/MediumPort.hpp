@@ -8,7 +8,7 @@ namespace paimon::texture_studio {
 
 class MediumPort final {
 public:
-    // Generate the -hd (half-resolution) version of a -uhd request.
+    // generate the -hd (half-resolution) version of a -uhd request.
     static geode::Result<SheetTinterOutput> generate(SheetTinterRequest const& uhdRequest);
 
 private:

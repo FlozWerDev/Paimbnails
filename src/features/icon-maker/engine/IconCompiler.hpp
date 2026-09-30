@@ -22,8 +22,8 @@ struct CompiledIcon {
 
 class IconCompiler final {
 public:
-    // Pure CPU work — safe to call off the main thread. Writes into
-    // IconPaths::outputDir(project.id).
+    // pure cpu work — safe to call off the main thread. writes into
+    // iconpaths::outputdir(project.id).
     static geode::Result<CompiledIcon> compile(IconProject const& project);
 
 private:

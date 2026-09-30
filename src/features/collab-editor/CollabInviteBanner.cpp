@@ -25,9 +25,9 @@ constexpr float kHoldDur = 15.f;
 constexpr float kAcceptDur = 0.65f;
 constexpr float kExitDur = 0.34f;
 
-// Above the capture preview (999000), below the color picker HUD (999500).
+// above the capture preview (999000), below the color picker hud (999500).
 constexpr int kZOrder = 999100;
-// Beats popups/inputs (~-500); CCMenu only claims touches hitting buttons.
+// beats popups/inputs (~-500); ccmenu only claims touches hitting buttons.
 constexpr int kTouchPriority = -1000;
 
 float easeOutCubic(float t) {
@@ -39,7 +39,7 @@ float easeInCubic(float t) {
     return t * t * t;
 }
 
-// Slight overshoot: the panel drops past its slot and settles back up.
+// slight overshoot: the panel drops past its slot and settles back up.
 float easeOutBack(float t) {
     constexpr float s = 1.45f;
     float u = t - 1.f;
@@ -67,7 +67,7 @@ CollabInviteBanner* CollabInviteBanner::s_instance = nullptr;
 void CollabInviteBanner::present(std::string const& room, std::string const& fromName) {
     if (room.empty()) return;
 
-    // Two stacked banners over the game read worse than losing the older one.
+    // two stacked banners over the game read worse than losing the older one.
     if (s_instance) {
         if (s_instance->m_menu) s_instance->m_menu->setEnabled(false);
         s_instance->removeFromParent();
@@ -103,7 +103,7 @@ bool CollabInviteBanner::init(std::string const& room, std::string const& fromNa
     this->setPosition({win.width / 2.f, m_hideY});
     this->setScale(0.92f);
 
-    // Vanilla GD popup panel, same frame every alert in the game uses.
+    // vanilla gd popup panel, same frame every alert in the game uses.
     if (auto* panel = paimon::SpriteHelper::safeCreateScale9("GJ_square01.png")) {
         panel->setContentSize({kCardW, kCardH});
         panel->setPosition({kCardW / 2.f, kCardH / 2.f});
@@ -132,7 +132,7 @@ bool CollabInviteBanner::init(std::string const& room, std::string const& fromNa
         paimon->setScale(32.f / std::max(paimon->getContentSize().height, 1.f));
         paimon->setPosition({kIconX, 35.f});
         this->addChild(paimon, 2);
-        // Keeps the banner feeling alive while it waits for an answer.
+        // keeps the banner feeling alive while it waits for an answer.
         paimon->runAction(CCRepeatForever::create(CCSequence::create(
             CCEaseSineInOut::create(CCMoveBy::create(0.9f, {0.f, 2.5f})),
             CCEaseSineInOut::create(CCMoveBy::create(0.9f, {0.f, -2.5f})),
@@ -153,7 +153,7 @@ bool CollabInviteBanner::init(std::string const& room, std::string const& fromNa
     m_roomLabel->setPosition({kTextX, 26.f});
     this->addChild(m_roomLabel, 2);
 
-    // Bottom countdown reuses the chat mic track+fill pair, drained via scaleX.
+    // bottom countdown reuses the chat mic track+fill pair, drained via scalex.
     float trackW = kCardW - kBarInset * 2.f;
     auto* track = CCLayerColor::create({0, 0, 0, 110}, trackW, 4.f);
     track->ignoreAnchorPointForPosition(false);
@@ -179,7 +179,7 @@ void CollabInviteBanner::onEnter() {
 
     if (m_priorityQueued) return;
     m_priorityQueued = true;
-    // Re-registering mid-touch dereferences a pending-add handler; wait one frame.
+    // re-registering mid-touch dereferences a pending-add handler; wait one frame.
     WeakRef<CollabInviteBanner> weak = this;
     Loader::get()->queueInMainThread([weak]() {
         if (auto self = weak.lock(); self && self->m_menu) {
@@ -236,7 +236,7 @@ void CollabInviteBanner::tick(float dt) {
 
 void CollabInviteBanner::captureFade() {
     m_fade.clear();
-    // Snapshot opacities first: half-faded parents would poison child targets.
+    // snapshot opacities first: half-faded parents would poison child targets.
     std::function<void(CCNode*)> walk = [&](CCNode* node) {
         if (!node) return;
         if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(node)) {
@@ -266,7 +266,7 @@ void CollabInviteBanner::onAccept(CCObject*) {
         m_menu->setEnabled(false);
         m_menu->setVisible(false);
     }
-    // Joining is the only feedback the banner can give before the editor opens.
+    // joining is the only feedback the banner can give before the editor opens.
     this->applyAlpha(1.f);
     if (m_roomLabel) {
         m_roomLabel->setString("Uniendote a la sala...");
@@ -276,7 +276,7 @@ void CollabInviteBanner::onAccept(CCObject*) {
         m_roomLabel->runAction(CCEaseSineOut::create(CCScaleTo::create(0.18f, scale)));
     }
     if (m_barFill) m_barFill->setScaleX(0.f);
-    this->captureFade(); // setString rebuilt the label's glyphs
+    this->captureFade(); // setstring rebuilt the label's glyphs
     this->toPhase(Phase::Accepted, kAcceptDur);
 
     CollabManager::get().connect(m_room, defaultDisplayName(), ConnectMode::Join);

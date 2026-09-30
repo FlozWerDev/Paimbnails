@@ -1,9 +1,5 @@
-"""Live slot contracts and optional headless GLES pixel regression.
-
---static-only checks wiring without compiling anything. The default additionally
-executes the real shader using Mesa EGL/GLES2, including premultiplied alpha,
-zero intensity, glow strength, detail, outline protection and uniform changes.
-"""
+"""checks live-slot wiring; --static-only avoids shader compilation.
+default mode also checks gles2 pixels with mesa."""
 import argparse
 import ast
 import json
@@ -33,7 +29,10 @@ def contracts():
             assert forbidden not in text, forbidden
     assert 'CCSprite::draw()' in hooks and 'CCSpriteBatchNode::draw()' in hooks
     assert 'setShaderProgram(previous)' in hooks
-    assert 'CCTextureCache::addImageAsyncCallBack(dt)' in hooks
+    assert 'CCTextureCache::addImage(path, skipSuffix)' in hooks
+    assert 'LiveSlotRuntime::get().onTextureLoaded(path, texture, skipSuffix)' in hooks
+    assert 'CCTextureCache::addUIImage(image, key)' in hooks
+    assert 'LiveSlotRuntime::get().refreshTextures()' in hooks
     assert 'LiveSlotRuntime::get().onGLContextReload()' in (ROOT / 'src/core/GLContextReload.cpp').read_text()
     assert 'LiveSlotRuntime::get().start()' in (FEATURE / 'hooks/MenuLayerEntry.cpp').read_text()
     live_branch = serialization.split('if (p.liveRendering) {', 1)[1].split('}', 1)[0]

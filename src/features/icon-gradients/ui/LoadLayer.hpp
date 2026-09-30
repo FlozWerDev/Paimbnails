@@ -12,33 +12,33 @@ class LoadLayer : public Popup {
 
 private:
 
-    // Owning editor and scroll content.
+    // owning editor and scroll content.
     GradientLayer* m_layer = nullptr;
     ScrollLayer* m_scrollLayer = nullptr;
 
-    // Selection and saved entries.
+    // selection and saved entries.
     ColorToggle* m_selected = nullptr;
     std::vector<ColorToggle*> m_toggles;
     std::unordered_map<ColorToggle*, GradientConfig> m_toggleGradients;
 
-    // First entry still waiting for its lazy paint.
+    // first entry still waiting for its lazy paint.
     int m_updatedIndex = 100;
 
     bool init() override;
 
-    // Bottom-bar button shared by the Load/Delete actions.
+    // bottom-bar button shared by the load/delete actions.
     CCMenuItemSpriteExtra* makeActionButton(const char*, SEL_MenuHandler, const CCPoint&, bool);
 
-    // Lazy painter.
+    // lazy painter.
     void updateGradient(float);
     void updateUI();
 
-    // Selection and actions.
+    // selection and actions.
     void onSelect(CCObject*);
     void onLoad(CCObject*);
     void onDelete(CCObject*);
 
-    // Factory.
+    // factory.
 public:
 
     static LoadLayer* create(GradientLayer*);

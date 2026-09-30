@@ -70,12 +70,12 @@ public:
     }
 
     void onToggle(CCObject*) {
-// isToggled() still reports the pre-click state here.
+// istoggled() still reports the pre-click state here.
         if (m_callback && m_toggler) m_callback(!m_toggler->isToggled());
     }
 };
 
-// Slider::create requires a CCNode target.
+// slider::create requires a ccnode target.
 class KitSliderCallback : public CCNode {
 public:
     std::function<void(double)> m_callback;
@@ -123,7 +123,7 @@ CCMenuItemToggler* addStandardToggler(
     cb->m_toggler = tog;
     tog->toggle(value);
     tog->setPosition(pos);
-tog->setUserObject(cb); // Keep the wrapper alive with the toggler.
+tog->setUserObject(cb); // keep the wrapper alive with the toggler.
     menu->addChild(tog);
     return tog;
 }
@@ -209,7 +209,7 @@ CCNode* makeSliderRow(
     cb->m_slider = slider;
     slider->setPosition({sliderCX, sliderCY});
     slider->setValue(normFromValue(value, minV, maxV));
-slider->setUserObject(cb); // Keep the wrapper alive.
+slider->setUserObject(cb); // keep the wrapper alive.
     row->addChild(slider);
 
     auto* chip = paimon::SpriteHelper::createColorPanel(54.f, 15.f, {0, 0, 0}, 110, 5.f);
@@ -395,7 +395,7 @@ CCNode* makeColorRow(
 
     auto* menu = makeRowMenu(row);
 
-// Tint a white swatch so every color previews accurately.
+// tint a white swatch so every color previews accurately.
     auto* swatch = CCSprite::create("square02_001.png");
     if (!swatch) swatch = CCSprite::createWithSpriteFrameName("square02_001.png");
     if (swatch) {
@@ -404,7 +404,7 @@ CCNode* makeColorRow(
         swatch->setColor(value);
         if (outSwatch) *outSwatch = swatch;
 
-// Keep a Ref because the modal callback may outlive a rebuilt row.
+// keep a ref because the modal callback may outlive a rebuilt row.
         geode::Ref<CCSprite> swatchRef = swatch;
         auto* btn = CCMenuItemExt::createSpriteExtra(
             swatch, [cb = std::move(onChange), swatchRef](CCMenuItemSpriteExtra*) {
@@ -731,7 +731,7 @@ void showAbove(FLAlertLayer* alert, CCNode* owner) {
     int const above = owner ? owner->getZOrder() + 1 : 100;
     alert->m_ZOrder = above;
     alert->show();
-// show() may ignore m_ZOrder, so reorder once it has a parent.
+// show() may ignore m_zorder, so reorder once it has a parent.
     if (auto* parent = alert->getParent()) parent->reorderChild(alert, above);
 }
 

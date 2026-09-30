@@ -11,34 +11,34 @@ namespace paimon::texture_studio {
 
 enum class FusionBlendMode : int {
     Replace = 0,
-    // Preserve base luminance while applying texture hue/saturation.
+    // preserve base luminance while applying texture hue/saturation.
     MultiplyLuma = 1,
-    // Straight-alpha texture over base.
+    // straight-alpha texture over base.
     Overlay = 2,
 };
 
 struct FusionApplyOptions {
-    // Replace leaves texture/GIF colors untouched by pack tint.
+    // replace leaves texture/gif colors untouched by pack tint.
     FusionBlendMode blendMode = FusionBlendMode::Replace;
-    // Extra opacity multiplier (0..1).
+    // extra opacity multiplier (0..1).
     float opacity = 1.0f;
-    // Scale, offset, rotation, flip, and fit.
+    // scale, offset, rotation, flip, and fit.
     ImageTransform transform{};
-    // Integer nudge; +X right, +Y down in image space.
+    // integer nudge; +x right, +y down in image space.
     int pixelOffsetX = 0;
     int pixelOffsetY = 0;
 };
 
 class FusionEngine final {
 public:
-    // 8-way flood fill into an R8 mask; transparent pixels are hard borders.
+    // 8-way flood fill into an r8 mask; transparent pixels are hard borders.
     static MaskBuffer floodFill(ImageBuffer const& sprite,
                                 int seedX, int seedY,
                                 int colorRadius = 120,
                                 int alphaCutoff = 12,
                                 int expandRadius = 1);
 
-    // Expand into opaque pixels matching the seed color.
+    // expand into opaque pixels matching the seed color.
     static void expandMask(MaskBuffer& mask,
                            ImageBuffer const& sprite,
                            int radius,
@@ -46,26 +46,26 @@ public:
                            int colorRadius,
                            int alphaCutoff = 12);
 
-    // OR masks with matching dimensions.
+    // or masks with matching dimensions.
     static void orMask(MaskBuffer& dst, MaskBuffer const& src);
 
-    // Texture on non-zero mask pixels; full-frame mapping keeps preview/export aligned as masks grow.
+    // texture on non-zero mask pixels; full-frame mapping keeps preview/export aligned as masks grow.
     static void apply(ImageBuffer& base,
                       MaskBuffer const& mask,
                       ImageBuffer const& texture,
                       FusionApplyOptions const& options = {});
 
-    // Apply into a copy.
+    // apply into a copy.
     static ImageBuffer applyCopy(ImageBuffer const& base,
                                  MaskBuffer const& mask,
                                  ImageBuffer const& texture,
                                  FusionApplyOptions const& options = {});
 
-    // Bounds of non-zero mask pixels; false when empty.
+    // bounds of non-zero mask pixels; false when empty.
     static bool maskBounds(MaskBuffer const& mask,
                            int& outX, int& outY, int& outW, int& outH);
 
-    // Soft 0..1 coverage for live preview.
+    // soft 0..1 coverage for live preview.
     static std::vector<float> softCoverage(MaskBuffer const& mask);
 
     static ImageBuffer buildStampCanvas(ImageBuffer const& texture,
@@ -75,7 +75,7 @@ public:
                                         int pixelOffsetX = 0,
                                         int pixelOffsetY = 0);
 
-    // Fast drag path reusing coverage and stamp; shifts only by pixelOffset.
+    // fast drag path reusing coverage and stamp; shifts only by pixeloffset.
     static void applyCached(ImageBuffer& base,
                             std::vector<float> const& coverage,
                             ImageBuffer const& stampCanvas,

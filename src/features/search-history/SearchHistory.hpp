@@ -1,11 +1,6 @@
 #pragma once
-// Search history data model and persistence.
-// Based on "Search History" by hiimjasmine00
-// (https://github.com/hiimjasmine00/SearchHistory, Geode id
-// hiimjustin000.search_history) under the MIT License.
-// Copyright (c) 2024-2026 hiimjasmine00. See THIRD-PARTY-NOTICES.md.
-// Local port retains the upstream capture/restore logic with Paimbnails
-// UI and persistence.
+// based on search history by hiimjasmine00 under the mit license.
+// copyright (c) 2024-2026 hiimjasmine00; attribution is in the third party notices.
 
 #include <matjson.hpp>
 #include <cstdint>
@@ -16,7 +11,7 @@ class GJSearchObject;
 
 namespace paimon::searchhistory {
 
-// One entry: the query plus the full filter snapshot.
+// one entry: the query plus the full filter snapshot.
 struct Entry {
     int64_t time = 0;            // epoch seconds (date display)
     int type = 0;                // 0 = levels, 1 = lists, 2 = users
@@ -39,16 +34,16 @@ struct Entry {
     bool noStar = false;
     bool star = false;
 
-    // Two entries match when day, type, query and filters agree.
+    // two entries match when day, type, query and filters agree.
     bool operator==(const Entry& other) const;
-    // Short text with the active filters (cell subtitle).
+    // short text with the active filters (cell subtitle).
     std::string summary() const;
 };
 
-// Newest first. Lives in memory; persisted in load()/save().
+// newest first. lives in memory; persisted in load()/save().
 extern std::vector<Entry> history;
 
-// Pushes (or re-promotes) a search to the front.
+// pushes (or re-promotes) a search to the front.
 void add(GJSearchObject* search, std::vector<int> difficulties, std::vector<int> lengths, int type);
 void remove(int index);
 void clear();

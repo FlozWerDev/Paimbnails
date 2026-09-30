@@ -13,7 +13,7 @@ enum class SearchStatus {
 
 struct SearchResult {
     SearchStatus status = SearchStatus::NoResults;
-    std::string songID;   // valid only when status == Found
+    std::string songID;   // valid only when status == found
 };
 
 bool isNumericID(std::string const& text);

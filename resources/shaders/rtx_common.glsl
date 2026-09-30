@@ -24,7 +24,7 @@ float hash12(vec2 p) {
     return fract((p3.x + p3.y) * p3.z);
 }
 
-// ANGLE fails on empty or inverted edges.
+// angle fails on empty or inverted edges.
 float safeSmoothstep(float e0, float e1, float x) {
     if (abs(e1 - e0) < 0.00001) return step(e0, x);
     if (e1 < e0) return 1.0 - smoothstep(e1, e0, x);
@@ -45,7 +45,7 @@ float halton(float idx, float base) {
     return fract(r);
 }
 
-// guards HDR Inf/NaN.
+// guards hdr inf/nan.
 vec3 softClampHi(vec3 c) {
     float l = luma(c);
     return c / (1.0 + max(l - 1.0, 0.0));
@@ -63,7 +63,7 @@ vec3 tmAcesInv(vec3 c) {
          / (502.0 - 486.0 * y);
 }
 
-// filmic bakes sRGB in; square back to linear.
+// filmic bakes srgb in; square back to linear.
 vec3 tmFilmic(vec3 c) {
     vec3 x = max(vec3(0.0), c - 0.004);
     vec3 s = (x * (6.2 * x + 0.5)) / (x * (6.2 * x + 1.7) + 0.06);

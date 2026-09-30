@@ -1,4 +1,5 @@
-// Poll timer sleeps on a background thread; requests and state stay on main.
+#include "../../utils/Base64.hpp"
+// poll timer sleeps on a background thread; requests and state stay on main.
 
 #include <Geode/Geode.hpp>
 
@@ -31,34 +32,6 @@ inline bool        sBool(char const* k) { return Mod::get()->getSettingValue<boo
 inline int64_t     sInt(char const* k)  { return Mod::get()->getSettingValue<int64_t>(k); }
 inline std::string sStr(char const* k)  { return Mod::get()->getSettingValue<std::string>(k); }
 
-// URL-safe base64 (GD uses -/_); also tolerates +/ and padding.
-std::string base64UrlDecode(std::string const& in) {
-    static int8_t const* T = [] {
-        static int8_t arr[256];
-        for (int i = 0; i < 256; ++i) arr[i] = -1;
-        char const* a = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-        for (int i = 0; i < 64; ++i) arr[(unsigned char)a[i]] = (int8_t)i;
-        arr[(unsigned char)'+'] = 62;
-        arr[(unsigned char)'/'] = 63;
-        return arr;
-    }();
-
-    std::string out;
-    out.reserve(in.size() * 3 / 4);
-    int bits = 0, value = 0;
-    for (unsigned char c : in) {
-        int8_t v = T[c];
-        if (v < 0) continue;
-        value = (value << 6) | v;
-        bits += 6;
-        if (bits >= 8) {
-            bits -= 8;
-            out.push_back((char)((value >> bits) & 0xFF));
-        }
-    }
-    return out;
-}
-
 std::map<std::string, std::string> parseKV(std::string const& s, std::string const& sep) {
     auto parts = gstr::split(s, sep);
     std::map<std::string, std::string> m;
@@ -75,7 +48,7 @@ std::vector<std::string> listSetting(char const* key) {
     return out;
 }
 
-// Aliases come from an editable setting, so escape them before interpolating.
+// aliases come from an editable setting, so escape them before interpolating.
 std::string regexEscape(std::string const& s) {
     static constexpr char const* kMeta = "\\^$.|?*+()[]{}";
     std::string out;
@@ -87,7 +60,7 @@ std::string regexEscape(std::string const& s) {
     return out;
 }
 
-// POST to RobTop with disk cache. Callback runs on the main thread.
+// post to robtop with disk cache. callback runs on the main thread.
 void gdRequest(std::string const& endpoint, std::string const& body,
                std::function<void(bool, std::string)> cb) {
     paimon::gd::postCached(endpoint, body, std::move(cb), paimon::gd::policyForEndpoint(endpoint));
@@ -104,7 +77,7 @@ public:
         if (m_started) return;
         m_started = true;
 
-        // First run: seed aliases with the current username.
+        // first run: seed aliases with the current username.
         if (!Mod::get()->setSavedValue("mentions-alias-initialized", true)) {
             auto user = AccountVerifier::get().getUsername();
             if (!user.empty() && sStr("mentions-aliases").empty()) {
@@ -131,7 +104,7 @@ public:
         });
     }
 
-    // Recomputes the special level IDs to watch. Main thread.
+    // recomputes the special level ids to watch. main thread.
     void reloadLevels() {
         m_dailyID = m_weeklyID = m_eventID = 0;
         if (!sBool("mentions-enabled")) return;
@@ -176,7 +149,7 @@ private:
             });
     }
 
-    // Main thread. Fires a comment request per watched level.
+    // main thread. fires a comment request per watched level.
     void pollOnce() {
         if (shuttingDown() || !sBool("mentions-enabled")) return;
         updateAliases();
@@ -212,7 +185,7 @@ private:
                     auto msgIt  = cm.find("6");
                     if (textIt == cm.end() || msgIt == cm.end()) continue;
 
-                    std::string text = base64UrlDecode(textIt->second);
+                    std::string text = paimon::base64UrlDecode(textIt->second);
                     if (!containsMention(text)) continue;
                     if (isSeen(msgIt->second)) continue;
                     if (sBool("mentions-ignore-self") &&
@@ -227,7 +200,7 @@ private:
                 }
 
                 if (found.empty()) return;
-                // If playing and hidden, skip seen-marking so menu return re-detects.
+                // if playing and hidden, skip seen-marking so menu return re-detects.
                 if (!sBool("mentions-show-while-playing") && PlayLayer::get()) return;
 
                 for (auto const& id : seenNow) markSeen(id);
@@ -345,7 +318,7 @@ void paimon::mentions::openProfile(std::string const& username) {
             if (users.empty()) { fail(); return; }
 
             auto kv = parseKV(users[0], ":");
-            auto it = kv.find("16"); // accountID
+            auto it = kv.find("16"); // accountid
             if (it == kv.end()) { fail(); return; }
 
             auto acc = geode::utils::numFromString<int>(it->second);

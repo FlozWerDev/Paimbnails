@@ -21,7 +21,7 @@ CCNode* findChildByIDDeep(CCNode* root, char const* id) {
     return nullptr;
 }
 
-// Fallback when geode.node-ids is unavailable.
+// fallback when geode.node-ids is unavailable.
 CCNode* findProgressBarFallback(CCNode* root) {
     if (!root) return nullptr;
     auto* children = root->getChildren();
@@ -85,7 +85,7 @@ ccColor3B resolveAnimatedColor(BarColorMode mode, ccColor3B const& c1,
     }
 }
 
-// Split bar sprites into background (largest by area) and fill sprites.
+// split bar sprites into background (largest by area) and fill sprites.
 struct SpriteSlots {
     CCSprite* bg = nullptr;
     std::vector<CCSprite*> all;
@@ -118,7 +118,7 @@ CCNode* createDecorationSprite(std::string const& path) {
     if (ImageLoadHelper::isAnimatedImage(fsPath)) {
         return AnimatedGIFSprite::create(path);
     }
-    auto img = ImageLoadHelper::loadStaticImage(fsPath, /*maxSizeMB*/ 24);
+    auto img = ImageLoadHelper::loadStaticImage(fsPath, /*maxsizemb*/ 24);
     if (!img.success || !img.texture) return nullptr;
     auto* spr = CCSprite::createWithTexture(img.texture);
     img.texture->release();
@@ -332,7 +332,7 @@ void ProgressBarManager::saveConfig() {
 
 void ProgressBarManager::resetToDefaults() {
     m_config = ProgressBarConfig{};
-    // Keep baseline so the next tick restores the vanilla bar correctly.
+    // keep baseline so the next tick restores the vanilla bar correctly.
     saveConfig();
 }
 
@@ -435,7 +435,7 @@ CCTexture2D* ProgressBarManager::resolveCustomTexture(
         return nullptr;
     }
 
-// Keep GIF/APNG animation ticking as an invisible PlayLayer child.
+// keep gif/apng animation ticking as an invisible playlayer child.
     if (ImageLoadHelper::isAnimatedImage(fsPath)) {
         auto* anim = AnimatedGIFSprite::create(path);
         if (!anim) {
@@ -449,7 +449,7 @@ CCTexture2D* ProgressBarManager::resolveCustomTexture(
         return anim->getTexture();
     }
 
-    auto img = ImageLoadHelper::loadStaticImage(fsPath, /*maxSizeMB*/ 16);
+    auto img = ImageLoadHelper::loadStaticImage(fsPath, /*maxsizemb*/ 16);
     if (!img.success || !img.texture) {
         log::warn("[ProgressBar] Failed to load image: {}", path);
         return nullptr;
@@ -566,7 +566,7 @@ void ProgressBarManager::restoreVanillaState(CCNode* bar, CCNode* label) {
         }
     }
     m_wasActive = false;
-// Re-sample the baseline after GD shifts the bar.
+// re-sample the baseline after gd shifts the bar.
     m_baselineCaptured = false;
     m_labelBaselineCaptured = false;
 }
@@ -586,7 +586,7 @@ void ProgressBarManager::tickAnimClock() {
 }
 
 void ProgressBarManager::applyTransform(CCNode* bar) {
-// Positions are stored in world-space pixels for sliders and free dragging.
+// positions are stored in world-space pixels for sliders and free dragging.
     if (m_config.useCustomPosition) {
         CCPoint world = ccp(m_config.posX, m_config.posY);
         auto* parent = bar->getParent();
@@ -594,7 +594,7 @@ void ProgressBarManager::applyTransform(CCNode* bar) {
     } else {
         bar->setPosition(m_baselinePos);
     }
-// scaleLength follows the bar axis; scaleThickness is perpendicular.
+// scalelength follows the bar axis; scalethickness is perpendicular.
     bar->setScaleX(m_baselineScaleX * m_config.scaleLength);
     bar->setScaleY(m_baselineScaleY * m_config.scaleThickness);
 
@@ -659,13 +659,13 @@ void ProgressBarManager::applySprites(CCNode* bar, CCNode* playLayerRoot) {
                 bool firstApply = !m_bgBaselineTex.captured;
                 if (firstApply) captureSpriteBaseline(spr, m_bgBaselineTex);
                 spr->setTexture(bgTex);
-// GD does not animate the background, so use its full texture rect.
+// gd does not animate the background, so use its full texture rect.
                 spr->setTextureRect({0, 0,
                     bgTex->getContentSize().width,
                     bgTex->getContentSize().height});
             }
         } else {
-// GD owns the fill rect after the first texture swap.
+// gd owns the fill rect after the first texture swap.
             spr->setColor(fillCol);
             if (m_config.useFillTexture && fillTex) {
                 bool firstApply = !m_fillBaselineTex.captured;
@@ -731,7 +731,7 @@ void ProgressBarManager::applyLabel(CCNode* label, CCNode* bar) {
             : ccc3(255, 255, 255);
         lb->setColor(pctCol);
         if (!m_config.percentageFont.empty()) {
-// Validate the font; Cocos2d crashes on a missing .fnt.
+// validate the font; cocos2d crashes on a missing .fnt.
             auto resolved = CCFileUtils::sharedFileUtils()
                 ->fullPathForFilename(m_config.percentageFont.c_str(), false);
             if (!resolved.empty() && resolved != m_config.percentageFont) {
@@ -778,10 +778,10 @@ void ProgressBarManager::applyDecorations(CCNode* playLayerRoot) {
 void ProgressBarManager::applyToPlayLayer(CCNode* playLayerRoot) {
     if (!playLayerRoot) return;
 
-// Skip node lookup while disabled; it is the expensive part of the update.
+// skip node lookup while disabled; it is the expensive part of the update.
     if (!m_config.enabled && !m_wasActive) return;
 
-// Cache bar/label nodes instead of searching every frame.
+// cache bar/label nodes instead of searching every frame.
     if (m_cachedPlayLayer != playLayerRoot) {
         m_cachedPlayLayer = playLayerRoot;
         m_cachedBar = findBarNode(playLayerRoot);
@@ -791,7 +791,7 @@ void ProgressBarManager::applyToPlayLayer(CCNode* playLayerRoot) {
     auto* bar   = m_cachedBar;
     auto* label = m_cachedLabel;
     if (!bar || !bar->getParent()) {
-// Throttle retries because findBarNode walks the whole PlayLayer tree; some
+// throttle retries because findbarnode walks the whole playlayer tree; some
 // levels never contain a progress bar.
         if (--m_barSearchCooldown > 0) return;
         m_barSearchCooldown = kBarSearchInterval;

@@ -10,7 +10,7 @@ NC='\033[0m'
 echo -e "${BLUE}Paimbnails Installer for Linux${NC}"
 echo ""
 
-# Find Geometry Dash installation
+# find geometry dash installation
 find_gd() {
     local DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
     local paths=(
@@ -30,7 +30,7 @@ find_gd() {
     return 1
 }
 
-GD_PATH=$(find_gd)
+GD_PATH=$(find_gd) || GD_PATH=""
 
 if [ -z "$GD_PATH" ]; then
     echo -e "${YELLOW}Could not automatically find Geometry Dash.${NC}"
@@ -44,7 +44,7 @@ fi
 MODS_DIR="$GD_PATH/geode/mods"
 mkdir -p "$MODS_DIR"
 
-# Find the .geode file next to this script
+# find the .geode file next to this script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GEODE_FILE=$(find "$SCRIPT_DIR" -maxdepth 1 -name "*.geode" | head -n 1)
 

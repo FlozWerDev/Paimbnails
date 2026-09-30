@@ -23,7 +23,7 @@ class $modify(PaimonPauseLayerLayoutHook, PauseLayer) {
 
         paimon::menu_layout::registerLayoutEditorKeybind(this);
 
-        // Re-apply after setup to catch buttons added by other hooks (capture, screenshot, etc.).
+        // re-apply after setup to catch buttons added by other hooks (capture, screenshot, etc.).
         this->scheduleOnce(schedule_selector(PaimonPauseLayerLayoutHook::applyDeferredPauseLayout), 0.f);
         this->scheduleOnce(schedule_selector(PaimonPauseLayerLayoutHook::applyDeferredPauseLayout2), 0.15f);
         this->scheduleOnce(schedule_selector(PaimonPauseLayerLayoutHook::applyDeferredPauseLayout3), 0.5f);

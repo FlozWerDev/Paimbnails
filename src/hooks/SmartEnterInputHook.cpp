@@ -11,7 +11,7 @@ namespace {
     }
 }
 
-// the original consumes multiline Enter; only single-line inputs trigger smart-enter
+// the original consumes multiline enter; only single-line inputs trigger smart-enter
 class $modify(PaimonSmartEnterInput, CCTextInputNode) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityPost("CCTextInputNode::onTextFieldInsertText", geode::Priority::Late);

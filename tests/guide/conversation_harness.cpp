@@ -1,8 +1,7 @@
-// Host-side test harness for Paimon's conversational engine (multi-turn
-// follow-ups). Compiles the real engine + LightLemmatizer sources (unity
+// host-side test harness for paimon's conversational engine (multi-turn
+// follow-ups). compiles the real engine + lightlemmatizer sources (unity
 // build) and runs labeled follow-up cases, reporting accuracy.
-//
-// Build: tests/guide/run_conversation_tests.bat
+// build: tests/guide/run_conversation_tests.bat
 
 #include "../../src/features/guide/services/ConversationalEngine.cpp"
 #include "../../src/features/guide/services/LightLemmatizer.cpp"
@@ -15,7 +14,7 @@
 
 using namespace paimon::guide;
 
-// Mirror of the service's normalize + tokenize (same as harness.cpp).
+// mirror of the service's normalize + tokenize (same as harness.cpp).
 namespace {
 
 std::string stripBasicAccents(std::string const& in) {
@@ -89,7 +88,7 @@ struct Case {
     std::string query;
     std::string lang;      // "english" / "spanish"
     std::string ctxTopic;  // current topic id ("" = no context)
-    std::string expectSub; // expected subTopicId; "<topic>" = pure reference (topic itself)
+    std::string expectSub; // expected subtopicid; "<topic>" = pure reference (topic itself)
     std::string group;
 };
 
@@ -130,7 +129,7 @@ int main() {
         {"what about resolution", "english", "thumbnail-settings", "thumb-quality", "sub"},
         {"el arcoiris?", "spanish", "colorful-icons", "icons-rainbow", "sub"},
 
-        // ---- NOT follow-ups (new topic or greeting) ----
+        // ---- not follow-ups (new topic or greeting) ----
         {"hola", "spanish", "custom-cursor", "", "not-fu"},
         {"hello", "english", "menu-music", "", "not-fu"},
         {"donde configuro el cursor", "english", "", "", "not-fu"},

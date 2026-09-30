@@ -460,23 +460,23 @@ int PetManager::cleanupInvalidImages() {
             }
 
             bool valid = false;
-            // PNG: 89 50 4E 47
+            // png: 89 50 4e 47
             if (header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47) valid = true;
-            // JPEG: FF D8 FF
+            // jpeg: ff d8 ff
             else if (header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF) valid = true;
-            // GIF: GIF8
+            // gif: gif8
             else if (header[0] == 'G' && header[1] == 'I' && header[2] == 'F' && header[3] == '8') valid = true;
-            // WEBP: RIFF....WEBP
+            // webp: riff....webp
             else if (bytesRead >= 12 && header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F'
                 && header[8] == 'W' && header[9] == 'E' && header[10] == 'B' && header[11] == 'P') valid = true;
-            // BMP: BM
+            // bmp: bm
             else if (header[0] == 'B' && header[1] == 'M') valid = true;
-            // TIFF: II (little-endian) or MM (big-endian)
+            // tiff: ii (little-endian) or mm (big-endian)
             else if ((header[0] == 'I' && header[1] == 'I' && header[2] == 0x2A && header[3] == 0x00)
                   || (header[0] == 'M' && header[1] == 'M' && header[2] == 0x00 && header[3] == 0x2A)) valid = true;
-            // QOI: qoif
+            // qoi: qoif
             else if (header[0] == 'q' && header[1] == 'o' && header[2] == 'i' && header[3] == 'f') valid = true;
-            // JXL: \x00\x00\x00\x0C JXL \x20\x0C (12 bytes)
+            // jxl: \x00\x00\x00\x0c jxl \x20\x0c (12 bytes)
             else if (bytesRead >= 12 && header[0] == 0x00 && header[1] == 0x00 && header[2] == 0x00 && header[3] == 0x0C
                      && header[4] == 'J' && header[5] == 'X' && header[6] == 'L' && header[7] == 0x20
                      && header[8] == 0x0C) valid = true;
@@ -691,7 +691,7 @@ void PetManager::attachToScene(CCScene* scene) {
         return;
     }
 
-    // Already on this scene — refresh visibility only.
+    // already on this scene — refresh visibility only.
     if (m_petNode && m_petNode->getParent() == scene) {
         refreshVisibility();
         return;
@@ -758,7 +758,7 @@ void PetManager::releaseSharedResources() {
 
 void PetManager::onGLContextReload() {
     detachFromScene();
-    // release (no take): old context still live, so glDelete is clean.
+    // release (no take): old context still live, so gldelete is clean.
     whiteTrailTexture() = nullptr;
     m_staticTextureCache.clear();
 }
@@ -780,7 +780,7 @@ void PetManager::update(float dt) {
         return;
     }
 
-    // A capture in flight owns the pet's visibility: re-asserting it here would
+    // a capture in flight owns the pet's visibility: re-asserting it here would
     // undo the hide pass and leak the pet into level thumbnails.
     bool const captureOwnsVisibility =
         FramebufferCapture::isCapturing() || FramebufferCapture::hasPendingCapture();
@@ -1003,7 +1003,7 @@ void PetManager::updateTrail() {
 
     if (!m_config.showTrail || !m_petNode || !m_petSprite) return;
 
-    // Use a generated white texture for the trail.
+    // use a generated white texture for the trail.
     auto& trailTex = whiteTrailTexture();
     if (!trailTex) {
         const int sz = 2;

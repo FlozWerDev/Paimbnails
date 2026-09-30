@@ -23,7 +23,7 @@ namespace paimon::texture_studio {
 class ImageBuffer;
 class ParamSliderRow;
 
-// Pack/Tune/Extra/Sprite tabs; fusion lives in FusionEditorLayer.
+// pack/tune/extra/sprite tabs; fusion lives in fusioneditorlayer.
 class ProjectEditorLayer : public cocos2d::CCLayer {
 public:
     static ProjectEditorLayer* create(std::string slotId);
@@ -73,11 +73,11 @@ protected:
     void setOriginalSprite(cocos2d::CCSprite* spr);
     void setResultSprite(cocos2d::CCSprite* spr);
 
-    // Plain tint with shader only; images/fusions/skips use CPU.
+    // plain tint with shader only; images/fusions/skips use cpu.
     bool gpuPreviewWanted(SpriteSetting const& setting,
                           bool globalWouldTint) const;
     void applyGpuTintParams(SpriteSetting const& setting);
-    // Identity of the segmentation inputs; color/grade changes keep it.
+    // identity of the segmentation inputs; color/grade changes keep it.
     static std::uint64_t maskFingerprint(SpritePreviewOptions const& opts);
 
     SpriteSetting currentSetting() const;
@@ -134,7 +134,7 @@ private:
     std::shared_ptr<ImageBuffer> m_customImage;
     SpriteFrameInfo m_previewFrameInfo;
 
-    // Live GPU base pixels + mask id for the uniforms fast path.
+    // live gpu base pixels + mask id for the uniforms fast path.
     std::shared_ptr<ImageBuffer> m_gpuPixels;
     std::uint64_t m_gpuMaskFp = 0;
     bool m_gpuAttached = false;

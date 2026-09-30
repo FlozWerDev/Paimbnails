@@ -54,7 +54,7 @@ std::vector<LogFile> collectLogs(std::filesystem::path const& dir) {
     return files;
 }
 
-// Crash's session log is the closest last-write, skipping the live one.
+// crash's session log is the closest last-write, skipping the live one.
 std::filesystem::path sessionLogFor(std::filesystem::file_time_type crashTime) {
     std::error_code ec;
     auto current = std::filesystem::weakly_canonical(log::getCurrentLogPath(), ec);
@@ -99,7 +99,7 @@ std::string readCapped(std::filesystem::path const& path, size_t limit, bool kee
     return content;
 }
 
-// Only the account folder in absolute paths identifies the player; placeholder it.
+// only the account folder in absolute paths identifies the player; placeholder it.
 void scrubUserPaths(std::string& text) {
     for (std::string_view needle : {"\\Users\\", "/Users/", "/home/"}) {
         size_t at = 0;
@@ -117,7 +117,7 @@ void scrubUserPaths(std::string& text) {
     }
 }
 
-// Geode writes the crash timestamp as the first line of the crashlog.
+// geode writes the crash timestamp as the first line of the crashlog.
 std::string crashTimestamp(std::string const& crashlog) {
     auto end = crashlog.find('\n');
     auto line = crashlog.substr(0, end == std::string::npos ? crashlog.size() : end);
@@ -206,7 +206,7 @@ void reportPendingCrashes() {
 
     log::info("[CrashReports] {} crashlog(s) pending upload", pending.size());
 
-    // Read on the main thread: Loader fills the game version lazily.
+    // read on the main thread: loader fills the game version lazily.
     auto geodeVersion = Loader::get()->getVersion().toVString();
     auto gameVersion = Loader::get()->getGameVersion();
 

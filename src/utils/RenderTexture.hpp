@@ -19,7 +19,7 @@ private:
     uint32_t m_fbo = 0;
     uint32_t m_texture = 0;
     uint32_t m_depthStencil = 0;
-    uint32_t m_stencilBuffer = 0; // used only on GL ES without packed depth-stencil
+    uint32_t m_stencilBuffer = 0; // used only on gl es without packed depth-stencil
     bool m_valid = false;
     bool m_begun = false;
     cocos2d::CCSize m_oldScale{};

@@ -58,7 +58,7 @@ constexpr float kMinInspectorW = 240.f;
 constexpr float kMaxInspectorW = 330.f;
 constexpr float kStripH = 30.f;
 
-// touch hit-testing needs no full canvas resolution; at this size a mask is 14 KB, not 230.
+// touch hit-testing needs no full canvas resolution; at this size a mask is 14 kb, not 230.
 constexpr int kHitMaskSize = 120;
 constexpr int kThumbSize = 44;
 
@@ -139,7 +139,7 @@ char const* fillTypeName(FillSpec const& fill) {
     }
 }
 
-// Representative paint color for list swatches and theme chips.
+// representative paint color for list swatches and theme chips.
 ccColor3B fillSwatch(FillSpec const& fill) {
     if (fill.chroma) return {255, 255, 255};
     switch (fill.type) {
@@ -164,7 +164,7 @@ std::string layerSubtitle(IconPiece const& piece) {
     return text;
 }
 
-// Copy a picked file into the project images directory under a unique name.
+// copy a picked file into the project images directory under a unique name.
 geode::Result<std::string> importImageFile(std::string const& slotId,
                                            std::string const& pieceId,
                                            std::filesystem::path const& source,
@@ -194,7 +194,7 @@ std::string suffixForZone(AnatomyDef const& def, std::string const& zoneKey, int
     return suffix;
 }
 
-// Extract one vanilla frame for the given zone.
+// extract one vanilla frame for the given zone.
 geode::Result<> fillPieceFromTemplate(IconProject const& project, IconPiece& piece,
                                       int iconId, int part, std::string const& zoneKey) {
     auto const* def = anatomyFor(project.type);
@@ -591,7 +591,7 @@ void IconEditorLayer::buildWorkspace() {
     float const toolLeft = layout.workspaceCX - layout.canvasSide / 2.f;
     m_toolLabelW = std::max(8.f, toolW - 12.f);
 
-    // ButtonSprite owns its art, so state goes in the text.
+    // buttonsprite owns its art, so state goes in the text.
     auto makeToolButton = [&](float cx, cocos2d::CCLabelBMFont** out,
                               std::function<void(CCMenuItemSpriteExtra*)> action) {
         float const btnW = std::max(12.f, toolW - 5.f);
@@ -1948,7 +1948,7 @@ void IconEditorLayer::adoptShapeFromProject(std::string const& projectId) {
         return;
     }
 
-    // PNG is copied into the project so it reopens even if the source icon is deleted.
+    // png is copied into the project so it reopens even if the source icon is deleted.
     auto const name = IconPaths::sanitizeFilename(
         fmt::format("prestada_{}_{}", selectedPiece()->id, sourcePiece.shape.file));
     std::error_code ec;
@@ -2371,7 +2371,7 @@ void IconEditorLayer::kickPreviewJob() {
 
     std::vector<std::string> keys;
     if (m_previewFast) {
-        // mid-drag only the active zone changes; repainting all five at 15 Hz shows.
+        // mid-drag only the active zone changes; repainting all five at 15 hz shows.
         keys.push_back(activeKey);
     } else {
         keys = drawOrderKeys();
@@ -2445,7 +2445,7 @@ void IconEditorLayer::applyPreview(std::vector<std::pair<std::string, SlotRender
     m_canvas->setEyedropper(m_eyedropper);
     pushCanvasSelection();
 
-    // mid-drag chips and list stay frozen; rebuilt on release in onGestureEnd.
+    // mid-drag chips and list stay frozen; rebuilt on release in ongestureend.
     if (m_gestureActive) return;
     refreshZoneChips();
     if (m_tab == Tab::Layers) scheduleInspectorRebuild();

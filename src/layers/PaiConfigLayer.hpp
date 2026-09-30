@@ -1,6 +1,6 @@
 #pragma once
 
-// single-screen background editor with live preview under a vanilla UI mock.
+// single-screen background editor with live preview under a vanilla ui mock.
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
@@ -112,7 +112,7 @@ protected:
 
     geode::ScrollLayer* m_controlsScroll = nullptr;
     cocos2d::CCNode* m_controlsHint = nullptr;
-    // rows live in Refs: the scroll layer culls with setVisible(),
+    // rows live in refs: the scroll layer culls with setvisible(),
     // so visibility does not track config intent.
     std::vector<geode::Ref<cocos2d::CCNode>> m_controlRows;
     // packs visible rows gap-free; scrolls to top only when the set changes.

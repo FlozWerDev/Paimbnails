@@ -11,8 +11,8 @@ namespace paimon::officialslots::ui {
 
 class SlotOrderPopup : public geode::Popup {
 public:
-    // onChanged runs after any move, so the manager can rebuild its own rows
-    // next to the page repaint refreshOfficialList() triggers.
+    // onchanged runs after any move, so the manager can rebuild its own rows
+    // next to the page repaint refreshofficiallist() triggers.
     static SlotOrderPopup* create(std::function<void()> onChanged = nullptr);
 
 protected:

@@ -1,4 +1,5 @@
-// Polls RobTop's public message endpoints through AchievementNotifier;
+#include "../../utils/Base64.hpp"
+// polls robtop's public message endpoints through achievementnotifier;
 // independent reimplementation, no code copied from the inspiring mod.
 
 #include <Geode/Geode.hpp>
@@ -24,35 +25,11 @@ constexpr char const* GD_SECRET = "Wmfd2893gb7";
 inline bool    sBool(char const* k) { return Mod::get()->getSettingValue<bool>(k); }
 inline int64_t sInt(char const* k)  { return Mod::get()->getSettingValue<int64_t>(k); }
 
-// URL-safe base64 decode (GD uses '-' and '_'). Also tolerates standard '+' '/' and padding/whitespace.
-std::string base64UrlDecode(std::string const& in) {
-    static int8_t const* T = [] {
-        static int8_t arr[256];
-        for (int i = 0; i < 256; ++i) arr[i] = -1;
-        char const* a = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-        for (int i = 0; i < 64; ++i) arr[(unsigned char)a[i]] = (int8_t)i;
-        arr[(unsigned char)'+'] = 62;
-        arr[(unsigned char)'/'] = 63;
-        return arr;
-    }();
-    std::string out;
-    out.reserve(in.size() * 3 / 4);
-    int bits = 0, value = 0;
-    for (unsigned char c : in) {
-        int8_t v = T[c];
-        if (v < 0) continue;
-        value = (value << 6) | v;
-        bits += 6;
-        if (bits >= 8) { bits -= 8; out.push_back((char)((value >> bits) & 0xFF)); }
-    }
-    return out;
-}
-
 inline int toInt(std::string const& s) {
     return geode::utils::numFromString<int>(s).unwrapOr(-1);
 }
 
-// Parse "k:v:k:v..." keeping only the keys we care about.
+// parse "k:v:k:v..." keeping only the keys we care about.
 struct MessageData {
     int messageID = -1;
     std::string title, username;
@@ -64,7 +41,7 @@ struct MessageData {
             if (key == -1) { key = toInt(str); continue; }
             switch (key) {
                 case 1: m.messageID = toInt(str); break;
-                case 4: m.title = base64UrlDecode(str); break;
+                case 4: m.title = paimon::base64UrlDecode(str); break;
                 case 6: m.username = str; break;
             }
             key = -1;
@@ -85,7 +62,7 @@ struct FriendData {
             switch (key) {
                 case 1:  f.username = str; break;
                 case 32: f.requestID = toInt(str); break;
-                case 35: f.message = base64UrlDecode(str); break;
+                case 35: f.message = paimon::base64UrlDecode(str); break;
             }
             key = -1;
         }
@@ -108,7 +85,7 @@ public:
             if (enabled) MessageWatcher::get().pollOnce();
         });
 
-        // Seed at once: waiting for the first tick would make the first new
+        // seed at once: waiting for the first tick would make the first new
         // message the baseline and suppress its notification.
         pollOnce();
 
@@ -139,7 +116,7 @@ public:
             if (d.messageID > latest) { latest = d.messageID; last = d; count++; }
         }
         Mod::get()->setSavedValue<int>("msgnotif-latest-id", latest);
-        // First run: just record baseline, don't notify.
+        // first run: just record baseline, don't notify.
         if (!Mod::get()->setSavedValue<bool>("msgnotif-seeded-msg", true)) return;
         if (count > 1) {
             showNotif(fmt::format("{} New Messages!", count), "Check them out!", false);

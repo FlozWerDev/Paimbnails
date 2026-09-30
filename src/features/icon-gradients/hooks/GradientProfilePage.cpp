@@ -1,5 +1,5 @@
-// Shades each own-profile slot by index (Ship doubles as Jetpack; re-shade on
-// 1P/2P toggle), after zilko's "Icon Gradients" (independent implementation; idea credit zilko144, unlicensed).
+// shades each own-profile slot by index (ship doubles as jetpack; re-shade on
+// 1p/2p toggle), after zilko's "icon gradients" (independent implementation; idea credit zilko144, unlicensed).
 
 #include "GradientProfilePage.hpp"
 #include "../GradientCache.hpp"
@@ -8,8 +8,8 @@
 using namespace geode::prelude;
 using namespace paimon::icon_gradients;
 
-// Slot index -> icon kind. Slot 1 shows the Ship doll, or the Jetpack
-// one while the Ship toggle is off.
+// slot index -> icon kind. slot 1 shows the ship doll, or the jetpack
+// one while the ship toggle is off.
 static IconType slotKind(int slot, bool shipOn) {
     return (slot == 1 && !shipOn) ? IconType::Jetpack : static_cast<IconType>(slot);
 }

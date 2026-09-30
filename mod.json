@@ -467,6 +467,12 @@
       "description": "Custom entry/exit animations for Paimbnails popups.",
       "default": true
     },
+    "dynamic-transition-enabled": {
+      "type": "bool",
+      "name": "Dynamic Transition",
+      "description": "Animates layers and game panels like apps, including Escape, Back and close buttons. Configure styles, timing, panel coverage and preview in Paimon Hub > Extras > Dynamic Transition.",
+      "default": true
+    },
     "dynamic-exit-enabled": {
       "type": "bool",
       "name": "Dynamic Popup Exit",

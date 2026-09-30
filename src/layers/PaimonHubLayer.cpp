@@ -10,6 +10,7 @@
 #include "../features/profiles/ui/ProfilePicEditorPopup.hpp"
 #include "../features/profiles/ui/ProfileSettingsPopup.hpp"
 #include "../features/transitions/ui/TransitionConfigPopup.hpp"
+#include "../features/transitions/ui/DynamicTransitionConfigPopup.hpp"
 #include "../features/cursor/ui/CursorConfigPopup.hpp"
 #include "../features/pet/ui/PetConfigPopup.hpp"
 #include "../features/profile-music/ui/ProfileMusicPopup.hpp"
@@ -281,6 +282,9 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
                 {"Smooth UI", "GJ_button_05.png", [](PaimonHubLayer*) {
                     if (auto popup = paimon::ui::SmoothUIConfigPopup::create()) popup->show();
                 }, 5, "Animaciones suaves"},
+                {"Dynamic Transition", "GJ_button_04.png", [](PaimonHubLayer*) {
+                    if (auto popup = paimon::transitions::dynamic::DynamicTransitionConfigPopup::create()) popup->show();
+                }, 5, "Los layers se abren desde su boton"},
                 {"Mascota", "GJ_button_03.png", [](PaimonHubLayer*) { if (auto popup = PetConfigPopup::create()) popup->show(); }, 5, "Companero en pantalla"},
                 {"Cursor", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = CursorConfigPopup::create()) popup->show(); }, 5, "Cursor personalizado"},
                 {"Hover", "GJ_button_01.png", [](PaimonHubLayer*) { paimon::hover::open(); }, 5, "Animaciones al pasar cursor o touch"},
@@ -377,6 +381,7 @@ std::vector<GranularSettingMeta> getGranularSettings() {
         {"Custom Hover", "Animaciones Hover", 5},
         {"Custom Slider Thumb", "Barra de Desplazamiento Personalizada", 5},
         {"Dynamic Popups", "Popups Dinamicos", 5},
+        {"Dynamic Transition", "Transicion Dinamica", 5},
         {"Dynamic Popup Exit", "Salida de Popup Dinamica", 5},
         {"Popup Blur", "Desenfoque de Popup", 5},
         {"Download Threads", "Hilos de Descarga / Hilos de Red", 5},

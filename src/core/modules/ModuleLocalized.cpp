@@ -20,6 +20,7 @@ Map const& spanishNames() {
     static Map const map = {
         {"paimbnails.smoothui.global", "UI Suave"},
         {"paimbnails.dynamicpopups.global", "Popups Dinamicos"},
+        {"paimbnails.dynamictransition.global", "Transicion Dinamica"},
         {"paimbnails.popupblur.global", "Desenfoque de Popups"},
         {"paimbnails.smoothscroll.global", "Scroll Suave"},
         {"paimbnails.smoothtext.global", "Entrada de Texto Suave"},
@@ -150,6 +151,7 @@ Map const& spanishDescs() {
         {"paimbnails.customslider.global", "Usa tu icono como el pulgar del slider."},
         {"paimbnails.paimonicons.global", "Recolorea los iconos del juego con tu paleta."},
         {"paimbnails.transitions.global", "Transiciones personalizadas entre escenas."},
+        {"paimbnails.dynamictransition.global", "Anima layers y paneles al abrir, pulsar Escape, volver y cerrar."},
         {"paimbnails.volumescroll.global", "Mantiene un modificador y usa la rueda para cambiar el volumen. En tactil, arrastra con tres dedos."},
         {"paimbnails.dynamicvolume.global", "Ecualiza una cancion fuerte al nivel de la anterior, o mantiene todas al mismo nivel."},
         {"paimbnails.safedrop.global", "Evita picos de efecto y volumen antes de que lleguen."},

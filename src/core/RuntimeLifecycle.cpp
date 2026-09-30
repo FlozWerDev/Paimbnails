@@ -35,6 +35,7 @@
 #include "../features/dynamic-volume/services/DynamicVolumeManager.hpp"
 #include "../features/transitions/services/LevelEntryEffects.hpp"
 #include "../features/transitions/services/TransitionMedia.hpp"
+#include "../features/transitions/services/DynamicTransitionManager.hpp"
 #include "../framework/ModEvents.hpp"
 #include "../framework/EventBus.hpp"
 #include "../utils/ThreadTracker.hpp"
@@ -257,6 +258,9 @@ $on_game(Exiting) {
     // join the media worker before statics die so it can't touch the cache in atexit.
     safeShutdownStep("transition-media-shutdown", []() {
         paimon::transitions::shutdownTransitionMedia();
+    });
+    safeShutdownStep("dynamic-transition-history-clear", []() {
+        paimon::transitions::dynamic::clearHistory();
     });
 
     if (!clearCacheOnExit) {

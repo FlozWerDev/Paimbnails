@@ -1,4 +1,5 @@
 #include "TransitionManager.hpp"
+#include "DynamicTransitionManager.hpp"
 #include "TransitionTimeline.hpp"
 #include "../ui/CustomTransitionScene.hpp"
 #include "../../../utils/LocalAssetStore.hpp"
@@ -955,6 +956,10 @@ CCScene* TransitionManager::createTransition(
 
 void TransitionManager::replaceScene(CCScene* dest) {
     if (!dest) return;
+    if (auto* dynamic = paimon::transitions::dynamic::createTransition(dest)) {
+        CCDirector::get()->replaceScene(dynamic);
+        return;
+    }
 
     if (m_enabled) {
         if (!m_loaded) loadConfig();
@@ -967,6 +972,10 @@ void TransitionManager::replaceScene(CCScene* dest) {
 
 void TransitionManager::pushScene(CCScene* dest) {
     if (!dest) return;
+    if (auto* dynamic = paimon::transitions::dynamic::createTransition(dest)) {
+        CCDirector::get()->pushScene(dynamic);
+        return;
+    }
 
     if (m_enabled) {
         if (!m_loaded) loadConfig();

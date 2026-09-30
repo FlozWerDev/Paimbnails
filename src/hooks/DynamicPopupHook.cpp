@@ -10,6 +10,8 @@
 #include "../blur/PopupBlurService.hpp"
 #include "../core/Settings.hpp"
 #include "../core/RuntimeLifecycle.hpp"
+#include "../features/transitions/services/DynamicTransitionManager.hpp"
+#include "../features/transitions/services/DynamicPanelTransitions.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -573,7 +575,8 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
 
     $override
     void show() {
-        // no VMT hook on inherited virtuals; table follows base size
+        paimon::transitions::dynamic::PanelShowGuard guard(this);
+        paimon::transitions::dynamic::discardButton();
         m_fields->m_self = this;
         FLAlertLayer::show();
 
@@ -641,6 +644,7 @@ bool isShaderRelatedPopup(cocos2d::CCNode* popup) {
 class $modify(PaimonProfilePageBlur, ProfilePage) {
     $override
     void show() {
+        paimon::transitions::dynamic::PanelShowGuard guard(this);
         ProfilePage::show();
         if (isEditorContextActive()) return;
         paimon::popupblur::captureAndApply(this);
@@ -659,7 +663,8 @@ class $modify(PaimonProfilePageBlur, ProfilePage) {
 class $modify(PaimonSetupTriggerPopupBlur, SetupTriggerPopup) {
     $override
     void show() {
-        // SetupTriggerPopup has many GD subclasses; avoid a base VMT hook
+        paimon::transitions::dynamic::PanelShowGuard guard(this);
+        // setuptriggerpopup has many gd subclasses; avoid a base vmt hook
         SetupTriggerPopup::show();
         if (isEditorContextActive()) return;
         if (isShaderRelatedPopup(this)) return;

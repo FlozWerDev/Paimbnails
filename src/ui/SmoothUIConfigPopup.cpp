@@ -3,6 +3,7 @@
 #include "../utils/DynamicPopupRegistry.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
 #include "../features/transitions/ui/TransitionConfigPopup.hpp"
+#include "../features/transitions/ui/DynamicTransitionConfigPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <fmt/format.h>
@@ -96,6 +97,7 @@ void applySmoothUIPreset(std::string const& preset) {
         setBase(false, 1.0f, 0.0f);
         sset<bool>("dynamic-popup-enabled", false);
         sset<bool>("dynamic-exit-enabled", false);
+        sset<bool>("dynamic-transition-enabled", false);
         sset<bool>("smooth-scroll", false);
         ssaved<bool>("popup-blur-show-placeholder", true);
         TransitionManager::get().setEnabled(false);
@@ -105,6 +107,7 @@ void applySmoothUIPreset(std::string const& preset) {
 
     sset<bool>("dynamic-popup-enabled", true);
     sset<bool>("dynamic-exit-enabled", true);
+    sset<bool>("dynamic-transition-enabled", true);
     sset<bool>("smooth-scroll", true);
     ssaved<bool>("popup-blur-show-placeholder", true);
 
@@ -239,6 +242,17 @@ void SmoothUIConfigPopup::rebuild() {
         });
 
     std::vector<CCNode*> items = {hero, presetCard, tabs};
+    items.push_back(kit::makeCard(scrollW, "Dynamic Transition", {115, 210, 255}, {
+        kit::makeToggleRow(innerW,
+            "Abrir layers como apps", "El layer se expande desde el boton pulsado.",
+            gset<bool>("dynamic-transition-enabled"),
+            [](bool value) { sset<bool>("dynamic-transition-enabled", value); }),
+        kit::makeButtonRow(innerW,
+            "Configuracion y vista previa", "Estilo, curvas, duracion, fondo y regreso.",
+            "Configurar", [] {
+                if (auto* popup = paimon::transitions::dynamic::DynamicTransitionConfigPopup::create()) popup->show();
+            }),
+    }));
 
     if (m_tab == 0) {
         items.push_back(kit::makeCard(scrollW, "Lo esencial", {120, 210, 255}, {

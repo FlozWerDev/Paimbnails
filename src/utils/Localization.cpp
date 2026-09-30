@@ -2,6 +2,9 @@
 
 void Localization::initTranslations() {
         m_spanish = {
+            {"pai.config.extras.dynamic_transition", "Transicion Dinamica"},
+            {"pai.config.extras.dynamic_transition_info.title", "Dynamic Transition"},
+            {"pai.config.extras.dynamic_transition_info.body", "Abre los layers desde sus botones como si fueran apps. Configura el movimiento, la apariencia y el regreso con una vista previa."},
             {"texture-studio.coming.title", "Texture Studio"},
             {"texture-studio.coming.message", "Texture Studio llegara <cy>definitivamente en la v1.1.0</c>.\n\nGracias por tu paciencia!"},
 
@@ -1279,6 +1282,9 @@ void Localization::initTranslations() {
         };
 
         m_english = {
+            {"pai.config.extras.dynamic_transition", "Dynamic Transition"},
+            {"pai.config.extras.dynamic_transition_info.title", "Dynamic Transition"},
+            {"pai.config.extras.dynamic_transition_info.body", "Open menu layers from their buttons, like apps. Configure motion, appearance and return animations with a live preview."},
             {"texture-studio.coming.title", "Texture Studio"},
             {"texture-studio.coming.message", "Texture Studio will <cy>definitely arrive in v1.1.0</c>.\n\nThanks for your patience!"},
 

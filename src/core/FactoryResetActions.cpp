@@ -21,6 +21,7 @@
 #include "../features/quick-hub/services/QuickHubManager.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
+#include "../features/transitions/services/DynamicTransitionManager.hpp"
 #include "../features/discord-presence/services/DiscordPresenceManager.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
 #include "../utils/HttpClient.hpp"
@@ -184,6 +185,7 @@ void resetFeatureManagers() {
     tm.clearLevelEntryConfig();
     tm.setEnabled(true);
     tm.saveConfig();
+    paimon::transitions::dynamic::resetConfig();
 }
 
 void refreshMenuIfVisible() {

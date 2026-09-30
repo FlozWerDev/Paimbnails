@@ -19,6 +19,7 @@
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
 #include "../features/transitions/ui/TransitionConfigPopup.hpp"
+#include "../features/transitions/ui/DynamicTransitionConfigPopup.hpp"
 #include "../core/QualityConfig.hpp"
 #include "../core/modules/ModuleRegistry.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
@@ -1655,6 +1656,10 @@ void PaiConfigLayer::buildExtrasTab() {
          "pai.config.extras.transitions_info.title", "Transitions",
          "pai.config.extras.transitions_info.body", "Configure custom scene transition effects.",
          [] { if (auto* p = TransitionConfigPopup::create()) p->show(); }},
+        {"pai.config.extras.dynamic_transition", "Dynamic Transition", "GJ_button_05.png",
+         "pai.config.extras.dynamic_transition_info.title", "Dynamic Transition",
+         "pai.config.extras.dynamic_transition_info.body", "Open menu layers from their buttons, like apps. Configure motion, appearance and return animations with a live preview.",
+         [] { if (auto* p = paimon::transitions::dynamic::DynamicTransitionConfigPopup::create()) p->show(); }},
         {"pai.config.extras.rtx", "Paimon RTX", "GJ_button_01.png",
          "pai.config.extras.rtx_info.title", "Paimon RTX",
          "pai.config.extras.rtx_info.body",

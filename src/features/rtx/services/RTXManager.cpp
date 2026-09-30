@@ -219,7 +219,7 @@ void RTXManager::loadConfig() {
         return;
     }
 
-    auto rawRes = file::readString(path);
+    auto rawRes = geode::utils::file::readString(path);
     if (!rawRes) {
         log::warn("[PaimonRTX] No se pudo leer la config: {}", rawRes.unwrapErr());
         return;

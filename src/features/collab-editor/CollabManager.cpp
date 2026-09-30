@@ -136,7 +136,7 @@ void addLocalCursorAppearance(PeerAppearance& appearance) {
     auto fileSize = std::filesystem::file_size(path, ec);
     if (ec || fileSize == 0 || fileSize > kMaxCursorAssetBytes) return;
 
-    auto data = file::readBinary(path);
+    auto data = geode::utils::file::readBinary(path);
     if (!data || data.unwrap().empty() || data.unwrap().size() > kMaxCursorAssetBytes) return;
 
     appearance.cursorData = paimon::base64Encode(data.unwrap());

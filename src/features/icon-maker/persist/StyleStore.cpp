@@ -39,7 +39,7 @@ void StyleStore::load() {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return;
 
-    auto rd = file::readJson(path);
+    auto rd = geode::utils::file::readJson(path);
     if (!rd) {
         log::warn("[icon-maker] styles.json read failed: {}", rd.unwrapErr());
         return;
@@ -78,7 +78,7 @@ geode::Result<> StyleStore::save() {
     auto doc = matjson::Value::object();
     doc["styles"] = arr;
 
-    auto wr = file::writeString(IconPaths::stylesFile(), doc.dump());
+    auto wr = geode::utils::file::writeString(IconPaths::stylesFile(), doc.dump());
     if (!wr) {
         return Err("writeString styles.json: {}", wr.unwrapErr());
     }

@@ -58,7 +58,7 @@ geode::Result<LoadedSpritesheet> SpritesheetReader::loadFromPaths(
         return Err("SpritesheetReader: invalid PNG file size for {}",
             geode::utils::string::pathToString(pngPath));
     }
-    auto pngBytes = file::readBinary(pngPath);
+    auto pngBytes = geode::utils::file::readBinary(pngPath);
     if (!pngBytes) {
         return Err("SpritesheetReader: cannot read PNG {}: {}",
             geode::utils::string::pathToString(pngPath), pngBytes.unwrapErr());

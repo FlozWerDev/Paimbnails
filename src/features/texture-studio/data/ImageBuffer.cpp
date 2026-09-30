@@ -195,7 +195,7 @@ geode::Result<ImageBuffer> ImageBuffer::loadFromFile(std::filesystem::path const
     if (ec || size > kMaxEncodedBytes) {
         return Err("ImageBuffer::loadFromFile: invalid file size");
     }
-    auto bytes = file::readBinary(path);
+    auto bytes = geode::utils::file::readBinary(path);
     if (!bytes) {
         return Err("ImageBuffer::loadFromFile: cannot read {}: {}",
             geode::utils::string::pathToString(path), bytes.unwrapErr());
@@ -240,7 +240,7 @@ geode::Result<> ImageBuffer::saveToPng(std::filesystem::path const& path) const 
     auto encoded = encodeAsPng();
     if (!encoded) return Err(encoded.unwrapErr());
 
-    auto res = file::writeBinary(path, encoded.unwrap());
+    auto res = geode::utils::file::writeBinary(path, encoded.unwrap());
     if (!res) {
         return Err("ImageBuffer::saveToPng: write failed: {}", res.unwrapErr());
     }

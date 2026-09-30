@@ -65,7 +65,7 @@ void PendingQueue::load() {
     auto p = jsonPath();
     std::error_code ec;
     if (!std::filesystem::exists(p, ec) || ec) return;
-    auto data = file::readString(p).unwrapOr("");
+    auto data = geode::utils::file::readString(p).unwrapOr("");
     if (data.empty()) return;
 
     auto jsonRes = matjson::parse(data);

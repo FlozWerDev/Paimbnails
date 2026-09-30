@@ -136,7 +136,7 @@ ProfileThumbs& ProfileThumbs::get() {
 
 std::string ProfileThumbs::makePath(int accountID) const {
     auto dir = getProfileThumbsDir();
-    (void)file::createDirectoryAll(dir);
+    (void)geode::utils::file::createDirectoryAll(dir);
     return geode::utils::string::pathToString(dir / fmt::format("{}.webp", accountID));
 }
 

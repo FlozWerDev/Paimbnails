@@ -481,7 +481,7 @@ void MainMenuLayoutManager::load() {
     m_shapes.clear();
     m_labelFollowerOffsets.clear();
 
-    auto raw = file::readString(this->configPath()).unwrapOr("");
+    auto raw = geode::utils::file::readString(this->configPath()).unwrapOr("");
     if (raw.empty()) {
         return;
     }

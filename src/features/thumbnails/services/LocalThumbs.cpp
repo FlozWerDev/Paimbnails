@@ -591,7 +591,7 @@ std::filesystem::path LocalThumbs::mappingFile() const {
 
 void LocalThumbs::loadMappings() {
     m_fileMapping.clear();
-    auto dataRes = file::readString(mappingFile());
+    auto dataRes = geode::utils::file::readString(mappingFile());
     if (!dataRes) {
         log::debug("no se hallo archivo de mapping, empezamos de cero");
         return;

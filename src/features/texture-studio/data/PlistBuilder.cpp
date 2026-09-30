@@ -204,7 +204,7 @@ geode::Result<> PlistBuilder::buildFile(ParsedSpritesheet const& sheet,
     auto content = buildString(sheet);
     if (!content) return Err(content.unwrapErr());
 
-    auto res = file::writeString(path, content.unwrap());
+    auto res = geode::utils::file::writeString(path, content.unwrap());
     if (!res) {
         return Err("PlistBuilder::buildFile: write failed: {}", res.unwrapErr());
     }

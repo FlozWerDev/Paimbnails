@@ -62,11 +62,16 @@ namespace ImageLoadHelper {
     // reject dimensions above 4096² (64 mb rgba).
     static constexpr int kMaxImageDim = 4096;
 
-    inline std::vector<uint8_t> readBinaryFile(std::filesystem::path const& path, size_t maxSizeMB = 10) {
+    inline uintmax_t fileSizeLimitBytes(uintmax_t maxSizeMB) {
         constexpr uintmax_t megabyte = 1024ull * 1024ull;
-        auto limit = std::numeric_limits<uintmax_t>::max();
-        if (maxSizeMB > 0 && maxSizeMB <= limit / megabyte) limit = static_cast<uintmax_t>(maxSizeMB) * megabyte;
-        return paimon::file::readBytes(path, limit);
+        constexpr auto maxBytes = std::numeric_limits<uintmax_t>::max();
+        return maxSizeMB == 0 || maxSizeMB > maxBytes / megabyte
+            ? maxBytes
+            : maxSizeMB * megabyte;
+    }
+
+    inline std::vector<uint8_t> readBinaryFile(std::filesystem::path const& path, size_t maxSizeMB = 10) {
+        return paimon::file::readBytes(path, fileSizeLimitBytes(maxSizeMB));
     }
 
     inline LoadedImage createFromRGBA(uint8_t const* rgba, int w, int h, bool copyBuffer = true) {
@@ -173,8 +178,7 @@ namespace ImageLoadHelper {
                 result.error = "image_open_error";
                 return result;
             }
-            if (maxSizeMB <= std::numeric_limits<uintmax_t>::max() / (1024ull * 1024ull) &&
-                fileSize > static_cast<uintmax_t>(maxSizeMB) * 1024ull * 1024ull) {
+            if (fileSize > fileSizeLimitBytes(maxSizeMB)) {
                 result.error = fmt::format("Image too large (max {}MB)", maxSizeMB);
                 return result;
             }

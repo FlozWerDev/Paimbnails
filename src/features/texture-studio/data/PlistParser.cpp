@@ -519,7 +519,7 @@ geode::Result<ParsedSpritesheet> PlistParser::parseFile(std::filesystem::path co
         return Err("PlistParser::parseFile: invalid file size for {}",
             geode::utils::string::pathToString(path));
     }
-    auto content = file::readString(path);
+    auto content = geode::utils::file::readString(path);
     if (!content) {
         return Err("PlistParser::parseFile: cannot read {}: {}",
             geode::utils::string::pathToString(path), content.unwrapErr());

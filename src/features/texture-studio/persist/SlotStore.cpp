@@ -60,7 +60,7 @@ void SlotStore::loadIndex() {
         return;
     }
 
-    auto rd = file::readJson(path);
+    auto rd = geode::utils::file::readJson(path);
     if (!rd) {
         log::warn("[texture-studio] slots.json read failed: {}", rd.unwrapErr());
         return;
@@ -98,7 +98,7 @@ geode::Result<> SlotStore::saveIndex() {
     for (auto const& e : m_index) arr.push(indexEntryToJson(e));
     doc["slots"] = arr;
 
-    auto wr = file::writeString(SlotPaths::slotsIndexFile(), doc.dump());
+    auto wr = geode::utils::file::writeString(SlotPaths::slotsIndexFile(), doc.dump());
     if (!wr) {
         return Err("writeString slots.json: {}", wr.unwrapErr());
     }
@@ -153,7 +153,7 @@ geode::Result<std::string> SlotStore::createSlot(TextureProject seed) {
     }
 
     auto json = matjson::Value(seed);
-    auto wr = file::writeString(SlotPaths::projectFile(finalId), json.dump());
+    auto wr = geode::utils::file::writeString(SlotPaths::projectFile(finalId), json.dump());
     if (!wr) {
         return Err("writeString project: {}", wr.unwrapErr());
     }
@@ -187,7 +187,7 @@ geode::Result<TextureProject> SlotStore::loadSlot(std::string_view id) {
     if (!std::filesystem::exists(path, ec)) {
         return Err("slot '{}' has no project.json", id);
     }
-    auto rd = file::readJson(path);
+    auto rd = geode::utils::file::readJson(path);
     if (!rd) {
         return Err("readJson project.json: {}", rd.unwrapErr());
     }
@@ -210,7 +210,7 @@ geode::Result<> SlotStore::saveSlot(TextureProject const& project) {
     }
 
     auto json = matjson::Value(project);
-    auto wr = file::writeString(SlotPaths::projectFile(project.id), json.dump());
+    auto wr = geode::utils::file::writeString(SlotPaths::projectFile(project.id), json.dump());
     if (!wr) {
         return Err("writeString project: {}", wr.unwrapErr());
     }

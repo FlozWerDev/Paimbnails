@@ -50,10 +50,10 @@ CCSprite* loadButtonSprite(
         if (!defaultContent.empty()) {
             ss << defaultContent << "\n";
         }
-        (void)file::writeString(path, ss.str());
+        (void)geode::utils::file::writeString(path, ss.str());
     }
 
-    auto txt = file::readString(path).unwrapOr("");
+    auto txt = geode::utils::file::readString(path).unwrapOr("");
     std::stringstream s(txt);
     std::string line;
     std::string directive;

@@ -175,7 +175,7 @@ geode::Result<> FusionStore::save(std::filesystem::path const& path,
         }
     }
 
-    auto wr = file::writeBinary(path, buf);
+    auto wr = geode::utils::file::writeBinary(path, buf);
     if (!wr) {
         return Err("writeBinary {}: {}",
             geode::utils::string::pathToString(path), wr.unwrapErr());
@@ -190,7 +190,7 @@ geode::Result<FusionPayload> FusionStore::load(std::filesystem::path const& path
         return Err("invalid fusion file size for {}",
             geode::utils::string::pathToString(path));
     }
-    auto rd = file::readBinary(path);
+    auto rd = geode::utils::file::readBinary(path);
     if (!rd) {
         return Err("readBinary {}: {}",
             geode::utils::string::pathToString(path), rd.unwrapErr());
@@ -316,7 +316,7 @@ geode::Result<std::filesystem::path> FusionStore::importTexture(
         return Err(r.unwrapErr());
     }
 
-    auto bytes = file::readBinary(sourcePath);
+    auto bytes = geode::utils::file::readBinary(sourcePath);
     if (!bytes) {
         return Err("cannot read {}: {}",
             geode::utils::string::pathToString(sourcePath), bytes.unwrapErr());
@@ -334,7 +334,7 @@ geode::Result<std::filesystem::path> FusionStore::importTexture(
         std::error_code ec;
         std::filesystem::remove(
             SlotPaths::fusionTextureFile(slotId, spriteName, ".png"), ec);
-        auto wr = file::writeBinary(dst, bytes.unwrap());
+        auto wr = geode::utils::file::writeBinary(dst, bytes.unwrap());
         if (!wr) {
             return Err("write GIF {}: {}",
                 geode::utils::string::pathToString(dst), wr.unwrapErr());

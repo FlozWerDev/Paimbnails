@@ -264,7 +264,7 @@ void TextureStudioLayer::onOpenFolder(CCObject*) {
     auto path = SlotPaths::rootDir();
     std::error_code ec;
     std::filesystem::create_directories(path, ec);
-    file::openFolder(path);
+    geode::utils::file::openFolder(path);
 }
 
 void TextureStudioLayer::refreshFooter() {

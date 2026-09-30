@@ -76,7 +76,7 @@ geode::Result<std::shared_ptr<FusionAsset>> FusionAssetLoader::loadFromFile(
         return Err("FusionAsset: invalid file size for {}",
             geode::utils::string::pathToString(path));
     }
-    auto bytes = file::readBinary(path);
+    auto bytes = geode::utils::file::readBinary(path);
     if (!bytes) {
         return Err("FusionAsset: cannot read {}: {}",
             geode::utils::string::pathToString(path), bytes.unwrapErr());

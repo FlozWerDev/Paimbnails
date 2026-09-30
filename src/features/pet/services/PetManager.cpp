@@ -110,7 +110,7 @@ void PetManager::loadConfig() {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return;
 
-    auto rawRes = file::readString(path);
+    auto rawRes = geode::utils::file::readString(path);
     if (!rawRes) {
         log::error("[PetManager] Failed to open config file");
         return;
@@ -314,7 +314,7 @@ void PetManager::saveConfig() {
         j["reactionSpinSpeed"]    = static_cast<double>(m_config.reactionSpinSpeed);
 
         auto str = j.dump();
-        auto writeRes = file::writeString(configPath(), str);
+        auto writeRes = geode::utils::file::writeString(configPath(), str);
         if (!writeRes) {
             log::error("[PetManager] Failed to write config file: {}", writeRes.unwrapErr());
             return;

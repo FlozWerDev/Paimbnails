@@ -34,7 +34,7 @@ void MainMenuLayoutPresetManager::load() {
     m_loaded = true;
     m_presets.clear();
 
-    auto raw = file::readString(this->configPath()).unwrapOr("");
+    auto raw = geode::utils::file::readString(this->configPath()).unwrapOr("");
     if (raw.empty()) {
         return;
     }

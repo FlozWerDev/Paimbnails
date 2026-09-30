@@ -91,7 +91,7 @@ void CustomSliderManager::loadConfig() {
     std::error_code ec;
     auto const size = std::filesystem::file_size(path, ec);
     if (ec || size > 2ull * 1024 * 1024) return;
-    auto res = file::readFromJson<matjson::Value>(path);
+    auto res = geode::utils::file::readFromJson<matjson::Value>(path);
     if (!res) return;
 
     auto json = res.unwrap();
@@ -222,7 +222,7 @@ void CustomSliderManager::saveConfig() {
     targets["garageSliders"]  = m_config.targets.garageSliders;
     json["targets"] = targets;
 
-    if (auto result = file::writeToJson(configPath(), json); result.isErr()) {
+    if (auto result = geode::utils::file::writeToJson(configPath(), json); result.isErr()) {
         log::warn("[CustomSlider] failed to save config: {}", result.unwrapErr());
     }
 }

@@ -31,7 +31,7 @@ void DiskManifest::load(std::filesystem::path const& cacheDir) {
         return;
     }
 
-    auto readRes = file::readString(m_manifestPath);
+    auto readRes = geode::utils::file::readString(m_manifestPath);
     if (!readRes) {
         log::warn("[DiskManifest] could not open manifest for reading");
         return;

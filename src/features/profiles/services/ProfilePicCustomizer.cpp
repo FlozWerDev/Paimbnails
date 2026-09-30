@@ -126,7 +126,7 @@ void ProfilePicCustomizer::save() {
     root["customIcons"] = customIconsArray;
     root["selectedCustomIconIndex"] = m_config.selectedCustomIconIndex;
 
-    auto res = file::writeStringSafe(savePath, root.dump());
+    auto res = geode::utils::file::writeStringSafe(savePath, root.dump());
     if (!res) {
         log::error("[ProfilePicCustomizer] Failed to save config: {}", res.unwrapErr());
         return;
@@ -138,7 +138,7 @@ void ProfilePicCustomizer::save() {
 void ProfilePicCustomizer::load() {
     auto savePath = Mod::get()->getSaveDir() / "profile_pic_config.json";
 
-    auto contentRes = file::readString(savePath);
+    auto contentRes = geode::utils::file::readString(savePath);
     if (!contentRes) return;
 
     auto parsed = matjson::parse(contentRes.unwrap());

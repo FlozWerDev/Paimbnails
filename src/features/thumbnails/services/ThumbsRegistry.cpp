@@ -25,7 +25,7 @@ void ThumbsRegistry::load() const {
     auto p = path();
     std::error_code ec;
     if (!std::filesystem::exists(p, ec) || ec) return;
-    auto data = file::readString(p).unwrapOr("");
+    auto data = geode::utils::file::readString(p).unwrapOr("");
     std::stringstream ss(data);
     std::string line;
     while (std::getline(ss, line)) {
@@ -51,7 +51,7 @@ void ThumbsRegistry::save() const {
     auto p = path();
     std::error_code ec;
     std::filesystem::create_directories(p.parent_path(), ec);
-    auto res = file::writeStringSafe(p, ss.str());
+    auto res = geode::utils::file::writeStringSafe(p, ss.str());
     if (!res) {
         log::warn("[ThumbsRegistry] Failed to save registry: {}", res.unwrapErr());
     }

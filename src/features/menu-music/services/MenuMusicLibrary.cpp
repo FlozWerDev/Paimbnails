@@ -490,7 +490,7 @@ void MenuMusicLibrary::save() {
     }
     root["playlists"] = playlists;
 
-    if (auto result = file::writeToJson(getLibraryFile(), root); result.isErr()) {
+    if (auto result = geode::utils::file::writeToJson(getLibraryFile(), root); result.isErr()) {
         log::warn("[MenuMusic] failed to save library.json: {}", result.unwrapErr());
     }
 }
@@ -513,7 +513,7 @@ void MenuMusicLibrary::load() {
         return;
     }
 
-    auto res = file::readFromJson<matjson::Value>(getLibraryFile());
+    auto res = geode::utils::file::readFromJson<matjson::Value>(getLibraryFile());
     if (!res) {
         log::warn("[MenuMusic] failed to read library.json: {}", res.unwrapErr());
         return;

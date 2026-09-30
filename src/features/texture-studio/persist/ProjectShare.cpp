@@ -28,7 +28,7 @@ geode::Result<> ProjectShare::exportTo(std::filesystem::path const& dst,
 
     // same serializer as slot project.json.
     auto json = matjson::Value(project);
-    auto wr = file::writeString(dst, json.dump());
+    auto wr = geode::utils::file::writeString(dst, json.dump());
     if (!wr) {
         return Err("writeString '{}': {}",
             geode::utils::string::pathToString(dst), wr.unwrapErr());
@@ -38,7 +38,7 @@ geode::Result<> ProjectShare::exportTo(std::filesystem::path const& dst,
 
 geode::Result<std::string> ProjectShare::importFrom(
     std::filesystem::path const& src) {
-    auto rd = file::readJson(src);
+    auto rd = geode::utils::file::readJson(src);
     if (!rd) {
         return Err("readJson '{}': {}",
             geode::utils::string::pathToString(src), rd.unwrapErr());

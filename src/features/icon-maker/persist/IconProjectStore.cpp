@@ -58,7 +58,7 @@ void IconProjectStore::loadIndex() {
         return;
     }
 
-    auto rd = file::readJson(path);
+    auto rd = geode::utils::file::readJson(path);
     if (!rd) {
         log::warn("[icon-maker] icons.json read failed: {}", rd.unwrapErr());
         return;
@@ -90,7 +90,7 @@ geode::Result<> IconProjectStore::saveIndex() {
     for (auto const& e : m_index) arr.push(indexEntryToJson(e));
     doc["icons"] = arr;
 
-    auto wr = file::writeString(IconPaths::indexFile(), doc.dump());
+    auto wr = geode::utils::file::writeString(IconPaths::indexFile(), doc.dump());
     if (!wr) {
         return Err("writeString icons.json: {}", wr.unwrapErr());
     }
@@ -167,7 +167,7 @@ geode::Result<std::string> IconProjectStore::createProject(IconProject seed) {
     }
 
     auto json = matjson::Value(seed);
-    auto wr = file::writeString(IconPaths::projectFile(finalId), json.dump());
+    auto wr = geode::utils::file::writeString(IconPaths::projectFile(finalId), json.dump());
     if (!wr) {
         return Err("writeString project: {}", wr.unwrapErr());
     }
@@ -195,7 +195,7 @@ geode::Result<IconProject> IconProjectStore::loadProject(std::string_view id) {
     if (!std::filesystem::exists(path, ec)) {
         return Err("el icono '{}' no tiene project.json", id);
     }
-    auto rd = file::readJson(path);
+    auto rd = geode::utils::file::readJson(path);
     if (!rd) {
         return Err("readJson project.json: {}", rd.unwrapErr());
     }
@@ -218,7 +218,7 @@ geode::Result<> IconProjectStore::saveProject(IconProject const& project) {
     }
 
     auto json = matjson::Value(project);
-    auto wr = file::writeString(IconPaths::projectFile(project.id), json.dump());
+    auto wr = geode::utils::file::writeString(IconPaths::projectFile(project.id), json.dump());
     if (!wr) {
         return Err("writeString project: {}", wr.unwrapErr());
     }

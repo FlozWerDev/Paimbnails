@@ -76,7 +76,7 @@ geode::ByteVector toByteVector(std::vector<std::uint8_t> const& v) {
 }
 
 // file::zip requires each parent folder before nested entries.
-geode::Result<> ensureZipFolders(file::Zip& zip, std::string const& entryPath,
+geode::Result<> ensureZipFolders(geode::utils::file::Zip& zip, std::string const& entryPath,
                                  std::set<std::string>& created) {
     std::size_t pos = 0;
     while ((pos = entryPath.find('/', pos)) != std::string::npos) {
@@ -93,7 +93,7 @@ geode::Result<> ensureZipFolders(file::Zip& zip, std::string const& entryPath,
 
 // ship png+plist only for stable vanilla sheets and re-packed -hd atlases.
 // mod/geode auto-sheets keep the installed plist via addsheetpngtozip.
-geode::Result<> addSheetToZip(file::Zip& zip,
+geode::Result<> addSheetToZip(geode::utils::file::Zip& zip,
                               std::set<std::string>& createdFolders,
                               std::string const& baseName,
                               std::string const& qualitySuffix,
@@ -114,7 +114,7 @@ geode::Result<> addSheetToZip(file::Zip& zip,
 
 // auto-sheets ship png-only so the installed plist remains authoritative;
 // in-place tinting does not change their atlas layout.
-geode::Result<> addSheetPngToZip(file::Zip& zip,
+geode::Result<> addSheetPngToZip(geode::utils::file::Zip& zip,
                                  std::set<std::string>& createdFolders,
                                  std::string const& baseName,
                                  std::string const& qualitySuffix,
@@ -205,7 +205,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
     }
 
-    auto zipRes = file::Zip::create(outputZipPath);
+    auto zipRes = geode::utils::file::Zip::create(outputZipPath);
     if (!zipRes) {
         result.errorMessage = std::string("cannot open zip for write: ") + zipRes.unwrapErr();
         return Err(result.errorMessage);
@@ -561,7 +561,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
             logMessages.push_back(rel + ": local file missing");
             continue;
         }
-        auto bytes = file::readBinary(path.unwrap());
+        auto bytes = geode::utils::file::readBinary(path.unwrap());
         if (!bytes) {
             logMessages.push_back(rel + ": read failed");
             continue;

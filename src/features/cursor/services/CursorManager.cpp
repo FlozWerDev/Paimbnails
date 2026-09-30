@@ -405,7 +405,7 @@ void CursorManager::loadConfig() {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return;
 
-    auto rawRes = file::readString(path);
+    auto rawRes = geode::utils::file::readString(path);
     if (!rawRes) {
         log::error("[CursorManager] Failed to open config file");
         return;
@@ -560,7 +560,7 @@ void CursorManager::saveConfig() {
     j["visibleLayers"] = layers;
 
     auto str = j.dump();
-    auto writeRes = file::writeString(configPath(), str);
+    auto writeRes = geode::utils::file::writeString(configPath(), str);
     if (!writeRes) {
         log::error("[CursorManager] Failed to write config: {}", writeRes.unwrapErr());
     }
@@ -795,7 +795,7 @@ std::string CursorManager::importSingleData(std::vector<uint8_t> const& data,
                 return "";
             }
             auto name = uniqueGalleryName(dir, stem + ".gif");
-            auto writeRes = file::writeBinary(dir / name,
+            auto writeRes = geode::utils::file::writeBinary(dir / name,
                 geode::ByteVector(gifBytes.begin(), gifBytes.end()));
             if (!writeRes) {
                 log::error("[CursorManager] Failed to write '{}': {}", name, writeRes.unwrapErr());
@@ -814,7 +814,7 @@ std::string CursorManager::importSingleData(std::vector<uint8_t> const& data,
             return "";
         }
         auto name = uniqueGalleryName(dir, stem + ".png");
-        auto writeRes = file::writeBinary(dir / name,
+        auto writeRes = geode::utils::file::writeBinary(dir / name,
             geode::ByteVector(png.begin(), png.end()));
         if (!writeRes) {
             log::error("[CursorManager] Failed to write '{}': {}", name, writeRes.unwrapErr());
@@ -837,7 +837,7 @@ std::string CursorManager::importSingleData(std::vector<uint8_t> const& data,
         }
     }
     auto name = uniqueGalleryName(dir, stem + ext);
-    auto writeRes = file::writeBinary(dir / name, geode::ByteVector(data.begin(), data.end()));
+    auto writeRes = geode::utils::file::writeBinary(dir / name, geode::ByteVector(data.begin(), data.end()));
     if (!writeRes) {
         log::error("[CursorManager] Failed to write '{}': {}", name, writeRes.unwrapErr());
         return "";
@@ -858,7 +858,7 @@ std::vector<std::string> CursorManager::importFromFile(std::filesystem::path con
     m_lastImportedPack.clear();
 
     if (ext == ".zip") {
-        auto unzipRes = file::Unzip::create(srcPath);
+        auto unzipRes = geode::utils::file::Unzip::create(srcPath);
         if (!unzipRes) {
             log::error("[CursorManager] Failed to open zip: {}", unzipRes.unwrapErr());
             m_lastImportError = "Couldn't open the .zip file.";
@@ -906,7 +906,7 @@ std::vector<std::string> CursorManager::importFromFile(std::filesystem::path con
             }
 
             considered++;
-            auto readRes = file::readBinary(entryPath);
+            auto readRes = geode::utils::file::readBinary(entryPath);
             if (!readRes) {
                 log::warn("[CursorManager]   read failed '{}': {}", baseName, readRes.unwrapErr());
                 failed++;
@@ -943,7 +943,7 @@ std::vector<std::string> CursorManager::importFromFile(std::filesystem::path con
     }
 
     if (extensionLooksLikeCursor(ext)) {
-        auto readRes = file::readBinary(srcPath);
+        auto readRes = geode::utils::file::readBinary(srcPath);
         if (!readRes) {
             log::error("[CursorManager] Failed to read cursor file: {}", readRes.unwrapErr());
             m_lastImportError = "Couldn't read the file.";
@@ -1006,7 +1006,7 @@ std::vector<std::string> CursorManager::importZipData(std::vector<uint8_t> const
 
     // file::unzip only opens files, so the .zip goes through disk.
     auto tmpPath = Mod::get()->getSaveDir() / "cursor_shop_download.zip";
-    auto writeRes = file::writeBinary(tmpPath, geode::ByteVector(data.begin(), data.end()));
+    auto writeRes = geode::utils::file::writeBinary(tmpPath, geode::ByteVector(data.begin(), data.end()));
     if (!writeRes) {
         log::error("[CursorManager] Failed to stage downloaded zip: {}", writeRes.unwrapErr());
         m_lastImportError = "No se pudo guardar el .zip descargado.";

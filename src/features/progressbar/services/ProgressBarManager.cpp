@@ -142,7 +142,7 @@ void ProgressBarManager::loadConfig() {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return;
 
-    auto rawRes = file::readString(path);
+    auto rawRes = geode::utils::file::readString(path);
     if (!rawRes) {
         log::warn("[ProgressBar] Failed to read config: {}", rawRes.unwrapErr());
         return;

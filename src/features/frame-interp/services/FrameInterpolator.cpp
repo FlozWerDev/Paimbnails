@@ -115,7 +115,7 @@ void FrameInterpolator::loadConfig() {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return;
 
-    auto rawRes = file::readString(path);
+    auto rawRes = geode::utils::file::readString(path);
     if (!rawRes) {
         log::warn("[PaimonInterp] No se pudo leer la config: {}", rawRes.unwrapErr());
         return;

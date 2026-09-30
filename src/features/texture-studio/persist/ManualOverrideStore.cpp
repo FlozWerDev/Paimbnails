@@ -122,7 +122,7 @@ geode::Result<> ManualOverrideStore::save(std::filesystem::path const& path,
         }
     }
 
-    auto wr = file::writeBinary(path, buf);
+    auto wr = geode::utils::file::writeBinary(path, buf);
     if (!wr) {
         return Err("writeBinary {}: {}", geode::utils::string::pathToString(path), wr.unwrapErr());
     }
@@ -136,7 +136,7 @@ geode::Result<MaskSet> ManualOverrideStore::load(std::filesystem::path const& pa
         return Err("invalid override file size for {}",
             geode::utils::string::pathToString(path));
     }
-    auto rd = file::readBinary(path);
+    auto rd = geode::utils::file::readBinary(path);
     if (!rd) {
         return Err("readBinary {}: {}", geode::utils::string::pathToString(path), rd.unwrapErr());
     }

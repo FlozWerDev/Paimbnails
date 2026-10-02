@@ -55,7 +55,7 @@ bool PlayerToggle::init() {
     addChild(menu);
 
     m_p1Sprite = ButtonSprite::create(
-        "P1", 46, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.45f
+        "P1", 40, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.4f
     );
 
     m_p1Btn = CCMenuItemSpriteExtra::create(m_p1Sprite, this, menu_selector(PlayerToggle::onP1));
@@ -64,7 +64,7 @@ bool PlayerToggle::init() {
     menu->addChild(m_p1Btn);
 
     m_p2Sprite = ButtonSprite::create(
-        "P2", 46, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.45f
+        "P2", 40, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.4f
     );
 
     m_p2Btn = CCMenuItemSpriteExtra::create(m_p2Sprite, this, menu_selector(PlayerToggle::onP2));

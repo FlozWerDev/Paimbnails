@@ -89,7 +89,7 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
 void PaimonMultiSettingsPanel::buildTitleBar() {
     m_titleBarBg = nullptr;
 
-    m_titleLabel = paimon::ui::makeTitle("Paimon Settings", 220.f, 0.65f);
+    m_titleLabel = paimon::ui::makeTitle("Paimon Settings", 200.f, 0.58f);
     m_titleLabel->setAnchorPoint({0.f, 0.5f});
     m_titleLabel->setPosition({30.f, PANEL_H - TITLE_BAR_H / 2.f - 2.f});
     m_panelContainer->addChild(m_titleLabel, 2);
@@ -111,7 +111,7 @@ void PaimonMultiSettingsPanel::buildTitleBar() {
     m_panelContainer->addChild(closeMenu, 2);
 
     auto closeSpr = CCSprite::createWithSpriteFrameName("GJ_closeBtn_001.png");
-    closeSpr->setScale(0.7f);
+    closeSpr->setScale(0.6f);
     auto closeBtn = CCMenuItemSpriteExtra::create(closeSpr, this, menu_selector(PaimonMultiSettingsPanel::onClose));
     closeBtn->setPosition({4.f, PANEL_H - 4.f});
     closeMenu->addChild(closeBtn);
@@ -126,13 +126,19 @@ void PaimonMultiSettingsPanel::buildSidebar() {
     m_sidebarMenu->setTouchPriority(m_childTouchPrio);
     m_panelContainer->addChild(m_sidebarMenu, 2);
     auto const& groups = paimon::settings_ui::getAllGroups();
+    // the old fixed 29-unit step pushed the 9th group past the panel edge.
+    float const firstY = CONTENT_H - 20.f;
+    float const lastY = 20.f;
+    float const step = std::min(24.f,
+        (firstY - lastY) / std::max(1.f, static_cast<float>(groups.size()) - 1.f));
+    float const scale = std::clamp(step / 30.f * 0.8f, 0.42f, 0.6f);
     for (size_t i = 0; i < groups.size(); ++i) {
         auto* face = paimon::ui::makeButtonSprite(groups[i].name.c_str(), paimon::ui::Btn::Gray,
-            SIDEBAR_W - 22.f, 0.75f, "bigFont.fnt");
+            SIDEBAR_W - 24.f, scale, "bigFont.fnt");
         auto* button = CCMenuItemExt::createSpriteExtra(face, [this, i](CCMenuItemSpriteExtra*) {
             selectCategory(static_cast<int>(i));
         });
-        button->setPosition({SIDEBAR_W / 2.f, CONTENT_H - 22.f - 29.f * static_cast<float>(i)});
+        button->setPosition({SIDEBAR_W / 2.f, firstY - step * static_cast<float>(i)});
         button->m_scaleMultiplier = 1.f;
         m_sidebarMenu->addChild(button);
         m_sidebarButtons.push_back(button);
@@ -273,6 +279,7 @@ void PaimonMultiSettingsPanel::updateSidebarAccent() {
         btn->setScale(kSidebarBtnScale);
         paimon::ui::setButtonSkin(btn, sel ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray);
     }
+    paimon::ui::matchButtonLabels(m_sidebarButtons);
 }
 
 void PaimonMultiSettingsPanel::onSearchChanged(std::string const& query) {

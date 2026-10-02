@@ -1,5 +1,4 @@
 #include "DynamicTransitionScene.hpp"
-#include "../../../utils/PaimonDrawNode.hpp"
 #include <Geode/cocos/kazmath/include/kazmath/GL/matrix.h>
 #include <array>
 
@@ -12,165 +11,316 @@ using namespace geode::prelude;
 namespace paimon::transitions::dynamic {
 namespace {
 
-void roundedRect(CCDrawNode* draw, Rect rect, float radius, ccColor4F color) {
-    std::array<CCPoint, 36> points;
+using Vertex = ccV2F_C4B_T2F;
+constexpr int kMaxCornerSegments = 24;
+constexpr int kMaxOutline = (kMaxCornerSegments + 1) * 4;
+constexpr ccColor4B kBackdrop{12, 15, 25, 255};
+constexpr ccColor4B kClear{0, 0, 0, 0};
+
+using Outline = std::array<CCPoint, kMaxOutline>;
+
+struct Mapping {
+    Rect content;
+    float maxS = 1.f, maxT = 1.f;
+};
+
+GLubyte channel(float value) {
+    return static_cast<GLubyte>(std::lround(std::clamp(value, 0.f, 1.f) * 255.f));
+}
+
+ccColor4B premultiplied(float gray, float alpha) {
+    auto value = channel(gray * alpha);
+    return {value, value, value, channel(alpha)};
+}
+
+bool coversScreen(Rect rect, float radius, float width, float height) {
+    constexpr float kSlack = .01f;
+    return radius <= .5f && rect.x <= kSlack && rect.y <= kSlack &&
+        rect.x + rect.width >= width - kSlack && rect.y + rect.height >= height - kSlack;
+}
+
+int cornerSegments(float radius, float pixels) {
+    if (radius <= .01f) return 0;
+    return std::clamp(static_cast<int>(std::sqrt(radius * pixels) * 1.2f), 2, kMaxCornerSegments);
+}
+
+Rect grow(Rect rect, float amount, float drop = 0.f) {
+    return {rect.x - amount, rect.y - amount - drop, rect.width + amount * 2.f, rect.height + amount * 2.f};
+}
+
+// Outlines with the same segment count line up point by point, so rings can join them directly.
+int outline(Rect rect, float radius, int segments, Outline& points) {
     radius = std::clamp(radius, 0.f, std::min(rect.width, rect.height) / 2.f);
     std::array<CCPoint, 4> centers{{
         {rect.x + rect.width - radius, rect.y + radius},
         {rect.x + rect.width - radius, rect.y + rect.height - radius},
         {rect.x + radius, rect.y + rect.height - radius},
         {rect.x + radius, rect.y + radius}}};
+    int count = 0;
     for (int corner = 0; corner < 4; ++corner) {
-        for (int step = 0; step <= 8; ++step) {
-            float angle = (-.5f + corner * .5f + step / 16.f) * 3.14159265f;
-            points[corner * 9 + step] = CCPoint{centers[corner].x + radius * std::cos(angle),
+        for (int step = 0; step <= segments; ++step) {
+            float fraction = segments ? static_cast<float>(step) / static_cast<float>(segments) : .5f;
+            float angle = (static_cast<float>(corner - 1) + fraction) * kPi * .5f;
+            points[count++] = {centers[corner].x + radius * std::cos(angle),
                 centers[corner].y + radius * std::sin(angle)};
         }
     }
-    draw->drawPolygon(points.data(), points.size(), color, 0.f, {0.f, 0.f, 0.f, 0.f});
+    return count;
+}
+
+class Mesh {
+public:
+    Mesh(std::vector<Vertex>& vertices, std::vector<Visual::Batch>& batches, float pixels)
+        : m_vertices(vertices), m_batches(batches), m_pixels(pixels), m_feather(1.f / pixels) {}
+
+    void use(CCTexture2D* texture, Mapping mapping = {}) {
+        m_mapping = mapping;
+        m_mapping.content.width = std::max(m_mapping.content.width, .001f);
+        m_mapping.content.height = std::max(m_mapping.content.height, .001f);
+        m_textured = texture != nullptr;
+        if (m_batches.empty() || m_batches.back().texture != texture)
+            m_batches.push_back({texture, static_cast<GLint>(m_vertices.size()), 0});
+    }
+
+    void quad(Rect rect, ccColor4B color) {
+        CCPoint a{rect.x, rect.y}, b{rect.x + rect.width, rect.y};
+        CCPoint c{rect.x + rect.width, rect.y + rect.height}, d{rect.x, rect.y + rect.height};
+        triangle(a, b, c, color, color, color);
+        triangle(a, c, d, color, color, color);
+    }
+
+    void shape(Rect rect, float radius, ccColor4B color) {
+        int segments = cornerSegments(radius, m_pixels);
+        Outline inner, outer;
+        int count = outline(rect, radius, segments, inner);
+        outline(grow(rect, m_feather), segments ? radius + m_feather : 0.f, segments, outer);
+        CCPoint center{rect.x + rect.width / 2.f, rect.y + rect.height / 2.f};
+        for (int i = 0; i < count; ++i)
+            triangle(center, inner[i], inner[(i + 1) % count], color, color, color);
+        ring(inner, outer, count, color, kClear);
+    }
+
+    // Two rings approximate a gaussian falloff; the shadow sits slightly below its card.
+    void shadow(Rect rect, float radius, float blur, float strength) {
+        int segments = cornerSegments(radius + blur, m_pixels);
+        Outline edge, middle, outer;
+        int count = outline(rect, radius, segments, edge);
+        outline(grow(rect, blur * .35f, blur * .12f), radius + blur * .35f, segments, middle);
+        outline(grow(rect, blur, blur * .3f), radius + blur, segments, outer);
+        ccColor4B dark{0, 0, 0, channel(strength)};
+        ccColor4B soft{0, 0, 0, channel(strength * .38f)};
+        ring(edge, middle, count, dark, soft);
+        ring(middle, outer, count, soft, kClear);
+    }
+
+private:
+    void ring(Outline const& inner, Outline const& outer, int count, ccColor4B innerColor, ccColor4B outerColor) {
+        for (int i = 0; i < count; ++i) {
+            int j = (i + 1) % count;
+            triangle(inner[i], outer[i], outer[j], innerColor, outerColor, outerColor);
+            triangle(inner[i], outer[j], inner[j], innerColor, outerColor, innerColor);
+        }
+    }
+
+    void triangle(CCPoint a, CCPoint b, CCPoint c, ccColor4B ca, ccColor4B cb, ccColor4B cc) {
+        push(a, ca);
+        push(b, cb);
+        push(c, cc);
+    }
+
+    void push(CCPoint point, ccColor4B color) {
+        Vertex vertex{{point.x, point.y}, color, {0.f, 0.f}};
+        if (m_textured) {
+            auto const& content = m_mapping.content;
+            vertex.texCoords.u = std::clamp((point.x - content.x) / content.width, 0.f, 1.f) * m_mapping.maxS;
+            vertex.texCoords.v = std::clamp((point.y - content.y) / content.height, 0.f, 1.f) * m_mapping.maxT;
+        }
+        m_vertices.push_back(vertex);
+        ++m_batches.back().count;
+    }
+
+    std::vector<Vertex>& m_vertices;
+    std::vector<Visual::Batch>& m_batches;
+    Mapping m_mapping;
+    float m_pixels, m_feather;
+    bool m_textured = false;
+};
+
+void sealAlpha() {
+    // Translucent sprites lower the destination alpha; a sealed capture never shows what is behind it.
+    GLfloat clear[4];
+    GLboolean mask[4];
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, clear);
+    glGetBooleanv(GL_COLOR_WRITEMASK, mask);
+    GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
+    if (scissor) glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+    glClearColor(0.f, 0.f, 0.f, 1.f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glColorMask(mask[0], mask[1], mask[2], mask[3]);
+    glClearColor(clear[0], clear[1], clear[2], clear[3]);
+    if (scissor) glEnable(GL_SCISSOR_TEST);
+}
+
+GLint maxTextureSize() {
+    static GLint size = 0;
+    if (size <= 0) {
+        glGetIntegerv(GL_MAX_TEXTURE_SIZE, &size);
+        if (size <= 0) size = 2048;
+    }
+    return size;
 }
 
 }
 
-Visual* Visual::create(CCNode* from, CCNode* to, CCSize size, Config config,
-    Rect origin, bool backwards, bool morphButton) {
-    if (!from || !to || size.width < 8.f || size.height < 8.f) return nullptr;
-    auto fromSurface = captureSurface(from, size, config);
-    auto toSurface = captureSurface(to, size, config);
-    return createFromSnapshots(fromSurface, toSurface, size, config, origin, backwards, morphButton);
+float Visual::pixelsPerPoint() {
+    auto* view = CCDirector::get()->getOpenGLView();
+    if (!view) return 1.f;
+    float scale = std::max(view->getScaleX(), view->getScaleY()) * geode::utils::getDisplayFactor();
+    return limit(scale, 1.f, .25f, 16.f);
 }
 
-Visual* Visual::createFromSnapshots(Ref<CCRenderTexture> from, Ref<CCRenderTexture> to,
-    CCSize size, Config config, Rect origin, bool backwards, bool morphButton) {
-    if (!from || !to || size.width < 8.f || size.height < 8.f) return nullptr;
+Visual* Visual::create(Ref<CCTexture2D> from, Ref<CCTexture2D> to, CCSize size, Config config,
+    Rect origin, bool backwards, bool morphButton, bool panel) {
+    if (!from || size.width < 8.f || size.height < 8.f) return nullptr;
     auto* visual = new Visual();
+    if (!visual->init()) {
+        delete visual;
+        return nullptr;
+    }
     visual->m_config = sanitize(config);
+    if (!morphButton) visual->m_config.buttonBlend = 0.f;
     visual->m_size = size;
     visual->m_origin = normalizeOrigin(origin, size.width, size.height);
     visual->m_backwards = backwards;
-    visual->m_fromSurface = from;
-    visual->m_toSurface = to;
-    if (visual->initialize(morphButton)) {
-        visual->autorelease();
-        return visual;
-    }
-    delete visual;
-    return nullptr;
+    visual->m_panel = panel;
+    visual->m_from = from;
+    visual->m_to = to;
+    visual->m_pixels = pixelsPerPoint();
+    visual->m_vertices.reserve(4096);
+    visual->setContentSize(size);
+    visual->autorelease();
+    return visual;
 }
 
-Ref<CCRenderTexture> Visual::captureSurface(CCNode* node, CCSize size, Config config) {
+Ref<CCTexture2D> Visual::capture(CCNode* node, CCSize size, float quality) {
     if (!node || size.width < 8.f || size.height < 8.f) return nullptr;
-    config = sanitize(config);
     auto* director = CCDirector::get();
-    auto* view = director->getOpenGLView();
-    if (!view) return nullptr;
     float pixelScale = std::max(1.f, director->getContentScaleFactor());
-    float displayScale = std::max(view->getScaleX(), view->getScaleY()) * geode::utils::getDisplayFactor();
-    GLint maxTexture = 2048;
-    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTexture);
-    float budget = std::min(2048.f, static_cast<float>(maxTexture));
-    float scale = std::min({config.quality * displayScale / pixelScale, budget / (size.width * pixelScale),
-        budget / (size.height * pixelScale),
+    float budget = std::min(2048.f, static_cast<float>(maxTextureSize()));
+    float scale = std::min({limit(quality, 1.f, .5f, 1.f) * pixelsPerPoint() / pixelScale,
+        budget / (size.width * pixelScale), budget / (size.height * pixelScale),
         std::sqrt(2097152.f / (size.width * size.height)) / pixelScale});
     int width = std::max(1, static_cast<int>(size.width * scale));
     int height = std::max(1, static_cast<int>(size.height * scale));
-    Ref<CCRenderTexture> surface = CCRenderTexture::create(width, height, kCCTexture2DPixelFormat_RGBA8888, GL_DEPTH24_STENCIL8);
-    if (!surface || !surface->getSprite()) return nullptr;
-    // The matrix scales captured pixels without changing the live scene's nodes.
+    // Keep stencil for clipped nodes; only the texture survives the capture.
+    Ref<CCRenderTexture> surface = CCRenderTexture::create(width, height,
+        kCCTexture2DPixelFormat_RGBA8888, GL_DEPTH24_STENCIL8);
+    if (!surface || !surface->getSprite() || !surface->getSprite()->getTexture()) return nullptr;
     surface->beginWithClear(0.f, 0.f, 0.f, 1.f, 1.f, 0);
     kmGLMatrixMode(KM_GL_MODELVIEW);
     kmGLPushMatrix();
     kmGLScalef(width / size.width, height / size.height, 1.f);
     node->visit();
     kmGLPopMatrix();
+    sealAlpha();
     surface->end();
-    auto* original = surface->getSprite();
-    original->getTexture()->setAntiAliasTexParameters();
-    return surface;
+    Ref<CCTexture2D> texture = surface->getSprite()->getTexture();
+    texture->setAntiAliasTexParameters();
+    return texture;
 }
 
-bool Visual::initialize(bool morphButton) {
-    if (!CCNode::init()) return false;
-    setContentSize(m_size);
-    auto* backdrop = CCLayerColor::create({12, 15, 25, 255}, m_size.width, m_size.height);
-    if (!backdrop) return false;
-    addChild(backdrop, -1);
-    auto makeSprite = [](CCRenderTexture* surface) {
-        auto* original = surface->getSprite();
-        if (!original) return static_cast<CCSprite*>(nullptr);
-        auto* sprite = CCSprite::createWithTexture(original->getTexture(), original->getTextureRect());
-        if (sprite) sprite->setFlipY(true);
-        return sprite;
-    };
-    auto* fromSprite = makeSprite(m_fromSurface.data());
-    auto* toSprite = makeSprite(m_toSurface.data());
-    if (!fromSprite || !toSprite) return false;
-    m_background = m_backwards ? toSprite : fromSprite;
-    m_foreground = m_backwards ? fromSprite : toSprite;
-    m_background->setPosition(m_size / 2.f);
-    addChild(m_background);
-
-    m_shadow = PaimonDrawNode::create();
-    m_stencil = PaimonDrawNode::create();
-    if (!m_shadow || !m_stencil) return false;
-    m_clip = CCClippingNode::create(m_stencil);
-    if (!m_clip) return false;
-    m_clip->setAlphaThreshold(.05f);
-    m_clip->setContentSize(m_size);
-    addChild(m_shadow, 1);
-    addChild(m_clip, 2);
-    m_clip->addChild(m_foreground);
-
-    if (morphButton && m_config.style == Style::App && m_config.buttonBlend > 0.f) {
-        auto* sprite = m_backwards ? toSprite : fromSprite;
-        auto textureRect = sprite->getTextureRect();
-        float sx = textureRect.size.width / m_size.width;
-        float sy = textureRect.size.height / m_size.height;
-        CCRect patch{textureRect.origin.x + m_origin.x * sx,
-            textureRect.origin.y + (m_size.height - m_origin.y - m_origin.height) * sy,
-            m_origin.width * sx, m_origin.height * sy};
-        m_button = CCSprite::createWithTexture(sprite->getTexture(), patch);
-        if (m_button) {
-            m_button->setFlipY(true);
-            m_clip->addChild(m_button, 1);
-        }
-    }
-    if (!m_button) m_config.buttonBlend = 0.f;
-    setProgress(0.f);
-    return true;
+void Visual::setDestination(Ref<CCTexture2D> to) {
+    m_to = to;
+    m_dirty = true;
 }
 
 void Visual::setProgress(float progress) {
-    auto frame = evaluate(m_config, m_origin, m_size.width, m_size.height, progress, m_backwards);
-    auto rect = frame.rect;
-    m_stencil->clear();
-    m_stencil->setPosition({rect.x, rect.y});
-    m_stencil->setContentSize({rect.width, rect.height});
-    roundedRect(m_stencil, {0.f, 0.f, rect.width, rect.height}, frame.radius, {1.f, 1.f, 1.f, 1.f});
-    m_shadow->clear();
-    if (frame.shadow > .001f) {
-        for (int i = 3; i > 0; --i) {
-            float spread = i * 3.f;
-            roundedRect(m_shadow, {rect.x - spread, rect.y - spread - 2.f,
-                rect.width + spread * 2.f, rect.height + spread * 2.f},
-                frame.radius + spread, {0.f, 0.f, 0.f, frame.shadow / 3.f});
-        }
-    }
-    m_background->setScaleX(m_size.width / m_background->getContentSize().width * frame.backgroundScale);
-    m_background->setScaleY(m_size.height / m_background->getContentSize().height * frame.backgroundScale);
-    auto brightness = static_cast<GLubyte>(frame.backgroundBrightness * 255.f);
-    m_background->setColor({brightness, brightness, brightness});
+    progress = limit(progress, 0.f, 0.f, 1.f);
+    if (progress == m_progress && !m_dirty) return;
+    m_progress = progress;
+    m_dirty = true;
+}
 
-    CCPoint center{rect.x + rect.width / 2.f, rect.y + rect.height / 2.f};
-    m_foreground->setPosition(center);
-    m_foreground->setScale(std::max(rect.width / m_foreground->getContentSize().width,
-        rect.height / m_foreground->getContentSize().height));
-    m_foreground->setOpacity(static_cast<GLubyte>(frame.opacity * 255.f));
-    if (m_button) {
-        m_button->setPosition(center);
-        m_button->setScaleX(rect.width / m_button->getContentSize().width);
-        m_button->setScaleY(rect.height / m_button->getContentSize().height);
-        m_button->setOpacity(static_cast<GLubyte>(frame.buttonOpacity * 255.f));
+void Visual::rebuild() {
+    m_vertices.clear();
+    m_batches.clear();
+    if (!m_from) return;
+    Mesh mesh(m_vertices, m_batches, m_pixels);
+    float width = m_size.width, height = m_size.height;
+    Rect screen{0.f, 0.f, width, height};
+    auto mapping = [](CCTexture2D* texture, Rect content) {
+        return Mapping{content, texture->getMaxS(), texture->getMaxT()};
+    };
+    if (!m_to) {
+        mesh.use(m_from, mapping(m_from, screen));
+        mesh.quad(screen, premultiplied(1.f, 1.f));
+        return;
+    }
+
+    auto frame = evaluate(m_config, m_origin, width, height, m_progress, m_backwards, m_panel);
+    CCTexture2D* back = m_backwards ? m_to.data() : m_from.data();
+    CCTexture2D* front = m_backwards ? m_from.data() : m_to.data();
+    auto drawLayer = [&](CCTexture2D* texture, Layer const& layer) {
+        if (layer.opacity <= .002f) return;
+        mesh.use(texture, mapping(texture, layer.content));
+        auto color = premultiplied(layer.brightness, layer.opacity);
+        if (coversScreen(layer.clip, layer.radius, width, height)) mesh.quad(screen, color);
+        else mesh.shape(layer.clip, layer.radius, color);
+    };
+    auto const& foreground = frame.foreground;
+    bool covered = foreground.opacity >= .999f &&
+        coversScreen(foreground.clip, foreground.radius, width, height);
+    if (!covered) {
+        auto const& background = frame.background;
+        if (!coversScreen(background.clip, background.radius, width, height)) {
+            mesh.use(nullptr);
+            mesh.quad(screen, kBackdrop);
+        }
+        drawLayer(back, background);
+        if (frame.shadow > .002f) {
+            mesh.use(nullptr);
+            mesh.shadow(foreground.clip, foreground.radius, frame.shadowBlur, frame.shadow);
+        }
+        drawLayer(back, frame.button);
+    }
+    drawLayer(front, foreground);
+}
+
+void Visual::draw() {
+    if (m_dirty) {
+        rebuild();
+        m_dirty = false;
+    }
+    if (m_vertices.empty()) return;
+    auto* shaders = CCShaderCache::sharedShaderCache();
+    auto* textured = shaders->programForKey(kCCShader_PositionTextureColor);
+    auto* plain = shaders->programForKey(kCCShader_PositionColor);
+    if (!textured || !plain) return;
+
+    ccGLBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    // Client arrays keep foreign VBO state out of the draw.
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    constexpr GLsizei stride = sizeof(Vertex);
+    for (auto const& batch : m_batches) {
+        if (batch.count <= 0) continue;
+        auto const* base = &m_vertices[static_cast<size_t>(batch.first)];
+        auto* program = batch.texture ? textured : plain;
+        program->use();
+        program->setUniformsForBuiltins();
+        if (batch.texture) {
+            ccGLBindTexture2D(batch.texture->getName());
+            ccGLEnableVertexAttribs(kCCVertexAttribFlag_PosColorTex);
+            glVertexAttribPointer(kCCVertexAttrib_TexCoords, 2, GL_FLOAT, GL_FALSE, stride, &base->texCoords);
+        } else {
+            ccGLEnableVertexAttribs(kCCVertexAttribFlag_Position | kCCVertexAttribFlag_Color);
+        }
+        glVertexAttribPointer(kCCVertexAttrib_Position, 2, GL_FLOAT, GL_FALSE, stride, &base->vertices);
+        glVertexAttribPointer(kCCVertexAttrib_Color, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride, &base->colors);
+        glDrawArrays(GL_TRIANGLES, 0, batch.count);
+#if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_ANDROID)
+        CC_INCREMENT_GL_DRAWS(1);
+#endif
     }
 }
 
@@ -194,8 +344,10 @@ DynamicTransitionScene* DynamicTransitionScene::create(CCScene* destination,
 void DynamicTransitionScene::onEnter() {
     CCTransitionScene::onEnter();
     m_size = CCDirector::get()->getWinSize();
-    m_visual = Visual::create(m_pOutScene, m_pInScene, m_size, m_config,
-        m_origin, m_backwards, m_morphButton);
+    // The destination is captured on the next frame so the two captures never share one hitch.
+    auto from = Visual::capture(m_pOutScene, m_size, m_config.quality);
+    m_visual = from ? Visual::create(from, nullptr, m_size, m_config, m_origin,
+        m_backwards, m_morphButton) : nullptr;
     if (!m_visual) {
         log::warn("[DynamicTransition] Capture unavailable; finishing scene navigation");
         complete();
@@ -210,17 +362,32 @@ void DynamicTransitionScene::draw() {
 }
 
 void DynamicTransitionScene::update(float dt) {
-    if (m_finished) return;
-    m_elapsed = std::min(m_fDuration, m_elapsed + limit(dt, 0.f, 0.f, 2.f));
-    auto size = CCDirector::get()->getWinSize();
-    if (!size.equals(m_size)) {
-        m_visual->setVisible(false);
-        m_visual = nullptr;
+    if (m_finished || !m_visual) return;
+    if (!CCDirector::get()->getWinSize().equals(m_size)) {
+        abandonVisual();
         complete();
         return;
     }
-    m_visual->setProgress(m_elapsed / m_fDuration);
+    if (!m_visual->hasDestination()) {
+        auto to = Visual::capture(m_pInScene, m_size, m_config.quality);
+        if (!to) {
+            abandonVisual();
+            complete();
+            return;
+        }
+        m_visual->setDestination(to);
+        m_firstStep = true;
+        return;
+    }
+    m_elapsed = std::min(m_fDuration, m_elapsed + frameStep(dt, m_firstStep));
+    m_firstStep = false;
+    m_visual->setProgress(m_fDuration > 0.f ? m_elapsed / m_fDuration : 1.f);
     if (m_elapsed >= m_fDuration) complete();
+}
+
+void DynamicTransitionScene::abandonVisual() {
+    if (m_visual) m_visual->setVisible(false);
+    m_visual = nullptr;
 }
 
 void DynamicTransitionScene::complete() {

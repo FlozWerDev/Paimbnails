@@ -81,7 +81,7 @@ bool ReportUserPopup::init(int accountID, std::string const& username) {
     }
 
     auto sendSpr = ButtonSprite::create("Send", "goldFont.fnt", "GJ_button_06.png", 0.8f);
-    sendSpr->setScale(0.85f);
+    sendSpr->setScale(0.7f);
     auto sendBtn = CCMenuItemSpriteExtra::create(sendSpr, this, menu_selector(ReportUserPopup::onSend));
     sendBtn->setID("send-user-report-btn"_spr);
     sendBtn->setPosition({cx, 26.f});

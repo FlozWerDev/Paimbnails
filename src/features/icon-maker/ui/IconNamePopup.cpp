@@ -54,6 +54,7 @@ bool IconNamePopup::init(std::string title, std::string placeholder,
     m_mainLayer->addChild(menu);
 
     if (auto* spr = ButtonSprite::create("Guardar", "bigFont.fnt", "GJ_button_01.png", 0.6f)) {
+        spr->setScale(0.7f);
         Ref<IconNamePopup> self = this;
         auto* btn = CCMenuItemExt::createSpriteExtra(spr, [self](CCMenuItemSpriteExtra*) {
             if (!self) return;

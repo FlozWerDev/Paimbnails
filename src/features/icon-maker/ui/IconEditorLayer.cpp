@@ -369,7 +369,7 @@ void IconEditorLayer::buildTopBar() {
     float const cy = win.height - kTopBarH / 2.f;
 
     if (auto* spr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png")) {
-        spr->setScale(0.72f);
+        spr->setScale(0.6f);
         auto* btn = CCMenuItemExt::createSpriteExtra(spr,
             [this](CCMenuItemSpriteExtra*) { this->onBack(); });
         btn->setPosition({20.f, cy});
@@ -383,7 +383,7 @@ void IconEditorLayer::buildTopBar() {
 
     m_titleLabel = CCLabelBMFont::create(heading.c_str(), "goldFont.fnt");
     m_titleLabel->setAnchorPoint({0.f, 0.5f});
-    m_titleLabel->limitLabelWidth(win.width * 0.30f, 0.52f, 0.2f);
+    m_titleLabel->limitLabelWidth(win.width * 0.30f, 0.48f, 0.2f);
 
     auto* titleHit = CCNode::create();
     titleHit->setAnchorPoint({0.f, 0.5f});
@@ -403,7 +403,7 @@ void IconEditorLayer::buildTopBar() {
                              std::function<void()> action) {
         auto* spr = ButtonSprite::create(text, "goldFont.fnt", sprite, 0.8f);
         if (!spr) return;
-        spr->setScale(0.62f);
+        spr->setScale(0.52f);
         auto* btn = CCMenuItemExt::createSpriteExtra(spr,
             [action](CCMenuItemSpriteExtra*) { if (action) action(); });
         x -= btn->getScaledContentSize().width / 2.f;
@@ -425,7 +425,7 @@ void IconEditorLayer::buildTopBar() {
         if (!base) return;
         base->setTopRelativeScale(glyphScale);
         if (outGlyph) *outGlyph = glyph;
-        base->setScale(0.8f);
+        base->setScale(0.6f);
 
         auto* btn = CCMenuItemExt::createSpriteExtra(base,
             [action](CCMenuItemSpriteExtra*) { if (action) action(); });
@@ -456,7 +456,7 @@ void IconEditorLayer::refreshTopBar() {
             ? fmt::format("{}  -  {}", m_project.name, def->displayName).c_str()
             : m_project.name.c_str());
         m_titleLabel->limitLabelWidth(
-            CCDirector::get()->getWinSize().width * 0.30f, 0.52f, 0.2f);
+            CCDirector::get()->getWinSize().width * 0.30f, 0.48f, 0.2f);
     }
 }
 
@@ -569,8 +569,8 @@ void IconEditorLayer::buildWorkspace() {
     // buttonsprite owns its art, so state goes in the text.
     auto makeToolButton = [&](float cx, cocos2d::CCLabelBMFont** out,
                               std::function<void(CCMenuItemSpriteExtra*)> action) {
-        float const btnW = std::max(12.f, toolW - 5.f);
-        constexpr float btnH = 21.f;
+        float const btnW = std::max(12.f, toolW - 6.f);
+        constexpr float btnH = 18.f;
 
         auto* holder = CCNode::create();
         holder->setAnchorPoint({0.5f, 0.5f});
@@ -642,7 +642,7 @@ void IconEditorLayer::refreshViewTools() {
     auto setLabel = [maxW](CCLabelBMFont* label, char const* text) {
         if (!label) return;
         label->setString(text);
-        label->limitLabelWidth(maxW, 0.38f, 0.1f);
+        label->limitLabelWidth(maxW, 0.3f, 0.1f);
     };
 
     setLabel(m_bgToolLabel, m_backgroundMode == 1
@@ -792,7 +792,7 @@ void IconEditorLayer::refreshSelectionStrip() {
     where->setAnchorPoint({0.f, 1.f});
     where->setScale(0.34f);
     where->setColor(kit::kDescColor);
-    where->limitLabelWidth((width - 96.f) / 0.34f, 0.34f, 0.14f);
+    where->limitLabelWidth(width - 96.f, 0.34f, 0.14f);
     where->setPosition({31.f, kStripH / 2.f});
     holder->addChild(where);
 
@@ -2238,7 +2238,7 @@ void IconEditorLayer::maybeShowTour() {
 
     if (auto* spr = ButtonSprite::create("Entendido", "goldFont.fnt",
                                          "GJ_button_01.png", 0.8f)) {
-        spr->setScale(0.7f);
+        spr->setScale(0.6f);
         if (auto* btn = CCMenuItemExt::createSpriteExtra(spr,
                 [hostRef](CCMenuItemSpriteExtra*) {
                     if (hostRef) hostRef->removeFromParent();

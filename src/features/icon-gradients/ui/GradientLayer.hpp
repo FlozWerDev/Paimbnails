@@ -62,6 +62,7 @@ private:
 
     // player switch and points canvas.
     PlayerToggle* m_playerToggle = nullptr;
+    CCLabelBMFont* m_playerCaption = nullptr;
     PointsLayer* m_pointsLayer = nullptr;
 
     // focused button and icon roster.

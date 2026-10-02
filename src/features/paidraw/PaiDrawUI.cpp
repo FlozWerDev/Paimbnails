@@ -348,15 +348,15 @@ void PaiDrawLobbyLayer::buildLayout() {
     float btnY = kBottomBar / 2.f - 4.f;
     float halfWindowW = win.width / 2.f;
 
-    auto* joinSprite = ButtonSprite::create("Join Room", "bigFont.fnt", "GJ_button_01.png", 0.9f);
-    joinSprite->setScale(0.85f);
+    auto* joinSprite = ButtonSprite::create("Join Room", "bigFont.fnt", "GJ_button_01.png", 0.7f);
+    joinSprite->setScale(0.7f);
     auto* joinBtn = CCMenuItemSpriteExtra::create(
         joinSprite, this, menu_selector(PaiDrawLobbyLayer::onJoinRoom));
     joinBtn->setPosition({halfWindowW - 92.f, btnY});
     m_menu->addChild(joinBtn);
 
-    auto* createSprite = ButtonSprite::create("Create Room", "bigFont.fnt", "GJ_button_02.png", 0.9f);
-    createSprite->setScale(0.85f);
+    auto* createSprite = ButtonSprite::create("Create Room", "bigFont.fnt", "GJ_button_02.png", 0.7f);
+    createSprite->setScale(0.7f);
     auto* createBtn = CCMenuItemSpriteExtra::create(
         createSprite, this, menu_selector(PaiDrawLobbyLayer::onCreateRoom));
     createBtn->setPosition({halfWindowW + 92.f, btnY});
@@ -623,8 +623,8 @@ void PaiDrawRoomsLayer::buildLayout() {
     this->addChild(m_emptyLabel, 4);
 
     float btnY = kBottomBar / 2.f - 4.f;
-    auto* createSprite = ButtonSprite::create("Create Room", "bigFont.fnt", "GJ_button_01.png", 0.9f);
-    createSprite->setScale(0.85f);
+    auto* createSprite = ButtonSprite::create("Create Room", "bigFont.fnt", "GJ_button_01.png", 0.7f);
+    createSprite->setScale(0.7f);
     auto* createBtn = CCMenuItemSpriteExtra::create(
         createSprite, this, menu_selector(PaiDrawRoomsLayer::onCreateRoom));
     createBtn->setPosition({win.width / 2.f, btnY});

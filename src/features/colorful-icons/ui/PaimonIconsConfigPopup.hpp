@@ -44,7 +44,7 @@ protected:
     void refreshPreview(float dt);
 
     cocos2d::CCMenu* m_tabMenu = nullptr;
-    std::array<ButtonSprite*, 3> m_tabSprites{};
+    std::array<CCMenuItemSpriteExtra*, 3> m_tabButtons{};
     cocos2d::CCNode* m_previewPanel = nullptr;
     cocos2d::CCNode* m_previewIcons = nullptr;
     cocos2d::CCLabelBMFont* m_disabledLabel = nullptr;

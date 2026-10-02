@@ -7,6 +7,7 @@
 #include <Geode/ui/NineSlice.hpp>
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace paimon::ui {
 
@@ -53,6 +54,8 @@ CCMenuItemSpriteExtra* makeButton(char const* text, std::function<void()> onPres
     char const* texture, float width = 0.f, float scale = 0.7f,
     char const* font = "goldFont.fnt");
 void setButtonSkin(CCMenuItemSpriteExtra* button, Btn skin);
+// Shrinks every label to the smallest one so a row/column of buttons reads evenly.
+void matchButtonLabels(std::vector<CCMenuItemSpriteExtra*> const& buttons);
 
 geode::CircleButtonSprite* makeCircleSprite(char const* frame,
     geode::CircleBaseColor color = geode::CircleBaseColor::Green,

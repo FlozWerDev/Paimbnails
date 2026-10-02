@@ -46,6 +46,8 @@ protected:
     geode::Ref<cocos2d::CCNode> m_typeSelector = nullptr;
     cocos2d::CCLabelBMFont* m_typeLabel = nullptr;
     cocos2d::CCLabelBMFont* m_startLabel = nullptr;
+    cocos2d::CCPoint m_startLabelPos;
+    float m_startLabelW = 0.f;
     cocos2d::CCNode* m_templateRow = nullptr;
     SimplePlayer* m_templatePreview = nullptr;
 };

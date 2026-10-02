@@ -92,8 +92,8 @@ void LoadLayer::onDelete(CCObject*) {
 
 // bottom-bar action button, dimmed when there is nothing to load.
 CCMenuItemSpriteExtra* LoadLayer::makeActionButton(const char* label, SEL_MenuHandler callback, const CCPoint& pos, bool usable, const char* texture) {
-    auto sprite = ButtonSprite::create(label, "goldFont.fnt", texture, 0.9f);
-    sprite->setScale(0.625f);
+    auto sprite = ButtonSprite::create(label, "goldFont.fnt", texture, 0.8f);
+    sprite->setScale(0.55f);
     sprite->setCascadeOpacityEnabled(true);
     sprite->setOpacity(usable ? 255 : 120);
 
@@ -127,8 +127,8 @@ bool LoadLayer::init() {
 
     m_mainLayer->addChild(border);
 
-    makeActionButton("Load", menu_selector(LoadLayer::onLoad), {211, 21}, usable);
-    makeActionButton("Delete", menu_selector(LoadLayer::onDelete), {141, 21}, usable, "GJ_button_06.png");
+    makeActionButton("Load", menu_selector(LoadLayer::onLoad), {161, 21}, usable);
+    makeActionButton("Delete", menu_selector(LoadLayer::onDelete), {85, 21}, usable, "GJ_button_06.png");
 
     auto lbl = CCLabelBMFont::create("No Gradients", "bigFont.fnt");
     lbl->setPosition(border->getPosition() + bg->getContentSize() / 2.f);

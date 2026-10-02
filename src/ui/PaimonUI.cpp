@@ -5,6 +5,7 @@
 #include <Geode/ui/General.hpp>
 #include <algorithm>
 #include <cmath>
+#include <string_view>
 
 using namespace cocos2d;
 using namespace geode::prelude;
@@ -57,16 +58,39 @@ NineSlice* makeInset(CCSize size, GLubyte opacity, ccColor3B color) {
     return panel;
 }
 
+namespace {
+
+// bigFont glyphs read much heavier than goldFont at the same scale.
+float buttonLabelScale(char const* font) {
+    return std::string_view(font) == "bigFont.fnt" ? 0.65f : 0.8f;
+}
+
+void fitButtonLabel(ButtonSprite* sprite) {
+    if (!sprite || !sprite->m_label) return;
+    float const inner = std::max(8.f, sprite->getContentSize().width - 14.f);
+    sprite->m_label->limitLabelWidth(inner, sprite->m_scale, 0.1f);
+}
+
+}
+
 ButtonSprite* makeButtonSprite(char const* text, char const* texture, float width, float scale, char const* font) {
     scale = std::max(0.1f, scale);
     if (!texture || texture[0] == '\0') texture = "GJ_button_01.png";
+    if (!font || font[0] == '\0') font = "goldFont.fnt";
+    char const* caption = text ? text : "";
+    float const labelScale = buttonLabelScale(font);
     ButtonSprite* sprite = nullptr;
     if (width > 0.f) {
-        int const raw = std::max(20, static_cast<int>(std::round(width / scale)));
-        sprite = ButtonSprite::create(text ? text : "", raw, true, font, texture, 30.f, 0.8f);
-        if (sprite && sprite->m_label) sprite->m_label->limitLabelWidth(raw - 14.f, 0.8f, 0.1f);
+        int const target = std::max(20, static_cast<int>(std::round(width / scale)));
+        sprite = ButtonSprite::create(caption, target, true, font, texture, 30.f, labelScale);
+        // the frame adds padding around m_width, so rows of fixed-width buttons overlapped.
+        int const pad = sprite ? static_cast<int>(std::round(sprite->getContentSize().width)) - target : 0;
+        if (pad > 0 && target - pad >= 16) {
+            sprite = ButtonSprite::create(caption, target - pad, true, font, texture, 30.f, labelScale);
+        }
+        fitButtonLabel(sprite);
     } else {
-        sprite = ButtonSprite::create(text ? text : "", font, texture, 0.8f);
+        sprite = ButtonSprite::create(caption, font, texture, labelScale);
     }
     if (sprite) sprite->setScale(scale);
     return sprite;
@@ -94,10 +118,21 @@ void setButtonSkin(CCMenuItemSpriteExtra* button, Btn skin) {
     if (auto* sprite = typeinfo_cast<ButtonSprite*>(button->getNormalImage())) {
         sprite->updateBGImage(buttonTexture(skin));
         // updateBGImage relayouts the label, which can undo the fit from makeButtonSprite
-        if (sprite->m_absolute && sprite->m_label) {
-            sprite->m_label->limitLabelWidth(sprite->m_width - 14.f, sprite->m_scale, 0.1f);
-        }
+        if (sprite->m_absolute) fitButtonLabel(sprite);
     }
+}
+
+void matchButtonLabels(std::vector<CCMenuItemSpriteExtra*> const& buttons) {
+    std::vector<CCLabelBMFont*> labels;
+    float smallest = 0.f;
+    for (auto* button : buttons) {
+        auto* sprite = button ? typeinfo_cast<ButtonSprite*>(button->getNormalImage()) : nullptr;
+        if (!sprite || !sprite->m_label) continue;
+        float const scale = sprite->m_label->getScale();
+        smallest = labels.empty() ? scale : std::min(smallest, scale);
+        labels.push_back(sprite->m_label);
+    }
+    for (auto* label : labels) label->setScale(smallest);
 }
 
 CircleButtonSprite* makeCircleSprite(char const* frame, CircleBaseColor color,

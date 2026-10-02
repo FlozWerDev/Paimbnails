@@ -49,7 +49,8 @@ cocos2d::CCNode* makeButtonRow(
     float width,
     char const* title, char const* desc,
     char const* buttonText,
-    std::function<void()> onPress);
+    std::function<void()> onPress,
+    paimon::ui::Btn skin = paimon::ui::Btn::Green);
 
 cocos2d::CCNode* makeColorRow(
     float width,
@@ -88,7 +89,7 @@ void stepWheelScroll(geode::ScrollLayer* scrollLayer,
 // flalertlayer::show uses the scene m_zorder, so a popup alert can end up underneath.
 void showAbove(FLAlertLayer* alert, cocos2d::CCNode* owner);
 
-constexpr float kTabBarHeight = 30.f;
+constexpr float kTabBarHeight = 24.f;
 cocos2d::CCNode* makeTabBar(
     float width,
     std::vector<std::string> const& labels,

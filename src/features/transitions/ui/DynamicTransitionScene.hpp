@@ -2,34 +2,45 @@
 
 #include <Geode/Geode.hpp>
 #include "../services/DynamicTransitionMotion.hpp"
+#include <vector>
 
 namespace paimon::transitions::dynamic {
 
+// Composites two opaque captures as rounded, antialiased meshes; no stencil or live scene visits.
 class Visual : public cocos2d::CCNode {
 public:
-    static Visual* create(cocos2d::CCNode* from, cocos2d::CCNode* to,
-        cocos2d::CCSize size, Config config, Rect origin, bool backwards, bool morphButton);
-    static geode::Ref<cocos2d::CCRenderTexture> captureSurface(cocos2d::CCNode* node,
-        cocos2d::CCSize size, Config config);
-    static Visual* createFromSnapshots(geode::Ref<cocos2d::CCRenderTexture> from,
-        geode::Ref<cocos2d::CCRenderTexture> to, cocos2d::CCSize size, Config config,
-        Rect origin, bool backwards, bool morphButton);
+    struct Batch {
+        cocos2d::CCTexture2D* texture = nullptr;
+        GLint first = 0;
+        GLsizei count = 0;
+    };
+
+    static Visual* create(geode::Ref<cocos2d::CCTexture2D> from, geode::Ref<cocos2d::CCTexture2D> to,
+        cocos2d::CCSize size, Config config, Rect origin, bool backwards, bool morphButton,
+        bool panel = false);
+    static geode::Ref<cocos2d::CCTexture2D> capture(cocos2d::CCNode* node, cocos2d::CCSize size,
+        float quality);
+    static float pixelsPerPoint();
+
+    void setDestination(geode::Ref<cocos2d::CCTexture2D> to);
+    bool hasDestination() const { return m_to.data() != nullptr; }
     void setProgress(float progress);
+    void draw() override;
 
 private:
-    bool initialize(bool morphButton);
+    void rebuild();
 
     Config m_config;
     Rect m_origin;
     cocos2d::CCSize m_size;
+    float m_progress = 0.f;
+    float m_pixels = 1.f;
     bool m_backwards = false;
-    geode::Ref<cocos2d::CCRenderTexture> m_fromSurface, m_toSurface;
-    cocos2d::CCSprite* m_background = nullptr;
-    cocos2d::CCSprite* m_foreground = nullptr;
-    cocos2d::CCSprite* m_button = nullptr;
-    cocos2d::CCClippingNode* m_clip = nullptr;
-    cocos2d::CCDrawNode* m_stencil = nullptr;
-    cocos2d::CCDrawNode* m_shadow = nullptr;
+    bool m_panel = false;
+    bool m_dirty = true;
+    geode::Ref<cocos2d::CCTexture2D> m_from, m_to;
+    std::vector<cocos2d::ccV2F_C4B_T2F> m_vertices;
+    std::vector<Batch> m_batches;
 };
 
 class DynamicTransitionScene : public cocos2d::CCTransitionScene {
@@ -50,6 +61,8 @@ private:
     bool m_backwards = false;
     bool m_morphButton = false;
     bool m_finished = false;
+    bool m_firstStep = true;
+    void abandonVisual();
     void complete();
 };
 

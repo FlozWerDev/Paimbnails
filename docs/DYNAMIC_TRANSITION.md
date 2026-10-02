@@ -15,18 +15,26 @@ al modificarlos, sin reiniciar.
 
 | Apartado | Opciones |
 | --- | --- |
-| Estilo | Presets Equilibrado, Rapido, Sedoso, Resorte y Cinematico; estilos App, Tarjeta, Deslizar y Zoom. |
-| Apariencia | Origen en boton, centro, abajo o izquierda; radio de esquinas y fusion del boton. |
-| Fondo | Oscurecimiento y escala de la pantalla anterior. |
-| Movimiento | Duraciones independientes de apertura y regreso; curvas fluida, resorte, S y lineal; fuerza del resorte. |
-| Alcance | Regreso animado, Escape/Volver de Android, navegacion originalmente instantanea y aperturas solo desde botones. |
-| Paneles | Popups del juego, desplegables, pausa y dialogos; controles separados para editor, niveles y popups de otros mods. |
-| Accesibilidad | Fundido corto o cambio instantaneo cuando Smooth UI tiene movimiento reducido activo. |
-| Calidad | Alta, Equilibrada o Rendimiento. La resolucion se limita segun el tamano de pantalla y la GPU. |
+| Estilo | 9 presets: Equilibrado, Rapido, Sedoso, Resorte, Cinematico, Hoja, Empujar, Revelar y Minimo. 8 estilos: App, Tarjeta, Deslizar, Zoom, Empujar, Hoja, Fundido y Revelado circular. Origen en boton, centro, abajo, izquierda, derecha o arriba; esquinas, fusion del boton, sombra, oscurecimiento y profundidad del fondo. |
+| Ritmo | Duraciones independientes de apertura y regreso; 6 curvas: fluida, resorte, suave (S), lineal, exponencial y enfatizada. Fuerza del rebote y sincronizacion con Smooth UI. |
+| Alcance | Regreso animado, Escape/Volver de Android, navegacion originalmente instantanea y aperturas solo desde botones. Fundido corto o cambio instantaneo con movimiento reducido. Calidad Alta, Equilibrada o Rendimiento. |
+| Paneles | Estilo independiente o igual al de los layers. Popups del juego, desplegables, pausa y dialogos; controles separados para editor, niveles y popups de otros mods. |
 
-**Vista previa** permite probar abrir y volver con el mismo compositor de la
-transicion real, sin salir de la configuracion. **Restaurar** repone los valores
-predeterminados. La interfaz esta disponible en espanol e ingles.
+La columna izquierda mantiene una **vista previa** del mismo compositor de la
+transicion real y una grafica de la curva elegida, incluido el rebote del resorte.
+**Abrir** y **Volver** reproducen una animacion; **Bucle** alterna apertura y regreso;
+**Lento** reduce la velocidad al 30%. Cambiar un ajuste reinicia la vista previa.
+La pestana Paneles muestra un popup sobre la escena de ejemplo.
+
+**Pantalla completa** captura la pantalla actual y reproduce apertura y regreso
+desde ese boton. Tocar durante la pausa inicia el regreso; Escape o Volver cierra
+la prueba. Esta prueba y la miniatura permiten revisar el efecto aunque el modulo
+este desactivado. **Restaurar** repone los valores predeterminados. La interfaz
+esta disponible en espanol e ingles.
+
+Los presets cambian el movimiento y la apariencia, conservando el interruptor,
+el alcance, el origen, el estilo de paneles y la calidad. El indicador muestra
+Personalizado si los valores ya no coinciden con un preset.
 
 La sincronizacion con Smooth UI aplica su velocidad general y fuerza del
 movimiento. Su preset Apagado tambien desactiva Dynamic Transition; los otros
@@ -69,12 +77,20 @@ parametros, lineas y bindings por plataforma. Los controles, objetos del nivel,
 texto, particulas y carga conservan sus animaciones nativas.
 
 El efecto anima capturas de ambas escenas y deja el ciclo de vida, entrada y
-limpieza en `CCTransitionScene`. El render usa la proyeccion y el framebuffer de
+limpieza en `CCTransitionScene`. Un solo nodo dibuja mallas redondeadas con un
+borde suavizado y una sombra gradual, sin visitar las escenas ni usar stencil
+durante el movimiento. El stencil se conserva al capturar para respetar los
+recortes de los controles originales. El render usa la proyeccion y el framebuffer de
 [CCRenderTexture de cocos2d-x](https://github.com/cocos2d/cocos2d-x/blob/cocos2d-x-2.2.3/cocos2dx/misc_nodes/CCRenderTexture.cpp)
 con un cambio temporal de matriz; los nodos del layer conservan sus transformaciones.
 Las capturas tienen un limite de 2048 pixeles por lado y aproximadamente dos
-millones de pixeles por escena. Se liberan con la transicion. Si falla la captura
-o cambia el tamano de ventana durante el efecto, la navegacion se completa.
+millones de pixeles por escena. Se conservan solo sus texturas; el framebuffer y
+los buffers de captura se liberan al vaciar el pool temporal. Su alpha se sella
+para evitar transparencias entre escenas. La captura de destino se aplaza al
+siguiente frame y el avance inicial se limita para absorber el coste de captura.
+Se omiten el fondo y la sombra cuando la imagen entrante cubre toda la pantalla.
+Si falla la captura o cambia el tamano de ventana durante el efecto, la navegacion
+se completa.
 
 Los paneles usan capturas antes y despues del cambio sobre la misma escena.
 Una imagen de espera evita mostrar el destino antes de iniciar el efecto. Se
@@ -90,7 +106,8 @@ limpian las capturas y el historial. El desmontaje completo de una escena es inm
 
 `python3 tests/dynamic_transition_config_regression.py` comprueba el manifiesto,
 lectura/escritura de ajustes, valores de restauracion, enums y accesos al panel
-sin compilar el mod.
+sin compilar el mod. Tambien comprueba que todos los campos de configuracion
+se carguen y tengan un control en el popup.
 
 `python3 tests/dynamic_transition_bindings_regression.py` comprueba la disponibilidad
 de los hooks en los bindings generados del build, la cobertura de las 11
@@ -98,15 +115,19 @@ implementaciones distintas de `show` de popups de Windows, las direcciones
 compartidas y la integridad del inventario. No compila ni modifica el build.
 
 `tests/dynamic_transition_motion_regression.cpp` cubre extremos de apertura y
-regreso, estilos y curvas, formatos de pantalla, limites de opacidad y entradas
-no finitas. No requiere Geometry Dash para probar las funciones de movimiento.
+regreso, los 8 estilos, las 6 curvas, los 6 origenes y 5 formatos de pantalla,
+incluida la miniatura. Comprueba las capas de escenas y paneles, el alpha de la
+fusion del boton, los presets, el resorte, el movimiento reducido, el avance de
+frames y las entradas no finitas. No requiere Geometry Dash para probar las
+funciones de movimiento; no se ejecuto en esta revision porque requiere compilar.
 
 Antes de publicar, verificar en el juego:
 
 1. Menu > garage, busqueda, configuracion y Paimon Hub: expansion desde el boton.
 2. Volver con flecha y con Escape: regreso al origen recordado.
 3. Navegacion con escenas apiladas y sin transicion nativa.
-4. Cada estilo, preset, calidad y opcion de movimiento reducido en la vista previa.
+4. Cada estilo, curva, preset, calidad y opcion de movimiento reducido en la
+   miniatura y a pantalla completa; Abrir, Volver, Bucle y Lento; estilo de paneles.
 5. Desactivar el modulo: recuperar el preset de Scene Transitions.
 6. Abrir y cerrar opciones, perfiles, comentarios, seleccion de canciones y colores
    con Escape, X, aceptar y cancelar; comprobar los callbacks de confirmacion.

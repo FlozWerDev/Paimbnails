@@ -168,9 +168,11 @@ bool NewIconPopup::init(CreatedCallback onCreated) {
         m_mainLayer->addChild(heading);
     }
 
-    m_nameInput = TextInput::create(rightW, "Mi icono");
+    constexpr float kNameScale = 0.8f;
+    m_nameInput = TextInput::create(rightW / kNameScale, "Mi icono");
     if (m_nameInput) {
-        m_nameInput->setPosition({rightX + rightW / 2.f, size.height - 78.f});
+        m_nameInput->setScale(kNameScale);
+        m_nameInput->setPosition({rightX + rightW / 2.f, size.height - 76.f});
         m_nameInput->setMaxCharCount(24);
         m_nameInput->setFilter(kNameFilter);
         m_mainLayer->addChild(m_nameInput);
@@ -186,19 +188,12 @@ bool NewIconPopup::init(CreatedCallback onCreated) {
     auto* tabs = kit::makeTabBar(rightW, {"Icono oficial", "En blanco"}, 0,
         [this](int index) { this->setStartFromTemplate(index == 0); });
     if (tabs) {
-        tabs->setPosition({rightX, size.height - 122.f - kit::kTabBarHeight});
+        tabs->setPosition({rightX, size.height - 120.f - kit::kTabBarHeight});
         m_mainLayer->addChild(tabs);
     }
 
-    m_startLabel = CCLabelBMFont::create("", "chatFont.fnt", rightW / 0.44f,
-                                         kCCTextAlignmentLeft);
-    if (m_startLabel) {
-        m_startLabel->setScale(0.44f);
-        m_startLabel->setAnchorPoint({0.f, 1.f});
-        m_startLabel->setColor(kit::kDescColor);
-        m_startLabel->setPosition({rightX, size.height - 154.f});
-        m_mainLayer->addChild(m_startLabel);
-    }
+    m_startLabelPos = {rightX, size.height - 150.f};
+    m_startLabelW = rightW;
 
     // row that shows which official icon is being copied.
     m_templateRow = CCNode::create();
@@ -226,11 +221,9 @@ bool NewIconPopup::init(CreatedCallback onCreated) {
         previewWrap->addChild(m_templatePreview);
     }
 
-    if (auto* spr = ButtonSprite::create("Elegir", "goldFont.fnt", "GJ_button_04.png", 0.7f)) {
-        spr->setScale(0.5f);
-        auto* btn = CCMenuItemExt::createSpriteExtra(spr,
-            [this](CCMenuItemSpriteExtra*) { this->pickTemplate(); });
-        btn->setPosition({rightW - 12.f - btn->getScaledContentSize().width / 2.f, 20.f});
+    if (auto* btn = paimon::ui::makeButton("Elegir", [this] { this->pickTemplate(); },
+            paimon::ui::Btn::Gray, 60.f, 0.5f)) {
+        btn->setPosition({rightW - 12.f - 30.f, 20.f});
         rowMenu->addChild(btn);
     }
 
@@ -238,10 +231,9 @@ bool NewIconPopup::init(CreatedCallback onCreated) {
     actionMenu->setPosition({0.f, 0.f});
     m_mainLayer->addChild(actionMenu);
 
-    if (auto* createSpr = ButtonSprite::create("Crear", "bigFont.fnt", "GJ_button_01.png", 0.7f)) {
-        auto* btn = CCMenuItemExt::createSpriteExtra(createSpr,
-            [this](CCMenuItemSpriteExtra*) { this->onCreate(); });
-        btn->setPosition({leftCX, 30.f});
+    if (auto* btn = paimon::ui::makeButton("Crear", [this] { this->onCreate(); },
+            paimon::ui::Btn::Green, 110.f, 0.65f)) {
+        btn->setPosition({leftCX, 28.f});
         actionMenu->addChild(btn);
     }
 
@@ -285,13 +277,17 @@ void NewIconPopup::setStartFromTemplate(bool fromTemplate) {
 
 void NewIconPopup::refreshStartRow() {
     if (m_templateRow) m_templateRow->setVisible(m_fromTemplate);
-    if (m_startLabel) {
-        m_startLabel->setString(m_fromTemplate
+    // a wrap width set on an empty label doesn't survive setString, so rebuild it.
+    if (m_startLabel) m_startLabel->removeFromParent();
+    m_startLabel = paimon::ui::makeText(m_fromTemplate
             ? "Copiamos la forma de un icono del juego y tu la pintas. Es la "
               "forma mas facil de empezar."
             : "Empiezas con el lienzo vacio y vas agregando tus propias "
-              "imagenes. Para cuando ya sabes lo que quieres.");
-    }
+              "imagenes. Para cuando ya sabes lo que quieres.",
+        m_startLabelW, 0.44f, kit::kDescColor);
+    m_startLabel->setAnchorPoint({0.f, 1.f});
+    m_startLabel->setPosition(m_startLabelPos);
+    m_mainLayer->addChild(m_startLabel);
     if (m_templatePreview) {
         m_templatePreview->updatePlayerFrame(m_templateIcon, m_selectedType);
     }

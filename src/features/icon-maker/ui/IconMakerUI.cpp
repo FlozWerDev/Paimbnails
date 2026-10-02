@@ -158,6 +158,8 @@ CCNode* makeZoneChips(float width, std::vector<ZoneChip> const& zones,
     float const chipW =
         (width - kGap * static_cast<float>(perRow - 1)) / static_cast<float>(perRow);
     auto cb = std::make_shared<std::function<void(int)>>(std::move(onSelect));
+    std::vector<CCLabelBMFont*> chipLabels;
+    float chipLabelScale = 0.f;
 
     for (int i = 0; i < n; ++i) {
         auto const& zone = zones[static_cast<std::size_t>(i)];
@@ -172,6 +174,11 @@ CCNode* makeZoneChips(float width, std::vector<ZoneChip> const& zones,
         if (face) {
             face->setPosition({chipW / 2.f, kChipH / 2.f});
             holder->addChild(face);
+            if (auto* sprite = typeinfo_cast<ButtonSprite*>(face); sprite && sprite->m_label) {
+                float const scale = sprite->m_label->getScale();
+                chipLabelScale = chipLabels.empty() ? scale : std::min(chipLabelScale, scale);
+                chipLabels.push_back(sprite->m_label);
+            }
         }
 
 // corner chip shows at a glance whether the zone has content and what it paints with.
@@ -205,6 +212,9 @@ CCNode* makeZoneChips(float width, std::vector<ZoneChip> const& zones,
         });
         menu->addChild(btn);
     }
+
+    // same text size on every chip, like the tab bars below it.
+    for (auto* label : chipLabels) label->setScale(chipLabelScale);
 
     return bar;
 }
@@ -263,7 +273,7 @@ CCNode* makeLayerRow(float width, LayerRowSpec spec) {
         subLbl->setAnchorPoint({0.f, 1.f});
         subLbl->setScale(0.36f);
         subLbl->setColor(spec.selected ? ccColor3B{56, 84, 62} : kit::kDescColor);
-        subLbl->limitLabelWidth(nameW / 0.36f, 0.36f, 0.14f);
+        subLbl->limitLabelWidth(nameW, 0.36f, 0.14f);
         subLbl->setPosition({kThumb + 6.f, (kRowH - 4.f) / 2.f});
         hit->addChild(subLbl);
     }

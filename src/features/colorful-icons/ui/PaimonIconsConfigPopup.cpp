@@ -83,7 +83,7 @@ int lockIndexOf(LockStyle s) {
 
 // small row builders use centered {kroww x krowh} nodes.
 
-CCLabelBMFont* makeLabel(std::string const& text, const char* font = "bigFont.fnt", float scale = 0.45f) {
+CCLabelBMFont* makeLabel(std::string const& text, const char* font = "bigFont.fnt", float scale = 0.38f) {
     auto* lbl = CCLabelBMFont::create(text.c_str(), font);
     if (lbl) lbl->setScale(scale);
     return lbl;
@@ -107,13 +107,13 @@ CCNode* makeToggleRow(std::string const& label, bool initial, std::function<void
     if (auto* lbl = makeLabel(label)) {
         lbl->setAnchorPoint({0.f, 0.5f});
         lbl->setPosition({10.f, kRowH / 2});
-        lbl->limitLabelWidth(300.f, 0.45f, 0.25f);
+        lbl->limitLabelWidth(300.f, 0.38f, 0.22f);
         row->addChild(lbl);
     }
 
     auto* menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
-    auto* tog = CCMenuItemExt::createTogglerWithStandardSprites(0.65f,
+    auto* tog = CCMenuItemExt::createTogglerWithStandardSprites(0.58f,
         [cb = std::move(onChange)](CCMenuItemToggler* t) {
             if (!t) return;
             if (cb) cb(!t->isToggled());
@@ -135,11 +135,11 @@ CCNode* makeSliderRow(std::string const& label, float minVal, float maxVal, floa
     if (auto* lbl = makeLabel(label)) {
         lbl->setAnchorPoint({0.f, 0.5f});
         lbl->setPosition({10.f, kRowH / 2});
-        lbl->limitLabelWidth(155.f, 0.45f, 0.25f);
+        lbl->limitLabelWidth(155.f, 0.38f, 0.22f);
         row->addChild(lbl);
     }
 
-    auto* valueLbl = makeLabel(formatValue(current, kind), "goldFont.fnt", 0.5f);
+    auto* valueLbl = makeLabel(formatValue(current, kind), "goldFont.fnt", 0.45f);
     if (valueLbl) {
         valueLbl->setAnchorPoint({1.f, 0.5f});
         valueLbl->setPosition({412.f, kRowH / 2});
@@ -195,7 +195,7 @@ CCNode* makeColorRow(std::string const& label, ccColor3B initial,
     if (auto* lbl = makeLabel(label)) {
         lbl->setAnchorPoint({0.f, 0.5f});
         lbl->setPosition({10.f, kRowH / 2});
-        lbl->limitLabelWidth(300.f, 0.45f, 0.25f);
+        lbl->limitLabelWidth(300.f, 0.38f, 0.22f);
         row->addChild(lbl);
     }
 
@@ -237,16 +237,16 @@ CCNode* makeCycleRow(std::string const& label, std::vector<std::string> options,
     if (auto* lbl = makeLabel(label)) {
         lbl->setAnchorPoint({0.f, 0.5f});
         lbl->setPosition({10.f, kRowH / 2});
-        lbl->limitLabelWidth(150.f, 0.45f, 0.25f);
+        lbl->limitLabelWidth(150.f, 0.38f, 0.22f);
         row->addChild(lbl);
     }
 
     auto* valueLbl = makeLabel(
         initialIdx >= 0 && initialIdx < static_cast<int>(options.size())
             ? options[initialIdx] : "?",
-        "bigFont.fnt", 0.45f);
+        "bigFont.fnt", 0.38f);
     valueLbl->setPosition({325.f, kRowH / 2});
-    valueLbl->limitLabelWidth(100.f, 0.45f, 0.25f);
+    valueLbl->limitLabelWidth(100.f, 0.38f, 0.22f);
     row->addChild(valueLbl);
     Ref<CCLabelBMFont> valueRef = valueLbl;
 
@@ -261,7 +261,7 @@ CCNode* makeCycleRow(std::string const& label, std::vector<std::string> options,
         *idxPtr = newIdx;
         if (valueRef) {
             valueRef->setString(options[newIdx].c_str());
-            valueRef->limitLabelWidth(100.f, 0.45f, 0.25f);
+            valueRef->limitLabelWidth(100.f, 0.38f, 0.22f);
         }
         if (cb) cb(newIdx);
     };
@@ -310,7 +310,7 @@ bool PaimonIconsConfigPopup::init() {
         "<cy>Candados</c>: como se ven los iconos bloqueados.\n"
         "<cy>Donde</c>: en que pantallas se aplica el recolor.\n\n"
         "El interruptor de arriba activa la funcion; <cr>Reset</c> vuelve a los valores por defecto.",
-        Anchor::TopLeft, {36.f, -18.f});
+        Anchor::TopLeft, {42.f, -24.f});
 
     buildHeader();
     buildPreview();
@@ -339,13 +339,13 @@ bool PaimonIconsConfigPopup::init() {
 }
 
 void PaimonIconsConfigPopup::buildHeader() {
-    auto* label = makeLabel("Activado", "goldFont.fnt", 0.5f);
+    auto* label = makeLabel("Activado", "goldFont.fnt", 0.45f);
     if (label) {
         label->setAnchorPoint({1.f, 0.5f});
-        m_mainLayer->addChildAtPosition(label, Anchor::TopRight, {-54.f, -26.f});
+        m_mainLayer->addChildAtPosition(label, Anchor::TopRight, {-46.f, -24.f});
     }
 
-    auto* tog = CCMenuItemExt::createTogglerWithStandardSprites(0.6f,
+    auto* tog = CCMenuItemExt::createTogglerWithStandardSprites(0.55f,
         [](CCMenuItemToggler* t) {
             if (!t) return;
             IconConfigStore::get().setFeatureEnabled(!t->isToggled());
@@ -353,13 +353,13 @@ void PaimonIconsConfigPopup::buildHeader() {
     if (tog) {
         tog->toggle(IconConfigStore::get().isFeatureEnabled());
         if (m_buttonMenu) {
-            m_buttonMenu->addChildAtPosition(tog, Anchor::TopRight, {-30.f, -26.f});
+            m_buttonMenu->addChildAtPosition(tog, Anchor::TopRight, {-26.f, -24.f});
         }
     }
 
     auto* spr = ButtonSprite::create("Reset", "goldFont.fnt", "GJ_button_06.png", 0.8f);
     if (!spr) return;
-    spr->setScale(0.5f);
+    spr->setScale(0.45f);
     auto* btn = CCMenuItemExt::createSpriteExtra(spr,
         [self = WeakRef<PaimonIconsConfigPopup>(this)](CCMenuItemSpriteExtra*) {
             PopupManager::get().quickPopup("Reset",
@@ -372,7 +372,7 @@ void PaimonIconsConfigPopup::buildHeader() {
                 }).showInstant();
         });
     if (m_buttonMenu) {
-        m_buttonMenu->addChildAtPosition(btn, Anchor::TopLeft, {52.f, -26.f});
+        m_buttonMenu->addChildAtPosition(btn, Anchor::TopLeft, {84.f, -24.f});
     }
 }
 
@@ -408,21 +408,18 @@ void PaimonIconsConfigPopup::buildTabs() {
 
     static constexpr std::array<const char*, 3> kNames{"Colores", "Candados", "Donde"};
     for (int i = 0; i < static_cast<int>(kNames.size()); ++i) {
-        auto* spr = ButtonSprite::create(kNames[i], "goldFont.fnt", "GJ_button_04.png", 0.8f);
-        if (!spr) continue;
-        spr->setScale(0.6f);
-        m_tabSprites[i] = spr;
-        auto* btn = CCMenuItemExt::createSpriteExtra(spr,
-            [self = WeakRef<PaimonIconsConfigPopup>(this), i](CCMenuItemSpriteExtra*) {
+        auto* btn = paimon::ui::makeButton(kNames[i],
+            [self = WeakRef<PaimonIconsConfigPopup>(this), i] {
                 if (auto p = self.lock()) p->switchTab(static_cast<Tab>(i));
-            });
+            }, paimon::ui::Btn::Gray, 84.f, 0.55f);
+        m_tabButtons[i] = btn;
         m_tabMenu->addChild(btn);
     }
     m_tabMenu->setLayout(RowLayout::create()
-        ->setGap(6.f)
+        ->setGap(5.f)
         ->setAxisAlignment(AxisAlignment::Center));
     m_tabMenu->updateLayout();
-    m_mainLayer->addChildAtPosition(m_tabMenu, Anchor::Top, {0.f, -120.f});
+    m_mainLayer->addChildAtPosition(m_tabMenu, Anchor::Top, {0.f, -118.f});
 }
 
 void PaimonIconsConfigPopup::buildIconMakerSection() {
@@ -443,8 +440,10 @@ void PaimonIconsConfigPopup::buildIconMakerSection() {
         band->addChild(accent);
     }
     if (auto* glyph = CCSprite::createWithSpriteFrameName("GJ_editBtn_001.png")) {
-        glyph->setScale(0.42f);
-        glyph->setPosition({28.f, cy});
+        // the circle art used to spill past the band's top and bottom edges.
+        float const longest = std::max(glyph->getContentSize().width, glyph->getContentSize().height);
+        glyph->setScale((kMakerBandH - 10.f) / std::max(1.f, longest));
+        glyph->setPosition({26.f, cy});
         band->addChild(glyph);
     }
 
@@ -455,7 +454,7 @@ void PaimonIconsConfigPopup::buildIconMakerSection() {
     float textMaxW = w - 60.f;
     auto* spr = ButtonSprite::create("Abrir", "goldFont.fnt", "GJ_button_01.png", 0.8f);
     if (spr) {
-        spr->setScale(0.55f);
+        spr->setScale(0.48f);
         auto* btn = CCMenuItemExt::createSpriteExtra(spr,
             [self = WeakRef<PaimonIconsConfigPopup>(this)](CCMenuItemSpriteExtra*) {
                 if (auto p = self.lock()) p->onClose(nullptr);
@@ -467,17 +466,17 @@ void PaimonIconsConfigPopup::buildIconMakerSection() {
         textMaxW = w - 60.f - halfW * 2.f - 16.f;
     }
 
-    if (auto* title = makeLabel("Creador de Iconos", "goldFont.fnt", 0.45f)) {
+    if (auto* title = makeLabel("Creador de Iconos", "goldFont.fnt", 0.42f)) {
         title->setAnchorPoint({0.f, 0.5f});
-        title->setPosition({44.f, cy + 7.f});
-        title->limitLabelWidth(textMaxW, 0.45f, 0.25f);
+        title->setPosition({44.f, cy + 6.f});
+        title->limitLabelWidth(textMaxW, 0.42f, 0.25f);
         band->addChild(title);
     }
-    if (auto* desc = makeLabel("Crea y edita tus propios iconos.", "chatFont.fnt", 0.42f)) {
+    if (auto* desc = makeLabel("Crea y edita tus propios iconos.", "chatFont.fnt", 0.4f)) {
         desc->setAnchorPoint({0.f, 0.5f});
         desc->setColor({170, 180, 205});
-        desc->setPosition({44.f, cy - 8.f});
-        desc->limitLabelWidth(textMaxW, 0.42f, 0.25f);
+        desc->setPosition({44.f, cy - 7.f});
+        desc->limitLabelWidth(textMaxW, 0.4f, 0.25f);
         band->addChild(desc);
     }
 }
@@ -485,12 +484,12 @@ void PaimonIconsConfigPopup::buildIconMakerSection() {
 void PaimonIconsConfigPopup::switchTab(Tab tab) {
     m_tab = tab;
     // update the active tab in place; the buttons are never rebuilt.
-    for (int i = 0; i < static_cast<int>(m_tabSprites.size()); ++i) {
-        if (m_tabSprites[i]) {
-            m_tabSprites[i]->updateBGImage(
-                i == static_cast<int>(tab) ? "GJ_button_01.png" : "GJ_button_04.png");
-        }
+    for (int i = 0; i < static_cast<int>(m_tabButtons.size()); ++i) {
+        paimon::ui::setButtonSkin(m_tabButtons[i],
+            i == static_cast<int>(tab) ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray);
     }
+    paimon::ui::matchButtonLabels(
+        std::vector<CCMenuItemSpriteExtra*>(m_tabButtons.begin(), m_tabButtons.end()));
     rebuildPreviewSlots();
     rebuildSelector();
     rebuildControls();
@@ -562,7 +561,7 @@ void PaimonIconsConfigPopup::rebuildSelector() {
     float const rowY  = 36.f;
     float const descY = 10.f;
 
-    auto* desc = makeLabel("", "chatFont.fnt", 0.55f);
+    auto* desc = makeLabel("", "chatFont.fnt", 0.5f);
     if (!desc) return;
     desc->setPosition({w / 2, descY});
     desc->setColor({185, 205, 255});
@@ -570,17 +569,17 @@ void PaimonIconsConfigPopup::rebuildSelector() {
     Ref<CCLabelBMFont> descRef = desc;
 
     if (m_tab == Tab::Areas) {
-        if (auto* head = makeLabel("Donde se aplica", "bigFont.fnt", 0.5f)) {
+        if (auto* head = makeLabel("Donde se aplica", "bigFont.fnt", 0.45f)) {
             head->setColor({255, 210, 80});
             head->setPosition({w / 2, rowY});
             m_selectorArea->addChild(head);
         }
         desc->setString("El recolor solo toca los lugares que actives.");
-        desc->limitLabelWidth(400.f, 0.55f, 0.3f);
+        desc->limitLabelWidth(400.f, 0.5f, 0.3f);
         return;
     }
 
-    auto* name = makeLabel("", "bigFont.fnt", 0.55f);
+    auto* name = makeLabel("", "bigFont.fnt", 0.48f);
     if (!name) return;
     name->setColor({255, 210, 80});
     name->setPosition({w / 2, rowY});
@@ -590,11 +589,11 @@ void PaimonIconsConfigPopup::rebuildSelector() {
     auto setTexts = [nameRef, descRef](const char* n, const char* d) {
         if (nameRef) {
             nameRef->setString(n);
-            nameRef->limitLabelWidth(190.f, 0.55f, 0.3f);
+            nameRef->limitLabelWidth(170.f, 0.48f, 0.3f);
         }
         if (descRef) {
             descRef->setString(d);
-            descRef->limitLabelWidth(400.f, 0.55f, 0.3f);
+            descRef->limitLabelWidth(400.f, 0.5f, 0.3f);
         }
     };
 
@@ -631,7 +630,7 @@ void PaimonIconsConfigPopup::rebuildSelector() {
     auto addArrow = [&](float x, bool flip, int delta) {
         auto* spr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
         if (spr) {
-            spr->setScale(0.55f);
+            spr->setScale(0.45f);
             spr->setFlipX(flip);
         }
         auto* btn = CCMenuItemExt::createSpriteExtra(
@@ -640,8 +639,8 @@ void PaimonIconsConfigPopup::rebuildSelector() {
         btn->setPosition({x, rowY});
         menu->addChild(btn);
     };
-    addArrow(90.f, false, -1);
-    addArrow(w - 90.f, true, 1);
+    addArrow(105.f, false, -1);
+    addArrow(w - 105.f, true, 1);
     m_selectorArea->addChild(menu);
 }
 

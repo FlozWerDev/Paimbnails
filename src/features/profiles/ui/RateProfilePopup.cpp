@@ -191,7 +191,7 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     m_mainLayer->addChild(bottomMenu, 2);
 
     auto submitSpr = ButtonSprite::create("Submit", "goldFont.fnt", "GJ_button_01.png", 0.8f);
-    submitSpr->setScale(0.9f);
+    submitSpr->setScale(0.7f);
     auto submitBtn = CCMenuItemSpriteExtra::create(submitSpr, this, menu_selector(RateProfilePopup::onSubmit));
     submitBtn->setID("submit-btn"_spr);
     bottomMenu->addChild(submitBtn);

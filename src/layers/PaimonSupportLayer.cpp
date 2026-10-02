@@ -263,7 +263,7 @@ void PaimonSupportLayer::buildUI() {
     this->addChild(donateMenu, 5);
 
     auto donateSpr = ButtonSprite::create("Donate", 120, true, "goldFont.fnt", "GJ_button_03.png", 35.f, 0.9f);
-    donateSpr->setScale(0.9f);
+    donateSpr->setScale(0.75f);
     auto donateBtn = CCMenuItemSpriteExtra::create(
         donateSpr, this, menu_selector(PaimonSupportLayer::onDonate)
     );

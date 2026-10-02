@@ -29,6 +29,7 @@ struct Route {
 
 ButtonOrigin s_button;
 std::vector<Route> s_routes;
+bool s_enabled = true;
 WeakRef<CCScene> s_backScene;
 unsigned s_backDepth = 0;
 uint64_t s_backGeneration = 0;
@@ -63,9 +64,9 @@ bool isBackButton(CCMenuItem* button) {
 }
 
 template<class Enum>
-Enum readEnum(char const* key, Enum fallback, int max) {
+Enum readEnum(char const* key, Enum fallback, int count) {
     auto value = Mod::get()->getSavedValue<int>(key, static_cast<int>(fallback));
-    return value >= 0 && value <= max ? static_cast<Enum>(value) : fallback;
+    return value >= 0 && value < count ? static_cast<Enum>(value) : fallback;
 }
 
 }
@@ -86,10 +87,11 @@ Config getConfig() {
     config.includeInstant = mod->getSavedValue<bool>("dynamic-transition-instant", config.includeInstant);
     config.onlyFromButton = mod->getSavedValue<bool>("dynamic-transition-only-buttons", config.onlyFromButton);
     config.syncSmoothUI = mod->getSavedValue<bool>("dynamic-transition-sync-smooth-ui", config.syncSmoothUI);
-    config.style = readEnum("dynamic-transition-style", config.style, 3);
-    config.curve = readEnum("dynamic-transition-curve", config.curve, 3);
-    config.origin = readEnum("dynamic-transition-origin", config.origin, 3);
-    config.reducedMotion = readEnum("dynamic-transition-reduced-motion", config.reducedMotion, 1);
+    config.style = readEnum("dynamic-transition-style", config.style, kStyleCount);
+    config.curve = readEnum("dynamic-transition-curve", config.curve, kCurveCount);
+    config.origin = readEnum("dynamic-transition-origin", config.origin, kOriginCount);
+    config.reducedMotion = readEnum("dynamic-transition-reduced-motion", config.reducedMotion, 2);
+    config.panelStyle = readEnum("dynamic-transition-panel-style", config.panelStyle, kPanelStyleCount);
     config.duration = mod->getSavedValue<double>("dynamic-transition-duration", config.duration);
     config.backDuration = mod->getSavedValue<double>("dynamic-transition-back-duration", config.backDuration);
     config.cornerRadius = mod->getSavedValue<double>("dynamic-transition-corners", config.cornerRadius);
@@ -97,6 +99,7 @@ Config getConfig() {
     config.dim = mod->getSavedValue<double>("dynamic-transition-dim", config.dim);
     config.spring = mod->getSavedValue<double>("dynamic-transition-spring", config.spring);
     config.buttonBlend = mod->getSavedValue<double>("dynamic-transition-button-blend", config.buttonBlend);
+    config.shadow = mod->getSavedValue<double>("dynamic-transition-shadow", config.shadow);
     config.quality = mod->getSavedValue<double>("dynamic-transition-quality", config.quality);
     return sanitize(config);
 }
@@ -117,6 +120,7 @@ Config animationConfig(Config config) {
 void saveConfig(Config config) {
     config = sanitize(config);
     auto* mod = Mod::get();
+    s_enabled = config.enabled;
     mod->setSettingValue<bool>(kEnabledSetting, config.enabled);
     mod->setSavedValue("dynamic-transition-back", config.animateBack);
     mod->setSavedValue("dynamic-transition-keyboard-back", config.animateKeyboardBack);
@@ -134,6 +138,7 @@ void saveConfig(Config config) {
     mod->setSavedValue("dynamic-transition-curve", static_cast<int>(config.curve));
     mod->setSavedValue("dynamic-transition-origin", static_cast<int>(config.origin));
     mod->setSavedValue("dynamic-transition-reduced-motion", static_cast<int>(config.reducedMotion));
+    mod->setSavedValue("dynamic-transition-panel-style", static_cast<int>(config.panelStyle));
     mod->setSavedValue("dynamic-transition-duration", static_cast<double>(config.duration));
     mod->setSavedValue("dynamic-transition-back-duration", static_cast<double>(config.backDuration));
     mod->setSavedValue("dynamic-transition-corners", static_cast<double>(config.cornerRadius));
@@ -141,6 +146,7 @@ void saveConfig(Config config) {
     mod->setSavedValue("dynamic-transition-dim", static_cast<double>(config.dim));
     mod->setSavedValue("dynamic-transition-spring", static_cast<double>(config.spring));
     mod->setSavedValue("dynamic-transition-button-blend", static_cast<double>(config.buttonBlend));
+    mod->setSavedValue("dynamic-transition-shadow", static_cast<double>(config.shadow));
     mod->setSavedValue("dynamic-transition-quality", static_cast<double>(config.quality));
     if (!config.enabled) clearHistory();
 }
@@ -151,7 +157,7 @@ void resetConfig() {
 }
 
 bool isEnabled() {
-    return Mod::get()->getSettingValue<bool>(kEnabledSetting);
+    return s_enabled;
 }
 
 Rect buttonRect(CCNode* button) {
@@ -276,15 +282,15 @@ CCScene* createTransition(CCScene* destination, bool backwards, bool instant) {
         return nullptr;
     }
 
+    origin = normalizeOrigin(origin, size.width, size.height);
     if (paimon::settings::smoothui::reducedMotion()) {
         clearHistory();
         if (config.reducedMotion == ReducedMotion::Instant) return destination;
-        return CCTransitionFade::create(.14f, destination);
+        return DynamicTransitionScene::create(destination, reducedMotionConfig(config), origin, backwards, false);
     }
     config = animationConfig(config);
     finishPanelAnimation();
-    auto* transition = DynamicTransitionScene::create(destination, config,
-        normalizeOrigin(origin, size.width, size.height), backwards,
+    auto* transition = DynamicTransitionScene::create(destination, config, origin, backwards,
         config.origin == Origin::Button && (hasButton || route != s_routes.end()));
     if (!transition) return nullptr;
     if (backwards) {
@@ -297,4 +303,11 @@ CCScene* createTransition(CCScene* destination, bool backwards, bool instant) {
     return transition;
 }
 
+}
+
+// Panel hooks query this on every addChild, so the setting is mirrored instead of read.
+$execute {
+    using namespace paimon::transitions::dynamic;
+    s_enabled = Mod::get()->getSettingValue<bool>(kEnabledSetting);
+    geode::listenForSettingChanges<bool>(kEnabledSetting, [](bool value) { s_enabled = value; });
 }

@@ -35,7 +35,16 @@ def run():
     assert reads == writes, f"Settings read/write mismatch: {reads ^ writes}"
     registered = dict(re.findall(r'set[BIDF]\("(dynamic-transition-[^"]+)",\s*([^)]+)\)', defaults))
     assert reads <= registered.keys(), f"Missing reset defaults: {reads - registered.keys()}"
-    assert "dynamic-transition-preset" in registered
+    assert "dynamic-transition-preset" not in registered
+    assert '"dynamic-transition-preset"' not in manager
+
+    config = re.search(r'struct Config \{(.*?)\n\};', motion, re.S)[1]
+    fields = set(re.findall(r'^    \w+ (\w+) = ', config, re.M))
+    loaded = set(re.findall(r'config\.(\w+) = ', manager.split('Config animationConfig')[0]))
+    assert fields == loaded, f"Config fields not loaded: {fields ^ loaded}"
+    popup = read("src/features/transitions/ui/DynamicTransitionConfigPopup.cpp")
+    editable = set(re.findall(r'm_config\.(\w+) = ', popup))
+    assert fields == editable, f"Config fields missing from the popup: {fields ^ editable}"
 
     for field, key in re.findall(
         r'config\.(\w+) = mod->getSavedValue<[^>]+>\("(dynamic-transition-[^"]+)"', manager
@@ -49,13 +58,17 @@ def run():
         else:
             assert float(saved) == float(declared), f"Different reset default for {field}"
 
-    for field, key, maximum in re.findall(
-        r'config\.(\w+) = readEnum\("([^"]+)", config\.\w+, (\d+)\)', manager
+    counts = dict(re.findall(r'inline constexpr int (\w+) = (\d+);', motion))
+    for field, key, count in re.findall(
+        r'config\.(\w+) = readEnum\("([^"]+)", config\.\w+, (\w+)\)', manager
     ):
         enum = re.search(rf'(\w+) {field} = \w+::\w+;', motion)[1]
-        members = re.search(rf'enum class {enum} \{{([^}}]+)\}}', motion)[1].split(",")
-        assert int(maximum) == len(members) - 1, f"Enum range mismatch for {field}"
-        assert int(registered[key]) == 0, f"Invalid enum reset default for {field}"
+        members = [member.strip() for member in re.search(
+            rf'enum class {enum} \{{([^}}]+)\}}', motion
+        )[1].split(",")]
+        assert int(counts.get(count, count)) == len(members), f"Enum range mismatch for {field}"
+        default = re.search(rf'{enum} {field} = {enum}::(\w+);', config)[1]
+        assert int(registered[key]) == members.index(default), f"Invalid enum reset default for {field}"
 
     assert read("src/core/modules/ModuleCatalog.cpp").count('"paimbnails.dynamictransition.global"') == 1
     assert read("src/core/modules/ModuleLocalized.cpp").count('"paimbnails.dynamictransition.global"') == 2

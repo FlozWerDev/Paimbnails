@@ -145,8 +145,9 @@ CCNode* makePlate(float width, float height, ccColor3B color, GLubyte opacity) {
 }
 
 CCSprite* makeTabFace(char const* text, bool selected, float maxW, float maxH) {
+    // leaves a few units of air inside the slot instead of filling it edge to edge.
     return paimon::ui::makeButtonSprite(text, selected ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray,
-        maxW, std::clamp(maxH / 30.f, 0.5f, 1.f));
+        maxW, std::clamp((maxH - 6.f) / 30.f, 0.45f, 0.62f));
 }
 
 CCMenuItemSpriteExtra* makeButton(char const* text, char const* sprite,

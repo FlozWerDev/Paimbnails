@@ -1,6 +1,7 @@
 #pragma once
 #include <Geode/Geode.hpp>
 #include "../../../ui/PaimonUI.hpp"
+#include "../../../ui/PaiConfigKit.hpp"
 #include <Geode/binding/CCMenuItemToggler.hpp>
 #include <Geode/binding/Slider.hpp>
 
@@ -91,7 +92,7 @@ geode::ScrollLayer* makeScrollStack(
     float gap = 8.f);
 
 // gd-style tabs with selected/unselected states.
-constexpr float kTabBarHeight = 30.f;
+constexpr float kTabBarHeight = paimon::configkit::kTabBarHeight;
 cocos2d::CCNode* makeTabBar(
     float width,
     std::vector<std::string> const& labels,

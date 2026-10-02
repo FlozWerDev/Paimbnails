@@ -36,7 +36,7 @@ struct ZoneChip {
     cocos2d::CCTexture2D* preview = nullptr;
 };
 
-constexpr float kZoneChipH = 30.f;
+constexpr float kZoneChipH = 24.f;
 constexpr float kZoneChipGap = 3.f;
 
 // wrap tabs only when the available width would make them unreadable.

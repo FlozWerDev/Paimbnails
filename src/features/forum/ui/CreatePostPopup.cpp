@@ -117,7 +117,7 @@ bool CreatePostPopup::init(
     updateCooldownLabel();
 
     auto postSpr = ButtonSprite::create("Post", "goldFont.fnt", "GJ_button_01.png", 0.9f);
-    postSpr->setScale(0.85f);
+    postSpr->setScale(0.7f);
     auto postBtn = CCMenuItemSpriteExtra::create(postSpr, this, menu_selector(CreatePostPopup::onSubmit));
     postBtn->setID("submit-post-btn"_spr);
     m_buttonMenu->addChildAtPosition(postBtn, Anchor::Bottom, {0.f, 8.f});

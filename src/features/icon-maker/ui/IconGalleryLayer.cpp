@@ -147,67 +147,47 @@ void IconGalleryLayer::buildHeader() {
     addChild(menu, 10);
 
     if (auto* spr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png")) {
-        spr->setScale(0.72f);
+        spr->setScale(0.62f);
         auto* back = CCMenuItemExt::createSpriteExtra(spr,
             [this](CCMenuItemSpriteExtra*) { this->onBack(); });
         back->setPosition({20.f, win.height - 22.f});
         menu->addChild(back);
     }
 
-    float x = win.width - 20.f;
-    auto addButton = [&](char const* label, char const* sprite,
+    float x = win.width - 18.f;
+    auto addButton = [&](char const* label, paimon::ui::Btn skin,
                          std::function<void()> action) {
-        auto* spr = ButtonSprite::create(label, "goldFont.fnt", sprite, 0.8f);
-        if (!spr) return;
-        spr->setScale(0.6f);
-        auto* btn = CCMenuItemExt::createSpriteExtra(spr,
-            [action](CCMenuItemSpriteExtra*) { if (action) action(); });
+        auto* btn = paimon::ui::makeButton(label, std::move(action), skin, 64.f, 0.55f);
         x -= btn->getScaledContentSize().width / 2.f;
         btn->setPosition({x, win.height - 22.f});
         menu->addChild(btn);
-        x -= btn->getScaledContentSize().width / 2.f + 8.f;
+        x -= btn->getScaledContentSize().width / 2.f + 6.f;
+        return btn;
     };
 
-    addButton("Crear", "GJ_button_01.png", [this] { this->onNewIcon(); });
-    addButton("Importar", "GJ_button_05.png", [this] { this->onImportIcon(); });
+    paimon::ui::matchButtonLabels({
+        addButton("Crear", paimon::ui::Btn::Green, [this] { this->onNewIcon(); }),
+        addButton("Importar", paimon::ui::Btn::Blue, [this] { this->onImportIcon(); }),
+    });
 
-    if (auto* base = CircleButtonSprite::createWithSpriteFrameName(
-            "GJ_infoIcon_001.png", 1.f, CircleBaseColor::Cyan, CircleBaseSize::Small)) {
-        base->setScale(0.8f);
-        auto* help = CCMenuItemExt::createSpriteExtra(base,
+    if (auto* info = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png")) {
+        info->setScale(0.6f);
+        auto* help = CCMenuItemExt::createSpriteExtra(info,
             [](CCMenuItemSpriteExtra*) {
                 if (auto* p = IconHelpPopup::create()) p->show();
             });
-        x -= help->getScaledContentSize().width / 2.f;
+        x -= help->getScaledContentSize().width / 2.f + 2.f;
         help->setPosition({x, win.height - 22.f});
         menu->addChild(help);
-    }
-
-    // search + sort share the second row so the grid keeps the whole width.
-    float const searchW = std::min(240.f, win.width * 0.42f);
-    m_search = TextInput::create(searchW, "Buscar por nombre...", "chatFont.fnt");
-    if (m_search) {
-        m_search->setPosition({24.f + searchW / 2.f, win.height - 52.f});
-        Ref<IconGalleryLayer> self = this;
-        m_search->setCallback([self](std::string const& value) {
-            if (paimon::isRuntimeShuttingDown() || !self) return;
-            self->m_query = lowered(value);
-            // out of the input's own callback: rebuilding tears down the
-            // scroll layer the touch dispatcher may still be walking.
-            Loader::get()->queueInMainThread([self] {
-                if (paimon::isRuntimeShuttingDown() || !self) return;
-                if (self->getParent()) self->rebuildGrid();
-            });
-        });
-        addChild(m_search, 6);
     }
 
     auto* sortMenu = CCMenu::create();
     sortMenu->setPosition({0.f, 0.f});
     addChild(sortMenu, 10);
 
+    // right cluster first; the search box takes whatever width is left.
     float const rowCY = win.height - 52.f;
-    float const tabsW = std::min(168.f, win.width * 0.32f);
+    float const tabsW = std::clamp(win.width * 0.34f, 150.f, 210.f);
     auto* tabs = kit::makeTabBar(tabsW, {"Recientes", "Nombre", "Creacion"}, 0,
         [this](int index) {
             m_sort = index == 1 ? Sort::Name
@@ -226,31 +206,31 @@ void IconGalleryLayer::buildHeader() {
     float toolX = win.width - 26.f - tabsW;
 
     // gamemode filter hides behind a button: ten chips don't fit.
+    constexpr float kFilterW = 62.f;
+    constexpr float kFilterH = 18.f;
     auto* filterHolder = CCNode::create();
     filterHolder->setAnchorPoint({0.5f, 0.5f});
-    filterHolder->setContentSize({64.f, 24.f});
-    if (auto* face = ButtonSprite::create("", 64.f / 0.9f, true, "bigFont.fnt",
-            "GJ_button_05.png", 24.f / 0.9f, 0.6f)) {
-        face->setScale(0.9f);
-        face->setPosition({32.f, 12.f});
+    filterHolder->setContentSize({kFilterW, kFilterH});
+    if (auto* face = paimon::ui::makeButtonSprite("", paimon::ui::Btn::Blue, kFilterW, kFilterH / 30.f)) {
+        face->setPosition({kFilterW / 2.f, kFilterH / 2.f});
         filterHolder->addChild(face, -1);
     }
     m_filterLabel = CCLabelBMFont::create("Todos", "bigFont.fnt");
     m_filterLabel->setAnchorPoint({0.5f, 0.5f});
-    m_filterLabel->limitLabelWidth(54.f, 0.36f, 0.14f);
-    m_filterLabel->setPosition({32.f, 12.f});
+    m_filterLabel->limitLabelWidth(kFilterW - 12.f, 0.3f, 0.12f);
+    m_filterLabel->setPosition({kFilterW / 2.f, kFilterH / 2.f});
     filterHolder->addChild(m_filterLabel);
 
     if (auto* filterBtn = CCMenuItemExt::createSpriteExtra(filterHolder,
             [this](CCMenuItemSpriteExtra*) { this->onFilterMenu(); })) {
-        toolX -= 32.f;
+        toolX -= kFilterW / 2.f;
         filterBtn->setPosition({toolX, rowCY});
         sortMenu->addChild(filterBtn);
-        toolX -= 32.f + 6.f;
+        toolX -= kFilterW / 2.f + 6.f;
     }
 
     if (auto* star = CCSprite::createWithSpriteFrameName("GJ_starsIcon_001.png")) {
-        star->setScale(0.7f);
+        star->setScale(0.55f);
         star->setOpacity(110);
         m_favGlyph = star;
         if (auto* favBtn = CCMenuItemExt::createSpriteExtra(star,
@@ -265,8 +245,30 @@ void IconGalleryLayer::buildHeader() {
                 })) {
             toolX -= favBtn->getScaledContentSize().width / 2.f;
             favBtn->setPosition({toolX, rowCY});
+            favBtn->setSizeMult(1.3f);
             sortMenu->addChild(favBtn);
+            toolX -= favBtn->getScaledContentSize().width / 2.f;
         }
+    }
+
+    constexpr float kSearchScale = 0.8f;
+    float const searchW = std::clamp(toolX - 10.f - 22.f, 100.f, 260.f);
+    m_search = TextInput::create(searchW / kSearchScale, "Buscar por nombre...", "chatFont.fnt");
+    if (m_search) {
+        m_search->setScale(kSearchScale);
+        m_search->setPosition({22.f + searchW / 2.f, rowCY});
+        Ref<IconGalleryLayer> self = this;
+        m_search->setCallback([self](std::string const& value) {
+            if (paimon::isRuntimeShuttingDown() || !self) return;
+            self->m_query = lowered(value);
+            // out of the input's own callback: rebuilding tears down the
+            // scroll layer the touch dispatcher may still be walking.
+            Loader::get()->queueInMainThread([self] {
+                if (paimon::isRuntimeShuttingDown() || !self) return;
+                if (self->getParent()) self->rebuildGrid();
+            });
+        });
+        addChild(m_search, 6);
     }
 }
 
@@ -279,7 +281,7 @@ void IconGalleryLayer::onFilterMenu() {
         self->m_typeFilter = -1;
         if (self->m_filterLabel) {
             self->m_filterLabel->setString("Todos");
-            self->m_filterLabel->limitLabelWidth(58.f, 0.36f, 0.14f);
+            self->m_filterLabel->limitLabelWidth(50.f, 0.3f, 0.12f);
         }
         self->rebuildGrid();
     }, false});
@@ -295,7 +297,7 @@ void IconGalleryLayer::onFilterMenu() {
             self->m_typeFilter = index;
             if (self->m_filterLabel) {
                 self->m_filterLabel->setString(name.c_str());
-                self->m_filterLabel->limitLabelWidth(58.f, 0.36f, 0.14f);
+                self->m_filterLabel->limitLabelWidth(50.f, 0.3f, 0.12f);
             }
             self->rebuildGrid();
         }, false});
@@ -465,7 +467,7 @@ CCNode* IconGalleryLayer::buildCard(std::string const& id, float width) {
         infoLbl->setAnchorPoint({0.5f, 0.5f});
         infoLbl->setScale(0.36f);
         infoLbl->setColor(kit::kDescColor);
-        infoLbl->limitLabelWidth((width - 16.f) / 0.36f, 0.36f, 0.16f);
+        infoLbl->limitLabelWidth(width - 16.f, 0.36f, 0.16f);
         infoLbl->setPosition({width / 2.f, 13.f});
         card->addChild(infoLbl, 3);
     }

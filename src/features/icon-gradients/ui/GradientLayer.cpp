@@ -9,6 +9,7 @@
 #include "../services/GradientImage.hpp"
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/LocalAssetStore.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../smooth-scroll/services/SmoothScrollController.hpp"
 
 #include <Geode/loader/Dispatch.hpp>
@@ -152,7 +153,9 @@ void GradientLayer::updateGlowToggle() {
 
 void GradientLayer::updatePlayerToggle() {
     Loader::get()->queueInMainThread([self = Ref(this)] {
-        self->m_playerToggle->setVisible(GradientCache::is2PSeparate()); self->m_playerToggle->toggle(false);
+        bool const separate = GradientCache::is2PSeparate();
+        self->m_playerToggle->setVisible(separate); self->m_playerToggle->toggle(false);
+        if (self->m_playerCaption) self->m_playerCaption->setVisible(separate);
     });
 }
 
@@ -701,7 +704,7 @@ bool GradientLayer::init() {
         m_garage = static_cast<GradientGarageLayer*>(garage);
     }
 
-    setTitle("Icon Gradients", "goldFont.fnt", 0.72f, 18.f);
+    setTitle("Icon Gradients", "goldFont.fnt", 0.66f, 18.f);
 
     addInfoButton("Icon Gradients",
         "Build a gradient from <cy>color points</c> on the preview. <cg>Add</c> and "
@@ -741,36 +744,37 @@ bool GradientLayer::init() {
 
     addCaption("ICONS", {52.f, 250.f});
     addCaption("PREVIEW", {190.f, 250.f});
-    addCaption("PLAYER", {46.f, 108.f}, 0.27f);
+    m_playerCaption = addCaption("PLAYER", {46.f, 108.f}, 0.27f);
+    m_playerCaption->setVisible(GradientCache::is2PSeparate());
     addCaption("MODE", {158.f, 108.f}, 0.3f);
     addCaption("CHANNEL", {326.f, 108.f}, 0.3f);
 
     auto settingsSprite = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
-    settingsSprite->setScale(0.58f);
+    settingsSprite->setScale(0.42f);
 
     auto settingsButton = CCMenuItemSpriteExtra::create(
         settingsSprite, this, menu_selector(GradientLayer::onAnimations)
     );
-    settingsButton->setPosition({384.f, 281.f});
+    settingsButton->setPosition({394.f, 282.f});
     settingsButton->setID("animation-button"_spr);
     m_buttonMenu->addChild(settingsButton);
 
-    auto* tabMenu = CCMenu::create();
-    tabMenu->setContentSize({124.f, 30.f});
-    tabMenu->setPosition({10.f, 266.f});
-    tabMenu->setLayout(RowLayout::create()->setGap(4.f)->setAxisAlignment(AxisAlignment::Center)->setDefaultScaleLimits(0.5f, 1.f));
-    tabMenu->setID("point-mode-menu"_spr);
-    m_mainLayer->addChild(tabMenu);
-
-    auto addPointMode = [tabMenu, this](char const* title, SEL_MenuHandler callback, char const* id) {
-        auto sprite = ButtonSprite::create(title, 54, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.42f);
+    // these set the selected point's fill, so they sit on the color panel.
+    auto addPointMode = [this](char const* title, float x, paimon::ui::Btn skin,
+                               SEL_MenuHandler callback, char const* id) {
+        auto sprite = paimon::ui::makeButtonSprite(title, skin, 54.f, 0.5f, "bigFont.fnt");
         auto button = CCMenuItemSpriteExtra::create(sprite, this, callback);
+        button->setPosition({x, 250.f});
         button->setID(id);
-        tabMenu->addChild(button);
+        m_buttonMenu->addChild(button);
+        return button;
     };
-    addPointMode("Image", menu_selector(GradientLayer::onImage), "point-image-button"_spr);
-    addPointMode("Color", menu_selector(GradientLayer::onPointColor), "point-color-button"_spr);
-    tabMenu->updateLayout();
+    paimon::ui::matchButtonLabels({
+        addPointMode("Color", 329.f, paimon::ui::Btn::Gray,
+            menu_selector(GradientLayer::onPointColor), "point-color-button"_spr),
+        addPointMode("Image", 387.f, paimon::ui::Btn::Cyan,
+            menu_selector(GradientLayer::onImage), "point-image-button"_spr),
+    });
 
     for (size_t i = 0; i < 9; ++i) {
         IconType type = static_cast<IconType>(i);
@@ -804,8 +808,8 @@ bool GradientLayer::init() {
     });
 
     m_picker = ColorPicker::create();
-    m_picker->setScale(0.5f);
-    m_picker->setPosition({358.f, 213.f});
+    m_picker->setScale(0.46f);
+    m_picker->setPosition({358.f, 208.f});
     m_picker->setDelegate(this);
     m_picker->setID("color-picker"_spr);
 
@@ -831,54 +835,56 @@ bool GradientLayer::init() {
     addRGBInput("G", 344.f, m_gInput);
     addRGBInput("B", 376.f, m_bInput);
 
-    auto* actionsMenu = CCMenu::create();
-    actionsMenu->setContentSize({420.f, 34.f});
-    actionsMenu->setPosition({10.f, 12.f});
-    actionsMenu->setLayout(RowLayout::create()->setGap(4.f)->setAxisAlignment(AxisAlignment::Center)->setDefaultScaleLimits(0.5f, 1.f));
-    actionsMenu->setID("gradient-actions-menu"_spr);
-    m_mainLayer->addChild(actionsMenu);
+    // grouped by what they touch: points, clipboard, library.
+    static constexpr float kActionW = 58.f;
+    static constexpr float kActionGap = 4.f;
+    static constexpr float kGroupGap = 14.f;
+    static constexpr float kActionsY = 29.f;
+    float const actionsW = kActionW * 6.f + kActionGap * 3.f + kGroupGap * 2.f;
+    float actionX = 220.f - actionsW / 2.f;
 
-    auto addActionButton = [actionsMenu, this](
-        char const* text, int width, char const* background,
+    auto addActionButton = [this, &actionX](
+        char const* text, paimon::ui::Btn skin, bool groupEnd,
         SEL_MenuHandler callback, char const* id
     ) {
-        auto sprite = ButtonSprite::create(
-            text, width, true, "bigFont.fnt", background, 18.f, 0.40f
-        );
+        auto sprite = paimon::ui::makeButtonSprite(text, skin, kActionW, 0.55f, "bigFont.fnt");
         sprite->setCascadeOpacityEnabled(true);
 
         auto button = CCMenuItemSpriteExtra::create(sprite, this, callback);
         button->setCascadeOpacityEnabled(true);
         button->setID(id);
-        actionsMenu->addChild(button);
+        button->setPosition({actionX + kActionW / 2.f, kActionsY});
+        m_buttonMenu->addChild(button);
+        actionX += kActionW + (groupEnd ? kGroupGap : kActionGap);
         return button;
     };
 
     m_addButton = addActionButton(
-        "Add", 56, "GJ_button_01.png",
+        "Add", paimon::ui::Btn::Green, false,
         menu_selector(GradientLayer::onAddPoint), "add-point-button"_spr
     );
     m_removeButton = addActionButton(
-        "Delete", 56, "GJ_button_06.png",
+        "Delete", paimon::ui::Btn::Red, true,
         menu_selector(GradientLayer::onRemovePoint), "remove-point-button"_spr
     );
     m_copyButton = addActionButton(
-        "Copy", 56, "GJ_button_04.png",
+        "Copy", paimon::ui::Btn::Gray, false,
         menu_selector(GradientLayer::onCopy), "copy-gradient-button"_spr
     );
     m_pasteButton = addActionButton(
-        "Paste", 56, "GJ_button_04.png",
+        "Paste", paimon::ui::Btn::Gray, true,
         menu_selector(GradientLayer::onPaste), "paste-gradient-button"_spr
     );
     m_saveButton = addActionButton(
-        "Save", 56, "GJ_button_01.png",
+        "Save", paimon::ui::Btn::Green, false,
         menu_selector(GradientLayer::onSave), "save-gradient-button"_spr
     );
     m_loadButton = addActionButton(
-        "Load", 56, "GJ_button_02.png",
+        "Load", paimon::ui::Btn::Cyan, false,
         menu_selector(GradientLayer::onLoad), "load-gradient-button"_spr
     );
-    actionsMenu->updateLayout();
+    paimon::ui::matchButtonLabels({m_addButton, m_removeButton, m_copyButton,
+        m_pasteButton, m_saveButton, m_loadButton});
 
     m_hideToggle = CCMenuItemToggler::create(
         CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png"),

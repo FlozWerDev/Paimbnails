@@ -211,7 +211,7 @@ class OptionPickerPopup : public PaimonPopup {
                 auto callback = m_callback;
                 this->onClose(nullptr);
                 if (callback) callback(static_cast<int>(i));
-            }, current ? ui::Btn::Green : ui::Btn::Gray, 300.f, 0.7f, "bigFont.fnt");
+            }, current ? ui::Btn::Green : ui::Btn::Gray, 300.f, 0.6f, "bigFont.fnt");
             button->setPosition({155.f, 13.f});
             menu->addChild(button);
             rows.push_back(row);
@@ -342,9 +342,10 @@ CCNode* makeButtonRow(
     float width,
     char const* title, char const* desc,
     char const* buttonText,
-    std::function<void()> onPress
+    std::function<void()> onPress,
+    ui::Btn skin
 ) {
-    constexpr float kButtonW = 96.f;
+    constexpr float kButtonW = 88.f;
     bool const stacked = width < 300.f;
     float const textMaxW = std::max(40.f, stacked ? width - 24.f : width - kButtonW - 28.f);
     float descH = 0.f;
@@ -354,7 +355,7 @@ CCNode* makeButtonRow(
     addRowText(row, makeTitleLabel(title, textMaxW), descLbl,
         descLbl || stacked ? rowH - 8.f : rowH / 2.f + 6.f);
     auto* menu = makeRowMenu(row);
-    auto* button = ui::makeButton(buttonText, std::move(onPress), ui::Btn::Green, kButtonW, 0.65f);
+    auto* button = ui::makeButton(buttonText, std::move(onPress), skin, kButtonW, 0.58f);
     button->setPosition({width - 10.f - kButtonW / 2.f, stacked ? 16.f : rowH / 2.f});
     menu->addChild(button);
     return row;
@@ -553,7 +554,7 @@ CCNode* makeTabBar(
     int selected,
     std::function<void(int)> onSelect
 ) {
-    constexpr float kGap = 6.f;
+    constexpr float kGap = 4.f;
     float const barH = kTabBarHeight;
 
     auto* bar = CCNode::create();
@@ -572,6 +573,7 @@ CCNode* makeTabBar(
             for (size_t i = 0; i < buttons.size(); ++i) {
                 ui::setButtonSkin(buttons[i], static_cast<int>(i) == selected ? ui::Btn::Green : ui::Btn::Gray);
             }
+            ui::matchButtonLabels(buttons);
         }
     };
     auto state = std::make_shared<TabState>();
@@ -584,7 +586,7 @@ CCNode* makeTabBar(
             state->selected = i;
             state->restyle();
             if (*cb) (*cb)(i);
-        }, ui::Btn::Gray, tabW, 0.75f);
+        }, ui::Btn::Gray, tabW, 0.6f);
         btn->setPosition({static_cast<float>(i) * (tabW + kGap) + tabW / 2.f, barH / 2.f});
         menu->addChild(btn);
         state->buttons.push_back(btn);

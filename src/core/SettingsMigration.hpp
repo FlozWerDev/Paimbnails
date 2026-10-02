@@ -93,11 +93,11 @@ inline void applyDefaults(bool force) {
     setS("dynamic-popup-style", "paimonUI");
     setD("dynamic-popup-speed", 1.0);
     setD("dynamic-exit-speed", 1.0);
-    setI("dynamic-transition-preset", 0);
     setI("dynamic-transition-style", 0);
     setI("dynamic-transition-curve", 0);
     setI("dynamic-transition-origin", 0);
     setI("dynamic-transition-reduced-motion", 0);
+    setI("dynamic-transition-panel-style", 0);
     setB("dynamic-transition-back", true);
     setB("dynamic-transition-keyboard-back", true);
     setB("dynamic-transition-popups", true);
@@ -117,6 +117,7 @@ inline void applyDefaults(bool force) {
     setD("dynamic-transition-dim", .22);
     setD("dynamic-transition-spring", .035);
     setD("dynamic-transition-button-blend", .24);
+    setD("dynamic-transition-shadow", .5);
     setD("dynamic-transition-quality", 1.0);
 
     setS("smooth-ui-preset", "balanced");

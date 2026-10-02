@@ -1,3 +1,4 @@
+#include "../../../ui/PaimonUI.hpp"
 #include "CommunityHubLayer.hpp"
 #include "../../audio/services/CaveAudio.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
@@ -247,10 +248,7 @@ void CommunityHubLayer::buildChrome() {
     auto& loc = Localization::get();
 
     if (!LayerBackgroundManager::get().applyBackground(this, "community_hub")) {
-        auto bg = createLayerBG();
-        bg->setZOrder(-10);
-        this->addChild(bg);
-        addSideArt(this, SideArt::All);
+        paimon::ui::decorateScene(this);
     }
 
     m_listW = std::min(384.f, winSize.width - 44.f);
@@ -270,18 +268,8 @@ void CommunityHubLayer::buildChrome() {
     m_listFrame->setPosition(m_listCenter);
     this->addChild(m_listFrame, 1);
 
-    if (auto* panel = paimon::SpriteHelper::safeCreateScale9("square02b_001.png")) {
-        panel->setContentSize({m_listW, m_listH});
-        panel->setAnchorPoint({0.f, 0.f});
-        panel->setColor({0, 0, 0});
-        panel->setOpacity(135);
-        m_listFrame->addChild(panel, 0);
-    }
-
-    auto borders = ListBorders::create();
-    borders->setContentSize({m_listW, m_listH});
-    borders->setPosition({m_listW / 2.f, m_listH / 2.f});
-    m_listFrame->addChild(borders, 5);
+    auto* panel = paimon::ui::makeSurface({m_listW, m_listH});
+    m_listFrame->addChild(panel);
 
     auto menu = CCMenu::create();
     menu->setPosition(0, 0);
@@ -374,6 +362,7 @@ CCMenuItemToggler* CommunityHubLayer::createTabButton(std::string const& text, c
 }
 
 void CommunityHubLayer::playIntro() {
+    if (!paimon::ui::motionEnabled()) return;
     if (m_title) {
         auto target = m_title->getPosition();
         m_title->setPosition({target.x, target.y + 34.f});

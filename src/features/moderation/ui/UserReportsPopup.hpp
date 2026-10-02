@@ -1,8 +1,9 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include "../../moderation/services/PendingQueue.hpp"
 
-class UserReportsPopup : public geode::Popup {
+class UserReportsPopup : public PaimonPopup {
 protected:
     std::vector<ReportEntry> m_reports;
     std::string m_reportedUsername;

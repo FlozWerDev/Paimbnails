@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -6,7 +7,7 @@
 
 namespace paimon::menu_layout {
 
-class MainMenuLayoutPresetPopup : public geode::Popup {
+class MainMenuLayoutPresetPopup : public PaimonPopup {
 public:
     enum class Mode {
         Save,

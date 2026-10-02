@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include "../services/CursorManager.hpp"
 #include "CursorShopTab.hpp"
@@ -6,7 +7,7 @@
 #include <string>
 #include <vector>
 
-class CursorConfigPopup : public geode::Popup {
+class CursorConfigPopup : public PaimonPopup {
 protected:
     void onExit() override;
     void scrollWheel(float x, float y) override;

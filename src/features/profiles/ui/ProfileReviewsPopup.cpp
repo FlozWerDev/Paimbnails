@@ -21,7 +21,7 @@ ProfileReviewsPopup* ProfileReviewsPopup::create(int accountID) {
 }
 
 bool ProfileReviewsPopup::init(int accountID) {
-    if (!Popup::init(400.f, 290.f)) return false;
+    if (!PaimonPopup::init(400.f, 290.f)) return false;
 
     m_accountID = accountID;
     this->setTitle("Profile Reviews");

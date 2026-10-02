@@ -13,7 +13,7 @@ using namespace geode::prelude;
 bool SetDailyWeeklyPopup::init(int levelID) {
     m_levelID = levelID;
 
-    if (!Popup::init(320.f, 240.f)) return false;
+    if (!PaimonPopup::init(320.f, 240.f)) return false;
 
     this->setTitle("Set Daily / Weekly");
     auto size = m_mainLayer->getContentSize();

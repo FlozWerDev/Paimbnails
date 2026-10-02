@@ -56,7 +56,7 @@ SlotOrderPopup* SlotOrderPopup::create(std::function<void()> onChanged) {
 }
 
 bool SlotOrderPopup::init(std::function<void()> onChanged) {
-    if (!Popup::init(kWidth, kHeight)) return false;
+    if (!PaimonPopup::init(kWidth, kHeight)) return false;
     paimon::markDynamicPopup(this);
     m_onChanged = std::move(onChanged);
     auto& loc = Localization::get();

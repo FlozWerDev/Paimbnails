@@ -1,10 +1,11 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include "../services/TransitionManager.hpp"
 
 // full ui for configuring transitions
 
-class TransitionConfigPopup : public geode::Popup {
+class TransitionConfigPopup : public PaimonPopup {
 protected:
     bool init();
 

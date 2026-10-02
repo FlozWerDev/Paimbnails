@@ -1,3 +1,4 @@
+#include "../ui/PaimonPopup.hpp"
 #include "ModAuthFlow.hpp"
 
 #include <Geode/Geode.hpp>
@@ -217,13 +218,13 @@ void complete(std::string const& token, std::string const& username, int account
     });
 }
 
-class ModerationPanel : public Popup {
+class ModerationPanel : public PaimonPopup {
     CCLabelBMFont* m_status = nullptr;
     CCMenuItemSpriteExtra* m_verify = nullptr;
     bool m_checking = false;
 
     bool init() override {
-        if (!Popup::init(390.f, 270.f)) return false;
+        if (!PaimonPopup::init(390.f, 270.f)) return false;
         setTitle("Moderacion");
         auto size = m_mainLayer->getContentSize();
         auto* game = GameManager::get();

@@ -11,7 +11,7 @@ StingerConfigPopup* StingerConfigPopup::create(TransitionConfig config, std::fun
     delete popup; return nullptr;
 }
 bool StingerConfigPopup::init(TransitionConfig config, std::function<void(TransitionConfig)> save) {
-    if (!Popup::init(400.f, 300.f)) return false;
+    if (!PaimonPopup::init(400.f, 300.f)) return false;
     setTitle("Stinger / OBS");
     m_config = std::move(config); m_save = std::move(save);
     TransitionManager::sanitizeConfig(m_config);

@@ -20,7 +20,7 @@ NewProjectPopup* NewProjectPopup::create(SlotCreatedCallback cb) {
 }
 
 bool NewProjectPopup::init(SlotCreatedCallback cb) {
-    if (!Popup::init(320.f, 160.f)) return false;
+    if (!PaimonPopup::init(320.f, 160.f)) return false;
     paimon::markDynamicPopup(this);
     m_onCreated = std::move(cb);
     setTitle("New color slot");

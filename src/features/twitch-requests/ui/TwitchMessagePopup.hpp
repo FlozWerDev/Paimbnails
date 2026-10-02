@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 // popup behind a row's "i" button: the note sent with the level from your web page.
 
@@ -10,7 +11,7 @@ namespace paimon::twitch {
 
 struct LevelRequest;
 
-class TwitchMessagePopup : public geode::Popup {
+class TwitchMessagePopup : public PaimonPopup {
 public:
     // `levelname` and `author` are what the level is known by; empty while
     // still loading.

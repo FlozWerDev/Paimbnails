@@ -7,7 +7,7 @@
 using namespace geode::prelude;
 
 bool BetaUploadWarningPopup::init(std::function<void()> onProceed) {
-    if (!Popup::init(320.f, 180.f)) return false;
+    if (!PaimonPopup::init(320.f, 180.f)) return false;
     paimon::markDynamicPopup(this);
     m_onProceed = std::move(onProceed);
 

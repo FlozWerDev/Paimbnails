@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
@@ -6,7 +7,7 @@
 
 namespace paimon::foryou {
 
-class LevelTagsGatePopup : public geode::Popup {
+class LevelTagsGatePopup : public PaimonPopup {
 public:
     // `oncontinue` runs when the user chooses to browse without tags.
     static LevelTagsGatePopup* create(std::function<void()> onContinue);

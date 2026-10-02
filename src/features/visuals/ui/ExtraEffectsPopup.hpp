@@ -1,8 +1,9 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include <sstream>
 
-class ExtraEffectsPopup : public geode::Popup {
+class ExtraEffectsPopup : public PaimonPopup {
 protected:
     cocos2d::CCNode* m_rowContainer = nullptr;
     cocos2d::CCMenu* m_rowMenu = nullptr;

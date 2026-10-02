@@ -74,7 +74,7 @@ ProfilePicEditorPopup* ProfilePicEditorPopup::create() {
 }
 
 bool ProfilePicEditorPopup::init() {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     this->setTitle("Profile Photo Editor");
 
     m_editConfig = ProfilePicCustomizer::get().getConfig();

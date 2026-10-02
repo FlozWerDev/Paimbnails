@@ -1,4 +1,7 @@
 #include "PaiConfigKit.hpp"
+#include "PaimonPopup.hpp"
+#include "../utils/Localization.hpp"
+#include "../utils/FluidReveal.hpp"
 #include "../utils/SpriteHelper.hpp"
 
 #include <Geode/binding/FLAlertLayer.hpp>
@@ -34,7 +37,7 @@ CCLabelBMFont* makeDescLabel(char const* text, float wrapW) {
     l->setScale(kScale);
     l->setAnchorPoint({0.f, 1.f});
     l->setColor(kDescColor);
-    l->setOpacity(230);
+    l->setOpacity(255);
     return l;
 }
 
@@ -70,7 +73,7 @@ public:
     }
 
     void onToggle(CCObject*) {
-// istoggled() still reports the pre-click state here.
+        // Geode invokes the callback before updating the toggle state.
         if (m_callback && m_toggler) m_callback(!m_toggler->isToggled());
     }
 };
@@ -118,12 +121,12 @@ CCMenuItemToggler* addStandardToggler(
     std::function<void(bool)> onChange
 ) {
     auto* cb = KitToggleCallback::create(std::move(onChange));
-    auto* tog = CCMenuItemToggler::createWithStandardSprites(
-        cb, menu_selector(KitToggleCallback::onToggle), scale);
+    auto* tog = paimon::ui::makeSwitch(
+        cb, menu_selector(KitToggleCallback::onToggle), value, scale / 0.62f);
     cb->m_toggler = tog;
     tog->toggle(value);
     tog->setPosition(pos);
-tog->setUserObject(cb); // keep the wrapper alive with the toggler.
+    tog->setUserObject(cb);
     menu->addChild(tog);
     return tog;
 }
@@ -137,14 +140,14 @@ CCNode* makeToggleRow(
     std::function<void(bool)> onChange,
     CCMenuItemToggler** outToggle
 ) {
-    constexpr float kPad = 6.f;
+    constexpr float kPad = 8.f;
     constexpr float kTitleH = 14.f;
-    float textMaxW = width - 60.f;
+    float textMaxW = std::max(40.f, width - 72.f);
 
     float descH = 0.f;
     auto* descLbl = makeDescBlock(desc, textMaxW, descH);
 
-    float rowH = kPad + kTitleH + descH + kPad;
+    float rowH = std::max(36.f, kPad + kTitleH + descH + kPad);
 
     auto* row = CCNode::create();
     row->setAnchorPoint({0.f, 0.f});
@@ -160,7 +163,7 @@ CCNode* makeToggleRow(
     }
 
     auto* menu = makeRowMenu(row);
-    auto* tog = addStandardToggler(menu, value, 0.55f, {width - 26.f, rowH / 2.f},
+    auto* tog = addStandardToggler(menu, value, 0.55f, {width - 30.f, rowH / 2.f},
                                    std::move(onChange));
     if (outToggle) *outToggle = tog;
     return row;
@@ -173,64 +176,111 @@ CCNode* makeSliderRow(
     std::function<std::string(double)> format,
     std::function<void(double)> onChange,
     Slider** outSlider,
-    cocos2d::CCLabelBMFont** outValue
+    CCLabelBMFont** outValue
 ) {
-    constexpr float kPad = 6.f;
-    constexpr float kTitleH = 14.f;
-
-    float leftW = width * 0.50f;
-    float textMaxW = leftW - 14.f;
-
     float descH = 0.f;
-    auto* descLbl = makeDescBlock(desc, textMaxW, descH);
-
-    float rowH = std::max(kPad + kTitleH + descH + kPad, 42.f);
-
+    auto* descLbl = makeDescBlock(desc, std::max(40.f, width - 24.f), descH);
+    float const rowH = 52.f + descH;
     auto* row = CCNode::create();
     row->setAnchorPoint({0.f, 0.f});
     row->setContentSize({width, rowH});
 
-    auto* titleLbl = makeTitleLabel(title, textMaxW);
-    titleLbl->setPosition({10.f, rowH - kPad});
+    auto* titleLbl = makeTitleLabel(title, std::max(40.f, width - 96.f));
+    titleLbl->setPosition({10.f, rowH - 8.f});
     row->addChild(titleLbl);
-
     if (descLbl) {
-        descLbl->setPosition({10.f, rowH - kPad - kTitleH - 1.f});
+        descLbl->setPosition({10.f, rowH - 24.f});
         row->addChild(descLbl);
     }
 
-    float grooveW = width * 0.38f;
-    float sliderScale = std::clamp(grooveW / 210.f, 0.35f, 0.85f);
-    float sliderCX = width - 14.f - (210.f * sliderScale) / 2.f;
-    float sliderCY = rowH / 2.f - 9.f;
+    auto* valLbl = CCLabelBMFont::create(format ? format(value).c_str() : "", "bigFont.fnt");
+    valLbl->setAnchorPoint({1.f, 1.f});
+    valLbl->setColor(kValueColor);
+    valLbl->limitLabelWidth(72.f, 0.32f, 0.12f);
+    valLbl->setPosition({width - 10.f, rowH - 8.f});
+    row->addChild(valLbl);
 
+    float const sliderScale = std::clamp((width - 38.f) / 210.f, 0.25f, 1.6f);
     auto* cb = KitSliderCallback::create(std::move(onChange), format, minV, maxV);
     auto* slider = Slider::create(cb, menu_selector(KitSliderCallback::onChanged), sliderScale);
     cb->m_slider = slider;
-    slider->setPosition({sliderCX, sliderCY});
-    slider->setValue(normFromValue(value, minV, maxV));
-slider->setUserObject(cb); // keep the wrapper alive.
-    row->addChild(slider);
-
-    auto* chip = paimon::SpriteHelper::createColorPanel(54.f, 15.f, {0, 0, 0}, 110, 5.f);
-    if (chip) {
-        chip->setAnchorPoint({0.f, 0.f});
-        chip->setPosition({sliderCX - 27.f, sliderCY + 10.f});
-        row->addChild(chip);
-    }
-
-    auto* valLbl = CCLabelBMFont::create(
-        format ? format(value).c_str() : "", "bigFont.fnt");
-    valLbl->setAnchorPoint({0.5f, 0.5f});
-    valLbl->setColor(kValueColor);
-    valLbl->limitLabelWidth(48.f, 0.30f, 0.1f);
-    valLbl->setPosition({sliderCX, sliderCY + 17.5f});
-    row->addChild(valLbl, 2);
     cb->m_valueLabel = valLbl;
+    slider->setPosition({width / 2.f, 15.f});
+    slider->setValue(normFromValue(value, minV, maxV));
+    slider->setUserObject(cb);
+    if (slider->m_touchLogic) slider->m_touchLogic->setTouchPriority(childTouchPrio());
+    row->addChild(slider);
 
     if (outSlider) *outSlider = slider;
     if (outValue) *outValue = valLbl;
     return row;
+}
+
+namespace {
+
+class OptionPickerPopup : public PaimonPopup {
+    std::vector<std::string> m_options;
+    std::function<void(int)> m_callback;
+    ScrollLayer* m_scroll = nullptr;
+    TextInput* m_search = nullptr;
+    int m_selected = 0;
+
+    void rebuild(std::string query) {
+        if (m_scroll) m_scroll->removeFromParent();
+        query = geode::utils::string::toLower(query);
+        std::vector<CCNode*> rows;
+        for (size_t i = 0; i < m_options.size(); ++i) {
+            if (!query.empty() && geode::utils::string::toLower(m_options[i]).find(query) == std::string::npos) continue;
+            auto* row = CCNode::create();
+            row->setContentSize({320.f, 32.f});
+            auto* menu = makeRowMenu(row);
+            auto* button = paimon::ui::makeButton(m_options[i].c_str(), {320.f, 30.f}, [this, i] {
+                Ref<OptionPickerPopup> guard = this;
+                auto callback = m_callback;
+                this->onClose(nullptr);
+                if (callback) callback(static_cast<int>(i));
+            }, static_cast<int>(i) == m_selected ? ccColor3B{36, 75, 106} : paimon::ui::palette::raised);
+            button->setPosition({160.f, 16.f});
+            menu->addChild(button);
+            rows.push_back(row);
+        }
+        if (rows.empty()) rows.push_back(makeHint(320.f,
+            Localization::get().getLanguage() == Localization::Language::SPANISH ? "Sin resultados" : "No results"));
+        m_scroll = makeScrollStack({320.f, 190.f}, rows, 4.f);
+        m_scroll->setPosition({20.f, 14.f});
+        m_mainLayer->addChild(m_scroll);
+    }
+
+    bool init(std::vector<std::string> options, int selected, std::function<void(int)> callback) {
+        if (!PaimonPopup::init(360.f, 270.f)) return false;
+        m_options = std::move(options);
+        m_selected = selected;
+        m_callback = std::move(callback);
+        bool const es = Localization::get().getLanguage() == Localization::Language::SPANISH;
+        setTitle(es ? "Elegir opcion" : "Choose an option");
+        m_search = TextInput::create(320.f, es ? "Buscar..." : "Search...", "chatFont.fnt");
+        m_search->setCommonFilter(CommonFilter::Any);
+        m_search->setMaxCharCount(64);
+        m_search->setPosition({180.f, 225.f});
+        m_search->setCallback([this](std::string const& query) { rebuild(query); });
+        m_mainLayer->addChild(m_search);
+        rebuild("");
+        return true;
+    }
+
+public:
+    static OptionPickerPopup* create(std::vector<std::string> options, int selected,
+        std::function<void(int)> callback) {
+        auto* popup = new OptionPickerPopup();
+        if (popup->init(std::move(options), selected, std::move(callback))) {
+            popup->autorelease();
+            return popup;
+        }
+        delete popup;
+        return nullptr;
+    }
+};
+
 }
 
 CCNode* makeSelectRow(
@@ -238,89 +288,73 @@ CCNode* makeSelectRow(
     char const* title, char const* desc,
     std::vector<std::string> options, int index,
     std::function<void(int)> onChange,
-    cocos2d::CCLabelBMFont** outLabel,
+    CCLabelBMFont** outLabel,
     std::function<void()> onGear
 ) {
-    constexpr float kPad = 6.f;
-    constexpr float kTitleH = 14.f;
-    constexpr float kZoneW = 150.f;
-    float gearW = onGear ? 24.f : 0.f;
-    float textMaxW = width - kZoneW - 24.f - gearW;
-
+    bool const stacked = width < 330.f;
+    float const zoneW = stacked ? width - 24.f : 160.f;
+    float const textMaxW = std::max(40.f, stacked ? width - 24.f : width - zoneW - 28.f);
     float descH = 0.f;
     auto* descLbl = makeDescBlock(desc, textMaxW, descH);
-
-    float rowH = std::max(kPad + kTitleH + descH + kPad, 30.f);
-
+    float const rowH = std::max(36.f, 30.f + descH) + (stacked ? 30.f : 0.f);
     auto* row = CCNode::create();
-    row->setAnchorPoint({0.f, 0.f});
     row->setContentSize({width, rowH});
-
+    row->setAnchorPoint({0.f, 0.f});
     auto* titleLbl = makeTitleLabel(title, textMaxW);
-    titleLbl->setPosition({10.f, rowH - kPad});
+    titleLbl->setPosition({10.f, rowH - 8.f});
     row->addChild(titleLbl);
-
     if (descLbl) {
-        descLbl->setPosition({10.f, rowH - kPad - kTitleH - 1.f});
+        descLbl->setPosition({10.f, rowH - 24.f});
         row->addChild(descLbl);
     }
 
-    float cy = rowH / 2.f;
-    float valueCX = width - 14.f - kZoneW / 2.f + 8.f;
-
-    auto* valLbl = CCLabelBMFont::create(
-        (index >= 0 && index < static_cast<int>(options.size()))
-            ? options[static_cast<size_t>(index)].c_str() : "",
-        "bigFont.fnt");
-    valLbl->setAnchorPoint({0.5f, 0.5f});
-    valLbl->setColor(kValueColor);
-    valLbl->limitLabelWidth(kZoneW - 46.f, 0.34f, 0.1f);
-    valLbl->setPosition({valueCX, cy});
-    row->addChild(valLbl);
-    if (outLabel) *outLabel = valLbl;
-
-    auto* menu = makeRowMenu(row);
-
-    auto state = std::make_shared<int>(index);
+    auto state = std::make_shared<int>(options.empty() ? 0 : std::clamp(index, 0, static_cast<int>(options.size()) - 1));
     auto opts = std::make_shared<std::vector<std::string>>(std::move(options));
     auto cb = std::make_shared<std::function<void(int)>>(std::move(onChange));
-
-    auto cycle = [state, opts, cb, valLbl, kZoneWCopy = kZoneW](int dir) {
-        if (opts->empty()) return;
-        int n = static_cast<int>(opts->size());
-        *state = ((*state + dir) % n + n) % n;
-        valLbl->setString((*opts)[static_cast<size_t>(*state)].c_str());
-        valLbl->limitLabelWidth(kZoneWCopy - 46.f, 0.34f, 0.1f);
-        if (*cb) (*cb)(*state);
+    float const cy = stacked ? 17.f : rowH / 2.f;
+    float const cx = stacked ? width / 2.f : width - zoneW / 2.f - 10.f;
+    float const gearW = onGear ? 28.f : 0.f;
+    float const labelW = zoneW - 62.f - gearW;
+    auto* face = paimon::ui::makeButtonFace("", {zoneW - gearW, 26.f});
+    auto* valLbl = CCLabelBMFont::create(opts->empty() ? "-" : (*opts)[*state].c_str(), "bigFont.fnt");
+    valLbl->setColor(kValueColor);
+    valLbl->limitLabelWidth(labelW, 0.32f, 0.12f);
+    valLbl->setPosition(face->getContentSize() / 2.f);
+    face->addChild(valLbl);
+    if (outLabel) *outLabel = valLbl;
+    WeakRef<CCNode> rowRef = row;
+    auto select = [state, opts, cb, valLbl, labelW, rowRef](int selected) {
+        auto owner = rowRef.lock();
+        if (!owner || !owner->getParent() || selected < 0 || selected >= static_cast<int>(opts->size())) return;
+        *state = selected;
+        valLbl->setString((*opts)[selected].c_str());
+        valLbl->limitLabelWidth(labelW, 0.32f, 0.12f);
+        if (*cb) (*cb)(selected);
     };
-
-    auto* leftSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
-    if (leftSpr) leftSpr->setScale(0.42f);
-    auto* leftBtn = CCMenuItemExt::createSpriteExtra(
-        leftSpr, [cycle](CCMenuItemSpriteExtra*) { cycle(-1); });
-    leftBtn->setPosition({valueCX - kZoneW / 2.f + 16.f, cy});
-    menu->addChild(leftBtn);
-
-    auto* rightSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
-    if (rightSpr) {
-        rightSpr->setScale(0.42f);
-        rightSpr->setFlipX(true);
+    auto* menu = makeRowMenu(row);
+    auto* valueBtn = CCMenuItemExt::createSpriteExtra(face, [opts, state, select](CCMenuItemSpriteExtra*) {
+        if (opts->empty()) return;
+        if (auto* picker = OptionPickerPopup::create(*opts, *state, select)) picker->show();
+    });
+    valueBtn->setPosition({cx - gearW / 2.f, cy});
+    valueBtn->setEnabled(!opts->empty());
+    valueBtn->m_scaleMultiplier = 1.02f;
+    menu->addChild(valueBtn);
+    for (int direction : {-1, 1}) {
+        auto* arrow = paimon::ui::makeButton(direction < 0 ? "<" : ">", {24.f, 26.f}, [state, opts, select, direction] {
+            if (opts->empty()) return;
+            int const n = static_cast<int>(opts->size());
+            select((*state + direction + n) % n);
+        });
+        arrow->setPosition({cx - gearW / 2.f + direction * (zoneW - gearW - 24.f) / 2.f, cy});
+        arrow->setEnabled(opts->size() > 1);
+        menu->addChild(arrow, 2);
     }
-    auto* rightBtn = CCMenuItemExt::createSpriteExtra(
-        rightSpr, [cycle](CCMenuItemSpriteExtra*) { cycle(1); });
-    rightBtn->setPosition({valueCX + kZoneW / 2.f - 16.f, cy});
-    menu->addChild(rightBtn);
-
     if (onGear) {
-        auto* gearSpr = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
-        if (gearSpr) gearSpr->setScale(0.32f);
-        auto gear = std::make_shared<std::function<void()>>(std::move(onGear));
-        auto* gearBtn = CCMenuItemExt::createSpriteExtra(
-            gearSpr, [gear](CCMenuItemSpriteExtra*) { if (*gear) (*gear)(); });
-        gearBtn->setPosition({valueCX - kZoneW / 2.f - 10.f, cy});
-        menu->addChild(gearBtn);
+        auto* gear = paimon::ui::makeButton("...", {24.f, 26.f}, std::move(onGear));
+        gear->setPosition({cx + zoneW / 2.f - 12.f, cy});
+        menu->addChild(gear);
     }
-
     return row;
 }
 
@@ -330,36 +364,25 @@ CCNode* makeButtonRow(
     char const* buttonText,
     std::function<void()> onPress
 ) {
-    constexpr float kPad = 6.f;
-    constexpr float kTitleH = 14.f;
-    float textMaxW = width - 130.f;
-
+    bool const stacked = width < 300.f;
+    float const textMaxW = std::max(40.f, stacked ? width - 24.f : width - 124.f);
     float descH = 0.f;
     auto* descLbl = makeDescBlock(desc, textMaxW, descH);
-
-    float rowH = std::max(kPad + kTitleH + descH + kPad, 32.f);
-
+    float const rowH = std::max(36.f, 30.f + descH) + (stacked ? 30.f : 0.f);
     auto* row = CCNode::create();
     row->setAnchorPoint({0.f, 0.f});
     row->setContentSize({width, rowH});
-
     auto* titleLbl = makeTitleLabel(title, textMaxW);
-    titleLbl->setPosition({10.f, rowH - kPad});
+    titleLbl->setPosition({10.f, rowH - 8.f});
     row->addChild(titleLbl);
-
     if (descLbl) {
-        descLbl->setPosition({10.f, rowH - kPad - kTitleH - 1.f});
+        descLbl->setPosition({10.f, rowH - 24.f});
         row->addChild(descLbl);
     }
-
     auto* menu = makeRowMenu(row);
-    auto* spr = ButtonSprite::create(buttonText, "goldFont.fnt", "GJ_button_04.png", 0.7f);
-    if (spr) spr->setScale(0.55f);
-    auto* btn = CCMenuItemExt::createSpriteExtra(
-        spr, [cb = std::move(onPress)](CCMenuItemSpriteExtra*) { if (cb) cb(); });
-    btn->setPosition({width - 14.f - btn->getScaledContentSize().width / 2.f, rowH / 2.f});
-    menu->addChild(btn);
-
+    auto* button = paimon::ui::makeButton(buttonText, {100.f, 27.f}, std::move(onPress), {36, 75, 106});
+    button->setPosition({width - 62.f, stacked ? 17.f : rowH / 2.f});
+    menu->addChild(button);
     return row;
 }
 
@@ -370,7 +393,7 @@ CCNode* makeColorRow(
     std::function<void(ccColor3B)> onChange,
     CCSprite** outSwatch
 ) {
-    constexpr float kPad = 6.f;
+    constexpr float kPad = 8.f;
     constexpr float kTitleH = 14.f;
     constexpr float kSwatch = 26.f;
     float textMaxW = width - 90.f;
@@ -395,7 +418,7 @@ CCNode* makeColorRow(
 
     auto* menu = makeRowMenu(row);
 
-// tint a white swatch so every color previews accurately.
+    // A white texture preserves the chosen RGB color.
     auto* swatch = CCSprite::create("square02_001.png");
     if (!swatch) swatch = CCSprite::createWithSpriteFrameName("square02_001.png");
     if (swatch) {
@@ -404,7 +427,7 @@ CCNode* makeColorRow(
         swatch->setColor(value);
         if (outSwatch) *outSwatch = swatch;
 
-// keep a ref because the modal callback may outlive a rebuilt row.
+        // The picker can outlive a rebuilt row.
         geode::Ref<CCSprite> swatchRef = swatch;
         auto* btn = CCMenuItemExt::createSpriteExtra(
             swatch, [cb = std::move(onChange), swatchRef](CCMenuItemSpriteExtra*) {
@@ -443,9 +466,9 @@ CCNode* makeCard(
     char const* title, cocos2d::ccColor3B accent,
     std::vector<CCNode*> const& rows
 ) {
-    constexpr float kPad = 8.f;
-    constexpr float kHeaderH = 18.f;
-    constexpr float kGap = 3.f;
+    constexpr float kPad = 10.f;
+    constexpr float kHeaderH = 20.f;
+    constexpr float kGap = 4.f;
 
     float contentH = 0.f;
     for (auto* r : rows) if (r) contentH += r->getContentSize().height + kGap;
@@ -458,8 +481,7 @@ CCNode* makeCard(
     card->setAnchorPoint({0.f, 0.f});
     card->setContentSize({width, cardH});
 
-    auto* panel = paimon::SpriteHelper::createColorPanel(
-        width, cardH, kCardColor, kCardAlpha, 7.f);
+    auto* panel = paimon::ui::makeSurface({width, cardH}, kCardColor, kCardAlpha);
     if (panel) {
         panel->setAnchorPoint({0.f, 0.f});
         panel->setPosition({0.f, 0.f});
@@ -498,7 +520,8 @@ CCNode* makeCard(
 
 void setHeroStateLabel(CCLabelBMFont* label, bool on) {
     if (!label) return;
-    label->setString(on ? "Activado" : "Desactivado");
+    bool const es = Localization::get().getLanguage() == Localization::Language::SPANISH;
+    label->setString(on ? (es ? "Activado" : "Enabled") : (es ? "Desactivado" : "Disabled"));
     label->setColor(on ? kOnColor : kOffColor);
 }
 
@@ -512,7 +535,7 @@ CCNode* makeHeroToggle(
 ) {
     constexpr float kPad = 7.f;
     constexpr float kTitleH = 17.f;
-    float textMaxW = width - 150.f;
+    float textMaxW = std::max(40.f, width - 144.f);
 
     float descH = 0.f;
     auto* descLbl = makeDescBlock(desc, textMaxW, descH);
@@ -523,8 +546,7 @@ CCNode* makeHeroToggle(
     row->setAnchorPoint({0.f, 0.f});
     row->setContentSize({width, rowH});
 
-    auto* panel = paimon::SpriteHelper::createColorPanel(
-        width, rowH, kCardColor, kCardAlpha, 7.f);
+    auto* panel = paimon::ui::makeSurface({width, rowH}, kCardColor, kCardAlpha);
     if (panel) {
         panel->setAnchorPoint({0.f, 0.f});
         panel->setPosition({0.f, 0.f});
@@ -543,7 +565,7 @@ CCNode* makeHeroToggle(
     auto* stateLbl = CCLabelBMFont::create(value ? "Activado" : "Desactivado", "bigFont.fnt");
     stateLbl->setAnchorPoint({1.f, 0.5f});
     stateLbl->setScale(0.28f);
-    stateLbl->setColor(value ? kOnColor : kOffColor);
+    setHeroStateLabel(stateLbl, value);
     stateLbl->setPosition({width - 52.f, rowH / 2.f});
     row->addChild(stateLbl);
 
@@ -553,7 +575,7 @@ CCNode* makeHeroToggle(
     };
 
     auto* menu = makeRowMenu(row);
-    auto* tog = addStandardToggler(menu, value, 0.72f, {width - 28.f, rowH / 2.f},
+    auto* tog = addStandardToggler(menu, value, 0.62f, {width - 28.f, rowH / 2.f},
                                    std::move(wrapped));
     if (outToggle) *outToggle = tog;
     if (outStateLabel) *outStateLabel = stateLbl;
@@ -596,20 +618,30 @@ struct TabBarState {
     std::vector<cocos2d::CCNodeRGBA*> panels;
     std::vector<CCLabelBMFont*> labels;
     int selected = 0;
+    CCNode* indicator = nullptr;
+    float step = 0.f;
 
-    void restyle() {
-        constexpr ccColor3B kSelPanel   = {66, 132, 245};
-        constexpr ccColor3B kUnselPanel = {10, 13, 24};
+    void restyle(bool animate = false) {
+        constexpr ccColor3B kSelPanel   = {36, 75, 106};
+        constexpr auto kUnselPanel = paimon::ui::palette::raised;
         for (size_t i = 0; i < panels.size(); ++i) {
             bool sel = static_cast<int>(i) == selected;
             if (panels[i]) {
                 panels[i]->setColor(sel ? kSelPanel : kUnselPanel);
-                panels[i]->setOpacity(sel ? 235 : 120);
+                panels[i]->setOpacity(255);
             }
             if (i < labels.size() && labels[i]) {
                 labels[i]->setColor(sel ? ccColor3B{255, 255, 255} : kDescColor);
                 labels[i]->setOpacity(sel ? 255 : 210);
             }
+        }
+        if (indicator) {
+            CCPoint const position{6.f + selected * step, 1.f};
+            indicator->stopAllActions();
+            if (animate && paimon::ui::motionEnabled()) {
+                indicator->runAction(CCEaseSineOut::create(CCMoveTo::create(
+                    paimon::ui::motionDuration(0.16f), position)));
+            } else indicator->setPosition(position);
         }
     }
 };
@@ -636,6 +668,9 @@ CCNode* makeTabBar(
 
     auto state = std::make_shared<TabBarState>();
     state->selected = std::clamp(selected, 0, n - 1);
+    state->step = tabW + kGap;
+    state->indicator = CCLayerColor::create({116, 204, 255, 255}, std::max(1.f, tabW - 12.f), 2.f);
+    bar->addChild(state->indicator, 6);
     auto cb = std::make_shared<std::function<void(int)>>(std::move(onSelect));
 
     for (int i = 0; i < static_cast<int>(labels.size()); ++i) {
@@ -645,8 +680,7 @@ CCNode* makeTabBar(
         holder->setAnchorPoint({0.5f, 0.5f});
         holder->setContentSize({tabW, barH - 4.f});
 
-        auto* panel = paimon::SpriteHelper::createColorPanel(
-            tabW, barH - 4.f, kCardColor, 120, 6.f);
+        auto* panel = paimon::ui::makeSurface({tabW, barH - 4.f});
         if (panel) {
             panel->setAnchorPoint({0.f, 0.f});
             panel->setPosition({0.f, 0.f});
@@ -665,10 +699,11 @@ CCNode* makeTabBar(
             holder, [state, cb, i](CCMenuItemSpriteExtra*) {
                 if (state->selected == i) return;
                 state->selected = i;
-                state->restyle();
+                state->restyle(true);
                 if (*cb) (*cb)(i);
             });
         btn->setPosition({x0 + tabW / 2.f, barH / 2.f});
+        btn->m_scaleMultiplier = 1.02f;
         menu->addChild(btn);
     }
 
@@ -684,17 +719,21 @@ bool queueWheelScroll(geode::ScrollLayer* scrollLayer, float x, float y,
 #else
     if (!scrollLayer || !scrollLayer->getParent()) return false;
 
-    CCPoint mousePos = geode::cocos::getMousePos();
-    CCRect scrollRect = scrollLayer->boundingBox();
-    scrollRect.origin = scrollLayer->getParent()->convertToWorldSpace(scrollRect.origin);
+    CCPoint mousePos = scrollLayer->convertToNodeSpace(geode::cocos::getMousePos());
+    CCRect scrollRect{{0.f, 0.f}, scrollLayer->getContentSize()};
     if (!scrollRect.containsPoint(mousePos)) return false;
 
     auto* contentLayer = scrollLayer->m_contentLayer;
     if (!contentLayer) return false;
+    if (scrollLayer->m_touchDown) {
+        targetSet = false;
+        return true;
+    }
 
     float amount = y;
     if (std::abs(amount) < 0.001f) amount = -x;
 
+    scrollLayer->enableScrollWheel(false);
     float minY = scrollLayer->getContentSize().height - contentLayer->getContentSize().height;
     float maxY = 0.f;
     if (minY > maxY) minY = maxY;
@@ -712,17 +751,26 @@ void stepWheelScroll(geode::ScrollLayer* scrollLayer,
     float& targetY, bool& targetSet, float dt
 ) {
     if (!targetSet || !scrollLayer) return;
+    if (scrollLayer->m_touchDown) { targetSet = false; return; }
+    if (!std::isfinite(dt) || dt <= 0.f) return;
     auto* contentLayer = scrollLayer->m_contentLayer;
     if (!contentLayer) { targetSet = false; return; }
 
+    float const minY = std::min(0.f, scrollLayer->getContentSize().height - contentLayer->getContentSize().height);
+    targetY = std::clamp(targetY, minY, 0.f);
     float cur = contentLayer->getPositionY();
+    if (!paimon::ui::motionEnabled()) {
+        contentLayer->setPositionY(targetY);
+        targetSet = false;
+        return;
+    }
     float diff = targetY - cur;
     if (std::abs(diff) < 0.5f) {
         contentLayer->setPositionY(targetY);
         targetSet = false;
         return;
     }
-    float t = 1.f - std::pow(0.001f, dt);
+    float t = 1.f - std::exp(-14.f * std::min(dt, 0.1f));
     contentLayer->setPositionY(cur + diff * t);
 }
 
@@ -731,7 +779,7 @@ void showAbove(FLAlertLayer* alert, CCNode* owner) {
     int const above = owner ? owner->getZOrder() + 1 : 100;
     alert->m_ZOrder = above;
     alert->show();
-// show() may ignore m_zorder, so reorder once it has a parent.
+    // Some alert implementations ignore m_ZOrder during show().
     if (auto* parent = alert->getParent()) parent->reorderChild(alert, above);
 }
 

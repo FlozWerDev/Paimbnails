@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 // linea de tiempo del nivel segun history.geometrydash.eu: estado actual, rate/feature y snapshots.
 // cada fila abre su ficha completa.
@@ -14,7 +15,7 @@
 
 namespace paimon::info {
 
-class LevelHistoryPopup : public geode::Popup {
+class LevelHistoryPopup : public PaimonPopup {
 public:
     static LevelHistoryPopup* create(GJGameLevel* level);
 

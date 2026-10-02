@@ -78,7 +78,7 @@ ProgressBarConfigPopup* ProgressBarConfigPopup::create() {
 }
 
 bool ProgressBarConfigPopup::init() {
-    if (!Popup::init(400.f, 280.f)) return false;
+    if (!PaimonPopup::init(400.f, 280.f)) return false;
     this->setTitle("Custom Progress Bar");
     this->setMouseEnabled(true);
 

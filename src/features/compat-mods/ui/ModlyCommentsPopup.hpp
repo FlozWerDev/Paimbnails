@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../services/ModlyTypes.hpp"
 #include <Geode/ui/Popup.hpp>
@@ -8,7 +9,7 @@
 namespace paimon::compat_mods {
 
 // read-only comment view; posting needs modly firebase auth the mod lacks.
-class ModlyCommentsPopup : public geode::Popup {
+class ModlyCommentsPopup : public PaimonPopup {
 public:
     static ModlyCommentsPopup* create(ModlyMod const& mod);
 

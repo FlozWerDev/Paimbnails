@@ -27,6 +27,7 @@ protected:
     cocos2d::CCPoint m_dragOffset;
 
     bool m_isClosing = false;
+    float m_panelScale = 1.f;
 
     // touch priority computed at open (force-priority aware)
     int m_touchPrio = -600;
@@ -35,7 +36,7 @@ protected:
     static constexpr float PANEL_W = 480.f;
     static constexpr float PANEL_H = 280.f;
     static constexpr float TITLE_BAR_H = 28.f;
-    static constexpr float SIDEBAR_W = 44.f;
+    static constexpr float SIDEBAR_W = 112.f;
     static constexpr float CORNER_RADIUS = 8.f;
     static constexpr float CONTENT_W = PANEL_W - SIDEBAR_W;
     static constexpr float CONTENT_H = PANEL_H - TITLE_BAR_H;

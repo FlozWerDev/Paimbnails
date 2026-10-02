@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../GifImportTypes.hpp"
 
@@ -17,7 +18,7 @@ namespace paimon::gifimport {
 struct ProcessingProgress;
 struct SourceLoadState;
 
-class GifImportPopup : public geode::Popup {
+class GifImportPopup : public PaimonPopup {
 public:
     static GifImportPopup* create();
     ~GifImportPopup();

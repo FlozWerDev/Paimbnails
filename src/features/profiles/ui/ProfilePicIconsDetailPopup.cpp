@@ -31,7 +31,7 @@ ProfilePicIconsDetailPopup* ProfilePicIconsDetailPopup::create(ProfilePicConfig*
 }
 
 bool ProfilePicIconsDetailPopup::init(ProfilePicConfig* cfg, CCNode* editor, std::function<void()> onChange) {
-    if (!Popup::init(kW, kH)) return false;
+    if (!PaimonPopup::init(kW, kH)) return false;
     paimon::markDynamicPopup(this);
     this->setTitle("Icon Settings");
     m_cfg = cfg;

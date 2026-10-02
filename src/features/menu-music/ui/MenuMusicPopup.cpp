@@ -106,7 +106,7 @@ MenuMusicPopup* MenuMusicPopup::create() {
 }
 
 bool MenuMusicPopup::init(float width, float height) {
-    if (!Popup::init(width, height)) return false;
+    if (!PaimonPopup::init(width, height)) return false;
     paimon::markDynamicPopup(this);
 
     MenuMusicLibrary::get().load();

@@ -1,6 +1,9 @@
 #include "PaimonMultiSettingsPanel.hpp"
 #include "SettingsCategoryBuilder.hpp"
 #include "SettingsControls.hpp"
+#include "../../../ui/PaimonUI.hpp"
+#include "../../../utils/FluidReveal.hpp"
+#include "../../../utils/Localization.hpp"
 #include "../services/SettingsPanelManager.hpp"
 #include "../../../utils/GeodeTextInputSafe.hpp"
 #include "../../../utils/SpriteHelper.hpp"
@@ -14,7 +17,7 @@ using namespace cocos2d;
 using namespace geode::prelude;
 
 namespace {
-constexpr float kSidebarBtnScale = 0.46f;
+constexpr float kSidebarBtnScale = 1.f;
 }
 
 PaimonMultiSettingsPanel* PaimonMultiSettingsPanel::create(CCSprite* blurBg, int initialCategory) {
@@ -50,21 +53,10 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
     m_panelContainer->setPosition(winSize * 0.5f);
     this->addChild(m_panelContainer, 1);
 
-    m_panelBg = paimon::SpriteHelper::safeCreateScale9("GJ_square06.png");
-    if (!m_panelBg) {
-        // fallback when the gd panel texture is unavailable.
-        m_panelBg = paimon::SpriteHelper::createColorPanel(
-            PANEL_W, PANEL_H, cocos2d::ccColor3B{255, 255, 255}, 255, CORNER_RADIUS
-        );
-    }
-    if (m_panelBg) {
-        m_panelBg->setContentSize({PANEL_W, PANEL_H});
-        m_panelBg->setAnchorPoint({0.f, 0.f});
-        m_panelBg->setPosition({0.f, 0.f});
-        m_panelBg->setColor({34, 46, 96});
-        m_panelBg->setOpacity(255);
-        m_panelContainer->addChild(m_panelBg, 0);
-    }
+    m_panelBg = paimon::ui::makeSurface({PANEL_W, PANEL_H});
+    m_panelContainer->addChild(m_panelBg);
+    m_panelScale = std::min({1.f, (winSize.width - 24.f) / PANEL_W, (winSize.height - 24.f) / PANEL_H});
+    m_panelContainer->setScale(m_panelScale);
 
     auto* dispatcher = CCDirector::get()->getTouchDispatcher();
     int basePrio = dispatcher->getTargetPrio();
@@ -95,16 +87,17 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
 void PaimonMultiSettingsPanel::buildTitleBar() {
     m_titleBarBg = nullptr;
 
-    m_titleLabel = CCLabelBMFont::create("Paimon Settings", "goldFont.fnt");
-    m_titleLabel->setScale(0.45f);
+    m_titleLabel = CCLabelBMFont::create("Paimon Settings", "bigFont.fnt");
+    m_titleLabel->limitLabelWidth(245.f, 0.45f, 0.18f);
+    m_titleLabel->setColor(paimon::ui::palette::text);
     m_titleLabel->setAnchorPoint({0.f, 0.5f});
     m_titleLabel->setPosition({14.f, PANEL_H - TITLE_BAR_H / 2.f});
     m_panelContainer->addChild(m_titleLabel, 2);
 
-    m_searchInput = geode::TextInput::create(150.f, "Search...");
-    m_searchInput->setScale(0.55f);
+    m_searchInput = geode::TextInput::create(210.f, "Search...", "chatFont.fnt");
+    m_searchInput->setScale(0.65f);
     m_searchInput->setAnchorPoint({0.5f, 0.5f});
-    m_searchInput->setPosition({PANEL_W / 2.f + 40.f, PANEL_H - TITLE_BAR_H / 2.f});
+    m_searchInput->setPosition({PANEL_W - 105.f, PANEL_H - TITLE_BAR_H / 2.f});
     m_searchInput->setCallback(
         paimon::ui::safeTextInputCallback<PaimonMultiSettingsPanel>(
             this, &PaimonMultiSettingsPanel::onSearchChanged
@@ -117,72 +110,31 @@ void PaimonMultiSettingsPanel::buildTitleBar() {
     closeMenu->setTouchPriority(m_childTouchPrio);
     m_panelContainer->addChild(closeMenu, 2);
 
-    auto closeSpr = CCSprite::createWithSpriteFrameName("GJ_closeBtn_001.png");
-    if (!closeSpr) closeSpr = CCSprite::create();
-    closeSpr->setScale(0.7f);
+    auto closeSpr = paimon::ui::makeButtonFace("x", {24.f, 24.f});
     auto closeBtn = CCMenuItemSpriteExtra::create(closeSpr, this, menu_selector(PaimonMultiSettingsPanel::onClose));
     closeBtn->setPosition({PANEL_W - 16.f, PANEL_H - 14.f});
     closeMenu->addChild(closeBtn);
 }
 
 void PaimonMultiSettingsPanel::buildSidebar() {
-    m_sidebarBg = nullptr;
-    m_sidebarAccent = nullptr;
-
+    m_sidebarBg = paimon::ui::makeSurface({SIDEBAR_W - 12.f, CONTENT_H - 12.f}, paimon::ui::palette::background);
+    m_sidebarBg->setPosition({6.f, 6.f});
+    m_panelContainer->addChild(m_sidebarBg, 1);
     m_sidebarMenu = CCMenu::create();
     m_sidebarMenu->setPosition({0.f, 0.f});
     m_sidebarMenu->setTouchPriority(m_childTouchPrio);
     m_panelContainer->addChild(m_sidebarMenu, 2);
-
     auto const& groups = paimon::settings_ui::getAllGroups();
-    float startY = CONTENT_H - 22.f;
-    float spacing = 28.f;
-
-    // keep this order aligned with the settings groups.
-    static const CircleBaseColor catColors[] = {
-        CircleBaseColor::Gray,
-        CircleBaseColor::Blue,
-        CircleBaseColor::Cyan,
-        CircleBaseColor::Pink,
-        CircleBaseColor::Green,
-        CircleBaseColor::DarkPurple,
-        CircleBaseColor::DarkAqua,
-    };
-    constexpr int kCatColorCount = 7;
-
-    constexpr float kCellW = SIDEBAR_W - 6.f;
-    constexpr float kCellH = 26.f;
-
-    for (size_t i = 0; i < groups.size(); i++) {
-        float y = startY - static_cast<float>(i) * spacing;
-
-        auto cell = paimon::SpriteHelper::createRoundedRect(
-            kCellW, kCellH, 7.f, {0.f, 0.f, 0.f, 0.42f}
-        );
-        if (cell) {
-            cell->setPosition({SIDEBAR_W / 2.f - kCellW / 2.f, y - kCellH / 2.f});
-            m_panelContainer->addChild(cell, 1);
-        }
-
-        auto letter = CCLabelBMFont::create(
-            groups[i].name.substr(0, 1).c_str(), "bigFont.fnt"
-        );
-        letter->setScale(0.8f);
-
-        CCNode* topNode = CircleButtonSprite::create(
-            letter, catColors[i % kCatColorCount], CircleBaseSize::Medium
-        );
-        if (!topNode) topNode = letter;
-
-        auto btn = CCMenuItemExt::createSpriteExtra(topNode, [this, idx = static_cast<int>(i)](CCMenuItemSpriteExtra*) {
-            selectCategory(idx);
+    for (size_t i = 0; i < groups.size(); ++i) {
+        auto* face = paimon::ui::makeButtonFace(groups[i].name.c_str(), {SIDEBAR_W - 20.f, 27.f},
+            paimon::ui::palette::raised, 0.28f);
+        auto* button = CCMenuItemExt::createSpriteExtra(face, [this, i](CCMenuItemSpriteExtra*) {
+            selectCategory(static_cast<int>(i));
         });
-        btn->setPosition({SIDEBAR_W / 2.f, y});
-        btn->setScale(kSidebarBtnScale);
-        btn->m_scaleMultiplier = 1.f;
-
-        m_sidebarMenu->addChild(btn);
-        m_sidebarButtons.push_back(btn);
+        button->setPosition({SIDEBAR_W / 2.f, CONTENT_H - 22.f - 29.f * static_cast<float>(i)});
+        button->m_scaleMultiplier = 1.f;
+        m_sidebarMenu->addChild(button);
+        m_sidebarButtons.push_back(button);
     }
 }
 
@@ -321,7 +273,7 @@ void PaimonMultiSettingsPanel::updateSidebarAccent() {
         if (auto* img = btn->getNormalImage()) {
             if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(img)) {
                 rgba->setCascadeOpacityEnabled(true);
-                rgba->setOpacity(sel ? 255 : 110);
+                rgba->setOpacity(sel ? 255 : 200);
             }
         }
     }
@@ -386,6 +338,13 @@ void PaimonMultiSettingsPanel::buildSearchResults(std::string const& query) {
         }
     }
 
+    if (matchingRows.empty()) {
+        auto* hint = paimon::settings_ui::createHintRow(
+            Localization::get().getLanguage() == Localization::Language::SPANISH
+                ? "Sin resultados. Prueba otro nombre." : "No results. Try another name.", CONTENT_W);
+        hint->retain();
+        matchingRows.push_back(hint);
+    }
     float totalH = 0.f;
     for (auto* row : matchingRows) totalH += row->getContentSize().height;
 
@@ -406,16 +365,17 @@ void PaimonMultiSettingsPanel::buildSearchResults(std::string const& query) {
 
 void PaimonMultiSettingsPanel::runEntryAnimation() {
     auto cfg = paimon::popupblur::getConfig();
-    int targetDarkness = std::clamp(static_cast<int>(std::round(cfg.darkness * 255.f)), 100, 220);
-    m_darkOverlay->runAction(CCFadeTo::create(0.2f, targetDarkness));
-
-    if (m_blurBg) {
-        m_blurBg->runAction(CCFadeTo::create(0.2f, 255));
+    int const darkness = std::clamp(static_cast<int>(std::round(cfg.darkness * 255.f)), 100, 220);
+    if (!paimon::ui::motionEnabled()) {
+        m_darkOverlay->setOpacity(darkness);
+        if (m_blurBg) m_blurBg->setOpacity(255);
+        return;
     }
-
-    m_panelContainer->setScale(0.92f);
-    auto scaleAction = CCEaseExponentialOut::create(CCScaleTo::create(0.25f, 1.0f));
-    m_panelContainer->runAction(scaleAction);
+    float const duration = paimon::ui::motionDuration(0.20f);
+    m_darkOverlay->runAction(CCFadeTo::create(duration, darkness));
+    if (m_blurBg) m_blurBg->runAction(CCFadeTo::create(duration, 255));
+    m_panelContainer->setScale(m_panelScale * 0.97f);
+    m_panelContainer->runAction(CCEaseSineOut::create(CCScaleTo::create(duration, m_panelScale)));
 }
 
 void PaimonMultiSettingsPanel::animateClose() {
@@ -425,6 +385,8 @@ void PaimonMultiSettingsPanel::animateClose() {
     paimon::ui::detachGeodeTextInput(m_searchInput);
 
     this->setTouchEnabled(false);
+    if (!paimon::ui::motionEnabled()) { onCloseFinished(); return; }
+    m_panelContainer->stopAllActions();
 
     if (m_darkOverlay) {
         m_darkOverlay->runAction(CCFadeTo::create(0.15f, 0));
@@ -435,7 +397,7 @@ void PaimonMultiSettingsPanel::animateClose() {
     }
 
     if (m_panelContainer) {
-        auto scaleAction = CCEaseExponentialIn::create(CCScaleTo::create(0.15f, 0.92f));
+        auto scaleAction = CCEaseExponentialIn::create(CCScaleTo::create(paimon::ui::motionDuration(0.15f), m_panelScale * 0.97f));
         auto callback = CCCallFunc::create(this, callfunc_selector(PaimonMultiSettingsPanel::onCloseFinished));
         auto seq = CCSequence::create(scaleAction, callback, nullptr);
         m_panelContainer->runAction(seq);
@@ -513,7 +475,13 @@ bool PaimonMultiSettingsPanel::ccTouchBegan(CCTouch* touch, CCEvent* event) {
 void PaimonMultiSettingsPanel::ccTouchMoved(CCTouch* touch, CCEvent* event) {
     if (!m_isDragging) return;
     auto touchPos = touch->getLocation();
-    m_panelContainer->setPosition(ccpAdd(touchPos, m_dragOffset));
+    auto const win = CCDirector::get()->getWinSize();
+    auto position = ccpAdd(touchPos, m_dragOffset);
+    float const halfW = PANEL_W * m_panelScale / 2.f;
+    float const halfH = PANEL_H * m_panelScale / 2.f;
+    position.x = std::clamp(position.x, halfW + 6.f, std::max(halfW + 6.f, win.width - halfW - 6.f));
+    position.y = std::clamp(position.y, halfH + 6.f, std::max(halfH + 6.f, win.height - halfH - 6.f));
+    m_panelContainer->setPosition(position);
 }
 
 void PaimonMultiSettingsPanel::ccTouchEnded(CCTouch* touch, CCEvent* event) {

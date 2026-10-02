@@ -1,8 +1,9 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include "../services/ForumApi.hpp"
 
-class PostDetailPopup : public geode::Popup {
+class PostDetailPopup : public PaimonPopup {
 protected:
     paimon::forum::Post m_post;
     geode::CopyableFunction<void()> m_onChanged;

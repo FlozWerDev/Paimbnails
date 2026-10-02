@@ -89,7 +89,7 @@ ThumbRequestsPopup* ThumbRequestsPopup::create() {
 }
 
 bool ThumbRequestsPopup::init() {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     paimon::markDynamicPopup(this);
     this->setTitle(Localization::get().getString("thumbreq.title"));

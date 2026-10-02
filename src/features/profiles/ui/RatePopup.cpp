@@ -21,7 +21,7 @@ RatePopup* RatePopup::create(int levelID, std::string thumbnailId) {
 }
 
 bool RatePopup::init(int levelID, std::string thumbnailId) {
-    if (!Popup::init(320.f, 220.f)) return false;
+    if (!PaimonPopup::init(320.f, 220.f)) return false;
 
     m_levelID = levelID;
     m_thumbnailId = std::move(thumbnailId);

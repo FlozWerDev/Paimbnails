@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 // graphical editor for one cosmetic official slot: fixed 440x320 two-column
 // popup, no scroll. everything here is paint over a local unrated stand-in.
@@ -15,7 +16,7 @@
 
 namespace paimon::officialslots::ui {
 
-class SlotEditorPopup : public geode::Popup {
+class SlotEditorPopup : public PaimonPopup {
 public:
     // replacesofficialid turns the form into "replace official n" mode (0 appends).
     // onsaved runs after save/hide so the caller can redraw its own list.

@@ -108,7 +108,7 @@ GifImportPopup* GifImportPopup::create() {
 }
 
 bool GifImportPopup::init() {
-    if (!Popup::init(kPopupWidth, kPopupHeight)) return false;
+    if (!PaimonPopup::init(kPopupWidth, kPopupHeight)) return false;
     setID("gif-import-popup"_spr);
     setTitle("GIF, Video o Imagen a Objetos");
     loadOptions();

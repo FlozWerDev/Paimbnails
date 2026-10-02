@@ -1,10 +1,11 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include "../services/PetManager.hpp"
 #include <array>
 #include <vector>
 
-class PetConfigPopup : public geode::Popup {
+class PetConfigPopup : public PaimonPopup {
 protected:
     void onExit() override;
     void scrollWheel(float x, float y) override;

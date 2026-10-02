@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
 #include <Geode/ui/TextInput.hpp>
@@ -18,7 +19,7 @@
 
 namespace paimon::icon_gradients {
 
-class GradientLayer : public Popup, public ColorPickerDelegate, public TextInputDelegate {
+class GradientLayer : public PaimonPopup, public ColorPickerDelegate, public TextInputDelegate {
 
 private:
 

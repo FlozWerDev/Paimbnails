@@ -112,7 +112,7 @@ bool ThumbnailOrderPopup::init(
     std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbnails,
     std::string const& selectedId
 ) {
-    if (!Popup::init(kPopupWidth, kPopupHeight)) return false;
+    if (!PaimonPopup::init(kPopupWidth, kPopupHeight)) return false;
     if (thumbnails.size() < 2) return false;
 
     m_levelID = levelID;

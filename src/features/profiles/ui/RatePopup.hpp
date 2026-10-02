@@ -1,8 +1,9 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include "../../../managers/ThumbnailAPI.hpp"
 
-class RatePopup : public geode::Popup {
+class RatePopup : public PaimonPopup {
 protected:
     int m_levelID;
     std::string m_thumbnailId;

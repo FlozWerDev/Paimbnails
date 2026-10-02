@@ -46,7 +46,7 @@ ClickEffectTunePopup* ClickEffectTunePopup::create(
 }
 
 bool ClickEffectTunePopup::init() {
-    if (!Popup::init(320.f, 226.f)) return false;
+    if (!PaimonPopup::init(320.f, 226.f)) return false;
 
     this->setTitle(m_titleText);
 

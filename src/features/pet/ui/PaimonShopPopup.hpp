@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 
 struct PetShopItem {
@@ -9,7 +10,7 @@ struct PetShopItem {
     int fileSize = 0;   // bytes
 };
 
-class PaimonShopPopup : public geode::Popup {
+class PaimonShopPopup : public PaimonPopup {
 protected:
     geode::ScrollLayer* m_scrollLayer = nullptr;
     cocos2d::CCLabelBMFont* m_statusLabel = nullptr;

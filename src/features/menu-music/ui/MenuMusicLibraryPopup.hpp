@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <string>
@@ -9,7 +10,7 @@ class ButtonSprite;
 
 namespace paimon::menumusic {
 
-class MenuMusicLibraryPopup : public geode::Popup {
+class MenuMusicLibraryPopup : public PaimonPopup {
 public:
     static MenuMusicLibraryPopup* create();
 

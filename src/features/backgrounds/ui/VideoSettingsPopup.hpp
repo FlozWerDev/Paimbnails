@@ -1,7 +1,8 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 
-class VideoSettingsPopup : public geode::Popup {
+class VideoSettingsPopup : public PaimonPopup {
 protected:
     CCMenuItemToggler* m_audioToggle = nullptr;
     cocos2d::CCLabelBMFont* m_fpsLabel = nullptr;

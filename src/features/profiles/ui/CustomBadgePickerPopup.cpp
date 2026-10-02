@@ -37,7 +37,7 @@ CustomBadgePickerPopup* CustomBadgePickerPopup::create(
 }
 
 bool CustomBadgePickerPopup::init(int accountID, std::string const& currentBadge) {
-    if (!Popup::init(POP_W, POP_H)) return false;
+    if (!PaimonPopup::init(POP_W, POP_H)) return false;
 
     m_accountID    = accountID;
     m_currentBadge = currentBadge;

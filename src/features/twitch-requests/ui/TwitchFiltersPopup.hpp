@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 // popup behind the "filters" button: accepted levels and per-user limits.
 
@@ -6,7 +7,7 @@
 
 namespace paimon::twitch {
 
-class TwitchFiltersPopup : public geode::Popup {
+class TwitchFiltersPopup : public PaimonPopup {
 public:
     static TwitchFiltersPopup* create();
 

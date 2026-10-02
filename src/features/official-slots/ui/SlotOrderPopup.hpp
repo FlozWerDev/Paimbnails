@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../OfficialSlots.hpp"
 
@@ -9,7 +10,7 @@
 
 namespace paimon::officialslots::ui {
 
-class SlotOrderPopup : public geode::Popup {
+class SlotOrderPopup : public PaimonPopup {
 public:
     // onchanged runs after any move, so the manager can rebuild its own rows
     // next to the page repaint refreshofficiallist() triggers.

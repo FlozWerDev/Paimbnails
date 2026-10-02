@@ -1,10 +1,11 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 
 namespace paimon::transitions {
 
-class LevelEntryConfigPopup : public geode::Popup {
+class LevelEntryConfigPopup : public PaimonPopup {
 public:
     static LevelEntryConfigPopup* create();
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/Slider.hpp>
@@ -8,7 +9,7 @@
 
 namespace paimon::info {
 
-class JumpToPagePopup : public geode::Popup {
+class JumpToPagePopup : public PaimonPopup {
 public:
     // `currentpage` and `pagecount` are 1 based. `pagecount` may be 0 when the
     // server never reported a total, in which case the scrubber is hidden.

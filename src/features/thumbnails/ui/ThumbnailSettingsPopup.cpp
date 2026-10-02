@@ -38,7 +38,7 @@ public:
 }
 
 bool ThumbnailSettingsPopup::init() {
-    if (!Popup::init(420.f, 300.f)) return false;
+    if (!PaimonPopup::init(420.f, 300.f)) return false;
 
     setTitle("Thumbnail Settings");
 

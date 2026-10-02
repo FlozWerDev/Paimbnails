@@ -297,7 +297,7 @@ void LevelCellSettingsPopup::registerSliderRow(Slider* slider, CCLabelBMFont* va
 }
 
 bool LevelCellSettingsPopup::init() {
-    if (!Popup::init(280.f, 250.f)) return false;
+    if (!PaimonPopup::init(280.f, 250.f)) return false;
 
     this->setTitle("LevelCell Settings");
 

@@ -21,7 +21,7 @@ BanUserPopup* BanUserPopup::create(std::string const& username) {
 }
 
 bool BanUserPopup::init(std::string const& username) {
-    if (!Popup::init(300.f, 200.f)) return false;
+    if (!PaimonPopup::init(300.f, 200.f)) return false;
 
     m_username = username;
     this->setTitle(Localization::get().getString("ban.popup.title"));

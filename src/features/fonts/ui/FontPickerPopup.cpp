@@ -44,7 +44,7 @@ bool FontPickerPopup::init(
         CopyableFunction<void(std::string const&)> onSelect) {
     m_onSelect = std::move(onSelect);
 
-    if (!Popup::init(POPUP_W, POPUP_H))
+    if (!PaimonPopup::init(POPUP_W, POPUP_H))
         return false;
     paimon::markDynamicPopup(this);
 

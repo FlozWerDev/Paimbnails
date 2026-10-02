@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -10,7 +11,7 @@ namespace paimon::twitch {
 
 geode::Popup* createRequestQueueSelector();
 
-class RequestSourcesPopup : public geode::Popup {
+class RequestSourcesPopup : public PaimonPopup {
 public:
     static RequestSourcesPopup* create();
 

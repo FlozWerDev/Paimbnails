@@ -49,7 +49,7 @@ void QuickButtonSfxPopup::onExit() {
 }
 
 bool QuickButtonSfxPopup::init() {
-    if (!Popup::init(400.f, 330.f)) return false;
+    if (!PaimonPopup::init(400.f, 330.f)) return false;
     paimon::markDynamicPopup(this);
     this->setTitle("Sonido del boton");
 

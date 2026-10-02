@@ -152,7 +152,7 @@ PhysicsPopup* PhysicsPopup::create() {
 }
 
 bool PhysicsPopup::init() {
-    if (!Popup::init(kPopupWidth, kPopupHeight)) return false;
+    if (!PaimonPopup::init(kPopupWidth, kPopupHeight)) return false;
     setID("physics-lab-popup"_spr);
     setTitle("Simulador de Fisicas");
     m_config = loadConfig();

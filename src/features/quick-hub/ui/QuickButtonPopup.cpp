@@ -1,3 +1,4 @@
+#include "../../../ui/PaimonPopup.hpp"
 #include "QuickButtonPopup.hpp"
 
 #include "QuickButtonEditKit.hpp"
@@ -56,7 +57,7 @@ std::vector<cocos2d::ccColor3B> const& presetColors() {
     return colors;
 }
 
-class IconPickerPopup : public Popup {
+class IconPickerPopup : public PaimonPopup {
 public:
     static IconPickerPopup* create(std::string current, std::function<void(std::string)> onPick) {
         auto* ret = new IconPickerPopup();
@@ -75,7 +76,7 @@ protected:
     std::function<void(std::string)> m_onPick;
 
     bool init() {
-        if (!Popup::init(360.f, 250.f)) return false;
+        if (!PaimonPopup::init(360.f, 250.f)) return false;
         paimon::markDynamicPopup(this);
         this->setTitle("Elegir icono");
 
@@ -184,7 +185,7 @@ QuickButtonPopup* QuickButtonPopup::create(CustomQuickButton candidate) {
 }
 
 bool QuickButtonPopup::init() {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
     s_instance = this;
 

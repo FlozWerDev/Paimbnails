@@ -1,3 +1,4 @@
+#include "../ui/PaimonPopup.hpp"
 #include <Geode/modify/LevelAreaInnerLayer.hpp>
 #include "../utils/DynamicPopupRegistry.hpp"
 #include <Geode/modify/FLAlertLayer.hpp>
@@ -41,10 +42,10 @@ void mountDoorThumbnail(CCNode* door, CCTexture2D* tex, int levelID,
 
 } // namespace
 
-class SimpleThumbnailPopup : public geode::Popup {
+class SimpleThumbnailPopup : public PaimonPopup {
 protected:
     bool init(CCTexture2D* tex, std::string const& title) {
-        if (!Popup::init(400.f, 280.f)) return false;
+        if (!PaimonPopup::init(400.f, 280.f)) return false;
 
         this->setTitle(title.c_str());
         

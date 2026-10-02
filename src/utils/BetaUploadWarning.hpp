@@ -1,8 +1,9 @@
 ﻿#pragma once
+#include "../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include <functional>
 
-class BetaUploadWarningPopup : public geode::Popup {
+class BetaUploadWarningPopup : public PaimonPopup {
 protected:
     std::function<void()> m_onProceed;
 

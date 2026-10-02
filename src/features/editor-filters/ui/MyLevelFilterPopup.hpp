@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/TextInput.hpp>
@@ -6,7 +7,7 @@
 
 namespace paimon::editorfilters {
 
-class MyLevelFilterPopup : public geode::Popup {
+class MyLevelFilterPopup : public PaimonPopup {
 protected:
     bool init() override;
     void onClose(cocos2d::CCObject* sender) override;

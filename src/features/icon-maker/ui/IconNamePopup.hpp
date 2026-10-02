@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 // single text field. renames icons and layers.
 
 #include <Geode/Geode.hpp>
@@ -10,7 +11,7 @@
 
 namespace paimon::icon_maker {
 
-class IconNamePopup : public geode::Popup {
+class IconNamePopup : public PaimonPopup {
 public:
     using ConfirmCallback = std::function<void(std::string const&)>;
 

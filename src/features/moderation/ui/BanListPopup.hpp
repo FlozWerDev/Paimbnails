@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/ui/Popup.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
@@ -10,7 +11,7 @@ struct BanDetail {
     std::string date;
 };
 
-class BanListPopup : public geode::Popup {
+class BanListPopup : public PaimonPopup {
 protected:
     cocos2d::CCNode* m_listContainer = nullptr;
     geode::ScrollLayer* m_scroll = nullptr;

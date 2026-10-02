@@ -17,7 +17,7 @@ constexpr float kPhotoH = 200.f;
 } // namespace
 
 bool ModPreviewGalleryPopup::init(int index, int total, std::string base) {
-    if (!Popup::init(kViewW, kViewH)) return false;
+    if (!PaimonPopup::init(kViewW, kViewH)) return false;
     paimon::markDynamicPopup(this);
 
     m_index = std::clamp(index, 1, std::max(total, 1));

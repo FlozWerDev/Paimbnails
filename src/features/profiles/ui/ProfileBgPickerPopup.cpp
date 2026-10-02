@@ -18,7 +18,7 @@ ProfileBgPickerPopup* ProfileBgPickerPopup::create(int accountID) {
 }
 
 bool ProfileBgPickerPopup::init(int accountID) {
-    if (!Popup::init(400.f, 200.f)) return false;
+    if (!PaimonPopup::init(400.f, 200.f)) return false;
 
     m_accountID = accountID;
 

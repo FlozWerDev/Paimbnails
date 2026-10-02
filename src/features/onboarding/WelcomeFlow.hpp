@@ -1,4 +1,5 @@
 #pragma once
+#include "../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
@@ -9,7 +10,7 @@ namespace paimon::onboarding {
 
 bool isAccepted();
 
-class WelcomePopup : public geode::Popup {
+class WelcomePopup : public PaimonPopup {
 public:
     static WelcomePopup* create();
 

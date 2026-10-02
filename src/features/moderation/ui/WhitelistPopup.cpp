@@ -24,7 +24,7 @@ WhitelistPopup* WhitelistPopup::create() {
 }
 
 bool WhitelistPopup::init() {
-    if (!Popup::init(360.f, 280.f)) return false;
+    if (!PaimonPopup::init(360.f, 280.f)) return false;
 
     this->setTitle("Whitelist");
 

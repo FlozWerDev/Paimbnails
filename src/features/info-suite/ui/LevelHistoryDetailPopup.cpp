@@ -34,7 +34,7 @@ LevelHistoryDetailPopup* LevelHistoryDetailPopup::create(HistoryEntry const& ent
 }
 
 bool LevelHistoryDetailPopup::init(HistoryEntry const& entry) {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     paimon::markDynamicPopup(this);
 

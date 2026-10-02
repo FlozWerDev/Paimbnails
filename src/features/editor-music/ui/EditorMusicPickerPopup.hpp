@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 // track chooser for the editor music panel. reads the same library the menu
 // music player uses, so anything imported or downloaded there shows up here.
@@ -16,7 +17,7 @@ class TextInput;
 
 namespace paimon::editormusic {
 
-class EditorMusicPickerPopup : public geode::Popup {
+class EditorMusicPickerPopup : public PaimonPopup {
 public:
     static EditorMusicPickerPopup* create();
 

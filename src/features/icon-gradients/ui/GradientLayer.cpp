@@ -681,7 +681,7 @@ void GradientLayer::scrollWheel(float y, float x) {
 }
 
 bool GradientLayer::init() {
-    if (!Popup::init(440, 300)) return false;
+    if (!PaimonPopup::init(440, 300)) return false;
 
     Dispatch<CCNode*, CCRect>("timestepyt.gdneko/create-neko-rect").send(
         m_mainLayer, {264.f, 75.f, 314.f, 96.f}

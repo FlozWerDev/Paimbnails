@@ -46,7 +46,7 @@ LevelEntryConfigPopup* LevelEntryConfigPopup::create() {
 }
 
 bool LevelEntryConfigPopup::init() {
-    if (!Popup::init(420.f, 300.f)) return false;
+    if (!PaimonPopup::init(420.f, 300.f)) return false;
     setTitle("Smooth Level Transitions+");
     paimon::markDynamicPopup(this);
     rebuild();

@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <string>
@@ -8,7 +9,7 @@ class PaimonLoadingOverlay;
 
 // admin-only role manager; users resolve to a real gd accountid before upload.
 // class name kept for the existing profilepage call site.
-class AddModeratorPopup : public geode::Popup {
+class AddModeratorPopup : public PaimonPopup {
 protected:
     geode::TextInput* m_usernameInput = nullptr;
     PaimonLoadingOverlay* m_loadingSpinner = nullptr;

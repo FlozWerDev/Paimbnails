@@ -1,8 +1,9 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include "../services/ProfilePicCustomizer.hpp"
 
-class ProfilePicIconsDetailPopup : public geode::Popup {
+class ProfilePicIconsDetailPopup : public PaimonPopup {
 protected:
     ProfilePicConfig* m_cfg = nullptr;
     geode::WeakRef<cocos2d::CCNode> m_editor;

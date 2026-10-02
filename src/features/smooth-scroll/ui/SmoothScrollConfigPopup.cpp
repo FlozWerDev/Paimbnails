@@ -27,7 +27,7 @@ SmoothScrollConfigPopup* SmoothScrollConfigPopup::create() {
 }
 
 bool SmoothScrollConfigPopup::init() {
-    if (!Popup::init(420.f, 300.f)) return false;
+    if (!PaimonPopup::init(420.f, 300.f)) return false;
     this->setTitle("Scroll Suave");
     paimon::markDynamicPopup(this);
 

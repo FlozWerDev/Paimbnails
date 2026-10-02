@@ -70,7 +70,7 @@ CursorShopDetailPopup* CursorShopDetailPopup::create(Listing listing,
 }
 
 bool CursorShopDetailPopup::init() {
-    if (!Popup::init(kPopupWidth, kPopupHeight)) return false;
+    if (!PaimonPopup::init(kPopupWidth, kPopupHeight)) return false;
 
     this->setTitle(m_listing.name.empty() ? "Cursor" : m_listing.name.c_str());
     this->setMouseEnabled(true);

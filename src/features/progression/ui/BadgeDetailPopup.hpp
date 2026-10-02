@@ -1,11 +1,12 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include "../data/ProgressionBadges.hpp"
 
 namespace paimon::progression {
 
-class BadgeDetailPopup : public geode::Popup {
+class BadgeDetailPopup : public PaimonPopup {
 public:
     static BadgeDetailPopup* create(BadgeDef const& badge, BadgeContext const& ctx);
 

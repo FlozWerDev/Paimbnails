@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/ui/Popup.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
@@ -9,7 +10,7 @@ namespace paimon::updates {
 
 // update center: current state, update button, and full published-version
 // history for rolling back to an older one.
-class UpdateCenterPopup : public geode::Popup {
+class UpdateCenterPopup : public PaimonPopup {
 public:
     static UpdateCenterPopup* create();
 

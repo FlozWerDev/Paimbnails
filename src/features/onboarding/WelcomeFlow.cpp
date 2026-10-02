@@ -229,7 +229,7 @@ WelcomePopup* WelcomePopup::create() {
 }
 
 bool WelcomePopup::init() {
-    if (!Popup::init(kWidth, kHeight)) return false;
+    if (!PaimonPopup::init(kWidth, kHeight)) return false;
     m_content = CCNode::create();
     m_content->setContentSize({kWidth, kHeight});
     m_content->setPosition({0.f, 0.f});

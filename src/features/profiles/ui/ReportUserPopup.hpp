@@ -1,8 +1,9 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include "../../../utils/HttpClient.hpp"
 
-class ReportUserPopup : public geode::Popup {
+class ReportUserPopup : public PaimonPopup {
 protected:
     int m_reportedAccountID = 0;
     std::string m_reportedUsername;

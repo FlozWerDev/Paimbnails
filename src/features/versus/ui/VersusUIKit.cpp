@@ -13,13 +13,13 @@ CCNode* makePanel(CCSize size, std::string const& caption) {
     panel->setContentSize(size);
     panel->setAnchorPoint({0.5f, 0.5f});
 
-    if (auto* bg = paimon::SpriteHelper::createDarkPanel(size.width, size.height, 130, 6.f)) {
+    if (auto* bg = paimon::ui::makeSurface(size)) {
         panel->addChild(bg, -1);
     }
 
     if (caption.empty()) return panel;
 
-    auto* title = CCLabelBMFont::create(caption.c_str(), "goldFont.fnt");
+    auto* title = CCLabelBMFont::create(caption.c_str(), "bigFont.fnt");
     title->setAnchorPoint({0.f, 0.5f});
     title->setScale(std::min(0.4f, (size.width - 20.f) /
                                    std::max(1.f, title->getContentSize().width)));
@@ -47,8 +47,7 @@ CCLabelBMFont* makeText(std::string const& text, char const* font, float scale,
 
 CCMenuItemSpriteExtra* makeTab(std::string const& label, float width, CCObject* target,
                                SEL_MenuHandler callback) {
-    auto* face = ButtonSprite::create(label.c_str(), static_cast<int>(width), true,
-                                      "bigFont.fnt", "GJ_button_04.png", 22.f, 0.36f);
+    auto* face = paimon::ui::makeButtonFace(label.c_str(), {width, 26.f});
     return CCMenuItemSpriteExtra::create(face, target, callback);
 }
 
@@ -60,8 +59,8 @@ void styleTab(CCMenuItemSpriteExtra* tab, bool active) {
 
 CCMenuItemSpriteExtra* makeAction(std::string const& label, float width, char const* skin,
                                   float scale, CCObject* target, SEL_MenuHandler callback) {
-    auto* face = ButtonSprite::create(label.c_str(), static_cast<int>(width), true,
-                                      "bigFont.fnt", skin, 30.f, scale);
+    auto* face = paimon::ui::makeButtonFace(label.c_str(), {width, 30.f},
+        paimon::ui::actionColor(skin), scale);
     return CCMenuItemSpriteExtra::create(face, target, callback);
 }
 
@@ -73,7 +72,7 @@ CCMenuItemSpriteExtra* makeIconRow(char const* frameName, std::string const& lab
     row->setContentSize({width, height});
     row->setAnchorPoint({0.5f, 0.5f});
 
-    if (auto* bg = paimon::SpriteHelper::createDarkPanel(width, height, 90, 4.f)) {
+    if (auto* bg = paimon::ui::makeSurface({width, height})) {
         row->addChild(bg, 0);
     }
 

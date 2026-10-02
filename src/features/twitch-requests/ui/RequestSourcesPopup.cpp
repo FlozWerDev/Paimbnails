@@ -1,3 +1,4 @@
+#include "../../../ui/PaimonPopup.hpp"
 #include "RequestSourcesPopup.hpp"
 
 #include "../TwitchRequestManager.hpp"
@@ -49,7 +50,7 @@ bool hasPopupAbove(Popup* owner) {
     return false;
 }
 
-class RequestQueuePopup final : public Popup {
+class RequestQueuePopup final : public PaimonPopup {
 public:
     static RequestQueuePopup* create(std::string const& value, std::function<void(std::string)> callback) {
         auto* popup = new RequestQueuePopup;
@@ -65,7 +66,7 @@ private:
     ~RequestQueuePopup() override { paimon::ui::detachGeodeTextInput(m_input); }
 
     bool init(std::string const& value, std::function<void(std::string)> callback) {
-        if (!Popup::init(320.f, 160.f)) return false;
+        if (!PaimonPopup::init(320.f, 160.f)) return false;
         setTitle("Cola de destino");
         paimon::markDynamicPopup(this);
         m_actions = CCMenu::create();
@@ -94,7 +95,7 @@ private:
     std::function<void(std::string)> m_callback;
 };
 
-class RequestRoutePopup final : public Popup {
+class RequestRoutePopup final : public PaimonPopup {
 public:
     static RequestRoutePopup* create(RequestRoute route, size_t index, std::function<void()> callback) {
         auto* popup = new RequestRoutePopup;
@@ -114,7 +115,7 @@ private:
     }
 
     bool init(RequestRoute route, size_t index, std::function<void()> callback) {
-        if (!Popup::init(400.f, 300.f)) return false;
+        if (!PaimonPopup::init(400.f, 300.f)) return false;
         m_route = std::move(route);
         m_index = index;
         m_callback = std::move(callback);
@@ -235,7 +236,7 @@ private:
     bool m_capturing = false;
 };
 
-class RequestQueueSelectorPopup final : public Popup {
+class RequestQueueSelectorPopup final : public PaimonPopup {
 public:
     static RequestQueueSelectorPopup* create() {
         auto* popup = new RequestQueueSelectorPopup;
@@ -249,7 +250,7 @@ public:
 
 private:
     bool init() override {
-        if (!Popup::init(360.f, 290.f)) return false;
+        if (!PaimonPopup::init(360.f, 290.f)) return false;
         setTitle("Elegir cola");
         paimon::markDynamicPopup(this);
         auto& manager = TwitchRequestManager::get();
@@ -311,7 +312,7 @@ RequestSourcesPopup* RequestSourcesPopup::create() {
 }
 
 bool RequestSourcesPopup::init() {
-    if (!Popup::init(440.f, 300.f)) return false;
+    if (!PaimonPopup::init(440.f, 300.f)) return false;
     setTitle("Origenes y colas de requests");
     paimon::markDynamicPopup(this);
     m_platform = TwitchRequestManager::get().selected();

@@ -74,7 +74,7 @@ TwitchNotifyPopup* TwitchNotifyPopup::create() {
 }
 
 bool TwitchNotifyPopup::init() {
-    if (!Popup::init(kPopupWidth, kPopupHeight)) return false;
+    if (!PaimonPopup::init(kPopupWidth, kPopupHeight)) return false;
     setTitle("Avisos de request");
     paimon::markDynamicPopup(this);
 

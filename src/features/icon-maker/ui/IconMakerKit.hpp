@@ -1,8 +1,6 @@
 #pragma once
-// geometry dash-styled controls for the icon maker, using the same row/card api
-// as configkit and vanilla gd assets.
-
 #include <Geode/Geode.hpp>
+#include "../../../ui/PaimonUI.hpp"
 #include <Geode/binding/CCMenuItemToggler.hpp>
 #include <Geode/binding/Slider.hpp>
 
@@ -14,15 +12,15 @@ namespace geode { class ScrollLayer; }
 
 namespace paimon::icon_maker::gdkit {
 
-constexpr cocos2d::ccColor3B kTitleColor = {255, 255, 255};
-constexpr cocos2d::ccColor3B kDescColor  = {171, 197, 232};
-constexpr cocos2d::ccColor3B kValueColor = {255, 226, 130};
-constexpr cocos2d::ccColor3B kGoldColor  = {255, 205, 61};
-constexpr cocos2d::ccColor3B kPlateColor = {255, 255, 255};
+constexpr cocos2d::ccColor3B kTitleColor = paimon::ui::palette::text;
+constexpr cocos2d::ccColor3B kDescColor  = paimon::ui::palette::muted;
+constexpr cocos2d::ccColor3B kValueColor = paimon::ui::palette::accent;
+constexpr cocos2d::ccColor3B kGoldColor  = paimon::ui::palette::accent;
+constexpr cocos2d::ccColor3B kPlateColor = paimon::ui::palette::raised;
 constexpr GLubyte            kPlateAlpha = 255;
 
 // usable row width inside a card.
-constexpr float cardInnerWidth(float cardWidth) { return cardWidth - 16.f; }
+constexpr float cardInnerWidth(float cardWidth) { return cardWidth - 20.f; }
 
 // large gd window frame (gj_square01).
 cocos2d::CCNode* makeWindow(cocos2d::CCSize size);

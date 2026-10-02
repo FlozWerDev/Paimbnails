@@ -1,11 +1,12 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/Slider.hpp>
 #include <functional>
 #include <string>
 
-class ClickEffectTunePopup : public geode::Popup {
+class ClickEffectTunePopup : public PaimonPopup {
 public:
     // `onchange` gets (size, speed) per slider move; `ontest` previews behind.
     static ClickEffectTunePopup* create(

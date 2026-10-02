@@ -1,10 +1,11 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 
 class PaimonLoadingOverlay;
 #include "../../../utils/HttpClient.hpp"
 
-class RateProfilePopup : public geode::Popup {
+class RateProfilePopup : public PaimonPopup {
 protected:
     int m_accountID;
     std::string m_targetUsername;

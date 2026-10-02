@@ -52,7 +52,7 @@ TagPreferencesPopup* TagPreferencesPopup::create() {
 }
 
 bool TagPreferencesPopup::init() {
-    if (!Popup::init(kPopupWidth, kPopupHeight)) return false;
+    if (!PaimonPopup::init(kPopupWidth, kPopupHeight)) return false;
     paimon::markDynamicPopup(this);
 
     auto& loc = Localization::get();

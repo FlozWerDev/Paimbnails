@@ -36,7 +36,7 @@ CursorConfigPopup* CursorConfigPopup::create() {
 
 
 bool CursorConfigPopup::init() {
-    if (!Popup::init(480.f, 310.f)) return false;
+    if (!PaimonPopup::init(480.f, 310.f)) return false;
 
     this->setTitle("Cursor Personalizado");
     this->setMouseEnabled(true);

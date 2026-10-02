@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -6,7 +7,7 @@ class Slider;
 
 namespace paimon::death_effects {
 
-class DeathEffectPopup : public geode::Popup {
+class DeathEffectPopup : public PaimonPopup {
 public:
     static DeathEffectPopup* create();
     void onClose(cocos2d::CCObject* sender) override;

@@ -114,7 +114,7 @@ PaimonGuideChatPopup* PaimonGuideChatPopup::create() {
 }
 
 bool PaimonGuideChatPopup::init() {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
 
     auto title = tr("pai.guide.title", "Paimon Guide");

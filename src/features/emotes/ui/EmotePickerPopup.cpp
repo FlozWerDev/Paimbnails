@@ -1,4 +1,6 @@
 #include "EmotePickerPopup.hpp"
+#include "../../../utils/DynamicPopupRegistry.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../services/EmoteService.hpp"
 #include "../services/EmoteCache.hpp"
 #include "../EmoteRenderer.hpp"
@@ -82,8 +84,9 @@ bool EmotePickerPopup::init(
     m_popupW = (size == LayoutSize::Large) ? POPUP_W_LARGE : POPUP_W;
     m_popupH = (size == LayoutSize::Large) ? POPUP_H_LARGE : POPUP_H;
 
-    if (!Popup::init(m_popupW, m_popupH))
+    if (!PaimonPopup::init(m_popupW, m_popupH))
         return false;
+    paimon::unmarkDynamicPopup(this);
 
     auto& emoteService = EmoteService::get();
     if (!emoteService.isLoaded()) emoteService.loadCatalogFromDisk();
@@ -1059,11 +1062,16 @@ void EmotePickerPopup::positionCentered() {
 
 
 void EmotePickerPopup::show() {
-    FLAlertLayer::show();
+    PaimonPopup::show();
+    m_restingScale = m_mainLayer ? m_mainLayer->getScale() : 1.f;
 
     // mark blur directly so the shared popup animation does not fight this one.
     paimon::popupblur::captureAndApply(this);
 
+    if (!paimon::ui::motionEnabled()) {
+        this->setOpacity(m_dimOpacity);
+        return;
+    }
     this->stopActionByTag(kDimActionTag);
     this->setOpacity(0);
     auto dimIn = CCEaseSineOut::create(CCFadeTo::create(ANIM_DIM_IN, m_dimOpacity));
@@ -1072,8 +1080,8 @@ void EmotePickerPopup::show() {
 
     if (m_mainLayer) {
         m_mainLayer->stopActionByTag(kBodyActionTag);
-        m_mainLayer->setScale(ANIM_IN_SCALE);
-        auto bodyIn = CCEaseBackOut::create(CCScaleTo::create(ANIM_IN_DUR, 1.0f));
+        m_mainLayer->setScale(ANIM_IN_SCALE * m_restingScale);
+        auto bodyIn = CCEaseBackOut::create(CCScaleTo::create(paimon::ui::motionDuration(ANIM_IN_DUR), m_restingScale));
         bodyIn->setTag(kBodyActionTag);
         m_mainLayer->runAction(bodyIn);
     }
@@ -1089,6 +1097,7 @@ void EmotePickerPopup::onClose(CCObject*) {
     paimon::ui::detachGeodeTextInput(m_searchInput);
 
     this->setTouchEnabled(false);
+    if (!paimon::ui::motionEnabled()) { finishClose(); return; }
 
     this->stopActionByTag(kDimActionTag);
     auto dimOut = CCEaseSineIn::create(CCFadeTo::create(ANIM_DIM_OUT, 0));
@@ -1098,7 +1107,7 @@ void EmotePickerPopup::onClose(CCObject*) {
     if (m_mainLayer) {
         m_mainLayer->stopActionByTag(kBodyActionTag);
         auto bodyOut = CCSequence::create(
-            CCEaseBackIn::create(CCScaleTo::create(ANIM_OUT_DUR, ANIM_OUT_SCALE)),
+            CCEaseBackIn::create(CCScaleTo::create(paimon::ui::motionDuration(ANIM_OUT_DUR), ANIM_OUT_SCALE * m_restingScale)),
             CCCallFunc::create(this, callfunc_selector(EmotePickerPopup::finishClose)),
             nullptr);
         bodyOut->setTag(kBodyActionTag);

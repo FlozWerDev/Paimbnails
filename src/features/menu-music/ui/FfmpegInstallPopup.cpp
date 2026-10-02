@@ -28,7 +28,7 @@ FfmpegInstallPopup* FfmpegInstallPopup::create(std::function<void(bool)> onFinis
 }
 
 bool FfmpegInstallPopup::init(std::function<void(bool)> onFinished) {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
 
     m_onFinished = std::move(onFinished);

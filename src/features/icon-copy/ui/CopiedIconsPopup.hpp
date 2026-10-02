@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 // garage side of the icon clipboard: every set you copied, with the name of the
 // user it came from.
 
@@ -11,7 +12,7 @@ namespace paimon::iconcopy {
 
 struct IconSet;
 
-class CopiedIconsPopup : public geode::Popup {
+class CopiedIconsPopup : public PaimonPopup {
 public:
     static CopiedIconsPopup* create();
 

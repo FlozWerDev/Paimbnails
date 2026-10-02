@@ -43,7 +43,7 @@ UpdateProgressPopup* UpdateProgressPopup::create(
 bool UpdateProgressPopup::init(
     std::string url, std::string version, std::function<void()> onInstalled
 ) {
-    if (!Popup::init(360.f, 200.f)) return false;
+    if (!PaimonPopup::init(360.f, 200.f)) return false;
     paimon::markDynamicPopup(this);
     this->setTitle(tr("pai.update.title", "Downloading update"));
 

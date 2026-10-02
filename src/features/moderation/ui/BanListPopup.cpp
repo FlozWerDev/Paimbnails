@@ -26,7 +26,7 @@ BanListPopup* BanListPopup::create() {
 }
 
 bool BanListPopup::init() {
-    if (!Popup::init(360.f, 260.f)) return false;
+    if (!PaimonPopup::init(360.f, 260.f)) return false;
 
     this->setTitle(Localization::get().getString("ban.list.title"));
 

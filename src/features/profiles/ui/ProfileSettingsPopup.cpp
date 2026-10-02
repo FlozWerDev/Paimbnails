@@ -21,7 +21,7 @@ ProfileSettingsPopup* ProfileSettingsPopup::create(int accountID) {
 }
 
 bool ProfileSettingsPopup::init(int accountID) {
-    if (!Popup::init(340.f, 180.f)) return false;
+    if (!PaimonPopup::init(340.f, 180.f)) return false;
 
     m_accountID = accountID;
 

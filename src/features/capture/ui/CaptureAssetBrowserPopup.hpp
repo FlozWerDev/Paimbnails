@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/DefaultInclude.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
 #include <Geode/ui/TextInput.hpp>
@@ -11,7 +12,7 @@ class GameObject;
 
 namespace paimon::capture { class MiniPreview; }
 
-class CaptureAssetBrowserPopup : public geode::Popup {
+class CaptureAssetBrowserPopup : public PaimonPopup {
 public:
     static CaptureAssetBrowserPopup* create(CapturePreviewPopup* previewPopup);
 

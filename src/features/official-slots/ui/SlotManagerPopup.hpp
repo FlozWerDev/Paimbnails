@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 // mutations rebuild the list and repaint the levelselect pages; appended
 // slots open for play here, having no vanilla page.
@@ -12,7 +13,7 @@
 
 namespace paimon::officialslots::ui {
 
-class SlotManagerPopup : public geode::Popup {
+class SlotManagerPopup : public PaimonPopup {
 public:
     // onchanged runs after any mutation, so the opener can refresh its own
     // buttons next to the page repaint refreshofficiallist() triggers.

@@ -113,7 +113,7 @@ CustomAnimationPopup* CustomAnimationPopup::create(
 bool CustomAnimationPopup::init(
     IconType previewType, bool secondPlayer, std::function<void()> onChanged
 ) {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     paimon::markDynamicPopup(this);
 

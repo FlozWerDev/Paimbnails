@@ -1,14 +1,12 @@
 #pragma once
 
-// rtx postfx: copy frame, trace, filter, composite on top.
-
+#include "RTXConfig.hpp"
 #include <Geode/cocos/platform/CCGL.h>
 
+#include <array>
 #include <chrono>
 
 namespace paimon::rtx {
-
-struct RTXConfig;
 
 class RTXRenderer {
 public:
@@ -47,9 +45,10 @@ private:
     void releaseAll();
 
     void drawInto(Target const& t);
+    void updateReprojection();
+    void invalidateHistory();
     void updateAdaptiveScale(RTXConfig const& cfg);
 
-    // effectives without touching config; degrades scale>rays>atrous>bloom>cadence.
     void syncGovernorEffectives(RTXConfig const& cfg);
     void clampGovernorToConfig(RTXConfig const& cfg);
     bool governorStepDown(float budget);
@@ -73,6 +72,7 @@ private:
         GLint lightRange       = -1;
         GLint bounceFalloff    = -1;
         GLint giSaturation     = -1;
+        GLint giStrength       = -1;
         GLint normalStrength   = -1;
         GLint thickness        = -1;
         GLint aoRadius         = -1;
@@ -88,10 +88,8 @@ private:
         GLint texel       = -1;
         GLint temporal    = -1;
         GLint clampSigma  = -1;
-        GLint reprojNow   = -1;
-        GLint reprojPrev  = -1;
-        GLint reprojScale = -1;
-        GLint histVar      = -1;
+        GLint reprojRow0  = -1;
+        GLint reprojRow1  = -1;
         GLint historyValid = -1;
         GLint outVariance  = -1;
     };
@@ -120,16 +118,19 @@ private:
         GLint hdrRange   = -1;
         GLint giMix      = -1;
         GLint adaptRate  = -1;
-        GLint frame      = -1;
+        GLint reprojRow0 = -1;
+        GLint reprojRow1 = -1;
     };
 
     struct CompositeProgram {
         GLuint id = 0;
         GLint texel         = -1;
         GLint giTexel       = -1;
+        GLint reprojRow0    = -1;
+        GLint reprojRow1    = -1;
+        GLint historyValid  = -1;
         GLint time          = -1;
         GLint mixAmount     = -1;
-        GLint giStrength    = -1;
         GLint aoStrength    = -1;
         GLint bloomStrength = -1;
         GLint rayStrength   = -1;
@@ -160,6 +161,7 @@ private:
     int m_sceneH = 0;
 
     Target m_traceSrc;
+    Target m_guideHistory;
     Target m_traceRT;
     Target m_history[2];
     Target m_variance[2];
@@ -176,15 +178,25 @@ private:
     GLuint m_bloomResultTex = 0;
     GLuint m_giResultTex = 0;
 
-    // no float fbo clips hdr: stays flat.
     bool m_hdr = true;
+    GLint m_hdrFormat = GL_RGBA;
+    GLenum m_hdrType = GL_UNSIGNED_BYTE;
     bool m_hasExposure = false;
+    bool m_canGenerateMips = true;
 
-    // previous camera for reprojection; updated only when tracing.
-    float m_prevCamX = 0.f;
-    float m_prevCamY = 0.f;
-    float m_prevCamScale = 1.f;
-    bool m_hasPrevCamera = false;
+    struct CameraTransform {
+        float a = 1.f, b = 0.f, c = 0.f, d = 1.f, tx = 0.f, ty = 0.f;
+    };
+    CameraTransform m_camera;
+    CameraTransform m_historyCamera;
+    std::array<float, 3> m_reprojRow0{1.f, 0.f, 0.f};
+    std::array<float, 3> m_reprojRow1{0.f, 1.f, 0.f};
+    std::array<float, 16> m_traceSettings{};
+    void const* m_scene = nullptr;
+    void const* m_cameraLayer = nullptr;
+    std::array<GLint, 4> m_sourceViewport{};
+    bool m_hasHistory = false;
+    float m_deltaSeconds = 0.f;
 
     unsigned m_frameCounter = 0;
     unsigned m_idleFrames = 0;

@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include "../GlobalIconTypes.hpp"
 #include <string>
@@ -8,7 +9,7 @@ namespace paimon::globalicon {
 
 // popup opened from a profile's custom icon: shows every icon that player
 // shares (cube, ship, ball, ...) and lets you download one or wear it.
-class GlobalIconViewPopup : public geode::Popup {
+class GlobalIconViewPopup : public PaimonPopup {
 protected:
     struct Cell {
         GlobalIconSlot slot;

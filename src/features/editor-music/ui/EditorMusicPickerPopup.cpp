@@ -56,7 +56,7 @@ EditorMusicPickerPopup* EditorMusicPickerPopup::create() {
 }
 
 bool EditorMusicPickerPopup::init() {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     setTitle("Musica del editor");
     setID("editor-music-picker"_spr);

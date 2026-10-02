@@ -106,7 +106,7 @@ ExtendedInfoPopup* ExtendedInfoPopup::create(GJGameLevel* level) {
 
 bool ExtendedInfoPopup::init(GJGameLevel* level) {
     if (!level) return false;
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     paimon::markDynamicPopup(this);
 

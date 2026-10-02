@@ -35,7 +35,7 @@ void LevelTagsGatePopup::openModPage() {
 }
 
 bool LevelTagsGatePopup::init(std::function<void()> onContinue) {
-    if (!Popup::init(kPopupWidth, kPopupHeight)) return false;
+    if (!PaimonPopup::init(kPopupWidth, kPopupHeight)) return false;
     paimon::markDynamicPopup(this);
 
     m_onContinue = std::move(onContinue);

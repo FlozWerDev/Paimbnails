@@ -126,7 +126,7 @@ IconHelpPopup* IconHelpPopup::create(Topic topic) {
 }
 
 bool IconHelpPopup::init(Topic topic) {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
     setTitle("Como funciona");
     setID("icon-maker-help-popup"_spr);

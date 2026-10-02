@@ -166,7 +166,7 @@ cocos2d::CCNode* ProfileMusicPopup::createHandleVisual(float height, cocos2d::cc
 }
 
 bool ProfileMusicPopup::init(int accountID) {
-    if (!Popup::init(410.f, 300.f)) return false;
+    if (!PaimonPopup::init(410.f, 300.f)) return false;
 
     m_accountID = accountID;
 

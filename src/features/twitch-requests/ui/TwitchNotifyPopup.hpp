@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 // popup behind the "notices" button: toggles the new-request notice and
 // previews it on a fake screen (spot, size, seconds) before it hits the stream.
@@ -9,7 +10,7 @@
 
 namespace paimon::twitch {
 
-class TwitchNotifyPopup : public geode::Popup {
+class TwitchNotifyPopup : public PaimonPopup {
 public:
     static TwitchNotifyPopup* create();
 

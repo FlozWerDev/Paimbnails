@@ -53,7 +53,7 @@ MyIconSetsPopup* MyIconSetsPopup::create() {
 }
 
 bool MyIconSetsPopup::init() {
-    if (!Popup::init(kWidth, kHeight)) return false;
+    if (!PaimonPopup::init(kWidth, kHeight)) return false;
 
     this->setTitle("My Icon Sets");
     this->setID("my-icon-sets-popup"_spr);

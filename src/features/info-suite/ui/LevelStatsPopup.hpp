@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 // your attempts, jumps and best runs over the level thumbnail, plus the two
 // charts the game never draws. the rest lives in extendedinfopopup.
@@ -9,7 +10,7 @@
 
 namespace paimon::info {
 
-class LevelStatsPopup : public geode::Popup {
+class LevelStatsPopup : public PaimonPopup {
 public:
     static LevelStatsPopup* create(GJGameLevel* level);
 

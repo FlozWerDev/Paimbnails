@@ -1,9 +1,8 @@
-// bloom: prefilter/down/up/god-rays/brightness via jimenez filters.
-
 varying vec2 v_texCoord;
 
 uniform sampler2D u_src;
 uniform sampler2D u_add;
+uniform sampler2D u_guide;
 uniform vec2  u_texel;
 uniform float u_mode;
 uniform float u_threshold;
@@ -18,7 +17,8 @@ uniform float u_tonemap;
 uniform float u_hdrRange;
 uniform float u_giMix;
 uniform float u_adaptRate;
-uniform float u_frame;
+uniform vec3 u_reprojRow0;
+uniform vec3 u_reprojRow1;
 
 const int kRaySamples = 24;
 // luma-approx shadows, no g-buffer.
@@ -74,7 +74,6 @@ vec3 tent9(vec2 uv, vec2 t) {
     return c / 16.0;
 }
 
-// textureless noise for volumetrics.
 float vnoise(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);
@@ -104,11 +103,8 @@ void main() {
         float lum = max(luma(toLinear(texture2D(u_src, vec2(0.5), 14.0).rgb)), 0.0005);
         outColor = vec3(mix(texture2D(u_add, vec2(0.5)).r, lum, u_adaptRate));
     } else if (u_mode > 2.5) {
-        // temporal jitter kills concentric banding.
         vec2 delta = (uv - u_lightPos) * u_density / float(kRaySamples);
-        // mod 64 keeps the hash precision-safe.
-        float frameIx = mod(u_frame, 64.0);
-        float j0 = fract(hash12(gl_FragCoord.xy) + halton(frameIx, 2.0));
+        float j0 = hash12(gl_FragCoord.xy);
         vec2 p = uv - delta * j0;
         float illum = 1.0;
         float trans = 1.0;
@@ -121,18 +117,13 @@ void main() {
             vec3 s = texture2D(u_src, p).rgb;
             if (!all(equal(s, s))) s = vec3(0.0);
             s = max(s, vec3(0.0));
-            // dense luma absorbs like decay.
             float w = illum * trans;
             acc += s * w;
             wsum += w;
             trans *= exp(-min(luma(s), 8.0) * kVolBlock);
             illum *= decay;
         }
-        vec2 rel = uv - u_lightPos;
-        float rad = length(rel);
-        float ang = 0.0;
-        if (rad > 0.0001) ang = atan(rel.y, rel.x);
-        vec2 npc = vec2(ang * 1.5 + frameIx * 0.02, rad * 6.0 - frameIx * 0.05);
+        vec2 npc = (uv - u_lightPos) * vec2(u_texel.y / u_texel.x, 1.0) * 6.0;
         float vn = vnoise(npc * 3.0) * 0.65 + vnoise(npc * 7.0 + 13.7) * 0.35;
         float dens = mix(0.75, 1.25, clamp(vn, 0.0, 1.0));
         outColor = acc / max(wsum, 0.0001) * dens;
@@ -142,7 +133,17 @@ void main() {
     } else if (u_mode > 0.5) {
         outColor = down13(uv, u_texel, 0.0);
     } else {
-        outColor = knee(down13(uv, u_texel, 1.0) + texture2D(u_add, uv).rgb * u_giMix);
+        vec2 histUV = vec2(dot(u_reprojRow0, vec3(uv, 1.0)),
+                           dot(u_reprojRow1, vec3(uv, 1.0)));
+        vec3 lighting = vec3(0.0);
+        if (u_giMix > 0.0 && all(greaterThanEqual(histUV, vec2(0.0)))
+            && all(lessThanEqual(histUV, vec2(1.0)))) {
+            vec3 currentGuide = texture2D(u_src, uv).rgb;
+            vec3 historyGuide = texture2D(u_guide, histUV).rgb;
+            float agreement = exp(-distance(currentGuide, historyGuide) * 24.0);
+            lighting = softClampHi(texture2D(u_add, histUV).rgb) * u_giMix * agreement;
+        }
+        outColor = knee(down13(uv, u_texel, 1.0) + lighting);
     }
 
     gl_FragColor = vec4(outColor, 1.0);

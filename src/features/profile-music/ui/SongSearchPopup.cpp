@@ -191,7 +191,7 @@ SongSearchPopup* SongSearchPopup::create(SelectCallback callback) {
 }
 
 bool SongSearchPopup::init(SelectCallback callback) {
-    if (!Popup::init(380.f, 300.f)) return false;
+    if (!PaimonPopup::init(380.f, 300.f)) return false;
 
     m_callback = std::move(callback);
     this->setTitle(tr("music.search.title").c_str());

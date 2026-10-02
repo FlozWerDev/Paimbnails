@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -11,7 +12,7 @@ namespace geode { class ScrollLayer; }
 
 namespace paimon::twitch {
 
-class StreamOverlayPopup : public geode::Popup {
+class StreamOverlayPopup : public PaimonPopup {
 public:
     static StreamOverlayPopup* create();
 

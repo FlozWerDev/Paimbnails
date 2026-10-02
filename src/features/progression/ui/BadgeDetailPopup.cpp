@@ -21,7 +21,7 @@ BadgeDetailPopup* BadgeDetailPopup::create(BadgeDef const& badge, BadgeContext c
 }
 
 bool BadgeDetailPopup::init(BadgeDef const& badge, BadgeContext const& ctx) {
-    if (!Popup::init(300.f, 200.f)) return false;
+    if (!PaimonPopup::init(300.f, 200.f)) return false;
 
     auto& loc = Localization::get();
     auto const size = m_mainLayer->getContentSize();

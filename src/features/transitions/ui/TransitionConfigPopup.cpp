@@ -62,7 +62,7 @@ TransitionConfigPopup* TransitionConfigPopup::create() {
 }
 
 bool TransitionConfigPopup::init() {
-    if (!Popup::init(380.f, 220.f)) return false;
+    if (!PaimonPopup::init(380.f, 220.f)) return false;
 
     this->setTitle("Transition Settings");
 

@@ -56,7 +56,7 @@ ProfileViewsPopup* ProfileViewsPopup::create(int accountID) {
 }
 
 bool ProfileViewsPopup::init(int accountID) {
-    if (!Popup::init(380.f, 260.f)) return false;
+    if (!PaimonPopup::init(380.f, 260.f)) return false;
 
     m_accountID = accountID;
     this->setTitle("Profile Views");

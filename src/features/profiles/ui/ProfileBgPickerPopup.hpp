@@ -1,7 +1,8 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 
-class ProfileBgPickerPopup : public geode::Popup {
+class ProfileBgPickerPopup : public PaimonPopup {
 public:
     using SimpleCallback = geode::CopyableFunction<void()>;
 

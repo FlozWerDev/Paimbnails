@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -6,7 +7,7 @@ namespace paimon::frameinterp {
 
 // interpolation popup on paiconfigkit. controls write the live config;
 // disk flush stays separate so drags don't rewrite each frame.
-class FrameInterpPopup : public geode::Popup {
+class FrameInterpPopup : public PaimonPopup {
 public:
     static FrameInterpPopup* create();
 

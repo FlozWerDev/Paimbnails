@@ -888,7 +888,7 @@ bool FeatureConfigPopup::init(std::string const& featureKey) {
     }
     auto const& group = it->second;
 
-    if (!Popup::init(380.f, 260.f)) return false;
+    if (!PaimonPopup::init(380.f, 260.f)) return false;
     paimon::markDynamicPopup(this);
 
     this->setTitle(group.title.c_str());

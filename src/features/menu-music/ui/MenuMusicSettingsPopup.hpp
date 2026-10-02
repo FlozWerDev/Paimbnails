@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -6,7 +7,7 @@
 
 namespace paimon::menumusic {
 
-class MenuMusicSettingsPopup : public geode::Popup {
+class MenuMusicSettingsPopup : public PaimonPopup {
 public:
     static MenuMusicSettingsPopup* create();
     ~MenuMusicSettingsPopup() override;

@@ -1,4 +1,5 @@
 #pragma once
+#include "PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include <string>
 
@@ -7,7 +8,7 @@ namespace paimon::ui {
 void applySmoothUIPreset(std::string const& preset);
 void setGlobalTransitionDuration(float duration);
 
-class SmoothUIConfigPopup : public geode::Popup {
+class SmoothUIConfigPopup : public PaimonPopup {
 public:
     static SmoothUIConfigPopup* create();
 

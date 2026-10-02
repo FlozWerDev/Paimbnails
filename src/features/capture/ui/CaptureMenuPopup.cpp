@@ -82,7 +82,7 @@ CaptureMenuPopup* CaptureMenuPopup::create() {
 }
 
 bool CaptureMenuPopup::initContents() {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     s_instance = this;
 
     this->setTitle("Captura de Pantalla");

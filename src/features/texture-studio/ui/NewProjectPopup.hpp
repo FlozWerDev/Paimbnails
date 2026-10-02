@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -7,7 +8,7 @@
 
 namespace paimon::texture_studio {
 
-class NewProjectPopup : public geode::Popup {
+class NewProjectPopup : public PaimonPopup {
 public:
     using SlotCreatedCallback = std::function<void(std::string const& slotId)>;
 

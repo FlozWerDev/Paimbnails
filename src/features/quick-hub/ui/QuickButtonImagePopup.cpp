@@ -37,7 +37,7 @@ void QuickButtonImagePopup::changed() {
 }
 
 bool QuickButtonImagePopup::init() {
-    if (!Popup::init(360.f, 272.f)) return false;
+    if (!PaimonPopup::init(360.f, 272.f)) return false;
     paimon::markDynamicPopup(this);
     this->setTitle("Imagen del boton");
 

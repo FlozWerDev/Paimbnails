@@ -23,6 +23,12 @@ namespace {
 bool isEditorContextActive() {
     return paimon::isEditorScene();
 }
+
+void disablePopupControls(CCNode* node) {
+    if (!node) return;
+    if (auto* layer = typeinfo_cast<CCLayer*>(node)) layer->setTouchEnabled(false);
+    for (auto* child : CCArrayExt<CCNode*>(node->getChildren())) disablePopupControls(child);
+}
 }
 
 // capture before selected() (may destroy popup)
@@ -63,6 +69,8 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         bool    m_exiting = false;
         CCPoint m_origin  = {-1.f, -1.f};
         CCPoint m_finalPos = {0.f, 0.f};
+        float m_finalScaleX = 1.f;
+        float m_finalScaleY = 1.f;
         Ref<FLAlertLayer> m_exitGuard = nullptr;
         Ref<CCNode> m_blurNode = nullptr;
         FLAlertLayer* m_self = nullptr;
@@ -99,6 +107,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
     bool shouldAnimatePopup() {
         return isPaimonPopup()
             && !isEditorContextActive()
+            && paimon::settings::smoothui::enabled()
             && !paimon::settings::smoothui::reducedMotion()
             && Mod::get()->getSettingValue<bool>("dynamic-popup-enabled");
     }
@@ -113,10 +122,11 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
 
     float getSpeedFor(char const* key) {
         float speed = static_cast<float>(Mod::get()->getSavedValue<double>(key, 1.0));
-        if (!(speed > 0.f)) speed = 1.0f;
+        if (!std::isfinite(speed) || speed <= 0.f) speed = 1.0f;
         if (paimon::settings::smoothui::enabled()) {
-            speed *= static_cast<float>(std::clamp(
-                paimon::settings::smoothui::globalSpeed(), 0.35, 2.5));
+            auto globalSpeed = paimon::settings::smoothui::globalSpeed();
+            if (!std::isfinite(globalSpeed)) globalSpeed = 1.0;
+            speed *= static_cast<float>(std::clamp(globalSpeed, 0.35, 2.5));
         }
         return std::max(0.1f, speed);
     }
@@ -182,6 +192,16 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
     void runEntryAnimation() {
         auto* ml = m_mainLayer;
         if (!ml) return;
+        m_fields->m_finalScaleX = ml->getScaleX();
+        m_fields->m_finalScaleY = ml->getScaleY();
+        auto scaleTo = [this](float duration, float x, float y = -1.f) {
+            return CCScaleTo::create(duration, x * m_fields->m_finalScaleX,
+                (y < 0.f ? x : y) * m_fields->m_finalScaleY);
+        };
+        auto setScale = [this, ml](float value) {
+            ml->setScaleX(value * m_fields->m_finalScaleX);
+            ml->setScaleY(value * m_fields->m_finalScaleY);
+        };
         ml->stopAllActions();
 
         float       spd = getSpeed();
@@ -190,213 +210,207 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         m_fields->m_finalPos = fp;
 
         if (sty == "paimonUI") {
-            CCPoint org = resolveOrigin(fp);
-
-            ml->setScale(0.0f);
-            ml->setPosition(org);
-
-            float dur = 0.42f / spd;
-
-            auto phase1 = CCEaseExponentialOut::create(CCScaleTo::create(dur * 0.65f, 1.05f));
-            auto phase2 = CCEaseSineInOut::create(CCScaleTo::create(dur * 0.20f, 0.985f));
-            auto phase3 = CCEaseSineOut::create(CCScaleTo::create(dur * 0.15f, 1.00f));
-            ml->runAction(CCSequence::create(phase1, phase2, phase3, nullptr));
-
-            ml->runAction(CCEaseExponentialOut::create(CCMoveTo::create(dur * 0.70f, fp)));
+            resolveOrigin(fp);
+            setScale(0.96f);
+            ml->setPosition(fp + CCPoint{0.f, -7.f});
+            float const duration = 0.24f / spd;
+            ml->runAction(CCSpawn::create(
+                CCEaseSineOut::create(scaleTo(duration, 1.f)),
+                CCEaseSineOut::create(CCMoveTo::create(duration, fp)), nullptr));
 
         } else if (sty == "jelly") {
             resolveOrigin(fp);
-            ml->setScaleX(0.0f);
-            ml->setScaleY(0.0f);
+            ml->setScaleX(0.0f * m_fields->m_finalScaleX);
+            ml->setScaleY(0.0f * m_fields->m_finalScaleY);
             ml->setPosition(fp);
 
             float dur = 0.55f / spd;
             auto jellySeq = CCSequence::create(
-                CCEaseExponentialOut::create(CCScaleTo::create(dur * 0.35f, 1.14f, 0.86f)),
-                CCEaseSineInOut::create(CCScaleTo::create(dur * 0.22f, 0.92f, 1.07f)),
-                CCEaseSineInOut::create(CCScaleTo::create(dur * 0.20f, 1.03f, 0.97f)),
-                CCEaseSineOut::create(CCScaleTo::create(dur * 0.23f, 1.00f, 1.00f)),
+                CCEaseExponentialOut::create(scaleTo(dur * 0.35f, 1.14f, 0.86f)),
+                CCEaseSineInOut::create(scaleTo(dur * 0.22f, 0.92f, 1.07f)),
+                CCEaseSineInOut::create(scaleTo(dur * 0.20f, 1.03f, 0.97f)),
+                CCEaseSineOut::create(scaleTo(dur * 0.23f, 1.00f, 1.00f)),
                 nullptr
             );
             ml->runAction(jellySeq);
 
         } else if (sty == "spiral") {
             resolveOrigin(fp);
-            ml->setScale(0.0f);
+            setScale(0.0f);
             ml->setPosition(fp);
             ml->setRotation(-180.f);
 
             float dur = 0.48f / spd;
-            ml->runAction(CCEaseBackOut::create(CCScaleTo::create(dur, 1.00f)));
+            ml->runAction(CCEaseBackOut::create(scaleTo(dur, 1.00f)));
             ml->runAction(CCEaseExponentialOut::create(CCRotateTo::create(dur, 0.f)));
 
         } else if (sty == "drop-bounce") {
             resolveOrigin(fp);
             ml->setPosition(fp + CCPoint(0.f, 260.f));
-            ml->setScaleX(0.88f);
-            ml->setScaleY(1.15f);
+            ml->setScaleX(0.88f * m_fields->m_finalScaleX);
+            ml->setScaleY(1.15f * m_fields->m_finalScaleY);
 
             float dur = 0.58f / spd;
             ml->runAction(CCEaseBounceOut::create(CCMoveTo::create(dur, fp)));
             auto scaleSeq = CCSequence::create(
-                CCEaseSineOut::create(CCScaleTo::create(dur * 0.50f, 1.04f, 0.96f)),
-                CCEaseSineInOut::create(CCScaleTo::create(dur * 0.30f, 0.98f, 1.02f)),
-                CCEaseSineOut::create(CCScaleTo::create(dur * 0.20f, 1.00f, 1.00f)),
+                CCEaseSineOut::create(scaleTo(dur * 0.50f, 1.04f, 0.96f)),
+                CCEaseSineInOut::create(scaleTo(dur * 0.30f, 0.98f, 1.02f)),
+                CCEaseSineOut::create(scaleTo(dur * 0.20f, 1.00f, 1.00f)),
                 nullptr
             );
             ml->runAction(scaleSeq);
 
         } else if (sty == "skew-pop") {
             resolveOrigin(fp);
-            ml->setScale(0.0f);
+            setScale(0.0f);
             ml->setPosition(fp);
             ml->setSkewX(22.f);
             ml->setSkewY(12.f);
 
             float dur = 0.45f / spd;
-            ml->runAction(CCEaseBackOut::create(CCScaleTo::create(dur, 1.00f)));
+            ml->runAction(CCEaseBackOut::create(scaleTo(dur, 1.00f)));
             ml->runAction(CCEaseExponentialOut::create(CCSkewTo::create(dur, 0.f, 0.f)));
 
         } else if (sty == "slide-left") {
             resolveOrigin(fp);
             ml->setPosition(fp + CCPoint(-160.f, 0.f));
-            ml->setScale(0.92f);
+            setScale(0.92f);
 
             float dur = 0.42f / spd;
             ml->runAction(CCEaseBackOut::create(CCMoveTo::create(dur, fp)));
-            ml->runAction(CCEaseExponentialOut::create(CCScaleTo::create(dur, 1.00f)));
+            ml->runAction(CCEaseExponentialOut::create(scaleTo(dur, 1.00f)));
 
         } else if (sty == "slide-right") {
             resolveOrigin(fp);
             ml->setPosition(fp + CCPoint(160.f, 0.f));
-            ml->setScale(0.92f);
+            setScale(0.92f);
 
             float dur = 0.42f / spd;
             ml->runAction(CCEaseBackOut::create(CCMoveTo::create(dur, fp)));
-            ml->runAction(CCEaseExponentialOut::create(CCScaleTo::create(dur, 1.00f)));
+            ml->runAction(CCEaseExponentialOut::create(scaleTo(dur, 1.00f)));
 
         } else if (sty == "slide-up") {
             resolveOrigin(fp);
-            ml->setScale(0.92f);
+            setScale(0.92f);
             ml->setPosition(fp + CCPoint(0.f, -80.f));
 
             float dur = 0.42f / spd;
             ml->runAction(CCEaseBackOut::create(CCMoveTo::create(dur, fp)));
-            ml->runAction(CCEaseExponentialOut::create(CCScaleTo::create(dur, 1.00f)));
+            ml->runAction(CCEaseExponentialOut::create(scaleTo(dur, 1.00f)));
 
         } else if (sty == "slide-down") {
             resolveOrigin(fp);
-            ml->setScale(0.92f);
+            setScale(0.92f);
             ml->setPosition(fp + CCPoint(0.f, 80.f));
 
             float dur = 0.42f / spd;
             ml->runAction(CCEaseBackOut::create(CCMoveTo::create(dur, fp)));
-            ml->runAction(CCEaseExponentialOut::create(CCScaleTo::create(dur, 1.00f)));
+            ml->runAction(CCEaseExponentialOut::create(scaleTo(dur, 1.00f)));
 
         } else if (sty == "zoom-fade") {
             resolveOrigin(fp);
-            ml->setScale(0.55f);
+            setScale(0.55f);
             ml->setPosition(fp);
 
             float dur = 0.32f / spd;
-            ml->runAction(CCEaseExponentialOut::create(CCScaleTo::create(dur, 1.00f)));
+            ml->runAction(CCEaseExponentialOut::create(scaleTo(dur, 1.00f)));
 
         } else if (sty == "elastic") {
             resolveOrigin(fp);
-            ml->setScale(0.0f);
+            setScale(0.0f);
             ml->setPosition(fp);
 
             float dur = 0.52f / spd;
-            ml->runAction(CCEaseElasticOut::create(CCScaleTo::create(dur, 1.00f), 0.40f));
+            ml->runAction(CCEaseElasticOut::create(scaleTo(dur, 1.00f), 0.40f));
 
         } else if (sty == "bounce") {
             resolveOrigin(fp);
-            ml->setScale(0.0f);
+            setScale(0.0f);
             ml->setPosition(fp);
 
             float dur = 0.48f / spd;
-            ml->runAction(CCEaseBounceOut::create(CCScaleTo::create(dur, 1.00f)));
+            ml->runAction(CCEaseBounceOut::create(scaleTo(dur, 1.00f)));
 
         } else if (sty == "flip") {
             resolveOrigin(fp);
-            ml->setScaleX(0.0f);
-            ml->setScaleY(1.0f);
+            ml->setScaleX(0.0f * m_fields->m_finalScaleX);
+            ml->setScaleY(1.0f * m_fields->m_finalScaleY);
             ml->setPosition(fp);
 
             float dur = 0.45f / spd;
-            ml->runAction(CCEaseBackOut::create(CCScaleTo::create(dur, 1.00f, 1.00f)));
+            ml->runAction(CCEaseBackOut::create(scaleTo(dur, 1.00f, 1.00f)));
 
         } else if (sty == "fold") {
             resolveOrigin(fp);
-            ml->setScaleX(1.0f);
-            ml->setScaleY(0.0f);
+            ml->setScaleX(1.0f * m_fields->m_finalScaleX);
+            ml->setScaleY(0.0f * m_fields->m_finalScaleY);
             ml->setPosition(fp);
 
             float dur = 0.45f / spd;
-            ml->runAction(CCEaseBackOut::create(CCScaleTo::create(dur, 1.00f, 1.00f)));
+            ml->runAction(CCEaseBackOut::create(scaleTo(dur, 1.00f, 1.00f)));
 
         } else if (sty == "pop-rotate") {
             resolveOrigin(fp);
-            ml->setScale(0.0f);
+            setScale(0.0f);
             ml->setRotation(-12.f);
             ml->setPosition(fp);
 
             float dur = 0.46f / spd;
-            ml->runAction(CCEaseBackOut::create(CCScaleTo::create(dur, 1.00f)));
+            ml->runAction(CCEaseBackOut::create(scaleTo(dur, 1.00f)));
             ml->runAction(CCEaseBackOut::create(CCRotateTo::create(dur, 0.f)));
 
         } else if (sty == "elastic-drop") {
             resolveOrigin(fp);
             ml->setPosition(fp + CCPoint(0.f, 320.f));
-            ml->setScaleX(0.75f);
-            ml->setScaleY(1.35f);
+            ml->setScaleX(0.75f * m_fields->m_finalScaleX);
+            ml->setScaleY(1.35f * m_fields->m_finalScaleY);
 
             float dur = 0.65f / spd;
             ml->runAction(CCEaseElasticOut::create(CCMoveTo::create(dur, fp), 0.45f));
-            ml->runAction(CCEaseElasticOut::create(CCScaleTo::create(dur, 1.00f, 1.00f), 0.45f));
+            ml->runAction(CCEaseElasticOut::create(scaleTo(dur, 1.00f, 1.00f), 0.45f));
 
         } else if (sty == "glitch-shake") {
             resolveOrigin(fp);
-            ml->setScale(0.1f);
+            setScale(0.1f);
             ml->setPosition(fp);
 
             float dur = 0.45f / spd;
             ml->runAction(CCSequence::create(
-                CCSpawn::create(CCScaleTo::create(dur * 0.15f, 1.15f, 0.85f), CCSkewTo::create(dur * 0.15f, 15.f, 5.f), nullptr),
-                CCSpawn::create(CCScaleTo::create(dur * 0.15f, 0.85f, 1.20f), CCSkewTo::create(dur * 0.15f, -15.f, -5.f), nullptr),
-                CCSpawn::create(CCScaleTo::create(dur * 0.15f, 1.05f, 0.95f), CCSkewTo::create(dur * 0.15f, 5.f, 2.f), nullptr),
-                CCSpawn::create(CCScaleTo::create(dur * 0.15f, 0.98f, 1.02f), CCSkewTo::create(dur * 0.15f, -2.f, -1.f), nullptr),
-                CCSpawn::create(CCScaleTo::create(dur * 0.40f, 1.00f, 1.00f), CCSkewTo::create(dur * 0.40f, 0.f, 0.f), nullptr),
+                CCSpawn::create(scaleTo(dur * 0.15f, 1.15f, 0.85f), CCSkewTo::create(dur * 0.15f, 15.f, 5.f), nullptr),
+                CCSpawn::create(scaleTo(dur * 0.15f, 0.85f, 1.20f), CCSkewTo::create(dur * 0.15f, -15.f, -5.f), nullptr),
+                CCSpawn::create(scaleTo(dur * 0.15f, 1.05f, 0.95f), CCSkewTo::create(dur * 0.15f, 5.f, 2.f), nullptr),
+                CCSpawn::create(scaleTo(dur * 0.15f, 0.98f, 1.02f), CCSkewTo::create(dur * 0.15f, -2.f, -1.f), nullptr),
+                CCSpawn::create(scaleTo(dur * 0.40f, 1.00f, 1.00f), CCSkewTo::create(dur * 0.40f, 0.f, 0.f), nullptr),
                 nullptr
             ));
 
         } else if (sty == "card-turn") {
             resolveOrigin(fp);
-            ml->setScaleX(0.0f);
-            ml->setScaleY(1.0f);
+            ml->setScaleX(0.0f * m_fields->m_finalScaleX);
+            ml->setScaleY(1.0f * m_fields->m_finalScaleY);
             ml->setPosition(fp);
             ml->setSkewY(15.f);
 
             float dur = 0.48f / spd;
-            ml->runAction(CCEaseExponentialOut::create(CCScaleTo::create(dur, 1.00f, 1.00f)));
+            ml->runAction(CCEaseExponentialOut::create(scaleTo(dur, 1.00f, 1.00f)));
             ml->runAction(CCEaseExponentialOut::create(CCSkewTo::create(dur, 0.f, 0.f)));
 
         } else if (sty == "fly-spin") {
             resolveOrigin(fp);
-            ml->setScale(0.0f);
+            setScale(0.0f);
             ml->setRotation(-720.f);
             ml->setPosition(fp);
 
             float dur = 0.55f / spd;
-            ml->runAction(CCEaseExponentialOut::create(CCScaleTo::create(dur, 1.00f)));
+            ml->runAction(CCEaseExponentialOut::create(scaleTo(dur, 1.00f)));
             ml->runAction(CCEaseExponentialOut::create(CCRotateTo::create(dur, 0.f)));
 
         } else {
             resolveOrigin(fp);
-            ml->setScale(0.60f);
+            setScale(0.60f);
             ml->setPosition(fp);
             float dur = 0.30f / spd;
-            ml->runAction(CCEaseExponentialOut::create(CCScaleTo::create(dur, 1.00f)));
+            ml->runAction(CCEaseExponentialOut::create(scaleTo(dur, 1.00f)));
         }
     }
 
@@ -404,6 +418,10 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         auto* ml = m_mainLayer;
         if (!ml) { FLAlertLayer::keyBackClicked(); return; }
 
+        auto scaleTo = [this](float duration, float x, float y = -1.f) {
+            return CCScaleTo::create(duration, x * m_fields->m_finalScaleX,
+                (y < 0.f ? x : y) * m_fields->m_finalScaleY);
+        };
         ml->stopAllActions();
         this->stopAllActions();
         m_fields->m_exitGuard = this;
@@ -417,47 +435,43 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         float dur = 0.f;
 
         if (sty == "paimonUI") {
-            dur = 0.28f / spd;
-            auto scaleUp = CCEaseSineOut::create(CCScaleTo::create(dur * 0.22f, 1.03f));
-            auto shrink = CCSpawn::create(
-                CCEaseExponentialIn::create(CCScaleTo::create(dur * 0.78f, 0.00f)),
-                CCEaseExponentialIn::create(CCMoveTo::create(dur * 0.78f, org)),
-                nullptr
-            );
-            ml->runAction(CCSequence::create(scaleUp, shrink, nullptr));
+            dur = 0.16f / spd;
+            ml->runAction(CCSpawn::create(
+                CCEaseSineIn::create(scaleTo(dur, 0.96f)),
+                CCEaseSineIn::create(CCMoveTo::create(dur, pos + CCPoint{0.f, -7.f})), nullptr));
 
         } else if (sty == "jelly") {
             dur = 0.25f / spd;
             auto exitSeq = CCSequence::create(
-                CCEaseSineInOut::create(CCScaleTo::create(dur * 0.30f, 1.12f, 0.72f)),
-                CCEaseExponentialIn::create(CCScaleTo::create(dur * 0.70f, 0.00f, 0.00f)),
+                CCEaseSineInOut::create(scaleTo(dur * 0.30f, 1.12f, 0.72f)),
+                CCEaseExponentialIn::create(scaleTo(dur * 0.70f, 0.00f, 0.00f)),
                 nullptr
             );
             ml->runAction(exitSeq);
 
         } else if (sty == "spiral") {
             dur = 0.32f / spd;
-            ml->runAction(CCEaseBackIn::create(CCScaleTo::create(dur, 0.0f)));
+            ml->runAction(CCEaseBackIn::create(scaleTo(dur, 0.0f)));
             ml->runAction(CCEaseExponentialIn::create(CCRotateTo::create(dur, 180.f)));
 
         } else if (sty == "drop-bounce") {
             dur = 0.30f / spd;
             ml->runAction(CCSpawn::create(
                 CCEaseExponentialIn::create(CCMoveTo::create(dur, pos + CCPoint(0.f, -280.f))),
-                CCEaseExponentialIn::create(CCScaleTo::create(dur, 0.85f, 1.15f)),
+                CCEaseExponentialIn::create(scaleTo(dur, 0.85f, 1.15f)),
                 nullptr
             ));
 
         } else if (sty == "skew-pop") {
             dur = 0.25f / spd;
-            ml->runAction(CCEaseBackIn::create(CCScaleTo::create(dur, 0.0f)));
+            ml->runAction(CCEaseBackIn::create(scaleTo(dur, 0.0f)));
             ml->runAction(CCEaseExponentialIn::create(CCSkewTo::create(dur, -22.f, -12.f)));
 
         } else if (sty == "slide-left") {
             dur = 0.24f / spd;
             ml->runAction(CCSpawn::create(
                 CCEaseExponentialIn::create(CCMoveTo::create(dur, pos + CCPoint(160.f, 0.f))),
-                CCEaseExponentialIn::create(CCScaleTo::create(dur, 0.92f)),
+                CCEaseExponentialIn::create(scaleTo(dur, 0.92f)),
                 nullptr
             ));
 
@@ -465,7 +479,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
             dur = 0.24f / spd;
             ml->runAction(CCSpawn::create(
                 CCEaseExponentialIn::create(CCMoveTo::create(dur, pos + CCPoint(-160.f, 0.f))),
-                CCEaseExponentialIn::create(CCScaleTo::create(dur, 0.92f)),
+                CCEaseExponentialIn::create(scaleTo(dur, 0.92f)),
                 nullptr
             ));
 
@@ -473,7 +487,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
             dur = 0.22f / spd;
             ml->runAction(CCSpawn::create(
                 CCEaseExponentialIn::create(CCMoveTo::create(dur, pos + CCPoint(0.f, -80.f))),
-                CCEaseExponentialIn::create(CCScaleTo::create(dur, 0.92f)),
+                CCEaseExponentialIn::create(scaleTo(dur, 0.92f)),
                 nullptr
             ));
 
@@ -481,68 +495,68 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
             dur = 0.22f / spd;
             ml->runAction(CCSpawn::create(
                 CCEaseExponentialIn::create(CCMoveTo::create(dur, pos + CCPoint(0.f, 80.f))),
-                CCEaseExponentialIn::create(CCScaleTo::create(dur, 0.92f)),
+                CCEaseExponentialIn::create(scaleTo(dur, 0.92f)),
                 nullptr
             ));
 
         } else if (sty == "zoom-fade") {
             dur = 0.20f / spd;
-            ml->runAction(CCEaseExponentialIn::create(CCScaleTo::create(dur, 0.55f)));
+            ml->runAction(CCEaseExponentialIn::create(scaleTo(dur, 0.55f)));
 
         } else if (sty == "elastic") {
             dur = 0.22f / spd;
-            ml->runAction(CCEaseSineIn::create(CCScaleTo::create(dur, 0.0f)));
+            ml->runAction(CCEaseSineIn::create(scaleTo(dur, 0.0f)));
 
         } else if (sty == "bounce") {
             dur = 0.24f / spd;
-            ml->runAction(CCEaseSineInOut::create(CCScaleTo::create(dur, 0.0f)));
+            ml->runAction(CCEaseSineInOut::create(scaleTo(dur, 0.0f)));
 
         } else if (sty == "flip") {
             dur = 0.22f / spd;
-            ml->runAction(CCEaseBackIn::create(CCScaleTo::create(dur, 0.0f, 1.0f)));
+            ml->runAction(CCEaseBackIn::create(scaleTo(dur, 0.0f, 1.0f)));
 
         } else if (sty == "fold") {
             dur = 0.22f / spd;
-            ml->runAction(CCEaseBackIn::create(CCScaleTo::create(dur, 1.0f, 0.0f)));
+            ml->runAction(CCEaseBackIn::create(scaleTo(dur, 1.0f, 0.0f)));
 
         } else if (sty == "pop-rotate") {
             dur = 0.25f / spd;
-            ml->runAction(CCEaseBackIn::create(CCScaleTo::create(dur, 0.0f)));
+            ml->runAction(CCEaseBackIn::create(scaleTo(dur, 0.0f)));
             ml->runAction(CCEaseBackIn::create(CCRotateTo::create(dur, 12.f)));
 
         } else if (sty == "elastic-drop") {
             dur = 0.35f / spd;
             ml->runAction(CCSpawn::create(
                 CCEaseElasticIn::create(CCMoveTo::create(dur, pos + CCPoint(0.f, 320.f)), 0.45f),
-                CCEaseElasticIn::create(CCScaleTo::create(dur, 0.75f, 1.35f), 0.45f),
+                CCEaseElasticIn::create(scaleTo(dur, 0.75f, 1.35f), 0.45f),
                 nullptr
             ));
 
         } else if (sty == "glitch-shake") {
             dur = 0.28f / spd;
             ml->runAction(CCSequence::create(
-                CCSpawn::create(CCScaleTo::create(dur * 0.25f, 1.25f, 0.70f), CCSkewTo::create(dur * 0.25f, 20.f, 8.f), nullptr),
-                CCSpawn::create(CCScaleTo::create(dur * 0.25f, 0.70f, 1.30f), CCSkewTo::create(dur * 0.25f, -20.f, -8.f), nullptr),
-                CCSpawn::create(CCScaleTo::create(dur * 0.50f, 2.00f, 0.00f), CCSkewTo::create(dur * 0.50f, 0.f, 0.f), nullptr),
+                CCSpawn::create(scaleTo(dur * 0.25f, 1.25f, 0.70f), CCSkewTo::create(dur * 0.25f, 20.f, 8.f), nullptr),
+                CCSpawn::create(scaleTo(dur * 0.25f, 0.70f, 1.30f), CCSkewTo::create(dur * 0.25f, -20.f, -8.f), nullptr),
+                CCSpawn::create(scaleTo(dur * 0.50f, 2.00f, 0.00f), CCSkewTo::create(dur * 0.50f, 0.f, 0.f), nullptr),
                 nullptr
             ));
 
         } else if (sty == "card-turn") {
             dur = 0.28f / spd;
             ml->runAction(CCSpawn::create(
-                CCEaseExponentialIn::create(CCScaleTo::create(dur, 0.00f, 1.00f)),
+                CCEaseExponentialIn::create(scaleTo(dur, 0.00f, 1.00f)),
                 CCEaseExponentialIn::create(CCSkewTo::create(dur, 15.f, 0.f)),
                 nullptr
             ));
 
         } else if (sty == "fly-spin") {
             dur = 0.32f / spd;
-            ml->runAction(CCEaseExponentialIn::create(CCScaleTo::create(dur, 0.0f)));
+            ml->runAction(CCEaseExponentialIn::create(scaleTo(dur, 0.0f)));
             ml->runAction(CCEaseExponentialIn::create(CCRotateTo::create(dur, 540.f)));
 
         } else {
             dur = 0.20f / spd;
-            ml->runAction(CCEaseExponentialIn::create(CCScaleTo::create(dur, 0.60f)));
+            ml->runAction(CCEaseExponentialIn::create(scaleTo(dur, 0.60f)));
         }
 
         this->runAction(CCSequence::create(
@@ -574,6 +588,12 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         m_fields->m_self = this;
         FLAlertLayer::show();
 
+        if (m_mainLayer) {
+            m_fields->m_finalPos = m_mainLayer->getPosition();
+            m_fields->m_finalScaleX = m_mainLayer->getScaleX();
+            m_fields->m_finalScaleY = m_mainLayer->getScaleY();
+        }
+
         if (shouldApplyPopupBlur()) {
             paimon::popupblur::captureAndApply(this);
         }
@@ -598,6 +618,8 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
     $override
     void removeFromParentAndCleanup(bool cleanup) {
         if (!shouldAnimateExit() || m_fields->m_exiting) {
+            auto keepAlive = Ref<FLAlertLayer>(this);
+            m_fields->m_exitGuard = nullptr;
             float fadeDur = std::clamp(
                 static_cast<float>(paimon::settings::popupblur::fadeDuration()),
                 0.0f, 1.0f);
@@ -608,6 +630,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         m_fields->m_exiting = true;
         this->setKeypadEnabled(false);
         this->setTouchEnabled(false);
+        disablePopupControls(m_mainLayer);
 
         // keep blur visible through the longer exit/fade duration
         float spd = getExitSpeed();

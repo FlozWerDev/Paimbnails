@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 // profile side of the icon clipboard: preview the set before taking it.
 // each icon in the strip opens its source card.
 
@@ -9,7 +10,7 @@
 
 namespace paimon::iconcopy {
 
-class CopyIconsPopup : public geode::Popup {
+class CopyIconsPopup : public PaimonPopup {
 public:
     // `saved` is the garage view of a set you already copied: same card, but the
     // two copy actions make no sense there.

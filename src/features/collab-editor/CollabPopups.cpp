@@ -219,7 +219,7 @@ CollabRoomPopup* CollabRoomPopup::create(GJGameLevel* hostLevel) {
 }
 
 bool CollabRoomPopup::init(GJGameLevel* hostLevel) {
-    if (!Popup::init(340.f, 210.f)) return false;
+    if (!PaimonPopup::init(340.f, 210.f)) return false;
     m_hostLevel = hostLevel;
     paimon::markDynamicPopup(this);
     setID("collab-room"_spr);
@@ -606,7 +606,7 @@ HostOptionsPopup* HostOptionsPopup::create() {
 
 bool HostOptionsPopup::init() {
     constexpr float kPopupW = 300.f, kPopupH = 286.f;
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
     setTitle("Permisos de la sala");
     m_permissions = CollabManager::get().permissions();
@@ -674,7 +674,7 @@ CollabPeersPopup* CollabPeersPopup::create() {
 }
 
 bool CollabPeersPopup::init() {
-    if (!Popup::init(360.f, 276.f)) return false;
+    if (!PaimonPopup::init(360.f, 276.f)) return false;
     paimon::markDynamicPopup(this);
     setTitle("Editores en la sala");
 
@@ -935,7 +935,7 @@ CollabInvitePopup::~CollabInvitePopup() {
 
 bool CollabInvitePopup::init() {
     constexpr float kPopupW = 380.f, kPopupH = 280.f;
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
     setTitle("Invitar Amigos");
 
@@ -1177,7 +1177,7 @@ CollabChatPopup* CollabChatPopup::create() {
 }
 
 bool CollabChatPopup::init() {
-    if (!Popup::init(400.f, 280.f)) return false;
+    if (!PaimonPopup::init(400.f, 280.f)) return false;
     paimon::markDynamicPopup(this);
     setID("collab-chat"_spr);
     setTitle("Chat de sala");

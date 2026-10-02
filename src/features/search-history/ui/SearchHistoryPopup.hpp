@@ -1,10 +1,11 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <functional>
 
 // search history: tap reruns, x deletes, "clear" empties.
-class SearchHistoryPopup : public geode::Popup {
+class SearchHistoryPopup : public PaimonPopup {
 public:
     // callback gets the picked entry index into paimon::searchhistory::history.
     static SearchHistoryPopup* create(std::function<void(int)> callback);

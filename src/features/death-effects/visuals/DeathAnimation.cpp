@@ -99,7 +99,7 @@ DeathAnimationPopup* DeathAnimationPopup::create() {
     delete ret; return nullptr;
 }
 bool DeathAnimationPopup::init() {
-    if (!Popup::init(440.f,290.f)) return false;
+    if (!PaimonPopup::init(440.f,290.f)) return false;
     setTitle("Death Animations");
     setID("death-animation-popup"_spr);
     m_preview = CCNode::create();

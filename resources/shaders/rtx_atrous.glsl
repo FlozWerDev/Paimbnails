@@ -1,5 +1,3 @@
-// edge-stopping a-trous; variance modulates phi.
-
 varying vec2 v_texCoord;
 
 uniform sampler2D u_src;
@@ -8,7 +6,6 @@ uniform sampler2D u_var;
 uniform vec2  u_texel;
 uniform float u_stride;
 uniform float u_phi;
-// u_wide: 1 uses a 5x5 kernel on the last pass.
 uniform float u_wide;
 
 // variance ~0 on stable history, high on disocclusions.
@@ -39,7 +36,7 @@ void main() {
 
     float vv = sanitizeVar(texture2D(u_var, uv).r);
     float blur = safeSmoothstep(0.0, kVarCeil, vv);
-    phi = phi / (1.0 + blur * kVarGain);
+    phi = max(phi / (1.0 + blur * kVarGain), 8.0);
 
     bool wide = u_wide > 0.5;
     int R = wide ? 2 : 1;

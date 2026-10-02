@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/ui/Popup.hpp>
 
@@ -11,7 +12,7 @@ class ButtonSprite;
 
 namespace paimon::icons::ui {
 
-class PaimonIconsConfigPopup : public geode::Popup {
+class PaimonIconsConfigPopup : public PaimonPopup {
 public:
     static PaimonIconsConfigPopup* open();
 

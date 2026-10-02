@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 // editor for the "custom" gradient animation: the user stacks up to 4
 // movements, shapes each one, and watches the result on a live icon.
@@ -12,7 +13,7 @@
 
 namespace paimon::icon_gradients {
 
-class CustomAnimationPopup : public geode::Popup {
+class CustomAnimationPopup : public PaimonPopup {
 public:
     // `onchanged` lets the parent popup resync its own controls once this one
     // closes, since both edit the same animation config.

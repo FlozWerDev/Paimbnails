@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../data/QuickHubCategories.hpp"
 
@@ -9,7 +10,7 @@
 namespace paimon::quickhub {
 
 // live editor for the button sfx; parent keeps customquickbutton ownership.
-class QuickButtonSfxPopup : public geode::Popup {
+class QuickButtonSfxPopup : public PaimonPopup {
 public:
     static QuickButtonSfxPopup* create(
         CustomQuickButton* target, std::function<void()> onChanged);

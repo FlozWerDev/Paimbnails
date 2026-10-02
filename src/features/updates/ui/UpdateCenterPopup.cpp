@@ -64,7 +64,7 @@ UpdateCenterPopup* UpdateCenterPopup::create() {
 }
 
 bool UpdateCenterPopup::init() {
-    if (!Popup::init(kWidth, kHeight)) return false;
+    if (!PaimonPopup::init(kWidth, kHeight)) return false;
     paimon::markDynamicPopup(this);
     this->setTitle(tr("pai.updates.center.title", "Updates"));
 

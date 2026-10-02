@@ -39,7 +39,7 @@ IconSetNamePopup* IconSetNamePopup::create(std::string title, std::string initia
 
 bool IconSetNamePopup::init(std::string const& title, std::string const& initial,
                             Callback onConfirm) {
-    if (!Popup::init(kWidth, kHeight)) return false;
+    if (!PaimonPopup::init(kWidth, kHeight)) return false;
 
     m_onConfirm = std::move(onConfirm);
     this->setTitle(title.c_str());

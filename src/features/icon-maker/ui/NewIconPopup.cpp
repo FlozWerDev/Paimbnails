@@ -82,7 +82,7 @@ NewIconPopup* NewIconPopup::create(CreatedCallback onCreated) {
 }
 
 bool NewIconPopup::init(CreatedCallback onCreated) {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
     m_onCreated = std::move(onCreated);
     setTitle("Nuevo icono");

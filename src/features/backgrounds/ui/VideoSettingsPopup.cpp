@@ -22,7 +22,7 @@ VideoSettingsPopup* VideoSettingsPopup::create() {
 }
 
 bool VideoSettingsPopup::init() {
-    if (!Popup::init(340.f, 260.f)) return false;
+    if (!PaimonPopup::init(340.f, 260.f)) return false;
 
     this->setTitle("Video Settings");
 

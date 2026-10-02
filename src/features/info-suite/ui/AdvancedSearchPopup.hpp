@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
@@ -9,7 +10,7 @@
 
 namespace paimon::info {
 
-class AdvancedSearchPopup : public geode::Popup {
+class AdvancedSearchPopup : public PaimonPopup {
 public:
     static AdvancedSearchPopup* create();
 

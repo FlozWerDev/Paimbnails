@@ -65,7 +65,7 @@ bool GarageHubPopup::init(GJGarageLayer* garage) {
     float const width = std::max(260.f, columns * kCellWidth + 50.f);
     float const height = kTopPad + rows * kCellHeight + kBottomPad;
 
-    if (!Popup::init(width, height)) return false;
+    if (!PaimonPopup::init(width, height)) return false;
 
     this->setTitle(tr("garage-hub.title"));
     this->setID("garage-hub-popup"_spr);

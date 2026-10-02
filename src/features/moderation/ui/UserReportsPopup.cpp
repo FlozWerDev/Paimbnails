@@ -6,7 +6,7 @@ using namespace geode::prelude;
 using namespace cocos2d;
 
 bool UserReportsPopup::init(std::string const& reportedUsername, std::vector<ReportEntry> const& reports) {
-    if (!Popup::init(380.f, 200.f)) return false;
+    if (!PaimonPopup::init(380.f, 200.f)) return false;
 
     m_reports = reports;
     m_reportedUsername = reportedUsername;

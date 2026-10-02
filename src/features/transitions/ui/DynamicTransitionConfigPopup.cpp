@@ -1,3 +1,4 @@
+#include "../../../ui/PaimonPopup.hpp"
 #include "DynamicTransitionConfigPopup.hpp"
 #include "DynamicTransitionScene.hpp"
 #include "../../../ui/PaiConfigKit.hpp"
@@ -49,7 +50,7 @@ CCNode* demoScreen(CCSize size, bool destination) {
     return root;
 }
 
-class PreviewPopup : public Popup {
+class PreviewPopup : public PaimonPopup {
 public:
     static PreviewPopup* create() {
         auto* popup = new PreviewPopup();
@@ -70,7 +71,7 @@ public:
 
 protected:
     bool init() override {
-        if (!Popup::init(380.f, 254.f)) return false;
+        if (!PaimonPopup::init(380.f, 254.f)) return false;
         setTitle(text("Vista previa", "Preview"));
         paimon::markDynamicPopup(this);
         m_stage = CCClippingNode::create(CCLayerColor::create({255, 255, 255, 255}, 340.f, 146.f));
@@ -152,7 +153,7 @@ DynamicTransitionConfigPopup* DynamicTransitionConfigPopup::create() {
 }
 
 bool DynamicTransitionConfigPopup::init() {
-    if (!Popup::init(430.f, 300.f)) return false;
+    if (!PaimonPopup::init(430.f, 300.f)) return false;
     setTitle("Dynamic Transition");
     paimon::markDynamicPopup(this);
     m_config = getConfig();

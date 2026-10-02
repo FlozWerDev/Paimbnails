@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../data/QuickHubCategories.hpp"
 #include <Geode/Geode.hpp>
@@ -8,7 +9,7 @@
 namespace paimon::quickhub {
 
 // shows the detected "address" as proof of what got saved.
-class QuickButtonPopup : public geode::Popup {
+class QuickButtonPopup : public PaimonPopup {
 public:
     static QuickButtonPopup* create(CustomQuickButton candidate);
     static bool isOpen();

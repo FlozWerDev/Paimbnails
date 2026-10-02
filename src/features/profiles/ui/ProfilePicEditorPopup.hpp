@@ -1,9 +1,10 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include "../services/ProfilePicCustomizer.hpp"
 #include "ProfilePicIconsDetailPopup.hpp"
 
-class ProfilePicEditorPopup : public geode::Popup {
+class ProfilePicEditorPopup : public PaimonPopup {
 protected:
     ProfilePicConfig m_editConfig;
 

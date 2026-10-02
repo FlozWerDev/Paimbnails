@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 // paimon rtx config popup.
 #include <Geode/Geode.hpp>
@@ -6,7 +7,7 @@
 namespace paimon::rtx {
 
 // sliders write live config; disk flush stays separate so drags don't rewrite json.
-class RTXConfigLayer : public geode::Popup {
+class RTXConfigLayer : public PaimonPopup {
 public:
     static RTXConfigLayer* create();
 

@@ -108,7 +108,7 @@ AdvancedSearchPopup* AdvancedSearchPopup::create() {
 }
 
 bool AdvancedSearchPopup::init() {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     paimon::markDynamicPopup(this);
     this->setTitle("Busqueda avanzada");

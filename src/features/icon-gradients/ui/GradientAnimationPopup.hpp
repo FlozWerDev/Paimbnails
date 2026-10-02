@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
@@ -7,7 +8,7 @@
 
 namespace paimon::icon_gradients {
 
-class GradientAnimationPopup : public geode::Popup {
+class GradientAnimationPopup : public PaimonPopup {
 public:
     static GradientAnimationPopup* create(IconType initialType, bool secondPlayer);
 

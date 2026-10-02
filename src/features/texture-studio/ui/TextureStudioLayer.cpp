@@ -1,3 +1,4 @@
+#include "../../../ui/PaimonUI.hpp"
 #include "TextureStudioLayer.hpp"
 
 #include "../../../utils/FileDialog.hpp"
@@ -125,31 +126,7 @@ bool TextureStudioLayer::init() {
 }
 
 void TextureStudioLayer::buildBackground() {
-    auto winSize = CCDirector::get()->getWinSize();
-
-    auto* bg = CCLayerColor::create(ccc4(16, 14, 26, 255));
-    bg->setContentSize(winSize);
-    this->addChild(bg, -5);
-
-    auto* gradient = CCLayerGradient::create(
-        ccc4(52, 30, 74, 110), ccc4(8, 6, 16, 160));
-    gradient->setContentSize(winSize);
-    gradient->setVector({0, -1});
-    this->addChild(gradient, -4);
-
-    if (auto* bottomLeft = CCSprite::createWithSpriteFrameName("GJ_sideArt_001.png")) {
-        bottomLeft->setAnchorPoint({0, 0});
-        bottomLeft->setPosition({-2, -2});
-        bottomLeft->setOpacity(70);
-        this->addChild(bottomLeft, -1);
-    }
-    if (auto* bottomRight = CCSprite::createWithSpriteFrameName("GJ_sideArt_001.png")) {
-        bottomRight->setAnchorPoint({1, 0});
-        bottomRight->setPosition({winSize.width + 2, -2});
-        bottomRight->setFlipX(true);
-        bottomRight->setOpacity(70);
-        this->addChild(bottomRight, -1);
-    }
+    paimon::ui::decorateScene(this);
 }
 
 void TextureStudioLayer::onEnter() {

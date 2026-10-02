@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include "../models/EmoteModels.hpp"
@@ -6,12 +7,13 @@
 
 namespace paimon::emotes {
 
-class EmotePickerPopup : public geode::Popup {
+class EmotePickerPopup : public PaimonPopup {
 public:
     enum class Tab { All, Stickers, GIFs };
     enum class LayoutSize { Normal, Large };
 
 protected:
+    float m_restingScale = 1.f;
     geode::CopyableFunction<std::string()> m_getText;
     geode::CopyableFunction<void(std::string const&)> m_onTextChanged;
     int m_charLimit = 140;

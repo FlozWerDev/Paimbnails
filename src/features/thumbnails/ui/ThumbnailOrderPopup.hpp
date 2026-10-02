@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -7,7 +8,7 @@
 
 #include "../../../managers/ThumbnailAPI.hpp"
 
-class ThumbnailOrderPopup : public geode::Popup {
+class ThumbnailOrderPopup : public PaimonPopup {
 protected:
     struct CellWidgets {
         geode::Ref<CCMenuItemSpriteExtra> button = nullptr;

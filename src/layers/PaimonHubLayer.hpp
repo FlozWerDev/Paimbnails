@@ -8,6 +8,8 @@ protected:
     ~PaimonHubLayer();
     bool init() override;
     void keyBackClicked() override;
+    void scrollWheel(float x, float y) override;
+    void update(float dt) override;
 
     cocos2d::CCMenu* m_mainMenu = nullptr;
     cocos2d::CCLayerRGBA* m_homeTab = nullptr;
@@ -24,6 +26,10 @@ protected:
     geode::TextInput* m_searchInput = nullptr;
     std::vector<CCMenuItemSpriteExtra*> m_homeCategoryBtns;
     int m_homeSelectedCategory = 0;
+    int m_homeFilter = 0;
+    float m_homeScrollTarget = 0.f;
+    bool m_homeScrollTargetSet = false;
+    cocos2d::CCNode* m_homeFilterBar = nullptr;
 
     cocos2d::CCNodeRGBA* m_sidebarBg = nullptr;
     cocos2d::CCNodeRGBA* m_sidebarHighlight = nullptr;
@@ -80,14 +86,17 @@ protected:
     void switchTab(int idx);
 
     void buildHomeTab();
+    void buildHomeFilterBar();
     void buildNewsTab();
     void buildForumTab();
     void refreshHomeCategorySelector();
     void switchHomeCategory(int idx);
-    void rebuildHomeCategoryCards();
+    void rebuildHomeCategoryCards(bool resetScroll = true);
     void onOpenHelp(cocos2d::CCObject*);
 
 public:
+    void activateHubAction(std::string const& id, std::function<void(PaimonHubLayer*)> const& callback);
+    void toggleHubFavorite(std::string const& id);
     void onOpenConfig(cocos2d::CCObject*);
     void onOpenProfiles(cocos2d::CCObject*);
     void onOpenBackgrounds(cocos2d::CCObject*);

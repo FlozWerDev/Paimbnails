@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -7,7 +8,7 @@
 
 namespace paimon::discord {
 
-class DiscordConfigPopup : public geode::Popup {
+class DiscordConfigPopup : public PaimonPopup {
 public:
     static DiscordConfigPopup* create();
 

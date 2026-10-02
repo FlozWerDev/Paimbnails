@@ -35,7 +35,7 @@ VersusProfilePopup* VersusProfilePopup::create(int accountId, std::string const&
 
 bool VersusProfilePopup::init(int accountId, std::string const& username,
                               ModeProfile const& classic, ModeProfile const& platformer, bool own) {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     m_accountId = accountId;
     m_username = username;

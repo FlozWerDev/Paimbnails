@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
@@ -9,7 +10,7 @@
 
 namespace paimon::icon_maker {
 
-class TemplatePickerPopup : public geode::Popup {
+class TemplatePickerPopup : public PaimonPopup {
 public:
     using PickedCallback = std::function<void(int iconId)>;
     using ProjectCallback = std::function<void(std::string const& projectId)>;

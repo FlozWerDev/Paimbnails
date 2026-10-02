@@ -7,7 +7,7 @@
 using namespace geode::prelude;
 
 bool BannedPopup::init(std::string const& reason) {
-    if (!Popup::init(340.f, 200.f)) return false;
+    if (!PaimonPopup::init(340.f, 200.f)) return false;
     paimon::markDynamicPopup(this);
     m_reason = reason;
 

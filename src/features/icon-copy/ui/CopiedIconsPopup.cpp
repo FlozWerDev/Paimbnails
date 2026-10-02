@@ -65,7 +65,7 @@ CopiedIconsPopup* CopiedIconsPopup::create() {
 }
 
 bool CopiedIconsPopup::init() {
-    if (!Popup::init(kWidth, kHeight)) return false;
+    if (!PaimonPopup::init(kWidth, kHeight)) return false;
 
     this->setTitle("Copied Icons");
     this->setID("copied-icons-popup"_spr);

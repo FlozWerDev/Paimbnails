@@ -1,7 +1,8 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 
-class LevelCellSettingsPopup : public geode::Popup {
+class LevelCellSettingsPopup : public PaimonPopup {
 protected:
     void onExit() override;
 

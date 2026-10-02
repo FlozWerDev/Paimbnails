@@ -1,7 +1,8 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 
-class ProfileSettingsPopup : public geode::Popup {
+class ProfileSettingsPopup : public PaimonPopup {
 protected:
     int m_accountID = 0;
     geode::CopyableFunction<void()> m_onMusicCallback;

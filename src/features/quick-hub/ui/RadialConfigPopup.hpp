@@ -1,11 +1,12 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include <vector>
 #include <string>
 
 namespace paimon::quickhub {
 
-class RadialConfigPopup : public geode::Popup {
+class RadialConfigPopup : public PaimonPopup {
 public:
     static RadialConfigPopup* create();
 

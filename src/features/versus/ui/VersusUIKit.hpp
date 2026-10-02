@@ -1,16 +1,17 @@
 #pragma once
 
 #include <Geode/Geode.hpp>
+#include "../../../ui/PaimonUI.hpp"
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 
 #include <string>
 
 namespace paimon::versus::ui {
 
-inline constexpr cocos2d::ccColor3B kAccent = {255, 226, 140};
-inline constexpr cocos2d::ccColor3B kMuted  = {172, 180, 200};
-inline constexpr cocos2d::ccColor3B kGood   = {140, 230, 160};
-inline constexpr cocos2d::ccColor3B kBad    = {240, 130, 140};
+inline constexpr cocos2d::ccColor3B kAccent = paimon::ui::palette::accent;
+inline constexpr cocos2d::ccColor3B kMuted  = paimon::ui::palette::muted;
+inline constexpr cocos2d::ccColor3B kGood   = paimon::ui::palette::success;
+inline constexpr cocos2d::ccColor3B kBad    = paimon::ui::palette::danger;
 
 // height of the caption strip inside a panel, so callers can lay out under it.
 inline constexpr float kCaptionH = 22.f;

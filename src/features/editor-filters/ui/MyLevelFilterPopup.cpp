@@ -89,7 +89,7 @@ CCMenuItemToggler* MyLevelFilterPopup::makeToggler(char const* text, int tag, bo
 }
 
 bool MyLevelFilterPopup::init() {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
     this->setTitle("Filter My Levels");
 

@@ -60,7 +60,7 @@ GifToSheetPopup::~GifToSheetPopup() {
 }
 
 bool GifToSheetPopup::init() {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     this->setID("gif-to-sheet-popup"_spr);
     this->setTitle("GIF a Sheet");
 

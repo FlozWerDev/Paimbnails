@@ -49,7 +49,7 @@ VersusFriendlyPopup* VersusFriendlyPopup::create(Mode mode) {
 }
 
 bool VersusFriendlyPopup::init(Mode mode) {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     auto& loc = Localization::get();
 

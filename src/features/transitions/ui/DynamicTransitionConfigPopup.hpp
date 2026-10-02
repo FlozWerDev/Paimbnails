@@ -1,11 +1,12 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include "../services/DynamicTransitionManager.hpp"
 
 namespace paimon::transitions::dynamic {
 
-class DynamicTransitionConfigPopup : public geode::Popup {
+class DynamicTransitionConfigPopup : public PaimonPopup {
 public:
     static DynamicTransitionConfigPopup* create();
 

@@ -26,7 +26,7 @@ RateProfilePopup* RateProfilePopup::create(int accountID, std::string const& tar
 }
 
 bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
-    if (!Popup::init(360.f, 280.f)) return false;
+    if (!PaimonPopup::init(360.f, 280.f)) return false;
 
     m_accountID = accountID;
     m_targetUsername = targetUsername;

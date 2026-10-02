@@ -1,7 +1,8 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 
-class BanUserPopup : public geode::Popup {
+class BanUserPopup : public PaimonPopup {
 protected:
     std::string m_username;
     geode::TextInput* m_input;

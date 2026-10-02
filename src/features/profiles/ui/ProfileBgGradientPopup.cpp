@@ -59,7 +59,7 @@ bool ProfileBgGradientPopup::init(int accountID,
                                   std::string const& initialEffect,
                                   float initialSpeed,
                                   ApplyCallback onApply) {
-    if (!Popup::init(420.f, 270.f)) return false;
+    if (!PaimonPopup::init(420.f, 270.f)) return false;
 
     m_accountID = accountID;
     m_effect    = paimon::profilebg::normalizeEffect(initialEffect);

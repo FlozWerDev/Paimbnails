@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <deque>
@@ -8,7 +9,7 @@
 
 class SongSearchRowWidget;
 
-class SongSearchPopup : public geode::Popup, public TextInputDelegate {
+class SongSearchPopup : public PaimonPopup, public TextInputDelegate {
 public:
     using SelectCallback = std::function<void(int songID)>;
 

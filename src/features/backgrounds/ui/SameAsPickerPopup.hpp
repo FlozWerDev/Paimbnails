@@ -1,7 +1,8 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 
-class SameAsPickerPopup : public geode::Popup {
+class SameAsPickerPopup : public PaimonPopup {
 protected:
     std::string m_selectedLayerKey;
     geode::CopyableFunction<void(std::string const&)> m_onPick;

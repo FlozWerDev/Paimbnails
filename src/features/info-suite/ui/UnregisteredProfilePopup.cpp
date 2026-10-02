@@ -30,7 +30,7 @@ UnregisteredProfilePopup* UnregisteredProfilePopup::create(int userID, std::stri
 
 bool UnregisteredProfilePopup::init(int userID, std::string userName) {
     if (userID <= 0) return false;
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     paimon::markDynamicPopup(this);
 

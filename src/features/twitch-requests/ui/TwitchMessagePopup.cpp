@@ -45,7 +45,7 @@ bool TwitchMessagePopup::init(
     std::string levelName,
     std::string author
 ) {
-    if (!Popup::init(kWidth, kHeight)) return false;
+    if (!PaimonPopup::init(kWidth, kHeight)) return false;
     setTitle("Mensaje del request");
     paimon::markDynamicPopup(this);
 

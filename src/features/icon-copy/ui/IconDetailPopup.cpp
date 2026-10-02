@@ -259,7 +259,7 @@ IconDetailPopup* IconDetailPopup::create(IconSet const& set, IconType type) {
 }
 
 bool IconDetailPopup::init(IconSet const& set, IconType type) {
-    if (!Popup::init(kWidth, kHeight)) return false;
+    if (!PaimonPopup::init(kWidth, kHeight)) return false;
 
     int const iconID = set.iconFor(type);
     auto const info = unlockInfoFor(iconID, type);

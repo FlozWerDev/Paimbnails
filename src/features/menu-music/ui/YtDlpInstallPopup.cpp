@@ -28,7 +28,7 @@ YtDlpInstallPopup* YtDlpInstallPopup::create(std::function<void(bool)> onFinishe
 }
 
 bool YtDlpInstallPopup::init(std::function<void(bool)> onFinished) {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
 
     m_onFinished = std::move(onFinished);

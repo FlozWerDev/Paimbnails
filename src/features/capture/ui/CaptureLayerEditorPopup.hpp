@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/DefaultInclude.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
@@ -9,7 +10,7 @@
 
 namespace paimon::capture { class MiniPreview; }
 
-class CaptureLayerEditorPopup : public geode::Popup {
+class CaptureLayerEditorPopup : public PaimonPopup {
 public:
     static CaptureLayerEditorPopup* create(CapturePreviewPopup* previewPopup);
 

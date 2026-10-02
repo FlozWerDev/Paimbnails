@@ -44,7 +44,7 @@ GradientEditorPopup* GradientEditorPopup::create(GradientSpec initial,
 }
 
 bool GradientEditorPopup::init(GradientSpec initial, ChangedCallback onChanged) {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
 
     m_spec = std::move(initial);

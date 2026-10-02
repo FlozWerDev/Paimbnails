@@ -1,3 +1,4 @@
+#include "../../../ui/PaimonUI.hpp"
 #include "IconGalleryLayer.hpp"
 
 #include "IconActionSheet.hpp"
@@ -128,34 +129,7 @@ bool IconGalleryLayer::init() {
 }
 
 void IconGalleryLayer::buildBackground() {
-    auto win = CCDirector::get()->getWinSize();
-
-    // same backdrop as the game menus, so the gallery blends in.
-    if (auto* bg = paimon::SpriteHelper::safeCreate("GJ_gradientBG.png")) {
-        bg->setAnchorPoint({0.f, 0.f});
-        bg->setScaleX(win.width / bg->getContentSize().width);
-        bg->setScaleY(win.height / bg->getContentSize().height);
-        bg->setColor({26, 48, 110});
-        addChild(bg, -5);
-    } else {
-        auto* flat = CCLayerColor::create(ccc4(22, 40, 92, 255));
-        flat->setContentSize(win);
-        addChild(flat, -5);
-    }
-
-    if (auto* bottomLeft = CCSprite::createWithSpriteFrameName("GJ_sideArt_001.png")) {
-        bottomLeft->setAnchorPoint({0, 0});
-        bottomLeft->setPosition({-2, -2});
-        bottomLeft->setOpacity(120);
-        addChild(bottomLeft, -1);
-    }
-    if (auto* bottomRight = CCSprite::createWithSpriteFrameName("GJ_sideArt_001.png")) {
-        bottomRight->setAnchorPoint({1, 0});
-        bottomRight->setPosition({win.width + 2, -2});
-        bottomRight->setFlipX(true);
-        bottomRight->setOpacity(120);
-        addChild(bottomRight, -1);
-    }
+    paimon::ui::decorateScene(this);
 }
 
 void IconGalleryLayer::buildHeader() {

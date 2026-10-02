@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../data/VersusTypes.hpp"
 #include "VersusRankBadgeNode.hpp"
@@ -10,7 +11,7 @@ namespace paimon::versus {
 
 // what a duel leaves behind: the result, the elo that moved, the tier if it
 // changed, and the two ways out.
-class VersusEndPopup : public geode::Popup {
+class VersusEndPopup : public PaimonPopup {
 public:
     static VersusEndPopup* create();
 

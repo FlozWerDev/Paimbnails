@@ -19,7 +19,7 @@ ProfileImgPopup* ProfileImgPopup::create(int accountID, CCTexture2D* texture) {
 }
 
 bool ProfileImgPopup::init(int accountID, CCTexture2D* texture) {
-    if (!Popup::init(440.f, 290.f)) return false;
+    if (!PaimonPopup::init(440.f, 290.f)) return false;
 
     m_accountID = accountID;
     m_texture = texture;

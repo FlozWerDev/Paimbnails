@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <string>
@@ -13,7 +14,7 @@ class VinylDisc;
 class CoverBlurBackground;
 class CoverHero;
 
-class MenuMusicPopup : public geode::Popup {
+class MenuMusicPopup : public PaimonPopup {
 public:
     static MenuMusicPopup* create();
 

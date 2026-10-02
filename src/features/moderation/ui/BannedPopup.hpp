@@ -1,8 +1,9 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include <string>
 
-class BannedPopup : public geode::Popup {
+class BannedPopup : public PaimonPopup {
 protected:
     std::string m_reason;
 

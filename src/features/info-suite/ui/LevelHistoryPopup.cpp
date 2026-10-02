@@ -233,7 +233,7 @@ LevelHistoryPopup* LevelHistoryPopup::create(GJGameLevel* level) {
 bool LevelHistoryPopup::init(GJGameLevel* level) {
     if (!level || level->m_levelID.value() <= 0) return false;
     if (!paimon::modules::isEnabled(gdhistory::kModuleId)) return false;
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     paimon::markDynamicPopup(this);
     m_level = level;

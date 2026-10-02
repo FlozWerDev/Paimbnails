@@ -1,9 +1,10 @@
-// rtx shared: linear-space work, inverse/tonemap pairs intact.
 #ifdef GL_ES
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
+precision highp sampler2D;
 #else
 precision mediump float;
+precision mediump sampler2D;
 #endif
 #endif
 
@@ -24,14 +25,13 @@ float hash12(vec2 p) {
     return fract((p3.x + p3.y) * p3.z);
 }
 
-// angle fails on empty or inverted edges.
+// GLSL smoothstep requires distinct, increasing edges.
 float safeSmoothstep(float e0, float e1, float x) {
     if (abs(e1 - e0) < 0.00001) return step(e0, x);
     if (e1 < e0) return 1.0 - smoothstep(e1, e0, x);
     return smoothstep(e0, e1, x);
 }
 
-// halton for temporal dither.
 float halton(float idx, float base) {
     float f = 1.0;
     float r = 0.0;
@@ -45,7 +45,6 @@ float halton(float idx, float base) {
     return fract(r);
 }
 
-// guards hdr inf/nan.
 vec3 softClampHi(vec3 c) {
     float l = luma(c);
     return c / (1.0 + max(l - 1.0, 0.0));
@@ -72,7 +71,6 @@ vec3 tmFilmic(vec3 c) {
 vec3 tmFilmicInv(vec3 c) {
     vec3 s = min(toDisplay(c), kHdrCeil);
     vec3 a = 6.2 * (s - 1.0);
-    // no div-by-zero on out-of-range input.
     vec3 ax = abs(a);
     a.x = ax.x < 0.001 ? -0.001 : a.x;
     a.y = ax.y < 0.001 ? -0.001 : a.y;

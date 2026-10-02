@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <chrono>
@@ -14,7 +15,7 @@
 
 namespace paimon::guide {
 
-class PaimonGuideChatPopup : public geode::Popup {
+class PaimonGuideChatPopup : public PaimonPopup {
 public:
     static PaimonGuideChatPopup* create();
     void submitQuery(std::string const& query);

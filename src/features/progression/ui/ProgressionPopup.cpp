@@ -139,7 +139,7 @@ ProgressionPopup* ProgressionPopup::create(BadgeContext const& ctx, std::string 
 }
 
 bool ProgressionPopup::init(BadgeContext const& ctx, std::string const& username) {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     m_ctx = ctx;
 

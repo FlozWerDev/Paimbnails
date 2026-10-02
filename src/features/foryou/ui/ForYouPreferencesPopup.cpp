@@ -108,7 +108,7 @@ ForYouPreferencesPopup* ForYouPreferencesPopup::create(std::function<void()> onC
 }
 
 bool ForYouPreferencesPopup::init(std::function<void()> onConfirm) {
-    if (!Popup::init(POPUP_W, POPUP_H)) return false;
+    if (!PaimonPopup::init(POPUP_W, POPUP_H)) return false;
     paimon::markDynamicPopup(this);
 
     m_onConfirm = std::move(onConfirm);

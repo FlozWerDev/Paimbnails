@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
@@ -9,7 +10,7 @@ class CCMenuItemToggler;
 
 namespace paimon::scorecell {
 
-class LeaderboardLayoutPopup : public geode::Popup {
+class LeaderboardLayoutPopup : public PaimonPopup {
 public:
     static LeaderboardLayoutPopup* create();
 

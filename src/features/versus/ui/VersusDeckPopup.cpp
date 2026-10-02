@@ -38,7 +38,7 @@ VersusDeckPopup* VersusDeckPopup::create() {
 }
 
 bool VersusDeckPopup::init() {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     this->setTitle(Localization::get().getString("versus.deck.title"));
     paimon::markDynamicPopup(this);

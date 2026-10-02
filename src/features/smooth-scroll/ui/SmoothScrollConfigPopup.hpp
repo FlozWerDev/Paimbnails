@@ -1,10 +1,11 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 
 namespace paimon::smoothscroll {
 
 // smooth-scroll config on paiconfigkit: cards per section, always-visible values.
-class SmoothScrollConfigPopup : public geode::Popup {
+class SmoothScrollConfigPopup : public PaimonPopup {
 public:
     static SmoothScrollConfigPopup* create();
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include <array>
 
@@ -15,7 +16,7 @@ bool spawnAnimation(cocos2d::CCNode* parent, cocos2d::CCPoint position, int styl
                     cocos2d::ccColor3B color, float scale = 1.f);
 void clearAnimations(cocos2d::CCNode* parent);
 
-class DeathAnimationPopup : public geode::Popup {
+class DeathAnimationPopup : public PaimonPopup {
 public:
     static DeathAnimationPopup* create();
 protected:

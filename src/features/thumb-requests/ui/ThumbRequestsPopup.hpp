@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../ThumbRequests.hpp"
 
@@ -11,7 +12,7 @@
 namespace paimon::thumbreq {
 
 // the request queue as the team left it: asked, sent, with which difficulty and rate.
-class ThumbRequestsPopup : public geode::Popup {
+class ThumbRequestsPopup : public PaimonPopup {
 public:
     static ThumbRequestsPopup* create();
 

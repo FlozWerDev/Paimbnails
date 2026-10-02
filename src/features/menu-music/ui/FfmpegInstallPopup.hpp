@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 // ffmpeginstallpopup — modal progress popup for the initial ffmpeg download.
 
@@ -10,7 +11,7 @@
 
 namespace paimon::menumusic {
 
-class FfmpegInstallPopup : public geode::Popup {
+class FfmpegInstallPopup : public PaimonPopup {
 public:
     static FfmpegInstallPopup* create(std::function<void(bool)> onFinished);
 

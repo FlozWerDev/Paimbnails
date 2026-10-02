@@ -27,7 +27,7 @@ namespace {
 }
 
 bool ModlyModPopup::init(ModlyMod const& mod) {
-    if (!Popup::init(kWidth, kHeight)) return false;
+    if (!PaimonPopup::init(kWidth, kHeight)) return false;
     paimon::markDynamicPopup(this);
 
     m_mod = mod;

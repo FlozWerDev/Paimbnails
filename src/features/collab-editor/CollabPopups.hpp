@@ -1,4 +1,5 @@
 #pragma once
+#include "../../ui/PaimonPopup.hpp"
 
 #include "CollabTypes.hpp"
 
@@ -28,7 +29,7 @@ std::string defaultDisplayName();
 void closeSessionPopups();
 
 // connect/create a room; setup, connecting, and connected states rebuild in place.
-class CollabRoomPopup : public geode::Popup {
+class CollabRoomPopup : public PaimonPopup {
 public:
     static CollabRoomPopup* create(GJGameLevel* hostLevel = nullptr);
 
@@ -75,7 +76,7 @@ private:
 };
 
 // host-only friend invite flow.
-class CollabInvitePopup : public geode::Popup, public UserListDelegate {
+class CollabInvitePopup : public PaimonPopup, public UserListDelegate {
 public:
     static CollabInvitePopup* create();
     ~CollabInvitePopup() override;
@@ -115,7 +116,7 @@ private:
     std::unordered_map<int, std::string> m_names;
 };
 
-class CollabChatPopup : public geode::Popup {
+class CollabChatPopup : public PaimonPopup {
 public:
     static CollabChatPopup* create();
 
@@ -141,7 +142,7 @@ private:
     uint64_t m_lastRevision = ~0ull;
 };
 
-class HostOptionsPopup : public geode::Popup {
+class HostOptionsPopup : public PaimonPopup {
 public:
     static HostOptionsPopup* create();
 
@@ -152,7 +153,7 @@ private:
     HostPermissions m_permissions;
 };
 
-class CollabPeersPopup : public geode::Popup {
+class CollabPeersPopup : public PaimonPopup {
 public:
     static CollabPeersPopup* create();
 

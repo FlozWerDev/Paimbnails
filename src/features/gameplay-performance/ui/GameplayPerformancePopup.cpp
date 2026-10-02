@@ -66,7 +66,7 @@ GameplayPerformancePopup* GameplayPerformancePopup::create() {
 }
 
 bool GameplayPerformancePopup::init() {
-    if (!Popup::init(kPopupWidth, kPopupHeight)) return false;
+    if (!PaimonPopup::init(kPopupWidth, kPopupHeight)) return false;
     paimon::markDynamicPopup(this);
     this->setID("gameplay-performance-popup"_spr);
 

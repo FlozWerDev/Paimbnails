@@ -1,8 +1,9 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 
-class ThumbnailSettingsPopup : public geode::Popup {
+class ThumbnailSettingsPopup : public PaimonPopup {
 protected:
     geode::ScrollLayer* m_scroll = nullptr;
     int m_tab = 0;

@@ -107,7 +107,7 @@ CCMenuItemSpriteExtra* LoadLayer::makeActionButton(const char* label, SEL_MenuHa
 }
 
 bool LoadLayer::init() {
-    Popup::init(246, 233);
+    PaimonPopup::init(246, 233);
 
     std::vector<GradientConfig> gradients = GradientUtils::getSavedGradients();
     bool usable = !gradients.empty();

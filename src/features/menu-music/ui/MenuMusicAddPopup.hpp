@@ -1,11 +1,12 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <string>
 
 namespace paimon::menumusic {
 
-class MenuMusicAddPopup : public geode::Popup {
+class MenuMusicAddPopup : public PaimonPopup {
 public:
     static MenuMusicAddPopup* create(std::string initialUrl = {});
 

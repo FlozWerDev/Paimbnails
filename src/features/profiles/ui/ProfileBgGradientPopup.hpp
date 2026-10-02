@@ -1,7 +1,8 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 
-class ProfileBgGradientPopup : public geode::Popup {
+class ProfileBgGradientPopup : public PaimonPopup {
 public:
     using ApplyCallback = geode::CopyableFunction<void(std::string const& effect, float speed)>;
 

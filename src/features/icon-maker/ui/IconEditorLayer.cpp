@@ -1,3 +1,4 @@
+#include "../../../ui/PaimonUI.hpp"
 #include "IconEditorLayer.hpp"
 
 #include "EditorCanvas.hpp"
@@ -355,33 +356,7 @@ void IconEditorLayer::onBack() {
 
 
 void IconEditorLayer::buildBackground() {
-    auto win = CCDirector::get()->getWinSize();
-
-    if (auto* bg = paimon::SpriteHelper::safeCreate("GJ_gradientBG.png")) {
-        bg->setAnchorPoint({0.f, 0.f});
-        bg->setScaleX(win.width / bg->getContentSize().width);
-        bg->setScaleY(win.height / bg->getContentSize().height);
-        bg->setColor({26, 48, 110});
-        addChild(bg, -6);
-    } else {
-        auto* flat = CCLayerColor::create(ccc4(22, 40, 92, 255));
-        flat->setContentSize(win);
-        addChild(flat, -6);
-    }
-
-    if (auto* left = paimon::SpriteHelper::safeCreateWithFrameName("GJ_sideArt_001.png")) {
-        left->setAnchorPoint({0.f, 0.f});
-        left->setPosition({-2.f, -2.f});
-        left->setOpacity(120);
-        addChild(left, -5);
-    }
-    if (auto* right = paimon::SpriteHelper::safeCreateWithFrameName("GJ_sideArt_001.png")) {
-        right->setAnchorPoint({1.f, 0.f});
-        right->setFlipX(true);
-        right->setPosition({win.width + 2.f, -2.f});
-        right->setOpacity(120);
-        addChild(right, -5);
-    }
+    paimon::ui::decorateScene(this);
 }
 
 void IconEditorLayer::buildTopBar() {

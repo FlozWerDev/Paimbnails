@@ -1,5 +1,14 @@
 #include "../features/custom-hover/CustomHover.hpp"
 #include "PaimonHubLayer.hpp"
+#include "../features/icon-maker/ui/IconGalleryLayer.hpp"
+#include "../features/texture-studio/ui/TextureStudioLayer.hpp"
+#include "../features/community/ui/CommunityHubLayer.hpp"
+#include "../features/versus/ui/VersusHubLayer.hpp"
+#include "../features/twitch-requests/ui/TwitchRequestsLayer.hpp"
+#include "../features/guide/ui/PaimonGuideChatPopup.hpp"
+#include "../ui/PaimonUI.hpp"
+#include "../ui/PaiConfigKit.hpp"
+#include "../utils/FluidReveal.hpp"
 #include "PaimonHubData.hpp"
 #include "PaiConfigLayer.hpp"
 #include "PaimonSupportLayer.hpp"
@@ -98,71 +107,77 @@ void dismissOverlay(CCNode*& node) {
     }
 }
 
-void animateActionCard(CCMenuItemSpriteExtra* btn, float x, float targetY, float delay) {
-    btn->setPosition({x, targetY - 18.f});
-    btn->setScale(0.f);
-    btn->setOpacity(0);
-    btn->runAction(CCSequence::create(
-        CCDelayTime::create(delay),
-        CCSpawn::create(
-            CCFadeTo::create(0.18f, 255),
-            CCEaseBackOut::create(CCMoveTo::create(0.24f, {x, targetY})),
-            CCScaleTo::create(0.24f, 1.f),
-            nullptr
-        ),
-        nullptr
-    ));
+void animateActionCard(CCMenuItemSpriteExtra* button, float x, float y, float delay) {
+    button->setPosition({x, y});
+    paimon::ui::animateIn(button, delay);
+}
+
+CCSprite* makePillFace(char const* text, ccColor3B color, float scale) {
+    auto* label = CCLabelBMFont::create(text, "bigFont.fnt");
+    float const width = std::clamp(label->getContentSize().width * 0.8f * scale + 16.f, 36.f, 160.f);
+    return paimon::ui::makeButtonFace(text, {width, std::max(18.f, 60.f * scale)}, color, 0.8f * scale);
+}
+
+void setPillSelected(CCMenuItemSpriteExtra* button, bool selected) {
+    if (!button || !button->getNormalImage()) return;
+    auto* face = button->getNormalImage();
+    if (auto* panel = typeinfo_cast<CCRGBAProtocol*>(face->getChildByID("paimon-button-surface"_spr))) {
+        panel->setColor(selected ? ccColor3B{36, 75, 106} : paimon::ui::palette::raised);
+    }
+    if (auto* label = typeinfo_cast<CCRGBAProtocol*>(face->getChildByID("paimon-button-label"_spr))) {
+        label->setColor(selected ? paimon::ui::palette::text : paimon::ui::palette::muted);
+    }
 }
 
 CCMenuItemSpriteExtra* makeActionCardBtn(
     paimon::hubdata::HubActionMeta const& action,
-    ccColor3B borderColor,
-    float cardW, float cardH,
+    ccColor3B accent,
+    float width, float height,
     WeakRef<PaimonHubLayer> self
 ) {
-    auto cardBg = paimon::SpriteHelper::createColorPanel(
-        cardW, cardH, {24, 25, 38}, 230, 5.f
-    );
-    auto accent = paimon::SpriteHelper::createColorPanel(
-        cardW - 14.f, 2.f, borderColor, 220, 0.f
-    );
-    accent->setPosition({7.f, cardH - 4.f});
-    cardBg->addChild(accent, 1);
+    auto* face = paimon::ui::makeButtonFace("", {width, height});
+    auto* stripe = paimon::SpriteHelper::createColorPanel(3.f, height - 20.f, accent, 255, 1.f);
+    stripe->setPosition({7.f, 10.f});
+    face->addChild(stripe);
+    auto* title = CCLabelBMFont::create(action.title.c_str(), "bigFont.fnt");
+    title->setAnchorPoint({0.f, 1.f});
+    title->setColor(paimon::ui::palette::text);
+    title->limitLabelWidth(width - 50.f, 0.35f, 0.16f);
+    title->setPosition({17.f, height - 11.f});
+    face->addChild(title);
+    auto* desc = CCLabelBMFont::create(action.desc.c_str(), "chatFont.fnt",
+        (width - 32.f) / 0.42f, kCCTextAlignmentLeft);
+    desc->setScale(0.42f);
+    desc->setColor(paimon::ui::palette::muted);
+    desc->setAnchorPoint({0.f, 1.f});
+    desc->setPosition({17.f, height - 28.f});
+    face->addChild(desc);
 
-    auto label = CCLabelBMFont::create(action.title.c_str(), "bigFont.fnt");
-    label->setAnchorPoint({0.5f, 0.5f});
-    constexpr float kLabelScale = 0.38f;
-    label->setScale(kLabelScale);
-    shrinkLabelToFit(label, cardW - 12.f);
-    label->setPosition({cardW / 2.f, cardH / 2.f});
-    cardBg->addChild(label);
-
-    return CCMenuItemExt::createSpriteExtra(cardBg, [self, action](CCMenuItemSpriteExtra*) {
-        auto selfRef = self.lock();
-        auto* hub = selfRef.data();
-        if (hub && hub->getParent()) action.onPress(hub);
+    auto* favoriteMenu = CCMenu::create();
+    favoriteMenu->setPosition({0.f, 0.f});
+    favoriteMenu->setTouchPriority(CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2);
+    auto* star = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
+    if (star && !action.id.empty()) {
+        star->setScale(0.42f);
+        auto favorites = Mod::get()->getSavedValue<std::vector<std::string>>("hub-favorites", {});
+        star->setColor(std::find(favorites.begin(), favorites.end(), action.id) != favorites.end()
+            ? paimon::ui::palette::warning : paimon::ui::palette::muted);
+        auto* pin = CCMenuItemExt::createSpriteExtra(star, [self, id = action.id](CCMenuItemSpriteExtra*) {
+            if (auto hub = self.lock()) hub->toggleHubFavorite(id);
+        });
+        pin->setPosition({width - 17.f, height - 17.f});
+        pin->setSizeMult(1.4f);
+        favoriteMenu->addChild(pin);
+    }
+    face->addChild(favoriteMenu, 5);
+    auto* button = CCMenuItemExt::createSpriteExtra(face, [self, action](CCMenuItemSpriteExtra*) {
+        if (auto hub = self.lock(); hub && hub->getParent()) {
+            hub->activateHubAction(action.id, action.onPress);
+        }
     });
+    button->m_scaleMultiplier = 1.025f;
+    return button;
 }
-
-CCScale9Sprite* makeShortcutBg(ccColor3B color = {255, 255, 255}) {
-    auto* bg = CCScale9Sprite::create("GJ_button_02.png");
-    bg->setContentSize({26.f, 26.f});
-    bg->setColor(color);
-    return bg;
-}
-
-CCLabelBMFont* addCenteredLabel(CCNode* parent, char const* text, float scale,
-    ccColor3B color = {255, 255, 255}, char const* id = nullptr)
-{
-    auto* label = CCLabelBMFont::create(text, "goldFont.fnt");
-    label->setScale(scale);
-    label->setColor(color);
-    label->setPosition(parent->getContentSize() / 2.f);
-    if (id) label->setID(id);
-    parent->addChild(label);
-    return label;
-}
-
 template <typename T>
 bool contains(std::vector<T> const& v, T const& x) {
     return std::find(v.begin(), v.end(), x) != v.end();
@@ -174,10 +189,7 @@ void eraseOne(std::vector<T>& v, T const& x) {
     if (it != v.end()) v.erase(it);
 }
 
-// narrow spacing when 8+ rows would hit shortcuts.
-float sidebarRowSpacing(size_t categoryCount) {
-    return categoryCount > 7 ? 24.f : 27.f;
-}
+
 } // namespace
 
 namespace paimon::hubdata {
@@ -200,16 +212,28 @@ std::vector<HubCategoryMeta> getHubCategories() {
     if (discordSupported()) {
         cats.push_back({"Discord", "Rich Presence completa.", {140, 160, 255}, paimon::ui::getDiscordInfo});
     }
-    cats.push_back({"Dev", "Herramientas para crear assets del mod.", {255, 210, 100}, paimon::ui::getDevInfo});
+    cats.push_back({"Crear", "Iconos, texturas y recursos propios.", {182, 161, 255}, [] {
+        return std::vector<paimon::ui::InfoSection>{
+            {"Iconos", "Crea, importa y organiza tus iconos. La galeria conserva proyectos y favoritos.", {182, 161, 255}},
+            {"Texturas", "Organiza paquetes y edita sus colores con una vista previa en el juego.", {116, 204, 255}},
+            {"GIF a Sheet", "Convierte una animacion en una hoja de sprites para tus recursos.", {255, 208, 128}}
+        };
+    }});
     return cats;
 }
 
 std::vector<HubActionMeta> getHubActions(int categoryIndex) {
-    // dev index shifts without discord; resolve it dynamically.
+    // The creation category follows the optional Discord category.
     const bool discord = discordSupported();
     const int devIndex = discord ? 7 : 6;
     if (categoryIndex == devIndex) {
         return {
+            {"Mis iconos", "GJ_button_05.png", [](PaimonHubLayer*) {
+                paimon::icon_maker::IconGalleryLayer::open();
+            }, devIndex, "Crea, importa y organiza tus iconos"},
+            {"Texture Studio", "GJ_button_02.png", [](PaimonHubLayer*) {
+                paimon::texture_studio::TextureStudioLayer::open();
+            }, devIndex, "Edita paquetes y colores en vivo"},
             {"GIF a Sheet", "GJ_button_04.png", [](PaimonHubLayer*) {
                 if (auto popup = paimon::dev::GifToSheetPopup::create()) popup->show();
             }, devIndex, "Convierte GIF en spritesheet"},
@@ -226,6 +250,15 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
                 {"Actualizaciones", "GJ_button_02.png", [](PaimonHubLayer*) {
                     if (auto popup = paimon::updates::UpdateCenterPopup::create()) popup->show();
                 }, 0, "Nueva version y versiones antiguas"},
+                {"Comunidad", "GJ_button_02.png", [](PaimonHubLayer*) {
+                    if (auto* scene = CommunityHubLayer::scene()) CCDirector::get()->pushScene(scene);
+                }, 0, "Creadores, miniaturas y mods compatibles"},
+                {"Versus", "GJ_button_05.png", [](PaimonHubLayer*) {
+                    if (auto* scene = paimon::versus::VersusHubLayer::scene()) CCDirector::get()->pushScene(scene);
+                }, 0, "Partidas, mazos y clasificaciones"},
+                {"Peticiones en directo", "GJ_button_02.png", [](PaimonHubLayer*) {
+                    TwitchRequestsLayer::open();
+                }, 0, "Colas y fuentes de streaming"},
                 {"PaiDraw", "GJ_button_05.png", [](PaimonHubLayer* self) { self->onOpenPaiDraw(nullptr); }, 0, "Dibuja con la comunidad"},
                 {"Soporte", "GJ_button_04.png", [](PaimonHubLayer* self) { self->onOpenSupport(nullptr); }, 0, "Ayuda y contacto"},
                 {"Reiniciar ajustes", "GJ_button_03.png", [](PaimonHubLayer*) {
@@ -279,6 +312,12 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
             };
         case 5:
             return {
+                {"Guia de Paimon", "GJ_button_05.png", [](PaimonHubLayer*) {
+                    if (auto* popup = paimon::guide::PaimonGuideChatPopup::create()) popup->show();
+                }, 5, "Ayuda para encontrar y usar las funciones"},
+                {"Quick Hub", "GJ_button_02.png", [](PaimonHubLayer*) {
+                    if (auto* popup = paimon::quickhub::RadialConfigPopup::create()) popup->show();
+                }, 5, "Tus accesos rapidos en un menu radial"},
                 {"Smooth UI", "GJ_button_05.png", [](PaimonHubLayer*) {
                     if (auto popup = paimon::ui::SmoothUIConfigPopup::create()) popup->show();
                 }, 5, "Animaciones suaves"},
@@ -426,6 +465,8 @@ bool PaimonHubLayer::init() {
     if (!CCLayer::init()) return false;
     this->setKeypadEnabled(true);
     this->setTouchEnabled(true);
+    this->setMouseEnabled(true);
+    this->scheduleUpdate();
 
     m_forumTags = {
         "Guide", "Tip", "Question", "Bug", "Suggestion",
@@ -444,29 +485,17 @@ bool PaimonHubLayer::init() {
     float cx = winSize.width / 2;
     float top = winSize.height;
 
-    if (auto bg = paimon::SpriteHelper::safeCreate("GJ_gradientBG.png")) {
-        bg->setAnchorPoint({0.f, 0.f});
-        bg->setScaleX(winSize.width / bg->getContentSize().width);
-        bg->setScaleY(winSize.height / bg->getContentSize().height);
-        bg->setColor({20, 20, 32});
-        this->addChild(bg, -2);
-        m_bgNode = bg;
-    } else {
-        auto flat = CCLayerColor::create(ccc4(20, 20, 32, 255));
-        flat->setContentSize(winSize);
-        this->addChild(flat, -2);
-        m_bgNode = flat;
-    }
-    m_bgColorHome = {20, 20, 32};
-    m_bgColorSub  = {0, 102, 255};
+    paimon::ui::decorateScene(this);
+    m_bgColorHome = paimon::ui::palette::background;
+    m_bgColorSub = paimon::ui::palette::background;
 
     m_mainMenu = makeZeroMenu("paimon-hub-main-menu"_spr);
     this->addChild(m_mainMenu, 10);
 
-    auto title = CCLabelBMFont::create(tr("pai.hub.title", "Paimbnails").c_str(), "goldFont.fnt");
+    auto title = CCLabelBMFont::create(tr("pai.hub.title", "Paimbnails").c_str(), "bigFont.fnt");
     title->setAnchorPoint({0.f, 0.5f});
     title->setPosition({46.f, top - 20.f});
-    title->setScale(0.48f);
+    title->limitLabelWidth(winSize.width < 500.f ? 76.f : 105.f, 0.48f, 0.22f);
     this->addChild(title);
 
     auto backSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
@@ -475,24 +504,22 @@ bool PaimonHubLayer::init() {
     backBtn->setScale(0.75f);
     m_mainMenu->addChild(backBtn);
 
-    auto helpSpr = ButtonSprite::create("?", "goldFont.fnt", "GJ_button_04.png", .72f);
-    helpSpr->setScale(0.40f);
+    auto helpSpr = paimon::ui::makeButtonFace("?", {24.f, 24.f});
     auto helpBtn = CCMenuItemSpriteExtra::create(helpSpr, this, menu_selector(PaimonHubLayer::onOpenHelp));
     helpBtn->setPosition({winSize.width - 20.f, top - 20.f});
     m_mainMenu->addChild(helpBtn);
 
-    auto uiSpr = ButtonSprite::create(tr("pai.hub.style.gd", "UI: GD").c_str(), "bigFont.fnt", "GJ_button_05.png", .8f);
-    uiSpr->setScale(0.34f);
+    auto uiSpr = paimon::ui::makeButtonFace("GD", {30.f, 24.f});
     auto uiBtn = CCMenuItemSpriteExtra::create(uiSpr, this, menu_selector(PaimonHubLayer::onToggleUIStyle));
     uiBtn->setID("ui-style-btn"_spr);
-    uiBtn->setPosition({winSize.width - 58.f, top - 20.f});
+    uiBtn->setPosition({winSize.width - 56.f, top - 20.f});
     m_mainMenu->addChild(uiBtn);
 
-    auto updSpr = ButtonSprite::create(tr("pai.hub.btn.updates", "Updates").c_str(), "bigFont.fnt", "GJ_button_02.png", .8f);
-    updSpr->setScale(0.34f);
+    auto updSpr = paimon::ui::makeButtonFace(tr("pai.hub.btn.updates", "Updates").c_str(),
+        {winSize.width < 500.f ? 48.f : 70.f, 24.f});
     auto updBtn = CCMenuItemSpriteExtra::create(updSpr, this, menu_selector(PaimonHubLayer::onCheckUpdate));
     updBtn->setID("updates-btn"_spr);
-    updBtn->setPosition({winSize.width - 108.f, top - 20.f});
+    updBtn->setPosition({winSize.width - (winSize.width < 500.f ? 98.f : 114.f), top - 20.f});
     m_mainMenu->addChild(updBtn);
 
     float tabY = top - 20.f;
@@ -504,8 +531,8 @@ bool PaimonHubLayer::init() {
 
     auto tabBar = CCMenu::create();
     tabBar->setID("paimon-hub-tab-bar"_spr);
-    tabBar->setPosition({cx + 40.f, tabY});
-    tabBar->setContentSize({200.f, 24.f});
+    tabBar->setPosition({cx + (winSize.width < 500.f ? 2.f : 4.f), tabY});
+    tabBar->setContentSize({174.f, 24.f});
     tabBar->setAnchorPoint({0.5f, 0.5f});
     tabBar->setLayout(
         RowLayout::create()
@@ -517,8 +544,7 @@ bool PaimonHubLayer::init() {
 
     static char const* kTabIds[] = {"home-tab-btn"_spr, "news-tab-btn"_spr, "forum-tab-btn"_spr};
     for (int i = 0; i < 3; i++) {
-        auto spr = ButtonSprite::create(tabNames[i].c_str(), "bigFont.fnt", "GJ_button_04.png", .8f);
-        spr->setScale(0.38f);
+        auto spr = paimon::ui::makeButtonFace(tabNames[i].c_str(), {54.f, 24.f}, paimon::ui::palette::raised, 0.30f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(PaimonHubLayer::onTabSwitch));
         btn->setTag(i);
         btn->setID(kTabIds[i]);
@@ -535,7 +561,7 @@ bool PaimonHubLayer::init() {
     auto addTab = [this](CCLayerRGBA*& tab, CCMenu*& menu, char const* tabId, char const* menuId, bool visible) {
         tab = cocos2d::CCLayerRGBA::create();
         tab->setID(tabId);
-        tab->setCascadeOpacityEnabled(true);
+        tab->setCascadeOpacityEnabled(false);
         tab->setVisible(visible);
         this->addChild(tab, 5);
         menu = makeZeroMenu(menuId);
@@ -596,276 +622,203 @@ void PaimonHubLayer::switchTab(int idx) {
     m_forumTab->setVisible(idx == 2);
     m_forumMenu->setVisible(idx == 2);
 
-    cocos2d::CCLayerRGBA* activeTab = (idx == 0) ? m_homeTab : (idx == 1) ? m_newsTab : m_forumTab;
-    cocos2d::CCMenu* activeMenu = (idx == 0) ? m_homeMenu : (idx == 1) ? m_newsMenu : m_forumMenu;
-    float dx = (idx > prev) ? 46.f : (idx < prev) ? -46.f : 0.f;
-
+    auto* activeTab = idx == 0 ? m_homeTab : idx == 1 ? m_newsTab : m_forumTab;
+    auto* activeMenu = idx == 0 ? m_homeMenu : idx == 1 ? m_newsMenu : m_forumMenu;
     if (activeTab) {
         activeTab->stopAllActions();
-        activeTab->setOpacity(0);
-        activeTab->setPosition({dx, 0.f});
-        activeTab->runAction(CCSpawn::create(
-            CCFadeTo::create(0.20f, 255),
-            CCEaseExponentialOut::create(CCMoveTo::create(0.32f, {0.f, 0.f})),
-            nullptr
-        ));
+        activeTab->setPosition({0.f, 0.f});
+        activeTab->setOpacity(255);
+        if (idx != prev) paimon::fluid::revealNode(activeTab);
     }
     if (activeMenu) {
         activeMenu->stopAllActions();
-        activeMenu->setPosition({dx, 0.f});
-        activeMenu->runAction(CCEaseExponentialOut::create(CCMoveTo::create(0.32f, {0.f, 0.f})));
+        activeMenu->setPosition({0.f, 0.f});
     }
-
-    if (m_bgNode) {
-        auto target = (idx == 0) ? m_bgColorHome : m_bgColorSub;
-        m_bgNode->stopAllActions();
-        m_bgNode->runAction(CCTintTo::create(0.32f, target.r, target.g, target.b));
-    }
-
-    for (int i = 0; i < (int)m_tabBtns.size(); i++) {
-        if (auto spr = typeinfo_cast<ButtonSprite*>(m_tabBtns[i]->getNormalImage())) {
-            spr->setColor(i == idx ? ccColor3B{100, 255, 100} : ccColor3B{255, 255, 255});
+    std::vector<std::string> const names = {
+        tr("pai.hub.tab.home", "Home"), tr("pai.hub.tab.news", "News"), tr("pai.hub.tab.forum", "Forum")};
+    for (size_t i = 0; i < m_tabBtns.size(); ++i) {
+        if (m_gdMode) {
+            if (auto* sprite = typeinfo_cast<ButtonSprite*>(m_tabBtns[i]->getNormalImage())) {
+                sprite->setColor(static_cast<int>(i) == idx ? ccColor3B{100, 255, 100} : ccColor3B{255, 255, 255});
+            }
+        } else {
+            m_tabBtns[i]->setSprite(paimon::ui::makeButtonFace(names[i].c_str(), {54.f, 24.f},
+                static_cast<int>(i) == idx ? ccColor3B{36, 75, 106} : paimon::ui::palette::raised, 0.30f));
         }
     }
     if (idx == 2) refreshForumPosts();
 }
 
 void PaimonHubLayer::buildHomeTab() {
-    auto winSize = CCDirector::get()->getWinSize();
-    float cx = winSize.width / 2.f;
-
+    auto const win = CCDirector::get()->getWinSize();
+    float const panelH = win.height - 58.f;
+    float const top = win.height - 70.f;
     auto categories = getHubCategories();
-
-    m_sidebarBg = paimon::SpriteHelper::createDarkPanel(135.f, 250.f, 220, 6.f);
+    m_sidebarBg = paimon::ui::makeSurface({135.f, panelH});
     m_sidebarBg->setPosition({15.f, 15.f});
-    m_homeTab->addChild(m_sidebarBg, 0);
-
-    m_sidebarHighlight = paimon::SpriteHelper::createColorPanel(
-        125.f, 26.f, cocos2d::ccColor3B{255, 255, 255}, 200, 4.f
-    );
-    m_sidebarHighlight->setPosition({20.f, 241.f - 13.f});
+    m_homeTab->addChild(m_sidebarBg);
+    m_sidebarHighlight = paimon::ui::makeSurface({119.f, 27.f}, {36, 75, 106});
+    m_sidebarHighlight->setPosition({23.f, top - 13.5f});
     m_homeTab->addChild(m_sidebarHighlight, 1);
-    if (m_sidebarHighlight && !categories.empty()) {
-        m_sidebarHighlight->setColor(categories[0].color);
-    }
-
     m_sidebarMenu = makeZeroMenu("paimon-sidebar-menu"_spr);
-    m_homeTab->addChild(m_sidebarMenu, 2);
-    m_sidebarLabels.clear();
-
-    for (size_t i = 0; i < categories.size(); i++) {
-        float yPos = 241.f - i * sidebarRowSpacing(categories.size());
-        auto label = CCLabelBMFont::create(categories[i].title.c_str(), "bigFont.fnt");
-        label->setAnchorPoint({0.5f, 0.5f});
-        label->setPosition({20.f + 125.f / 2.f, yPos});
-        label->setScale(0.28f);
-        m_homeTab->addChild(label, 3);
+    m_homeTab->addChild(m_sidebarMenu, 3);
+    float const spacing = std::min(28.f, (panelH - 84.f) / std::max(1.f, static_cast<float>(categories.size() - 1)));
+    for (size_t i = 0; i < categories.size(); ++i) {
+        float const y = top - static_cast<float>(i) * spacing;
+        auto* face = CCSprite::create();
+        face->setContentSize({119.f, 27.f});
+        auto* button = CCMenuItemSpriteExtra::create(face, this, menu_selector(PaimonHubLayer::onTabSwitch));
+        button->setPosition({82.5f, y});
+        button->setTag(100 + static_cast<int>(i));
+        button->m_scaleMultiplier = 1.f;
+        m_sidebarMenu->addChild(button);
+        auto* label = CCLabelBMFont::create(categories[i].title.c_str(), "bigFont.fnt");
+        label->setAnchorPoint({0.f, 0.5f});
+        label->setPosition({35.f, y});
+        label->limitLabelWidth(97.f, 0.32f, 0.16f);
+        m_homeTab->addChild(label, 2);
         m_sidebarLabels.push_back(label);
-
-        auto btnBg = CCNode::create();
-        btnBg->setContentSize({125.f, 26.f});
-        auto btn = CCMenuItemSpriteExtra::create(btnBg, this, menu_selector(PaimonHubLayer::onTabSwitch));
-        btn->setTag(100 + static_cast<int>(i));
-        btn->setPosition({20.f + 125.f / 2.f, yPos});
-        m_sidebarMenu->addChild(btn);
     }
+    auto* quick = paimon::ui::makeButton("Quick Hub", {112.f, 26.f}, [] {
+        if (auto* popup = paimon::quickhub::RadialConfigPopup::create()) popup->show();
+    });
+    quick->setPosition({82.5f, 40.f});
+    m_sidebarMenu->addChild(quick);
+    auto* version = CCLabelBMFont::create(paimon::updates::UpdateChecker::get().localVersion().c_str(), "chatFont.fnt");
+    version->setScale(0.42f);
+    version->setColor(paimon::ui::palette::muted);
+    version->setPosition({82.5f, 21.f});
+    m_homeTab->addChild(version, 2);
 
-    {
-        auto* shortcutsRow = CCMenu::create();
-        shortcutsRow->setID("hub-shortcuts-row"_spr);
-        shortcutsRow->setContentSize({135.f, 30.f});
-        shortcutsRow->setAnchorPoint({0.5f, 0.5f});
-        shortcutsRow->ignoreAnchorPointForPosition(false);
-        shortcutsRow->setPosition({135.f * 0.5f + 5.f + 10.f, 32.f});
-        shortcutsRow->setLayout(
-            RowLayout::create()
-                ->setGap(6.f)
-                ->setAxisAlignment(AxisAlignment::Center)
-                ->setCrossAxisAlignment(AxisAlignment::Center)
-        );
-
-        if (discordSupported()) {
-            auto* discordBg = makeShortcutBg({110, 150, 255});
-            addCenteredLabel(discordBg, "RPC", 0.26f);
-            auto* discordBtn = CCMenuItemExt::createSpriteExtra(discordBg, [self = WeakRef<PaimonHubLayer>(this)](CCMenuItemSpriteExtra*) {
-                if (auto* hub = self.lock().data(); hub && hub->getParent()) hub->onOpenDiscordConfig(nullptr);
-            });
-            discordBtn->setID("discord-sidebar-btn"_spr);
-            shortcutsRow->addChild(discordBtn);
-        }
-
-        auto* qhBg = makeShortcutBg({255, 200, 80});
-        addCenteredLabel(qhBg, "QH", 0.26f);
-        auto* qhBtn = CCMenuItemExt::createSpriteExtra(qhBg, [](CCMenuItemSpriteExtra*) {
-            if (auto popup = paimon::quickhub::RadialConfigPopup::create()) popup->show();
-        });
-        qhBtn->setID("quickhub-sidebar-btn"_spr);
-        shortcutsRow->addChild(qhBtn);
-
-        auto* drawBg = makeShortcutBg();
-        if (auto* icon = paidraw::createPaiDrawIcon(20.f)) {
-            icon->setPosition(drawBg->getContentSize() / 2.f);
-            drawBg->addChild(icon);
-        }
-        auto* drawBtn = CCMenuItemSpriteExtra::create(drawBg, this, menu_selector(PaimonHubLayer::onOpenPaiDraw));
-        drawBtn->setID("paidraw-sidebar-btn"_spr);
-        shortcutsRow->addChild(drawBtn);
-
-        bool guideOn = paimon::guide::PaimonGuideService::get().isEnabled();
-        auto* guideBg = makeShortcutBg(guideOn ? ccColor3B{255, 220, 100} : ccColor3B{120, 120, 130});
-        addCenteredLabel(guideBg, "GUI", 0.26f,
-            guideOn ? ccColor3B{255, 255, 255} : ccColor3B{180, 180, 180},
-            "guide-sidebar-btn-label"_spr);
-
-        auto* guideBtn = CCMenuItemExt::createSpriteExtra(guideBg, [](CCMenuItemSpriteExtra* sender) {
-            using namespace paimon::guide;
-            bool newState = !PaimonGuideService::get().isEnabled();
-            PaimonGuideService::get().setEnabled(newState);
-            GuideEnabledChangedEvent(kGuideEventFilter).send(newState);
-
-            if (auto* nine = typeinfo_cast<cocos2d::extension::CCScale9Sprite*>(
-                    sender ? sender->getNormalImage() : nullptr)) {
-                nine->setColor(newState ? ccColor3B{255, 220, 100} : ccColor3B{120, 120, 130});
-                if (auto* lbl = typeinfo_cast<CCLabelBMFont*>(
-                        nine->getChildByIDRecursive("guide-sidebar-btn-label"_spr))) {
-                    lbl->setColor(newState ? ccColor3B{255, 255, 255} : ccColor3B{180, 180, 180});
-                }
-            }
-            Notification::create(
-                Localization::get().getString(newState ? "pai.guide.toggle.on" : "pai.guide.toggle.off"),
-                newState ? NotificationIcon::Success : NotificationIcon::None,
-                1.8f
-            )->show();
-        });
-        guideBtn->setID("guide-sidebar-btn"_spr);
-        shortcutsRow->addChild(guideBtn);
-        shortcutsRow->updateLayout();
-        m_sidebarMenu->addChild(shortcutsRow);
-    }
-
-    float detailsW = winSize.width - 175.f;
-    m_detailsBg = paimon::SpriteHelper::createDarkPanel(detailsW, 250.f, 240, 6.f);
+    float const detailsW = win.width - 175.f;
+    m_detailsBg = paimon::ui::makeSurface({detailsW, panelH});
     m_detailsBg->setPosition({160.f, 15.f});
-    m_homeTab->addChild(m_detailsBg, 0);
-
-    m_homeCategoryTitle = CCLabelBMFont::create(categories[0].title.c_str(), "goldFont.fnt");
-    m_homeCategoryTitle->setScale(0.48f);
-    m_homeCategoryTitle->setColor(categories[0].color);
+    m_homeTab->addChild(m_detailsBg);
+    m_homeCategoryTitle = CCLabelBMFont::create("", "bigFont.fnt");
     m_homeCategoryTitle->setAnchorPoint({0.f, 0.5f});
-    m_homeCategoryTitle->setPosition({178.f, 242.f});
+    m_homeCategoryTitle->setPosition({174.f, top});
     m_homeTab->addChild(m_homeCategoryTitle, 2);
-
-    m_homeCategoryInfoBtn = CCMenuItemExt::createSpriteExtra(
-        CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png"),
-        [self = WeakRef<PaimonHubLayer>(this)](CCMenuItemSpriteExtra*) {
-            auto selfRef = self.lock();
-            auto* hub = selfRef.data();
-            if (!hub || !hub->getParent()) return;
-            auto categories = getHubCategories();
-            if (hub->m_homeSelectedCategory < 0 || hub->m_homeSelectedCategory >= static_cast<int>(categories.size())) return;
-            auto const& cat = categories[hub->m_homeSelectedCategory];
-            auto sections = cat.getInfo();
-            if (auto popup = paimon::ui::FeatureInfoPopup::create(cat.title, sections)) {
-                popup->show();
-            }
-        }
-    );
-    m_homeCategoryInfoBtn->setScale(0.38f);
-    m_sidebarMenu->addChild(m_homeCategoryInfoBtn);
-
-    m_homeCategoryDesc = CCLabelBMFont::create(categories[0].shortDesc.c_str(), "bigFont.fnt");
-    m_homeCategoryDesc->setScale(0.20f);
-    m_homeCategoryDesc->setColor({160, 170, 190});
+    m_homeCategoryDesc = CCLabelBMFont::create("", "chatFont.fnt");
     m_homeCategoryDesc->setAnchorPoint({0.f, 0.5f});
-    m_homeCategoryDesc->setPosition({178.f, 222.f});
+    m_homeCategoryDesc->setColor(paimon::ui::palette::muted);
+    m_homeCategoryDesc->setPosition({174.f, top - 19.f});
     m_homeTab->addChild(m_homeCategoryDesc, 2);
 
-    m_searchInput = TextInput::create(120.f, tr("pai.hub.search", "Search...").c_str(), "chatFont.fnt");
+    auto* infoSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png");
+    if (infoSprite) {
+        infoSprite->setScale(0.45f);
+        m_homeCategoryInfoBtn = CCMenuItemExt::createSpriteExtra(infoSprite, [self = WeakRef<PaimonHubLayer>(this)](CCMenuItemSpriteExtra*) {
+            if (auto hub = self.lock()) {
+                auto cats = getHubCategories();
+                if (auto* popup = paimon::ui::FeatureInfoPopup::create(cats[hub->m_homeSelectedCategory].title,
+                    cats[hub->m_homeSelectedCategory].getInfo())) popup->show();
+            }
+        });
+        m_homeCategoryInfoBtn->setPosition({win.width - 32.f, top});
+        m_sidebarMenu->addChild(m_homeCategoryInfoBtn);
+    }
+    bool const es = Localization::get().getLanguage() == Localization::Language::SPANISH;
+    float const searchW = detailsW - 54.f;
+    m_searchInput = TextInput::create(searchW, es ? "Buscar funciones y ajustes..." : "Find features and settings...", "chatFont.fnt");
     m_searchInput->setCommonFilter(CommonFilter::Any);
-    m_searchInput->setMaxCharCount(20);
-    m_searchInput->setPosition({winSize.width - 95.f, 236.f});
-    m_searchInput->setScale(0.68f);
-    WeakRef<PaimonHubLayer> hubRef = this;
-    m_searchInput->setCallback([hubRef](std::string const&) {
-        auto selfRef = hubRef.lock();
-        auto* hub = selfRef.data();
-        if (hub && hub->getParent()) {
-            hub->rebuildHomeCategoryCards();
-        }
+    m_searchInput->setMaxCharCount(64);
+    m_searchInput->setPosition({174.f + searchW / 2.f, top - 46.f});
+    m_searchInput->setCallback([self = WeakRef<PaimonHubLayer>(this)](std::string const&) {
+        if (auto hub = self.lock(); hub && hub->getParent()) hub->rebuildHomeCategoryCards();
     });
     m_homeTab->addChild(m_searchInput, 10);
-
+    auto* clear = paimon::ui::makeButton("x", {24.f, 26.f}, [this] {
+        m_searchInput->setString("");
+        rebuildHomeCategoryCards();
+    });
+    clear->setPosition({win.width - 32.f, top - 46.f});
+    m_sidebarMenu->addChild(clear);
+    buildHomeFilterBar();
     m_homeActionsMenu = makeZeroMenu();
-    m_homeMenu->addChild(m_homeActionsMenu, 3);
-
-    {
-        auto& chk = paimon::updates::UpdateChecker::get();
-        std::string verText = fmt::format(
-            fmt::runtime(tr("pai.hub.version", "Version: {}")),
-            chk.localVersion()
-        );
-        auto* versionLabel = CCLabelBMFont::create(verText.c_str(), "bigFont.fnt");
-        versionLabel->setScale(0.24f);
-        versionLabel->setColor({120, 130, 150});
-
-        auto* versionBtn = CCMenuItemExt::createSpriteExtra(versionLabel, [](CCMenuItemSpriteExtra*) {
-            if (auto popup = paimon::updates::UpdateCenterPopup::create()) popup->show();
-        });
-        versionBtn->setID("hub-version-btn"_spr);
-        versionBtn->setPosition({15.f + 135.f / 2.f, 13.f});
-        m_sidebarMenu->addChild(versionBtn);
-    }
-
-    switchHomeCategory(0);
+    m_homeMenu->addChild(m_homeActionsMenu);
+    switchHomeCategory(std::clamp(Mod::get()->getSavedValue<int>("hub-last-category", 0),
+        0, static_cast<int>(categories.size()) - 1));
 }
 
-void PaimonHubLayer::switchHomeCategory(int idx) {
+void PaimonHubLayer::buildHomeFilterBar() {
+    if (m_homeFilterBar) m_homeFilterBar->removeFromParent();
+    auto const win = CCDirector::get()->getWinSize();
+    bool const es = Localization::get().getLanguage() == Localization::Language::SPANISH;
+    m_homeFilterBar = paimon::configkit::makeTabBar(win.width - 203.f,
+        {es ? "Categoria" : "Category", es ? "Favoritos" : "Favorites", es ? "Recientes" : "Recent"},
+        m_homeFilter, [this](int filter) {
+            m_homeFilter = filter;
+            rebuildHomeCategoryCards();
+        });
+    m_homeFilterBar->setPosition({174.f, win.height - 152.f});
+    m_homeTab->addChild(m_homeFilterBar, 3);
+}
+
+void PaimonHubLayer::switchHomeCategory(int index) {
     auto categories = getHubCategories();
-    if (idx < 0 || idx >= static_cast<int>(categories.size())) return;
-    m_homeSelectedCategory = idx;
-
+    if (index < 0 || index >= static_cast<int>(categories.size())) return;
+    m_homeSelectedCategory = index;
+    if (m_homeFilter != 0) {
+        m_homeFilter = 0;
+        buildHomeFilterBar();
+    }
+    Mod::get()->setSavedValue("hub-last-category", index);
     if (m_searchInput) m_searchInput->setString("");
-    if (m_homeActionsScroll) {
-        m_homeActionsScroll->removeFromParent();
-        m_homeActionsScroll = nullptr;
-    }
-    if (m_homeActionsMenu) m_homeActionsMenu->setVisible(true);
-
     refreshHomeCategorySelector();
-    if (m_homeCategoryTitle) {
-        m_homeCategoryTitle->setString(categories[idx].title.c_str());
-        m_homeCategoryTitle->setColor(categories[idx].color);
-    }
-    if (m_homeCategoryDesc) m_homeCategoryDesc->setString(categories[idx].shortDesc.c_str());
     rebuildHomeCategoryCards();
 }
 
 void PaimonHubLayer::refreshHomeCategorySelector() {
+    auto const win = CCDirector::get()->getWinSize();
     auto categories = getHubCategories();
-    if (m_homeSelectedCategory < 0 || m_homeSelectedCategory >= static_cast<int>(categories.size())) return;
-
-    float targetY = 241.f - m_homeSelectedCategory * sidebarRowSpacing(categories.size());
+    float const spacing = std::min(28.f, (win.height - 142.f) / std::max(1.f, static_cast<float>(categories.size() - 1)));
     if (m_sidebarHighlight) {
-        auto c = categories[m_homeSelectedCategory].color;
         m_sidebarHighlight->stopAllActions();
-        m_sidebarHighlight->runAction(CCEaseExponentialOut::create(
-            CCMoveTo::create(0.22f, {20.f, targetY - 13.f})
-        ));
-        m_sidebarHighlight->runAction(CCTintTo::create(0.22f, c.r, c.g, c.b));
+        CCPoint const destination{23.f, win.height - 83.5f - m_homeSelectedCategory * spacing};
+        if (paimon::ui::motionEnabled()) {
+            m_sidebarHighlight->runAction(CCEaseSineOut::create(CCMoveTo::create(paimon::ui::motionDuration(0.18f), destination)));
+        } else m_sidebarHighlight->setPosition(destination);
     }
+    for (size_t i = 0; i < m_sidebarLabels.size(); ++i) {
+        m_sidebarLabels[i]->setColor(static_cast<int>(i) == m_homeSelectedCategory
+            ? paimon::ui::palette::text : paimon::ui::palette::muted);
+    }
+}
 
-    for (size_t i = 0; i < m_sidebarLabels.size(); i++) {
-        if (!m_sidebarLabels[i]) continue;
-        bool sel = static_cast<int>(i) == m_homeSelectedCategory;
-        m_sidebarLabels[i]->setColor(sel ? ccColor3B{255, 255, 255} : ccColor3B{130, 140, 165});
-        m_sidebarLabels[i]->runAction(CCScaleTo::create(0.12f, sel ? 0.32f : 0.28f));
+void PaimonHubLayer::activateHubAction(std::string const& id, std::function<void(PaimonHubLayer*)> const& callback) {
+    if (!id.empty()) {
+        auto recent = Mod::get()->getSavedValue<std::vector<std::string>>("hub-recent", {});
+        std::erase(recent, id);
+        recent.insert(recent.begin(), id);
+        if (recent.size() > 12) recent.resize(12);
+        Mod::get()->setSavedValue("hub-recent", recent);
+        if (m_homeFilter == 2) {
+            Loader::get()->queueInMainThread([self = WeakRef<PaimonHubLayer>(this)] {
+                if (auto hub = self.lock(); hub && hub->getParent()) hub->rebuildHomeCategoryCards(false);
+            });
+        }
     }
+    if (callback) callback(this);
+}
 
-    if (m_homeCategoryInfoBtn && m_homeCategoryTitle) {
-        m_homeCategoryInfoBtn->setPosition({
-            178.f + m_homeCategoryTitle->getScaledContentSize().width + 12.f, 242.f
-        });
-    }
+void PaimonHubLayer::toggleHubFavorite(std::string const& id) {
+    auto favorites = Mod::get()->getSavedValue<std::vector<std::string>>("hub-favorites", {});
+    if (contains(favorites, id)) std::erase(favorites, id);
+    else favorites.push_back(id);
+    Mod::get()->setSavedValue("hub-favorites", favorites);
+    Loader::get()->queueInMainThread([self = WeakRef<PaimonHubLayer>(this)] {
+        if (auto hub = self.lock(); hub && hub->getParent()) hub->rebuildHomeCategoryCards(false);
+    });
+}
+
+void PaimonHubLayer::scrollWheel(float x, float y) {
+    if (m_currentTab == 0 && paimon::configkit::queueWheelScroll(m_homeActionsScroll,
+        x, y, m_homeScrollTarget, m_homeScrollTargetSet)) return;
+    CCLayer::scrollWheel(x, y);
+}
+
+void PaimonHubLayer::update(float dt) {
+    paimon::configkit::stepWheelScroll(m_homeActionsScroll, m_homeScrollTarget, m_homeScrollTargetSet, dt);
 }
 
 void PaimonHubLayer::onOpenHelp(CCObject*) {
@@ -879,147 +832,131 @@ void PaimonHubLayer::onOpenHelp(CCObject*) {
         }
     }
 
-    auto body = fmt::format(
-        "<cy>{}</c> = layout menu/pausa\n"
-        "(en Geode)\n\n"
-        "Arrastra | verde=tamano\n"
-        "azul=opacidad | rojo=ocultar\n"
-        "<cy>Esc</c> = salir\n\n"
-        "Hub: izq. categorias,\n"
-        "abajo acciones.",
-        layoutKeybind
-    );
+    bool const es = Localization::get().getLanguage() == Localization::Language::SPANISH;
+    auto body = fmt::format(fmt::runtime(es
+        ? "Busca funciones por nombre, descripcion o ajuste.\n\n"
+          "Toca la estrella para guardar un favorito. Recientes muestra tus ultimos doce accesos.\n\n"
+          "Pulsa el valor de un selector para buscar entre sus opciones.\n\n"
+          "<cy>Esc</c>: cerrar. <cy>{}</c>: layout de menu/pausa, configurable en Geode."
+        : "Find features by name, description or setting.\n\n"
+          "Tap a star to save a favorite. Recent shows your last twelve visits.\n\n"
+          "Tap a selector value to search its options.\n\n"
+          "<cy>Esc</c>: close. <cy>{}</c>: menu/pause layout, configurable in Geode."),
+        layoutKeybind);
 
-    PopupManager::get().alert("Ayuda", body).showInstant();
+    PopupManager::get().alert(es ? "Ayuda del hub" : "Hub help", body).showInstant();
 }
 
-void PaimonHubLayer::rebuildHomeCategoryCards() {
+void PaimonHubLayer::rebuildHomeCategoryCards(bool resetScroll) {
     if (!m_homeActionsMenu) return;
+    float const previousOffset = m_homeActionsScroll && m_homeActionsScroll->m_contentLayer
+        ? m_homeActionsScroll->m_contentLayer->getPositionY()
+            + m_homeActionsScroll->m_contentLayer->getContentSize().height
+            - m_homeActionsScroll->getContentSize().height : 0.f;
     m_homeActionsMenu->removeAllChildren();
     if (m_homeActionsScroll) {
         m_homeActionsScroll->removeFromParent();
         m_homeActionsScroll = nullptr;
     }
-    m_homeActionsMenu->setVisible(true);
-
+    m_homeScrollTargetSet = false;
     auto categories = getHubCategories();
-    if (m_homeSelectedCategory < 0 || m_homeSelectedCategory >= static_cast<int>(categories.size())) return;
-    auto const& cat = categories[m_homeSelectedCategory];
-
+    auto const& category = categories[m_homeSelectedCategory];
+    std::string const query = toLower(m_searchInput ? m_searchInput->getString() : "");
+    auto favorites = Mod::get()->getSavedValue<std::vector<std::string>>("hub-favorites", {});
+    auto recent = Mod::get()->getSavedValue<std::vector<std::string>>("hub-recent", {});
+    bool const es = Localization::get().getLanguage() == Localization::Language::SPANISH;
     std::vector<HubActionMeta> actions;
-    std::string query = m_searchInput ? m_searchInput->getString() : "";
-
-    if (query.empty()) {
-        actions = getHubActions(m_homeSelectedCategory);
-        for (auto& act : actions) act.categoryIndex = m_homeSelectedCategory;
-        if (m_homeCategoryTitle) {
-            m_homeCategoryTitle->setString(cat.title.c_str());
-            m_homeCategoryTitle->setColor(cat.color);
+    auto include = [&](HubActionMeta action, int categoryIndex) {
+        action.categoryIndex = categoryIndex;
+        if (m_homeFilter == 1 && !contains(favorites, action.id)) return;
+        if (m_homeFilter == 2 && !contains(recent, action.id)) return;
+        if (!query.empty() && toLower(action.title + " " + action.desc + " " + categories[categoryIndex].title).find(query) == std::string::npos) return;
+        if (m_homeFilter == 0 && query.empty() && categoryIndex != m_homeSelectedCategory) return;
+        if (m_homeFilter != 0 || !query.empty()) action.desc = categories[categoryIndex].title + " / " + action.desc;
+        actions.push_back(std::move(action));
+    };
+    for (size_t cat = 0; cat < categories.size(); ++cat) {
+        for (auto action : getHubActions(static_cast<int>(cat))) {
+            action.id = categories[cat].title + "/" + action.title;
+            include(std::move(action), static_cast<int>(cat));
         }
-        if (m_homeCategoryDesc) m_homeCategoryDesc->setString(cat.shortDesc.c_str());
-        if (m_homeCategoryInfoBtn) {
-            m_homeCategoryInfoBtn->setVisible(true);
-            m_homeCategoryInfoBtn->setPosition({
-                178.f + m_homeCategoryTitle->getScaledContentSize().width + 12.f, 242.f
-            });
-        }
-    } else {
-        std::string lowerQuery = toLower(query);
-        for (size_t catIdx = 0; catIdx < categories.size(); ++catIdx) {
-            for (auto const& act : getHubActions(static_cast<int>(catIdx))) {
-                if (toLower(act.title).find(lowerQuery) != std::string::npos ||
-                    toLower(categories[catIdx].title).find(lowerQuery) != std::string::npos) {
-                    HubActionMeta searchAct = act;
-                    searchAct.title = categories[catIdx].title + ": " + act.title;
-                    searchAct.categoryIndex = static_cast<int>(catIdx);
-                    actions.push_back(std::move(searchAct));
-                }
-            }
-        }
-
-        bool isSpanish = geode::Mod::get()->getSettingValue<std::string>("language") == "spanish";
-        for (auto const& gs : getGranularSettings()) {
-            if (toLower(gs.englishName).find(lowerQuery) == std::string::npos &&
-                toLower(gs.spanishName).find(lowerQuery) == std::string::npos) continue;
-            HubActionMeta searchAct;
-            searchAct.title = isSpanish ? gs.spanishName : gs.englishName;
-            searchAct.sprite = "GJ_button_02.png";
-            searchAct.categoryIndex = gs.categoryIndex;
-            searchAct.onPress = [gs](PaimonHubLayer*) {
-                paimon::ui::openFeatureConfigFor(gs.englishName, gs.categoryIndex);
+    }
+    if (!query.empty() || m_homeFilter != 0) {
+        for (auto const& setting : getGranularSettings()) {
+            if (setting.categoryIndex >= static_cast<int>(categories.size())) continue;
+            HubActionMeta action;
+            action.id = "setting/" + setting.englishName;
+            action.title = es ? setting.spanishName : setting.englishName;
+            action.desc = es ? setting.englishName : setting.spanishName;
+            action.onPress = [setting](PaimonHubLayer*) {
+                paimon::ui::openFeatureConfigFor(setting.englishName, setting.categoryIndex);
             };
-            actions.push_back(std::move(searchAct));
-        }
-
-        if (m_homeCategoryTitle) {
-            m_homeCategoryTitle->setString(tr("pai.hub.search_results", "Search Results").c_str());
-            m_homeCategoryTitle->setColor({255, 255, 255});
-        }
-        if (m_homeCategoryDesc) {
-            m_homeCategoryDesc->setString(fmt::format(
-                fmt::runtime(tr("pai.hub.search_found", "Found {} features matching search.")),
-                actions.size()
-            ).c_str());
-        }
-        if (m_homeCategoryInfoBtn) m_homeCategoryInfoBtn->setVisible(false);
-    }
-
-    auto winSize = CCDirector::get()->getWinSize();
-    float detailsW = winSize.width - 175.f;
-    float rightPanelCX = 160.f + detailsW / 2.f;
-    size_t n = actions.size();
-    if (n == 0) return;
-
-    constexpr float kCardW = 112.f, kCardH = 48.f;
-    WeakRef<PaimonHubLayer> self = this;
-
-    if (n > 4) {
-        m_homeActionsMenu->setVisible(false);
-        float scrollW = detailsW - 20.f;
-        float scrollH = 175.f;
-        m_homeActionsScroll = geode::ScrollLayer::create(CCSize{scrollW, scrollH});
-        m_homeActionsScroll->setPosition({160.f + 10.f, 20.f});
-        m_homeActionsScroll->setID("search-actions-scroll"_spr);
-        m_homeTab->addChild(m_homeActionsScroll, 3);
-
-        constexpr float colWidth = 120.f, rowHeight = 56.f;
-        int numCols = std::max(1, static_cast<int>(scrollW / colWidth));
-        int numRows = (static_cast<int>(n) + numCols - 1) / numCols;
-        float contentHeight = std::max(scrollH, static_cast<float>(numRows) * rowHeight + 10.f);
-        m_homeActionsScroll->m_contentLayer->setContentSize(CCSize{scrollW, contentHeight});
-
-        auto scrollMenu = makeZeroMenu();
-        scrollMenu->setContentSize(m_homeActionsScroll->m_contentLayer->getContentSize());
-        m_homeActionsScroll->m_contentLayer->addChild(scrollMenu, 10);
-
-        float startX = (scrollW - static_cast<float>(numCols) * colWidth) / 2.f;
-        for (size_t i = 0; i < n; ++i) {
-            auto const& action = actions[i];
-            int row = static_cast<int>(i / numCols);
-            int col = static_cast<int>(i % numCols);
-            float x = startX + col * colWidth + colWidth / 2.f;
-            float targetY = contentHeight - (row * rowHeight + rowHeight / 2.f + 5.f);
-            auto btn = makeActionCardBtn(action, categories[action.categoryIndex].color, kCardW, kCardH, self);
-            scrollMenu->addChild(btn);
-            animateActionCard(btn, x, targetY, 0.02f * static_cast<float>(i));
-        }
-    } else {
-        m_homeActionsMenu->setVisible(true);
-        for (size_t i = 0; i < n; ++i) {
-            auto const& action = actions[i];
-            float x = rightPanelCX, targetY = 110.f;
-            if (n <= 3) {
-                float spacing = 125.f;
-                x = rightPanelCX - spacing * static_cast<float>(n - 1) / 2.f + static_cast<float>(i) * spacing;
-            } else {
-                x = rightPanelCX + (i % 2 == 0 ? -65.f : 65.f);
-                targetY = (i < 2) ? 142.f : 82.f;
-            }
-            auto btn = makeActionCardBtn(action, categories[action.categoryIndex].color, kCardW, kCardH, self);
-            m_homeActionsMenu->addChild(btn);
-            animateActionCard(btn, x, targetY, 0.04f * static_cast<float>(i));
+            include(std::move(action), setting.categoryIndex);
         }
     }
+    if (m_homeFilter == 2) {
+        std::stable_sort(actions.begin(), actions.end(), [&recent](auto const& left, auto const& right) {
+            return std::find(recent.begin(), recent.end(), left.id) < std::find(recent.begin(), recent.end(), right.id);
+        });
+    }
+    std::string title = !query.empty() ? (es ? "Resultados" : "Search results")
+        : m_homeFilter == 1 ? (es ? "Favoritos" : "Favorites")
+        : m_homeFilter == 2 ? (es ? "Recientes" : "Recent") : category.title;
+    auto const win = CCDirector::get()->getWinSize();
+    float const detailsW = win.width - 175.f;
+    m_homeCategoryTitle->setString(title.c_str());
+    m_homeCategoryTitle->limitLabelWidth(detailsW - 58.f, 0.48f, 0.20f);
+    m_homeCategoryTitle->setColor(m_homeFilter == 0 && query.empty() ? category.color : paimon::ui::palette::text);
+    m_homeCategoryDesc->setString((query.empty() && m_homeFilter == 0 ? category.shortDesc
+        : fmt::format(fmt::runtime(es ? "{} funciones disponibles" : "{} features available"), actions.size())).c_str());
+    m_homeCategoryDesc->limitLabelWidth(detailsW - 28.f, 0.44f, 0.20f);
+    if (m_homeCategoryInfoBtn) m_homeCategoryInfoBtn->setVisible(query.empty() && m_homeFilter == 0);
+
+    float const scrollW = detailsW - 28.f;
+    float const scrollH = std::max(40.f, win.height - 183.f);
+    m_homeActionsScroll = ScrollLayer::create({scrollW, scrollH});
+    m_homeActionsScroll->setPosition({174.f, 25.f});
+    m_homeActionsScroll->setID("search-actions-scroll"_spr);
+    m_homeTab->addChild(m_homeActionsScroll, 3);
+    auto* content = m_homeActionsScroll->m_contentLayer;
+    if (actions.empty()) {
+        content->setContentSize({scrollW, scrollH});
+        char const* message = m_homeFilter == 1 && query.empty()
+            ? (es ? "Toca una estrella para guardar una funcion." : "Tap a star to save a feature.")
+            : m_homeFilter == 2 && query.empty()
+            ? (es ? "Tus ultimas funciones apareceran aqui." : "Your recent features will appear here.")
+            : (es ? "Sin resultados. Prueba otro nombre o categoria." : "No results. Try another name or category.");
+        auto* hint = paimon::configkit::makeHint(scrollW, message);
+        hint->setPosition({0.f, (scrollH - hint->getContentSize().height) / 2.f});
+        content->addChild(hint);
+        return;
+    }
+    int const columns = std::max(1, static_cast<int>((scrollW + 8.f) / 166.f));
+    float const cardW = (scrollW - 8.f * (columns - 1)) / columns;
+    float cardH = 64.f;
+    for (auto const& action : actions) {
+        auto* label = CCLabelBMFont::create(action.desc.c_str(), "chatFont.fnt",
+            (cardW - 32.f) / 0.42f, kCCTextAlignmentLeft);
+        cardH = std::max(cardH, 38.f + label->getContentSize().height * 0.42f);
+    }
+    int const rows = (static_cast<int>(actions.size()) + columns - 1) / columns;
+    float const contentH = std::max(scrollH, rows * (cardH + 8.f));
+    content->setContentSize({scrollW, contentH});
+    auto* menu = makeZeroMenu();
+    content->addChild(menu);
+    for (size_t i = 0; i < actions.size(); ++i) {
+        int const column = static_cast<int>(i) % columns;
+        int const row = static_cast<int>(i) / columns;
+        auto* button = makeActionCardBtn(actions[i], categories[actions[i].categoryIndex].color,
+            cardW, cardH, WeakRef<PaimonHubLayer>(this));
+        menu->addChild(button);
+        CCPoint const position{cardW / 2.f + column * (cardW + 8.f),
+            contentH - cardH / 2.f - row * (cardH + 8.f)};
+        if (resetScroll) animateActionCard(button, position.x, position.y, 0.02f * static_cast<float>(i));
+        else button->setPosition(position);
+    }
+    if (resetScroll) m_homeActionsScroll->moveToTop();
+    else content->setPositionY(std::clamp(scrollH - contentH + previousOffset, scrollH - contentH, 0.f));
 }
 
 namespace {
@@ -1064,22 +1001,15 @@ namespace {
         return items;
     }
 
-    constexpr cocos2d::ccColor4B kListRowDark  = {161, 88, 44, 255};
-    constexpr cocos2d::ccColor4B kListRowLight = {194, 114, 62, 255};
-    constexpr cocos2d::ccColor3B kListTextSoft = {255, 235, 190};
+    constexpr cocos2d::ccColor4B kListRowDark  = {20, 28, 45, 255};
+    constexpr cocos2d::ccColor4B kListRowLight = {29, 40, 61, 255};
+    constexpr auto kListTextSoft = paimon::ui::palette::muted;
 
     cocos2d::CCNode* makeGDPanel(cocos2d::CCNode* parent, float panelW, float panelH) {
-        if (auto panel = paimon::SpriteHelper::safeCreateScale9("GJ_square01.png")) {
-            panel->setAnchorPoint({0.f, 0.f});
-            panel->setContentSize({panelW, panelH});
-            panel->setPosition({15.f, 15.f});
-            parent->addChild(panel, 0);
-            return panel;
-        }
-        auto fallback = paimon::SpriteHelper::createDarkPanel(panelW, panelH, 245, 6.f);
-        fallback->setPosition({15.f, 15.f});
-        parent->addChild(fallback, 0);
-        return fallback;
+        auto* panel = paimon::ui::makeSurface({panelW, panelH});
+        panel->setPosition({15.f, 15.f});
+        parent->addChild(panel, 0);
+        return panel;
     }
 
     void addGDListChrome(
@@ -1094,11 +1024,7 @@ namespace {
             inset->setPosition({centerX, centerY});
             parent->addChild(inset, 1);
         }
-        if (auto borders = geode::ListBorders::create()) {
-            borders->setContentSize({listW + 6.f, listH});
-            borders->setPosition({centerX, centerY});
-            parent->addChild(borders, 6);
-        }
+
     }
 
     cocos2d::CCNode* makeGDRefreshSprite() {
@@ -1106,9 +1032,7 @@ namespace {
             spr->setScale(0.72f);
             return spr;
         }
-        auto fallback = ButtonSprite::create("R", "goldFont.fnt", "GJ_button_02.png", .8f);
-        fallback->setScale(0.5f);
-        return fallback;
+        return paimon::ui::makeButtonFace("R", {28.f, 28.f});
     }
 } // namespace
 
@@ -1122,9 +1046,10 @@ void PaimonHubLayer::buildNewsTab() {
     panel->setID("news-panel"_spr);
 
     auto titleLbl = CCLabelBMFont::create(
-        tr("pai.hub.news.title", "Latest News").c_str(), "goldFont.fnt"
+        tr("pai.hub.news.title", "Latest News").c_str(), "bigFont.fnt"
     );
-    titleLbl->setScale(0.55f);
+    titleLbl->setScale(0.48f);
+    titleLbl->setColor(paimon::ui::palette::text);
     titleLbl->setPosition({cx, 245.f});
     m_newsTab->addChild(titleLbl, 2);
 
@@ -1159,78 +1084,57 @@ void PaimonHubLayer::buildNewsTab() {
 
 void PaimonHubLayer::rebuildNewsList() {
     if (!m_newsScroll) return;
-    auto content = m_newsScroll->m_contentLayer;
+    auto* content = m_newsScroll->m_contentLayer;
     content->removeAllChildren();
-
-    auto items = buildNewsItems();
-
-    float listW = m_newsScroll->getContentSize().width;
-    float listH = m_newsScroll->getContentSize().height;
-    constexpr float kRowH = 50.f;
-    float totalH = static_cast<float>(items.size()) * kRowH;
-    if (totalH < listH) totalH = listH;
-    content->setContentSize({listW, totalH});
-
-    float y = totalH;
-    for (size_t i = 0; i < items.size(); i++) {
-        y -= kRowH;
-
-        auto row = cocos2d::CCNodeRGBA::create();
-        row->setContentSize({listW, kRowH});
+    auto const items = buildNewsItems();
+    float const listW = m_newsScroll->getContentSize().width;
+    float const listH = m_newsScroll->getContentSize().height;
+    float totalH = 0.f;
+    std::vector<CCNodeRGBA*> rows;
+    for (size_t i = 0; i < items.size(); ++i) {
+        auto* desc = CCLabelBMFont::create(items[i].desc.c_str(), "chatFont.fnt",
+            (listW - 28.f) / 0.46f, kCCTextAlignmentLeft);
+        desc->setScale(0.46f);
+        desc->setColor(paimon::ui::palette::muted);
+        desc->setAnchorPoint({0.f, 1.f});
+        float const rowH = std::max(52.f, 38.f + desc->getScaledContentSize().height);
+        auto* row = CCNodeRGBA::create();
+        row->setContentSize({listW, rowH});
         row->setAnchorPoint({0.f, 0.f});
-        row->setPosition({0.f, y});
         row->setCascadeOpacityEnabled(true);
-        content->addChild(row, 1);
-
-        auto rowBg = CCLayerColor::create(i % 2 == 0 ? kListRowLight : kListRowDark);
-        rowBg->setContentSize({listW, kRowH});
-        rowBg->setPosition({0.f, 0.f});
-        row->addChild(rowBg, 0);
-
-        if (i > 0) {
-            auto line = CCLayerColor::create({0, 0, 0, 60});
-            line->setContentSize({listW, 1.f});
-            line->setPosition({0.f, kRowH - 1.f});
-            row->addChild(line, 2);
-        }
-
-        auto itemTitle = CCLabelBMFont::create(items[i].title.c_str(), "goldFont.fnt");
-        itemTitle->setScale(0.36f);
-        itemTitle->setAnchorPoint({0.f, 0.5f});
-        itemTitle->setPosition({14.f, kRowH - 14.f});
-        shrinkLabelToFit(itemTitle, listW - (items[i].highlight ? 90.f : 28.f));
-        row->addChild(itemTitle, 1);
-
-        auto itemDesc = CCLabelBMFont::create(items[i].desc.c_str(), "chatFont.fnt");
-        itemDesc->setScale(0.50f);
-        itemDesc->setColor({255, 250, 240});
-        itemDesc->setAnchorPoint({0.f, 0.5f});
-        itemDesc->setPosition({14.f, 15.f});
-        shrinkLabelToFit(itemDesc, listW - 28.f);
-        row->addChild(itemDesc, 1);
-
+        row->addChild(paimon::ui::makeSurface({listW, rowH}, paimon::ui::palette::raised), -1);
+        desc->setPosition({14.f, rowH - 28.f});
+        row->addChild(desc);
+        auto* title = CCLabelBMFont::create(items[i].title.c_str(), "bigFont.fnt");
+        title->setColor(paimon::ui::palette::text);
+        title->setAnchorPoint({0.f, 1.f});
+        title->limitLabelWidth(listW - (items[i].highlight ? 75.f : 28.f), 0.36f, 0.16f);
+        title->setPosition({14.f, rowH - 9.f});
+        row->addChild(title);
         if (items[i].highlight) {
-            auto newBadge = CCLabelBMFont::create("NEW", "bigFont.fnt");
-            newBadge->setScale(0.28f);
-            newBadge->setColor({100, 255, 100});
-            newBadge->setAnchorPoint({1.f, 0.5f});
-            newBadge->setPosition({listW - 12.f, kRowH - 14.f});
-            row->addChild(newBadge, 1);
-            newBadge->runAction(CCRepeatForever::create(CCSequence::create(
-                CCFadeTo::create(0.6f, 140),
-                CCFadeTo::create(0.6f, 255),
-                nullptr
-            )));
+            auto* badge = CCLabelBMFont::create("NEW", "bigFont.fnt");
+            badge->setScale(0.25f);
+            badge->setColor(paimon::ui::palette::success);
+            badge->setAnchorPoint({1.f, 0.5f});
+            badge->setPosition({listW - 12.f, rowH - 16.f});
+            row->addChild(badge);
         }
-
-        row->setOpacity(0);
-        row->runAction(CCSequence::create(
-            CCDelayTime::create(0.04f * static_cast<float>(i)),
-            CCFadeTo::create(0.2f, 255),
-            nullptr
-        ));
+        totalH += rowH + 6.f;
+        rows.push_back(row);
+        content->addChild(row);
     }
-    m_newsScroll->scrollToTop();
+    float const contentH = std::max(listH, totalH);
+    content->setContentSize({listW, contentH});
+    float y = contentH;
+    for (size_t i = 0; i < rows.size(); ++i) {
+        y -= rows[i]->getContentSize().height;
+        rows[i]->setPosition({0.f, y});
+        paimon::fluid::RevealOpts reveal;
+        reveal.startDelay = 0.02f * static_cast<float>(i);
+        paimon::fluid::revealNode(rows[i], reveal);
+        y -= 6.f;
+    }
+    m_newsScroll->moveToTop();
 }
 
 namespace {
@@ -1249,8 +1153,7 @@ namespace {
         cocos2d::CCObject* target,
         int tag = 0
     ) {
-        auto spr = ButtonSprite::create(text, "bigFont.fnt", bg, .8f);
-        spr->setScale(scale);
+        auto spr = makePillFace(text, paimon::ui::actionColor(bg), scale);
         auto btn = CCMenuItemSpriteExtra::create(spr, target, handler);
         btn->setTag(tag);
         return btn;
@@ -1270,9 +1173,10 @@ void PaimonHubLayer::buildForumTab() {
 
     m_forumHeaderTitle = CCLabelBMFont::create(
         tr("pai.hub.forum.title", "Community Forum").c_str(),
-        "goldFont.fnt"
+        "bigFont.fnt"
     );
-    m_forumHeaderTitle->setScale(0.5f);
+    m_forumHeaderTitle->setScale(0.46f);
+    m_forumHeaderTitle->setColor(paimon::ui::palette::text);
     m_forumHeaderTitle->setPosition({cx, kForumHeaderY});
     m_forumTab->addChild(m_forumHeaderTitle, 2);
 
@@ -1346,11 +1250,7 @@ void PaimonHubLayer::buildForumTab() {
         sortMenu->updateLayout();
 
         for (size_t i = 0; i < m_sortBtns.size(); ++i) {
-            if (auto spr = typeinfo_cast<ButtonSprite*>(m_sortBtns[i]->getNormalImage())) {
-                spr->setColor(static_cast<int>(m_sortMode) == (int)i
-                    ? ccColor3B{100, 255, 100}
-                    : ccColor3B{255, 255, 255});
-            }
+            setPillSelected(m_sortBtns[i], static_cast<int>(m_sortMode) == static_cast<int>(i));
         }
 
         auto tagMenuBar = CCMenu::create();
@@ -1384,11 +1284,8 @@ void PaimonHubLayer::buildForumTab() {
         ));
         tagMenuBar->updateLayout();
 
-        auto newPostSpr = ButtonSprite::create(
-            tr("pai.hub.forum.create.cta", "+ New Post").c_str(),
-            "goldFont.fnt", "GJ_button_01.png", .8f
-        );
-        newPostSpr->setScale(0.42f);
+        auto newPostSpr = makePillFace(tr("pai.hub.forum.create.cta", "+ New Post").c_str(),
+            paimon::ui::actionColor("GJ_button_01.png"), 0.42f);
         auto newPostBtn = CCMenuItemSpriteExtra::create(
             newPostSpr, this, menu_selector(PaimonHubLayer::onForumSubTabSwitch)
         );
@@ -1474,7 +1371,7 @@ void PaimonHubLayer::buildForumTab() {
     m_forumTab->addChild(m_forumCreateNode, 1);
 
     auto lblTitle = CCLabelBMFont::create(
-        tr("pai.hub.forum.title_placeholder", "Title").c_str(), "goldFont.fnt");
+        tr("pai.hub.forum.title_placeholder", "Title").c_str(), "bigFont.fnt");
     lblTitle->setScale(0.35f);
     lblTitle->setAnchorPoint({0.f, 0.5f});
     lblTitle->setPosition({contentLeft, 198.f});
@@ -1488,7 +1385,7 @@ void PaimonHubLayer::buildForumTab() {
     m_forumCreateNode->addChild(m_createTitleInput, 1);
 
     auto lblDesc = CCLabelBMFont::create(
-        tr("pai.hub.forum.desc_placeholder", "Description").c_str(), "goldFont.fnt");
+        tr("pai.hub.forum.desc_placeholder", "Description").c_str(), "bigFont.fnt");
     lblDesc->setScale(0.35f);
     lblDesc->setAnchorPoint({0.f, 0.5f});
     lblDesc->setPosition({contentLeft, 158.f});
@@ -1502,7 +1399,7 @@ void PaimonHubLayer::buildForumTab() {
     m_forumCreateNode->addChild(m_createDescInput, 1);
 
     auto lblTags = CCLabelBMFont::create(
-        tr("pai.hub.forum.create.tags", "Tags (tap to toggle)").c_str(), "goldFont.fnt");
+        tr("pai.hub.forum.create.tags", "Tags (tap to toggle)").c_str(), "bigFont.fnt");
     lblTags->setScale(0.32f);
     lblTags->setAnchorPoint({0.f, 0.5f});
     lblTags->setPosition({contentLeft, 118.f});
@@ -1524,10 +1421,7 @@ void PaimonHubLayer::buildForumTab() {
     m_forumCreateNode->addChild(predefMenu, 1);
 
     for (size_t i = 0; i < m_forumTags.size(); ++i) {
-        auto chipSpr = ButtonSprite::create(
-            m_forumTags[i].c_str(), "bigFont.fnt", "GJ_button_05.png", .8f
-        );
-        chipSpr->setScale(0.26f);
+        auto chipSpr = makePillFace(m_forumTags[i].c_str(), paimon::ui::palette::raised, 0.26f);
         auto chipBtn = CCMenuItemSpriteExtra::create(
             chipSpr, this, menu_selector(PaimonHubLayer::onCreateToggleTag)
         );
@@ -1556,11 +1450,8 @@ void PaimonHubLayer::buildForumTab() {
     btnMenu->setContentSize(winSize);
     m_forumCreateNode->addChild(btnMenu, 1);
 
-    auto cancelSpr = ButtonSprite::create(
-        tr("pai.hub.forum.cancel", "Cancel").c_str(),
-        "bigFont.fnt", "GJ_button_06.png", 0.8f
-    );
-    cancelSpr->setScale(0.5f);
+    auto cancelSpr = paimon::ui::makeButtonFace(tr("pai.hub.forum.cancel", "Cancel").c_str(),
+        {100.f, 28.f}, paimon::ui::palette::raised);
     auto cancelBtn = CCMenuItemSpriteExtra::create(
         cancelSpr, this, menu_selector(PaimonHubLayer::onForumSubTabSwitch)
     );
@@ -1568,11 +1459,8 @@ void PaimonHubLayer::buildForumTab() {
     cancelBtn->setPosition({cx - 70.f, 32.f});
     btnMenu->addChild(cancelBtn);
 
-    auto submitSpr = ButtonSprite::create(
-        tr("pai.hub.forum.publish", "Publish").c_str(),
-        "goldFont.fnt", "GJ_button_01.png", 0.9f
-    );
-    submitSpr->setScale(0.6f);
+    auto submitSpr = paimon::ui::makeButtonFace(tr("pai.hub.forum.publish", "Publish").c_str(),
+        {100.f, 28.f}, paimon::ui::actionColor("GJ_button_01.png"));
     auto submitBtn = CCMenuItemSpriteExtra::create(
         submitSpr, this, menu_selector(PaimonHubLayer::onCreateSubmit)
     );
@@ -1637,8 +1525,8 @@ void PaimonHubLayer::refreshUpdateBadge(float) {
         auto size = btn->getContentSize();
         mark->setPosition({size.width - 3.f, size.height - 3.f});
         btn->addChild(mark, 100);
-        mark->runAction(CCRepeatForever::create(CCSequence::create(
-            CCScaleTo::create(0.45f, 1.3f),
+        if (paimon::ui::motionEnabled()) mark->runAction(CCRepeatForever::create(CCSequence::create(
+            CCScaleTo::create(0.45f, 1.1f),
             CCScaleTo::create(0.45f, 1.f),
             nullptr
         )));
@@ -1697,26 +1585,20 @@ void PaimonHubLayer::onCreateTag(CCObject*) {
     this->addChild(overlay, 50);
     m_createTagOverlay = overlay;
 
-    if (auto panel = paimon::SpriteHelper::safeCreateScale9("GJ_square01.png")) {
-        panel->setContentSize({260.f, 130.f});
-        panel->setPosition({winSize.width / 2, winSize.height / 2});
-        overlay->addChild(panel);
-    } else {
-        auto fallback = paimon::SpriteHelper::createDarkPanel(260, 130, 230);
-        fallback->setPosition({winSize.width / 2 - 130, winSize.height / 2 - 65});
-        overlay->addChild(fallback);
-    }
+    auto* panel = paimon::ui::makeSurface({260.f, 130.f});
+    panel->setPosition(winSize / 2.f - CCPoint{130.f, 65.f});
+    overlay->addChild(panel);
 
     auto titleLbl = CCLabelBMFont::create(
         tr("pai.hub.forum.create_tag", "Create Custom Tag").c_str(),
-        "goldFont.fnt"
+        "bigFont.fnt"
     );
     titleLbl->setScale(0.4f);
     titleLbl->setPosition({winSize.width / 2, winSize.height / 2 + 40});
     overlay->addChild(titleLbl, 1);
 
     m_newTagInput = TextInput::create(180, tr("pai.hub.forum.new_tag", "Tag name"));
-    m_newTagInput->setPosition({winSize.width / 2 - 90, winSize.height / 2});
+    m_newTagInput->setPosition(winSize / 2.f);
     m_newTagInput->setScale(0.6f);
     overlay->addChild(m_newTagInput, 51);
 
@@ -1724,17 +1606,13 @@ void PaimonHubLayer::onCreateTag(CCObject*) {
     btnMenu->setContentSize(winSize);
     overlay->addChild(btnMenu, 52);
 
-    auto closeSpr = CCSprite::createWithSpriteFrameName("GJ_closeBtn_001.png");
-    closeSpr->setScale(0.55f);
+    auto closeSpr = paimon::ui::makeButtonFace("x", {24.f, 24.f});
     auto closeBtn = CCMenuItemSpriteExtra::create(closeSpr, this, menu_selector(PaimonHubLayer::onCloseCreateTag));
     closeBtn->setPosition({winSize.width / 2 - 130.f + 6.f, winSize.height / 2 + 65.f - 6.f});
     btnMenu->addChild(closeBtn);
 
-    auto createSpr = ButtonSprite::create(
-        tr("pai.hub.forum.create", "Create").c_str(),
-        "goldFont.fnt", "GJ_button_01.png", .8f
-    );
-    createSpr->setScale(0.4f);
+    auto createSpr = paimon::ui::makeButtonFace(tr("pai.hub.forum.create", "Create").c_str(),
+        {96.f, 26.f}, paimon::ui::actionColor("GJ_button_01.png"));
     auto createBtn = CCMenuItemSpriteExtra::create(createSpr, this, menu_selector(PaimonHubLayer::onSubmitTag));
     createBtn->setPosition({winSize.width / 2, winSize.height / 2 - 35});
     btnMenu->addChild(createBtn);
@@ -1908,7 +1786,7 @@ void PaimonHubLayer::renderPosts(std::vector<paimon::forum::Post> const& posts) 
         float headerY = kPostH - kPad - kIconSize / 2.f;
         auto nameLbl = CCLabelBMFont::create(
             post.author.username.empty() ? "Anonymous" : post.author.username.c_str(),
-            "goldFont.fnt"
+            "bigFont.fnt"
         );
         nameLbl->setScale(0.32f);
         nameLbl->setAnchorPoint({0.f, 0.5f});
@@ -1953,8 +1831,7 @@ void PaimonHubLayer::renderPosts(std::vector<paimon::forum::Post> const& posts) 
         int tagsShown = 0;
         for (auto const& t : post.tags) {
             if (tagsShown >= 2) break;
-            auto chip = ButtonSprite::create(t.c_str(), "bigFont.fnt", "GJ_button_05.png", 0.7f);
-            chip->setScale(0.18f);
+            auto chip = makePillFace(t.c_str(), paimon::ui::palette::raised, 0.18f);
             chip->setAnchorPoint({0.f, 0.5f});
             chip->setPosition({tagX, footerY});
             cardContainer->addChild(chip, 2);
@@ -1983,7 +1860,7 @@ void PaimonHubLayer::renderPosts(std::vector<paimon::forum::Post> const& posts) 
             if (preMaxW > 40.f) {
                 auto pre = CCLabelBMFont::create(preview.c_str(), "chatFont.fnt");
                 pre->setScale(0.36f);
-                pre->setColor({255, 250, 240});
+                pre->setColor(paimon::ui::palette::muted);
                 pre->setOpacity(220);
                 pre->setAnchorPoint({0.f, 0.5f});
                 pre->setPosition({tagX, footerY});
@@ -1995,13 +1872,9 @@ void PaimonHubLayer::renderPosts(std::vector<paimon::forum::Post> const& posts) 
             }
         }
 
-        float delay = std::min(0.03f * i, 0.3f);
-        cardContainer->setOpacity(0);
-        cardContainer->runAction(CCSequence::create(
-            CCDelayTime::create(delay),
-            CCFadeTo::create(0.18f, 255),
-            nullptr
-        ));
+        paimon::fluid::RevealOpts reveal;
+        reveal.startDelay = 0.02f * i;
+        paimon::fluid::revealNode(cardContainer, reveal);
 
         ++i;
     }
@@ -2019,12 +1892,8 @@ void PaimonHubLayer::refreshTagButtons() {
     for (size_t i = 0; i < m_visibleTags.size(); i++) {
         bool isSelected = contains(m_selectedTags, m_visibleTags[i]);
         std::string label = isSelected ? (m_visibleTags[i] + "  x") : m_visibleTags[i];
-        auto tagSpr = ButtonSprite::create(
-            label.c_str(), "bigFont.fnt",
-            isSelected ? "GJ_button_01.png" : "GJ_button_04.png", .8f
-        );
-        tagSpr->setScale(0.32f);
-        if (!isSelected) tagSpr->setColor({210, 220, 240});
+        auto tagSpr = makePillFace(label.c_str(), isSelected ? ccColor3B{36, 75, 106}
+            : paimon::ui::palette::raised, 0.32f);
         auto tagBtn = CCMenuItemSpriteExtra::create(tagSpr, this, menu_selector(PaimonHubLayer::onFilterByTag));
         tagBtn->setTag(static_cast<int>(i));
         m_tagMenu->addChild(tagBtn);
@@ -2038,11 +1907,7 @@ void PaimonHubLayer::onSortChanged(CCObject* sender) {
     m_sortMode = static_cast<SortMode>(idx);
 
     for (size_t i = 0; i < m_sortBtns.size(); i++) {
-        if (auto spr = typeinfo_cast<ButtonSprite*>(m_sortBtns[i]->getNormalImage())) {
-            spr->setColor(idx == (int)i
-                ? ccColor3B{100, 255, 100}
-                : ccColor3B{200, 210, 230});
-        }
+        setPillSelected(m_sortBtns[i], idx == static_cast<int>(i));
     }
 
     refreshForumPosts();
@@ -2064,20 +1929,13 @@ void PaimonHubLayer::onOpenPredefPicker(CCObject*) {
     float panelX = winSize.width / 2.f - panelW / 2.f;
     float panelY = winSize.height / 2.f - panelH / 2.f;
 
-    if (auto panel = paimon::SpriteHelper::safeCreateScale9("GJ_square01.png")) {
-        panel->setAnchorPoint({0.f, 0.f});
-        panel->setContentSize({panelW, panelH});
-        panel->setPosition({panelX, panelY});
-        m_predefPickerOverlay->addChild(panel);
-    } else {
-        auto fallback = paimon::SpriteHelper::createDarkPanel(panelW, panelH, 230);
-        fallback->setPosition({panelX, panelY});
-        m_predefPickerOverlay->addChild(fallback);
-    }
+    auto* panel = paimon::ui::makeSurface({panelW, panelH});
+    panel->setPosition({panelX, panelY});
+    m_predefPickerOverlay->addChild(panel);
 
     auto titleLbl = CCLabelBMFont::create(
         tr("pai.hub.forum.predef.title", "Pick Predefined Tags").c_str(),
-        "goldFont.fnt"
+        "bigFont.fnt"
     );
     titleLbl->setScale(0.4f);
     titleLbl->setPosition({winSize.width / 2.f, panelY + panelH - 20.f});
@@ -2088,7 +1946,7 @@ void PaimonHubLayer::onOpenPredefPicker(CCObject*) {
         "bigFont.fnt"
     );
     hintLbl->setScale(0.3f);
-    hintLbl->setColor({255, 235, 190});
+    hintLbl->setColor(paimon::ui::palette::muted);
     hintLbl->setPosition({winSize.width / 2.f, panelY + panelH - 40.f});
     m_predefPickerOverlay->addChild(hintLbl, 1);
 
@@ -2096,8 +1954,7 @@ void PaimonHubLayer::onOpenPredefPicker(CCObject*) {
     closeMenu->setContentSize(winSize);
     m_predefPickerOverlay->addChild(closeMenu, 52);
 
-    auto closeSpr = CCSprite::createWithSpriteFrameName("GJ_closeBtn_001.png");
-    closeSpr->setScale(0.55f);
+    auto closeSpr = paimon::ui::makeButtonFace("x", {24.f, 24.f});
     auto closeBtn = CCMenuItemSpriteExtra::create(
         closeSpr, this, menu_selector(PaimonHubLayer::onClosePredefPicker)
     );
@@ -2122,11 +1979,8 @@ void PaimonHubLayer::onOpenPredefPicker(CCObject*) {
         bool isActive = std::find(m_activePredefTags.begin(), m_activePredefTags.end(),
             m_forumTags[i]) != m_activePredefTags.end();
 
-        auto chipSpr = ButtonSprite::create(
-            m_forumTags[i].c_str(), "bigFont.fnt",
-            isActive ? "GJ_button_01.png" : "GJ_button_05.png", .8f
-        );
-        chipSpr->setScale(0.34f);
+        auto chipSpr = makePillFace(m_forumTags[i].c_str(), isActive ? ccColor3B{36, 75, 106}
+            : paimon::ui::palette::raised, 0.34f);
         auto chipBtn = CCMenuItemSpriteExtra::create(
             chipSpr, this, menu_selector(PaimonHubLayer::onTogglePredefTag)
         );
@@ -2153,9 +2007,7 @@ void PaimonHubLayer::onTogglePredefTag(CCObject* sender) {
     }
 
     if (auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender)) {
-        if (auto spr = typeinfo_cast<ButtonSprite*>(btn->getNormalImage())) {
-            spr->updateBGImage(contains(m_activePredefTags, tag) ? "GJ_button_01.png" : "GJ_button_05.png");
-        }
+        setPillSelected(btn, contains(m_activePredefTags, tag));
     }
     refreshTagButtons();
 }
@@ -2203,9 +2055,7 @@ void PaimonHubLayer::onCreateToggleTag(CCObject* sender) {
     else m_createSelectedTags.push_back(tag);
 
     if (auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender)) {
-        if (auto spr = typeinfo_cast<ButtonSprite*>(btn->getNormalImage())) {
-            spr->updateBGImage(wasSelected ? "GJ_button_05.png" : "GJ_button_01.png");
-        }
+        setPillSelected(btn, !wasSelected);
     }
 
     if (!m_createTagsHint) return;

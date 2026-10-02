@@ -1,4 +1,5 @@
 #include "UserThumbnailsLayer.hpp"
+#include "../ui/PaimonUI.hpp"
 #include "../managers/ThumbnailAPI.hpp"
 #include "../utils/PaimonNotification.hpp"
 #include "../core/RuntimeLifecycle.hpp"
@@ -30,16 +31,7 @@ bool UserThumbnailsLayer::init(std::string const& username, int accountID) {
     m_accountID = accountID;
     auto win = CCDirector::sharedDirector()->getWinSize();
 
-    if (auto bg = CCSprite::create("GJ_gradientBG.png")) {
-        bg->setAnchorPoint({0.5f, 0.5f});
-        bg->setPosition(win / 2);
-        auto bgSize = bg->getContentSize();
-        bg->setScaleX(win.width / bgSize.width);
-        bg->setScaleY(win.height / bgSize.height);
-        bg->setColor({40, 125, 255});
-        bg->setZOrder(-2);
-        this->addChild(bg);
-    }
+    paimon::ui::decorateScene(this);
 
     auto topMenu = CCMenu::create();
     topMenu->setID("nav-menu"_spr);
@@ -57,7 +49,7 @@ bool UserThumbnailsLayer::init(std::string const& username, int accountID) {
         fmt::format("{}'s Thumbnails", username).c_str(), "bigFont.fnt"
     );
     m_titleLabel->setPosition({win.width / 2, win.height - 30.f});
-    m_titleLabel->setScale(0.7f);
+    m_titleLabel->limitLabelWidth(win.width - 110.f, 0.6f, 0.24f);
     this->addChild(m_titleLabel);
 
     m_loadingLabel = CCLabelBMFont::create("Loading...", "bigFont.fnt");

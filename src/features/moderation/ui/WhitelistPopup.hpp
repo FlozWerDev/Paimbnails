@@ -1,11 +1,12 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/ui/Popup.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
 #include <Geode/ui/TextInput.hpp>
 #include <Geode/DefaultInclude.hpp>
 
-class WhitelistPopup : public geode::Popup {
+class WhitelistPopup : public PaimonPopup {
 protected:
     cocos2d::CCNode* m_listContainer = nullptr;
     geode::ScrollLayer* m_scroll = nullptr;

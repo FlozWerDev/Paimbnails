@@ -22,6 +22,7 @@ struct HubActionMeta {
     std::function<void(PaimonHubLayer*)> onPress;
     int categoryIndex = 0;
     std::string desc;
+    std::string id;
 };
 
 struct GranularSettingMeta {

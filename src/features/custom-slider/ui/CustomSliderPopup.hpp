@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include "../services/CustomSliderManager.hpp"
 
@@ -7,7 +8,7 @@
 namespace paimon::slider {
 
 // slider config popup on paiconfigkit; mode-dependent options rebuild content.
-class CustomSliderPopup : public geode::Popup {
+class CustomSliderPopup : public PaimonPopup {
 public:
     static CustomSliderPopup* create();
 

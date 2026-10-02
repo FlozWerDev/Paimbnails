@@ -508,7 +508,7 @@ DiscordConfigPopup* DiscordConfigPopup::create() {
 }
 
 bool DiscordConfigPopup::init() {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     this->setTitle(tr("discord.title", "Discord Rich Presence").c_str());
     this->setMouseEnabled(true);

@@ -149,7 +149,7 @@ bool SlotEditorPopup::init(
     int replacesOfficialId,
     std::function<void()> onSaved
 ) {
-    if (!Popup::init(kWidth, kHeight)) return false;
+    if (!PaimonPopup::init(kWidth, kHeight)) return false;
     paimon::markDynamicPopup(this);
     m_onSaved = std::move(onSaved);
 

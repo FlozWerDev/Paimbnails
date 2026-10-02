@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -6,7 +7,7 @@
 
 namespace paimon::dynsong {
 
-class DynamicSongPopup : public geode::Popup {
+class DynamicSongPopup : public PaimonPopup {
 public:
     static DynamicSongPopup* create();
 

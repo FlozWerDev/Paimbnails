@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/utils/Keyboard.hpp>
@@ -14,7 +15,7 @@ namespace paimon::volscroll {
 // keybind editor with mouse buttons and optional wheel capture.
 // keyboard saves to keybindsettingv3; mouse/wheel to extendedkeybind.
 
-class ExtendedKeybindEditPopup : public geode::Popup {
+class ExtendedKeybindEditPopup : public PaimonPopup {
 public:
     using SaveCallback = std::function<void(
         std::optional<geode::Keybind> keyboardBind,

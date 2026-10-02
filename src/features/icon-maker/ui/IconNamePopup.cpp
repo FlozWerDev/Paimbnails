@@ -32,7 +32,7 @@ IconNamePopup* IconNamePopup::create(std::string title, std::string placeholder,
 
 bool IconNamePopup::init(std::string title, std::string placeholder,
                          std::string initial, ConfirmCallback onConfirm) {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
     m_onConfirm = std::move(onConfirm);
     setTitle(title.c_str());

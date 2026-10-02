@@ -69,7 +69,7 @@ LevelStatsPopup* LevelStatsPopup::create(GJGameLevel* level) {
 
 bool LevelStatsPopup::init(GJGameLevel* level) {
     if (!level) return false;
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     paimon::markDynamicPopup(this);
 

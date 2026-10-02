@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../PhysicsConfig.hpp"
 #include "../services/PhysicsWorkspace.hpp"
@@ -14,7 +15,7 @@ class ButtonSprite;
 
 namespace paimon::editorphysics {
 
-class PhysicsPopup : public geode::Popup {
+class PhysicsPopup : public PaimonPopup {
 public:
     static PhysicsPopup* create();
 

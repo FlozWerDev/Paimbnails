@@ -298,7 +298,7 @@ PaimonIconsConfigPopup* PaimonIconsConfigPopup::open() {
 
 bool PaimonIconsConfigPopup::init() {
     bool const withMaker = paimon::settings::icon_maker::enabled();
-    if (!Popup::init(kPopupW, kPopupH + (withMaker ? kMakerExtraH : 0.f))) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH + (withMaker ? kMakerExtraH : 0.f))) return false;
     paimon::markDynamicPopup(this);
     IconConfigStore::get().load();
     setTitle("Paimon Icons");

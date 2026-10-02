@@ -93,7 +93,7 @@ bool GlobalIconViewPopup::init(int accountID, std::string const& username, Globa
     int rows = static_cast<int>((slots.size() + kColumns - 1) / kColumns);
     float height = 110.f + rows * kCellStride;
 
-    if (!Popup::init(kPopupWidth, height)) return false;
+    if (!PaimonPopup::init(kPopupWidth, height)) return false;
 
     m_accountID = accountID;
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 // one-screen icon creation: gamemode, name, starting point (blank or official
 // shape). returns the created id.
 
@@ -14,7 +15,7 @@ class SimplePlayer;
 
 namespace paimon::icon_maker {
 
-class NewIconPopup : public geode::Popup {
+class NewIconPopup : public PaimonPopup {
 public:
     using CreatedCallback = std::function<void(std::string const& slotId)>;
 

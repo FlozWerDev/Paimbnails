@@ -26,7 +26,7 @@ LeaderboardLayoutPopup* LeaderboardLayoutPopup::create() {
 }
 
 bool LeaderboardLayoutPopup::initContents() {
-    if (!Popup::init(460.f, 390.f)) return false;
+    if (!PaimonPopup::init(460.f, 390.f)) return false;
     this->setTitle("Leaderboard Layout");
 
     auto size = m_mainLayer->getContentSize();

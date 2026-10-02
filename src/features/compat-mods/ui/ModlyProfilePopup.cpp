@@ -27,7 +27,7 @@ namespace {
 }
 
 bool ModlyProfilePopup::init(ModlyUser const& user) {
-    if (!Popup::init(kWidth, kHeight)) return false;
+    if (!PaimonPopup::init(kWidth, kHeight)) return false;
     paimon::markDynamicPopup(this);
 
     m_user = user;

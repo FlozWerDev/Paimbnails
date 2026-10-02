@@ -22,7 +22,7 @@ bool CreatePostPopup::init(
     std::vector<std::string> availableTags,
     CopyableFunction<void(Post const&)> onCreated
 ) {
-    if (!Popup::init(POPUP_W, POPUP_H)) return false;
+    if (!PaimonPopup::init(POPUP_W, POPUP_H)) return false;
 
     m_availableTags = std::move(availableTags);
     m_onCreated = std::move(onCreated);

@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../data/FillSpec.hpp"
 
@@ -11,7 +12,7 @@ namespace geode { class ScrollLayer; }
 
 namespace paimon::icon_maker {
 
-class GradientEditorPopup : public geode::Popup {
+class GradientEditorPopup : public PaimonPopup {
 public:
     using ChangedCallback = std::function<void(GradientSpec const&)>;
 

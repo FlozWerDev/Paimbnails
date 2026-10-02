@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../data/VersusCards.hpp"
 
@@ -12,7 +13,7 @@ namespace paimon::versus {
 
 // the deck browser, which doubles as the place you learn the mode: every card
 // with its full text, filtered by rarity.
-class VersusDeckPopup : public geode::Popup {
+class VersusDeckPopup : public PaimonPopup {
 public:
     static VersusDeckPopup* create();
 

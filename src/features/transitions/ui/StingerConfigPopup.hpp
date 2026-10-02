@@ -1,8 +1,9 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include "../services/TransitionManager.hpp"
 
-class StingerConfigPopup : public geode::Popup {
+class StingerConfigPopup : public PaimonPopup {
 public:
     static StingerConfigPopup* create(TransitionConfig config, std::function<void(TransitionConfig)> save);
     void update(float dt) override;

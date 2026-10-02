@@ -6,6 +6,7 @@
 #include <Geode/binding/PlayLayer.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <type_traits>
 #include <variant>
@@ -195,6 +196,7 @@ void saveFields(RTXConfig const& c, matjson::Value& j) {
 }
 
 void sanitizeFields(RTXConfig& c) {
+    RTXConfig const defaults{};
     for (auto const& f : kRtxFields) {
         std::visit([&]<typename M>(M RTXConfig::* ptr) {
             if constexpr (std::is_same_v<M, bool>) {
@@ -202,7 +204,7 @@ void sanitizeFields(RTXConfig& c) {
             } else if constexpr (std::is_same_v<M, int>) {
                 c.*ptr = std::clamp(c.*ptr, static_cast<int>(f.lo), static_cast<int>(f.hi));
             } else {
-                c.*ptr = std::clamp(c.*ptr, f.lo, f.hi);
+                c.*ptr = std::isfinite(c.*ptr) ? std::clamp(c.*ptr, f.lo, f.hi) : defaults.*ptr;
             }
         }, f.member);
     }

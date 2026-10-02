@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 // your own stylings: the plus saves whatever you are wearing right now, and the
 // list puts any of them back on later.
 
@@ -11,7 +12,7 @@ namespace paimon::iconcopy {
 
 struct IconPreset;
 
-class MyIconSetsPopup : public geode::Popup {
+class MyIconSetsPopup : public PaimonPopup {
 public:
     static MyIconSetsPopup* create();
 

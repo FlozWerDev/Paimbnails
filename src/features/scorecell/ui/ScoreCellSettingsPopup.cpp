@@ -44,7 +44,7 @@ ScoreCellSettingsPopup* ScoreCellSettingsPopup::create() {
 }
 
 bool ScoreCellSettingsPopup::initContents() {
-    if (!Popup::init(440.f, 360.f)) return false;
+    if (!PaimonPopup::init(440.f, 360.f)) return false;
 
     this->setTitle("Score Cell FX");
 

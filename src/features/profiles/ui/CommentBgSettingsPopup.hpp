@@ -1,10 +1,11 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 
 struct ProfileConfig;
 struct ThumbnailInfo;
 
-class CommentBgSettingsPopup : public geode::Popup {
+class CommentBgSettingsPopup : public PaimonPopup {
 protected:
     int m_accountID = 0;
     ProfileConfig* m_configPtr = nullptr;

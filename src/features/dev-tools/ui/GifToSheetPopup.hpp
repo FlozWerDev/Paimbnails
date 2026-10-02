@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <filesystem>
@@ -9,7 +10,7 @@ class PaimonLoadingOverlay;
 
 namespace paimon::dev {
 
-class GifToSheetPopup : public geode::Popup {
+class GifToSheetPopup : public PaimonPopup {
 public:
     static GifToSheetPopup* create();
 

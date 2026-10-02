@@ -1,4 +1,5 @@
 #include "PaimonModulesLayer.hpp"
+#include "../ui/PaimonUI.hpp"
 #include "../utils/SpriteHelper.hpp"
 #include "../utils/PaimonNotification.hpp"
 #include "../features/info-suite/InfoCompat.hpp"
@@ -16,22 +17,22 @@ constexpr float kHeaderH = 26.f;
 constexpr float kBannerH = 52.f;
 
 namespace pal {
-    constexpr ccColor4B kBgTop{112, 74, 44, 255};
-    constexpr ccColor4B kBgBottom{38, 24, 15, 255};
-    constexpr ccColor3B kInset{46, 30, 18};
+    constexpr ccColor4B kBgTop{24, 36, 57, 255};
+    constexpr ccColor4B kBgBottom{11, 16, 29, 255};
+    constexpr ccColor3B kInset{20, 28, 45};
     constexpr GLubyte kInsetOpacity = 240;
-    constexpr ccColor3B kCardOn{96, 64, 36};
-    constexpr ccColor3B kCardOff{52, 35, 22};
+    constexpr ccColor3B kCardOn{29, 40, 61};
+    constexpr ccColor3B kCardOff{20, 28, 45};
     constexpr GLubyte kCardOnOpacity = 245;
     constexpr GLubyte kCardOffOpacity = 215;
     constexpr ccColor3B kStateOn{150, 255, 150};
-    constexpr ccColor3B kStateOff{180, 158, 130};
-    constexpr ccColor3B kStateLocked{200, 140, 120};
-    constexpr ccColor3B kAccentOff{120, 92, 60};
-    constexpr ccColor3B kCount{255, 236, 200};
-    constexpr ccColor3B kName{255, 244, 224};
-    constexpr ccColor3B kDesc{214, 190, 162};
-    constexpr ccColor3B kId{158, 132, 106};
+    constexpr ccColor3B kStateOff{162, 180, 205};
+    constexpr ccColor3B kStateLocked{255, 137, 155};
+    constexpr ccColor3B kAccentOff{55, 72, 99};
+    constexpr ccColor3B kCount{116, 204, 255};
+    constexpr ccColor3B kName{237, 244, 255};
+    constexpr ccColor3B kDesc{162, 180, 205};
+    constexpr ccColor3B kId{132, 153, 182};
 }
 
 ccColor3B sectionAccent(mods::Section section) {
@@ -86,23 +87,17 @@ bool PaimonModulesLayer::init() {
     float panelTop = cy + panelH / 2.f;
     float panelBot = cy - panelH / 2.f;
 
-    if (auto frame = paimon::SpriteHelper::safeCreateScale9("GJ_square01.png")) {
-        frame->setContentSize({panelW, panelH});
-        frame->setPosition({cx, cy});
-        this->addChild(frame, 0);
-    } else {
-        auto fallback = paimon::SpriteHelper::createColorPanel(panelW, panelH, {78, 52, 30}, 245, 8.f);
-        fallback->setPosition({panelLeft, panelBot});
-        this->addChild(fallback, 0);
-    }
+    auto* frame = paimon::ui::makeSurface({panelW, panelH});
+    frame->setPosition({panelLeft, panelBot});
+    this->addChild(frame);
 
     m_menu = CCMenu::create();
     m_menu->setPosition({0.f, 0.f});
     this->addChild(m_menu, 20);
 
-    auto title = CCLabelBMFont::create("Modulos", "goldFont.fnt");
+    auto title = CCLabelBMFont::create("Modulos", "bigFont.fnt");
     title->setPosition({cx, panelTop - 22.f});
-    title->setScale(0.8f);
+    title->setScale(0.6f);
     this->addChild(title, 10);
 
     m_countLabel = CCLabelBMFont::create("", "goldFont.fnt");
@@ -432,7 +427,7 @@ void PaimonModulesLayer::updateSectionLabel() {
     m_sectionLabel->setString(name);
     m_sectionLabel->limitLabelWidth(120.f, 0.42f, 0.2f);
     m_sectionLabel->setColor(m_sectionIndex == 0
-        ? ccColor3B{255, 244, 224}
+        ? ccColor3B{237, 244, 255}
         : sectionAccent(mods::sections()[m_sectionIndex - 1]));
 }
 

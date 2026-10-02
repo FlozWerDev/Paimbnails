@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
@@ -9,7 +10,7 @@
 
 namespace paimon::icon_maker {
 
-class IconActionSheet : public geode::Popup {
+class IconActionSheet : public PaimonPopup {
 public:
     struct Action {
         std::string label;

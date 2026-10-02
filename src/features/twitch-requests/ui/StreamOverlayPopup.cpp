@@ -35,7 +35,7 @@ StreamOverlayPopup* StreamOverlayPopup::create() {
 }
 
 bool StreamOverlayPopup::init() {
-    if (!Popup::init(kPopupWidth, kPopupHeight)) return false;
+    if (!PaimonPopup::init(kPopupWidth, kPopupHeight)) return false;
     setTitle("Overlay para OBS");
     paimon::markDynamicPopup(this);
     m_config = streamOverlayConfig();

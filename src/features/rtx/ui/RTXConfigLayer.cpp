@@ -42,7 +42,7 @@ RTXConfigLayer* RTXConfigLayer::create() {
 }
 
 bool RTXConfigLayer::init() {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
 
     setTitle("Paimon RTX");
@@ -190,7 +190,7 @@ void RTXConfigLayer::rebuild() {
                 cfg.targetFps, 30.0, 240.0, count,
                 [this](double v) { RTXManager::get().config().targetFps = static_cast<int>(std::lround(v)); touched(false); }),
             kit::makeSliderRow(innerW,
-                "Saltar fotogramas", "Traza uno de cada N+1 y reutiliza el anterior.",
+                "Saltar fotogramas", "Traza uno de cada N+1 y ajusta la luz al movimiento actual.",
                 cfg.frameSkip, 0.0, 3.0, count,
                 [this](double v) { RTXManager::get().config().frameSkip = static_cast<int>(std::lround(v)); touched(true); }),
         }));
@@ -370,9 +370,9 @@ void RTXConfigLayer::rebuild() {
         }));
 
         items.push_back(kit::makeHint(scrollW,
-            "La luz se suma en <cy>espacio lineal</c> y con el rango expandido, asi que "
-            "con todo a cero la imagen sale <cy>identica</c> a la del juego. Si algo se "
-            "ve lavado, es que se ha subido de mas, no que la cadena tinte."));
+            "La luz se suma en <cy>espacio lineal</c>. Para conservar el aspecto original, "
+            "deja exposicion en cero, contraste, saturacion y gamma en uno, y desactiva "
+            "los efectos de luz y lente."));
     } else {
         items.push_back(kit::makeCard(scrollW, "Lente", {255, 170, 170}, {
             kit::makeSliderRow(innerW, "Aberracion cromatica", "Separacion de canales hacia los bordes.",
@@ -384,7 +384,7 @@ void RTXConfigLayer::rebuild() {
             kit::makeSliderRow(innerW, "Grano", "Ruido de pelicula sobre la imagen final.",
                 cfg.grain, 0.0, 1.0, pct,
                 [this](double v) { RTXManager::get().config().grain = static_cast<float>(v); touched(false); }),
-            kit::makeSliderRow(innerW, "Nitidez", "Realce de bordes antes del color.",
+            kit::makeSliderRow(innerW, "Nitidez", "Realce suave de los bordes de la imagen.",
                 cfg.sharpen, 0.0, 2.0, times,
                 [this](double v) { RTXManager::get().config().sharpen = static_cast<float>(v); touched(false); }),
         }));
@@ -413,8 +413,8 @@ void RTXConfigLayer::rebuild() {
         }));
 
         items.push_back(kit::makeHint(scrollW,
-            "El historial se reproyecta con el movimiento de la camara, asi que la "
-            "<cy>acumulacion</c> puede ir alta sin arrastrar. Si aun ves rastros, "
+            "El historial acompana a la camara y se descarta cuando cambia la imagen. "
+            "Si aun ves rastros, "
             "baja la <cy>dureza del recorte</c> antes que la acumulacion."));
     }
 

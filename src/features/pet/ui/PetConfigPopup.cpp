@@ -1,3 +1,4 @@
+#include "../../../ui/PaimonPopup.hpp"
 #include "PetConfigPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
@@ -119,14 +120,14 @@ bool scrollLayerWithWheel(ScrollLayer* scrollLayer, float x, float y) {
 #endif
 }
 
-class PetLayerPickerPopup final : public geode::Popup {
+class PetLayerPickerPopup final : public PaimonPopup {
 protected:
     WeakRef<PetConfigPopup> m_owner;
     ScrollLayer* m_scrollLayer = nullptr;
     std::vector<CCMenuItemToggler*> m_layerToggles;
 
     bool init(PetConfigPopup* owner) {
-        if (!Popup::init(320.f, 250.f)) return false;
+        if (!PaimonPopup::init(320.f, 250.f)) return false;
 
         m_owner = owner;
         this->setTitle("Elegir pantallas");
@@ -322,7 +323,7 @@ PetConfigPopup* PetConfigPopup::create() {
 
 
 bool PetConfigPopup::init() {
-    if (!Popup::init(420.f, 290.f)) return false;
+    if (!PaimonPopup::init(420.f, 290.f)) return false;
 
     this->setTitle("Mascota");
     this->setMouseEnabled(true);

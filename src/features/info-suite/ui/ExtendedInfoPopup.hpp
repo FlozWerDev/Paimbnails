@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 // replaces the vanilla "level info" alert, so gd's description stays on the first tab.
 // tab 0 is the dashboard; the rest are raw fields, tapping a row copies it.
@@ -13,7 +14,7 @@
 
 namespace paimon::info {
 
-class ExtendedInfoPopup : public geode::Popup {
+class ExtendedInfoPopup : public PaimonPopup {
 public:
     static ExtendedInfoPopup* create(GJGameLevel* level);
 

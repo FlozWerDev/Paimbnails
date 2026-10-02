@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
@@ -6,7 +7,7 @@
 class ButtonSprite;
 
 // right-click screenshot menu. closes on capture and delegates to captureoverlay.
-class CaptureMenuPopup : public geode::Popup {
+class CaptureMenuPopup : public PaimonPopup {
 public:
     // toggle: close the open menu or open a new one; not show(), which clashes with flalertlayer::show().
     static void toggle();

@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
 
@@ -8,7 +9,7 @@ using namespace geode::prelude;
 
 class GradientLayer;
 
-class ColorSelectLayer : public Popup {
+class ColorSelectLayer : public PaimonPopup {
 
 private:
 

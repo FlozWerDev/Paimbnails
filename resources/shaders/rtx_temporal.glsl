@@ -1,22 +1,18 @@
-// svgf-lite temporal accumulation with layer-transform reprojection.
-
 varying vec2 v_texCoord;
 
 uniform sampler2D u_current;
 uniform sampler2D u_history;
 uniform sampler2D u_histVar;
+uniform sampler2D u_guideNow;
+uniform sampler2D u_guidePrev;
 uniform vec2  u_texel;
 uniform float u_temporal;
 uniform float u_clampSigma;
-uniform vec2  u_reprojNow;
-uniform vec2  u_reprojPrev;
-uniform float u_reprojScale;
-// 0 = invalid history, 1 = valid reprojection.
+uniform vec3  u_reprojRow0;
+uniform vec3  u_reprojRow1;
 uniform float u_historyValid;
-// 0 = color, 1 = writes variance to r.
 uniform float u_outVariance;
 
-// ldr ceiling; reset on converged noise.
 const float kVarMax   = 4.0;
 const float kVarReset = 1.0;
 
@@ -35,9 +31,12 @@ void main() {
     vec2 uv = v_texCoord;
     vec4 current = texture2D(u_current, uv);
 
-    vec2 histUV = (uv - u_reprojNow) * u_reprojScale + u_reprojPrev;
+    vec2 histUV = vec2(dot(u_reprojRow0, vec3(uv, 1.0)),
+                       dot(u_reprojRow1, vec3(uv, 1.0)));
     bool varPass = u_outVariance > 0.5;
-    if (histUV.x < 0.0 || histUV.x > 1.0 || histUV.y < 0.0 || histUV.y > 1.0) {
+    vec2 border = u_texel * 0.5;
+    if (u_historyValid < 0.5 || any(lessThan(histUV, border))
+        || any(greaterThan(histUV, vec2(1.0) - border))) {
         if (varPass) {
             gl_FragColor = vec4(kVarReset, 0.0, 0.0, 1.0);
         } else {
@@ -45,16 +44,15 @@ void main() {
         }
         return;
     }
-    if (varPass && u_historyValid < 0.5) {
-        gl_FragColor = vec4(kVarReset, 0.0, 0.0, 1.0);
-        return;
-    }
-
     vec4 histRaw = texture2D(u_history, histUV);
+    vec3 guideNow = texture2D(u_guideNow, uv).rgb;
+    vec3 guidePrev = texture2D(u_guidePrev, histUV).rgb;
+    float agreement = exp(-distance(guideNow, guidePrev) * 24.0
+                          - abs(luma(guideNow) - luma(guidePrev)) * 16.0);
 
     vec2 vpx = (histUV - uv) / max(u_texel, vec2(0.0000001));
     float adapt = exp(-length(vpx) * 0.12);
-    float fb = clamp(u_temporal, 0.0, 0.97) * mix(0.30, 1.0, adapt);
+    float fb = clamp(u_temporal, 0.0, 0.97) * adapt * agreement;
 
     if (varPass) {
         vec3 d = sanitizeColor(current.rgb) - sanitizeColor(histRaw.rgb);
@@ -82,7 +80,7 @@ void main() {
     vec4 sigma = sqrt(max(m2 - m1 * m1, vec4(0.0)));
 
     vec4 hist = histRaw;
-    if (u_clampSigma > 0.0) {
+    if (u_clampSigma >= 0.0) {
         // intersection never empty: mn <= m1 <= mx.
         vec4 lo = max(mn, m1 - sigma * u_clampSigma);
         vec4 hi = min(mx, m1 + sigma * u_clampSigma);

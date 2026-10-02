@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/ui/Popup.hpp>
 #include <Geode/ui/LazySprite.hpp>
@@ -10,7 +11,7 @@
 
 namespace paimon::mod_previews {
 
-class ModPreviewGalleryPopup : public geode::Popup {
+class ModPreviewGalleryPopup : public PaimonPopup {
 public:
     // index: initial image (1-based); full url is base + "<n>.png".
     static ModPreviewGalleryPopup* create(int index, int total, std::string base);

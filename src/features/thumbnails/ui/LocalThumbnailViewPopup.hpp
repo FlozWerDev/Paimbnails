@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/ui/Popup.hpp>
 #include <Geode/binding/FLAlertLayer.hpp>
@@ -32,7 +33,7 @@ using cocos2d::CCSize;
 using cocos2d::CCObject;
 
 // zoom/pan touch thumbnail popup with gallery; split from the heavy hook.
-class LocalThumbnailViewPopup : public geode::Popup, public FLAlertLayerProtocol {
+class LocalThumbnailViewPopup : public PaimonPopup, public FLAlertLayerProtocol {
 public:
     enum class NavDirection : uint8_t { None = 0, Left, Right };
 

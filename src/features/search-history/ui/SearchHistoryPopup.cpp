@@ -60,7 +60,7 @@ SearchHistoryPopup* SearchHistoryPopup::create(std::function<void(int)> callback
 }
 
 bool SearchHistoryPopup::init(std::function<void(int)> callback) {
-    if (!Popup::init(POPUP_W, POPUP_H)) return false;
+    if (!PaimonPopup::init(POPUP_W, POPUP_H)) return false;
     paimon::markDynamicPopup(this);
     m_callback = std::move(callback);
     this->setTitle("Search History", "goldFont.fnt", 0.75f);

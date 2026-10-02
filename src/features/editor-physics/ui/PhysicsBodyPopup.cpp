@@ -75,7 +75,7 @@ PhysicsBodyPopup* PhysicsBodyPopup::create(
 }
 
 bool PhysicsBodyPopup::init() {
-    if (!Popup::init(kPopupWidth, kPopupHeight)) return false;
+    if (!PaimonPopup::init(kPopupWidth, kPopupHeight)) return false;
     auto& workspace = PhysicsWorkspace::get();
     if (!workspace.material(m_body)) return false;
 

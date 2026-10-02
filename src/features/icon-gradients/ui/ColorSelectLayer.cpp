@@ -73,7 +73,7 @@ void ColorSelectLayer::createButton(int color, const CCPoint& pos) {
 }
 
 bool ColorSelectLayer::init() {
-    Popup::init(450, 245, "GJ_square05.png");
+    PaimonPopup::init(450, 245, "GJ_square05.png");
 
     setTitle("Select Color");
 

@@ -6,7 +6,7 @@ using namespace geode::prelude;
 using namespace cocos2d;
 
 bool ExtraEffectsPopup::init() {
-    if (!Popup::init(240.f, 220.f)) return false;
+    if (!PaimonPopup::init(240.f, 220.f)) return false;
 
     this->setTitle("Extra Effects");
 

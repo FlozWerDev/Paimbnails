@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 // one text field: names a styling when you save it, and renames it later.
 
 #include <Geode/Geode.hpp>
@@ -10,7 +11,7 @@
 
 namespace paimon::iconcopy {
 
-class IconSetNamePopup : public geode::Popup {
+class IconSetNamePopup : public PaimonPopup {
 public:
     using Callback = std::function<void(std::string const&)>;
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../services/VersusStore.hpp"
 
@@ -11,7 +12,7 @@ namespace paimon::versus {
 
 // a player's two ladders side by side. opened from the chip in the username
 // row, on your own profile and on anybody else's.
-class VersusProfilePopup : public geode::Popup {
+class VersusProfilePopup : public PaimonPopup {
 public:
     static VersusProfilePopup* create(int accountId, std::string const& username,
                                       ModeProfile const& classic, ModeProfile const& platformer,

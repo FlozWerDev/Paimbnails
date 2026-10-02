@@ -78,7 +78,7 @@ SlotManagerPopup* SlotManagerPopup::create(std::function<void()> onChanged) {
 }
 
 bool SlotManagerPopup::init(std::function<void()> onChanged) {
-    if (!Popup::init(kWidth, kHeight)) return false;
+    if (!PaimonPopup::init(kWidth, kHeight)) return false;
     paimon::markDynamicPopup(this);
     m_onChanged = std::move(onChanged);
     this->setTitle(tr("slot.manager.title"));

@@ -1,7 +1,8 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 
-class ProgressBarConfigPopup : public geode::Popup {
+class ProgressBarConfigPopup : public PaimonPopup {
 public:
     static ProgressBarConfigPopup* create();
 

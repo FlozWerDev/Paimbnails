@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <string>
@@ -12,7 +13,7 @@ struct InfoSection {
     cocos2d::ccColor3B color = {100, 220, 255};
 };
 
-class FeatureInfoPopup : public geode::Popup {
+class FeatureInfoPopup : public PaimonPopup {
 public:
     static FeatureInfoPopup* create(
         std::string const& mainTitle,

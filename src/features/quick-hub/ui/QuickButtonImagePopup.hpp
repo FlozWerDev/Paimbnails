@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../data/QuickHubCategories.hpp"
 
@@ -9,7 +10,7 @@
 namespace paimon::quickhub {
 
 // edits *target live, fires onchanged; parent keeps ownership.
-class QuickButtonImagePopup : public geode::Popup {
+class QuickButtonImagePopup : public PaimonPopup {
 public:
     static QuickButtonImagePopup* create(
         CustomQuickButton* target, std::function<void()> onChanged);

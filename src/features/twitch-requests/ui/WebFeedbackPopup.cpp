@@ -102,7 +102,7 @@ WebFeedbackPopup* WebFeedbackPopup::create(LevelRequest request,
 
 bool WebFeedbackPopup::init(LevelRequest request, CCTexture2D* texture,
     std::shared_ptr<uint8_t> rgba, int width, int height) {
-    if (!texture || !rgba || width <= 0 || height <= 0 || !Popup::init(510.f, 310.f)) return false;
+    if (!texture || !rgba || width <= 0 || height <= 0 || !PaimonPopup::init(510.f, 310.f)) return false;
     m_request = std::move(request);
     m_rgba = std::move(rgba);
     m_width = width;

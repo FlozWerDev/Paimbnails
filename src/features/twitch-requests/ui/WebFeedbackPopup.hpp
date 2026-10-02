@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../TwitchRequestManager.hpp"
 #include <Geode/Geode.hpp>
@@ -9,7 +10,7 @@
 
 namespace paimon::twitch {
 
-class WebFeedbackPopup final : public geode::Popup {
+class WebFeedbackPopup final : public PaimonPopup {
 public:
     static WebFeedbackPopup* create(LevelRequest request, cocos2d::CCTexture2D* texture,
         std::shared_ptr<uint8_t> rgba, int width, int height);

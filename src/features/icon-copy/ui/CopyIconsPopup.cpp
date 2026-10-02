@@ -76,7 +76,7 @@ CopyIconsPopup* CopyIconsPopup::create(IconSet const& set, bool saved) {
 }
 
 bool CopyIconsPopup::init(IconSet const& set, bool saved) {
-    if (!Popup::init(kWidth, kHeight)) return false;
+    if (!PaimonPopup::init(kWidth, kHeight)) return false;
 
     m_set = set;
     this->setTitle(saved ? "Icon Set" : "Copy Icons");

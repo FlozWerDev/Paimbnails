@@ -56,7 +56,7 @@ namespace {
 }
 
 bool PostDetailPopup::init(Post const& post, CopyableFunction<void()> onChanged) {
-    if (!Popup::init(POPUP_W, POPUP_H)) return false;
+    if (!PaimonPopup::init(POPUP_W, POPUP_H)) return false;
     m_post = post;
     m_onChanged = std::move(onChanged);
 

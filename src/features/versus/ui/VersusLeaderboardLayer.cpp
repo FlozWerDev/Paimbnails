@@ -1,3 +1,4 @@
+#include "../../../ui/PaimonUI.hpp"
 #include "VersusLeaderboardLayer.hpp"
 #include "VersusRankBadgeNode.hpp"
 #include "VersusUIKit.hpp"
@@ -64,10 +65,7 @@ void VersusLeaderboardLayer::buildChrome() {
     auto const winSize = CCDirector::get()->getWinSize();
 
     if (!LayerBackgroundManager::get().applyBackground(this, "versus_board")) {
-        auto* bg = createLayerBG();
-        bg->setZOrder(-10);
-        this->addChild(bg);
-        addSideArt(this, SideArt::All);
+        paimon::ui::decorateScene(this);
     }
 
     auto* title = CCLabelBMFont::create(

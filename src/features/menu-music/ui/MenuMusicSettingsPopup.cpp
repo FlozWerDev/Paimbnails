@@ -163,7 +163,7 @@ MenuMusicSettingsPopup::~MenuMusicSettingsPopup() {
 }
 
 bool MenuMusicSettingsPopup::init() {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
     setTitle("Configuracion de Musica");
 

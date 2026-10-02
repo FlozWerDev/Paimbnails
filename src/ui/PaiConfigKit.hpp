@@ -3,21 +3,21 @@
 #include <Geode/Geode.hpp>
 #include <Geode/binding/Slider.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
+#include "PaimonUI.hpp"
 #include <functional>
 #include <string>
 #include <vector>
 
 namespace paimon::configkit {
 
-constexpr cocos2d::ccColor3B kCardColor  = {14, 18, 32};
-constexpr GLubyte            kCardAlpha  = 145;
-constexpr cocos2d::ccColor3B kTitleColor = {255, 255, 255};
-constexpr cocos2d::ccColor3B kDescColor  = {166, 176, 198};
-constexpr cocos2d::ccColor3B kValueColor = {255, 222, 120};
-constexpr cocos2d::ccColor3B kOnColor    = {120, 255, 140};
-constexpr cocos2d::ccColor3B kOffColor   = {150, 155, 170};
+constexpr auto kCardColor  = paimon::ui::palette::raised;
+constexpr GLubyte kCardAlpha = 245;
+constexpr auto kTitleColor = paimon::ui::palette::text;
+constexpr auto kDescColor  = paimon::ui::palette::muted;
+constexpr auto kValueColor = paimon::ui::palette::accent;
+constexpr auto kOnColor    = paimon::ui::palette::success;
+constexpr auto kOffColor   = paimon::ui::palette::muted;
 
-// usable row width inside a card.
 constexpr float cardInnerWidth(float cardWidth) { return cardWidth - 20.f; }
 
 cocos2d::CCNode* makeToggleRow(
@@ -87,7 +87,7 @@ void stepWheelScroll(geode::ScrollLayer* scrollLayer,
 // flalertlayer::show uses the scene m_zorder, so a popup alert can end up underneath.
 void showAbove(FLAlertLayer* alert, cocos2d::CCNode* owner);
 
-constexpr float kTabBarHeight = 26.f;
+constexpr float kTabBarHeight = 30.f;
 cocos2d::CCNode* makeTabBar(
     float width,
     std::vector<std::string> const& labels,

@@ -38,7 +38,7 @@ std::string AddModeratorPopup::roleDisplayName(std::string const& role) const {
 }
 
 bool AddModeratorPopup::init(geode::CopyableFunction<void(bool, std::string const&)> callback) {
-    if (!Popup::init(400.f, 320.f)) return false;
+    if (!PaimonPopup::init(400.f, 320.f)) return false;
 
     m_callback = callback;
     this->setTitle(Localization::get().getString("rolemgr.title").c_str());

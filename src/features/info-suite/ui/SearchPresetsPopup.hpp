@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 // two small popups over the same list: picking a saved search to load, and
 // naming the current one to save it.
@@ -11,7 +12,7 @@
 
 namespace paimon::info {
 
-class SearchPresetsPopup : public geode::Popup {
+class SearchPresetsPopup : public PaimonPopup {
 public:
     static SearchPresetsPopup* createPicker(std::function<void(AdvancedQuery const&)> onPick);
     static SearchPresetsPopup* createSaveDialog(AdvancedQuery query,

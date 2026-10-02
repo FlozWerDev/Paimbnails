@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <atomic>
@@ -8,7 +9,7 @@
 
 namespace paimon::menumusic {
 
-class YtDlpInstallPopup : public geode::Popup {
+class YtDlpInstallPopup : public PaimonPopup {
 public:
     static YtDlpInstallPopup* create(std::function<void(bool)> onFinished);
 

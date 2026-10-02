@@ -1,5 +1,3 @@
-// screen trace: height from luma+saturation, ign strata, geometric steps.
-
 varying vec2 v_texCoord;
 
 uniform sampler2D u_scene;
@@ -14,6 +12,7 @@ uniform float u_lightThreshold;
 uniform float u_lightRange;
 uniform float u_bounceFalloff;
 uniform float u_giSaturation;
+uniform float u_giStrength;
 uniform float u_normalStrength;
 uniform float u_thickness;
 uniform float u_aoRadius;
@@ -27,7 +26,6 @@ const int   kMaxRays  = 16;
 const int   kMaxSteps = 32;
 const int   kSpecTaps = 4;
 const float kTau      = 6.28318531;
-const float kPi       = 3.14159265;
 const float kF0       = 0.04;
 const float kGlassIor = 1.33;
 // glass mask: high luma, low saturation.
@@ -67,7 +65,6 @@ bool outside(vec2 p) {
 void main() {
     vec2 uv = v_texCoord;
 
-    // clamp: hand-written json must not inject nan/inf.
     float steps = clamp(u_raySteps, 1.0, float(kMaxSteps));
     float dist  = max(u_rayDistance, 0.001);
     float range = max(u_lightRange, 0.0001);
@@ -90,16 +87,17 @@ void main() {
                             1.0));
     float slopeMag = (abs(hR - hL) + abs(hU - hD)) * 0.5;
 
-    // separate ign streams for diffuse vs specular.
     vec2 frag = gl_FragCoord.xy;
     float rotA   = ign(frag, u_frame);
     float rPhase = ign(frag + 11.31, u_frame + 57.0);
     float specU  = ign(frag + vec2(43.17, 17.29), u_frame + 113.0);
     float specV  = ign(frag.yx + vec2(29.53, 13.37), u_frame + 171.0);
 
-    float g = clamp(u_stepGrowth, 1.0001, 2.0);
+    float g = clamp(u_stepGrowth, 1.0, 1.5);
+    bool linearSteps = g < 1.001;
+    float phase = mix(0.1, 0.9, rPhase);
     float invSpan = 1.0 / max(pow(g, steps) - 1.0, 0.0001);
-    float gStart = pow(g, rPhase);
+    float gStart = pow(g, phase);
 
     vec3  gi   = vec3(0.0);
     float occ  = 0.0;
@@ -117,16 +115,15 @@ void main() {
         wsum += w;
         if (w <= 0.0001) continue;
 
-        // pixel-space march, aspect-independent.
-        vec2 dirUV = dirPx * u_texel;
-        dirUV /= max(length(dirUV), 0.0000001);
+        vec2 dirUV = dirPx * (u_texel / u_texel.y);
 
         float gPow = gStart;
 
         for (int s = 0; s < kMaxSteps; s++) {
             if (float(s) >= steps) break;
 
-            float t = dist * (gPow - 1.0) * invSpan;
+            float t = dist * (linearSteps ? (float(s) + phase) / steps
+                                         : (gPow - 1.0) * invSpan);
             gPow *= g;
 
             vec2 p = uv + dirUV * t;
@@ -138,7 +135,7 @@ void main() {
             if (heightOf(c) > tol) {
                 float f = exp(-tN * fall);
                 vec3 lit = toLinear(c);
-                vec3 tinted = mix(vec3(luma(lit)), lit, clamp(u_giSaturation, 0.0, 2.0));
+                vec3 tinted = max(mix(vec3(luma(lit)), lit, clamp(u_giSaturation, 0.0, 2.0)), vec3(0.0));
                 gi  += tinted * emissiveOf(c, range) * f * w;
                 occ += (1.0 - safeSmoothstep(0.0, aoR, tN)) * w;
                 break;
@@ -171,7 +168,7 @@ void main() {
         }
         vec3 bDir = cross(n, tDir);
 
-        float reflSteps = max(4.0, steps * 0.6);
+        float reflSteps = max(4.0, floor(steps * 0.6));
         float reflSpan = 1.0 / max(pow(g, reflSteps) - 1.0, 0.0001);
 
         vec3 specAcc = vec3(0.0);
@@ -195,17 +192,14 @@ void main() {
             if (ndl <= 0.0) continue;
             float ndlc = clamp(ndl, 0.0, 1.0);
 
-            // d cancels with the pdf to bound energy.
-            float ggxD = alpha2 / max(kPi * pow(ndh * ndh * (alpha2 - 1.0) + 1.0, 2.0), 0.0000001);
             float kk = alpha * 0.5;
             float gV = ndv / max(ndv * (1.0 - kk) + kk, 0.0001);
             float gL = ndlc / max(ndlc * (1.0 - kk) + kk, 0.0001);
             float ggxG = gV * gL;
             float fres = kF0 + (1.0 - kF0) * pow(max(1.0 - vdh, 0.0), 5.0);
             float fMix = mix(1.0, fres, fresAmt);
-            float pdf = ggxD * ndh / max(4.0 * vdh, 0.0001);
-            float fNdotL = ggxD * ggxG * fMix / max(4.0 * ndv, 0.0001);
-            float thru = clamp(fNdotL / max(pdf, 0.0001), 0.0, 1.0);
+            // Cancel the GGX density analytically to avoid narrow-lobe overflow.
+            float thru = clamp(ggxG * fMix * vdh / max(ndv * ndh, 0.0001), 0.0, 1.0);
             if (thru <= 0.0001) continue;
 
             vec2 rd = lDir.xy;
@@ -220,13 +214,14 @@ void main() {
             float w = max(dot(rd, n.xy) * 0.5 + 0.5, 0.0);
             if (w <= 0.0001) continue;
 
-            vec2 rdUV = rd * u_texel;
-            rdUV /= max(length(rdUV), 0.0000001);
-            float gPow = pow(g, u2);
+            vec2 rdUV = rd * (u_texel / u_texel.y);
+            float specPhase = mix(0.1, 0.9, u2);
+            float gPow = pow(g, specPhase);
             for (int s = 0; s < kMaxSteps; s++) {
                 if (float(s) >= reflSteps) break;
 
-                float t = dist * (gPow - 1.0) * reflSpan;
+                float t = dist * (linearSteps ? (float(s) + specPhase) / reflSteps
+                                             : (gPow - 1.0) * reflSpan);
                 gPow *= g;
 
                 vec2 p = uv + rdUV * t;
@@ -242,7 +237,6 @@ void main() {
             }
         }
 
-        // packs (gi+refl+trans, ao) for the composite.
         refl = specAcc * (1.0 / float(kSpecTaps)) * rStr;
 
         float sat0 = max(max(c0.r, c0.g), c0.b) - min(min(c0.r, c0.g), c0.b);
@@ -251,7 +245,6 @@ void main() {
         float fPix = mix(1.0, kF0 + (1.0 - kF0) * pow(max(1.0 - ndv, 0.0), 5.0), fresAmt);
         float transK = clamp(transMask * (1.0 - fPix), 0.0, 1.0);
         if (transK > 0.001) {
-            // no tir possible (eta < 1); stable fallbacks.
             vec3 refr3 = refract(-vDir, n, 1.0 / kGlassIor);
             vec2 refrD = refr3.xy;
             float refrL = length(refrD);
@@ -264,15 +257,15 @@ void main() {
             } else {
                 marchD = vec2(1.0, 0.0);
             }
-            vec2 refrUV = marchD * u_texel;
-            refrUV /= max(length(refrUV), 0.0000001);
+            vec2 refrUV = marchD * (u_texel / u_texel.y);
 
             vec3 transHit = vec3(0.0);
-            float gPowT = pow(g, rPhase);
+            float gPowT = pow(g, phase);
             for (int s = 0; s < kMaxSteps; s++) {
                 if (float(s) >= reflSteps) break;
 
-                float t = dist * (gPowT - 1.0) * reflSpan;
+                float t = dist * (linearSteps ? (float(s) + phase) / reflSteps
+                                             : (gPowT - 1.0) * reflSpan);
                 gPowT *= g;
 
                 vec2 p = uv + refrUV * t;
@@ -292,5 +285,6 @@ void main() {
         }
     }
 
-    gl_FragColor = vec4(min(gi + refl + trans, vec3(8.0)), clamp(ao, 0.0, 1.0));
+    gl_FragColor = vec4(clamp(gi * u_giStrength + refl + trans, vec3(0.0), vec3(8.0)),
+                        clamp(ao, 0.0, 1.0));
 }

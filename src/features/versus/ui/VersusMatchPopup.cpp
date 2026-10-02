@@ -73,7 +73,7 @@ VersusMatchPopup* VersusMatchPopup::create() {
 }
 
 bool VersusMatchPopup::init() {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     paimon::markDynamicPopup(this);
     this->setTitle(Localization::get().getString("versus.match.title"));

@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../data/VersusTypes.hpp"
 #include "VersusRankBadgeNode.hpp"
@@ -11,7 +12,7 @@
 
 namespace paimon::versus {
 
-class VersusMatchPopup : public geode::Popup {
+class VersusMatchPopup : public PaimonPopup {
 public:
     static VersusMatchPopup* create();
 

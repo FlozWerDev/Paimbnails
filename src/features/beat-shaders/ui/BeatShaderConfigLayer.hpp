@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -9,7 +10,7 @@
 
 namespace paimon::beat_shaders {
 
-class BeatShaderConfigLayer : public geode::Popup {
+class BeatShaderConfigLayer : public PaimonPopup {
 public:
     static BeatShaderConfigLayer* create();
 

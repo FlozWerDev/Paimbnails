@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../services/NewgroundsCatalog.hpp"
 
@@ -12,7 +13,7 @@ class Sound;
 
 namespace paimon::menumusic {
 
-class NewgroundsBrowserPopup : public geode::Popup {
+class NewgroundsBrowserPopup : public PaimonPopup {
 public:
     static NewgroundsBrowserPopup* create();
 

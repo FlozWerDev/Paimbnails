@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
@@ -8,7 +9,7 @@
 
 namespace paimon::progression {
 
-class ProgressionPopup : public geode::Popup {
+class ProgressionPopup : public PaimonPopup {
 public:
     static ProgressionPopup* create(BadgeContext const& ctx, std::string const& username);
 

@@ -11,7 +11,7 @@ using namespace geode::prelude;
 using namespace cocos2d;
 
 bool ReportUserPopup::init(int accountID, std::string const& username) {
-    if (!Popup::init(320.f, 160.f)) return false;
+    if (!PaimonPopup::init(320.f, 160.f)) return false;
 
     m_reportedAccountID = accountID;
     m_reportedUsername = username;

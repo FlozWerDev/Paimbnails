@@ -72,7 +72,7 @@ DeathEffectPopup* DeathEffectPopup::create() {
 }
 
 bool DeathEffectPopup::init() {
-    if (!Popup::init(kPopupWidth, kPopupHeight)) return false;
+    if (!PaimonPopup::init(kPopupWidth, kPopupHeight)) return false;
 
     this->setTitle("Death Effects", "goldFont.fnt", 0.75f);
     this->setID("death-effects-popup"_spr);

@@ -35,7 +35,7 @@ CommentBgSettingsPopup::~CommentBgSettingsPopup() {
 }
 
 bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
-    if (!Popup::init(420.f, 300.f)) return false;
+    if (!PaimonPopup::init(420.f, 300.f)) return false;
     paimon::markDynamicPopup(this);
 
     m_accountID = accountID;

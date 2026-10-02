@@ -1,4 +1,5 @@
 #include "PaiDrawUI.hpp"
+#include "../../ui/PaimonUI.hpp"
 
 #include "PaiDrawIcon.hpp"
 #include "PaiDrawManager.hpp"
@@ -40,20 +41,20 @@ CCMenuItemSpriteExtra* makeTextButton(cocos2d::CCNode* target, char const* text,
 }
 
 namespace theme {
-    constexpr cocos2d::ccColor3B kPanelTint        {255, 255, 255};
-    constexpr cocos2d::ccColor3B kPanelInnerTint   {255, 255, 255};
-    constexpr cocos2d::ccColor3B kDragBarTint      {255, 255, 255};
+    constexpr cocos2d::ccColor3B kPanelTint        {237, 244, 255};
+    constexpr cocos2d::ccColor3B kPanelInnerTint   {237, 244, 255};
+    constexpr cocos2d::ccColor3B kDragBarTint      {237, 244, 255};
 
-    constexpr cocos2d::ccColor3B kAccentGold       {255, 217, 119};
-    constexpr cocos2d::ccColor3B kAccentLightGold  {255, 240, 170};
-    constexpr cocos2d::ccColor3B kAccentGreen      {102, 255, 102};
-    constexpr cocos2d::ccColor3B kAccentRed        {255,  71,  71};
+    constexpr cocos2d::ccColor3B kAccentGold       {116, 204, 255};
+    constexpr cocos2d::ccColor3B kAccentLightGold  {182, 161, 255};
+    constexpr cocos2d::ccColor3B kAccentGreen      {118, 224, 181};
+    constexpr cocos2d::ccColor3B kAccentRed        {255, 137, 155};
     constexpr cocos2d::ccColor3B kAccentAqua       {125, 200, 255};
     constexpr cocos2d::ccColor3B kAccentOrange     {255, 175,  90};
 
-    constexpr cocos2d::ccColor3B kTextOnDark       {255, 255, 255};
-    constexpr cocos2d::ccColor3B kTextSubtle       {200, 210, 230};
-    constexpr cocos2d::ccColor3B kTextMuted        {150, 160, 180};
+    constexpr cocos2d::ccColor3B kTextOnDark       {237, 244, 255};
+    constexpr cocos2d::ccColor3B kTextSubtle       {162, 180, 205};
+    constexpr cocos2d::ccColor3B kTextMuted        {132, 153, 182};
 
     constexpr cocos2d::ccColor3B kChipDarkFill     { 35,  40,  60};
     constexpr cocos2d::ccColor3B kChipDangerFill   { 80,  20,  20};
@@ -70,78 +71,20 @@ constexpr std::array<cocos2d::ccColor3B, 16> kDrawPalette = {{
 }};
 
 void addNativeBackground(CCLayer* layer, cocos2d::ccColor4B /*fallbackcolor*/ = ccc4(0, 0, 0, 255)) {
-    if (auto* bg = MenuGameLayer::create()) {
-        layer->addChild(bg, -10);
-        return;
-    }
-    auto win = CCDirector::get()->getWinSize();
-    if (auto* bg = paimon::SpriteHelper::safeCreate("GJ_gradientBG.png")) {
-        auto bgSize = bg->getTextureRect().size;
-        bg->setAnchorPoint({0.f, 0.f});
-        bg->setScaleX((win.width  + 10.f) / std::max(bgSize.width,  1.f));
-        bg->setScaleY((win.height + 10.f) / std::max(bgSize.height, 1.f));
-        bg->setPosition({-5.f, -5.f});
-        layer->addChild(bg, -10);
-        return;
-    }
-    auto solid = CCLayerColor::create(ccc4(0, 0, 0, 255));
-    solid->setContentSize(win);
-    layer->addChild(solid, -10);
+    paimon::ui::decorateScene(layer);
 }
 
 CCNode* makeFramedPanel(float width, float height,
     cocos2d::ccColor3B fillColor = {0, 0, 0},
-    cocos2d::ccColor3B borderColor = {0, 0, 0},
+    cocos2d::ccColor3B = {0, 0, 0},
     GLubyte opacity = 150) {
     auto* node = CCNode::create();
     node->setContentSize({width, height});
     node->setAnchorPoint({0.f, 0.f});
-
-    bool placedMain = false;
-    if (auto* main = paimon::SpriteHelper::safeCreateNineSlice("GJ_square01.png")) {
-        main->setContentSize({width, height});
-        main->setAnchorPoint({0.f, 0.f});
-        main->setPosition({0.f, 0.f});
-        main->setColor(fillColor);
-        main->setOpacity(opacity);
-        node->addChild(main, 0);
-        placedMain = true;
-    }
-    if (!placedMain) {
-        if (auto* main = paimon::SpriteHelper::safeCreateScale9("GJ_square01.png")) {
-            main->setContentSize({width, height});
-            main->setAnchorPoint({0.f, 0.f});
-            main->setPosition({0.f, 0.f});
-            main->setColor(fillColor);
-            main->setOpacity(opacity);
-            node->addChild(main, 0);
-        }
-    }
-
-    if (width > 64.f && height > 64.f) {
-        bool placedInner = false;
-        if (auto* inner = paimon::SpriteHelper::safeCreateNineSlice(
-                "GJ_square05.png", {6.f, 6.f, 6.f, 6.f})) {
-            inner->setContentSize({width - 16.f, height - 16.f});
-            inner->setAnchorPoint({0.5f, 0.5f});
-            inner->setPosition({width / 2.f, height / 2.f});
-            inner->setColor(borderColor);
-            inner->setOpacity(70);
-            node->addChild(inner, 1);
-            placedInner = true;
-        }
-        if (!placedInner) {
-            if (auto* inner = paimon::SpriteHelper::safeCreateScale9("GJ_square05.png")) {
-                inner->setContentSize({width - 16.f, height - 16.f});
-                inner->setAnchorPoint({0.5f, 0.5f});
-                inner->setPosition({width / 2.f, height / 2.f});
-                inner->setColor(borderColor);
-                inner->setOpacity(70);
-                node->addChild(inner, 1);
-            }
-        }
-    }
-
+    auto const color = fillColor.r > 220 || (fillColor.r < 10 && fillColor.g < 10)
+        ? paimon::ui::palette::surface : fillColor;
+    auto* panel = paimon::ui::makeSurface({width, height}, color, std::max<GLubyte>(opacity, 230));
+    node->addChild(panel);
     return node;
 }
 

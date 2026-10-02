@@ -9,7 +9,7 @@ using namespace geode::prelude;
 using namespace cocos2d;
 
 bool ReportInputPopup::init(int levelID, geode::CopyableFunction<void(std::string)> callback) {
-    if (!Popup::init(320.f, 160.f)) return false;
+    if (!PaimonPopup::init(320.f, 160.f)) return false;
 
     m_levelID = levelID;
     m_callback = callback;

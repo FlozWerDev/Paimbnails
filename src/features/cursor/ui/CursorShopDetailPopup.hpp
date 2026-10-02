@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 // ficha del set/pack: las descargas salen de aqui, nunca del listado (las tiendas piden no rastrear).
 
@@ -10,7 +11,7 @@
 #include <string>
 #include <vector>
 
-class CursorShopDetailPopup : public geode::Popup {
+class CursorShopDetailPopup : public PaimonPopup {
 public:
     // `oninstalled` avisa a la galeria para que se repinte.
     static CursorShopDetailPopup* create(paimon::cursorshop::Listing listing,

@@ -1,6 +1,7 @@
 #include "PaimonLoadingOverlay.hpp"
 #include "SheetAnimSprite.hpp"
 #include "SpriteHelper.hpp"
+#include "../ui/PaimonUI.hpp"
 #include <algorithm>
 #include <cmath>
 #include <random>
@@ -68,7 +69,7 @@ bool PaimonLoadingOverlay::init(std::string const& statusText, float spinnerSize
         ring->setOpacity(220);
         float texW = ring->getContentSize().width;
         if (texW > 1.f) ring->setScale(spinnerSize * 2.2f / texW);
-        ring->runAction(CCRepeatForever::create(CCRotateBy::create(1.1f, 360.f)));
+        if (paimon::ui::motionEnabled()) ring->runAction(CCRepeatForever::create(CCRotateBy::create(1.1f, 360.f)));
         m_ring = ring;
         m_badge->addChild(ring, 0);
     }
@@ -82,12 +83,12 @@ bool PaimonLoadingOverlay::init(std::string const& statusText, float spinnerSize
         if (!emote) return false;
         float h = emote->getContentSize().height;
         if (h > 1.f) emote->setScale(spinnerSize * 1.1f / h);
-        emote->runAction(CCRepeatForever::create(CCSequence::create(
+        if (paimon::ui::motionEnabled()) emote->runAction(CCRepeatForever::create(CCSequence::create(
             CCEaseSineInOut::create(CCMoveBy::create(0.8f, {0.f, 5.f})),
             CCEaseSineInOut::create(CCMoveBy::create(0.8f, {0.f, -5.f})),
             nullptr
         )));
-        emote->runAction(CCRepeatForever::create(CCSequence::create(
+        if (paimon::ui::motionEnabled()) emote->runAction(CCRepeatForever::create(CCSequence::create(
             CCEaseSineInOut::create(CCRotateTo::create(1.3f, 5.f)),
             CCEaseSineInOut::create(CCRotateTo::create(1.3f, -5.f)),
             nullptr
@@ -119,7 +120,8 @@ bool PaimonLoadingOverlay::init(std::string const& statusText, float spinnerSize
         m_badge->addChild(m_spinner, 1);
     }
 
-    m_statusLabel = CCLabelBMFont::create(m_baseText.c_str(), "goldFont.fnt");
+    m_statusLabel = CCLabelBMFont::create(m_baseText.c_str(), "bigFont.fnt");
+    m_statusLabel->setColor(paimon::ui::palette::text);
     m_statusLabel->setScale(0.5f);
     m_statusLabel->setAnchorPoint({0.f, 0.5f});
     m_statusLabel->setOpacity(0);
@@ -152,16 +154,24 @@ void PaimonLoadingOverlay::showAt(CCNode* parent, CCPoint const& position, CCSiz
     m_badge->setPosition({cx, cy + 14.f});
     positionStatusLabel();
     m_funFactLabel->setPosition({cx, m_statusY - 18.f});
+    m_funFactLabel->limitLabelWidth(std::max(20.f, size.width - 36.f), 0.48f, 0.18f);
 
     parent->addChild(this, zOrder);
 
     this->setTouchEnabled(true);
+    if (!paimon::ui::motionEnabled()) {
+        this->setOpacity(140);
+        m_badge->setScale(1.f);
+        m_statusLabel->setOpacity(255);
+        m_funFactLabel->setOpacity(90);
+        return;
+    }
 
     this->runAction(CCFadeTo::create(0.25f, 140));
 
     m_badge->runAction(
         CCSequence::create(
-            CCEaseBackOut::create(CCScaleTo::create(0.3f, 1.0f)),
+            CCEaseSineOut::create(CCScaleTo::create(paimon::ui::motionDuration(0.22f), 1.0f)),
             CCCallFunc::create(this, callfunc_selector(PaimonLoadingOverlay::startPulse)),
             nullptr
         )
@@ -215,6 +225,7 @@ void PaimonLoadingOverlay::positionStatusLabel() {
     if (!m_statusLabel) return;
     // base text stays centered as dots grow; no wiggle.
     m_statusLabel->setString(m_baseText.c_str());
+    m_statusLabel->limitLabelWidth(std::max(20.f, getContentSize().width - 48.f), 0.5f, 0.18f);
     float baseW = m_statusLabel->getScaledContentSize().width;
     m_statusLabel->setPosition({m_centerX - baseW / 2.f, m_statusY});
     m_statusLabel->setString((m_baseText + std::string(m_dotCount, '.')).c_str());
@@ -243,11 +254,11 @@ void PaimonLoadingOverlay::swapFunFact(float) {
 }
 
 void PaimonLoadingOverlay::startPulse() {
-    if (m_dismissed || !m_badge) return;
+    if (m_dismissed || !m_badge || !paimon::ui::motionEnabled()) return;
     m_badge->runAction(CCRepeatForever::create(
         CCSequence::create(
-            CCEaseInOut::create(CCScaleTo::create(0.8f, 1.06f), 2.0f),
-            CCEaseInOut::create(CCScaleTo::create(0.8f, 0.96f), 2.0f),
+            CCEaseInOut::create(CCScaleTo::create(0.8f, 1.02f), 2.0f),
+            CCEaseInOut::create(CCScaleTo::create(0.8f, 1.0f), 2.0f),
             nullptr
         )
     ));
@@ -261,6 +272,7 @@ void PaimonLoadingOverlay::dismiss() {
     this->unschedule(schedule_selector(PaimonLoadingOverlay::swapFunFact));
 
     this->setTouchEnabled(false);
+    if (!paimon::ui::motionEnabled()) { this->removeFromParent(); return; }
 
     this->runAction(CCFadeTo::create(0.2f, 0));
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 // manual tag pins outrank anything inferred from play history.
 #include <Geode/Geode.hpp>
@@ -11,7 +12,7 @@
 
 namespace paimon::foryou {
 
-class TagPreferencesPopup : public geode::Popup {
+class TagPreferencesPopup : public PaimonPopup {
 public:
     static TagPreferencesPopup* create();
 

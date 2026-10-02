@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include <functional>
 #include <vector>
@@ -16,7 +17,7 @@ enum class RatingTier : int {
     Count     = 5
 };
 
-class ForYouPreferencesPopup : public geode::Popup {
+class ForYouPreferencesPopup : public PaimonPopup {
 public:
     static ForYouPreferencesPopup* create(std::function<void()> onConfirm);
 

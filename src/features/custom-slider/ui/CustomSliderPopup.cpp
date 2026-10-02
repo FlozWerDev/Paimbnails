@@ -37,7 +37,7 @@ CustomSliderPopup* CustomSliderPopup::create() {
 }
 
 bool CustomSliderPopup::init() {
-    if (!Popup::init(400.f, 280.f)) return false;
+    if (!PaimonPopup::init(400.f, 280.f)) return false;
     paimon::markDynamicPopup(this);
     this->setTitle("Slider Personalizado");
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../services/LevelHistoryModel.hpp"
 
@@ -7,7 +8,7 @@
 
 namespace paimon::info {
 
-class LevelHistoryDetailPopup : public geode::Popup {
+class LevelHistoryDetailPopup : public PaimonPopup {
 public:
     static LevelHistoryDetailPopup* create(HistoryEntry const& entry);
 

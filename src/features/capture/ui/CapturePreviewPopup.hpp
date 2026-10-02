@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/DefaultInclude.hpp>
 #include <Geode/utils/function.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
@@ -7,7 +8,7 @@
 
 class PauseLayer;
 
-class CapturePreviewPopup : public geode::Popup {
+class CapturePreviewPopup : public PaimonPopup {
 public:
     static CapturePreviewPopup* create(
         cocos2d::CCTexture2D* texture, 

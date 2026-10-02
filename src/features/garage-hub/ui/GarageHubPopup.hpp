@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 // hub grid for the icon kit. buttons are borrowed from the hidden garage rail
 // and returned on close.
 
@@ -11,7 +12,7 @@ class GJGarageLayer;
 
 namespace paimon::garage_hub::ui {
 
-class GarageHubPopup : public geode::Popup {
+class GarageHubPopup : public PaimonPopup {
 public:
     static GarageHubPopup* create(GJGarageLayer* garage);
 

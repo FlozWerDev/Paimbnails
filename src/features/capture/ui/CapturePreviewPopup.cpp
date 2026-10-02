@@ -170,7 +170,7 @@ void CapturePreviewPopup::updateContent(CCTexture2D* texture,
 bool CapturePreviewPopup::init() {
     namespace C = paimon::capture::preview;
 
-    if (!Popup::init(C::POPUP_WIDTH, C::POPUP_HEIGHT)) return false;
+    if (!PaimonPopup::init(C::POPUP_WIDTH, C::POPUP_HEIGHT)) return false;
 
     this->setTitle(Localization::get().getString("preview.title").c_str());
 

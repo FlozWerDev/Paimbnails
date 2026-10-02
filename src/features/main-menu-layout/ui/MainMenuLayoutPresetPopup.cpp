@@ -44,7 +44,7 @@ MainMenuLayoutPresetPopup* MainMenuLayoutPresetPopup::create(Mode mode, SelectCa
 }
 
 bool MainMenuLayoutPresetPopup::init(Mode mode, SelectCallback onSelect) {
-    if (!Popup::init(kPopupWidth, kPopupHeight)) return false;
+    if (!PaimonPopup::init(kPopupWidth, kPopupHeight)) return false;
 
     m_mode = mode;
     m_onSelect = std::move(onSelect);

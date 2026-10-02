@@ -1,8 +1,9 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include "../services/TransitionManager.hpp"
 
-class CustomTransitionEditorPopup : public geode::Popup {
+class CustomTransitionEditorPopup : public PaimonPopup {
 protected:
     bool init(TransitionConfig config, bool isGlobal, std::function<void(TransitionConfig)> save);
 

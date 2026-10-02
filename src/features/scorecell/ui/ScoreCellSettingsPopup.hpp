@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/ui/Popup.hpp>
@@ -6,7 +7,7 @@
 
 namespace paimon::scorecell {
 
-class ScoreCellSettingsPopup : public geode::Popup {
+class ScoreCellSettingsPopup : public PaimonPopup {
 public:
     static ScoreCellSettingsPopup* create();
 

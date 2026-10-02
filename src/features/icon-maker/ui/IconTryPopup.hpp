@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../data/IconProject.hpp"
 
@@ -12,7 +13,7 @@ class SimplePlayer;
 
 namespace paimon::icon_maker {
 
-class IconTryPopup : public geode::Popup {
+class IconTryPopup : public PaimonPopup {
 public:
     static IconTryPopup* create(IconProject project);
 

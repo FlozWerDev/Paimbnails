@@ -44,7 +44,7 @@ FrameInterpPopup* FrameInterpPopup::create() {
 }
 
 bool FrameInterpPopup::init() {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
     this->setID("frame-interp-popup"_spr);
     this->setTitle(tr("Frame Interpolation", "Interpolacion de Fotogramas"));

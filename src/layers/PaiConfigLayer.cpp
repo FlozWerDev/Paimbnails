@@ -32,6 +32,7 @@
 #include "../utils/PaimonNotification.hpp"
 #include "../utils/SpriteHelper.hpp"
 #include "../ui/PaiConfigKit.hpp"
+#include "../ui/PaimonUI.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
@@ -117,26 +118,11 @@ std::string tr(char const* key, char const* fallback = "") {
 }
 
 CCNode* gdWindow(CCSize size) {
-    CCNode* window = paimon::SpriteHelper::safeCreateNineSliceFromFile("GJ_square01.png");
-    if (!window) {
-        window = paimon::SpriteHelper::createColorPanel(size.width, size.height, {12, 20, 44}, 230, 7.f);
-    }
-    if (!window) return nullptr;
-    window->setContentSize(size);
-    window->setAnchorPoint({0.f, 0.f});
-    return window;
+    return paimon::ui::makeSurface(size);
 }
 
 CCNode* gdPlate(CCSize size, GLubyte opacity = 255) {
-    CCNode* plate = paimon::SpriteHelper::safeCreateScale9("GJ_square05.png");
-    if (!plate) {
-        plate = paimon::SpriteHelper::createColorPanel(size.width, size.height, {40, 58, 96}, opacity, 4.f);
-    }
-    if (!plate) return nullptr;
-    plate->setContentSize(size);
-    plate->setAnchorPoint({0.f, 0.f});
-    if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(plate)) rgba->setOpacity(opacity);
-    return plate;
+    return paimon::ui::makeSurface(size, paimon::ui::palette::raised, opacity, 5.f);
 }
 
 CCLabelBMFont* gdLabel(char const* text, char const* font, float maxWidth, float scale,
@@ -152,22 +138,8 @@ CCLabelBMFont* gdLabel(char const* text, char const* font, float maxWidth, float
 CCMenuItemSpriteExtra* gdFixedButton(char const* text, char const* sprite,
                                      float width, float height, float textScale,
                                      std::function<void()> onPress) {
-    auto* spr = ButtonSprite::create(text, static_cast<int>(width), true, "bigFont.fnt",
-                                     sprite, height, textScale);
-    if (!spr) {
-        spr = ButtonSprite::create(text, "bigFont.fnt", sprite, 0.7f);
-        if (!spr) return nullptr;
-        float const raw = spr->getContentSize().width;
-        if (raw > 1.f) spr->setScale(std::min(0.6f, width / raw));
-    }
-// buttonsprite does not shrink overflowing text automatically.
-    if (auto* label = spr->m_label) {
-        float const maxW = width - 10.f;
-        float const raw = label->getContentSize().width;
-        if (raw > 1.f && raw * label->getScale() > maxW) {
-            label->setScale(maxW / raw);
-        }
-    }
+    auto* spr = paimon::ui::makeButtonFace(text, {width, height},
+        paimon::ui::actionColor(sprite), std::min(textScale, 0.42f));
     return CCMenuItemExt::createSpriteExtra(spr,
         [cb = std::move(onPress)](CCMenuItemSpriteExtra*) { if (cb) cb(); });
 }
@@ -189,6 +161,10 @@ void setButtonTexture(CCMenuItemSpriteExtra* btn, char const* texture) {
     if (auto* sprite = typeinfo_cast<ButtonSprite*>(btn->getNormalImage())) {
         sprite->updateBGImage(texture);
         sprite->setColor({255, 255, 255});
+    } else if (auto* face = btn->getNormalImage()) {
+        if (auto* panel = typeinfo_cast<CCRGBAProtocol*>(face->getChildByID("paimon-button-surface"_spr))) {
+            panel->setColor(paimon::ui::actionColor(texture));
+        }
     }
 }
 
@@ -299,28 +275,16 @@ void PaiConfigLayer::buildChrome() {
     auto const win = CCDirector::get()->getWinSize();
     float const cx = win.width / 2.f;
 
-    if (auto* bg = paimon::SpriteHelper::safeCreate("GJ_gradientBG.png")) {
-        auto const size = bg->getContentSize();
-        bg->setAnchorPoint({0.f, 0.f});
-        bg->setPosition({0.f, 0.f});
-        bg->setScaleX(win.width / std::max(size.width, 1.f));
-        bg->setScaleY(win.height / std::max(size.height, 1.f));
-        bg->setColor({0, 44, 102});
-        this->addChild(bg, -10);
-    } else {
-        auto* flat = CCLayerColor::create({0, 30, 72, 255});
-        flat->setContentSize(win);
-        this->addChild(flat, -10);
-    }
+    paimon::ui::decorateScene(this);
 
     m_chromeMenu = CCMenu::create();
     m_chromeMenu->setPosition({0.f, 0.f});
     m_chromeMenu->setID("paimon-config-chrome"_spr);
     this->addChild(m_chromeMenu, 20);
 
-    auto* title = CCLabelBMFont::create(tr("pai.config.title", "Background Editor").c_str(), "goldFont.fnt");
+    auto* title = CCLabelBMFont::create(tr("pai.config.title", "Background Editor").c_str(), "bigFont.fnt");
     if (title) {
-        title->limitLabelWidth(win.width - 150.f, 0.85f, 0.35f);
+        title->limitLabelWidth(win.width - 150.f, 0.62f, 0.28f);
         title->setPosition({cx, win.height - C::HEADER_Y});
         this->addChild(title, 15);
     }
@@ -407,7 +371,7 @@ CCNode* PaiConfigLayer::makeCardWindow(CCRect area, char const* title) {
     if (auto* window = gdWindow(area.size)) card->addChild(window, 0);
 
     if (title && title[0] != '\0') {
-        if (auto* lbl = gdLabel(title, "goldFont.fnt", area.size.width - 16.f, 0.42f)) {
+        if (auto* lbl = gdLabel(title, "bigFont.fnt", area.size.width - 16.f, 0.38f, paimon::ui::palette::accent)) {
             lbl->setAnchorPoint({0.f, 0.5f});
             lbl->setPosition({10.f, area.size.height - 11.f});
             card->addChild(lbl, 3);
@@ -426,7 +390,7 @@ CCNode* PaiConfigLayer::addScrollHint(CCNode* card, CCSize cardSize) {
     hint->setOpacity(140);
     hint->setPosition({cardSize.width / 2.f, C::LIST_HINT_Y});
     card->addChild(hint, 6);
-    hint->runAction(CCRepeatForever::create(CCSequence::create(
+    if (paimon::ui::motionEnabled()) hint->runAction(CCRepeatForever::create(CCSequence::create(
         CCEaseInOut::create(CCMoveBy::create(0.6f, {0.f, -3.f}), 2.f),
         CCEaseInOut::create(CCMoveBy::create(0.6f, {0.f, 3.f}), 2.f),
         nullptr)));
@@ -1030,9 +994,8 @@ void PaiConfigLayer::refreshAll() {
     for (auto const& [type, btn] : m_sourceButtons) {
         if (!btn) continue;
         bool const active = !type.empty() && type == cfg.type;
-        if (auto* spr = typeinfo_cast<ButtonSprite*>(btn->getNormalImage())) {
-            spr->setColor(active ? ccColor3B{255, 255, 255} : ccColor3B{175, 185, 205});
-        }
+        setButtonTexture(btn, active ? "GJ_button_02.png" : "GJ_button_03.png");
+        tintButton(btn, active ? ccColor3B{255, 255, 255} : paimon::ui::palette::muted);
     }
 
     refreshScreenList();

@@ -89,7 +89,7 @@ GradientAnimationPopup* GradientAnimationPopup::create(IconType initialType, boo
 }
 
 bool GradientAnimationPopup::init(IconType initialType, bool secondPlayer) {
-    if (!Popup::init(430.f, 290.f)) return false;
+    if (!PaimonPopup::init(430.f, 290.f)) return false;
 
     m_secondPlayer = secondPlayer;
 

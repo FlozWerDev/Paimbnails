@@ -36,7 +36,7 @@ bool IconActionSheet::init(std::string title, std::vector<Action> actions) {
     float const listH = static_cast<float>(actions.size()) * (kRowH + 4.f) + 4.f;
     float const popupH = std::clamp(listH + 62.f, 120.f, 280.f);
 
-    if (!Popup::init(kPopupW, popupH)) return false;
+    if (!PaimonPopup::init(kPopupW, popupH)) return false;
     paimon::markDynamicPopup(this);
     setTitle(title.c_str());
     setID("icon-maker-action-sheet"_spr);

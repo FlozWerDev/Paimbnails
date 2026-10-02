@@ -1,10 +1,11 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include "../../../features/emotes/models/EmoteModels.hpp"
 #include <string>
 #include <vector>
 
-class CustomBadgePickerPopup : public geode::Popup {
+class CustomBadgePickerPopup : public PaimonPopup {
 public:
     using SelectCallback = geode::CopyableFunction<void(std::string const& emoteName)>;
 

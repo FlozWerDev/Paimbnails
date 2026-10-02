@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../services/PhysicsWorkspace.hpp"
 
@@ -16,7 +17,7 @@ std::string bodyName(std::size_t index);
 
 // per body and per object materials: what the lab sliders set for everyone, one
 // captured body (and one of its objects) can override here.
-class PhysicsBodyPopup : public geode::Popup {
+class PhysicsBodyPopup : public PaimonPopup {
 public:
     static PhysicsBodyPopup* create(
         std::size_t body,

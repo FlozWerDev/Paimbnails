@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../data/VersusTypes.hpp"
 
@@ -12,7 +13,7 @@ namespace paimon::versus {
 
 // the last twenty duels, straight from the local cache: the server has more,
 // but this is the list you want the instant the popup opens.
-class VersusHistoryPopup : public geode::Popup {
+class VersusHistoryPopup : public PaimonPopup {
 public:
     static VersusHistoryPopup* create();
 

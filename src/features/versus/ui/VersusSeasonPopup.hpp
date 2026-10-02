@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "VersusRankBadgeNode.hpp"
 
@@ -8,7 +9,7 @@ namespace paimon::versus {
 
 // where the season stands: the number, what is left of it, what it does to your
 // elo when it closes, and which mutators the queue is running this week.
-class VersusSeasonPopup : public geode::Popup {
+class VersusSeasonPopup : public PaimonPopup {
 public:
     static VersusSeasonPopup* create();
 

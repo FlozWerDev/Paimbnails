@@ -1,3 +1,4 @@
+#include "../ui/PaimonPopup.hpp"
 #include <Geode/modify/LeaderboardsLayer.hpp>
 #include "../core/ModAuthFlow.hpp"
 #include "../framework/HookConventions.hpp"
@@ -33,7 +34,7 @@
 
 using namespace geode::prelude;
 
-class ProfilePreviewPopup : public geode::Popup {
+class ProfilePreviewPopup : public PaimonPopup {
 protected:
     std::vector<uint8_t> m_data;
     std::string m_username;
@@ -41,7 +42,7 @@ protected:
     geode::CopyableFunction<void()> m_callback;
 
     bool init() {
-        if (!Popup::init(360.f, 180.f)) return false;
+        if (!PaimonPopup::init(360.f, 180.f)) return false;
 
         this->setTitle("Preview Profile");
 

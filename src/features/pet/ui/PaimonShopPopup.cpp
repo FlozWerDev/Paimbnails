@@ -26,7 +26,7 @@ PaimonShopPopup* PaimonShopPopup::create() {
 }
 
 bool PaimonShopPopup::init() {
-    if (!Popup::init(300.f, 240.f)) return false;
+    if (!PaimonPopup::init(300.f, 240.f)) return false;
 
     this->setTitle("Paimon Pet Shop");
 

@@ -32,7 +32,7 @@ BeatShaderConfigLayer* BeatShaderConfigLayer::create() {
 }
 
 bool BeatShaderConfigLayer::init() {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
 
     setTitle("Beat Shaders");

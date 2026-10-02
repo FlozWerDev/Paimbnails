@@ -1,3 +1,4 @@
+#include "../../../ui/PaimonPopup.hpp"
 #include "TwitchFiltersPopup.hpp"
 
 #include "../TwitchRequestFilters.hpp"
@@ -184,7 +185,7 @@ CCNode* makeMultiRow(
     return row;
 }
 
-class AddVideoRulePopup : public geode::Popup {
+class AddVideoRulePopup : public PaimonPopup {
 public:
     static AddVideoRulePopup* create(std::function<void()> onAdded) {
         auto* ret = new AddVideoRulePopup();
@@ -198,7 +199,7 @@ public:
 
 protected:
     bool init(std::function<void()> onAdded) {
-        if (!Popup::init(400.f, 250.f)) return false;
+        if (!PaimonPopup::init(400.f, 250.f)) return false;
         m_onAdded = std::move(onAdded);
         setTitle("Agregar regla de video");
         paimon::markDynamicPopup(this);
@@ -277,7 +278,7 @@ TwitchFiltersPopup* TwitchFiltersPopup::create() {
 }
 
 bool TwitchFiltersPopup::init() {
-    if (!Popup::init(420.f, 280.f)) return false;
+    if (!PaimonPopup::init(420.f, 280.f)) return false;
     setTitle("Filtros de requests");
     paimon::markDynamicPopup(this);
     rebuild();

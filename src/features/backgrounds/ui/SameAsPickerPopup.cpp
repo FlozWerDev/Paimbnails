@@ -17,7 +17,7 @@ SameAsPickerPopup* SameAsPickerPopup::create(std::string const& currentKey, geod
 }
 
 bool SameAsPickerPopup::init(std::string const& currentKey, geode::CopyableFunction<void(std::string const&)> onPick) {
-    if (!Popup::init(240.f, 275.f)) return false;
+    if (!PaimonPopup::init(240.f, 275.f)) return false;
 
     m_selectedLayerKey = currentKey;
     m_onPick = std::move(onPick);

@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -8,7 +9,7 @@ namespace paimon::volscroll {
 
 // volume rows take a mouse hold as the scroll modifier.
 
-class ScrollKeybindsPopup : public geode::Popup {
+class ScrollKeybindsPopup : public PaimonPopup {
 public:
     static ScrollKeybindsPopup* create();
 

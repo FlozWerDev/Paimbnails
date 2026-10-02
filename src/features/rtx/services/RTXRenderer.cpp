@@ -10,10 +10,26 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <string>
+#include <string_view>
 
 #ifndef GL_RGBA16F
     #define GL_RGBA16F 0x881A
+#endif
+#ifndef GL_HALF_FLOAT
+    #define GL_HALF_FLOAT 0x140B
+#endif
+#ifndef GL_HALF_FLOAT_OES
+    #define GL_HALF_FLOAT_OES 0x8D61
+#endif
+#ifndef GL_VERTEX_ARRAY_BINDING
+    #define GL_VERTEX_ARRAY_BINDING 0x85B5
+#endif
+#ifndef GL_READ_FRAMEBUFFER
+    #define GL_READ_FRAMEBUFFER 0x8CA8
+    #define GL_DRAW_FRAMEBUFFER 0x8CA9
+    #define GL_READ_FRAMEBUFFER_BINDING 0x8CAA
 #endif
 
 using namespace cocos2d;
@@ -23,13 +39,10 @@ namespace paimon::rtx {
 
 namespace {
 
-// 5s idle frees fbos instead of holding ~20mb vram.
 constexpr unsigned kIdleReleaseFrames = 300;
 
-// long-edge cap: more pixels cost without improving image.
 constexpr int kMaxTraceLongEdge = 1280;
 
-// floors match sanitize so degradation stays legal.
 constexpr float kMinAdaptiveScale = 0.20f;
 constexpr int kMinRaySteps = 4;
 constexpr int kMinRayCount = 1;
@@ -38,6 +51,109 @@ constexpr int kMinBloomLevels = 1;
 constexpr int kMaxGovernorSkip = 3;
 constexpr int kAdaptPeriodFrames = 30;
 constexpr int kUpDwellPeriods = 4;
+
+int contextMajorVersion() {
+    auto const* version = reinterpret_cast<char const*>(glGetString(GL_VERSION));
+    if (!version) return 0;
+    while (*version && (*version < '0' || *version > '9')) ++version;
+    return static_cast<int>(std::strtol(version, nullptr, 10));
+}
+
+void bindTexture(GLuint unit, GLuint texture) {
+    // Texture edits require the active unit even when the binding is unchanged.
+    glActiveTexture(GL_TEXTURE0 + unit);
+    glBindTexture(GL_TEXTURE_2D, texture);
+}
+
+class FrameState {
+    struct Attribute {
+        GLint enabled = 0, size = 4, type = GL_FLOAT, normalized = GL_FALSE;
+        GLint stride = 0, buffer = 0;
+        void* pointer = nullptr;
+    };
+
+    static constexpr GLenum kCaps[] = {
+        GL_BLEND, GL_SCISSOR_TEST, GL_DEPTH_TEST, GL_STENCIL_TEST, GL_CULL_FACE
+    };
+    GLint m_program = 0, m_arrayBuffer = 0, m_activeTexture = GL_TEXTURE0;
+    GLint m_textures[6] = {};
+    GLboolean m_caps[5] = {}, m_colorMask[4] = {};
+    Attribute m_attributes[3];
+    bool m_separateFramebuffers = false;
+    GLint m_readFbo = 0;
+#if CC_TEXTURE_ATLAS_USE_VAO
+    GLint m_vao = 0;
+#endif
+
+public:
+    GLint fbo = 0;
+    GLint viewport[4] = {};
+
+    FrameState() {
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
+        glGetIntegerv(GL_VIEWPORT, viewport);
+        m_separateFramebuffers = contextMajorVersion() >= 3;
+        if (m_separateFramebuffers) glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &m_readFbo);
+        glGetIntegerv(GL_CURRENT_PROGRAM, &m_program);
+        glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &m_arrayBuffer);
+        glGetIntegerv(GL_ACTIVE_TEXTURE, &m_activeTexture);
+        glGetBooleanv(GL_COLOR_WRITEMASK, m_colorMask);
+        for (GLuint i = 0; i < 6; ++i) {
+            glActiveTexture(GL_TEXTURE0 + i);
+            glGetIntegerv(GL_TEXTURE_BINDING_2D, &m_textures[i]);
+        }
+        for (int i = 0; i < 5; ++i) {
+            m_caps[i] = glIsEnabled(kCaps[i]);
+            glDisable(kCaps[i]);
+        }
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+#if CC_TEXTURE_ATLAS_USE_VAO
+        glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &m_vao);
+        glBindVertexArray(0);
+#endif
+        for (GLuint i = 0; i < 3; ++i) {
+            auto& a = m_attributes[i];
+            glGetVertexAttribiv(i, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &a.enabled);
+            glGetVertexAttribiv(i, GL_VERTEX_ATTRIB_ARRAY_SIZE, &a.size);
+            glGetVertexAttribiv(i, GL_VERTEX_ATTRIB_ARRAY_TYPE, &a.type);
+            glGetVertexAttribiv(i, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED, &a.normalized);
+            glGetVertexAttribiv(i, GL_VERTEX_ATTRIB_ARRAY_STRIDE, &a.stride);
+            glGetVertexAttribiv(i, GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING, &a.buffer);
+            glGetVertexAttribPointerv(i, GL_VERTEX_ATTRIB_ARRAY_POINTER, &a.pointer);
+        }
+    }
+
+    ~FrameState() {
+        // Raw GL calls leave Cocos' cached state unchanged across the pass.
+        for (GLuint i = 0; i < 3; ++i) {
+            auto const& a = m_attributes[i];
+            glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(a.buffer));
+            glVertexAttribPointer(i, a.size, static_cast<GLenum>(a.type),
+                                  static_cast<GLboolean>(a.normalized), a.stride, a.pointer);
+            if (a.enabled) glEnableVertexAttribArray(i);
+            else glDisableVertexAttribArray(i);
+        }
+#if CC_TEXTURE_ATLAS_USE_VAO
+        glBindVertexArray(static_cast<GLuint>(m_vao));
+#endif
+        glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(m_arrayBuffer));
+        glUseProgram(static_cast<GLuint>(m_program));
+        for (GLuint i = 0; i < 6; ++i) bindTexture(i, static_cast<GLuint>(m_textures[i]));
+        glActiveTexture(static_cast<GLenum>(m_activeTexture));
+        if (m_separateFramebuffers) {
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(fbo));
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(m_readFbo));
+        } else {
+            glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(fbo));
+        }
+        glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+        glColorMask(m_colorMask[0], m_colorMask[1], m_colorMask[2], m_colorMask[3]);
+        for (int i = 0; i < 5; ++i) {
+            if (m_caps[i]) glEnable(kCaps[i]);
+            else glDisable(kCaps[i]);
+        }
+    }
+};
 
 constexpr GLfloat kQuad[] = {
     -1.f,  1.f,  0.f, 1.f,
@@ -80,9 +196,13 @@ GLuint linkProgram(char const* tag, std::string const& vert, std::string const& 
     }
 
     GLuint prog = glCreateProgram();
+    if (!prog) {
+        glDeleteShader(vs);
+        glDeleteShader(fs);
+        return 0;
+    }
     glAttachShader(prog, vs);
     glAttachShader(prog, fs);
-    // same slots as cocos so its attribute cache stays valid.
     glBindAttribLocation(prog, kCCVertexAttrib_Position, "aPosition");
     glBindAttribLocation(prog, kCCVertexAttrib_TexCoords, "aTexCoord");
     glLinkProgram(prog);
@@ -106,13 +226,26 @@ void bindSampler(GLuint prog, char const* name, int unit) {
     if (loc != -1) glUniform1i(loc, unit);
 }
 
-// without this an hdr failure clips at 1.0 with no gl error.
-bool probeHdrTargets() {
+bool probeHdrTargets(GLint& format, GLenum& type) {
+    format = GL_RGBA16F;
+    type = GL_HALF_FLOAT;
+#if defined(GEODE_IS_MOBILE)
+    if (contextMajorVersion() < 3) {
+        auto const* raw = reinterpret_cast<char const*>(glGetString(GL_EXTENSIONS));
+        std::string_view const extensions = raw ? raw : "";
+        if (extensions.find("GL_OES_texture_half_float") == std::string_view::npos
+            || extensions.find("GL_OES_texture_half_float_linear") == std::string_view::npos) {
+            return false;
+        }
+        format = GL_RGBA;
+        type = GL_HALF_FLOAT_OES;
+    }
+#endif
     GLuint tex = 0;
     GLuint fbo = 0;
     glGenTextures(1, &tex);
-    ccGLBindTexture2DN(0, tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, 4, 4, 0, GL_RGBA, GL_FLOAT, nullptr);
+    bindTexture(0, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, format, 4, 4, 0, GL_RGBA, type, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
@@ -121,13 +254,13 @@ bool probeHdrTargets() {
     glGenFramebuffers(1, &fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
-    bool const ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    bool const ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE
+                 && glGetError() == GL_NO_ERROR;
 
     glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFbo));
     glDeleteFramebuffers(1, &fbo);
     glDeleteTextures(1, &tex);
-    // cocos cache holds the freed name: force rebind.
-    ccGLBindTexture2DN(0, 0);
+    bindTexture(0, 0);
     while (glGetError() != GL_NO_ERROR) {}
     return ok;
 }
@@ -184,6 +317,7 @@ bool RTXRenderer::ensurePrograms() {
     m_trace.lightRange       = glGetUniformLocation(trace, "u_lightRange");
     m_trace.bounceFalloff    = glGetUniformLocation(trace, "u_bounceFalloff");
     m_trace.giSaturation     = glGetUniformLocation(trace, "u_giSaturation");
+    m_trace.giStrength       = glGetUniformLocation(trace, "u_giStrength");
     m_trace.normalStrength   = glGetUniformLocation(trace, "u_normalStrength");
     m_trace.thickness        = glGetUniformLocation(trace, "u_thickness");
     m_trace.aoRadius         = glGetUniformLocation(trace, "u_aoRadius");
@@ -192,7 +326,7 @@ bool RTXRenderer::ensurePrograms() {
     m_trace.reflectRoughness = glGetUniformLocation(trace, "u_reflectRoughness");
     m_trace.reflectFresnel   = glGetUniformLocation(trace, "u_reflectFresnel");
     m_trace.reflectFade      = glGetUniformLocation(trace, "u_reflectFade");
-    ccGLUseProgram(trace);
+    glUseProgram(trace);
     bindSampler(trace, "u_scene", 0);
 
     m_temporalProg = TemporalProgram{};
@@ -200,16 +334,16 @@ bool RTXRenderer::ensurePrograms() {
     m_temporalProg.texel       = glGetUniformLocation(temporal, "u_texel");
     m_temporalProg.temporal    = glGetUniformLocation(temporal, "u_temporal");
     m_temporalProg.clampSigma  = glGetUniformLocation(temporal, "u_clampSigma");
-    m_temporalProg.reprojNow   = glGetUniformLocation(temporal, "u_reprojNow");
-    m_temporalProg.reprojPrev  = glGetUniformLocation(temporal, "u_reprojPrev");
-    m_temporalProg.reprojScale = glGetUniformLocation(temporal, "u_reprojScale");
-    m_temporalProg.histVar      = glGetUniformLocation(temporal, "u_histVar");
+    m_temporalProg.reprojRow0  = glGetUniformLocation(temporal, "u_reprojRow0");
+    m_temporalProg.reprojRow1  = glGetUniformLocation(temporal, "u_reprojRow1");
     m_temporalProg.historyValid = glGetUniformLocation(temporal, "u_historyValid");
     m_temporalProg.outVariance  = glGetUniformLocation(temporal, "u_outVariance");
-    ccGLUseProgram(temporal);
+    glUseProgram(temporal);
     bindSampler(temporal, "u_current", 0);
     bindSampler(temporal, "u_history", 1);
     bindSampler(temporal, "u_histVar", 2);
+    bindSampler(temporal, "u_guideNow", 3);
+    bindSampler(temporal, "u_guidePrev", 4);
 
     m_atrousProg = AtrousProgram{};
     m_atrousProg.id     = atrous;
@@ -217,7 +351,7 @@ bool RTXRenderer::ensurePrograms() {
     m_atrousProg.stride = glGetUniformLocation(atrous, "u_stride");
     m_atrousProg.phi    = glGetUniformLocation(atrous, "u_phi");
     m_atrousProg.wide   = glGetUniformLocation(atrous, "u_wide");
-    ccGLUseProgram(atrous);
+    glUseProgram(atrous);
     bindSampler(atrous, "u_src", 0);
     bindSampler(atrous, "u_guide", 1);
     bindSampler(atrous, "u_var", 2);
@@ -238,18 +372,22 @@ bool RTXRenderer::ensurePrograms() {
     m_bloom.hdrRange   = glGetUniformLocation(bloom, "u_hdrRange");
     m_bloom.giMix      = glGetUniformLocation(bloom, "u_giMix");
     m_bloom.adaptRate  = glGetUniformLocation(bloom, "u_adaptRate");
-    m_bloom.frame      = glGetUniformLocation(bloom, "u_frame");
-    ccGLUseProgram(bloom);
+    m_bloom.reprojRow0 = glGetUniformLocation(bloom, "u_reprojRow0");
+    m_bloom.reprojRow1 = glGetUniformLocation(bloom, "u_reprojRow1");
+    glUseProgram(bloom);
     bindSampler(bloom, "u_src", 0);
     bindSampler(bloom, "u_add", 1);
+    bindSampler(bloom, "u_guide", 2);
 
     m_composite = CompositeProgram{};
     m_composite.id            = composite;
     m_composite.texel         = glGetUniformLocation(composite, "u_texel");
     m_composite.giTexel       = glGetUniformLocation(composite, "u_giTexel");
+    m_composite.reprojRow0    = glGetUniformLocation(composite, "u_reprojRow0");
+    m_composite.reprojRow1    = glGetUniformLocation(composite, "u_reprojRow1");
+    m_composite.historyValid  = glGetUniformLocation(composite, "u_historyValid");
     m_composite.time          = glGetUniformLocation(composite, "u_time");
     m_composite.mixAmount     = glGetUniformLocation(composite, "u_mix");
-    m_composite.giStrength    = glGetUniformLocation(composite, "u_giStrength");
     m_composite.aoStrength    = glGetUniformLocation(composite, "u_aoStrength");
     m_composite.bloomStrength = glGetUniformLocation(composite, "u_bloomStrength");
     m_composite.rayStrength   = glGetUniformLocation(composite, "u_rayStrength");
@@ -265,12 +403,13 @@ bool RTXRenderer::ensurePrograms() {
     m_composite.vignette      = glGetUniformLocation(composite, "u_vignette");
     m_composite.grain         = glGetUniformLocation(composite, "u_grain");
     m_composite.sharpen       = glGetUniformLocation(composite, "u_sharpen");
-    ccGLUseProgram(composite);
+    glUseProgram(composite);
     bindSampler(composite, "u_scene", 0);
     bindSampler(composite, "u_gi", 1);
     bindSampler(composite, "u_bloom", 2);
     bindSampler(composite, "u_rays", 3);
     bindSampler(composite, "u_adapt", 4);
+    bindSampler(composite, "u_guide", 5);
 
     if (!m_vbo) {
         glGenBuffers(1, &m_vbo);
@@ -283,7 +422,7 @@ bool RTXRenderer::ensurePrograms() {
     if (!m_blackTex) {
         unsigned char const black[4] = {0, 0, 0, 0};
         glGenTextures(1, &m_blackTex);
-        ccGLBindTexture2DN(0, m_blackTex);
+        bindTexture(0, m_blackTex);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, black);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -291,7 +430,13 @@ bool RTXRenderer::ensurePrograms() {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
 
-    m_hdr = probeHdrTargets();
+    m_hdr = probeHdrTargets(m_hdrFormat, m_hdrType);
+#if defined(GEODE_IS_MOBILE)
+    auto const* rawExtensions = reinterpret_cast<char const*>(glGetString(GL_EXTENSIONS));
+    std::string_view const extensions = rawExtensions ? rawExtensions : "";
+    m_canGenerateMips = contextMajorVersion() >= 3
+                    || extensions.find("GL_OES_texture_npot") != std::string_view::npos;
+#endif
     log::info("[PaimonRTX] programas compilados (rango alto {})",
               m_hdr ? "disponible" : "no soportado");
     return true;
@@ -306,24 +451,29 @@ bool RTXRenderer::makeTarget(Target& t, int w, int h, bool hdr) {
     dropTarget(t);
 
     glGenTextures(1, &t.tex);
-    ccGLBindTexture2DN(0, t.tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, hdr ? GL_RGBA16F : GL_RGBA, w, h, 0, GL_RGBA,
-                 hdr ? GL_FLOAT : GL_UNSIGNED_BYTE, nullptr);
+    if (!t.tex) return false;
+    bindTexture(0, t.tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, hdr ? m_hdrFormat : GL_RGBA, w, h, 0, GL_RGBA,
+                 hdr ? m_hdrType : GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     glGenFramebuffers(1, &t.fbo);
+    if (!t.fbo) {
+        dropTarget(t);
+        return false;
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, t.fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, t.tex, 0);
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE
+        || glGetError() != GL_NO_ERROR) {
         log::warn("[PaimonRTX] FBO incompleto ({}x{})", w, h);
         dropTarget(t);
         return false;
     }
 
-    // alpha is occlusion: start at 1 or the first frame comes out black.
     GLfloat prevClear[4] = {0.f, 0.f, 0.f, 1.f};
     glGetFloatv(GL_COLOR_CLEAR_VALUE, prevClear);
     glViewport(0, 0, w, h);
@@ -352,8 +502,9 @@ bool RTXRenderer::ensureFullTargets(int srcW, int srcH) {
 
     glGenTextures(1, &m_sceneTex);
     if (!m_sceneTex) return false;
-    ccGLBindTexture2DN(0, m_sceneTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, srcW, srcH, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    bindTexture(0, m_sceneTex);
+    // GLES2 can copy opaque framebuffers into RGB textures without an alpha channel.
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, srcW, srcH, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -383,38 +534,33 @@ bool RTXRenderer::ensureFullTargets(int srcW, int srcH) {
 }
 
 bool RTXRenderer::ensureTraceTargets(int srcW, int srcH, float scale) {
-    int w = std::max(64, static_cast<int>(std::lround(srcW * scale)));
-    int h = std::max(64, static_cast<int>(std::lround(srcH * scale)));
-
-    int const longEdge = std::max(w, h);
-    if (longEdge > kMaxTraceLongEdge) {
-        float const k = static_cast<float>(kMaxTraceLongEdge) / static_cast<float>(longEdge);
-        w = std::max(64, static_cast<int>(std::lround(w * k)));
-        h = std::max(64, static_cast<int>(std::lround(h * k)));
-    }
+    float const cappedScale = std::min(scale, static_cast<float>(kMaxTraceLongEdge)
+                                                   / static_cast<float>(std::max(srcW, srcH)));
+    int const w = std::max(1, static_cast<int>(std::lround(srcW * cappedScale)));
+    int const h = std::max(1, static_cast<int>(std::lround(srcH * cappedScale)));
 
     if (m_traceRT.fbo && w == m_traceW && h == m_traceH) return true;
 
     if (!makeTarget(m_traceSrc, w, h)) return false;
-    if (!makeTarget(m_traceRT, w, h)) return false;
-    if (!makeTarget(m_history[0], w, h)) return false;
-    if (!makeTarget(m_history[1], w, h)) return false;
-    if (!makeTarget(m_variance[0], w, h)) return false;
-    if (!makeTarget(m_variance[1], w, h)) return false;
-    if (!makeTarget(m_atrous[0], w, h)) return false;
-    if (!makeTarget(m_atrous[1], w, h)) return false;
+    if (!makeTarget(m_guideHistory, w, h)) return false;
+    if (!makeTarget(m_traceRT, w, h, true)) return false;
+    if (!makeTarget(m_history[0], w, h, true)) return false;
+    if (!makeTarget(m_history[1], w, h, true)) return false;
+    if (!makeTarget(m_variance[0], w, h, true)) return false;
+    if (!makeTarget(m_variance[1], w, h, true)) return false;
+    if (!makeTarget(m_atrous[0], w, h, true)) return false;
+    if (!makeTarget(m_atrous[1], w, h, true)) return false;
 
     m_traceW = w;
     m_traceH = h;
-    m_giResultTex = m_history[m_historyIndex].tex;
-    // fresh history doesn't match the previous camera.
-    m_hasPrevCamera = false;
+    invalidateHistory();
     log::debug("[PaimonRTX] objetivos de trazado {}x{} (escala {:.2f})", w, h, scale);
     return true;
 }
 
 void RTXRenderer::releaseAll() {
     dropTarget(m_traceSrc);
+    dropTarget(m_guideHistory);
     dropTarget(m_traceRT);
     dropTarget(m_history[0]);
     dropTarget(m_history[1]);
@@ -440,7 +586,7 @@ void RTXRenderer::releaseAll() {
     m_traceH = 0;
     m_bloomResultTex = 0;
     m_giResultTex = 0;
-    m_hasPrevCamera = false;
+    invalidateHistory();
     m_hasExposure = false;
 }
 
@@ -479,6 +625,66 @@ void RTXRenderer::drawInto(Target const& t) {
     glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
+void RTXRenderer::invalidateHistory() {
+    m_hasHistory = false;
+    m_giResultTex = 0;
+    m_reprojRow0 = {1.f, 0.f, 0.f};
+    m_reprojRow1 = {0.f, 1.f, 0.f};
+}
+
+void RTXRenderer::updateReprojection() {
+    auto* director = CCDirector::get();
+    auto* scene = director->getRunningScene();
+    auto* game = GJBaseGameLayer::get();
+    auto* layer = game ? game->m_objectLayer : nullptr;
+    if (scene != m_scene || layer != m_cameraLayer) {
+        invalidateHistory();
+        m_hasExposure = false;
+        m_scene = scene;
+        m_cameraLayer = layer;
+    }
+
+    m_camera = CameraTransform{};
+    if (layer) {
+        auto const win = director->getWinSize();
+        if (win.width <= 0.f || win.height <= 0.f) {
+            invalidateHistory();
+            return;
+        }
+        auto const xf = layer->nodeToWorldTransform();
+        m_camera = {xf.a / win.width, xf.b / win.height,
+                    xf.c / win.width, xf.d / win.height,
+                    xf.tx / win.width, xf.ty / win.height};
+    }
+    if (!m_hasHistory) return;
+
+    auto const& n = m_camera;
+    auto const& p = m_historyCamera;
+    float const det = n.a * n.d - n.b * n.c;
+    if (!std::isfinite(det) || std::abs(det) < 1e-12f) {
+        invalidateHistory();
+        return;
+    }
+    float const a = (p.a * n.d - p.c * n.b) / det;
+    float const c = (p.c * n.a - p.a * n.c) / det;
+    float const b = (p.b * n.d - p.d * n.b) / det;
+    float const d = (p.d * n.a - p.b * n.c) / det;
+    m_reprojRow0 = {a, c, p.tx - a * n.tx - c * n.ty};
+    m_reprojRow1 = {b, d, p.ty - b * n.tx - d * n.ty};
+    for (auto const& row : {m_reprojRow0, m_reprojRow1}) {
+        for (float v : row) {
+            if (!std::isfinite(v)) {
+                invalidateHistory();
+                return;
+            }
+        }
+    }
+    if (std::abs(m_reprojRow0[2]) > 0.25f || std::abs(m_reprojRow1[2]) > 0.25f
+        || std::abs(a * d - b * c) < 0.25f || std::abs(a * d - b * c) > 4.f) {
+        invalidateHistory();
+    }
+}
+
 void RTXRenderer::syncGovernorEffectives(RTXConfig const& cfg) {
     m_activeScale = std::clamp(cfg.renderScale, kMinAdaptiveScale, 1.f);
     m_effRayCount = std::clamp(cfg.rayCount, kMinRayCount, 16);
@@ -502,7 +708,6 @@ void RTXRenderer::clampGovernorToConfig(RTXConfig const& cfg) {
 }
 
 bool RTXRenderer::governorStepDown(float budget) {
-    // one step per period: stride before count, for stability.
     if (m_activeScale > kMinAdaptiveScale + 1e-6f) {
         float const over = budget > 0.f ? m_frameMs / budget : 2.f;
         float const step = over > 1.5f ? 0.10f : 0.05f;
@@ -574,7 +779,6 @@ void RTXRenderer::updateAdaptiveScale(RTXConfig const& cfg) {
     }
     clampGovernorToConfig(cfg);
 
-    // no budget or no measurement: nothing to push against.
     int const fps = cfg.targetFps > 0 ? cfg.targetFps : 60;
     float const budget = 1000.f / static_cast<float>(fps);
     if (budget <= 0.f || m_frameMs <= 0.f) return;
@@ -582,7 +786,6 @@ void RTXRenderer::updateAdaptiveScale(RTXConfig const& cfg) {
     if (++m_adaptTicks < kAdaptPeriodFrames) return;
     m_adaptTicks = 0;
 
-    // one step down per period under sustained pressure.
     if (m_frameMs > budget * 1.15f) {
         governorStepDown(budget);
         m_upTicks = 0;
@@ -605,15 +808,15 @@ void RTXRenderer::runTrace(RTXConfig const& cfg) {
     float const texelX = 1.f / static_cast<float>(m_traceW);
     float const texelY = 1.f / static_cast<float>(m_traceH);
 
-    ccGLUseProgram(m_bloom.id);
+    glUseProgram(m_bloom.id);
     glUniform1f(m_bloom.mode, 1.f);
     glUniform2f(m_bloom.texel, 1.f / static_cast<float>(m_sceneW),
                                1.f / static_cast<float>(m_sceneH));
-    ccGLBindTexture2DN(0, m_sceneTex);
-    ccGLBindTexture2DN(1, m_blackTex);
+    bindTexture(0, m_sceneTex);
+    bindTexture(1, m_blackTex);
     drawInto(m_traceSrc);
 
-    ccGLUseProgram(m_trace.id);
+    glUseProgram(m_trace.id);
     glUniform2f(m_trace.texel, texelX, texelY);
     glUniform1f(m_trace.frame, static_cast<float>(m_frameCounter % 4096u));
     glUniform1f(m_trace.rayCount, static_cast<float>(m_effRayCount));
@@ -624,6 +827,7 @@ void RTXRenderer::runTrace(RTXConfig const& cfg) {
     glUniform1f(m_trace.lightRange, cfg.lightRange);
     glUniform1f(m_trace.bounceFalloff, cfg.bounceFalloff);
     glUniform1f(m_trace.giSaturation, cfg.giSaturation);
+    glUniform1f(m_trace.giStrength, cfg.giStrength);
     glUniform1f(m_trace.normalStrength, cfg.normalStrength);
     glUniform1f(m_trace.thickness, cfg.thickness);
     glUniform1f(m_trace.aoRadius, cfg.aoRadius);
@@ -632,7 +836,7 @@ void RTXRenderer::runTrace(RTXConfig const& cfg) {
     glUniform1f(m_trace.reflectRoughness, cfg.reflectRoughness);
     glUniform1f(m_trace.reflectFresnel, cfg.reflectFresnel);
     glUniform1f(m_trace.reflectFade, cfg.reflectFade);
-    ccGLBindTexture2DN(0, m_traceSrc.tex);
+    bindTexture(0, m_traceSrc.tex);
     drawInto(m_traceRT);
 
     runFilter(cfg);
@@ -642,58 +846,37 @@ void RTXRenderer::runFilter(RTXConfig const& cfg) {
     float const texelX = 1.f / static_cast<float>(m_traceW);
     float const texelY = 1.f / static_cast<float>(m_traceH);
 
-    // layer only translates/scales: its transform gives the reprojection.
-    bool const hadPrevCamera = m_hasPrevCamera;
-    float nowX = 0.f, nowY = 0.f, prevX = 0.f, prevY = 0.f, ratio = 1.f;
-    auto* game = GJBaseGameLayer::get();
-    auto* layer = game ? game->m_objectLayer : nullptr;
-    if (layer) {
-        auto const win = CCDirector::get()->getWinSize();
-        auto const xf = layer->nodeToWorldTransform();
-        float const scale = std::abs(xf.a) > 0.0001f ? xf.a : 1.f;
-
-        nowX = xf.tx / win.width;
-        nowY = xf.ty / win.height;
-        if (m_hasPrevCamera) {
-            prevX = m_prevCamX / win.width;
-            prevY = m_prevCamY / win.height;
-            ratio = m_prevCamScale / scale;
-        } else {
-            prevX = nowX;
-            prevY = nowY;
-        }
-
-        m_prevCamX = xf.tx;
-        m_prevCamY = xf.ty;
-        m_prevCamScale = scale;
-        m_hasPrevCamera = true;
-    } else {
-        m_hasPrevCamera = false;
-    }
-
     int const dst = 1 - m_historyIndex;
     int const histSrc = m_historyIndex;
-    ccGLUseProgram(m_temporalProg.id);
+    glUseProgram(m_temporalProg.id);
     glUniform2f(m_temporalProg.texel, texelX, texelY);
     glUniform1f(m_temporalProg.temporal, cfg.temporal);
-    glUniform1f(m_temporalProg.clampSigma, cfg.ghostClamp ? cfg.clampSigma : 0.f);
-    glUniform2f(m_temporalProg.reprojNow, nowX, nowY);
-    glUniform2f(m_temporalProg.reprojPrev, prevX, prevY);
-    glUniform1f(m_temporalProg.reprojScale, ratio);
-    // no previous camera: variance starts high.
-    glUniform1f(m_temporalProg.historyValid, hadPrevCamera ? 1.f : 0.f);
+    glUniform1f(m_temporalProg.clampSigma, cfg.ghostClamp ? cfg.clampSigma : -1.f);
+    glUniform3f(m_temporalProg.reprojRow0, m_reprojRow0[0], m_reprojRow0[1], m_reprojRow0[2]);
+    glUniform3f(m_temporalProg.reprojRow1, m_reprojRow1[0], m_reprojRow1[1], m_reprojRow1[2]);
+    glUniform1f(m_temporalProg.historyValid, m_hasHistory ? 1.f : 0.f);
     glUniform1f(m_temporalProg.outVariance, 0.f);
-    ccGLBindTexture2DN(0, m_traceRT.tex);
-    ccGLBindTexture2DN(1, m_history[histSrc].tex);
+    bindTexture(0, m_traceRT.tex);
+    bindTexture(1, m_history[histSrc].tex);
+    bindTexture(2, m_variance[histSrc].tex);
+    bindTexture(3, m_traceSrc.tex);
+    bindTexture(4, m_guideHistory.tex);
     drawInto(m_history[dst]);
 
-    // variance pass, same program, in lockstep with color.
     glUniform1f(m_temporalProg.outVariance, 1.f);
-    ccGLBindTexture2DN(0, m_traceRT.tex);
-    ccGLBindTexture2DN(1, m_history[histSrc].tex);
-    ccGLBindTexture2DN(2, m_variance[histSrc].tex);
+    bindTexture(0, m_traceRT.tex);
+    bindTexture(1, m_history[histSrc].tex);
+    bindTexture(2, m_variance[histSrc].tex);
     drawInto(m_variance[dst]);
     m_historyIndex = dst;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, m_traceSrc.fbo);
+    bindTexture(0, m_guideHistory.tex);
+    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, m_traceW, m_traceH);
+    m_historyCamera = m_camera;
+    m_hasHistory = true;
+    m_reprojRow0 = {1.f, 0.f, 0.f};
+    m_reprojRow1 = {0.f, 1.f, 0.f};
 
     int const passes = std::clamp(m_effAtrous, 0, 5);
     if (passes == 0) {
@@ -704,19 +887,18 @@ void RTXRenderer::runFilter(RTXConfig const& cfg) {
     // high phi keeps edges, low phi cleans at the cost of flattening.
     float const phi = 48.f - std::clamp(cfg.denoise, 0.f, 4.f) * 11.f;
 
-    ccGLUseProgram(m_atrousProg.id);
+    glUseProgram(m_atrousProg.id);
     glUniform2f(m_atrousProg.texel, texelX, texelY);
     glUniform1f(m_atrousProg.phi, phi);
-    ccGLBindTexture2DN(1, m_traceSrc.tex);
-    ccGLBindTexture2DN(2, m_variance[m_historyIndex].tex);
+    bindTexture(1, m_traceSrc.tex);
+    bindTexture(2, m_variance[m_historyIndex].tex);
 
     GLuint src = m_history[m_historyIndex].tex;
     int out = 0;
     for (int i = 0; i < passes; ++i) {
         glUniform1f(m_atrousProg.stride, static_cast<float>(1 << i));
-        // 5x5 kernel only on the last pass with 4+ passes.
         glUniform1f(m_atrousProg.wide, (passes >= 4 && i == passes - 1) ? 1.f : 0.f);
-        ccGLBindTexture2DN(0, src);
+        bindTexture(0, src);
         drawInto(m_atrous[out]);
         src = m_atrous[out].tex;
         out = 1 - out;
@@ -725,42 +907,42 @@ void RTXRenderer::runFilter(RTXConfig const& cfg) {
 }
 
 void RTXRenderer::runBloom(RTXConfig const& cfg) {
-    // min 1: without levels the source passes straight to upsample.
     int const levels = std::clamp(m_effBloom, 1, kBloomLevels);
 
-    ccGLUseProgram(m_bloom.id);
+    glUseProgram(m_bloom.id);
     glUniform1f(m_bloom.tonemap, static_cast<float>(cfg.tonemap));
     glUniform1f(m_bloom.hdrRange, m_hdr ? cfg.hdrRange : 1.f);
     glUniform1f(m_bloom.anamorphic, cfg.bloomAnamorphic);
     glUniform1f(m_bloom.radius, cfg.bloomRadius);
 
-    // traced light feeds bloom or lit areas won't glow.
     glUniform1f(m_bloom.mode, 0.f);
     glUniform1f(m_bloom.threshold, cfg.bloomThreshold);
     glUniform1f(m_bloom.softKnee, cfg.bloomSoftKnee);
-    glUniform1f(m_bloom.giMix, m_giResultTex ? cfg.giStrength : 0.f);
+    glUniform1f(m_bloom.giMix, m_hasHistory ? 1.f : 0.f);
+    glUniform3f(m_bloom.reprojRow0, m_reprojRow0[0], m_reprojRow0[1], m_reprojRow0[2]);
+    glUniform3f(m_bloom.reprojRow1, m_reprojRow1[0], m_reprojRow1[1], m_reprojRow1[2]);
     glUniform2f(m_bloom.texel, 1.f / static_cast<float>(m_sceneW),
                                1.f / static_cast<float>(m_sceneH));
-    ccGLBindTexture2DN(0, m_sceneTex);
-    ccGLBindTexture2DN(1, m_giResultTex ? m_giResultTex : m_blackTex);
+    bindTexture(0, m_sceneTex);
+    bindTexture(1, m_giResultTex ? m_giResultTex : m_blackTex);
+    bindTexture(2, m_hasHistory ? m_guideHistory.tex : m_blackTex);
     drawInto(m_bloomDown[0]);
 
     glUniform1f(m_bloom.mode, 1.f);
     for (int i = 1; i < levels; ++i) {
         glUniform2f(m_bloom.texel, 1.f / static_cast<float>(m_bloomDown[i - 1].w),
                                    1.f / static_cast<float>(m_bloomDown[i - 1].h));
-        ccGLBindTexture2DN(0, m_bloomDown[i - 1].tex);
+        bindTexture(0, m_bloomDown[i - 1].tex);
         drawInto(m_bloomDown[i]);
     }
 
     glUniform1f(m_bloom.mode, 2.f);
     if (levels == 1) {
-        // no mix: source passes straight to upsample.
         glUniform1f(m_bloom.blend, 1.f);
         glUniform2f(m_bloom.texel, 1.f / static_cast<float>(m_bloomDown[0].w),
                                    1.f / static_cast<float>(m_bloomDown[0].h));
-        ccGLBindTexture2DN(0, m_bloomDown[0].tex);
-        ccGLBindTexture2DN(1, m_blackTex);
+        bindTexture(0, m_bloomDown[0].tex);
+        bindTexture(1, m_blackTex);
         drawInto(m_bloomUp[0]);
     } else {
         glUniform1f(m_bloom.blend, cfg.bloomBlend);
@@ -768,8 +950,8 @@ void RTXRenderer::runBloom(RTXConfig const& cfg) {
             Target const& src = (i == levels - 2) ? m_bloomDown[levels - 1] : m_bloomUp[i + 1];
             glUniform2f(m_bloom.texel, 1.f / static_cast<float>(src.w),
                                        1.f / static_cast<float>(src.h));
-            ccGLBindTexture2DN(0, src.tex);
-            ccGLBindTexture2DN(1, m_bloomDown[i].tex);
+            bindTexture(0, src.tex);
+            bindTexture(1, m_bloomDown[i].tex);
             drawInto(m_bloomUp[i]);
         }
     }
@@ -782,37 +964,34 @@ void RTXRenderer::runBloom(RTXConfig const& cfg) {
         glUniform2f(m_bloom.lightPos, cfg.godRayX, cfg.godRayY);
         glUniform1f(m_bloom.decay, cfg.godRayDecay);
         glUniform1f(m_bloom.density, cfg.godRayDensity);
-        // same counter as tracing: jitter in lockstep with ign.
-        glUniform1f(m_bloom.frame, static_cast<float>(m_frameCounter % 4096u));
         glUniform2f(m_bloom.texel, 1.f / static_cast<float>(src.w),
                                    1.f / static_cast<float>(src.h));
-        ccGLBindTexture2DN(0, src.tex);
-        ccGLBindTexture2DN(1, m_blackTex);
+        bindTexture(0, src.tex);
+        bindTexture(1, m_blackTex);
         drawInto(m_rays);
     }
 }
 
 void RTXRenderer::runAutoExposure(RTXConfig const& cfg) {
     // high mip is already mean brightness; ping-pong adds inertia.
-    // binding 0 forces the active unit past the cocos cache.
-    ccGLBindTexture2DN(0, 0);
-    ccGLBindTexture2DN(0, m_sceneTex);
+    bindTexture(0, 0);
+    bindTexture(0, m_sceneTex);
     glGenerateMipmap(GL_TEXTURE_2D);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 
-    float const dt = std::clamp(m_frameMs * 0.001f, 0.f, 0.1f);
-    float const rate = m_hasExposure ? std::clamp(cfg.adaptSpeed * dt, 0.f, 1.f) : 1.f;
+    float const dt = std::clamp(m_deltaSeconds, 0.f, 0.1f);
+    float const rate = m_hasExposure ? 1.f - std::exp(-cfg.adaptSpeed * dt) : 1.f;
 
     int const dst = 1 - m_exposureIndex;
-    ccGLUseProgram(m_bloom.id);
+    glUseProgram(m_bloom.id);
     glUniform1f(m_bloom.mode, 4.f);
     glUniform1f(m_bloom.adaptRate, rate);
-    ccGLBindTexture2DN(1, m_exposure[m_exposureIndex].tex);
+    bindTexture(1, m_exposure[m_exposureIndex].tex);
     drawInto(m_exposure[dst]);
 
     // back to flat filter or bloom would read mip 1 and come out soft.
-    ccGLBindTexture2DN(0, 0);
-    ccGLBindTexture2DN(0, m_sceneTex);
+    bindTexture(0, 0);
+    bindTexture(0, m_sceneTex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
     m_exposureIndex = dst;
@@ -820,23 +999,24 @@ void RTXRenderer::runAutoExposure(RTXConfig const& cfg) {
 }
 
 void RTXRenderer::runComposite(RTXConfig const& cfg, GLint const* viewport, GLuint prevFbo) {
-    ccGLUseProgram(m_composite.id);
+    glUseProgram(m_composite.id);
     glUniform2f(m_composite.texel, 1.f / static_cast<float>(m_sceneW),
                                    1.f / static_cast<float>(m_sceneH));
-    // no trace: upsample degrades to a single same-res tap.
     int const giW = m_giResultTex ? std::max(1, m_traceW) : std::max(1, m_sceneW);
     int const giH = m_giResultTex ? std::max(1, m_traceH) : std::max(1, m_sceneH);
     glUniform2f(m_composite.giTexel, 1.f / static_cast<float>(giW),
                                      1.f / static_cast<float>(giH));
+    glUniform3f(m_composite.reprojRow0, m_reprojRow0[0], m_reprojRow0[1], m_reprojRow0[2]);
+    glUniform3f(m_composite.reprojRow1, m_reprojRow1[0], m_reprojRow1[1], m_reprojRow1[2]);
+    glUniform1f(m_composite.historyValid, m_hasHistory ? 1.f : 0.f);
     glUniform1f(m_composite.time, m_shaderTime);
     glUniform1f(m_composite.mixAmount, cfg.intensity);
-    glUniform1f(m_composite.giStrength, cfg.giStrength);
     glUniform1f(m_composite.aoStrength, cfg.aoStrength);
     glUniform1f(m_composite.bloomStrength, cfg.bloomStrength);
     glUniform1f(m_composite.rayStrength, cfg.godRayStrength);
     glUniform1f(m_composite.tonemap, static_cast<float>(cfg.tonemap));
     glUniform1f(m_composite.exposure, cfg.exposure);
-    bool const hasAuto = cfg.adaptEnabled && m_hdr && m_hasExposure;
+    bool const hasAuto = cfg.adaptEnabled && m_hdr && m_canGenerateMips && m_hasExposure;
     glUniform1f(m_composite.adaptKey, hasAuto ? cfg.adaptKey : 0.f);
     glUniform1f(m_composite.contrast, cfg.contrast);
     glUniform1f(m_composite.saturation, cfg.saturation);
@@ -848,11 +1028,12 @@ void RTXRenderer::runComposite(RTXConfig const& cfg, GLint const* viewport, GLui
     glUniform1f(m_composite.grain, cfg.grain);
     glUniform1f(m_composite.sharpen, cfg.sharpen);
 
-    ccGLBindTexture2DN(0, m_sceneTex);
-    ccGLBindTexture2DN(1, m_giResultTex ? m_giResultTex : m_blackTex);
-    ccGLBindTexture2DN(2, m_bloomResultTex ? m_bloomResultTex : m_blackTex);
-    ccGLBindTexture2DN(3, (cfg.godRayStrength > 0.001f && m_rays.tex) ? m_rays.tex : m_blackTex);
-    ccGLBindTexture2DN(4, hasAuto ? m_exposure[m_exposureIndex].tex : m_blackTex);
+    bindTexture(0, m_sceneTex);
+    bindTexture(1, m_giResultTex ? m_giResultTex : m_blackTex);
+    bindTexture(2, m_bloomResultTex ? m_bloomResultTex : m_blackTex);
+    bindTexture(3, (cfg.godRayStrength > 0.001f && m_rays.tex) ? m_rays.tex : m_blackTex);
+    bindTexture(4, hasAuto ? m_exposure[m_exposureIndex].tex : m_blackTex);
+    bindTexture(5, m_hasHistory ? m_guideHistory.tex : m_blackTex);
 
     glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
     glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
@@ -865,6 +1046,8 @@ void RTXRenderer::renderFrame() {
     auto const& cfg = RTXManager::get().config();
     if (!RTXManager::get().shouldRender()) {
         m_wasActive = false;
+        invalidateHistory();
+        m_hasExposure = false;
         if (m_sceneTex && ++m_idleFrames > kIdleReleaseFrames) {
             releaseAll();
             m_idleFrames = 0;
@@ -873,9 +1056,16 @@ void RTXRenderer::renderFrame() {
     }
     m_idleFrames = 0;
 
-    GLint viewport[4] = {0, 0, 0, 0};
-    glGetIntegerv(GL_VIEWPORT, viewport);
+    FrameState const state;
+    auto const* viewport = state.viewport;
     if (viewport[2] <= 0 || viewport[3] <= 0) return;
+
+    std::array<GLint, 4> const sourceViewport{viewport[0], viewport[1], viewport[2], viewport[3]};
+    if (sourceViewport != m_sourceViewport) {
+        invalidateHistory();
+        m_hasExposure = false;
+        m_sourceViewport = sourceViewport;
+    }
 
     if (!ensurePrograms()) {
         m_broken = true;
@@ -886,37 +1076,42 @@ void RTXRenderer::renderFrame() {
     auto const now = std::chrono::steady_clock::now();
     if (m_wasActive) {
         float const ms = std::chrono::duration<float, std::milli>(now - m_lastFrame).count();
+        m_deltaSeconds = ms * 0.001f;
+        if (ms > 250.f) {
+            invalidateHistory();
+            m_hasExposure = false;
+        }
         m_frameMs = m_frameMs > 0.f ? m_frameMs * 0.9f + ms * 0.1f : ms;
-        m_shaderTime += ms * 0.001f;
+        m_shaderTime = std::fmod(m_shaderTime + std::min(m_deltaSeconds, 0.1f), 1024.f);
         updateAdaptiveScale(cfg);
     } else {
-        // on reactivation the governor starts from config, debt-free.
         syncGovernorEffectives(cfg);
         m_frameMs = 0.f;
+        m_deltaSeconds = 0.f;
     }
     m_lastFrame = now;
     m_wasActive = true;
-
-    // capture before creating targets: maketarget touches fbo and viewport.
-    GLint prevFbo = 0;
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
-    GLboolean const scissor = glIsEnabled(GL_SCISSOR_TEST);
-    if (scissor) glDisable(GL_SCISSOR_TEST);
 
     while (glGetError() != GL_NO_ERROR) {}
 
     if (ensureFullTargets(viewport[2], viewport[3])
         && ensureTraceTargets(viewport[2], viewport[3], m_activeScale)) {
 
-        ccGLBindTexture2DN(0, m_sceneTex);
+        // Target allocation binds offscreen FBOs; capture the presented frame explicitly.
+        glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(state.fbo));
+        bindTexture(0, m_sceneTex);
         glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, viewport[0], viewport[1], m_sceneW, m_sceneH);
+        if (glGetError() != GL_NO_ERROR) {
+            m_broken = true;
+            log::warn("[PaimonRTX] no se pudo capturar el framebuffer - RTX apagado esta sesion");
+            releaseAll();
+            return;
+        }
 
-        ccGLBlendFunc(GL_ONE, GL_ZERO);
-#if CC_TEXTURE_ATLAS_USE_VAO
-        ccGLBindVAO(0);
-#endif
         glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-        ccGLEnableVertexAttribs(kCCVertexAttribFlag_Position | kCCVertexAttribFlag_TexCoords);
+        glEnableVertexAttribArray(kCCVertexAttrib_Position);
+        glDisableVertexAttribArray(kCCVertexAttrib_Color);
+        glEnableVertexAttribArray(kCCVertexAttrib_TexCoords);
         glVertexAttribPointer(kCCVertexAttrib_Position, 2, GL_FLOAT, GL_FALSE,
                               4 * sizeof(GLfloat), reinterpret_cast<void*>(0));
         glVertexAttribPointer(kCCVertexAttrib_TexCoords, 2, GL_FLOAT, GL_FALSE,
@@ -926,11 +1121,27 @@ void RTXRenderer::renderFrame() {
                              || cfg.reflectStrength > 0.001f;
         bool const wantsBloom = cfg.bloomStrength > 0.001f || cfg.godRayStrength > 0.001f;
 
-        if (cfg.adaptEnabled && m_hdr) runAutoExposure(cfg);
+        std::array<float, 16> const traceSettings{
+            cfg.rayDistance, cfg.stepGrowth, cfg.lightThreshold, cfg.lightRange,
+            cfg.bounceFalloff, cfg.giSaturation, cfg.normalStrength, cfg.thickness,
+            cfg.aoRadius, cfg.aoPower, cfg.reflectStrength, cfg.reflectRoughness,
+            cfg.reflectFresnel, cfg.reflectFade, static_cast<float>(cfg.tonemap), cfg.giStrength
+        };
+        if (traceSettings != m_traceSettings) {
+            invalidateHistory();
+            m_traceSettings = traceSettings;
+        }
+        updateReprojection();
 
-        // governor-effective cadence; max(1,...) covers skip at 0.
+        if (cfg.adaptEnabled && m_hdr && m_canGenerateMips) runAutoExposure(cfg);
+        else m_hasExposure = false;
+
         unsigned const cadence = static_cast<unsigned>(std::max(1, m_effSkip + 1));
-        if (wantsTrace && m_frameCounter % cadence == 0) runTrace(cfg);
+        if (wantsTrace) {
+            if (!m_hasHistory || m_frameCounter % cadence == 0) runTrace(cfg);
+        } else {
+            invalidateHistory();
+        }
 
         if (wantsBloom) {
             runBloom(cfg);
@@ -938,31 +1149,28 @@ void RTXRenderer::renderFrame() {
             m_bloomResultTex = 0;
         }
 
-        runComposite(cfg, viewport, static_cast<GLuint>(prevFbo));
+        GLenum const passError = glGetError();
+        if (passError != GL_NO_ERROR) {
+            m_broken = true;
+            log::warn("[PaimonRTX] error GL 0x{:X} en los pases de luz - RTX apagado esta sesion",
+                      static_cast<unsigned>(passError));
+            releaseAll();
+            return;
+        }
+        runComposite(cfg, viewport, static_cast<GLuint>(state.fbo));
 
         GLenum const err = glGetError();
         if (err != GL_NO_ERROR) {
             m_broken = true;
             log::warn("[PaimonRTX] error GL 0x{:X} en el postproceso - RTX apagado esta sesion",
                       static_cast<unsigned>(err));
+            releaseAll();
         }
     } else {
         m_broken = true;
         log::warn("[PaimonRTX] no se pudieron crear los render targets - RTX apagado esta sesion");
+        releaseAll();
     }
-
-    glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFbo));
-    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    ccGLUseProgram(0);
-    ccGLBlendFunc(CC_BLEND_SRC, CC_BLEND_DST);
-    ccGLBindTexture2DN(4, 0);
-    ccGLBindTexture2DN(3, 0);
-    ccGLBindTexture2DN(2, 0);
-    ccGLBindTexture2DN(1, 0);
-    ccGLBindTexture2DN(0, 0);
-    glActiveTexture(GL_TEXTURE0);
-    if (scissor) glEnable(GL_SCISSOR_TEST);
 
     m_frameCounter++;
 }

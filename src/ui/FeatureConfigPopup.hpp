@@ -1,11 +1,12 @@
 ﻿#pragma once
+#include "PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <string>
 
 namespace paimon::ui {
 
-class FeatureConfigPopup : public geode::Popup {
+class FeatureConfigPopup : public PaimonPopup {
 public:
     static FeatureConfigPopup* create(std::string const& featureKey);
 

@@ -1,10 +1,11 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 
 class PaimonLoadingOverlay;
 #include "../../../features/forum/services/ForumApi.hpp"
 
-class ProfileViewsPopup : public geode::Popup {
+class ProfileViewsPopup : public PaimonPopup {
 protected:
     int m_accountID;
     uint64_t m_requestGeneration = 0;

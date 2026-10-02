@@ -1,4 +1,5 @@
 #include "PaimonSupportLayer.hpp"
+#include "../ui/PaimonUI.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include "../core/QualityConfig.hpp"
@@ -37,19 +38,13 @@ void addSideArt(CCLayer* layer, CCSize win) {
     }
 }
 
-CCNode* makePanel(float w, float h, float x, float y, ccColor3B borderColor) {
+CCNode* makePanel(float w, float h, float x, float y, ccColor3B) {
     auto root = CCNode::create();
 
-    auto bg = paimon::SpriteHelper::createColorPanel(w, h, {15, 10, 32}, 205);
+    auto bg = paimon::ui::makeSurface({w, h});
     bg->setPosition({x - w / 2, y - h / 2});
     root->addChild(bg, 1);
 
-    if (auto border = paimon::SpriteHelper::safeCreateScale9("GJ_square07.png")) {
-        border->setContentSize({w + 6.f, h + 6.f});
-        border->setPosition({x, y});
-        border->setColor(borderColor);
-        root->addChild(border, 2);
-    }
     return root;
 }
 
@@ -140,8 +135,8 @@ void PaimonSupportLayer::buildUI() {
         glow->setOpacity(40);
         glow->setBlendFunc({GL_SRC_ALPHA, GL_ONE});
         this->addChild(glow, -4);
-        glow->runAction(CCRepeatForever::create(CCRotateBy::create(20.f, 360.f)));
-        glow->runAction(CCRepeatForever::create(CCSequence::create(
+        if (paimon::ui::motionEnabled()) glow->runAction(CCRepeatForever::create(CCRotateBy::create(20.f, 360.f)));
+        if (paimon::ui::motionEnabled()) glow->runAction(CCRepeatForever::create(CCSequence::create(
             CCFadeTo::create(4.f, 60), CCFadeTo::create(4.f, 20), nullptr
         )));
     }
@@ -175,7 +170,7 @@ void PaimonSupportLayer::buildUI() {
         star->setColor({255, 215, 0});
         star->setPosition({badgeX, panelY + 10.f});
         badgeRoot->addChild(star, 4);
-        star->runAction(CCRepeatForever::create(CCSequence::create(
+        if (paimon::ui::motionEnabled()) star->runAction(CCRepeatForever::create(CCSequence::create(
             CCScaleTo::create(1.f, 0.74f), CCScaleTo::create(1.f, 0.66f), nullptr
         )));
     }
@@ -240,7 +235,7 @@ void PaimonSupportLayer::buildUI() {
         heart->setPosition({cx, sectionY + 30.f});
         heart->setColor({255, 80, 120});
         this->addChild(heart, 3);
-        heart->runAction(CCRepeatForever::create(CCSequence::create(
+        if (paimon::ui::motionEnabled()) heart->runAction(CCRepeatForever::create(CCSequence::create(
             CCScaleTo::create(0.18f, 0.52f),
             CCScaleTo::create(0.18f, 0.38f),
             CCScaleTo::create(0.18f, 0.48f),
@@ -278,8 +273,10 @@ void PaimonSupportLayer::buildUI() {
         donateSpr->addChild(heartIcon, 10);
     }
 
-    this->schedule(schedule_selector(PaimonSupportLayer::spawnParticles), 3.5f);
-    spawnParticles(0.f);
+    if (paimon::ui::motionEnabled()) {
+        this->schedule(schedule_selector(PaimonSupportLayer::spawnParticles), 3.5f);
+        spawnParticles(0.f);
+    }
 
     auto backMenu = CCMenu::create();
     backMenu->setPosition({cx, win.height / 2});

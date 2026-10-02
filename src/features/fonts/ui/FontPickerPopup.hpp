@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <string>
@@ -6,7 +7,7 @@
 
 namespace paimon::fonts {
 
-class FontPickerPopup : public geode::Popup {
+class FontPickerPopup : public PaimonPopup {
 public:
     enum class Tab { GDFonts, Custom };
 

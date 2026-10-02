@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/ui/Popup.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
@@ -9,7 +10,7 @@
 namespace paimon::updates {
 
 // popup with .geode download progress + "restart" button when done.
-class UpdateProgressPopup : public geode::Popup {
+class UpdateProgressPopup : public PaimonPopup {
 public:
     // downloads one version from the history; oninstalled tells the update
     // center to refresh its buttons.

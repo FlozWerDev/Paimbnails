@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../data/VersusModes.hpp"
 #include "../data/VersusTypes.hpp"
@@ -13,7 +14,7 @@
 namespace paimon::versus {
 
 // friendly rooms leave ladder ratings unchanged.
-class VersusFriendlyPopup : public geode::Popup {
+class VersusFriendlyPopup : public PaimonPopup {
 public:
     static VersusFriendlyPopup* create(Mode mode);
 

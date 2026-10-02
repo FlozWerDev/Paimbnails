@@ -1,7 +1,8 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 
-class ReportInputPopup : public geode::Popup {
+class ReportInputPopup : public PaimonPopup {
 protected:
     int m_levelID = 0;
     geode::TextInput* m_textInput = nullptr;

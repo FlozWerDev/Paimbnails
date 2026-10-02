@@ -82,7 +82,7 @@ CustomTransitionEditorPopup* CustomTransitionEditorPopup::create(TransitionConfi
 }
 
 bool CustomTransitionEditorPopup::init(TransitionConfig config, bool isGlobal, std::function<void(TransitionConfig)> save) {
-    if (!Popup::init(520.f, 340.f)) return false;
+    if (!PaimonPopup::init(520.f, 340.f)) return false;
 
     m_config = std::move(config);
     m_save = std::move(save);

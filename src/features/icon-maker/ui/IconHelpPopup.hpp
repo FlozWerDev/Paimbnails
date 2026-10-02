@@ -1,11 +1,12 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
 
 namespace paimon::icon_maker {
 
-class IconHelpPopup : public geode::Popup {
+class IconHelpPopup : public PaimonPopup {
 public:
     enum class Topic { Basics = 0, Canvas = 1, Paint = 2, Export = 3 };
 

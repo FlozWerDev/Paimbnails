@@ -53,7 +53,7 @@ int TemplatePickerPopup::pageCount() const {
 
 bool TemplatePickerPopup::init(IconType type, PickedCallback onPicked,
                                ProjectCallback onProject) {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
     m_type = type;
     m_onPicked = std::move(onPicked);

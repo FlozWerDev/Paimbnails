@@ -1,8 +1,9 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 
-class SetDailyWeeklyPopup : public geode::Popup {
+class SetDailyWeeklyPopup : public PaimonPopup {
 protected:
     int m_levelID;
 

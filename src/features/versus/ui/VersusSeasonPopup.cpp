@@ -39,7 +39,7 @@ VersusSeasonPopup* VersusSeasonPopup::create() {
 }
 
 bool VersusSeasonPopup::init() {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     paimon::markDynamicPopup(this);
 

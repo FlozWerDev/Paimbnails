@@ -35,7 +35,7 @@ JumpToPagePopup* JumpToPagePopup::create(int currentPage, int pageCount,
 }
 
 bool JumpToPagePopup::init(int currentPage, int pageCount, std::function<void(int)> onJump) {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     paimon::markDynamicPopup(this);
 

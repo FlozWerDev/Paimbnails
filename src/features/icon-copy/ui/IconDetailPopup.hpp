@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 // one icon of a copied set, blown up: the icon on the left, everything the game
 // asks of you before it hands it over on the right.
 
@@ -9,7 +10,7 @@
 
 namespace paimon::iconcopy {
 
-class IconDetailPopup : public geode::Popup {
+class IconDetailPopup : public PaimonPopup {
 public:
     static IconDetailPopup* create(IconSet const& set, IconType type);
 

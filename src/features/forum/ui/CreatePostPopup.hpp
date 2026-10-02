@@ -1,10 +1,11 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
 #include "../services/ForumApi.hpp"
 #include <vector>
 #include <string>
 
-class CreatePostPopup : public geode::Popup, public FLAlertLayerProtocol, public TextInputDelegate {
+class CreatePostPopup : public PaimonPopup, public FLAlertLayerProtocol, public TextInputDelegate {
 protected:
     geode::TextInput* m_titleInput = nullptr;
     geode::TextInput* m_descInput = nullptr;

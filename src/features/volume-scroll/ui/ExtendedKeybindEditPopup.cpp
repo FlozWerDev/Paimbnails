@@ -60,7 +60,7 @@ bool ExtendedKeybindEditPopup::init(
     bool allowScroll,
     SaveCallback onSave
 ) {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
 
     m_title = std::move(title);

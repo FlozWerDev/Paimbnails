@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include "../services/ModlyTypes.hpp"
 #include <Geode/ui/Popup.hpp>
@@ -6,7 +7,7 @@
 
 namespace paimon::compat_mods {
 
-class ModlyModPopup : public geode::Popup {
+class ModlyModPopup : public PaimonPopup {
 public:
     static ModlyModPopup* create(ModlyMod const& mod);
 

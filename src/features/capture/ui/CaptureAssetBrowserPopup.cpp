@@ -159,7 +159,7 @@ bool CaptureAssetBrowserPopup::init() {
     namespace C = paimon::capture::assets;
     namespace E = paimon::capture::editor;
 
-    if (!Popup::init(C::POPUP_WIDTH, C::POPUP_HEIGHT)) return false;
+    if (!PaimonPopup::init(C::POPUP_WIDTH, C::POPUP_HEIGHT)) return false;
     this->setTitle(loc("assets.title").c_str());
 
     auto content = m_mainLayer->getContentSize();

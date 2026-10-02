@@ -51,7 +51,7 @@ VersusEndPopup* VersusEndPopup::create() {
 }
 
 bool VersusEndPopup::init() {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     this->setTitle(Localization::get().getString("versus.end.title"));
     paimon::markDynamicPopup(this);

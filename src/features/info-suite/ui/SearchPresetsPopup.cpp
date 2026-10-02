@@ -46,7 +46,7 @@ SearchPresetsPopup* SearchPresetsPopup::createSaveDialog(
 bool SearchPresetsPopup::init(bool saveMode, AdvancedQuery query,
                               std::function<void(AdvancedQuery const&)> onPick,
                               std::function<void()> onSaved) {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     paimon::markDynamicPopup(this);
 

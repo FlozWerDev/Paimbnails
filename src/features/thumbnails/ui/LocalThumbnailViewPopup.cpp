@@ -691,7 +691,7 @@ void LocalThumbnailViewPopup::onRate(CCObject* sender) {
 
 
 bool LocalThumbnailViewPopup::init(float width, float height) {
-     if (!Popup::init(width, height)) return false;
+     if (!PaimonPopup::init(width, height)) return false;
      paimon::markDynamicPopup(this);
      return true;
 }

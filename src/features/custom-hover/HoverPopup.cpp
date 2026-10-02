@@ -1,3 +1,4 @@
+#include "../../ui/PaimonPopup.hpp"
 #include "CustomHover.hpp"
 #include "../../ui/PaiConfigKit.hpp"
 #include "../../utils/DynamicPopupRegistry.hpp"
@@ -15,7 +16,7 @@ namespace kit = paimon::configkit;
 class HoverPopup;
 HoverPopup* active = nullptr;
 
-class HoverPopup : public Popup {
+class HoverPopup : public PaimonPopup {
     std::string key;
     int tab = 0;
     ScrollLayer* scroll = nullptr;
@@ -219,7 +220,7 @@ class HoverPopup : public Popup {
     }
 
     bool init(std::string const& target) {
-        if (!Popup::init(400, 290)) return false;
+        if (!PaimonPopup::init(400, 290)) return false;
         key = target;
         setID("custom-hover-popup"_spr);
         paimon::markDynamicPopup(this);

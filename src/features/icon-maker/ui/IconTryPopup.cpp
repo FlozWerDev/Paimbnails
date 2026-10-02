@@ -65,7 +65,7 @@ IconTryPopup* IconTryPopup::create(IconProject project) {
 }
 
 bool IconTryPopup::init(IconProject project) {
-    if (!Popup::init(kPopupW, kPopupH)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
 
     m_project = std::move(project);

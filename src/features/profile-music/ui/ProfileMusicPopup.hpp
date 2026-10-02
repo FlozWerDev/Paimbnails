@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -6,7 +7,7 @@ class PaimonLoadingOverlay;
 #include "../services/ProfileMusicManager.hpp"
 #include <vector>
 
-class ProfileMusicPopup : public geode::Popup {
+class ProfileMusicPopup : public PaimonPopup {
 protected:
     int m_accountID;
     int m_songID = 0;

@@ -41,9 +41,14 @@ void addSideArt(CCLayer* layer, CCSize win) {
 CCNode* makePanel(float w, float h, float x, float y, ccColor3B) {
     auto root = CCNode::create();
 
-    auto bg = paimon::ui::makeSurface({w, h});
-    bg->setPosition({x - w / 2, y - h / 2});
+    auto bg = NineSlice::create("GJ_square04.png");
+    bg->setContentSize({w, h});
+    bg->setPosition({x, y});
     root->addChild(bg, 1);
+
+    auto inset = paimon::ui::makeInset({w - 16.f, h - 32.f}, 70);
+    inset->setPosition({x - w / 2.f + 8.f, y - h / 2.f + 8.f});
+    root->addChild(inset, 2);
 
     return root;
 }
@@ -161,8 +166,8 @@ void PaimonSupportLayer::buildUI() {
     this->addChild(badgeRoot, 3);
 
     auto badgeTitle = CCLabelBMFont::create("Supporter Badge", "goldFont.fnt");
-    badgeTitle->setScale(0.35f);
-    badgeTitle->setPosition({badgeX, panelY + 61.f});
+    badgeTitle->limitLabelWidth(136.f, 0.5f, 0.2f);
+    badgeTitle->setPosition({badgeX, panelY + 62.f});
     badgeRoot->addChild(badgeTitle, 4);
 
     if (auto star = CCSprite::createWithSpriteFrameName("GJ_bigStar_001.png")) {
@@ -192,8 +197,8 @@ void PaimonSupportLayer::buildUI() {
     this->addChild(benRoot, 3);
 
     auto benTitle = CCLabelBMFont::create("Supporter Benefits", "goldFont.fnt");
-    benTitle->setScale(0.38f);
-    benTitle->setPosition({benX, panelY + 61.f});
+    benTitle->limitLabelWidth(200.f, 0.55f, 0.2f);
+    benTitle->setPosition({benX, panelY + 62.f});
     benRoot->addChild(benTitle, 4);
 
     struct Benefit { char const* icon; char const* text; ccColor3B color; };
@@ -206,12 +211,12 @@ void PaimonSupportLayer::buildUI() {
         {"gj_heartOn_001.png",       "Early Access Before Public", {255, 100, 150}},
     };
 
-    float startY = panelY + 43.f;
+    float startY = panelY + 40.f;
     float leftX = benX - 92.f;
     for (int i = 0; i < 6; i++) {
         float rowY = startY - i * 19.f;
         if (auto icon = CCSprite::createWithSpriteFrameName(benefits[i].icon)) {
-            icon->setScale(0.32f);
+            icon->setScale(0.3f);
             icon->setPosition({leftX, rowY});
             icon->setColor(benefits[i].color);
             benRoot->addChild(icon, 4);
@@ -225,9 +230,8 @@ void PaimonSupportLayer::buildUI() {
     }
 
     float sectionY = win.height * 0.20f;
-    auto sep = CCLayerColor::create({255, 120, 180, 45});
-    sep->setContentSize({win.width * 0.6f, 1.5f});
-    sep->setPosition({win.width * 0.2f, sectionY + 22.f});
+    auto sep = paimon::ui::makeDivider(win.width * 0.6f, {255, 140, 200}, 140);
+    sep->setPosition({cx, sectionY + 22.f});
     this->addChild(sep, 2);
 
     if (auto heart = CCSprite::createWithSpriteFrameName("gj_heartOn_001.png")) {
@@ -258,7 +262,7 @@ void PaimonSupportLayer::buildUI() {
     donateMenu->setPosition({cx, 28.f});
     this->addChild(donateMenu, 5);
 
-    auto donateSpr = ButtonSprite::create("Donate", 120, true, "bigFont.fnt", "GJ_button_01.png", 35.f, 0.7f);
+    auto donateSpr = ButtonSprite::create("Donate", 120, true, "goldFont.fnt", "GJ_button_03.png", 35.f, 0.9f);
     donateSpr->setScale(0.9f);
     auto donateBtn = CCMenuItemSpriteExtra::create(
         donateSpr, this, menu_selector(PaimonSupportLayer::onDonate)

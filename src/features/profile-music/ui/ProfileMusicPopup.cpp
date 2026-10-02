@@ -5,6 +5,7 @@
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/PaimonDrawNode.hpp"
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/GeodeTextInputSafe.hpp"
@@ -171,6 +172,10 @@ bool ProfileMusicPopup::init(int accountID) {
     m_accountID = accountID;
 
     this->setTitle(tr("music.popup_title").c_str());
+    this->addInfoButton(tr("music.popup_title"),
+        "Load a song by ID, search your downloads, or import a file.\n\n"
+        "Drag the <cg>green</c> and <cr>red</c> handles on the waveform to pick the fragment, or type the "
+        "<cy>start</c>/<cy>end</c> times. Preview it, then <cg>Save</c> to set your profile music.");
     if (m_title) {
         m_title->setScale(m_title->getScale() * 0.82f);
     }
@@ -279,7 +284,7 @@ void ProfileMusicPopup::createWaveformDisplay() {
     const float bgPad = 6.f;
     float wfBgW = m_waveformWidth + bgPad * 2.f;
     float wfBgH = m_waveformHeight + bgPad * 2.f;
-    auto waveformBg = paimon::SpriteHelper::createDarkPanel(wfBgW, wfBgH, 155, 7.f);
+    auto waveformBg = paimon::ui::makeInset({wfBgW, wfBgH}, 155);
     waveformBg->setPosition({winSize.width / 2.f - wfBgW / 2.f, m_waveformY - bgPad});
     m_mainLayer->addChild(waveformBg, 0);
 
@@ -392,8 +397,7 @@ const float labelYOff   = 27.f;
 
     const float badgeCenterX = winSize.width / 2.f;
     float badgeW = 80.f, badgeH = 22.f;
-    auto selBg = paimon::SpriteHelper::createColorPanel(
-        badgeW, badgeH, {0, 0, 0}, 120, 5.f);
+    auto selBg = paimon::ui::makeInset({badgeW, badgeH}, 120);
     selBg->setPosition({badgeCenterX - badgeW / 2.f, m_timeEditorY - badgeH / 2.f});
     m_mainLayer->addChild(selBg, 4);
 

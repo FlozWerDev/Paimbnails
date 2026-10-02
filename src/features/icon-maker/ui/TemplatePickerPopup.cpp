@@ -60,6 +60,11 @@ bool TemplatePickerPopup::init(IconType type, PickedCallback onPicked,
     m_onProject = std::move(onProject);
     setTitle("Elige una forma");
     setID("icon-maker-template-popup"_spr);
+    addInfoButton("Elegir forma",
+        "Toca un icono para copiar su forma. Usa las <cy>flechas</c> para pasar "
+        "de pagina o escribe el <cg>numero</c> del icono para saltar directo. Si "
+        "ya tienes otros iconos de este gamemode, la pestana <cy>Mis iconos</c> "
+        "te deja reutilizar sus formas.");
 
     auto const size = m_mainLayer->getContentSize();
 

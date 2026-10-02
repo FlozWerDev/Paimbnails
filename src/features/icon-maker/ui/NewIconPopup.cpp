@@ -87,6 +87,11 @@ bool NewIconPopup::init(CreatedCallback onCreated) {
     m_onCreated = std::move(onCreated);
     setTitle("Nuevo icono");
     setID("icon-maker-new-popup"_spr);
+    addInfoButton("Nuevo icono",
+        "Elige el <cy>modo</c> (cubo, nave, bola...), ponle un <cy>nombre</c> y "
+        "decide de donde partir: <cg>Icono oficial</c> copia la forma de un icono "
+        "del juego para que solo lo pintes, o <cg>En blanco</c> empieza con el "
+        "lienzo vacio. Toca <cg>Crear</c> para abrirlo en el editor.");
 
     auto size = m_mainLayer->getContentSize();
 

@@ -1,5 +1,6 @@
 #include "LayerPreviewNode.hpp"
 
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/Localization.hpp"
@@ -437,6 +438,10 @@ void LayerPreviewNode::addFlatFill(ccColor4B color) {
 void LayerPreviewNode::addPlaceholder(std::string const& text, ccColor3B color) {
     if (!m_bgHolder) return;
     addFlatFill({28, 32, 52, 255});
+    if (auto* inset = paimon::ui::makeInset({m_frame.width - 16.f, m_frame.height - 16.f}, 120)) {
+        inset->setPosition({8.f, 8.f});
+        m_bgHolder->addChild(inset, 1);
+    }
     auto* lbl = CCLabelBMFont::create(text.c_str(), "bigFont.fnt");
     if (!lbl) return;
     lbl->setAlignment(kCCTextAlignmentCenter);

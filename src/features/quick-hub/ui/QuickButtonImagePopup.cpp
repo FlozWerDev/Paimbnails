@@ -3,6 +3,7 @@
 #include "QuickButtonEditKit.hpp"
 #include "RadialVisuals.hpp"
 #include "../services/QuickButtonSfx.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -40,11 +41,24 @@ bool QuickButtonImagePopup::init() {
     if (!PaimonPopup::init(360.f, 272.f)) return false;
     paimon::markDynamicPopup(this);
     this->setTitle("Imagen del boton");
+    this->addCorners();
+    this->addInfoButton("Imagen del boton",
+        "Pon una imagen propia sobre el boton rapido, o vuelve al <cy>frame del juego</c>.\n\n"
+        "<cj>Tamano</c> y <cj>Giro</c> se ajustan con los botones -/+. <cg>FlipX/FlipY</c> "
+        "voltean la imagen; <co>Cero</c> deja giro y tamano al valor base. La <cy>vista "
+        "previa</c> de arriba se actualiza al instante.");
 
+    namespace ui = paimon::ui;
     auto size = m_mainLayer->getContentSize();
+    float cx = size.width * 0.5f;
+
+    if (auto* inset = ui::makeInset({96.f, 96.f}, 110)) {
+        inset->setPosition({cx - 48.f, 208.f - 48.f});
+        m_mainLayer->addChild(inset, 1);
+    }
 
     m_thumb = CCNode::create();
-    m_thumb->setPosition({size.width * 0.5f, 208.f});
+    m_thumb->setPosition({cx, 208.f});
     m_mainLayer->addChild(m_thumb, 2);
 
     m_menu = CCMenu::create();
@@ -59,9 +73,16 @@ bool QuickButtonImagePopup::init() {
         return item;
     };
 
-    float cx = size.width * 0.5f;
-    addBtn("Elegir PNG/JPG", false, {cx - 78.f, 168.f}, [this] { onChooseFile(); });
-    addBtn("Frame del juego", false, {cx + 78.f, 168.f}, [this] {
+    auto heading = [&](char const* text, float y) {
+        auto* label = ui::makeTitle(text, 300.f, 0.4f);
+        label->setAnchorPoint({0.f, 0.5f});
+        label->setPosition({10.f, y});
+        m_mainLayer->addChild(label, 2);
+    };
+
+    heading("Fuente", 168.f);
+    addBtn("Elegir PNG/JPG", false, {cx - 46.f, 168.f}, [this] { onChooseFile(); });
+    addBtn("Frame del juego", false, {cx + 90.f, 168.f}, [this] {
         m_target->imagePath.clear();
         changed();
     });
@@ -83,51 +104,45 @@ bool QuickButtonImagePopup::init() {
         changed();
     });
 
-    addBtn("FlipX", m_target->imageFlipX, {cx - 110.f, 86.f}, [this] {
+    heading("Opciones", 100.f);
+    addBtn("FlipX", m_target->imageFlipX, {cx - 92.f, 86.f}, [this] {
         m_target->imageFlipX = !m_target->imageFlipX;
         changed();
     });
-    addBtn("FlipY", m_target->imageFlipY, {cx - 30.f, 86.f}, [this] {
+    addBtn("FlipY", m_target->imageFlipY, {cx - 20.f, 86.f}, [this] {
         m_target->imageFlipY = !m_target->imageFlipY;
         changed();
     });
-    addBtn("Cero", false, {cx + 48.f, 86.f}, [this] {
+    addBtn("Cero", false, {cx + 52.f, 86.f}, [this] {
         m_target->imageRotation = 0.f;
         m_target->imageScale = 1.f;
         changed();
     });
-    addBtn("Quitar", false, {cx + 118.f, 86.f}, [this] {
+    addBtn("Quitar", false, {cx + 120.f, 86.f}, [this] {
         m_target->imagePath.clear();
         changed();
     });
 
-    m_scaleValue = CCLabelBMFont::create("", "chatFont.fnt");
-    m_scaleValue->setScale(0.5f);
+    m_scaleValue = ui::makeLabel("", 90.f, 0.5f, ui::palette::gold);
     m_scaleValue->setPosition({cx, 138.f});
     m_mainLayer->addChild(m_scaleValue, 2);
 
-    m_rotValue = CCLabelBMFont::create("", "chatFont.fnt");
-    m_rotValue->setScale(0.5f);
+    m_rotValue = ui::makeLabel("", 90.f, 0.5f, ui::palette::gold);
     m_rotValue->setPosition({cx, 112.f});
     m_mainLayer->addChild(m_rotValue, 2);
 
-    auto* cap1 = CCLabelBMFont::create("Tamano", "goldFont.fnt");
-    cap1->setScale(0.32f);
+    auto* cap1 = ui::makeLabel("Tamano", 100.f, 0.4f);
     cap1->setPosition({cx - 150.f, 138.f});
     cap1->setAnchorPoint({0.f, 0.5f});
     m_mainLayer->addChild(cap1, 2);
 
-    auto* cap2 = CCLabelBMFont::create("Giro", "goldFont.fnt");
-    cap2->setScale(0.32f);
+    auto* cap2 = ui::makeLabel("Giro", 100.f, 0.4f);
     cap2->setPosition({cx - 150.f, 112.f});
     cap2->setAnchorPoint({0.f, 0.5f});
     m_mainLayer->addChild(cap2, 2);
 
-    auto* done = ButtonSprite::create("Listo", "goldFont.fnt", "GJ_button_01.png", .8f);
-    done->setScale(0.6f);
-    auto* doneBtn = CCMenuItemExt::createSpriteExtra(done, [this](CCMenuItemSpriteExtra*) {
-        this->keyBackClicked();
-    });
+    auto* doneBtn = ui::makeButton("Listo", [this] { this->keyBackClicked(); },
+        ui::Btn::Green, 0.f, 0.6f);
     m_buttonMenu->addChildAtPosition(doneBtn, Anchor::Bottom, ccp(0.f, 22.f));
 
     refresh();

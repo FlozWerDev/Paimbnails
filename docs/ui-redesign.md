@@ -1,42 +1,29 @@
 # Rediseño de la interfaz de Paimbnails
 
-El diseño comparte una paleta oscura, acentos celestes y violeta, superficies discretas y texto de alto contraste. Los estados se distinguen por texto, posición y color. Los controles conservan los callbacks y los bindings de Geode.
+La interfaz usa los recursos de Geometry Dash en lugar de superficies dibujadas a mano: ventanas `GJ_square01`, botones `ButtonSprite` con `GJ_button_01..06`, casillas `GJ_checkOn/Off`, flechas `GJ_arrow_0X`, iconos del juego, títulos en `goldFont` y paneles internos `square02b` oscuros. Los callbacks, IDs y bindings de Geode se conservan.
 
-## Navegación y funciones
+## Kit compartido
 
-- El hub muestra la descripción de cada acción, busca en nombres, descripciones y ajustes, y ofrece favoritos y los últimos doce accesos. Las claves de favoritos y recientes no dependen del idioma del ajuste ni del índice opcional de Discord.
-- La categoría Crear da acceso a iconos, Texture Studio y conversión de GIF. General incorpora Comunidad, Versus y peticiones de streaming; Extras incluye Quick Hub y la guía.
-- Guardar favoritos conserva el desplazamiento de la lista; Recientes actualiza su orden al abrir una función. Seleccionar una categoría vuelve a su vista de funciones. Las búsquedas vacías muestran una explicación útil. La última categoría se conserva entre visitas. Las tarjetas adaptan sus columnas al ancho y su altura al texto.
-- Los ajustes usan interruptores con estado visible, valores numéricos separados del título, descripciones que se ajustan al ancho y pestañas con indicador animado. Los selectores compartidos permiten buscar una opción al pulsar el valor; las flechas siguen disponibles.
-- Los paneles de fondos, módulos, iconos, texturas, comunidad, PaiDraw y Versus comparten superficies y colores. Los lienzos, las herramientas de edición y las integraciones conservan sus acciones específicas.
-- Las noticias ajustan sus tarjetas al texto y el foro comparte botones y estados de etiquetas. La ayuda del hub explica sus controles y muestra el atajo configurado en Geode.
-- Las ayudas calculan la altura desde el texto renderizado. El popup informativo prescinde del fondo aleatorio y de la lectura de miniaturas que acompañaba a ese adorno.
+`src/ui/PaimonUI.hpp` reúne las piezas: `makeButtonSprite`/`makeButton` (color por significado: verde principal, cian secundario, rosa especial, gris neutro o pestaña inactiva, azul alternativo, rojo destructivo), `setButtonSkin` para pestañas, `makeFrameButton` y `makeCircleButton` para iconos de GD, `makeToggle`/`makeSwitch` con la casilla de GD, `makeInset`/`makePanel` para agrupar, `makeTitle`/`makeLabel`/`makeText`, `makeDivider` (`floorLine`), `addCorners` y `decorateScene` (degradado de GD y arte lateral para escenas completas).
 
-## Ventanas y movimiento
+`PaimonPopup` respeta el fondo pedido (por defecto `GJ_square01`), fuerza el título en `goldFont`, mantiene el cierre de GD y ofrece `addInfoButton` (icono `GJ_infoIcon` arriba a la derecha, o donde se indique si ese hueco está ocupado) y `addCorners`.
 
-167 clases de popup usan `PaimonPopup`, una subclase normal de `geode::Popup`; la lista de cobertura está debajo. El fondo, título, cierre, sombra y ajuste a la pantalla se comparten. No se añaden hooks de bindings ni dependencias al manifiesto.
+## Popups y escenas
 
-La entrada predeterminada dura 0,24 s y la salida 0,16 s antes del multiplicador de velocidad. Los estilos configurables existentes conservan sus opciones y respetan la escala de la ventana ajustada a la pantalla. Los menús compartidos, las revelaciones, las ventanas y el panel de ajustes respetan el control de movimiento reducido.
-
-Las revelaciones conservan la opacidad original de cada nodo y cancelan la animación anterior al reiniciarse. El desplazamiento manual cancela el destino pendiente de la rueda. El panel flotante de ajustes mantiene sus bordes dentro de la pantalla al arrastrarlo. El selector de emotes conserva su animación propia sin duplicar la del sistema compartido.
-
-Durante la salida de un popup se desactivan sus controles. Un cierre repetido libera la referencia de la animación antes de retirar la ventana.
+- Cada popup agrupa sus controles en paneles oscuros con encabezado dorado, etiqueta cada control y deja la acción principal abajo a la derecha. Los popups con controles no evidentes tienen un botón de información que explica su uso.
+- El hub enmarca sus pestañas en una ventana de GD con esquinas doradas; las categorías son botones de GD con estado verde, las tarjetas de acción llevan el icono de su categoría y noticias y foro usan los colores de lista y los bordes de comentarios de GD.
+- Configuración de fondos, módulos, soporte, miniaturas de usuario, comunidad, Versus, Texture Studio, peticiones en directo y el centro de verificación usan el fondo y el arte lateral de GD.
+- Los visores a pantalla completa (miniaturas, captura, imagen de perfil) y el selector de emotes conservan su presentación y gestos; solo cambian sus botones y paneles.
 
 ## Compatibilidad y comprobaciones
 
-- SDK local consultado: `Popup.hpp` y su implementación, `CCMenuItemToggler`, `CCMenuItemSpriteExtra`, `ButtonSprite`, `ScrollLayer`, `CCNode` y `CCRGBAProtocol`.
-- Se conservan la invocación de `Popup::onClose`, los delegates de teclado, el orden de actualización de los toggles y la prioridad de los controles dentro de popups.
-- No se ejecutó ninguna compilación ni ningún comando de build. La verificación usa análisis sintáctico de 340 archivos C++, revisión de rutas e inclusiones, comprobación del diff y validación del JavaScript de la referencia visual. El HTML se renderizó y se inspeccionó con Firefox. Este análisis no comprueba los tipos ni el enlace de C++.
-- La referencia HTML es una demostración del diseño y no sustituye una captura del juego. La comprobación visual y de interacción en Geometry Dash queda pendiente: escritorio y Android, ventanas anidadas, búsqueda, favoritos, controles, rueda y arrastre, texto largo, modos de animación y movimiento reducido.
-- Los cambios de renderizado RTX que ya estaban presentes se conservan; la integración de su popup consiste en usar la nueva base.
-
-## Referencia visual
-
-[Abrir la vista interactiva](ui-preview.html). Permite explorar categorías, buscar, usar favoritos y recientes, comparar anchos y ver controles de Smooth UI y fondos.
+- No se ejecutó ninguna compilación. Cada unidad de traducción tocada y cada una que incluye un encabezado modificado pasó un análisis `-fsyntax-only` con los flags de `build-win` (Windows, clang-cl). Este análisis no comprueba el enlace.
+- Cada nombre de sprite o textura añadido se validó contra los `plist` y archivos de `Resources` de GD 2.2081, y se comprobó que los marcos de hoja se cargan como marcos y las texturas sueltas como archivos.
+- Queda pendiente la comprobación visual e interactiva en el juego (escritorio y Android, popups anidados, textos largos y pantallas estrechas).
 
 ## Cobertura de popups
 
-La base común se aplica a cada clase de esta lista. Las mejoras de filas, selectores y pestañas se propagan a las funciones que usan `PaiConfigKit`, `SettingsControls`, `IconMakerKit` y `VersusUIKit`.
+La base común se aplica a cada clase de esta lista. Las filas, selectores y pestañas de `PaiConfigKit`, `SettingsControls`, `IconMakerKit` y `VersusUIKit` usan los mismos recursos de GD.
 
 ### backgrounds (2)
 

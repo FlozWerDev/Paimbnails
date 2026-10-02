@@ -7,6 +7,7 @@
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "CopyIconsPopup.hpp"
 #include "MyIconSetsPopup.hpp"
 
@@ -69,9 +70,17 @@ bool CopiedIconsPopup::init() {
 
     this->setTitle("Copied Icons");
     this->setID("copied-icons-popup"_spr);
+    this->addInfoButton("Copied Icons",
+        "Icon sets you copied from other players. <cg>Use</c> wears a set, "
+        "<cy>Icons</c> previews it, and the <cy>folder</c> opens the sets you saved yourself.",
+        Anchor::TopLeft, {36.f, -18.f});
     paimon::markDynamicPopup(this);
 
     auto const content = m_mainLayer->getContentSize();
+
+    auto* bodyBg = paimon::ui::makeInset({kBodyWidth, kBodyHeight});
+    bodyBg->setPosition({(content.width - kBodyWidth) / 2.f, 52.f});
+    m_mainLayer->addChild(bodyBg);
 
     m_body = CCNode::create();
     m_body->setContentSize({kBodyWidth, kBodyHeight});
@@ -92,7 +101,7 @@ bool CopiedIconsPopup::init() {
         m_buttonMenu->addChild(btn);
     }
 
-    auto* clearSpr = ButtonSprite::create("Clear All", "bigFont.fnt", "GJ_button_06.png", 0.5f);
+    auto* clearSpr = paimon::ui::makeButtonSprite("Clear All", paimon::ui::Btn::Red, 0.f, 0.6f, "bigFont.fnt");
     if (clearSpr) {
         m_clearBtn = CCMenuItemSpriteExtra::create(
             clearSpr, this, menu_selector(CopiedIconsPopup::onClearAll));

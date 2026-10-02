@@ -102,6 +102,10 @@ bool GlobalIconViewPopup::init(int accountID, std::string const& username, Globa
         title.replace(pos, 2, username.empty() ? "?" : username);
     }
     this->setTitle(title.c_str());
+    this->addInfoButton("Global Icons",
+        "Browse this player's saved icons. Tap one to select it, then <cy>Download</c> "
+        "to add it to your More Icons library, or <cg>Download & Use</c> to add it and "
+        "equip it right away.");
 
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;

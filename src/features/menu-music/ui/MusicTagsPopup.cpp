@@ -4,6 +4,7 @@
 #include "../services/MenuMusicLibrary.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/MusicBrowser.hpp>
@@ -28,16 +29,17 @@ bool MusicTagsPopup::init(float width, float height) {
     if (!PaimonPopup::init(width, height)) return false;
     paimon::markDynamicPopup(this);
     this->setTitle("Music Browser");
+    this->addInfoButton("Music Browser",
+        "Pick a catalog to explore. <cg>All Songs</c> opens the full browser; "
+        "<co>Tags</c> jumps straight to the genre/tag filters. <cy>Newgrounds</c> "
+        "lets you search and download songs without leaving the mod.");
 
     auto size = m_mainLayer->getContentSize();
-    auto subtitle = CCLabelBMFont::create(
+    auto subtitle = paimon::ui::makeText(
         "Choose a catalog, then browse everything or filter by tags.",
-        "chatFont.fnt"
-    );
+        size.width - 40.f, 0.43f, paimon::ui::palette::muted, kCCTextAlignmentCenter);
     if (subtitle) {
-        subtitle->setScale(0.43f);
         subtitle->setPosition({size.width / 2.f, size.height - 42.f});
-        subtitle->setColor({210, 220, 240});
         m_mainLayer->addChild(subtitle, 3);
     }
 
@@ -50,44 +52,31 @@ bool MusicTagsPopup::init(float width, float height) {
         char const* id
     ) {
         constexpr float cardW = 184.f;
-        constexpr float cardH = 70.f;
-        auto card = paimon::SpriteHelper::createDarkPanel(cardW, cardH, 150, 7.f);
+        constexpr float cardH = 72.f;
+        auto card = paimon::ui::makePanel({cardW, cardH}, titleText);
         if (!card) return;
-        card->setAnchorPoint({0.f, 0.f});
-        card->setPosition({x, 86.f});
+        card->setPosition({x, 84.f});
         card->setID(id);
 
-        auto title = CCLabelBMFont::create(titleText, "goldFont.fnt");
-        if (title) {
-            title->setScale(0.48f);
-            title->setPosition({cardW / 2.f, 55.f});
-            card->addChild(title, 2);
-        }
-
-        auto detail = CCLabelBMFont::create(description, "chatFont.fnt");
+        auto detail = paimon::ui::makeText(description, cardW - 16.f, 0.34f,
+            paimon::ui::palette::muted, kCCTextAlignmentCenter);
         if (detail) {
-            detail->setScale(0.34f);
-            detail->setPosition({cardW / 2.f, 39.f});
-            detail->setColor({185, 200, 225});
+            detail->setPosition({cardW / 2.f, cardH - paimon::ui::kPanelHeader - 8.f});
             card->addChild(detail, 2);
         }
 
         auto menu = CCMenu::create();
-        menu->setPosition({cardW / 2.f, 18.f});
-        auto allSprite = ButtonSprite::create(
-            "All Songs", 76, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.42f
-        );
-        if (allSprite) {
-            auto button = CCMenuItemSpriteExtra::create(allSprite, this, allHandler);
-            button->setPosition({-43.f, 0.f});
+        menu->setPosition({cardW / 2.f, 16.f});
+        if (auto* button = paimon::ui::makeButton("All Songs",
+                [this, allHandler] { (this->*allHandler)(nullptr); },
+                paimon::ui::Btn::Green, 80.f, 0.42f, "bigFont.fnt")) {
+            button->setPosition({-44.f, 0.f});
             menu->addChild(button);
         }
-        auto tagsSprite = ButtonSprite::create(
-            "Tags", 68, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.42f
-        );
-        if (tagsSprite) {
-            auto button = CCMenuItemSpriteExtra::create(tagsSprite, this, tagsHandler);
-            button->setPosition({43.f, 0.f});
+        if (auto* button = paimon::ui::makeButton("Tags",
+                [this, tagsHandler] { (this->*tagsHandler)(nullptr); },
+                paimon::ui::Btn::Cyan, 70.f, 0.42f, "bigFont.fnt")) {
+            button->setPosition({44.f, 0.f});
             menu->addChild(button);
         }
         card->addChild(menu, 3);
@@ -107,43 +96,34 @@ bool MusicTagsPopup::init(float width, float height) {
         "ncs-card"_spr
     );
 
-    auto newgroundsCard = paimon::SpriteHelper::createDarkPanel(380.f, 55.f, 150, 7.f);
+    auto newgroundsCard = paimon::ui::makePanel({380.f, 58.f}, nullptr);
     if (newgroundsCard) {
-        newgroundsCard->setAnchorPoint({0.f, 0.f});
-        newgroundsCard->setPosition({15.f, 21.f});
+        newgroundsCard->setPosition({15.f, 20.f});
         newgroundsCard->setID("newgrounds-card"_spr);
 
-        auto title = CCLabelBMFont::create("Newgrounds", "goldFont.fnt");
+        auto title = paimon::ui::makeTitle("Newgrounds", 160.f, 0.46f);
         if (title) {
-            title->setScale(0.46f);
             title->setAnchorPoint({0.f, 0.5f});
-            title->setPosition({14.f, 36.f});
+            title->setPosition({14.f, 40.f});
             newgroundsCard->addChild(title, 2);
         }
-        auto detail = CCLabelBMFont::create(
+        auto detail = paimon::ui::makeLabel(
             "Latest songs, genre tags and search inside the mod",
-            "chatFont.fnt"
-        );
+            300.f, 0.34f, paimon::ui::palette::muted);
         if (detail) {
-            detail->setScale(0.34f);
             detail->setAnchorPoint({0.f, 0.5f});
-            detail->setPosition({14.f, 17.f});
-            detail->setColor({185, 200, 225});
+            detail->setPosition({14.f, 20.f});
             newgroundsCard->addChild(detail, 2);
         }
 
-        auto sprite = ButtonSprite::create(
-            "Browse", 85, true, "bigFont.fnt", "GJ_button_05.png", 20.f, 0.48f
-        );
-        if (sprite) {
-            auto button = CCMenuItemSpriteExtra::create(
-                sprite, this, menu_selector(MusicTagsPopup::onNewgrounds)
-            );
-            auto menu = CCMenu::create();
-            menu->setPosition({328.f, 27.f});
+        auto menu = CCMenu::create();
+        menu->setPosition({328.f, 29.f});
+        if (auto* button = paimon::ui::makeButton("Browse",
+                [this] { this->onNewgrounds(nullptr); },
+                paimon::ui::Btn::Pink, 88.f, 0.48f, "bigFont.fnt")) {
             menu->addChild(button);
-            newgroundsCard->addChild(menu, 3);
         }
+        newgroundsCard->addChild(menu, 3);
         m_mainLayer->addChild(newgroundsCard, 3);
     }
 

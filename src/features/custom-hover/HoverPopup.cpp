@@ -1,6 +1,7 @@
 #include "../../ui/PaimonPopup.hpp"
 #include "CustomHover.hpp"
 #include "../../ui/PaiConfigKit.hpp"
+#include "../../ui/PaimonUI.hpp"
 #include "../../utils/DynamicPopupRegistry.hpp"
 #include "../../core/modules/ModuleRegistry.hpp"
 #include "../../core/Settings.hpp"
@@ -225,6 +226,14 @@ class HoverPopup : public PaimonPopup {
         setID("custom-hover-popup"_spr);
         paimon::markDynamicPopup(this);
         setTitle("Custom Hover");
+        addCorners();
+        addInfoButton("Custom Hover",
+            "Anima los botones cuando pasas el cursor por encima (o deslizas el dedo en "
+            "movil).\n\n"
+            "<cy>Presets</c>: 24 estilos listos. <cj>Ajustes</c>: forma, movimiento, tiempo "
+            "y animacion continua. <cg>Guardados</c>: tus propios estilos.\n\n"
+            "La <co>vista previa</c> de la derecha se mueve sola. Respeta Movimiento "
+            "reducido y no afecta a los controles del nivel ni al lienzo del editor.");
 
         auto* sprite = ButtonSprite::create("Hover", "bigFont.fnt", "GJ_button_01.png", .7f);
         auto* button = CCMenuItemExt::createSpriteExtra(sprite, [this](auto*) {
@@ -235,8 +244,7 @@ class HoverPopup : public PaimonPopup {
         m_buttonMenu->addChild(button);
         preview = sprite;
 
-        auto* caption = CCLabelBMFont::create("Vista previa", "chatFont.fnt");
-        caption->setScale(.45f);
+        auto* caption = paimon::ui::makeLabel("Vista previa", 90.f, 0.45f, paimon::ui::palette::muted);
         caption->setPosition({325, 228});
         m_mainLayer->addChild(caption);
 

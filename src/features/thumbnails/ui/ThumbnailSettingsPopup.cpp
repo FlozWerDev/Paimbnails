@@ -41,6 +41,11 @@ bool ThumbnailSettingsPopup::init() {
     if (!PaimonPopup::init(420.f, 300.f)) return false;
 
     setTitle("Thumbnail Settings");
+    addInfoButton("Thumbnail Settings",
+        "<cy>Background</c> styles the thumbnail behind the level info. "
+        "<cy>Transitions</c> animates how backgrounds and the gallery change. "
+        "<cy>Popups</c> controls open/close animations for every Paimbnails popup. "
+        "Use the eye button (top-right of the screen) to hide the menu and preview.");
 
     m_allStyles = {
         "normal", "pixel", "blur", "paimonblur", "grayscale", "sepia",

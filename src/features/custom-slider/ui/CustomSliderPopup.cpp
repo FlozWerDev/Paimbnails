@@ -3,9 +3,9 @@
 #include "../hooks/SliderThumbHook.hpp"
 #include "../services/CustomSliderManager.hpp"
 #include "../../../ui/PaiConfigKit.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/ShapeStencil.hpp"
-#include "../../../utils/SpriteHelper.hpp"
 #include "../../icon-gradients/GradientCache.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
@@ -40,12 +40,17 @@ bool CustomSliderPopup::init() {
     if (!PaimonPopup::init(400.f, 280.f)) return false;
     paimon::markDynamicPopup(this);
     this->setTitle("Slider Personalizado");
+    this->addInfoButton("Slider Personalizado",
+        "Cambia el puntero de las barras del juego por tu icono, una imagen o un GIF. "
+        "La <cy>Vista</c> muestra como se vera. En <cg>Avanzado</c> ajustas la animacion "
+        "y en que barras se aplica.",
+        Anchor::TopLeft, {36.f, -18.f});
 
     auto content = m_mainLayer->getContentSize();
 
     {
         float px = content.width - 30.f, py = content.height - 26.f;
-        auto* bg = paimon::SpriteHelper::createDarkPanel(34.f, 34.f, 80, 4.f);
+        auto* bg = paimon::ui::makeInset({34.f, 34.f}, 80);
         bg->setAnchorPoint({0.5f, 0.5f});
         bg->setPosition({px, py});
         m_mainLayer->addChild(bg, 4);
@@ -368,10 +373,9 @@ void CustomSliderPopup::rebuildShapeGrid() {
         auto const& shapeName = shapes[i].first;
         bool selected = (cfg.containerShape == shapeName);
 
-        cocos2d::ccColor3B bgCol = selected ? ccColor3B{60, 160, 60} : ccColor3B{40, 40, 40};
+        ccColor3B bgCol = selected ? ccColor3B{40, 120, 40} : paimon::ui::palette::ink;
         GLubyte bgAlpha = selected ? 220 : 140;
-        auto* cellBg = paimon::SpriteHelper::createColorPanel(kCell, kCell, bgCol, bgAlpha, 3.f);
-        cellBg->setContentSize({kCell, kCell});
+        auto* cellBg = paimon::ui::makeInset({kCell, kCell}, bgAlpha, bgCol);
 
         if (auto* icon = createShapeStencil(shapeName, kCell - 6.f)) {
             icon->setAnchorPoint({0.5f, 0.5f});

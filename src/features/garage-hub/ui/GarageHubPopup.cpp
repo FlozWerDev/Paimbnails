@@ -1,6 +1,7 @@
 #include "GarageHubPopup.hpp"
 
 #include "../GarageButtonHub.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Localization.hpp"
 
@@ -69,6 +70,9 @@ bool GarageHubPopup::init(GJGarageLayer* garage) {
 
     this->setTitle(tr("garage-hub.title"));
     this->setID("garage-hub-popup"_spr);
+    this->addInfoButton(tr("garage-hub.title"),
+        "Accesos directos a las herramientas del taller del mod.\n\n"
+        "Toca un <cg>icono</c> para abrir su pantalla; la ventana se cierra sola.");
     paimon::markDynamicPopup(this);
 
     auto const content = m_mainLayer->getContentSize();
@@ -85,6 +89,11 @@ bool GarageHubPopup::init(GJGarageLayer* garage) {
     float const gridWidth = columns * kCellWidth;
     float const left = (content.width - gridWidth) / 2.f;
     float const top = content.height - kTopPad;
+
+    auto* gridInset = paimon::ui::makeInset(
+        {gridWidth + 16.f, rows * kCellHeight + 12.f});
+    gridInset->setPosition({left - 8.f, top - rows * kCellHeight - 2.f});
+    m_mainLayer->addChild(gridInset, -1);
 
     for (int index = 0; index < count; ++index) {
         int const column = index % kMaxColumns;

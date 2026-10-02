@@ -1,5 +1,6 @@
 #include "WelcomeFlow.hpp"
 
+#include "../../ui/PaimonUI.hpp"
 #include "../../layers/PaiConfigLayer.hpp"
 #include "../../features/cursor/ui/CursorConfigPopup.hpp"
 #include "../../features/cursor/services/CursorManager.hpp"
@@ -292,6 +293,9 @@ void WelcomePopup::showStep() {
             menu->addChild(item);
         }
     } else {
+        auto* scrollInset = paimon::ui::makeInset({402.f, 168.f});
+        scrollInset->setPosition({19.f, 60.f});
+        m_content->addChild(scrollInset);
         auto* scroll = ScrollLayer::create({398.f, 164.f});
         scroll->setPosition({21.f, 62.f});
         m_content->addChild(scroll);
@@ -314,10 +318,10 @@ void WelcomePopup::showStep() {
             float y = total - 14.f - static_cast<float>(i) * 43.f;
             addText(scroll->m_contentLayer, localized(option.es, option.en), 8.f, y, 290.f, 0.52f, true);
             addText(scroll->m_contentLayer, localized(option.detailEs, option.detailEn), 8.f, y - 17.f, 300.f, 0.40f);
-            auto* item = button(it->second ? localized("Si", "On") : localized("No", "Off"),
-                it->second ? "GJ_button_01.png" : "GJ_button_06.png",
-                [this, key = std::string(option.key)] { toggleOption(key); }, 0.47f);
-            item->setPosition({350.f, y - 10.f});
+            // ignore the toggler's reported state; toggleOption flips m_pending and rebuilds.
+            auto* item = paimon::ui::makeToggle(it->second,
+                [this, key = std::string(option.key)](bool) { toggleOption(key); }, 0.7f);
+            item->setPosition({360.f, y - 10.f});
             menu->addChild(item);
         }
         scroll->moveToTop();
@@ -341,7 +345,7 @@ void WelcomePopup::showStep() {
     auto* footer = CCMenu::create();
     footer->setPosition({0.f, 0.f});
     m_content->addChild(footer);
-    auto* skipAll = button(localized("Saltar tutorial", "Skip tutorial"), "GJ_button_06.png",
+    auto* skipAll = button(localized("Saltar tutorial", "Skip tutorial"), "GJ_button_04.png",
         [this] { m_skippedTutorial = true; m_step = static_cast<int>(steps().size()); showTerms(); }, 0.46f);
     skipAll->setPosition({72.f, 28.f});
     footer->addChild(skipAll);
@@ -364,6 +368,9 @@ void WelcomePopup::showTerms() {
     addText(m_content, fmt::format("{} / {} - {}", m_termsPage + 1, termsPages().size(),
         localized(page.titleEs, page.titleEn)), 22.f, 260.f, 395.f, 0.53f, true);
 
+    auto* scrollInset = paimon::ui::makeInset({400.f, 192.f});
+    scrollInset->setPosition({20.f, 52.f});
+    m_content->addChild(scrollInset);
     auto* scroll = ScrollLayer::create({396.f, 188.f});
     scroll->setPosition({22.f, 54.f});
     m_content->addChild(scroll);

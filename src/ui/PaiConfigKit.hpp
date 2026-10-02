@@ -10,13 +10,14 @@
 
 namespace paimon::configkit {
 
-constexpr auto kCardColor  = paimon::ui::palette::raised;
-constexpr GLubyte kCardAlpha = 245;
-constexpr auto kTitleColor = paimon::ui::palette::text;
-constexpr auto kDescColor  = paimon::ui::palette::muted;
-constexpr auto kValueColor = paimon::ui::palette::accent;
-constexpr auto kOnColor    = paimon::ui::palette::success;
-constexpr auto kOffColor   = paimon::ui::palette::muted;
+constexpr auto    kCardColor  = paimon::ui::palette::ink;
+constexpr GLubyte kCardAlpha  = 75;
+constexpr GLubyte kRowAlpha   = 55;
+constexpr auto    kTitleColor = paimon::ui::palette::text;
+constexpr auto    kDescColor  = paimon::ui::palette::muted;
+constexpr auto    kValueColor = paimon::ui::palette::gold;
+constexpr auto    kOnColor    = paimon::ui::palette::success;
+constexpr auto    kOffColor   = paimon::ui::palette::dim;
 
 constexpr float cardInnerWidth(float cardWidth) { return cardWidth - 20.f; }
 

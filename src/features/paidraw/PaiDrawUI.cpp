@@ -81,9 +81,8 @@ CCNode* makeFramedPanel(float width, float height,
     auto* node = CCNode::create();
     node->setContentSize({width, height});
     node->setAnchorPoint({0.f, 0.f});
-    auto const color = fillColor.r > 220 || (fillColor.r < 10 && fillColor.g < 10)
-        ? paimon::ui::palette::surface : fillColor;
-    auto* panel = paimon::ui::makeSurface({width, height}, color, std::max<GLubyte>(opacity, 230));
+    auto const color = fillColor.r > 220 ? paimon::ui::palette::ink : fillColor;
+    auto* panel = paimon::ui::makeInset({width, height}, std::clamp<GLubyte>(opacity, 70, 120), color);
     node->addChild(panel);
     return node;
 }

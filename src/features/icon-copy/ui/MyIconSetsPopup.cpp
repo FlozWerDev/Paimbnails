@@ -9,6 +9,7 @@
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
@@ -57,9 +58,16 @@ bool MyIconSetsPopup::init() {
 
     this->setTitle("My Icon Sets");
     this->setID("my-icon-sets-popup"_spr);
+    this->addInfoButton("My Icon Sets",
+        "Icon sets you saved from your own account. Press <cg>+</c> to save what you are "
+        "wearing now. <cg>Use</c> wears a set, <cy>Icons</c> previews it.");
     paimon::markDynamicPopup(this);
 
     auto const content = m_mainLayer->getContentSize();
+
+    auto* bodyBg = paimon::ui::makeInset({kBodyWidth, kBodyHeight});
+    bodyBg->setPosition({(content.width - kBodyWidth) / 2.f, 52.f});
+    m_mainLayer->addChild(bodyBg);
 
     m_body = CCNode::create();
     m_body->setContentSize({kBodyWidth, kBodyHeight});
@@ -71,7 +79,7 @@ bool MyIconSetsPopup::init() {
         float const dim = std::max(addSpr->getContentWidth(), addSpr->getContentHeight());
         if (dim > 0.f) addSpr->setScale(kAddButton / dim);
     } else {
-        addSpr = ButtonSprite::create("+", "bigFont.fnt", "GJ_button_01.png", 0.7f);
+        addSpr = paimon::ui::makeButtonSprite("+", paimon::ui::Btn::Green, 0.f, 0.7f, "bigFont.fnt");
     }
     if (addSpr) {
         auto* btn = CCMenuItemSpriteExtra::create(

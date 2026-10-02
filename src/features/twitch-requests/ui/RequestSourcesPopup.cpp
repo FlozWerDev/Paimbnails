@@ -3,6 +3,7 @@
 
 #include "../TwitchRequestManager.hpp"
 #include "../../../ui/PaiConfigKit.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include <Geode/ui/TextInput.hpp>
 #include "../../../utils/GeodeTextInputSafe.hpp"
@@ -21,10 +22,10 @@ namespace {
 
 constexpr ccColor3B kAccent = {166, 112, 255};
 
-void addButton(CCMenu* menu, char const* text, CCPoint position, std::function<void()> action) {
-    auto* sprite = ButtonSprite::create(text, "goldFont.fnt", "GJ_button_02.png", .8f);
+void addButton(CCMenu* menu, char const* text, CCPoint position,
+    std::function<void()> action, paimon::ui::Btn skin = paimon::ui::Btn::Green) {
+    auto* sprite = paimon::ui::makeButtonSprite(text, skin, 0.f, .55f);
     if (!sprite) return;
-    sprite->setScale(.55f);
     auto* button = CCMenuItemExt::createSpriteExtra(sprite,
         [action = std::move(action)](CCMenuItemSpriteExtra*) { action(); });
     button->setPosition(position);
@@ -32,10 +33,8 @@ void addButton(CCMenu* menu, char const* text, CCPoint position, std::function<v
 }
 
 void addCaption(CCNode* parent, char const* text, CCPoint position) {
-    auto* label = CCLabelBMFont::create(text, "chatFont.fnt");
+    auto* label = paimon::ui::makeLabel(text, 320.f, .36f, kit::kDescColor);
     label->setAnchorPoint({0.f, .5f});
-    label->setScale(.45f);
-    label->setColor(kit::kDescColor);
     label->setPosition(position);
     parent->addChild(label);
 }
@@ -68,6 +67,7 @@ private:
     bool init(std::string const& value, std::function<void(std::string)> callback) {
         if (!PaimonPopup::init(320.f, 160.f)) return false;
         setTitle("Cola de destino");
+        addCorners();
         paimon::markDynamicPopup(this);
         m_actions = CCMenu::create();
         m_actions->setPosition({0.f, 0.f});
@@ -120,6 +120,15 @@ private:
         m_index = index;
         m_callback = std::move(callback);
         setTitle(m_route.reward ? "Vincular canje de Twitch" : "Destino de un comando");
+        addCorners();
+        addInfoButton(m_route.reward ? "Vincular canje de Twitch" : "Destino de un comando",
+            m_route.reward
+                ? "Activa <cy>Pedir texto</c> en el canje de Twitch. El espectador escribe: "
+                  "ID descripcion. Usa <cg>Detectar siguiente</c> y haz el canje, o pega su "
+                  "ID a mano. El mod no confirma ni reembolsa puntos."
+                : "Manda un comando a una cola concreta. Ejemplo: <cy>!req</c> a General y "
+                  "<cy>!vip</c> a Prioridad. Una regla con plataforma concreta gana a la de "
+                  "Todos. El comando se acepta aunque no este en la lista del chat.");
         paimon::markDynamicPopup(this);
         m_actions = CCMenu::create();
         m_actions->setPosition({0.f, 0.f});
@@ -136,12 +145,13 @@ private:
             selector->setPosition({22.f, 209.f});
             m_mainLayer->addChild(selector);
         } else {
-            addButton(m_actions, "Ultimo canje", {108.f, 239.f}, [this] { useLastReward(); });
+            addButton(m_actions, "Ultimo canje", {108.f, 239.f}, [this] { useLastReward(); },
+                paimon::ui::Btn::Cyan);
             addButton(m_actions, "Detectar siguiente", {281.f, 239.f}, [this] {
                 m_captureRevision = TwitchRequestManager::get().rewardDetectionRevision();
                 m_capturing = true;
                 m_hint->setString("Haz un canje con texto en el canal conectado; se vinculara su ID.");
-            });
+            }, paimon::ui::Btn::Cyan);
         }
 
         auto input = [this](char const* caption, char const* placeholder, std::string const& value,
@@ -179,7 +189,7 @@ private:
             manager.setRouting(std::move(config));
             m_callback();
             onClose(nullptr);
-        });
+        }, paimon::ui::Btn::Red);
         scheduleUpdate();
         return true;
     }
@@ -252,6 +262,7 @@ private:
     bool init() override {
         if (!PaimonPopup::init(360.f, 290.f)) return false;
         setTitle("Elegir cola");
+        addCorners();
         paimon::markDynamicPopup(this);
         auto& manager = TwitchRequestManager::get();
         auto names = manager.queueNames();
@@ -314,6 +325,13 @@ RequestSourcesPopup* RequestSourcesPopup::create() {
 bool RequestSourcesPopup::init() {
     if (!PaimonPopup::init(440.f, 300.f)) return false;
     setTitle("Origenes y colas de requests");
+    addCorners();
+    addInfoButton("Origenes y colas",
+        "Configura de donde llegan los requests y a que cola van.\n\n"
+        "Para juntar varios origenes usa el <cy>mismo nombre de cola</c>. Las reglas "
+        "especificas ganan a las de Todos. Los pedidos guardados conservan su destino.\n\n"
+        "Los <co>canjes</c> se leen mientras Twitch esta conectado y solo si Pedir texto "
+        "esta activo; los no vinculados se ignoran. YouTube, Kick y TikTok usan sus chats.");
     paimon::markDynamicPopup(this);
     m_platform = TwitchRequestManager::get().selected();
     m_status = CCLabelBMFont::create("", "chatFont.fnt");

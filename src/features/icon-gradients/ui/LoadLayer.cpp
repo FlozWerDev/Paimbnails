@@ -91,8 +91,8 @@ void LoadLayer::onDelete(CCObject*) {
 }
 
 // bottom-bar action button, dimmed when there is nothing to load.
-CCMenuItemSpriteExtra* LoadLayer::makeActionButton(const char* label, SEL_MenuHandler callback, const CCPoint& pos, bool usable) {
-    auto sprite = ButtonSprite::create(label);
+CCMenuItemSpriteExtra* LoadLayer::makeActionButton(const char* label, SEL_MenuHandler callback, const CCPoint& pos, bool usable, const char* texture) {
+    auto sprite = ButtonSprite::create(label, "goldFont.fnt", texture, 0.9f);
     sprite->setScale(0.625f);
     sprite->setCascadeOpacityEnabled(true);
     sprite->setOpacity(usable ? 255 : 120);
@@ -113,6 +113,9 @@ bool LoadLayer::init() {
     bool usable = !gradients.empty();
 
     setTitle("Load Gradient");
+    addInfoButton("Load Gradient",
+        "Tap a saved gradient to select it, then press <cg>Load</c> to apply it to your "
+        "icon. <cr>Delete</c> removes the selected gradient for good.");
 
     auto bg = NineSlice::create("square02b_001.png");
     bg->setColor({0, 0, 0});
@@ -125,7 +128,7 @@ bool LoadLayer::init() {
     m_mainLayer->addChild(border);
 
     makeActionButton("Load", menu_selector(LoadLayer::onLoad), {211, 21}, usable);
-    makeActionButton("Delete", menu_selector(LoadLayer::onDelete), {141, 21}, usable);
+    makeActionButton("Delete", menu_selector(LoadLayer::onDelete), {141, 21}, usable, "GJ_button_06.png");
 
     auto lbl = CCLabelBMFont::create("No Gradients", "bigFont.fnt");
     lbl->setPosition(border->getPosition() + bg->getContentSize() / 2.f);

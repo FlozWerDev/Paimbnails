@@ -350,7 +350,7 @@ CCNode* ProgressionPopup::buildOverview() {
 
     if (auto* header = makeLabel(
             loc.getString(lastTier ? "progression.max-tier" : "progression.next-tier").c_str(),
-            "chatFont.fnt", 0.38f, kMutedText)) {
+            "goldFont.fnt", 0.4f, {255, 210, 90})) {
         header->setAnchorPoint({0.f, 0.5f});
         header->setPosition({12.f, cardH - 14.f});
         nextCard->addChild(header);
@@ -401,7 +401,7 @@ CCNode* ProgressionPopup::buildOverview() {
     int const totalBadges = static_cast<int>(allBadges().size());
 
     if (auto* header = makeLabel(loc.getString("progression.tab.badges").c_str(),
-                                 "chatFont.fnt", 0.38f, kMutedText)) {
+                                 "goldFont.fnt", 0.4f, {255, 210, 90})) {
         header->setAnchorPoint({0.f, 0.5f});
         header->setPosition({12.f, cardH - 14.f});
         badgeCard->addChild(header);
@@ -458,7 +458,7 @@ CCNode* ProgressionPopup::buildSources() {
     int64_t const peak = rows.empty() ? 0 : std::max<int64_t>(1, rows.front().exp);
 
     if (auto* header = makeLabel(loc.getString("progression.sources.title").c_str(),
-                                 "chatFont.fnt", 0.4f, kMutedText)) {
+                                 "goldFont.fnt", 0.42f, {255, 210, 90})) {
         header->setAnchorPoint({0.f, 0.5f});
         header->setPosition({8.f, kPageH - 10.f});
         page->addChild(header);

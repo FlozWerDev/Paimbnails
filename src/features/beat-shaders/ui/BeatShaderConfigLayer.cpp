@@ -36,6 +36,11 @@ bool BeatShaderConfigLayer::init() {
     paimon::markDynamicPopup(this);
 
     setTitle("Beat Shaders");
+    this->addInfoButton("Beat Shaders",
+        "El fondo del menu se anima siguiendo la musica. Elige un <cy>Estilo</c> y ajusta la "
+        "<cy>Intensidad</c> en <cy>Basico</c>. En <cy>Avanzado</c> controlas la reaccion por frecuencias "
+        "(<co>graves, medios, agudos</c> y el golpe del beat) y en que pantallas se aplica. "
+        "<cr>Restaurar</c> vuelve a los valores por defecto.");
 
     m_cfg     = BeatShaderManager::get().getConfig();
     m_shaders = BeatShaderManager::get().availableShaders();

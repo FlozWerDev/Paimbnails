@@ -1,5 +1,6 @@
 #include "ProfilePicEditorPopup.hpp"
 #include "ProfilePicIconsDetailPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
@@ -76,6 +77,10 @@ ProfilePicEditorPopup* ProfilePicEditorPopup::create() {
 bool ProfilePicEditorPopup::init() {
     if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     this->setTitle("Profile Photo Editor");
+    this->addInfoButton("Profile Photo Editor",
+        "Build your profile picture across tabs: <cy>Photo</c> source and framing, <cy>Shape</c> mask, "
+        "<cy>Border</c>, game <cy>Icon</c>, <cy>Deco</c> stickers and <cy>Style</c> presets/fonts. "
+        "The box on the left is a live preview. Hit <cg>Save</c> to apply.");
 
     m_editConfig = ProfilePicCustomizer::get().getConfig();
 
@@ -84,11 +89,7 @@ bool ProfilePicEditorPopup::init() {
     float previewCenterX = kPreviewPad + kPreviewBoxW * 0.5f;
     float previewCenterY = winSize.height * 0.5f - 5.f;
 
-    auto previewBg = paimon::SpriteHelper::createRoundedRect(
-        kPreviewBoxW, kPreviewBoxH, 8.f,
-        ccc4FFromccc4B(ccc4(15, 15, 15, 200)),
-        ccc4FFromccc4B(ccc4(255, 255, 255, 60)), 1.2f
-    );
+    auto previewBg = paimon::ui::makeInset({kPreviewBoxW, kPreviewBoxH}, 200);
     if (previewBg) {
         previewBg->setAnchorPoint({0.5f, 0.5f});
         previewBg->setPosition({previewCenterX, previewCenterY});
@@ -114,11 +115,7 @@ bool ProfilePicEditorPopup::init() {
     float panelCenterX = kPanelX + kPanelW * 0.5f;
     float panelCenterY = winSize.height * 0.5f + 10.f;
 
-    auto panelBg = paimon::SpriteHelper::createRoundedRect(
-        kPanelW, kPanelH, 8.f,
-        ccc4FFromccc4B(ccc4(0, 0, 0, 120)),
-        ccc4FFromccc4B(ccc4(255, 255, 255, 40)), 1.0f
-    );
+    auto panelBg = paimon::ui::makeInset({kPanelW, kPanelH}, 120);
     if (panelBg) {
         panelBg->setAnchorPoint({0.5f, 0.5f});
         panelBg->setPosition({panelCenterX, panelCenterY});
@@ -1500,11 +1497,7 @@ void ProfilePicEditorPopup::onPreset(CCObject*) {
     float rowH = 30.f;
     float panelH = 40.f + (float)presets.size() * rowH;
 
-    auto panel = paimon::SpriteHelper::createRoundedRect(
-        panelW, panelH, 8.f,
-        ccc4FFromccc4B(ccc4(20, 20, 30, 240)),
-        ccc4FFromccc4B(ccc4(255, 215, 0, 200)), 1.5f
-    );
+    auto panel = paimon::ui::makeInset({panelW, panelH}, 240);
     if (!panel) { closeOverlay(); return; }
     panel->setAnchorPoint({0.5f, 0.5f});
     panel->setPosition({winSize.width * 0.5f, winSize.height * 0.5f});

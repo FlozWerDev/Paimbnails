@@ -32,10 +32,8 @@ protected:
     cocos2d::CCNode* m_homeFilterBar = nullptr;
 
     cocos2d::CCNodeRGBA* m_sidebarBg = nullptr;
-    cocos2d::CCNodeRGBA* m_sidebarHighlight = nullptr;
     cocos2d::CCNodeRGBA* m_detailsBg = nullptr;
     cocos2d::CCMenu* m_sidebarMenu = nullptr;
-    std::vector<cocos2d::CCLabelBMFont*> m_sidebarLabels;
 
     int m_currentTab = 0;
     std::vector<CCMenuItemSpriteExtra*> m_tabBtns;

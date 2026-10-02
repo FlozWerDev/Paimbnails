@@ -92,16 +92,19 @@ bool DynamicVolumePopup::init() {
     paimon::markDynamicPopup(this);
 
     setTitle("Volumen Dinamico");
+    this->addInfoButton("Volumen Dinamico",
+        "Iguala el volumen de cada cancion y protege de <cr>subidas repentinas</c>.\n"
+        "<cg>Adaptativo</c>: sube poco a poco. <cg>Fijo</c>: mismo nivel siempre. "
+        "<cg>Personalizado</c>: tu controlas la curva y los limites.\n"
+        "<co>Safe Drop</c> frena picos bruscos.");
 
     DynamicVolumeManager::get().loadConfig();
     m_cfg = DynamicVolumeManager::get().getConfig();
 
     rebuild();
 
-    auto* resetSpr = ButtonSprite::create("Restaurar", "goldFont.fnt", "GJ_button_06.png", 0.7f);
-    if (resetSpr) resetSpr->setScale(0.55f);
-    auto* resetBtn = CCMenuItemExt::createSpriteExtra(resetSpr,
-        [this](CCMenuItemSpriteExtra*) {
+    auto* resetBtn = paimon::ui::makeButton("Restaurar",
+        [this] {
             bool const wasEnabled = m_cfg.enabled;
             m_cfg = DynamicVolumeConfig{};
             m_cfg.enabled = wasEnabled;
@@ -110,7 +113,7 @@ bool DynamicVolumePopup::init() {
             DynamicVolumeManager::get().resetRuntimeState();
             scheduleRebuild();
             PaimonNotify::create("Volumen Dinamico restablecido", NotificationIcon::Success)->show();
-        });
+        }, paimon::ui::Btn::Red, 0.f, 0.6f);
     resetBtn->setID("dynamic-volume-default-btn"_spr);
     resetBtn->setPosition({m_mainLayer->getContentSize().width / 2.f, 20.f});
     m_buttonMenu->addChild(resetBtn);

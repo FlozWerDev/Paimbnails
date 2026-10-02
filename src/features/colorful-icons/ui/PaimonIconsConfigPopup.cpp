@@ -1,6 +1,7 @@
 #include "PaimonIconsConfigPopup.hpp"
 
 #include "../../../core/Settings.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../icon-maker/ui/IconGalleryLayer.hpp"
 #include "../services/IconColorService.hpp"
@@ -302,6 +303,14 @@ bool PaimonIconsConfigPopup::init() {
     paimon::markDynamicPopup(this);
     IconConfigStore::get().load();
     setTitle("Paimon Icons");
+    this->addInfoButton("Paimon Icons",
+        "Recolorea tus iconos del juego.\n\n"
+        "<cy>Colores</c>: elige el modo de color con las flechas; cada modo tiene "
+        "sus propias opciones debajo.\n"
+        "<cy>Candados</c>: como se ven los iconos bloqueados.\n"
+        "<cy>Donde</c>: en que pantallas se aplica el recolor.\n\n"
+        "El interruptor de arriba activa la funcion; <cr>Reset</c> vuelve a los valores por defecto.",
+        Anchor::TopLeft, {36.f, -18.f});
 
     buildHeader();
     buildPreview();
@@ -312,6 +321,11 @@ bool PaimonIconsConfigPopup::init() {
     m_selectorArea->setContentSize({kRowW, 52.f});
     m_selectorArea->setAnchorPoint({0.5f, 1.f});
     m_mainLayer->addChildAtPosition(m_selectorArea, Anchor::Top, {0.f, -136.f});
+
+    auto* optionsInset = paimon::ui::makeInset({kRowW + 8.f, 138.f});
+    optionsInset->setAnchorPoint({0.5f, 1.f});
+    optionsInset->setZOrder(-1);
+    m_mainLayer->addChildAtPosition(optionsInset, Anchor::Top, {0.f, -132.f});
 
     m_controls = CCNode::create();
     m_controls->setContentSize({kRowW, 84.f});

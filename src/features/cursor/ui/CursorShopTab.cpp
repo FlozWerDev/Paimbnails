@@ -87,7 +87,7 @@ void CursorShopTab::buildChrome(CCSize size) {
     float storeRowY = size.height - 56.f;
     char const* labels[] = {"RW-Designer", "Custom-Cursor"};
     for (int i = 0; i < kStoreCount; ++i) {
-        auto* sprite = ButtonSprite::create(labels[i]);
+        auto* sprite = ButtonSprite::create(labels[i], "bigFont.fnt", "GJ_button_04.png", 0.9f);
         sprite->setScale(0.5f);
         auto* button = CCMenuItemSpriteExtra::create(
             sprite, this, menu_selector(CursorShopTab::onStoreButton));
@@ -152,11 +152,8 @@ void CursorShopTab::buildChrome(CCSize size) {
     float gridHeight = size.height - 96.f - gridBottom;
     float gridMidY = gridBottom + gridHeight / 2.f;
 
-    auto* backdrop = CCScale9Sprite::create("square02b_001.png");
-    backdrop->setContentSize({gridWidth + 8.f, gridHeight + 8.f});
-    backdrop->setColor({0, 0, 0});
-    backdrop->setOpacity(90);
-    backdrop->setPosition({centerX, gridMidY});
+    auto* backdrop = paimon::ui::makeInset({gridWidth + 8.f, gridHeight + 8.f});
+    backdrop->setPosition({centerX - (gridWidth + 8.f) / 2.f, gridMidY - (gridHeight + 8.f) / 2.f});
     this->addChild(backdrop, 0);
 
     m_grid = ScrollLayer::create({gridWidth, gridHeight});
@@ -257,8 +254,9 @@ void CursorShopTab::applyStoreStyle() {
     for (int i = 0; i < kStoreCount; ++i) {
         if (!m_storeSprites[i]) continue;
         bool active = i == storeIndex();
-        m_storeSprites[i]->setColor(active ? ccc3(0, 255, 0) : ccc3(255, 255, 255));
-        m_storeSprites[i]->setOpacity(active ? 255 : 150);
+        m_storeSprites[i]->updateBGImage(active ? "GJ_button_01.png" : "GJ_button_04.png");
+        m_storeSprites[i]->setColor({255, 255, 255});
+        m_storeSprites[i]->setOpacity(active ? 255 : 200);
     }
     if (m_creditLabel) m_creditLabel->setString(ShopClient::storeCredit(m_store));
 }
@@ -446,8 +444,7 @@ void CursorShopTab::rebuildGrid() {
         cell->setAnchorPoint({0.5f, 0.5f});
         holder->addChild(cell);
 
-        auto* bg = paimon::SpriteHelper::createColorPanel(
-            kCellWidth, kCellHeight, ccc3(24, 28, 46), 170);
+        auto* bg = paimon::ui::makeInset({kCellWidth, kCellHeight}, 170);
         bg->setPosition({0.f, 0.f});
         cell->addChild(bg, 0);
 

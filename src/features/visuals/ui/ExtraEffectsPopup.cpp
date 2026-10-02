@@ -1,4 +1,5 @@
 #include "ExtraEffectsPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/InfoButton.hpp"
 
@@ -29,6 +30,16 @@ bool ExtraEffectsPopup::init() {
             for (int i = 0; i < (int)m_styles.size(); i++) {
                 if (m_styles[i] == name) { m_indices.push_back(i); break; }
             }
+        }
+    }
+
+    {
+        auto content = m_mainLayer->getContentSize();
+        float const insetW = content.width - 20.f;
+        float const insetH = content.height - 70.f;
+        if (auto* inset = paimon::ui::makeInset({insetW, insetH})) {
+            inset->setPosition({(content.width - insetW) / 2.f, 36.f});
+            m_mainLayer->addChild(inset, 5);
         }
     }
 
@@ -66,7 +77,7 @@ void ExtraEffectsPopup::rebuildRows() {
         "Stack up to <cy>4 additional</c> visual effects on top of\n"
         "the main background style.\n\n"
         "Each slot applies its effect in order.\n"
-        "Use the arrows to cycle effects, and <cr>X</c> to remove.\n"
+        "Use the arrows to cycle effects, and the <cr>trash</c> icon to remove.\n"
         "Effects combine for unique visual results!", this, 0.3f);
     if (iBtn) {
         iBtn->setPosition({cx + 95.f, topY});
@@ -118,9 +129,8 @@ void ExtraEffectsPopup::rebuildRows() {
         m_rowContainer->addChild(label);
         m_labels.push_back(label);
 
-        auto xSpr = CCLabelBMFont::create("X", "bigFont.fnt");
-        xSpr->setScale(0.55f);
-        xSpr->setColor({255, 80, 80});
+        auto xSpr = CCSprite::createWithSpriteFrameName("edit_delBtn_001.png");
+        xSpr->setScale(0.6f);
         auto xBtn = CCMenuItemExt::createSpriteExtra(xSpr, [this, i](CCMenuItemSpriteExtra*) {
             if (i < (int)m_indices.size()) {
                 m_indices.erase(m_indices.begin() + i);

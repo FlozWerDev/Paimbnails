@@ -5,6 +5,7 @@
 #include "../services/SearchObjectBuilder.hpp"
 #include "../../thumbnails/services/ThumbnailLoader.hpp"
 #include "../../../blur/BlurSystem.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/GeodeTextInputSafe.hpp"
 #include "../../../utils/LevelMetadata.hpp"
@@ -122,6 +123,13 @@ bool ExtendedInfoPopup::init(GJGameLevel* level) {
         m_title->setZOrder(kZChrome);
     }
 
+    this->addInfoButton("Informacion del nivel",
+        "Pestana <cy>Resumen</c> con portada, stats y aprobacion; las demas listan "
+        "cada campo. Toca una fila para <cg>copiarla</c> o abrir lo que apunta "
+        "(<co>flecha</c>). El buscador filtra por campo y la <co>flecha</c> de arriba "
+        "despliega la lista a pantalla completa.",
+        Anchor::TopLeft, {36.f, -18.f});
+
     buildTabBar(cx, kTabY);
 
     m_filter = TextInput::create(kListW - 8.f, "Buscar campo...", "chatFont.fnt");
@@ -133,12 +141,8 @@ bool ExtendedInfoPopup::init(GJGameLevel* level) {
         WeakRef<ExtendedInfoPopup>(this), &ExtendedInfoPopup::onFilterChanged));
     m_mainLayer->addChild(m_filter, kZChrome);
 
-    m_listBg = paimon::SpriteHelper::safeCreateScale9("square02_001.png");
-    if (m_listBg) {
-        m_listBg->setColor({0, 0, 0});
-        m_listBg->setOpacity(70);
-        m_mainLayer->addChild(m_listBg, kZListBg);
-    }
+    m_listBg = paimon::ui::makeInset({kListW + 6.f, kListTopPlain - kListBottomOpen + 6.f}, 70);
+    m_mainLayer->addChild(m_listBg, kZListBg);
 
     m_scroll = ScrollLayer::create({kListW, kListTopPlain - kListBottomOpen});
     m_mainLayer->addChild(m_scroll, kZList);
@@ -226,7 +230,7 @@ void ExtendedInfoPopup::applyLayout() {
     }
     if (m_listBg) {
         m_listBg->setContentSize({kListW + 6.f, height + 6.f});
-        m_listBg->setPosition({cx, bottom + height / 2.f});
+        m_listBg->setPosition({cx - (kListW + 6.f) / 2.f, bottom - 3.f});
     }
     if (m_emptyLabel) m_emptyLabel->setPosition({cx, bottom + height / 2.f});
 

@@ -26,6 +26,7 @@
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/TextureBudget.hpp"
 #include "../../../utils/PaimonDrawNode.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../blur/BlurSystem.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
@@ -459,7 +460,7 @@ void MenuMusicPopup::buildInfoColumn() {
     m_subtitleLabel = CCLabelBMFont::create("", "chatFont.fnt");
     if (m_subtitleLabel) {
         m_subtitleLabel->setScale(0.5f);
-        m_subtitleLabel->setColor({215, 215, 235});
+        m_subtitleLabel->setColor(paimon::ui::palette::muted);
         m_subtitleLabel->setAnchorPoint({0.f, 0.5f});
         m_subtitleLabel->setPosition({colX, size.height * 0.74f - 6.f});
         m_subtitleLabel->setID("subtitle-label"_spr);
@@ -614,7 +615,7 @@ void MenuMusicPopup::buildSeekBar() {
         m_seekCurLabel->setScale(0.4f);
         m_seekCurLabel->setAnchorPoint({1.f, 0.5f});
         m_seekCurLabel->setPosition({sliderZoneX - 3.f, barY});
-        m_seekCurLabel->setColor({235, 235, 250});
+        m_seekCurLabel->setColor(paimon::ui::palette::text);
         m_seekRow->addChild(m_seekCurLabel, 2);
     }
     m_seekTotalLabel = CCLabelBMFont::create("0:00", "chatFont.fnt");
@@ -622,7 +623,7 @@ void MenuMusicPopup::buildSeekBar() {
         m_seekTotalLabel->setScale(0.4f);
         m_seekTotalLabel->setAnchorPoint({0.f, 0.5f});
         m_seekTotalLabel->setPosition({sliderZoneX + sliderZoneW + 3.f, barY});
-        m_seekTotalLabel->setColor({235, 235, 250});
+        m_seekTotalLabel->setColor(paimon::ui::palette::text);
         m_seekRow->addChild(m_seekTotalLabel, 2);
     }
 
@@ -762,8 +763,8 @@ void MenuMusicPopup::updateModeSelector() {
     auto tint = [](ButtonSprite* spr, bool active) {
         if (!spr) return;
         const ccColor3B c = active
-            ? ccColor3B{255, 255, 255}
-            : ccColor3B{110, 110, 110};
+            ? paimon::ui::palette::text
+            : paimon::ui::palette::dim;
         if (spr->m_BGSprite) spr->m_BGSprite->setColor(c);
         if (spr->m_label) spr->m_label->setColor(c);
     };
@@ -1063,11 +1064,11 @@ void MenuMusicPopup::refreshFromState() {
     };
     auto* track = player.currentTrack();
     tintAction(m_holdActionSpr, player.heldTrackId().empty()
-        ? ccColor3B{180, 180, 190} : ccColor3B{130, 210, 255});
+        ? paimon::ui::palette::dim : paimon::ui::palette::info);
     tintAction(m_favoriteActionSpr, track && track->favorite
-        ? ccColor3B{255, 220, 80} : ccColor3B{190, 190, 200});
+        ? paimon::ui::palette::gold : paimon::ui::palette::dim);
     tintAction(m_blacklistActionSpr, track && track->blacklisted
-        ? ccColor3B{255, 105, 105} : ccColor3B{190, 190, 200});
+        ? paimon::ui::palette::danger : paimon::ui::palette::dim);
 }
 
 void MenuMusicPopup::applyCovers(std::vector<std::string> const& coverPaths) {

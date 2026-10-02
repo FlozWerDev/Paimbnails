@@ -228,16 +228,17 @@ void IconGalleryLayer::buildHeader() {
     // gamemode filter hides behind a button: ten chips don't fit.
     auto* filterHolder = CCNode::create();
     filterHolder->setAnchorPoint({0.5f, 0.5f});
-    filterHolder->setContentSize({64.f, 22.f});
-    if (auto* plate = paimon::SpriteHelper::createColorPanel(
-            64.f, 22.f, {14, 24, 52}, 210, 3.f)) {
-        plate->setAnchorPoint({0.f, 0.f});
-        filterHolder->addChild(plate, -1);
+    filterHolder->setContentSize({64.f, 24.f});
+    if (auto* face = ButtonSprite::create("", 64.f / 0.9f, true, "bigFont.fnt",
+            "GJ_button_05.png", 24.f / 0.9f, 0.6f)) {
+        face->setScale(0.9f);
+        face->setPosition({32.f, 12.f});
+        filterHolder->addChild(face, -1);
     }
     m_filterLabel = CCLabelBMFont::create("Todos", "bigFont.fnt");
     m_filterLabel->setAnchorPoint({0.5f, 0.5f});
-    m_filterLabel->limitLabelWidth(58.f, 0.36f, 0.14f);
-    m_filterLabel->setPosition({32.f, 11.f});
+    m_filterLabel->limitLabelWidth(54.f, 0.36f, 0.14f);
+    m_filterLabel->setPosition({32.f, 12.f});
     filterHolder->addChild(m_filterLabel);
 
     if (auto* filterBtn = CCMenuItemExt::createSpriteExtra(filterHolder,
@@ -406,9 +407,7 @@ CCNode* IconGalleryLayer::buildCard(std::string const& id, float width) {
     float const thumbBox = width - 20.f;
     float const thumbCY = kCardH - 12.f - thumbBox / 2.f;
 
-    if (auto* well = paimon::SpriteHelper::createColorPanel(
-            thumbBox, thumbBox, {0, 0, 0}, 110, 6.f)) {
-        well->setAnchorPoint({0.f, 0.f});
+    if (auto* well = paimon::ui::makeInset({thumbBox, thumbBox}, 110)) {
         well->setPosition({10.f, thumbCY - thumbBox / 2.f});
         card->addChild(well);
     }

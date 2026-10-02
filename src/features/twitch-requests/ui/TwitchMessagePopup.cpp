@@ -2,8 +2,8 @@
 
 #include "../TwitchRequestManager.hpp"
 #include "../TwitchRequestNotify.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
-#include "../../../utils/SpriteHelper.hpp"
 
 #include <Geode/ui/ScrollLayer.hpp>
 #include <Geode/ui/TextArea.hpp>
@@ -47,6 +47,7 @@ bool TwitchMessagePopup::init(
 ) {
     if (!PaimonPopup::init(kWidth, kHeight)) return false;
     setTitle("Mensaje del request");
+    addCorners();
     paimon::markDynamicPopup(this);
 
     auto const content = m_mainLayer->getContentSize();
@@ -102,9 +103,7 @@ bool TwitchMessagePopup::init(
 
     float const panelTop = levelY - 36.f;
     float const panelHeight = panelTop - 14.f;
-    if (auto* panel = paimon::SpriteHelper::createColorPanel(
-            inner, panelHeight, {8, 12, 26}, 150, 6.f)) {
-        panel->setAnchorPoint({0.f, 0.f});
+    if (auto* panel = paimon::ui::makeInset({inner, panelHeight}, 150)) {
         panel->setPosition({kPad, 14.f});
         m_mainLayer->addChild(panel);
     }

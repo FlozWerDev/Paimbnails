@@ -183,6 +183,11 @@ SmoothUIConfigPopup* SmoothUIConfigPopup::create() {
 bool SmoothUIConfigPopup::init() {
     if (!PaimonPopup::init(420.f, 300.f)) return false;
     this->setTitle("Smooth UI");
+    this->addInfoButton("Smooth UI",
+        "Controla el movimiento de toda la interfaz del mod.\n\n"
+        "Elige un <cg>preset</c> para ajustar todo de golpe, o entra en "
+        "<cy>Avanzado</c> para afinar popups, botones, scroll y blur por separado.\n\n"
+        "<co>Reducir movimiento</c> minimiza animaciones si te marean.");
     paimon::markDynamicPopup(this);
 
     rebuild();

@@ -8,7 +8,6 @@
 #include "../../texture-studio/engine/SpritePreviewRenderer.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
-#include "../../../utils/SpriteHelper.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/ColorPickPopup.hpp>
@@ -53,13 +52,16 @@ bool GradientEditorPopup::init(GradientSpec initial, ChangedCallback onChanged) 
 
     setTitle("Degradado");
     setID("icon-maker-gradient-popup"_spr);
+    addInfoButton("Degradado",
+        "Elige <cy>Lineal</c> (la mezcla va de un lado a otro, segun la "
+        "direccion) o <cy>Radial</c> (sale del centro hacia afuera). Cada color "
+        "es una parada: toca su cuadro para cambiarlo, mueve la posicion con el "
+        "deslizador y agrega o quita colores con <cg>+ Color</c>.");
 
     auto size = m_mainLayer->getContentSize();
 
     // square preview: a strip cannot show what "radial" means.
-    if (auto* frame = paimon::SpriteHelper::createColorPanel(
-            kPreviewSide + 6.f, kPreviewSide + 6.f, {0, 0, 0}, 140, 6.f)) {
-        frame->setAnchorPoint({0.f, 0.f});
+    if (auto* frame = paimon::ui::makeInset({kPreviewSide + 6.f, kPreviewSide + 6.f}, 140)) {
         frame->setPosition({16.f, size.height - 52.f - kPreviewSide});
         m_mainLayer->addChild(frame);
     }

@@ -4,6 +4,7 @@
 #include "../services/EditorMusicPlayer.hpp"
 #include "../../menu-music/services/MenuMusicLibrary.hpp"
 #include "../../../ui/PaiConfigKit.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/SpriteHelper.hpp"
@@ -22,6 +23,7 @@ using paimon::menumusic::MusicTrack;
 namespace {
 
 namespace kit = paimon::configkit;
+namespace ui = paimon::ui;
 
 constexpr float kPopupW = 380.f;
 constexpr float kPopupH = 280.f;
@@ -60,6 +62,10 @@ bool EditorMusicPickerPopup::init() {
 
     setTitle("Musica del editor");
     setID("editor-music-picker"_spr);
+    addInfoButton("Musica del editor",
+        "Elige la cancion que suena mientras editas. <cg>Sync</c> agrega las "
+        "canciones ya descargadas en el juego y <cg>Carpeta</c> importa archivos "
+        "de audio de tu PC. Toca el boton de play de cada fila para escucharla.");
 
     MenuMusicLibrary::get().load();
     EditorMusicPlayer::get().refreshQueue();
@@ -137,9 +143,8 @@ CCNode* EditorMusicPickerPopup::trackRow(float width, std::string const& trackId
 
     bool current = EditorMusicPlayer::get().trackId() == trackId;
     bool playing = current && EditorMusicPlayer::get().isPlaying();
-    if (auto* bg = SpriteHelper::createColorPanel(
-            width, kRowH, current ? ccColor3B{28, 60, 96} : ccColor3B{14, 18, 32}, 190, 6.f)) {
-        bg->setAnchorPoint({0.f, 0.f});
+    if (auto* bg = ui::makeInset({width, kRowH}, current ? 150 : 90,
+            current ? ui::palette::info : ui::palette::ink)) {
         row->addChild(bg, -1);
     }
 

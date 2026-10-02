@@ -4,6 +4,7 @@
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include <Geode/binding/FLAlertLayer.hpp>
 #include <Geode/ui/PopupManager.hpp>
 #include <Geode/utils/web.hpp>
@@ -16,6 +17,9 @@ bool SetDailyWeeklyPopup::init(int levelID) {
     if (!PaimonPopup::init(320.f, 240.f)) return false;
 
     this->setTitle("Set Daily / Weekly");
+    this->addInfoButton("Set Daily / Weekly",
+        "Feature this level for the whole community. <cg>Daily</c> rotates every day, "
+        "<cy>Weekly</c> every week. <cr>Unset</c> removes it from both.");
     auto size = m_mainLayer->getContentSize();
 
     auto subtitle = CCLabelBMFont::create(
@@ -38,21 +42,12 @@ bool SetDailyWeeklyPopup::init(int levelID) {
         content->setContentSize({ cardW, cardH });
         content->setAnchorPoint({ 0.5f, 0.5f });
 
-        auto bg = CCScale9Sprite::create("GJ_square02.png");
-        if (!bg) bg = CCScale9Sprite::create("square02b_001.png");
-        bg->setContentSize({ cardW, cardH });
-        bg->setPosition({ cardW / 2.f, cardH / 2.f });
-        bg->setColor(tint);
+        auto bg = paimon::ui::makeInset({ cardW, cardH }, 90, tint);
         content->addChild(bg);
 
-        auto badge = CCScale9Sprite::create("GJ_square05.png");
-        if (badge) {
-            badge->setContentSize({ 34.f, 34.f });
-            badge->setPosition({ 8.f + 17.f, cardH / 2.f });
-            badge->setColor({ 0, 0, 0 });
-            badge->setOpacity(110);
-            content->addChild(badge);
-        }
+        auto badge = paimon::ui::makeInset({ 34.f, 34.f }, 120);
+        badge->setPosition({ 8.f, cardH / 2.f - 17.f });
+        content->addChild(badge);
 
         auto icon = paimon::SpriteHelper::safeCreateWithFrameName(iconFrame);
         if (!icon && fallbackFrame)
@@ -96,7 +91,7 @@ bool SetDailyWeeklyPopup::init(int levelID) {
     actionMenu->addChild(makeCard(
         "GJ_timeIcon_001.png", "GJ_starsIcon_001.png",
         "Set Daily", "Feature this level as the Daily",
-        { 110, 200, 110 },
+        paimon::ui::palette::success,
         menu_selector(SetDailyWeeklyPopup::onSetDaily),
         "set-daily-btn"_spr
     ));
@@ -104,7 +99,7 @@ bool SetDailyWeeklyPopup::init(int levelID) {
     actionMenu->addChild(makeCard(
         "gj_dailyCrown_001.png", "GJ_starsIcon_001.png",
         "Set Weekly", "Feature this level as the Weekly",
-        { 120, 170, 255 },
+        paimon::ui::palette::info,
         menu_selector(SetDailyWeeklyPopup::onSetWeekly),
         "set-weekly-btn"_spr
     ));
@@ -112,7 +107,7 @@ bool SetDailyWeeklyPopup::init(int levelID) {
     actionMenu->addChild(makeCard(
         "GJ_deleteIcon_001.png", nullptr,
         "Unset", "Remove this level from Daily/Weekly",
-        { 235, 110, 110 },
+        paimon::ui::palette::danger,
         menu_selector(SetDailyWeeklyPopup::onUnset),
         "unset-btn"_spr
     ));

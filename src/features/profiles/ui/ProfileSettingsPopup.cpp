@@ -1,4 +1,5 @@
 #include "ProfileSettingsPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/Localization.hpp"
@@ -34,6 +35,10 @@ bool ProfileSettingsPopup::init(int accountID) {
     auto menu = CCMenu::create();
     menu->setPosition({0, 0});
     m_mainLayer->addChild(menu);
+
+    auto optionsInset = paimon::ui::makeInset({content.width - 28.f, content.height - 56.f}, 85);
+    optionsInset->setPosition({14.f, 12.f});
+    m_mainLayer->addChild(optionsInset, -1);
 
     float colSpacing = 70.f;
     float rowSpacing = 45.f;

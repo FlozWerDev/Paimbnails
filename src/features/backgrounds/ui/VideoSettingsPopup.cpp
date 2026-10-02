@@ -1,4 +1,5 @@
 #include "VideoSettingsPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
@@ -25,6 +26,11 @@ bool VideoSettingsPopup::init() {
     if (!PaimonPopup::init(340.f, 260.f)) return false;
 
     this->setTitle("Video Settings");
+    this->addInfoButton("Video Settings",
+        "<cy>FPS</c>: lower limits save CPU. <cy>Quality</c>: decode resolution. "
+        "<cy>Blur</c>: softens the video; <cy>Intensity</c> shows only when a blur is active. "
+        "<cy>Rotation</c>: rotates the video. <cg>Changes apply instantly.</c>\n"
+        "<cr>Clear RAM</c> frees decode buffers; <cr>Clear Cache</c> deletes cached files on disk.");
 
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
@@ -89,6 +95,16 @@ bool VideoSettingsPopup::init() {
     const float rowSpacing = 30.f;
     float topY = content.height - 46.f;
 
+    float panelW = colSpacing - 14.f;
+    float panelTop = topY + 16.f;
+    float panelBot = topY - rowSpacing * 3.f - 8.f;
+    float panelH = panelTop - panelBot;
+    for (float colCX : {leftCX, rightCX}) {
+        auto* inset = paimon::ui::makeInset({panelW, panelH});
+        inset->setPosition({colCX - panelW / 2.f, panelBot});
+        m_mainLayer->addChild(inset, 0);
+    }
+
     auto colLayout = [&](float colCX) {
         float titleX = colCX - 55.f;
         float prevX  = colCX - 7.f;
@@ -101,9 +117,8 @@ bool VideoSettingsPopup::init() {
     {
         auto [titleX, prevX, valX, nextX, toggleX] = colLayout(leftCX);
 
-        auto header = CCLabelBMFont::create("Playback", "bigFont.fnt");
-        header->setScale(0.35f);
-        header->setColor({255, 220, 100});
+        auto header = CCLabelBMFont::create("Playback", "goldFont.fnt");
+        header->setScale(0.5f);
         header->setPosition({leftCX, topY});
         m_mainLayer->addChild(header, 1);
 
@@ -151,9 +166,8 @@ bool VideoSettingsPopup::init() {
     {
         auto [titleX, prevX, valX, nextX, toggleX] = colLayout(rightCX);
 
-        auto header = CCLabelBMFont::create("Filters", "bigFont.fnt");
-        header->setScale(0.35f);
-        header->setColor({255, 160, 255});
+        auto header = CCLabelBMFont::create("Filters", "goldFont.fnt");
+        header->setScale(0.5f);
         header->setPosition({rightCX, topY});
         m_mainLayer->addChild(header, 1);
 
@@ -222,7 +236,18 @@ bool VideoSettingsPopup::init() {
 
     float cacheY = topY - rowSpacing * 3.f - 14.f - 28.f;
 
-    auto ramBtnSpr = ButtonSprite::create("Clear RAM", 76, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f);
+    {
+        auto* cacheInset = paimon::ui::makeInset({content.width - 32.f, 34.f});
+        cacheInset->setPosition({16.f, cacheY - 17.f});
+        m_mainLayer->addChild(cacheInset, 0);
+    }
+
+    auto cacheHeader = CCLabelBMFont::create("Cache", "goldFont.fnt");
+    cacheHeader->setScale(0.42f);
+    cacheHeader->setPosition({cx, cacheY + 24.f});
+    m_mainLayer->addChild(cacheHeader, 1);
+
+    auto ramBtnSpr = ButtonSprite::create("Clear RAM", 76, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.40f);
     auto ramBtn = CCMenuItemSpriteExtra::create(ramBtnSpr, this, menu_selector(VideoSettingsPopup::onClearRAM));
     ramBtn->setPosition({cx - 85.f, cacheY});
     menu->addChild(ramBtn);
@@ -234,7 +259,7 @@ bool VideoSettingsPopup::init() {
     m_mainLayer->addChild(m_ramLabel, 1);
     updateRAMLabel();
 
-    auto cacheBtnSpr = ButtonSprite::create("Clear Cache", 88, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f);
+    auto cacheBtnSpr = ButtonSprite::create("Clear Cache", 88, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.40f);
     auto cacheBtn = CCMenuItemSpriteExtra::create(cacheBtnSpr, this, menu_selector(VideoSettingsPopup::onClearDiskCache));
     cacheBtn->setPosition({cx + 75.f, cacheY});
     menu->addChild(cacheBtn);

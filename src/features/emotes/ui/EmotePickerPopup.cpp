@@ -21,7 +21,6 @@ static constexpr float POPUP_W   = 380.f;
 static constexpr float POPUP_H   = 192.f;
 static constexpr float POPUP_W_LARGE = 500.f;
 static constexpr float POPUP_H_LARGE = 280.f;
-static constexpr float CORNER_R  = 12.f;
 static constexpr float PAD       = 6.f;
 static constexpr float INPUT_H   = 24.f;
 static constexpr float PREVIEW_H = 36.f;
@@ -33,19 +32,6 @@ static constexpr float CAT_HDR_H        = 18.f;
 static constexpr float CAT_GAP          = 6.f;
 static constexpr float INPUT_ACTION_W   = 22.f;
 static constexpr float INPUT_ACTION_GAP = 6.f;
-
-static constexpr ccColor4F COL_BORDER      = {0.18f, 0.18f, 0.18f, 1.0f};
-static constexpr ccColor4F COL_BG          = {0.07f, 0.07f, 0.07f, 0.97f};
-static constexpr ccColor4F COL_INPUT_BG    = {0.05f, 0.05f, 0.05f, 1.0f};
-static constexpr ccColor4F COL_PREVIEW_BG  = {0.06f, 0.06f, 0.06f, 0.9f};
-static constexpr ccColor4F COL_BOTTOM_BG   = {0.09f, 0.09f, 0.09f, 1.0f};
-static constexpr ccColor4F COL_TAB_ACTIVE  = {0.22f, 0.22f, 0.22f, 1.0f};
-static constexpr ccColor4F COL_TAB_INACTIVE= {0.13f, 0.13f, 0.13f, 0.8f};
-static constexpr ccColor4F COL_CELL_BG     = {0.14f, 0.14f, 0.14f, 0.8f};
-static constexpr ccColor4F COL_CELL_HOVER  = {0.45f, 0.78f, 0.95f, 0.85f};
-static constexpr ccColor4F COL_CAT_HL      = {0.20f, 0.20f, 0.20f, 0.7f};
-static constexpr ccColor4F COL_DIVIDER     = {0.22f, 0.22f, 0.22f, 0.5f};
-static constexpr ccColor4F COL_SEPARATOR   = {0.18f, 0.18f, 0.18f, 0.6f};
 
 // action tags used to cancel entrance/exit animations.
 static constexpr int kDimActionTag  = 8801;
@@ -95,13 +81,11 @@ bool EmotePickerPopup::init(
 
     if (m_bgSprite) m_bgSprite->setVisible(false);
 
-    auto border = paimon::SpriteHelper::createRoundedRect(
-        m_popupW + 2, m_popupH + 2, CORNER_R + 1, COL_BORDER);
+    auto border = paimon::ui::makeInset({m_popupW + 2.f, m_popupH + 2.f}, 255, {24, 24, 24});
     border->setPosition({-1.f, -1.f});
     m_mainLayer->addChild(border, -2);
 
-    auto bg = paimon::SpriteHelper::createRoundedRect(
-        m_popupW, m_popupH, CORNER_R, COL_BG);
+    auto bg = paimon::ui::makeInset({m_popupW, m_popupH}, 248, {16, 16, 16});
     bg->setPosition({0.f, 0.f});
     m_mainLayer->addChild(bg, -1);
 
@@ -112,8 +96,7 @@ bool EmotePickerPopup::init(
     float inputActionTotal = inputActionsW + INPUT_ACTION_GAP;
     float inputBoxW = contentW - inputActionTotal;
 
-    auto inputBg = paimon::SpriteHelper::createRoundedRect(
-        inputBoxW, INPUT_H, 6.f, COL_INPUT_BG);
+    auto inputBg = paimon::ui::makeInset({inputBoxW, INPUT_H}, 255, {12, 12, 12});
     inputBg->setPosition({PAD, inputY});
     m_mainLayer->addChild(inputBg, 1);
 
@@ -130,8 +113,7 @@ bool EmotePickerPopup::init(
     );
     m_mainLayer->addChild(m_textInput, 2);
 
-    auto inputActionBg = paimon::SpriteHelper::createRoundedRect(
-        inputActionsW, INPUT_H, 6.f, COL_INPUT_BG);
+    auto inputActionBg = paimon::ui::makeInset({inputActionsW, INPUT_H}, 255, {12, 12, 12});
     inputActionBg->setPosition({PAD + inputBoxW + INPUT_ACTION_GAP, inputY});
     m_mainLayer->addChild(inputActionBg, 1);
 
@@ -183,8 +165,7 @@ bool EmotePickerPopup::init(
 
     float previewY = inputY - PAD - PREVIEW_H;
 
-    m_renderPreviewBg = paimon::SpriteHelper::createRoundedRect(
-        contentW, PREVIEW_H, 6.f, COL_PREVIEW_BG);
+    m_renderPreviewBg = paimon::ui::makeInset({contentW, PREVIEW_H}, 230, {15, 15, 15});
     m_renderPreviewBg->setPosition({PAD, previewY});
     m_mainLayer->addChild(m_renderPreviewBg, 1);
 
@@ -196,8 +177,7 @@ bool EmotePickerPopup::init(
     updateRenderPreview();
 
     {
-        m_searchInputBg = paimon::SpriteHelper::createRoundedRect(
-            contentW, PREVIEW_H, 6.f, COL_INPUT_BG);
+        m_searchInputBg = paimon::ui::makeInset({contentW, PREVIEW_H}, 255, {12, 12, 12});
         m_searchInputBg->setPosition({PAD, previewY});
         m_searchInputBg->setVisible(false);
         m_mainLayer->addChild(m_searchInputBg, 3);
@@ -221,8 +201,7 @@ bool EmotePickerPopup::init(
     m_botY = PAD;
     float botW = contentW;
 
-    auto botBg = paimon::SpriteHelper::createRoundedRect(
-        botW, botH, 8.f, COL_BOTTOM_BG);
+    auto botBg = paimon::ui::makeInset({botW, botH}, 255, {20, 20, 20});
     botBg->setPosition({PAD, m_botY});
     m_mainLayer->addChild(botBg, 1);
 
@@ -281,8 +260,7 @@ bool EmotePickerPopup::init(
     m_catScroll->m_contentLayer->addChild(m_catMenu);
 
     float divX = PAD + SIDEBAR_W + 4;
-    auto divider = paimon::SpriteHelper::createRoundedRect(
-        1.5f, botH - 6.f, 1.f, COL_DIVIDER);
+    auto divider = paimon::ui::makeInset({1.5f, botH - 6.f}, 130, {60, 60, 60});
     divider->setPosition({divX, m_botY + 3.f});
     m_mainLayer->addChild(divider, 2);
 
@@ -360,8 +338,9 @@ void EmotePickerPopup::updateTabHighlights() {
             old->removeFromParent();
         float w = container->getContentSize().width;
         float h = container->getContentSize().height;
-        ccColor4F col = active ? COL_TAB_ACTIVE : COL_TAB_INACTIVE;
-        auto hl = paimon::SpriteHelper::createRoundedRect(w, h, 4.f, col);
+        auto hl = active
+            ? paimon::ui::makeInset({w, h}, 230, {45, 115, 65})
+            : paimon::ui::makeInset({w, h}, 150, {34, 34, 34});
         hl->setID("paimon-tab-bg"_spr);
         hl->setPosition({0, 0});
         container->addChild(hl, -1);
@@ -456,8 +435,7 @@ void EmotePickerPopup::selectCategory(std::string const& cat) {
         if (nameObj && cat == nameObj->getCString()) {
             float w = container->getContentSize().width;
             float h = container->getContentSize().height;
-            auto hl = paimon::SpriteHelper::createRoundedRect(
-                w, h, 3.f, COL_CAT_HL);
+            auto hl = paimon::ui::makeInset({w, h}, 180, {50, 50, 50});
             hl->setID("paimon-cat-hl"_spr);
             hl->setPosition({0, 0});
             container->addChild(hl, -1);

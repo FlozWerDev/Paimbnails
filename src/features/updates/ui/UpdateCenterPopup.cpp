@@ -1,5 +1,6 @@
 #include "UpdateCenterPopup.hpp"
 #include "UpdateProgressPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../services/UpdateChecker.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
@@ -67,6 +68,11 @@ bool UpdateCenterPopup::init() {
     if (!PaimonPopup::init(kWidth, kHeight)) return false;
     paimon::markDynamicPopup(this);
     this->setTitle(tr("pai.updates.center.title", "Updates"));
+    this->addInfoButton(tr("pai.updates.center.title", "Updates"),
+        "Check for and install Paimbnails updates. The top card shows your <cy>current version</c> and "
+        "status; the list is the full <cy>version history</c> (tap the info icon for release notes). "
+        "<cg>Install</c> is green, <cr>Revert</c> to an older build is red. Toggle <co>Betas</c> to "
+        "include prereleases and <co>Auto update</c> to update on launch.");
 
     m_headerMenu = CCMenu::create();
     m_headerMenu->setPosition({0.f, 0.f});
@@ -100,7 +106,7 @@ bool UpdateCenterPopup::init() {
     betaToggle->setPosition({344.f, 183.f});
     m_headerMenu->addChild(betaToggle);
 
-    auto listBg = paimon::SpriteHelper::createDarkPanel(kListW + 4.f, kListH + 4.f, 100, 5.f);
+    auto listBg = paimon::ui::makeInset({kListW + 4.f, kListH + 4.f}, 100);
     listBg->setPosition({kListX - 2.f, kListY - 2.f});
     m_mainLayer->addChild(listBg, 1);
 
@@ -148,7 +154,7 @@ bool UpdateCenterPopup::init() {
 }
 
 void UpdateCenterPopup::buildHeader() {
-    auto card = paimon::SpriteHelper::createDarkPanel(kListW + 4.f, 44.f, 130, 5.f);
+    auto card = paimon::ui::makeInset({kListW + 4.f, 44.f}, 130);
     card->setPosition({kListX - 2.f, 196.f});
     m_mainLayer->addChild(card, 1);
 

@@ -7,6 +7,7 @@
 #include "../../../utils/Localization.hpp"
 #include "../../emotes/ui/EmoteButton.hpp"
 #include "../../emotes/ui/EmoteAutocomplete.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
 using namespace geode::prelude;
 
@@ -21,25 +22,39 @@ BanUserPopup* BanUserPopup::create(std::string const& username) {
 }
 
 bool BanUserPopup::init(std::string const& username) {
-    if (!PaimonPopup::init(300.f, 200.f)) return false;
+    if (!PaimonPopup::init(300.f, 210.f)) return false;
 
     m_username = username;
     this->setTitle(Localization::get().getString("ban.popup.title"));
+    this->addInfoButton(Localization::get().getString("ban.popup.title"),
+        "Enter the <cr>reason</c> this user is being banned from Paimbnails. "
+        "The reason is shown to the user and saved in the moderation log.");
 
     auto content = m_mainLayer->getContentSize();
+    float cx = content.width / 2.f;
 
     auto lbl = CCLabelBMFont::create(fmt::format(fmt::runtime(Localization::get().getString("ban.popup.user")), username).c_str(), "goldFont.fnt");
     lbl->setScale(0.6f);
-    lbl->setPosition({content.width / 2, content.height - 60.f});
+    lbl->setPosition({cx, content.height - 46.f});
     lbl->setID("username-label"_spr);
     m_mainLayer->addChild(lbl);
+
+    CCSize insetSize = {content.width - 30.f, 70.f};
+    auto inset = paimon::ui::makeInset(insetSize);
+    inset->setPosition({cx - insetSize.width / 2.f, content.height / 2.f - 24.f});
+    m_mainLayer->addChild(inset);
+
+    auto reasonLabel = paimon::ui::makeLabel("Reason", insetSize.width - 20.f, 0.4f);
+    reasonLabel->setAnchorPoint({0.f, 0.5f});
+    reasonLabel->setPosition({cx - insetSize.width / 2.f + 4.f, content.height / 2.f + 36.f});
+    m_mainLayer->addChild(reasonLabel);
 
     m_input = TextInput::create(240.f, Localization::get().getString("ban.popup.placeholder"));
     m_input->setCommonFilter(geode::CommonFilter::Any);
     m_input->setMaxCharCount(200);
     m_input->setID("reason-input"_spr);
-    m_input->setPosition({content.width / 2, content.height / 2});
-    m_mainLayer->addChild(m_input);
+    m_input->setPosition({cx, content.height / 2.f + 8.f});
+    m_mainLayer->addChild(m_input, 1);
 
     {
         paimon::emotes::EmoteInputContext ctx;
@@ -55,7 +70,7 @@ bool BanUserPopup::init(std::string const& username) {
         auto emoteBtn = paimon::emotes::EmoteButton::create(std::move(ctx));
         auto emoteMenu = CCMenu::create();
         emoteMenu->setID("emote-menu"_spr);
-        emoteMenu->setPosition({content.width - 18.f, content.height / 2});
+        emoteMenu->setPosition({content.width - 18.f, content.height / 2.f + 8.f});
         emoteBtn->setScale(0.45f);
         emoteMenu->addChild(emoteBtn);
         m_mainLayer->addChild(emoteMenu, 5);
@@ -68,18 +83,18 @@ bool BanUserPopup::init(std::string const& username) {
                 if (m_input) m_input->setString(newText);
             }
         );
-        ac->setPosition({content.width / 2.f - 60.f, content.height / 2.f + 26.f});
+        ac->setPosition({cx - 60.f, content.height / 2.f + 34.f});
         m_mainLayer->addChild(ac, 100);
     }
 
-    auto btnSpr = ButtonSprite::create(Localization::get().getString("ban.popup.ban_btn").c_str(), "goldFont.fnt", "GJ_button_01.png", .8f);
-    auto btn = CCMenuItemSpriteExtra::create(btnSpr, this, menu_selector(BanUserPopup::onBan));
-    
+    auto btn = paimon::ui::makeButton(
+        Localization::get().getString("ban.popup.ban_btn").c_str(),
+        [this] { this->onBan(nullptr); }, paimon::ui::Btn::Red, 0.f, 0.8f);
     btn->setID("ban-btn"_spr);
     auto menu = CCMenu::create();
     menu->setID("ban-menu"_spr);
     menu->addChild(btn);
-    menu->setPosition({content.width / 2, 40.f});
+    menu->setPosition({cx, 34.f});
     m_mainLayer->addChild(menu);
 
     paimon::markDynamicPopup(this);

@@ -48,6 +48,13 @@ bool FrameInterpPopup::init() {
     paimon::markDynamicPopup(this);
     this->setID("frame-interp-popup"_spr);
     this->setTitle(tr("Frame Interpolation", "Interpolacion de Fotogramas"));
+    this->addInfoButton(tr("Frame Interpolation", "Interpolacion de Fotogramas"),
+        tr("Draws the game between physics ticks for smooth motion at any refresh rate. "
+           "<cy>Smooth</c> adds one tick of delay and never guesses; <cy>Instant</c> has no "
+           "delay but can overshoot on bounces.",
+           "Dibuja el juego entre pasos de fisica para un movimiento fluido a cualquier tasa. "
+           "<cy>Suave</c> anade un paso de retraso y nunca adivina; <cy>Sin retardo</c> no tiene "
+           "retraso pero puede pasarse en los rebotes."));
 
     FrameInterpolator::get().init();
     rebuild();

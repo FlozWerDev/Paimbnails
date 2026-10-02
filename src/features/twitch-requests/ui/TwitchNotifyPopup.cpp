@@ -2,6 +2,7 @@
 
 #include "../TwitchRequestManager.hpp"
 #include "../../../ui/PaiConfigKit.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/ScissorClipNode.hpp"
 #include "../../../utils/SpriteHelper.hpp"
@@ -76,6 +77,14 @@ TwitchNotifyPopup* TwitchNotifyPopup::create() {
 bool TwitchNotifyPopup::init() {
     if (!PaimonPopup::init(kPopupWidth, kPopupHeight)) return false;
     setTitle("Avisos de request");
+    addCorners();
+    addInfoButton("Avisos de request",
+        "Muestra un aviso en pantalla cuando tu chat pide un nivel, "
+        "estes donde estes.\n\n"
+        "La <cy>vista previa</c> de la izquierda imita tu pantalla real: la esquina, el "
+        "tamano y los segundos se ven ahi antes de salir en directo. <cg>Probar en "
+        "pantalla</c> lanza un aviso de ejemplo sobre el juego.\n\n"
+        "El nombre del nivel solo aparece si ya se habia cargado; si no, se ensena la ID.");
     paimon::markDynamicPopup(this);
 
     m_config = notifyConfig();
@@ -97,9 +106,7 @@ void TwitchNotifyPopup::buildPreview(CCPoint origin, CCSize size) {
     panel->setPosition(origin);
     m_mainLayer->addChild(panel);
 
-    if (auto* bg = paimon::SpriteHelper::createColorPanel(
-            size.width, size.height, kit::kCardColor, kit::kCardAlpha, 7.f)) {
-        bg->setAnchorPoint({0.f, 0.f});
+    if (auto* bg = paimon::ui::makeInset(size, kit::kCardAlpha)) {
         panel->addChild(bg, -1);
     }
 

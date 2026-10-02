@@ -1,6 +1,7 @@
 #include "FontPickerPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 
 using namespace geode::prelude;
@@ -9,13 +10,11 @@ using namespace paimon::fonts;
 
 static constexpr float POPUP_W   = 360.f;
 static constexpr float POPUP_H   = 218.f;
-static constexpr float CORNER_R  = 12.f;
 static constexpr float PAD       = 8.f;
 static constexpr float PREVIEW_H = 36.f;
 static constexpr float SIDEBAR_W = 76.f;
 static constexpr float CELL_SIZE = 44.f;
 static constexpr float CELL_GAP  = 4.f;
-static constexpr float TAB_H     = 20.f;
 
 static std::vector<std::pair<std::string, std::string>> getGDFonts() {
     std::vector<std::pair<std::string, std::string>> v;
@@ -50,19 +49,16 @@ bool FontPickerPopup::init(
 
     if (m_closeBtn) m_closeBtn->setVisible(false);
 
-    if (m_bgSprite) m_bgSprite->setVisible(false);
-
-    auto bg = paimon::SpriteHelper::createRoundedRect(
-        POPUP_W, POPUP_H, CORNER_R,
-        {0.08f, 0.08f, 0.14f, 0.97f});
-    bg->setPosition({0.f, 0.f});
-    m_mainLayer->addChild(bg, -1);
+    this->setTitle("Fonts");
+    this->addInfoButton("Font Picker",
+        "Insert a <cy>font tag</c> into your text. <cg>GD Fonts</c> are the game's "
+        "numbered fonts; <co>Custom</c> lets you type any <cy>.fnt</c> name present in "
+        "the game resources. <cr>None</c> clears the font back to default.");
 
     float pvW = POPUP_W - PAD * 2;
-    float pvY = POPUP_H - PAD - PREVIEW_H;
+    float pvY = POPUP_H - PAD - PREVIEW_H - 24.f;
 
-    auto pvBg = paimon::SpriteHelper::createRoundedRect(
-        pvW, PREVIEW_H, 8.f, {0.13f, 0.13f, 0.20f, 1.f});
+    auto pvBg = paimon::ui::makeInset({pvW, PREVIEW_H}, 230);
     pvBg->setPosition({PAD, pvY});
     m_mainLayer->addChild(pvBg, 1);
 
@@ -74,15 +70,14 @@ bool FontPickerPopup::init(
     m_previewLabel = CCLabelBMFont::create("Pick a font!", "chatFont.fnt");
     m_previewLabel->setScale(0.32f);
     m_previewLabel->setPosition({pvW / 2.f, PREVIEW_H / 2.f});
-    m_previewLabel->setColor({190, 190, 200});
+    m_previewLabel->setColor(paimon::ui::palette::muted);
     m_previewContainer->addChild(m_previewLabel);
 
     float botH = pvY - PAD;
     float botY = PAD;
     float botW = POPUP_W - PAD * 2;
 
-    auto botBg = paimon::SpriteHelper::createRoundedRect(
-        botW, botH, 8.f, {0.11f, 0.11f, 0.18f, 1.f});
+    auto botBg = paimon::ui::makeInset({botW, botH}, 90);
     botBg->setPosition({PAD, botY});
     m_mainLayer->addChild(botBg, 1);
 
@@ -104,15 +99,9 @@ bool FontPickerPopup::init(
     m_mainLayer->addChild(m_sideMenu, 3);
 
     auto makeTabBtn = [&](const char* text, SEL_MenuHandler sel) -> CCMenuItemSpriteExtra* {
-        float bw = SIDEBAR_W - 8;
-        auto lbl = CCLabelBMFont::create(text, "bigFont.fnt");
-        lbl->setScale(0.28f);
-        auto container = CCNode::create();
-        container->setContentSize({bw, TAB_H});
-        lbl->setPosition({bw / 2, TAB_H / 2});
-        container->addChild(lbl, 1);
-        auto btn = CCMenuItemSpriteExtra::create(container, this, sel);
-        return btn;
+        auto spr = paimon::ui::makeButtonSprite(text, paimon::ui::Btn::Gray,
+            SIDEBAR_W - 8.f, 0.5f, "bigFont.fnt");
+        return CCMenuItemSpriteExtra::create(spr, this, sel);
     };
 
     m_tabGD = makeTabBtn("GD Fonts",
@@ -123,14 +112,11 @@ bool FontPickerPopup::init(
         menu_selector(FontPickerPopup::onTabCustom));
     m_sideMenu->addChild(m_tabCustom);
 
-    auto divLine = paimon::SpriteHelper::createRoundedRect(
-        SIDEBAR_W - 16, 1.f, 0.5f, {0.3f, 0.3f, 0.4f, 0.4f});
-    divLine->setContentSize({SIDEBAR_W - 16, 1.f});
+    auto divLine = paimon::ui::makeDivider(SIDEBAR_W - 16.f);
     m_sideMenu->addChild(divLine);
 
-    auto qpLabel = CCLabelBMFont::create("Quick Pick", "chatFont.fnt");
-    qpLabel->setScale(0.22f);
-    qpLabel->setColor({120, 120, 140});
+    auto qpLabel = paimon::ui::makeLabel("Quick Pick", SIDEBAR_W - 10.f, 0.3f,
+        paimon::ui::palette::gold);
     m_sideMenu->addChild(qpLabel);
 
     struct QuickFont { const char* display; const char* fontFile; const char* fontId; };
@@ -147,8 +133,7 @@ bool FontPickerPopup::init(
         auto container = CCNode::create();
         container->setContentSize({bw, qpBtnH});
 
-        auto cellBg = paimon::SpriteHelper::createRoundedRect(
-            bw, qpBtnH, 5.f, {0.16f, 0.16f, 0.24f, 0.9f});
+        auto cellBg = paimon::ui::makeInset({bw, qpBtnH}, 150);
         cellBg->setPosition({0, 0});
         container->addChild(cellBg);
 
@@ -169,33 +154,17 @@ bool FontPickerPopup::init(
     }
 
     {
-        float bw = SIDEBAR_W - 8;
-        auto container = CCNode::create();
-        container->setContentSize({bw, qpBtnH});
-
-        auto cellBg = paimon::SpriteHelper::createRoundedRect(
-            bw, qpBtnH, 5.f, {0.22f, 0.14f, 0.14f, 0.9f});
-        cellBg->setPosition({0, 0});
-        container->addChild(cellBg);
-
-        auto lbl = CCLabelBMFont::create("None", "bigFont.fnt");
-        if (lbl) {
-            lbl->setScale(0.22f);
-            lbl->setColor({200, 150, 150});
-            lbl->setPosition({bw / 2, qpBtnH / 2});
-            container->addChild(lbl, 1);
-        }
-
+        auto spr = paimon::ui::makeButtonSprite("None", paimon::ui::Btn::Red,
+            SIDEBAR_W - 8.f, 0.4f, "bigFont.fnt");
         auto btn = CCMenuItemSpriteExtra::create(
-            container, this, menu_selector(FontPickerPopup::onRemoveFont));
+            spr, this, menu_selector(FontPickerPopup::onRemoveFont));
         m_sideMenu->addChild(btn);
     }
 
     m_sideMenu->updateLayout();
 
     float divX = PAD + SIDEBAR_W + 4;
-    auto divider = paimon::SpriteHelper::createRoundedRect(
-        1.5f, botH - 8.f, 1.f, {0.25f, 0.25f, 0.35f, 0.4f});
+    auto divider = paimon::ui::makeInset({2.f, botH - 8.f}, 70);
     divider->setPosition({divX, botY + 4.f});
     m_mainLayer->addChild(divider, 2);
 
@@ -222,14 +191,12 @@ bool FontPickerPopup::init(
     float cardX = 8.f;
     float cardY = std::max(14.f, gridH - cardH - 12.f);
 
-    auto cardBg = paimon::SpriteHelper::createRoundedRect(
-        cardW, cardH, 8.f, {0.14f, 0.14f, 0.22f, 0.8f});
+    auto cardBg = paimon::ui::makeInset({cardW, cardH}, 150);
     cardBg->setPosition({cardX, cardY});
     m_customContainer->addChild(cardBg);
 
-    auto customLabel = CCLabelBMFont::create("Enter font name:", "bigFont.fnt");
-    customLabel->setScale(0.24f);
-    customLabel->setColor({180, 180, 195});
+    auto customLabel = paimon::ui::makeLabel("Enter font name:", cardW - 16.f, 0.4f,
+        paimon::ui::palette::muted);
     customLabel->setPosition({gridW / 2.f, cardY + cardH - 12.f});
     m_customContainer->addChild(customLabel);
 
@@ -240,20 +207,10 @@ bool FontPickerPopup::init(
     m_customInput->setPosition({gridW / 2.f, cardY + cardH / 2.f + 1.f});
     m_customContainer->addChild(m_customInput);
 
-    auto applyContainer = CCNode::create();
-    float applyW = 78.f, applyH = 22.f;
-    applyContainer->setContentSize({applyW, applyH});
-    auto applyBg = paimon::SpriteHelper::createRoundedRect(
-        applyW, applyH, 6.f, {0.28f, 0.26f, 0.45f, 1.f});
-    applyBg->setPosition({0, 0});
-    applyContainer->addChild(applyBg);
-    auto applyLbl = CCLabelBMFont::create("Apply", "bigFont.fnt");
-    applyLbl->setScale(0.28f);
-    applyLbl->setPosition({applyW / 2, applyH / 2});
-    applyContainer->addChild(applyLbl, 1);
-
+    auto applySpr = paimon::ui::makeButtonSprite("Apply", paimon::ui::Btn::Green,
+        82.f, 0.5f, "bigFont.fnt");
     auto applyBtn = CCMenuItemSpriteExtra::create(
-        applyContainer, this, menu_selector(FontPickerPopup::onCustomApply));
+        applySpr, this, menu_selector(FontPickerPopup::onCustomApply));
     applyBtn->setPosition({gridW / 2.f, cardY + 14.f});
 
     auto customMenu = CCMenu::create();
@@ -262,10 +219,8 @@ bool FontPickerPopup::init(
     m_customContainer->addChild(customMenu, 10);
     customMenu->addChild(applyBtn);
 
-    auto hintLabel = CCLabelBMFont::create(
-        ".fnt file in game resources", "chatFont.fnt");
-    hintLabel->setScale(0.20f);
-    hintLabel->setColor({110, 110, 125});
+    auto hintLabel = paimon::ui::makeLabel(
+        ".fnt file in game resources", gridW - 10.f, 0.3f, paimon::ui::palette::dim);
     hintLabel->setPosition({gridW / 2.f, cardY - 8.f});
     m_customContainer->addChild(hintLabel);
 
@@ -290,24 +245,10 @@ void FontPickerPopup::switchTab(Tab tab) {
 }
 
 void FontPickerPopup::updateTabHighlights() {
-    auto setTabBg = [](CCMenuItemSpriteExtra* btn, bool active) {
-        if (!btn) return;
-        auto container = btn->getNormalImage();
-        if (!container) return;
-        if (auto old = container->getChildByID("paimon-tab-bg"_spr))
-            old->removeFromParent();
-        float w = container->getContentSize().width;
-        float h = container->getContentSize().height;
-        ccColor4F col = active
-            ? ccColor4F{0.28f, 0.26f, 0.45f, 1.f}
-            : ccColor4F{0.15f, 0.15f, 0.22f, 0.7f};
-        auto hl = paimon::SpriteHelper::createRoundedRect(w, h, 5.f, col);
-        hl->setID("paimon-tab-bg"_spr);
-        hl->setPosition({0, 0});
-        container->addChild(hl, -1);
-    };
-    setTabBg(m_tabGD,     m_activeTab == Tab::GDFonts);
-    setTabBg(m_tabCustom, m_activeTab == Tab::Custom);
+    paimon::ui::setButtonSkin(m_tabGD,
+        m_activeTab == Tab::GDFonts ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray);
+    paimon::ui::setButtonSkin(m_tabCustom,
+        m_activeTab == Tab::Custom ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray);
 }
 
 void FontPickerPopup::buildGDFontGrid() {
@@ -342,9 +283,7 @@ void FontPickerPopup::buildGDFontGrid() {
     for (int i = 0; i < static_cast<int>(gdFonts.size()); ++i) {
         auto const& [fontId, fontFile] = gdFonts[i];
 
-        auto cellBg = paimon::SpriteHelper::createRoundedRect(
-            CELL_SIZE, CELL_SIZE, 6.f,
-            {0.16f, 0.16f, 0.24f, 0.85f});
+        auto cellBg = paimon::ui::makeInset({CELL_SIZE, CELL_SIZE}, 150);
 
         auto container = CCNode::create();
         container->setContentSize({CELL_SIZE, CELL_SIZE});
@@ -364,7 +303,7 @@ void FontPickerPopup::buildGDFontGrid() {
 
         auto idLbl = CCLabelBMFont::create(fontId.c_str(), "chatFont.fnt");
         idLbl->setScale(0.22f);
-        idLbl->setColor({140, 140, 155});
+        idLbl->setColor(paimon::ui::palette::dim);
         idLbl->setPosition({CELL_SIZE / 2, 7.f});
         container->addChild(idLbl, 1);
 

@@ -1,29 +1,30 @@
 #include "CustomTransitionEditorPopup.hpp"
 #include <Geode/ui/PopupManager.hpp>
 #include "../../../utils/DynamicPopupRegistry.hpp"
-#include "../../../utils/SpriteHelper.hpp"
 #include "CustomTransitionScene.hpp"
 #include "../services/TransitionManager.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/LocalAssetStore.hpp"
 #include "../../../layers/PaimonInfoPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include <exception>
 
 using namespace geode::prelude;
 using namespace cocos2d;
 
+namespace ui = paimon::ui;
+
 
 static CCMenuItemSpriteExtra* makeArrow(bool left, CCObject* t, SEL_MenuHandler s) {
-    auto spr = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
-    if (left) spr->setFlipX(true);
-    spr->setScale(0.3f);
+    auto spr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
+    if (!left) spr->setFlipX(true);
+    spr->setScale(0.4f);
     return CCMenuItemSpriteExtra::create(spr, t, s);
 }
 
-static CCMenuItemSpriteExtra* makeSmallBtn(const char* text, CCObject* t, SEL_MenuHandler s, const char* bg = "GJ_button_04.png") {
-    auto spr = ButtonSprite::create(text, "bigFont.fnt", bg, .6f);
-    spr->setScale(0.5f);
+static CCMenuItemSpriteExtra* makeSmallBtn(const char* text, CCObject* t, SEL_MenuHandler s, ui::Btn skin = ui::Btn::Cyan) {
+    auto spr = ui::makeButtonSprite(text, skin, 0.f, 0.5f, "bigFont.fnt");
     return CCMenuItemSpriteExtra::create(spr, t, s);
 }
 
@@ -90,6 +91,11 @@ bool CustomTransitionEditorPopup::init(TransitionConfig config, bool isGlobal, s
     m_commands = m_config.commands;
 
     this->setTitle("Custom Transition Editor");
+    this->addInfoButton("Custom Transition Editor",
+        "Build a transition from a timeline of commands.\n\n"
+        "The left list holds the <cy>command sequence</c>: use <cg>+</c> to add, <cr>-</c> to remove, and the arrows to reorder or move the selection.\n"
+        "The right panel edits the selected command: <cy>action</c>, <cy>target</c> (from/to scene), <cy>duration</c>, <cy>delay</c> and value range.\n"
+        "<cg>Preview</c> plays it live; <cg>Save</c> applies it (remember to Save in the Transitions window too).");
 
     auto ws = m_mainLayer->getContentSize();
     float cx = ws.width / 2.f;
@@ -104,7 +110,7 @@ bool CustomTransitionEditorPopup::init(TransitionConfig config, bool isGlobal, s
     listTitle->setPosition({listX + listW / 2, ws.height - 40.f});
     m_mainLayer->addChild(listTitle);
 
-    auto listPanel = paimon::SpriteHelper::createDarkPanel(listW, listH, 80);
+    auto listPanel = ui::makeInset({listW, listH}, 90);
     listPanel->setPosition({listX, listY});
     m_mainLayer->addChild(listPanel);
 
@@ -121,11 +127,11 @@ bool CustomTransitionEditorPopup::init(TransitionConfig config, bool isGlobal, s
     float btnY = 18.f;
     float btnBaseX = listX + 10.f;
 
-    auto addBtn = makeSmallBtn("+", this, menu_selector(CustomTransitionEditorPopup::onAddCommand), "GJ_button_01.png");
+    auto addBtn = makeSmallBtn("+", this, menu_selector(CustomTransitionEditorPopup::onAddCommand), ui::Btn::Green);
     addBtn->setPosition({btnBaseX, btnY});
     m_buttonMenu->addChild(addBtn);
 
-    auto delBtn = makeSmallBtn("-", this, menu_selector(CustomTransitionEditorPopup::onRemoveCommand), "GJ_button_06.png");
+    auto delBtn = makeSmallBtn("-", this, menu_selector(CustomTransitionEditorPopup::onRemoveCommand), ui::Btn::Red);
     delBtn->setPosition({btnBaseX + 30, btnY});
     m_buttonMenu->addChild(delBtn);
 
@@ -154,7 +160,7 @@ bool CustomTransitionEditorPopup::init(TransitionConfig config, bool isGlobal, s
     float editH = listH;
     float editY = listY;
 
-    auto editPanel = paimon::SpriteHelper::createDarkPanel(editW, editH, 60);
+    auto editPanel = ui::makeInset({editW, editH}, 70);
     editPanel->setPosition({editX, editY});
     m_mainLayer->addChild(editPanel);
 
@@ -432,19 +438,19 @@ bool CustomTransitionEditorPopup::init(TransitionConfig config, bool isGlobal, s
     float bbY = 18.f;
     float bbX = editX + editW / 2;
 
-    auto saveBtn = makeSmallBtn("Save", this, menu_selector(CustomTransitionEditorPopup::onSave), "GJ_button_01.png");
+    auto saveBtn = makeSmallBtn("Save", this, menu_selector(CustomTransitionEditorPopup::onSave), ui::Btn::Green);
     saveBtn->setPosition({bbX - 80, bbY});
     m_buttonMenu->addChild(saveBtn);
 
-    auto prevBtn = makeSmallBtn("Preview", this, menu_selector(CustomTransitionEditorPopup::onPreviewTransition));
+    auto prevBtn = makeSmallBtn("Preview", this, menu_selector(CustomTransitionEditorPopup::onPreviewTransition), ui::Btn::Cyan);
     prevBtn->setPosition({bbX - 20, bbY});
     m_buttonMenu->addChild(prevBtn);
 
-    auto presetBtn = makeSmallBtn("Presets", this, menu_selector(CustomTransitionEditorPopup::onLoadPreset));
+    auto presetBtn = makeSmallBtn("Presets", this, menu_selector(CustomTransitionEditorPopup::onLoadPreset), ui::Btn::Pink);
     presetBtn->setPosition({bbX + 40, bbY});
     m_buttonMenu->addChild(presetBtn);
 
-    auto imgBtn = makeSmallBtn("Image", this, menu_selector(CustomTransitionEditorPopup::onSelectImage));
+    auto imgBtn = makeSmallBtn("Image", this, menu_selector(CustomTransitionEditorPopup::onSelectImage), ui::Btn::Cyan);
     imgBtn->setPosition({bbX + 95, bbY});
     m_buttonMenu->addChild(imgBtn);
 
@@ -482,11 +488,11 @@ void CustomTransitionEditorPopup::rebuildCommandList() {
 
         float y = contentH - (i + 0.5f) * cellH;
 
-        auto bg = paimon::SpriteHelper::createColorPanel(
-            m_scrollSize.width - 6.f, cellH - 2.f,
-            i == m_selectedIdx ? ccColor3B{80, 120, 200} : ccColor3B{40, 40, 40},
-            i == m_selectedIdx ? 180 : 100);
-        bg->setPosition({(m_scrollSize.width - 6.f) / 2.f + 3.f, y - (cellH - 2.f) / 2.f});
+        auto bg = ui::makeInset(
+            {m_scrollSize.width - 6.f, cellH - 2.f},
+            i == m_selectedIdx ? 200 : 110,
+            i == m_selectedIdx ? ccColor3B{80, 120, 200} : ui::palette::ink);
+        bg->setPosition({3.f, y - (cellH - 2.f) / 2.f});
         m_commandListMenu->addChild(bg);
 
         char buf[64];

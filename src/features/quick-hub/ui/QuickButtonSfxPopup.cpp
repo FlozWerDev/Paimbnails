@@ -2,6 +2,7 @@
 
 #include "QuickButtonEditKit.hpp"
 #include "../services/QuickButtonSfx.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -52,7 +53,16 @@ bool QuickButtonSfxPopup::init() {
     if (!PaimonPopup::init(400.f, 330.f)) return false;
     paimon::markDynamicPopup(this);
     this->setTitle("Sonido del boton");
+    this->addCorners();
+    this->addInfoButton("Sonido del boton",
+        "Elige que suena al pulsar el boton rapido.\n\n"
+        "<cy>No</c> usa el sonido original; <cj>Juego</c> un ogg del juego por nombre; "
+        "<cj>Online</c> un ID de la libreria de SFX; <cj>Archivo</c> un mp3/ogg/wav/flac "
+        "tuyo.\n\n"
+        "Ajusta <co>volumen, velocidad, recorte y fundidos</c>, o usa un preajuste. "
+        "<cg>Probar</c> reproduce el resultado.");
 
+    namespace ui = paimon::ui;
     auto size = m_mainLayer->getContentSize();
     float cx = size.width * 0.5f;
 
@@ -60,6 +70,11 @@ bool QuickButtonSfxPopup::init() {
     m_menu->setPosition({0.f, 0.f});
     m_menu->setContentSize(size);
     m_mainLayer->addChild(m_menu, 3);
+
+    if (auto* inset = ui::makeInset({size.width - 28.f, 70.f}, 110)) {
+        inset->setPosition({14.f, 220.f});
+        m_mainLayer->addChild(inset, 0);
+    }
 
     m_ctx = CCNode::create();
     m_ctx->setPosition({0.f, 0.f});
@@ -175,24 +190,20 @@ bool QuickButtonSfxPopup::init() {
     m_durLabel->setPosition({cx, 60.f});
     m_mainLayer->addChild(m_durLabel, 2);
 
-    auto* test = ButtonSprite::create("Probar", "bigFont.fnt", "GJ_button_04.png", .8f);
-    test->setScale(0.55f);
-    auto* testBtn = CCMenuItemExt::createSpriteExtra(test, [this](CCMenuItemSpriteExtra*) {
+    auto* testBtn = ui::makeButton("Probar", [this] {
         syncInputs();
         if (!playQuickButtonSfx(*m_target)) {
             PaimonNotify::create("Sin sonido: elige o descarga primero.", NotificationIcon::Warning)->show();
         }
         refresh();
-    });
+    }, ui::Btn::Cyan, 0.f, 0.55f, "bigFont.fnt");
     testBtn->setPosition({cx - 70.f, 32.f});
     m_menu->addChild(testBtn);
 
-    auto* done = ButtonSprite::create("Listo", "goldFont.fnt", "GJ_button_01.png", .8f);
-    done->setScale(0.6f);
-    auto* doneBtn = CCMenuItemExt::createSpriteExtra(done, [this](CCMenuItemSpriteExtra*) {
+    auto* doneBtn = ui::makeButton("Listo", [this] {
         syncInputs();
         this->keyBackClicked();
-    });
+    }, ui::Btn::Green, 0.f, 0.6f);
     doneBtn->setPosition({cx + 70.f, 32.f});
     m_menu->addChild(doneBtn);
 

@@ -1,5 +1,6 @@
 #include "PaimonGuideChatPopup.hpp"
 
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../services/PaimonGuideService.hpp"
 #include "../services/PopupRegistry.hpp"
@@ -217,11 +218,7 @@ bool PaimonGuideChatPopup::init() {
     }
 
 
-    auto chatFrame = CCScale9Sprite::create("GJ_square01.png");
-    chatFrame->setColor({25, 28, 40});
-    chatFrame->setOpacity(210);
-    chatFrame->setContentSize({kChatFrameW, kChatFrameH});
-    chatFrame->setAnchorPoint({0.f, 0.f});
+    auto chatFrame = paimon::ui::makeInset({kChatFrameW, kChatFrameH}, 210);
     chatFrame->setPosition({kChatFrameX, kChatFrameY});
     chatFrame->setID("guide-chat-frame"_spr);
     m_mainLayer->addChild(chatFrame, 3);

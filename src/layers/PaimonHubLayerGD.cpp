@@ -7,6 +7,7 @@
 #include "../features/updates/ui/UpdateCenterPopup.hpp"
 #include "../ui/FeatureInfoPopup.hpp"
 #include "../ui/FeatureConfigPopup.hpp"
+#include "../ui/PaimonUI.hpp"
 #include "../utils/SpriteHelper.hpp"
 #include "../utils/PaimonNotification.hpp"
 #include "../utils/Localization.hpp"
@@ -60,17 +61,29 @@ CCScale9Sprite* makeGDTile(
     std::string const& bgFile,
     std::string const& title,
     std::string const& desc,
-    float w = kTileW, float h = kTileH
+    float w = kTileW, float h = kTileH,
+    std::string const& iconFrame = ""
 ) {
     auto bg = paimon::SpriteHelper::safeCreateScale9(bgFile.c_str());
     if (!bg) bg = CCScale9Sprite::create("GJ_button_04.png");
     if (!bg) return nullptr;
     bg->setContentSize({w, h});
 
+    float textLeft = w / 2.f;
+    if (!iconFrame.empty()) {
+        if (auto* icon = paimon::SpriteHelper::safeCreateWithFrameName(iconFrame.c_str())) {
+            float longest = std::max(icon->getContentSize().width, icon->getContentSize().height);
+            icon->setScale(longest > 0.f ? 18.f / longest : 1.f);
+            icon->setPosition({14.f, h / 2.f});
+            bg->addChild(icon, 2);
+            textLeft = w / 2.f + 8.f;
+        }
+    }
+
     auto titleLbl = CCLabelBMFont::create(title.c_str(), "bigFont.fnt");
     titleLbl->setScale(0.32f);
     shrinkLabelToFit(titleLbl, w - 14.f);
-    titleLbl->setPosition({w / 2.f, desc.empty() ? h / 2.f : h - 15.f});
+    titleLbl->setPosition({textLeft, desc.empty() ? h / 2.f : h - 15.f});
     bg->addChild(titleLbl, 1);
 
     if (!desc.empty()) {
@@ -79,7 +92,7 @@ CCScale9Sprite* makeGDTile(
         descLbl->setColor({235, 240, 255});
         descLbl->setOpacity(210);
         shrinkLabelToFit(descLbl, w - 14.f);
-        descLbl->setPosition({w / 2.f, 11.f});
+        descLbl->setPosition({textLeft, 11.f});
         bg->addChild(descLbl, 1);
     }
     return bg;
@@ -111,12 +124,7 @@ void PaimonHubLayer::buildGDShell() {
     float cx = winSize.width / 2.f;
     float top = winSize.height;
 
-    if (auto bg = paimon::SpriteHelper::safeCreate("GJ_gradientBG.png")) {
-        bg->setAnchorPoint({0.f, 0.f});
-        bg->setScaleX(winSize.width / bg->getContentSize().width);
-        bg->setScaleY(winSize.height / bg->getContentSize().height);
-        bg->setColor({40, 70, 160});
-        this->addChild(bg, -2);
+    if (auto bg = paimon::ui::decorateScene(this, {40, 70, 160}, true)) {
         m_bgNode = bg;
         m_bgColorHome = {40, 70, 160};
         m_bgColorSub  = {0, 102, 255};
@@ -127,18 +135,6 @@ void PaimonHubLayer::buildGDShell() {
         m_bgNode = flat;
         m_bgColorHome = {30, 50, 120};
         m_bgColorSub  = {0, 102, 255};
-    }
-
-    if (auto leftArt = paimon::SpriteHelper::safeCreateWithFrameName("GJ_sideArt_001.png")) {
-        leftArt->setAnchorPoint({0.f, 0.f});
-        leftArt->setPosition({0.f, 0.f});
-        this->addChild(leftArt, -1);
-    }
-    if (auto rightArt = paimon::SpriteHelper::safeCreateWithFrameName("GJ_sideArt_001.png")) {
-        rightArt->setAnchorPoint({1.f, 0.f});
-        rightArt->setFlipX(true);
-        rightArt->setPosition({winSize.width, 0.f});
-        this->addChild(rightArt, -1);
     }
 
     m_mainMenu = makeZeroMenu("paimon-hub-main-menu"_spr);
@@ -384,7 +380,8 @@ void PaimonHubLayer::gdShowCategories(bool animate) {
 
         auto tile = makeGDTile(
             kCatButtonFiles[i % kCatButtonFiles.size()],
-            categories[i].title, categories[i].shortDesc
+            categories[i].title, categories[i].shortDesc,
+            kTileW, kTileH, categories[i].icon
         );
         if (!tile) continue;
 

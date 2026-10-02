@@ -1,8 +1,8 @@
 #include "LevelTagsGatePopup.hpp"
 
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Localization.hpp"
-#include "../../../utils/SpriteHelper.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
@@ -44,6 +44,9 @@ bool LevelTagsGatePopup::init(std::function<void()> onContinue) {
     float const cx = content.width / 2.f;
 
     this->setTitle(Localization::get().getString("foryou.tags_gate_title").c_str());
+    this->addInfoButton(Localization::get().getString("foryou.tags_gate_title").c_str(),
+        "<cg>Install</c> opens the Level Tags mod so recommendations can use tags. "
+        "<cy>Later</c> keeps browsing without them.");
 
     // the explanation sits in a recessed gd panel rather than floating on the
     // brown backdrop, matching how the rest of the game frames body text.
@@ -51,20 +54,9 @@ bool LevelTagsGatePopup::init(std::function<void()> onContinue) {
     float const panelH = 86.f;
     float const panelTop = content.height - 42.f;
 
-    if (auto* panel = paimon::SpriteHelper::safeCreateScale9("square02b_001.png")) {
-        panel->setContentSize({panelW, panelH});
-        panel->setAnchorPoint({0.5f, 1.f});
-        panel->setPosition({cx, panelTop});
-        panel->setColor({26, 20, 14});
-        panel->setOpacity(125);
-        m_mainLayer->addChild(panel, -1);
-    }
-    if (auto* border = paimon::SpriteHelper::safeCreateScale9("GJ_square07.png")) {
-        border->setContentSize({panelW, panelH});
-        border->setAnchorPoint({0.5f, 1.f});
-        border->setPosition({cx, panelTop});
-        border->setOpacity(70);
-        m_mainLayer->addChild(border, -1);
+    if (auto* inset = paimon::ui::makeInset({panelW, panelH})) {
+        inset->setPosition({cx - panelW / 2.f, panelTop - panelH});
+        m_mainLayer->addChild(inset, -1);
     }
 
     auto body = SimpleTextArea::create(

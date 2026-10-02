@@ -1,4 +1,5 @@
 #include "ProfileViewsPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
@@ -81,9 +82,13 @@ bool ProfileViewsPopup::init(int accountID) {
     m_countLabel->setColor({180, 180, 180});
     m_mainLayer->addChild(m_countLabel, 2);
 
-    auto separator = paimon::SpriteHelper::createDarkPanel(300.f, 1.5f, 60, 0.f);
-    separator->setPosition({centerX - 150.f, contentSize.height - 58.f});
+    auto separator = paimon::ui::makeDivider(300.f);
+    separator->setPosition({centerX, contentSize.height - 58.f});
     m_mainLayer->addChild(separator, 1);
+
+    auto listInset = paimon::ui::makeInset({contentSize.width - 26.f, contentSize.height - 82.f}, 85);
+    listInset->setPosition({13.f, 8.f});
+    m_mainLayer->addChild(listInset, 0);
 
     m_spinner = PaimonLoadingOverlay::create("Loading...", 35.f);
     m_spinner->show(m_mainLayer, 10);
@@ -212,8 +217,8 @@ CCNode* ProfileViewsPopup::createViewCell(std::string const& username, int64_t v
     timeLabel->setColor({160, 160, 180});
     node->addChild(timeLabel);
 
-    auto line = paimon::SpriteHelper::createDarkPanel(width - 10.f, 0.8f, 40, 0.f);
-    line->setPosition({5.f, 0.f});
+    auto line = paimon::ui::makeDivider(width - 10.f, paimon::ui::palette::gold, 40);
+    line->setPosition({width / 2.f, 0.f});
     node->addChild(line, -1);
 
     return node;

@@ -46,6 +46,11 @@ bool RTXConfigLayer::init() {
     paimon::markDynamicPopup(this);
 
     setTitle("Paimon RTX");
+    this->addInfoButton("Paimon RTX",
+        "Trazado de luz sobre la imagen del juego. Usa <cy>General</c> para calidad y presets, "
+        "<cy>Luz</c> para el rebote y la oclusion, <cy>Reflejos</c>, <cy>Color</c> (tono, bloom, balance) "
+        "y <cy>Lente</c> (grano, nitidez, ruido). Sube la <cy>resolucion del trazado</c> para mas calidad "
+        "o baja los <co>rayos por pixel</c> si pierdes FPS. <cr>Restaurar</c> vuelve a los valores por defecto.");
 
     RTXManager::get().init();
     rebuild();

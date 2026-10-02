@@ -4,8 +4,8 @@
 
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Localization.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
-#include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/PopupManager.hpp>
 
 #include <algorithm>
@@ -50,6 +50,9 @@ bool MainMenuLayoutPresetPopup::init(Mode mode, SelectCallback onSelect) {
     m_onSelect = std::move(onSelect);
 
     this->setTitle(tr(mode == Mode::Save ? "menu_layout.presets_title_save" : "menu_layout.presets_title_load"));
+    this->addInfoButton(
+        tr(mode == Mode::Save ? "menu_layout.presets_title_save" : "menu_layout.presets_title_load"),
+        tr(mode == Mode::Save ? "menu_layout.presets_hint_save" : "menu_layout.presets_hint_load"));
 
     auto content = m_mainLayer->getContentSize();
 
@@ -78,18 +81,11 @@ bool MainMenuLayoutPresetPopup::init(Mode mode, SelectCallback onSelect) {
         auto* container = CCNode::create();
         container->setContentSize({ kSlotWidth, kSlotHeight });
 
-        auto* border = CCLayerColor::create({ 70, 82, 96, 255 });
-        border->ignoreAnchorPointForPosition(false);
-        border->setAnchorPoint({ 0.5f, 0.5f });
-        border->setContentSize({ kSlotWidth, kSlotHeight });
-        border->setPosition({ kSlotWidth * 0.5f, kSlotHeight * 0.5f });
+        auto* border = paimon::ui::makeInset({ kSlotWidth, kSlotHeight }, 255, { 70, 82, 96 });
         container->addChild(border, 0);
 
-        auto* fill = CCLayerColor::create({ 10, 12, 16, 220 });
-        fill->ignoreAnchorPointForPosition(false);
-        fill->setAnchorPoint({ 0.5f, 0.5f });
-        fill->setContentSize({ kSlotWidth - 4.f, kSlotHeight - 4.f });
-        fill->setPosition({ kSlotWidth * 0.5f, kSlotHeight * 0.5f });
+        auto* fill = paimon::ui::makeInset({ kSlotWidth - 6.f, kSlotHeight - 6.f }, 220, { 10, 12, 16 });
+        fill->setPosition({ 3.f, 3.f });
         container->addChild(fill, 1);
 
         auto* titleLabel = CCLabelBMFont::create("", "goldFont.fnt");

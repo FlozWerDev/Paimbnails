@@ -5,7 +5,6 @@
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../ui/PaiConfigKit.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
-#include "../../../utils/SpriteHelper.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <fmt/format.h>
@@ -123,6 +122,12 @@ bool CustomAnimationPopup::init(
     setTitle("Custom Animation", "goldFont.fnt", 0.66f, 16.f);
     setID("custom-animation-popup"_spr);
 
+    addInfoButton("Custom Animation",
+        "Build an animation as a <cy>stack of movements</c>. Each layer pushes the "
+        "gradient a little; <cy>Movement</c> sets how, <cy>Rhythm</c> sets when. Layers "
+        "run top to bottom. Tap a line in the stack to edit it. Everything <cg>saves "
+        "automatically</c> and the icon on the left shows the live result.");
+
     for (size_t i = 0; i < kPreviewIcons.size(); ++i) {
         if (kPreviewIcons[i].type == previewType) {
             m_previewIndex = i;
@@ -148,15 +153,10 @@ void CustomAnimationPopup::onClose(CCObject* sender) {
 
 
 void CustomAnimationPopup::buildPreview() {
-    auto panel = paimon::SpriteHelper::createColorPanel(
-        kBandW, kBandH, kit::kCardColor, kit::kCardAlpha, 7.f
-    );
-    if (panel) {
-        panel->setAnchorPoint({0.f, 0.f});
-        panel->setPosition({kBandX, kBandY});
-        panel->setID("custom-animation-band"_spr);
-        m_mainLayer->addChild(panel);
-    }
+    auto panel = paimon::ui::makeInset({kBandW, kBandH});
+    panel->setPosition({kBandX, kBandY});
+    panel->setID("custom-animation-band"_spr);
+    m_mainLayer->addChild(panel);
 
     auto menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
@@ -201,12 +201,10 @@ void CustomAnimationPopup::buildPreview() {
     m_iconLabel->setPosition({54.f, 199.f});
     m_mainLayer->addChild(m_iconLabel, 3);
 
-    auto divider = paimon::SpriteHelper::createColorPanel(1.f, kBandH - 16.f, {255, 255, 255}, 40, 0.5f);
-    if (divider) {
-        divider->setAnchorPoint({0.f, 0.f});
-        divider->setPosition({102.f, kBandY + 8.f});
-        m_mainLayer->addChild(divider, 2);
-    }
+    auto divider = paimon::ui::makeDivider(kBandH - 16.f);
+    divider->setRotation(90.f);
+    divider->setPosition({102.f, kBandY + kBandH / 2.f});
+    m_mainLayer->addChild(divider, 2);
 
     auto stackTitle = CCLabelBMFont::create("LAYER STACK", "goldFont.fnt");
     stackTitle->setScale(0.26f);
@@ -277,17 +275,13 @@ void CustomAnimationPopup::rebuildStack() {
         holder->setAnchorPoint({0.5f, 0.5f});
         holder->setContentSize({kStackW, kStackLineH});
 
-        auto background = paimon::SpriteHelper::createColorPanel(
-            kStackW, kStackLineH,
-            selected ? kLayerAccent : ccColor3B{0, 0, 0},
+        auto background = paimon::ui::makeInset(
+            {kStackW, kStackLineH},
             selected ? 70 : 60,
-            4.f
+            selected ? kLayerAccent : paimon::ui::palette::ink
         );
-        if (background) {
-            background->setAnchorPoint({0.f, 0.f});
-            background->setPosition({0.f, 0.f});
-            holder->addChild(background, -1);
-        }
+        background->setPosition({0.f, 0.f});
+        holder->addChild(background, -1);
 
         auto text = CCLabelBMFont::create(
             fmt::format(
@@ -377,29 +371,30 @@ CCNode* CustomAnimationPopup::makeToolbar(float width) {
     struct Action {
         char const* label;
         bool available;
+        char const* skin;
         std::function<void()> run;
     };
 
     std::array<Action, 5> actions = {
-        Action{"Add", hasRoom, [this] {
+        Action{"Add", hasRoom, "GJ_button_01.png", [this] {
             auto& mgr = GradientAnimationManager::get();
             if (mgr.addCustomLayer()) m_selected = mgr.customLayers().size() - 1;
             scheduleRebuild();
         }},
-        Action{"Copy", hasRoom && hasLayer, [this] {
+        Action{"Copy", hasRoom && hasLayer, "GJ_button_02.png", [this] {
             auto& mgr = GradientAnimationManager::get();
             if (mgr.duplicateCustomLayer(m_selected)) m_selected += 1;
             scheduleRebuild();
         }},
-        Action{"Up", hasLayer && m_selected > 0, [this] {
+        Action{"Up", hasLayer && m_selected > 0, "GJ_button_02.png", [this] {
             m_selected = GradientAnimationManager::get().moveCustomLayer(m_selected, -1);
             scheduleRebuild();
         }},
-        Action{"Down", hasLayer && m_selected + 1 < count, [this] {
+        Action{"Down", hasLayer && m_selected + 1 < count, "GJ_button_02.png", [this] {
             m_selected = GradientAnimationManager::get().moveCustomLayer(m_selected, 1);
             scheduleRebuild();
         }},
-        Action{"Delete", hasLayer, [this] {
+        Action{"Delete", hasLayer, "GJ_button_06.png", [this] {
             auto& mgr = GradientAnimationManager::get();
             mgr.removeCustomLayer(m_selected);
             if (m_selected > 0) m_selected -= 1;
@@ -414,7 +409,7 @@ CCNode* CustomAnimationPopup::makeToolbar(float width) {
 
         auto sprite = ButtonSprite::create(
             action.label, "bigFont.fnt",
-            action.available ? "GJ_button_04.png" : "GJ_button_05.png", 0.7f
+            action.available ? action.skin : "GJ_button_05.png", 0.7f
         );
         if (sprite) sprite->setScale(0.52f);
 

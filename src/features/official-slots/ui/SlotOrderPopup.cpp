@@ -3,6 +3,7 @@
 #include "SlotVisuals.hpp"
 #include "../services/OfficialSlotStore.hpp"
 #include "../services/SlotListRefresh.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Localization.hpp"
 
@@ -61,6 +62,9 @@ bool SlotOrderPopup::init(std::function<void()> onChanged) {
     m_onChanged = std::move(onChanged);
     auto& loc = Localization::get();
     this->setTitle(loc.getString("slot.order.title"));
+    this->addInfoButton(loc.getString("slot.order.title"),
+        "Selecciona una pagina y usa los botones de abajo para moverla: "
+        "<cy>|^</c> al inicio, <cy>^</c>/<cy>v</c> un paso, <cy>v|</c> al final.");
     this->buildList();
     this->buildControls();
     auto const& order = SlotStore::get().pageOrder();
@@ -72,13 +76,10 @@ bool SlotOrderPopup::init(std::function<void()> onChanged) {
 void SlotOrderPopup::buildList() {
     float const scrollH = kHeight - kListY - 60.f;
     float const scrollW = kWidth - 30.f;
-    if (auto* panel = CCScale9Sprite::create("GJ_square02.png")) {
-        panel->setContentSize({kWidth - 20.f, scrollH + 6.f});
-        panel->setPosition({kWidth / 2.f, kListY + scrollH / 2.f});
-        panel->setOpacity(220);
-        panel->setID("order-list-bg"_spr);
-        m_mainLayer->addChild(panel, 1);
-    }
+    auto* panel = paimon::ui::makeInset({kWidth - 20.f, scrollH + 6.f}, 90);
+    panel->setPosition({kWidth / 2.f - (kWidth - 20.f) / 2.f, kListY - 3.f});
+    panel->setID("order-list-bg"_spr);
+    m_mainLayer->addChild(panel, 1);
 
     m_scroll = ScrollLayer::create({scrollW, scrollH});
     if (!m_scroll) return;

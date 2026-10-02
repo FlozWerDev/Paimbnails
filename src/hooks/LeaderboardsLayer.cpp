@@ -1,4 +1,5 @@
 #include "../ui/PaimonPopup.hpp"
+#include "../ui/PaimonUI.hpp"
 #include <Geode/modify/LeaderboardsLayer.hpp>
 #include "../core/ModAuthFlow.hpp"
 #include "../framework/HookConventions.hpp"
@@ -45,6 +46,9 @@ protected:
         if (!PaimonPopup::init(360.f, 180.f)) return false;
 
         this->setTitle("Preview Profile");
+        this->addInfoButton("Preview Profile",
+            "This is how your profile background will look on the leaderboard. Press "
+            "<cg>Upload</c> to make it live, or close to keep your current one.");
 
         CCTexture2D* texture = m_texture;
 
@@ -68,7 +72,7 @@ protected:
         }
 
         auto uploadBtn = CCMenuItemSpriteExtra::create(
-            ButtonSprite::create("Upload"),
+            paimon::ui::makeButtonSprite("Upload", paimon::ui::Btn::Green, 90.f),
             this,
             menu_selector(ProfilePreviewPopup::onUpload)
         );

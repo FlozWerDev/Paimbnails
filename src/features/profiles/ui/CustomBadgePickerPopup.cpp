@@ -1,4 +1,5 @@
 #include "CustomBadgePickerPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../services/CustomBadgeService.hpp"
 #include "../../../features/emotes/services/EmoteService.hpp"
 #include "../../../features/emotes/services/EmoteCache.hpp"
@@ -16,13 +17,10 @@ static constexpr float POP_H     = 260.f;
 static constexpr float CELL_SIZE = 34.f;
 static constexpr float CELL_GAP  = 4.f;
 
-static constexpr ccColor4F COL_DARK_INTERIOR   = {0.00f, 0.00f, 0.03f, 0.93f};
-static constexpr ccColor4F COL_SCROLL_BG       = {0.00f, 0.00f, 0.00f, 0.45f};
 static constexpr ccColor4F COL_CELL_BG         = {0.00f, 0.00f, 0.00f, 0.65f};
 static constexpr ccColor4F COL_CELL_BORDER     = {0.26f, 0.26f, 0.26f, 0.72f};
 static constexpr ccColor4F COL_CELL_SEL_BG     = {0.18f, 0.13f, 0.00f, 0.78f};
 static constexpr ccColor4F COL_CELL_SEL_BORDER = {1.00f, 0.82f, 0.00f, 0.90f};
-static constexpr ccColor4F COL_SEPARATOR       = {0.30f, 0.30f, 0.30f, 0.38f};
 
 
 CustomBadgePickerPopup* CustomBadgePickerPopup::create(
@@ -45,19 +43,14 @@ bool CustomBadgePickerPopup::init(int accountID, std::string const& currentBadge
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
 
-    auto darkBg = paimon::SpriteHelper::createRoundedRect(
-        content.width  - 8.f,
-        content.height - 8.f,
-        4.f, COL_DARK_INTERIOR);
-    darkBg->setPosition({4.f, 4.f});
-    m_mainLayer->addChild(darkBg, 0);
-
     this->setTitle("Custom Badge");
+    this->addInfoButton("Custom Badge",
+        "Pick an emote to show as your <cy>profile badge</c>. Tap any emote to apply it instantly, "
+        "or use <cr>Clear Badge</c> to remove it.");
 
-    auto titleSep = paimon::SpriteHelper::createRoundedRect(
-        content.width - 28.f, 1.f, 0.5f, COL_SEPARATOR);
-    titleSep->setPosition({14.f, content.height - 48.f});
-    m_mainLayer->addChild(titleSep, 1);
+    auto heading = paimon::ui::makeTitle("Choose an Emote", 220.f, 0.5f);
+    heading->setPosition({cx, content.height - 40.f});
+    m_mainLayer->addChild(heading, 2);
 
     {
         std::string txt = currentBadge.empty()
@@ -65,15 +58,15 @@ bool CustomBadgePickerPopup::init(int accountID, std::string const& currentBadge
             : ("Current: :" + currentBadge + ":");
         m_currentLabel = CCLabelBMFont::create(txt.c_str(), "bigFont.fnt");
         m_currentLabel->setScale(0.28f);
-        m_currentLabel->setColor({210, 210, 210});
-        m_currentLabel->setPosition({cx, content.height - 40.f});
+        m_currentLabel->setColor(paimon::ui::palette::muted);
+        m_currentLabel->setPosition({cx, content.height - 54.f});
         m_mainLayer->addChild(m_currentLabel, 2);
     }
 
     m_statusLabel = CCLabelBMFont::create("", "bigFont.fnt");
     m_statusLabel->setScale(0.27f);
-    m_statusLabel->setPosition({cx, 24.f});
-    m_statusLabel->setColor({255, 210, 60});
+    m_statusLabel->setPosition({cx, 26.f});
+    m_statusLabel->setColor(paimon::ui::palette::gold);
     m_mainLayer->addChild(m_statusLabel, 2);
 
     auto menu = CCMenu::create();
@@ -81,22 +74,20 @@ bool CustomBadgePickerPopup::init(int accountID, std::string const& currentBadge
     m_mainLayer->addChild(menu, 3);
 
     {
-        auto spr = ButtonSprite::create(
-            "Clear Badge", "bigFont.fnt", "GJ_button_06.png", 0.6f);
+        auto spr = paimon::ui::makeButtonSprite("Clear Badge", paimon::ui::Btn::Red, 0.f, 0.6f, "bigFont.fnt");
         auto btn = CCMenuItemSpriteExtra::create(
             spr, this, menu_selector(CustomBadgePickerPopup::onClearBadge));
-        btn->setPosition({cx, 24.f});
+        btn->setPosition({content.width - 56.f, 26.f});
         btn->setID("clear-badge-btn"_spr);
         menu->addChild(btn);
     }
 
     float gridBot = 44.f;
-    float gridTop = content.height - 54.f;
+    float gridTop = content.height - 64.f;
     float gridH   = gridTop - gridBot;
     float gridW   = content.width - 16.f;
 
-    auto scrollBg = paimon::SpriteHelper::createRoundedRect(
-        gridW, gridH, 6.f, COL_SCROLL_BG);
+    auto scrollBg = paimon::ui::makeInset({gridW, gridH}, 95);
     scrollBg->setPosition({8.f, gridBot});
     m_mainLayer->addChild(scrollBg, 1);
 

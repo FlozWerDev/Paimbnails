@@ -74,6 +74,12 @@ bool CursorShopDetailPopup::init() {
 
     this->setTitle(m_listing.name.empty() ? "Cursor" : m_listing.name.c_str());
     this->setMouseEnabled(true);
+    this->addInfoButton("Ficha del cursor",
+        "A la izquierda estan todos los cursores del set; toca uno para "
+        "<cg>previsualizarlo</c>.\n\n"
+        "Con las flechas eliges a que <cy>estado</c> se asigna (Normal, Click, etc.).\n\n"
+        "<cg>Instalar y usar</c> lo asigna al estado elegido; <cb>Solo guardar</c> lo "
+        "deja en la galeria. Si el set trae varios, <cg>Instalar set</c> los coloca solos.");
 
     auto content = m_mainLayer->getContentSize();
 
@@ -157,6 +163,10 @@ void CursorShopDetailPopup::buildBody() {
     float gridBottom = 58.f;
     float gridTop = content.height - 58.f;
 
+    auto* gridInset = paimon::ui::makeInset({gridW + 8.f, (gridTop - gridBottom) + 8.f});
+    gridInset->setPosition({8.f, gridBottom - 4.f});
+    m_mainLayer->addChild(gridInset, 3);
+
     m_grid = ScrollLayer::create({gridW, gridTop - gridBottom});
     m_grid->setPosition({12.f, gridBottom});
     m_mainLayer->addChild(m_grid, 4);
@@ -172,7 +182,7 @@ void CursorShopDetailPopup::buildBody() {
     m_previewBox->setPosition({sideX - 44.f, content.height - 150.f});
     m_mainLayer->addChild(m_previewBox, 5);
 
-    auto* previewBg = paimon::SpriteHelper::createColorPanel(88.f, 88.f, ccc3(20, 24, 40), 160);
+    auto* previewBg = paimon::ui::makeInset({88.f, 88.f});
     previewBg->setPosition({0.f, 0.f});
     m_previewBox->addChild(previewBg, 0);
 

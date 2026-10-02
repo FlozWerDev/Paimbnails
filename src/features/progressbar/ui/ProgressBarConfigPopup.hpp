@@ -44,18 +44,18 @@ protected:
     CCMenuItemToggler* m_showPctToggle = nullptr;
     CCMenuItemToggler* m_usePctColorToggle = nullptr;
 
-    cocos2d::CCLayerColor* m_fillColorPreview = nullptr;
-    cocos2d::CCLayerColor* m_bgColorPreview = nullptr;
-    cocos2d::CCLayerColor* m_pctColorPreview = nullptr;
+    cocos2d::CCSprite* m_fillColorPreview = nullptr;
+    cocos2d::CCSprite* m_bgColorPreview = nullptr;
+    cocos2d::CCSprite* m_pctColorPreview = nullptr;
 
     Slider* m_colorAnimSpeedSlider = nullptr;
     cocos2d::CCLabelBMFont* m_colorAnimSpeedLabel = nullptr;
     CCMenuItemSpriteExtra* m_fillModeBtn = nullptr;
     CCMenuItemSpriteExtra* m_bgModeBtn   = nullptr;
     CCMenuItemSpriteExtra* m_pctModeBtn  = nullptr;
-    cocos2d::CCLayerColor* m_fillColor2Preview = nullptr;
-    cocos2d::CCLayerColor* m_bgColor2Preview   = nullptr;
-    cocos2d::CCLayerColor* m_pctColor2Preview  = nullptr;
+    cocos2d::CCSprite* m_fillColor2Preview = nullptr;
+    cocos2d::CCSprite* m_bgColor2Preview   = nullptr;
+    cocos2d::CCSprite* m_pctColor2Preview  = nullptr;
     CCMenuItemToggler* m_useFillTexToggle = nullptr;
     CCMenuItemToggler* m_useBgTexToggle   = nullptr;
     cocos2d::CCLabelBMFont* m_fillTexPathLabel = nullptr;

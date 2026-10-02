@@ -1,5 +1,7 @@
 #include "PhysicsBodyPopup.hpp"
 
+#include "../../../ui/PaimonUI.hpp"
+
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/GameObject.hpp>
 #include <fmt/format.h>
@@ -81,6 +83,13 @@ bool PhysicsBodyPopup::init() {
 
     setID("physics-body-popup"_spr);
     setTitle(fmt::format("Cuerpo {}", bodyName(m_body)));
+    addInfoButton("Ajustes del cuerpo",
+        "A la izquierda estan las propiedades fisicas del cuerpo (masa, "
+        "gravedad, friccion, rebote y velocidad inicial); un valor en <cy>lab</c> "
+        "usa lo que diga el simulador. A la derecha, la <cy>salida nativa GD</c>: "
+        "el compilador (triggers o keyframes), el preset de comportamiento, la "
+        "fuerza, el sensor y a que jugador afecta. <cr>Volver al lab</c> descarta "
+        "los cambios de este cuerpo.");
 
     auto const& captured = workspace.bodies()[m_body];
     std::string subtitle = fmt::format("{} objetos en el cuerpo", captured.objects.size());
@@ -99,6 +108,19 @@ bool PhysicsBodyPopup::init() {
     subtitleLabel->setPosition({kPopupWidth * 0.5f, kFirstRowY + 20.f});
     subtitleLabel->limitLabelWidth(kPopupWidth - 40.f, 0.27f, 0.16f);
     m_mainLayer->addChild(subtitleLabel);
+
+    if (auto* leftInset = paimon::ui::makeInset({352.f, 232.f}, 70)) {
+        leftInset->setPosition({14.f, 40.f});
+        m_mainLayer->addChild(leftInset, -1);
+    }
+    if (auto* rightInset = paimon::ui::makeInset({130.f, 232.f}, 70)) {
+        rightInset->setPosition({372.f, 40.f});
+        m_mainLayer->addChild(rightInset, -1);
+    }
+    if (auto* heading = paimon::ui::makeTitle("Propiedades", 160.f, 0.42f)) {
+        heading->setPosition({120.f, 262.f});
+        m_mainLayer->addChild(heading);
+    }
 
     auto* menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});

@@ -4,6 +4,7 @@
 #include "../services/GDHistoryClient.hpp"
 #include "../services/LevelFacts.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 
@@ -238,6 +239,10 @@ bool LevelHistoryPopup::init(GJGameLevel* level) {
     paimon::markDynamicPopup(this);
     m_level = level;
     setTitle("Historial del nivel", "goldFont.fnt", 0.65f, 18.f);
+    this->addInfoButton("Historial del nivel",
+        "Linea de tiempo de este nivel: cuando se <cy>subio</c>, <cg>rateo</c>, "
+        "destaco o cambio de version. Toca un registro para ver su detalle. "
+        "Usa los botones de abajo para <cy>ordenar</c> o mostrar <cy>solo hitos</c>.");
 
     m_statusLabel = CCLabelBMFont::create("Cargando historial...", "chatFont.fnt");
     m_statusLabel->setScale(0.42f);
@@ -245,10 +250,9 @@ bool LevelHistoryPopup::init(GJGameLevel* level) {
     m_statusLabel->setPosition({kPopupW / 2.f, kListY + kListH + 11.f});
     m_mainLayer->addChild(m_statusLabel, 3);
 
-    if (auto* panel = paimon::SpriteHelper::createDarkPanel(kListW, kListH, 65, 5.f)) {
-        panel->setPosition({kListX, kListY});
-        m_mainLayer->addChild(panel);
-    }
+    auto* panel = paimon::ui::makeInset({kListW, kListH}, 65);
+    panel->setPosition({kListX, kListY});
+    m_mainLayer->addChild(panel);
 
     m_scroll = geode::ScrollLayer::create({kListW, kListH});
     if (!m_scroll) return false;

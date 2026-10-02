@@ -2,7 +2,7 @@
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
-#include "../../../utils/SpriteHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/FLAlertLayer.hpp>
 #include <Geode/ui/TextInput.hpp>
@@ -28,25 +28,17 @@ bool CreatePostPopup::init(
     m_onCreated = std::move(onCreated);
 
     this->setTitle("Create New Post");
-
-    if (m_bgSprite) m_bgSprite->setVisible(false);
-    {
-        auto popupSize = m_mainLayer->getContentSize();
-        auto darkBg = paimon::SpriteHelper::createRoundedRect(
-            popupSize.width, popupSize.height, 8.f,
-            {10/255.f, 10/255.f, 18/255.f, 245/255.f},
-            {130/255.f, 180/255.f, 255/255.f, 130/255.f},
-            1.4f
-        );
-        if (darkBg) {
-            darkBg->setPosition({0.f, 0.f});
-            darkBg->setZOrder(-1);
-            m_mainLayer->addChild(darkBg);
-        }
-    }
+    this->addInfoButton("Create Post",
+        "Give your post a <cy>title</c> and a short <cy>description</c>, then pick any "
+        "<cy>tags</c> that fit. Tap <cg>+</c> to add your own tag. Press <cg>Post</c> when "
+        "you are done. A short cooldown applies between posts.");
 
     auto contentSize = m_mainLayer->getContentSize();
     float cx = contentSize.width / 2.f;
+
+    auto* formInset = paimon::ui::makeInset({contentSize.width - 24.f, 118.f});
+    formInset->setPosition({12.f, contentSize.height - 170.f});
+    m_mainLayer->addChild(formInset, -1);
 
     auto titleLbl = CCLabelBMFont::create("Title", "bigFont.fnt");
     titleLbl->setScale(0.35f);
@@ -101,7 +93,7 @@ bool CreatePostPopup::init(
     );
     m_mainLayer->addChild(m_tagMenu);
 
-    auto plusSpr = ButtonSprite::create("+", "bigFont.fnt", "GJ_button_06.png", 0.8f);
+    auto plusSpr = ButtonSprite::create("+", "bigFont.fnt", "GJ_button_01.png", 0.8f);
     plusSpr->setScale(0.4f);
     auto plusBtn = CCMenuItemSpriteExtra::create(plusSpr, this, menu_selector(CreatePostPopup::onAddCustomTag));
     plusBtn->setPosition({contentSize.width - 24.f, contentSize.height - 138.f});

@@ -8,7 +8,7 @@
 #include <Geode/binding/GJAccountManager.hpp>
 #include <Geode/ui/MDTextArea.hpp>
 #include <Geode/ui/General.hpp>
-#include "../../../utils/SpriteHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -51,7 +51,7 @@ namespace {
     }
 
     static CCNode* makeDarkPanel(float w, float h, GLubyte alpha = 70) {
-        return paimon::SpriteHelper::createDarkPanel(w, h, alpha);
+        return paimon::ui::makeInset({w, h}, alpha);
     }
 }
 
@@ -61,6 +61,10 @@ bool PostDetailPopup::init(Post const& post, CopyableFunction<void()> onChanged)
     m_onChanged = std::move(onChanged);
 
     this->setTitle(m_post.title.c_str());
+    this->addInfoButton("Post",
+        "Read the post and its replies here. Tap <cg>Like</c> to support it, "
+        "<cy>Reply</c> to join the conversation, or <cr>Report</c> if something is "
+        "wrong. The author can <cr>Delete</c> their own post or replies.");
     if (m_title) {
         float maxTitleW = POPUP_W - 90.f;
         if (m_title->getScaledContentSize().width > maxTitleW) {

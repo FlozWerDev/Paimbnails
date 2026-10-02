@@ -217,7 +217,7 @@ std::vector<TopicKnowledge> buildTopicKnowledge() {
         t.enMoreReply = "With <cy>Thumbnails</c> you can also: <cy>size</c>, "
             "<cy>quality</c>, <cy>order</c> and <cy>capture</c>.";
         t.esMoreReply = "Con <cy>Miniaturas</c> tambien puedes: <cy>tamano</c>, "
-            "<cy>calidad</cy>, <cy>orden</c> y <cy>captura</c>.";
+            "<cy>calidad</c>, <cy>orden</c> y <cy>captura</c>.";
         out.push_back(std::move(t));
     }
 

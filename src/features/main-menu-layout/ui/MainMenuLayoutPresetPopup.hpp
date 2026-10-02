@@ -24,8 +24,8 @@ protected:
 private:
     struct SlotCell {
         geode::Ref<CCMenuItemSpriteExtra> button = nullptr;
-        geode::Ref<cocos2d::CCLayerColor> border = nullptr;
-        geode::Ref<cocos2d::CCLayerColor> fill = nullptr;
+        geode::Ref<geode::NineSlice> border = nullptr;
+        geode::Ref<geode::NineSlice> fill = nullptr;
         geode::Ref<cocos2d::CCLabelBMFont> titleLabel = nullptr;
         geode::Ref<cocos2d::CCLabelBMFont> infoLabel = nullptr;
     };

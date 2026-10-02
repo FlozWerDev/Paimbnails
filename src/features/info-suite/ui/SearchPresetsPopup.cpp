@@ -1,4 +1,5 @@
 #include "SearchPresetsPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/GeodeTextInputSafe.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -59,26 +60,36 @@ bool SearchPresetsPopup::init(bool saveMode, AdvancedQuery query,
     float const cx = content.width / 2.f;
 
     this->setTitle(m_saveMode ? "Guardar preset" : "Presets guardados");
+    this->addInfoButton(m_saveMode ? "Guardar preset" : "Presets guardados",
+        m_saveMode
+            ? "Dale un <cy>nombre</c> a la busqueda actual para reutilizarla luego "
+              "con un toque desde <cg>Presets guardados</c>."
+            : "Tus busquedas guardadas. <cg>Usar</c> aplica el preset; "
+              "el icono <cr>papelera</c> lo borra.");
 
     float listTop = content.height - 46.f;
 
     if (m_saveMode) {
-        auto summary = CCLabelBMFont::create(describeQuery(m_query).c_str(), "chatFont.fnt");
-        summary->setScale(0.44f);
-        summary->limitLabelWidth(kListW, 0.44f, 0.22f);
-        summary->setColor({170, 170, 170});
-        summary->setPosition({cx, listTop - 12.f});
-        m_mainLayer->addChild(summary);
+        CCSize const panelSize{kListW, 92.f};
+        auto panel = paimon::ui::makePanel(panelSize, "Nuevo preset");
+        panel->setPosition({cx - panelSize.width / 2.f, listTop - panelSize.height});
+        m_mainLayer->addChild(panel);
+
+        float const panelCx = panelSize.width / 2.f;
+
+        auto summary = paimon::ui::makeText(describeQuery(m_query).c_str(),
+            panelSize.width - 24.f, 0.44f, paimon::ui::palette::muted, kCCTextAlignmentCenter);
+        summary->setPosition({panelCx, panelSize.height - paimon::ui::kPanelHeader - 14.f});
+        panel->addChild(summary);
 
         m_nameInput = TextInput::create(kListW - 40.f, "Nombre del preset", "chatFont.fnt");
         m_nameInput->setMaxCharCount(28);
-        m_nameInput->setPosition({cx, listTop - 40.f});
-        m_mainLayer->addChild(m_nameInput);
+        m_nameInput->setPosition({panelCx, 24.f});
+        panel->addChild(m_nameInput);
 
-        auto saveSpr = ButtonSprite::create("Guardar", "goldFont.fnt", "GJ_button_01.png", 0.7f);
-        auto saveBtn = CCMenuItemSpriteExtra::create(
-            saveSpr, this, menu_selector(SearchPresetsPopup::onSave));
-        saveBtn->setPosition({cx, 96.f});
+        auto saveBtn = paimon::ui::makeButton("Guardar",
+            [this] { this->onSave(nullptr); }, paimon::ui::Btn::Green, 0.f, 0.7f);
+        saveBtn->setPosition({cx, 30.f});
         m_buttonMenu->addChild(saveBtn);
 
         listTop -= 74.f;
@@ -87,21 +98,16 @@ bool SearchPresetsPopup::init(bool saveMode, AdvancedQuery query,
     float listH = m_saveMode ? 74.f : kListH;
     float listCenterY = listTop - 10.f - listH / 2.f;
 
-    if (auto bg = paimon::SpriteHelper::safeCreateScale9("square02_001.png")) {
-        bg->setContentSize({kListW, listH});
-        bg->setColor({0, 0, 0});
-        bg->setOpacity(90);
-        bg->setPosition({cx, listCenterY});
-        m_mainLayer->addChild(bg, -1);
-    }
+    auto bg = paimon::ui::makeInset({kListW, listH}, 90);
+    bg->setPosition({cx - kListW / 2.f, listCenterY - listH / 2.f});
+    m_mainLayer->addChild(bg, -1);
 
     m_scroll = ScrollLayer::create({kListW, listH});
     m_scroll->setPosition({cx - kListW / 2.f, listCenterY - listH / 2.f});
     m_mainLayer->addChild(m_scroll);
 
-    m_emptyLabel = CCLabelBMFont::create("Todavia no guardaste ninguno", "chatFont.fnt");
-    m_emptyLabel->setScale(0.46f);
-    m_emptyLabel->setColor({160, 160, 160});
+    m_emptyLabel = paimon::ui::makeText("Todavia no guardaste ninguno",
+        kListW - 20.f, 0.46f, paimon::ui::palette::dim, kCCTextAlignmentCenter);
     m_emptyLabel->setPosition({cx, listCenterY});
     m_mainLayer->addChild(m_emptyLabel);
 
@@ -153,7 +159,7 @@ void SearchPresetsPopup::rebuildList() {
         content->addChild(desc, 1);
 
         if (!m_saveMode) {
-            auto useSpr = ButtonSprite::create("Usar", "bigFont.fnt", "GJ_button_01.png", 0.6f);
+            auto useSpr = paimon::ui::makeButtonSprite("Usar", paimon::ui::Btn::Green, 0.f, 0.6f, "bigFont.fnt");
             auto useBtn = CCMenuItemSpriteExtra::create(
                 useSpr, this, menu_selector(SearchPresetsPopup::onPick));
             useBtn->setPosition({kListW - 56.f, y + kRowH / 2.f});

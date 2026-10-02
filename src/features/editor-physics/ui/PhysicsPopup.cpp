@@ -9,6 +9,8 @@
 #include "../services/PhysicsTriggerEmitter.hpp"
 #include "PhysicsBodyPopup.hpp"
 
+#include "../../../ui/PaimonUI.hpp"
+
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/EditorUI.hpp>
 #include <Geode/binding/GJGroundLayer.hpp>
@@ -155,11 +157,16 @@ bool PhysicsPopup::init() {
     if (!PaimonPopup::init(kPopupWidth, kPopupHeight)) return false;
     setID("physics-lab-popup"_spr);
     setTitle("Simulador de Fisicas");
+    addInfoButton("Simulador de fisicas",
+        "Captura objetos del editor como cuerpos y simula su fisica. "
+        "<cg>Elegir A/B</c> definen los dos cuerpos y <cy>+ Din / + Fijo</c> "
+        "agregan mas. En la vista toca un objeto para elegirlo, arrastra para "
+        "mover la camara y usa la rueda para el zoom. El <cy>engranaje</c> abre "
+        "los ajustes de cada cuerpo. <cg>Previsualizar</c> reproduce la "
+        "simulacion y <cg>Compilar GD</c> la convierte en objetos nativos.");
     m_config = loadConfig();
 
-    auto* previewPanel = paimon::SpriteHelper::createDarkPanel(
-        kPreviewWidth, kPreviewHeight, 220, 5.f
-    );
+    auto* previewPanel = paimon::ui::makeInset({kPreviewWidth, kPreviewHeight}, 220);
     previewPanel->setPosition({kPreviewX, kPreviewY});
     m_mainLayer->addChild(previewPanel);
 
@@ -303,6 +310,10 @@ bool PhysicsPopup::init() {
         "Gravedad", "Rebote", "Friccion", "Arrastre", "Duracion",
         "Velocidad X", "Velocidad Y", "Giro inicial", "Calidad",
     };
+    if (auto* panel = paimon::ui::makeInset({232.f, 220.f}, 70)) {
+        panel->setPosition({270.f, 70.f});
+        m_mainLayer->addChild(panel, -1);
+    }
     for (int field = 0; field < 9; ++field) {
         float const y = 259.f - field * 22.f;
         auto* name = CCLabelBMFont::create(optionNames[field], "bigFont.fnt");

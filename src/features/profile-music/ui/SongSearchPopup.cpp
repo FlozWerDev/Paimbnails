@@ -2,6 +2,7 @@
 
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/PaimonDrawNode.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 
@@ -53,7 +54,7 @@ bool SongSearchRowWidget::init(SongSearchPopup* parent) {
     this->setTouchEnabled(true);
     this->setTouchMode(kCCTouchesOneByOne);
 
-    if (auto* bg = paimon::SpriteHelper::createDarkPanel(320.f, 36.f, 130, 5.f)) {
+    if (auto* bg = paimon::ui::makeInset({320.f, 36.f}, 130)) {
         bg->setPosition({0.f, 0.f});
         this->addChild(bg, -1);
     }
@@ -196,6 +197,10 @@ bool SongSearchPopup::init(SelectCallback callback) {
     m_callback = std::move(callback);
     this->setTitle(tr("music.search.title").c_str());
     this->setID("SongSearchPopup"_spr);
+    this->addInfoButton(tr("music.search.title"),
+        "Search your <cy>downloaded songs</c> by name or artist.\n\n"
+        "Tap the <cg>play</c> icon to preview a track and the <cg>select</c> icon (or the row) to choose it.",
+        Anchor::TopLeft, {36.f, -18.f});
 
     auto winSize = m_mainLayer->getContentSize();
 
@@ -219,7 +224,7 @@ bool SongSearchPopup::init(SelectCallback callback) {
     constexpr float listX = (380.f - listW) / 2.f;
     constexpr float listY = 30.f;
 
-    if (auto* bg = paimon::SpriteHelper::createDarkPanel(listW, listH, 145, 6.f)) {
+    if (auto* bg = paimon::ui::makeInset({listW, listH}, 145)) {
         bg->setPosition({listX, listY});
         m_mainLayer->addChild(bg, 0);
     }

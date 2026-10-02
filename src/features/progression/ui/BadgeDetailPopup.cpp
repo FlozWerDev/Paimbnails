@@ -4,6 +4,7 @@
 #include "../data/ProgressionStats.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Localization.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -54,6 +55,10 @@ bool BadgeDetailPopup::init(BadgeDef const& badge, BadgeContext const& ctx) {
 
     float const barW = size.width - 70.f;
     float const barY = 40.f;
+
+    auto* statsInset = paimon::ui::makeInset({size.width - 40.f, 90.f}, 90);
+    statsInset->setPosition({20.f, 20.f});
+    m_mainLayer->addChild(statsInset, -1);
 
     if (auto* bar = GDProgressBar::create(barW, 16.f)) {
         bar->setFillColor(accent);

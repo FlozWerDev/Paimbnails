@@ -1,4 +1,5 @@
 #include "RatePopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
@@ -30,8 +31,11 @@ bool RatePopup::init(int levelID, std::string thumbnailId) {
     float centerX = contentSize.width / 2.f;
 
     this->setTitle("Rate Thumbnail");
+    this->addInfoButton("Rate Thumbnail",
+        "Give this level's thumbnail a <co>star rating</c> from 1 to 5. The panel at the top shows the "
+        "current community <cy>average</c> and vote count. Tap <cg>Submit</c> to save your vote.");
 
-    auto avgPanel = paimon::SpriteHelper::createDarkPanel(160.f, 44.f, 140, 6.f);
+    auto avgPanel = paimon::ui::makeInset({160.f, 44.f}, 140);
     avgPanel->setPosition({centerX - 80.f, contentSize.height - 62.f - 22.f});
     m_mainLayer->addChild(avgPanel, 1);
 
@@ -55,11 +59,11 @@ bool RatePopup::init(int levelID, std::string thumbnailId) {
     m_countLabel->setID("count-label"_spr);
     m_mainLayer->addChild(m_countLabel, 2);
 
-    auto separator = paimon::SpriteHelper::createDarkPanel(240.f, 1.5f, 80, 0.f);
-    separator->setPosition({centerX - 120.f, contentSize.height - 90.f - 0.75f});
+    auto separator = paimon::ui::makeDivider(240.f);
+    separator->setPosition({centerX, contentSize.height - 90.f - 0.75f});
     m_mainLayer->addChild(separator, 1);
 
-    auto starPanel = paimon::SpriteHelper::createDarkPanel(220.f, 50.f, 100, 6.f);
+    auto starPanel = paimon::ui::makeInset({220.f, 50.f}, 100);
     starPanel->setPosition({centerX - 110.f, contentSize.height - 120.f - 25.f});
     m_mainLayer->addChild(starPanel, 1);
 

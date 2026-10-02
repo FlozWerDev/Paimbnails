@@ -1,6 +1,7 @@
 #include "LevelHistoryDetailPopup.hpp"
 #include "InfoBlocks.hpp"
 #include "../services/LevelFacts.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 
@@ -41,6 +42,10 @@ bool LevelHistoryDetailPopup::init(HistoryEntry const& entry) {
     auto title = entry.levelName.empty() ? std::string("Registro") : entry.levelName;
     setTitle(title.c_str(), "goldFont.fnt", 0.62f, 20.f);
     if (m_title) m_title->limitLabelWidth(kInnerW - 60.f, 0.62f, 0.1f);
+    this->addInfoButton("Detalle del registro",
+        "Todos los datos guardados de este intento o record: "
+        "<cy>fecha</c>, <cy>fuente</c> y los campos reportados por el servidor. "
+        "Un registro <cr>invalido</c> no se contara en tus estadisticas.");
 
     float const left = (kPopupW - kInnerW) / 2.f;
     float const headerY = kPopupH - 42.f - kHeaderH;
@@ -75,10 +80,9 @@ bool LevelHistoryDetailPopup::init(HistoryEntry const& entry) {
     auto fields = describeEntry(entry);
 
     float const listY = headerY - kListH - 6.f;
-    if (auto* panel = paimon::SpriteHelper::createDarkPanel(kInnerW, kListH, 70, 5.f)) {
-        panel->setPosition({left, listY});
-        m_mainLayer->addChild(panel);
-    }
+    auto* panel = paimon::ui::makeInset({kInnerW, kListH}, 70);
+    panel->setPosition({left, listY});
+    m_mainLayer->addChild(panel);
 
     auto* scroll = ScrollLayer::create({kInnerW, kListH});
     if (!scroll) return false;

@@ -4,6 +4,7 @@
 #include "ModlyUIHelpers.hpp"
 #include "../services/ModlyRepo.hpp"
 #include "../../mod-previews/ui/ModPreviewGalleryPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Localization.hpp"
 #include <Geode/Geode.hpp>
@@ -32,6 +33,12 @@ bool ModlyModPopup::init(ModlyMod const& mod) {
 
     m_mod = mod;
     this->setTitle(m_mod.name.c_str());
+
+    addInfoButton("Detalles del mod",
+        "Informacion del mod y su autor. Toca el nombre del autor para ver su "
+        "perfil y las miniaturas para ampliarlas. Abajo: <cg>Descargar</c> abre "
+        "el enlace, y los botones de GitHub, Discord o Ko-fi llevan a sus "
+        "paginas. <cy>Comentarios</c> muestra lo que opina la comunidad.");
 
     buildHeader();
     buildBody();
@@ -129,6 +136,11 @@ void ModlyModPopup::buildHeader() {
 
 void ModlyModPopup::buildBody() {
     auto& loc = Localization::get();
+
+    if (auto* inset = paimon::ui::makeInset({kScrollW + 8.f, kScrollH + 8.f}, 90)) {
+        inset->setPosition({(kWidth - kScrollW - 8.f) / 2.f, 64.f});
+        m_mainLayer->addChild(inset, 1);
+    }
 
     auto scroll = ScrollLayer::create({kScrollW, kScrollH});
     scroll->setPosition({(kWidth - kScrollW) / 2.f, 68.f});

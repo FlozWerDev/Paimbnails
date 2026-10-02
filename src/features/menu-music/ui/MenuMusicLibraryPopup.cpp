@@ -12,6 +12,7 @@
 #include "../../../utils/TextureBudget.hpp"
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/LocalAssetStore.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/Notification.hpp>
@@ -101,6 +102,11 @@ bool MenuMusicLibraryPopup::init(float width, float height) {
     if (!PaimonPopup::init(width, height)) return false;
     paimon::markDynamicPopup(this);
     this->setTitle("My Songs");
+    this->addInfoButton("My Songs",
+        "Your music library. Row icons: <cg>play</c> the song, <co>+</c> add it to a "
+        "playlist, <cy>star</c> to favorite, <cr>flag</c> to block it from shuffle, and "
+        "<cr>trash</c> to remove it. The filter row toggles <cy>sort order</c> and "
+        "shows only Local, Favorites or Blocked songs.");
 
     MenuMusicLibrary::get().load();
     MenuMusicLibrary::get().syncDownloadedSongs();
@@ -238,10 +244,8 @@ void MenuMusicLibraryPopup::buildHeader() {
 void MenuMusicLibraryPopup::buildList() {
     auto size = m_mainLayer->getContentSize();
     const float scrollH = size.height - 94.f;
-    if (auto* panel = paimon::SpriteHelper::safeCreateScale9("GJ_square02.png")) {
-        panel->setContentSize({size.width - 20.f, scrollH + 6.f});
-        panel->setPosition({size.width / 2.f, 12.f + scrollH / 2.f});
-        panel->setOpacity(220);
+    if (auto* panel = paimon::ui::makeInset({size.width - 20.f, scrollH + 6.f}, 220)) {
+        panel->setPosition({10.f, 9.f});
         panel->setID("library-list-bg"_spr);
         m_mainLayer->addChild(panel, 1);
     }
@@ -339,12 +343,12 @@ void MenuMusicLibraryPopup::rebuildList() {
             : m_localOnly && !hasLocalTracks
                 ? "No local songs - tap 'Folder' to import music."
                 : "No tracks match your filters.";
-        auto label = CCLabelBMFont::create(message, "chatFont.fnt");
+        auto label = paimon::ui::makeText(message,
+            m_scroll->getContentSize().width - 24.f, 0.5f,
+            paimon::ui::palette::muted, kCCTextAlignmentCenter);
         if (label) {
-            label->setScale(0.5f);
             label->setPosition({m_scroll->getContentSize().width / 2.f,
                                 m_scroll->getContentSize().height / 2.f});
-            label->setColor({200, 200, 220});
             m_scroll->m_contentLayer->addChild(label);
         }
     } else {
@@ -387,15 +391,14 @@ cocos2d::CCNode* MenuMusicLibraryPopup::buildTrackCard(
     node->setAnchorPoint({0, 0});
     node->setID(fmt::format("{}track-card-{}", ""_spr, trackId));
 
-    if (auto* bg = paimon::SpriteHelper::safeCreateScale9("GJ_square02.png")) {
-        bg->setContentSize({widthOverride, cardHeight});
+    if (auto* bg = paimon::ui::makeInset({widthOverride, cardHeight},
+            available ? 235 : 180)) {
         bg->setAnchorPoint({0.f, 0.f});
         bg->setPosition({0.f, 0.f});
-        bg->setOpacity(available ? 235 : 180);
         if (track->blacklisted) {
-            bg->setColor({210, 115, 105});
+            bg->setColor({70, 20, 20});
         } else if (isPlayingNow) {
-            bg->setColor({145, 220, 145});
+            bg->setColor({24, 70, 30});
         }
         bg->setID("card-bg"_spr);
         node->addChild(bg, 0);
@@ -465,12 +468,12 @@ cocos2d::CCNode* MenuMusicLibraryPopup::buildTrackCard(
     if (nameLbl) {
         nameLbl->setAnchorPoint({0.f, 0.5f});
         nameLbl->setColor(track->blacklisted
-            ? cocos2d::ccColor3B{255, 120, 120}
+            ? paimon::ui::palette::danger
             : track->favorite
-                ? cocos2d::ccColor3B{255, 220, 90}
+                ? paimon::ui::palette::gold
                 : isPlayingNow
-            ? cocos2d::ccColor3B{120, 240, 140}
-            : cocos2d::ccColor3B{255, 255, 255});
+            ? paimon::ui::palette::success
+            : paimon::ui::palette::text);
         nameLbl->limitLabelWidth(textAreaW, 0.48f, 0.26f);
         nameLbl->setPosition({textX, cardHeight * 0.66f});
         nameLbl->setID("card-title"_spr);
@@ -493,7 +496,8 @@ cocos2d::CCNode* MenuMusicLibraryPopup::buildTrackCard(
     auto subLbl = CCLabelBMFont::create(subStr.c_str(), "chatFont.fnt");
     if (subLbl) {
         subLbl->setAnchorPoint({0.f, 0.5f});
-        subLbl->setColor(available ? ccColor3B{235, 210, 175} : ccColor3B{255, 205, 95});
+        subLbl->setColor(available ? paimon::ui::palette::muted
+                                   : paimon::ui::palette::warning);
         subLbl->limitLabelWidth(textAreaW, 0.38f, 0.23f);
         subLbl->setPosition({textX, cardHeight * 0.30f});
         subLbl->setID("card-subtitle"_spr);

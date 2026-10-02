@@ -1,4 +1,5 @@
 #include "SameAsPickerPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../services/LayerBackgroundManager.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
@@ -23,6 +24,9 @@ bool SameAsPickerPopup::init(std::string const& currentKey, geode::CopyableFunct
     m_onPick = std::move(onPick);
 
     this->setTitle("Same as...");
+    this->addInfoButton("Same as...",
+        "Pick another layer to <cy>mirror its background</c>. This layer will reuse "
+        "whatever that layer shows, so changing the source updates both.");
 
     auto content = m_mainLayer->getContentSize();
 
@@ -33,9 +37,14 @@ bool SameAsPickerPopup::init(std::string const& currentKey, geode::CopyableFunct
         options.push_back({k, n});
     }
 
+    CCSize panelSize = {content.width - 24.f, content.height - 58.f};
+    auto* panel = paimon::ui::makePanel(panelSize, "Mirror Layer");
+    panel->setPosition({content.width / 2.f - panelSize.width / 2.f, 14.f});
+    m_mainLayer->addChild(panel, 1);
+
     auto menu = CCMenu::create();
     menu->setID("same-as-picker-menu"_spr);
-    menu->setContentSize({content.width - 20.f, content.height - 60.f});
+    menu->setContentSize({panelSize.width - 16.f, panelSize.height - paimon::ui::kPanelHeader - 12.f});
     menu->setLayout(
         ColumnLayout::create()
             ->setGap(6.f)
@@ -44,12 +53,13 @@ bool SameAsPickerPopup::init(std::string const& currentKey, geode::CopyableFunct
             ->setAxisReverse(true)
             ->setDefaultScaleLimits(0.5f, 1.f)
     );
-    m_mainLayer->addChildAtPosition(menu, Anchor::Center, {0.f, -10.f});
+    panel->addChild(menu);
+    menu->setPosition({panelSize.width / 2.f, (panelSize.height - paimon::ui::kPanelHeader) / 2.f});
     menu->setZOrder(10);
 
     for (int i = 0; i < (int)options.size(); i++) {
         auto& opt = options[i];
-        auto spr = ButtonSprite::create(opt.label.c_str(), 108, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
+        auto spr = ButtonSprite::create(opt.label.c_str(), 108, true, "bigFont.fnt", "GJ_button_05.png", 18.f, 0.45f);
 
         auto btn = CCMenuItemExt::createSpriteExtra(spr, [this, optKey = opt.key](CCMenuItemSpriteExtra*) {
             if (m_onPick) m_onPick(optKey);

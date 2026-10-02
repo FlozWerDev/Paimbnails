@@ -2,6 +2,7 @@
 
 #include "../services/DiscordPresenceManager.hpp"
 #include "../../../core/Settings.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/FileDialog.hpp"
@@ -481,8 +482,8 @@ CCNode* makeCard(const char* title, std::vector<CCNode*> const& rows, float widt
     header->setPosition({kCardPadX, totalH - kCardHeaderH / 2.f - 1.f});
     card->addChild(header);
 
-    auto sep = CCLayerColor::create({255, 255, 255, 40}, width - kCardPadX * 2.f, 0.6f);
-    sep->setPosition({kCardPadX, totalH - kCardHeaderH - 1.f});
+    auto sep = paimon::ui::makeDivider(width - kCardPadX * 2.f, paimon::ui::palette::gold, 70);
+    sep->setPosition({width / 2.f, totalH - kCardHeaderH - 1.f});
     card->addChild(sep);
 
     float y = totalH - kCardHeaderH - 4.f;
@@ -511,6 +512,11 @@ bool DiscordConfigPopup::init() {
     if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     this->setTitle(tr("discord.title", "Discord Rich Presence").c_str());
+    this->addInfoButton(tr("discord.title", "Discord Rich Presence"),
+        "Controla como aparece tu actividad de Geometry Dash en tu perfil de Discord. "
+        "La <cy>vista previa</c> de arriba refleja los cambios al instante. "
+        "<cr>Reset</c> vuelve a los valores por defecto, <cg>Refresh</c> fuerza una "
+        "actualizacion y <cy>Geode</c> abre los ajustes del mod.");
     this->setMouseEnabled(true);
 
     auto content = m_mainLayer->getContentSize();
@@ -822,22 +828,22 @@ bool DiscordConfigPopup::init() {
         footer->setPosition({0.f, 0.f});
         m_mainLayer->addChild(footer, 20);
 
-        auto resetSpr = ButtonSprite::create(tr("discord.btn_reset", "Reset").c_str(), "bigFont.fnt", "GJ_button_06.png", 0.8f);
-        resetSpr->setScale(0.38f);
+        auto resetSpr = paimon::ui::makeButtonSprite(tr("discord.btn_reset", "Reset").c_str(),
+            paimon::ui::Btn::Red, 0.f, 0.5f, "bigFont.fnt");
         auto resetBtn = CCMenuItemSpriteExtra::create(
             resetSpr, this, menu_selector(DiscordConfigPopup::onResetDefaults));
         resetBtn->setPosition({40.f, 16.f});
         footer->addChild(resetBtn);
 
-        auto refreshSpr = ButtonSprite::create(tr("discord.btn_refresh", "Refresh").c_str(), "bigFont.fnt", "GJ_button_05.png", 0.8f);
-        refreshSpr->setScale(0.38f);
+        auto refreshSpr = paimon::ui::makeButtonSprite(tr("discord.btn_refresh", "Refresh").c_str(),
+            paimon::ui::Btn::Blue, 0.f, 0.5f, "bigFont.fnt");
         auto refreshBtn = CCMenuItemSpriteExtra::create(
             refreshSpr, this, menu_selector(DiscordConfigPopup::onRefreshPresence));
         refreshBtn->setPosition({content.width / 2.f, 16.f});
         footer->addChild(refreshBtn);
 
-        auto geodeSpr = ButtonSprite::create(tr("discord.btn_geode", "Geode").c_str(), "bigFont.fnt", "GJ_button_04.png", 0.8f);
-        geodeSpr->setScale(0.38f);
+        auto geodeSpr = paimon::ui::makeButtonSprite(tr("discord.btn_geode", "Geode").c_str(),
+            paimon::ui::Btn::Gray, 0.f, 0.5f, "bigFont.fnt");
         auto geodeBtn = CCMenuItemSpriteExtra::create(
             geodeSpr, this, menu_selector(DiscordConfigPopup::onOpenGeodeSettings));
         geodeBtn->setPosition({content.width - 40.f, 16.f});

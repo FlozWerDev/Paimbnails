@@ -1,6 +1,7 @@
 #include "WebFeedbackPopup.hpp"
 
 #include "../../../core/RuntimeLifecycle.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/ImageConverter.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/ThreadTracker.hpp"
@@ -30,10 +31,10 @@ int childTouchPrio() {
 }
 
 void addButton(CCMenu* menu, char const* label, CCPoint position,
-    std::function<void()> action, float scale = .62f) {
-    auto* sprite = ButtonSprite::create(label, "goldFont.fnt", "GJ_button_01.png", .8f);
+    std::function<void()> action, float scale = .62f,
+    paimon::ui::Btn skin = paimon::ui::Btn::Cyan) {
+    auto* sprite = paimon::ui::makeButtonSprite(label, skin, 0.f, scale, "bigFont.fnt");
     if (!sprite) return;
-    sprite->setScale(scale);
     auto* item = CCMenuItemExt::createSpriteExtra(sprite,
         [action = std::move(action)](CCMenuItemSpriteExtra*) { action(); });
     item->setPosition(position);
@@ -108,6 +109,20 @@ bool WebFeedbackPopup::init(LevelRequest request, CCTexture2D* texture,
     m_width = width;
     m_height = height;
     setTitle("Feedback del nivel");
+    addCorners();
+    addInfoButton("Feedback del nivel",
+        "Marca la captura y manda tu veredicto a quien lo pidio desde la web.\n\n"
+        "<cy>Pluma</c> y <cj>Circulo</c> dibujan sobre la imagen; <co>Color</c> cambia de "
+        "tinta y <cy>Deshacer</c> quita la ultima marca. Los emotes se anaden al comentario.\n\n"
+        "<cj>Feedback</c> solo guarda nota y porcentaje; <cg>Aceptar</c> y <cr>Rechazar</c> "
+        "cierran el pedido. El rechazo necesita un motivo.");
+
+    namespace ui = paimon::ui;
+
+    if (auto* frame = ui::makeInset({308.f, 177.f}, 120)) {
+        frame->setPosition({10.f, 88.f});
+        m_mainLayer->addChild(frame, 1);
+    }
 
     float drawW = std::min(300.f, 169.f * width / height);
     float drawH = drawW * height / width;
@@ -124,6 +139,11 @@ bool WebFeedbackPopup::init(LevelRequest request, CCTexture2D* texture,
     m_marksNode = CCDrawNode::create();
     m_image->addChild(m_marksNode, 2);
 
+    if (auto* fields = ui::makeInset({182.f, 177.f}, 120)) {
+        fields->setPosition({320.f, 88.f});
+        m_mainLayer->addChild(fields, 1);
+    }
+
     auto* menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
     menu->setTouchPriority(childTouchPrio());
@@ -135,15 +155,14 @@ bool WebFeedbackPopup::init(LevelRequest request, CCTexture2D* texture,
         if (!m_marks.empty()) m_marks.pop_back();
         redraw();
     });
-    addButton(menu, ":)", {343.f, 91.f}, [this] { appendEmote(" 🙂"); }, .48f);
-    addButton(menu, "<3", {402.f, 91.f}, [this] { appendEmote(" ❤️"); }, .48f);
-    addButton(menu, "!", {461.f, 91.f}, [this] { appendEmote(" 🔥"); }, .48f);
+    addButton(menu, ":)", {343.f, 91.f}, [this] { appendEmote(" 🙂"); }, .48f, ui::Btn::Pink);
+    addButton(menu, "<3", {402.f, 91.f}, [this] { appendEmote(" ❤️"); }, .48f, ui::Btn::Pink);
+    addButton(menu, "!", {461.f, 91.f}, [this] { appendEmote(" 🔥"); }, .48f, ui::Btn::Pink);
 
     auto addLabel = [this](char const* text, float y) {
-        auto* label = CCLabelBMFont::create(text, "bigFont.fnt");
+        auto* label = paimon::ui::makeLabel(text, 180.f, .35f);
         label->setAnchorPoint({0.f, .5f});
-        label->setScale(.35f);
-        label->setPosition({325.f, y});
+        label->setPosition({335.f, y});
         m_mainLayer->addChild(label, 3);
     };
     addLabel("Feedback", 252.f);
@@ -164,9 +183,9 @@ bool WebFeedbackPopup::init(LevelRequest request, CCTexture2D* texture,
     m_percent->setPosition({412.f, 126.f});
     m_mainLayer->addChild(m_percent, 3);
 
-    addButton(menu, "Feedback", {80.f, 30.f}, [this] { send("feedback"); }, .72f);
-    addButton(menu, "Aceptar", {250.f, 30.f}, [this] { send("accepted"); }, .72f);
-    addButton(menu, "Rechazar", {425.f, 30.f}, [this] { send("rejected"); }, .72f);
+    addButton(menu, "Feedback", {80.f, 30.f}, [this] { send("feedback"); }, .72f, ui::Btn::Cyan);
+    addButton(menu, "Aceptar", {250.f, 30.f}, [this] { send("accepted"); }, .72f, ui::Btn::Green);
+    addButton(menu, "Rechazar", {425.f, 30.f}, [this] { send("rejected"); }, .72f, ui::Btn::Red);
     return true;
 }
 

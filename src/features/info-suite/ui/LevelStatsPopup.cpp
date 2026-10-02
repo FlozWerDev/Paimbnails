@@ -7,6 +7,7 @@
 #include "../../thumbnails/services/ThumbnailLoader.hpp"
 #include "../../../blur/BlurSystem.hpp"
 #include "../../../framework/ModEvents.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Shaders.hpp"
 #include "../../../utils/SpriteHelper.hpp"
@@ -81,10 +82,8 @@ bool LevelStatsPopup::init(GJGameLevel* level) {
     this->setTitle(std::string(level->m_levelName).c_str(), "goldFont.fnt", 0.5f, 17.f);
     if (m_title) m_title->limitLabelWidth(kPopupW - 90.f, 0.5f, 0.1f);
 
-    if (auto spr = SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png")) {
-        spr->setScale(0.7f);
-        auto btn = CCMenuItemSpriteExtra::create(
-            spr, this, menu_selector(LevelStatsPopup::onFullInfo));
+    if (auto* btn = paimon::ui::makeFrameButton("GJ_infoIcon_001.png", 0.7f,
+            [this] { this->onFullInfo(nullptr); })) {
         btn->setPosition({kPopupW - 18.f, kPopupH - 18.f});
         m_buttonMenu->addChild(btn);
     }
@@ -253,8 +252,8 @@ void LevelStatsPopup::buildCharts() {
     menu->setPosition({0.f, 0.f});
     m_chartLayer->addChild(menu);
 
-    auto spr = ButtonSprite::create(m_practice ? "Ver normal" : "Ver practica",
-                                    100, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.45f);
+    auto spr = paimon::ui::makeButtonSprite(m_practice ? "Ver normal" : "Ver practica",
+        paimon::ui::Btn::Blue, 100.f, 0.5f, "bigFont.fnt");
     auto toggle = CCMenuItemSpriteExtra::create(
         spr, this, menu_selector(LevelStatsPopup::onPracticeToggle));
     toggle->setPosition({kPopupW / 2.f, kToggleY});

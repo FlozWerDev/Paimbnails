@@ -4,6 +4,7 @@
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/string.hpp>
@@ -98,9 +99,7 @@ bool DeathEffectPopup::init() {
         m_buttonMenu->addChild(infoButton);
     }
 
-    auto listPanel = paimon::SpriteHelper::createDarkPanel(
-        kListWidth + 8.f, kListHeight + 8.f, 90
-    );
+    auto listPanel = paimon::ui::makeInset({kListWidth + 8.f, kListHeight + 8.f});
     if (listPanel) {
         listPanel->setPosition({14.f, 47.f});
         m_mainLayer->addChild(listPanel);
@@ -117,7 +116,7 @@ bool DeathEffectPopup::init() {
     borders->setPosition({16.f, 50.f});
     m_mainLayer->addChild(borders, 3);
 
-    auto settingsPanel = paimon::SpriteHelper::createDarkPanel(154.f, 172.f, 90);
+    auto settingsPanel = paimon::ui::makeInset({154.f, 172.f});
     if (settingsPanel) {
         settingsPanel->setPosition({312.f, 47.f});
         m_mainLayer->addChild(settingsPanel);
@@ -282,8 +281,8 @@ void DeathEffectPopup::rebuildList() {
         row->setPosition({0.f, bottom});
         content->addChild(row);
 
-        auto background = paimon::SpriteHelper::createDarkPanel(
-            kListWidth - 4.f, kRowHeight - 4.f, index % 2 == 0 ? 85 : 55, 3.f
+        auto background = paimon::ui::makeInset(
+            {kListWidth - 4.f, kRowHeight - 4.f}, index % 2 == 0 ? 85 : 55
         );
         if (background) {
             background->setPosition({2.f, 2.f});

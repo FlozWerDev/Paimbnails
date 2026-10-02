@@ -3,10 +3,10 @@
 #include "LevelTagsGatePopup.hpp"
 #include "../services/LevelTagsClient.hpp"
 #include "../services/TasteProfile.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonButtonHighlighter.hpp"
-#include "../../../utils/SpriteHelper.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
@@ -60,6 +60,9 @@ bool TagPreferencesPopup::init() {
     float const cx = content.width / 2.f;
 
     this->setTitle(loc.getString("foryou.tags_popup_title").c_str());
+    this->addInfoButton(loc.getString("foryou.tags_popup_title").c_str(),
+        "Tap a tag to cycle it: <cg>love</c> boosts levels with it, <cr>avoid</c> hides them, "
+        "neutral ignores it.");
 
     auto hint = CCLabelBMFont::create(loc.getString("foryou.tags_popup_hint").c_str(), "chatFont.fnt");
     hint->setScale(0.42f);
@@ -77,12 +80,11 @@ bool TagPreferencesPopup::init() {
 
         float x = -86.f;
         auto addKey = [&](ccColor3B color, char const* labelKey) {
-            if (auto* swatch = paimon::SpriteHelper::safeCreateScale9("square02b_001.png")) {
-                swatch->setContentSize({12.f, 12.f});
+            if (auto* swatch = CCSprite::createWithSpriteFrameName("GJ_colorBtn_001.png")) {
+                swatch->setScale(0.42f);
                 swatch->setAnchorPoint({0.f, 0.5f});
                 swatch->setPosition({x, 0.f});
                 swatch->setColor(color);
-                swatch->setOpacity(230);
                 legend->addChild(swatch);
             }
             auto label = CCLabelBMFont::create(
@@ -103,12 +105,8 @@ bool TagPreferencesPopup::init() {
     m_scroll->setPosition({cx - kScrollWidth / 2.f, 34.f});
     m_mainLayer->addChild(m_scroll);
 
-    if (auto* scrollBg = paimon::SpriteHelper::safeCreateScale9("square02b_001.png")) {
-        scrollBg->setContentSize({kScrollWidth, kScrollHeight});
-        scrollBg->setAnchorPoint({0.f, 0.f});
+    if (auto* scrollBg = paimon::ui::makeInset({kScrollWidth, kScrollHeight})) {
         scrollBg->setPosition({cx - kScrollWidth / 2.f, 34.f});
-        scrollBg->setColor({22, 17, 12});
-        scrollBg->setOpacity(150);
         m_mainLayer->addChild(scrollBg, -1);
     }
 

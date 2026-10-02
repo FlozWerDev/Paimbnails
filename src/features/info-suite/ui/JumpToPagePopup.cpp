@@ -1,4 +1,5 @@
 #include "JumpToPagePopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/GeodeTextInputSafe.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
@@ -15,7 +16,7 @@ namespace paimon::info {
 namespace {
 
 constexpr float kPopupW = 300.f;
-constexpr float kPopupH = 180.f;
+constexpr float kPopupH = 190.f;
 
 // the server tops out well below this; the cap only exists so a pasted number
 // cannot overflow the int sent to loadpage().
@@ -48,48 +49,57 @@ bool JumpToPagePopup::init(int currentPage, int pageCount, std::function<void(in
     float const cx = content.width / 2.f;
 
     this->setTitle("Ir a la pagina");
+    this->addInfoButton("Ir a la pagina",
+        "Escribe el <cy>numero de pagina</c> o arrastra la barra para moverte "
+        "rapido por la lista. <cg>Primera</c> y <cg>Ultima</c> saltan a los extremos.");
+
+    bool const hasSlider = m_pageCount > 1;
+    float const panelH = hasSlider ? 108.f : 78.f;
+    CCSize const panelSize{content.width - 40.f, panelH};
+    auto panel = paimon::ui::makePanel(panelSize, "Pagina");
+    panel->setPosition({cx - panelSize.width / 2.f, 48.f});
+    m_mainLayer->addChild(panel);
+
+    float const panelCx = panelSize.width / 2.f;
+    float inputY = panelSize.height - paimon::ui::kPanelHeader - 16.f;
 
     m_input = TextInput::create(120.f, "Pagina", "bigFont.fnt");
-    m_input->setPosition({cx, content.height - 62.f});
+    m_input->setPosition({panelCx, inputY});
     m_input->setCommonFilter(CommonFilter::Uint);
     m_input->setMaxCharCount(7);
     m_input->setString(std::to_string(m_page));
     m_input->setCallback(paimon::ui::safeTextInputCallback<JumpToPagePopup>(
         WeakRef<JumpToPagePopup>(this), &JumpToPagePopup::onInputChanged));
-    m_mainLayer->addChild(m_input);
+    panel->addChild(m_input);
 
-    m_rangeLabel = CCLabelBMFont::create("", "chatFont.fnt");
-    m_rangeLabel->setScale(0.5f);
-    m_rangeLabel->setColor({170, 170, 170});
-    m_rangeLabel->setPosition({cx, content.height - 86.f});
-    m_mainLayer->addChild(m_rangeLabel);
+    m_rangeLabel = paimon::ui::makeText("", panelSize.width - 24.f, 0.5f,
+        paimon::ui::palette::muted, kCCTextAlignmentCenter);
+    m_rangeLabel->setPosition({panelCx, inputY - 24.f});
+    panel->addChild(m_rangeLabel);
 
     // a scrubber only makes sense once we know how many pages there are.
-    if (m_pageCount > 1) {
+    if (hasSlider) {
         m_slider = Slider::create(this, menu_selector(JumpToPagePopup::onSlider), 0.85f);
-        m_slider->setPosition({cx, content.height - 108.f});
-        m_mainLayer->addChild(m_slider);
+        m_slider->setPosition({panelCx, inputY - 50.f});
+        panel->addChild(m_slider);
     }
 
     auto menu = CCMenu::create();
-    menu->setPosition({cx, 34.f});
+    menu->setPosition({cx, 26.f});
     menu->setContentSize({kPopupW - 40.f, 34.f});
     menu->setLayout(RowLayout::create()->setGap(10.f)->setAxisAlignment(AxisAlignment::Center));
     m_mainLayer->addChild(menu);
 
-    auto firstSpr = ButtonSprite::create("Primera", "bigFont.fnt", "GJ_button_04.png", 0.6f);
-    menu->addChild(CCMenuItemSpriteExtra::create(
-        firstSpr, this, menu_selector(JumpToPagePopup::onFirst)));
-
-    auto goSpr = ButtonSprite::create("Ir", "goldFont.fnt", "GJ_button_01.png", 0.7f);
-    menu->addChild(CCMenuItemSpriteExtra::create(
-        goSpr, this, menu_selector(JumpToPagePopup::onConfirm)));
+    menu->addChild(paimon::ui::makeButton("Primera",
+        [this] { this->onFirst(nullptr); }, paimon::ui::Btn::Gray, 0.f, 0.6f, "bigFont.fnt"));
 
     if (m_pageCount > 0) {
-        auto lastSpr = ButtonSprite::create("Ultima", "bigFont.fnt", "GJ_button_04.png", 0.6f);
-        menu->addChild(CCMenuItemSpriteExtra::create(
-            lastSpr, this, menu_selector(JumpToPagePopup::onLast)));
+        menu->addChild(paimon::ui::makeButton("Ultima",
+            [this] { this->onLast(nullptr); }, paimon::ui::Btn::Gray, 0.f, 0.6f, "bigFont.fnt"));
     }
+
+    menu->addChild(paimon::ui::makeButton("Ir",
+        [this] { this->onConfirm(nullptr); }, paimon::ui::Btn::Green, 0.f, 0.7f));
 
     menu->updateLayout();
 

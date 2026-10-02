@@ -1,4 +1,5 @@
 #include "MyLevelFilterPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../services/MyLevelFilters.hpp"
 
@@ -8,12 +9,13 @@
 #include <Geode/binding/GJSearchObject.hpp>
 
 using namespace geode::prelude;
+namespace ui = paimon::ui;
 
 namespace paimon::editorfilters {
 
 namespace {
-    constexpr float kPopupW = 340.f;
-    constexpr float kPopupH = 200.f;
+    constexpr float kPopupW = 360.f;
+    constexpr float kPopupH = 230.f;
 
     bool* boolForTag(int tag) {
         static bool FilterState::* const kByTag[] = {
@@ -29,61 +31,26 @@ namespace {
         if (tag < 1 || tag > 7) return nullptr;
         return &(state().*kByTag[tag]);
     }
-
-    CCScale9Sprite* makePanel(CCSize size) {
-        auto panel = CCScale9Sprite::create("square02b_001.png");
-        panel->setContentSize(size);
-        panel->setColor({0, 0, 0});
-        panel->setOpacity(70);
-        return panel;
-    }
-
-    CCSprite* safeFrameSprite(char const* frame) {
-        if (!CCSpriteFrameCache::sharedSpriteFrameCache()->spriteFrameByName(frame))
-            return nullptr;
-        return CCSprite::createWithSpriteFrameName(frame);
-    }
-
-    CCNode* makeHeader(char const* iconFrame, char const* text) {
-        auto node = CCNode::create();
-        auto label = CCLabelBMFont::create(text, "goldFont.fnt");
-        label->setScale(0.45f);
-
-        float gap = 4.f;
-        float iconW = 0.f;
-        CCSprite* icon = safeFrameSprite(iconFrame);
-        if (icon) {
-            icon->setScale(16.f / std::max(icon->getContentSize().height, 1.f));
-            iconW = icon->getScaledContentSize().width + gap;
-        }
-
-        float labelW = label->getScaledContentSize().width;
-        node->setContentSize({iconW + labelW, 20.f});
-        node->setAnchorPoint({0.5f, 0.5f});
-
-        if (icon) {
-            icon->setPosition({icon->getScaledContentSize().width / 2.f, 10.f});
-            node->addChild(icon);
-        }
-        label->setAnchorPoint({0.f, 0.5f});
-        label->setPosition({iconW, 10.f});
-        node->addChild(label);
-        return node;
-    }
 }
 
+// GD checkbox with its label to the right; the toggler keeps the tag/selector
+// the rest of the popup relies on.
 CCMenuItemToggler* MyLevelFilterPopup::makeToggler(char const* text, int tag, bool on, float scale) {
-    auto labelOff = CCLabelBMFont::create(text, "bigFont.fnt");
-    auto labelOn = CCLabelBMFont::create(text, "bigFont.fnt");
-    labelOff->setColor({110, 110, 110});
-    labelOff->setScale(scale);
-    labelOn->setColor({0, 255, 127});
-    labelOn->setScale(scale);
-
-    auto toggler = CCMenuItemToggler::create(
-        labelOff, labelOn, this, menu_selector(MyLevelFilterPopup::onToggle));
+    auto* off = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
+    auto* onSpr = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
+    auto* toggler = CCMenuItemToggler::create(
+        off, onSpr, this, menu_selector(MyLevelFilterPopup::onToggle));
+    toggler->setScale(0.6f);
     toggler->setTag(tag);
     toggler->toggle(on);
+
+    auto* label = CCLabelBMFont::create(text, "bigFont.fnt");
+    label->setAnchorPoint({0.f, 0.5f});
+    label->setScale(scale);
+    label->limitLabelWidth(70.f, scale, 0.2f);
+    label->setPosition({14.f, 0.f});
+    toggler->addChild(label);
+
     m_togglers.push_back(toggler);
     return toggler;
 }
@@ -92,79 +59,66 @@ bool MyLevelFilterPopup::init() {
     if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
     this->setTitle("Filter My Levels");
+    addInfoButton("Filtrar mis niveles",
+        "Marca una o varias casillas de <cy>Length</c> para ver solo niveles de "
+        "esas duraciones, y en <cy>Status</c> si estan verificados. Escribe un "
+        "<cg>Song ID</c> para quedarte con los que usan esa cancion. El boton de "
+        "la papelera limpia todos los filtros.");
+    addCorners();
 
     auto size = m_mainLayer->getContentSize();
-    float cx = size.width / 2.f;
+    float const cx = size.width / 2.f;
     auto& f = state();
 
-    if (auto cornerL = safeFrameSprite("dailyLevelCorner_001.png")) {
-        cornerL->setAnchorPoint({0.f, 0.f});
-        cornerL->setPosition({1.5f, 1.5f});
-        m_mainLayer->addChild(cornerL);
-    }
-    if (auto cornerR = safeFrameSprite("dailyLevelCorner_001.png")) {
-        cornerR->setFlipX(true);
-        cornerR->setAnchorPoint({1.f, 0.f});
-        cornerR->setPosition({size.width - 1.5f, 1.5f});
-        m_mainLayer->addChild(cornerR);
-    }
-
-    auto lengthPanel = makePanel({312.f, 56.f});
-    lengthPanel->setPosition({cx, 122.f});
+    float const lengthW = size.width - 24.f;
+    auto* lengthPanel = ui::makePanel({lengthW, 60.f}, "Length");
+    lengthPanel->setPosition({12.f, size.height - 42.f - 60.f});
     m_mainLayer->addChild(lengthPanel);
 
-    auto lengthHeader = makeHeader("GJ_timeIcon_001.png", "Length");
-    lengthHeader->setPosition({cx, 150.f});
-    m_mainLayer->addChild(lengthHeader);
-
-    auto lengthMenu = CCMenu::create();
-    lengthMenu->setContentSize({296.f, 26.f});
+    auto* lengthMenu = CCMenu::create();
+    lengthMenu->setContentSize({lengthW - 16.f, 24.f});
     lengthMenu->setAnchorPoint({0.5f, 0.5f});
     lengthMenu->ignoreAnchorPointForPosition(false);
-    lengthMenu->setLayout(RowLayout::create()->setGap(10.f));
-    lengthMenu->addChild(makeToggler("Tiny",   1, f.tiny));
-    lengthMenu->addChild(makeToggler("Short",  2, f.shortLen));
-    lengthMenu->addChild(makeToggler("Medium", 3, f.medium));
-    lengthMenu->addChild(makeToggler("Long",   4, f.longLen));
-    lengthMenu->addChild(makeToggler("XL",     5, f.xl));
-    lengthMenu->setPosition({cx, 116.f});
+    lengthMenu->setLayout(RowLayout::create()->setGap(2.f));
+    lengthMenu->addChild(makeToggler("Tiny",   1, f.tiny,     0.42f));
+    lengthMenu->addChild(makeToggler("Short",  2, f.shortLen, 0.42f));
+    lengthMenu->addChild(makeToggler("Medium", 3, f.medium,   0.42f));
+    lengthMenu->addChild(makeToggler("Long",   4, f.longLen,  0.42f));
+    lengthMenu->addChild(makeToggler("XL",     5, f.xl,       0.42f));
+    lengthMenu->setPosition({lengthW / 2.f + 12.f, size.height - 42.f - 60.f + 18.f});
     lengthMenu->updateLayout();
     m_mainLayer->addChild(lengthMenu);
 
-    auto statusPanel = makePanel({154.f, 58.f});
-    statusPanel->setPosition({cx - 79.f, 52.f});
+    float const halfW = (size.width - 32.f) / 2.f;
+    float const lowRowY = 44.f;
+
+    auto* statusPanel = ui::makePanel({halfW, 74.f}, "Status");
+    statusPanel->setPosition({12.f, lowRowY});
     m_mainLayer->addChild(statusPanel);
 
-    auto statusHeader = makeHeader("GJ_completesIcon_001.png", "Status");
-    statusHeader->setPosition({cx - 79.f, 81.f});
-    m_mainLayer->addChild(statusHeader);
-
-    auto statusMenu = CCMenu::create();
-    statusMenu->setContentSize({140.f, 44.f});
+    auto* statusMenu = CCMenu::create();
+    statusMenu->setContentSize({halfW - 16.f, 44.f});
     statusMenu->setAnchorPoint({0.5f, 0.5f});
     statusMenu->ignoreAnchorPointForPosition(false);
-    statusMenu->setLayout(ColumnLayout::create()->setGap(4.f)->setAxisReverse(true));
-    statusMenu->addChild(makeToggler("Verified",   6, f.verified,   0.5f));
-    statusMenu->addChild(makeToggler("Unverified", 7, f.unverified, 0.5f));
-    statusMenu->setPosition({cx - 79.f, 47.f});
+    statusMenu->setLayout(ColumnLayout::create()->setGap(6.f)->setAxisReverse(true)
+        ->setCrossAxisLineAlignment(AxisAlignment::Start));
+    statusMenu->addChild(makeToggler("Verified",   6, f.verified,   0.46f));
+    statusMenu->addChild(makeToggler("Unverified", 7, f.unverified, 0.46f));
+    statusMenu->setPosition({12.f + halfW / 2.f, lowRowY + 24.f});
     statusMenu->updateLayout();
     m_mainLayer->addChild(statusMenu);
 
-    auto songPanel = makePanel({150.f, 58.f});
-    songPanel->setPosition({cx + 81.f, 52.f});
+    auto* songPanel = ui::makePanel({halfW, 74.f}, "Song ID");
+    songPanel->setPosition({size.width - 12.f - halfW, lowRowY});
     m_mainLayer->addChild(songPanel);
 
-    auto songHeader = makeHeader("GJ_musicIcon_001.png", "Song ID");
-    songHeader->setPosition({cx + 81.f, 81.f});
-    m_mainLayer->addChild(songHeader);
-
-    m_songInput = TextInput::create(120.f, "Song ID");
+    m_songInput = TextInput::create(halfW - 24.f, "Song ID");
     m_songInput->setFilter("0123456789");
     m_songInput->setString(f.songID);
     m_songInput->setCallback([](std::string const& text) {
         state().songID = text;
     });
-    m_songInput->setPosition({cx + 81.f, 47.f});
+    m_songInput->setPosition({size.width - 12.f - halfW / 2.f, lowRowY + 26.f});
     m_mainLayer->addChild(m_songInput);
 
     auto trashSpr = CCSprite::createWithSpriteFrameName("GJ_trashBtn_001.png");
@@ -174,7 +128,7 @@ bool MyLevelFilterPopup::init() {
         trashSpr, this, menu_selector(MyLevelFilterPopup::onTrash));
     auto trashMenu = CCMenu::create();
     trashMenu->addChild(trashBtn);
-    trashMenu->setPosition({size.width - 22.f, size.height - 22.f});
+    trashMenu->setPosition({cx, 20.f});
     m_mainLayer->addChild(trashMenu);
 
     return true;

@@ -2,6 +2,7 @@
 #include "DynamicTransitionConfigPopup.hpp"
 #include "DynamicTransitionScene.hpp"
 #include "../../../ui/PaiConfigKit.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
@@ -91,8 +92,7 @@ protected:
 
 private:
     void addButton(char const* label, float x, bool backwards) {
-        auto* sprite = ButtonSprite::create(label, "bigFont.fnt", "GJ_button_04.png", .6f);
-        sprite->setScale(.55f);
+        auto* sprite = paimon::ui::makeButtonSprite(label, backwards ? paimon::ui::Btn::Gray : paimon::ui::Btn::Cyan, 0.f, .6f, "bigFont.fnt");
         auto* button = CCMenuItemExt::createSpriteExtra(sprite,
             [this, backwards](CCMenuItemSpriteExtra*) { play(backwards); });
         button->setPosition({x, 24.f});
@@ -155,20 +155,22 @@ DynamicTransitionConfigPopup* DynamicTransitionConfigPopup::create() {
 bool DynamicTransitionConfigPopup::init() {
     if (!PaimonPopup::init(430.f, 300.f)) return false;
     setTitle("Dynamic Transition");
+    addInfoButton(text("Transicion dinamica", "Dynamic Transition"),
+        text("Cada layer se abre como una app desde el boton que lo lanzo.\n\nUsa las pestanas para ajustar <cy>Estilo</c>, <cy>Movimiento</c>, <cy>Alcance</c> y <cy>Paneles</c>. Los cambios se guardan al instante; <cg>Vista previa</c> usa tus ajustes actuales.",
+            "Open each layer like an app from the button that launched it.\n\nUse the tabs to tune <cy>Style</c>, <cy>Motion</c>, <cy>Scope</c> and <cy>Panels</c>. Changes save instantly; <cg>Preview</c> uses your current settings."));
     paimon::markDynamicPopup(this);
     m_config = getConfig();
     rebuild();
-    auto addFooterButton = [this](char const* label, float x, auto callback) {
-        auto* sprite = ButtonSprite::create(label, "bigFont.fnt", "GJ_button_04.png", .6f);
-        sprite->setScale(.52f);
+    auto addFooterButton = [this](char const* label, float x, paimon::ui::Btn skin, auto callback) {
+        auto* sprite = paimon::ui::makeButtonSprite(label, skin, 0.f, .55f, "bigFont.fnt");
         auto* button = CCMenuItemExt::createSpriteExtra(sprite, callback);
         button->setPosition({x, 18.f});
         m_buttonMenu->addChild(button);
     };
-    addFooterButton(text("Vista previa", "Preview"), 135.f, [this](CCMenuItemSpriteExtra*) {
+    addFooterButton(text("Vista previa", "Preview"), 135.f, paimon::ui::Btn::Cyan, [this](CCMenuItemSpriteExtra*) {
         if (auto* preview = PreviewPopup::create()) kit::showAbove(preview, this);
     });
-    addFooterButton(text("Restaurar", "Reset"), 295.f, [this](CCMenuItemSpriteExtra*) {
+    addFooterButton(text("Restaurar", "Reset"), 295.f, paimon::ui::Btn::Red, [this](CCMenuItemSpriteExtra*) {
         resetConfig();
         m_config = getConfig();
         Mod::get()->setSavedValue("dynamic-transition-preset", 0);

@@ -4,6 +4,7 @@
 #include "../services/QuickHubManager.hpp"
 #include "../data/QuickHubCategories.hpp"
 #include "../../../ui/PaiConfigKit.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
@@ -69,20 +70,25 @@ bool RadialConfigPopup::init() {
     paimon::markDynamicPopup(this);
 
     this->setTitle("Configurar Quick Hub");
+    this->addCorners();
+    this->addInfoButton("Configurar Quick Hub",
+        "Arma tu rueda radial de accesos rapidos.\n\n"
+        "<cy>Activos</c> es lo que sale en la rueda; <cj>Anadir</c> lista lo disponible. "
+        "Usa las flechas para ordenar, el <co>+</c> para anadir y la papelera para quitar. "
+        "Haz <cg>click derecho</c> en cualquier boton del juego para crear un acceso.\n\n"
+        "<cg>Guardar</c> aplica los cambios; <cr>Reset</c> vuelve a los valores por defecto.");
 
+    namespace ui = paimon::ui;
     auto size = m_mainLayer->getContentSize();
     m_activeIds = QuickHubManager::get().getActiveOptions();
 
-    auto* subtitle = CCLabelBMFont::create(
+    auto* subtitle = ui::makeText(
         "Click derecho en cualquier boton del juego para anadirlo aqui.",
-        "chatFont.fnt");
-    subtitle->setColor({166, 176, 198});
-    subtitle->limitLabelWidth(size.width - 60.f, 0.45f, 0.2f);
+        size.width - 60.f, 0.5f, ui::palette::muted, kCCTextAlignmentCenter);
     subtitle->setPosition({size.width / 2.f, size.height - 38.f});
     m_mainLayer->addChild(subtitle, 2);
 
-    if (auto* panel = paimon::SpriteHelper::createDarkPanel(
-            kPreviewSize + 8.f, kPreviewSize + 8.f, 95, 8.f)) {
+    if (auto* panel = ui::makeInset({kPreviewSize + 8.f, kPreviewSize + 8.f}, 110)) {
         panel->setPosition({kPreviewCx - kPreviewSize / 2.f - 4.f,
                             kPreviewCy - kPreviewSize / 2.f - 4.f});
         m_mainLayer->addChild(panel, 0);
@@ -92,9 +98,7 @@ bool RadialConfigPopup::init() {
     m_previewNode->setPosition({kPreviewCx, kPreviewCy});
     m_mainLayer->addChild(m_previewNode, 1);
 
-    m_countLabel = CCLabelBMFont::create("", "chatFont.fnt");
-    m_countLabel->setScale(0.4f);
-    m_countLabel->setColor({166, 176, 198});
+    m_countLabel = ui::makeLabel("", kPreviewSize + 8.f, 0.4f, ui::palette::muted);
     m_countLabel->setPosition({kPreviewCx, kPreviewCy - kPreviewSize / 2.f - 12.f});
     m_mainLayer->addChild(m_countLabel, 2);
 
@@ -111,7 +115,7 @@ bool RadialConfigPopup::init() {
     tabs->setPosition({kListX, kListY + kListH + 6.f});
     m_mainLayer->addChild(tabs, 2);
 
-    if (auto* listBg = paimon::SpriteHelper::createDarkPanel(kListW + 8.f, kListH + 8.f, 95, 8.f)) {
+    if (auto* listBg = ui::makeInset({kListW + 8.f, kListH + 8.f}, 110)) {
         listBg->setPosition({kListX - 4.f, kListY - 4.f});
         m_mainLayer->addChild(listBg, 0);
     }
@@ -120,18 +124,12 @@ bool RadialConfigPopup::init() {
     m_scrollLayer->setPosition({kListX, kListY});
     m_mainLayer->addChild(m_scrollLayer, 1);
 
-    auto* resetSpr = ButtonSprite::create("Reset", "goldFont.fnt", "GJ_button_06.png", .8f);
-    resetSpr->setScale(0.6f);
-    auto* resetBtn = CCMenuItemExt::createSpriteExtra(resetSpr, [this](CCMenuItemSpriteExtra*) {
-        this->onReset(nullptr);
-    });
+    auto* resetBtn = ui::makeButton("Reset", [this] { this->onReset(nullptr); },
+        ui::Btn::Red, 0.f, 0.6f);
     m_buttonMenu->addChildAtPosition(resetBtn, Anchor::BottomRight, ccp(-138.f, 18.f));
 
-    auto* saveSpr = ButtonSprite::create("Guardar", "goldFont.fnt", "GJ_button_01.png", .8f);
-    saveSpr->setScale(0.6f);
-    auto* saveBtn = CCMenuItemExt::createSpriteExtra(saveSpr, [this](CCMenuItemSpriteExtra*) {
-        this->onSave(nullptr);
-    });
+    auto* saveBtn = ui::makeButton("Guardar", [this] { this->onSave(nullptr); },
+        ui::Btn::Green, 0.f, 0.6f);
     m_buttonMenu->addChildAtPosition(saveBtn, Anchor::BottomRight, ccp(-58.f, 18.f));
 
     rebuildList();
@@ -252,14 +250,11 @@ void RadialConfigPopup::rebuildList() {
         row->setPosition({0.f, yPos});
         content->addChild(row);
 
-        if (auto* rowBg = paimon::SpriteHelper::createRoundedRect(
-                kListW - 4.f, kRowH - 2.f, 5.f,
-                m_tab == 0 ? ccc4f(0.11f, 0.13f, 0.20f, 0.85f)
-                           : ccc4f(0.09f, 0.11f, 0.15f, 0.7f),
-                accentColor(opt->color, 0.35f), 1.f)) {
-            rowBg->setPosition({2.f, 1.f});
-            row->addChild(rowBg, 0);
-        }
+        ccColor3B const rowColor = (i % 2 == 0) ? ccColor3B{194, 114, 62} : ccColor3B{161, 88, 44};
+        auto* rowBg = CCLayerColor::create(ccc4(rowColor.r, rowColor.g, rowColor.b, 255),
+            kListW - 4.f, kRowH - 2.f);
+        rowBg->setPosition({2.f, 1.f});
+        row->addChild(rowBg, 0);
 
         float textX = 10.f;
 

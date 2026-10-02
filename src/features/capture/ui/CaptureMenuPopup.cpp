@@ -13,6 +13,7 @@
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
+#include "../../../ui/PaimonUI.hpp"
 
 using namespace cocos2d;
 using namespace geode::prelude;
@@ -21,17 +22,6 @@ using paimon::quickhub::QuickHubManager;
 namespace {
 constexpr float kPopupW   = 360.f;
 constexpr float kPopupH   = 190.f;
-constexpr float kCenterX  = kPopupW / 2.f;
-constexpr float kCenterY  = 90.f;
-constexpr float kCaptureY  = 38.f;
-constexpr float kShortcutsY = -6.f;
-constexpr float kHoldCtrlY = -50.f;
-constexpr float kToggleX  = 132.f;
-constexpr float kLabelX   = 194.f;
-constexpr float kGearX    = 342.f;
-constexpr float kInvertY  = 42.f;
-constexpr float kPhysicsY = 6.f;
-constexpr float kSmoothY  = -30.f;
 
 // flag for popups opened from this menu: only those block right-click toggle.
 std::string const& captureChildFlag() {
@@ -86,23 +76,47 @@ bool CaptureMenuPopup::initContents() {
     s_instance = this;
 
     this->setTitle("Captura de Pantalla");
+    this->addInfoButton("Captura de Pantalla",
+        "<cg>Capturar</c> toma una foto del nivel. <cy>Atajos</c> configura las teclas.\n"
+        "<co>Hold Ctrl</c> abre el menu radial manteniendo Ctrl.\n"
+        "<cr>Invertir Inputs</c>: clic derecho pasa a ser saltar.");
+
+    auto content = m_mainLayer->getContentSize();
 
     auto* menu = CCMenu::create();
-    menu->setPosition({kCenterX, kCenterY});
+    menu->setPosition({0.f, 0.f});
     m_mainLayer->addChild(menu);
+
+    const float panelTop = content.height - 34.f;
+    const float panelBot = 14.f;
+    const float panelH = panelTop - panelBot;
+    const float gap = 10.f;
+    const float sideMargin = 12.f;
+    const float leftW = 150.f;
+    const float rightW = content.width - sideMargin * 2 - leftW - gap;
+
+    auto* actionPanel = paimon::ui::makePanel({leftW, panelH}, "Captura");
+    actionPanel->setPosition({sideMargin, panelBot});
+    m_mainLayer->addChild(actionPanel);
+
+    auto* optionsPanel = paimon::ui::makePanel({rightW, panelH}, "Opciones");
+    optionsPanel->setPosition({sideMargin + leftW + gap, panelBot});
+    m_mainLayer->addChild(optionsPanel);
+
+    const float leftCX = sideMargin + leftW * 0.5f;
 
     auto* captureBtnSpr = ButtonSprite::create("Capturar", "goldFont.fnt", "GJ_button_01.png", .65f);
     auto* captureBtn = CCMenuItemSpriteExtra::create(
         captureBtnSpr, this, menu_selector(CaptureMenuPopup::onCapture)
     );
-    captureBtn->setPosition({-74.f, kCaptureY});
+    captureBtn->setPosition({leftCX, panelBot + panelH - 46.f});
     menu->addChild(captureBtn);
 
     auto* shortcutsBtnSpr = ButtonSprite::create("Atajos", "bigFont.fnt", "GJ_button_04.png", .52f);
     auto* shortcutsBtn = CCMenuItemSpriteExtra::create(
         shortcutsBtnSpr, this, menu_selector(CaptureMenuPopup::onOpenShortcuts)
     );
-    shortcutsBtn->setPosition({-74.f, kShortcutsY});
+    shortcutsBtn->setPosition({leftCX, panelBot + panelH - 80.f});
     menu->addChild(shortcutsBtn);
 
     bool const holdCtrlOn = QuickHubManager::isHoldCtrlEnabled();
@@ -110,8 +124,22 @@ bool CaptureMenuPopup::initContents() {
     auto* holdCtrlBtn = CCMenuItemSpriteExtra::create(
         m_holdCtrlBtnSpr, this, menu_selector(CaptureMenuPopup::onToggleHoldCtrl)
     );
-    holdCtrlBtn->setPosition({-74.f, kHoldCtrlY});
+    holdCtrlBtn->setPosition({leftCX, panelBot + panelH - 112.f});
     menu->addChild(holdCtrlBtn);
+
+    const float rowX0 = sideMargin + leftW + gap;
+    const float toggleX = rowX0 + rightW - 20.f;
+    const float labelX = rowX0 + 12.f;
+    float rowY = panelBot + panelH - 40.f;
+    const float rowStep = 32.f;
+
+    auto addLabel = [&](char const* text, float y) {
+        auto* lbl = CCLabelBMFont::create(text, "bigFont.fnt");
+        lbl->setAnchorPoint({0.f, .5f});
+        lbl->setPosition({labelX, y});
+        lbl->limitLabelWidth(rightW - 56.f, .34f, .1f);
+        m_mainLayer->addChild(lbl);
+    };
 
     bool const invertOn = Mod::get()->getSavedValue<bool>("invert-mouse-inputs", false);
     auto* invOff = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
@@ -122,14 +150,10 @@ bool CaptureMenuPopup::initContents() {
         invOff, invOn, this, menu_selector(CaptureMenuPopup::onToggleInvert)
     );
     invertToggle->toggle(invertOn);
-    invertToggle->setPosition({kToggleX, kInvertY});
+    invertToggle->setPosition({toggleX, rowY});
     menu->addChild(invertToggle);
-
-    auto* invLabel = CCLabelBMFont::create("Invertir Inputs", "bigFont.fnt");
-    invLabel->setAnchorPoint({0.f, .5f});
-    invLabel->setPosition({kLabelX, kCenterY + kInvertY});
-    invLabel->limitLabelWidth(104.f, .28f, .1f);
-    m_mainLayer->addChild(invLabel);
+    addLabel("Invertir Inputs", rowY);
+    rowY -= rowStep;
 
     bool const physicsOn = Mod::get()->getSettingValue<bool>("menu-physics-enable");
     auto* phyOff = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
@@ -140,14 +164,10 @@ bool CaptureMenuPopup::initContents() {
         phyOff, phyOn, this, menu_selector(CaptureMenuPopup::onTogglePhysics)
     );
     physicsToggle->toggle(physicsOn);
-    physicsToggle->setPosition({kToggleX, kPhysicsY});
+    physicsToggle->setPosition({toggleX, rowY});
     menu->addChild(physicsToggle);
-
-    auto* phyLabel = CCLabelBMFont::create("Menu Physics", "bigFont.fnt");
-    phyLabel->setAnchorPoint({0.f, .5f});
-    phyLabel->setPosition({kLabelX, kCenterY + kPhysicsY});
-    phyLabel->limitLabelWidth(104.f, .28f, .1f);
-    m_mainLayer->addChild(phyLabel);
+    addLabel("Menu Physics", rowY);
+    rowY -= rowStep;
 
     bool const smoothOn = Mod::get()->getSettingValue<bool>("smooth-scroll");
     auto* smoothOff = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
@@ -158,21 +178,16 @@ bool CaptureMenuPopup::initContents() {
         smoothOff, smoothOnSpr, this, menu_selector(CaptureMenuPopup::onToggleSmoothScroll)
     );
     smoothToggle->toggle(smoothOn);
-    smoothToggle->setPosition({kToggleX, kSmoothY});
+    smoothToggle->setPosition({toggleX, rowY});
     menu->addChild(smoothToggle);
-
-    auto* smoothLabel = CCLabelBMFont::create("Smooth Scroll", "bigFont.fnt");
-    smoothLabel->setAnchorPoint({0.f, .5f});
-    smoothLabel->setPosition({kLabelX, kCenterY + kSmoothY});
-    smoothLabel->limitLabelWidth(104.f, .28f, .1f);
-    m_mainLayer->addChild(smoothLabel);
+    addLabel("Smooth Scroll", rowY);
 
     auto* gearSpr = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
     if (gearSpr) {
         gearSpr->setScale(0.38f);
         auto* gearBtn = CCMenuItemSpriteExtra::create(
             gearSpr, this, menu_selector(CaptureMenuPopup::onOpenSmoothScrollConfig));
-        gearBtn->setPosition({kGearX - kCenterX, kSmoothY});
+        gearBtn->setPosition({toggleX - 26.f, rowY});
         menu->addChild(gearBtn);
     }
 

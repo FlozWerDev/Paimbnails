@@ -6,9 +6,12 @@
 
 #include "CustomTransitionEditorPopup.hpp"
 #include "LevelEntryConfigPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
 using namespace geode::prelude;
 using namespace cocos2d;
+
+namespace ui = paimon::ui;
 
 
 static int typeIndex(TransitionType type) {
@@ -29,23 +32,22 @@ static void cycleType(TransitionConfig& cfg, int dir) {
 }
 
 static CCMenuItemSpriteExtra* createArrowBtn(bool left, CCObject* target, SEL_MenuHandler sel) {
-    auto spr = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
-    if (left) spr->setFlipX(true);
-    spr->setScale(0.35f);
+    auto spr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
+    if (!left) spr->setFlipX(true);
+    spr->setScale(0.5f);
     auto btn = CCMenuItemSpriteExtra::create(spr, target, sel);
     return btn;
 }
 
 static CCMenuItemSpriteExtra* createInfoBtn(CCObject* target, SEL_MenuHandler sel) {
     auto spr = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
-    spr->setScale(0.4f);
+    spr->setScale(0.6f);
     auto btn = CCMenuItemSpriteExtra::create(spr, target, sel);
     return btn;
 }
 
 static CCMenuItemSpriteExtra* createSmallButton(const char* text, CCObject* target, SEL_MenuHandler sel) {
-    auto spr = ButtonSprite::create(text, "bigFont.fnt", "GJ_button_04.png", .6f);
-    spr->setScale(0.55f);
+    auto spr = ui::makeButtonSprite(text, ui::Btn::Cyan, 0.f, 0.55f, "bigFont.fnt");
     auto btn = CCMenuItemSpriteExtra::create(spr, target, sel);
     return btn;
 }
@@ -62,9 +64,14 @@ TransitionConfigPopup* TransitionConfigPopup::create() {
 }
 
 bool TransitionConfigPopup::init() {
-    if (!PaimonPopup::init(380.f, 220.f)) return false;
+    if (!PaimonPopup::init(400.f, 262.f)) return false;
 
     this->setTitle("Transition Settings");
+    this->addCorners();
+    this->addInfoButton("Transitions",
+        "Set the animation played when the game changes screens.\n\n"
+        "<cy>Global</c> applies everywhere. <cy>Level Entry</c> can override it when you enter a level.\n"
+        "Use the <cg>arrows</c> to browse styles and adjust the duration; <cg>Save</c> to apply.");
 
     auto& tm = TransitionManager::get();
     if (!tm.isEnabled()) tm.loadConfig();
@@ -73,178 +80,148 @@ bool TransitionConfigPopup::init() {
     m_editingLevel = tm.getLevelEntryConfig();
 
     auto ws = m_mainLayer->getContentSize();
-    float cx = ws.width / 2.f;
-    float y = ws.height - 42.f;
 
-    auto enableLbl = CCLabelBMFont::create("Enabled", "bigFont.fnt");
-    enableLbl->setScale(0.3f);
-    enableLbl->setPosition({cx - 35, y});
-    m_mainLayer->addChild(enableLbl);
+    float enableH = 24.f;
+    auto enableRow = ui::makeInset({ws.width - 24.f, enableH}, 90);
+    enableRow->setPosition({12.f, ws.height - 34.f - enableH});
+    m_mainLayer->addChild(enableRow);
 
-    auto onSpr  = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
-    auto offSpr = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
-    onSpr->setScale(0.48f);
-    offSpr->setScale(0.48f);
-    m_enableToggle = CCMenuItemToggler::create(offSpr, onSpr, this, menu_selector(TransitionConfigPopup::onToggleEnabled));
-    m_enableToggle->toggle(tm.isEnabled());
-    m_enableToggle->setPosition({cx + 10, y});
+    auto enableLbl = ui::makeLabel("Transitions enabled", 160.f, 0.45f);
+    enableLbl->setAnchorPoint({0.f, 0.5f});
+    enableLbl->setPosition({10.f, enableH / 2.f});
+    enableRow->addChild(enableLbl);
+
+    m_enableToggle = ui::makeSwitch(this, menu_selector(TransitionConfigPopup::onToggleEnabled), tm.isEnabled(), 0.7f);
+    m_enableToggle->setPosition({ws.width - 24.f - 18.f, enableRow->getPositionY() + enableH / 2.f});
     m_buttonMenu->addChild(m_enableToggle);
 
-    y -= 18;
-    auto gTitle = CCLabelBMFont::create("Global Transition", "goldFont.fnt");
-    gTitle->setScale(0.38f);
-    gTitle->setPosition({cx - 30, y});
-    m_mainLayer->addChild(gTitle);
+    float panelW = (ws.width - 30.f) / 2.f;
+    float panelH = 120.f;
+    float panelY = 44.f;
+
+    auto buildSection = [&](float px, char const* heading, bool isGlobal,
+        CCLabelBMFont*& nameLbl, CCLabelBMFont*& idxLbl, CCLabelBMFont*& durLbl,
+        CCLabelBMFont*& descLbl, CCLayerColor*& swatch, CCMenuItemSpriteExtra*& colorBtn,
+        CCMenuItemSpriteExtra*& customBtn) {
+        auto panel = ui::makePanel({panelW, panelH}, heading, 95);
+        panel->setPosition({px, panelY});
+        m_mainLayer->addChild(panel);
+
+        float inner = panelH - ui::kPanelHeader;
+        float midX = panelW / 2.f;
+
+        float ty = inner - 16.f;
+        auto leftArr = createArrowBtn(true, this, isGlobal
+            ? menu_selector(TransitionConfigPopup::onGlobalPrevType)
+            : menu_selector(TransitionConfigPopup::onLevelPrevType));
+        leftArr->setPosition({px + 14.f, panelY + ty});
+        m_buttonMenu->addChild(leftArr);
+
+        auto rightArr = createArrowBtn(false, this, isGlobal
+            ? menu_selector(TransitionConfigPopup::onGlobalNextType)
+            : menu_selector(TransitionConfigPopup::onLevelNextType));
+        rightArr->setPosition({px + panelW - 14.f, panelY + ty});
+        m_buttonMenu->addChild(rightArr);
+
+        nameLbl = CCLabelBMFont::create("", "goldFont.fnt");
+        nameLbl->setScale(0.4f);
+        nameLbl->setPosition({midX, ty});
+        panel->addChild(nameLbl);
+
+        ty -= 15.f;
+        idxLbl = CCLabelBMFont::create("", "chatFont.fnt");
+        idxLbl->setScale(0.42f);
+        idxLbl->setColor(ui::palette::muted);
+        idxLbl->setPosition({midX, ty});
+        panel->addChild(idxLbl);
+
+        ty -= 18.f;
+        auto durLblTag = ui::makeLabel("Duration", 70.f, 0.34f, ui::palette::muted);
+        durLblTag->setAnchorPoint({0.f, 0.5f});
+        durLblTag->setPosition({10.f, ty});
+        panel->addChild(durLblTag);
+
+        auto durDown = createArrowBtn(true, this, isGlobal
+            ? menu_selector(TransitionConfigPopup::onGlobalDurDown)
+            : menu_selector(TransitionConfigPopup::onLevelDurDown));
+        durDown->setScale(0.4f);
+        durDown->setPosition({px + midX + 2.f, panelY + ty});
+        m_buttonMenu->addChild(durDown);
+
+        durLbl = CCLabelBMFont::create("", "bigFont.fnt");
+        durLbl->setScale(0.32f);
+        durLbl->setPosition({midX + 30.f, ty});
+        panel->addChild(durLbl);
+
+        auto durUp = createArrowBtn(false, this, isGlobal
+            ? menu_selector(TransitionConfigPopup::onGlobalDurUp)
+            : menu_selector(TransitionConfigPopup::onLevelDurUp));
+        durUp->setScale(0.4f);
+        durUp->setPosition({px + panelW - 12.f, panelY + ty});
+        m_buttonMenu->addChild(durUp);
+
+        descLbl = CCLabelBMFont::create("", "chatFont.fnt");
+        descLbl->setScale(0.35f);
+        descLbl->setColor(ui::palette::muted);
+        descLbl->setVisible(false);
+        m_mainLayer->addChild(descLbl);
+
+        ty -= 20.f;
+        swatch = CCLayerColor::create({0, 0, 0, 255}, 14, 14);
+        swatch->setPosition({px + 12.f, panelY + ty - 7.f});
+        m_mainLayer->addChild(swatch);
+
+        colorBtn = createSmallButton("Color", this, isGlobal
+            ? menu_selector(TransitionConfigPopup::onGlobalColor)
+            : menu_selector(TransitionConfigPopup::onLevelColor));
+        colorBtn->setPosition({px + 48.f, panelY + ty});
+        m_buttonMenu->addChild(colorBtn);
+
+        customBtn = createSmallButton("Custom...", this, isGlobal
+            ? menu_selector(TransitionConfigPopup::onGlobalCustom)
+            : menu_selector(TransitionConfigPopup::onLevelCustom));
+        customBtn->setPosition({px + panelW - 44.f, panelY + ty});
+        m_buttonMenu->addChild(customBtn);
+        return panel;
+    };
+
+    auto globalPanel = buildSection(12.f, "Global", true,
+        m_globalNameLabel, m_globalIndexLabel, m_globalDurLabel, m_globalDescLabel,
+        m_globalColorSwatch, m_globalColorBtn, m_globalCustomBtn);
 
     auto gInfo = createInfoBtn(this, menu_selector(TransitionConfigPopup::onInfoGlobal));
-    gInfo->setPosition({cx + 70, y});
+    gInfo->setScale(0.5f);
+    gInfo->setPosition({12.f + panelW - 12.f, panelY + panelH - 11.f});
     m_buttonMenu->addChild(gInfo);
 
-    y -= 16;
-    auto gLeftArr = createArrowBtn(true, this, menu_selector(TransitionConfigPopup::onGlobalPrevType));
-    gLeftArr->setPosition({cx - 115, y});
-    m_buttonMenu->addChild(gLeftArr);
+    float lpx = 18.f + panelW;
+    auto levelPanel = buildSection(lpx, "Level Entry", false,
+        m_levelNameLabel, m_levelIndexLabel, m_levelDurLabel, m_levelDescLabel,
+        m_levelColorSwatch, m_levelColorBtn, m_levelCustomBtn);
 
-    m_globalNameLabel = CCLabelBMFont::create("", "goldFont.fnt");
-    m_globalNameLabel->setScale(0.36f);
-    m_globalNameLabel->setPosition({cx - 40, y});
-    m_mainLayer->addChild(m_globalNameLabel);
-
-    auto gRightArr = createArrowBtn(false, this, menu_selector(TransitionConfigPopup::onGlobalNextType));
-    gRightArr->setPosition({cx + 20, y});
-    m_buttonMenu->addChild(gRightArr);
-
-    m_globalIndexLabel = CCLabelBMFont::create("", "chatFont.fnt");
-    m_globalIndexLabel->setScale(0.38f);
-    m_globalIndexLabel->setColor({180, 180, 180});
-    m_globalIndexLabel->setPosition({cx + 48, y});
-    m_mainLayer->addChild(m_globalIndexLabel);
-
-    auto gDurDown = createArrowBtn(true, this, menu_selector(TransitionConfigPopup::onGlobalDurDown));
-    gDurDown->setPosition({cx + 90, y});
-    m_buttonMenu->addChild(gDurDown);
-
-    m_globalDurLabel = CCLabelBMFont::create("", "bigFont.fnt");
-    m_globalDurLabel->setScale(0.24f);
-    m_globalDurLabel->setPosition({cx + 120, y});
-    m_mainLayer->addChild(m_globalDurLabel);
-
-    auto gDurUp = createArrowBtn(false, this, menu_selector(TransitionConfigPopup::onGlobalDurUp));
-    gDurUp->setPosition({cx + 148, y});
-    m_buttonMenu->addChild(gDurUp);
-
-    m_globalDescLabel = CCLabelBMFont::create("", "chatFont.fnt");
-    m_globalDescLabel->setScale(0.35f);
-    m_globalDescLabel->setColor({200, 200, 200});
-    m_globalDescLabel->setVisible(false);
-    m_mainLayer->addChild(m_globalDescLabel);
-
-    y -= 14;
-    m_globalColorSwatch = CCLayerColor::create({0, 0, 0, 255}, 14, 14);
-    m_globalColorSwatch->setPosition({cx - 115, y - 7});
-    m_mainLayer->addChild(m_globalColorSwatch);
-
-    m_globalColorBtn = createSmallButton("Color", this, menu_selector(TransitionConfigPopup::onGlobalColor));
-    m_globalColorBtn->setPosition({cx - 85, y});
-    m_buttonMenu->addChild(m_globalColorBtn);
-
-    m_globalCustomBtn = createSmallButton("Edit Custom...", this, menu_selector(TransitionConfigPopup::onGlobalCustom));
-    m_globalCustomBtn->setPosition({cx - 35, y});
-    m_buttonMenu->addChild(m_globalCustomBtn);
-
-    y -= 20;
-    auto lTitle = CCLabelBMFont::create("Level Entry", "goldFont.fnt");
-    lTitle->setScale(0.36f);
-    lTitle->setPosition({cx - 55, y});
-    m_mainLayer->addChild(lTitle);
-
-    auto sepLbl = CCLabelBMFont::create("Override:", "bigFont.fnt");
-    sepLbl->setScale(0.22f);
-    sepLbl->setPosition({cx + 10, y});
-    m_mainLayer->addChild(sepLbl);
-
-    auto onSpr2  = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
-    auto offSpr2 = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
-    onSpr2->setScale(0.4f);
-    offSpr2->setScale(0.4f);
-    m_levelToggle = CCMenuItemToggler::create(offSpr2, onSpr2, this, menu_selector(TransitionConfigPopup::onToggleLevelEntry));
-    m_levelToggle->toggle(tm.hasLevelEntryConfig());
-    m_levelToggle->setPosition({cx + 52, y});
+    m_levelToggle = ui::makeSwitch(this, menu_selector(TransitionConfigPopup::onToggleLevelEntry), tm.hasLevelEntryConfig(), 0.5f);
+    m_levelToggle->setPosition({lpx + 14.f, panelY + panelH - 11.f});
     m_buttonMenu->addChild(m_levelToggle);
 
     auto lInfo = createInfoBtn(this, menu_selector(TransitionConfigPopup::onInfoLevel));
-    lInfo->setPosition({cx + 75, y});
+    lInfo->setScale(0.5f);
+    lInfo->setPosition({lpx + panelW - 12.f, panelY + panelH - 11.f});
     m_buttonMenu->addChild(lInfo);
 
-    y -= 16;
-    auto lLeftArr = createArrowBtn(true, this, menu_selector(TransitionConfigPopup::onLevelPrevType));
-    lLeftArr->setPosition({cx - 115, y});
-    m_buttonMenu->addChild(lLeftArr);
-
-    m_levelNameLabel = CCLabelBMFont::create("", "goldFont.fnt");
-    m_levelNameLabel->setScale(0.36f);
-    m_levelNameLabel->setPosition({cx - 40, y});
-    m_mainLayer->addChild(m_levelNameLabel);
-
-    auto lRightArr = createArrowBtn(false, this, menu_selector(TransitionConfigPopup::onLevelNextType));
-    lRightArr->setPosition({cx + 20, y});
-    m_buttonMenu->addChild(lRightArr);
-
-    m_levelIndexLabel = CCLabelBMFont::create("", "chatFont.fnt");
-    m_levelIndexLabel->setScale(0.38f);
-    m_levelIndexLabel->setColor({180, 180, 180});
-    m_levelIndexLabel->setPosition({cx + 48, y});
-    m_mainLayer->addChild(m_levelIndexLabel);
-
-    auto lDurDown = createArrowBtn(true, this, menu_selector(TransitionConfigPopup::onLevelDurDown));
-    lDurDown->setPosition({cx + 90, y});
-    m_buttonMenu->addChild(lDurDown);
-
-    m_levelDurLabel = CCLabelBMFont::create("", "bigFont.fnt");
-    m_levelDurLabel->setScale(0.24f);
-    m_levelDurLabel->setPosition({cx + 120, y});
-    m_mainLayer->addChild(m_levelDurLabel);
-
-    auto lDurUp = createArrowBtn(false, this, menu_selector(TransitionConfigPopup::onLevelDurUp));
-    lDurUp->setPosition({cx + 148, y});
-    m_buttonMenu->addChild(lDurUp);
-
-    m_levelDescLabel = CCLabelBMFont::create("", "chatFont.fnt");
-    m_levelDescLabel->setScale(0.35f);
-    m_levelDescLabel->setColor({200, 200, 200});
-    m_levelDescLabel->setVisible(false);
-    m_mainLayer->addChild(m_levelDescLabel);
-
-    y -= 14;
-    m_levelColorSwatch = CCLayerColor::create({0, 0, 0, 255}, 14, 14);
-    m_levelColorSwatch->setPosition({cx - 115, y - 7});
-    m_mainLayer->addChild(m_levelColorSwatch);
-
-    m_levelColorBtn = createSmallButton("Color", this, menu_selector(TransitionConfigPopup::onLevelColor));
-    m_levelColorBtn->setPosition({cx - 85, y});
-    m_buttonMenu->addChild(m_levelColorBtn);
-
-    m_levelCustomBtn = createSmallButton("Edit Custom...", this, menu_selector(TransitionConfigPopup::onLevelCustom));
-    m_levelCustomBtn->setPosition({cx - 35, y});
-    m_buttonMenu->addChild(m_levelCustomBtn);
-
     auto levelEffectsBtn = createSmallButton("Smooth+...", this, menu_selector(TransitionConfigPopup::onLevelEffects));
-    levelEffectsBtn->setPosition({cx + 95, y});
+    levelEffectsBtn->setPosition({lpx + panelW / 2.f, panelY - 2.f});
     m_buttonMenu->addChild(levelEffectsBtn);
 
-    float btnY = 26;
-
-    auto saveSpr = ButtonSprite::create("Save", "goldFont.fnt", "GJ_button_01.png", .8f);
-    saveSpr->setScale(0.6f);
-    auto saveBtn = CCMenuItemSpriteExtra::create(saveSpr, this, menu_selector(TransitionConfigPopup::onSave));
-    saveBtn->setPosition({cx - 45, btnY});
-    m_buttonMenu->addChild(saveBtn);
-
     m_statusLabel = CCLabelBMFont::create("", "bigFont.fnt");
-    m_statusLabel->setScale(0.2f);
-    m_statusLabel->setColor({100, 255, 100});
-    m_statusLabel->setPosition({cx, 8});
+    m_statusLabel->setScale(0.3f);
+    m_statusLabel->setColor(ui::palette::success);
+    m_statusLabel->setAnchorPoint({0.f, 0.5f});
+    m_statusLabel->setPosition({14.f, 18.f});
     m_mainLayer->addChild(m_statusLabel);
+
+    auto saveBtn = ui::makeButton("Save", [this]() { onSave(nullptr); }, ui::Btn::Green, 0.f, 0.7f);
+    saveBtn->setPosition({ws.width - 48.f, 18.f});
+    m_buttonMenu->addChild(saveBtn);
 
     updateGlobalDisplay();
     updateLevelDisplay();

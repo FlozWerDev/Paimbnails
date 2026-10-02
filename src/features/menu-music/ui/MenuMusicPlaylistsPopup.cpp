@@ -4,6 +4,7 @@
 #include "../services/MenuMusicPlayer.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/Notification.hpp>
@@ -36,6 +37,10 @@ bool MenuMusicPlaylistsPopup::init(float width, float height) {
     if (!PaimonPopup::init(width, height)) return false;
     paimon::markDynamicPopup(this);
     this->setTitle("Playlists");
+    this->addInfoButton("Playlists",
+        "Group songs into playlists. <cg>Create</c> a new one by name, <cy>Open</c> to see "
+        "its tracks, and <cg>Use</c> to make it the active playlist for shuffle. The "
+        "<cr>trash</c> icon deletes a playlist; your songs stay in the library.");
 
     MenuMusicLibrary::get().load();
 
@@ -71,7 +76,7 @@ void MenuMusicPlaylistsPopup::buildHeader() {
     }
 
     auto createSpr = ButtonSprite::create(
-        "Create", 78, true, "bigFont.fnt", "GJ_button_05.png", 20.f, 0.48f);
+        "Create", 78, true, "bigFont.fnt", "GJ_button_01.png", 20.f, 0.48f);
     if (createSpr) {
         auto btn = CCMenuItemSpriteExtra::create(createSpr, this,
             menu_selector(MenuMusicPlaylistsPopup::onCreatePlaylist));
@@ -108,10 +113,8 @@ void MenuMusicPlaylistsPopup::buildHeader() {
 void MenuMusicPlaylistsPopup::buildList() {
     auto size = m_mainLayer->getContentSize();
     const float scrollHeight = size.height - 84.f;
-    if (auto* panel = paimon::SpriteHelper::safeCreateScale9("GJ_square02.png")) {
-        panel->setContentSize({size.width - 20.f, scrollHeight + 6.f});
-        panel->setPosition({size.width / 2.f, 12.f + scrollHeight / 2.f});
-        panel->setOpacity(220);
+    if (auto* panel = paimon::ui::makeInset({size.width - 20.f, scrollHeight + 6.f}, 220)) {
+        panel->setPosition({10.f, 9.f});
         panel->setID("playlists-list-bg"_spr);
         m_mainLayer->addChild(panel, 1);
     }
@@ -149,12 +152,10 @@ void MenuMusicPlaylistsPopup::showGrid() {
         node->setAnchorPoint({0.f, 0.f});
         node->setID(fmt::format("{}playlist-card-{}", ""_spr, pl.id));
 
-        if (auto* bg = paimon::SpriteHelper::safeCreateScale9("GJ_square02.png")) {
-            bg->setContentSize({cardW, kCardHeight});
+        if (auto* bg = paimon::ui::makeInset({cardW, kCardHeight}, active ? 245 : 215)) {
             bg->setAnchorPoint({0.f, 0.f});
             bg->setPosition({0.f, 0.f});
-            bg->setOpacity(active ? 245 : 215);
-            if (active) bg->setColor({135, 215, 145});
+            if (active) bg->setColor({24, 70, 30});
             bg->setID("playlist-card-bg"_spr);
             node->addChild(bg, 0);
         }
@@ -164,8 +165,8 @@ void MenuMusicPlaylistsPopup::showGrid() {
             nameLbl->setAnchorPoint({0.f, 0.5f});
             nameLbl->setPosition({12.f, kCardHeight * 0.66f});
             nameLbl->limitLabelWidth(cardW - 175.f, 0.5f, 0.3f);
-            nameLbl->setColor(active ? ccColor3B{120, 245, 140}
-                                     : ccColor3B{255, 255, 255});
+            nameLbl->setColor(active ? paimon::ui::palette::success
+                                     : paimon::ui::palette::text);
             node->addChild(nameLbl, 1);
         }
         auto countText = fmt::format("{} track{}{}", pl.trackIds.size(),
@@ -175,8 +176,8 @@ void MenuMusicPlaylistsPopup::showGrid() {
             countLbl->setScale(0.36f);
             countLbl->setAnchorPoint({0.f, 0.5f});
             countLbl->setPosition({12.f, kCardHeight * 0.28f});
-            countLbl->setColor(active ? ccColor3B{180, 245, 185}
-                                      : ccColor3B{220, 205, 175});
+            countLbl->setColor(active ? paimon::ui::palette::success
+                                      : paimon::ui::palette::muted);
             node->addChild(countLbl, 1);
         }
 
@@ -198,7 +199,8 @@ void MenuMusicPlaylistsPopup::showGrid() {
         }
         auto useSpr = ButtonSprite::create(
             active ? "Active" : "Use",
-            62, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.45f);
+            62, true, "bigFont.fnt",
+            active ? "GJ_button_01.png" : "GJ_button_04.png", 18.f, 0.45f);
         if (useSpr) {
             auto b = CCMenuItemSpriteExtra::create(useSpr, this,
                 menu_selector(MenuMusicPlaylistsPopup::onActivatePlaylist));
@@ -227,14 +229,13 @@ void MenuMusicPlaylistsPopup::showGrid() {
     }
 
     if (playlists.empty()) {
-        auto lbl = CCLabelBMFont::create(
+        auto lbl = paimon::ui::makeText(
             "No playlists yet. Type a name and hit Create.",
-            "chatFont.fnt");
+            m_scroll->getContentSize().width - 24.f, 0.5f,
+            paimon::ui::palette::muted, kCCTextAlignmentCenter);
         if (lbl) {
-            lbl->setScale(0.5f);
             lbl->setPosition({m_scroll->getContentSize().width / 2.f,
                               m_scroll->getContentSize().height / 2.f});
-            lbl->setColor({200, 200, 220});
             m_scroll->m_contentLayer->addChild(lbl);
         }
     }
@@ -280,11 +281,9 @@ void MenuMusicPlaylistsPopup::showDetail(const std::string& playlistId) {
         node->setAnchorPoint({0.f, 0.f});
         node->setID(fmt::format("{}playlist-track-{}", ""_spr, tid));
 
-        if (auto* bg = paimon::SpriteHelper::safeCreateScale9("GJ_square02.png")) {
-            bg->setContentSize({cardW, kTrackHeight});
+        if (auto* bg = paimon::ui::makeInset({cardW, kTrackHeight}, 210)) {
             bg->setAnchorPoint({0.f, 0.f});
             bg->setPosition({0.f, 0.f});
-            bg->setOpacity(210);
             bg->setID("playlist-track-bg"_spr);
             node->addChild(bg, 0);
         }
@@ -311,7 +310,7 @@ void MenuMusicPlaylistsPopup::showDetail(const std::string& playlistId) {
             subLbl->setScale(0.34f);
             subLbl->setAnchorPoint({0.f, 0.5f});
             subLbl->setPosition({44.f, kTrackHeight * 0.25f});
-            subLbl->setColor({220, 205, 175});
+            subLbl->setColor(paimon::ui::palette::muted);
             node->addChild(subLbl, 1);
         }
 
@@ -340,14 +339,13 @@ void MenuMusicPlaylistsPopup::showDetail(const std::string& playlistId) {
     }
 
     if (validTracks == 0) {
-        auto lbl = CCLabelBMFont::create(
+        auto lbl = paimon::ui::makeText(
             "Empty playlist. Open 'My Songs' and press + on a song to add it here.",
-            "chatFont.fnt");
+            m_scroll->getContentSize().width - 24.f, 0.45f,
+            paimon::ui::palette::muted, kCCTextAlignmentCenter);
         if (lbl) {
-            lbl->setScale(0.45f);
             lbl->setPosition({m_scroll->getContentSize().width / 2.f,
                               m_scroll->getContentSize().height / 2.f});
-            lbl->setColor({200, 200, 220});
             m_scroll->m_contentLayer->addChild(lbl);
         }
     }

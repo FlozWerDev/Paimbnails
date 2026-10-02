@@ -2,7 +2,7 @@
 #include "ExtendedKeybindEditPopup.hpp"
 
 #include "../../../utils/ExtendedKeybind.hpp"
-#include "../../../utils/SpriteHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
@@ -114,12 +114,15 @@ bool ScrollKeybindsPopup::init() {
     paimon::markDynamicPopup(this);
 
     this->setTitle("Atajos de Teclado");
+    this->addInfoButton("Atajos de Teclado",
+        "Cada fila muestra su asignacion actual. Pulsa <cg>Set</c> para cambiarla "
+        "(tecla, mouse o scroll segun el atajo). <cr>Reset Volumen</c> restaura "
+        "los cuatro atajos de volumen a su valor original.");
 
     auto winSize = m_mainLayer->getContentSize();
 
-    auto resetSpr = ButtonSprite::create(
-        "Reset Volumen", "bigFont.fnt", "GJ_button_06.png", 0.4f);
-    resetSpr->setScale(0.7f);
+    auto resetSpr = paimon::ui::makeButtonSprite(
+        "Reset Volumen", paimon::ui::Btn::Red, 0.f, 0.7f, "bigFont.fnt");
     auto resetBtn = CCMenuItemSpriteExtra::create(
         resetSpr, this, menu_selector(ScrollKeybindsPopup::onResetVolumeDefaults));
     auto bottomMenu = CCMenu::create();
@@ -132,10 +135,9 @@ bool ScrollKeybindsPopup::init() {
     float scrollW = winSize.width - kScrollPad * 2.f;
     float scrollH = winSize.height - kBottomBarH - 38.f;
 
-    if (auto bg = paimon::SpriteHelper::createDarkPanel(scrollW + 6.f, scrollH + 6.f, 80, 6.f)) {
-        bg->setPosition({scrollX - 3.f, scrollY - 3.f});
-        m_mainLayer->addChild(bg, 0);
-    }
+    auto bg = paimon::ui::makeInset({scrollW + 6.f, scrollH + 6.f}, 90);
+    bg->setPosition({scrollX - 3.f, scrollY - 3.f});
+    m_mainLayer->addChild(bg, 0);
 
     m_scrollLayer = ScrollLayer::create({scrollW, scrollH});
     m_scrollLayer->setPosition({scrollX, scrollY});
@@ -218,9 +220,8 @@ CCNode* ScrollKeybindsPopup::makeSectionHeader(char const* title, float width) {
     row->setContentSize({width, kHeaderH});
     row->setAnchorPoint({0.f, 0.f});
 
-    auto sep = CCLayerColor::create({255, 255, 255, 35});
-    sep->setContentSize({width - 6.f, 1.f});
-    sep->setPosition({3.f, kHeaderH - 1.f});
+    auto sep = paimon::ui::makeDivider(width - 6.f, paimon::ui::palette::gold, 90);
+    sep->setPosition({width / 2.f, kHeaderH - 1.f});
     row->addChild(sep);
 
     auto label = CCLabelBMFont::create(title, "goldFont.fnt");
@@ -269,7 +270,7 @@ CCNode* ScrollKeybindsPopup::makeKeybindRow(
     bindingLabel->limitLabelWidth(width * 0.34f, 0.5f, 0.26f);
     row->addChild(bindingLabel, 1);
 
-    auto setSpr = ButtonSprite::create("Set", 42, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
+    auto setSpr = paimon::ui::makeButtonSprite("Set", paimon::ui::Btn::Cyan, 42.f, 0.45f, "bigFont.fnt");
 
     std::string keyCopy = settingKey;
     std::string nameCopy = displayName;

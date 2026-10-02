@@ -1,5 +1,6 @@
 #include "ForYouPreferencesPopup.hpp"
 #include "TagPreferencesPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include "../services/TasteProfile.hpp"
@@ -120,20 +121,9 @@ bool ForYouPreferencesPopup::init(std::function<void()> onConfirm) {
 
     auto addPanel = [&](float top, float height) {
         float const width = POPUP_W - 26.f;
-        if (auto* panel = paimon::SpriteHelper::safeCreateScale9("square02b_001.png")) {
-            panel->setContentSize({width, height});
-            panel->setAnchorPoint({0.5f, 1.f});
-            panel->setPosition({cx, top});
-            panel->setColor({26, 20, 14});
-            panel->setOpacity(120);
+        if (auto* panel = paimon::ui::makeInset({width, height})) {
+            panel->setPosition({cx - width / 2.f, top - height});
             m_mainLayer->addChild(panel, -1);
-        }
-        if (auto* border = paimon::SpriteHelper::safeCreateScale9("GJ_square07.png")) {
-            border->setContentSize({width, height});
-            border->setAnchorPoint({0.5f, 1.f});
-            border->setPosition({cx, top});
-            border->setOpacity(70);
-            m_mainLayer->addChild(border, -1);
         }
     };
 

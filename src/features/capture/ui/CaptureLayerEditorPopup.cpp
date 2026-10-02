@@ -9,6 +9,7 @@
 #include "CaptureUIConstants.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonButtonHighlighter.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -123,6 +124,7 @@ bool CaptureLayerEditorPopup::init() {
 
     if (!PaimonPopup::init(C::POPUP_WIDTH, C::POPUP_HEIGHT)) return false;
     this->setTitle(loc("layers.title").c_str());
+    this->addInfoButton(loc("layers.title"), loc("layers.hint"));
 
     auto content = m_mainLayer->getContentSize();
 
@@ -207,7 +209,7 @@ bool CaptureLayerEditorPopup::init() {
     btnMenu->setID("bottom-buttons"_spr);
 
     auto restoreSpr = ButtonSprite::create(
-        loc("layers.restore_all").c_str(), 78, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f);
+        loc("layers.restore_all").c_str(), 78, true, "bigFont.fnt", "GJ_button_02.png", 18.f, 0.40f);
     if (restoreSpr) {
         auto btn = CCMenuItemSpriteExtra::create(
             restoreSpr, this, menu_selector(CaptureLayerEditorPopup::onRestoreAllBtn));
@@ -216,7 +218,7 @@ bool CaptureLayerEditorPopup::init() {
     }
 
     auto doneSpr = ButtonSprite::create(
-        loc("layers.done").c_str(), 70, true, "bigFont.fnt", "GJ_button_02.png", 22.f, 0.35f);
+        loc("layers.done").c_str(), 70, true, "bigFont.fnt", "GJ_button_01.png", 22.f, 0.35f);
     if (doneSpr) {
         auto btn = CCMenuItemSpriteExtra::create(
             doneSpr, this, menu_selector(CaptureLayerEditorPopup::onDoneBtn));
@@ -687,7 +689,7 @@ void CaptureLayerEditorPopup::buildList() {
     m_listRoot->setID("list-root"_spr);
     m_mainLayer->addChild(m_listRoot, 2);
 
-    auto panel = paimon::SpriteHelper::createDarkPanel(listW, viewH, 80);
+    auto panel = paimon::ui::makeInset({listW, viewH}, 80);
     panel->setPosition({viewX, listBot});
     m_listRoot->addChild(panel, 0);
 
@@ -875,7 +877,7 @@ void CaptureLayerEditorPopup::onFilterBtn(CCObject*) {
     m_filterDropdown = CCNode::create();
     m_filterDropdown->setID("filter-dropdown"_spr);
 
-    auto panel = paimon::SpriteHelper::createDarkPanel(areaW, areaH, 100);
+    auto panel = paimon::ui::makeInset({areaW, areaH}, 100);
     panel->setPosition({areaX, areaBot});
     m_filterDropdown->addChild(panel, 0);
 

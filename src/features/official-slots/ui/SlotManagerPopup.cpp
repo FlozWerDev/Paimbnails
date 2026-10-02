@@ -6,6 +6,7 @@
 #include "../services/OfficialSlotStore.hpp"
 #include "../services/SlotLevels.hpp"
 #include "../services/SlotListRefresh.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -82,6 +83,11 @@ bool SlotManagerPopup::init(std::function<void()> onChanged) {
     paimon::markDynamicPopup(this);
     m_onChanged = std::move(onChanged);
     this->setTitle(tr("slot.manager.title"));
+    this->addInfoButton(tr("slot.manager.title"),
+        "Administra tus slots oficiales personalizados. <cg>+</c> crea uno nuevo, "
+        "cada fila deja probar, editar, mover, activar o <cr>borrar</c>. "
+        "<cy>Ordenar</c> cambia el orden de las paginas.");
+    this->addCorners();
     this->buildHeader();
     this->buildList();
     this->buildFooter();
@@ -108,13 +114,10 @@ void SlotManagerPopup::buildHeader() {
 void SlotManagerPopup::buildList() {
     float const scrollH = kHeight - 134.f;
     float const scrollW = kWidth - 30.f;
-    if (auto* panel = CCScale9Sprite::create("GJ_square02.png")) {
-        panel->setContentSize({kWidth - 20.f, scrollH + 6.f});
-        panel->setPosition({kWidth / 2.f, kListY + scrollH / 2.f});
-        panel->setOpacity(220);
-        panel->setID("manager-list-bg"_spr);
-        m_mainLayer->addChild(panel, 1);
-    }
+    auto* panel = paimon::ui::makeInset({kWidth - 20.f, scrollH + 6.f}, 90);
+    panel->setPosition({kWidth / 2.f - (kWidth - 20.f) / 2.f, kListY - 3.f});
+    panel->setID("manager-list-bg"_spr);
+    m_mainLayer->addChild(panel, 1);
 
     m_scroll = ScrollLayer::create({scrollW, scrollH});
     if (!m_scroll) return;
@@ -163,12 +166,11 @@ void SlotManagerPopup::rebuild() {
     totalH = std::max(totalH, m_scroll->getContentSize().height);
 
     if (rows.empty()) {
-        if (auto* label = CCLabelBMFont::create(tr("slot.manager.empty").c_str(), "chatFont.fnt")) {
-            label->setScale(0.55f);
-            label->setPosition(m_scroll->getContentSize() / 2.f);
-            label->setColor({200, 200, 220});
-            m_scroll->m_contentLayer->addChild(label);
-        }
+        auto* label = paimon::ui::makeText(tr("slot.manager.empty").c_str(),
+            m_scroll->getContentSize().width - 20.f, 0.55f, paimon::ui::palette::muted,
+            kCCTextAlignmentCenter);
+        label->setPosition(m_scroll->getContentSize() / 2.f);
+        m_scroll->m_contentLayer->addChild(label);
     } else {
         float y = totalH;
         for (auto* row : rows) {

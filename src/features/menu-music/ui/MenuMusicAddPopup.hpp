@@ -40,7 +40,7 @@ protected:
 
     // visible progress bar for yt-dlp downloads. many users didn't realize
     // the download was running because we only updated a small text label.
-    cocos2d::CCLayerColor* m_progressBarBg = nullptr;
+    cocos2d::CCNode* m_progressBarBg = nullptr;
     cocos2d::CCLayerColor* m_progressBarFill = nullptr;
     cocos2d::CCLabelBMFont* m_progressPercentLabel = nullptr;
 

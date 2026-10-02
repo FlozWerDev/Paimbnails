@@ -1,4 +1,5 @@
 #include "CommentBgSettingsPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../services/ProfileThumbs.hpp"
 #include <Geode/ui/ColorPickPopup.hpp>
@@ -35,24 +36,35 @@ CommentBgSettingsPopup::~CommentBgSettingsPopup() {
 }
 
 bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
-    if (!PaimonPopup::init(420.f, 300.f)) return false;
+    if (!PaimonPopup::init(420.f, 320.f)) return false;
     paimon::markDynamicPopup(this);
 
     m_accountID = accountID;
     m_configPtr = new ProfileConfig(config);
 
     this->setTitle("Comment Background");
+    this->addInfoButton("Comment Background",
+        "Choose how your comment card looks: <cy>None</c>, a level <cy>Thumbnail</c>, your profile <cy>Banner</c>, "
+        "or a <cy>Solid</c> color. <cg>Blur</c> and <cg>Dark</c> fine-tune image backgrounds. "
+        "The strip at the bottom is a live <co>preview</c>.");
 
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
-    float y = content.height - 55.f;
+    float y = content.height - 48.f;
 
     auto menu = CCMenu::create();
     menu->setPosition({0, 0});
     m_mainLayer->addChild(menu, 5);
 
+    auto typeHeading = paimon::ui::makeTitle("Background Type", 200.f, 0.5f);
+    typeHeading->setPosition({cx, y});
+    m_mainLayer->addChild(typeHeading);
+
+    y -= 16.f;
+
     m_typeLabel = CCLabelBMFont::create("Type: None", "bigFont.fnt");
     m_typeLabel->setScale(0.32f);
+    m_typeLabel->setColor(paimon::ui::palette::gold);
     m_typeLabel->setPosition({cx, y});
     m_mainLayer->addChild(m_typeLabel);
 
@@ -347,9 +359,9 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
     y -= (kPreviewHeight + 16.f);
 
     {
-        auto saveBtnSpr = ButtonSprite::create("Save", "bigFont.fnt", "GJ_button_05.png");
+        auto saveBtnSpr = paimon::ui::makeButtonSprite("Save", paimon::ui::Btn::Green, 0.f, 0.8f);
         auto saveBtn = CCMenuItemSpriteExtra::create(saveBtnSpr, this, menu_selector(CommentBgSettingsPopup::onSave));
-        saveBtn->setPosition({cx, y});
+        saveBtn->setPosition({content.width - 50.f, 26.f});
         menu->addChild(saveBtn);
     }
 

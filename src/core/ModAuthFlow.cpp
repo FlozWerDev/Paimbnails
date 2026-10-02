@@ -1,4 +1,5 @@
 #include "../ui/PaimonPopup.hpp"
+#include "../ui/PaimonUI.hpp"
 #include "ModAuthFlow.hpp"
 
 #include <Geode/Geode.hpp>
@@ -226,9 +227,19 @@ class ModerationPanel : public PaimonPopup {
     bool init() override {
         if (!PaimonPopup::init(390.f, 270.f)) return false;
         setTitle("Moderacion");
+        addInfoButton("Mod Code seguro",
+            "El <cy>Mod Code</c> conecta tu cuenta de Geometry Dash sin exponer tu credencial.\n\n"
+            "1. Pulsa <cg>Conectar / Confirmar</c> para generar un codigo.\n"
+            "2. Publicalo como comentario en tu perfil de GD.\n"
+            "3. Vuelve y confirma. Usa <cy>Verificar estado</c> para refrescar tus permisos.");
         auto size = m_mainLayer->getContentSize();
         auto* game = GameManager::get();
         auto* account = GJAccountManager::get();
+
+        auto* headInset = paimon::ui::makeInset({size.width - 40.f, 66.f});
+        headInset->setPosition({20.f, 170.f});
+        m_mainLayer->addChild(headInset);
+
         auto identity = fmt::format("{}  #{}", game->m_playerName, account->m_accountID);
         auto label = CCLabelBMFont::create(identity.c_str(), "goldFont.fnt");
         label->limitLabelWidth(340.f, 0.6f, 0.25f);
@@ -242,17 +253,17 @@ class ModerationPanel : public PaimonPopup {
         auto menu = CCMenu::create();
         menu->setPosition({0, 0});
         m_mainLayer->addChild(menu);
-        auto button = [&](char const* text, float y, SEL_MenuHandler selector) {
-            auto sprite = ButtonSprite::create(text, 260, true, "bigFont.fnt", "GJ_button_01.png", 30.f, 0.5f);
+        auto button = [&](char const* text, float y, char const* texture, SEL_MenuHandler selector) {
+            auto sprite = ButtonSprite::create(text, 260, true, "bigFont.fnt", texture, 30.f, 0.5f);
             auto item = CCMenuItemSpriteExtra::create(sprite, this, selector);
             item->setPosition({size.width / 2, y});
             menu->addChild(item);
             return item;
         };
-        m_verify = button("Verificar estado", 147.f, menu_selector(ModerationPanel::onVerify));
-        button("Conectar / Confirmar", 109.f, menu_selector(ModerationPanel::onConnect));
-        button("Centro de moderacion", 71.f, menu_selector(ModerationPanel::onOpen));
-        button("Cerrar sesion local", 33.f, menu_selector(ModerationPanel::onDisconnect));
+        m_verify = button("Verificar estado", 147.f, "GJ_button_01.png", menu_selector(ModerationPanel::onVerify));
+        button("Conectar / Confirmar", 109.f, "GJ_button_02.png", menu_selector(ModerationPanel::onConnect));
+        button("Centro de moderacion", 71.f, "GJ_button_02.png", menu_selector(ModerationPanel::onOpen));
+        button("Cerrar sesion local", 33.f, "GJ_button_06.png", menu_selector(ModerationPanel::onDisconnect));
         return true;
     }
 

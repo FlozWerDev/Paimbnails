@@ -72,6 +72,11 @@ bool IconTryPopup::init(IconProject project) {
     m_exactColors = m_project.exactColors;
     setTitle(fmt::format("Probar: {}", m_project.name).c_str());
     setID("icon-maker-try"_spr);
+    addInfoButton("Probar el icono",
+        "Asi se vera el icono en el juego, junto a un icono normal como "
+        "referencia de tamano. <cy>Colores reales</c> muestra los colores que "
+        "pintaste; apagalo para verlo con tus colores de jugador. Cambia el "
+        "<cy>Tamano</c> y el fondo con los botones de abajo.");
 
     auto const size = m_mainLayer->getContentSize();
     float const stageW = size.width - 30.f;

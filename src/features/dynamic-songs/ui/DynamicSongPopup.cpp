@@ -4,6 +4,7 @@
 #include "../services/DynamicSongSubmerge.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../ui/PaiConfigKit.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 
@@ -85,14 +86,17 @@ bool DynamicSongPopup::init() {
     paimon::markDynamicPopup(this);
 
     setTitle("Cancion Dinamica");
+    this->addInfoButton("Cancion Dinamica",
+        "Suena la cancion del nivel mientras ves su informacion. En <cy>Buceo</c> eliges si al "
+        "darle play la cancion se hunde bajo un filtro en vez de cortarse, y en <cy>Avanzado</c> "
+        "ajustas la zona de inicio y el filtro personalizado.");
 
     loadConfig();
     m_cfg = config();
 
     rebuild();
 
-    auto* resetSpr = ButtonSprite::create("Restaurar", "goldFont.fnt", "GJ_button_06.png", 0.7f);
-    if (resetSpr) resetSpr->setScale(0.55f);
+    auto* resetSpr = paimon::ui::makeButtonSprite("Restaurar", paimon::ui::Btn::Red, 0.f, 0.6f, "bigFont.fnt");
     auto* resetBtn = CCMenuItemExt::createSpriteExtra(resetSpr,
         [this](CCMenuItemSpriteExtra*) {
             m_cfg = DynamicSongConfig{};

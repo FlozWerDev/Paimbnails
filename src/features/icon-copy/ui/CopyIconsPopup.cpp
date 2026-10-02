@@ -8,6 +8,7 @@
 #include "../../../utils/PaimonDrawNode.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
@@ -81,6 +82,10 @@ bool CopyIconsPopup::init(IconSet const& set, bool saved) {
     m_set = set;
     this->setTitle(saved ? "Icon Set" : "Copy Icons");
     this->setID("copy-icons-popup"_spr);
+    this->addInfoButton(saved ? "Icon Set" : "Copy Icons",
+        "Preview every gamemode icon in this set and its colors. "
+        "Tap an icon to see <cy>how it unlocks</c>. <cg>Copy</c> saves the set, "
+        "<cg>Use</c> wears it now.");
     paimon::markDynamicPopup(this);
 
     auto const content = m_mainLayer->getContentSize();
@@ -88,7 +93,7 @@ bool CopyIconsPopup::init(IconSet const& set, bool saved) {
     float const plateX = cx - kPlateWidth / 2.f;
 
     // header card: who the set belongs to, plus its colors.
-    if (auto* plate = paimon::SpriteHelper::createDarkPanel(kPlateWidth, 34.f, 90, 6.f)) {
+    if (auto* plate = paimon::ui::makeInset({kPlateWidth, 34.f})) {
         plate->setPosition({plateX, 176.f});
         m_mainLayer->addChild(plate);
     }
@@ -105,7 +110,7 @@ bool CopyIconsPopup::init(IconSet const& set, bool saved) {
     }
 
     // the set itself, framed so it reads as one thing instead of loose icons.
-    if (auto* plate = paimon::SpriteHelper::createDarkPanel(kPlateWidth, 46.f, 90, 6.f)) {
+    if (auto* plate = paimon::ui::makeInset({kPlateWidth, 46.f})) {
         plate->setPosition({plateX, 112.f});
         m_mainLayer->addChild(plate);
     }
@@ -118,17 +123,17 @@ bool CopyIconsPopup::init(IconSet const& set, bool saved) {
 
     struct Action {
         char const* text;
-        char const* sprite;
+        paimon::ui::Btn skin;
         cocos2d::SEL_MenuHandler handler;
         std::string id;
         bool copies;
     };
     Action const actions[] = {
-        {"Copy & Use", "GJ_button_01.png",
+        {"Copy & Use", paimon::ui::Btn::Green,
          menu_selector(CopyIconsPopup::onCopyAndUse), "copy-and-use-button"_spr, true},
-        {"Copy", "GJ_button_04.png",
+        {"Copy", paimon::ui::Btn::Cyan,
          menu_selector(CopyIconsPopup::onCopy), "copy-button"_spr, true},
-        {"Use", "GJ_button_02.png",
+        {"Use", paimon::ui::Btn::Blue,
          menu_selector(CopyIconsPopup::onUse), "use-button"_spr, false},
     };
 
@@ -137,10 +142,8 @@ bool CopyIconsPopup::init(IconSet const& set, bool saved) {
     float total = 0.f;
     for (auto const& action : actions) {
         if (saved && action.copies) continue;
-        auto* spr = ButtonSprite::create(action.text, static_cast<int>(kButtonWidth), true,
-                                         "bigFont.fnt", action.sprite, 30.f, 0.5f);
+        auto* spr = paimon::ui::makeButtonSprite(action.text, action.skin, kButtonWidth, kButtonScale, "bigFont.fnt");
         if (!spr) continue;
-        spr->setScale(kButtonScale);
         auto* btn = CCMenuItemSpriteExtra::create(spr, this, action.handler);
         btn->setID(action.id);
         menu->addChild(btn);

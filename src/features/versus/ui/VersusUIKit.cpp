@@ -13,17 +13,13 @@ CCNode* makePanel(CCSize size, std::string const& caption) {
     panel->setContentSize(size);
     panel->setAnchorPoint({0.5f, 0.5f});
 
-    if (auto* bg = paimon::ui::makeSurface(size)) {
-        panel->addChild(bg, -1);
-    }
+    panel->addChild(paimon::ui::makeInset(size, 85), -1);
 
     if (caption.empty()) return panel;
 
-    auto* title = CCLabelBMFont::create(caption.c_str(), "bigFont.fnt");
+    auto* title = paimon::ui::makeTitle(caption.c_str(), size.width - 20.f, 0.5f);
     title->setAnchorPoint({0.f, 0.5f});
-    title->setScale(std::min(0.4f, (size.width - 20.f) /
-                                   std::max(1.f, title->getContentSize().width)));
-    title->setPosition({10.f, size.height - kCaptionH / 2.f - 2.f});
+    title->setPosition({10.f, size.height - kCaptionH / 2.f - 1.f});
     panel->addChild(title, 1);
 
     if (auto* rule = makeDivider(size.width - 16.f)) {
@@ -47,20 +43,17 @@ CCLabelBMFont* makeText(std::string const& text, char const* font, float scale,
 
 CCMenuItemSpriteExtra* makeTab(std::string const& label, float width, CCObject* target,
                                SEL_MenuHandler callback) {
-    auto* face = paimon::ui::makeButtonFace(label.c_str(), {width, 26.f});
+    auto* face = paimon::ui::makeButtonSprite(label.c_str(), paimon::ui::Btn::Gray, width, 0.8f);
     return CCMenuItemSpriteExtra::create(face, target, callback);
 }
 
 void styleTab(CCMenuItemSpriteExtra* tab, bool active) {
-    if (!tab) return;
-    tab->setColor(active ? ccColor3B{255, 255, 255} : ccColor3B{124, 130, 148});
-    tab->setOpacity(active ? 255 : 190);
+    paimon::ui::setButtonSkin(tab, active ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray);
 }
 
 CCMenuItemSpriteExtra* makeAction(std::string const& label, float width, char const* skin,
                                   float scale, CCObject* target, SEL_MenuHandler callback) {
-    auto* face = paimon::ui::makeButtonFace(label.c_str(), {width, 30.f},
-        paimon::ui::actionColor(skin), scale);
+    auto* face = paimon::ui::makeButtonSprite(label.c_str(), skin, width, std::clamp(scale / 0.6f, 0.6f, 1.f));
     return CCMenuItemSpriteExtra::create(face, target, callback);
 }
 
@@ -72,9 +65,7 @@ CCMenuItemSpriteExtra* makeIconRow(char const* frameName, std::string const& lab
     row->setContentSize({width, height});
     row->setAnchorPoint({0.5f, 0.5f});
 
-    if (auto* bg = paimon::ui::makeSurface({width, height})) {
-        row->addChild(bg, 0);
-    }
+    row->addChild(paimon::ui::makeInset({width, height}, 80), 0);
 
     float textX = 10.f;
     auto* icon = paimon::SpriteHelper::safeCreateWithFrameName(frameName);
@@ -97,7 +88,9 @@ CCMenuItemSpriteExtra* makeIconRow(char const* frameName, std::string const& lab
 }
 
 CCNode* makeDivider(float width) {
-    return CCLayerColor::create(ccColor4B{255, 255, 255, 38}, width, 1.f);
+    auto* line = paimon::ui::makeDivider(width, paimon::ui::palette::gold, 110);
+    line->setAnchorPoint({0.f, 0.5f});
+    return line;
 }
 
 } // namespace paimon::versus::ui

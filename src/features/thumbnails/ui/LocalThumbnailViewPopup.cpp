@@ -1,4 +1,5 @@
 #include "LocalThumbnailViewPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../framework/state/SessionState.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
@@ -654,7 +655,7 @@ void LocalThumbnailViewPopup::setupRating() {
     ratingContainer->setPosition({contentSize.width / 2.f, 237.f});
     m_mainLayer->addChild(ratingContainer, 100);
 
-    auto bg = paimon::SpriteHelper::createDarkPanel(74.f, 16.f, 125);
+    auto bg = paimon::ui::makeInset({74.f, 16.f}, 125);
     bg->setPosition({-37.f, -8.f});
     ratingContainer->addChild(bg, -1);
 
@@ -1774,8 +1775,7 @@ void LocalThumbnailViewPopup::showNoThumbnail(CCSize content) {
     container->setPosition({0, 0});
     container->setID("nothumb-container"_spr);
 
-    auto bg = CCLayerColor::create({0, 0, 0, 200});
-    bg->setContentSize({bgWidth, bgHeight});
+    auto bg = paimon::ui::makeInset({bgWidth, bgHeight}, 200);
     bg->setPosition({centerX - bgWidth / 2, centerY - bgHeight / 2});
     container->addChild(bg);
 

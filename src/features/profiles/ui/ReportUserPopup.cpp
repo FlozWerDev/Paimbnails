@@ -1,4 +1,5 @@
 #include "ReportUserPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../emotes/ui/EmoteButton.hpp"
@@ -17,9 +18,16 @@ bool ReportUserPopup::init(int accountID, std::string const& username) {
     m_reportedUsername = username;
 
     this->setTitle("Report User");
+    this->addInfoButton("Report User",
+        "Send a report about this player to the moderators. Describe the <cy>reason</c> clearly; "
+        "abuse of reports may be penalized.");
 
     auto contentSize = m_mainLayer->getContentSize();
     float cx = contentSize.width / 2.f;
+
+    auto fieldInset = paimon::ui::makeInset({contentSize.width - 28.f, 60.f}, 85);
+    fieldInset->setPosition({14.f, contentSize.height - 98.f});
+    m_mainLayer->addChild(fieldInset, -1);
 
     auto infoLabel = CCLabelBMFont::create(
         fmt::format("User: {}", username).c_str(),

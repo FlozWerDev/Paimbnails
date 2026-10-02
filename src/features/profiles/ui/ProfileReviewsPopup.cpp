@@ -1,4 +1,5 @@
 #include "ProfileReviewsPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
@@ -25,11 +26,14 @@ bool ProfileReviewsPopup::init(int accountID) {
 
     m_accountID = accountID;
     this->setTitle("Profile Reviews");
+    this->addInfoButton("Profile Reviews",
+        "Ratings other players left on your profile. The <cy>number</c> at the top is your average "
+        "out of 5 stars; each row below shows a reviewer, their <co>star rating</c> and message.");
 
     auto contentSize = m_mainLayer->getContentSize();
     float centerX = contentSize.width / 2.f;
 
-    auto headerPanel = paimon::SpriteHelper::createDarkPanel(260.f, 50.f, 90, 8.f);
+    auto headerPanel = paimon::ui::makeInset({260.f, 50.f}, 90);
     headerPanel->setPosition({centerX - 130.f, contentSize.height - 72.f});
     m_mainLayer->addChild(headerPanel, 1);
 
@@ -52,8 +56,8 @@ bool ProfileReviewsPopup::init(int accountID) {
     m_countLabel->setColor({180, 180, 180});
     m_mainLayer->addChild(m_countLabel, 2);
 
-    auto separator = paimon::SpriteHelper::createDarkPanel(320.f, 1.5f, 60, 0.f);
-    separator->setPosition({centerX - 160.f, contentSize.height - 78.f});
+    auto separator = paimon::ui::makeDivider(320.f);
+    separator->setPosition({centerX, contentSize.height - 78.f});
     m_mainLayer->addChild(separator, 1);
 
     m_spinner = PaimonLoadingOverlay::create("Loading...", 35.f);
@@ -232,7 +236,7 @@ CCNode* ProfileReviewsPopup::createReviewCell(std::string const& username, float
     auto cell = CCNode::create();
     cell->setContentSize({width, cellH});
 
-    auto bg = paimon::SpriteHelper::createDarkPanel(width, cellH, 50, 5.f);
+    auto bg = paimon::ui::makeInset({width, cellH}, 50);
     bg->setPosition({0, 0});
     cell->addChild(bg, -1);
 

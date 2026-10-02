@@ -8,6 +8,7 @@
 #include "../../../utils/InfoButton.hpp"
 #include "../../../utils/ImageConverter.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
 #include <fstream>
@@ -48,8 +49,7 @@ bool PaimonShopPopup::init() {
     }
 
     if (PaimonUtils::isUserModerator()) {
-        auto uploadSpr = ButtonSprite::create("Upload", "goldFont.fnt", "GJ_button_04.png", 0.6f);
-        uploadSpr->setScale(0.6f);
+        auto uploadSpr = paimon::ui::makeButtonSprite("Upload", paimon::ui::Btn::Cyan, 0.f, 0.6f, "bigFont.fnt");
         auto uploadBtn = CCMenuItemSpriteExtra::create(
             uploadSpr, this, menu_selector(PaimonShopPopup::onUploadPet));
         uploadBtn->setPosition({55.f, content.height - 20.f});
@@ -64,6 +64,11 @@ bool PaimonShopPopup::init() {
 
     float scrollW = content.width - 16.f;
     float scrollH = content.height - 50.f;
+
+    auto listBg = paimon::ui::makeInset({scrollW, scrollH});
+    listBg->setPosition({8.f, 8.f});
+    m_mainLayer->addChild(listBg, 4);
+
     m_scrollLayer = ScrollLayer::create({scrollW, scrollH});
     m_scrollLayer->setPosition({8.f, 8.f});
     m_scrollLayer->setVisible(false);
@@ -150,8 +155,7 @@ void PaimonShopPopup::buildList() {
     float y = totalH - 30.f;
 
     for (auto& item : m_items) {
-        auto stripe = CCLayerColor::create({0, 0, 0, 40});
-        stripe->setContentSize({scrollW - 4.f, rowH - 4.f});
+        auto stripe = paimon::ui::makeInset({scrollW - 4.f, rowH - 4.f}, 70);
         stripe->setPosition({2.f, y - rowH / 2.f + 2.f});
         sc->addChild(stripe);
 
@@ -177,8 +181,7 @@ void PaimonShopPopup::buildList() {
             checkLbl->setPosition({scrollW - 45.f, y});
             sc->addChild(checkLbl);
         } else {
-            auto dlSpr = ButtonSprite::create("Get", "bigFont.fnt", "GJ_button_01.png", 0.6f);
-            dlSpr->setScale(0.55f);
+            auto dlSpr = paimon::ui::makeButtonSprite("Get", paimon::ui::Btn::Green, 0.f, 0.55f, "bigFont.fnt");
             auto dlBtn = CCMenuItemSpriteExtra::create(
                 dlSpr, this, menu_selector(PaimonShopPopup::onDownload));
             dlBtn->setPosition({scrollW - 45.f, y});

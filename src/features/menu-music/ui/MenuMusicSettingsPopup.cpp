@@ -166,6 +166,11 @@ bool MenuMusicSettingsPopup::init() {
     if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
     setTitle("Configuracion de Musica");
+    this->addInfoButton("Configuracion de Musica",
+        "Los <cg>efectos</c> se aplican en vivo a Menu Music. Cambia cualquier "
+        "slider y el preset pasa a <cy>Custom</c>. En <co>Espacial</c>, "
+        "<cy>A/B sonido original</c> desactiva los efectos un momento para comparar "
+        "sin perder tus ajustes. <cr>Restaurar FX</c> vuelve al sonido original.");
 
     auto& effects = MenuMusicEffects::get();
     effects.setAuditionBypassed(false);

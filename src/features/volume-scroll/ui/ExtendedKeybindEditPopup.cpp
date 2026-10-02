@@ -1,5 +1,6 @@
 #include "ExtendedKeybindEditPopup.hpp"
 
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 
 #include <Geode/Geode.hpp>
@@ -70,9 +71,19 @@ bool ExtendedKeybindEditPopup::init(
     m_onSave = std::move(onSave);
 
     this->setTitle(m_title.c_str());
+    this->addInfoButton("Editar atajo",
+        "Pulsa <cg>Record</c> y luego una tecla, boton del mouse"
+        + std::string(m_allowScroll ? " o <cy>scroll</c>" : "")
+        + " para asignarlo. <cg>Guardar</c> aplica el cambio; "
+        "<cr>Borrar</c> lo deja sin asignar.");
     m_noElasticity = true;
 
     auto winSize = m_mainLayer->getContentSize();
+
+    CCSize const insetSize{winSize.width - 40.f, 70.f};
+    auto inset = paimon::ui::makeInset(insetSize, 90);
+    inset->setPosition({(winSize.width - insetSize.width) / 2.f, winSize.height / 2.f - 8.f});
+    m_mainLayer->addChild(inset);
 
     m_displayLabel = CCLabelBMFont::create("(none)", "bigFont.fnt");
     m_displayLabel->setScale(0.6f);
@@ -83,15 +94,20 @@ bool ExtendedKeybindEditPopup::init(
     auto hintText = m_allowScroll
         ? "Click 'Record' then press a key, mouse button, or scroll"
         : "Click 'Record' then press a key or mouse button";
-    m_hintLabel = CCLabelBMFont::create(hintText, "chatFont.fnt");
-    m_hintLabel->setScale(0.55f);
+    m_hintLabel = paimon::ui::makeText(hintText, winSize.width - 56.f, 0.5f,
+        paimon::ui::palette::muted, kCCTextAlignmentCenter);
     m_hintLabel->setAnchorPoint({0.5f, 0.5f});
     m_hintLabel->setPosition({winSize.width / 2.f, winSize.height / 2.f - 10.f});
-    m_hintLabel->setOpacity(180);
     m_mainLayer->addChild(m_hintLabel);
 
     auto bottomMenu = CCMenu::create();
     bottomMenu->setContentSize({winSize.width - 30.f, 36.f});
+
+    auto clearSpr = paimon::ui::makeButtonSprite("Clear", paimon::ui::Btn::Red, 0.f, 0.6f);
+    auto clearBtn = CCMenuItemSpriteExtra::create(
+        clearSpr, this, menu_selector(ExtendedKeybindEditPopup::onClear)
+    );
+    bottomMenu->addChild(clearBtn);
 
     auto recordSpr = ButtonSprite::create("Record", "bigFont.fnt", "GJ_button_03.png", 0.6f);
     m_recordButton = CCMenuItemSpriteExtra::create(
@@ -99,17 +115,11 @@ bool ExtendedKeybindEditPopup::init(
     );
     bottomMenu->addChild(m_recordButton);
 
-    auto saveSpr = ButtonSprite::create("Save", "bigFont.fnt", "GJ_button_01.png", 0.6f);
+    auto saveSpr = paimon::ui::makeButtonSprite("Save", paimon::ui::Btn::Green, 0.f, 0.6f);
     auto saveBtn = CCMenuItemSpriteExtra::create(
         saveSpr, this, menu_selector(ExtendedKeybindEditPopup::onSave)
     );
     bottomMenu->addChild(saveBtn);
-
-    auto clearSpr = ButtonSprite::create("Clear", "bigFont.fnt", "GJ_button_06.png", 0.6f);
-    auto clearBtn = CCMenuItemSpriteExtra::create(
-        clearSpr, this, menu_selector(ExtendedKeybindEditPopup::onClear)
-    );
-    bottomMenu->addChild(clearBtn);
 
     bottomMenu->setLayout(RowLayout::create()->setGap(10.f));
     bottomMenu->setPosition({winSize.width / 2.f, 26.f});

@@ -1,4 +1,5 @@
 #include "ReportInputPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/Localization.hpp"
@@ -15,9 +16,19 @@ bool ReportInputPopup::init(int levelID, geode::CopyableFunction<void(std::strin
     m_callback = callback;
 
     this->setTitle(Localization::get().getString("report.title").c_str());
+    this->addInfoButton(Localization::get().getString("report.title").c_str(),
+        "Describe what is wrong with this thumbnail so a moderator can review it. "
+        "Reports are tied to <cy>Level ID</c> " + std::to_string(levelID) + ".");
 
     auto contentSize = m_mainLayer->getContentSize();
     float cx = contentSize.width / 2.f;
+
+    float const insetW = contentSize.width - 24.f;
+    float const insetH = 70.f;
+    if (auto* inset = paimon::ui::makeInset({insetW, insetH})) {
+        inset->setPosition({(contentSize.width - insetW) / 2.f, contentSize.height - 48.f - insetH});
+        m_mainLayer->addChild(inset);
+    }
 
     auto idLabel = CCLabelBMFont::create(
         fmt::format("Level ID: {}", levelID).c_str(),
@@ -25,7 +36,7 @@ bool ReportInputPopup::init(int levelID, geode::CopyableFunction<void(std::strin
     );
     idLabel->setScale(0.35f);
     idLabel->setPosition({cx, contentSize.height - 48.f});
-    idLabel->setColor({180, 180, 180});
+    idLabel->setColor(paimon::ui::palette::gold);
     m_mainLayer->addChild(idLabel);
 
     m_textInput = geode::TextInput::create(280.f, Localization::get().getString("report.placeholder").c_str(), "chatFont.fnt");

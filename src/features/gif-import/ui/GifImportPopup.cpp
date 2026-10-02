@@ -6,7 +6,6 @@
 #include "../../../utils/GIFDecoder.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
 #include "../../../utils/PaimonNotification.hpp"
-#include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/stb_image.h"
 #include "../../../utils/ThreadTracker.hpp"
 #include "../services/GifArtVectorizer.hpp"
@@ -15,6 +14,8 @@
 #include "../services/GifSourceScaler.hpp"
 #include "../services/GifStampLibrary.hpp"
 #include "../services/GifVideoSource.hpp"
+
+#include "../../../ui/PaimonUI.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/EditorUI.hpp>
@@ -111,9 +112,16 @@ bool GifImportPopup::init() {
     if (!PaimonPopup::init(kPopupWidth, kPopupHeight)) return false;
     setID("gif-import-popup"_spr);
     setTitle("GIF, Video o Imagen a Objetos");
+    addInfoButton("GIF a objetos",
+        "Convierte un GIF, video o imagen en objetos de GD dentro del editor. "
+        "Elige el archivo con <cg>Elegir archivo</c> y ajusta a la derecha: el "
+        "<cy>Modo</c> decide como se dibuja (bloques, pintura, art...), "
+        "<cy>Resolucion</c> y <cy>Colores</c> el detalle, y <cy>Presupuesto</c> "
+        "el limite de objetos. La vista previa usa objetos reales. "
+        "<cg>Importar</c> los coloca en el editor.");
     loadOptions();
 
-    auto* previewPanel = paimon::SpriteHelper::createDarkPanel(214.f, 178.f, 220, 6.f);
+    auto* previewPanel = paimon::ui::makeInset({214.f, 178.f}, 220);
     previewPanel->setPosition({18.f, 82.f});
     m_mainLayer->addChild(previewPanel);
 
@@ -149,6 +157,11 @@ bool GifImportPopup::init() {
     m_progressFill->setScaleX(0.f);
     m_progressFill->setVisible(false);
     m_mainLayer->addChild(m_progressFill, 3);
+
+    if (auto* panel = paimon::ui::makeInset({248.f, 200.f}, 70)) {
+        panel->setPosition({246.f, 72.f});
+        m_mainLayer->addChild(panel, -1);
+    }
 
     auto* menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});

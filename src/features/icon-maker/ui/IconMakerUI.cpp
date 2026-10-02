@@ -340,21 +340,10 @@ CCNode* makeSwatchGrid(float width, std::vector<ccColor3B> const& colors,
 
         if (i == static_cast<int>(colors.size())) {
 // open the full color wheel.
-            auto* holder = CCNode::create();
-            holder->setAnchorPoint({0.5f, 0.5f});
-            holder->setContentSize({kSwatch, kSwatch});
-            if (auto* panel = paimon::SpriteHelper::createColorPanel(
-                    kSwatch, kSwatch, {70, 76, 96}, 235, 4.f)) {
-                panel->setAnchorPoint({0.f, 0.f});
-                holder->addChild(panel);
-            }
-            auto* plus = CCLabelBMFont::create("...", "bigFont.fnt");
-            plus->setScale(0.34f);
-            plus->setAnchorPoint({0.5f, 0.5f});
-            plus->setPosition({kSwatch / 2.f, kSwatch / 2.f + 2.f});
-            holder->addChild(plus);
-
-            auto* btn = CCMenuItemExt::createSpriteExtra(holder,
+            auto* face = ButtonSprite::create("...", kSwatch / 0.5f, true, "bigFont.fnt",
+                                              "GJ_button_04.png", kSwatch / 0.5f, 0.5f);
+            face->setScale(0.5f);
+            auto* btn = CCMenuItemExt::createSpriteExtra(face,
                 [cb = onCustom](CCMenuItemSpriteExtra*) { if (cb) cb(); });
             btn->setPosition({cx, cy});
             menu->addChild(btn);
@@ -670,21 +659,10 @@ CCNode* makeAlignRow(float width, char const* title, char const* desc,
     auto cb = std::make_shared<std::function<void(AlignMode)>>(std::move(onAlign));
 
     auto addButton = [&](char const* text, AlignMode mode, int col, int line) {
-        auto* holder = CCNode::create();
-        holder->setAnchorPoint({0.5f, 0.5f});
-        holder->setContentSize({btnW, kBtnH});
-        if (auto* plate = paimon::SpriteHelper::createColorPanel(
-                btnW, kBtnH, {14, 24, 52}, 200, 3.f)) {
-            plate->setAnchorPoint({0.f, 0.f});
-            holder->addChild(plate, -1);
-        }
-        auto* label = CCLabelBMFont::create(text, "bigFont.fnt");
-        label->setAnchorPoint({0.5f, 0.5f});
-        label->limitLabelWidth(btnW - 8.f, 0.34f, 0.13f);
-        label->setPosition({btnW / 2.f, kBtnH / 2.f});
-        holder->addChild(label);
-
-        auto* btn = CCMenuItemExt::createSpriteExtra(holder,
+        auto* face = ButtonSprite::create(text, btnW / 0.6f, true, "bigFont.fnt",
+                                          "GJ_button_04.png", kBtnH / 0.6f, 0.5f);
+        face->setScale(0.6f);
+        auto* btn = CCMenuItemExt::createSpriteExtra(face,
             [cb, mode](CCMenuItemSpriteExtra*) { if (*cb) (*cb)(mode); });
         btn->setPosition({
             11.f + btnW / 2.f + static_cast<float>(col) * (btnW + kGap),

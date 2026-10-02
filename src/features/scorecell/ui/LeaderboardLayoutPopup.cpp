@@ -2,6 +2,7 @@
 #include "ScoreCellSettingsPopup.hpp"
 #include "../LeaderboardLayoutSettings.hpp"
 #include "../ScoreCellRefresh.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
 
@@ -28,29 +29,38 @@ LeaderboardLayoutPopup* LeaderboardLayoutPopup::create() {
 bool LeaderboardLayoutPopup::initContents() {
     if (!PaimonPopup::init(460.f, 390.f)) return false;
     this->setTitle("Leaderboard Layout");
+    this->addCorners();
+    this->addInfoButton("Leaderboard Layout",
+        "Choose which stats a leaderboard cell shows.\n\n"
+        "<cy>Presets</c> set a whole combination at once; toggling any <cg>module</c> "
+        "switches you to <cj>Custom</c>.\n\n"
+        "The game's native alignment is kept and the active stat always stays visible. "
+        "Open <co>Effects</c> for gradient and hover animations.");
 
+    namespace ui = paimon::ui;
     auto size = m_mainLayer->getContentSize();
     auto menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
     m_mainLayer->addChild(menu, 5);
 
-    auto hint = CCLabelBMFont::create("Native alignment is preserved. The active stat always stays visible.", "bigFont.fnt");
-    hint->setScale(0.34f);
-    hint->setColor({190, 205, 225});
-    hint->setPosition({size.width / 2.f, size.height - 52.f});
-    m_mainLayer->addChild(hint);
+    float presetPanelH = 70.f;
+    float presetTop = size.height - 44.f;
+    if (auto* panel = ui::makePanel({size.width - 32.f, presetPanelH}, "Presets")) {
+        panel->setPosition({16.f, presetTop - presetPanelH});
+        m_mainLayer->addChild(panel);
+    }
 
-    m_presetLabel = CCLabelBMFont::create("", "goldFont.fnt");
-    m_presetLabel->setScale(0.42f);
-    m_presetLabel->setPosition({size.width / 2.f, size.height - 76.f});
+    m_presetLabel = ui::makeLabel("", size.width - 60.f, 0.4f, ui::palette::gold);
+    m_presetLabel->setPosition({size.width / 2.f, presetTop - ui::kPanelHeader - 6.f});
     m_mainLayer->addChild(m_presetLabel);
 
-    float presetY = size.height - 105.f;
+    float presetY = presetTop - presetPanelH + 20.f;
     float presetGap = 92.f;
     float presetStart = size.width / 2.f - presetGap * 1.5f;
     for (size_t i = 0; i < kLeaderboardPresets.size(); ++i) {
         auto const& preset = kLeaderboardPresets[i];
-        auto sprite = ButtonSprite::create(std::string(preset.name).c_str(), "bigFont.fnt", "GJ_button_05.png", 0.6f);
+        auto sprite = ui::makeButtonSprite(std::string(preset.name).c_str(),
+            ui::Btn::Blue, 0.f, 0.6f, "bigFont.fnt");
         auto button = CCMenuItemSpriteExtra::create(sprite, this, menu_selector(LeaderboardLayoutPopup::onPreset));
         button->setTag(static_cast<int>(i));
         button->setScale(0.68f);
@@ -58,17 +68,18 @@ bool LeaderboardLayoutPopup::initContents() {
         menu->addChild(button);
     }
 
-    auto modulesTitle = CCLabelBMFont::create("Modules", "goldFont.fnt");
-    modulesTitle->setScale(0.48f);
-    modulesTitle->setAnchorPoint({0.f, 0.5f});
-    modulesTitle->setPosition({28.f, size.height - 138.f});
-    m_mainLayer->addChild(modulesTitle);
+    float modTop = presetTop - presetPanelH - 10.f;
+    float modH = 185.f;
+    if (auto* panel = ui::makePanel({size.width - 32.f, modH}, "Modules")) {
+        panel->setPosition({16.f, modTop - modH});
+        m_mainLayer->addChild(panel);
+    }
 
     m_moduleToggles.resize(kLeaderboardModules.size());
     constexpr size_t kRows = 5;
     float columnWidth = 205.f;
     float startX = 28.f;
-    float startY = size.height - 169.f;
+    float startY = modTop - ui::kPanelHeader - 12.f;
 
     for (size_t i = 0; i < kLeaderboardModules.size(); ++i) {
         auto const& info = kLeaderboardModules[i];
@@ -77,8 +88,7 @@ bool LeaderboardLayoutPopup::initContents() {
         float x = startX + columnWidth * static_cast<float>(column);
         float y = startY - 29.f * static_cast<float>(row);
 
-        auto label = CCLabelBMFont::create(std::string(info.name).c_str(), "bigFont.fnt");
-        label->setScale(0.37f);
+        auto label = ui::makeLabel(std::string(info.name).c_str(), 150.f, 0.37f);
         label->setAnchorPoint({0.f, 0.5f});
         label->setPosition({x, y});
         m_mainLayer->addChild(label);
@@ -92,17 +102,13 @@ bool LeaderboardLayoutPopup::initContents() {
         m_moduleToggles[i] = toggle;
     }
 
-    auto effectsSprite = ButtonSprite::create("Effects", "bigFont.fnt", "GJ_button_04.png", 0.7f);
-    auto effectsButton = CCMenuItemSpriteExtra::create(
-        effectsSprite, this, menu_selector(LeaderboardLayoutPopup::onEffects)
-    );
+    auto effectsButton = ui::makeButton("Effects", [this] { this->onEffects(nullptr); },
+        ui::Btn::Cyan, 0.f, 0.7f);
     effectsButton->setPosition({size.width / 2.f - 70.f, 28.f});
     menu->addChild(effectsButton);
 
-    auto doneSprite = ButtonSprite::create("Done", "bigFont.fnt", "GJ_button_01.png", 0.7f);
-    auto doneButton = CCMenuItemSpriteExtra::create(
-        doneSprite, this, menu_selector(LeaderboardLayoutPopup::onClose)
-    );
+    auto doneButton = ui::makeButton("Done", [this] { this->onClose(nullptr); },
+        ui::Btn::Green, 0.f, 0.7f);
     doneButton->setPosition({size.width / 2.f + 70.f, 28.f});
     menu->addChild(doneButton);
 

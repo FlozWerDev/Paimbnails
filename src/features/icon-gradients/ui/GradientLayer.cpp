@@ -703,6 +703,13 @@ bool GradientLayer::init() {
 
     setTitle("Icon Gradients", "goldFont.fnt", 0.72f, 18.f);
 
+    addInfoButton("Icon Gradients",
+        "Build a gradient from <cy>color points</c> on the preview. <cg>Add</c> and "
+        "<cr>Delete</c> points, drag them to move, and set each point's color with the "
+        "picker or <cy>R/G/B</c> fields. Toggle <cy>Linear</c> or <cy>Radial</c>, lock the "
+        "layout, and hide the dots. <cg>Save</c>/<co>Load</c> your gradients, and the gear "
+        "opens animations.");
+
     auto addPanel = [this](CCPoint position, CCSize size, char const* id) {
         auto panel = CCScale9Sprite::create("square02b_001.png");
         panel->setContentSize(size);
@@ -744,7 +751,7 @@ bool GradientLayer::init() {
     auto settingsButton = CCMenuItemSpriteExtra::create(
         settingsSprite, this, menu_selector(GradientLayer::onAnimations)
     );
-    settingsButton->setPosition({418.f, 281.f});
+    settingsButton->setPosition({384.f, 281.f});
     settingsButton->setID("animation-button"_spr);
     m_buttonMenu->addChild(settingsButton);
 

@@ -53,15 +53,10 @@ bool TextureStudioLayer::init() {
 
     buildBackground();
 
-    if (auto* title = CCLabelBMFont::create("Pack Gen", "bigFont.fnt")) {
-        title->setScale(0.75f);
-        title->setPosition({winSize.width / 2.f, winSize.height - 22.f});
-        this->addChild(title, 5);
-    }
-    if (auto* subtitle = CCLabelBMFont::create(
-            "Color slots applied live to the game", "chatFont.fnt")) {
-        subtitle->setScale(0.55f);
-        subtitle->setColor({185, 190, 200});
+    paimon::ui::addSceneTitle(this, "Pack Gen");
+    if (auto* subtitle = paimon::ui::makeText(
+            "Color slots applied live to the game", winSize.width - 80.f, 0.55f,
+            paimon::ui::palette::muted, kCCTextAlignmentCenter)) {
         subtitle->setPosition({winSize.width / 2.f, winSize.height - 40.f});
         this->addChild(subtitle, 5);
     }
@@ -70,34 +65,25 @@ bool TextureStudioLayer::init() {
     menu->setPosition({0.f, 0.f});
     this->addChild(menu, 10);
 
-    if (auto* backSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png")) {
-        if (auto* backBtn = CCMenuItemExt::createSpriteExtra(backSpr,
-                [this](CCMenuItemSpriteExtra*) { this->onBack(nullptr); })) {
-            backBtn->setPosition({26.f, winSize.height - 24.f});
-            menu->addChild(backBtn);
-        }
+    if (auto* backBtn = paimon::ui::makeBackButton([this] { this->onBack(nullptr); })) {
+        backBtn->setPosition({26.f, winSize.height - 24.f});
+        menu->addChild(backBtn);
     }
 
-    if (auto* newSpr = ButtonSprite::create("+ New Slot", "bigFont.fnt", "GJ_button_01.png", 0.42f)) {
-        if (auto* newBtn = CCMenuItemExt::createSpriteExtra(newSpr,
-                [this](CCMenuItemSpriteExtra*) { this->onNewPack(nullptr); })) {
-            newBtn->setPosition({winSize.width - 60.f, winSize.height - 24.f});
-            menu->addChild(newBtn);
-        }
+    if (auto* newBtn = paimon::ui::makeButton("+ New Slot",
+            [this] { this->onNewPack(nullptr); }, paimon::ui::Btn::Green, 0.f, 0.5f, "bigFont.fnt")) {
+        newBtn->setPosition({winSize.width - 60.f, winSize.height - 24.f});
+        menu->addChild(newBtn);
     }
-    if (auto* importSpr = ButtonSprite::create("Import JSON", "bigFont.fnt", "GJ_button_05.png", 0.36f)) {
-        if (auto* importBtn = CCMenuItemExt::createSpriteExtra(importSpr,
-                [this](CCMenuItemSpriteExtra*) { this->onImportJson(nullptr); })) {
-            importBtn->setPosition({winSize.width - 210.f, winSize.height - 24.f});
-            menu->addChild(importBtn);
-        }
+    if (auto* importBtn = paimon::ui::makeButton("Import JSON",
+            [this] { this->onImportJson(nullptr); }, paimon::ui::Btn::Blue, 0.f, 0.45f, "bigFont.fnt")) {
+        importBtn->setPosition({winSize.width - 210.f, winSize.height - 24.f});
+        menu->addChild(importBtn);
     }
-    if (auto* folderSpr = ButtonSprite::create("Folder", "bigFont.fnt", "GJ_button_05.png", 0.4f)) {
-        if (auto* folderBtn = CCMenuItemExt::createSpriteExtra(folderSpr,
-                [this](CCMenuItemSpriteExtra*) { this->onOpenFolder(nullptr); })) {
-            folderBtn->setPosition({winSize.width - 46.f, 20.f});
-            menu->addChild(folderBtn);
-        }
+    if (auto* folderBtn = paimon::ui::makeButton("Folder",
+            [this] { this->onOpenFolder(nullptr); }, paimon::ui::Btn::Cyan, 0.f, 0.5f, "bigFont.fnt")) {
+        folderBtn->setPosition({winSize.width - 46.f, 20.f});
+        menu->addChild(folderBtn);
     }
 
     const float gridW = winSize.width - 70.f;

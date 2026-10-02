@@ -3,6 +3,7 @@
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../framework/state/SessionState.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include <Geode/ui/LoadingSpinner.hpp>
 #include <Geode/ui/PopupManager.hpp>
 #include "../../../utils/PaimonNotification.hpp"
@@ -61,39 +62,18 @@ bool VerificationCenterLayer::init() {
 
     auto winSize = CCDirector::get()->getWinSize();
 
-    auto bg = CCLayerColor::create(ccc4(18, 18, 40, 255));
-    bg->setContentSize(winSize);
-    this->addChild(bg, -2);
+    paimon::ui::decorateScene(this);
 
-    auto bottomLeft = CCSprite::createWithSpriteFrameName("GJ_sideArt_001.png");
-    if (bottomLeft) {
-        bottomLeft->setAnchorPoint({0, 0});
-        bottomLeft->setPosition({-2, -2});
-        bottomLeft->setOpacity(100);
-        this->addChild(bottomLeft, -1);
-    }
-    auto bottomRight = CCSprite::createWithSpriteFrameName("GJ_sideArt_001.png");
-    if (bottomRight) {
-        bottomRight->setAnchorPoint({1, 0});
-        bottomRight->setPosition({winSize.width + 2, -2});
-        bottomRight->setFlipX(true);
-        bottomRight->setOpacity(100);
-        this->addChild(bottomRight, -1);
-    }
-
-    auto title = CCLabelBMFont::create(
-        Localization::get().getString("queue.title").c_str(), "goldFont.fnt"
-    );
+    auto title = paimon::ui::addSceneTitle(this,
+        Localization::get().getString("queue.title").c_str());
     title->setPosition({winSize.width / 2, winSize.height - 22.f});
-    title->setScale(0.8f);
-    this->addChild(title, 2);
 
     m_tabsMenu = CCMenu::create();
     m_tabsMenu->setID("tabs-menu"_spr);
     m_tabsMenu->setPosition({winSize.width / 2, winSize.height - 50.f});
 
     auto mkTab = [&](char const* label, int width, SEL_MenuHandler sel, PendingCategory cat) {
-        auto spr = ButtonSprite::create(label, width, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
+        auto spr = paimon::ui::makeButtonSprite(label, paimon::ui::Btn::Gray, (float)width, 0.7f, "bigFont.fnt");
         auto btn = CCMenuItemSpriteExtra::create(spr, this, sel);
         btn->setTag(static_cast<int>(cat));
         return btn;
@@ -114,23 +94,23 @@ bool VerificationCenterLayer::init() {
         menu_selector(VerificationCenterLayer::onTabProfileImg), PendingCategory::ProfileImg));
 
     {
-        auto spr = ButtonSprite::create(
+        auto spr = paimon::ui::makeButtonSprite(
             Localization::get().getString("queue.banned_btn").c_str(),
-            70, true, "bigFont.fnt", "GJ_button_05.png", 28.f, 0.55f);
-        spr->setScale(0.75f);
+            paimon::ui::Btn::Red, 70.f, 0.7f, "bigFont.fnt");
         auto btn = CCMenuItemSpriteExtra::create(spr, this,
             menu_selector(VerificationCenterLayer::onViewBans));
         btn->setID("banned-users-btn"_spr);
+        btn->setTag(-1);
         m_tabsMenu->addChild(btn);
     }
 
     {
-        auto spr = ButtonSprite::create(
-            "WL", 50, true, "bigFont.fnt", "GJ_button_04.png", 28.f, 0.55f);
-        spr->setScale(0.75f);
+        auto spr = paimon::ui::makeButtonSprite(
+            "WL", paimon::ui::Btn::Blue, 50.f, 0.7f, "bigFont.fnt");
         auto btn = CCMenuItemSpriteExtra::create(spr, this,
             menu_selector(VerificationCenterLayer::onViewWhitelist));
         btn->setID("whitelist-btn"_spr);
+        btn->setTag(-1);
         m_tabsMenu->addChild(btn);
     }
 
@@ -142,7 +122,7 @@ bool VerificationCenterLayer::init() {
     float listX = 18.f;
     float listY = 35.f;
 
-    auto listBg = paimon::SpriteHelper::createDarkPanel(listW, listH, 80);
+    auto listBg = paimon::ui::makeInset({listW, listH});
     listBg->setPosition({listX, listY});
     this->addChild(listBg, 0);
 
@@ -167,7 +147,7 @@ bool VerificationCenterLayer::init() {
     float previewH = listH;
     float previewY = listY;
 
-    auto previewBg = paimon::SpriteHelper::createDarkPanel(previewW, previewH, 60);
+    auto previewBg = paimon::ui::makeInset({previewW, previewH}, 70);
     previewBg->setPosition({previewX, previewY});
     this->addChild(previewBg, 0);
 
@@ -253,21 +233,21 @@ bool VerificationCenterLayer::init() {
     {
         auto filterMenu = CCMenu::create();
         filterMenu->setPosition({0, 0});
-        auto filterSpr = ButtonSprite::create("All", 72, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.40f);
+        auto filterSpr = paimon::ui::makeButtonSprite("All", paimon::ui::Btn::Blue, 72.f, 0.6f, "bigFont.fnt");
         auto filterBtn = CCMenuItemSpriteExtra::create(filterSpr, this,
             menu_selector(VerificationCenterLayer::onToggleFilter));
         filterBtn->setID("filter-btn"_spr);
         filterBtn->setPosition({listX + 38.f, listY - 12.f});
         filterMenu->addChild(filterBtn);
 
-        auto refreshSpr = ButtonSprite::create("Refresh", 60, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f);
+        auto refreshSpr = paimon::ui::makeButtonSprite("Refresh", paimon::ui::Btn::Green, 60.f, 0.6f, "bigFont.fnt");
         m_refreshBtn = CCMenuItemSpriteExtra::create(refreshSpr, this,
             menu_selector(VerificationCenterLayer::onRefresh));
         m_refreshBtn->setID("refresh-btn"_spr);
         m_refreshBtn->setPosition({listX + 110.f, listY - 12.f});
         filterMenu->addChild(m_refreshBtn);
 
-        auto sessionSpr = ButtonSprite::create("Sesion", 54, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.40f);
+        auto sessionSpr = paimon::ui::makeButtonSprite("Sesion", paimon::ui::Btn::Blue, 54.f, 0.6f, "bigFont.fnt");
         auto sessionBtn = CCMenuItemSpriteExtra::create(sessionSpr, this,
             menu_selector(VerificationCenterLayer::onSession));
         sessionBtn->setPosition({listX + 180.f, listY - 12.f});
@@ -312,8 +292,9 @@ void VerificationCenterLayer::switchTo(PendingCategory cat) {
     if (m_tabsMenu) {
         for (auto* n : CCArrayExt<CCNode*>(m_tabsMenu->getChildren())) {
             auto* it = static_cast<CCMenuItemSpriteExtra*>(n);
+            if (it->getTag() < 0) continue;
             bool active = it->getTag() == static_cast<int>(cat);
-            it->setScale(active ? 0.82f : 0.68f);
+            paimon::ui::setButtonSkin(it, active ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray);
         }
     }
 
@@ -1146,11 +1127,10 @@ void VerificationCenterLayer::onToggleFilter(CCObject* sender) {
 
     auto btn = static_cast<CCMenuItemSpriteExtra*>(sender);
     if (btn) {
-        auto spr = ButtonSprite::create(
+        auto spr = paimon::ui::makeButtonSprite(
             m_filterUnclaimed ? "Unclaimed" : "All",
-            72, true, "bigFont.fnt",
-            m_filterUnclaimed ? "GJ_button_02.png" : "GJ_button_04.png",
-            18.f, 0.40f);
+            m_filterUnclaimed ? paimon::ui::Btn::Cyan : paimon::ui::Btn::Blue,
+            72.f, 0.6f, "bigFont.fnt");
         btn->setNormalImage(spr);
     }
 

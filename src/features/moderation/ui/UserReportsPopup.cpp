@@ -1,20 +1,28 @@
 #include "UserReportsPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
-#include <Geode/binding/ButtonSprite.hpp>
+#include "../../../ui/PaimonUI.hpp"
 
 using namespace geode::prelude;
 using namespace cocos2d;
 
 bool UserReportsPopup::init(std::string const& reportedUsername, std::vector<ReportEntry> const& reports) {
-    if (!PaimonPopup::init(380.f, 200.f)) return false;
+    if (!PaimonPopup::init(380.f, 210.f)) return false;
 
     m_reports = reports;
     m_reportedUsername = reportedUsername;
 
     this->setTitle(fmt::format("Reports: {}", m_reportedUsername).c_str());
+    this->addInfoButton("User Reports",
+        "Each report filed against this user. Use the <cy>arrows</c> to move between them; "
+        "<cg>By</c> is who filed it and the text below is their note.");
 
     auto contentSize = m_mainLayer->getContentSize();
     float centerX = contentSize.width / 2.f;
+
+    CCSize insetSize = {contentSize.width - 70.f, 96.f};
+    auto inset = paimon::ui::makeInset(insetSize);
+    inset->setPosition({centerX - insetSize.width / 2.f, contentSize.height / 2.f - 42.f});
+    m_mainLayer->addChild(inset);
 
     m_reporterLabel = CCLabelBMFont::create("", "goldFont.fnt");
     m_reporterLabel->setScale(0.4f);
@@ -23,15 +31,15 @@ bool UserReportsPopup::init(std::string const& reportedUsername, std::vector<Rep
 
     m_noteLabel = CCLabelBMFont::create("", "chatFont.fnt");
     m_noteLabel->setScale(0.45f);
-    m_noteLabel->setPosition({centerX, contentSize.height - 90.f});
+    m_noteLabel->setPosition({centerX, contentSize.height - 92.f});
     m_noteLabel->setColor({220, 220, 220});
-    m_noteLabel->setWidth(340.f);
+    m_noteLabel->setWidth(insetSize.width - 20.f);
     m_noteLabel->setAlignment(CCTextAlignment::kCCTextAlignmentCenter);
-    m_mainLayer->addChild(m_noteLabel);
+    m_mainLayer->addChild(m_noteLabel, 1);
 
     m_counterLabel = CCLabelBMFont::create("", "chatFont.fnt");
     m_counterLabel->setScale(0.4f);
-    m_counterLabel->setPosition({centerX, 50.f});
+    m_counterLabel->setPosition({centerX, 36.f});
     m_counterLabel->setColor({180, 180, 180});
     m_mainLayer->addChild(m_counterLabel);
 

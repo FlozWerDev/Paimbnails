@@ -46,13 +46,17 @@ bool UserThumbnailsLayer::init(std::string const& username, int accountID) {
     this->addChild(topMenu);
 
     m_titleLabel = CCLabelBMFont::create(
-        fmt::format("{}'s Thumbnails", username).c_str(), "bigFont.fnt"
+        fmt::format("{}'s Thumbnails", username).c_str(), "goldFont.fnt"
     );
-    m_titleLabel->setPosition({win.width / 2, win.height - 30.f});
-    m_titleLabel->limitLabelWidth(win.width - 110.f, 0.6f, 0.24f);
+    m_titleLabel->setPosition({win.width / 2, win.height - 24.f});
+    m_titleLabel->limitLabelWidth(win.width - 110.f, 0.8f, 0.3f);
     this->addChild(m_titleLabel);
 
-    m_loadingLabel = CCLabelBMFont::create("Loading...", "bigFont.fnt");
+    auto* listBg = paimon::ui::makeInset({win.width - 30.f, win.height - 90.f}, 90);
+    listBg->setPosition({15.f, 45.f});
+    this->addChild(listBg, -1);
+
+    m_loadingLabel = CCLabelBMFont::create("Loading...", "goldFont.fnt");
     m_loadingLabel->setPosition(win / 2);
     m_loadingLabel->setScale(0.5f);
     this->addChild(m_loadingLabel);

@@ -1,6 +1,7 @@
 #include "../features/custom-hover/CustomHover.hpp"
 #include "FeatureConfigPopup.hpp"
 #include "SmoothUIConfigPopup.hpp"
+#include "PaimonUI.hpp"
 
 #include "../utils/DynamicPopupRegistry.hpp"
 #include "../features/settings-panel/services/SettingsPanelManager.hpp"
@@ -892,13 +893,18 @@ bool FeatureConfigPopup::init(std::string const& featureKey) {
     paimon::markDynamicPopup(this);
 
     this->setTitle(group.title.c_str());
+    this->addInfoButton(group.title,
+        "Cada fila ajusta una opcion de esta seccion.\n\n"
+        "Los <cg>interruptores</c> activan o desactivan; los <cy>deslizadores</c> "
+        "fijan un valor; <co>Abrir</c> lleva a su editor dedicado.\n\n"
+        "Los cambios se guardan al instante.");
 
     auto winSize = m_mainLayer->getContentSize();
 
     if (!group.subtitle.empty()) {
         auto* subtitleLbl = CCLabelBMFont::create(group.subtitle.c_str(), "chatFont.fnt");
         subtitleLbl->setScale(0.55f);
-        subtitleLbl->setColor({180, 190, 210});
+        subtitleLbl->setColor(paimon::ui::palette::muted);
         subtitleLbl->setAnchorPoint({0.5f, 1.f});
         subtitleLbl->setPosition({winSize.width / 2.f, winSize.height - 28.f});
         m_mainLayer->addChild(subtitleLbl);
@@ -909,6 +915,10 @@ bool FeatureConfigPopup::init(std::string const& featureKey) {
     float scrollH = winSize.height - topOffset - 16.f;
     float scrollX = 15.f;
     float scrollY = 8.f;
+
+    auto* listInset = paimon::ui::makeInset({scrollW + 8.f, scrollH + 8.f});
+    listInset->setPosition({scrollX - 4.f, scrollY - 4.f});
+    m_mainLayer->addChild(listInset);
 
     m_scroll = ScrollLayer::create({scrollW, scrollH});
     m_scroll->setPosition({scrollX, scrollY});

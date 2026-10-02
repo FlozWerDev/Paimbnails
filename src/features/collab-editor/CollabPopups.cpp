@@ -224,6 +224,10 @@ bool CollabRoomPopup::init(GJGameLevel* hostLevel) {
     paimon::markDynamicPopup(this);
     setID("collab-room"_spr);
     setTitle("Collab Editor");
+    addInfoButton("Collab Editor",
+        "Edita niveles en tiempo real con tus amigos.\n"
+        "<cg>Crear sala</c> genera un codigo que compartes; <cy>Unirse</c> pide el "
+        "codigo del host.\nEl host controla los <co>permisos</c> y puede expulsar editores.");
 
     m_content = CCNode::create();
     m_content->setContentSize(m_mainLayer->getContentSize());
@@ -609,6 +613,10 @@ bool HostOptionsPopup::init() {
     if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
     setTitle("Permisos de la sala");
+    addInfoButton("Permisos de la sala",
+        "Define que pueden hacer los demas editores. Los cambios se sincronizan en vivo.\n"
+        "<cy>Solo lectura</c>: los peers ven pero no editan ni comparten nada.\n"
+        "<cg>Layers exclusivas</c>: cada editor trabaja en capas separadas.");
     m_permissions = CollabManager::get().permissions();
 
     auto* hint = makeHint("Que pueden hacer los demas editores");
@@ -677,6 +685,9 @@ bool CollabPeersPopup::init() {
     if (!PaimonPopup::init(360.f, 276.f)) return false;
     paimon::markDynamicPopup(this);
     setTitle("Editores en la sala");
+    addInfoButton("Editores en la sala",
+        "Lista de quien esta conectado. Toca un nombre para abrir su perfil de GD.\n"
+        "Si eres el host, usa <cr>Expulsar</c> para echar a un editor.");
 
     constexpr float kScrollW = 320.f, kScrollH = 172.f;
     constexpr float kScrollX = 20.f, kScrollY = 44.f;
@@ -938,6 +949,9 @@ bool CollabInvitePopup::init() {
     if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     paimon::markDynamicPopup(this);
     setTitle("Invitar Amigos");
+    addInfoButton("Invitar Amigos",
+        "Invita a tus amigos de GD a la sala. Usa el buscador para filtrar por nombre.\n"
+        "<cg>Invitar</c> envia la invitacion; el amigo debe estar en linea para recibirla.");
 
     constexpr float kScrollW = 330.f, kScrollH = 152.f;
     constexpr float kScrollX = (kPopupW - kScrollW) / 2.f;
@@ -1181,6 +1195,10 @@ bool CollabChatPopup::init() {
     paimon::markDynamicPopup(this);
     setID("collab-chat"_spr);
     setTitle("Chat de sala");
+    addInfoButton("Chat de sala",
+        "Habla con los demas editores de la sala.\n"
+        "Escribe y pulsa <cg>Enviar</c>, o usa el boton de emotes.\n"
+        "<co>Mic</c> activa el chat de voz (debe estar habilitado en ajustes).");
 
     m_statusDot = CCDrawNode::create();
     m_mainLayer->addChild(m_statusDot, 5);

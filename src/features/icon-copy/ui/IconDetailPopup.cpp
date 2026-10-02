@@ -4,6 +4,7 @@
 #include "../IconUnlockInfo.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
 #include <algorithm>
 #include <string>
@@ -268,8 +269,7 @@ bool IconDetailPopup::init(IconSet const& set, IconType type) {
     this->setID("icon-detail-popup"_spr);
     paimon::markDynamicPopup(this);
 
-    if (auto* card = paimon::SpriteHelper::createDarkPanel(
-            kPreviewWidth, kPreviewHeight, 80, 9.f)) {
+    if (auto* card = paimon::ui::makeInset({kPreviewWidth, kPreviewHeight})) {
         card->setID("icon-preview-card"_spr);
         card->setPosition({kPreviewX, kPreviewY});
         m_mainLayer->addChild(card);
@@ -280,8 +280,7 @@ bool IconDetailPopup::init(IconSet const& set, IconType type) {
     constexpr float well = 98.f;
     constexpr float wellX = kPreviewX + (kPreviewWidth - well) / 2.f;
     constexpr float wellY = 76.f;
-    if (auto* plate = paimon::SpriteHelper::createColorPanel(
-            well, well, {21, 23, 31}, 235, 10.f)) {
+    if (auto* plate = paimon::ui::makeInset({well, well}, 235)) {
         plate->setID("icon-art-plate"_spr);
         plate->setPosition({wellX, wellY});
         m_mainLayer->addChild(plate);
@@ -311,8 +310,7 @@ bool IconDetailPopup::init(IconSet const& set, IconType type) {
 
     constexpr float summaryY = 168.f;
     constexpr float summaryH = 36.f;
-    if (auto* summary = paimon::SpriteHelper::createDarkPanel(
-            kInfoWidth, summaryH, 75, 7.f)) {
+    if (auto* summary = paimon::ui::makeInset({kInfoWidth, summaryH})) {
         summary->setID("unlock-summary-card"_spr);
         summary->setPosition({kInfoX, summaryY});
         m_mainLayer->addChild(summary);
@@ -349,8 +347,7 @@ bool IconDetailPopup::init(IconSet const& set, IconType type) {
 
     constexpr float requirementY = 92.f;
     constexpr float requirementH = 50.f;
-    if (auto* requirement = paimon::SpriteHelper::createDarkPanel(
-            kInfoWidth, requirementH, 65, 7.f)) {
+    if (auto* requirement = paimon::ui::makeInset({kInfoWidth, requirementH})) {
         requirement->setID("unlock-requirement-card"_spr);
         requirement->setPosition({kInfoX, requirementY});
         m_mainLayer->addChild(requirement);
@@ -375,8 +372,7 @@ bool IconDetailPopup::init(IconSet const& set, IconType type) {
 
     constexpr float progressY = 36.f;
     constexpr float progressH = 50.f;
-    if (auto* progressCard = paimon::SpriteHelper::createDarkPanel(
-            kInfoWidth, progressH, 65, 7.f)) {
+    if (auto* progressCard = paimon::ui::makeInset({kInfoWidth, progressH})) {
         progressCard->setID("unlock-progress-card"_spr);
         progressCard->setPosition({kInfoX, progressY});
         m_mainLayer->addChild(progressCard);

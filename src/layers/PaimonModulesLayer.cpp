@@ -1,6 +1,5 @@
 #include "PaimonModulesLayer.hpp"
 #include "../ui/PaimonUI.hpp"
-#include "../utils/SpriteHelper.hpp"
 #include "../utils/PaimonNotification.hpp"
 #include "../features/info-suite/InfoCompat.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
@@ -17,22 +16,20 @@ constexpr float kHeaderH = 26.f;
 constexpr float kBannerH = 52.f;
 
 namespace pal {
-    constexpr ccColor4B kBgTop{24, 36, 57, 255};
-    constexpr ccColor4B kBgBottom{11, 16, 29, 255};
-    constexpr ccColor3B kInset{20, 28, 45};
-    constexpr GLubyte kInsetOpacity = 240;
-    constexpr ccColor3B kCardOn{29, 40, 61};
-    constexpr ccColor3B kCardOff{20, 28, 45};
-    constexpr GLubyte kCardOnOpacity = 245;
-    constexpr GLubyte kCardOffOpacity = 215;
-    constexpr ccColor3B kStateOn{150, 255, 150};
-    constexpr ccColor3B kStateOff{162, 180, 205};
-    constexpr ccColor3B kStateLocked{255, 137, 155};
-    constexpr ccColor3B kAccentOff{55, 72, 99};
-    constexpr ccColor3B kCount{116, 204, 255};
-    constexpr ccColor3B kName{237, 244, 255};
-    constexpr ccColor3B kDesc{162, 180, 205};
-    constexpr ccColor3B kId{132, 153, 182};
+    constexpr ccColor3B kInset{0, 0, 0};
+    constexpr GLubyte kInsetOpacity = 80;
+    constexpr ccColor3B kCardOn{0, 0, 0};
+    constexpr ccColor3B kCardOff{0, 0, 0};
+    constexpr GLubyte kCardOnOpacity = 70;
+    constexpr GLubyte kCardOffOpacity = 120;
+    constexpr ccColor3B kStateOn{130, 255, 130};
+    constexpr ccColor3B kStateOff{190, 190, 200};
+    constexpr ccColor3B kStateLocked{255, 120, 120};
+    constexpr ccColor3B kAccentOff{90, 90, 100};
+    constexpr ccColor3B kCount{255, 210, 90};
+    constexpr ccColor3B kName{255, 255, 255};
+    constexpr ccColor3B kDesc{210, 210, 220};
+    constexpr ccColor3B kId{150, 150, 165};
 }
 
 ccColor3B sectionAccent(mods::Section section) {
@@ -75,11 +72,7 @@ bool PaimonModulesLayer::init() {
     float cx = win.width / 2.f;
     float cy = win.height / 2.f;
 
-    if (auto grad = CCLayerGradient::create(pal::kBgTop, pal::kBgBottom)) {
-        grad->setContentSize(win);
-        grad->setVector({0.2f, -1.f});
-        this->addChild(grad, -10);
-    }
+    paimon::ui::decorateScene(this);
 
     float panelW = std::min(480.f, win.width - 40.f);
     float panelH = win.height - 36.f;
@@ -87,17 +80,20 @@ bool PaimonModulesLayer::init() {
     float panelTop = cy + panelH / 2.f;
     float panelBot = cy - panelH / 2.f;
 
-    auto* frame = paimon::ui::makeSurface({panelW, panelH});
+    auto* frame = NineSlice::create("GJ_square01.png");
+    frame->setContentSize({panelW, panelH});
+    frame->setAnchorPoint({0.f, 0.f});
     frame->setPosition({panelLeft, panelBot});
     this->addChild(frame);
+    paimon::ui::addCorners(frame, {panelW, panelH});
 
     m_menu = CCMenu::create();
     m_menu->setPosition({0.f, 0.f});
     this->addChild(m_menu, 20);
 
-    auto title = CCLabelBMFont::create("Modulos", "bigFont.fnt");
-    title->setPosition({cx, panelTop - 22.f});
-    title->setScale(0.6f);
+    auto title = CCLabelBMFont::create("Modulos", "goldFont.fnt");
+    title->setPosition({cx, panelTop - 20.f});
+    title->setScale(0.8f);
     this->addChild(title, 10);
 
     m_countLabel = CCLabelBMFont::create("", "goldFont.fnt");
@@ -117,11 +113,9 @@ bool PaimonModulesLayer::init() {
     float sectionW = std::min(panelW * 0.44f, 190.f);
     float sectionCx = panelLeft + 18.f + sectionW / 2.f;
 
-    if (auto chip = paimon::SpriteHelper::createColorPanel(
-            sectionW, 24.f, pal::kInset, pal::kInsetOpacity, 6.f)) {
-        chip->setPosition({sectionCx - sectionW / 2.f, filterY - 12.f});
-        this->addChild(chip, 1);
-    }
+    auto* chip = paimon::ui::makeInset({sectionW, 24.f}, pal::kInsetOpacity);
+    chip->setPosition({sectionCx - sectionW / 2.f, filterY - 12.f});
+    this->addChild(chip, 1);
 
     auto prevSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
     prevSpr->setScale(0.5f);
@@ -138,7 +132,7 @@ bool PaimonModulesLayer::init() {
     nextBtn->setPosition({sectionCx + sectionW / 2.f - 12.f, filterY});
     m_menu->addChild(nextBtn);
 
-    m_sectionLabel = CCLabelBMFont::create("", "bigFont.fnt");
+    m_sectionLabel = CCLabelBMFont::create("", "goldFont.fnt");
     m_sectionLabel->setPosition({sectionCx, filterY});
     m_sectionLabel->setScale(0.42f);
     this->addChild(m_sectionLabel, 10);
@@ -163,14 +157,14 @@ bool PaimonModulesLayer::init() {
     float actionScale = panelW < 370.f ? 0.50f : 0.60f;
     float actionOffset = std::min(panelW * 0.24f, 118.f);
 
-    auto allOnSpr = ButtonSprite::create("Activar Todo", "bigFont.fnt", "GJ_button_01.png", .8f);
-    allOnSpr->setScale(actionScale);
+    auto allOnSpr = ButtonSprite::create("Activar Todo", "goldFont.fnt", "GJ_button_01.png", .8f);
+    allOnSpr->setScale(actionScale + 0.1f);
     auto allOnBtn = CCMenuItemSpriteExtra::create(allOnSpr, this, menu_selector(PaimonModulesLayer::onAllOn));
     allOnBtn->setPosition({cx - actionOffset, footerY});
     m_menu->addChild(allOnBtn);
 
-    auto allOffSpr = ButtonSprite::create("Apagar Todo", "bigFont.fnt", "GJ_button_06.png", .8f);
-    allOffSpr->setScale(actionScale);
+    auto allOffSpr = ButtonSprite::create("Apagar Todo", "goldFont.fnt", "GJ_button_06.png", .8f);
+    allOffSpr->setScale(actionScale + 0.1f);
     auto allOffBtn = CCMenuItemSpriteExtra::create(allOffSpr, this, menu_selector(PaimonModulesLayer::onAllOff));
     allOffBtn->setPosition({cx + actionOffset, footerY});
     m_menu->addChild(allOffBtn);
@@ -181,11 +175,9 @@ bool PaimonModulesLayer::init() {
     float scrollH = listTop - listBot;
     float scrollX = cx - scrollW / 2.f;
 
-    if (auto listBg = paimon::SpriteHelper::createColorPanel(
-            scrollW + 14.f, scrollH + 14.f, pal::kInset, pal::kInsetOpacity, 8.f)) {
-        listBg->setPosition({scrollX - 7.f, listBot - 7.f});
-        this->addChild(listBg, 1);
-    }
+    auto* listBg = paimon::ui::makeInset({scrollW + 14.f, scrollH + 14.f}, pal::kInsetOpacity);
+    listBg->setPosition({scrollX - 7.f, listBot - 7.f});
+    this->addChild(listBg, 1);
 
     m_scroll = ScrollLayer::create({scrollW, scrollH});
     m_scroll->setPosition({scrollX, listBot});
@@ -278,11 +270,9 @@ void PaimonModulesLayer::buildList() {
         float bannerX = (scrollW - bannerW) / 2.f;
         float bannerY = y + (kBannerH - bannerH) / 2.f;
 
-        if (auto panel = paimon::SpriteHelper::createColorPanel(
-                bannerW, bannerH, {96, 52, 34}, 235, 7.f)) {
-            panel->setPosition({bannerX, bannerY});
-            content->addChild(panel, 0);
-        }
+        auto* panel = paimon::ui::makeInset({bannerW, bannerH}, 140, {120, 30, 30});
+        panel->setPosition({bannerX, bannerY});
+        content->addChild(panel, 0);
 
         auto title = CCLabelBMFont::create("BetterInfo detectado", "bigFont.fnt");
         title->setAnchorPoint({0.f, 0.5f});
@@ -301,7 +291,7 @@ void PaimonModulesLayer::buildList() {
         note->setPosition({bannerX + 14.f, bannerY + 14.f});
         content->addChild(note, 2);
 
-        auto forceSprite = ButtonSprite::create("Forzar", "bigFont.fnt", "GJ_button_04.png", 0.55f);
+        auto forceSprite = ButtonSprite::create("Forzar", "goldFont.fnt", "GJ_button_04.png", 0.6f);
         auto forceBtn = CCMenuItemSpriteExtra::create(
             forceSprite, this, menu_selector(PaimonModulesLayer::onToggleCompatForce));
         forceBtn->setPosition({bannerX + bannerW - 42.f, bannerY + bannerH / 2.f});
@@ -328,9 +318,8 @@ void PaimonModulesLayer::buildList() {
             label->setPosition({22.f, hcy});
             content->addChild(label, 2);
 
-            auto line = CCLayerColor::create(ccc4(255, 255, 255, 28));
-            line->setContentSize({scrollW - 24.f, 1.f});
-            line->setPosition({12.f, y + 1.f});
+            auto line = paimon::ui::makeDivider(scrollW - 24.f, paimon::ui::palette::gold, 90);
+            line->setPosition({scrollW / 2.f, y + 1.f});
             content->addChild(line, 1);
         }
 
@@ -346,13 +335,10 @@ void PaimonModulesLayer::buildList() {
         float cardX = (scrollW - cardW) / 2.f;
         float cardY = y + (kRowH - cardH) / 2.f;
 
-        auto card = paimon::SpriteHelper::createColorPanel(
-            cardW, cardH, on ? pal::kCardOn : pal::kCardOff,
-            on ? pal::kCardOnOpacity : pal::kCardOffOpacity, 7.f);
-        if (card) {
-            card->setPosition({cardX, cardY});
-            content->addChild(card, 0);
-        }
+        auto card = paimon::ui::makeInset({cardW, cardH},
+            on ? pal::kCardOnOpacity : pal::kCardOffOpacity, on ? pal::kCardOn : pal::kCardOff);
+        card->setPosition({cardX, cardY});
+        content->addChild(card, 0);
 
         auto accent = CCLayerColor::create(ccc4(
             on ? accentColor.r : pal::kAccentOff.r,
@@ -394,9 +380,9 @@ void PaimonModulesLayer::buildList() {
         CCLabelBMFont* state = nullptr;
         if (showState) {
             char const* text = ceded ? "EN PAUSA" : (!available ? "OFF*" : (on ? "ON" : "OFF"));
-            state = CCLabelBMFont::create(text, "chatFont.fnt");
+            state = CCLabelBMFont::create(text, "bigFont.fnt");
             state->setAnchorPoint({1.f, 0.5f});
-            state->setScale(0.46f);
+            state->setScale(0.32f);
             state->setColor(ceded || !available
                 ? pal::kStateLocked
                 : (on ? pal::kStateOn : pal::kStateOff));

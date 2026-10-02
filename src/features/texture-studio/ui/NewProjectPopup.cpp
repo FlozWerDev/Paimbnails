@@ -1,5 +1,6 @@
 #include "NewProjectPopup.hpp"
 
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../engine/PackMetadataBuilder.hpp"
 #include "../persist/SlotStore.hpp"
@@ -20,20 +21,37 @@ NewProjectPopup* NewProjectPopup::create(SlotCreatedCallback cb) {
 }
 
 bool NewProjectPopup::init(SlotCreatedCallback cb) {
-    if (!PaimonPopup::init(320.f, 160.f)) return false;
+    if (!PaimonPopup::init(320.f, 170.f)) return false;
     paimon::markDynamicPopup(this);
     m_onCreated = std::move(cb);
     setTitle("New color slot");
-    m_nameInput = TextInput::create(260.f, "My slot");
+    this->addInfoButton("New color slot",
+        "Name your texture slot. You pick its <cy>palette</c> and colors on the "
+        "next screen. <cg>Create slot</c> saves it and opens the editor.");
+
+    auto const content = m_mainLayer->getContentSize();
+    float const cx = content.width / 2.f;
+
+    CCSize const panelSize{content.width - 36.f, 86.f};
+    auto panel = paimon::ui::makePanel(panelSize, "Slot name");
+    panel->setPosition({cx - panelSize.width / 2.f, 44.f});
+    m_mainLayer->addChild(panel);
+
+    float const panelCx = panelSize.width / 2.f;
+
+    m_nameInput = TextInput::create(panelSize.width - 24.f, "My slot");
     m_nameInput->setString("My slot");
     m_nameInput->setMaxCharCount(40);
-    m_mainLayer->addChildAtPosition(m_nameInput, Anchor::Center, {0, 10.f});
-    auto* hint = CCLabelBMFont::create("Choose your palette in the next screen.", "chatFont.fnt");
-    hint->setScale(.55f);
-    m_mainLayer->addChildAtPosition(hint, Anchor::Center, {0, -20.f});
-    auto* sprite = ButtonSprite::create("Create slot", "goldFont.fnt", "GJ_button_01.png", .55f);
-    auto* create = CCMenuItemExt::createSpriteExtra(sprite,
-        [this](CCMenuItemSpriteExtra*) { onCreateClicked(nullptr); });
+    m_nameInput->setPosition({panelCx, panelSize.height - paimon::ui::kPanelHeader - 14.f});
+    panel->addChild(m_nameInput);
+
+    auto* hint = paimon::ui::makeText("Choose your palette in the next screen.",
+        panelSize.width - 24.f, 0.45f, paimon::ui::palette::muted, kCCTextAlignmentCenter);
+    hint->setPosition({panelCx, 16.f});
+    panel->addChild(hint);
+
+    auto* create = paimon::ui::makeButton("Create slot",
+        [this] { this->onCreateClicked(nullptr); }, paimon::ui::Btn::Green, 0.f, 0.6f);
     m_buttonMenu->addChildAtPosition(create, Anchor::Bottom, {0, 24.f});
     return true;
 }

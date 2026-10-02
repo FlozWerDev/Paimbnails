@@ -3,6 +3,7 @@
 #include "../fx/ScoreGradientDesign.hpp"
 #include "../fx/ScoreGradientLayer.hpp"
 #include "../../profiles/services/ProfileGradientEffects.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include <Geode/binding/GameManager.hpp>
@@ -47,7 +48,9 @@ bool ScoreCellSettingsPopup::initContents() {
     if (!PaimonPopup::init(440.f, 360.f)) return false;
 
     this->setTitle("Score Cell FX");
+    this->addCorners();
 
+    namespace ui = paimon::ui;
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
 
@@ -55,16 +58,8 @@ bool ScoreCellSettingsPopup::initContents() {
     menu->setPosition({0, 0});
     m_mainLayer->addChild(menu, 5);
 
-    auto addSectionLabel = [&](const char* text, float x, float y) {
-        auto lbl = CCLabelBMFont::create(text, "goldFont.fnt");
-        lbl->setScale(0.42f);
-        lbl->setAnchorPoint({0.f, 0.5f});
-        lbl->setPosition({x, y});
-        m_mainLayer->addChild(lbl);
-    };
     auto addSmall = [&](const char* text, float x, float y, float anchorX = 0.f) {
-        auto lbl = CCLabelBMFont::create(text, "bigFont.fnt");
-        lbl->setScale(0.34f);
+        auto lbl = ui::makeLabel(text, 160.f, 0.34f);
         lbl->setAnchorPoint({anchorX, 0.5f});
         lbl->setPosition({x, y});
         m_mainLayer->addChild(lbl);
@@ -72,20 +67,14 @@ bool ScoreCellSettingsPopup::initContents() {
     };
 
     auto makeToggle = [&](bool on, SEL_MenuHandler sel, float x, float y) {
-        auto off = paimon::SpriteHelper::safeCreateWithFrameName("GJ_checkOff_001.png");
-        if (!off) off = CCSprite::create();
-        auto onS = paimon::SpriteHelper::safeCreateWithFrameName("GJ_checkOn_001.png");
-        if (!onS) onS = CCSprite::create();
-        auto t = CCMenuItemToggler::create(off, onS, this, sel);
-        t->setScale(0.7f);
+        auto t = ui::makeSwitch(this, sel, on, 0.7f);
         t->setPosition({x, y});
-        t->toggle(on);
         menu->addChild(t);
         return t;
     };
 
     auto makeCycle = [&](std::string const& text, SEL_MenuHandler sel, float x, float y) -> ButtonSprite* {
-        auto spr = ButtonSprite::create(text.c_str(), "bigFont.fnt", "GJ_button_05.png", 0.6f);
+        auto spr = ui::makeButtonSprite(text.c_str(), ui::Btn::Blue, 0.f, 0.6f, "bigFont.fnt");
         auto btn = CCMenuItemSpriteExtra::create(spr, this, sel);
         btn->setScale(0.74f);
         btn->setPosition({x, y});
@@ -103,6 +92,10 @@ bool ScoreCellSettingsPopup::initContents() {
 
     float previewW = 300.f, previewH = 32.f;
     float py = content.height - 56.f;
+    if (auto* frame = ui::makeInset({previewW + 12.f, previewH + 12.f}, 120)) {
+        frame->setPosition({cx - (previewW + 12.f) / 2.f, py - (previewH + 12.f) / 2.f});
+        m_mainLayer->addChild(frame);
+    }
     m_previewContainer = CCNode::create();
     m_previewContainer->setContentSize({previewW, previewH});
     m_previewContainer->setAnchorPoint({0.5f, 0.5f});
@@ -111,17 +104,23 @@ bool ScoreCellSettingsPopup::initContents() {
     m_mainLayer->addChild(m_previewContainer);
     rebuildPreview();
 
+    const float kPanelW = content.width - 32.f;
     const float kLeft  = 24.f;
     const float kRight = content.width - 18.f;
 
-    float y = py - 42.f;
-    addSectionLabel("Icon Gradient", kLeft, y);
+    float gradTop = py - 24.f;
+    float gradH = 120.f;
+    if (auto* panel = ui::makePanel({kPanelW, gradH}, "Icon Gradient")) {
+        panel->setPosition({16.f, gradTop - gradH});
+        m_mainLayer->addChild(panel);
+    }
+
+    float y = gradTop - ui::kPanelHeader - 6.f;
     addSmall("Enable", kRight - 24.f, y, 1.f);
     makeToggle(gradientEnabled(), menu_selector(ScoreCellSettingsPopup::onToggleGradient), kRight - 8.f, y);
 
-    y -= 30.f;
     addSmall("Effect:", kLeft, y);
-    m_effectBtnSprite = makeCycle(gradientEffect(), menu_selector(ScoreCellSettingsPopup::onCycleEffect), 118.f, y);
+    m_effectBtnSprite = makeCycle(gradientEffect(), menu_selector(ScoreCellSettingsPopup::onCycleEffect), 128.f, y);
 
     y -= 32.f;
     addSmall("Speed", kLeft, y);
@@ -133,22 +132,27 @@ bool ScoreCellSettingsPopup::initContents() {
     addSlider(gradientOpacity() / 255.f, menu_selector(ScoreCellSettingsPopup::onOpacity), y);
     m_opacityLabel = addSmall("", kRight, y, 1.f);
 
-    y -= 38.f;
-    addSectionLabel("Hover Animation", kLeft, y);
+    float hoverTop = gradTop - gradH - 10.f;
+    float hoverH = 92.f;
+    if (auto* panel = ui::makePanel({kPanelW, hoverH}, "Hover Animation")) {
+        panel->setPosition({16.f, hoverTop - hoverH});
+        m_mainLayer->addChild(panel);
+    }
+
+    y = hoverTop - ui::kPanelHeader - 6.f;
     addSmall("Enable", kRight - 24.f, y, 1.f);
     makeToggle(hoverEnabled(), menu_selector(ScoreCellSettingsPopup::onToggleHover), kRight - 8.f, y);
 
-    y -= 30.f;
     addSmall("Type:", kLeft, y);
-    m_hoverBtnSprite = makeCycle(hoverType(), menu_selector(ScoreCellSettingsPopup::onCycleHover), 110.f, y);
+    m_hoverBtnSprite = makeCycle(hoverType(), menu_selector(ScoreCellSettingsPopup::onCycleHover), 120.f, y);
 
     y -= 32.f;
     addSmall("Power", kLeft, y);
     addSlider(hoverIntensity(), menu_selector(ScoreCellSettingsPopup::onIntensity), y);
     m_intensityLabel = addSmall("", kRight, y, 1.f);
 
-    auto doneSpr = ButtonSprite::create("Done", "bigFont.fnt", "GJ_button_01.png", 0.8f);
-    auto doneBtn = CCMenuItemSpriteExtra::create(doneSpr, this, menu_selector(ScoreCellSettingsPopup::onClose));
+    auto doneBtn = ui::makeButton("Done", [this] { this->onClose(nullptr); },
+        ui::Btn::Green, 0.f, 0.8f);
     doneBtn->setPosition({cx, 26.f});
     menu->addChild(doneBtn);
 

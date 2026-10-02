@@ -70,7 +70,7 @@ protected:
     geode::ScrollLayer* m_scroll = nullptr;
     geode::TextInput* m_filter = nullptr;
     cocos2d::CCLabelBMFont* m_emptyLabel = nullptr;
-    cocos2d::extension::CCScale9Sprite* m_listBg = nullptr;
+    cocos2d::CCNode* m_listBg = nullptr;
     cocos2d::CCMenu* m_tabMenu = nullptr;
     cocos2d::CCMenu* m_actionRow = nullptr;
     CCMenuItemSpriteExtra* m_drawerBtn = nullptr;

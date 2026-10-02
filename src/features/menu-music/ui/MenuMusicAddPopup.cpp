@@ -11,6 +11,7 @@
 
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/FileDialog.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCTextInputNode.hpp>
@@ -55,7 +56,7 @@ bool MenuMusicAddPopup::init(float width, float height) {
     if (m_statusLabel) {
         m_statusLabel->setScale(0.4f);
         m_statusLabel->setPosition({size.width / 2.f, size.height * 0.05f});
-        m_statusLabel->setColor({255, 220, 120});
+        m_statusLabel->setColor(paimon::ui::palette::gold);
         m_statusLabel->setID("status-label"_spr);
         m_mainLayer->addChild(m_statusLabel, 4);
     }
@@ -72,24 +73,24 @@ void MenuMusicAddPopup::onExit() {
 void MenuMusicAddPopup::buildUrlSection() {
     auto size = m_mainLayer->getContentSize();
 
-    auto header = CCLabelBMFont::create("Download from a link", "goldFont.fnt");
-    if (header) {
-        header->setScale(0.5f);
-        header->setPosition({size.width / 2.f, size.height * 0.88f});
-        header->setID("url-header"_spr);
-        m_mainLayer->addChild(header, 3);
-    }
+    const CCSize panelSize{size.width - 28.f, 104.f};
+    const float panelY = size.height - 40.f - panelSize.height;
+    auto panel = paimon::ui::makePanel(panelSize, "Download from a link");
+    panel->setPosition({14.f, panelY});
+    panel->setID("url-panel"_spr);
+    m_mainLayer->addChild(panel, 2);
 
-    m_ytDlpLabel = CCLabelBMFont::create("", "chatFont.fnt");
+    const float innerTop = panelSize.height - paimon::ui::kPanelHeader;
+
+    m_ytDlpLabel = paimon::ui::makeText("", panelSize.width - 24.f, 0.4f,
+        paimon::ui::palette::muted, kCCTextAlignmentCenter);
     if (m_ytDlpLabel) {
-        m_ytDlpLabel->setScale(0.4f);
-        m_ytDlpLabel->setPosition({size.width / 2.f, size.height * 0.82f});
-        m_ytDlpLabel->setColor({180, 220, 180});
+        m_ytDlpLabel->setPosition({panelSize.width / 2.f, innerTop - 10.f});
         m_ytDlpLabel->setID("ytdlp-status"_spr);
-        m_mainLayer->addChild(m_ytDlpLabel, 3);
+        panel->addChild(m_ytDlpLabel, 3);
     }
 
-    m_urlInput = TextInput::create(size.width * 0.6f, "Paste a YouTube/SoundCloud link");
+    m_urlInput = TextInput::create(panelSize.width * 0.62f, "Paste a YouTube/SoundCloud link");
     if (m_urlInput) {
         m_urlInput->setCommonFilter(geode::CommonFilter::Any);
 // preserve url punctuation that some geode builds omit from setcommonfilter.
@@ -97,143 +98,116 @@ void MenuMusicAddPopup::buildUrlSection() {
             inner->m_allowedChars = geode::getCommonFilterAllowedChars(geode::CommonFilter::Any);
         }
         m_urlInput->setMaxCharCount(2048);
-        m_urlInput->setPosition({size.width * 0.38f, size.height * 0.73f});
+        m_urlInput->setPosition({panelSize.width * 0.38f, innerTop - 36.f});
         m_urlInput->setID("url-input"_spr);
         if (!m_initialUrl.empty()) m_urlInput->setString(m_initialUrl);
-        m_mainLayer->addChild(m_urlInput, 3);
+        panel->addChild(m_urlInput, 3);
     }
 
-    {
-        auto pasteSpr = CCSprite::createWithSpriteFrameName("GJ_pasteBtn2_001.png");
-        if (pasteSpr) {
-            auto btn = CCMenuItemSpriteExtra::create(pasteSpr, this,
-                menu_selector(MenuMusicAddPopup::onPasteUrl));
-            auto menu = CCMenu::create();
-            menu->setPosition({size.width * 0.75f, size.height * 0.73f});
-            menu->addChild(btn);
-            menu->setID("paste-menu"_spr);
-            m_mainLayer->addChild(menu, 3);
-        }
+    auto actions = CCMenu::create();
+    actions->setPosition({0.f, 0.f});
+    actions->setID("url-actions"_spr);
+    panel->addChild(actions, 3);
+
+    if (auto* btn = paimon::ui::makeFrameButton("GJ_pasteBtn2_001.png", 0.9f,
+            [this] { this->onPasteUrl(nullptr); })) {
+        btn->setPosition({panelSize.width * 0.76f, innerTop - 36.f});
+        actions->addChild(btn);
+    }
+    if (auto* btn = paimon::ui::makeFrameButton("GJ_downloadBtn_001.png", 0.9f,
+            [this] { this->onStartDownload(nullptr); })) {
+        btn->setPosition({panelSize.width * 0.9f, innerTop - 36.f});
+        actions->addChild(btn);
     }
 
-    {
-        auto dlSpr = CCSprite::createWithSpriteFrameName("GJ_downloadBtn_001.png");
-        if (dlSpr) {
-            auto btn = CCMenuItemSpriteExtra::create(dlSpr, this,
-                menu_selector(MenuMusicAddPopup::onStartDownload));
-            auto menu = CCMenu::create();
-            menu->setPosition({size.width * 0.9f, size.height * 0.73f});
-            menu->addChild(btn);
-            menu->setID("dl-menu"_spr);
-            m_mainLayer->addChild(menu, 3);
-        }
-    }
-
-    auto helpSpr = CCSprite::createWithSpriteFrameName("GJ_infoBtn_001.png");
-    if (helpSpr) {
-        helpSpr->setScale(0.5f);
-        auto btn = CCMenuItemSpriteExtra::create(helpSpr, this,
-            menu_selector(MenuMusicAddPopup::onOpenYtDlpHelp));
-        auto menu = CCMenu::create();
-        menu->setPosition({size.width - 16.f, size.height * 0.88f});
-        menu->addChild(btn);
-        menu->setID("help-menu"_spr);
-        m_mainLayer->addChild(menu, 3);
+    auto helpMenu = CCMenu::create();
+    helpMenu->setPosition({0.f, 0.f});
+    helpMenu->setID("help-menu"_spr);
+    m_mainLayer->addChild(helpMenu, 3);
+    if (auto* btn = paimon::ui::makeFrameButton("GJ_infoIcon_001.png", 0.6f,
+            [this] { this->onOpenYtDlpHelp(nullptr); })) {
+        btn->setPosition({14.f + panelSize.width - 14.f, panelY + panelSize.height - 11.f});
+        helpMenu->addChild(btn);
     }
 }
 
 void MenuMusicAddPopup::buildLocalSection() {
     auto size = m_mainLayer->getContentSize();
 
-    auto sep = CCLayerColor::create(ccc4(120, 140, 160, 150));
-    if (sep) {
-        sep->setContentSize({size.width - 40.f, 2.f});
-        sep->setAnchorPoint({0.5f, 0.5f});
-        sep->setPosition({size.width / 2.f, size.height * 0.62f});
-        sep->ignoreAnchorPointForPosition(false);
-        m_mainLayer->addChild(sep, 2);
-    }
+    const CCSize panelSize{size.width - 28.f, 128.f};
+    const float panelY = 40.f;
+    auto panel = paimon::ui::makePanel(panelSize, "Import a file from your PC");
+    panel->setPosition({14.f, panelY});
+    panel->setID("local-panel"_spr);
+    m_mainLayer->addChild(panel, 2);
 
-    auto header = CCLabelBMFont::create("Or import a file from your PC", "goldFont.fnt");
-    if (header) {
-        header->setScale(0.5f);
-        header->setPosition({size.width / 2.f, size.height * 0.56f});
-        header->setID("local-header"_spr);
-        m_mainLayer->addChild(header, 3);
-    }
+    const float innerTop = panelSize.height - paimon::ui::kPanelHeader;
+    auto menu = CCMenu::create();
+    menu->setPosition({0.f, 0.f});
+    menu->setID("local-actions"_spr);
+    panel->addChild(menu, 3);
 
-    auto audioSpr = ButtonSprite::create("Audio", 90, true, "bigFont.fnt", "GJ_button_01.png", 24.f, 0.6f);
-    if (audioSpr) {
-        auto b = CCMenuItemSpriteExtra::create(audioSpr, this,
-            menu_selector(MenuMusicAddPopup::onPickAudio));
-        auto menu = CCMenu::create();
-        menu->setPosition({size.width * 0.25f, size.height * 0.47f});
+    const float row1 = innerTop - 18.f;
+    const float row2 = innerTop - 46.f;
+
+    if (auto* b = paimon::ui::makeButton("Audio",
+            [this] { this->onPickAudio(nullptr); },
+            paimon::ui::Btn::Cyan, 86.f, 0.55f, "bigFont.fnt")) {
+        b->setPosition({58.f, row1});
         menu->addChild(b);
-        m_mainLayer->addChild(menu, 3);
     }
-    m_audioPathLabel = CCLabelBMFont::create("No audio selected", "chatFont.fnt");
+    m_audioPathLabel = paimon::ui::makeLabel("No audio selected",
+        panelSize.width - 120.f, 0.4f, paimon::ui::palette::muted);
     if (m_audioPathLabel) {
-        m_audioPathLabel->setScale(0.38f);
         m_audioPathLabel->setAnchorPoint({0.f, 0.5f});
-        m_audioPathLabel->setPosition({size.width * 0.42f, size.height * 0.47f});
-        m_audioPathLabel->setColor({220, 220, 220});
-        m_mainLayer->addChild(m_audioPathLabel, 3);
+        m_audioPathLabel->setPosition({112.f, row1});
+        panel->addChild(m_audioPathLabel, 3);
     }
 
-    auto coverSpr = ButtonSprite::create("Cover", 90, true, "bigFont.fnt", "GJ_button_01.png", 24.f, 0.6f);
-    if (coverSpr) {
-        auto b = CCMenuItemSpriteExtra::create(coverSpr, this,
-            menu_selector(MenuMusicAddPopup::onPickCover));
-        auto menu = CCMenu::create();
-        menu->setPosition({size.width * 0.25f, size.height * 0.37f});
+    if (auto* b = paimon::ui::makeButton("Cover",
+            [this] { this->onPickCover(nullptr); },
+            paimon::ui::Btn::Cyan, 86.f, 0.55f, "bigFont.fnt")) {
+        b->setPosition({58.f, row2});
         menu->addChild(b);
-        m_mainLayer->addChild(menu, 3);
     }
-    m_coverPathLabel = CCLabelBMFont::create("No cover (optional)", "chatFont.fnt");
+    m_coverPathLabel = paimon::ui::makeLabel("No cover (optional)",
+        panelSize.width - 120.f, 0.4f, paimon::ui::palette::muted);
     if (m_coverPathLabel) {
-        m_coverPathLabel->setScale(0.38f);
         m_coverPathLabel->setAnchorPoint({0.f, 0.5f});
-        m_coverPathLabel->setPosition({size.width * 0.42f, size.height * 0.37f});
-        m_coverPathLabel->setColor({220, 220, 220});
-        m_mainLayer->addChild(m_coverPathLabel, 3);
+        m_coverPathLabel->setPosition({112.f, row2});
+        panel->addChild(m_coverPathLabel, 3);
     }
 
-    m_nameInput = TextInput::create(size.width * 0.78f, "Display name (optional)");
+    m_nameInput = TextInput::create(panelSize.width * 0.8f, "Display name (optional)");
     if (m_nameInput) {
         m_nameInput->setCommonFilter(geode::CommonFilter::Any);
         if (auto* inner = m_nameInput->getInputNode()) {
             inner->m_allowedChars = geode::getCommonFilterAllowedChars(geode::CommonFilter::Any);
         }
         m_nameInput->setMaxCharCount(120);
-        m_nameInput->setPosition({size.width / 2.f, size.height * 0.27f});
+        m_nameInput->setPosition({panelSize.width / 2.f, innerTop - 72.f});
         m_nameInput->setID("name-input"_spr);
-        m_mainLayer->addChild(m_nameInput, 3);
+        panel->addChild(m_nameInput, 3);
     }
 
-    auto importSpr = ButtonSprite::create("Import", 120, true, "bigFont.fnt", "GJ_button_05.png", 28.f, 0.65f);
-    if (importSpr) {
-        auto b = CCMenuItemSpriteExtra::create(importSpr, this,
-            menu_selector(MenuMusicAddPopup::onImportLocal));
-        auto menu = CCMenu::create();
-        menu->setPosition({size.width / 2.f, size.height * 0.14f});
+    if (auto* b = paimon::ui::makeButton("Import",
+            [this] { this->onImportLocal(nullptr); },
+            paimon::ui::Btn::Green, 120.f, 0.6f)) {
+        b->setPosition({panelSize.width / 2.f, 16.f});
         menu->addChild(b);
-        m_mainLayer->addChild(menu, 3);
     }
 }
 
 void MenuMusicAddPopup::buildProgressBar() {
     auto size = m_mainLayer->getContentSize();
 
-// place the progress row between the url input and local-file separator; hide
-// it until a download starts.
     const float barW = size.width - 60.f;
-    const float barH = 12.f;
-    const float barY = size.height * 0.66f;
+    const float barH = 14.f;
+    const float barY = size.height - 40.f - 104.f + 16.f;
     const float cx   = size.width / 2.f;
 
-    auto bg = CCLayerColor::create(ccc4(20, 20, 30, 230));
+    auto bg = paimon::ui::makeInset({barW, barH}, 230);
     if (bg) {
-        bg->setContentSize({barW, barH});
         bg->ignoreAnchorPointForPosition(false);
         bg->setAnchorPoint({0.5f, 0.5f});
         bg->setPosition({cx, barY});
@@ -259,7 +233,7 @@ void MenuMusicAddPopup::buildProgressBar() {
         pct->setScale(0.35f);
         pct->setAnchorPoint({0.5f, 0.5f});
         pct->setPosition({cx, barY});
-        pct->setColor({255, 255, 255});
+        pct->setColor(paimon::ui::palette::text);
         pct->setID("download-bar-percent"_spr);
         pct->setVisible(false);
         m_mainLayer->addChild(pct, 5);
@@ -295,10 +269,10 @@ void MenuMusicAddPopup::refreshStatus() {
     auto& boot = YtDlpBootstrap::get();
     if (boot.exists()) {
         m_ytDlpLabel->setString("Ready - paste a link and press the download button");
-        m_ytDlpLabel->setColor({180, 230, 180});
+        m_ytDlpLabel->setColor(paimon::ui::palette::success);
     } else {
         m_ytDlpLabel->setString("The first download installs a small helper (~17 MB, one time)");
-        m_ytDlpLabel->setColor({255, 220, 150});
+        m_ytDlpLabel->setColor(paimon::ui::palette::warning);
     }
 }
 

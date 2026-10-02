@@ -22,6 +22,7 @@
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/ImageConverter.hpp"
 #include "../../../utils/ThreadTracker.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <filesystem>
@@ -173,6 +174,13 @@ bool CapturePreviewPopup::init() {
     if (!PaimonPopup::init(C::POPUP_WIDTH, C::POPUP_HEIGHT)) return false;
 
     this->setTitle(Localization::get().getString("preview.title").c_str());
+    this->addInfoButton(Localization::get().getString("preview.title"),
+        "Revisa la captura antes de subirla. Arrastra para mover y usa la rueda o "
+        "pellizco para hacer <cy>zoom</c>.\n"
+        "Los botones de la izquierda ocultan jugadores, recortan, activan <co>HDR</c> "
+        "y abren el editor de capas o el explorador de assets.\n"
+        "A la derecha: <cr>cancelar</c>, descargar, abrir carpeta, recentrar y "
+        "<cg>aceptar</c>.");
 
     if (m_bgSprite) m_bgSprite->setVisible(false);
 
@@ -915,7 +923,7 @@ void CapturePreviewPopup::updateResBadge() {
         m_resBadge = nullptr;
     }
 
-    auto badgeBg = paimon::SpriteHelper::createColorPanel(bgW, bgH, {20, 20, 20}, 190, 4.f);
+    auto badgeBg = paimon::ui::makeInset({bgW, bgH}, 190, {20, 20, 20});
     if (badgeBg) {
         badgeBg->setAnchorPoint({1.f, 1.f});
         badgeBg->setPosition(ccp(badgeX, badgeY));

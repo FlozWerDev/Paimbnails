@@ -1,5 +1,6 @@
 #include "DeathAnimation.hpp"
 #include "../../../utils/GLSLLoader.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include <algorithm>
 #include <random>
 
@@ -102,29 +103,30 @@ bool DeathAnimationPopup::init() {
     if (!PaimonPopup::init(440.f,290.f)) return false;
     setTitle("Death Animations");
     setID("death-animation-popup"_spr);
+    this->addInfoButton("Death Animations",
+        "Pick the burst that plays when you die. <cy>Original</c> keeps the vanilla effect, "
+        "<cg>Random</c> picks a different one each death. The box on the right previews your pick.");
     m_preview = CCNode::create();
     m_preview->setPosition({345,158});
     m_mainLayer->addChild(m_preview,5);
     m_previewHint = CCLabelBMFont::create("Uses your\nequipped effect", "bigFont.fnt");
     m_previewHint->setScale(0.3f);
     m_preview->addChild(m_previewHint);
-    auto backdrop = CCLayerColor::create({12,18,32,220},148,164);
+    auto backdrop = paimon::ui::makeInset({148,164}, 220);
     backdrop->setPosition({270,76});
     m_mainLayer->addChild(backdrop);
     auto label = CCLabelBMFont::create("PREVIEW", "goldFont.fnt");
     label->setScale(0.45f); label->setPosition({344,228}); m_mainLayer->addChild(label);
     for (int i=0;i<14;++i) {
         auto name = i==0 ? "Original" : i==13 ? "Random" : kAnimationNames[i-1];
-        auto sprite = ButtonSprite::create(name,"bigFont.fnt","GJ_button_04.png",0.65f);
-        sprite->setScale(0.48f);
+        auto sprite = paimon::ui::makeButtonSprite(name, paimon::ui::Btn::Gray, 0.f, 0.48f, "bigFont.fnt");
         sprite->setCascadeColorEnabled(true);
         auto item = CCMenuItemSpriteExtra::create(sprite,this,menu_selector(DeathAnimationPopup::onSelect));
         item->setTag(i-1);
         item->setPosition({80.f+(i%2)*120.f,228.f-(i/2)*27.f});
         m_buttonMenu->addChild(item); m_choices[i]=item;
     }
-    auto sprite = ButtonSprite::create("Replay","bigFont.fnt","GJ_button_01.png",0.7f);
-    sprite->setScale(0.5f);
+    auto sprite = paimon::ui::makeButtonSprite("Replay", paimon::ui::Btn::Green, 0.f, 0.5f, "bigFont.fnt");
     auto replay = CCMenuItemSpriteExtra::create(sprite,this,menu_selector(DeathAnimationPopup::onPreview));
     replay->setPosition({344,58}); m_buttonMenu->addChild(replay);
     m_status = CCLabelBMFont::create("","bigFont.fnt");

@@ -1,5 +1,6 @@
 #include "PaimonInfoPopup.hpp"
 #include "../features/emotes/EmoteRenderer.hpp"
+#include "../ui/PaimonUI.hpp"
 #include "../utils/DynamicPopupRegistry.hpp"
 #include <Geode/ui/MDTextArea.hpp>
 
@@ -22,9 +23,15 @@ bool PaimonInfoPopup::init(std::string const& title, std::string const& desc) {
     m_infoTitle = title;
     m_infoDesc = desc;
     this->setTitle(title.c_str());
+    this->addCorners();
 
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
+
+    if (auto* inset = paimon::ui::makeInset({312.f, 170.f}, 110)) {
+        inset->setPosition({cx - 156.f, content.height / 2.f + 10.f - 85.f});
+        m_mainLayer->addChild(inset);
+    }
 
     auto descLabel = geode::MDTextArea::create(desc, {300.f, 160.f});
     if (descLabel) {

@@ -7,6 +7,7 @@
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/LocalAssetStore.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/SliderThumb.hpp>
@@ -19,6 +20,12 @@ using namespace geode::prelude;
 using namespace cocos2d;
 
 namespace {
+CCSprite* makeColorSwatch(ccColor3B color) {
+    auto* chip = CCSprite::createWithSpriteFrameName("GJ_colorBtn_001.png");
+    chip->setColor(color);
+    chip->setScale(22.f / std::max(1.f, chip->getContentSize().height));
+    return chip;
+}
 float readSliderRange(Slider* s, float minV, float maxV) {
     if (!s || !s->getThumb()) return minV;
     float v = s->getThumb()->getValue();
@@ -80,6 +87,11 @@ ProgressBarConfigPopup* ProgressBarConfigPopup::create() {
 bool ProgressBarConfigPopup::init() {
     if (!PaimonPopup::init(400.f, 280.f)) return false;
     this->setTitle("Custom Progress Bar");
+    this->addInfoButton("Custom Progress Bar",
+        "Customize the gameplay progress bar across five tabs: "
+        "<cg>General</c>, <cg>Pos/Size</c>, <cg>Colors</c>, <cg>Label</c> and <cg>FX</c>.\n"
+        "<co>Pulse</c> blends two colors, <co>Rainbow</c> cycles the hue.\n"
+        "Use <cy>Free Edit Mode</c> to drag the bar in the pause menu.");
     this->setMouseEnabled(true);
 
     auto content = m_mainLayer->getContentSize();
@@ -136,7 +148,7 @@ void ProgressBarConfigPopup::createTabButtons() {
         {"FX",       4,  160.f},
     };
     for (auto const& d : defs) {
-        auto spr = ButtonSprite::create(d.label, 76, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
+        auto spr = ButtonSprite::create(d.label, 76, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.45f);
         auto btn = CCMenuItemSpriteExtra::create(
             spr, this, menu_selector(ProgressBarConfigPopup::onTabSwitch));
         btn->setTag(d.tag);
@@ -159,15 +171,8 @@ void ProgressBarConfigPopup::onTabSwitch(CCObject* sender) {
     if (m_fxTab)       m_fxTab->setVisible(m_currentTab == 4);
 
     for (auto* tab : m_tabs) {
-        auto* spr = typeinfo_cast<ButtonSprite*>(tab->getNormalImage());
-        if (!spr) continue;
-        if (tab->getTag() == m_currentTab) {
-            spr->setColor({0, 255, 0});
-            spr->setOpacity(255);
-        } else {
-            spr->setColor({255, 255, 255});
-            spr->setOpacity(160);
-        }
+        paimon::ui::setButtonSkin(tab,
+            tab->getTag() == m_currentTab ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray);
     }
 }
 
@@ -181,6 +186,12 @@ void ProgressBarConfigPopup::buildGeneralTab() {
     menu->setPosition({0, 0});
     m_generalTab->addChild(menu, 2);
     m_generalTab->setVisible(true);
+
+    {
+        auto* inset = paimon::ui::makeInset({content.width - 36.f, content.height - 92.f});
+        inset->setPosition({18.f, 24.f});
+        m_generalTab->addChild(inset, -1);
+    }
 
     float y = content.height - 70.f;
 
@@ -246,6 +257,12 @@ void ProgressBarConfigPopup::buildPositionTab() {
     menu->setPosition({0, 0});
     m_positionTab->addChild(menu, 2);
 
+    {
+        auto* inset = paimon::ui::makeInset({content.width - 36.f, content.height - 92.f});
+        inset->setPosition({18.f, 24.f});
+        m_positionTab->addChild(inset, -1);
+    }
+
     float y = content.height - 75.f;
 
     auto addSlider = [&](char const* text, Slider*& slider, CCLabelBMFont*& valLabel,
@@ -296,11 +313,17 @@ void ProgressBarConfigPopup::buildColorsTab() {
     menu->setPosition({0, 0});
     m_colorsTab->addChild(menu, 2);
 
+    {
+        auto* inset = paimon::ui::makeInset({content.width - 36.f, content.height - 92.f});
+        inset->setPosition({18.f, 44.f});
+        m_colorsTab->addChild(inset, -1);
+    }
+
     float y = content.height - 75.f;
 
     auto addColorRow = [&](char const* text, CCMenuItemToggler*& toggle, bool value,
                            SEL_MenuHandler toggleCb, ccColor3B color,
-                           CCLayerColor*& preview, SEL_MenuHandler pickCb) {
+                           CCSprite*& preview, SEL_MenuHandler pickCb) {
         auto lbl = CCLabelBMFont::create(text, "bigFont.fnt");
         lbl->setScale(0.45f);
         lbl->setAnchorPoint({0.f, 0.5f});
@@ -312,8 +335,8 @@ void ProgressBarConfigPopup::buildColorsTab() {
         toggle->toggle(value);
         menu->addChild(toggle);
 
-        preview = CCLayerColor::create({color.r, color.g, color.b, 255}, 40.f, 22.f);
-        preview->setPosition({cx + 50.f, y - 11.f});
+        preview = makeColorSwatch(color);
+        preview->setPosition({cx + 60.f, y});
         m_colorsTab->addChild(preview);
 
         auto pickSpr = ButtonSprite::create("Pick", "goldFont.fnt", "GJ_button_04.png", 0.7f);
@@ -353,6 +376,12 @@ void ProgressBarConfigPopup::buildLabelTab() {
     menu->setPosition({0, 0});
     m_labelTab->addChild(menu, 2);
 
+    {
+        auto* inset = paimon::ui::makeInset({content.width - 36.f, content.height - 92.f});
+        inset->setPosition({18.f, 24.f});
+        m_labelTab->addChild(inset, -1);
+    }
+
     float y = content.height - 75.f;
 
     {
@@ -380,9 +409,8 @@ void ProgressBarConfigPopup::buildLabelTab() {
         m_usePctColorToggle->setPosition({cx - 30.f, y});
         m_usePctColorToggle->toggle(cfg.useCustomPercentageColor);
         menu->addChild(m_usePctColorToggle);
-        m_pctColorPreview = CCLayerColor::create(
-            {cfg.percentageColor.r, cfg.percentageColor.g, cfg.percentageColor.b, 255}, 40.f, 22.f);
-        m_pctColorPreview->setPosition({cx + 50.f, y - 11.f});
+        m_pctColorPreview = makeColorSwatch(cfg.percentageColor);
+        m_pctColorPreview->setPosition({cx + 60.f, y});
         m_labelTab->addChild(m_pctColorPreview);
         auto pickSpr = ButtonSprite::create("Pick", "goldFont.fnt", "GJ_button_04.png", 0.7f);
         pickSpr->setScale(0.55f);
@@ -453,11 +481,17 @@ void ProgressBarConfigPopup::buildFxTab() {
     menu->setPosition({0, 0});
     m_fxTab->addChild(menu, 2);
 
+    {
+        auto* inset = paimon::ui::makeInset({content.width - 36.f, content.height - 92.f});
+        inset->setPosition({18.f, 30.f});
+        m_fxTab->addChild(inset, -1);
+    }
+
     float y = content.height - 75.f;
 
     auto addModeRow = [&](char const* title, BarColorMode mode,
                           ccColor3B c2, CCMenuItemSpriteExtra*& modeBtn,
-                          CCLayerColor*& preview2, SEL_MenuHandler cycleCb,
+                          CCSprite*& preview2, SEL_MenuHandler cycleCb,
                           SEL_MenuHandler pickCb) {
         auto lbl = CCLabelBMFont::create(title, "bigFont.fnt");
         lbl->setScale(0.42f);
@@ -471,8 +505,8 @@ void ProgressBarConfigPopup::buildFxTab() {
         modeBtn->setPosition({cx - 50.f, y});
         menu->addChild(modeBtn);
 
-        preview2 = CCLayerColor::create({c2.r, c2.g, c2.b, 255}, 40.f, 22.f);
-        preview2->setPosition({cx + 40.f, y - 11.f});
+        preview2 = makeColorSwatch(c2);
+        preview2->setPosition({cx + 50.f, y});
         m_fxTab->addChild(preview2);
 
         auto pickSpr = ButtonSprite::create("Pick 2", 62, true, "goldFont.fnt",

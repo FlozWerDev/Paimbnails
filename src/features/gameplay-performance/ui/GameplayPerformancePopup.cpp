@@ -1,6 +1,7 @@
 #include "GameplayPerformancePopup.hpp"
 
 #include "../GameplayPerformance.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Localization.hpp"
@@ -73,6 +74,26 @@ bool GameplayPerformancePopup::init() {
     if (auto* module = modules::find(kModuleId)) {
         this->setTitle(modules::localizedName(*module), "goldFont.fnt", 0.75f);
     }
+
+    this->addInfoButton(
+        translated("Gameplay Performance", "Rendimiento del juego"),
+        translated(
+            "Turn things off to gain FPS. <cg>Safe optimizations</c> on the left keep the level looking the "
+            "same; <co>visual cuts</c> on the right remove effects to go faster. Changes apply when you enter "
+            "the next level.",
+            "Apaga cosas para ganar FPS. Las <cg>optimizaciones seguras</c> de la izquierda no cambian como se "
+            "ve el nivel; los <co>recortes visuales</c> de la derecha quitan efectos para ir mas rapido. "
+            "Los cambios se aplican al entrar al siguiente nivel."
+        )
+    );
+
+    auto* safeInset = paimon::ui::makeInset({216.f, 232.f}, 90);
+    safeInset->setPosition({16.f, 44.f});
+    m_mainLayer->addChild(safeInset, -1);
+
+    auto* cutsInset = paimon::ui::makeInset({216.f, 232.f}, 90);
+    cutsInset->setPosition({246.f, 44.f});
+    m_mainLayer->addChild(cutsInset, -1);
 
     addHeader(
         m_mainLayer,

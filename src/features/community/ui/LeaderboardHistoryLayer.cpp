@@ -1,4 +1,5 @@
 #include "LeaderboardHistoryLayer.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../audio/services/CaveAudio.hpp"
 #include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/HttpClient.hpp"
@@ -41,14 +42,11 @@ bool LeaderboardHistoryLayer::init() {
 
     auto winSize = CCDirector::get()->getWinSize();
 
-    auto bg = CCLayerColor::create(ccc4(15, 12, 25, 255));
-    bg->setContentSize(winSize);
-    bg->setZOrder(-10);
-    this->addChild(bg);
+    paimon::ui::decorateScene(this);
 
-    auto title = CCLabelBMFont::create("Featured History", "bigFont.fnt");
-    title->setScale(0.65f);
-    title->setPosition({winSize.width / 2, winSize.height - 20.f});
+    auto title = CCLabelBMFont::create("Featured History", "goldFont.fnt");
+    title->setScale(0.9f);
+    title->setPosition({winSize.width / 2, winSize.height - 22.f});
     this->addChild(title, 10);
 
     auto menu = CCMenu::create();
@@ -377,9 +375,10 @@ void LeaderboardHistoryLayer::createList() {
         cell->setPosition({listW / 2, y});
         content->addChild(cell);
 
-        auto cellBg = paimon::SpriteHelper::createColorPanel(
-            listW, cellH - 2.f,
-            p % 2 == 0 ? ccColor3B{18, 18, 28} : ccColor3B{22, 22, 32}, 200);
+        auto cellBg = paimon::ui::makeInset(
+            {listW, cellH - 2.f},
+            p % 2 == 0 ? 200 : 150,
+            p % 2 == 0 ? ccColor3B{194, 114, 62} : ccColor3B{161, 88, 44});
         cellBg->setPosition({0, 0});
         cell->addChild(cellBg, 0);
 

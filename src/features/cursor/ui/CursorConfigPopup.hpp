@@ -35,7 +35,7 @@ protected:
     CursorState m_activeSlot = CursorState::Idle;
 
     struct SlotWidgets {
-        cocos2d::CCLayerColor*  bg      = nullptr;
+        geode::NineSlice*       bg      = nullptr;
         cocos2d::CCLabelBMFont* label   = nullptr;
         cocos2d::CCSprite*      preview = nullptr;
     };

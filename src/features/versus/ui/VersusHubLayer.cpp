@@ -55,11 +55,9 @@ CCNode* buildFormatRow(FormatDef const& def, float width, bool selected) {
     row->setContentSize({width, kRowH});
     row->setAnchorPoint({0.5f, 0.5f});
 
-    if (auto* bg = paimon::SpriteHelper::createDarkPanel(width, kRowH - 4.f,
-                                                         selected ? 165 : 85, 4.f)) {
-        bg->setPosition({0.f, 2.f});
-        row->addChild(bg, 0);
-    }
+    auto* bg = paimon::ui::makeInset({width, kRowH - 4.f}, selected ? 165 : 85);
+    bg->setPosition({0.f, 2.f});
+    row->addChild(bg, 0);
 
     if (selected) {
         auto* mark = CCLayerColor::create(ccColor4B{255, 226, 140, 235}, 3.f, kRowH - 12.f);
@@ -373,10 +371,9 @@ void VersusHubLayer::refreshPlayButton() {
     bool const queued = VersusSession::get().phase() == Phase::Queued;
     auto const key = queued ? "versus.cancel-search" : "versus.play";
 
-    if (auto* face = m_playButton->getNormalImage()) {
-        m_playButton->setSprite(paimon::ui::makeButtonFace(
-            Localization::get().getString(key).c_str(), face->getContentSize(),
-            paimon::ui::actionColor(queued ? "GJ_button_06.png" : "GJ_button_01.png"), 0.42f));
+    if (auto* face = typeinfo_cast<ButtonSprite*>(m_playButton->getNormalImage())) {
+        face->setString(Localization::get().getString(key).c_str());
+        face->updateBGImage(queued ? "GJ_button_06.png" : "GJ_button_01.png");
     }
 }
 

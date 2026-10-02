@@ -14,6 +14,7 @@
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../ui/PaiConfigKit.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/GeodeTextInputSafe.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -355,34 +356,8 @@ void TwitchRequestsLayer::runIntro() {
 }
 
 void TwitchRequestsLayer::buildBackground() {
-    auto win = CCDirector::get()->getWinSize();
-
-    if (auto* bg = paimon::SpriteHelper::safeCreate("GJ_gradientBG.png")) {
-        bg->setAnchorPoint({0.f, 0.f});
-        bg->setScaleX(win.width / bg->getContentSize().width);
-        bg->setScaleY(win.height / bg->getContentSize().height);
-        bg->setColor(backdropColor(TwitchRequestManager::get().selected()));
-        addChild(bg, -5);
-        m_background = bg;
-    } else {
-        auto* flat = CCLayerColor::create(ccc4(48, 22, 92, 255));
-        flat->setContentSize(win);
-        addChild(flat, -5);
-    }
-
-    if (auto* bottomLeft = paimon::SpriteHelper::safeCreateWithFrameName("GJ_sideArt_001.png")) {
-        bottomLeft->setAnchorPoint({0.f, 0.f});
-        bottomLeft->setPosition({-2.f, -2.f});
-        bottomLeft->setOpacity(120);
-        addChild(bottomLeft, -1);
-    }
-    if (auto* bottomRight = paimon::SpriteHelper::safeCreateWithFrameName("GJ_sideArt_001.png")) {
-        bottomRight->setAnchorPoint({1.f, 0.f});
-        bottomRight->setPosition({win.width + 2.f, -2.f});
-        bottomRight->setFlipX(true);
-        bottomRight->setOpacity(120);
-        addChild(bottomRight, -1);
-    }
+    auto tint = backdropColor(TwitchRequestManager::get().selected());
+    m_background = paimon::ui::decorateScene(this, tint, true);
 }
 
 void TwitchRequestsLayer::buildHeader() {
@@ -465,9 +440,7 @@ void TwitchRequestsLayer::buildHeader() {
     pill->setPosition({(win.width - pillWidth) / 2.f, pillY - 10.f});
     addChild(pill, 5);
 
-    if (auto* plate = paimon::SpriteHelper::createColorPanel(
-            pillWidth, 20.f, {6, 8, 18}, 175, 6.f)) {
-        plate->setAnchorPoint({0.f, 0.f});
+    if (auto* plate = paimon::ui::makeInset({pillWidth, 20.f}, 175)) {
         pill->addChild(plate, 0);
     }
 

@@ -2,6 +2,7 @@
 
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCTextInputNode.hpp>
@@ -106,7 +107,7 @@ void NewgroundsBrowserPopup::buildHeader() {
         m_statusLabel->setScale(0.42f);
         m_statusLabel->setAnchorPoint({0.f, 0.5f});
         m_statusLabel->setPosition({14.f, size.height - 63.f});
-        m_statusLabel->setColor({205, 215, 235});
+        m_statusLabel->setColor(paimon::ui::palette::muted);
         m_statusLabel->setID("newgrounds-status"_spr);
         m_mainLayer->addChild(m_statusLabel, 4);
     }
@@ -114,6 +115,11 @@ void NewgroundsBrowserPopup::buildHeader() {
 
 void NewgroundsBrowserPopup::buildList() {
     auto size = m_mainLayer->getContentSize();
+    if (auto* panel = paimon::ui::makeInset({size.width - 20.f, size.height - 78.f}, 220)) {
+        panel->setPosition({10.f, 7.f});
+        panel->setID("newgrounds-list-bg"_spr);
+        m_mainLayer->addChild(panel, 2);
+    }
     m_scroll = ScrollLayer::create({size.width - 24.f, size.height - 84.f});
     if (!m_scroll) return;
     m_scroll->setPosition({12.f, 10.f});
@@ -128,7 +134,7 @@ void NewgroundsBrowserPopup::loadWeekly() {
     auto generation = ++m_requestGeneration;
     if (m_statusLabel) {
         m_statusLabel->setString("Loading the weekly Newgrounds picks...");
-        m_statusLabel->setColor({255, 220, 145});
+        m_statusLabel->setColor(paimon::ui::palette::warning);
     }
     m_tracks.clear();
     rebuildList();
@@ -168,7 +174,7 @@ void NewgroundsBrowserPopup::runSearch() {
         if (m_statusLabel) {
             m_statusLabel->setString(
                 fmt::format("Looking up song #{} on GD's servers...", songId).c_str());
-            m_statusLabel->setColor({255, 220, 145});
+            m_statusLabel->setColor(paimon::ui::palette::warning);
         }
         fetchNewgroundsSongInfo(songId,
             [songId, onResult](NewgroundsSongResult result) {
@@ -190,7 +196,7 @@ void NewgroundsBrowserPopup::runSearch() {
     m_listTitle = fmt::format("Results for \"{}\"", query);
     if (m_statusLabel) {
         m_statusLabel->setString("Searching Newgrounds songs...");
-        m_statusLabel->setColor({255, 220, 145});
+        m_statusLabel->setColor(paimon::ui::palette::warning);
     }
     searchNewgroundsSongs(query, onResult);
 }
@@ -226,7 +232,7 @@ void NewgroundsBrowserPopup::rebuildList() {
         row->setPosition({0.f, contentH - (i + 1) * cellH});
 
         auto background = CCLayerColor::create(
-            i % 2 == 0 ? ccc4(25, 24, 34, 190) : ccc4(34, 31, 43, 190),
+            i % 2 == 0 ? ccc4(194, 114, 62, 255) : ccc4(161, 88, 44, 255),
             cellW - 7.f, cellH - 2.f
         );
         if (background) {
@@ -268,8 +274,8 @@ void NewgroundsBrowserPopup::rebuildList() {
             subtitle->setAnchorPoint({0.f, 0.5f});
             subtitle->setPosition({11.f, 10.f});
             subtitle->setColor(track.gdAvailable
-                ? ccColor3B{180, 195, 220}
-                : ccColor3B{200, 150, 150});
+                ? paimon::ui::palette::muted
+                : paimon::ui::palette::danger);
             subtitle->limitLabelWidth(cellW - 160.f, 0.32f, 0.20f);
             row->addChild(subtitle, 2);
         }
@@ -354,16 +360,10 @@ void NewgroundsBrowserPopup::rebuildList() {
             ? m_emptyMessage
             : std::string("No songs found. Paste a Newgrounds song ID or "
                           "/audio/listen/ URL to fetch any GD-enabled song.");
-        auto empty = CCLabelBMFont::create(message.c_str(), "chatFont.fnt");
+        auto empty = paimon::ui::makeText(message.c_str(), cellW - 40.f, 0.5f,
+            paimon::ui::palette::muted, kCCTextAlignmentCenter);
         if (empty) {
-            empty->setScale(0.5f);
             empty->setPosition({cellW / 2.f, contentH / 2.f});
-            empty->setColor({205, 205, 220});
-            empty->setAlignment(kCCTextAlignmentCenter);
-            auto maxW = cellW - 40.f;
-            if (empty->getContentSize().width * empty->getScale() > maxW) {
-                empty->setScale(maxW / empty->getContentSize().width);
-            }
             m_scroll->m_contentLayer->addChild(empty);
         }
     }
@@ -377,14 +377,14 @@ void NewgroundsBrowserPopup::refreshStatus() {
 
     if (m_previewSongId != 0 && m_previewSound && !m_previewChannel) {
         m_statusLabel->setString("Buffering preview...");
-        m_statusLabel->setColor({255, 220, 145});
+        m_statusLabel->setColor(paimon::ui::palette::warning);
         return;
     }
     if (m_previewChannel) {
         auto title = std::to_string(m_previewSongId);
         if (auto* track = trackById(m_previewSongId)) title = track->title;
         m_statusLabel->setString(fmt::format("Streaming: {}", title).c_str());
-        m_statusLabel->setColor({145, 245, 155});
+        m_statusLabel->setColor(paimon::ui::palette::success);
         return;
     }
     if (m_loading) return;
@@ -392,10 +392,10 @@ void NewgroundsBrowserPopup::refreshStatus() {
     if (m_tracks.empty()) {
         if (!m_emptyMessage.empty()) {
             m_statusLabel->setString(m_emptyMessage.c_str());
-            m_statusLabel->setColor({255, 170, 145});
+            m_statusLabel->setColor(paimon::ui::palette::warning);
         } else {
             m_statusLabel->setString(m_listTitle.c_str());
-            m_statusLabel->setColor({205, 215, 235});
+            m_statusLabel->setColor(paimon::ui::palette::muted);
         }
         return;
     }
@@ -405,7 +405,7 @@ void NewgroundsBrowserPopup::refreshStatus() {
     m_statusLabel->setString(fmt::format(
         "{}  -  {} songs ({} downloadable)",
         m_listTitle, m_tracks.size(), usable).c_str());
-    m_statusLabel->setColor({175, 230, 185});
+    m_statusLabel->setColor(paimon::ui::palette::success);
 }
 
 NewgroundsTrack const* NewgroundsBrowserPopup::trackById(int songId) const {
@@ -647,7 +647,7 @@ void NewgroundsBrowserPopup::onDownloadTrack(CCObject* sender) {
     rebuildList();
     if (m_statusLabel) {
         m_statusLabel->setString(fmt::format("Downloading {}...", title).c_str());
-        m_statusLabel->setColor({255, 220, 145});
+        m_statusLabel->setColor(paimon::ui::palette::warning);
     }
 }
 

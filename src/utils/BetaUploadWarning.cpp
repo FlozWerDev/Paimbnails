@@ -34,15 +34,15 @@ bool BetaUploadWarningPopup::init(std::function<void()> onProceed) {
         this,
         menu_selector(BetaUploadWarningPopup::onAccept)
     );
-    acceptBtn->setPosition({cx - 80.f, 35.f});
+    acceptBtn->setPosition({cx + 80.f, 35.f});
     menu->addChild(acceptBtn);
 
     auto dismissBtn = CCMenuItemSpriteExtra::create(
-        ButtonSprite::create("Don't show again", "goldFont.fnt", "GJ_button_06.png", 0.55f),
+        ButtonSprite::create("Don't show again", "bigFont.fnt", "GJ_button_04.png", 0.55f),
         this,
         menu_selector(BetaUploadWarningPopup::onDismissForever)
     );
-    dismissBtn->setPosition({cx + 80.f, 35.f});
+    dismissBtn->setPosition({cx - 80.f, 35.f});
     menu->addChild(dismissBtn);
 
     return true;

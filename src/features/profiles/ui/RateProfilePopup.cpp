@@ -1,4 +1,5 @@
 #include "RateProfilePopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
 #include "ReportUserPopup.hpp"
@@ -32,11 +33,15 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     m_targetUsername = targetUsername;
 
     this->setTitle("Rate Profile");
+    this->addInfoButton("Rate Profile",
+        "Rate this player's profile from 1 to 5 stars (tap a star again for a <cy>half star</c>) and "
+        "optionally leave a comment. <cg>Submit</c> saves it, <cy>Reviews</c> shows all ratings, "
+        "and <cr>Report</c> flags the user to moderators.");
 
     auto contentSize = m_mainLayer->getContentSize();
     float centerX = contentSize.width / 2.f;
 
-    auto avgPanel = paimon::SpriteHelper::createDarkPanel(200.f, 50.f, 100, 8.f);
+    auto avgPanel = paimon::ui::makeInset({200.f, 50.f}, 100);
     avgPanel->setPosition({centerX - 100.f, contentSize.height - 96.f});
     m_mainLayer->addChild(avgPanel, 1);
 
@@ -64,8 +69,8 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     m_loadingSpinner = PaimonLoadingOverlay::create("Loading...", 20.f);
     m_loadingSpinner->show(m_mainLayer, 3);
 
-    auto separator = paimon::SpriteHelper::createDarkPanel(280.f, 1.5f, 60, 0.f);
-    separator->setPosition({centerX - 140.f, contentSize.height - 104.f});
+    auto separator = paimon::ui::makeDivider(280.f);
+    separator->setPosition({centerX, contentSize.height - 104.f});
     m_mainLayer->addChild(separator, 1);
 
     auto yourRatingLabel = CCLabelBMFont::create("Your Rating", "bigFont.fnt");
@@ -74,7 +79,7 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     yourRatingLabel->setColor({200, 200, 200});
     m_mainLayer->addChild(yourRatingLabel, 2);
 
-    auto starPanel = paimon::SpriteHelper::createDarkPanel(240.f, 44.f, 80, 8.f);
+    auto starPanel = paimon::ui::makeInset({240.f, 44.f}, 80);
     starPanel->setPosition({centerX - 120.f, contentSize.height - 152.f});
     m_mainLayer->addChild(starPanel, 1);
 

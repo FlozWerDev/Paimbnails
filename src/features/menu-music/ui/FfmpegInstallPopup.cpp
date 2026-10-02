@@ -4,6 +4,8 @@
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 
+#include "../../../ui/PaimonUI.hpp"
+
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/loader/Loader.hpp>
 #include <Geode/utils/string.hpp>
@@ -33,36 +35,41 @@ bool FfmpegInstallPopup::init(std::function<void(bool)> onFinished) {
 
     m_onFinished = std::move(onFinished);
     this->setTitle("Installing ffmpeg");
+    this->addInfoButton("ffmpeg",
+        "ffmpeg is the <cy>audio converter</c> Paimbnails uses to decode and re-encode "
+        "songs. It downloads <cg>once</c> (~80 MB) and is kept bundled with the mod.");
 
     auto content = m_mainLayer->getContentSize();
     const float cx = content.width / 2.f;
 
-    m_infoLabel = CCLabelBMFont::create(
+    m_infoLabel = paimon::ui::makeText(
         "Downloading audio converter (one-time, ~80 MB)",
-        "chatFont.fnt");
+        content.width - 48.f, 0.5f, paimon::ui::palette::muted,
+        kCCTextAlignmentCenter);
     if (m_infoLabel) {
-        m_infoLabel->setScale(0.5f);
-        m_infoLabel->setColor({220, 220, 220});
-        m_infoLabel->setPosition({cx, content.height - 44.f});
+        m_infoLabel->setPosition({cx, content.height - 46.f});
         m_mainLayer->addChild(m_infoLabel, 3);
     }
+
+    const float barW = 340.f;
+    const float barH = 20.f;
+    const float barY = content.height / 2.f - 2.f;
+
+    auto panel = paimon::ui::makePanel({barW + 24.f, 92.f}, "Progress");
+    panel->setPosition({cx - (barW + 24.f) / 2.f, barY - 32.f});
+    m_mainLayer->addChild(panel, 2);
 
     m_statusLabel = CCLabelBMFont::create("Preparing...", "bigFont.fnt");
     if (m_statusLabel) {
         m_statusLabel->setScale(0.42f);
-        m_statusLabel->setColor({255, 235, 150});
-        m_statusLabel->setPosition({cx, content.height - 70.f});
-        m_mainLayer->addChild(m_statusLabel, 3);
+        m_statusLabel->setColor(paimon::ui::palette::gold);
+        m_statusLabel->setPosition({(barW + 24.f) / 2.f, 92.f - paimon::ui::kPanelHeader - 8.f});
+        panel->addChild(m_statusLabel, 3);
     }
 
-    const float barW = 340.f;
-    const float barH = 18.f;
-    const float barY = content.height / 2.f - 4.f;
-
-    auto barBg = CCLayerColor::create(ccc4(18, 18, 28, 230));
-    barBg->setContentSize({barW, barH});
-    barBg->setPosition({cx - barW / 2.f, barY});
-    m_mainLayer->addChild(barBg, 3);
+    auto barBg = paimon::ui::makeInset({barW, barH}, 220);
+    barBg->setPosition({12.f, 18.f});
+    panel->addChild(barBg, 1);
     m_barBg = barBg;
 
     auto barFill = CCLayerColor::create(ccc4(180, 140, 255, 255));
@@ -71,20 +78,11 @@ bool FfmpegInstallPopup::init(std::function<void(bool)> onFinished) {
     barBg->addChild(barFill);
     m_barFill = barFill;
 
-    auto borderBot = CCLayerColor::create(ccc4(255, 255, 255, 60));
-    borderBot->setContentSize({barW, 1.f});
-    borderBot->setPosition({cx - barW / 2.f, barY});
-    m_mainLayer->addChild(borderBot, 4);
-    auto borderTop = CCLayerColor::create(ccc4(255, 255, 255, 60));
-    borderTop->setContentSize({barW, 1.f});
-    borderTop->setPosition({cx - barW / 2.f, barY + barH - 1.f});
-    m_mainLayer->addChild(borderTop, 4);
-
     m_percentLabel = CCLabelBMFont::create("0%", "bigFont.fnt");
     if (m_percentLabel) {
-        m_percentLabel->setScale(0.42f);
-        m_percentLabel->setPosition({cx, barY - 18.f});
-        m_mainLayer->addChild(m_percentLabel, 3);
+        m_percentLabel->setScale(0.4f);
+        m_percentLabel->setPosition({(barW + 24.f) / 2.f, 28.f});
+        panel->addChild(m_percentLabel, 3);
     }
 
     auto destPath = FfmpegBootstrap::get().bundledPath();
@@ -93,27 +91,24 @@ bool FfmpegInstallPopup::init(std::function<void(bool)> onFinished) {
     if (displayPath.size() > 62) {
         displayPath = "..." + displayPath.substr(displayPath.size() - 59);
     }
-    m_pathLabel = CCLabelBMFont::create(
+    m_pathLabel = paimon::ui::makeText(
         fmt::format("Destination: {}", displayPath).c_str(),
-        "chatFont.fnt");
+        content.width - 48.f, 0.34f, paimon::ui::palette::dim,
+        kCCTextAlignmentCenter);
     if (m_pathLabel) {
-        m_pathLabel->setScale(0.32f);
-        m_pathLabel->setColor({170, 170, 180});
-        m_pathLabel->setPosition({cx, 52.f});
+        m_pathLabel->setPosition({cx, 50.f});
         m_mainLayer->addChild(m_pathLabel, 3);
     }
 
-    auto dismissSpr = ButtonSprite::create("Close", 80, true, "bigFont.fnt", "GJ_button_06.png", 24.f, 0.6f);
-    if (dismissSpr) {
-        m_dismissBtn = CCMenuItemSpriteExtra::create(
-            dismissSpr, this, menu_selector(FfmpegInstallPopup::onDismiss));
-        if (m_dismissBtn) {
-            auto menu = CCMenu::create();
-            menu->setPosition({cx, 24.f});
-            menu->addChild(m_dismissBtn);
-            m_dismissBtn->setVisible(false);
-            m_mainLayer->addChild(menu, 5);
-        }
+    m_dismissBtn = paimon::ui::makeButton("Close",
+        [this] { this->onDismiss(nullptr); },
+        paimon::ui::Btn::Gray, 90.f, 0.6f);
+    if (m_dismissBtn) {
+        auto menu = CCMenu::create();
+        menu->setPosition({cx, 22.f});
+        menu->addChild(m_dismissBtn);
+        m_dismissBtn->setVisible(false);
+        m_mainLayer->addChild(menu, 5);
     }
 
     this->startInstall();
@@ -184,7 +179,7 @@ void FfmpegInstallPopup::finishSuccess() {
     if (m_percentLabel) m_percentLabel->setString("100%");
     if (m_statusLabel) {
         m_statusLabel->setString("ffmpeg installed - resuming download...");
-        m_statusLabel->setColor({150, 255, 150});
+        m_statusLabel->setColor(paimon::ui::palette::success);
     }
 
     if (m_onFinished) {
@@ -208,7 +203,7 @@ void FfmpegInstallPopup::finishError(const std::string& error) {
         std::string e = error;
         if (e.size() > 140) e = e.substr(0, 137) + "...";
         m_statusLabel->setString(e.c_str());
-        m_statusLabel->setColor({255, 120, 120});
+        m_statusLabel->setColor(paimon::ui::palette::danger);
     }
     if (m_percentLabel) m_percentLabel->setString("Failed");
 

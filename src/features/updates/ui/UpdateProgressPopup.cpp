@@ -1,4 +1,5 @@
 #include "UpdateProgressPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../services/UpdateChecker.hpp"
 #include "../../../utils/Localization.hpp"
@@ -46,6 +47,9 @@ bool UpdateProgressPopup::init(
     if (!PaimonPopup::init(360.f, 200.f)) return false;
     paimon::markDynamicPopup(this);
     this->setTitle(tr("pai.update.title", "Downloading update"));
+    this->addInfoButton(tr("pai.update.title", "Downloading update"),
+        "Paimbnails is downloading the new version. Keep this open until it finishes; the update is "
+        "applied the next time you <cy>restart</c> the game. <cr>Cancel</c> stops the download.");
 
     m_url = std::move(url);
     m_version = std::move(version);
@@ -79,6 +83,10 @@ bool UpdateProgressPopup::init(
     float barW = 280.f;
     float barH = 16.f;
     float barY = content.height / 2.f - 5.f;
+
+    auto barInset = paimon::ui::makeInset({barW + 16.f, barH + 16.f}, 95);
+    barInset->setPosition({cx - (barW + 16.f) / 2.f, barY - 8.f});
+    m_mainLayer->addChild(barInset);
 
     auto barBg = CCLayerColor::create(ccc4(20, 20, 30, 230));
     barBg->setContentSize({barW, barH});

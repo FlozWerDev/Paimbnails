@@ -1,5 +1,6 @@
 #include "AdvancedSearchPopup.hpp"
 #include "SearchPresetsPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/GeodeTextInputSafe.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -19,9 +20,6 @@ constexpr float kPopupW = 400.f;
 constexpr float kPopupH = 290.f;
 constexpr float kTabW = 366.f;
 constexpr float kTabH = 168.f;
-
-constexpr ccColor3B kOn{255, 255, 255};
-constexpr ccColor3B kOff{115, 115, 115};
 
 // 1..6 are the values the search api expects for easy..demon.
 struct DiffDef { int value; char const* label; };
@@ -112,6 +110,10 @@ bool AdvancedSearchPopup::init() {
 
     paimon::markDynamicPopup(this);
     this->setTitle("Busqueda avanzada");
+    this->addInfoButton("Busqueda avanzada",
+        "Combina filtros del <cy>servidor</c> (dificultad, largo, flags) con un "
+        "<cy>refinado local</c> (rango de IDs, version, objetos). Guarda combinaciones "
+        "como <cg>presets</c> para reusarlas. Pulsa <cg>Buscar</c> para aplicar.");
 
     auto const content = m_mainLayer->getContentSize();
     float const cx = content.width / 2.f;
@@ -122,6 +124,10 @@ bool AdvancedSearchPopup::init() {
     // be laid out in plain 0..ktabw / 0..ktabh coordinates.
     float tabOriginX = cx - kTabW / 2.f;
     float tabOriginY = content.height - 70.f - kTabH;
+
+    auto* tabInset = paimon::ui::makeInset({kTabW, kTabH}, 80);
+    tabInset->setPosition({tabOriginX, tabOriginY});
+    m_mainLayer->addChild(tabInset, -1);
 
     m_serverTab = CCNode::create();
     m_serverTab->setContentSize({kTabW, kTabH});
@@ -141,17 +147,14 @@ bool AdvancedSearchPopup::init() {
     menu->setLayout(RowLayout::create()->setGap(10.f)->setAxisAlignment(AxisAlignment::Center));
     m_mainLayer->addChild(menu);
 
-    auto presetsSpr = ButtonSprite::create("Presets", "bigFont.fnt", "GJ_button_04.png", 0.6f);
-    menu->addChild(CCMenuItemSpriteExtra::create(
-        presetsSpr, this, menu_selector(AdvancedSearchPopup::onPresets)));
+    menu->addChild(paimon::ui::makeButton("Presets",
+        [this] { this->onPresets(nullptr); }, paimon::ui::Btn::Gray, 0.f, 0.6f, "bigFont.fnt"));
 
-    auto saveSpr = ButtonSprite::create("Guardar", "bigFont.fnt", "GJ_button_03.png", 0.6f);
-    menu->addChild(CCMenuItemSpriteExtra::create(
-        saveSpr, this, menu_selector(AdvancedSearchPopup::onSavePreset)));
+    menu->addChild(paimon::ui::makeButton("Guardar",
+        [this] { this->onSavePreset(nullptr); }, paimon::ui::Btn::Pink, 0.f, 0.6f, "bigFont.fnt"));
 
-    auto searchSpr = ButtonSprite::create("Buscar", "goldFont.fnt", "GJ_button_01.png", 0.7f);
-    menu->addChild(CCMenuItemSpriteExtra::create(
-        searchSpr, this, menu_selector(AdvancedSearchPopup::onSearch)));
+    menu->addChild(paimon::ui::makeButton("Buscar",
+        [this] { this->onSearch(nullptr); }, paimon::ui::Btn::Green, 0.f, 0.7f));
 
     menu->updateLayout();
 
@@ -167,8 +170,7 @@ void AdvancedSearchPopup::buildTabs(float centerX, float y) {
     m_mainLayer->addChild(menu);
 
     for (auto const* name : {"Servidor", "Refinar"}) {
-        auto spr = ButtonSprite::create(name, "bigFont.fnt", "GJ_button_04.png", 0.7f);
-        if (spr) spr->setScale(0.58f);
+        auto spr = paimon::ui::makeButtonSprite(name, paimon::ui::Btn::Gray, 0.f, 0.58f, "bigFont.fnt");
         auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(AdvancedSearchPopup::onTab));
         btn->setTag(static_cast<int>(m_tabButtons.size()));
         menu->addChild(btn);
@@ -193,9 +195,8 @@ void AdvancedSearchPopup::buildServerTab(CCNode* parent, float width) {
     parent->addChild(diffMenu);
 
     for (int i = 0; i < static_cast<int>(std::size(kDifficulties)); i++) {
-        auto spr = ButtonSprite::create(kDifficulties[i].label, "bigFont.fnt",
-                                        "GJ_button_04.png", 0.7f);
-        if (spr) spr->setScale(0.5f);
+        auto spr = paimon::ui::makeButtonSprite(kDifficulties[i].label, paimon::ui::Btn::Gray,
+            0.f, 0.5f, "bigFont.fnt");
         auto btn = CCMenuItemSpriteExtra::create(
             spr, this, menu_selector(AdvancedSearchPopup::onDifficulty));
         btn->setTag(i);
@@ -211,8 +212,7 @@ void AdvancedSearchPopup::buildServerTab(CCNode* parent, float width) {
     parent->addChild(lenMenu);
 
     for (int i = 0; i < static_cast<int>(std::size(kLengths)); i++) {
-        auto spr = ButtonSprite::create(kLengths[i], "bigFont.fnt", "GJ_button_04.png", 0.7f);
-        if (spr) spr->setScale(0.5f);
+        auto spr = paimon::ui::makeButtonSprite(kLengths[i], paimon::ui::Btn::Gray, 0.f, 0.5f, "bigFont.fnt");
         auto btn = CCMenuItemSpriteExtra::create(
             spr, this, menu_selector(AdvancedSearchPopup::onLength));
         btn->setTag(i);
@@ -225,8 +225,7 @@ void AdvancedSearchPopup::buildServerTab(CCNode* parent, float width) {
     demonMenu->setPosition({0.f, 0.f});
     parent->addChild(demonMenu);
 
-    auto demonSpr = ButtonSprite::create("<>", "bigFont.fnt", "GJ_button_04.png", 0.7f);
-    if (demonSpr) demonSpr->setScale(0.45f);
+    auto demonSpr = paimon::ui::makeButtonSprite("<>", paimon::ui::Btn::Blue, 0.f, 0.45f, "bigFont.fnt");
     auto demonBtn = CCMenuItemSpriteExtra::create(
         demonSpr, this, menu_selector(AdvancedSearchPopup::onDemonCycle));
     demonBtn->setPosition({26.f, top - 92.f});
@@ -309,14 +308,11 @@ void AdvancedSearchPopup::buildRefineTab(CCNode* parent, float width) {
     m_minObjInput = makeNumberInput(parent, 100.f, "min", minX, rows[2].y);
     m_maxObjInput = makeNumberInput(parent, 100.f, "max", maxX, rows[2].y);
 
-    auto hint = CCLabelBMFont::create(
+    auto hint = paimon::ui::makeText(
         "El servidor no soporta estos filtros: se aplican a cada\n"
         "pagina al llegar, asi que una pagina puede traer menos\n"
         "de 10 niveles. La version se escribe como 21 o 22.",
-        "chatFont.fnt");
-    hint->setAlignment(kCCTextAlignmentCenter);
-    hint->setScale(0.42f);
-    hint->setColor({170, 170, 170});
+        width - 24.f, 0.42f, paimon::ui::palette::muted, kCCTextAlignmentCenter);
     hint->setPosition({width / 2.f, top - 140.f});
     parent->addChild(hint);
 }
@@ -326,7 +322,7 @@ void AdvancedSearchPopup::refreshTabs() {
     if (m_refineTab) m_refineTab->setVisible(m_tab == 1);
 
     for (int i = 0; i < static_cast<int>(m_tabButtons.size()); i++) {
-        if (auto* btn = m_tabButtons[i]) btn->setColor(i == m_tab ? kOn : kOff);
+        paimon::ui::setButtonSkin(m_tabButtons[i], i == m_tab ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray);
     }
 }
 
@@ -334,7 +330,7 @@ void AdvancedSearchPopup::refreshDifficultyButtons() {
     for (int i = 0; i < static_cast<int>(m_difficultyButtons.size()); i++) {
         bool on = std::find(m_query.difficulties.begin(), m_query.difficulties.end(),
                             kDifficulties[i].value) != m_query.difficulties.end();
-        if (auto* btn = m_difficultyButtons[i]) btn->setColor(on ? kOn : kOff);
+        paimon::ui::setButtonSkin(m_difficultyButtons[i], on ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray);
     }
 }
 
@@ -342,7 +338,7 @@ void AdvancedSearchPopup::refreshLengthButtons() {
     for (int i = 0; i < static_cast<int>(m_lengthButtons.size()); i++) {
         bool on = std::find(m_query.lengths.begin(), m_query.lengths.end(), i)
                 != m_query.lengths.end();
-        if (auto* btn = m_lengthButtons[i]) btn->setColor(on ? kOn : kOff);
+        paimon::ui::setButtonSkin(m_lengthButtons[i], on ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray);
     }
 }
 

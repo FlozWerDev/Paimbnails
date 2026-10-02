@@ -9,6 +9,7 @@
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/InfoButton.hpp"
 #include "../../../ui/PaiConfigKit.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/cocos/extensions/GUI/CCControlExtension/CCScale9Sprite.h>
 #include <Geode/ui/ColorPickPopup.hpp>
@@ -203,13 +204,13 @@ protected:
             y -= 16.f;
         }
 
-        auto selectAllSpr = ButtonSprite::create("Todas", 55, true, "goldFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
+        auto selectAllSpr = paimon::ui::makeButtonSprite("Todas", paimon::ui::Btn::Green, 55.f, 0.6f, "bigFont.fnt");
         auto selectAllBtn = CCMenuItemSpriteExtra::create(
             selectAllSpr, this, menu_selector(PetLayerPickerPopup::onSelectAll));
         selectAllBtn->setPosition({content.width / 2.f - 55.f, 15.f});
         menu->addChild(selectAllBtn);
 
-        auto clearSpr = ButtonSprite::create("Ninguna", 69, true, "goldFont.fnt", "GJ_button_06.png", 18.f, 0.45f);
+        auto clearSpr = paimon::ui::makeButtonSprite("Ninguna", paimon::ui::Btn::Red, 69.f, 0.6f, "bigFont.fnt");
         auto clearBtn = CCMenuItemSpriteExtra::create(
             clearSpr, this, menu_selector(PetLayerPickerPopup::onClearAll));
         clearBtn->setPosition({content.width / 2.f + 55.f, 15.f});
@@ -389,7 +390,7 @@ void PetConfigPopup::createTabButtons() {
     menu->setPosition({0, 0});
     m_mainLayer->addChild(menu, 10);
 
-    auto spr1 = ButtonSprite::create("1 Imagen", 84, true, "goldFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
+    auto spr1 = paimon::ui::makeButtonSprite("1 Imagen", paimon::ui::Btn::Green, 84.f, 0.7f, "bigFont.fnt");
     auto tab1 = CCMenuItemSpriteExtra::create(spr1, this, menu_selector(PetConfigPopup::onTabSwitch));
     tab1->setTag(0);
     tab1->setID("pet-gallery-tab-btn"_spr);
@@ -397,7 +398,7 @@ void PetConfigPopup::createTabButtons() {
     menu->addChild(tab1);
     m_tabs.push_back(tab1);
 
-    auto spr2 = ButtonSprite::create("2 Ajustes", 84, true, "goldFont.fnt", "GJ_button_04.png", 18.f, 0.45f);
+    auto spr2 = paimon::ui::makeButtonSprite("2 Ajustes", paimon::ui::Btn::Gray, 84.f, 0.7f, "bigFont.fnt");
     auto tab2 = CCMenuItemSpriteExtra::create(spr2, this, menu_selector(PetConfigPopup::onTabSwitch));
     tab2->setTag(1);
     tab2->setID("pet-settings-tab-btn"_spr);
@@ -405,7 +406,7 @@ void PetConfigPopup::createTabButtons() {
     menu->addChild(tab2);
     m_tabs.push_back(tab2);
 
-    auto spr3 = ButtonSprite::create("3 Extras", 84, true, "goldFont.fnt", "GJ_button_04.png", 18.f, 0.45f);
+    auto spr3 = paimon::ui::makeButtonSprite("3 Extras", paimon::ui::Btn::Gray, 84.f, 0.7f, "bigFont.fnt");
     auto tab3 = CCMenuItemSpriteExtra::create(spr3, this, menu_selector(PetConfigPopup::onTabSwitch));
     tab3->setTag(2);
     tab3->setID("pet-advanced-tab-btn"_spr);
@@ -427,11 +428,8 @@ void PetConfigPopup::onTabSwitch(CCObject* sender) {
     if (m_currentTab == 0 && m_galleryScroll) refreshGallery();
 
     for (auto* tab : m_tabs) {
-        auto spr = typeinfo_cast<ButtonSprite*>(tab->getNormalImage());
-        if (!spr) continue;
         bool selected = tab->getTag() == m_currentTab;
-        spr->updateBGImage(selected ? "GJ_button_01.png" : "GJ_button_04.png");
-        spr->setOpacity(selected ? 255 : 205);
+        paimon::ui::setButtonSkin(tab, selected ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray);
     }
 }
 
@@ -447,14 +445,12 @@ void PetConfigPopup::buildGalleryTab() {
         log::info("[PetConfig] Cleaned up {} invalid image files from gallery", cleaned);
     }
 
-    auto* previewPanel = cocos2d::extension::CCScale9Sprite::create("GJ_square02.png");
-    previewPanel->setContentSize({140.f, 140.f});
-    previewPanel->setPosition({82.f, 138.f});
+    auto* previewPanel = paimon::ui::makeInset({140.f, 140.f});
+    previewPanel->setPosition({82.f - 70.f, 138.f - 70.f});
     m_galleryTab->addChild(previewPanel);
 
-    auto* galleryPanel = cocos2d::extension::CCScale9Sprite::create("GJ_square02.png");
-    galleryPanel->setContentSize({246.f, 140.f});
-    galleryPanel->setPosition({284.f, 138.f});
+    auto* galleryPanel = paimon::ui::makeInset({246.f, 140.f});
+    galleryPanel->setPosition({284.f - 123.f, 138.f - 70.f});
     m_galleryTab->addChild(galleryPanel);
 
     auto* previewTitle = CCLabelBMFont::create("Vista previa", "bigFont.fnt");
@@ -462,9 +458,8 @@ void PetConfigPopup::buildGalleryTab() {
     previewTitle->setPosition({82.f, 195.f});
     m_galleryTab->addChild(previewTitle);
 
-    auto* previewFrame = cocos2d::extension::CCScale9Sprite::create("GJ_square01.png");
-    previewFrame->setContentSize({78.f, 70.f});
-    previewFrame->setPosition({82.f, 146.f});
+    auto* previewFrame = paimon::ui::makeInset({78.f, 70.f}, 60);
+    previewFrame->setPosition({82.f - 39.f, 146.f - 35.f});
     m_galleryTab->addChild(previewFrame);
 
     m_emptyPreviewIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plusBtn_001.png");
@@ -509,28 +504,28 @@ void PetConfigPopup::buildGalleryTab() {
     m_galleryMenu->setPosition({0, 0});
     m_galleryTab->addChild(m_galleryMenu, 10);
 
-    auto* refreshSpr = ButtonSprite::create("Actualizar", 75, true, "goldFont.fnt", "GJ_button_04.png", 18.f, 0.37f);
+    auto* refreshSpr = paimon::ui::makeButtonSprite("Actualizar", paimon::ui::Btn::Gray, 75.f, 0.55f, "bigFont.fnt");
     auto* refreshBtn = CCMenuItemExt::createSpriteExtra(
         refreshSpr, [this](CCMenuItemSpriteExtra*) { refreshGallery(); });
     refreshBtn->setPosition({356.f, 195.f});
     m_galleryMenu->addChild(refreshBtn);
 
-    auto addSpr = ButtonSprite::create("Importar", 78, true, "goldFont.fnt", "GJ_button_01.png", 18.f, 0.45f);
+    auto addSpr = paimon::ui::makeButtonSprite("Importar", paimon::ui::Btn::Green, 78.f, 0.65f, "bigFont.fnt");
     auto addBtn = CCMenuItemSpriteExtra::create(addSpr, this, menu_selector(PetConfigPopup::onAddImage));
     addBtn->setPosition({57.f, 45.f});
     m_galleryMenu->addChild(addBtn);
 
-    auto shopSpr = ButtonSprite::create("Tienda", 70, true, "goldFont.fnt", "GJ_button_02.png", 18.f, 0.45f);
+    auto shopSpr = paimon::ui::makeButtonSprite("Tienda", paimon::ui::Btn::Cyan, 70.f, 0.65f, "bigFont.fnt");
     auto shopBtn = CCMenuItemSpriteExtra::create(shopSpr, this, menu_selector(PetConfigPopup::onOpenShop));
     shopBtn->setPosition({148.f, 45.f});
     m_galleryMenu->addChild(shopBtn);
 
-    auto delAllSpr = ButtonSprite::create("Borrar todo", 91, true, "goldFont.fnt", "GJ_button_06.png", 18.f, 0.42f);
+    auto delAllSpr = paimon::ui::makeButtonSprite("Borrar todo", paimon::ui::Btn::Red, 91.f, 0.6f, "bigFont.fnt");
     auto delAllBtn = CCMenuItemSpriteExtra::create(delAllSpr, this, menu_selector(PetConfigPopup::onDeleteAllImages));
     delAllBtn->setPosition({252.f, 45.f});
     m_galleryMenu->addChild(delAllBtn);
 
-    auto nextSpr = ButtonSprite::create("Ajustes >", 82, true, "goldFont.fnt", "GJ_button_01.png", 18.f, 0.42f);
+    auto nextSpr = paimon::ui::makeButtonSprite("Ajustes >", paimon::ui::Btn::Green, 82.f, 0.6f, "bigFont.fnt");
     auto nextBtn = CCMenuItemSpriteExtra::create(nextSpr, this, menu_selector(PetConfigPopup::onNextStep));
     nextBtn->setPosition({361.f, 45.f});
     m_galleryMenu->addChild(nextBtn);
@@ -961,7 +956,7 @@ void PetConfigPopup::buildAdvancedTab() {
             CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2);
         row->addChild(menu, 5);
 
-        auto* spr = ButtonSprite::create("Cambiar", 69, true, "goldFont.fnt", "GJ_button_04.png", 18.f, 0.45f);
+        auto* spr = paimon::ui::makeButtonSprite("Cambiar", paimon::ui::Btn::Gray, 69.f, 0.6f, "bigFont.fnt");
         auto* btn = CCMenuItemExt::createSpriteExtra(
             spr, [this, idx](CCMenuItemSpriteExtra*) { pickIconStateImage(idx); });
         btn->setPosition({innerW - 14.f - btn->getScaledContentSize().width / 2.f, 15.f});

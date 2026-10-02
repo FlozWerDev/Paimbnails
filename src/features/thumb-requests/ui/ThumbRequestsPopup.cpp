@@ -6,6 +6,7 @@
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/GJDifficultySprite.hpp>
@@ -93,6 +94,10 @@ bool ThumbRequestsPopup::init() {
 
     paimon::markDynamicPopup(this);
     this->setTitle(Localization::get().getString("thumbreq.title"));
+    this->addInfoButton(Localization::get().getString("thumbreq.title"),
+        "Browse the thumbnail requests queue.\n\n"
+        "Use the top <cy>filter</c> tabs to show all, pending or sent requests. "
+        "Tap <cg>play</c> to open a level, or the <cr>video</c> icon to watch its clip.");
 
     if (auto* logo = paimon::SpriteHelper::safeCreate("Logo.png"_spr)) {
         logo->setScale(0.11f);
@@ -116,6 +121,10 @@ bool ThumbRequestsPopup::init() {
         menu->addChild(btn);
         m_filterButtons.push_back(btn);
     }
+
+    auto* listInset = paimon::ui::makeInset({kListW, kListH}, 90);
+    listInset->setPosition({(kPopupW - kListW) / 2.f, 16.f});
+    m_mainLayer->addChild(listInset, 0);
 
     m_scroll = ScrollLayer::create({kListW, kListH});
     m_scroll->setPosition({(kPopupW - kListW) / 2.f, 16.f});
@@ -169,8 +178,7 @@ void ThumbRequestsPopup::showMessage(std::string const& text) {
 void ThumbRequestsPopup::buildRows() {
     for (size_t i = 0; i < m_filterButtons.size(); i++) {
         bool const active = static_cast<int>(i) == m_filter;
-        m_filterButtons[i]->setColor(active ? ccColor3B{255, 255, 255} : ccColor3B{124, 130, 148});
-        m_filterButtons[i]->setOpacity(active ? 255 : 190);
+        paimon::ui::setButtonSkin(m_filterButtons[i], active ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray);
     }
 
     m_scroll->m_contentLayer->removeAllChildren();
@@ -206,7 +214,7 @@ CCNode* ThumbRequestsPopup::createRow(Request const& request, float y, bool odd)
     row->setPosition({0.f, y});
 
     auto* strip = CCLayerColor::create(
-        odd ? ccColor4B{0, 0, 0, 95} : ccColor4B{0, 0, 0, 60}, kListW, kRowH - 2.f);
+        odd ? ccColor4B{194, 114, 62, 255} : ccColor4B{161, 88, 44, 255}, kListW, kRowH - 2.f);
     strip->setPosition({0.f, -(kRowH - 2.f) / 2.f});
     row->addChild(strip, 0);
 

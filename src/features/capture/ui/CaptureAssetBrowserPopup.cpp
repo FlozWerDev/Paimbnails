@@ -10,6 +10,7 @@
 #include "CaptureUIConstants.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonButtonHighlighter.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include <Geode/ui/GeodeUI.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
@@ -161,6 +162,10 @@ bool CaptureAssetBrowserPopup::init() {
 
     if (!PaimonPopup::init(C::POPUP_WIDTH, C::POPUP_HEIGHT)) return false;
     this->setTitle(loc("assets.title").c_str());
+    this->addInfoButton(loc("assets.title"),
+        "Oculta o muestra objetos del nivel por tipo. Usa el buscador para filtrar "
+        "por <cy>ID</c> o categoria.\n<cg>Solo</c> deja visible solo ese tipo; "
+        "<cg>Restaurar</c> devuelve todo a su estado original.");
 
     auto content = m_mainLayer->getContentSize();
 
@@ -268,13 +273,13 @@ bool CaptureAssetBrowserPopup::init() {
         btnMenu->addChild(btn);
     };
 
-    addActionButton("assets.restore_all", "GJ_button_01.png",
+    addActionButton("assets.restore_all", "GJ_button_04.png",
         menu_selector(CaptureAssetBrowserPopup::onRestoreAllBtn));
     addActionButton("assets.hide_all", "GJ_button_05.png",
         menu_selector(CaptureAssetBrowserPopup::onHideAllBtn));
     addActionButton("assets.show_all", "GJ_button_02.png",
         menu_selector(CaptureAssetBrowserPopup::onShowAllBtn));
-    addActionButton("assets.done", "GJ_button_02.png",
+    addActionButton("assets.done", "GJ_button_01.png",
         menu_selector(CaptureAssetBrowserPopup::onDoneBtn));
 
     btnMenu->alignItemsHorizontallyWithPadding(6.f);
@@ -465,7 +470,7 @@ void CaptureAssetBrowserPopup::buildList() {
     m_listRoot->setID("asset-list-root"_spr);
     m_mainLayer->addChild(m_listRoot, 2);
 
-    auto panel = paimon::SpriteHelper::createDarkPanel(listW, viewH, 80);
+    auto panel = paimon::ui::makeInset({listW, viewH}, 80);
     panel->setPosition({viewX, listBot});
     m_listRoot->addChild(panel, 0);
 

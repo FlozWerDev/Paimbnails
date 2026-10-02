@@ -1,4 +1,5 @@
 #include "ProfileBgGradientPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../services/ProfileGradientEffects.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
@@ -75,6 +76,10 @@ bool ProfileBgGradientPopup::init(int accountID,
     float previewW = 260.f;
     float previewH = 60.f;
 
+    auto previewInset = paimon::ui::makeInset({previewW + 12.f, previewH + 12.f}, 95);
+    previewInset->setPosition({cx - (previewW + 12.f) / 2.f, previewY - (previewH + 12.f) / 2.f});
+    m_mainLayer->addChild(previewInset);
+
     m_previewContainer = CCNode::create();
     m_previewContainer->setContentSize({previewW, previewH});
     m_previewContainer->setAnchorPoint({0.5f, 0.5f});
@@ -89,6 +94,11 @@ bool ProfileBgGradientPopup::init(int accountID,
     m_mainLayer->addChild(menu, 5);
 
     float btnY = previewY - 60.f;
+
+    auto effectHeading = paimon::ui::makeTitle("Effect", 160.f, 0.5f);
+    effectHeading->setPosition({cx, btnY + 28.f});
+    m_mainLayer->addChild(effectHeading);
+
     auto const& effects = paimon::profilebg::availableEffects();
     int n = (int)effects.size();
     float spacing = 70.f;

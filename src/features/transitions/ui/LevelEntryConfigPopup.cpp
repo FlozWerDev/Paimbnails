@@ -48,6 +48,10 @@ LevelEntryConfigPopup* LevelEntryConfigPopup::create() {
 bool LevelEntryConfigPopup::init() {
     if (!PaimonPopup::init(420.f, 300.f)) return false;
     setTitle("Smooth Level Transitions+");
+    addInfoButton("Smooth Level Transitions+",
+        "Coreografia la entrada y la salida de los niveles manteniendo ambas escenas vivas.\n\n"
+        "Ajusta la <cy>curva</c>, la <cy>duracion</c> y que capas se animan. Todo se guarda al instante.");
+    addCorners();
     paimon::markDynamicPopup(this);
     rebuild();
     return true;

@@ -150,12 +150,10 @@ void VersusMatchPopup::buildSteps(CCNode* page, Phase phase) {
         bool const active = i == current;
         float const x = kPopupW / 2.f + (i - 1) * 122.f;
 
-        if (auto* chip = paimon::SpriteHelper::createColorPanel(
-                112.f, 22.f, active ? ccColor3B{90, 74, 30} : ccColor3B{0, 0, 0},
-                active ? 220 : 110, 4.f)) {
-            chip->setPosition({x - 56.f, kPopupH - 62.f});
-            page->addChild(chip, 1);
-        }
+        auto* chip = paimon::ui::makeInset({112.f, 22.f}, active ? 220 : 110,
+            active ? ccColor3B{90, 74, 30} : paimon::ui::palette::ink);
+        chip->setPosition({x - 56.f, kPopupH - 62.f});
+        page->addChild(chip, 1);
 
         auto* label = CCLabelBMFont::create(
             fmt::format("{} {}", i + 1, loc.getString(keys[i])).c_str(), "bigFont.fnt");
@@ -258,11 +256,9 @@ void VersusMatchPopup::buildBanning(CCNode* page) {
         card->setPosition({x, kPopupH - 166.f});
         page->addChild(card, 2);
 
-        if (auto* panel = paimon::SpriteHelper::createDarkPanel(116.f, 112.f,
-                                                                offer.banned ? 180 : 110, 5.f)) {
-            panel->setPosition({-58.f, -56.f});
-            card->addChild(panel, 0);
-        }
+        auto* panel = paimon::ui::makeInset({116.f, 112.f}, offer.banned ? 180 : 110);
+        panel->setPosition({-58.f, -56.f});
+        card->addChild(panel, 0);
 
         if (auto* diff = paimon::SpriteHelper::safeCreateWithFrameName(difficultySprite(offer.difficulty))) {
             diff->setScale(0.7f);

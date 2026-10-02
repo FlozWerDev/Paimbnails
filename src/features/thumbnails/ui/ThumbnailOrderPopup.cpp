@@ -1,5 +1,6 @@
 #include "ThumbnailOrderPopup.hpp"
 
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -26,13 +27,6 @@ constexpr float kCellHeight = 76.f;
 constexpr float kCellGap = 8.f;
 constexpr float kPreviewWidth = 72.f;
 constexpr float kPreviewHeight = 42.f;
-
-constexpr ccColor4F kCellBorderColor = {0.28f, 0.31f, 0.38f, 0.74f};
-constexpr ccColor4F kCellFillColor = {0.03f, 0.03f, 0.06f, 0.86f};
-constexpr ccColor4F kCellSelectedFill = {0.20f, 0.15f, 0.05f, 0.92f};
-constexpr ccColor4F kCellMainBorder = {0.16f, 0.86f, 1.00f, 0.94f};
-constexpr ccColor4F kCellMainFill = {0.05f, 0.19f, 0.24f, 0.90f};
-constexpr ccColor4F kCellSelectedAccent = {0.98f, 0.82f, 0.28f, 0.96f};
 
 ButtonSprite* createSmallTextButton(char const* text, char const* bg, float scale = 0.5f, int width = 70) {
     return ButtonSprite::create(text, width, true, "bigFont.fnt", bg, 26.f, scale);
@@ -123,24 +117,26 @@ bool ThumbnailOrderPopup::init(
     m_selectedIndex = preferredIndex >= 0 ? preferredIndex : 0;
 
     this->setTitle("Thumbnail Order");
+    this->addInfoButton("Thumbnail Order",
+        "Pick a thumbnail, then use the <cg>arrows</c> to move it. Slot <cy>#1</c> (cyan) "
+        "is the main thumbnail shown everywhere. Press <cg>Save</c> to send the new order.");
 
     auto content = m_mainLayer->getContentSize();
 
-    auto subtitle = CCLabelBMFont::create(
+    auto subtitle = paimon::ui::makeText(
         "Select a thumbnail, move it with arrows, then save. Cyan = main.",
-        "chatFont.fnt"
-    );
-    subtitle->setScale(0.6f);
-    subtitle->setColor({190, 205, 220});
+        content.width - 24.f, 0.6f, paimon::ui::palette::muted,
+        kCCTextAlignmentCenter);
     subtitle->setPosition({content.width * 0.5f, content.height - 38.f});
     m_mainLayer->addChild(subtitle, 2);
 
     float scrollWidth = content.width - kScrollInset * 2.f;
     float scrollHeight = content.height - kScrollBottom - 58.f;
 
-    auto scrollBg = paimon::SpriteHelper::createDarkPanel(scrollWidth, scrollHeight, 115, 8.f);
-    scrollBg->setPosition({kScrollInset, kScrollBottom});
-    m_mainLayer->addChild(scrollBg, 1);
+    if (auto* scrollBg = paimon::ui::makeInset({scrollWidth, scrollHeight}, 115)) {
+        scrollBg->setPosition({kScrollInset, kScrollBottom});
+        m_mainLayer->addChild(scrollBg, 1);
+    }
 
     m_scrollLayer = ScrollLayer::create({scrollWidth, scrollHeight});
     m_scrollLayer->setPosition({kScrollInset, kScrollBottom});
@@ -185,7 +181,7 @@ bool ThumbnailOrderPopup::init(
         actionMenu->addChild(m_moveRightBtn);
     }
 
-    if (auto cancelSpr = createSmallTextButton("Cancel", "GJ_button_05.png", 0.42f, 65)) {
+    if (auto cancelSpr = createSmallTextButton("Cancel", "GJ_button_04.png", 0.42f, 65)) {
         m_cancelBtn = CCMenuItemSpriteExtra::create(cancelSpr, this, menu_selector(ThumbnailOrderPopup::onCancel));
         m_cancelBtn->setPosition({content.width - 140.f, 18.f});
         actionMenu->addChild(m_cancelBtn);
@@ -223,7 +219,7 @@ void ThumbnailOrderPopup::buildCells() {
         previewClip->setPosition({(kCellWidth - kPreviewWidth) * 0.5f, 20.f});
         container->addChild(previewClip, 2);
 
-        auto previewBg = paimon::SpriteHelper::createDarkPanel(kPreviewWidth, kPreviewHeight, 150, 5.f);
+        auto previewBg = paimon::ui::makeInset({kPreviewWidth, kPreviewHeight}, 150);
         previewBg->setPosition({0.f, 0.f});
         previewClip->addChild(previewBg, -1);
 
@@ -366,36 +362,33 @@ void ThumbnailOrderPopup::updateCellVisual(int index) {
     auto const& thumbnail = m_thumbnails[index];
     if (!cell.container) return;
 
-    if (auto node = cell.container->getChildByID("order-cell-border"_spr)) node->removeFromParent();
     if (auto node = cell.container->getChildByID("order-cell-fill"_spr)) node->removeFromParent();
     if (auto node = cell.container->getChildByID("order-cell-accent"_spr)) node->removeFromParent();
 
     bool isSelected = index == m_selectedIndex;
     bool isMain = index == 0;
 
-    ccColor4F borderColor = isMain ? kCellMainBorder : kCellBorderColor;
-    ccColor4F fillColor = kCellFillColor;
+    ccColor3B fillColor = paimon::ui::palette::ink;
+    GLubyte fillOpacity = 150;
     if (isMain) {
-        fillColor = kCellMainFill;
+        fillColor = {12, 48, 60};
+        fillOpacity = 170;
     }
     if (isSelected) {
-        fillColor = isMain ? ccColor4F{0.08f, 0.24f, 0.30f, 0.92f} : kCellSelectedFill;
+        fillColor = isMain ? ccColor3B{20, 60, 76} : ccColor3B{52, 40, 14};
+        fillOpacity = 200;
     }
 
-    auto border = paimon::SpriteHelper::createRoundedRect(kCellWidth, kCellHeight, 8.f, borderColor);
-    border->setID("order-cell-border"_spr);
-    border->setPosition({0.f, 0.f});
-    cell.container->addChild(border, 0);
-
-    auto fill = paimon::SpriteHelper::createRoundedRect(kCellWidth - 2.f, kCellHeight - 2.f, 7.f, fillColor);
+    auto fill = paimon::ui::makeInset({kCellWidth, kCellHeight}, fillOpacity, fillColor);
     fill->setID("order-cell-fill"_spr);
-    fill->setPosition({1.f, 1.f});
+    fill->setPosition({0.f, 0.f});
     cell.container->addChild(fill, 1);
 
-    if (isSelected) {
-        auto accent = paimon::SpriteHelper::createRoundedRect(kCellWidth - 12.f, 3.f, 1.5f, kCellSelectedAccent);
+    if (isSelected || isMain) {
+        ccColor3B accentColor = isMain ? ccColor3B{40, 220, 255} : paimon::ui::palette::gold;
+        auto accent = paimon::ui::makeDivider(kCellWidth - 12.f, accentColor, 230);
         accent->setID("order-cell-accent"_spr);
-        accent->setPosition({6.f, kCellHeight - 6.f});
+        accent->setPosition({kCellWidth * 0.5f, kCellHeight - 5.f});
         cell.container->addChild(accent, 3);
     }
 

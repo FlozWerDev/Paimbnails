@@ -1,5 +1,6 @@
 #include <Geode/ui/PopupManager.hpp>
 #include "ProfileBgPickerPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/Localization.hpp"
@@ -35,6 +36,15 @@ bool ProfileBgPickerPopup::init(int accountID) {
     constexpr float btnSpacing  = 80.f;
     const float    rowY        = cy + 8.f;
     constexpr float labelOffset = -32.f;
+
+    auto optionHeading = paimon::ui::makeTitle(
+        Localization::get().getString("profilebg.picker.title").c_str(), 260.f, 0.5f);
+    optionHeading->setPosition({cx, rowY + 46.f});
+    m_mainLayer->addChild(optionHeading);
+
+    auto optionsInset = paimon::ui::makeInset({content.width - 40.f, 92.f}, 90);
+    optionsInset->setPosition({20.f, rowY - 42.f});
+    m_mainLayer->addChild(optionsInset);
 
     auto makeBtn = [&](const char* label,
                        const char* primaryFrame,

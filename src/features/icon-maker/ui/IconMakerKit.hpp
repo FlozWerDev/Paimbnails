@@ -14,10 +14,10 @@ namespace paimon::icon_maker::gdkit {
 
 constexpr cocos2d::ccColor3B kTitleColor = paimon::ui::palette::text;
 constexpr cocos2d::ccColor3B kDescColor  = paimon::ui::palette::muted;
-constexpr cocos2d::ccColor3B kValueColor = paimon::ui::palette::accent;
-constexpr cocos2d::ccColor3B kGoldColor  = paimon::ui::palette::accent;
-constexpr cocos2d::ccColor3B kPlateColor = paimon::ui::palette::raised;
-constexpr GLubyte            kPlateAlpha = 255;
+constexpr cocos2d::ccColor3B kValueColor = paimon::ui::palette::gold;
+constexpr cocos2d::ccColor3B kGoldColor  = paimon::ui::palette::gold;
+constexpr cocos2d::ccColor3B kPlateColor = paimon::ui::palette::ink;
+constexpr GLubyte            kPlateAlpha = 80;
 
 // usable row width inside a card.
 constexpr float cardInnerWidth(float cardWidth) { return cardWidth - 20.f; }

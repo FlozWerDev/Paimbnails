@@ -2,6 +2,7 @@
 #include "ModlyModPopup.hpp"
 #include "ModlyUIHelpers.hpp"
 #include "../services/ModlyRepo.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/SpriteHelper.hpp"
@@ -119,6 +120,11 @@ void ModlyProfilePopup::buildProjects() {
     }
 
     auto& repo = ModlyRepo::get();
+
+    if (auto* inset = paimon::ui::makeInset({kListW + 8.f, kListH + 8.f}, 90)) {
+        inset->setPosition({(kWidth - kListW - 8.f) / 2.f, 22.f});
+        m_mainLayer->addChild(inset, 1);
+    }
 
     auto scroll = ScrollLayer::create({kListW, kListH});
     scroll->setPosition({(kWidth - kListW) / 2.f, 26.f});

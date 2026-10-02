@@ -28,7 +28,8 @@ private:
     bool init() override;
 
     // bottom-bar button shared by the load/delete actions.
-    CCMenuItemSpriteExtra* makeActionButton(const char*, SEL_MenuHandler, const CCPoint&, bool);
+    CCMenuItemSpriteExtra* makeActionButton(const char*, SEL_MenuHandler, const CCPoint&, bool,
+        const char* texture = "GJ_button_01.png");
 
     // lazy painter.
     void updateGradient(float);

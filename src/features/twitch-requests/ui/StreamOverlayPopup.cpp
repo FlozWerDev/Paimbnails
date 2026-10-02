@@ -37,6 +37,14 @@ StreamOverlayPopup* StreamOverlayPopup::create() {
 bool StreamOverlayPopup::init() {
     if (!PaimonPopup::init(kPopupWidth, kPopupHeight)) return false;
     setTitle("Overlay para OBS");
+    addCorners();
+    addInfoButton("Overlay para OBS",
+        "Sirve una <cy>Browser Source</c> privada desde tu propia PC con la cola de "
+        "requests, para ponerla en OBS.\n\n"
+        "<cg>URL limpia</c>: pegala como Fuente de navegador de 1920x1080 y deja "
+        "activado 'Actualizar al activar la escena'. <cj>Vista previa</c> abre una demo "
+        "en el navegador aunque la cola este vacia.\n\n"
+        "El servidor solo escucha en <co>localhost</c>: nadie fuera de tu PC puede abrirlo.");
     paimon::markDynamicPopup(this);
     m_config = streamOverlayConfig();
 

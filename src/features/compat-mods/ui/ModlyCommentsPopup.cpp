@@ -1,6 +1,7 @@
 #include "ModlyCommentsPopup.hpp"
 #include "ModlyUIHelpers.hpp"
 #include "../services/ModlyRepo.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/SpriteHelper.hpp"
@@ -32,6 +33,11 @@ bool ModlyCommentsPopup::init(ModlyMod const& mod) {
     subtitle->setPosition({kWidth / 2.f, kHeight - 52.f});
     fitLabelWidth(subtitle, kListW);
     m_mainLayer->addChild(subtitle, 2);
+
+    if (auto* inset = paimon::ui::makeInset({kListW + 8.f, kListH + 8.f}, 90)) {
+        inset->setPosition({(kWidth - kListW - 8.f) / 2.f, 26.f});
+        m_mainLayer->addChild(inset, 1);
+    }
 
     m_listHolder = CCNode::create();
     m_listHolder->setPosition({0.f, 0.f});

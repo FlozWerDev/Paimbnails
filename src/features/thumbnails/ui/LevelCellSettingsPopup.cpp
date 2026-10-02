@@ -2,9 +2,9 @@
 #include "../services/CompactListRefresh.hpp"
 #include "../../../blur/PopupBlurService.hpp"
 #include "../../../core/Settings.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/InfoButton.hpp"
-#include "../../../utils/SpriteHelper.hpp"
 #include <Geode/binding/Slider.hpp>
 #include <Geode/ui/BreakLine.hpp>
 
@@ -300,6 +300,10 @@ bool LevelCellSettingsPopup::init() {
     if (!PaimonPopup::init(280.f, 250.f)) return false;
 
     this->setTitle("LevelCell Settings");
+    this->addInfoButton("LevelCell Settings",
+        "Customize how level cells look in lists: background style, blur, darkness, "
+        "display toggles and hover animations. Drag a slider to preview the result live. "
+        "Each section has its own <cy>info</c> button for details.");
 
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
@@ -615,7 +619,7 @@ bool LevelCellSettingsPopup::init() {
     }
 
     {
-        auto pill = paimon::SpriteHelper::createColorPanel(160.f, 24.f, {0, 0, 0}, 200, 6.f);
+        auto pill = paimon::ui::makeInset({160.f, 24.f}, 200);
         if (pill) {
             pill->setAnchorPoint({0.5f, 0.5f});
             pill->setPosition({content.width / 2.f, content.height + 24.f});

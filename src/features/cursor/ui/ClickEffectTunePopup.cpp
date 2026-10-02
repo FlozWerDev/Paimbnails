@@ -49,6 +49,11 @@ bool ClickEffectTunePopup::init() {
     if (!PaimonPopup::init(320.f, 226.f)) return false;
 
     this->setTitle(m_titleText);
+    this->addInfoButton("Ajuste del efecto",
+        "Afina <cy>solo este efecto</c> de click.\n\n"
+        "<cg>Tamano</c>: multiplica su escala.\n"
+        "<cg>Velocidad</c>: que tan rapido y lejos sale.\n\n"
+        "Usa <cg>Probar</c> para ver los cambios sin cerrar.");
 
     auto content = m_mainLayer->getContentSize();
     float cardW = content.width - 30.f;
@@ -93,10 +98,9 @@ bool ClickEffectTunePopup::init() {
     // footer test button: preview changes without closing.
     auto* menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
-    auto* testSpr = ButtonSprite::create("Probar");
-    testSpr->setScale(0.6f);
-    auto* testBtn = CCMenuItemExt::createSpriteExtra(
-        testSpr, [this](CCMenuItemSpriteExtra*) { if (m_onTest) m_onTest(); });
+    auto* testBtn = paimon::ui::makeButton("Probar",
+        [this] { if (m_onTest) m_onTest(); },
+        paimon::ui::Btn::Green, 0.f, 0.7f);
     testBtn->setPosition({content.width / 2.f, 22.f});
     menu->addChild(testBtn);
     m_mainLayer->addChild(menu, 10);

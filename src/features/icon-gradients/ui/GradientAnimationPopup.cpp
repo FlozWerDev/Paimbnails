@@ -96,6 +96,11 @@ bool GradientAnimationPopup::init(IconType initialType, bool secondPlayer) {
     setTitle("Gradient Animations", "goldFont.fnt", 0.72f, 18.f);
     setID("gradient-animation-popup"_spr);
 
+    addInfoButton("Gradient Animations",
+        "Pick an <cy>effect</c> to make your icon's gradient move. <cy>Enabled</c> turns it "
+        "on, <cy>Reverse</c> flips its direction, and <cy>Speed</c> sets how fast it runs. "
+        "<cg>Edit</c> opens the custom builder; <cy>Reset</c> restores the default.");
+
     auto menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
     m_mainLayer->addChild(menu, 5);

@@ -1,5 +1,6 @@
 #include <Geode/ui/PopupManager.hpp>
 #include "SearchHistoryPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../SearchHistory.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 
@@ -64,6 +65,11 @@ bool SearchHistoryPopup::init(std::function<void(int)> callback) {
     paimon::markDynamicPopup(this);
     m_callback = std::move(callback);
     this->setTitle("Search History", "goldFont.fnt", 0.75f);
+    this->addInfoButton("Historial de busqueda",
+        "Toca una fila para <cg>repetir</c> esa busqueda.\n\n"
+        "El icono muestra la dificultad filtrada; la fecha es cuando la hiciste.\n\n"
+        "Usa la <cr>papelera</c> de cada fila para borrarla, o <cr>Clear</c> para "
+        "vaciar todo el historial.");
 
     // clocks flanking the title (same icon as the opener button).
     if (m_title) {
@@ -106,8 +112,7 @@ bool SearchHistoryPopup::init(std::function<void(int)> callback) {
     m_mainLayer->addChildAtPosition(m_countLabel, Anchor::BottomLeft, { 26.f, 22.f });
 
     // clear button (bottom).
-    auto clearSpr = ButtonSprite::create("Clear", "bigFont.fnt", "GJ_button_06.png", 0.8f);
-    clearSpr->setScale(0.55f);
+    auto clearSpr = paimon::ui::makeButtonSprite("Clear", paimon::ui::Btn::Red, 0.f, 0.6f, "bigFont.fnt");
     auto clearBtn = CCMenuItemSpriteExtra::create(clearSpr, this, menu_selector(SearchHistoryPopup::onClear));
     clearBtn->setID("clear-button"_spr);
     m_buttonMenu->addChildAtPosition(clearBtn, Anchor::Bottom, { 0.f, 21.f });

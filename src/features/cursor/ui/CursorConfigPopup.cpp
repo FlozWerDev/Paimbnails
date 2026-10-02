@@ -173,7 +173,7 @@ void CursorConfigPopup::createTabButtons() {
     m_mainLayer->addChildAtPosition(menu, Anchor::Top, {0.f, -38.f});
     menu->setZOrder(10);
 
-    auto spr1 = ButtonSprite::create("Galeria");
+    auto spr1 = ButtonSprite::create("Galeria", "bigFont.fnt", "GJ_button_04.png", 0.9f);
     spr1->setScale(0.5f);
     auto tab1 = CCMenuItemSpriteExtra::create(spr1, this, menu_selector(CursorConfigPopup::onTabSwitch));
     tab1->setTag(0);
@@ -181,7 +181,7 @@ void CursorConfigPopup::createTabButtons() {
     menu->addChild(tab1);
     m_tabs.push_back(tab1);
 
-    auto sprShop = ButtonSprite::create("Tienda");
+    auto sprShop = ButtonSprite::create("Tienda", "bigFont.fnt", "GJ_button_04.png", 0.9f);
     sprShop->setScale(0.5f);
     auto tabShop = CCMenuItemSpriteExtra::create(sprShop, this, menu_selector(CursorConfigPopup::onTabSwitch));
     tabShop->setTag(1);
@@ -189,7 +189,7 @@ void CursorConfigPopup::createTabButtons() {
     menu->addChild(tabShop);
     m_tabs.push_back(tabShop);
 
-    auto spr2 = ButtonSprite::create("Ajustes");
+    auto spr2 = ButtonSprite::create("Ajustes", "bigFont.fnt", "GJ_button_04.png", 0.9f);
     spr2->setScale(0.5f);
     auto tab2 = CCMenuItemSpriteExtra::create(spr2, this, menu_selector(CursorConfigPopup::onTabSwitch));
     tab2->setTag(2);
@@ -197,7 +197,7 @@ void CursorConfigPopup::createTabButtons() {
     menu->addChild(tab2);
     m_tabs.push_back(tab2);
 
-    auto spr3 = ButtonSprite::create("Estela");
+    auto spr3 = ButtonSprite::create("Estela", "bigFont.fnt", "GJ_button_04.png", 0.9f);
     spr3->setScale(0.5f);
     auto tab3 = CCMenuItemSpriteExtra::create(spr3, this, menu_selector(CursorConfigPopup::onTabSwitch));
     tab3->setTag(3);
@@ -205,7 +205,7 @@ void CursorConfigPopup::createTabButtons() {
     menu->addChild(tab3);
     m_tabs.push_back(tab3);
 
-    auto spr4 = ButtonSprite::create("Transicion");
+    auto spr4 = ButtonSprite::create("Transicion", "bigFont.fnt", "GJ_button_04.png", 0.9f);
     spr4->setScale(0.5f);
     auto tab4 = CCMenuItemSpriteExtra::create(spr4, this, menu_selector(CursorConfigPopup::onTabSwitch));
     tab4->setTag(4);
@@ -213,7 +213,7 @@ void CursorConfigPopup::createTabButtons() {
     menu->addChild(tab4);
     m_tabs.push_back(tab4);
 
-    auto spr5 = ButtonSprite::create("Click");
+    auto spr5 = ButtonSprite::create("Click", "bigFont.fnt", "GJ_button_04.png", 0.9f);
     spr5->setScale(0.5f);
     auto tab5 = CCMenuItemSpriteExtra::create(spr5, this, menu_selector(CursorConfigPopup::onTabSwitch));
     tab5->setTag(5);
@@ -221,7 +221,7 @@ void CursorConfigPopup::createTabButtons() {
     menu->addChild(tab5);
     m_tabs.push_back(tab5);
 
-    auto spr6 = ButtonSprite::create("Avanzado");
+    auto spr6 = ButtonSprite::create("Avanzado", "bigFont.fnt", "GJ_button_04.png", 0.9f);
     spr6->setScale(0.5f);
     auto tab6 = CCMenuItemSpriteExtra::create(spr6, this, menu_selector(CursorConfigPopup::onTabSwitch));
     tab6->setTag(6);
@@ -259,13 +259,10 @@ void CursorConfigPopup::onTabSwitch(CCObject* sender) {
     for (auto* tab : m_tabs) {
         auto spr = typeinfo_cast<ButtonSprite*>(tab->getNormalImage());
         if (!spr) continue;
-        if (tab->getTag() == m_currentTab) {
-            spr->setColor({0, 255, 0});
-            spr->setOpacity(255);
-        } else {
-            spr->setColor({255, 255, 255});
-            spr->setOpacity(150);
-        }
+        bool active = tab->getTag() == m_currentTab;
+        spr->updateBGImage(active ? "GJ_button_01.png" : "GJ_button_04.png");
+        spr->setColor({255, 255, 255});
+        spr->setOpacity(active ? 255 : 200);
     }
 }
 
@@ -324,7 +321,7 @@ void CursorConfigPopup::buildGalleryTab() {
         float slotX = cx + (static_cast<float>(i) - 2.5f) * colStep;
         float slotY = slotRowY;
 
-        auto bg = CCLayerColor::create(ccc4(80, 80, 80, 120), slotSize, slotSize);
+        auto bg = paimon::ui::makeInset({slotSize, slotSize}, 120, ccc3(80, 80, 80));
         bg->setPosition({slotX - slotSize / 2.f, slotY - slotSize / 2.f});
         m_galleryTab->addChild(bg);
         m_slots[i].bg = bg;
@@ -525,7 +522,7 @@ void CursorConfigPopup::refreshGallery() {
         if (assignedCount > 1)      { bgColor = ccc3(255, 200, 0); bgOpacity = 190; }
         else if (assignedCount == 1){ bgColor = singleColor; bgOpacity = 190; }
 
-        auto bg = paimon::SpriteHelper::createColorPanel(cellSize, cellSize, bgColor, bgOpacity);
+        auto bg = paimon::ui::makeInset({cellSize, cellSize}, bgOpacity, bgColor);
         bg->setPosition({0.f, 0.f});
         cell->addChild(bg, 0);
 

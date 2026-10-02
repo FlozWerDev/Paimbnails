@@ -1,15 +1,40 @@
 #include "PaimonUI.hpp"
 #include "../core/Settings.hpp"
-#include "../utils/SpriteHelper.hpp"
+#include "../utils/InfoButton.hpp"
 
+#include <Geode/ui/General.hpp>
 #include <algorithm>
 #include <cmath>
-#include <cstring>
 
 using namespace cocos2d;
 using namespace geode::prelude;
 
 namespace paimon::ui {
+
+char const* buttonTexture(Btn skin) {
+    switch (skin) {
+        case Btn::Green: return "GJ_button_01.png";
+        case Btn::Cyan:  return "GJ_button_02.png";
+        case Btn::Pink:  return "GJ_button_03.png";
+        case Btn::Gray:  return "GJ_button_04.png";
+        case Btn::Blue:  return "GJ_button_05.png";
+        case Btn::Red:   return "GJ_button_06.png";
+    }
+    return "GJ_button_01.png";
+}
+
+char const* popupTexture(Bg bg) {
+    switch (bg) {
+        case Bg::Brown:  return "GJ_square01.png";
+        case Bg::Blue:   return "GJ_square02.png";
+        case Bg::Green:  return "GJ_square03.png";
+        case Bg::Purple: return "GJ_square04.png";
+        case Bg::Dark:   return "GJ_square05.png";
+        case Bg::Light:  return "GJ_square06.png";
+        case Bg::White:  return "GJ_square07.png";
+    }
+    return "GJ_square01.png";
+}
 
 bool motionEnabled() {
     return settings::smoothui::enabled() && !settings::smoothui::reducedMotion();
@@ -21,82 +46,171 @@ float motionDuration(float seconds) {
     return seconds / static_cast<float>(std::clamp(speed, 0.35, 2.5));
 }
 
-ccColor3B actionColor(char const* skin) {
-    if (skin && std::strstr(skin, "06")) return {88, 43, 62};
-    if (skin && std::strstr(skin, "01")) return {34, 84, 79};
-    if (skin && std::strstr(skin, "02")) return {36, 75, 106};
-    return palette::raised;
+NineSlice* makeInset(CCSize size, GLubyte opacity, ccColor3B color) {
+    // half-size corners keep short rows from squashing the rounded edge
+    auto* panel = NineSlice::create("square02b_001.png");
+    panel->setScaleMultiplier(0.5f);
+    panel->setContentSize(size);
+    panel->setAnchorPoint({0.f, 0.f});
+    panel->setColor(color);
+    panel->setOpacity(opacity);
+    return panel;
 }
 
-CCNodeRGBA* makeSurface(CCSize size, ccColor3B color, GLubyte opacity, float radius) {
-    if (auto* panel = SpriteHelper::safeCreateNineSliceFromFile("square02b_001.png")) {
-        panel->setContentSize(size);
-        panel->setAnchorPoint({0.f, 0.f});
-        panel->setColor(color);
-        panel->setOpacity(opacity);
-        return panel;
+ButtonSprite* makeButtonSprite(char const* text, char const* texture, float width, float scale, char const* font) {
+    scale = std::max(0.1f, scale);
+    if (!texture || texture[0] == '\0') texture = "GJ_button_01.png";
+    ButtonSprite* sprite = nullptr;
+    if (width > 0.f) {
+        int const raw = std::max(20, static_cast<int>(std::round(width / scale)));
+        sprite = ButtonSprite::create(text ? text : "", raw, true, font, texture, 30.f, 0.8f);
+        if (sprite && sprite->m_label) sprite->m_label->limitLabelWidth(raw - 14.f, 0.8f, 0.1f);
+    } else {
+        sprite = ButtonSprite::create(text ? text : "", font, texture, 0.8f);
     }
-    return SpriteHelper::createRoundedRect(size.width, size.height, radius,
-        {color.r / 255.f, color.g / 255.f, color.b / 255.f, opacity / 255.f},
-        {palette::border.r / 255.f, palette::border.g / 255.f,
-            palette::border.b / 255.f, opacity / 255.f * 0.50f}, 0.65f);
+    if (sprite) sprite->setScale(scale);
+    return sprite;
 }
 
-CCSprite* makeButtonFace(char const* text, CCSize size, ccColor3B color, float textScale) {
-    auto* face = CCSprite::create();
-    face->setContentSize(size);
-    face->setCascadeOpacityEnabled(true);
-    face->setCascadeColorEnabled(true);
-    if (auto* panel = makeSurface(size, color, 255, 6.f)) {
-        panel->setID("paimon-button-surface"_spr);
-        face->addChild(panel, -1);
-    }
-    auto* label = CCLabelBMFont::create(text ? text : "", "bigFont.fnt");
-    label->setColor(palette::text);
-    label->limitLabelWidth(std::max(1.f, size.width - 16.f), textScale, 0.12f);
-    label->setPosition(size / 2.f);
-    label->setID("paimon-button-label"_spr);
-    face->addChild(label);
-    return face;
+ButtonSprite* makeButtonSprite(char const* text, Btn skin, float width, float scale, char const* font) {
+    return makeButtonSprite(text, buttonTexture(skin), width, scale, font);
 }
 
-CCMenuItemSpriteExtra* makeButton(char const* text, CCSize size,
-    std::function<void()> onPress, ccColor3B color) {
-    auto* button = CCMenuItemExt::createSpriteExtra(makeButtonFace(text, size, color),
+CCMenuItemSpriteExtra* makeButton(char const* text, std::function<void()> onPress,
+    char const* texture, float width, float scale, char const* font) {
+    return CCMenuItemExt::createSpriteExtra(makeButtonSprite(text, texture, width, scale, font),
         [callback = std::move(onPress)](CCMenuItemSpriteExtra*) {
             if (callback) callback();
         });
-    button->m_scaleMultiplier = 1.035f;
-    return button;
 }
 
-namespace {
-CCSprite* switchFace(bool on) {
-    auto* face = CCSprite::create();
-    face->setContentSize({42.f, 24.f});
-    face->setCascadeOpacityEnabled(true);
-    auto* track = makeSurface({38.f, 20.f}, on ? ccColor3B{37, 104, 102} : palette::raised,
-        255, 10.f);
-    track->setPosition({2.f, 2.f});
-    face->addChild(track);
-    auto* thumb = SpriteHelper::createColorPanel(14.f, 14.f,
-        on ? palette::success : palette::muted, 255, 7.f);
-    thumb->setPosition({on ? 23.f : 5.f, 5.f});
-    face->addChild(thumb);
-    auto* state = CCLabelBMFont::create(on ? "I" : "O", "chatFont.fnt");
-    state->setScale(0.28f);
-    state->setColor(on ? palette::success : palette::muted);
-    state->setPosition({on ? 12.f : 30.f, 12.f});
-    face->addChild(state);
-    return face;
+CCMenuItemSpriteExtra* makeButton(char const* text, std::function<void()> onPress,
+    Btn skin, float width, float scale, char const* font) {
+    return makeButton(text, std::move(onPress), buttonTexture(skin), width, scale, font);
 }
+
+void setButtonSkin(CCMenuItemSpriteExtra* button, Btn skin) {
+    if (!button) return;
+    if (auto* sprite = typeinfo_cast<ButtonSprite*>(button->getNormalImage())) {
+        sprite->updateBGImage(buttonTexture(skin));
+        // updateBGImage relayouts the label, which can undo the fit from makeButtonSprite
+        if (sprite->m_absolute && sprite->m_label) {
+            sprite->m_label->limitLabelWidth(sprite->m_width - 14.f, sprite->m_scale, 0.1f);
+        }
+    }
+}
+
+CircleButtonSprite* makeCircleSprite(char const* frame, CircleBaseColor color,
+    CircleBaseSize size, float topScale) {
+    return CircleButtonSprite::createWithSpriteFrameName(frame, topScale, color, size);
+}
+
+CCMenuItemSpriteExtra* makeCircleButton(char const* frame, std::function<void()> onPress,
+    CircleBaseColor color, CircleBaseSize size, float topScale) {
+    return CCMenuItemExt::createSpriteExtra(makeCircleSprite(frame, color, size, topScale),
+        [callback = std::move(onPress)](CCMenuItemSpriteExtra*) {
+            if (callback) callback();
+        });
+}
+
+CCMenuItemSpriteExtra* makeFrameButton(char const* frame, float scale, std::function<void()> onPress) {
+    return CCMenuItemExt::createSpriteExtraWithFrameName(frame, scale,
+        [callback = std::move(onPress)](CCMenuItemSpriteExtra*) {
+            if (callback) callback();
+        });
 }
 
 CCMenuItemToggler* makeSwitch(CCObject* target, SEL_MenuHandler callback, bool value, float scale) {
-    auto* toggle = CCMenuItemToggler::create(switchFace(false), switchFace(true), target, callback);
-    toggle->setScale(scale);
+    auto* toggle = CCMenuItemToggler::createWithStandardSprites(target, callback, scale);
     toggle->toggle(value);
     return toggle;
+}
+
+CCMenuItemToggler* makeToggle(bool value, std::function<void(bool)> onChange, float scale) {
+    // the callback fires before the toggler flips its state
+    auto* toggle = CCMenuItemExt::createTogglerWithStandardSprites(scale,
+        [callback = std::move(onChange)](CCMenuItemToggler* item) {
+            if (callback) callback(!item->isToggled());
+        });
+    toggle->toggle(value);
+    return toggle;
+}
+
+CCMenuItemSpriteExtra* makeInfoButton(std::string const& title, std::string const& body, float scale) {
+    return PaimonInfo::createInfoBtn(title, body, nullptr, scale);
+}
+
+CCLabelBMFont* makeTitle(char const* text, float maxWidth, float scale) {
+    auto* label = CCLabelBMFont::create(text ? text : "", "goldFont.fnt");
+    label->limitLabelWidth(std::max(1.f, maxWidth), scale, 0.1f);
+    return label;
+}
+
+CCLabelBMFont* makeLabel(char const* text, float maxWidth, float scale, ccColor3B color) {
+    auto* label = CCLabelBMFont::create(text ? text : "", "bigFont.fnt");
+    label->limitLabelWidth(std::max(1.f, maxWidth), scale, 0.1f);
+    label->setColor(color);
+    return label;
+}
+
+CCLabelBMFont* makeText(char const* text, float wrapWidth, float scale, ccColor3B color,
+    CCTextAlignment align) {
+    auto* label = CCLabelBMFont::create(text ? text : "", "chatFont.fnt",
+        std::max(1.f, wrapWidth) / scale, align);
+    label->setScale(scale);
+    label->setColor(color);
+    return label;
+}
+
+CCSprite* makeDivider(float width, ccColor3B color, GLubyte opacity) {
+    auto* line = CCSprite::createWithSpriteFrameName("floorLine_001.png");
+    line->setScaleX(std::max(1.f, width) / std::max(1.f, line->getContentSize().width));
+    line->setScaleY(0.6f);
+    line->setColor(color);
+    line->setOpacity(opacity);
+    return line;
+}
+
+CCNode* makePanel(CCSize size, char const* title, GLubyte opacity) {
+    auto* panel = CCNode::create();
+    panel->setAnchorPoint({0.f, 0.f});
+    panel->setContentSize(size);
+    panel->addChild(makeInset(size, opacity), -1);
+    if (title && title[0] != '\0') {
+        auto* heading = makeTitle(title, size.width - 20.f, 0.5f);
+        heading->setAnchorPoint({0.f, 0.5f});
+        heading->setPosition({10.f, size.height - 12.f});
+        panel->addChild(heading);
+        auto* line = makeDivider(size.width - 16.f, palette::gold, 90);
+        line->setPosition({size.width / 2.f, size.height - kPanelHeader + 1.f});
+        panel->addChild(line);
+    }
+    return panel;
+}
+
+void addCorners(CCNode* to, CCSize size, SideArtStyle style, float scale, bool top) {
+    if (!to) return;
+    char const* frame = "dailyLevelCorner_001.png";
+    switch (style) {
+        case SideArtStyle::PopupBlue: frame = "rewardCorner_001.png"; break;
+        case SideArtStyle::Layer:     frame = "GJ_sideArt_001.png"; break;
+        case SideArtStyle::LayerGray: frame = "gauntletCorner_001.png"; break;
+        default: break;
+    }
+    constexpr float kPad = 3.f;
+    struct Spot { bool right; bool upper; };
+    for (auto spot : {Spot{false, false}, Spot{true, false}, Spot{false, true}, Spot{true, true}}) {
+        if (spot.upper && !top) continue;
+        auto* corner = CCSprite::createWithSpriteFrameName(frame);
+        corner->setScale(scale);
+        corner->setFlipX(spot.right);
+        corner->setFlipY(spot.upper);
+        corner->setAnchorPoint({spot.right ? 1.f : 0.f, spot.upper ? 1.f : 0.f});
+        corner->setPosition({spot.right ? size.width - kPad : kPad, spot.upper ? size.height - kPad : kPad});
+        corner->setID(std::string("paimon-corner"_spr) + (spot.upper ? "-top" : "-bottom")
+            + (spot.right ? "-right" : "-left"));
+        to->addChild(corner);
+    }
 }
 
 void animateIn(CCNode* node, float delay, float distance) {
@@ -111,16 +225,38 @@ void animateIn(CCNode* node, float delay, float distance) {
     node->runAction(action);
 }
 
-void decorateScene(CCNode* parent) {
-    auto size = CCDirector::get()->getWinSize();
-    auto* bg = CCLayerGradient::create({11, 16, 29, 255}, {24, 36, 57, 255});
-    bg->setContentSize(size);
-    bg->setVector({0.6f, -1.f});
+CCSprite* decorateScene(CCNode* parent, ccColor3B tint, bool sideArt) {
+    auto* bg = geode::createLayerBG();
+    bg->setColor(tint);
     bg->setID("paimon-scene-background"_spr);
     parent->addChild(bg, -10);
-    auto* line = CCLayerColor::create({116, 204, 255, 65}, size.width - 32.f, 1.f);
-    line->setPosition({16.f, size.height - 42.f});
-    parent->addChild(line, -9);
+    if (sideArt) {
+        auto const win = CCDirector::get()->getWinSize();
+        for (bool right : {false, true}) {
+            auto* art = CCSprite::createWithSpriteFrameName("GJ_sideArt_001.png");
+            art->setFlipX(right);
+            art->setAnchorPoint({right ? 1.f : 0.f, 0.f});
+            art->setPosition({right ? win.width : 0.f, 0.f});
+            art->setID(right ? "paimon-side-art-right"_spr : "paimon-side-art-left"_spr);
+            parent->addChild(art, -9);
+        }
+    }
+    return bg;
+}
+
+CCLabelBMFont* addSceneTitle(CCNode* parent, char const* text, float maxWidth) {
+    auto const win = CCDirector::get()->getWinSize();
+    auto* title = makeTitle(text, maxWidth, 0.8f);
+    title->setPosition({win.width / 2.f, win.height - 22.f});
+    title->setID("paimon-scene-title"_spr);
+    parent->addChild(title, 5);
+    return title;
+}
+
+CCMenuItemSpriteExtra* makeBackButton(std::function<void()> onPress) {
+    auto* button = makeFrameButton("GJ_arrow_01_001.png", 1.f, std::move(onPress));
+    button->setID("back-button"_spr);
+    return button;
 }
 
 }

@@ -5,6 +5,7 @@
 #include "../services/OfficialSlotStore.hpp"
 #include "../services/SlotLevels.hpp"
 #include "../services/SlotListRefresh.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/Localization.hpp"
@@ -182,6 +183,11 @@ bool SlotEditorPopup::init(
     } else {
         this->setTitle(tr("slot.editor.add_title"));
     }
+
+    this->addInfoButton(tr("slot.editor.title"),
+        "Edita como se ve un slot oficial personalizado: elige <cy>fuente</c> "
+        "(ID o archivo .gmd), dificultad, tier de rate, estrellas y monedas. "
+        "La <cg>vista previa</c> muestra el resultado. <cg>Guardar</c> aplica los cambios.");
 
     this->buildDifficultyRow();
     this->buildTierRow();
@@ -551,7 +557,7 @@ void SlotEditorPopup::buildStarsRow() {
     menu->setID("stars-menu"_spr);
     layer->addChild(menu, 3);
 
-    auto* minusSpr = ButtonSprite::create("-", 30, true, "bigFont.fnt", "GJ_button_01.png", 22.f, 0.6f);
+    auto* minusSpr = ButtonSprite::create("-", 30, true, "bigFont.fnt", "GJ_button_04.png", 22.f, 0.6f);
     auto* minus = CCMenuItemExt::createSpriteExtra(minusSpr, [this](CCMenuItemSpriteExtra*) {
         this->setStars(m_draft.stars - 1);
     });
@@ -566,7 +572,7 @@ void SlotEditorPopup::buildStarsRow() {
         layer->addChild(m_starsLabel, 3);
     }
 
-    auto* plusSpr = ButtonSprite::create("+", 30, true, "bigFont.fnt", "GJ_button_01.png", 22.f, 0.6f);
+    auto* plusSpr = ButtonSprite::create("+", 30, true, "bigFont.fnt", "GJ_button_04.png", 22.f, 0.6f);
     auto* plus = CCMenuItemExt::createSpriteExtra(plusSpr, [this](CCMenuItemSpriteExtra*) {
         this->setStars(m_draft.stars + 1);
     });
@@ -699,10 +705,10 @@ void SlotEditorPopup::buildFooter() {
     layer->addChild(menu, 3);
 
     float x = kWidth - 12.f;
-    auto addButton = [&](char const* key, int width, auto onPress) {
+    auto addButton = [&](char const* key, int width, char const* bg, auto onPress) {
         auto* spr = ButtonSprite::create(
             tr(key).c_str(), width, true,
-            "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f);
+            "bigFont.fnt", bg, 18.f, 0.40f);
         auto* item = CCMenuItemExt::createSpriteExtra(spr, onPress);
         x -= width / 2.f;
         item->setPosition({x, 26.f});
@@ -710,17 +716,17 @@ void SlotEditorPopup::buildFooter() {
         menu->addChild(item);
     };
 
-    addButton("slot.editor.save", 90, [this](CCMenuItemSpriteExtra*) {
+    addButton("slot.editor.save", 90, "GJ_button_01.png", [this](CCMenuItemSpriteExtra*) {
         this->onSave(nullptr);
     });
-    addButton("slot.editor.surprise", 100, [this](CCMenuItemSpriteExtra*) {
+    addButton("slot.editor.surprise", 100, "GJ_button_03.png", [this](CCMenuItemSpriteExtra*) {
         this->onSurprise(nullptr);
     });
-    addButton("slot.editor.test", 80, [this](CCMenuItemSpriteExtra*) {
+    addButton("slot.editor.test", 80, "GJ_button_02.png", [this](CCMenuItemSpriteExtra*) {
         this->onTest(nullptr);
     });
     if (m_draft.replacesOfficialId != 0) {
-        addButton("slot.editor.hide_official", 150, [this](CCMenuItemSpriteExtra*) {
+        addButton("slot.editor.hide_official", 150, "GJ_button_06.png", [this](CCMenuItemSpriteExtra*) {
             this->onHideOfficial(nullptr);
         });
     } else {
@@ -755,7 +761,7 @@ void SlotEditorPopup::buildPositionRow(CCMenu* menu) {
     float const x0 = 10.f + labelW;
     auto addStep = [&](char const* text, float x, auto onPress) {
         auto* spr = ButtonSprite::create(
-            text, 26, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f);
+            text, 26, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.40f);
         auto* item = CCMenuItemExt::createSpriteExtra(spr, onPress);
         item->setPosition({x, 26.f});
         menu->addChild(item);

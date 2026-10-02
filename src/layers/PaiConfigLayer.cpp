@@ -118,11 +118,14 @@ std::string tr(char const* key, char const* fallback = "") {
 }
 
 CCNode* gdWindow(CCSize size) {
-    return paimon::ui::makeSurface(size);
+    auto* window = NineSlice::create("GJ_square01.png");
+    window->setContentSize(size);
+    window->setAnchorPoint({0.f, 0.f});
+    return window;
 }
 
 CCNode* gdPlate(CCSize size, GLubyte opacity = 255) {
-    return paimon::ui::makeSurface(size, paimon::ui::palette::raised, opacity, 5.f);
+    return paimon::ui::makeInset(size, std::min<GLubyte>(opacity, 90));
 }
 
 CCLabelBMFont* gdLabel(char const* text, char const* font, float maxWidth, float scale,
@@ -138,8 +141,9 @@ CCLabelBMFont* gdLabel(char const* text, char const* font, float maxWidth, float
 CCMenuItemSpriteExtra* gdFixedButton(char const* text, char const* sprite,
                                      float width, float height, float textScale,
                                      std::function<void()> onPress) {
-    auto* spr = paimon::ui::makeButtonFace(text, {width, height},
-        paimon::ui::actionColor(sprite), std::min(textScale, 0.42f));
+    float const scale = std::clamp(height / 30.f, 0.45f, 1.f);
+    auto* spr = paimon::ui::makeButtonSprite(text, sprite, width, scale,
+        textScale < 0.5f ? "bigFont.fnt" : "goldFont.fnt");
     return CCMenuItemExt::createSpriteExtra(spr,
         [cb = std::move(onPress)](CCMenuItemSpriteExtra*) { if (cb) cb(); });
 }
@@ -149,22 +153,11 @@ CCMenuItemSpriteExtra* gdButton(char const* text, char const* sprite, float widt
     return gdFixedButton(text, sprite, width, 28.f, 0.6f, std::move(onPress));
 }
 
-void tintButton(CCMenuItemSpriteExtra* btn, ccColor3B color) {
-    if (!btn) return;
-    if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(btn->getNormalImage())) {
-        rgba->setColor(color);
-    }
-}
-
 void setButtonTexture(CCMenuItemSpriteExtra* btn, char const* texture) {
     if (!btn) return;
     if (auto* sprite = typeinfo_cast<ButtonSprite*>(btn->getNormalImage())) {
         sprite->updateBGImage(texture);
         sprite->setColor({255, 255, 255});
-    } else if (auto* face = btn->getNormalImage()) {
-        if (auto* panel = typeinfo_cast<CCRGBAProtocol*>(face->getChildByID("paimon-button-surface"_spr))) {
-            panel->setColor(paimon::ui::actionColor(texture));
-        }
     }
 }
 
@@ -282,9 +275,9 @@ void PaiConfigLayer::buildChrome() {
     m_chromeMenu->setID("paimon-config-chrome"_spr);
     this->addChild(m_chromeMenu, 20);
 
-    auto* title = CCLabelBMFont::create(tr("pai.config.title", "Background Editor").c_str(), "bigFont.fnt");
+    auto* title = CCLabelBMFont::create(tr("pai.config.title", "Background Editor").c_str(), "goldFont.fnt");
     if (title) {
-        title->limitLabelWidth(win.width - 150.f, 0.62f, 0.28f);
+        title->limitLabelWidth(win.width - 150.f, 0.8f, 0.3f);
         title->setPosition({cx, win.height - C::HEADER_Y});
         this->addChild(title, 15);
     }
@@ -352,8 +345,7 @@ void PaiConfigLayer::switchTab(int index) {
     }
     for (int i = 0; i < static_cast<int>(m_tabButtons.size()); ++i) {
         bool const active = (i == index);
-        tintButton(m_tabButtons[i], active ? ccColor3B{255, 255, 255} : ccColor3B{105, 115, 135});
-        if (m_tabButtons[i]) m_tabButtons[i]->setScale(active ? 1.f : 0.92f);
+        setButtonTexture(m_tabButtons[i], active ? "GJ_button_01.png" : "GJ_button_04.png");
     }
     if (index == 1) rebuildProfilePreview();
     if (index < static_cast<int>(m_tabPages.size()) && m_tabPages[index]) {
@@ -371,9 +363,9 @@ CCNode* PaiConfigLayer::makeCardWindow(CCRect area, char const* title) {
     if (auto* window = gdWindow(area.size)) card->addChild(window, 0);
 
     if (title && title[0] != '\0') {
-        if (auto* lbl = gdLabel(title, "bigFont.fnt", area.size.width - 16.f, 0.38f, paimon::ui::palette::accent)) {
+        if (auto* lbl = gdLabel(title, "goldFont.fnt", area.size.width - 16.f, 0.5f)) {
             lbl->setAnchorPoint({0.f, 0.5f});
-            lbl->setPosition({10.f, area.size.height - 11.f});
+            lbl->setPosition({10.f, area.size.height - 12.f});
             card->addChild(lbl, 3);
         }
     }
@@ -994,8 +986,7 @@ void PaiConfigLayer::refreshAll() {
     for (auto const& [type, btn] : m_sourceButtons) {
         if (!btn) continue;
         bool const active = !type.empty() && type == cfg.type;
-        setButtonTexture(btn, active ? "GJ_button_02.png" : "GJ_button_03.png");
-        tintButton(btn, active ? ccColor3B{255, 255, 255} : paimon::ui::palette::muted);
+        setButtonTexture(btn, active ? "GJ_button_01.png" : "GJ_button_04.png");
     }
 
     refreshScreenList();
@@ -1007,7 +998,7 @@ void PaiConfigLayer::refreshScreenList() {
     for (int i = 0; i < static_cast<int>(screens.size()) && i < static_cast<int>(m_screenButtons.size()); ++i) {
         bool const selected = screens[i].first == m_selectedKey;
         auto* btn = m_screenButtons[i];
-        setButtonTexture(btn, selected ? "GJ_button_02.png" : "GJ_button_01.png");
+        setButtonTexture(btn, selected ? "GJ_button_02.png" : "GJ_button_04.png");
         if (btn) btn->setScale(1.f);
     }
 }

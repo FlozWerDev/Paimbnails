@@ -3,7 +3,6 @@
 #include "../../../ui/PaiConfigKit.hpp"
 #include <algorithm>
 #include <cmath>
-#include "../../../utils/SpriteHelper.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -17,8 +16,8 @@ static int childTouchPrio() {
 }
 
 static CCLabelBMFont* makeLabel(const char* text) {
-    auto label = CCLabelBMFont::create(text, "chatFont.fnt");
-    label->setScale(0.5f);
+    auto label = CCLabelBMFont::create(text, "bigFont.fnt");
+    label->setScale(0.36f);
     label->setColor(paimon::ui::palette::text);
     label->setAnchorPoint({0.f, 0.5f});
     return label;
@@ -27,18 +26,15 @@ static CCLabelBMFont* makeLabel(const char* text) {
 static CCLabelBMFont* makeValueLabel(const char* text) {
     auto label = CCLabelBMFont::create(text, "bigFont.fnt");
     label->setScale(0.3f);
-    label->setColor(paimon::ui::palette::accent);
+    label->setColor(paimon::ui::palette::gold);
     label->setAnchorPoint({0.f, 0.5f});
     return label;
 }
 
 static void addRowBackground(CCNode* row, float width, float height) {
-    auto bg = paimon::ui::makeSurface({width - 4.f, height - 4.f},
-        paimon::ui::palette::raised, 245, 5.f);
-    if (bg) {
-        bg->setPosition({2.f, 2.f});
-        row->addChild(bg, -1);
-    }
+    auto bg = paimon::ui::makeInset({width - 4.f, height - 4.f}, 60);
+    bg->setPosition({2.f, 2.f});
+    row->addChild(bg, -1);
 }
 
 static CCNode* makeRow(float width, float height = ROW_HEIGHT, bool withBg = true) {
@@ -75,7 +71,7 @@ CCNode* createToggleRow(const char* label, bool initialValue,
     auto row = makeRow(width);
 
     auto lbl = makeLabel(label);
-    lbl->limitLabelWidth(std::max(36.f, width - 72.f), 0.5f, 0.23f);
+    lbl->limitLabelWidth(std::max(36.f, width - 60.f), 0.36f, 0.16f);
     lbl->setPosition({LABEL_X, ROW_HEIGHT / 2.f});
     row->addChild(lbl);
 
@@ -86,10 +82,10 @@ CCNode* createToggleRow(const char* label, bool initialValue,
 
     auto cb = ToggleCallback::create(std::move(onChange));
     auto toggler = paimon::ui::makeSwitch(
-        cb, menu_selector(ToggleCallback::onToggle), initialValue, 0.85f);
+        cb, menu_selector(ToggleCallback::onToggle), initialValue, 0.6f);
     cb->m_toggler = toggler;
     toggler->toggle(initialValue);
-    toggler->setPosition({width - 28.f, ROW_HEIGHT / 2.f});
+    toggler->setPosition({width - 24.f, ROW_HEIGHT / 2.f});
     menu->addChild(toggler);
     toggler->setUserObject(cb);
 
@@ -134,7 +130,7 @@ CCNode* createSliderRow(const char* label, float initialValue,
     auto row = makeRow(width);
 
     auto lbl = makeLabel(label);
-    lbl->limitLabelWidth(std::max(36.f, width - 208.f), 0.5f, 0.23f);
+    lbl->limitLabelWidth(std::max(36.f, width - 208.f), 0.36f, 0.16f);
     lbl->setPosition({LABEL_X, ROW_HEIGHT / 2.f});
     row->addChild(lbl);
 
@@ -208,7 +204,7 @@ CCNode* createIntSliderRow(const char* label, int initialValue,
     auto row = makeRow(width);
 
     auto lbl = makeLabel(label);
-    lbl->limitLabelWidth(std::max(36.f, width - 208.f), 0.5f, 0.23f);
+    lbl->limitLabelWidth(std::max(36.f, width - 208.f), 0.36f, 0.16f);
     lbl->setPosition({LABEL_X, ROW_HEIGHT / 2.f});
     row->addChild(lbl);
 
@@ -279,7 +275,7 @@ CCNode* createButtonRow(const char* label, const char* buttonText,
     auto row = makeRow(width);
 
     auto lbl = makeLabel(label);
-    lbl->limitLabelWidth(std::max(36.f, width - 122.f), 0.5f, 0.23f);
+    lbl->limitLabelWidth(std::max(36.f, width - 122.f), 0.36f, 0.16f);
     lbl->setPosition({LABEL_X, ROW_HEIGHT / 2.f});
     row->addChild(lbl);
 
@@ -290,7 +286,7 @@ CCNode* createButtonRow(const char* label, const char* buttonText,
 
     auto cb = ButtonCallback::create(std::move(onPress));
 
-    auto btnSpr = paimon::ui::makeButtonFace(buttonText, {90.f, 27.f}, {36, 75, 106});
+    auto btnSpr = paimon::ui::makeButtonSprite(buttonText, paimon::ui::Btn::Green, 90.f, 0.65f);
     auto btn = CCMenuItemSpriteExtra::create(btnSpr, cb, menu_selector(ButtonCallback::onPress));
     btn->setPosition({width - 57.f, ROW_HEIGHT / 2.f});
     btn->setUserObject(cb);
@@ -305,7 +301,7 @@ CCNode* createLinkRow(const char* label, std::function<void()> onOpen,
     auto row = makeRow(width);
 
     auto lbl = makeLabel(label);
-    lbl->limitLabelWidth(std::max(36.f, width - 48.f), 0.5f, 0.23f);
+    lbl->limitLabelWidth(std::max(36.f, width - 48.f), 0.36f, 0.16f);
     lbl->setPosition({LABEL_X, ROW_HEIGHT / 2.f});
     row->addChild(lbl);
 
@@ -318,9 +314,9 @@ CCNode* createLinkRow(const char* label, std::function<void()> onOpen,
 
     auto hitArea = CCSprite::create();
     hitArea->setContentSize({width, ROW_HEIGHT});
-    auto caret = CCLabelBMFont::create(">", "bigFont.fnt");
-    caret->setScale(0.4f);
-    caret->setColor(paimon::ui::palette::accent);
+    auto caret = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
+    caret->setFlipX(true);
+    caret->setScale(0.38f);
     caret->setPosition({width - 20.f, ROW_HEIGHT / 2.f});
     hitArea->addChild(caret);
     auto button = CCMenuItemSpriteExtra::create(hitArea, cb, menu_selector(ButtonCallback::onPress));
@@ -340,7 +336,7 @@ CCNode* createTextInputRow(const char* label, std::string const& initialValue,
     auto row = makeRow(width);
 
     auto lbl = makeLabel(label);
-    lbl->limitLabelWidth(std::max(36.f, width - std::max(width * 0.5f, 140.f) - 24.f), 0.5f, 0.23f);
+    lbl->limitLabelWidth(std::max(36.f, width - std::max(width * 0.5f, 140.f) - 24.f), 0.36f, 0.16f);
     lbl->setPosition({LABEL_X, ROW_HEIGHT / 2.f});
     row->addChild(lbl);
 
@@ -378,28 +374,16 @@ CCNode* createSectionHeader(const char* title, float width) {
     row->setContentSize({width, HEADER_HEIGHT});
     row->setAnchorPoint({0.f, 0.f});
 
-    auto accent = paimon::SpriteHelper::createRoundedRect(
-        3.f, 11.f, 1.5f, {116.f / 255.f, 204.f / 255.f, 1.f, 1.f}
-    );
-    if (accent) {
-        accent->setPosition({4.f, HEADER_HEIGHT / 2.f - 5.5f - 1.f});
-        row->addChild(accent);
-    }
-
-    auto lbl = CCLabelBMFont::create(title, "bigFont.fnt");
-    lbl->setColor(paimon::ui::palette::accent);
-    lbl->limitLabelWidth(width - 34.f, 0.38f, 0.16f);
-    lbl->setScale(0.38f);
+    auto lbl = paimon::ui::makeTitle(title, width - 34.f, 0.5f);
     lbl->setAnchorPoint({0.f, 0.5f});
-    lbl->setPosition({LABEL_X + 2.f, HEADER_HEIGHT / 2.f - 1.f});
+    lbl->setPosition({LABEL_X - 2.f, HEADER_HEIGHT / 2.f});
     row->addChild(lbl);
 
-    float lblW = lbl->getContentSize().width * lbl->getScale();
-    float sepX = LABEL_X + 2.f + lblW + 8.f;
-    if (sepX < width - 8.f) {
-        auto sep = CCLayerColor::create({255, 255, 255, 35},
-                                        width - 8.f - sepX, 0.6f);
-        sep->setPosition({sepX, HEADER_HEIGHT / 2.f - 1.f});
+    float lblW = lbl->getScaledContentSize().width;
+    float sepX = LABEL_X + lblW + 8.f;
+    if (sepX < width - 16.f) {
+        auto sep = paimon::ui::makeDivider(width - 8.f - sepX, paimon::ui::palette::gold, 110);
+        sep->setPosition({sepX + (width - 8.f - sepX) / 2.f, HEADER_HEIGHT / 2.f - 1.f});
         row->addChild(sep);
     }
 
@@ -411,11 +395,11 @@ class CollapsibleCallback : public CCObject {
 public:
     bool m_expanded;
     CCNode* m_contentContainer;
-    CCLabelBMFont* m_caret;
+    CCSprite* m_caret;
     std::function<void()> m_onToggle;
     float m_expandedHeight = 0.f;
 
-    static CollapsibleCallback* create(CCNode* content, CCLabelBMFont* caret,
+    static CollapsibleCallback* create(CCNode* content, CCSprite* caret,
                                         bool expanded, std::function<void()> onToggle) {
         auto ret = new CollapsibleCallback();
         ret->m_expanded = expanded;
@@ -442,7 +426,7 @@ public:
     void onToggle(CCObject*) {
         m_expanded = !m_expanded;
         applyExpandedState();
-        m_caret->setString(m_expanded ? "v" : ">");
+        m_caret->setRotation(m_expanded ? -90.f : 180.f);
         if (m_onToggle) m_onToggle();
     }
 };
@@ -454,35 +438,27 @@ CCNode* createCollapsibleHeader(const char* title, float width,
     row->setContentSize({width, HEADER_HEIGHT});
     row->setAnchorPoint({0.f, 0.f});
 
-    auto bg = paimon::SpriteHelper::createRoundedRect(
-        width - 4.f, HEADER_HEIGHT - 4.f, 5.f, {1.f, 1.f, 1.f, 0.06f}
-    );
-    if (bg) {
-        bg->setPosition({2.f, 2.f});
-        row->addChild(bg, -1);
-    }
+    auto bg = paimon::ui::makeInset({width - 4.f, HEADER_HEIGHT - 4.f}, 90);
+    bg->setPosition({2.f, 2.f});
+    row->addChild(bg, -1);
 
     auto menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
     menu->setTouchPriority(childTouchPrio());
     row->addChild(menu);
 
-    auto caret = CCLabelBMFont::create(initiallyExpanded ? "v" : ">", "bigFont.fnt");
-    caret->setScale(0.25f);
-    caret->setColor({240, 194, 56});
-    caret->setAnchorPoint({0.5f, 0.5f});
+    auto caret = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
+    caret->setScale(0.32f);
+    caret->setRotation(initiallyExpanded ? -90.f : 180.f);
 
-    auto lbl = CCLabelBMFont::create(title, "bigFont.fnt");
-    lbl->setColor(paimon::ui::palette::accent);
-    lbl->limitLabelWidth(width - 34.f, 0.38f, 0.16f);
-    lbl->setScale(0.34f);
+    auto lbl = paimon::ui::makeTitle(title, width - 40.f, 0.48f);
     lbl->setAnchorPoint({0.f, 0.5f});
 
     auto btnContent = CCNode::create();
     btnContent->setContentSize({width - 16.f, HEADER_HEIGHT});
     btnContent->setAnchorPoint({0.5f, 0.5f});
-    caret->setPosition({10.f, HEADER_HEIGHT / 2.f});
-    lbl->setPosition({22.f, HEADER_HEIGHT / 2.f});
+    caret->setPosition({12.f, HEADER_HEIGHT / 2.f});
+    lbl->setPosition({26.f, HEADER_HEIGHT / 2.f});
     btnContent->addChild(caret);
     btnContent->addChild(lbl);
 

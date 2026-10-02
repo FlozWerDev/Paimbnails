@@ -1,7 +1,6 @@
 #include "IconMakerKit.hpp"
 
 #include "../../../ui/PaiConfigKit.hpp"
-#include "../../../utils/SpriteHelper.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/SliderThumb.hpp>
@@ -135,26 +134,24 @@ struct NumberState {
 
 
 CCNode* makeWindow(CCSize size) {
-    return paimon::ui::makeSurface(size);
+    auto* window = NineSlice::create("GJ_square01.png");
+    window->setContentSize(size);
+    window->setAnchorPoint({0.f, 0.f});
+    return window;
 }
 
 CCNode* makePlate(float width, float height, ccColor3B color, GLubyte opacity) {
-    return paimon::ui::makeSurface({width, height}, color, opacity, 5.f);
+    return paimon::ui::makeInset({width, height}, opacity, color);
 }
 
 CCSprite* makeTabFace(char const* text, bool selected, float maxW, float maxH) {
-    return paimon::ui::makeButtonFace(text, {maxW, maxH},
-        selected ? ccColor3B{36, 75, 106} : paimon::ui::palette::raised);
+    return paimon::ui::makeButtonSprite(text, selected ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray,
+        maxW, std::clamp(maxH / 30.f, 0.5f, 1.f));
 }
 
 CCMenuItemSpriteExtra* makeButton(char const* text, char const* sprite,
                                   float scale, std::function<void()> onPress) {
-    auto* label = CCLabelBMFont::create(text, "bigFont.fnt");
-    float const width = std::clamp(label->getContentSize().width * 0.6f + 24.f, 70.f, 260.f);
-    auto* spr = paimon::ui::makeButtonFace(text, {width, 44.f}, paimon::ui::actionColor(sprite), 0.6f);
-    spr->setScale(scale);
-    return CCMenuItemExt::createSpriteExtra(spr,
-        [cb = std::move(onPress)](CCMenuItemSpriteExtra*) { if (cb) cb(); });
+    return paimon::ui::makeButton(text, std::move(onPress), sprite, 0.f, scale);
 }
 
 
@@ -280,16 +277,9 @@ CCNode* makeNumberRow(
         auto* holder = CCNode::create();
         holder->setAnchorPoint({0.5f, 0.5f});
         holder->setContentSize({kStepW, kStepW});
-        if (auto* plate = paimon::SpriteHelper::createColorPanel(
-                kStepW, kStepW, {12, 20, 44}, 190, 3.f)) {
-            plate->setAnchorPoint({0.f, 0.f});
-            holder->addChild(plate, -1);
-        }
-        auto* label = CCLabelBMFont::create(text, "bigFont.fnt");
-        label->setAnchorPoint({0.5f, 0.5f});
-        label->limitLabelWidth(kStepW - 5.f, 0.36f, 0.14f);
-        label->setPosition({kStepW / 2.f, kStepW / 2.f});
-        holder->addChild(label);
+        auto* face = paimon::ui::makeButtonSprite(text, paimon::ui::Btn::Gray, kStepW, kStepW / 30.f, "bigFont.fnt");
+        face->setPosition({kStepW / 2.f, kStepW / 2.f});
+        holder->addChild(face);
 
         auto* btn = CCMenuItemExt::createSpriteExtra(holder,
             [state, direction](CCMenuItemSpriteExtra*) {

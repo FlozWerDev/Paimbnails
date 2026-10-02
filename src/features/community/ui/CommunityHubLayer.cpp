@@ -257,8 +257,8 @@ void CommunityHubLayer::buildChrome() {
     m_listCenter = ccp(winSize.width / 2.f, 16.f + m_listH / 2.f);
     m_tabBaseY = tabsY;
 
-    m_title = CCLabelBMFont::create(loc.getString("community.title").c_str(), "bigFont.fnt");
-    m_title->setScale(0.75f);
+    m_title = CCLabelBMFont::create(loc.getString("community.title").c_str(), "goldFont.fnt");
+    m_title->setScale(0.9f);
     m_title->setPosition({winSize.width / 2.f, winSize.height - 20.f});
     this->addChild(m_title, 10);
 
@@ -268,7 +268,7 @@ void CommunityHubLayer::buildChrome() {
     m_listFrame->setPosition(m_listCenter);
     this->addChild(m_listFrame, 1);
 
-    auto* panel = paimon::ui::makeSurface({m_listW, m_listH});
+    auto* panel = paimon::ui::makeInset({m_listW, m_listH}, 95);
     m_listFrame->addChild(panel);
 
     auto menu = CCMenu::create();
@@ -284,9 +284,9 @@ void CommunityHubLayer::buildChrome() {
     backBtn->setPosition(25, winSize.height - 25);
     menu->addChild(backBtn);
 
-    CCNode* infoFace = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoBtn_001.png");
+    CCNode* infoFace = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png");
     if (infoFace) {
-        infoFace->setScale(0.7f);
+        infoFace->setScale(0.8f);
     } else {
         auto fallback = CCLabelBMFont::create("?", "bigFont.fnt");
         fallback->setScale(0.5f);

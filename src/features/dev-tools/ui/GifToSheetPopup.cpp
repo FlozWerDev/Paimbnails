@@ -7,6 +7,7 @@
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/GeodeTextInputSafe.hpp"
 #include "../../../utils/ThreadTracker.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
 #include <Geode/ui/TextInput.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -63,90 +64,95 @@ bool GifToSheetPopup::init() {
     if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
     this->setID("gif-to-sheet-popup"_spr);
     this->setTitle("GIF a Sheet");
+    this->addInfoButton("GIF a Sheet",
+        "Convierte un <cy>GIF animado</c> en un <cg>spritesheet PNG</c> y un archivo "
+        "<co>JSON</c> con el grid y los delays. Ajusta <cy>Columnas</c> para cambiar la "
+        "forma del sheet; deja <cg>auto</c> para una rejilla casi cuadrada.");
 
     WeakRef<GifToSheetPopup> self = this;
 
-    auto desc = CCLabelBMFont::create(
-        "Convierte un GIF animado en spritesheet PNG + JSON", "bigFont.fnt");
-    desc->setScale(0.26f);
-    desc->setColor({200, 205, 225});
-    desc->setPosition({kPopupW / 2.f, kPopupH - 38.f});
+    auto desc = paimon::ui::makeText(
+        "Convierte un GIF animado en spritesheet PNG + JSON",
+        kPopupW - 40.f, 0.4f, paimon::ui::palette::muted, kCCTextAlignmentCenter);
+    desc->setPosition({kPopupW / 2.f, kPopupH - 40.f});
     desc->setID("description-label"_spr);
     m_mainLayer->addChild(desc);
 
-    auto* previewBox = paimon::SpriteHelper::createDarkPanel(100.f, 100.f, 220, 5.f);
-    previewBox->setPosition({24.f, 88.f});
-    m_mainLayer->addChild(previewBox);
+    auto* previewPanel = paimon::ui::makePanel({112.f, 128.f}, "Preview");
+    previewPanel->setPosition({18.f, 70.f});
+    m_mainLayer->addChild(previewPanel);
+
+    auto* previewBox = paimon::ui::makeInset({92.f, 86.f}, 220);
+    previewBox->setPosition({10.f, 10.f});
+    previewPanel->addChild(previewBox);
 
     m_previewHint = CCLabelBMFont::create("Sin GIF", "bigFont.fnt");
     m_previewHint->setScale(0.32f);
-    m_previewHint->setColor({120, 130, 155});
-    m_previewHint->setPosition({74.f, 138.f});
+    m_previewHint->setColor(paimon::ui::palette::dim);
+    m_previewHint->setPosition({74.f, 123.f});
     m_previewHint->setID("preview-hint"_spr);
     m_mainLayer->addChild(m_previewHint, 2);
+
+    auto* settingsPanel = paimon::ui::makePanel({220.f, 128.f}, "Ajustes");
+    settingsPanel->setPosition({142.f, 70.f});
+    m_mainLayer->addChild(settingsPanel);
+
+    const float innerTop = 128.f - paimon::ui::kPanelHeader;
 
     m_fileLabel = CCLabelBMFont::create("Ningun archivo seleccionado", "goldFont.fnt");
     m_fileLabel->setAnchorPoint({0.f, 0.5f});
     m_fileLabel->setScale(0.42f);
-    m_fileLabel->setPosition({140.f, 176.f});
+    m_fileLabel->setPosition({12.f, innerTop - 10.f});
     m_fileLabel->setID("file-label"_spr);
-    m_mainLayer->addChild(m_fileLabel);
+    settingsPanel->addChild(m_fileLabel);
 
     m_infoLabel = CCLabelBMFont::create("", "bigFont.fnt");
     m_infoLabel->setAnchorPoint({0.f, 1.f});
     m_infoLabel->setScale(0.3f);
-    m_infoLabel->setColor({170, 220, 255});
-    m_infoLabel->setPosition({140.f, 160.f});
+    m_infoLabel->setColor(paimon::ui::palette::info);
+    m_infoLabel->setPosition({12.f, innerTop - 26.f});
     m_infoLabel->setID("info-label"_spr);
-    m_mainLayer->addChild(m_infoLabel);
+    settingsPanel->addChild(m_infoLabel);
 
-    auto colsLabel = CCLabelBMFont::create("Columnas:", "bigFont.fnt");
+    auto colsLabel = paimon::ui::makeLabel("Columnas:", 90.f, 0.4f);
     colsLabel->setAnchorPoint({0.f, 0.5f});
-    colsLabel->setScale(0.32f);
-    colsLabel->setPosition({140.f, 104.f});
+    colsLabel->setPosition({12.f, 18.f});
     colsLabel->setID("cols-label"_spr);
-    m_mainLayer->addChild(colsLabel);
+    settingsPanel->addChild(colsLabel);
 
     m_colsInput = TextInput::create(64.f, "auto");
     m_colsInput->setCommonFilter(CommonFilter::Uint);
     m_colsInput->setMaxCharCount(3);
     m_colsInput->setScale(0.75f);
-    m_colsInput->setPosition({248.f, 104.f});
+    m_colsInput->setPosition({120.f, 18.f});
     m_colsInput->setCallback([self](std::string const&) {
         if (auto* popup = self.lock().data()) popup->refreshInfo();
     });
     m_colsInput->setID("cols-input"_spr);
-    m_mainLayer->addChild(m_colsInput);
+    settingsPanel->addChild(m_colsInput);
 
     auto* menu = CCMenu::create();
     menu->setID("actions-menu"_spr);
     menu->setPosition({0.f, 0.f});
     m_mainLayer->addChild(menu, 3);
 
-    auto* pickBtn = CCMenuItemExt::createSpriteExtra(
-        ButtonSprite::create("Elegir GIF", "goldFont.fnt", "GJ_button_01.png", 0.7f),
-        [self](CCMenuItemSpriteExtra*) {
-            if (auto* popup = self.lock().data()) popup->onPickGif();
-        }
-    );
+    auto* pickBtn = paimon::ui::makeButton("Elegir GIF",
+        [self] { if (auto* popup = self.lock().data()) popup->onPickGif(); },
+        paimon::ui::Btn::Cyan, 0.f, 0.7f);
     pickBtn->setID("pick-button"_spr);
-    pickBtn->setPosition({kPopupW / 2.f - 78.f, 44.f});
+    pickBtn->setPosition({kPopupW / 2.f - 78.f, 42.f});
     menu->addChild(pickBtn);
 
-    auto* exportBtn = CCMenuItemExt::createSpriteExtra(
-        ButtonSprite::create("Exportar", "goldFont.fnt", "GJ_button_02.png", 0.7f),
-        [self](CCMenuItemSpriteExtra*) {
-            if (auto* popup = self.lock().data()) popup->onExport();
-        }
-    );
+    auto* exportBtn = paimon::ui::makeButton("Exportar",
+        [self] { if (auto* popup = self.lock().data()) popup->onExport(); },
+        paimon::ui::Btn::Green, 0.f, 0.7f);
     exportBtn->setID("export-button"_spr);
-    exportBtn->setPosition({kPopupW / 2.f + 78.f, 44.f});
+    exportBtn->setPosition({kPopupW / 2.f + 78.f, 42.f});
     menu->addChild(exportBtn);
 
-    auto hint = CCLabelBMFont::create(
-        "Exporta nombre.png + nombre.json (grid, delays en ms)", "bigFont.fnt");
-    hint->setScale(0.22f);
-    hint->setColor({140, 150, 175});
+    auto hint = paimon::ui::makeText(
+        "Exporta nombre.png + nombre.json (grid, delays en ms)",
+        kPopupW - 30.f, 0.35f, paimon::ui::palette::dim, kCCTextAlignmentCenter);
     hint->setPosition({kPopupW / 2.f, 16.f});
     hint->setID("hint-label"_spr);
     m_mainLayer->addChild(hint);
@@ -243,7 +249,7 @@ void GifToSheetPopup::applyDecoded(std::filesystem::path const& path, std::share
         m_previewSprite = CCSprite::createWithTexture(tex);
         float s = std::min(92.f / first.width, 92.f / first.height);
         m_previewSprite->setScale(std::min(s, 1.f));
-        m_previewSprite->setPosition({74.f, 138.f});
+        m_previewSprite->setPosition({74.f, 123.f});
         m_mainLayer->addChild(m_previewSprite, 1);
         if (m_previewHint) m_previewHint->setVisible(false);
     }

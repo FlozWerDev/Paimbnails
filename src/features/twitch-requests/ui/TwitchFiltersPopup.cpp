@@ -202,6 +202,7 @@ protected:
         if (!PaimonPopup::init(400.f, 250.f)) return false;
         m_onAdded = std::move(onAdded);
         setTitle("Agregar regla de video");
+        addCorners();
         paimon::markDynamicPopup(this);
 
         auto const content = m_mainLayer->getContentSize();
@@ -280,6 +281,14 @@ TwitchFiltersPopup* TwitchFiltersPopup::create() {
 bool TwitchFiltersPopup::init() {
     if (!PaimonPopup::init(420.f, 280.f)) return false;
     setTitle("Filtros de requests");
+    addCorners();
+    addInfoButton("Filtros de requests",
+        "Decide que niveles entran en la cola.\n\n"
+        "Lo que no encaja se <cy>guarda</c> pero no se ve en la lista, y Jugar siguiente lo "
+        "salta. Mientras un nivel se carga siempre se muestra, porque aun no sabemos como es.\n\n"
+        "<co>Video obligatorio</c> exige enlace para tipos o dificultades concretas. "
+        "<cg>Solo verificados</c> solo deja pasar pedidos de cuentas de GD validadas por tu "
+        "pagina web (los chats no pueden comprobarlas).");
     paimon::markDynamicPopup(this);
     rebuild();
     return true;

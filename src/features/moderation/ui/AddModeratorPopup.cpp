@@ -7,6 +7,7 @@
 #include "../../../utils/PaimonLoadingOverlay.hpp"
 #include "../services/GdUserResolver.hpp"
 #include "../../badges/services/RoleService.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -42,6 +43,9 @@ bool AddModeratorPopup::init(geode::CopyableFunction<void(bool, std::string cons
 
     m_callback = callback;
     this->setTitle(Localization::get().getString("rolemgr.title").c_str());
+    this->addInfoButton(Localization::get().getString("rolemgr.title"),
+        "Pick a <cy>role</c> tab, then type a username and press <cg>Add</c> to grant it. "
+        "Press <cr>Remove</c> next to a member to revoke their role.");
 
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
@@ -52,7 +56,7 @@ bool AddModeratorPopup::init(geode::CopyableFunction<void(bool, std::string cons
     float panelH = 120.f;
     float panelY = content.height / 2.f + 8.f;
 
-    auto panel = paimon::SpriteHelper::createDarkPanel(panelW, panelH, 70);
+    auto panel = paimon::ui::makeInset({panelW, panelH});
     panel->setPosition({cx - panelW / 2, panelY - panelH / 2});
     panel->setID("role-list-panel"_spr);
     m_mainLayer->addChild(panel);
@@ -83,21 +87,15 @@ bool AddModeratorPopup::init(geode::CopyableFunction<void(bool, std::string cons
     m_usernameInput->setID("username-input"_spr);
     m_mainLayer->addChild(m_usernameInput, 11);
 
-    auto addSpr = ButtonSprite::create(
-        Localization::get().getString("addmod.add_btn").c_str(),
-        "goldFont.fnt", "GJ_button_01.png", 0.8f
-    );
-    addSpr->setScale(0.7f);
+    auto addSpr = paimon::ui::makeButtonSprite(
+        Localization::get().getString("addmod.add_btn").c_str(), paimon::ui::Btn::Green, 0.f, 0.7f);
     auto addBtn = CCMenuItemSpriteExtra::create(addSpr, this, menu_selector(AddModeratorPopup::onAdd));
     addBtn->setPosition({cx + panelW / 2.f - 30.f, content.height / 2.f - 86.f});
     addBtn->setID("add-btn"_spr);
     m_buttonMenu->addChild(addBtn);
 
-    auto closeSpr = ButtonSprite::create(
-        Localization::get().getString("general.cancel").c_str(),
-        "goldFont.fnt", "GJ_button_06.png", 0.8f
-    );
-    closeSpr->setScale(0.7f);
+    auto closeSpr = paimon::ui::makeButtonSprite(
+        Localization::get().getString("general.cancel").c_str(), paimon::ui::Btn::Gray, 0.f, 0.7f);
     auto closeBtn = CCMenuItemSpriteExtra::create(closeSpr, this, menu_selector(AddModeratorPopup::onClose));
     closeBtn->setPosition({cx, 24.f});
     closeBtn->setID("close-btn"_spr);
@@ -125,10 +123,8 @@ void AddModeratorPopup::buildRoleTabs() {
 
     float x = -(content.width - 30.f) / 2.f + btnW / 2.f;
     for (auto const& role : kRoles) {
-        auto spr = ButtonSprite::create(
-            roleDisplayName(role).c_str(), 80, true, "bigFont.fnt", "GJ_button_04.png", 24.f, 0.5f
-        );
-        spr->setScale(std::min(0.85f, btnW / std::max(1.f, spr->getContentSize().width)));
+        auto spr = paimon::ui::makeButtonSprite(
+            roleDisplayName(role).c_str(), paimon::ui::Btn::Gray, btnW, 0.7f, "bigFont.fnt");
         auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(AddModeratorPopup::onRoleTab));
         btn->setUserObject(CCString::create(role));
         btn->setPosition({x, 0.f});
@@ -154,9 +150,7 @@ void AddModeratorPopup::selectRole(std::string const& role) {
         if (!btn) continue;
         auto str = typeinfo_cast<CCString*>(btn->getUserObject());
         bool active = str && role == str->getCString();
-        if (auto* bs = typeinfo_cast<ButtonSprite*>(btn->getChildren()->objectAtIndex(0))) {
-            bs->setColor(active ? ccColor3B{255, 255, 255} : ccColor3B{150, 150, 150});
-        }
+        paimon::ui::setButtonSkin(btn, active ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray);
     }
 
     refreshAddLabel();
@@ -252,7 +246,7 @@ void AddModeratorPopup::rebuildList() {
         cell->setAnchorPoint({0.5f, 0.5f});
         cell->setPosition({viewW / 2.f, yPos});
 
-        auto bg = paimon::SpriteHelper::createDarkPanel(cellW, cellH, 55);
+        auto bg = paimon::ui::makeInset({cellW, cellH}, 70);
         bg->setPosition({0, 0});
         cell->addChild(bg);
 
@@ -267,11 +261,9 @@ void AddModeratorPopup::rebuildList() {
         btnMenu->setContentSize({80.f, cellH});
         cell->addChild(btnMenu);
 
-        auto removeSpr = ButtonSprite::create(
+        auto removeSpr = paimon::ui::makeButtonSprite(
             Localization::get().getString("addmod.remove_btn").c_str(),
-            50, true, "goldFont.fnt", "GJ_button_06.png", 28.f, 0.5f
-        );
-        removeSpr->setScale(0.75f);
+            paimon::ui::Btn::Red, 50.f, 0.6f, "bigFont.fnt");
         auto removeBtn = CCMenuItemSpriteExtra::create(removeSpr, this, menu_selector(AddModeratorPopup::onRemove));
         removeBtn->setUserObject(CCString::create(name));
         removeBtn->setID("remove-btn"_spr);

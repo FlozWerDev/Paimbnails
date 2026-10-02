@@ -1,9 +1,9 @@
 #include "SmoothScrollConfigPopup.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../ui/PaiConfigKit.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 
-#include <Geode/binding/ButtonSprite.hpp>
 #include <fmt/format.h>
 
 using namespace geode::prelude;
@@ -29,15 +29,17 @@ SmoothScrollConfigPopup* SmoothScrollConfigPopup::create() {
 bool SmoothScrollConfigPopup::init() {
     if (!PaimonPopup::init(420.f, 300.f)) return false;
     this->setTitle("Scroll Suave");
+    this->addInfoButton("Scroll Suave",
+        "Agrega <cy>inercia</c> al desplazar menus y al hacer zoom en el editor.\n"
+        "<cg>Velocidad</c> controla cuanto avanza cada giro de rueda; "
+        "<cg>Suavidad</c> cuanto tarda en frenar.");
     paimon::markDynamicPopup(this);
 
     rebuild();
 
     // pinned bottom button: restore defaults
-    auto* resetSpr = ButtonSprite::create("Restaurar", "goldFont.fnt", "GJ_button_06.png", 0.7f);
-    resetSpr->setScale(0.55f);
-    auto* resetBtn = CCMenuItemExt::createSpriteExtra(resetSpr,
-        [this](CCMenuItemSpriteExtra*) {
+    auto* resetBtn = paimon::ui::makeButton("Restaurar",
+        [this] {
             (void)Mod::get()->setSavedValue<double>("smooth-scroll-sensitivity", ss::kSensitivityDefault);
             (void)Mod::get()->setSavedValue<double>("smooth-scroll-smoothness", ss::kSmoothnessDefault);
             (void)Mod::get()->setSavedValue<bool>("smooth-scroll-editor-zoom", true);
@@ -47,7 +49,7 @@ bool SmoothScrollConfigPopup::init() {
             (void)Mod::get()->setSavedValue<double>(
                 "smooth-scroll-editor-zoom-smoothness", ss::kEditorZoomSmoothnessDefault);
             this->rebuild();
-        });
+        }, paimon::ui::Btn::Red, 0.f, 0.6f);
     resetBtn->setPosition({m_mainLayer->getContentSize().width / 2.f, 20.f});
     m_buttonMenu->addChild(resetBtn);
 

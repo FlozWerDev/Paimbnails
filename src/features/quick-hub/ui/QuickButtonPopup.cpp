@@ -7,6 +7,7 @@
 #include "RadialVisuals.hpp"
 #include "../services/QuickButtonSfx.hpp"
 #include "../services/QuickHubManager.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
@@ -79,6 +80,7 @@ protected:
         if (!PaimonPopup::init(360.f, 250.f)) return false;
         paimon::markDynamicPopup(this);
         this->setTitle("Elegir icono");
+        this->addCorners();
 
         auto size = m_mainLayer->getContentSize();
 
@@ -87,8 +89,7 @@ protected:
         float listX = (size.width - listW) * 0.5f;
         float listY = 26.f;
 
-        auto panel = paimon::SpriteHelper::createDarkPanel(listW + 10.f, listH + 10.f, 90, 6.f);
-        if (panel) {
+        if (auto* panel = paimon::ui::makeInset({listW + 10.f, listH + 10.f}, 110)) {
             panel->setPosition({listX - 5.f, listY - 5.f});
             m_mainLayer->addChild(panel, 0);
         }
@@ -134,16 +135,10 @@ protected:
             auto holder = CCNode::create();
             holder->setContentSize({cell, cell});
 
-            auto card = paimon::SpriteHelper::createRoundedRect(
-                cell - 6.f, cell - 6.f, 6.f,
-                isCurrent ? ccc4f(0.18f, 0.42f, 0.55f, 0.95f)
-                          : ccc4f(0.10f, 0.12f, 0.16f, 0.85f),
-                isCurrent ? ccc4f(0.45f, 0.85f, 1.f, 1.f)
-                          : ccc4f(0.30f, 0.35f, 0.45f, 0.7f),
-                1.2f);
-            if (card) {
-                // rounded rect draws from (0,0) to (w,h): center the (cell-6) card, offset 3.
-                card->setPosition({3.f, 3.f});
+            if (auto* card = paimon::SpriteHelper::safeCreateScale9(
+                    isCurrent ? "GJ_button_02.png" : "GJ_button_04.png")) {
+                card->setContentSize({cell - 6.f, cell - 6.f});
+                card->setPosition({cell * 0.5f, cell * 0.5f});
                 holder->addChild(card, 0);
             }
 
@@ -191,11 +186,20 @@ bool QuickButtonPopup::init() {
 
     m_editing = QuickHubManager::get().getCustomButton(m_candidate.id).has_value();
     this->setTitle(m_editing ? "Editar boton rapido" : "Anadir al Quick Hub");
+    this->addCorners();
+    this->addInfoButton(m_editing ? "Editar boton rapido" : "Anadir al Quick Hub",
+        "Define como se ve y suena un acceso del Quick Hub.\n\n"
+        "Elige <cy>icono</c>, <cj>forma</c> y <co>color</c>; opcionalmente una <cg>imagen</c> "
+        "propia y un <cg>sonido</c>. La tarjeta de abajo muestra a que boton del juego "
+        "apunta el acceso.\n\n"
+        "<cg>Guardar</c> lo anade a la rueda si cabe.");
+
+    namespace ui = paimon::ui;
 
     constexpr float kPreviewCx = 78.f;
     constexpr float kPreviewCy = 220.f;
 
-    if (auto* panel = paimon::SpriteHelper::createDarkPanel(104.f, 104.f, 95, 8.f)) {
+    if (auto* panel = ui::makeInset({104.f, 104.f}, 110)) {
         panel->setPosition({kPreviewCx - 52.f, kPreviewCy - 52.f});
         m_mainLayer->addChild(panel, 0);
     }
@@ -204,11 +208,8 @@ bool QuickButtonPopup::init() {
     m_preview->setPosition({kPreviewCx, kPreviewCy});
     m_mainLayer->addChild(m_preview, 2);
 
-    auto* iconSpr = ButtonSprite::create("Icono", "bigFont.fnt", "GJ_button_04.png", .8f);
-    iconSpr->setScale(0.5f);
-    auto* iconButton = CCMenuItemExt::createSpriteExtra(iconSpr, [this](CCMenuItemSpriteExtra* s) {
-        this->onChangeIcon(s);
-    });
+    auto* iconButton = ui::makeButton("Icono", [this] { this->onChangeIcon(nullptr); },
+        ui::Btn::Cyan, 0.f, 0.5f, "bigFont.fnt");
     iconButton->setPosition({kPreviewCx, kPreviewCy - 68.f});
     m_buttonMenu->addChild(iconButton);
 
@@ -216,8 +217,7 @@ bool QuickButtonPopup::init() {
     constexpr float kFieldW = 226.f;
 
     auto addFieldLabel = [&](char const* text, float y) {
-        auto* label = CCLabelBMFont::create(text, "goldFont.fnt");
-        label->setScale(0.34f);
+        auto* label = ui::makeTitle(text, 200.f, 0.4f);
         label->setAnchorPoint({0.f, 0.5f});
         label->setPosition({kFieldX, y});
         m_mainLayer->addChild(label, 2);
@@ -272,11 +272,8 @@ bool QuickButtonPopup::init() {
 
     buildTargetInfo();
 
-    auto* saveSprite = ButtonSprite::create("Guardar", "goldFont.fnt", "GJ_button_01.png", .8f);
-    saveSprite->setScale(0.66f);
-    auto* saveButton = CCMenuItemExt::createSpriteExtra(saveSprite, [this](CCMenuItemSpriteExtra*) {
-        this->onSave(nullptr);
-    });
+    auto* saveButton = paimon::ui::makeButton("Guardar", [this] { this->onSave(nullptr); },
+        paimon::ui::Btn::Green, 0.f, 0.66f);
     m_buttonMenu->addChildAtPosition(saveButton, Anchor::BottomRight, ccp(-58.f, 22.f));
 
     rebuildPreview();
@@ -299,7 +296,7 @@ void QuickButtonPopup::buildTargetInfo() {
     constexpr float kCardW = 278.f;
     constexpr float kTextW = kCardW - 16.f;
 
-    if (auto* card = paimon::SpriteHelper::createDarkPanel(kCardW, 52.f, 90, 6.f)) {
+    if (auto* card = paimon::ui::makeInset({kCardW, 52.f}, 110)) {
         card->setPosition({kCardX, 16.f});
         m_mainLayer->addChild(card, 0);
     }
@@ -448,11 +445,18 @@ void QuickButtonPopup::rebuildColorSwatches() {
         auto* holder = CCNode::create();
         holder->setContentSize({kSwatch, kSwatch});
 
-        if (auto* chip = paimon::SpriteHelper::createRoundedRect(
-                kSwatch, kSwatch, 5.f, accentColor(color, 0.9f),
-                selected ? ccc4f(1.f, 1.f, 1.f, 1.f) : ccc4f(0.f, 0.f, 0.f, 0.45f),
-                selected ? 2.f : 1.f)) {
+        if (auto* chip = paimon::SpriteHelper::safeCreateWithFrameName("GJ_colorBtn_001.png")) {
+            chip->setColor(color);
+            chip->setScale(kSwatch / std::max(chip->getContentSize().width, 1.f));
+            chip->setPosition({kSwatch / 2.f, kSwatch / 2.f});
             holder->addChild(chip);
+        }
+        if (selected) {
+            if (auto* ring = paimon::SpriteHelper::createRoundedRectOutline(
+                    kSwatch + 3.f, kSwatch + 3.f, 5.f, ccc4f(1.f, 1.f, 1.f, 1.f), 2.f)) {
+                ring->setPosition({kSwatch / 2.f, kSwatch / 2.f});
+                holder->addChild(ring, 1);
+            }
         }
 
         auto* button = CCMenuItemExt::createSpriteExtra(holder, [this, color](CCMenuItemSpriteExtra*) {

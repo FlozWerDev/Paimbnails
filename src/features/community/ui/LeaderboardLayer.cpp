@@ -305,10 +305,12 @@ bool LeaderboardLayer::init() {
         m_historyButton = historyBtn;
         menu->addChild(historyBtn);
 
-        auto histLabel = CCLabelBMFont::create("H", "bigFont.fnt");
-        histLabel->setScale(0.9f);
-        histLabel->setPosition(historySpr->getContentSize() / 2);
-        historySpr->addChild(histLabel, 10);
+        if (auto histIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_timeIcon_001.png")) {
+            float side = std::max(histIcon->getContentSize().width, histIcon->getContentSize().height);
+            if (side > 0.f) histIcon->setScale(28.f / side);
+            histIcon->setPosition(historySpr->getContentSize() / 2);
+            historySpr->addChild(histIcon, 10);
+        }
     }
 
     showLoading();

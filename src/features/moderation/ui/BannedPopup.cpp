@@ -1,6 +1,6 @@
 #include "BannedPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
-#include <Geode/binding/ButtonSprite.hpp>
+#include "../../../ui/PaimonUI.hpp"
 #include <Geode/ui/MDTextArea.hpp>
 #include <Geode/ui/PopupManager.hpp>
 
@@ -20,27 +20,26 @@ bool BannedPopup::init(std::string const& reason) {
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
 
+    CCSize insetSize = {content.width - 30.f, 118.f};
+    auto inset = paimon::ui::makeInset(insetSize);
+    inset->setPosition({cx - insetSize.width / 2.f, content.height - 32.f - insetSize.height});
+    m_mainLayer->addChild(inset);
+
     std::string body = "You have been banned from using Paimbnails.";
     if (!reason.empty()) body += "\n\n<cy>Reason:</c> " + reason;
     body += "\n\nThe mod has been disabled. Press the button below to confirm and restart the game.";
 
-    auto desc = MDTextArea::create(body, {300.f, 115.f});
+    auto desc = MDTextArea::create(body, {insetSize.width - 16.f, insetSize.height - 12.f});
     if (desc) {
-        desc->setPosition({cx, content.height - 85.f});
+        desc->setPosition({cx, content.height - 32.f - insetSize.height / 2.f});
         m_mainLayer->addChild(desc);
     }
 
-    auto menu = CCMenu::create();
-    menu->setPosition({0, 0});
-    m_mainLayer->addChild(menu);
-
-    auto disableBtn = CCMenuItemSpriteExtra::create(
-        ButtonSprite::create("Disable Mod", "goldFont.fnt", "GJ_button_06.png", 0.8f),
-        this,
-        menu_selector(BannedPopup::onDisableMod)
-    );
+    auto disableBtn = paimon::ui::makeButton("Disable Mod", [this] {
+        this->onDisableMod(nullptr);
+    }, paimon::ui::Btn::Red, 0.f, 0.8f);
     disableBtn->setPosition({cx, 32.f});
-    menu->addChild(disableBtn);
+    m_buttonMenu->addChild(disableBtn);
 
     return true;
 }

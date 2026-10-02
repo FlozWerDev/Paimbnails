@@ -14,6 +14,7 @@ struct HubCategoryMeta {
     std::string shortDesc;
     cocos2d::ccColor3B color;
     std::function<std::vector<paimon::ui::InfoSection>()> getInfo;
+    std::string icon;
 };
 
 struct HubActionMeta {

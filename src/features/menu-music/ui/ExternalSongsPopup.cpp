@@ -6,6 +6,7 @@
 
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/FMODAudioEngine.hpp>
@@ -45,6 +46,10 @@ bool ExternalSongsPopup::init(float width, float height) {
     paimon::markDynamicPopup(this);
 
     this->setTitle("Song List");
+    this->addInfoButton("Song List",
+        "Every playable song found on your system: your <cg>library</c>, the <cy>menu "
+        "loop</c> songs, and <co>downloaded</c> Geometry Dash songs. Tap the <cg>play</c> "
+        "button on a row to hear it, or <cy>Shuffle</c> to pick one at random.");
 
     auto addUnique = [this](const std::string& path, const std::string& label,
                             const std::string& source) {
@@ -114,7 +119,7 @@ void ExternalSongsPopup::buildHeader() {
         fmt::format("{} songs", m_rows.size()).c_str(), "chatFont.fnt");
     if (m_summaryLabel) {
         m_summaryLabel->setScale(0.5f);
-        m_summaryLabel->setColor({225, 225, 240});
+        m_summaryLabel->setColor(paimon::ui::palette::gold);
         m_summaryLabel->setAnchorPoint({1.f, 0.5f});
         m_summaryLabel->setPosition({size.width - 14.f, size.height - 66.f});
         m_summaryLabel->setID("summary-label"_spr);
@@ -124,14 +129,11 @@ void ExternalSongsPopup::buildHeader() {
     auto menu = CCMenu::create();
     menu->setContentSize({96.f, 28.f});
     menu->setPosition({350.f, headerY});
-    if (auto spr = ButtonSprite::create("Shuffle", 90, true, "bigFont.fnt",
-            "GJ_button_02.png", 20.f, 0.45f)) {
-        auto btn = CCMenuItemSpriteExtra::create(
-            spr, this, menu_selector(ExternalSongsPopup::onShuffleAll));
-        if (btn) {
-            btn->setID("shuffle-all-btn"_spr);
-            menu->addChild(btn);
-        }
+    if (auto btn = paimon::ui::makeButton("Shuffle",
+            [this] { this->onShuffleAll(nullptr); },
+            paimon::ui::Btn::Cyan, 90.f, 0.5f, "bigFont.fnt")) {
+        btn->setID("shuffle-all-btn"_spr);
+        menu->addChild(btn);
     }
     menu->setID("shuffle-menu"_spr);
     m_mainLayer->addChild(menu, 5);
@@ -141,10 +143,8 @@ void ExternalSongsPopup::buildList() {
     auto size = m_mainLayer->getContentSize();
     const float scrollHeight = size.height - 84.f;
     const CCSize scrollSize{size.width - 30.f, scrollHeight};
-    if (auto* panel = paimon::SpriteHelper::safeCreateScale9("GJ_square02.png")) {
-        panel->setContentSize({size.width - 20.f, scrollHeight + 6.f});
-        panel->setPosition({size.width / 2.f, 12.f + scrollHeight / 2.f});
-        panel->setOpacity(220);
+    if (auto* panel = paimon::ui::makeInset({size.width - 20.f, scrollHeight + 6.f}, 220)) {
+        panel->setPosition({10.f, 9.f});
         panel->setID("song-list-bg"_spr);
         m_mainLayer->addChild(panel, 2);
     }
@@ -193,12 +193,12 @@ void ExternalSongsPopup::rebuildList() {
             - shown * kRowGap});
         row->setID(fmt::format("{}song-row-{}", ""_spr, shown));
 
-        if (auto* bg = paimon::SpriteHelper::safeCreateScale9("GJ_square02.png")) {
+        if (auto* bg = CCLayerColor::create(playing
+                ? ccc4(80, 170, 95, 255)
+                : (shown % 2 == 0 ? ccc4(194, 114, 62, 255) : ccc4(161, 88, 44, 255)))) {
             bg->setContentSize({cellW, kRowHeight});
             bg->setAnchorPoint({0.f, 0.f});
             bg->setPosition({0.f, 0.f});
-            bg->setOpacity(playing ? 245 : (shown % 2 == 0 ? 220 : 195));
-            if (playing) bg->setColor({135, 215, 145});
             bg->setID("song-row-bg"_spr);
             row->addChild(bg, 0);
         }
@@ -216,8 +216,8 @@ void ExternalSongsPopup::rebuildList() {
             label->limitLabelWidth(cellW - 92.f, 0.43f, 0.25f);
             label->setAnchorPoint({0.f, 0.5f});
             label->setPosition({42.f, kRowHeight * 0.65f});
-            label->setColor(playing ? ccColor3B{120, 245, 140}
-                                    : ccColor3B{255, 255, 255});
+            label->setColor(playing ? paimon::ui::palette::success
+                                    : paimon::ui::palette::text);
             row->addChild(label, 1);
         }
 
@@ -229,7 +229,7 @@ void ExternalSongsPopup::rebuildList() {
             tag->setScale(0.34f);
             tag->setAnchorPoint({0.f, 0.5f});
             tag->setPosition({42.f, kRowHeight * 0.26f});
-            tag->setColor({220, 205, 175});
+            tag->setColor(paimon::ui::palette::muted);
             row->addChild(tag, 1);
         }
 
@@ -257,14 +257,13 @@ void ExternalSongsPopup::rebuildList() {
     }
 
     if (filtered.empty()) {
-        auto* label = CCLabelBMFont::create(
+        auto* label = paimon::ui::makeText(
             m_rows.empty() ? "No songs found." : "No songs match your search.",
-            "chatFont.fnt");
+            m_scroll->getContentSize().width - 20.f, 0.5f,
+            paimon::ui::palette::muted, kCCTextAlignmentCenter);
         if (label) {
-            label->setScale(0.5f);
             label->setPosition({m_scroll->getContentSize().width / 2.f,
                                 m_scroll->getContentSize().height / 2.f});
-            label->setColor({205, 205, 220});
             m_scroll->m_contentLayer->addChild(label);
         }
     }

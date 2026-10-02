@@ -1,4 +1,5 @@
 #include "ProfilePicIconsDetailPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "ProfilePicEditorPopup.hpp"
 #include "../services/ProfilePicRenderer.hpp"
@@ -34,9 +35,19 @@ bool ProfilePicIconsDetailPopup::init(ProfilePicConfig* cfg, CCNode* editor, std
     if (!PaimonPopup::init(kW, kH)) return false;
     paimon::markDynamicPopup(this);
     this->setTitle("Icon Settings");
+    this->addInfoButton("Icon Settings",
+        "Fine-tune the game icon used in your profile picture: <cy>Color 1/2</c> (custom or your player "
+        "colors), <cy>Glow</c>, <cy>Scale</c>, an idle <cy>animation</c>, and an optional background "
+        "image shown behind the icon.");
     m_cfg = cfg;
     m_editor = editor;
     m_onChange = onChange;
+
+    auto contentInset = paimon::ui::makeInset({kW - 16.f, kH - 46.f}, 95);
+    contentInset->setAnchorPoint({0.5f, 0.5f});
+    contentInset->setPosition({kW * 0.5f, kH * 0.5f - 10.f});
+    m_mainLayer->addChild(contentInset, -1);
+
     m_contentNode = CCNode::create();
     m_contentNode->setContentSize({kW - 20.f, kH - 50.f});
     m_contentNode->setAnchorPoint({0.5f, 0.5f});
@@ -68,7 +79,7 @@ void ProfilePicIconsDetailPopup::rebuild() {
 
     float previewY = topY - 48.f;
     CCPoint previewCenter = {area.width - 52.f, previewY};
-    auto previewBox = paimon::SpriteHelper::createColorPanel(80.f, 80.f, {40,40,40}, 160, 4.f);
+    auto previewBox = paimon::ui::makeInset({80.f, 80.f}, 160);
     if (previewBox) {
         previewBox->setAnchorPoint({0.5f, 0.5f});
         previewBox->ignoreAnchorPointForPosition(false);

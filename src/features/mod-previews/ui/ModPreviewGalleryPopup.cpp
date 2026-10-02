@@ -1,4 +1,5 @@
 #include "ModPreviewGalleryPopup.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include <Geode/Geode.hpp>
 
@@ -25,6 +26,13 @@ bool ModPreviewGalleryPopup::init(int index, int total, std::string base) {
     m_base = std::move(base);
 
     this->setTitle("Mod Images");
+    this->addInfoButton("Mod Images",
+        "Galeria de capturas del mod. Usa las <cy>flechas</c> para pasar entre fotos; "
+        "el contador de abajo indica la posicion actual.");
+
+    auto* photoInset = paimon::ui::makeInset({kPhotoW + 8.f, kPhotoH + 8.f}, 110);
+    m_mainLayer->addChildAtPosition(photoInset, Anchor::Center,
+        {-(kPhotoW + 8.f) / 2.f, 12.f - (kPhotoH + 8.f) / 2.f});
 
     m_sprite = LazySprite::create({120, 60});
     m_mainLayer->addChildAtPosition(m_sprite, Anchor::Center, {0, 12});

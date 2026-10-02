@@ -4,6 +4,7 @@
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -27,9 +28,17 @@ bool WhitelistPopup::init() {
     if (!PaimonPopup::init(360.f, 280.f)) return false;
 
     this->setTitle("Whitelist");
+    this->addInfoButton("Whitelist",
+        "Users here can use custom <cy>profile backgrounds</c>. Type a username and press "
+        "<cg>+</c> to add, or <cr>X</c> to remove. A <co>Mod Code</c> is required.");
 
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
+
+    auto inputLabel = paimon::ui::makeLabel("Username", 120.f, 0.4f);
+    inputLabel->setAnchorPoint({0.f, 0.5f});
+    inputLabel->setPosition({cx - 120.f, content.height - 36.f});
+    m_mainLayer->addChild(inputLabel);
 
     m_input = TextInput::create(180.f, "Username...");
     m_input->setPosition({cx - 30.f, content.height - 50.f});
@@ -38,7 +47,7 @@ bool WhitelistPopup::init() {
     m_input->setID("wl-input"_spr);
     m_mainLayer->addChild(m_input);
 
-    auto addSpr = ButtonSprite::create("+", 30, true, "bigFont.fnt", "GJ_button_01.png", 25.f, 0.7f);
+    auto addSpr = paimon::ui::makeButtonSprite("+", paimon::ui::Btn::Green, 30.f, 0.7f);
     auto addBtn = CCMenuItemSpriteExtra::create(addSpr, this, menu_selector(WhitelistPopup::onAdd));
     addBtn->setID("wl-add-btn"_spr);
 
@@ -51,7 +60,7 @@ bool WhitelistPopup::init() {
     float panelH = content.height - 90.f;
     float panelY = (content.height - 60.f) / 2.f - 5.f;
 
-    auto panel = paimon::SpriteHelper::createDarkPanel(panelW, panelH, 70);
+    auto panel = paimon::ui::makeInset({panelW, panelH});
     panel->setPosition({cx - panelW / 2, panelY - panelH / 2});
     m_mainLayer->addChild(panel);
 
@@ -140,7 +149,7 @@ void WhitelistPopup::rebuildList() {
         cell->setAnchorPoint({0.5f, 0.5f});
         cell->setPosition({viewW / 2.f, yPos});
 
-        auto bg = paimon::SpriteHelper::createDarkPanel(cellW, cellH, 55);
+        auto bg = paimon::ui::makeInset({cellW, cellH}, 70);
         bg->setPosition({0, 0});
         cell->addChild(bg);
 
@@ -155,7 +164,7 @@ void WhitelistPopup::rebuildList() {
         btnMenu->setContentSize({70.f, cellH});
         cell->addChild(btnMenu);
 
-        auto rmSpr = ButtonSprite::create("X", 30, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.45f);
+        auto rmSpr = paimon::ui::makeButtonSprite("X", paimon::ui::Btn::Red, 30.f, 0.6f);
         auto rmBtn = CCMenuItemSpriteExtra::create(rmSpr, this, menu_selector(WhitelistPopup::onRemove));
         rmBtn->setID("wl-rm-btn"_spr);
         rmBtn->setUserObject(CCString::create(user));

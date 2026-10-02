@@ -3,6 +3,7 @@
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
+#include "../../../ui/PaimonUI.hpp"
 
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/ui/PopupManager.hpp>
@@ -29,6 +30,9 @@ bool BanListPopup::init() {
     if (!PaimonPopup::init(360.f, 260.f)) return false;
 
     this->setTitle(Localization::get().getString("ban.list.title"));
+    this->addInfoButton(Localization::get().getString("ban.list.title"),
+        "Everyone currently <cr>banned</c> from Paimbnails. Tap the <cy>info</c> icon "
+        "to see why a user was banned, or <cg>Unban</c> to restore their access.");
 
     auto content = this->m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
@@ -37,7 +41,7 @@ bool BanListPopup::init() {
     float panelH = content.height - 60.f;
     float panelY = content.height / 2.f - 10.f;
 
-    auto panel = paimon::SpriteHelper::createDarkPanel(panelW, panelH, 70);
+    auto panel = paimon::ui::makeInset({panelW, panelH});
     panel->setPosition({cx - panelW / 2, panelY - panelH / 2});
     panel->setID("list-panel"_spr);
     this->m_mainLayer->addChild(panel);
@@ -144,7 +148,7 @@ void BanListPopup::rebuildList(std::vector<std::string> const& users) {
         cell->setPosition({viewW / 2.f, yPos});
         cell->setID("user-cell"_spr);
 
-        auto bg = paimon::SpriteHelper::createDarkPanel(cellW, cellH, 55);
+        auto bg = paimon::ui::makeInset({cellW, cellH}, 70);
         bg->setPosition({0, 0});
         cell->addChild(bg);
 
@@ -167,7 +171,9 @@ void BanListPopup::rebuildList(std::vector<std::string> const& users) {
         infoBtn->setPosition({-20.f, 0.f});
         btnMenu->addChild(infoBtn);
 
-        auto unbanSpr = ButtonSprite::create(Localization::get().getString("ban.list.unban_btn").c_str(), 68, true, "goldFont.fnt", "GJ_button_05.png", 18.f, 0.40f);
+        auto unbanSpr = paimon::ui::makeButtonSprite(
+            Localization::get().getString("ban.list.unban_btn").c_str(),
+            paimon::ui::Btn::Green, 68.f, 0.5f, "bigFont.fnt");
         auto unbanBtn = CCMenuItemSpriteExtra::create(unbanSpr, this, menu_selector(BanListPopup::onUnban));
         unbanBtn->setID("unban-btn"_spr);
         unbanBtn->setUserObject(CCString::create(user));

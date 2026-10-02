@@ -6,7 +6,6 @@
 #include "../../../utils/Localization.hpp"
 #include "../services/SettingsPanelManager.hpp"
 #include "../../../utils/GeodeTextInputSafe.hpp"
-#include "../../../utils/SpriteHelper.hpp"
 #include "../../../blur/PopupBlurService.hpp"
 #include "../../../core/Settings.hpp"
 
@@ -53,7 +52,10 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
     m_panelContainer->setPosition(winSize * 0.5f);
     this->addChild(m_panelContainer, 1);
 
-    m_panelBg = paimon::ui::makeSurface({PANEL_W, PANEL_H});
+    auto* panelBg = NineSlice::create("GJ_square01.png");
+    panelBg->setContentSize({PANEL_W, PANEL_H});
+    panelBg->setAnchorPoint({0.f, 0.f});
+    m_panelBg = panelBg;
     m_panelContainer->addChild(m_panelBg);
     m_panelScale = std::min({1.f, (winSize.width - 24.f) / PANEL_W, (winSize.height - 24.f) / PANEL_H});
     m_panelContainer->setScale(m_panelScale);
@@ -87,17 +89,15 @@ bool PaimonMultiSettingsPanel::init(CCSprite* blurBg, int initialCategory) {
 void PaimonMultiSettingsPanel::buildTitleBar() {
     m_titleBarBg = nullptr;
 
-    m_titleLabel = CCLabelBMFont::create("Paimon Settings", "bigFont.fnt");
-    m_titleLabel->limitLabelWidth(245.f, 0.45f, 0.18f);
-    m_titleLabel->setColor(paimon::ui::palette::text);
+    m_titleLabel = paimon::ui::makeTitle("Paimon Settings", 220.f, 0.65f);
     m_titleLabel->setAnchorPoint({0.f, 0.5f});
-    m_titleLabel->setPosition({14.f, PANEL_H - TITLE_BAR_H / 2.f});
+    m_titleLabel->setPosition({30.f, PANEL_H - TITLE_BAR_H / 2.f - 2.f});
     m_panelContainer->addChild(m_titleLabel, 2);
 
     m_searchInput = geode::TextInput::create(210.f, "Search...", "chatFont.fnt");
     m_searchInput->setScale(0.65f);
     m_searchInput->setAnchorPoint({0.5f, 0.5f});
-    m_searchInput->setPosition({PANEL_W - 105.f, PANEL_H - TITLE_BAR_H / 2.f});
+    m_searchInput->setPosition({PANEL_W - 82.f, PANEL_H - TITLE_BAR_H / 2.f - 2.f});
     m_searchInput->setCallback(
         paimon::ui::safeTextInputCallback<PaimonMultiSettingsPanel>(
             this, &PaimonMultiSettingsPanel::onSearchChanged
@@ -110,14 +110,15 @@ void PaimonMultiSettingsPanel::buildTitleBar() {
     closeMenu->setTouchPriority(m_childTouchPrio);
     m_panelContainer->addChild(closeMenu, 2);
 
-    auto closeSpr = paimon::ui::makeButtonFace("x", {24.f, 24.f});
+    auto closeSpr = CCSprite::createWithSpriteFrameName("GJ_closeBtn_001.png");
+    closeSpr->setScale(0.7f);
     auto closeBtn = CCMenuItemSpriteExtra::create(closeSpr, this, menu_selector(PaimonMultiSettingsPanel::onClose));
-    closeBtn->setPosition({PANEL_W - 16.f, PANEL_H - 14.f});
+    closeBtn->setPosition({4.f, PANEL_H - 4.f});
     closeMenu->addChild(closeBtn);
 }
 
 void PaimonMultiSettingsPanel::buildSidebar() {
-    m_sidebarBg = paimon::ui::makeSurface({SIDEBAR_W - 12.f, CONTENT_H - 12.f}, paimon::ui::palette::background);
+    m_sidebarBg = paimon::ui::makeInset({SIDEBAR_W - 12.f, CONTENT_H - 12.f}, 90);
     m_sidebarBg->setPosition({6.f, 6.f});
     m_panelContainer->addChild(m_sidebarBg, 1);
     m_sidebarMenu = CCMenu::create();
@@ -126,8 +127,8 @@ void PaimonMultiSettingsPanel::buildSidebar() {
     m_panelContainer->addChild(m_sidebarMenu, 2);
     auto const& groups = paimon::settings_ui::getAllGroups();
     for (size_t i = 0; i < groups.size(); ++i) {
-        auto* face = paimon::ui::makeButtonFace(groups[i].name.c_str(), {SIDEBAR_W - 20.f, 27.f},
-            paimon::ui::palette::raised, 0.28f);
+        auto* face = paimon::ui::makeButtonSprite(groups[i].name.c_str(), paimon::ui::Btn::Gray,
+            SIDEBAR_W - 22.f, 0.75f, "bigFont.fnt");
         auto* button = CCMenuItemExt::createSpriteExtra(face, [this, i](CCMenuItemSpriteExtra*) {
             selectCategory(static_cast<int>(i));
         });
@@ -270,12 +271,7 @@ void PaimonMultiSettingsPanel::updateSidebarAccent() {
         if (!btn) continue;
         btn->stopAllActions();
         btn->setScale(kSidebarBtnScale);
-        if (auto* img = btn->getNormalImage()) {
-            if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(img)) {
-                rgba->setCascadeOpacityEnabled(true);
-                rgba->setOpacity(sel ? 255 : 200);
-            }
-        }
+        paimon::ui::setButtonSkin(btn, sel ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray);
     }
 }
 

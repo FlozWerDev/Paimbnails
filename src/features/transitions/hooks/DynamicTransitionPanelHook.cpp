@@ -32,7 +32,7 @@ class $modify(PaimonDynamicPanelNodes, CCNode) {
     }
 
     void removeAllChildrenWithCleanup(bool cleanup) {
-        if (this == CCDirector::get()->getRunningScene()) {
+        if (static_cast<CCNode*>(this) == CCDirector::get()->getRunningScene()) {
             dynamic::finishPanelAnimation();
             CCNode::removeAllChildrenWithCleanup(cleanup);
             return;

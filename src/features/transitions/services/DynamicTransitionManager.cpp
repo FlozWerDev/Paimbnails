@@ -7,6 +7,7 @@
 #include <array>
 #include <chrono>
 #include <string>
+#include <string_view>
 #include <vector>
 
 using namespace geode::prelude;
@@ -51,8 +52,8 @@ std::string sceneKey(CCScene* scene) {
 }
 
 bool isBackButton(CCMenuItem* button) {
-    auto const& id = button->getID();
-    if (id.find("back") != std::string::npos || id.find("return") != std::string::npos)
+    auto const id = button->getID().view();
+    if (id.find("back") != std::string_view::npos || id.find("return") != std::string_view::npos)
         return true;
     auto* item = typeinfo_cast<CCMenuItemSprite*>(button);
     auto* sprite = item ? typeinfo_cast<CCSprite*>(item->getNormalImage()) : nullptr;

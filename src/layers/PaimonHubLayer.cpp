@@ -257,7 +257,7 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
                     if (auto* scene = paimon::versus::VersusHubLayer::scene()) CCDirector::get()->pushScene(scene);
                 }, 0, "Partidas, mazos y clasificaciones"},
                 {"Peticiones en directo", "GJ_button_02.png", [](PaimonHubLayer*) {
-                    TwitchRequestsLayer::open();
+                    paimon::twitch::TwitchRequestsLayer::open();
                 }, 0, "Colas y fuentes de streaming"},
                 {"PaiDraw", "GJ_button_05.png", [](PaimonHubLayer* self) { self->onOpenPaiDraw(nullptr); }, 0, "Dibuja con la comunidad"},
                 {"Soporte", "GJ_button_04.png", [](PaimonHubLayer* self) { self->onOpenSupport(nullptr); }, 0, "Ayuda y contacto"},

@@ -87,7 +87,7 @@ void roundedFill(CCDrawNode* draw, CCSize size, float radius) {
     for (int corner = 0; corner < 4; ++corner) {
         for (int step = 0; step <= kSteps; ++step) {
             float angle = (static_cast<float>(corner - 1) + static_cast<float>(step) / kSteps) * kPi * .5f;
-            points[count++] = {centers[corner].x + radius * std::cos(angle), centers[corner].y + radius * std::sin(angle)};
+            points[count++] = CCPoint{centers[corner].x + radius * std::cos(angle), centers[corner].y + radius * std::sin(angle)};
         }
     }
     draw->drawPolygon(points.data(), static_cast<unsigned>(count), {1.f, 1.f, 1.f, 1.f}, 0.f, {0.f, 0.f, 0.f, 0.f});
@@ -357,8 +357,8 @@ bool ConfigPreview::setup(float width) {
     auto win = CCDirector::get()->getWinSize();
     float aspect = win.height / std::max(1.f, win.width);
     float innerWidth = width - 8.f, innerHeight = kStageBox - 8.f;
-    m_stage = {innerWidth, innerWidth * aspect};
-    if (m_stage.height > innerHeight) m_stage = {innerHeight / aspect, innerHeight};
+    m_stage = CCSize{innerWidth, innerWidth * aspect};
+    if (m_stage.height > innerHeight) m_stage = CCSize{innerHeight / aspect, innerHeight};
     float stageBottom = kGraphHeight + kCaptionGap;
     setContentSize({width, stageBottom + kStageBox});
 

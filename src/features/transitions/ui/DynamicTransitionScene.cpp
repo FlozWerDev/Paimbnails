@@ -61,7 +61,7 @@ int outline(Rect rect, float radius, int segments, Outline& points) {
         for (int step = 0; step <= segments; ++step) {
             float fraction = segments ? static_cast<float>(step) / static_cast<float>(segments) : .5f;
             float angle = (static_cast<float>(corner - 1) + fraction) * kPi * .5f;
-            points[count++] = {centers[corner].x + radius * std::cos(angle),
+            points[count++] = CCPoint{centers[corner].x + radius * std::cos(angle),
                 centers[corner].y + radius * std::sin(angle)};
         }
     }

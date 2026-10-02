@@ -192,10 +192,9 @@ bool NewIconPopup::init(CreatedCallback onCreated) {
         m_mainLayer->addChild(tabs);
     }
 
-    m_startLabelPos = {rightX, size.height - 150.f};
+    m_startLabelPos = CCPoint{rightX, size.height - 150.f};
     m_startLabelW = rightW;
 
-    // row that shows which official icon is being copied.
     m_templateRow = CCNode::create();
     m_templateRow->setPosition({rightX, 46.f});
     m_mainLayer->addChild(m_templateRow);

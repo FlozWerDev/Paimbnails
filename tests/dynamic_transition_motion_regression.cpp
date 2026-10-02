@@ -1,17 +1,23 @@
-#include "../src/features/transitions/services/DynamicTransitionMotion.hpp"
 #include <array>
 #include <cassert>
 #include <limits>
+
+// Windows SDK headers define these pointer qualifiers as empty macros.
+#define near
+#define far
+#include "../src/features/transitions/services/DynamicTransitionMotion.hpp"
+#undef far
+#undef near
 
 using namespace paimon::transitions::dynamic;
 
 namespace {
 
-bool near(float a, float b) { return std::abs(a - b) < .001f; }
+bool withinTolerance(float a, float b) { return std::abs(a - b) < .001f; }
 
 void sameRect(Rect a, Rect b) {
-    assert(near(a.x, b.x) && near(a.y, b.y));
-    assert(near(a.width, b.width) && near(a.height, b.height));
+    assert(withinTolerance(a.x, b.x) && withinTolerance(a.y, b.y));
+    assert(withinTolerance(a.width, b.width) && withinTolerance(a.height, b.height));
 }
 
 void validRect(Rect rect) {
@@ -62,7 +68,7 @@ int main() {
         for (int step = 0; step <= 100; ++step) {
             auto frame = evaluate(config, button, 568.f, 320.f, step / 100.f, backwards);
             float alpha = frame.foreground.opacity + (1.f - frame.foreground.opacity) * frame.button.opacity;
-            assert(near(alpha, 1.f));
+            assert(withinTolerance(alpha, 1.f));
         }
     }
 
@@ -177,9 +183,9 @@ int main() {
 
     assert(frameStep(nan, false) == 0.f && frameStep(inf, true) == 0.f);
     assert(frameStep(-1.f, false) == 0.f);
-    assert(near(frameStep(.01f, true), .01f));
-    assert(near(frameStep(1.f, true), 1.f / 60.f));
-    assert(near(frameStep(1.f, false), .1f));
+    assert(withinTolerance(frameStep(.01f, true), .01f));
+    assert(withinTolerance(frameStep(1.f, true), 1.f / 60.f));
+    assert(withinTolerance(frameStep(1.f, false), .1f));
 
     for (int origin = 0; origin < kOriginCount; ++origin) {
         auto rect = fallbackOrigin(568.f, 320.f, static_cast<Origin>(origin));

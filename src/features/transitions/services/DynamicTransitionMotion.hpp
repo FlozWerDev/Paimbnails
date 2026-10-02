@@ -431,18 +431,18 @@ inline Config applyPreset(Config config, int index) {
 }
 
 inline int matchPreset(Config const& config) {
-    auto near = [](float a, float b, float tolerance) { return std::abs(a - b) <= tolerance; };
+    auto withinTolerance = [](float a, float b, float tolerance) { return std::abs(a - b) <= tolerance; };
     for (size_t i = 0; i < kPresets.size(); ++i) {
         auto const& preset = kPresets[i];
         if (config.style == preset.style && config.curve == preset.curve &&
-            near(config.duration, preset.duration, .006f) &&
-            near(config.backDuration, preset.backDuration, .006f) &&
-            near(config.cornerRadius, preset.cornerRadius, .3f) &&
-            near(config.backgroundScale, preset.backgroundScale, .003f) &&
-            near(config.dim, preset.dim, .006f) &&
-            near(config.spring, preset.spring, .003f) &&
-            near(config.buttonBlend, preset.buttonBlend, .006f) &&
-            near(config.shadow, preset.shadow, .006f)) return static_cast<int>(i);
+            withinTolerance(config.duration, preset.duration, .006f) &&
+            withinTolerance(config.backDuration, preset.backDuration, .006f) &&
+            withinTolerance(config.cornerRadius, preset.cornerRadius, .3f) &&
+            withinTolerance(config.backgroundScale, preset.backgroundScale, .003f) &&
+            withinTolerance(config.dim, preset.dim, .006f) &&
+            withinTolerance(config.spring, preset.spring, .003f) &&
+            withinTolerance(config.buttonBlend, preset.buttonBlend, .006f) &&
+            withinTolerance(config.shadow, preset.shadow, .006f)) return static_cast<int>(i);
     }
     return -1;
 }

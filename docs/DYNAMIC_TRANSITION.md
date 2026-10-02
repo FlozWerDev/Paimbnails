@@ -118,8 +118,9 @@ compartidas y la integridad del inventario. No compila ni modifica el build.
 regreso, los 8 estilos, las 6 curvas, los 6 origenes y 5 formatos de pantalla,
 incluida la miniatura. Comprueba las capas de escenas y paneles, el alpha de la
 fusion del boton, los presets, el resorte, el movimiento reducido, el avance de
-frames y las entradas no finitas. No requiere Geometry Dash para probar las
-funciones de movimiento; no se ejecuto en esta revision porque requiere compilar.
+frames y las entradas no finitas. Tambien reproduce las macros `near` y `far`
+del SDK de Windows. La prueba se ejecuto como programa independiente y paso;
+no requiere Geometry Dash para probar las funciones de movimiento.
 
 Antes de publicar, verificar en el juego:
 
@@ -140,5 +141,5 @@ Antes de publicar, verificar en el juego:
 10. Cambiar el tamano de ventana durante la animacion, entrar/salir del nivel o
     editor y restaurar ajustes de fabrica.
 
-La implementacion se reviso sin compilar el mod, siguiendo las instrucciones del
-repositorio. La comprobacion visual y la prueba C++ requieren ejecutarse aparte.
+La prueba C++ de movimiento y las comprobaciones de configuracion pasaron.
+La compilacion completa del mod y la comprobacion visual siguen pendientes.

@@ -23,7 +23,7 @@ void roundedRect(CCDrawNode* draw, Rect rect, float radius, ccColor4F color) {
     for (int corner = 0; corner < 4; ++corner) {
         for (int step = 0; step <= 8; ++step) {
             float angle = (-.5f + corner * .5f + step / 16.f) * 3.14159265f;
-            points[corner * 9 + step] = {centers[corner].x + radius * std::cos(angle),
+            points[corner * 9 + step] = CCPoint{centers[corner].x + radius * std::cos(angle),
                 centers[corner].y + radius * std::sin(angle)};
         }
     }

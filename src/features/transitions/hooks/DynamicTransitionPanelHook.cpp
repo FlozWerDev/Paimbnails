@@ -22,8 +22,9 @@ namespace dynamic = paimon::transitions::dynamic;
 
 class $modify(PaimonDynamicPanelNodes, CCNode) {
     void addChild(CCNode* child, int z, int tag) {
-        dynamic::panelWillChange(child, this, true);
+        bool animated = dynamic::panelWillChange(child, this, true);
         CCNode::addChild(child, z, tag);
+        if (animated) dynamic::panelDidOpen(child);
     }
 
     void removeChild(CCNode* child, bool cleanup) {
@@ -48,15 +49,15 @@ class $modify(PaimonDynamicPanelNodes, CCNode) {
 
 class $modify(PaimonDynamicEndLevel, EndLevelLayer) {
     void showLayer(bool instant) {
-        bool animated = dynamic::panelWillChange(this, getParent(), true);
-        EndLevelLayer::showLayer(animated || instant);
+        dynamic::PanelOpenScope scope(this, getParent());
+        EndLevelLayer::showLayer(scope.active() || instant);
     }
 };
 
 class $modify(PaimonDynamicRetryLevel, RetryLevelLayer) {
     void showLayer(bool instant) {
-        bool animated = dynamic::panelWillChange(this, getParent(), true);
-        RetryLevelLayer::showLayer(animated || instant);
+        dynamic::PanelOpenScope scope(this, getParent());
+        RetryLevelLayer::showLayer(scope.active() || instant);
     }
 };
 
@@ -95,9 +96,9 @@ class $modify(PaimonDynamicUpload, UploadPopup) {
 
 class $modify(PaimonDynamicDialog, DialogLayer) {
     void animateInRandomSide() {
-        bool animated = dynamic::panelWillChange(this, getParent(), true);
+        dynamic::PanelOpenScope scope(this, getParent());
         float duration = m_animateTime;
-        if (animated) m_animateTime = 0.f;
+        if (scope.active()) m_animateTime = 0.f;
         DialogLayer::animateInRandomSide();
         m_animateTime = duration;
     }
@@ -106,8 +107,8 @@ class $modify(PaimonDynamicDialog, DialogLayer) {
 #ifdef GEODE_IS_MACOS
 class $modify(PaimonDynamicSlideIn, SlideInLayer) {
     void showLayer(bool instant) {
-        bool animated = dynamic::panelWillChange(this, getParent(), true);
-        SlideInLayer::showLayer(animated || instant);
+        dynamic::PanelOpenScope scope(this, getParent());
+        SlideInLayer::showLayer(scope.active() || instant);
     }
     void hideLayer(bool instant) {
         bool animated = dynamic::panelWillChange(this, getParent(), false);
@@ -118,8 +119,8 @@ class $modify(PaimonDynamicSlideIn, SlideInLayer) {
 
 class $modify(PaimonDynamicDropdown, GJDropDownLayer) {
     void showLayer(bool instant) {
-        bool animated = dynamic::panelWillChange(this, getParent(), true);
-        GJDropDownLayer::showLayer(animated || instant);
+        dynamic::PanelOpenScope scope(this, getParent());
+        GJDropDownLayer::showLayer(scope.active() || instant);
     }
 
     void hideLayer(bool instant) {
@@ -130,8 +131,8 @@ class $modify(PaimonDynamicDropdown, GJDropDownLayer) {
 
 class $modify(PaimonDynamicBlockingLayer, CCBlockLayer) {
     void showLayer(bool instant) {
-        bool animated = dynamic::panelWillChange(this, getParent(), true);
-        CCBlockLayer::showLayer(animated || instant);
+        dynamic::PanelOpenScope scope(this, getParent());
+        CCBlockLayer::showLayer(scope.active() || instant);
     }
 
     void hideLayer(bool instant) {

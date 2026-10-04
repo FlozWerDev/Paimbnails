@@ -36,3 +36,31 @@ La lámina está en `/home/fernando/Descargas/previsualizacion-pintura-320.png`.
 `tests/paint_circle_regression.cpp` incluye seis regresiones C++ adicionales de fusión y cuatro de resolución automática. La revisión mediante un parser C++ no añadió errores respecto a los archivos iniciales y pasó `git diff --check`.
 
 Las regresiones C++ y la comprobación en GD quedan pendientes. No se ejecutaron compilaciones, siguiendo `AGENTS.md`.
+
+## Uniones y remates suaves — 2026-10-04
+
+El trazado suave filtra el eje antes de simplificarlo y usa una tolerancia menor. Los bucles conservan la continuidad en su cierre. Los giros de más de 12 grados pueden unir los rectángulos con un círculo del grosor del trazo; los tramos rectos conservan su unión directa. La construcción se basa en los [remates y uniones redondos de SVG 2](https://www.w3.org/TR/SVG2/painting.html#StrokeShape).
+
+Después de fusionar fragmentos, los extremos expuestos de trazos de hasta 32 celdas se prueban con remates circulares o elípticos. El rectángulo se acorta y el remate queda dentro de su extensión original. Cada sustitución conserva los centros y contactos de las líneas y las muestras interiores a escala 8. Los extremos cubiertos por otros objetos se conservan. Los círculos protegen nueve muestras centrales de cada celda de color ajeno; los círculos de contorno que crecen al fusionarse también vuelven a comprobar su frontera.
+
+### Comprobación numérica sin compilar
+
+Se descargaron tres dibujos de Wikimedia y se rasterizaron sus SVG antes de reducirlos a un lado máximo de 320. Las imágenes y el script reproducible están en `/home/fernando/Descargas/pintura-curvas-anime/`:
+
+- [Animegirl, de j4p4n](https://commons.wikimedia.org/wiki/File:Animegirl.svg), CC0.
+- [Wikipe-tan face, de Kasuga y Actam](https://commons.wikimedia.org/wiki/File:Wikipe-tan_face.svg), CC BY-SA 3.0.
+- [Manga kid head, de El_Sato](https://commons.wikimedia.org/wiki/File:El_Sato_Manga_kid_head_(1).svg), CC0.
+
+El modelo Python prueba ejes de líneas finas, simplificación y remates. Usa una paleta median cut de 24 colores, esqueletización de scikit-image y rectángulos por filas para rellenar áreas. No reproduce el ajuste completo de contornos, la fusión de fragmentos, la reparación de costuras, el presupuesto ni las máscaras de sprites del pipeline C++. Las comparativas son resultados del modelo y no capturas del mod.
+
+| Dibujo | Resolución | Objetos del modelo previo | Objetos del modelo ajustado | Centros con otro color: previo → ajustado |
+| --- | ---: | ---: | ---: | ---: |
+| Animegirl | 107 × 320 | 5764 | 6574 | 450 → 376 |
+| Wikipe-tan face | 320 × 320 | 13156 | 16919 | 1005 → 568 |
+| Manga kid head | 284 × 320 | 12358 | 15153 | 675 → 468 |
+
+Las comparativas siguen mostrando costuras: el modelo no ejecuta la reparación del mod. El aumento de objetos del modelo es de un 14–29 %; el conteo real y el efecto del presupuesto requieren ejecutar el pipeline C++.
+
+La prueba aislada de remates pasó 77 combinaciones de 11 orientaciones y siete grosores. En 37 casos aceptó redondear; en todos conservó los centros y las muestras protegidas, no añadió cobertura fuera del rectángulo original a escala 8 y no añadió remates al repetir la operación. `remates-ampliados.png` muestra dos ejemplos sin deformar su proporción.
+
+Se añadieron cuatro regresiones C++: cobertura y contactos en esas 77 combinaciones, uniones de giro suave, extremos ocultos y protección de muestras de primer plano. El parser C++ no añadió errores respecto al archivo inicial y `git diff --check` pasó. No se ejecutaron compilaciones ni estas regresiones C++, siguiendo `AGENTS.md`; falta comprobar el resultado importado en GD.

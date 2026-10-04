@@ -45,10 +45,16 @@ namespace paimon::twitch {
 namespace {
 
 constexpr float kMargin = 12.f;
-constexpr float kSideWidth = 196.f;
+constexpr float kSideWidth = 204.f;
 constexpr float kRowHeight = 60.f;
 constexpr float kRowGap = 6.f;
-constexpr float kSideBtnScale = 0.52f;
+// two side buttons must fit in half the inner width each.
+constexpr float kSideBtnScale = 0.42f;
+constexpr float kStatsCardBottom = 8.f;
+constexpr float kStatsCardHeight = 28.f;
+constexpr float kStatColumnW = (kSideWidth - 28.f) / 4.f;
+constexpr float kStatValueScale = 0.36f;
+constexpr float kHintScale = 0.34f;
 
 constexpr char const* kQueueOpenBg = "GJ_button_01.png";
 constexpr char const* kQueueClosedBg = "GJ_button_06.png";
@@ -501,7 +507,7 @@ void TwitchRequestsLayer::buildHeader() {
     m_sourceChips = CCNode::create();
     m_sourceChips->setContentSize({pillWidth, 14.f});
     m_sourceChips->setAnchorPoint({0.5f, 0.5f});
-    m_sourceChips->setPosition({win.width / 2.f, pillY - 30.f});
+    m_sourceChips->setPosition({win.width / 2.f, pillY - 23.f});
     addChild(m_sourceChips, 5);
 
     float chipX = 0.f;
@@ -519,7 +525,7 @@ void TwitchRequestsLayer::buildHeader() {
 
         auto* name = CCLabelBMFont::create(shortPlatform(platform).c_str(), "chatFont.fnt");
         name->setAnchorPoint({0.f, 0.5f});
-        name->setScale(0.34f);
+        name->setScale(0.38f);
         name->setColor(platformAccent(platform));
         name->setPosition({11.f, 7.f});
         chip->addChild(name, 1);
@@ -562,15 +568,23 @@ void TwitchRequestsLayer::buildSidePanel() {
     panel->addChild(menu, 5);
 
     float const inner = kSideWidth - 28.f;
-    float y = height - 16.f;
+    float const midX = kSideWidth / 2.f;
+
+    // fixed slots from the top; the stats card owns the bottom strip.
+    float const captionY = height - 14.f;
+    float const inputY = height - 37.f;
+    float const commandCaptionY = height - 61.f;
+    float const commandInputY = height - 84.f;
+    float const primaryY = height - 110.f;
+    float const toggleRowY = height - 133.f;
+    float const hintY = (kStatsCardBottom + kStatsCardHeight + toggleRowY - 8.f) / 2.f;
 
     auto& manager = TwitchRequestManager::get();
     auto const platform = manager.selected();
 
     m_channelCaption = makeCaption(platformFieldName(platform));
-    m_channelCaption->setPosition({14.f, y});
+    m_channelCaption->setPosition({14.f, captionY});
     panel->addChild(m_channelCaption, 2);
-    y -= 22.f;
 
     m_channelInput = TextInput::create(inner, platformPlaceholder(platform), "chatFont.fnt");
     if (m_channelInput) {
@@ -578,34 +592,33 @@ void TwitchRequestsLayer::buildSidePanel() {
             "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.@:/?=");
         m_channelInput->setMaxCharCount(120);
         m_channelInput->setString(manager.channelSetting(platform));
-        m_channelInput->setPosition({kSideWidth / 2.f, y - 3.f});
+        m_channelInput->setPosition({midX, inputY});
         panel->addChild(m_channelInput, 3);
     }
 
     m_webUrlLabel = CCLabelBMFont::create("", "chatFont.fnt");
     m_webUrlLabel->setScale(0.4f);
     m_webUrlLabel->setColor(kGold);
-    m_webUrlLabel->setPosition({kSideWidth / 2.f, y - 3.f});
+    m_webUrlLabel->setPosition({midX, inputY});
     m_webUrlLabel->setVisible(false);
     panel->addChild(m_webUrlLabel, 3);
-    y -= 32.f;
 
     m_commandCaption = makeCaption("Comandos de esta plataforma");
-    m_commandCaption->setPosition({14.f, y});
+    m_commandCaption->setPosition({14.f, commandCaptionY});
     panel->addChild(m_commandCaption, 2);
-    y -= 22.f;
 
     m_commandInput = TextInput::create(inner, "Vacio: comandos generales", "chatFont.fnt");
     if (m_commandInput) {
         m_commandInput->setMaxCharCount(400);
         m_commandInput->setString(manager.commandsSetting(platform));
-        m_commandInput->setPosition({kSideWidth / 2.f, y - 3.f});
+        m_commandInput->setPosition({midX, commandInputY});
         panel->addChild(m_commandInput, 3);
     }
 
+    // web has no command field, so its link buttons sit right under the url.
     m_webMenu = CCMenu::create();
     m_webMenu->setContentSize({inner, 26.f});
-    m_webMenu->setPosition({kSideWidth / 2.f, y - 3.f});
+    m_webMenu->setPosition({midX, (inputY + commandInputY) / 2.f});
     m_webMenu->setTouchPriority(childTouchPrio());
     m_webMenu->setVisible(false);
     panel->addChild(m_webMenu, 5);
@@ -622,35 +635,32 @@ void TwitchRequestsLayer::buildSidePanel() {
         ->setGap(8.f)
         ->setAutoScale(false)
         ->setAxisAlignment(AxisAlignment::Center));
-    y -= 32.f;
 
     if (auto* primary = makeTextButton("Guardar y conectar", "GJ_button_01.png", 0.62f,
             [this] { this->onPrimary(); }, &m_primarySprite)) {
-        primary->setPosition({kSideWidth / 2.f, y});
+        primary->setPosition({midX, primaryY});
         menu->addChild(primary);
     }
-    y -= 27.f;
 
+    // queue + order share one row; stacked they ran into the stats card.
+    float const slotW = inner / 2.f;
     if (auto* queueToggle = makeTextButton("Cerrar requests",
             manager.isAccepting() ? kQueueOpenBg : kQueueClosedBg, kSideBtnScale,
             [this] { this->onToggleQueue(); }, &m_queueSprite)) {
-        queueToggle->setPosition({kSideWidth / 2.f, y});
+        queueToggle->setPosition({14.f + slotW / 2.f, toggleRowY});
         menu->addChild(queueToggle);
     }
-    y -= 27.f;
 
     if (auto* order = makeTextButton("Orden: aleatorio", "GJ_button_02.png", kSideBtnScale,
             [this] { this->onToggleOrder(); }, &m_orderSprite)) {
-        order->setPosition({kSideWidth / 2.f, y});
+        order->setPosition({14.f + slotW * 1.5f, toggleRowY});
         menu->addChild(order);
     }
-    y -= 24.f;
 
-    m_hintLabel = CCLabelBMFont::create("", "chatFont.fnt", inner / 0.34f, kCCTextAlignmentCenter);
-    m_hintLabel->setScale(0.34f);
+    m_hintLabel = CCLabelBMFont::create("", "chatFont.fnt");
+    m_hintLabel->setScale(kHintScale);
     m_hintLabel->setColor(kDesc);
-    m_hintLabel->setAnchorPoint({0.5f, 1.f});
-    m_hintLabel->setPosition({kSideWidth / 2.f, std::max(y, 68.f)});
+    m_hintLabel->setPosition({midX, hintY});
     panel->addChild(m_hintLabel, 2);
 
     buildStatsCard(panel, inner);
@@ -659,48 +669,50 @@ void TwitchRequestsLayer::buildSidePanel() {
 }
 
 void TwitchRequestsLayer::buildStatsCard(CCNode* panel, float width) {
-    constexpr float kCardH = 46.f;
     auto* card = CCNode::create();
-    card->setContentSize({width, kCardH});
-    card->setPosition({14.f, 10.f});
+    card->setContentSize({width, kStatsCardHeight});
+    card->setPosition({14.f, kStatsCardBottom});
     panel->addChild(card, 2);
 
-    if (auto* inset = paimon::ui::makeInset({width, kCardH}, 120)) {
+    if (auto* inset = paimon::ui::makeInset({width, kStatsCardHeight}, 120)) {
         card->addChild(inset, -1);
     }
 
-    // 2x2 grid: caption above a value, so the card stays short.
-    float const colW = width / 2.f;
-    auto makeStat = [&](char const* caption, int col, int rowFromTop, ccColor3B color) -> CCLabelBMFont* {
+    float const colW = width / 4.f;
+    auto makeStat = [&](char const* caption, int col, ccColor3B color) -> CCLabelBMFont* {
         float const cx = col * colW + colW / 2.f;
-        float const capY = kCardH - 10.f - rowFromTop * 22.f;
         auto* cap = CCLabelBMFont::create(caption, "chatFont.fnt");
         cap->setScale(0.3f);
         cap->setColor(kDesc);
-        cap->setPosition({cx, capY});
+        cap->setPosition({cx, kStatsCardHeight - 8.f});
         card->addChild(cap);
 
         auto* value = CCLabelBMFont::create("0", "bigFont.fnt");
-        value->setScale(0.4f);
+        value->setScale(kStatValueScale);
         value->setColor(color);
-        value->setPosition({cx, capY - 11.f});
+        value->setPosition({cx, 9.f});
         card->addChild(value);
         return value;
     };
 
-    m_statReceived = makeStat("Recibidos", 0, 0, {210, 215, 230});
-    m_statPlayed = makeStat("Jugados", 1, 0, {120, 245, 150});
-    m_statSkipped = makeStat("Saltados", 0, 1, {255, 150, 150});
-    m_statWait = makeStat("Espera", 1, 1, kGold);
+    m_statReceived = makeStat("Recibidos", 0, {210, 215, 230});
+    m_statPlayed = makeStat("Jugados", 1, {120, 245, 150});
+    m_statSkipped = makeStat("Saltados", 2, {255, 150, 150});
+    m_statWait = makeStat("Espera", 3, kGold);
 }
 
 void TwitchRequestsLayer::refreshStats() {
     auto& manager = TwitchRequestManager::get();
     auto const& stats = manager.sessionStats();
-    if (m_statReceived) m_statReceived->setString(std::to_string(stats.received).c_str());
-    if (m_statPlayed) m_statPlayed->setString(std::to_string(stats.played).c_str());
-    if (m_statSkipped) m_statSkipped->setString(std::to_string(stats.removed).c_str());
-    if (m_statWait) m_statWait->setString(waitLabel(manager.averageWaitSeconds()).c_str());
+    auto setStat = [](CCLabelBMFont* label, std::string const& text) {
+        if (!label) return;
+        label->setString(text.c_str());
+        label->limitLabelWidth(kStatColumnW - 4.f, kStatValueScale, 0.2f);
+    };
+    setStat(m_statReceived, std::to_string(stats.received));
+    setStat(m_statPlayed, std::to_string(stats.played));
+    setStat(m_statSkipped, std::to_string(stats.removed));
+    setStat(m_statWait, waitLabel(manager.averageWaitSeconds()));
 }
 
 void TwitchRequestsLayer::refreshSourceChips() {
@@ -756,16 +768,21 @@ void TwitchRequestsLayer::buildQueuePanel() {
         queueMenu->addChild(select);
     }
 
-    float const searchY = height - 38.f;
-    if (auto* glass = paimon::SpriteHelper::safeCreateWithFrameName("GJ_searchBtn_001.png")) {
-        glass->setScale(0.42f);
-        glass->setPosition({24.f, searchY});
+    float const searchY = height - 40.f;
+    float const searchLeft = 34.f;
+    if (auto* glass = paimon::SpriteHelper::safeCreateWithFrameName("gj_findBtn_001.png")) {
+        glass->setScale(16.f / std::max(glass->getContentSize().height, 1.f));
+        glass->setPosition({20.f, searchY});
         panel->addChild(glass, 3);
     }
-    m_searchInput = TextInput::create(width - 70.f, "Buscar nombre, ID o pedidor", "chatFont.fnt");
+    // gd's default 30pt input height crowds the header row.
+    constexpr float kSearchScale = 0.8f;
+    float const searchW = width - searchLeft - 10.f;
+    m_searchInput = TextInput::create(searchW / kSearchScale, "Buscar nombre, ID o pedidor", "chatFont.fnt");
     if (m_searchInput) {
         m_searchInput->setMaxCharCount(60);
-        m_searchInput->setPosition({(width + 10.f) / 2.f, searchY});
+        m_searchInput->setScale(kSearchScale);
+        m_searchInput->setPosition({searchLeft + searchW / 2.f, searchY});
         m_searchInput->setCommonFilter(CommonFilter::Any);
         m_searchInput->setCallback([this](std::string const&) { this->onSearchChanged(); });
         panel->addChild(m_searchInput, 3);
@@ -1035,6 +1052,7 @@ void TwitchRequestsLayer::refreshStatus() {
             hint = fmt::format("Vacio: {} no se lee", platformName(platform));
         }
         m_hintLabel->setString(hint.c_str());
+        m_hintLabel->limitLabelWidth(kSideWidth - 28.f, kHintScale, 0.22f);
     }
 }
 

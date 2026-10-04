@@ -4,12 +4,11 @@
 #include <Geode/modify/LevelSelectLayer.hpp>
 #include <Geode/modify/LevelPage.hpp>
 
+#include <Geode/binding/BoomScrollLayer.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/binding/GJGameLevel.hpp>
 #include <Geode/utils/cocos.hpp>
-
-#include <fmt/format.h>
 
 #include "../OfficialSlots.hpp"
 #include "../services/OfficialSlotStore.hpp"
@@ -23,11 +22,12 @@
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 
+#include <algorithm>
 #include <cmath>
-#include <cstring>
 #include <functional>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 using namespace geode::prelude;
@@ -55,36 +55,42 @@ void refresh() {
 
 namespace paimon::officialslots {
 
-// pages carrying one of ours; vanilla pages are keyed by official id.
-constexpr char const* kSlotPagePrefix = "paimon-slot:"_spr;
+// stand-ins and the coming-soon pages both use ids <= 0, so the untouched
+// vanilla list is kept to tell them apart on later syncs.
+constexpr char const* kVanillaLevelsKey = "official-slots-vanilla-levels"_spr;
 
-std::string pageIdentity(LevelPage* page) {
-    if (!page) return {};
-    std::string const tag = page->getID();
-    if (tag.rfind(kSlotPagePrefix, 0) == 0) {
-        return SlotStore::slotKey(tag.substr(std::strlen(kSlotPagePrefix)));
-    }
-    if (page->m_level && isOfficialId(page->m_level->m_levelID)) {
-        return SlotStore::officialKey(page->m_level->m_levelID);
-    }
-    return {};
+std::optional<Slot> slotForLevel(GJGameLevel* level) {
+    auto slotId = SlotLevelCache::get().slotIdForLevel(level);
+    if (!slotId) return std::nullopt;
+    return SlotStore::get().find(*slotId);
 }
 
-std::optional<Slot> slotForPage(LevelPage* page) {
-    if (!page) return std::nullopt;
-    std::string const tag = page->getID();
-    if (tag.rfind(kSlotPagePrefix, 0) != 0) return std::nullopt;
-    return SlotStore::get().find(tag.substr(std::strlen(kSlotPagePrefix)));
+std::string levelIdentity(GJGameLevel* level) {
+    if (!level) return {};
+    if (auto slotId = SlotLevelCache::get().slotIdForLevel(level)) {
+        return SlotStore::slotKey(*slotId);
+    }
+    if (isOfficialId(level->m_levelID)) return SlotStore::officialKey(level->m_levelID);
+    return {};
 }
 
 void syncDots(BoomScrollLayer* scroll);
 
-// reconciles the live pages with the store order: appended slots get real
-// pages, hidden officials lose theirs. runs on open and after every mutation.
+// rewrites the level list behind the scroll layer in store order: appended
+// slots get an entry, hidden officials lose theirs. runs on open and after every mutation.
 void syncPages(LevelSelectLayer* select) {
     if (!select || !slotsEnabled()) return;
     auto* scroll = select->m_scrollLayer;
-    if (!scroll || !scroll->m_pages) return;
+    // levelselect recycles three pages over m_dynamicObjects. removing those pages
+    // leaves getPage wrapping over a count of 0, which hung the game on open.
+    if (!scroll || !scroll->m_dynamic || !scroll->m_dynamicObjects || !scroll->m_pages) return;
+    if (scroll->m_pages->count() == 0 || scroll->m_dynamicObjects->count() == 0) return;
+
+    auto* vanilla = typeinfo_cast<CCArray*>(scroll->getUserObject(kVanillaLevelsKey));
+    if (!vanilla) {
+        vanilla = CCArray::createWithArray(scroll->m_dynamicObjects);
+        scroll->setUserObject(kVanillaLevelsKey, vanilla);
+    }
 
     auto& store = SlotStore::get();
     std::vector<std::string> desired;
@@ -99,52 +105,75 @@ void syncPages(LevelSelectLayer* select) {
     // levelselect with no page at all is outside what the game handles.
     if (desired.empty()) return;
 
-    std::string current;
-    int const pageCount = static_cast<int>(scroll->m_pages->count());
-    if (scroll->m_page >= 0 && scroll->m_page < pageCount) {
-        current = pageIdentity(
-            typeinfo_cast<LevelPage*>(scroll->m_pages->objectAtIndex(scroll->m_page)));
+    int const oldIndex = scroll->getRelativePageForNum(scroll->m_page);
+    std::string const current = levelIdentity(
+        typeinfo_cast<GJGameLevel*>(scroll->m_dynamicObjects->objectAtIndex(oldIndex)));
+
+    std::unordered_map<int, GJGameLevel*> officials;
+    auto* extras = CCArray::create();
+    for (auto* obj : CCArrayExt<CCObject*>(vanilla)) {
+        auto* level = typeinfo_cast<GJGameLevel*>(obj);
+        if (level && isOfficialId(level->m_levelID)) {
+            officials[level->m_levelID] = level;
+        } else if (obj) {
+            extras->addObject(obj);
+        }
     }
 
-    for (int i = pageCount - 1; i >= 0; --i) {
-        scroll->removePageWithNumber(i);
-    }
     auto* glm = GameLevelManager::get();
+    auto* levels = CCArray::create();
+    std::vector<std::string> keys;
     for (auto const& key : desired) {
         int officialId = 0;
-        LevelPage* page = nullptr;
+        GJGameLevel* level = nullptr;
         if (SlotStore::officialKeyId(key, officialId)) {
-            if (glm) page = LevelPage::create(glm->getMainLevel(officialId, false));
+            auto it = officials.find(officialId);
+            if (it != officials.end()) {
+                level = it->second;
+            } else if (glm) {
+                level = glm->getMainLevel(officialId, false);
+            }
         } else if (auto slot = store.find(key.substr(2))) {
-            page = LevelPage::create(SlotLevelCache::get().levelForSlot(*slot));
-            if (page) page->setID(fmt::format("{}{}", kSlotPagePrefix, slot->id));
+            level = SlotLevelCache::get().levelForSlot(*slot);
         }
-        if (page) scroll->addPage(page);
+        if (!level) continue;
+        levels->addObject(level);
+        keys.push_back(key);
     }
-    scroll->updatePages();
+    if (levels->count() == 0) return;
+    levels->addObjectsFromArray(extras);
+
+    int target = -1;
+    if (!current.empty()) {
+        for (std::size_t i = 0; i < keys.size(); ++i) {
+            if (keys[i] == current) {
+                target = static_cast<int>(i);
+                break;
+            }
+        }
+    }
+    if (target < 0) target = std::min(oldIndex, static_cast<int>(levels->count()) - 1);
+
+    // the recycled pages may still point at levels this swap drops.
+    Ref<CCArray> previous = CCArray::createWithArray(scroll->m_dynamicObjects);
+    scroll->m_dynamicObjects->removeAllObjects();
+    scroll->m_dynamicObjects->addObjectsFromArray(levels);
     syncDots(scroll);
 
-    int target = 0;
-    for (std::size_t i = 0; i < desired.size(); ++i) {
-        if (!current.empty() && desired[i] == current) {
-            target = static_cast<int>(i);
-            break;
-        }
-    }
     scroll->m_page = target;
     scroll->instantMoveToPage(target);
 
-    for (auto* child : CCArrayExt<CCNode*>(scroll->m_pages)) {
-        if (auto* page = typeinfo_cast<LevelPage*>(child)) {
-            page->updateDynamicPage(page->m_level);
-        }
+    for (int i = target - 1; i <= target + 1; ++i) {
+        auto* page = scroll->getPage(i);
+        auto* level = scroll->m_dynamicObjects->objectAtIndex(scroll->getRelativePageForNum(i));
+        if (page && level) select->updatePageWithObject(page, level);
     }
 }
 
 void syncDots(BoomScrollLayer* scroll) {
-    if (!scroll || !scroll->m_dots || !scroll->m_pages) return;
+    if (!scroll || !scroll->m_dots || !scroll->m_dynamicObjects) return;
     auto* dots = scroll->m_dots;
-    unsigned const want = scroll->m_pages->count();
+    unsigned const want = scroll->m_dynamicObjects->count();
     while (dots->count() > want) {
         unsigned const last = dots->count() - 1;
         if (auto* dot = typeinfo_cast<CCNode*>(dots->objectAtIndex(last))) {
@@ -228,8 +257,8 @@ class $modify(PaimonOfficialSlotPage, LevelPage) {
         if (!level) return;
         if (!slotsEnabled()) return;
 
-        // appended slots live on their own page, tagged at creation.
-        if (auto slot = paimon::officialslots::slotForPage(this)) {
+        // appended slots arrive as their own stand-in level.
+        if (auto slot = paimon::officialslots::slotForLevel(level)) {
             if (slot->enabled) this->paintSlot(*slot);
             return;
         }
@@ -331,7 +360,7 @@ class $modify(PaimonOfficialSlotPage, LevelPage) {
 
         // our own pages never reach vanilla: the stand-in level would break
         // the flows that key off the id.
-        if (auto slot = paimon::officialslots::slotForPage(this)) {
+        if (auto slot = paimon::officialslots::slotForLevel(m_level)) {
             if (slot->enabled) paimon::officialslots::openSlotLevel(*slot);
             return true;
         }
@@ -378,34 +407,31 @@ class $modify(PaimonOfficialSlotSelect, LevelSelectLayer) {
         return true;
     }
 
-    // current page read at click time, so the buttons never track swipes.
-    LevelPage* currentPage() {
-        if (!m_scrollLayer || !m_scrollLayer->m_extendedLayer || !m_scrollLayer->m_pages) {
+    // read at click time from the level list, since the three pages are recycled.
+    GJGameLevel* currentLevel() {
+        auto* scroll = m_scrollLayer;
+        if (!scroll || !scroll->m_extendedLayer || !scroll->m_dynamic || !scroll->m_dynamicObjects) {
             return nullptr;
         }
-        float const width = m_scrollLayer->getContentSize().width;
+        if (scroll->m_dynamicObjects->count() == 0) return nullptr;
+        float const width = scroll->getContentSize().width;
         if (width <= 0.f) return nullptr;
         int const page = static_cast<int>(
-            std::round(-m_scrollLayer->m_extendedLayer->getPositionX() / width));
-        if (page < 0 || page >= static_cast<int>(m_scrollLayer->m_pages->count())) {
-            return nullptr;
-        }
-        return typeinfo_cast<LevelPage*>(m_scrollLayer->m_pages->objectAtIndex(page));
+            std::round(-scroll->m_extendedLayer->getPositionX() / width));
+        return typeinfo_cast<GJGameLevel*>(
+            scroll->m_dynamicObjects->objectAtIndex(scroll->getRelativePageForNum(page)));
     }
 
     int currentOfficialId() {
-        auto* page = this->currentPage();
-        if (!page || !page->m_level) return -1;
-        int const id = page->m_level->m_levelID;
+        auto* level = this->currentLevel();
+        if (!level) return -1;
+        int const id = level->m_levelID;
         return paimon::officialslots::isOfficialId(id) ? id : -1;
     }
 
     std::string currentSlotId() {
-        auto* page = this->currentPage();
-        if (!page) return {};
-        std::string const tag = page->getID();
-        if (tag.rfind(paimon::officialslots::kSlotPagePrefix, 0) != 0) return {};
-        return tag.substr(std::strlen(paimon::officialslots::kSlotPagePrefix));
+        auto slotId = paimon::officialslots::SlotLevelCache::get().slotIdForLevel(this->currentLevel());
+        return slotId ? *slotId : std::string{};
     }
 
     void addSlotButtons() {

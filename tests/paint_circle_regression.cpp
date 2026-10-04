@@ -1606,6 +1606,117 @@ bool paintFragmentsPreserveInteriorAndForeground() {
     });
 }
 
+bool paintRoundFragmentsPreserveCoverage() {
+    constexpr int size = 48;
+    int roundedCases = 0;
+    for (float angle : {0.f, 7.f, 15.f, 26.f, 45.f, 63.f, 83.f, 90.f, 117.f, 155.f, 179.f}) {
+        for (float thickness : {0.7f, 1.f, 1.5f, 2.f, 3.f, 5.f, 8.f}) {
+            Primitive const original{20.2f, 20.3f, 14.f, thickness, angle,
+                0, PrimitiveKind::Stroke, 1};
+            auto const originalForm = xformOf(original);
+            std::vector<int> positions;
+            std::vector<std::uint8_t> target(size * size, 0);
+            for (int y = 0; y < size; ++y) {
+                for (int x = 0; x < size; ++x) {
+                    if (!originalForm.contains(x + 0.5f, y + 0.5f)) continue;
+                    positions.push_back(y * size + x);
+                    target[static_cast<std::size_t>(y) * size + x] = 1;
+                }
+            }
+            std::vector<Primitive> objects{original};
+            roundPaintFragmentEnds(objects, positions, size, size);
+            roundedCases += objects.size() > 1;
+            auto const forms = xformsOf(objects);
+            auto covered = [&](float x, float y) {
+                return std::any_of(forms.begin(), forms.end(), [&](ShapeXform const& form) {
+                    return form.contains(x, y);
+                });
+            };
+            for (int position : positions) {
+                int const x = position % size, y = position / size;
+                if (!covered(x + 0.5f, y + 0.5f)) return false;
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        int const xx = x + dx, yy = y + dy;
+                        if ((dx == 0 && dy == 0) || xx < 0 || yy < 0 || xx >= size || yy >= size ||
+                            !target[static_cast<std::size_t>(yy) * size + xx]) continue;
+                        if (dx != 0 && dy != 0 &&
+                            (target[static_cast<std::size_t>(y) * size + xx] ||
+                             target[static_cast<std::size_t>(yy) * size + x])) continue;
+                        float const px = x + 0.5f + dx * 0.5f;
+                        float const py = y + 0.5f + dy * 0.5f;
+                        if (originalForm.contains(px, py) && !covered(px, py)) return false;
+                    }
+                }
+                bool const interior = x > 0 && y > 0 && x + 1 < size && y + 1 < size &&
+                    target[position - 1] && target[position + 1] &&
+                    target[position - size] && target[position + size];
+                if (!interior) continue;
+                for (int sy = 0; sy < 8; ++sy) {
+                    for (int sx = 0; sx < 8; ++sx) {
+                        float const px = x + (sx + 0.5f) / 8.f;
+                        float const py = y + (sy + 0.5f) / 8.f;
+                        if (originalForm.contains(px, py) && !covered(px, py)) return false;
+                    }
+                }
+            }
+            for (auto const& object : objects) {
+                bool const expands = forEachSample(xformOf(object), size, size, 8, [&](int x, int y) {
+                    return !originalForm.contains((x + 0.5f) / 8.f, (y + 0.5f) / 8.f);
+                });
+                if (expands) return false;
+                if (object.kind != PrimitiveKind::Circle) continue;
+                for (int y = 0; y < size; ++y) {
+                    for (int x = 0; x < size; ++x) {
+                        if (target[static_cast<std::size_t>(y) * size + x]) continue;
+                        for (float dy : {0.4f, 0.5f, 0.6f}) {
+                            for (float dx : {0.4f, 0.5f, 0.6f}) {
+                                if (xformOf(object).contains(x + dx, y + dy)) return false;
+                            }
+                        }
+                    }
+                }
+            }
+            auto const count = objects.size();
+            roundPaintFragmentEnds(objects, positions, size, size);
+            if (objects.size() != count) return false;
+        }
+    }
+    std::cout << "paint-round-fragments: cases=77 rounded=" << roundedCases << '\n';
+    return roundedCases >= 10;
+}
+
+bool paintSmoothJointsRoundShallowBends() {
+    float const shallow = std::cos(24.f * kPi / 180.f);
+    return needsPaintRoundJoint(shallow, 1.f, false) &&
+        !needsPaintRoundJoint(shallow, 1.f, true) &&
+        !needsPaintRoundJoint(1.f, 3.f, false) &&
+        !needsPaintRoundJoint(shallow, 0.4f, false);
+}
+
+bool paintRoundFragmentsKeepHiddenEnds() {
+    constexpr int size = 48;
+    Primitive const stroke{20.2f, 20.3f, 14.f, 1.f, 26.f, 0, PrimitiveKind::Stroke, 1};
+    std::vector<Primitive> objects{stroke,
+        {20.2f, 20.3f, 20.f, 20.f, 0.f, 0, PrimitiveKind::Block, 0}};
+    std::vector<int> positions;
+    for (int y = 10; y < 30; ++y) {
+        for (int x = 10; x < 30; ++x) positions.push_back(y * size + x);
+    }
+    roundPaintFragmentEnds(objects, positions, size, size);
+    return objects.size() == 2 && objects.front().width == stroke.width &&
+        objects.front().height == stroke.height;
+}
+
+bool paintRoundCapsProtectForegroundSamples() {
+    constexpr int size = 24;
+    std::vector<std::uint8_t> blocked(size * size, 0);
+    blocked[10 * size + 10] = 1;
+    Primitive const cap{10.f, 10.f, 1.2f, 1.2f, 0.f, 0, PrimitiveKind::Circle, 1};
+    return !xformOf(cap).contains(10.5f, 10.5f) &&
+        coversBlocked(cap, size, size, blocked);
+}
+
 bool autoPaintKeepsSmallAndFlatSources() {
     auto const small = animation(290, 290, 1, 180, 180, 180);
     auto const flat = animation(736, 736, 1, 180, 180, 180);
@@ -1703,6 +1814,10 @@ int main() {
     bool const f04 = paintFragmentsKeepIsolatedDetails();
     bool const f05 = paintFragmentsUseRoundPatches();
     bool const f06 = paintFragmentsPreserveInteriorAndForeground();
+    bool const f07 = paintRoundFragmentsPreserveCoverage();
+    bool const f08 = paintSmoothJointsRoundShallowBends();
+    bool const f09 = paintRoundFragmentsKeepHiddenEnds();
+    bool const f10 = paintRoundCapsProtectForegroundSamples();
     bool const a01 = autoPaintKeepsSmallAndFlatSources();
     bool const a02 = autoPaintRaisesDetailedSources();
     bool const a03 = autoPaintChecksMiddleFrame();
@@ -1757,9 +1872,14 @@ int main() {
     if (!f04) std::cerr << "FAIL: paintFragmentsKeepIsolatedDetails\n";
     if (!f05) std::cerr << "FAIL: paintFragmentsUseRoundPatches\n";
     if (!f06) std::cerr << "FAIL: paintFragmentsPreserveInteriorAndForeground\n";
+    if (!f07) std::cerr << "FAIL: paintRoundFragmentsPreserveCoverage\n";
+    if (!f08) std::cerr << "FAIL: paintSmoothJointsRoundShallowBends\n";
+    if (!f09) std::cerr << "FAIL: paintRoundFragmentsKeepHiddenEnds\n";
+    if (!f10) std::cerr << "FAIL: paintRoundCapsProtectForegroundSamples\n";
     if (!a01) std::cerr << "FAIL: autoPaintKeepsSmallAndFlatSources\n";
     if (!a02) std::cerr << "FAIL: autoPaintRaisesDetailedSources\n";
     if (!a03) std::cerr << "FAIL: autoPaintChecksMiddleFrame\n";
     if (!a04) std::cerr << "FAIL: autoPaintPreservesResolutionDuringSourceScaling\n";
-    return pass && f01 && f02 && f03 && f04 && f05 && f06 && a01 && a02 && a03 && a04 ? 0 : 1;
+    return pass && f01 && f02 && f03 && f04 && f05 && f06 && f07 && f08 && f09 && f10 &&
+        a01 && a02 && a03 && a04 ? 0 : 1;
 }

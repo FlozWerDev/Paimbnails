@@ -147,6 +147,14 @@ GJGameLevel* SlotLevelCache::levelForSlot(Slot const& slot) {
     return level;
 }
 
+std::optional<std::string> SlotLevelCache::slotIdForLevel(GJGameLevel const* level) const {
+    if (!level) return std::nullopt;
+    for (auto const& [slotId, entry] : m_levels) {
+        if (entry.level.data() == level) return slotId;
+    }
+    return std::nullopt;
+}
+
 void SlotLevelCache::invalidate() {
     m_levels.clear();
 }

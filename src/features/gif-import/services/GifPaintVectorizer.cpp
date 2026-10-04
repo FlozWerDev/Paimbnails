@@ -364,7 +364,11 @@ bool coversBlocked(
     for (int y = box[1]; y <= box[3]; ++y) {
         for (int x = box[0]; x <= box[2]; ++x) {
             if (!blocked[static_cast<std::size_t>(y) * sourceWidth + x]) continue;
-            if (placed.contains(x + 0.5f, y + 0.5f)) return true;
+            for (float dy : kCenterOffsets) {
+                for (float dx : kCenterOffsets) {
+                    if (placed.contains(x + dx, y + dy)) return true;
+                }
+            }
         }
     }
     return false;
@@ -549,6 +553,13 @@ bool needsRoundJoint(float dot, float thickness, float excess = kRoundJointExces
     float const cosHalf =
         std::max(std::cos(std::acos(clamped) * 0.5f), 0.05f);
     return thickness * 0.5f * (1.f / cosHalf - 1.f) >= excess;
+}
+
+bool needsPaintRoundJoint(float dot, float thickness, bool gridExact) {
+    // A twelve-degree bend can expose a square corner on a smooth stroke.
+    if (!gridExact) return thickness >= kRoundCapMinThickness && dot < 0.9781476f;
+    return needsRoundJoint(dot, thickness,
+        thickness <= 1.6f ? kThinRoundJointExcess : kRoundJointExcess);
 }
 
 // no room for a disc: place nothing, the caller lengthens the stroke.
@@ -744,15 +755,14 @@ void appendBand(
         if (!geomValid[previous] || !geomValid[next]) return;
         float const diameter =
             std::max(geoms[previous].thickness, geoms[next].thickness);
-        // turns on 1-2 cell runs are stepping, not corners.
-        if (measured[previous].length < 2.f || measured[next].length < 2.f) {
+        // Short pixel steps must not grow into round bulges.
+        if (gridExact &&
+            (measured[previous].length < 2.f || measured[next].length < 2.f)) {
             return;
         }
         float const dot = directionDot(
             measured[previous].direction, measured[next].direction);
-        float const jointExcess = diameter <= 1.6f
-            ? kThinRoundJointExcess : kRoundJointExcess;
-        if (!needsRoundJoint(dot, diameter, jointExcess)) {
+        if (!needsPaintRoundJoint(dot, diameter, gridExact)) {
             return;
         }
         auto const& before = geoms[previous];
@@ -802,7 +812,7 @@ void appendBand(
                 return permitted[static_cast<std::size_t>(cellY) * sourceWidth +
                                  cellX] != 0;
             };
-            if (insidePermitted(c0x, c0y) && insidePermitted(c1x, c1y) &&
+            if (gridExact && insidePermitted(c0x, c0y) && insidePermitted(c1x, c1y) &&
                 insidePermitted(tipX, tipY)) {
                 return;
             }
@@ -823,8 +833,15 @@ void appendBand(
                     known.y - center.y - static_cast<float>(region.offsetY)) <
                 std::min(known.width, diameter) * 0.5f) {
                 float const grown = std::max(known.width, diameter);
-                bandDiscs[index].width = grown;
-                bandDiscs[index].height = grown;
+                Primitive candidate = known;
+                candidate.width = grown;
+                candidate.height = grown;
+                if (coversBlocked(candidate, sourceWidth, sourceHeight, blocked) ||
+                    !fitsPaintBoundary(candidate, permitted, sourceWidth, sourceHeight,
+                        gridExact)) {
+                    continue;
+                }
+                bandDiscs[index] = candidate;
                 bandEndJoint[previous] = static_cast<int>(index);
                 bandStartJoint[next] = static_cast<int>(index);
                 return;
@@ -838,7 +855,7 @@ void appendBand(
             PrimitiveKind::Circle, static_cast<std::int16_t>(layer)
         };
         if (coversBlocked(cap, sourceWidth, sourceHeight, blocked)) return;
-        if (!fitsPaintBoundary(cap, permitted, sourceWidth, sourceHeight)) return;
+        if (!fitsPaintBoundary(cap, permitted, sourceWidth, sourceHeight, gridExact)) return;
         int const index = static_cast<int>(bandDiscs.size());
         bandDiscs.push_back(cap);
         bandEndJoint[previous] = index;
@@ -921,7 +938,9 @@ bool appendChain(
     auto const skeleton = thin(component, sourceWidth);
     auto const paths = skeletonPaths(skeleton);
     // axis capped at half thickness, else the strip crosses the drawing.
-    float const tolerance = std::clamp(radius * 0.5f, 0.6f, 1.3f);
+    float const tolerance = gridExact
+        ? std::clamp(radius * 0.5f, 0.6f, 1.3f)
+        : std::clamp(radius * 0.25f, 0.25f, 0.6f);
 
     struct Line {
         std::vector<Point> points;
@@ -971,10 +990,15 @@ bool appendChain(
             return dist;
         };
 
+        bool const closed = !gridExact && points.size() > 3 &&
+            pointDistance(points.front(), points.back()) < 0.01f;
         std::vector<Point> centered = points;
         for (std::size_t i = 0; i < points.size(); ++i) {
-            Point const prev = (i > 0) ? points[i - 1] : points[i];
-            Point const next = (i + 1 < points.size()) ? points[i + 1] : points[i];
+            bool const seam = closed && (i == 0 || i + 1 == points.size());
+            Point const prev = seam ? points[points.size() - 2]
+                : (i > 0) ? points[i - 1] : points[i];
+            Point const next = seam ? points[1]
+                : (i + 1 < points.size()) ? points[i + 1] : points[i];
             float const tx = next.x - prev.x;
             float const ty = next.y - prev.y;
             float const len = std::hypot(tx, ty);
@@ -987,7 +1011,14 @@ bool appendChain(
             centered[i].y = points[i].y + normal.y * shift;
         }
 
-        auto reduced = simplify(centered, tolerance);
+        std::vector<Point> reduced;
+        if (closed) {
+            centered.pop_back();
+            reduced = simplifyLoop(smoothLoop(centered, 2), tolerance);
+            if (reduced.size() >= 3) reduced.push_back(reduced.front());
+        } else {
+            reduced = simplify(gridExact ? centered : smoothPath(centered, 2), tolerance);
+        }
         if (reduced.size() < 2) continue;
         float length = 0.f;
         for (std::size_t i = 1; i < reduced.size(); ++i) {
@@ -1176,17 +1207,24 @@ bool appendChain(
             }
             float const diameter = std::max(
                 thicknessOf[slot][vertex - 1], thicknessOf[slot][vertex]);
-            float const jointExcess = diameter <= 1.6f
-                ? kThinRoundJointExcess : kRoundJointExcess;
-            if (!needsRoundJoint(
+            if (!needsPaintRoundJoint(
                     directionDot(
                         measured[vertex - 1].direction,
                         measured[vertex].direction),
-                    diameter, jointExcess)) {
+                    diameter, gridExact)) {
                 continue;
             }
             bidJoint(reduced[vertex], diameter, slot, vertex - 1, false);
             bidJoint(reduced[vertex], diameter, slot, vertex, true);
+        }
+        if (!gridExact && pointDistance(reduced.front(), reduced.back()) < 0.01f) {
+            float const diameter = std::max(
+                thicknessOf[slot].front(), thicknessOf[slot].back());
+            if (needsPaintRoundJoint(directionDot(
+                    measured.back().direction, measured.front().direction), diameter, false)) {
+                bidJoint(reduced.front(), diameter, slot, segments - 1, false);
+                bidJoint(reduced.front(), diameter, slot, 0, true);
+            }
         }
         for (int end = 0; end < 2; ++end) {
             if (!line.joined[static_cast<std::size_t>(end)]) continue;
@@ -1196,9 +1234,7 @@ bool appendChain(
             float const known =
                 line.jointDot[static_cast<std::size_t>(end)];
             if (known < -0.999f) continue;
-            float const jointExcess = thicknessOf[slot][segment] <= 1.6f
-                ? kThinRoundJointExcess : kRoundJointExcess;
-            if (!needsRoundJoint(known, thicknessOf[slot][segment], jointExcess)) {
+            if (!needsPaintRoundJoint(known, thicknessOf[slot][segment], gridExact)) {
                 continue;
             }
             bidJoint(
@@ -3338,6 +3374,125 @@ void coalescePaintFragments(
     }
 }
 
+void roundPaintFragmentEnds(
+    std::vector<Primitive>& objects,
+    std::vector<int> const& positions,
+    int width,
+    int height
+) {
+    if (objects.empty() || positions.empty() ||
+        std::none_of(objects.begin(), objects.end(), [](Primitive const& object) {
+            return object.kind == PrimitiveKind::Stroke && object.layer >= 0;
+        })) {
+        return;
+    }
+    std::vector<std::uint8_t> target(static_cast<std::size_t>(width) * height, 0);
+    for (int position : positions) target[static_cast<std::size_t>(position)] = 1;
+    auto const forms = xformsOf(objects);
+    constexpr int bucketSize = 4;
+    int const columns = (width + bucketSize - 1) / bucketSize;
+    int const rows = (height + bucketSize - 1) / bucketSize;
+    std::vector<std::vector<std::size_t>> buckets(static_cast<std::size_t>(columns) * rows);
+    for (std::size_t index = 0; index < forms.size(); ++index) {
+        auto const box = xformBox(forms[index], width, height);
+        if (box[2] < box[0] || box[3] < box[1]) continue;
+        for (int y = box[1] / bucketSize; y <= box[3] / bucketSize; ++y) {
+            for (int x = box[0] / bucketSize; x <= box[2] / bucketSize; ++x) {
+                buckets[static_cast<std::size_t>(y) * columns + x].push_back(index);
+            }
+        }
+    }
+    auto coveredByNeighbor = [&](Point point, std::size_t owner) {
+        int const x = static_cast<int>(std::floor(point.x));
+        int const y = static_cast<int>(std::floor(point.y));
+        if (x < 0 || y < 0 || x >= width || y >= height) return false;
+        auto const& bucket = buckets[static_cast<std::size_t>(y / bucketSize) * columns +
+            x / bucketSize];
+        return std::any_of(bucket.begin(), bucket.end(), [&](std::size_t index) {
+            return index != owner && objects[index].color == objects[owner].color &&
+                forms[index].contains(point.x, point.y);
+        });
+    };
+    std::vector<Primitive> rounded;
+    rounded.reserve(objects.size());
+    for (std::size_t index = 0; index < objects.size(); ++index) {
+        auto const& object = objects[index];
+        float const length = std::max(object.width, object.height);
+        float const thickness = std::min(object.width, object.height);
+        if (object.kind != PrimitiveKind::Stroke || object.layer < 0 ||
+            thickness < kRoundCapMinThickness || thickness > 8.f ||
+            length > 32.f || length <= thickness * 1.35f) {
+            rounded.push_back(object);
+            continue;
+        }
+        Primitive body = object;
+        if (body.height > body.width) {
+            std::swap(body.width, body.height);
+            body.rotation += 90.f;
+        }
+        float const angle = body.rotation * kPi / 180.f;
+        Point const direction{std::cos(angle), std::sin(angle)};
+        Point const normal{-direction.y, direction.x};
+        auto const support = samplePaintFragment(forms[index], target, width, height);
+        if (support.centers.empty()) {
+            rounded.push_back(object);
+            continue;
+        }
+        std::vector<Primitive> caps;
+        for (float sign : {-1.f, 1.f}) {
+            Point const edge{object.x + direction.x * sign * length * 0.5f,
+                object.y + direction.y * sign * length * 0.5f};
+            Point const first{edge.x + normal.x * thickness * 0.49f,
+                edge.y + normal.y * thickness * 0.49f};
+            Point const second{edge.x - normal.x * thickness * 0.49f,
+                edge.y - normal.y * thickness * 0.49f};
+            if (coveredByNeighbor(first, index) && coveredByNeighbor(second, index)) continue;
+            for (float ratio : {0.5f, 0.35f, 0.25f}) {
+                float const depth = thickness * ratio;
+                Primitive cap{edge.x - direction.x * sign * depth,
+                    edge.y - direction.y * sign * depth,
+                    depth * 2.f, thickness, body.rotation, object.color,
+                    PrimitiveKind::Circle, object.layer};
+                if (!fitsPaintBoundary(cap, target, width, height, false)) continue;
+                Primitive candidate = body;
+                candidate.width -= depth;
+                candidate.x -= direction.x * sign * depth * 0.5f;
+                candidate.y -= direction.y * sign * depth * 0.5f;
+                auto const candidateForm = xformOf(candidate);
+                auto const capForm = xformOf(cap);
+                auto const capForms = xformsOf(caps);
+                // Preserve interior samples and thin-line contacts while removing exposed corners.
+                bool const preserves = std::all_of(support.required.begin(), support.required.end(),
+                    [&](Point point) {
+                        return candidateForm.contains(point.x, point.y) ||
+                            capForm.contains(point.x, point.y) ||
+                            std::any_of(capForms.begin(), capForms.end(), [&](ShapeXform const& form) {
+                                return form.contains(point.x, point.y);
+                            });
+                    });
+                if (!preserves) continue;
+                body = candidate;
+                caps.push_back(cap);
+                break;
+            }
+        }
+        rounded.push_back(caps.empty() ? object : body);
+        rounded.insert(rounded.end(), caps.begin(), caps.end());
+    }
+    objects = std::move(rounded);
+}
+
+void finishPaintFragments(
+    std::vector<Primitive>& objects,
+    std::vector<int> const& positions,
+    int width,
+    int height,
+    std::vector<std::uint8_t> const& blocked
+) {
+    coalescePaintFragments(objects, positions, width, height, blocked);
+    roundPaintFragmentEnds(objects, positions, width, height);
+}
+
 // Only objects with no visible contribution can be discarded.
 void dropRedundantObjects(std::vector<Primitive>& objects, int width, int height) {
     std::size_t const samples =
@@ -3617,7 +3772,7 @@ void smoothPaintFragments(
                 blocked[cell] = other >= 0 && other < static_cast<int>(ranks.size()) &&
                     ranks[static_cast<std::size_t>(other)] > ranks[color];
             }
-            coalescePaintFragments(fragments, positions[color], width, height, blocked);
+            finishPaintFragments(fragments, positions[color], width, height, blocked);
         }
         result.insert(result.end(), fragments.begin(), fragments.end());
     }
@@ -3933,7 +4088,7 @@ std::vector<Primitive> vectorizePaint(
                     output, spikeRepairs, width, height, color, base + 2,
                     blocked, spikeRepairs, empty, gridExact);
             }
-            if (!gridExact) coalescePaintFragments(output, positions, width, height, blocked);
+            if (!gridExact) finishPaintFragments(output, positions, width, height, blocked);
             return output;
         }
     }
@@ -3963,7 +4118,7 @@ std::vector<Primitive> vectorizePaint(
                         fitted, spikeRepairs, width, height, color, base + 2,
                         blocked, spikeRepairs, empty, gridExact);
                 }
-                if (!gridExact) coalescePaintFragments(fitted, whole, width, height, blocked);
+                if (!gridExact) finishPaintFragments(fitted, whole, width, height, blocked);
                 output.insert(output.end(), fitted.begin(), fitted.end());
                 continue;
             }
@@ -4039,7 +4194,8 @@ std::vector<Primitive> vectorizePaint(
                         contourThickness(region, contour, band, gridExact);
                     refined.push_back(refineContour(
                         contour, local <= 2.5f ? 1 : 2,
-                        std::clamp(local * 0.3f, 0.3f, kSmoothTolerance)));
+                        gridExact ? std::clamp(local * 0.3f, 0.3f, kSmoothTolerance)
+                                  : std::clamp(local * 0.15f, 0.18f, 0.45f)));
                 }
                 std::vector<Primitive> outline;
                 for (auto const& contour : refined) {
@@ -4121,7 +4277,7 @@ std::vector<Primitive> vectorizePaint(
         }
     }
 
-    if (!gridExact) coalescePaintFragments(output, positions, width, height, blocked);
+    if (!gridExact) finishPaintFragments(output, positions, width, height, blocked);
 
     std::stable_sort(output.begin(), output.end(), [](Primitive const& left, Primitive const& right) {
         return left.layer < right.layer;

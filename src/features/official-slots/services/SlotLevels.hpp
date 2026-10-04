@@ -50,6 +50,9 @@ public:
     // null only while the level id download is in flight; valid until invalidate().
     GJGameLevel* levelForSlot(Slot const& slot);
 
+    // levelselect recycles its pages, so a page is only known by the level it shows.
+    std::optional<std::string> slotIdForLevel(GJGameLevel const* level) const;
+
     void invalidate();
     void invalidate(std::string const& slotId);
 

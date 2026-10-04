@@ -335,6 +335,15 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
 
         int page = static_cast<int>(std::round(-pagesLayer->getPositionX() / width));
 
+        // official slots can reorder or hide levels, so read the list instead of assuming index + 1
+        auto* levels = m_scrollLayer->m_dynamicObjects;
+        if (m_scrollLayer->m_dynamic && levels && levels->count() > 0) {
+            int index = m_scrollLayer->getRelativePageForNum(page);
+            auto* level = typeinfo_cast<GJGameLevel*>(levels->objectAtIndex(index));
+            if (level && level->m_levelID >= 1 && level->m_levelID <= 22) return level->m_levelID;
+            return -1;
+        }
+
         const int totalLevels = 22;
         const int emptySections = 2;
         const int cycleSize = totalLevels + emptySections;

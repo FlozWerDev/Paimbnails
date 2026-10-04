@@ -43,7 +43,9 @@ bool StreamOverlayPopup::init() {
         "requests, para ponerla en OBS.\n\n"
         "<cg>URL limpia</c>: pegala como Fuente de navegador de 1920x1080 y deja "
         "activado 'Actualizar al activar la escena'. <cj>Vista previa</c> abre una demo "
-        "en el navegador aunque la cola este vacia.\n\n"
+        "en el navegador aunque la cola este vacia y <cp>Galeria</c> muestra todos los estilos.\n\n"
+        "Cada fuente puede forzar su propio look con parametros: "
+        "<cy>/overlay?style=gd&layout=ticker&anim=bounce&scale=0.8</c>\n\n"
         "El servidor solo escucha en <co>localhost</c>: nadie fuera de tu PC puede abrirlo.");
     paimon::markDynamicPopup(this);
     m_config = streamOverlayConfig();
@@ -82,6 +84,33 @@ bool StreamOverlayPopup::init() {
             "Abre una demo en el navegador aunque la cola este vacia.",
             "Abrir",
             [this] { this->openPreview(); }
+        ),
+    }));
+
+    items.push_back(kit::makeCard(width, "Estilo", {255, 120, 200}, {
+        kit::makeSelectRow(
+            inner,
+            "Estilo visual", "19 temas, incluido uno con las fuentes y caras reales de GD.",
+            streamOverlayStyleNames(), static_cast<int>(m_config.style),
+            [this](int index) {
+                this->apply([index](StreamOverlayConfig& config) {
+                    config.style = static_cast<StreamOverlayStyle>(index);
+                });
+            }
+        ),
+        kit::makeButtonRow(
+            inner,
+            "Galeria de estilos",
+            "Todos los estilos animados a la vez, con su link para OBS.",
+            "Abrir",
+            [this] { this->openGallery(); }
+        ),
+        kit::makeToggleRow(
+            inner, "Usar mis colores", "Reemplaza la paleta del estilo por la de abajo.",
+            m_config.customColors,
+            [this](bool value) {
+                this->apply([value](StreamOverlayConfig& config) { config.customColors = value; });
+            }
         ),
     }));
 
@@ -136,12 +165,82 @@ bool StreamOverlayPopup::init() {
                 });
             }
         ),
+        kit::makeToggleRow(
+            inner, "Dificultad y estrellas", "Cara de dificultad, estrellas y duracion.",
+            m_config.showDifficulty,
+            [this](bool value) {
+                this->apply([value](StreamOverlayConfig& config) {
+                    config.showDifficulty = value;
+                });
+            }
+        ),
+        kit::makeToggleRow(
+            inner, "Plataforma", "Etiqueta de Twitch, YouTube, Kick, TikTok o web.",
+            m_config.showPlatform,
+            [this](bool value) {
+                this->apply([value](StreamOverlayConfig& config) { config.showPlatform = value; });
+            }
+        ),
+        kit::makeToggleRow(
+            inner, "Intentos y mejor marca", "Intento actual, modo practica y tu record.",
+            m_config.showAttempts,
+            [this](bool value) {
+                this->apply([value](StreamOverlayConfig& config) { config.showAttempts = value; });
+            }
+        ),
+        kit::makeToggleRow(
+            inner, "Estadisticas del directo", "Recibidos, jugados y espera media.",
+            m_config.showStats,
+            [this](bool value) {
+                this->apply([value](StreamOverlayConfig& config) { config.showStats = value; });
+            }
+        ),
+    }));
+
+    items.push_back(kit::makeCard(width, "Efectos y avisos", {255, 150, 90}, {
+        kit::makeToggleRow(
+            inner, "Aviso de nuevo request", "Notificacion animada cuando llega un pedido.",
+            m_config.showAlerts,
+            [this](bool value) {
+                this->apply([value](StreamOverlayConfig& config) { config.showAlerts = value; });
+            }
+        ),
+        kit::makeToggleRow(
+            inner, "Sonido del aviso", "Activa 'Controlar audio via OBS' en la fuente.",
+            m_config.alertSound,
+            [this](bool value) {
+                this->apply([value](StreamOverlayConfig& config) { config.alertSound = value; });
+            }
+        ),
+        kit::makeToggleRow(
+            inner, "Celebracion al completar", "Confeti al 100% y aviso de nuevo record.",
+            m_config.showCelebration,
+            [this](bool value) {
+                this->apply([value](StreamOverlayConfig& config) {
+                    config.showCelebration = value;
+                });
+            }
+        ),
+        kit::makeToggleRow(
+            inner, "Particulas de fondo", "Nieve, brasas, estrellas... segun el estilo.",
+            m_config.showParticles,
+            [this](bool value) {
+                this->apply([value](StreamOverlayConfig& config) { config.showParticles = value; });
+            }
+        ),
+        kit::makeToggleRow(
+            inner, "Ocultar sin actividad", "Desaparece si no juegas nada y la cola esta vacia.",
+            m_config.hideWhenIdle,
+            [this](bool value) {
+                this->apply([value](StreamOverlayConfig& config) { config.hideWhenIdle = value; });
+            }
+        ),
     }));
 
     items.push_back(kit::makeCard(width, "Composicion y movimiento", {120, 255, 155}, {
         kit::makeSelectRow(
             inner,
-            "Diseno", "Tarjetas, compacto o cinta inferior.",
+            "Diseno", "Tarjetas, lateral, cinta, banner, esquina...",
             streamOverlayLayoutNames(), static_cast<int>(m_config.layout),
             [this](int index) {
                 this->apply([index](StreamOverlayConfig& config) {
@@ -151,7 +250,7 @@ bool StreamOverlayPopup::init() {
         ),
         kit::makeSelectRow(
             inner,
-            "Animacion", "Como entra el nivel actual y se renueva la cola.",
+            "Animacion", "Como entra el nivel actual y se reordena la cola.",
             streamOverlayAnimationNames(), static_cast<int>(m_config.animation),
             [this](int index) {
                 this->apply([index](StreamOverlayConfig& config) {
@@ -162,7 +261,7 @@ bool StreamOverlayPopup::init() {
         kit::makeSliderRow(
             inner,
             "Escala", "Tamano general dentro de la Browser Source.",
-            m_config.scale, .7, 1.6,
+            m_config.scale, .5, 1.6,
             [](double value) { return fmt::format("{:.0f}%", value * 100.0); },
             [this](double value) {
                 this->apply([value](StreamOverlayConfig& config) {
@@ -194,7 +293,7 @@ bool StreamOverlayPopup::init() {
         ),
     }));
 
-    items.push_back(kit::makeCard(width, "Paleta", {255, 205, 61}, {
+    items.push_back(kit::makeCard(width, "Paleta personalizada", {255, 205, 61}, {
         kit::makeColorRow(
             inner, "Color principal", "Luces, progreso y detalles activos.",
             m_config.accent,
@@ -203,7 +302,7 @@ bool StreamOverlayPopup::init() {
             }
         ),
         kit::makeColorRow(
-            inner, "Cristal", "Tono base de las tarjetas.",
+            inner, "Cristal", "Tono base de las tarjetas (con 'Usar mis colores').",
             m_config.background,
             [this](ccColor3B color) {
                 this->apply([color](StreamOverlayConfig& config) { config.background = color; });
@@ -260,6 +359,17 @@ void StreamOverlayPopup::openPreview() {
         return;
     }
     geode::utils::web::openLinkInBrowser(server.previewUrl());
+}
+
+void StreamOverlayPopup::openGallery() {
+    auto& server = StreamOverlayServer::get();
+    if (!server.isRunning()) {
+        PaimonNotify::create(
+            "Enciende el overlay antes de abrir la galeria",
+            NotificationIcon::Warning)->show();
+        return;
+    }
+    geode::utils::web::openLinkInBrowser(server.galleryUrl());
 }
 
 void StreamOverlayPopup::refreshStatus() {

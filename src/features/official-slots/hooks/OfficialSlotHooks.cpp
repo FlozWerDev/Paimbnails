@@ -76,6 +76,14 @@ std::string levelIdentity(GJGameLevel* level) {
 
 void syncDots(BoomScrollLayer* scroll);
 
+// createWithArray deep-copies via copy(); GJGameLevel has no copyWithZone, so it
+// yields nullptr entries and crashes in retain.
+CCArray* shallowCopy(CCArray* src) {
+    auto* out = CCArray::create();
+    if (src) out->addObjectsFromArray(src);
+    return out;
+}
+
 // rewrites the level list behind the scroll layer in store order: appended
 // slots get an entry, hidden officials lose theirs. runs on open and after every mutation.
 void syncPages(LevelSelectLayer* select) {
@@ -88,7 +96,7 @@ void syncPages(LevelSelectLayer* select) {
 
     auto* vanilla = typeinfo_cast<CCArray*>(scroll->getUserObject(kVanillaLevelsKey));
     if (!vanilla) {
-        vanilla = CCArray::createWithArray(scroll->m_dynamicObjects);
+        vanilla = shallowCopy(scroll->m_dynamicObjects);
         scroll->setUserObject(kVanillaLevelsKey, vanilla);
     }
 
@@ -155,7 +163,7 @@ void syncPages(LevelSelectLayer* select) {
     if (target < 0) target = std::min(oldIndex, static_cast<int>(levels->count()) - 1);
 
     // the recycled pages may still point at levels this swap drops.
-    Ref<CCArray> previous = CCArray::createWithArray(scroll->m_dynamicObjects);
+    Ref<CCArray> previous = shallowCopy(scroll->m_dynamicObjects);
     scroll->m_dynamicObjects->removeAllObjects();
     scroll->m_dynamicObjects->addObjectsFromArray(levels);
     syncDots(scroll);

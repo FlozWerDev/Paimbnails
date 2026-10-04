@@ -21,7 +21,10 @@
     "files": [
       "resources/shaders/*.glsl",
       "resources/shaders/*.fsh",
-      "resources/shaders/*.vert"
+      "resources/shaders/*.vert",
+      "resources/overlay/*.html",
+      "resources/overlay/*.css",
+      "resources/overlay/*.js"
     ]
   },
   "settings": {

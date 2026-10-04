@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Paimbnails - Galeria de overlays</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:#0e1020;color:#fff;font:14px/1.4 Inter,"Segoe UI",system-ui,sans-serif}
+header{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:16px 24px;background:rgba(14,16,32,.92);backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.08)}
+h1{margin:0 auto 0 0;font-size:18px;letter-spacing:.02em}
+label{display:flex;align-items:center;gap:8px;color:#b9bdd6;font-weight:600}
+select,button{font:inherit;color:#fff;background:#1d2140;border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:7px 10px}
+button{cursor:pointer;font-weight:700}
+button:hover,button:focus-visible{background:#2b3160;outline:2px solid #a670ff;outline-offset:1px}
+.bg{display:flex;gap:6px}
+.bg button{width:28px;height:28px;padding:0}
+main{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,460px),1fr));gap:18px;padding:22px 24px 40px}
+.card{border-radius:16px;overflow:hidden;background:#161a33;border:1px solid rgba(255,255,255,.08)}
+.frame{position:relative;aspect-ratio:1280/820;overflow:hidden;background:var(--bg)}
+.frame iframe{position:absolute;left:0;top:0;width:1280px;height:820px;border:0;transform:scale(var(--preview-scale,.36));transform-origin:0 0;pointer-events:none}
+.info{display:flex;align-items:center;gap:10px;padding:12px 14px}
+.info strong{font-size:15px}
+.info code{margin-left:auto;overflow:hidden;max-width:60%;color:#9aa0c7;font-size:11px;white-space:nowrap;text-overflow:ellipsis}
+.copied{background:#2f8f4e!important}
+body{--bg:repeating-conic-gradient(#2a2d3e 0 25%,#22253a 0 50%) 0 0/24px 24px}
+body.bg-game{--bg:linear-gradient(160deg,#2a7bff,#0b3fbf)}
+body.bg-dark{--bg:#05060a}
+body.bg-light{--bg:#e9ecf5}
+</style>
+</head>
+<body>
+<header>
+  <h1>Galeria de estilos</h1>
+  <label>Diseno <select id="layout"></select></label>
+  <label>Animacion <select id="anim"></select></label>
+  <span class="bg" role="group" aria-label="Fondo de la vista previa">
+    <button type="button" data-bg="" title="Transparente" aria-label="Fondo transparente">▦</button>
+    <button type="button" data-bg="bg-game" title="Juego" aria-label="Fondo azul de juego">■</button>
+    <button type="button" data-bg="bg-dark" title="Oscuro" aria-label="Fondo oscuro">●</button>
+    <button type="button" data-bg="bg-light" title="Claro" aria-label="Fondo claro">○</button>
+  </span>
+</header>
+<main id="grid"></main>
+<script>
+'use strict';
+const grid = document.getElementById('grid');
+const layoutSel = document.getElementById('layout');
+const animSel = document.getElementById('anim');
+let catalog = null;
+const previewSizes = new ResizeObserver(entries => {
+  entries.forEach(({ target, contentRect }) => {
+    target.style.setProperty('--preview-scale', contentRect.width / 1280);
+  });
+});
+
+function query(style) {
+  const q = new URLSearchParams({ style });
+  if (layoutSel.value) q.set('layout', layoutSel.value);
+  if (animSel.value) q.set('anim', animSel.value);
+  return q.toString();
+}
+
+function fillSelect(select, options) {
+  select.append(new Option('Como en el mod', ''));
+  options.forEach(o => select.append(new Option(o.name, o.key)));
+}
+
+function render() {
+  previewSizes.disconnect();
+  grid.replaceChildren();
+  catalog.styles.forEach(style => {
+    const card = document.createElement('article');
+    card.className = 'card';
+    const frame = document.createElement('div');
+    frame.className = 'frame';
+    const iframe = document.createElement('iframe');
+    iframe.title = `Vista previa ${style.name}`;
+    iframe.loading = 'lazy';
+    iframe.src = `/preview?${query(style.key)}&demo=1&embed=1`;
+    frame.append(iframe);
+    const info = document.createElement('div');
+    info.className = 'info';
+    const name = document.createElement('strong');
+    name.textContent = style.name;
+    const url = `${location.origin}/overlay?${query(style.key)}`;
+    const code = document.createElement('code');
+    code.textContent = url;
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.textContent = 'Copiar link';
+    copy.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(url);
+        copy.textContent = 'Copiado';
+        copy.classList.add('copied');
+        setTimeout(() => { copy.textContent = 'Copiar link'; copy.classList.remove('copied'); }, 1600);
+      } catch {
+        prompt('Copia este link para OBS:', url);
+      }
+    });
+    info.append(name, copy, code);
+    card.append(frame, info);
+    grid.append(card);
+    previewSizes.observe(frame);
+  });
+}
+
+document.querySelectorAll('[data-bg]').forEach(button => button.addEventListener('click', () => {
+  document.body.className = button.dataset.bg;
+}));
+layoutSel.addEventListener('change', render);
+animSel.addEventListener('change', render);
+
+fetch('/api/styles', { cache: 'no-store' }).then(r => r.json()).then(data => {
+  catalog = data;
+  fillSelect(layoutSel, data.layouts);
+  fillSelect(animSel, data.animations);
+  render();
+}).catch(() => {
+  grid.textContent = 'No se pudo leer la lista de estilos. Comprueba que el overlay siga encendido.';
+});
+</script>
+</body>
+</html>

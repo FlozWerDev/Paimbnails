@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Paimbnails - Level Requests</title>
+<link rel="stylesheet" href="/overlay.css">
+</head>
+<body>
+<canvas id="fx" class="fx" aria-hidden="true"></canvas>
+<main id="overlay" class="overlay" aria-live="polite">
+  <div class="ambient" aria-hidden="true"></div>
+  <div class="deco" aria-hidden="true"><i></i><i></i><i></i></div>
+  <header class="header">
+    <i class="live-dot"></i>
+    <span class="brand" data-gd="gold" data-text="Level Requests">Level Requests</span>
+    <span id="closed" class="chip closed" hidden>Cola cerrada</span>
+    <span id="queue-count" class="queue-count">0 en cola</span>
+  </header>
+  <section id="now" class="now panel"></section>
+  <div class="next-title"><span id="next-label">Siguientes niveles</span><small id="order-label"></small></div>
+  <ol id="queue" class="queue"></ol>
+  <footer id="stats" class="stats" hidden></footer>
+</main>
+<div id="toasts" class="toasts" aria-live="assertive"></div>
+<span class="preview-badge">MODO VISTA PREVIA</span>
+<script src="/overlay.js"></script>
+</body>
+</html>

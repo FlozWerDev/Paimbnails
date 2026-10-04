@@ -26,6 +26,7 @@ private:
     void setEnabled(bool enabled);
     void copyOverlayUrl();
     void openPreview();
+    void openGallery();
     void refreshStatus();
 
     StreamOverlayConfig m_config;

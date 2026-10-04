@@ -66,18 +66,12 @@ CCSprite* loadIcon(
     return spr;
 }
 
-CircleButtonSprite* circleIcon(
-    char const* preferredPaim,
-    std::initializer_list<char const*> fallbacks,
-    float topScale,
-    CircleBaseColor color,
-    CircleBaseSize size
-) {
+CCNode* wrappedIcon(char const* preferredPaim, std::initializer_list<char const*> fallbacks) {
     auto* icon = loadIcon(preferredPaim, fallbacks);
     if (!icon) return nullptr;
 
-    // circlebuttonsprite needs a sized top node with a centered anchor —
-    // basedbuttonsprite positions the top by center assuming anchor 0.5.
+    // basedbuttonsprite positions the top by center assuming anchor 0.5,
+    // so it needs a sized top node.
     auto* wrap = CCNode::create();
     auto sz = icon->getContentSize();
     if (sz.width < 1.f || sz.height < 1.f) sz = CCSize{20.f, 20.f};
@@ -85,11 +79,30 @@ CircleButtonSprite* circleIcon(
     wrap->setAnchorPoint({0.5f, 0.5f});
     icon->setPosition(sz / 2.f);
     wrap->addChild(icon);
+    return wrap;
+}
 
+CircleButtonSprite* circleIcon(
+    char const* preferredPaim,
+    std::initializer_list<char const*> fallbacks,
+    float topScale,
+    CircleBaseColor color,
+    CircleBaseSize size
+) {
+    auto* wrap = wrappedIcon(preferredPaim, fallbacks);
+    if (!wrap) return nullptr;
     auto* base = CircleButtonSprite::create(wrap, color, size);
     if (!base) return nullptr;
     base->setTopRelativeScale(topScale);
     return base;
+}
+
+CCMenuItemSpriteExtra* menuItem(CCSprite* sprite, std::function<void()> onClick) {
+    return CCMenuItemExt::createSpriteExtra(
+        sprite, [cb = std::move(onClick)](CCMenuItemSpriteExtra*) {
+            if (cb) cb();
+        }
+    );
 }
 
 } // namespace
@@ -108,11 +121,25 @@ CCMenuItemSpriteExtra* circleButton(
 ) {
     auto* base = circleIcon(preferredPaim, fallbacks, topScale, color, size);
     if (!base) return nullptr;
-    return CCMenuItemExt::createSpriteExtra(
-        base, [cb = std::move(onClick)](CCMenuItemSpriteExtra*) {
-            if (cb) cb();
-        }
-    );
+    return menuItem(base, std::move(onClick));
+}
+
+CCMenuItemSpriteExtra* squareButton(
+    char const* preferredPaim,
+    std::initializer_list<char const*> fallbacks,
+    float topScale,
+    EditorBaseColor color,
+    std::function<void()> onClick,
+    float targetSize
+) {
+    auto* wrap = wrappedIcon(preferredPaim, fallbacks);
+    if (!wrap) return nullptr;
+    auto* base = EditorButtonSprite::create(wrap, color);
+    if (!base) return nullptr;
+    base->setTopRelativeScale(topScale);
+    auto const h = base->getContentSize().height;
+    if (targetSize > 0.f && h > 0.f) base->setScale(targetSize / h);
+    return menuItem(base, std::move(onClick));
 }
 
 } // namespace paimon::editor::assets

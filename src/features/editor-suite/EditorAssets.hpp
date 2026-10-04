@@ -23,4 +23,14 @@ CCMenuItemSpriteExtra* circleButton(
     geode::CircleBaseSize size = geode::CircleBaseSize::Tiny
 );
 
+// targetSize <= 0 keeps the base's native size.
+CCMenuItemSpriteExtra* squareButton(
+    char const* preferredPaim,
+    std::initializer_list<char const*> fallbacks,
+    float topScale,
+    geode::EditorBaseColor color,
+    std::function<void()> onClick,
+    float targetSize = 0.f
+);
+
 } // namespace paimon::editor::assets

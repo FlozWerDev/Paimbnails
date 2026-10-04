@@ -108,13 +108,13 @@ class $modify(PaimonAnimateEditorUI, EditorUI) {
         if (!EditorUI::init(editorLayer)) return false;
         if (!enabled()) return true;
 
-        auto* button = paimon::editor::assets::circleButton(
+        auto* button = paimon::editor::assets::squareButton(
             "paim_animate.png",
             {"GJ_playEditorBtn_001.png", "GJ_optionsBtn_001.png"},
-            0.72f,
-            CircleBaseColor::Green,
+            0.85f,
+            EditorBaseColor::Green,
             [] { toggleTimeline(); },
-            CircleBaseSize::Tiny
+            paimon::editor::toolbarToggleSize(this)
         );
         if (!button) return true;
         button->setID("animate-button"_spr);

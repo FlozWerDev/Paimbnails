@@ -34,13 +34,13 @@ class $modify(PaimonGifImportEditorUI, EditorUI) {
         if (!EditorUI::init(editorLayer)) return false;
         if (!enabled()) return true;
 
-        auto* button = paimon::editor::assets::circleButton(
+        auto* button = paimon::editor::assets::squareButton(
             "paim_gif_import.png",
             {"GJ_downloadBtn_001.png", "GJ_artBtn_001.png", "GJ_optionsBtn_001.png"},
             0.9f,
-            CircleBaseColor::Green,
+            EditorBaseColor::Green,
             [] { openImporter(); },
-            CircleBaseSize::Tiny
+            paimon::editor::toolbarToggleSize(this)
         );
         if (!button) return true;
         button->setID("gif-import-button"_spr);

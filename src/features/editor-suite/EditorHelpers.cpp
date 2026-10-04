@@ -26,6 +26,14 @@ CCMenu* hostToolbarMenu(EditorUI* ui) {
     return nullptr;
 }
 
+float toolbarToggleSize(EditorUI* ui) {
+    if (!ui) return 0.f;
+    for (auto* btn : {ui->m_swipeBtn, ui->m_freeMoveBtn, ui->m_snapBtn}) {
+        if (btn) return btn->getContentSize().height;
+    }
+    return 0.f;
+}
+
 void focusCameraOnPoint(LevelEditorLayer* lel, CCPoint objectSpace) {
     if (!lel || !lel->m_objectLayer) return;
     auto* layer = lel->m_objectLayer;

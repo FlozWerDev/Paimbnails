@@ -62,13 +62,13 @@ class $modify(PaimonPhysicsEditorUI, EditorUI) {
         if (!EditorUI::init(editorLayer)) return false;
         if (!enabled()) return true;
 
-        auto* button = paimon::editor::assets::circleButton(
+        auto* button = paimon::editor::assets::squareButton(
             "paim_physics.png",
             {"GJ_gravityBtn_001.png", "GJ_moveBtn_001.png", "GJ_optionsBtn_001.png"},
             0.9f,
-            CircleBaseColor::Green,
+            EditorBaseColor::Green,
             [] { openLab(); },
-            CircleBaseSize::Tiny
+            paimon::editor::toolbarToggleSize(this)
         );
         if (!button) return true;
         button->setID("physics-lab-button"_spr);

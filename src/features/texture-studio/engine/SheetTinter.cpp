@@ -362,7 +362,7 @@ void computeRepackJob(RepackJob& job, SheetTinterRequest const& req) {
                                                  makeTintOptions(req));
             job.tintedDelta = 1;
         } else {
-            job.recolored = job.origPixels;
+            job.recolored = std::move(job.origPixels);
         }
         if (!job.customCanvas.empty()) {
             SpritePreviewRenderer::compositeOver(job.recolored, job.customCanvas);
@@ -375,7 +375,7 @@ void computeRepackJob(RepackJob& job, SheetTinterRequest const& req) {
         }
         job.tintedDelta = 1;
     } else {
-        job.recolored = job.origPixels;
+        job.recolored = std::move(job.origPixels);
         if (!job.customCanvas.empty()) {
             SpritePreviewRenderer::compositeOver(job.recolored, job.customCanvas);
             job.tintedDelta = 1;
@@ -490,6 +490,7 @@ geode::Result<SheetTinterOutput> processRepack(SheetTinterRequest const& req,
         t.pixels = std::move(job.recolored);
         tinted.push_back(std::move(t));
     }
+    jobs.clear();
 
     if (tinted.empty()) {
         return Err("SheetTinter: no usable frames produced for '{}'", req.outputBaseName);

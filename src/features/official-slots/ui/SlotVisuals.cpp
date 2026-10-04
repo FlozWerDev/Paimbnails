@@ -1,8 +1,10 @@
 #include "SlotVisuals.hpp"
 
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../utils/Localization.hpp"
 
 #include <Geode/binding/GJDifficultySprite.hpp>
+#include <Geode/binding/GameLevelManager.hpp>
 
 #include <fmt/format.h>
 
@@ -27,6 +29,24 @@ GJFeatureState featureStateOf(Tier tier) {
 }
 
 } // namespace
+
+std::string officialName(int officialId) {
+    if (auto* glm = GameLevelManager::get()) {
+        if (auto* main = glm->getMainLevel(officialId, true)) {
+            std::string name = main->m_levelName.c_str();
+            if (!name.empty()) return name;
+        }
+    }
+    return fmt::format("#{}", officialId);
+}
+
+std::string slotDisplayName(Slot const& slot) {
+    if (!slot.name.empty()) return slot.name;
+    if (slot.source == Source::LevelId && slot.levelId > 0) {
+        return fmt::format("Level #{}", slot.levelId);
+    }
+    return Localization::get().getString("slot.level.unnamed");
+}
 
 CCNode* createDifficultyBadge(Difficulty difficulty, Tier tier, float scale) {
     // tier via updatefeaturestate: hand-mounted coins doubled the glow in the request list.

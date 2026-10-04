@@ -19,8 +19,11 @@ struct GmdInfo {
 // read or does not look like a plist at all.
 std::optional<GmdInfo> readGmdInfo(std::filesystem::path const& path);
 
-// level string (k4) as the game keeps it in gjgamelevel::m_levelstring.
-// empty when the file has none: a cosmetic-only slot.
-std::string readGmdLevelString(std::filesystem::path const& path);
+struct GmdData {
+    std::optional<GmdInfo> info;
+    std::string levelString;
+};
+
+GmdData readGmd(std::filesystem::path const& path);
 
 } // namespace paimon::officialslots

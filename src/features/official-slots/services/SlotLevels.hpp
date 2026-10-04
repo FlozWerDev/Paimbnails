@@ -58,8 +58,11 @@ private:
 
     GJGameLevel* build(Slot const& slot, int fakeId);
 
-    std::unordered_map<std::string, geode::Ref<GJGameLevel>> m_levels;
-    std::unordered_map<std::string, Slot> m_snapshot;
+    struct Entry {
+        geode::Ref<GJGameLevel> level;
+        Slot snapshot;
+    };
+    std::unordered_map<std::string, Entry> m_levels;
     int m_nextFakeId = 0;
 };
 

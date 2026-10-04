@@ -23,7 +23,7 @@ std::string gdString(gd::string const& str) {
 }
 
 bool levelStringEmpty(GJGameLevel* level) {
-    return !level || gdString(level->m_levelString).empty();
+    return !level || level->m_levelString.empty();
 }
 
 void applyDisplayFields(GJGameLevel* level, Slot const& slot) {
@@ -130,12 +130,11 @@ SlotLevelCache& SlotLevelCache::get() {
 
 GJGameLevel* SlotLevelCache::levelForSlot(Slot const& slot) {
     auto it = m_levels.find(slot.id);
-    if (it != m_levels.end() && it->second) {
-        auto snapshot = m_snapshot.find(slot.id);
-        if (snapshot != m_snapshot.end() && sameSource(snapshot->second, slot)) {
-            applyDisplayFields(it->second, slot);
-            snapshot->second = slot;
-            return it->second;
+    if (it != m_levels.end() && it->second.level) {
+        if (sameSource(it->second.snapshot, slot)) {
+            applyDisplayFields(it->second.level, slot);
+            it->second.snapshot = slot;
+            return it->second.level;
         }
         this->invalidate(slot.id);
     }
@@ -144,19 +143,16 @@ GJGameLevel* SlotLevelCache::levelForSlot(Slot const& slot) {
     auto* level = this->build(slot, fakeId);
     if (!level) return nullptr;
 
-    m_levels.emplace(slot.id, Ref<GJGameLevel>(level));
-    m_snapshot.emplace(slot.id, slot);
+    m_levels.emplace(slot.id, Entry{Ref<GJGameLevel>(level), slot});
     return level;
 }
 
 void SlotLevelCache::invalidate() {
     m_levels.clear();
-    m_snapshot.clear();
 }
 
 void SlotLevelCache::invalidate(std::string const& slotId) {
     m_levels.erase(slotId);
-    m_snapshot.erase(slotId);
 }
 
 GJGameLevel* SlotLevelCache::build(Slot const& slot, int fakeId) {
@@ -199,15 +195,13 @@ GJGameLevel* SlotLevelCache::build(Slot const& slot, int fakeId) {
 
     if (slot.source == Source::Gmd && !slot.gmdFile.empty()) {
         auto path = SlotStore::get().gmdDir() / slot.gmdFile;
-        if (auto info = readGmdInfo(path)) {
-            if (info->songId > 0) {
-                level->m_songID = info->songId;
-                level->m_audioTrack = 0;
-            }
+        auto data = readGmd(path);
+        if (data.info && data.info->songId > 0) {
+            level->m_songID = data.info->songId;
+            level->m_audioTrack = 0;
         }
-        std::string str = readGmdLevelString(path);
-        level->m_levelString = str.c_str();
-        level->m_levelNotDownloaded = str.empty();
+        level->m_levelString = data.levelString.c_str();
+        level->m_levelNotDownloaded = data.levelString.empty();
     } else if (slot.source == Source::LevelId && slot.levelId > 0) {
         // an already-downloaded copy opens instantly; otherwise the string
         // arrives through slotdownloads when the player presses play.

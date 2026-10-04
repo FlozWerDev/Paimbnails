@@ -368,17 +368,17 @@ void ProfileMusicManager::uploadFragment(int accountID, std::string const& usern
             return;
         }
 
-        Loader::get()->queueInMainThread([this, token, jsonData, accountID, config, isCustom, callback]() {
+        Loader::get()->queueInMainThread([this, token, jsonData = std::move(jsonData), accountID, isCustom, callback]() {
             if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
                 return;
             }
 
-            HttpClient::get().postWithAuth("/api/profile-music/upload", jsonData, [this, token, accountID, config, isCustom, callback](bool success, std::string const& response) {
+            HttpClient::get().postWithAuth("/api/profile-music/upload", jsonData, [this, token, accountID, isCustom, callback](bool success, std::string const& response) {
                 if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
                     return;
                 }
 
-                Loader::get()->queueInMainThread([this, token, accountID, config, isCustom, callback, success, response]() {
+                Loader::get()->queueInMainThread([this, token, accountID, isCustom, callback, success, response]() {
                     if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
                         return;
                     }

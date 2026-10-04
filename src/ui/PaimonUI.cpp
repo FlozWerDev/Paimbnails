@@ -37,6 +37,15 @@ char const* popupTexture(Bg bg) {
     return "GJ_square01.png";
 }
 
+std::vector<std::string> const& popupStyles() {
+    static const std::vector<std::string> styles = {
+        "paimonUI", "jelly", "spiral", "drop-bounce", "skew-pop", "elastic",
+        "bounce", "slide-up", "slide-down", "slide-left", "slide-right",
+        "zoom-fade", "flip", "fold", "pop-rotate", "elastic-drop",
+        "glitch-shake", "card-turn", "fly-spin"};
+    return styles;
+}
+
 bool motionEnabled() {
     return settings::smoothui::enabled() && !settings::smoothui::reducedMotion();
 }

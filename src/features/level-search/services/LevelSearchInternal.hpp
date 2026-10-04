@@ -424,7 +424,6 @@ namespace {
             m_isLoading = false;
             m_totalPages = 0;
             m_currentPage = 0;
-            m_requestedPage = 0;
             m_loadedPageOrder.clear();
             m_cachedPageOrder.clear();
             m_pageCache.clear();
@@ -661,7 +660,6 @@ namespace {
         float m_autoLoadCooldown = 0.f;
         int m_lastAutoLoadedPage = -1;
         int m_currentPage = 0;
-        int m_requestedPage = 0;
         int m_totalPages = 0;
         int m_totalItems = 0;
         int m_itemsPerPage = kRealtimeResultCount;
@@ -1092,7 +1090,6 @@ namespace {
             m_totalPages = 1;
             m_totalItems = 0;
             m_currentPage = 0;
-            m_requestedPage = 0;
             clearRenderedRows();
             requestNextSmartQuery();
         }
@@ -1159,7 +1156,6 @@ namespace {
             m_totalItems = 0;
             m_itemsPerPage = static_cast<int>(resultsPerPage());
             m_currentPage = 0;
-            m_requestedPage = 0;
             m_lastAutoLoadedPage = -1;
             m_autoLoadCooldown = 0.f;
             m_isLoading = false;
@@ -1209,7 +1205,6 @@ namespace {
             if (!force && m_isLoading) return;
             if (page < 0) page = 0;
 
-            m_requestedPage = page;
             captureScrollState(intent);
 
             if (intent == RequestIntent::Replace) {

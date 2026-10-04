@@ -58,6 +58,7 @@ void setEnabled(std::string_view id, bool enabled);
 
 // modules whose parent chain is satisfied can be toggled by the user.
 bool isAvailable(Module const& mod);
+Module const* blockingParent(Module const& mod);
 
 std::vector<Module const*> search(std::string_view query);
 

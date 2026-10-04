@@ -2,6 +2,7 @@
 
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../ui/PaimonUI.hpp"
+#include "../../../utils/Base64.hpp"
 #include "../../../utils/ImageConverter.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/ThreadTracker.hpp"
@@ -70,22 +71,6 @@ void writeLine(std::vector<uint8_t>& rgba, int w, int h,
             static_cast<int>(std::round(x0 + (x1 - x0) * t)),
             static_cast<int>(std::round(y0 + (y1 - y0) * t)), radius, color);
     }
-}
-
-std::string base64(std::vector<uint8_t> const& bytes) {
-    static constexpr char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string result;
-    result.reserve((bytes.size() + 2) / 3 * 4);
-    for (size_t i = 0; i < bytes.size(); i += 3) {
-        unsigned n = static_cast<unsigned>(bytes[i]) << 16;
-        if (i + 1 < bytes.size()) n |= static_cast<unsigned>(bytes[i + 1]) << 8;
-        if (i + 2 < bytes.size()) n |= bytes[i + 2];
-        result += alphabet[(n >> 18) & 63];
-        result += alphabet[(n >> 12) & 63];
-        result += i + 1 < bytes.size() ? alphabet[(n >> 6) & 63] : '=';
-        result += i + 2 < bytes.size() ? alphabet[n & 63] : '=';
-    }
-    return result;
 }
 
 } // namespace
@@ -319,7 +304,7 @@ void WebFeedbackPopup::send(std::string decision) {
         std::vector<uint8_t> png;
         bool encoded = ImageConverter::rgbaToPngBuffer(pixels.data(), w, h, png)
             && png.size() <= 1048576;
-        std::string image = encoded ? base64(png) : "";
+        std::string image = encoded ? paimon::base64Encode(png) : "";
         Loader::get()->queueInMainThread([weak, request, decision = std::move(decision), percent,
             note = std::move(note), reason = std::move(reason), image = std::move(image), encoded]() mutable {
             if (paimon::isRuntimeShuttingDown()) return;

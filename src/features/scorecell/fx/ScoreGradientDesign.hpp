@@ -1,5 +1,6 @@
 #pragma once
 #include <Geode/Geode.hpp>
+#include "../../../utils/SpriteHelper.hpp"
 #include <algorithm>
 #include <cmath>
 #include <utility>
@@ -119,6 +120,19 @@ inline void attachCellOverlays(cocos2d::CCNode* clip, cocos2d::CCSize cs) {
         sheen->setID("paimon-score-sheen"_spr);
         clip->addChild(sheen, 2);
     }
+}
+
+inline cocos2d::CCClippingNode* makeScoreGradientClip(cocos2d::CCNode* gradient, cocos2d::CCSize size) {
+    auto* stencil = SpriteHelper::createRoundedRectStencil(size.width, size.height, 7.f);
+    auto* clip = cocos2d::CCClippingNode::create(stencil);
+    if (!clip) return nullptr;
+    clip->setContentSize(size);
+    clip->setAnchorPoint({0.f, 0.f});
+    clip->setPosition({0.f, 0.f});
+    clip->setAlphaThreshold(0.05f);
+    clip->addChild(gradient);
+    attachCellOverlays(clip, size);
+    return clip;
 }
 
 } // namespace paimon::scorecell

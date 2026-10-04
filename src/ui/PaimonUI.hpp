@@ -33,6 +33,7 @@ char const* buttonTexture(Btn skin);
 // GJ_square01..07
 enum class Bg { Brown = 1, Blue, Green, Purple, Dark, Light, White };
 char const* popupTexture(Bg bg);
+std::vector<std::string> const& popupStyles();
 
 bool motionEnabled();
 float motionDuration(float seconds);

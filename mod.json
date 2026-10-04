@@ -1344,6 +1344,65 @@
       "category": "editor",
       "allow-in-text-inputs": false
     },
+    "editor-animate-title": {
+      "name": "Paimon Animate",
+      "description": "Frame by frame animation inside the level editor, in the spirit of Adobe Animate.",
+      "type": "title"
+    },
+    "editor-animate-enable": {
+      "type": "bool",
+      "name": "Enable Paimon Animate",
+      "description": "Adds a timeline to the editor. Draw each frame with normal objects, organize them into named frame groups, scrub with onion skin, set FPS, holds and loop/once/ping-pong/repeat modes, and bake everything into native Alpha, Toggle, Spawn and Stop triggers that play without the mod.",
+      "default": true
+    },
+    "editor-animate-keybind": {
+      "type": "keybind",
+      "name": "Toggle Timeline (Editor)",
+      "description": "Shows or hides the Paimon Animate timeline in the level editor.",
+      "default": "Ctrl+Shift+K",
+      "category": "editor",
+      "allow-in-text-inputs": false
+    },
+    "editor-animate-play-key": {
+      "type": "keybind",
+      "name": "Play / Pause Animation",
+      "description": "Plays the animation preview in the editor or pauses it.",
+      "default": "Ctrl+Enter",
+      "category": "editor",
+      "allow-in-text-inputs": false
+    },
+    "editor-animate-prev-key": {
+      "type": "keybind",
+      "name": "Previous Frame",
+      "description": "Moves to the previous frame of the active animation. Hold to keep stepping.",
+      "default": "OEMComma",
+      "category": "editor",
+      "allow-in-text-inputs": false
+    },
+    "editor-animate-next-key": {
+      "type": "keybind",
+      "name": "Next Frame",
+      "description": "Moves to the next frame of the active animation. Hold to keep stepping.",
+      "default": "OEMPeriod",
+      "category": "editor",
+      "allow-in-text-inputs": false
+    },
+    "editor-animate-new-frame-key": {
+      "type": "keybind",
+      "name": "Duplicate Frame",
+      "description": "Copies the current frame and its objects into a new frame right after it.",
+      "default": "F6",
+      "category": "editor",
+      "allow-in-text-inputs": false
+    },
+    "editor-animate-blank-frame-key": {
+      "type": "keybind",
+      "name": "New Blank Frame",
+      "description": "Inserts an empty frame after the current one.",
+      "default": "F7",
+      "category": "editor",
+      "allow-in-text-inputs": false
+    },
     "editor-music-title": {
       "name": "Editor Music",
       "description": "Background music player inside the level editor.",

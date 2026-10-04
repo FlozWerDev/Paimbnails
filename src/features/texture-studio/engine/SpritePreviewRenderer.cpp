@@ -38,7 +38,8 @@ SpritePreviewResult SpritePreviewRenderer::renderTintedWithStats(
 
 MaskBuildResult SpritePreviewRenderer::renderMasks(
     ImageBuffer const& framePixels,
-    SpritePreviewOptions const& options) {
+    SpritePreviewOptions const& options,
+    bool withStats) {
 
     MaskBuildResult result;
     if (framePixels.empty()) return result;
@@ -53,6 +54,7 @@ MaskBuildResult SpritePreviewRenderer::renderMasks(
     mopts.edgeRefine = std::clamp(options.edgeCleanup, 0, 4);
     result.masks = MaskBuilder::build(framePixels, classified, mopts);
     result.stats.needsReview = classified.needsReview;
+    if (!withStats) return result;
 
     std::size_t visiblePixels = 0;
     for (std::size_t i = 0; i < framePixels.pixelCount(); ++i) {

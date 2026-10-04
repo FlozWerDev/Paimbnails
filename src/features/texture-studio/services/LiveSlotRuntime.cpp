@@ -230,14 +230,14 @@ void LiveSlotRuntime::prepareMasks() {
                             error = "UI atlas exceeds 4096 pixels";
                         } else if (input.plist.empty()) {
                             packed = std::make_shared<ImageBuffer>(SpritePreviewRenderer::renderRoleMask(
-                                SpritePreviewRenderer::renderMasks(atlas, options).masks));
+                                SpritePreviewRenderer::renderMasks(atlas, options, false).masks));
                         } else {
                             packed = std::make_shared<ImageBuffer>(atlas.width(), atlas.height());
                             for (auto const& frame : frames) {
                                 if (cancelled()) return;
                                 auto pixels = SpritesheetReader::extractFrame(atlas, frame);
                                 auto mask = SpritePreviewRenderer::renderRoleMask(
-                                    SpritePreviewRenderer::renderMasks(pixels, options).masks);
+                                    SpritePreviewRenderer::renderMasks(pixels, options, false).masks);
                                 if (frame.rotated) mask.rotateCW90();
                                 packed->blitOverwrite(frame.rectX, frame.rectY, mask);
                             }

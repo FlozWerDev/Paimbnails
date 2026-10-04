@@ -85,15 +85,19 @@ bool isSelfEnabled(std::string_view id) {
     return mod && isSelfEnabled(*mod);
 }
 
-bool isAvailable(Module const& mod) {
+Module const* blockingParent(Module const& mod) {
     char const* parent = mod.parent;
     for (int depth = 0; parent && *parent && depth < kMaxParentDepth; depth++) {
         auto* owner = find(parent);
         if (!owner) break;
-        if (!isSelfEnabled(*owner)) return false;
+        if (!isSelfEnabled(*owner)) return owner;
         parent = owner->parent;
     }
-    return true;
+    return nullptr;
+}
+
+bool isAvailable(Module const& mod) {
+    return blockingParent(mod) == nullptr;
 }
 
 bool isEnabled(Module const& mod) {

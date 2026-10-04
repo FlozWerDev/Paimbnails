@@ -1549,9 +1549,35 @@ std::vector<Primitive> splitTriangle(
     return shapes;
 }
 
+// spilling over covered layers costs less; orla forgives on long thin strokes.
+std::vector<std::uint8_t> fitNearMask(
+    std::vector<int> const& positions, int width, int height
+) {
+    int pieceMinX = width;
+    int pieceMinY = height;
+    int pieceMaxX = -1;
+    int pieceMaxY = -1;
+    for (int position : positions) {
+        int const x = position % width;
+        int const y = position / width;
+        pieceMinX = std::min(pieceMinX, x);
+        pieceMaxX = std::max(pieceMaxX, x);
+        pieceMinY = std::min(pieceMinY, y);
+        pieceMaxY = std::max(pieceMaxY, y);
+    }
+    int const longSpan = std::max(
+        pieceMaxX - pieceMinX + 1, pieceMaxY - pieceMinY + 1);
+    bool const thinPiece = longSpan > 0 &&
+        static_cast<float>(positions.size()) / static_cast<float>(longSpan) <=
+            static_cast<float>(kThickSpan) &&
+        longSpan >= kLongSpan;
+    return thinPiece ? nearCells(positions, width, height) : std::vector<std::uint8_t>{};
+}
+
 float fitSimilarity(
     std::vector<int> const& positions,
     std::vector<std::uint8_t> const& target,
+    std::vector<std::uint8_t> const& nearMask,
     int width,
     int height,
     std::vector<Primitive> const& shapes,
@@ -1589,34 +1615,13 @@ float fitSimilarity(
         maxY = std::max(maxY, std::min(height - 1, static_cast<int>(std::ceil(shape.y + extentY))));
     }
 
-    // spilling over covered layers costs less; orla forgives on long thin strokes.
-    int pieceMinX = width;
-    int pieceMinY = height;
-    int pieceMaxX = -1;
-    int pieceMaxY = -1;
-    for (int position : positions) {
-        int const x = position % width;
-        int const y = position / width;
-        pieceMinX = std::min(pieceMinX, x);
-        pieceMaxX = std::max(pieceMaxX, x);
-        pieceMinY = std::min(pieceMinY, y);
-        pieceMaxY = std::max(pieceMaxY, y);
-    }
-    int const longSpan = std::max(
-        pieceMaxX - pieceMinX + 1, pieceMaxY - pieceMinY + 1);
-    bool const thinPiece = longSpan > 0 &&
-        static_cast<float>(positions.size()) / static_cast<float>(longSpan) <=
-            static_cast<float>(kThickSpan) &&
-        longSpan >= kLongSpan;
     float spilled = 0.f;
     bool const hasBlocked = blocked.size() == target.size();
-    std::vector<std::uint8_t> nearMask;
-    if (thinPiece) nearMask = nearCells(positions, width, height);
     for (int y = minY; y <= maxY; ++y) {
         for (int x = minX; x <= maxX; ++x) {
             std::size_t const index = static_cast<std::size_t>(y) * width + x;
             if (target[index] || !covered(x + 0.5f, y + 0.5f)) continue;
-            if (thinPiece && index < nearMask.size() && nearMask[index]) continue;
+            if (index < nearMask.size() && nearMask[index]) continue;
             spilled += hasBlocked && blocked[index] ? kCoveredSpill : 1.f;
         }
     }
@@ -1666,9 +1671,10 @@ bool appendCapsule(
     constexpr std::array<float, 4> kWidthPadding{0.f, 0.2f, 0.4f, 0.6f};
     float bestSimilarity = 0.f;
     std::vector<Primitive> best;
+    auto const nearMask = fitNearMask(positions, width, height);
     auto consider = [&](std::vector<Primitive> const& shapes, bool tight) {
         float const similarity = fitSimilarity(
-            positions, target, width, height, shapes, blocked);
+            positions, target, nearMask, width, height, shapes, blocked);
         if (similarity <= bestSimilarity) return;
         if (tight && std::any_of(shapes.begin(), shapes.end(),
                                  [&](Primitive const& shape) {
@@ -1788,6 +1794,7 @@ bool appendTriangle(
         hull = simplifyLoop(hull, tolerance);
     }
     if (hull.size() < 3 || hull.size() > 16) return false;
+    auto const nearMask = fitNearMask(positions, width, height);
 
     float bestSimilarity = 0.f;
     std::vector<Primitive> best;
@@ -1798,7 +1805,7 @@ bool appendTriangle(
                     hull[first], hull[second], hull[third], color, layer);
                 if (shapes.empty()) continue;
                 float const similarity = fitSimilarity(
-                    positions, target, width, height, shapes, blocked);
+                    positions, target, nearMask, width, height, shapes, blocked);
                 if (similarity <= bestSimilarity) continue;
                 bestSimilarity = similarity;
                 best = std::move(shapes);
@@ -3391,10 +3398,8 @@ std::vector<Primitive> paintSeamRepairs(
     std::vector<std::int32_t> const& cells,
     std::vector<int> const& ranks,
     int width,
-    int height,
-    bool gridExact
+    int height
 ) {
-    (void)gridExact;
     std::vector<Primitive> repairs;
     if (width < 3 || height < 3 ||
         cells.size() != static_cast<std::size_t>(width) * height || ranks.empty()) {
@@ -3569,8 +3574,7 @@ std::vector<Primitive> paintSeamRepairs(
 }
 
 // sews same-color same-turn caps into rectangles without overpainting.
-void mergePaintSolids(std::vector<Primitive>& objects, bool gridExact) {
-    (void)gridExact;
+void mergePaintSolids(std::vector<Primitive>& objects) {
     if (objects.size() < 2) return;
     mergePaintBlocks(objects);
     mergePaintRects(objects, true);
@@ -3623,8 +3627,7 @@ void smoothPaintFragments(
     objects = std::move(result);
 }
 
-void prunePaintObjects(std::vector<Primitive>& objects, int width, int height, bool gridExact) {
-    (void)gridExact;
+void prunePaintObjects(std::vector<Primitive>& objects, int width, int height) {
     if (objects.size() < 2) return;
     std::vector<std::uint8_t> keep(objects.size(), 0);
     std::vector<PruneEntry> entries;

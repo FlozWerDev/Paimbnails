@@ -8,7 +8,6 @@
 #include "../../../utils/Localization.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
-#include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/loader/Loader.hpp>
 
 #include <fmt/format.h>
@@ -25,24 +24,6 @@ constexpr float kHeight = 300.f;
 constexpr float kRowH = 30.f;
 constexpr float kRowGap = 4.f;
 constexpr float kListY = 56.f;
-
-std::string officialName(int officialId) {
-    if (auto* glm = GameLevelManager::get()) {
-        if (auto* main = glm->getMainLevel(officialId, true)) {
-            std::string name = main->m_levelName.c_str();
-            if (!name.empty()) return name;
-        }
-    }
-    return fmt::format("#{}", officialId);
-}
-
-std::string slotDisplayName(Slot const& slot) {
-    if (!slot.name.empty()) return slot.name;
-    if (slot.source == Source::LevelId && slot.levelId > 0) {
-        return fmt::format("Level #{}", slot.levelId);
-    }
-    return Localization::get().getString("slot.level.unnamed");
-}
 
 } // namespace
 

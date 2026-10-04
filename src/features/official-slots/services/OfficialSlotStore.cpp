@@ -275,6 +275,19 @@ std::optional<Slot> SlotStore::find(std::string const& slotId) {
     return *it;
 }
 
+void SlotStore::demoteReplacements(int officialId, std::string const& excludedId) {
+    if (officialId == 0) return;
+    // two slots on the same page would fight over one draw, so the newest wins.
+    for (auto& existing : m_slots) {
+        if (existing.id == excludedId || existing.replacesOfficialId != officialId) continue;
+        existing.replacesOfficialId = 0;
+        std::string const rivalKey = slotKey(existing.id);
+        if (std::find(m_order.begin(), m_order.end(), rivalKey) == m_order.end()) {
+            m_order.push_back(rivalKey);
+        }
+    }
+}
+
 std::string SlotStore::add(Slot slot, std::optional<std::size_t> orderIndex) {
     this->ensureLoaded();
     if (m_slots.size() >= kMaxSlots) {
@@ -286,19 +299,7 @@ std::string SlotStore::add(Slot slot, std::optional<std::size_t> orderIndex) {
     slot.stars = std::clamp(slot.stars, kMinStars, kMaxStars);
     if (!isOfficialId(slot.replacesOfficialId)) slot.replacesOfficialId = 0;
 
-    // two slots on the same page would fight over one draw, so the newest wins
-    // and the previous one goes back to being appended.
-    if (slot.replacesOfficialId != 0) {
-        for (auto& existing : m_slots) {
-            if (existing.replacesOfficialId == slot.replacesOfficialId) {
-                existing.replacesOfficialId = 0;
-                std::string const rivalKey = slotKey(existing.id);
-                if (std::find(m_order.begin(), m_order.end(), rivalKey) == m_order.end()) {
-                    m_order.push_back(rivalKey);
-                }
-            }
-        }
-    }
+    this->demoteReplacements(slot.replacesOfficialId);
 
     auto id = slot.id;
     bool const appended = slot.replacesOfficialId == 0;
@@ -325,18 +326,7 @@ bool SlotStore::update(Slot const& slot) {
     updated.stars = std::clamp(updated.stars, kMinStars, kMaxStars);
     if (!isOfficialId(updated.replacesOfficialId)) updated.replacesOfficialId = 0;
 
-    if (updated.replacesOfficialId != 0) {
-        for (auto& existing : m_slots) {
-            if (existing.id != updated.id &&
-                existing.replacesOfficialId == updated.replacesOfficialId) {
-                existing.replacesOfficialId = 0;
-                std::string const rivalKey = slotKey(existing.id);
-                if (std::find(m_order.begin(), m_order.end(), rivalKey) == m_order.end()) {
-                    m_order.push_back(rivalKey);
-                }
-            }
-        }
-    }
+    this->demoteReplacements(updated.replacesOfficialId, updated.id);
 
     // the .gmd is ours to keep only while a slot points at it.
     if (!it->gmdFile.empty() && it->gmdFile != updated.gmdFile) {

@@ -3,7 +3,6 @@
 #include "SmoothUIConfigPopup.hpp"
 #include "PaimonUI.hpp"
 
-#include "../utils/DynamicPopupRegistry.hpp"
 #include "../features/settings-panel/services/SettingsPanelManager.hpp"
 #include "../features/settings-panel/ui/SettingsControls.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
@@ -58,15 +57,6 @@ void ssaved(const char* key, T val) {
 
 void openNativeSettings() {
     geode::openSettingsPopup(Mod::get(), false);
-}
-
-std::vector<std::string> const& popupStyleOptions() {
-    static const std::vector<std::string> styles = {
-        "paimonUI", "jelly", "spiral", "drop-bounce", "skew-pop", "elastic",
-        "bounce", "slide-up", "slide-down", "slide-left", "slide-right",
-        "zoom-fade", "flip", "fold", "pop-rotate", "elastic-drop",
-        "glitch-shake", "card-turn", "fly-spin"};
-    return styles;
 }
 
 struct FeatureGroup {
@@ -430,7 +420,7 @@ void buildPopupAnimationGroup(CCNode* c, float w) {
 
     c->addChild(createDropdownRow("Popup Style",
         gsaved<std::string>("dynamic-popup-style", "paimonUI"),
-        popupStyleOptions(),
+        paimon::ui::popupStyles(),
         [](std::string const& v) { ssaved<std::string>("dynamic-popup-style", v); },
         w));
 
@@ -579,7 +569,7 @@ void buildSmoothUIGroup(CCNode* c, float w) {
 
     c->addChild(createDropdownRow("Popup Style",
         gsaved<std::string>("dynamic-popup-style", "paimonUI"),
-        popupStyleOptions(),
+        paimon::ui::popupStyles(),
         [](std::string const& v) { ssaved<std::string>("dynamic-popup-style", v); },
         w));
 
@@ -890,7 +880,6 @@ bool FeatureConfigPopup::init(std::string const& featureKey) {
     auto const& group = it->second;
 
     if (!PaimonPopup::init(380.f, 260.f)) return false;
-    paimon::markDynamicPopup(this);
 
     this->setTitle(group.title.c_str());
     this->addInfoButton(group.title,

@@ -180,18 +180,9 @@ public:
                 gradient->setPosition({0.f, 0.f});
                 gradient->setBaseOpacity(static_cast<GLubyte>(paimon::scorecell::gradientOpacity()));
                 gradient->setIdleSpeed(paimon::scorecell::gradientSpeed());
-                auto stencil = paimon::SpriteHelper::createRoundedRectStencil(cs.width, cs.height, 7.f);
-                auto clip = cocos2d::CCClippingNode::create(stencil);
-                if (clip) {
-                    clip->setContentSize(cs);
-                    clip->setAnchorPoint({0.f, 0.f});
-                    clip->setPosition({0.f, 0.f});
-                    clip->setAlphaThreshold(0.05f);
+                if (auto* clip = paimon::scorecell::makeScoreGradientClip(gradient, cs)) {
                     clip->setZOrder(-15);
                     clip->setID("paimon-score-gradient-clip"_spr);
-                    clip->addChild(gradient);
-                    // same readability scrim as the icon-gradient path
-                    paimon::scorecell::attachCellOverlays(clip, cs);
                     addChild(clip);
                     // legacy id so refresh logic finds the layer
                     gradient->setID("paimon-score-gradient"_spr);

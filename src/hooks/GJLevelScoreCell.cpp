@@ -254,16 +254,9 @@ class $modify(PaimonGJLevelScoreCell, GJLevelScoreCell) {
                 gradient->setPosition({0.f, 0.f});
                 gradient->setBaseOpacity(static_cast<GLubyte>(paimon::scorecell::gradientOpacity()));
                 gradient->setIdleSpeed(paimon::scorecell::gradientSpeed());
-                auto stencil = paimon::SpriteHelper::createRoundedRectStencil(cs.width, cs.height, 7.f);
-                if (auto clip = cocos2d::CCClippingNode::create(stencil)) {
-                    clip->setContentSize(cs);
-                    clip->setAnchorPoint({0.f, 0.f});
-                    clip->setPosition({0.f, 0.f});
-                    clip->setAlphaThreshold(0.05f);
+                if (auto* clip = paimon::scorecell::makeScoreGradientClip(gradient, cs)) {
                     clip->setZOrder(-1);
                     clip->setID("paimon-lls-gradient-clip"_spr);
-                    clip->addChild(gradient);
-                    paimon::scorecell::attachCellOverlays(clip, cs);
                     this->addChild(clip);
                     gradient->setID("paimon-lls-gradient"_spr);
                 } else {

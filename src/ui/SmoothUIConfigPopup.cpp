@@ -1,6 +1,6 @@
 #include "SmoothUIConfigPopup.hpp"
 #include "PaiConfigKit.hpp"
-#include "../utils/DynamicPopupRegistry.hpp"
+#include "PaimonUI.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
 #include "../features/transitions/ui/TransitionConfigPopup.hpp"
 #include "../features/transitions/ui/DynamicTransitionConfigPopup.hpp"
@@ -51,17 +51,8 @@ int presetIndexFromId(std::string const& id) {
     return 0;
 }
 
-std::vector<std::string> const& popupStyles() {
-    static const std::vector<std::string> styles = {
-        "paimonUI", "jelly", "spiral", "drop-bounce", "skew-pop", "elastic",
-        "bounce", "slide-up", "slide-down", "slide-left", "slide-right",
-        "zoom-fade", "flip", "fold", "pop-rotate", "elastic-drop",
-        "glitch-shake", "card-turn", "fly-spin"};
-    return styles;
-}
-
 int popupStyleIndex(std::string const& id) {
-    auto const& styles = popupStyles();
+    auto const& styles = paimon::ui::popupStyles();
     for (size_t i = 0; i < styles.size(); ++i) {
         if (styles[i] == id) return static_cast<int>(i);
     }
@@ -188,7 +179,6 @@ bool SmoothUIConfigPopup::init() {
         "Elige un <cg>preset</c> para ajustar todo de golpe, o entra en "
         "<cy>Avanzado</c> para afinar popups, botones, scroll y blur por separado.\n\n"
         "<co>Reducir movimiento</c> minimiza animaciones si te marean.");
-    paimon::markDynamicPopup(this);
 
     rebuild();
     return true;
@@ -289,10 +279,10 @@ void SmoothUIConfigPopup::rebuild() {
                 [](bool v) { sset<bool>("dynamic-popup-enabled", v); }),
             kit::makeSelectRow(innerW,
                 "Estilo de entrada", "Como aparece cada popup.",
-                popupStyles(),
+                paimon::ui::popupStyles(),
                 popupStyleIndex(gsaved<std::string>("dynamic-popup-style", "paimonUI")),
                 [](int idx) {
-                    auto const& styles = popupStyles();
+                    auto const& styles = paimon::ui::popupStyles();
                     if (idx >= 0 && idx < static_cast<int>(styles.size())) {
                         ssaved<std::string>("dynamic-popup-style", styles[static_cast<size_t>(idx)]);
                     }

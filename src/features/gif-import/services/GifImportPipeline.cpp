@@ -1840,10 +1840,9 @@ void repairPaintSeams(
     std::vector<std::int32_t> const& cells,
     std::vector<int> const& ranks,
     int width,
-    int height,
-    bool gridExact = true
+    int height
 ) {
-    auto repairs = paintSeamRepairs(objects, cells, ranks, width, height, gridExact);
+    auto repairs = paintSeamRepairs(objects, cells, ranks, width, height);
     if (repairs.empty()) return;
     objects.insert(objects.end(), repairs.begin(), repairs.end());
     sortByLayer(objects);
@@ -2474,11 +2473,11 @@ BuildResult buildAt(
                 // repairs add fill: prune and repair again.
                 repairPaintSeams(
                     chosen.staticObjects, frames.front().cells, context.ranks,
-                    width, height, context.gridExact);
+                    width, height);
                 prunePaintObjects(chosen.staticObjects, width, height);
                 repairPaintSeams(
                     chosen.staticObjects, frames.front().cells, context.ranks,
-                    width, height, context.gridExact);
+                    width, height);
                 // stitched seams merge with their strips too.
                 mergePaintSolids(chosen.staticObjects);
             }

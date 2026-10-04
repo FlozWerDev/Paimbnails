@@ -101,6 +101,7 @@ std::vector<Step> const& steps() {
                 {"editor-music-enable", "Musica en el editor", "Editor music", "Control musical en el editor.", "Music controls in the editor."},
                 {"editor-color-picker-enable", "Selector de color", "Color picker", "Colores mas faciles de elegir.", "Easier color selection."},
                 {"gif-import-enable", "Importar GIF", "GIF import", "Convierte GIF en objetos.", "Converts GIFs to objects."},
+                {"editor-animate-enable", "Paimon Animate", "Paimon Animate", "Anima frame a frame en el editor.", "Animate frame by frame in the editor."},
                 {"icon-maker-enabled", "Creador de iconos", "Icon maker", "Crea iconos propios.", "Create your own icons."},
                 {"texture-studio-enabled", "Texture Studio", "Texture Studio", "Crea paquetes de texturas.", "Create texture packs."},
                 {"collab-enabled", "Editor colaborativo", "Collaborative editor", "Salas de edicion en linea.", "Online editing rooms."},

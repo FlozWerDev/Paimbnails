@@ -4,6 +4,15 @@
 - Los terminos y el uso de datos se muestran despues del inicio rapido; la aceptacion se guarda en `welcome.json`.
 - La publicacion compila para Windows y Android32/Android64.
 
+## ![](flozwer.paimbnails2/paim_animate.png?height=18) <cy>Paimon Animate</c>
+
+- Nueva <cl>linea de tiempo</c> en el editor, al estilo Adobe Animate: cada frame es un grupo de objetos normales y se dibuja con las herramientas de siempre. Se abre con el boton del editor o <cg>Ctrl+Shift+K</c>, se arrastra, se pliega y recuerda su posicion.
+- <cg>Grupos de frames</c> con nombre, color, ocultar, bloquear, reordenar, duplicar (copia los objetos) y crear desde la seleccion o importando grupos que ya animaste a mano (`10, 11, 12` o `10-24`).
+- Tira de frames con <cg>hold</c>, etiquetas, frames omitidos, cabezal de reproduccion y vista previa en vivo. <cg>,</c> y <cg>.</c> recorren los frames, <cg>F6</c> duplica, <cg>F7</c> crea uno vacio y <cg>Ctrl+Enter</c> reproduce.
+- <cg>Papel cebolla</c> con frames antes y despues, otros frames ocultos, atenuados o visibles, y bloqueo para que solo se seleccione el frame actual. Lo que dibujas o pegas entra solo en el frame en el que estas.
+- <cl>Centro de Animacion</c>: FPS de 1 a 60 con atajos, modos <cg>Bucle</c>, <cg>Una vez</c>, <cg>Ida y vuelta</c>, <cg>Repetir N</c> y <cg>Bucle inverso</c>, fundido entre frames, que pasa al terminar, como arranca (con el nivel, por grupo o en una X) y retiempos de todos los frames.
+- <cp>Hornear</c> escribe triggers nativos Alpha o Toggle, Spawn y Stop, con grupos de inicio, stop, pausa y reanudar listos para copiar. El nivel se reproduce <cg>sin el mod</c> y se puede volver a hornear solo al guardar y probar.
+
 ---
 
 # <cy>v1.1.3</c>

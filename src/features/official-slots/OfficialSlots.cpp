@@ -1,4 +1,5 @@
 #include "OfficialSlots.hpp"
+#include "../../core/MainLevels.hpp"
 
 namespace paimon::officialslots {
 
@@ -36,7 +37,7 @@ std::vector<Tier> const& allTiers() {
 }
 
 bool isOfficialId(int levelId) {
-    return levelId >= 1 && levelId <= 22;
+    return paimon::isMainLevelID(levelId);
 }
 
 } // namespace paimon::officialslots

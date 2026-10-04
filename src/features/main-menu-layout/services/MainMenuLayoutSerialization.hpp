@@ -1,18 +1,16 @@
 #pragma once
 
 #include "MainMenuLayoutManager.hpp"
+#include "../../../utils/JsonHelper.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <limits>
 
 namespace paimon::menu_layout {
 
 namespace serialization_detail {
 inline float number(matjson::Value const& value, char const* key, float fallback) {
-    double const parsed = value[key].asDouble().unwrapOr(fallback);
-    return std::isfinite(parsed) && std::abs(parsed) <= std::numeric_limits<float>::max()
-        ? static_cast<float>(parsed) : fallback;
+    return paimon::json::floatOr(value[key], fallback);
 }
 inline GLubyte color(matjson::Value const& value, char const* key, int fallback) {
     return static_cast<GLubyte>(std::clamp<int64_t>(value[key].asInt().unwrapOr(fallback), 0, 255));

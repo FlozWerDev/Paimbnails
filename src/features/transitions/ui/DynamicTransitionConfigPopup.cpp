@@ -207,6 +207,28 @@ Ref<CCTexture2D> render(CCNode* node, CCSize design, CCSize target, float qualit
     return Visual::capture(node, target, quality);
 }
 
+struct PreviewVisuals {
+    Visual* open;
+    Visual* back;
+};
+
+PreviewVisuals previewVisuals(Ref<CCTexture2D> const& before, Ref<CCTexture2D> const& after,
+    CCSize size, Config const& config, Rect origin, bool instant, bool panel) {
+    bool morph = config.origin == Origin::Button;
+    if (instant) {
+        return {
+            Visual::create(after, nullptr, size, config, origin, false, false, panel),
+            Visual::create(before, nullptr, size, config, origin, true, false, panel)
+        };
+    }
+    return {
+        Visual::create(before, after, size, config, origin, false, morph, panel),
+        config.animateBack ?
+            Visual::create(after, before, size, config, origin, true, morph, panel) :
+            Visual::create(before, nullptr, size, config, origin, true, false, panel)
+    };
+}
+
 class FullscreenTest : public CCLayer {
 public:
     static FullscreenTest* create(Config const& config, bool panel, Rect origin) {
@@ -291,15 +313,9 @@ private:
         bool morph = config.origin == Origin::Button;
         origin = morph ? normalizeOrigin(origin, m_size.width, m_size.height) :
             fallbackOrigin(m_size.width, m_size.height, config.origin);
-        if (instant) {
-            m_open = Visual::create(after, nullptr, m_size, config, origin, false, false, panel);
-            m_back = Visual::create(before, nullptr, m_size, config, origin, true, false, panel);
-        } else {
-            m_open = Visual::create(before, after, m_size, config, origin, false, morph, panel);
-            m_back = config.animateBack ?
-                Visual::create(after, before, m_size, config, origin, true, morph, panel) :
-                Visual::create(before, nullptr, m_size, config, origin, true, false, panel);
-        }
+        auto visuals = previewVisuals(before, after, m_size, config, origin, instant, panel);
+        m_open = visuals.open;
+        m_back = visuals.back;
         if (!m_open || !m_back) return false;
         m_openDuration = instant ? .05f : config.duration;
         m_backDuration = instant || !config.animateBack ? .05f : config.backDuration;
@@ -444,15 +460,9 @@ void ConfigPreview::rebuildVisuals() {
         auto to = m_panelMode ? m_panel : m_layer;
         bool morph = m_motion.origin == Origin::Button;
         Rect origin = morph ? m_button : fallbackOrigin(m_stage.width, m_stage.height, m_motion.origin);
-        if (m_instant) {
-            m_open = Visual::create(to, nullptr, m_stage, m_motion, origin, false, false, m_panelMode);
-            m_back = Visual::create(m_menu, nullptr, m_stage, m_motion, origin, true, false, m_panelMode);
-        } else {
-            m_open = Visual::create(m_menu, to, m_stage, m_motion, origin, false, morph, m_panelMode);
-            m_back = m_motion.animateBack ?
-                Visual::create(to, m_menu, m_stage, m_motion, origin, true, morph, m_panelMode) :
-                Visual::create(m_menu, nullptr, m_stage, m_motion, origin, true, false, m_panelMode);
-        }
+        auto visuals = previewVisuals(m_menu, to, m_stage, m_motion, origin, m_instant, m_panelMode);
+        m_open = visuals.open;
+        m_back = visuals.back;
         for (auto* visual : {m_open, m_back}) {
             if (visual) m_clip->addChild(visual);
         }

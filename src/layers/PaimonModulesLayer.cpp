@@ -68,18 +68,6 @@ bool isEdited(mods::Module const& mod) {
     return mods::isSelfEnabled(mod) != mod.defaultOn;
 }
 
-// first switched-off module up the parent chain, the one the user has to enable.
-mods::Module const* blockingParent(mods::Module const& mod) {
-    char const* parent = mod.parent;
-    for (int depth = 0; parent && *parent && depth < 8; ++depth) {
-        auto const* owner = mods::find(parent);
-        if (!owner) return nullptr;
-        if (!mods::isSelfEnabled(*owner)) return owner;
-        parent = owner->parent;
-    }
-    return nullptr;
-}
-
 char const* stateText(bool ceded, bool available, bool on) {
     if (ceded) return text("EN PAUSA", "PAUSED");
     if (!available) return text("BLOQUEADO", "LOCKED");
@@ -657,7 +645,7 @@ void PaimonModulesLayer::refreshRow(int index, bool updateToggler) {
         row.state->setColor(stateColor(row.ceded, available, on));
     }
     if (row.desc) {
-        auto const* owner = available ? nullptr : blockingParent(*row.mod);
+        auto const* owner = available ? nullptr : mods::blockingParent(*row.mod);
         std::string const line = owner
             ? fmt::format(fmt::runtime(text("Requiere: {}", "Requires: {}")), mods::localizedName(*owner))
             : std::string(mods::localizedDescription(*row.mod));

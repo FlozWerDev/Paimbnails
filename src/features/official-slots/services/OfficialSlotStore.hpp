@@ -75,6 +75,7 @@ private:
 
     void ensureLoaded();
     void save();
+    void demoteReplacements(int officialId, std::string const& excludedId = {});
 
     void loadOrder(matjson::Value const& root);
 

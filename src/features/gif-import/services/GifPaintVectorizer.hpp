@@ -16,12 +16,11 @@ std::vector<int> paintOrder(
 void prunePaintObjects(
     std::vector<Primitive>& objects,
     int width,
-    int height,
-    bool gridExact = true
+    int height
 );
 
 // Seam repairs may only merge when their union adds no paint.
-void mergePaintSolids(std::vector<Primitive>& objects, bool gridExact = true);
+void mergePaintSolids(std::vector<Primitive>& objects);
 
 void smoothPaintFragments(
     std::vector<Primitive>& objects,
@@ -44,8 +43,7 @@ std::vector<Primitive> paintSeamRepairs(
     std::vector<std::int32_t> const& cells,
     std::vector<int> const& ranks,
     int width,
-    int height,
-    bool gridExact = true
+    int height
 );
 
 std::vector<Primitive> vectorizePaint(

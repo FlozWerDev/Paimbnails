@@ -82,16 +82,6 @@ public:
     }
 };
 
-std::string officialName(int officialId) {
-    if (auto* glm = GameLevelManager::get()) {
-        if (auto* main = glm->getMainLevel(officialId, true)) {
-            std::string name = main->m_levelName.c_str();
-            if (!name.empty()) return name;
-        }
-    }
-    return fmt::format("#{}", officialId);
-}
-
 int clampFace(int face) {
     return std::clamp(face, -1, 10);
 }
@@ -969,26 +959,16 @@ std::string SlotEditorPopup::saveDraft() {
     }
 
     std::string id = slot.id;
-    if (m_isNew || id.empty()) {
-        slot.id.clear(); // the store assigns a stable uuid
+    if (m_isNew || id.empty() || !store.update(slot)) {
+        // re-add if it was deleted elsewhere while we edited.
+        slot.id.clear();
         if (slot.replacesOfficialId == 0) {
             id = store.add(slot, store.orderIndexForVisiblePos(m_position));
         } else {
             id = store.add(slot);
         }
-    } else {
-        slot.id = id;
-        if (!store.update(slot)) {
-            // deleted elsewhere while we edited; re-add instead of losing it.
-            slot.id.clear();
-            if (slot.replacesOfficialId == 0) {
-                id = store.add(slot, store.orderIndexForVisiblePos(m_position));
-            } else {
-                id = store.add(slot);
-            }
-        } else if (slot.replacesOfficialId == 0 && m_positionDirty) {
-            store.movePageToVisible(SlotStore::slotKey(id), m_position);
-        }
+    } else if (slot.replacesOfficialId == 0 && m_positionDirty) {
+        store.movePageToVisible(SlotStore::slotKey(id), m_position);
     }
     if (id.empty()) {
         toast(tr("slot.editor.import_failed"), NotificationIcon::Error);

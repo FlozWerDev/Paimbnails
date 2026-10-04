@@ -58,7 +58,8 @@ public:
 
     // tintless segmentation with identical role maps, so gpu preview and cpu bake agree.
     static MaskBuildResult renderMasks(ImageBuffer const& framePixels,
-                                       SpritePreviewOptions const& options);
+                                       SpritePreviewOptions const& options,
+                                       bool withStats = true);
 
     // role weights packed rgba (r=c1 g=c2 b=detail a=glow) for gpu upload.
     static ImageBuffer renderRoleMask(MaskSet const& masks);

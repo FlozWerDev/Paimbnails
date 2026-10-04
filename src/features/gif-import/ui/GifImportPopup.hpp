@@ -1,6 +1,7 @@
 #pragma once
 #include "../../../ui/PaimonPopup.hpp"
 
+#include "../../editor-suite/EditorPopupKit.hpp"
 #include "../GifImportTypes.hpp"
 
 #include <Geode/Geode.hpp>
@@ -8,9 +9,9 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <string>
 #include <vector>
 
-class ButtonSprite;
 class PaimonLoadingOverlay;
 
 namespace paimon::gifimport {
@@ -25,6 +26,8 @@ public:
 
 private:
     bool init() override;
+    void buildSourcePanel();
+    void buildOptionsPanel(cocos2d::CCMenu* menu);
     void cancelSourceLoad();
 
     void pickSource();
@@ -49,7 +52,8 @@ private:
     void adjustFrames(int direction);
     void adjustPixelSize(int direction);
     void adjustTolerance(int direction);
-    void toggleMode();
+    void cycleMode(int direction);
+    void stepBackground(int direction);
     void toggleBackground();
     void toggleSampling();
     void toggleDither();
@@ -59,6 +63,7 @@ private:
     void loadOptions();
     void saveOptions() const;
     void refreshControls();
+    void setStats(std::string const& text, cocos2d::ccColor3B color);
     void pollSourceLoad();
     void pollProcessing();
     void pollPreview();
@@ -98,11 +103,12 @@ private:
     cocos2d::CCLayerColor* m_progressTrack = nullptr;
     cocos2d::CCLayerColor* m_progressFill = nullptr;
     cocos2d::CCSprite* m_previewSprite = nullptr;
-    ButtonSprite* m_modeSprite = nullptr;
-    ButtonSprite* m_samplingSprite = nullptr;
-    ButtonSprite* m_ditherSprite = nullptr;
-    ButtonSprite* m_loopSprite = nullptr;
-    ButtonSprite* m_glowSprite = nullptr;
+    cocos2d::CCNode* m_previewHint = nullptr;
+    editor::kit::Pill m_modePill;
+    editor::kit::Pill m_samplingPill;
+    editor::kit::Pill m_ditherPill;
+    editor::kit::Pill m_loopPill;
+    editor::kit::Pill m_glowPill;
     PaimonLoadingOverlay* m_busyOverlay = nullptr;
 };
 

@@ -1,6 +1,7 @@
 #pragma once
 #include "../../../ui/PaimonPopup.hpp"
 
+#include "../../editor-suite/EditorPopupKit.hpp"
 #include "../PhysicsConfig.hpp"
 #include "../services/PhysicsWorkspace.hpp"
 
@@ -11,7 +12,6 @@
 #include <vector>
 
 class EditorUI;
-class ButtonSprite;
 
 namespace paimon::editorphysics {
 
@@ -23,6 +23,9 @@ private:
     bool init() override;
     void onClose(cocos2d::CCObject* sender) override;
 
+    void buildPreviewPanel(cocos2d::CCMenu* menu);
+    void buildBodiesPanel(cocos2d::CCMenu* menu);
+    void buildWorldPanel(cocos2d::CCMenu* menu);
     void beginCapture(CaptureRole role);
     void toggleBMotion();
     void clearBodies();
@@ -87,7 +90,8 @@ private:
     cocos2d::CCLabelBMFont* m_bodyALabel = nullptr;
     cocos2d::CCLabelBMFont* m_otherBodiesLabel = nullptr;
     cocos2d::CCLabelBMFont* m_statusLabel = nullptr;
-    ButtonSprite* m_bodyModeSprite = nullptr;
+    cocos2d::CCSprite* m_statusIcon = nullptr;
+    editor::kit::Pill m_bodyMode;
     std::array<cocos2d::CCLabelBMFont*, 9> m_valueLabels{};
 };
 

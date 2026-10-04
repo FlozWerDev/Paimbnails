@@ -14,25 +14,29 @@
 #include "../services/GifSourceScaler.hpp"
 #include "../services/GifStampLibrary.hpp"
 #include "../services/GifVideoSource.hpp"
+#include "../../editor-suite/EditorPopupKit.hpp"
 
 #include "../../../ui/PaimonUI.hpp"
 
-#include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/EditorUI.hpp>
 #include <Geode/binding/LevelEditorLayer.hpp>
 #include <Geode/utils/general.hpp>
 #include <fmt/format.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <cmath>
 #include <mutex>
 #include <optional>
+#include <vector>
 
 using namespace geode::prelude;
 
 namespace paimon::gifimport {
+
+namespace kit = paimon::editor::kit;
 
 // workers fill mailboxes; tick applies them on cocos thread.
 struct ProcessingProgress {
@@ -66,6 +70,28 @@ namespace {
 
 constexpr float kPopupWidth = 500.f;
 constexpr float kPopupHeight = 320.f;
+constexpr float kLeftX = 14.f;
+constexpr float kRightX = 254.f;
+constexpr float kColumnWidth = 232.f;
+constexpr float kBarY = 246.f;
+constexpr float kBarHeight = 24.f;
+constexpr float kFileLabelWidth = 200.f;
+constexpr float kModeWidth = 180.f;
+constexpr float kPreviewY = 108.f;
+constexpr float kPreviewHeight = 132.f;
+constexpr float kPreviewInset = 3.f;
+constexpr float kPreviewCenterX = kLeftX + kColumnWidth * 0.5f;
+constexpr float kPreviewCenterY = kPreviewY + kPreviewHeight * 0.5f;
+constexpr float kPreviewFitWidth = 220.f;
+constexpr float kPreviewFitHeight = 120.f;
+constexpr float kStatsY = 60.f;
+constexpr float kStatsHeight = 42.f;
+constexpr float kOptionRowHeight = 18.f;
+constexpr float kToggleHeight = 17.f;
+constexpr float kToggleTopY = 93.f;
+constexpr float kToggleBottomY = 71.f;
+constexpr float kActionY = 38.f;
+constexpr float kActionHeight = 26.f;
 constexpr std::size_t kMaxFileBytes = 128 * 1024 * 1024;
 constexpr std::size_t kDecodeMemory = 128 * 1024 * 1024;
 constexpr int kMaxImageDimension = 8192;
@@ -87,12 +113,30 @@ char const* buildStageText(BuildStage stage) {
     return "Procesando";
 }
 
-CCLabelBMFont* valueLabel(CCNode* parent, CCPoint position) {
-    auto* label = CCLabelBMFont::create("-", "goldFont.fnt");
-    label->setScale(0.38f);
-    label->setPosition(position);
-    parent->addChild(label);
-    return label;
+struct ModeInfo {
+    ImportMode mode;
+    char const* name;
+    char const* icon;
+};
+
+// cycle order of the mode arrows.
+constexpr std::array<ModeInfo, 9> kModes{{
+    {ImportMode::Blocks, "Bloques", "paim_gif_modeBlocks.png"},
+    {ImportMode::Art, "Art", "paim_gif_modeArt.png"},
+    {ImportMode::Paint, "Pintura", "paim_gif_modePaint.png"},
+    {ImportMode::Render, "Render", "paim_gif_modeRender.png"},
+    {ImportMode::Free, "Libre", "paim_gif_modeFree.png"},
+    {ImportMode::Circles, "Circulos", "paim_gif_modeCircles.png"},
+    {ImportMode::Blur, "Blur", "paim_gif_modeBlur.png"},
+    {ImportMode::Vert, "Vert", "paim_gif_modeVert.png"},
+    {ImportMode::VertX, "VertX", "paim_gif_modeVertX.png"},
+}};
+
+ModeInfo const& modeInfo(ImportMode mode) {
+    for (auto const& info : kModes) {
+        if (info.mode == mode) return info;
+    }
+    return kModes.front();
 }
 
 } // namespace
@@ -114,176 +158,198 @@ bool GifImportPopup::init() {
     setTitle("GIF, Video o Imagen a Objetos");
     addInfoButton("GIF a objetos",
         "Convierte un GIF, video o imagen en objetos de GD dentro del editor. "
-        "Elige el archivo con <cg>Elegir archivo</c> y ajusta a la derecha: el "
-        "<cy>Modo</c> decide como se dibuja (bloques, pintura, art...), "
+        "Elige el archivo con <cg>Elegir archivo</c> y ajusta a la derecha: las "
+        "flechas del <cy>Modo</c> deciden como se dibuja (bloques, pintura, art...), "
         "<cy>Resolucion</c> y <cy>Colores</c> el detalle, y <cy>Presupuesto</c> "
         "el limite de objetos. La vista previa usa objetos reales. "
         "<cg>Importar</c> los coloca en el editor.");
+    addCorners(SideArtStyle::PopupGold, 0.4f);
     loadOptions();
-
-    auto* previewPanel = paimon::ui::makeInset({214.f, 178.f}, 220);
-    previewPanel->setPosition({18.f, 82.f});
-    m_mainLayer->addChild(previewPanel);
-
-    auto* previewHint = CCLabelBMFont::create("Elige un GIF, video o imagen", "bigFont.fnt");
-    previewHint->setID("preview-hint"_spr);
-    previewHint->setScale(0.34f);
-    previewHint->setColor({125, 135, 160});
-    previewHint->setPosition({125.f, 171.f});
-    m_mainLayer->addChild(previewHint, 2);
-
-    m_fileLabel = CCLabelBMFont::create("Ningun archivo seleccionado", "goldFont.fnt");
-    m_fileLabel->setScale(0.4f);
-    m_fileLabel->setPosition({125.f, 274.f});
-    m_mainLayer->addChild(m_fileLabel);
-
-    m_statsLabel = CCLabelBMFont::create("La vista previa usa objetos reales de GD", "bigFont.fnt");
-    m_statsLabel->setScale(0.27f);
-    m_statsLabel->setColor({165, 180, 210});
-    m_statsLabel->setPosition({125.f, 69.f});
-    m_mainLayer->addChild(m_statsLabel);
-
-    m_progressTrack = CCLayerColor::create({0, 0, 0, 150}, 214.f, 4.f);
-    m_progressTrack->ignoreAnchorPointForPosition(false);
-    m_progressTrack->setAnchorPoint({0.f, 0.f});
-    m_progressTrack->setPosition({18.f, 77.f});
-    m_progressTrack->setVisible(false);
-    m_mainLayer->addChild(m_progressTrack, 2);
-
-    m_progressFill = CCLayerColor::create({90, 225, 150, 255}, 214.f, 4.f);
-    m_progressFill->ignoreAnchorPointForPosition(false);
-    m_progressFill->setAnchorPoint({0.f, 0.f});
-    m_progressFill->setPosition({18.f, 77.f});
-    m_progressFill->setScaleX(0.f);
-    m_progressFill->setVisible(false);
-    m_mainLayer->addChild(m_progressFill, 3);
-
-    if (auto* panel = paimon::ui::makeInset({248.f, 200.f}, 70)) {
-        panel->setPosition({246.f, 72.f});
-        m_mainLayer->addChild(panel, -1);
-    }
 
     auto* menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
     m_mainLayer->addChild(menu, 5);
     WeakRef<GifImportPopup> self = this;
 
-    m_modeSprite = ButtonSprite::create(
-        "Modo: Bloques", 120, true, "bigFont.fnt", "GJ_button_05.png", 18.f, 0.45f);
-    auto* modeButton = CCMenuItemExt::createSpriteExtra(
-        m_modeSprite, [self](CCMenuItemSpriteExtra*) {
-            if (auto* popup = self.lock().data()) popup->toggleMode();
-        });
-    modeButton->setPosition({375.f, 278.f});
-    menu->addChild(modeButton);
-
-    using Adjust = std::function<void(GifImportPopup*, int)>;
-    auto addStepper = [&](char const* title, float y, CCLabelBMFont** output, Adjust adjust) {
-        auto* label = CCLabelBMFont::create(title, "bigFont.fnt");
-        label->setAnchorPoint({0.f, 0.5f});
-        label->setScale(0.32f);
-        label->setPosition({252.f, y});
-        m_mainLayer->addChild(label);
-
-        *output = valueLabel(m_mainLayer, {421.f, y});
-        for (int direction : {-1, 1}) {
-            auto* sprite = ButtonSprite::create(
-                direction < 0 ? "-" : "+", "bigFont.fnt", "GJ_button_04.png", 0.8f);
-            sprite->setScale(0.43f);
-            auto* button = CCMenuItemExt::createSpriteExtra(
-                sprite, [self, adjust, direction](CCMenuItemSpriteExtra*) {
-                    if (auto* popup = self.lock().data()) adjust(popup, direction);
-                });
-            button->setPosition({direction < 0 ? 382.f : 462.f, y});
-            menu->addChild(button);
-        }
-    };
-
-    addStepper("Resolucion", 248.f, &m_resolutionValue,
-               [](GifImportPopup* popup, int d) { popup->adjustResolution(d); });
-    addStepper("Colores", 222.f, &m_colorsValue,
-               [](GifImportPopup* popup, int d) { popup->adjustColors(d); });
-    addStepper("Presupuesto", 196.f, &m_budgetValue,
-               [](GifImportPopup* popup, int d) { popup->adjustBudget(d); });
-    addStepper("Frames max.", 170.f, &m_framesValue,
-               [](GifImportPopup* popup, int d) { popup->adjustFrames(d); });
-    addStepper("Tamano pixel", 144.f, &m_pixelSizeValue,
-               [](GifImportPopup* popup, int d) { popup->adjustPixelSize(d); });
-    addStepper("Fondo", 118.f, &m_backgroundValue,
-               [](GifImportPopup* popup, int) { popup->toggleBackground(); });
-    addStepper("Tolerancia", 92.f, &m_toleranceValue,
-               [](GifImportPopup* popup, int d) { popup->adjustTolerance(d); });
-
-    m_samplingSprite = ButtonSprite::create("Suave", 74, true, "bigFont.fnt", "GJ_button_04.png", 24.f, 0.5f);
-    m_samplingSprite->setScale(0.55f);
-    auto* samplingButton = CCMenuItemExt::createSpriteExtra(
-        m_samplingSprite, [self](CCMenuItemSpriteExtra*) {
-            if (auto* popup = self.lock().data()) popup->toggleSampling();
-        });
-    samplingButton->setPosition({265.f, 62.f});
-    menu->addChild(samplingButton);
-
-    m_ditherSprite = ButtonSprite::create("Dither: no", 80, true, "bigFont.fnt", "GJ_button_04.png", 24.f, 0.5f);
-    m_ditherSprite->setScale(0.55f);
-    auto* ditherButton = CCMenuItemExt::createSpriteExtra(
-        m_ditherSprite, [self](CCMenuItemSpriteExtra*) {
-            if (auto* popup = self.lock().data()) popup->toggleDither();
-        });
-    ditherButton->setPosition({330.f, 62.f});
-    menu->addChild(ditherButton);
-
-    m_loopSprite = ButtonSprite::create("Loop: si", 74, true, "bigFont.fnt", "GJ_button_04.png", 24.f, 0.5f);
-    m_loopSprite->setScale(0.55f);
-    auto* loopButton = CCMenuItemExt::createSpriteExtra(
-        m_loopSprite, [self](CCMenuItemSpriteExtra*) {
-            if (auto* popup = self.lock().data()) popup->toggleLoop();
-        });
-    loopButton->setPosition({395.f, 62.f});
-    menu->addChild(loopButton);
-
-    m_glowSprite = ButtonSprite::create("Glow: no", 74, true, "bigFont.fnt", "GJ_button_04.png", 24.f, 0.5f);
-    m_glowSprite->setScale(0.55f);
-    auto* glowButton = CCMenuItemExt::createSpriteExtra(
-        m_glowSprite, [self](CCMenuItemSpriteExtra*) {
-            if (auto* popup = self.lock().data()) popup->toggleGlow();
-        });
-    glowButton->setPosition({458.f, 62.f});
-    menu->addChild(glowButton);
+    buildSourcePanel();
+    buildOptionsPanel(menu);
 
     bool const hasRender = renderEnabled();
-    auto* pickSprite = ButtonSprite::create("Elegir archivo", "goldFont.fnt", "GJ_button_01.png", 0.65f);
-    auto* pickButton = CCMenuItemExt::createSpriteExtra(
-        pickSprite, [self](CCMenuItemSpriteExtra*) {
-            if (auto* popup = self.lock().data()) popup->pickSource();
-        });
-    pickButton->setPosition({hasRender ? 79.f : 125.f, 31.f});
-    menu->addChild(pickButton);
-
-    auto* importSprite = ButtonSprite::create(
-        hasRender ? "Importar" : "Importar objetos",
-        "goldFont.fnt", "GJ_button_02.png", 0.65f);
-    auto* importButton = CCMenuItemExt::createSpriteExtra(
-        importSprite, [self](CCMenuItemSpriteExtra*) {
-            if (auto* popup = self.lock().data()) popup->importObjects();
-        });
-    importButton->setPosition({hasRender ? 248.f : 375.f, 31.f});
-    menu->addChild(importButton);
-
+    struct Action {
+        char const* icon;
+        char const* fallback;
+        char const* text;
+        char const* texture;
+        void (GifImportPopup::*run)();
+    };
+    std::vector<Action> actions{
+        {"paim_ui_folder.png", "folderIcon_001.png", "Elegir archivo", "GJ_button_02.png",
+            &GifImportPopup::pickSource},
+        {"paim_ui_import.png", "GJ_downloadBtn_001.png",
+            hasRender ? "Importar" : "Importar objetos", "GJ_button_01.png",
+            &GifImportPopup::importObjects},
+    };
     if (hasRender) {
-        auto* backgroundSprite = ButtonSprite::create(
-            "Run background", 112, true, "goldFont.fnt", "GJ_button_04.png", 30.f, 0.55f);
-        backgroundSprite->setScale(0.88f);
-        auto* backgroundButton = CCMenuItemExt::createSpriteExtra(
-            backgroundSprite, [self](CCMenuItemSpriteExtra*) {
-                if (auto* popup = self.lock().data()) popup->runBackground();
+        actions.push_back({"paim_ui_clock.png", "GJ_timeIcon_001.png", "Segundo plano",
+            "GJ_button_04.png", &GifImportPopup::runBackground});
+    }
+    float const actionWidth = hasRender ? 150.f : 200.f;
+    float const spacing = (kPopupWidth - 28.f - actionWidth) /
+        static_cast<float>(std::max<std::size_t>(actions.size() - 1, 1));
+    for (std::size_t i = 0; i < actions.size(); ++i) {
+        auto const run = actions[i].run;
+        auto button = kit::pill(actions[i].icon, actions[i].fallback, actions[i].text,
+            actions[i].texture, {actionWidth, kActionHeight}, [self, run] {
+                if (auto* popup = self.lock().data()) (popup->*run)();
             });
-        backgroundButton->setPosition({414.f, 31.f});
-        menu->addChild(backgroundButton);
+        float const x = hasRender
+            ? 14.f + actionWidth * 0.5f + spacing * static_cast<float>(i)
+            : (i == 0 ? 130.f : 370.f);
+        button.button->setPosition({x, kActionY});
+        menu->addChild(button.button);
     }
 
     refreshControls();
     schedule(schedule_selector(GifImportPopup::tick));
     return true;
+}
+
+void GifImportPopup::buildSourcePanel() {
+    m_mainLayer->addChild(kit::inset({kLeftX, kBarY, kColumnWidth, kBarHeight}, 90));
+    auto* folder = kit::glyph("paim_ui_folder.png", "folderIcon_001.png", 13.f, kit::tint::gold);
+    folder->setPosition({kLeftX + 13.f, kBarY + kBarHeight * 0.5f});
+    m_mainLayer->addChild(folder);
+    m_fileLabel = kit::label("Ningun archivo seleccionado", "goldFont.fnt", 0.42f);
+    m_fileLabel->setAnchorPoint({0.f, 0.5f});
+    m_fileLabel->setPosition({kLeftX + 24.f, kBarY + kBarHeight * 0.5f + 1.7f});
+    m_fileLabel->limitLabelWidth(kFileLabelWidth, 0.42f, 0.2f);
+    m_mainLayer->addChild(m_fileLabel);
+
+    m_mainLayer->addChild(kit::inset({kLeftX, kPreviewY, kColumnWidth, kPreviewHeight}, 220));
+    // transparent pixels read as a checkerboard, so a removed background is visible.
+    auto* board = kit::checker(
+        {kColumnWidth - kPreviewInset * 2.f, kPreviewHeight - kPreviewInset * 2.f},
+        8.f, {30, 30, 40}, {44, 44, 56});
+    board->setPosition({kLeftX + kPreviewInset, kPreviewY + kPreviewInset});
+    m_mainLayer->addChild(board, 1);
+
+    m_previewHint = CCNode::create();
+    m_previewHint->setPosition({kPreviewCenterX, kPreviewCenterY});
+    auto* hintIcon = kit::glyph("paim_gif_import.png", "GJ_downloadBtn_001.png", 34.f);
+    hintIcon->setOpacity(110);
+    hintIcon->setPosition({0.f, 12.f});
+    m_previewHint->addChild(hintIcon);
+    auto* hintText = kit::label("Elige un GIF, video o imagen", "bigFont.fnt", 0.32f,
+        {125, 135, 160});
+    hintText->limitLabelWidth(kColumnWidth - 22.f, 0.32f, 0.2f);
+    hintText->setPosition({0.f, -17.4f});
+    m_previewHint->addChild(hintText);
+    m_mainLayer->addChild(m_previewHint, 2);
+
+    float const barWidth = kColumnWidth - kPreviewInset * 2.f - 8.f;
+    CCPoint const barOrigin{kLeftX + kPreviewInset + 4.f, kPreviewY + kPreviewInset + 3.f};
+    m_progressTrack = CCLayerColor::create({0, 0, 0, 150}, barWidth, 4.f);
+    m_progressTrack->ignoreAnchorPointForPosition(false);
+    m_progressTrack->setAnchorPoint({0.f, 0.f});
+    m_progressTrack->setPosition(barOrigin);
+    m_progressTrack->setVisible(false);
+    m_mainLayer->addChild(m_progressTrack, 4);
+
+    m_progressFill = CCLayerColor::create({90, 225, 150, 255}, barWidth, 4.f);
+    m_progressFill->ignoreAnchorPointForPosition(false);
+    m_progressFill->setAnchorPoint({0.f, 0.f});
+    m_progressFill->setPosition(barOrigin);
+    m_progressFill->setScaleX(0.f);
+    m_progressFill->setVisible(false);
+    m_mainLayer->addChild(m_progressFill, 5);
+
+    m_mainLayer->addChild(kit::inset({kLeftX, kStatsY, kColumnWidth, kStatsHeight}, 90));
+    m_statsLabel = kit::label("", "bigFont.fnt", 0.3f);
+    m_statsLabel->setAlignment(kCCTextAlignmentCenter);
+    m_statsLabel->setPosition({kPreviewCenterX, kStatsY + kStatsHeight * 0.5f + 0.5f});
+    m_mainLayer->addChild(m_statsLabel);
+    setStats("La vista previa usa objetos reales de GD", kit::tint::muted);
+}
+
+void GifImportPopup::buildOptionsPanel(CCMenu* menu) {
+    WeakRef<GifImportPopup> self = this;
+
+    m_mainLayer->addChild(kit::inset({kRightX, kBarY, kColumnWidth, kBarHeight}, 90));
+    float const barY = kBarY + kBarHeight * 0.5f;
+    for (int direction : {-1, 1}) {
+        auto* arrow = kit::arrowButton(direction > 0, 12.f, [self, direction] {
+            if (auto* popup = self.lock().data()) popup->cycleMode(direction);
+        });
+        arrow->setPosition({direction < 0 ? kRightX + 13.f : kRightX + kColumnWidth - 13.f, barY});
+        menu->addChild(arrow);
+    }
+    m_modePill = kit::pill("paim_gif_modeBlocks.png", "GJ_colorBtn_001.png", "Modo: Bloques",
+        nullptr, {kModeWidth, 20.f}, [self] {
+            if (auto* popup = self.lock().data()) popup->cycleMode(1);
+        });
+    m_modePill.button->setPosition({kRightX + kColumnWidth * 0.5f, barY});
+    menu->addChild(m_modePill.button);
+
+    m_mainLayer->addChild(kit::inset({kRightX, kPreviewY, kColumnWidth, kPreviewHeight}, 70));
+    using Adjust = void (GifImportPopup::*)(int);
+    struct Row {
+        kit::StepperSpec spec;
+        CCLabelBMFont** output;
+        Adjust adjust;
+    };
+    std::array<Row, 7> const rows{{
+        {{"paim_gif_resolution.png", "GJ_colorBtn_001.png", "Resolucion", kit::tint::cyan},
+            &m_resolutionValue, &GifImportPopup::adjustResolution},
+        {{"paim_gif_colors.png", "GJ_colorBtn_001.png", "Colores", kit::tint::pink},
+            &m_colorsValue, &GifImportPopup::adjustColors},
+        {{"paim_gif_budget.png", "GJ_colorBtn_001.png", "Presupuesto", kit::tint::yellow},
+            &m_budgetValue, &GifImportPopup::adjustBudget},
+        {{"paim_anim_film.png", "GJ_colorBtn_001.png", "Frames max.", kit::tint::violet},
+            &m_framesValue, &GifImportPopup::adjustFrames},
+        {{"paim_gif_pixel.png", "GJ_colorBtn_001.png", "Tamano pixel", kit::tint::green},
+            &m_pixelSizeValue, &GifImportPopup::adjustPixelSize},
+        {{"paim_gif_background.png", "GJ_colorBtn_001.png", "Fondo", kit::tint::silver},
+            &m_backgroundValue, &GifImportPopup::stepBackground},
+        {{"paim_gif_tolerance.png", "GJ_colorBtn_001.png", "Tolerancia", kit::tint::red},
+            &m_toleranceValue, &GifImportPopup::adjustTolerance},
+    }};
+    float const top = kPreviewY + kPreviewHeight - 3.f;
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        CCRect const area{
+            kRightX + 4.f,
+            top - kOptionRowHeight * static_cast<float>(i + 1),
+            kColumnWidth - 8.f,
+            kOptionRowHeight,
+        };
+        auto const adjust = rows[i].adjust;
+        *rows[i].output = kit::stepper(m_mainLayer, menu, rows[i].spec, area, i % 2 == 0,
+            [self, adjust](int direction) {
+                if (auto* popup = self.lock().data()) (popup->*adjust)(direction);
+            });
+    }
+
+    struct Toggle {
+        kit::Pill* pill;
+        char const* icon;
+        void (GifImportPopup::*run)();
+    };
+    std::array<Toggle, 4> const toggles{{
+        {&m_samplingPill, "paim_gif_sampling.png", &GifImportPopup::toggleSampling},
+        {&m_ditherPill, "paim_gif_dither.png", &GifImportPopup::toggleDither},
+        {&m_loopPill, "paim_anim_loop.png", &GifImportPopup::toggleLoop},
+        {&m_glowPill, "paim_gif_glow.png", &GifImportPopup::toggleGlow},
+    }};
+    float const toggleWidth = (kColumnWidth - 6.f) * 0.5f;
+    for (std::size_t i = 0; i < toggles.size(); ++i) {
+        auto const run = toggles[i].run;
+        *toggles[i].pill = kit::pill(toggles[i].icon, "GJ_colorBtn_001.png", "-",
+            "GJ_button_04.png", {toggleWidth, kToggleHeight}, [self, run] {
+                if (auto* popup = self.lock().data()) (popup->*run)();
+            }, "bigFont.fnt");
+        float const x = kRightX + toggleWidth * 0.5f + (i % 2 == 0 ? 0.f : toggleWidth + 6.f);
+        toggles[i].pill->button->setPosition({x, i < 2 ? kToggleTopY : kToggleBottomY});
+        menu->addChild(toggles[i].pill->button);
+    }
 }
 
 void GifImportPopup::loadOptions() {
@@ -524,6 +590,7 @@ void GifImportPopup::applySource(
     auto name = utils::string::pathToString(path.filename());
     if (name.size() > 32) name = name.substr(0, 30) + "..";
     m_fileLabel->setString(name.c_str());
+    m_fileLabel->limitLabelWidth(kFileLabelWidth, 0.42f, 0.2f);
     requestProcess();
 }
 
@@ -550,8 +617,7 @@ void GifImportPopup::startProcess() {
     m_progressTrack->setVisible(true);
     m_progressFill->setScaleX(0.f);
     m_progressFill->setVisible(true);
-    m_statsLabel->setColor({255, 205, 105});
-    m_statsLabel->setString("Procesando y optimizando...");
+    setStats("Procesando y optimizando...", {255, 205, 105});
 
     // free mode may arrive saved without touching the button.
     if (m_options.mode == ImportMode::Free && !stampLibraryReady()) buildStampLibrary();
@@ -592,8 +658,7 @@ void GifImportPopup::startProcess() {
     m_progress.reset();
     m_progressTrack->setVisible(false);
     m_progressFill->setVisible(false);
-    m_statsLabel->setColor({255, 190, 100});
-    m_statsLabel->setString("El juego se esta cerrando.");
+    setStats("El juego se esta cerrando.", {255, 190, 100});
 }
 
 void GifImportPopup::applyProcessed(BuildResult result) {
@@ -607,8 +672,7 @@ void GifImportPopup::applyProcessed(BuildResult result) {
     m_progressFill->setVisible(false);
     if (!result) {
         m_plan.reset();
-        m_statsLabel->setColor({255, 120, 120});
-        m_statsLabel->setString(result.error.c_str());
+        setStats(result.error, {255, 120, 120});
         return;
     }
     m_plan = std::make_shared<ImportPlan>(std::move(result.plan));
@@ -620,54 +684,73 @@ void GifImportPopup::applyProcessed(BuildResult result) {
 
 void GifImportPopup::refreshControls() {
     bool const autoResolution = m_options.autoResolution && m_options.mode == ImportMode::Paint;
-    m_resolutionValue->setString(autoResolution ? "Auto"
-        : fmt::format("{} px", m_options.maxDimension).c_str());
-    m_colorsValue->setString(std::to_string(m_options.maxColors).c_str());
-    m_budgetValue->setString(fmt::format("{}k", m_options.objectBudget / 1000.f).c_str());
-    m_framesValue->setString(std::to_string(m_options.maxFrames).c_str());
-    m_pixelSizeValue->setString(fmt::format("{:.0f} u", m_options.pixelSize).c_str());
-    m_backgroundValue->setString(
+    kit::setValue(m_resolutionValue, autoResolution
+        ? std::string("Auto") : fmt::format("{} px", m_options.maxDimension));
+    kit::setValue(m_colorsValue, std::to_string(m_options.maxColors));
+    kit::setValue(m_budgetValue, fmt::format("{}k", m_options.objectBudget / 1000.f));
+    kit::setValue(m_framesValue, std::to_string(m_options.maxFrames));
+    kit::setValue(m_pixelSizeValue, fmt::format("{:.0f} u", m_options.pixelSize));
+    kit::setValue(m_backgroundValue,
         m_options.background == BackgroundMode::AutoBorder ? "Auto" : "Conservar");
-    m_toleranceValue->setString(std::to_string(m_options.backgroundTolerance).c_str());
-    bool const vector = m_options.mode != ImportMode::Blocks;
-    m_modeSprite->setString(
-        m_options.mode == ImportMode::Render ? "Modo: Render"
-        : m_options.mode == ImportMode::Paint ? "Modo: Pintura"
-        : m_options.mode == ImportMode::Art ? "Modo: Art"
-        : m_options.mode == ImportMode::Free ? "Modo: Libre"
-        : m_options.mode == ImportMode::Circles ? "Modo: Circulos"
-        : m_options.mode == ImportMode::Blur ? "Modo: Blur"
-        : m_options.mode == ImportMode::Vert ? "Modo: Vert"
-        : m_options.mode == ImportMode::VertX ? "Modo: VertX"
-        : "Modo: Bloques");
-    m_samplingSprite->setString((m_options.mode == ImportMode::Blocks ||
+    kit::setValue(m_toleranceValue, std::to_string(m_options.backgroundTolerance));
+
+    auto const& mode = modeInfo(m_options.mode);
+    kit::setPillText(m_modePill, fmt::format("Modo: {}", mode.name));
+    kit::setPillIcon(m_modePill, mode.icon, "GJ_colorBtn_001.png");
+
+    auto setToggle = [](kit::Pill& pill, std::string const& text, bool on, char const* icon) {
+        kit::setPillSkin(pill, on ? "GJ_button_01.png" : "GJ_button_04.png");
+        kit::setPillIcon(pill, icon, "GJ_colorBtn_001.png");
+        kit::setPillText(pill, text);
+    };
+
+    bool const blur = m_options.mode == ImportMode::Blur;
+    bool const samples = m_options.mode == ImportMode::Blocks ||
         m_options.mode == ImportMode::Paint || m_options.mode == ImportMode::Render ||
-        m_options.mode == ImportMode::Free)
-        ? (m_options.sampling == SamplingMode::Smooth ? "Suave" : "Pixel")
-        : m_options.mode == ImportMode::Blur
-        ? (m_options.blurRadius == 0.f ? "Filtro: no"
-            : m_options.blurRadius < 0.8f ? "Blur: fino"
-            : m_options.blurRadius < 1.3f ? "Blur: suave" : "Blur: alto")
-        : "Suave: fijo");
-    m_ditherSprite->setString(usesSoftGeometry(m_options.mode)
-        ? (m_options.softBackdrop ? "Base: negra" : "Base: nivel")
-        : vector
-        ? "Dither: no"
-        : (m_options.dither ? "Dither: si" : "Dither: no"));
-    m_loopSprite->setString(m_options.loop ? "Loop: si" : "Loop: no");
-    m_glowSprite->setString(
-        m_options.mode == ImportMode::Blur
-            ? fmt::format("Glow: {}x",
-                static_cast<int>(m_options.blurGlowDiameter)).c_str()
-        : m_options.mode == ImportMode::Vert ? "Grad. vertical"
-        : m_options.mode == ImportMode::VertX
-        ? (m_options.gradientWash ? "Grad: 2903" : "Grad: no")
-        : m_options.glow == GlowMode::Strong ? "Glow: alto"
-        : m_options.glow == GlowMode::Soft ? "Glow: suave"
-        : "Glow: no");
+        m_options.mode == ImportMode::Free;
+    bool const smooth = m_options.sampling == SamplingMode::Smooth;
+    if (samples) {
+        setToggle(m_samplingPill, smooth ? "Suave" : "Pixel", smooth, "paim_gif_sampling.png");
+    } else if (blur) {
+        float const radius = m_options.blurRadius;
+        setToggle(m_samplingPill,
+            radius == 0.f ? "Filtro: no"
+            : radius < 0.8f ? "Blur: fino"
+            : radius < 1.3f ? "Blur: suave" : "Blur: alto",
+            radius > 0.f, "paim_gif_modeBlur.png");
+    } else {
+        setToggle(m_samplingPill, "Suave: fijo", false, "paim_gif_sampling.png");
+    }
+
+    if (usesSoftGeometry(m_options.mode)) {
+        setToggle(m_ditherPill, m_options.softBackdrop ? "Base: negra" : "Base: nivel",
+            m_options.softBackdrop, "paim_gif_background.png");
+    } else {
+        bool const dither = m_options.mode == ImportMode::Blocks && m_options.dither;
+        setToggle(m_ditherPill, dither ? "Dither: si" : "Dither: no", dither,
+            "paim_gif_dither.png");
+    }
+
+    setToggle(m_loopPill, m_options.loop ? "Loop: si" : "Loop: no", m_options.loop,
+        m_options.loop ? "paim_anim_loop.png" : "paim_anim_once.png");
+
+    if (blur) {
+        setToggle(m_glowPill,
+            fmt::format("Glow: {}x", static_cast<int>(m_options.blurGlowDiameter)), true,
+            "paim_gif_glow.png");
+    } else if (m_options.mode == ImportMode::Vert) {
+        setToggle(m_glowPill, "Grad. vertical", false, "paim_gif_modeVert.png");
+    } else if (m_options.mode == ImportMode::VertX) {
+        setToggle(m_glowPill, m_options.gradientWash ? "Grad: 2903" : "Grad: no",
+            m_options.gradientWash, "paim_gif_modeVert.png");
+    } else {
+        setToggle(m_glowPill,
+            m_options.glow == GlowMode::Strong ? "Glow: alto"
+            : m_options.glow == GlowMode::Soft ? "Glow: suave" : "Glow: no",
+            m_options.glow != GlowMode::Off, "paim_gif_glow.png");
+    }
 
     if (!m_plan || m_processing) return;
-    m_statsLabel->setColor({135, 230, 170});
     // fps from real delays after decimation/merge.
     double fps = 0.0;
     if (m_plan->frames.size() > 1) {
@@ -693,7 +776,7 @@ void GifImportPopup::refreshControls() {
         extra += fmt::format(", {} moves en {} pistas",
                              m_plan->moveTriggers, m_plan->motionTracks.size());
     }
-    m_statsLabel->setString(fmt::format(
+    setStats(fmt::format(
         "{}x{} | {} frames{} | {} colores | {}{}\n"
         "{} formas ({} blq, {} traz, {} circ, {} tri{}) + {} triggers = {}{}",
         m_plan->width, m_plan->height, m_plan->frames.size(),
@@ -705,7 +788,13 @@ void GifImportPopup::refreshControls() {
         m_plan->circleObjects, m_plan->triangleObjects, extra,
         m_plan->triggerObjects, m_plan->totalObjects,
         m_plan->actualDimension < m_plan->requestedDimension ? " (ajustado)" : ""
-    ).c_str());
+    ), {135, 230, 170});
+}
+
+void GifImportPopup::setStats(std::string const& text, ccColor3B color) {
+    if (!m_statsLabel) return;
+    m_statsLabel->setColor(color);
+    kit::setWrapped(m_statsLabel, text, {kColumnWidth - 10.f, kStatsHeight - 6.f}, 0.3f, 0.26f);
 }
 
 void GifImportPopup::pollSourceLoad() {
@@ -757,7 +846,7 @@ void GifImportPopup::refreshProgress() {
         ? fmt::format("Render {}/{} | {} | {:.0f}%", pass, passes,
                       buildStageText(stage), value * 100.f)
         : fmt::format("{} | {:.0f}%", buildStageText(stage), value * 100.f);
-    m_statsLabel->setString(text.c_str());
+    setStats(text, {255, 205, 105});
 }
 
 void GifImportPopup::displayPixels(
@@ -778,11 +867,11 @@ void GifImportPopup::displayPixels(
         if (alias) texture->setAliasTexParameters();
         else texture->setAntiAliasTexParameters();
         m_previewSprite = CCSprite::createWithTexture(texture);
-        float const scale = std::min(198.f / width, 162.f / height);
+        float const scale = std::min(kPreviewFitWidth / width, kPreviewFitHeight / height);
         m_previewSprite->setScale(scale);
-        m_previewSprite->setPosition({125.f, 171.f});
+        m_previewSprite->setPosition({kPreviewCenterX, kPreviewCenterY});
         m_mainLayer->addChild(m_previewSprite, 3);
-        if (auto* hint = m_mainLayer->getChildByID("preview-hint"_spr)) hint->setVisible(false);
+        if (m_previewHint) m_previewHint->setVisible(false);
     }
     texture->release();
 }
@@ -1009,16 +1098,17 @@ void GifImportPopup::adjustTolerance(int direction) {
     requestProcess();
 }
 
-void GifImportPopup::toggleMode() {
-    m_options.mode = m_options.mode == ImportMode::Blocks ? ImportMode::Art
-        : m_options.mode == ImportMode::Art ? ImportMode::Paint
-        : m_options.mode == ImportMode::Paint && renderEnabled() ? ImportMode::Render
-        : m_options.mode == ImportMode::Free ? ImportMode::Circles
-        : m_options.mode == ImportMode::Circles ? ImportMode::Blur
-        : m_options.mode == ImportMode::Blur ? ImportMode::Vert
-        : m_options.mode == ImportMode::Vert ? ImportMode::VertX
-        : m_options.mode == ImportMode::VertX ? ImportMode::Blocks
-        : ImportMode::Free;
+void GifImportPopup::cycleMode(int direction) {
+    int const count = static_cast<int>(kModes.size());
+    int index = 0;
+    for (int i = 0; i < count; ++i) {
+        if (kModes[static_cast<std::size_t>(i)].mode == m_options.mode) index = i;
+    }
+    int const step = direction < 0 ? -1 : 1;
+    do {
+        index = ((index + step) % count + count) % count;
+    } while (kModes[static_cast<std::size_t>(index)].mode == ImportMode::Render && !renderEnabled());
+    m_options.mode = kModes[static_cast<std::size_t>(index)].mode;
     // decoration touches gl: warn; with an active plan it rides in startprocess.
     if (m_options.mode == ImportMode::Free && !stampLibraryReady() && !m_processing) {
         refreshControls();
@@ -1034,6 +1124,10 @@ void GifImportPopup::toggleMode() {
         return;
     }
     requestProcess();
+}
+
+void GifImportPopup::stepBackground(int) {
+    toggleBackground();
 }
 
 void GifImportPopup::toggleBackground() {

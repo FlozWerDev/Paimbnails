@@ -65,7 +65,7 @@ class $modify(PaimonPhysicsEditorUI, EditorUI) {
         auto* button = paimon::editor::assets::circleButton(
             "paim_physics.png",
             {"GJ_gravityBtn_001.png", "GJ_moveBtn_001.png", "GJ_optionsBtn_001.png"},
-            0.68f,
+            0.9f,
             CircleBaseColor::Green,
             [] { openLab(); },
             CircleBaseSize::Tiny

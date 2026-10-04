@@ -8,10 +8,10 @@
 #include "../services/PhysicsObjectArt.hpp"
 #include "../services/PhysicsTriggerEmitter.hpp"
 #include "PhysicsBodyPopup.hpp"
+#include "../../editor-suite/EditorPopupKit.hpp"
 
 #include "../../../ui/PaimonUI.hpp"
 
-#include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/EditorUI.hpp>
 #include <Geode/binding/GJGroundLayer.hpp>
 #include <Geode/binding/GameManager.hpp>
@@ -32,15 +32,41 @@ using namespace geode::prelude;
 
 namespace paimon::editorphysics {
 
+namespace kit = paimon::editor::kit;
+
 namespace {
 
 constexpr float kPopupWidth = 520.f;
 constexpr float kPopupHeight = 315.f;
-constexpr float kPreviewX = 16.f;
-constexpr float kPreviewY = 91.f;
-constexpr float kPreviewWidth = 235.f;
-constexpr float kPreviewHeight = 137.f;
+constexpr float kPreviewX = 14.f;
+constexpr float kPreviewY = 136.f;
+constexpr float kPreviewWidth = 222.f;
+constexpr float kPreviewHeight = 132.f;
 constexpr float kPreviewClipInset = 3.f;
+constexpr float kFocusBarHeight = 16.f;
+constexpr float kRailX = 240.f;
+constexpr float kRailWidth = 30.f;
+constexpr float kToolSize = 19.f;
+constexpr float kToolPitch = 22.f;
+constexpr float kLeftWidth = 256.f;
+constexpr float kBodiesY = 66.f;
+constexpr float kBodiesHeight = 64.f;
+constexpr float kBodyARowY = 118.f;
+constexpr float kBodyBRowY = 100.f;
+constexpr float kCaptureRowY = 78.f;
+constexpr float kBodyModeWidth = 70.f;
+constexpr float kBodyLabelScale = 0.3f;
+constexpr float kBodyALabelWidth = 226.f;
+constexpr float kBodyBLabelWidth = 154.f;
+constexpr float kWorldX = 280.f;
+constexpr float kWorldWidth = 226.f;
+constexpr float kWorldRowHeight = 19.f;
+constexpr float kActionY = 46.f;
+constexpr float kActionHeight = 24.f;
+constexpr float kStatusX = 30.f;
+constexpr float kStatusY = 10.f;
+constexpr float kStatusWidth = 460.f;
+constexpr float kStatusHeight = 19.f;
 constexpr float kCamFollow = 5.f;
 constexpr float kTwoPi = 6.2831853071795864769f;
 constexpr float kRadiansToDegrees = 57.29577951308232f;
@@ -78,38 +104,6 @@ bool containsPoint(Fixture const& fixture, CCPoint point, float slack) {
         return dx * dx + dy * dy <= reach * reach;
     }
     return dx <= fixture.halfSize.x + slack && dy <= fixture.halfSize.y + slack;
-}
-
-CCMenuItemSpriteExtra* textButton(
-    CCMenu* menu,
-    char const* text,
-    float x,
-    float y,
-    int width,
-    char const* texture,
-    std::function<void()> callback
-) {
-    auto* sprite = ButtonSprite::create(
-        text, width, true, "bigFont.fnt", texture, 24.f, 0.55f
-    );
-    sprite->setScale(0.72f);
-    auto* button = CCMenuItemExt::createSpriteExtra(
-        sprite, [callback = std::move(callback)](CCMenuItemSpriteExtra*) {
-            if (callback) callback();
-        }
-    );
-    button->setPosition({x, y});
-    menu->addChild(button);
-    return button;
-}
-
-CCLabelBMFont* smallLabel(CCNode* parent, CCPoint position, ccColor3B color) {
-    auto* label = CCLabelBMFont::create("-", "bigFont.fnt");
-    label->setScale(0.29f);
-    label->setColor(color);
-    label->setPosition(position);
-    parent->addChild(label);
-    return label;
 }
 
 std::size_t liveObjectCount(CapturedBody const& body) {
@@ -161,201 +155,61 @@ bool PhysicsPopup::init() {
         "Captura objetos del editor como cuerpos y simula su fisica. "
         "<cg>Elegir A/B</c> definen los dos cuerpos y <cy>+ Din / + Fijo</c> "
         "agregan mas. En la vista toca un objeto para elegirlo, arrastra para "
-        "mover la camara y usa la rueda para el zoom. El <cy>engranaje</c> abre "
-        "los ajustes de cada cuerpo. <cg>Previsualizar</c> reproduce la "
-        "simulacion y <cg>Compilar GD</c> la convierte en objetos nativos.");
+        "mover la camara y usa la rueda para el zoom. La barra junto a la vista "
+        "tiene zoom, encuadre, <cy>hitboxes</c>, el cambio <cy>dinamico/fijo</c> "
+        "y el <cy>engranaje</c> con los ajustes de cada cuerpo. <cg>Previsualizar</c> "
+        "reproduce la simulacion y <cg>Compilar GD</c> la convierte en objetos nativos.");
+    addCorners(SideArtStyle::PopupGold, 0.4f);
     m_config = loadConfig();
-
-    auto* previewPanel = paimon::ui::makeInset({kPreviewWidth, kPreviewHeight}, 220);
-    previewPanel->setPosition({kPreviewX, kPreviewY});
-    m_mainLayer->addChild(previewPanel);
-
-    float const clipWidth = kPreviewWidth - kPreviewClipInset * 2.f;
-    float const clipHeight = kPreviewHeight - kPreviewClipInset * 2.f;
-    auto* previewClip = CCClippingNode::create();
-    previewClip->setPosition({kPreviewX + kPreviewClipInset, kPreviewY + kPreviewClipInset});
-    previewClip->setContentSize({clipWidth, clipHeight});
-    m_mainLayer->addChild(previewClip, 2);
-
-    auto* stencil = CCLayerColor::create({255, 255, 255, 255}, clipWidth, clipHeight);
-    previewClip->setStencil(stencil);
-
-    buildPreviewScenery(previewClip, clipWidth, clipHeight);
-
-    m_previewWorld = CCNode::create();
-    previewClip->addChild(m_previewWorld, 3);
-
-    m_focusLabel = CCLabelBMFont::create("Vista: todos | x1.0", "goldFont.fnt");
-    m_focusLabel->setScale(0.32f);
-    m_focusLabel->setPosition({kPreviewX + kPreviewWidth * 0.5f, kPreviewY + kPreviewHeight - 11.f});
-    m_mainLayer->addChild(m_focusLabel, 6);
-
-    m_bodyALabel = smallLabel(m_mainLayer, {128.f, 267.f}, {120, 235, 255});
-    m_otherBodiesLabel = smallLabel(m_mainLayer, {111.f, 249.f}, {255, 190, 95});
-
-    auto* hint = CCLabelBMFont::create(
-        "Configura cada cuerpo con engranaje: triggers en vivo o keyframes horneados.",
-        "bigFont.fnt"
-    );
-    hint->setScale(0.235f);
-    hint->setColor({155, 170, 200});
-    hint->setPosition({133.f, 235.f});
-    hint->limitLabelWidth(230.f, 0.235f, 0.16f);
-    m_mainLayer->addChild(hint);
 
     auto* menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
     m_mainLayer->addChild(menu, 5);
     WeakRef<PhysicsPopup> self = this;
 
-    for (int direction : {-1, 1}) {
-        auto* arrow = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
-        arrow->setScale(0.26f);
-        if (direction < 0) arrow->setFlipX(true);
-        auto* focusButton = CCMenuItemExt::createSpriteExtra(
-            arrow, [self, direction](CCMenuItemSpriteExtra*) {
-                if (auto popup = self.lock()) popup->cycleFocus(direction);
-            }
-        );
-        focusButton->setPosition({
-            direction < 0 ? kPreviewX + 13.f : kPreviewX + kPreviewWidth - 13.f,
-            kPreviewY + kPreviewHeight - 11.f,
-        });
-        menu->addChild(focusButton);
-    }
+    buildPreviewPanel(menu);
+    buildBodiesPanel(menu);
+    buildWorldPanel(menu);
 
-    struct ViewControl {
-        char const* frame;
-        float y;
-        float factor;
+    struct Action {
+        char const* icon;
+        char const* fallback;
+        char const* text;
+        char const* texture;
+        float x;
+        float width;
+        void (PhysicsPopup::*run)();
     };
-    // the strip between the preview and the option column, so the controls never
-    // cover the simulation.
-    for (auto const& control : std::array<ViewControl, 3>{{
-        {"GJ_zoomInBtn_001.png", 200.f, kZoomStep},
-        {"GJ_zoomOutBtn_001.png", 180.f, 1.f / kZoomStep},
-        {"GJ_resetBtn_001.png", 160.f, 0.f},
+    for (auto const& action : std::array<Action, 4>{{
+        {"paim_ui_trash.png", "GJ_trashBtn_001.png", "Limpiar", "GJ_button_06.png",
+            60.f, 92.f, &PhysicsPopup::clearBodies},
+        {"paim_ui_undo.png", "GJ_undoBtn_001.png", "Quitar ultimo", "GJ_button_04.png",
+            171.f, 118.f, &PhysicsPopup::removeLast},
+        {"paim_ui_play.png", "GJ_playEditorBtn_001.png", "Previsualizar", "GJ_button_02.png",
+            308.f, 128.f, &PhysicsPopup::preview},
+        {"paim_ui_hammer.png", "GJ_hammerIcon_001.png", "Compilar GD", "GJ_button_01.png",
+            442.f, 128.f, &PhysicsPopup::bake},
     }}) {
-        auto* sprite = paimon::SpriteHelper::safeCreateWithFrameName(control.frame);
-        if (!sprite) continue;
-        limitNodeSize(sprite, {15.f, 15.f}, 1.f, 0.05f);
-        float const factor = control.factor;
-        auto* button = CCMenuItemExt::createSpriteExtra(
-            sprite, [self, factor](CCMenuItemSpriteExtra*) {
-                auto popup = self.lock();
-                if (!popup) return;
-                if (factor > 0.f) popup->adjustZoom(factor);
-                else popup->resetView();
-            }
-        );
-        button->setPosition({261.f, control.y});
-        menu->addChild(button);
+        auto const run = action.run;
+        auto button = kit::pill(action.icon, action.fallback, action.text, action.texture,
+            {action.width, kActionHeight}, [self, run] {
+                if (auto popup = self.lock()) (popup.data()->*run)();
+            });
+        button.button->setPosition({action.x, kActionY});
+        menu->addChild(button.button);
     }
 
-    auto* hitboxToggle = CCMenuItemExt::createTogglerWithStandardSprites(
-        0.3f, [self](CCMenuItemToggler*) {
-            if (auto popup = self.lock()) popup->toggleHitboxes();
-        }
-    );
-    hitboxToggle->setPosition({261.f, 140.f});
-    menu->addChild(hitboxToggle);
-
-    if (auto* gravity = paimon::SpriteHelper::safeCreateWithFrameName("GJ_gravityBtn_001.png")) {
-        limitNodeSize(gravity, {15.f, 15.f}, 1.f, 0.05f);
-        auto* motionButton = CCMenuItemExt::createSpriteExtra(
-            gravity, [self](CCMenuItemSpriteExtra*) {
-                if (auto popup = self.lock()) popup->toggleFocusedMotion();
-            }
-        );
-        motionButton->setPosition({261.f, 120.f});
-        menu->addChild(motionButton);
-    }
-
-    if (auto* gear = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn_001.png")) {
-        limitNodeSize(gear, {15.f, 15.f}, 1.f, 0.05f);
-        auto* editButton = CCMenuItemExt::createSpriteExtra(
-            gear, [self](CCMenuItemSpriteExtra*) {
-                if (auto popup = self.lock()) popup->openBodyEditor();
-            }
-        );
-        editButton->setPosition({261.f, 100.f});
-        menu->addChild(editButton);
-    }
-
-    textButton(menu, "Elegir A", 47.f, 73.f, 70, "GJ_button_04.png", [self] {
-        if (auto popup = self.lock()) popup->beginCapture(CaptureRole::ReplaceA);
+    m_mainLayer->addChild(kit::inset({kStatusX, kStatusY, kStatusWidth, kStatusHeight}, 90));
+    m_statusIcon = kit::glyph("paim_ui_badge.png", "GJ_infoIcon_001.png", 10.f);
+    m_statusIcon->setPosition({kStatusX + 11.f, kStatusY + kStatusHeight * 0.5f});
+    m_mainLayer->addChild(m_statusIcon, 1);
+    m_statusLabel = kit::label("", "bigFont.fnt", 0.3f);
+    m_statusLabel->setAlignment(kCCTextAlignmentCenter);
+    m_statusLabel->setPosition({
+        kStatusX + 20.f + (kStatusWidth - 24.f) * 0.5f,
+        kStatusY + kStatusHeight * 0.5f + 0.5f,
     });
-    textButton(menu, "Elegir B", 103.f, 73.f, 70, "GJ_button_05.png", [self] {
-        if (auto popup = self.lock()) popup->beginCapture(CaptureRole::ReplaceB);
-    });
-    textButton(menu, "+ Din", 158.f, 73.f, 62, "GJ_button_04.png", [self] {
-        if (auto popup = self.lock()) popup->beginCapture(CaptureRole::AddDynamic);
-    });
-    textButton(menu, "+ Fijo", 211.f, 73.f, 62, "GJ_button_05.png", [self] {
-        if (auto popup = self.lock()) popup->beginCapture(CaptureRole::AddStatic);
-    });
-
-    m_bodyModeSprite = ButtonSprite::create(
-        "B: fijo", 97, true, "bigFont.fnt", "GJ_button_05.png", 18.f, 0.45f
-    );
-    auto* bodyModeButton = CCMenuItemExt::createSpriteExtra(
-        m_bodyModeSprite, [self](CCMenuItemSpriteExtra*) {
-            if (auto popup = self.lock()) popup->toggleBMotion();
-        }
-    );
-    bodyModeButton->setPosition({225.f, 249.f});
-    menu->addChild(bodyModeButton);
-
-    char const* optionNames[] = {
-        "Gravedad", "Rebote", "Friccion", "Arrastre", "Duracion",
-        "Velocidad X", "Velocidad Y", "Giro inicial", "Calidad",
-    };
-    if (auto* panel = paimon::ui::makeInset({232.f, 220.f}, 70)) {
-        panel->setPosition({270.f, 70.f});
-        m_mainLayer->addChild(panel, -1);
-    }
-    for (int field = 0; field < 9; ++field) {
-        float const y = 259.f - field * 22.f;
-        auto* name = CCLabelBMFont::create(optionNames[field], "bigFont.fnt");
-        name->setAnchorPoint({0.f, 0.5f});
-        name->setScale(0.3f);
-        name->setPosition({274.f, y});
-        m_mainLayer->addChild(name);
-
-        m_valueLabels[static_cast<std::size_t>(field)] = smallLabel(
-            m_mainLayer, {429.f, y}, {255, 220, 110}
-        );
-        for (int direction : {-1, 1}) {
-            auto* sprite = ButtonSprite::create(
-                direction < 0 ? "-" : "+", "bigFont.fnt", "GJ_button_04.png", 0.8f
-            );
-            sprite->setScale(0.6f);
-            auto* button = CCMenuItemExt::createSpriteExtra(
-                sprite, [self, field, direction](CCMenuItemSpriteExtra*) {
-                    if (auto popup = self.lock()) popup->adjust(field, direction);
-                }
-            );
-            button->setPosition({direction < 0 ? 397.f : 485.f, y});
-            menu->addChild(button);
-        }
-    }
-
-    textButton(menu, "Limpiar", 61.f, 39.f, 75, "GJ_button_06.png", [self] {
-        if (auto popup = self.lock()) popup->clearBodies();
-    });
-    textButton(menu, "Previsualizar", 154.f, 39.f, 110, "GJ_button_04.png", [self] {
-        if (auto popup = self.lock()) popup->preview();
-    });
-    textButton(menu, "Compilar GD", 269.f, 39.f, 100, "GJ_button_01.png", [self] {
-        if (auto popup = self.lock()) popup->bake();
-    });
-    textButton(menu, "Quitar ultimo", 399.f, 39.f, 115, "GJ_button_06.png", [self] {
-        if (auto popup = self.lock()) popup->removeLast();
-    });
-
-    m_statusLabel = smallLabel(m_mainLayer, {260.f, 15.f}, {185, 200, 225});
-    m_statusLabel->setScale(0.265f);
-    m_statusLabel->limitLabelWidth(475.f, 0.265f, 0.16f);
+    m_mainLayer->addChild(m_statusLabel, 1);
 
     setMouseEnabled(true);
     refreshBodies();
@@ -373,12 +227,189 @@ bool PhysicsPopup::init() {
     } else {
         setStatus(
             "Listo: toca un objeto para elegirlo y afinalo con el engranaje. "
-            "Arrastra la vista, usa la rueda para el zoom y la casilla para las hitboxes.",
+            "Arrastra la vista, usa la rueda para el zoom y la barra lateral para las hitboxes.",
             {170, 225, 185}
         );
     }
     schedule(schedule_selector(PhysicsPopup::tick));
     return true;
+}
+
+void PhysicsPopup::buildPreviewPanel(CCMenu* menu) {
+    WeakRef<PhysicsPopup> self = this;
+
+    m_mainLayer->addChild(kit::inset({kPreviewX, kPreviewY, kPreviewWidth, kPreviewHeight}, 220));
+
+    float const clipWidth = kPreviewWidth - kPreviewClipInset * 2.f;
+    float const clipHeight = kPreviewHeight - kPreviewClipInset * 2.f;
+    auto* previewClip = CCClippingNode::create();
+    previewClip->setPosition({kPreviewX + kPreviewClipInset, kPreviewY + kPreviewClipInset});
+    previewClip->setContentSize({clipWidth, clipHeight});
+    m_mainLayer->addChild(previewClip, 2);
+
+    auto* stencil = CCLayerColor::create({255, 255, 255, 255}, clipWidth, clipHeight);
+    previewClip->setStencil(stencil);
+
+    buildPreviewScenery(previewClip, clipWidth, clipHeight);
+
+    m_previewWorld = CCNode::create();
+    previewClip->addChild(m_previewWorld, 3);
+
+    auto* focusBar = CCLayerColor::create({0, 0, 0, 110}, clipWidth, kFocusBarHeight);
+    focusBar->setPosition({0.f, clipHeight - kFocusBarHeight});
+    previewClip->addChild(focusBar, 5);
+
+    float const focusY = kPreviewY + kPreviewHeight - kPreviewClipInset - kFocusBarHeight * 0.5f;
+    m_focusLabel = kit::label("Vista: todos | x1.0", "goldFont.fnt", 0.34f);
+    m_focusLabel->setPosition({kPreviewX + kPreviewWidth * 0.5f, focusY + 1.4f});
+    m_mainLayer->addChild(m_focusLabel, 6);
+
+    for (int direction : {-1, 1}) {
+        auto* arrow = kit::arrowButton(direction > 0, 10.f, [self, direction] {
+            if (auto popup = self.lock()) popup->cycleFocus(direction);
+        });
+        arrow->setPosition({
+            direction < 0 ? kPreviewX + 12.f : kPreviewX + kPreviewWidth - 12.f,
+            focusY,
+        });
+        menu->addChild(arrow);
+    }
+
+    // the rail sits beside the preview so the controls never cover the simulation.
+    m_mainLayer->addChild(kit::inset({kRailX, kPreviewY, kRailWidth, kPreviewHeight}, 90));
+    std::vector<CCMenuItem*> tools;
+    struct Zoom {
+        char const* icon;
+        char const* fallback;
+        float factor;
+    };
+    for (auto const& zoom : std::array<Zoom, 3>{{
+        {"paim_ui_zoomIn.png", "GJ_zoomInBtn_001.png", kZoomStep},
+        {"paim_ui_zoomOut.png", "GJ_zoomOutBtn_001.png", 1.f / kZoomStep},
+        {"paim_ui_fit.png", "GJ_resetBtn_001.png", 0.f},
+    }}) {
+        float const factor = zoom.factor;
+        tools.push_back(kit::toolButton(zoom.icon, zoom.fallback, EditorBaseColor::LightBlue,
+            kToolSize, [self, factor] {
+                auto popup = self.lock();
+                if (!popup) return;
+                if (factor > 0.f) popup->adjustZoom(factor);
+                else popup->resetView();
+            }));
+    }
+    tools.push_back(kit::toolToggle("paim_phys_hitbox.png", "GJ_checkOn_001.png",
+        EditorBaseColor::Cyan, kToolSize, m_showHitboxes, [self](bool) {
+            if (auto popup = self.lock()) popup->toggleHitboxes();
+        }));
+    tools.push_back(kit::toolButton("paim_phys_ball.png", "GJ_colorBtn_001.png",
+        EditorBaseColor::Orange, kToolSize, [self] {
+            if (auto popup = self.lock()) popup->toggleFocusedMotion();
+        }));
+    tools.push_back(kit::toolButton("paim_anim_gear.png", "GJ_optionsBtn_001.png",
+        EditorBaseColor::Magenta, kToolSize, [self] {
+            if (auto popup = self.lock()) popup->openBodyEditor();
+        }));
+    for (std::size_t i = 0; i < tools.size(); ++i) {
+        if (!tools[i]) continue;
+        tools[i]->setPosition({
+            kRailX + kRailWidth * 0.5f,
+            kPreviewY + kPreviewHeight - 11.f - static_cast<float>(i) * kToolPitch,
+        });
+        menu->addChild(tools[i]);
+    }
+}
+
+void PhysicsPopup::buildBodiesPanel(CCMenu* menu) {
+    WeakRef<PhysicsPopup> self = this;
+    m_mainLayer->addChild(kit::inset({kPreviewX, kBodiesY, kLeftWidth, kBodiesHeight}, 70));
+
+    auto row = [&](char const* icon, ccColor3B color, float y) {
+        auto* marker = kit::glyph(icon, "GJ_colorBtn_001.png", 12.f, color);
+        marker->setPosition({kPreviewX + 12.f, y});
+        m_mainLayer->addChild(marker);
+        auto* text = kit::label("-", "bigFont.fnt", kBodyLabelScale, color);
+        text->setAnchorPoint({0.f, 0.5f});
+        text->setPosition({kPreviewX + 22.f, y + 0.6f});
+        m_mainLayer->addChild(text);
+        return text;
+    };
+    m_bodyALabel = row("paim_phys_ball.png", kit::tint::cyan, kBodyARowY);
+    m_otherBodiesLabel = row("paim_phys_anchor.png", kit::tint::orange, kBodyBRowY);
+
+    m_bodyMode = kit::pill("paim_phys_anchor.png", "GJ_colorBtn_001.png", "B: fijo",
+        "GJ_button_05.png", {kBodyModeWidth, 16.f}, [self] {
+            if (auto popup = self.lock()) popup->toggleBMotion();
+        }, "bigFont.fnt");
+    m_bodyMode.button->setPosition({
+        kPreviewX + kLeftWidth - 6.f - kBodyModeWidth * 0.5f, kBodyBRowY,
+    });
+    menu->addChild(m_bodyMode.button);
+
+    struct Capture {
+        char const* icon;
+        char const* text;
+        char const* texture;
+        ccColor3B color;
+        CaptureRole role;
+    };
+    float const width = (kLeftWidth - 12.f - 3.f * 4.f) / 4.f;
+    float x = kPreviewX + 6.f + width * 0.5f;
+    for (auto const& capture : std::array<Capture, 4>{{
+        {"paim_phys_capture.png", "Elegir A", "GJ_button_02.png", kit::tint::white,
+            CaptureRole::ReplaceA},
+        {"paim_phys_capture.png", "Elegir B", "GJ_button_05.png", kit::tint::orange,
+            CaptureRole::ReplaceB},
+        {"paim_phys_addDyn.png", "+ Din", "GJ_button_04.png", kit::tint::cyan,
+            CaptureRole::AddDynamic},
+        {"paim_phys_addStatic.png", "+ Fijo", "GJ_button_04.png", kit::tint::orange,
+            CaptureRole::AddStatic},
+    }}) {
+        auto const role = capture.role;
+        auto button = kit::pill(capture.icon, "GJ_plus2Btn_001.png", capture.text,
+            capture.texture, {width, 18.f}, [self, role] {
+                if (auto popup = self.lock()) popup->beginCapture(role);
+            }, "bigFont.fnt", capture.color);
+        button.button->setPosition({x, kCaptureRowY});
+        menu->addChild(button.button);
+        x += width + 4.f;
+    }
+}
+
+void PhysicsPopup::buildWorldPanel(CCMenu* menu) {
+    WeakRef<PhysicsPopup> self = this;
+    float const top = kPreviewY + kPreviewHeight;
+    m_mainLayer->addChild(kit::inset({kWorldX, kBodiesY, kWorldWidth, top - kBodiesY}, 70));
+
+    auto* heading = kit::header("paim_phys_world.png", "GJ_infoIcon_001.png", "Mundo",
+        kWorldWidth - 8.f);
+    heading->setPosition({kWorldX + 4.f, top - 22.f});
+    m_mainLayer->addChild(heading);
+
+    std::array<kit::StepperSpec, 9> const rows{{
+        {"paim_phys_gravity.png", "GJ_arrow_02_001.png", "Gravedad", kit::tint::red},
+        {"paim_phys_bounce.png", "GJ_plus2Btn_001.png", "Rebote", kit::tint::green},
+        {"paim_phys_friction.png", "GJ_plus2Btn_001.png", "Friccion", kit::tint::yellow},
+        {"paim_phys_drag.png", "GJ_plus2Btn_001.png", "Arrastre", kit::tint::sky},
+        {"paim_ui_clock.png", "GJ_timeIcon_001.png", "Duracion", kit::tint::cream},
+        {"paim_phys_velX.png", "GJ_arrow_02_001.png", "Velocidad X", kit::tint::cyan},
+        {"paim_phys_velY.png", "GJ_arrow_02_001.png", "Velocidad Y", kit::tint::cyan},
+        {"paim_phys_spin.png", "GJ_updateBtn_001.png", "Giro inicial", kit::tint::violet},
+        {"paim_phys_quality.png", "GJ_plus2Btn_001.png", "Calidad", kit::tint::pink},
+    }};
+    float const firstRow = top - 25.f - kWorldRowHeight;
+    for (std::size_t field = 0; field < rows.size(); ++field) {
+        CCRect const area{
+            kWorldX + 4.f,
+            firstRow - static_cast<float>(field) * kWorldRowHeight,
+            kWorldWidth - 8.f,
+            kWorldRowHeight,
+        };
+        int const index = static_cast<int>(field);
+        m_valueLabels[field] = kit::stepper(m_mainLayer, menu, rows[field], area, field % 2 == 0,
+            [self, index](int direction) {
+                if (auto popup = self.lock()) popup->adjust(index, direction);
+            });
+    }
 }
 
 void PhysicsPopup::onClose(CCObject* sender) {
@@ -597,28 +628,36 @@ void PhysicsPopup::refreshValues() {
         fmt::format("{} Hz", m_config.sampleRate),
     };
     for (std::size_t i = 0; i < values.size(); ++i) {
-        if (m_valueLabels[i]) m_valueLabels[i]->setString(values[i].c_str());
+        kit::setValue(m_valueLabels[i], values[i]);
     }
 }
 
 void PhysicsPopup::refreshBodies() {
     auto const& bodies = PhysicsWorkspace::get().bodies();
+    auto setBodyLabels = [&](std::string const& a, std::string const& others) {
+        m_bodyALabel->setString(a.c_str());
+        m_bodyALabel->limitLabelWidth(kBodyALabelWidth, kBodyLabelScale, 0.18f);
+        m_otherBodiesLabel->setString(others.c_str());
+        m_otherBodiesLabel->limitLabelWidth(kBodyBLabelWidth, kBodyLabelScale, 0.18f);
+    };
+    bool const bDynamic = bodies.size() > 1 && bodies[1].motion == Motion::Dynamic;
+    kit::setPillText(m_bodyMode, bDynamic ? "B: dinamico" : "B: fijo");
+    kit::setPillIcon(m_bodyMode, bDynamic ? "paim_phys_ball.png" : "paim_phys_anchor.png",
+        "GJ_colorBtn_001.png");
     if (bodies.empty()) {
-        m_bodyALabel->setString("A: sin capturar");
-        m_otherBodiesLabel->setString("B / multiples: sin capturar");
-        if (m_bodyModeSprite) m_bodyModeSprite->setString("B: fijo");
+        setBodyLabels("A: sin capturar", "B / multiples: sin capturar");
         return;
     }
 
     auto const& a = bodies.front();
-    m_bodyALabel->setString(fmt::format(
+    auto const bodyA = fmt::format(
         "A: {} objeto{} | {} | {}",
         liveObjectCount(a), liveObjectCount(a) == 1 ? "" : "s",
         a.exactGroup > 0 ? fmt::format("grupo {}", a.exactGroup) : "grupo automatico",
         a.motion == Motion::Static
             ? std::string("fijo")
             : fmt::format("{}:{}", backendName(a.native.backend), presetName(a.native.preset))
-    ).c_str());
+    );
 
     std::size_t dynamicCount = 0;
     std::size_t staticCount = 0;
@@ -628,15 +667,10 @@ void PhysicsPopup::refreshBodies() {
         if (bodies[i].motion == Motion::Dynamic) ++dynamicCount;
         else ++staticCount;
     }
-    m_otherBodiesLabel->setString(fmt::format(
-        "B+: {} fijos + {} dinamicos | {} objetos",
+    setBodyLabels(bodyA, fmt::format(
+        "B+: {} fijos + {} dinamicos | {} obj",
         staticCount, dynamicCount, objectCount
-    ).c_str());
-    if (m_bodyModeSprite) {
-        m_bodyModeSprite->setString(
-            bodies.size() > 1 && bodies[1].motion == Motion::Dynamic ? "B: dinamico" : "B: fijo"
-        );
-    }
+    ));
 }
 
 // backgrounds are loose files and colours come from the editor's own nodes, so
@@ -1044,7 +1078,7 @@ void PhysicsPopup::updateFocusLabel() {
         );
     }
     m_focusLabel->setString(text.c_str());
-    m_focusLabel->limitLabelWidth(190.f, 0.32f, 0.2f);
+    m_focusLabel->limitLabelWidth(166.f, 0.34f, 0.2f);
 }
 
 float PhysicsPopup::playbackTime() const {
@@ -1179,8 +1213,8 @@ void PhysicsPopup::tick(float dt) {
 void PhysicsPopup::setStatus(std::string const& text, ccColor3B color) {
     if (!m_statusLabel) return;
     m_statusLabel->setColor(color);
-    m_statusLabel->setString(text.c_str());
-    m_statusLabel->limitLabelWidth(475.f, 0.265f, 0.16f);
+    kit::setWrapped(m_statusLabel, text, {kStatusWidth - 24.f, kStatusHeight - 3.f}, 0.3f, 0.24f);
+    if (m_statusIcon) m_statusIcon->setColor(color);
 }
 
 } // namespace paimon::editorphysics

@@ -37,7 +37,7 @@ class $modify(PaimonGifImportEditorUI, EditorUI) {
         auto* button = paimon::editor::assets::circleButton(
             "paim_gif_import.png",
             {"GJ_downloadBtn_001.png", "GJ_artBtn_001.png", "GJ_optionsBtn_001.png"},
-            0.68f,
+            0.9f,
             CircleBaseColor::Green,
             [] { openImporter(); },
             CircleBaseSize::Tiny

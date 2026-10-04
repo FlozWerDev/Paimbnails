@@ -5,6 +5,7 @@
 #include <chrono>
 #include <functional>
 #include <string>
+#include <vector>
 
 #include "AnimatedPaimon.hpp"
 #include "AnimatedTextInput.hpp"
@@ -25,6 +26,10 @@ protected:
     void onExit() override;
     void keyDown(cocos2d::enumKeyCodes key, double p1) override;
 
+    void buildSidebar();
+    void buildChatArea();
+    void buildInputRow();
+
     void onSubmitButton(cocos2d::CCObject* sender);
     void onTakeMeThere(cocos2d::CCObject* sender);
     void onSuggestionChip(cocos2d::CCObject* sender);
@@ -32,16 +37,22 @@ protected:
     void onClearChat(cocos2d::CCObject* sender);
     void onHelpButton(cocos2d::CCObject* sender);
     void onToggleMode(cocos2d::CCObject* sender);
+    void onCopyReply();
 
     // async max reply lands here, already on the main thread.
     void onMaxReply(GuideAnswer const& ans);
 
     void setRecommendationChips(std::vector<GuideRecommendation> const& recs);
     void restoreDefaultChips();
+    // one row: chips shrink together instead of wrapping onto each other.
+    void addChipRow(std::vector<std::pair<std::string, cocos2d::CCObject*>> const& chips,
+        char const* texture, cocos2d::SEL_MenuHandler handler);
     void updateTopicLabel(std::string const& topicId);
 
     // enter arrives via both ime and keydown; debounced.
     void trySubmitFromEnter();
+    void recallHistory(int direction);
+    void updateHint();
 
     void displayMessage(std::string const& message);
     void appendUserMessage(std::string const& message);
@@ -57,11 +68,20 @@ protected:
     CCMenuItemSpriteExtra* m_takeMeBtn = nullptr;
     cocos2d::CCMenu* m_takeMeMenu = nullptr;
     cocos2d::CCMenu* m_suggestionsMenu = nullptr;
+    cocos2d::CCMenu* m_sideMenu = nullptr;
     cocos2d::CCLabelBMFont* m_lastBubbleLabel = nullptr; // set by makebubble.
     cocos2d::CCLabelBMFont* m_topicLabel = nullptr;      // current topic.
+    cocos2d::CCLabelBMFont* m_hintLabel = nullptr;
+    cocos2d::CCLabelBMFont* m_counterLabel = nullptr;
+    CCMenuItemSpriteExtra* m_copyBtn = nullptr;
 
     std::string m_pendingMessage;
+    std::string m_lastReply;
     std::size_t m_typewriterIndex = 0;
+
+    std::vector<std::string> m_history;
+    int m_historyIndex = -1;
+    std::string m_draft;
 
     std::chrono::steady_clock::time_point m_lastEnterSubmit{};
 

@@ -1,46 +1,19 @@
-﻿#pragma once
+#pragma once
 #include "../../../ui/PaimonPopup.hpp"
 #include <Geode/Geode.hpp>
+#include <Geode/binding/Slider.hpp>
+#include <string>
+#include <vector>
 
 class LevelCellSettingsPopup : public PaimonPopup {
 protected:
     void onExit() override;
 
-    cocos2d::CCLabelBMFont* m_bgTypeLabel = nullptr;
     std::vector<std::string> m_bgTypes;
-    int m_bgTypeIndex = 0;
-
-    Slider* m_thumbWidthSlider = nullptr;
-    cocos2d::CCLabelBMFont* m_thumbWidthLabel = nullptr;
-
-    Slider* m_blurSlider = nullptr;
-    cocos2d::CCLabelBMFont* m_blurLabel = nullptr;
-
-    Slider* m_darknessSlider = nullptr;
-    cocos2d::CCLabelBMFont* m_darknessLabel = nullptr;
-
-    Slider* m_edgeBlendSlider = nullptr;
-    cocos2d::CCLabelBMFont* m_edgeBlendLabel = nullptr;
-
-    CCMenuItemToggler* m_separatorToggle = nullptr;
-    CCMenuItemToggler* m_viewButtonToggle = nullptr;
-    CCMenuItemToggler* m_compactToggle = nullptr;
-    CCMenuItemToggler* m_compactShowToggle = nullptr;
-    CCMenuItemToggler* m_transparentToggle = nullptr;
-    CCMenuItemToggler* m_hoverToggle = nullptr;
-    CCMenuItemToggler* m_effectOnGradientToggle = nullptr;
-    CCMenuItemToggler* m_mythicParticlesToggle = nullptr;
-    CCMenuItemToggler* m_animatedGradientToggle = nullptr;
-
-    cocos2d::CCLabelBMFont* m_animTypeLabel = nullptr;
     std::vector<std::string> m_animTypes;
-    int m_animTypeIndex = 0;
-
-    Slider* m_animSpeedSlider = nullptr;
-    cocos2d::CCLabelBMFont* m_animSpeedLabel = nullptr;
-
-    cocos2d::CCLabelBMFont* m_animEffectLabel = nullptr;
     std::vector<std::string> m_animEffects;
+    int m_bgTypeIndex = 0;
+    int m_animTypeIndex = 0;
     int m_animEffectIndex = 0;
 
     std::string m_currentBgType;
@@ -61,19 +34,18 @@ protected:
     bool m_mythicParticles = true;
     bool m_animatedGradient = true;
 
+    int m_tab = 0;
     geode::ScrollLayer* m_scrollLayer = nullptr;
-    cocos2d::CCSprite* m_scrollArrow = nullptr;
-    cocos2d::CCPoint m_scrollArrowBasePos = {0.f, 0.f};
-    bool m_scrollArrowBouncing = false;
+    cocos2d::CCNode* m_scrollbar = nullptr;
 
-    // during drag chrome hides so the list behind is a live preview; the dragged slider stays put and live.
+    // during drag everything but the dragged slider hides so the list behind is a live preview.
     struct SliderRow {
         Slider* slider = nullptr;
         cocos2d::CCLabelBMFont* valueLabel = nullptr;
         std::string title;
     };
     std::vector<SliderRow> m_sliderRows;
-    std::vector<cocos2d::CCNode*> m_hideOnDragNodes;
+    std::vector<geode::Ref<cocos2d::CCNode>> m_dragHidden;
     bool m_dragHiding = false;
     Slider* m_activeDragSlider = nullptr;
     GLubyte m_dimOriginalOpacity = 0;
@@ -88,33 +60,21 @@ protected:
     bool init() override;
     void loadSettings();
     void saveSettings();
-    void checkScrollPosition(float dt);
+    void rebuild(bool keepScroll = false);
+    void scheduleRebuild(bool keepScroll = false);
+    void resetToDefaults();
+    void applyPreset(float blur, float darkness, float edgeBlend);
+    std::vector<cocos2d::CCNode*> buildBackgroundTab(float width);
+    std::vector<cocos2d::CCNode*> buildDisplayTab(float width);
+    std::vector<cocos2d::CCNode*> buildHoverTab(float width);
+    cocos2d::CCNode* trackedSlider(float width, char const* title, char const* desc,
+        double value, double minV, double maxV, int precision, std::function<void(double)> onChange);
+
     void checkDragState(float dt);
     void applyDragVisibility(Slider* active);
+    void restoreDragVisibility();
     void updateDragCaption(Slider* active);
     void onDragCaptionHidden();
-    void registerSliderRow(Slider* slider, cocos2d::CCLabelBMFont* valueLabel, std::string title);
-
-    void onBgTypePrev(cocos2d::CCObject*);
-    void onBgTypeNext(cocos2d::CCObject*);
-    void onThumbWidthChanged(cocos2d::CCObject*);
-    void onBlurChanged(cocos2d::CCObject*);
-    void onDarknessChanged(cocos2d::CCObject*);
-    void onEdgeBlendChanged(cocos2d::CCObject*);
-    void onSeparatorToggled(cocos2d::CCObject*);
-    void onViewButtonToggled(cocos2d::CCObject*);
-    void onCompactToggled(cocos2d::CCObject*);
-    void onCompactShowToggleToggled(cocos2d::CCObject*);
-    void onTransparentToggled(cocos2d::CCObject*);
-    void onHoverToggled(cocos2d::CCObject*);
-    void onAnimTypePrev(cocos2d::CCObject*);
-    void onAnimTypeNext(cocos2d::CCObject*);
-    void onAnimSpeedChanged(cocos2d::CCObject*);
-    void onAnimEffectPrev(cocos2d::CCObject*);
-    void onAnimEffectNext(cocos2d::CCObject*);
-    void onEffectOnGradientToggled(cocos2d::CCObject*);
-    void onMythicParticlesToggled(cocos2d::CCObject*);
-    void onAnimatedGradientToggled(cocos2d::CCObject*);
 
     std::string getBgTypeDisplayName(std::string const& type);
     std::string getAnimTypeDisplayName(std::string const& type);

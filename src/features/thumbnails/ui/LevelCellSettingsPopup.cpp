@@ -1,15 +1,62 @@
 #include "LevelCellSettingsPopup.hpp"
 #include "../services/CompactListRefresh.hpp"
 #include "../../../blur/PopupBlurService.hpp"
+#include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../core/Settings.hpp"
+#include "../../../ui/PaiConfigKit.hpp"
 #include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
-#include "../../../utils/InfoButton.hpp"
+#include "../../../utils/PaimonNotification.hpp"
 #include <Geode/binding/Slider.hpp>
-#include <Geode/ui/BreakLine.hpp>
+#include <Geode/binding/SliderThumb.hpp>
+#include <Geode/ui/Scrollbar.hpp>
+#include <algorithm>
+#include <unordered_set>
 
 using namespace geode::prelude;
 using namespace cocos2d;
+
+namespace kit = paimon::configkit;
+namespace ui = paimon::ui;
+
+namespace {
+// external blurapi marks these nodes separately from our paiblurnode.
+constexpr char const* kBlurApiTag = "thesillydoggo.blur-api/blur-options";
+constexpr char const* kSavedTab = "levelcell-settings-tab";
+
+constexpr float kPopupW = 380.f;
+constexpr float kPopupH = 290.f;
+constexpr float kScrollX = 12.f;
+constexpr float kScrollY = 44.f;
+constexpr float kScrollbarW = 8.f;
+constexpr float kTabsGap = 6.f;
+
+struct Defaults {
+    static constexpr char const* bgType = "thumbnail";
+    static constexpr float thumbWidth = 0.5f;
+    static constexpr float blur = 3.0f;
+    static constexpr float darkness = 0.2f;
+    static constexpr float edgeBlend = 0.65f;
+    static constexpr char const* animType = "zoom-slide";
+    static constexpr float animSpeed = 1.0f;
+    static constexpr char const* animEffect = "none";
+};
+
+int indexOf(std::vector<std::string> const& list, std::string const& value) {
+    auto it = std::find(list.begin(), list.end(), value);
+    return it == list.end() ? 0 : static_cast<int>(it - list.begin());
+}
+
+std::function<std::string(double)> fixedFormat(int precision, char const* suffix = "") {
+    return [precision, suffix](double v) {
+        return precision == 1 ? fmt::format("{:.1f}{}", v, suffix) : fmt::format("{:.2f}{}", v, suffix);
+    };
+}
+
+int childTouchPrio() {
+    return CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2;
+}
+}
 
 std::string LevelCellSettingsPopup::getBgTypeDisplayName(std::string const& type) {
     if (type == "gradient") return "Gradient";
@@ -57,81 +104,67 @@ std::string LevelCellSettingsPopup::getAnimEffectDisplayName(std::string const& 
     return effect;
 }
 
-namespace {
-// external blurapi marks these nodes separately from our paiblurnode.
-constexpr char const* kBlurApiTag = "thesillydoggo.blur-api/blur-options";
-}
-
 void LevelCellSettingsPopup::onExit() {
-    this->unschedule(schedule_selector(LevelCellSettingsPopup::checkScrollPosition));
     this->unschedule(schedule_selector(LevelCellSettingsPopup::checkDragState));
     // restore external blur on close-mid-drag.
     if (m_dragHiding) {
         m_dragHiding = false;
         m_activeDragSlider = nullptr;
+        restoreDragVisibility();
         paimon::popupblur::setLivePreviewMode(this, false, 0.f);
         if (m_savedBlurApiOptions) {
             this->setUserObject(kBlurApiTag, m_savedBlurApiOptions.data());
             m_savedBlurApiOptions = nullptr;
         }
     }
-    if (m_scrollArrow) {
-        m_scrollArrow->stopAllActions();
-        m_scrollArrow->setPosition(m_scrollArrowBasePos);
-    }
-    m_scrollArrowBouncing = false;
     Popup::onExit();
 }
 
 void LevelCellSettingsPopup::loadSettings() {
-    m_currentBgType = Mod::get()->getSavedValue<std::string>("levelcell-background-type", "thumbnail");
-    m_currentThumbWidth = static_cast<float>(Mod::get()->getSettingValue<double>("level-thumb-width"));
-    m_currentBlur = static_cast<float>(Mod::get()->getSavedValue<double>("levelcell-background-blur", 3.0));
-    m_currentDarkness = static_cast<float>(Mod::get()->getSavedValue<double>("levelcell-background-darkness", 0.2));
+    auto* mod = Mod::get();
+    m_currentBgType = mod->getSavedValue<std::string>("levelcell-background-type", Defaults::bgType);
+    m_currentThumbWidth = static_cast<float>(mod->getSettingValue<double>("level-thumb-width"));
+    m_currentBlur = static_cast<float>(mod->getSavedValue<double>("levelcell-background-blur", Defaults::blur));
+    m_currentDarkness = static_cast<float>(mod->getSavedValue<double>("levelcell-background-darkness", Defaults::darkness));
     m_currentEdgeBlend = static_cast<float>(paimon::settings::thumbnails::thumbnailEdgeBlend());
-    m_showSeparator = Mod::get()->getSavedValue<bool>("levelcell-show-separator", true);
-    m_showViewButton = Mod::get()->getSavedValue<bool>("levelcell-show-view-button", true);
-    m_compactMode = Mod::get()->getSettingValue<bool>("compact-list-mode");
-    m_compactShowQuickToggle = Mod::get()->getSavedValue<bool>("compact-list-show-toggle", true);
-    m_transparentMode = Mod::get()->getSavedValue<bool>("transparent-list-mode", false);
-    m_hoverEffects = Mod::get()->getSettingValue<bool>("levelcell-hover-effects");
-    m_currentAnimType = Mod::get()->getSavedValue<std::string>("levelcell-anim-type", "zoom-slide");
-    m_currentAnimSpeed = static_cast<float>(Mod::get()->getSavedValue<double>("levelcell-anim-speed", 1.0));
-    m_currentAnimEffect = Mod::get()->getSavedValue<std::string>("levelcell-anim-effect", "none");
-    m_effectOnGradient = Mod::get()->getSavedValue<bool>("levelcell-effect-on-gradient", false);
-    m_mythicParticles = Mod::get()->getSavedValue<bool>("levelcell-mythic-particles", true);
-    m_animatedGradient = Mod::get()->getSavedValue<bool>("levelcell-animated-gradient", true);
+    m_showSeparator = mod->getSavedValue<bool>("levelcell-show-separator", true);
+    m_showViewButton = mod->getSavedValue<bool>("levelcell-show-view-button", true);
+    m_compactMode = mod->getSettingValue<bool>("compact-list-mode");
+    m_compactShowQuickToggle = mod->getSavedValue<bool>("compact-list-show-toggle", true);
+    m_transparentMode = mod->getSavedValue<bool>("transparent-list-mode", false);
+    m_hoverEffects = mod->getSettingValue<bool>("levelcell-hover-effects");
+    m_currentAnimType = mod->getSavedValue<std::string>("levelcell-anim-type", Defaults::animType);
+    m_currentAnimSpeed = static_cast<float>(mod->getSavedValue<double>("levelcell-anim-speed", Defaults::animSpeed));
+    m_currentAnimEffect = mod->getSavedValue<std::string>("levelcell-anim-effect", Defaults::animEffect);
+    m_effectOnGradient = mod->getSavedValue<bool>("levelcell-effect-on-gradient", false);
+    m_mythicParticles = mod->getSavedValue<bool>("levelcell-mythic-particles", true);
+    m_animatedGradient = mod->getSavedValue<bool>("levelcell-animated-gradient", true);
 
-    for (int i = 0; i < (int)m_bgTypes.size(); i++) {
-        if (m_bgTypes[i] == m_currentBgType) { m_bgTypeIndex = i; break; }
-    }
-    for (int i = 0; i < (int)m_animTypes.size(); i++) {
-        if (m_animTypes[i] == m_currentAnimType) { m_animTypeIndex = i; break; }
-    }
-    for (int i = 0; i < (int)m_animEffects.size(); i++) {
-        if (m_animEffects[i] == m_currentAnimEffect) { m_animEffectIndex = i; break; }
-    }
+    m_bgTypeIndex = indexOf(m_bgTypes, m_currentBgType);
+    m_animTypeIndex = indexOf(m_animTypes, m_currentAnimType);
+    m_animEffectIndex = indexOf(m_animEffects, m_currentAnimEffect);
 }
 
 void LevelCellSettingsPopup::saveSettings() {
     // same types levelcell and settings.hpp read.
-    Mod::get()->setSavedValue<std::string>("levelcell-background-type", m_currentBgType);
-    Mod::get()->setSettingValue<double>("level-thumb-width", static_cast<double>(m_currentThumbWidth));
-    Mod::get()->setSavedValue<double>("levelcell-background-blur", static_cast<double>(m_currentBlur));
-    Mod::get()->setSavedValue<double>("levelcell-background-darkness", static_cast<double>(m_currentDarkness));
-    Mod::get()->setSavedValue<double>("levelcell-thumbnail-edge-blend", static_cast<double>(m_currentEdgeBlend));
-    Mod::get()->setSavedValue<bool>("levelcell-show-separator", m_showSeparator);
-    Mod::get()->setSavedValue<bool>("levelcell-show-view-button", m_showViewButton);
-    Mod::get()->setSettingValue<bool>("compact-list-mode", m_compactMode);
-    Mod::get()->setSavedValue<bool>("compact-list-show-toggle", m_compactShowQuickToggle);
-    Mod::get()->setSavedValue<bool>("transparent-list-mode", m_transparentMode);
-    Mod::get()->setSettingValue<bool>("levelcell-hover-effects", m_hoverEffects);
-    Mod::get()->setSavedValue<std::string>("levelcell-anim-type", m_currentAnimType);
-    Mod::get()->setSavedValue<double>("levelcell-anim-speed", static_cast<double>(m_currentAnimSpeed));
-    Mod::get()->setSavedValue<std::string>("levelcell-anim-effect", m_currentAnimEffect);
-    Mod::get()->setSavedValue<bool>("levelcell-effect-on-gradient", m_effectOnGradient);
-    Mod::get()->setSavedValue<bool>("levelcell-mythic-particles", m_mythicParticles);
-    Mod::get()->setSavedValue<bool>("levelcell-animated-gradient", m_animatedGradient);
+    auto* mod = Mod::get();
+    mod->setSavedValue<std::string>("levelcell-background-type", m_currentBgType);
+    mod->setSettingValue<double>("level-thumb-width", static_cast<double>(m_currentThumbWidth));
+    mod->setSavedValue<double>("levelcell-background-blur", static_cast<double>(m_currentBlur));
+    mod->setSavedValue<double>("levelcell-background-darkness", static_cast<double>(m_currentDarkness));
+    mod->setSavedValue<double>("levelcell-thumbnail-edge-blend", static_cast<double>(m_currentEdgeBlend));
+    mod->setSavedValue<bool>("levelcell-show-separator", m_showSeparator);
+    mod->setSavedValue<bool>("levelcell-show-view-button", m_showViewButton);
+    mod->setSettingValue<bool>("compact-list-mode", m_compactMode);
+    mod->setSavedValue<bool>("compact-list-show-toggle", m_compactShowQuickToggle);
+    mod->setSavedValue<bool>("transparent-list-mode", m_transparentMode);
+    mod->setSettingValue<bool>("levelcell-hover-effects", m_hoverEffects);
+    mod->setSavedValue<std::string>("levelcell-anim-type", m_currentAnimType);
+    mod->setSavedValue<double>("levelcell-anim-speed", static_cast<double>(m_currentAnimSpeed));
+    mod->setSavedValue<std::string>("levelcell-anim-effect", m_currentAnimEffect);
+    mod->setSavedValue<bool>("levelcell-effect-on-gradient", m_effectOnGradient);
+    mod->setSavedValue<bool>("levelcell-mythic-particles", m_mythicParticles);
+    mod->setSavedValue<bool>("levelcell-animated-gradient", m_animatedGradient);
 
     // invalidate cell watcher + shared settings cache.
     paimon::settings::internal::invalidateSettingsCache();
@@ -140,44 +173,8 @@ void LevelCellSettingsPopup::saveSettings() {
     if (m_onSettingsChanged) m_onSettingsChanged();
 }
 
-void LevelCellSettingsPopup::checkScrollPosition(float dt) {
-    if (!m_scrollArrow || !m_scrollLayer) return;
-
-    float minY = m_scrollLayer->m_contentLayer->getContentSize().height -
-                 m_scrollLayer->getContentSize().height;
-    float currentY = m_scrollLayer->m_contentLayer->getPositionY();
-
-    bool nearBottom = (currentY <= -minY + 20.f);
-
-    if (nearBottom) {
-        m_scrollArrow->stopAllActions();
-        m_scrollArrow->setPosition(m_scrollArrowBasePos);
-        m_scrollArrowBouncing = false;
-        if (m_scrollArrow->getOpacity() > 0) {
-            m_scrollArrow->runAction(CCFadeTo::create(0.3f, 0));
-        }
-    } else {
-        if (!m_scrollArrowBouncing) {
-            m_scrollArrow->stopAllActions();
-            m_scrollArrow->setPosition(m_scrollArrowBasePos);
-            auto moveUp = CCMoveBy::create(0.5f, {0, 3.f});
-            auto moveDown = CCMoveBy::create(0.5f, {0, -3.f});
-            auto seq = CCSequence::create(moveUp, moveDown, nullptr);
-            auto bounce = CCRepeatForever::create(seq);
-            if (m_scrollArrow->getOpacity() < 150) {
-                auto fadeIn = CCFadeTo::create(0.3f, 150);
-                auto spawn = CCSpawn::create(fadeIn, bounce, nullptr);
-                m_scrollArrow->runAction(spawn);
-            } else {
-                m_scrollArrow->runAction(bounce);
-            }
-            m_scrollArrowBouncing = true;
-        }
-    }
-}
-
 // frame-polled slider drag state, no hooks.
-void LevelCellSettingsPopup::checkDragState(float dt) {
+void LevelCellSettingsPopup::checkDragState(float) {
     Slider* dragging = nullptr;
     for (auto& row : m_sliderRows) {
         if (row.slider && row.slider->getLiveDragging()) {
@@ -211,6 +208,7 @@ void LevelCellSettingsPopup::updateDragCaption(Slider* active) {
     }
     if (m_dragCaptionLabel) {
         m_dragCaptionLabel->setString(fmt::format("{}: {}", title, valueText).c_str());
+        m_dragCaptionLabel->limitLabelWidth(m_dragCaptionPill->getContentSize().width - 14.f, 0.38f, 0.2f);
     }
 
     auto* thumb = active->getThumb();
@@ -228,15 +226,40 @@ void LevelCellSettingsPopup::updateDragCaption(Slider* active) {
     m_dragCaptionPill->setPosition(localPos);
 }
 
+void LevelCellSettingsPopup::restoreDragVisibility() {
+    for (auto& node : m_dragHidden) {
+        if (node) node->setVisible(true);
+    }
+    m_dragHidden.clear();
+}
+
 void LevelCellSettingsPopup::applyDragVisibility(Slider* active) {
     bool hiding = (active != nullptr);
     m_dragHiding = hiding;
 
-    // visibility, not opacity: slider/scrolllayer/breakline lack ccrgbaprotocol.
-    for (auto* node : m_hideOnDragNodes) {
-        if (!node) continue;
-    if (active && node == static_cast<CCNode*>(active)) continue;
-        node->setVisible(!hiding);
+    restoreDragVisibility();
+    if (hiding) {
+        // keep only the chain from the dragged slider (and its value) up to the popup layer.
+        std::unordered_set<CCNode*> keep;
+        auto keepChain = [&](CCNode* node) {
+            for (; node && node != m_mainLayer; node = node->getParent()) keep.insert(node);
+        };
+        keepChain(active);
+        for (auto& row : m_sliderRows) {
+            if (row.slider == active) keepChain(row.valueLabel);
+        }
+        keepChain(m_dragCaptionPill);
+
+        std::unordered_set<CCNode*> visitedParents;
+        for (auto* node : std::vector<CCNode*>(keep.begin(), keep.end())) {
+            auto* parent = node->getParent();
+            if (!parent || !visitedParents.insert(parent).second) continue;
+            for (auto* child : CCArrayExt<CCNode*>(parent->getChildren())) {
+                if (keep.contains(child) || !child->isVisible()) continue;
+                child->setVisible(false);
+                m_dragHidden.emplace_back(child);
+            }
+        }
     }
 
     // fade the dim layer mid-drag to preview the list beneath; restore after.
@@ -291,26 +314,17 @@ void LevelCellSettingsPopup::onDragCaptionHidden() {
     if (m_dragCaptionPill) m_dragCaptionPill->setVisible(false);
 }
 
-void LevelCellSettingsPopup::registerSliderRow(Slider* slider, CCLabelBMFont* valueLabel, std::string title) {
-    if (!slider) return;
-    m_sliderRows.push_back({slider, valueLabel, std::move(title)});
-}
-
 bool LevelCellSettingsPopup::init() {
-    if (!PaimonPopup::init(280.f, 250.f)) return false;
+    if (!PaimonPopup::init(kPopupW, kPopupH)) return false;
 
     this->setTitle("LevelCell Settings");
+    this->addCorners();
     this->addInfoButton("LevelCell Settings",
-        "Customize how level cells look in lists: background style, blur, darkness, "
-        "display toggles and hover animations. Drag a slider to preview the result live. "
-        "Each section has its own <cy>info</c> button for details.");
-
-    auto content = m_mainLayer->getContentSize();
-    float cx = content.width / 2.f;
-
-    if (m_title) m_hideOnDragNodes.push_back(m_title);
-    if (m_closeBtn) m_hideOnDragNodes.push_back(m_closeBtn);
-    if (m_bgSprite) m_hideOnDragNodes.push_back(m_bgSprite);
+        "Customize how level cells look in lists.\n"
+        "<cy>Background</c>: style, thumbnail size, blur, darkness and quick presets.\n"
+        "<cy>Display</c>: separator, view button, compact and transparent lists.\n"
+        "<cy>Hover</c>: animation, speed and color effect.\n"
+        "Drag any slider and the popup fades out so you can <cg>preview the list live</c>.");
 
     m_bgTypes = {"gradient", "legacy-gradient", "thumbnail"};
     m_animTypes = {
@@ -325,463 +339,330 @@ bool LevelCellSettingsPopup::init() {
     };
 
     loadSettings();
+    m_tab = std::clamp(static_cast<int>(Mod::get()->getSavedValue<int64_t>(kSavedTab, 0)), 0, 2);
 
-    float scrollW = content.width - 16.f;
-    float scrollH = content.height - 42.f;
-    float totalH = 600.f;
+    auto const content = m_mainLayer->getContentSize();
+    float const scrollW = content.width - kScrollX * 2.f - kScrollbarW - 4.f;
 
-    m_scrollLayer = geode::ScrollLayer::create({scrollW, scrollH});
-    m_scrollLayer->setPosition({8.f, 8.f});
-    m_mainLayer->addChild(m_scrollLayer, 5);
+    auto* tabs = kit::makeTabBar(scrollW, {"Background", "Display", "Hover"}, m_tab,
+        [this](int tab) {
+            m_tab = tab;
+            Mod::get()->setSavedValue<int64_t>(kSavedTab, tab);
+            scheduleRebuild();
+        });
+    tabs->setPosition({kScrollX, content.height - 40.f - kit::kTabBarHeight + kTabsGap});
+    tabs->setID("levelcell-tabs"_spr);
+    m_mainLayer->addChild(tabs, 5);
 
-    auto* scrollContent = m_scrollLayer->m_contentLayer;
-    scrollContent->setContentSize({scrollW, totalH});
+    auto* bottomMenu = CCMenu::create();
+    bottomMenu->setPosition({0.f, 0.f});
+    m_mainLayer->addChild(bottomMenu, 5);
 
-    auto navMenu = CCMenu::create();
-    navMenu->setPosition({0, 0});
-    navMenu->ignoreAnchorPointForPosition(true);
-    navMenu->setContentSize({scrollW, totalH});
-    scrollContent->addChild(navMenu, 10);
+    auto* resetBtn = ui::makeButton("Reset", [this] {
+        WeakRef<LevelCellSettingsPopup> self = this;
+        geode::createQuickPopup("Reset LevelCell",
+            "Restore every <cy>LevelCell</c> setting to its default value?",
+            "Cancel", "Reset",
+            [self](FLAlertLayer*, bool confirmed) {
+                if (!confirmed) return;
+                if (auto popup = self.lock()) popup->resetToDefaults();
+            });
+    }, ui::Btn::Red, 96.f, 0.6f);
+    resetBtn->setID("levelcell-reset-btn"_spr);
+    resetBtn->setPosition({content.width * 0.5f - 56.f, 22.f});
+    bottomMenu->addChild(resetBtn);
 
-    float cxs = scrollW / 2.f;
-    float y = totalH - 10.f;
+    auto* doneBtn = ui::makeButton("Done", [this] { this->onClose(nullptr); }, ui::Btn::Green, 96.f, 0.6f);
+    doneBtn->setID("levelcell-done-btn"_spr);
+    doneBtn->setPosition({content.width * 0.5f + 56.f, 22.f});
+    bottomMenu->addChild(doneBtn);
 
-    auto addTitle = [&](char const* text, char const* info = nullptr) {
-        auto label = CCLabelBMFont::create(text, "goldFont.fnt");
-        label->setScale(0.4f);
-        label->setPosition({cxs, y});
-        scrollContent->addChild(label);
-        m_hideOnDragNodes.push_back(label);
+    if (auto pill = ui::makeInset({190.f, 24.f}, 200)) {
+        pill->setAnchorPoint({0.5f, 0.5f});
+        pill->setPosition({content.width / 2.f, content.height + 24.f});
+        pill->setVisible(false);
+        m_mainLayer->addChild(pill, 50);
+        m_dragCaptionPill = pill;
 
-        if (info) {
-            auto btn = PaimonInfo::createInfoBtn(text, info, this, 0.48f);
-            if (btn) {
-                float halfW = label->getContentSize().width * 0.4f / 2.f;
-                btn->setPosition({cxs + halfW + 12.f, y});
-                navMenu->addChild(btn);
-                m_hideOnDragNodes.push_back(btn);
-            }
-        }
-    };
-
-    auto addSlider = [&](Slider*& slider, CCLabelBMFont*& label, float value, float maxVal,
-                          SEL_MenuHandler callback, char const* rowTitle, int precision = 2) {
-        slider = Slider::create(this, callback, 0.65f);
-        slider->setPosition({cxs - 10.f, y});
-        slider->setValue(value / maxVal);
-        scrollContent->addChild(slider);
-        m_hideOnDragNodes.push_back(slider);
-
-        std::string valStr = precision == 1
-            ? fmt::format("{:.1f}", value)
-            : fmt::format("{:.2f}", value);
-        label = CCLabelBMFont::create(valStr.c_str(), "bigFont.fnt");
-        label->setScale(0.32f);
-        label->setPosition({cxs + 95.f, y});
-        scrollContent->addChild(label);
-        m_hideOnDragNodes.push_back(label);
-
-        registerSliderRow(slider, label, rowTitle);
-    };
-
-    auto addToggle = [&](char const* text, CCMenuItemToggler*& toggle, bool value,
-                         SEL_MenuHandler callback, char const* info = nullptr) {
-        auto lbl = CCLabelBMFont::create(text, "bigFont.fnt");
-        lbl->setScale(0.35f);
-        lbl->setAnchorPoint({0.f, 0.5f});
-        lbl->setPosition({cxs - 90.f, y});
-        scrollContent->addChild(lbl);
-        m_hideOnDragNodes.push_back(lbl);
-
-        if (info) {
-            auto iBtn = PaimonInfo::createInfoBtn(text, info, this, 0.4f);
-            if (iBtn) {
-                float lblW = lbl->getContentSize().width * 0.35f;
-                iBtn->setPosition({cxs - 90.f + lblW + 8.f, y});
-                navMenu->addChild(iBtn);
-                m_hideOnDragNodes.push_back(iBtn);
-            }
-        }
-
-        toggle = CCMenuItemToggler::createWithStandardSprites(this, callback, 0.55f);
-        toggle->setScale(0.55f);
-        toggle->setPosition({cxs + 90.f, y});
-        toggle->toggle(value);
-        navMenu->addChild(toggle);
-        m_hideOnDragNodes.push_back(toggle);
-    };
-
-    auto addSelector = [&](CCLabelBMFont*& label, std::string const& displayText,
-                          SEL_MenuHandler prevCb, SEL_MenuHandler nextCb) {
-        auto lSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
-        lSpr->setScale(0.4f);
-        auto lBtn = CCMenuItemSpriteExtra::create(lSpr, this, prevCb);
-        lBtn->setPosition({cxs - 70.f, y});
-        navMenu->addChild(lBtn);
-        m_hideOnDragNodes.push_back(lBtn);
-
-        auto rSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
-        rSpr->setFlipX(true);
-        rSpr->setScale(0.4f);
-        auto rBtn = CCMenuItemSpriteExtra::create(rSpr, this, nextCb);
-        rBtn->setPosition({cxs + 70.f, y});
-        navMenu->addChild(rBtn);
-        m_hideOnDragNodes.push_back(rBtn);
-
-        label = CCLabelBMFont::create(displayText.c_str(), "bigFont.fnt");
-        label->setScale(0.3f);
-        label->setPosition({cxs, y});
-        scrollContent->addChild(label);
-        m_hideOnDragNodes.push_back(label);
-    };
-
-    addTitle("Background Style",
-        "Choose how the cell background is rendered.\n"
-        "<cy>Gradient</c>: strongly blurs the thumbnail with Dual Kawase.\n"
-        "<cy>Legacy Gradient</c>: original two-color gradient, double-checked.\n"
-        "<cy>Thumbnail</c>: shows the level thumbnail as background.");
-    y -= 18.f;
-    addSelector(m_bgTypeLabel, getBgTypeDisplayName(m_currentBgType),
-        menu_selector(LevelCellSettingsPopup::onBgTypePrev),
-        menu_selector(LevelCellSettingsPopup::onBgTypeNext));
-    y -= 24.f;
-
-    addTitle("Thumbnail Size",
-        "Controls how much of the cell width the thumbnail covers.");
-    y -= 16.f;
-    {
-        m_thumbWidthSlider = Slider::create(
-            this, menu_selector(LevelCellSettingsPopup::onThumbWidthChanged), 0.6f);
-        m_thumbWidthSlider->setPosition({cxs - 10.f, y});
-        m_thumbWidthSlider->setValue((m_currentThumbWidth - 0.2f) / (0.95f - 0.2f));
-        scrollContent->addChild(m_thumbWidthSlider);
-        m_hideOnDragNodes.push_back(m_thumbWidthSlider);
-
-        m_thumbWidthLabel = CCLabelBMFont::create(
-            fmt::format("{:.2f}", m_currentThumbWidth).c_str(), "bigFont.fnt");
-        m_thumbWidthLabel->setScale(0.28f);
-        m_thumbWidthLabel->setPosition({cxs + 90.f, y});
-        scrollContent->addChild(m_thumbWidthLabel);
-        m_hideOnDragNodes.push_back(m_thumbWidthLabel);
-
-        registerSliderRow(m_thumbWidthSlider, m_thumbWidthLabel, "Thumbnail Size");
-    }
-    y -= 24.f;
-
-    addTitle("Background Blur",
-        "Gaussian blur on the thumbnail background.\n"
-        "<cy>0</c> = sharp, <cy>10</c> = max blur.");
-    y -= 16.f;
-    addSlider(m_blurSlider, m_blurLabel, m_currentBlur, 10.0f,
-        menu_selector(LevelCellSettingsPopup::onBlurChanged), "Background Blur", 1);
-    y -= 24.f;
-
-    addTitle("Background Darkness",
-        "Dark overlay on the thumbnail background.\n"
-        "<cy>0</c> = none, <cy>1</c> = fully dark.");
-    y -= 16.f;
-    addSlider(m_darknessSlider, m_darknessLabel, m_currentDarkness, 1.0f,
-        menu_selector(LevelCellSettingsPopup::onDarknessChanged), "Background Darkness");
-    y -= 24.f;
-
-    addTitle("Thumbnail Edge Blend",
-        "Softly blends the diagonal thumbnail edge into the blurred background.\n"
-        "<cy>0</c> = hard cut, <cy>1</c> = blend across 75% of the thumbnail.");
-    y -= 16.f;
-    addSlider(m_edgeBlendSlider, m_edgeBlendLabel, m_currentEdgeBlend, 1.0f,
-        menu_selector(LevelCellSettingsPopup::onEdgeBlendChanged), "Thumbnail Edge Blend");
-    y -= 26.f;
-
-    if (auto* sep = geode::BreakLine::create(scrollW - 20.f, 1.f, {1.f, 1.f, 1.f, 0.15f})) {
-        sep->setPosition({10.f, y + 6.f});
-        sep->setAnchorPoint({0.f, 0.5f});
-        scrollContent->addChild(sep);
-        m_hideOnDragNodes.push_back(sep);
+        m_dragCaptionLabel = CCLabelBMFont::create("", "bigFont.fnt");
+        m_dragCaptionLabel->setScale(0.38f);
+        m_dragCaptionLabel->setColor(ui::palette::gold);
+        m_dragCaptionLabel->setPosition({95.f, 12.f});
+        pill->addChild(m_dragCaptionLabel);
     }
 
-    addTitle("Display Options");
-    y -= 18.f;
+    rebuild();
 
-    addToggle("Show Separator Line", m_separatorToggle, m_showSeparator,
-        menu_selector(LevelCellSettingsPopup::onSeparatorToggled),
-        "Thin line between cell content and the thumbnail area.\n"
-        "Only visible when <cy>Thumbnail Edge Blend</c> is 0.");
-    y -= 20.f;
-
-    addToggle("Show View Button", m_viewButtonToggle, m_showViewButton,
-        menu_selector(LevelCellSettingsPopup::onViewButtonToggled),
-        "When OFF, the View button is hidden and the whole cell is clickable.");
-    y -= 20.f;
-
-    addToggle("Compact Mode (Lists)", m_compactToggle, m_compactMode,
-        menu_selector(LevelCellSettingsPopup::onCompactToggled),
-        "Shorter level cells in list views.");
-    y -= 20.f;
-
-    addToggle("Show Compact Toggle", m_compactShowToggle, m_compactShowQuickToggle,
-        menu_selector(LevelCellSettingsPopup::onCompactShowToggleToggled),
-        "Quick compact-mode button in the level browser.");
-    y -= 20.f;
-
-    addToggle("Transparent Lists", m_transparentToggle, m_transparentMode,
-        menu_selector(LevelCellSettingsPopup::onTransparentToggled),
-        "Transparent list cell backgrounds.");
-    y -= 20.f;
-
-    addToggle("Mythic Particles", m_mythicParticlesToggle, m_mythicParticles,
-        menu_selector(LevelCellSettingsPopup::onMythicParticlesToggled),
-        "Particles on Mythic/Legendary rated levels.");
-    y -= 20.f;
-
-    addToggle("Animated Gradient", m_animatedGradientToggle, m_animatedGradient,
-        menu_selector(LevelCellSettingsPopup::onAnimatedGradientToggled),
-        "Color-shifting animation on gradient backgrounds.");
-    y -= 26.f;
-
-    if (auto* sep = geode::BreakLine::create(scrollW - 20.f, 1.f, {1.f, 1.f, 1.f, 0.15f})) {
-        sep->setPosition({10.f, y + 6.f});
-        sep->setAnchorPoint({0.f, 0.5f});
-        scrollContent->addChild(sep);
-        m_hideOnDragNodes.push_back(sep);
-    }
-
-    addTitle("Hover & Animation");
-    y -= 18.f;
-
-    addToggle("Hover Animation", m_hoverToggle, m_hoverEffects,
-        menu_selector(LevelCellSettingsPopup::onHoverToggled),
-        "Animate cells when hovering with the mouse.");
-    y -= 22.f;
-
-    addTitle("Animation Type",
-        "Animation played when hovering over a cell.");
-    y -= 18.f;
-    addSelector(m_animTypeLabel, getAnimTypeDisplayName(m_currentAnimType),
-        menu_selector(LevelCellSettingsPopup::onAnimTypePrev),
-        menu_selector(LevelCellSettingsPopup::onAnimTypeNext));
-    y -= 24.f;
-
-    addTitle("Animation Speed",
-        "How fast the hover animation plays.");
-    y -= 16.f;
-    {
-        m_animSpeedSlider = Slider::create(
-            this, menu_selector(LevelCellSettingsPopup::onAnimSpeedChanged), 0.6f);
-        m_animSpeedSlider->setPosition({cxs - 10.f, y});
-        m_animSpeedSlider->setValue((m_currentAnimSpeed - 0.1f) / (5.0f - 0.1f));
-        scrollContent->addChild(m_animSpeedSlider);
-        m_hideOnDragNodes.push_back(m_animSpeedSlider);
-
-        m_animSpeedLabel = CCLabelBMFont::create(
-            fmt::format("{:.1f}", m_currentAnimSpeed).c_str(), "bigFont.fnt");
-        m_animSpeedLabel->setScale(0.28f);
-        m_animSpeedLabel->setPosition({cxs + 90.f, y});
-        scrollContent->addChild(m_animSpeedLabel);
-        m_hideOnDragNodes.push_back(m_animSpeedLabel);
-
-        registerSliderRow(m_animSpeedSlider, m_animSpeedLabel, "Animation Speed");
-    }
-    y -= 24.f;
-
-    addTitle("Color Effect",
-        "Color/visual filter when hovering.");
-    y -= 18.f;
-    addSelector(m_animEffectLabel, getAnimEffectDisplayName(m_currentAnimEffect),
-        menu_selector(LevelCellSettingsPopup::onAnimEffectPrev),
-        menu_selector(LevelCellSettingsPopup::onAnimEffectNext));
-    y -= 22.f;
-
-    addToggle("Apply Effect to BG", m_effectOnGradientToggle, m_effectOnGradient,
-        menu_selector(LevelCellSettingsPopup::onEffectOnGradientToggled),
-        "Also apply the hover color effect to the gradient background.");
-
-    m_scrollLayer->moveToTop();
-
-    auto scrollArrow = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
-    if (scrollArrow) {
-        scrollArrow->setRotation(-90.f);
-        scrollArrow->setScale(0.35f);
-        scrollArrow->setOpacity(150);
-        m_scrollArrowBasePos = ccp(content.width / 2.f, 18.f);
-        scrollArrow->setPosition(m_scrollArrowBasePos);
-        scrollArrow->setID("scroll-hint-arrow"_spr);
-        m_mainLayer->addChild(scrollArrow, 20);
-        m_hideOnDragNodes.push_back(scrollArrow);
-
-        auto moveUp = CCMoveBy::create(0.5f, {0, 3.f});
-        auto moveDown = CCMoveBy::create(0.5f, {0, -3.f});
-        scrollArrow->runAction(CCRepeatForever::create(
-            CCSequence::create(moveUp, moveDown, nullptr)));
-        m_scrollArrowBouncing = true;
-        m_scrollArrow = scrollArrow;
-        this->unschedule(schedule_selector(LevelCellSettingsPopup::checkScrollPosition));
-        this->schedule(schedule_selector(LevelCellSettingsPopup::checkScrollPosition), 0.2f);
-    }
-
-    {
-        auto pill = paimon::ui::makeInset({160.f, 24.f}, 200);
-        if (pill) {
-            pill->setAnchorPoint({0.5f, 0.5f});
-            pill->setPosition({content.width / 2.f, content.height + 24.f});
-            pill->setVisible(false);
-            m_mainLayer->addChild(pill, 50);
-            m_dragCaptionPill = pill;
-
-            m_dragCaptionLabel = CCLabelBMFont::create("", "bigFont.fnt");
-            m_dragCaptionLabel->setScale(0.38f);
-            m_dragCaptionLabel->setPosition({80.f, 12.f});
-            pill->addChild(m_dragCaptionLabel);
-        }
-    }
-
-    this->unschedule(schedule_selector(LevelCellSettingsPopup::checkDragState));
     this->schedule(schedule_selector(LevelCellSettingsPopup::checkDragState), 0.f);
 
     paimon::markDynamicPopup(this);
     return true;
 }
 
-void LevelCellSettingsPopup::onBgTypePrev(CCObject*) {
-    m_bgTypeIndex--;
-    if (m_bgTypeIndex < 0) m_bgTypeIndex = (int)m_bgTypes.size() - 1;
-    m_currentBgType = m_bgTypes[m_bgTypeIndex];
-    if (m_bgTypeLabel) m_bgTypeLabel->setString(getBgTypeDisplayName(m_currentBgType).c_str());
-    saveSettings();
+void LevelCellSettingsPopup::scheduleRebuild(bool keepScroll) {
+    WeakRef<LevelCellSettingsPopup> self = this;
+    Loader::get()->queueInMainThread([self, keepScroll] {
+        if (paimon::isRuntimeShuttingDown()) return;
+        if (auto popup = self.lock(); popup && popup->getParent()) popup->rebuild(keepScroll);
+    });
 }
 
-void LevelCellSettingsPopup::onBgTypeNext(CCObject*) {
-    m_bgTypeIndex++;
-    if (m_bgTypeIndex >= (int)m_bgTypes.size()) m_bgTypeIndex = 0;
-    m_currentBgType = m_bgTypes[m_bgTypeIndex];
-    if (m_bgTypeLabel) m_bgTypeLabel->setString(getBgTypeDisplayName(m_currentBgType).c_str());
-    saveSettings();
-}
+void LevelCellSettingsPopup::rebuild(bool keepScroll) {
+    if (m_dragHiding) applyDragVisibility(nullptr);
+    m_activeDragSlider = nullptr;
+    m_sliderRows.clear();
 
-void LevelCellSettingsPopup::onThumbWidthChanged(CCObject*) {
-    if (!m_thumbWidthSlider) return;
-    float val = m_thumbWidthSlider->getThumb()->getValue();
-    m_currentThumbWidth = 0.2f + val * (0.95f - 0.2f);
-    m_currentThumbWidth = std::max(0.2f, std::min(0.95f, m_currentThumbWidth));
-    if (m_thumbWidthLabel) m_thumbWidthLabel->setString(fmt::format("{:.2f}", m_currentThumbWidth).c_str());
-    saveSettings();
-}
+    float scrollY = 0.f;
+    bool const restore = keepScroll && m_scrollLayer;
+    if (restore) scrollY = m_scrollLayer->m_contentLayer->getPositionY();
+    if (m_scrollLayer) m_scrollLayer->removeFromParent();
+    if (m_scrollbar) m_scrollbar->removeFromParent();
+    m_scrollLayer = nullptr;
+    m_scrollbar = nullptr;
 
-void LevelCellSettingsPopup::onBlurChanged(CCObject*) {
-    if (!m_blurSlider) return;
-    float val = m_blurSlider->getThumb()->getValue();
-    m_currentBlur = val * 10.0f;
-    m_currentBlur = std::max(0.0f, std::min(10.0f, m_currentBlur));
-    if (m_blurLabel) m_blurLabel->setString(fmt::format("{:.1f}", m_currentBlur).c_str());
-    saveSettings();
-}
+    auto const content = m_mainLayer->getContentSize();
+    float const scrollW = content.width - kScrollX * 2.f - kScrollbarW - 4.f;
+    float const scrollTop = content.height - 40.f - kit::kTabBarHeight;
+    float const scrollH = scrollTop - kScrollY;
 
-void LevelCellSettingsPopup::onDarknessChanged(CCObject*) {
-    if (!m_darknessSlider) return;
-    float val = m_darknessSlider->getThumb()->getValue();
-    m_currentDarkness = val * 1.0f;
-    m_currentDarkness = std::max(0.0f, std::min(1.0f, m_currentDarkness));
-    if (m_darknessLabel) m_darknessLabel->setString(fmt::format("{:.2f}", m_currentDarkness).c_str());
-    saveSettings();
-}
-
-void LevelCellSettingsPopup::onEdgeBlendChanged(CCObject*) {
-    if (!m_edgeBlendSlider) return;
-    m_currentEdgeBlend = std::clamp(m_edgeBlendSlider->getThumb()->getValue(), 0.f, 1.f);
-    if (m_edgeBlendLabel) {
-        m_edgeBlendLabel->setString(fmt::format("{:.2f}", m_currentEdgeBlend).c_str());
+    std::vector<CCNode*> items;
+    switch (m_tab) {
+        case 1: items = buildDisplayTab(scrollW); break;
+        case 2: items = buildHoverTab(scrollW); break;
+        default: items = buildBackgroundTab(scrollW); break;
     }
-    saveSettings();
+
+    m_scrollLayer = kit::makeScrollStack({scrollW, scrollH}, items, 6.f);
+    m_scrollLayer->setPosition({kScrollX, kScrollY});
+    m_scrollLayer->setID("levelcell-scroll"_spr);
+    m_mainLayer->addChild(m_scrollLayer, 4);
+
+    if (restore) {
+        float const minY = scrollH - m_scrollLayer->m_contentLayer->getContentSize().height;
+        m_scrollLayer->m_contentLayer->setPositionY(std::clamp(scrollY, std::min(minY, 0.f), 0.f));
+    }
+
+    if (auto* bar = Scrollbar::create(m_scrollLayer)) {
+        bar->setContentSize({kScrollbarW, scrollH - 4.f});
+        bar->setPosition({kScrollX + scrollW + 4.f + kScrollbarW * 0.5f, kScrollY + scrollH * 0.5f});
+        m_mainLayer->addChild(bar, 5);
+        m_scrollbar = bar;
+    }
 }
 
-void LevelCellSettingsPopup::onAnimSpeedChanged(CCObject*) {
-    if (!m_animSpeedSlider) return;
-    float val = m_animSpeedSlider->getThumb()->getValue();
-    m_currentAnimSpeed = 0.1f + val * (5.0f - 0.1f);
-    m_currentAnimSpeed = std::max(0.1f, std::min(5.0f, m_currentAnimSpeed));
-    if (m_animSpeedLabel) m_animSpeedLabel->setString(fmt::format("{:.1f}", m_currentAnimSpeed).c_str());
-    saveSettings();
+CCNode* LevelCellSettingsPopup::trackedSlider(float width, char const* title, char const* desc,
+    double value, double minV, double maxV, int precision, std::function<void(double)> onChange) {
+    Slider* slider = nullptr;
+    CCLabelBMFont* valueLabel = nullptr;
+    auto* row = kit::makeSliderRow(width, title, desc, value, minV, maxV, fixedFormat(precision),
+        std::move(onChange), &slider, &valueLabel);
+    if (slider) m_sliderRows.push_back({slider, valueLabel, title});
+    return row;
 }
 
-void LevelCellSettingsPopup::onSeparatorToggled(CCObject*) {
-    m_showSeparator = !m_separatorToggle->isToggled();
-    saveSettings();
+std::vector<CCNode*> LevelCellSettingsPopup::buildBackgroundTab(float width) {
+    float const inner = kit::cardInnerWidth(width);
+
+    std::vector<std::string> bgNames;
+    for (auto const& type : m_bgTypes) bgNames.push_back(getBgTypeDisplayName(type));
+
+    std::vector<CCNode*> items;
+    items.push_back(kit::makeCard(width, "Style", {255, 190, 100}, {
+        kit::makeSelectRow(inner, "Background Style",
+            "Gradient blurs the thumbnail, Legacy uses two colors, Thumbnail shows the image.",
+            bgNames, m_bgTypeIndex,
+            [this](int index) {
+                m_bgTypeIndex = std::clamp(index, 0, static_cast<int>(m_bgTypes.size()) - 1);
+                m_currentBgType = m_bgTypes[static_cast<size_t>(m_bgTypeIndex)];
+                saveSettings();
+            }),
+        kit::makeToggleRow(inner, "Animated Gradient", "Color-shifting animation on gradient backgrounds.",
+            m_animatedGradient,
+            [this](bool on) { m_animatedGradient = on; saveSettings(); }),
+    }));
+
+    items.push_back(kit::makeCard(width, "Thumbnail", {120, 210, 255}, {
+        trackedSlider(inner, "Thumbnail Size", "How much of the cell width the thumbnail covers.",
+            m_currentThumbWidth, 0.2, 0.95, 2,
+            [this](double v) { m_currentThumbWidth = static_cast<float>(v); saveSettings(); }),
+        trackedSlider(inner, "Edge Blend", "Blends the diagonal edge into the background. 0 is a hard cut.",
+            m_currentEdgeBlend, 0.0, 1.0, 2,
+            [this](double v) { m_currentEdgeBlend = static_cast<float>(v); saveSettings(); }),
+    }));
+
+    items.push_back(kit::makeCard(width, "Background", {180, 150, 255}, {
+        trackedSlider(inner, "Blur", "0 is sharp, 10 is the strongest blur.",
+            m_currentBlur, 0.0, 10.0, 1,
+            [this](double v) { m_currentBlur = static_cast<float>(v); saveSettings(); }),
+        trackedSlider(inner, "Darkness", "Dark overlay drawn over the background.",
+            m_currentDarkness, 0.0, 1.0, 2,
+            [this](double v) { m_currentDarkness = static_cast<float>(v); saveSettings(); }),
+    }));
+
+    {
+        constexpr float kRowH = 34.f;
+        constexpr float kGap = 6.f;
+        auto* row = CCNode::create();
+        row->setAnchorPoint({0.f, 0.f});
+        row->setContentSize({inner, kRowH});
+        row->addChild(ui::makeInset({inner, kRowH}, kit::kRowAlpha), -1);
+
+        auto* menu = CCMenu::create();
+        menu->setPosition({0.f, 0.f});
+        menu->setTouchPriority(childTouchPrio());
+        row->addChild(menu, 5);
+
+        struct Preset { char const* name; float blur, darkness, edge; ui::Btn skin; };
+        Preset const presets[] = {
+            {"Default", Defaults::blur, Defaults::darkness, Defaults::edgeBlend, ui::Btn::Gray},
+            {"Soft",  6.0f, 0.30f, 0.85f, ui::Btn::Blue},
+            {"Sharp", 0.5f, 0.10f, 0.30f, ui::Btn::Cyan},
+            {"Dark",  4.0f, 0.55f, 0.70f, ui::Btn::Pink},
+        };
+        int const count = static_cast<int>(std::size(presets));
+        float const buttonW = (inner - 16.f - kGap * (count - 1)) / count;
+        for (int i = 0; i < count; ++i) {
+            auto const p = presets[i];
+            auto* btn = ui::makeButton(p.name, [this, p] { applyPreset(p.blur, p.darkness, p.edge); },
+                p.skin, buttonW, 0.55f);
+            btn->setPosition({8.f + buttonW * 0.5f + i * (buttonW + kGap), kRowH * 0.5f});
+            menu->addChild(btn);
+        }
+        items.push_back(kit::makeCard(width, "Quick Presets", {255, 150, 210}, {
+            row,
+            kit::makeHint(inner, "Presets only change blur, darkness and edge blend."),
+        }));
+    }
+
+    items.push_back(kit::makeHint(width,
+        "Tip: drag a slider and the popup fades out so you can see the list update live."));
+    return items;
 }
 
-void LevelCellSettingsPopup::onViewButtonToggled(CCObject*) {
-    m_showViewButton = !m_viewButtonToggle->isToggled();
-    saveSettings();
-    // vanilla view button needs a full list rebuild.
-    paimon::thumbnails::refreshActiveLevelBrowserForCompactToggle();
+std::vector<CCNode*> LevelCellSettingsPopup::buildDisplayTab(float width) {
+    float const inner = kit::cardInnerWidth(width);
+    auto refreshList = [] { paimon::thumbnails::refreshActiveLevelBrowserForCompactToggle(); };
+
+    std::vector<CCNode*> items;
+    items.push_back(kit::makeCard(width, "Cell Layout", {120, 210, 255}, {
+        kit::makeToggleRow(inner, "Separator Line",
+            "Thin line between the cell content and the thumbnail. Only visible with Edge Blend at 0.",
+            m_showSeparator,
+            [this](bool on) { m_showSeparator = on; saveSettings(); }),
+        kit::makeToggleRow(inner, "View Button",
+            "When off, the View button is hidden and the whole cell is clickable.",
+            m_showViewButton,
+            [this, refreshList](bool on) {
+                m_showViewButton = on;
+                saveSettings();
+                // vanilla view button needs a full list rebuild.
+                refreshList();
+            }),
+    }));
+
+    items.push_back(kit::makeCard(width, "Lists", {150, 235, 170}, {
+        kit::makeToggleRow(inner, "Compact Mode", "Shorter level cells in list views.",
+            m_compactMode,
+            [this, refreshList](bool on) { m_compactMode = on; saveSettings(); refreshList(); }),
+        kit::makeToggleRow(inner, "Compact Toggle Button", "Quick compact-mode button in the level browser.",
+            m_compactShowQuickToggle,
+            [this](bool on) { m_compactShowQuickToggle = on; saveSettings(); }),
+        kit::makeToggleRow(inner, "Transparent Lists", "Transparent list cell backgrounds.",
+            m_transparentMode,
+            [this, refreshList](bool on) {
+                m_transparentMode = on;
+                saveSettings();
+                // transparent mode restructures cells: rebuild.
+                refreshList();
+            }),
+    }));
+
+    items.push_back(kit::makeCard(width, "Extras", {255, 210, 100}, {
+        kit::makeToggleRow(inner, "Mythic Particles", "Particles on Mythic and Legendary rated levels.",
+            m_mythicParticles,
+            [this](bool on) { m_mythicParticles = on; saveSettings(); }),
+    }));
+    return items;
 }
 
-void LevelCellSettingsPopup::onCompactToggled(CCObject*) {
-    m_compactMode = !m_compactToggle->isToggled();
-    saveSettings();
-    paimon::thumbnails::refreshActiveLevelBrowserForCompactToggle();
+std::vector<CCNode*> LevelCellSettingsPopup::buildHoverTab(float width) {
+    float const inner = kit::cardInnerWidth(width);
+
+    std::vector<std::string> animNames;
+    for (auto const& type : m_animTypes) animNames.push_back(getAnimTypeDisplayName(type));
+    std::vector<std::string> effectNames;
+    for (auto const& effect : m_animEffects) effectNames.push_back(getAnimEffectDisplayName(effect));
+
+    std::vector<CCNode*> items;
+    items.push_back(kit::makeHeroToggle(width, "Hover Animation",
+        "Animate level cells while the mouse is over them.",
+        m_hoverEffects,
+        [this](bool on) { m_hoverEffects = on; saveSettings(); }));
+
+    items.push_back(kit::makeCard(width, "Animation", {120, 210, 255}, {
+        kit::makeSelectRow(inner, "Type", "Movement played when hovering a cell.",
+            animNames, m_animTypeIndex,
+            [this](int index) {
+                m_animTypeIndex = std::clamp(index, 0, static_cast<int>(m_animTypes.size()) - 1);
+                m_currentAnimType = m_animTypes[static_cast<size_t>(m_animTypeIndex)];
+                saveSettings();
+            }),
+        kit::makeSliderRow(inner, "Speed", "How fast the hover animation plays.",
+            m_currentAnimSpeed, 0.1, 5.0, fixedFormat(1, "x"),
+            [this](double v) { m_currentAnimSpeed = static_cast<float>(v); saveSettings(); }),
+    }));
+
+    items.push_back(kit::makeCard(width, "Color Effect", {255, 150, 210}, {
+        kit::makeSelectRow(inner, "Effect", "Color or visual filter applied while hovering.",
+            effectNames, m_animEffectIndex,
+            [this](int index) {
+                m_animEffectIndex = std::clamp(index, 0, static_cast<int>(m_animEffects.size()) - 1);
+                m_currentAnimEffect = m_animEffects[static_cast<size_t>(m_animEffectIndex)];
+                saveSettings();
+            }),
+        kit::makeToggleRow(inner, "Apply to Background", "Also apply the effect to the gradient background.",
+            m_effectOnGradient,
+            [this](bool on) { m_effectOnGradient = on; saveSettings(); }),
+    }));
+    return items;
 }
 
-void LevelCellSettingsPopup::onCompactShowToggleToggled(CCObject*) {
-    m_compactShowQuickToggle = !m_compactShowToggle->isToggled();
+void LevelCellSettingsPopup::applyPreset(float blur, float darkness, float edgeBlend) {
+    m_currentBlur = blur;
+    m_currentDarkness = darkness;
+    m_currentEdgeBlend = edgeBlend;
     saveSettings();
+    scheduleRebuild(true);
 }
 
-void LevelCellSettingsPopup::onTransparentToggled(CCObject*) {
-    m_transparentMode = !m_transparentToggle->isToggled();
-    saveSettings();
-    // transparent mode restructures cells: rebuild.
-    paimon::thumbnails::refreshActiveLevelBrowserForCompactToggle();
-}
+void LevelCellSettingsPopup::resetToDefaults() {
+    bool const needsListRebuild = !m_showViewButton || !m_compactMode || m_transparentMode;
 
-void LevelCellSettingsPopup::onHoverToggled(CCObject*) {
-    m_hoverEffects = !m_hoverToggle->isToggled();
-    saveSettings();
-}
+    m_currentBgType = Defaults::bgType;
+    m_currentThumbWidth = Defaults::thumbWidth;
+    m_currentBlur = Defaults::blur;
+    m_currentDarkness = Defaults::darkness;
+    m_currentEdgeBlend = Defaults::edgeBlend;
+    m_showSeparator = true;
+    m_showViewButton = true;
+    m_compactMode = true;
+    m_compactShowQuickToggle = true;
+    m_transparentMode = false;
+    m_hoverEffects = true;
+    m_currentAnimType = Defaults::animType;
+    m_currentAnimSpeed = Defaults::animSpeed;
+    m_currentAnimEffect = Defaults::animEffect;
+    m_effectOnGradient = false;
+    m_mythicParticles = true;
+    m_animatedGradient = true;
+    m_bgTypeIndex = indexOf(m_bgTypes, m_currentBgType);
+    m_animTypeIndex = indexOf(m_animTypes, m_currentAnimType);
+    m_animEffectIndex = indexOf(m_animEffects, m_currentAnimEffect);
 
-void LevelCellSettingsPopup::onEffectOnGradientToggled(CCObject*) {
-    m_effectOnGradient = !m_effectOnGradientToggle->isToggled();
     saveSettings();
-}
-
-void LevelCellSettingsPopup::onMythicParticlesToggled(CCObject*) {
-    m_mythicParticles = !m_mythicParticlesToggle->isToggled();
-    saveSettings();
-}
-
-void LevelCellSettingsPopup::onAnimatedGradientToggled(CCObject*) {
-    m_animatedGradient = !m_animatedGradientToggle->isToggled();
-    saveSettings();
-}
-
-void LevelCellSettingsPopup::onAnimTypePrev(CCObject*) {
-    m_animTypeIndex--;
-    if (m_animTypeIndex < 0) m_animTypeIndex = (int)m_animTypes.size() - 1;
-    m_currentAnimType = m_animTypes[m_animTypeIndex];
-    if (m_animTypeLabel) m_animTypeLabel->setString(getAnimTypeDisplayName(m_currentAnimType).c_str());
-    saveSettings();
-}
-
-void LevelCellSettingsPopup::onAnimTypeNext(CCObject*) {
-    m_animTypeIndex++;
-    if (m_animTypeIndex >= (int)m_animTypes.size()) m_animTypeIndex = 0;
-    m_currentAnimType = m_animTypes[m_animTypeIndex];
-    if (m_animTypeLabel) m_animTypeLabel->setString(getAnimTypeDisplayName(m_currentAnimType).c_str());
-    saveSettings();
-}
-
-void LevelCellSettingsPopup::onAnimEffectPrev(CCObject*) {
-    m_animEffectIndex--;
-    if (m_animEffectIndex < 0) m_animEffectIndex = (int)m_animEffects.size() - 1;
-    m_currentAnimEffect = m_animEffects[m_animEffectIndex];
-    if (m_animEffectLabel) m_animEffectLabel->setString(getAnimEffectDisplayName(m_currentAnimEffect).c_str());
-    saveSettings();
-}
-
-void LevelCellSettingsPopup::onAnimEffectNext(CCObject*) {
-    m_animEffectIndex++;
-    if (m_animEffectIndex >= (int)m_animEffects.size()) m_animEffectIndex = 0;
-    m_currentAnimEffect = m_animEffects[m_animEffectIndex];
-    if (m_animEffectLabel) m_animEffectLabel->setString(getAnimEffectDisplayName(m_currentAnimEffect).c_str());
-    saveSettings();
+    if (needsListRebuild) paimon::thumbnails::refreshActiveLevelBrowserForCompactToggle();
+    scheduleRebuild();
+    PaimonNotify::show("LevelCell settings restored", NotificationIcon::Success);
 }
 
 LevelCellSettingsPopup* LevelCellSettingsPopup::create() {

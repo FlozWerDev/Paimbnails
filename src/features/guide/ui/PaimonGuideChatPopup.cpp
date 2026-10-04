@@ -2,6 +2,7 @@
 
 #include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
+#include "../../../utils/PaimonNotification.hpp"
 #include "../services/PaimonGuideService.hpp"
 #include "../services/PopupRegistry.hpp"
 #include "../../../utils/Localization.hpp"
@@ -9,6 +10,8 @@
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
+#include <Geode/ui/Scrollbar.hpp>
+#include <Geode/utils/general.hpp>
 
 using namespace geode::prelude;
 
@@ -19,12 +22,19 @@ namespace {
 constexpr float kPopupW = 440.f;
 constexpr float kPopupH = 290.f;
 
-constexpr float kChatFrameX = 100.f;
-constexpr float kChatFrameY = 94.f;
-constexpr float kChatFrameW = 326.f;
-constexpr float kChatFrameH = 152.f;
+constexpr float kSideX = 12.f;
+constexpr float kSideY = 12.f;
+constexpr float kSideW = 100.f;
+constexpr float kSideH = 238.f;
+constexpr float kSideCX = kSideX + kSideW * 0.5f;
 
-constexpr float kChatScrollW = kChatFrameW - 8.f;
+constexpr float kChatFrameX = 120.f;
+constexpr float kChatFrameY = 100.f;
+constexpr float kChatFrameW = 308.f;
+constexpr float kChatFrameH = 150.f;
+
+constexpr float kScrollbarW  = 8.f;
+constexpr float kChatScrollW = kChatFrameW - 8.f - kScrollbarW - 2.f;
 constexpr float kChatScrollH = kChatFrameH - 8.f;
 constexpr float kChatRowW    = kChatScrollW - 12.f;
 
@@ -33,15 +43,24 @@ constexpr float kBubblePadY     = 6.f;
 constexpr float kBubbleGap      = 5.f;
 constexpr float kChatEdgePad    = 6.f;
 constexpr float kLabelScale     = 0.45f;
-constexpr std::size_t kWrapChars  = 44;
+constexpr std::size_t kWrapChars  = 42;
 constexpr std::size_t kMaxBubbles = 30;
+constexpr std::size_t kMaxHistory = 20;
+constexpr std::size_t kMaxInput   = 120;
 
-constexpr float kInputY = 66.f;
+constexpr float kInputW = 238.f;
+constexpr float kInputY = 74.f;
+constexpr float kHintY  = 53.f;
+constexpr float kChipsY = 28.f;
 
 std::string tr(char const* key, char const* fallback = "") {
     auto v = Localization::get().getString(key);
     if (v == key && fallback && fallback[0] != '\0') return fallback;
     return v;
+}
+
+bool isSpanish() {
+    return Localization::get().getCurrentLanguageId() == "spanish";
 }
 
 std::string wrapText(std::string const& text, std::size_t maxChars) {
@@ -102,6 +121,12 @@ std::string stripGDColorTags(std::string const& in) {
     return out;
 }
 
+CCMenuItemSpriteExtra* sideButton(std::string const& text, paimon::ui::Btn skin,
+    CCObject* target, SEL_MenuHandler handler) {
+    auto* sprite = paimon::ui::makeButtonSprite(text.c_str(), skin, kSideW - 14.f, 0.5f);
+    return CCMenuItemSpriteExtra::create(sprite, target, handler);
+}
+
 }
 
 PaimonGuideChatPopup* PaimonGuideChatPopup::create() {
@@ -120,215 +145,20 @@ bool PaimonGuideChatPopup::init() {
 
     auto title = tr("pai.guide.title", "Paimon Guide");
     this->setTitle(title.c_str());
+    this->addCorners();
 
-    auto layerSize = m_mainLayer->getContentSize();
-
-
-    m_paimon = AnimatedPaimon::create(0.5f);
-    if (m_paimon) {
-        m_paimon->setLively(true);
-        m_paimon->setAnchorPoint({0.5f, 0.5f});
-        m_paimon->setPosition({50.f, 185.f});
-        m_mainLayer->addChild(m_paimon, 5);
-        m_paimon->play(AnimatedPaimon::Animation::Wave);
-    }
-
-    {
-        int featureCount = static_cast<int>(PopupRegistry::get().entries().size());
-        std::string version = "?";
-        // format below already prints the "v"; tovstring would give "vv1.1.0".
-        if (auto* mod = Mod::get()) version = mod->getVersion().toNonVString(false);
-
-        auto featuresWord = tr("pai.guide.subtitle", "features");
-        auto subtitle = fmt::format("{} {}\nv{}", featureCount, featuresWord, version);
-
-        auto badge = CCLabelBMFont::create(subtitle.c_str(), "goldFont.fnt");
-        badge->setScale(0.3f);
-        badge->setAlignment(kCCTextAlignmentCenter);
-        badge->setPosition({50.f, 128.f});
-        badge->setID("guide-feature-badge"_spr);
-        m_mainLayer->addChild(badge, 5);
-    }
-
-    {
-        m_topicLabel = CCLabelBMFont::create("", "chatFont.fnt");
-        m_topicLabel->setScale(0.32f);
-        m_topicLabel->setAlignment(kCCTextAlignmentCenter);
-        m_topicLabel->setPosition({50.f, 113.f});
-        m_topicLabel->setOpacity(160);
-        m_topicLabel->setID("guide-topic-label"_spr);
-        m_mainLayer->addChild(m_topicLabel, 5);
-    }
-
-    {
-        auto utilMenu = CCMenu::create();
-        utilMenu->setContentSize({90.f, 30.f});
-        utilMenu->setAnchorPoint({0.5f, 0.5f});
-        utilMenu->ignoreAnchorPointForPosition(false);
-        utilMenu->setPosition({50.f, 98.f});
-        utilMenu->setID("guide-util-menu"_spr);
-
-        auto trashSpr = CCSprite::createWithSpriteFrameName("GJ_trashBtn_001.png");
-        if (trashSpr) {
-            trashSpr->setScale(0.5f);
-            auto clearBtn = CCMenuItemSpriteExtra::create(
-                trashSpr, this, menu_selector(PaimonGuideChatPopup::onClearChat)
-            );
-            clearBtn->setID("guide-clear-btn"_spr);
-            clearBtn->setPosition({27.f, 15.f});
-            utilMenu->addChild(clearBtn);
-        }
-
-        auto infoSpr = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
-        if (infoSpr) {
-            infoSpr->setScale(0.65f);
-            auto helpBtn = CCMenuItemSpriteExtra::create(
-                infoSpr, this, menu_selector(PaimonGuideChatPopup::onHelpButton)
-            );
-            helpBtn->setID("guide-help-btn"_spr);
-            helpBtn->setPosition({63.f, 15.f});
-            utilMenu->addChild(helpBtn);
-        }
-
-        m_mainLayer->addChild(utilMenu, 5);
-    }
-
-    {
-        m_modeBtn = CCMenuItemSpriteExtra::create(
-            CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png"),
-            this, menu_selector(PaimonGuideChatPopup::onToggleMode)
-        );
-        m_modeBtn->setID("guide-mode-btn"_spr);
-        m_modeBtn->setScale(0.6f);
-
-        auto modeMenu = CCMenu::create();
-        modeMenu->setContentSize({40.f, 40.f});
-        modeMenu->setPosition({50.f, 74.f});
-        modeMenu->addChild(m_modeBtn);
-        m_modeBtn->setPosition({0.f, 0.f});
-        m_mainLayer->addChild(modeMenu, 5);
-
-        m_modeLabel = CCLabelBMFont::create("", "bigFont.fnt");
-        m_modeLabel->setScale(0.28f);
-        m_modeLabel->setPosition({50.f, 62.f});
-        m_modeLabel->setID("guide-mode-label"_spr);
-        m_mainLayer->addChild(m_modeLabel, 5);
-
-        refreshModeButton();
-    }
-
-
-    auto chatFrame = paimon::ui::makeInset({kChatFrameW, kChatFrameH}, 210);
-    chatFrame->setPosition({kChatFrameX, kChatFrameY});
-    chatFrame->setID("guide-chat-frame"_spr);
-    m_mainLayer->addChild(chatFrame, 3);
-
-    m_scroll = ScrollLayer::create({kChatScrollW, kChatScrollH});
-    m_scroll->setPosition({kChatFrameX + 4.f, kChatFrameY + 4.f});
-    m_scroll->setID("guide-chat-scroll"_spr);
-    m_mainLayer->addChild(m_scroll, 4);
-
-
-    constexpr float kInputW = 250.f;
-
-    m_input = AnimatedTextInput::create(kInputW,
-        tr("pai.guide.placeholder", "Ask me anything..."));
-    if (m_input) {
-        m_input->setAnchorPoint({0.f, 0.5f});
-        m_input->setPosition({kChatFrameX, kInputY});
-        m_mainLayer->addChild(m_input, 5);
-
-        geode::WeakRef<PaimonGuideChatPopup> weak = this;
-        m_input->setOnSubmit([weak]() {
-            // defer mutation out of the ime callback.
-            Loader::get()->queueInMainThread([weak]() {
-                if (paimon::isRuntimeShuttingDown()) return;
-                if (auto self = weak.lock()) {
-                    static_cast<PaimonGuideChatPopup*>(self.data())->trySubmitFromEnter();
-                }
-            });
-        });
-    }
-
-    auto sendSpr = ButtonSprite::create(
-        tr("pai.guide.send", "Ask").c_str(),
-        "goldFont.fnt", "GJ_button_01.png", 0.8f
-    );
-    sendSpr->setScale(0.55f);
-    auto sendBtn = CCMenuItemSpriteExtra::create(
-        sendSpr, this, menu_selector(PaimonGuideChatPopup::onSubmitButton)
-    );
-    sendBtn->setID("guide-send-btn"_spr);
-
-    auto sendMenu = CCMenu::create();
-    sendMenu->setContentSize({70.f, 40.f});
-    sendMenu->setPosition({(kChatFrameX + kInputW + layerSize.width) * 0.5f - 6.f, kInputY});
-    sendMenu->addChild(sendBtn);
-    sendBtn->setPosition({0.f, 0.f});
-    m_mainLayer->addChild(sendMenu, 5);
-
-    {
-        auto hintText = tr("pai.guide.hint.enter", "Enter to send");
-        auto hint = CCLabelBMFont::create(hintText.c_str(), "chatFont.fnt");
-        hint->setScale(0.35f);
-        hint->setOpacity(110);
-        hint->setPosition({kChatFrameX + kInputW * 0.5f, kInputY - 20.f});
-        hint->setID("guide-enter-hint"_spr);
-        m_mainLayer->addChild(hint, 5);
-    }
-
-
-    auto takeMeSpr = ButtonSprite::create(
-        tr("pai.guide.take.me.there", "Take me there").c_str(),
-        112, true, "bigFont.fnt", "GJ_button_05.png", 18.f, 0.45f
-    );
-    m_takeMeBtn = CCMenuItemSpriteExtra::create(
-        takeMeSpr, this, menu_selector(PaimonGuideChatPopup::onTakeMeThere)
-    );
-    m_takeMeBtn->setID("guide-take-me-btn"_spr);
-    m_takeMeBtn->setVisible(false);
-
-    m_takeMeMenu = CCMenu::create();
-    m_takeMeMenu->setContentSize({150.f, 22.f});
-    m_takeMeMenu->setPosition({kChatFrameX + kChatFrameW * 0.5f, kChatFrameY});
-    m_takeMeMenu->addChild(m_takeMeBtn);
-    m_takeMeBtn->setPosition({0.f, 0.f});
-    m_mainLayer->addChild(m_takeMeMenu, 10);
-
+    buildSidebar();
+    buildChatArea();
+    buildInputRow();
 
     m_suggestionsMenu = CCMenu::create();
     m_suggestionsMenu->setID("guide-suggestions"_spr);
-    m_suggestionsMenu->setContentSize({layerSize.width - 30.f, 22.f});
-    m_suggestionsMenu->setAnchorPoint({0.5f, 0.5f});
+    m_suggestionsMenu->setContentSize({kChatFrameW, 24.f});
+    m_suggestionsMenu->setAnchorPoint({0.f, 0.5f});
     m_suggestionsMenu->ignoreAnchorPointForPosition(false);
-    m_suggestionsMenu->setPosition({layerSize.width * 0.5f, 22.f});
-    m_suggestionsMenu->setLayout(
-        RowLayout::create()
-            ->setGap(5.f)
-            ->setAxisAlignment(AxisAlignment::Center)
-            ->setCrossAxisAlignment(AxisAlignment::Center)
-            ->setGrowCrossAxis(true)
-            ->setCrossAxisOverflow(false)
-            ->setAutoScale(false)
-            ->setDefaultScaleLimits(0.5f, 1.f)
-    );
-
-    auto suggestions = PaimonGuideService::get().getSuggestions();
-    for (auto const& [chipText, query] : suggestions) {
-        int chipW = static_cast<int>(chipText.size()) * 6 + 18;
-        auto* chipSpr = ButtonSprite::create(
-            chipText.c_str(), chipW, true, "bigFont.fnt", "GJ_button_05.png", 18.f, 0.40f
-        );
-        auto* chipBtn = CCMenuItemSpriteExtra::create(
-            chipSpr, this, menu_selector(PaimonGuideChatPopup::onSuggestionChip)
-        );
-        chipBtn->setUserObject(CCString::create(query.c_str()));
-        chipBtn->setID(("flozwer.paimbnails2/guide-chip-" + chipText));
-        m_suggestionsMenu->addChild(chipBtn);
-    }
-    m_suggestionsMenu->updateLayout();
+    m_suggestionsMenu->setPosition({kChatFrameX, kChipsY});
     m_mainLayer->addChild(m_suggestionsMenu, 5);
-
+    restoreDefaultChips();
 
     auto& mem = PaimonGuideService::get().memory();
     std::string welcome;
@@ -336,10 +166,9 @@ bool PaimonGuideChatPopup::init() {
         if (auto last = mem.lastFunctionalTurn();
             last && (std::time(nullptr) - last->timestamp) < 120)
         {
-            auto langId = Localization::get().getCurrentLanguageId();
-            welcome = (langId == "spanish")
+            welcome = tr("pai.guide.welcome.back", isSpanish()
                 ? "Hola otra vez! En que mas te ayudo?"
-                : "Hello again! What else can I help with?";
+                : "Hello again! What else can I help with?");
         }
     }
     if (welcome.empty()) {
@@ -363,16 +192,213 @@ bool PaimonGuideChatPopup::init() {
     return true;
 }
 
+void PaimonGuideChatPopup::buildSidebar() {
+    auto* panel = paimon::ui::makeInset({kSideW, kSideH}, 70);
+    panel->setPosition({kSideX, kSideY});
+    panel->setID("guide-sidebar"_spr);
+    m_mainLayer->addChild(panel, 1);
+
+    float const top = kSideY + kSideH;
+
+    m_paimon = AnimatedPaimon::create(0.5f);
+    if (m_paimon) {
+        m_paimon->setLively(true);
+        m_paimon->setAnchorPoint({0.5f, 0.5f});
+        m_paimon->setPosition({kSideCX, top - 52.f});
+        m_mainLayer->addChild(m_paimon, 5);
+        m_paimon->play(AnimatedPaimon::Animation::Wave);
+    }
+
+    {
+        int featureCount = static_cast<int>(PopupRegistry::get().entries().size());
+        std::string version = "?";
+        // the label already prints the "v"; tovstring would give "vv1.1.0".
+        if (auto* mod = Mod::get()) version = mod->getVersion().toNonVString(false);
+
+        auto featuresWord = tr("pai.guide.subtitle", "features");
+        auto* badge = paimon::ui::makeTitle(fmt::format("{} {}", featureCount, featuresWord).c_str(),
+            kSideW - 12.f, 0.36f);
+        badge->setPosition({kSideCX, top - 108.f});
+        badge->setID("guide-feature-badge"_spr);
+        m_mainLayer->addChild(badge, 5);
+
+        auto* ver = paimon::ui::makeLabel(fmt::format("v{}", version).c_str(), kSideW - 12.f, 0.26f,
+            paimon::ui::palette::dim);
+        ver->setPosition({kSideCX, top - 121.f});
+        m_mainLayer->addChild(ver, 5);
+    }
+
+    m_topicLabel = CCLabelBMFont::create("", "chatFont.fnt");
+    m_topicLabel->setScale(0.4f);
+    m_topicLabel->setColor(paimon::ui::palette::info);
+    m_topicLabel->setPosition({kSideCX, top - 135.f});
+    m_topicLabel->setID("guide-topic-label"_spr);
+    m_mainLayer->addChild(m_topicLabel, 5);
+
+    auto* line = paimon::ui::makeDivider(kSideW - 14.f, paimon::ui::palette::gold, 90);
+    line->setPosition({kSideCX, top - 146.f});
+    m_mainLayer->addChild(line, 5);
+
+    m_sideMenu = CCMenu::create();
+    m_sideMenu->setPosition({0.f, 0.f});
+    m_sideMenu->setID("guide-util-menu"_spr);
+    m_mainLayer->addChild(m_sideMenu, 6);
+
+    m_modeLabel = paimon::ui::makeLabel(tr("pai.guide.mode", "Mode").c_str(), kSideW - 14.f, 0.24f,
+        paimon::ui::palette::muted);
+    m_modeLabel->setPosition({kSideCX, top - 157.f});
+    m_modeLabel->setID("guide-mode-label"_spr);
+    m_mainLayer->addChild(m_modeLabel, 5);
+
+    m_modeBtn = sideButton(tr("pai.guide.mode.assistant", "Assistant"), paimon::ui::Btn::Pink,
+        this, menu_selector(PaimonGuideChatPopup::onToggleMode));
+    m_modeBtn->setID("guide-mode-btn"_spr);
+    m_modeBtn->setPosition({kSideCX, top - 172.f});
+    m_sideMenu->addChild(m_modeBtn);
+    refreshModeButton();
+
+    auto* helpBtn = sideButton(tr("pai.guide.help", "Help"), paimon::ui::Btn::Blue,
+        this, menu_selector(PaimonGuideChatPopup::onHelpButton));
+    helpBtn->setID("guide-help-btn"_spr);
+    helpBtn->setPosition({kSideCX, kSideY + 44.f});
+    m_sideMenu->addChild(helpBtn);
+
+    auto* clearBtn = sideButton(tr("pai.guide.clear", "Clear chat"), paimon::ui::Btn::Red,
+        this, menu_selector(PaimonGuideChatPopup::onClearChat));
+    clearBtn->setID("guide-clear-btn"_spr);
+    clearBtn->setPosition({kSideCX, kSideY + 18.f});
+    m_sideMenu->addChild(clearBtn);
+}
+
+void PaimonGuideChatPopup::buildChatArea() {
+    auto chatFrame = paimon::ui::makeInset({kChatFrameW, kChatFrameH}, 210);
+    chatFrame->setPosition({kChatFrameX, kChatFrameY});
+    chatFrame->setID("guide-chat-frame"_spr);
+    m_mainLayer->addChild(chatFrame, 3);
+
+    m_scroll = ScrollLayer::create({kChatScrollW, kChatScrollH});
+    m_scroll->setPosition({kChatFrameX + 4.f, kChatFrameY + 4.f});
+    m_scroll->setID("guide-chat-scroll"_spr);
+    m_mainLayer->addChild(m_scroll, 4);
+
+    if (auto* bar = Scrollbar::create(m_scroll)) {
+        bar->setContentSize({kScrollbarW, kChatScrollH - 6.f});
+        bar->setPosition({kChatFrameX + kChatFrameW - 4.f - kScrollbarW * 0.5f,
+            kChatFrameY + kChatFrameH * 0.5f});
+        bar->setID("guide-chat-scrollbar"_spr);
+        m_mainLayer->addChild(bar, 6);
+    }
+
+    auto* copyMenu = CCMenu::create();
+    copyMenu->setPosition({0.f, 0.f});
+    m_mainLayer->addChild(copyMenu, 8);
+
+    auto* copySpr = CCSprite::createWithSpriteFrameName("GJ_copyBtn_001.png");
+    if (copySpr) {
+        copySpr->setScale(0.42f);
+        m_copyBtn = CCMenuItemExt::createSpriteExtra(copySpr, [this](auto*) { this->onCopyReply(); });
+        m_copyBtn->setID("guide-copy-btn"_spr);
+        m_copyBtn->setPosition({kChatFrameX + kChatFrameW - 10.f, kChatFrameY + kChatFrameH + 11.f});
+        copyMenu->addChild(m_copyBtn);
+    }
+
+    auto takeMeSpr = paimon::ui::makeButtonSprite(
+        tr("pai.guide.take.me.there", "Take me there").c_str(), paimon::ui::Btn::Green, 0.f, 0.55f);
+    m_takeMeBtn = CCMenuItemSpriteExtra::create(
+        takeMeSpr, this, menu_selector(PaimonGuideChatPopup::onTakeMeThere)
+    );
+    m_takeMeBtn->setID("guide-take-me-btn"_spr);
+    m_takeMeBtn->setVisible(false);
+
+    m_takeMeMenu = CCMenu::create();
+    m_takeMeMenu->setContentSize({150.f, 22.f});
+    m_takeMeMenu->setPosition({kChatFrameX + kChatFrameW * 0.5f, kChatFrameY});
+    m_takeMeMenu->addChild(m_takeMeBtn);
+    m_takeMeBtn->setPosition({0.f, 0.f});
+    m_mainLayer->addChild(m_takeMeMenu, 10);
+}
+
+void PaimonGuideChatPopup::buildInputRow() {
+    m_input = AnimatedTextInput::create(kInputW,
+        tr("pai.guide.placeholder", "Ask me anything..."));
+    if (m_input) {
+        m_input->setAnchorPoint({0.f, 0.5f});
+        m_input->setPosition({kChatFrameX, kInputY});
+        m_mainLayer->addChild(m_input, 5);
+        if (auto* inner = m_input->getInput()) inner->setMaxCharCount(static_cast<int>(kMaxInput));
+
+        geode::WeakRef<PaimonGuideChatPopup> weak = this;
+        m_input->setOnSubmit([weak]() {
+            // defer mutation out of the ime callback.
+            Loader::get()->queueInMainThread([weak]() {
+                if (paimon::isRuntimeShuttingDown()) return;
+                if (auto self = weak.lock()) {
+                    static_cast<PaimonGuideChatPopup*>(self.data())->trySubmitFromEnter();
+                }
+            });
+        });
+        m_input->setCallback([this](std::string const& text) {
+            if (m_counterLabel) {
+                m_counterLabel->setString(fmt::format("{}/{}", text.size(), kMaxInput).c_str());
+                m_counterLabel->setColor(text.size() + 10 >= kMaxInput
+                    ? paimon::ui::palette::warning : paimon::ui::palette::dim);
+            }
+        });
+    }
+
+    float const sendX = (kChatFrameX + kInputW + kChatFrameX + kChatFrameW) * 0.5f + 3.f;
+    auto sendSpr = paimon::ui::makeButtonSprite(tr("pai.guide.send", "Ask").c_str(),
+        paimon::ui::Btn::Green, kChatFrameW - kInputW - 12.f, 0.6f);
+    auto sendBtn = CCMenuItemSpriteExtra::create(
+        sendSpr, this, menu_selector(PaimonGuideChatPopup::onSubmitButton)
+    );
+    sendBtn->setID("guide-send-btn"_spr);
+
+    auto sendMenu = CCMenu::create();
+    sendMenu->setPosition({0.f, 0.f});
+    sendMenu->addChild(sendBtn);
+    sendBtn->setPosition({sendX, kInputY});
+    m_mainLayer->addChild(sendMenu, 5);
+
+    m_hintLabel = CCLabelBMFont::create("", "chatFont.fnt");
+    m_hintLabel->setScale(0.38f);
+    m_hintLabel->setAnchorPoint({0.f, 0.5f});
+    m_hintLabel->setColor(paimon::ui::palette::dim);
+    m_hintLabel->setPosition({kChatFrameX + 4.f, kHintY});
+    m_hintLabel->setID("guide-enter-hint"_spr);
+    m_mainLayer->addChild(m_hintLabel, 5);
+
+    m_counterLabel = CCLabelBMFont::create(fmt::format("0/{}", kMaxInput).c_str(), "chatFont.fnt");
+    m_counterLabel->setScale(0.38f);
+    m_counterLabel->setAnchorPoint({1.f, 0.5f});
+    m_counterLabel->setColor(paimon::ui::palette::dim);
+    m_counterLabel->setPosition({kChatFrameX + kInputW - 4.f, kHintY});
+    m_mainLayer->addChild(m_counterLabel, 5);
+
+    updateHint();
+}
+
 void PaimonGuideChatPopup::onExit() {
     this->unschedule(schedule_selector(PaimonGuideChatPopup::onTypewriterTick));
     Popup::onExit();
 }
 
 void PaimonGuideChatPopup::keyDown(cocos2d::enumKeyCodes key, double p1) {
-    if (key == cocos2d::enumKeyCodes::KEY_Enter
-        || key == cocos2d::enumKeyCodes::KEY_NumEnter) {
-        trySubmitFromEnter();
-        return;
+    switch (key) {
+        case cocos2d::enumKeyCodes::KEY_Enter:
+        case cocos2d::enumKeyCodes::KEY_NumEnter:
+            trySubmitFromEnter();
+            return;
+        case cocos2d::enumKeyCodes::KEY_Up:
+        case cocos2d::enumKeyCodes::KEY_ArrowUp:
+            recallHistory(1);
+            return;
+        case cocos2d::enumKeyCodes::KEY_Down:
+        case cocos2d::enumKeyCodes::KEY_ArrowDown:
+            recallHistory(-1);
+            return;
+        default:
+            break;
     }
     Popup::keyDown(key, p1);
 }
@@ -384,6 +410,34 @@ void PaimonGuideChatPopup::trySubmitFromEnter() {
     m_lastEnterSubmit = now;
 
     onSubmitButton(nullptr);
+}
+
+// direction 1 walks back to older queries, -1 forward to the draft.
+void PaimonGuideChatPopup::recallHistory(int direction) {
+    if (!m_input || m_history.empty()) return;
+    int const count = static_cast<int>(m_history.size());
+    if (m_historyIndex < 0) {
+        if (direction < 0) return;
+        m_draft = m_input->getString();
+    }
+    int const next = std::clamp(m_historyIndex + direction, -1, count - 1);
+    if (next == m_historyIndex) return;
+    m_historyIndex = next;
+    m_input->setString(m_historyIndex < 0
+        ? m_draft
+        : m_history[static_cast<std::size_t>(count - 1 - m_historyIndex)]);
+}
+
+void PaimonGuideChatPopup::updateHint() {
+    if (!m_hintLabel) return;
+    bool const typing = m_responseLabel && m_typewriterIndex < m_pendingMessage.size();
+    auto text = typing
+        ? tr("pai.guide.typing", "Paimon is typing...")
+        : fmt::format("{}  -  {}", tr("pai.guide.hint.enter", "Enter to send"),
+            tr("pai.guide.hint.history", "Up/Down: history"));
+    m_hintLabel->setString(text.c_str());
+    m_hintLabel->setColor(typing ? paimon::ui::palette::info : paimon::ui::palette::dim);
+    m_hintLabel->limitLabelWidth(kInputW - 50.f, 0.38f, 0.2f);
 }
 
 cocos2d::CCNode* PaimonGuideChatPopup::makeBubble(std::string const& wrapped, bool fromUser) {
@@ -469,8 +523,8 @@ void PaimonGuideChatPopup::displayMessage(std::string const& message) {
         content->removeChild(static_cast<CCNode*>(children->objectAtIndex(0)));
     }
 
-    auto cleaned = stripGDColorTags(message);
-    m_pendingMessage = wrapText(cleaned, kWrapChars);
+    m_lastReply = stripGDColorTags(message);
+    m_pendingMessage = wrapText(m_lastReply, kWrapChars);
 
 // size bubbles for full text; typewriter only controls label content.
     content->addChild(makeBubble(m_pendingMessage, false));
@@ -480,6 +534,7 @@ void PaimonGuideChatPopup::displayMessage(std::string const& message) {
     relayoutChat();
 
     this->schedule(schedule_selector(PaimonGuideChatPopup::onTypewriterTick), 0.04f);
+    updateHint();
 
     if (m_paimon) m_paimon->play(AnimatedPaimon::Animation::Talk);
 }
@@ -490,6 +545,7 @@ void PaimonGuideChatPopup::finishTypewriter() {
         m_responseLabel->setString(m_pendingMessage.c_str());
     }
     m_typewriterIndex = m_pendingMessage.size();
+    updateHint();
 }
 
 void PaimonGuideChatPopup::onTypewriterTick(float /*dt*/) {
@@ -497,6 +553,7 @@ void PaimonGuideChatPopup::onTypewriterTick(float /*dt*/) {
 
     if (m_typewriterIndex >= m_pendingMessage.size()) {
         this->unschedule(schedule_selector(PaimonGuideChatPopup::onTypewriterTick));
+        updateHint();
         return;
     }
 
@@ -506,23 +563,22 @@ void PaimonGuideChatPopup::onTypewriterTick(float /*dt*/) {
     auto partial = m_pendingMessage.substr(0, newIdx);
     m_responseLabel->setString(partial.c_str());
     m_typewriterIndex = newIdx;
+    if (m_typewriterIndex >= m_pendingMessage.size()) updateHint();
 }
 
 void PaimonGuideChatPopup::updateTopicLabel(std::string const& topicId) {
     if (!m_topicLabel) return;
-    if (topicId.empty()) {
-        m_topicLabel->setString("");
-        return;
+    std::string name;
+    if (!topicId.empty()) {
+        name = PopupRegistry::get().displayNameFor(topicId, Localization::get().getCurrentLanguageId());
     }
-    auto langId = Localization::get().getCurrentLanguageId();
-    auto name = PopupRegistry::get().displayNameFor(topicId, langId);
     if (name.empty()) {
         m_topicLabel->setString("");
         return;
     }
-    bool es = (langId == "spanish");
-    auto text = (es ? "Hablando de: " : "Talking about: ") + name;
+    auto text = fmt::format(fmt::runtime(tr("pai.guide.topic", "Topic: {}")), name);
     m_topicLabel->setString(text.c_str());
+    m_topicLabel->limitLabelWidth(kSideW - 12.f, 0.4f, 0.2f);
 }
 
 void PaimonGuideChatPopup::submitQuery(std::string const& query) {
@@ -537,6 +593,14 @@ void PaimonGuideChatPopup::onSubmitButton(cocos2d::CCObject* /*sender*/) {
 
     m_input->playSendSweep();
     m_input->clear();
+    if (m_counterLabel) m_counterLabel->setString(fmt::format("0/{}", kMaxInput).c_str());
+
+    if (m_history.empty() || m_history.back() != query) {
+        m_history.push_back(query);
+        if (m_history.size() > kMaxHistory) m_history.erase(m_history.begin());
+    }
+    m_historyIndex = -1;
+    m_draft.clear();
 
     appendUserMessage(query);
 
@@ -588,55 +652,82 @@ void PaimonGuideChatPopup::onSubmitButton(cocos2d::CCObject* /*sender*/) {
     }
 }
 
-void PaimonGuideChatPopup::setRecommendationChips(
-    std::vector<GuideRecommendation> const& recs)
+void PaimonGuideChatPopup::addChipRow(
+    std::vector<std::pair<std::string, CCObject*>> const& chips,
+    char const* texture, SEL_MenuHandler handler)
 {
     if (!m_suggestionsMenu) return;
     m_suggestionsMenu->removeAllChildren();
+    if (chips.empty()) return;
+
+    constexpr float kGap = 4.f;
+    constexpr float kBaseScale = 0.5f;
+    float const avail = m_suggestionsMenu->getContentSize().width;
+
+    std::vector<ButtonSprite*> sprites;
+    float total = 0.f;
+    for (auto const& [text, _] : chips) {
+        auto* spr = paimon::ui::makeButtonSprite(text.c_str(), texture, 0.f, kBaseScale, "bigFont.fnt");
+        if (!spr) continue;
+        total += spr->getScaledContentSize().width;
+        sprites.push_back(spr);
+    }
+    if (sprites.empty()) return;
+    total += kGap * static_cast<float>(sprites.size() - 1);
+
+    float const fit = std::clamp(avail / std::max(total, 1.f), 0.55f, 1.f);
+    float rowW = 0.f;
+    for (auto* spr : sprites) {
+        spr->setScale(kBaseScale * fit);
+        rowW += spr->getScaledContentSize().width;
+    }
+    rowW += kGap * fit * static_cast<float>(sprites.size() - 1);
+
+    float x = (avail - rowW) * 0.5f;
+    float const y = m_suggestionsMenu->getContentSize().height * 0.5f;
+    for (std::size_t i = 0; i < sprites.size(); ++i) {
+        auto* spr = sprites[i];
+        float const w = spr->getScaledContentSize().width;
+        // anything past the row edge would collide with the popup border.
+        if (x + w > avail + 0.5f) break;
+        auto* chipBtn = CCMenuItemSpriteExtra::create(spr, this, handler);
+        auto* payload = chips[i].second;
+        if (auto* str = typeinfo_cast<CCString*>(payload)) chipBtn->setUserObject(str);
+        else if (auto* tag = typeinfo_cast<CCInteger*>(payload)) chipBtn->setTag(tag->getValue());
+        chipBtn->setID(fmt::format("flozwer.paimbnails2/guide-chip-{}", i));
+        chipBtn->setPosition({x + w * 0.5f, y});
+        m_suggestionsMenu->addChild(chipBtn);
+        x += w + kGap * fit;
+    }
+}
+
+void PaimonGuideChatPopup::setRecommendationChips(
+    std::vector<GuideRecommendation> const& recs)
+{
     m_pendingRecommendations = recs;
 
+    std::vector<std::pair<std::string, CCObject*>> chips;
     int idx = 0;
     for (auto const& rec : m_pendingRecommendations) {
-        if (rec.label.empty()) continue;
+        if (rec.label.empty()) { ++idx; continue; }
 // truncate long chip labels.
         std::string chipText = rec.label;
         if (chipText.size() > 16) chipText = chipText.substr(0, 14) + "..";
-
-        int chipW = static_cast<int>(chipText.size()) * 6 + 18;
-        auto* chipSpr = ButtonSprite::create(
-            chipText.c_str(), chipW, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f
-        );
-        auto* chipBtn = CCMenuItemSpriteExtra::create(
-            chipSpr, this, menu_selector(PaimonGuideChatPopup::onRecommendationChip)
-        );
-        chipBtn->setTag(idx);
-        chipBtn->setID(fmt::format("flozwer.paimbnails2/guide-rec-{}", rec.intentId));
-        m_suggestionsMenu->addChild(chipBtn);
+        chips.push_back({chipText, CCInteger::create(idx)});
         ++idx;
-        if (idx >= 4) break;
+        if (chips.size() >= 4) break;
     }
-    m_suggestionsMenu->updateLayout();
+    addChipRow(chips, "GJ_button_01.png", menu_selector(PaimonGuideChatPopup::onRecommendationChip));
 }
 
 void PaimonGuideChatPopup::restoreDefaultChips() {
-    if (!m_suggestionsMenu) return;
-    m_suggestionsMenu->removeAllChildren();
     m_pendingRecommendations.clear();
 
-    auto suggestions = PaimonGuideService::get().getSuggestions();
-    for (auto const& [chipText, query] : suggestions) {
-        int chipW = static_cast<int>(chipText.size()) * 6 + 18;
-        auto* chipSpr = ButtonSprite::create(
-            chipText.c_str(), chipW, true, "bigFont.fnt", "GJ_button_05.png", 18.f, 0.40f
-        );
-        auto* chipBtn = CCMenuItemSpriteExtra::create(
-            chipSpr, this, menu_selector(PaimonGuideChatPopup::onSuggestionChip)
-        );
-        chipBtn->setUserObject(CCString::create(query.c_str()));
-        chipBtn->setID(("flozwer.paimbnails2/guide-chip-" + chipText));
-        m_suggestionsMenu->addChild(chipBtn);
+    std::vector<std::pair<std::string, CCObject*>> chips;
+    for (auto const& [chipText, query] : PaimonGuideService::get().getSuggestions()) {
+        chips.push_back({chipText, CCString::create(query.c_str())});
     }
-    m_suggestionsMenu->updateLayout();
+    addChipRow(chips, "GJ_button_05.png", menu_selector(PaimonGuideChatPopup::onSuggestionChip));
 }
 
 void PaimonGuideChatPopup::onRecommendationChip(cocos2d::CCObject* sender) {
@@ -688,6 +779,17 @@ void PaimonGuideChatPopup::onSuggestionChip(cocos2d::CCObject* sender) {
     }
 }
 
+void PaimonGuideChatPopup::onCopyReply() {
+    if (m_lastReply.empty()) return;
+    geode::utils::clipboard::write(m_lastReply);
+    PaimonNotify::show(tr("pai.guide.copied", "Reply copied"), NotificationIcon::Success);
+    if (m_copyBtn) {
+        m_copyBtn->stopAllActions();
+        m_copyBtn->setScale(1.25f);
+        m_copyBtn->runAction(CCEaseBackOut::create(CCScaleTo::create(0.2f, 1.f)));
+    }
+}
+
 void PaimonGuideChatPopup::onClearChat(cocos2d::CCObject* /*sender*/) {
     finishTypewriter();
     m_responseLabel = nullptr;
@@ -713,13 +815,12 @@ void PaimonGuideChatPopup::onHelpButton(cocos2d::CCObject* /*sender*/) {
 
 void PaimonGuideChatPopup::refreshModeButton() {
     bool max = (PaimonGuideService::get().getMode() == GuideMode::Max);
-    if (m_modeLabel) {
-        m_modeLabel->setString(max ? "MAX" : "ASISTENTE");
-    }
-    if (m_modeBtn) {
-        if (auto* spr = static_cast<cocos2d::CCSprite*>(m_modeBtn->getNormalImage())) {
-            spr->setColor(max ? cocos2d::ccc3(90, 200, 255) : cocos2d::ccc3(255, 150, 200));
-        }
+    if (!m_modeBtn) return;
+    paimon::ui::setButtonSkin(m_modeBtn, max ? paimon::ui::Btn::Cyan : paimon::ui::Btn::Pink);
+    if (auto* spr = typeinfo_cast<ButtonSprite*>(m_modeBtn->getNormalImage())) {
+        auto text = max ? tr("pai.guide.mode.max", "Max") : tr("pai.guide.mode.assistant", "Assistant");
+        spr->setString(text.c_str());
+        if (spr->m_label) spr->m_label->limitLabelWidth(kSideW - 30.f, 0.8f, 0.2f);
     }
 }
 
@@ -728,8 +829,7 @@ void PaimonGuideChatPopup::onToggleMode(cocos2d::CCObject* /*sender*/) {
     bool max = (svc.getMode() == GuideMode::Max);
 
     if (!max && !svc.isMaxAvailable()) {
-        bool es = (Localization::get().getCurrentLanguageId() == "spanish");
-        displayMessage(es
+        displayMessage(isSpanish()
             ? "El modo <cy>Max</c> no esta disponible por ahora. Me quedo en "
               "<cy>Asistente</c>, que responde al instante con mi conocimiento local."
             : "<cy>Max</c> mode is not available right now. Staying on "
@@ -741,8 +841,7 @@ void PaimonGuideChatPopup::onToggleMode(cocos2d::CCObject* /*sender*/) {
     svc.setMode(max ? GuideMode::Assistant : GuideMode::Max);
     refreshModeButton();
 
-    auto langId = Localization::get().getCurrentLanguageId();
-    bool es = (langId == "spanish");
+    bool es = isSpanish();
     std::string msg = max
         ? (es ? "Modo <cy>Asistente</c> activado: respondo al instante con mi conocimiento local."
               : "<cy>Assistant</c> mode on: instant answers from my local knowledge.")

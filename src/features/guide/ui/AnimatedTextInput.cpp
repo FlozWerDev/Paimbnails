@@ -7,6 +7,10 @@ using namespace geode::prelude;
 
 namespace paimon::guide {
 
+namespace {
+constexpr float kDotScale = 0.45f;
+}
+
 AnimatedTextInput* AnimatedTextInput::create(float width, std::string const& placeholder) {
     auto ret = new AnimatedTextInput();
     if (ret && ret->init(width, placeholder)) {
@@ -61,13 +65,13 @@ bool AnimatedTextInput::init(float width, std::string const& placeholder) {
         }
     }
 
-    m_typingDot = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
+    m_typingDot = CCSprite::createWithSpriteFrameName("uiDot_001.png");
     if (!m_typingDot) {
         // robust fallback: a blank ccsprite.
         m_typingDot = CCSprite::create();
     }
     m_typingDot->setColor({255, 220, 100});
-    m_typingDot->setScale(0.35f);
+    m_typingDot->setScale(kDotScale);
     m_typingDot->setOpacity(150);
     m_typingDot->setPosition({width - 8.f, kHeight * 0.5f});
     this->addChild(m_typingDot, 2);
@@ -132,10 +136,10 @@ void AnimatedTextInput::startGlowPulse() {
 void AnimatedTextInput::playTypingPulse() {
     if (!m_typingDot) return;
     m_typingDot->stopAllActions();
-    m_typingDot->setScale(0.35f);
+    m_typingDot->setScale(kDotScale);
     auto pop = CCSequence::create(
-        CCEaseBackOut::create(CCScaleTo::create(0.10f, 0.55f)),
-        CCEaseBackIn::create(CCScaleTo::create(0.10f, 0.35f)),
+        CCEaseBackOut::create(CCScaleTo::create(0.10f, kDotScale * 1.6f)),
+        CCEaseBackIn::create(CCScaleTo::create(0.10f, kDotScale)),
         nullptr
     );
     m_typingDot->runAction(pop);

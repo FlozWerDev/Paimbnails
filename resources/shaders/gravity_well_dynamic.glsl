@@ -13,29 +13,28 @@ void main() {
     vec2 uv = v_texCoord;
     vec2 delta = uv - u_cursor;
     float dist = length(delta);
-    
+    float t = mod(u_time, 628.318);
+
     float mass = u_intensity * 0.03 * (1.0 + u_click * 2.0);
     float bend = mass / (dist * dist + 0.01);
     bend *= smoothstep(0.8, 0.0, dist);
-    
-    float spiralAngle = bend * 0.5 + u_time * 0.5;
+
+    float spiralAngle = bend * 0.5 + t * 0.5;
     float s = sin(spiralAngle);
     float c = cos(spiralAngle);
     vec2 spiralDelta = vec2(delta.x * c - delta.y * s, delta.x * s + delta.y * c);
-    
-    uv = u_cursor + spiralDelta * (1.0 - bend * 0.3);
-    
+    uv = clamp(u_cursor + spiralDelta * (1.0 - bend * 0.3), 0.0, 1.0);
+
     vec4 color = texture2D(u_texture, uv);
-    
     float horizon = smoothstep(0.05, 0.0, dist) * u_click;
     color.rgb *= 1.0 - horizon * 0.8;
-    
+
     float ring = smoothstep(0.08, 0.06, abs(dist - 0.07)) * u_click;
     color.rgb += vec3(1.0, 0.6, 0.2) * ring * u_intensity * 0.15;
-    
-    float redshift = bend * 0.3;
+
+    float redshift = clamp(bend, 0.0, 1.0) * 0.3;
     color.r += redshift * 0.1;
     color.b -= redshift * 0.05;
-    
+
     gl_FragColor = color * v_fragmentColor;
 }

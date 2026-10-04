@@ -4,6 +4,9 @@
 #include <Geode/binding/GJSearchObject.hpp>
 #include <Geode/binding/GJGameLevel.hpp>
 
+#include <algorithm>
+#include <vector>
+
 #include "../services/MyLevelFilters.hpp"
 #include "../ui/MyLevelFilterPopup.hpp"
 #include "../../editor-suite/EditorModule.hpp"
@@ -40,7 +43,7 @@ class $modify(PaimonMyLevelsFilterBrowser, LevelBrowserLayer) {
             this->getChildByIDRecursive("paim-mylevels-filter-icon"_spr));
         if (!icon) return;
 
-        icon->setColor(paimon::editorfilters::anyActive()
+        icon->setColor((paimon::editorfilters::anyActive() || paimon::editorfilters::anySort())
             ? ccColor3B{0, 255, 127}
             : ccColor3B{255, 255, 255});
     }
@@ -89,6 +92,8 @@ class $modify(PaimonMyLevelsFilterBrowser, LevelBrowserLayer) {
         if (!LevelBrowserLayer::init(obj)) return false;
         if (!filtersEnabled() || !isMyLevels(obj)) return true;
 
+        paimon::editorfilters::load();
+
         auto pageMenu = this->getChildByID("page-menu");
         if (!pageMenu) return true;
 
@@ -115,14 +120,24 @@ class $modify(PaimonMyLevelsFilterBrowser, LevelBrowserLayer) {
     void loadPage(GJSearchObject* searchObj) {
         using namespace paimon::editorfilters;
 
-        if (filtersEnabled() && isMyLevels(searchObj) && anyActive()) {
+        if (filtersEnabled() && isMyLevels(searchObj) && (anyActive() || anySort())) {
             auto* llm = LocalLevelManager::sharedState();
             auto* original = llm ? llm->m_localLevels : nullptr;
             if (llm && original) {
-                auto* filtered = CCArray::create();
+                std::vector<GJGameLevel*> kept;
+                kept.reserve(original->count());
                 for (auto* level : CCArrayExt<GJGameLevel*>(original)) {
-                    if (matches(level)) filtered->addObject(level);
+                    if (matches(level)) kept.push_back(level);
                 }
+                if (anySort()) {
+                    auto mode = state().sort;
+                    std::stable_sort(kept.begin(), kept.end(),
+                        [mode](GJGameLevel* a, GJGameLevel* b) { return lessFor(mode, a, b); });
+                }
+
+                auto* filtered = CCArray::create();
+                for (auto* level : kept) filtered->addObject(level);
+
                 LocalLevelSwap swap(llm, original, filtered);
                 LevelBrowserLayer::loadPage(searchObj);
                 updateFilterButton();

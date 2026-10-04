@@ -11,34 +11,36 @@ uniform float u_click;
 
 void main() {
     vec2 uv = v_texCoord;
-    
-    float wave1 = sin(uv.x * 15.0 + u_time * 1.5) * cos(uv.y * 12.0 + u_time * 1.2);
-    float wave2 = sin(uv.x * 8.0 - u_time * 0.8) * cos(uv.y * 10.0 + u_time * 1.0);
-    
+    float t = mod(u_time, 628.318);
+
+    float wave1 = sin(uv.x * 15.0 + t * 1.5) * cos(uv.y * 12.0 + t * 1.2);
+    float wave2 = sin(uv.x * 8.0 - t * 0.8) * cos(uv.y * 10.0 + t * 1.0);
+
     float distortStr = u_intensity * 0.004 * (0.5 + u_click * 0.5);
     uv.x += (wave1 + wave2 * 0.5) * distortStr;
     uv.y += (wave2 + wave1 * 0.3) * distortStr;
-    
-    float dist = length(v_texCoord - u_cursor);
-    float bubble = sin(dist * 40.0 - u_time * 6.0) * smoothstep(0.2, 0.0, dist);
-    uv += normalize(v_texCoord - u_cursor + 0.001) * bubble * 0.005 * u_click;
-    
-    vec4 color = texture2D(u_texture, uv);
-    
+
+    vec2 delta = v_texCoord - u_cursor;
+    float dist = length(delta);
+    float bubble = sin(dist * 40.0 - t * 6.0) * smoothstep(0.2, 0.0, dist);
+    uv += (delta / max(dist, 1e-4)) * bubble * 0.005 * u_click;
+
+    vec4 color = texture2D(u_texture, clamp(uv, 0.0, 1.0));
+
     float depth = u_intensity * 0.08;
     color.r *= 1.0 - depth * 0.4;
     color.g *= 1.0 - depth * 0.1;
     color.b *= 1.0 + depth * 0.2;
-    
+
     float caustic = pow(max(wave1 * wave2 + 0.5, 0.0), 3.0);
     color.rgb += vec3(0.3, 0.6, 0.5) * caustic * u_intensity * 0.04;
-    
-    float ray = smoothstep(0.3, 0.0, abs(v_texCoord.x - 0.5 + sin(u_time * 0.5) * 0.2));
+
+    float ray = smoothstep(0.3, 0.0, abs(v_texCoord.x - 0.5 + sin(t * 0.5) * 0.2));
     ray *= smoothstep(0.0, 1.0, v_texCoord.y);
     color.rgb += vec3(0.2, 0.4, 0.3) * ray * 0.1 * u_intensity * 0.1;
-    
+
     float bubbleGlow = smoothstep(0.05, 0.0, abs(dist - 0.04)) * u_click;
     color.rgb += vec3(0.5, 0.8, 1.0) * bubbleGlow * 0.3;
-    
+
     gl_FragColor = color * v_fragmentColor;
 }

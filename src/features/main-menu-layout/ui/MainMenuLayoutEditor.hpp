@@ -42,17 +42,25 @@ private:
         EditableMenuButton target;
     };
 
-    enum class DragMode { None, Move, Scale };
+    enum class DragMode { None, Move, Scale, Rotate };
 
     void collectItems();
     void disableTargetMenus();
     void buildUI();
+    void buildTopBar();
+    void buildDock();
+    void buildInspector();
     void redraw();
+    void refreshInspector();
+    void updateHint();
     void captureInterfaceNodes(cocos2d::CCNode* node);
     void applyInterfaceOpacity();
     void beginClose(bool saved);
     void animateLive(Item const& item);
     void updateAnimations(float dt);
+    void rebuildGrid();
+    void setGridEnabled(bool on);
+    void setSnapEnabled(bool on);
 
     Item* selectedItem();
     void selectIndex(int index);
@@ -60,14 +68,22 @@ private:
     // itemrect plus outline margin: grip draw zone.
     cocos2d::CCRect outlineRect(Item const& item) const;
     cocos2d::CCPoint gripPos(Item const& item) const;
+    cocos2d::CCPoint rotateGripPos(Item const& item) const;
     Item* findItemAt(cocos2d::CCPoint worldPos);
     bool isBackgroundItem(Item const& item) const;
+    bool isSelectionLocked();
 
     MenuButtonLayout* liveLayout(Item const& item);
     void applyLive(Item const& item);
     cocos2d::CCPoint snapWorld(Item const& item, cocos2d::CCPoint proposedWorld);
+    float snapToGrid(float value) const;
     void nudgeSelection(cocos2d::CCPoint deltaWorld);
     void scaleSelection(float factor);
+    void rotateSelection(float deltaDegrees);
+    void setSelectionOpacity(float opacity);
+    void bringSelection(int direction);
+    void toggleSelectionLock();
+    void centerSelection(bool horizontal, bool vertical);
     void resetItemToDefault(Item const& item);
 
     void pushHistory();
@@ -86,6 +102,14 @@ private:
     void onLoadPreset(cocos2d::CCObject*);
     void openPresetPicker(bool saveMode);
     void onToggleBar(cocos2d::CCObject*);
+    void onUndo(cocos2d::CCObject*);
+    void onRedo(cocos2d::CCObject*);
+    void onToggleGrid(cocos2d::CCObject*);
+    void onToggleSnap(cocos2d::CCObject*);
+    void onToggleLock(cocos2d::CCObject*);
+    void onBringFront(cocos2d::CCObject*);
+    void onBringBack(cocos2d::CCObject*);
+    void onInspectorStep(cocos2d::CCObject*);
 
     geode::WeakRef<cocos2d::CCNode> m_root;
     std::vector<Item> m_items;
@@ -114,8 +138,11 @@ private:
     cocos2d::CCDrawNode* m_grip = nullptr;
     cocos2d::CCDrawNode* m_guideX = nullptr;
     cocos2d::CCDrawNode* m_guideY = nullptr;
+    cocos2d::CCDrawNode* m_grid = nullptr;
     cocos2d::CCLayerColor* m_dark = nullptr;
     cocos2d::CCLabelBMFont* m_status = nullptr;
+    cocos2d::CCLabelBMFont* m_title = nullptr;
+    cocos2d::CCNode* m_topBar = nullptr;
     cocos2d::CCMenu* m_bar = nullptr;
     cocos2d::CCNode* m_barContainer = nullptr;
     CCMenuItemSpriteExtra* m_collapseBtn = nullptr;
@@ -123,12 +150,30 @@ private:
     bool m_collapsed = false;
     Slider* m_opacitySlider = nullptr;
 
+    // floating inspector for the active node.
+    cocos2d::CCNode* m_inspector = nullptr;
+    cocos2d::CCLabelBMFont* m_inspX = nullptr;
+    cocos2d::CCLabelBMFont* m_inspY = nullptr;
+    cocos2d::CCLabelBMFont* m_inspScale = nullptr;
+    cocos2d::CCLabelBMFont* m_inspRot = nullptr;
+    cocos2d::CCLabelBMFont* m_inspOpacity = nullptr;
+    cocos2d::CCLabelBMFont* m_inspZ = nullptr;
+    cocos2d::CCSprite* m_lockIcon = nullptr;
+    cocos2d::CCSprite* m_gridIcon = nullptr;
+    cocos2d::CCSprite* m_snapIcon = nullptr;
+
+    bool m_gridOn = false;
+    bool m_snapGrid = false;
+    float m_gridStep = 24.f;
+
     DragMode m_drag = DragMode::None;
     cocos2d::CCPoint m_touchStart = { 0.f, 0.f };
     cocos2d::CCPoint m_itemStartWorld = { 0.f, 0.f };
     cocos2d::CCPoint m_scaleFixedWorld = { 0.f, 0.f };
     float m_scaleStartDist = 1.f;
     float m_itemStartScale = 1.f;
+    float m_rotateStartAngle = 0.f;
+    float m_itemStartRotation = 0.f;
     bool m_dragChanged = false;
 
     std::vector<LayoutSnapshot> m_history;

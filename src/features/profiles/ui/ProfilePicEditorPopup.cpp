@@ -10,10 +10,13 @@
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/LocalAssetStore.hpp"
 #include "../services/ProfilePicRenderer.hpp"
+#include "../services/ProfileShapes.hpp"
+#include "../services/ProfileNameDecorator.hpp"
 #include "../services/ProfileImageService.hpp"
 #include "../services/ProfileImageCache.hpp"
 #include "../services/ProfileThumbs.hpp"
 #include <Geode/ui/ColorPickPopup.hpp>
+#include <Geode/ui/ScrollLayer.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
 #include <Geode/binding/SliderTouchLogic.hpp>
@@ -159,8 +162,8 @@ void ProfilePicEditorPopup::createTabs() {
     float panelCenterX = kPanelX + kPanelW * 0.5f;
     float panelTopY    = winSize.height * 0.5f + kPanelH * 0.5f + 10.f - 14.f;
 
-    static const std::array<char const*, 6> kTabNames = {
-        "Photo", "Shape", "Border", "Icon", "Deco", "Style"
+    static const std::array<char const*, 7> kTabNames = {
+        "Photo", "Shape", "Border", "Icon", "Deco", "Style", "Name"
     };
 
     auto tabMenu = CCMenu::create();
@@ -218,6 +221,9 @@ void ProfilePicEditorPopup::rebuildCurrentTab() {
     m_decoPosXSlider = m_decoPosYSlider = m_decoOpacitySlider = nullptr;
     m_decoScaleLabel = m_decoRotLabel = nullptr;
     m_decoPosXLabel = m_decoPosYLabel = m_decoOpacityLabel = nullptr;
+    m_hoverIntensitySlider = nullptr;
+    m_hoverIntensityLabel = nullptr;
+    m_namePreview = nullptr;
 
     CCNode* tabNode = nullptr;
     switch (m_currentTab) {
@@ -227,6 +233,7 @@ void ProfilePicEditorPopup::rebuildCurrentTab() {
         case 3: tabNode = createIconTab(); break;
         case 4: tabNode = createDecoTab(); break;
         case 5: tabNode = createStyleTab(); break;
+        case 6: tabNode = createNameTab(); break;
     }
     if (tabNode) {
         tabNode->setAnchorPoint({0.5f, 0.5f});
@@ -561,8 +568,9 @@ CCNode* ProfilePicEditorPopup::createShapeTab() {
             selected ? 200 : 120, 3.f
         );
 
-        auto stencilIcon = createShapeStencil(shapeName, cellSize - 6.f);
+        auto stencilIcon = paimon::profile_shapes::createFill(shapeName, cellSize - 6.f);
         if (stencilIcon) {
+            stencilIcon->ignoreAnchorPointForPosition(false);
             stencilIcon->setAnchorPoint({0.5f, 0.5f});
             stencilIcon->setPosition({cellSize * 0.5f, cellSize * 0.5f});
             cellBg->addChild(stencilIcon);
@@ -1452,7 +1460,45 @@ CCNode* ProfilePicEditorPopup::createStyleTab() {
     }
     fontMenu->updateLayout();
 
-    auto tipLbl = smallLabel("Font applies to your username in the main menu", 0.32f, "chatFont.fnt");
+    float hoverY = fontY - 56.f;
+    auto hoverLbl = smallLabel("Hover FX", 0.42f);
+    hoverLbl->setAnchorPoint({0.f, 0.5f});
+    hoverLbl->setPosition({14.f, hoverY});
+    root->addChild(hoverLbl);
+
+    auto hoverMenu = CCMenu::create();
+    hoverMenu->setAnchorPoint({0.5f, 0.5f});
+    hoverMenu->setPosition({area.width * 0.5f, hoverY - 20.f});
+    hoverMenu->setContentSize({area.width - 20.f, 40.f});
+    root->addChild(hoverMenu);
+    hoverMenu->setLayout(
+        RowLayout::create()->setGap(3.f)->setGrowCrossAxis(true)
+            ->setCrossAxisOverflow(false)->setAutoScale(false)
+    );
+
+    auto hovers = ProfilePicCustomizer::getHoverShaders();
+    for (size_t i = 0; i < hovers.size(); i++) {
+        bool sel = m_editConfig.hoverShader == hovers[i].first;
+        auto cell = paimon::SpriteHelper::createColorPanel(
+            44.f, 18.f, sel ? ccColor3B{60, 160, 60} : ccColor3B{40, 40, 40}, sel ? 200 : 120, 3.f);
+        auto l = smallLabel(hovers[i].second, 0.3f, "chatFont.fnt");
+        l->setPosition({22.f, 9.f});
+        cell->addChild(l);
+        auto btn = CCMenuItemSpriteExtra::create(cell, this, menu_selector(ProfilePicEditorPopup::onHoverSelect));
+        btn->setTag(static_cast<int>(i));
+        hoverMenu->addChild(btn);
+    }
+    hoverMenu->updateLayout();
+
+    if (m_editConfig.hoverShader != "none" && !m_editConfig.hoverShader.empty()) {
+        addSliderRow(root, this, area, "Intensity", hoverY - 48.f,
+            std::clamp(m_editConfig.hoverIntensity / 2.f, 0.f, 1.f),
+            menu_selector(ProfilePicEditorPopup::onHoverIntensityChanged),
+            fmt::format("{:.1f}", m_editConfig.hoverIntensity),
+            m_hoverIntensitySlider, m_hoverIntensityLabel);
+    }
+
+    auto tipLbl = smallLabel("Font + hover effect apply to your profile picture", 0.3f, "chatFont.fnt");
     tipLbl->setColor({180, 180, 200});
     tipLbl->setOpacity(200);
     tipLbl->setAnchorPoint({0.5f, 0.5f});
@@ -1474,6 +1520,279 @@ void ProfilePicEditorPopup::onFontSelect(CCObject* sender) {
     m_editConfig.profileFont = fonts[idx].first;
     rebuildCurrentTab();
     rebuildPreview();
+}
+
+void ProfilePicEditorPopup::onHoverSelect(CCObject* sender) {
+    int idx = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
+    auto hovers = ProfilePicCustomizer::getHoverShaders();
+    if (idx < 0 || idx >= (int)hovers.size()) return;
+    m_editConfig.hoverShader = hovers[idx].first;
+    rebuildCurrentTab();
+    rebuildPreview();
+}
+
+void ProfilePicEditorPopup::onHoverIntensityChanged(CCObject* sender) {
+    auto* slider = static_cast<SliderThumb*>(sender);
+    m_editConfig.hoverIntensity = slider->getValue() * 2.f;
+    if (m_hoverIntensityLabel) {
+        m_hoverIntensityLabel->setString(fmt::format("{:.1f}", m_editConfig.hoverIntensity).c_str());
+    }
+    rebuildPreview();
+}
+
+namespace {
+    // small reusable swatch button that opens a GD color picker.
+    CCMenuItemSpriteExtra* makeSwatch(cocos2d::ccColor3B col, CCObject* t, SEL_MenuHandler sel) {
+        auto panel = paimon::SpriteHelper::createColorPanel(26.f, 18.f, col, 255, 3.f);
+        return CCMenuItemSpriteExtra::create(panel, t, sel);
+    }
+}
+
+CCNode* ProfilePicEditorPopup::createNameTab() {
+    auto root = CCNode::create();
+    CCSize area = m_tabContent->getContentSize();
+    root->setContentSize(area);
+
+    auto& nc = m_editConfig.nameConfig;
+
+    float topY = area.height - 10.f;
+
+    auto enableToggle = CCMenuItemToggler::createWithStandardSprites(
+        this, menu_selector(ProfilePicEditorPopup::onNameEnableToggle), 0.6f);
+    enableToggle->toggle(nc.enabled);
+    auto toggleMenu = CCMenu::create();
+    toggleMenu->setPosition({16.f, topY});
+    toggleMenu->addChild(enableToggle);
+    root->addChild(toggleMenu);
+
+    auto enLbl = smallLabel("Decorate name", 0.4f);
+    enLbl->setAnchorPoint({0.f, 0.5f});
+    enLbl->setPosition({30.f, topY});
+    root->addChild(enLbl);
+
+    // live preview of the player's name with the current style.
+    m_namePreview = CCNode::create();
+    m_namePreview->setContentSize({area.width - 20.f, 24.f});
+    m_namePreview->setAnchorPoint({0.5f, 0.5f});
+    m_namePreview->setPosition({area.width * 0.5f, topY - 24.f});
+    root->addChild(m_namePreview);
+    {
+        std::string name = "Player";
+        if (auto* gm = GameManager::sharedState()) {
+            if (!gm->m_playerName.empty()) name = gm->m_playerName;
+        }
+        auto prev = CCLabelBMFont::create(name.c_str(),
+            m_editConfig.profileFont.empty() ? "goldFont.fnt" : m_editConfig.profileFont.c_str());
+        prev->setScale(0.6f);
+        prev->setPosition(m_namePreview->getContentSize() * 0.5f);
+        m_namePreview->addChild(prev);
+        if (nc.enabled) paimon::profile_name::decorate(prev, nc);
+    }
+
+    // scrollable font grid.
+    float gridTop = topY - 44.f;
+    auto fontTitle = smallLabel("Font", 0.38f);
+    fontTitle->setAnchorPoint({0.f, 0.5f});
+    fontTitle->setPosition({10.f, gridTop});
+    root->addChild(fontTitle);
+
+    float scrollH = 42.f;
+    auto scroll = geode::ScrollLayer::create({area.width - 16.f, scrollH});
+    scroll->setPosition({8.f, gridTop - scrollH - 2.f});
+    scroll->setTouchEnabled(true);
+    root->addChild(scroll);
+
+    auto fonts = ProfilePicCustomizer::getAvailableFonts();
+    auto fontMenu = CCMenu::create();
+    fontMenu->setContentSize({area.width - 16.f, 0.f});
+    fontMenu->setAnchorPoint({0.f, 0.f});
+    fontMenu->setLayout(
+        RowLayout::create()->setGap(3.f)->setGrowCrossAxis(true)
+            ->setCrossAxisOverflow(true)->setAutoScale(false)
+            ->setAxisAlignment(AxisAlignment::Start)
+    );
+    for (size_t i = 0; i < fonts.size(); i++) {
+        bool sel = m_editConfig.profileFont == fonts[i].first;
+        auto cell = paimon::SpriteHelper::createColorPanel(
+            44.f, 18.f, sel ? ccColor3B{60, 160, 60} : ccColor3B{40, 40, 40}, sel ? 200 : 120, 3.f);
+        auto l = CCLabelBMFont::create(fonts[i].second.c_str(), fonts[i].first.c_str());
+        if (l) {
+            l->setScale(0.26f);
+            l->limitLabelWidth(40.f, 0.26f, 0.1f);
+            l->setPosition({22.f, 9.f});
+            cell->addChild(l);
+        }
+        auto btn = CCMenuItemSpriteExtra::create(cell, this, menu_selector(ProfilePicEditorPopup::onNameFontSelect));
+        btn->setTag(static_cast<int>(i));
+        fontMenu->addChild(btn);
+    }
+    fontMenu->updateLayout();
+    float menuH = fontMenu->getContentSize().height;
+    fontMenu->setPositionY(std::max(0.f, scrollH - menuH));
+    scroll->m_contentLayer->setContentSize({area.width - 16.f, std::max(scrollH, menuH)});
+    scroll->m_contentLayer->addChild(fontMenu);
+    scroll->moveToTop();
+
+    // option rows: gradient mode, gradient anim, letter anim, toggles, colors.
+    auto optMenu = CCMenu::create();
+    optMenu->setAnchorPoint({0.f, 0.f});
+    optMenu->setPosition({0.f, 0.f});
+    optMenu->setContentSize(area);
+    optMenu->ignoreAnchorPointForPosition(false);
+    root->addChild(optMenu);
+
+    float rowY = gridTop - scrollH - 20.f;
+
+    auto cycleBtn = [&](char const* label, float x, float w, SEL_MenuHandler sel) {
+        auto spr = ButtonSprite::create(label, "goldFont.fnt", "GJ_button_04.png", 0.7f);
+        spr->setScale(0.42f);
+        auto b = CCMenuItemSpriteExtra::create(spr, this, sel);
+        b->setPosition({x, rowY});
+        optMenu->addChild(b);
+        return b;
+    };
+
+    auto gm = ProfilePicCustomizer::getNameGradientAnims();
+    char const* gradModeTxt = nc.gradientMode == 0 ? "Grad: Off"
+        : (nc.gradientMode == 1 ? "Grad: 2" : "Grad: 3");
+    cycleBtn(gradModeTxt, 46.f, 70.f, menu_selector(ProfilePicEditorPopup::onNameGradientMode));
+
+    std::string animLabel = "Anim: " + nc.gradAnim;
+    cycleBtn(animLabel.c_str(), 128.f, 80.f, menu_selector(ProfilePicEditorPopup::onNameGradientAnim));
+
+    std::string letterLabel = "Letters: " + nc.letterAnim;
+    cycleBtn(letterLabel.c_str(), 224.f, 86.f, menu_selector(ProfilePicEditorPopup::onNameLetterAnim));
+
+    rowY -= 26.f;
+
+    // color swatches: solid, grad A/B/C.
+    auto solid = makeSwatch(nc.color, this, menu_selector(ProfilePicEditorPopup::onNameColorPick));
+    solid->setPosition({24.f, rowY});
+    optMenu->addChild(solid);
+    auto solidLbl = smallLabel("Color", 0.3f, "chatFont.fnt");
+    solidLbl->setPosition({24.f, rowY - 14.f});
+    root->addChild(solidLbl);
+
+    auto gA = makeSwatch(nc.gradA, this, menu_selector(ProfilePicEditorPopup::onNameGradAPick));
+    gA->setPosition({64.f, rowY});
+    optMenu->addChild(gA);
+    auto gB = makeSwatch(nc.gradB, this, menu_selector(ProfilePicEditorPopup::onNameGradBPick));
+    gB->setPosition({96.f, rowY});
+    optMenu->addChild(gB);
+    auto gC = makeSwatch(nc.gradC, this, menu_selector(ProfilePicEditorPopup::onNameGradCPick));
+    gC->setPosition({128.f, rowY});
+    optMenu->addChild(gC);
+    auto gLbl = smallLabel("Gradient A/B/C", 0.3f, "chatFont.fnt");
+    gLbl->setAnchorPoint({0.f, 0.5f});
+    gLbl->setPosition({48.f, rowY - 14.f});
+    root->addChild(gLbl);
+
+    auto outToggle = CCMenuItemToggler::createWithStandardSprites(
+        this, menu_selector(ProfilePicEditorPopup::onNameOutlineToggle), 0.5f);
+    outToggle->toggle(nc.outline);
+    outToggle->setPosition({196.f, rowY});
+    optMenu->addChild(outToggle);
+    auto outLbl = smallLabel("Outline", 0.3f, "chatFont.fnt");
+    outLbl->setPosition({196.f, rowY - 14.f});
+    root->addChild(outLbl);
+
+    auto glowToggle = CCMenuItemToggler::createWithStandardSprites(
+        this, menu_selector(ProfilePicEditorPopup::onNameGlowToggle), 0.5f);
+    glowToggle->toggle(nc.glow);
+    glowToggle->setPosition({250.f, rowY});
+    optMenu->addChild(glowToggle);
+    auto glowLbl = smallLabel("Glow", 0.3f, "chatFont.fnt");
+    glowLbl->setPosition({250.f, rowY - 14.f});
+    root->addChild(glowLbl);
+
+    return root;
+}
+
+void ProfilePicEditorPopup::onNameEnableToggle(CCObject*) {
+    m_editConfig.nameConfig.enabled = !m_editConfig.nameConfig.enabled;
+    rebuildCurrentTab();
+}
+
+void ProfilePicEditorPopup::onNameFontSelect(CCObject* sender) {
+    int idx = static_cast<CCMenuItemSpriteExtra*>(sender)->getTag();
+    auto fonts = ProfilePicCustomizer::getAvailableFonts();
+    if (idx < 0 || idx >= (int)fonts.size()) return;
+    m_editConfig.profileFont = fonts[idx].first;
+    rebuildCurrentTab();
+    rebuildPreview();
+}
+
+void ProfilePicEditorPopup::onNameGradientMode(CCObject*) {
+    m_editConfig.nameConfig.gradientMode = (m_editConfig.nameConfig.gradientMode + 1) % 3;
+    rebuildCurrentTab();
+}
+
+void ProfilePicEditorPopup::onNameGradientAnim(CCObject*) {
+    auto anims = ProfilePicCustomizer::getNameGradientAnims();
+    auto& cur = m_editConfig.nameConfig.gradAnim;
+    int i = 0;
+    for (; i < (int)anims.size(); i++) if (anims[i].first == cur) break;
+    cur = anims[(i + 1) % anims.size()].first;
+    rebuildCurrentTab();
+}
+
+void ProfilePicEditorPopup::onNameLetterAnim(CCObject*) {
+    auto anims = ProfilePicCustomizer::getNameLetterAnims();
+    auto& cur = m_editConfig.nameConfig.letterAnim;
+    int i = 0;
+    for (; i < (int)anims.size(); i++) if (anims[i].first == cur) break;
+    cur = anims[(i + 1) % anims.size()].first;
+    rebuildCurrentTab();
+}
+
+void ProfilePicEditorPopup::onNameOutlineToggle(CCObject*) {
+    m_editConfig.nameConfig.outline = !m_editConfig.nameConfig.outline;
+    rebuildCurrentTab();
+}
+
+void ProfilePicEditorPopup::onNameGlowToggle(CCObject*) {
+    m_editConfig.nameConfig.glow = !m_editConfig.nameConfig.glow;
+    rebuildCurrentTab();
+}
+
+void ProfilePicEditorPopup::onNameColorPick(CCObject*) {
+    auto* popup = geode::ColorPickPopup::create(m_editConfig.nameConfig.color);
+    if (!popup) return;
+    popup->setCallback([this](ccColor4B const& c) {
+        m_editConfig.nameConfig.color = {c.r, c.g, c.b};
+        rebuildCurrentTab();
+    });
+    popup->show();
+}
+
+void ProfilePicEditorPopup::onNameGradAPick(CCObject*) {
+    auto* popup = geode::ColorPickPopup::create(m_editConfig.nameConfig.gradA);
+    if (!popup) return;
+    popup->setCallback([this](ccColor4B const& c) {
+        m_editConfig.nameConfig.gradA = {c.r, c.g, c.b};
+        rebuildCurrentTab();
+    });
+    popup->show();
+}
+
+void ProfilePicEditorPopup::onNameGradBPick(CCObject*) {
+    auto* popup = geode::ColorPickPopup::create(m_editConfig.nameConfig.gradB);
+    if (!popup) return;
+    popup->setCallback([this](ccColor4B const& c) {
+        m_editConfig.nameConfig.gradB = {c.r, c.g, c.b};
+        rebuildCurrentTab();
+    });
+    popup->show();
+}
+
+void ProfilePicEditorPopup::onNameGradCPick(CCObject*) {
+    auto* popup = geode::ColorPickPopup::create(m_editConfig.nameConfig.gradC);
+    if (!popup) return;
+    popup->setCallback([this](ccColor4B const& c) {
+        m_editConfig.nameConfig.gradC = {c.r, c.g, c.b};
+        rebuildCurrentTab();
+    });
+    popup->show();
 }
 
 void ProfilePicEditorPopup::onPreset(CCObject*) {

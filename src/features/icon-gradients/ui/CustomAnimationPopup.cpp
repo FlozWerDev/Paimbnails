@@ -552,10 +552,45 @@ void CustomAnimationPopup::rebuild() {
                 [](double value) {
                     GradientAnimationManager::get().setIntensity(static_cast<float>(value));
                 }),
+            kit::makeSliderRow(innerW,
+                "Phase", "Shifts where the built-in presets start in their cycle.",
+                config.phaseOffset, 0.0, 1.0, formatPercent,
+                [](double value) {
+                    GradientAnimationManager::get().setPhaseOffset(static_cast<float>(value));
+                }),
             kit::makeToggleRow(innerW,
                 "Reverse", "Runs the whole animation backwards.",
                 config.reverse,
                 [](bool value) { GradientAnimationManager::get().setReverse(value); }),
+        }));
+    }
+
+    {
+        auto const& config = manager.config();
+
+        std::vector<std::string> easingNames;
+        for (int i = 0; i < kGradientEasingCount; ++i) {
+            easingNames.emplace_back(
+                GradientAnimationManager::nameFor(static_cast<GradientEasing>(i)));
+        }
+
+        items.push_back(kit::makeCard(kScrollW, "Built-in shaping", kPresetAccent, {
+            kit::makeSelectRow(innerW,
+                "Easing", nullptr,
+                easingNames, static_cast<int>(config.easing),
+                [](int index) {
+                    GradientAnimationManager::get().setEasing(
+                        static_cast<GradientEasing>(
+                            std::clamp(index, 0, kGradientEasingCount - 1)));
+                }),
+            kit::makeToggleRow(innerW,
+                "Ping-pong", "Built-in presets swing back instead of wrapping around.",
+                config.pingPong,
+                [](bool value) { GradientAnimationManager::get().setPingPong(value); }),
+            kit::makeHint(innerW,
+                "Easing and Ping-pong reshape the ready-made presets (Flow, Wave, "
+                "Rainbow and the rest). Your own stack below uses each layer's own "
+                "Rhythm instead."),
         }));
     }
 
@@ -578,6 +613,21 @@ void CustomAnimationPopup::rebuild() {
     }
 
     items.push_back(kit::makeCard(kScrollW, "Manage", kManageAccent, {
+        kit::makeButtonRow(innerW,
+            "Randomize", "Rolls a random preset and settings for a quick surprise.",
+            "Roll",
+            [this] {
+                GradientAnimationManager::get().randomize();
+                scheduleRebuild();
+            }),
+        kit::makeButtonRow(innerW,
+            "Reset master", "Restores speed, intensity, phase and shaping to default.",
+            "Reset",
+            [this] {
+                GradientAnimationManager::get().reset();
+                m_selected = 0;
+                scheduleRebuild();
+            }),
         kit::makeButtonRow(innerW,
             "Clear stack", "Removes every layer so you can start from zero.",
             "Clear",

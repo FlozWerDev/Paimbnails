@@ -10,29 +10,29 @@ uniform vec2 u_cursor;
 
 void main() {
     float s = u_intensity * 0.1;
-    
+    float t = mod(u_time, 628.318);
+
     vec2 uv = v_texCoord * 2.0 - 1.0;
     vec2 cursorNorm = u_cursor * 2.0 - 1.0;
     vec2 fromCursor = uv - cursorNorm;
     uv += fromCursor * dot(fromCursor, fromCursor) * s * 0.3;
     uv = uv * 0.5 + 0.5;
-    
+
     float vig = smoothstep(0.0, 0.02, uv.x) * smoothstep(1.0, 0.98, uv.x)
               * smoothstep(0.0, 0.02, uv.y) * smoothstep(1.0, 0.98, uv.y);
     uv = clamp(uv, 0.0, 1.0);
-    
+
     float cursorDist = length(v_texCoord - u_cursor);
     float subpx = s * 0.003 * (0.5 + cursorDist);
     vec4 center = texture2D(u_texture, uv);
-    float r = texture2D(u_texture, uv + vec2(subpx, 0.0)).r;
-    float b = texture2D(u_texture, uv - vec2(subpx, 0.0)).b;
-    
+    float r = texture2D(u_texture, clamp(uv + vec2(subpx, 0.0), 0.0, 1.0)).r;
+    float b = texture2D(u_texture, clamp(uv - vec2(subpx, 0.0), 0.0, 1.0)).b;
+
     vec3 col = vec3(r, center.g, b);
-    
     col *= mix(1.0, sin(uv.y * 800.0) * 0.5 + 0.5, s * 0.3);
-    col *= 1.0 - 0.03 * s * sin(u_time * 8.0 + sin(u_time * 13.0) * 2.0);
-    col += fract(sin(dot(v_texCoord * 500.0 + u_time, vec2(127.1, 311.7))) * 43758.5453) * s * 0.15;
+    col *= 1.0 - 0.03 * s * sin(t * 8.0 + sin(t * 13.0) * 2.0);
+    col += fract(sin(dot(v_texCoord * 500.0 + t, vec2(127.1, 311.7))) * 43758.5453) * s * 0.15;
     col *= vig;
-    
+
     gl_FragColor = vec4(col, center.a) * v_fragmentColor;
 }

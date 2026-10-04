@@ -1,9 +1,11 @@
 #include "ProfilePicCustomizer.hpp"
+#include "ProfileShapes.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/ShapeStencil.hpp"
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/string.hpp>
+#include <cstdio>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -91,6 +93,33 @@ void ProfilePicCustomizer::save() {
 
     root["profileFont"] = m_config.profileFont;
 
+    root["hoverShader"] = m_config.hoverShader;
+    root["hoverIntensity"] = m_config.hoverIntensity;
+
+    {
+        auto col = [](cocos2d::ccColor3B c) {
+            return matjson::makeObject({{"r", (int)c.r}, {"g", (int)c.g}, {"b", (int)c.b}});
+        };
+        matjson::Value n;
+        auto const& nc = m_config.nameConfig;
+        n["enabled"] = nc.enabled;
+        n["color"] = col(nc.color);
+        n["gradientMode"] = nc.gradientMode;
+        n["gradA"] = col(nc.gradA);
+        n["gradB"] = col(nc.gradB);
+        n["gradC"] = col(nc.gradC);
+        n["gradAnim"] = nc.gradAnim;
+        n["gradSpeed"] = nc.gradSpeed;
+        n["outline"] = nc.outline;
+        n["outlineColor"] = col(nc.outlineColor);
+        n["glow"] = nc.glow;
+        n["glowColor"] = col(nc.glowColor);
+        n["letterAnim"] = nc.letterAnim;
+        n["letterSpeed"] = nc.letterSpeed;
+        n["letterAmount"] = nc.letterAmount;
+        root["nameConfig"] = n;
+    }
+
     root["onlyIconMode"] = m_config.onlyIconMode;
     matjson::Value iconObj;
     iconObj["iconId"] = m_config.iconConfig.iconId;
@@ -163,6 +192,7 @@ void ProfilePicCustomizer::load() {
     if (root.contains("imageOpacity")) m_config.imageOpacity = root["imageOpacity"].asDouble().unwrapOr(255.0);
     if (root.contains("frameEnabled")) m_config.frameEnabled = root["frameEnabled"].asBool().unwrapOr(false);
     if (root.contains("stencilSprite")) m_config.stencilSprite = root["stencilSprite"].asString().unwrapOr("circle");
+    m_config.stencilSprite = paimon::profile_shapes::canonicalId(m_config.stencilSprite);
 
     if (root.contains("frame")) {
         auto& f = root["frame"];
@@ -199,6 +229,38 @@ void ProfilePicCustomizer::load() {
     }
 
     if (root.contains("profileFont")) m_config.profileFont = root["profileFont"].asString().unwrapOr("goldFont.fnt");
+
+    if (root.contains("hoverShader")) m_config.hoverShader = root["hoverShader"].asString().unwrapOr("none");
+    if (root.contains("hoverIntensity")) m_config.hoverIntensity = root["hoverIntensity"].asDouble().unwrapOr(1.0);
+
+    if (root.contains("nameConfig")) {
+        auto& n = root["nameConfig"];
+        auto readCol = [&](char const* key, cocos2d::ccColor3B fallback) {
+            if (!n.contains(key)) return fallback;
+            auto& v = n[key];
+            return cocos2d::ccColor3B{
+                static_cast<GLubyte>(v["r"].asInt().unwrapOr(fallback.r)),
+                static_cast<GLubyte>(v["g"].asInt().unwrapOr(fallback.g)),
+                static_cast<GLubyte>(v["b"].asInt().unwrapOr(fallback.b))
+            };
+        };
+        auto& nc = m_config.nameConfig;
+        nc.enabled = n["enabled"].asBool().unwrapOr(nc.enabled);
+        nc.color = readCol("color", nc.color);
+        nc.gradientMode = n["gradientMode"].asInt().unwrapOr(nc.gradientMode);
+        nc.gradA = readCol("gradA", nc.gradA);
+        nc.gradB = readCol("gradB", nc.gradB);
+        nc.gradC = readCol("gradC", nc.gradC);
+        nc.gradAnim = n["gradAnim"].asString().unwrapOr(nc.gradAnim);
+        nc.gradSpeed = n["gradSpeed"].asDouble().unwrapOr(nc.gradSpeed);
+        nc.outline = n["outline"].asBool().unwrapOr(nc.outline);
+        nc.outlineColor = readCol("outlineColor", nc.outlineColor);
+        nc.glow = n["glow"].asBool().unwrapOr(nc.glow);
+        nc.glowColor = readCol("glowColor", nc.glowColor);
+        nc.letterAnim = n["letterAnim"].asString().unwrapOr(nc.letterAnim);
+        nc.letterSpeed = n["letterSpeed"].asDouble().unwrapOr(nc.letterSpeed);
+        nc.letterAmount = n["letterAmount"].asDouble().unwrapOr(nc.letterAmount);
+    }
 
     if (root.contains("onlyIconMode")) m_config.onlyIconMode = root["onlyIconMode"].asBool().unwrapOr(false);
     if (root.contains("iconConfig")) {
@@ -246,7 +308,7 @@ void ProfilePicCustomizer::load() {
 }
 
 std::vector<std::pair<std::string, std::string>> ProfilePicCustomizer::getAvailableStencils() {
-    return getGeometricShapes();
+    return paimon::profile_shapes::pickerShapes();
 }
 
 std::vector<DecorationCategory> ProfilePicCustomizer::getDecorationCategories() {
@@ -558,12 +620,47 @@ std::vector<ProfilePicPreset> ProfilePicCustomizer::getPresets() {
 }
 
 std::vector<std::pair<std::string, std::string>> ProfilePicCustomizer::getAvailableFonts() {
-    return {
+    std::vector<std::pair<std::string, std::string>> fonts = {
         {"goldFont.fnt", "Gold"},
         {"bigFont.fnt", "Big"},
         {"chatFont.fnt", "Chat"},
-        {"GJSHFont_002.png", "Square"},
-        {"GJSHFont_003.png", "Square Bold"},
-        {"GJSHFont_001.png", "Square Light"},
+    };
+    for (int i = 1; i <= 59; i++) {
+        char id[24];
+        char label[16];
+        std::snprintf(id, sizeof(id), "gjFont%02d.fnt", i);
+        std::snprintf(label, sizeof(label), "GJ %02d", i);
+        fonts.emplace_back(id, label);
+    }
+    return fonts;
+}
+
+std::vector<std::pair<std::string, std::string>> ProfilePicCustomizer::getHoverShaders() {
+    return {
+        {"none", "None"},
+        {"profile_shine", "Shine"},
+        {"profile_glow", "Glow"},
+        {"profile_holo", "Hologram"},
+        {"profile_ripple", "Ripple"},
+        {"profile_prism", "Prism"},
+    };
+}
+
+std::vector<std::pair<std::string, std::string>> ProfilePicCustomizer::getNameGradientAnims() {
+    return {
+        {"static", "Static"},
+        {"flow", "Flow"},
+        {"pulse", "Pulse"},
+        {"rainbow", "Rainbow"},
+        {"wave", "Wave"},
+    };
+}
+
+std::vector<std::pair<std::string, std::string>> ProfilePicCustomizer::getNameLetterAnims() {
+    return {
+        {"none", "None"},
+        {"wave", "Wave"},
+        {"bounce", "Bounce"},
+        {"jitter", "Jitter"},
     };
 }

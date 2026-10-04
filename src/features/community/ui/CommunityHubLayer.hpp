@@ -5,6 +5,8 @@
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
 #include <Geode/binding/GJUserScore.hpp>
+#include <Geode/ui/TextInput.hpp>
+#include <Geode/ui/LoadingSpinner.hpp>
 #include "../../compat-mods/services/ModlyTypes.hpp"
 #include <fmod.hpp>
 #include <string>
@@ -67,6 +69,24 @@ protected:
     void showEmptyState();
     void finishTabLoad();
 
+    // decorated chrome extras, built once with the chrome and kept across tabs
+    void buildHeader();
+    void buildToolbar();
+    void buildFooter();
+    void updateTabHeader();
+    void updateFooter(int shown, bool fromCache);
+    char const* tabIconFrame(Tab tab) const;
+    std::string tabSubtitle(Tab tab) const;
+    void onSearchChanged(std::string const& text);
+    void onSort(cocos2d::CCObject* sender);
+    void onRefresh(cocos2d::CCObject* sender);
+    void setToolbarBusy(bool busy);
+    // top-3 crown/medal strip for ranking tabs; returns the vertical space it took.
+    cocos2d::CCNode* buildPodium(std::vector<std::string> const& names,
+        std::vector<cocos2d::CCNode*> const& faces, std::vector<std::string> const& subs);
+    bool rowMatchesFilter(std::string const& name) const;
+    cocos2d::CCSprite* makeRankMedal(int rank);
+
     // moderator profiles (username -> accountid -> gd, throttled); cells update in place, never rebuilt.
     void startIconPipeline();
     void beginIconRequest(std::string const& key);
@@ -99,6 +119,19 @@ protected:
     float m_listH = 0.f;
     cocos2d::CCPoint m_listCenter = {0.f, 0.f};
     float m_tabBaseY = 0.f;
+
+    cocos2d::CCLabelBMFont* m_subtitle = nullptr;
+    geode::TextInput* m_searchInput = nullptr;
+    std::string m_searchFilter;
+    CCMenuItemSpriteExtra* m_sortButton = nullptr;
+    cocos2d::CCLabelBMFont* m_sortLabel = nullptr;
+    CCMenuItemSpriteExtra* m_refreshButton = nullptr;
+    geode::LoadingSpinner* m_refreshSpinner = nullptr;
+    cocos2d::CCLabelBMFont* m_footerLabel = nullptr;
+    cocos2d::CCNode* m_toolbarMenu = nullptr;
+    // sort mode per ranking tab; creators/thumbnails cycle, moderators keep role order.
+    int m_sortMode = 0;
+    bool m_lastLoadFromCache = false;
 
     struct ModEntry {
         std::string username;

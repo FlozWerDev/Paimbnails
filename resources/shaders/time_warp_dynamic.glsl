@@ -13,32 +13,27 @@ void main() {
     vec2 uv = v_texCoord;
     vec2 delta = uv - u_cursor;
     float dist = length(delta);
-    
+    float t = mod(u_time, 628.318);
+
     float warpZone = smoothstep(0.4, 0.0, dist);
-    
-    float breathe = sin(u_time * 2.0 + dist * 10.0) * 0.02 * u_intensity * 0.1;
+    float breathe = sin(t * 2.0 + dist * 10.0) * 0.02 * u_intensity * 0.1;
     float stretch = 1.0 + breathe * warpZone * (1.0 + u_click * 2.0);
-    
     uv = u_cursor + delta * stretch;
-    
+
     float echoOffset = 0.01 * u_intensity * 0.1 * warpZone;
-    vec2 echoUV = uv + vec2(
-        sin(u_time * 3.0) * echoOffset,
-        cos(u_time * 3.0) * echoOffset
-    );
-    
-    vec4 color = texture2D(u_texture, uv);
-    vec4 echo = texture2D(u_texture, echoUV);
-    
+    vec2 echoUV = uv + vec2(sin(t * 3.0), cos(t * 3.0)) * echoOffset;
+
+    vec4 color = texture2D(u_texture, clamp(uv, 0.0, 1.0));
+    vec4 echo = texture2D(u_texture, clamp(echoUV, 0.0, 1.0));
     color.rgb = mix(color.rgb, echo.rgb, warpZone * u_click * 0.4);
-    
+
     float angle = atan(delta.y, delta.x);
-    float clock = abs(sin(angle * 6.0 + u_time * 1.0));
+    float clock = abs(sin(angle * 6.0 + t));
     float clockMask = smoothstep(0.15, 0.05, dist) * smoothstep(0.02, 0.05, dist);
     color.rgb += vec3(0.6, 0.8, 1.0) * pow(clock, 8.0) * clockMask * u_intensity * 0.08 * u_click;
-    
+
     float gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
     color.rgb = mix(color.rgb, vec3(gray), warpZone * 0.2 * u_click);
-    
+
     gl_FragColor = color * v_fragmentColor;
 }

@@ -644,6 +644,18 @@ int m_fallbackOrigin = -1;
             {"time-warp",       "time-warp-dyn"_spr,       "time_warp_dynamic.glsl",       true, false, true, true},
             {"underwater",      "underwater-dyn"_spr,      "underwater_dynamic.glsl",      true, false, true, true},
             {"neon-trail",      "neon-trail-dyn"_spr,      "neon_trail_dynamic.glsl",      true, false, true, true},
+            {"chromatic-ripple","chromatic-ripple-dyn"_spr,"chromatic_ripple_dynamic.glsl",true, false, true, true},
+            {"black-hole",      "black-hole-dyn"_spr,      "black_hole_dynamic.glsl",      true, false, true, true},
+            {"aurora-cursor",   "aurora-cursor-dyn"_spr,   "aurora_cursor_dynamic.glsl",   true, false, true, true},
+            {"starwarp",        "starwarp-dyn"_spr,        "starwarp_dynamic.glsl",        true, false, true, true},
+            {"liquid-glass",    "liquid-glass-dyn"_spr,    "liquid_glass_dynamic.glsl",    true, false, true, true},
+            {"fisheye",         "fisheye-dyn"_spr,         "fisheye_dynamic.glsl",         true, false, true, true},
+            {"swirl-galaxy",    "swirl-galaxy-dyn"_spr,    "swirl_galaxy_dynamic.glsl",    true, false, true, true},
+            {"embers-trail",    "embers-trail-dyn"_spr,    "embers_trail_dynamic.glsl",    true, false, true, true},
+            {"crystal-glass",   "crystal-glass-dyn"_spr,   "crystal_glass_dynamic.glsl",   true, false, true, true},
+            {"bokeh",           "bokeh-dyn"_spr,           "bokeh_dynamic.glsl",           true, false, true, true},
+            {"caustics",        "caustics-dyn"_spr,        "caustics_dynamic.glsl",        true, false, true, true},
+            {"glitch-scan",     "glitch-scan-dyn"_spr,     "glitch_scan_dynamic.glsl",     true, false, true, true},
         };
 
         auto lookupShader = [this, intensity](std::string const& style) -> std::tuple<CCGLProgram*, float, bool, bool> {

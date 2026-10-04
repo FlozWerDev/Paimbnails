@@ -54,6 +54,30 @@ struct PicCustomIcon {
     bool isModAsset = false;
 };
 
+// name decoration applied to the profile username label everywhere it shows.
+struct PicNameConfig {
+    bool enabled = false;
+    cocos2d::ccColor3B color = {255, 255, 255};
+
+    // gradient: 0 none, 1 two-stop, 2 three-stop; animation names below.
+    int gradientMode = 0;
+    cocos2d::ccColor3B gradA = {255, 90, 160};
+    cocos2d::ccColor3B gradB = {90, 170, 255};
+    cocos2d::ccColor3B gradC = {255, 230, 120};
+    std::string gradAnim = "flow";   // flow, pulse, rainbow, wave, static
+    float gradSpeed = 1.f;
+
+    bool outline = false;
+    cocos2d::ccColor3B outlineColor = {0, 0, 0};
+    bool glow = false;
+    cocos2d::ccColor3B glowColor = {120, 200, 255};
+
+    // per-letter motion: none, wave, bounce, jitter.
+    std::string letterAnim = "none";
+    float letterSpeed = 1.f;
+    float letterAmount = 1.f;
+};
+
 struct ProfilePicConfig {
     float scaleX = 1.f;
     float scaleY = 1.f;
@@ -81,6 +105,12 @@ struct ProfilePicConfig {
     std::vector<PicDecoration> decorations;
 
     std::string profileFont = "goldFont.fnt";
+
+    // hover effect shader id for the profile picture: "none" or profile_*.
+    std::string hoverShader = "none";
+    float hoverIntensity = 1.f;
+
+    PicNameConfig nameConfig;
 
     bool onlyIconMode = false;
     PicIconConfig iconConfig;
@@ -120,6 +150,13 @@ public:
     static std::vector<std::pair<std::string, cocos2d::ccColor3B>> getColorPalette();
 
     static std::vector<std::pair<std::string, std::string>> getAvailableFonts();
+
+    // id -> label for the hover effect picker (first is "none").
+    static std::vector<std::pair<std::string, std::string>> getHoverShaders();
+
+    // name gradient animation ids and letter animation ids.
+    static std::vector<std::pair<std::string, std::string>> getNameGradientAnims();
+    static std::vector<std::pair<std::string, std::string>> getNameLetterAnims();
 
 private:
     ProfilePicCustomizer();

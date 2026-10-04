@@ -224,6 +224,9 @@ void buildLevelInfo(CCNode* c, float w) {
          "kaleidoscope","sonar","electric-arc","prism-split",
          "gravity-well","shatter","heat-haze","liquify",
          "ink-spread","hologram","time-warp","underwater","neon-trail",
+         "chromatic-ripple","black-hole","aurora-cursor","starwarp",
+         "liquid-glass","fisheye","swirl-galaxy","embers-trail",
+         "crystal-glass","bokeh","caustics","glitch-scan",
          "synthwave","neon-city","ocean","galaxy"},
         [](std::string const& v){ sset<std::string>("levelinfo-background-style", v); },
         w));

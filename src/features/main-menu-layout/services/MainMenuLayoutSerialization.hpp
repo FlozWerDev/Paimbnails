@@ -29,8 +29,10 @@ inline matjson::Value layoutToJson(std::string const& key, MenuButtonLayout cons
     value["scale"] = layout.scale;
     value["scaleX"] = layout.scaleX;
     value["scaleY"] = layout.scaleY;
+    value["rotation"] = layout.rotation;
     value["opacity"] = layout.opacity;
     value["hidden"] = layout.hidden;
+    value["locked"] = layout.locked;
     value["layer"] = layout.layer;
     value["linkGroup"] = layout.linkGroup;
     value["hasColor"] = layout.hasColor;
@@ -48,8 +50,10 @@ inline MenuButtonLayout layoutFromJson(matjson::Value const& value) {
     layout.scale = serialization_detail::number(value, "scale", 1.0);
     layout.scaleX = serialization_detail::number(value, "scaleX", layout.scale);
     layout.scaleY = serialization_detail::number(value, "scaleY", layout.scale);
+    layout.rotation = serialization_detail::number(value, "rotation", 0.0);
     layout.opacity = serialization_detail::number(value, "opacity", 1.0);
     layout.hidden = value["hidden"].asBool().unwrapOr(false);
+    layout.locked = value["locked"].asBool().unwrapOr(false);
     layout.layer = serialization_detail::integer(value, "layer");
     layout.linkGroup = value["linkGroup"].asString().unwrapOr("");
     layout.hasColor = value["hasColor"].asBool().unwrapOr(false);

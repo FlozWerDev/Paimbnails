@@ -252,14 +252,22 @@ void CommunityHubLayer::buildChrome() {
     }
 
     m_listW = std::min(384.f, winSize.width - 44.f);
-    float tabsY = winSize.height - 56.f;
-    m_listH = (tabsY - 18.f) - 16.f;
-    m_listCenter = ccp(winSize.width / 2.f, 16.f + m_listH / 2.f);
+
+    // header (title+subtitle) sits up top, tabs below it, then a toolbar strip,
+    // the list, and a footer summary at the very bottom.
+    float headerY = winSize.height - 20.f;
+    float tabsY = winSize.height - 74.f;
+    float toolbarY = tabsY - 30.f;
+    float footerH = 20.f;
+    float listTop = toolbarY - 22.f;
+    float listBottom = 14.f + footerH;
+    m_listH = listTop - listBottom;
+    m_listCenter = ccp(winSize.width / 2.f, listBottom + m_listH / 2.f);
     m_tabBaseY = tabsY;
 
     m_title = CCLabelBMFont::create(loc.getString("community.title").c_str(), "goldFont.fnt");
     m_title->setScale(0.9f);
-    m_title->setPosition({winSize.width / 2.f, winSize.height - 20.f});
+    m_title->setPosition({winSize.width / 2.f, headerY});
     this->addChild(m_title, 10);
 
     m_listFrame = CCNode::create();
@@ -270,6 +278,15 @@ void CommunityHubLayer::buildChrome() {
 
     auto* panel = paimon::ui::makeInset({m_listW, m_listH}, 95);
     m_listFrame->addChild(panel);
+    paimon::ui::addCorners(m_listFrame, {m_listW, m_listH});
+
+    auto* titleIcon = paimon::SpriteHelper::safeCreateWithFrameName("gj_eventCrown_001.png");
+    if (titleIcon) {
+        titleIcon->setScale(0.8f);
+        float half = m_title->getScaledContentSize().width / 2.f;
+        titleIcon->setPosition({winSize.width / 2.f - half - 16.f, headerY});
+        this->addChild(titleIcon, 10);
+    }
 
     auto menu = CCMenu::create();
     menu->setPosition(0, 0);
@@ -319,11 +336,113 @@ void CommunityHubLayer::buildChrome() {
     m_tabs.front()->toggle(true);
     m_tabs.front()->setPositionY(m_tabBaseY + 4.f);
     m_tabs.front()->setZOrder(2);
+
+    buildHeader();
+    buildToolbar();
+    buildFooter();
+    updateTabHeader();
+}
+
+void CommunityHubLayer::buildHeader() {
+    auto winSize = CCDirector::get()->getWinSize();
+    m_subtitle = CCLabelBMFont::create("", "chatFont.fnt");
+    m_subtitle->setScale(0.5f);
+    m_subtitle->setColor({205, 205, 215});
+    m_subtitle->setOpacity(220);
+    m_subtitle->setPosition({winSize.width / 2.f, winSize.height - 44.f});
+    this->addChild(m_subtitle, 10);
+}
+
+char const* CommunityHubLayer::tabIconFrame(Tab tab) const {
+    switch (tab) {
+        case Tab::Moderators: return "GJ_hammerIcon_001.png";
+        case Tab::TopCreators: return "GJ_creatorBtn_001.png";
+        case Tab::TopThumbnails: return "GJ_bigStar_001.png";
+        case Tab::CompatibleMods: return "gj_folderBtn_001.png";
+    }
+    return "GJ_infoIcon_001.png";
+}
+
+std::string CommunityHubLayer::tabSubtitle(Tab tab) const {
+    switch (tab) {
+        case Tab::Moderators: return "Equipo oficial que gestiona las miniaturas";
+        case Tab::TopCreators: return "Creadores con mas miniaturas y mejor valoradas";
+        case Tab::TopThumbnails: return "Las miniaturas mejor valoradas por la comunidad";
+        case Tab::CompatibleMods: return "Mods y packs compatibles de modly.web.app";
+    }
+    return "";
+}
+
+void CommunityHubLayer::updateTabHeader() {
+    if (m_subtitle) m_subtitle->setString(tabSubtitle(m_currentTab).c_str());
+    // creators/thumbnails are the only tabs with a meaningful sort toggle.
+    bool sortable = m_currentTab == Tab::TopCreators || m_currentTab == Tab::TopThumbnails;
+    if (m_sortButton) m_sortButton->setVisible(sortable);
+    if (m_sortLabel) m_sortLabel->setVisible(sortable);
+}
+
+void CommunityHubLayer::buildToolbar() {
+    auto winSize = CCDirector::get()->getWinSize();
+    float toolbarY = m_listCenter.y + m_listH / 2.f + 20.f;
+    float left = m_listCenter.x - m_listW / 2.f;
+    float right = m_listCenter.x + m_listW / 2.f;
+
+    m_searchInput = TextInput::create(m_listW - 92.f, "Buscar...", "chatFont.fnt");
+    m_searchInput->setScale(0.8f);
+    m_searchInput->setPosition({left + (m_listW - 92.f) * 0.8f / 2.f + 2.f, toolbarY});
+    m_searchInput->setCallback([this](std::string const& text) { onSearchChanged(text); });
+    this->addChild(m_searchInput, 10);
+
+    auto* magnifier = paimon::SpriteHelper::safeCreateWithFrameName("GJ_searchBtn_001.png");
+    if (magnifier) {
+        magnifier->setScale(0.42f);
+        magnifier->setPosition({left + 10.f, toolbarY});
+        this->addChild(magnifier, 11);
+    }
+
+    m_toolbarMenu = CCMenu::create();
+    m_toolbarMenu->setPosition(0, 0);
+    m_toolbarMenu->setZOrder(12);
+    this->addChild(m_toolbarMenu);
+
+    m_refreshButton = paimon::ui::makeFrameButton("GJ_updateBtn_001.png", 0.7f,
+        [this] { onRefresh(nullptr); });
+    m_refreshButton->setPosition({right - 14.f, toolbarY});
+    static_cast<CCMenu*>(m_toolbarMenu)->addChild(m_refreshButton);
+
+    m_sortButton = paimon::ui::makeFrameButton("GJ_sortIcon_001.png", 0.7f,
+        [this] { onSort(nullptr); });
+    m_sortButton->setPosition({right - 44.f, toolbarY});
+    static_cast<CCMenu*>(m_toolbarMenu)->addChild(m_sortButton);
+
+    m_sortLabel = CCLabelBMFont::create("", "chatFont.fnt");
+    m_sortLabel->setScale(0.34f);
+    m_sortLabel->setColor({205, 205, 215});
+    m_sortLabel->setAnchorPoint({1.f, 0.5f});
+    m_sortLabel->setPosition({right - 60.f, toolbarY - 13.f});
+    this->addChild(m_sortLabel, 11);
+}
+
+void CommunityHubLayer::buildFooter() {
+    auto winSize = CCDirector::get()->getWinSize();
+    m_footerLabel = CCLabelBMFont::create("", "chatFont.fnt");
+    m_footerLabel->setScale(0.42f);
+    m_footerLabel->setColor({195, 200, 215});
+    m_footerLabel->setOpacity(205);
+    m_footerLabel->setPosition({m_listCenter.x, m_listCenter.y - m_listH / 2.f - 11.f});
+    this->addChild(m_footerLabel, 10);
 }
 
 CCMenuItemToggler* CommunityHubLayer::createTabButton(std::string const& text, char const* id, CCPoint pos) {
     float tabW = m_listW / 4.f - 4.f;
     float tabH = 28.f;
+
+    Tab tab = Tab::Moderators;
+    std::string ids = id;
+    if (ids == "creators") tab = Tab::TopCreators;
+    else if (ids == "thumbnails") tab = Tab::TopThumbnails;
+    else if (ids == "compat_mods") tab = Tab::CompatibleMods;
+    char const* iconFrame = tabIconFrame(tab);
 
     auto buildFace = [&](bool active) -> CCNode* {
         auto node = CCNode::create();
@@ -342,10 +461,20 @@ CCMenuItemToggler* CommunityHubLayer::createTabButton(std::string const& text, c
             node->addChild(skin, 0);
         }
 
+        float textX = tabW / 2.f;
+        if (auto* icon = paimon::SpriteHelper::safeCreateWithFrameName(iconFrame)) {
+            float h = icon->getContentSize().height;
+            if (h > 0.f) icon->setScale(14.f / h);
+            icon->setPosition({12.f, tabH / 2.f + (active ? 0.f : -1.f)});
+            if (!active) icon->setOpacity(200);
+            node->addChild(icon, 2);
+            textX = tabW / 2.f + 7.f;
+        }
+
         auto label = CCLabelBMFont::create(text.c_str(), "bigFont.fnt");
-        label->setScale(0.36f);
-        fitLabel(label, tabW - 12.f);
-        label->setPosition({tabW / 2.f, tabH / 2.f + (active ? 0.f : -1.f)});
+        label->setScale(0.34f);
+        fitLabel(label, tabW - 26.f);
+        label->setPosition({textX, tabH / 2.f + (active ? 0.f : -1.f)});
         label->setColor(active ? ccColor3B{255, 255, 255} : ccColor3B{198, 204, 220});
         if (!active) label->setOpacity(215);
         node->addChild(label, 1);
@@ -353,12 +482,12 @@ CCMenuItemToggler* CommunityHubLayer::createTabButton(std::string const& text, c
         return node;
     };
 
-    auto tab = CCMenuItemToggler::create(
+    auto toggler = CCMenuItemToggler::create(
         buildFace(false), buildFace(true), this, menu_selector(CommunityHubLayer::onTab));
-    tab->setUserObject(CCString::create(id));
-    tab->setPosition(pos);
-    m_tabs.push_back(tab);
-    return tab;
+    toggler->setUserObject(CCString::create(id));
+    toggler->setPosition(pos);
+    m_tabs.push_back(toggler);
+    return toggler;
 }
 
 void CommunityHubLayer::playIntro() {
@@ -384,6 +513,10 @@ void CommunityHubLayer::playIntro() {
         m_listFrame->setScale(0.9f);
         m_listFrame->runAction(CCEaseBackOut::create(CCScaleTo::create(0.45f, 1.f)));
     }
+
+    paimon::ui::animateIn(m_subtitle, 0.1f);
+    paimon::ui::animateIn(m_searchInput, 0.14f);
+    paimon::ui::animateIn(m_footerLabel, 0.2f);
 }
 
 void CommunityHubLayer::onExit() {
@@ -465,8 +598,12 @@ void CommunityHubLayer::onTab(CCObject* sender) {
     }
 
     m_currentTab = newTab;
+    m_sortMode = 0;
+    m_searchFilter.clear();
+    if (m_searchInput) m_searchInput->setString("");
     this->unschedule(schedule_selector(CommunityHubLayer::onIconTick));
     if (m_infoButton) m_infoButton->setTag(static_cast<int>(newTab));
+    updateTabHeader();
 
     for (auto* tab : m_tabs) {
         bool active = (tab == toggler);
@@ -523,6 +660,7 @@ void CommunityHubLayer::hideLoading() {
 
 void CommunityHubLayer::finishTabLoad() {
     for (auto* tab : m_tabs) tab->setEnabled(true);
+    setToolbarBusy(false);
 }
 
 CCNode* CommunityHubLayer::beginList() {
@@ -643,6 +781,7 @@ void CommunityHubLayer::loadModerators(int attempt) {
                 m_modEntries.push_back({ce.username, ce.role, ce.accountID});
             }
             m_modScores = getCachedModScores();
+            m_lastLoadFromCache = true;
             hideLoading();
             sortModerators();
             buildModeratorsList();
@@ -650,6 +789,7 @@ void CommunityHubLayer::loadModerators(int attempt) {
         }
     }
 
+    m_lastLoadFromCache = false;
     m_modEntries.clear();
     m_modScores = CCArray::create();
     m_iconStates.clear();
@@ -740,17 +880,27 @@ void CommunityHubLayer::buildModeratorsList() {
 
     if (!m_modScores || m_modScores->count() == 0) {
         showEmptyState();
+        updateFooter(0, m_lastLoadFromCache);
+        return;
+    }
+
+    std::vector<GJUserScore*> visible;
+    for (auto* score : CCArrayExt<GJUserScore*>(m_modScores)) {
+        if (!score) continue;
+        if (rowMatchesFilter(std::string(score->m_userName))) visible.push_back(score);
+    }
+    if (visible.empty()) {
+        showEmptyState();
+        updateFooter(0, m_lastLoadFromCache);
         return;
     }
 
     float cellH = 48.f;
-    float totalH = std::max(m_listH, cellH * static_cast<float>(m_modScores->count()));
+    float totalH = std::max(m_listH, cellH * static_cast<float>(visible.size()));
     auto* content = addScrollList(totalH);
 
     int i = 0;
-    for (auto* score : CCArrayExt<GJUserScore*>(m_modScores)) {
-        if (!score) { i++; continue; }
-
+    for (auto* score : visible) {
         std::string username = score->m_userName;
         std::string key = toLowerCopy(username);
         bool admin = score->m_modBadge == 2;
@@ -768,9 +918,19 @@ void CommunityHubLayer::buildModeratorsList() {
         accent->setContentSize({3.f, cellH});
         cell->addChild(accent, 4);
 
+        // medal only in the natural order; a filtered subset has no meaningful podium.
+        if (m_searchFilter.empty() && i < 3) {
+            if (auto* medal = makeRankMedal(i + 1)) {
+                float h = medal->getContentSize().height;
+                if (h > 0.f) medal->setScale(20.f / h);
+                medal->setPosition({19.f, mid});
+                cell->addChild(medal, 7);
+            }
+        }
         auto posLbl = CCLabelBMFont::create(fmt::format("{}", i + 1).c_str(), "goldFont.fnt");
         posLbl->setScale(0.38f);
         posLbl->setPosition({19.f, mid});
+        if (m_searchFilter.empty() && i < 3) posLbl->setVisible(false);
         cell->addChild(posLbl, 6);
 
         auto nameLbl = CCLabelBMFont::create(username.c_str(), "bigFont.fnt");
@@ -837,6 +997,7 @@ void CommunityHubLayer::buildModeratorsList() {
     }
 
     startIconPipeline();
+    updateFooter(static_cast<int>(visible.size()), m_lastLoadFromCache);
 }
 
 void CommunityHubLayer::onModProfile(CCObject* sender) {
@@ -1296,25 +1457,72 @@ void CommunityHubLayer::buildCreatorsList() {
     beginList();
 
     auto& loc = Localization::get();
+    if (m_sortLabel) m_sortLabel->setString(m_sortMode == 0
+        ? loc.getString("community.uploads").c_str()
+        : loc.getString("community.avg_rating").c_str());
+
     if (m_creatorEntries.empty()) {
         showEmptyState();
+        updateFooter(0, false);
+        return;
+    }
+
+    std::vector<int> visible;
+    for (int i = 0; i < static_cast<int>(m_creatorEntries.size()); i++) {
+        if (rowMatchesFilter(m_creatorEntries[i].username)) visible.push_back(i);
+    }
+    if (visible.empty()) {
+        showEmptyState();
+        updateFooter(0, false);
         return;
     }
 
     float cellH = 42.f;
-    float totalH = std::max(m_listH, cellH * static_cast<float>(m_creatorEntries.size()));
+    // podium only when unfiltered: the top-3 strip would be meaningless over a search subset.
+    bool showPodium = m_searchFilter.empty() && m_creatorEntries.size() >= 3;
+    float podH = showPodium ? 100.f : 0.f;
+    float totalH = std::max(m_listH, podH + cellH * static_cast<float>(visible.size()));
     auto* content = addScrollList(totalH);
 
-    for (int i = 0; i < static_cast<int>(m_creatorEntries.size()); i++) {
-        auto& entry = m_creatorEntries[i];
-        auto* cell = addCell(content, cellH, i, totalH);
+    if (showPodium) {
+        std::vector<std::string> names;
+        std::vector<CCNode*> faces;
+        std::vector<std::string> subs;
+        for (int i = 0; i < 3; i++) {
+            auto& e = m_creatorEntries[i];
+            names.push_back(e.username);
+            faces.push_back(nullptr);
+            subs.push_back(m_sortMode == 0
+                ? fmt::format("{} subidas", e.uploadCount)
+                : fmt::format("{:.1f}", e.avgRating));
+        }
+        auto* podium = buildPodium(names, faces, subs);
+        if (podium) {
+            podium->setPosition({m_listW / 2.f, totalH - podH / 2.f});
+            content->addChild(podium, 20);
+        }
+    }
+
+    int row = 0;
+    for (int idx : visible) {
+        auto& entry = m_creatorEntries[idx];
+        auto* cell = addCell(content, cellH, 0, 0.f);
+        cell->setPosition({0.f, totalH - podH - static_cast<float>(row + 1) * cellH});
+        cell->setOpacity(idx % 2 == 0 ? 110 : 55);
         float mid = cellH / 2.f;
 
-        auto numLbl = CCLabelBMFont::create(fmt::format("{}", i + 1).c_str(), "goldFont.fnt");
-        numLbl->setScale(0.5f);
-        numLbl->setAnchorPoint({0.5f, 0.5f});
-        numLbl->setPosition({22.f, mid});
-        cell->addChild(numLbl, 10);
+        if (auto* medal = makeRankMedal(idx + 1)) {
+            float h = medal->getContentSize().height;
+            if (h > 0.f) medal->setScale(24.f / h);
+            medal->setPosition({22.f, mid});
+            cell->addChild(medal, 11);
+        } else {
+            auto numLbl = CCLabelBMFont::create(fmt::format("{}", idx + 1).c_str(), "goldFont.fnt");
+            numLbl->setScale(0.5f);
+            numLbl->setAnchorPoint({0.5f, 0.5f});
+            numLbl->setPosition({22.f, mid});
+            cell->addChild(numLbl, 10);
+        }
 
         auto nameLbl = CCLabelBMFont::create(entry.username.c_str(), "bigFont.fnt");
         nameLbl->setScale(0.45f);
@@ -1332,8 +1540,11 @@ void CommunityHubLayer::buildCreatorsList() {
         statsLbl->setPosition({42.f, mid - 8.f});
         cell->addChild(statsLbl, 10);
 
-        animateCellIn(cell, i);
+        animateCellIn(cell, row);
+        row++;
     }
+
+    updateFooter(static_cast<int>(visible.size()), false);
 }
 
 void CommunityHubLayer::loadTopThumbnails(int attempt) {
@@ -1385,18 +1596,38 @@ void CommunityHubLayer::buildThumbnailsList() {
     beginList();
 
     auto& loc = Localization::get();
+    if (m_sortLabel) m_sortLabel->setString(m_sortMode == 0
+        ? loc.getString("community.rating").c_str()
+        : loc.getString("community.votes").c_str());
+
     if (m_thumbnailEntries.empty()) {
         showEmptyState();
+        updateFooter(0, false);
+        return;
+    }
+
+    std::vector<int> visible;
+    for (int i = 0; i < static_cast<int>(m_thumbnailEntries.size()); i++) {
+        auto& e = m_thumbnailEntries[i];
+        std::string hay = fmt::format("{} {}", e.uploadedBy, e.levelId);
+        if (rowMatchesFilter(hay)) visible.push_back(i);
+    }
+    if (visible.empty()) {
+        showEmptyState();
+        updateFooter(0, false);
         return;
     }
 
     float cellH = 56.f;
-    float totalH = std::max(m_listH, cellH * static_cast<float>(m_thumbnailEntries.size()));
+    float totalH = std::max(m_listH, cellH * static_cast<float>(visible.size()));
     auto* content = addScrollList(totalH);
 
-    for (int i = 0; i < static_cast<int>(m_thumbnailEntries.size()); i++) {
-        auto& entry = m_thumbnailEntries[i];
-        auto* cell = addCell(content, cellH, i, totalH);
+    int row = 0;
+    for (int idx : visible) {
+        auto& entry = m_thumbnailEntries[idx];
+        auto* cell = addCell(content, cellH, 0, 0.f);
+        cell->setPosition({0.f, totalH - static_cast<float>(row + 1) * cellH});
+        cell->setOpacity(idx % 2 == 0 ? 110 : 55);
         float mid = cellH / 2.f;
 
         float thumbH = cellH - 10.f;
@@ -1439,11 +1670,18 @@ void CommunityHubLayer::buildThumbnailsList() {
 
         float textX = thumbX + thumbW + 8.f;
 
-        auto numLbl = CCLabelBMFont::create(fmt::format("#{}", i + 1).c_str(), "goldFont.fnt");
-        numLbl->setScale(0.4f);
-        numLbl->setAnchorPoint({0.f, 0.5f});
-        numLbl->setPosition({textX, mid + 15.f});
-        cell->addChild(numLbl, 10);
+        if (auto* medal = makeRankMedal(idx + 1)) {
+            float h = medal->getContentSize().height;
+            if (h > 0.f) medal->setScale(18.f / h);
+            medal->setPosition({textX + 7.f, mid + 15.f});
+            cell->addChild(medal, 11);
+        } else {
+            auto numLbl = CCLabelBMFont::create(fmt::format("#{}", idx + 1).c_str(), "goldFont.fnt");
+            numLbl->setScale(0.4f);
+            numLbl->setAnchorPoint({0.f, 0.5f});
+            numLbl->setPosition({textX, mid + 15.f});
+            cell->addChild(numLbl, 10);
+        }
 
         auto saved = GameLevelManager::get()->getSavedLevel(levelID);
         std::string levelName = saved
@@ -1466,8 +1704,11 @@ void CommunityHubLayer::buildThumbnailsList() {
         infoLbl->setPosition({textX, mid - 14.f});
         cell->addChild(infoLbl, 10);
 
-        animateCellIn(cell, i);
+        animateCellIn(cell, row);
+        row++;
     }
+
+    updateFooter(static_cast<int>(visible.size()), false);
 }
 
 void CommunityHubLayer::loadCompatibleMods() {
@@ -1510,13 +1751,34 @@ void CommunityHubLayer::buildCompatibleModsList() {
         fitLabel(hint, m_listW - 20.f);
         m_listContainer->addChild(hint, 10);
         hint->runAction(CCFadeTo::create(0.35f, 140));
+
+        if (m_compatLoadFailed) {
+            auto menu = CCMenu::create();
+            menu->setPosition(m_listCenter.x, m_listCenter.y - 46.f);
+            m_listContainer->addChild(menu, 11);
+            auto* retry = paimon::ui::makeButton("Reintentar", [this] { onRefresh(nullptr); },
+                paimon::ui::Btn::Green, 110.f, 0.6f);
+            menu->addChild(retry);
+        }
+        updateFooter(0, false);
         return;
     }
 
     auto& repo = ModlyRepo::get();
 
+    std::vector<int> visible;
+    for (int i = 0; i < static_cast<int>(m_compatMods.size()); i++) {
+        std::string hay = fmt::format("{} {}", m_compatMods[i].name, m_compatMods[i].authorName);
+        if (rowMatchesFilter(hay)) visible.push_back(i);
+    }
+    if (visible.empty()) {
+        showEmptyState();
+        updateFooter(0, false);
+        return;
+    }
+
     float cellH = 46.f;
-    float totalH = std::max(m_listH, cellH * static_cast<float>(m_compatMods.size()));
+    float totalH = std::max(m_listH, cellH * static_cast<float>(visible.size()));
     auto* content = addScrollList(totalH);
 
     // one menu over the content layer; each row's button opens its project anywhere tapped.
@@ -1525,9 +1787,12 @@ void CommunityHubLayer::buildCompatibleModsList() {
     menu->setContentSize({m_listW, totalH});
     content->addChild(menu, 20);
 
-    for (int i = 0; i < static_cast<int>(m_compatMods.size()); i++) {
-        auto const& mod = m_compatMods[i];
-        auto* cell = addCell(content, cellH, i, totalH);
+    int row = 0;
+    for (int modIndex : visible) {
+        auto const& mod = m_compatMods[modIndex];
+        auto* cell = addCell(content, cellH, 0, 0.f);
+        cell->setPosition({0.f, totalH - static_cast<float>(row + 1) * cellH});
+        cell->setOpacity(modIndex % 2 == 0 ? 110 : 55);
         float mid = cellH / 2.f;
 
         auto* logo = createAvatar(repo.logoUrl(mod), mod.hasLogo, mod.name, 32.f, 7.f);
@@ -1582,12 +1847,15 @@ void CommunityHubLayer::buildCompatibleModsList() {
 
         auto* hit = CCLayerColor::create({0, 0, 0, 0}, m_listW, cellH);
         auto* btn = CCMenuItemSpriteExtra::create(hit, this, menu_selector(CommunityHubLayer::onCompatMod));
-        btn->setTag(i);
-        btn->setPosition({m_listW / 2.f, totalH - (static_cast<float>(i) + 0.5f) * cellH});
+        btn->setTag(modIndex);
+        btn->setPosition({m_listW / 2.f, totalH - (static_cast<float>(row) + 0.5f) * cellH});
         menu->addChild(btn);
 
-        animateCellIn(cell, i);
+        animateCellIn(cell, row);
+        row++;
     }
+
+    updateFooter(static_cast<int>(visible.size()), false);
 }
 
 void CommunityHubLayer::onCompatMod(CCObject* sender) {
@@ -1627,4 +1895,155 @@ void CommunityHubLayer::onInfoButton(CCObject* sender) {
     }
 
     PopupManager::get().alert(title, body, "OK", nullptr, 350.f).showInstant();
+}
+
+bool CommunityHubLayer::rowMatchesFilter(std::string const& name) const {
+    if (m_searchFilter.empty()) return true;
+    return toLowerCopy(name).find(m_searchFilter) != std::string::npos;
+}
+
+void CommunityHubLayer::onSearchChanged(std::string const& text) {
+    std::string next = toLowerCopy(text);
+    if (next == m_searchFilter) return;
+    m_searchFilter = next;
+    // data is already in memory; rebuilding filters without any network hit.
+    switch (m_currentTab) {
+        case Tab::Moderators: buildModeratorsList(); break;
+        case Tab::TopCreators: buildCreatorsList(); break;
+        case Tab::TopThumbnails: buildThumbnailsList(); break;
+        case Tab::CompatibleMods: buildCompatibleModsList(); break;
+    }
+}
+
+void CommunityHubLayer::onSort(CCObject*) {
+    if (m_currentTab != Tab::TopCreators && m_currentTab != Tab::TopThumbnails) return;
+    m_sortMode = (m_sortMode + 1) % 2;
+
+    if (m_currentTab == Tab::TopCreators) {
+        std::stable_sort(m_creatorEntries.begin(), m_creatorEntries.end(),
+            [this](CreatorEntry const& a, CreatorEntry const& b) {
+                return m_sortMode == 0 ? a.uploadCount > b.uploadCount : a.avgRating > b.avgRating;
+            });
+        buildCreatorsList();
+    } else {
+        std::stable_sort(m_thumbnailEntries.begin(), m_thumbnailEntries.end(),
+            [this](ThumbnailEntry const& a, ThumbnailEntry const& b) {
+                return m_sortMode == 0 ? a.rating > b.rating : a.count > b.count;
+            });
+        buildThumbnailsList();
+    }
+    updateTabHeader();
+}
+
+void CommunityHubLayer::onRefresh(CCObject*) {
+    setToolbarBusy(true);
+    showLoading();
+    loadTab(m_currentTab);
+}
+
+void CommunityHubLayer::setToolbarBusy(bool busy) {
+    if (m_refreshButton) m_refreshButton->setVisible(!busy);
+    if (busy && !m_refreshSpinner && m_refreshButton) {
+        m_refreshSpinner = LoadingSpinner::create(16.f);
+        m_refreshSpinner->setPosition(m_refreshButton->getPosition());
+        this->addChild(m_refreshSpinner, 13);
+    } else if (!busy && m_refreshSpinner) {
+        m_refreshSpinner->removeFromParent();
+        m_refreshSpinner = nullptr;
+    }
+}
+
+void CommunityHubLayer::updateFooter(int shown, bool fromCache) {
+    if (!m_footerLabel) return;
+    std::string label;
+    switch (m_currentTab) {
+        case Tab::Moderators:   label = fmt::format("{} moderadores", shown); break;
+        case Tab::TopCreators:  label = fmt::format("{} creadores", shown); break;
+        case Tab::TopThumbnails:label = fmt::format("{} miniaturas", shown); break;
+        case Tab::CompatibleMods:label = fmt::format("{} mods", shown); break;
+    }
+    std::time_t now = std::time(nullptr);
+    std::tm tmv{};
+#if defined(GEODE_IS_WINDOWS)
+    localtime_s(&tmv, &now);
+#else
+    localtime_r(&now, &tmv);
+#endif
+    char buf[16];
+    std::strftime(buf, sizeof(buf), "%H:%M", &tmv);
+    label += fromCache ? fmt::format("  |  cache {}", buf)
+                       : fmt::format("  |  act. {}", buf);
+    m_footerLabel->setString(label.c_str());
+    m_footerLabel->setOpacity(0);
+    m_footerLabel->runAction(CCFadeTo::create(0.3f, 205));
+}
+
+CCSprite* CommunityHubLayer::makeRankMedal(int rank) {
+    if (rank < 1 || rank > 3) return nullptr;
+    auto* medal = paimon::SpriteHelper::safeCreateWithFrameName("rankIcon_1_001.png");
+    if (!medal) return nullptr;
+    ccColor3B tint = rank == 1 ? ccColor3B{255, 206, 66}
+                   : rank == 2 ? ccColor3B{206, 212, 224}
+                               : ccColor3B{205, 140, 86};
+    medal->setColor(tint);
+    return medal;
+}
+
+CCNode* CommunityHubLayer::buildPodium(std::vector<std::string> const& names,
+    std::vector<CCNode*> const& faces, std::vector<std::string> const& subs) {
+    if (names.empty()) return nullptr;
+
+    float podH = 92.f;
+    auto* node = CCNode::create();
+    node->setContentSize({m_listW, podH});
+    node->setAnchorPoint({0.5f, 0.5f});
+
+    auto panel = paimon::ui::makeInset({m_listW - 8.f, podH - 6.f}, 120);
+    panel->setPosition({4.f, 3.f});
+    node->addChild(panel, 0);
+
+    char const* crowns[] = {"gj_eventCrown_001.png", "gj_weeklyCrown_001.png", "gj_dailyCrown_001.png"};
+    float slotX[] = {m_listW / 2.f, m_listW / 2.f - 108.f, m_listW / 2.f + 108.f};
+    float slotY[] = {podH / 2.f + 6.f, podH / 2.f - 4.f, podH / 2.f - 4.f};
+    float iconScale[] = {1.3f, 1.0f, 1.0f};
+
+    int count = std::min<int>(3, static_cast<int>(names.size()));
+    for (int i = 0; i < count; i++) {
+        float cx = slotX[i];
+        float cy = slotY[i];
+
+        if (auto* crown = paimon::SpriteHelper::safeCreateWithFrameName(crowns[i])) {
+            crown->setScale(0.55f * iconScale[i]);
+            crown->setPosition({cx, cy + 30.f * iconScale[i]});
+            node->addChild(crown, 3);
+        }
+
+        if (i < static_cast<int>(faces.size()) && faces[i]) {
+            auto* face = faces[i];
+            face->setScale(face->getScale() * iconScale[i]);
+            face->setPosition({cx, cy + 6.f});
+            node->addChild(face, 2);
+        }
+
+        auto nameLbl = CCLabelBMFont::create(names[i].c_str(), "bigFont.fnt");
+        nameLbl->setScale(0.34f);
+        fitLabel(nameLbl, 92.f);
+        nameLbl->setPosition({cx, cy - 16.f});
+        node->addChild(nameLbl, 4);
+
+        if (i < static_cast<int>(subs.size()) && !subs[i].empty()) {
+            auto subLbl = CCLabelBMFont::create(subs[i].c_str(), "chatFont.fnt");
+            subLbl->setScale(0.32f);
+            subLbl->setColor({255, 206, 90});
+            fitLabel(subLbl, 92.f);
+            subLbl->setPosition({cx, cy - 28.f});
+            node->addChild(subLbl, 4);
+        }
+    }
+
+    if (paimon::ui::motionEnabled()) {
+        node->setScale(0.9f);
+        node->runAction(CCEaseBackOut::create(CCScaleTo::create(0.35f, 1.f)));
+    }
+    return node;
 }

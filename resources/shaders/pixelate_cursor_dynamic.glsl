@@ -12,23 +12,22 @@ uniform float u_click;
 void main() {
     vec2 uv = v_texCoord;
     float dist = length(v_texCoord - u_cursor);
-    
+
     float radius = 0.2 + u_intensity * 0.04 + u_click * 0.25;
     float pixelMask = smoothstep(radius + 0.05, radius - 0.1, dist);
-    
+
     float pixelSize = mix(200.0, 8.0 + (10.0 - u_intensity) * 3.0, pixelMask);
-    
-    vec2 pixelUV = floor(uv * pixelSize) / pixelSize;
-    vec2 finalUV = mix(uv, pixelUV, pixelMask);
-    
+    vec2 pixelUV = (floor(uv * pixelSize) + 0.5) / pixelSize;
+    vec2 finalUV = clamp(mix(uv, pixelUV, pixelMask), 0.0, 1.0);
+
     vec4 color = texture2D(u_texture, finalUV);
-    
+
     vec2 grid = fract(uv * pixelSize);
     float gridLine = step(0.95, max(grid.x, grid.y));
     color.rgb -= vec3(0.1) * gridLine * pixelMask * 0.5;
-    
+
     float scan = sin(v_texCoord.y * pixelSize * 3.14159) * 0.5 + 0.5;
     color.rgb -= vec3(0.03) * scan * pixelMask;
-    
+
     gl_FragColor = color * v_fragmentColor;
 }

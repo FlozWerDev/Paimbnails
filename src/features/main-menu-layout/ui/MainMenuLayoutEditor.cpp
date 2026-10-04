@@ -5,10 +5,13 @@
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/Layout.hpp>
+#include <Geode/ui/Popup.hpp>
+#include <Geode/ui/PopupManager.hpp>
 
 #include <algorithm>
 #include <cfloat>
@@ -29,7 +32,10 @@ namespace {
     constexpr float kGripSize = 18.f;
     // just above the drawn square (18/2 = 9) for touch; 22 swallowed the button corner.
     constexpr float kGripHit = 12.f;
-    constexpr float kCanvasBottom = 84.f;
+    constexpr float kRotateGripHit = 14.f;
+    constexpr float kRotateArm = 34.f;
+    constexpr float kCanvasBottom = 100.f;
+    constexpr float kTopBarHeight = 34.f;
     constexpr std::size_t kHistoryLimit = 50;
     constexpr float kTransitionDuration = 0.46f;
     constexpr float kCloseDuration = 0.32f;
@@ -137,6 +143,10 @@ bool MainMenuLayoutEditor::init(CCNode* root) {
     m_dark->setContentSize(winSize);
     this->addChild(m_dark, -1);
 
+    m_grid = CCDrawNode::create();
+    m_grid->setVisible(false);
+    this->addChild(m_grid, 1);
+
     m_highlights = CCDrawNode::create();
     this->addChild(m_highlights, 10);
     m_outline = CCDrawNode::create();
@@ -150,68 +160,199 @@ bool MainMenuLayoutEditor::init(CCNode* root) {
     m_guideY->setVisible(false);
     this->addChild(m_guideY, 15);
 
+    m_gridOn = Mod::get()->getSavedValue<bool>("main-menu-layout-grid", false);
+    m_snapGrid = Mod::get()->getSavedValue<bool>("main-menu-layout-snap-grid", false);
+
     this->buildUI();
     this->collectItems();
     this->disableTargetMenus();
     this->captureInterfaceNodes(m_barContainer);
+    this->captureInterfaceNodes(m_topBar);
+    this->captureInterfaceNodes(m_inspector);
     this->captureInterfaceNodes(m_status);
     if (m_collapseBtn) this->captureInterfaceNodes(m_collapseBtn->getParent());
     this->applyInterfaceOpacity();
+    this->rebuildGrid();
     this->pushHistory();
     this->redraw();
     return true;
 }
 
 void MainMenuLayoutEditor::buildUI() {
+    this->buildTopBar();
+    this->buildDock();
+    this->buildInspector();
+}
+
+void MainMenuLayoutEditor::buildTopBar() {
     auto winSize = CCDirector::get()->getWinSize();
     auto& loc = Localization::get();
 
+    m_topBar = CCNode::create();
+    m_topBar->setPosition({ 0.f, 0.f });
+    this->addChild(m_topBar, 30);
+
+    if (auto* bg = paimon::SpriteHelper::createColorPanel(winSize.width + 20.f, kTopBarHeight, { 12, 16, 26 }, 215, 6.f)) {
+        bg->setAnchorPoint({ 0.f, 0.f });
+        bg->setPosition({ -10.f, winSize.height - kTopBarHeight });
+        m_topBar->addChild(bg, 0);
+    }
+    if (auto* line = paimon::ui::makeDivider(winSize.width, paimon::ui::palette::gold, 120)) {
+        line->setPosition({ winSize.width / 2.f, winSize.height - kTopBarHeight });
+        m_topBar->addChild(line, 1);
+    }
+
+    m_title = CCLabelBMFont::create(loc.getString("menu_layout.title").c_str(), "goldFont.fnt");
+    m_title->setScale(0.55f);
+    m_title->setAnchorPoint({ 0.f, 0.5f });
+    m_title->setPosition({ 14.f, winSize.height - kTopBarHeight / 2.f });
+    m_topBar->addChild(m_title, 2);
+
     m_status = CCLabelBMFont::create(loc.getString("menu_layout.none_selected").c_str(), "chatFont.fnt");
-    m_status->setScale(0.5f);
-    m_status->setColor({ 220, 230, 245 });
-    m_status->setPosition({ winSize.width / 2.f, winSize.height - 16.f });
-    this->addChild(m_status, 31);
+    m_status->setScale(0.52f);
+    m_status->setColor({ 190, 210, 240 });
+    m_status->setAnchorPoint({ 1.f, 0.5f });
+    m_status->setPosition({ winSize.width - 14.f, winSize.height - kTopBarHeight / 2.f });
+    m_topBar->addChild(m_status, 2);
+}
+
+void MainMenuLayoutEditor::buildDock() {
+    auto winSize = CCDirector::get()->getWinSize();
 
     // collapsible so buttons underneath stay movable.
     m_barContainer = CCNode::create();
     m_barContainer->setPosition({ 0.f, 0.f });
     this->addChild(m_barContainer, 30);
 
-    if (auto* barBg = paimon::SpriteHelper::createDarkPanel(winSize.width, kCanvasBottom, 190, 0.f)) {
+    if (auto* barBg = paimon::SpriteHelper::createColorPanel(winSize.width + 20.f, kCanvasBottom, { 10, 13, 22 }, 225, 8.f)) {
         barBg->setAnchorPoint({ 0.f, 0.f });
-        barBg->setPosition({ 0.f, 0.f });
+        barBg->setPosition({ -10.f, 0.f });
         m_barContainer->addChild(barBg, 0);
     }
+    if (auto* topLine = paimon::ui::makeDivider(winSize.width, paimon::ui::palette::gold, 110)) {
+        topLine->setPosition({ winSize.width / 2.f, kCanvasBottom - 1.f });
+        m_barContainer->addChild(topLine, 1);
+    }
+    paimon::ui::addCorners(m_barContainer, { winSize.width, kCanvasBottom }, geode::SideArtStyle::PopupGold, 0.4f, true);
 
     // shown only with a selection.
     m_opacitySlider = Slider::create(this, menu_selector(MainMenuLayoutEditor::onOpacityChanged));
-    m_opacitySlider->setScale(0.7f);
-    m_opacitySlider->setPosition({ winSize.width / 2.f, kCanvasBottom - 18.f });
+    m_opacitySlider->setScale(0.6f);
+    m_opacitySlider->setPosition({ winSize.width / 2.f, kCanvasBottom - 14.f });
     m_opacitySlider->setValue(1.f);
     m_opacitySlider->setVisible(false);
     m_barContainer->addChild(m_opacitySlider, 2);
 
     m_bar = CCMenu::create();
-    m_bar->setContentSize({ winSize.width - 24.f, 40.f });
-    m_bar->setPosition({ winSize.width / 2.f, 22.f });
-    m_bar->setLayout(RowLayout::create()->setGap(4.f)->setAxisAlignment(AxisAlignment::Center)->setDefaultScaleLimits(0.5f, 1.f));
+    m_bar->setContentSize({ winSize.width - 24.f, 70.f });
+    m_bar->setPosition({ winSize.width / 2.f, 36.f });
+    m_bar->setLayout(RowLayout::create()->setGap(10.f)->setAxisAlignment(AxisAlignment::Center)
+        ->setCrossAxisAlignment(AxisAlignment::Center)->setGrowCrossAxis(false)->setAutoScale(false));
     m_barContainer->addChild(m_bar, 1);
 
-    auto addBtn = [&](char const* key, SEL_MenuHandler cb, char const* bg, int width) {
-        auto* spr = ButtonSprite::create(loc.getString(key).c_str(), width, true, "goldFont.fnt", bg, 18.f, 0.40f);
-        auto* btn = CCMenuItemSpriteExtra::create(spr, this, cb);
-        m_bar->addChild(btn);
-        return btn;
+    auto& loc = Localization::get();
+
+    auto groupLabel = [&](char const* text) {
+        auto* lbl = CCLabelBMFont::create(text, "goldFont.fnt");
+        lbl->setScale(0.3f);
+        lbl->setOpacity(170);
+        return lbl;
     };
 
-    addBtn("menu_layout.cancel", menu_selector(MainMenuLayoutEditor::onCancel), "GJ_button_06.png", 56);
-    addBtn("menu_layout.reset_selected", menu_selector(MainMenuLayoutEditor::onResetSelected), "GJ_button_05.png", 90);
-    addBtn("menu_layout.reset_all", menu_selector(MainMenuLayoutEditor::onResetAll), "GJ_button_05.png", 78);
-    addBtn("menu_layout.hide_selected", menu_selector(MainMenuLayoutEditor::onToggleHidden), "GJ_button_04.png", 60);
-    addBtn("menu_layout.load_preset", menu_selector(MainMenuLayoutEditor::onLoadPreset), "GJ_button_03.png", 84);
-    addBtn("menu_layout.save_preset", menu_selector(MainMenuLayoutEditor::onSavePreset), "GJ_button_02.png", 90);
-    addBtn("menu_layout.save", menu_selector(MainMenuLayoutEditor::onSave), "GJ_button_01.png", 56);
+    // a vertical group: tiny gold header over a row of icon buttons.
+    auto makeGroup = [&](char const* header, std::vector<CCMenuItemSpriteExtra*> const& btns) {
+        auto* group = CCNode::create();
+        float w = 0.f;
+        for (auto* b : btns) w += b->getContentSize().width + 4.f;
+        w = std::max(w, 40.f);
+        group->setContentSize({ w, 62.f });
 
+        auto* row = CCMenu::create();
+        row->setContentSize({ w, 42.f });
+        row->setPosition({ w / 2.f, 24.f });
+        row->setLayout(RowLayout::create()->setGap(6.f)->setAxisAlignment(AxisAlignment::Center)->setAutoScale(false));
+        for (auto* b : btns) row->addChild(b);
+        row->updateLayout();
+        group->addChild(row);
+
+        auto* hdr = groupLabel(header);
+        hdr->setPosition({ w / 2.f, 54.f });
+        group->addChild(hdr);
+        return group;
+    };
+
+    auto iconBtn = [&](char const* frame, SEL_MenuHandler cb, float scale) -> CCMenuItemSpriteExtra* {
+        auto* spr = CCSprite::createWithSpriteFrameName(frame);
+        if (!spr) spr = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
+        spr->setScale(scale);
+        return CCMenuItemSpriteExtra::create(spr, this, cb);
+    };
+
+    auto* fileGroup = makeGroup(loc.getString("menu_layout.title").c_str(), {
+        iconBtn("GJ_updateBtn_001.png", menu_selector(MainMenuLayoutEditor::onSave), 0.72f),
+        iconBtn("folderIcon_001.png", menu_selector(MainMenuLayoutEditor::onLoadPreset), 0.78f),
+        iconBtn("GJ_duplicateBtn_001.png", menu_selector(MainMenuLayoutEditor::onSavePreset), 0.72f),
+    });
+
+    m_lockIcon = CCSprite::createWithSpriteFrameName("GJ_lock_open_001.png");
+    auto* lockBtn = m_lockIcon ? CCMenuItemSpriteExtra::create(m_lockIcon, this, menu_selector(MainMenuLayoutEditor::onToggleLock)) : nullptr;
+    if (m_lockIcon) m_lockIcon->setScale(0.72f);
+
+    std::vector<CCMenuItemSpriteExtra*> editBtns = {
+        iconBtn("GJ_undoBtn_001.png", menu_selector(MainMenuLayoutEditor::onUndo), 0.72f),
+        iconBtn("GJ_redoBtn_001.png", menu_selector(MainMenuLayoutEditor::onRedo), 0.72f),
+        iconBtn("GJ_resetBtn_001.png", menu_selector(MainMenuLayoutEditor::onResetSelected), 0.68f),
+        iconBtn("edit_delBtn_001.png", menu_selector(MainMenuLayoutEditor::onResetAll), 0.72f),
+        iconBtn("GJ_closeBtn_001.png", menu_selector(MainMenuLayoutEditor::onToggleHidden), 0.62f),
+    };
+    if (lockBtn) editBtns.push_back(lockBtn);
+    auto* editGroup = makeGroup("EDIT", editBtns);
+
+    m_gridIcon = CCSprite::createWithSpriteFrameName("square_01_001.png");
+    auto* gridBtn = m_gridIcon ? CCMenuItemSpriteExtra::create(m_gridIcon, this, menu_selector(MainMenuLayoutEditor::onToggleGrid)) : nullptr;
+    if (m_gridIcon) { m_gridIcon->setScale(0.5f); m_gridIcon->setOpacity(m_gridOn ? 255 : 120); }
+    m_snapIcon = CCSprite::createWithSpriteFrameName("GJ_select_001.png");
+    auto* snapBtn = m_snapIcon ? CCMenuItemSpriteExtra::create(m_snapIcon, this, menu_selector(MainMenuLayoutEditor::onToggleSnap)) : nullptr;
+    if (m_snapIcon) { m_snapIcon->setScale(0.72f); m_snapIcon->setOpacity(m_snapGrid ? 255 : 120); }
+
+    std::vector<CCMenuItemSpriteExtra*> viewBtns;
+    if (gridBtn) viewBtns.push_back(gridBtn);
+    if (snapBtn) viewBtns.push_back(snapBtn);
+    auto* viewGroup = makeGroup("VIEW", viewBtns);
+
+    auto* doneGroup = CCNode::create();
+    doneGroup->setContentSize({ 70.f, 62.f });
+    auto* doneMenu = CCMenu::create();
+    doneMenu->setContentSize({ 70.f, 56.f });
+    doneMenu->setPosition({ 35.f, 24.f });
+    doneMenu->setLayout(ColumnLayout::create()->setGap(5.f)->setAxisReverse(true)->setAutoScale(false));
+    auto* doneBtn = paimon::ui::makeButton(loc.getString("menu_layout.save").c_str(),
+        [this] { this->onSave(nullptr); }, paimon::ui::Btn::Green, 64.f, 0.56f);
+    auto* cancelBtn = paimon::ui::makeButton(loc.getString("menu_layout.cancel").c_str(),
+        [this] { this->onCancel(nullptr); }, paimon::ui::Btn::Red, 64.f, 0.56f);
+    doneMenu->addChild(doneBtn);
+    doneMenu->addChild(cancelBtn);
+    doneMenu->updateLayout();
+    doneGroup->addChild(doneMenu);
+
+    auto addDivider = [&] {
+        auto* holder = CCNode::create();
+        holder->setContentSize({ 2.f, 50.f });
+        if (auto* d = paimon::SpriteHelper::createColorPanel(2.f, 46.f, { 90, 90, 110 }, 120, 1.f)) {
+            d->setAnchorPoint({ 0.5f, 0.5f });
+            d->setPosition({ 1.f, 25.f });
+            holder->addChild(d);
+        }
+        m_bar->addChild(holder);
+    };
+
+    m_bar->addChild(fileGroup);
+    addDivider();
+    m_bar->addChild(editGroup);
+    addDivider();
+    m_bar->addChild(viewGroup);
+    addDivider();
+    m_bar->addChild(doneGroup);
     m_bar->updateLayout();
 
     // single toggle arrow, always visible outside the lowered container.
@@ -223,9 +364,94 @@ void MainMenuLayoutEditor::buildUI() {
         m_collapseArrow->setScale(0.7f);
         m_collapseArrow->setRotation(-90.f);
         m_collapseBtn = CCMenuItemSpriteExtra::create(m_collapseArrow, this, menu_selector(MainMenuLayoutEditor::onToggleBar));
-        m_collapseBtn->setPosition({ winSize.width / 2.f, kCanvasBottom + 12.f });
+        m_collapseBtn->setPosition({ winSize.width - 24.f, kCanvasBottom + 14.f });
         toggleMenu->addChild(m_collapseBtn);
     }
+}
+
+void MainMenuLayoutEditor::buildInspector() {
+    auto winSize = CCDirector::get()->getWinSize();
+    auto& loc = Localization::get();
+
+    constexpr float kW = 150.f;
+    constexpr float kH = 196.f;
+    m_inspector = CCNode::create();
+    m_inspector->setContentSize({ kW, kH });
+    m_inspector->setAnchorPoint({ 1.f, 0.5f });
+    m_inspector->setPosition({ winSize.width - 8.f, winSize.height / 2.f });
+    m_inspector->setVisible(false);
+    this->addChild(m_inspector, 32);
+
+    if (auto* bg = paimon::SpriteHelper::createColorPanel(kW, kH, { 10, 13, 22 }, 230, 8.f)) {
+        bg->setAnchorPoint({ 0.f, 0.f });
+        m_inspector->addChild(bg, 0);
+    }
+    paimon::ui::addCorners(m_inspector, { kW, kH }, geode::SideArtStyle::PopupGold, 0.3f, false);
+
+    auto* header = CCLabelBMFont::create(loc.getString("menu_layout.edit_selected").c_str(), "goldFont.fnt");
+    header->setScale(0.5f);
+    header->setPosition({ kW / 2.f, kH - 14.f });
+    m_inspector->addChild(header, 2);
+
+    auto* menu = CCMenu::create();
+    menu->setPosition({ 0.f, 0.f });
+    m_inspector->addChild(menu, 3);
+
+    // one steppable row: label, [-], value, [+]. tag encodes field*10 + sign.
+    auto addRow = [&](char const* name, float y, int field, CCLabelBMFont*& out, float bigStep) {
+        auto* caption = CCLabelBMFont::create(name, "chatFont.fnt");
+        caption->setScale(0.42f);
+        caption->setAnchorPoint({ 0.f, 0.5f });
+        caption->setPosition({ 12.f, y + 11.f });
+        caption->setColor({ 190, 200, 220 });
+        m_inspector->addChild(caption, 2);
+
+        auto stepButton = [&](char const* frame, int tag, float x) {
+            auto* spr = CCSprite::createWithSpriteFrameName(frame);
+            spr->setScale(0.5f);
+            auto* btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(MainMenuLayoutEditor::onInspectorStep));
+            btn->setTag(tag);
+            btn->setPosition({ x, y });
+            menu->addChild(btn);
+        };
+        (void)bigStep;
+        stepButton("edit_leftBtn_001.png", field * 10 + 0, 20.f);
+        stepButton("edit_rightBtn_001.png", field * 10 + 1, kW - 20.f);
+
+        out = CCLabelBMFont::create("0", "bigFont.fnt");
+        out->setScale(0.4f);
+        out->setPosition({ kW / 2.f, y });
+        m_inspector->addChild(out, 2);
+    };
+
+    float y = kH - 40.f;
+    constexpr float kStep = 28.f;
+    addRow("X", y, 0, m_inspX, 10.f);           y -= kStep;
+    addRow("Y", y, 1, m_inspY, 10.f);           y -= kStep;
+    addRow("Escala", y, 2, m_inspScale, 0.1f);  y -= kStep;
+    addRow("Rotacion", y, 3, m_inspRot, 15.f);  y -= kStep;
+    addRow("Opacidad", y, 4, m_inspOpacity, 10.f); y -= kStep;
+
+    auto* zCaption = CCLabelBMFont::create("Capa", "chatFont.fnt");
+    zCaption->setScale(0.42f);
+    zCaption->setAnchorPoint({ 0.f, 0.5f });
+    zCaption->setPosition({ 12.f, y + 11.f });
+    zCaption->setColor({ 190, 200, 220 });
+    m_inspector->addChild(zCaption, 2);
+    auto backSpr = CCSprite::createWithSpriteFrameName("edit_downBtn_001.png");
+    backSpr->setScale(0.5f);
+    auto* backBtn = CCMenuItemSpriteExtra::create(backSpr, this, menu_selector(MainMenuLayoutEditor::onBringBack));
+    backBtn->setPosition({ 20.f, y });
+    menu->addChild(backBtn);
+    auto frontSpr = CCSprite::createWithSpriteFrameName("edit_upBtn_001.png");
+    frontSpr->setScale(0.5f);
+    auto* frontBtn = CCMenuItemSpriteExtra::create(frontSpr, this, menu_selector(MainMenuLayoutEditor::onBringFront));
+    frontBtn->setPosition({ kW - 20.f, y });
+    menu->addChild(frontBtn);
+    m_inspZ = CCLabelBMFont::create("0", "bigFont.fnt");
+    m_inspZ->setScale(0.4f);
+    m_inspZ->setPosition({ kW / 2.f, y });
+    m_inspector->addChild(m_inspZ, 2);
 }
 
 void MainMenuLayoutEditor::registerWithTouchDispatcher() {
@@ -283,6 +509,7 @@ void MainMenuLayoutEditor::selectIndex(int index) {
             m_opacitySlider->setValue(std::clamp(layout->opacity, 0.f, 1.f));
         }
     }
+    this->refreshInspector();
 }
 
 MenuButtonLayout* MainMenuLayoutEditor::liveLayout(Item const& item) {
@@ -339,6 +566,7 @@ void MainMenuLayoutEditor::beginClose(bool saved) {
     m_bar->setEnabled(false);
     if (m_collapseBtn) m_collapseBtn->setEnabled(false);
     m_opacitySlider->setVisible(false);
+    if (m_inspector) m_inspector->setVisible(false);
 }
 
 void MainMenuLayoutEditor::updateAnimations(float dt) {
@@ -411,6 +639,11 @@ CCPoint MainMenuLayoutEditor::gripPos(Item const& item) const {
     return { r.getMaxX(), r.getMinY() };
 }
 
+CCPoint MainMenuLayoutEditor::rotateGripPos(Item const& item) const {
+    auto r = this->outlineRect(item);
+    return { r.getMidX(), r.getMaxY() + kRotateArm };
+}
+
 bool MainMenuLayoutEditor::isBackgroundItem(Item const& item) const {
     if (!item.target.node || !item.target.node->getParent()) return false;
     auto win = CCDirector::get()->getWinSize();
@@ -436,6 +669,10 @@ MainMenuLayoutEditor::Item* MainMenuLayoutEditor::findItemAt(CCPoint worldPos) {
 }
 
 CCPoint MainMenuLayoutEditor::snapWorld(Item const& item, CCPoint proposed) {
+    if (m_snapGrid) {
+        proposed.x = this->snapToGrid(proposed.x);
+        proposed.y = this->snapToGrid(proposed.y);
+    }
     auto snapDist = std::clamp(static_cast<float>(Mod::get()->getSavedValue<int64_t>("main-menu-layout-snap-distance", 10)), 1.f, 64.f);
     auto winSize = CCDirector::get()->getWinSize();
     auto rect = this->itemRect(item);
@@ -497,6 +734,130 @@ void MainMenuLayoutEditor::scaleSelection(float factor) {
     layout->scaleX = s;
     layout->scaleY = s;
     this->applyLive(*item);
+}
+
+void MainMenuLayoutEditor::rotateSelection(float deltaDegrees) {
+    auto* item = this->selectedItem();
+    if (!item) return;
+    auto* layout = this->liveLayout(*item);
+    if (!layout) return;
+    layout->rotation = std::fmod(layout->rotation + deltaDegrees, 360.f);
+    this->applyLive(*item);
+}
+
+void MainMenuLayoutEditor::setSelectionOpacity(float opacity) {
+    auto* item = this->selectedItem();
+    if (!item) return;
+    auto* layout = this->liveLayout(*item);
+    if (!layout) return;
+    layout->opacity = std::clamp(opacity, 0.f, 1.f);
+    layout->hidden = false;
+    this->applyLive(*item);
+    if (m_opacitySlider) m_opacitySlider->setValue(layout->opacity);
+}
+
+void MainMenuLayoutEditor::bringSelection(int direction) {
+    auto* item = this->selectedItem();
+    if (!item) return;
+    auto* layout = this->liveLayout(*item);
+    if (!layout) return;
+    layout->layer = std::clamp(layout->layer + (direction >= 0 ? 1 : -1), -100, 100);
+    this->applyLive(*item);
+    this->pushHistory();
+    this->refreshInspector();
+    this->redraw();
+}
+
+bool MainMenuLayoutEditor::isSelectionLocked() {
+    auto* item = this->selectedItem();
+    if (!item) return false;
+    auto* layout = this->liveLayout(*item);
+    return layout && layout->locked;
+}
+
+void MainMenuLayoutEditor::toggleSelectionLock() {
+    auto* item = this->selectedItem();
+    if (!item) return;
+    auto* layout = this->liveLayout(*item);
+    if (!layout) return;
+    layout->locked = !layout->locked;
+    this->pushHistory();
+    this->refreshInspector();
+    this->redraw();
+}
+
+void MainMenuLayoutEditor::centerSelection(bool horizontal, bool vertical) {
+    auto* item = this->selectedItem();
+    if (!item || !item->target.node || !item->target.node->getParent()) return;
+    auto* layout = this->liveLayout(*item);
+    if (!layout) return;
+    auto winSize = CCDirector::get()->getWinSize();
+    auto w = worldPos(item->target.node);
+    if (horizontal) w.x = winSize.width / 2.f;
+    if (vertical) w.y = winSize.height / 2.f;
+    layout->position = item->target.node->getParent()->convertToNodeSpace(w);
+    this->applyLive(*item);
+    this->pushHistory();
+    this->refreshInspector();
+    this->redraw();
+}
+
+float MainMenuLayoutEditor::snapToGrid(float value) const {
+    if (!m_snapGrid || m_gridStep <= 1.f) return value;
+    return std::round(value / m_gridStep) * m_gridStep;
+}
+
+void MainMenuLayoutEditor::rebuildGrid() {
+    if (!m_grid) return;
+    m_grid->clear();
+    m_grid->setVisible(m_gridOn);
+    if (!m_gridOn) return;
+    auto winSize = CCDirector::get()->getWinSize();
+    ccColor4F line = { 1.f, 1.f, 1.f, 0.08f };
+    ccColor4F axis = { 0.3f, 1.f, 0.6f, 0.25f };
+    for (float x = m_gridStep; x < winSize.width; x += m_gridStep) {
+        m_grid->drawSegment({ x, kCanvasBottom }, { x, winSize.height - kTopBarHeight }, 0.5f, line);
+    }
+    for (float y = kCanvasBottom + m_gridStep; y < winSize.height - kTopBarHeight; y += m_gridStep) {
+        m_grid->drawSegment({ 0.f, y }, { winSize.width, y }, 0.5f, line);
+    }
+    m_grid->drawSegment({ winSize.width / 2.f, kCanvasBottom }, { winSize.width / 2.f, winSize.height - kTopBarHeight }, 1.f, axis);
+    m_grid->drawSegment({ 0.f, winSize.height / 2.f }, { winSize.width, winSize.height / 2.f }, 1.f, axis);
+}
+
+void MainMenuLayoutEditor::setGridEnabled(bool on) {
+    m_gridOn = on;
+    Mod::get()->setSavedValue<bool>("main-menu-layout-grid", on);
+    if (m_gridIcon) m_gridIcon->setOpacity(on ? 255 : 120);
+    this->rebuildGrid();
+}
+
+void MainMenuLayoutEditor::setSnapEnabled(bool on) {
+    m_snapGrid = on;
+    Mod::get()->setSavedValue<bool>("main-menu-layout-snap-grid", on);
+    if (m_snapIcon) m_snapIcon->setOpacity(on ? 255 : 120);
+}
+
+void MainMenuLayoutEditor::refreshInspector() {
+    if (!m_inspector) return;
+    auto* sel = this->selectedItem();
+    bool show = sel != nullptr && !m_closing;
+    m_inspector->setVisible(show);
+    if (m_lockIcon) {
+        bool locked = this->isSelectionLocked();
+        m_lockIcon->setDisplayFrame(CCSpriteFrameCache::get()->spriteFrameByName(
+            locked ? "GJ_lock_001.png" : "GJ_lock_open_001.png"));
+    }
+    if (!show || !sel->target.node || !sel->target.node->getParent()) return;
+    auto* layout = this->liveLayout(*sel);
+    if (!layout) return;
+    auto w = worldPos(sel->target.node);
+    if (m_inspX) m_inspX->setString(fmt::format("{:.0f}", w.x).c_str());
+    if (m_inspY) m_inspY->setString(fmt::format("{:.0f}", w.y).c_str());
+    if (m_inspScale) m_inspScale->setString(fmt::format("{:.2f}", layout->scale).c_str());
+    if (m_inspRot) m_inspRot->setString(fmt::format("{:.0f}", layout->rotation).c_str());
+    if (m_inspOpacity) m_inspOpacity->setString(fmt::format("{:.0f}%", std::clamp(layout->opacity, 0.f, 1.f) * 100.f).c_str());
+    if (m_inspZ) m_inspZ->setString(fmt::format("{}", layout->layer).c_str());
 }
 
 void MainMenuLayoutEditor::resetItemToDefault(Item const& item) {
@@ -577,30 +938,64 @@ void MainMenuLayoutEditor::redraw() {
     }
 
     if (sel && sel->target.node && sel->target.node->getParent()) {
-        strokeRect(m_outline, this->outlineRect(*sel), { 0.4f, 1.f, 0.55f, 0.95f * m_interfaceOpacity }, 2.f);
+        bool locked = this->isSelectionLocked();
+        ccColor4F outlineColor = locked
+            ? ccColor4F{ 1.f, 0.6f, 0.25f, 0.95f * m_interfaceOpacity }
+            : ccColor4F{ 0.4f, 1.f, 0.55f, 0.95f * m_interfaceOpacity };
+        auto outline = this->outlineRect(*sel);
+        strokeRect(m_outline, outline, outlineColor, 2.f);
 
-        CCPoint g = this->gripPos(*sel);
-        float h = kGripSize / 2.f;
-        CCPoint pts[4] = { { g.x - h, g.y - h }, { g.x + h, g.y - h }, { g.x + h, g.y + h }, { g.x - h, g.y + h } };
-        m_grip->drawPolygon(pts, 4, { 0.27f, 1.f, 0.51f, m_interfaceOpacity }, 1.f, { 1.f, 1.f, 1.f, 0.9f * m_interfaceOpacity });
-    }
+        // glow pass: a wider faint stroke reads as a soft highlight.
+        auto glow = outline;
+        glow.origin.x -= 3.f; glow.origin.y -= 3.f;
+        glow.size.width += 6.f; glow.size.height += 6.f;
+        strokeRect(m_outline, glow, { outlineColor.r, outlineColor.g, outlineColor.b, 0.25f * m_interfaceOpacity }, 1.f);
 
-    if (m_status) {
-        std::string status;
-        if (!sel || !sel->target.node) {
-            status = Localization::get().getString("menu_layout.none_selected");
-        } else {
-            auto w = worldPos(sel->target.node);
-            float scale = sel->target.node->getScale();
-            float opacity = 100.f;
-            if (auto it = m_live.find(sel->target.key); it != m_live.end()) opacity = std::clamp(it->second.opacity, 0.f, 1.f) * 100.f;
-            status = fmt::format(fmt::runtime(Localization::get().getString("menu_layout.status")),
-                sel->target.label, w.x, w.y, scale, std::round(opacity));
+        // corner handles for a drag-affordance look.
+        float hs = 4.f;
+        ccColor4F fill = { outlineColor.r, outlineColor.g, outlineColor.b, m_interfaceOpacity };
+        ccColor4F edge = { 1.f, 1.f, 1.f, 0.9f * m_interfaceOpacity };
+        CCPoint corners[4] = {
+            { outline.getMinX(), outline.getMinY() }, { outline.getMaxX(), outline.getMinY() },
+            { outline.getMaxX(), outline.getMaxY() }, { outline.getMinX(), outline.getMaxY() },
+        };
+        for (auto const& c : corners) {
+            CCPoint q[4] = { { c.x - hs, c.y - hs }, { c.x + hs, c.y - hs }, { c.x + hs, c.y + hs }, { c.x - hs, c.y + hs } };
+            m_grip->drawPolygon(q, 4, fill, 1.f, edge);
         }
-        if (status != m_status->getString()) m_status->setString(status.c_str());
+
+        if (!locked) {
+            CCPoint g = this->gripPos(*sel);
+            float h = kGripSize / 2.f;
+            CCPoint pts[4] = { { g.x - h, g.y - h }, { g.x + h, g.y - h }, { g.x + h, g.y + h }, { g.x - h, g.y + h } };
+            m_grip->drawPolygon(pts, 4, { 0.27f, 1.f, 0.51f, m_interfaceOpacity }, 1.f, edge);
+
+            CCPoint rg = this->rotateGripPos(*sel);
+            m_grip->drawSegment({ outline.getMidX(), outline.getMaxY() }, rg, 1.f, { 0.6f, 0.8f, 1.f, 0.7f * m_interfaceOpacity });
+            m_grip->drawDot(rg, kGripSize * 0.4f, { 0.5f, 0.8f, 1.f, m_interfaceOpacity });
+        }
     }
 
+    this->updateHint();
     if (m_opacitySlider) m_opacitySlider->setVisible(sel != nullptr && !m_closing);
+    this->refreshInspector();
+}
+
+void MainMenuLayoutEditor::updateHint() {
+    if (!m_status) return;
+    auto* sel = this->selectedItem();
+    std::string status;
+    if (!sel || !sel->target.node) {
+        status = Localization::get().getString("menu_layout.none_selected");
+    } else {
+        auto w = worldPos(sel->target.node);
+        float scale = sel->target.node->getScale();
+        float opacity = 100.f;
+        if (auto it = m_live.find(sel->target.key); it != m_live.end()) opacity = std::clamp(it->second.opacity, 0.f, 1.f) * 100.f;
+        status = fmt::format(fmt::runtime(Localization::get().getString("menu_layout.status")),
+            sel->target.label, w.x, w.y, scale, std::round(opacity));
+    }
+    if (status != m_status->getString()) m_status->setString(status.c_str());
 }
 
 bool MainMenuLayoutEditor::ccTouchBegan(CCTouch* touch, CCEvent*) {
@@ -616,11 +1011,31 @@ bool MainMenuLayoutEditor::ccTouchBegan(CCTouch* touch, CCEvent*) {
     // bottom strip belongs to menu/slider; collapsed, the screen is canvas.
     float strip = m_collapsed ? 0.f : kCanvasBottom;
     if (wp.y <= strip) return false;
+
+    // top bar and inspector own their regions so their menus get the touch.
+    auto winSize = CCDirector::get()->getWinSize();
+    if (wp.y >= winSize.height - kTopBarHeight) return false;
+    if (m_inspector && m_inspector->isVisible()) {
+        auto bl = m_inspector->convertToWorldSpace({ 0.f, 0.f });
+        auto sz = m_inspector->getContentSize();
+        CCRect ir(bl.x, bl.y, sz.width, sz.height);
+        if (ir.containsPoint(wp)) return false;
+    }
+
     if (!m_transitions.empty()) return true;
 
     if (auto* sel = this->selectedItem()) {
-        if (sel->target.node && sel->target.node->getParent()) {
+        if (sel->target.node && sel->target.node->getParent() && !this->isSelectionLocked()) {
             auto r = this->itemRect(*sel);
+            CCPoint rgrip = this->rotateGripPos(*sel);
+            if (ccpDistanceSQ(wp, rgrip) <= kRotateGripHit * kRotateGripHit) {
+                m_drag = DragMode::Rotate;
+                m_dragChanged = false;
+                m_scaleFixedWorld = ccp(r.getMidX(), r.getMidY());
+                m_rotateStartAngle = CC_RADIANS_TO_DEGREES(std::atan2(wp.y - m_scaleFixedWorld.y, wp.x - m_scaleFixedWorld.x));
+                if (auto* layout = this->liveLayout(*sel)) m_itemStartRotation = layout->rotation;
+                return true;
+            }
             CCPoint grip = this->gripPos(*sel);
             if (ccpDistanceSQ(wp, grip) <= kGripHit * kGripHit) {
                 m_drag = DragMode::Scale;
@@ -643,7 +1058,7 @@ bool MainMenuLayoutEditor::ccTouchBegan(CCTouch* touch, CCEvent*) {
     int idx = static_cast<int>(hit - m_items.data());
     this->selectIndex(idx);
     auto* node = hit->target.node.data();
-    if (node && node->getParent()) {
+    if (node && node->getParent() && !this->isSelectionLocked()) {
         m_drag = DragMode::Move;
         m_dragChanged = false;
         m_touchStart = wp;
@@ -673,6 +1088,15 @@ void MainMenuLayoutEditor::ccTouchMoved(CCTouch* touch, CCEvent*) {
         layout->scale = s;
         layout->scaleX = s;
         layout->scaleY = s;
+        this->applyLive(*sel);
+        m_dragChanged = true;
+    } else if (m_drag == DragMode::Rotate) {
+        float now = CC_RADIANS_TO_DEGREES(std::atan2(wp.y - m_scaleFixedWorld.y, wp.x - m_scaleFixedWorld.x));
+        float delta = m_rotateStartAngle - now;
+        float rot = m_itemStartRotation + delta;
+        auto* kd = CCKeyboardDispatcher::get();
+        if (kd && kd->getShiftKeyPressed()) rot = std::round(rot / 15.f) * 15.f;
+        layout->rotation = std::fmod(rot, 360.f);
         this->applyLive(*sel);
         m_dragChanged = true;
     }
@@ -706,16 +1130,20 @@ void MainMenuLayoutEditor::keyDown(enumKeyCodes key, double) {
     if (ctrl && key == enumKeyCodes::KEY_S) { this->saveAndClose(); return; }
     if (ctrl && key == enumKeyCodes::KEY_Z) { this->undo(); return; }
     if (ctrl && key == enumKeyCodes::KEY_Y) { this->redo(); return; }
+    if (!ctrl && key == enumKeyCodes::KEY_G) { this->setGridEnabled(!m_gridOn); return; }
 
     if (!m_transitions.empty()) return;
     if (!this->selectedItem()) return;
 
+    if (!ctrl && key == enumKeyCodes::KEY_L) { this->toggleSelectionLock(); return; }
+    if (this->isSelectionLocked()) return;
+    if (!ctrl && key == enumKeyCodes::KEY_C) { this->centerSelection(true, true); return; }
     if (key == enumKeyCodes::KEY_Delete || key == enumKeyCodes::KEY_Backspace) {
         this->onToggleHidden(nullptr);
         return;
     }
-    if (key == enumKeyCodes::KEY_Add || key == enumKeyCodes::KEY_OEMPlus) { this->scaleSelection(1.05f); this->pushHistory(); this->redraw(); return; }
-    if (key == enumKeyCodes::KEY_Subtract || key == enumKeyCodes::KEY_OEMMinus) { this->scaleSelection(1.f / 1.05f); this->pushHistory(); this->redraw(); return; }
+    if (key == enumKeyCodes::KEY_Add || key == enumKeyCodes::KEY_OEMPlus) { this->scaleSelection(1.05f); this->pushHistory(); this->refreshInspector(); this->redraw(); return; }
+    if (key == enumKeyCodes::KEY_Subtract || key == enumKeyCodes::KEY_OEMMinus) { this->scaleSelection(1.f / 1.05f); this->pushHistory(); this->refreshInspector(); this->redraw(); return; }
 
     float step = shift ? 10.f : 1.f;
     CCPoint d{ 0.f, 0.f };
@@ -726,6 +1154,7 @@ void MainMenuLayoutEditor::keyDown(enumKeyCodes key, double) {
     else return;
     this->nudgeSelection(d);
     this->pushHistory();
+    this->refreshInspector();
     this->redraw();
 }
 
@@ -762,16 +1191,51 @@ void MainMenuLayoutEditor::onSave(CCObject*) {
 
 void MainMenuLayoutEditor::onCancel(CCObject*) {
     if (m_closing) return;
-    for (auto const& item : m_items) {
-        auto it = m_initial.find(item.target.key);
-        if (it == m_initial.end()) continue;
-        m_live[item.target.key] = it->second;
-        this->applyLive(item);
+
+    // dirty only when live differs from the state captured on open.
+    bool dirty = false;
+    for (auto const& [key, layout] : m_live) {
+        auto it = m_initial.find(key);
+        if (it == m_initial.end()) { dirty = true; break; }
+        if (!(std::abs(layout.position.x - it->second.position.x) < 0.05f &&
+              std::abs(layout.position.y - it->second.position.y) < 0.05f &&
+              std::abs(layout.scale - it->second.scale) < 0.001f &&
+              std::abs(layout.rotation - it->second.rotation) < 0.001f &&
+              std::abs(layout.opacity - it->second.opacity) < 0.001f &&
+              layout.hidden == it->second.hidden && layout.locked == it->second.locked &&
+              layout.layer == it->second.layer)) {
+            dirty = true;
+            break;
+        }
     }
-    if (auto* root = this->getTargetRoot()) {
-        MainMenuLayoutManager::get().syncShapes(root, m_initialShapes);
-    }
-    this->beginClose(false);
+
+    auto doCancel = [this] {
+        for (auto const& item : m_items) {
+            auto it = m_initial.find(item.target.key);
+            if (it == m_initial.end()) continue;
+            m_live[item.target.key] = it->second;
+            this->applyLive(item);
+        }
+        if (auto* root = this->getTargetRoot()) {
+            MainMenuLayoutManager::get().syncShapes(root, m_initialShapes);
+        }
+        this->beginClose(false);
+    };
+
+    if (!dirty) { doCancel(); return; }
+
+    auto& loc = Localization::get();
+    WeakRef<MainMenuLayoutEditor> self = this;
+    geode::createQuickPopup(
+        loc.getString("menu_layout.cancel").c_str(),
+        "Hay cambios sin guardar. Deseas descartarlos?",
+        "No",
+        "Si",
+        [self, doCancel](auto*, bool yes) {
+            auto* ed = self.lock().data();
+            if (!ed || !ed->getParent() || ed->m_closing || !yes) return;
+            doCancel();
+        });
 }
 
 void MainMenuLayoutEditor::onResetSelected(CCObject*) {
@@ -788,13 +1252,25 @@ void MainMenuLayoutEditor::onResetAll(CCObject*) {
     if (m_closing) return;
     auto* root = this->getTargetRoot();
     if (!root) return;
-    for (auto const& item : m_items) {
-        this->resetItemToDefault(item);
-    }
-    this->selectIndex(-1);
-    this->pushHistory();
-    this->redraw();
-    PaimonNotify::show(Localization::get().getString("menu_layout.reset_done"), NotificationIcon::Info);
+
+    auto& loc = Localization::get();
+    WeakRef<MainMenuLayoutEditor> self = this;
+    geode::createQuickPopup(
+        loc.getString("menu_layout.reset_all").c_str(),
+        "Esto restaura TODOS los botones a su posicion base. Continuar?",
+        "No",
+        "Si",
+        [self](auto*, bool yes) {
+            auto* ed = self.lock().data();
+            if (!ed || !ed->getParent() || ed->m_closing || !yes) return;
+            for (auto const& item : ed->m_items) {
+                ed->resetItemToDefault(item);
+            }
+            ed->selectIndex(-1);
+            ed->pushHistory();
+            ed->redraw();
+            PaimonNotify::show(Localization::get().getString("menu_layout.reset_done"), NotificationIcon::Info);
+        });
 }
 
 void MainMenuLayoutEditor::onToggleHidden(CCObject*) {
@@ -834,6 +1310,55 @@ void MainMenuLayoutEditor::onToggleBar(CCObject*) {
         m_collapseArrow->stopAllActions();
         m_collapseArrow->runAction(CCEaseSineOut::create(CCRotateTo::create(0.22f, m_collapsed ? 90.f : -90.f)));
     }
+}
+
+void MainMenuLayoutEditor::onUndo(CCObject*) { if (!m_closing) this->undo(); }
+void MainMenuLayoutEditor::onRedo(CCObject*) { if (!m_closing) this->redo(); }
+
+void MainMenuLayoutEditor::onToggleGrid(CCObject*) {
+    if (m_closing) return;
+    this->setGridEnabled(!m_gridOn);
+}
+
+void MainMenuLayoutEditor::onToggleSnap(CCObject*) {
+    if (m_closing) return;
+    this->setSnapEnabled(!m_snapGrid);
+}
+
+void MainMenuLayoutEditor::onToggleLock(CCObject*) {
+    if (m_closing) return;
+    this->toggleSelectionLock();
+}
+
+void MainMenuLayoutEditor::onBringFront(CCObject*) { if (!m_closing) this->bringSelection(1); }
+void MainMenuLayoutEditor::onBringBack(CCObject*) { if (!m_closing) this->bringSelection(-1); }
+
+void MainMenuLayoutEditor::onInspectorStep(CCObject* sender) {
+    if (m_closing || this->isSelectionLocked()) return;
+    auto* btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
+    if (!btn) return;
+    int tag = btn->getTag();
+    int field = tag / 10;
+    int sign = (tag % 10 == 1) ? 1 : -1;
+    auto* kd = CCKeyboardDispatcher::get();
+    bool big = kd && kd->getShiftKeyPressed();
+
+    switch (field) {
+        case 0: this->nudgeSelection({ sign * (big ? 10.f : 1.f), 0.f }); break;
+        case 1: this->nudgeSelection({ 0.f, sign * (big ? 10.f : 1.f) }); break;
+        case 2: this->scaleSelection(sign > 0 ? (big ? 1.2f : 1.05f) : (big ? 1.f / 1.2f : 1.f / 1.05f)); break;
+        case 3: this->rotateSelection(sign * (big ? 45.f : 5.f)); break;
+        case 4: {
+            auto* s = this->selectedItem();
+            auto* layout = s ? this->liveLayout(*s) : nullptr;
+            if (layout) this->setSelectionOpacity(layout->opacity + sign * (big ? 0.25f : 0.05f));
+            break;
+        }
+        default: return;
+    }
+    this->pushHistory();
+    this->refreshInspector();
+    this->redraw();
 }
 
 void MainMenuLayoutEditor::saveAndClose() { this->onSave(nullptr); }

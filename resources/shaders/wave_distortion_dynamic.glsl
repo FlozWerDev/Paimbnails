@@ -10,23 +10,25 @@ uniform vec2 u_cursor;
 
 void main() {
     float strength = u_intensity * 0.02;
+    float t = mod(u_time, 628.318);
     vec2 uv = v_texCoord;
-    
-    float cursorDist = length(v_texCoord - u_cursor);
-    float ripple = sin(cursorDist * 30.0 - u_time * 4.0) * strength * (1.0 - smoothstep(0.0, 0.7, cursorDist));
-    
-    uv.x += sin(uv.y * 15.0 + u_time * 2.0) * strength * 0.6;
-    uv.y += cos(uv.x * 12.0 + u_time * 1.7) * strength * 0.5;
-    
-    vec2 rippleDir = normalize(v_texCoord - u_cursor + 0.001);
-    uv += rippleDir * ripple;
-    
+
+    vec2 delta = v_texCoord - u_cursor;
+    float cursorDist = length(delta);
+    float ripple = sin(cursorDist * 30.0 - t * 4.0) * strength * (1.0 - smoothstep(0.0, 0.7, cursorDist));
+
+    uv.x += sin(uv.y * 15.0 + t * 2.0) * strength * 0.6;
+    uv.y += cos(uv.x * 12.0 + t * 1.7) * strength * 0.5;
+
+    uv += (delta / max(cursorDist, 1e-4)) * ripple;
+    uv = clamp(uv, 0.0, 1.0);
+
     vec4 color = texture2D(u_texture, uv);
-    float caustic = sin(uv.x * 30.0 + u_time * 4.0) * sin(uv.y * 30.0 + u_time * 3.0);
+    float caustic = sin(uv.x * 30.0 + t * 4.0) * sin(uv.y * 30.0 + t * 3.0);
     caustic = smoothstep(0.3, 1.0, caustic) * strength * 2.0;
     color.rgb += vec3(0.1, 0.3, 0.5) * caustic;
-    
+
     color.rgb = mix(color.rgb, color.rgb * vec3(0.9, 0.95, 1.1), u_intensity * 0.05);
-    
+
     gl_FragColor = color * v_fragmentColor;
 }

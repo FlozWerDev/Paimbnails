@@ -24,6 +24,7 @@
 #include "../core/Settings.hpp"
 #include "../features/profiles/services/ProfilePicCustomizer.hpp"
 #include "../features/profiles/services/ProfilePicRenderer.hpp"
+#include "../features/profiles/services/ProfileNameDecorator.hpp"
 #include "../features/updates/services/UpdateChecker.hpp"
 #include "../utils/AudioInterop.hpp"
 #include "../utils/SpriteHelper.hpp"
@@ -742,6 +743,9 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         if (!picCfg.profileFont.empty()) {
             if (auto lbl = typeinfo_cast<CCLabelBMFont*>(this->getChildByID("player-username"))) {
                 lbl->setFntFile(picCfg.profileFont.c_str());
+                if (picCfg.nameConfig.enabled) {
+                    paimon::profile_name::decorate(lbl, picCfg.nameConfig);
+                }
             }
         }
 

@@ -55,6 +55,9 @@ bool ThumbnailSettingsPopup::init() {
         "freeze", "pixelate-cursor", "kaleidoscope", "sonar", "electric-arc",
         "prism-split", "gravity-well", "shatter", "heat-haze", "liquify",
         "ink-spread", "hologram", "time-warp", "underwater", "neon-trail",
+        "chromatic-ripple", "black-hole", "aurora-cursor", "starwarp",
+        "liquid-glass", "fisheye", "swirl-galaxy", "embers-trail",
+        "crystal-glass", "bokeh", "caustics", "glitch-scan",
         "synthwave", "neon-city", "ocean", "galaxy"
     };
     m_styles = m_allStyles;
@@ -400,7 +403,10 @@ void ThumbnailSettingsPopup::updateStylesForDynamicShaders() {
         "ripple", "plasma-cursor", "freeze", "pixelate-cursor", "kaleidoscope",
         "sonar", "electric-arc", "prism-split", "gravity-well", "shatter",
         "heat-haze", "liquify", "ink-spread", "hologram", "time-warp",
-        "underwater", "neon-trail"
+        "underwater", "neon-trail", "chromatic-ripple", "black-hole",
+        "aurora-cursor", "starwarp", "liquid-glass", "fisheye",
+        "swirl-galaxy", "embers-trail", "crystal-glass", "bokeh",
+        "caustics", "glitch-scan"
     };
 
     m_styles = m_dynamicShaders ? dynamicStyles : m_allStyles;
@@ -559,6 +565,18 @@ std::string ThumbnailSettingsPopup::getStyleDisplayName(
     if (style == "time-warp") return "Time Warp";
     if (style == "underwater") return "Underwater";
     if (style == "neon-trail") return "Neon Trail";
+    if (style == "chromatic-ripple") return "Chromatic Ripple";
+    if (style == "black-hole") return "Black Hole";
+    if (style == "aurora-cursor") return "Aurora";
+    if (style == "starwarp") return "Star Warp";
+    if (style == "liquid-glass") return "Liquid Glass";
+    if (style == "fisheye") return "Fisheye";
+    if (style == "swirl-galaxy") return "Swirl Galaxy";
+    if (style == "embers-trail") return "Embers";
+    if (style == "crystal-glass") return "Crystal Glass";
+    if (style == "bokeh") return "Bokeh";
+    if (style == "caustics") return "Caustics";
+    if (style == "glitch-scan") return "Glitch Scan";
     if (style == "synthwave") return "Synthwave";
     if (style == "neon-city") return "Neon City";
     if (style == "ocean") return "Ocean";

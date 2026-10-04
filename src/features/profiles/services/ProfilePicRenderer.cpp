@@ -1,6 +1,8 @@
 #include "ProfilePicRenderer.hpp"
 #include "ProfilePicCustomizer.hpp"
 #include "ProfileImageCache.hpp"
+#include "ProfileShapes.hpp"
+#include "HoverShaderSprite.hpp"
 #include "../../../utils/ShapeStencil.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
@@ -230,10 +232,9 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
         }
 
         if (cfg.frameEnabled) {
-            float borderSize = targetSize + cfg.frame.thickness * 2.f;
-            auto border = createShapeBorder(
-                shapeName, borderSize,
-                cfg.frame.thickness, cfg.frame.color,
+            auto border = paimon::profile_shapes::createOutline(
+                paimon::profile_shapes::canonicalId(shapeName), targetSize,
+                std::max(cfg.frame.thickness, 1.f), cfg.frame.color,
                 static_cast<GLubyte>(std::clamp(cfg.frame.opacity, 0.f, 255.f))
             );
             if (border) {
@@ -255,58 +256,86 @@ CCNode* composeProfilePicture(CCNode* imageNode, float targetSize, ProfilePicCon
     }
 
 
-    auto stencil = createShapeStencil(shapeName, targetSize);
-    if (!stencil) stencil = createShapeStencil("circle", targetSize);
+    std::string canonShape = paimon::profile_shapes::canonicalId(shapeName);
+
+    auto stencil = paimon::profile_shapes::createFill(canonShape, targetSize);
+    if (!stencil) stencil = paimon::profile_shapes::createFill("circle", targetSize);
     if (!stencil) return nullptr;
     stencil->setPosition({0, 0});
 
     auto clipper = CCClippingNode::create();
     clipper->setStencil(stencil);
-    clipper->setAlphaThreshold(-1.0f);
+    clipper->setAlphaThreshold(0.5f);
     clipper->setContentSize({targetSize, targetSize});
     clipper->setID("paimon-profile-clipper"_spr);
 
-    if (imageNode) {
-        float iw = std::max(imageNode->getContentWidth(), 1.f);
-        float ih = std::max(imageNode->getContentHeight(), 1.f);
+    // single transform shared by stencil, image and border: scaling the
+    // container moves all three together, so they never drift apart.
+    auto shapeNode = CCNode::create();
+    shapeNode->setContentSize({targetSize, targetSize});
+    shapeNode->setAnchorPoint({0.5f, 0.5f});
+    shapeNode->ignoreAnchorPointForPosition(false);
+    shapeNode->setPosition({targetSize / 2.f, targetSize / 2.f});
+    shapeNode->setID("paimon-profile-shape"_spr);
+
+    CCNode* finalImage = imageNode;
+    if (imageNode && cfg.hoverShader != "none" && !cfg.hoverShader.empty()) {
+        if (auto* spr = typeinfo_cast<CCSprite*>(imageNode)) {
+            if (auto* tex = spr->getTexture()) {
+                if (auto* hover = HoverShaderSprite::createWithTexture(
+                        tex, cfg.hoverShader, std::clamp(cfg.hoverIntensity, 0.f, 2.f))) {
+                    hover->setTextureRect(spr->getTextureRect());
+                    hover->setHoverSource(shapeNode);
+                    finalImage = hover;
+                }
+            }
+        }
+    }
+
+    if (finalImage) {
+        float iw = std::max(finalImage->getContentWidth(), 1.f);
+        float ih = std::max(finalImage->getContentHeight(), 1.f);
         float baseScale = std::max(targetSize / iw, targetSize / ih);
 
         float zoom = std::clamp(cfg.imageZoom, 0.5f, 3.0f);
         float imgScale = baseScale * zoom;
-        imageNode->setScaleX(imgScale * (cfg.imageFlipX ? -1.f : 1.f));
-        imageNode->setScaleY(imgScale * (cfg.imageFlipY ? -1.f : 1.f));
-        imageNode->setRotation(cfg.imageRotation);
-        if (auto* rgba = typeinfo_cast<CCSprite*>(imageNode)) {
+        finalImage->setScaleX(imgScale * (cfg.imageFlipX ? -1.f : 1.f));
+        finalImage->setScaleY(imgScale * (cfg.imageFlipY ? -1.f : 1.f));
+        finalImage->setRotation(cfg.imageRotation);
+        if (auto* rgba = typeinfo_cast<CCSprite*>(finalImage)) {
             rgba->setOpacity(static_cast<GLubyte>(std::clamp(cfg.imageOpacity, 0.f, 255.f)));
         }
-        imageNode->setAnchorPoint({0.5f, 0.5f});
-        imageNode->ignoreAnchorPointForPosition(false);
-        imageNode->setPosition({
+        finalImage->setAnchorPoint({0.5f, 0.5f});
+        finalImage->ignoreAnchorPointForPosition(false);
+        finalImage->setPosition({
             targetSize / 2.f + cfg.imageOffsetX,
             targetSize / 2.f + cfg.imageOffsetY
         });
-        clipper->addChild(imageNode);
+        clipper->addChild(finalImage);
     } else {
         auto placeholder = paimon::SpriteHelper::createColorPanel(targetSize, targetSize, {40, 40, 40}, 220, 0.f);
         clipper->addChild(placeholder);
     }
 
-    container->addChild(clipper);
+    shapeNode->addChild(clipper);
 
     if (cfg.frameEnabled) {
-        float borderSize = targetSize + cfg.frame.thickness * 2.f;
-        auto border = createShapeBorder(
-            shapeName, borderSize,
-            cfg.frame.thickness, cfg.frame.color,
+        // same box and silhouette as the stencil: the stroke rides the clip
+        // edge instead of a separate larger outline.
+        auto border = paimon::profile_shapes::createOutline(
+            canonShape, targetSize,
+            std::max(cfg.frame.thickness, 1.f), cfg.frame.color,
             static_cast<GLubyte>(std::clamp(cfg.frame.opacity, 0.f, 255.f))
         );
         if (border) {
             border->setID("paimon-profile-border"_spr);
             border->setAnchorPoint({0.5f, 0.5f});
             border->setPosition({targetSize / 2.f, targetSize / 2.f});
-            container->addChild(border, -1);
+            shapeNode->addChild(border, 1);
         }
     }
+
+    container->addChild(shapeNode);
 
     for (auto const& deco : cfg.decorations) {
         if (deco.spriteName.empty()) continue;

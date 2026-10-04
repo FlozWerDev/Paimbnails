@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <random>
 
 using namespace geode::prelude;
 
@@ -21,6 +22,9 @@ constexpr char const* kSpeedKey = "gradient-animation-speed";
 constexpr char const* kIntensityKey = "gradient-animation-intensity";
 constexpr char const* kReverseKey = "gradient-animation-reverse";
 constexpr char const* kCustomKey = "gradient-animation-custom";
+constexpr char const* kPhaseKey = "gradient-animation-phase";
+constexpr char const* kPingPongKey = "gradient-animation-pingpong";
+constexpr char const* kEasingKey = "gradient-animation-easing";
 
 float bounded(double value, float fallback, float low, float high) {
     return std::isfinite(value)
@@ -30,10 +34,29 @@ float bounded(double value, float fallback, float low, float high) {
 
 GradientAnimationType validType(int64_t value) {
     if (value < static_cast<int>(GradientAnimationType::Flow)
-        || value > static_cast<int>(GradientAnimationType::Custom)) {
+        || value > kLastAnimationType) {
         return GradientAnimationType::Flow;
     }
     return static_cast<GradientAnimationType>(value);
+}
+
+GradientEasing validEasing(int64_t value) {
+    if (value < 0 || value >= kGradientEasingCount) return GradientEasing::Smooth;
+    return static_cast<GradientEasing>(value);
+}
+
+// the easing choice maps onto the per-layer wave of a recipe. shader-native
+// types never reach this.
+GradientWave waveForEasing(GradientEasing easing, bool pingPong) {
+    if (pingPong) return GradientWave::Bounce;
+    switch (easing) {
+        case GradientEasing::Smooth: return GradientWave::Smooth;
+        case GradientEasing::Linear: return GradientWave::Even;
+        case GradientEasing::Snap: return GradientWave::Snap;
+        case GradientEasing::Soft: return GradientWave::Smooth;
+        case GradientEasing::Sharp: return GradientWave::Even;
+    }
+    return GradientWave::Smooth;
 }
 
 GradientMotion validMotion(int64_t value) {
@@ -78,6 +101,13 @@ void GradientAnimationManager::load() {
         mod->getSavedValue<double>(kIntensityKey, 0.6), 0.6f, 0.f, 1.f
     );
     m_config.reverse = mod->getSavedValue<bool>(kReverseKey, false);
+    m_config.phaseOffset = bounded(
+        mod->getSavedValue<double>(kPhaseKey, 0.0), 0.f, 0.f, 1.f
+    );
+    m_config.pingPong = mod->getSavedValue<bool>(kPingPongKey, false);
+    m_config.easing = validEasing(paimon::json::integerOr<int64_t>(
+        mod->getSavedValue<matjson::Value>(kEasingKey), 0
+    ));
 
     m_config.custom.clear();
 
@@ -104,6 +134,9 @@ void GradientAnimationManager::save() {
     mod->setSavedValue<double>(kSpeedKey, m_config.speed);
     mod->setSavedValue<double>(kIntensityKey, m_config.intensity);
     mod->setSavedValue<bool>(kReverseKey, m_config.reverse);
+    mod->setSavedValue<double>(kPhaseKey, m_config.phaseOffset);
+    mod->setSavedValue<bool>(kPingPongKey, m_config.pingPong);
+    mod->setSavedValue<int64_t>(kEasingKey, static_cast<int64_t>(m_config.easing));
     paimon::requestDeferredModSave();
 }
 
@@ -158,6 +191,50 @@ void GradientAnimationManager::setIntensity(float intensity) {
 
 void GradientAnimationManager::setReverse(bool reverse) {
     m_config.reverse = reverse;
+    save();
+    refreshPrograms();
+}
+
+void GradientAnimationManager::setPhaseOffset(float phase) {
+    m_config.phaseOffset = bounded(phase, 0.f, 0.f, 1.f);
+    save();
+    refreshPrograms();
+}
+
+void GradientAnimationManager::setPingPong(bool pingPong) {
+    m_config.pingPong = pingPong;
+    save();
+    refreshPrograms();
+}
+
+void GradientAnimationManager::setEasing(GradientEasing easing) {
+    m_config.easing = validEasing(static_cast<int>(easing));
+    save();
+    refreshPrograms();
+}
+
+void GradientAnimationManager::randomize() {
+    static std::mt19937 rng{std::random_device{}()};
+
+    // custom needs a hand-built stack to show anything, so keep it out of the roll.
+    std::vector<GradientAnimationType> pool;
+    for (auto type : builtInTypes()) {
+        if (type != GradientAnimationType::Custom) pool.push_back(type);
+    }
+
+    std::uniform_int_distribution<size_t> typePick(0, pool.size() - 1);
+    std::uniform_real_distribution<float> unit(0.f, 1.f);
+    std::uniform_real_distribution<float> speed(0.4f, 2.2f);
+    std::uniform_int_distribution<int> easePick(0, kGradientEasingCount - 1);
+
+    m_config.type = pool[typePick(rng)];
+    m_config.speed = bounded(speed(rng), 1.f, 0.1f, 4.f);
+    m_config.intensity = bounded(0.35f + unit(rng) * 0.6f, 0.6f, 0.f, 1.f);
+    m_config.reverse = unit(rng) < 0.5f;
+    m_config.phaseOffset = unit(rng);
+    m_config.pingPong = unit(rng) < 0.4f;
+    m_config.easing = static_cast<GradientEasing>(easePick(rng));
+
     save();
     refreshPrograms();
 }
@@ -284,13 +361,29 @@ void GradientAnimationManager::apply(CCGLProgram* program) const {
     auto intensityLoc = glGetUniformLocation(programId, "u_animIntensity");
     auto directionLoc = glGetUniformLocation(programId, "u_animDirection");
 
+    bool enabled = paimon::modules::isEnabled(kAnimationModuleId);
+    int rawType = static_cast<int>(m_config.type);
+    bool recipe = rawType >= kFirstBuiltRecipeType;
+
+    // recipe presets have no shader branch, so they ride the custom-layer engine
+    // (branch 6) with a generated stack. the first six types stay shader-native.
+    std::vector<GradientAnimationLayer> feed =
+        recipe ? recipeFor(m_config.type) : m_config.custom;
+
+    if (recipe) {
+        for (auto& layer : feed) {
+            // loop and random carry the preset's identity (rainbow, glitch,
+            // twinkle); only reshape the plain travel waves.
+            bool shaping = layer.wave != GradientWave::Loop
+                && layer.wave != GradientWave::Random;
+            if (shaping) layer.wave = waveForEasing(m_config.easing, m_config.pingPong);
+            layer.phase = std::fmod(layer.phase + m_config.phaseOffset, 1.f);
+        }
+    }
+
     if (typeLoc >= 0) {
-        glUniform1i(
-            typeLoc,
-            paimon::modules::isEnabled(kAnimationModuleId)
-                ? static_cast<int>(m_config.type)
-                : 0
-        );
+        int shaderType = enabled ? (recipe ? static_cast<int>(GradientAnimationType::Custom) : rawType) : 0;
+        glUniform1i(typeLoc, shaderType);
     }
     if (speedLoc >= 0) {
         glUniform1f(speedLoc, m_config.speed);
@@ -306,7 +399,7 @@ void GradientAnimationManager::apply(CCGLProgram* program) const {
     auto layersLoc = glGetUniformLocation(programId, "u_customLayers");
     auto phaseLoc = glGetUniformLocation(programId, "u_customPhase");
 
-    auto count = std::min(m_config.custom.size(), kMaxCustomLayers);
+    auto count = std::min(feed.size(), kMaxCustomLayers);
 
     if (countLoc >= 0) {
         glUniform1i(countLoc, static_cast<int>(count));
@@ -317,7 +410,7 @@ void GradientAnimationManager::apply(CCGLProgram* program) const {
         std::array<GLfloat, kMaxCustomLayers> phases{};
 
         for (size_t i = 0; i < count; ++i) {
-            auto const& layer = m_config.custom[i];
+            auto const& layer = feed[i];
             layers[i * 4 + 0] = static_cast<GLfloat>(static_cast<int>(layer.motion));
             layers[i * 4 + 1] = static_cast<GLfloat>(static_cast<int>(layer.wave));
             layers[i * 4 + 2] = layer.amount;
@@ -342,6 +435,19 @@ char const* GradientAnimationManager::nameFor(GradientAnimationType type) {
         case GradientAnimationType::Orbit: return "Orbit";
         case GradientAnimationType::Swing: return "Swing";
         case GradientAnimationType::Custom: return "Custom";
+        case GradientAnimationType::Wave: return "Wave";
+        case GradientAnimationType::Breathe: return "Breathe";
+        case GradientAnimationType::Rainbow: return "Rainbow";
+        case GradientAnimationType::Shimmer: return "Shimmer";
+        case GradientAnimationType::Bounce: return "Bounce";
+        case GradientAnimationType::Zigzag: return "Zigzag";
+        case GradientAnimationType::Heartbeat: return "Heartbeat";
+        case GradientAnimationType::Strobe: return "Strobe";
+        case GradientAnimationType::PingPong: return "Ping-pong";
+        case GradientAnimationType::Spiral: return "Spiral";
+        case GradientAnimationType::Twinkle: return "Twinkle";
+        case GradientAnimationType::GlitchFx: return "Glitch";
+        case GradientAnimationType::Ripple: return "Ripple";
     }
     return "Flow";
 }
@@ -355,8 +461,118 @@ char const* GradientAnimationManager::descriptionFor(GradientAnimationType type)
         case GradientAnimationType::Swing: return "Rocks the gradient back and forth.";
         case GradientAnimationType::Custom:
             return "Your own animation, built from up to 4 stacked movements.";
+        case GradientAnimationType::Wave:
+            return "Rolls the colors in a soft horizontal wave.";
+        case GradientAnimationType::Breathe:
+            return "Slow zoom in and out, calm and even.";
+        case GradientAnimationType::Rainbow:
+            return "Keeps turning in one direction so the colors cycle forever.";
+        case GradientAnimationType::Shimmer:
+            return "A quick sheen sweep sliding across the icon.";
+        case GradientAnimationType::Bounce:
+            return "Drops and springs back like it is bouncing.";
+        case GradientAnimationType::Zigzag:
+            return "Snaps side to side in sharp zigzag steps.";
+        case GradientAnimationType::Heartbeat:
+            return "Two quick throbs, then a rest. Like a pulse.";
+        case GradientAnimationType::Strobe:
+            return "Hard on-off jumps for a flashing look.";
+        case GradientAnimationType::PingPong:
+            return "Slides one way, then back, without wrapping around.";
+        case GradientAnimationType::Spiral:
+            return "A whirlpool twist that keeps spinning.";
+        case GradientAnimationType::Twinkle:
+            return "Tiny random sparkle, barely moving.";
+        case GradientAnimationType::GlitchFx:
+            return "Nervous jitter in both directions, like a glitch.";
+        case GradientAnimationType::Ripple:
+            return "Crossing ripples, like a drop hitting water.";
     }
     return "Slides the colors smoothly from side to side.";
+}
+
+char const* GradientAnimationManager::nameFor(GradientEasing easing) {
+    switch (easing) {
+        case GradientEasing::Smooth: return "Smooth";
+        case GradientEasing::Linear: return "Linear";
+        case GradientEasing::Snap: return "Snap";
+        case GradientEasing::Soft: return "Soft";
+        case GradientEasing::Sharp: return "Sharp";
+    }
+    return "Smooth";
+}
+
+std::vector<GradientAnimationType> const& GradientAnimationManager::builtInTypes() {
+    static std::vector<GradientAnimationType> const types = {
+        GradientAnimationType::Flow,
+        GradientAnimationType::Pulse,
+        GradientAnimationType::Spin,
+        GradientAnimationType::Orbit,
+        GradientAnimationType::Swing,
+        GradientAnimationType::Wave,
+        GradientAnimationType::Breathe,
+        GradientAnimationType::Rainbow,
+        GradientAnimationType::Shimmer,
+        GradientAnimationType::Bounce,
+        GradientAnimationType::Zigzag,
+        GradientAnimationType::Heartbeat,
+        GradientAnimationType::Strobe,
+        GradientAnimationType::PingPong,
+        GradientAnimationType::Spiral,
+        GradientAnimationType::Twinkle,
+        GradientAnimationType::GlitchFx,
+        GradientAnimationType::Ripple,
+        GradientAnimationType::Custom,
+    };
+    return types;
+}
+
+std::vector<GradientAnimationLayer> GradientAnimationManager::recipeFor(GradientAnimationType type) {
+    using M = GradientMotion;
+    using W = GradientWave;
+
+    switch (type) {
+        case GradientAnimationType::Wave:
+            return {{M::RippleX, W::Smooth, 0.75f, 0.9f, 0.f}};
+        case GradientAnimationType::Breathe:
+            return {{M::Zoom, W::Smooth, 0.6f, 0.55f, 0.f}};
+        case GradientAnimationType::Rainbow:
+            return {{M::Rotate, W::Loop, 1.f, 0.6f, 0.f}};
+        case GradientAnimationType::Shimmer:
+            return {{M::SlideX, W::Loop, 0.5f, 1.8f, 0.f}};
+        case GradientAnimationType::Bounce:
+            return {{M::SlideY, W::Bounce, 0.7f, 1.4f, 0.f}};
+        case GradientAnimationType::Zigzag:
+            return {
+                {M::SlideX, W::Snap, 0.55f, 1.6f, 0.f},
+                {M::SlideY, W::Snap, 0.35f, 1.6f, 0.5f},
+            };
+        case GradientAnimationType::Heartbeat:
+            return {{M::Zoom, W::Bounce, 0.6f, 1.7f, 0.f}};
+        case GradientAnimationType::Strobe:
+            return {{M::Zoom, W::Snap, 0.5f, 2.4f, 0.f}};
+        case GradientAnimationType::PingPong:
+            return {{M::SlideX, W::Even, 0.7f, 1.f, 0.f}};
+        case GradientAnimationType::Spiral:
+            return {
+                {M::Twist, W::Loop, 0.9f, 0.7f, 0.f},
+                {M::Zoom, W::Smooth, 0.3f, 0.5f, 0.5f},
+            };
+        case GradientAnimationType::Twinkle:
+            return {{M::Zoom, W::Random, 0.3f, 2.6f, 0.f}};
+        case GradientAnimationType::GlitchFx:
+            return {
+                {M::SlideX, W::Random, 0.4f, 4.f, 0.f},
+                {M::SlideY, W::Random, 0.3f, 3.4f, 0.5f},
+            };
+        case GradientAnimationType::Ripple:
+            return {
+                {M::RippleX, W::Smooth, 0.6f, 1.f, 0.f},
+                {M::RippleY, W::Smooth, 0.6f, 1.2f, 0.5f},
+            };
+        default:
+            return {};
+    }
 }
 
 char const* GradientAnimationManager::nameFor(GradientMotion motion) {

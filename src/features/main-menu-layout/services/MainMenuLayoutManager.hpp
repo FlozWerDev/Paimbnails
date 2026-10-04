@@ -13,8 +13,10 @@ struct MenuButtonLayout {
     float scale = 1.f;
     float scaleX = 1.f;
     float scaleY = 1.f;
+    float rotation = 0.f;
     float opacity = 1.f;
     bool hidden = false;
+    bool locked = false;
     int layer = 0;
     std::string linkGroup;
     bool hasColor = false;

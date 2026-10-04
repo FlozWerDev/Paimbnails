@@ -12,6 +12,7 @@
 #include <Geode/binding/GJGameLevel.hpp>
 #include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/binding/GameManager.hpp>
+#include <Geode/binding/GJAccountManager.hpp>
 #include <Geode/binding/GameToolbox.hpp>
 #include <Geode/binding/LevelCell.hpp>
 #include <Geode/binding/GJSearchObject.hpp>
@@ -27,6 +28,8 @@
 #include "../../../framework/compat/SceneLocators.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/HttpClient.hpp"
+#include "../../profiles/services/ProfilePicCustomizer.hpp"
+#include "../../profiles/services/ProfileNameDecorator.hpp"
 #include "../../forum/services/ForumApi.hpp"
 #include "../../emotes/EmoteRenderer.hpp"
 #include "../../emotes/services/EmoteService.hpp"
@@ -1101,8 +1104,19 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
         menu->setLayout(RowLayout::create()->setAxisAlignment(AxisAlignment::Start)
             ->setGap(5.f)->setCrossAxisOverflow(false)->setAutoScale(true));
 
-        auto nameLabel = CCLabelBMFont::create(std::string(score->m_userName).c_str(), "bigFont.fnt");
+        auto const picCfg = ProfilePicCustomizer::get().getConfig();
+        bool ownProfile = false;
+        if (auto* am = GJAccountManager::sharedState()) {
+            ownProfile = am->m_accountID != 0 && am->m_accountID == score->m_accountID;
+        }
+        char const* nameFont = (ownProfile && !picCfg.profileFont.empty())
+            ? picCfg.profileFont.c_str() : "bigFont.fnt";
+
+        auto nameLabel = CCLabelBMFont::create(std::string(score->m_userName).c_str(), nameFont);
         nameLabel->limitLabelWidth(contentW - 112.f, 0.72f, 0.35f);
+        if (ownProfile && picCfg.nameConfig.enabled) {
+            paimon::profile_name::decorate(nameLabel, picCfg.nameConfig);
+        }
         if (auto nameBtn = CCMenuItemExt::createSpriteExtra(nameLabel, [scoreRef](CCMenuItemSpriteExtra*) {
                 if (scoreRef) {
                     geode::utils::clipboard::write(std::string(scoreRef->m_userName));

@@ -33,6 +33,8 @@
 #include <Geode/utils/web.hpp>
 
 #include <algorithm>
+#include <cctype>
+#include <chrono>
 
 using namespace geode::prelude;
 
@@ -275,6 +277,44 @@ int levelPercent(int levelID) {
     return 0;
 }
 
+int64_t nowSeconds() {
+    return std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+// compact "hace 3m" style relative time; empty when the stamp is missing.
+std::string timeAgo(int64_t receivedAt) {
+    if (receivedAt <= 0) return {};
+    int64_t secs = nowSeconds() - receivedAt;
+    if (secs < 0) secs = 0;
+    if (secs < 60) return "hace " + std::to_string(secs) + "s";
+    int64_t mins = secs / 60;
+    if (mins < 60) return "hace " + std::to_string(mins) + "m";
+    int64_t hours = mins / 60;
+    if (hours < 24) return "hace " + std::to_string(hours) + "h";
+    return "hace " + std::to_string(hours / 24) + "d";
+}
+
+std::string waitLabel(double seconds) {
+    if (seconds < 1.0) return "0s";
+    int64_t s = static_cast<int64_t>(seconds + 0.5);
+    if (s < 60) return std::to_string(s) + "s";
+    int64_t m = s / 60;
+    if (m < 60) return std::to_string(m) + "m " + std::to_string(s % 60) + "s";
+    return std::to_string(m / 60) + "h " + std::to_string(m % 60) + "m";
+}
+
+// case-insensitive substring, used by the queue search box.
+bool matchesQuery(std::string const& haystack, std::string const& needle) {
+    if (needle.empty()) return true;
+    auto lower = [](std::string value) {
+        std::ranges::transform(value, value.begin(),
+            [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+        return value;
+    };
+    return lower(haystack).find(lower(needle)) != std::string::npos;
+}
+
 std::string firstCommand() {
     auto& manager = TwitchRequestManager::get();
     return parseCommands(routedCommands(manager.routing(), manager.selected(), manager.commandsSetting())).front();
@@ -322,6 +362,9 @@ bool TwitchRequestsLayer::init() {
 
     applyPlatformSkin();
     refreshStatus();
+    refreshStats();
+    refreshSourceChips();
+    refreshNowPlaying();
     rebuildRows();
     schedule(schedule_selector(TwitchRequestsLayer::tick), 0.4f);
     scheduleUpdate();
@@ -455,15 +498,51 @@ void TwitchRequestsLayer::buildHeader() {
     m_statusLabel->setPosition({26.f, 10.f});
     pill->addChild(m_statusLabel, 1);
 
+    m_sourceChips = CCNode::create();
+    m_sourceChips->setContentSize({pillWidth, 14.f});
+    m_sourceChips->setAnchorPoint({0.5f, 0.5f});
+    m_sourceChips->setPosition({win.width / 2.f, pillY - 30.f});
+    addChild(m_sourceChips, 5);
+
+    float chipX = 0.f;
+    for (int index = 0; index < kSelectableCount; ++index) {
+        auto const platform = platformFromIndex(index);
+        auto* chip = CCNode::create();
+        chip->setAnchorPoint({0.f, 0.5f});
+        chip->setContentSize({54.f, 14.f});
+
+        auto* dotHost = CCNode::create();
+        dotHost->setContentSize({7.f, 7.f});
+        dotHost->setPosition({0.f, 7.f});
+        chip->addChild(dotHost, 1);
+        m_sourceDots[static_cast<size_t>(index)] = dotHost;
+
+        auto* name = CCLabelBMFont::create(shortPlatform(platform).c_str(), "chatFont.fnt");
+        name->setAnchorPoint({0.f, 0.5f});
+        name->setScale(0.34f);
+        name->setColor(platformAccent(platform));
+        name->setPosition({11.f, 7.f});
+        chip->addChild(name, 1);
+
+        float const w = 11.f + name->getScaledContentSize().width + 10.f;
+        chip->setContentSize({w, 14.f});
+        chip->setPositionX(chipX);
+        chipX += w;
+        m_sourceChips->addChild(chip);
+    }
+    m_sourceChips->setContentSize({chipX, 14.f});
+    m_sourceChips->setPositionX(win.width / 2.f - chipX / 2.f);
+
     enterBy(menu, {0.f, 34.f}, 0.f, true);
     enterBy(title, {0.f, 24.f}, 0.04f, true);
     enterBy(m_titleIcon, {0.f, 24.f}, 0.07f, true);
     enterBy(pill, {0.f, 20.f}, 0.1f);
+    enterBy(m_sourceChips, {0.f, 18.f}, 0.12f);
 }
 
 void TwitchRequestsLayer::buildSidePanel() {
     auto win = CCDirector::get()->getWinSize();
-    float const top = win.height - 62.f;
+    float const top = win.height - 86.f;
     float const bottom = 44.f;
     float const height = top - bottom;
 
@@ -571,15 +650,81 @@ void TwitchRequestsLayer::buildSidePanel() {
     m_hintLabel->setScale(0.34f);
     m_hintLabel->setColor(kDesc);
     m_hintLabel->setAnchorPoint({0.5f, 1.f});
-    m_hintLabel->setPosition({kSideWidth / 2.f, y});
+    m_hintLabel->setPosition({kSideWidth / 2.f, std::max(y, 68.f)});
     panel->addChild(m_hintLabel, 2);
+
+    buildStatsCard(panel, inner);
 
     enterBy(panel, {-kSideWidth - kMargin - 8.f, 0.f}, 0.06f);
 }
 
+void TwitchRequestsLayer::buildStatsCard(CCNode* panel, float width) {
+    constexpr float kCardH = 46.f;
+    auto* card = CCNode::create();
+    card->setContentSize({width, kCardH});
+    card->setPosition({14.f, 10.f});
+    panel->addChild(card, 2);
+
+    if (auto* inset = paimon::ui::makeInset({width, kCardH}, 120)) {
+        card->addChild(inset, -1);
+    }
+
+    // 2x2 grid: caption above a value, so the card stays short.
+    float const colW = width / 2.f;
+    auto makeStat = [&](char const* caption, int col, int rowFromTop, ccColor3B color) -> CCLabelBMFont* {
+        float const cx = col * colW + colW / 2.f;
+        float const capY = kCardH - 10.f - rowFromTop * 22.f;
+        auto* cap = CCLabelBMFont::create(caption, "chatFont.fnt");
+        cap->setScale(0.3f);
+        cap->setColor(kDesc);
+        cap->setPosition({cx, capY});
+        card->addChild(cap);
+
+        auto* value = CCLabelBMFont::create("0", "bigFont.fnt");
+        value->setScale(0.4f);
+        value->setColor(color);
+        value->setPosition({cx, capY - 11.f});
+        card->addChild(value);
+        return value;
+    };
+
+    m_statReceived = makeStat("Recibidos", 0, 0, {210, 215, 230});
+    m_statPlayed = makeStat("Jugados", 1, 0, {120, 245, 150});
+    m_statSkipped = makeStat("Saltados", 0, 1, {255, 150, 150});
+    m_statWait = makeStat("Espera", 1, 1, kGold);
+}
+
+void TwitchRequestsLayer::refreshStats() {
+    auto& manager = TwitchRequestManager::get();
+    auto const& stats = manager.sessionStats();
+    if (m_statReceived) m_statReceived->setString(std::to_string(stats.received).c_str());
+    if (m_statPlayed) m_statPlayed->setString(std::to_string(stats.played).c_str());
+    if (m_statSkipped) m_statSkipped->setString(std::to_string(stats.removed).c_str());
+    if (m_statWait) m_statWait->setString(waitLabel(manager.averageWaitSeconds()).c_str());
+}
+
+void TwitchRequestsLayer::refreshSourceChips() {
+    auto& manager = TwitchRequestManager::get();
+    for (int index = 0; index < kSelectableCount; ++index) {
+        auto* host = m_sourceDots[static_cast<size_t>(index)];
+        if (!host) continue;
+        auto const platform = platformFromIndex(index);
+        bool const active = manager.isActive(platform);
+        auto const color = active ? stateColor(manager.state(platform))
+            : ccColor3B{90, 95, 110};
+        host->removeAllChildren();
+        if (auto* dot = paimon::SpriteHelper::createRoundedRect(
+                7.f, 7.f, 3.5f, ccc4FFromccc3B(color))) {
+            dot->setPosition({-3.5f, -3.5f});
+            dot->setOpacity(active ? 255 : 150);
+            host->addChild(dot);
+        }
+    }
+}
+
 void TwitchRequestsLayer::buildQueuePanel() {
     auto win = CCDirector::get()->getWinSize();
-    float const top = win.height - 62.f;
+    float const top = win.height - 86.f;
     float const bottom = 44.f;
     float const height = top - bottom;
     float const left = kMargin + kSideWidth + 10.f;
@@ -611,8 +756,45 @@ void TwitchRequestsLayer::buildQueuePanel() {
         queueMenu->addChild(select);
     }
 
+    float const searchY = height - 38.f;
+    if (auto* glass = paimon::SpriteHelper::safeCreateWithFrameName("GJ_searchBtn_001.png")) {
+        glass->setScale(0.42f);
+        glass->setPosition({24.f, searchY});
+        panel->addChild(glass, 3);
+    }
+    m_searchInput = TextInput::create(width - 70.f, "Buscar nombre, ID o pedidor", "chatFont.fnt");
+    if (m_searchInput) {
+        m_searchInput->setMaxCharCount(60);
+        m_searchInput->setPosition({(width + 10.f) / 2.f, searchY});
+        m_searchInput->setCommonFilter(CommonFilter::Any);
+        m_searchInput->setCallback([this](std::string const&) { this->onSearchChanged(); });
+        panel->addChild(m_searchInput, 3);
+    }
+
+    float const bannerTop = searchY - 16.f;
+    m_nowPlaying = CCNode::create();
+    m_nowPlaying->setContentSize({width - 20.f, 24.f});
+    m_nowPlaying->setAnchorPoint({0.f, 1.f});
+    m_nowPlaying->setPosition({10.f, bannerTop});
+    m_nowPlaying->setVisible(false);
+    panel->addChild(m_nowPlaying, 2);
+
+    if (auto* inset = paimon::ui::makeInset({width - 20.f, 24.f}, 150, {28, 60, 30})) {
+        m_nowPlaying->addChild(inset, -1);
+    }
+    if (auto* icon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_playBtn2_001.png")) {
+        icon->setScale(16.f / std::max(icon->getContentSize().height, 1.f));
+        icon->setPosition({14.f, 12.f});
+        m_nowPlaying->addChild(icon, 1);
+    }
+    m_nowPlayingLabel = CCLabelBMFont::create("", "bigFont.fnt");
+    m_nowPlayingLabel->setAnchorPoint({0.f, 0.5f});
+    m_nowPlayingLabel->setScale(0.4f);
+    m_nowPlayingLabel->setPosition({26.f, 12.f});
+    m_nowPlaying->addChild(m_nowPlayingLabel, 1);
+
     m_listWidth = width - 20.f;
-    m_listHeight = height - 32.f;
+    m_listHeight = bannerTop - 24.f - 10.f;
 
     m_rowsHost = CCNode::create();
     m_rowsHost->setContentSize({m_listWidth, m_listHeight});
@@ -622,15 +804,73 @@ void TwitchRequestsLayer::buildQueuePanel() {
     enterBy(panel, {win.width - left + 8.f, 0.f}, 0.1f);
 }
 
+void TwitchRequestsLayer::refreshNowPlaying() {
+    if (!m_nowPlaying || !m_nowPlayingLabel) return;
+
+    auto& manager = TwitchRequestManager::get();
+    auto requests = manager.requests();
+
+    // the current level on stream: the newest played request, if any.
+    int level = 0;
+    std::string name;
+    std::string requester;
+    for (auto const& request : requests) {
+        if (!request.played) continue;
+        level = request.levelID;
+        requester = request.requester;
+        if (auto const* brief = TwitchLevelBriefCache::get().peek(request.levelID);
+            brief && brief->found) {
+            name = brief->name;
+        }
+    }
+
+    if (level == 0) {
+        if (m_nowPlaying->isVisible()) m_nowPlaying->setVisible(false);
+        m_nowPlayingLevel = 0;
+        return;
+    }
+
+    if (level == m_nowPlayingLevel && m_nowPlaying->isVisible()) return;
+    m_nowPlayingLevel = level;
+    m_nowPlaying->setVisible(true);
+
+    auto const text = fmt::format("En pantalla: {}  @{}",
+        name.empty() ? fmt::format("ID {}", level) : shorten(name, 24),
+        shorten(requester, 14));
+    m_nowPlayingLabel->setString(text.c_str());
+    m_nowPlayingLabel->limitLabelWidth(m_nowPlaying->getContentSize().width - 34.f, 0.4f, 0.24f);
+    pulse(m_nowPlaying, 1.f);
+}
+
+void TwitchRequestsLayer::onSearchChanged() {
+    if (!m_searchInput) return;
+    auto query = std::string(m_searchInput->getString());
+    if (query == m_searchQuery) return;
+    m_searchQuery = std::move(query);
+    rebuildRows();
+}
+
 void TwitchRequestsLayer::buildFooter() {
     auto win = CCDirector::get()->getWinSize();
 
-    auto* menu = CCMenu::create();
-    menu->setContentSize({win.width - 2.f * kMargin, 34.f});
-    menu->setPosition({win.width / 2.f, 22.f});
-    addChild(menu, 10);
+    float const dockWidth = win.width - 2.f * kMargin;
+    auto* dock = CCNode::create();
+    dock->setContentSize({dockWidth, 38.f});
+    dock->setAnchorPoint({0.5f, 0.5f});
+    dock->setPosition({win.width / 2.f, 22.f});
+    addChild(dock, 10);
 
-    if (auto* next = makeTextButton("Jugar siguiente", "GJ_button_01.png", 0.5f,
+    if (auto* backing = paimon::ui::makeInset({dockWidth, 38.f}, 110)) {
+        backing->setPosition({-dockWidth / 2.f, -19.f});
+        dock->addChild(backing, -1);
+    }
+
+    auto* menu = CCMenu::create();
+    menu->setContentSize({dockWidth - 16.f, 34.f});
+    menu->setPosition({dockWidth / 2.f, 19.f});
+    dock->addChild(menu);
+
+    if (auto* next = makeTextButton("Jugar siguiente", "GJ_button_01.png", 0.56f,
             [this] { this->onPlayNext(); })) {
         menu->addChild(next);
     }
@@ -640,10 +880,6 @@ void TwitchRequestsLayer::buildFooter() {
     }
     if (auto* sources = makeTextButton("Origenes", "GJ_button_04.png", .5f,
             [this] { onSources(); })) menu->addChild(sources);
-    if (auto* clear = makeTextButton("Vaciar requests", "GJ_button_06.png", 0.5f,
-            [this] { this->onClearQueue(); })) {
-        menu->addChild(clear);
-    }
     if (auto* reconnect = makeTextButton("Reconectar", "GJ_button_05.png", 0.5f,
             [this] {
                 TwitchRequestManager::get().restart();
@@ -651,19 +887,26 @@ void TwitchRequestsLayer::buildFooter() {
             })) {
         menu->addChild(reconnect);
     }
+    if (auto* clear = makeTextButton("Vaciar requests", "GJ_button_06.png", 0.5f,
+            [this] { this->onClearQueue(); })) {
+        menu->addChild(clear);
+    }
 
     menu->setLayout(RowLayout::create()
         ->setGap(8.f)
         ->setAutoScale(false)
         ->setAxisAlignment(AxisAlignment::Center));
 
-    enterBy(menu, {0.f, -52.f}, 0.16f, true);
+    enterBy(dock, {0.f, -52.f}, 0.16f, true);
 }
 
 void TwitchRequestsLayer::tick(float) {
     TwitchLevelBriefCache::get().tick();
     refreshPercents();
     refreshStatus();
+    refreshStats();
+    refreshSourceChips();
+    refreshNowPlaying();
     if (m_popupOnTop) return;
 
     auto& manager = TwitchRequestManager::get();
@@ -827,26 +1070,57 @@ void TwitchRequestsLayer::rebuildRows() {
         if (!manager.inSelectedQueue(requests[index])) continue;
         auto passes = requestPasses(requests[index].levelID, !requests[index].videoUrl.empty());
         if (passes && !*passes) continue;
+        if (!m_searchQuery.empty()) {
+            auto const& request = requests[index];
+            std::string name;
+            if (auto const* brief = TwitchLevelBriefCache::get().peek(request.levelID);
+                brief && brief->found) {
+                name = brief->name;
+            }
+            bool const hit = matchesQuery(name, m_searchQuery)
+                || matchesQuery(request.requester, m_searchQuery)
+                || matchesQuery(std::to_string(request.levelID), m_searchQuery);
+            if (!hit) continue;
+        }
         visible.push_back(index);
     }
 
     if (visible.empty()) {
-        bool const allFiltered = manager.selectedRequestCount() > 0;
-        auto* empty = CCLabelBMFont::create(
-            allFiltered ? "Nada pasa el filtro" : "Todavia no hay requests", "bigFont.fnt");
+        bool const searching = !m_searchQuery.empty();
+        bool const allFiltered = !searching && manager.selectedRequestCount() > 0;
+
+        char const* decoFrame = searching ? "GJ_searchBtn_001.png"
+            : (allFiltered ? "GJ_filterIcon_001.png" : "GJ_chatBtn_001.png");
+        if (auto* deco = paimon::SpriteHelper::safeCreateWithFrameName(decoFrame)) {
+            deco->setScale(0.9f);
+            deco->setOpacity(120);
+            deco->setColor(currentAccent());
+            deco->setPosition({m_listWidth / 2.f, m_listHeight / 2.f + 34.f});
+            m_rowsHost->addChild(deco);
+            breathe(deco, 0.86f, 0.96f, 1.3f);
+        }
+
+        char const* emptyText = searching ? "Sin coincidencias"
+            : (allFiltered ? "Nada pasa el filtro" : "Todavia no hay requests");
+        auto* empty = CCLabelBMFont::create(emptyText, "bigFont.fnt");
         empty->setScale(0.5f);
         empty->setColor({210, 215, 230});
-        empty->setPosition({m_listWidth / 2.f, m_listHeight / 2.f + 10.f});
+        empty->setPosition({m_listWidth / 2.f, m_listHeight / 2.f + 2.f});
         m_rowsHost->addChild(empty);
         pulse(empty, 0.5f);
 
-        auto const hintText = allFiltered
-            ? fmt::format("{} pedidos ocultos; toca Filtros para cambiarlos", manager.selectedRequestCount())
-            : fmt::format("Escribe {} y una ID en tu chat", firstCommand());
+        std::string hintText;
+        if (searching) {
+            hintText = fmt::format("Borra la busqueda \"{}\" para ver la cola", shorten(m_searchQuery, 18));
+        } else if (allFiltered) {
+            hintText = fmt::format("{} pedidos ocultos; toca Filtros para cambiarlos", manager.selectedRequestCount());
+        } else {
+            hintText = fmt::format("Escribe {} y una ID en tu chat", firstCommand());
+        }
         auto* hint = CCLabelBMFont::create(hintText.c_str(), "chatFont.fnt");
         hint->setScale(0.4f);
         hint->setColor(kDesc);
-        hint->setPosition({m_listWidth / 2.f, m_listHeight / 2.f - 10.f});
+        hint->setPosition({m_listWidth / 2.f, m_listHeight / 2.f - 18.f});
         m_rowsHost->addChild(hint);
         return;
     }
@@ -933,7 +1207,7 @@ CCNode* TwitchRequestsLayer::buildRow(
 
     float const textLeft = 58.f;
     auto const note = requestNote(request);
-    int const buttonCount = 2 + (index > 0 ? 1 : 0)
+    int const buttonCount = 4 + (index > 0 ? 1 : 0)
         + (request.videoUrl.empty() ? 0 : 1)
         + (note.empty() ? 0 : 1);
     float const textWidth = width - textLeft - static_cast<float>(buttonCount) * 28.f - 8.f;
@@ -1001,6 +1275,7 @@ CCNode* TwitchRequestsLayer::buildRow(
     }
 
     auto details = request.queue + " / " + (request.sourceName.empty() ? shortPlatform(request.platform) : request.sourceName);
+    if (auto ago = timeAgo(request.receivedAt); !ago.empty()) details += " - " + ago;
     if (!note.empty()) details += " - " + note;
     auto* detailsLabel = CCLabelBMFont::create("", "chatFont.fnt");
     detailsLabel->setAnchorPoint({0.f, .5f});
@@ -1043,6 +1318,14 @@ CCNode* TwitchRequestsLayer::buildRow(
         place(makeIconButton("gj_ytIcon_001.png", 22.f,
             [this, url = request.videoUrl] { this->openVideo(url); }));
     }
+
+    place(makeCircleButton("GJ_duplicateBtn_001.png", CircleBaseColor::Gray, 0.56f,
+        [this, levelID = request.levelID] { this->copyLevelId(levelID); }));
+
+    place(makeCircleButton(
+        request.played ? "GJ_undoBtn_001.png" : "GJ_completesIcon_001.png",
+        request.played ? CircleBaseColor::Gray : CircleBaseColor::Green, 0.56f,
+        [this, index] { this->toggleReviewed(index); }));
 
     place(makeIconButton("GJ_trashBtn_001.png", 26.f,
         [this, index] {
@@ -1331,17 +1614,49 @@ void TwitchRequestsLayer::scrollWheel(float x, float y) {
 }
 
 TwitchRequestsLayer::~TwitchRequestsLayer() {
+    if (m_searchInput) m_searchInput->setCallback(nullptr);
     paimon::ui::detachGeodeTextInput(m_channelInput);
     paimon::ui::detachGeodeTextInput(m_commandInput);
+    paimon::ui::detachGeodeTextInput(m_searchInput);
 }
 
 void TwitchRequestsLayer::keyBackClicked() {
     onBack();
 }
 
+// desktop shortcut: enter plays the next pending request while the scene is on
+// top and nothing is being typed into the queue search.
+void TwitchRequestsLayer::keyDown(enumKeyCodes key, double timestamp) {
+    bool const searching = m_searchInput
+        && !std::string(m_searchInput->getString()).empty();
+    if ((key == KEY_Enter || key == KEY_NumEnter) && !m_popupOnTop && !searching) {
+        onPlayNext();
+        return;
+    }
+    CCLayer::keyDown(key, timestamp);
+}
+
 void TwitchRequestsLayer::onBack() {
     if (inputsDiffer()) applyInputs();
     CCDirector::get()->popSceneWithTransition(0.4f, PopTransition::kPopTransitionFade);
+}
+
+void TwitchRequestsLayer::copyLevelId(int levelID) {
+    geode::utils::clipboard::write(std::to_string(levelID));
+    PaimonNotify::create(
+        fmt::format("ID {} copiado", levelID), NotificationIcon::Success)->show();
+}
+
+void TwitchRequestsLayer::toggleReviewed(size_t index) {
+    auto& manager = TwitchRequestManager::get();
+    auto requests = manager.requests();
+    if (index >= requests.size()) return;
+    bool const next = !requests[index].played;
+    manager.setReviewed(index, next);
+    PaimonNotify::create(
+        next ? "Marcado como revisado" : "Marcado como pendiente",
+        NotificationIcon::Info)->show();
+    scheduleRebuild();
 }
 
 }

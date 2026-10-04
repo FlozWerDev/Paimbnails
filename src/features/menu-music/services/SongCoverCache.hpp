@@ -22,11 +22,19 @@ public:
 
     static constexpr int kMaxLevelsPerSong = 10;
 
+    // cover art plus the level it came from, for the "Miniatura de: ..." caption.
+    struct CoverEntry {
+        int levelID = 0;
+        std::string name;
+        std::string path;
+    };
+
     std::filesystem::path getCoversDir() const;
     std::filesystem::path getSongDir(int songID) const;
 
     bool hasCachedCovers(int songID) const;
     std::vector<std::string> getCachedCoverPaths(int songID) const;
+    std::vector<CoverEntry> getCachedCoverEntries(int songID) const;
 
     void requestCovers(int songID, CoversCallback callback);
     void cancelPending(int songID);
@@ -43,6 +51,7 @@ private:
     struct PendingBatch {
         int songID = 0;
         int searchAttempt = 0;
+        bool localTried = false;
         std::string searchKey;
         std::vector<CoversCallback> callbacks;
     };
@@ -50,11 +59,17 @@ private:
     struct SongManifest {
         std::vector<int> levelIds;
         std::vector<std::string> coverPaths;
+        std::unordered_map<int, std::string> levelNames;
     };
 
     bool loadManifest(int songID, SongManifest& out) const;
     void saveManifest(int songID, std::vector<int> const& levelIds,
-        std::vector<std::string> const& coverPaths) const;
+        std::vector<std::string> const& coverPaths,
+        std::unordered_map<int, std::string> const& levelNames) const;
+
+    std::filesystem::path negativeCachePath() const;
+    bool isNegativelyCached(int songID) const;
+    void markNegative(int songID) const;
 
     void ensureSearchNode();
     void scheduleDebouncedFlush(float delaySec);
@@ -64,7 +79,8 @@ private:
     bool isCooldownActive() const;
     double nowSeconds() const;
     void pumpQueue();
-    void loadThumbnailsForLevels(int songID, std::vector<int> const& levelIds);
+    void loadThumbnailsForLevels(int songID, std::vector<int> const& levelIds,
+        std::unordered_map<int, std::string> levelNames, bool fromLocal = false);
     void finishRequest(int songID, std::vector<std::string> const& coverPaths, bool success);
     void dispatchCallbacks(PendingBatch& batch, std::vector<std::string> const& coverPaths, bool success);
 

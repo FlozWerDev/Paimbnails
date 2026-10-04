@@ -121,6 +121,25 @@ protected:
     void onPreset(cocos2d::CCObject* sender);
     void onRandomize(cocos2d::CCObject* sender);
     void onResetAll(cocos2d::CCObject* sender);
+    void onHoverSelect(cocos2d::CCObject* sender);
+    void onHoverIntensityChanged(cocos2d::CCObject* sender);
+
+    cocos2d::CCNode* createNameTab();
+    void onNameEnableToggle(cocos2d::CCObject* sender);
+    void onNameFontSelect(cocos2d::CCObject* sender);
+    void onNameGradientMode(cocos2d::CCObject* sender);
+    void onNameGradientAnim(cocos2d::CCObject* sender);
+    void onNameLetterAnim(cocos2d::CCObject* sender);
+    void onNameOutlineToggle(cocos2d::CCObject* sender);
+    void onNameGlowToggle(cocos2d::CCObject* sender);
+    void onNameColorPick(cocos2d::CCObject* sender);
+    void onNameGradAPick(cocos2d::CCObject* sender);
+    void onNameGradBPick(cocos2d::CCObject* sender);
+    void onNameGradCPick(cocos2d::CCObject* sender);
+
+    Slider* m_hoverIntensitySlider = nullptr;
+    cocos2d::CCLabelBMFont* m_hoverIntensityLabel = nullptr;
+    cocos2d::CCNode* m_namePreview = nullptr;
 
     void rebuildPreview();
 

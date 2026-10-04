@@ -82,6 +82,9 @@ protected:
 
     void applyCovers(std::vector<std::string> const& coverPaths);
 
+    void updateCoverCaption();
+    void onOpenCoverLevel(cocos2d::CCObject*);
+
     void applyFullscreenCover(const std::string& coverPath);
     void syncCoverChrome(float dt);
 
@@ -136,6 +139,12 @@ protected:
     std::size_t m_playerListenerToken = 0;
     int m_pendingSongCoverID = 0;
     int m_failedSongCoverID = 0;
+
+    cocos2d::CCLabelBMFont* m_coverCaption = nullptr;
+    cocos2d::CCMenu* m_coverCaptionMenu = nullptr;
+    CCMenuItemSpriteExtra* m_coverCaptionBtn = nullptr;
+    int m_coverLevelID = 0;
+    std::string m_coverLevelName;
 };
 
 } // namespace paimon::menumusic

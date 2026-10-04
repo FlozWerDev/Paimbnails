@@ -31,6 +31,9 @@
 
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/FMODAudioEngine.hpp>
+#include <Geode/binding/GameLevelManager.hpp>
+#include <Geode/binding/GJGameLevel.hpp>
+#include <Geode/binding/LevelInfoLayer.hpp>
 #include <Geode/binding/InfoAlertButton.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/MusicDownloadManager.hpp>
@@ -416,6 +419,37 @@ void MenuMusicPopup::buildVinyl() {
     }
 
     m_disc = nullptr;
+
+    // caption sits over the hero bottom; the menu lives outside the clipper so it gets touches.
+    m_coverCaption = CCLabelBMFont::create("", "chatFont.fnt");
+    if (m_coverCaption) {
+        m_coverCaption->setScale(0.42f);
+        m_coverCaption->setAnchorPoint({0.f, 0.f});
+        m_coverCaption->setColor({235, 235, 245});
+        m_coverCaption->setOpacity(230);
+        m_coverCaption->setID("mm-cover-caption"_spr);
+        m_coverCaption->setVisible(false);
+
+        auto* btn = CCMenuItemSpriteExtra::create(
+            m_coverCaption, this, menu_selector(MenuMusicPopup::onOpenCoverLevel));
+        if (btn) {
+            btn->setAnchorPoint({0.f, 0.f});
+            m_coverCaptionBtn = btn;
+            CCPoint clipperBL =
+                m_contentClip->getPosition()
+                - CCPoint(clipSize.width / 2.f, heroH / 2.f);
+            btn->setPosition(clipperBL + CCPoint(6.f, 5.f));
+
+            m_coverCaptionMenu = CCMenu::create();
+            m_coverCaptionMenu->setContentSize(m_mainLayer->getContentSize());
+            m_coverCaptionMenu->setPosition({0.f, 0.f});
+            m_coverCaptionMenu->setAnchorPoint({0.f, 0.f});
+            m_coverCaptionMenu->ignoreAnchorPointForPosition(false);
+            m_coverCaptionMenu->addChild(btn);
+            m_coverCaptionMenu->setID("mm-cover-caption-menu"_spr);
+            m_mainLayer->addChild(m_coverCaptionMenu, 10);
+        }
+    }
 }
 
 void MenuMusicPopup::buildInfoColumn() {
@@ -991,7 +1025,10 @@ void MenuMusicPopup::refreshFromState() {
         }
     }
 
-    if (coverPaths.empty() && detected.songID > 0) {
+    const bool thumbnailCoversEnabled =
+        Mod::get()->getSavedValue<bool>("menuMusicThumbnailCovers", true);
+
+    if (thumbnailCoversEnabled && coverPaths.empty() && detected.songID > 0) {
         if (m_pendingSongCoverID != detected.songID &&
             m_failedSongCoverID != detected.songID) {
             m_pendingSongCoverID = detected.songID;
@@ -1086,6 +1123,64 @@ void MenuMusicPopup::applyCovers(std::vector<std::string> const& coverPaths) {
     if (m_disc) m_disc->setCoverFromPath(chromePath);
     applyFullscreenCover(chromePath);
     m_lastChromeCoverPath = chromePath;
+
+    updateCoverCaption();
+}
+
+void MenuMusicPopup::updateCoverCaption() {
+    if (!m_coverCaption) return;
+
+    m_coverLevelID = 0;
+    m_coverLevelName.clear();
+
+    std::string current = m_hero ? m_hero->getCurrentCoverPath() : std::string{};
+    auto detected = detectActiveSong(false);
+    if (current.empty() || detected.songID <= 0) {
+        m_coverCaption->setVisible(false);
+        return;
+    }
+
+    for (auto const& entry : SongCoverCache::get().getCachedCoverEntries(detected.songID)) {
+        if (entry.path == current) {
+            m_coverLevelID = entry.levelID;
+            m_coverLevelName = entry.name;
+            break;
+        }
+    }
+
+    if (m_coverLevelID <= 0) {
+        m_coverCaption->setVisible(false);
+        return;
+    }
+
+    std::string label = m_coverLevelName.empty()
+        ? fmt::format("Miniatura de nivel #{}", m_coverLevelID)
+        : fmt::format("Miniatura de: {}", m_coverLevelName);
+    m_coverCaption->setString(label.c_str());
+
+    // only clickable when the level is already in memory; keeps the caption cheap.
+    bool clickable = false;
+    if (auto* glm = GameLevelManager::get()) {
+        clickable = glm->getSavedLevel(m_coverLevelID) != nullptr;
+    }
+    m_coverCaption->setColor(clickable ? ccColor3B{150, 220, 255} : ccColor3B{235, 235, 245});
+    if (m_coverCaptionBtn) m_coverCaptionBtn->setEnabled(clickable);
+    m_coverCaption->setVisible(true);
+}
+
+void MenuMusicPopup::onOpenCoverLevel(CCObject*) {
+    if (m_coverLevelID <= 0) return;
+    auto* glm = GameLevelManager::get();
+    if (!glm) return;
+    auto* level = glm->getSavedLevel(m_coverLevelID);
+    if (!level) return;
+
+    auto* scene = CCScene::create();
+    if (!scene) return;
+    auto* layer = LevelInfoLayer::create(level, false);
+    if (!layer) return;
+    scene->addChild(layer);
+    CCDirector::get()->pushScene(CCTransitionFade::create(0.4f, scene));
 }
 
 void MenuMusicPopup::syncCoverChrome(float) {
@@ -1098,6 +1193,7 @@ void MenuMusicPopup::syncCoverChrome(float) {
     if (m_bg) m_bg->setCoverFromPath(current);
     if (m_disc) m_disc->setCoverFromPath(current);
     applyFullscreenCover(current);
+    updateCoverCaption();
 }
 
 void MenuMusicPopup::onTrackChanged(const std::string&) { refreshFromState(); }

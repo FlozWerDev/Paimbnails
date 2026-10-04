@@ -35,6 +35,8 @@ constexpr int kMaxSearchAttempts = 2;
 constexpr float kDebounceSec = 2.5f;
 constexpr float kMinSearchGapSec = 4.0f;
 constexpr float kRateLimitCooldownSec = 300.0f;
+// a song with no popular leveled thumbnail stays negative for a day.
+constexpr double kNegativeTtlSec = 60.0 * 60.0 * 24.0;
 // gd level browser: 0=relevance, 1=downloads, 2=most liked (approx).
 constexpr int kSearchModeMostLiked = 2;
 
@@ -119,7 +121,8 @@ bool persistLevelCover(int songID, int levelID, CCTexture2D* tex) {
     return ImageLoadHelper::saveTextureToPng(tex, dst);
 }
 
-std::vector<int> collectTopLevelIds(cocos2d::CCArray* levels, int songID, int maxCount) {
+std::vector<int> collectTopLevelIds(cocos2d::CCArray* levels, int songID, int maxCount,
+    std::unordered_map<int, std::string>& namesOut) {
     std::vector<GJGameLevel*> matched;
     std::vector<GJGameLevel*> fallback;
     matched.reserve(maxCount);
@@ -146,7 +149,51 @@ std::vector<int> collectTopLevelIds(cocos2d::CCArray* levels, int songID, int ma
     out.reserve(maxCount);
     for (auto* level : source) {
         if (static_cast<int>(out.size()) >= maxCount) break;
-        out.push_back(level->m_levelID);
+        int id = level->m_levelID;
+        out.push_back(id);
+        std::string name = level->m_levelName;
+        if (!name.empty()) namesOut[id] = name;
+    }
+    return out;
+}
+
+// levels the game already knows (browsed, saved, downloaded) that use the song,
+// most famous first, so we skip the server search when possible.
+std::vector<int> collectLocalLevelIds(int songID, int maxCount,
+    std::unordered_map<int, std::string>& namesOut) {
+    auto* glm = GameLevelManager::get();
+    if (!glm) return {};
+
+    std::unordered_map<int, GJGameLevel*> byId;
+    auto consider = [&](CCObject* obj) {
+        auto* level = typeinfo_cast<GJGameLevel*>(obj);
+        if (!level || level->m_levelID <= 0) return;
+        if (level->m_songID == songID) byId.emplace(static_cast<int>(level->m_levelID), level);
+    };
+
+    for (auto* dict : {glm->m_onlineLevels, glm->m_downloadedLevels}) {
+        if (!dict) continue;
+        for (auto [key, obj] : CCDictionaryExt<std::string_view, CCObject>(dict)) consider(obj);
+    }
+    if (auto* saved = glm->getSavedLevels(false, 0)) {
+        for (auto* obj : CCArrayExt<CCObject*>(saved)) consider(obj);
+    }
+
+    std::vector<GJGameLevel*> levels;
+    levels.reserve(byId.size());
+    for (auto& [id, level] : byId) levels.push_back(level);
+    std::sort(levels.begin(), levels.end(), [](GJGameLevel* a, GJGameLevel* b) {
+        if (a->m_downloads != b->m_downloads) return a->m_downloads > b->m_downloads;
+        return a->m_likes > b->m_likes;
+    });
+
+    std::vector<int> out;
+    for (auto* level : levels) {
+        if (static_cast<int>(out.size()) >= maxCount) break;
+        int id = level->m_levelID;
+        out.push_back(id);
+        std::string name = level->m_levelName;
+        if (!name.empty()) namesOut[id] = name;
     }
     return out;
 }
@@ -258,8 +305,10 @@ struct ThumbnailBatchState {
     std::vector<int> levelIds;
     std::vector<int> savedLevelIds;
     std::vector<std::string> coverPaths;
+    std::unordered_map<int, std::string> levelNames;
     std::shared_ptr<int> completed;
     int pendingCount = 0;
+    bool fromLocal = false;
 };
 
 } // namespace
@@ -327,6 +376,16 @@ bool SongCoverCache::loadManifest(int songID, SongManifest& out) const {
         }
     }
 
+    if (root.contains("names") && root["names"].isObject()) {
+        for (auto const& [key, value] : root["names"]) {
+            if (auto name = value.asString()) {
+                if (auto id = geode::utils::numFromString<int>(key); id.isOk()) {
+                    out.levelNames[id.unwrap()] = name.unwrap();
+                }
+            }
+        }
+    }
+
     if (root.contains("files") && root["files"].isArray()) {
         for (auto const& item : root["files"].asArray().unwrap()) {
             if (auto file = item.asString()) {
@@ -348,7 +407,8 @@ bool SongCoverCache::loadManifest(int songID, SongManifest& out) const {
 void SongCoverCache::saveManifest(
     int songID,
     std::vector<int> const& levelIds,
-    std::vector<std::string> const& coverPaths
+    std::vector<std::string> const& coverPaths,
+    std::unordered_map<int, std::string> const& levelNames
 ) const {
     std::error_code ec;
     std::filesystem::create_directories(getSongDir(songID), ec);
@@ -364,6 +424,15 @@ void SongCoverCache::saveManifest(
             std::filesystem::path(fullPath).filename()));
     }
     root["files"] = fileArr;
+
+    auto nameObj = matjson::Value::object();
+    for (int id : levelIds) {
+        auto it = levelNames.find(id);
+        if (it != levelNames.end() && !it->second.empty()) {
+            nameObj[std::to_string(id)] = it->second;
+        }
+    }
+    root["names"] = nameObj;
 
     std::ofstream file(getSongDir(songID) / "manifest.json", std::ios::trunc);
     if (file) file << root.dump();
@@ -392,6 +461,63 @@ std::vector<std::string> SongCoverCache::getCachedCoverPaths(int songID) const {
         }
     }
     return {};
+}
+
+std::vector<SongCoverCache::CoverEntry> SongCoverCache::getCachedCoverEntries(int songID) const {
+    if (songID <= 0) return {};
+
+    SongManifest manifest;
+    if (!loadManifest(songID, manifest)) return {};
+
+    std::vector<CoverEntry> out;
+    out.reserve(manifest.coverPaths.size());
+    for (auto const& path : manifest.coverPaths) {
+        CoverEntry entry;
+        entry.path = path;
+        // cover files are "<levelID>.png"/".gif"; recover the id from the stem.
+        auto stem = std::filesystem::path(path).stem().string();
+        if (auto id = geode::utils::numFromString<int>(stem); id.isOk()) {
+            entry.levelID = id.unwrap();
+            auto it = manifest.levelNames.find(entry.levelID);
+            if (it != manifest.levelNames.end()) entry.name = it->second;
+        }
+        out.push_back(std::move(entry));
+    }
+    return out;
+}
+
+std::filesystem::path SongCoverCache::negativeCachePath() const {
+    return getCoversDir() / "negative.json";
+}
+
+bool SongCoverCache::isNegativelyCached(int songID) const {
+    auto data = geode::utils::file::readString(negativeCachePath());
+    if (!data) return false;
+    auto parsed = matjson::parse(data.unwrap());
+    if (!parsed.isOk()) return false;
+    auto root = parsed.unwrap();
+    if (!root.isObject() || !root.contains(std::to_string(songID))) return false;
+    auto when = root[std::to_string(songID)].asDouble().unwrapOr(0.0);
+    double const nowUnix = std::chrono::duration<double>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    return (nowUnix - when) < kNegativeTtlSec;
+}
+
+void SongCoverCache::markNegative(int songID) const {
+    matjson::Value root = matjson::Value::object();
+    if (auto data = geode::utils::file::readString(negativeCachePath())) {
+        if (auto parsed = matjson::parse(data.unwrap()); parsed.isOk() && parsed.unwrap().isObject()) {
+            root = parsed.unwrap();
+        }
+    }
+    double const nowUnix = std::chrono::duration<double>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    root[std::to_string(songID)] = nowUnix;
+
+    std::error_code ec;
+    std::filesystem::create_directories(getCoversDir(), ec);
+    std::ofstream file(negativeCachePath(), std::ios::trunc);
+    if (file) file << root.dump();
 }
 
 void SongCoverCache::ensureSearchNode() {
@@ -443,6 +569,12 @@ void SongCoverCache::requestCovers(int songID, CoversCallback callback) {
     if (auto cached = getCachedCoverPaths(songID); !cached.empty()) {
         coverlog::info("[SongCoverCache] disk cache hit songID={} covers={}", songID, cached.size());
         if (callback) callback(cached, true);
+        return;
+    }
+
+    if (isNegativelyCached(songID)) {
+        coverlog::info("[SongCoverCache] negative cache hit songID={}, skipping search", songID);
+        if (callback) callback({}, false);
         return;
     }
 
@@ -680,6 +812,19 @@ void SongCoverCache::pumpQueue() {
         return;
     }
 
+    if (!batch.localTried) {
+        batch.localTried = true;
+        std::unordered_map<int, std::string> names;
+        auto localIds = collectLocalLevelIds(batch.songID, kMaxLevelsPerSong, names);
+        if (!localIds.empty()) {
+            coverlog::info("[SongCoverCache] local levels songID={} candidates={}",
+                batch.songID, localIds.size());
+            m_searchInFlight = true;
+            loadThumbnailsForLevels(batch.songID, localIds, std::move(names), true);
+            return;
+        }
+    }
+
     if (batch.searchAttempt >= kMaxSearchAttempts) {
         coverlog::warn("[SongCoverCache] max search attempts reached songID={}", batch.songID);
         finishRequest(batch.songID, {}, false);
@@ -714,12 +859,13 @@ void SongCoverCache::pumpQueue() {
         batch.songID, batch.searchAttempt, customSong, batch.searchKey);
 
     if (auto* cached = manager->getStoredOnlineLevels(searchObj->getKey())) {
-        auto levelIds = collectTopLevelIds(cached, batch.songID, kMaxLevelsPerSong);
+        std::unordered_map<int, std::string> names;
+        auto levelIds = collectTopLevelIds(cached, batch.songID, kMaxLevelsPerSong, names);
         coverlog::info("[SongCoverCache] GLM session cache hit songID={} levels={} matchedIds={}",
             batch.songID, cached->count(), levelIds.size());
         if (!levelIds.empty()) {
             m_searchInFlight = true;
-            loadThumbnailsForLevels(batch.songID, levelIds);
+            loadThumbnailsForLevels(batch.songID, levelIds, std::move(names));
             return;
         }
         coverlog::warn("[SongCoverCache] GLM session cache empty after filter songID={}", batch.songID);
@@ -746,7 +892,8 @@ void SongCoverCache::handleLevelSearchResult(
         return;
     }
 
-    auto levelIds = collectTopLevelIds(levels, songID, kMaxLevelsPerSong);
+    std::unordered_map<int, std::string> names;
+    auto levelIds = collectTopLevelIds(levels, songID, kMaxLevelsPerSong, names);
     coverlog::info("[SongCoverCache] collectTopLevelIds songID={} rawLevels={} selected={}",
         songID, levels ? levels->count() : 0, levelIds.size());
     if (levelIds.empty()) {
@@ -759,14 +906,16 @@ void SongCoverCache::handleLevelSearchResult(
             scheduleDebouncedFlush(kMinSearchGapSec);
             return;
         }
+        markNegative(songID);
         finishRequest(songID, {}, false);
         return;
     }
 
-    loadThumbnailsForLevels(songID, levelIds);
+    loadThumbnailsForLevels(songID, levelIds, std::move(names));
 }
 
-void SongCoverCache::loadThumbnailsForLevels(int songID, std::vector<int> const& levelIds) {
+void SongCoverCache::loadThumbnailsForLevels(int songID, std::vector<int> const& levelIds,
+    std::unordered_map<int, std::string> levelNames, bool fromLocal) {
     if (songID != m_targetSongID || levelIds.empty()) {
         finishRequest(songID, {}, false);
         return;
@@ -778,8 +927,10 @@ void SongCoverCache::loadThumbnailsForLevels(int songID, std::vector<int> const&
     auto state = std::make_shared<ThumbnailBatchState>();
     state->songID = songID;
     state->levelIds = levelIds;
+    state->levelNames = std::move(levelNames);
     state->completed = std::make_shared<int>(0);
     state->pendingCount = static_cast<int>(levelIds.size());
+    state->fromLocal = fromLocal;
 
     coverlog::info("[SongCoverCache] fetching {} thumbnails by level ID for songID={}",
         state->pendingCount, songID);
@@ -828,8 +979,19 @@ void SongCoverCache::loadThumbnailsForLevels(int songID, std::vector<int> const&
                 }
 
                 if (++(*state->completed) >= state->pendingCount) {
+                    if (state->coverPaths.empty() && state->fromLocal
+                        && state->songID == m_targetSongID) {
+                        coverlog::info("[SongCoverCache] no local thumbnail songID={}, searching server",
+                            state->songID);
+                        m_searchInFlight = false;
+                        pumpQueue();
+                        return;
+                    }
                     if (!state->coverPaths.empty()) {
-                        saveManifest(state->songID, state->savedLevelIds, state->coverPaths);
+                        saveManifest(state->songID, state->savedLevelIds, state->coverPaths,
+                            state->levelNames);
+                    } else {
+                        markNegative(state->songID);
                     }
                     coverlog::info("[SongCoverCache] saved {} covers for songID={}",
                         state->coverPaths.size(), state->songID);

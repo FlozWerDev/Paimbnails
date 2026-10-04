@@ -45,6 +45,7 @@
 #include "ReportInputPopup.hpp"
 #include "ThumbnailOrderPopup.hpp"
 #include "ThumbnailSettingsPopup.hpp"
+#include "ThumbViewerChrome.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -103,6 +104,7 @@ void LocalThumbnailViewPopup::replaceRemoteThumbnails(std::vector<ThumbnailAPI::
     }
 
     updateOrderUiState();
+    syncInfoBar();
 }
 
 void LocalThumbnailViewPopup::ensureOrderControls(float /*contentwidth*/) {
@@ -165,6 +167,7 @@ void LocalThumbnailViewPopup::onPrev(CCObject*) {
         if (m_counterLabel) {
             m_counterLabel->setString(fmt::format("{}/{}", m_localCurrentIndex + 1, count).c_str());
         }
+        syncInfoBar();
         return;
     }
 
@@ -191,6 +194,7 @@ void LocalThumbnailViewPopup::onNext(CCObject*) {
         if (m_counterLabel) {
             m_counterLabel->setString(fmt::format("{}/{}", m_localCurrentIndex + 1, count).c_str());
         }
+        syncInfoBar();
         return;
     }
 
@@ -297,6 +301,8 @@ void LocalThumbnailViewPopup::FLAlert_Clicked(FLAlertLayer* alert, bool btn2) {
 }
 
 void LocalThumbnailViewPopup::applyRatingLabel() {
+    if (m_infoBar) m_infoBar->setRating(m_hasRatingData, m_ratingAverage, m_ratingCount);
+
     if (!m_ratingLabel) return;
 
     if (!m_hasRatingData) {
@@ -311,6 +317,31 @@ void LocalThumbnailViewPopup::applyRatingLabel() {
     } else {
         m_ratingLabel->setColor({255, 255, 255});
     }
+}
+
+void LocalThumbnailViewPopup::syncInfoBar() {
+    if (!m_infoBar) return;
+
+    int index = 0;
+    int total = 0;
+    std::string creator;
+    if (m_viewingLocal) {
+        index = m_localCurrentIndex;
+        total = static_cast<int>(m_localThumbPaths.size());
+    } else if (!m_suggestions.empty()) {
+        index = m_currentIndex;
+        total = static_cast<int>(m_suggestions.size());
+    } else {
+        index = m_currentIndex;
+        total = static_cast<int>(m_thumbnails.size());
+        if (m_currentIndex >= 0 && m_currentIndex < static_cast<int>(m_thumbnails.size())) {
+            creator = m_thumbnails[m_currentIndex].creator;
+        }
+    }
+
+    m_infoBar->setLevelId(m_levelID);
+    m_infoBar->setCreator(creator);
+    m_infoBar->setCounter(index, total);
 }
 
 void LocalThumbnailViewPopup::refreshRating() {
@@ -392,6 +423,7 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
     updateOrderUiState();
 
     refreshRating();
+    syncInfoBar();
 
     Ref<LocalThumbnailViewPopup> self = this;
 
@@ -553,6 +585,8 @@ void LocalThumbnailViewPopup::loadCurrentSuggestion() {
     if (m_leftArrow) m_leftArrow->setVisible(m_suggestions.size() > 1);
     if (m_rightArrow) m_rightArrow->setVisible(m_suggestions.size() > 1);
 
+    syncInfoBar();
+
     std::string url = HttpClient::get().buildAssetURL(suggestion.filename, "suggestions");
     int requestToken = ++m_suggestionRequestToken;
     int requestedIndex = m_currentIndex;
@@ -638,6 +672,8 @@ void LocalThumbnailViewPopup::onExit() {
     m_leftArrow = nullptr;
     m_rightArrow = nullptr;
     m_orderEditBtn = nullptr;
+    m_infoBar = nullptr;
+    m_hideChromeBtn = nullptr;
 
     Popup::onExit();
 }
@@ -653,6 +689,7 @@ void LocalThumbnailViewPopup::setupRating() {
     auto ratingContainer = CCNode::create();
     ratingContainer->setID("rating-container"_spr);
     ratingContainer->setPosition({contentSize.width / 2.f, 237.f});
+    ratingContainer->setVisible(false);
     m_mainLayer->addChild(ratingContainer, 100);
 
     auto bg = paimon::ui::makeInset({74.f, 16.f}, 125);
@@ -833,6 +870,15 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
     m_counterLabel->setPosition({content.width / 2.f, 23.f});
     m_counterLabel->setVisible(false);
     this->m_mainLayer->addChild(m_counterLabel, 11);
+
+    // caption bar overlays the top edge of the image; width tracks the frame.
+    m_infoBar = paimon::thumbviewer::InfoBar::create(maxWidth);
+    if (m_infoBar) {
+        float topY = (content.height / 2.f + 5.f) + (maxHeight / 2.f);
+        m_infoBar->setPosition({content.width / 2.f, topY - 17.f});
+        this->m_mainLayer->addChild(m_infoBar, 12);
+        m_infoBar->setLevelId(m_levelID);
+    }
 
     this->setTouchEnabled(true);
 
@@ -1185,6 +1231,7 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
     }
     m_refreshBtn = nullptr;
     m_orderEditBtn = nullptr;
+    m_hideChromeBtn = nullptr;
     if (!m_suggestions.empty()) {
         if (m_leftArrow) {
             m_leftArrow->removeFromParent();
@@ -1312,6 +1359,26 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
     m_buttonMenu = CCMenu::create();
     auto buttonMenu = m_buttonMenu;
 
+    namespace tv = paimon::thumbviewer;
+
+    if (m_verificationCategory < 0) {
+        auto refreshSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_updateBtn_001.png");
+        if (!refreshSpr) refreshSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_replayBtn_001.png");
+        if (refreshSpr) {
+            refreshSpr->setScale(0.5f);
+            m_refreshBtn = CCMenuItemSpriteExtra::create(refreshSpr, this, menu_selector(LocalThumbnailViewPopup::onRefreshBtn));
+            m_refreshBtn->setID("refresh-btn"_spr);
+            buttonMenu->addChild(m_refreshBtn);
+        }
+    }
+
+    if (auto fitBtn = tv::makeToolButton("GJ_resetBtn_001.png", 0.5f, nullptr, this, menu_selector(LocalThumbnailViewPopup::onFitReset))) {
+        fitBtn->setID("fit-reset-btn"_spr);
+        buttonMenu->addChild(fitBtn);
+    }
+
+    buttonMenu->addChild(tv::makeToolDivider(34.f));
+
     auto downloadSprite = Assets::loadButtonSprite(
         "popup-download",
         "frame:GJ_downloadBtn_001.png",
@@ -1347,16 +1414,19 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         acceptBtn = CCMenuItemSpriteExtra::create(acceptSpr, this, menu_selector(LocalThumbnailViewPopup::onAcceptThumbBtn));
     }
 
-    if (acceptBtn) buttonMenu->addChild(acceptBtn);
-    if (centerBtn) buttonMenu->addChild(centerBtn);
-
     if (auto rateSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starBtn_001.png")) {
         rateSpr->setScale(0.7f);
         auto rateBtn = CCMenuItemSpriteExtra::create(rateSpr, this, menu_selector(LocalThumbnailViewPopup::onRate));
+        rateBtn->setID("rate-btn"_spr);
         buttonMenu->addChild(rateBtn);
     }
 
     buttonMenu->addChild(downloadBtn);
+
+    if (auto copyBtn = tv::makeToolButton("GJ_copyBtn_001.png", 0.6f, nullptr, this, menu_selector(LocalThumbnailViewPopup::onCopyLevelId))) {
+        copyBtn->setID("copy-id-btn"_spr);
+        buttonMenu->addChild(copyBtn);
+    }
 
     if (auto ytSpr = paimon::SpriteHelper::safeCreateWithFrameName("gj_ytIcon_001.png")) {
         ytSpr->setScale(0.7f);
@@ -1364,6 +1434,12 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         ytBtn->setID("youtube-btn"_spr);
         buttonMenu->addChild(ytBtn);
     }
+
+    // moderation / destructive group is kept to the right behind a divider.
+    buttonMenu->addChild(tv::makeToolDivider(34.f));
+
+    if (acceptBtn) buttonMenu->addChild(acceptBtn);
+    if (centerBtn) buttonMenu->addChild(centerBtn);
 
     auto gm = GameManager::get();
     if (gm) {
@@ -1391,6 +1467,7 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
                         popup,
                         menu_selector(LocalThumbnailViewPopup::onDeleteThumbnail)
                     );
+                    btn->setID("mod-delete-btn"_spr);
 
                     if (popup->m_buttonMenu) {
                         popup->m_buttonMenu->addChild(btn);
@@ -1406,47 +1483,53 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         });
     }
 
+    buttonMenu->addChild(tv::makeToolDivider(34.f));
+    auto gearSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn_001.png");
+    if (!gearSpr) gearSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn02_001.png");
+    if (gearSpr) {
+        gearSpr->setScale(0.5f);
+        auto gearBtn = CCMenuItemSpriteExtra::create(gearSpr, this, menu_selector(LocalThumbnailViewPopup::onSettings));
+        gearBtn->setID("settings-gear-btn"_spr);
+        buttonMenu->addChild(gearBtn);
+    }
+
     buttonMenu->ignoreAnchorPointForPosition(false);
     buttonMenu->setAnchorPoint({0.5f, 0.5f});
-    buttonMenu->setContentSize({content.width - 40.f, 60.f});
-    buttonMenu->setPosition({content.width / 2, 46.f});
+    buttonMenu->setContentSize({content.width - 24.f, 42.f});
+    buttonMenu->setPosition({content.width / 2, 24.f});
 
     auto layout = RowLayout::create();
-    layout->setGap(10.f);
+    layout->setGap(7.f);
     layout->setAxisAlignment(AxisAlignment::Center);
     layout->setCrossAxisAlignment(AxisAlignment::Center);
-    layout->setDefaultScaleLimits(0.5f, 1.f);
+    layout->setGrowCrossAxis(false);
+    layout->setAutoScale(true);
+    layout->setDefaultScaleLimits(0.4f, 1.f);
 
     buttonMenu->setLayout(layout);
     buttonMenu->updateLayout();
 
     this->m_mainLayer->addChild(buttonMenu, 10);
+    updateRefreshButtonState();
 
+    // chrome toggle rides the corner so it stays reachable when the toolbar hides.
     m_settingsMenu = CCMenu::create();
     auto settingsMenu = m_settingsMenu;
     settingsMenu->setPosition({0, 0});
+    settingsMenu->setID("thumbviewer-corner-menu"_spr);
     this->m_mainLayer->addChild(settingsMenu, 15);
 
-    auto gearSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn_001.png");
-    if (!gearSpr) gearSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn02_001.png");
-    if (gearSpr) {
-        gearSpr->setScale(0.45f);
-        auto gearBtn = CCMenuItemSpriteExtra::create(gearSpr, this, menu_selector(LocalThumbnailViewPopup::onSettings));
-        gearBtn->setPosition({content.width - 22.f, 46.f});
-        gearBtn->setID("settings-gear-btn"_spr);
-        settingsMenu->addChild(gearBtn);
-    }
-
-    if (m_verificationCategory < 0) {
-        auto refreshSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_updateBtn_001.png");
-        if (!refreshSpr) refreshSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_replayBtn_001.png");
-        if (refreshSpr) {
-            refreshSpr->setScale(0.45f);
-            m_refreshBtn = CCMenuItemSpriteExtra::create(refreshSpr, this, menu_selector(LocalThumbnailViewPopup::onRefreshBtn));
-            m_refreshBtn->setPosition({22.f, 46.f});
-            m_refreshBtn->setID("refresh-btn"_spr);
-            settingsMenu->addChild(m_refreshBtn);
-            updateRefreshButtonState();
+    {
+        auto hideSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_zoomInBtn_001.png");
+        if (!hideSpr) hideSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_bigStar_noShadow_001.png");
+        if (hideSpr) {
+            hideSpr->setScale(0.5f);
+            m_hideChromeBtn = CCMenuItemSpriteExtra::create(hideSpr, this, menu_selector(LocalThumbnailViewPopup::toggleChrome));
+            // top-left, just inside the close button, clear of the toolbar row.
+            float topY = (content.height / 2.f + 5.f) + (maxHeight / 2.f);
+            m_hideChromeBtn->setPosition({46.f, topY + 3.f});
+            m_hideChromeBtn->setID("hide-chrome-btn"_spr);
+            settingsMenu->addChild(m_hideChromeBtn);
         }
     }
 
@@ -1462,6 +1545,8 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
     }
 
     updateOrderUiState();
+    syncInfoBar();
+    if (m_chromeHidden) setChromeVisible(false);
 }
 
 void LocalThumbnailViewPopup::clearGalleryDisplay() {
@@ -2505,11 +2590,16 @@ void LocalThumbnailViewPopup::onRecenter(CCObject*) {
     m_thumbnailSprite->stopAllActions();
     resetZoomGestureState();
 
-    auto content = this->m_mainLayer->getContentSize();
-    float centerX = content.width * 0.5f;
-    float centerY = content.height * 0.5f + 10.f;
+    // sprite usually lives in the clip node, so center in its parent space, not the main layer.
+    CCPoint target;
+    if (m_thumbnailSprite->getParent() == m_clippingNode && m_viewWidth > 0.f && m_viewHeight > 0.f) {
+        target = ccp(m_viewWidth * 0.5f, m_viewHeight * 0.5f);
+    } else {
+        auto content = this->m_mainLayer->getContentSize();
+        target = ccp(content.width * 0.5f, content.height * 0.5f + 10.f);
+    }
 
-    auto moveTo = CCMoveTo::create(0.3f, {centerX, centerY});
+    auto moveTo = CCMoveTo::create(0.3f, target);
     auto scaleTo = CCScaleTo::create(0.3f, m_initialScale);
     auto easeMove = CCEaseSineOut::create(moveTo);
     auto easeScale = CCEaseSineOut::create(scaleTo);
@@ -2517,6 +2607,49 @@ void LocalThumbnailViewPopup::onRecenter(CCObject*) {
     m_thumbnailSprite->runAction(easeMove);
     m_thumbnailSprite->runAction(easeScale);
     m_thumbnailSprite->setAnchorPoint({0.5f, 0.5f});
+}
+
+void LocalThumbnailViewPopup::onFitReset(CCObject* sender) {
+    onRecenter(sender);
+}
+
+void LocalThumbnailViewPopup::onCopyLevelId(CCObject*) {
+    geode::utils::clipboard::write(std::to_string(m_levelID));
+    PaimonNotify::show(fmt::format("ID {} copiado", m_levelID), geode::NotificationIcon::Success);
+}
+
+void LocalThumbnailViewPopup::setChromeVisible(bool visible) {
+    m_chromeHidden = !visible;
+
+    if (m_buttonMenu) m_buttonMenu->setVisible(visible);
+    if (m_infoBar) m_infoBar->setVisible(visible);
+    if (m_counterLabel && !visible) m_counterLabel->setVisible(false);
+
+    // arrows share the suggestion/gallery menu; keep them with the chrome.
+    bool multi = m_thumbnails.size() > 1 || m_suggestions.size() > 1 || m_localThumbPaths.size() > 1;
+    if (m_leftArrow && m_leftArrow->getParent()) m_leftArrow->setVisible(visible && multi);
+    if (m_rightArrow && m_rightArrow->getParent()) m_rightArrow->setVisible(visible && multi);
+}
+
+void LocalThumbnailViewPopup::toggleChrome(CCObject*) {
+    setChromeVisible(m_chromeHidden);
+}
+
+void LocalThumbnailViewPopup::keyDown(enumKeyCodes key, double timestamp) {
+    switch (key) {
+        case KEY_Left:
+            onPrev(nullptr);
+            return;
+        case KEY_Right:
+            onNext(nullptr);
+            return;
+        case KEY_R:
+            onFitReset(nullptr);
+            return;
+        default:
+            break;
+    }
+    PaimonPopup::keyDown(key, timestamp);
 }
 
 float LocalThumbnailViewPopup::clamp(float value, float min, float max) {

@@ -525,6 +525,18 @@ CCGLProgram* getBgShaderProgram(std::string const& shaderName) {
     if (shaderName == "time-warp") return paimon::shaders::loadShader("layerbg-time-warp-dyn"_spr, "cell_vertex.glsl", "time_warp_dynamic.glsl", nullptr, nullptr);
     if (shaderName == "underwater") return paimon::shaders::loadShader("layerbg-underwater-dyn"_spr, "cell_vertex.glsl", "underwater_dynamic.glsl", nullptr, nullptr);
     if (shaderName == "neon-trail") return paimon::shaders::loadShader("layerbg-neon-trail-dyn"_spr, "cell_vertex.glsl", "neon_trail_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "chromatic-ripple") return paimon::shaders::loadShader("layerbg-chromatic-ripple-dyn"_spr, "cell_vertex.glsl", "chromatic_ripple_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "black-hole") return paimon::shaders::loadShader("layerbg-black-hole-dyn"_spr, "cell_vertex.glsl", "black_hole_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "aurora-cursor") return paimon::shaders::loadShader("layerbg-aurora-cursor-dyn"_spr, "cell_vertex.glsl", "aurora_cursor_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "starwarp") return paimon::shaders::loadShader("layerbg-starwarp-dyn"_spr, "cell_vertex.glsl", "starwarp_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "liquid-glass") return paimon::shaders::loadShader("layerbg-liquid-glass-dyn"_spr, "cell_vertex.glsl", "liquid_glass_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "fisheye") return paimon::shaders::loadShader("layerbg-fisheye-dyn"_spr, "cell_vertex.glsl", "fisheye_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "swirl-galaxy") return paimon::shaders::loadShader("layerbg-swirl-galaxy-dyn"_spr, "cell_vertex.glsl", "swirl_galaxy_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "embers-trail") return paimon::shaders::loadShader("layerbg-embers-trail-dyn"_spr, "cell_vertex.glsl", "embers_trail_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "crystal-glass") return paimon::shaders::loadShader("layerbg-crystal-glass-dyn"_spr, "cell_vertex.glsl", "crystal_glass_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "bokeh") return paimon::shaders::loadShader("layerbg-bokeh-dyn"_spr, "cell_vertex.glsl", "bokeh_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "caustics") return paimon::shaders::loadShader("layerbg-caustics-dyn"_spr, "cell_vertex.glsl", "caustics_dynamic.glsl", nullptr, nullptr);
+    if (shaderName == "glitch-scan") return paimon::shaders::loadShader("layerbg-glitch-scan-dyn"_spr, "cell_vertex.glsl", "glitch_scan_dynamic.glsl", nullptr, nullptr);
 
     // beat shaders read fft uniforms; zeroed keeps them static when off.
     if (shaderName == "glitch-beat")      return paimon::shaders::loadShader("beat-glitch"_spr,      "cell_vertex.glsl", "glitch_beat.glsl",      nullptr, nullptr);

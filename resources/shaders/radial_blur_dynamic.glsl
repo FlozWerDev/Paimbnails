@@ -12,13 +12,10 @@ void main() {
     vec2 center = u_cursor;
     vec2 dir = v_texCoord - center;
     float str = u_intensity * 0.05;
-    vec4 c  = texture2D(u_texture, center + dir * (1.0 - str * 0.000));
-    c += texture2D(u_texture, center + dir * (1.0 - str * 0.143));
-    c += texture2D(u_texture, center + dir * (1.0 - str * 0.286));
-    c += texture2D(u_texture, center + dir * (1.0 - str * 0.429));
-    c += texture2D(u_texture, center + dir * (1.0 - str * 0.571));
-    c += texture2D(u_texture, center + dir * (1.0 - str * 0.714));
-    c += texture2D(u_texture, center + dir * (1.0 - str * 0.857));
-    c += texture2D(u_texture, center + dir * (1.0 - str * 1.000));
+    vec4 c = vec4(0.0);
+    for (int i = 0; i < 8; i++) {
+        float k = float(i) / 7.0;
+        c += texture2D(u_texture, clamp(center + dir * (1.0 - str * k), 0.0, 1.0));
+    }
     gl_FragColor = (c * 0.125) * v_fragmentColor;
 }

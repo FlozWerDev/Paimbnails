@@ -843,6 +843,7 @@ std::string TwitchRequestManager::enqueueRequest(
     rememberEvent(request.eventID);
     m_requests.push_back(std::move(request));
     m_lastRequestAt[userKey] = now;
+    ++m_session.received;
     ++m_queueRevision;
     saveQueue();
     showRequestNotify(m_requests.back());
@@ -944,8 +945,20 @@ std::optional<size_t> TwitchRequestManager::nextPendingIndex() const {
 
 void TwitchRequestManager::markPlayed(size_t index, int percent) {
     if (index >= m_requests.size()) return;
+    if (!m_requests[index].played) ++m_session.played;
     m_requests[index].played = true;
     m_requests[index].percent = std::clamp(percent, 0, 100);
+    ++m_queueRevision;
+    saveQueue();
+}
+
+void TwitchRequestManager::setReviewed(size_t index, bool reviewed) {
+    if (index >= m_requests.size()) return;
+    if (m_requests[index].played == reviewed) return;
+    if (reviewed) ++m_session.played;
+    else if (m_session.played > 0) --m_session.played;
+    m_requests[index].played = reviewed;
+    if (!reviewed) m_requests[index].percent = 0;
     ++m_queueRevision;
     saveQueue();
 }
@@ -972,6 +985,7 @@ bool TwitchRequestManager::sendWebFeedback(LevelRequest const& request,
 void TwitchRequestManager::remove(size_t index) {
     if (index >= m_requests.size()) return;
     m_requests.erase(m_requests.begin() + static_cast<std::ptrdiff_t>(index));
+    ++m_session.removed;
     ++m_queueRevision;
     saveQueue();
 }
@@ -992,8 +1006,35 @@ void TwitchRequestManager::clear() {
         return item.first.starts_with(prefix);
     });
     if (before == m_requests.size()) return;
+    m_session.removed += static_cast<int>(before - m_requests.size());
     ++m_queueRevision;
     saveQueue();
+}
+
+void TwitchRequestManager::resetSessionStats() {
+    m_session = {};
+}
+
+double TwitchRequestManager::averageWaitSeconds() const {
+    int64_t const now = unixTime();
+    int64_t total = 0;
+    int count = 0;
+    for (auto const& request : m_requests) {
+        if (request.played || request.receivedAt <= 0) continue;
+        total += std::max<int64_t>(0, now - request.receivedAt);
+        ++count;
+    }
+    return count > 0 ? static_cast<double>(total) / count : 0.0;
+}
+
+int64_t TwitchRequestManager::oldestPendingSeconds() const {
+    int64_t const now = unixTime();
+    int64_t oldest = 0;
+    for (auto const& request : m_requests) {
+        if (request.played || request.receivedAt <= 0) continue;
+        oldest = std::max(oldest, now - request.receivedAt);
+    }
+    return std::max<int64_t>(0, oldest);
 }
 
 int TwitchRequestManager::maxQueueSize() const {

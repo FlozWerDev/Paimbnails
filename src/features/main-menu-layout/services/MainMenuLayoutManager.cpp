@@ -86,8 +86,10 @@ namespace {
                std::abs(a.scale - b.scale) <= kScaleEpsilon &&
                std::abs(a.scaleX - b.scaleX) <= kScaleEpsilon &&
                std::abs(a.scaleY - b.scaleY) <= kScaleEpsilon &&
+               std::abs(a.rotation - b.rotation) <= kScaleEpsilon &&
                std::abs(a.opacity - b.opacity) <= kScaleEpsilon &&
                a.hidden == b.hidden &&
+               a.locked == b.locked &&
                a.layer == b.layer &&
                a.linkGroup == b.linkGroup &&
                a.hasColor == b.hasColor &&
@@ -915,6 +917,7 @@ MenuButtonLayout MainMenuLayoutManager::readLayout(CCNode* node) {
     layout.scale = node->getScale();
     layout.scaleX = node->getScaleX();
     layout.scaleY = node->getScaleY();
+    layout.rotation = node->getRotation();
     layout.hidden = !node->isVisible();
     layout.layer = node->getZOrder();
 
@@ -950,6 +953,7 @@ void MainMenuLayoutManager::applyLayout(CCNode* node, MenuButtonLayout const& la
     node->setScale(layout.scale);
     node->setScaleX(layout.scaleX);
     node->setScaleY(layout.scaleY);
+    node->setRotation(layout.rotation);
     node->setVisible(!layout.hidden);
     node->setZOrder(layout.layer);
 

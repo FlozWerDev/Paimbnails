@@ -129,6 +129,8 @@ public:
     // index of the next unreviewed request.
     std::optional<size_t> nextPendingIndex() const;
     void markPlayed(size_t index, int percent);
+    // explicit reviewed flag toggle used by the queue list.
+    void setReviewed(size_t index, bool reviewed);
     void setPercent(size_t index, int percent);
     bool sendWebFeedback(LevelRequest const& request, std::string decision, int percent,
         std::string note, std::string reason, std::string image,
@@ -138,6 +140,19 @@ public:
     void moveToFront(size_t index);
     void clear();
     int maxQueueSize() const;
+
+    // live-session counters, reset when the layer calls resetSessionStats.
+    struct SessionStats {
+        int received = 0;   // requests that entered the queue this session.
+        int played = 0;     // marked reviewed/played this session.
+        int removed = 0;    // skipped/removed/cleared this session.
+    };
+    SessionStats const& sessionStats() const { return m_session; }
+    void resetSessionStats();
+    // mean seconds a still-pending request has been waiting (0 when empty).
+    double averageWaitSeconds() const;
+    // oldest still-pending request age in seconds (0 when empty).
+    int64_t oldestPendingSeconds() const;
 
 private:
     struct Link {
@@ -217,6 +232,7 @@ private:
     int64_t m_nextEntryID = 1;
     std::vector<LevelRequest> m_requests;
     std::unordered_map<std::string, int64_t> m_lastRequestAt;
+    SessionStats m_session;
 };
 
 }

@@ -25,6 +25,10 @@ class CCTouch;
 class CCEvent;
 }
 
+namespace paimon::thumbviewer {
+class InfoBar;
+}
+
 using cocos2d::CCTexture2D;
 using cocos2d::CCNode;
 using cocos2d::CCPoint;
@@ -99,7 +103,18 @@ protected:
     CCMenuItemSpriteExtra* m_playBtn = nullptr;
     bool m_videoPlaying = false;
 
+    paimon::thumbviewer::InfoBar* m_infoBar = nullptr;
+    bool m_chromeHidden = false;
+    CCMenuItemSpriteExtra* m_hideChromeBtn = nullptr;
+
     bool isUiAlive();
+
+    void syncInfoBar();
+    void toggleChrome(CCObject*);
+    void setChromeVisible(bool visible);
+    void onFitReset(CCObject*);
+    void onCopyLevelId(CCObject*);
+    void keyDown(cocos2d::enumKeyCodes key, double timestamp) override;
 
     void onPrev(CCObject*);
     void onNext(CCObject*);

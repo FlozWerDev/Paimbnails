@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <array>
 #include <optional>
 #include <string>
 #include <vector>
@@ -26,6 +27,7 @@ protected:
     bool init() override;
     void onEnterTransitionDidFinish() override;
     void keyBackClicked() override;
+    void keyDown(cocos2d::enumKeyCodes key, double timestamp) override;
     void update(float dt) override;
     void scrollWheel(float x, float y) override;
 
@@ -35,6 +37,11 @@ private:
     void buildSidePanel();
     void buildQueuePanel();
     void buildFooter();
+    // grouped control cards in the left column.
+    void buildStatsCard(cocos2d::CCNode* panel, float width);
+    void refreshStats();
+    void refreshSourceChips();
+    void refreshNowPlaying();
 
     // deferred entry until the transition ends, or the animation plays out
     // behind the fade.
@@ -72,6 +79,11 @@ private:
     void onClearQueue();
     void onSettings();
     void onBack();
+    // per-row utilities.
+    void copyLevelId(int levelID);
+    void toggleReviewed(size_t index);
+    // queue search by name / id / requester.
+    void onSearchChanged();
 
     cocos2d::CCLabelBMFont* m_statusLabel = nullptr;
     cocos2d::CCNode* m_statusDot = nullptr;
@@ -94,6 +106,22 @@ private:
     ButtonSprite* m_queueSelectorSprite = nullptr;
     cocos2d::CCNode* m_rowsHost = nullptr;
     geode::ScrollLayer* m_scroll = nullptr;
+
+    // left stats card.
+    cocos2d::CCLabelBMFont* m_statReceived = nullptr;
+    cocos2d::CCLabelBMFont* m_statPlayed = nullptr;
+    cocos2d::CCLabelBMFont* m_statSkipped = nullptr;
+    cocos2d::CCLabelBMFont* m_statWait = nullptr;
+    // header per-source chips (dot host + short name), indexed by platform.
+    std::array<cocos2d::CCNode*, 5> m_sourceDots{};
+    cocos2d::CCNode* m_sourceChips = nullptr;
+    // now-playing banner over the queue list.
+    cocos2d::CCNode* m_nowPlaying = nullptr;
+    cocos2d::CCLabelBMFont* m_nowPlayingLabel = nullptr;
+    int m_nowPlayingLevel = 0;
+    // queue search box.
+    geode::TextInput* m_searchInput = nullptr;
+    std::string m_searchQuery;
 
     float m_listWidth = 0.f;
     float m_listHeight = 0.f;

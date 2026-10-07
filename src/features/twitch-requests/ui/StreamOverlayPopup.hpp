@@ -25,6 +25,7 @@ private:
     void apply(std::function<void(StreamOverlayConfig&)> const& change);
     void setEnabled(bool enabled);
     void copyOverlayUrl();
+    void openOverlayPage(std::string const& url, char const* warn);
     void openPreview();
     void openGallery();
     void refreshStatus();

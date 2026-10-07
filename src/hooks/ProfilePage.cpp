@@ -18,7 +18,6 @@
 #include <cmath>
 #include <optional>
 #include <vector>
-#include <fstream>
 #include <mutex>
 #include <atomic>
 #include <list>
@@ -634,16 +633,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     static std::shared_ptr<std::vector<uint8_t>> readProfileImgCacheBytes(int accountID) {
-        auto path = getProfileImgCachePath(accountID);
-        std::ifstream file(path, std::ios::binary | std::ios::ate);
-        if (!file) return nullptr;
-        std::streamoff const size = file.tellg();
-        if (size <= 0 || size > 64ll * 1024 * 1024) return nullptr;
-        file.seekg(0, std::ios::beg);
-
-        auto bytes = std::make_shared<std::vector<uint8_t>>(static_cast<size_t>(size));
-        if (!file.read(reinterpret_cast<char*>(bytes->data()), size)) return nullptr;
-        return bytes;
+        auto bytes = ImageLoadHelper::readBinaryFile(getProfileImgCachePath(accountID), 64);
+        if (bytes.empty()) return nullptr;
+        return std::make_shared<std::vector<uint8_t>>(std::move(bytes));
     }
 
     static void addProfileImgDarkOverlay(CCNode* clip, CCSize const& imgArea) {
@@ -954,15 +946,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (!bytes || bytes->empty()) return false;
         if (outBytes) *outBytes = bytes;
 
-        bool isMp4 = false;
-        if (bytes->size() > 12) {
-            for (size_t i = 0; i + 3 < bytes->size() && i < 12; ++i) {
-                if ((*bytes)[i]=='f' && (*bytes)[i+1]=='t' && (*bytes)[i+2]=='y' && (*bytes)[i+3]=='p') {
-                    isMp4 = true;
-                    break;
-                }
-            }
-        }
+        bool const isMp4 = paimon::format::isMp4(bytes->data(), bytes->size());
         if (isMp4) {
             std::string videoKey = fmt::format("profileimg_video_{}", accountID);
             auto* videoSprite = VideoThumbnailSprite::createFromData(*bytes, videoKey);
@@ -982,18 +966,12 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (!gifResult.frames.empty()) {
             auto& firstFrame = gifResult.frames[0];
             if (firstFrame.width > 0 && firstFrame.height > 0) {
-                auto* tex = new CCTexture2D();
-                if (tex->initWithData(
-                        firstFrame.pixels.data(),
-                        kCCTexture2DPixelFormat_RGBA8888,
-                        firstFrame.width,
-                        firstFrame.height,
-                        CCSize(static_cast<float>(firstFrame.width), static_cast<float>(firstFrame.height)))) {
-                    tex->autorelease();
-                    cacheProfileImgTexture(accountID, tex);
-                    displayProfileImg(accountID, tex);
-                } else {
-                    tex->release();
+                auto img = ImageLoadHelper::createFromRGBA(
+                    firstFrame.pixels.data(), firstFrame.width, firstFrame.height, false);
+                if (img.success && img.texture) {
+                    cacheProfileImgTexture(accountID, img.texture);
+                    displayProfileImg(accountID, img.texture);
+                    img.texture->autorelease();
                 }
             }
         }
@@ -2178,8 +2156,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     void processProfileImg(std::filesystem::path path) {
-        std::string ext = geode::utils::string::pathToString(path.extension());
-        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        std::string ext = geode::utils::string::toLower(
+            geode::utils::string::pathToString(path.extension()));
         bool isVideo = (ext == ".mp4" || ext == ".mov" || ext == ".m4v");
 
         if (isVideo) {
@@ -2264,21 +2242,14 @@ class $modify(PaimonProfilePage, ProfilePage) {
                             if (!gifResult.frames.empty()) {
                                 auto& firstFrame = gifResult.frames[0];
                                 if (firstFrame.width > 0 && firstFrame.height > 0) {
-                                        auto* tex = new CCTexture2D();
-                                        if (tex->initWithData(
-                                            firstFrame.pixels.data(),
-                                            kCCTexture2DPixelFormat_RGBA8888,
-                                            firstFrame.width,
-                                            firstFrame.height,
-                                            CCSize(static_cast<float>(firstFrame.width), static_cast<float>(firstFrame.height))
-                                        )) {
-                                            tex->autorelease();
-                                            cacheProfileImgTexture(accountID, tex);
+                                        auto img = ImageLoadHelper::createFromRGBA(
+                                            firstFrame.pixels.data(), firstFrame.width, firstFrame.height, false);
+                                        if (img.success && img.texture) {
+                                            cacheProfileImgTexture(accountID, img.texture);
                                             if (auto* page = static_cast<PaimonProfilePage*>(imgGifSafeRef.data())) {
-                                                page->displayProfileImg(accountID, tex);
+                                                page->displayProfileImg(accountID, img.texture);
                                             }
-                                        } else {
-                                            tex->release();
+                                            img.texture->autorelease();
                                         }
                                 }
                             }

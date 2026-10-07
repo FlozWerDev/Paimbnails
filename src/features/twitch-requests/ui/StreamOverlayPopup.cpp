@@ -62,6 +62,11 @@ bool StreamOverlayPopup::init() {
     float const scrollHeight = content.height - 68.f;
     float const inner = kit::cardInnerWidth(width);
     std::vector<CCNode*> items;
+    auto toggle = [this](bool StreamOverlayConfig::* member) {
+        return [this, member](bool value) {
+            this->apply([value, member](StreamOverlayConfig& config) { config.*member = value; });
+        };
+    };
 
     items.push_back(kit::makeCard(width, "Servidor local", kAccent, {
         kit::makeHeroToggle(
@@ -108,9 +113,7 @@ bool StreamOverlayPopup::init() {
         kit::makeToggleRow(
             inner, "Usar mis colores", "Reemplaza la paleta del estilo por la de abajo.",
             m_config.customColors,
-            [this](bool value) {
-                this->apply([value](StreamOverlayConfig& config) { config.customColors = value; });
-            }
+            toggle(&StreamOverlayConfig::customColors)
         ),
     }));
 
@@ -129,71 +132,47 @@ bool StreamOverlayPopup::init() {
         kit::makeToggleRow(
             inner, "Creador", "Muestra quien creo cada nivel.",
             m_config.showAuthor,
-            [this](bool value) {
-                this->apply([value](StreamOverlayConfig& config) { config.showAuthor = value; });
-            }
+            toggle(&StreamOverlayConfig::showAuthor)
         ),
         kit::makeToggleRow(
             inner, "Solicitante", "Muestra quien lo pidio en el chat o la web.",
             m_config.showRequester,
-            [this](bool value) {
-                this->apply([value](StreamOverlayConfig& config) {
-                    config.showRequester = value;
-                });
-            }
+            toggle(&StreamOverlayConfig::showRequester)
         ),
         kit::makeToggleRow(
             inner, "ID del nivel", "Util para que el publico pueda buscarlo.",
             m_config.showLevelID,
-            [this](bool value) {
-                this->apply([value](StreamOverlayConfig& config) { config.showLevelID = value; });
-            }
+            toggle(&StreamOverlayConfig::showLevelID)
         ),
         kit::makeToggleRow(
             inner, "Progreso en vivo", "Barra y porcentaje del nivel que estas jugando.",
             m_config.showProgress,
-            [this](bool value) {
-                this->apply([value](StreamOverlayConfig& config) { config.showProgress = value; });
-            }
+            toggle(&StreamOverlayConfig::showProgress)
         ),
         kit::makeToggleRow(
             inner, "Total de la cola", "Contador de requests pendientes en la cabecera.",
             m_config.showQueueCount,
-            [this](bool value) {
-                this->apply([value](StreamOverlayConfig& config) {
-                    config.showQueueCount = value;
-                });
-            }
+            toggle(&StreamOverlayConfig::showQueueCount)
         ),
         kit::makeToggleRow(
             inner, "Dificultad y estrellas", "Cara de dificultad, estrellas y duracion.",
             m_config.showDifficulty,
-            [this](bool value) {
-                this->apply([value](StreamOverlayConfig& config) {
-                    config.showDifficulty = value;
-                });
-            }
+            toggle(&StreamOverlayConfig::showDifficulty)
         ),
         kit::makeToggleRow(
             inner, "Plataforma", "Etiqueta de Twitch, YouTube, Kick, TikTok o web.",
             m_config.showPlatform,
-            [this](bool value) {
-                this->apply([value](StreamOverlayConfig& config) { config.showPlatform = value; });
-            }
+            toggle(&StreamOverlayConfig::showPlatform)
         ),
         kit::makeToggleRow(
             inner, "Intentos y mejor marca", "Intento actual, modo practica y tu record.",
             m_config.showAttempts,
-            [this](bool value) {
-                this->apply([value](StreamOverlayConfig& config) { config.showAttempts = value; });
-            }
+            toggle(&StreamOverlayConfig::showAttempts)
         ),
         kit::makeToggleRow(
             inner, "Estadisticas del directo", "Recibidos, jugados y espera media.",
             m_config.showStats,
-            [this](bool value) {
-                this->apply([value](StreamOverlayConfig& config) { config.showStats = value; });
-            }
+            toggle(&StreamOverlayConfig::showStats)
         ),
     }));
 
@@ -201,39 +180,27 @@ bool StreamOverlayPopup::init() {
         kit::makeToggleRow(
             inner, "Aviso de nuevo request", "Notificacion animada cuando llega un pedido.",
             m_config.showAlerts,
-            [this](bool value) {
-                this->apply([value](StreamOverlayConfig& config) { config.showAlerts = value; });
-            }
+            toggle(&StreamOverlayConfig::showAlerts)
         ),
         kit::makeToggleRow(
             inner, "Sonido del aviso", "Activa 'Controlar audio via OBS' en la fuente.",
             m_config.alertSound,
-            [this](bool value) {
-                this->apply([value](StreamOverlayConfig& config) { config.alertSound = value; });
-            }
+            toggle(&StreamOverlayConfig::alertSound)
         ),
         kit::makeToggleRow(
             inner, "Celebracion al completar", "Confeti al 100% y aviso de nuevo record.",
             m_config.showCelebration,
-            [this](bool value) {
-                this->apply([value](StreamOverlayConfig& config) {
-                    config.showCelebration = value;
-                });
-            }
+            toggle(&StreamOverlayConfig::showCelebration)
         ),
         kit::makeToggleRow(
             inner, "Particulas de fondo", "Nieve, brasas, estrellas... segun el estilo.",
             m_config.showParticles,
-            [this](bool value) {
-                this->apply([value](StreamOverlayConfig& config) { config.showParticles = value; });
-            }
+            toggle(&StreamOverlayConfig::showParticles)
         ),
         kit::makeToggleRow(
             inner, "Ocultar sin actividad", "Desaparece si no juegas nada y la cola esta vacia.",
             m_config.hideWhenIdle,
-            [this](bool value) {
-                this->apply([value](StreamOverlayConfig& config) { config.hideWhenIdle = value; });
-            }
+            toggle(&StreamOverlayConfig::hideWhenIdle)
         ),
     }));
 
@@ -350,26 +317,22 @@ void StreamOverlayPopup::copyOverlayUrl() {
     PaimonNotify::create("Link de OBS copiado", NotificationIcon::Success)->show();
 }
 
-void StreamOverlayPopup::openPreview() {
-    auto& server = StreamOverlayServer::get();
-    if (!server.isRunning()) {
-        PaimonNotify::create(
-            "Enciende el overlay antes de abrir la vista previa",
-            NotificationIcon::Warning)->show();
+void StreamOverlayPopup::openOverlayPage(std::string const& url, char const* warn) {
+    if (!StreamOverlayServer::get().isRunning()) {
+        PaimonNotify::create(warn, NotificationIcon::Warning)->show();
         return;
     }
-    geode::utils::web::openLinkInBrowser(server.previewUrl());
+    geode::utils::web::openLinkInBrowser(url);
+}
+
+void StreamOverlayPopup::openPreview() {
+    openOverlayPage(StreamOverlayServer::get().previewUrl(),
+        "Enciende el overlay antes de abrir la vista previa");
 }
 
 void StreamOverlayPopup::openGallery() {
-    auto& server = StreamOverlayServer::get();
-    if (!server.isRunning()) {
-        PaimonNotify::create(
-            "Enciende el overlay antes de abrir la galeria",
-            NotificationIcon::Warning)->show();
-        return;
-    }
-    geode::utils::web::openLinkInBrowser(server.galleryUrl());
+    openOverlayPage(StreamOverlayServer::get().galleryUrl(),
+        "Enciende el overlay antes de abrir la galeria");
 }
 
 void StreamOverlayPopup::refreshStatus() {

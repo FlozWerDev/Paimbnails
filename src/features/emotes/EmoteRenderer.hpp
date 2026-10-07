@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <Geode/Geode.hpp>
+#include <cstddef>
 #include <string>
 #include <vector>
 #include <variant>
@@ -9,14 +10,20 @@ namespace paimon::emotes {
 
 struct TextToken {
     std::string text;
+    size_t start = 0;
+    size_t end = 0;
 };
 
 struct EmoteToken {
     std::string name;
+    size_t start = 0;
+    size_t end = 0;
 };
 
 struct MentionToken {
     std::string username;
+    size_t start = 0;
+    size_t end = 0;
 };
 
 using CommentToken = std::variant<TextToken, EmoteToken, MentionToken>;

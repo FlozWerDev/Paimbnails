@@ -54,13 +54,14 @@ protected:
     void onTabProfileImg(cocos2d::CCObject*);
 
     void rebuildList();
-    cocos2d::CCNode* createRowForItem(const PendingItem& item, float width, int index);
+    cocos2d::CCNode* createRowForItem(const PendingItem& item, float width, int index, std::string const& currentUsername);
     void highlightRow(int index);
 
     void showPreviewForItem(int index);
     void clearPreview();
     void setPreviewTexture(cocos2d::CCTexture2D* tex);
-    void setPreviewSprite(cocos2d::CCSprite* spr);
+    void dismissPreviewSpinner();
+    void showNoPreview();
     void updateNavigationArrows();
 
     void onSelectItem(cocos2d::CCObject* sender);

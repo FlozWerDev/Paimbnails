@@ -14,6 +14,7 @@
 #include "../../profiles/services/ProfileThumbs.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
 #include "../../../utils/CommentTextSelector.hpp"
+#include "../../../utils/CommentTextLayout.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../blur/BlurSystem.hpp"
 #include "../../../utils/SpriteHelper.hpp"
@@ -603,22 +604,31 @@ class $modify(BadgeCommentCell, CommentCell) {
         this->unschedule(schedule_selector(BadgeCommentCell::hideVanillaBgLayerTick));
         clearCommentProfileBackground();
         this->setUserObject("paimon-comment-bgs-hidden"_spr, nullptr);
-        // drop old emotes before gd rebuilds recycled text.
+        // Recycled cells must release overlays before GD replaces their text nodes.
         if (m_mainLayer) {
+            if (auto* selector = m_mainLayer->getChildByID("paimon-text-selector"_spr)) {
+                selector->removeFromParent();
+            }
             if (auto* oldEmote = m_mainLayer->getChildByID("paimon-emote-overlay"_spr)) {
                 oldEmote->removeFromParent();
             }
         }
         CommentCell::loadFromComment(comment);
         
-        if (!comment) return;
+        if (!comment || !m_mainLayer) return;
+
+        if (auto* textArea = m_mainLayer->getChildByID("comment-text-area")) {
+            textArea->setVisible(true);
+        }
+        if (auto* textLabel = m_mainLayer->getChildByID("comment-text-label")) {
+            textLabel->setVisible(true);
+        }
 
         installDarkCommentPanel();
         scheduleCommentPanelRefresh(m_fields->m_commentBgToken, 1);
 
         {
-            std::string commentText = comment->m_commentString;
-            auto fontResult = paimon::fonts::parseFontTag(commentText);
+            auto fontResult = paimon::fonts::parseFontTag(std::string(comment->m_commentString));
             bool serviceLoaded = paimon::emotes::EmoteService::get().isLoaded();
             bool hasEmoteSyntax = paimon::emotes::EmoteRenderer::hasEmoteSyntax(fontResult.remainingText);
             bool hasEmotes = serviceLoaded && hasEmoteSyntax;
@@ -626,47 +636,12 @@ class $modify(BadgeCommentCell, CommentCell) {
 
             if (fontResult.hasTag || hasEmotes || hasMention) {
                 this->tryRenderWithFont(fontResult.remainingText, fontResult.fontFile);
-            } else if (!serviceLoaded && hasEmoteSyntax) {
+            }
+            if (!serviceLoaded && hasEmoteSyntax) {
                 WeakRef<CommentCell> weakSelf = static_cast<CommentCell*>(this);
                 deferEmoteRetry(weakSelf, fontResult.remainingText, fontResult.fontFile, 10);
             }
-        }
-
-        {
-            std::string commentText = comment->m_commentString;
-            auto fontResult = paimon::fonts::parseFontTag(commentText);
-            CCNode* textNode = m_mainLayer->getChildByID("comment-text-area");
-            if (!textNode) textNode = m_mainLayer->getChildByID("comment-text-label");
-            if (!textNode) textNode = m_mainLayer->getChildByID("paimon-emote-overlay"_spr);
-
-            if (!textNode) {
-                auto* children = m_mainLayer->getChildren();
-                if (children) {
-                    for (auto* obj : CCArrayExt<CCObject*>(children)) {
-                        if (auto* area = typeinfo_cast<TextArea*>(obj)) {
-                            textNode = area;
-                            break;
-                        }
-                    }
-                }
-                if (!textNode && children) {
-                    for (auto* obj : CCArrayExt<CCObject*>(children)) {
-                        if (auto* lbl = typeinfo_cast<CCLabelBMFont*>(obj)) {
-                            textNode = lbl;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (textNode) {
-                paimon::CommentTextSelector::attach(
-                    m_mainLayer,
-                    fontResult.remainingText,
-                    textNode,
-                    fontResult.fontFile
-                );
-            }
+            refreshCommentTextSelector(fontResult.remainingText);
         }
 
         std::string username = comment->m_userName;
@@ -780,23 +755,29 @@ class $modify(BadgeCommentCell, CommentCell) {
             });
     }
 
-    void tryRenderWithFont(std::string const& commentText, std::string const& fontFile) {
+    void refreshCommentTextSelector(std::string const& text) {
+        if (!m_mainLayer) return;
+        CCNode* textNode = m_mainLayer->getChildByID("paimon-emote-overlay"_spr);
+        if (!textNode) textNode = m_mainLayer->getChildByID("comment-text-area");
+        if (!textNode) textNode = m_mainLayer->getChildByID("comment-text-label");
+        paimon::CommentTextSelector::attach(m_mainLayer, text, textNode);
+    }
 
-        if (m_mainLayer->getChildByID("paimon-emote-overlay"_spr)) return;
+    bool tryRenderWithFont(std::string const& commentText, std::string const& fontFile,
+                           bool refreshEmotes = false) {
+        if (!m_mainLayer) return false;
+        auto* oldOverlay = m_mainLayer->getChildByID("paimon-emote-overlay"_spr);
+        if (oldOverlay && !refreshEmotes) return false;
 
         CCNode* targetNode = nullptr;
         cocos2d::ccColor3B textColor = {255, 255, 255};
         float maxWidth = 315.f;
         float fontSize = 1.f;
-        CCPoint position = {0.f, 0.f};
-        CCPoint anchorPoint = {0.f, 0.5f};
 
         if (auto* textArea = typeinfo_cast<TextArea*>(m_mainLayer->getChildByID("comment-text-area"))) {
             targetNode = textArea;
-            position = textArea->getPosition();
-            anchorPoint = textArea->getAnchorPoint();
-            maxWidth = textArea->getContentSize().width * textArea->getScaleX();
-            fontSize = textArea->getScale();
+            maxWidth = textArea->m_width * textArea->getScaleX();
+            fontSize = textArea->m_scale * textArea->getScale();
 
             if (auto* bitmapFont = textArea->m_label) {
                 auto* lines = bitmapFont->m_lines;
@@ -812,16 +793,14 @@ class $modify(BadgeCommentCell, CommentCell) {
         }
         else if (auto* label = typeinfo_cast<CCLabelBMFont*>(m_mainLayer->getChildByID("comment-text-label"))) {
             targetNode = label;
-            position = label->getPosition();
-            anchorPoint = label->getAnchorPoint();
             maxWidth = 270.f;
             fontSize = label->getScale();
             textColor = label->getColor();
         }
 
-        if (!targetNode) return;
+        if (!targetNode) return false;
 
-        // reduce font size for long comments so emotes still fit.
+        // Leave room for emotes in long comments.
         float adjustedFontSize = fontSize;
         size_t textLen = commentText.size();
         if (textLen > 80) {
@@ -829,12 +808,10 @@ class $modify(BadgeCommentCell, CommentCell) {
             adjustedFontSize = fontSize * (1.f - reduction);
         }
 
-        bool isCustomFont = (fontFile != "chatFont.fnt");
         auto emoteNode = paimon::emotes::EmoteRenderer::renderComment(
-            commentText, 0.f, maxWidth, fontFile.c_str(), adjustedFontSize, isCustomFont,
-            /*animategifs=*/false
+            commentText, 0.f, maxWidth, fontFile.c_str(), adjustedFontSize, true, false
         );
-        if (!emoteNode) return;
+        if (!emoteNode) return false;
 
         for (auto* child : CCArrayExt<CCNode*>(emoteNode->getChildren())) {
             if (auto* lbl = typeinfo_cast<CCLabelBMFont*>(child)) {
@@ -842,24 +819,30 @@ class $modify(BadgeCommentCell, CommentCell) {
             }
         }
 
-        auto nodeSize = targetNode->getContentSize();
-        float scX = targetNode->getScaleX();
-        float scY = targetNode->getScaleY();
-        float leftX = position.x - nodeSize.width * anchorPoint.x * scX;
-        float topY  = position.y + nodeSize.height * (1.f - anchorPoint.y) * scY;
+        cocos2d::CCRect textBounds;
+        bool haveBounds = false;
+        if (auto* area = typeinfo_cast<TextArea*>(targetNode);
+            area && area->m_label && area->m_label->m_lines) {
+            for (auto* line : CCArrayExt<CCLabelBMFont*>(area->m_label->m_lines)) {
+                auto lineSize = line->getContentSize();
+                auto bounds = paimon::text::convertRect(line, m_mainLayer, {0.f, 0.f, lineSize.width, lineSize.height});
+                textBounds = haveBounds ? paimon::text::unionRect(textBounds, bounds) : bounds;
+                haveBounds = true;
+            }
+        }
+        if (!haveBounds) {
+            auto size = targetNode->getContentSize();
+            textBounds = paimon::text::convertRect(targetNode, m_mainLayer, {0.f, 0.f, size.width, size.height});
+        }
 
         emoteNode->setID("paimon-emote-overlay"_spr);
         emoteNode->setAnchorPoint({0.f, 1.f});
-        emoteNode->setPosition({leftX, topY});
+        emoteNode->setPosition({textBounds.getMinX(), textBounds.getMaxY()});
 
-            if (auto* textArea = m_mainLayer->getChildByID("comment-text-area")) {
-                textArea->setVisible(false);
-            }
-            if (auto* textLabel = m_mainLayer->getChildByID("comment-text-label")) {
-                textLabel->setVisible(false);
-            }
-            targetNode->setVisible(false);
+        if (oldOverlay) oldOverlay->removeFromParent();
         m_mainLayer->addChild(emoteNode, targetNode->getZOrder() + 1);
+        targetNode->setVisible(false);
+        return true;
     }
 };
 
@@ -875,12 +858,13 @@ static void deferEmoteRetry(WeakRef<CommentCell> weakSelf,
             if (!commentCell->m_comment) return;
             std::string currentText = commentCell->m_comment->m_commentString;
             auto currentParse = paimon::fonts::parseFontTag(currentText);
-            if (currentParse.remainingText != text) {
+            if (currentParse.remainingText != text || currentParse.fontFile != font) {
                 return;
             }
 
             if (paimon::emotes::EmoteService::get().isLoaded()) {
-                commentCell->tryRenderWithFont(text, font);
+                commentCell->tryRenderWithFont(text, font, true);
+                commentCell->refreshCommentTextSelector(text);
                 return;
             }
 

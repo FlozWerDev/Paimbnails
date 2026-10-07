@@ -46,6 +46,13 @@ constexpr char const* kConfigKey = "twitch-requests-obs-config";
 constexpr uint16_t kPort = 21680;
 constexpr float kRefreshSeconds = .25f;
 constexpr float kRestartRetrySeconds = 2.f;
+// gallery opens 19 previews at once.
+constexpr int kListenBacklog = 32;
+constexpr int kMaxNextCount = 8;
+
+std::string urlFor(char const* path) {
+    return fmt::format("http://localhost:{}{}", kPort, path);
+}
 
 struct OptionInfo {
     char const* key;
@@ -102,12 +109,17 @@ constexpr OptionInfo kAnimations[] = {
 static_assert(std::size(kAnimations) == kStreamOverlayAnimationCount);
 
 // overlay files ship in resources/; the installed .geode flattens them.
-constexpr char const* kOverlayFiles[] = {
-    "stream-overlay.html",
-    "stream-overlay.css",
-    "stream-overlay.js",
-    "stream-overlay-gallery.html",
+struct OverlayRoute {
+    char const* path;
+    char const* file;
 };
+
+constexpr OverlayRoute kOverlayRoutes[] = {
+    {"/overlay.css", "stream-overlay.css"},
+    {"/overlay.js", "stream-overlay.js"},
+    {"/gallery", "stream-overlay-gallery.html"},
+};
+constexpr char const* kOverlayIndex = "stream-overlay.html";
 
 StreamOverlayConfig g_config;
 
@@ -151,14 +163,17 @@ std::string cssColor(ccColor3B color) {
     return fmt::format("#{:02x}{:02x}{:02x}", color.r, color.g, color.b);
 }
 
+template <typename T>
+T clampOption(int value, int count) {
+    return static_cast<T>(std::clamp(value, 0, count - 1));
+}
+
 void clampConfig(StreamOverlayConfig& config) {
-    config.style = static_cast<StreamOverlayStyle>(std::clamp(
-        static_cast<int>(config.style), 0, kStreamOverlayStyleCount - 1));
-    config.layout = static_cast<StreamOverlayLayout>(std::clamp(
-        static_cast<int>(config.layout), 0, kStreamOverlayLayoutCount - 1));
-    config.animation = static_cast<StreamOverlayAnimation>(std::clamp(
-        static_cast<int>(config.animation), 0, kStreamOverlayAnimationCount - 1));
-    config.nextCount = std::clamp(config.nextCount, 1, 8);
+    config.style = clampOption<StreamOverlayStyle>(static_cast<int>(config.style), kStreamOverlayStyleCount);
+    config.layout = clampOption<StreamOverlayLayout>(static_cast<int>(config.layout), kStreamOverlayLayoutCount);
+    config.animation = clampOption<StreamOverlayAnimation>(
+        static_cast<int>(config.animation), kStreamOverlayAnimationCount);
+    config.nextCount = std::clamp(config.nextCount, 1, kMaxNextCount);
     config.scale = std::clamp(config.scale, .5f, 1.6f);
     config.opacity = std::clamp(config.opacity, .15f, 1.f);
     config.roundness = std::clamp(config.roundness, 0.f, 34.f);
@@ -307,12 +322,13 @@ std::unordered_map<std::string, std::filesystem::path> resolveGdAssets() {
         return path.empty() ? resolveGameFile(anyName, false) : path;
     };
 
-    auto gold = resolveGameFile("goldFont.fnt", false);
-    add("gold.fnt", gold);
-    add("gold.png", withExtension(gold, ".png"));
-    auto big = resolveGameFile("bigFont.fnt", false);
-    add("big.fnt", big);
-    add("big.png", withExtension(big, ".png"));
+    auto addFont = [&add](char const* key, char const* name) {
+        auto path = resolveGameFile(name, false);
+        add(fmt::format("{}.fnt", key).c_str(), path);
+        add(fmt::format("{}.png", key).c_str(), withExtension(path, ".png"));
+    };
+    addFont("gold", "goldFont.fnt");
+    addFont("big", "bigFont.fnt");
     // the uhd sheet decodes to 64 mb in the browser; hd is plenty for 60px icons.
     auto sheet = preferHd("GJ_GameSheet03-hd.plist", "GJ_GameSheet03.plist");
     add("sheet.plist", sheet);
@@ -325,15 +341,11 @@ std::unordered_map<std::string, std::filesystem::path> resolveGdAssets() {
 }
 
 std::string_view contentTypeFor(std::string_view name) {
-    auto ends = [name](std::string_view suffix) {
-        return name.size() >= suffix.size()
-            && name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0;
-    };
-    if (ends(".html")) return "text/html; charset=utf-8";
-    if (ends(".css")) return "text/css; charset=utf-8";
-    if (ends(".js")) return "application/javascript; charset=utf-8";
-    if (ends(".png")) return "image/png";
-    if (ends(".plist")) return "application/xml; charset=utf-8";
+    if (name.ends_with(".html")) return "text/html; charset=utf-8";
+    if (name.ends_with(".css")) return "text/css; charset=utf-8";
+    if (name.ends_with(".js")) return "application/javascript; charset=utf-8";
+    if (name.ends_with(".png")) return "image/png";
+    if (name.ends_with(".plist")) return "application/xml; charset=utf-8";
     return "text/plain; charset=utf-8";
 }
 
@@ -412,6 +424,10 @@ std::string httpResponse(
         code, status, contentType, body.size(), cache, body);
 }
 
+std::string notFound() {
+    return httpResponse(404, "Not Found", "text/plain; charset=utf-8", "Not found");
+}
+
 #endif
 
 class StreamOverlayTicker final : public CCNode {
@@ -472,7 +488,7 @@ struct StreamOverlayServer::Impl {
                 return httpResponse(500, "Internal Server Error",
                     contentTypeFor(".html"), kMissingFilesHtml);
             }
-            return httpResponse(404, "Not Found", "text/plain; charset=utf-8", "Not found");
+            return notFound();
         }
         return httpResponse(200, "OK", contentTypeFor(name), body);
     }
@@ -482,11 +498,11 @@ struct StreamOverlayServer::Impl {
         if (query != std::string::npos) path.resize(query);
 
         if (path == "/" || path == "/overlay" || path == "/preview") {
-            return serveOverlayFile(kOverlayFiles[0]);
+            return serveOverlayFile(kOverlayIndex);
         }
-        if (path == "/overlay.css") return serveOverlayFile(kOverlayFiles[1]);
-        if (path == "/overlay.js") return serveOverlayFile(kOverlayFiles[2]);
-        if (path == "/gallery") return serveOverlayFile(kOverlayFiles[3]);
+        for (auto const& route : kOverlayRoutes) {
+            if (path == route.path) return serveOverlayFile(route.file);
+        }
         if (path == "/api/state") {
             std::lock_guard lock(mutex);
             return httpResponse(200, "OK", "application/json; charset=utf-8", payload);
@@ -497,11 +513,11 @@ struct StreamOverlayServer::Impl {
         if (path.starts_with("/gd/")) {
             auto it = gdAssets.find(path.substr(4));
             if (it == gdAssets.end()) {
-                return httpResponse(404, "Not Found", "text/plain; charset=utf-8", "Not found");
+                return notFound();
             }
             auto body = readFileRaw(it->second);
             if (body.empty()) {
-                return httpResponse(404, "Not Found", "text/plain; charset=utf-8", "Not found");
+                return notFound();
             }
             return httpResponse(200, "OK", contentTypeFor(it->first), body, 3600);
         }
@@ -511,7 +527,7 @@ struct StreamOverlayServer::Impl {
         if (path == "/favicon.ico") {
             return httpResponse(204, "No Content", "image/x-icon", "");
         }
-        return httpResponse(404, "Not Found", "text/plain; charset=utf-8", "Not found");
+        return notFound();
     }
 
     void handleClient(SocketHandle client) const {
@@ -593,7 +609,7 @@ struct StreamOverlayServer::Impl {
         address.sin_port = htons(kPort);
         address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         if (bind(socket, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0
-            || listen(socket, 16) != 0) {
+            || listen(socket, kListenBacklog) != 0) {
             setStatus("El puerto 21680 ya esta ocupado");
             closeListener();
 #ifdef GEODE_IS_WINDOWS
@@ -826,15 +842,13 @@ void StreamOverlayServer::refreshSnapshot() {
         playing["platformer"] = level->isPlatformer();
     }
 
-    auto queue = matjson::Value::array();
-    matjson::Value latest = matjson::makeObject({{"entry", 0}});
+    std::array<LevelRequest const*, kMaxNextCount> queueRequests{};
+    size_t queueRequestCount = 0;
+    size_t pendingCount = 0;
     LevelRequest const* latestRequest = nullptr;
     auto requestJson = [&cache](LevelRequest const& request) {
         auto const* brief = cache.peek(request.levelID);
-        if (!brief) {
-            cache.request(request.levelID);
-            brief = cache.peek(request.levelID);
-        }
+        if (!brief) cache.request(request.levelID);
         auto item = briefJson(brief);
         item["entry"] = request.entryID;
         item["id"] = request.levelID;
@@ -845,21 +859,33 @@ void StreamOverlayServer::refreshSnapshot() {
         item["receivedAt"] = request.receivedAt;
         return item;
     };
-    size_t pending = 0;
     for (auto const& request : requests) {
         if (!manager.inSelectedQueue(request)) continue;
         if (request.played) continue;
         if (auto passes = requestPasses(request.levelID, !request.videoUrl.empty()); passes && !*passes) continue;
-        ++pending;
-
+        ++pendingCount;
+        if (queueRequestCount < static_cast<size_t>(g_config.nextCount)) {
+            queueRequests[queueRequestCount++] = &request;
+        }
         if (!latestRequest || request.entryID > latestRequest->entryID) {
             latestRequest = &request;
         }
-        if (queue.size() < static_cast<size_t>(g_config.nextCount)) {
-            queue.push(requestJson(request));
-        }
     }
-    if (latestRequest) latest = requestJson(*latestRequest);
+
+    auto queue = matjson::Value::array();
+    matjson::Value latest = matjson::makeObject({{"entry", 0}});
+    matjson::Value latestBuilt;
+    bool haveLatest = false;
+    for (size_t i = 0; i < queueRequestCount; ++i) {
+        auto const* request = queueRequests[i];
+        auto item = requestJson(*request);
+        if (latestRequest && request->entryID == latestRequest->entryID) {
+            latestBuilt = item;
+            haveLatest = true;
+        }
+        queue.push(std::move(item));
+    }
+    if (latestRequest) latest = haveLatest ? std::move(latestBuilt) : requestJson(*latestRequest);
 
     auto const& session = manager.sessionStats();
     auto payload = matjson::makeObject({
@@ -869,7 +895,7 @@ void StreamOverlayServer::refreshSnapshot() {
         {"queue", queue},
         {"latest", latest},
         {"queueName", manager.selectedQueue()},
-        {"pending", static_cast<int64_t>(pending)},
+        {"pending", static_cast<int64_t>(pendingCount)},
         {"random", manager.isRandomOrder()},
         {"accepting", manager.isAccepting()},
         {"stats", matjson::makeObject({
@@ -895,15 +921,15 @@ std::string StreamOverlayServer::statusText() const {
 }
 
 std::string StreamOverlayServer::overlayUrl() const {
-    return fmt::format("http://localhost:{}/overlay", kPort);
+    return urlFor("/overlay");
 }
 
 std::string StreamOverlayServer::previewUrl() const {
-    return fmt::format("http://localhost:{}/preview", kPort);
+    return urlFor("/preview");
 }
 
 std::string StreamOverlayServer::galleryUrl() const {
-    return fmt::format("http://localhost:{}/gallery", kPort);
+    return urlFor("/gallery");
 }
 
 } // namespace paimon::twitch

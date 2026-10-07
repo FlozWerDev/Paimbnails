@@ -186,12 +186,6 @@ class $modify(PaimonCollabLevelEditorLayer, LevelEditorLayer) {
 // color popups may skip levelsettingsupdated; push full metadata on close.
 class $modify(PaimonCollabColorSelectPopup, ColorSelectPopup) {
     $override
-    bool init(EffectGameObject* object, CCArray* objects, ColorAction* action) {
-        if (!ColorSelectPopup::init(object, objects, action)) return false;
-        return true;
-    }
-
-    $override
     void keyBackClicked() {
         ColorSelectPopup::keyBackClicked();
         auto& mgr = paimon::collab::CollabManager::get();

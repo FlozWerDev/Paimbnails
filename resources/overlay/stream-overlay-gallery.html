@@ -66,9 +66,23 @@ function fillSelect(select, options) {
   options.forEach(o => select.append(new Option(o.name, o.key)));
 }
 
-function render() {
-  previewSizes.disconnect();
-  grid.replaceChildren();
+const cards = [];
+
+function bindCopy(copy, getUrl) {
+  copy.addEventListener('click', async () => {
+    const url = getUrl();
+    try {
+      await navigator.clipboard.writeText(url);
+      copy.textContent = 'Copiado';
+      copy.classList.add('copied');
+      setTimeout(() => { copy.textContent = 'Copiar link'; copy.classList.remove('copied'); }, 1600);
+    } catch {
+      prompt('Copia este link para OBS:', url);
+    }
+  });
+}
+
+function build() {
   catalog.styles.forEach(style => {
     const card = document.createElement('article');
     card.className = 'card';
@@ -77,33 +91,34 @@ function render() {
     const iframe = document.createElement('iframe');
     iframe.title = `Vista previa ${style.name}`;
     iframe.loading = 'lazy';
-    iframe.src = `/preview?${query(style.key)}&demo=1&embed=1`;
     frame.append(iframe);
     const info = document.createElement('div');
     info.className = 'info';
     const name = document.createElement('strong');
     name.textContent = style.name;
-    const url = `${location.origin}/overlay?${query(style.key)}`;
     const code = document.createElement('code');
-    code.textContent = url;
     const copy = document.createElement('button');
     copy.type = 'button';
     copy.textContent = 'Copiar link';
-    copy.addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(url);
-        copy.textContent = 'Copiado';
-        copy.classList.add('copied');
-        setTimeout(() => { copy.textContent = 'Copiar link'; copy.classList.remove('copied'); }, 1600);
-      } catch {
-        prompt('Copia este link para OBS:', url);
-      }
-    });
+    bindCopy(copy, () => `${location.origin}/overlay?${query(style.key)}`);
     info.append(name, copy, code);
     card.append(frame, info);
     grid.append(card);
     previewSizes.observe(frame);
+    cards.push({ key: style.key, iframe, code, src: '' });
   });
+}
+
+function render() {
+  if (!cards.length) build();
+  for (const card of cards) {
+    const src = `/preview?${query(card.key)}&demo=1&embed=1`;
+    if (card.src !== src) {
+      card.src = src;
+      card.iframe.src = src;
+    }
+    card.code.textContent = `${location.origin}/overlay?${query(card.key)}`;
+  }
 }
 
 document.querySelectorAll('[data-bg]').forEach(button => button.addEventListener('click', () => {

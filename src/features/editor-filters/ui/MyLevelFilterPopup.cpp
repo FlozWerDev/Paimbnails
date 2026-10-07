@@ -102,7 +102,6 @@ bool MyLevelFilterPopup::init() {
 
     auto* content = m_scroll->m_contentLayer;
     float const colW = scrollSize.width;
-    float y = 0.f;
 
     auto addSection = [&](char const* heading, float h) -> CCNode* {
         auto* panel = ui::makePanel({colW - 8.f, h}, heading);
@@ -249,7 +248,7 @@ bool MyLevelFilterPopup::init() {
     totalH += kRowGap;
     content->setContentSize({colW, std::max(totalH, scrollSize.height)});
 
-    y = content->getContentSize().height - kRowGap;
+    float y = content->getContentSize().height - kRowGap;
     for (unsigned i = 0; i < children->count(); i++) {
         auto* node = static_cast<CCNode*>(children->objectAtIndex(i));
         float h = node->getContentSize().height;

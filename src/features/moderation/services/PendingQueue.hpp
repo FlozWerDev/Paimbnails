@@ -61,8 +61,6 @@ public:
 
     std::string toJson() const;
 
-    void syncNow();
-    
     static char const* catToStr(PendingCategory c);
 
 private:

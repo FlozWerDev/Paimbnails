@@ -139,7 +139,6 @@ Row makeRow(float width, float height, char const* title, char const* desc, GLub
     return row;
 }
 
-// ---------------------------------------------------------------- prompt
 
 class PromptPopup : public PaimonPopup {
 public:
@@ -211,7 +210,6 @@ private:
     Callback m_onConfirm;
 };
 
-// ---------------------------------------------------------------- center
 
 class CenterPopup : public PaimonPopup {
 public:
@@ -687,7 +685,6 @@ private:
     CCNode* m_summary = nullptr;
 };
 
-// ---------------------------------------------------------------- clips
 
 class ClipsPopup : public PaimonPopup {
 public:
@@ -884,7 +881,6 @@ private:
     geode::ScrollLayer* m_scroll = nullptr;
 };
 
-// ---------------------------------------------------------------- frame
 
 class FramePopup : public PaimonPopup {
 public:

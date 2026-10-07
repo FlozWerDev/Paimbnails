@@ -17,8 +17,8 @@
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/PlayLayer.hpp>
 #include <Geode/binding/GameObject.hpp>
+#include <Geode/utils/string.hpp>
 #include <algorithm>
-#include <cctype>
 #include <unordered_map>
 #include <unordered_set>
 #include <fmt/format.h>
@@ -390,12 +390,8 @@ bool CaptureAssetBrowserPopup::groupMatchesSearch(int groupIdx) const {
     // numeric query: substring of the object id (previous behavior).
     if (std::to_string(group.objectID).find(m_searchQuery) != std::string::npos) return true;
     // text query: substring of the localized category name, case-insensitive.
-    auto lowered = m_searchQuery;
-    std::transform(lowered.begin(), lowered.end(), lowered.begin(),
-        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    auto catName = Localization::get().getString(group.categoryKey);
-    std::transform(catName.begin(), catName.end(), catName.begin(),
-        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    auto lowered = geode::utils::string::toLower(m_searchQuery);
+    auto catName = geode::utils::string::toLower(Localization::get().getString(group.categoryKey));
     return catName.find(lowered) != std::string::npos;
 }
 

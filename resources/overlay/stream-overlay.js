@@ -161,9 +161,11 @@ const GD = {
     const top = doc.querySelector('plist > dict');
     const frames = top && pairs(top).frames;
     if (!frames) throw new Error('frames');
-    for (const [name, dict] of Object.entries(pairs(frames))) {
+    const kids = [...frames.children];
+    for (let i = 0; i + 1 < kids.length; i += 2) {
+      const name = kids[i].textContent;
       if (!wanted.has(name)) continue;
-      const f = pairs(dict);
+      const f = pairs(kids[i + 1]);
       const rect = (f.textureRect || f.frame)?.textContent.match(/-?\d+/g)?.map(Number);
       if (!rect || rect.length < 4) continue;
       const rotated = (f.textureRotated || f.rotated)?.tagName === 'true';
@@ -250,7 +252,7 @@ function setText(el, text) {
 /* ---------- particles ---------- */
 
 const FX = {
-  canvas: $('fx'), ctx: null, kind: 'none', parts: [], bursts: [], raf: 0, last: 0, rect: null, dpr: 1, w: 0, h: 0,
+  canvas: $('fx'), ctx: null, kind: 'none', parts: [], bursts: [], raf: 0, last: 0, dpr: 1, w: 0, h: 0,
 
   init() {
     this.ctx = this.canvas.getContext('2d');
@@ -282,10 +284,6 @@ const FX = {
 
   accent: '#ffffff',
 
-  color() {
-    return this.accent;
-  },
-
   spawn(r) {
     const k = this.kind, rand = (a, b) => a + Math.random() * (b - a);
     const p = { x: rand(r.left, r.right), y: rand(r.top, r.bottom), vx: 0, vy: 0, life: 0, max: rand(3, 7), size: rand(2, 5), rot: rand(0, 6.3), spin: rand(-1, 1), seed: Math.random() * 100 };
@@ -294,7 +292,7 @@ const FX = {
     else if (k === 'snow') Object.assign(p, { y: r.top - 10, vy: rand(14, 34), size: rand(1.5, 4), max: rand(6, 11) });
     else if (k === 'sparks') Object.assign(p, { vy: rand(-18, -6), vx: rand(-6, 6), size: rand(1, 2.6), max: rand(2, 5) });
     else if (k === 'hearts') Object.assign(p, { y: r.bottom, vy: rand(-30, -14), size: rand(7, 13), max: rand(4, 7) });
-    else if (k === 'rain') Object.assign(p, { x: r.left + Math.floor(rand(0, (r.right - r.left) / 16)) * 16, y: r.top - 20, vy: rand(70, 140), size: 13, max: rand(2.5, 5), ch: '' });
+    else if (k === 'rain') Object.assign(p, { x: r.left + Math.floor(rand(0, (r.right - r.left) / 16)) * 16, y: r.top - 20, vy: rand(70, 140), size: 13, max: rand(2.5, 5) });
     else if (k === 'dust') Object.assign(p, { vx: rand(-8, 8), vy: rand(-8, 4), size: rand(2, 6), max: rand(5, 10) });
     else if (k === 'stars') Object.assign(p, { size: rand(.8, 2.4), max: rand(2, 6), shoot: Math.random() < .06 });
     if (p.shoot) Object.assign(p, { vx: rand(180, 280), vy: rand(60, 110), x: rand(r.left, (r.left + r.right) / 2), y: rand(r.top, r.top + 40), max: 1 });
@@ -303,7 +301,7 @@ const FX = {
 
   burst(rect, count, palette) {
     if (reducedMotion) return;
-    const colors = palette || [this.color(), '#ffffff', '#ffd84a', '#5ad1ff', '#ff6fae', '#7dff00'];
+    const colors = palette || [this.accent, '#ffffff', '#ffd84a', '#5ad1ff', '#ff6fae', '#7dff00'];
     for (let i = 0; i < count; i++) {
       const angle = -Math.PI / 2 + (Math.random() - .5) * Math.PI * 1.25;
       const speed = 220 + Math.random() * 420;
@@ -364,7 +362,7 @@ const FX = {
   },
 
   drawAmbient(ctx, dt) {
-    const accent = this.color();
+    const accent = this.accent;
     for (const p of this.parts) {
       p.life += dt;
       p.x += (p.vx + (this.kind === 'snow' || this.kind === 'embers' ? Math.sin(p.life * 2 + p.seed) * 14 : 0)) * dt;
@@ -1008,7 +1006,9 @@ async function poll() {
       cachedRaw = await response.json();
     }
     body.classList.remove('offline');
-    update(structuredClone(cachedRaw));
+    // update() replaces s.config: a top-level copy keeps the cache pristine
+    // without deep-cloning the whole queue every poll.
+    update({ ...cachedRaw });
   } catch {
     if (forceDemo || preview) update(demoState(null));
     body.classList.add('offline');

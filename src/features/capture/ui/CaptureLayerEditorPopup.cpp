@@ -17,6 +17,7 @@
 #include <Geode/binding/PlayerObject.hpp>
 #include <Geode/binding/ShaderLayer.hpp>
 #include <Geode/binding/FLAlertLayer.hpp>
+#include <Geode/utils/string.hpp>
 #include <set>
 #include <algorithm>
 #include <cstring>
@@ -54,13 +55,6 @@ namespace {
         return Localization::get().getString(key);
     }
 
-    static std::string toLower(std::string s) {
-        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
-            return static_cast<char>(std::tolower(c));
-        });
-        return s;
-    }
-
     static std::string describeNode(CCNode* node) {
         if (!node) return {};
         std::string id = node->getID();
@@ -79,8 +73,8 @@ namespace {
         if (!node) return false;
         if (typeinfo_cast<ShaderLayer*>(node)) return true;
         if (typeinfo_cast<CCParticleSystem*>(node)) return true;
-        auto cls = toLower(typeid(*node).name());
-        auto id = toLower(node->getID());
+        auto cls = geode::utils::string::toLower(typeid(*node).name());
+        auto id = geode::utils::string::toLower(node->getID());
         static std::vector<std::string> patterns = {
             "shader", "effect", "particle", "trail", "glow", "bloom", "swing", "dash", "fire"
         };

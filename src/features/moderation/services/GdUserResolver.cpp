@@ -46,7 +46,6 @@ void resolveUsername(
             auto entries = geode::utils::string::split(response, "|");
             std::string wantLower = geode::utils::string::toLower(trimmed);
 
-            std::map<std::string, std::string> chosen;
             std::string chosenName;
             int chosenAccountID = 0;
 
@@ -62,7 +61,6 @@ void resolveUsername(
                 if (accountID <= 0) continue;
 
                 if (chosenAccountID == 0) {
-                    chosen = kv;
                     chosenName = nameIt->second;
                     chosenAccountID = accountID;
                 }

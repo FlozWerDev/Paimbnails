@@ -2,6 +2,7 @@
 #include "services/EmoteService.hpp"
 #include "services/EmoteCache.hpp"
 #include "../../utils/AnimatedGIFSprite.hpp"
+#include "../../utils/CommentTextLayout.hpp"
 #include "../../core/RuntimeLifecycle.hpp"
 #include "../../core/modules/ModuleRegistry.hpp"
 #include "../comment-mentions/MentionLink.hpp"
@@ -11,28 +12,6 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 using namespace paimon::emotes;
-
-static std::string stripGDColorCodes(std::string const& text) {
-    std::string result;
-    result.reserve(text.size());
-
-    size_t i = 0;
-    while (i < text.size()) {
-        if (text[i] == '<' && i + 1 < text.size()) {
-            if (text[i + 1] == 'c' && i + 3 < text.size() && text[i + 3] == '>') {
-                i += 4;
-                continue;
-            }
-            if (i + 3 < text.size() && text[i + 1] == '/' && text[i + 2] == 'c' && text[i + 3] == '>') {
-                i += 4;
-                continue;
-            }
-        }
-        result += text[i];
-        ++i;
-    }
-    return result;
-}
 
 static std::vector<std::string> splitTextChunks(std::string const& text) {
     std::vector<std::string> chunks;
@@ -96,9 +75,7 @@ static bool isValidEmoteName(std::string const& name) {
 }
 
 static bool isGDColorCode(std::string const& inner) {
-    if (inner.size() == 2 && inner[0] == 'c') return true;
-    if (inner == "/c") return true;
-    return false;
+    return paimon::text::isGDColorTag(inner);
 }
 
 static bool isMentionWordChar(char c) {
@@ -155,20 +132,21 @@ std::vector<CommentToken> EmoteRenderer::parseTokens(std::string const& rawText)
     bool emotesAvailable = service.isLoaded() &&
         paimon::modules::isEnabled("paimbnails.emotes.social");
 
-    std::string text = stripGDColorCodes(rawText);
+    std::string text = paimon::text::stripColorCodes(rawText);
 
     size_t i = 0;
     std::string currentText;
+    size_t currentStart = 0;
 
     while (i < text.size()) {
         bool matched = false;
 
         if (size_t mlen = matchMention(text, i); mlen > 0) {
             if (!currentText.empty()) {
-                tokens.push_back(TextToken{currentText});
+                tokens.push_back(TextToken{currentText, currentStart, i});
                 currentText.clear();
             }
-            tokens.push_back(MentionToken{text.substr(i + 1, mlen)});
+            tokens.push_back(MentionToken{text.substr(i + 1, mlen), i, i + mlen + 1});
             i += mlen + 1;
             matched = true;
         }
@@ -179,10 +157,10 @@ std::vector<CommentToken> EmoteRenderer::parseTokens(std::string const& rawText)
                 auto name = text.substr(i + 1, end - i - 1);
                 if (isValidEmoteName(name) && service.getEmoteByName(name).has_value()) {
                     if (!currentText.empty()) {
-                        tokens.push_back(TextToken{currentText});
+                        tokens.push_back(TextToken{currentText, currentStart, i});
                         currentText.clear();
                     }
-                    tokens.push_back(EmoteToken{name});
+                    tokens.push_back(EmoteToken{name, i, end + 1});
                     i = end + 1;
                     matched = true;
                 }
@@ -195,10 +173,10 @@ std::vector<CommentToken> EmoteRenderer::parseTokens(std::string const& rawText)
                 auto name = text.substr(i + 1, end - i - 1);
                 if (!isGDColorCode(name) && isValidEmoteName(name) && service.getEmoteByName(name).has_value()) {
                     if (!currentText.empty()) {
-                        tokens.push_back(TextToken{currentText});
+                        tokens.push_back(TextToken{currentText, currentStart, i});
                         currentText.clear();
                     }
-                    tokens.push_back(EmoteToken{name});
+                    tokens.push_back(EmoteToken{name, i, end + 1});
                     i = end + 1;
                     matched = true;
                 }
@@ -206,13 +184,14 @@ std::vector<CommentToken> EmoteRenderer::parseTokens(std::string const& rawText)
         }
 
         if (!matched) {
+            if (currentText.empty()) currentStart = i;
             currentText += text[i];
             ++i;
         }
     }
 
     if (!currentText.empty()) {
-        tokens.push_back(TextToken{currentText});
+        tokens.push_back(TextToken{currentText, currentStart, i});
     }
 
     return tokens;
@@ -249,15 +228,20 @@ CCNode* EmoteRenderer::renderComment(
     float refHeight = refProbe ? refProbe->getContentSize().height * fontSize : 20.f;
 
     auto fontProbe = CCLabelBMFont::create("Ag", font);
+    if (!fontProbe) {
+        font = "chatFont.fnt";
+        fontProbe = refProbe;
+    }
+    if (!fontProbe || maxWidth <= 0.f || fontSize <= 0.f) return nullptr;
     float fontScale = fontSize;
-    if (fontProbe && refProbe && std::string(font) != "chatFont.fnt") {
+    if (refProbe && std::string(font) != "chatFont.fnt") {
         float fontRawH = fontProbe->getContentSize().height;
         float refRawH = refProbe->getContentSize().height;
         if (fontRawH > 1.f && refRawH > 1.f) {
             fontScale = fontSize * (refRawH / fontRawH);
         }
     }
-    float fontHeight = fontProbe ? fontProbe->getContentSize().height * fontScale : refHeight;
+    float fontHeight = fontProbe->getContentSize().height * fontScale;
 
     constexpr float LINE_GAP = 3.f;
     float lineHeight = std::max(emoteSize, refHeight) + LINE_GAP;
@@ -283,7 +267,10 @@ CCNode* EmoteRenderer::renderComment(
 
     for (auto& token : tokens) {
         if (auto* tt = std::get_if<TextToken>(&token)) {
+            size_t chunkOffset = tt->start;
             for (auto const& chunk : splitTextChunks(tt->text)) {
+                size_t chunkStart = chunkOffset;
+                chunkOffset += chunk.size();
                 if (chunk == "\n") {
                     maxUsedX = std::max(maxUsedX, curX);
                     curX = 0.f;
@@ -311,14 +298,17 @@ CCNode* EmoteRenderer::renderComment(
                     }
                 }
 
-                float labelH = label->getContentSize().height * fontScale;                float textYOff = (lineHeight - labelH) / 2.f + baselineAdjust;
+                float labelH = label->getContentSize().height * fontScale;
+                float textYOff = (lineHeight - labelH) / 2.f + baselineAdjust;
                 label->setPosition({curX, curY + textYOff});
+                paimon::text::CommentTextRange::attach(label, chunkStart, chunkOffset);
                 container->addChild(label);
                 curX += labelW;
                 maxUsedX = std::max(maxUsedX, curX);
             }
 
         } else if (auto* et = std::get_if<EmoteToken>(&token)) {
+            size_t emoteStart = et->start;
             if (curX + emoteSize > maxWidth && curX > 0.f) {
                 maxUsedX = std::max(maxUsedX, curX);
                 curX = 0.f;
@@ -330,6 +320,7 @@ CCNode* EmoteRenderer::renderComment(
             placeholder->setAnchorPoint({0.f, 0.f});
             float emoteYOff = (lineHeight - emoteSize) / 2.f;
             placeholder->setPosition({curX, curY + emoteYOff});
+            paimon::text::CommentTextRange::attach(placeholder, emoteStart, et->end, true);
             container->addChild(placeholder, 5);
 
             auto info = EmoteService::get().getEmoteByName(et->name);
@@ -337,7 +328,7 @@ CCNode* EmoteRenderer::renderComment(
                 auto phRef = Ref(placeholder);
                 std::string emoteKey = et->name;
                 EmoteCache::get().loadEmote(*info, [phRef, emoteSize, emoteKey, animateGifs](CCTexture2D* tex, bool isGif, std::vector<uint8_t> const& gifData) {
-                    // ram evict can free tex before the queued task runs; keep a ref or it dangles.
+                    // Cache eviction can release the texture before the queued task runs.
                     geode::Ref<CCTexture2D> texRef = tex;
                     Loader::get()->queueInMainThread([phRef, texRef, isGif, gifData, emoteSize, emoteKey, animateGifs]() {
                         if (paimon::isRuntimeShuttingDown()) return;
@@ -369,11 +360,13 @@ CCNode* EmoteRenderer::renderComment(
             maxUsedX = std::max(maxUsedX, curX);
         } else if (auto* mt = std::get_if<MentionToken>(&token)) {
             std::string display = "@" + mt->username;
+            size_t mentionStart = mt->start;
             auto label = CCLabelBMFont::create(display.c_str(), font);
             if (label) {
                 label->setColor({90, 170, 255});
-                // pre-scale the label, not the menu item: ccmenuitemspriteextra resets item scale on press.
+                // CCMenuItemSpriteExtra resets its own scale on press.
                 label->setScale(fontScale);
+                paimon::text::CommentTextRange::attach(label, mentionStart, mt->end);
 
                 float labelW = label->getContentSize().width * fontScale;
                 float labelH = label->getContentSize().height * fontScale;

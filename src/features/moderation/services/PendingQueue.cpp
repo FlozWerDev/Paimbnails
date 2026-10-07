@@ -132,7 +132,7 @@ void PendingQueue::addOrBump(int levelID, PendingCategory cat, std::string submi
             if (!submittedBy.empty()) it.submittedBy = std::move(submittedBy); 
             if (!note.empty()) it.note = std::move(note);
             it.isCreator = isCreator;
-            save(); syncNow();
+            save();
             log::info("[PendingQueue] Updated item {} cat {} isCreator={}", levelID, catToStr(cat), isCreator);
             return;
         }
@@ -146,7 +146,7 @@ void PendingQueue::addOrBump(int levelID, PendingCategory cat, std::string submi
     it.status = PendingStatus::Open;
     it.isCreator = isCreator;
     m_items.push_back(std::move(it));
-    save(); syncNow();
+    save();
     log::info("[PendingQueue] Added item {} cat {} isCreator={}", levelID, catToStr(cat), isCreator);
 }
 
@@ -158,7 +158,7 @@ void PendingQueue::removeForLevel(int levelID) {
             it.status = PendingStatus::Accepted; changed = true;
         }
     }
-    if (changed) { save(); syncNow(); }
+    if (changed) { save(); }
     log::info("[PendingQueue] Marked items as accepted for level {}", levelID);
 }
 
@@ -170,7 +170,7 @@ void PendingQueue::reject(int levelID, PendingCategory cat, std::string reason) 
             it.status = PendingStatus::Rejected; if (!reason.empty()) it.note = std::move(reason); changed = true;
         }
     }
-    if (changed) { save(); syncNow(); }
+    if (changed) { save(); }
     log::info("[PendingQueue] Rejected item {} cat {}", levelID, catToStr(cat));
 }
 
@@ -182,7 +182,7 @@ void PendingQueue::accept(int levelID, PendingCategory cat) {
             it.status = PendingStatus::Accepted; changed = true;
         }
     }
-    if (changed) { save(); syncNow(); }
+    if (changed) { save(); }
     log::info("[PendingQueue] Accepted item {} cat {}", levelID, catToStr(cat));
 }
 
@@ -195,9 +195,5 @@ std::vector<PendingItem> PendingQueue::list(PendingCategory cat) const {
         return a.timestamp > b.timestamp;
     });
     return out;
-}
-
-void PendingQueue::syncNow() {
-    log::info("[PendingQueue] Server sync disabled - changes are saved locally only");
 }
 

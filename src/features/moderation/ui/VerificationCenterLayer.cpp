@@ -24,7 +24,6 @@
 #include "../../thumbnails/services/ThumbnailTransportClient.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/HttpClient.hpp"
-#include "../../../utils/SpriteHelper.hpp"
 #include <algorithm>
 #include "../../../utils/Localization.hpp"
 #include "BanListPopup.hpp"
@@ -33,6 +32,10 @@
 
 using namespace geode::prelude;
 using namespace cocos2d;
+
+static float previewFitScale(float contentW, float contentH, float maxW, float maxH) {
+    return std::min(maxW / contentW, maxH / contentH);
+}
 
 VerificationCenterLayer* VerificationCenterLayer::create() {
     auto ret = new VerificationCenterLayer();
@@ -354,7 +357,7 @@ void VerificationCenterLayer::rebuildList() {
         content->setContentSize({listW, std::max(scrollSize.height, totalH)});
 
         for (size_t i = 0; i < m_items.size(); ++i) {
-            auto row = createRowForItem(m_items[i], listW, static_cast<int>(i));
+            auto row = createRowForItem(m_items[i], listW, static_cast<int>(i), currentUsername);
             float y = content->getContentSize().height - 8.f - (float)i * rowH;
             row->setPosition({0, y - rowH});
             content->addChild(row);
@@ -363,7 +366,7 @@ void VerificationCenterLayer::rebuildList() {
         m_scrollLayer->scrollToTop();
 }
 
-CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float width, int index) {
+CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float width, int index, std::string const& currentUsername) {
     auto row = CCNode::create();
     row->setContentSize({width, 42.f});
     row->setAnchorPoint({0, 0});
@@ -375,8 +378,6 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
     rowBg->setTag(1000 + index);
     row->addChild(rowBg, -1);
 
-    std::string currentUsername;
-    if (auto gm = GameManager::get()) currentUsername = gm->m_playerName;
     bool isClaimed = !item.claimedBy.empty();
     bool claimedByMe = isClaimed && (item.claimedBy == currentUsername);
 
@@ -583,10 +584,7 @@ void VerificationCenterLayer::clearPreview() {
         m_previewAnimNode->removeFromParent();
         m_previewAnimNode = nullptr;
     }
-    if (m_previewSpinner) {
-        m_previewSpinner->dismiss();
-        m_previewSpinner = nullptr;
-    }
+    dismissPreviewSpinner();
     if (m_prevArrowBtn) m_prevArrowBtn->setVisible(false);
     if (m_nextArrowBtn) m_nextArrowBtn->setVisible(false);
     if (m_suggestionCountLabel) m_suggestionCountLabel->setVisible(false);
@@ -608,29 +606,24 @@ void VerificationCenterLayer::setPreviewTexture(CCTexture2D* tex) {
     float maxW = panelSize.width - 16.f;
     float maxH = panelSize.height - 16.f;
 
-    float scaleX = maxW / spr->getContentWidth();
-    float scaleY = maxH / spr->getContentHeight();
-    float scale = std::min(scaleX, scaleY);
-    spr->setScale(scale);
+    spr->setScale(previewFitScale(spr->getContentWidth(), spr->getContentHeight(), maxW, maxH));
     spr->setPosition(panelSize / 2);
     m_previewPanel->addChild(spr, 5);
     m_previewSprite = spr;
 }
 
-void VerificationCenterLayer::setPreviewSprite(CCSprite* spr) {
-    if (!spr || !m_previewPanel) return;
-    clearPreview();
-    if (m_previewLabel) m_previewLabel->setVisible(false);
+void VerificationCenterLayer::dismissPreviewSpinner() {
+    if (m_previewSpinner) {
+        m_previewSpinner->dismiss();
+        m_previewSpinner = nullptr;
+    }
+}
 
-    auto panelSize = m_previewPanel->getContentSize();
-    float maxW = panelSize.width - 16.f;
-    float maxH = panelSize.height - 16.f;
-    float scaleX = maxW / spr->getContentWidth();
-    float scaleY = maxH / spr->getContentHeight();
-    spr->setScale(std::min(scaleX, scaleY));
-    spr->setPosition(panelSize / 2);
-    m_previewPanel->addChild(spr, 5);
-    m_previewSprite = spr;
+void VerificationCenterLayer::showNoPreview() {
+    if (m_previewLabel) {
+        m_previewLabel->setString("No preview");
+        m_previewLabel->setVisible(true);
+    }
 }
 
 void VerificationCenterLayer::showPreviewForItem(int index) {
@@ -653,16 +646,10 @@ void VerificationCenterLayer::showPreviewForItem(int index) {
         if (!layer) return;
         if (layer->m_selectedIndex != savedIndex) return;
 
-        if (layer->m_previewSpinner) {
-            layer->m_previewSpinner->dismiss();
-            layer->m_previewSpinner = nullptr;
-        }
+        layer->dismissPreviewSpinner();
 
         if (!success || data.empty()) {
-            if (layer->m_previewLabel) {
-                layer->m_previewLabel->setString("No preview");
-                layer->m_previewLabel->setVisible(true);
-            }
+            layer->showNoPreview();
             return;
         }
 
@@ -673,9 +660,7 @@ void VerificationCenterLayer::showPreviewForItem(int index) {
         if (ThumbnailTransportClient::isGIFData(data)) {
             auto* gifSpr = AnimatedGIFSprite::create(data.data(), data.size());
             if (gifSpr) {
-                float scaleX = maxW / gifSpr->getContentWidth();
-                float scaleY = maxH / gifSpr->getContentHeight();
-                gifSpr->setScale(std::min(scaleX, scaleY));
+                gifSpr->setScale(previewFitScale(gifSpr->getContentWidth(), gifSpr->getContentHeight(), maxW, maxH));
                 gifSpr->setPosition(panelSize / 2);
                 layer->m_previewPanel->addChild(gifSpr, 5);
                 layer->m_previewAnimNode = gifSpr;
@@ -688,10 +673,7 @@ void VerificationCenterLayer::showPreviewForItem(int index) {
         if (tex) {
             layer->setPreviewTexture(tex);
         } else {
-            if (layer->m_previewLabel) {
-                layer->m_previewLabel->setString("No preview");
-                layer->m_previewLabel->setVisible(true);
-            }
+            layer->showNoPreview();
         }
     };
 
@@ -700,18 +682,12 @@ void VerificationCenterLayer::showPreviewForItem(int index) {
         if (!layer) return;
         if (layer->m_selectedIndex != savedIndex) return;
 
-        if (layer->m_previewSpinner) {
-            layer->m_previewSpinner->dismiss();
-            layer->m_previewSpinner = nullptr;
-        }
+        layer->dismissPreviewSpinner();
 
         if (success && tex) {
             layer->setPreviewTexture(tex);
         } else {
-            if (layer->m_previewLabel) {
-                layer->m_previewLabel->setString("No preview");
-                layer->m_previewLabel->setVisible(true);
-            }
+            layer->showNoPreview();
         }
     };
 

@@ -55,8 +55,6 @@ struct PlaybackState {
     std::string currentAudioPath;
     PlaybackMode mode = PlaybackMode::Disabled;
     bool isPlaying = false;
-    std::int32_t positionMs = 0;
-    std::int32_t lengthMs = 0;
 };
 
 }

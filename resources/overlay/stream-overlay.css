@@ -250,7 +250,6 @@ body{
 @keyframes celebrate{0%{transform:none}15%{transform:scale(1.03)}30%{transform:scale(.99) rotate(-.6deg)}45%{transform:scale(1.015) rotate(.4deg)}100%{transform:none}}
 @keyframes beat{0%,100%{transform:none}40%{transform:scale(1.025)}}
 @keyframes flicker{0%,19%,21%,23%,55%,57%,100%{opacity:1}20%,22%,56%{opacity:.45}}
-@keyframes hueSpin{to{filter:hue-rotate(360deg)}}
 @keyframes slideBg{to{background-position:200% 50%}}
 @keyframes blink{50%{opacity:0}}
 @keyframes jitter{0%,93%,100%{transform:none}94%{transform:translate(2px,-1px)}96%{transform:translate(-3px,1px)}98%{transform:translate(1px,2px)}}
@@ -612,6 +611,7 @@ body.custom-colors .level-name{background:none;color:var(--text)}
 body.custom-colors .meta strong{color:var(--text)}
 body.custom-colors .progress>.fill{background:var(--fill)}
 
+/* layout hides stay last: they beat style display rules (e.g. brutal badges) */
 body:is(.layout-spotlight,.layout-corner) :is(.next-title,.queue){display:none}
 body.layout-ticker :is(.header,.next-title,.stats),body.layout-banner .next-title,body.layout-corner .stats{display:none}
 

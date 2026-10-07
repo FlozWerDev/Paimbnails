@@ -10,6 +10,8 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <utility>
+#include <vector>
 
 #include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../features/capture/ui/CapturePreviewPopup.hpp"
@@ -25,6 +27,7 @@
 #include "../managers/ThumbnailAPI.hpp"
 #include "../utils/LevelMetadata.hpp"
 #include "../utils/ImageConverter.hpp"
+#include "../utils/FormatDetect.hpp"
 #include "../utils/ImageLoadHelper.hpp"
 #include "../utils/PaimonLoadingOverlay.hpp"
 #include "../utils/FileDialog.hpp"
@@ -45,6 +48,14 @@
 using namespace geode::prelude;
 
 namespace {
+std::pair<ccColor3B, ccColor3B> dominantPair(uint8_t const* rgba, int w, int h) {
+    size_t const pixelCount = static_cast<size_t>(w) * h;
+    std::vector<uint8_t> rgbBuf(pixelCount * 3);
+    ImageConverter::rgbaToRgbFast(rgba, rgbBuf.data(), pixelCount);
+    auto pair = DominantColors::extract(rgbBuf.data(), w, h);
+    return {{pair.first.r, pair.first.g, pair.first.b}, {pair.second.r, pair.second.g, pair.second.b}};
+}
+
 std::optional<paimon::twitch::LevelRequest> feedbackRequestForLevel(int levelID) {
     for (auto const& request : paimon::twitch::TwitchRequestManager::get().requests()) {
         if (request.levelID == levelID && request.platform == paimon::twitch::Platform::Web
@@ -53,17 +64,6 @@ std::optional<paimon::twitch::LevelRequest> feedbackRequestForLevel(int levelID)
     }
     return std::nullopt;
 }
-}
-
-static std::vector<uint8_t> convertRGBAtoRGB(const uint8_t* rgba, int w, int h) {
-    const size_t pixelCount = static_cast<size_t>(w) * h;
-    std::vector<uint8_t> rgb(pixelCount * 3);
-    for (size_t i = 0; i < pixelCount; ++i) {
-        rgb[i*3 + 0] = rgba[i*4 + 0];
-        rgb[i*3 + 1] = rgba[i*4 + 1];
-        rgb[i*3 + 2] = rgba[i*4 + 2];
-    }
-    return rgb;
 }
 
 // encode and analyze off-thread; call onmaindone on the main thread.
@@ -80,10 +80,9 @@ static void processAcceptedCaptureAsync(
 
             ccColor3B A{255, 255, 255}, B{255, 255, 255};
             if (extractColors) {
-                auto rgbBuf = convertRGBAtoRGB(buf.get(), w, h);
-                auto pair = DominantColors::extract(rgbBuf.data(), w, h);
-                A = {pair.first.r, pair.first.g, pair.first.b};
-                B = {pair.second.r, pair.second.g, pair.second.b};
+                auto colors = dominantPair(buf.get(), w, h);
+                A = colors.first;
+                B = colors.second;
             }
 
             std::vector<uint8_t> pngData;
@@ -668,8 +667,8 @@ class $modify(PaimonPauseLayer, PauseLayer) {
     }
 
     void processSelectedFile(std::filesystem::path selectedPath, int levelID) {
-        std::string ext = geode::utils::string::pathToString(selectedPath.extension());
-        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        std::string ext = geode::utils::string::toLower(
+            geode::utils::string::pathToString(selectedPath.extension()));
 
         if (ext == ".mp4" || ext == ".mov" || ext == ".m4v") {
             std::error_code fileError;
@@ -690,8 +689,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 return;
             }
 
-            if (mp4Data.size() < 8 ||
-                !(mp4Data[4] == 'f' && mp4Data[5] == 't' && mp4Data[6] == 'y' && mp4Data[7] == 'p')) {
+            if (!paimon::format::isMp4(mp4Data.data(), mp4Data.size())) {
                 log::error("[PauseLayer] Selected file is not a valid MP4/MOV");
                 PaimonNotify::create(Localization::get().getString("pause.video_invalid").c_str(), NotificationIcon::Error)->show();
                 return;
@@ -730,7 +728,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 return;
             }
 
-            auto preview = ImageLoadHelper::loadStaticImage(selectedPath, 50);
+            auto preview = ImageLoadHelper::loadWithSTBFromMemory(gifData.data(), gifData.size());
             if (!preview.success || !preview.texture || !preview.buffer) {
                 log::error("[PauseLayer] Could not decode GIF preview: {}", preview.error);
                 PaimonNotify::create(Localization::get().getString("pause.gif_read_error").c_str(), NotificationIcon::Error)->show();
@@ -770,10 +768,9 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                         paimon::ThreadTracker::get().spawn([lvlID, buf, w, h]() {
                             geode::utils::thread::setName("PaimonDominantColors");
                             if (paimon::isRuntimeShuttingDown()) return;
-                            auto rgbBuf = convertRGBAtoRGB(buf.get(), w, h);
-                            auto pair = DominantColors::extract(rgbBuf.data(), w, h);
-                            ccColor3B A{pair.first.r, pair.first.g, pair.first.b};
-                            ccColor3B B{pair.second.r, pair.second.g, pair.second.b};
+                            auto dominant = dominantPair(buf.get(), w, h);
+                            ccColor3B A = dominant.first;
+                            ccColor3B B = dominant.second;
                             Loader::get()->queueInMainThread([lvlID, A, B]() {
                                 if (paimon::isRuntimeShuttingDown()) return;
                                 LevelColors::get().set(lvlID, A, B);

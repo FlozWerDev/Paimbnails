@@ -22,7 +22,6 @@ std::atomic<bool> g_autoCaptureBusy{false};
 bool levelHasNoThumbnail(int levelID) {
     if (levelID <= 0) return false;
     if (LocalThumbs::get().has(levelID)) return false;
-    if (paimon::autopreview::AutoPreviewStore::get().has(levelID)) return false;
     return ThumbnailLoader::get().isNotFound(levelID);
 }
 

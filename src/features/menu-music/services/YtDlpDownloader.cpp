@@ -547,11 +547,6 @@ void YtDlpDownloader::download(
         std::string lastMeaningfulLine;
         std::string lastErrorLine;
 
-        auto hasPrefix = [](const std::string& line, std::string_view prefix) {
-            return line.size() >= prefix.size() &&
-                   line.compare(0, prefix.size(), prefix) == 0;
-        };
-
         // prevent a hung yt-dlp process from blocking shutdown.
         constexpr int kDownloadTimeoutMs = 5 * 60 * 1000;
         int exitCode = runAndCaptureArgv(argv, [&](const std::string& line) {
@@ -578,7 +573,7 @@ void YtDlpDownloader::download(
                 lastMeaningfulLine = trimmed;
                 if (trimmed.find("ERROR") != std::string::npos ||
                     trimmed.find("error:") != std::string::npos ||
-                    hasPrefix(trimmed, "usage:")) {
+                    trimmed.starts_with("usage:")) {
                     lastErrorLine = trimmed;
                 }
             }

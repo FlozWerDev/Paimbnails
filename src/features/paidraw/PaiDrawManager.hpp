@@ -50,7 +50,6 @@ private:
     std::string baseServerUrl() const;
     bool hasValidLogin() const;
 
-    geode::ByteVector encodeJson(matjson::Value const& value) const;
     void authenticate();
     void handleLobbySnapshot(matjson::Value const& payload);
     void handleRoomSnapshot(matjson::Value const& payload);

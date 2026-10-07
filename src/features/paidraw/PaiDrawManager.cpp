@@ -1,6 +1,5 @@
 #include "PaiDrawManager.hpp"
 
-#include "PaiDrawCodec.hpp"
 #include "../../framework/EventBus.hpp"
 #include "../../utils/AccountVerifier.hpp"
 #include "../../utils/JsonHelper.hpp"
@@ -302,86 +301,6 @@ void PaiDrawManager::disconnect() {
     if (!m_shuttingDown) {
         publishConnection("Desconectado");
     }
-}
-
-geode::ByteVector PaiDrawManager::encodeJson(matjson::Value const& value) const {
-    codec::MsgPackWriter writer;
-    std::function<void(matjson::Value const&)> encode = [&](matjson::Value const& input) {
-        if (input.isBool()) {
-            writer.boolean(input.asBool().unwrapOr(false));
-            return;
-        }
-        if (input.isString()) {
-            writer.string(input.asString().unwrapOr(""));
-            return;
-        }
-        if (input.isArray()) {
-            auto arrRes = input.asArray();
-            if (!arrRes.isOk()) {
-                writer.array(0);
-                return;
-            }
-            auto arr = arrRes.unwrap();
-            writer.array(arr.size());
-            for (auto const& value : arr) {
-                encode(value);
-            }
-            return;
-        }
-
-        auto asInt = input.asInt();
-        if (asInt) {
-            writer.integer(asInt.unwrap());
-            return;
-        }
-
-        auto asDouble = input.asDouble();
-        if (asDouble) {
-            writer.floating(asDouble.unwrap());
-            return;
-        }
-
-        auto serialized = input.dump();
-        auto parsed = matjson::parse(serialized);
-        if (!parsed) {
-            writer.nil();
-            return;
-        }
-
-        auto reparsed = parsed.unwrap();
-        if (reparsed.isArray()) {
-            auto arrRes = reparsed.asArray();
-            if (!arrRes.isOk()) {
-                writer.array(0);
-                return;
-            }
-            auto arr = arrRes.unwrap();
-            writer.array(arr.size());
-            for (auto const& value : arr) {
-                encode(value);
-            }
-            return;
-        }
-
-        if (reparsed.isObject()) {
-            // iterate via matjson; comma-splitting corrupts values with ':' or quotes.
-            std::vector<std::pair<std::string, matjson::Value>> entries;
-            for (auto const& [key, value] : reparsed) {
-                entries.emplace_back(std::string(key), value);
-            }
-            writer.map(entries.size());
-            for (auto const& [key, value] : entries) {
-                writer.key(key);
-                encode(value);
-            }
-            return;
-        }
-
-        writer.nil();
-    };
-
-    encode(value);
-    return writer.bytes();
 }
 
 void PaiDrawManager::authenticate() {

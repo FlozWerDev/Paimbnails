@@ -1,10 +1,11 @@
 #include "CommentTextSelector.hpp"
+#include "CommentTextLayout.hpp"
+#include "Localization.hpp"
 #include "SpriteHelper.hpp"
-#include <Geode/Geode.hpp>
 #include <algorithm>
 #include <cmath>
 #include <cctype>
-#include <unordered_map>
+#include <functional>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -12,232 +13,129 @@ using namespace paimon;
 
 namespace {
 CommentTextSelector* g_activeSelector = nullptr;
-
-constexpr float kTouchPaddingX = 8.f;
-constexpr float kTouchPaddingY = 6.f;
 constexpr float kMinSelectionDistance = 6.f;
-constexpr float kLineGap = 3.f;
+constexpr float kLongPressDelay = 0.45f;
+constexpr float kTouchPadX = 4.f;
+constexpr float kTouchPadY = 3.f;
 
-struct LayoutToken {
-    enum class Kind {
-        Text,
-        Space,
-        Newline,
-        Emote,
-    };
+class SelectionMenu : public CCMenu {
+public:
+    std::function<bool(CCPoint const&)> acceptsTouch;
 
-    Kind kind = Kind::Text;
-    size_t start = 0;
-    size_t end = 0;
-    std::string text;
+    static SelectionMenu* create() {
+        auto* menu = new SelectionMenu();
+        if (menu->init()) {
+            menu->autorelease();
+            return menu;
+        }
+        delete menu;
+        return nullptr;
+    }
+
+    bool ccTouchBegan(CCTouch* touch, CCEvent* event) override {
+        if (acceptsTouch && !acceptsTouch(touch->getLocation())) return false;
+        return CCMenu::ccTouchBegan(touch, event);
+    }
 };
 
-std::string stripGDColorCodes(std::string const& text) {
-    std::string result;
-    result.reserve(text.size());
-
-    size_t index = 0;
-    while (index < text.size()) {
-        if (text[index] == '<' && index + 1 < text.size()) {
-            if (text[index + 1] == 'c' && index + 3 < text.size() && text[index + 3] == '>') {
-                index += 4;
-                continue;
-            }
-            if (index + 3 < text.size() && text[index + 1] == '/' && text[index + 2] == 'c' && text[index + 3] == '>') {
-                index += 4;
-                continue;
-            }
-        }
-
-        result += text[index];
-        ++index;
-    }
-
-    return result;
+int characterClass(std::string const& text, size_t index) {
+    auto ch = static_cast<unsigned char>(text[index]);
+    if (std::isspace(ch)) return 0;
+    return ch >= 0x80 || std::isalnum(ch) || ch == '_' ? 1 : 2;
 }
-
-bool isValidEmoteName(std::string const& name) {
-    if (name.size() < 2) return false;
-
-    for (char ch : name) {
-        if (!std::isalnum(static_cast<unsigned char>(ch)) && ch != '_' && ch != '-') {
-            return false;
-        }
-    }
-
-    return true;
 }
-
-bool isGDColorCode(std::string const& inner) {
-    if (inner.size() == 2 && inner[0] == 'c') return true;
-    return inner == "/c";
-}
-
-bool tryConsumeEmoteToken(std::string const& text, size_t start, size_t& end) {
-    if (start >= text.size()) return false;
-
-    if (text[start] == ':') {
-        auto close = text.find(':', start + 1);
-        if (close != std::string::npos && close > start + 1) {
-            auto name = text.substr(start + 1, close - start - 1);
-            if (isValidEmoteName(name)) {
-                end = close + 1;
-                return true;
-            }
-        }
-    }
-
-    if (text[start] == '<') {
-        auto close = text.find('>', start + 1);
-        if (close != std::string::npos && close > start + 1) {
-            auto name = text.substr(start + 1, close - start - 1);
-            if (!isGDColorCode(name) && isValidEmoteName(name)) {
-                end = close + 1;
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
-std::vector<LayoutToken> tokenizeForLayout(std::string const& text) {
-    std::vector<LayoutToken> tokens;
-    size_t index = 0;
-
-    while (index < text.size()) {
-        if (text[index] == '\n') {
-            tokens.push_back({LayoutToken::Kind::Newline, index, index + 1, "\n"});
-            ++index;
-            continue;
-        }
-
-        size_t emoteEnd = 0;
-        if (tryConsumeEmoteToken(text, index, emoteEnd)) {
-            tokens.push_back({
-                LayoutToken::Kind::Emote,
-                index,
-                emoteEnd,
-                text.substr(index, emoteEnd - index)
-            });
-            index = emoteEnd;
-            continue;
-        }
-
-        bool isSpace = std::isspace(static_cast<unsigned char>(text[index])) != 0;
-        auto kind = isSpace ? LayoutToken::Kind::Space : LayoutToken::Kind::Text;
-        size_t start = index;
-
-        while (index < text.size()) {
-            if (text[index] == '\n') break;
-            if (tryConsumeEmoteToken(text, index, emoteEnd)) break;
-
-            bool sameSpaceClass = (std::isspace(static_cast<unsigned char>(text[index])) != 0) == isSpace;
-            if (!sameSpaceClass) break;
-            ++index;
-        }
-
-        tokens.push_back({kind, start, index, text.substr(start, index - start)});
-    }
-
-    return tokens;
-}
-} // namespace
 
 CommentTextSelector* CommentTextSelector::create(
-    std::string const& text, CCNode* textNode, CCSize const& cellSize,
-    std::string const& fontFile)
-{
-    auto ret = new CommentTextSelector();
-    if (ret && ret->init(text, textNode, cellSize, fontFile)) {
+    std::string const& text, CCNode* textNode, CCSize const& cellSize) {
+    auto* ret = new CommentTextSelector();
+    if (ret->init(text, textNode, cellSize)) {
         ret->autorelease();
         return ret;
     }
-    CC_SAFE_DELETE(ret);
+    delete ret;
     return nullptr;
 }
 
 bool CommentTextSelector::init(
-    std::string const& text, CCNode* textNode, CCSize const& cellSize,
-    std::string const& fontFile)
-{
+    std::string const& text, CCNode* textNode, CCSize const& cellSize) {
     if (!CCLayer::init()) return false;
-
-    this->setContentSize(cellSize);
-    this->setAnchorPoint({0.f, 0.f});
-    this->setPosition({0.f, 0.f});
-    this->setID("paimon-text-selector"_spr);
-
-    // must not swallow touches (see registerwithtouchdispatcher).
-    this->setTouchEnabled(true);
-    this->setTouchMode(kCCTouchesOneByOne);
-    this->setTouchPriority(-90);
+    setAnchorPoint({0.f, 0.f});
+    setPosition({0.f, 0.f});
+    setID("paimon-text-selector"_spr);
+    setTouchMode(kCCTouchesOneByOne);
+    setTouchPriority(-130);
+    setTouchEnabled(true);
 
     m_highlight = PaimonDrawNode::create();
     m_highlight->setVisible(false);
-    this->addChild(m_highlight, 50);
-
-    m_copyMenu = CCMenu::create();
+    addChild(m_highlight);
+    auto* copyMenu = SelectionMenu::create();
+    if (!copyMenu) return false;
+    copyMenu->acceptsTouch = [this](CCPoint const& point) { return isVisibleAt(point); };
+    m_copyMenu = copyMenu;
     m_copyMenu->setPosition({0.f, 0.f});
-    m_copyMenu->setContentSize(cellSize);
+    m_copyMenu->setTouchPriority(-131);
     m_copyMenu->setVisible(false);
-    this->addChild(m_copyMenu, 100);
-
-    refresh(text, textNode, cellSize, fontFile);
-
+    addChild(m_copyMenu, 1);
+    bool spanish = Localization::get().getLanguage() == Localization::Language::SPANISH;
+    auto makeButton = [&](char const* labelText, SEL_MenuHandler handler, float x,
+                          CCLabelBMFont*& labelOut) {
+        auto* background = SpriteHelper::createColorPanel(56.f, 22.f, {45, 90, 175}, 240, 5.f);
+        labelOut = CCLabelBMFont::create(labelText, "bigFont.fnt");
+        labelOut->limitLabelWidth(48.f, 0.26f, 0.15f);
+        labelOut->setPosition({28.f, 11.f});
+        background->addChild(labelOut);
+        auto* button = CCMenuItemSpriteExtra::create(background, this, handler);
+        button->setPosition({x, 0.f});
+        m_copyMenu->addChild(button);
+    };
+    makeButton(spanish ? "Copiar" : "Copy", menu_selector(CommentTextSelector::onCopy), -30.f, m_copyLabel);
+    makeButton(spanish ? "Todo" : "All", menu_selector(CommentTextSelector::onSelectAll), 30.f, m_allLabel);
+    refresh(text, textNode, cellSize);
     return true;
 }
 
 void CommentTextSelector::onExit() {
+    unschedule(schedule_selector(CommentTextSelector::onLongPress));
     unlockParentScroll();
-    if (g_activeSelector == this) {
-        g_activeSelector = nullptr;
-    }
+    m_touch = nullptr;
+    m_selecting = false;
+    dismissSelection();
     CCLayer::onExit();
 }
 
 void CommentTextSelector::refresh(
-    std::string const& text,
-    CCNode* textNode,
-    CCSize const& cellSize,
-    std::string const& fontFile)
-{
+    std::string const& text, CCNode* textNode, CCSize const& cellSize) {
+    unschedule(schedule_selector(CommentTextSelector::onLongPress));
     unlockParentScroll();
-    if (g_activeSelector == this) {
-        g_activeSelector = nullptr;
-    }
-
-    m_fullText = stripGDColorCodes(text);
-    m_fontFile = fontFile.empty() ? "chatFont.fnt" : fontFile;
+    dismissSelection();
+    m_touch = nullptr;
+    m_fullText = paimon::text::stripColorCodes(text);
     m_textNode = textNode;
     m_selecting = false;
-    m_startPos = ccp(0.f, 0.f);
-    m_endPos = ccp(0.f, 0.f);
-    m_startIndex = 0;
-    m_endIndex = 0;
-
-    this->setContentSize(cellSize);
-    if (m_copyMenu) {
-        m_copyMenu->setContentSize(cellSize);
-    }
-
-    dismissCopyButton();
-    rebuildLayoutCache();
+    m_gestureCancelled = false;
+    m_tapCount = 0;
+    setContentSize(cellSize);
+    m_copyMenu->setContentSize(cellSize);
+    m_lines.clear();
+    m_textRect = CCRectZero;
 }
 
 void CommentTextSelector::registerWithTouchDispatcher() {
-    // keep propagation for clickable mentions; movement is locked while selecting.
-    CCDirector::get()->getTouchDispatcher()
-        ->addTargetedDelegate(this, getTouchPriority(), false);
+    // Mobile must keep receiving list scroll gestures until the long press activates.
+#ifdef GEODE_IS_DESKTOP
+    constexpr bool swallowTouches = true;
+#else
+    constexpr bool swallowTouches = false;
+#endif
+    CCDirector::get()->getTouchDispatcher()->addTargetedDelegate(this, getTouchPriority(), swallowTouches);
 }
 
 void CommentTextSelector::lockParentScroll() {
     unlockParentScroll();
-
     for (auto* parent = getParent(); parent; parent = parent->getParent()) {
         auto* scroll = typeinfo_cast<CCScrollLayerExt*>(parent);
         if (!scroll) continue;
-
         m_parentScroll = scroll;
         m_parentScrollWasDisabled = scroll->m_disableMovement;
         scroll->m_disableMovement = true;
@@ -252,443 +150,413 @@ void CommentTextSelector::unlockParentScroll() {
     m_parentScroll = {};
 }
 
+bool CommentTextSelector::isVisibleAt(CCPoint const& worldPoint) {
+    for (auto* node = static_cast<CCNode*>(this); node; node = node->getParent()) {
+        if (!node->isVisible()) return false;
+        if (auto* scroll = typeinfo_cast<CCScrollLayerExt*>(node)) {
+            auto size = scroll->getContentSize();
+            if (scroll->m_cutContent && !CCRect(0.f, 0.f, size.width, size.height).containsPoint(
+                    scroll->convertToNodeSpace(worldPoint))) return false;
+        }
+    }
+    CCNode* topAlert = nullptr;
+    if (auto* scene = CCDirector::get()->getRunningScene()) {
+        for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
+            if (!child->isVisible() || !typeinfo_cast<FLAlertLayer*>(child)) continue;
+            if (!topAlert || child->getZOrder() > topAlert->getZOrder() ||
+                (child->getZOrder() == topAlert->getZOrder() &&
+                 child->getOrderOfArrival() > topAlert->getOrderOfArrival())) topAlert = child;
+        }
+    }
+    if (!topAlert) return true;
+    for (auto* node = static_cast<CCNode*>(this); node; node = node->getParent()) {
+        if (node == topAlert) return true;
+    }
+    return false;
+}
+
 bool CommentTextSelector::ccTouchBegan(CCTouch* touch, CCEvent*) {
-    if (!m_textNode || !m_textNode->getParent()) return false;
-
-    rebuildLayoutCache();
-    if (m_textRect.size.width <= 0.f || m_textRect.size.height <= 0.f) return false;
-
-    if (g_activeSelector && g_activeSelector != this) return false;
-
-    auto touchLocal = this->convertTouchToNodeSpace(touch);
-    if (!getExpandedTextRect().containsPoint(touchLocal)) {
+    auto textNode = m_textNode.lock();
+    if (m_touch || !textNode || !textNode->getParent() || !textNode->isVisible() ||
+        !isVisibleAt(touch->getLocation())) return false;
+    if (m_lines.empty()) rebuildLayoutCache();
+    auto point = convertTouchToNodeSpace(touch);
+    if (m_lines.empty() || !getExpandedTextRect().containsPoint(point)) {
+        if (g_activeSelector == this) dismissSelection();
         return false;
     }
-
-    dismissCopyButton();
-
+    if (g_activeSelector && g_activeSelector != this) {
+        if (g_activeSelector->m_touch) return false;
+        g_activeSelector->dismissSelection();
+    }
+    dismissSelection();
+    m_touch = touch;
+    m_startPos = m_endPos = point;
+    m_startIndex = m_endIndex = pointToTextIndex(point);
+    m_gestureCancelled = false;
+#ifdef GEODE_IS_DESKTOP
     g_activeSelector = this;
     m_selecting = true;
     lockParentScroll();
-    updateSelection(touchLocal, true);
-
+#else
+    m_selecting = false;
+    scheduleOnce(schedule_selector(CommentTextSelector::onLongPress), kLongPressDelay);
+#endif
     return true;
 }
 
 void CommentTextSelector::ccTouchMoved(CCTouch* touch, CCEvent*) {
-    if (!m_selecting) return;
-
-    updateSelection(this->convertTouchToNodeSpace(touch));
+    if (!m_touch || touch->getID() != m_touch->getID() || m_gestureCancelled) return;
+    auto point = convertTouchToNodeSpace(touch);
+    if (!m_selecting) {
+        if (ccpDistance(touch->getStartLocation(), touch->getLocation()) >= kMinSelectionDistance) {
+            unschedule(schedule_selector(CommentTextSelector::onLongPress));
+            m_gestureCancelled = true;
+        }
+        return;
+    }
+    if (ccpDistance(m_startPos, point) >= kMinSelectionDistance) cancelMentionTouches();
+    updateSelection(point);
 }
 
 void CommentTextSelector::ccTouchEnded(CCTouch* touch, CCEvent*) {
-    if (!m_selecting) return;
-
-    updateSelection(this->convertTouchToNodeSpace(touch));
+    if (!m_touch || touch->getID() != m_touch->getID()) return;
+    unschedule(schedule_selector(CommentTextSelector::onLongPress));
+    auto point = convertTouchToNodeSpace(touch);
+    bool dragged = ccpDistance(touch->getStartLocation(), touch->getLocation()) >= kMinSelectionDistance;
+    bool hasSelection = m_selecting && m_startIndex != m_endIndex;
+    if (m_selecting && dragged) {
+        cancelMentionTouches();
+        updateSelection(point);
+        hasSelection = m_startIndex != m_endIndex;
+    }
     unlockParentScroll();
     m_selecting = false;
-    if (g_activeSelector == this) {
-        g_activeSelector = nullptr;
-    }
-
-    float dragDist = ccpDistance(m_startPos, m_endPos);
-    if (dragDist < kMinSelectionDistance || m_startIndex == m_endIndex) {
-        dismissCopyButton();
+    m_touch = nullptr;
+    if (m_gestureCancelled) {
+        dismissSelection();
         return;
     }
-
-    updateHighlight();
-
-    m_copyMenu->removeAllChildren();
-    m_copyMenu->setVisible(true);
-
-    auto copyBg = SpriteHelper::createColorPanel(
-        50.f, 22.f, {60, 120, 220}, 210, 6.f);
-    auto copyLabel = CCLabelBMFont::create("Copy", "bigFont.fnt");
-    copyLabel->setScale(0.3f);
-    copyLabel->setPosition({25.f, 11.f});
-    copyBg->addChild(copyLabel, 1);
-    copyBg->setContentSize({50.f, 22.f});
-
-    auto copyBtn = CCMenuItemSpriteExtra::create(
-        copyBg, this, menu_selector(CommentTextSelector::onCopy));
-
-    float minBtnX = m_textRect.origin.x + std::min(24.f, m_textRect.size.width * 0.5f);
-    float maxBtnX = std::max(minBtnX, m_textRect.getMaxX() - std::min(24.f, m_textRect.size.width * 0.5f));
-    float btnX = std::clamp(m_endPos.x, minBtnX, maxBtnX);
-    float btnY = std::min(m_textRect.getMaxY() + 14.f, this->getContentSize().height - 15.f);
-    copyBtn->setPosition({btnX, btnY});
-    m_copyMenu->addChild(copyBtn);
+    if (hasSelection) {
+        m_tapCount = 0;
+        updateHighlight();
+        showCopyMenu();
+        return;
+    }
+    if (dragged) {
+        dismissSelection();
+        m_tapCount = 0;
+        return;
+    }
+    auto now = std::chrono::steady_clock::now();
+    bool repeated = std::chrono::duration<float>(now - m_lastTap).count() < 0.35f &&
+                    ccpDistance(point, m_lastTapPosition) < 10.f;
+    m_tapCount = repeated ? m_tapCount + 1 : 1;
+    m_lastTap = now;
+    m_lastTapPosition = point;
+    if (m_tapCount == 2) {
+        selectWord(point);
+        showCopyMenu();
+    } else if (m_tapCount >= 3) {
+        onSelectAll(nullptr);
+        m_tapCount = 0;
+    } else {
+        dismissSelection();
+        g_activeSelector = this;
+#ifdef GEODE_IS_DESKTOP
+        activateMention(point);
+#endif
+    }
 }
 
-void CommentTextSelector::ccTouchCancelled(CCTouch*, CCEvent*) {
+void CommentTextSelector::ccTouchCancelled(CCTouch* touch, CCEvent*) {
+    if (!m_touch || touch->getID() != m_touch->getID()) return;
+    unschedule(schedule_selector(CommentTextSelector::onLongPress));
     unlockParentScroll();
+    m_touch = nullptr;
     m_selecting = false;
-    if (g_activeSelector == this) {
-        g_activeSelector = nullptr;
+    dismissSelection();
+}
+
+void CommentTextSelector::onLongPress(float) {
+    if (!m_touch || m_gestureCancelled || !isVisibleAt(m_touch->getLocation())) return;
+    g_activeSelector = this;
+    m_selecting = true;
+    lockParentScroll();
+    cancelMentionTouches();
+    selectWord(m_startPos);
+}
+
+void CommentTextSelector::cancelMentionTouches() {
+    auto textNode = m_textNode.lock();
+    if (!textNode || !m_touch) return;
+    for (auto* child : CCArrayExt<CCNode*>(textNode->getChildren())) {
+        if (auto* menu = typeinfo_cast<CCMenu*>(child);
+            menu && menu->m_eState == kCCMenuStateTrackingTouch) {
+            if (menu->m_pSelectedItem) menu->m_pSelectedItem->unselected();
+            // The dispatcher still owes the menu its touch-ended callback.
+            menu->m_pSelectedItem = nullptr;
+        }
     }
-    dismissCopyButton();
+}
+
+void CommentTextSelector::activateMention(CCPoint const& point) {
+    auto textNode = m_textNode.lock();
+    if (!textNode) return;
+    auto world = convertToWorldSpace(point);
+    for (auto* child : CCArrayExt<CCNode*>(textNode->getChildren())) {
+        auto* menu = typeinfo_cast<CCMenu*>(child);
+        if (!menu) continue;
+        for (auto* node : CCArrayExt<CCNode*>(menu->getChildren())) {
+            auto* item = typeinfo_cast<CCMenuItem*>(node);
+            if (!item || !item->isEnabled()) continue;
+            auto size = item->getContentSize();
+            if (CCRect(0.f, 0.f, size.width, size.height).containsPoint(item->convertToNodeSpace(world))) {
+                item->activate();
+                return;
+            }
+        }
+    }
 }
 
 void CommentTextSelector::rebuildLayoutCache() {
     m_lines.clear();
     m_textRect = CCRectZero;
-    m_availableWidth = 0.f;
-    m_lineHeight = 0.f;
-    m_effectiveFontScale = 1.f;
+    auto textNode = m_textNode.lock();
+    if (!textNode || !textNode->getParent()) return;
 
-    if (!m_textNode || !m_textNode->getParent()) return;
-
-    auto nodeSize = m_textNode->getContentSize();
-    auto anchor = m_textNode->getAnchorPoint();
-    auto position = m_textNode->getPosition();
-    float scaleX = m_textNode->getScaleX();
-    float scaleY = m_textNode->getScaleY();
-    float leftX = position.x - nodeSize.width * anchor.x * scaleX;
-    float topY = position.y + nodeSize.height * (1.f - anchor.y) * scaleY;
-    auto topLeftWorld = m_textNode->getParent()->convertToWorldSpace({leftX, topY});
-    auto topLeftLocal = this->convertToNodeSpace(topLeftWorld);
-
-    float baseScale = std::max(m_textNode->getScale(), 0.01f);
-    float baseWidth = nodeSize.width * std::max(scaleX, 0.01f);
-    float baseHeight = nodeSize.height * std::max(scaleY, 0.01f);
-
-    if (auto* textArea = typeinfo_cast<TextArea*>(m_textNode)) {
-        baseScale = std::max(textArea->getScale(), 0.01f);
-        if (textArea->m_width > 0.f) {
-            baseWidth = textArea->m_width * std::max(textArea->getScaleX(), 0.01f);
+    auto addSegment = [&](size_t start, size_t end, CCRect const& bounds) {
+        float center = bounds.getMidY();
+        auto line = std::find_if(m_lines.begin(), m_lines.end(), [&](DisplayLine const& entry) {
+            return std::abs(entry.bounds.getMidY() - center) <
+                   std::max(2.f, std::min(entry.bounds.size.height, bounds.size.height) * 0.25f);
+        });
+        DisplaySegment segment{start, end, bounds};
+        if (line == m_lines.end()) m_lines.push_back({bounds, {segment}});
+        else {
+            line->bounds = paimon::text::unionRect(line->bounds, bounds);
+            line->segments.push_back(segment);
         }
-        if (textArea->m_height > 0.f) {
-            baseHeight = textArea->m_height * std::max(textArea->getScaleY(), 0.01f);
+    };
+    auto addLabel = [&](CCLabelBMFont* label, size_t start, size_t end) {
+        for (auto const& glyph : paimon::text::labelGlyphs(label, m_fullText, start, end)) {
+            addSegment(glyph.start, glyph.end, paimon::text::convertRect(label, this, glyph.bounds));
         }
-    }
-
-    m_availableWidth = std::max(baseWidth, 8.f);
-
-    float adjustedScale = baseScale;
-    if (m_fullText.size() > 80) {
-        float reduction = std::min(static_cast<float>(m_fullText.size() - 80) * 0.004f, 0.25f);
-        adjustedScale = baseScale * (1.f - reduction);
-    }
-
-    auto measureFontHeight = [](std::string const& fontFile, float scale) {
-        auto probe = CCLabelBMFont::create("Ag", fontFile.c_str());
-        if (!probe) {
-            probe = CCLabelBMFont::create("Ag", "chatFont.fnt");
-        }
-        if (!probe) return 16.f * std::max(scale, 0.01f);
-        return probe->getContentSize().height * std::max(scale, 0.01f);
     };
 
-    bool hasOverlay = this->getParent() && this->getParent()->getChildByID("paimon-emote-overlay"_spr);
-    if (hasOverlay || m_fontFile != "chatFont.fnt") {
-        m_effectiveFontScale = adjustedScale;
-        float refHeight = measureFontHeight("chatFont.fnt", adjustedScale);
-        float emoteHeight = refHeight * 1.2f;
-        m_lineHeight = std::max(emoteHeight, refHeight) + kLineGap;
-    } else {
-        m_effectiveFontScale = adjustedScale;
-        float fontHeight = measureFontHeight(m_fontFile, m_effectiveFontScale);
-        m_lineHeight = std::max(fontHeight + 2.f, 12.f);
-
-        if (auto* textArea = typeinfo_cast<TextArea*>(m_textNode)) {
-            if (textArea->m_label && textArea->m_label->m_lines && textArea->m_label->m_lines->count() > 0) {
-                float lineCount = static_cast<float>(textArea->m_label->m_lines->count());
-                if (lineCount > 0.f) {
-                    m_lineHeight = std::max(baseHeight / lineCount, m_lineHeight);
+    if (auto* area = typeinfo_cast<TextArea*>(textNode.data())) {
+        size_t offset = 0;
+        if (area->m_label && area->m_label->m_lines) {
+            for (auto* line : CCArrayExt<CCLabelBMFont*>(area->m_label->m_lines)) {
+                std::string lineText = paimon::text::stripColorCodes(line->getString());
+                if (lineText.empty()) continue;
+                auto start = m_fullText.find(lineText, offset);
+                if (start == std::string::npos) continue;
+                offset = start + lineText.size();
+                DisplayLine display;
+                bool haveBounds = false;
+                for (auto const& glyph : paimon::text::labelGlyphs(line, m_fullText, start, offset)) {
+                    auto bounds = paimon::text::convertRect(line, this, glyph.bounds);
+                    display.bounds = haveBounds ? paimon::text::unionRect(display.bounds, bounds) : bounds;
+                    display.segments.push_back({glyph.start, glyph.end, bounds});
+                    haveBounds = true;
                 }
-            } else {
-                m_lineHeight = std::max(baseHeight, m_lineHeight);
-            }
-        } else {
-            m_lineHeight = std::max(baseHeight, m_lineHeight);
-        }
-    }
-
-    std::unordered_map<unsigned char, float> charWidthCache;
-    auto measureTextWidth = [&](std::string const& text) {
-        if (text.empty()) return 0.f;
-        auto label = CCLabelBMFont::create(text.c_str(), m_fontFile.c_str());
-        if (!label) {
-            label = CCLabelBMFont::create(text.c_str(), "chatFont.fnt");
-        }
-        if (!label) {
-            return static_cast<float>(text.size()) * 6.f * std::max(m_effectiveFontScale, 0.01f);
-        }
-        return label->getContentSize().width * std::max(m_effectiveFontScale, 0.01f);
-    };
-
-    auto measureCharWidth = [&](char ch) {
-        auto key = static_cast<unsigned char>(ch);
-        if (auto found = charWidthCache.find(key); found != charWidthCache.end()) {
-            return found->second;
-        }
-
-        float width = measureTextWidth(std::string(1, ch));
-        charWidthCache.emplace(key, width);
-        return width;
-    };
-
-    auto tokens = tokenizeForLayout(m_fullText);
-    DisplayLine currentLine;
-    currentLine.rawStart = 0;
-    float cursorX = 0.f;
-    float emoteWidth = std::max(m_lineHeight - kLineGap, 10.f);
-    float emoteAdvance = emoteWidth + 2.f;
-
-    auto finalizeLine = [&](size_t nextRawStart) {
-        currentLine.width = cursorX;
-        if (!currentLine.segments.empty()) {
-            currentLine.rawEnd = currentLine.segments.back().rawEnd;
-        } else {
-            currentLine.rawEnd = currentLine.rawStart;
-        }
-        m_lines.push_back(std::move(currentLine));
-        currentLine = DisplayLine();
-        currentLine.rawStart = nextRawStart;
-        cursorX = 0.f;
-    };
-
-    for (auto const& token : tokens) {
-        if (token.kind == LayoutToken::Kind::Newline) {
-            finalizeLine(token.end);
-            continue;
-        }
-
-        float tokenWidth = token.kind == LayoutToken::Kind::Emote
-            ? emoteAdvance
-            : measureTextWidth(token.text);
-
-        if (cursorX + tokenWidth > m_availableWidth && cursorX > 0.f) {
-            finalizeLine(token.start);
-            if (token.kind == LayoutToken::Kind::Space) {
-                currentLine.rawStart = token.end;
-                continue;
+                if (haveBounds) m_lines.push_back(std::move(display));
             }
         }
-
-        if (token.kind == LayoutToken::Kind::Emote) {
-            currentLine.segments.push_back({token.start, token.end, cursorX, cursorX + emoteWidth});
-            cursorX += emoteAdvance;
-            continue;
-        }
-
-        for (size_t index = token.start; index < token.end; ++index) {
-            float charWidth = measureCharWidth(m_fullText[index]);
-            currentLine.segments.push_back({index, index + 1, cursorX, cursorX + charWidth});
-            cursorX += charWidth;
-        }
+    } else if (auto* label = typeinfo_cast<CCLabelBMFont*>(textNode.data())) {
+        addLabel(label, 0, m_fullText.size());
+    } else {
+        auto visit = [&](auto const& self, CCNode* node) -> void {
+            if (auto* range = typeinfo_cast<paimon::text::CommentTextRange*>(
+                    node->getUserObject("paimon-comment-text-range"))) {
+                if (range->atomic) {
+                    auto size = node->getContentSize();
+                    addSegment(range->start, range->end, paimon::text::convertRect(
+                        node, this, {0.f, 0.f, size.width, size.height}));
+                } else if (auto* label = typeinfo_cast<CCLabelBMFont*>(node)) {
+                    addLabel(label, range->start, range->end);
+                }
+                return;
+            }
+            for (auto* child : CCArrayExt<CCNode*>(node->getChildren())) self(self, child);
+        };
+        visit(visit, textNode.data());
     }
-
-    if (!tokens.empty() || m_fullText.empty()) {
-        finalizeLine(m_fullText.size());
+    std::sort(m_lines.begin(), m_lines.end(), [](DisplayLine const& first, DisplayLine const& second) {
+        return first.bounds.getMidY() > second.bounds.getMidY();
+    });
+    for (auto& line : m_lines) {
+        std::sort(line.segments.begin(), line.segments.end(),
+            [](DisplaySegment const& first, DisplaySegment const& second) {
+                return first.bounds.getMinX() < second.bounds.getMinX();
+            });
     }
-
-    if (m_lines.empty()) {
-        m_lines.push_back(DisplayLine());
+    if (!m_lines.empty()) {
+        m_textRect = m_lines.front().bounds;
+        for (auto const& line : m_lines) m_textRect = paimon::text::unionRect(m_textRect, line.bounds);
     }
-
-    float layoutHeight = std::max(baseHeight, m_lineHeight * static_cast<float>(m_lines.size()));
-    m_textRect = CCRect(topLeftLocal.x, topLeftLocal.y - layoutHeight, m_availableWidth, layoutHeight);
 }
 
-cocos2d::CCRect CommentTextSelector::getExpandedTextRect() const {
-    return CCRect(
-        m_textRect.origin.x - kTouchPaddingX,
-        m_textRect.origin.y - kTouchPaddingY,
-        m_textRect.size.width + kTouchPaddingX * 2.f,
-        m_textRect.size.height + kTouchPaddingY * 2.f
-    );
-}
-
-cocos2d::CCPoint CommentTextSelector::clampToTextRect(CCPoint const& point) const {
-    if (m_textRect.size.width <= 0.f || m_textRect.size.height <= 0.f) return point;
-
-    return {
-        std::clamp(point.x, m_textRect.origin.x, m_textRect.getMaxX()),
-        std::clamp(point.y, m_textRect.origin.y, m_textRect.getMaxY())
-    };
+CCRect CommentTextSelector::getExpandedTextRect() const {
+    return {m_textRect.origin.x - kTouchPadX, m_textRect.origin.y - kTouchPadY,
+            m_textRect.size.width + kTouchPadX * 2.f, m_textRect.size.height + kTouchPadY * 2.f};
 }
 
 size_t CommentTextSelector::pointToTextIndex(CCPoint const& point) const {
     if (m_lines.empty()) return 0;
-
-    auto clamped = clampToTextRect(point);
-    float relativeY = m_textRect.getMaxY() - clamped.y;
-    int lineIndex = static_cast<int>(relativeY / std::max(m_lineHeight, 1.f));
-    lineIndex = std::clamp(lineIndex, 0, static_cast<int>(m_lines.size()) - 1);
-
-    auto const& line = m_lines[static_cast<size_t>(lineIndex)];
-    if (line.segments.empty()) return line.rawStart;
-
-    float lineX = clamped.x - m_textRect.origin.x;
-    if (lineX <= line.segments.front().startX) {
-        return line.segments.front().rawStart;
+    if (point.y > m_textRect.getMaxY() + kTouchPadY) return 0;
+    if (point.y < m_textRect.getMinY() - kTouchPadY) return m_fullText.size();
+    auto line = std::min_element(m_lines.begin(), m_lines.end(),
+        [&](DisplayLine const& first, DisplayLine const& second) {
+            return std::abs(first.bounds.getMidY() - point.y) < std::abs(second.bounds.getMidY() - point.y);
+        });
+    for (auto const& segment : line->segments) {
+        if (point.x < segment.bounds.getMidX()) return segment.rawStart;
     }
-
-    for (auto const& segment : line.segments) {
-        float midpoint = (segment.startX + segment.endX) * 0.5f;
-        if (lineX < midpoint) return segment.rawStart;
-        if (lineX <= segment.endX) return segment.rawEnd;
-    }
-
-    return line.rawEnd;
+    return line->segments.back().rawEnd;
 }
 
-void CommentTextSelector::updateSelection(CCPoint const& point, bool resetStart) {
-    auto clampedPoint = clampToTextRect(point);
-    size_t index = pointToTextIndex(clampedPoint);
+void CommentTextSelector::updateSelection(CCPoint const& point) {
+    m_endPos = point;
+    m_endIndex = pointToTextIndex(point);
+    updateHighlight();
+}
 
-    if (resetStart) {
-        m_startPos = clampedPoint;
-        m_startIndex = index;
+void CommentTextSelector::selectWord(CCPoint const& point) {
+    if (m_fullText.empty()) return;
+    auto index = pointToTextIndex(point);
+    for (auto const& line : m_lines) {
+        for (auto const& segment : line.segments) {
+            if (segment.bounds.containsPoint(point)) {
+                index = segment.rawStart;
+                break;
+            }
+        }
     }
-
-    m_endPos = clampedPoint;
-    m_endIndex = index;
+    if (index == m_fullText.size()) index = paimon::text::prevCharacter(m_fullText, index);
+    for (auto const& line : m_lines) {
+        for (auto const& segment : line.segments) {
+            if (index >= segment.rawStart && index < segment.rawEnd &&
+                segment.rawEnd > paimon::text::nextCharacter(m_fullText, segment.rawStart)) {
+                g_activeSelector = this;
+                m_startIndex = segment.rawStart;
+                m_endIndex = segment.rawEnd;
+                updateHighlight();
+                return;
+            }
+        }
+    }
+    int kind = characterClass(m_fullText, index);
+    size_t start = index;
+    size_t end = paimon::text::nextCharacter(m_fullText, index);
+    while (start > 0) {
+        size_t previous = paimon::text::prevCharacter(m_fullText, start);
+        if (characterClass(m_fullText, previous) != kind) break;
+        start = previous;
+    }
+    while (end < m_fullText.size() && characterClass(m_fullText, end) == kind) {
+        end = paimon::text::nextCharacter(m_fullText, end);
+    }
+    g_activeSelector = this;
+    m_startIndex = start;
+    m_endIndex = end;
+    m_endPos = point;
     updateHighlight();
 }
 
 void CommentTextSelector::updateHighlight() {
-    if (!m_highlight || m_lines.empty()) return;
     m_highlight->clear();
-
-    size_t rawStart = std::min(m_startIndex, m_endIndex);
-    size_t rawEnd = std::max(m_startIndex, m_endIndex);
-    if (rawStart == rawEnd) {
-        m_highlight->setVisible(false);
-        return;
+    size_t start = std::min(m_startIndex, m_endIndex);
+    size_t end = std::max(m_startIndex, m_endIndex);
+    for (auto const& line : m_lines) {
+        bool found = false;
+        CCRect bounds;
+        for (auto const& segment : line.segments) {
+            if (segment.rawEnd <= start || segment.rawStart >= end) continue;
+            bounds = found ? paimon::text::unionRect(bounds, segment.bounds) : segment.bounds;
+            found = true;
+        }
+        if (!found) continue;
+        CCPoint points[] = {{bounds.getMinX(), bounds.getMinY()}, {bounds.getMaxX(), bounds.getMinY()},
+                            {bounds.getMaxX(), bounds.getMaxY()}, {bounds.getMinX(), bounds.getMaxY()}};
+        m_highlight->drawPolygon(points, 4, {0.25f, 0.5f, 1.f, 0.22f}, 0.5f, {0.4f, 0.65f, 1.f, 0.55f});
     }
+    m_highlight->setVisible(start != end);
+}
 
-    struct Cursor {
-        size_t lineIndex = 0;
-        float x = 0.f;
-    };
-
-    auto locateIndex = [&](size_t rawIndex) {
-        Cursor cursor;
-
-        for (size_t lineIndex = 0; lineIndex < m_lines.size(); ++lineIndex) {
-            auto const& line = m_lines[lineIndex];
-            cursor.lineIndex = lineIndex;
-
-            if (line.segments.empty()) {
-                cursor.x = 0.f;
-                if (rawIndex <= line.rawEnd || lineIndex + 1 == m_lines.size()) {
-                    return cursor;
-                }
-                continue;
-            }
-
-            if (rawIndex <= line.segments.front().rawStart) {
-                cursor.x = line.segments.front().startX;
-                return cursor;
-            }
-
-            for (auto const& segment : line.segments) {
-                if (rawIndex <= segment.rawStart) {
-                    cursor.x = segment.startX;
-                    return cursor;
-                }
-                if (rawIndex <= segment.rawEnd) {
-                    cursor.x = segment.endX;
-                    return cursor;
-                }
-            }
-
-            cursor.x = line.width;
-            if (rawIndex <= line.rawEnd || lineIndex + 1 == m_lines.size()) {
-                return cursor;
-            }
-        }
-
-        return cursor;
-    };
-
-    auto startCursor = locateIndex(rawStart);
-    auto endCursor = locateIndex(rawEnd);
-
-    for (size_t lineIndex = startCursor.lineIndex; lineIndex <= endCursor.lineIndex; ++lineIndex) {
-        auto const& line = m_lines[lineIndex];
-        float left = 0.f;
-        float right = line.width;
-
-        if (lineIndex == startCursor.lineIndex) {
-            left = startCursor.x;
-        }
-        if (lineIndex == endCursor.lineIndex) {
-            right = endCursor.x;
-        }
-
-        if (right - left < 1.f) continue;
-
-        float top = m_textRect.getMaxY() - m_lineHeight * static_cast<float>(lineIndex);
-        float bottom = std::max(top - m_lineHeight, m_textRect.origin.y);
-        top = std::min(top - 1.f, m_textRect.getMaxY());
-        bottom = std::max(bottom + 1.f, m_textRect.origin.y);
-
-        CCPoint rect[4] = {
-            ccp(m_textRect.origin.x + left, bottom),
-            ccp(m_textRect.origin.x + right, bottom),
-            ccp(m_textRect.origin.x + right, top),
-            ccp(m_textRect.origin.x + left, top)
-        };
-
-        ccColor4F fillColor = {0.3f, 0.5f, 0.9f, 0.25f};
-        ccColor4F borderColor = {0.4f, 0.6f, 1.0f, 0.45f};
-        m_highlight->drawPolygon(rect, 4, fillColor, 1.0f, borderColor);
-    }
-
-    m_highlight->setVisible(true);
+void CommentTextSelector::showCopyMenu() {
+    if (m_startIndex == m_endIndex) return;
+    g_activeSelector = this;
+    bool spanish = Localization::get().getLanguage() == Localization::Language::SPANISH;
+    m_copyLabel->setString(spanish ? "Copiar" : "Copy");
+    m_allLabel->setString(spanish ? "Todo" : "All");
+    auto size = getContentSize();
+    float x = std::clamp(m_endPos.x, 60.f, std::max(60.f, size.width - 60.f));
+    float y = m_endPos.y + 20.f;
+    if (y > size.height - 12.f) y = m_endPos.y - 20.f;
+    y = std::clamp(y, 12.f, std::max(12.f, size.height - 12.f));
+    m_copyMenu->setPosition({x, y});
+    m_copyMenu->setVisible(true);
 }
 
 std::string CommentTextSelector::getSelectedText() const {
-    if (m_fullText.empty()) return "";
-
-    size_t startIdx = std::min(m_startIndex, m_endIndex);
-    size_t endIdx = std::max(m_startIndex, m_endIndex);
-    endIdx = std::min(endIdx, m_fullText.size());
-
-    if (startIdx >= endIdx || startIdx >= m_fullText.size()) return "";
-    return m_fullText.substr(startIdx, endIdx - startIdx);
+    auto start = std::min(m_startIndex, m_endIndex);
+    auto end = std::min(std::max(m_startIndex, m_endIndex), m_fullText.size());
+    return start < end ? m_fullText.substr(start, end - start) : "";
 }
 
 void CommentTextSelector::onCopy(CCObject*) {
-    std::string selected = getSelectedText();
-    if (!selected.empty()) {
-        geode::utils::clipboard::write(selected);
-    }
-
-    dismissCopyButton();
+    auto selected = getSelectedText();
+    if (!selected.empty()) geode::utils::clipboard::write(selected);
+    dismissSelection();
 }
 
-void CommentTextSelector::dismissCopyButton() {
-    if (m_copyMenu) {
-        m_copyMenu->removeAllChildren();
-        m_copyMenu->setVisible(false);
-    }
+void CommentTextSelector::onSelectAll(CCObject*) {
+    m_startIndex = 0;
+    m_endIndex = m_fullText.size();
+    updateHighlight();
+    showCopyMenu();
+}
+
+void CommentTextSelector::dismissSelection() {
+    if (g_activeSelector == this) g_activeSelector = nullptr;
+    m_startIndex = m_endIndex = 0;
+    if (m_copyMenu) m_copyMenu->setVisible(false);
     if (m_highlight) {
         m_highlight->clear();
         m_highlight->setVisible(false);
     }
 }
 
-void CommentTextSelector::attach(
-    CCNode* parent,
-    std::string const& text,
-    CCNode* textNode,
-    std::string const& fontFile)
-{
-    if (!parent || text.empty()) return;
-
-    if (auto* existing = typeinfo_cast<CommentTextSelector*>(parent->getChildByID("paimon-text-selector"_spr))) {
-        existing->refresh(text, textNode, parent->getContentSize(), fontFile);
-        existing->setZOrder(200);
+void CommentTextSelector::attach(CCNode* parent, std::string const& text, CCNode* textNode) {
+    if (!parent) return;
+    auto* existing = typeinfo_cast<CommentTextSelector*>(parent->getChildByID("paimon-text-selector"_spr));
+    if (!textNode || text.empty()) {
+        if (existing) existing->removeFromParent();
         return;
     }
-
-    auto selector = create(text, textNode, parent->getContentSize(), fontFile);
-    if (selector) {
-        parent->addChild(selector, 200);
+    auto size = parent->getContentSize();
+    if ((size.width <= 0.f || size.height <= 0.f) && parent->getParent()) size = parent->getParent()->getContentSize();
+    if (existing) {
+        existing->refresh(text, textNode, size);
+        return;
     }
+    if (auto* selector = create(text, textNode, size)) parent->addChild(selector, 200);
+}
+
+bool CommentTextSelector::handleKeyboard(KeyboardInputData& data) {
+    if (!g_activeSelector || data.action != KeyboardInputData::Action::Press) return false;
+    auto* selector = g_activeSelector;
+    if (!selector->isRunning() || !selector->isVisibleAt(selector->convertToWorldSpace(selector->m_endPos))) return false;
+    bool shortcut = (data.modifiers.value & (KeyboardModifier::Control | KeyboardModifier::Super)) != 0;
+    if (shortcut && data.key == KEY_C) selector->onCopy(nullptr);
+    else if (shortcut && data.key == KEY_A) selector->onSelectAll(nullptr);
+    else if (data.key == KEY_Escape) selector->dismissSelection();
+    else return false;
+    return true;
+}
+
+$execute {
+    KeyboardInputEvent().listen(&CommentTextSelector::handleKeyboard).leak();
 }

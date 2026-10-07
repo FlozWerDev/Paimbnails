@@ -19,6 +19,15 @@ namespace detail {
 
 inline constexpr int kFadeActionTag = 0x46414445;
 
+inline bool forwardsOpacityWithoutCascade(cocos2d::CCNode* node) {
+    return geode::cast::typeinfo_cast<TextArea*>(node) ||
+        geode::cast::typeinfo_cast<MultilineBitmapFont*>(node) ||
+        geode::cast::typeinfo_cast<cocos2d::CCLabelBMFont*>(node) ||
+        geode::cast::typeinfo_cast<cocos2d::CCMenuItemSprite*>(node) ||
+        geode::cast::typeinfo_cast<cocos2d::CCMenuItemLabel*>(node) ||
+        geode::cast::typeinfo_cast<cocos2d::extension::CCScale9Sprite*>(node);
+}
+
 inline void reveal(cocos2d::CCNode* node, RevealOpts const& opts, float delay, int depth) {
     if (!node || depth > 10) return;
     if (auto* rgba = geode::cast::typeinfo_cast<cocos2d::CCRGBAProtocol*>(node)) {
@@ -43,7 +52,7 @@ inline void reveal(cocos2d::CCNode* node, RevealOpts const& opts, float delay, i
             action->setTag(kFadeActionTag);
             node->runAction(action);
         }
-        if (rgba->isCascadeOpacityEnabled()) return;
+        if (rgba->isCascadeOpacityEnabled() || forwardsOpacityWithoutCascade(node)) return;
     }
     if (!opts.recurse) return;
     for (auto* child : geode::cocos::CCArrayExt<cocos2d::CCNode*>(node->getChildren())) {

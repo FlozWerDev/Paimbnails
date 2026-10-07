@@ -6,6 +6,7 @@
 
 #include <Geode/binding/MusicDownloadManager.hpp>
 #include <Geode/utils/general.hpp>
+#include <Geode/utils/string.hpp>
 #include <Geode/utils/web.hpp>
 
 #include <algorithm>
@@ -26,33 +27,15 @@ constexpr char const* kBrowserUserAgent =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 Chrome/126 Safari/537.36";
 
-std::string trim(std::string value) {
-    auto isSpace = [](unsigned char c) { return std::isspace(c) != 0; };
-    while (!value.empty() && isSpace(static_cast<unsigned char>(value.front()))) {
-        value.erase(value.begin());
-    }
-    while (!value.empty() && isSpace(static_cast<unsigned char>(value.back()))) {
-        value.pop_back();
-    }
-    return value;
-}
-
-void replaceAll(std::string& text, std::string const& from, std::string const& to) {
-    std::size_t pos = 0;
-    while ((pos = text.find(from, pos)) != std::string::npos) {
-        text.replace(pos, from.size(), to);
-        pos += to.size();
-    }
-}
-
 std::string decodeHtml(std::string value) {
-    replaceAll(value, "&quot;", "\"");
-    replaceAll(value, "&#039;", "'");
-    replaceAll(value, "&#39;", "'");
-    replaceAll(value, "&lt;", "<");
-    replaceAll(value, "&gt;", ">");
-    replaceAll(value, "&amp;", "&");
-    return trim(std::move(value));
+    using geode::utils::string::replace;
+    value = replace(value, "&quot;", "\"");
+    value = replace(value, "&#039;", "'");
+    value = replace(value, "&#39;", "'");
+    value = replace(value, "&lt;", "<");
+    value = replace(value, "&gt;", ">");
+    value = replace(value, "&amp;", "&");
+    return geode::utils::string::trim(value);
 }
 
 std::string between(
@@ -327,7 +310,7 @@ void finishDownload(int songId, NewgroundsDownloadCallback& callback, Newgrounds
 } // namespace
 
 int parseNewgroundsSongId(std::string const& text) {
-    auto trimmed = trim(text);
+    auto trimmed = geode::utils::string::trim(text);
     if (trimmed.empty()) return 0;
 
     constexpr char const* listenMarker = "/audio/listen/";
@@ -370,7 +353,7 @@ void fetchWeeklyPicks(NewgroundsListCallback callback) {
 }
 
 void searchNewgroundsSongs(std::string const& query, NewgroundsListCallback callback) {
-    auto cleaned = trim(query);
+    auto cleaned = geode::utils::string::trim(query);
     auto url = "https://www.newgrounds.com/search/summary?suitabilities=etm&terms=" +
         urlEncode(cleaned);
 

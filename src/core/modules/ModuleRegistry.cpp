@@ -1,8 +1,11 @@
 #include "ModuleRegistry.hpp"
 #include "../Settings.hpp"
 #include <Geode/loader/Mod.hpp>
+#include <Geode/utils/string.hpp>
 #include <algorithm>
 #include <atomic>
+#include <cctype>
+#include <string_view>
 #include <unordered_map>
 
 using namespace geode::prelude;
@@ -45,10 +48,15 @@ std::atomic<uint64_t>& cachedVersion() {
 }
 
 std::string lower(std::string_view text) {
-    std::string out(text);
-    std::transform(out.begin(), out.end(), out.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return out;
+    return geode::utils::string::toLower(std::string(text));
+}
+
+bool containsFolded(char const* haystack, std::string const& needle) {
+    if (!haystack) return false;
+    if (needle.empty()) return true;
+    std::string_view hay(haystack);
+    return std::search(hay.begin(), hay.end(), needle.begin(), needle.end(),
+        [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == b; }) != hay.end();
 }
 
 constexpr int kMaxParentDepth = 8;
@@ -162,13 +170,16 @@ void setEnabled(std::string_view id, bool enabled) {
 std::vector<Module const*> search(std::string_view query) {
     auto needle = lower(query);
     std::vector<Module const*> out;
+    if (needle.empty()) {
+        for (auto const& mod : all()) out.push_back(&mod);
+        return out;
+    }
     auto hit = [&needle](char const* field) {
-        return field && lower(field).find(needle) != std::string::npos;
+        return containsFolded(field, needle);
     };
     for (auto const& mod : all()) {
         // the list shows localized names, so search those too.
-        if (needle.empty()
-            || hit(mod.id)
+        if (hit(mod.id)
             || hit(mod.name)
             || hit(mod.description)
             || hit(mod.group)

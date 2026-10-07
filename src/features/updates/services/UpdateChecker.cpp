@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <limits>
 
 using namespace geode::prelude;
@@ -127,9 +128,13 @@ int UpdateChecker::compareVersions(std::string const& baseStr, std::string const
     return 0;
 }
 
-void UpdateChecker::checkAsync(bool force) {
+void UpdateChecker::checkAsync(bool force, std::function<void(bool, std::string)> onDone) {
+    if (onDone) m_checkWaiters.push_back(std::move(onDone));
     if (m_state.load() == State::Checking) return;
-    if (m_checkLaunched && !force) return;
+    if (m_checkLaunched && !force) {
+        this->finishCheck(m_state.load() != State::Failed, m_lastError);
+        return;
+    }
     m_checkLaunched = true;
     m_state.store(State::Checking);
 
@@ -139,6 +144,10 @@ void UpdateChecker::checkAsync(bool force) {
         .timeout(std::chrono::seconds(15))
         .userAgent("Paimbnails-UpdateChecker/1.0")
         .header("Accept", "application/vnd.github+json");
+    if (force) {
+        req.header("Cache-Control", "no-cache")
+            .param("_paimbnails", std::chrono::steady_clock::now().time_since_epoch().count());
+    }
 
     WebHelper::dispatchOwned(
         m_checkTask,
@@ -154,32 +163,33 @@ void UpdateChecker::checkAsync(bool force) {
 
 void UpdateChecker::onCheckResponse(web::WebResponse& res) {
     if (paimon::isRuntimeShuttingDown()) return;
-    if (!res.ok()) {
-        m_lastError = fmt::format("HTTP {}", res.code());
-        log::warn("[UpdateChecker] check failed: {}", m_lastError);
+    auto fail = [this](std::string error) {
+        m_lastError = std::move(error);
         m_state.store(State::Failed);
+        log::warn("[UpdateChecker] check failed: {}", m_lastError);
+        this->finishCheck(false, m_lastError);
+    };
+    if (!res.ok()) {
+        fail(fmt::format("HTTP {}", res.code()));
         return;
     }
 
     auto body = res.string().unwrapOr("");
     if (body.empty()) {
-        m_lastError = "empty body";
-        m_state.store(State::Failed);
+        fail("empty body");
         return;
     }
 
     auto parsed = matjson::parse(body);
     if (!parsed.isOk()) {
-        m_lastError = "invalid json";
-        m_state.store(State::Failed);
+        fail("invalid json");
         return;
     }
     auto json = parsed.unwrap();
 
     std::string tag = jsonString(json, "tag_name");
     if (tag.empty()) {
-        m_lastError = "no tag_name";
-        m_state.store(State::Failed);
+        fail("no tag_name");
         return;
     }
     m_remoteTag = tag;
@@ -195,15 +205,22 @@ void UpdateChecker::onCheckResponse(web::WebResponse& res) {
     }
 
     int cmp = compareVersions(m_localVersion, m_remoteVersion);
-    if (cmp > 0) {
-        m_state.store(State::UpdateAvailable);
-        if (paimon::settings::general::autoUpdate()) {
-            Loader::get()->queueInMainThread([]() {
-                UpdateChecker::get().autoDownloadIfNeeded();
-            });
-        }
-    } else {
-        m_state.store(State::UpToDate);
+    m_state.store(cmp > 0 ? State::UpdateAvailable : State::UpToDate);
+    m_lastError.clear();
+    bool manualCheck = !m_checkWaiters.empty();
+    this->finishCheck(true, "");
+    if (cmp > 0 && !manualCheck && paimon::settings::general::autoUpdate()) {
+        Loader::get()->queueInMainThread([]() {
+            UpdateChecker::get().autoDownloadIfNeeded();
+        });
+    }
+}
+
+void UpdateChecker::finishCheck(bool ok, std::string error) {
+    auto waiters = std::move(m_checkWaiters);
+    m_checkWaiters.clear();
+    for (auto const& callback : waiters) {
+        if (callback) callback(ok, error);
     }
 }
 
@@ -303,6 +320,10 @@ void UpdateChecker::downloadRelease(
     std::function<void(uint64_t, uint64_t)> onProgress,
     std::function<void(bool, std::string)> onDone
 ) {
+    if (this->isDownloading()) {
+        if (onDone) onDone(false, "a download is already in progress");
+        return;
+    }
     if (url.empty()) {
         if (onDone) onDone(false, "no download url");
         return;
@@ -318,7 +339,10 @@ void UpdateChecker::downloadRelease(
 
     auto req = web::WebRequest()
         .timeout(std::chrono::minutes(5))
-        .userAgent("Paimbnails-UpdateChecker/1.0");
+        .userAgent("Paimbnails-UpdateChecker/1.0")
+        // Release assets can be replaced without changing their tag or filename.
+        .header("Cache-Control", "no-cache")
+        .param("_paimbnails", std::chrono::steady_clock::now().time_since_epoch().count());
 
     req.onProgress([progressShared, this](web::WebProgress const& p) {
         if (!progressShared || !*progressShared) return;
@@ -437,6 +461,7 @@ void UpdateChecker::autoDownloadIfNeeded() {
     if (m_state.load() != State::UpdateAvailable) return;
     if (m_downloadUrl.empty()) return;
     if (this->hasPendingInstall()) return;
+    if (this->isDownloading()) return;
 
     bool expected = false;
     if (!m_autoDownloadStarted.compare_exchange_strong(expected, true)) return;
@@ -470,6 +495,7 @@ void UpdateChecker::autoDownloadIfNeeded() {
 
 void UpdateChecker::cancelDownload() {
     m_downloadCancelled.store(true);
+    m_downloadTask.cancel();
 }
 
 void UpdateChecker::shutdown() {
@@ -477,6 +503,7 @@ void UpdateChecker::shutdown() {
     m_checkTask.cancel();
     m_releasesTask.cancel();
     m_downloadTask.cancel();
+    m_checkWaiters.clear();
     m_releaseWaiters.clear();
     m_releasesLoading = false;
 }

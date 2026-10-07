@@ -8,8 +8,6 @@
 
 namespace paimon::updates {
 
-// update center: current state, update button, and full published-version
-// history for rolling back to an older one.
 class UpdateCenterPopup : public PaimonPopup {
 public:
     static UpdateCenterPopup* create();
@@ -29,6 +27,7 @@ protected:
     void startInstall(ReleaseInfo const& release);
 
     void onPrimary(cocos2d::CCObject*);
+    void onRefresh(cocos2d::CCObject*);
     void pollState(float dt);
 
 private:
@@ -36,15 +35,18 @@ private:
     cocos2d::CCLabelBMFont* m_versionLabel = nullptr;
     cocos2d::CCLabelBMFont* m_statusLabel = nullptr;
     CCMenuItemSpriteExtra* m_primaryBtn = nullptr;
+    CCMenuItemSpriteExtra* m_refreshBtn = nullptr;
 
     cocos2d::CCNode* m_listHolder = nullptr;
     geode::ScrollLayer* m_historyScroll = nullptr;
 
     bool m_showPrereleases = false;
     bool m_historyFailed = false;
+    bool m_refreshing = false;
 
     UpdateChecker::State m_lastState = UpdateChecker::State::Idle;
     bool m_lastPending = false;
+    bool m_lastDownloading = false;
 };
 
 } // namespace paimon::updates

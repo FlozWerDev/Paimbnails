@@ -72,7 +72,8 @@ bool UpdateCenterPopup::init() {
         "Check for and install Paimbnails updates. The top card shows your <cy>current version</c> and "
         "status; the list is the full <cy>version history</c> (tap the info icon for release notes). "
         "<cg>Install</c> is green, <cr>Revert</c> to an older build is red. Toggle <co>Betas</c> to "
-        "include prereleases and <co>Auto update</c> to update on launch.");
+        "include prereleases and <co>Auto update</c> to update on launch. <cy>Refresh</c> downloads "
+        "and reinstalls the latest release, even if its version number has not changed.");
 
     m_headerMenu = CCMenu::create();
     m_headerMenu->setPosition({0.f, 0.f});
@@ -138,6 +139,18 @@ bool UpdateCenterPopup::init() {
     autoToggle->toggle(paimon::settings::general::autoUpdate());
     m_headerMenu->addChild(autoToggle);
 
+    auto refreshSpr = ButtonSprite::create(
+        tr("pai.updates.refresh", "Refresh").c_str(), "bigFont.fnt", "GJ_button_02.png", .8f
+    );
+    refreshSpr->setScale(0.4f);
+    m_refreshBtn = CCMenuItemSpriteExtra::create(
+        refreshSpr, this, menu_selector(UpdateCenterPopup::onRefresh)
+    );
+    m_refreshBtn->setID("reinstall-latest-btn"_spr);
+    m_refreshBtn->setPosition({270.f, 25.f});
+    m_headerMenu->addChild(m_refreshBtn);
+    this->refreshHeader();
+
     auto ghSpr = ButtonSprite::create(
         tr("pai.updates.github", "GitHub").c_str(), "bigFont.fnt", "GJ_button_05.png", .8f
     );
@@ -181,16 +194,28 @@ void UpdateCenterPopup::refreshHeader() {
     auto& checker = UpdateChecker::get();
     auto state = checker.state();
     bool pending = checker.hasPendingInstall();
+    bool downloading = checker.isDownloading();
 
     m_lastState = state;
     m_lastPending = pending;
+    m_lastDownloading = downloading;
 
     std::string status;
     ccColor3B statusColor = {170, 180, 200};
     std::string btnText = tr("pai.updates.check", "Check");
     char const* btnSprite = "GJ_button_02.png";
 
-    if (pending) {
+    if (m_refreshing) {
+        status = tr("pai.update.checking", "Checking for updates...");
+        statusColor = {120, 200, 255};
+        btnText = tr("pai.updates.checking.btn", "Wait...");
+        btnSprite = "GJ_button_04.png";
+    } else if (downloading) {
+        status = tr("pai.update.title", "Downloading update");
+        statusColor = {120, 200, 255};
+        btnText = tr("pai.updates.checking.btn", "Wait...");
+        btnSprite = "GJ_button_04.png";
+    } else if (pending) {
         auto version = checker.pendingVersion();
         if (version.empty()) version = checker.remoteVersion();
         status = fmt::format(
@@ -248,11 +273,21 @@ void UpdateCenterPopup::refreshHeader() {
         spr, this, menu_selector(UpdateCenterPopup::onPrimary)
     );
     m_primaryBtn->setPosition({340.f, 218.f});
+    bool enabled = !m_refreshing && !downloading && state != UpdateChecker::State::Checking;
+    m_primaryBtn->setEnabled(enabled);
     m_headerMenu->addChild(m_primaryBtn);
+
+    if (m_refreshBtn) {
+        m_refreshBtn->setEnabled(enabled);
+        if (auto* sprite = typeinfo_cast<ButtonSprite*>(m_refreshBtn->getNormalImage())) {
+            sprite->setOpacity(enabled ? 255 : 120);
+        }
+    }
 }
 
 void UpdateCenterPopup::onPrimary(CCObject*) {
     auto& checker = UpdateChecker::get();
+    if (m_refreshing || checker.isDownloading()) return;
 
     if (checker.hasPendingInstall()) {
         checker.restartToApplyPendingUpdate();
@@ -278,9 +313,38 @@ void UpdateCenterPopup::onPrimary(CCObject*) {
     }
 }
 
+void UpdateCenterPopup::onRefresh(CCObject*) {
+    auto& checker = UpdateChecker::get();
+    if (m_refreshing || checker.isDownloading() || checker.state() == UpdateChecker::State::Checking) return;
+
+    m_refreshing = true;
+    checker.checkAsync(true, [self = WeakRef<UpdateCenterPopup>(this)](bool ok, std::string error) {
+        auto popup = self.lock();
+        if (!popup || !popup->isRunning()) return;
+        popup->m_refreshing = false;
+        popup->refreshHeader();
+        if (!ok) {
+            PaimonNotify::show(
+                fmt::format(fmt::runtime(tr("pai.updates.check_failed", "Check failed: {}")), error),
+                NotificationIcon::Error
+            );
+            return;
+        }
+
+        auto& checker = UpdateChecker::get();
+        ReleaseInfo latest;
+        latest.version = checker.remoteVersion();
+        latest.tag = checker.remoteTag();
+        latest.downloadUrl = checker.downloadUrl();
+        popup->startInstall(latest);
+    });
+    this->refreshHeader();
+}
+
 void UpdateCenterPopup::pollState(float) {
     auto& checker = UpdateChecker::get();
-    if (checker.state() == m_lastState && checker.hasPendingInstall() == m_lastPending) return;
+    if (checker.state() == m_lastState && checker.hasPendingInstall() == m_lastPending &&
+        checker.isDownloading() == m_lastDownloading) return;
     this->refreshHeader();
 }
 
@@ -534,6 +598,7 @@ void UpdateCenterPopup::confirmInstall(ReleaseInfo const& release) {
 }
 
 void UpdateCenterPopup::startInstall(ReleaseInfo const& release) {
+    if (m_refreshing || UpdateChecker::get().isDownloading()) return;
     if (release.downloadUrl.empty()) {
         PaimonNotify::show(tr("pai.updates.no_file", "No file"), NotificationIcon::Error);
         return;
@@ -548,7 +613,10 @@ void UpdateCenterPopup::startInstall(ReleaseInfo const& release) {
             }
         }
     );
-    if (progress) progress->show();
+    if (progress) {
+        progress->show();
+        this->refreshHeader();
+    }
 }
 
 } // namespace paimon::updates

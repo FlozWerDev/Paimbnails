@@ -34,8 +34,7 @@ public:
 
     static UpdateChecker& get();
 
-    // runs once; force re-runs it from the update center.
-    void checkAsync(bool force = false);
+    void checkAsync(bool force = false, std::function<void(bool, std::string)> onDone = {});
 
     bool hasUpdate() const { return m_state.load() == State::UpdateAvailable; }
     State state() const { return m_state.load(); }
@@ -67,6 +66,7 @@ public:
     );
 
     bool hasPendingInstall() const;
+    bool isDownloading() const { return m_downloadTask.isPending(); }
 
     std::string const& pendingVersion() const { return m_pendingVersion; }
 
@@ -88,11 +88,13 @@ private:
     UpdateChecker();
 
     void onCheckResponse(geode::utils::web::WebResponse& res);
+    void finishCheck(bool ok, std::string error);
     void onReleasesResponse(geode::utils::web::WebResponse& res);
     void finishReleasesFetch(bool ok, std::string error);
 
     std::atomic<State> m_state{State::Idle};
     bool m_checkLaunched = false;
+    std::vector<std::function<void(bool, std::string)>> m_checkWaiters;
 
     std::string m_localVersion;
     std::string m_remoteVersion;

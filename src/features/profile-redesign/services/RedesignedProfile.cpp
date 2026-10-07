@@ -654,14 +654,6 @@ static void setMenuTouchPriority(CCNode* root, int priority) {
 static void styleAccountCommentCell(CommentCell* cell, float w, float h) {
     if (!cell) return;
     stripCommentDecorations(cell);
-    if (cell->m_iconSprite) {
-        for (cocos2d::CCNode* n = cell->m_iconSprite; n && n != cell; n = n->getParent()) {
-            if (auto* item = typeinfo_cast<cocos2d::CCMenuItem*>(n)) {
-                item->setEnabled(false);
-                break;
-            }
-        }
-    }
     if (cell->m_backgroundLayer) cell->m_backgroundLayer->setVisible(false);
     if (auto* p = cell->getChildByID("paimon-comment-bg-panel"_spr)) p->setVisible(false);
 

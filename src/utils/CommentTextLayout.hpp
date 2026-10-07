@@ -106,7 +106,7 @@ inline std::vector<GlyphRange> labelGlyphs(cocos2d::CCLabelBMFont* label,
     float lineHeight = label->getContentSize().height / lineCount;
     float pixelScale = std::max(CCDirector::get()->getContentScaleFactor(), 0.01f);
     std::vector<CCNode*> glyphs(glyphCount, nullptr);
-    for (auto* child : CCArrayExt<CCNode*>(label->getChildren())) {
+    for (auto* child : geode::cocos::CCArrayExt<CCNode*>(label->getChildren())) {
         int const tag = child->getTag();
         if (tag >= 0 && static_cast<size_t>(tag) < glyphCount && !glyphs[tag]) {
             glyphs[tag] = child;

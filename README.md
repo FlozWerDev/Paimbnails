@@ -1,6 +1,6 @@
 # Paimbnails
 
-A Geode mod for Geometry Dash packed with thumbnails, visual effects, community features, and more.
+A Geode mod for Geometry Dash with thumbnails, visual effects, and a Paimon companion.
 
 ## Features
 
@@ -29,4 +29,4 @@ Requires [Geode](https://geode-sdk.org/install) and Geometry Dash 2.2081.
 ## Links
 
 - Discord: https://discord.gg/5N5vpSfZwY
-- Source: https://github.com/Paimonteam/paimbnails-compilation
+- Source: https://github.com/FlozWerDev/Paimbnails

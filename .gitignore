@@ -3,6 +3,7 @@
 
 # keep this file
 !.gitignore
+!LICENSE
 
 # keep logo.png
 !Logo.png

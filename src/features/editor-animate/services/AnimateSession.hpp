@@ -81,6 +81,7 @@ public:
     void togglePlay();
     void stopPlayback();
     float playTime() const { return m_time; }
+    float activeDuration();
     // where the playhead sits; differs from the cursor while playing unfollowed.
     int displayedFrame();
     void tick(float dt);

@@ -101,15 +101,7 @@ void syncPages(LevelSelectLayer* select) {
     }
 
     auto& store = SlotStore::get();
-    std::vector<std::string> desired;
-    for (auto const& key : store.pageOrder()) {
-        int officialId = 0;
-        if (SlotStore::officialKeyId(key, officialId)) {
-            if (!store.isOfficialHidden(officialId)) desired.push_back(key);
-        } else if (store.pageVisible(key)) {
-            desired.push_back(key);
-        }
-    }
+    auto desired = store.visiblePages();
     // levelselect with no page at all is outside what the game handles.
     if (desired.empty()) return;
 

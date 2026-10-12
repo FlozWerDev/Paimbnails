@@ -554,17 +554,15 @@ std::size_t AnimateSession::assignObjects(
     if (!editor || group <= 0) return 0;
     auto const strip = frameGroups(clip);
     std::size_t assigned = 0;
-    std::vector<GameObject*> touched;
     for (auto* object : objects) {
         for (int other : strip) {
             if (other != group && hasGroup(object, other)) object->removeFromGroup(other);
         }
         if (!hasGroup(object, group)) object->addToGroup(group);
         if (hasGroup(object, group)) ++assigned;
-        touched.push_back(object);
     }
     editor->recreateGroups();
-    syncUpdated(touched);
+    syncUpdated(objects);
     touch(clip);
     return assigned;
 }
@@ -709,6 +707,12 @@ int AnimateSession::shownFrame(int clipIndex) {
         t -= step.duration;
     }
     return static_cast<int>(steps.back().frame);
+}
+
+float AnimateSession::activeDuration() {
+    if (!activeClip()) return 0.f;
+    rebuildSequences();
+    return sequenceDuration(m_sequences[static_cast<std::size_t>(m_doc.activeClip)]);
 }
 
 int AnimateSession::displayedFrame() {

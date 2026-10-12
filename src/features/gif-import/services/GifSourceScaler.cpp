@@ -198,7 +198,15 @@ bool reduceOnGpu(
 std::shared_ptr<SourceAnimation> blurSource(
     std::shared_ptr<SourceAnimation> source, float radius
 ) {
-    auto target = std::make_shared<SourceAnimation>(*source);
+    auto target = std::make_shared<SourceAnimation>();
+    target->width = source->width;
+    target->height = source->height;
+    target->frames.resize(source->frames.size());
+    for (std::size_t index = 0; index < source->frames.size(); ++index) {
+        target->frames[index].delayMs = source->frames[index].delayMs;
+        target->frames[index].rgba.resize(
+            static_cast<std::size_t>(target->width) * target->height * 4);
+    }
     auto* director = CCDirector::get();
     auto* shader = director && director->getOpenGLView()
         ? paimon::shaders::getGifBlurShader() : nullptr;

@@ -5,6 +5,8 @@
 #include <Geode/utils/general.hpp>
 #include <Geode/utils/string.hpp>
 
+#include "../../../utils/JsonHelper.hpp"
+
 #include <fmt/format.h>
 
 #include <algorithm>
@@ -176,22 +178,18 @@ void SlotStore::ensureLoaded() {
 
     auto const& root = parsed.unwrap();
 
-    if (root.contains("slots") && root["slots"].isArray()) {
-        for (auto const& entry : root["slots"].asArray().unwrapOr(std::vector<matjson::Value>{})) {
-            if (auto slot = slotFromJson(entry)) {
-                m_slots.push_back(std::move(*slot));
-            }
+    paimon::json::forEachInArray(root["slots"], [&](matjson::Value const& entry) {
+        if (auto slot = slotFromJson(entry)) {
+            m_slots.push_back(std::move(*slot));
         }
-    }
+    });
 
-    if (root.contains("hidden") && root["hidden"].isArray()) {
-        for (auto const& entry : root["hidden"].asArray().unwrapOr(std::vector<matjson::Value>{})) {
-            int id = static_cast<int>(entry.asInt().unwrapOr(0));
-            if (isOfficialId(id) && !this->isOfficialHidden(id)) {
-                m_hidden.push_back(id);
-            }
+    paimon::json::forEachInArray(root["hidden"], [&](matjson::Value const& entry) {
+        int id = static_cast<int>(entry.asInt().unwrapOr(0));
+        if (isOfficialId(id) && !this->isOfficialHidden(id)) {
+            m_hidden.push_back(id);
         }
-    }
+    });
 
     this->loadOrder(root);
 }
@@ -210,17 +208,15 @@ void SlotStore::loadOrder(matjson::Value const& root) {
         }
     };
 
-    if (root.contains("order") && root["order"].isArray()) {
-        for (auto const& entry : root["order"].asArray().unwrapOr(std::vector<matjson::Value>{})) {
-            std::string const key = entry.asString().unwrapOr("");
-            int officialId = 0;
-            if (officialKeyId(key, officialId)) {
-                pushOnce(key);
-            } else if (isSlotKey(key) && hasSlot(key.substr(2))) {
-                pushOnce(key);
-            }
+    paimon::json::forEachInArray(root["order"], [&](matjson::Value const& entry) {
+        std::string const key = entry.asString().unwrapOr("");
+        int officialId = 0;
+        if (officialKeyId(key, officialId)) {
+            pushOnce(key);
+        } else if (isSlotKey(key) && hasSlot(key.substr(2))) {
+            pushOnce(key);
         }
-    }
+    });
 
     // anything unknown to the saved order keeps working: officials hold
     // their vanilla spot, appended slots go last in list order.

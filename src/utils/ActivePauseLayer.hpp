@@ -28,6 +28,43 @@ namespace paimon {
         slot.compare_exchange_strong(expected, nullptr, std::memory_order_acq_rel);
     }
 
+    inline bool isPauseLayerClosing(PauseLayer* layer) {
+        return layer && layer->getUserObject("paimon-pause-closing");
+    }
+
+    inline void setPauseLayerClosing(PauseLayer* layer, bool closing) {
+        if (layer) {
+            layer->setUserObject("paimon-pause-closing",
+                closing ? cocos2d::CCBool::create(true) : nullptr);
+        }
+    }
+
+    inline bool isPauseLayerOpen(PauseLayer* layer) {
+        if (!layer || !layer->getParent() || isPauseLayerClosing(layer)) return false;
+        auto* director = cocos2d::CCDirector::get();
+        auto* scene = director ? director->getRunningScene() : nullptr;
+        auto* root = static_cast<cocos2d::CCNode*>(layer);
+        while (root->getParent()) root = root->getParent();
+        return scene && root == scene;
+    }
+
+    inline PauseLayer* findOpenPauseLayerInScene() {
+        auto* director = cocos2d::CCDirector::get();
+        auto* scene = director ? director->getRunningScene() : nullptr;
+        auto* children = scene ? scene->getChildren() : nullptr;
+        if (!children) return nullptr;
+
+        PauseLayer* fallback = nullptr;
+        auto* active = getActivePauseLayer();
+        for (auto* obj : geode::cocos::CCArrayExt<cocos2d::CCObject*>(children)) {
+            auto* layer = geode::cast::typeinfo_cast<PauseLayer*>(obj);
+            if (!layer || isPauseLayerClosing(layer)) continue;
+            if (layer == active) return layer;
+            fallback = layer;
+        }
+        return fallback;
+    }
+
     // tell pausezoommanager (playlayer.cpp) the layer is closing so its ticker
     // stops calling showlayer()/setvisible() mid exit animation.
     void notifyPauseClosing();

@@ -10,6 +10,7 @@
 #include "../../../utils/RenderTexture.hpp"
 #include "../../../utils/ThreadTracker.hpp"
 #include "../../../utils/Localization.hpp"
+#include "../../../utils/ActivePauseLayer.hpp"
 #include "../../../framework/compat/ModCompat.hpp"
 
 #include <Geode/loader/Log.hpp>
@@ -505,11 +506,19 @@ std::vector<HiddenGameObjectState> hidePracticeAndEffectObjects() {
     return hidden;
 }
 
+void restoreCapturedNodeVisibility(CCNode* node, bool visible) {
+    if (auto* pause = typeinfo_cast<PauseLayer*>(node)) {
+        auto* play = PlayLayer::get();
+        if (!play || !play->m_isPaused || !paimon::isPauseLayerOpen(pause)) return;
+    }
+    node->setVisible(visible);
+}
+
 void restoreHiddenState() {
     if (!g_prep.active) return;
 
     for (auto& [weakNode, vis] : g_prep.hiddenNodes) {
-        if (auto node = weakNode.lock()) node->setVisible(vis);
+        if (auto node = weakNode.lock()) restoreCapturedNodeVisibility(node.data(), vis);
     }
 
     for (auto& h : g_prep.hiddenGameObjects) {
@@ -1503,7 +1512,7 @@ CCTexture2D* FramebufferCapture::renderPreviewTexture(
     if (hidP2) paimTogglePlayer(pl->m_player2, p2State, false);
 
     for (auto& [weakNode, vis] : hiddenNodes) {
-        if (auto node = weakNode.lock()) node->setVisible(vis);
+        if (auto node = weakNode.lock()) restoreCapturedNodeVisibility(node.data(), vis);
     }
     for (auto& h : hiddenObjs) {
         auto obj = h.obj.lock();

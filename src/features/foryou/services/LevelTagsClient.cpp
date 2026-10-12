@@ -1,5 +1,6 @@
 #include "LevelTagsClient.hpp"
 
+#include "../../../utils/AtomicFileWrite.hpp"
 #include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/WebHelper.hpp"
 
@@ -408,27 +409,8 @@ void LevelTagsClient::saveDiskCache() {
         m_dirty = false;
     }
 
-    auto path = cachePath();
-    auto tmpPath = std::filesystem::path(path).replace_extension(".tmp");
-
-    std::ofstream file(tmpPath, std::ios::binary | std::ios::trunc);
-    if (!file.is_open()) {
-        std::lock_guard lock(m_mutex);
-        m_dirty = true;
-        return;
-    }
-    file << root.dump();
-    file.close();
-    if (!file) {
-        std::lock_guard lock(m_mutex);
-        m_dirty = true;
-        return;
-    }
-
-    std::error_code ec;
-    std::filesystem::rename(tmpPath, path, ec);
-    if (ec) {
-        log::warn("[ForYou] Failed to persist Level Tags cache: {}", ec.message());
+    if (!paimon::file::writeAtomically(cachePath(), root.dump())) {
+        log::warn("[ForYou] Failed to persist Level Tags cache");
         std::lock_guard lock(m_mutex);
         m_dirty = true;
     }

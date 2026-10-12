@@ -186,9 +186,6 @@ namespace {
     void resetPlayLayerZoom(CCNode* playLayer);
     void clampPlayLayerZoomPosition(CCNode* playLayer);
 
-    // pauselayer appears a few frames after pausing. require a grace period
-    // before treating a missing layer as resume, or pause-zoom can reset early.
-
     class PauseZoomManager {
     public:
         static PauseZoomManager& get() {
@@ -208,12 +205,11 @@ namespace {
         }
 
         void onResume() {
-            if (!m_isPaused) return;
-            if (auto* playLayer = PlayLayer::get()) {
-                resetPlayLayerZoom(playLayer);
+            if (m_isPaused) {
+                if (auto* playLayer = PlayLayer::get()) {
+                    resetPlayLayerZoom(playLayer);
+                }
             }
-            restorePauseMenuVisible();
-            // clear the global flag even if the layer was already destroyed
             paimon::setPauseZoomHidden(false);
             m_isPaused = false;
             m_isPanning = false;
@@ -231,19 +227,18 @@ namespace {
         }
 
         void update(float dt) {
-            // use the pauselayer itself; other mods may bypass pausegame().
             auto* playLayer = PlayLayer::get();
-            // outside gameplay the scan can only ever lose, and it walks the
-            // scene's children with a typeinfo_cast each.
-            auto* pauseLayer = playLayer ? getPauseLayer() : nullptr;
-            bool pauseLayerPresent = (playLayer && pauseLayer);
+            if (!playLayer || !playLayer->m_isPaused) {
+                this->onResume();
+                return;
+            }
+            auto* pauseLayer = getPauseLayer();
 
-            if (pauseLayerPresent && !m_isPaused) {
+            if (pauseLayer && !m_isPaused) {
                 this->onPause();
             }
-            if (!pauseLayerPresent && m_isPaused) {
-                m_pauseLayerMissingFrames++;
-                if (m_pauseLayerMissingFrames > 120) this->onResume();
+            if (!pauseLayer) {
+                if (m_isPaused && ++m_pauseLayerMissingFrames > 120) this->onResume();
                 return;
             }
             m_pauseLayerMissingFrames = 0;
@@ -372,25 +367,10 @@ namespace {
         CCPoint m_lastMousePos = ccp(0.f, 0.f);
         CCPoint m_deltaMousePos = ccp(0.f, 0.f);
 
-    // pauselayer is destroyed on resume, so resolve it every frame.
         PauseLayer* getPauseLayer() {
-            auto* scene = CCDirector::get() ? CCDirector::get()->getRunningScene() : nullptr;
-            if (!scene) return nullptr;
-
-            if (auto* byID = typeinfo_cast<PauseLayer*>(scene->getChildByID("PauseLayer"))) {
-                return byID;
-            }
-
-            auto* children = scene->getChildren();
-            if (!children) return nullptr;
-
-            for (auto* obj : CCArrayExt<CCObject*>(children)) {
-                if (auto* pl = typeinfo_cast<PauseLayer*>(obj)) {
-                    return pl;
-                }
-            }
-
-            return nullptr;
+            auto* playLayer = PlayLayer::get();
+            if (!playLayer || !playLayer->m_isPaused) return nullptr;
+            return paimon::findOpenPauseLayerInScene();
         }
 
         bool hasBlockingPopup() {
@@ -436,6 +416,7 @@ namespace {
         }
 
         void restorePauseMenuVisible() {
+            if (paimon::isCaptureInProgress()) return;
             auto* pauseLayer = getPauseLayer();
             if (pauseLayer) {
                 if (pauseLayer->getParent() && !pauseLayer->isVisible()) pauseLayer->setVisible(true);
@@ -447,7 +428,7 @@ namespace {
 
         void zoomAtMouse(float delta) {
             auto* playLayer = PlayLayer::get();
-            if (!playLayer) return;
+            if (!playLayer || !playLayer->m_isPaused || !getPauseLayer()) return;
 
             auto contentSize = playLayer->getContentSize();
             auto screenSize = getGameplayScreenSize();
@@ -1112,14 +1093,24 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
     }
 
     $override
-    void pauseGame(bool value) {
+    void pauseGame(bool unfocused) {
         ensurePauseZoomTicker();
-        if (value) {
+        PlayLayer::pauseGame(unfocused);
+        if (m_isPaused) {
             PauseZoomManager::get().onPause();
-        } else {
-            PauseZoomManager::get().onResume();
         }
-        PlayLayer::pauseGame(value);
+    }
+
+    $override
+    void resume() {
+        PauseZoomManager::get().onResume();
+        PlayLayer::resume();
+    }
+
+    $override
+    void resumeAndRestart(bool fromStart) {
+        PauseZoomManager::get().onResume();
+        PlayLayer::resumeAndRestart(fromStart);
     }
 
     $override

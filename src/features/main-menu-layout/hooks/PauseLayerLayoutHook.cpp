@@ -36,11 +36,4 @@ class $modify(PaimonPauseLayerLayoutHook, PauseLayer) {
     void applyDeferredPauseLayout2(float) { this->applyDeferredPauseLayout(0.f); }
     void applyDeferredPauseLayout3(float) { this->applyDeferredPauseLayout(0.f); }
 
-    $override
-    void onExit() {
-        this->unschedule(schedule_selector(PaimonPauseLayerLayoutHook::applyDeferredPauseLayout));
-        this->unschedule(schedule_selector(PaimonPauseLayerLayoutHook::applyDeferredPauseLayout2));
-        this->unschedule(schedule_selector(PaimonPauseLayerLayoutHook::applyDeferredPauseLayout3));
-        PauseLayer::onExit();
-    }
 };

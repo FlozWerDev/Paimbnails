@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <set>
+#include <string_view>
 
 using namespace geode::prelude;
 
@@ -82,6 +83,7 @@ geode::Result<> LiveSlotRuntime::preview(TextureProject p) {
     if (paimon::isRuntimeShuttingDown()) return Err("Game is closing");
     if (!m_shader) m_shader = program();
     if (!m_shader) return Err("Pack Gen shader is unavailable on this GPU");
+    checkResourceSources();
     normalize(p);
     bool rebuild = m_sources.empty() || p.maskSoftness != m_project.maskSoftness ||
         p.clusterPrecision != m_project.clusterPrecision ||
@@ -115,6 +117,33 @@ geode::Result<> LiveSlotRuntime::disable() {
     GEODE_UNWRAP(SlotStore::get().setActiveSlot(""));
     m_enabled = false;
     return Ok();
+}
+
+void LiveSlotRuntime::checkResourceSources() {
+    auto* files = CCFileUtils::sharedFileUtils();
+    auto* director = CCDirector::get();
+    if (!files || !director) return;
+
+    auto const packCount = files->getTexturePackCount();
+    auto const contentScale = director->getContentScaleFactor();
+    auto const& paths = files->getSearchPaths();
+    bool const samePaths = paths.size() == m_sourceSearchPaths.size()
+        && std::equal(paths.begin(), paths.end(), m_sourceSearchPaths.begin(),
+            [](auto const& path, std::string const& saved) {
+                return std::string_view(path.c_str(), path.size()) == saved;
+            });
+    if (packCount == m_sourceTexturePackCount && contentScale == m_sourceContentScale && samePaths) return;
+
+    // Replacing a pack can change its paths while the pack count stays constant.
+    ++*m_generation;
+    m_sources.clear();
+    m_textures.clear();
+    m_pending = false;
+    m_sourceTexturePackCount = packCount;
+    m_sourceContentScale = contentScale;
+    m_sourceSearchPaths.clear();
+    m_sourceSearchPaths.reserve(paths.size());
+    for (auto const& path : paths) m_sourceSearchPaths.emplace_back(path.c_str(), path.size());
 }
 
 void LiveSlotRuntime::collectSources() {
@@ -333,6 +362,9 @@ void LiveSlotRuntime::onGLContextReload() {
     m_pending = false;
     m_sources.clear();
     m_textures.clear();
+    m_sourceTexturePackCount = 0;
+    m_sourceContentScale = 0.f;
+    m_sourceSearchPaths.clear();
     m_shader = nullptr;
     m_uniformsDirty = true;
 }

@@ -23,56 +23,16 @@ std::vector<CCPoint> regularPolygon(int sides, float radius, float phase) {
     return v;
 }
 
-// rounded regular polygon: arc each corner so scaled-up shapes read as
-// deliberate, not jagged.
-std::vector<CCPoint> roundedPolygon(int sides, float radius, float phase, float cornerFrac) {
-    std::vector<CCPoint> corners = regularPolygon(sides, radius, phase);
+template <typename Fraction>
+std::vector<CCPoint> roundedOutline(std::vector<CCPoint> const& corners, int arcSegs, Fraction cornerFraction) {
     std::vector<CCPoint> out;
-    int arcSegs = 7;
-    for (int i = 0; i < sides; i++) {
-        CCPoint prev = corners[(i + sides - 1) % sides];
-        CCPoint cur = corners[i];
-        CCPoint next = corners[(i + 1) % sides];
-        auto toward = [&](CCPoint a, CCPoint b, float t) {
-            return ccp(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
-        };
-        CCPoint a0 = toward(cur, prev, cornerFrac);
-        CCPoint a1 = toward(cur, next, cornerFrac);
-        for (int s = 0; s <= arcSegs; s++) {
-            float t = static_cast<float>(s) / arcSegs;
-            // quadratic bezier through the corner point.
-            float u = 1.f - t;
-            float x = u * u * a0.x + 2 * u * t * cur.x + t * t * a1.x;
-            float y = u * u * a0.y + 2 * u * t * cur.y + t * t * a1.y;
-            out.push_back(ccp(x, y));
-        }
-    }
-    return out;
-}
-
-std::vector<CCPoint> star(int points, float outerR, float innerR, float phase) {
-    int total = points * 2;
-    std::vector<CCPoint> v;
-    v.reserve(total);
-    for (int i = 0; i < total; i++) {
-        float a = kTwoPi * i / total + phase;
-        float r = (i % 2 == 0) ? outerR : innerR;
-        v.push_back(c(r * cosf(a), r * sinf(a)));
-    }
-    return v;
-}
-
-// softened star: round the tips so points don't alias when enlarged.
-std::vector<CCPoint> roundedStar(int points, float outerR, float innerR, float phase) {
-    std::vector<CCPoint> raw = star(points, outerR, innerR, phase);
-    std::vector<CCPoint> out;
-    int n = static_cast<int>(raw.size());
-    int arcSegs = 4;
+    int n = static_cast<int>(corners.size());
+    out.reserve(corners.size() * (arcSegs + 1));
     for (int i = 0; i < n; i++) {
-        CCPoint prev = raw[(i + n - 1) % n];
-        CCPoint cur = raw[i];
-        CCPoint next = raw[(i + 1) % n];
-        float frac = (i % 2 == 0) ? 0.42f : 0.30f;
+        CCPoint prev = corners[(i + n - 1) % n];
+        CCPoint cur = corners[i];
+        CCPoint next = corners[(i + 1) % n];
+        float frac = cornerFraction(i);
         auto toward = [&](CCPoint a, CCPoint b, float t) {
             return ccp(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
         };
@@ -87,6 +47,28 @@ std::vector<CCPoint> roundedStar(int points, float outerR, float innerR, float p
         }
     }
     return out;
+}
+
+std::vector<CCPoint> roundedPolygon(int sides, float radius, float phase, float cornerFrac) {
+    return roundedOutline(regularPolygon(sides, radius, phase), 7,
+        [cornerFrac](int) { return cornerFrac; });
+}
+
+std::vector<CCPoint> star(int points, float outerR, float innerR, float phase) {
+    int total = points * 2;
+    std::vector<CCPoint> v;
+    v.reserve(total);
+    for (int i = 0; i < total; i++) {
+        float a = kTwoPi * i / total + phase;
+        float r = (i % 2 == 0) ? outerR : innerR;
+        v.push_back(c(r * cosf(a), r * sinf(a)));
+    }
+    return v;
+}
+
+std::vector<CCPoint> roundedStar(int points, float outerR, float innerR, float phase) {
+    return roundedOutline(star(points, outerR, innerR, phase), 4,
+        [](int i) { return i % 2 == 0 ? 0.42f : 0.30f; });
 }
 
 std::vector<CCPoint> circle(float radius) {

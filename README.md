@@ -24,7 +24,9 @@ A Geode mod for Geometry Dash with thumbnails, visual effects, and a Paimon comp
 
 Download from the [Geode mod index](https://geode-sdk.org) — search for **Paimbnails**.
 
-Requires [Geode](https://geode-sdk.org/install) and Geometry Dash 2.2081.
+Requires [Geode 5.11.1 or newer](https://geode-sdk.org/install) and Geometry Dash 2.2081.
+
+See [Geode 5.11 integration](docs/GEODE_5_11.md) for SDK requirements and the changes used by the mod.
 
 ## License
 

@@ -1,5 +1,6 @@
 #include "../framework/HookConventions.hpp"
 #include <Geode/modify/FLAlertLayer.hpp>
+#include <Geode/modify/CCNode.hpp>
 #include <Geode/modify/ProfilePage.hpp>
 #include <Geode/modify/SetupTriggerPopup.hpp>
 #include <Geode/modify/CCMenuItemSpriteExtra.hpp>
@@ -93,7 +94,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
     static void onModify(auto& self) {
         paimon::hooks::afterNodeIdsOrLate(self, "FLAlertLayer::show");
         paimon::hooks::afterNodeIdsOrLate(self, "FLAlertLayer::keyBackClicked");
-        paimon::hooks::afterNodeIdsOrLate(self, "FLAlertLayer::removeFromParentAndCleanup");
     }
 
     bool isPaimonPopup() {
@@ -572,9 +572,9 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
     }
 
     void deferredClose(float) {
+        auto self = Ref<FLAlertLayer>(this);
         m_fields->m_exitGuard = nullptr;
         // defer removal so a destructor cannot return into freed memory
-        auto self = Ref<FLAlertLayer>(this);
         Loader::get()->queueInMainThread([self]() {
             if (paimon::isRuntimeShuttingDown()) return;
             self->removeFromParentAndCleanup(true);
@@ -615,17 +615,14 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         this->removeFromParentAndCleanup(true);
     }
 
-    $override
-    void removeFromParentAndCleanup(bool cleanup) {
+    bool deferAnimatedRemoval() {
         if (!shouldAnimateExit() || m_fields->m_exiting) {
-            auto keepAlive = Ref<FLAlertLayer>(this);
             m_fields->m_exitGuard = nullptr;
             float fadeDur = std::clamp(
                 static_cast<float>(paimon::settings::popupblur::fadeDuration()),
                 0.0f, 1.0f);
             fadeOutAndRemoveBlur(fadeDur);
-            FLAlertLayer::removeFromParentAndCleanup(cleanup);
-            return;
+            return false;
         }
         m_fields->m_exiting = true;
         this->setKeypadEnabled(false);
@@ -641,6 +638,26 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         fadeOutAndRemoveBlur(std::max(sty_dur_max, settingFade));
 
         runExitAnimation();
+        return true;
+    }
+};
+
+// FLAlertLayer inherits removal from CCNode; it has no removal hook of its own.
+class $modify(PaimonDynamicPopupRemoval, CCNode) {
+    static void onModify(auto& self) {
+        paimon::hooks::afterNodeIdsOrLate(self, "cocos2d::CCNode::removeFromParentAndCleanup");
+    }
+
+    void removeFromParentAndCleanup(bool cleanup) {
+        if (auto* popup = typeinfo_cast<FLAlertLayer*>(this);
+            popup && cleanup && getParent() && paimon::isManagedDynamicPopup(popup)
+            && !paimon::isRuntimeShuttingDown()) {
+            Ref<FLAlertLayer> keepAlive = popup;
+            if (static_cast<PaimonDynamicPopupHook*>(popup)->deferAnimatedRemoval()) return;
+            CCNode::removeFromParentAndCleanup(cleanup);
+            return;
+        }
+        CCNode::removeFromParentAndCleanup(cleanup);
     }
 };
 

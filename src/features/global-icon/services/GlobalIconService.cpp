@@ -5,9 +5,9 @@
 #include "../../../utils/Debug.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/Base64.hpp"
+#include "../../../utils/BoundedFileRead.hpp"
 
 #include <matjson.hpp>
-#include <fstream>
 #include <optional>
 
 #define MORE_ICONS_EVENTS
@@ -22,16 +22,8 @@ namespace {
     constexpr int64_t kMaxSyncBytes = 20 * 1024 * 1024;  // 20 mb (server limit)
 
     std::optional<std::vector<uint8_t>> readFile(std::filesystem::path const& p) {
-        if (p.empty()) return std::nullopt;
-        std::ifstream in(p, std::ios::binary | std::ios::ate);
-        if (!in) return std::nullopt;
-
-        std::streamoff const size = in.tellg();
-        if (size <= 0 || size > kMaxFileBytes) return std::nullopt;
-        in.seekg(0, std::ios::beg);
-
-        std::vector<uint8_t> data(static_cast<size_t>(size));
-        if (!in.read(reinterpret_cast<char*>(data.data()), size)) return std::nullopt;
+        auto data = paimon::file::readBytes(p, kMaxFileBytes);
+        if (data.empty()) return std::nullopt;
         return std::move(data);
     }
 }

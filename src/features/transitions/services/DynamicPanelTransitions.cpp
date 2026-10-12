@@ -3,6 +3,7 @@
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
+#include "../../../utils/ActivePauseLayer.hpp"
 #include <Geode/cocos/kazmath/include/kazmath/GL/matrix.h>
 #include <algorithm>
 #include <optional>
@@ -100,6 +101,7 @@ CCNode* contentOf(CCNode* panel) {
 
 std::optional<Plan> planFor(CCNode* panel, CCNode* parent, bool opening) {
     if (!parent || paimon::isRuntimeShuttingDown()) return std::nullopt;
+    if (paimon::isPauseLayerClosing(typeinfo_cast<PauseLayer*>(panel))) return std::nullopt;
     auto kind = panelKind(panel);
     if (paimon::isManagedDynamicPopup(panel)) return std::nullopt;
     auto* director = CCDirector::get();
@@ -514,6 +516,7 @@ void panelDidOpen(CCNode* panel) {
 
     auto* director = CCDirector::get();
     if (paimon::isRuntimeShuttingDown() || director->getNextScene() ||
+        paimon::isPauseLayerClosing(typeinfo_cast<PauseLayer*>(panel)) ||
         attachedScene(panel) != director->getRunningScene()) return;
 
     auto* content = contentOf(panel);

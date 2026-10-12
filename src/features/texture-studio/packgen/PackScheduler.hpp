@@ -74,20 +74,13 @@ public:
         }
         std::size_t chunks = std::min(total, workers * 4);
         std::size_t step = (total + chunks - 1) / chunks;
-        std::exception_ptr error;
-        std::mutex errMutex;
         std::size_t taskCount = (total + step - 1) / step;
         try {
             for (std::size_t t = 0; t < taskCount; ++t) {
                 submit([&, t] {
-                    try {
-                        Index lo = begin + static_cast<Index>(t * step);
-                        Index hi = std::min<Index>(end, lo + static_cast<Index>(step));
-                        for (Index i = lo; i < hi; ++i) fn(i);
-                    } catch (...) {
-                        std::lock_guard<std::mutex> lock(errMutex);
-                        if (!error) error = std::current_exception();
-                    }
+                    Index lo = begin + static_cast<Index>(t * step);
+                    Index hi = std::min<Index>(end, lo + static_cast<Index>(step));
+                    for (Index i = lo; i < hi; ++i) fn(i);
                 });
             }
         } catch (...) {
@@ -97,7 +90,6 @@ public:
             std::rethrow_exception(submissionError);
         }
         waitAll();
-        if (error) std::rethrow_exception(error);
     }
 
 private:

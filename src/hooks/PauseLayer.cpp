@@ -1,4 +1,5 @@
 #include <Geode/modify/PauseLayer.hpp>
+#include <Geode/modify/CCLayer.hpp>
 #include "../framework/HookConventions.hpp"
 #include <Geode/binding/PlayLayer.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
@@ -8,6 +9,7 @@
 #include <Geode/loader/Event.hpp>
 #include <Geode/ui/GeodeUI.hpp>
 #include <filesystem>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -142,18 +144,27 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         bool m_fileDialogOpen = false;
         bool m_captureInProgress = false;
         bool m_feedbackCaptureInProgress = false;
+        bool m_closing = false;
+        uint64_t m_captureGeneration = 0;
+        WeakRef<PlayLayer> m_playLayer;
+        WeakRef<PaimonLoadingOverlay> m_loadingOverlay;
     };
+
+    void onPauseEnter() {
+        m_fields->m_closing = false;
+        paimon::setPauseLayerClosing(this, false);
+        paimon::setActivePauseLayer(this);
+    }
 
     $override
     void customSetup() {
         PauseLayer::customSetup();
-        paimon::setActivePauseLayer(this);
-
-        // reset stale zoom state for the new pause layer
-        paimon::setPauseZoomHidden(false);
 
         auto playLayer = PlayLayer::get();
+        m_fields->m_playLayer = playLayer;
         if (!playLayer) return;
+
+        paimon::setPauseZoomHidden(false);
 
         if (!playLayer->m_level) {
             log::warn("Level not available in PlayLayer");
@@ -306,9 +317,72 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             rewireScreenshotInMenu(findButtonMenu("left-button-menu", false));
     }
 
-    // playlayer's ccnode hook filters this layer because pauselayer has no visit hook
+    bool canUsePauseLayer() {
+        auto play = m_fields->m_playLayer.lock();
+        return !m_fields->m_closing && paimon::isPauseLayerOpen(this)
+            && play && play.data() == PlayLayer::get() && play->m_isPaused
+            && paimon::findOpenPauseLayerInScene() == this;
+    }
+
+    void stopPauseWork() {
+        ++m_fields->m_captureGeneration;
+        m_fields->m_fileDialogOpen = false;
+        bool const ownsCapture = m_fields->m_captureInProgress || m_fields->m_feedbackCaptureInProgress;
+        m_fields->m_captureInProgress = false;
+        m_fields->m_feedbackCaptureInProgress = false;
+        if (ownsCapture) {
+            FramebufferCapture::cancelPending();
+            paimon::setCaptureInProgress(false);
+        }
+        if (auto* director = CCDirector::get()) {
+            if (auto* scheduler = director->getScheduler()) scheduler->unscheduleAllForTarget(this);
+        }
+        removeLoadingOverlay();
+    }
+
+    void markClosing() {
+        m_fields->m_closing = true;
+        paimon::setPauseLayerClosing(this, true);
+        if (paimon::getActivePauseLayer() == this) {
+            paimon::clearActivePauseLayer(this);
+            paimon::notifyPauseClosing();
+        }
+    }
+
+    bool beginPauseAction(char const* action) {
+        if (m_fields->m_closing) return false;
+        bool const canUse = canUsePauseLayer();
+        markClosing();
+        stopPauseWork();
+        setVisible(false);
+        setTouchEnabled(false);
+        setKeypadEnabled(false);
+        setKeyboardEnabled(false);
+        if (!canUse) {
+            log::warn("[PauseLayer] Ignoring {} on an inactive pause menu", action);
+            removeFromParentAndCleanup(true);
+        }
+        return canUse;
+    }
+
+    void finishPauseAction() {
+        if (!getParent()) return;
+        auto play = m_fields->m_playLayer.lock();
+        if (!play || play.data() != PlayLayer::get() || !play->m_isPaused
+            || paimon::findOpenPauseLayerInScene()) {
+            removeFromParentAndCleanup(true);
+            return;
+        }
+        // Keep the menu usable if another hook rejects the action.
+        onPauseEnter();
+        setVisible(true);
+        setTouchEnabled(true);
+        setKeypadEnabled(true);
+        setKeyboardEnabled(true);
+    }
 
     void onWebRequestFeedback(CCObject*) {
+        if (!canUsePauseLayer()) return;
         auto* play = PlayLayer::get();
         auto request = play && play->m_level
             ? feedbackRequestForLevel(play->m_level->m_levelID) : std::nullopt;
@@ -320,6 +394,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             return;
         }
         m_fields->m_feedbackCaptureInProgress = true;
+        ++m_fields->m_captureGeneration;
         paimon::setCaptureInProgress(true);
         setVisible(false);
         showLoadingOverlay();
@@ -329,9 +404,11 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
     void webRequestCaptureTimeout(float) {
         if (!m_fields->m_feedbackCaptureInProgress) return;
+        ++m_fields->m_captureGeneration;
         m_fields->m_feedbackCaptureInProgress = false;
+        FramebufferCapture::cancelPending();
         paimon::setCaptureInProgress(false);
-        if (getParent()) setVisible(true);
+        if (canUsePauseLayer()) setVisible(true);
         removeLoadingOverlay();
         PaimonNotify::create("La captura no respondio", NotificationIcon::Warning)->show();
     }
@@ -340,35 +417,31 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         auto* play = PlayLayer::get();
         auto request = play && play->m_level
             ? feedbackRequestForLevel(play->m_level->m_levelID) : std::nullopt;
-        if (!m_fields->m_feedbackCaptureInProgress || !getParent() || !request) {
+        if (!m_fields->m_feedbackCaptureInProgress || !canUsePauseLayer() || !request) {
             webRequestCaptureTimeout(0.f);
             return;
         }
-        if (auto* scene = CCDirector::get()->getRunningScene()) {
-            if (auto* overlay = scene->getChildByID("paimon-loading-overlay"_spr))
-                overlay->setVisible(false);
-        }
+        if (auto overlay = m_fields->m_loadingOverlay.lock()) overlay->setVisible(false);
         WeakRef<PauseLayer> weak = this;
+        auto const generation = m_fields->m_captureGeneration;
         FramebufferCapture::requestCapture(request->levelID,
-            [weak, request = *request](bool success, CCTexture2D* texture,
+            [weak, generation, request = *request](bool success, CCTexture2D* texture,
                 std::shared_ptr<uint8_t> rgba, int width, int height) mutable {
                 Ref<CCTexture2D> held = texture;
-                Loader::get()->queueInMainThread([weak, request = std::move(request), success,
+                Loader::get()->queueInMainThread([weak, generation, request = std::move(request), success,
                     held, rgba, width, height]() mutable {
                     if (paimon::isRuntimeShuttingDown()) return;
                     auto locked = weak.lock();
-                    if (!locked) {
-                        paimon::setCaptureInProgress(false);
-                        return;
-                    }
+                    if (!locked) return;
                     auto* self = static_cast<PaimonPauseLayer*>(locked.data());
-                    if (!self->m_fields->m_feedbackCaptureInProgress) return;
+                    if (generation != self->m_fields->m_captureGeneration
+                        || !self->m_fields->m_feedbackCaptureInProgress || !self->canUsePauseLayer()) return;
                     self->m_fields->m_feedbackCaptureInProgress = false;
                     self->unschedule(schedule_selector(PaimonPauseLayer::webRequestCaptureTimeout));
                     paimon::setCaptureInProgress(false);
                     self->removeLoadingOverlay();
-                    if (self->getParent()) self->setVisible(true);
-                    if (!success || !held || !rgba || !self->getParent()) {
+                    self->setVisible(true);
+                    if (!success || !held || !rgba) {
                         PaimonNotify::create("No se pudo capturar el nivel", NotificationIcon::Error)->show();
                         return;
                     }
@@ -380,6 +453,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
     }
 
     void onScreenshot(CCObject*) {
+        if (!canUsePauseLayer()) return;
         if (m_fields->m_captureInProgress) {
             log::warn("[PauseLayer] Capture already in progress, ignoring duplicate request");
             return;
@@ -407,6 +481,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         // prevent the zoom ticker from restoring it before swapbuffers().
         paimon::setCaptureInProgress(true);
         m_fields->m_captureInProgress = true;
+        ++m_fields->m_captureGeneration;
 
         showLoadingOverlay();
         // restore the ui if the callback never returns
@@ -439,16 +514,14 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         }
 
         if (auto* overlay = PaimonLoadingOverlay::create("Loading...", 40.f)) {
+            m_fields->m_loadingOverlay = overlay;
             overlay->show(scene, 10000);
         }
     }
 
     void reShowOverlay(float) {
-        auto* director = CCDirector::get();
-        auto* scene = director ? director->getRunningScene() : nullptr;
-        if (!scene) return;
-        auto overlay = scene->getChildByID("paimon-loading-overlay"_spr);
-        if (overlay) overlay->setVisible(true);
+        if (!canUsePauseLayer() || !m_fields->m_captureInProgress) return;
+        if (auto overlay = m_fields->m_loadingOverlay.lock()) overlay->setVisible(true);
     }
 
     void removeLoadingOverlay() {
@@ -463,31 +536,37 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             );
         }
 
-        auto* scene = director->getRunningScene();
-        if (!scene) return;
-        if (auto overlay = typeinfo_cast<PaimonLoadingOverlay*>(scene->getChildByID("paimon-loading-overlay"_spr))) {
-            overlay->dismiss();
+        if (auto overlay = m_fields->m_loadingOverlay.lock()) {
+            if (m_fields->m_closing) {
+                overlay->setVisible(false);
+                overlay->setTouchEnabled(false);
+                // Scene teardown may be iterating the overlay's siblings.
+                Loader::get()->queueInMainThread([overlay] {
+                    if (overlay->getParent()) overlay->removeFromParentAndCleanup(true);
+                });
+            } else {
+                overlay->dismiss();
+            }
         }
+        m_fields->m_loadingOverlay = nullptr;
     }
 
     void captureSafetyRestore(float) {
         if (!m_fields->m_captureInProgress) return;
-        // don't restore a detached pause menu
-        if (!this->getParent()) {
-            m_fields->m_captureInProgress = false;
-            paimon::setCaptureInProgress(false);
-            removeLoadingOverlay();
-            return;
-        }
+        bool const canRestore = canUsePauseLayer();
+        ++m_fields->m_captureGeneration;
         log::warn("[PauseLayer] Capture watchdog restored UI state");
         m_fields->m_captureInProgress = false;
+        FramebufferCapture::cancelPending();
         paimon::setCaptureInProgress(false);
         removeLoadingOverlay();
+        if (!canRestore) return;
         this->setVisible(true);
         PaimonNotify::create(Localization::get().getString("pause.capture_error").c_str(), NotificationIcon::Warning)->show();
     }
 
     void performCaptureAndRestore(float) {
+        if (!m_fields->m_captureInProgress || !canUsePauseLayer()) return;
         auto* director = CCDirector::get();
         auto* scheduler = director ? director->getScheduler() : nullptr;
         if (!scheduler) {
@@ -502,15 +581,6 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         scheduler->unscheduleSelector(
             schedule_selector(PaimonPauseLayer::performCaptureAndRestore), this
         );
-
-        // restart may detach the pause menu during the delay.
-        if (!this->getParent()) {
-            log::warn("[PauseLayer] performCaptureAndRestore called on orphaned PauseLayer");
-            m_fields->m_captureInProgress = false;
-            paimon::setCaptureInProgress(false);
-            removeLoadingOverlay();
-            return;
-        }
 
         auto* pl = PlayLayer::get();
         if (!pl || !pl->m_level) {
@@ -535,40 +605,26 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
         int levelID = pl->m_level->m_levelID;
 
-        auto scene = CCDirector::get()->getRunningScene();
-        if (scene) {
-            auto overlay = scene->getChildByID("paimon-loading-overlay"_spr);
-            if (overlay) overlay->setVisible(false);
-        }
+        if (auto overlay = m_fields->m_loadingOverlay.lock()) overlay->setVisible(false);
 
         scheduler->scheduleSelector(
             schedule_selector(PaimonPauseLayer::reShowOverlay),
             this, 0.0f, 0, 0.0f, false
         );
 
-        // weakref avoids reviving a destroyed layer
         WeakRef<PauseLayer> weakRef = this;
+        auto const generation = m_fields->m_captureGeneration;
 
-            FramebufferCapture::requestCapture(levelID, [weakRef, levelID](bool success, CCTexture2D* texture, std::shared_ptr<uint8_t> rgbData, int width, int height) {
+            FramebufferCapture::requestCapture(levelID, [weakRef, generation, levelID](bool success, CCTexture2D* texture, std::shared_ptr<uint8_t> rgbData, int width, int height) {
                 Ref<CCTexture2D> texRef = texture;
-                Loader::get()->queueInMainThread([weakRef, success, texRef, rgbData, width, height, levelID]() {
-                    if (paimon::isRuntimeShuttingDown()) {
-                        paimon::setCaptureInProgress(false);
-                        return;
-                    }
+                Loader::get()->queueInMainThread([weakRef, generation, success, texRef, rgbData, width, height, levelID]() {
+                    if (paimon::isRuntimeShuttingDown()) return;
                     CCTexture2D* texture = texRef.data();
                     auto locked = weakRef.lock();
-                    if (!locked) {
-                        paimon::setCaptureInProgress(false);
-                        return;
-                    }
+                    if (!locked) return;
                     auto* self = static_cast<PaimonPauseLayer*>(locked.data());
-                    // a missing parent means the layer is already exiting
-                    if (!self->getParent()) {
-                        self->m_fields->m_captureInProgress = false;
-                        paimon::setCaptureInProgress(false);
-                        return;
-                    }
+                    if (generation != self->m_fields->m_captureGeneration
+                        || !self->m_fields->m_captureInProgress || !self->canUsePauseLayer()) return;
                     self->removeLoadingOverlay();
                     self->m_fields->m_captureInProgress = false;
                     paimon::setCaptureInProgress(false);
@@ -642,28 +698,9 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
     }
 
-    $override
-    void onExit() {
-        // cover exits that skip onresume() before the ticker runs again
-        paimon::notifyPauseClosing();
-        paimon::clearActivePauseLayer(this);
-        paimon::setPauseZoomHidden(false);
-        m_fields->m_fileDialogOpen = false;
-
-        // only tear down a capture this layer started: an unrelated flow
-        // (playlayer keybind, overlay) may own the global flag right now
-        if (m_fields->m_captureInProgress) {
-            m_fields->m_captureInProgress = false;
-            paimon::setCaptureInProgress(false);
-            FramebufferCapture::cancelPending();
-        }
-
-        // cancel capture work and unschedule selectors before destruction
-        if (auto* director = CCDirector::get()) {
-            if (auto* scheduler = director->getScheduler()) scheduler->unscheduleAllForTarget(this);
-        }
-        removeLoadingOverlay();
-        PauseLayer::onExit();
+    void onPauseExit() {
+        markClosing();
+        stopPauseWork();
     }
 
     void processSelectedFile(std::filesystem::path selectedPath, int levelID) {
@@ -866,6 +903,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
     }
 
     void onSelectPNGFile(CCObject*) {
+        if (!canUsePauseLayer()) return;
         if (m_fields->m_fileDialogOpen) {
             log::warn("[PauseLayer] File dialog already open, ignoring");
             return;
@@ -886,6 +924,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             auto layer = self.lock();
             if (!layer) return;
             layer->m_fields->m_fileDialogOpen = false;
+            if (!layer->canUsePauseLayer()) return;
             auto pathOpt = std::move(result).unwrapOr(std::nullopt);
             if (!pathOpt || pathOpt->empty()) return;
             layer->processSelectedFile(std::move(*pathOpt), levelID);
@@ -899,42 +938,61 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         }
     }
 
-    bool requirePlayLayer(char const* what) {
-        if (PlayLayer::get()) return true;
-        log::warn("[PauseLayer] {} called but PlayLayer::get() is null. Preventing crash.", what);
-        return false;
-    }
-
     void onResume(CCObject* sender) {
-        // playlayer may be gone during a scene transition.
-        if (!requirePlayLayer("onResume")) return;
-
-        // clear zoom so its ticker cannot restart the closing menu.
-        paimon::notifyPauseClosing();
+        Ref<PaimonPauseLayer> keepAlive = this;
+        if (!beginPauseAction("onResume")) return;
         PauseLayer::onResume(sender);
+        finishPauseAction();
     }
 
     void onRestart(CCObject* sender) {
-        if (!requirePlayLayer("onRestart")) return;
-        paimon::notifyPauseClosing();
+        Ref<PaimonPauseLayer> keepAlive = this;
+        if (!beginPauseAction("onRestart")) return;
         PauseLayer::onRestart(sender);
+        finishPauseAction();
     }
 
     void onRestartFull(CCObject* sender) {
-        if (!requirePlayLayer("onRestartFull")) return;
-        paimon::notifyPauseClosing();
+        Ref<PaimonPauseLayer> keepAlive = this;
+        if (!beginPauseAction("onRestartFull")) return;
         PauseLayer::onRestartFull(sender);
+        finishPauseAction();
     }
 
     void onNormalMode(CCObject* sender) {
-        if (!requirePlayLayer("onNormalMode")) return;
-        paimon::notifyPauseClosing();
+        Ref<PaimonPauseLayer> keepAlive = this;
+        if (!beginPauseAction("onNormalMode")) return;
         PauseLayer::onNormalMode(sender);
+        finishPauseAction();
     }
 
     void onPracticeMode(CCObject* sender) {
-        if (!requirePlayLayer("onPracticeMode")) return;
-        paimon::notifyPauseClosing();
+        Ref<PaimonPauseLayer> keepAlive = this;
+        if (!beginPauseAction("onPracticeMode")) return;
         PauseLayer::onPracticeMode(sender);
+        finishPauseAction();
+    }
+
+    void onQuit(CCObject* sender) {
+        Ref<PaimonPauseLayer> keepAlive = this;
+        if (!beginPauseAction("onQuit")) return;
+        PauseLayer::onQuit(sender);
+    }
+};
+
+// PauseLayer inherits these methods; its modify bindings do not hook them.
+class $modify(PaimonPauseLifecycleLayer, CCLayer) {
+    void onEnter() {
+        CCLayer::onEnter();
+        if (auto* pause = typeinfo_cast<PauseLayer*>(this)) {
+            static_cast<PaimonPauseLayer*>(pause)->onPauseEnter();
+        }
+    }
+
+    void onExit() {
+        if (auto* pause = typeinfo_cast<PauseLayer*>(this)) {
+            static_cast<PaimonPauseLayer*>(pause)->onPauseExit();
+        }
+        CCLayer::onExit();
     }
 };

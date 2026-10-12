@@ -493,7 +493,7 @@ void TimelinePanel::refreshInfo() {
     m_infoLabel->setString(fmt::format("{} {} / {}", tr("Frame", "Frame"), frame + 1, count).c_str());
     m_infoLabel->limitLabelWidth(m_infoWidth, 0.26f, 0.1f);
 
-    float const total = sequenceDuration(buildSequence(*clip));
+    float const total = s.activeDuration();
     float const at = s.playing() && total > 0.f ? std::fmod(s.playTime(), total)
         : timeBefore(*clip, frame);
     std::string line = fmt::format("{} / {}", w::seconds(at), w::seconds(total));

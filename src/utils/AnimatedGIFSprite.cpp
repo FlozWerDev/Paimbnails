@@ -2,6 +2,7 @@
 #include "DominantColors.hpp"
 #include "Debug.hpp"
 #include "FrameBudget.hpp"
+#include "BoundedFileRead.hpp"
 #include "../core/QualityConfig.hpp"
 #include "../core/Settings.hpp"
 #include "../core/RuntimeLifecycle.hpp"
@@ -34,16 +35,7 @@ static size_t getSharedGIFDataSize(AnimatedGIFSprite::SharedGIFData const& data)
 }
 
 static std::vector<uint8_t> readGifFile(std::string const& path) {
-    std::ifstream file(paimon::assets::pathFromUtf8(path), std::ios::binary | std::ios::ate);
-    if (!file) return {};
-
-    std::streamoff const size = file.tellg();
-    if (size <= 0 || size > 64ll * 1024 * 1024) return {};
-    file.seekg(0, std::ios::beg);
-
-    std::vector<uint8_t> data(static_cast<size_t>(size));
-    if (!file.read(reinterpret_cast<char*>(data.data()), size)) return {};
-    return data;
+    return paimon::file::readBytes(paimon::assets::pathFromUtf8(path), 64ull * 1024 * 1024);
 }
 
 std::unordered_map<std::string, AnimatedGIFSprite::SharedGIFData> AnimatedGIFSprite::s_gifCache;

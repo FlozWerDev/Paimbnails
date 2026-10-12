@@ -697,12 +697,12 @@ void CapturePreviewPopup::restoreRecapturePauseState() {
     if (!m_recaptureHidPause) return;
 
     if (auto* pause = m_recapturePauseLayer.data()) {
-        if (pause->getParent()) {
+        if (auto* play = PlayLayer::get(); play && play->m_isPaused && paimon::isPauseLayerOpen(pause)) {
             pause->setVisible(m_recapturePauseWasVisible);
             pause->setTouchEnabled(m_recapturePauseWasVisible);
         }
     }
-    if (!m_recaptureZoomWasHidden) {
+    if (!m_recaptureZoomWasHidden && paimon::isPauseLayerOpen(m_recapturePauseLayer.data())) {
         paimon::setPauseZoomHidden(false);
     }
 
@@ -733,17 +733,7 @@ void CapturePreviewPopup::recapture() {
     this->scheduleOnce(schedule_selector(CapturePreviewPopup::onRecaptureTimeout),
         paimon::capture::preview::RECAPTURE_TIMEOUT_SEC);
 
-    PauseLayer* pauseLayer = paimon::getActivePauseLayer();
-    if (!pauseLayer && paimon::hasPauseLayerInScene()) {
-        if (auto* scene = CCDirector::get()->getRunningScene()) {
-            for (auto* obj : CCArrayExt<CCObject*>(scene->getChildren())) {
-                if (auto* found = typeinfo_cast<PauseLayer*>(obj)) {
-                    pauseLayer = found;
-                    break;
-                }
-            }
-        }
-    }
+    PauseLayer* pauseLayer = paimon::findOpenPauseLayerInScene();
 
     if (pauseLayer && !m_recaptureHidPause) {
         m_recapturePauseLayer = pauseLayer;

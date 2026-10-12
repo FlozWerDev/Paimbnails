@@ -248,6 +248,16 @@ else()
     message(STATUS "Found Geode: $ENV{GEODE_SDK}")
 endif()
 
+file(READ "$ENV{GEODE_SDK}/VERSION" PAIMBNAILS_GEODE_SDK_VERSION)
+string(STRIP "${PAIMBNAILS_GEODE_SDK_VERSION}" PAIMBNAILS_GEODE_SDK_VERSION)
+if (PAIMBNAILS_GEODE_SDK_VERSION VERSION_LESS "5.11.1")
+    message(FATAL_ERROR "Paimbnails requires Geode SDK 5.11.1 or newer. Run: geode sdk update 5.11.1")
+endif()
+
+# Cached SDK dependencies must match the loader's async ABI.
+set(GEODE_ARC_VERSION "@1.5.11" CACHE STRING "Geode arc version" FORCE)
+set(GEODE_ASP_VERSION "#ecea33b" CACHE STRING "Geode asp version" FORCE)
+
 add_subdirectory($ENV{GEODE_SDK} ${CMAKE_CURRENT_BINARY_DIR}/geode)
 
 setup_geode_mod(${PROJECT_NAME})

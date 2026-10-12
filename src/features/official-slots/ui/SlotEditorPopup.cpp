@@ -1011,7 +1011,6 @@ void SlotEditorPopup::onHideOfficial(CCObject*) {
     // hiding wins over replacing: drop the replacement so no orphan slot
     // lingers behind the hidden page.
     if (auto existing = store.slotForOfficial(officialId)) {
-        if (!existing->gmdFile.empty()) store.discardGmd(existing->gmdFile);
         SlotLevelCache::get().invalidate(existing->id);
         store.remove(existing->id);
     }

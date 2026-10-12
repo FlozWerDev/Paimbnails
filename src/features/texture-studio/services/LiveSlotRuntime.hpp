@@ -34,6 +34,7 @@ private:
         int width = 0, height = 0;
     };
     void collectSources();
+    void checkResourceSources();
     void prepareMasks();
 
     geode::Ref<cocos2d::CCGLProgram> m_shader;
@@ -42,6 +43,9 @@ private:
     float m_maskScaleX = 1.f, m_maskScaleY = 1.f;
     TextureProject m_project;
     std::vector<Source> m_sources;
+    std::size_t m_sourceTexturePackCount = 0;
+    float m_sourceContentScale = 0.f;
+    std::vector<std::string> m_sourceSearchPaths;
     std::unordered_map<cocos2d::CCTexture2D*, std::size_t> m_textures;
     std::shared_ptr<std::atomic<unsigned>> m_generation =
         std::make_shared<std::atomic<unsigned>>(0);

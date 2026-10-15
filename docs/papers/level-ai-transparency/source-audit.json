@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-12",
+  "gitRevision": "a2419d80371e113e4f274c2998262f40dd91839f",
+  "method": "Static source inspection; no mod compilation or runtime survival study.",
+  "files": [
+    {
+      "path": "src/features/gif-import/services/GifObjectEmitter.cpp",
+      "sha256": "b69fa4087b6d0d236ecf60705560efa79d972ae724d5321311cff781d1193a0f"
+    },
+    {
+      "path": "src/features/gif-import/services/ImageWatermark.cpp",
+      "sha256": "a03a87be02aec972db3638eb451dc7573fcaa363e649b809118c9d2330a890d6"
+    },
+    {
+      "path": "src/features/gif-import/services/ImageWatermark.hpp",
+      "sha256": "b610e27c05fbd915fef6bb4cd49ff736ccf0ebdb122bda51675caa6f508df78d"
+    },
+    {
+      "path": "src/features/gif-import/services/GifImportPipeline.cpp",
+      "sha256": "fbc1431c0e35828e47d8ae2f75d5cad8c3b8ac17c570cc49993c7a1e515c5cc4"
+    },
+    {
+      "path": "src/hooks/LevelInfoLayer.cpp",
+      "sha256": "51a9a59925f0918731e26b0025e045dd3b0702b88cac2e4ced017bf08919a546"
+    },
+    {
+      "path": "src/features/editor-physics/services/PhysicsTriggerEmitter.cpp",
+      "sha256": "a9ee13fc2309b8dcd81fb80a9e83a9c411f8dc0d748fdba710bb881faac5dcb8"
+    },
+    {
+      "path": "src/features/collab-editor/CollabManager.cpp",
+      "sha256": "325006e845de569b7c172cc3255b56ae5e2e647a2f0088a3cebff09dc611eb61"
+    }
+  ],
+  "paperSha256": "15f935db055603b7b9118543d89c1d0a15d9ecfca188381aaed59a5734b9beb3",
+  "analyzerSha256": "17b073e97c297bf28cd1590d5e17a9dd9d71ab37ea2ba7f29b91b9e5a0a9d32b",
+  "empiricalAIClassificationResults": null
+}

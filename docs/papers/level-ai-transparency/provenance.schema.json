@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flozwer.org/request-assets/papers/ai-level-transparency/provenance.schema.json",
+  "title": "Paimbnails AI provenance 0.1 — proposed manifest",
+  "description": "Structural validation only. This schema does not authenticate assertions, receipts, signatures or issuers.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "artifact", "declaration", "operations", "receipts"],
+  "properties": {
+    "schema": { "const": "paimbnails.ai-provenance/0.1" },
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sha256", "hashScope", "gdVersion"],
+      "properties": {
+        "sha256": { "$ref": "#/$defs/hash" },
+        "hashScope": { "const": "utf8-decoded-level-string-exact-v1" },
+        "gdVersion": { "type": "string", "minLength": 1, "maxLength": 64 }
+      }
+    },
+    "declaration": {
+      "type": "object", "additionalProperties": false,
+      "required": ["aiUse", "scope", "statement"],
+      "properties": {
+        "aiUse": { "enum": ["undeclared", "unknown", "none", "assisted", "generated"] },
+        "scope": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "statement": { "type": "string", "maxLength": 4096 }
+      }
+    },
+    "operations": {
+      "type": "array", "maxItems": 10000,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "parentIds", "inputHashes", "outputHash", "family", "scope", "tool", "model"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "parentIds": { "type": "array", "uniqueItems": true, "maxItems": 128, "items": { "type": "string", "minLength": 1, "maxLength": 128 } },
+          "inputHashes": { "type": "array", "maxItems": 128, "items": { "$ref": "#/$defs/hash" }, "description": "Exact artifact-byte hashes. Empty means no input is recorded, not that the operation had no context." },
+          "outputHash": { "$ref": "#/$defs/hash" },
+          "family": { "enum": ["text", "script", "tool", "asset", "layout", "manual-edit", "deterministic"] },
+          "scope": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "tool": { "type": "object", "additionalProperties": false, "required": ["name", "version"], "properties": { "name": { "type": "string", "minLength": 1, "maxLength": 128 }, "version": { "type": ["string", "null"], "maxLength": 128 } } },
+          "model": { "type": ["object", "null"], "additionalProperties": false, "required": ["provider", "identifier", "version"], "properties": { "provider": { "type": "string", "minLength": 1, "maxLength": 128 }, "identifier": { "type": "string", "minLength": 1, "maxLength": 256 }, "version": { "type": ["string", "null"], "maxLength": 128 } } }
+        }
+      }
+    },
+    "receipts": {
+      "type": "array", "maxItems": 10000,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["payload", "signature"],
+        "properties": {
+          "payload": {
+            "type": "object", "additionalProperties": false,
+            "required": ["schema", "operationId", "issuerId", "keyId", "algorithm", "canonicalization", "operationSha256", "issuedAt"],
+            "properties": {
+              "schema": { "const": "paimbnails.operation-receipt/0.1" },
+              "operationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+              "issuerId": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "keyId": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "algorithm": { "const": "Ed25519" },
+              "canonicalization": { "const": "RFC8785" },
+              "operationSha256": { "$ref": "#/$defs/hash" },
+              "issuedAt": { "type": "string", "format": "date-time" }
+            }
+          },
+          "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$", "description": "64-byte Ed25519 signature, unpadded base64url. Verification and trust evaluation are separate." }
+        }
+      }
+    }
+  },
+  "$defs": { "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
+}

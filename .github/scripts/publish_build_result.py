@@ -42,7 +42,7 @@ def git(*args, data=None):
         "GIT_COMMITTER_EMAIL": "41898282+github-actions[bot]@users.noreply.github.com",
     })
     result = subprocess.run(["git", *args], cwd=ROOT, env=environment,
-                            input=data, text=True, capture_output=True, check=True)
+                            input=data, text=True, encoding="utf-8", capture_output=True, check=True)
     return result.stdout.strip()
 
 
@@ -90,7 +90,7 @@ def run():
     if TOKEN:
         serialized = serialized.replace(TOKEN, "***")
     blob = git("hash-object", "-w", "--stdin", data=serialized)
-    tree = git("mktree", data=f"100644 blob {blob}\treport.json\n")
+    tree = git("mktree", "-z", data=f"100644 blob {blob}\treport.json\0")
     ref = f"refs/heads/ci-results/{HEAD}/{STAGE}"
     parents = []
     if git("ls-remote", "origin", ref):

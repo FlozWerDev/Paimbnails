@@ -12,7 +12,7 @@ endif()
 
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
-project(Paimbnails VERSION 1.2.5)
+project(Paimbnails VERSION 1.2.6)
 
 # Allow Clang on Windows runners where MSVC STL is newer than the installed LLVM Clang.
 if (WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")

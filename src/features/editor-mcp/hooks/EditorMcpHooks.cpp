@@ -35,6 +35,7 @@ class $modify(PaimonEditorMcpUI, EditorUI) {
     $override
     bool init(LevelEditorLayer* editorLayer) {
         if (!EditorUI::init(editorLayer)) return false;
+        if (!featureEnabled()) return true;
 
         auto* button = paimon::editor::assets::squareButton(
             "paim_gif_modeRender.png",

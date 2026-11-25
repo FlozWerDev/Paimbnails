@@ -427,7 +427,7 @@ std::vector<Module> buildCatalog() {
                 "editor-optimizer-enable", "Tools", S::Editor, true),
         setting("paimbnails.mcp.editor", "Editor MCP (AI Bridge)",
                 "Local MCP server with full editor control, real-time 1:1 OpenGL rendering, and complete GD trigger reference.",
-                "editor-mcp-enable", "Tools", S::Editor, true),
+                "editor-mcp-enable", "Tools", S::Editor, false),
         setting("paimbnails.collab.editor", "Collab Editor",
                 "Real time collaborative editing.",
                 "collab-enabled", "Collab", S::Editor, true),

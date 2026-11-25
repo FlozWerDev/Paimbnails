@@ -4,7 +4,7 @@
     "win": "2.2091",
     "android": "2.2091"
   },
-  "version": "v1.2.5",
+  "version": "v1.2.6",
   "id": "flozwer.paimbnails2",
   "name": "Paimbnails",
   "developer": "FlozWer",
@@ -1504,7 +1504,7 @@
       "type": "bool",
       "name": "Enable Editor MCP Server",
       "description": "Runs a local MCP server (http://127.0.0.1:21690/mcp) so AI assistants can inspect, build, decorate, configure triggers/colors, and capture 1:1 OpenGL renders of your level.",
-      "default": true
+      "default": false
     },
     "editor-mcp-port": {
       "type": "int",

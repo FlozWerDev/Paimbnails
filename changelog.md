@@ -1,3 +1,14 @@
+# <cy>v1.2.6</c>
+
+![](flozwer.paimbnails2/paim_Paimon.png?height=32) Actualizacion con la incorporacion de <cl>Editor MCP</c> y multiples correcciones de bugs, crashes y compatibilidad multiplataforma.
+
+## ![](frame:GJ_hammerIcon_001.png?height=18) <cy>Novedades y Correcciones</c>
+
+- <cl>Editor MCP (Puente IA)</c>: añadido servidor MCP local para el editor con control de objetos, triggers, decoracion, referencia integrada y render 1:1 en tiempo real (desactivado por defecto en <cg>Modulos</c>).
+- <cl>Correcciones de bugs y crashes</c>: solucionados errores de compilacion y compatibilidad en <cg>Windows</c> y <cg>Android</c> (`OpenGL ES 2.0`, `CCDrawNode`, formateo en UI y gestos tactiles), ademas de multiples fixes de estabilidad y crashes.
+
+---
+
 # <cy>v1.2.5</c>
 
 ![](flozwer.paimbnails2/paim_Paimon.png?height=32) Actualizacion con soporte para <cg>Geometry Dash 2.2091</c> en <cg>Windows</c>, con <cl>Wallpaper Engine</c>, <cl>Dynamic Ambient</c>, <cl>Liquid Glass UI</c>, <cl>Button Skins</c>, <cl>Structure Optimizer</c>, <cl>Overlay OBS</c>, <cl>Paimon Shop & Base</c>, <cl>Separate Dual Icons</c>, <cl>Transiciones v2</c>, <cl>PaiDraw</c>, <cl>Imagenes en Grupos</c>, <cl>Traductor de Comentarios</c> y mas.

@@ -12,11 +12,11 @@ RequestExecutionLevel admin
     !define PAIMBNAILS_BUILD_NUMBER "0"
 !endif
 
-VIProductVersion "1.2.0.${PAIMBNAILS_BUILD_NUMBER}"
+VIProductVersion "1.2.6.${PAIMBNAILS_BUILD_NUMBER}"
 VIAddVersionKey "ProductName" "Paimbnails"
 VIAddVersionKey "CompanyName" "FlozWer"
 VIAddVersionKey "FileDescription" "Paimbnails - Thumbnails for Geometry Dash"
-VIAddVersionKey "FileVersion" "1.2.0.${PAIMBNAILS_BUILD_NUMBER}"
+VIAddVersionKey "FileVersion" "1.2.6.${PAIMBNAILS_BUILD_NUMBER}"
 VIAddVersionKey "LegalCopyright" "FlozWer"
 
 !define MUI_ICON "paimbnails.ico"

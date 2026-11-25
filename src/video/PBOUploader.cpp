@@ -473,12 +473,27 @@ static void uploadSinglePBO(GLuint pbo, int pboSize, GLuint texId,
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
         if (data) {
             int rowBytes = (format == GL_RGBA) ? width * 4 : width;
+#ifdef GL_UNPACK_ROW_LENGTH
             glPixelStorei(GL_UNPACK_ROW_LENGTH, stride == rowBytes ? 0 : stride / ((format == GL_RGBA) ? 4 : 1));
             glBindTexture(GL_TEXTURE_2D, texId);
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height,
                             format, GL_UNSIGNED_BYTE, data);
             glBindTexture(GL_TEXTURE_2D, 0);
             glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+#else
+            const uint8_t* uploadPtr = data;
+            std::vector<uint8_t> packed;
+            if (stride != rowBytes) {
+                packed.resize(static_cast<size_t>(rowBytes) * static_cast<size_t>(height));
+                paimon::copyStridedRows(packed.data(), static_cast<size_t>(rowBytes),
+                    data, static_cast<size_t>(stride), static_cast<size_t>(rowBytes), height);
+                uploadPtr = packed.data();
+            }
+            glBindTexture(GL_TEXTURE_2D, texId);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height,
+                            format, GL_UNSIGNED_BYTE, uploadPtr);
+            glBindTexture(GL_TEXTURE_2D, 0);
+#endif
         }
         return;
     }

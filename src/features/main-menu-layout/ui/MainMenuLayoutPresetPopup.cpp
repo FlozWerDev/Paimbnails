@@ -447,7 +447,7 @@ void MainMenuLayoutPresetPopup::onDeleteSlot(CCObject* sender) {
     WeakRef<MainMenuLayoutPresetPopup> self = this;
     PopupManager::get().quickPopup(
         isSpanish() ? "Borrar Slot" : "Delete Slot",
-        fmt::format(isSpanish() ? "Borrar el preset del slot <cy>{}</c>?" : "Delete preset in slot <cy>{}</c>?", slotIndex + 1),
+        fmt::format(fmt::runtime(isSpanish() ? "Borrar el preset del slot <cy>{}</c>?" : "Delete preset in slot <cy>{}</c>?"), slotIndex + 1),
         tr("general.cancel").c_str(),
         isSpanish() ? "Borrar" : "Delete",
         [self, slotIndex](auto*, bool confirmed) {

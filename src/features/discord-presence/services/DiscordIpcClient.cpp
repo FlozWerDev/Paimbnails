@@ -78,6 +78,8 @@ bool finishPipeOperation(HANDLE pipe, std::unique_ptr<PipeOperation>& operation,
 #endif
 
 #ifndef GEODE_IS_WINDOWS
+constexpr int kSendSliceMs = 100;
+constexpr int kSendBudgetMs = 500;
 #ifdef MSG_NOSIGNAL
 constexpr int kSendFlags = MSG_NOSIGNAL; // survive discord closing the socket (no sigpipe)
 #else

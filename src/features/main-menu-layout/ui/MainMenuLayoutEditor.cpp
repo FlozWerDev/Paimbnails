@@ -3127,7 +3127,7 @@ void MainMenuLayoutEditor::refreshInspector() {
     if (m_selectedIds.empty()) return;
 
     if (multi) {
-        setLabelIfChanged(m_inspName, fmt::format(loc("{} Selected", "{} Selec."), m_selectedIds.size()));
+        setLabelIfChanged(m_inspName, fmt::format(fmt::runtime(loc("{} Selected", "{} Selec.")), m_selectedIds.size()));
         m_inspName->limitLabelWidth(108.f, 0.42f, 0.16f);
         setLabelIfChanged(m_inspSub, loc("Multi-selection actions", "Acciones multiples"));
         studio_ui::setGdButtonState(
@@ -3257,7 +3257,7 @@ void MainMenuLayoutEditor::updateHint() {
     if (m_selectedIds.empty()) {
         text = loc("Tap an element or drag a box to select", "Toca un elemento o arrastra para seleccionar");
     } else if (m_selectedIds.size() > 1) {
-        text = fmt::format(loc("{} selected - Drag to move or align", "{} selec. - Arrastra o alinea"), m_selectedIds.size());
+        text = fmt::format(fmt::runtime(loc("{} selected - Drag to move or align", "{} selec. - Arrastra o alinea")), m_selectedIds.size());
     } else if (auto* el = this->primaryElement()) {
         if (this->isLocked(*el)) {
             text = tr("menu_layout.hint_locked");

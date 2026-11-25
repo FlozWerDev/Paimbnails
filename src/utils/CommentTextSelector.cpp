@@ -14,6 +14,9 @@ using namespace paimon;
 namespace {
 CommentTextSelector* g_activeSelector = nullptr;
 constexpr float kMinSelectionDistance = 6.f;
+#ifndef GEODE_IS_DESKTOP
+constexpr float kLongPressDelay = 0.35f;
+#endif
 constexpr float kTouchPadX = 4.f;
 constexpr float kTouchPadY = 3.f;
 

@@ -49,7 +49,7 @@ bool describeFile(std::string const& path, std::string& out) {
     out += '|';
     out += std::to_string(size);
     out += '|';
-    out += std::to_string(stamp.time_since_epoch().count());
+    out += std::to_string(static_cast<long long>(stamp.time_since_epoch().count()));
     return true;
 }
 

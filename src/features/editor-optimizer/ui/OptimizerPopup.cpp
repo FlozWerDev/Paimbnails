@@ -453,8 +453,8 @@ void OptimizerPopup::recomputePlan() {
         float const pct = 100.f * static_cast<float>(saved) / static_cast<float>(m_plan.inputCount);
         setStatus(
             fmt::format(
-                tr("Ready: {} objects can be reduced to {} (-{}, -{:.1f}%).",
-                   "Listo: {} objetos se reducen a {} (-{}, -{:.1f}%)."),
+                fmt::runtime(tr("Ready: {} objects can be reduced to {} (-{}, -{:.1f}%).",
+                   "Listo: {} objetos se reducen a {} (-{}, -{:.1f}%).")),
                 m_plan.inputCount, m_plan.outputCount, saved, pct
             ),
             {150, 240, 180}
@@ -481,8 +481,8 @@ void OptimizerPopup::applyOptimization() {
     auto const report = result.unwrap();
     PaimonNotify::show(
         fmt::format(
-            tr("Optimized: {} -> {} objects (-{}).",
-               "Optimizado: {} -> {} objetos (-{})."),
+            fmt::runtime(tr("Optimized: {} -> {} objects (-{}).",
+               "Optimizado: {} -> {} objetos (-{}).")),
             report.removedObjects, report.createdObjects, report.netSaved
         ),
         NotificationIcon::Success
@@ -490,8 +490,8 @@ void OptimizerPopup::applyOptimization() {
     analyze(false);
     setStatus(
         fmt::format(
-            tr("Applied! Replaced {} blocks with {} stretched objects (Ctrl+Z to undo).",
-               "Aplicado! Se reemplazaron {} bloques por {} objetos (Ctrl+Z para deshacer)."),
+            fmt::runtime(tr("Applied! Replaced {} blocks with {} stretched objects (Ctrl+Z to undo).",
+               "Aplicado! Se reemplazaron {} bloques por {} objetos (Ctrl+Z para deshacer).")),
             report.removedObjects, report.createdObjects
         ),
         {135, 255, 150}
@@ -543,8 +543,8 @@ void OptimizerPopup::refreshOptionsUI() {
     kit::setPillText(
         m_scopePill,
         m_selectedOnly
-            ? fmt::format(tr("Scope: Selection ({})", "Alcance: Seleccion ({})"), m_scene.selectionCount)
-            : fmt::format(tr("Scope: Full Level ({})", "Alcance: Nivel ({})"), m_scene.levelCount)
+            ? fmt::format(fmt::runtime(tr("Scope: Selection ({})", "Alcance: Seleccion ({})")), m_scene.selectionCount)
+            : fmt::format(fmt::runtime(tr("Scope: Full Level ({})", "Alcance: Nivel ({})")), m_scene.levelCount)
     );
     kit::setPillText(
         m_viewPill,
@@ -567,16 +567,16 @@ void OptimizerPopup::refreshStats() {
     float const pct = 100.f * static_cast<float>(saved) / static_cast<float>(m_plan.inputCount);
 
     m_statLabels[0]->setString(fmt::format(
-        tr("Objects: {} -> {} (-{}, -{:.1f}%)", "Objetos: {} -> {} (-{}, -{:.1f}%)"),
+        fmt::runtime(tr("Objects: {} -> {} (-{}, -{:.1f}%)", "Objetos: {} -> {} (-{}, -{:.1f}%)")),
         m_plan.inputCount, m_plan.outputCount, saved, pct
     ).c_str());
     m_statLabels[1]->setString(fmt::format(
-        tr("Collision: {} -> {} | Deco: {} -> {}", "Colision: {} -> {} | Deco: {} -> {}"),
+        fmt::runtime(tr("Collision: {} -> {} | Deco: {} -> {}", "Colision: {} -> {} | Deco: {} -> {}")),
         m_plan.solidInputCount, m_plan.solidOutputCount,
         m_plan.decoInputCount, m_plan.decoOutputCount
     ).c_str());
     m_statLabels[2]->setString(fmt::format(
-        tr("Corners kept: {} | Excluded: {}", "Esquinas intactas: {} | Excluidos: {}"),
+        fmt::runtime(tr("Corners kept: {} | Excluded: {}", "Esquinas intactas: {} | Excluidos: {}")),
         m_plan.preservedCornerCount, m_plan.excludedCount
     ).c_str());
 

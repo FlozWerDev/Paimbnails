@@ -8,6 +8,7 @@
 #include <Geode/utils/cocos.hpp>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <vector>
 
 using cocos2d::CCDrawNode;
@@ -150,7 +151,16 @@ public:
     // Direct triangle append without CCDrawNode::drawPolygon miter extrusion.
     void drawTriangle(cocos2d::CCPoint p1, cocos2d::CCPoint p2, cocos2d::CCPoint p3,
                       cocos2d::ccColor4F const& color) {
-        ensureCapacity(3);
+        if (m_nBufferCount + 3 > static_cast<int>(m_uBufferCapacity)) {
+            unsigned int newCapacity = std::max(
+                m_uBufferCapacity * 2u,
+                static_cast<unsigned int>(m_nBufferCount + 3));
+            auto* resized = static_cast<cocos2d::ccV2F_C4B_T2F*>(
+                std::realloc(m_pBuffer, newCapacity * sizeof(cocos2d::ccV2F_C4B_T2F)));
+            if (!resized) return;
+            m_pBuffer = resized;
+            m_uBufferCapacity = newCapacity;
+        }
         cocos2d::ccColor4B c4b = cocos2d::ccc4BFromccc4F(color);
         auto* v = m_pBuffer + m_nBufferCount;
         v[0] = {{p1.x, p1.y}, c4b, {0.5f, 0.5f}};

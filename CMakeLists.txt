@@ -14,6 +14,11 @@ set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
 project(Paimbnails VERSION 1.2.5)
 
+# Allow Clang on Windows runners where MSVC STL is newer than the installed LLVM Clang.
+if (WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    add_compile_definitions(_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH)
+endif()
+
 # Geometry Dash 2.2091 is supported by Geode SDK v6.0.0 or newer.
 
 # cpm

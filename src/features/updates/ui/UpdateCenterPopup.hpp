@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/ui/Popup.hpp>
@@ -16,6 +16,8 @@ protected:
     bool init();
 
     void buildHeader();
+    void buildHistoryPanel();
+    void buildFooter();
     void refreshHeader();
     void loadHistory();
     void rebuildHistory();
@@ -23,6 +25,7 @@ protected:
 
     void showHistoryStatus(std::string const& text, bool retry);
     void showNotes(ReleaseInfo const& release);
+    void showLocalChangelog();
     void confirmInstall(ReleaseInfo const& release);
     void startInstall(ReleaseInfo const& release);
 

@@ -7,6 +7,7 @@
 #include "CollabPopups.hpp"
 #include "CollabTypes.hpp"
 #include "../../utils/ThreadTracker.hpp"
+#include "../../utils/MainThreadDelay.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
@@ -79,7 +80,7 @@ void CollabPresence::registerSelf() {
     });
 
     auto req = web::WebRequest();
-    req.timeout(std::chrono::seconds(15));
+    req.timeout(asp::Duration::fromSecs(15));
     req.header("Content-Type", "application/json");
     if (!m_token.empty()) req.header("Authorization", "Bearer " + m_token);
     req.bodyString(body.dump(matjson::NO_INDENTATION));
@@ -88,13 +89,16 @@ void CollabPresence::registerSelf() {
         [this, gen](web::WebResponse res) {
             if (!m_started || gen != m_gen) return;
             if (res.ok()) {
+                m_retryAttempts = 0;
                 if (auto parsed = matjson::parse(res.string().unwrapOr(""))) {
                     std::string token = parsed.unwrap()["presenceToken"].asString().unwrapOr("");
                     if (!token.empty()) m_token = std::move(token);
                 }
                 poll();
             } else {
-                scheduleRetry(gen, 5000);
+                int shift = std::min(m_retryAttempts++, 4);
+                int delay = std::min(5000 * (1 << shift), 60000);
+                scheduleRetry(gen, delay);
             }
         });
 }
@@ -104,7 +108,7 @@ void CollabPresence::poll() {
     uint64_t gen = m_gen;
 
     auto req = web::WebRequest();
-    req.timeout(std::chrono::seconds(35));
+    req.timeout(asp::Duration::fromSecs(35));
     req.header("Authorization", "Bearer " + m_token);
     std::string url = baseUrl() + fmt::format("/api/presence/poll?account={}", m_accountId);
 
@@ -150,15 +154,11 @@ void CollabPresence::poll() {
 
 void CollabPresence::scheduleRetry(uint64_t gen, int ms) {
     auto lifetime = std::weak_ptr<std::atomic<bool>>(m_lifetime);
-    ThreadTracker::get().spawn([this, lifetime, gen, ms]() {
-        geode::utils::thread::setName("PaimonCollabPresence");
-        std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+    paimon::scheduleMainThreadDelay(static_cast<float>(ms) / 1000.f, [this, lifetime, gen]() {
+        if (paimon::isRuntimeShuttingDown()) return;
         if (auto alive = lifetime.lock(); !alive || !alive->load(std::memory_order_acquire)) return;
-        Loader::get()->queueInMainThread([this, gen]() {
-            if (paimon::isRuntimeShuttingDown()) return;
-            if (!m_started || gen != m_gen) return;
-            registerSelf();
-        });
+        if (!m_started || gen != m_gen) return;
+        registerSelf();
     });
 }
 

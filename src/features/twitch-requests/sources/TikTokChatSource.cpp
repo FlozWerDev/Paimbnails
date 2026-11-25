@@ -15,7 +15,6 @@ namespace paimon::twitch {
 namespace {
 
 constexpr char const* kRelayFallback = "https://tiktok.eulerstream.com/webcast/fetch";
-constexpr int kMaxFailures = 4;
 constexpr int kLiveStatus = 2;
 
 // just enough protobuf to walk webcastresponse: varints and length delimited
@@ -179,11 +178,8 @@ void TikTokChatSource::poll() {
     httpGetBinary(url, [this](bool ok, std::vector<uint8_t> body) {
         if (stopped()) return;
         if (!ok || body.empty()) {
-            if (++m_failures >= kMaxFailures) {
-                fail("Se corto el chat de TikTok");
-                return;
-            }
-            later(3.f, [this] { poll(); });
+            retryPollOrFail(m_failures, "Se corto el chat de TikTok", 3.f,
+                            [this] { poll(); });
             return;
         }
         m_failures = 0;
@@ -240,11 +236,8 @@ void TikTokChatSource::handleResponse(std::vector<uint8_t> const& body) {
     // no cursor means the relay did not hand us a webcastresponse; polling the
     // same window again would just replay it forever.
     if (cursor.empty()) {
-        if (++m_failures >= kMaxFailures) {
-            fail("El relay de TikTok dejo de responder");
-            return;
-        }
-        later(3.f, [this] { poll(); });
+        retryPollOrFail(m_failures, "El relay de TikTok dejo de responder", 3.f,
+                        [this] { poll(); });
         return;
     }
     m_cursor = std::move(cursor);

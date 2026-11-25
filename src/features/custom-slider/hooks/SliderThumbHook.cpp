@@ -2,6 +2,7 @@
 
 #include <Geode/modify/Slider.hpp>
 #include <Geode/modify/SliderTouchLogic.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 
 #include "../services/CustomSliderManager.hpp"
 #include "../../../framework/HookConventions.hpp"
@@ -14,7 +15,7 @@ using namespace paimon::slider;
 class $modify(PaimonSlider, Slider) {
 public:
     static void onModify(auto& self) {
-        paimon::hooks::afterNodeIdsOrLate(self, "Slider::init");
+        paimon::hooks::afterNodeIdsOrLate(self, "Slider::create");
     }
 
     struct Fields {
@@ -27,26 +28,26 @@ public:
         Ref<CCNode> m_selectedNode = nullptr;
     };
 
-    bool init(CCNode* target, SEL_MenuHandler handler, char const* bar,
-              char const* groove, char const* thumb, char const* thumbSel,
-              float scale) {
-        if (!Slider::init(target, handler, bar, groove, thumb, thumbSel, scale))
-            return false;
+    // on GD 2.2091 Windows, the SDK's Slider::init address is actually the
+    // SliderTouchLogic factory. Hook the verified Slider factory instead.
+    static Slider* create(CCNode* target, SEL_MenuHandler handler, char const* bar,
+                          char const* groove, char const* thumb, char const* thumbSel,
+                          float scale) {
+        auto* slider = Slider::create(target, handler, bar, groove, thumb, thumbSel, scale);
+        if (!slider) return nullptr;
 
         auto& mgr = CustomSliderManager::get();
-        if (!mgr.config().enabled) return true;
+        if (!mgr.config().enabled) return slider;
 
         // schedule for next frame so the slider is fully parented
-        this->scheduleOnce(
+        slider->scheduleOnce(
             schedule_selector(PaimonSlider::applyIconDeferred), 0.f);
+        slider->addOnExitCallback([slider] {
+            slider->unschedule(schedule_selector(PaimonSlider::applyIconDeferred));
+            return true;
+        });
 
-        return true;
-    }
-
-    $override
-    void onExit() {
-        this->unschedule(schedule_selector(PaimonSlider::applyIconDeferred));
-        Slider::onExit();
+        return slider;
     }
 
     void applyIconDeferred(float) {

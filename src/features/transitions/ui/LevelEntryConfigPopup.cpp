@@ -64,6 +64,25 @@ void LevelEntryConfigPopup::rebuild() {
     }
 
     auto config = getLevelEntryEffectsConfig();
+
+    // every row edits the stored config the same way: load, set one field, save.
+    auto setFlag = [](bool LevelEntryEffectsConfig::* field, bool value) {
+        auto next = getLevelEntryEffectsConfig();
+        next.*field = value;
+        saveLevelEntryEffectsConfig(next);
+    };
+    auto setFloat = [](float LevelEntryEffectsConfig::* field, double value) {
+        auto next = getLevelEntryEffectsConfig();
+        next.*field = static_cast<float>(value);
+        saveLevelEntryEffectsConfig(next);
+    };
+    auto pickEnum = [](auto const& options, int index, auto field) {
+        if (index < 0 || index >= static_cast<int>(options.size())) return;
+        auto next = getLevelEntryEffectsConfig();
+        next.*field = options[static_cast<size_t>(index)];
+        saveLevelEntryEffectsConfig(next);
+    };
+
     auto content = m_mainLayer->getContentSize();
     float scrollW = content.width - 24.f;
     float scrollH = content.height - 44.f;
@@ -85,11 +104,7 @@ void LevelEntryConfigPopup::rebuild() {
         "Transicion real al nivel",
         "Mantiene ambas escenas vivas y coreografia el nivel antes de empezar.",
         config.enabled,
-        [](bool value) {
-            auto next = getLevelEntryEffectsConfig();
-            next.enabled = value;
-            saveLevelEntryEffectsConfig(next);
-        }
+        [setFlag](bool value) { setFlag(&LevelEntryEffectsConfig::enabled, value); }
     ));
 
     items.push_back(kit::makeCard(scrollW, "Movimiento", {255, 202, 105}, {
@@ -99,13 +114,7 @@ void LevelEntryConfigPopup::rebuild() {
             "Smooth+ es fiel al mod original, con una llegada mas limpia.",
             std::move(styleNames),
             styleIndex(config.style),
-            [](int index) {
-                auto const& styles = levelEntryStyles();
-                if (index < 0 || index >= static_cast<int>(styles.size())) return;
-                auto next = getLevelEntryEffectsConfig();
-                next.style = styles[static_cast<size_t>(index)];
-                saveLevelEntryEffectsConfig(next);
-            }
+            [pickEnum](int index) { pickEnum(levelEntryStyles(), index, &LevelEntryEffectsConfig::style); }
         ),
         kit::makeSliderRow(
             innerW,
@@ -113,11 +122,7 @@ void LevelEntryConfigPopup::rebuild() {
             "Un segundo reproduce el ritmo del original.",
             config.duration, .35, 1.8,
             [](double value) { return fmt::format("{:.2f}s", value); },
-            [](double value) {
-                auto next = getLevelEntryEffectsConfig();
-                next.duration = static_cast<float>(value);
-                saveLevelEntryEffectsConfig(next);
-            }
+            [setFloat](double value) { setFloat(&LevelEntryEffectsConfig::duration, value); }
         ),
         kit::makeSliderRow(
             innerW,
@@ -125,22 +130,14 @@ void LevelEntryConfigPopup::rebuild() {
             "Ajusta distancias, giro y profundidad sin cambiar la duracion.",
             config.intensity, .25, 1.5,
             [](double value) { return fmt::format("x{:.2f}", value); },
-            [](double value) {
-                auto next = getLevelEntryEffectsConfig();
-                next.intensity = static_cast<float>(value);
-                saveLevelEntryEffectsConfig(next);
-            }
+            [setFloat](double value) { setFloat(&LevelEntryEffectsConfig::intensity, value); }
         ),
         kit::makeToggleRow(
             innerW,
             "Cascada de objetos",
             "Escalona los bloques visibles de izquierda a derecha.",
             config.staggerObjects,
-            [](bool value) {
-                auto next = getLevelEntryEffectsConfig();
-                next.staggerObjects = value;
-                saveLevelEntryEffectsConfig(next);
-            }
+            [setFlag](bool value) { setFlag(&LevelEntryEffectsConfig::staggerObjects, value); }
         ),
     }));
 
@@ -151,13 +148,7 @@ void LevelEntryConfigPopup::rebuild() {
             "Puede invertir la entrada o usar una personalidad independiente.",
             std::move(exitModeNames),
             exitModeIndex(config.exitMode),
-            [](int index) {
-                auto const& modes = levelExitModes();
-                if (index < 0 || index >= static_cast<int>(modes.size())) return;
-                auto next = getLevelEntryEffectsConfig();
-                next.exitMode = modes[static_cast<size_t>(index)];
-                saveLevelEntryEffectsConfig(next);
-            }
+            [pickEnum](int index) { pickEnum(levelExitModes(), index, &LevelEntryEffectsConfig::exitMode); }
         ),
         kit::makeSelectRow(
             innerW,
@@ -165,13 +156,7 @@ void LevelEntryConfigPopup::rebuild() {
             "Se usa cuando Al salir esta en Estilo diferente.",
             std::move(exitStyleNames),
             styleIndex(config.exitStyle),
-            [](int index) {
-                auto const& styles = levelEntryStyles();
-                if (index < 0 || index >= static_cast<int>(styles.size())) return;
-                auto next = getLevelEntryEffectsConfig();
-                next.exitStyle = styles[static_cast<size_t>(index)];
-                saveLevelEntryEffectsConfig(next);
-            }
+            [pickEnum](int index) { pickEnum(levelEntryStyles(), index, &LevelEntryEffectsConfig::exitStyle); }
         ),
         kit::makeSliderRow(
             innerW,
@@ -179,11 +164,7 @@ void LevelEntryConfigPopup::rebuild() {
             "Solo afecta al estilo diferente.",
             config.exitDuration, .25, 1.8,
             [](double value) { return fmt::format("{:.2f}s", value); },
-            [](double value) {
-                auto next = getLevelEntryEffectsConfig();
-                next.exitDuration = static_cast<float>(value);
-                saveLevelEntryEffectsConfig(next);
-            }
+            [setFloat](double value) { setFloat(&LevelEntryEffectsConfig::exitDuration, value); }
         ),
         kit::makeSliderRow(
             innerW,
@@ -191,11 +172,7 @@ void LevelEntryConfigPopup::rebuild() {
             "Solo afecta al estilo diferente.",
             config.exitIntensity, .25, 1.5,
             [](double value) { return fmt::format("x{:.2f}", value); },
-            [](double value) {
-                auto next = getLevelEntryEffectsConfig();
-                next.exitIntensity = static_cast<float>(value);
-                saveLevelEntryEffectsConfig(next);
-            }
+            [setFloat](double value) { setFloat(&LevelEntryEffectsConfig::exitIntensity, value); }
         ),
     }));
 
@@ -205,55 +182,35 @@ void LevelEntryConfigPopup::rebuild() {
             "Pantalla anterior",
             "Saca controles y decoraciones al entrar, y recibe el pause y la pagina de destino al salir.",
             config.animatePage,
-            [](bool value) {
-                auto next = getLevelEntryEffectsConfig();
-                next.animatePage = value;
-                saveLevelEntryEffectsConfig(next);
-            }
+            [setFlag](bool value) { setFlag(&LevelEntryEffectsConfig::animatePage, value); }
         ),
         kit::makeToggleRow(
             innerW,
             "Fondo",
             "Revela el fondo durante la segunda mitad.",
             config.animateBackground,
-            [](bool value) {
-                auto next = getLevelEntryEffectsConfig();
-                next.animateBackground = value;
-                saveLevelEntryEffectsConfig(next);
-            }
+            [setFlag](bool value) { setFlag(&LevelEntryEffectsConfig::animateBackground, value); }
         ),
         kit::makeToggleRow(
             innerW,
             "Suelos opuestos",
             "Los dos suelos entran desde direcciones contrarias.",
             config.animateGround,
-            [](bool value) {
-                auto next = getLevelEntryEffectsConfig();
-                next.animateGround = value;
-                saveLevelEntryEffectsConfig(next);
-            }
+            [setFlag](bool value) { setFlag(&LevelEntryEffectsConfig::animateGround, value); }
         ),
         kit::makeToggleRow(
             innerW,
             "Middleground",
             "Trae la decoracion intermedia desde la derecha.",
             config.animateMiddleground,
-            [](bool value) {
-                auto next = getLevelEntryEffectsConfig();
-                next.animateMiddleground = value;
-                saveLevelEntryEffectsConfig(next);
-            }
+            [setFlag](bool value) { setFlag(&LevelEntryEffectsConfig::animateMiddleground, value); }
         ),
         kit::makeToggleRow(
             innerW,
             "Gradientes",
             "Hace aparecer gradualmente los gradientes del nivel.",
             config.animateGradients,
-            [](bool value) {
-                auto next = getLevelEntryEffectsConfig();
-                next.animateGradients = value;
-                saveLevelEntryEffectsConfig(next);
-            }
+            [setFlag](bool value) { setFlag(&LevelEntryEffectsConfig::animateGradients, value); }
         ),
     }));
 
@@ -263,44 +220,28 @@ void LevelEntryConfigPopup::rebuild() {
             "HUD",
             "Escala controles y desliza intento, progreso e informacion.",
             config.animateHud,
-            [](bool value) {
-                auto next = getLevelEntryEffectsConfig();
-                next.animateHud = value;
-                saveLevelEntryEffectsConfig(next);
-            }
+            [setFlag](bool value) { setFlag(&LevelEntryEffectsConfig::animateHud, value); }
         ),
         kit::makeToggleRow(
             innerW,
             "Jugador",
             "El icono entra desde fuera de pantalla segun su modo.",
             config.animatePlayer,
-            [](bool value) {
-                auto next = getLevelEntryEffectsConfig();
-                next.animatePlayer = value;
-                saveLevelEntryEffectsConfig(next);
-            }
+            [setFlag](bool value) { setFlag(&LevelEntryEffectsConfig::animatePlayer, value); }
         ),
         kit::makeToggleRow(
             innerW,
             "Objetos visibles",
             "Bloques activos suben, giran, escalan y recuperan su opacidad.",
             config.animateObjects,
-            [](bool value) {
-                auto next = getLevelEntryEffectsConfig();
-                next.animateObjects = value;
-                saveLevelEntryEffectsConfig(next);
-            }
+            [setFlag](bool value) { setFlag(&LevelEntryEffectsConfig::animateObjects, value); }
         ),
         kit::makeToggleRow(
             innerW,
             "Movimiento reducido",
             "Respeta el ajuste global y deja solo un revelado corto.",
             config.respectReducedMotion,
-            [](bool value) {
-                auto next = getLevelEntryEffectsConfig();
-                next.respectReducedMotion = value;
-                saveLevelEntryEffectsConfig(next);
-            }
+            [setFlag](bool value) { setFlag(&LevelEntryEffectsConfig::respectReducedMotion, value); }
         ),
     }));
 

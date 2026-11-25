@@ -1,5 +1,6 @@
 #include "PaigoritV1.hpp"
 #include "LightLemmatizer.hpp"
+#include "MicroRanker.hpp"
 
 #include <rapidfuzz/fuzz.hpp>
 #include <algorithm>
@@ -33,20 +34,6 @@ std::string normalizeKeyword(std::string s) {
     }
     while (!out.empty() && out.back() == ' ') out.pop_back();
     return out;
-}
-
-std::vector<std::string> tokenizeKw(std::string const& s) {
-    std::vector<std::string> tokens;
-    std::string cur;
-    for (char c : s) {
-        if (c == ' ') {
-            if (!cur.empty()) { tokens.push_back(cur); cur.clear(); }
-        } else {
-            cur.push_back(c);
-        }
-    }
-    if (!cur.empty()) tokens.push_back(cur);
-    return tokens;
 }
 
 std::vector<std::vector<std::string>> buildTokenForms(
@@ -93,7 +80,7 @@ PaigoritV1::KwMatch PaigoritV1::matchKeyword(
     }
 
     // token matching uses expanded forms; exact/stem/synonym/typo hits anchor.
-    auto kwTokens = tokenizeKw(keyword);
+    auto kwTokens = LightLemmatizer::tokenize(keyword);
     if (kwTokens.size() == 1) {
         std::string const& kw = kwTokens[0];
         std::string kwStem = LightLemmatizer::stem(kw);
@@ -201,17 +188,37 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
     all.reserve(intents.size());
 
     for (auto const& intent : intents) {
-        auto kwIt = intent.keywordsByLang.find(langId);
-        if (kwIt == intent.keywordsByLang.end()) {
-            kwIt = intent.keywordsByLang.find("english");
-        }
-        if (kwIt == intent.keywordsByLang.end()) continue;
-
+        // bilingual matching: score keywords in the active language PLUS the
+        // other supported language. Players constantly mix "hola" into an
+        // english UI (and vice versa); matching a single language made those
+        // queries fall back to random "did you mean?" suggestions.
         std::vector<std::string> normalizedKeywords;
-        normalizedKeywords.reserve(kwIt->second.size());
-        for (auto const& kwRaw : kwIt->second) {
-            auto kw = normalizeKeyword(kwRaw);
-            if (!kw.empty()) normalizedKeywords.push_back(std::move(kw));
+        {
+            std::string const* langs[3] = {&langId, nullptr, nullptr};
+            std::string other = (langId == "spanish") ? "english" : "spanish";
+            langs[1] = &other;
+            static std::string const kEn = "english";
+            langs[2] = &kEn;
+            bool seenEn = false, seenEs = false, seenReq = false;
+            for (auto const* lp : langs) {
+                if (!lp || lp->empty()) continue;
+                if (*lp == "english" && seenEn) continue;
+                if (*lp == "spanish" && seenEs) continue;
+                if (*lp == langId && seenReq) continue;
+                if (*lp == "english") seenEn = true;
+                else if (*lp == "spanish") seenEs = true;
+                else seenReq = true;
+                auto kwIt = intent.keywordsByLang.find(*lp);
+                if (kwIt == intent.keywordsByLang.end()) continue;
+                for (auto const& kwRaw : kwIt->second) {
+                    auto kw = normalizeKeyword(kwRaw);
+                    if (kw.empty()) continue;
+                    if (std::find(normalizedKeywords.begin(), normalizedKeywords.end(), kw)
+                        == normalizedKeywords.end()) {
+                        normalizedKeywords.push_back(std::move(kw));
+                    }
+                }
+            }
         }
         if (normalizedKeywords.empty()) continue;
 
@@ -227,7 +234,7 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
             scored.bestKeywordFuzzy = std::max(scored.bestKeywordFuzzy, km.score);
             scored.bestAnchoredFuzzy = std::max(scored.bestAnchoredFuzzy, km.anchoredScore);
 
-            auto kwTokens = tokenizeKw(kw);
+            auto kwTokens = LightLemmatizer::tokenize(kw);
             if (kwTokens.size() >= 2) {
                 if (keywordAppearsAsCompound(tokenForms, kwTokens)) {
                     scored.hasCompoundMatch = true;
@@ -243,19 +250,36 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
         }
 
         // search phrases stay below strong keyword matches but can qualify.
-        auto spIt = intent.searchPhrasesByLang.find(langId);
-        if (spIt == intent.searchPhrasesByLang.end()) {
-            spIt = intent.searchPhrasesByLang.find("english");
-        }
-        if (spIt != intent.searchPhrasesByLang.end()) {
-            for (auto const& raw : spIt->second) {
+        // same bilingual rule as keywords: check both languages.
+        {
+            std::vector<std::string> phraseRaws;
+            {
+                std::string other = (langId == "spanish") ? "english" : "spanish";
+                std::string const* langs[3] = {&langId, &other, nullptr};
+                static std::string const kEn = "english";
+                langs[2] = &kEn;
+                for (auto const* lp : langs) {
+                    if (!lp || lp->empty()) continue;
+                    auto spIt = intent.searchPhrasesByLang.find(*lp);
+                    if (spIt == intent.searchPhrasesByLang.end()) continue;
+                    for (auto const& r : spIt->second) phraseRaws.push_back(r);
+                    if (lp == &langId) {
+                        // avoid triple-adding when langId is already english/spanish
+                        if (*lp == "english" || *lp == "spanish") {
+                            // still allow the other language below; mark by skipping dup later
+                        }
+                    }
+                    if (phraseRaws.size() > 64) break;
+                }
+            }
+            for (auto const& raw : phraseRaws) {
                 auto phrase = normalizeKeyword(raw);
                 if (phrase.empty()) continue;
                 auto km = matchKeyword(normalizedQuery, flatForms, phrase);
                 double capped = std::min(km.score, kSearchPhraseCap);
                 scored.bestSearchFuzzy = std::max(scored.bestSearchFuzzy, capped);
 
-                auto pToks = tokenizeKw(phrase);
+                auto pToks = LightLemmatizer::tokenize(phrase);
                 if (pToks.size() >= 2 && keywordAppearsAsCompound(tokenForms, pToks)) {
                     scored.bestSearchFuzzy = std::max(scored.bestSearchFuzzy, kSearchPhraseCap);
                 }
@@ -278,7 +302,7 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
         }
         if (descIt != intent.descriptionByLang.end() && !tokenForms.empty()) {
             auto descNorm = normalizeKeyword(descIt->second);
-            auto descToks = LightLemmatizer::removeStopwords(tokenizeKw(descNorm));
+            auto descToks = LightLemmatizer::removeStopwords(LightLemmatizer::tokenize(descNorm));
             if (!descToks.empty()) {
                 int dHit = 0;
                 for (auto const& forms : tokenForms) {
@@ -354,7 +378,8 @@ PaigoritResult PaigoritV1::run(std::vector<GuideIntent> const& intents,
         double qualityFactor = kQualityBase + kQualityRange * norm;
 
         scored.finalScore = static_cast<double>(intent.weight) * qualityFactor
-                          + scored.confidenceBonus;
+                          + scored.confidenceBonus
+                          + MicroRanker::score(intent.id, normalizedQuery);
 
         all.push_back(scored);
     }
@@ -414,33 +439,65 @@ std::vector<GuideIntent const*> PaigoritV1::splitTopics(
     std::string const& normalizedQuery,
     std::string const& langId)
 {
-    auto toks = tokenizeKw(normalizedQuery);
+    auto toks = LightLemmatizer::tokenize(normalizedQuery);
 
     auto isConj = [](std::string const& t) {
-        return t == "and" || t == "y" || t == "e";
+        return t == "and" || t == "y" || t == "e" || t == "con"
+            || t == "plus" || t == "mas" || t == "with";
     };
 
     bool hasConj = false;
     for (auto const& t : toks) if (isConj(t)) { hasConj = true; break; }
-    if (!hasConj) return {};
 
     // split the query into conjunction-separated segments.
     std::vector<std::string> segments;
-    std::string cur;
-    for (auto const& t : toks) {
-        if (isConj(t)) {
-            if (!cur.empty()) { cur.pop_back(); segments.push_back(cur); cur.clear(); }
-        } else {
-            cur += t;
-            cur.push_back(' ');
+    if (hasConj) {
+        std::string cur;
+        for (auto const& t : toks) {
+            if (isConj(t)) {
+                if (!cur.empty()) { cur.pop_back(); segments.push_back(cur); cur.clear(); }
+            } else {
+                cur += t;
+                cur.push_back(' ');
+            }
         }
+        if (!cur.empty()) { cur.pop_back(); segments.push_back(cur); }
+    } else if (toks.size() >= 2 && toks.size() <= 6) {
+        // no explicit conjunction (commas/& are stripped by normalize), but
+        // "cursor discord" or "musica fondos" may still be two topics. Try every
+        // split point and keep the one where both sides match strongly.
+        std::vector<std::string> bestPair;
+        double bestSum = 0.0;
+        for (std::size_t cut = 1; cut < toks.size(); ++cut) {
+            std::string left, right;
+            for (std::size_t i = 0; i < cut; ++i) { left += toks[i]; left.push_back(' '); }
+            for (std::size_t i = cut; i < toks.size(); ++i) { right += toks[i]; right.push_back(' '); }
+            if (!left.empty()) left.pop_back();
+            if (!right.empty()) right.pop_back();
+            auto lToks = LightLemmatizer::tokenize(left);
+            auto rToks = LightLemmatizer::tokenize(right);
+            auto lRes = run(intents, left, lToks, langId);
+            auto rRes = run(intents, right, rToks, langId);
+            if (!lRes.best || !rRes.best) continue;
+            if (lRes.best->kind != IntentKind::Functional) continue;
+            if (rRes.best->kind != IntentKind::Functional) continue;
+            if (lRes.ranking.empty() || rRes.ranking.empty()) continue;
+            if (lRes.ranking.front().tier < 3 || rRes.ranking.front().tier < 3) continue;
+            if (lRes.best->id == rRes.best->id) continue;
+            double sum = lRes.bestScore + rRes.bestScore;
+            if (sum > bestSum) {
+                bestSum = sum;
+                bestPair = {left, right};
+            }
+        }
+        if (!bestPair.empty()) segments = std::move(bestPair);
     }
-    if (!cur.empty()) { cur.pop_back(); segments.push_back(cur); }
+    if (segments.empty()) return {};
 
     std::vector<GuideIntent const*> hits;
     for (auto const& seg : segments) {
         if (seg.empty()) continue;
-        auto segToks = tokenizeKw(seg);
+        auto segToks = LightLemmatizer::tokenize(seg);
         auto res = run(intents, seg, segToks, langId);
         if (!res.best || res.ranking.empty()) continue;
         if (res.best->kind != IntentKind::Functional) continue;

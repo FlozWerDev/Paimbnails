@@ -1,0 +1,67 @@
+#include "tests/review_fixtures/ReviewQueue.hpp"
+#include "src/utils/StagedDirectory.hpp"
+namespace fs = std::filesystem;
+std::string read(fs::path const& path) { std::ifstream in(path); return {std::istreambuf_iterator<char>(in),{}}; }
+void put(fs::path const& path,std::string const& value) { std::ofstream out(path);out<<value;assert(out); }
+int main() {
+    auto root=fs::current_path()/paimon::storage::newProjectId();
+    assert(root.is_absolute() && root.parent_path()==fs::current_path());
+    auto output=root/"project/output";
+    fs::create_directories(output);
+    put(output/"image","previous");
+    std::error_code error;
+    {
+        auto staged=paimon::file::StagedDirectory::create(root/"builds",error);assert(staged&&!error);
+        put(staged->path()/"image","new");
+        for(auto const& invalid:{fs::path{},fs::path("."),fs::path(".."),root.root_path()}) {
+            assert(!staged->publishTo(invalid,error));
+            assert(read(staged->path()/"image")=="new");
+        }
+        assert(staged->publishTo(output,error)&&!error);
+        assert(read(output/"image")=="new");
+        // A metadata failure abandons the transaction: its destructor restores the old set.
+    }
+    assert(read(output/"image")=="previous");
+    {
+        auto staged=paimon::file::StagedDirectory::create(root/"builds",error);assert(staged&&!error);
+        fs::remove_all(staged->path());
+        assert(!staged->publishTo(output,error)&&error);
+        assert(read(output/"image")=="previous");
+    }
+    {
+        auto staged=paimon::file::StagedDirectory::create(root/"builds",error);assert(staged&&!error);
+        put(staged->path()/"image","committed");
+        assert(staged->publishTo(output,error));staged->commit();
+    }
+    assert(read(output/"image")=="committed");
+    {
+        auto staged=paimon::file::StagedDirectory::create(root/"builds",error);assert(staged);
+        put(staged->path()/"image","temporary");
+        assert(staged->publishTo(root/"project/new-output",error));
+        assert(staged->rollback(error)&&!error);
+        assert(!fs::exists(root/"project/new-output"));
+        auto blocker=root/"project/file";put(blocker,"keep");
+        assert(!staged->publishTo(blocker,error));assert(read(blocker)=="keep");
+        fs::remove(blocker);
+    }
+    {
+        auto staged=paimon::file::StagedDirectory::create(root/"builds",error);assert(staged);
+        put(staged->path()/"image","not committed");
+        assert(staged->publishTo(output,error));
+        auto backup=staged->backupPath();
+        fs::create_directory(staged->path());
+        put(staged->path()/"blocker","block rollback");
+        assert(!staged->rollback(error)&&error);
+        assert(read(backup/"previous/image")=="committed");
+        assert(!staged->publishTo(output,error));
+        assert(staged->backupPath()==backup);
+        assert(staged->path().is_absolute() && staged->path().parent_path()==root/"builds");
+        fs::remove_all(staged->path());
+        assert(staged->rollback(error)&&!error);
+        assert(read(output/"image")=="committed");
+    }
+    assert(fs::is_empty(root/"builds"));
+    assert(std::distance(fs::directory_iterator(root/"project"),fs::directory_iterator{})==1);
+    fs::remove_all(root);
+    std::cout<<"Directory publication commits complete sets and rolls back every tested failure\n";
+}

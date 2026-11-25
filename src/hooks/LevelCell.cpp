@@ -1,3 +1,4 @@
+#include "../utils/FilesystemPath.hpp"
 #include <Geode/modify/LevelCell.hpp>
 #include <Geode/binding/BoomListView.hpp>
 #include <Geode/binding/DailyLevelNode.hpp>
@@ -7,6 +8,7 @@
 #include <Geode/loader/Mod.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/LoadingSpinner.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 #include "../utils/PaimonDrawNode.hpp"
 #include <cmath>
 #include <algorithm>
@@ -32,6 +34,7 @@
 #include "../utils/RetainedLazyTextureLoad.hpp"
 #include "../features/thumbnails/ui/LevelCellSettingsPopup.hpp"
 #include "../framework/compat/ModCompat.hpp"
+#include "../framework/compat/CDCThumbsCompat.hpp"
 #include "../utils/SpriteHelper.hpp"
 #include "../utils/ScissorClipNode.hpp"
 #include "../video/VideoPlayer.hpp"
@@ -49,15 +52,36 @@
 #include "../features/auto-preview/services/AutoPreviewQueue.hpp"
 #include "../core/modules/ModuleRegistry.hpp"
 #include "../framework/HookConventions.hpp"
+#include "../features/colorful-icons/services/IconColorMath.hpp"
 
 using namespace geode::prelude;
 using namespace Shaders;
 using namespace paimon::levelcell;
+using paimon::icons::math::clampByte;
 
 namespace paimon::hooks {
     bool g_suppressLevelCellEnhancements = false;
     bool g_forceCompactLevelCells = false;
     thread_local bool g_suppressCompactLevelCellsInContext = false;
+}
+
+// shared guard for gallery async callbacks: revalidates the recycled cell,
+// its level, and the gallery generation. returns the live fields (null when
+// stale); the cell goes through outCell for follow-up work.
+template <typename CellT, typename RefT>
+static auto resolveGalleryCell(RefT const& safeRef, int levelID, int galleryToken, CellT*& outCell) {
+    outCell = nullptr;
+    auto cellRef = safeRef.lock();
+    auto* cell = static_cast<CellT*>(cellRef.data());
+    if (!cell || !cell->m_level || cell->m_level->m_levelID != levelID) {
+        return static_cast<decltype(cell->m_fields.self())>(nullptr);
+    }
+    auto* fields = cell->m_fields.self();
+    if (!fields || fields->m_galleryToken != galleryToken) {
+        return static_cast<decltype(fields)>(nullptr);
+    }
+    outCell = cell;
+    return fields;
 }
 
 class $modify(PaimonLevelCell, LevelCell) {
@@ -90,6 +114,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         std::shared_ptr<std::monostate> m_asyncCancelToken = std::make_shared<std::monostate>();
         int m_lastRequestedLevelID = 0; 
         bool m_thumbnailApplied = false; 
+        bool m_thumbInvalidated = false;
 // don't retry a known failure until state changes
         bool m_thumbnailFailed = false;
         bool m_wasInCenter = false; 
@@ -189,6 +214,20 @@ class $modify(PaimonLevelCell, LevelCell) {
         if (fields) {
             fields->m_isBeingDestroyed = true;
         }
+    }
+
+    $override
+    bool init() {
+        if (!LevelCell::init()) return false;
+        this->addOnEnterCallback([this] {
+            this->handleEnter();
+            return true;
+        });
+        this->addOnExitCallback([this] {
+            this->handleExit();
+            return true;
+        });
+        return true;
     }
     
     static void calculateFullCoverageThumbScale(CCSprite* sprite, float targetWidth, float targetHeight, float& outScale) {
@@ -382,6 +421,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         if (!m_level || m_level->m_levelID.value() != invalidLevelID) return;
         auto fields = m_fields.self();
         if (!fields) return;
+        fields->m_thumbInvalidated = true;
         auto bundle = thumbResetBundle();
         paimon::thumbnails::levelcell::invalidateForRemoteThumbnail(
             bundle,
@@ -426,7 +466,10 @@ class $modify(PaimonLevelCell, LevelCell) {
             },
             .setThumbnailApplied = [self](bool value) {
                 if (auto* cell = static_cast<PaimonLevelCell*>(self.lock().data())) {
-                    if (auto f = cell->m_fields.self()) f->m_thumbnailApplied = value;
+                    if (auto f = cell->m_fields.self()) {
+                        f->m_thumbnailApplied = value;
+                        if (value) f->m_thumbInvalidated = false;
+                    }
                 }
             },
         };
@@ -474,7 +517,10 @@ class $modify(PaimonLevelCell, LevelCell) {
             },
             .setThumbnailApplied = [self](bool value) {
                 if (auto* cell = static_cast<PaimonLevelCell*>(self.lock().data())) {
-                    if (auto f = cell->m_fields.self()) f->m_thumbnailApplied = value;
+                    if (auto f = cell->m_fields.self()) {
+                        f->m_thumbnailApplied = value;
+                        if (value) f->m_thumbInvalidated = false;
+                    }
                 }
             },
             .setGalleryIndex = [self](int index) {
@@ -580,6 +626,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             // keep it retryable until a sprite is mounted
         if (fields->m_thumbSprite && fields->m_thumbSprite->getParent()) {
             fields->m_thumbnailApplied = true;
+            fields->m_thumbInvalidated = false;
             this->flashThumbnailSprite();
         }
     }
@@ -596,6 +643,19 @@ class $modify(PaimonLevelCell, LevelCell) {
         fields->m_isMaintenanceScheduled = true;
     }
 
+    void ensureTick(bool want, bool& scheduled, cocos2d::SEL_SCHEDULE selector) {
+        if (want) {
+            if (!scheduled) {
+                this->schedule(selector, LEVELCELL_VISUAL_TICK_INTERVAL);
+                scheduled = true;
+            }
+        }
+        else if (scheduled) {
+            this->unschedule(selector);
+            scheduled = false;
+        }
+    }
+
     void refreshRuntimeScheduling() {
         auto fields = m_fields.self();
         if (!fields || fields->m_isBeingDestroyed) {
@@ -604,37 +664,19 @@ class $modify(PaimonLevelCell, LevelCell) {
 
         cacheSettings();
 
-        bool wantsCenterAnimation =
+        ensureTick(
             fields->m_cachedHoverEnabled &&
             fields->m_clippingNode &&
-            fields->m_thumbSprite;
+            fields->m_thumbSprite,
+            fields->m_isCenterAnimScheduled,
+            schedule_selector(PaimonLevelCell::updateCenterAnimation));
 
-        if (wantsCenterAnimation) {
-            if (!fields->m_isCenterAnimScheduled) {
-                this->schedule(schedule_selector(PaimonLevelCell::updateCenterAnimation), LEVELCELL_VISUAL_TICK_INTERVAL);
-                fields->m_isCenterAnimScheduled = true;
-            }
-        }
-        else if (fields->m_isCenterAnimScheduled) {
-            this->unschedule(schedule_selector(PaimonLevelCell::updateCenterAnimation));
-            fields->m_isCenterAnimScheduled = false;
-        }
-
-        bool wantsGradientAnimation =
+        ensureTick(
             fields->m_cachedAnimatedGradient &&
             fields->m_gradientLayer &&
-            fields->m_gradientIsPSG;
-
-        if (wantsGradientAnimation) {
-            if (!fields->m_isGradientAnimScheduled) {
-                this->schedule(schedule_selector(PaimonLevelCell::updateGradientAnim), LEVELCELL_VISUAL_TICK_INTERVAL);
-                fields->m_isGradientAnimScheduled = true;
-            }
-        }
-        else if (fields->m_isGradientAnimScheduled) {
-            this->unschedule(schedule_selector(PaimonLevelCell::updateGradientAnim));
-            fields->m_isGradientAnimScheduled = false;
-        }
+            fields->m_gradientIsPSG,
+            fields->m_isGradientAnimScheduled,
+            schedule_selector(PaimonLevelCell::updateGradientAnim));
 
         bool wantsFrameUpdate =
             fields->m_hasVideo &&
@@ -642,10 +684,10 @@ class $modify(PaimonLevelCell, LevelCell) {
             fields->m_videoPlayer->isPlaying();
 
         if (wantsFrameUpdate) {
-            this->scheduleUpdate();
+            this->schedule(schedule_selector(PaimonLevelCell::tickVideo), 1.f / 60.f);
         }
         else {
-            this->unscheduleUpdate();
+            this->unschedule(schedule_selector(PaimonLevelCell::tickVideo));
         }
 
         ensureMaintenanceTickScheduled();
@@ -721,7 +763,10 @@ class $modify(PaimonLevelCell, LevelCell) {
         fields->m_thumbSprite = nullptr;
         fields->m_thumbTypeCached = false;
         fields->m_staticThumbLoad.reset();
-fields->m_loadingSpinner = nullptr;
+        if (fields->m_loadingSpinner) {
+            fields->m_loadingSpinner->removeFromParent();
+            fields->m_loadingSpinner = nullptr;
+        }
         fields->m_lastClipHoverOffsetX = 0.0f;
         fields->m_lastClipHoverPosAdjustment = 0.0f;
         fields->m_lastClipHoverScaleX = 1.0f;
@@ -763,7 +808,7 @@ fields->m_loadingSpinner = nullptr;
         int32_t levelIDForGIF = m_level ? m_level->m_levelID.value() : 0;
         bool hasLevelGIF = allowLevelGIF && levelIDForGIF > 0 && ThumbnailLoader::get().hasGIFData(levelIDForGIF);
         std::string gifPath = hasLevelGIF
-            ? geode::utils::string::pathToString(ThumbnailLoader::get().getCachePath(levelIDForGIF, true))
+            ? paimon::paths::toUtf8(ThumbnailLoader::get().getCachePath(levelIDForGIF, true))
             : std::string();
 
         if (hasLevelGIF && AnimatedGIFSprite::isCached(gifPath)) {
@@ -807,6 +852,7 @@ fields->m_loadingSpinner = nullptr;
                         old->removeFromParent();
                         parent->addChild(anim);
                         fields->m_thumbSprite = anim;
+                        fields->m_thumbTypeCached = false;
                     }
                 }
             });
@@ -849,6 +895,9 @@ fields->m_loadingSpinner = nullptr;
         boundsClipper->setZOrder(-1);
         boundsClipper->setID("paimon-bounds-clipper"_spr);
         this->addChild(boundsClipper);
+        // ours replaces the cdc thumbnail on this cell (kept updated by the
+        // maintenance tick in case theirs lands after ours).
+        paimon::compat::hideCDCLevelCellThumbs(this);
 
         auto hoverContainer = CCNode::create();
         hoverContainer->setContentSize(bgSize);
@@ -931,6 +980,7 @@ const float sepW = 3.f;
         auto fields = m_fields.self();
         Ref<CCNode> safeBg = bg;
              bg->setVisible(true);
+             paimon::compat::hideCDCLevelCellThumbs(this);
              if (auto* bgLayer = typeinfo_cast<CCLayerColor*>(bg)) {
                  if (transparentMode) {
                      auto size = bgLayer->getContentSize();
@@ -945,7 +995,7 @@ const float sepW = 3.f;
                  : static_cast<float>(Mod::get()->getSavedValue<double>("levelcell-background-blur", 3.0));
              bool hasGifBackground = ThumbnailLoader::get().hasGIFData(levelID);
              std::string gifPath = hasGifBackground
-                 ? geode::utils::string::pathToString(ThumbnailLoader::get().getCachePath(levelID, true))
+                 ? paimon::paths::toUtf8(ThumbnailLoader::get().getCachePath(levelID, true))
                  : std::string();
 
              auto ensureBgClipper = [safeBg]() -> CCClippingNode* {
@@ -1272,9 +1322,8 @@ Ref<CCNode> safeBg = bg;
 
         if (enableMythic && m_level && m_level->m_isEpic >= 3) {
                 auto brighten = [](ccColor3B c) {
-                    auto clamp = [](int v){ return std::max(0, std::min(255, v)); };
                     int add = 35;
-                    return ccColor3B{ (GLubyte)clamp(c.r + add), (GLubyte)clamp(c.g + add), (GLubyte)clamp(c.b + add) };
+                    return ccColor3B{ clampByte(c.r + add), clampByte(c.g + add), clampByte(c.b + add) };
                 };
                 ccColor3B ca{220,220,220}, cb{255,255,255};
                 if (auto pair2 = LevelColors::get().getPair(levelID)) {
@@ -1406,7 +1455,7 @@ this->addChild(ps, bg->getZOrder() + 1);
                     menuItem->setEnabled(true);
 
                     if (!isDaily) {
-                        auto makeInvisible = [kAreaWidth, areaHeight]() {
+                        auto makeInvisible = [areaHeight]() {
                             auto s = CCSprite::create();
                             s->setContentSize({kAreaWidth, areaHeight});
                             s->setAnchorPoint({0.5f, 0.5f});
@@ -1815,6 +1864,7 @@ this->addChild(ps, bg->getZOrder() + 1);
         // store final bases before the transition moves positions
         fields->m_clippingNode = newClip;
         fields->m_thumbSprite = newSprite;
+        fields->m_thumbTypeCached = false;
         fields->m_thumbBasePos = newSprite->getPosition();
         fields->m_clipBasePos = newClip->getPosition();
         fields->m_thumbBaseScaleX = newBaseScale;
@@ -1979,11 +2029,9 @@ fields2->m_gradientIsPSG = false;
             std::string cacheKey = fmt::format("gallery_video_{}_{}", levelID, index);
             WeakRef<PaimonLevelCell> safeRef = this;
             VideoThumbnailSprite::createAsync(thumb.url, cacheKey, [safeRef, levelID, galleryToken, index](VideoThumbnailSprite* videoSprite) {
-                auto cellRef = safeRef.lock();
-                auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
-                if (!cell || !cell->m_level || cell->m_level->m_levelID != levelID) return;
-                auto fields = cell->m_fields.self();
-                if (!fields || fields->m_galleryToken != galleryToken) return;
+                PaimonLevelCell* cell = nullptr;
+                auto fields = resolveGalleryCell<PaimonLevelCell>(safeRef, levelID, galleryToken, cell);
+                if (!fields || !cell) return;
                 if (!videoSprite) return;
 
                 if (fields->m_galleryIndex == index) {
@@ -1997,17 +2045,9 @@ fields2->m_gradientIsPSG = false;
                     videoSprite->setID("video-driver-pending"_spr);
                     cell->addChild(videoSprite, -1000);
                     videoSprite->setOnFirstVisibleFrame([safeRef, levelID, galleryToken, index](VideoThumbnailSprite* readySprite) {
-                        auto cellRefInner = safeRef.lock();
-                        auto* currentCell = static_cast<PaimonLevelCell*>(cellRefInner.data());
-                        if (!currentCell || !currentCell->m_level || currentCell->m_level->m_levelID != levelID) {
-                            if (readySprite->getParent()) {
-                                readySprite->removeFromParent();
-                            }
-                            return;
-                        }
-
-                        auto currentFields = currentCell->m_fields.self();
-                        if (!currentFields || currentFields->m_galleryToken != galleryToken || currentFields->m_galleryIndex != index) {
+                        PaimonLevelCell* currentCell = nullptr;
+                        auto currentFields = resolveGalleryCell<PaimonLevelCell>(safeRef, levelID, galleryToken, currentCell);
+                        if (!currentFields || !currentCell || currentFields->m_galleryIndex != index) {
                             if (readySprite->getParent()) {
                                 readySprite->removeFromParent();
                             }
@@ -2035,11 +2075,9 @@ fields2->m_gradientIsPSG = false;
                 }
                 WeakRef<PaimonLevelCell> safeRef = this;
                 ThumbnailLoader::get().requestUrlLoad(thumb.url, [safeRef, levelID, galleryToken, index](CCTexture2D* tex, bool ok) {
-                    auto cellRef = safeRef.lock();
-                    auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
-                    if (!cell || !cell->m_level || cell->m_level->m_levelID != levelID) return;
-                    auto fields = cell->m_fields.self();
-                    if (!fields || fields->m_galleryToken != galleryToken) return;
+                    PaimonLevelCell* cell = nullptr;
+                    auto fields = resolveGalleryCell<PaimonLevelCell>(safeRef, levelID, galleryToken, cell);
+                    if (!fields || !cell) return;
                     if (!ok || !tex || fields->m_galleryIndex != index) return;
                     if (fields->m_thumbSprite && fields->m_thumbSprite->getTexture() == tex) return;
                     cell->crossfadeToThumb(tex);
@@ -2058,14 +2096,10 @@ fields2->m_gradientIsPSG = false;
 
         WeakRef<PaimonLevelCell> safeRef = this;
         ThumbnailLoader::get().requestUrlLoad(thumb.url, [safeRef, levelID, galleryToken, index, url = thumb.url](CCTexture2D* tex, bool success) {
-            auto cellRef = safeRef.lock();
-            auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
-            if (!cell || !cell->m_level || cell->m_level->m_levelID != levelID) return;
-
-            auto fields = cell->m_fields.self();
-            if (!fields) return;
+            PaimonLevelCell* cell = nullptr;
+            auto fields = resolveGalleryCell<PaimonLevelCell>(safeRef, levelID, galleryToken, cell);
+            if (!fields || !cell) return;
             fields->m_galleryPendingUrls.erase(url);
-            if (fields->m_galleryToken != galleryToken) return;
             if (!success || !tex) {
                 return;
             }
@@ -2076,7 +2110,7 @@ fields2->m_gradientIsPSG = false;
         });
     }
 
-    void updateGalleryCycle(float dt) {
+    void updateGalleryCycle(float) {
         auto fields = m_fields.self();
         if (!fields || fields->m_isBeingDestroyed || !m_level) return;
 
@@ -2359,7 +2393,6 @@ return;
     }
 
     bool isTouchOnMenu(CCTouch* touch) {
-        auto fields = m_fields.self();
         CCPoint worldPoint = touch->getLocation();
         return checkMenuCollision(this, worldPoint, nullptr);
     }
@@ -2421,21 +2454,27 @@ return;
             if (newCompact != fields->m_cachedCompactMode) {
                 m_compactView = newCompact;
                 fields->m_cachedCompactMode = newCompact;
-                if (m_level) {
-                    if (m_cellMode == 0) {
-                        loadFromLevel(m_level);
-                    } else {
-                        loadCustomLevelCell();
+                Ref<PaimonLevelCell> keepAlive = this;
+                int const capturedLevelID = m_level ? m_level->m_levelID : 0;
+                Loader::get()->queueInMainThread([keepAlive, capturedLevelID] {
+                    auto* cell = keepAlive.data();
+                    if (!cell || !cell->getParent()) return;
+                    if (capturedLevelID && (!cell->m_level || cell->m_level->m_levelID != capturedLevelID)) return;
+                    if (cell->m_level) {
+                        if (cell->m_cellMode == 0) {
+                            cell->loadFromLevel(cell->m_level);
+                        } else {
+                            cell->loadCustomLevelCell();
+                        }
                     }
-                }
-
-                CCNode* parent = this->getParent();
-                for (int depth = 0; parent && depth < 15; ++depth, parent = parent->getParent()) {
-                    if (auto* listView = typeinfo_cast<BoomListView*>(parent)) {
-                        listView->setupList(0.f);
-                        break;
+                    CCNode* parent = cell->getParent();
+                    for (int depth = 0; parent && depth < 15; ++depth, parent = parent->getParent()) {
+                        if (auto* listView = typeinfo_cast<BoomListView*>(parent)) {
+                            listView->setupList(0.f);
+                            break;
+                        }
                     }
-                }
+                });
                 return;
             }
 
@@ -2488,12 +2527,16 @@ return;
             applyTransparentMode();
         }
 
+        // cdc downloads finish asynchronously and can land after our
+        // thumbnail: re-assert the replacement while ours is on screen.
+        if (levelID > 0 && (fields->m_thumbnailApplied || fields->m_gradientLayer)) {
+            paimon::compat::hideCDCLevelCellThumbs(this);
+        }
+
         refreshRuntimeScheduling();
     }
 
-    $override void onEnter() {
-        LevelCell::onEnter();
-
+    void handleEnter() {
         auto fields = m_fields.self();
         if (!fields) return;
 
@@ -2511,14 +2554,21 @@ return;
             }
         }
 
+        // cached browser results can build cells before they have a parent:
+        // retry once attached, using this cell's browser rather than the old scene.
+        if (m_level && !paimon::hooks::g_suppressLevelCellEnhancements &&
+            !isInCompactExcludedContext()) {
+            tryLoadThumbnail();
+        }
+
         refreshRuntimeScheduling();
     }
 
-    $override void onExit() {
+    void handleExit() {
         PaimonDebug::log("[LevelCell] onExit: levelID={}", m_level ? m_level->m_levelID.value() : 0);
         bool realtimePreviewCell = isInsideRealtimeSearchPreviewContext();
 
-        this->unscheduleUpdate();
+        this->unschedule(schedule_selector(PaimonLevelCell::tickVideo));
         this->unschedule(schedule_selector(PaimonLevelCell::updateMaintenance));
         this->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
         this->unschedule(schedule_selector(PaimonLevelCell::updateGradientAnim));
@@ -2578,7 +2628,6 @@ return;
                 ThumbnailLoader::get().cancelLoad(m_level->m_levelID.value(), true);
             }
         }
-        LevelCell::onExit();
     }
 
     void playTapFlashAnimation() {
@@ -2654,11 +2703,11 @@ return;
         LevelCell::onClick(sender);
     }
 
-    static inline ccColor3B brightenColor(ccColor3B const& c, int add) {        auto clamp = [](int v){ return std::max(0, std::min(255, v)); };
+    static inline ccColor3B brightenColor(ccColor3B const& c, int add) {
         return ccColor3B{
-            (GLubyte)clamp(c.r + add),
-            (GLubyte)clamp(c.g + add),
-            (GLubyte)clamp(c.b + add)
+            clampByte(c.r + add),
+            clampByte(c.g + add),
+            clampByte(c.b + add)
         };
     }
 
@@ -2690,16 +2739,15 @@ return;
                 (GLubyte)((1-t)*fields->m_gradientColorB.b + t*fields->m_gradientColorA.b)
             };
             
-            auto clamp = [](int v) { return std::max(0, std::min(255, v)); };
             int brightAmount = static_cast<int>(60.0f * fields->m_centerLerp);
             
-            left.r = (GLubyte)clamp(left.r + brightAmount);
-            left.g = (GLubyte)clamp(left.g + brightAmount);
-            left.b = (GLubyte)clamp(left.b + brightAmount);
+            left.r = clampByte(left.r + brightAmount);
+            left.g = clampByte(left.g + brightAmount);
+            left.b = clampByte(left.b + brightAmount);
             
-            right.r = (GLubyte)clamp(right.r + brightAmount);
-            right.g = (GLubyte)clamp(right.g + brightAmount);
-            right.b = (GLubyte)clamp(right.b + brightAmount);
+            right.r = clampByte(right.r + brightAmount);
+            right.g = clampByte(right.g + brightAmount);
+            right.b = clampByte(right.b + brightAmount);
             
             grad->setStartColor(left);
             grad->setEndColor(right);
@@ -2934,7 +2982,8 @@ return;
                 if (fields->m_thumbIsPSS) pss = static_cast<PaimonShaderSprite*>(target);
                 if (fields->m_thumbIsAGS) ags = static_cast<AnimatedGIFSprite*>(target);
             } else if (ti == 1) {
-                psg = static_cast<PaimonShaderGradient*>(target);
+                psg = typeinfo_cast<PaimonShaderGradient*>(target);
+                if (!psg) fields->m_gradientIsPSG = false;
             }
 
             auto setIntensity = [&](float i) {
@@ -3143,6 +3192,7 @@ return;
 
     bool tryReuseAppliedThumbnail(int32_t levelID) {
         auto fields = m_fields.self();
+        if (fields->m_thumbInvalidated) return false;
         bool const spriteAlive = fields->m_thumbSprite && fields->m_thumbSprite->getParent();
         if (!spriteAlive) return false;
 
@@ -3353,9 +3403,7 @@ return;
         );
     }
 
-    $override void update(float dt) {
-        LevelCell::update(dt);
-
+    void tickVideo(float dt) {
         auto fields = m_fields.self();
         if (!fields) return;
 
@@ -3375,42 +3423,196 @@ return;
         }
 
         if (!(fields->m_hasVideo && fields->m_videoPlayer && fields->m_videoPlayer->isPlaying())) {
-            this->unscheduleUpdate();
+            this->unschedule(schedule_selector(PaimonLevelCell::tickVideo));
         }
     }
 
-    // compact mode hides the first-page place label and shifts contents
+    // compact mode hides the place index when unranked and organizes the cell into
+    // a balanced 3-row card without far-left clutter or text overlaps.
     void applyCompactLayoutAdjustments() {
         if (!m_compactView || !m_level) return;
-        if (m_level->m_listPosition != 0) return;
         if (this->getUserFlag("compact-adjusted"_spr)) return;
         this->setUserFlag("compact-adjusted"_spr, true);
 
-        if (auto label = m_mainLayer->getChildByID("level-place")) {
-            label->setVisible(false);
-
-            for (auto* child : CCArrayExt<CCNode*>(m_mainLayer->getChildren())) {
-                if (child->getID() != "main-menu") {
-                    child->setPositionX(child->getPositionX() - 20.f);
-                }
+        bool const hasListRank = m_level->m_listPosition > 0;
+        if (!hasListRank) {
+            if (auto label = m_mainLayer->getChildByID("level-place")) {
+                label->setVisible(false);
+                label->setScale(0.f);
             }
-
-            if (auto menu = m_mainLayer->getChildByID("main-menu")) {
-                for (auto* child : CCArrayExt<CCNode*>(menu->getChildren())) {
-                    if (child->getID() != "view-button") {
-                        child->setPositionX(child->getPositionX() - 20.f);
+            if (auto* children = m_mainLayer->getChildren()) {
+                for (auto* child : CCArrayExt<CCNode*>(children)) {
+                    auto* lbl = typeinfo_cast<CCLabelBMFont*>(child);
+                    if (!lbl || !lbl->getString()) continue;
+                    auto const id = lbl->getID();
+                    if (!id.empty() && id != "level-place") continue;
+                    if (std::string_view(lbl->getString()) == "0" && lbl->getPositionX() < 55.f) {
+                        lbl->setVisible(false);
+                        lbl->setScale(0.f);
                     }
                 }
             }
+        }
 
-            auto moveNextToView = [this](CCNode* node) {
-                if (!node) return;
-                auto viewButton = m_mainMenu ? m_mainMenu->getChildByID("view-button") : nullptr;
-                if (!viewButton) return;
-                node->setPosition({276.f, 25.f});
-            };
-            moveNextToView(m_mainLayer->getChildByID("completed-icon"));
-            moveNextToView(m_mainLayer->getChildByID("percentage-label"));
+        float const cellH = m_height > 10.f ? m_height : 50.f;
+        float const cellW = m_width > 100.f ? m_width : 356.f;
+
+        // Place list rank (if any) on the far left, and center the difficulty badge cleanly.
+        if (hasListRank) {
+            if (auto* rankLabel = m_mainLayer->getChildByID("level-place")) {
+                rankLabel->setPosition({22.f, cellH * 0.5f});
+            }
+        }
+
+        float const diffX = hasListRank ? 50.f : 25.f;
+        if (auto* diffNode = m_mainLayer->getChildByID("difficulty-container")
+                ? m_mainLayer->getChildByID("difficulty-container")
+                : m_mainLayer->getChildByID("difficulty-sprite")) {
+            diffNode->setPosition({diffX, cellH * 0.53f});
+            if (diffNode->getScale() > 0.74f) {
+                diffNode->setScale(0.72f);
+            }
+        }
+
+        // Compute safe right boundary clear of VIEW button and right-side #id / thumbnail.
+        CCNode* viewBtn = m_mainMenu ? m_mainMenu->getChildByID("view-button") : nullptr;
+        float viewLeft = cellW - 88.f;
+        if (viewBtn && viewBtn->isVisible()) {
+            float btnCenterWorldX = m_mainMenu->convertToWorldSpace(viewBtn->getPosition()).x;
+            float btnCenterLocalX = m_mainLayer->convertToNodeSpace({btnCenterWorldX, 0.f}).x;
+            float btnHalfW = viewBtn->getScaledContentSize().width * 0.5f;
+            viewLeft = btnCenterLocalX - btnHalfW - 8.f;
+        }
+        float const leftX = hasListRank ? 72.f : 48.f;
+        float const row1Right = std::min(viewLeft, cellW - 96.f);
+        float const row2Right = std::min(viewLeft, cellW - 82.f);
+        float const row3Right = std::min(viewLeft, cellW - 78.f);
+
+        float const topY = cellH - 11.5f;
+        float const midY = cellH * 0.49f;
+        float const botY = 10.5f;
+
+        // Collect copy / high-object badges for Row 1 so we know how much space to reserve.
+        std::vector<CCNode*> topBadges;
+        for (char const* badgeId : {"copy-indicator", "high-object-indicator"}) {
+            if (auto* b = m_mainLayer->getChildByID(badgeId)) {
+                if (b->isVisible()) topBadges.push_back(b);
+            }
+        }
+        float badgesWidth = 0.f;
+        for (auto* b : topBadges) {
+            b->setScale(std::min(b->getScale(), 0.78f));
+            badgesWidth += b->getScaledContentSize().width + 4.f;
+        }
+
+        // Row 1: Level title + Creator + Badges
+        float cursorX = leftX;
+        if (auto* nameLbl = typeinfo_cast<CCLabelBMFont*>(m_mainLayer->getChildByID("level-name"))) {
+            nameLbl->setAnchorPoint({0.f, 0.5f});
+            nameLbl->setPosition({leftX, topY});
+            float const maxTitleW = std::max(72.f, row1Right - leftX - badgesWidth - 52.f);
+            float const baseScale = std::min(std::max(nameLbl->getScale(), 0.42f), 0.56f);
+            nameLbl->limitLabelWidth(maxTitleW, baseScale, 0.24f);
+            cursorX = leftX + nameLbl->getScaledContentSize().width + 6.f;
+        }
+
+        if (auto* creatorItem = m_mainMenu ? m_mainMenu->getChildByID("creator-name") : nullptr) {
+            float const availCreator = (row1Right - badgesWidth) - cursorX - 4.f;
+            if (availCreator > 16.f) {
+                creatorItem->setVisible(true);
+                float curW = creatorItem->getScaledContentSize().width;
+                if (curW > availCreator && curW > 1.f) {
+                    float factor = availCreator / curW;
+                    creatorItem->setScale(std::max(0.24f, creatorItem->getScale() * factor));
+                }
+                float finalW = creatorItem->getScaledContentSize().width;
+                CCPoint worldCenter = m_mainLayer->convertToWorldSpace({cursorX + finalW * 0.5f, topY});
+                creatorItem->setPosition(m_mainMenu->convertToNodeSpace(worldCenter));
+                cursorX += finalW + 5.f;
+            }
+        }
+
+        for (auto* b : topBadges) {
+            float w = b->getScaledContentSize().width;
+            if (cursorX + w <= row1Right + 6.f) {
+                b->setAnchorPoint({0.5f, 0.5f});
+                b->setPosition({cursorX + w * 0.5f, topY});
+                cursorX += w + 4.f;
+            }
+        }
+
+        // Row 2: Song name
+        if (auto* songLbl = typeinfo_cast<CCLabelBMFont*>(m_mainLayer->getChildByID("song-name"))) {
+            songLbl->setAnchorPoint({0.f, 0.5f});
+            songLbl->setPosition({leftX, midY});
+            float const maxSongW = std::max(80.f, row2Right - leftX);
+            float const baseScale = std::min(std::max(songLbl->getScale(), 0.32f), 0.39f);
+            songLbl->limitLabelWidth(maxSongW, baseScale, 0.18f);
+        }
+
+        // Row 3: Length, Downloads, Likes, Orbs, Coins, and Completion status
+        struct StatPair { char const* icon; char const* label; };
+        constexpr StatPair kStats[] = {
+            {"length-icon", "length-label"},
+            {"downloads-icon", "downloads-label"},
+            {"likes-icon", "likes-label"},
+            {"orbs-icon", "orbs-label"},
+        };
+
+        float statX = leftX;
+        for (auto const& pair : kStats) {
+            auto* icon = m_mainLayer->getChildByID(pair.icon);
+            auto* lbl = typeinfo_cast<CCLabelBMFont*>(m_mainLayer->getChildByID(pair.label));
+            if (icon && icon->isVisible()) {
+                if (icon->getScale() > 0.66f) icon->setScale(0.62f);
+                float w = icon->getScaledContentSize().width;
+                icon->setAnchorPoint({0.5f, 0.5f});
+                icon->setPosition({statX + w * 0.5f, botY});
+                statX += w + 3.f;
+            }
+            if (lbl && lbl->isVisible()) {
+                lbl->setAnchorPoint({0.f, 0.5f});
+                lbl->setPosition({statX, botY});
+                if (lbl->getScale() > 0.36f) lbl->setScale(0.35f);
+                statX += lbl->getScaledContentSize().width + 7.5f;
+            }
+        }
+
+        for (char const* coinId : {"coin-icon-1", "coin-icon-2", "coin-icon-3"}) {
+            if (auto* coin = m_mainLayer->getChildByID(coinId)) {
+                if (!coin->isVisible()) continue;
+                if (coin->getScale() > 0.58f) coin->setScale(0.55f);
+                float w = coin->getScaledContentSize().width;
+                if (statX + w <= row3Right) {
+                    coin->setAnchorPoint({0.5f, 0.5f});
+                    coin->setPosition({statX + w * 0.5f, botY});
+                    statX += w + 2.5f;
+                }
+            }
+        }
+
+        // Move completion checkmark / percentage cleanly next to the stats bar (never stacked under "0")
+        auto* compIcon = m_mainLayer->getChildByID("completed-icon");
+        auto* pctLabel = typeinfo_cast<CCLabelBMFont*>(m_mainLayer->getChildByID("percentage-label"));
+        float compX = std::max(statX + 4.f, row3Right - 4.f);
+        if (pctLabel && pctLabel->isVisible()) {
+            if (pctLabel->getScale() > 0.40f) pctLabel->setScale(0.38f);
+            float pw = pctLabel->getScaledContentSize().width;
+            float px = std::min(compX, row3Right);
+            if (px - pw < statX + 2.f) px = statX + 4.f + pw;
+            pctLabel->setAnchorPoint({1.f, 0.5f});
+            pctLabel->setPosition({px, botY});
+            if (compIcon && compIcon->isVisible()) {
+                if (compIcon->getScale() > 0.56f) compIcon->setScale(0.54f);
+                compIcon->setAnchorPoint({0.5f, 0.5f});
+                compIcon->setPosition({px - pw - compIcon->getScaledContentSize().width * 0.5f - 3.f, botY});
+            }
+        } else if (compIcon && compIcon->isVisible()) {
+            if (compIcon->getScale() > 0.60f) compIcon->setScale(0.58f);
+            float cw = compIcon->getScaledContentSize().width;
+            float px = std::max(statX + 6.f + cw * 0.5f, row3Right - cw * 0.5f);
+            compIcon->setAnchorPoint({0.5f, 0.5f});
+            compIcon->setPosition({px, botY});
         }
     }
 
@@ -3452,20 +3654,8 @@ return;
             }
         }
 
-        if (auto* scene = cocos2d::CCDirector::get()->getRunningScene()) {
-            for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
-                if (typeinfo_cast<LevelListLayer*>(child)) {
-                    return true;
-                }
-                if (auto* browser = typeinfo_cast<LevelBrowserLayer*>(child)) {
-                    if (browser->m_searchObject &&
-                        browser->m_searchObject->m_searchType == SearchType::MyLevels) {
-                        return true;
-                    }
-                }
-            }
-        }
-
+        // unparented cells are covered by the creation-time flag above. the
+        // running scene can still be the local browser while online results build.
         return false;
     }
 
@@ -3545,12 +3735,25 @@ return;
     }
 
     void applyCompactViewFromSetting(GJGameLevel* level = nullptr) {
+        // m_compactView decides the cell layout, and gd 2.2091 reads it from
+        // the same byte (levelcell + 0x260) right after this write.
+        //
+        // ojo: geode.node-ids also branches on this same flag (levelcell's
+        // register_ids expects a "level-place" tag at index 0 of m_mainlayer
+        // when m_compactView is true). if the 2.2091 compact layout doesn't
+        // put that tag there, node-ids shifts its indices and mislabels some
+        // cell nodes. not a crash (setidsafe checks for null) but a wrong id.
+        // if the compact cell ever breaks, check this flag first.
+        //
         // recycled cells may retain compact state; reset first
         if (isInCompactExcludedContext()) {
             m_compactView = false;
+            m_compactNoIndex = false;
             return;
         }
-        m_compactView = shouldUseCompactForLevel(level ? level : m_level);
+        auto* target = level ? level : m_level;
+        m_compactView = shouldUseCompactForLevel(target);
+        m_compactNoIndex = m_compactView && (!target || target->m_listPosition <= 0);
     }
 
     $override void loadCustomLevelCell() {

@@ -71,6 +71,7 @@ private:
 
 class PaiDrawCreateRoomLayer : public cocos2d::CCLayer {
 public:
+    using cocos2d::CCLayer::init;
     static PaiDrawCreateRoomLayer* create(bool editMode = false);
     static cocos2d::CCScene* scene(bool editMode = false);
 
@@ -181,7 +182,6 @@ private:
 
     cocos2d::CCClippingNode* m_clipper = nullptr;
     cocos2d::CCNode* m_strokeLayer = nullptr;
-    PaimonDrawNode* m_overlayFrame = nullptr;
     PaimonDrawNode* m_previewNode = nullptr;
     cocos2d::CCNode* m_currentGroup = nullptr;
     std::vector<cocos2d::CCNode*> m_groupStack;
@@ -194,7 +194,6 @@ private:
     float m_currentOpacity = 1.f;
     Tool m_tool = Tool::Pencil;
     bool m_readOnly = false;
-    float m_lastSendTimestamp = 0.f;
 
 public:
     void setDrawColor(cocos2d::ccColor3B color) { m_currentColor = color; }
@@ -227,6 +226,9 @@ public:
     void tickLocalTimer(float dt);
 
 private:
+    void scheduleStateRefresh();
+    void refreshStateTick(float);
+    bool m_stateRefreshScheduled = false;
     void buildLayout();
     void rebuildScoreboard();
     void rebuildChat();

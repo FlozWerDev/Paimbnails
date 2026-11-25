@@ -1,0 +1,63 @@
+#include <cassert>
+#include <iostream>
+#include <memory>
+#include <vector>
+
+enum class DynSongLayer { None, LevelSelect, LevelInfo };
+struct GJGameLevel {
+    int m_levelID = 0, m_audioTrack = 0, m_songID = 0;
+    static GJGameLevel* create();
+};
+std::vector<std::unique_ptr<GJGameLevel>> levels;
+GJGameLevel* GJGameLevel::create() {
+    levels.push_back(std::make_unique<GJGameLevel>());
+    return levels.back().get();
+}
+struct Mod {
+    static Mod* get() { static Mod mod; return &mod; }
+    template<class T> T getSettingValue(char const*) { return true; }
+};
+struct DynamicSongManager {
+    GJGameLevel* last = nullptr;
+    DynSongLayer layer = DynSongLayer::None;
+    static DynamicSongManager* get() { static DynamicSongManager manager; return &manager; }
+    void enterLayer(DynSongLayer selected) { layer = selected; }
+    void playSong(GJGameLevel* level) { last = level; }
+};
+constexpr int kMainLevelCount = 22;
+struct AudioContextCoordinator {
+    bool m_profileOpen = false, m_gameplayActive = false;
+    int m_levelSelectLevelID = 0;
+    GJGameLevel* m_levelSelectLevel = nullptr;
+    GJGameLevel* m_levelInfoLevel = nullptr;
+    DynSongLayer m_dynamicContextLayer = DynSongLayer::None;
+    bool playDynamicForCurrentContext(bool ignoreProfileGate = false);
+};
+@@function|src/features/audio/services/AudioContextCoordinator.cpp|bool AudioContextCoordinator::playDynamicForCurrentContext(@@
+
+int main() {
+    AudioContextCoordinator coordinator;
+    auto* custom = GJGameLevel::create();
+    custom->m_levelID = 1000000123;
+    custom->m_songID = 1516520;
+    coordinator.m_dynamicContextLayer = DynSongLayer::LevelSelect;
+    coordinator.m_levelSelectLevelID = custom->m_levelID;
+    coordinator.m_levelSelectLevel = custom;
+    assert(coordinator.playDynamicForCurrentContext());
+    assert(DynamicSongManager::get()->last == custom);
+    assert(DynamicSongManager::get()->last->m_songID == 1516520);
+
+    coordinator.m_gameplayActive = true;
+    assert(!coordinator.playDynamicForCurrentContext());
+    coordinator.m_gameplayActive = false;
+    coordinator.m_profileOpen = true;
+    assert(!coordinator.playDynamicForCurrentContext());
+    assert(coordinator.playDynamicForCurrentContext(true));
+    coordinator.m_profileOpen = false;
+    coordinator.m_levelSelectLevel = nullptr;
+    coordinator.m_levelSelectLevelID = 4;
+    assert(coordinator.playDynamicForCurrentContext());
+    assert(DynamicSongManager::get()->last->m_levelID == 4);
+    assert(DynamicSongManager::get()->last->m_audioTrack == 3);
+    std::cout << "Dynamic context: custom songs, original fallback and gameplay/profile guards passed\n";
+}

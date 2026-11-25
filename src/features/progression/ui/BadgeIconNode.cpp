@@ -86,12 +86,12 @@ bool BadgeIconNode::init(BadgeDef const& badge, BadgeContext const& ctx, float s
     }
 
     if (auto* glyph = paimon::SpriteHelper::safeCreateWithFrameName(badge.glyph)) {
-        float const target = size * (goal ? 0.30f : 0.38f);
+        float const target = size * (goal ? 0.28f : 0.35f);
         float const source = std::max(glyph->getContentSize().width, glyph->getContentSize().height);
         glyph->setScale(target / std::max(1.f, source));
-        glyph->setPosition({0.f, goal ? size * 0.05f : 0.f});
+        glyph->setPosition({0.f, goal ? size * 0.055f : 0.f});
         if (!m_unlocked) {
-            glyph->setColor({48, 52, 64});
+            glyph->setColor({54, 58, 70});
             glyph->setOpacity(225);
         }
         m_content->addChild(glyph, 2);
@@ -102,8 +102,8 @@ bool BadgeIconNode::init(BadgeDef const& badge, BadgeContext const& ctx, float s
             float const height = size * 0.13f;
             label->limitLabelWidth(
                 size * 0.44f, height / std::max(1.f, label->getContentSize().height), 0.05f);
-            label->setPosition({0.f, -size * 0.175f});
-            label->setColor(m_unlocked ? family : ccColor3B{118, 124, 140});
+            label->setPosition({0.f, -size * 0.165f});
+            label->setColor(m_unlocked ? ccColor3B{255, 255, 255} : ccColor3B{138, 144, 160});
             m_content->addChild(label, 3);
         }
     }

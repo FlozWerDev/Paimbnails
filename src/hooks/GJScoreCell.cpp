@@ -16,6 +16,7 @@
 #include "../blur/BlurSystem.hpp"
 #include "../framework/HookConventions.hpp"
 #include "../core/RuntimeLifecycle.hpp"
+#include "../core/Settings.hpp"
 #include "../features/scorecell/ScoreCellSettings.hpp"
 #include "../features/scorecell/ScoreCellRefresh.hpp"
 #include "../features/scorecell/LeaderboardCellLayout.hpp"
@@ -34,14 +35,6 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
         paimon::hooks::afterNodeIdsOrLate(self, "GJScoreCell::loadFromScore");
     }
 
-    void onExit() {
-        if (auto f = m_fields.self()) {
-            f->m_isBeingDestroyed = true;
-            hideLoadingSpinner();
-        }
-        GJScoreCell::onExit();
-    }
-
     struct Fields {
         Ref<CCClippingNode> m_profileClip = nullptr;
         Ref<CCLayerColor> m_profileSeparator = nullptr;
@@ -49,6 +42,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
         Ref<CCLayerColor> m_darkOverlay = nullptr;
         Ref<geode::LoadingSpinner> m_loadingSpinner = nullptr;
         bool m_isBeingDestroyed = false; // don't touch cells being destroyed
+        bool m_exitCallbackInstalled = false;
         Ref<CCNode> m_iconGradient = nullptr;
         Ref<paimon::scorecell::ScoreCellHoverWatcher> m_hoverWatcher = nullptr;
     };
@@ -281,7 +275,6 @@ public:
             float darkness = 0.2f;
             ccColor3B colorA = {255,255,255};
             ccColor3B colorB = {255,255,255};
-            bool useGradient = false;
             std::string gifKey = "";
 
             bool isCurrentUser = this->m_score && this->m_score->isCurrentUser();
@@ -292,15 +285,14 @@ public:
             gifKey = config.gifKey;
 
             if (isCurrentUser) {
-                bgType = Mod::get()->getSavedValue<std::string>("scorecell-background-type", "thumbnail");
-                blurIntensity = Mod::get()->getSavedValue<float>("scorecell-background-blur", 3.0f);
-                darkness = Mod::get()->getSavedValue<float>("scorecell-background-darkness", 0.2f);
+                bgType = paimon::settings::profiles::scorecellBgType();
+                blurIntensity = paimon::settings::profiles::scorecellBlur();
+                darkness = paimon::settings::profiles::scorecellDarkness();
             } else {
                 if (config.hasConfig) {
                     bgType = config.backgroundType;
                     blurIntensity = config.blurIntensity;
                     darkness = config.darkness;
-                    useGradient = config.useGradient;
                     colorA = config.colorA;
                     colorB = config.colorB;
                 } else {
@@ -496,7 +488,7 @@ public:
 
             float factor = 0.60f;
             if (isCurrentUser) {
-                factor = Mod::get()->getSavedValue<float>("profile-thumb-width", 0.6f);
+                factor = paimon::settings::profiles::profileThumbWidth();
             } else if (config.hasConfig) {
                 factor = config.widthFactor;
             }
@@ -570,6 +562,16 @@ public:
 
     $override void loadFromScore(GJUserScore* score) {
         GJScoreCell::loadFromScore(score);
+        if (!m_fields->m_exitCallbackInstalled) {
+            m_fields->m_exitCallbackInstalled = true;
+            this->addOnExitCallback([this] {
+                if (auto f = m_fields.self()) {
+                    f->m_isBeingDestroyed = true;
+                    hideLoadingSpinner();
+                }
+                return true;
+            });
+        }
         m_fields->m_isBeingDestroyed = false;
         
         pushGameColorLayersBehind(this);

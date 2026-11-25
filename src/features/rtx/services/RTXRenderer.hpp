@@ -13,7 +13,7 @@ public:
     static RTXRenderer& get();
 
     void renderFrame();
-    void onGLContextReload();
+    void onGLContextReload(bool deleteHandles = true);
 
     float lastFrameMs() const { return m_frameMs; }
     float activeScale() const { return m_activeScale; }
@@ -41,8 +41,9 @@ private:
     bool ensureTraceTargets(int srcW, int srcH, float scale);
 
     bool makeTarget(Target& t, int w, int h, bool hdr = false);
-    void dropTarget(Target& t);
-    void releaseAll();
+    void dropTarget(Target& t, bool deleteHandles = true);
+    void releaseAll(bool deleteHandles = true);
+    void const* m_contextToken = nullptr;
 
     void drawInto(Target const& t);
     void updateReprojection();

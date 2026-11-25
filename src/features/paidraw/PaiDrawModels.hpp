@@ -167,6 +167,18 @@ struct MatchResults {
     std::string hardestWord;
 };
 
+// lightweight activity data: no canvas, messages, words or authentication data.
+struct ActivitySnapshot {
+    bool connecting = false;
+    bool connected = false;
+    bool offlinePreview = false;
+    bool inRoom = false;
+    bool localPlayerIsDrawer = false;
+    std::string roomName;
+    int playerCount = 0;
+    int maxPlayers = 0;
+};
+
 struct SessionState {
     bool initialized = false;
     bool connecting = false;

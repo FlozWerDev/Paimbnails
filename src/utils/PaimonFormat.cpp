@@ -1,3 +1,4 @@
+#include "FilesystemPath.hpp"
 #include "PaimonFormat.hpp"
 #include <Geode/loader/Log.hpp>
 #include <Geode/utils/file.hpp>
@@ -39,7 +40,7 @@ namespace {
             log::error("[PaimonFormat] Data exceeds {} byte limit", kMaxDataBytes);
             return false;
         }
-        (void)geode::utils::file::createDirectoryAll(path.parent_path());
+        (void)geode::utils::file::createDirectoryAll(paimon::paths::toSdkPath(path.parent_path()));
 
         auto encrypted = xorBytes(data);
 
@@ -58,7 +59,7 @@ namespace {
         uint64_t hash = calculateHash(encrypted);
         buf.insert(buf.end(), reinterpret_cast<uint8_t const*>(&hash), reinterpret_cast<uint8_t const*>(&hash) + 8);
 
-        auto res = geode::utils::file::writeBinary(path, buf);
+        auto res = geode::utils::file::writeBinary(paimon::paths::toSdkPath(path), buf);
         if (res.isErr()) {
             log::error("[PaimonFormat] Failed to write file: {}", res.unwrapErr());
             return false;
@@ -70,7 +71,7 @@ namespace {
         std::error_code sizeEc;
         auto fileSize = std::filesystem::file_size(path, sizeEc);
         if (sizeEc || fileSize > kMaxDataBytes + 19) return {};
-        auto readRes = geode::utils::file::readBinary(path);
+        auto readRes = geode::utils::file::readBinary(paimon::paths::toSdkPath(path));
         if (readRes.isErr()) {
             std::error_code ec;
             if (std::filesystem::exists(path, ec)) {

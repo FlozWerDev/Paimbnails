@@ -1,0 +1,82 @@
+#include <matjson.hpp>
+#include "src/core/BanPolicy.hpp"
+#include "src/utils/BanVerdict.hpp"
+#include <cassert>
+#include <chrono>
+#include <string>
+
+int main() {
+    using namespace paimon::ban;
+    using namespace std::chrono_literals;
+    AccountIdentity const alice{123, "alice", 111};
+    AccountIdentity const bob{456, "bob", 222};
+    auto const now = Session::Clock::time_point(1000s);
+    Session session;
+    assert(session.authorization(alice, now) == 0);
+    assert(!session.recordVerdict(alice, bob, false, now));
+    assert(session.authorization(bob, now) == 0);
+    assert(session.recordVerdict(alice, alice, false, now));
+    auto const permit = session.authorization(alice, now);
+    assert(permit != 0);
+    assert(session.authorization(bob, now) == 0);
+    assert(session.authorization({123, "renamed", 111}, now) == 0);
+    assert(session.authorization({123, "alice", 999}, now) == 0);
+    assert(session.authorization({0, "alice", 111}, now) == 0);
+    assert(session.authorization(alice, now - 1s) == 0);
+    assert(session.authorization(alice, now + 119s) == permit);
+    assert(session.authorization(alice, now + 120s) == 0);
+    assert(sameAccountName("Alice", "alice"));
+    assert(!sameAccountName("alice", "alicia"));
+    assert(sameAccountName("", "alice"));
+    session.recordVerdict(alice, alice, false, now + 60s);
+    assert(session.authorization(alice, now + 60s) == permit);
+    session.recordVerdict(alice, alice, std::nullopt, now + 1s);
+    assert(session.authorization(alice, now + 1s) == 0);
+    session.recordVerdict(alice, alice, false, now + 2s);
+    assert(session.authorization(alice, now + 2s) != permit);
+    session.markBanned();
+    session.recordVerdict(bob, bob, false, now + 3s);
+    assert(session.authorization(bob, now + 3s) == 0);
+
+    // A newer allow mirror must never override a known ban without the server.
+    assert(preferCachedVerdict(true, 10, false, 20));
+    assert(!preferCachedVerdict(false, 20, true, 10));
+    assert(preferCachedVerdict(true, 20, true, 10));
+    assert(isVerificationRequest("GET", "https://api.flozwer.org/api/banned?accountID=123"));
+    assert(!isVerificationRequest("POST", "https://api.flozwer.org/api/banned?accountID=123"));
+    assert(!isVerificationRequest("GET", "http://api.flozwer.org/api/banned?accountID=123"));
+    assert(!isVerificationRequest("GET", "https://api.flozwer.org.evil/api/banned?accountID=123"));
+    assert(!isVerificationRequest("GET", "https://api.flozwer.org/api/banned/../upload?x=1"));
+
+    for (auto const* invalid : {"{}", "[]", "null", "invalid", "{\"banned\":null}",
+            "{\"banned\":0}", "{\"banned\":\"false\"}", "{\"banned\":false,\"success\":false}",
+            "{\"banned\":false,\"reason\":3}"}) {
+        assert(!parseBanVerdict(invalid));
+    }
+    auto const allowed = parseBanVerdict("{\"banned\":false}");
+    assert(allowed && !allowed->banned);
+    auto const banned = parseBanVerdict("{\"success\":true,\"banned\":true,\"reason\":\"abuse\"}");
+    assert(banned && banned->banned && banned->reason == "abuse");
+    assert(!parseBanVerdict(std::string(4097, ' ')));
+
+    // Optional account/check echoes bind a verdict to the exact request.
+    assert(!parseBanVerdict("{\"banned\":false,\"accountID\":456}", 123, "nonce"));
+    assert(parseBanVerdict("{\"banned\":false,\"accountID\":123}", 123, "nonce"));
+    assert(parseBanVerdict("{\"banned\":false,\"accountID\":\"123\"}", 123, "nonce"));
+    assert(!parseBanVerdict("{\"banned\":false,\"accountID\":\"x\"}", 123, "nonce"));
+    assert(!parseBanVerdict("{\"banned\":false,\"check\":\"other\"}", 123, "nonce"));
+    assert(!parseBanVerdict("{\"banned\":false,\"nonce\":7}", 123, "nonce"));
+    assert(parseBanVerdict("{\"banned\":false,\"check\":\"nonce\"}", 123, "nonce"));
+    assert(parseBanVerdict("{\"banned\":false,\"nonce\":\"nonce\"}", 123, "nonce"));
+
+    // Reasons are display text: strip controls and never split UTF-8.
+    auto const sanitized = parseBanVerdict(
+        "{\"banned\":true,\"reason\":\"ab\\tcd\\r\\nef\"}");
+    assert(sanitized && sanitized->reason == "ab cd\nef");
+    std::string utf8 = "{\"banned\":true,\"reason\":\"";
+    utf8 += std::string(511, 'a');
+    utf8 += "\xC3\xA9"; // e-acute: a 2-byte sequence that would cross the cap.
+    utf8 += "\"}";
+    auto const truncated = parseBanVerdict(utf8);
+    assert(truncated && truncated->reason.size() == 511);
+}

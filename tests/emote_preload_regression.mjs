@@ -8,7 +8,6 @@ const root = new URL("../", import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), "utf8").replace(/^\uFEFF/, "");
 const service = read("src/features/emotes/services/EmoteService.cpp");
 const cache = read("src/features/emotes/services/EmoteCache.cpp");
-const preload = read("src/core/PreloadActions.cpp");
 
 function functionSource(source, signature) {
     const start = source.indexOf(signature);
@@ -123,6 +122,7 @@ struct HttpClient {
 };
 class EmoteCache {
 public:
+    ${read("src/features/emotes/services/EmoteCache.hpp").match(/static constexpr size_t MAX_FILE_BYTES = [^;]+;/)[0]}
     using PreloadCallback = geode::CopyableFunction<void(size_t, size_t, size_t)>;
     using PreloadProgressCallback = geode::CopyableFunction<void(size_t, size_t)>;
     std::atomic<bool> m_preloading{false}, m_preloadCancel{false};
@@ -140,9 +140,6 @@ public:
 ${functionSource(cache, "void dispatchPreloadCallback(")}
 ${functionSource(cache, "void EmoteCache::cancelPreload(")}
 ${functionSource(cache, "void EmoteCache::preloadAllToDisk(")}
-int preloadStarts = 0;
-void startEmotePreloadIfReady() { ++preloadStarts; }
-${functionSource(preload, "void schedulePrefetchEmotes(")}
 
 EmoteInfo emote(std::string name) {
     EmoteInfo info;
@@ -169,22 +166,20 @@ int main() {
     svc.fetchAllEmotes(result);
     std::thread concurrent([&] { svc.fetchAllEmotes(result); });
     concurrent.join();
-    schedulePrefetchEmotes();
-    assert(pages.size() == 1 && results.empty() && preloadStarts == 0);
+    assert(pages.size() == 1 && results.empty());
     finishPage(true);
     assert(results.empty() && !svc.isFetching());
     Loader::get()->drain();
-    assert((results == std::vector<bool>{true, true}) && preloadStarts == 1 && saves == 1);
+    assert((results == std::vector<bool>{true, true}) && saves == 1);
 
     svc.clearCatalog();
     results.clear();
     svc.fetchAllEmotes(result);
     svc.fetchAllEmotes(result);
-    schedulePrefetchEmotes();
     finishPage(false);
     Loader::get()->drain();
     assert((results == std::vector<bool>{false, false}));
-    assert(paimon::preload::g_emotesCatalogReady && preloadStarts == 1 && pages.empty());
+    assert(pages.empty());
 
     results.clear();
     svc.fetchAllEmotes(result);
@@ -326,12 +321,13 @@ int main() {
 
 const temp = mkdtempSync(join(tmpdir(), "emote-preload-"));
 try {
-    const compiler = process.env.CXX || "g++";
+    const compiler = process.env.CXX || (process.platform === "win32" ? "clang++" : "g++");
+    const binary = join(temp, process.platform === "win32" ? "regression.exe" : "regression");
     const compile = spawnSync(compiler, ["-std=c++20", "-pthread", "-Wall", "-Wextra", "-Werror",
-        "-fsanitize=address,undefined", "-g", "-x", "c++", "-", "-o", `${temp}/regression`],
+        "-fsanitize=address,undefined", "-g", "-x", "c++", "-", "-o", binary],
         { input: source, encoding: "utf8" });
     assert.equal(compile.status, 0, compile.error?.message || compile.stderr);
-    const run = spawnSync(`${temp}/regression`, [], { cwd: temp, encoding: "utf8", timeout: 15000 });
+    const run = spawnSync(binary, [], { cwd: temp, encoding: "utf8", timeout: 15000 });
     assert.equal(run.status, 0, run.error?.message || run.stderr);
     process.stdout.write(run.stdout);
 } finally {

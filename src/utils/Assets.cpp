@@ -1,3 +1,4 @@
+#include "FilesystemPath.hpp"
 #include "Assets.hpp"
 #include "SpriteHelper.hpp"
 #include <Geode/loader/Mod.hpp>
@@ -14,7 +15,7 @@ using namespace cocos2d;
 namespace {
 
 std::filesystem::path cfgPathFor(std::string const& key) {
-    auto base = Mod::get()->getSaveDir() / "assets" / "buttons";
+    auto base = paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "assets" / "buttons";
     std::error_code ec; std::filesystem::create_directories(base, ec);
     return base / (key + ".txt");
 }
@@ -50,10 +51,10 @@ CCSprite* loadButtonSprite(
         if (!defaultContent.empty()) {
             ss << defaultContent << "\n";
         }
-        (void)geode::utils::file::writeString(path, ss.str());
+        (void)geode::utils::file::writeString(paimon::paths::toSdkPath(path), ss.str());
     }
 
-    auto txt = geode::utils::file::readString(path).unwrapOr("");
+    auto txt = geode::utils::file::readString(paimon::paths::toSdkPath(path)).unwrapOr("");
     std::stringstream s(txt);
     std::string line;
     std::string directive;
@@ -87,7 +88,7 @@ CCSprite* loadButtonSprite(
                 std::filesystem::path p = pathStr;
                 if (!p.is_absolute()) p = cfgPathFor(key).parent_path() / p;
                 if (std::filesystem::exists(p, ecAsset)) {
-                    if (auto spr = CCSprite::create(geode::utils::string::pathToString(p).c_str())) {
+                    if (auto spr = CCSprite::create(paimon::paths::toUtf8(p).c_str())) {
                         normalizeSpriteSize(spr);
                         return spr;
                     }
@@ -97,16 +98,16 @@ CCSprite* loadButtonSprite(
     }
 
     // then mod resources: resources/buttons/{key}.png, resources/{key}.png.
-    auto modResourcePath = Mod::get()->getResourcesDir() / "buttons" / (key + ".png");
+    auto modResourcePath = paimon::paths::toStdPath(Mod::get()->getResourcesDir()) / "buttons" / (key + ".png");
     if (std::filesystem::exists(modResourcePath, ecAsset)) {
-        if (auto spr = CCSprite::create(geode::utils::string::pathToString(modResourcePath).c_str())) {
+        if (auto spr = CCSprite::create(paimon::paths::toUtf8(modResourcePath).c_str())) {
             normalizeSpriteSize(spr);
             return spr;
         }
     }
-    auto modResourcePath2 = Mod::get()->getResourcesDir() / (key + ".png");
+    auto modResourcePath2 = paimon::paths::toStdPath(Mod::get()->getResourcesDir()) / (key + ".png");
     if (std::filesystem::exists(modResourcePath2, ecAsset)) {
-        if (auto spr = CCSprite::create(geode::utils::string::pathToString(modResourcePath2).c_str())) {
+        if (auto spr = CCSprite::create(paimon::paths::toUtf8(modResourcePath2).c_str())) {
             normalizeSpriteSize(spr);
             return spr;
         }

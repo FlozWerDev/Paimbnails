@@ -1,4 +1,5 @@
 #include "EmoteAutocomplete.hpp"
+#include "../EmoteRenderer.hpp"
 #include "../services/EmoteService.hpp"
 #include "../services/EmoteCache.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
@@ -15,7 +16,26 @@ EmoteAutocomplete* EmoteAutocomplete::create(
     CopyableFunction<void(std::string const&)> setTextFn)
 {
     auto ret = new EmoteAutocomplete();
-    if (ret && ret->init(input, std::move(setTextFn))) {
+    auto getTextFn = [input]() -> std::string {
+        return input ? std::string(input->getString()) : std::string();
+    };
+    if (ret && ret->init(input, std::move(getTextFn), std::move(setTextFn))) {
+        ret->autorelease();
+        return ret;
+    }
+    CC_SAFE_DELETE(ret);
+    return nullptr;
+}
+
+EmoteAutocomplete* EmoteAutocomplete::create(
+    geode::TextInput* input,
+    CopyableFunction<void(std::string const&)> setTextFn)
+{
+    auto ret = new EmoteAutocomplete();
+    auto getTextFn = [input]() -> std::string {
+        return input ? input->getString() : std::string();
+    };
+    if (ret && ret->init(input, std::move(getTextFn), std::move(setTextFn))) {
         ret->autorelease();
         return ret;
     }
@@ -24,12 +44,14 @@ EmoteAutocomplete* EmoteAutocomplete::create(
 }
 
 bool EmoteAutocomplete::init(
-    CCTextInputNode* input,
+    CCNode* input,
+    CopyableFunction<std::string()> getTextFn,
     CopyableFunction<void(std::string const&)> setTextFn)
 {
     if (!CCNode::init()) return false;
 
     m_inputNode = input;
+    m_getTextFn = std::move(getTextFn);
     m_setTextFn = std::move(setTextFn);
     this->setID("emote-autocomplete"_spr);
 
@@ -55,12 +77,12 @@ bool EmoteAutocomplete::init(
 }
 
 void EmoteAutocomplete::update(float /*dt*/) {
-    if (!m_inputNode || !m_inputNode->getParent()) {
+    if (!m_inputNode || !m_inputNode->getParent() || !m_getTextFn) {
         clearSuggestions();
         return;
     }
 
-    std::string text = m_inputNode->getString();
+    std::string text = m_getTextFn();
     if (text == m_lastText) return;
     m_lastText = text;
 
@@ -71,16 +93,9 @@ void EmoteAutocomplete::update(float /*dt*/) {
     }
 
     std::string partial = text.substr(lastColon + 1);
-    if (partial.empty() || partial.size() < 2) {
+    if (!isValidEmoteName(partial)) {
         clearSuggestions();
         return;
-    }
-
-    for (char c : partial) {
-        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-') {
-            clearSuggestions();
-            return;
-        }
     }
 
     auto matches = EmoteService::get().searchEmotes(partial, 8);
@@ -136,10 +151,10 @@ void EmoteAutocomplete::rebuildSuggestions(
         row->setContentSize({rowW, ROW_H});
 
         Ref<CCNode> phRef = emotePh;
-        EmoteCache::get().loadEmote(info, [phRef, EMOTE_SZ](CCTexture2D* tex, bool isGif, std::vector<uint8_t> const& gifData) {
+        EmoteCache::get().loadEmote(info, [phRef](CCTexture2D* tex, bool isGif, std::vector<uint8_t> const& gifData) {
             // same evict-before-run hazard as emoterenderer; hold a ref.
             geode::Ref<CCTexture2D> texRef = tex;
-            Loader::get()->queueInMainThread([phRef, texRef, isGif, gifData, EMOTE_SZ]() {
+            Loader::get()->queueInMainThread([phRef, texRef, isGif, gifData]() {
                 if (paimon::isRuntimeShuttingDown()) return;
                 if (!phRef || !phRef->getParent()) return;
 
@@ -229,10 +244,10 @@ void EmoteAutocomplete::clearSuggestions() {
 void EmoteAutocomplete::onSuggestionClicked(CCObject* sender) {
     auto btn = static_cast<CCMenuItemSpriteExtra*>(sender);
     auto nameObj = static_cast<CCString*>(btn->getUserObject());
-    if (!nameObj || !m_inputNode) return;
+    if (!nameObj || !m_inputNode || !m_getTextFn) return;
 
     std::string emoteName = nameObj->getCString();
-    std::string text = m_inputNode->getString();
+    std::string text = m_getTextFn();
 
     if (m_colonPos == std::string::npos || m_colonPos >= text.size()) return;
 

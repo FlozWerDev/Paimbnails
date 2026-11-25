@@ -33,6 +33,12 @@ public:
     void claimQueueItem(int levelId, PendingCategory category,
                         std::string const& username, ActionCallback callback,
                         std::string const& type = "");
+    void unclaimQueueItem(int levelId, PendingCategory category,
+                          std::string const& username, ActionCallback callback,
+                          std::string const& type = "", bool force = false);
+    void takeoverQueueItem(int levelId, PendingCategory category,
+                           std::string const& username, ActionCallback callback,
+                           std::string const& type = "");
     // targetfilename picks one entry out of a level's review gallery; leaving
     // it empty acts on the newest. acceptall publishes the whole gallery.
     void acceptQueueItem(int levelId, PendingCategory category,
@@ -57,6 +63,15 @@ private:
     ModerationService() = default;
     ModerationService(ModerationService const&) = delete;
     ModerationService& operator=(ModerationService const&) = delete;
+
+    // shared add/remove-moderator post; reports `successMessage` on success.
+    void postModeratorChange(char const* endpoint, std::string const& username,
+                             std::string const& adminUser, char const* successMessage,
+                             ActionCallback callback);
+    // shared queue-action post; a failure drops the verified session before
+    // the callback, a success runs `onSuccess` first.
+    void postQueueAction(std::string const& endpoint, matjson::Value const& json,
+                         ActionCallback callback, geode::CopyableFunction<void()> onSuccess = nullptr);
 
     bool m_serverEnabled = true;
 

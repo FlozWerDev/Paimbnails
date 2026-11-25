@@ -1,15 +1,21 @@
 #include "BannedPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
+#include "../../../utils/SafeText.hpp"
 #include "../../../ui/PaimonUI.hpp"
 #include <Geode/ui/MDTextArea.hpp>
 #include <Geode/ui/PopupManager.hpp>
 
 using namespace geode::prelude;
 
+namespace {
+BannedPopup* g_activeBannedPopup = nullptr;
+}
+
 bool BannedPopup::init(std::string const& reason) {
     if (!PaimonPopup::init(340.f, 200.f)) return false;
     paimon::markDynamicPopup(this);
-    m_reason = reason;
+    g_activeBannedPopup = this;
+    m_reason = paimon::text::sanitizeDisplayText(reason, 512);
 
     this->setTitle("Banned");
 
@@ -26,8 +32,9 @@ bool BannedPopup::init(std::string const& reason) {
     m_mainLayer->addChild(inset);
 
     std::string body = "You have been banned from using Paimbnails.";
-    if (!reason.empty()) body += "\n\n<cy>Reason:</c> " + reason;
-    body += "\n\nThe mod has been disabled. Press the button below to confirm and restart the game.";
+    if (!m_reason.empty()) body += "\n\n<cy>Reason:</c> " + m_reason;
+    body += "\n\nOnline features are blocked while this ban is active. "
+        "Press the button below to disable the mod and restart the game.";
 
     auto desc = MDTextArea::create(body, {insetSize.width - 16.f, insetSize.height - 12.f});
     if (desc) {
@@ -42,6 +49,11 @@ bool BannedPopup::init(std::string const& reason) {
     m_buttonMenu->addChild(disableBtn);
 
     return true;
+}
+
+void BannedPopup::onExit() {
+    if (g_activeBannedPopup == this) g_activeBannedPopup = nullptr;
+    PaimonPopup::onExit();
 }
 
 void BannedPopup::onDisableMod(CCObject*) {
@@ -64,7 +76,12 @@ BannedPopup* BannedPopup::create(std::string const& reason) {
 }
 
 namespace paimon::ban {
+    bool isBannedPopupActive() {
+        return g_activeBannedPopup != nullptr;
+    }
+
     void showBannedPopup(std::string const& reason) {
+        if (isBannedPopupActive()) return;
         if (auto* popup = BannedPopup::create(reason)) {
             popup->show();
         }

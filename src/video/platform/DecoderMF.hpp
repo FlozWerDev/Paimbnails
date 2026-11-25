@@ -14,6 +14,7 @@
 #include <dxgi.h>
 #pragma comment(lib, "mfuuid.lib")
 #include <strmif.h>
+#include <memory>
 
 namespace paimon {
 
@@ -33,70 +34,94 @@ public:
     // coded size; getwidth/height return downscaled output.
     int getNativeWidth() const override;
     int getNativeHeight() const override;
-    VideoColorMatrix getColorMatrix() const override { return m_colorMatrix; }
-    bool isFullRange() const override { return m_fullRange; }
-    int getRotationDegrees() const override { return m_rotation; }
+    VideoColorMatrix getColorMatrix() const override {
+        auto st = m_state;
+        return st ? st->m_colorMatrix : VideoColorMatrix::Auto;
+    }
+    bool isFullRange() const override {
+        auto st = m_state;
+        return st ? st->m_fullRange : false;
+    }
+    int getRotationDegrees() const override {
+        auto st = m_state;
+        return st ? st->m_rotation : 0;
+    }
     bool isFinished() const override;
     double peekNextPTS() const override;
     double peekSecondPTS() const override;
     const Frame* peekFrame() override;
     void releaseFrame() override;
     bool setLooping(bool loop) override {
-        m_looping.store(loop, std::memory_order_relaxed);
+        if (auto st = m_state) st->m_looping.store(loop, std::memory_order_relaxed);
         return true;
     }
 
 private:
-    void decodeLoop();
+    // crash #9: everything the decode worker touches (ring, reader, d3d
+    // handles, flags) lives here under shared_ptr. The worker captures its
+    // own copy at spawn, so a detach after a timed-out join never leaves
+    // the orphan writing freed memory. The decoder shell only owns the
+    // std::thread plus its own copy of the state. Public API unchanged.
+    struct State {
+        ~State();
+
+        void decodeLoop();
+        bool setupD3D11();
+        bool setupReader(const std::string& path);
+        bool setOutputFormat();
+        void refreshLinearStride();
+        // false drops the frame.
+        bool copyPlanesToSlot2D(BYTE* scanline0, LONG lStride, Frame& slot, size_t bufferSize = 0);
+        bool copyPlanesToSlotLinear(BYTE* data, DWORD bufLen, Frame& slot);
+        bool createStagingTexture();
+        bool copyPlanesFromD3D11(ID3D11Texture2D* srcTexture, UINT subresource, Frame& slot);
+        bool fallbackToSoftwareDecode(const std::string& path);
+        void downscalePlanes(const Frame& src, Frame& dst, int factor);
+
+        IMFSourceReader*   m_reader     = nullptr;
+        IMFDXGIDeviceManager* m_dxgiMgr = nullptr;
+        ID3D11Device*      m_d3dDevice  = nullptr;
+        ID3D11DeviceContext* m_d3dCtx   = nullptr;
+        ID3D11Texture2D*   m_stagingTex = nullptr;
+        DXGI_FORMAT         m_stagingFormat = DXGI_FORMAT_UNKNOWN;
+        UINT                m_stagingWidth  = 0;
+        UINT                m_stagingHeight = 0;
+        bool               m_dxvaEnabled = false;
+        int                m_dxvaReadbackFailures = 0;
+        UINT               m_resetToken = 0;
+        // shared: release via releasesharedd3d11(), never release().
+        bool               m_sharedD3D = false;
+        std::mutex         m_d3dCtxMutex;  // serialises context ops vs dxva decode (amd fix)
+
+        VideoRingBuffer    m_ring;
+        std::string        m_videoPath;
+        int                m_width  = 0;
+        int                m_height = 0;
+        // post-downscale output; native when factor == 1.
+        int                m_outWidth  = 0;
+        int                m_outHeight = 0;
+        int                m_downscaleFactor = 1;
+        // mf padded stride (e.g. 854 -> 856).
+        int                m_linearStride = 0;
+        VideoColorMatrix   m_colorMatrix = VideoColorMatrix::Auto;
+        bool               m_fullRange = false;
+        int                m_rotation = 0;
+        // native-size scratch, downscale only.
+        Frame              m_scratch;
+        double             m_duration = 0.0;
+        GUID               m_pixelFormat = GUID_NULL;
+
+        std::atomic<bool>  m_decoding{false};
+        std::atomic<bool>  m_finished{false};
+        std::atomic<bool>  m_looping{false};
+        // set on every worker exit path (ThreadExitSignal); bounds the join.
+        std::atomic<bool>  m_threadDone{true};
+    };
+
     void closeInternal();
-    bool setupD3D11();
-    bool setupReader(const std::string& path);
-    bool setOutputFormat();
-    void refreshLinearStride();
-    // false drops the frame.
-    bool copyPlanesToSlot2D(BYTE* scanline0, LONG lStride, Frame& slot, size_t bufferSize = 0);
-    bool copyPlanesToSlotLinear(BYTE* data, DWORD bufLen, Frame& slot);
-    bool createStagingTexture();
-    bool copyPlanesFromD3D11(ID3D11Texture2D* srcTexture, UINT subresource, Frame& slot);
-    bool fallbackToSoftwareDecode(const std::string& path);
-    void downscalePlanes(const Frame& src, Frame& dst, int factor);
-    IMFSourceReader*   m_reader     = nullptr;
-    IMFDXGIDeviceManager* m_dxgiMgr = nullptr;
-    ID3D11Device*      m_d3dDevice  = nullptr;
-    ID3D11DeviceContext* m_d3dCtx   = nullptr;
-    ID3D11Texture2D*   m_stagingTex = nullptr;
-    DXGI_FORMAT         m_stagingFormat = DXGI_FORMAT_UNKNOWN;
-    UINT                m_stagingWidth  = 0;
-    UINT                m_stagingHeight = 0;
-    bool               m_dxvaEnabled = false;
-    int                m_dxvaReadbackFailures = 0;
-    UINT               m_resetToken = 0;
-    // shared: release via releasesharedd3d11(), never release().
-    bool               m_sharedD3D = false;
-    std::mutex         m_d3dCtxMutex;  // serialises context ops vs dxva decode (amd fix)
 
-    VideoRingBuffer    m_ring;
-    std::string        m_videoPath;
-    int                m_width  = 0;
-    int                m_height = 0;
-    // post-downscale output; native when factor == 1.
-    int                m_outWidth  = 0;
-    int                m_outHeight = 0;
-    int                m_downscaleFactor = 1;
-    // mf padded stride (e.g. 854 -> 856).
-    int                m_linearStride = 0;
-    VideoColorMatrix   m_colorMatrix = VideoColorMatrix::Auto;
-    bool               m_fullRange = false;
-    int                m_rotation = 0;
-    // native-size scratch, downscale only.
-    Frame              m_scratch;
-    double             m_duration = 0.0;
-    GUID               m_pixelFormat = GUID_NULL;
-
-    std::atomic<bool>  m_decoding{false};
-    std::atomic<bool>  m_finished{false};
-    std::atomic<bool>  m_looping{false};
-    std::thread        m_thread;
+    std::shared_ptr<State> m_state;
+    std::thread            m_thread;
 };
 
 } // namespace paimon

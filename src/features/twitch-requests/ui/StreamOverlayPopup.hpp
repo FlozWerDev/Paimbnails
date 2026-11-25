@@ -19,7 +19,7 @@ public:
 protected:
     bool init() override;
     void update(float dt) override;
-    void scrollWheel(float x, float y) override;
+    bool scrollWheel(float x, float y) override;
 
 private:
     void apply(std::function<void(StreamOverlayConfig&)> const& change);
@@ -35,6 +35,7 @@ private:
     geode::ScrollLayer* m_scroll = nullptr;
     float m_wheelTargetY = 0.f;
     bool m_wheelTargetSet = false;
+    float m_statusElapsed = 0.f;
     std::string m_lastStatus;
 };
 

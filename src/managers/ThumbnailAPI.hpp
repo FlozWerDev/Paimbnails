@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/Geode.hpp>
 #include "../utils/ThumbnailTypes.hpp"
@@ -89,6 +89,8 @@ public:
     void syncVerificationQueue(PendingCategory category, QueueCallback callback);
     
     void claimQueueItem(int levelId, PendingCategory category, std::string const& username, ActionCallback callback, std::string const& type = "");
+    void unclaimQueueItem(int levelId, PendingCategory category, std::string const& username, ActionCallback callback, std::string const& type = "", bool force = false);
+    void takeoverQueueItem(int levelId, PendingCategory category, std::string const& username, ActionCallback callback, std::string const& type = "");
     
     void acceptQueueItem(int levelId, PendingCategory category, std::string const& username, ActionCallback callback, std::string const& targetFilename = "", std::string const& type = "", bool acceptAll = false);
 

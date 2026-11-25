@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/DefaultInclude.hpp>
 #include <Geode/binding/GJGameLevel.hpp>
@@ -32,12 +32,14 @@ struct PendingItem {
     std::string submittedBy;
     std::string note;
     std::string claimedBy;
+    int64_t claimedAt = 0;
     PendingStatus status = PendingStatus::Open;
     bool isCreator = false;
     
     std::vector<Suggestion> suggestions;
 
     std::string type;
+    std::string filename;
     std::string reportedUsername;
     std::vector<ReportEntry> reports;
 };

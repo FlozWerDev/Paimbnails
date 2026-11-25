@@ -1,0 +1,268 @@
+#include "src/features/menu-music/model/MenuMusicTypes.hpp"
+#define isRuntimeShuttingDown fixtureOriginalRuntimeShuttingDown
+#define ThreadTracker FixtureOriginalThreadTracker
+#include "tests/review_fixtures/ReviewQueue.hpp"
+#undef ThreadTracker
+#undef isRuntimeShuttingDown
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+#include <chrono>
+#include <deque>
+#include <thread>
+#include <unordered_map>
+namespace geode::prelude { using namespace geode; }
+namespace paimon {
+inline bool testShuttingDown = false, testAllowWorker = true;
+inline bool isRuntimeShuttingDown() { return testShuttingDown; }
+struct ThreadTracker {
+    static ThreadTracker& get() { static ThreadTracker tracker; return tracker; }
+    bool spawn(std::function<void()> task) {
+        if (!testAllowWorker) return false;
+        workers.push_back(std::move(task)); return true;
+    }
+};
+}
+using namespace paimon::menumusic;
+using namespace geode::prelude;
+
+struct SongInfoObject { int m_songID; std::string m_songName, m_artistName; };
+namespace cocos2d {
+struct CCDictElement {
+    std::string key;
+    SongInfoObject* song = nullptr;
+    struct { CCDictElement* next = nullptr; } hh;
+    char const* getStrKey() const { return key.c_str(); }
+    SongInfoObject* getObject() const { return song; }
+};
+struct CCDictionary {
+    std::vector<std::unique_ptr<CCDictElement>> nodes;
+    CCDictElement* m_pElements = nullptr;
+    std::size_t count() const { return nodes.size(); }
+    void assign(std::vector<std::pair<std::string, SongInfoObject*>> const& songs);
+};
+}
+using namespace cocos2d;
+std::unordered_map<std::string, CCDictElement*> hashIndex;
+std::size_t hashLookups = 0;
+void CCDictionary::assign(std::vector<std::pair<std::string, SongInfoObject*>> const& songs) {
+    nodes.clear(); hashIndex.clear(); m_pElements = nullptr;
+    for (auto const& [key, song] : songs) {
+        auto node = std::make_unique<CCDictElement>();
+        node->key = key; node->song = song;
+        if (!nodes.empty()) nodes.back()->hh.next = node.get();
+        else m_pElements = node.get();
+        hashIndex[key] = node.get(); nodes.push_back(std::move(node));
+    }
+}
+#define HASH_FIND_STR(head, key, out) do { (void)(head); ++hashLookups; auto found = hashIndex.find(key); out = found == hashIndex.end() ? nullptr : found->second; } while (false)
+template<class K, class V> struct CCDictionaryExt {
+    CCDictionary* dictionary;
+    CCDictionaryExt(CCDictionary* value) : dictionary(value) {}
+    struct Iterator {
+        CCDictElement* node;
+        auto operator*() const { return std::pair<std::string_view, SongInfoObject*>{node->key, node->song}; }
+        Iterator& operator++() { node = node->hh.next; return *this; }
+        bool operator!=(Iterator other) const { return node != other.node; }
+    };
+    auto begin() { return Iterator{dictionary->m_pElements}; }
+    auto end() { return Iterator{nullptr}; }
+};
+struct MusicDownloadManager {
+    CCDictionary known;
+    CCDictionary* m_songObjects = &known;
+    std::unordered_map<int, std::string> paths;
+    int blockingEnumerations = 0;
+    mutable int pathCalls = 0;
+    bool simulateSlowPath = false;
+    static MusicDownloadManager* sharedState() { static MusicDownloadManager manager; return &manager; }
+    CCDictionary* getDownloadedSongs() { ++blockingEnumerations; assert(false && "native API scans files on caller thread"); return &known; }
+    bool isResourceSong(int id) const { return id < 0; }
+    std::string pathForSong(int id) const {
+        ++pathCalls;
+        if (simulateSlowPath) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        return paths.at(id);
+    }
+};
+namespace paimon::assets { std::filesystem::path pathFromUtf8(std::string const& path) { return path; } }
+namespace paimon::menumusic {
+struct DownloadedSongSnapshot {
+    cocos2d::CCDictionary* dictionary = nullptr;
+    std::size_t count = 0;
+    std::uint64_t generation = 0;
+    std::string cursor;
+    std::deque<MusicTrack> candidates;
+};
+}
+class MenuMusicLibrary {
+public:
+    std::vector<MusicTrack> m_tracks;
+    std::unordered_map<std::string, std::size_t> m_trackIndex;
+    std::size_t m_syncedSongCount = static_cast<std::size_t>(-1);
+    CCDictionary* m_syncedSongDictionary = nullptr;
+    std::uint64_t m_downloadSyncGeneration = 0;
+    bool m_downloadSyncPending = false;
+    bool playWaiting = false, playFinished = false;
+    int saves = 0, notifications = 0, comparisons = 0;
+    static bool isAudioExtension(std::filesystem::path const& path) { return path.extension() == ".mp3"; }
+    MusicTrack* findTrack(std::string const& id) {
+        ++comparisons;
+        auto it = m_trackIndex.find(id); return it == m_trackIndex.end() ? nullptr : &m_tracks[it->second];
+    }
+    std::string generateId(char const*) { return "unique-" + std::to_string(m_tracks.size()); }
+    void markDirty() { ++saves; }
+    void notifyChanged() { ++notifications; if (playWaiting && !m_downloadSyncPending) { playFinished = true; playWaiting = false; } }
+    void syncDownloadedSongsAsync();
+    void captureDownloadedSongBatch(std::shared_ptr<DownloadedSongSnapshot> const&);
+    void finishDownloadedSongCapture(std::shared_ptr<DownloadedSongSnapshot> const&);
+    void restartDownloadedSongSync();
+    std::size_t syncDownloadedSongs(bool);
+    std::size_t mergeDownloadedSongs(std::vector<MusicTrack>, bool = false);
+};
+@@function|src/features/menu-music/services/MenuMusicLibrary.cpp|std::vector<MusicTrack> downloadedSongCandidates(@@
+@@function|src/features/menu-music/services/MenuMusicLibrary.cpp|void filterMissingDownloadedSongs(@@
+@@function|src/features/menu-music/services/MenuMusicLibrary.cpp|void MenuMusicLibrary::syncDownloadedSongsAsync()@@
+@@function|src/features/menu-music/services/MenuMusicLibrary.cpp|void MenuMusicLibrary::restartDownloadedSongSync()@@
+@@function|src/features/menu-music/services/MenuMusicLibrary.cpp|void MenuMusicLibrary::captureDownloadedSongBatch(@@
+@@function|src/features/menu-music/services/MenuMusicLibrary.cpp|void MenuMusicLibrary::finishDownloadedSongCapture(@@
+@@function|src/features/menu-music/services/MenuMusicLibrary.cpp|std::size_t MenuMusicLibrary::syncDownloadedSongs(@@
+@@function|src/features/menu-music/services/MenuMusicLibrary.cpp|std::size_t MenuMusicLibrary::mergeDownloadedSongs(@@
+
+void captureAll(MusicDownloadManager* manager) {
+    while (!mainJobs.empty() && workers.empty()) {
+        int const previous = manager->pathCalls;
+        auto const previousHashes = hashLookups;
+        runJob(mainJobs);
+        assert(manager->pathCalls - previous <= 64);
+        assert(hashLookups - previousHashes <= 65); // cursor hash lookup + one per item
+    }
+}
+int main() {
+    auto* manager = MusicDownloadManager::sharedState();
+    auto const root = std::filesystem::temp_directory_path() / "paimon-menu-music-opening-fixture";
+    std::filesystem::create_directories(root);
+    auto const audio = root / "song.mp3";
+    { std::ofstream file(audio); file << "audio"; }
+    SongInfoObject downloaded{1, "Server title", "Artist"}, missing{2, "Missing", "Artist"};
+    manager->known.assign({{"1", &downloaded}, {"2", &missing}});
+    manager->paths[1] = audio.string(); manager->paths[2] = (root / "missing.mp3").string();
+    MenuMusicLibrary library;
+    library.syncDownloadedSongsAsync();
+    assert(library.m_tracks.empty() && workers.empty() && mainJobs.size() == 1);
+    assert(manager->pathCalls == 0); // opening does not enumerate or resolve any paths
+    library.syncDownloadedSongsAsync();
+    assert(workers.empty() && mainJobs.size() == 1); // reopens share the in-flight scan
+    MusicTrack edited;
+    edited.id = "user-id"; edited.audioPath = audio.string(); edited.displayName = "My title";
+    edited.favorite = true;
+    library.m_tracks.push_back(edited); library.m_trackIndex[edited.id] = 0;
+    captureAll(manager);
+    assert(workers.size() == 1 && mainJobs.empty());
+    runJob(workers);
+    assert(library.m_tracks.size() == 1 && mainJobs.size() == 1);
+    runJob(mainJobs);
+    assert(library.m_tracks.size() == 1 && library.m_tracks[0].displayName == "My title");
+    assert(library.m_tracks[0].favorite && library.m_tracks[0].artist == "Artist");
+    assert(!library.m_downloadSyncPending && library.m_syncedSongCount == 2);
+    library.syncDownloadedSongsAsync();
+    assert(mainJobs.empty() && workers.empty());
+    assert(manager->blockingEnumerations == 0);
+
+    // Finish a known download without changing the metadata count. If another
+    // change occurs while the worker runs, no stale result may release Play.
+    auto const later = root / "missing.mp3";
+    { std::ofstream file(later); file << "later download"; }
+    ++library.m_downloadSyncGeneration; library.m_syncedSongCount = static_cast<std::size_t>(-1);
+    library.playWaiting = true; library.playFinished = false;
+    library.syncDownloadedSongsAsync(); captureAll(manager);
+    ++library.m_downloadSyncGeneration; library.m_syncedSongCount = static_cast<std::size_t>(-1);
+    runJob(workers); runJob(mainJobs);
+    assert(library.m_downloadSyncPending && !library.playFinished && library.m_tracks.size() == 1);
+    captureAll(manager); runJob(workers); runJob(mainJobs);
+    assert(library.m_syncedSongCount == 2 && library.playFinished && library.m_tracks.size() == 2);
+
+    // Empty results still resolve Play once; they must not silently remain pending.
+    MenuMusicLibrary empty;
+    CCDictionary emptyDictionary;
+    manager->m_songObjects = &emptyDictionary;
+    empty.playWaiting = true; empty.syncDownloadedSongsAsync();
+    captureAll(manager); runJob(workers); runJob(mainJobs);
+    assert(empty.m_tracks.empty() && empty.playFinished && empty.notifications == 1);
+    manager->m_songObjects = &manager->known;
+
+    // A costly path resolution is bounded by time as well as item count.
+    manager->simulateSlowPath = true;
+    MenuMusicLibrary slow;
+    slow.syncDownloadedSongsAsync();
+    int before = manager->pathCalls; runJob(mainJobs);
+    assert(manager->pathCalls == before + 1 && slow.m_downloadSyncPending && workers.empty());
+    runJob(mainJobs); runJob(workers); runJob(mainJobs);
+    assert(!slow.m_downloadSyncPending);
+    manager->simulateSlowPath = false;
+
+    // A 300-song capture runs in multiple frames, then a same-count replacement
+    // invalidates it. The replacement must be captured without using stale nodes.
+    std::vector<SongInfoObject> largeSongs; largeSongs.reserve(301);
+    std::vector<std::pair<std::string, SongInfoObject*>> entries;
+    for (int i = 0; i < 300; ++i) {
+        int id = 1000 + i; largeSongs.push_back({id, "Track", "Artist"});
+        entries.emplace_back(std::to_string(id), &largeSongs.back()); manager->paths[id] = audio.string();
+    }
+    manager->known.assign(entries);
+    MenuMusicLibrary large;
+    large.playWaiting = true; large.syncDownloadedSongsAsync();
+    before = manager->pathCalls; runJob(mainJobs);
+    assert(manager->pathCalls > before && manager->pathCalls - before <= 64 && workers.empty());
+    largeSongs.push_back({9999, "New", "Artist"});
+    entries[0] = {"9999", &largeSongs.back()}; manager->paths[9999] = later.string();
+    manager->known.assign(entries); ++large.m_downloadSyncGeneration;
+    runJob(mainJobs); // restart without dereferencing the removed cursor
+    assert(large.m_downloadSyncPending && !large.playFinished && workers.empty());
+    captureAll(manager); runJob(workers); runJob(mainJobs);
+    assert(large.playFinished && large.m_tracks.size() == 2);
+    assert(large.findTrack("gd_9999") != nullptr);
+
+    // A removed cursor must be detected by hash lookup even if a same-count
+    // mutation happened without an invalidation event.
+    MenuMusicLibrary changedCursor;
+    changedCursor.playWaiting = true;
+    changedCursor.syncDownloadedSongsAsync();
+    before = manager->pathCalls; runJob(mainJobs);
+    int const processed = manager->pathCalls - before;
+    assert(processed > 0 && processed <= 64);
+    entries[static_cast<std::size_t>(processed - 1)] = {"9998", &missing};
+    manager->known.assign(entries);
+    before = manager->pathCalls; runJob(mainJobs);
+    assert(manager->pathCalls == before && changedCursor.m_downloadSyncPending && !changedCursor.playFinished);
+    captureAll(manager); runJob(workers); runJob(mainJobs);
+    assert(changedCursor.playFinished && !changedCursor.m_downloadSyncPending);
+
+    // Shutdown before a queued batch clears pending state without touching GD.
+    MenuMusicLibrary shuttingDown;
+    shuttingDown.syncDownloadedSongsAsync();
+    before = manager->pathCalls; paimon::testShuttingDown = true;
+    runJob(mainJobs);
+    assert(!shuttingDown.m_downloadSyncPending && manager->pathCalls == before && workers.empty());
+    paimon::testShuttingDown = false;
+
+    // A rejected worker still wakes a waiting Play request.
+    MenuMusicLibrary rejected;
+    rejected.playWaiting = true; rejected.syncDownloadedSongsAsync();
+    paimon::testAllowWorker = false;
+    while (!mainJobs.empty()) runJob(mainJobs);
+    paimon::testAllowWorker = true;
+    assert(!rejected.m_downloadSyncPending && rejected.playFinished && workers.empty());
+
+    // O(1) average lookup is used to resume; the number of lookups is linear.
+    assert(hashLookups < static_cast<std::size_t>(manager->pathCalls) * 3 + 20);
+    std::filesystem::remove(later);
+    std::vector<MusicTrack> candidates;
+    for (int i = 0; i < 10000; ++i) {
+        MusicTrack track; track.id = std::to_string(i); track.audioPath = "audio-" + std::to_string(i);
+        candidates.push_back(track); candidates.push_back(track);
+    }
+    library.comparisons = 0;
+    assert(library.mergeDownloadedSongs(candidates) == 10000);
+    assert(library.m_tracks.size() == 10002 && library.comparisons <= 10000);
+    assert(library.mergeDownloadedSongs(std::move(candidates)) == 0);
+    std::filesystem::remove(audio); std::filesystem::remove(root);
+}

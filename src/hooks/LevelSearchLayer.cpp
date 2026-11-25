@@ -1,5 +1,6 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/LevelSearchLayer.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 #include "../framework/HookConventions.hpp"
 #include "../core/modules/ModuleRegistry.hpp"
 #include "../features/community/ui/LeaderboardLayer.hpp"
@@ -32,6 +33,7 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
 
     struct Fields {
         bool m_previewCallbacksSuspended = false;
+        std::unordered_map<CCMenuItem*, SEL_MenuHandler> m_nativeSearchCallbacks;
     };
 
     CCNode* getRealtimePreviewNodeSafe() {
@@ -43,7 +45,20 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
 
     bool init(int type) {
         if (!LevelSearchLayer::init(type)) return false;
+        this->addOnEnterCallback([this] {
+            this->handleEnter();
+            return true;
+        });
+        this->addOnExitCallback([this] {
+            this->handleExit();
+            return true;
+        });
+        this->addCleanupCallback([this] {
+            this->handleCleanup();
+            return true;
+        });
         m_fields->m_previewCallbacksSuspended = false;
+        wrapNativeSearchButtons(this);
 
         bool hasCustomBg = LayerBackgroundManager::get().applyBackground(this, "search");
 
@@ -119,21 +134,34 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
         return true;
     }
 
-    $override
-    void onExit() {
+    void wrapNativeSearchButtons(CCNode* node) {
+        if (auto* item = typeinfo_cast<CCMenuItem*>(node);
+            item && item->m_pListener == this && item->m_pfnSelector) {
+            m_fields->m_nativeSearchCallbacks.emplace(item, item->m_pfnSelector);
+            item->setTarget(this, menu_selector(MyLevelSearchLayer::onNativeSearchButton));
+        }
+        for (auto* child : node->getChildrenExt<CCNode*>()) wrapNativeSearchButtons(child);
+    }
+
+    void onNativeSearchButton(CCObject* sender) {
+        auto* item = typeinfo_cast<CCMenuItem*>(sender);
+        auto const found = m_fields->m_nativeSearchCallbacks.find(item);
+        if (found == m_fields->m_nativeSearchCallbacks.end()) return;
+        destroyRealtimePreviewNow();
+        (this->*found->second)(sender);
+    }
+
+    void handleExit() {
         m_fields->m_previewCallbacksSuspended = true;
-        LevelSearchLayer::onExit();
         releaseSearchInputFocus(this);
     }
 
-    $override
-    void onEnter() {
-        LevelSearchLayer::onEnter();
+    void handleEnter() {
         m_fields->m_previewCallbacksSuspended = false;
 
         // recreate the realtime preview destroyed in transition (normal tab only)
         if (kEnableRealtimeSearchPreview() && !hasRealtimePreview() && supportsRealtimePreviewUI()) {
-            if (auto searchInput = typeinfo_cast<CCTextInputNode*>(this->getChildByID("search-input"))) {
+            if (this->getChildByID("search-input")) {
                 // 0 = normal search, 1 = list search (from the tab buttons)
                 auto* tabMenu = this->getChildByID("tab-menu");
                 auto* listBtn = tabMenu ? tabMenu->getChildByID("list-search-btn") : nullptr;
@@ -147,11 +175,9 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
         }
     }
 
-    $override
-    void cleanup() {
+    void handleCleanup() {
         m_fields->m_previewCallbacksSuspended = true;
         // replacescene() fires cleanup() mid-transition; onenter() re-activates after
-        LevelSearchLayer::cleanup();
     }
 
     bool hasRealtimePreview() {
@@ -272,47 +298,19 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
         LevelSearchLayer::onSearchUser(sender);
     }
 
-    $override
-    void onMostDownloaded(CCObject* sender) {
-        destroyRealtimePreviewNow();
-        LevelSearchLayer::onMostDownloaded(sender);
-    }
 
-    $override
-    void onMostLikes(CCObject* sender) {
-        destroyRealtimePreviewNow();
-        LevelSearchLayer::onMostLikes(sender);
-    }
 
-    $override
-    void onSuggested(CCObject* sender) {
-        destroyRealtimePreviewNow();
-        LevelSearchLayer::onSuggested(sender);
-    }
 
-    $override
-    void onTrending(CCObject* sender) {
-        destroyRealtimePreviewNow();
-        LevelSearchLayer::onTrending(sender);
-    }
 
-    $override
-    void onMagic(CCObject* sender) {
-        destroyRealtimePreviewNow();
-        LevelSearchLayer::onMagic(sender);
-    }
 
-    $override
-    void onMostRecent(CCObject* sender) {
-        destroyRealtimePreviewNow();
-        LevelSearchLayer::onMostRecent(sender);
-    }
 
-    $override
-    void onLatestStars(CCObject* sender) {
-        destroyRealtimePreviewNow();
-        LevelSearchLayer::onLatestStars(sender);
-    }
+
+
+
+
+
+
+
 
     $override
     void onFriends(CCObject* sender) {
@@ -320,17 +318,17 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
         LevelSearchLayer::onFriends(sender);
     }
 
-    $override
-    void onFollowed(CCObject* sender) {
-        destroyRealtimePreviewNow();
-        LevelSearchLayer::onFollowed(sender);
-    }
 
+
+    // bindings 2.2091 have no windows address for onStarAward; the native
+    // button is still covered by wrapNativeSearchButtons there.
+#ifndef GEODE_IS_WINDOWS
     $override
     void onStarAward(CCObject* sender) {
         destroyRealtimePreviewNow();
         LevelSearchLayer::onStarAward(sender);
     }
+#endif
 
     void onLeaderboard(CCObject*) {
         destroyRealtimePreviewNow();

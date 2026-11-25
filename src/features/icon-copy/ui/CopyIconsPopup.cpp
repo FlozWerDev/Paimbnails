@@ -1,8 +1,14 @@
 #include "CopyIconsPopup.hpp"
 
+#include "CopyChoicePopup.hpp"
 #include "IconDetailPopup.hpp"
 #include "IconSetPreview.hpp"
 #include "../hooks/IconCopyGarageGlue.hpp"
+#include "../../community-base/services/CommunityClient.hpp"
+#include "../../global-icon/GlobalIconGradients.hpp"
+#include "../../global-icon/services/GlobalIconClient.hpp"
+#include "../../global-icon/services/GlobalIconStorage.hpp"
+#include "../../../framework/compat/MoreIconsAPI.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonDrawNode.hpp"
@@ -163,6 +169,28 @@ bool CopyIconsPopup::init(IconSet const& set, bool saved) {
     hint->setColor({160, 160, 180});
     hint->setPosition({cx, 26.f});
     m_mainLayer->addChild(hint);
+    m_hint = hint;
+
+    // the player's global icon may also share gradients and custom textures.
+    if (!saved && m_set.accountID > 0) {
+        WeakRef<CopyIconsPopup> weak = this;
+        paimon::globalicon::GlobalIconClient::get().getMetadata(m_set.accountID,
+            [weak](bool ok, bool found, paimon::globalicon::GlobalIconMeta const& meta) {
+                auto self = weak.lock();
+                if (!self) return;
+                self->m_metaLoaded = ok;
+                if (!ok || !found) return;
+                self->m_meta = meta;
+                auto available = self->extras();
+                if (!available.gradients && !available.custom) return;
+                std::string text = paimon::community::tx("Tambien comparte: ", "Also shares: ");
+                if (available.gradients) text += paimon::community::tx("gradientes", "gradients");
+                if (available.gradients && available.custom) text += ", ";
+                if (available.custom) text += paimon::community::tx("iconos custom", "custom icons");
+                self->m_hint->setString(text.c_str());
+                self->m_hint->setColor({130, 255, 170});
+            });
+    }
 
     return true;
 }
@@ -217,28 +245,77 @@ void CopyIconsPopup::openDetail(IconType type, CCNode* slot) {
     });
 }
 
-void CopyIconsPopup::onCopyAndUse(CCObject*) {
-    iconcopy::add(m_set);
-    iconcopy::apply(m_set);
-    garage::refreshVisibleGarage();
-    PaimonNotify::show(fmt::format("Copied and using {}'s icons", m_set.label()),
-                       NotificationIcon::Success);
+paimon::globalicon::LinkOptions CopyIconsPopup::extras() const {
+    return {true,
+        m_meta.share.gradients && m_meta.gradients.isObject() && m_meta.gradients.size() > 0,
+        m_meta.share.custom && !m_meta.icons.empty() && paimon::globalicon::GlobalIconStorage::available()};
+}
+
+void CopyIconsPopup::choose(Mode mode) {
+    auto available = extras();
+    if (!available.gradients && !available.custom) {
+        perform(mode, {true, false, false});
+        return;
+    }
+    char const* action = mode == Mode::Copy ? "Copy" : mode == Mode::Use ? "Use" : "Copy & Use";
+    WeakRef<CopyIconsPopup> weak = this;
+    auto* popup = CopyChoicePopup::create(available, action, [weak, mode](paimon::globalicon::LinkOptions options) {
+        if (auto self = weak.lock()) self->perform(mode, options);
+    });
+    paimon::community::showOnTop(popup);
+}
+
+void CopyIconsPopup::perform(Mode mode, paimon::globalicon::LinkOptions options) {
+    bool const keep = mode != Mode::Use;
+    bool const wear = mode != Mode::Copy;
+    if (options.vanilla) {
+        if (keep) iconcopy::add(m_set);
+        if (wear) iconcopy::apply(m_set);
+    }
+    // async parts only capture copies: this popup closes right away.
+    auto meta = m_meta;
+    if (options.gradients) {
+        paimon::globalicon::ensureGradientImages(meta, [meta, wear](paimon::globalicon::GradientPaths const& paths) {
+            int written = paimon::globalicon::copyGradients(meta, paths, wear);
+            garage::refreshVisibleGarage();
+            PaimonNotify::show(fmt::format("{} {}", written, wear
+                ? paimon::community::tx("gradientes aplicados", "gradients applied")
+                : paimon::community::tx("gradientes guardados en tu biblioteca", "gradients saved to your library")),
+                written > 0 ? NotificationIcon::Success : NotificationIcon::Warning);
+        });
+    }
+    if (options.custom) {
+        std::vector<paimon::globalicon::GlobalIconSlot> slots;
+        for (auto const& [type, slot] : meta.icons) slots.push_back(slot);
+        int accountID = meta.accountID;
+        paimon::globalicon::GlobalIconStorage::get().ensureIcons(accountID, slots,
+            [accountID, slots, wear](int succeeded, int total) {
+                if (wear) {
+                    for (auto const& slot : slots) {
+                        auto type = paimon::globalicon::iconTypeFromString(slot.type);
+                        if (!type) continue;
+                        auto* info = more_icons::getIcon(paimon::globalicon::GlobalIconStorage::registeredName(accountID, slot), *type);
+                        if (info) more_icons::setIcon(info, *type);
+                    }
+                    garage::refreshVisibleGarage();
+                }
+                PaimonNotify::show(fmt::format("{} / {} {}", succeeded, total,
+                    paimon::community::tx("iconos custom descargados", "custom icons downloaded")),
+                    succeeded > 0 ? NotificationIcon::Success : NotificationIcon::Error);
+            });
+    }
+    if (options.vanilla) {
+        if (wear) garage::refreshVisibleGarage();
+        PaimonNotify::show(wear ? fmt::format("Now using {}'s icons", m_set.label()) : fmt::format("Saved {}'s icons", m_set.label()),
+            NotificationIcon::Success);
+    }
     this->onClose(nullptr);
 }
 
-void CopyIconsPopup::onCopy(CCObject*) {
-    iconcopy::add(m_set);
-    PaimonNotify::show(fmt::format("Saved {}'s icons", m_set.label()),
-                       NotificationIcon::Success);
-    this->onClose(nullptr);
-}
+void CopyIconsPopup::onCopyAndUse(CCObject*) { choose(Mode::CopyAndUse); }
 
-void CopyIconsPopup::onUse(CCObject*) {
-    iconcopy::apply(m_set);
-    garage::refreshVisibleGarage();
-    PaimonNotify::show(fmt::format("Now using {}'s icons", m_set.label()),
-                       NotificationIcon::Success);
-    this->onClose(nullptr);
-}
+void CopyIconsPopup::onCopy(CCObject*) { choose(Mode::Copy); }
+
+void CopyIconsPopup::onUse(CCObject*) { choose(Mode::Use); }
 
 }  // namespace paimon::iconcopy

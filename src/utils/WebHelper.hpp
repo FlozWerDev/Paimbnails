@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <memory>
+#include "../core/BanGate.hpp"
 
 // non-blocking web dispatch; callbacks on main thread.
 namespace WebHelper {
@@ -27,12 +28,23 @@ inline void dispatch(
     std::string const& url,
     geode::CopyableFunction<void(geode::utils::web::WebResponse)> cb
 ) {
+    auto const permit = paimon::ban::authorizeWebRequest(method, url);
+    if (!permit) {
+        geode::queueInMainThread([cb = std::move(cb)] {
+            if (cb) cb(geode::utils::web::WebResponse{});
+        });
+        return;
+    }
     auto future = req.send(normalizeMethod(method), url);
 
     auto safeCb = std::make_shared<decltype(cb)>(std::move(cb));
 
-    auto handle = geode::async::spawn(std::move(future), [safeCb](geode::utils::web::WebResponse res) {
+    auto handle = geode::async::spawn(std::move(future), [safeCb, permit, method, url](geode::utils::web::WebResponse res) {
         if (safeCb && *safeCb) {
+            if (paimon::ban::authorizeWebRequest(method, url) != permit) {
+                (*safeCb)(geode::utils::web::WebResponse{});
+                return;
+            }
             (*safeCb)(std::move(res));
         }
     });
@@ -46,10 +58,21 @@ inline void dispatchOwned(
     std::string const& url,
     geode::CopyableFunction<void(geode::utils::web::WebResponse)> cb
 ) {
+    auto const permit = paimon::ban::authorizeWebRequest(method, url);
+    if (!permit) {
+        geode::queueInMainThread([cb = std::move(cb)] {
+            if (cb) cb(geode::utils::web::WebResponse{});
+        });
+        return;
+    }
     auto future = req.send(normalizeMethod(method), url);
     auto safeCb = std::make_shared<decltype(cb)>(std::move(cb));
-    owner.spawn("Paimbnails WebRequest", std::move(future), [safeCb](geode::utils::web::WebResponse res) {
+    owner.spawn("Paimbnails WebRequest", std::move(future), [safeCb, permit, method, url](geode::utils::web::WebResponse res) {
         if (safeCb && *safeCb) {
+            if (paimon::ban::authorizeWebRequest(method, url) != permit) {
+                (*safeCb)(geode::utils::web::WebResponse{});
+                return;
+            }
             (*safeCb)(std::move(res));
         }
     });

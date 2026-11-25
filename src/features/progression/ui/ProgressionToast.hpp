@@ -20,11 +20,11 @@ protected:
     bool initProgress(ProgressDelta const& delta);
     bool initBadge(BadgeDef const& badge, BadgeContext const& ctx);
 
-    void buildCard(float width, float height, cocos2d::ccColor3B accent);
-    void slideIn(float delay, float hold);
+    void buildCard(float width, float height, cocos2d::ccColor3B accent, bool badgeCard);
+    void slideDown(float delay, float hold, float targetY);
     void onStartFill();
 
-    float m_width = 252.f;
+    float m_width = 276.f;
     float m_height = 76.f;
     cocos2d::CCNode* m_card = nullptr;
     geode::Ref<XPBarNode> m_pendingBar = nullptr;

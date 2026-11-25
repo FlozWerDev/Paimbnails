@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "LevelColors.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/PaimonFormat.hpp"
@@ -14,9 +15,21 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
+namespace {
+std::atomic<bool> s_levelColorsInitialized{false};
+} // namespace
+
+bool LevelColors::isInitialized() {
+    return s_levelColorsInitialized.load(std::memory_order_acquire);
+}
+
 LevelColors& LevelColors::get() {
     // leaked on purpose: dodges destructor-order issues at shutdown (runtimelifecycle flushes on exit).
-    static auto* lc = new LevelColors();
+    static auto* lc = []() {
+        auto* colors = new LevelColors();
+        s_levelColorsInitialized.store(true, std::memory_order_release);
+        return colors;
+    }();
     return *lc;
 }
 
@@ -26,7 +39,7 @@ LevelColors::~LevelColors() {
 }
 
 std::filesystem::path LevelColors::path() const {
-    return Mod::get()->getSaveDir() / "thumbnails" / "level_colors_v3.paimon";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "thumbnails" / "level_colors_v3.paimon";
 }
 
 void LevelColors::load() const {
@@ -66,31 +79,49 @@ void LevelColors::load() const {
     }
 }
 
-bool LevelColors::save() const {
-    log::info("[LevelColors] save: writing {} entries", m_items.size());
+bool LevelColors::saveItems(std::vector<std::pair<int32_t, LevelColorPair>> const& items) const {
+    // paimonformat::save is a plain write, not temp+rename; a batch save and a
+    // shutdown flush must never publish the same file at the same time.
+    std::lock_guard<std::mutex> writeLock(m_saveMutex);
+    log::info("[LevelColors] save: writing {} entries", items.size());
     std::stringstream ss;
-    for (auto const& [id, p] : m_items) {
+    for (auto const& [id, p] : items) {
         ss << id << "," << (int)p.a.r << "," << (int)p.a.g << "," << (int)p.a.b
            << "," << (int)p.b.r << "," << (int)p.b.g << "," << (int)p.b.b << "\n";
     }
-    
+
     std::string content = ss.str();
     std::vector<uint8_t> data(content.begin(), content.end());
-    
+
     auto p = path();
     return PaimonFormat::save(p, data);
 }
 
 void LevelColors::set(int32_t levelID, ccColor3B a, ccColor3B b) {
     log::debug("[LevelColors] set: levelID={} a=({},{},{}) b=({},{},{})", levelID, a.r, a.g, a.b, b.r, b.g, b.b);
-    std::lock_guard<std::mutex> lock(m_mutex);
-    load();
-    m_items[levelID] = LevelColorPair{a, b};
-    m_dirty = true;
-    m_pendingWrites++;
-    if (m_pendingWrites >= BATCH_SAVE_THRESHOLD && save()) {
-        m_dirty = false;
-        m_pendingWrites = 0;
+
+    std::vector<std::pair<int32_t, LevelColorPair>> snapshot;
+    uint64_t generation = 0;
+    bool shouldSave = false;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        load();
+        m_items[levelID] = LevelColorPair{a, b};
+        m_dirty = true;
+        ++m_generation;
+        m_pendingWrites++;
+        if (m_pendingWrites >= BATCH_SAVE_THRESHOLD) {
+            m_pendingWrites = 0;
+            snapshot.assign(m_items.begin(), m_items.end());
+            generation = m_generation;
+            shouldSave = true;
+        }
+    }
+
+    // disk i/o stays outside the lock: getPair() takes it for every cell.
+    if (shouldSave && saveItems(snapshot)) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_generation == generation) m_dirty = false;
     }
 }
 
@@ -122,14 +153,45 @@ std::optional<LevelColorPair> LevelColors::getPair(int32_t levelID) const {
 }
 
 void LevelColors::flushIfDirty() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_dirty) {
+    std::vector<std::pair<int32_t, LevelColorPair>> snapshot;
+    uint64_t generation = 0;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!m_dirty) return;
         log::info("[LevelColors] flushIfDirty: flushing pending writes");
-        if (!save()) return;
+        snapshot.assign(m_items.begin(), m_items.end());
+        generation = m_generation;
+    }
+
+    if (!saveItems(snapshot)) return;
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_generation == generation) {
         m_dirty = false;
         m_pendingWrites = 0;
     }
 }
+
+namespace {
+
+std::pair<cocos2d::ccColor3B, cocos2d::ccColor3B> extractPair(
+    uint8_t const* imgData, int w, int h, bool hasAlpha) {
+    std::vector<uint8_t> rgb24;
+    uint8_t const* rgbPtr = imgData;
+    if (hasAlpha) {
+        rgb24.resize(static_cast<size_t>(w) * h * 3);
+        ImageConverter::rgbaToRgbFast(imgData, rgb24.data(),
+                                      static_cast<size_t>(w) * h);
+        rgbPtr = rgb24.data();
+    }
+    auto pair = DominantColors::extractReviewed(rgbPtr, w, h);
+    return {
+        cocos2d::ccColor3B{pair.first.r, pair.first.g, pair.first.b},
+        cocos2d::ccColor3B{pair.second.r, pair.second.g, pair.second.b},
+    };
+}
+
+} // namespace
 
 void LevelColors::extractFromImage(int32_t levelID, cocos2d::CCImage* image) {
     if (!image) return;
@@ -139,53 +201,25 @@ void LevelColors::extractFromImage(int32_t levelID, cocos2d::CCImage* image) {
     int w = image->getWidth();
     int h = image->getHeight();
     bool hasAlpha = image->hasAlpha();
-    
-    if (!imgData || w <= 0 || h <= 0) return;
-    
-    std::vector<uint8_t> rgb24;
-    const uint8_t* rgbPtr = nullptr;
-    
-    if (hasAlpha) {
-        rgb24.resize(static_cast<size_t>(w) * h * 3);
-        ImageConverter::rgbaToRgbFast(imgData, rgb24.data(), static_cast<size_t>(w) * h);
-        rgbPtr = rgb24.data();
-    } else {
-        rgbPtr = imgData;
-    }
-    
-    auto pair = DominantColors::extractReviewed(rgbPtr, w, h);
-    cocos2d::ccColor3B colorA{pair.first.r, pair.first.g, pair.first.b};
-    cocos2d::ccColor3B colorB{pair.second.r, pair.second.g, pair.second.b};
 
+    if (!imgData || w <= 0 || h <= 0) return;
+
+    auto [colorA, colorB] = extractPair(imgData, w, h, hasAlpha);
     this->set(levelID, colorA, colorB);
 }
 
 void LevelColors::extractFromRawData(int32_t levelID, const uint8_t* imgData, int w, int h, bool hasAlpha) {
     if (!imgData || w <= 0 || h <= 0) return;
     log::debug("[LevelColors] extractFromRawData: levelID={} {}x{} alpha={}", levelID, w, h, hasAlpha);
-    
-    std::vector<uint8_t> rgb24;
-    const uint8_t* rgbPtr = nullptr;
-    
-    if (hasAlpha) {
-        rgb24.resize(static_cast<size_t>(w) * h * 3);
-        ImageConverter::rgbaToRgbFast(imgData, rgb24.data(), static_cast<size_t>(w) * h);
-        rgbPtr = rgb24.data();
-    } else {
-        rgbPtr = imgData;
-    }
-    
-    auto pair2 = DominantColors::extractReviewed(rgbPtr, w, h);
-    cocos2d::ccColor3B colorA2{pair2.first.r, pair2.first.g, pair2.first.b};
-    cocos2d::ccColor3B colorB2{pair2.second.r, pair2.second.g, pair2.second.b};
 
-    this->set(levelID, colorA2, colorB2);
+    auto [colorA, colorB] = extractPair(imgData, w, h, hasAlpha);
+    this->set(levelID, colorA, colorB);
 }
 
 void processCachedImage(std::filesystem::path const& filepath, int32_t levelID) {
     std::ifstream file(filepath, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
-        log::warn("[LevelColors] fallo al abrir: {}", geode::utils::string::pathToString(filepath));
+        log::warn("[LevelColors] fallo al abrir: {}", paimon::paths::toUtf8(filepath));
         return;
     }
 
@@ -198,7 +232,7 @@ void processCachedImage(std::filesystem::path const& filepath, int32_t levelID) 
     
     auto image = new cocos2d::CCImage();
     if (!image->initWithImageData(const_cast<uint8_t*>(data.data()), data.size())) {
-        log::warn("[LevelColors] fallo al decodificar imagen: {}", geode::utils::string::pathToString(filepath));
+        log::warn("[LevelColors] fallo al decodificar imagen: {}", paimon::paths::toUtf8(filepath));
         image->release();
         return;
     }
@@ -227,10 +261,10 @@ void LevelColors::extractColorsFromCache() {
             if (ecCache || !entry.is_regular_file()) continue;
 
             auto filepath = entry.path();
-            auto ext = geode::utils::string::toLower(geode::utils::string::pathToString(filepath.extension()));
+            auto ext = geode::utils::string::toLower(paimon::paths::toUtf8(filepath.extension()));
             if (!(ext == ".png" || ext == ".webp" || ext == ".jpg" || ext == ".jpeg")) continue;
 
-            std::string filename = geode::utils::string::pathToString(filepath.stem());
+            std::string filename = paimon::paths::toUtf8(filepath.stem());
             auto levelIDResult = geode::utils::numFromString<int32_t>(filename);
             if (!levelIDResult.isOk()) {
                 log::debug("[LevelColors] saltando archivo no-numerico: {}", filename);
@@ -255,7 +289,7 @@ void LevelColors::extractColorsFromCache() {
         }
     };
 
-    scanDir(Mod::get()->getSaveDir() / "thumbnails");
+    scanDir(paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "thumbnails");
     scanDir(paimon::quality::cacheDir());
     
     log::info("[LevelColors] listo: {} ok, {} saltado, {} procesado", 

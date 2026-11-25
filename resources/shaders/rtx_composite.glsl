@@ -49,29 +49,51 @@ vec3 sharpenCAS(vec2 uv, vec3 c, float amount) {
 }
 
 vec4 giUpsample(vec2 uv, vec3 guideC) {
-    vec4 neutral = vec4(0.0, 0.0, 0.0, 1.0);
-    if (u_historyValid < 0.5) return neutral;
-    vec2 histUV = vec2(dot(u_reprojRow0, vec3(uv, 1.0)),
-                       dot(u_reprojRow1, vec3(uv, 1.0)));
-    if (any(lessThan(histUV, vec2(0.0))) || any(greaterThan(histUV, vec2(1.0)))) return neutral;
+    vec2 sampleUV = uv;
+    if (u_historyValid > 0.5) {
+        sampleUV = vec2(dot(u_reprojRow0, vec3(uv, 1.0)),
+                        dot(u_reprojRow1, vec3(uv, 1.0)));
+        sampleUV = clamp(sampleUV, u_giTexel * 0.5, vec2(1.0) - u_giTexel * 0.5);
+    }
     float guideL = luma(guideC);
-    vec2 pixel = histUV / u_giTexel - 0.5;
+    vec2 pixel = sampleUV / u_giTexel - 0.5;
     vec2 base = floor(pixel);
     vec2 f = fract(pixel);
     vec4 sum = vec4(0.0);
     float wsum = 0.0;
+    vec4 bilerpSum = vec4(0.0);
+    float bilerpW = 0.0;
     for (int k = 0; k < 4; k++) {
         vec2 corner = vec2(float(k - (k / 2) * 2), float(k / 2));
-        vec2 d = (base + corner + 0.5) * u_giTexel;
+        vec2 d = clamp((base + corner + 0.5) * u_giTexel, vec2(0.0), vec2(1.0));
         vec2 spatial = mix(vec2(1.0) - f, f, corner);
+        float sw = spatial.x * spatial.y;
         vec3 gc = texture2D(u_guide, d).rgb;
-        float wgt = spatial.x * spatial.y
-                  * exp(-(abs(luma(gc) - guideL) * 28.0 + distance(gc, guideC) * 14.0));
-        sum += texture2D(u_gi, d) * wgt;
+        float dl = abs(luma(gc) - guideL);
+        float dc = distance(gc, guideC);
+        float wgt = sw * exp(-dl * 12.0 - dc * 6.0);
+        vec4 giVal = texture2D(u_gi, d);
+        sum += giVal * wgt;
         wsum += wgt;
+        bilerpSum += giVal * sw;
+        bilerpW += sw;
     }
-    float confidence = safeSmoothstep(0.02, 0.25, wsum);
-    return mix(neutral, sum / max(wsum, 0.0001), confidence);
+    vec4 bilateral = sum / max(wsum, 0.00001);
+    vec4 bilerp = bilerpSum / max(bilerpW, 0.00001);
+    // Smoothly fall back to standard bilinear when crossing sharp contrast edges,
+    // rather than falling back to neutral (black), which caused dark fringes and flickering.
+    float confidence = clamp(wsum / 0.15, 0.0, 1.0);
+    return mix(bilerp, bilateral, confidence);
+}
+
+vec3 sampleGodRays(vec2 uv) {
+    vec2 t = u_texel * 1.5;
+    vec3 r = texture2D(u_rays, uv).rgb * 0.40;
+    r += (texture2D(u_rays, uv + vec2(-t.x, 0.0)).rgb +
+          texture2D(u_rays, uv + vec2( t.x, 0.0)).rgb +
+          texture2D(u_rays, uv + vec2(0.0, -t.y)).rgb +
+          texture2D(u_rays, uv + vec2(0.0,  t.y)).rgb) * 0.15;
+    return r;
 }
 
 void main() {
@@ -103,7 +125,7 @@ void main() {
     // soft >1 rolloff kills fireflies.
     hdr += softClampHi(traced.rgb);
     hdr += texture2D(u_bloom, uv).rgb * u_bloomStrength;
-    hdr += texture2D(u_rays, uv).rgb * u_rayStrength;
+    hdr += sampleGodRays(uv) * u_rayStrength;
 
     float ev = exp2(clamp(u_exposure, -8.0, 8.0));
     if (u_adaptKey > 0.0) {
@@ -140,7 +162,8 @@ void main() {
     }
 
     float change = clamp(length(col - original) * 255.0, 0.0, 1.0);
-    col += (hash12(gl_FragCoord.xy + 0.5) - hash12(gl_FragCoord.yx + 7.3)) * 0.0039 * change;
+    float ditherPhase = fract(u_time * 60.0) * 17.31;
+    col += (hash12(gl_FragCoord.xy + ditherPhase) - hash12(gl_FragCoord.yx + ditherPhase + 7.3)) * 0.0025 * change;
     col = mix(original, col, clamp(u_mix, 0.0, 1.0));
 
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);

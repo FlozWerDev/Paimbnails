@@ -1,5 +1,10 @@
 #include "MenuMusicSettingsPopup.hpp"
 #include "components/SpatialStagePreview.hpp"
+#include "components/VinylDisc.hpp"
+#include "components/NowPlayingToast.hpp"
+#include "../services/MenuMusicPlayer.hpp"
+#include "../services/MenuMusicLibrary.hpp"
+#include "../../../utils/PaimonDrawNode.hpp"
 
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../ui/PaiConfigKit.hpp"
@@ -184,7 +189,7 @@ bool MenuMusicSettingsPopup::init() {
             MenuMusicEffects::get().applyPreset(MusicEffectsPreset::Original);
             m_cfg = MenuMusicEffects::get().config();
             scheduleRebuild();
-            PaimonNotify::create("Efectos restaurados", NotificationIcon::Success)->show();
+            PaimonNotify::show("Efectos restaurados", NotificationIcon::Success);
         });
     resetBtn->setID("menu-music-effects-reset-btn"_spr);
     resetBtn->setPosition({m_mainLayer->getContentSize().width / 2.f, 20.f});
@@ -235,7 +240,7 @@ void MenuMusicSettingsPopup::rebuild() {
         });
 
     auto* tabs = kit::makeTabBar(scrollW,
-        {"Presets", "Sonido", "Espacial", "Ambiente", "Player"}, m_tab,
+        {"Presets", "Sonido", "Espacial", "Ambiente", "Disco", "Player"}, m_tab,
         [this](int tab) {
             m_tab = tab;
             scheduleRebuild();
@@ -414,6 +419,127 @@ void MenuMusicSettingsPopup::rebuild() {
                 m_cfg.echoFeedback, 0.0, 90.0, formatPercent,
                 [this](double value) { m_cfg.echoFeedback = static_cast<float>(value); persist(); }),
         }));
+    } else if (m_tab == 4) {
+        auto currentStyle = VinylDisc::getSavedStyle();
+        auto styleIndex = static_cast<int>(currentStyle);
+        auto const& names = VinylDisc::getStyleNames();
+
+        // live preview of the rotating disc
+        auto* previewCard = CCNode::create();
+        previewCard->setContentSize({scrollW, 94.f});
+        previewCard->setAnchorPoint({0.f, 0.f});
+
+        auto* previewBg = PaimonDrawNode::create();
+        if (previewBg) {
+            CCPoint p[4] = {
+                ccp(0.f, 0.f), ccp(scrollW, 0.f),
+                ccp(scrollW, 94.f), ccp(0.f, 94.f)
+            };
+            previewBg->drawPolygon(p, 4, ccc4f(0.06f, 0.06f, 0.09f, 0.85f), 1.f, ccc4f(0.18f, 0.20f, 0.28f, 0.8f));
+            previewCard->addChild(previewBg, 0);
+        }
+
+        auto* discPreview = VinylDisc::create(36.f, currentStyle);
+        if (discPreview) {
+            discPreview->setPosition({scrollW * 0.22f, 47.f});
+            discPreview->startSpinning();
+            if (auto* track = MenuMusicPlayer::get().currentTrack()) {
+                if (!track->coverPath.empty()) {
+                    discPreview->setCoverFromPath(track->coverPath);
+                }
+            }
+            previewCard->addChild(discPreview, 1);
+        }
+
+        auto* previewTitle = CCLabelBMFont::create("Vista Previa en Vivo", "goldFont.fnt");
+        if (previewTitle) {
+            previewTitle->setScale(0.52f);
+            previewTitle->setAnchorPoint({0.f, 0.5f});
+            previewTitle->setPosition({scrollW * 0.42f, 62.f});
+            previewCard->addChild(previewTitle, 2);
+        }
+
+        auto* previewSub = CCLabelBMFont::create(names[styleIndex].c_str(), "chatFont.fnt");
+        if (previewSub) {
+            previewSub->setScale(0.40f);
+            previewSub->setAnchorPoint({0.f, 0.5f});
+            previewSub->setColor(ccc3(180, 210, 255));
+            previewSub->setPosition({scrollW * 0.42f, 36.f});
+            previewCard->addChild(previewSub, 2);
+        }
+
+        items.push_back(previewCard);
+
+        items.push_back(kit::makeCard(scrollW, "Modelo de Disco", {255, 190, 100}, {
+            kit::makeSelectRow(innerW,
+                "Estilo", "Elige la estetica visual del vinilo y sus materiales.",
+                names, styleIndex,
+                [this](int index) {
+                    auto style = static_cast<VinylStyle>(std::clamp(index, 0, static_cast<int>(VinylStyle::Count) - 1));
+                    VinylDisc::setSavedStyle(style);
+                    VinylDisc::reloadAllInstances();
+                    scheduleRebuild();
+                }),
+        }));
+        items.push_back(kit::makeHint(scrollW, VinylDisc::getStyleDescription(currentStyle)));
+
+        bool gleam = Mod::get()->getSavedValue<bool>("menuMusicVinylGleam", true);
+        bool grooves = Mod::get()->getSavedValue<bool>("menuMusicVinylGrooves", true);
+        int labelSizeIdx = Mod::get()->getSavedValue<int>("menuMusicVinylLabelSize", 1);
+        double speed = static_cast<double>(Mod::get()->getSavedValue<float>("menuMusicVinylSpeed", 40.f));
+
+        std::vector<std::string> const labelSizes = {
+            "Clasico (38% - Mas vinilo)",
+            "Equilibrado (46% - Proporcion moderna)",
+            "Grande (54% - Resalta caratula)"
+        };
+
+        items.push_back(kit::makeCard(scrollW, "Detalles Visuales", {120, 210, 255}, {
+            kit::makeToggleRow(innerW,
+                "Brillo Anisotropico",
+                "Proyecta los dos conos de luz especular caracteristicos de los surcos de vinilo.",
+                gleam,
+                [](bool value) {
+                    Mod::get()->setSavedValue("menuMusicVinylGleam", value);
+                    VinylDisc::reloadAllInstances();
+                }),
+            kit::makeToggleRow(innerW,
+                "Surcos y Separadores de Pistas",
+                "Renderiza bandas detalladas de micro-surcos de sonido.",
+                grooves,
+                [](bool value) {
+                    Mod::get()->setSavedValue("menuMusicVinylGrooves", value);
+                    VinylDisc::reloadAllInstances();
+                }),
+            kit::makeSelectRow(innerW,
+                "Tamano de Caratula Central",
+                "Ajusta la proporcion entre la caratula del disco y el vinilo expuesto.",
+                labelSizes, labelSizeIdx,
+                [](int index) {
+                    Mod::get()->setSavedValue("menuMusicVinylLabelSize", index);
+                    VinylDisc::reloadAllInstances();
+                }),
+        }));
+
+        items.push_back(kit::makeCard(scrollW, "Rotacion y Animacion", {150, 235, 170}, {
+            kit::makeSliderRow(innerW,
+                "Velocidad de Giro",
+                "0 deg/s es detenido; 40 deg/s es estandar; 78 deg/s es rapido.",
+                speed, 0.0, 100.0,
+                [](double v) { return fmt::format("{:.0f} deg/s", v); },
+                [](double value) {
+                    Mod::get()->setSavedValue("menuMusicVinylSpeed", static_cast<float>(value));
+                    VinylDisc::reloadAllInstances();
+                }),
+            kit::makeToggleRow(innerW,
+                "Girar solo al reproducir",
+                "Pausa la rotacion del disco cuando la cancion este en pausa.",
+                Mod::get()->getSavedValue<bool>("menuMusicVinylSpinOnPlayOnly", true),
+                [](bool value) {
+                    Mod::get()->setSavedValue("menuMusicVinylSpinOnPlayOnly", value);
+                    VinylDisc::reloadAllInstances();
+                }),
+        }));
     } else {
         items.push_back(kit::makeCard(scrollW, "Reproduccion", {120, 210, 255}, {
             kit::makeToggleRow(innerW,
@@ -495,6 +621,30 @@ void MenuMusicSettingsPopup::rebuild() {
                     setSetting("menuLoopCustomPrefix",
                         kNotificationPrefixes[std::clamp(index, 0,
                             static_cast<int>(kNotificationPrefixes.size()) - 1)]);
+                }),
+            kit::makeSelectRow(innerW,
+                "Animacion", "Como entra y sale el aviso del menu.",
+                toastAnimationLabels(),
+                static_cast<int>(toastAnimationFromId(setting<std::string>("menuLoopNotificationStyle"))),
+                [](int index) {
+                    auto const animation = static_cast<ToastAnimation>(
+                        std::clamp(index, 0, static_cast<int>(ToastAnimation::Count) - 1));
+                    setSetting("menuLoopNotificationStyle", std::string(toastAnimationId(animation)));
+                }),
+            kit::makeSliderRow(innerW,
+                "Velocidad de animacion", "0.5x es lento; 2x es el doble de rapido.",
+                setting<double>("menuLoopNotificationSpeed"), 0.25, 3.0, formatSpeed,
+                [](double value) { setSetting("menuLoopNotificationSpeed", value); }),
+            kit::makeSliderRow(innerW,
+                "Intensidad", "Cuanto rebota el aviso al entrar.",
+                setting<double>("menuLoopNotificationIntensity"), 0.0, 1.0,
+                [](double value) { return formatPercent(value * 100.0); },
+                [](double value) { setSetting("menuLoopNotificationIntensity", value); }),
+            kit::makeButtonRow(innerW,
+                "Vista previa", "Muestra el aviso con la animacion configurada.",
+                "Probar",
+                []() {
+                    NowPlayingToast::showPreview(CCDirector::get()->getRunningScene());
                 }),
         }));
     }

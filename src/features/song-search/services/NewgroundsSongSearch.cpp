@@ -1,4 +1,5 @@
 #include "NewgroundsSongSearch.hpp"
+#include "../../../utils/HttpClient.hpp"
 #include "../../../utils/WebHelper.hpp"
 
 #include <algorithm>
@@ -17,29 +18,9 @@ bool isNumericID(std::string const& text) {
 
 namespace {
 
-std::string encodeQuery(std::string const& raw) {
-    static char const* hex = "0123456789ABCDEF";
-    std::string out;
-    out.reserve(raw.size() * 3);
-    for (unsigned char c : raw) {
-        if (std::isalnum(c)) {
-            out.push_back(static_cast<char>(c));
-        } else if (c == ' ') {
-            out.push_back('+');
-        } else if (c == '-' || c == '_' || c == '.' || c == '~') {
-            out.push_back(static_cast<char>(c));
-        } else {
-            out.push_back('%');
-            out.push_back(hex[(c >> 4) & 0xF]);
-            out.push_back(hex[c & 0xF]);
-        }
-    }
-    return out;
-}
-
 std::string buildSearchURL(std::string const& rawQuery) {
     return "https://www.newgrounds.com/search/summary?suitabilities=etm&terms="
-        + encodeQuery(rawQuery);
+        + HttpClient::encodeQueryParamForm(rawQuery);
 }
 
 std::string extractFirstAudioID(std::string const& html) {
@@ -62,7 +43,7 @@ void resolveByName(std::string const& rawQuery, std::function<void(SearchResult)
     auto url = buildSearchURL(rawQuery);
 
     auto req = web::WebRequest();
-    req.timeout(std::chrono::seconds(10));
+    req.timeout(asp::Duration::fromSecs(10));
     req.userAgent("Mozilla/5.0 (compatible; Paimbnails)");
 
     WebHelper::dispatch(std::move(req), "GET", url,

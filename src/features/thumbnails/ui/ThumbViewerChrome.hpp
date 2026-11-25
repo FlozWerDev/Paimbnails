@@ -6,7 +6,16 @@
 
 namespace paimon::thumbviewer {
 
-// Top strip: level id / creator on the left, star rating on the right, page dots below.
+inline constexpr float kPopupWidth = 400.f;
+inline constexpr float kPopupHeight = 232.f;
+inline constexpr float kToolWidth = 68.f;
+
+cocos2d::CCRect imageArea(cocos2d::CCSize const& popupSize);
+cocos2d::CCRect actionArea(cocos2d::CCSize const& popupSize);
+cocos2d::CCRect focusedImageArea(cocos2d::CCSize const& popupSize);
+void setChromeFade(cocos2d::CCNode* node, float opacity);
+
+// header above the image: identity on the left, rating and gallery position on the right.
 class InfoBar : public cocos2d::CCNode {
 public:
     static InfoBar* create(float width);
@@ -17,7 +26,7 @@ public:
     void setCounter(int index, int total);
 
 protected:
-    bool init(float width);
+    bool initWithWidth(float width);
 
     float m_width = 0.f;
     cocos2d::CCLabelBMFont* m_titleLabel = nullptr;
@@ -30,11 +39,15 @@ protected:
     void rebuildDots(int index, int total);
 };
 
-// Icon with an optional caption underneath; the whole thing is one menu item.
+// native GD action button, or a standalone game icon when no caption is supplied.
 CCMenuItemSpriteExtra* makeToolButton(char const* frame, float iconScale, char const* caption,
-    cocos2d::CCObject* target, cocos2d::SEL_MenuHandler cb, cocos2d::ccColor3B tint = {255, 255, 255});
+    cocos2d::CCObject* target, cocos2d::SEL_MenuHandler cb, cocos2d::ccColor3B tint = {255, 255, 255},
+    char const* background = "GJ_button_01.png");
+CCMenuItemSpriteExtra* makeToolButton(cocos2d::CCSprite* icon, float iconScale, char const* caption,
+    cocos2d::CCObject* target, cocos2d::SEL_MenuHandler cb, cocos2d::ccColor3B tint = {255, 255, 255},
+    char const* background = "GJ_button_01.png");
 
-// Thin vertical gold line to separate toolbar groups inside a RowLayout.
-cocos2d::CCNode* makeToolDivider(float height);
+// horizontal separator between viewing and moderation actions.
+cocos2d::CCNode* makeToolDivider(float width);
 
 }

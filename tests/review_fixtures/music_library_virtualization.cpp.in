@@ -1,0 +1,85 @@
+#include "src/utils/VisibleRows.hpp"
+#include <algorithm>
+#include <cassert>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+struct Point { float x = 0, y = 0; };
+struct Size { float width = 400, height = 200; };
+struct CCObject {};
+struct CCNode {
+    Size size;
+    Point position;
+    bool attached = false, cancelled = false;
+    Size getContentSize() const { return size; }
+    float getPositionY() const { return position.y; }
+    void setPosition(Point value) { position = value; }
+    void setPositionY(float value) { position.y = value; }
+    void addChild(CCNode* child) { child->attached = true; }
+    void removeFromParent() { attached = false; }
+};
+struct Scroll {
+    CCNode content;
+    CCNode* m_contentLayer = &content;
+    Size getContentSize() const { return {400, 200}; }
+    void scrollToTop() { content.position.y = 200 - content.size.height; }
+};
+struct MenuMusicPlayer {
+    struct State { std::string currentTrackId; } playback;
+    static MenuMusicPlayer& get() { static MenuMusicPlayer player; return player; }
+    State const& state() const { return playback; }
+};
+constexpr float kCardHeight = 48, kCompactCardHeight = 38, kCardGap = 4;
+void cancelCardCover(CCNode* card) { card->cancelled = true; }
+struct MenuMusicLibraryPopup {
+    Scroll* m_scroll = nullptr;
+    bool m_compact = false, m_cardsDirty = true;
+    std::vector<std::string> m_trackIds;
+    std::unordered_map<std::size_t, CCNode*> m_trackCards;
+    paimon::ui::VisibleRowRange m_cardRange;
+    std::vector<std::unique_ptr<CCNode>> pool;
+    CCNode* buildTrackCard(std::string const&, float, float height) {
+        pool.push_back(std::make_unique<CCNode>());
+        pool.back()->size.height = height;
+        return pool.back().get();
+    }
+    void refreshVisibleCards();
+    void clearTrackCards();
+    void onScrollCurrent(CCObject*);
+};
+@@function|src/features/menu-music/ui/MenuMusicLibraryPopup.cpp|void MenuMusicLibraryPopup::refreshVisibleCards()@@
+@@function|src/features/menu-music/ui/MenuMusicLibraryPopup.cpp|void MenuMusicLibraryPopup::clearTrackCards()@@
+@@function|src/features/menu-music/ui/MenuMusicLibraryPopup.cpp|void MenuMusicLibraryPopup::onScrollCurrent(@@
+
+int main() {
+    Scroll scroll;
+    MenuMusicLibraryPopup popup;
+    popup.m_scroll = &scroll;
+    for (int i = 0; i < 10000; ++i) popup.m_trackIds.push_back(std::to_string(i));
+    scroll.content.size.height = 10000 * 52 - 4;
+    scroll.scrollToTop();
+    popup.refreshVisibleCards();
+    assert(popup.m_trackCards.size() <= 6);
+    auto* first = popup.m_trackCards.at(0);
+    auto const initialBuilds = popup.pool.size();
+    for (int i = 0; i < 1000; ++i) popup.refreshVisibleCards();
+    assert(popup.pool.size() == initialBuilds); // idle frames build nothing
+
+    MenuMusicPlayer::get().playback.currentTrackId = "5000";
+    popup.onScrollCurrent(nullptr); // works before the target card exists
+    popup.refreshVisibleCards();
+    assert(popup.m_trackCards.contains(5000));
+    assert(popup.m_trackCards.size() <= 7);
+    assert(!first->attached && first->cancelled);
+    auto* current = popup.m_trackCards.at(5000);
+    assert(std::abs(current->position.y + 24 + scroll.content.position.y - 100) < 1.f);
+
+    popup.clearTrackCards();
+    assert(popup.m_trackCards.empty());
+    for (auto const& card : popup.pool) assert(card->cancelled && !card->attached);
+    popup.m_trackIds.clear();
+    popup.refreshVisibleCards();
+    assert(popup.m_trackCards.empty());
+}

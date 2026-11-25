@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "ThumbsRegistry.hpp"
 #include <Geode/loader/Log.hpp>
 #include <Geode/loader/Mod.hpp>
@@ -15,7 +16,7 @@ namespace {
 ThumbsRegistry& ThumbsRegistry::get() { static ThumbsRegistry r; return r; }
 
 std::filesystem::path ThumbsRegistry::path() const {
-    return Mod::get()->getSaveDir() / "thumbnails" / "registry.csv";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "thumbnails" / "registry.csv";
 }
 
 void ThumbsRegistry::load() const {
@@ -25,7 +26,7 @@ void ThumbsRegistry::load() const {
     auto p = path();
     std::error_code ec;
     if (!std::filesystem::exists(p, ec) || ec) return;
-    auto data = geode::utils::file::readString(p).unwrapOr("");
+    auto data = geode::utils::file::readString(paimon::paths::toSdkPath(p)).unwrapOr("");
     std::stringstream ss(data);
     std::string line;
     while (std::getline(ss, line)) {
@@ -51,7 +52,7 @@ void ThumbsRegistry::save() const {
     auto p = path();
     std::error_code ec;
     std::filesystem::create_directories(p.parent_path(), ec);
-    auto res = geode::utils::file::writeStringSafe(p, ss.str());
+    auto res = geode::utils::file::writeStringSafe(paimon::paths::toSdkPath(p), ss.str());
     if (!res) {
         log::warn("[ThumbsRegistry] Failed to save registry: {}", res.unwrapErr());
     }

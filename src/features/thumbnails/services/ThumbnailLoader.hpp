@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/DefaultInclude.hpp>
 #include <Geode/utils/cocos.hpp>
@@ -33,6 +33,7 @@ public:
     static constexpr int PriorityVisibleCell = 10;
 
     static ThumbnailLoader& get();
+    static bool isInitialized();
 
     enum class Quality {
         Small,
@@ -79,11 +80,10 @@ public:
     static bool isTextureSane(cocos2d::CCTexture2D* tex);
     std::filesystem::path getCachePath(int levelID, bool isGif = false);
 
-    // strip cache-busting params for a stable key.
-    static std::string normalizeUrlKey(std::string const& url);
-    
     void updateSessionCache(int levelID, cocos2d::CCTexture2D* texture);
     bool hasGIFData(int levelID) const;
+    void requestShutdown();
+    void cleanupUntil(std::chrono::steady_clock::time_point deadline);
     void cleanup();
     void clearDiskCache();
     void clearPendingQueue();
@@ -206,12 +206,19 @@ private:
     static constexpr int RAM_CACHE_SMALL_MAX_DIM = 512;
     static constexpr int RAM_CACHE_HIGH_MAX_DIM = 1024;
     static constexpr int URL_CACHE_MAX_DIM = 512;
+    // largest texture the UI can ever consume from the disk cache. Files
+    // above this are downsampled once so future reads/decode/uploads stay
+    // small (a 5120x2880 PNG used to be read and uploaded every time).
+    static constexpr int DISK_CACHE_MAX_DIM = 1024;
 #else
     static constexpr int RAM_CACHE_SMALL_MAX_DIM = 768;
     static constexpr int RAM_CACHE_HIGH_MAX_DIM = 1920;
     static constexpr int URL_CACHE_MAX_DIM = 1280;
+    static constexpr int DISK_CACHE_MAX_DIM = 1920;
 #endif
     int decodeMaxDimForQuality(Quality quality) const;
+    void maybeCompactDiskImage(std::filesystem::path const& path, int realID, bool isGif,
+                               std::shared_ptr<std::vector<uint8_t>> data);
     void enqueuePendingUpload(PendingUpload upload);
     void drainPendingUploads();
     void scheduleUploadDrain();
@@ -252,7 +259,7 @@ private:
     void processUrlQueue();
     void spawnDisk(std::function<void()> job);
     void spawnCpu(std::function<void()> job);
-    void waitBackgroundWorkers();
+    void waitBackgroundWorkers(std::chrono::steady_clock::time_point deadline);
 
     struct DecodeResult {
         std::vector<uint8_t> pixels;        // preferred raw rgba.

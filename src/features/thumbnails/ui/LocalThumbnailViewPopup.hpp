@@ -1,5 +1,6 @@
-﻿#pragma once
+#pragma once
 #include "../../../ui/PaimonPopup.hpp"
+#include "FocusTransition.hpp"
 
 #include <Geode/ui/Popup.hpp>
 #include <Geode/binding/FLAlertLayer.hpp>
@@ -47,6 +48,9 @@ protected:
     bool m_isAdmin = false;
     geode::Ref<CCTexture2D> m_thumbnailTexture = nullptr;
     cocos2d::CCNode* m_clippingNode = nullptr;
+    cocos2d::CCNode* m_imageStencil = nullptr;
+    cocos2d::CCNode* m_imageBorder = nullptr;
+    cocos2d::CCLayerColor* m_imageBackdrop = nullptr;
     CCNode* m_thumbnailSprite = nullptr;
     float m_initialScale = 1.0f;
     float m_maxScale = 4.0f;
@@ -59,6 +63,7 @@ protected:
     bool m_isExiting = false;
     int m_verificationCategory = -1;
     cocos2d::CCMenuItem* m_activatedItem = nullptr;
+    bool m_activatedCloseBtn = false;
 
     float m_viewWidth = 0.0f;
     float m_viewHeight = 0.0f;
@@ -104,14 +109,30 @@ protected:
     bool m_videoPlaying = false;
 
     paimon::thumbviewer::InfoBar* m_infoBar = nullptr;
+    cocos2d::CCNode* m_sidebarBg = nullptr;
     bool m_chromeHidden = false;
     CCMenuItemSpriteExtra* m_hideChromeBtn = nullptr;
+    paimon::thumbviewer::FocusTransition m_focusTransition;
+    struct HeaderButtonPose {
+        geode::WeakRef<CCMenuItemSpriteExtra> button;
+        CCPoint position;
+    };
+    std::vector<HeaderButtonPose> m_headerButtonPoses;
+    bool m_hasFocusImagePose = false;
+    float m_collapsedImageScale = 1.f;
+    float m_expandedImageScale = 1.f;
+    CCPoint m_collapsedImagePosition;
+    CCPoint m_expandedImagePosition;
 
     bool isUiAlive();
 
     void syncInfoBar();
+    void buildControls(bool openedFromReport);
     void toggleChrome(CCObject*);
     void setChromeVisible(bool visible);
+    void tickFocus(float dt);
+    void applyFocusLayout();
+    void prepareFocusImagePose(bool preserveCurrent);
     void onFitReset(CCObject*);
     void onCopyLevelId(CCObject*);
     void keyDown(cocos2d::enumKeyCodes key, double timestamp) override;
@@ -124,6 +145,7 @@ protected:
     ~LocalThumbnailViewPopup();
 
     void loadCurrentSuggestion();
+    void stepSuggestion(int delta);
     void onNextSuggestion(CCObject*);
     void onPrevSuggestion(CCObject*);
 
@@ -184,7 +206,7 @@ protected:
     bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchMoved(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchEnded(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
-    void scrollWheel(float x, float y) override;
+    bool scrollWheel(float x, float y) override;
     void ccTouchCancelled(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
 
 public:

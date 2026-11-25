@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "MenuLoopManager.hpp"
 #include "MenuLoopControl.hpp"
 #include "MenuLoopScan.hpp"
@@ -15,19 +16,19 @@ namespace {
 void ensureFileExists(std::filesystem::path const& path, std::string const& content) {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec) && !ec)
-        (void)geode::utils::file::writeString(path, content);
+        (void)geode::utils::file::writeString(paimon::paths::toSdkPath(path), content);
 }
 
 void startSongScan() {
     auto* mod = Mod::get();
     MenuLoopScanInput input;
-    input.configDir = mod->getConfigDir();
+    input.configDir = paimon::paths::toStdPath(mod->getConfigDir());
     input.extraFolder = menuLoopUtf8Path(mod->getSavedValue<std::string>("menuLoopAdditionalFolder", ""));
     input.playlistFile = menuLoopUtf8Path(mod->getSavedValue<std::string>("menuLoopPlaylistFile", ""));
     input.usePlaylist = mod->getSavedValue<bool>("menuLoopLoadPlaylistFile", false);
     input.restoreSaved = mod->getSettingValue<bool>("menuLoopSaveSongOnGameClose");
     input.savedSong = mod->getSavedValue<std::string>("lastMenuLoop", "");
-    input.savedPath = menuLoopPathString(mod->getSavedValue<std::filesystem::path>("lastMenuLoopPath"));
+    input.savedPath = mod->getSavedValue<std::string>("lastMenuLoopPath");
 
     auto& manager = MenuLoopManager::get();
     // opening menu music before/during this task must never lose live edits.

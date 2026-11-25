@@ -1,0 +1,57 @@
+#include "src/features/discord-presence/model/PresenceCustomization.hpp"
+#include <matjson.hpp>
+#include <atomic>
+#include <cassert>
+
+namespace paimon::discord {
+constexpr uint32_t kOpFrame = 1, kOpClose = 2, kOpPing = 3, kOpPong = 4;
+constexpr std::size_t kMaxDrainBytes = 64 * 1024;
+class DiscordIpcClient {
+public:
+    std::string m_receiveBuffer, error, pong;
+    uint32_t lastOpcode = 0;
+    std::atomic<bool> m_ready{false};
+    bool writable = true;
+    bool writeFrame(uint32_t opcode, std::string const& payload) { lastOpcode = opcode; pong = payload; return writable; }
+    void setError(std::string message) { error = std::move(message); }
+    bool processFrames();
+    void reset() { m_receiveBuffer.clear(); error.clear(); pong.clear(); m_ready = false; }
+};
+@@function|src/features/discord-presence/services/DiscordIpcClient.cpp|std::string buildHeader(@@
+@@function|src/features/discord-presence/services/DiscordIpcClient.cpp|bool DiscordIpcClient::processFrames()@@
+std::string frame(uint32_t opcode, std::string const& payload) {
+    return buildHeader(opcode, static_cast<uint32_t>(payload.size())) + payload;
+}
+}
+int main() {
+    using namespace paimon::discord;
+    DiscordIpcClient client;
+    auto ready = frame(1, "{\"evt\": \"READY\"}");
+    for (std::size_t i = 0; i + 1 < ready.size(); ++i) {
+        client.m_receiveBuffer += ready[i];
+        assert(client.processFrames() && !client.m_ready);
+    }
+    client.m_receiveBuffer += ready.back();
+    assert(client.processFrames() && client.m_ready && client.m_receiveBuffer.empty());
+    client.m_receiveBuffer = frame(3, "opaque ping");
+    assert(client.processFrames() && client.lastOpcode == 4 && client.pong == "opaque ping");
+    client.m_receiveBuffer = frame(1, "{\"evt\":null,\"data\":{\"details\":\"CLOSE\"}}");
+    assert(client.processFrames()); // Payload text is not an opcode.
+    client.m_receiveBuffer = frame(1, "{\"evt\": \"ERROR\", \"data\": {\"message\": \"Bad setting\"}}");
+    assert(!client.processFrames() && client.error == "Bad setting");
+    client.reset();
+    client.m_receiveBuffer = frame(2, "{}");
+    assert(!client.processFrames());
+    client.reset();
+    client.m_receiveBuffer = buildHeader(1, kMaxDrainBytes + 1);
+    assert(!client.processFrames() && !client.error.empty());
+    client.reset();
+    client.m_receiveBuffer = frame(1, "[]");
+    assert(!client.processFrames());
+    client.reset();
+    client.m_receiveBuffer = frame(99, "{}");
+    assert(!client.processFrames());
+    client.reset(); client.writable = false;
+    client.m_receiveBuffer = frame(3, "ping");
+    assert(!client.processFrames());
+}

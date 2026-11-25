@@ -7,7 +7,9 @@
 #include "../../core/modules/ModuleRegistry.hpp"
 #include "../comment-mentions/MentionLink.hpp"
 #include <Geode/Geode.hpp>
+#include <Geode/binding/EmoteSprite.hpp>
 #include <cctype>
+#include <optional>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -64,18 +66,47 @@ static bool isWhitespaceChunk(std::string const& chunk) {
     return true;
 }
 
-static bool isValidEmoteName(std::string const& name) {
-    if (name.size() < 2) return false;
-    for (char c : name) {
-        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-') {
-            return false;
-        }
-    }
-    return true;
-}
-
 static bool isGDColorCode(std::string const& inner) {
     return paimon::text::isGDColorTag(inner);
+}
+
+struct EmoteMatch {
+    std::string name;
+    size_t end = 0;   // index of the closing ':' or '>'
+    bool native = false;
+};
+
+// GD 2.2091 ships its own emotes (":exclaim:", ":normal:", ":hard:", ...).
+// defForName lowercases the name itself and returns null for unknown ones.
+static EmoteDef* nativeEmoteDef(std::string const& name) {
+    if (name.empty() || name.size() > 32) return nullptr;
+    for (char c : name) {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') return nullptr;
+    }
+    return EmoteSprite::defForName(name);
+}
+
+// closed emote reference at `i`: ":name:" or "<name>" (gd color tags excluded).
+// catalog emotes keep priority; GD's own emotes only use the ":name:" form.
+static std::optional<EmoteMatch> matchEmoteAt(std::string const& text, size_t i,
+                                              EmoteService* catalog) {
+    char closer;
+    bool isAngle;
+    if (text[i] == ':') { closer = ':'; isAngle = false; }
+    else if (text[i] == '<') { closer = '>'; isAngle = true; }
+    else return std::nullopt;
+
+    auto end = text.find(closer, i + 1);
+    if (end == std::string::npos || end <= i + 1) return std::nullopt;
+    auto name = text.substr(i + 1, end - i - 1);
+    if (isAngle && isGDColorCode(name)) return std::nullopt;
+    if (catalog && isValidEmoteName(name) && catalog->getEmoteByName(name).has_value()) {
+        return EmoteMatch{std::move(name), end, false};
+    }
+    if (!isAngle && nativeEmoteDef(name)) {
+        return EmoteMatch{std::move(name), end, true};
+    }
+    return std::nullopt;
 }
 
 static bool isMentionWordChar(char c) {
@@ -129,8 +160,9 @@ bool EmoteRenderer::hasMentionSyntax(std::string const& text) {
 std::vector<CommentToken> EmoteRenderer::parseTokens(std::string const& rawText) {
     std::vector<CommentToken> tokens;
     auto& service = EmoteService::get();
-    bool emotesAvailable = service.isLoaded() &&
-        paimon::modules::isEnabled("paimbnails.emotes.social");
+    // gD's built-in emotes need neither the catalog nor the emotes module.
+    EmoteService* catalog = service.isLoaded() &&
+        paimon::modules::isEnabled("paimbnails.emotes.social") ? &service : nullptr;
 
     std::string text = paimon::text::stripColorCodes(rawText);
 
@@ -151,35 +183,15 @@ std::vector<CommentToken> EmoteRenderer::parseTokens(std::string const& rawText)
             matched = true;
         }
 
-        if (!matched && emotesAvailable && text[i] == ':') {
-            auto end = text.find(':', i + 1);
-            if (end != std::string::npos && end > i + 1) {
-                auto name = text.substr(i + 1, end - i - 1);
-                if (isValidEmoteName(name) && service.getEmoteByName(name).has_value()) {
-                    if (!currentText.empty()) {
-                        tokens.push_back(TextToken{currentText, currentStart, i});
-                        currentText.clear();
-                    }
-                    tokens.push_back(EmoteToken{name, i, end + 1});
-                    i = end + 1;
-                    matched = true;
+        if (!matched) {
+            if (auto m = matchEmoteAt(text, i, catalog)) {
+                if (!currentText.empty()) {
+                    tokens.push_back(TextToken{currentText, currentStart, i});
+                    currentText.clear();
                 }
-            }
-        }
-
-        if (!matched && emotesAvailable && text[i] == '<') {
-            auto end = text.find('>', i + 1);
-            if (end != std::string::npos && end > i + 1) {
-                auto name = text.substr(i + 1, end - i - 1);
-                if (!isGDColorCode(name) && isValidEmoteName(name) && service.getEmoteByName(name).has_value()) {
-                    if (!currentText.empty()) {
-                        tokens.push_back(TextToken{currentText, currentStart, i});
-                        currentText.clear();
-                    }
-                    tokens.push_back(EmoteToken{name, i, end + 1});
-                    i = end + 1;
-                    matched = true;
-                }
+                tokens.push_back(EmoteToken{m->name, i, m->end + 1, m->native});
+                i = m->end + 1;
+                matched = true;
             }
         }
 
@@ -323,12 +335,21 @@ CCNode* EmoteRenderer::renderComment(
             paimon::text::CommentTextRange::attach(placeholder, emoteStart, et->end, true);
             container->addChild(placeholder, 5);
 
-            auto info = EmoteService::get().getEmoteByName(et->name);
-            if (info) {
+            if (et->native) {
+                auto* def = nativeEmoteDef(et->name);
+                if (auto* sprite = def ? EmoteSprite::createWithDef(def) : nullptr) {
+                    float maxDim = std::max(sprite->getContentSize().width,
+                                            sprite->getContentSize().height);
+                    if (maxDim > 0.f) sprite->setScale(emoteSize / maxDim);
+                    sprite->setAnchorPoint({0.5f, 0.5f});
+                    sprite->setPosition({emoteSize / 2.f, emoteSize / 2.f});
+                    placeholder->addChild(sprite);
+                }
+            } else if (auto info = EmoteService::get().getEmoteByName(et->name)) {
                 auto phRef = Ref(placeholder);
                 std::string emoteKey = et->name;
                 EmoteCache::get().loadEmote(*info, [phRef, emoteSize, emoteKey, animateGifs](CCTexture2D* tex, bool isGif, std::vector<uint8_t> const& gifData) {
-                    // Cache eviction can release the texture before the queued task runs.
+                    // cache eviction can release the texture before the queued task runs.
                     geode::Ref<CCTexture2D> texRef = tex;
                     Loader::get()->queueInMainThread([phRef, texRef, isGif, gifData, emoteSize, emoteKey, animateGifs]() {
                         if (paimon::isRuntimeShuttingDown()) return;
@@ -364,7 +385,7 @@ CCNode* EmoteRenderer::renderComment(
             auto label = CCLabelBMFont::create(display.c_str(), font);
             if (label) {
                 label->setColor({90, 170, 255});
-                // CCMenuItemSpriteExtra resets its own scale on press.
+                // cCMenuItemSpriteExtra resets its own scale on press.
                 label->setScale(fontScale);
                 paimon::text::CommentTextRange::attach(label, mentionStart, mt->end);
 

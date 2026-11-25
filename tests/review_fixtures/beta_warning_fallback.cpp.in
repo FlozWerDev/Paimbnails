@@ -1,0 +1,38 @@
+#include <cassert>
+#include <functional>
+#include <utility>
+struct Mod {
+    bool dismissed=false;
+    static Mod* get(){static Mod value;return &value;}
+    template<class T>T getSavedValue(char const*,bool){return dismissed;}
+};
+namespace paimon::settings::moderation {
+bool isVerifiedModerator(){return false;}
+bool isVerifiedAdmin(){return false;}
+bool isVerifiedVip(){return false;}
+}
+struct BetaUploadWarningPopup {
+    static inline bool fail=true;
+    static inline std::function<void()> accepted;
+    static BetaUploadWarningPopup* create(std::function<void()> cb){
+        // init owns its parameter before it can fail, as in the production popup.
+        auto owned=std::move(cb);
+        if(fail)return nullptr;
+        accepted=std::move(owned);static BetaUploadWarningPopup value;return &value;
+    }
+    void show(){}
+};
+namespace paimon {
+@@function|src/utils/BetaUploadWarning.cpp|void showBetaUploadWarningIfNeeded(@@
+}
+int main() {
+    int calls=0;
+    paimon::showBetaUploadWarningIfNeeded([&]{++calls;});
+    assert(calls==1);
+    BetaUploadWarningPopup::fail=false;
+    paimon::showBetaUploadWarningIfNeeded([&]{++calls;});
+    assert(calls==1);
+    BetaUploadWarningPopup::accepted();assert(calls==2);
+    Mod::get()->dismissed=true;
+    paimon::showBetaUploadWarningIfNeeded([&]{++calls;});assert(calls==3);
+}

@@ -16,6 +16,16 @@ int findIndex(std::vector<std::string> const& values, std::string const& value) 
     return it == values.end() ? -1 : static_cast<int>(std::distance(values.begin(), it));
 }
 
+// resolves the current value against its list, falling back to the first entry.
+int resolveIndex(std::vector<std::string> const& values, std::string& current) {
+    int index = findIndex(values, current);
+    if (index < 0 && !values.empty()) {
+        index = 0;
+        current = values.front();
+    }
+    return index;
+}
+
 class PeekButtonHandler : public CCNode {
 public:
     ThumbnailSettingsPopup* m_popup = nullptr;
@@ -107,21 +117,9 @@ bool ThumbnailSettingsPopup::init() {
     m_currentExitSpeed = std::clamp(Mod::get()->getSavedValue<double>(
         "dynamic-exit-speed", 1.0), 0.2, 3.0);
 
-    m_popupTransitionIndex = findIndex(m_popupTransitions, m_currentPopupTransition);
-    if (m_popupTransitionIndex < 0) {
-        m_popupTransitionIndex = 0;
-        m_currentPopupTransition = m_popupTransitions.front();
-    }
-    m_bgTransitionIndex = findIndex(m_bgTransitions, m_currentBgTransition);
-    if (m_bgTransitionIndex < 0) {
-        m_bgTransitionIndex = 0;
-        m_currentBgTransition = m_bgTransitions.front();
-    }
-    m_popupStyleIndex = findIndex(m_popupStyles, m_currentPopupStyle);
-    if (m_popupStyleIndex < 0) {
-        m_popupStyleIndex = 0;
-        m_currentPopupStyle = m_popupStyles.front();
-    }
+    m_popupTransitionIndex = resolveIndex(m_popupTransitions, m_currentPopupTransition);
+    m_bgTransitionIndex = resolveIndex(m_bgTransitions, m_currentBgTransition);
+    m_popupStyleIndex = resolveIndex(m_popupStyles, m_currentPopupStyle);
 
     paimon::markDynamicPopup(this);
     rebuild();
@@ -410,11 +408,7 @@ void ThumbnailSettingsPopup::updateStylesForDynamicShaders() {
     };
 
     m_styles = m_dynamicShaders ? dynamicStyles : m_allStyles;
-    m_styleIndex = findIndex(m_styles, m_currentStyle);
-    if (m_styleIndex < 0 && !m_styles.empty()) {
-        m_styleIndex = 0;
-        m_currentStyle = m_styles.front();
-    }
+    m_styleIndex = resolveIndex(m_styles, m_currentStyle);
 }
 
 void ThumbnailSettingsPopup::saveSettings() {

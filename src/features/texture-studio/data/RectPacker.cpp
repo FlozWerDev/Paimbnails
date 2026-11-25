@@ -92,7 +92,6 @@ PackResult RectPacker::pack(std::vector<RectPackInput> rects, PackerOptions opti
             continue;
         }
         int rWG = frameWithGap(r.width);
-        int rHG = frameWithGap(r.height);
 
         bool placed = false;
         for (auto& bin : bins) {

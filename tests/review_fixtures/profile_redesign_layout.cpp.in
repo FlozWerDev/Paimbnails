@@ -1,0 +1,227 @@
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+#include <algorithm>
+#include <array>
+#include <cassert>
+#include <cmath>
+#include <limits>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
+@@source|src/features/profile-redesign/services/ProfileLayout.hpp@@
+constexpr char const* operator""_spr(char const* value, std::size_t) { return value; }
+struct Point { float x = 0, y = 0; };
+struct Size { float width = 30, height = 30; };
+namespace cocos2d {
+struct CCNode {
+    virtual ~CCNode() = default;
+    std::string id;
+    CCNode* parent = nullptr;
+    std::vector<CCNode*> children;
+    std::unordered_map<std::string, CCNode*> objects;
+    bool visible = true;
+    Point position;
+    Size size;
+    float scale = 1;
+    std::string_view getID() { return id; }
+    auto* getChildren() { return &children; }
+    CCNode* getParent() { return parent; }
+    bool hasAncestor(CCNode* value) {
+        for (auto* p = parent; p; p = p->parent) if (p == value) return true;
+        return false;
+    }
+    void addChild(CCNode* node) { children.push_back(node); node->parent = this; }
+    CCNode* getChildByID(std::string const& key) {
+        for (auto* child : children) if (child->id == key) return child;
+        return nullptr;
+    }
+    void setUserObject(std::string const& key, CCNode* node) { objects[key] = node; }
+    CCNode* getUserObject(std::string const& key) {
+        auto found = objects.find(key);
+        return found == objects.end() ? nullptr : found->second;
+    }
+    bool isVisible() { return visible; }
+    void setVisible(bool value) { visible = value; }
+    Size getContentSize() { return size; }
+    void setContentSize(Size value) { size = value; }
+    void setScale(float value) { scale = value; }
+    void setPosition(Point value) { position = value; }
+};
+struct CCLayer : CCNode {};
+struct CCMenu : CCNode { void setLayout(std::nullptr_t) {} };
+struct CCString : CCNode {
+    static std::vector<std::unique_ptr<CCString>> arena;
+    std::string value;
+    static CCString* create(std::string text) {
+        auto object = std::make_unique<CCString>();
+        object->value = std::move(text);
+        arena.push_back(std::move(object));
+        return arena.back().get();
+    }
+    char const* getCString() { return value.c_str(); }
+};
+std::vector<std::unique_ptr<CCString>> CCString::arena;
+}
+using namespace cocos2d;
+struct CCMenuItemSpriteExtra : CCNode { float m_baseScale = 1; };
+struct GJCommentListLayer : CCNode {};
+template<class To, class From> To typeinfo_cast(From* value) { return dynamic_cast<To>(value); }
+template<class T> struct CCArrayExt {
+    std::vector<CCNode*>* nodes;
+    CCArrayExt(std::vector<CCNode*>* value) : nodes(value) {}
+    auto begin() const { return nodes->begin(); }
+    auto end() const { return nodes->end(); }
+};
+using paimon::profile_redesign::ProfileRect;
+@@function|src/features/profile-redesign/services/RedesignedProfile.cpp|static std::string accountRailSignature(@@
+@@function|src/features/profile-redesign/services/RedesignedProfile.cpp|static bool arrangeAccountRail(@@
+@@function|src/features/profile-redesign/services/RedesignedProfile.cpp|static void collectNodesByID(@@
+@@function|src/features/profile-redesign/services/RedesignedProfile.cpp|static void hideInlineSocialButtons(@@
+@@function|src/features/profile-redesign/services/RedesignedProfile.cpp|static std::vector<std::string> relocatableIDs(@@
+@@function|src/features/profile-redesign/services/RedesignedProfile.cpp|static GJCommentListLayer* asVanillaCommentList(@@
+@@function|src/features/profile-redesign/services/RedesignedProfile.cpp|static bool hasVisibleVanillaCommentList(@@
+@@function|src/features/profile-redesign/services/RedesignedProfile.cpp|bool needsSettlePass(@@
+
+using namespace paimon::profile_redesign;
+bool overlaps(ProfileRect a, ProfileRect b) {
+    return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.top() && b.y < a.top();
+}
+int main() {
+    for (auto size : {Size{440, 290}, Size{480, 320}, Size{600, 400}, Size{360, 280}}) {
+        auto const layout = profileLayout(280, 160, size.width, size.height);
+        auto const left = 280 - size.width / 2;
+        auto const bottom = 160 - size.height / 2;
+        std::vector<ProfileRect> sections{layout.header, layout.icons, layout.activity, layout.footer,
+            layout.accountRail, layout.socialRail};
+        assert(layout.header.centerX() == 280 && layout.activity.centerX() == 280);
+        assert(layout.accountRail.width == layout.socialRail.width);
+        assert(layout.accountRail.top() == layout.socialRail.top());
+        for (std::size_t i = 0; i < sections.size(); ++i) {
+            auto const a = sections[i];
+            assert(a.width > 0 && a.height > 0);
+            assert(a.x >= left && a.y >= bottom && a.x + a.width <= left + size.width);
+            assert(a.top() <= bottom + size.height);
+            for (std::size_t j = i + 1; j < sections.size(); ++j) assert(!overlaps(a, sections[j]));
+        }
+        assert(layout.posts.width == layout.activity.width - 8 && layout.posts.width > 220);
+        assert(layout.posts.height == layout.activity.height - 30);
+        assert(layout.posts.y == layout.activity.y + 4);
+        assert(layout.posts.top() == layout.activity.top() - 26);
+        auto const tabs = profileActivityTabs(layout.activity.width, layout.activity.height);
+        assert(std::abs((tabs.front().x + tabs.back().x + tabs.back().width) * .5f - layout.activity.width * .5f) < .001f);
+        for (std::size_t index = 0; index < tabs.size(); ++index) {
+            auto const tab = tabs[index];
+            assert(tab.width > tab.height * 1.9f && tab.top() < layout.activity.height);
+            assert(tab.x >= 8.f && tab.x + tab.width <= layout.activity.width - 8.f);
+            assert(tab.y == layout.posts.top() - layout.activity.y + 2);
+            if (index) assert(tabs[index - 1].x + tabs[index - 1].width + 5.f <= tab.x);
+        }
+    }
+    auto fallback = profileLayout(280, 160, std::numeric_limits<float>::quiet_NaN(), 0);
+    assert(fallback.header.width == 336 && fallback.header.height == 56);
+    for (bool own : {false, true}) {
+        auto ids = relocatableIDs(own);
+        assert(std::unordered_set<std::string>(ids.begin(), ids.end()).size() == ids.size());
+        for (auto const* id : {"notifications-button", "socials-button", "prev-page-button", "next-page-button",
+            "unblock-button", "report-button", "mod-button", "info-button", "profile-info-button"}) {
+            assert(std::find(ids.begin(), ids.end(), id) != ids.end());
+        }
+        for (auto const* id : {"youtube-button", "twitter-button", "twitch-button", "instagram-button", "tiktok-button"}) {
+            assert(std::find(ids.begin(), ids.end(), id) == ids.end());
+        }
+    }
+    CCMenu infoRail;
+    CCMenuItemSpriteExtra infoSettings, infoButton, infoComment, infoRequests;
+    infoSettings.id = "profile-settings-button";
+    infoButton.id = "profile-info-button";
+    infoComment.id = "comment-button";
+    infoRequests.id = "requests-button";
+    for (auto* node : {&infoSettings, &infoButton, &infoComment, &infoRequests}) infoRail.addChild(node);
+    assert(arrangeAccountRail(&infoRail, profileLayout(280, 160, 440, 290).accountRail));
+    // the account info button sits under the comment history button and above the settings gear
+    assert(infoRequests.position.y > infoComment.position.y);
+    assert(infoComment.position.y > infoButton.position.y);
+    assert(infoButton.position.y > infoSettings.position.y);
+    assert(infoButton.scale == infoSettings.scale && infoButton.position.x == infoSettings.position.x);
+
+    CCLayer layer;
+    CCMenu rail;
+    rail.id = "rd-options-rail";
+    auto const ownLayout = profileLayout(280, 160, 440, 290);
+    rail.size = {34, 186};
+    layer.addChild(&rail);
+    CCMenuItemSpriteExtra message, settings, notifications, role, postBadge;
+    message.id = "message-button";
+    settings.id = "profile-settings-button";
+    notifications.id = "requests-button";
+    role.id = "ban-user-button";
+    role.visible = false;
+    for (auto* node : {&settings, &role, &notifications, &message}) rail.addChild(node);
+    assert(arrangeAccountRail(&rail, ownLayout.accountRail));
+    assert(message.position.x == notifications.position.x && message.position.y > notifications.position.y);
+    assert(settings.position.y < message.position.y && !role.visible);
+    assert(rail.size.height < ownLayout.accountRail.height);
+    assert(rail.position.y + rail.size.height * .5f == ownLayout.accountRail.top());
+    assert(message.m_baseScale == message.scale && message.scale > 0);
+    assert(!needsSettlePass(&layer, nullptr, true));
+    role.visible = true; // asynchronous moderator lookup makes an existing button applicable
+    assert(needsSettlePass(&layer, nullptr, true));
+    arrangeAccountRail(&rail, ownLayout.accountRail);
+    assert(!needsSettlePass(&layer, nullptr, true));
+    CCMenu rightRail;
+    rightRail.id = "rd-socials-rail";
+    layer.addChild(&rightRail);
+    CCMenuItemSpriteExtra friendButton, notificationButton, accountSettings;
+    friendButton.id = "friend-button";
+    notificationButton.id = "notifications-button";
+    accountSettings.id = "settings-button";
+    notificationButton.visible = false;
+    for (auto* node : {&accountSettings, &notificationButton, &friendButton}) rightRail.addChild(node);
+    assert(arrangeAccountRail(&rightRail, ownLayout.socialRail));
+    assert(!needsSettlePass(&layer, nullptr, true));
+    notificationButton.visible = true;
+    assert(needsSettlePass(&layer, nullptr, true)); // both sides react to late controls
+    arrangeAccountRail(&rightRail, ownLayout.socialRail);
+    assert(!needsSettlePass(&layer, nullptr, true));
+    assert(friendButton.position.x == accountSettings.position.x && friendButton.position.y > accountSettings.position.y);
+    CCNode posts;
+    posts.id = "rd-comment-content";
+    layer.addChild(&posts);
+    postBadge.id = "paimon-admin-badge";
+    posts.addChild(&postBadge);
+    assert(!needsSettlePass(&layer, nullptr, true));
+    std::vector<CCNode*> found;
+    collectNodesByID(&layer, postBadge.id, found);
+    assert(found.empty()); // never adopt a comment author's badge into the profile header
+    CCMenu fresh;
+    layer.addChild(&fresh);
+    CCMenuItemSpriteExtra social;
+    social.id = "socials-button";
+    fresh.addChild(&social);
+    assert(needsSettlePass(&layer, nullptr, true));
+    found.clear();
+    collectNodesByID(&layer, social.id, found);
+    assert(found.size() == 1 && found[0] == &social);
+
+    CCMenu previousRail;
+    previousRail.id = "rd-socials-rail";
+    layer.addChild(&previousRail);
+    CCMenuItemSpriteExtra oldYoutube, nativeYoutube, twitter, twitch, instagram, tiktok, postLink;
+    oldYoutube.id = nativeYoutube.id = postLink.id = "youtube-button";
+    twitter.id = "twitter-button";
+    twitch.id = "twitch-button";
+    instagram.id = "instagram-button";
+    tiktok.id = "tiktok-button";
+    previousRail.addChild(&oldYoutube);
+    for (auto* node : {&nativeYoutube, &twitter, &twitch, &instagram, &tiktok}) fresh.addChild(node);
+    posts.addChild(&postLink);
+    hideInlineSocialButtons(&layer);
+    hideInlineSocialButtons(&layer); // repeat after settling the same page
+    for (auto* node : {&oldYoutube, &nativeYoutube, &twitter, &twitch, &instagram, &tiktok}) assert(!node->visible);
+    assert(social.visible && postLink.visible && message.visible);
+    hideInlineSocialButtons(nullptr);
+}

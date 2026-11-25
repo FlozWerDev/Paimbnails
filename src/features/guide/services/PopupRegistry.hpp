@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "GuideIntents.hpp"
 #include <string>
@@ -49,7 +49,7 @@ struct PopupEntry {
     // localized aliases not present in the title.
     std::unordered_map<std::string, std::vector<std::string>> aliasesByLang;
 
-    // softer problem/how-to phrases.
+    // natural-language problem statements and how-to queries used for fuzzy intent resolution.
     std::unordered_map<std::string, std::vector<std::string>> searchPhrasesByLang;
 
     // localized response shown before opening.

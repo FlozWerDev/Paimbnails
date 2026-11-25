@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../utils/FilesystemPath.hpp"
 
 // shared by the quick-button editors (image + sound) and quickbuttonpopup.
 
@@ -59,19 +60,19 @@ inline std::string importFileToConfigDir(
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     if (ec) {
-        PaimonNotify::create("No se pudo crear la carpeta.", geode::NotificationIcon::Error)->show();
+        PaimonNotify::show("No se pudo crear la carpeta.", geode::NotificationIcon::Error);
         return "";
     }
     auto ext = geode::utils::string::toLower(
-        geode::utils::string::pathToString(src.extension()));
+        paimon::paths::toUtf8(src.extension()));
     auto dest = uniqueDestIn(dir, slugify(stem), ext);
     std::filesystem::copy_file(
         src, dest, std::filesystem::copy_options::overwrite_existing, ec);
     if (ec) {
-        PaimonNotify::create("No se pudo copiar el archivo.", geode::NotificationIcon::Error)->show();
+        PaimonNotify::show("No se pudo copiar el archivo.", geode::NotificationIcon::Error);
         return "";
     }
-    auto destStr = geode::utils::string::pathToString(dest);
+    auto destStr = paimon::paths::toUtf8(dest);
     if (!validate(src, destStr)) {
         std::filesystem::remove(dest, ec);
         return "";

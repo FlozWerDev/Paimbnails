@@ -90,20 +90,31 @@ float ClusterClassifier::computeBorderRatio(ImageBuffer const& sprite,
 }
 
 ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer const& sprite) {
+    if (set.clusters.empty()) {
+        ClassifiedSet out;
+        out.needsReview = true;
+        return out;
+    }
+    // step 1: single shared border-ratio pass.
+    int n = static_cast<int>(set.clusters.size());
+    return classifyWithRatios(set, computeAllBorderRatios(sprite, set.clusters.data(), n));
+}
+
+ClassifiedSet ClusterClassifier::classifyWithRatios(ClusterSet const& set,
+                                                    std::vector<float> const& ratios) {
     ClassifiedSet out;
     if (set.clusters.empty()) {
         out.needsReview = true;
         return out;
     }
 
-    // step 1: single shared border-ratio pass.
     int n = static_cast<int>(set.clusters.size());
-    auto ratios = computeAllBorderRatios(sprite, set.clusters.data(), n);
     out.clusters.reserve(n);
     for (int i = 0; i < n; ++i) {
         ClassifiedCluster c;
         c.source = set.clusters[i];
-        c.source.borderRatio = ratios[static_cast<std::size_t>(i)];
+        c.source.borderRatio = static_cast<std::size_t>(i) < ratios.size()
+            ? ratios[static_cast<std::size_t>(i)] : 0.0f;
         c.role = ClusterRole::Unassigned;
         out.clusters.push_back(c);
     }
@@ -217,6 +228,38 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
         out.clusters[c1Idx].confidence = 0.80f;
     }
 
+    // step 4b: detail (interior glyph, icon, symbol, or badge) — low border ratio,
+    // distinct from Color1, typically bright or neutral (white icon, star, trophy, wrench).
+    int detIdx = -1;
+    if (c1Idx >= 0 && n >= 3) {
+        float bestDetScore = -1.0f;
+        auto const& c1 = out.clusters[c1Idx].source;
+        for (int i = 0; i < n; ++i) {
+            if (out.clusters[i].role != ClusterRole::Unassigned) continue;
+            auto const& c = out.clusters[i].source;
+            // interior details rarely touch the sprite silhouette.
+            if (c.borderRatio > 0.28f) continue;
+            // should not be larger than the primary button body.
+            if (c.pixelCount > c1.pixelCount * 0.9f) continue;
+
+            float dh = std::fabs(c.h - c1.h);
+            if (dh > 180.0f) dh = 360.0f - dh;
+            float hueDistNorm = dh / 180.0f;
+            float neutralScore = std::clamp(c.v, 0.0f, 1.0f) * (1.0f - std::clamp(c.s, 0.0f, 1.0f));
+            float contrastScore = std::fabs(c.v - c1.v) + hueDistNorm * std::min(c.s, c1.s);
+            float score = (neutralScore * 0.6f + contrastScore * 0.4f) * (1.0f - c.borderRatio);
+
+            if (score > 0.35f && score > bestDetScore) {
+                bestDetScore = score;
+                detIdx = i;
+            }
+        }
+        if (detIdx >= 0) {
+            out.clusters[detIdx].role = ClusterRole::Detail;
+            out.clusters[detIdx].confidence = 0.75f;
+        }
+    }
+
     // step 5: color2 — hue-distant from color1, else largest remaining.
     int c2Idx = -1;
     float c2Score = -1.0f;
@@ -271,6 +314,9 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
         if (float d = roleHueDist(i, ClusterRole::Glow); d < bestDist) {
             bestDist = d; bestRole = ClusterRole::Glow;
         }
+        if (float d = roleHueDist(i, ClusterRole::Detail); d < bestDist) {
+            bestDist = d; bestRole = ClusterRole::Detail;
+        }
         if (float d = roleHueDist(i, ClusterRole::Outline); d < bestDist) {
             bestDist = d; bestRole = ClusterRole::Outline;
         }
@@ -293,6 +339,52 @@ ClassifiedSet ClusterClassifier::classify(ClusterSet const& set, ImageBuffer con
     }
 
     return out;
+}
+
+ClassifiedSet ClusterClassifier::classifyUi(ClusterSet const& set, ImageBuffer const& sprite) {
+    return refineUi(classify(set, sprite));
+}
+
+ClassifiedSet ClusterClassifier::classifyUiWithRatios(ClusterSet const& set,
+                                                      std::vector<float> const& ratios) {
+    return refineUi(classifyWithRatios(set, ratios));
+}
+
+ClassifiedSet ClusterClassifier::refineUi(ClassifiedSet classified) {
+    int primaryIndex = -1;
+    for (std::size_t i = 0; i < classified.clusters.size(); ++i) {
+        if (classified.clusters[i].role == ClusterRole::Color1) {
+            primaryIndex = static_cast<int>(i);
+            break;
+        }
+    }
+    bool const hadPrimary = primaryIndex >= 0;
+    float primaryScore = -1.f;
+    for (std::size_t i = 0; !hadPrimary && i < classified.clusters.size(); ++i) {
+        auto const& cluster = classified.clusters[i];
+        if (cluster.role == ClusterRole::Outline) continue;
+        // prefer a colored body over a white glyph or specular highlight.
+        float score = cluster.source.pixelCount * (cluster.source.s >= .18f ? 2.f : 1.f);
+        if (score > primaryScore) {
+            primaryIndex = static_cast<int>(i);
+            primaryScore = score;
+        }
+    }
+    if (primaryIndex < 0) return classified;
+
+    // a flat white/gray control may have been classified entirely as glow.
+    classified.clusters[primaryIndex].role = ClusterRole::Color1;
+    auto const fill = classified.clusters[primaryIndex].source;
+    for (auto& cluster : classified.clusters) {
+        if (cluster.role == ClusterRole::Outline) continue;
+        float hueDistance = std::fabs(cluster.source.h - fill.h);
+        hueDistance = std::min(hueDistance, 360.f - hueDistance);
+        bool sameHue = fill.s >= .18f && cluster.source.s >= .18f && hueDistance <= 28.f;
+        bool neutralShade = fill.s < .12f && cluster.source.s < .12f &&
+            (cluster.role == ClusterRole::Color2 || !hadPrimary);
+        if (sameHue || neutralShade) cluster.role = ClusterRole::Color1;
+    }
+    return classified;
 }
 
 }  // namespace paimon::texture_studio

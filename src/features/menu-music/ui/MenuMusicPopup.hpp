@@ -39,6 +39,7 @@ protected:
     void updateModeSelector();
     void onTrackChanged(const std::string& trackId);
     void onLibraryChanged();
+    void finishPendingPlayback();
 
     void onPlayPause(cocos2d::CCObject*);
     void onPrev(cocos2d::CCObject*);
@@ -79,6 +80,8 @@ protected:
         bool hasAnything = false;
     };
     DetectedSong detectActiveSong(bool logResult = true) const;
+    void updateDetectedTrack(DetectedSong const& detected);
+    std::vector<std::string> resolveCoverPaths(DetectedSong const& detected);
 
     void applyCovers(std::vector<std::string> const& coverPaths);
 
@@ -86,6 +89,7 @@ protected:
     void onOpenCoverLevel(cocos2d::CCObject*);
 
     void applyFullscreenCover(const std::string& coverPath);
+    void buildFullscreenBlur(cocos2d::CCTexture2D* texture, std::uint64_t generation);
     void syncCoverChrome(float dt);
 
     void pollExternalSong(float dt);
@@ -101,6 +105,7 @@ protected:
     cocos2d::CCLayerColor* m_fullscreenDim = nullptr;
     cocos2d::CCSprite* m_fullscreenBlur = nullptr;
     std::uint64_t m_fullscreenBlurGen = 0;
+    bool m_fullscreenBlurPending = false;
     std::string m_lastCoverPath;
     std::string m_lastChromeCoverPath;
     std::vector<std::string> m_activeCoverPaths;
@@ -139,6 +144,17 @@ protected:
     std::size_t m_playerListenerToken = 0;
     int m_pendingSongCoverID = 0;
     int m_failedSongCoverID = 0;
+    int m_cachedCoverSongID = 0;
+    bool m_cachedCoverPending = false;
+    std::uint64_t m_cachedCoverGeneration = 0;
+    std::vector<std::string> m_cachedCoverPaths;
+    std::vector<std::string> m_coverValidationInput;
+    std::vector<std::string> m_validatedCoverPaths;
+    std::string m_coverValidationTrack;
+    bool m_coverValidationPending = false;
+    bool m_needsRefreshOnEnter = false;
+    std::uint64_t m_coverValidationGeneration = 0;
+    bool m_playAfterSync = false;
 
     cocos2d::CCLabelBMFont* m_coverCaption = nullptr;
     cocos2d::CCMenu* m_coverCaptionMenu = nullptr;

@@ -1,32 +1,25 @@
 #include <Geode/modify/SetFolderPopup.hpp>
-#include <Geode/modify/SetTextPopup.hpp>
+#include <Geode/binding/SetTextPopup.hpp>
 
 using namespace geode::prelude;
-
-namespace {
-SetFolderPopup* s_openingFolderPopup = nullptr;
-}
-
-class $modify(PaimonSetTextPopupLifetime, SetTextPopup) {
-    struct Fields {
-        Ref<SetFolderPopup> m_folderPopup = nullptr;
-    };
-
-    $override
-    void show() {
-        if (s_openingFolderPopup) {
-            m_fields->m_folderPopup = s_openingFolderPopup;
-        }
-        SetTextPopup::show();
-    }
-};
 
 class $modify(PaimonSetFolderPopupLifetime, SetFolderPopup) {
     $override
     void onSetFolderName(CCObject* sender) {
-        auto* previous = s_openingFolderPopup;
-        s_openingFolderPopup = this;
+        Ref<SetFolderPopup> keepAlive(this);
         SetFolderPopup::onSetFolderName(sender);
-        s_openingFolderPopup = previous;
+
+        auto* scene = CCDirector::get()->getRunningScene();
+        if (!scene) return;
+        auto* text = findFirstChildRecursive<SetTextPopup>(scene, [this](SetTextPopup* popup) {
+            return popup->m_delegate == this;
+        });
+        if (!text || text->getChildByID("folder-popup-lifetime"_spr)) return;
+
+        // keep the delegate alive until its name dialog is destroyed.
+        auto* lifetime = CCNode::create();
+        lifetime->setID("folder-popup-lifetime"_spr);
+        lifetime->setUserObject(this);
+        text->addChild(lifetime);
     }
 };

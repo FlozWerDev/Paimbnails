@@ -35,13 +35,17 @@ public:
         MessageCallback onMessage,
         CloseCallback onClose
     );
+    // main-thread api. callbacks are delivered on the main thread; disconnect
+    // invalidates queued callbacks without waiting for network activity.
     void disconnect();
+    // true = accepted into the bounded fifo, not acknowledged by the peer.
     bool send(std::string const& message);
     bool isOpen() const;
+    static void shutdownAll();
 
 private:
     struct Impl;
-    std::unique_ptr<Impl> m_impl;
+    std::shared_ptr<Impl> m_impl;
 };
 
 } // namespace paimon::net

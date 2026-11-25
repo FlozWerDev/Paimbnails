@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "ProfileThumbs.hpp"
 #include "../../../managers/ThumbnailAPI.hpp"
 #include "../../../core/Settings.hpp"
@@ -136,13 +137,13 @@ ProfileThumbs& ProfileThumbs::get() {
 
 std::string ProfileThumbs::makePath(int accountID) const {
     auto dir = getProfileThumbsDir();
-    (void)geode::utils::file::createDirectoryAll(dir);
-    return geode::utils::string::pathToString(dir / fmt::format("{}.webp", accountID));
+    (void)geode::utils::file::createDirectoryAll(paimon::paths::toSdkPath(dir));
+    return paimon::paths::toUtf8(dir / fmt::format("{}.webp", accountID));
 }
 
 static std::string makeLegacyPath(int accountID) {
     auto dir = getProfileThumbsDir();
-    return geode::utils::string::pathToString(dir / fmt::format("{}.rgb", accountID));
+    return paimon::paths::toUtf8(dir / fmt::format("{}.rgb", accountID));
 }
 
 void ProfileThumbs::deleteProfile(int accountID) {
@@ -159,67 +160,57 @@ void ProfileThumbs::deleteProfile(int accountID) {
         log::debug("[ProfileThumbs] Deleted legacy .rgb for account {}", accountID);
     }
 }
-void ProfileThumbs::cacheProfile(int accountID, CCTexture2D* texture, 
-                                 ccColor3B colorA, ccColor3B colorB, float widthFactor) {
-    if (!texture) return;
-    
-    std::lock_guard<std::mutex> lock(m_cacheMutex);
-    
+void ProfileThumbs::noteInsertLocked() {
     m_insertsSinceCleanup++;
     if (m_insertsSinceCleanup >= CLEANUP_INTERVAL) {
         clearOldCache();
         m_insertsSinceCleanup = 0;
     }
-    
-    log::debug("[ProfileThumbs] Caching profile for account {} with colors RGB({},{},{}) -> RGB({},{},{}), width: {}", 
-               accountID, colorA.r, colorA.g, colorA.b, colorB.r, colorB.g, colorB.b, widthFactor);
-    
-    ProfileConfig existingConfig;
-    std::string existingGifKey;
-    auto it = m_profileCache.find(accountID);
-    if (it != m_profileCache.end()) {
-        existingConfig = it->second.config;
-        existingGifKey = it->second.gifKey;
+}
+
+void ProfileThumbs::storeEntryLocked(int accountID, ProfileCacheEntry entry) {
+    if (auto it = m_profileCache.find(accountID); it != m_profileCache.end()) {
+        entry.config = it->second.config;
     }
-
-    m_profileCache[accountID] = ProfileCacheEntry(texture, colorA, colorB, widthFactor);
-    m_profileCache[accountID].config = existingConfig;
-
-    if (!existingGifKey.empty()) {
-        m_profileCache[accountID].gifKey = existingGifKey;
-        log::debug("[ProfileThumbs] Preserved existing gifKey: {} for account {}", existingGifKey, accountID);
-    }
-
+    m_profileCache[accountID] = std::move(entry);
     touchCacheEntry(accountID);
 }
 
-void ProfileThumbs::cacheProfileGIF(int accountID, std::string const& gifKey, 
+void ProfileThumbs::cacheProfile(int accountID, CCTexture2D* texture,
+                                 ccColor3B colorA, ccColor3B colorB, float widthFactor) {
+    if (!texture) return;
+
+    std::lock_guard<std::mutex> lock(m_cacheMutex);
+    noteInsertLocked();
+
+    log::debug("[ProfileThumbs] Caching profile for account {} with colors RGB({},{},{}) -> RGB({},{},{}), width: {}",
+               accountID, colorA.r, colorA.g, colorA.b, colorB.r, colorB.g, colorB.b, widthFactor);
+
+    ProfileCacheEntry entry(texture, colorA, colorB, widthFactor);
+    if (auto it = m_profileCache.find(accountID); it != m_profileCache.end() && !it->second.gifKey.empty()) {
+        entry.gifKey = it->second.gifKey;
+        log::debug("[ProfileThumbs] Preserved existing gifKey: {} for account {}", entry.gifKey, accountID);
+    }
+
+    storeEntryLocked(accountID, std::move(entry));
+}
+
+void ProfileThumbs::cacheProfileGIF(int accountID, std::string const& gifKey,
                                     cocos2d::ccColor3B colorA, cocos2d::ccColor3B colorB, float widthFactor) {
     std::lock_guard<std::mutex> lock(m_cacheMutex);
-    
-    m_insertsSinceCleanup++;
-    if (m_insertsSinceCleanup >= CLEANUP_INTERVAL) {
-        clearOldCache();
-        m_insertsSinceCleanup = 0;
-    }
-    
+    noteInsertLocked();
+
     log::debug("[ProfileThumbs] Caching GIF profile for account {} with key {}", accountID, gifKey);
-    
-    ProfileConfig existingConfig;
-    auto it = m_profileCache.find(accountID);
-    if (it != m_profileCache.end()) {
-        existingConfig = it->second.config;
-        if (!it->second.gifKey.empty() && it->second.gifKey != gifKey) {
-            AnimatedGIFSprite::unpinGIF(it->second.gifKey);
-        }
+
+    if (auto it = m_profileCache.find(accountID);
+        it != m_profileCache.end() && !it->second.gifKey.empty() && it->second.gifKey != gifKey) {
+        AnimatedGIFSprite::unpinGIF(it->second.gifKey);
     }
 
     if (AnimatedGIFSprite::isCached(gifKey)) {
         AnimatedGIFSprite::pinGIF(gifKey);
     }
-    m_profileCache[accountID] = ProfileCacheEntry(gifKey, colorA, colorB, widthFactor);
-    m_profileCache[accountID].config = existingConfig;
-    touchCacheEntry(accountID);
+    storeEntryLocked(accountID, ProfileCacheEntry(gifKey, colorA, colorB, widthFactor));
 }
 
 void ProfileThumbs::cacheProfileConfig(int accountID, ProfileConfig const& config) {
@@ -392,6 +383,39 @@ void ProfileThumbs::clearPendingDownloads() {
     m_activeDownloads = 0;
 }
 
+namespace {
+
+// clip an already cover-scaled backdrop sprite to the node rect; also adds
+// the darkness overlay to the container when requested.
+CCNode* makeClippedBackdrop(CCNode* bgSprite, CCSize const& cs, CCNode* container, float darkness) {
+    auto stencil = PaimonDrawNode::create();
+    CCPoint rect[4];
+    rect[0] = ccp(0, 0);
+    rect[1] = ccp(cs.width, 0);
+    rect[2] = ccp(cs.width, cs.height);
+    rect[3] = ccp(0, cs.height);
+    ccColor4F white = {1, 1, 1, 1};
+    stencil->drawPolygon(rect, 4, white, 0, white);
+
+    auto clipper = CCClippingNode::create(stencil);
+    clipper->setAlphaThreshold(0.05f);
+    clipper->setContentSize(cs);
+    clipper->setPosition({0, 0});
+    clipper->setZOrder(-10);
+    clipper->addChild(bgSprite);
+
+    if (darkness > 0.0f) {
+        auto overlay = CCLayerColor::create({0, 0, 0, static_cast<GLubyte>(darkness * 255)});
+        overlay->setContentSize(cs);
+        overlay->setPosition({0, 0});
+        overlay->setZOrder(-5);
+        container->addChild(overlay);
+    }
+    return clipper;
+}
+
+} // namespace
+
 CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig const& config, CCSize cs, bool onlyBackground) {
     AnimatedGIFSprite* gifSprite = nullptr;
     if (!config.gifKey.empty()) {
@@ -422,46 +446,21 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
                 CCSize targetSize = cs;
                 targetSize.width = std::max(targetSize.width, 512.f);
                 targetSize.height = std::max(targetSize.height, 256.f);
-                
+
                 float scaleX = targetSize.width / gifSprite->getContentSize().width;
                 float scaleY = targetSize.height / gifSprite->getContentSize().height;
                 float scale = std::max(scaleX, scaleY);
-                
+
                 bgSprite->setScale(scale);
-                bgSprite->setPosition(targetSize * 0.5f);
-                
+
                 auto shader = BlurSystem::getInstance()->getRealtimeBlurShader();
                 if (!shader) shader = paimon::shaders::getBlurFastShader();
                 if (shader) {
                     bgSprite->setShaderProgram(shader);
                 }
 
-                auto stencil = PaimonDrawNode::create();
-                CCPoint rect[4];
-                rect[0] = ccp(0, 0);
-                rect[1] = ccp(cs.width, 0);
-                rect[2] = ccp(cs.width, cs.height);
-                rect[3] = ccp(0, cs.height);
-                ccColor4F white = {1, 1, 1, 1};
-                stencil->drawPolygon(rect, 4, white, 0, white);
-                
-                auto clipper = CCClippingNode::create(stencil);
-                clipper->setAlphaThreshold(0.05f);
-                clipper->setContentSize(cs);
-                clipper->setPosition({0,0});
-                clipper->setZOrder(-10);
-                
                 bgSprite->setPosition(cs / 2);
-                clipper->addChild(bgSprite);
-                bg = clipper;
-                
-                if (config.darkness > 0.0f) {
-                    auto overlay = CCLayerColor::create({0, 0, 0, static_cast<GLubyte>(config.darkness * 255)});
-                    overlay->setContentSize(cs);
-                    overlay->setPosition({0, 0});
-                    overlay->setZOrder(-5); 
-                    container->addChild(overlay);
-                }
+                bg = makeClippedBackdrop(bgSprite, cs, container, config.darkness);
             }
         } else if (texture) {
             CCSize targetSize = cs;
@@ -472,21 +471,6 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
             if (!bgSprite) bgSprite = CCSprite::createWithTexture(texture);
 
             if (bgSprite) {
-                auto stencil = PaimonDrawNode::create();
-                CCPoint rect[4];
-                rect[0] = ccp(0, 0);
-                rect[1] = ccp(cs.width, 0);
-                rect[2] = ccp(cs.width, cs.height);
-                rect[3] = ccp(0, cs.height);
-                ccColor4F white = {1, 1, 1, 1};
-                stencil->drawPolygon(rect, 4, white, 0, white);
-                
-                auto clipper = CCClippingNode::create(stencil);
-                clipper->setAlphaThreshold(0.05f);
-                clipper->setContentSize(cs);
-                clipper->setPosition({0,0});
-                clipper->setZOrder(-10);
-                
                 float targetW = cs.width;
                 float targetH = cs.height;
                 float finalScale = std::max(
@@ -495,17 +479,8 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
                 );
                 bgSprite->setScale(finalScale);
                 bgSprite->setPosition(cs / 2);
-                
-                clipper->addChild(bgSprite);
-                bg = clipper;
 
-                if (config.darkness > 0.0f) {
-                    auto overlay = CCLayerColor::create({0, 0, 0, static_cast<GLubyte>(config.darkness * 255)});
-                    overlay->setContentSize(cs);
-                    overlay->setPosition({0, 0});
-                    overlay->setZOrder(-5); 
-                    container->addChild(overlay);
-                }
+                bg = makeClippedBackdrop(bgSprite, cs, container, config.darkness);
             }
         }
     } else if (bgType != "none") {

@@ -1,3 +1,4 @@
+#include "../../../framework/compat/NativeUI.hpp"
 #include "TwitchLevelBriefCache.hpp"
 
 #include "../../../core/RuntimeLifecycle.hpp"
@@ -38,7 +39,7 @@ int difficultyValue(GJGameLevel* level) {
             default: return 6;
         }
     }
-    return level->getAverageDifficulty();
+    return paimon::compat::averageDifficulty(level);
 }
 
 int requestedDifficulty(GJGameLevel* level) {
@@ -276,6 +277,6 @@ void TwitchLevelBriefCache::loadLevelsFailed(char const* key) {
     finish(false);
 }
 
-void TwitchLevelBriefCache::setupPageInfo(gd::string, char const*) {}
+void TwitchLevelBriefCache::setupPageInfo(std::string, char const*) {}
 
 } // namespace paimon::twitch

@@ -1,4 +1,5 @@
 #pragma once
+#include "FilesystemPath.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/utils/string.hpp>
@@ -44,7 +45,7 @@ namespace ImageLoadHelper {
         target->end();
         auto* image = target->newCCImage(false);
         if (!image) return false;
-        auto const filename = geode::utils::string::pathToString(path);
+        auto const filename = paimon::paths::toUtf8(path);
         bool const saved = image->saveToFile(filename.c_str(), false);
         image->release();
         return saved && std::filesystem::exists(path, ec) && !ec;
@@ -74,10 +75,12 @@ namespace ImageLoadHelper {
         return paimon::file::readBytes(path, fileSizeLimitBytes(maxSizeMB));
     }
 
-    inline LoadedImage createFromRGBA(uint8_t const* rgba, int w, int h, bool copyBuffer = true) {
+    // maxDim lets large-format caches (blur tiles, generated previews) use
+    // their own bound; the default keeps the 4096 cap.
+    inline LoadedImage createFromRGBA(uint8_t const* rgba, int w, int h, bool copyBuffer = true, int maxDim = kMaxImageDim) {
         LoadedImage result;
 
-        if (!rgba || w <= 0 || h <= 0 || w > kMaxImageDim || h > kMaxImageDim) {
+        if (!rgba || w <= 0 || h <= 0 || maxDim <= 0 || w > maxDim || h > maxDim) {
             result.error = "invalid_dimensions";
             return result;
         }
@@ -119,6 +122,42 @@ namespace ImageLoadHelper {
         return result;
     }
 
+    enum class StbDecodeError { None, UnsupportedFormat, InvalidDimensions, DecodeFailed };
+
+    // cpu-only stb decode to rgba32: no gl calls, safe off the main thread.
+    // validated against kMaxImageDim before and after decode.
+    inline std::unique_ptr<unsigned char, decltype(&stbi_image_free)> decodeRGBAFromMemory(
+        uint8_t const* fileData, size_t fileSize, int& outW, int& outH,
+        StbDecodeError* outError = nullptr) {
+        auto fail = [outError](StbDecodeError error) {
+            if (outError) *outError = error;
+            return std::unique_ptr<unsigned char, decltype(&stbi_image_free)>(nullptr, &stbi_image_free);
+        };
+        outW = 0;
+        outH = 0;
+        if (outError) *outError = StbDecodeError::None;
+        if (!fileData || fileSize == 0 || fileSize > static_cast<size_t>(std::numeric_limits<int>::max())) {
+            return fail(StbDecodeError::UnsupportedFormat);
+        }
+
+        int const dataSize = static_cast<int>(fileSize);
+        int channels = 0;
+        if (!stbi_info_from_memory(fileData, dataSize, &outW, &outH, &channels)) {
+            return fail(StbDecodeError::UnsupportedFormat);
+        }
+        if (outW <= 0 || outH <= 0 || outW > kMaxImageDim || outH > kMaxImageDim) {
+            return fail(StbDecodeError::InvalidDimensions);
+        }
+
+        std::unique_ptr<unsigned char, decltype(&stbi_image_free)> data(
+            stbi_load_from_memory(fileData, dataSize, &outW, &outH, &channels, 4), stbi_image_free);
+        if (!data) return fail(StbDecodeError::DecodeFailed);
+        if (outW <= 0 || outH <= 0 || outW > kMaxImageDim || outH > kMaxImageDim) {
+            return fail(StbDecodeError::InvalidDimensions);
+        }
+        return data;
+    }
+
     inline LoadedImage loadWithSTBFromMemory(uint8_t const* fileData, size_t fileSize, bool copyBuffer = true) {
         LoadedImage result;
 
@@ -127,22 +166,13 @@ namespace ImageLoadHelper {
             return result;
         }
 
-        int w = 0, h = 0, channels = 0;
-        int const dataSize = static_cast<int>(fileSize);
-        if (!stbi_info_from_memory(fileData, dataSize, &w, &h, &channels)) {
-            result.error = "unsupported_image_format";
-            return result;
-        }
-        if (w <= 0 || h <= 0 || w > kMaxImageDim || h > kMaxImageDim) {
-            result.error = "invalid_dimensions";
-            return result;
-        }
-
-        std::unique_ptr<unsigned char, decltype(&stbi_image_free)> data(
-            stbi_load_from_memory(fileData, dataSize, &w, &h, &channels, 4), stbi_image_free
-        );
+        int w = 0, h = 0;
+        StbDecodeError decodeError = StbDecodeError::None;
+        auto data = decodeRGBAFromMemory(fileData, fileSize, w, h, &decodeError);
         if (!data) {
-            result.error = "image_open_error";
+            result.error = decodeError == StbDecodeError::UnsupportedFormat ? "unsupported_image_format"
+                : decodeError == StbDecodeError::InvalidDimensions ? "invalid_dimensions"
+                : "image_open_error";
             return result;
         }
 
@@ -168,7 +198,7 @@ namespace ImageLoadHelper {
 
     // decode a static image, stb_image first, then ccimage.
     // maxsizemb=0 disables the file-size limit.
-    inline LoadedImage loadStaticImage(std::filesystem::path const& path, size_t maxSizeMB = 10) {
+    inline LoadedImage loadStaticImage(std::filesystem::path const& path, size_t maxSizeMB = 10, bool copyBuffer = true) {
         LoadedImage result;
 
         if (maxSizeMB > 0) {
@@ -191,7 +221,7 @@ namespace ImageLoadHelper {
         }
 
         {
-            auto stbResult = loadWithSTBFromMemory(fileData.data(), fileData.size());
+            auto stbResult = loadWithSTBFromMemory(fileData.data(), fileData.size(), copyBuffer);
             if (stbResult.success) return stbResult;
             if (stbResult.error == "invalid_image_data" || stbResult.error == "invalid_dimensions") return stbResult;
         }
@@ -215,7 +245,7 @@ namespace ImageLoadHelper {
                         ImageConverter::rgbToRgbaFast(src, rgba.data(), static_cast<size_t>(w) * h);
                     }
 
-                    return createFromRGBA(rgba.data(), w, h);
+                    return createFromRGBA(rgba.data(), w, h, copyBuffer);
                 }
             }
         }
@@ -237,7 +267,7 @@ namespace ImageLoadHelper {
                 }
             }
         }
-        std::string ext = geode::utils::string::pathToString(path.extension());
+        std::string ext = paimon::paths::toUtf8(path.extension());
         std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         return ext == ".gif";
     }
@@ -252,7 +282,7 @@ namespace ImageLoadHelper {
         std::function<cocos2d::CCSprite*(std::string const&)> const& createAnimated
     ) {
         if (isAnimatedImage(path)) {
-            auto pathStr = geode::utils::string::pathToString(path);
+            auto pathStr = paimon::paths::toUtf8(path);
             auto* anim = createAnimated(pathStr);
             if (anim) return anim;
         }
@@ -266,14 +296,14 @@ namespace ImageLoadHelper {
         return nullptr;
     }
 
-    inline LoadedImage loadStaticImage(std::string_view pathStr, size_t maxSizeMB = 10) {
-        return loadStaticImage(paimon::assets::pathFromUtf8(pathStr), maxSizeMB);
+    inline LoadedImage loadStaticImage(std::string_view pathStr, size_t maxSizeMB = 10, bool copyBuffer = true) {
+        return loadStaticImage(paimon::assets::pathFromUtf8(pathStr), maxSizeMB, copyBuffer);
     }
-    inline LoadedImage loadStaticImage(std::string const& pathStr, size_t maxSizeMB = 10) {
-        return loadStaticImage(paimon::assets::pathFromUtf8(pathStr), maxSizeMB);
+    inline LoadedImage loadStaticImage(std::string const& pathStr, size_t maxSizeMB = 10, bool copyBuffer = true) {
+        return loadStaticImage(paimon::assets::pathFromUtf8(pathStr), maxSizeMB, copyBuffer);
     }
-    inline LoadedImage loadStaticImage(char const* pathStr, size_t maxSizeMB = 10) {
-        return loadStaticImage(paimon::assets::pathFromUtf8(pathStr), maxSizeMB);
+    inline LoadedImage loadStaticImage(char const* pathStr, size_t maxSizeMB = 10, bool copyBuffer = true) {
+        return loadStaticImage(paimon::assets::pathFromUtf8(pathStr), maxSizeMB, copyBuffer);
     }
 
     inline std::vector<uint8_t> readBinaryFile(std::string_view pathStr, size_t maxSizeMB = 10) {

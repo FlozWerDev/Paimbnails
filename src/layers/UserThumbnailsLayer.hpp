@@ -14,6 +14,7 @@ protected:
     cocos2d::CCLabelBMFont* m_errorLabel = nullptr;
     std::shared_ptr<std::atomic<bool>> m_requestAlive;
 
+    using cocos2d::CCLayer::init;
     bool init(std::string const& username, int accountID);
     void onExit() override;
     void keyBackClicked() override;

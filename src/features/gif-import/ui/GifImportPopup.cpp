@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "GifImportPopup.hpp"
 
 #include "../../../core/RuntimeLifecycle.hpp"
@@ -161,9 +162,14 @@ bool GifImportPopup::init() {
         "Elige el archivo con <cg>Elegir archivo</c> y ajusta a la derecha: las "
         "flechas del <cy>Modo</c> deciden como se dibuja (bloques, pintura, art...), "
         "<cy>Resolucion</c> y <cy>Colores</c> el detalle, y <cy>Presupuesto</c> "
-        "el limite de objetos. La vista previa usa objetos reales. "
+        "el limite de objetos. En <cy>Pintura</c>, el boton <cy>Optimiz</c> "
+        "desactivado usa el trazado de contornos suavizados: lineas mas suaves "
+        "a cambio de mas objetos. La resolucion numerica se conserva (hasta 680 px): "
+        "si hace falta, se usan menos frames manteniendo la duracion. "
+        "<cy>Auto</c> permite ajustar tambien la resolucion. Para mas detalle "
+        "y fluidez, aumenta el presupuesto. La vista previa usa objetos reales. "
         "<cg>Importar</c> los coloca en el editor.");
-    addCorners(SideArtStyle::PopupGold, 0.4f);
+    addCorners(SideArtStyle::PopupGold);
     loadOptions();
 
     auto* menu = CCMenu::create();
@@ -355,8 +361,8 @@ void GifImportPopup::buildOptionsPanel(CCMenu* menu) {
 void GifImportPopup::loadOptions() {
     auto* mod = Mod::get();
     m_options.maxDimension = std::clamp(static_cast<int>(
-        mod->getSavedValue<int64_t>("gif-import-resolution", 320)), 4, 320);
-    m_options.autoResolution = mod->getSavedValue<bool>("gif-import-auto-resolution", false);
+        mod->getSavedValue<int64_t>("gif-import-resolution", 320)), 4, kMaxImportDimension);
+    m_options.autoResolution = mod->getSavedValue<bool>("gif-import-auto-resolution", true);
     m_options.maxColors = static_cast<int>(mod->getSavedValue<int64_t>("gif-import-colors", 24));
     m_options.objectBudget = static_cast<int>(mod->getSavedValue<int64_t>("gif-import-budget", 12000));
     m_options.maxFrames = static_cast<int>(mod->getSavedValue<int64_t>("gif-import-frames", 90));
@@ -379,6 +385,7 @@ void GifImportPopup::loadOptions() {
         : savedMode == 2 ? ImportMode::Paint
         : savedMode == 1 ? ImportMode::Art : ImportMode::Blocks;
     m_options.dither = mod->getSavedValue<bool>("gif-import-dither", false);
+    m_options.optimize = mod->getSavedValue<bool>("gif-import-optimize", true);
     m_options.loop = mod->getSavedValue<bool>("gif-import-loop", true);
     m_options.glow = static_cast<GlowMode>(std::clamp<int>(
         static_cast<int>(mod->getSavedValue<int64_t>("gif-import-glow", 0)), 0, 2));
@@ -407,6 +414,7 @@ void GifImportPopup::saveOptions() const {
     mod->setSavedValue<bool>("gif-import-smooth", m_options.sampling == SamplingMode::Smooth);
     mod->setSavedValue<int64_t>("gif-import-mode", static_cast<int64_t>(m_options.mode));
     mod->setSavedValue<bool>("gif-import-dither", m_options.dither);
+    mod->setSavedValue<bool>("gif-import-optimize", m_options.optimize);
     mod->setSavedValue<bool>("gif-import-loop", m_options.loop);
     mod->setSavedValue<int64_t>("gif-import-glow", static_cast<int64_t>(m_options.glow));
     mod->setSavedValue<bool>("gif-import-motion", m_options.motion);
@@ -437,7 +445,7 @@ void GifImportPopup::loadSource(std::filesystem::path const& path) {
         loadVideo(path);
         return;
     }
-    auto bytesResult = utils::file::readBinary(path);
+    auto bytesResult = utils::file::readBinary(paimon::paths::toSdkPath(path));
     if (bytesResult.isErr()) {
         PaimonNotify::show("No se pudo leer el archivo.", NotificationIcon::Error);
         return;
@@ -587,7 +595,7 @@ void GifImportPopup::applySource(
     m_plan.reset();
     m_previewFrame = 0;
     m_previewElapsed = 0.f;
-    auto name = utils::string::pathToString(path.filename());
+    auto name = paimon::paths::toUtf8(path.filename());
     if (name.size() > 32) name = name.substr(0, 30) + "..";
     m_fileLabel->setString(name.c_str());
     m_fileLabel->limitLabelWidth(kFileLabelWidth, 0.42f, 0.2f);
@@ -683,8 +691,7 @@ void GifImportPopup::applyProcessed(BuildResult result) {
 }
 
 void GifImportPopup::refreshControls() {
-    bool const autoResolution = m_options.autoResolution && m_options.mode == ImportMode::Paint;
-    kit::setValue(m_resolutionValue, autoResolution
+    kit::setValue(m_resolutionValue, m_options.autoResolution
         ? std::string("Auto") : fmt::format("{} px", m_options.maxDimension));
     kit::setValue(m_colorsValue, std::to_string(m_options.maxColors));
     kit::setValue(m_budgetValue, fmt::format("{}k", m_options.objectBudget / 1000.f));
@@ -722,7 +729,10 @@ void GifImportPopup::refreshControls() {
         setToggle(m_samplingPill, "Suave: fijo", false, "paim_gif_sampling.png");
     }
 
-    if (usesSoftGeometry(m_options.mode)) {
+    if (m_options.mode == ImportMode::Paint) {
+        setToggle(m_ditherPill, m_options.optimize ? "Optimiz: si" : "Optimiz: no",
+            m_options.optimize, "paim_gif_optimize.png");
+    } else if (usesSoftGeometry(m_options.mode)) {
         setToggle(m_ditherPill, m_options.softBackdrop ? "Base: negra" : "Base: nivel",
             m_options.softBackdrop, "paim_gif_background.png");
     } else {
@@ -776,6 +786,14 @@ void GifImportPopup::refreshControls() {
         extra += fmt::format(", {} moves en {} pistas",
                              m_plan->moveTriggers, m_plan->motionTracks.size());
     }
+    std::string adjustments;
+    if (m_plan->actualDimension < m_plan->requestedDimension) {
+        adjustments += fmt::format(" | Auto: de {} px", m_plan->requestedDimension);
+    }
+    if (m_plan->sampledFrames < std::min(m_options.maxFrames, m_plan->sourceFrames)) {
+        adjustments += fmt::format(" | muestreo {}/{} frames",
+            m_plan->sampledFrames, m_plan->sourceFrames);
+    }
     setStats(fmt::format(
         "{}x{} | {} frames{} | {} colores | {}{}\n"
         "{} formas ({} blq, {} traz, {} circ, {} tri{}) + {} triggers = {}{}",
@@ -787,8 +805,8 @@ void GifImportPopup::refreshControls() {
         m_plan->visualObjects, m_plan->blockObjects, m_plan->strokeObjects,
         m_plan->circleObjects, m_plan->triangleObjects, extra,
         m_plan->triggerObjects, m_plan->totalObjects,
-        m_plan->actualDimension < m_plan->requestedDimension ? " (ajustado)" : ""
-    ), {135, 230, 170});
+        adjustments
+    ), adjustments.empty() ? ccColor3B{135, 230, 170} : ccColor3B{255, 205, 105});
 }
 
 void GifImportPopup::setStats(std::string const& text, ccColor3B color) {
@@ -1050,17 +1068,17 @@ void GifImportPopup::importObjects() {
 }
 
 void GifImportPopup::adjustResolution(int direction) {
-    if (m_options.mode == ImportMode::Paint && m_options.autoResolution) {
+    if (m_options.autoResolution) {
         if (direction >= 0) return;
         m_options.autoResolution = false;
-        m_options.maxDimension = 320;
-    } else if (m_options.mode == ImportMode::Paint && direction > 0 &&
-               m_options.maxDimension >= 320) {
+        m_options.maxDimension = kMaxImportDimension;
+    } else if (direction > 0 && m_options.maxDimension >= kMaxImportDimension) {
         m_options.autoResolution = true;
     } else {
         int const from = direction < 0 ? m_options.maxDimension - 1 : m_options.maxDimension;
-        int const step = from >= 160 ? 16 : from >= 64 ? 8 : 4;
-        m_options.maxDimension = std::clamp(m_options.maxDimension + direction * step, 4, 320);
+        int const step = from >= 320 ? 32 : from >= 160 ? 16 : from >= 64 ? 8 : 4;
+        m_options.maxDimension = std::clamp(
+            m_options.maxDimension + direction * step, 4, kMaxImportDimension);
     }
     requestProcess();
 }
@@ -1154,6 +1172,11 @@ void GifImportPopup::toggleSampling() {
 }
 
 void GifImportPopup::toggleDither() {
+    if (m_options.mode == ImportMode::Paint) {
+        m_options.optimize = !m_options.optimize;
+        requestProcess();
+        return;
+    }
     if (usesSoftGeometry(m_options.mode)) {
         m_options.softBackdrop = !m_options.softBackdrop;
         requestProcess();

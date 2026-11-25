@@ -112,13 +112,21 @@ private:
 
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     static constexpr std::size_t MAX_BLUR_CACHE_ENTRIES = 48;
+    static constexpr std::size_t MAX_BLUR_CACHE_BYTES = 64ull * 1024 * 1024;
 #else
-    // each entry is a cctexture2d ~100-400kb (~40-80mb total at 192 entries).
     static constexpr std::size_t MAX_BLUR_CACHE_ENTRIES = 192;
+    // at a 4x content scale a 569x320 tile is ~11.6mb of texture memory, so an
+    // entry count alone can pin gigabytes. bound the actual pixel storage.
+    static constexpr std::size_t MAX_BLUR_CACHE_BYTES = 256ull * 1024 * 1024;
 #endif
 
     std::list<BlurKey> m_blurLru;
     std::unordered_map<BlurKey, Entry, BlurKeyHash> m_blurCache;
+    std::size_t m_blurCacheBytes = 0;
+
+    using CacheMap = std::unordered_map<BlurKey, Entry, BlurKeyHash>;
+    // moves an existing entry to the front of the lru list.
+    void touchKey(BlurKey const& k, CacheMap::iterator it);
 
     // consolidate duplicate callbacks for in-flight jobs.
     std::unordered_map<BlurKey, std::vector<std::function<void(cocos2d::CCSprite*)>>, BlurKeyHash> m_inFlight;

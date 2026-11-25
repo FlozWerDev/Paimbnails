@@ -9,6 +9,8 @@
 #include "../ui/VersusProfilePopup.hpp"
 #include "../ui/VersusRankBadgeNode.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
+#include "../../../core/Settings.hpp"
+#include "../../profiles/services/ProfileIdentityStore.hpp"
 #include "../../../framework/HookConventions.hpp"
 
 #include <algorithm>
@@ -98,12 +100,17 @@ class $modify(PaimonVersusProfilePage, ProfilePage) {
     }
 
     void applyChip() {
-        auto* menu = typeinfo_cast<CCMenu*>(this->getChildByIDRecursive("username-menu"));
-        if (!menu) return;
-
         while (auto* existing = this->getChildByIDRecursive(kChipId)) {
             existing->removeFromParent();
         }
+
+        bool const inNamePopup = paimon::settings::profiles::redesignEnabled();
+        auto* store = inNamePopup
+            ? paimon::profiles::IdentityStore::get(this->m_mainLayer, true) : nullptr;
+        if (store) store->remove("versus");
+
+        auto* menu = typeinfo_cast<CCMenu*>(this->getChildByIDRecursive("username-menu"));
+        if (!menu && !store) return;
 
         // no chip for a never-duelled stranger; an unranked chip on every
         // profile would be noise.
@@ -113,6 +120,28 @@ class $modify(PaimonVersusProfilePage, ProfilePage) {
         if (best.wins + best.losses == 0 && !m_fields->m_own) return;
 
         auto const rank = rankFor(best.elo, best.placementsLeft, best.paimon);
+
+        // the redesigned header keeps the name row clean; the chip lives in the name popup.
+        if (store) {
+            auto accountId = m_fields->m_accountId;
+            auto username = m_fields->m_username;
+            auto classic = m_fields->m_classic;
+            auto platformer = m_fields->m_platformer;
+            bool own = m_fields->m_own;
+            store->set({
+                "versus", 1,
+                [rank](float height) { return buildVersusChip(rank, height); },
+                [accountId, username, classic, platformer, own]() {
+                    if (auto* popup = VersusProfilePopup::create(
+                            accountId, username, classic, platformer, own)) {
+                        popup->show();
+                    }
+                },
+                ""
+            });
+            return;
+        }
+
         auto* chip = buildVersusChip(rank, 20.f);
         if (!chip) return;
 

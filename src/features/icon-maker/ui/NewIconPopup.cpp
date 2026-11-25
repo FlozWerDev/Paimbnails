@@ -3,9 +3,11 @@
 #include "IconMakerKit.hpp"
 #include "TemplatePickerPopup.hpp"
 #include "../data/IconAnatomy.hpp"
+#include "../data/IconPalettes.hpp"
 #include "../engine/TemplateExtractor.hpp"
 #include "../persist/IconPaths.hpp"
 #include "../persist/IconProjectStore.hpp"
+#include "../services/IconApplier.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
@@ -25,8 +27,6 @@ constexpr float kPopupH = 275.f;
 constexpr char const* kNameFilter =
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -_";
 
-// prefills every zone of a fresh project with the pieces of a vanilla icon, so
-// a beginner lands on something that already looks like an icon.
 void seedFromTemplate(std::string const& slotId, int iconId) {
     auto loaded = IconProjectStore::get().loadProject(slotId);
     if (!loaded) return;
@@ -69,6 +69,114 @@ void seedFromTemplate(std::string const& slotId, int iconId) {
     }
 }
 
+void seedFromStarterShape(std::string const& slotId) {
+    auto loaded = IconProjectStore::get().loadProject(slotId);
+    if (!loaded) return;
+    auto project = loaded.unwrap();
+
+    auto const* def = anatomyFor(project.type);
+    if (!def) return;
+
+    int const part = def->partCount > 1 ? 1 : 0;
+
+    // 1. Main body shape tuned to the gamemode
+    IconPiece body;
+    body.id = project.makePieceId();
+    body.name = "Cuerpo base";
+    body.shape.kind = PieceShape::Kind::Primitive;
+    switch (project.type) {
+        case IconType::Ball:
+            body.shape.primitive = PrimitiveKind::Circle;
+            break;
+        case IconType::Wave:
+            body.shape.primitive = PrimitiveKind::Triangle;
+            body.transform.rotationDeg = 90.f;
+            break;
+        case IconType::Ufo:
+            body.shape.primitive = PrimitiveKind::Capsule;
+            body.transform.offsetY = -0.10f;
+            break;
+        case IconType::Ship:
+            body.shape.primitive = PrimitiveKind::Shield;
+            body.transform.rotationDeg = -90.f;
+            break;
+        case IconType::Swing:
+            body.shape.primitive = PrimitiveKind::Octagon;
+            break;
+        default:
+            body.shape.primitive = PrimitiveKind::RoundedSquare;
+            body.shape.cornerRadius = 0.14f;
+            break;
+    }
+    body.fill.type = FillType::Gradient;
+    body.fill.gradient = gradientPresets().size() > 3 ? gradientPresets()[3].spec : GradientSpec{};
+    body.fill.gloss = true;
+    body.fill.glossStrength = 0.35f;
+    body.fill.outline.enabled = true;
+    body.fill.outline.width = 6.f;
+    body.fill.outline.color = {12, 14, 24, 255};
+    project.slots[slotStorageKey(part, "main")].pieces.push_back(std::move(body));
+
+    // 2. Secondary inner frame accent
+    IconPiece accent;
+    accent.id = project.makePieceId();
+    accent.name = "Marco interior";
+    accent.shape.kind = PieceShape::Kind::Primitive;
+    accent.shape.primitive = project.type == IconType::Ball
+        ? PrimitiveKind::Circle
+        : (project.type == IconType::Wave ? PrimitiveKind::Triangle : PrimitiveKind::RoundedSquare);
+    accent.shape.hollow = true;
+    accent.shape.strokeWidth = 0.14f;
+    accent.transform.scale = 0.80f;
+    if (project.type == IconType::Wave) accent.transform.rotationDeg = 90.f;
+    accent.fill.type = FillType::Flat;
+    accent.fill.flat = {225, 248, 255, 255};
+    accent.fill.keepLuminance = false;
+    project.slots[slotStorageKey(part, "secondary")].pieces.push_back(std::move(accent));
+
+    // 3. Classic GD eyes in Blanco/Extra for non-Wave icons
+    if (project.type != IconType::Wave) {
+        IconPiece eyes;
+        eyes.id = project.makePieceId();
+        eyes.name = "Ojos GD";
+        eyes.shape.kind = PieceShape::Kind::Decal;
+        eyes.shape.decal = DecalKind::EyesClassic;
+        eyes.transform.scale = 0.78f;
+        eyes.fill.type = FillType::Flat;
+        eyes.fill.flat = {255, 255, 255, 255};
+        eyes.fill.keepLuminance = false;
+        eyes.fill.outline.enabled = true;
+        eyes.fill.outline.width = 4.f;
+        eyes.fill.outline.color = {12, 14, 24, 255};
+        project.slots[slotStorageKey(part, "extra")].pieces.push_back(std::move(eyes));
+    }
+
+    // 4. Glow outline
+    IconPiece glow;
+    glow.id = project.makePieceId();
+    glow.name = "Brillo";
+    glow.shape.kind = PieceShape::Kind::Primitive;
+    glow.shape.primitive = project.type == IconType::Ball
+        ? PrimitiveKind::Circle
+        : (project.type == IconType::Wave ? PrimitiveKind::Triangle : PrimitiveKind::RoundedSquare);
+    glow.shape.hollow = true;
+    glow.shape.strokeWidth = 0.12f;
+    glow.transform.scale = 1.08f;
+    if (project.type == IconType::Wave) glow.transform.rotationDeg = 90.f;
+    glow.fill.type = FillType::Flat;
+    glow.fill.flat = {80, 245, 255, 255};
+    glow.fill.keepLuminance = false;
+    glow.fill.shadow.enabled = true;
+    glow.fill.shadow.blur = 8.f;
+    glow.fill.shadow.color = {80, 245, 255, 190};
+    project.slots[slotStorageKey(part, "glow")].pieces.push_back(std::move(glow));
+
+    project.modifiedAt = nowUnixMs();
+    if (auto r = IconProjectStore::get().saveProject(project); !r) {
+        log::warn("[icon-maker] seedFromStarterShape save: {}", r.unwrapErr());
+    }
+}
+
 }  // anonymous namespace
 
 NewIconPopup* NewIconPopup::create(CreatedCallback onCreated) {
@@ -89,9 +197,10 @@ bool NewIconPopup::init(CreatedCallback onCreated) {
     setID("icon-maker-new-popup"_spr);
     addInfoButton("Nuevo icono",
         "Elige el <cy>modo</c> (cubo, nave, bola...), ponle un <cy>nombre</c> y "
-        "decide de donde partir: <cg>Icono oficial</c> copia la forma de un icono "
-        "del juego para que solo lo pintes, o <cg>En blanco</c> empieza con el "
-        "lienzo vacio. Toca <cg>Crear</c> para abrirlo en el editor.");
+        "decide de donde partir:\n"
+        "- <cg>Oficial</c>: copia un icono del juego para editarlo.\n"
+        "- <cg>Forma base</c>: empieza con un diseno geometrico + ojos listo.\n"
+        "- <cg>En blanco</c>: lienzo vacio para crear desde cero.");
 
     auto size = m_mainLayer->getContentSize();
 
@@ -125,33 +234,33 @@ bool NewIconPopup::init(CreatedCallback onCreated) {
         typeMenu->addChild(m_typeSelector, -1);
     }
 
-    for (std::size_t i = 0; i < types.size(); ++i) {
-        IconType type = types[i];
+    {
+        IconApplier::VanillaScope vanillaGuard;
+        for (std::size_t i = 0; i < types.size(); ++i) {
+            IconType type = types[i];
 
-        // simpleplayer has no content size of its own; it always rides inside a
-        // sized wrapper so the button gets a real touch box.
-        auto* wrap = CCNode::create();
-        wrap->setContentSize({kCell - 6.f, kCell - 6.f});
-        wrap->setAnchorPoint({0.5f, 0.5f});
+            auto* wrap = CCNode::create();
+            wrap->setContentSize({kCell - 6.f, kCell - 6.f});
+            wrap->setAnchorPoint({0.5f, 0.5f});
 
-        auto* player = SimplePlayer::create(1);
-        if (player) {
-            player->updatePlayerFrame(1, type);
-            player->setPosition({(kCell - 6.f) / 2.f, (kCell - 6.f) / 2.f});
-            player->setScale(0.72f);
-            wrap->addChild(player, 1);
+            if (auto* player = SimplePlayer::create(1)) {
+                player->updatePlayerFrame(1, type);
+                player->setPosition({(kCell - 6.f) / 2.f, (kCell - 6.f) / 2.f});
+                player->setScale(0.72f);
+                wrap->addChild(player, 1);
+            }
+
+            auto* btn = CCMenuItemExt::createSpriteExtra(wrap,
+                [this, type](CCMenuItemSpriteExtra*) { this->selectType(type); });
+            if (!btn) continue;
+            btn->setPosition({
+                gridLeft + kCell * static_cast<float>(i % kCols),
+                gridTop - kCell * static_cast<float>(i / kCols) - kCell / 2.f,
+            });
+            typeMenu->addChild(btn);
+
+            m_typeButtons.push_back({type, btn->getPosition()});
         }
-
-        auto* btn = CCMenuItemExt::createSpriteExtra(wrap,
-            [this, type](CCMenuItemSpriteExtra*) { this->selectType(type); });
-        if (!btn) continue;
-        btn->setPosition({
-            gridLeft + kCell * static_cast<float>(i % kCols),
-            gridTop - kCell * static_cast<float>(i / kCols) - kCell / 2.f,
-        });
-        typeMenu->addChild(btn);
-
-        m_typeButtons.push_back({type, btn->getPosition()});
     }
 
     m_typeLabel = CCLabelBMFont::create("Cubo", "goldFont.fnt");
@@ -185,8 +294,8 @@ bool NewIconPopup::init(CreatedCallback onCreated) {
         m_mainLayer->addChild(heading);
     }
 
-    auto* tabs = kit::makeTabBar(rightW, {"Icono oficial", "En blanco"}, 0,
-        [this](int index) { this->setStartFromTemplate(index == 0); });
+    auto* tabs = kit::makeTabBar(rightW, {"Oficial", "Forma base", "En blanco"}, 0,
+        [this](int index) { this->setStartMode(static_cast<StartMode>(index)); });
     if (tabs) {
         tabs->setPosition({rightX, size.height - 120.f - kit::kTabBarHeight});
         m_mainLayer->addChild(tabs);
@@ -213,11 +322,14 @@ bool NewIconPopup::init(CreatedCallback onCreated) {
     previewWrap->setPosition({6.f, 3.f});
     m_templateRow->addChild(previewWrap);
 
-    m_templatePreview = SimplePlayer::create(1);
-    if (m_templatePreview) {
-        m_templatePreview->setPosition({17.f, 17.f});
-        m_templatePreview->setScale(0.72f);
-        previewWrap->addChild(m_templatePreview);
+    {
+        IconApplier::VanillaScope vanillaGuard;
+        m_templatePreview = SimplePlayer::create(1);
+        if (m_templatePreview) {
+            m_templatePreview->setPosition({17.f, 17.f});
+            m_templatePreview->setScale(0.72f);
+            previewWrap->addChild(m_templatePreview);
+        }
     }
 
     if (auto* btn = paimon::ui::makeButton("Elegir", [this] { this->pickTemplate(); },
@@ -237,7 +349,7 @@ bool NewIconPopup::init(CreatedCallback onCreated) {
     }
 
     selectType(IconType::Cube);
-    setStartFromTemplate(true);
+    setStartMode(StartMode::Official);
     return true;
 }
 
@@ -264,30 +376,38 @@ void NewIconPopup::selectType(IconType type) {
             m_typeLabel->setString(std::string(def->displayName).c_str());
         }
     }
-    // the template belongs to a gamemode, so the preview follows the choice.
     m_templateIcon = 1;
-    if (m_templatePreview) m_templatePreview->updatePlayerFrame(m_templateIcon, type);
+    if (m_templatePreview) {
+        IconApplier::VanillaScope vanillaGuard;
+        m_templatePreview->updatePlayerFrame(m_templateIcon, type);
+    }
 }
 
-void NewIconPopup::setStartFromTemplate(bool fromTemplate) {
-    m_fromTemplate = fromTemplate;
+void NewIconPopup::setStartMode(StartMode mode) {
+    m_startMode = mode;
     refreshStartRow();
 }
 
 void NewIconPopup::refreshStartRow() {
-    if (m_templateRow) m_templateRow->setVisible(m_fromTemplate);
-    // a wrap width set on an empty label doesn't survive setString, so rebuild it.
+    if (m_templateRow) m_templateRow->setVisible(m_startMode == StartMode::Official);
     if (m_startLabel) m_startLabel->removeFromParent();
-    m_startLabel = paimon::ui::makeText(m_fromTemplate
-            ? "Copiamos la forma de un icono del juego y tu la pintas. Es la "
-              "forma mas facil de empezar."
-            : "Empiezas con el lienzo vacio y vas agregando tus propias "
-              "imagenes. Para cuando ya sabes lo que quieres.",
-        m_startLabelW, 0.44f, kit::kDescColor);
+
+    char const* desc = "Copiamos la forma de un icono oficial para que lo pintes y "
+                       "le agregues accesorios a tu gusto.";
+    if (m_startMode == StartMode::StarterShape) {
+        desc = "Empieza con una forma geometrica brillante, marco interior y ojos GD "
+               "listos para personalizar sin archivos externos.";
+    } else if (m_startMode == StartMode::Blank) {
+        desc = "Lienzo completamente vacio. Agrega formas, caras, accesorios, "
+               "iconos oficiales o tus propias imagenes PNG.";
+    }
+
+    m_startLabel = paimon::ui::makeText(desc, m_startLabelW, 0.44f, kit::kDescColor);
     m_startLabel->setAnchorPoint({0.f, 1.f});
     m_startLabel->setPosition(m_startLabelPos);
     m_mainLayer->addChild(m_startLabel);
-    if (m_templatePreview) {
+    if (m_templatePreview && m_startMode == StartMode::Official) {
+        IconApplier::VanillaScope vanillaGuard;
         m_templatePreview->updatePlayerFrame(m_templateIcon, m_selectedType);
     }
 }
@@ -325,13 +445,17 @@ void NewIconPopup::onCreate() {
 
     auto slotId = created.unwrap();
     auto callback = m_onCreated;
-    bool fromTemplate = m_fromTemplate;
+    StartMode mode = m_startMode;
     int templateIcon = m_templateIcon;
     onClose(nullptr);
 
-    Loader::get()->queueInMainThread([callback, slotId, fromTemplate, templateIcon] {
+    Loader::get()->queueInMainThread([callback, slotId, mode, templateIcon] {
         if (paimon::isRuntimeShuttingDown()) return;
-        if (fromTemplate) seedFromTemplate(slotId, templateIcon);
+        if (mode == StartMode::Official) {
+            seedFromTemplate(slotId, templateIcon);
+        } else if (mode == StartMode::StarterShape) {
+            seedFromStarterShape(slotId);
+        }
         if (callback) callback(slotId);
     });
 }

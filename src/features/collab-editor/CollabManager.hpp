@@ -113,11 +113,8 @@ public:
     bool clientCanEditColors() const;
 
 private:
-    struct OutOp {
-        std::string kind;
-        std::string gid;
-        uint32_t version = 0;
-        std::string save;
+    // transform payload shared by outgoing ops and incoming applies.
+    struct TransformFields {
         float x = 0.f;
         float y = 0.f;
         bool hasPos = false;
@@ -131,24 +128,20 @@ private:
         bool hasFlip = false;
     };
 
-    struct ApplyObj {
+    struct OutOp : TransformFields {
+        std::string kind;
+        std::string gid;
+        uint32_t version = 0;
+        std::string save;
+    };
+
+    struct ApplyObj : TransformFields {
         std::string kind = "add";
         std::string gid;
         std::string save;
         uint32_t version = 0;
         int origin = 0;
         std::string by;
-        float x = 0.f;
-        float y = 0.f;
-        bool hasPos = false;
-        float rot = 0.f;
-        bool hasRot = false;
-        float scaleX = 1.f;
-        float scaleY = 1.f;
-        bool hasScale = false;
-        bool flipX = false;
-        bool flipY = false;
-        bool hasFlip = false;
     };
 
     struct DeferredEdit {
@@ -222,8 +215,8 @@ private:
     void applyRemoteTransform(ApplyObj const& op);
     void applyRemoteDelete(ApplyObj const& op);
     void notifyOverlayEdit(ApplyObj const& op, GameObject* object);
-    static void fillApplyTransform(ApplyObj& op, matjson::Value const& item);
-    static void writeOutTransform(matjson::Value& obj, OutOp const& op);
+    static void fillApplyTransform(TransformFields& op, matjson::Value const& item);
+    static void writeOutTransform(matjson::Value& obj, TransformFields const& op);
 
     GameObject* findTrackedObject(std::string const& gid) const;
     std::string saveObject(GameObject* object) const;

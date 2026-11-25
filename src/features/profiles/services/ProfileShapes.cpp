@@ -164,27 +164,23 @@ std::vector<CCPoint> shield(float w, float h) {
 }
 
 std::vector<CCPoint> cloud(float scale) {
+    // Trace a clean counter-clockwise cloud silhouette with no self-intersections.
     std::vector<CCPoint> v;
-    struct Bump { float cx, cy, r; };
-    Bump bumps[4] = {
-        {-0.55f, -0.05f, 0.42f},
-        {-0.18f,  0.22f, 0.5f},
-        { 0.3f,   0.18f, 0.46f},
-        { 0.58f, -0.05f, 0.38f},
+    struct Arc { float cx, cy, r, a0, a1; };
+    Arc arcs[4] = {
+        { 0.56f, -0.06f, 0.36f, -kPi * 0.42f, kPi * 0.42f},
+        { 0.28f,  0.18f, 0.44f,  kPi * 0.12f, kPi * 0.68f},
+        {-0.18f,  0.22f, 0.48f,  kPi * 0.35f, kPi * 0.92f},
+        {-0.54f, -0.06f, 0.38f,  kPi * 0.62f, kPi * 1.42f},
     };
-    const int segs = 24;
-    for (int b = 0; b < 4; b++) {
-        float startA = (b == 0) ? kPi * 0.6f : kPi * 0.95f;
-        float sweep = (b == 0 || b == 3) ? kPi * 1.1f : kPi * 1.0f;
-        if (b == 3) startA = kPi * 1.35f;
+    const int segs = 20;
+    for (auto const& arc : arcs) {
         for (int i = 0; i <= segs; i++) {
-            float a = startA + sweep * i / segs;
-            v.push_back(c((bumps[b].cx + bumps[b].r * cosf(a)) * scale,
-                          (bumps[b].cy + bumps[b].r * sinf(a)) * scale));
+            float a = arc.a0 + (arc.a1 - arc.a0) * static_cast<float>(i) / segs;
+            v.push_back(c((arc.cx + arc.r * cosf(a)) * scale,
+                          (arc.cy + arc.r * sinf(a)) * scale));
         }
     }
-    v.push_back(c(0.75f * scale, -0.35f * scale));
-    v.push_back(c(-0.75f * scale, -0.35f * scale));
     return v;
 }
 
@@ -388,16 +384,34 @@ std::vector<CCPoint> unitOutline(std::string const& shapeName) {
 }
 
 CCNode* createFill(std::string const& shapeName, float size) {
-    auto unit = unitOutline(shapeName);
-    if (unit.size() < 3) return nullptr;
-
-    std::vector<CCPoint> verts;
-    verts.reserve(unit.size());
-    for (auto const& p : unit) verts.push_back(ccp(p.x * size, p.y * size));
-
     auto draw = PaimonDrawNode::create();
-    draw->drawPolygon(verts.data(), static_cast<unsigned int>(verts.size()),
-                      ccc4f(1, 1, 1, 1), 0, ccc4f(0, 0, 0, 0));
+    const ccColor4F white = ccc4f(1, 1, 1, 1);
+
+    if (canonicalId(shapeName) == "ring") {
+        const int segs = 96;
+        const float outer = 0.5f * size;
+        const float inner = 0.32f * size;
+        const float cx = 0.5f * size;
+        const float cy = 0.5f * size;
+        for (int i = 0; i < segs; ++i) {
+            float a0 = kTwoPi * static_cast<float>(i) / segs;
+            float a1 = kTwoPi * static_cast<float>(i + 1) / segs;
+            CCPoint o0 = ccp(cx + outer * cosf(a0), cy + outer * sinf(a0));
+            CCPoint o1 = ccp(cx + outer * cosf(a1), cy + outer * sinf(a1));
+            CCPoint i0 = ccp(cx + inner * cosf(a0), cy + inner * sinf(a0));
+            CCPoint i1 = ccp(cx + inner * cosf(a1), cy + inner * sinf(a1));
+            draw->drawTriangle(o0, o1, i1, white);
+            draw->drawTriangle(o0, i1, i0, white);
+        }
+    } else {
+        auto unit = unitOutline(shapeName);
+        if (unit.size() < 3) return nullptr;
+
+        std::vector<CCPoint> verts;
+        verts.reserve(unit.size());
+        for (auto const& p : unit) verts.push_back(ccp(p.x * size, p.y * size));
+        draw->drawSolidPolygon(verts, white);
+    }
 
     auto container = CCNode::create();
     container->setContentSize({size, size});

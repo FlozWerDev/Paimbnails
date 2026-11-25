@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "MenuMusicAddPopup.hpp"
 
 #include "../services/MenuMusicLibrary.hpp"
@@ -6,8 +7,8 @@
 #include "../services/YtDlpDownloader.hpp"
 #include "../services/YtDlpBootstrap.hpp"
 #include "../services/FfmpegBootstrap.hpp"
-#include "YtDlpInstallPopup.hpp"
-#include "FfmpegInstallPopup.hpp"
+#include "../services/SpotifyService.hpp"
+#include "ToolInstallPopupBase.hpp"
 
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/FileDialog.hpp"
@@ -73,52 +74,104 @@ void MenuMusicAddPopup::onExit() {
 void MenuMusicAddPopup::buildUrlSection() {
     auto size = m_mainLayer->getContentSize();
 
-    const CCSize panelSize{size.width - 28.f, 104.f};
+    const CCSize panelSize{size.width - 28.f, 114.f};
     const float panelY = size.height - 40.f - panelSize.height;
-    auto panel = paimon::ui::makePanel(panelSize, "Download from a link");
-    panel->setPosition({14.f, panelY});
-    panel->setID("url-panel"_spr);
-    m_mainLayer->addChild(panel, 2);
+    m_urlPanel = paimon::ui::makePanel(panelSize, "Music Sources");
+    m_urlPanel->setPosition({14.f, panelY});
+    m_urlPanel->setID("url-panel"_spr);
+    m_mainLayer->addChild(m_urlPanel, 2);
 
     const float innerTop = panelSize.height - paimon::ui::kPanelHeader;
 
-    m_ytDlpLabel = paimon::ui::makeText("", panelSize.width - 24.f, 0.4f,
-        paimon::ui::palette::muted, kCCTextAlignmentCenter);
-    if (m_ytDlpLabel) {
-        m_ytDlpLabel->setPosition({panelSize.width / 2.f, innerTop - 10.f});
-        m_ytDlpLabel->setID("ytdlp-status"_spr);
-        panel->addChild(m_ytDlpLabel, 3);
+    // source Selector Tabs Menu: [YouTube] [SoundCloud] [Spotify]
+    auto tabsMenu = CCMenu::create();
+    tabsMenu->setPosition({panelSize.width / 2.f, innerTop - 12.f});
+    tabsMenu->setLayout(
+        RowLayout::create()
+            ->setGap(6.f)
+            ->setAxisAlignment(AxisAlignment::Center)
+    );
+    tabsMenu->setID("source-tabs-menu"_spr);
+    m_urlPanel->addChild(tabsMenu, 3);
+
+    auto ytBtn = paimon::ui::makeButton("YouTube", [this] {
+        switchSourceTab(MusicSourceTab::YouTube);
+    }, paimon::ui::Btn::Red, 75.f, 0.44f);
+    tabsMenu->addChild(ytBtn);
+
+    auto scBtn = paimon::ui::makeButton("SoundCloud", [this] {
+        switchSourceTab(MusicSourceTab::SoundCloud);
+    }, paimon::ui::Btn::Pink, 85.f, 0.44f);
+    tabsMenu->addChild(scBtn);
+
+    auto spBtn = paimon::ui::makeButton("Spotify", [this] {
+        switchSourceTab(MusicSourceTab::Spotify);
+    }, paimon::ui::Btn::Green, 75.f, 0.44f);
+    tabsMenu->addChild(spBtn);
+
+    tabsMenu->updateLayout();
+
+    m_sourceDescLabel = paimon::ui::makeText(
+        "YouTube (Uso Personal) · Descarga local MP3",
+        panelSize.width - 24.f, 0.38f,
+        paimon::ui::palette::gold, kCCTextAlignmentCenter
+    );
+    if (m_sourceDescLabel) {
+        m_sourceDescLabel->setPosition({panelSize.width / 2.f, innerTop - 30.f});
+        m_sourceDescLabel->setID("source-desc-label"_spr);
+        m_urlPanel->addChild(m_sourceDescLabel, 3);
     }
 
-    m_urlInput = TextInput::create(panelSize.width * 0.62f, "Paste a YouTube/SoundCloud link");
+    // container 1: URL Download (YouTube & SoundCloud)
+    m_urlSubContainer = CCNode::create();
+    m_urlSubContainer->setContentSize({panelSize.width, 50.f});
+    m_urlSubContainer->setPosition({0.f, 0.f});
+    m_urlSubContainer->setID("url-subcontainer"_spr);
+    m_urlPanel->addChild(m_urlSubContainer, 3);
+
+    m_ytDlpLabel = paimon::ui::makeText("", panelSize.width - 24.f, 0.36f,
+        paimon::ui::palette::muted, kCCTextAlignmentCenter);
+    if (m_ytDlpLabel) {
+        m_ytDlpLabel->setPosition({panelSize.width / 2.f, 42.f});
+        m_ytDlpLabel->setID("ytdlp-status"_spr);
+        m_urlSubContainer->addChild(m_ytDlpLabel, 3);
+    }
+
+    m_urlInput = TextInput::create(panelSize.width * 0.62f, "Pega enlace de YouTube (youtube.com / youtu.be)");
     if (m_urlInput) {
         m_urlInput->setCommonFilter(geode::CommonFilter::Any);
-// preserve url punctuation that some geode builds omit from setcommonfilter.
-        if (auto* inner = m_urlInput->getInputNode()) {
-            inner->m_allowedChars = geode::getCommonFilterAllowedChars(geode::CommonFilter::Any);
-        }
         m_urlInput->setMaxCharCount(2048);
-        m_urlInput->setPosition({panelSize.width * 0.38f, innerTop - 36.f});
+        m_urlInput->setPosition({panelSize.width * 0.38f, 18.f});
         m_urlInput->setID("url-input"_spr);
         if (!m_initialUrl.empty()) m_urlInput->setString(m_initialUrl);
-        panel->addChild(m_urlInput, 3);
+        m_urlSubContainer->addChild(m_urlInput, 3);
     }
 
     auto actions = CCMenu::create();
     actions->setPosition({0.f, 0.f});
     actions->setID("url-actions"_spr);
-    panel->addChild(actions, 3);
+    m_urlSubContainer->addChild(actions, 3);
 
     if (auto* btn = paimon::ui::makeFrameButton("GJ_pasteBtn2_001.png", 0.9f,
             [this] { this->onPasteUrl(nullptr); })) {
-        btn->setPosition({panelSize.width * 0.76f, innerTop - 36.f});
+        btn->setPosition({panelSize.width * 0.76f, 18.f});
         actions->addChild(btn);
     }
     if (auto* btn = paimon::ui::makeFrameButton("GJ_downloadBtn_001.png", 0.9f,
             [this] { this->onStartDownload(nullptr); })) {
-        btn->setPosition({panelSize.width * 0.9f, innerTop - 36.f});
+        btn->setPosition({panelSize.width * 0.9f, 18.f});
         actions->addChild(btn);
     }
+
+    // container 2: Spotify Connect UI (Spotify Tab)
+    m_spotifySubContainer = CCNode::create();
+    m_spotifySubContainer->setContentSize({panelSize.width, 50.f});
+    m_spotifySubContainer->setPosition({0.f, 0.f});
+    m_spotifySubContainer->setID("spotify-subcontainer"_spr);
+    m_spotifySubContainer->setVisible(false);
+    m_urlPanel->addChild(m_spotifySubContainer, 3);
+
+    refreshSpotifyUI();
 
     auto helpMenu = CCMenu::create();
     helpMenu->setPosition({0.f, 0.f});
@@ -129,6 +182,160 @@ void MenuMusicAddPopup::buildUrlSection() {
         btn->setPosition({14.f + panelSize.width - 14.f, panelY + panelSize.height - 11.f});
         helpMenu->addChild(btn);
     }
+}
+
+void MenuMusicAddPopup::switchSourceTab(MusicSourceTab tab) {
+    m_currentSourceTab = tab;
+    if (m_urlSubContainer) {
+        m_urlSubContainer->setVisible(tab != MusicSourceTab::Spotify);
+    }
+    if (m_spotifySubContainer) {
+        m_spotifySubContainer->setVisible(tab == MusicSourceTab::Spotify);
+        if (tab == MusicSourceTab::Spotify) {
+            refreshSpotifyUI();
+        }
+    }
+
+    if (m_sourceDescLabel) {
+        if (tab == MusicSourceTab::YouTube) {
+            m_sourceDescLabel->setString("YouTube (Uso Personal) · Descarga local MP3");
+            m_sourceDescLabel->setColor(paimon::ui::palette::gold);
+            if (m_urlInput) m_urlInput->setPlaceholder("Pega enlace de YouTube (youtube.com / youtu.be)");
+        } else if (tab == MusicSourceTab::SoundCloud) {
+            m_sourceDescLabel->setString("SoundCloud (Legal) · Pistas publicas y Creative Commons");
+            m_sourceDescLabel->setColor(paimon::ui::palette::warning);
+            if (m_urlInput) m_urlInput->setPlaceholder("Pega enlace de SoundCloud (soundcloud.com)");
+        } else {
+            m_sourceDescLabel->setString("Spotify Connect · Vinculacion oficial sin descargas");
+            m_sourceDescLabel->setColor(paimon::ui::palette::success);
+        }
+    }
+}
+
+void MenuMusicAddPopup::refreshSpotifyUI() {
+    if (!m_spotifySubContainer) return;
+    m_spotifySubContainer->removeAllChildren();
+
+    auto const panelSize = m_spotifySubContainer->getContentSize();
+    bool linked = SpotifyService::get().isLinked();
+
+    if (!linked) {
+        auto* promptLbl = CCLabelBMFont::create("Ingresa tu usuario de Spotify para vincular:", "chatFont.fnt");
+        promptLbl->setScale(0.38f);
+        promptLbl->setPosition({panelSize.width * 0.38f, panelSize.height - 12.f});
+        promptLbl->setColor(paimon::ui::palette::muted);
+        m_spotifySubContainer->addChild(promptLbl);
+
+        m_spotifyUserInput = TextInput::create(panelSize.width * 0.44f, "Usuario de Spotify", "chatFont.fnt");
+        m_spotifyUserInput->setMaxCharCount(64);
+        m_spotifyUserInput->setPosition({panelSize.width * 0.28f, panelSize.height - 30.f});
+        m_spotifySubContainer->addChild(m_spotifyUserInput);
+
+        auto menu = CCMenu::create();
+        menu->setPosition({0, 0});
+        m_spotifySubContainer->addChild(menu);
+
+        auto linkBtn = paimon::ui::makeButton("Vincular", [this] {
+            onLinkSpotify();
+        }, paimon::ui::Btn::Green, 70.f, 0.44f);
+        linkBtn->setPosition({panelSize.width * 0.60f, panelSize.height - 30.f});
+        menu->addChild(linkBtn);
+
+        auto webBtn = paimon::ui::makeButton("Abrir Web", [] {
+            SpotifyService::get().openSpotifyAppOrWeb();
+        }, paimon::ui::Btn::Cyan, 70.f, 0.44f);
+        webBtn->setPosition({panelSize.width * 0.82f, panelSize.height - 30.f});
+        menu->addChild(webBtn);
+    } else {
+        std::string userStr = "✓ Conectado como: " + SpotifyService::get().getUserName();
+        auto* userLbl = CCLabelBMFont::create(userStr.c_str(), "goldFont.fnt");
+        userLbl->setScale(0.40f);
+        userLbl->setColor(paimon::ui::palette::success);
+        userLbl->setPosition({panelSize.width / 2.f, panelSize.height - 10.f});
+        m_spotifySubContainer->addChild(userLbl);
+
+        m_spotifyTrackInput = TextInput::create(panelSize.width * 0.58f, "Pega enlace de cancion (open.spotify.com/track/...)", "chatFont.fnt");
+        m_spotifyTrackInput->setMaxCharCount(2048);
+        m_spotifyTrackInput->setPosition({panelSize.width * 0.36f, panelSize.height - 30.f});
+        m_spotifySubContainer->addChild(m_spotifyTrackInput);
+
+        auto menu = CCMenu::create();
+        menu->setPosition({0, 0});
+        m_spotifySubContainer->addChild(menu);
+
+        auto addTrackBtn = paimon::ui::makeButton("Agregar al Disco", [this] {
+            onAddSpotifyTrack();
+        }, paimon::ui::Btn::Green, 95.f, 0.42f);
+        addTrackBtn->setPosition({panelSize.width * 0.74f, panelSize.height - 30.f});
+        menu->addChild(addTrackBtn);
+
+        auto unlinkBtn = paimon::ui::makeButton("Salir", [this] {
+            onUnlinkSpotify();
+        }, paimon::ui::Btn::Red, 50.f, 0.42f);
+        unlinkBtn->setPosition({panelSize.width * 0.92f, panelSize.height - 30.f});
+        menu->addChild(unlinkBtn);
+    }
+}
+
+void MenuMusicAddPopup::onAddSpotifyTrack() {
+    if (!m_spotifyTrackInput) return;
+    auto url = m_spotifyTrackInput->getString();
+    if (url.empty()) {
+        Notification::create("Pega un enlace de cancion de Spotify.", NotificationIcon::Warning)->show();
+        return;
+    }
+    if (url.find("spotify.com") == std::string::npos && url.find("spotify:") == std::string::npos) {
+        Notification::create("El enlace debe ser de Spotify (ej. open.spotify.com/track/...)", NotificationIcon::Warning)->show();
+        return;
+    }
+
+    if (m_statusLabel) {
+        m_statusLabel->setString("Descargando banner de album de Spotify...");
+        m_statusLabel->setColor(paimon::ui::palette::gold);
+    }
+
+    auto weakThis = geode::WeakRef<cocos2d::CCNode>(this);
+    SpotifyService::get().fetchSpotifyTrack(url, [weakThis](bool ok, std::string title, std::string artist, std::string) {
+        auto ref = weakThis.lock();
+        auto* self = ref ? typeinfo_cast<MenuMusicAddPopup*>(ref.data()) : nullptr;
+        if (!self || !self->m_alive.load()) return;
+
+        if (ok) {
+            if (self->m_statusLabel) {
+                self->m_statusLabel->setString(fmt::format("Agregada con banner: {} ({})", title, artist).c_str());
+                self->m_statusLabel->setColor(paimon::ui::palette::success);
+            }
+            if (self->m_spotifyTrackInput) self->m_spotifyTrackInput->setString("");
+            Notification::create("Cancion de Spotify anadida con banner al disco!", NotificationIcon::Success, 3.5f)->show();
+        } else {
+            if (self->m_statusLabel) {
+                self->m_statusLabel->setString("Error al obtener datos de Spotify.");
+                self->m_statusLabel->setColor(paimon::ui::palette::danger);
+            }
+            Notification::create("No se pudo obtener informacion de la cancion.", NotificationIcon::Error)->show();
+        }
+    });
+}
+
+void MenuMusicAddPopup::onLinkSpotify() {
+    std::string user = m_spotifyUserInput ? m_spotifyUserInput->getString() : "";
+    if (user.empty()) {
+        user = "Usuario Spotify";
+    }
+    SpotifyService::get().linkAccount(user);
+    Notification::create("Cuenta de Spotify vinculada!", NotificationIcon::Success)->show();
+    refreshSpotifyUI();
+}
+
+void MenuMusicAddPopup::onUnlinkSpotify() {
+    SpotifyService::get().unlinkAccount();
+    Notification::create("Cuenta de Spotify desvinculada.", NotificationIcon::Info)->show();
+    refreshSpotifyUI();
+}
+
+void MenuMusicAddPopup::onSpotifyMediaCmd(std::string const& cmd) {
+    SpotifyService::get().sendMediaCommand(cmd);
+    Notification::create("Comando enviado a Spotify", NotificationIcon::Info, 1.2f)->show();
 }
 
 void MenuMusicAddPopup::buildLocalSection() {
@@ -181,9 +388,6 @@ void MenuMusicAddPopup::buildLocalSection() {
     m_nameInput = TextInput::create(panelSize.width * 0.8f, "Display name (optional)");
     if (m_nameInput) {
         m_nameInput->setCommonFilter(geode::CommonFilter::Any);
-        if (auto* inner = m_nameInput->getInputNode()) {
-            inner->m_allowedChars = geode::getCommonFilterAllowedChars(geode::CommonFilter::Any);
-        }
         m_nameInput->setMaxCharCount(120);
         m_nameInput->setPosition({panelSize.width / 2.f, innerTop - 72.f});
         m_nameInput->setID("name-input"_spr);
@@ -266,6 +470,10 @@ void MenuMusicAddPopup::updateProgressBar(float ratio01) {
 
 void MenuMusicAddPopup::refreshStatus() {
     if (!m_ytDlpLabel) return;
+#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
+    m_ytDlpLabel->setString("En movil: usa Newgrounds, Spotify o 'Importar archivo local'");
+    m_ytDlpLabel->setColor(paimon::ui::palette::muted);
+#else
     auto& boot = YtDlpBootstrap::get();
     if (boot.exists()) {
         m_ytDlpLabel->setString("Ready - paste a link and press the download button");
@@ -274,6 +482,7 @@ void MenuMusicAddPopup::refreshStatus() {
         m_ytDlpLabel->setString("The first download installs a small helper (~17 MB, one time)");
         m_ytDlpLabel->setColor(paimon::ui::palette::warning);
     }
+#endif
 }
 
 void MenuMusicAddPopup::onPickAudio(CCObject*) {
@@ -286,9 +495,9 @@ void MenuMusicAddPopup::onPickAudio(CCObject*) {
         if (!res) return;
         auto v = res.unwrap();
         if (!v.has_value()) return;
-        self->m_pendingAudioPath = geode::utils::string::pathToString(v.value());
+        self->m_pendingAudioPath = paimon::paths::toUtf8(v.value());
         if (self->m_audioPathLabel) {
-            self->m_audioPathLabel->setString(geode::utils::string::pathToString(v.value().filename()).c_str());
+            self->m_audioPathLabel->setString(paimon::paths::toUtf8(v.value().filename()).c_str());
         }
     });
 }
@@ -303,9 +512,9 @@ void MenuMusicAddPopup::onPickCover(CCObject*) {
         if (!res) return;
         auto v = res.unwrap();
         if (!v.has_value()) return;
-        self->m_pendingCoverPath = geode::utils::string::pathToString(v.value());
+        self->m_pendingCoverPath = paimon::paths::toUtf8(v.value());
         if (self->m_coverPathLabel) {
-            self->m_coverPathLabel->setString(geode::utils::string::pathToString(v.value().filename()).c_str());
+            self->m_coverPathLabel->setString(paimon::paths::toUtf8(v.value().filename()).c_str());
         }
     });
 }
@@ -328,7 +537,7 @@ void MenuMusicAddPopup::finalizeLocalImport() {
 
     auto& lib = MenuMusicLibrary::get();
     auto id = lib.generateId("local");
-    auto ext = geode::utils::string::pathToString(audioP.extension());
+    auto ext = paimon::paths::toUtf8(audioP.extension());
     auto destAudio = lib.getTracksDir() / (id + ext);
     std::error_code ec;
     std::filesystem::create_directories(destAudio.parent_path(), ec);
@@ -343,19 +552,19 @@ void MenuMusicAddPopup::finalizeLocalImport() {
     if (!m_pendingCoverPath.empty()) {
         auto coverP = std::filesystem::path(m_pendingCoverPath);
         if (MenuMusicLibrary::isImageExtension(coverP)) {
-            auto destCover = lib.getCoversDir() / (id + geode::utils::string::pathToString(coverP.extension()));
+            auto destCover = lib.getCoversDir() / (id + paimon::paths::toUtf8(coverP.extension()));
             std::filesystem::copy_file(coverP, destCover,
                 std::filesystem::copy_options::overwrite_existing, ec);
-            if (!ec) destCoverStr = geode::utils::string::pathToString(destCover);
+            if (!ec) destCoverStr = paimon::paths::toUtf8(destCover);
         }
     }
 
     std::string name = m_nameInput ? std::string(m_nameInput->getString()) : std::string();
-    if (name.empty()) name = geode::utils::string::pathToString(audioP.stem());
+    if (name.empty()) name = paimon::paths::toUtf8(audioP.stem());
 
     MusicTrack track;
     track.id = id;
-    track.audioPath = geode::utils::string::pathToString(destAudio);
+    track.audioPath = paimon::paths::toUtf8(destAudio);
     track.coverPath = destCoverStr;
     track.displayName = name;
     track.source = TrackSource::Local;
@@ -382,6 +591,41 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
     if (m_busy) {
         Notification::create("Download already in progress...", NotificationIcon::Info)->show();
         return;
+    }
+
+    // intercept Spotify links to direct users to account linking
+    if (url.find("spotify.com") != std::string::npos) {
+        Notification::create(
+            "Spotify requiere vincular tu cuenta (pestana Spotify). No admite descarga directa.",
+            NotificationIcon::Warning, 4.0f
+        )->show();
+        switchSourceTab(MusicSourceTab::Spotify);
+        return;
+    }
+
+    // enforce source rules: YouTube tab only accepts YouTube/Newgrounds; SoundCloud tab only accepts SoundCloud
+    if (m_currentSourceTab == MusicSourceTab::YouTube) {
+        if (url.find("soundcloud.com") != std::string::npos) {
+            switchSourceTab(MusicSourceTab::SoundCloud);
+        } else if (url.find("youtube.com") == std::string::npos &&
+                   url.find("youtu.be") == std::string::npos &&
+                   parseNewgroundsSongId(url) == 0) {
+            Notification::create(
+                "Solo se admiten enlaces de YouTube (o Newgrounds) en esta seccion.",
+                NotificationIcon::Warning, 3.5f
+            )->show();
+            return;
+        }
+    } else if (m_currentSourceTab == MusicSourceTab::SoundCloud) {
+        if (url.find("youtube.com") != std::string::npos || url.find("youtu.be") != std::string::npos) {
+            switchSourceTab(MusicSourceTab::YouTube);
+        } else if (url.find("soundcloud.com") == std::string::npos && parseNewgroundsSongId(url) == 0) {
+            Notification::create(
+                "Solo se admiten enlaces de SoundCloud en esta seccion.",
+                NotificationIcon::Warning, 3.5f
+            )->show();
+            return;
+        }
     }
 
 // newgrounds links/ids use gd's downloader, then register the resulting mp3.
@@ -452,6 +696,17 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
         return;
     }
 
+#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
+    if (m_statusLabel) {
+        m_statusLabel->setString("Descarga directa de URL solo disponible en PC; usa Newgrounds o archivo local.");
+        m_statusLabel->setColor({255, 190, 110});
+    }
+    Notification::create(
+        "yt-dlp no esta soportado en movil. Usa un ID/enlace de Newgrounds o 'Importar archivo local'.",
+        NotificationIcon::Warning, 4.0f)->show();
+    return;
+#endif
+
     auto& bootstrap = YtDlpBootstrap::get();
     if (!bootstrap.exists()) {
         if (m_statusLabel) {
@@ -479,7 +734,21 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
                 }
 
 // m_alive and weakref guard ui access during install.
-                auto installPopup = YtDlpInstallPopup::create(
+                ToolInstallPopupConfig ytConfig;
+                ytConfig.popupW = 400.f;
+                ytConfig.popupH = 220.f;
+                ytConfig.title = "Installing yt-dlp";
+                ytConfig.infoTitle = "yt-dlp";
+                ytConfig.infoBody =
+                    "yt-dlp is the <cy>audio downloader</c> Paimbnails uses to fetch songs from "
+                    "online sources. It downloads <cg>once</c> (~17 MB) and is kept bundled with the mod.";
+                ytConfig.headline = "Downloading the audio downloader (one-time, ~17 MB)";
+                ytConfig.barW = 320.f;
+                ytConfig.fillColor = {120, 220, 255, 255};
+                ytConfig.successMessage = "yt-dlp installed - starting download...";
+                ytConfig.pathLimit = 60;
+                auto installPopup = ToolInstallPopupBase::createForTool(
+                    ytConfig, YtDlpBootstrap::get(),
                     [weakThis](bool ok) {
                         auto ref = weakThis.lock();
                         auto* self = typeinfo_cast<MenuMusicAddPopup*>(ref.data());
@@ -530,7 +799,21 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
                     return;
                 }
 
-                auto installPopup = FfmpegInstallPopup::create(
+                ToolInstallPopupConfig ffConfig;
+                ffConfig.popupW = 420.f;
+                ffConfig.popupH = 230.f;
+                ffConfig.title = "Installing ffmpeg";
+                ffConfig.infoTitle = "ffmpeg";
+                ffConfig.infoBody =
+                    "ffmpeg is the <cy>audio converter</c> Paimbnails uses to decode and re-encode "
+                    "songs. It downloads <cg>once</c> (~80 MB) and is kept bundled with the mod.";
+                ffConfig.headline = "Downloading audio converter (one-time, ~80 MB)";
+                ffConfig.barW = 340.f;
+                ffConfig.fillColor = {180, 140, 255, 255};
+                ffConfig.successMessage = "ffmpeg installed - resuming download...";
+                ffConfig.pathLimit = 62;
+                auto installPopup = ToolInstallPopupBase::createForTool(
+                    ffConfig, FfmpegBootstrap::get(),
                     [weakThis](bool ok) {
                         auto ref = weakThis.lock();
                         auto* self = typeinfo_cast<MenuMusicAddPopup*>(ref.data());
@@ -639,7 +922,7 @@ void MenuMusicAddPopup::onStartDownload(CCObject*) {
             t.audioPath = result.audioPath;
             t.coverPath = result.coverPath;
             t.displayName = result.displayName.empty()
-                ? geode::utils::string::pathToString(std::filesystem::path(result.audioPath).stem())
+                ? paimon::paths::toUtf8(std::filesystem::path(result.audioPath).stem())
                 : result.displayName;
             t.artist = result.artist;
             t.sourceUrl = url;
@@ -682,7 +965,7 @@ void MenuMusicAddPopup::onPasteUrl(CCObject*) {
 
 void MenuMusicAddPopup::onOpenYtDlpHelp(CCObject*) {
     auto bundle = YtDlpBootstrap::get().bundledPath();
-    auto bundleStr = geode::utils::string::pathToString(bundle);
+    auto bundleStr = paimon::paths::toUtf8(bundle);
     bool installed = YtDlpBootstrap::get().exists();
 
     std::string msg = installed

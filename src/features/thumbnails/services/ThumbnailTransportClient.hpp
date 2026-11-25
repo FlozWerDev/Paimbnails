@@ -10,6 +10,7 @@
 #include <mutex>
 #include <atomic>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class ThumbnailTransportClient {
@@ -115,6 +116,9 @@ private:
     static constexpr int BATCH_LIST_FLUSH_DELAY_MS = 50;
     static constexpr size_t BATCH_LIST_MAX_IDS = 40;
     std::vector<int> m_batchListPending;
+    // ids whose requesters passed forceRefresh: a stale cache must not be
+    // reported as success for them, only fresh data or failure.
+    std::unordered_set<int> m_batchListForceRefresh;
     std::mutex m_batchListMutex;
     std::atomic<bool> m_batchListFlushScheduled{false};
     void scheduleBatchListFlush();
@@ -129,4 +133,9 @@ private:
     void invalidateRatingCache(int levelId, std::string const& thumbnailId = "");
 
     cocos2d::CCTexture2D* loadFromLocal(int levelId);
+
+    // E4: transport-side SSRF/size gate for arbitrary-URL fetches.
+    // HttpClient owns wire-level checks; this is the pre-decode abort.
+    static constexpr size_t kMaxUrlDownloadBytes = 8u * 1024 * 1024;
+    static bool isUrlAllowed(std::string const& url);
 };

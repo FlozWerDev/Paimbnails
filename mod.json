@@ -1,10 +1,10 @@
 {
-  "geode": "5.11.1",
+  "geode": "6.0.0",
   "gd": {
-    "win": "2.2081",
-    "android": "2.2081"
+    "win": "2.2091",
+    "android": "2.2091"
   },
-  "version": "v1.2.0",
+  "version": "v1.2.5",
   "id": "flozwer.paimbnails2",
   "name": "Paimbnails",
   "developer": "FlozWer",
@@ -17,14 +17,16 @@
 
 
   "resources": {
-    "sprites": ["resources/*.png", "Logo.png"],
+    "sprites": ["resources/*.png", "logo.png"],
     "files": [
       "resources/shaders/*.glsl",
       "resources/shaders/*.fsh",
       "resources/shaders/*.vert",
       "resources/overlay/*.html",
       "resources/overlay/*.css",
-      "resources/overlay/*.js"
+      "resources/overlay/*.js",
+      "resources/wallpaper/*.js",
+      "resources/wallpaper/*.txt"
     ]
   },
   "settings": {
@@ -81,7 +83,8 @@
       "type": "bool",
       "name": "Smooth Scroll",
       "description": "Smooth mouse wheel scrolling in menus and lists.",
-      "default": true
+      "default": true,
+      "platforms": ["win", "mac"]
     },
     "search-history-title": {
       "name": "Search History",
@@ -259,8 +262,8 @@
     "menu-music-cover-debug": {
       "type": "bool",
       "name": "Menu Music Cover Debug",
-      "description": "Log cover loading diagnostics to Geode console and saveDir/menu-music/cover-debug.log (works even when Debug Logs is off).",
-      "default": true
+      "description": "When enabled, log cover loading diagnostics to the Geode console and saveDir/menu-music/cover-debug.log, even when Debug Logs is off.",
+      "default": false
     },
     "open-menu-music-folder": {
       "type": "button",
@@ -289,6 +292,31 @@
       "default": 2.0,
       "min": 0.5,
       "max": 5.0
+    },
+    "menuLoopNotificationStyle": {
+      "type": "string",
+      "name": "Notification Animation",
+      "description": "How the Now Playing toast enters and leaves: expand (drops in from the top edge), slide, bounce, elastic, fade, or none.",
+      "default": "expand",
+      "one-of": ["expand", "slide", "bounce", "elastic", "fade", "none"]
+    },
+    "menuLoopNotificationSpeed": {
+      "type": "float",
+      "name": "Notification Animation Speed",
+      "description": "Speed multiplier for the Now Playing toast entry and exit. 2.0 plays them twice as fast.",
+      "default": 1.0,
+      "min": 0.25,
+      "max": 3.0,
+      "control": { "slider": true }
+    },
+    "menuLoopNotificationIntensity": {
+      "type": "float",
+      "name": "Notification Animation Intensity",
+      "description": "How strong the small rebound of the Now Playing toast is (0 = almost none, 1 = maximum).",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 1.0,
+      "control": { "slider": true }
     },
     "menuLoopCustomPrefix": {
       "type": "string",
@@ -446,14 +474,8 @@
     "global-icons-enabled": {
       "type": "bool",
       "name": "Global Icons",
-      "description": "Show other players' shared custom icons on their profile, and share yours from the profile settings gear. Requires the More Icons mod.",
+      "description": "Show what other players link to their global icon on their profile (custom More Icons textures and Icon Gradients), and link yours from the profile settings gear. Stored in Paimon Base.",
       "default": true
-    },
-    "global-icon-server-url": {
-      "type": "string",
-      "name": "Global Icon Server URL",
-      "description": "Base URL of your deployed Global Icon server (Vercel). Must match the server whose PAIMON_API_KEY equals the mod's API key.",
-      "default": "https://global-icons.vercel.app"
     },
     "custom-hover-enabled": {
       "type": "bool",
@@ -495,7 +517,8 @@
       "type": "bool",
       "name": "Custom Cursor",
       "description": "Replace the OS cursor with a custom image. Click-state tracking idea inspired by Ecuet's Custom Cursor mod; implemented independently. The cursor shop browses rw-designer.com and custom-cursor.com with credit to each store and author; files download only when you install them.",
-      "default": false
+      "default": false,
+      "platforms": ["win", "mac"]
     },
     "smooth-text-enabled": {
       "type": "bool",
@@ -563,6 +586,7 @@
       "name": "Open Settings Panel",
       "description": "Key to open/close the Paimon settings panel.",
       "default": "Ctrl+P",
+      "category": "universal",
       "allow-in-text-inputs": false
     },
     "versus-card-1-keybind": {
@@ -593,14 +617,32 @@
       "type": "keybind",
       "name": "Open Capture Menu",
       "description": "Key (or mouse button) that opens the capture menu when not playing. Works as an alternative or replacement for right-click. Examples: A, Ctrl+A.",
-      "default": "",
+      "category": "universal",
+      "default": [],
+      "allow-in-text-inputs": false
+    },
+    "feedback-keybind": {
+      "type": "keybind",
+      "name": "Paimon Feedback",
+      "description": "Opens the feedback panel with an annotated screenshot of the current screen. Draw with the pencil, write what could be improved, and send it.",
+      "default": "Ctrl+R",
+      "category": "universal",
+      "allow-in-text-inputs": false
+    },
+    "paimon-assistant-keybind": {
+      "type": "keybind",
+      "name": "Paimon Assistant (Computer Use)",
+      "description": "Opens the Paimon computer-use overlay: blurred screen, ask Paimon anything, pick Normal / High / Ultra effort. Ctrl+J toggles, Enter sends.",
+      "default": "Ctrl+J",
+      "category": "universal",
       "allow-in-text-inputs": false
     },
     "capture-menu-rightclick": {
       "type": "bool",
       "name": "Open Capture Menu with Right-Click",
       "description": "When enabled, right-click opens the capture menu (default behavior). Disable it if you prefer to use only the 'Open Capture Menu' keybind above.",
-      "default": true
+      "default": true,
+      "platforms": ["win", "mac"]
     },
     "golden-best-title": {
       "name": "Golden Best",
@@ -770,22 +812,22 @@
       }
     },
     "maintenance-title": {
-      "name": "Moderation Maintenance",
-      "description": "Moderator verification and maintenance actions",
+      "name": "Paimbnails Account & Session",
+      "description": "Unified login, granted permissions and moderation access",
       "type": "title"
     },
     "maintenance-refresh-mod-code": {
       "type": "button",
-      "name": "Moderation Security",
-      "description": "Verify your session with the server, connect your Geometry Dash account and open the moderation center.",
+      "name": "Account & Permissions",
+      "description": "Sign in to Paimbnails with 1-click or manual GD verification, view your granted permissions and open moderation if authorized.",
       "buttons": {
         "run": "Open"
       }
     },
     "maintenance-copy-mod-code": {
       "type": "button",
-      "name": "Moderation Session",
-      "description": "Manage your session without exposing your private credential.",
+      "name": "Manage Session",
+      "description": "Refresh your permissions or log out and revoke your session without exposing your private credential.",
       "buttons": {
         "run": "Manage"
       }
@@ -802,14 +844,14 @@
       "default": true
     },
     "texture-studio-title": {
-      "name": "Pack Gen",
+      "name": "Texture Live",
       "description": "Live color slots for the game UI. Recoloring inspired by PackGen by Asterveila and ravexcode. Works locally with GPU rendering.",
       "type": "title"
     },
     "texture-studio-enabled": {
       "type": "bool",
-      "name": "Enable Pack Gen",
-      "description": "Enable live color slots and show Pack Gen in the main menu.",
+      "name": "Enable Live Colors",
+      "description": "Apply your palette to buttons and menu UI, and show Texture Live in the main menu.",
       "default": true
     },
     "comment-mentions-title": {
@@ -919,6 +961,12 @@
       "type": "bool",
       "name": "Redesign Messages",
       "description": "GD-style inbox with player icons from the native friend cache, unread counter, local search, quick reply, profile shortcuts and one-tap select-read for bulk cleanup.",
+      "default": true
+    },
+    "thread-images-enabled": {
+      "type": "bool",
+      "name": "Images in Message Groups",
+      "description": "Send and view images and GIFs inside group and DM threads. Other Paimbnails users see them inline.",
       "default": true
     },
     "msgnotif-title": {
@@ -1428,6 +1476,53 @@
       "category": "editor",
       "allow-in-text-inputs": false
     },
+    "editor-optimizer-title": {
+      "name": "Structure Optimizer",
+      "description": "Merges aligned blocks into fewer stretched objects while respecting corner pieces and collision limits.",
+      "type": "title"
+    },
+    "editor-optimizer-enable": {
+      "type": "bool",
+      "name": "Enable Structure Optimizer",
+      "description": "Adds a Structure Optimizer tool to the level editor. It merges aligned identical blocks into fewer stretched objects within safe collision/decoration length caps while keeping corner blocks and L-corners untouched.",
+      "default": true
+    },
+    "editor-optimizer-keybind": {
+      "type": "keybind",
+      "name": "Open Structure Optimizer (Editor)",
+      "description": "Opens the Structure Optimizer panel inside the level editor.",
+      "default": "Ctrl+Shift+O",
+      "category": "editor",
+      "allow-in-text-inputs": false
+    },
+    "editor-mcp-title": {
+      "name": "Editor MCP (AI Bridge)",
+      "description": "Local Model Context Protocol (MCP) server for AI level building, decoration, triggers, and 1:1 live rendering.",
+      "type": "title"
+    },
+    "editor-mcp-enable": {
+      "type": "bool",
+      "name": "Enable Editor MCP Server",
+      "description": "Runs a local MCP server (http://127.0.0.1:21690/mcp) so AI assistants can inspect, build, decorate, configure triggers/colors, and capture 1:1 OpenGL renders of your level.",
+      "default": true
+    },
+    "editor-mcp-port": {
+      "type": "int",
+      "name": "Editor MCP Port",
+      "description": "Localhost TCP port for the Geometry Dash Editor MCP server.",
+      "default": 21690,
+      "min": 1024,
+      "max": 65535,
+      "enable-if": "editor-mcp-enable"
+    },
+    "editor-mcp-keybind": {
+      "type": "keybind",
+      "name": "Open Editor MCP Panel (Editor)",
+      "description": "Opens the Editor MCP status, 1:1 render preview, and AI config copy popup inside the level editor.",
+      "default": "Ctrl+Shift+M",
+      "category": "editor",
+      "allow-in-text-inputs": false
+    },
     "collab-title": {
       "name": "Collab Editor",
       "description": "Real-time collaborative level editing over a dedicated server.",
@@ -1482,13 +1577,15 @@
     "input-scroll-title": {
       "name": "Input Scroll",
       "description": "Scroll the mouse wheel over a numeric text input to change its value one at a time. Hold a modifier for fine 0.10 steps on decimal inputs.",
-      "type": "title"
+      "type": "title",
+      "platforms": ["win", "mac"]
     },
     "input-scroll-enable": {
       "type": "bool",
       "name": "Enable Input Scroll",
       "description": "Hover a numeric text input and scroll the wheel to add or subtract 1 to its value.",
-      "default": true
+      "default": true,
+      "platforms": ["win", "mac"]
     },
     "input-scroll-step": {
       "type": "int",
@@ -1497,7 +1594,8 @@
       "default": 1,
       "min": 1,
       "max": 1000,
-      "enable-if": "input-scroll-enable"
+      "enable-if": "input-scroll-enable",
+      "platforms": ["win", "mac"]
     },
     "input-scroll-decimal-modifier": {
       "type": "string",
@@ -1505,7 +1603,8 @@
       "description": "Hold this key while scrolling on a decimal input to step by the decimal amount. Fn is not detectable on Windows, so pick Shift/Ctrl/Alt instead.",
       "default": "shift",
       "one-of": ["shift", "ctrl", "alt"],
-      "enable-if": "input-scroll-enable"
+      "enable-if": "input-scroll-enable",
+      "platforms": ["win", "mac"]
     },
     "input-scroll-decimal-step": {
       "type": "float",
@@ -1514,7 +1613,8 @@
       "default": 0.10,
       "min": 0.001,
       "max": 10.0,
-      "enable-if": "input-scroll-enable"
+      "enable-if": "input-scroll-enable",
+      "platforms": ["win", "mac"]
     },
     "input-scroll-decimal-places": {
       "type": "int",
@@ -1523,21 +1623,24 @@
       "default": 2,
       "min": 1,
       "max": 6,
-      "enable-if": "input-scroll-enable"
+      "enable-if": "input-scroll-enable",
+      "platforms": ["win", "mac"]
     },
     "input-scroll-focus-only": {
       "type": "bool",
       "name": "Only When Focused",
       "description": "Only change the value when the input is focused (cursor active). If off, hovering the input is enough.",
       "default": false,
-      "enable-if": "input-scroll-enable"
+      "enable-if": "input-scroll-enable",
+      "platforms": ["win", "mac"]
     },
     "input-scroll-wrap": {
       "type": "bool",
       "name": "Wrap Around Limits",
       "description": "When the value would overflow the input's max length, wrap around instead of clamping.",
       "default": false,
-      "enable-if": "input-scroll-enable"
+      "enable-if": "input-scroll-enable",
+      "platforms": ["win", "mac"]
     },
     "twitch-requests-title": {
       "name": "Level Requests (Web / Twitch / YouTube / Kick / TikTok)",
@@ -1562,7 +1665,8 @@
       "name": "OBS Stream Overlay",
       "description": "Serve the current level and request queue at http://localhost:21680/overlay for an OBS Browser Source.",
       "default": false,
-      "enable-if": "twitch-requests-enabled"
+      "enable-if": "twitch-requests-enabled",
+      "platforms": ["win", "mac"]
     },
     "twitch-requests-channel": {
       "type": "string",
@@ -1636,7 +1740,7 @@
     "info-mod-ids": {
       "type": "bool",
       "name": "Visible IDs",
-      "description": "Shows level, list, comment and user ids directly on cells and profiles.",
+      "description": "Shows level, list and comment ids directly on cells, and adds an info button to profiles.",
       "default": true,
       "enable-if": "info-suite-enable"
     },
@@ -1656,8 +1760,8 @@
     },
     "info-ids-users": {
       "type": "bool",
-      "name": "IDs on Profiles",
-      "description": "Show the user id and account id on the profile page.",
+      "name": "Profile Info Button",
+      "description": "Adds a cyan info button to the profile's left column with the user id, account id, estimated creation date and every public detail of the account.",
       "default": true,
       "enable-if": "info-mod-ids"
     },
@@ -1674,12 +1778,13 @@
       "name": "Hold Shift To Reveal",
       "description": "Keeps ids hidden until you hold Shift. Useful when recording or streaming.",
       "default": false,
-      "enable-if": "info-mod-ids"
+      "enable-if": "info-mod-ids",
+      "platforms": ["win", "mac"]
     },
     "info-ids-color": {
       "type": "rgb",
       "name": "ID Color",
-      "description": "Color of the id text drawn on cells and profiles.",
+      "description": "Color of the id text drawn on cells.",
       "default": [255, 255, 255],
       "enable-if": "info-mod-ids"
     },

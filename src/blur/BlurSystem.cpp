@@ -1,5 +1,6 @@
 #include "BlurSystem.hpp"
 #include "BlurDiskCache.hpp"
+#include "../utils/HashKey.hpp"
 #include "../utils/UrlKeyNormalize.hpp"
 
 #include <Geode/utils/cocos.hpp>
@@ -38,17 +39,34 @@ static std::string makeDiskKey(BlurSystem::BlurKey const& k, BlurSystem::BlurFla
         }
         c = '_';
     }
+    if (safe.size() > 32) {
+        // hash long keys with 64-bit fnv-1a so the filename stays under
+        // windows MAX_PATH.
+        safe = fmt::format("{}_{:016x}", safe.substr(0, 16), paimon::hash::fnv1a64(safe));
+    }
     char const* styleStr = (flavor == BlurSystem::BlurFlavor::Paimon) ? "paimon" : "gauss";
     return fmt::format("{}_{}_q{}_{}x{}",
         safe, styleStr, k.intensityBucket, k.w, k.h);
 }
 
-CCTexture2D* BlurSystem::lookupBlur(BlurKey const& k) {
-    auto it = m_blurCache.find(k);
-    if (it == m_blurCache.end()) return nullptr;
+void BlurSystem::touchKey(BlurKey const& k, CacheMap::iterator it) {
     m_blurLru.erase(it->second.lruIt);
     m_blurLru.push_front(k);
     it->second.lruIt = m_blurLru.begin();
+}
+
+static std::size_t textureBytes(CCTexture2D* tex) {
+    if (!tex) return 0;
+    int w = tex->getPixelsWide();
+    int h = tex->getPixelsHigh();
+    if (w <= 0 || h <= 0) return 0;
+    return static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4;
+}
+
+CCTexture2D* BlurSystem::lookupBlur(BlurKey const& k) {
+    auto it = m_blurCache.find(k);
+    if (it == m_blurCache.end()) return nullptr;
+    touchKey(k, it);
     return it->second.texture.data();
 }
 
@@ -57,16 +75,23 @@ void BlurSystem::insertBlur(BlurKey const& k, CCTexture2D* tex) {
 
     auto existing = m_blurCache.find(k);
     if (existing != m_blurCache.end()) {
+        m_blurCacheBytes -= textureBytes(existing->second.texture.data());
         existing->second.texture = tex;
-        m_blurLru.erase(existing->second.lruIt);
-        m_blurLru.push_front(k);
-        existing->second.lruIt = m_blurLru.begin();
+        m_blurCacheBytes += textureBytes(tex);
+        touchKey(k, existing);
         return;
     }
 
-    while (m_blurCache.size() >= MAX_BLUR_CACHE_ENTRIES && !m_blurLru.empty()) {
-        auto const& oldKey = m_blurLru.back();
-        m_blurCache.erase(oldKey);
+    auto const incomingBytes = textureBytes(tex);
+    while ((m_blurCache.size() >= MAX_BLUR_CACHE_ENTRIES ||
+            m_blurCacheBytes + incomingBytes > MAX_BLUR_CACHE_BYTES) &&
+           !m_blurLru.empty()) {
+        auto const oldKey = m_blurLru.back();
+        auto old = m_blurCache.find(oldKey);
+        if (old != m_blurCache.end()) {
+            m_blurCacheBytes -= textureBytes(old->second.texture.data());
+            m_blurCache.erase(old);
+        }
         m_blurLru.pop_back();
     }
 
@@ -75,16 +100,21 @@ void BlurSystem::insertBlur(BlurKey const& k, CCTexture2D* tex) {
     e.lruIt = m_blurLru.begin();
     e.texture = tex;
     m_blurCache.emplace(k, std::move(e));
+    m_blurCacheBytes += incomingBytes;
 }
 
 CCSprite* BlurSystem::spriteFromCachedTexture(CCTexture2D* tex) {
     if (!tex) return nullptr;
+    // blur job textures are stored pre-oriented (every job pass reads its
+    // input with flipY, which cancels the rt readback inversion), so a
+    // plain wrap displays them upright; disk hits keep the same layout.
     return CCSprite::createWithTexture(tex);
 }
 
 void BlurSystem::clearBlurCache() {
     m_blurCache.clear();
     m_blurLru.clear();
+    m_blurCacheBytes = 0;
 }
 
 void BlurSystem::destroy() {
@@ -102,12 +132,19 @@ void BlurSystem::abortJobs() {
     }
     m_runningJobs.clear();
 
+    // copy callback lists before invoking: a callback may reenter
+    // requestBlur() and mutate m_inFlight while we iterate.
+    std::vector<std::vector<std::function<void(cocos2d::CCSprite*)>>> pending;
+    pending.reserve(m_inFlight.size());
     for (auto& [key, callbacks] : m_inFlight) {
+        pending.push_back(std::move(callbacks));
+    }
+    m_inFlight.clear();
+    for (auto& callbacks : pending) {
         for (auto& cb : callbacks) {
             if (cb) cb(nullptr);
         }
     }
-    m_inFlight.clear();
     m_pendingJobs.clear();
     m_activeJobCount = 0;
 

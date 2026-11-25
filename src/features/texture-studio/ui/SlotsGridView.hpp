@@ -14,6 +14,7 @@ namespace paimon::texture_studio {
 
 class SlotsGridView : public cocos2d::CCNode {
 public:
+    using cocos2d::CCNode::init;
     using SlotActionCallback = std::function<void(std::string const& slotId)>;
 
     static SlotsGridView* create(float width, float height,

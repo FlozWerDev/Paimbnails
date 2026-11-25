@@ -42,7 +42,7 @@ inline void reveal(cocos2d::CCNode* node, RevealOpts const& opts, float delay, i
         if (!paimon::ui::motionEnabled()) {
             rgba->setOpacity(opacity);
         } else {
-            // Preserve translucent panels when an interrupted reveal restarts.
+            // preserve translucent panels when an interrupted reveal restarts.
             node->setUserObject(key, cocos2d::CCInteger::create(opacity));
             rgba->setOpacity(0);
             auto* action = cocos2d::CCSequence::create(

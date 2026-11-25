@@ -116,6 +116,7 @@ bool TwitchMessagePopup::init(
 
     CCSize const viewSize = {inner - 12.f, panelHeight - 10.f};
     auto* scroll = ScrollLayer::create(viewSize);
+    if (scroll) scroll->setAnchorPoint({0.f, 0.f});
     scroll->setPosition({kPad + 6.f, 19.f});
     m_mainLayer->addChild(scroll);
 

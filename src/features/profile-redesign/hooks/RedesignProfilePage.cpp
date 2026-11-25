@@ -40,7 +40,7 @@ class $modify(RedesignProfilePage, ProfilePage) {
         // latecomers land async in hidden menus; rebuild only when one appears.
         m_fields->m_watchTime = 0.f;
         this->unschedule(schedule_selector(RedesignProfilePage::watchLatecomers));
-        this->schedule(schedule_selector(RedesignProfilePage::watchLatecomers), 0.25f);
+        this->schedule(schedule_selector(RedesignProfilePage::watchLatecomers), 0.1f);
     }
 
     // this path can skip loadpagefromuserinfo, so the strip rebuilds here.

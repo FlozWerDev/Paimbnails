@@ -93,28 +93,8 @@ struct PetConfig {
     bool showInGameplay = true;
 
     // empty with alllayers off hides the pet everywhere.
-    std::set<std::string> visibleLayers = {
-        "MenuLayer", "LevelBrowserLayer", "LevelInfoLayer",
-        "CreatorLayer", "LevelSearchLayer", "GauntletSelectLayer",
-        "ProfilePage", "LevelListLayer", "LevelEditorLayer",
-        "PlayLayer", "PauseLayer", "GJGarageLayer",
-        "GJShopLayer", "SecretLayer", "TreasureRoomLayer",
-        "ChallengesLayer", "LevelAreaLayer", "DailyLevelLayer",
-        "WeeklyLevelLayer", "GauntletLayer", "LeaderboardLayer",
-        "LevelLeaderboard", "CommentListLayer", "InfoLayer",
-        "SongInfoLayer", "CustomSongLayer", "GJMoreGamesLayer",
-        "GJOptionsLayer", "OptionsLayer", "MoreOptionsLayer",
-        "AccountLayer", "AccountLoginLayer", "GJAccountSettingsLayer",
-        "GJScoreLayer", "EndLevelLayer", "LevelCompleteLayer",
-        "LevelFailedLayer", "RetryLayer", "FLAlertLayer",
-        "GJDropDownLayer", "SelectItemLayer", "GJLocalLevelSelector",
-        "TowerSelectorLayer", "GJPathsLayer", "GJPathPage",
-        "GJMapPackLayer", "PromoArtLayer", "SupportLayer",
-        "CreditsLayer", "GJChallengeLayer", "GJRewardLayer",
-        "LevelSelectLayer", "GJFriendsLayer", "GJScoresLayer",
-        "LeaderboardsLayer", "GJCommentListLayer", "FRequestProfilePage",
-        "GJLevelScoreCell"
-    };
+    std::set<std::string> visibleLayers{
+        PET_LAYER_OPTIONS.begin(), PET_LAYER_OPTIONS.end()};
 
     // empty state images fall back to selectedimage.
     std::string idleImage;
@@ -188,6 +168,8 @@ public:
 
     PetConfig& config() { return m_config; }
     void loadConfig();
+    // apply an already parsed snapshot on the main thread.
+    void loadConfig(matjson::Value const& config);
     void saveConfig();
     void applyConfigLive();
 
@@ -283,6 +265,9 @@ private:
     void createParticleNode();
     void updateParticles(float dt);
     void emitParticle();
+    // normalized particle tint; final attach shared by all particle shapes.
+    cocos2d::ccColor4F particleColor() const;
+    void attachParticle(cocos2d::CCDrawNode* draw, cocos2d::CCPoint const& pos, float vx, float vy);
     void createSpeechBubbleNode();
     void updateSpeechBubble(float dt);
     void createSleepZzz();

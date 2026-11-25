@@ -14,6 +14,8 @@
 #include <Geode/utils/cocos.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
+#include <Geode/binding/GameLevelManager.hpp>
+#include <Geode/binding/GJSearchObject.hpp>
 #include <Geode/binding/LevelInfoLayer.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
@@ -137,6 +139,7 @@ bool VerificationCenterLayer::init() {
     this->addChild(m_listContainer, 1);
 
     m_scrollLayer = ScrollLayer::create({listW - 14.f, listH});
+    if (m_scrollLayer) m_scrollLayer->setAnchorPoint({0.f, 0.f});
     m_scrollLayer->setPosition({0, 0});
     m_listContainer->addChild(m_scrollLayer);
 
@@ -264,6 +267,12 @@ bool VerificationCenterLayer::init() {
 
 void VerificationCenterLayer::onExit() {
     this->unschedule(schedule_selector(VerificationCenterLayer::checkLevelDownloaded));
+    if (auto* glm = GameLevelManager::get()) {
+        if (glm->m_levelManagerDelegate == this) {
+            glm->m_levelManagerDelegate = nullptr;
+        }
+    }
+    m_pendingBatchSearchKey.clear();
     m_pendingLevelID = 0;
     m_downloadCheckCount = 0;
     CCLayer::onExit();
@@ -271,6 +280,11 @@ void VerificationCenterLayer::onExit() {
 
 void VerificationCenterLayer::onBack(CCObject*) {
     this->unschedule(schedule_selector(VerificationCenterLayer::checkLevelDownloaded));
+    if (auto* glm = GameLevelManager::get()) {
+        if (glm->m_levelManagerDelegate == this) {
+            glm->m_levelManagerDelegate = nullptr;
+        }
+    }
     CCDirector::get()->popSceneWithTransition(0.5f, kPopTransitionFade);
 }
 
@@ -317,13 +331,15 @@ void VerificationCenterLayer::switchTo(PendingCategory cat) {
 
         if (!success) {
             layer->m_allItems.clear();
-            PaimonNotify::create("No se pudo cargar la cola. Verifica la sesion y reintenta.", NotificationIcon::Warning)->show();
+            PaimonNotify::show("No se pudo cargar la cola. Verifica la sesion y reintenta.", NotificationIcon::Warning);
         } else {
             layer->m_allItems = items;
         }
         layer->applyFilter();
         if (layer->getParent()) {
             layer->rebuildList();
+            layer->prefetchQueueLevelsBatch();
+            layer->prefetchPreviewNeighbors(-1);
         }
     });
 }
@@ -388,6 +404,8 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
             item.reports.size(), item.reports.size() == 1 ? "" : "s");
     } else if (m_current == PendingCategory::ProfileBackground || m_current == PendingCategory::ProfileImg) {
         idText = fmt::format("Account: {}", item.levelID);
+    } else if (auto* cachedLvl = findCachedLevel(item.levelID); cachedLvl && !cachedLvl->m_levelName.empty()) {
+        idText = fmt::format("{} ({})", std::string(cachedLvl->m_levelName), item.levelID);
     } else {
         idText = fmt::format("ID: {}", item.levelID);
     }
@@ -395,6 +413,8 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
     idLbl->setScale(0.38f);
     idLbl->setAnchorPoint({0, 0.5f});
     idLbl->setPosition({8.f, 26.f});
+    idLbl->setTag(2000 + index);
+    idLbl->limitLabelWidth(std::max(110.f, width - 175.f), 0.38f, 0.22f);
     if (isUserReport) idLbl->setColor({255, 120, 120});
     row->addChild(idLbl);
 
@@ -404,7 +424,7 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
         countLbl->setScale(0.28f);
         countLbl->setColor({255, 200, 50});
         countLbl->setAnchorPoint({0, 0.5f});
-        countLbl->setPosition({idLbl->getPositionX() + idLbl->getContentSize().width * idLbl->getScale() + 4.f, 26.f});
+        countLbl->setPosition({idLbl->getPositionX() + idLbl->getScaledContentSize().width + 4.f, 26.f});
         row->addChild(countLbl);
     }
 
@@ -424,7 +444,7 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
             : fmt::format(fmt::runtime(Localization::get().getString("queue.claimed_by_user")), item.claimedBy);
         auto claimLbl = CCLabelBMFont::create(claimText.c_str(), "chatFont.fnt");
         claimLbl->setScale(0.3f);
-        claimLbl->setColor(claimedByMe ? ccColor3B{100, 255, 100} : ccColor3B{255, 100, 100});
+        claimLbl->setColor(claimedByMe ? ccColor3B{100, 255, 100} : ccColor3B{255, 185, 90});
         claimLbl->setAnchorPoint({1, 0.5f});
         claimLbl->setPosition({width - 12.f, 12.f});
         row->addChild(claimLbl);
@@ -511,15 +531,14 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
     }
 
     {
-        char const* claimImg = claimedByMe ? "GJ_button_02.png" : "GJ_button_04.png";
-        auto spr = ButtonSprite::create("C", 28, true, "bigFont.fnt", claimImg, 18.f, 0.45f);
+        char const* claimImg = claimedByMe
+            ? "GJ_button_02.png"
+            : (isClaimed ? "GJ_button_05.png" : "GJ_button_04.png");
+        char const* claimLabel = (isClaimed && !claimedByMe) ? "C!" : "C";
+        auto spr = ButtonSprite::create(claimLabel, 28, true, "bigFont.fnt", claimImg, 18.f, 0.45f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this,
             menu_selector(VerificationCenterLayer::onClaimLevel));
         btn->setTag(item.levelID);
-        if (isClaimed && !claimedByMe) {
-            btn->setEnabled(false);
-            spr->setColor({100, 100, 100});
-        }
         PaimonButtonHighlighter::registerButton(btn);
         btnMenu->addChild(btn);
         btn->setPosition({btnX, btnY});
@@ -572,6 +591,11 @@ void VerificationCenterLayer::onSelectItem(CCObject* sender) {
     m_currentSuggestionIndex = 0;
     highlightRow(index);
     showPreviewForItem(index);
+    if (m_current != PendingCategory::ProfileBackground &&
+        m_current != PendingCategory::ProfileImg &&
+        m_items[index].type != "user") {
+        prefetchLevelData(m_items[index].levelID);
+    }
 }
 
 void VerificationCenterLayer::clearPreview() {
@@ -626,24 +650,262 @@ void VerificationCenterLayer::showNoPreview() {
     }
 }
 
+GJGameLevel* VerificationCenterLayer::findCachedLevel(int levelId) const {
+    if (levelId <= 0) return nullptr;
+    if (auto it = m_prefetchedLevels.find(levelId); it != m_prefetchedLevels.end() && it->second) {
+        return it->second.data();
+    }
+    auto* glm = GameLevelManager::get();
+    if (!glm) return nullptr;
+    if (glm->m_onlineLevels) {
+        if (auto* lvl = static_cast<GJGameLevel*>(glm->m_onlineLevels->objectForKey(std::to_string(levelId)))) {
+            return lvl;
+        }
+    }
+    return glm->getSavedLevel(levelId);
+}
+
+void VerificationCenterLayer::prefetchQueueLevelsBatch() {
+    if (m_current == PendingCategory::ProfileBackground || m_current == PendingCategory::ProfileImg) return;
+    auto* glm = GameLevelManager::get();
+    if (!glm || m_items.empty()) return;
+
+    std::string ids;
+    int count = 0;
+    for (auto const& it : m_items) {
+        if (it.levelID <= 0 || it.type == "user") continue;
+        if (auto* cached = findCachedLevel(it.levelID); cached && !cached->m_levelName.empty()) continue;
+        if (!ids.empty()) ids += ',';
+        ids += std::to_string(it.levelID);
+        if (++count >= 40) break;
+    }
+    if (ids.empty()) return;
+
+    auto* searchObj = GJSearchObject::create(SearchType::Type19, ids);
+    if (!searchObj) return;
+    auto* key = searchObj->getKey();
+    m_pendingBatchSearchKey = key ? key : "";
+    glm->m_levelManagerDelegate = this;
+    glm->getOnlineLevels(searchObj);
+}
+
+void VerificationCenterLayer::prefetchLevelData(int levelId) {
+    if (levelId <= 0) return;
+    auto* glm = GameLevelManager::get();
+    if (!glm) return;
+    auto* cached = findCachedLevel(levelId);
+    if (cached && !cached->m_levelName.empty() && !std::string(cached->m_levelString).empty()) {
+        return;
+    }
+    if (!m_prefetchedDownloadStarted.insert(levelId).second) return;
+    glm->downloadLevel(levelId, false, 0);
+}
+
+void VerificationCenterLayer::loadLevelsFinished(CCArray* levels, char const* key) {
+    if (auto* glm = GameLevelManager::get()) {
+        if (glm->m_levelManagerDelegate == this) {
+            glm->m_levelManagerDelegate = nullptr;
+        }
+    }
+    if (!levels) return;
+    if (!m_pendingBatchSearchKey.empty() && key && m_pendingBatchSearchKey != key) return;
+    m_pendingBatchSearchKey.clear();
+
+    bool updated = false;
+    for (auto* level : CCArrayExt<GJGameLevel*>(levels)) {
+        if (level && level->m_levelID > 0 && !std::string(level->m_levelName).empty()) {
+            m_prefetchedLevels[level->m_levelID] = level;
+            updated = true;
+        }
+    }
+    if (!updated || !m_scrollLayer || !m_scrollLayer->m_contentLayer) return;
+
+    for (auto* row : CCArrayExt<CCNode*>(m_scrollLayer->m_contentLayer->getChildren())) {
+        for (int i = 0; i < static_cast<int>(m_items.size()); ++i) {
+            if (auto* lbl = typeinfo_cast<CCLabelBMFont*>(row->getChildByTag(2000 + i))) {
+                auto const& it = m_items[i];
+                if (it.type == "user") break;
+                if (auto* lv = findCachedLevel(it.levelID); lv && !lv->m_levelName.empty()) {
+                    std::string text = fmt::format("{} ({})", std::string(lv->m_levelName), it.levelID);
+                    lbl->setString(text.c_str());
+                    lbl->limitLabelWidth(std::max(110.f, row->getContentSize().width - 175.f), 0.38f, 0.22f);
+                }
+                break;
+            }
+        }
+    }
+}
+
+void VerificationCenterLayer::loadLevelsFinished(CCArray* levels, char const* key, int) {
+    loadLevelsFinished(levels, key);
+}
+
+void VerificationCenterLayer::loadLevelsFailed(char const* key) {
+    if (auto* glm = GameLevelManager::get()) {
+        if (glm->m_levelManagerDelegate == this) {
+            glm->m_levelManagerDelegate = nullptr;
+        }
+    }
+    if (!m_pendingBatchSearchKey.empty() && key && m_pendingBatchSearchKey == key) {
+        m_pendingBatchSearchKey.clear();
+    }
+}
+
+void VerificationCenterLayer::loadLevelsFailed(char const* key, int) {
+    loadLevelsFailed(key);
+}
+
+std::string VerificationCenterLayer::resolvePreviewUrl(PendingItem const& item, int sugIdx) const {
+    if (m_current == PendingCategory::Verify) {
+        if (!item.suggestions.empty()) {
+            int safeIdx = std::clamp(sugIdx, 0, static_cast<int>(item.suggestions.size()) - 1);
+            if (!item.suggestions[safeIdx].filename.empty()) {
+                return HttpClient::get().buildAssetURL(item.suggestions[safeIdx].filename, "suggestions");
+            }
+        }
+        return HttpClient::get().getServerURL() + "/suggestions/" + std::to_string(item.levelID) + ".webp";
+    }
+    if (m_current == PendingCategory::Update) {
+        if (!item.suggestions.empty()) {
+            int safeIdx = std::clamp(sugIdx, 0, static_cast<int>(item.suggestions.size()) - 1);
+            if (!item.suggestions[safeIdx].filename.empty()) {
+                return HttpClient::get().buildAssetURL(item.suggestions[safeIdx].filename, "updates");
+            }
+        }
+        if (!item.filename.empty()) {
+            return HttpClient::get().buildAssetURL(item.filename, "updates");
+        }
+        return HttpClient::get().getServerURL() + "/updates/" + std::to_string(item.levelID) + ".webp";
+    }
+    if (m_current == PendingCategory::ProfileBackground) {
+        if (!item.suggestions.empty() && !item.suggestions[0].filename.empty()) {
+            return HttpClient::get().buildAssetURL(item.suggestions[0].filename);
+        }
+        return HttpClient::get().getServerURL() + "/pending_profilebackground/" + std::to_string(item.levelID) + "?self=1";
+    }
+    if (m_current == PendingCategory::ProfileImg) {
+        if (!item.suggestions.empty() && !item.suggestions[0].filename.empty()) {
+            return HttpClient::get().buildAssetURL(item.suggestions[0].filename);
+        }
+        return HttpClient::get().getServerURL() + "/profileimgs/" + std::to_string(item.levelID) + "?pending=1";
+    }
+    return {};
+}
+
+void VerificationCenterLayer::cachePreviewBytes(std::string const& url, std::vector<uint8_t> const& data) {
+    if (url.empty() || data.empty()) return;
+    static constexpr size_t kMaxCachedPreviews = 32;
+    auto it = m_previewBytesCache.find(url);
+    if (it != m_previewBytesCache.end()) {
+        it->second = data;
+        std::erase(m_previewBytesOrder, url);
+        m_previewBytesOrder.push_back(url);
+        return;
+    }
+    while (m_previewBytesOrder.size() >= kMaxCachedPreviews) {
+        auto oldest = std::move(m_previewBytesOrder.front());
+        m_previewBytesOrder.pop_front();
+        m_previewBytesCache.erase(oldest);
+    }
+    m_previewBytesOrder.push_back(url);
+    m_previewBytesCache.emplace(url, data);
+}
+
+void VerificationCenterLayer::applyRawPreviewBytes(std::vector<uint8_t> const& data) {
+    if (!m_previewPanel || data.empty()) {
+        showNoPreview();
+        return;
+    }
+    auto panelSize = m_previewPanel->getContentSize();
+    float maxW = panelSize.width - 16.f;
+    float maxH = panelSize.height - 16.f;
+
+    if (ThumbnailTransportClient::isGIFData(data)) {
+        auto* gifSpr = AnimatedGIFSprite::create(data.data(), data.size());
+        if (gifSpr) {
+            clearPreview();
+            gifSpr->setScale(previewFitScale(gifSpr->getContentWidth(), gifSpr->getContentHeight(), maxW, maxH));
+            gifSpr->setPosition(panelSize / 2);
+            m_previewPanel->addChild(gifSpr, 5);
+            m_previewAnimNode = gifSpr;
+            if (m_previewLabel) m_previewLabel->setVisible(false);
+            return;
+        }
+    }
+
+    auto* tex = ThumbnailTransportClient::bytesToTexture(data);
+    if (tex) {
+        setPreviewTexture(tex);
+    } else {
+        showNoPreview();
+    }
+}
+
+void VerificationCenterLayer::prefetchPreviewNeighbors(int index) {
+    if (m_items.empty() || m_current == PendingCategory::Report) return;
+    std::vector<std::string> urls;
+    if (index >= 0 && index < static_cast<int>(m_items.size())) {
+        auto const& cur = m_items[index];
+        if (m_currentSuggestionIndex + 1 < static_cast<int>(cur.suggestions.size())) {
+            urls.push_back(resolvePreviewUrl(cur, m_currentSuggestionIndex + 1));
+        }
+    }
+    for (int offset = 1; offset <= 3; ++offset) {
+        int nextIdx = (index < 0) ? (offset - 1) : (index + offset);
+        if (nextIdx >= 0 && nextIdx < static_cast<int>(m_items.size())) {
+            urls.push_back(resolvePreviewUrl(m_items[nextIdx], 0));
+        }
+    }
+
+    WeakRef<VerificationCenterLayer> self = this;
+    for (auto const& url : urls) {
+        if (url.empty()) continue;
+        if (m_previewBytesCache.contains(url)) continue;
+        if (!m_previewPrefetchInFlight.insert(url).second) continue;
+
+        HttpClient::get().downloadFromUrl(url, [self, url](bool success, std::vector<uint8_t> const& data, int, int) {
+            auto layer = self.lock();
+            if (!layer) return;
+            layer->m_previewPrefetchInFlight.erase(url);
+            if (success && !data.empty()) {
+                layer->cachePreviewBytes(url, data);
+            }
+        });
+    }
+}
+
 void VerificationCenterLayer::showPreviewForItem(int index) {
     if (index < 0 || index >= static_cast<int>(m_items.size())) return;
+
+    auto const& item = m_items[index];
+    std::string previewUrl = resolvePreviewUrl(item, m_currentSuggestionIndex);
+
+    if (!previewUrl.empty()) {
+        if (auto cached = m_previewBytesCache.find(previewUrl); cached != m_previewBytesCache.end()) {
+            dismissPreviewSpinner();
+            applyRawPreviewBytes(cached->second);
+            updateNavigationArrows();
+            prefetchPreviewNeighbors(index);
+            return;
+        }
+    }
 
     clearPreview();
     if (m_previewLabel) m_previewLabel->setVisible(false);
 
-    auto panelSize = m_previewPanel->getContentSize();
-
     m_previewSpinner = PaimonLoadingOverlay::create("Loading...", 40.f);
     m_previewSpinner->showLocal(m_previewPanel, 10);
 
-    int itemID = m_items[index].levelID;
+    int itemID = item.levelID;
     WeakRef<VerificationCenterLayer> self = this;
     int savedIndex = index;
 
-    auto onRawLoaded = [self, savedIndex](bool success, std::vector<uint8_t> const& data, int, int) {
+    auto onRawLoaded = [self, savedIndex, previewUrl](bool success, std::vector<uint8_t> const& data, int, int) {
         auto layer = self.lock();
         if (!layer) return;
+        if (success && !data.empty() && !previewUrl.empty()) {
+            layer->cachePreviewBytes(previewUrl, data);
+        }
         if (layer->m_selectedIndex != savedIndex) return;
 
         layer->dismissPreviewSpinner();
@@ -652,29 +914,9 @@ void VerificationCenterLayer::showPreviewForItem(int index) {
             layer->showNoPreview();
             return;
         }
-
-        auto panelSize = layer->m_previewPanel->getContentSize();
-        float maxW = panelSize.width - 16.f;
-        float maxH = panelSize.height - 16.f;
-
-        if (ThumbnailTransportClient::isGIFData(data)) {
-            auto* gifSpr = AnimatedGIFSprite::create(data.data(), data.size());
-            if (gifSpr) {
-                gifSpr->setScale(previewFitScale(gifSpr->getContentWidth(), gifSpr->getContentHeight(), maxW, maxH));
-                gifSpr->setPosition(panelSize / 2);
-                layer->m_previewPanel->addChild(gifSpr, 5);
-                layer->m_previewAnimNode = gifSpr;
-                if (layer->m_previewLabel) layer->m_previewLabel->setVisible(false);
-                return;
-            }
-        }
-
-        auto* tex = ThumbnailTransportClient::bytesToTexture(data);
-        if (tex) {
-            layer->setPreviewTexture(tex);
-        } else {
-            layer->showNoPreview();
-        }
+        layer->applyRawPreviewBytes(data);
+        layer->updateNavigationArrows();
+        layer->prefetchPreviewNeighbors(savedIndex);
     };
 
     auto onLoaded = [self, savedIndex](bool success, CCTexture2D* tex) {
@@ -691,49 +933,20 @@ void VerificationCenterLayer::showPreviewForItem(int index) {
         }
     };
 
-    auto const& item = m_items[index];
-    switch (m_current) {
-    case PendingCategory::Verify: {
-        int sugIdx = m_currentSuggestionIndex;
-        if (sugIdx < 0 || sugIdx >= (int)item.suggestions.size()) sugIdx = 0;
-        if (!item.suggestions.empty() && !item.suggestions[sugIdx].filename.empty()) {
-            std::string url = HttpClient::get().buildAssetURL(item.suggestions[sugIdx].filename, "suggestions");
-            HttpClient::get().downloadFromUrl(url, onRawLoaded);
-        } else {
-            HttpClient::get().downloadSuggestion(itemID, onRawLoaded);
-        }
-        break;
-    }
-    case PendingCategory::ProfileBackground:
-        if (!item.suggestions.empty() && !item.suggestions[0].filename.empty()) {
-            std::string url = HttpClient::get().getServerURL() + "/" + item.suggestions[0].filename;
-            HttpClient::get().downloadFromUrl(url, onRawLoaded);
-        } else {
-            std::string url = HttpClient::get().getServerURL()
-                + "/pending_profilebackground/" + std::to_string(itemID) + "?self=1";
-            HttpClient::get().downloadFromUrl(url, onRawLoaded);
-        }
-        break;
-    case PendingCategory::Update:
-        HttpClient::get().downloadUpdate(itemID, onRawLoaded);
-        break;
-    case PendingCategory::Report:
+    if (!previewUrl.empty()) {
+        HttpClient::get().downloadFromUrl(previewUrl, onRawLoaded);
+    } else if (m_current == PendingCategory::Report) {
         ThumbnailAPI::get().downloadReported(itemID, onLoaded);
-        break;
-    case PendingCategory::ProfileImg: {
-        std::string url = HttpClient::get().getServerURL()
-            + "/profileimgs/" + std::to_string(itemID) + "?pending=1";
-        HttpClient::get().downloadFromUrl(url, onRawLoaded);
-        break;
-    }
-    default:
-        break;
     }
 
     updateNavigationArrows();
 }
 
 void VerificationCenterLayer::onViewBans(CCObject*) {
+    if (!paimon::modauth::isVerified()) {
+        PaimonNotify::show(Localization::get().getString("ban.verify_required"), NotificationIcon::Warning);
+        return;
+    }
     if (auto popup = BanListPopup::create()) popup->show();
 }
 
@@ -752,41 +965,34 @@ void VerificationCenterLayer::onOpenLevel(CCObject* sender) {
     vctx.queueLevelID   = lvl;
 
     auto glm = GameLevelManager::get();
-    GJGameLevel* level = nullptr;
-    auto onlineLevels = glm->m_onlineLevels;
-    if (onlineLevels) {
-        level = static_cast<GJGameLevel*>(onlineLevels->objectForKey(std::to_string(lvl)));
-    }
+    GJGameLevel* level = findCachedLevel(lvl);
 
     if (level && !level->m_levelName.empty()) {
         TransitionManager::get().replaceScene(
             LevelInfoLayer::scene(level, false));
-    } else {
-        PaimonNotify::create("Downloading level...", NotificationIcon::Loading)->show();
+    } else if (glm) {
+        PaimonNotify::show("Downloading level...", NotificationIcon::Loading);
         m_downloadCheckCount = 0;
         m_pendingLevelID = lvl;
         glm->downloadLevel(lvl, false, 0);
-        this->schedule(schedule_selector(VerificationCenterLayer::checkLevelDownloaded), 0.1f);
+        this->schedule(schedule_selector(VerificationCenterLayer::checkLevelDownloaded), 0.03f);
     }
 }
 
-void VerificationCenterLayer::checkLevelDownloaded(float dt) {
+void VerificationCenterLayer::checkLevelDownloaded(float) {
     if (m_pendingLevelID <= 0) {
         this->unschedule(schedule_selector(VerificationCenterLayer::checkLevelDownloaded));
         return;
     }
     m_downloadCheckCount++;
-    if (m_downloadCheckCount > 50) {
-        PaimonNotify::create("Error: timed out downloading level", NotificationIcon::Error)->show();
+    if (m_downloadCheckCount > 250) {
+        PaimonNotify::show("Error: timed out downloading level", NotificationIcon::Error);
         this->unschedule(schedule_selector(VerificationCenterLayer::checkLevelDownloaded));
         m_pendingLevelID = 0;
         return;
     }
 
-    auto glm = GameLevelManager::get();
-    if (!glm || !glm->m_onlineLevels) return;
-
-    auto level = static_cast<GJGameLevel*>(glm->m_onlineLevels->objectForKey(std::to_string(m_pendingLevelID)));
+    auto level = findCachedLevel(m_pendingLevelID);
     if (!level) return;
 
     std::string name = level->m_levelName;
@@ -794,7 +1000,6 @@ void VerificationCenterLayer::checkLevelDownloaded(float dt) {
 
     this->unschedule(schedule_selector(VerificationCenterLayer::checkLevelDownloaded));
     m_downloadCheckCount = 0;
-    int lvl = m_pendingLevelID;
     m_pendingLevelID = 0;
 
     TransitionManager::get().replaceScene(
@@ -830,7 +1035,7 @@ void VerificationCenterLayer::runQueueAction(int levelID, bool acceptAll, bool r
     }
     if (accountID <= 0) {
         m_actionPending = false;
-        PaimonNotify::create("Tienes que tener cuenta para subir", NotificationIcon::Error)->show();
+        PaimonNotify::show("Tienes que tener cuenta para subir", NotificationIcon::Error);
         return;
     }
 
@@ -856,43 +1061,34 @@ void VerificationCenterLayer::runQueueAction(int levelID, bool acceptAll, bool r
     char const* okKey = reject ? "queue.rejected" : "queue.accepted";
     auto okIcon = reject ? NotificationIcon::Warning : NotificationIcon::Success;
 
-    ThumbnailAPI::get().checkModeratorAccount(username, accountID,
-        [self, levelID, username, loading, cat, targetFilename, itemType, acceptAll, reject,
-         errorKey, okKey, okIcon](bool isMod, bool isAdmin) {
+    auto done = [self, loading, cat, errorKey, okKey, okIcon](bool success, std::string const& message) {
         auto layer = self.lock();
+        if (loading) loading->dismiss();
         if (!layer) return;
+        layer->m_actionPending = false;
 
-        if (!(isMod || isAdmin)) {
-            layer->m_actionPending = false;
-            if (loading) loading->dismiss();
-            PaimonNotify::create(Localization::get().getString(errorKey).c_str(), NotificationIcon::Error)->show();
-            return;
-        }
-
-        auto done = [self, loading, cat, errorKey, okKey, okIcon](bool success, std::string const&) {
-            auto layer = self.lock();
-            if (loading) loading->dismiss();
-            if (!layer) return;
-            layer->m_actionPending = false;
-
-            if (success) {
-                PaimonNotify::create(Localization::get().getString(okKey).c_str(), okIcon)->show();
-                // reload from the server: a level whose gallery still holds
-                // other submissions must stay in the list.
-                if (layer->getParent()) layer->switchTo(cat);
-            } else {
-                PaimonNotify::create(Localization::get().getString(errorKey).c_str(), NotificationIcon::Error)->show();
-            }
-        };
-
-        if (reject) {
-            ThumbnailAPI::get().rejectQueueItem(levelID, cat, username, "Rechazado por moderador",
-                                                done, itemType, targetFilename);
+        if (success) {
+            PaimonNotify::show(Localization::get().getString(okKey).c_str(), okIcon);
+            // reload from the server: a level whose gallery still holds
+            // other submissions must stay in the list.
+            if (layer->getParent()) layer->switchTo(cat);
         } else {
-            ThumbnailAPI::get().acceptQueueItem(levelID, cat, username, done,
-                                                targetFilename, itemType, acceptAll);
+            if (!paimon::modauth::isVerified()) {
+                paimon::modauth::showPanel();
+            }
+            PaimonNotify::show(
+                message.empty() ? Localization::get().getString(errorKey).c_str() : message.c_str(),
+                NotificationIcon::Error);
         }
-    });
+    };
+
+    if (reject) {
+        ThumbnailAPI::get().rejectQueueItem(levelID, cat, username, "Rechazado por moderador",
+                                            done, itemType, targetFilename);
+    } else {
+        ThumbnailAPI::get().acceptQueueItem(levelID, cat, username, done,
+                                            targetFilename, itemType, acceptAll);
+    }
 }
 
 void VerificationCenterLayer::onAccept(CCObject* sender) {
@@ -908,6 +1104,11 @@ void VerificationCenterLayer::onReject(CCObject* sender) {
 }
 
 void VerificationCenterLayer::onClaimLevel(CCObject* sender) {
+    if (!paimon::modauth::isVerified()) {
+        paimon::modauth::showPanel();
+        return;
+    }
+
     int lvl = static_cast<CCNode*>(sender)->getTag();
 
     std::string username;
@@ -918,51 +1119,105 @@ void VerificationCenterLayer::onClaimLevel(CCObject* sender) {
     }
 
     if (username.empty() || accountID <= 0) {
-        PaimonNotify::create(Localization::get().getString("level.account_required").c_str(), NotificationIcon::Error)->show();
+        PaimonNotify::show(Localization::get().getString("level.account_required").c_str(), NotificationIcon::Error);
         return;
     }
 
     std::string itemType;
+    std::string existingClaimedBy;
     for (auto const& it : m_items) {
-        if (it.levelID == lvl && it.type == "user") { itemType = "user"; break; }
+        if (it.levelID == lvl) {
+            if (it.type == "user") itemType = "user";
+            existingClaimedBy = it.claimedBy;
+            break;
+        }
     }
-
-    PaimonNotify::create(Localization::get().getString("queue.claiming").c_str(), NotificationIcon::Info)->show();
 
     WeakRef<VerificationCenterLayer> self = this;
     auto cat = m_current;
 
-    ThumbnailAPI::get().checkModeratorAccount(username, accountID, [self, lvl, username, cat, itemType](bool isMod, bool isAdmin) {
+    auto applyLocalClaim = [self, lvl](std::string const& newClaimedBy) {
+        auto layer = self.lock();
+        if (!layer) return;
+        for (auto& item : layer->m_items) {
+            if (item.levelID == lvl) {
+                item.claimedBy = newClaimedBy;
+                break;
+            }
+        }
+        for (auto& item : layer->m_allItems) {
+            if (item.levelID == lvl) {
+                item.claimedBy = newClaimedBy;
+                break;
+            }
+        }
+        if (layer->getParent()) {
+            layer->applyFilter();
+            layer->rebuildList();
+        }
+    };
+
+    if (!existingClaimedBy.empty() && existingClaimedBy == username) {
+        ThumbnailAPI::get().unclaimQueueItem(lvl, cat, username, [self, applyLocalClaim](bool success, std::string const& message) {
+            auto layer = self.lock();
+            if (!layer) return;
+            if (success) {
+                PaimonNotify::show(Localization::get().getString("queue.unclaimed").c_str(), NotificationIcon::Info);
+                applyLocalClaim("");
+            } else {
+                if (!paimon::modauth::isVerified()) paimon::modauth::showPanel();
+                PaimonNotify::show(
+                    fmt::format(fmt::runtime(Localization::get().getString("queue.claim_error")), message).c_str(),
+                    NotificationIcon::Error);
+            }
+        }, itemType);
+        return;
+    }
+
+    if (!existingClaimedBy.empty() && existingClaimedBy != username) {
+        PopupManager::get().quickPopup(
+            Localization::get().getString("queue.takeover_title").c_str(),
+            fmt::format(fmt::runtime(Localization::get().getString("queue.takeover_confirm")), existingClaimedBy),
+            Localization::get().getString("general.cancel").c_str(),
+            Localization::get().getString("queue.takeover_btn").c_str(),
+            [self, lvl, cat, username, itemType, applyLocalClaim](auto*, bool confirm) {
+                if (!confirm) return;
+                ThumbnailAPI::get().takeoverQueueItem(lvl, cat, username, [self, username, applyLocalClaim](bool success, std::string const& message) {
+                    auto layer = self.lock();
+                    if (!layer) return;
+                    if (success) {
+                        PaimonNotify::show(Localization::get().getString("queue.taken_over").c_str(), NotificationIcon::Success);
+                        applyLocalClaim(username);
+                    } else {
+                        if (!paimon::modauth::isVerified()) paimon::modauth::showPanel();
+                        PaimonNotify::show(
+                            fmt::format(fmt::runtime(Localization::get().getString("queue.claim_error")), message).c_str(),
+                            NotificationIcon::Error);
+                    }
+                }, itemType);
+            }
+        ).showInstant();
+        return;
+    }
+
+    PaimonNotify::show(Localization::get().getString("queue.claiming").c_str(), NotificationIcon::Info);
+    ThumbnailAPI::get().claimQueueItem(lvl, cat, username, [self, username, cat, applyLocalClaim](bool success, std::string const& message) {
         auto layer = self.lock();
         if (!layer) return;
 
-        if (!(isMod || isAdmin)) {
-            PaimonNotify::create(
-                fmt::format(fmt::runtime(Localization::get().getString("queue.claim_error")), "Moderator auth required").c_str(),
-                NotificationIcon::Error)->show();
-            return;
-        }
-
-        ThumbnailAPI::get().claimQueueItem(lvl, cat, username, [self, lvl, username](bool success, std::string const& message) {
-            auto layer = self.lock();
-            if (!layer) return;
-
-            if (success) {
-                PaimonNotify::create(Localization::get().getString("queue.claimed").c_str(), NotificationIcon::Success)->show();
-                for (auto& item : layer->m_items) {
-                    if (item.levelID == lvl) {
-                        item.claimedBy = username;
-                        break;
-                    }
-                }
-                if (layer->getParent()) layer->rebuildList();
-            } else {
-                PaimonNotify::create(
-                    fmt::format(fmt::runtime(Localization::get().getString("queue.claim_error")), message).c_str(),
-                    NotificationIcon::Error)->show();
+        if (success) {
+            PaimonNotify::show(Localization::get().getString("queue.claimed").c_str(), NotificationIcon::Success);
+            applyLocalClaim(username);
+        } else {
+            if (!paimon::modauth::isVerified()) paimon::modauth::showPanel();
+            PaimonNotify::show(
+                fmt::format(fmt::runtime(Localization::get().getString("queue.claim_error")), message).c_str(),
+                NotificationIcon::Error);
+            if (message.find("ALREADY_CLAIMED") != std::string::npos || message.find("claimed") != std::string::npos) {
+                if (layer->getParent()) layer->switchTo(cat);
             }
-        }, itemType);
-    });
+        }
+    }, itemType);
 }
 
 void VerificationCenterLayer::onViewReport(CCObject* sender) {
@@ -994,7 +1249,7 @@ void VerificationCenterLayer::onBanUser(CCObject* sender) {
         }
     }
     if (reportedUsername.empty()) {
-        PaimonNotify::create("User report not found", NotificationIcon::Error)->show();
+        PaimonNotify::show("User report not found", NotificationIcon::Error);
         return;
     }
 
@@ -1020,14 +1275,14 @@ void VerificationCenterLayer::onBanUser(CCObject* sender) {
                     auto layer = self.lock();
                     if (!layer) return;
                     if (success) {
-                        PaimonNotify::create(
+                        PaimonNotify::show(
                             fmt::format("{} has been banned", capturedUsername).c_str(),
-                            NotificationIcon::Success)->show();
+                            NotificationIcon::Success);
                         if (layer->getParent()) layer->switchTo(PendingCategory::Report);
                     } else {
-                        PaimonNotify::create(
+                        PaimonNotify::show(
                             fmt::format("Failed to ban: {}", message).c_str(),
-                            NotificationIcon::Error)->show();
+                            NotificationIcon::Error);
                     }
                 },
                 "", "user"

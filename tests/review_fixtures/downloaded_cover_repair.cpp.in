@@ -1,0 +1,121 @@
+// Repair saved download covers without blocking the UI or overwriting later edits.
+#include "src/features/menu-music/model/MenuMusicTypes.hpp"
+#include <algorithm>
+#include <cassert>
+#include <cctype>
+#include <filesystem>
+#include <functional>
+#include <string>
+#include <vector>
+
+using namespace paimon::menumusic;
+namespace fs = std::filesystem;
+bool shuttingDown = false, rejectWorker = false;
+std::vector<std::function<void()>> workers, mainJobs;
+namespace paimon {
+bool isRuntimeShuttingDown() { return shuttingDown; }
+struct ThreadTracker {
+    static ThreadTracker& get() { static ThreadTracker tracker; return tracker; }
+    bool spawn(std::function<void()> job) {
+        if (rejectWorker) return false;
+        workers.push_back(std::move(job));
+        return true;
+    }
+};
+namespace assets { fs::path pathFromUtf8(std::string const& path) { return fs::path(path); } }
+}
+struct Loader {
+    static Loader* get() { static Loader loader; return &loader; }
+    void queueInMainThread(std::function<void()> job) { mainJobs.push_back(std::move(job)); }
+};
+namespace geode::utils::string {
+std::string toLower(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+        [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    return value;
+}
+}
+namespace geode::log { template<class... T> void warn(T const&...) {} }
+namespace paimon::menumusic {
+namespace log = geode::log;
+struct FfmpegBootstrap {
+    static FfmpegBootstrap& get() { static FfmpegBootstrap bootstrap; return bootstrap; }
+    fs::path bundledPath() const { return "ffmpeg.exe"; }
+};
+struct YtDlpDownloader {
+    static fs::path prepareCoverForDisplay(fs::path path, fs::path const& ffmpeg) {
+        assert(ffmpeg == "ffmpeg.exe");
+        if (path.stem() != "failed") path.replace_extension(".png");
+        return path;
+    }
+};
+struct MenuMusicLibrary {
+    std::vector<MusicTrack> m_tracks;
+    int saves = 0, notifications = 0;
+    MusicTrack* findTrack(std::string const& id) {
+        for (auto& track : m_tracks) if (track.id == id) return &track;
+        return nullptr;
+    }
+    void markDirty() { ++saves; }
+    void notifyChanged() { ++notifications; }
+    void repairDownloadedCoversAsync();
+};
+@@function|src/features/menu-music/services/MenuMusicLibrary.cpp|void MenuMusicLibrary::repairDownloadedCoversAsync()@@
+}
+void flush(std::vector<std::function<void()>>& jobs) {
+    while (!jobs.empty()) {
+        auto job = std::move(jobs.front()); jobs.erase(jobs.begin()); job();
+    }
+}
+MusicTrack track(std::string id, std::string cover, TrackSource source = TrackSource::Downloaded) {
+    MusicTrack result;
+    result.id = std::move(id); result.coverPath = std::move(cover); result.source = source;
+    return result;
+}
+int main() {
+    MenuMusicLibrary library;
+    library.m_tracks = {
+        track("normal", "normal.webp"), track("ready", "ready.png"),
+        track("local", "local.webp", TrackSource::Local),
+        track("gd", "gd.webp", TrackSource::GeometryDash), track("empty", ""),
+        track("removed", "removed.webp"), track("replaced", "replaced.webp"),
+        track("source", "source.webp"), track("failed", "failed.webp"),
+    };
+    library.repairDownloadedCoversAsync();
+    assert(workers.size() == 1 && mainJobs.empty() && library.saves == 0);
+    assert(library.findTrack("normal")->coverPath == "normal.webp");
+    flush(workers);
+    assert(mainJobs.size() == 1 && library.saves == 0);
+    assert(library.findTrack("normal")->coverPath == "normal.webp");
+    library.findTrack("normal")->favorite = true;
+    library.findTrack("replaced")->coverPath = "custom.png";
+    library.findTrack("source")->source = TrackSource::GeometryDash;
+    std::erase_if(library.m_tracks, [](auto const& value) { return value.id == "removed"; });
+    flush(mainJobs);
+    assert(library.findTrack("normal")->coverPath == "normal.png");
+    assert(library.findTrack("normal")->favorite);
+    assert(library.findTrack("replaced")->coverPath == "custom.png");
+    assert(library.findTrack("source")->coverPath == "source.webp");
+    assert(library.findTrack("local")->coverPath == "local.webp");
+    assert(library.findTrack("gd")->coverPath == "gd.webp");
+    assert(library.findTrack("failed")->coverPath == "failed.webp");
+    assert(library.saves == 1 && library.notifications == 1);
+
+    library.repairDownloadedCoversAsync();
+    flush(workers); flush(mainJobs);
+    assert(library.saves == 1 && library.notifications == 1); // failed conversion preserves metadata
+    rejectWorker = true;
+    library.repairDownloadedCoversAsync();
+    assert(workers.empty() && mainJobs.empty());
+    rejectWorker = false;
+    library.m_tracks = {track("late", "late.webp")};
+    library.repairDownloadedCoversAsync();
+    flush(workers);
+    shuttingDown = true;
+    flush(mainJobs);
+    assert(library.findTrack("late")->coverPath == "late.webp" && library.saves == 1);
+    shuttingDown = false;
+    library.m_tracks = {track("ready", "ready.png"), track("local", "local.webp", TrackSource::Local)};
+    library.repairDownloadedCoversAsync();
+    assert(workers.empty() && mainJobs.empty());
+}

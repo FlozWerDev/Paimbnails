@@ -247,8 +247,8 @@ bool official_plist_parse() {
     // misma convencion que extractframe). ademas el marco enderezado debe
     // coincidir con spritesize (recortado): se cumple en los 3542 marcos y
     // valida la convencion de rotacion en toda la hoja, no solo en el ovni.
-    // el sourcesize trae metadata rota en 5 marcos (p. ej. spider_07_04 con
-    // fuente {1,1} para un sprite de 3x3): se cuenta como aviso, no es fallo.
+    // algunos sprites oficiales tienen sourceSize inferior al marco recortado
+    // (p. ej. spider_07_04); se registra como aviso, no como fallo de extracción.
     int srcWarnings = 0;
     for (Sheet const* s : {&g_icons, &g_glow, &g_game}) {
         for (auto const& f : s->frames) {

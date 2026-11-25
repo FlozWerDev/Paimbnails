@@ -1,0 +1,33 @@
+#include <algorithm>
+#include <cassert>
+#include <deque>
+#include <string>
+#include <unordered_set>
+
+struct CCTextureCache {
+    std::unordered_set<std::string> keys;
+    static CCTextureCache* sharedTextureCache() { static CCTextureCache cache; return &cache; }
+    void removeTextureForKey(char const* key) { keys.erase(key); }
+};
+@@function|src/utils/TextureBudget.cpp|std::deque<std::string>& lru()@@
+@@function|src/utils/TextureBudget.cpp|void touch(@@
+@@function|src/utils/TextureBudget.cpp|void evictDownTo(@@
+@@function|src/utils/TextureBudget.cpp|void touchBudgeted(@@
+
+int main() {
+    auto& cache = *CCTextureCache::sharedTextureCache();
+    for (int i = 0; i < 10000; ++i) {
+        auto const path = std::to_string(i);
+        cache.keys.insert(path); // what LazySprite publishes before invoking the callback
+        touchBudgeted(path, 24);
+        assert(cache.keys.size() <= 24 && lru().size() <= 24);
+    }
+    touchBudgeted("9976", 24); // recent reuse protects the oldest survivor
+    cache.keys.insert("10000");
+    touchBudgeted("10000", 24);
+    assert(cache.keys.contains("9976") && !cache.keys.contains("9977"));
+    touchBudgeted("", 24);
+    assert(cache.keys.size() == 24);
+    touchBudgeted("10000", 0);
+    assert(cache.keys.size() == 1 && cache.keys.contains("10000"));
+}

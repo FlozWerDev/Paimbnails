@@ -1,0 +1,39 @@
+#include <atomic>
+#include <cassert>
+#include <functional>
+#include <vector>
+
+bool mainThread = true, shuttingDown = false, reject = false;
+std::vector<std::function<void()>> jobs;
+namespace paimon {
+bool isMainThread() { return mainThread; }
+bool isRuntimeShuttingDown() { return shuttingDown; }
+struct ThreadTracker {
+    static ThreadTracker& get() { static ThreadTracker value; return value; }
+    bool spawn(std::function<void()> job) {
+        if (reject) return false;
+        jobs.push_back(std::move(job)); return true;
+    }
+};
+}
+struct ThumbnailCache {
+    struct Manifest { int calls = 0; void flush() { assert(!mainThread || shuttingDown); ++calls; } } m_manifest;
+    void saveDiskIndex(bool allowDuringShutdown = false);
+};
+@@function|src/features/thumbnails/services/ThumbnailCache.cpp|void ThumbnailCache::saveDiskIndex(bool allowDuringShutdown)@@
+int main() {
+    ThumbnailCache cache;
+    cache.saveDiskIndex(); cache.saveDiskIndex(true); cache.saveDiskIndex();
+    assert(jobs.size() == 1 && cache.m_manifest.calls == 0);
+    mainThread = false;
+    auto job = std::move(jobs.back()); jobs.clear(); job();
+    assert(cache.m_manifest.calls == 1);
+    cache.saveDiskIndex(); assert(cache.m_manifest.calls == 2);
+    mainThread = true;
+    reject = true; cache.saveDiskIndex(); assert(jobs.empty());
+    reject = false; cache.saveDiskIndex(); assert(jobs.size() == 1);
+    mainThread = false; jobs.back()(); jobs.clear();
+    mainThread = true; shuttingDown = true;
+    cache.saveDiskIndex(); assert(cache.m_manifest.calls == 3);
+    cache.saveDiskIndex(true); assert(cache.m_manifest.calls == 4);
+}

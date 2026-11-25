@@ -14,6 +14,10 @@ class GJGameLevel;
 namespace paimon::animate {
 
 std::string levelKey(GJGameLevel* level);
+inline constexpr char const* kLevelIdentityKey = "paimbnails-animate-id-v2";
+void restoreLevelIdentity(GJGameLevel* level, std::string const& identity);
+void copyLevelDocument(GJGameLevel* source, GJGameLevel* destination);
+Document loadLevelDocument(GJGameLevel* level);
 
 matjson::Value encodeDocument(Document const& doc);
 Document decodeDocument(matjson::Value const& json);

@@ -1,4 +1,6 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "RTXManager.hpp"
+#include "../../../utils/AtomicFileWrite.hpp"
 
 #include "../../../utils/EditorContext.hpp"
 
@@ -16,35 +18,34 @@ using namespace geode::prelude;
 namespace paimon::rtx {
 
 // only when a saved field flips meaning.
-constexpr int kConfigSchema = 3;
+constexpr int kConfigSchema = 6;
 
 void applyPreset(RTXConfig& cfg, Preset preset) {
     // pricey presets raise filter too: 8 rays alone aren't enough.
     switch (preset) {
         case Preset::Performance:
-            cfg.renderScale = 0.35f; cfg.rayCount = 2; cfg.raySteps = 10;
+            cfg.renderScale = 0.40f; cfg.rayCount = 3; cfg.raySteps = 10;
             cfg.rayDistance = 0.24f; cfg.stepGrowth = 1.35f; cfg.bloomPasses = 3;
-            cfg.denoise = 2.60f; cfg.atrousPasses = 2;
-            // low temporal: with frameskip=1, 0.90 left trails.
+            cfg.denoise = 2.20f; cfg.atrousPasses = 2;
             cfg.temporal = 0.85f; cfg.frameSkip = 1;
             break;
         case Preset::Balanced:
-            cfg.renderScale = 0.50f; cfg.rayCount = 3; cfg.raySteps = 14;
+            cfg.renderScale = 0.60f; cfg.rayCount = 4; cfg.raySteps = 14;
             cfg.rayDistance = 0.28f; cfg.stepGrowth = 1.28f; cfg.bloomPasses = 4;
             cfg.denoise = 2.00f; cfg.atrousPasses = 3;
             cfg.temporal = 0.88f; cfg.frameSkip = 0;
             break;
         case Preset::Quality:
-            cfg.renderScale = 0.65f; cfg.rayCount = 5; cfg.raySteps = 18;
+            cfg.renderScale = 0.80f; cfg.rayCount = 6; cfg.raySteps = 18;
             cfg.rayDistance = 0.32f; cfg.stepGrowth = 1.22f; cfg.bloomPasses = 5;
-            cfg.denoise = 1.60f; cfg.atrousPasses = 3;
-            cfg.temporal = 0.86f; cfg.frameSkip = 0;
+            cfg.denoise = 1.90f; cfg.atrousPasses = 3;
+            cfg.temporal = 0.90f; cfg.frameSkip = 0;
             break;
         case Preset::Ultra:
-            cfg.renderScale = 0.85f; cfg.rayCount = 8; cfg.raySteps = 24;
+            cfg.renderScale = 1.00f; cfg.rayCount = 8; cfg.raySteps = 24;
             cfg.rayDistance = 0.38f; cfg.stepGrowth = 1.18f; cfg.bloomPasses = 5;
-            cfg.denoise = 1.20f; cfg.atrousPasses = 4;
-            cfg.temporal = 0.84f; cfg.frameSkip = 0;
+            cfg.denoise = 1.80f; cfg.atrousPasses = 3;
+            cfg.temporal = 0.92f; cfg.frameSkip = 0;
             break;
         case Preset::Custom:
             break;
@@ -80,7 +81,7 @@ RTXManager& RTXManager::get() {
 }
 
 std::filesystem::path RTXManager::configPath() const {
-    return Mod::get()->getSaveDir() / "rtx_config.json";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "rtx_config.json";
 }
 
 void RTXManager::init() {
@@ -221,7 +222,7 @@ void RTXManager::loadConfig() {
         return;
     }
 
-    auto rawRes = geode::utils::file::readString(path);
+    auto rawRes = geode::utils::file::readString(paimon::paths::toSdkPath(path));
     if (!rawRes) {
         log::warn("[PaimonRTX] No se pudo leer la config: {}", rawRes.unwrapErr());
         return;
@@ -270,11 +271,38 @@ void RTXManager::loadConfig() {
         c.sharpen         = fresh.sharpen;
     }
 
+    // schema 6 native 100% resolution for Ultra, removed 720p cap: reapply saved preset if not custom.
+    if (schema < 6 && c.preset != static_cast<int>(Preset::Custom)) {
+        applyPreset(c, static_cast<Preset>(c.preset));
+        c.clampSigma = 2.20f;
+    }
+
     if (schema < kConfigSchema) {
         saveConfig();
         log::info("[PaimonRTX] Config migrada del esquema {} al {} (preset {})",
                   schema, kConfigSchema, presetName(c.preset));
     }
+}
+
+matjson::Value RTXManager::exportConfig() const {
+    auto config = m_config;
+    sanitizeFields(config);
+    auto json = matjson::makeObject({{"schema", kConfigSchema}});
+    saveFields(config, json);
+    return json;
+}
+
+bool RTXManager::importConfig(matjson::Value const& configuration) {
+    if (!configuration.isObject() || configuration["schema"].asInt().unwrapOr(0) != kConfigSchema) return false;
+    auto json = configuration;
+    RTXConfig next{};
+    loadFields(next, json);
+    sanitizeFields(next);
+    auto normalized = matjson::makeObject({{"schema", kConfigSchema}});
+    saveFields(next, normalized);
+    if (!paimon::file::writeAtomically(configPath(), normalized.dump())) return false;
+    m_config = next;
+    return true;
 }
 
 void RTXManager::saveConfig() {
@@ -285,17 +313,11 @@ void RTXManager::saveConfig() {
     j["schema"]           = kConfigSchema;
     saveFields(c, j);
 
-    auto path = configPath();
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out) {
-        log::error("[PaimonRTX] No se pudo escribir la config en {}",
-                   geode::utils::string::pathToString(path));
-        return;
-    }
     auto txt = j.dump();
-    out.write(txt.data(), static_cast<std::streamsize>(txt.size()));
+    if (!paimon::file::writeAtomically(configPath(), txt)) {
+        log::error("[PaimonRTX] No se pudo escribir la config en {}",
+                   paimon::paths::toUtf8(configPath()));
+    }
 }
 
 void RTXManager::resetToDefaults() {

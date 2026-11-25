@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "TasteProfile.hpp"
 
 #include "../../../core/modules/ModuleRegistry.hpp"
@@ -62,11 +63,45 @@ void normalize(float* values, size_t count) {
     for (size_t i = 0; i < count; i++) values[i] /= total;
 }
 
+// fields whose key and transform are identical in the current and legacy
+// schemas; the divergent ones (renamed keys, bool-to-int votes) stay per-reader.
+void readSharedInteractionFields(LevelInteraction& rec, matjson::Value const& value) {
+    rec.playCount = value["playCount"].asInt().unwrapOr(0);
+    rec.attempts = value["attempts"].asInt().unwrapOr(0);
+    rec.bestPercent = value["bestPercent"].asInt().unwrapOr(0);
+    rec.completed = value["completed"].asBool().unwrapOr(false);
+    rec.thumbnailRating = value["thumbnailRating"].asInt().unwrapOr(0);
+    rec.difficulty = value["difficulty"].asInt().unwrapOr(0);
+    rec.demonDifficulty = value["demonDifficulty"].asInt().unwrapOr(0);
+    rec.stars = value["stars"].asInt().unwrapOr(0);
+    rec.length = value["length"].asInt().unwrapOr(0);
+    rec.featured = value["featured"].asBool().unwrapOr(false);
+    rec.songID = value["songID"].asInt().unwrapOr(0);
+    rec.creatorID = value["creatorID"].asInt().unwrapOr(0);
+    paimon::json::forEachInArray(value["tags"], [&](matjson::Value const& tag) {
+        auto name = tag.asString().unwrapOr("");
+        if (!name.empty()) rec.tags.push_back(std::move(name));
+    });
+}
+
+}
+
+namespace {
+std::atomic<bool> s_tasteProfileInitialized{false};
+} // namespace
+
+bool TasteProfile::isInitialized() {
+    return s_tasteProfileInitialized.load(std::memory_order_acquire);
 }
 
 TasteProfile& TasteProfile::get() {
-    static TasteProfile instance;
-    return instance;
+    // Heap-leaked: never run destructor or lazy file load during DllMain/teardown.
+    static auto* instance = []() {
+        auto* profile = new TasteProfile();
+        s_tasteProfileInitialized.store(true, std::memory_order_release);
+        return profile;
+    }();
+    return *instance;
 }
 
 TasteProfile::TasteProfile() {
@@ -74,7 +109,7 @@ TasteProfile::TasteProfile() {
 }
 
 std::filesystem::path TasteProfile::profilePath() const {
-    return Mod::get()->getSaveDir() / "foryou_profile.json";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "foryou_profile.json";
 }
 
 
@@ -571,57 +606,27 @@ matjson::Value TasteProfile::toJson(LevelInteraction const& rec) const {
 
 LevelInteraction TasteProfile::fromJson(matjson::Value const& value) const {
     LevelInteraction rec;
-    rec.playCount = value["playCount"].asInt().unwrapOr(0);
+    readSharedInteractionFields(rec, value);
     rec.playSeconds = static_cast<float>(value["playSeconds"].asDouble().unwrapOr(0.0));
-    rec.attempts = value["attempts"].asInt().unwrapOr(0);
-    rec.bestPercent = value["bestPercent"].asInt().unwrapOr(0);
-    rec.completed = value["completed"].asBool().unwrapOr(false);
     rec.vote = std::clamp<int>(static_cast<int>(value["vote"].asInt().unwrapOr(0)), -1, 1);
     rec.favoriteLevel = value["favoriteLevel"].asBool().unwrapOr(false);
-    rec.thumbnailRating = value["thumbnailRating"].asInt().unwrapOr(0);
     rec.dismissed = value["dismissed"].asBool().unwrapOr(false);
-    rec.difficulty = value["difficulty"].asInt().unwrapOr(0);
-    rec.demonDifficulty = value["demonDifficulty"].asInt().unwrapOr(0);
-    rec.stars = value["stars"].asInt().unwrapOr(0);
-    rec.length = value["length"].asInt().unwrapOr(0);
     rec.platformer = value["platformer"].asBool().unwrapOr(false);
-    rec.featured = value["featured"].asBool().unwrapOr(false);
     rec.epicTier = value["epicTier"].asInt().unwrapOr(0);
-    rec.songID = value["songID"].asInt().unwrapOr(0);
-    rec.creatorID = value["creatorID"].asInt().unwrapOr(0);
     rec.lastSeen = static_cast<int64_t>(value["lastSeen"].asInt().unwrapOr(0));
-    paimon::json::forEachInArray(value["tags"], [&](matjson::Value const& tag) {
-        auto name = tag.asString().unwrapOr("");
-        if (!name.empty()) rec.tags.push_back(std::move(name));
-    });
     return rec;
 }
 
 LevelInteraction TasteProfile::fromLegacyJson(matjson::Value const& value) const {
     LevelInteraction rec;
-    rec.playCount = value["playCount"].asInt().unwrapOr(0);
+    readSharedInteractionFields(rec, value);
     rec.playSeconds = static_cast<float>(value["totalTime"].asDouble().unwrapOr(0.0));
-    rec.attempts = value["attempts"].asInt().unwrapOr(0);
-    rec.bestPercent = value["bestPercent"].asInt().unwrapOr(0);
-    rec.completed = value["completed"].asBool().unwrapOr(false);
     // v2 recorded only positives and conflated favorites with likes.
     rec.vote = value["liked"].asBool().unwrapOr(false) ? 1 : 0;
     rec.favoriteLevel = value["isFavoriteLevel"].asBool().unwrapOr(false);
-    rec.thumbnailRating = value["thumbnailRating"].asInt().unwrapOr(0);
-    rec.difficulty = value["difficulty"].asInt().unwrapOr(0);
-    rec.demonDifficulty = value["demonDifficulty"].asInt().unwrapOr(0);
-    rec.stars = value["stars"].asInt().unwrapOr(0);
-    rec.length = value["length"].asInt().unwrapOr(0);
     rec.platformer = value["isPlatformer"].asBool().unwrapOr(false);
-    rec.featured = value["featured"].asBool().unwrapOr(false);
     rec.epicTier = value["epic"].asBool().unwrapOr(false) ? 1 : 0;
-    rec.songID = value["songID"].asInt().unwrapOr(0);
-    rec.creatorID = value["creatorID"].asInt().unwrapOr(0);
     rec.lastSeen = static_cast<int64_t>(value["lastPlayed"].asInt().unwrapOr(0));
-    paimon::json::forEachInArray(value["tags"], [&](matjson::Value const& tag) {
-        auto name = tag.asString().unwrapOr("");
-        if (!name.empty()) rec.tags.push_back(std::move(name));
-    });
     return rec;
 }
 

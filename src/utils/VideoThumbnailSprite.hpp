@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/Geode.hpp>
 #include "../video/VideoPlayer.hpp"
@@ -12,7 +12,7 @@
 #include <chrono>
 #include <atomic>
 
-// ccsprite wrapper around videoplayer; muted autoplay, zero-alloc frame uploads.
+// ccsprite wrapper around videoplayer: muted autoplay, zero-alloc frame uploads.
 class VideoThumbnailSprite : public cocos2d::CCSprite {
 public:
     using FrameReadyCallback = std::function<void(VideoThumbnailSprite*)>;
@@ -33,6 +33,7 @@ public:
     void play();
     void pause();
     void stop();
+    void forceStop();
 
     void setLoop(bool loop);
     void setVolume(float v);
@@ -41,6 +42,8 @@ public:
     cocos2d::CCSize getVideoSize() const;
     void setOnFirstVisibleFrame(FrameReadyCallback callback);
 
+    static void requestShutdown();
+    static void waitShutdown(std::chrono::steady_clock::time_point deadline);
     static void clearCache();
 
     static void onGLContextReload();
@@ -87,9 +90,9 @@ private:
     static void pruneRecentFailuresLocked(std::chrono::steady_clock::time_point now);
     static void pumpAsyncQueues();
     static void handleDownloadResponse(std::string requestKey, geode::utils::web::WebResponse&& response);
-    // decoder opens off main thread, then finishcreatejob takes the player.
+    // decoder opens off the main thread; finishcreatejob takes the player.
     static void handleCreateJob(CreateJob job);
-    // main thread: wrap the player in a sprite and settle queue bookkeeping.
+    // main thread: wraps the player in a sprite and settles queue bookkeeping.
     static void finishCreateJob(CreateJob job, std::unique_ptr<paimon::video::VideoPlayer> player);
     void dispatchFirstVisibleFrame();
 
@@ -161,7 +164,7 @@ private:
     static std::mutex s_activeSpritesMutex;
     static int s_activeSpriteCount;
 
-    // total decode frame budget stays bounded as visible sprite count grows.
+    // keeps the total decode frame budget bounded as sprite count grows.
     static int adaptiveSpriteFPS(int activeCount);
 
     bool tryAcquireActiveSlot();
@@ -169,7 +172,7 @@ private:
 
     bool m_holdsActiveSlot = false;
 
-    // pause decoding after staying off-screen past the threshold.
+    // pauses decoding after staying off-screen past the threshold.
     float m_offscreenAccumulator = 0.0f;
     static constexpr float kOffscreenPauseThreshold = 0.5f; // seconds
 };

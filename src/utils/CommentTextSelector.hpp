@@ -10,6 +10,7 @@ namespace paimon {
 
 class CommentTextSelector : public cocos2d::CCLayer {
 protected:
+    using cocos2d::CCLayer::init;
     struct DisplaySegment {
         size_t rawStart = 0;
         size_t rawEnd = 0;

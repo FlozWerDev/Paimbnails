@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "GifToSheetPopup.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../utils/FileDialog.hpp"
@@ -169,7 +170,7 @@ void GifToSheetPopup::onPickGif() {
         auto* popup = ref.data();
         if (!popup || !popup->getParent()) return;
         if (res.isErr()) {
-            PaimonNotify::create("No se pudo abrir el dialogo de archivos.", NotificationIcon::Error)->show();
+            PaimonNotify::show("No se pudo abrir el dialogo de archivos.", NotificationIcon::Error);
             return;
         }
         auto opt = res.unwrap();
@@ -179,14 +180,14 @@ void GifToSheetPopup::onPickGif() {
 }
 
 void GifToSheetPopup::loadGif(std::filesystem::path const& path) {
-    auto dataRes = utils::file::readBinary(path);
+    auto dataRes = utils::file::readBinary(paimon::paths::toSdkPath(path));
     if (dataRes.isErr()) {
-        PaimonNotify::create("No se pudo leer el archivo.", NotificationIcon::Error)->show();
+        PaimonNotify::show("No se pudo leer el archivo.", NotificationIcon::Error);
         return;
     }
     auto bytes = std::make_shared<std::vector<uint8_t>>(dataRes.unwrap());
     if (!GIFDecoder::isGIF(bytes->data(), bytes->size())) {
-        PaimonNotify::create("El archivo no es un GIF valido.", NotificationIcon::Warning)->show();
+        PaimonNotify::show("El archivo no es un GIF valido.", NotificationIcon::Warning);
         return;
     }
 
@@ -202,7 +203,7 @@ void GifToSheetPopup::loadGif(std::filesystem::path const& path) {
             Loader::get()->queueInMainThread([self] {
                 auto ref = self.lock();
                 if (auto* popup = ref.data()) popup->hideBusy();
-                PaimonNotify::create("No se pudo decodificar el GIF.", NotificationIcon::Error)->show();
+                PaimonNotify::show("No se pudo decodificar el GIF.", NotificationIcon::Error);
             });
             return;
         }
@@ -212,7 +213,7 @@ void GifToSheetPopup::loadGif(std::filesystem::path const& path) {
             if (!popup) return;
             popup->hideBusy();
             if (gif->frames.empty()) {
-                PaimonNotify::create("No se pudo decodificar el GIF.", NotificationIcon::Error)->show();
+                PaimonNotify::show("No se pudo decodificar el GIF.", NotificationIcon::Error);
                 return;
             }
             popup->applyDecoded(path, gif);
@@ -231,7 +232,7 @@ void GifToSheetPopup::applyDecoded(std::filesystem::path const& path, std::share
         static_cast<double>(count) * m_gif->height / std::max(1, m_gif->width));
     m_autoCols = std::clamp(static_cast<int>(std::lround(ideal)), 1, count);
 
-    auto name = utils::string::pathToString(path.filename());
+    auto name = paimon::paths::toUtf8(path.filename());
     if (name.size() > 30) name = name.substr(0, 28) + "..";
     m_fileLabel->setString(name.c_str());
 
@@ -289,7 +290,7 @@ void GifToSheetPopup::refreshInfo() {
 void GifToSheetPopup::onExport() {
     if (m_busyOverlay) return;
     if (!m_gif || m_gif->frames.empty()) {
-        PaimonNotify::create("Primero elige un GIF.", NotificationIcon::Warning)->show();
+        PaimonNotify::show("Primero elige un GIF.", NotificationIcon::Warning);
         return;
     }
     int cols = currentCols();
@@ -297,21 +298,21 @@ void GifToSheetPopup::onExport() {
     long long sheetW = static_cast<long long>(cols) * m_gif->width;
     long long sheetH = static_cast<long long>(rows) * m_gif->height;
     if (sheetW > kMaxSheetSide || sheetH > kMaxSheetSide || sheetW * sheetH > kMaxSheetPixels) {
-        PaimonNotify::create(
+        PaimonNotify::show(
             "El sheet resultante es demasiado grande. Ajusta las columnas.",
             NotificationIcon::Warning
-        )->show();
+        );
         return;
     }
 
-    auto defaultName = utils::string::pathToString(m_gifPath.stem()) + "_sheet.png";
+    auto defaultName = paimon::paths::toUtf8(m_gifPath.stem()) + "_sheet.png";
     WeakRef<GifToSheetPopup> self = this;
     pt::saveImage(defaultName, [self](Result<std::optional<std::filesystem::path>> res) {
         auto ref = self.lock();
         auto* popup = ref.data();
         if (!popup || !popup->getParent()) return;
         if (res.isErr()) {
-            PaimonNotify::create("No se pudo abrir el dialogo de guardado.", NotificationIcon::Error)->show();
+            PaimonNotify::show("No se pudo abrir el dialogo de guardado.", NotificationIcon::Error);
             return;
         }
         auto opt = res.unwrap();
@@ -346,7 +347,7 @@ void GifToSheetPopup::exportTo(std::filesystem::path pngPath) {
             Loader::get()->queueInMainThread([self] {
                 auto ref = self.lock();
                 if (auto* popup = ref.data()) popup->hideBusy();
-                PaimonNotify::create("El sheet no cabe en memoria.", NotificationIcon::Error)->show();
+                PaimonNotify::show("El sheet no cabe en memoria.", NotificationIcon::Error);
             });
             return;
         }
@@ -371,7 +372,7 @@ void GifToSheetPopup::exportTo(std::filesystem::path pngPath) {
             pngPath
         );
         if (ok) {
-            auto jsonRes = utils::file::writeString(jsonPath, sheetJson(*gif, cols, rows));
+            auto jsonRes = utils::file::writeString(paimon::paths::toSdkPath(jsonPath), sheetJson(*gif, cols, rows));
             ok = jsonRes.isOk();
         }
 
@@ -380,12 +381,12 @@ void GifToSheetPopup::exportTo(std::filesystem::path pngPath) {
             auto* popup = ref.data();
             if (popup) popup->hideBusy();
             if (ok) {
-                PaimonNotify::create(
-                    fmt::format("Sheet exportado: {}", utils::string::pathToString(pngPath.filename())),
+                PaimonNotify::show(
+                    fmt::format("Sheet exportado: {}", paimon::paths::toUtf8(pngPath.filename())),
                     NotificationIcon::Success
-                )->show();
+                );
             } else {
-                PaimonNotify::create("Fallo la exportacion del sheet.", NotificationIcon::Error)->show();
+                PaimonNotify::show("Fallo la exportacion del sheet.", NotificationIcon::Error);
             }
         });
     });

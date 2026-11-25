@@ -1,0 +1,77 @@
+#include <cassert>
+#include <memory>
+#include <string>
+
+namespace geode::prelude {}
+namespace paimon {
+    int mainThreadCaptures = 0;
+    void captureMainThread() { ++mainThreadCaptures; }
+}
+
+struct LoadingLayer {
+    bool initSucceeded = true;
+    int loadCalls = 0;
+    bool init(bool) { return initSucceeded; }
+    void loadAssets() { ++loadCalls; }
+};
+
+struct LayerBackgroundManager {
+    int applications = 0;
+    int tintFixes = 0;
+    LoadingLayer* lastLayer = nullptr;
+    bool customBackground = true;
+    static LayerBackgroundManager& get() {
+        static LayerBackgroundManager manager;
+        return manager;
+    }
+    bool applyBackground(LoadingLayer* layer, std::string const& key) {
+        assert(key == "loading");
+        ++applications;
+        lastLayer = layer;
+        return customBackground;
+    }
+    void applyVanillaBackgroundTintFix(LoadingLayer*) { ++tintFixes; }
+};
+
+template <class Derived, class Base>
+struct TestModify : Base {
+    struct FieldProxy {
+        std::shared_ptr<void> storage;
+        auto operator->() {
+            if (!storage) storage = std::make_shared<typename Derived::Fields>();
+            return static_cast<typename Derived::Fields*>(storage.get());
+        }
+    } m_fields;
+};
+#define $modify(Name, Base) Name##Dummy; struct Name : TestModify<Name, Base>
+@@source|src/hooks/LoadingLayer.cpp@@
+
+int main() {
+    auto& manager = LayerBackgroundManager::get();
+    PaimonLoadingLayer startup;
+    // Geode creates this layer before loading the mod and installing its hooks.
+    assert(startup.LoadingLayer::init(false));
+    assert(manager.applications == 0);
+    startup.loadAssets();
+    assert(manager.applications == 1);
+    assert(manager.lastLayer == &startup);
+    assert(manager.tintFixes == 1 && paimon::mainThreadCaptures == 1);
+    for (int step = 0; step < 15; ++step) startup.loadAssets();
+    assert(startup.loadCalls == 16);
+    assert(manager.applications == 1); // preserve animations and pending downloads
+
+    PaimonLoadingLayer refresh;
+    assert(refresh.init(true));
+    refresh.loadAssets();
+    assert(manager.applications == 2 && manager.lastLayer == &refresh);
+    refresh.loadAssets();
+    assert(manager.applications == 2 && refresh.loadCalls == 2);
+
+    manager.customBackground = false;
+    PaimonLoadingLayer vanilla;
+    assert(vanilla.init(false));
+    vanilla.loadAssets();
+    vanilla.loadAssets();
+    assert(manager.applications == 3 && manager.tintFixes == 3);
+    assert(vanilla.loadCalls == 2); // default backgrounds still advance loading
+}

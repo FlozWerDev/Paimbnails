@@ -17,7 +17,7 @@ class SlotStore {
 public:
     static SlotStore& get();
 
-    // every slot in display order.
+    // saved custom levels; pageOrder() defines their position among the originals.
     std::vector<Slot> const& slots();
 
     std::optional<Slot> find(std::string const& slotId);
@@ -58,7 +58,8 @@ public:
     bool isOfficialHidden(int levelId);
     void setOfficialHidden(int levelId, bool hidden);
 
-    // the slot drawn in place of an official page, if any.
+    // the saved replacement includes disabled drafts; slotForOfficial only returns active ones.
+    std::optional<Slot> replacementForOfficial(int levelId);
     std::optional<Slot> slotForOfficial(int levelId);
 
     // folder holding imported .gmd files. created on first use.

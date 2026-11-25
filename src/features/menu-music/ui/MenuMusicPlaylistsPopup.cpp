@@ -121,6 +121,7 @@ void MenuMusicPlaylistsPopup::buildList() {
 
     m_scroll = ScrollLayer::create({size.width - 30.f, scrollHeight});
     if (!m_scroll) return;
+    m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setPosition({15.f, 12.f});
     m_scroll->m_contentLayer->setID("playlists-scroll-content"_spr);
     m_mainLayer->addChild(m_scroll, 2);

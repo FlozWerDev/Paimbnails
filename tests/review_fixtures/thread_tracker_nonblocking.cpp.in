@@ -1,0 +1,59 @@
+#include <atomic>
+#include <cassert>
+#include <chrono>
+#include <condition_variable>
+#include <future>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <thread>
+#include <vector>
+#ifdef _WIN32
+#include <windows.h>
+#endif
+using namespace std::chrono_literals;
+namespace geode::log {
+template<class... T> void warn(T const&...) {}
+template<class... T> void error(T const&...) {}
+template<class... T> void info(T const&...) {}
+}
+namespace paimon {
+void joinWithWarning(std::thread& thread, std::chrono::milliseconds) { thread.join(); }
+}
+@@source|src/utils/ThreadTracker.hpp@@
+
+std::mutex finalizerMutex;
+std::condition_variable finalizerReady;
+bool entered = false, released = false;
+struct SlowFinalizer {
+    ~SlowFinalizer() {
+        std::unique_lock lock(finalizerMutex);
+        entered = true; finalizerReady.notify_all();
+        assert(finalizerReady.wait_for(lock, 3s, [] { return released; }));
+    }
+};
+void verifyResponsiveCleanup() {
+    {
+        std::unique_lock lock(finalizerMutex);
+        assert(finalizerReady.wait_for(lock, 2s, [] { return entered; }));
+    }
+    auto cleanup = std::async(std::launch::async, [] { paimon::ThreadTracker::get().cleanup(); });
+    bool const responsive = cleanup.wait_for(100ms) == std::future_status::ready;
+    { std::lock_guard lock(finalizerMutex); released = true; }
+    finalizerReady.notify_all(); cleanup.get();
+    assert(responsive);
+}
+int main() {
+    auto& tracker = paimon::ThreadTracker::get();
+    assert(tracker.spawn([resource = std::make_unique<SlowFinalizer>()] {}));
+    verifyResponsiveCleanup();
+#ifdef _WIN32
+    // The body and its captures are gone, but the OS thread has not exited:
+    // a completed body is not permission to wait for slow TLS destructors.
+    { std::lock_guard lock(finalizerMutex); entered = released = false; }
+    assert(tracker.spawn([] { thread_local SlowFinalizer tls; (void)tls; }));
+    verifyResponsiveCleanup();
+#endif
+    tracker.shutdown();
+    assert(!tracker.spawn([] {}));
+}

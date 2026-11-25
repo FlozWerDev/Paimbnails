@@ -155,8 +155,8 @@ int main() {
 
 const temp = mkdtempSync(join(tmpdir(), "main-level-prefetch-"));
 try {
-    const compiler = process.env.CXX || "g++";
-    const binary = join(temp, "regression");
+    const compiler = process.env.CXX || (process.platform === "win32" ? "clang++" : "g++");
+    const binary = join(temp, process.platform === "win32" ? "regression.exe" : "regression");
     const compile = spawnSync(compiler, ["-std=c++20", "-Wall", "-Wextra", "-Werror",
         "-fsanitize=address,undefined", "-g", "-x", "c++", "-", "-o", binary],
         { input: source, encoding: "utf8" });

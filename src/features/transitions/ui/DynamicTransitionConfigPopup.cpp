@@ -1,5 +1,6 @@
 #include "DynamicTransitionConfigPopup.hpp"
 #include "DynamicTransitionScene.hpp"
+#include "../services/TransitionManager.hpp"
 #include "../../../ui/PaiConfigKit.hpp"
 #include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
@@ -105,7 +106,7 @@ CCLabelBMFont* label(char const* value, char const* font, float scale, CCPoint p
     return node;
 }
 
-// Demo screens are laid out at window size so the miniature keeps real proportions.
+// demo screens are laid out at window size so the miniature keeps real proportions.
 CCNode* menuScreen(CCSize size, Rect& button) {
     auto* root = CCNode::create();
     root->setContentSize(size);
@@ -715,6 +716,11 @@ void DynamicTransitionConfigPopup::rebuild() {
     m_mainLayer->addChild(m_header);
 
     std::vector<CCNode*> items;
+    if (TransitionManager::get().isCustomActive()) {
+        items.push_back(kit::makeHint(width, text(
+            "En pausa: hay una transicion Custom (Studio) activa en Transitions. Dynamic vuelve sola al desactivarla o cambiar el estilo.",
+            "Paused: a Custom (Studio) transition is active in Transitions. Dynamic resumes on its own when you turn it off or change the style.")));
+    }
     if (m_tab == 0) {
         constexpr int kColumns = 3;
         constexpr float kGap = 4.f, kRow = 22.f;

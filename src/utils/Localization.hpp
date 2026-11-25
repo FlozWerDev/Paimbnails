@@ -38,7 +38,7 @@ public:
 
     static std::string languageDisplayName(Language lang) {
         switch (lang) {
-            case Language::SPANISH: return "Espanol";
+            case Language::SPANISH: return "Español";
             case Language::ENGLISH: return "English";
         }
         return "English";
@@ -110,4 +110,13 @@ private:
     std::unordered_map<std::string, std::string> m_spanish;
     std::unordered_map<std::string, std::string> m_english;
 };
+
+namespace paimon::loc {
+// localized string; `fallback` wins when the key itself comes back untranslated.
+inline std::string tr(char const* key, char const* fallback = "") {
+    auto value = Localization::get().getString(key);
+    if (value == key && fallback && fallback[0] != '\0') return fallback;
+    return value;
+}
+} // namespace paimon::loc
 

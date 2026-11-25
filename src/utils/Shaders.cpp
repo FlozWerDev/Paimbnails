@@ -2,6 +2,7 @@
 #include "GLSLLoader.hpp"
 #include "../features/audio/services/PaimonAudio.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
+#include "../features/cursor/services/CursorManager.hpp"
 #include "../core/RuntimeLifecycle.hpp"
 #include "../core/BackgroundPreload.hpp"
 #include "../utils/MainThreadDelay.hpp"
@@ -19,36 +20,6 @@ using namespace cocos2d;
 
 namespace Shaders {
 
-CCGLProgram* getOrCreateShader(char const* key, char const* vertexSrc, char const* fragmentSrc) {
-    auto shaderCache = CCShaderCache::sharedShaderCache();
-    if (auto program = shaderCache->programForKey(key)) {
-        return program;
-    }
-
-    if (!vertexSrc || !fragmentSrc) {
-        geode::log::error("shader source is null for key: {}", key);
-        return nullptr;
-    }
-
-    auto program = new CCGLProgram();
-    program->initWithVertexShaderByteArray(vertexSrc, fragmentSrc);
-    program->addAttribute("a_position", kCCVertexAttrib_Position);
-    program->addAttribute("a_color", kCCVertexAttrib_Color);
-    program->addAttribute("a_texCoord", kCCVertexAttrib_TexCoords);
-
-    if (!program->link()) {
-        geode::log::error("failed to link shader: {}", key);
-        program->release();
-        return nullptr;
-    }
-
-    program->updateUniforms();
-    shaderCache->addProgram(program, key);
-    program->release();
-    paimon::shaders::trackShaderKey(key);
-    return program;
-}
-
 void applyBlurPass(CCSprite* input, CCRenderTexture* output, CCGLProgram* program, CCSize const& size, float radius) {
     input->setShaderProgram(program);
     input->setPosition(size * 0.5f);
@@ -64,8 +35,8 @@ void applyBlurPass(CCSprite* input, CCRenderTexture* output, CCGLProgram* progra
         program->setUniformLocationWith1f(locRadius, radius);
     }
 
-    // begin() does not clear the fbo; transparent sources would blend with
-    // uninitialized memory and produce driver-dependent white artifacts.
+    // begin() does not clear the fbo: transparent sources would blend with
+    // garbage and produce driver-dependent artifacts.
     output->beginWithClear(0.f, 0.f, 0.f, 0.f);
     input->visit();
     output->end();
@@ -73,9 +44,28 @@ void applyBlurPass(CCSprite* input, CCRenderTexture* output, CCGLProgram* progra
 
 float intensityToBlurRadius(float intensity) {
     float normalized = std::clamp((intensity - 1.0f) / 9.0f, 0.0f, 1.0f);
-    // smoothstep avoids an abrupt blur jump at low intensity.
+    // smoothstep: no abrupt jump at low intensity.
     float curved = normalized * normalized * (3.0f - 2.0f * normalized);
     return 0.03f + (curved * 0.27f);
+}
+
+// sprite feeding the next blur pass: flipped sample of a render texture,
+// optionally stretched to the blur size and centered.
+CCSprite* makeBlurPassSprite(CCRenderTexture* from, CCSize const& blurSize,
+                             ccTexParams& params, bool stretch, bool center) {
+    auto sprite = CCSprite::createWithTexture(from->getSprite()->getTexture());
+    if (!sprite) return nullptr;
+    if (stretch) {
+        float texW = std::max(1.0f, sprite->getContentSize().width);
+        float texH = std::max(1.0f, sprite->getContentSize().height);
+        sprite->setScaleX(blurSize.width / texW);
+        sprite->setScaleY(blurSize.height / texH);
+    }
+    sprite->setFlipY(true);
+    sprite->setAnchorPoint({0.5f, 0.5f});
+    if (center) sprite->setPosition(blurSize * 0.5f);
+    sprite->getTexture()->setTexParameters(&params);
+    return sprite;
 }
 
 CCSprite* createBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, float intensity, bool useDirectRadius) {
@@ -106,7 +96,8 @@ CCSprite* createBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, fl
     srcSprite->setScale(scale);
     srcSprite->setAnchorPoint({0.5f, 0.5f});
     srcSprite->setPosition(blurSize * 0.5f);
-    srcSprite->setFlipY(true);
+    // no flipY here: each rt read below flips its own sprite, so pre-flipping
+    // would invert the whole chain.
 
     auto blurH = paimon::shaders::getBlurHorizontalShader();
     auto blurV = paimon::shaders::getBlurVerticalShader();
@@ -133,42 +124,25 @@ CCSprite* createBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, fl
 
     applyBlurPass(srcSprite, rtA, blurH, blurSize, radius);
 
-    auto midSprite = CCSprite::createWithTexture(rtA->getSprite()->getTexture());
-    midSprite->setFlipY(true);
-    midSprite->setAnchorPoint({0.5f, 0.5f});
-    midSprite->setPosition(blurSize * 0.5f);
-    midSprite->getTexture()->setTexParameters(&params);
+    auto midSprite = makeBlurPassSprite(rtA, blurSize, params, false, true);
 
     applyBlurPass(midSprite, rtB, blurV, blurSize, radius);
 
     if (!useDirectRadius && intensity >= 4.0f) {
-        auto mid2 = CCSprite::createWithTexture(rtB->getSprite()->getTexture());
-        mid2->setFlipY(true);
-        mid2->setAnchorPoint({0.5f, 0.5f});
-        mid2->setPosition(blurSize * 0.5f);
-        mid2->getTexture()->setTexParameters(&params);
+        auto mid2 = makeBlurPassSprite(rtB, blurSize, params, false, true);
 
         applyBlurPass(mid2, rtA, blurH, blurSize, radius * 0.8f);
 
-        auto mid3 = CCSprite::createWithTexture(rtA->getSprite()->getTexture());
-        mid3->setFlipY(true);
-        mid3->setAnchorPoint({0.5f, 0.5f});
-        mid3->setPosition(blurSize * 0.5f);
-        mid3->getTexture()->setTexParameters(&params);
+        auto mid3 = makeBlurPassSprite(rtA, blurSize, params, false, true);
 
         applyBlurPass(mid3, rtB, blurV, blurSize, radius * 0.8f);
     }
 
-    auto finalSprite = CCSprite::createWithTexture(rtB->getSprite()->getTexture());
-    finalSprite->setAnchorPoint({0.5f, 0.5f});
-    finalSprite->setFlipY(true);
-    finalSprite->getTexture()->setTexParameters(&params);
-
-    return finalSprite;
+    return makeBlurPassSprite(rtB, blurSize, params, false, false);
 }
 
 CCSprite* createPopupBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, float intensity) {
-    // blur at reduced resolution and restore target size with bilinear sampling.
+    // blur at reduced resolution; restore target size with bilinear sampling.
     if (!texture) return nullptr;
     if (targetSize.width <= 0.f || targetSize.height <= 0.f ||
         targetSize.width > 4096.f || targetSize.height > 4096.f) return nullptr;
@@ -179,7 +153,7 @@ CCSprite* createPopupBlurredSprite(CCTexture2D* texture, CCSize const& targetSiz
     ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
     texture->setTexParameters(&params);
 
-    // bound the internal target; blur hides the downsample aliasing.
+    // bound the internal target; the blur hides downsample aliasing.
     constexpr float kInternalBlurDim = 960.f;
     CCSize blurSize = targetSize;
     if (blurSize.width > kInternalBlurDim || blurSize.height > kInternalBlurDim) {
@@ -191,7 +165,7 @@ CCSprite* createPopupBlurredSprite(CCTexture2D* texture, CCSize const& targetSiz
         if (blurSize.height < 16.f) blurSize.height = 16.f;
     }
 
-    // preserve edge coverage with independent scaling.
+    // scale x/y independently to keep edge coverage.
     {
         float texW = std::max(1.0f, srcSprite->getContentSize().width);
         float texH = std::max(1.0f, srcSprite->getContentSize().height);
@@ -228,60 +202,27 @@ CCSprite* createPopupBlurredSprite(CCTexture2D* texture, CCSize const& targetSiz
 
     applyBlurPass(srcSprite, rtA, blurH, blurSize, radius);
 
-    auto mid1 = CCSprite::createWithTexture(rtA->getSprite()->getTexture());
+    auto mid1 = makeBlurPassSprite(rtA, blurSize, params, true, true);
     if (!mid1) return nullptr;
-    {
-        float texW = std::max(1.0f, mid1->getContentSize().width);
-        float texH = std::max(1.0f, mid1->getContentSize().height);
-        mid1->setScaleX(blurSize.width / texW);
-        mid1->setScaleY(blurSize.height / texH);
-    }
-    mid1->setFlipY(true);
-    mid1->setAnchorPoint({0.5f, 0.5f});
-    mid1->setPosition(blurSize * 0.5f);
-    mid1->getTexture()->setTexParameters(&params);
     applyBlurPass(mid1, rtB, blurV, blurSize, radius);
 
     if (intensity >= 4.0f) {
-        // deferred mobile renderers need a barrier between passes; desktop does not.
+        // deferred mobile renderers need a barrier between passes.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
         glFlush();
 #endif
 
-        auto mid2 = CCSprite::createWithTexture(rtB->getSprite()->getTexture());
+        auto mid2 = makeBlurPassSprite(rtB, blurSize, params, true, true);
         if (!mid2) return nullptr;
-        {
-            float texW = std::max(1.0f, mid2->getContentSize().width);
-            float texH = std::max(1.0f, mid2->getContentSize().height);
-            mid2->setScaleX(blurSize.width / texW);
-            mid2->setScaleY(blurSize.height / texH);
-        }
-        mid2->setFlipY(true);
-        mid2->setAnchorPoint({0.5f, 0.5f});
-        mid2->setPosition(blurSize * 0.5f);
-        mid2->getTexture()->setTexParameters(&params);
         applyBlurPass(mid2, rtA, blurH, blurSize, radius * 0.8f);
 
-        auto mid3 = CCSprite::createWithTexture(rtA->getSprite()->getTexture());
+        auto mid3 = makeBlurPassSprite(rtA, blurSize, params, true, true);
         if (!mid3) return nullptr;
-        {
-            float texW = std::max(1.0f, mid3->getContentSize().width);
-            float texH = std::max(1.0f, mid3->getContentSize().height);
-            mid3->setScaleX(blurSize.width / texW);
-            mid3->setScaleY(blurSize.height / texH);
-        }
-        mid3->setFlipY(true);
-        mid3->setAnchorPoint({0.5f, 0.5f});
-        mid3->setPosition(blurSize * 0.5f);
-        mid3->getTexture()->setTexParameters(&params);
         applyBlurPass(mid3, rtB, blurV, blurSize, radius * 0.8f);
     }
 
-    auto finalSprite = CCSprite::createWithTexture(rtB->getSprite()->getTexture());
+    auto finalSprite = makeBlurPassSprite(rtB, blurSize, params, false, false);
     if (!finalSprite) return nullptr;
-    finalSprite->setAnchorPoint({0.5f, 0.5f});
-    finalSprite->setFlipY(true);
-    finalSprite->getTexture()->setTexParameters(&params);
     return finalSprite;
 }
 
@@ -292,21 +233,18 @@ CCSprite* createPopupPaimonBlurredSprite(CCTexture2D* texture, CCSize const& tar
 
     auto baseSize = base->getContentSize();
 
-    // restore the exact target size with one bilinear pass.
+    // one bilinear pass to restore the exact target size.
     auto rt = CCRenderTexture::create(
         static_cast<int>(std::round(targetSize.width)),
         static_cast<int>(std::round(targetSize.height)));
     if (!rt) {
-        base->setFlipY(true);
         return base;
     }
 
     ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
     rt->getSprite()->getTexture()->setTexParameters(&params);
 
-    // the captured fbo is y-inverted. flip the base before rendering to the
-    // target fbo, then flip the result when reading it back.
-    base->setFlipY(true);
+    // base is already upright; only the readback sprite flips below.
     base->setAnchorPoint({0.5f, 0.5f});
     base->setPosition(targetSize * 0.5f);
     {
@@ -322,11 +260,10 @@ CCSprite* createPopupPaimonBlurredSprite(CCTexture2D* texture, CCSize const& tar
 
     auto finalSprite = CCSprite::createWithTexture(rt->getSprite()->getTexture());
     if (!finalSprite) {
-        base->setFlipY(true);
         return base;
     }
     finalSprite->setAnchorPoint({0.5f, 0.5f});
-    finalSprite->setFlipY(true);  // fbo inverts y.
+    finalSprite->setFlipY(true);  // rt textures come back y-inverted.
     finalSprite->setContentSize(targetSize);
     finalSprite->getTexture()->setTexParameters(&params);
     return finalSprite;
@@ -655,8 +592,8 @@ void runStaggeredPrewarm(
         }
 
         if (state->index < state->steps.size()) {
-            // strong ref only in the pending continuation; the closure holds a weak
-            // self-ref to avoid a self-owning shared_ptr cycle (permanent leak).
+            // strong ref only here; the closure keeps a weak self-ref to
+            // avoid a self-owning shared_ptr cycle.
             if (auto strong = weakTick.lock()) {
                 paimon::scheduleMainThreadDelay(state->delay, [strong]() { (*strong)(); });
             }
@@ -907,7 +844,7 @@ void ProgressiveBlurJob::finish(CCSprite* result) {
     release();
 }
 
-void ProgressiveBlurJob::tick(float dt) {
+void ProgressiveBlurJob::tick(float) {
     if (m_cancelled || m_done) return;
 
     if (m_blurType == BlurType::PaimonBlur)
@@ -951,7 +888,17 @@ void ProgressiveBlurJob::tickGaussian() {
     if (m_phase == Phase::GaussianH1) {
         applyBlurPass(m_currentSprite, m_rtA, m_blurH, m_targetSize, m_radius);
 
-        auto midSprite = CCSprite::createWithTexture(m_rtA->getSprite()->getTexture());
+        auto* rtSpriteA = (m_rtA) ? m_rtA->getSprite() : nullptr;
+        auto* midTexA = (rtSpriteA) ? rtSpriteA->getTexture() : nullptr;
+        if (!midTexA) {
+            finish(m_currentSprite);
+            return;
+        }
+        auto midSprite = CCSprite::createWithTexture(midTexA);
+        if (!midSprite || !midSprite->getTexture()) {
+            finish(m_currentSprite);
+            return;
+        }
         midSprite->setFlipY(true);
         midSprite->setAnchorPoint({0.5f, 0.5f});
         midSprite->setPosition(m_targetSize * 0.5f);
@@ -966,7 +913,17 @@ void ProgressiveBlurJob::tickGaussian() {
         applyBlurPass(m_currentSprite, m_rtB, m_blurV, m_targetSize, m_radius);
 
         if (m_intensity < 4.0f) {
-            auto finalSprite = CCSprite::createWithTexture(m_rtB->getSprite()->getTexture());
+            auto* rtSpriteB0 = (m_rtB) ? m_rtB->getSprite() : nullptr;
+            auto* finalTex0 = (rtSpriteB0) ? rtSpriteB0->getTexture() : nullptr;
+            if (!finalTex0) {
+                finish(m_currentSprite);
+                return;
+            }
+            auto finalSprite = CCSprite::createWithTexture(finalTex0);
+            if (!finalSprite || !finalSprite->getTexture()) {
+                finish(m_currentSprite);
+                return;
+            }
             finalSprite->setAnchorPoint({0.5f, 0.5f});
             finalSprite->setFlipY(true);
             finalSprite->getTexture()->setTexParameters(&linearParams);
@@ -974,7 +931,17 @@ void ProgressiveBlurJob::tickGaussian() {
             return;
         }
 
-        auto mid2 = CCSprite::createWithTexture(m_rtB->getSprite()->getTexture());
+        auto* rtSpriteB1 = (m_rtB) ? m_rtB->getSprite() : nullptr;
+        auto* midTexB1 = (rtSpriteB1) ? rtSpriteB1->getTexture() : nullptr;
+        if (!midTexB1) {
+            finish(m_currentSprite);
+            return;
+        }
+        auto mid2 = CCSprite::createWithTexture(midTexB1);
+        if (!mid2 || !mid2->getTexture()) {
+            finish(m_currentSprite);
+            return;
+        }
         mid2->setFlipY(true);
         mid2->setAnchorPoint({0.5f, 0.5f});
         mid2->setPosition(m_targetSize * 0.5f);
@@ -988,7 +955,17 @@ void ProgressiveBlurJob::tickGaussian() {
     if (m_phase == Phase::GaussianH2) {
         applyBlurPass(m_currentSprite, m_rtA, m_blurH, m_targetSize, m_radius * 0.8f);
 
-        auto mid3 = CCSprite::createWithTexture(m_rtA->getSprite()->getTexture());
+        auto* rtSpriteA2 = (m_rtA) ? m_rtA->getSprite() : nullptr;
+        auto* midTexA2 = (rtSpriteA2) ? rtSpriteA2->getTexture() : nullptr;
+        if (!midTexA2) {
+            finish(m_currentSprite);
+            return;
+        }
+        auto mid3 = CCSprite::createWithTexture(midTexA2);
+        if (!mid3 || !mid3->getTexture()) {
+            finish(m_currentSprite);
+            return;
+        }
         mid3->setFlipY(true);
         mid3->setAnchorPoint({0.5f, 0.5f});
         mid3->setPosition(m_targetSize * 0.5f);
@@ -1002,7 +979,17 @@ void ProgressiveBlurJob::tickGaussian() {
     if (m_phase == Phase::GaussianV2) {
         applyBlurPass(m_currentSprite, m_rtB, m_blurV, m_targetSize, m_radius * 0.8f);
 
-        auto finalSprite = CCSprite::createWithTexture(m_rtB->getSprite()->getTexture());
+        auto* rtSpriteB2 = (m_rtB) ? m_rtB->getSprite() : nullptr;
+        auto* finalTex = (rtSpriteB2) ? rtSpriteB2->getTexture() : nullptr;
+        if (!finalTex) {
+            finish(m_currentSprite);
+            return;
+        }
+        auto finalSprite = CCSprite::createWithTexture(finalTex);
+        if (!finalSprite || !finalSprite->getTexture()) {
+            finish(m_currentSprite);
+            return;
+        }
         finalSprite->setAnchorPoint({0.5f, 0.5f});
         finalSprite->setFlipY(true);
         finalSprite->getTexture()->setTexParameters(&linearParams);
@@ -1102,7 +1089,7 @@ void ProgressiveBlurJob::tickPaimonBlur() {
         if (m_currentPass >= m_totalPasses || m_mips.empty()) {
             m_currentPass = static_cast<int>(m_mips.size()) - 1;
             m_phase = Phase::Upsample;
-            // avoid an fbo burst in batch mode.
+            // yield before the fbo burst in batch mode.
             if (!m_fastMode) return;
         } else {
             return;
@@ -1163,7 +1150,7 @@ void ProgressiveBlurJob::tickPaimonBlur() {
 }
 
 namespace {
-    // update audio analysis once per frame across all sprites.
+    // audio analysis runs once per frame across all sprites.
     uint64_t g_lastShaderAudioFrame = 0;
 
     std::atomic<bool> g_beatShadersGloballyEnabled{false};
@@ -1209,7 +1196,7 @@ void ShaderBgSprite::draw() {
         loc = shader->getUniformLocationForName("u_click");
         if (loc != -1) shader->setUniformLocationWith1f(loc, m_clickState);
 
-        // disabled beat shaders receive zeroed audio uniforms.
+        // disabled beat shaders get zeroed audio uniforms.
         bool audioGate = g_beatShadersGloballyEnabled.load(std::memory_order_relaxed);
         float bass = 0.f, mid = 0.f, treble = 0.f, beat = 0.f, energy = 0.f;
         if (audioGate) {
@@ -1227,7 +1214,7 @@ void ShaderBgSprite::draw() {
             treble = audio.treble()    * m_trebleMult;
             beat   = audio.beatPulse() * m_beatMult;
             energy = audio.energy()    * m_energyMult;
-            // keep peaks within the shader's stable range.
+            // clamp peaks to the shader's stable range.
             if (bass   > 2.f) bass   = 2.f;
             if (mid    > 2.f) mid    = 2.f;
             if (treble > 2.f) treble = 2.f;
@@ -1256,7 +1243,7 @@ void ShaderBgSprite::draw() {
 void ShaderBgSprite::updateShaderTime(float dt) {
     m_shaderTime += dt;
 
-    // cocos does not expose mouse coordinates consistently on mobile targets.
+    // cocos does not expose mouse coordinates consistently on mobile.
 #if defined(GEODE_IS_WINDOWS)
     auto* director = CCDirector::get();
     auto* glView = director ? director->getOpenGLView() : nullptr;
@@ -1270,9 +1257,19 @@ void ShaderBgSprite::updateShaderTime(float dt) {
             m_cursorY = ny < 0.f ? 0.f : (ny > 1.f ? 1.f : ny);
         }
     }
+#elif defined(GEODE_IS_MOBILE)
+    auto* director = CCDirector::get();
+    auto ptr = CursorManager::get().pointerPos();
+    if (director && ptr.x >= 0.f && ptr.y >= 0.f) {
+        auto winSize = director->getWinSize();
+        if (winSize.width > 0.f && winSize.height > 0.f) {
+            m_cursorX = std::clamp(ptr.x / winSize.width, 0.f, 1.f);
+            m_cursorY = std::clamp(ptr.y / winSize.height, 0.f, 1.f);
+        }
+    }
 #endif
 
-    // multiple sprites can coexist during transitions; update audio once per frame.
+    // several sprites can coexist during transitions; update audio once per frame.
     if (g_beatShadersGloballyEnabled.load(std::memory_order_relaxed)) {
         uint64_t frame = currentFrameForAudio();
         if (frame != g_lastShaderAudioFrame) {

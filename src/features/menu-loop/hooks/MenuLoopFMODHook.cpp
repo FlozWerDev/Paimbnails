@@ -1,6 +1,10 @@
 #include "../services/MenuLoopManager.hpp"
 #include "../services/MenuLoopControl.hpp"
+#include "../../audio/services/AudioContextCoordinator.hpp"
+#include "../../menu-music/services/MenuMusicPlayer.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
+#include "../../../utils/AudioInterop.hpp"
+#include "../../../utils/MusicChannel.hpp"
 
 #include <Geode/modify/FMODAudioEngine.hpp>
 #include <Geode/binding/GJBaseGameLayer.hpp>
@@ -8,6 +12,12 @@
 using namespace geode::prelude;
 
 class $modify(PaimonMenuLoopFMODHook, FMODAudioEngine) {
+    struct Fields {
+        float m_songPoll = 0.f;
+        std::string m_activeSong;
+        std::string m_trackedSong;
+    };
+
     static void onModify(auto& self) {
         // stopallmusic is non-virtual (hooked by address); a gd offset change would silently leave it unhooked.
         if (auto h = self.getHook("FMODAudioEngine::stopAllMusic"); !h) {
@@ -40,17 +50,31 @@ class $modify(PaimonMenuLoopFMODHook, FMODAudioEngine) {
 
         auto& sm = paimon::menuloop::MenuLoopManager::get();
 
-        if (GJBaseGameLayer::get() || paimon::menuloop::isVanillaMenuLoopDisabled()) return;
+        if (GJBaseGameLayer::get() || paimon::menuloop::isVanillaMenuLoopDisabled() ||
+            paimon::menumusic::MenuMusicPlayer::get().isManagingPlayback() ||
+            AudioContextCoordinator::get().isGameplayActive() ||
+            paimon::isProfileMusicInteropActive() ||
+            paimon::isDynamicSongInteropActive() ||
+            paimon::isVideoAudioInteropActive()) {
+            return;
+        }
 
         auto* fmod = FMODAudioEngine::get();
         if (!fmod || !fmod->m_backgroundMusicChannel) return;
 
-        auto* channel = fmod->getActiveMusicChannel(0);
+        auto* channel = paimon::audio::activeMusicChannel(fmod, 0);
         if (!channel) return;
 
-        const auto activeSong = fmod->getActiveMusic(0);
-        const auto trackedSong = sm.getCurrentSong();
-        if (activeSong != trackedSong) return;
+        bool isPaused = false;
+        if (channel->getPaused(&isPaused) == FMOD_OK && isPaused) return;
+
+        m_fields->m_songPoll -= dt;
+        if (m_fields->m_songPoll <= 0.f) {
+            m_fields->m_songPoll = 0.25f;
+            m_fields->m_activeSong = fmod->getActiveMusic(0);
+            m_fields->m_trackedSong = sm.getCurrentSong();
+        }
+        if (m_fields->m_activeSong != m_fields->m_trackedSong) return;
 
         unsigned int position = 0;
         if (channel->getPosition(&position, FMOD_TIMEUNIT_MS) == FMOD_OK) {

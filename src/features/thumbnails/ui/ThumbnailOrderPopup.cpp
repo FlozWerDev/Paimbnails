@@ -139,6 +139,7 @@ bool ThumbnailOrderPopup::init(
     }
 
     m_scrollLayer = ScrollLayer::create({scrollWidth, scrollHeight});
+    if (m_scrollLayer) m_scrollLayer->setAnchorPoint({0.f, 0.f});
     m_scrollLayer->setPosition({kScrollInset, kScrollBottom});
     m_mainLayer->addChild(m_scrollLayer, 2);
 
@@ -315,7 +316,7 @@ void ThumbnailOrderPopup::updateUiState() {
     bool canMoveRight = !m_isSaving && m_selectedIndex >= 0 && m_selectedIndex < static_cast<int>(m_thumbnails.size()) - 1;
     bool canSave = !m_isSaving && hasUnsavedChanges();
 
-    auto updateButton = [this](CCMenuItemSpriteExtra* button, bool enabled) {
+    auto updateButton = [](CCMenuItemSpriteExtra* button, bool enabled) {
         if (!button) return;
         button->setEnabled(enabled);
         button->setOpacity(enabled ? 255 : 105);
@@ -660,7 +661,7 @@ void ThumbnailOrderPopup::onSave(CCObject*) {
             // rejected save returns the server's real list: adopting it un-stales the retry.
             if (gotServerOrder) popup->adoptServerOrder(serverOrder, selectedKey);
             popup->updateUiState();
-            PaimonNotify::create(reorderErrorText(message).c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::show(reorderErrorText(message).c_str(), NotificationIcon::Error);
             return;
         }
 

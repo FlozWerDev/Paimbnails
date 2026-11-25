@@ -22,18 +22,50 @@ namespace paimon::updates {
 
 namespace {
 
+// the popup is kWidth x kHeight. Cards share one left and one right edge, text starts at
+// kTextX and actions end at kRight.
 constexpr float kWidth  = 420.f;
-constexpr float kHeight = 285.f;
-constexpr float kListX  = 20.f;
-constexpr float kListY  = 44.f;
-constexpr float kListW  = 380.f;
-constexpr float kListH  = 130.f;
-constexpr float kRowH   = 32.f;
+constexpr float kHeight = 300.f;
+constexpr float kLeft   = 12.f;
+constexpr float kCardW  = 396.f;
+constexpr float kTextX  = 22.f;
+constexpr float kRight  = 398.f;
 
-std::string tr(char const* key, char const* fallback = "") {
-    auto value = Localization::get().getString(key);
-    if (value == key && fallback && fallback[0] != '\0') return fallback;
-    return value;
+// status card: installed version, status line and the primary action.
+constexpr float kHeroY       = 206.f;
+constexpr float kHeroH       = 48.f;
+constexpr float kPrimaryW    = 100.f;
+constexpr float kStatusScale = 0.3f;
+constexpr float kStatusMaxW  = 260.f;
+
+// history panel: a header band (paimon::ui::kPanelHeader) above the scrollable list.
+constexpr float kPanelY      = 44.f;
+constexpr float kPanelH      = 156.f;
+constexpr float kListX       = kLeft + 6.f;
+constexpr float kListY       = kPanelY + 6.f;
+constexpr float kListW       = kCardW - 12.f;
+constexpr float kListH       = kPanelH - paimon::ui::kPanelHeader - 12.f;
+constexpr float kRowH        = 30.f;
+constexpr float kRowW        = kListW - 14.f; // leaves room for the scrollbar
+constexpr float kActionW     = 64.f;
+constexpr float kActionScale = 0.5f;
+// LATEST badge: GD's cyan button with the gold font, about as tall as the version text.
+constexpr float kLatestW     = 44.f;
+constexpr float kLatestScale = 0.44f;
+
+// footer: auto update on the left, secondary actions on the right.
+constexpr float kFooterY        = 22.f;
+constexpr float kFooterBtnW     = 80.f;
+constexpr float kFooterBtnScale = 0.5f;
+// geode's GitHub icon, drawn as tall as the footer buttons (15 pt).
+constexpr char const* kGithubFrame = "geode.loader/github.png";
+constexpr float kGithubHeight   = 15.f;
+
+using paimon::loc::tr;
+
+// UpdateChecker stores the bare version ("1.2.5"), so the "v" prefix is added here.
+std::string versionText() {
+    return fmt::format("v{}", UpdateChecker::get().localVersion());
 }
 
 std::string formatSize(uint64_t bytes) {
@@ -80,86 +112,9 @@ bool UpdateCenterPopup::init() {
     m_mainLayer->addChild(m_headerMenu, 3);
 
     this->buildHeader();
-
-    auto historyTitle = CCLabelBMFont::create(
-        tr("pai.updates.history", "Version history").c_str(), "goldFont.fnt"
-    );
-    historyTitle->setScale(0.34f);
-    historyTitle->setAnchorPoint({0.f, 0.5f});
-    historyTitle->setPosition({20.f, 183.f});
-    m_mainLayer->addChild(historyTitle, 2);
-
-    auto betaLabel = CCLabelBMFont::create(tr("pai.updates.betas", "Betas").c_str(), "bigFont.fnt");
-    betaLabel->setScale(0.3f);
-    betaLabel->setColor({190, 200, 220});
-    betaLabel->setAnchorPoint({0.f, 0.5f});
-    betaLabel->setPosition({358.f, 183.f});
-    m_mainLayer->addChild(betaLabel, 2);
-
-    auto* betaToggle = CCMenuItemExt::createTogglerWithStandardSprites(
-        0.4f, [self = WeakRef<UpdateCenterPopup>(this)](CCMenuItemToggler* sender) {
-            auto popup = self.lock();
-            if (!popup) return;
-            popup->m_showPrereleases = !sender->isToggled();
-            popup->rebuildHistory();
-        }
-    );
-    betaToggle->setPosition({344.f, 183.f});
-    m_headerMenu->addChild(betaToggle);
-
-    auto listBg = paimon::ui::makeInset({kListW + 4.f, kListH + 4.f}, 100);
-    listBg->setPosition({kListX - 2.f, kListY - 2.f});
-    m_mainLayer->addChild(listBg, 1);
-
-    m_listHolder = CCNode::create();
-    m_mainLayer->addChild(m_listHolder, 2);
-
-    auto autoLabel = CCLabelBMFont::create(
-        tr("pai.updates.auto", "Auto update").c_str(), "bigFont.fnt"
-    );
-    autoLabel->setScale(0.3f);
-    autoLabel->setColor({190, 200, 220});
-    autoLabel->setAnchorPoint({0.f, 0.5f});
-    autoLabel->setPosition({40.f, 25.f});
-    m_mainLayer->addChild(autoLabel, 2);
-
-    auto* autoToggle = CCMenuItemExt::createTogglerWithStandardSprites(
-        0.45f, [](CCMenuItemToggler* sender) {
-            bool enabled = !sender->isToggled();
-            Mod::get()->setSettingValue<bool>("auto-update", enabled);
-            PaimonNotify::show(
-                tr(enabled ? "pai.updates.auto.on" : "pai.updates.auto.off",
-                   enabled ? "Auto update on" : "Auto update off"),
-                enabled ? NotificationIcon::Success : NotificationIcon::None,
-                1.6f
-            );
-        }
-    );
-    autoToggle->setPosition({26.f, 25.f});
-    autoToggle->toggle(paimon::settings::general::autoUpdate());
-    m_headerMenu->addChild(autoToggle);
-
-    auto refreshSpr = ButtonSprite::create(
-        tr("pai.updates.refresh", "Refresh").c_str(), "bigFont.fnt", "GJ_button_02.png", .8f
-    );
-    refreshSpr->setScale(0.4f);
-    m_refreshBtn = CCMenuItemSpriteExtra::create(
-        refreshSpr, this, menu_selector(UpdateCenterPopup::onRefresh)
-    );
-    m_refreshBtn->setID("reinstall-latest-btn"_spr);
-    m_refreshBtn->setPosition({270.f, 25.f});
-    m_headerMenu->addChild(m_refreshBtn);
+    this->buildHistoryPanel();
+    this->buildFooter();
     this->refreshHeader();
-
-    auto ghSpr = ButtonSprite::create(
-        tr("pai.updates.github", "GitHub").c_str(), "bigFont.fnt", "GJ_button_05.png", .8f
-    );
-    ghSpr->setScale(0.4f);
-    auto* ghBtn = CCMenuItemExt::createSpriteExtra(ghSpr, [](CCMenuItemSpriteExtra*) {
-        web::openLinkInBrowser("https://github.com/FlozWerDev/Paimbnails/releases");
-    });
-    ghBtn->setPosition({372.f, 25.f});
-    m_headerMenu->addChild(ghBtn);
 
     this->loadHistory();
     this->schedule(schedule_selector(UpdateCenterPopup::pollState), 0.4f);
@@ -167,27 +122,101 @@ bool UpdateCenterPopup::init() {
 }
 
 void UpdateCenterPopup::buildHeader() {
-    auto card = paimon::ui::makeInset({kListW + 4.f, 44.f}, 130);
-    card->setPosition({kListX - 2.f, 196.f});
+    auto card = paimon::ui::makeInset({kCardW, kHeroH}, 120);
+    card->setPosition({kLeft, kHeroY});
     m_mainLayer->addChild(card, 1);
 
-    auto& checker = UpdateChecker::get();
-
-    m_versionLabel = CCLabelBMFont::create(
-        fmt::format("v{}", checker.localVersion()).c_str(), "goldFont.fnt"
-    );
+    m_versionLabel = CCLabelBMFont::create(versionText().c_str(), "goldFont.fnt");
     m_versionLabel->setScale(0.5f);
     m_versionLabel->setAnchorPoint({0.f, 0.5f});
-    m_versionLabel->setPosition({32.f, 226.f});
+    m_versionLabel->setPosition({kTextX, kHeroY + kHeroH - 16.f});
     m_mainLayer->addChild(m_versionLabel, 2);
 
     m_statusLabel = CCLabelBMFont::create("", "bigFont.fnt");
-    m_statusLabel->setScale(0.3f);
     m_statusLabel->setAnchorPoint({0.f, 0.5f});
-    m_statusLabel->setPosition({32.f, 208.f});
+    m_statusLabel->setPosition({kTextX, kHeroY + 14.f});
     m_mainLayer->addChild(m_statusLabel, 2);
+}
 
-    this->refreshHeader();
+void UpdateCenterPopup::buildHistoryPanel() {
+    auto* panel = paimon::ui::makePanel({kCardW, kPanelH},
+        tr("pai.updates.history", "Version history").c_str(), 90);
+    panel->setPosition({kLeft, kPanelY});
+    m_mainLayer->addChild(panel, 1);
+
+    // the Betas toggle sits in the panel header, on the right.
+    float const headerY = kPanelH - paimon::ui::kPanelHeader / 2.f;
+    auto* betaLabel = CCLabelBMFont::create(tr("pai.updates.betas", "Betas").c_str(), "bigFont.fnt");
+    betaLabel->setScale(0.3f);
+    betaLabel->setColor(paimon::ui::palette::muted);
+    betaLabel->setAnchorPoint({1.f, 0.5f});
+    betaLabel->setPosition({kCardW - 46.f, headerY});
+    panel->addChild(betaLabel, 2);
+
+    auto* betaMenu = paimon::ui::makeZeroMenu();
+    panel->addChild(betaMenu, 3);
+    auto* betaToggle = paimon::ui::makeToggle(m_showPrereleases,
+        [self = WeakRef<UpdateCenterPopup>(this)](bool enabled) {
+            auto popup = self.lock();
+            if (!popup) return;
+            popup->m_showPrereleases = enabled;
+            popup->rebuildHistory();
+        }, 0.4f);
+    betaToggle->setPosition({kCardW - 18.f, headerY});
+    betaMenu->addChild(betaToggle);
+
+    m_listHolder = CCNode::create();
+    m_mainLayer->addChild(m_listHolder, 2);
+}
+
+void UpdateCenterPopup::buildFooter() {
+    auto* autoToggle = paimon::ui::makeToggle(paimon::settings::general::autoUpdate(), [](bool enabled) {
+        Mod::get()->setSettingValue<bool>("auto-update", enabled);
+        PaimonNotify::show(
+            tr(enabled ? "pai.updates.auto.on" : "pai.updates.auto.off",
+               enabled ? "Auto update on" : "Auto update off"),
+            enabled ? NotificationIcon::Success : NotificationIcon::None,
+            1.6f
+        );
+    }, 0.45f);
+    autoToggle->setPosition({kTextX + 12.f, kFooterY});
+    m_headerMenu->addChild(autoToggle);
+
+    auto* autoLabel = CCLabelBMFont::create(tr("pai.updates.auto", "Auto update").c_str(), "bigFont.fnt");
+    autoLabel->setScale(0.3f);
+    autoLabel->setColor(paimon::ui::palette::muted);
+    autoLabel->setAnchorPoint({0.f, 0.5f});
+    autoLabel->setPosition({kTextX + 30.f, kFooterY});
+    m_mainLayer->addChild(autoLabel, 2);
+
+    // Geode packs this icon at 4x, so its frame is 31 x 30 pt, not the 124 x 120 px file. Measure
+    // the frame so the icon stays kGithubHeight tall whichever sheet GD loads.
+    float githubScale = kGithubHeight / 30.f;
+    if (auto* probe = paimon::SpriteHelper::safeCreateWithFrameName(kGithubFrame)) {
+        if (probe->getContentSize().height > 0.f) githubScale = kGithubHeight / probe->getContentSize().height;
+    }
+    auto* github = paimon::ui::makeFrameButton(kGithubFrame, githubScale, [] {
+        web::openLinkInBrowser("https://github.com/FlozWerDev/Paimbnails/releases");
+    });
+    github->setID("github-button"_spr);
+    float const githubW = github->getNormalImage()->getContentSize().width * githubScale;
+    github->setPosition({kRight - githubW / 2.f, kFooterY});
+    m_headerMenu->addChild(github);
+
+    m_refreshBtn = paimon::ui::makeButton(tr("pai.updates.refresh", "Refresh").c_str(), [this] {
+        this->onRefresh(nullptr);
+    }, paimon::ui::Btn::Cyan, kFooterBtnW, kFooterBtnScale, "bigFont.fnt");
+    m_refreshBtn->setID("reinstall-latest-btn"_spr);
+    float const refreshX = kRight - githubW - 8.f - kFooterBtnW / 2.f;
+    m_refreshBtn->setPosition({refreshX, kFooterY});
+    m_headerMenu->addChild(m_refreshBtn);
+
+    auto* changelogBtn = paimon::ui::makeButton(tr("pai.updates.changelog", "Changelog").c_str(), [this] {
+        this->showLocalChangelog();
+    }, paimon::ui::Btn::Cyan, kFooterBtnW, kFooterBtnScale, "bigFont.fnt");
+    changelogBtn->setID("local-changelog-btn"_spr);
+    changelogBtn->setPosition({refreshX - kFooterBtnW - 6.f, kFooterY});
+    m_headerMenu->addChild(changelogBtn);
 }
 
 void UpdateCenterPopup::refreshHeader() {
@@ -203,18 +232,18 @@ void UpdateCenterPopup::refreshHeader() {
     std::string status;
     ccColor3B statusColor = {170, 180, 200};
     std::string btnText = tr("pai.updates.check", "Check");
-    char const* btnSprite = "GJ_button_02.png";
+    auto btnSkin = paimon::ui::Btn::Cyan;
 
     if (m_refreshing) {
         status = tr("pai.update.checking", "Checking for updates...");
         statusColor = {120, 200, 255};
         btnText = tr("pai.updates.checking.btn", "Wait...");
-        btnSprite = "GJ_button_04.png";
+        btnSkin = paimon::ui::Btn::Gray;
     } else if (downloading) {
         status = tr("pai.update.title", "Downloading update");
         statusColor = {120, 200, 255};
         btnText = tr("pai.updates.checking.btn", "Wait...");
-        btnSprite = "GJ_button_04.png";
+        btnSkin = paimon::ui::Btn::Gray;
     } else if (pending) {
         auto version = checker.pendingVersion();
         if (version.empty()) version = checker.remoteVersion();
@@ -223,14 +252,14 @@ void UpdateCenterPopup::refreshHeader() {
         );
         statusColor = {120, 255, 140};
         btnText = tr("pai.update.restart", "Restart");
-        btnSprite = "GJ_button_01.png";
+        btnSkin = paimon::ui::Btn::Green;
     } else {
         switch (state) {
             case UpdateChecker::State::Checking:
                 status = tr("pai.update.checking", "Checking for updates...");
                 statusColor = {120, 200, 255};
                 btnText = tr("pai.updates.checking.btn", "Wait...");
-                btnSprite = "GJ_button_04.png";
+                btnSkin = paimon::ui::Btn::Gray;
                 break;
             case UpdateChecker::State::UpdateAvailable:
                 status = fmt::format(
@@ -239,7 +268,7 @@ void UpdateCenterPopup::refreshHeader() {
                 );
                 statusColor = {255, 220, 110};
                 btnText = tr("pai.updates.update", "Update");
-                btnSprite = "GJ_button_01.png";
+                btnSkin = paimon::ui::Btn::Green;
                 break;
             case UpdateChecker::State::UpToDate:
                 status = tr("pai.updates.uptodate", "You're up to date");
@@ -259,20 +288,20 @@ void UpdateCenterPopup::refreshHeader() {
     }
 
     if (m_versionLabel) {
-        m_versionLabel->setString(fmt::format("v{}", checker.localVersion()).c_str());
+        m_versionLabel->setString(versionText().c_str());
     }
     if (m_statusLabel) {
         m_statusLabel->setString(status.c_str());
         m_statusLabel->setColor(statusColor);
+        m_statusLabel->setScale(kStatusScale);
+        m_statusLabel->limitLabelWidth(kStatusMaxW, kStatusScale, 0.1f);
     }
 
     if (m_primaryBtn) m_primaryBtn->removeFromParent();
-    auto spr = ButtonSprite::create(btnText.c_str(), "bigFont.fnt", btnSprite, .8f);
-    spr->setScale(0.5f);
-    m_primaryBtn = CCMenuItemSpriteExtra::create(
-        spr, this, menu_selector(UpdateCenterPopup::onPrimary)
-    );
-    m_primaryBtn->setPosition({340.f, 218.f});
+    m_primaryBtn = paimon::ui::makeButton(btnText.c_str(), [this] {
+        this->onPrimary(nullptr);
+    }, btnSkin, kPrimaryW, 0.55f, "bigFont.fnt");
+    m_primaryBtn->setPosition({kRight - kPrimaryW / 2.f, kHeroY + kHeroH / 2.f});
     bool enabled = !m_refreshing && !downloading && state != UpdateChecker::State::Checking;
     m_primaryBtn->setEnabled(enabled);
     m_headerMenu->addChild(m_primaryBtn);
@@ -394,6 +423,7 @@ void UpdateCenterPopup::rebuildHistory() {
     }
 
     auto scroll = ScrollLayer::create({kListW, kListH});
+    if (scroll) scroll->setAnchorPoint({0.f, 0.f});
     scroll->setPosition({kListX, kListY});
     m_listHolder->addChild(scroll);
     m_historyScroll = scroll;
@@ -424,19 +454,20 @@ CCNode* UpdateCenterPopup::buildReleaseRow(ReleaseInfo const& release, int index
     bool isLatest = index == 0 && !release.prerelease;
 
     auto row = CCNode::create();
-    row->setContentSize({kListW, kRowH});
+    row->setContentSize({kRowW, kRowH});
     row->setAnchorPoint({0.f, 0.f});
 
-    ccColor3B rowColor = (index % 2 == 0) ? ccColor3B{26, 28, 42} : ccColor3B{20, 22, 34};
-    if (isCurrent) rowColor = {28, 52, 40};
-    auto bg = paimon::SpriteHelper::createColorPanel(kListW - 4.f, kRowH - 2.f, rowColor, 235, 4.f);
-    bg->setPosition({2.f, 1.f});
+    // the installed build gets a green tint so it is easy to spot in the list.
+    auto* bg = isCurrent
+        ? paimon::ui::makeInset({kRowW, kRowH - 2.f}, 120, {34, 80, 52})
+        : paimon::ui::makeInset({kRowW, kRowH - 2.f}, 75);
+    bg->setPosition({0.f, 1.f});
     row->addChild(bg);
 
     auto versionLbl = CCLabelBMFont::create(fmt::format("v{}", release.version).c_str(), "goldFont.fnt");
     versionLbl->setScale(0.38f);
     versionLbl->setAnchorPoint({0.f, 0.5f});
-    versionLbl->setPosition({12.f, kRowH - 11.f});
+    versionLbl->setPosition({4.f, kRowH - 10.f});
     row->addChild(versionLbl, 1);
 
     std::string sub = release.date;
@@ -447,24 +478,34 @@ CCNode* UpdateCenterPopup::buildReleaseRow(ReleaseInfo const& release, int index
         subLbl->setScale(0.22f);
         subLbl->setColor({150, 160, 180});
         subLbl->setAnchorPoint({0.f, 0.5f});
-        subLbl->setPosition({12.f, 10.f});
+        subLbl->setPosition({4.f, 8.f});
         row->addChild(subLbl, 1);
     }
 
-    float badgeX = 14.f + versionLbl->getScaledContentSize().width;
-    auto addBadge = [&](std::string const& text, ccColor3B color) {
-        auto* badge = makeBadge(text, color);
-        badge->setPosition({badgeX, kRowH - 17.5f});
-        row->addChild(badge, 1);
-        badgeX += badge->getContentSize().width + 4.f;
-    };
-    if (isCurrent) addBadge(tr("pai.updates.badge.current", "CURRENT"), {60, 160, 90});
-    if (isLatest && !isCurrent) addBadge(tr("pai.updates.badge.latest", "LATEST"), {70, 120, 210});
-    if (release.prerelease) addBadge(tr("pai.updates.badge.beta", "BETA"), {200, 130, 40});
+    // badges sit after the version text. LATEST uses GD's cyan button with the gold font, the same
+    // skin as the Check and Refresh buttons.
+    float badgeX = 4.f + versionLbl->getScaledContentSize().width + 6.f;
+    if (isLatest && !isCurrent) {
+        auto* latest = paimon::ui::makeButtonSprite(tr("pai.updates.badge.latest", "LATEST").c_str(),
+            paimon::ui::Btn::Cyan, kLatestW, kLatestScale, "goldFont.fnt");
+        float const latestW = latest->getScaledContentSize().width;
+        latest->setPosition({badgeX + latestW / 2.f, kRowH - 10.f});
+        row->addChild(latest, 1);
+        badgeX += latestW + 6.f;
+    }
+    if (release.prerelease) {
+        auto* beta = makeBadge(tr("pai.updates.badge.beta", "BETA"), {200, 130, 40});
+        beta->setPosition({badgeX, kRowH - 16.5f});
+        row->addChild(beta, 1);
+    }
+
+    // the info icon and the action share one column on the right, so the buttons line up.
+    float const actionX = kRowW - 4.f - kActionW / 2.f;
+    float const midY = kRowH / 2.f;
 
     auto menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
-    menu->setContentSize({kListW, kRowH});
+    menu->setContentSize({kRowW, kRowH});
     row->addChild(menu, 2);
 
     if (auto* infoSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png")) {
@@ -474,45 +515,37 @@ CCNode* UpdateCenterPopup::buildReleaseRow(ReleaseInfo const& release, int index
                 if (auto popup = self.lock()) popup->showNotes(release);
             }
         );
-        infoBtn->setPosition({294.f, kRowH / 2.f});
+        infoBtn->setPosition({actionX - kActionW / 2.f - 14.f, midY});
         menu->addChild(infoBtn);
     }
 
     if (isCurrent) {
-        auto tag = CCLabelBMFont::create(tr("pai.updates.installed", "Installed").c_str(), "bigFont.fnt");
+        auto* tag = CCLabelBMFont::create(tr("pai.updates.installed", "Installed").c_str(), "bigFont.fnt");
         tag->setScale(0.26f);
         tag->setColor({140, 220, 160});
-        tag->setPosition({338.f, kRowH / 2.f});
+        tag->setPosition({actionX, midY});
         row->addChild(tag, 1);
         return row;
     }
 
     if (release.downloadUrl.empty()) {
-        auto tag = CCLabelBMFont::create(tr("pai.updates.no_file", "No file").c_str(), "bigFont.fnt");
+        auto* tag = CCLabelBMFont::create(tr("pai.updates.no_file", "No file").c_str(), "bigFont.fnt");
         tag->setScale(0.24f);
         tag->setColor({150, 150, 160});
-        tag->setPosition({338.f, kRowH / 2.f});
+        tag->setPosition({actionX, midY});
         row->addChild(tag, 1);
         return row;
     }
 
     bool downgrade = cmp < 0;
-    auto actionSpr = ButtonSprite::create(
-        downgrade ? tr("pai.updates.revert", "Revert").c_str()
-                  : tr("pai.updates.install", "Install").c_str(),
-        "bigFont.fnt",
-        downgrade ? "GJ_button_06.png" : "GJ_button_01.png",
-        .8f
-    );
-    actionSpr->setScale(0.42f);
-    auto* actionBtn = CCMenuItemExt::createSpriteExtra(
-        actionSpr, [self = WeakRef<UpdateCenterPopup>(this), release](CCMenuItemSpriteExtra*) {
+    auto actionText = downgrade ? tr("pai.updates.revert", "Revert") : tr("pai.updates.install", "Install");
+    auto* action = paimon::ui::makeButton(actionText.c_str(),
+        [self = WeakRef<UpdateCenterPopup>(this), release] {
             if (auto popup = self.lock()) popup->confirmInstall(release);
-        }
-    );
-    actionBtn->setPosition({340.f, kRowH / 2.f});
-    menu->addChild(actionBtn);
-
+        },
+        downgrade ? paimon::ui::Btn::Red : paimon::ui::Btn::Green, kActionW, kActionScale, "bigFont.fnt");
+    action->setPosition({actionX, midY});
+    menu->addChild(action);
     return row;
 }
 
@@ -532,18 +565,14 @@ void UpdateCenterPopup::showHistoryStatus(std::string const& text, bool retry) {
     menu->setPosition({kListX + kListW / 2.f, kListY + kListH / 2.f - 14.f});
     m_listHolder->addChild(menu);
 
-    auto spr = ButtonSprite::create(
-        tr("pai.updates.retry", "Retry").c_str(), "bigFont.fnt", "GJ_button_02.png", .8f
-    );
-    spr->setScale(0.45f);
-    menu->addChild(CCMenuItemExt::createSpriteExtra(
-        spr, [self = WeakRef<UpdateCenterPopup>(this)](CCMenuItemSpriteExtra*) {
+    auto* retryBtn = paimon::ui::makeButton(tr("pai.updates.retry", "Retry").c_str(),
+        [self = WeakRef<UpdateCenterPopup>(this)] {
             auto popup = self.lock();
             if (!popup) return;
             popup->m_historyFailed = false;
             popup->loadHistory();
-        }
-    ));
+        }, paimon::ui::Btn::Cyan, kFooterBtnW, kFooterBtnScale, "bigFont.fnt");
+    menu->addChild(retryBtn);
 }
 
 void UpdateCenterPopup::showNotes(ReleaseInfo const& release) {
@@ -569,6 +598,21 @@ void UpdateCenterPopup::showNotes(ReleaseInfo const& release) {
         }
     );
     if (md) md->show();
+}
+
+void UpdateCenterPopup::showLocalChangelog() {
+    auto const& changelogOpt = Mod::get()->getMetadata().getChangelog();
+    std::string body = (changelogOpt && !changelogOpt->empty())
+        ? *changelogOpt
+        : tr("pai.updates.no_notes", "This release has no notes.");
+    std::string title = fmt::format(
+        "{} ({})",
+        tr("pai.updates.changelog.title", "Changelog"),
+        versionText()
+    );
+    if (auto* md = MDPopup::create(title, body, tr("pai.updates.close", "Close"))) {
+        md->show();
+    }
 }
 
 void UpdateCenterPopup::confirmInstall(ReleaseInfo const& release) {

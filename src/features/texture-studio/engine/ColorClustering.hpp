@@ -55,10 +55,25 @@ struct ClusteringOptions {
     int maxSamples = 24000;
 };
 
+// one distinct color plus the pixel mass that uses it; weight is the alpha-weighted sum.
+struct WeightedColor {
+    float h = 0.0f;
+    float s = 0.0f;
+    float v = 0.0f;
+    float weight = 0.0f;
+    int count = 0;
+};
+
 class ColorClustering final {
 public:
     static ClusterSet compute(ImageBuffer const& sprite,
                               ClusteringOptions options = {});
+
+    // same k-means over distinct colors instead of pixels. weights carry the pixel
+    // mass, so the result matches a full-pixel run at a fraction of the cost.
+    static ClusterSet computeWeighted(std::vector<WeightedColor> const& colors,
+                                      std::uint64_t seed,
+                                      ClusteringOptions options = {});
 
     // weighted hsv distance; hue uses circular distance (350° and 10° = 20°).
     static float hsvDistance(float h1, float s1, float v1,

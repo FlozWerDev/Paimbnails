@@ -1,11 +1,11 @@
-// paint layer for the cosmetic official slots: every vanilla page stays in
-// place and is repainted (never rebuilt, so background/music/swipe can't desync).
+#include "../../../framework/compat/NativeUI.hpp"
+// keep the recycled vanilla pages and rebuild their source list in the user's order.
 
 #include <Geode/modify/LevelSelectLayer.hpp>
 #include <Geode/modify/LevelPage.hpp>
+#include <Geode/modify/GameManager.hpp>
 
 #include <Geode/binding/BoomScrollLayer.hpp>
-#include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/binding/GJGameLevel.hpp>
 #include <Geode/utils/cocos.hpp>
@@ -19,6 +19,7 @@
 #include "../ui/SlotVisuals.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../framework/HookConventions.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 
@@ -55,8 +56,7 @@ void refresh() {
 
 namespace paimon::officialslots {
 
-// stand-ins and the coming-soon pages both use ids <= 0, so the untouched
-// vanilla list is kept to tell them apart on later syncs.
+// keep the original list so restored officials and special pages retain their native data.
 constexpr char const* kVanillaLevelsKey = "official-slots-vanilla-levels"_spr;
 
 std::optional<Slot> slotForLevel(GJGameLevel* level) {
@@ -68,6 +68,9 @@ std::optional<Slot> slotForLevel(GJGameLevel* level) {
 std::string levelIdentity(GJGameLevel* level) {
     if (!level) return {};
     if (auto slotId = SlotLevelCache::get().slotIdForLevel(level)) {
+        if (auto slot = SlotStore::get().find(*slotId); slot && slot->replacesOfficialId != 0) {
+            return SlotStore::officialKey(slot->replacesOfficialId);
+        }
         return SlotStore::slotKey(*slotId);
     }
     if (isOfficialId(level->m_levelID)) return SlotStore::officialKey(level->m_levelID);
@@ -75,6 +78,21 @@ std::string levelIdentity(GJGameLevel* level) {
 }
 
 void syncDots(BoomScrollLayer* scroll);
+
+void selectVisiblePage(LevelSelectLayer* select, int index) {
+    if (!select || !select->m_scrollLayer) return;
+    auto* scroll = select->m_scrollLayer;
+    if (!scroll->m_dynamicObjects || scroll->m_dynamicObjects->count() == 0 ||
+        !scroll->m_pages || scroll->m_pages->count() == 0) return;
+    int const target = std::clamp(index, 0, static_cast<int>(scroll->m_dynamicObjects->count()) - 1);
+    scroll->m_page = target;
+    scroll->instantMoveToPage(target);
+    for (int i = target - 1; i <= target + 1; ++i) {
+        auto* page = scroll->getPage(i);
+        auto* level = scroll->m_dynamicObjects->objectAtIndex(scroll->getRelativePageForNum(i));
+        if (page && level) select->updatePageWithObject(page, level);
+    }
+}
 
 // createWithArray deep-copies via copy(); GJGameLevel has no copyWithZone, so it
 // yields nullptr entries and crashes in retain.
@@ -102,8 +120,6 @@ void syncPages(LevelSelectLayer* select) {
 
     auto& store = SlotStore::get();
     auto desired = store.visiblePages();
-    // levelselect with no page at all is outside what the game handles.
-    if (desired.empty()) return;
 
     int const oldIndex = scroll->getRelativePageForNum(scroll->m_page);
     std::string const current = levelIdentity(
@@ -127,11 +143,12 @@ void syncPages(LevelSelectLayer* select) {
         int officialId = 0;
         GJGameLevel* level = nullptr;
         if (SlotStore::officialKeyId(key, officialId)) {
-            auto it = officials.find(officialId);
-            if (it != officials.end()) {
-                level = it->second;
-            } else if (glm) {
-                level = glm->getMainLevel(officialId, false);
+            if (auto replacement = store.slotForOfficial(officialId)) {
+                level = SlotLevelCache::get().levelForSlot(*replacement);
+            } else {
+                auto it = officials.find(officialId);
+                if (it != officials.end()) level = it->second;
+                else if (glm) level = glm->getMainLevel(officialId, false);
             }
         } else if (auto slot = store.find(key.substr(2))) {
             level = SlotLevelCache::get().levelForSlot(*slot);
@@ -140,8 +157,14 @@ void syncPages(LevelSelectLayer* select) {
         levels->addObject(level);
         keys.push_back(key);
     }
-    if (levels->count() == 0) return;
     levels->addObjectsFromArray(extras);
+    // an empty catalogue uses the game's coming-soon page, never the old hidden list.
+    if (levels->count() == 0) {
+        auto* empty = GJGameLevel::create();
+        if (!empty) return;
+        empty->m_levelID = 0;
+        levels->addObject(empty);
+    }
 
     int target = -1;
     if (!current.empty()) {
@@ -160,18 +183,12 @@ void syncPages(LevelSelectLayer* select) {
     scroll->m_dynamicObjects->addObjectsFromArray(levels);
     syncDots(scroll);
 
-    scroll->m_page = target;
-    scroll->instantMoveToPage(target);
-
-    for (int i = target - 1; i <= target + 1; ++i) {
-        auto* page = scroll->getPage(i);
-        auto* level = scroll->m_dynamicObjects->objectAtIndex(scroll->getRelativePageForNum(i));
-        if (page && level) select->updatePageWithObject(page, level);
-    }
+    selectVisiblePage(select, target);
 }
 
 void syncDots(BoomScrollLayer* scroll) {
     if (!scroll || !scroll->m_dots || !scroll->m_dynamicObjects) return;
+    bool const visible = scroll->m_dotsVisible;
     auto* dots = scroll->m_dots;
     unsigned const want = scroll->m_dynamicObjects->count();
     while (dots->count() > want) {
@@ -196,6 +213,9 @@ void syncDots(BoomScrollLayer* scroll) {
         }
     }
     scroll->updateDots(0.f);
+    // cloned dots start visible even when LevelSelect replaced the row with
+    // its scrollbar. Reapply the native visibility after rebuilding it.
+    paimon::compat::setPageIndicatorsVisible(scroll, visible);
 }
 
 void refreshOfficialList() {
@@ -222,15 +242,25 @@ void refreshOfficialList() {
 
 } // namespace paimon::officialslots
 
+class $modify(PaimonOfficialSlotReturn, GameManager) {
+    $override
+    void returnToLastScene(GJGameLevel* level) {
+        if (paimon::officialslots::returnFromSlotLevel(level)) return;
+        GameManager::returnToLastScene(level);
+    }
+};
+
 class $modify(PaimonOfficialSlotPage, LevelPage) {
     static void onModify(auto& self) {
-        paimon::hooks::afterNodeIdsOrLate(self, "LevelPage::updateDynamicPage");
+        // apply the custom badges after the thumbnail hook restores vanilla children.
+        paimon::hooks::veryLatePost(self, "LevelPage::updateDynamicPage");
     }
 
     struct Fields {
         // every node our paint added to this page. dropped and rebuilt on each
         // update because boomscrolllayer recycles pages across swipes.
         std::vector<Ref<CCNode>> m_slotNodes;
+        float m_nativeNameScale = 0.f;
     };
 
     void trackSlotNode(CCNode* node) {
@@ -246,11 +276,24 @@ class $modify(PaimonOfficialSlotPage, LevelPage) {
 
     $override
     void updateDynamicPage(GJGameLevel* level) {
-        LevelPage::updateDynamicPage(level);
-
-        // drop our previous paint first: this page object may have shown a
-        // different official a moment ago.
+        bool const hadSlotPaint = !m_fields->m_slotNodes.empty();
+        bool const changedLevel = !m_level || !level || m_level->m_levelID != level->m_levelID;
         this->clearSlotPaint();
+        // a recycled custom page must restore the vanilla controls before updating them.
+        if (hadSlotPaint) {
+            if (m_difficultySprite) m_difficultySprite->setVisible(true);
+            if (m_starsLabel) m_starsLabel->setVisible(true);
+            if (m_starsSprite) m_starsSprite->setVisible(true);
+            if (m_coins) {
+                for (auto* coin : CCArrayExt<CCNode*>(m_coins)) coin->setVisible(true);
+            }
+        }
+        LevelPage::updateDynamicPage(level);
+        if (m_nameLabel && (changedLevel || m_fields->m_nativeNameScale <= 0.f)) {
+            m_fields->m_nativeNameScale = m_nameLabel->getScale();
+        }
+
+        // the same page object may have shown another official a moment ago.
         if (m_levelDisplay) m_levelDisplay->setColor({255, 255, 255});
         if (m_nameLabel) m_nameLabel->setColor({255, 255, 255});
 
@@ -278,12 +321,8 @@ class $modify(PaimonOfficialSlotPage, LevelPage) {
         using namespace paimon::officialslots::ui;
 
         if (m_nameLabel) {
-            if (!slot.name.empty()) {
-                m_nameLabel->setString(slot.name.c_str());
-                // shrink only when too long; the vanilla update reset the
-                // scale just before, so this never accumulates.
-                m_nameLabel->limitLabelWidth(320.f, m_nameLabel->getScale(), 0.1f);
-            }
+            m_nameLabel->setString(slotDisplayName(slot).c_str());
+            m_nameLabel->limitLabelWidth(320.f, m_fields->m_nativeNameScale, 0.1f);
         }
 
         if (m_difficultySprite) {
@@ -300,27 +339,14 @@ class $modify(PaimonOfficialSlotPage, LevelPage) {
             }
         }
 
-        CCNode* starParent = nullptr;
-        CCPoint starPos{0.f, 0.f};
-        if (m_starsLabel) {
-            starParent = m_starsLabel->getParent();
-            starPos = m_starsLabel->getPosition();
-            m_starsLabel->setVisible(false);
-        }
-        if (m_starsSprite) {
-            if (starParent && m_starsSprite->getParent() == starParent) {
-                starPos = (starPos + m_starsSprite->getPosition()) / 2.f;
-            }
-            m_starsSprite->setVisible(false);
-        }
-        if (starParent) {
-            // scale 1 matches the editor preview (0.5 label, 0.8 icon).
-            if (auto* badge = createStarBadge(slot.stars, 1.f)) {
-                badge->setPosition(starPos);
-                starParent->addChild(badge);
-                this->trackSlotNode(badge);
-            }
-        }
+        CCNode* starParent = m_starsSprite ? m_starsSprite->getParent()
+            : (m_starsLabel ? m_starsLabel->getParent() : nullptr);
+        CCPoint const starPos = m_starsSprite ? m_starsSprite->getPosition()
+            : (m_starsLabel ? m_starsLabel->getPosition() : CCPoint{});
+        updatePageStars(m_starsLabel, m_starsSprite, slot.stars);
+        auto* orbsLabel = typeinfo_cast<CCLabelBMFont*>(this->getChildByIDRecursive("orbs-label"));
+        auto* orbsIcon = typeinfo_cast<CCSprite*>(this->getChildByIDRecursive("orbs-icon"));
+        updatePageOrbs(orbsLabel, orbsIcon, m_level ? m_level->m_normalPercent.value() : 0);
 
         // the slot owns the coin row completely: vanilla coins are always
         // hidden on a replacement, ours appear only when the slot has them.
@@ -393,6 +419,11 @@ class $modify(PaimonOfficialSlotPage, LevelPage) {
 };
 
 class $modify(PaimonOfficialSlotSelect, LevelSelectLayer) {
+    struct Fields {
+        CCNode* m_actionsPanel = nullptr;
+        CCMenu* m_actionsMenu = nullptr;
+    };
+
     static void onModify(auto& self) {
         paimon::hooks::afterNodeIdsOrLate(self, "LevelSelectLayer::init");
     }
@@ -439,47 +470,94 @@ class $modify(PaimonOfficialSlotSelect, LevelSelectLayer) {
         if (!director) return;
         auto const win = director->getWinSize();
 
+        constexpr float buttonWidth = 116.f;
+        constexpr float gap = 6.f;
+        constexpr float rowHeight = 28.f;
+        constexpr float padding = 8.f;
+        constexpr float menuHeight = rowHeight * 3.f + gap * 2.f;
+        constexpr float panelWidth = buttonWidth + padding * 2.f;
+        constexpr float panelHeight = menuHeight + padding * 2.f;
+
+        auto* toggleMenu = CCMenu::create();
+        toggleMenu->setPosition({0.f, 0.f});
+        toggleMenu->setContentSize(win);
+        toggleMenu->setID("officialslots-toggle-menu"_spr);
+        this->addChild(toggleMenu, 41);
+        auto* toggle = paimon::ui::makeFrameButton("GJ_optionsBtn_001.png", 0.55f,
+            [this] { this->toggleSlotActions(); });
+        if (!toggle) return;
+        toggle->setID("officialslots-toggle"_spr);
+
+        CCPoint position{win.width - 58.f, win.height - 20.f};
+        if (auto* info = this->getChildByIDRecursive("info-button"); info && info->getParent()) {
+            auto const bounds = info->boundingBox();
+            auto const leftCenter = this->convertToNodeSpace(info->getParent()->convertToWorldSpace(
+                {bounds.getMinX(), bounds.getMidY()}));
+            position = CCPoint{leftCenter.x - 8.f - toggle->getScaledContentWidth() / 2.f, leftCenter.y};
+        }
+        float const halfWidth = toggle->getScaledContentWidth() / 2.f;
+        float const halfHeight = toggle->getScaledContentHeight() / 2.f;
+        position.x = std::clamp(position.x, halfWidth + 8.f, win.width - halfWidth - 8.f);
+        position.y = std::clamp(position.y, halfHeight + 8.f, win.height - halfHeight - 8.f);
+        toggle->setPosition(position);
+        toggleMenu->addChild(toggle);
+
+        auto* panel = CCNode::create();
+        panel->setID("officialslots-actions"_spr);
+        panel->setContentSize({panelWidth, panelHeight});
+        panel->setPosition({std::clamp(position.x + halfWidth - panelWidth,
+            8.f, win.width - panelWidth - 8.f),
+            std::max(8.f, position.y - halfHeight - 8.f - panelHeight)});
+        panel->addChild(paimon::ui::makeInset({panelWidth, panelHeight}, 200), -1);
+        panel->setVisible(false);
+        this->addChild(panel, 40);
+        m_fields->m_actionsPanel = panel;
+
         auto* menu = CCMenu::create();
         if (!menu) return;
         menu->setID("officialslots-menu"_spr);
         menu->ignoreAnchorPointForPosition(false);
         menu->setAnchorPoint({0.f, 0.f});
+        menu->setContentSize({buttonWidth, menuHeight});
+        menu->setPosition({padding, padding});
+        menu->setEnabled(false);
+        panel->addChild(menu);
+        m_fields->m_actionsMenu = menu;
 
-        constexpr float kGap = 6.f;
-        constexpr float kH = 30.f;
-        float const addW = 46.f;
-        float const editW = 84.f;
-        float const listW = 84.f;
-        float const totalW = addW + editW + listW + kGap * 2.f;
-
-        menu->setContentSize({totalW, kH});
-        menu->setPosition({win.width - 12.f - totalW, win.height - 30.f - kH / 2.f});
-        this->addChild(menu, 40);
-
-        float x = 0.f;
-        this->addTopButton(menu, "+", addW, x, [this] { this->onSlotAdd(); });
-        x += addW + kGap;
-        this->addTopButton(
-            menu, tr("slot.manager.edit").c_str(), editW, x, [this] { this->onSlotEdit(); });
-        x += editW + kGap;
-        this->addTopButton(
-            menu, tr("slot.manager.list").c_str(), listW, x, [this] { this->onSlotList(); });
+        std::vector<CCMenuItemSpriteExtra*> buttons;
+        auto addButton = [&](std::string const& text, paimon::ui::Btn skin, std::function<void()> action) {
+            auto* button = paimon::ui::makeButton(text.c_str(), std::move(action),
+                skin, buttonWidth, 0.65f, "bigFont.fnt");
+            if (!button) return;
+            menu->addChild(button);
+            buttons.push_back(button);
+        };
+        addButton("+ " + tr("slot.manager.add"), paimon::ui::Btn::Green, [this] { this->onSlotAdd(); });
+        addButton(tr("slot.manager.edit"), paimon::ui::Btn::Cyan, [this] { this->onSlotEdit(); });
+        addButton(tr("slot.manager.list"), paimon::ui::Btn::Pink, [this] { this->onSlotList(); });
+        paimon::ui::matchButtonLabels(buttons);
+        menu->setLayout(ColumnLayout::create()->setGap(gap)->setAxisReverse(true)
+            ->setAxisAlignment(AxisAlignment::Center)
+            ->setCrossAxisAlignment(AxisAlignment::Center)
+            ->setAutoScale(false));
     }
 
-    void addTopButton(
-        CCMenu* menu, char const* text, float width, float x, std::function<void()> cb
-    ) {
-        auto* spr = ButtonSprite::create(
-            text, static_cast<int>(width), true, "bigFont.fnt", "GJ_button_01.png", 20.f, 0.5f);
-        if (!spr) return;
-        auto* item = CCMenuItemExt::createSpriteExtra(
-            spr, [cb = std::move(cb)](CCMenuItemSpriteExtra*) { cb(); });
-        if (!item) return;
-        item->setPosition({x + width / 2.f, menu->getContentSize().height / 2.f});
-        menu->addChild(item);
+    void toggleSlotActions() {
+        auto* panel = m_fields->m_actionsPanel;
+        auto* menu = m_fields->m_actionsMenu;
+        if (!panel || !menu) return;
+        bool const open = !panel->isVisible();
+        panel->setVisible(open);
+        menu->setEnabled(open);
+    }
+
+    void closeSlotActions() {
+        if (auto* panel = m_fields->m_actionsPanel) panel->setVisible(false);
+        if (auto* menu = m_fields->m_actionsMenu) menu->setEnabled(false);
     }
 
     void onSlotAdd() {
+        this->closeSlotActions();
         using namespace paimon::officialslots::ui;
         if (auto* editor = SlotEditorPopup::create(std::nullopt, 0, [] { refresh(); })) {
             editor->show();
@@ -487,6 +565,7 @@ class $modify(PaimonOfficialSlotSelect, LevelSelectLayer) {
     }
 
     void onSlotEdit() {
+        this->closeSlotActions();
         using namespace paimon::officialslots::ui;
         // a slot page edits that slot; an official edits its replacement.
         if (!this->currentSlotId().empty()) {
@@ -501,7 +580,7 @@ class $modify(PaimonOfficialSlotSelect, LevelSelectLayer) {
             return;
         }
         std::optional<std::string> existing;
-        if (auto slot = paimon::officialslots::SlotStore::get().slotForOfficial(id)) {
+        if (auto slot = paimon::officialslots::SlotStore::get().replacementForOfficial(id)) {
             existing = slot->id;
         }
         if (auto* editor = SlotEditorPopup::create(existing, id, [] { refresh(); })) {
@@ -510,6 +589,7 @@ class $modify(PaimonOfficialSlotSelect, LevelSelectLayer) {
     }
 
     void onSlotList() {
+        this->closeSlotActions();
         using namespace paimon::officialslots::ui;
         if (auto* manager = SlotManagerPopup::create([] { refresh(); })) {
             manager->show();

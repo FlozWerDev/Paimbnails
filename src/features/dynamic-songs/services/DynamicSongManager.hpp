@@ -63,6 +63,7 @@ public:
     void checkSongInfoSwap(MusicDownloadManager* mdm, FMODAudioEngine* engine);
     void checkPendingStream(FMODAudioEngine* engine);
     void handoffWatchTick(float dt);
+    void pumpRetiringStreamSounds(float dt = 0.f);
 
     float getDynamicVolume() const;
     void setDynamicVolume(float vol);
@@ -132,13 +133,16 @@ private:
     bool m_streamingPreview = false;
     // keep polling a disabled preview until its download finishes.
     bool m_awaitingDownloadOnly = false;
+    std::vector<FMOD::Sound*> m_retiringStreamSounds;
     FMOD::Sound* m_previewStreamSound = nullptr;
     FMOD::Channel* m_previewChannel = nullptr;
     int m_previewSongID = 0;
     cocos2d::CCNode* m_streamPollNode = nullptr;
+    cocos2d::CCNode* m_streamRetireNode = nullptr;
     std::chrono::steady_clock::time_point m_previewRequestStartTime{};
     std::chrono::steady_clock::time_point m_previewPlayAttemptSince{};
 
     void startStreamingPreview(GJGameLevel* level);
+    void retirePreviewSound(FMOD::Sound* sound);
     void syncPreviewVolume();
 };

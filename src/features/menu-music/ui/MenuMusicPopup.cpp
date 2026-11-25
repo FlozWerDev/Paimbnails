@@ -1,3 +1,5 @@
+#include "../../../framework/compat/NativeUI.hpp"
+#include "../../../utils/FilesystemPath.hpp"
 #include "MenuMusicPopup.hpp"
 
 #include "components/VinylDisc.hpp"
@@ -55,10 +57,61 @@ using namespace geode::prelude;
 
 namespace paimon::menumusic {
 
-static constexpr float kPopupW = 460.f;
-static constexpr float kPopupH = 225.f;
-static constexpr float kHeroWidthRatio = 0.44f;
-static constexpr float kHeroSkew = 20.f;
+static constexpr float kPopupW = 476.f;
+static constexpr float kPopupH = 286.f;
+static constexpr float kClipInset = 4.f;
+static constexpr float kOuterPad = 12.f;
+static constexpr float kColGap = 10.f;
+
+static constexpr float kDockY = 29.f;
+static constexpr float kDockH = 34.f;
+static constexpr float kStageBottom = 54.f;
+static constexpr float kStageTop = 250.f;
+static constexpr float kStageH = kStageTop - kStageBottom; // 196
+
+static constexpr float kHeroW = 188.f;
+static constexpr float kRightColX = kOuterPad + kHeroW + kColGap; // 210
+static constexpr float kRightColW = kPopupW - kRightColX - kOuterPad; // 254
+static constexpr float kRightColCenterX = kRightColX + kRightColW * 0.5f; // 337
+
+// Right-column stacked cards (64 + 6 + 76 + 6 + 44 = 196 == kStageH).
+static constexpr float kInfoCardH = 64.f;
+static constexpr float kInfoCardCenterY = kStageTop - kInfoCardH * 0.5f; // 218
+static constexpr float kCardGap = 6.f;
+static constexpr float kTransportCardH = 76.f;
+static constexpr float kTransportCardCenterY = (kStageTop - kInfoCardH - kCardGap) - kTransportCardH * 0.5f; // 142
+static constexpr float kActionsCardH = 44.f;
+static constexpr float kActionsCardCenterY = kStageBottom + kActionsCardH * 0.5f; // 76
+
+static float fitSpriteToExtent(CCSprite* spr, float targetExtent) {
+    if (!spr) return 1.f;
+    CCSize const sz = spr->getContentSize();
+    float const longest = std::max({sz.width, sz.height, 1.f});
+    return targetExtent / longest;
+}
+
+static void updateButtonBgIfChanged(ButtonSprite* spr, char const* targetBg) {
+    if (!spr || !targetBg) return;
+    auto* prevBg = typeinfo_cast<CCString*>(spr->getUserObject("paimon-mm-bg"_spr));
+    if (!prevBg || prevBg->m_sString != targetBg) {
+        spr->updateBGImage(targetBg);
+        spr->setUserObject("paimon-mm-bg"_spr, CCString::create(targetBg));
+    }
+}
+
+// Add a clean recessed classic GD dark card (square02b_001.png) for layout grouping.
+static void addDeckPanel(CCNode* parent, CCPoint center, CCSize sz, GLubyte opacity = 105, int zOrder = 4) {
+    if (!parent) return;
+    if (auto* card = paimon::SpriteHelper::safeCreateNineSliceFromFile("square02b_001.png")) {
+        card->setScaleMultiplier(0.38f);
+        card->setContentSize(sz);
+        card->setAnchorPoint({0.5f, 0.5f});
+        card->setPosition(center);
+        card->setColor({0, 0, 0});
+        card->setOpacity(opacity);
+        parent->addChild(card, zOrder);
+    }
+}
 
 // use a geometric fallback so the button never has a 0x0 size.
 static CCSprite* createIconSpriteWithFallback(
@@ -114,9 +167,9 @@ bool MenuMusicPopup::init(float width, float height) {
     paimon::markDynamicPopup(this);
 
     MenuMusicLibrary::get().load();
-    MenuMusicLibrary::get().syncDownloadedSongs();
+    MenuMusicLibrary::get().syncDownloadedSongsAsync();
 
-    buildFullscreenBackdrop();
+    // buildFullscreenBackdrop(); - removed: only keep the popup's internal background
 
     buildContentClipper();
     buildBlurBackground();
@@ -129,8 +182,7 @@ bool MenuMusicPopup::init(float width, float height) {
     buildActions();
     buildBottomBar();
 
-    coverlog::info("[MenuMusicCover] popup opened - log file: {}",
-        geode::utils::string::pathToString(coverlog::logFilePath()));
+    coverlog::info("[MenuMusicCover] popup opened");
     refreshFromState();
 
     return true;
@@ -143,12 +195,12 @@ void MenuMusicPopup::onEnterTransitionDidFinish() {
         static bool s_shownLogHint = false;
         if (!s_shownLogHint) {
             s_shownLogHint = true;
-            auto const logPath = geode::utils::string::pathToString(coverlog::logFilePath());
-            PaimonNotify::create(
+            auto const logPath = paimon::paths::toUtf8(coverlog::logFilePath());
+            PaimonNotify::show(
                 fmt::format("Cover debug log:\n{}", logPath),
                 NotificationIcon::Info,
                 4.f
-            )->show();
+            );
         }
     }
 
@@ -159,6 +211,11 @@ void MenuMusicPopup::onEnterTransitionDidFinish() {
         [this](const std::string& trackId) {
             this->onTrackChanged(trackId);
         });
+
+    if (m_needsRefreshOnEnter) {
+        m_needsRefreshOnEnter = false;
+        refreshFromState();
+    }
 
     auto& player = MenuMusicPlayer::get();
     if (!player.isPaused() && player.currentTrack()) {
@@ -180,8 +237,22 @@ void MenuMusicPopup::onEnterTransitionDidFinish() {
 }
 
 void MenuMusicPopup::onExit() {
+    m_playAfterSync = false;
+    ++m_fullscreenBlurGen;
+    m_fullscreenBlurPending = false;
+    ++m_cachedCoverGeneration;
+    ++m_coverValidationGeneration;
+    m_cachedCoverPending = false;
+    m_coverValidationPending = false;
+    m_needsRefreshOnEnter = true;
+    m_cachedCoverSongID = 0;
+    m_cachedCoverPaths.clear();
+    m_coverValidationTrack.clear();
+    m_coverValidationInput.clear();
+    m_validatedCoverPaths.clear();
     SongCoverCache::get().cancelAllPending();
     m_pendingSongCoverID = 0;
+    m_failedSongCoverID = 0;
     this->unschedule(schedule_selector(MenuMusicPopup::pollExternalSong));
     this->unschedule(schedule_selector(MenuMusicPopup::tickSeekUpdate));
     this->unschedule(schedule_selector(MenuMusicPopup::pressAndHoldSeek));
@@ -200,8 +271,8 @@ void MenuMusicPopup::onExit() {
 void MenuMusicPopup::buildContentClipper() {
     auto size = m_mainLayer->getContentSize();
 
-    const float inset = 3.f;
-    const float cornerRadius = 3.f;
+    const float inset = kClipInset;
+    const float cornerRadius = 6.f;
 
     CCSize clipSize{size.width - inset * 2.f, size.height - inset * 2.f};
 
@@ -229,104 +300,52 @@ void MenuMusicPopup::buildBlurBackground() {
 }
 
 void MenuMusicPopup::buildFullscreenBackdrop() {
-    auto winSize = CCDirector::get()->getWinSize();
-
-    m_fullscreenBackdrop = CCNode::create();
-    if (!m_fullscreenBackdrop) return;
-    m_fullscreenBackdrop->setContentSize(winSize);
-    m_fullscreenBackdrop->setAnchorPoint({0.f, 0.f});
-    m_fullscreenBackdrop->setPosition({0.f, 0.f});
-    m_fullscreenBackdrop->setID("mm-fullscreen-backdrop"_spr);
-    this->addChild(m_fullscreenBackdrop, -1);
+    // disabled: fullscreen backdrop behind the popup removed per user request.
 }
 
 void MenuMusicPopup::applyFullscreenCover(const std::string& coverPath) {
-    if (!m_fullscreenBackdrop) return;
+    // disabled: fullscreen backdrop behind the popup removed per user request.
+    (void)coverPath;
+}
 
-    // invalidate in-flight blur jobs.
-    m_fullscreenBlurGen++;
-    auto gen = m_fullscreenBlurGen;
-
-    if (coverPath.empty()) {
-        if (m_fullscreenBlur) {
-            m_fullscreenBlur->removeFromParent();
-            m_fullscreenBlur = nullptr;
-        }
-        m_lastCoverPath.clear();
-        return;
-    }
-
-    if (coverPath == m_lastCoverPath && m_fullscreenBlur) return;
-    m_lastCoverPath = coverPath;
-
-    auto* source = paimon::image::loadBudgeted(coverPath);
-    if (!source) return;
-
-    auto winSize = CCDirector::get()->getWinSize();
-
-    float intensity = 7.f;
-    std::string cacheKey = fmt::format(
-        "menumusic_fullscreen::{}::{}x{}",
-        coverPath,
-        static_cast<int>(winSize.width),
-        static_cast<int>(winSize.height));
-
-    // generation and backdrop existence reject stale callbacks.
-    BlurSystem::getInstance()->buildPaimonBlurPriority(
-        source, winSize, intensity, cacheKey,
-        [this, gen](CCSprite* blurred) {
-            if (!blurred) return;
-            if (!m_fullscreenBackdrop || !m_fullscreenBackdrop->getParent()) return;
-            if (gen != m_fullscreenBlurGen) return;
-
-            auto win = CCDirector::get()->getWinSize();
-            const CCSize ts = blurred->getContentSize();
-            float sx = win.width / ts.width;
-            float sy = win.height / ts.height;
-            float scale = std::max(sx, sy);
-            blurred->setScale(scale);
-            blurred->setAnchorPoint({0.5f, 0.5f});
-            blurred->setPosition({win.width / 2.f, win.height / 2.f});
-            blurred->setOpacity(0);
-            m_fullscreenBackdrop->addChild(blurred, 0);
-
-            blurred->runAction(CCFadeTo::create(0.3f, 255));
-            if (m_fullscreenBlur) {
-                auto* old = m_fullscreenBlur;
-                old->runAction(CCSequence::create(
-                    CCFadeTo::create(0.3f, 0),
-                    CCCallFunc::create(old, callfunc_selector(CCNode::removeFromParent)),
-                    nullptr));
-            }
-            m_fullscreenBlur = blurred;
-        });
+void MenuMusicPopup::buildFullscreenBlur(CCTexture2D* texture, std::uint64_t generation) {
+    // disabled: fullscreen backdrop behind the popup removed per user request.
+    (void)texture;
+    (void)generation;
 }
 
 void MenuMusicPopup::buildTopBar() {
+    auto size = m_mainLayer->getContentSize();
+    float const headerY = size.height - 18.f;
+
     this->setTitle("Menu Music");
     if (m_title) {
-        m_title->setPositionY(m_title->getPositionY() - 2.f);
+        m_title->setScale(0.74f);
+        m_title->setPosition({size.width * 0.5f, headerY});
     }
 
-    auto size = m_mainLayer->getContentSize();
+    // Subtle dark header strip behind title & utility buttons for crisp contrast over blurred covers.
+    addDeckPanel(m_mainLayer, {size.width * 0.5f, headerY}, {size.width - kOuterPad * 2.f, 24.f}, 85, 3);
 
     auto topMenu = CCMenu::create();
     if (!topMenu) return;
     topMenu->setID("top-right-menu"_spr);
-    topMenu->setContentSize({100.f, 26.f});
+    topMenu->setContentSize({84.f, 24.f});
     topMenu->setAnchorPoint({1.f, 0.5f});
     topMenu->ignoreAnchorPointForPosition(false);
-    topMenu->setPosition({size.width - 8.f, size.height - 18.f});
+    topMenu->setPosition({size.width - kOuterPad - 6.f, headerY});
+
+    constexpr float kUtilIconExtent = 18.f;
 
     {
         auto infoBtn = InfoAlertButton::create(
             "How Menu Music works",
             "<cj>1.</c> <cg>Add Music</c>: link (YouTube...) or file.\n"
             "<cj>2.</c> <cy>Mode</c>: <cl>Off</c>=vanilla | <cl>All Songs</c>=all | <cl>Playlist</c>=active\n"
-            "<cj>3.</c> <cg>My Songs</c> > play any. <cg>Folder</c>=bulk import, <cg>GD</c>=sync GD songs.\n\n"
+            "<cj>3.</c> <cg>My Songs</c> > play any. <cg>Folders</c>=bulk import, <cg>GD</c>=sync GD songs.\n\n"
             "<cy>Actions:</c> hold, fav, block, copy, +List, replay toast.\n"
             "<cy>Hotkeys:</c> <cj>0-9</c> jump | <cj>Ctrl+Left/Right</c> prev/next | <cj>J/L</c> seek | <cj>Ctrl+K</c> songs | <cj>Ctrl+H</c> hold",
-            0.6f);
+            0.56f);
         if (infoBtn) {
             infoBtn->setID("mm-info-btn"_spr);
             topMenu->addChild(infoBtn);
@@ -335,13 +354,13 @@ void MenuMusicPopup::buildTopBar() {
 
     {
         auto spr = createIconSpriteWithFallback(
-            {"GJ_optionsBtn02_001.png", "GJ_optionsBtn_001.png"},
-            22.f, ccc4f(1.f, 1.f, 1.f, 1.f));
+            {"GJ_reloadBtn_001.png", "GJ_updateBtn_001.png"},
+            20.f, ccc4f(1.f, 1.f, 1.f, 1.f));
         if (spr) {
-            spr->setScale(0.6f);
+            spr->setScale(fitSpriteToExtent(spr, kUtilIconExtent));
             if (auto btn = CCMenuItemSpriteExtra::create(
-                    spr, this, menu_selector(MenuMusicPopup::onOpenSettings))) {
-                btn->setID("mm-settings-btn"_spr);
+                    spr, this, menu_selector(MenuMusicPopup::onReplayToast))) {
+                btn->setID("mm-replay-toast-btn"_spr);
                 topMenu->addChild(btn);
             }
         }
@@ -349,13 +368,13 @@ void MenuMusicPopup::buildTopBar() {
 
     {
         auto spr = createIconSpriteWithFallback(
-            {"GJ_reloadBtn_001.png", "GJ_updateBtn_001.png"},
-            22.f, ccc4f(1.f, 1.f, 1.f, 1.f));
+            {"GJ_optionsBtn02_001.png", "GJ_optionsBtn_001.png"},
+            20.f, ccc4f(1.f, 1.f, 1.f, 1.f));
         if (spr) {
-            spr->setScale(0.55f);
+            spr->setScale(fitSpriteToExtent(spr, kUtilIconExtent));
             if (auto btn = CCMenuItemSpriteExtra::create(
-                    spr, this, menu_selector(MenuMusicPopup::onReplayToast))) {
-                btn->setID("mm-replay-toast-btn"_spr);
+                    spr, this, menu_selector(MenuMusicPopup::onOpenSettings))) {
+                btn->setID("mm-settings-btn"_spr);
                 topMenu->addChild(btn);
             }
         }
@@ -378,19 +397,16 @@ void MenuMusicPopup::onOpenSettings(cocos2d::CCObject*) {
 
 void MenuMusicPopup::buildVinyl() {
     if (!m_contentClip) return;
-    auto clipSize = m_contentClip->getContentSize();
 
-    const float heroW = clipSize.width * kHeroWidthRatio;
-    const float heroH = clipSize.height;
-
-    m_hero = CoverHero::create({heroW, heroH}, kHeroSkew);
+    // Clean framed turntable showcase card on the left, fully clear of the bottom dock.
+    m_hero = CoverHero::create({kHeroW, kStageH}, 0.f);
     if (!m_hero) return;
     m_hero->setAnchorPoint({0.f, 0.f});
-    m_hero->setPosition({0.f, 0.f});
+    m_hero->setPosition({kOuterPad - kClipInset, kStageBottom - kClipInset});
     m_hero->setID("music-hero"_spr);
     m_contentClip->addChild(m_hero, 5);
 
-    // keep the play/pause menu outside ccclippingnode so it receives touches.
+    // Keep the play/pause menu outside CCClippingNode so it receives touches cleanly.
     if (auto* disc = m_hero->getDisc()) {
         auto dummy = cocos2d::CCSprite::create();
         if (dummy) {
@@ -418,15 +434,15 @@ void MenuMusicPopup::buildVinyl() {
         }
     }
 
-    m_disc = nullptr;
+    m_disc = m_hero ? m_hero->getDisc() : nullptr;
 
-    // caption sits over the hero bottom; the menu lives outside the clipper so it gets touches.
+    // Caption sits cleanly along the bottom of the turntable showcase, well above the dock.
     m_coverCaption = CCLabelBMFont::create("", "chatFont.fnt");
     if (m_coverCaption) {
-        m_coverCaption->setScale(0.42f);
+        m_coverCaption->setScale(0.40f);
         m_coverCaption->setAnchorPoint({0.f, 0.f});
-        m_coverCaption->setColor({235, 235, 245});
-        m_coverCaption->setOpacity(230);
+        m_coverCaption->setColor({235, 240, 250});
+        m_coverCaption->setOpacity(235);
         m_coverCaption->setID("mm-cover-caption"_spr);
         m_coverCaption->setVisible(false);
 
@@ -435,10 +451,7 @@ void MenuMusicPopup::buildVinyl() {
         if (btn) {
             btn->setAnchorPoint({0.f, 0.f});
             m_coverCaptionBtn = btn;
-            CCPoint clipperBL =
-                m_contentClip->getPosition()
-                - CCPoint(clipSize.width / 2.f, heroH / 2.f);
-            btn->setPosition(clipperBL + CCPoint(6.f, 5.f));
+            btn->setPosition({kOuterPad + 7.f, kStageBottom + 5.f});
 
             m_coverCaptionMenu = CCMenu::create();
             m_coverCaptionMenu->setContentSize(m_mainLayer->getContentSize());
@@ -453,13 +466,12 @@ void MenuMusicPopup::buildVinyl() {
 }
 
 void MenuMusicPopup::buildInfoColumn() {
-    auto size = m_mainLayer->getContentSize();
-    const float heroW = size.width * kHeroWidthRatio;
-    const float colX = heroW + 12.f;
-    const float colWidth = size.width - colX - 14.f;
+    // Card 1: Now Playing track info + Mode Selector (y = 186..250, h = 64).
+    addDeckPanel(m_mainLayer, {kRightColCenterX, kInfoCardCenterY}, {kRightColW, kInfoCardH}, 115, 4);
 
-    const float titleBoxW = colWidth;
-    const float titleBoxH = 22.f;
+    const float padX = 10.f;
+    const float titleBoxW = kRightColW - padX * 2.f;
+    const float titleBoxH = 20.f;
 
     auto titleStencil = paimon::SpriteHelper::createRoundedRectStencil(
         titleBoxW, titleBoxH, 3.f);
@@ -470,7 +482,7 @@ void MenuMusicPopup::buildInfoColumn() {
         m_trackClip->setAlphaThreshold(0.05f);
         m_trackClip->setContentSize({titleBoxW, titleBoxH});
         m_trackClip->setAnchorPoint({0.f, 0.5f});
-        m_trackClip->setPosition({colX, size.height * 0.86f - 13.f});
+        m_trackClip->setPosition({kRightColX + padX, 236.f});
         m_trackClip->setID("track-clip"_spr);
         m_mainLayer->addChild(m_trackClip, 6);
     }
@@ -478,41 +490,78 @@ void MenuMusicPopup::buildInfoColumn() {
     m_trackLabel = CCLabelBMFont::create("No track selected", "bigFont.fnt");
     if (m_trackLabel) {
         m_trackLabel->setAnchorPoint({0.f, 0.5f});
-        m_trackLabel->setPosition({6.f, titleBoxH / 2.f});
+        m_trackLabel->setPosition({1.f, titleBoxH / 2.f});
         m_trackLabel->setColor({255, 255, 255});
         m_trackLabel->setID("track-label"_spr);
-        m_trackLabel->setScale(0.55f);
+        m_trackLabel->setScale(0.52f);
         if (m_trackClip) {
             m_trackClip->addChild(m_trackLabel, 1);
         } else {
-            m_trackLabel->limitLabelWidth(colWidth, 0.55f, 0.3f);
-            m_trackLabel->setPosition({colX, size.height * 0.80f});
+            m_trackLabel->limitLabelWidth(titleBoxW, 0.52f, 0.30f);
+            m_trackLabel->setPosition({kRightColX + padX, 236.f});
             m_mainLayer->addChild(m_trackLabel, 6);
         }
     }
 
     m_subtitleLabel = CCLabelBMFont::create("", "chatFont.fnt");
     if (m_subtitleLabel) {
-        m_subtitleLabel->setScale(0.5f);
-        m_subtitleLabel->setColor(paimon::ui::palette::muted);
+        m_subtitleLabel->setScale(0.46f);
+        m_subtitleLabel->setColor({185, 212, 242});
         m_subtitleLabel->setAnchorPoint({0.f, 0.5f});
-        m_subtitleLabel->setPosition({colX, size.height * 0.74f - 6.f});
+        m_subtitleLabel->setPosition({kRightColX + padX + 1.f, 221.f});
         m_subtitleLabel->setID("subtitle-label"_spr);
         m_mainLayer->addChild(m_subtitleLabel, 6);
+    }
+
+    // Subtle hairline separator between track metadata and playback mode selector.
+    if (auto* div = PaimonDrawNode::create()) {
+        div->drawSegment(
+            {kRightColX + padX, 212.f},
+            {kRightColX + kRightColW - padX, 212.f},
+            0.6f,
+            {1.f, 1.f, 1.f, 0.14f}
+        );
+        m_mainLayer->addChild(div, 5);
     }
 }
 
 void MenuMusicPopup::buildTransport() {
-    auto size = m_mainLayer->getContentSize();
-    auto menu = CCMenu::create();
-    menu->setContentSize({size.width * 0.55f, 44.f});
+    // Card 2: Symmetric Playback Transport + Full-Width Seek Timeline (y = 104..180, h = 76).
+    addDeckPanel(m_mainLayer, {kRightColCenterX, kTransportCardCenterY}, {kRightColW, kTransportCardH}, 115, 4);
 
+    auto menu = CCMenu::create();
+    menu->setContentSize({kRightColW - 14.f, 40.f});
+
+    const int seekMs = std::clamp<int>(
+        static_cast<int>(Mod::get()->getSettingValue<int64_t>("menuLoopSeekAmountMs")),
+        100, 30000);
+    const int seekSec = std::max(1, (seekMs + 500) / 1000);
+    const std::string bkwdLbl = fmt::format("-{}s", seekSec);
+    const std::string fwrdLbl = fmt::format("+{}s", seekSec);
+
+    auto makeSkipBtn = [&](const std::string& label, SEL_MenuHandler selector)
+        -> CCMenuItemSpriteExtra* {
+        auto spr = ButtonSprite::create(
+            label.c_str(), 26, true, "bigFont.fnt",
+            "GJ_button_04.png", 18.f, 0.38f);
+        if (!spr) return nullptr;
+        return CCMenuItemSpriteExtra::create(spr, this, selector);
+    };
+
+    // 1. Seek backward (-5s)
+    m_seekBkwdBtn = makeSkipBtn(bkwdLbl, menu_selector(MenuMusicPopup::onSeekBackward));
+    if (m_seekBkwdBtn) {
+        m_seekBkwdBtn->setID("seek-bkwd-btn"_spr);
+        menu->addChild(m_seekBkwdBtn);
+    }
+
+    // 2. Previous track (<)
     {
         auto spr = createIconSpriteWithFallback(
             {"GJ_arrow_02_001.png"},
-            22.f, ccc4f(1.f, 1.f, 1.f, 1.f), /*triangle*/true, /*flipx*/false);
+            20.f, ccc4f(1.f, 1.f, 1.f, 1.f), /*triangle*/true, /*flipx*/false);
         if (spr) {
-            spr->setScale(0.7f);
+            spr->setScale(0.62f);
             auto btn = CCMenuItemSpriteExtra::create(
                 spr, this, menu_selector(MenuMusicPopup::onPrev));
             if (btn) {
@@ -522,12 +571,13 @@ void MenuMusicPopup::buildTransport() {
         }
     }
 
+    // 3. Centerpiece Play / Pause
     {
         m_playSprite = createIconSpriteWithFallback(
             {"GJ_playBtn2_001.png", "GJ_playBtn_001.png"},
             30.f, ccc4f(1.f, 1.f, 1.f, 1.f), /*triangle*/true);
         if (!m_playSprite) m_playSprite = CCSprite::create();
-        const float playBaseScale = m_playSprite->getContentSize().width > 10.f ? 0.7f : 1.f;
+        const float playBaseScale = m_playSprite->getContentSize().width > 10.f ? 0.64f : 1.f;
         m_playSprite->setScale(playBaseScale);
 
         const cocos2d::CCSize playVisual = {
@@ -549,7 +599,7 @@ void MenuMusicPopup::buildTransport() {
                 const float pauseRef = std::max(pauseCS.width, pauseCS.height);
                 const float playRef = std::max(playVisual.width, playVisual.height);
                 if (pauseRef > 0.f) {
-                    m_pauseSprite->setScale(playRef / pauseRef * 0.95f);
+                    m_pauseSprite->setScale(playRef / pauseRef * 0.92f);
                 }
                 const auto btnCS = m_playBtn->getContentSize();
                 m_pauseSprite->setAnchorPoint({0.5f, 0.5f});
@@ -560,12 +610,13 @@ void MenuMusicPopup::buildTransport() {
         }
     }
 
+    // 4. Next track (>)
     {
         auto spr = createIconSpriteWithFallback(
             {"GJ_arrow_02_001.png"},
-            22.f, ccc4f(1.f, 1.f, 1.f, 1.f), /*triangle*/true, /*flipx*/true);
+            20.f, ccc4f(1.f, 1.f, 1.f, 1.f), /*triangle*/true, /*flipx*/true);
         if (spr) {
-            spr->setScale(0.7f);
+            spr->setScale(0.62f);
             auto btn = CCMenuItemSpriteExtra::create(
                 spr, this, menu_selector(MenuMusicPopup::onNext));
             if (btn) {
@@ -575,40 +626,28 @@ void MenuMusicPopup::buildTransport() {
         }
     }
 
-    {
-        auto spr = createIconSpriteWithFallback(
-            {"GJ_chanceBtn_001.png", "GJ_reloadBtn_001.png", "GJ_updateBtn_001.png"},
-            22.f, ccc4f(1.f, 1.f, 1.f, 1.f), /*triangle*/false);
-        if (spr) {
-            spr->setScale(0.75f);
-            auto btn = CCMenuItemSpriteExtra::create(
-                spr, this, menu_selector(MenuMusicPopup::onShuffle));
-            if (btn) {
-                btn->setID("shuffle-btn"_spr);
-                menu->addChild(btn);
-            }
-        }
+    // 5. Seek forward (+5s)
+    m_seekFwrdBtn = makeSkipBtn(fwrdLbl, menu_selector(MenuMusicPopup::onSeekForward));
+    if (m_seekFwrdBtn) {
+        m_seekFwrdBtn->setID("seek-fwrd-btn"_spr);
+        menu->addChild(m_seekFwrdBtn);
     }
 
     menu->setLayout(RowLayout::create()
-        ->setGap(14.f)
+        ->setGap(12.f)
         ->setAxisAlignment(AxisAlignment::Center)
         ->setCrossAxisAlignment(AxisAlignment::Center));
     menu->setID("transport-menu"_spr);
-    const float heroW = size.width * kHeroWidthRatio;
-    menu->setPosition({
-        heroW + (size.width - heroW) * 0.5f,
-        size.height * 0.48f});
+    menu->setPosition({kRightColCenterX, 155.f});
     menu->updateLayout();
     m_mainLayer->addChild(menu, 6);
 }
 
 void MenuMusicPopup::buildSeekBar() {
-    auto size = m_mainLayer->getContentSize();
-    const float heroW = size.width * kHeroWidthRatio;
-    const float colX = heroW + 14.f;
-    const float colW = size.width - colX - 14.f;
-    const float rowY = size.height * 0.33f;
+    const float padX = 10.f;
+    const float colX = kRightColX + padX;
+    const float colW = kRightColW - padX * 2.f; // 234
+    const float rowY = 120.f;
 
     m_seekRow = CCNode::create();
     if (!m_seekRow) return;
@@ -618,15 +657,15 @@ void MenuMusicPopup::buildSeekBar() {
     m_seekRow->setID("seek-row"_spr);
     m_mainLayer->addChild(m_seekRow, 6);
 
-    const float buttonsZone = 88.f;
-    const float leftLabelZone = 22.f;
-    const float rightLabelZone = 22.f;
-    const float sliderZoneX = leftLabelZone;
-    const float sliderZoneW = colW - leftLabelZone - rightLabelZone - buttonsZone;
+    const float leftLabelZone = 26.f;
+    const float rightLabelZone = 26.f;
+    const float labelGap = 6.f;
+    const float sliderZoneX = leftLabelZone + labelGap;
+    const float sliderZoneW = colW - leftLabelZone - rightLabelZone - labelGap * 2.f; // 170
     const float barY = 12.f;
 
-    static constexpr float kSliderBaseWidth = 230.f;
-    const float sliderScale = std::clamp(sliderZoneW / kSliderBaseWidth, 0.3f, 1.2f);
+    static constexpr float kSliderBaseWidth = 215.f;
+    const float sliderScale = std::clamp(sliderZoneW / kSliderBaseWidth, 0.35f, 1.2f);
 
     m_seekSlider = Slider::create(this,
         menu_selector(MenuMusicPopup::onSeekSliderChanged),
@@ -636,7 +675,7 @@ void MenuMusicPopup::buildSeekBar() {
         m_seekSlider->setPosition({sliderZoneX + sliderZoneW / 2.f, barY});
         m_seekSlider->setValue(0.f);
         m_seekSlider->setID("seek-slider"_spr);
- // give the slider priority over the close button and main menu.
+        // Give the slider priority over the close button and main menu.
         m_seekSlider->setTouchEnabled(true);
         if (m_seekSlider->m_touchLogic) {
             m_seekSlider->m_touchLogic->setTouchPriority(-600);
@@ -646,80 +685,45 @@ void MenuMusicPopup::buildSeekBar() {
 
     m_seekCurLabel = CCLabelBMFont::create("0:00", "chatFont.fnt");
     if (m_seekCurLabel) {
-        m_seekCurLabel->setScale(0.4f);
+        m_seekCurLabel->setScale(0.45f);
         m_seekCurLabel->setAnchorPoint({1.f, 0.5f});
-        m_seekCurLabel->setPosition({sliderZoneX - 3.f, barY});
+        m_seekCurLabel->setPosition({leftLabelZone, barY});
         m_seekCurLabel->setColor(paimon::ui::palette::text);
         m_seekRow->addChild(m_seekCurLabel, 2);
     }
     m_seekTotalLabel = CCLabelBMFont::create("0:00", "chatFont.fnt");
     if (m_seekTotalLabel) {
-        m_seekTotalLabel->setScale(0.4f);
+        m_seekTotalLabel->setScale(0.45f);
         m_seekTotalLabel->setAnchorPoint({0.f, 0.5f});
-        m_seekTotalLabel->setPosition({sliderZoneX + sliderZoneW + 3.f, barY});
-        m_seekTotalLabel->setColor(paimon::ui::palette::text);
+        m_seekTotalLabel->setPosition({sliderZoneX + sliderZoneW + labelGap, barY});
+        m_seekTotalLabel->setColor(paimon::ui::palette::muted);
         m_seekRow->addChild(m_seekTotalLabel, 2);
     }
-
-    auto skipMenu = CCMenu::create();
-    skipMenu->setContentSize({buttonsZone, 24.f});
-    skipMenu->setPosition({
-        sliderZoneX + sliderZoneW + rightLabelZone + buttonsZone / 2.f,
-        barY});
-    skipMenu->ignoreAnchorPointForPosition(false);
-
-    const int seekMs = std::clamp<int>(
-        static_cast<int>(Mod::get()->getSettingValue<int64_t>("menuLoopSeekAmountMs")),
-        100, 30000);
-    const int seekSec = std::max(1, (seekMs + 500) / 1000);
-    const std::string bkwdLbl = fmt::format("-{}s", seekSec);
-    const std::string fwrdLbl = fmt::format("+{}s", seekSec);
-
-    auto makeLabeledBtn = [&](const std::string& label, SEL_MenuHandler selector)
-        -> CCMenuItemSpriteExtra* {
-        auto spr = ButtonSprite::create(
-            label.c_str(), 42, true, "bigFont.fnt",
-            "GJ_button_01.png", 18.f, 0.45f);
-        if (!spr) return nullptr;
-        auto btn = CCMenuItemSpriteExtra::create(spr, this, selector);
-        return btn;
-    };
-
-    m_seekBkwdBtn = makeLabeledBtn(bkwdLbl, menu_selector(MenuMusicPopup::onSeekBackward));
-    if (m_seekBkwdBtn) {
-        m_seekBkwdBtn->setID("seek-bkwd-btn"_spr);
-        skipMenu->addChild(m_seekBkwdBtn);
-    }
-    m_seekFwrdBtn = makeLabeledBtn(fwrdLbl, menu_selector(MenuMusicPopup::onSeekForward));
-    if (m_seekFwrdBtn) {
-        m_seekFwrdBtn->setID("seek-fwrd-btn"_spr);
-        skipMenu->addChild(m_seekFwrdBtn);
-    }
-    skipMenu->setLayout(RowLayout::create()
-        ->setGap(3.f)
-        ->setAxisAlignment(AxisAlignment::Center)
-        ->setCrossAxisAlignment(AxisAlignment::Center)
-        ->setDefaultScaleLimits(0.5f, 1.f));
-    skipMenu->setID("seek-skip-menu"_spr);
-    skipMenu->updateLayout();
-    m_seekRow->addChild(skipMenu, 3);
 }
 
 void MenuMusicPopup::buildActions() {
-    auto size = m_mainLayer->getContentSize();
-    const float heroW = size.width * kHeroWidthRatio;
-    const float colX = heroW + 14.f;
-    const float colW = size.width - colX - 14.f;
+    // Card 3: Current Track Quick Actions (y = 54..98, h = 44).
+    addDeckPanel(m_mainLayer, {kRightColCenterX, kActionsCardCenterY}, {kRightColW, kActionsCardH}, 115, 4);
+
+    if (auto* lbl = CCLabelBMFont::create("TRACK ACTIONS", "goldFont.fnt")) {
+        lbl->setScale(0.32f);
+        lbl->setAnchorPoint({0.f, 0.5f});
+        lbl->setPosition({kRightColX + 10.f, 90.f});
+        lbl->setColor({245, 220, 145});
+        lbl->setOpacity(225);
+        lbl->setID("quick-actions-label"_spr);
+        m_mainLayer->addChild(lbl, 6);
+    }
 
     auto menu = CCMenu::create();
     if (!menu) return;
-    menu->setContentSize({colW, 26.f});
-    menu->setPosition({colX + colW / 2.f, size.height * 0.225f});
+    menu->setContentSize({kRightColW - 14.f, 24.f});
+    menu->setPosition({kRightColCenterX, 70.f});
     menu->setID("quick-actions-menu"_spr);
 
     auto addAction = [&](const char* text, int width, const char* bg, SEL_MenuHandler handler,
                          const char* id, ButtonSprite** out = nullptr) {
-        auto* spr = ButtonSprite::create(text, width, true, "bigFont.fnt", bg, 18.f, 0.40f);
+        auto* spr = ButtonSprite::create(text, width, true, "bigFont.fnt", bg, 18.f, 0.38f);
         if (!spr) return;
         auto* btn = CCMenuItemSpriteExtra::create(spr, this, handler);
         if (!btn) return;
@@ -728,19 +732,19 @@ void MenuMusicPopup::buildActions() {
         if (out) *out = spr;
     };
 
-    addAction("Hold", 40, "GJ_button_04.png", menu_selector(MenuMusicPopup::onHold),
+    addAction("Hold", 38, "GJ_button_04.png", menu_selector(MenuMusicPopup::onHold),
         "hold-action-btn"_spr, &m_holdActionSpr);
-    addAction("Fav", 36, "GJ_button_05.png", menu_selector(MenuMusicPopup::onFavorite),
+    addAction("Fav", 34, "GJ_button_04.png", menu_selector(MenuMusicPopup::onFavorite),
         "favorite-action-btn"_spr, &m_favoriteActionSpr);
-    addAction("Block", 46, "GJ_button_06.png", menu_selector(MenuMusicPopup::onBlacklist),
+    addAction("Block", 42, "GJ_button_04.png", menu_selector(MenuMusicPopup::onBlacklist),
         "blacklist-action-btn"_spr, &m_blacklistActionSpr);
-    addAction("Copy", 40, "GJ_button_01.png", menu_selector(MenuMusicPopup::onCopy),
+    addAction("Copy", 38, "GJ_button_05.png", menu_selector(MenuMusicPopup::onCopy),
         "copy-action-btn"_spr);
-    addAction("+ List", 52, "GJ_button_02.png", menu_selector(MenuMusicPopup::onAddCurrentToPlaylist),
+    addAction("+ List", 46, "GJ_button_01.png", menu_selector(MenuMusicPopup::onAddCurrentToPlaylist),
         "playlist-add-action-btn"_spr);
 
     menu->setLayout(RowLayout::create()
-        ->setGap(3.f)
+        ->setGap(4.f)
         ->setAxisAlignment(AxisAlignment::Center)
         ->setCrossAxisAlignment(AxisAlignment::Center)
         ->setDefaultScaleLimits(0.45f, 1.f));
@@ -749,22 +753,31 @@ void MenuMusicPopup::buildActions() {
 }
 
 void MenuMusicPopup::buildModeSelector() {
-    auto size = m_mainLayer->getContentSize();
-    const float heroW = size.width * kHeroWidthRatio;
-    const float colX = heroW + 14.f;
-    const float colW = size.width - colX - 14.f;
+    float const modeY = 198.f;
+
+    if (auto* modeLbl = CCLabelBMFont::create("MODE", "goldFont.fnt")) {
+        modeLbl->setScale(0.34f);
+        modeLbl->setAnchorPoint({0.f, 0.5f});
+        modeLbl->setPosition({kRightColX + 10.f, modeY});
+        modeLbl->setColor({245, 220, 145});
+        modeLbl->setOpacity(225);
+        modeLbl->setID("mode-selector-label"_spr);
+        m_mainLayer->addChild(modeLbl, 6);
+    }
 
     auto menu = CCMenu::create();
     if (!menu) return;
-    menu->setContentSize({colW, 24.f});
-    menu->setAnchorPoint({0.5f, 0.5f});
-    menu->setPosition({colX + colW / 2.f, size.height * 0.64f});
+    float const menuW = kRightColW - 52.f;
+    menu->setContentSize({menuW, 22.f});
+    menu->setAnchorPoint({1.f, 0.5f});
+    menu->ignoreAnchorPointForPosition(false);
+    menu->setPosition({kRightColX + kRightColW - 8.f, modeY});
     menu->setID("mode-selector-menu"_spr);
 
     auto makeModeBtn = [&](const char* text, int width, SEL_MenuHandler handler,
                            const char* id, ButtonSprite** sprOut) {
         auto spr = ButtonSprite::create(text, width, true, "bigFont.fnt",
-            "GJ_button_01.png", 18.f, 0.45f);
+            "GJ_button_04.png", 17.f, 0.40f);
         if (!spr) return;
         auto btn = CCMenuItemSpriteExtra::create(spr, this, handler);
         if (!btn) return;
@@ -773,16 +786,16 @@ void MenuMusicPopup::buildModeSelector() {
         *sprOut = spr;
     };
 
-    makeModeBtn("Off", 40, menu_selector(MenuMusicPopup::onModeDisabled),
+    makeModeBtn("Off", 38, menu_selector(MenuMusicPopup::onModeDisabled),
         "mode-off-btn"_spr, &m_modeOffSpr);
-    makeModeBtn("All Songs", 72, menu_selector(MenuMusicPopup::onModeLibrary),
+    makeModeBtn("All Songs", 68, menu_selector(MenuMusicPopup::onModeLibrary),
         "mode-all-btn"_spr, &m_modeAllSpr);
-    makeModeBtn("Playlist", 66, menu_selector(MenuMusicPopup::onModePlaylist),
+    makeModeBtn("Playlist", 60, menu_selector(MenuMusicPopup::onModePlaylist),
         "mode-playlist-btn"_spr, &m_modePlaylistSpr);
 
     menu->setLayout(RowLayout::create()
-        ->setGap(6.f)
-        ->setAxisAlignment(AxisAlignment::Center)
+        ->setGap(5.f)
+        ->setAxisAlignment(AxisAlignment::End)
         ->setCrossAxisAlignment(AxisAlignment::Center)
         ->setDefaultScaleLimits(0.4f, 1.0f));
     menu->updateLayout();
@@ -794,30 +807,38 @@ void MenuMusicPopup::buildModeSelector() {
 void MenuMusicPopup::updateModeSelector() {
     const auto mode = MenuMusicLibrary::get().mode();
 
-    auto tint = [](ButtonSprite* spr, bool active) {
+    auto styleModeBtn = [](ButtonSprite* spr, bool active, char const* activeBg) {
         if (!spr) return;
-        const ccColor3B c = active
-            ? paimon::ui::palette::text
-            : paimon::ui::palette::dim;
-        if (spr->m_BGSprite) spr->m_BGSprite->setColor(c);
-        if (spr->m_label) spr->m_label->setColor(c);
+        updateButtonBgIfChanged(spr, active ? activeBg : "GJ_button_04.png");
+        if (spr->m_BGSprite) {
+            spr->m_BGSprite->setColor({255, 255, 255});
+            spr->m_BGSprite->setOpacity(active ? 255 : 205);
+        }
+        if (spr->m_label) {
+            spr->m_label->setColor(active ? paimon::ui::palette::text : paimon::ui::palette::muted);
+            spr->m_label->setOpacity(active ? 255 : 215);
+        }
     };
 
- // a manual queue counts as active custom music and displays as "all songs".
-    tint(m_modeOffSpr, mode == PlaybackMode::Disabled);
-    tint(m_modeAllSpr, mode == PlaybackMode::Library || mode == PlaybackMode::Queue);
-    tint(m_modePlaylistSpr, mode == PlaybackMode::Playlist);
+    // A manual queue counts as active custom music and displays as "All Songs".
+    styleModeBtn(m_modeOffSpr, mode == PlaybackMode::Disabled, "GJ_button_06.png");
+    styleModeBtn(m_modeAllSpr, mode == PlaybackMode::Library || mode == PlaybackMode::Queue, "GJ_button_01.png");
+    styleModeBtn(m_modePlaylistSpr, mode == PlaybackMode::Playlist, "GJ_button_02.png");
 }
 
 void MenuMusicPopup::buildBottomBar() {
     auto size = m_mainLayer->getContentSize();
+    const float dockW = size.width - kOuterPad * 2.f;
+
+    // Dedicated full-width bottom navigation dock, cleanly separated from vinyl & right deck.
+    addDeckPanel(m_mainLayer, {size.width * 0.5f, kDockY}, {dockW, kDockH}, 135, 4);
 
     auto menu = CCMenu::create();
-    menu->setContentSize({size.width * 0.95f, 32.f});
-    menu->setPosition({size.width / 2.f, 22.f});
+    menu->setContentSize({dockW - 14.f, 28.f});
+    menu->setPosition({size.width * 0.5f, kDockY});
 
     auto makeBtn = [&](const char* text, const char* bg, SEL_MenuHandler handler) -> CCMenuItemSpriteExtra* {
-        auto spr = ButtonSprite::create(text, 70, true, "bigFont.fnt", bg, 18.f, 0.45f);
+        auto spr = ButtonSprite::create(text, 72, true, "bigFont.fnt", bg, 20.f, 0.44f);
         if (!spr) return nullptr;
         return CCMenuItemSpriteExtra::create(spr, this, handler);
     };
@@ -825,21 +846,21 @@ void MenuMusicPopup::buildBottomBar() {
     if (auto b = makeBtn("My Songs", "GJ_button_01.png", menu_selector(MenuMusicPopup::onOpenLibrary))) {
         b->setID("lib-btn"_spr); menu->addChild(b);
     }
-    if (auto b = makeBtn("Playlists", "GJ_button_04.png", menu_selector(MenuMusicPopup::onOpenPlaylists))) {
+    if (auto b = makeBtn("Playlists", "GJ_button_05.png", menu_selector(MenuMusicPopup::onOpenPlaylists))) {
         b->setID("pl-btn"_spr); menu->addChild(b);
     }
-    if (auto b = makeBtn("Folders", "GJ_button_02.png", menu_selector(MenuMusicPopup::onOpenExternalSongs))) {
+    if (auto b = makeBtn("Folders", "GJ_button_05.png", menu_selector(MenuMusicPopup::onOpenExternalSongs))) {
         b->setID("external-btn"_spr); menu->addChild(b);
     }
-    if (auto b = makeBtn("Tags", "GJ_button_04.png", menu_selector(MenuMusicPopup::onOpenTags))) {
+    if (auto b = makeBtn("Tags", "GJ_button_05.png", menu_selector(MenuMusicPopup::onOpenTags))) {
         b->setID("tags-btn"_spr); menu->addChild(b);
     }
-    if (auto b = makeBtn("Add Music", "GJ_button_05.png", menu_selector(MenuMusicPopup::onOpenAdd))) {
+    if (auto b = makeBtn("Add Music", "GJ_button_02.png", menu_selector(MenuMusicPopup::onOpenAdd))) {
         b->setID("add-btn"_spr); menu->addChild(b);
     }
 
     menu->setLayout(RowLayout::create()
-        ->setGap(6.f)
+        ->setGap(7.f)
         ->setAxisAlignment(AxisAlignment::Center)
         ->setDefaultScaleLimits(0.5f, 1.0f));
     menu->setID("bottom-menu"_spr);
@@ -853,7 +874,7 @@ MenuMusicPopup::DetectedSong MenuMusicPopup::detectActiveSong(bool logResult) co
     auto& player = MenuMusicPlayer::get();
     if (auto* t = player.currentTrack()) {
         out.displayName = t->displayName.empty()
-            ? geode::utils::string::pathToString(std::filesystem::path(t->audioPath).stem())
+            ? paimon::paths::toUtf8(std::filesystem::path(t->audioPath).stem())
             : t->displayName;
         out.artist = t->artist.empty()
             ? (t->source == TrackSource::Downloaded ? "Downloaded track" : "Local track")
@@ -870,10 +891,6 @@ MenuMusicPopup::DetectedSong MenuMusicPopup::detectActiveSong(bool logResult) co
                 coverlog::warn("[MenuMusicCover] could not resolve songID from paimon track path='{}' sourceUrl='{}'",
                     t->audioPath, t->sourceUrl);
             }
-        }
-        if (out.coverPaths.empty() && out.songID > 0) {
-            out.coverPaths = SongCoverCache::get().getCachedCoverPaths(out.songID);
-            if (!out.coverPaths.empty()) out.coverPath = out.coverPaths.front();
         }
         if (logResult) {
             coverlog::info("[MenuMusicCover] detectActiveSong (paimon) songID={} covers={} path='{}'",
@@ -922,10 +939,6 @@ MenuMusicPopup::DetectedSong MenuMusicPopup::detectActiveSong(bool logResult) co
             coverlog::warn("[MenuMusicCover] could not resolve songID from menu path='{}'", current);
         }
     }
-    if (out.coverPaths.empty() && out.songID > 0) {
-        out.coverPaths = SongCoverCache::get().getCachedCoverPaths(out.songID);
-        if (!out.coverPaths.empty()) out.coverPath = out.coverPaths.front();
-    }
     if (logResult) {
         coverlog::info("[MenuMusicCover] detectActiveSong (external) songID={} covers={} path='{}'",
             out.songID, out.coverPaths.size(), out.audioPath);
@@ -946,7 +959,7 @@ MenuMusicPopup::DetectedSong MenuMusicPopup::detectActiveSong(bool logResult) co
     if (out.displayName.empty()) {
         out.displayName = !resolvedName.empty()
             ? resolvedName
-            : geode::utils::string::pathToString(p.filename());
+            : paimon::paths::toUtf8(p.filename());
     }
     if (out.artist.empty()) {
         out.artist = loop.isOverride() ? "Override" : "External track";
@@ -956,15 +969,95 @@ MenuMusicPopup::DetectedSong MenuMusicPopup::detectActiveSong(bool logResult) co
     return out;
 }
 
+std::vector<std::string> MenuMusicPopup::resolveCoverPaths(DetectedSong const& detected) {
+    auto& cache = SongCoverCache::get();
+    if (m_cachedCoverSongID != detected.songID) {
+        if (m_cachedCoverSongID > 0) cache.cancelPending(m_cachedCoverSongID);
+        m_cachedCoverSongID = detected.songID;
+        // show the same song's remembered artwork immediately while the
+        // worker revalidates it. Missing files are removed on completion.
+        m_cachedCoverPaths = cache.peekCachedCoverPaths(detected.songID);
+        m_cachedCoverPending = detected.songID > 0;
+        m_pendingSongCoverID = 0;
+        m_failedSongCoverID = 0;
+        auto generation = ++m_cachedCoverGeneration;
+        if (m_cachedCoverPending) {
+            WeakRef<MenuMusicPopup> weak = this;
+            cache.requestCachedCoversAsync(detected.songID,
+                [weak, generation](std::vector<std::string> const& paths, bool) {
+                    auto self = weak.lock();
+                    if (!self || self->m_cachedCoverGeneration != generation) return;
+                    self->m_cachedCoverPending = false;
+                    self->m_cachedCoverPaths = paths;
+                    self->refreshFromState();
+                });
+        }
+    }
+    if (m_coverValidationTrack != detected.audioPath) {
+        m_coverValidationTrack = detected.audioPath;
+        m_coverValidationInput.clear();
+        m_validatedCoverPaths.clear();
+        m_coverValidationPending = false;
+        ++m_coverValidationGeneration;
+    }
+    auto candidates = detected.coverPaths;
+    if (candidates.empty() && !detected.coverPath.empty()) candidates.push_back(detected.coverPath);
+    if (candidates != m_coverValidationInput) {
+        m_coverValidationInput = candidates;
+        m_validatedCoverPaths.clear();
+        m_coverValidationPending = !candidates.empty();
+        auto generation = ++m_coverValidationGeneration;
+        if (m_coverValidationPending) {
+            WeakRef<MenuMusicPopup> weak = this;
+            SongCoverCache::validateCoverPathsAsync(std::move(candidates),
+                [weak, generation](std::vector<std::string> const& paths, bool) {
+                    auto self = weak.lock();
+                    if (!self || self->m_coverValidationGeneration != generation) return;
+                    self->m_coverValidationPending = false;
+                    self->m_validatedCoverPaths = paths;
+                    self->refreshFromState();
+                });
+        }
+    }
+    if (!m_validatedCoverPaths.empty()) return m_validatedCoverPaths;
+    if (m_coverValidationPending) return {};
+    if (!m_cachedCoverPaths.empty()) return m_cachedCoverPaths;
+    if (m_cachedCoverPending) return {};
+    if (detected.songID <= 0 || !Mod::get()->getSavedValue<bool>("menuMusicThumbnailCovers", true)) return {};
+    if (m_pendingSongCoverID == detected.songID || m_failedSongCoverID == detected.songID) return {};
+
+    m_pendingSongCoverID = detected.songID;
+    auto generation = m_cachedCoverGeneration;
+    int requestedSongID = detected.songID;
+    WeakRef<MenuMusicPopup> weak = this;
+    cache.requestCovers(requestedSongID,
+        [weak, generation, requestedSongID](std::vector<std::string> const& paths, bool success) {
+            auto self = weak.lock();
+            if (!self || self->m_cachedCoverGeneration != generation || self->m_cachedCoverSongID != requestedSongID) return;
+            self->m_pendingSongCoverID = 0;
+            self->m_failedSongCoverID = success && !paths.empty() ? 0 : requestedSongID;
+            if (success) self->m_cachedCoverPaths = paths;
+            self->refreshFromState();
+        });
+    return {};
+}
+
+void MenuMusicPopup::updateDetectedTrack(DetectedSong const& detected) {
+    if (detected.audioPath != m_lastDetectedPath) {
+        m_failedSongCoverID = 0;
+    }
+    // a negative-cache callback can return immediately and reenter refresh.
+    // publish the identity first so that it does not clear the failure again.
+    m_lastDetectedPath = detected.audioPath;
+}
+
 void MenuMusicPopup::refreshFromState() {
     auto& player = MenuMusicPlayer::get();
 
     updateModeSelector();
 
     auto detected = detectActiveSong();
-    if (detected.audioPath != m_lastDetectedPath) {
-        m_failedSongCoverID = 0;
-    }
+    updateDetectedTrack(detected);
 
     const std::string displayTitle = detected.displayName.empty()
         ? "No track selected" : detected.displayName;
@@ -977,104 +1070,23 @@ void MenuMusicPopup::refreshFromState() {
             m_trackLabel->setScale(1.f);
             const float available = m_trackClipWidth - 12.f;
             const float rawW = m_trackLabel->getContentSize().width;
-            if (rawW > available) {
-                const float s = std::max(0.35f, available / rawW);
+            if (rawW > 0.f) {
+                const float s = std::clamp(available / rawW, 0.34f, 0.54f);
                 m_trackLabel->setScale(s);
             } else {
-                m_trackLabel->setScale(0.55f);
+                m_trackLabel->setScale(0.54f);
             }
         } else {
             m_trackLabel->limitLabelWidth(
                 m_mainLayer->getContentSize().width * 0.48f, 0.7f, 0.3f);
         }
     }
-    if (m_subtitleLabel) m_subtitleLabel->setString(subtitle.c_str());
-
-    std::vector<std::string> coverPaths = detected.coverPaths;
-    if (coverPaths.empty() && !detected.coverPath.empty()) {
-        coverPaths.push_back(detected.coverPath);
+    if (m_subtitleLabel) {
+        m_subtitleLabel->setString(subtitle.c_str());
+        m_subtitleLabel->limitLabelWidth(kRightColW - 20.f, 0.48f, 0.30f);
     }
 
-    {
-        std::error_code coverEc;
-        std::size_t const beforeFilter = coverPaths.size();
-        coverPaths.erase(
-            std::remove_if(coverPaths.begin(), coverPaths.end(),
-                [&](std::string const& p) {
-                    if (p.empty()) return true;
-                    if (!std::filesystem::exists(p, coverEc) || coverEc) {
-                        coverlog::warn("[MenuMusicCover] cover file missing: '{}'", p);
-                        coverEc.clear();
-                        return true;
-                    }
-                    return false;
-                }),
-            coverPaths.end()
-        );
-        if (beforeFilter > coverPaths.size()) {
-            coverlog::warn("[MenuMusicCover] filtered {} missing cover files songID={}",
-                beforeFilter - coverPaths.size(), detected.songID);
-        }
-    }
-
-    if (coverPaths.empty() && detected.songID > 0) {
-        coverPaths = SongCoverCache::get().getCachedCoverPaths(detected.songID);
-        if (!coverPaths.empty()) {
-            coverlog::info("[MenuMusicCover] loaded {} covers from SongCoverCache songID={}",
-                coverPaths.size(), detected.songID);
-        }
-    }
-
-    const bool thumbnailCoversEnabled =
-        Mod::get()->getSavedValue<bool>("menuMusicThumbnailCovers", true);
-
-    if (thumbnailCoversEnabled && coverPaths.empty() && detected.songID > 0) {
-        if (m_pendingSongCoverID != detected.songID &&
-            m_failedSongCoverID != detected.songID) {
-            m_pendingSongCoverID = detected.songID;
-            Ref<MenuMusicPopup> self = this;
-            const int requestedSongID = detected.songID;
-            coverlog::info("[MenuMusicCover] requesting covers songID={} title='{}'",
-                requestedSongID, detected.displayName);
-            SongCoverCache::get().requestCovers(requestedSongID,
-                [self, requestedSongID](std::vector<std::string> const& paths, bool success) {
-                    if (!(self->getParent() || self->isRunning())) {
-                        coverlog::info("[MenuMusicCover] callback ignored: popup closed songID={}",
-                            requestedSongID);
-                        return;
-                    }
-                    if (success && !paths.empty()) {
-                        self->m_failedSongCoverID = 0;
-                        coverlog::info("[MenuMusicCover] covers ready songID={} count={}",
-                            requestedSongID, paths.size());
-                        self->refreshFromState();
-                        return;
-                    }
-                    coverlog::warn("[MenuMusicCover] cover request failed songID={} success={} paths={}",
-                        requestedSongID, success, paths.size());
-                    if (self->m_pendingSongCoverID == requestedSongID) {
-                        self->m_pendingSongCoverID = 0;
-                    }
-                    self->m_failedSongCoverID = requestedSongID;
-                });
-        } else {
-            coverlog::info("[MenuMusicCover] cover request already pending songID={}", detected.songID);
-        }
-    } else if (detected.songID <= 0) {
-        if (!detected.hasAnything) {
-            coverlog::info("[MenuMusicCover] no custom track, skipping cover fetch");
-        } else {
-            coverlog::warn("[MenuMusicCover] active track has no songID path='{}'", detected.audioPath);
-        }
-        m_pendingSongCoverID = 0;
-        m_failedSongCoverID = 0;
-    } else if (!coverPaths.empty()) {
-        m_failedSongCoverID = 0;
-        coverlog::info("[MenuMusicCover] using {} local covers songID={}",
-            coverPaths.size(), detected.songID);
-    }
-
-    applyCovers(coverPaths);
+    applyCovers(resolveCoverPaths(detected));
 
     if (m_hero) {
         const bool isPlaying = detected.hasAnything && !player.isPaused();
@@ -1088,27 +1100,33 @@ void MenuMusicPopup::refreshFromState() {
         }
     }
 
-    m_lastDetectedPath = detected.audioPath;
-
     const bool showPause = detected.hasAnything && !player.isPaused();
     if (m_playSprite) m_playSprite->setVisible(!showPause);
     if (m_pauseSprite) m_pauseSprite->setVisible(showPause);
 
-    auto tintAction = [](ButtonSprite* spr, ccColor3B color) {
+    auto styleToggleAction = [](ButtonSprite* spr, bool active, char const* activeBg, ccColor3B activeLabelColor) {
         if (!spr) return;
-        if (spr->m_BGSprite) spr->m_BGSprite->setColor(color);
-        if (spr->m_label) spr->m_label->setColor(color);
+        updateButtonBgIfChanged(spr, active ? activeBg : "GJ_button_04.png");
+        if (spr->m_BGSprite) {
+            spr->m_BGSprite->setColor({255, 255, 255});
+            spr->m_BGSprite->setOpacity(active ? 255 : 205);
+        }
+        if (spr->m_label) {
+            spr->m_label->setColor(active ? activeLabelColor : paimon::ui::palette::muted);
+            spr->m_label->setOpacity(active ? 255 : 220);
+        }
     };
     auto* track = player.currentTrack();
-    tintAction(m_holdActionSpr, player.heldTrackId().empty()
-        ? paimon::ui::palette::dim : paimon::ui::palette::info);
-    tintAction(m_favoriteActionSpr, track && track->favorite
-        ? paimon::ui::palette::gold : paimon::ui::palette::dim);
-    tintAction(m_blacklistActionSpr, track && track->blacklisted
-        ? paimon::ui::palette::danger : paimon::ui::palette::dim);
+    styleToggleAction(m_holdActionSpr, !player.heldTrackId().empty(), "GJ_button_02.png", paimon::ui::palette::text);
+    styleToggleAction(m_favoriteActionSpr, track && track->favorite, "GJ_button_03.png", paimon::ui::palette::gold);
+    styleToggleAction(m_blacklistActionSpr, track && track->blacklisted, "GJ_button_06.png", paimon::ui::palette::text);
 }
 
 void MenuMusicPopup::applyCovers(std::vector<std::string> const& coverPaths) {
+    if (coverPaths == m_activeCoverPaths) {
+        updateCoverCaption();
+        return;
+    }
     m_activeCoverPaths = coverPaths;
 
     if (m_hero) {
@@ -1140,7 +1158,7 @@ void MenuMusicPopup::updateCoverCaption() {
         return;
     }
 
-    for (auto const& entry : SongCoverCache::get().getCachedCoverEntries(detected.songID)) {
+    for (auto const& entry : SongCoverCache::get().peekCachedCoverEntries(detected.songID)) {
         if (entry.path == current) {
             m_coverLevelID = entry.levelID;
             m_coverLevelName = entry.name;
@@ -1157,6 +1175,7 @@ void MenuMusicPopup::updateCoverCaption() {
         ? fmt::format("Miniatura de nivel #{}", m_coverLevelID)
         : fmt::format("Miniatura de: {}", m_coverLevelName);
     m_coverCaption->setString(label.c_str());
+    m_coverCaption->limitLabelWidth(kHeroW - 14.f, 0.40f, 0.26f);
 
     // only clickable when the level is already in memory; keeps the caption cheap.
     bool clickable = false;
@@ -1177,7 +1196,7 @@ void MenuMusicPopup::onOpenCoverLevel(CCObject*) {
 
     auto* scene = CCScene::create();
     if (!scene) return;
-    auto* layer = LevelInfoLayer::create(level, false);
+    auto* layer = paimon::compat::createLevelInfoLayer(level, false);
     if (!layer) return;
     scene->addChild(layer);
     CCDirector::get()->pushScene(CCTransitionFade::create(0.4f, scene));
@@ -1197,11 +1216,22 @@ void MenuMusicPopup::syncCoverChrome(float) {
 }
 
 void MenuMusicPopup::onTrackChanged(const std::string&) { refreshFromState(); }
-void MenuMusicPopup::onLibraryChanged() { refreshFromState(); }
+void MenuMusicPopup::onLibraryChanged() {
+    finishPendingPlayback();
+    refreshFromState();
+}
+
+void MenuMusicPopup::finishPendingPlayback() {
+    if (!m_playAfterSync || MenuMusicLibrary::get().isSyncingDownloadedSongs()) return;
+    m_playAfterSync = false;
+    onModeLibrary(nullptr);
+}
 
 void MenuMusicPopup::pollExternalSong(float) {
+    finishPendingPlayback();
     auto detected = detectActiveSong(false);
     if (detected.audioPath == m_lastDetectedPath) {
+        if (m_coverValidationPending || m_cachedCoverPending) return;
         if (!detected.coverPaths.empty() || detected.songID <= 0) return;
         if (m_pendingSongCoverID == detected.songID) return;
         if (m_failedSongCoverID == detected.songID) return;
@@ -1211,6 +1241,7 @@ void MenuMusicPopup::pollExternalSong(float) {
 }
 
 void MenuMusicPopup::onPlayPause(CCObject*) {
+    if (m_playAfterSync) { m_playAfterSync = false; return; }
     auto& player = MenuMusicPlayer::get();
     if (!player.currentTrack()) {
         auto detected = detectActiveSong();
@@ -1222,6 +1253,7 @@ void MenuMusicPopup::onPlayPause(CCObject*) {
         }
         auto& lib = MenuMusicLibrary::get();
         if (!lib.hasTracks()) {
+            if (lib.isSyncingDownloadedSongs()) { m_playAfterSync = true; return; }
             Notification::create("Your music library is empty - use 'Add Music' first.",
                 NotificationIcon::Info)->show();
             return;
@@ -1265,6 +1297,7 @@ void MenuMusicPopup::onShuffle(CCObject*) {
 void MenuMusicPopup::onModeLibrary(CCObject*) {
     auto& lib = MenuMusicLibrary::get();
     if (!lib.hasTracks()) {
+        if (lib.isSyncingDownloadedSongs()) { m_playAfterSync = true; return; }
         Notification::create("Your library is empty - press 'Add Music' first.",
             NotificationIcon::Info)->show();
         return;
@@ -1273,6 +1306,7 @@ void MenuMusicPopup::onModeLibrary(CCObject*) {
     refreshFromState();
 }
 void MenuMusicPopup::onModePlaylist(CCObject*) {
+    m_playAfterSync = false;
     auto& lib = MenuMusicLibrary::get();
     if (lib.playlists().empty()) {
         Notification::create("Create a playlist first (Playlists button).",
@@ -1286,6 +1320,7 @@ void MenuMusicPopup::onModePlaylist(CCObject*) {
     refreshFromState();
 }
 void MenuMusicPopup::onModeDisabled(CCObject*) {
+    m_playAfterSync = false;
     MenuMusicPlayer::get().setMode(PlaybackMode::Disabled, false);
     refreshFromState();
 }
@@ -1455,6 +1490,14 @@ void MenuMusicPopup::pressAndHoldSeek(float dt) {
 void MenuMusicPopup::tickSeekUpdate(float) {
     const bool show = Mod::get()->getSettingValue<bool>("menuLoopShowPlaybackProgress");
     if (m_seekRow) m_seekRow->setVisible(show);
+    if (m_seekBkwdBtn) {
+        m_seekBkwdBtn->setEnabled(show);
+        m_seekBkwdBtn->setOpacity(show ? 255 : 110);
+    }
+    if (m_seekFwrdBtn) {
+        m_seekFwrdBtn->setEnabled(show);
+        m_seekFwrdBtn->setOpacity(show ? 255 : 110);
+    }
     if (!show) return;
 
     auto* fmod = FMODAudioEngine::sharedEngine();

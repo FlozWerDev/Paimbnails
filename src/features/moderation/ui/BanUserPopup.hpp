@@ -6,6 +6,7 @@ class BanUserPopup : public PaimonPopup {
 protected:
     std::string m_username;
     geode::TextInput* m_input;
+    bool m_pending = false;
 
     bool init(std::string const& username);
     void onBan(cocos2d::CCObject*);

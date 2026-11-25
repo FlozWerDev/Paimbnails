@@ -1,7 +1,9 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "MenuLoopManager.hpp"
 #include <Geode/utils/string.hpp>
 #include <ranges>
 #include <random>
+#include <unordered_set>
 
 using namespace geode::prelude;
 using namespace paimon::menuloop;
@@ -9,7 +11,7 @@ using namespace paimon::menuloop;
 
 static bool isSupportedFile(const std::string_view path) {
     if (path.empty()) return false;
-    auto ext = geode::utils::string::toLower(geode::utils::string::pathToString(std::filesystem::path(path).extension()));
+    auto ext = geode::utils::string::toLower(paimon::paths::toUtf8(std::filesystem::path(path).extension()));
     static const std::array<std::string, 7> ok = {
         ".mp3", ".wav", ".ogg", ".oga", ".flac", ".m4a", ".opus"
     };
@@ -18,10 +20,6 @@ static bool isSupportedFile(const std::string_view path) {
 
 static std::filesystem::path toProblematicString(const std::string& s) {
     return std::filesystem::path(s);
-}
-
-static std::string toNormalizedString(const std::filesystem::path& p) {
-    return geode::utils::string::pathToString(p);
 }
 
 static int randomIndex(int size) {
@@ -38,15 +36,18 @@ void MenuLoopManager::removeSong(const std::string& path) {
 
 
 std::vector<std::string> MenuLoopManager::buildWeightedCandidates() const {
+    // lookup sets built once: the per-song find over both lists was O(n*m).
+    std::unordered_set<std::string> const blacklisted(m_blacklist.begin(), m_blacklist.end());
+    std::unordered_set<std::string> const favorites(m_favorites.begin(), m_favorites.end());
     std::vector<std::string> candidates;
     for (const auto& song : m_songs) {
         std::error_code existsEc;
         if (!std::filesystem::is_regular_file(toProblematicString(song), existsEc) || existsEc) {
             continue;
         }
-        if (std::ranges::find(m_blacklist, song) != m_blacklist.end()) continue;
+        if (blacklisted.contains(song)) continue;
         candidates.push_back(song);
-        if (std::ranges::find(m_favorites, song) != m_favorites.end()) {
+        if (favorites.contains(song)) {
             candidates.push_back(song);
         }
     }
@@ -139,11 +140,6 @@ void MenuLoopManager::addToBlacklist(const std::string& song) {
 }
 
 void MenuLoopManager::addToBlacklist() {
-    if (!getOverrideSong().empty()) return;
-    if (std::ranges::find(m_favorites, m_currentSong) != m_favorites.end()) {
-        if (getAdvancedLogs()) log::info("tried to blacklist a favorited song: {}", m_currentSong);
-        return;
-    }
     addToBlacklist(m_currentSong);
 }
 
@@ -163,11 +159,6 @@ void MenuLoopManager::addToFavorites(const std::string& song) {
 }
 
 void MenuLoopManager::addToFavorites() {
-    if (!getOverrideSong().empty()) return;
-    if (std::ranges::find(m_blacklist, m_currentSong) != m_blacklist.end()) {
-        if (getAdvancedLogs()) log::info("tried to favorite a blacklisted song: {}", m_currentSong);
-        return;
-    }
     addToFavorites(m_currentSong);
 }
 
@@ -188,7 +179,7 @@ void MenuLoopManager::setPreviousSong(const std::string& value) {
 void MenuLoopManager::saveLastMenuLoop() {
     if (m_isMenuLoop || !getOverrideSong().empty()) return;
     Mod::get()->setSavedValue("lastMenuLoop", m_currentSong);
-    Mod::get()->setSavedValue("lastMenuLoopPath", std::filesystem::path(m_currentSong));
+    Mod::get()->setSavedValue("lastMenuLoopPath", m_currentSong);
 }
 
 
@@ -216,6 +207,6 @@ void MenuLoopManager::updateCurrentSongMetadata() {
         m_displayName = it->second.displayName;
         return;
     }
-    m_displayName = geode::utils::string::pathToString(
+    m_displayName = paimon::paths::toUtf8(
         std::filesystem::path(m_currentSong).stem());
 }

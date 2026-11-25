@@ -92,10 +92,16 @@ bool allNonGameplayLayersSelected(std::set<std::string> const& selectedLayers) {
     return true;
 }
 
-bool scrollLayerWithWheel(ScrollLayer* scrollLayer, float x, float y) {
+// vertical is the first scrollWheel argument (cocos hands over the vertical
+// delta first). The travel already arrives smoothed and in pixels.
+bool scrollLayerWithWheel(ScrollLayer* scrollLayer, float vertical, float horizontal) {
 #if !defined(GEODE_IS_WINDOWS) && !defined(GEODE_IS_MACOS)
+    (void)scrollLayer;
+    (void)vertical;
+    (void)horizontal;
     return false;
 #else
+    (void)horizontal;
     if (!scrollLayer) return false;
 
     CCPoint mousePos = geode::cocos::getMousePos();
@@ -103,20 +109,13 @@ bool scrollLayerWithWheel(ScrollLayer* scrollLayer, float x, float y) {
     scrollRect.origin = scrollLayer->getParent()->convertToWorldSpace(scrollRect.origin);
     if (!scrollRect.containsPoint(mousePos)) return false;
 
-    float scrollAmount = y;
-    if (std::abs(scrollAmount) < 0.001f) {
-        scrollAmount = -x;
-    }
-
     auto* contentLayer = scrollLayer->m_contentLayer;
     if (!contentLayer) return false;
 
-    float newY = contentLayer->getPositionY() - scrollAmount * 6.f;
-    float minY = scrollLayer->getContentSize().height - contentLayer->getContentSize().height;
-    float maxY = 0.f;
-    if (minY > maxY) minY = maxY;
+    float const minY = std::min(0.f, scrollLayer->getContentSize().height - contentLayer->getContentSize().height);
+    float const newY = std::clamp(contentLayer->getPositionY() + vertical, minY, 0.f);
 
-    contentLayer->setPositionY(std::max(minY, std::min(maxY, newY)));
+    contentLayer->setPositionY(newY);
     return true;
 #endif
 }
@@ -157,6 +156,7 @@ protected:
         m_mainLayer->addChild(hint);
 
         m_scrollLayer = ScrollLayer::create({content.width - 16.f, content.height - 74.f});
+        if (m_scrollLayer) m_scrollLayer->setAnchorPoint({0.f, 0.f});
         m_scrollLayer->setPosition({8.f, 28.f});
         m_mainLayer->addChild(m_scrollLayer, 5);
 
@@ -277,8 +277,8 @@ protected:
         syncOwner();
     }
 
-    void scrollWheel(float x, float y) override {
-        (void)scrollLayerWithWheel(m_scrollLayer, x, y);
+    bool scrollWheel(float x, float y) override {
+        return scrollLayerWithWheel(m_scrollLayer, x, y);
     }
 
 public:
@@ -364,13 +364,14 @@ void PetConfigPopup::onExit() {
     Popup::onExit();
 }
 
-void PetConfigPopup::scrollWheel(float x, float y) {
+bool PetConfigPopup::scrollWheel(float x, float y) {
     if (m_currentTab == 0 &&
-        kit::queueWheelScroll(m_galleryScroll, x, y, m_galleryScrollTargetY, m_galleryScrollTargetSet)) return;
+        kit::queueWheelScroll(m_galleryScroll, x, y, m_galleryScrollTargetY, m_galleryScrollTargetSet)) return true;
     if (m_currentTab == 1 &&
-        kit::queueWheelScroll(m_scrollLayer, x, y, m_settingsScrollTargetY, m_settingsScrollTargetSet)) return;
+        kit::queueWheelScroll(m_scrollLayer, x, y, m_settingsScrollTargetY, m_settingsScrollTargetSet)) return true;
     if (m_currentTab == 2 &&
-        kit::queueWheelScroll(m_advancedScroll, x, y, m_advancedScrollTargetY, m_advancedScrollTargetSet)) return;
+        kit::queueWheelScroll(m_advancedScroll, x, y, m_advancedScrollTargetY, m_advancedScrollTargetSet)) return true;
+    return false;
 }
 
 void PetConfigPopup::updateSmoothScroll(float dt) {
@@ -495,6 +496,7 @@ void PetConfigPopup::buildGalleryTab() {
     m_galleryTab->addChild(m_galleryHintLabel);
 
     m_galleryScroll = ScrollLayer::create({226.f, 100.f});
+    if (m_galleryScroll) m_galleryScroll->setAnchorPoint({0.f, 0.f});
     m_galleryScroll->setID("pet-gallery-scroll"_spr);
     m_galleryScroll->setPosition({171.f, 70.f});
     m_galleryTab->addChild(m_galleryScroll, 5);
@@ -681,13 +683,13 @@ void PetConfigPopup::onAddImage(CCObject*) {
 
         auto filename = PetManager::get().addToGallery(*pathOpt);
         if (!filename.empty()) {
-            PaimonNotify::create("Imagen anadida a la galeria!", NotificationIcon::Success)->show();
+            PaimonNotify::show("Imagen anadida a la galeria!", NotificationIcon::Success);
             if (PetManager::get().config().selectedImage.empty()) {
                 PetManager::get().setImage(filename);
             }
             popup->refreshGallery();
         } else {
-            PaimonNotify::create("No se pudo anadir la imagen", NotificationIcon::Error)->show();
+            PaimonNotify::show("No se pudo anadir la imagen", NotificationIcon::Error);
         }
     });
 }
@@ -710,7 +712,7 @@ void PetConfigPopup::onDeleteImage(CCObject* sender) {
             auto popup = self.lock();
             if (!popup || !popup->getParent()) return;
             PetManager::get().removeFromGallery(filename);
-            PaimonNotify::create("Imagen eliminada", NotificationIcon::Info)->show();
+            PaimonNotify::show("Imagen eliminada", NotificationIcon::Info);
             static_cast<PetConfigPopup*>(popup.data())->refreshGallery();
         }
     ).showInstant();
@@ -719,7 +721,7 @@ void PetConfigPopup::onDeleteImage(CCObject* sender) {
 void PetConfigPopup::onDeleteAllImages(CCObject*) {
     auto images = PetManager::get().getGalleryImages();
     if (images.empty()) {
-        PaimonNotify::create("La galeria ya esta vacia", NotificationIcon::Info)->show();
+        PaimonNotify::show("La galeria ya esta vacia", NotificationIcon::Info);
         return;
     }
 
@@ -745,7 +747,7 @@ void PetConfigPopup::onDeleteAllImages(CCObject*) {
             if (cleaned > 0) {
                 note += fmt::format(" ({} archivos corruptos eliminados)", cleaned);
             }
-            PaimonNotify::create(note, NotificationIcon::Success)->show();
+            PaimonNotify::show(note, NotificationIcon::Success);
             static_cast<PetConfigPopup*>(popup.data())->refreshGallery();
         }
     ).showInstant();
@@ -759,7 +761,7 @@ void PetConfigPopup::onSelectImage(CCObject* sender) {
 
     std::string filename = nameObj->getCString();
     PetManager::get().setImage(filename);
-    PaimonNotify::create("Mascota elegida!", NotificationIcon::Success)->show();
+    PaimonNotify::show("Mascota elegida!", NotificationIcon::Success);
     refreshGallery();
 }
 
@@ -799,10 +801,10 @@ void PetConfigPopup::buildSettingsTab() {
             c.enabled = v;
             applyLive();
             if (v && c.selectedImage.empty()) {
-                PaimonNotify::create(
+                PaimonNotify::show(
                     "Elige primero una imagen en la pestana Imagen.",
                     NotificationIcon::Info
-                )->show();
+                );
             }
         },
         nullptr, nullptr);
@@ -1330,12 +1332,12 @@ void PetConfigPopup::pickIconStateImage(int stateIdx) {
         auto filename = PetManager::get().addToGallery(*pathOpt);
         if (!filename.empty()) {
             PetManager::get().setIconStateImage(state, filename);
-            PaimonNotify::create("Imagen del estado asignada!", NotificationIcon::Success)->show();
+            PaimonNotify::show("Imagen del estado asignada!", NotificationIcon::Success);
             auto* p = static_cast<PetConfigPopup*>(popup.data());
             p->refreshIconStateLabels();
             p->refreshGallery();
         } else {
-            PaimonNotify::create("No se pudo anadir la imagen", NotificationIcon::Error)->show();
+            PaimonNotify::show("No se pudo anadir la imagen", NotificationIcon::Error);
         }
     });
 }

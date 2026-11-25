@@ -34,16 +34,27 @@ int scrollDirection(float y) {
     return 0;
 }
 
+struct InputTarget {
+    TextInput* geode = nullptr;
+    CCTextInputNode* cocos = nullptr;
+    explicit operator bool() const { return geode || cocos; }
+    bool operator==(InputTarget const& o) const {
+        return geode == o.geode && cocos == o.cocos;
+    }
+};
+
 struct NumericProfile {
     bool numeric = false;
     bool signedInt = false;
     bool floating = false;
 };
 
-NumericProfile classifyInput(CCTextInputNode* input) {
+NumericProfile classifyInput(InputTarget const& target) {
     NumericProfile p;
-    if (!input) return p;
-    std::string allowed(input->m_allowedChars.c_str());
+    if (!target) return p;
+    std::string allowed = target.geode
+        ? target.geode->getFilter()
+        : std::string(target.cocos->m_allowedChars.c_str());
     if (allowed.empty()) return p;
 
     bool hasDigit = false;
@@ -64,8 +75,8 @@ NumericProfile classifyInput(CCTextInputNode* input) {
     return p;
 }
 
-TextInput* findGeodeWrapper(CCTextInputNode* input) {
-    for (CCNode* p = input ? input->getParent() : nullptr; p; p = p->getParent()) {
+TextInput* findGeodeWrapper(CCNode* node) {
+    for (CCNode* p = node ? node->getParent() : nullptr; p; p = p->getParent()) {
         if (auto* w = typeinfo_cast<TextInput*>(p)) return w;
     }
     return nullptr;
@@ -79,20 +90,26 @@ CCRect worldBox(CCNode* n) {
 }
 
 void collectCandidates(CCNode* node, CCPoint const& mouse,
-                       CCTextInputNode*& topHit,
-                       CCTextInputNode*& focused) {
+                       InputTarget& topHit,
+                       InputTarget& focused) {
     if (!node || !node->isVisible()) return;
 
-    if (auto* input = typeinfo_cast<CCTextInputNode*>(node)) {
-        if (input->m_selected) focused = input;
-        CCRect box = worldBox(input);
-        if (!box.containsPoint(mouse)) {
-            if (auto* wrap = findGeodeWrapper(input)) {
-                box = worldBox(wrap);
+    if (auto* geodeInput = typeinfo_cast<TextInput*>(node)) {
+        if (geodeInput->isEnabled()) {
+            if (geodeInput->isFocused()) focused = {geodeInput, nullptr};
+            if (worldBox(geodeInput).containsPoint(mouse)) {
+                topHit = {geodeInput, nullptr};
             }
         }
-        if (box.containsPoint(mouse)) {
-            topHit = input;
+        return;
+    }
+
+    if (auto* input = typeinfo_cast<CCTextInputNode*>(node)) {
+        if (!findGeodeWrapper(input)) {
+            if (input->m_selected) focused = {nullptr, input};
+            if (worldBox(input).containsPoint(mouse)) {
+                topHit = {nullptr, input};
+            }
         }
     }
 
@@ -104,19 +121,19 @@ void collectCandidates(CCNode* node, CCPoint const& mouse,
     }
 }
 
-CCTextInputNode* pickTarget() {
+InputTarget pickTarget() {
     auto* dir = CCDirector::get();
-    if (!dir) return nullptr;
+    if (!dir) return {};
     auto* scene = dir->getRunningScene();
-    if (!scene) return nullptr;
+    if (!scene) return {};
 
     auto mouse = geode::cocos::getMousePos();
-    CCTextInputNode* hit = nullptr;
-    CCTextInputNode* focused = nullptr;
+    InputTarget hit{};
+    InputTarget focused{};
     collectCandidates(scene, mouse, hit, focused);
 
     if (paimon::settings::input_scroll::focusOnly()) {
-        return (focused && hit == focused) ? focused : nullptr;
+        return (focused && hit == focused) ? focused : InputTarget{};
     }
     return hit ? hit : focused;
 }
@@ -146,8 +163,14 @@ std::string formatFloat(double value, int places) {
     return s;
 }
 
-bool parseCurrentInt(CCTextInputNode* input, long long& out) {
-    std::string s(input->getString().c_str());
+std::string readTargetString(InputTarget const& target) {
+    if (target.geode) return target.geode->getString();
+    if (target.cocos) return std::string(target.cocos->getString().c_str());
+    return {};
+}
+
+bool parseCurrentInt(InputTarget const& target, long long& out) {
+    std::string s = readTargetString(target);
     if (s.empty()) { out = 0; return true; }
 
     size_t i = 0;
@@ -176,8 +199,8 @@ bool parseCurrentInt(CCTextInputNode* input, long long& out) {
     return true;
 }
 
-bool parseCurrentFloat(CCTextInputNode* input, double& out) {
-    std::string s(input->getString().c_str());
+bool parseCurrentFloat(InputTarget const& target, double& out) {
+    std::string s = readTargetString(target);
     if (s.empty()) { out = 0.0; return true; }
     for (auto& c : s) if (c == ',') c = '.';
     auto parsed = geode::utils::numFromString<double>(s);
@@ -186,21 +209,24 @@ bool parseCurrentFloat(CCTextInputNode* input, double& out) {
     return true;
 }
 
-void commitString(CCTextInputNode* input, std::string const& newStr) {
-    if (auto* wrap = findGeodeWrapper(input)) {
-        wrap->setString(newStr, true);
+void commitString(InputTarget const& target, std::string const& newStr) {
+    if (target.geode) {
+        target.geode->setString(newStr, true);
         return;
     }
-    input->setString(newStr);
-    input->refreshLabel();
-    if (input->m_delegate) {
-        input->m_delegate->textChanged(input);
+    if (!target.cocos) return;
+    target.cocos->setString(newStr);
+    target.cocos->refreshLabel();
+    if (target.cocos->m_delegate) {
+        target.cocos->m_delegate->textChanged(target.cocos);
     }
 }
 
-bool respectsMaxLen(CCTextInputNode* input, std::string const& newStr,
+bool respectsMaxLen(InputTarget const& target, std::string const& newStr,
                     std::string& outFinal) {
-    int maxLen = input->m_maxLabelLength;
+    int maxLen = target.geode
+        ? static_cast<int>(target.geode->getMaxCharCount())
+        : target.cocos->m_maxLabelLength;
     if (maxLen <= 0 || static_cast<int>(newStr.size()) <= maxLen) {
         outFinal = newStr;
         return true;
@@ -221,21 +247,21 @@ bool respectsMaxLen(CCTextInputNode* input, std::string const& newStr,
     return static_cast<int>(outFinal.size()) <= maxLen;
 }
 
-void writeInt(CCTextInputNode* input, long long value, NumericProfile const& profile) {
+void writeInt(InputTarget const& target, long long value, NumericProfile const& profile) {
     if (!profile.signedInt && value < 0) value = 0;
     std::string s = std::to_string(value);
     std::string finalStr;
-    if (!respectsMaxLen(input, s, finalStr)) return;
-    commitString(input, finalStr);
+    if (!respectsMaxLen(target, s, finalStr)) return;
+    commitString(target, finalStr);
 }
 
-void writeFloat(CCTextInputNode* input, double value, NumericProfile const& profile) {
+void writeFloat(InputTarget const& target, double value, NumericProfile const& profile) {
     if (!profile.signedInt && value < 0.0) value = 0.0;
     int places = std::clamp(paimon::settings::input_scroll::decimalPlaces(), 1, 6);
     std::string s = formatFloat(value, places);
     std::string finalStr;
-    if (!respectsMaxLen(input, s, finalStr)) return;
-    commitString(input, finalStr);
+    if (!respectsMaxLen(target, s, finalStr)) return;
+    commitString(target, finalStr);
 }
 
 bool tryHandleInputScroll(float y) {
@@ -249,7 +275,7 @@ bool tryHandleInputScroll(float y) {
     int dir = scrollDirection(y);
     if (dir == 0) return false;
 
-    auto* target = pickTarget();
+    auto target = pickTarget();
     if (!target) return false;
 
     auto profile = classifyInput(target);

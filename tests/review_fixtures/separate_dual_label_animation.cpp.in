@@ -1,0 +1,179 @@
+#include <cassert>
+#include <cmath>
+#include <memory>
+#include <vector>
+
+using GLubyte = unsigned char;
+enum class Side { Primary, Secondary };
+
+struct CCPoint {
+    float x = 0.f;
+    float y = 0.f;
+    CCPoint operator+(CCPoint other) const { return {x + other.x, y + other.y}; }
+};
+
+// Record scheduled actions; the engine owns interpolation and easing in game.
+struct Action {
+    CCPoint destination;
+    GLubyte opacity = 0;
+    int tag = 0;
+    void setTag(int value) { tag = value; }
+};
+std::vector<std::unique_ptr<Action>> actions;
+Action* makeAction() {
+    actions.push_back(std::make_unique<Action>());
+    return actions.back().get();
+}
+struct CCMoveTo {
+    static Action* create(float duration, CCPoint destination) {
+        assert(duration > 0.f && duration < 1.f);
+        auto* action = makeAction();
+        action->destination = destination;
+        return action;
+    }
+};
+struct CCFadeTo {
+    static Action* create(float duration, GLubyte opacity) {
+        assert(duration > 0.f && duration < 1.f);
+        auto* action = makeAction();
+        action->opacity = opacity;
+        return action;
+    }
+};
+struct CCEaseSineOut {
+    static Action* create(Action* action) { return action; }
+};
+struct CCEaseSineInOut {
+    static Action* create(Action* action) { return action; }
+};
+struct CCSpawn {
+    static Action* create(Action* movement, Action* fade, std::nullptr_t) {
+        auto* action = makeAction();
+        action->destination = movement->destination;
+        action->opacity = fade->opacity;
+        return action;
+    }
+};
+
+struct CCNode {
+    CCPoint position;
+    CCPoint getPosition() const { return position; }
+    void setPosition(CCPoint value) { position = value; }
+};
+struct CCLabelBMFont : CCNode {
+    GLubyte opacity = 0;
+    Action* running = nullptr;
+    void setOpacity(GLubyte value) { opacity = value; }
+    Action* getActionByTag(int tag) { return running && running->tag == tag ? running : nullptr; }
+    void stopActionByTag(int tag) {
+        if (getActionByTag(tag)) running = nullptr;
+    }
+    void runAction(Action* action) {
+        assert(!running); // Repeated clicks must replace the previous transition.
+        running = action;
+    }
+    void simulatePartialProgress() {
+        assert(running);
+        position = {(position.x + running->destination.x) / 2.f,
+                    (position.y + running->destination.y) / 2.f};
+        opacity = static_cast<GLubyte>((static_cast<int>(opacity) + running->opacity) / 2);
+    }
+    void finish() {
+        assert(running);
+        position = running->destination;
+        opacity = running->opacity;
+        running = nullptr;
+    }
+};
+template <typename T>
+struct Ref {
+    T* pointer = nullptr;
+    T* data() const { return pointer; }
+};
+
+struct Garage {
+    struct Fields {
+        Ref<CCLabelBMFont> player1Label;
+        Ref<CCLabelBMFont> player2Label;
+        Ref<CCNode> secondDoll;
+    } fields;
+    Fields* m_fields = &fields;
+    CCNode* m_playerObject = nullptr;
+
+    @@function|src/features/separate-dual/hooks/SeparateDualGarageLayer.cpp|void updateSideLabel(@@
+
+    void select(bool secondary, bool animate) {
+        updateSideLabel(Side::Primary, !secondary, animate);
+        updateSideLabel(Side::Secondary, secondary, animate);
+    }
+};
+
+void assertNear(float actual, float expected) {
+    assert(std::abs(actual - expected) < 0.001f);
+}
+
+int main() {
+    CCNode p1{{236.f, 235.f}};
+    CCNode p2{{331.f, 235.f}};
+    CCLabelBMFont label1, label2;
+    Garage garage;
+    garage.fields = {{&label1}, {&label2}, {&p2}};
+    garage.m_playerObject = &p1;
+
+    garage.select(false, false);
+    assert(label1.opacity == 255 && label2.opacity == 0);
+    assert(label1.position.x < p1.position.x);
+    assertNear(label1.position.y, p1.position.y);
+    assertNear(label2.position.y, p2.position.y);
+    float const leftVisible = label1.position.x;
+
+    // P2 emerges to the right while P1 retreats toward its preview.
+    garage.select(true, true);
+    float const rightStart = label2.position.x;
+    assert(label2.opacity == 0);
+    assert(label2.running->destination.x > rightStart);
+    assert(label1.running->destination.x > leftVisible);
+    label1.simulatePartialProgress();
+    label2.simulatePartialProgress();
+    assert(label2.position.x > rightStart);
+    assert(label2.opacity > 0 && label2.opacity < 255);
+
+    // Choosing icons or changing pages cannot snap or cancel an entrance.
+    auto* entrance = label2.running;
+    CCPoint const beforeRefresh = label2.position;
+    garage.select(true, false);
+    assert(label2.running == entrance);
+    assertNear(label2.position.x, beforeRefresh.x);
+
+    // A quick reversal continues from the current position and opacity.
+    CCPoint const leftMidway = label1.position;
+    CCPoint const rightMidway = label2.position;
+    auto const leftOpacity = label1.opacity;
+    garage.select(false, true);
+    assertNear(label1.position.x, leftMidway.x);
+    assertNear(label2.position.x, rightMidway.x);
+    assert(label1.opacity == leftOpacity);
+    label1.finish();
+    label2.finish();
+    assertNear(label1.position.x, leftVisible);
+    assert(label1.opacity == 255 && label2.opacity == 0);
+
+    // Pressing the selected preview again replays its outward entrance.
+    garage.select(false, true);
+    assert(label1.opacity == 0 && label1.position.x > leftVisible);
+    label1.finish();
+    label2.finish();
+    assertNear(label1.position.x, leftVisible);
+
+    garage.select(true, true);
+    label1.finish();
+    label2.finish();
+    assert(label1.opacity == 0 && label2.opacity == 255);
+    assert(label2.position.x > p2.position.x);
+    assertNear(label2.position.y, p2.position.y);
+
+    // Refreshes during garage construction are safe before previews/labels exist.
+    Garage empty;
+    empty.select(false, true);
+    empty.select(true, false);
+}

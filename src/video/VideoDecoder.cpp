@@ -2,6 +2,7 @@
 #include "platform/DecoderPLM.hpp"
 
 #if defined(USE_MEDIA_FOUNDATION)
+#include "platform/DecoderFFmpeg.hpp"
 #include "platform/DecoderMF.hpp"
 #endif
 #if defined(USE_MEDIA_NDK)
@@ -22,6 +23,18 @@ namespace paimon {
 std::unique_ptr<IVideoDecoder> IVideoDecoder::create(const std::string& path) {
     // native backends first; pl_mpeg handles mpeg-1 only, so it stays last.
 #if defined(USE_MEDIA_FOUNDATION)
+    // Under Linux Wine/Proton, winegstreamer often lacks H.264/HEVC plugins and
+    // silently outputs a 320x240 SMPTE videotestsrc instead of failing. Prefer our
+    // bundled FFmpeg pipe decoder on Wine whenever ffmpeg.exe is present.
+    if (DecoderFFmpeg::isWineEnvironment()) {
+        if (DecoderFFmpeg::isFfmpegAvailable()) {
+            auto ff = std::make_unique<DecoderFFmpeg>();
+            if (ff->open(path)) return ff;
+            geode::log::warn("DecoderFFmpeg failed under Wine, trying Media Foundation: {}", path);
+        } else {
+            DecoderFFmpeg::ensureFfmpegAsyncIfNeeded();
+        }
+    }
     {
         auto dec = std::make_unique<DecoderMF>();
         if (dec->open(path)) return dec;

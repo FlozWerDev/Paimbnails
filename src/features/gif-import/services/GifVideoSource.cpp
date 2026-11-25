@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "GifVideoSource.hpp"
 
 #include "../../../core/RuntimeLifecycle.hpp"
@@ -26,7 +27,7 @@ constexpr auto kStallTimeout = std::chrono::seconds(12);
 constexpr size_t kFrameBudget = 96 * 1024 * 1024;
 
 std::string extensionOf(std::filesystem::path const& path) {
-    auto extension = geode::utils::string::pathToString(path.extension());
+    auto extension = paimon::paths::toUtf8(path.extension());
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return extension;
@@ -134,7 +135,7 @@ std::shared_ptr<SourceAnimation> decodeVideo(
     VideoProgress* progress
 ) {
     if (partialOut) *partialOut = false;
-    auto decoder = IVideoDecoder::create(geode::utils::string::pathToString(path));
+    auto decoder = IVideoDecoder::create(paimon::paths::toUtf8(path));
     if (!decoder) {
 #if defined(USE_MEDIA_NDK)
         error = "Este dispositivo no pudo abrir el video (codec no soportado o archivo danado).";

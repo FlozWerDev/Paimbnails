@@ -1,0 +1,148 @@
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <vector>
+
+struct CCPoint {
+    float x = 0.f, y = 0.f;
+    CCPoint operator+(CCPoint point) const { return {x + point.x, y + point.y}; }
+    CCPoint operator-(CCPoint point) const { return {x - point.x, y - point.y}; }
+    CCPoint operator*(float scale) const { return {x * scale, y * scale}; }
+};
+struct CCSize { float width = 0.f, height = 0.f; };
+struct CCRect {
+    CCPoint origin;
+    CCSize size;
+    CCRect(float x, float y, float width, float height) : origin{x, y}, size{width, height} {}
+    float getMidX() const { return origin.x + size.width / 2.f; }
+    float getMidY() const { return origin.y + size.height / 2.f; }
+};
+struct CCNode {
+    CCPoint position;
+    CCSize size;
+    float scale = 1.f, scaleX = 1.f, scaleY = 1.f, opacity = 1.f;
+    bool visible = true, enabled = true;
+    CCSize getContentSize() const { return size; }
+    float getContentWidth() const { return size.width; }
+    void setContentSize(CCSize value) { size = value; }
+    void setPosition(CCPoint value) { position = value; }
+    CCPoint getPosition() const { return position; }
+    void setScale(float value) { scale = value; }
+    float getScale() const { return scale; }
+    void setScaleX(float value) { scaleX = value; }
+    void setScaleY(float value) { scaleY = value; }
+    void setVisible(bool value) { visible = value; }
+    void setEnabled(bool value) { enabled = value; }
+    void stopAllActions() {}
+    void runAction(int) {}
+};
+struct CCRGBAProtocol {};
+template<class T> T typeinfo_cast(CCNode*) { return nullptr; }
+struct CCFadeTo { static int create(float, int) { return 0; } };
+struct CCObject {};
+using CCMenuItemSpriteExtra = CCNode;
+template<class T> struct Ref {
+    T* node;
+    T* data() const { return node; }
+    T* operator->() const { return node; }
+    explicit operator bool() const { return node != nullptr; }
+};
+template<class T> struct WeakRef {
+    T* node;
+    WeakRef(T* value) : node(value) {}
+    Ref<T> lock() const { return {node}; }
+};
+#define schedule_selector(...) 0
+@@source|src/features/thumbnails/ui/FocusTransition.hpp@@
+namespace paimon::thumbviewer {
+@@function|src/features/thumbnails/ui/ThumbViewerChrome.cpp|CCRect imageArea(@@
+@@function|src/features/thumbnails/ui/ThumbViewerChrome.cpp|CCRect actionArea(@@
+@@function|src/features/thumbnails/ui/ThumbViewerChrome.cpp|CCRect focusedImageArea(@@
+void setChromeFade(CCNode* node, float value) { node->opacity = value; }
+}
+
+struct LocalThumbnailViewPopup {
+    CCNode *m_mainLayer = nullptr, *m_clippingNode = nullptr, *m_imageStencil = nullptr,
+        *m_imageBorder = nullptr, *m_imageBackdrop = nullptr, *m_thumbnailSprite = nullptr,
+        *m_buttonMenu = nullptr, *m_sidebarBg = nullptr, *m_infoBar = nullptr,
+        *m_playBtn = nullptr, *m_playBtnMenu = nullptr, *m_hideChromeBtn = nullptr,
+        *m_refreshBtn = nullptr, *m_leftArrow = nullptr, *m_rightArrow = nullptr;
+    struct HeaderButtonPose { WeakRef<CCNode> button; CCPoint position; };
+    std::vector<HeaderButtonPose> m_headerButtonPoses;
+    std::vector<int> m_thumbnails, m_suggestions, m_localThumbPaths;
+    std::vector<int> m_touches;
+    paimon::thumbviewer::FocusTransition m_focusTransition;
+    bool m_chromeHidden = false, m_hasFocusImagePose = false,
+        m_refreshCooldownActive = false, m_isDownloading = false;
+    float m_viewWidth = 0.f, m_viewHeight = 0.f, m_initialScale = 1.f,
+        m_minScale = 1.f, m_maxScale = 4.f, m_collapsedImageScale = 1.f, m_expandedImageScale = 1.f;
+    CCPoint m_collapsedImagePosition, m_expandedImagePosition;
+    void schedule(int) {}
+    void unschedule(int) {}
+    void clampSpritePosition() {}
+    void resetZoomGestureState() {}
+    void updateRefreshButtonState() {}
+    void prepareFocusImagePose(bool);
+    void applyFocusLayout();
+    void setChromeVisible(bool);
+    void tickFocus(float);
+};
+@@function|src/features/thumbnails/ui/LocalThumbnailViewPopup.cpp|void LocalThumbnailViewPopup::prepareFocusImagePose(@@
+@@function|src/features/thumbnails/ui/LocalThumbnailViewPopup.cpp|void LocalThumbnailViewPopup::applyFocusLayout()@@
+@@function|src/features/thumbnails/ui/LocalThumbnailViewPopup.cpp|void LocalThumbnailViewPopup::setChromeVisible(@@
+@@function|src/features/thumbnails/ui/LocalThumbnailViewPopup.cpp|void LocalThumbnailViewPopup::tickFocus(@@
+
+bool near(float a, float b) { return std::abs(a - b) < 0.0001f; }
+bool near(CCPoint a, CCPoint b) { return near(a.x, b.x) && near(a.y, b.y); }
+int main() {
+    CCNode main, clip, stencil, border, backdrop, image, menu, sidebar, info, magnifier, other, previous, next;
+    main.size = {400.f, 232.f};
+    image.size = {1280.f, 720.f};
+    image.position = {135.f, 82.f};
+    image.scale = 0.35f; // preserve a user's panned/zoomed view on return
+    info.size = {244.f, 26.f};
+    magnifier.position = {332.f, 212.f};
+    other.position = {288.f, 212.f};
+    LocalThumbnailViewPopup popup;
+    popup.m_mainLayer = &main; popup.m_clippingNode = &clip;
+    popup.m_imageStencil = &stencil; popup.m_imageBorder = &border; popup.m_imageBackdrop = &backdrop;
+    popup.m_thumbnailSprite = &image; popup.m_buttonMenu = &menu; popup.m_sidebarBg = &sidebar;
+    popup.m_infoBar = &info; popup.m_hideChromeBtn = &magnifier;
+    popup.m_leftArrow = &previous; popup.m_rightArrow = &next; popup.m_thumbnails = {1, 2};
+    popup.m_headerButtonPoses = {{&magnifier, magnifier.position}, {&other, other.position}};
+    auto const originalPosition = image.position;
+    float const originalScale = image.scale;
+    popup.setChromeVisible(false);
+    popup.tickFocus(0.12f);
+    assert(clip.size.width > 294.f && clip.size.width < 380.f);
+    assert(magnifier.position.x > 332.f && magnifier.position.x < 378.f);
+    assert(menu.opacity > 0.f && menu.opacity < 1.f && !menu.enabled);
+    auto const midwayImage = image.position;
+    auto const midwayButton = magnifier.position;
+    popup.setChromeVisible(true);
+    assert(near(image.position, midwayImage) && near(magnifier.position, midwayButton));
+    popup.tickFocus(0.32f);
+    assert(near(image.position, originalPosition) && near(image.scale, originalScale));
+    assert(near(magnifier.position, {332.f, 212.f}) && near(other.position, {288.f, 212.f}));
+    assert(menu.visible && menu.enabled && near(menu.opacity, 1.f));
+
+    popup.setChromeVisible(false);
+    popup.tickFocus(0.32f);
+    assert(near(clip.size.width, 380.f) && near(clip.size.height, 212.f));
+    assert(image.scale > originalScale && near(magnifier.position, {378.f, 212.f}));
+    assert(!menu.visible && !sidebar.visible && !info.visible && !previous.visible && !next.visible);
+    assert(magnifier.visible && magnifier.enabled);
+    image.position = {170.f, 100.f}; image.scale *= 1.4f; // interaction in focused mode
+    auto const focusedPosition = image.position;
+    popup.setChromeVisible(true);
+    assert(near(image.position, focusedPosition));
+    popup.tickFocus(0.32f);
+    assert(near(image.position, originalPosition) && near(image.scale, originalScale));
+
+    popup.m_thumbnailSprite = nullptr;
+    popup.setChromeVisible(false);
+    popup.tickFocus(0.32f);
+    popup.setChromeVisible(true);
+    popup.tickFocus(0.32f);
+    assert(menu.visible && near(magnifier.position, {332.f, 212.f}));
+}

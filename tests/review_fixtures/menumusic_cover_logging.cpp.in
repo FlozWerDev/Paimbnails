@@ -1,0 +1,96 @@
+#include "tests/review_fixtures/ReviewQueue.hpp"
+#include <chrono>
+#include <iomanip>
+#include <mutex>
+#include <sstream>
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+
+std::filesystem::path saveRoot;
+struct Mod {
+    bool logging = false;
+    bool coverDebug = false;
+    int settingReads = 0;
+    static Mod* get() { static Mod mod; return &mod; }
+    bool isLoggingEnabled() const { return logging; }
+    void setLoggingEnabled(bool enabled) { logging = enabled; }
+    template<class T> T getSettingValue(char const*) { ++settingReads; return static_cast<T>(coverDebug); }
+    std::filesystem::path getSaveDir() { return saveRoot; }
+};
+namespace geode {
+    namespace log {
+        int infos = 0, warnings = 0;
+        void info(char const*, std::string const&) { assert(Mod::get()->logging); ++infos; }
+        void warn(char const*, std::string const&) { assert(Mod::get()->logging); ++warnings; }
+    }
+    namespace prelude { using namespace geode; }
+}
+struct FormatProbe { int* formatted; };
+template<> struct fmt::formatter<FormatProbe> : fmt::formatter<fmt::string_view> {
+    template<class Context> auto format(FormatProbe const& probe, Context& ctx) const {
+        ++*probe.formatted;
+        return fmt::formatter<fmt::string_view>::format("formatted", ctx);
+    }
+};
+@@source|src/features/menu-music/services/MenuMusicCoverLog.hpp@@
+@@source|src/features/menu-music/services/MenuMusicCoverLog.cpp@@
+int main() {
+    using namespace paimon::menumusic::coverlog;
+    auto unique = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    saveRoot = std::filesystem::temp_directory_path() / ("paimon-cover-log-fixture-" + unique);
+    auto path = logFilePath();
+    assert(!std::filesystem::exists(path));
+
+    int formatted = 0;
+    Mod::get()->coverDebug = false;
+    info(std::string("disabled info"));
+    warn(std::string("disabled warning"));
+    info("disabled literal");
+    warn("disabled literal warning");
+    info("disabled {}", FormatProbe{&formatted});
+    warn("disabled {}", FormatProbe{&formatted});
+    assert(formatted == 0 && workers.empty()); // no formatting, scheduling or file access
+    assert(Mod::get()->settingReads == 6); // one setting lookup per diagnostic
+    assert(geode::log::infos == 0 && geode::log::warnings == 0);
+    assert(!std::filesystem::exists(path));
+
+    Mod::get()->coverDebug = true;
+    info("enabled {}", FormatProbe{&formatted});
+    warn("warning {}", FormatProbe{&formatted});
+    assert(formatted == 2);
+    assert(Mod::get()->settingReads == 8); // enabled formatted calls do not check twice
+    for (int i = 0; i < 500; ++i) info(std::string("message ") + std::to_string(i));
+    assert(geode::log::infos == 501 && geode::log::warnings == 1);
+    assert(!Mod::get()->logging); // previous console logging setting is restored
+    assert(workers.size() == 1 && !std::filesystem::exists(path));
+
+    // Disabling the diagnostic drops later messages, but preserves already
+    // accepted events until the worker flushes them.
+    Mod::get()->coverDebug = false;
+    info("late {}", FormatProbe{&formatted});
+    warn(std::string("late warning"));
+    assert(formatted == 2 && workers.size() == 1);
+    runJob(workers);
+    std::ifstream file(path);
+    std::string line;
+    assert(static_cast<bool>(std::getline(file, line)) && line.ends_with("INFO enabled formatted"));
+    assert(static_cast<bool>(std::getline(file, line)) && line.ends_with("WARN warning formatted"));
+    for (int i = 0; i < 500; ++i) {
+        assert(static_cast<bool>(std::getline(file, line)));
+        assert(line.ends_with("INFO message " + std::to_string(i)));
+    }
+    assert(!std::getline(file, line)); file.close();
+
+    Mod::get()->coverDebug = true;
+    Mod::get()->logging = true;
+    warn(std::string("already enabled"));
+    assert(Mod::get()->logging && geode::log::warnings == 2 && workers.size() == 1);
+    runJob(workers);
+    file.open(path); int lines = 0;
+    while (std::getline(file, line)) ++lines;
+    assert(lines == 503 && line.empty());
+    file.close();
+    std::filesystem::remove(path);
+    std::filesystem::remove(path.parent_path());
+    std::filesystem::remove(saveRoot);
+}

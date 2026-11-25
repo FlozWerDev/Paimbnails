@@ -1,4 +1,5 @@
 #include "ColorNode.hpp"
+#include "../GradientUtils.hpp"
 
 using namespace geode::prelude;
 using namespace paimon::icon_gradients;
@@ -49,11 +50,9 @@ bool ColorNode::init(bool invis) {
     m_dot->setPosition(middle);
     m_circle->setPosition(middle);
 
-    m_select = CCSprite::createWithSpriteFrameName("GJ_select_001.png");
-    m_select->setScale(1.15f);
+    m_select = makeSelectRing(1.15f);
     m_select->setPosition(middle);
     m_select->setOpacity(m_opacity);
-    m_select->setVisible(false);
 
     addChild(m_dot, 0);
     addChild(m_select, 1);

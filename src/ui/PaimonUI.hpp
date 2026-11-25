@@ -11,13 +11,13 @@
 
 namespace paimon::ui {
 
-// Tuned for GD backgrounds (GJ_square01 brown, black square02 insets).
+// tuned for GD backgrounds (GJ_square01 brown, black square02 insets).
 namespace palette {
 inline constexpr cocos2d::ccColor3B text{255, 255, 255};
 inline constexpr cocos2d::ccColor3B muted{205, 205, 215};
 inline constexpr cocos2d::ccColor3B dim{150, 150, 160};
 inline constexpr cocos2d::ccColor3B gold{255, 210, 90};
-inline constexpr cocos2d::ccColor3B accent{255, 210, 90};
+inline constexpr cocos2d::ccColor3B accent = gold;
 inline constexpr cocos2d::ccColor3B info{110, 220, 255};
 inline constexpr cocos2d::ccColor3B violet{205, 160, 255};
 inline constexpr cocos2d::ccColor3B success{130, 255, 130};
@@ -26,11 +26,11 @@ inline constexpr cocos2d::ccColor3B danger{255, 110, 110};
 inline constexpr cocos2d::ccColor3B ink{0, 0, 0};
 }
 
-// GJ_button_01..06
+// gJ_button_01..06
 enum class Btn { Green = 1, Cyan, Pink, Gray, Blue, Red };
 char const* buttonTexture(Btn skin);
 
-// GJ_square01..07
+// gJ_square01..07
 enum class Bg { Brown = 1, Blue, Green, Purple, Dark, Light, White };
 char const* popupTexture(Bg bg);
 std::vector<std::string> const& popupStyles();
@@ -38,9 +38,14 @@ std::vector<std::string> const& popupStyles();
 bool motionEnabled();
 float motionDuration(float seconds);
 
-// Rounded GD panel (square02b tinted), anchored bottom-left.
+// rounded GD panel (square02b tinted), anchored bottom-left.
 geode::NineSlice* makeInset(cocos2d::CCSize size, GLubyte opacity = 90,
     cocos2d::ccColor3B color = palette::ink);
+
+// menu pinned at the origin; id optional.
+cocos2d::CCMenu* makeZeroMenu(char const* id = nullptr);
+// scale a label down (never up) so its width fits maxW.
+void shrinkLabelToFit(cocos2d::CCLabelBMFont* label, float maxW);
 
 // width is the final on-screen width (0 = fit the text); scale is the whole sprite scale.
 ButtonSprite* makeButtonSprite(char const* text, Btn skin = Btn::Green,
@@ -48,15 +53,23 @@ ButtonSprite* makeButtonSprite(char const* text, Btn skin = Btn::Green,
 CCMenuItemSpriteExtra* makeButton(char const* text, std::function<void()> onPress,
     Btn skin = Btn::Green, float width = 0.f, float scale = 0.7f,
     char const* font = "goldFont.fnt");
-// Same as above with a raw GJ_button_0X.png texture name.
+// same as above with a raw GJ_button_0X.png texture name.
 ButtonSprite* makeButtonSprite(char const* text, char const* texture,
     float width = 0.f, float scale = 0.7f, char const* font = "goldFont.fnt");
 CCMenuItemSpriteExtra* makeButton(char const* text, std::function<void()> onPress,
     char const* texture, float width = 0.f, float scale = 0.7f,
     char const* font = "goldFont.fnt");
 void setButtonSkin(CCMenuItemSpriteExtra* button, Btn skin);
-// Shrinks every label to the smallest one so a row/column of buttons reads evenly.
+// shrinks every label to the smallest one so a row/column of buttons reads evenly.
 void matchButtonLabels(std::vector<CCMenuItemSpriteExtra*> const& buttons);
+
+enum class RowAlign { Left, Center, Right };
+void layoutButtonRow(
+    std::vector<cocos2d::CCMenuItem*> const& items,
+    float leftX, float rightX, float y,
+    float gap = 6.f,
+    RowAlign align = RowAlign::Center
+);
 
 geode::CircleButtonSprite* makeCircleSprite(char const* frame,
     geode::CircleBaseColor color = geode::CircleBaseColor::Green,
@@ -85,13 +98,13 @@ cocos2d::CCLabelBMFont* makeText(char const* text, float wrapWidth, float scale 
 cocos2d::CCSprite* makeDivider(float width, cocos2d::ccColor3B color = palette::gold,
     GLubyte opacity = 150);
 
-// Inset with an optional gold heading; children go between the heading and the bottom padding.
+// inset with an optional gold heading; children go between the heading and the bottom padding.
 cocos2d::CCNode* makePanel(cocos2d::CCSize size, char const* title = nullptr,
     GLubyte opacity = 90);
 constexpr float kPanelHeader = 22.f;
 
 void addCorners(cocos2d::CCNode* to, cocos2d::CCSize size,
-    geode::SideArtStyle style = geode::SideArtStyle::PopupGold, float scale = 0.45f,
+    geode::SideArtStyle style = geode::SideArtStyle::PopupGold, float scale = 1.f,
     bool top = false);
 
 void animateIn(cocos2d::CCNode* node, float delay = 0.f, float distance = 6.f);

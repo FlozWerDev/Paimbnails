@@ -28,7 +28,7 @@ void forEachItemIcon(CCNode* root, Fn&& cb) {
         }
         auto* children = node->getChildren();
         if (!children) continue;
-        for (int i = 0; i < children->count(); ++i) {
+        for (unsigned int i = 0; i < children->count(); ++i) {
             if (auto* c = static_cast<CCNode*>(children->objectAtIndex(i))) {
                 stack.push_back(c);
             }
@@ -54,7 +54,7 @@ void collectListBarIcons(ListButtonBar* bar, std::vector<GJItemIcon*>& out) {
         if (!menu) continue;
         auto* children = menu->getChildren();
         if (!children) continue;
-        for (int i = 0; i < children->count(); ++i) {
+        for (unsigned int i = 0; i < children->count(); ++i) {
             auto* btn = typeinfo_cast<CCMenuItemSpriteExtra*>(
                 static_cast<CCObject*>(children->objectAtIndex(i)));
             if (!btn) continue;
@@ -170,6 +170,13 @@ bool IconRecolorEngine::recolorOne(GJItemIcon* icon, int displayIndex, int total
     return true;
 }
 
+void IconRecolorEngine::recolorMany(std::vector<GJItemIcon*> const& icons, RecolorArea area) {
+    int const total = static_cast<int>(icons.size());
+    for (int i = 0; i < total; ++i) {
+        recolorOne(icons[static_cast<std::size_t>(i)], i, total, area);
+    }
+}
+
 void IconRecolorEngine::recolorSubtree(CCNode* root, RecolorArea area) {
     if (!root) return;
     if (!IconConfigStore::get().isFeatureEnabled()) return;
@@ -178,10 +185,7 @@ void IconRecolorEngine::recolorSubtree(CCNode* root, RecolorArea area) {
     // collect first so we have totalcount for gradient mode.
     std::vector<GJItemIcon*> icons;
     forEachItemIcon(root, [&](GJItemIcon* icon) { icons.push_back(icon); });
-    int total = static_cast<int>(icons.size());
-    for (int i = 0; i < total; ++i) {
-        recolorOne(icons[i], i, total, area);
-    }
+    recolorMany(icons, area);
 }
 
 void IconRecolorEngine::recolorListBar(ListButtonBar* bar, RecolorArea area) {
@@ -191,10 +195,7 @@ void IconRecolorEngine::recolorListBar(ListButtonBar* bar, RecolorArea area) {
 
     std::vector<GJItemIcon*> icons;
     collectListBarIcons(bar, icons);
-    int total = static_cast<int>(icons.size());
-    for (int i = 0; i < total; ++i) {
-        recolorOne(icons[i], i, total, area);
-    }
+    recolorMany(icons, area);
 }
 
 void IconRecolorEngine::snapshotLockedVanilla(GJItemIcon* icon) {
@@ -254,15 +255,21 @@ void IconRecolorEngine::restoreOne(GJItemIcon* icon) {
     icon->setUserObject(kIconRecoloredKey, nullptr);
 }
 
+void IconRecolorEngine::restoreMany(std::vector<GJItemIcon*> const& icons) {
+    for (auto* icon : icons) restoreOne(icon);
+}
+
 void IconRecolorEngine::restoreVanilla(CCNode* root) {
     if (!root) return;
-    forEachItemIcon(root, [this](GJItemIcon* icon) { restoreOne(icon); });
+    std::vector<GJItemIcon*> icons;
+    forEachItemIcon(root, [&](GJItemIcon* icon) { icons.push_back(icon); });
+    restoreMany(icons);
 }
 
 void IconRecolorEngine::restoreListBar(ListButtonBar* bar) {
     std::vector<GJItemIcon*> icons;
     collectListBarIcons(bar, icons);
-    for (auto* icon : icons) restoreOne(icon);
+    restoreMany(icons);
 }
 
 }  // namespace paimon::icons

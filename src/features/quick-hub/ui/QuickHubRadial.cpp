@@ -112,7 +112,7 @@ void QuickHubRadial::onExit() {
 }
 
 
-void QuickHubRadial::update(float dt) {
+void QuickHubRadial::update(float) {
 #ifdef GEODE_IS_DESKTOP
     // getmousepos already comes in design space.
     updateHover(getHoveredIndex(geode::cocos::getMousePos()));
@@ -283,17 +283,17 @@ void QuickHubRadial::animateClose() {
 
     // only cctouchended fires an option.
 
-bool QuickHubRadial::ccTouchBegan(CCTouch* touch, CCEvent* event) {
+bool QuickHubRadial::ccTouchBegan(CCTouch*, CCEvent*) {
     return true;
 }
 
-void QuickHubRadial::ccTouchMoved(CCTouch* touch, CCEvent* event) {
+void QuickHubRadial::ccTouchMoved(CCTouch* touch, CCEvent*) {
     auto worldPos = touch->getLocation();
     int hovered = getHoveredIndex(worldPos);
     updateHover(hovered);
 }
 
-void QuickHubRadial::ccTouchEnded(CCTouch* touch, CCEvent* event) {
+void QuickHubRadial::ccTouchEnded(CCTouch* touch, CCEvent*) {
     auto worldPos = touch->getLocation();
     int hovered = getHoveredIndex(worldPos);
 
@@ -304,7 +304,7 @@ void QuickHubRadial::ccTouchEnded(CCTouch* touch, CCEvent* event) {
     }
 }
 
-void QuickHubRadial::ccTouchCancelled(CCTouch* touch, CCEvent* event) {
+void QuickHubRadial::ccTouchCancelled(CCTouch*, CCEvent*) {
 }
 
 void QuickHubRadial::keyBackClicked() {
@@ -464,7 +464,7 @@ void QuickHubRadial::executeOption(int index) {
             if (accountID > 0) {
                 if (auto popup = ProfileMusicPopup::create(accountID)) popup->show();
             } else {
-                PaimonNotify::create("Necesitas iniciar sesion.", NotificationIcon::Warning)->show();
+                PaimonNotify::show("Necesitas iniciar sesion.", NotificationIcon::Warning);
             }
             return;
         }

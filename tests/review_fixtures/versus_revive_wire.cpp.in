@@ -1,0 +1,60 @@
+
+#include <algorithm>
+#include <cassert>
+#include <cctype>
+#include <cstdint>
+#include <functional>
+#include <iostream>
+#include <optional>
+#include <span>
+#include <string>
+#include <utility>
+#include <vector>
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
+#include <chrono>
+#include <cstring>
+#include <sstream>
+#include <stdexcept>
+#include <filesystem>
+#include <fstream>
+#include <charconv>
+#include <string_view>
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+
+template<class T> struct Result {
+ std::optional<T> value;
+ Result(std::nullopt_t):value(std::nullopt){}
+ Result(T v):value(std::move(v)){}
+ bool isOk() const {return value.has_value();}
+};
+std::nullopt_t Err(char const*) {return std::nullopt;}
+template<class T> T Ok(T v){return v;}
+namespace globed {
+ enum class EventServer {Game};
+ template<class T,EventServer S> struct ServerEvent {};
+}
+constexpr int operator""_spr(char const*,size_t){return 1;}
+@@function|src/features/versus/services/VersusNet.hpp|enum class StateKind@@;
+struct StateMsg {StateKind kind=StateKind::Ready; uint8_t value=0; uint16_t detail=0; float levelTime=0;};
+void putU16(std::vector<uint8_t>& out,uint16_t v){out.push_back(v&255);out.push_back(v>>8);}
+uint16_t readU16(std::span<uint8_t const> data,size_t at){return data[at]|(data[at+1]<<8);}
+uint16_t clampU16(float v,float s){return static_cast<uint16_t>(std::clamp(v*s,0.f,65535.f));}
+@@function|src/features/versus/services/VersusNet.cpp|struct VsState :@@;
+int main() {
+ VsState spent({StateKind::Spent,0,0,5.f}), revive({StateKind::Revive,0,0,5.f});
+ assert(VsState::decode(spent.encode()).isOk());
+ assert(VsState::decode(revive.encode()).isOk());
+ for(unsigned i=0;i<=static_cast<unsigned>(StateKind::Revive);++i) {
+  VsState state({static_cast<StateKind>(i),3,42,5.f});
+  auto decoded=VsState::decode(state.encode());
+  assert(decoded.isOk() && decoded.value->data.kind==static_cast<StateKind>(i));
+ }
+ auto invalid=revive.encode(); invalid[0]=255;
+ assert(!VsState::decode(invalid).isOk());
+ assert(!VsState::decode({}).isOk());
+ std::cout << "PASS: versus_revive_wire\n";
+}

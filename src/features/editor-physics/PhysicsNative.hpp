@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PhysicsTypes.hpp"
+#include "NativeTriggerCatalog.hpp"
 
 #include <array>
 #include <cstddef>
@@ -89,6 +90,18 @@ enum class NativeNodeKind {
     Spawn,
     Rotate,
 };
+
+constexpr int nativeObjectID(NativeNodeKind kind) {
+    switch (kind) {
+        case NativeNodeKind::AdvancedFollow: return nativeids::AdvancedFollow;
+        case NativeNodeKind::AdvancedFollowEdit: return nativeids::AdvancedFollowEdit;
+        case NativeNodeKind::CollisionBlock: return nativeids::CollisionBlock;
+        case NativeNodeKind::CollisionTrigger: return nativeids::Collision;
+        case NativeNodeKind::Spawn: return nativeids::Spawn;
+        case NativeNodeKind::Rotate: return nativeids::Rotate;
+    }
+    return 0;
+}
 
 enum class CollisionPeer {
     Block,

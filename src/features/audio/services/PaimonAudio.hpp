@@ -6,7 +6,7 @@ class PaimonAudio {
 public:
     static PaimonAudio& get();
 
-    void activate();
+    bool activate();
     void deactivate();
     void update(float dt);
 

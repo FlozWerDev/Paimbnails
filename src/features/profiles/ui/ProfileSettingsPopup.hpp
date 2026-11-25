@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "../../../ui/PaimonPopup.hpp"
+#include "../../global-icon/GlobalIconTypes.hpp"
 #include <Geode/Geode.hpp>
 
 class ProfileSettingsPopup : public PaimonPopup {
@@ -9,7 +10,7 @@ protected:
     geode::CopyableFunction<void()> m_onImageCallback;
     geode::CopyableFunction<void()> m_onBadgeCallback;
     geode::CopyableFunction<void()> m_onCommentBgCallback;
-    geode::CopyableFunction<void(bool enabled)> m_onGlobalIconCallback;
+    geode::CopyableFunction<void(bool link, paimon::globalicon::LinkOptions options)> m_onGlobalIconCallback;
 
     geode::Ref<SimplePlayer> m_globalIconSprite;
     cocos2d::ccColor3B m_globalIconColor1 = {255, 255, 255};
@@ -21,7 +22,7 @@ protected:
     void onConfigureMusic(cocos2d::CCObject*);
     void onAddProfileImg(cocos2d::CCObject*);
     void onConfigureBadge(cocos2d::CCObject*);
-    void onConfigureCommentBgSoon(cocos2d::CCObject*);
+    void onConfigureCommentBg(cocos2d::CCObject*);
     void onToggleGlobalIcon(cocos2d::CCObject*);
     void applyGlobalIconColor();
     void onInfo(cocos2d::CCObject*);
@@ -33,5 +34,7 @@ public:
     void setOnImageCallback(geode::CopyableFunction<void()> cb) { m_onImageCallback = std::move(cb); }
     void setOnBadgeCallback(geode::CopyableFunction<void()> cb) { m_onBadgeCallback = std::move(cb); }
     void setOnCommentBgCallback(geode::CopyableFunction<void()> cb) { m_onCommentBgCallback = std::move(cb); }
-    void setOnGlobalIconCallback(geode::CopyableFunction<void(bool enabled)> cb) { m_onGlobalIconCallback = std::move(cb); }
+    void setOnGlobalIconCallback(geode::CopyableFunction<void(bool link, paimon::globalicon::LinkOptions options)> cb) {
+        m_onGlobalIconCallback = std::move(cb);
+    }
 };

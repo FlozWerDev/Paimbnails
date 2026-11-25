@@ -17,12 +17,15 @@ public:
     static AudioContextCoordinator& get();
 
     void activateLevelSelect(int levelID, bool playImmediately = true);
+    void activateLevelSelectLevel(GJGameLevel* level, bool playImmediately = true);
     void deactivateLevelSelect(bool stopSong = true);
 
     void activateLevelInfo(GJGameLevel* level, bool playImmediately = true);
     void deactivateLevelInfo(bool returnsToLevelSelect);
 
     void beginGameplayTransition();
+    // end selector previews before native LevelPage preloads its gameplay track.
+    void prepareGameplayAudio(GJGameLevel* level);
     void abortGameplayTransition(DynSongLayer restoredLayer = DynSongLayer::None);
     void notifyGameplayStarted(GJGameLevel* level = nullptr);
 
@@ -45,10 +48,12 @@ public:
     bool isProfileOpen() const { return m_profileOpen; }
 
     int getCurrentLevelSelectID() const { return m_levelSelectLevelID; }
+    GJGameLevel* getCurrentLevelSelectLevel() const { return m_levelSelectLevel.data(); }
     DynSongLayer getDynamicContextLayer() const { return m_dynamicContextLayer; }
 
 private:
     int m_levelSelectLevelID = 0;
+    geode::Ref<GJGameLevel> m_levelSelectLevel = nullptr;
     geode::Ref<GJGameLevel> m_levelInfoLevel = nullptr;
     DynSongLayer m_dynamicContextLayer = DynSongLayer::None;
     // layer to restore if a play never reaches gameplay.

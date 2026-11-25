@@ -25,6 +25,7 @@ struct IconTheme;
 
 class IconEditorLayer : public cocos2d::CCLayer {
 public:
+    using cocos2d::CCLayer::init;
     static void open(std::string const& slotId);
     static IconEditorLayer* create(std::string const& slotId);
 
@@ -34,9 +35,8 @@ protected:
     bool init(std::string const& slotId);
     void keyBackClicked() override;
     void update(float dt) override;
-    void scrollWheel(float x, float y) override;
+    bool scrollWheel(float x, float y) override;
 
-    // -- build ---------------------------------------------------------------
     void buildBackground();
     void buildTopBar();
     void buildWorkspace();
@@ -54,7 +54,6 @@ protected:
     std::vector<cocos2d::CCNode*> buildShapeTab(float width);
     std::vector<cocos2d::CCNode*> buildIconTab(float width);
 
-    // -- model ---------------------------------------------------------------
     std::vector<SlotDef> visibleZones() const;
     std::string currentSlotKey() const;
     IconSlotContent& currentSlot();
@@ -74,9 +73,11 @@ protected:
     // wraps a mutation so undo, autosave and preview stay consistent.
     // `coalescekey` merges a burst (slider drag) into one undo step.
     void edit(std::string coalesceKey, std::function<void()> mutate);
+    // edit() applied to the selected piece; the mutation is skipped (but the
+    // undo step still records) when nothing is selected.
+    void editPiece(std::string coalesceKey, std::function<void(IconPiece*)> mutate);
     void applyRestoredProject();
 
-    // -- actions -------------------------------------------------------------
     void onBack();
     void onUndo();
     void onRedo();
@@ -84,8 +85,12 @@ protected:
     void onExport();
     void onTry();
     void onRename();
+    void onDeleteProject();
     void onProjectMenu();
     void onLayerMenu(int pieceIndex);
+    void onDeleteLayer(int pieceIndex);
+    void onDuplicateMirrored(int pieceIndex);
+    void onAddShapeLayer(bool startOnDecals = false);
     void onAddImportLayer();
     void onAddTemplateLayer();
     void onLoadWholeIcon();
@@ -104,10 +109,9 @@ protected:
     // first-run hints over the editor zones.
     void maybeShowTour();
 
-    void saveProject(bool notify);
+    bool saveProject(bool notify);
     void setStatus(std::string const& text, bool good = true);
 
-    // -- preview ------------------------------------------------------------
     // `fast` repaints the active zone only (all that changes mid-drag).
     void schedulePreview(bool fast);
     void kickPreviewJob();
@@ -132,9 +136,10 @@ protected:
     bool m_gestureActive = false;
 
     int m_backgroundMode = 0;         // 0 oscuro, 1 claro, 2 tablero
-    bool m_isolateZone = false;
+    int m_focusMode = 0;              // 0 todo 100%, 1 enfocar zona, 2 solo zona
     bool m_showGuide = true;
     bool m_eyedropper = false;
+    bool m_showColorAdjust = false;
 
     EditorCanvas* m_canvas = nullptr;
     cocos2d::CCSprite* m_undoGlyph = nullptr;

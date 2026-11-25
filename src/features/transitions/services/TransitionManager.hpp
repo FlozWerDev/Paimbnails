@@ -6,115 +6,7 @@
 
 // customizable transition system
 
-enum class TransitionType {
-    Fade,
-    FadeWhite,
-    FadeColor,
-    CrossFade,
-
-    SlideLeft,
-    SlideRight,
-    SlideUp,
-    SlideDown,
-    MoveInLeft,
-    MoveInRight,
-    MoveInTop,
-    MoveInBottom,
-
-    ZoomIn,
-    ZoomOut,
-    ZoomFlipYUp,
-    ZoomFlipYDown,
-    FlipX,
-    FlipY,
-    FlipAngular,
-    ShrinkGrow,
-    RotoZoom,
-    JumpZoom,
-
-    FadeTR,
-    FadeBL,
-    FadeUp,
-    FadeDown,
-    TurnOffTiles,
-    SplitCols,
-    SplitRows,
-    ProgressRadialCW,
-    ProgressRadialCCW,
-    ProgressInOut,
-    ProgressOutIn,
-    ProgressHorizontal,
-    ProgressVertical,
-
-    PageForward,
-    PageBackward,
-
-    FadeBounce,
-    SlideOverLeft,
-    SlideOverRight,
-    SlideOverUp,
-    SlideOverDown,
-    ZoomShrinkFade,
-    SpinCW,
-    SpinCCW,
-    PixelateFade,
-    DiamondWipe,
-    DoubleDoor,
-    Blinds,
-    Swirl,
-    Glitch,
-    CinematicBars,
-    FlashWhite,
-    HeartIris,
-    WaveSlide,
-    Random,
-
-    Custom,
-    Stinger,
-    None
-};
-
-
-enum class CommandAction {
-    FadeOut,
-    FadeIn,
-    Move,
-    Scale,
-    Rotate,
-    Wait,
-    Color,
-    EaseIn,
-    EaseOut,
-    Spawn,
-    Image,
-    Shake,
-    Bounce
-};
-
-struct TransitionCommand {
-    CommandAction action = CommandAction::Wait;
-    std::string target = "from";
-    float duration = 0.3f;
-    float fromX = 0.f, fromY = 0.f;
-    float toX = 0.f, toY = 0.f;
-    float fromVal = 1.f;
-    float toVal = 1.f;
-    int r = 0, g = 0, b = 0;
-    std::string imagePath;
-    int spawnCount = 0;
-    float delay = 0.f;
-    float intensity = 5.f;
-};
-
-struct TransitionConfig {
-    TransitionType type = TransitionType::Fade;
-    float duration = 0.5f;
-    int colorR = 0, colorG = 0, colorB = 0;
-    std::vector<TransitionCommand> commands;
-    std::string scriptPath;
-    std::string mediaPath; // prepared .pttransition manifest
-    float cutPoint = .5f; // normalized time, independent of media duration
-};
+#include "TransitionTypes.hpp"
 
 class TransitionManager {
 public:
@@ -142,6 +34,12 @@ public:
     bool isEnabled() const { return m_enabled; }
     void setEnabled(bool v) { m_enabled = v; }
 
+    // custom (Studio) owns scene changes while it is the active transition:
+    // dynamic Transition stands down (its saved setting is left untouched).
+    // isCustomActiveFor picks the level-entry config for PlayLayer destinations.
+    bool isCustomActive() const;
+    bool isCustomActiveFor(cocos2d::CCScene* dest) const;
+
     void tripCustomSafeMode(std::string const& reason);
     bool isCustomSafeModeTripped() const { return m_customSafeModeTripped; }
 
@@ -151,7 +49,15 @@ public:
     static std::string typeDescription(TransitionType t);
     static CommandAction actionFromString(std::string const& s);
     static std::string actionToString(CommandAction a);
+    static TransitionEasing easingFromString(std::string const& s);
+    static std::string easingToString(TransitionEasing e);
+    static std::string easingDisplayName(TransitionEasing e);
+    static std::vector<TransitionEasing> const& allEasings();
+    static float easeValue(TransitionEasing e, float t);
     static bool isValidTarget(std::string const& target);
+    // studio share tab: same JSON shape as transitions.json "commands".
+    static std::string commandsToJson(std::vector<TransitionCommand> const& commands);
+    static bool commandsFromJson(std::string const& text, std::vector<TransitionCommand>& out);
     static int sanitizeCommand(TransitionCommand& cmd);
     static int sanitizeCommands(std::vector<TransitionCommand>& commands);
     static int sanitizeConfig(TransitionConfig& cfg);
@@ -160,10 +66,21 @@ public:
 
     cocos2d::CCTransitionScene* createNativeTransition(TransitionConfig const& cfg, cocos2d::CCScene* dest) const;
 
+    // studio-timeline scene shared by the Custom and creative-type branches:
+    // sanitizes the timeline and creates the scene, falling back to a fade
+    // when there is no running scene, no dest, or an empty/invalid timeline.
+    // `custom` applies the script cut/min-duration args; `logFallback` logs
+    // the Custom branch's fallback line.
+    cocos2d::CCScene* createStudioScene(std::vector<TransitionCommand> commands,
+                                        cocos2d::CCScene* dest, bool isPush,
+                                        TransitionConfig const& cfg, bool custom,
+                                        bool logFallback) const;
+
     std::vector<TransitionCommand> buildPreviewCommands(TransitionType type, float dur) const;
 
 private:
     TransitionManager();
+    void navigateScene(cocos2d::CCScene* dest, bool isPush);
     void warmMedia();
     unsigned m_mediaGeneration = 0;
     std::vector<std::shared_ptr<paimon::transitions::TransitionMedia>> m_preloadedMedia;

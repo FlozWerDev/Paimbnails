@@ -28,27 +28,32 @@ def run():
     manager = read("src/features/transitions/services/DynamicTransitionManager.cpp")
     motion = read("src/features/transitions/services/DynamicTransitionMotion.hpp")
     defaults = read("src/core/SettingsMigration.hpp")
+    # scalar bool/float fields load and save through member-pointer tables.
+    table = re.findall(r'\{"(dynamic-transition-[^"]+)", &Config::(\w+)\}', manager)
+    keys = [key for key, _ in table]
+    members = [field for _, field in table]
+    assert len(table) == len(set(keys)) == len(set(members)), \
+        "Duplicate key or field in the config tables"
     reads = set(re.findall(
         r'(?:getSavedValue<[^>]+>|readEnum)\("(dynamic-transition-[^"]+)"', manager
-    ))
-    writes = set(re.findall(r'setSavedValue\("(dynamic-transition-[^"]+)"', manager))
+    )) | set(keys)
+    writes = set(re.findall(r'setSavedValue\("(dynamic-transition-[^"]+)"', manager)) | set(keys)
     assert reads == writes, f"Settings read/write mismatch: {reads ^ writes}"
-    registered = dict(re.findall(r'set[BIDF]\("(dynamic-transition-[^"]+)",\s*([^)]+)\)', defaults))
+    registered = dict(re.findall(r'set(?:[BIDF])?\("(dynamic-transition-[^"]+)",\s*([^)]+)\)', defaults))
     assert reads <= registered.keys(), f"Missing reset defaults: {reads - registered.keys()}"
     assert "dynamic-transition-preset" not in registered
     assert '"dynamic-transition-preset"' not in manager
 
     config = re.search(r'struct Config \{(.*?)\n\};', motion, re.S)[1]
     fields = set(re.findall(r'^    \w+ (\w+) = ', config, re.M))
-    loaded = set(re.findall(r'config\.(\w+) = ', manager.split('Config animationConfig')[0]))
+    loaded = set(re.findall(r'config\.(\w+) = ', manager.split('Config animationConfig')[0])) \
+        | set(members)
     assert fields == loaded, f"Config fields not loaded: {fields ^ loaded}"
     popup = read("src/features/transitions/ui/DynamicTransitionConfigPopup.cpp")
     editable = set(re.findall(r'm_config\.(\w+) = ', popup))
     assert fields == editable, f"Config fields missing from the popup: {fields ^ editable}"
 
-    for field, key in re.findall(
-        r'config\.(\w+) = mod->getSavedValue<[^>]+>\("(dynamic-transition-[^"]+)"', manager
-    ):
+    for key, field in table:
         match = re.search(rf'(?:bool|float) {field} = ([^;]+);', motion)
         assert match, f"Missing config default: {field}"
         declared = match[1].removesuffix("f")

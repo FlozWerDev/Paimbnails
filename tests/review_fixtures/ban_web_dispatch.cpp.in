@@ -1,0 +1,83 @@
+#include <algorithm>
+#include <cassert>
+#include <cctype>
+#include <cstdint>
+#include <deque>
+#include <functional>
+#include <memory>
+#include <string>
+
+std::uint64_t permit = 0;
+int sent = 0;
+namespace paimon::ban {
+std::uint64_t authorizeWebRequest(std::string const&, std::string const&) { return permit; }
+}
+namespace geode {
+template<class T> using CopyableFunction = std::function<T>;
+std::deque<std::function<void()>> mainCallbacks;
+void queueInMainThread(std::function<void()> callback) { mainCallbacks.push_back(std::move(callback)); }
+namespace utils::web {
+struct WebResponse { bool success = false; };
+struct WebRequest {
+    int send(std::string const&, std::string const&) { return ++sent; }
+};
+}
+namespace async {
+using Callback = std::function<void(utils::web::WebResponse)>;
+std::deque<Callback> callbacks;
+struct Handle { void setName(char const*) {} };
+Handle spawn(int, Callback callback) { callbacks.push_back(std::move(callback)); return {}; }
+template<class T> struct TaskHolder {
+    void spawn(char const*, int future, Callback callback) { async::spawn(future, std::move(callback)); }
+};
+}
+}
+
+@@source|src/utils/WebHelper.hpp@@
+
+void respond() {
+    auto callback = std::move(geode::async::callbacks.front());
+    geode::async::callbacks.pop_front();
+    callback({true});
+}
+void flushMain() {
+    auto callback = std::move(geode::mainCallbacks.front());
+    geode::mainCallbacks.pop_front();
+    callback();
+}
+int main() {
+    int completed = 0;
+    bool succeeded = true;
+    auto callback = [&](geode::utils::web::WebResponse response) {
+        ++completed;
+        succeeded = response.success;
+    };
+    WebHelper::dispatch({}, "GET", "https://example.com", callback);
+    assert(sent == 0 && completed == 0);
+    flushMain();
+    assert(completed == 1 && !succeeded);
+    permit = 1;
+    WebHelper::dispatch({}, "GET", "https://example.com", callback);
+    permit = 0; // Ban or verification failure while the request is in flight.
+    respond();
+    assert(completed == 2 && !succeeded);
+    permit = 2;
+    WebHelper::dispatch({}, "GET", "https://example.com", callback);
+    permit = 3; // A different account received its own authorization.
+    respond();
+    assert(completed == 3 && !succeeded);
+    WebHelper::dispatch({}, "GET", "https://example.com", callback);
+    respond();
+    assert(completed == 4 && succeeded);
+
+    geode::async::TaskHolder<geode::utils::web::WebResponse> owner;
+    permit = 0;
+    WebHelper::dispatchOwned(owner, {}, "POST", "https://example.com", callback);
+    flushMain();
+    assert(completed == 5 && !succeeded && sent == 3);
+    permit = 4;
+    WebHelper::dispatchOwned(owner, {}, "POST", "https://example.com", callback);
+    permit = 0;
+    respond();
+    assert(completed == 6 && !succeeded);
+}

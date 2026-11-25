@@ -1,6 +1,9 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "LevelTagsClient.hpp"
 
 #include "../../../utils/AtomicFileWrite.hpp"
+#include "../../../utils/BoundedFileRead.hpp"
+#include "../../../utils/HttpClient.hpp"
 #include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/WebHelper.hpp"
 
@@ -57,20 +60,6 @@ std::string LevelTagsClient::serverURL() {
     }
     return kDefaultServer;
 }
-
-std::string LevelTagsClient::urlEncode(std::string const& value) {
-    std::ostringstream out;
-    out << std::hex << std::uppercase << std::setfill('0');
-    for (unsigned char c : value) {
-        if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
-            out << static_cast<char>(c);
-        } else {
-            out << '%' << std::setw(2) << static_cast<unsigned int>(c);
-        }
-    }
-    return out.str();
-}
-
 
 void LevelTagsClient::parseCatalog(matjson::Value const& root) {
     if (!root.isObject()) return;
@@ -134,7 +123,7 @@ void LevelTagsClient::loadCatalog(std::function<void(bool)> callback) {
     if (!startRequest) return;
 
     auto req = web::WebRequest();
-    req.timeout(std::chrono::seconds(12));
+    req.timeout(asp::Duration::fromSecs(12));
     req.acceptEncoding("gzip, deflate");
 
     WebHelper::dispatch(std::move(req), "GET", serverURL() + "/tags", [this](web::WebResponse res) {
@@ -195,7 +184,7 @@ LevelTagMap LevelTagsClient::parseLevelTags(matjson::Value const& root) const {
 
     for (auto const& [key, levelObj] : root) {
         auto idResult = geode::utils::numFromString<int>(key);
-        if (!idResult.isOk()) continue;
+        if (!idResult.isOk() || idResult.unwrap() <= 0) continue;
 
         std::vector<std::string> tags;
         if (levelObj.isObject()) {
@@ -257,18 +246,22 @@ void LevelTagsClient::fetchTags(std::vector<int> const& levelIDs, std::function<
         }
 
         auto req = web::WebRequest();
-        req.timeout(std::chrono::seconds(12));
+        req.timeout(asp::Duration::fromSecs(12));
         req.acceptEncoding("gzip, deflate");
 
         WebHelper::dispatch(std::move(req), "GET", base + "/get?id=" + ids,
             [this, chunk, results, remaining, shared](web::WebResponse res) {
                 LevelTagMap parsed;
+                bool validResponse = false;
                 if (res.ok()) {
                     auto json = matjson::parse(res.string().unwrapOr(""));
-                    if (json.isOk()) parsed = parseLevelTags(json.unwrap());
+                    if (json.isOk() && json.unwrap().isObject()) {
+                        parsed = parseLevelTags(json.unwrap());
+                        validResponse = true;
+                    }
                 }
 
-                {
+                if (validResponse) {
                     std::lock_guard lock(m_mutex);
                     for (auto const& [id, tags] : parsed) {
                         m_levelTags[id] = tags;
@@ -313,11 +306,11 @@ void LevelTagsClient::searchByTags(
         return out;
     };
 
-    std::string query = "?i=" + urlEncode(join(include));
-    if (!exclude.empty()) query += "&e=" + urlEncode(join(exclude));
+    std::string query = "?i=" + HttpClient::encodeQueryParam(join(include));
+    if (!exclude.empty()) query += "&e=" + HttpClient::encodeQueryParam(join(exclude));
 
     auto req = web::WebRequest();
-    req.timeout(std::chrono::seconds(12));
+    req.timeout(asp::Duration::fromSecs(12));
     req.acceptEncoding("gzip, deflate");
 
     WebHelper::dispatch(std::move(req), "GET", serverURL() + "/search" + query,
@@ -345,7 +338,8 @@ void LevelTagsClient::searchByTags(
 
 
 std::filesystem::path LevelTagsClient::cachePath() const {
-    return Mod::get()->getSaveDir() / "foryou_leveltags_cache.json";
+    // v1 may contain empty entries written after failed network requests.
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "foryou_leveltags_cache_v2.json";
 }
 
 void LevelTagsClient::loadDiskCache() {
@@ -359,13 +353,10 @@ void LevelTagsClient::loadDiskCache() {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec) || ec) return;
 
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file.is_open()) return;
-    std::streamoff const size = file.tellg();
-    if (size <= 0 || size > 16ll * 1024 * 1024) return;
-    file.seekg(0, std::ios::beg);
-    std::string contents(static_cast<size_t>(size), '\0');
-    if (!file.read(contents.data(), size)) return;
+    // bounded read (16 mb cap): oversize or unreadable files yield empty.
+    auto bytes = paimon::file::readBytes(path, 16ull * 1024 * 1024);
+    if (bytes.empty()) return;
+    std::string contents(bytes.begin(), bytes.end());
 
     auto parsed = matjson::parse(contents);
     if (!parsed.isOk()) return;

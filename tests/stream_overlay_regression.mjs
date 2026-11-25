@@ -31,7 +31,8 @@ const files = { '/overlay': 'stream-overlay.html', '/preview': 'stream-overlay.h
   '/gallery': 'stream-overlay-gallery.html', '/overlay.js': 'stream-overlay.js', '/overlay.css': 'stream-overlay.css' };
 const assets = { 'gold.fnt': 'goldFont-uhd.fnt', 'gold.png': 'goldFont-uhd.png', 'big.fnt': 'bigFont-uhd.fnt',
   'big.png': 'bigFont-uhd.png', 'sheet.plist': 'GJ_GameSheet03-hd.plist', 'sheet.png': 'GJ_GameSheet03-hd.png',
-  'square01.png': 'GJ_square01-uhd.png', 'square02.png': 'GJ_square02-uhd.png',
+  'square01.png': 'GJ_square01-uhd.png', 'square02.png': 'GJ_square02-uhd.png', 'button01.png': 'GJ_button_01-uhd.png',
+  'button06.png': 'GJ_button_06-uhd.png', 'groove.png': 'slidergroove-hd.png',
   'bg.png': 'game_bg_01_001-hd.png', 'ground.png': 'groundSquare_01_001-uhd.png' };
 const types = { html: 'text/html', js: 'application/javascript', css: 'text/css', png: 'image/png', plist: 'application/xml', fnt: 'text/plain' };
 const server = createServer(async (req, res) => {
@@ -74,7 +75,7 @@ try {
     }
     update(next, true);
   }, patch);
-  assert.equal(catalog.styles.length, 19);
+  assert.equal(catalog.styles.length, 27);
   for (const { key: style } of catalog.styles) {
     for (const { key: layout } of catalog.layouts) {
       await apply({ config: { style, layout } });
@@ -89,7 +90,7 @@ try {
       assert.ok(result.star <= 20, `${style}/${layout}: star size ${result.star}`);
     }
   }
-  console.log('Passed 133 style/layout combinations');
+  console.log('Passed 189 style/layout combinations');
 
   await apply({ config: { style: 'inferno', layout: 'cards', customColors: true, background: '#123456', text: '#abcdef' } });
   assert.equal(await page.locator('#now').evaluate(el => getComputedStyle(el).backgroundColor), 'rgba(18, 52, 86, 0.86)');
@@ -144,11 +145,11 @@ try {
   }
   console.log('Passed 11 entrance animations');
   await page.goto(`${origin}/gallery`);
-  await page.waitForFunction(() => document.querySelectorAll('.card').length === 19);
+  await page.waitForFunction(() => document.querySelectorAll('.card').length === 27);
   await page.selectOption('#layout', 'ticker');
   await page.selectOption('#anim', 'bounce');
   assert.match(await page.locator('.card').nth(1).locator('code').textContent(), /style=gd&layout=ticker&anim=bounce$/);
-  assert.equal(await page.locator('.card iframe').count(), 19);
+  assert.equal(await page.locator('.card iframe').count(), 27);
   assert.deepEqual(errors, []);
   console.log('Passed gallery links; no browser script errors');
 } finally {

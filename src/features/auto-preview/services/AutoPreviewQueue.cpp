@@ -89,6 +89,8 @@ void AutoPreviewQueue::processNext() {
     }
     if (PlayLayer::get() != nullptr) return;
     if (LevelEditorLayer::get() != nullptr) return;
+    // preserve pending levels and their attempt budget while a request is active.
+    if (LevelDataProvider::get().busy()) return;
     if (m_lastGenAt.time_since_epoch().count() != 0) {
         auto since = std::chrono::steady_clock::now() - m_lastGenAt;
         if (since < std::chrono::milliseconds(2500)) return; // retry next tick
@@ -142,7 +144,7 @@ void AutoPreviewQueue::processNext() {
     }
     Ref<GJGameLevel> keep = chosenLevel;
     LevelDataProvider::get().request(chosenId, [this, chosenId, keep](GJGameLevel* dl) {
-        if (!paimon::isRuntimeShuttingDown()) {
+        if (!paimon::isRuntimeShuttingDown() && config::browserGenEnabled()) {
             GJGameLevel* lvl = (dl && !dl->m_levelString.empty()) ? dl : nullptr;
             if (!lvl && keep && !keep->m_levelString.empty()) lvl = keep.data();
             if (lvl) generateFor(lvl, chosenId);
@@ -154,10 +156,13 @@ void AutoPreviewQueue::processNext() {
 
 void AutoPreviewQueue::generateFor(GJGameLevel* level, int levelID) {
     if (!level || levelID <= 0 || level->m_levelString.empty()) return;
+    size_t const levelSize = level->m_levelString.size();
     long const objCount = static_cast<long>(level->m_objectCount.value());
-    if (objCount > 0 && objCount > static_cast<long>(config::maxObjects())) {
-        log::debug("[AutoPreview] skip level {} ({} objects > cap {})",
-                   levelID, objCount, config::maxObjects());
+    if (!OffscreenLevelRenderer::passesSizeGuards(level, levelID)) return;
+    // the download callback can land after the user entered a level/editor.
+    if (PlayLayer::get() != nullptr || LevelEditorLayer::get() != nullptr) {
+        log::debug("[AutoPreview] skip level {} (busy: PlayLayer/Editor active, objects {}, size {})",
+                   levelID, objCount, levelSize);
         return;
     }
 

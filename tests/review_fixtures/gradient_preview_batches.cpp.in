@@ -1,0 +1,74 @@
+#include <algorithm>
+#include <cassert>
+#include <chrono>
+#include <memory>
+#include <unordered_map>
+#include <vector>
+
+struct CCObject { virtual ~CCObject() = default; };
+struct Node {
+    void removeFromParent() {}
+    void updateLayout() {}
+};
+struct ColorToggle : CCObject {
+    Node parent;
+    int painted = 0;
+    Node* getParent() { return &parent; }
+    void applyGradient(int, bool, bool) { ++painted; }
+};
+struct Scroll {
+    Node content;
+    Node* m_contentLayer = &content;
+};
+struct GradientUtils { static void removeSavedGradient(int) {} };
+enum class NotificationIcon { Success };
+struct Notification {
+    static Notification* create(char const*, NotificationIcon, float) { static Notification toast; return &toast; }
+    void show() {}
+};
+class LoadLayer {
+public:
+    std::vector<ColorToggle*> m_toggles;
+    std::unordered_map<ColorToggle*, int> m_toggleGradients;
+    std::size_t m_updatedIndex = 0;
+    ColorToggle* m_selected = nullptr;
+    Scroll* m_scrollLayer = nullptr;
+    int* m_layer = nullptr;
+    bool m_noElasticity = false, scheduled = true;
+    void unscheduleAllSelectors() { scheduled = false; }
+    void onClose(CCObject*) {}
+    void onSelect(ColorToggle* toggle) { m_selected = toggle; }
+    static LoadLayer* create(int*) { static LoadLayer fresh; return &fresh; }
+    void show() {}
+    void updateGradient(float);
+    void onDelete(CCObject*);
+};
+@@function|src/features/icon-gradients/ui/LoadLayer.cpp|void LoadLayer::updateGradient(@@
+@@function|src/features/icon-gradients/ui/LoadLayer.cpp|void LoadLayer::onDelete(@@
+
+int main() {
+    Scroll scroll;
+    LoadLayer layer;
+    layer.m_scrollLayer = &scroll;
+    std::vector<std::unique_ptr<ColorToggle>> toggles;
+    for (int i = 0; i < 113; ++i) {
+        toggles.push_back(std::make_unique<ColorToggle>());
+        layer.m_toggles.push_back(toggles.back().get());
+        layer.m_toggleGradients[toggles.back().get()] = i;
+    }
+    layer.updateGradient(0);
+    assert(layer.m_updatedIndex > 0 && layer.m_updatedIndex <= 4);
+    auto const beforeDelete = layer.m_updatedIndex;
+    layer.m_selected = toggles.front().get();
+    layer.onDelete(nullptr);
+    assert(layer.m_updatedIndex == beforeDelete - 1);
+    assert(!layer.m_toggleGradients.contains(toggles.front().get()));
+    // Destroy the removed toggle while lazy rendering is still pending.
+    toggles.front().reset();
+    while (layer.scheduled) {
+        auto const previous = layer.m_updatedIndex;
+        layer.updateGradient(0);
+        assert(layer.m_updatedIndex - previous <= 4);
+    }
+    for (std::size_t i = 1; i < toggles.size(); ++i) assert(toggles[i]->painted == 1);
+}

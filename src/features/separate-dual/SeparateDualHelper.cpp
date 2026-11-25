@@ -49,18 +49,12 @@ int readLiveIcon(GameManager* gm, IconSlot slot) {
     }
 }
 
+// kSlotRows is ordered by IconSlot value (see primeFromGame indexing by slot).
 char const* keyOf(IconSlot slot) {
-    for (auto const& row : kSlotRows) {
-        if (row.slot == slot) return row.key;
-    }
-    return "cube";
-}
-
-int64_t fallbackOf(IconSlot slot) {
-    for (auto const& row : kSlotRows) {
-        if (row.slot == slot) return row.fallback;
-    }
-    return 1;
+    auto i = static_cast<int>(slot);
+    if (i < 0 || i >= static_cast<int>(IconSlot::Count)) return "cube";
+    auto const& row = kSlotRows[i];
+    return row.slot == slot ? row.key : "cube";
 }
 
 // vanilla trail look per trail id 1..7 (gd tuning, kept as data).
@@ -130,18 +124,36 @@ bool DualKitVault::isSpawning() const {
 void DualKitVault::primeFromGame() {
     if (m_primed) return;
     m_primed = true;
-    if (Mod::get()->getSavedValue<bool>(save_key::kSeeded, false)) return;
+    if (Mod::get()->getSavedValue<bool>(save_key::kSeeded, false)) {
+        for (auto const& row : kSlotRows) {
+            m_storedCache.icons[static_cast<int>(row.slot)] = load<int64_t>(row.key, row.fallback);
+        }
+        m_storedCache.ink = load<int64_t>(save_key::kInk, 0);
+        m_storedCache.trim = load<int64_t>(save_key::kTrim, 0);
+        m_storedCache.halo = load<int64_t>(save_key::kHalo, 0);
+        m_storedCache.haloOn = load<bool>(save_key::kHaloOn, false);
+        m_storedCache.burst = load<bool>(save_key::kBurst, false);
+        return;
+    }
 
     auto gm = GameManager::get();
     auto mod = Mod::get();
     for (auto const& row : kSlotRows) {
-        mod->setSavedValue<int64_t>(row.key, readLiveIcon(gm, row.slot));
+        int64_t val = readLiveIcon(gm, row.slot);
+        mod->setSavedValue<int64_t>(row.key, val);
+        m_storedCache.icons[static_cast<int>(row.slot)] = val;
     }
-    mod->setSavedValue<int64_t>(save_key::kInk, gm->getPlayerColor());
-    mod->setSavedValue<int64_t>(save_key::kTrim, gm->getPlayerColor2());
-    mod->setSavedValue<int64_t>(save_key::kHalo, gm->getPlayerGlowColor());
-    mod->setSavedValue<bool>(save_key::kHaloOn, gm->getPlayerGlow());
-    mod->setSavedValue<bool>(save_key::kBurst, gm->getGameVariable("0153"));
+    m_storedCache.ink = gm->getPlayerColor();
+    m_storedCache.trim = gm->getPlayerColor2();
+    m_storedCache.halo = gm->getPlayerGlowColor();
+    m_storedCache.haloOn = gm->getPlayerGlow();
+    m_storedCache.burst = gm->getGameVariable("0153");
+
+    mod->setSavedValue<int64_t>(save_key::kInk, m_storedCache.ink);
+    mod->setSavedValue<int64_t>(save_key::kTrim, m_storedCache.trim);
+    mod->setSavedValue<int64_t>(save_key::kHalo, m_storedCache.halo);
+    mod->setSavedValue<bool>(save_key::kHaloOn, m_storedCache.haloOn);
+    mod->setSavedValue<bool>(save_key::kBurst, m_storedCache.burst);
     mod->setSavedValue<bool>(save_key::kSeeded, true);
 }
 
@@ -161,16 +173,8 @@ KitSnapshot snapshotLive(GameManager* gm) {
 }
 
 KitSnapshot snapshotStored(DualKitVault* vault) {
-    KitSnapshot snap;
-    for (auto const& row : kSlotRows) {
-        snap.icons[static_cast<int>(row.slot)] = vault->load<int64_t>(row.key, row.fallback);
-    }
-    snap.ink = vault->load<int64_t>(save_key::kInk, 0);
-    snap.trim = vault->load<int64_t>(save_key::kTrim, 0);
-    snap.halo = vault->load<int64_t>(save_key::kHalo, 0);
-    snap.haloOn = vault->load<bool>(save_key::kHaloOn, false);
-    snap.burst = vault->load<bool>(save_key::kBurst, false);
-    return snap;
+    vault->primeFromGame();
+    return vault->storedCache();
 }
 
 void pushSnapshot(GameManager* gm, KitSnapshot const& snap) {
@@ -194,6 +198,7 @@ void pushSnapshot(GameManager* gm, KitSnapshot const& snap) {
 }
 
 void stashSnapshot(DualKitVault* vault, KitSnapshot const& snap) {
+    vault->setStoredCache(snap);
     for (auto const& row : kSlotRows) {
         vault->save<int64_t>(row.key, snap.icons[static_cast<int>(row.slot)]);
     }
@@ -221,24 +226,26 @@ bool usesStored(bool secondLeads, Side side) {
 int DualKitVault::slotIcon(IconSlot slot, Side side) {
     primeFromGame();
     if (usesStored(m_secondLeads, side)) {
-        return static_cast<int>(load<int64_t>(keyOf(slot), fallbackOf(slot)));
+        return static_cast<int>(m_storedCache.icons[static_cast<int>(slot)]);
     }
     return readLiveIcon(GameManager::get(), slot);
 }
 
 void DualKitVault::storeSlot(IconSlot slot, int iconId) {
+    primeFromGame();
+    m_storedCache.icons[static_cast<int>(slot)] = iconId;
     save<int64_t>(keyOf(slot), iconId);
 }
 
 int DualKitVault::inkOf(Side side) {
     primeFromGame();
-    if (usesStored(m_secondLeads, side)) return static_cast<int>(load<int64_t>(save_key::kInk, 0));
+    if (usesStored(m_secondLeads, side)) return static_cast<int>(m_storedCache.ink);
     return GameManager::get()->getPlayerColor();
 }
 
 int DualKitVault::trimOf(Side side) {
     primeFromGame();
-    if (usesStored(m_secondLeads, side)) return static_cast<int>(load<int64_t>(save_key::kTrim, 0));
+    if (usesStored(m_secondLeads, side)) return static_cast<int>(m_storedCache.trim);
     return GameManager::get()->getPlayerColor2();
 }
 
@@ -246,12 +253,12 @@ int DualKitVault::haloOf(Side side) {
     primeFromGame();
     auto gm = GameManager::get();
     int64_t halo = usesStored(m_secondLeads, side)
-        ? load<int64_t>(save_key::kHalo, 0)
+        ? m_storedCache.halo
         : gm->getPlayerGlowColor();
     // gd records -1 while the glow channel tracks color 2.
     if (halo == -1) {
         return usesStored(m_secondLeads, side)
-            ? static_cast<int>(load<int64_t>(save_key::kTrim, 0))
+            ? static_cast<int>(m_storedCache.trim)
             : gm->getPlayerColor2();
     }
     return static_cast<int>(halo);
@@ -259,22 +266,40 @@ int DualKitVault::haloOf(Side side) {
 
 bool DualKitVault::haloEnabled(Side side) {
     primeFromGame();
-    if (usesStored(m_secondLeads, side)) return load<bool>(save_key::kHaloOn, false);
+    if (usesStored(m_secondLeads, side)) return m_storedCache.haloOn;
     return GameManager::get()->getPlayerGlow();
 }
 
 void DualKitVault::storeHaloEnabled(bool on) {
+    primeFromGame();
+    m_storedCache.haloOn = on;
     save<bool>(save_key::kHaloOn, on);
 }
 
 bool DualKitVault::burstEnabled(Side side) {
     primeFromGame();
-    if (usesStored(m_secondLeads, side)) return load<bool>(save_key::kBurst, false);
+    if (usesStored(m_secondLeads, side)) return m_storedCache.burst;
     return GameManager::get()->getGameVariable("0153");
 }
 
 void DualKitVault::storeBurstEnabled(bool on) {
+    primeFromGame();
+    m_storedCache.burst = on;
     save<bool>(save_key::kBurst, on);
+}
+
+void DualKitVault::storeColor(int mode, int color) {
+    primeFromGame();
+    if (mode == 1) {
+        m_storedCache.trim = color;
+        save<int64_t>(save_key::kTrim, color);
+    } else if (mode == 2) {
+        m_storedCache.halo = color;
+        save<int64_t>(save_key::kHalo, color);
+    } else {
+        m_storedCache.ink = color;
+        save<int64_t>(save_key::kInk, color);
+    }
 }
 
 int DualKitVault::slotIconForPreview(IconType type, Side side) {

@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "SpritesheetReader.hpp"
 
 #include "PlistParser.hpp"
@@ -52,16 +53,14 @@ geode::Result<LoadedSpritesheet> SpritesheetReader::loadFromPaths(
     std::filesystem::path const& pngPath) {
 
     GEODE_UNWRAP_INTO(auto parsed, PlistParser::parseFile(plistPath));
-    std::error_code ec;
-    auto size = std::filesystem::file_size(pngPath, ec);
-    if (ec || size > ImageBuffer::kMaxEncodedBytes) {
-        return Err("SpritesheetReader: invalid PNG file size for {}",
-            geode::utils::string::pathToString(pngPath));
-    }
-    auto pngBytes = geode::utils::file::readBinary(pngPath);
+    auto pngBytes = geode::utils::file::readBinary(paimon::paths::toSdkPath(pngPath));
     if (!pngBytes) {
         return Err("SpritesheetReader: cannot read PNG {}: {}",
-            geode::utils::string::pathToString(pngPath), pngBytes.unwrapErr());
+            paimon::paths::toUtf8(pngPath), pngBytes.unwrapErr());
+    }
+    if (pngBytes.unwrap().size() > ImageBuffer::kMaxEncodedBytes) {
+        return Err("SpritesheetReader: invalid PNG file size for {}",
+            paimon::paths::toUtf8(pngPath));
     }
     return loadFromMemory(parsed, std::span<std::uint8_t const>(
         pngBytes.unwrap().data(), pngBytes.unwrap().size()));

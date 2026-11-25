@@ -1,0 +1,87 @@
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <functional>
+#include <iostream>
+#include <memory>
+#include <vector>
+
+struct CCPoint { float x = 0.f, y = 0.f; };
+struct CCSize { float width = 0.f, height = 0.f; };
+struct CCRect {
+    float x, y, width, height;
+    bool containsPoint(CCPoint p) const {
+        return p.x >= x && p.x <= x + width && p.y >= y && p.y <= y + height;
+    }
+};
+struct CCTouch { CCPoint point; CCPoint getLocation() const { return point; } };
+struct CCEvent {};
+struct ContentLayer {
+    float height = 644.f, offset = -504.f;
+    float getContentHeight() const { return height; }
+    float getPositionY() const { return offset; }
+    void setPositionY(float y) { offset = y; }
+    CCPoint convertToNodeSpace(CCPoint p) const { return {p.x, p.y - offset}; }
+};
+struct ScrollLayer {
+    std::unique_ptr<ContentLayer> m_contentLayer = std::make_unique<ContentLayer>();
+    CCRect rect;
+    bool visible = true;
+    int regularBegins = 0, regularMoves = 0, regularEnds = 0, regularCancels = 0;
+    ScrollLayer(CCRect area, bool, bool) : rect(area) {}
+    virtual ~ScrollLayer() = default;
+    virtual bool ccTouchBegan(CCTouch*, CCEvent*) { ++regularBegins; return true; }
+    virtual void ccTouchMoved(CCTouch*, CCEvent*) { ++regularMoves; }
+    virtual void ccTouchEnded(CCTouch*, CCEvent*) { ++regularEnds; }
+    virtual void ccTouchCancelled(CCTouch*, CCEvent*) { ++regularCancels; }
+    CCPoint convertToNodeSpace(CCPoint p) const { return p; }
+    float getContentWidth() const { return rect.width; }
+    float getContentHeight() const { return rect.height; }
+    void autorelease() {}
+    void setStealingTouches(bool) {}
+};
+namespace geode::cocos { bool nodeIsVisible(ScrollLayer* layer) { return layer->visible; } }
+constexpr float kPlacementRowHeight = 28.f;
+@@function|src/features/official-slots/ui/SlotEditorPopup.cpp|class PlacementScrollLayer :@@;
+
+struct TestPlacement : PlacementScrollLayer {
+    TestPlacement() : PlacementScrollLayer({0.f, 0.f, 210.f, 140.f}) {}
+    using PlacementScrollLayer::ccTouchBegan;
+    using PlacementScrollLayer::ccTouchMoved;
+    using PlacementScrollLayer::ccTouchEnded;
+    using PlacementScrollLayer::ccTouchCancelled;
+};
+
+int main() {
+    TestPlacement list;
+    list.rowCount = 23;
+    std::vector<std::size_t> positions;
+    list.onPlace = [&](std::size_t position) { positions.push_back(position); };
+    CCEvent event;
+    CCTouch touch{{100.f, 126.f}};
+    assert(list.ccTouchBegan(&touch, &event) && list.isDragging());
+    touch.point.y = 98.f;
+    list.ccTouchMoved(&touch, &event);
+    assert(positions.back() == 2 && list.selectedIndex == 1);
+    assert(list.regularBegins == 0 && list.regularMoves == 0);
+    touch.point.y = -20.f;
+    list.ccTouchMoved(&touch, &event);
+    assert(list.m_contentLayer->getPositionY() > -504.f); // Dragging near the edge scrolls the list.
+    assert(positions.back() > 2 && positions.back() <= list.rowCount);
+    list.ccTouchEnded(&touch, &event);
+    assert(!list.isDragging() && list.regularEnds == 0);
+
+    // Other rows keep normal scrolling; touches outside the list never start a drag.
+    list.selectedIndex = 20;
+    touch.point = {100.f, 100.f};
+    assert(list.ccTouchBegan(&touch, &event) && !list.isDragging());
+    list.ccTouchMoved(&touch, &event);
+    list.ccTouchEnded(&touch, &event);
+    assert(list.regularBegins == 1 && list.regularMoves == 1 && list.regularEnds == 1);
+    touch.point.x = 300.f;
+    assert(!list.ccTouchBegan(&touch, &event));
+    list.visible = false;
+    touch.point.x = 100.f;
+    assert(!list.ccTouchBegan(&touch, &event));
+    std::cout << "Placement box: dragging, edge scrolling and ordinary list gestures passed\n";
+}

@@ -88,6 +88,7 @@ struct TasteSnapshot {
 class TasteProfile {
 public:
     static TasteProfile& get();
+    static bool isInitialized();
 
     void onLevelEnter(GJGameLevel* level);
     void onLevelExit(GJGameLevel* level);

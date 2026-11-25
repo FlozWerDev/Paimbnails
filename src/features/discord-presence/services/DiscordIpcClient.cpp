@@ -1,4 +1,6 @@
 #include "DiscordIpcClient.hpp"
+#include "../model/PresenceCustomization.hpp"
+#include <matjson.hpp>
 
 #include <Geode/loader/Log.hpp>
 
@@ -9,6 +11,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <memory>
 
 #ifdef GEODE_IS_WINDOWS
 #include <windows.h>
@@ -28,23 +31,51 @@ namespace {
 constexpr uint32_t kOpHandshake = 0;
 constexpr uint32_t kOpFrame = 1;
 constexpr uint32_t kOpClose = 2;
+constexpr uint32_t kOpPing = 3;
+constexpr uint32_t kOpPong = 4;
 
 // reconnect throttle: don't hammer the ipc endpoint when discord is closed.
 constexpr std::chrono::seconds kReconnectCooldown(15);
 
-// posix send: bound eagain spinning with poll() in short slices.
-constexpr int kSendSliceMs = 100;
-constexpr int kSendBudgetMs = 500;
 // windows overlapped i/o timeouts: writes must never hang the main thread.
 constexpr int kPipeWriteTimeoutMs = 500;
 constexpr int kPipeReadTimeoutMs = 100;
 // cap drained replies so a chatty peer can't spin us forever.
 constexpr size_t kMaxDrainBytes = 64 * 1024;
-constexpr size_t kLogSnippetLen = 200;
 
-// replies are async; reconnect on error/close if seen.
-constexpr char const* kEvtErrorMarker = "\"evt\":\"ERROR\"";
-constexpr char const* kCloseMarker = "\"CLOSE\"";
+#ifdef GEODE_IS_WINDOWS
+struct PipeOperation {
+    OVERLAPPED overlapped{};
+    std::vector<char> buffer;
+    explicit PipeOperation(std::size_t size) : buffer(size) {
+        overlapped.hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+    }
+    ~PipeOperation() { if (overlapped.hEvent) CloseHandle(overlapped.hEvent); }
+};
+// only the IPC worker accesses this pool. Own both OVERLAPPED and its buffer
+// until cancellation completes; closing an event alone does not stop kernel I/O.
+auto& cancelledOperations() {
+    static auto* operations = [] {
+        auto operations = std::make_unique<std::vector<std::unique_ptr<PipeOperation>>>();
+        operations->reserve(8);
+        return operations.release();
+    }();
+    return *operations;
+}
+void collectCancelledOperations() {
+    std::erase_if(cancelledOperations(), [](auto const& operation) {
+        return WaitForSingleObject(operation->overlapped.hEvent, 0) == WAIT_OBJECT_0;
+    });
+}
+bool finishPipeOperation(HANDLE pipe, std::unique_ptr<PipeOperation>& operation, DWORD timeout, DWORD& transferred) {
+    if (WaitForSingleObject(operation->overlapped.hEvent, timeout) != WAIT_OBJECT_0) {
+        CancelIoEx(pipe, &operation->overlapped);
+        cancelledOperations().push_back(std::move(operation));
+        return false;
+    }
+    return GetOverlappedResult(pipe, &operation->overlapped, &transferred, FALSE) && transferred > 0;
+}
+#endif
 
 #ifndef GEODE_IS_WINDOWS
 #ifdef MSG_NOSIGNAL
@@ -160,6 +191,9 @@ std::string buildActivityJson(DiscordActivity const& a) {
     if (!buttons.empty()) {
         activity += ",\"buttons\":" + buttons;
     }
+    if (a.partySize > 0 && a.partyMax >= a.partySize) {
+        activity += ",\"party\":{\"size\":[" + std::to_string(a.partySize) + "," + std::to_string(a.partyMax) + "]}";
+    }
     activity += "}";
     return activity;
 }
@@ -178,7 +212,7 @@ DiscordIpcClient::~DiscordIpcClient() {
 bool DiscordIpcClient::tryConnect() {
 #ifdef GEODE_IS_WINDOWS
     for (int i = 0; i < 10; ++i) {
-        std::string name = "\\\\?\\pipe\\discord-ipc-" + std::to_string(i);
+        std::string name = "\\\\.\\pipe\\discord-ipc-" + std::to_string(i);
         HANDLE h = CreateFileA(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
                                OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
         if (h != INVALID_HANDLE_VALUE) {
@@ -241,9 +275,17 @@ bool DiscordIpcClient::tryConnect() {
                     continue;
                 }
                 std::strncpy(addr.sun_path, path.c_str(), sizeof(addr.sun_path) - 1);
-                if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0) {
-                    int flags = fcntl(fd, F_GETFL, 0);
-                    if (flags >= 0) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+                int flags = fcntl(fd, F_GETFL, 0);
+                if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) { ::close(fd); continue; }
+                bool connected = ::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0;
+                if (!connected && errno == EINPROGRESS) {
+                    pollfd pending{fd, POLLOUT, 0};
+                    int error = 0;
+                    socklen_t length = sizeof(error);
+                    connected = ::poll(&pending, 1, kSendSliceMs) > 0 &&
+                        ::getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &length) == 0 && error == 0;
+                }
+                if (connected) {
 #ifdef __APPLE__
                     int noSigPipe = 1; // so_nosignal equivalent: survive discord restarts
                     (void)::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, sizeof(noSigPipe));
@@ -265,44 +307,21 @@ bool DiscordIpcClient::writeFrame(uint32_t opcode, std::string const& payload) {
 #ifdef GEODE_IS_WINDOWS
     if (!m_pipe) return false;
     HANDLE pipe = static_cast<HANDLE>(m_pipe);
-    auto writeAll = [this, pipe](void const* data, size_t size) -> bool {
-        char const* p = static_cast<char const*>(data);
-        size_t left = size;
-        while (left > 0) {
-            DWORD chunk = left > 65536 ? 65536 : static_cast<DWORD>(left);
-            // heap alloc: kernel may use overlapped after timeout.
-            OVERLAPPED* ov = new OVERLAPPED{};
-            ov->hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
-            if (!ov->hEvent) {
-                delete ov;
-                return false;
-            }
-            BOOL ok = WriteFile(pipe, p, chunk, nullptr, ov);
-            if (!ok && GetLastError() != ERROR_IO_PENDING) {
-                CloseHandle(ov->hEvent);
-                delete ov;
-                return false;
-            }
-            if (WaitForSingleObject(ov->hEvent, static_cast<DWORD>(kPipeWriteTimeoutMs)) != WAIT_OBJECT_0) {
-                // timeout: cancel, tear down, leak ov to avoid use-after-free.
-                CancelIoEx(pipe, ov);
-                CloseHandle(ov->hEvent);
-                geode::log::warn("[DiscordIPC] pipe write timed out, leaking OVERLAPPED on purpose");
-                CloseHandle(pipe);
-                m_pipe = nullptr;
-                if (m_connected) {
-                    m_connected = false;
-                    ++m_connectionGeneration;
-                }
-                return false;
-            }
+    auto writeAll = [pipe](void const* data, size_t size) -> bool {
+        auto* bytes = static_cast<char const*>(data);
+        while (size > 0) {
+            collectCancelledOperations();
+            if (cancelledOperations().size() >= 8) return false;
+            DWORD chunk = static_cast<DWORD>(std::min<std::size_t>(size, 65536));
+            auto operation = std::make_unique<PipeOperation>(chunk);
+            if (!operation->overlapped.hEvent) return false;
+            std::copy_n(bytes, chunk, operation->buffer.data());
+            BOOL ok = WriteFile(pipe, operation->buffer.data(), chunk, nullptr, &operation->overlapped);
+            if (!ok && GetLastError() != ERROR_IO_PENDING) return false;
             DWORD written = 0;
-            bool done = GetOverlappedResult(pipe, ov, &written, FALSE) != FALSE;
-            CloseHandle(ov->hEvent);
-            delete ov;
-            if (!done || written == 0) return false; // dead pipe (zero-byte completion)
-            p += written;
-            left -= written;
+            if (!finishPipeOperation(pipe, operation, kPipeWriteTimeoutMs, written)) return false;
+            bytes += written;
+            size -= written;
         }
         return true;
     };
@@ -348,76 +367,114 @@ bool DiscordIpcClient::writeFrame(uint32_t opcode, std::string const& payload) {
 #endif
 }
 
-bool DiscordIpcClient::drainReads() {
-    // drain replies so os buffer doesn't fill; false means peer dead.
-    std::string drained;
-    char buf[2048];
-#ifdef GEODE_IS_WINDOWS
-    if (!m_pipe) return true;
-    HANDLE pipe = static_cast<HANDLE>(m_pipe);
-    while (drained.size() < kMaxDrainBytes) {
-        DWORD avail = 0;
-        if (!PeekNamedPipe(pipe, nullptr, 0, nullptr, &avail, nullptr)) {
-            return GetLastError() != ERROR_BROKEN_PIPE;
+void DiscordIpcClient::setError(std::string message) {
+    std::lock_guard lock(m_errorMutex);
+    m_lastError = cleanText(message, 160);
+}
+
+std::string DiscordIpcClient::lastError() const {
+    std::lock_guard lock(m_errorMutex);
+    return m_lastError;
+}
+
+void DiscordIpcClient::setClientID(std::string id) {
+    if (id == m_clientID) return;
+    close();
+    m_clientID = std::move(id);
+    m_lastConnectAttempt = {};
+    setError({});
+}
+
+bool DiscordIpcClient::processFrames() {
+    auto readLE = [](char const* bytes) {
+        uint32_t value = 0;
+        for (int i = 0; i < 4; ++i) value |= static_cast<uint32_t>(static_cast<unsigned char>(bytes[i])) << (8 * i);
+        return value;
+    };
+    while (m_receiveBuffer.size() >= 8) {
+        auto opcode = readLE(m_receiveBuffer.data());
+        auto size = readLE(m_receiveBuffer.data() + 4);
+        if (size > kMaxDrainBytes) { setError("RPC frame exceeds size limit"); return false; }
+        if (m_receiveBuffer.size() < 8 + size) return true;
+        auto payload = m_receiveBuffer.substr(8, size);
+        m_receiveBuffer.erase(0, 8 + size);
+        if (opcode == kOpClose) { setError("Discord closed the connection"); return false; }
+        if (opcode == kOpPing) {
+            if (!writeFrame(kOpPong, payload)) return false;
+            continue;
         }
-        if (avail == 0) break;
-        DWORD toRead = avail < static_cast<DWORD>(sizeof(buf)) ? avail : static_cast<DWORD>(sizeof(buf));
-        // heap alloc: same leak-on-timeout as writeframe.
-        OVERLAPPED* ov = new OVERLAPPED{};
-        ov->hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
-        if (!ov->hEvent) {
-            delete ov;
-            break;
-        }
-        BOOL ok = ReadFile(pipe, buf, toRead, nullptr, ov);
-        if (!ok && GetLastError() != ERROR_IO_PENDING) {
-            DWORD err = GetLastError();
-            CloseHandle(ov->hEvent);
-            delete ov;
-            if (err == ERROR_BROKEN_PIPE) return false;
-            break;
-        }
-        if (WaitForSingleObject(ov->hEvent, static_cast<DWORD>(kPipeReadTimeoutMs)) != WAIT_OBJECT_0) {
-            CancelIoEx(pipe, ov);
-            CloseHandle(ov->hEvent);
-            // leak ov on purpose (see writeframe).
-            geode::log::warn("[DiscordIPC] pipe read timed out, leaking OVERLAPPED on purpose");
+        if (opcode == kOpPong) continue;
+        if (opcode != kOpFrame) { setError("Unexpected RPC opcode"); return false; }
+        auto parsed = matjson::parse(payload);
+        if (!parsed || !parsed.unwrap().isObject()) { setError("Invalid JSON in Discord reply"); return false; }
+        auto event = parsed.unwrap()["evt"].asString().unwrapOr("");
+        if (event == "ERROR") {
+            auto const& data = parsed.unwrap()["data"];
+            auto message = data.isObject() ? data["message"].asString().unwrapOr("Activity was rejected") : "Activity was rejected";
+            setError(message);
             return false;
         }
-        DWORD read = 0;
-        bool done = GetOverlappedResult(pipe, ov, &read, FALSE) != FALSE;
-        CloseHandle(ov->hEvent);
-        delete ov;
-        if (!done || read == 0) return false;
-        drained.append(buf, read);
-    }
-#else
-    if (m_socket < 0) return true;
-    while (drained.size() < kMaxDrainBytes) {
-        ssize_t n = ::recv(m_socket, buf, sizeof(buf), 0);
-        if (n == 0) return false;
-        if (n < 0) {
-            if (errno == EINTR) continue;
-            if (errno == ECONNRESET || errno == EPIPE) return false;
-            break; // eagain means drained.
-        }
-        drained.append(buf, static_cast<size_t>(n));
-    }
-#endif
-    // force reconnect on error/close reply.
-    if (drained.find(kEvtErrorMarker) != std::string::npos) {
-        geode::log::warn("[DiscordIPC] Discord replied ERROR, forcing reconnect: {}",
-                         drained.substr(0, kLogSnippetLen));
-        return false;
-    }
-    if (drained.find(kCloseMarker) != std::string::npos) {
-        return false;
+        if (event == "READY") { m_ready.store(true, std::memory_order_release); setError({}); }
     }
     return true;
 }
 
+bool DiscordIpcClient::drainReads() {
+    std::size_t drained = 0;
+#ifdef GEODE_IS_WINDOWS
+    if (!m_pipe) return false;
+    auto pipe = static_cast<HANDLE>(m_pipe);
+    while (drained < kMaxDrainBytes) {
+        DWORD available = 0;
+        if (!PeekNamedPipe(pipe, nullptr, 0, nullptr, &available, nullptr)) return false;
+        if (!available) break;
+        collectCancelledOperations();
+        if (cancelledOperations().size() >= 8) return false;
+        DWORD amount = std::min<DWORD>(available, 2048);
+        auto operation = std::make_unique<PipeOperation>(amount);
+        if (!operation->overlapped.hEvent) return false;
+        BOOL ok = ReadFile(pipe, operation->buffer.data(), amount, nullptr, &operation->overlapped);
+        if (!ok && GetLastError() != ERROR_IO_PENDING) return false;
+        DWORD received = 0;
+        if (!finishPipeOperation(pipe, operation, kPipeReadTimeoutMs, received)) return false;
+        m_receiveBuffer.append(operation->buffer.data(), received);
+        drained += received;
+        if (!processFrames()) return false;
+    }
+#else
+    if (m_socket < 0) return false;
+    char buffer[2048];
+    while (drained < kMaxDrainBytes) {
+        auto received = ::recv(m_socket, buffer, sizeof(buffer), 0);
+        if (received == 0) return false;
+        if (received < 0) {
+            if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+            return false;
+        }
+        m_receiveBuffer.append(buffer, static_cast<std::size_t>(received));
+        drained += static_cast<std::size_t>(received);
+        if (!processFrames()) return false;
+    }
+#endif
+    return true;
+}
+
 void DiscordIpcClient::handleDisconnect() {
+    // do not send CLOSE over a transport that has already failed.
+    if (m_connected.exchange(false, std::memory_order_acq_rel)) ++m_connectionGeneration;
     close();
+}
+
+void DiscordIpcClient::poll() {
+#ifdef GEODE_IS_WINDOWS
+    collectCancelledOperations();
+#endif
+    if (isConnected() && !drainReads()) { handleDisconnect(); return; }
+    if (isConnected() && !isReady() && std::chrono::steady_clock::now() - m_handshakeStarted > std::chrono::seconds(5)) {
+        setError("Discord handshake timed out");
+        handleDisconnect();
+    }
 }
 
 bool DiscordIpcClient::ensureConnected() {
@@ -432,6 +489,10 @@ bool DiscordIpcClient::ensureConnected() {
     }
     m_lastConnectAttempt = now;
 
+#ifdef GEODE_IS_WINDOWS
+    collectCancelledOperations();
+    if (cancelledOperations().size() >= 8) { setError("Waiting for pending pipe cancellation"); return false; }
+#endif
     if (!tryConnect()) return false;
 
     std::string handshake = "{\"v\":1,\"client_id\":\"" + jsonEscape(m_clientID) + "\"}";
@@ -439,6 +500,7 @@ bool DiscordIpcClient::ensureConnected() {
         close();
         return false;
     }
+    m_handshakeStarted = std::chrono::steady_clock::now();
     m_connected = true;
     ++m_connectionGeneration;
     if (!drainReads()) {
@@ -468,7 +530,7 @@ void DiscordIpcClient::clear() {
     if (!m_connected) return;
 
     std::string payload = "{\"cmd\":\"SET_ACTIVITY\",\"args\":{\"pid\":" +
-        std::to_string(currentPid()) + "},\"nonce\":\"" + std::to_string(++m_nonce) + "\"}";
+        std::to_string(currentPid()) + ",\"activity\":null},\"nonce\":\"" + std::to_string(++m_nonce) + "\"}";
 
     if (!writeFrame(kOpFrame, payload)) {
         handleDisconnect();
@@ -483,7 +545,7 @@ void DiscordIpcClient::close() {
 #ifdef GEODE_IS_WINDOWS
     if (m_pipe) {
         if (m_connected) writeFrame(kOpClose, "{}");
-        // writeframe may already have torn the pipe down on a write timeout.
+        // cancelled operations retain their buffers until the kernel signals completion.
         if (m_pipe) {
             CloseHandle(static_cast<HANDLE>(m_pipe));
             m_pipe = nullptr;
@@ -501,6 +563,9 @@ void DiscordIpcClient::close() {
         ++m_connectionGeneration;
     }
     m_connected = false;
+    m_ready = false;
+    m_handshakeStarted = {};
+    m_receiveBuffer.clear();
 }
 
 } // namespace paimon::discord

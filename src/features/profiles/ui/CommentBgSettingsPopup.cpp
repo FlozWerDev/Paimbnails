@@ -12,6 +12,10 @@
 #include "../../../utils/VideoThumbnailSprite.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/HttpClient.hpp"
+#include "../../community-base/services/CommunityClient.hpp"
+#include "../../community-base/services/CommunityMediaCache.hpp"
+#include "../../community-base/ui/CommunityBackgroundsPopup.hpp"
+#include "../../community-base/ui/CommunityWidgets.hpp"
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -70,12 +74,11 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
 
     y -= 22.f;
 
-    float btnSpacing = 85.f;
-    float startX = cx - btnSpacing * 1.5f;
+    float btnSpacing = 72.f;
+    float startX = cx - btnSpacing * 2.f;
 
     auto makeTypeBtn = [&](const char* label, const char* primaryFrame, const char* fallbackFrame, float x, CCMenuItemSpriteExtra*& outBtn) {
-        auto spr = paimon::SpriteHelper::safeCreateWithFrameName(primaryFrame);
-        if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName(fallbackFrame);
+        auto spr = paimon::SpriteHelper::createWithFallback(primaryFrame, fallbackFrame);
         if (!spr) spr = CCSprite::create();
         float maxDim = std::max(spr->getContentWidth(), spr->getContentHeight());
         if (maxDim > 0) spr->setScale(22.f / maxDim);
@@ -96,8 +99,34 @@ bool CommentBgSettingsPopup::init(int accountID, ProfileConfig const& config) {
     makeTypeBtn("Thumb",  "GJ_colorBtn_001.png",   "GJ_paintBtn_001.png",  startX + btnSpacing,     m_btnThumbnail);
     makeTypeBtn("Banner", "GJ_paintBtn_001.png",   "GJ_colorBtn_001.png",  startX + btnSpacing * 2, m_btnBanner);
     makeTypeBtn("Solid",  "GJ_colorBtn_001.png",   "GJ_paintBtn_001.png",  startX + btnSpacing * 3, m_btnSolid);
+    makeTypeBtn(paimon::community::tx("Comunidad", "Community"), "GJ_sMagicIcon_001.png", "GJ_starsIcon_001.png",
+        startX + btnSpacing * 4, m_btnCommunity);
 
     y -= 40.f;
+
+    // community: an approved paimon base background, chosen from the gallery.
+    m_communityRow = CCNode::create();
+    m_communityRow->setPosition({0, 0});
+    m_mainLayer->addChild(m_communityRow);
+    {
+        m_communityLabel = CCLabelBMFont::create("", "bigFont.fnt");
+        m_communityLabel->setScale(0.28f);
+        m_communityLabel->setPosition({cx - 70.f, y});
+        m_communityRow->addChild(m_communityLabel);
+
+        auto communityMenu = CCMenu::create();
+        communityMenu->setPosition({0, 0});
+        m_communityRow->addChild(communityMenu);
+        auto pickSpr = paimon::ui::makeButtonSprite(paimon::community::tx("Elegir", "Choose"), paimon::ui::Btn::Cyan, 0.f, 0.5f, "bigFont.fnt");
+        auto pickBtn = CCMenuItemSpriteExtra::create(pickSpr, this, menu_selector(CommentBgSettingsPopup::onPickCommunity));
+        pickBtn->setPosition({cx + 60.f, y});
+        communityMenu->addChild(pickBtn);
+        auto suggestSpr = paimon::ui::makeButtonSprite(paimon::community::tx("Sugerir", "Suggest"), paimon::ui::Btn::Gray, 0.f, 0.5f, "bigFont.fnt");
+        auto suggestBtn = CCMenuItemSpriteExtra::create(suggestSpr, this, menu_selector(CommentBgSettingsPopup::onSuggestCommunity));
+        suggestBtn->setPosition({cx + 140.f, y});
+        communityMenu->addChild(suggestBtn);
+    }
+    updateCommunityLabel();
 
     m_thumbnailIdRow = CCNode::create();
     m_thumbnailIdRow->setPosition({0, 0});
@@ -387,6 +416,7 @@ void CommentBgSettingsPopup::onSelectType(CCObject* sender) {
     else if (btn == m_btnThumbnail)  m_configPtr->commentBgType = "thumbnail";
     else if (btn == m_btnBanner)     m_configPtr->commentBgType = "banner";
     else if (btn == m_btnSolid)      m_configPtr->commentBgType = "solid";
+    else if (btn == m_btnCommunity)  m_configPtr->commentBgType = "community";
 
     updateTypeSelection();
     updateConditionalRows();
@@ -408,11 +438,13 @@ void CommentBgSettingsPopup::updateTypeSelection() {
     highlight(m_btnThumbnail, m_configPtr->commentBgType == "thumbnail");
     highlight(m_btnBanner,    m_configPtr->commentBgType == "banner");
     highlight(m_btnSolid,     m_configPtr->commentBgType == "solid");
+    highlight(m_btnCommunity, m_configPtr->commentBgType == "community");
 
     std::string typeName = "None";
     if (m_configPtr->commentBgType == "thumbnail") typeName = "Thumbnail";
     else if (m_configPtr->commentBgType == "banner") typeName = "Banner";
     else if (m_configPtr->commentBgType == "solid") typeName = "Solid Color";
+    else if (m_configPtr->commentBgType == "community") typeName = "Paimon Base";
 
     if (m_typeLabel) {
         m_typeLabel->setString(fmt::format("Type: {}", typeName).c_str());
@@ -423,6 +455,7 @@ void CommentBgSettingsPopup::updateConditionalRows() {
     if (m_thumbnailIdRow) m_thumbnailIdRow->setVisible(m_configPtr->commentBgType == "thumbnail");
     if (m_bannerRow)      m_bannerRow->setVisible(m_configPtr->commentBgType == "banner");
     if (m_solidColorRow)  m_solidColorRow->setVisible(m_configPtr->commentBgType == "solid");
+    if (m_communityRow)   m_communityRow->setVisible(m_configPtr->commentBgType == "community");
 
     if (m_toggleBannerBg)  m_toggleBannerBg->toggle(m_configPtr->commentBgBannerMode != "background");
     if (m_toggleBannerImg) m_toggleBannerImg->toggle(m_configPtr->commentBgBannerMode != "image");
@@ -463,20 +496,20 @@ void CommentBgSettingsPopup::fetchThumbnailsForLevel() {
     WeakRef<CommentBgSettingsPopup> weakSelf = this;
 
     ThumbnailAPI::get().getThumbnails(levelId,
-        [weakSelf, token, this](bool success, std::vector<ThumbnailInfo> const& thumbs) {
-            if (token != m_thumbRequestToken) return;
+        [weakSelf, token](bool success, std::vector<ThumbnailInfo> const& thumbs) {
             auto self = weakSelf.lock();
             if (!self) return;
+            if (token != self->m_thumbRequestToken) return;
             if (success && !thumbs.empty()) {
-                m_cachedThumbnails = thumbs;
-                if (m_configPtr->commentBgThumbnailPos > static_cast<int>(thumbs.size())) {
-                    m_configPtr->commentBgThumbnailPos = 1;
+                self->m_cachedThumbnails = thumbs;
+                if (self->m_configPtr->commentBgThumbnailPos > static_cast<int>(thumbs.size())) {
+                    self->m_configPtr->commentBgThumbnailPos = 1;
                 }
             } else {
-                m_cachedThumbnails.clear();
+                self->m_cachedThumbnails.clear();
             }
-            updateThumbnailPreview();
-            refreshPreview();
+            self->updateThumbnailPreview();
+            self->refreshPreview();
         }
     );
 }
@@ -673,6 +706,41 @@ void CommentBgSettingsPopup::refreshPreview() {
             }
         }
     }
+    else if (m_configPtr->commentBgType == "community") {
+        if (paimon::community::isCommunityId(m_configPtr->commentBgCommunityId)) {
+            WeakRef<CommentBgSettingsPopup> weakSelf = this;
+            paimon::community::CommunityMediaCache::get().load(
+                paimon::community::CommunityClient::backgroundUrl(m_configPtr->commentBgCommunityId),
+                [weakSelf, token, pw, ph](CCTexture2D* tex) {
+                    auto self = weakSelf.lock();
+                    if (!self || !self->m_previewBgContainer || self->m_previewToken != token || !tex) return;
+                    bool usePaimon = (self->m_configPtr->commentBgBlurType == "paimon");
+                    auto blurred = usePaimon
+                        ? BlurSystem::getInstance()->createPaimonBlurSprite(
+                            tex, {std::max(pw, 512.f), std::max(ph, 256.f)}, self->m_configPtr->commentBgBlur)
+                        : BlurSystem::getInstance()->createBlurredSprite(
+                            tex, {std::max(pw, 512.f), std::max(ph, 256.f)}, self->m_configPtr->commentBgBlur);
+                    if (!blurred) return;
+                    blurred->setScale(std::max(pw / blurred->getContentWidth(), ph / blurred->getContentHeight()));
+                    blurred->setAnchorPoint({0.5f, 0.5f});
+                    blurred->setPosition({pw / 2.f, ph / 2.f});
+                    self->m_previewBgContainer->addChild(blurred);
+                    if (self->m_configPtr->commentBgDarkness > 0.f) {
+                        auto overlay = CCLayerColor::create(
+                            {0, 0, 0, static_cast<GLubyte>(self->m_configPtr->commentBgDarkness * 255)});
+                        overlay->setContentSize({pw, ph});
+                        self->m_previewBgContainer->addChild(overlay);
+                    }
+                });
+        } else {
+            auto panel = paimon::SpriteHelper::createDarkPanel(pw, ph, 92, kPreviewRadius);
+            if (panel) {
+                panel->setAnchorPoint({0, 0});
+                panel->setPosition({0, 0});
+                m_previewBgContainer->addChild(panel);
+            }
+        }
+    }
     else if (m_configPtr->commentBgType == "banner") {
         auto& thumbs = ProfileThumbs::get();
         if (auto cached = thumbs.getCachedProfile(m_accountID)) {
@@ -729,6 +797,11 @@ void CommentBgSettingsPopup::onSave(CCObject*) {
             return;
         }
     }
+    if (m_configPtr->commentBgType == "community" && !paimon::community::isCommunityId(m_configPtr->commentBgCommunityId)) {
+        PaimonNotify::show(paimon::community::tx("Elige un fondo de la comunidad.", "Choose a community background."),
+            NotificationIcon::Warning);
+        return;
+    }
 
     WeakRef<CommentBgSettingsPopup> weakSelf = this;
     int accountID = m_accountID;
@@ -741,9 +814,45 @@ void CommentBgSettingsPopup::onSave(CCObject*) {
             if (success) {
                 PaimonNotify::show("Comment background saved!", NotificationIcon::Success);
                 self->onClose(nullptr);
-            } else {
-                PaimonNotify::show(("Failed to save: " + msg).c_str(), NotificationIcon::Error);
+                return;
             }
+            // saving the profile config needs the gd account proven, like paimon base.
+            if (paimon::community::needsVerification(msg)) paimon::community::promptVerification();
+            PaimonNotify::show(paimon::community::describeError(msg).c_str(), NotificationIcon::Error);
         }
     );
+}
+
+void CommentBgSettingsPopup::updateCommunityLabel() {
+    if (!m_communityLabel) return;
+    std::string text = !m_communityTitle.empty() ? m_communityTitle
+        : paimon::community::isCommunityId(m_configPtr->commentBgCommunityId)
+            ? std::string(paimon::community::tx("Fondo elegido", "Chosen background"))
+            : std::string(paimon::community::tx("Ninguno elegido", "None chosen"));
+    m_communityLabel->setString(text.c_str());
+    m_communityLabel->limitLabelWidth(150.f, 0.28f, 0.12f);
+}
+
+void CommentBgSettingsPopup::setCommunityBackground(std::string const& id, std::string const& title) {
+    if (!paimon::community::isCommunityId(id)) return;
+    m_configPtr->commentBgCommunityId = id;
+    m_configPtr->commentBgType = "community";
+    m_communityTitle = title;
+    updateCommunityLabel();
+    updateTypeSelection();
+    updateConditionalRows();
+    refreshPreview();
+}
+
+void CommentBgSettingsPopup::onPickCommunity(CCObject*) {
+    WeakRef<CommentBgSettingsPopup> weakSelf = this;
+    auto* gallery = paimon::community::CommunityBackgroundsPopup::create(
+        [weakSelf](std::string const& id, std::string const& title) {
+            if (auto self = weakSelf.lock()) self->setCommunityBackground(id, title);
+        });
+    paimon::community::showOnTop(gallery);
+}
+
+void CommentBgSettingsPopup::onSuggestCommunity(CCObject*) {
+    paimon::community::suggestBackground();
 }

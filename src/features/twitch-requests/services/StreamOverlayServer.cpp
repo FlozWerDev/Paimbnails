@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #ifdef GEODE_IS_WINDOWS
 #include <winsock.h>
 #endif
@@ -9,6 +10,7 @@
 #include "../TwitchRequestFilters.hpp"
 #include "../TwitchRequestManager.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
+#include "../../../utils/JoinWithWarning.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
 
 #include <Geode/binding/GJGameLevel.hpp>
@@ -17,6 +19,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -46,7 +49,7 @@ constexpr char const* kConfigKey = "twitch-requests-obs-config";
 constexpr uint16_t kPort = 21680;
 constexpr float kRefreshSeconds = .25f;
 constexpr float kRestartRetrySeconds = 2.f;
-// gallery opens 19 previews at once.
+// gallery opens one preview per style at once.
 constexpr int kListenBacklog = 32;
 constexpr int kMaxNextCount = 8;
 
@@ -79,6 +82,14 @@ constexpr OptionInfo kStyles[] = {
     {"brutal", "Brutalista"},
     {"cozy", "Lo-fi calido"},
     {"esports", "Esports HUD"},
+    {"gameboy", "Consola de bolsillo"},
+    {"retro95", "Retro OS 95"},
+    {"blueprint", "Plano tecnico"},
+    {"cyberpunk", "Cyberpunk"},
+    {"ticket", "Ticket de cine"},
+    {"vhs", "VHS"},
+    {"notebook", "Cuaderno"},
+    {"quest", "Tablon de misiones"},
 };
 static_assert(std::size(kStyles) == kStreamOverlayStyleCount);
 
@@ -335,6 +346,9 @@ std::unordered_map<std::string, std::filesystem::path> resolveGdAssets() {
     add("sheet.png", withExtension(sheet, ".png"));
     add("square01.png", resolveGameFile("GJ_square01.png", false));
     add("square02.png", resolveGameFile("GJ_square02.png", false));
+    add("button01.png", resolveGameFile("GJ_button_01.png", false));
+    add("button06.png", resolveGameFile("GJ_button_06.png", false));
+    add("groove.png", preferHd("slidergroove-hd.png", "slidergroove.png"));
     add("bg.png", preferHd("game_bg_01_001-hd.png", "game_bg_01_001.png"));
     add("ground.png", resolveGameFile("groundSquare_01_001.png", false));
     return assets;
@@ -535,7 +549,9 @@ struct StreamOverlayServer::Impl {
         std::string request;
         request.reserve(2048);
         char buffer[2048];
+        auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
         while (request.size() < 16 * 1024) {
+            if (std::chrono::steady_clock::now() > deadline) break;
             int count = recv(client, buffer, sizeof(buffer), 0);
             if (count <= 0) break;
             request.append(buffer, static_cast<size_t>(count));
@@ -553,6 +569,28 @@ struct StreamOverlayServer::Impl {
                 "text/plain; charset=utf-8", "GET only"));
             return;
         }
+
+        std::string host;
+        auto hostPos = request.find("\r\nHost:");
+        if (hostPos == std::string::npos) hostPos = request.find("\r\nhost:");
+        if (hostPos != std::string::npos) {
+            auto valueStart = hostPos + 7;
+            auto valueEnd = request.find("\r\n", valueStart);
+            host = request.substr(valueStart, valueEnd - valueStart);
+            auto first = host.find_first_not_of(" \t");
+            auto last = host.find_last_not_of(" \t");
+            host = first == std::string::npos ? std::string{} : host.substr(first, last - first + 1);
+        }
+        std::transform(host.begin(), host.end(), host.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (host != "localhost:21680" && host != "127.0.0.1:21680"
+            && host != "[::1]:21680" && host != "localhost"
+            && host != "127.0.0.1" && host != "[::1]") {
+            sendAll(client, httpResponse(421, "Misdirected Request",
+                "text/plain; charset=utf-8", "Invalid Host"));
+            return;
+        }
+
         sendAll(client, responseFor(
             firstLine.substr(firstSpace + 1, secondSpace - firstSpace - 1)));
     }
@@ -681,12 +719,25 @@ void setStreamOverlayConfig(StreamOverlayConfig config) {
     StreamOverlayServer::get().refreshSnapshot();
 }
 
-StreamOverlayServer& StreamOverlayServer::get() {
-    static StreamOverlayServer instance;
-    return instance;
+namespace {
+std::atomic<bool> s_streamOverlayInitialized{false};
+} // namespace
+
+bool StreamOverlayServer::isInitialized() {
+    return s_streamOverlayInitialized.load(std::memory_order_acquire);
 }
 
-StreamOverlayServer::StreamOverlayServer() : m_impl(std::make_unique<Impl>()) {}
+StreamOverlayServer& StreamOverlayServer::get() {
+    // Heap-leaked: ~StreamOverlayServer() must never join a worker under DllMain loader-lock.
+    static auto* instance = []() {
+        auto* srv = new StreamOverlayServer();
+        s_streamOverlayInitialized.store(true, std::memory_order_release);
+        return srv;
+    }();
+    return *instance;
+}
+
+StreamOverlayServer::StreamOverlayServer() : m_impl(std::make_shared<Impl>()) {}
 
 StreamOverlayServer::~StreamOverlayServer() {
     stop();
@@ -707,8 +758,7 @@ void StreamOverlayServer::init() {
     restart();
 }
 
-void StreamOverlayServer::shutdown() {
-    if (!m_initialized) return;
+void StreamOverlayServer::requestStop() {
     m_initialized = false;
     if (g_ticker) {
         if (auto* director = CCDirector::get(); director && director->getScheduler()) {
@@ -716,7 +766,41 @@ void StreamOverlayServer::shutdown() {
         }
         (void)g_ticker.take();
     }
-    stop();
+#if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_MACOS)
+    m_impl->stopping = true;
+    m_impl->closeListener();
+#endif
+}
+
+void StreamOverlayServer::waitShutdown(std::chrono::steady_clock::time_point deadline) {
+    requestStop();
+#if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_MACOS)
+    if (m_impl->worker.joinable()) {
+        auto const now = std::chrono::steady_clock::now();
+        auto const remaining = now < deadline
+            ? std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now)
+            : std::chrono::milliseconds(0);
+        auto impl = m_impl;
+        bool const joined = paimon::joinOrDetachWithWarning(
+            m_impl->worker, remaining, "StreamOverlayServer",
+            [impl] { return impl->finished.load(std::memory_order_acquire); }
+        );
+        if (joined) {
+            m_impl->finished = true;
+        }
+    } else {
+        m_impl->finished = true;
+    }
+    m_impl->running = false;
+    m_restartClock = 0.f;
+    m_impl->setStatus("Apagado");
+#else
+    (void)deadline;
+#endif
+}
+
+void StreamOverlayServer::shutdown() {
+    waitShutdown(std::chrono::steady_clock::now() + std::chrono::milliseconds(1500));
 }
 
 bool StreamOverlayServer::supported() const {
@@ -728,7 +812,7 @@ bool StreamOverlayServer::supported() const {
 }
 
 void StreamOverlayServer::start() {
-    if (!supported() || m_impl->worker.joinable()) return;
+    if (!supported() || m_impl->worker.joinable() || !m_impl->finished) return;
 #if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_MACOS)
     m_impl->stopping = false;
     m_impl->running = false;
@@ -736,7 +820,7 @@ void StreamOverlayServer::start() {
     m_restartClock = 0.f;
     m_impl->setStatus("Iniciando servidor local...");
     // cocos file lookups are main-thread only; resolve everything before the worker runs.
-    m_impl->resourcesDir = Mod::get()->getResourcesDir();
+    m_impl->resourcesDir = paimon::paths::toStdPath(Mod::get()->getResourcesDir());
     m_impl->gdAssets = resolveGdAssets();
     m_impl->catalog = matjson::makeObject({
         {"styles", optionJson(kStyles)},
@@ -745,7 +829,8 @@ void StreamOverlayServer::start() {
     }).dump(matjson::NO_INDENTATION);
     refreshSnapshot();
     try {
-        m_impl->worker = std::thread([impl = m_impl.get()] { impl->run(); });
+        auto impl = m_impl;
+        m_impl->worker = std::thread([impl] { impl->run(); });
     } catch (...) {
         m_impl->finished = true;
         m_impl->setStatus("No se pudo iniciar el hilo del servidor");
@@ -754,15 +839,7 @@ void StreamOverlayServer::start() {
 }
 
 void StreamOverlayServer::stop() {
-#if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_MACOS)
-    m_impl->stopping = true;
-    m_impl->closeListener();
-    if (m_impl->worker.joinable()) m_impl->worker.join();
-    m_impl->running = false;
-    m_impl->finished = true;
-    m_restartClock = 0.f;
-    m_impl->setStatus("Apagado");
-#endif
+    waitShutdown(std::chrono::steady_clock::now() + std::chrono::milliseconds(1500));
 }
 
 void StreamOverlayServer::restart() {

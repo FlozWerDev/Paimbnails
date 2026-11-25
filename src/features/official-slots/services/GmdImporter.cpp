@@ -1,15 +1,30 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "GmdImporter.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/general.hpp>
 #include <Geode/utils/string.hpp>
+#include <algorithm>
+#include <cstdint>
+#include <filesystem>
 
 using namespace geode::prelude;
 
 namespace paimon::officialslots {
 
 namespace {
+
+// matches the import cap in OfficialSlotStore; a bigger file is never legit.
+constexpr std::uintmax_t kMaxGmdFileBytes = 32ull * 1024 * 1024;
+
+bool withinSizeCap(std::filesystem::path const& path) {
+    std::error_code ec;
+    auto const size = std::filesystem::file_size(path, ec);
+    if (!ec && size <= kMaxGmdFileBytes) return true;
+    log::warn("[OfficialSlots] .gmd too large or unreadable: {} bytes", ec ? 0 : size);
+    return false;
+}
 
 // values sit right after their <k>key</k>; scanning for that pair avoids
 // parsing the whole document, most of which is the level string.
@@ -74,9 +89,10 @@ std::optional<GmdInfo> parseGmdInfo(std::string const& xml, std::filesystem::pat
     if (auto author = stringValue(xml, "k5")) info.author = decodeEntities(*author);
 
     info.songId = intValue(xml, "k45");
+    info.audioTrack = std::max(0, intValue(xml, "k8"));
 
     if (info.name.empty()) {
-        info.name = utils::string::pathToString(path.stem());
+        info.name = paimon::paths::toUtf8(path.stem());
     }
     return info;
 }
@@ -84,7 +100,8 @@ std::optional<GmdInfo> parseGmdInfo(std::string const& xml, std::filesystem::pat
 } // namespace
 
 std::optional<GmdInfo> readGmdInfo(std::filesystem::path const& path) {
-    auto contents = utils::file::readString(path);
+    if (!withinSizeCap(path)) return std::nullopt;
+    auto contents = utils::file::readString(paimon::paths::toSdkPath(path));
     if (!contents) {
         log::warn("[OfficialSlots] Could not read the .gmd: {}", contents.unwrapErr());
         return std::nullopt;
@@ -93,7 +110,8 @@ std::optional<GmdInfo> readGmdInfo(std::filesystem::path const& path) {
 }
 
 GmdData readGmd(std::filesystem::path const& path) {
-    auto contents = utils::file::readString(path);
+    if (!withinSizeCap(path)) return {};
+    auto contents = utils::file::readString(paimon::paths::toSdkPath(path));
     if (!contents) {
         log::warn("[OfficialSlots] Could not read the .gmd: {}", contents.unwrapErr());
         log::warn("[OfficialSlots] Could not read the .gmd for its level string: {}",

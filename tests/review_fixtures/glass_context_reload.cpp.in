@@ -1,0 +1,97 @@
+#include <algorithm>
+#include <array>
+#include <cassert>
+#include <cstddef>
+#include <vector>
+
+using GLuint = unsigned;
+using GLint = int;
+
+std::vector<GLuint> deletedTextures;
+std::vector<GLuint> deletedFramebuffers;
+void glDeleteFramebuffers(int count, GLuint const* names) {
+    for (int i = 0; i < count; ++i) deletedFramebuffers.push_back(names[i]);
+}
+void ccGLDeleteTexture(GLuint name) { deletedTextures.push_back(name); }
+
+struct CCGLProgram {};
+template<class T> struct Ref {
+    T* object = nullptr;
+    Ref& operator=(std::nullptr_t) { object = nullptr; return *this; }
+    explicit operator bool() const { return object != nullptr; }
+};
+
+struct GlassTarget {
+    GLuint tex = 0;
+    GLuint fbo = 0;
+    int width = 0;
+    int height = 0;
+};
+
+struct GlassCapture {
+    struct Slot { std::array<GlassTarget, 5> levels{}; };
+    std::vector<Slot> m_slots;
+    GlassTarget m_sharp;
+    Ref<CCGLProgram> m_blurProgram;
+    GLint m_locStep = 3, m_locClamp = 4, m_locUp = 5;
+    void const* m_contextToken = nullptr;
+    bool m_validated = true;
+    bool m_broken = true;
+    static GlassCapture& get() { static GlassCapture instance; return instance; }
+    void releaseTarget(GlassTarget& target, bool deleteHandles);
+    void releaseGL(bool deleteHandles);
+};
+@@function|src/features/liquid-glass/services/GlassCapture.cpp|void GlassCapture::releaseTarget(@@
+@@function|src/features/liquid-glass/services/GlassCapture.cpp|void GlassCapture::releaseGL(@@
+
+struct PlateProgram {
+    Ref<CCGLProgram> program;
+    bool failed = false;
+};
+PlateProgram& plateProgram() { static PlateProgram program; return program; }
+int skinInvalidations = 0;
+void invalidateSkinCache() { ++skinInvalidations; }
+struct GlassNode { static void onGLContextReloadAll(); };
+@@function|src/features/liquid-glass/services/GlassNode.cpp|void GlassNode::onGLContextReloadAll()@@
+
+int main() {
+    auto& capture = GlassCapture::get();
+    CCGLProgram program;
+    capture.m_sharp = {11, 0, 512, 256};
+    capture.m_slots.resize(2);
+    capture.m_slots[0].levels[0] = {21, 31, 256, 128};
+    capture.m_slots[0].levels[1] = {22, 32, 128, 64};
+    capture.m_slots[1].levels[0] = {23, 33, 64, 64};
+    capture.m_blurProgram.object = &program;
+    capture.m_contextToken = &capture;
+    plateProgram().program.object = &program;
+    plateProgram().failed = true;
+
+    // The reload hook runs while the old context is current: delete every
+    // name exactly once (the shared copy has no framebuffer of its own).
+    GlassNode::onGLContextReloadAll();
+    auto textures = deletedTextures;
+    auto framebuffers = deletedFramebuffers;
+    std::sort(textures.begin(), textures.end());
+    std::sort(framebuffers.begin(), framebuffers.end());
+    assert((textures == std::vector<GLuint>{11, 21, 22, 23}));
+    assert((framebuffers == std::vector<GLuint>{31, 32, 33}));
+    assert(capture.m_slots.empty());
+    assert(capture.m_sharp.tex == 0 && capture.m_sharp.width == 0 && capture.m_sharp.height == 0);
+    assert(!capture.m_blurProgram);
+    assert(capture.m_locStep == -1 && capture.m_locClamp == -1 && capture.m_locUp == -1);
+    assert(!capture.m_contextToken && !capture.m_validated && !capture.m_broken);
+    assert(!plateProgram().program && !plateProgram().failed && skinInvalidations == 1);
+
+    // The pre-context hook and the SDK texture event may both report the reload.
+    GlassNode::onGLContextReloadAll();
+    assert(deletedTextures.size() == 4 && deletedFramebuffers.size() == 3);
+
+    // A replaced context owns none of these names: forget them, delete nothing.
+    capture.m_sharp = {41, 0, 64, 64};
+    capture.m_slots.resize(1);
+    capture.m_slots[0].levels[0] = {42, 43, 32, 32};
+    capture.releaseGL(false);
+    assert(deletedTextures.size() == 4 && deletedFramebuffers.size() == 3);
+    assert(capture.m_sharp.tex == 0 && capture.m_slots.empty());
+}

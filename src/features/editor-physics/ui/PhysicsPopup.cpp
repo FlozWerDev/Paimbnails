@@ -159,7 +159,7 @@ bool PhysicsPopup::init() {
         "tiene zoom, encuadre, <cy>hitboxes</c>, el cambio <cy>dinamico/fijo</c> "
         "y el <cy>engranaje</c> con los ajustes de cada cuerpo. <cg>Previsualizar</c> "
         "reproduce la simulacion y <cg>Compilar GD</c> la convierte en objetos nativos.");
-    addCorners(SideArtStyle::PopupGold, 0.4f);
+    addCorners(SideArtStyle::PopupGold);
     m_config = loadConfig();
 
     auto* menu = CCMenu::create();
@@ -1193,13 +1193,14 @@ void PhysicsPopup::ccTouchCancelled(CCTouch* touch, CCEvent* event) {
     FLAlertLayer::ccTouchCancelled(touch, event);
 }
 
-void PhysicsPopup::scrollWheel(float vertical, float horizontal) {
+bool PhysicsPopup::scrollWheel(float vertical, float horizontal) {
     float const steps = paimon::smoothscroll::SmoothScrollController::get()
         .filteredZoomSteps(vertical, horizontal);
-    if (std::abs(steps) < 0.000001f) return;
+    if (std::abs(steps) < 0.000001f) return true;
 
     float const baseFactor = steps > 0.f ? kScrollZoomIn : kScrollZoomOut;
     adjustZoom(std::pow(baseFactor, std::abs(steps)));
+    return true;
 }
 
 void PhysicsPopup::tick(float dt) {

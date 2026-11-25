@@ -4,8 +4,7 @@
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 
-#define MORE_ICONS_EVENTS
-#include <hiimjustin000.more_icons/include/MoreIcons.hpp>
+#include "../../../framework/compat/MoreIconsAPI.hpp"
 
 #include <algorithm>
 
@@ -294,9 +293,9 @@ void GlobalIconViewPopup::loadPreviews() {
         }
         popup->refreshPreviews();
         if (succeeded == 0 && total > 0) {
-            PaimonNotify::create(
+            PaimonNotify::show(
                 Localization::get().getString("globalicon.download_failed").c_str(),
-                NotificationIcon::Error)->show();
+                NotificationIcon::Error);
         }
     });
 }
@@ -319,9 +318,9 @@ void GlobalIconViewPopup::withSelectedIcon(geode::CopyableFunction<void(std::str
     if (m_busy) return;
     if (m_selected < 0 || m_selected >= static_cast<int>(m_cells.size())) return;
     if (!GlobalIconStorage::available()) {
-        PaimonNotify::create(
+        PaimonNotify::show(
             Localization::get().getString("globalicon.requires_moreicons_title").c_str(),
-            NotificationIcon::Error)->show();
+            NotificationIcon::Error);
         return;
     }
 
@@ -336,9 +335,9 @@ void GlobalIconViewPopup::withSelectedIcon(geode::CopyableFunction<void(std::str
         [self, type, action = std::move(action)](bool ok, std::string const& iconName) {
             if (auto popup = self.lock()) popup->m_busy = false;
             if (!ok || iconName.empty()) {
-                PaimonNotify::create(
+                PaimonNotify::show(
                     Localization::get().getString("globalicon.download_failed").c_str(),
-                    NotificationIcon::Error)->show();
+                    NotificationIcon::Error);
                 return;
             }
             if (action) action(iconName, type);
@@ -347,9 +346,9 @@ void GlobalIconViewPopup::withSelectedIcon(geode::CopyableFunction<void(std::str
 
 void GlobalIconViewPopup::onDownload(CCObject*) {
     withSelectedIcon([](std::string const&, IconType) {
-        PaimonNotify::create(
+        PaimonNotify::show(
             Localization::get().getString("globalicon.downloaded").c_str(),
-            NotificationIcon::Success)->show();
+            NotificationIcon::Success);
     });
 }
 
@@ -357,15 +356,15 @@ void GlobalIconViewPopup::onDownloadUse(CCObject*) {
     withSelectedIcon([](std::string const& iconName, IconType type) {
         auto* info = more_icons::getIcon(iconName, type);
         if (!info) {
-            PaimonNotify::create(
+            PaimonNotify::show(
                 Localization::get().getString("globalicon.download_failed").c_str(),
-                NotificationIcon::Error)->show();
+                NotificationIcon::Error);
             return;
         }
         more_icons::setIcon(info, type);
-        PaimonNotify::create(
+        PaimonNotify::show(
             Localization::get().getString("globalicon.applied").c_str(),
-            NotificationIcon::Success)->show();
+            NotificationIcon::Success);
     });
 }
 

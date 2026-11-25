@@ -1,0 +1,170 @@
+#include <matjson.hpp>
+#include "src/utils/BanVerdict.hpp"
+#include "src/core/BanPolicy.hpp"
+#include <atomic>
+#include <cassert>
+#include <chrono>
+#include <cstdint>
+#include <deque>
+#include <functional>
+#include <map>
+#include <memory>
+#include <random>
+#include <string>
+#include <vector>
+
+namespace web {
+struct WebRequest {
+    bool redirects = true;
+    std::chrono::seconds limit{};
+    std::map<std::string, std::string> headers;
+    void timeout(std::chrono::seconds value) { limit = value; }
+    void followRedirects(bool value) { redirects = value; }
+    void header(std::string key, std::string value) { headers[key] = value; }
+};
+struct WebResponse {
+    int status;
+    std::string body;
+    bool ok() const { return status == 200; }
+    int code() const { return status; }
+    geode::Result<std::string> string() const { return geode::Ok(body); }
+};
+}
+namespace paimon {
+std::deque<std::function<void()>> delays;
+std::vector<float> waits;
+bool isRuntimeShuttingDown() { return false; }
+void scheduleMainThreadDelay(float delay, std::function<void()> callback) {
+    waits.push_back(delay);
+    delays.push_back(std::move(callback));
+}
+}
+namespace WebHelper {
+struct Request {
+    web::WebRequest options;
+    std::string url;
+    std::function<void(web::WebResponse)> callback;
+};
+std::deque<Request> requests;
+void dispatch(web::WebRequest&& req, std::string const& method, std::string const& url,
+              std::function<void(web::WebResponse)> callback) {
+    assert(method == "GET");
+    assert(!req.redirects && req.limit == std::chrono::seconds(10));
+    assert(req.headers.at("Cache-Control") == "no-cache, no-store");
+    assert(req.headers.at("X-Viewer-Token") == "viewer-token");
+    assert(url.starts_with("https://api.flozwer.org/api/banned?username=alice&accountID=123&_check="));
+    requests.push_back({std::move(req), url, std::move(callback)});
+}
+void respond(int status, std::string body) {
+    auto request = std::move(requests.front());
+    requests.pop_front();
+    request.callback({status, std::move(body)});
+}
+std::string pendingNonce() {
+    auto const& url = requests.front().url;
+    auto const marker = std::string("&_check=");
+    auto const pos = url.find(marker);
+    return pos == std::string::npos ? std::string() : url.substr(pos + marker.size());
+}
+}
+int accountID = 123;
+std::string username = "alice";
+int getSafeAccountID() { return accountID; }
+std::string getSafeAccountUsername() { return username; }
+constexpr int kVerdictMaxAttempts = 3;
+constexpr float kBanCheckRetryDelays[] = {1.f, 2.f};
+struct HttpClient {
+    using BanCheckCallback = std::function<void(bool, bool, std::string const&)>;
+    std::string m_apiKey = "test-key";
+    std::string m_viewerToken = "viewer-token";
+    std::string m_serverURL = "http://untrusted.example";
+    static std::string encodeQueryParam(std::string const& value) { return value; }
+    void checkBanned(BanCheckCallback callback);
+};
+
+@@function|src/utils/HttpClient.cpp|void HttpClient::checkBanned(@@
+
+void retry() {
+    auto callback = std::move(paimon::delays.front());
+    paimon::delays.pop_front();
+    callback();
+}
+
+int main() {
+    HttpClient client;
+    int completions = 0;
+    bool ok = false;
+    bool banned = false;
+    auto callback = [&](bool success, bool verdict, std::string const&) {
+        ++completions;
+        ok = success;
+        banned = verdict;
+    };
+    client.checkBanned(callback);
+    WebHelper::respond(200, "{}");
+    assert(completions == 0);
+    retry();
+    WebHelper::respond(200, "{\"banned\":\"false\"}");
+    retry();
+    WebHelper::respond(200, "{\"success\":false,\"banned\":false}");
+    assert(completions == 1 && !ok);
+    assert((paimon::waits == std::vector<float>{1.f, 2.f}));
+
+    for (int status : {302, 403, 429}) {
+        client.checkBanned(callback);
+        WebHelper::respond(status, "{\"banned\":false}");
+        assert(!ok && paimon::delays.empty());
+    }
+    client.checkBanned(callback);
+    WebHelper::respond(503, "unavailable");
+    retry();
+    WebHelper::respond(200, "{\"banned\":true,\"reason\":\"abuse\"}");
+    assert(ok && banned);
+
+    client.checkBanned(callback);
+    WebHelper::respond(200, "{\"banned\":false}");
+    assert(ok && !banned);
+
+    client.checkBanned(callback);
+    accountID = 456;
+    WebHelper::respond(200, "{\"banned\":false}");
+    assert(!ok);
+    accountID = 123;
+
+    client.checkBanned(callback);
+    WebHelper::respond(503, "unavailable");
+    username = "bob";
+    retry();
+    assert(!ok && WebHelper::requests.empty());
+    username = "alice";
+
+    // A matching nonce echo is accepted.
+    client.checkBanned(callback);
+    auto const echoedNonce = WebHelper::pendingNonce();
+    WebHelper::respond(200, "{\"banned\":true,\"accountID\":123,\"check\":\"" +
+        echoedNonce + "\"}");
+    assert(ok && banned);
+
+    // A mismatched nonce echo forces another attempt instead of trusting it.
+    ok = false;
+    banned = true;
+    client.checkBanned(callback);
+    WebHelper::respond(200, "{\"banned\":true,\"check\":\"wrong\"}");
+    retry();
+    WebHelper::respond(200, "{\"banned\":false}");
+    assert(ok && !banned);
+
+    // A response for another account is discarded.
+    ok = false;
+    banned = true;
+    client.checkBanned(callback);
+    WebHelper::respond(200, "{\"banned\":true,\"accountID\":456}");
+    retry();
+    WebHelper::respond(200, "{\"banned\":false}");
+    assert(ok && !banned);
+
+    accountID = 0;
+    client.checkBanned(callback);
+    assert(!ok && WebHelper::requests.empty());
+    assert(completions == 12);
+}

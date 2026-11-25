@@ -1,0 +1,22 @@
+#include "tests/review_fixtures/EngineLifetime.hpp"
+#include <algorithm>
+#include <cassert>
+struct Size {float width,height;};
+struct Node : TestLifetime {
+    Size size{};bool removed=false;
+    void setContentSize(Size value){size=value;}
+    void removeFromParent(){removed=true;}
+};
+struct HoldState {WeakRef<Node> progressBar,progressFill;bool barVisible=true;}s_hold;
+@@function|src/features/quick-hub/services/QuickHubKeybind.cpp|void updateProgressBar(@@
+@@function|src/features/quick-hub/services/QuickHubKeybind.cpp|void cleanupProgressBar(@@
+int main() {
+    auto* fill=new Node;
+    auto* bar=new Node;
+    s_hold.progressBar=bar;s_hold.progressFill=fill;
+    updateProgressBar(.5f);assert(fill->size.width==100.f);
+    delete fill;delete bar;
+    updateProgressBar(.9f);
+    cleanupProgressBar();
+    assert(!s_hold.barVisible && !s_hold.progressBar.lock() && !s_hold.progressFill.lock());
+}

@@ -1,0 +1,88 @@
+#include <algorithm>
+#include <atomic>
+#include <cassert>
+#include <chrono>
+#include <cstdint>
+#include <iterator>
+#include <memory>
+#include <mutex>
+#include <thread>
+#include <vector>
+
+int uploads = 0;
+bool uploadSucceeds = true;
+bool shuttingDown = false;
+struct CCSize { CCSize(float, float) {} };
+constexpr int kCCTexture2DPixelFormat_RGBA8888 = 0;
+struct CCImage { void release() {} };
+struct CCTexture2D {
+    bool initWithImage(CCImage*) { return true; }
+    bool initWithData(void const*, int, int, int, CCSize) {
+        ++uploads;
+        // Model a slow driver upload that exceeds the remaining frame slice.
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        return uploadSucceeds;
+    }
+    void autorelease() {}
+    void release() { delete this; }
+};
+namespace PaimonDebug { template<class... T> void log(T&&...) {} }
+namespace paimon {
+bool isRuntimeShuttingDown() { return shuttingDown; }
+namespace framebudget {
+enum class Stage { Upload };
+std::int64_t remaining = 1000;
+std::int64_t remainingUs(Stage) { return remaining; }
+void consume(Stage, std::int64_t elapsed) { remaining = std::max<std::int64_t>(0, remaining - elapsed); }
+}
+}
+struct ThumbnailLoader {
+    struct Task { bool cancelled = false; int priority = 10; };
+    struct PendingUpload {
+        std::shared_ptr<Task> task = std::make_shared<Task>();
+        CCImage* image = nullptr;
+        std::vector<unsigned char> pixels{0, 0, 0, 255};
+        bool fallbackToDownload = false;
+        int width = 1, height = 1, originalWidth = 1, originalHeight = 1;
+    };
+    static constexpr int MAX_UPLOADS_PER_FRAME = 4, UPLOAD_FRAME_BUDGET_US = 1000;
+    static constexpr int PriorityVisibleCell = 10;
+    std::atomic<bool> m_uploadDrainScheduled{true}, m_shuttingDown{false};
+    std::mutex m_uploadMutex;
+    std::vector<PendingUpload> m_pendingUploads;
+    int scheduled = 0, completed = 0;
+    void scheduleUploadDrain() { ++scheduled; }
+    void finishTask(std::shared_ptr<Task>, CCTexture2D* texture, bool, int = 0, int = 0) {
+        ++completed;
+        if (texture) texture->release();
+    }
+    void workerDownload(std::shared_ptr<Task>) { assert(false); }
+    void drainPendingUploads();
+};
+@@function|src/features/thumbnails/services/ThumbnailLoader.cpp|void ThumbnailLoader::drainPendingUploads()@@
+int main() {
+    ThumbnailLoader loader;
+    loader.m_pendingUploads.resize(4);
+    loader.drainPendingUploads();
+    // Visible cells keep priority, but one slow upload must yield the frame.
+    assert(uploads == 1 && loader.completed == 1);
+    assert(loader.m_pendingUploads.size() == 3 && loader.scheduled == 1);
+    loader.drainPendingUploads();
+    assert(uploads == 1 && loader.m_pendingUploads.size() == 3);
+    while (!loader.m_pendingUploads.empty()) {
+        paimon::framebudget::remaining = 1000;
+        loader.drainPendingUploads();
+    }
+    assert(uploads == 4 && loader.completed == 4);
+    uploadSucceeds = false;
+    loader.m_pendingUploads.resize(4);
+    paimon::framebudget::remaining = 1000;
+    loader.drainPendingUploads();
+    assert(uploads == 5 && loader.completed == 5 && loader.m_pendingUploads.size() == 3);
+    // Shutdown must not issue further GL uploads or schedule another drain.
+    shuttingDown = true;
+    int scheduled = loader.scheduled;
+    paimon::framebudget::remaining = 1000;
+    loader.drainPendingUploads();
+    assert(uploads == 5 && loader.scheduled == scheduled);
+}

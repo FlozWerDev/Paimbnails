@@ -65,16 +65,6 @@ void fitInto(CCSprite* spr, float box) {
     spr->setScale(std::min({maxSide / sz.width, maxSide / sz.height, 4.f}));
 }
 
-std::string toLowerCopy(std::string const& s) {
-    std::string out;
-    out.reserve(s.size());
-    for (char c : s) {
-        out.push_back(static_cast<char>(
-            std::tolower(static_cast<unsigned char>(c))));
-    }
-    return out;
-}
-
 std::string shortFrameName(std::string name) {
     if (auto p = name.rfind("_001.png"); p != std::string::npos) name.resize(p);
     else if (auto p2 = name.rfind(".png"); p2 != std::string::npos) name.resize(p2);
@@ -279,7 +269,7 @@ void FusionEditorLayer::buildBrowser() {
         search->setScale(0.62f);
         search->setID("fusion-search"_spr);
         search->setCallback([this](std::string const& text) {
-            m_search = toLowerCopy(text);
+            m_search = geode::utils::string::toLower(text);
             applyBrowserFilter();
         });
         search->setPosition({colX + kBrowserW * 0.5f, searchY});
@@ -642,7 +632,7 @@ void FusionEditorLayer::applyBrowserFilter() {
     m_filtered.clear();
     for (int i = 0; i < static_cast<int>(m_entries.size()); ++i) {
         if (!m_search.empty()
-            && toLowerCopy(m_entries[i].frameName).find(m_search)
+            && geode::utils::string::toLower(m_entries[i].frameName).find(m_search)
                 == std::string::npos) {
             continue;
         }
@@ -1366,11 +1356,9 @@ void FusionEditorLayer::loadFusionForSelection() {
             auto r = FusionAssetLoader::loadFromFile(p);
             if (r) asset = r.unwrap();
         };
-        std::error_code ec;
-        auto gif = SlotPaths::fusionTextureFile(slotId, frameName, ".gif");
-        auto png = SlotPaths::fusionTextureFile(slotId, frameName, ".png");
-        if (std::filesystem::exists(gif, ec)) tryLoad(gif);
-        else if (std::filesystem::exists(png, ec)) tryLoad(png);
+        if (auto texPath = SlotPaths::resolveFusionTexture(slotId, frameName, true)) {
+            tryLoad(*texPath);
+        }
 
         Loader::get()->queueInMainThread(
             [weakSelf, closed, frameName, mask, asset, have, blend, tol, opac, transform, animated]() {

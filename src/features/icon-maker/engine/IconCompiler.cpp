@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "IconCompiler.hpp"
 
 #include "FillRenderer.hpp"
@@ -13,6 +14,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <vector>
 
 using namespace geode::prelude;
 namespace ts = paimon::texture_studio;
@@ -22,11 +24,11 @@ namespace paimon::icon_maker {
 namespace {
 
 // a rendered frame trimmed out of its authoring canvas. trim sizes are kept
-// multiples of 4 so the ÷2 (hd) and ÷4 (sd) variants stay integral.
+// multiples of 4 so the /2 (hd) and /4 (sd) variants stay integral.
 struct RenderedFrame {
     std::string name;        // final frame name, e.g. "micubo_glow_001.png"
     ts::ImageBuffer pixels;  // trimmed
-    float centerOffX = 0.f;  // trimmed-center − canvas-center, +y up (plist)
+    float centerOffX = 0.f;  // trimmed-center - canvas-center, +y up (plist)
     float centerOffY = 0.f;
     int canvasSize = 0;
     bool placeholder = false;
@@ -34,6 +36,52 @@ struct RenderedFrame {
 
 int ceil4(int v) {
     return (v + 3) & ~3;
+}
+
+// Bleed edge RGB into adjacent alpha==0 pixels (2 passes) so OpenGL linear
+// filtering never interpolates transparent black halos at sprite silhouettes.
+void bleedTransparentRGB(ts::ImageBuffer& img) {
+    int const w = img.width();
+    int const h = img.height();
+    if (w <= 1 || h <= 1) return;
+
+    std::vector<std::uint8_t> copy(img.data(), img.data() + img.byteSize());
+    for (int pass = 0; pass < 2; ++pass) {
+        auto* dst = img.data();
+        bool changed = false;
+        for (int y = 0; y < h; ++y) {
+            for (int x = 0; x < w; ++x) {
+                std::size_t const idx = (static_cast<std::size_t>(y) * w + x) * 4;
+                if (copy[idx + 3] > 0) continue;
+
+                int sr = 0, sg = 0, sb = 0, count = 0;
+                for (int dy = -1; dy <= 1; ++dy) {
+                    int const ny = y + dy;
+                    if (ny < 0 || ny >= h) continue;
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        int const nx = x + dx;
+                        if (nx < 0 || nx >= w || (dx == 0 && dy == 0)) continue;
+                        std::size_t const nidx = (static_cast<std::size_t>(ny) * w + nx) * 4;
+                        if (copy[nidx + 3] > 0) {
+                            sr += copy[nidx + 0];
+                            sg += copy[nidx + 1];
+                            sb += copy[nidx + 2];
+                            ++count;
+                        }
+                    }
+                }
+                if (count > 0) {
+                    dst[idx + 0] = static_cast<std::uint8_t>(sr / count);
+                    dst[idx + 1] = static_cast<std::uint8_t>(sg / count);
+                    dst[idx + 2] = static_cast<std::uint8_t>(sb / count);
+                    dst[idx + 3] = 0;
+                    changed = true;
+                }
+            }
+        }
+        if (!changed) break;
+        std::copy(img.data(), img.data() + img.byteSize(), copy.begin());
+    }
 }
 
 // trim `canvas` to its alpha bbox expanded to multiples of 4, staying inside
@@ -86,9 +134,11 @@ geode::Result<CompiledQuality> writeQuality(
         auto const& frame = frames[i];
         int sw = std::max(1, static_cast<int>(std::lround(frame.pixels.width() * factor)));
         int sh = std::max(1, static_cast<int>(std::lround(frame.pixels.height() * factor)));
-        scaled.push_back(factor == 1.f
+        auto buf = factor == 1.f
             ? frame.pixels
-            : frame.pixels.resizedBilinear(sw, sh));
+            : frame.pixels.resizedBilinear(sw, sh);
+        if (!frame.placeholder) bleedTransparentRGB(buf);
+        scaled.push_back(std::move(buf));
         inputs.push_back({std::to_string(i), sw, sh});
     }
 
@@ -102,7 +152,7 @@ geode::Result<CompiledQuality> writeQuality(
     sheet.metadata.format = 3;
     sheet.metadata.sizeW = packed.sheetWidth;
     sheet.metadata.sizeH = packed.sheetHeight;
-    sheet.metadata.textureFileName = geode::utils::string::pathToString(pngPath.filename());
+    sheet.metadata.textureFileName = paimon::paths::toUtf8(pngPath.filename());
     sheet.metadata.realTextureFileName = sheet.metadata.textureFileName;
     sheet.metadata.premultiplyAlpha = false;
 
@@ -151,10 +201,11 @@ geode::Result<CompiledIcon> IconCompiler::compile(IconProject const& project) {
     if (project.id.empty()) return Err("Proyecto sin id");
 
     auto imagesDir = IconPaths::imagesDir(project.id);
-    auto outputDir = IconPaths::outputDir(project.id);
-    if (auto r = IconPaths::ensureSlotDirs(project.id); !r) {
-        return Err(r.unwrapErr());
-    }
+    std::error_code stagingError;
+    auto staging = paimon::file::StagedDirectory::create(
+        IconPaths::rootDir() / "build-staging", stagingError);
+    if (!staging) return Err("No se pudo preparar la compilacion: {}", stagingError.message());
+    auto const& outputDir = staging->path();
 
     std::vector<RenderedFrame> frames;
     bool anyContent = false;
@@ -198,6 +249,7 @@ geode::Result<CompiledIcon> IconCompiler::compile(IconProject const& project) {
 
     CompiledIcon result;
     result.exportName = project.id;
+    result.staging = std::move(staging);
 
     auto out = [&](std::string const& suffix) {
         return std::pair{
@@ -206,23 +258,23 @@ geode::Result<CompiledIcon> IconCompiler::compile(IconProject const& project) {
         };
     };
 
-    {
-        auto [png, plist] = out("-uhd");
-        auto r = writeQuality(frames, 1.f, 4, png, plist);
-        if (!r) return Err("UHD: {}", r.unwrapErr());
-        result.uhd = r.unwrap();
-    }
-    {
-        auto [png, plist] = out("-hd");
-        auto r = writeQuality(frames, 0.5f, 2, png, plist);
-        if (!r) return Err("HD: {}", r.unwrapErr());
-        result.hd = r.unwrap();
-    }
-    {
-        auto [png, plist] = out("");
-        auto r = writeQuality(frames, 0.25f, 1, png, plist);
-        if (!r) return Err("SD: {}", r.unwrapErr());
-        result.sd = r.unwrap();
+    struct QualityRow {
+        char const* suffix;
+        float scale;
+        int gap;
+        char const* label;
+        CompiledQuality CompiledIcon::* member;
+    };
+    constexpr QualityRow kQualities[] = {
+        {"-uhd", 1.f,   4, "UHD", &CompiledIcon::uhd},
+        {"-hd",  0.5f,  2, "HD",  &CompiledIcon::hd},
+        {"",     0.25f, 1, "SD",  &CompiledIcon::sd},
+    };
+    for (auto const& quality : kQualities) {
+        auto [png, plist] = out(quality.suffix);
+        auto r = writeQuality(frames, quality.scale, quality.gap, png, plist);
+        if (!r) return Err("{}: {}", quality.label, r.unwrapErr());
+        result.*(quality.member) = r.unwrap();
     }
 
     return Ok(std::move(result));

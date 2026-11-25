@@ -29,7 +29,7 @@ struct RTXConfig {
 
     int   preset           = static_cast<int>(Preset::Balanced);
     float renderScale      = 0.50f;
-    int   rayCount         = 3;
+    int   rayCount         = 4;
     int   raySteps         = 14;
     float rayDistance      = 0.28f;
     float stepGrowth       = 1.28f;
@@ -70,11 +70,11 @@ struct RTXConfig {
     float godRayX          = 0.50f;
     float godRayY          = 0.82f;
 
-    float denoise          = 2.00f;
+    float denoise          = 1.80f;
     int   atrousPasses     = 3;
     float temporal         = 0.88f;
     bool  ghostClamp       = true;
-    float clampSigma       = 1.40f;
+    float clampSigma       = 2.20f;
 
     int   tonemap          = static_cast<int>(Tonemap::ACES);
     float exposure         = 0.00f;

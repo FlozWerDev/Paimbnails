@@ -1,0 +1,101 @@
+// Check status updates against measured label bounds, including long errors.
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <functional>
+#include <string>
+
+struct CCSize { float width = 0.f, height = 0.f; };
+struct CCNode {
+    CCSize size;
+    bool visible = false;
+    CCSize getContentSize() const { return size; }
+    void setContentSize(CCSize value) { size = value; }
+    void setVisible(bool value) { visible = value; }
+};
+struct CCLabelBMFont : CCNode {
+    std::string text;
+    float scale = 0.5f;
+    void setString(char const* value) {
+        text = value;
+        // Deterministic font metrics with a 640-unit wrapping width.
+        size = {0.f, 20.f};
+        float lineWidth = 0.f;
+        for (char ch : text) {
+            if (ch == '\n' || lineWidth >= 640.f) {
+                size.width = std::max(size.width, lineWidth);
+                size.height += 20.f;
+                lineWidth = 0.f;
+            }
+            if (ch != '\n') lineWidth += 10.f;
+        }
+        size.width = std::max(size.width, lineWidth);
+    }
+    void setScale(float value) { scale = value; }
+    void setColor(int) {}
+};
+namespace paimon::ui::palette { constexpr int danger = 1; }
+struct ToolInstallPopupBase {
+    CCLabelBMFont *m_statusLabel = nullptr, *m_percentLabel = nullptr;
+    CCNode *m_barBg = nullptr, *m_barFill = nullptr, *m_dismissBtn = nullptr;
+    CCSize m_statusBounds{320.f, 24.f};
+    bool m_finished = false;
+    std::function<void(bool)> m_onFinished;
+    void setStatusMessage(std::string const&);
+    void updateProgress(float, std::string const&);
+    void finishError(std::string const&);
+};
+@@function|src/features/menu-music/ui/ToolInstallPopupBase.cpp|void ToolInstallPopupBase::setStatusMessage(@@
+@@function|src/features/menu-music/ui/ToolInstallPopupBase.cpp|void ToolInstallPopupBase::updateProgress(@@
+@@function|src/features/menu-music/ui/ToolInstallPopupBase.cpp|void ToolInstallPopupBase::finishError(@@
+
+void assertFits(ToolInstallPopupBase const& popup) {
+    auto const& label = *popup.m_statusLabel;
+    assert(std::isfinite(label.scale) && label.scale > 0.f);
+    assert(label.size.width * label.scale <= popup.m_statusBounds.width + 0.001f);
+    assert(label.size.height * label.scale <= popup.m_statusBounds.height + 0.001f);
+}
+
+int main() {
+    CCLabelBMFont status, percent;
+    CCNode background, fill, dismiss;
+    background.size = {320.f, 20.f};
+    fill.size = {0.f, 20.f};
+    ToolInstallPopupBase popup;
+    popup.m_statusLabel = &status;
+    popup.m_percentLabel = &percent;
+    popup.m_barBg = &background;
+    popup.m_barFill = &fill;
+    popup.m_dismissBtn = &dismiss;
+
+    auto const longStatus = "Downloading yt-dlp... " + std::string(200, 'x');
+    popup.updateProgress(0.5f, longStatus);
+    assert(status.text == longStatus && fill.size.width == 160.f);
+    assertFits(popup);
+    popup.updateProgress(2.f, "Installing...");
+    assert(status.scale == 0.5f && fill.size.width == 320.f);
+    assertFits(popup);
+    popup.updateProgress(-1.f, "");
+    assert(status.text == "Installing..." && fill.size.width == 0.f);
+
+    // Both multiline diagnostics and long unbroken paths stay in the status area.
+    std::string const error = "Failed to download yt-dlp (request error -3).\n"
+        "Try again or place the binary at:\nC:/" + std::string(300, 'x') + "/yt-dlp.exe";
+    int completions = 0;
+    popup.m_onFinished = [&](bool ok) { assert(!ok); ++completions; };
+    popup.finishError(error);
+    assert(status.text == error && percent.text == "Failed" && dismiss.visible);
+    assert(completions == 1);
+    assertFits(popup);
+    popup.updateProgress(1.f, "Late progress must not replace the error");
+    popup.finishError("Another failure");
+    assert(status.text == error && completions == 1);
+
+    popup.setStatusMessage("Ready");
+    assert(status.scale == 0.5f);
+    assertFits(popup);
+    popup.m_statusLabel = nullptr;
+    popup.setStatusMessage("No label");
+}

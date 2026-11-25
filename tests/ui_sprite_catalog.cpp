@@ -194,49 +194,36 @@ bool test_classify_content_art_stays_vanilla() {
 bool test_classify_content_baked_buttons_stay_vanilla() {
     auto other = SpriteKind::Other;
     auto btn = SpriteKind::Button;
-    CHECK(UiSpriteCatalog::classify("GJ_normalBtn_001.png", "GJ_GameSheet03") == other);
     CHECK(UiSpriteCatalog::classify("GJ_shardsBtn_001.png", "GJ_GameSheet03") == other);
     CHECK(UiSpriteCatalog::classify("gj_videoRewardBtn_001.png", "GJ_ShopSheet") == other);
-    // caras de dificultad y demonio en el marco (incluido rate).
-    CHECK(UiSpriteCatalog::classify("GJ_rateDiffBtn_001.png", "GJ_GameSheet03") == other);
-    CHECK(UiSpriteCatalog::classify("GJ_rateDiffBtn2_001.png", "GJ_GameSheet03") == other);
-    CHECK(UiSpriteCatalog::classify("GJ_rateDiffBtnMod_001.png", "GJ_GameSheet03") == other);
-    // estrellas de rate.
-    CHECK(UiSpriteCatalog::classify("GJ_starBtn_001.png", "GJ_GameSheet03") == other);
-    CHECK(UiSpriteCatalog::classify("GJ_starBtn2_001.png", "GJ_GameSheet03") == other);
-    CHECK(UiSpriteCatalog::classify("GJ_starBtnMod_001.png", "GJ_GameSheet03") == other);
-    // cubo de jugador, gemas, trofeos.
-    CHECK(UiSpriteCatalog::classify("GJ_garageBtn_001.png", "GJ_GameSheet03") == other);
-    CHECK(UiSpriteCatalog::classify("GJ_checkpointBtn_001.png", "GJ_GameSheet03") == other);
-    CHECK(UiSpriteCatalog::classify("GJ_practiceBtn_001.png", "GJ_GameSheet03") == other);
-    CHECK(UiSpriteCatalog::classify("GJ_levelLeaderboardBtn_001.png", "GJ_GameSheet03") == other);
-    CHECK(UiSpriteCatalog::classify("GJ_achBtn_001.png", "GJ_GameSheet03") == other);
-    // cofres y recompensas con texto pegado.
-    CHECK(UiSpriteCatalog::classify("GJ_adChestBtn_001.png", "GJ_GameSheet03") == other);
-    CHECK(UiSpriteCatalog::classify("GJ_freeChestBtn_001.png", "GJ_GameSheet03") == other);
-    CHECK(UiSpriteCatalog::classify("GJ_dailyRewardBtn_001.png", "GJ_GameSheet03") == other);
-    CHECK(UiSpriteCatalog::classify("GJ_freeStuffBtn_001.png", "GJ_GameSheet03") == other);
-    CHECK(UiSpriteCatalog::classify("GJ_rewardBtn_001.png", "GJ_GameSheet03") == other);
-    CHECK(UiSpriteCatalog::classify("GJ_adVideoBtn_001.png", "GJ_GameSheet03") == other);
-    // botones grandes de menu (cromo verde + arte/texto pegados).
-    CHECK(UiSpriteCatalog::classify("GJ_dailyBtn_001.png", "GJ_GameSheet04") == other);
-    CHECK(UiSpriteCatalog::classify("GJ_weeklyBtn_001.png", "GJ_GameSheet04") == other);
-    CHECK(UiSpriteCatalog::classify("levelLeaderboard_globalWeeklyBtn_001.png", "GJ_GameSheet03") == other);
-    CHECK(UiSpriteCatalog::classify("GJ_eventBtn_001.png", "GJ_GameSheet04") == other);
-    CHECK(UiSpriteCatalog::classify("GJ_featuredBtn_001.png", "GJ_GameSheet04") == other);
-    CHECK(UiSpriteCatalog::classify("GJ_mapPacksBtn_001.png", "GJ_GameSheet04") == other);
-    CHECK(UiSpriteCatalog::classify("GJ_pathsBtn_001.png", "GJ_GameSheet04") == other);
-    CHECK(UiSpriteCatalog::classify("GJ_highscoreBtn_001.png", "GJ_GameSheet04") == other);
-    // nodos de nivel del worldsheet (calavera sobre pedestal).
-    CHECK(UiSpriteCatalog::classify("worldLevelBtn_001.png", "WorldSheet") == other);
-    CHECK(UiSpriteCatalog::classify("worldLevelBtn_locked_001.png", "WorldSheet") == other);
-    // logos de marcas pegados.
+
+    // los botones de chrome con glifos (garage, daily, ach, etc.) ahora se clasifican como Button
+    // para tintar el marco mientras el glifo interior se protege via ClusterRole::Detail
+    CHECK(UiSpriteCatalog::classify("GJ_rateDiffBtn_001.png", "GJ_GameSheet03") == btn);
+    CHECK(UiSpriteCatalog::classify("GJ_starBtn_001.png", "GJ_GameSheet03") == btn);
+    CHECK(UiSpriteCatalog::classify("GJ_garageBtn_001.png", "GJ_GameSheet03") == btn);
+    CHECK(UiSpriteCatalog::classify("GJ_checkpointBtn_001.png", "GJ_GameSheet03") == btn);
+    CHECK(UiSpriteCatalog::classify("GJ_practiceBtn_001.png", "GJ_GameSheet03") == btn);
+    CHECK(UiSpriteCatalog::classify("GJ_levelLeaderboardBtn_001.png", "GJ_GameSheet03") == btn);
+    CHECK(UiSpriteCatalog::classify("GJ_achBtn_001.png", "GJ_GameSheet03") == btn);
+    CHECK(UiSpriteCatalog::classify("GJ_adChestBtn_001.png", "GJ_GameSheet03") == btn);
+    CHECK(UiSpriteCatalog::classify("GJ_dailyBtn_001.png", "GJ_GameSheet04") == btn);
+    CHECK(UiSpriteCatalog::classify("GJ_weeklyBtn_001.png", "GJ_GameSheet04") == btn);
+    CHECK(UiSpriteCatalog::classify("GJ_eventBtn_001.png", "GJ_GameSheet04") == btn);
+    CHECK(UiSpriteCatalog::classify("GJ_featuredBtn_001.png", "GJ_GameSheet04") == btn);
+    CHECK(UiSpriteCatalog::classify("GJ_mapPacksBtn_001.png", "GJ_GameSheet04") == btn);
+    CHECK(UiSpriteCatalog::classify("GJ_pathsBtn_001.png", "GJ_GameSheet04") == btn);
+    CHECK(UiSpriteCatalog::classify("GJ_highscoreBtn_001.png", "GJ_GameSheet04") == btn);
+    CHECK(UiSpriteCatalog::classify("worldLevelBtn_001.png", "WorldSheet") == btn);
+
+    // logos de marcas pegados (permanecen vainilla)
     CHECK(UiSpriteCatalog::classify("GJ_ngBtn_001.png", "GJ_GameSheet03") == other);
     CHECK(UiSpriteCatalog::classify("GJ_gpBtn_001.png", "GJ_GameSheet03") == other);
     CHECK(UiSpriteCatalog::classify("GJ_gpgBtn_001.png", "GJ_GameSheet03") == other);
     CHECK(UiSpriteCatalog::classify("GJ_ncsLibraryBtn_001.png", "GJ_GameSheet03") == other);
     CHECK(UiSpriteCatalog::classify("GJ_everyplayBtn_001.png", "GJ_GameSheet03") == other);
-    // los botones de verdad siguen siendo botones.
+
+    // los botones estandar siguen siendo botones.
     CHECK(UiSpriteCatalog::classify("GJ_unlockBtn_001.png", "GJ_GameSheet03") == btn);
     // pestanas de garage: glifo blanco sobre cromo monocromo (verificado
     // pixel a pixel). no son arte de jugador coloreado como garagebtn.
@@ -341,6 +328,24 @@ bool test_should_tint_legacy_everything_is_ui_only() {
     return true;
 }
 
+bool test_ui_sheet_unknown_frames_paint_as_menu_ui() {
+    // motor en vivo: en una hoja UI, lo no excluido es chrome y se pinta
+    // con la paleta; fuera de hoja UI lo desconocido sigue sin pintarse.
+    auto ui = SpriteKind::MenuUi;
+    CHECK(UiSpriteCatalog::classify("someChromeThing_001.png", "GJ_GameSheet03") == ui);
+    CHECK(UiSpriteCatalog::classify("shopThing_001.png", "GJ_ShopSheet") == ui);
+    CHECK(UiSpriteCatalog::shouldTint(ui, TintScope::ButtonsAndMenuUi));
+    CHECK(UiSpriteCatalog::classify("someChromeThing_001.png", "") == SpriteKind::Other);
+    // el arte con significado dentro de la hoja UI sigue vainilla.
+    auto other = SpriteKind::Other;
+    CHECK(UiSpriteCatalog::classify("currencyOrbIcon_001.png", "GJ_GameSheet03") == other);
+    CHECK(UiSpriteCatalog::classify("chest_01_01_001.png", "GJ_ShopSheet") == other);
+    CHECK(UiSpriteCatalog::classify("fireShardBig_001.png", "GJ_GameSheet03") == other);
+    // pero una etiqueta de texto con token de menu si se pinta.
+    CHECK(UiSpriteCatalog::classify("fireShardLabel_001.png", "GJ_GameSheet03") == ui);
+    return true;
+}
+
 bool test_standalone_button_gate() {
     // la puerta del exportador para pngs sueltos: el boton de menu pasa con
     // el alcance por defecto (buttonsonly), el arte de gameplay no.
@@ -376,6 +381,7 @@ int main() {
     RUN(test_classify_menu_furniture);
     RUN(test_should_tint_scopes);
     RUN(test_should_tint_legacy_everything_is_ui_only);
+    RUN(test_ui_sheet_unknown_frames_paint_as_menu_ui);
     RUN(test_standalone_button_gate);
 
     std::cout << ok << "/" << total << " OK\n";

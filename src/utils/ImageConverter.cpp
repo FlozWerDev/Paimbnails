@@ -1,3 +1,4 @@
+#include "FilesystemPath.hpp"
 #include "ImageConverter.hpp"
 #include <Geode/Geode.hpp>
 
@@ -7,7 +8,14 @@
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STBIW_WINDOWS_UTF8
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-field-initializers"
+#endif
 #include "stb_image_write.h"
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -18,10 +26,24 @@ namespace {
         auto* bytes = static_cast<uint8_t*>(data);
         vec->insert(vec->end(), bytes, bytes + size);
     }
+
+    // E4: pre-alloc cap coherente con LocalThumbs kMaxRgbPixels; el decode de
+    // red nunca debe reservar antes de validar dimensiones.
+    constexpr uint64_t kMaxPixels = 16ull * 1024 * 1024;
+    constexpr uint32_t kMaxDim = 16384;
 }
 
 std::vector<uint8_t> ImageConverter::rgbToRgba(std::vector<uint8_t> const& rgbData, uint32_t width, uint32_t height) {
-    size_t pixelCount = static_cast<size_t>(width) * height;
+    uint64_t const pixels64 = static_cast<uint64_t>(width) * height;
+    if (width == 0 || height == 0 || width > kMaxDim || height > kMaxDim || pixels64 > kMaxPixels) {
+        log::error("[ImageConverter] RGB dimensions exceed cap: {}x{}", width, height);
+        return {};
+    }
+    if (rgbData.size() < static_cast<size_t>(pixels64 * 3)) {
+        log::error("[ImageConverter] RGB data smaller than dimensions: {} < {}", rgbData.size(), pixels64 * 3);
+        return {};
+    }
+    size_t pixelCount = static_cast<size_t>(pixels64);
     std::vector<uint8_t> rgba(pixelCount * 4);
     rgbToRgbaFast(rgbData.data(), rgba.data(), pixelCount);
     return rgba;
@@ -50,6 +72,11 @@ void ImageConverter::rgbaToRgbFast(uint8_t const* rgba, uint8_t* rgbOut, size_t 
 
 bool ImageConverter::rgbaToPngBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>& outPngData) {
     if (!rgba || width == 0 || height == 0) return false;
+    uint64_t const pixels64 = static_cast<uint64_t>(width) * height;
+    if (width > kMaxDim || height > kMaxDim || pixels64 > kMaxPixels) {
+        log::error("[ImageConverter] PNG dimensions exceed cap: {}x{}", width, height);
+        return false;
+    }
 
     outPngData.clear();
     outPngData.reserve(static_cast<size_t>(width) * height);
@@ -59,13 +86,33 @@ bool ImageConverter::rgbaToPngBuffer(const uint8_t* rgba, uint32_t width, uint32
     return ok != 0;
 }
 
+bool ImageConverter::rgbaToJpegBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>& outData, int quality) {
+    if (!rgba || width == 0 || height == 0) return false;
+    uint64_t const pixels64 = static_cast<uint64_t>(width) * height;
+    if (width > kMaxDim || height > kMaxDim || pixels64 > kMaxPixels) {
+        log::error("[ImageConverter] JPEG dimensions exceed cap: {}x{}", width, height);
+        return false;
+    }
+
+    // stb writes JPEG from RGB; dropping alpha is the caller's decision.
+    std::vector<uint8_t> rgb(static_cast<size_t>(pixels64) * 3);
+    rgbaToRgbFast(rgba, rgb.data(), static_cast<size_t>(pixels64));
+
+    outData.clear();
+    outData.reserve(static_cast<size_t>(pixels64) / 4);
+    int const clampedQuality = quality < 1 ? 1 : (quality > 100 ? 100 : quality);
+    int ok = stbi_write_jpg_to_func(stbiWriteToVector, &outData,
+        static_cast<int>(width), static_cast<int>(height), 3, rgb.data(), clampedQuality);
+    return ok != 0 && !outData.empty();
+}
+
 bool ImageConverter::saveRGBAToPNG(const uint8_t* rgba, uint32_t width, uint32_t height, std::filesystem::path const& filePath) {
     std::vector<uint8_t> pngData;
     if (!rgbaToPngBuffer(rgba, width, height, pngData)) {
         log::error("[ImageConverter] PNG encode failed");
         return false;
     }
-    auto res = geode::utils::file::writeBinary(filePath, pngData);
+    auto res = geode::utils::file::writeBinary(paimon::paths::toSdkPath(filePath), pngData);
     if (res.isErr()) {
         log::error("[ImageConverter] Cannot write PNG file: {}", res.unwrapErr());
         return false;
@@ -73,21 +120,21 @@ bool ImageConverter::saveRGBAToPNG(const uint8_t* rgba, uint32_t width, uint32_t
     return true;
 }
 
-bool ImageConverter::rgbaToWebpBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>& outData, float quality) {
+bool ImageConverter::rgbaToWebpBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>&, float) {
     if (!rgba || width == 0 || height == 0) return false;
 
     log::warn("[ImageConverter] WebP encode not available (requires ImagePlus mod)");
     return false;
 }
 
-bool ImageConverter::rgbaToJxlBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>& outData, float quality) {
+bool ImageConverter::rgbaToJxlBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>&, float) {
     if (!rgba || width == 0 || height == 0) return false;
 
     log::warn("[ImageConverter] JPEG XL encode not available (requires ImagePlus mod)");
     return false;
 }
 
-bool ImageConverter::rgbaToQoiBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>& outData) {
+bool ImageConverter::rgbaToQoiBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>&) {
     if (!rgba || width == 0 || height == 0) return false;
 
     log::warn("[ImageConverter] QOI encode not available (requires ImagePlus mod)");
@@ -100,7 +147,7 @@ bool ImageConverter::saveRGBAToWebP(const uint8_t* rgba, uint32_t width, uint32_
         log::error("[ImageConverter] WebP encode failed");
         return false;
     }
-    auto res = geode::utils::file::writeBinary(filePath, webpData);
+    auto res = geode::utils::file::writeBinary(paimon::paths::toSdkPath(filePath), webpData);
     if (res.isErr()) {
         log::error("[ImageConverter] Cannot write WebP file: {}", res.unwrapErr());
         return false;
@@ -109,13 +156,24 @@ bool ImageConverter::saveRGBAToWebP(const uint8_t* rgba, uint32_t width, uint32_
 }
 
 bool ImageConverter::rgbToPng(std::vector<uint8_t> const& rgbData, uint32_t width, uint32_t height, std::vector<uint8_t>& outPngData) {
+    uint64_t const pixels64 = static_cast<uint64_t>(width) * height;
+    if (width == 0 || height == 0 || width > kMaxDim || height > kMaxDim || pixels64 > kMaxPixels) {
+        log::error("[ImageConverter] PNG dimensions exceed cap: {}x{}", width, height);
+        return false;
+    }
+
     bool isRgba = (rgbData.size() == static_cast<size_t>(width) * height * 4);
 
     if (isRgba) {
         return rgbaToPngBuffer(rgbData.data(), width, height, outPngData);
     }
 
+    if (rgbData.size() < static_cast<size_t>(pixels64 * 3)) {
+        log::error("[ImageConverter] RGB data smaller than dimensions: {} < {}", rgbData.size(), pixels64 * 3);
+        return false;
+    }
     auto rgba = rgbToRgba(rgbData, width, height);
+    if (rgba.empty()) return false;
     return rgbaToPngBuffer(rgba.data(), width, height, outPngData);
 }
 

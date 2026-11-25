@@ -1,0 +1,177 @@
+#include <algorithm>
+#include <cassert>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+#include <matjson.hpp>
+#include "src/utils/JsonHelper.hpp"
+
+inline std::vector<std::function<void()>> workers, mainJobs;
+void runJob(std::vector<std::function<void()>>& jobs) {
+    auto job = std::move(jobs.front()); jobs.erase(jobs.begin()); job();
+}
+struct Loader {
+    static Loader* get() { static Loader loader; return &loader; }
+    void queueInMainThread(std::function<void()> job) { mainJobs.push_back(std::move(job)); }
+};
+namespace paimon {
+bool isRuntimeShuttingDown() { return false; }
+struct ThreadTracker {
+    bool reject = false, throwOnSpawn = false;
+    static ThreadTracker& get() { static ThreadTracker tracker; return tracker; }
+    bool spawn(std::function<void()> job) {
+        if (throwOnSpawn) throw std::runtime_error("worker unavailable");
+        if (reject) return false;
+        workers.push_back(std::move(job)); return true;
+    }
+};
+namespace assets { std::filesystem::path pathFromUtf8(std::string const& path) { return std::filesystem::path(path); } }
+namespace file {
+bool writeAtomically(std::filesystem::path const& path, std::string const& value) {
+    std::filesystem::create_directories(path.parent_path());
+    std::ofstream stream(path); stream << value; return static_cast<bool>(stream);
+}
+}
+}
+namespace geode::utils {
+namespace string { std::string pathToString(std::filesystem::path const& path) { return path.string(); } }
+struct Number { std::optional<int> number; explicit operator bool() const { return number.has_value(); } bool isOk() const { return number.has_value(); } int unwrap() const { return *number; } };
+template<class T> Number numFromString(std::string const& value) {
+    try { return {{std::stoi(value)}}; } catch (...) { return {}; }
+}
+namespace file {
+struct ReadResult { std::optional<std::string> value; explicit operator bool() const { return value.has_value(); } std::string unwrap() const { return *value; } };
+ReadResult readString(std::filesystem::path const& path) {
+    std::ifstream stream(path); if (!stream) return {};
+    return {{std::string(std::istreambuf_iterator<char>(stream), {})}};
+}
+}
+}
+namespace coverlog { template<class... A> void info(A const&...) {} template<class... A> void warn(A const&...) {} }
+std::filesystem::path saveRoot;
+struct Mod { static Mod* get() { static Mod mod; return &mod; } std::filesystem::path getSaveDir() { return saveRoot; } };
+
+struct SongCoverCache {
+    using CoversCallback = std::function<void(std::vector<std::string> const&, bool)>;
+    struct CoverEntry { int levelID = 0; std::string name, path; };
+    struct SongManifest { std::vector<int> levelIds; std::vector<std::string> coverPaths; std::unordered_map<int, std::string> levelNames; };
+    struct DiskCoverSnapshot { std::optional<SongManifest> manifest; std::vector<std::string> legacyPaths; std::unordered_map<std::string, double> negativeEntries; };
+    struct PendingDiskLookup { std::uint64_t serial = 0, version = 0; std::vector<CoversCallback> callbacks; };
+    struct PendingBatch { int songID = 0; };
+    mutable std::unordered_set<int> m_loggedMissingManifests;
+    mutable std::unordered_map<int, std::optional<SongManifest>> m_manifestMemo;
+    mutable std::unordered_map<int, std::vector<std::string>> m_legacyMemo;
+    mutable std::unordered_map<int, std::uint64_t> m_manifestVersions;
+    mutable std::optional<std::unordered_map<std::string, double>> m_negativeMemo;
+    std::unordered_map<int, PendingDiskLookup> m_pendingDiskLookups;
+    std::unordered_map<int, std::vector<CoversCallback>> m_deferredCallbacks;
+    std::vector<PendingBatch> m_queue;
+    std::uint64_t m_diskLookupSerial = 0;
+    int m_targetSongID = 0;
+    void cancelDebounce() {}
+    static SongCoverCache& get() { static SongCoverCache cache; return cache; }
+    std::filesystem::path getCoversDir() const; std::filesystem::path getSongDir(int) const;
+    static DiskCoverSnapshot readDiskCoverSnapshot(std::filesystem::path const&, int);
+    void requestCachedCoversAsync(int, CoversCallback);
+    void finishCachedCoverLookup(int, std::uint64_t, std::optional<DiskCoverSnapshot>);
+    static void validateCoverPathsAsync(std::vector<std::string>, CoversCallback);
+    std::vector<std::string> peekCachedCoverPaths(int) const;
+    std::vector<CoverEntry> peekCachedCoverEntries(int) const;
+    bool loadManifest(int, SongManifest&) const;
+    void saveManifest(int, std::vector<int> const&, std::vector<std::string> const&, std::unordered_map<int, std::string> const&) const;
+    std::vector<std::string> getCachedCoverPaths(int) const;
+    std::vector<CoverEntry> getCachedCoverEntries(int) const;
+    void cancelPending(int);
+};
+@@function|src/features/menu-music/services/SongCoverCache.cpp|std::filesystem::path SongCoverCache::getCoversDir()@@
+@@function|src/features/menu-music/services/SongCoverCache.cpp|std::filesystem::path SongCoverCache::getSongDir(@@
+@@function|src/features/menu-music/services/SongCoverCache.cpp|SongCoverCache::DiskCoverSnapshot SongCoverCache::readDiskCoverSnapshot(@@
+@@function|src/features/menu-music/services/SongCoverCache.cpp|std::vector<std::string> SongCoverCache::peekCachedCoverPaths(@@
+@@function|src/features/menu-music/services/SongCoverCache.cpp|std::vector<SongCoverCache::CoverEntry> SongCoverCache::peekCachedCoverEntries(@@
+@@function|src/features/menu-music/services/SongCoverCache.cpp|void SongCoverCache::finishCachedCoverLookup(@@
+@@function|src/features/menu-music/services/SongCoverCache.cpp|void SongCoverCache::requestCachedCoversAsync(@@
+@@function|src/features/menu-music/services/SongCoverCache.cpp|void SongCoverCache::validateCoverPathsAsync(@@
+@@function|src/features/menu-music/services/SongCoverCache.cpp|bool SongCoverCache::loadManifest(@@
+@@function|src/features/menu-music/services/SongCoverCache.cpp|void SongCoverCache::saveManifest(@@
+@@function|src/features/menu-music/services/SongCoverCache.cpp|std::vector<std::string> SongCoverCache::getCachedCoverPaths(@@
+@@function|src/features/menu-music/services/SongCoverCache.cpp|std::vector<SongCoverCache::CoverEntry> SongCoverCache::getCachedCoverEntries(@@
+@@function|src/features/menu-music/services/SongCoverCache.cpp|void SongCoverCache::cancelPending(@@
+
+void write(std::filesystem::path const& path, std::string const& value) {
+    std::filesystem::create_directories(path.parent_path()); std::ofstream out(path); out << value;
+}
+int main() {
+    saveRoot = std::filesystem::temp_directory_path() / "paimon-music-cover-async-regression";
+    auto& cache = SongCoverCache::get();
+    auto root = cache.getCoversDir();
+    int callbacks = 0;
+    std::vector<std::string> delivered;
+    auto result = [&](std::vector<std::string> const& paths, bool success) { ++callbacks; assert(success == !paths.empty()); delivered = paths; };
+    cache.requestCachedCoversAsync(42, result);
+    cache.requestCachedCoversAsync(42, result);
+    assert(workers.size() == 1 && callbacks == 0 && cache.peekCachedCoverPaths(42).empty());
+    // Files appear only after the request: the initial call cannot have read them.
+    write(root / "42" / "123.png", "image");
+    write(root / "42" / "manifest.json", R"({"levelIds":[123],"files":["123.png"],"names":{"123":"Nivel"}})");
+    write(root / "negative.json", R"({"999":12345})");
+    runJob(workers); assert(callbacks == 0 && mainJobs.size() == 1);
+    runJob(mainJobs);
+    assert(callbacks == 2 && delivered.size() == 1);
+    auto entries = cache.peekCachedCoverEntries(42);
+    assert(entries.size() == 1 && entries[0].levelID == 123 && entries[0].name == "Nivel");
+    assert(cache.m_negativeMemo && cache.m_negativeMemo->at("999") == 12345.);
+
+    cache.requestCachedCoversAsync(7, result);
+    cache.cancelPending(7);
+    cache.requestCachedCoversAsync(7, result);
+    write(root / "7.gif", "legacy");
+    runJob(workers); runJob(mainJobs); assert(callbacks == 2); // closed popup cannot consume an old result
+    runJob(workers); runJob(mainJobs); assert(callbacks == 3 && delivered[0].ends_with("7.gif"));
+
+    cache.requestCachedCoversAsync(8, result);
+    write(root / "8" / "1.png", "old");
+    write(root / "8" / "manifest.json", R"({"files":["1.png"],"names":{"1":"old"}})");
+    runJob(workers); // old snapshot is ready but has not reached the UI yet
+    write(root / "8" / "2.png", "new");
+    cache.saveManifest(8, {2}, {(root / "8" / "2.png").string()}, {{2, "new"}});
+    runJob(mainJobs); assert(callbacks == 3 && workers.size() == 1);
+    runJob(workers); runJob(mainJobs); assert(callbacks == 4 && delivered[0].ends_with("2.png"));
+    assert(cache.peekCachedCoverEntries(8)[0].name == "new");
+
+    auto userCover = (root / "user.png").string();
+    SongCoverCache::validateCoverPathsAsync({userCover, (root / "missing.png").string()}, result);
+    assert(callbacks == 4 && workers.size() == 1);
+    write(userCover, "image");
+    runJob(workers); runJob(mainJobs);
+    assert(callbacks == 5 && delivered.size() == 1 && delivered[0] == userCover);
+
+    cache.requestCachedCoversAsync(99, result);
+    runJob(workers); runJob(mainJobs);
+    assert(callbacks == 6 && delivered.empty());
+    assert(cache.m_manifestMemo.contains(99) && cache.m_legacyMemo.contains(99));
+    assert(cache.getCachedCoverPaths(99).empty());
+    std::filesystem::remove(root / "42" / "123.png");
+    cache.requestCachedCoversAsync(42, result); // reopening rechecks deleted images off-thread
+    assert(workers.size() == 1 && callbacks == 6);
+    runJob(workers); runJob(mainJobs);
+    assert(callbacks == 7 && delivered.empty() && cache.peekCachedCoverEntries(42).empty());
+    auto& tracker = paimon::ThreadTracker::get();
+    tracker.reject = true;
+    cache.requestCachedCoversAsync(66, result);
+    assert(callbacks == 8 && delivered.empty() && !cache.m_pendingDiskLookups.contains(66));
+    SongCoverCache::validateCoverPathsAsync({userCover}, result);
+    assert(callbacks == 9 && delivered.empty());
+    tracker.reject = false; tracker.throwOnSpawn = true;
+    cache.requestCachedCoversAsync(67, result);
+    assert(callbacks == 10 && delivered.empty() && !cache.m_pendingDiskLookups.contains(67));
+    SongCoverCache::validateCoverPathsAsync({userCover}, result);
+    assert(callbacks == 11 && delivered.empty());
+}

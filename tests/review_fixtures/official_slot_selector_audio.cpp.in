@@ -1,0 +1,129 @@
+#include <cassert>
+#include <cstdint>
+#include <functional>
+#include <iostream>
+#include <memory>
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <vector>
+struct GJGameLevel { int m_levelID = 0, m_songID = 0; };
+template<class T> struct Ref {
+    T* value = nullptr;
+    Ref(T* pointer = nullptr) : value(pointer) {}
+    T* data() const { return value; }
+    T* operator->() const { return value; }
+    operator T*() const { return value; }
+};
+template<class T> struct WeakRef {
+    T* value;
+    WeakRef(T* pointer) : value(pointer) {}
+    Ref<T> lock() const { return value; }
+};
+enum class DynSongLayer { None, LevelSelect, LevelInfo };
+struct Mod {
+    static inline bool enabled = true;
+    static Mod* get() { static Mod mod; return &mod; }
+    template<class T> T getSettingValue(char const*) { return enabled; }
+};
+namespace paimon::dynsong {
+struct Config { bool inLevelSelect = true; };
+Config& config() { static Config config; return config; }
+}
+struct DynamicSongManager {
+    bool active = true, pending = false;
+    int playing = 0, stops = 0;
+    static DynamicSongManager* get() { static DynamicSongManager manager; return &manager; }
+    bool isActive() const { return active; }
+    bool isStreamingPreviewPending() const { return pending; }
+    bool verifyPlayback() const { return active; }
+    int getCurrentPlayingLevelID() const { return playing; }
+    void stopSong() { ++stops; active = false; }
+};
+struct AudioContextCoordinator {
+    bool gameplay = false, profile = false;
+    GJGameLevel* level = nullptr;
+    int id = 0;
+    DynSongLayer context = DynSongLayer::None;
+    static AudioContextCoordinator& get() { static AudioContextCoordinator coordinator; return coordinator; }
+    bool isGameplayActive() const { return gameplay; }
+    bool isProfileOpen() const { return profile; }
+    DynSongLayer getDynamicContextLayer() const { return context; }
+    int getCurrentLevelSelectID() const { return id; }
+    GJGameLevel* getCurrentLevelSelectLevel() const { return level; }
+    void activateLevelSelect(int selected, bool) { id = selected; level = nullptr; context = DynSongLayer::LevelSelect; }
+    void activateLevelSelectLevel(GJGameLevel* selected, bool) {
+        level = selected;
+        id = selected->m_levelID;
+        context = DynSongLayer::LevelSelect;
+        DynamicSongManager::get()->playing = id;
+        DynamicSongManager::get()->active = true;
+    }
+};
+namespace paimon::officialslots {
+struct Slot { std::string id; bool enabled = true; };
+struct SlotStore {
+    static SlotStore& get() { static SlotStore store; return store; }
+    std::optional<Slot> find(std::string const& id) { return Slot{id}; }
+};
+struct SlotLevelCache {
+    std::unordered_map<GJGameLevel*, std::string> slots;
+    static SlotLevelCache& get() { static SlotLevelCache cache; return cache; }
+    std::optional<std::string> slotIdForLevel(GJGameLevel* level) {
+        auto it = slots.find(level);
+        return it == slots.end() ? std::nullopt : std::optional(it->second);
+    }
+};
+std::vector<std::function<void(GJGameLevel*)>> requests;
+void loadSlotLevel(Slot const&, std::function<void(GJGameLevel*)> callback) { requests.push_back(std::move(callback)); }
+}
+using namespace paimon::officialslots;
+struct TestSelector;
+using PaimonLevelSelectLayer = TestSelector;
+struct TestSelector {
+    struct Fields {
+        bool m_audioCleanedUp = false, m_audioLoading = false, m_audioFailed = false;
+        int m_currentLevelID = 123456, m_audioPageId = 0;
+        std::uint64_t m_audioRequest = 0;
+        Ref<GJGameLevel> m_audioLevel;
+    };
+    std::unique_ptr<Fields> m_fields = std::make_unique<Fields>();
+    GJGameLevel* visible = nullptr;
+    TestSelector* getParent() { return this; }
+    GJGameLevel* visiblePageLevel() { return visible; }
+    int resolveVisibleLevelID() const { return m_fields->m_currentLevelID; }
+    @@function|src/hooks/LevelSelectLayer.cpp|void syncLevelSelectSong(@@
+};
+
+int main() {
+    auto& audio = AudioContextCoordinator::get();
+    TestSelector selector;
+    GJGameLevel custom{1000000001, 1516520}, original{2, 0}, empty{0, 0};
+    SlotLevelCache::get().slots[&custom] = "custom";
+    selector.visible = &custom;
+    selector.syncLevelSelectSong(true);
+    assert(requests.size() == 1);
+    selector.syncLevelSelectSong();
+    assert(requests.size() == 1); // No duplicate fetch while waiting.
+    selector.visible = &original;
+    selector.syncLevelSelectSong(true);
+    assert(audio.level == &original);
+    requests[0](&custom);
+    assert(audio.level == &original); // Old download cannot switch the page's song.
+
+    selector.visible = &custom;
+    selector.syncLevelSelectSong(true);
+    assert(requests.size() == 2);
+    requests[1](&custom);
+    assert(audio.level == &custom && audio.level->m_songID == 1516520);
+    assert(audio.id == custom.m_levelID);
+    audio.gameplay = true;
+    selector.visible = &original;
+    selector.syncLevelSelectSong(true);
+    assert(audio.level == &custom);
+    audio.gameplay = false;
+    selector.visible = &empty;
+    selector.syncLevelSelectSong(true);
+    assert(DynamicSongManager::get()->stops == 1 && audio.id == 0);
+    std::cout << "Selector audio: page-specific songs, pending downloads and stale responses passed\n";
+}

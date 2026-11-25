@@ -1,0 +1,31 @@
+#include <cassert>
+#include <iostream>
+struct CCNode { virtual ~CCNode() = default; };
+struct CCLayer : CCNode {};
+struct CCBlockLayer : CCLayer {};
+struct PauseLayer : CCBlockLayer {};
+struct FLAlertLayer : CCLayer {};
+struct GJDropDownLayer : CCLayer {};
+struct SlideInLayer : CCLayer {};
+struct DialogLayer : CCLayer {};
+struct LevelBrowserLayer : CCLayer { bool m_isOverlay = false; };
+template<class T> T typeinfo_cast(CCNode* node) { return dynamic_cast<T>(node); }
+enum class PanelKind { None, Popup, Dropdown, Blocking, Dialog };
+@@function|src/features/transitions/services/DynamicPanelTransitions.cpp|PanelKind panelKind(@@
+int main() {
+    PauseLayer pause;
+    assert(panelKind(&pause) == PanelKind::None && "generic panel animations must not own the native pause lifecycle");
+    CCBlockLayer blocking;
+    FLAlertLayer alert;
+    GJDropDownLayer dropdown;
+    DialogLayer dialog;
+    LevelBrowserLayer browser;
+    assert(panelKind(&blocking) == PanelKind::Blocking);
+    assert(panelKind(&alert) == PanelKind::Popup);
+    assert(panelKind(&dropdown) == PanelKind::Dropdown);
+    assert(panelKind(&dialog) == PanelKind::Dialog);
+    assert(panelKind(&browser) == PanelKind::None);
+    browser.m_isOverlay = true;
+    assert(panelKind(&browser) == PanelKind::Popup);
+    std::cout << "Pause panel ownership checks passed.\n";
+}

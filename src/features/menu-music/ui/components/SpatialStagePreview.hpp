@@ -7,6 +7,7 @@ namespace paimon::menumusic {
 
 class SpatialStagePreview : public cocos2d::CCNode {
 public:
+    using cocos2d::CCNode::init;
     static SpatialStagePreview* create(float width);
 
 protected:

@@ -2,6 +2,7 @@
 #include "SettingsControls.hpp"
 #include "../services/SettingsPanelManager.hpp"
 #include "../../../core/Settings.hpp"
+#include "../../keybinds/ui/ManagerCutPopup.hpp"
 #include "../../../layers/PaiConfigLayer.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
 #include "../../../features/pet/services/PetManager.hpp"
@@ -16,6 +17,7 @@
 #include "../../../features/discord-presence/ui/DiscordConfigPopup.hpp"
 #include "../../../features/discord-presence/services/DiscordPresenceManager.hpp"
 #include "../../../features/menu-physics/services/MenuPhysicsManager.hpp"
+#include "../../../features/texture-studio/ui/TextureStudioLayer.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 
 #include <Geode/Geode.hpp>
@@ -85,7 +87,15 @@ void buildGeneral(CCNode* c, float w) {
         [](bool v){ sset<bool>("crash-reports-enable", v); },
         w));
 
-    c->addChild(createSectionHeader("Settings Panel", w));
+    c->addChild(createSectionHeader("Controls & Gestures", w));
+
+    c->addChild(createLinkRow("Open Manager Cut (Keys & Gestures)",
+        [](){
+            if (auto* popup = paimon::keybinds::ManagerCutPopup::create()) {
+                popup->show();
+            }
+        },
+        w));
 
     c->addChild(createLinkRow("Configure Panel Keybind (Geode)",
         [](){
@@ -743,13 +753,13 @@ void buildMaintenance(CCNode* c, float w) {
             ThumbnailLoader::get().clearPendingQueue();
             ThumbnailLoader::get().clearCache();
             ProfileMusicManager::get().clearCache();
-            PaimonNotify::create("Cleanup complete.", NotificationIcon::Success)->show();
+            PaimonNotify::show("Cleanup complete.", NotificationIcon::Success);
         },
         w));
 
     c->addChild(createButtonRow("Fetch Mod Code", "Fetch",
         [](){
-            PaimonNotify::create("Use Geode mod settings to fetch your mod code.", NotificationIcon::Info)->show();
+            PaimonNotify::show("Use Geode mod settings to fetch your mod code.", NotificationIcon::Info);
         },
         w));
 
@@ -903,12 +913,20 @@ void buildAutoPreview(CCNode* c, float w) {
 
 
 void buildTextureStudio(CCNode* c, float w) {
-    c->addChild(createSectionHeader("Pack Gen", w));
+    c->addChild(createSectionHeader("Texture Live", w));
 
-    c->addChild(createToggleRow("Enable Pack Gen",
+    c->addChild(createToggleRow("Enable Live Colors",
         gset<bool>("texture-studio-enabled"),
         [](bool v){ sset<bool>("texture-studio-enabled", v); },
         w));
+
+    c->addChild(createLinkRow("Open Texture Studio",
+        [] {
+            SettingsPanelManager::get().close();
+            paimon::scheduleMainThreadDelay(0.18f, [] {
+                paimon::texture_studio::TextureStudioLayer::open();
+            });
+        }, w));
 }
 
 
@@ -986,7 +1004,9 @@ std::vector<SettingsGroup> const& getAllGroups() {
         }},
         { "extras", "Pet & More", {
             { "pet",         "Pet",           buildPet         },
+#if defined(GEODE_IS_DESKTOP)
             { "cursor",      "Custom Cursor", buildCursor      },
+#endif
             { "menuphysics", "Menu Physics",  buildMenuPhysics },
             { "scorecells",  "Score Cells",   buildScoreCells  },
             { "performance", "Performance",   buildPerformance },

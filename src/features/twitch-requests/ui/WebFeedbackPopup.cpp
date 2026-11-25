@@ -247,7 +247,7 @@ void WebFeedbackPopup::send(std::string decision) {
     std::string note = m_note ? std::string(m_note->getString()) : std::string{};
     std::string reason = m_reason ? std::string(m_reason->getString()) : std::string{};
     if (decision == "rejected" && reason.empty()) {
-        PaimonNotify::create("Escribe el motivo del rechazo", NotificationIcon::Warning)->show();
+        PaimonNotify::show("Escribe el motivo del rechazo", NotificationIcon::Warning);
         return;
     }
     int percent = 0;
@@ -255,12 +255,12 @@ void WebFeedbackPopup::send(std::string decision) {
     if (!value.empty()) {
         auto [ptr, error] = std::from_chars(value.data(), value.data() + value.size(), percent);
         if (error != std::errc{} || ptr != value.data() + value.size() || percent > 100) {
-            PaimonNotify::create("El porcentaje debe estar entre 0 y 100", NotificationIcon::Warning)->show();
+            PaimonNotify::show("El porcentaje debe estar entre 0 y 100", NotificationIcon::Warning);
             return;
         }
     }
     m_sending = true;
-    PaimonNotify::create("Preparando feedback...", NotificationIcon::Info)->show();
+    PaimonNotify::show("Preparando feedback...", NotificationIcon::Info);
     auto marks = m_marks;
     auto rgba = m_rgba;
     int srcW = m_width, srcH = m_height;
@@ -312,7 +312,7 @@ void WebFeedbackPopup::send(std::string decision) {
             if (!popup) return;
             if (!encoded) {
                 popup->m_sending = false;
-                PaimonNotify::create("No se pudo preparar la captura", NotificationIcon::Error)->show();
+                PaimonNotify::show("No se pudo preparar la captura", NotificationIcon::Error);
                 return;
             }
             bool started = TwitchRequestManager::get().sendWebFeedback(request, decision, percent,
@@ -321,7 +321,7 @@ void WebFeedbackPopup::send(std::string decision) {
                     auto popup = weak.lock();
                     if (!success) {
                         if (popup) popup->m_sending = false;
-                        PaimonNotify::create(error.c_str(), NotificationIcon::Error)->show();
+                        PaimonNotify::show(error.c_str(), NotificationIcon::Error);
                         return;
                     }
                     auto& manager = TwitchRequestManager::get();
@@ -332,12 +332,12 @@ void WebFeedbackPopup::send(std::string decision) {
                         else manager.markPlayed(i, percent);
                         break;
                     }
-                    PaimonNotify::create("Feedback enviado", NotificationIcon::Success)->show();
+                    PaimonNotify::show("Feedback enviado", NotificationIcon::Success);
                     if (popup) popup->onClose(nullptr);
                 });
             if (!started) {
                 popup->m_sending = false;
-                PaimonNotify::create("Conecta tu pagina de requests", NotificationIcon::Error)->show();
+                PaimonNotify::show("Conecta tu pagina de requests", NotificationIcon::Error);
             }
         });
     });

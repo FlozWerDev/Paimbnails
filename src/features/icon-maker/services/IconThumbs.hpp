@@ -2,7 +2,9 @@
 
 #include <Geode/Geode.hpp>
 
+#include <cstdint>
 #include <functional>
+#include <list>
 #include <map>
 #include <string>
 #include <vector>
@@ -32,7 +34,20 @@ private:
     IconThumbs& operator=(IconThumbs const&) = delete;
 
     std::map<std::string, geode::Ref<cocos2d::CCTexture2D>> m_cache;
-    std::map<std::string, std::vector<ReadyCallback>> m_pending;
+    struct PendingRender {
+        std::uint64_t token;
+        std::vector<ReadyCallback> callbacks;
+    };
+    void touch(std::string const& id);
+    void cacheTexture(std::string const& id, cocos2d::CCTexture2D* texture);
+#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
+    static constexpr std::size_t kMaxCachedThumbs = 64;
+#else
+    static constexpr std::size_t kMaxCachedThumbs = 128;
+#endif
+    std::uint64_t m_nextToken = 0;
+    std::list<std::string> m_cacheOrder;
+    std::map<std::string, PendingRender> m_pending;
 };
 
 }  // namespace paimon::icon_maker

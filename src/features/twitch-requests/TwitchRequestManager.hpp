@@ -3,6 +3,7 @@
 #include <Geode/Geode.hpp>
 
 #include "TwitchRequestFilters.hpp"
+#include "RequestQueue.hpp"
 #include "RequestRouting.hpp"
 #include "sources/ChatSource.hpp"
 #include "sources/WebRequestSource.hpp"
@@ -20,28 +21,6 @@
 namespace paimon::twitch {
 
 struct ParsedRequest;
-
-struct LevelRequest {
-    int64_t entryID = 0;
-    int levelID = 0;
-    std::string webRequestID;
-    int requesterAccountID = 0;
-    std::string requester;
-    bool requesterVerified = false;
-    std::string message;
-    std::string description;
-    std::string queue = "General";
-    std::string command;
-    std::string rewardID;
-    std::string sourceName;
-    std::string eventID;
-    std::string userID;
-    int64_t receivedAt = 0;
-    bool played = false;  // already reviewed on stream.
-    int percent = 0;      // saved normal-mode progress.
-    std::string videoUrl; // video sent with the request.
-    Platform platform = Platform::Twitch;  // request source.
-};
 
 std::string requestNote(LevelRequest const& request);
 
@@ -121,6 +100,12 @@ public:
     std::vector<LevelRequest> requests() const { return m_requests; }
     size_t requestCount() const { return m_requests.size(); }
     size_t pendingCount() const;
+    size_t reviewedCount() const;
+    size_t removeReviewed();
+    std::vector<int> pendingLevelIDs() const;
+    std::optional<size_t> indexForEntry(int64_t entryID) const;
+    // host additions work while intake is paused; capacity and duplicate rules still apply.
+    std::string addManualRequest(std::string_view body, std::string requester);
     // filtered requests remain stored.
     size_t filteredCount() const;
     size_t removeFiltered();
@@ -137,6 +122,8 @@ public:
         std::function<void(bool, std::string)> callback);
 
     void remove(size_t index);
+    // puts a removed request back at its old slot; false when it no longer fits.
+    bool restore(LevelRequest request, size_t index);
     void moveToFront(size_t index);
     void clear();
     int maxQueueSize() const;
@@ -196,6 +183,7 @@ private:
         std::string sourceName = std::string{}
     );
 
+    void appendRequest(LevelRequest request);
     void loadQueue();
     void saveQueue();
     void loadRouting();

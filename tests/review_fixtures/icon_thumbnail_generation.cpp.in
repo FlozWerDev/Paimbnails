@@ -1,0 +1,72 @@
+#include "tests/review_fixtures/ReviewQueue.hpp"
+#include <cstdint>
+#include <list>
+
+struct CCTexture2D { int revision; };
+namespace geode {template<class T>struct Ref{T* p;Ref(T* v):p(v){} T* data()const{return p;} operator T*()const{return p;}};}
+namespace ts {
+struct ImageBuffer { int revision=0; ImageBuffer()=default; ImageBuffer(int,int) {} bool empty()const{return revision==0;} };
+struct SpritePreviewRenderer {
+    static inline std::vector<std::unique_ptr<CCTexture2D>> textures;
+    static void compositeOver(ImageBuffer& dst, ImageBuffer const& src) { dst.revision=src.revision; }
+    static CCTexture2D* createTexture(ImageBuffer const& p) {
+        textures.push_back(std::make_unique<CCTexture2D>(p.revision)); return textures.back().get();
+    }
+};
+}
+namespace paimon::icon_maker {
+namespace log=geode::log;
+constexpr int kThumbSize = 128;
+struct IconProject { int type=0; int revision=1; };
+struct AnatomyDef {};
+inline AnatomyDef const* anatomyFor(int) { static AnatomyDef d; return &d; }
+inline std::vector<std::string> composeOrder(AnatomyDef const&) { return {"main"}; }
+struct IconPaths { static std::string imagesDir(std::string const&) { return {}; } };
+struct IconProjectStore {
+    IconProject current;
+    static IconProjectStore& get() { static IconProjectStore s; return s; }
+    Result<IconProject> loadProject(std::string const&) { return Ok(current); }
+};
+struct PieceRenderer {
+    static Result<ts::ImageBuffer> renderSlot(IconProject const& p, std::string const&,int,std::string const&) {
+        ts::ImageBuffer b(1,1); b.revision=p.revision; return Ok(b);
+    }
+};
+class IconThumbs {
+public:
+    using ReadyCallback=std::function<void(CCTexture2D*)>;
+    static IconThumbs& get() { static IconThumbs s; return s; }
+    std::map<std::string,CCTexture2D*> m_cache;
+    struct PendingRender { std::uint64_t token=0; std::vector<ReadyCallback> callbacks; };
+    std::map<std::string,PendingRender> m_pending;
+    std::uint64_t m_nextToken=0;
+    std::list<std::string> m_cacheOrder;
+    static constexpr size_t kMaxCachedThumbs=128;
+    void touch(std::string const& id);
+    void cacheTexture(std::string const& id,CCTexture2D* tex);
+    void request(std::string const&,ReadyCallback);
+    void invalidate(std::string const&);
+};
+@@function|src/features/icon-maker/services/IconThumbs.cpp|void IconThumbs::touch@@
+@@function|src/features/icon-maker/services/IconThumbs.cpp|void IconThumbs::cacheTexture@@
+@@function|src/features/icon-maker/services/IconThumbs.cpp|void IconThumbs::request@@
+@@function|src/features/icon-maker/services/IconThumbs.cpp|void IconThumbs::invalidate@@
+}
+
+int main() {
+    using namespace paimon::icon_maker;
+    auto& cache=IconThumbs::get(); auto& store=IconProjectStore::get();
+    cache.request("same", [](auto*) { assert(false && "cancelled callback must not run"); });
+    cache.invalidate("same");
+    store.current.revision=2;
+    int observed=0;
+    cache.request("same", [&](auto* texture) { observed=texture->revision; });
+    runJob(workers); runJob(mainJobs);
+    assert(observed == 0);
+    runJob(workers); runJob(mainJobs);
+    assert(observed == 2);
+    assert(cache.m_cache.at("same")->revision == 2);
+    for(int i=0;i<200;++i){auto id=std::to_string(i);cache.request(id,[](auto*){});runJob(workers);runJob(mainJobs);}
+    assert(cache.m_cache.size()<=IconThumbs::kMaxCachedThumbs);
+    std::cout << "Fresh request received revision=" << observed << "; revision=2 completion discarded.\n";
+}

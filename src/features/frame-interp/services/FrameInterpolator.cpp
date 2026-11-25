@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "FrameInterpolator.hpp"
 
 #include <Geode/Geode.hpp>
@@ -99,7 +100,7 @@ FrameInterpolator& FrameInterpolator::get() {
 }
 
 std::filesystem::path FrameInterpolator::configPath() const {
-    return Mod::get()->getSaveDir() / "frame_interp.json";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "frame_interp.json";
 }
 
 void FrameInterpolator::init() {
@@ -115,7 +116,7 @@ void FrameInterpolator::loadConfig() {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return;
 
-    auto rawRes = geode::utils::file::readString(path);
+    auto rawRes = geode::utils::file::readString(paimon::paths::toSdkPath(path));
     if (!rawRes) {
         log::warn("[PaimonInterp] No se pudo leer la config: {}", rawRes.unwrapErr());
         return;
@@ -175,7 +176,7 @@ void FrameInterpolator::saveConfig() {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out) {
         log::error("[PaimonInterp] No se pudo escribir la config en {}",
-                   geode::utils::string::pathToString(path));
+                   paimon::paths::toUtf8(path));
         return;
     }
     auto txt = j.dump();

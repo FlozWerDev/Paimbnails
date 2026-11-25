@@ -6,6 +6,7 @@ import json
 import re
 from collections import Counter, defaultdict
 from pathlib import Path
+from build_paths import bindings_directory
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,22 +42,13 @@ ENGINE = {
 }
 
 
-def bindings_directory():
-    cache = ROOT / "build-win/CMakeCache.txt"
-    version = re.search(r"^GEODE_GD_VERSION:[^=]+=([^\n]+)$", cache.read_text(), re.M)[1]
-    path = ROOT / "build-win/_deps/bindings-src/bindings" / version.strip()
-    if not (path / "Entry.bro").is_file():
-        raise FileNotFoundError(f"Missing bindings for {version}: {path}")
-    return path
-
-
 def collect(directory):
     classes, sources = {}, []
     entry = directory / "Entry.bro"
     for filename in ["Entry.bro", *re.findall(r"#include <([^>]+)>", entry.read_text())]:
         path = directory / filename
         source = path.read_text()
-        sources.append({"path": str(path.relative_to(ROOT)), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+        sources.append({"path": filename, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
         for match in CLASS.finditer(source):
             name, parents, body = match.groups()
             methods = []
@@ -135,7 +127,7 @@ def inventory(directory=None):
 def markdown(data):
     lines = [
         "# Inventario de Dynamic Transition", "",
-        f'Fuente: `build-win/_deps/bindings-src/bindings/{data["version"]}/Entry.bro` y todos sus includes.', "",
+        f'Fuente: bindings de GD `{data["version"]}` del build configurado y todos sus includes.', "",
         f'Se revisaron **{data["total_classes"]} clases** y se extrajeron **{data["candidate_count"]} candidatos** '
         "de interfaz, controles y efectos. Este inventario describe cobertura por herencia y puntos de entrada; "
         "la validacion visual en Geometry Dash sigue pendiente.", "",

@@ -61,7 +61,7 @@ void ListThumbnailCarousel::startCarousel() {
     tryShowNextImage();
 }
 
-void ListThumbnailCarousel::updateCarousel(float dt) {
+void ListThumbnailCarousel::updateCarousel(float) {
     tryShowNextImage();
 }
 
@@ -183,7 +183,7 @@ void ListThumbnailCarousel::tryShowNextImage() {
     }
 }
 
-void ListThumbnailCarousel::onImageLoaded(CCTexture2D* texture, int index) {
+void ListThumbnailCarousel::onImageLoaded(CCTexture2D* texture, int) {
     if (!texture) {
         return;
     }

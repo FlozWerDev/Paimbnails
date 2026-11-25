@@ -1,3 +1,4 @@
+#include "../../../framework/compat/NativeUI.hpp"
 #include "LeaderboardHistoryLayer.hpp"
 #include "../../../ui/PaimonUI.hpp"
 #include "../../audio/services/CaveAudio.hpp"
@@ -157,7 +158,7 @@ void LeaderboardHistoryLayer::onExitTransitionDidStart() {
     CCLayer::onExitTransitionDidStart();
 }
 
-void LeaderboardHistoryLayer::update(float dt) {
+void LeaderboardHistoryLayer::update(float) {
     if (!m_caveApplied) {
         applyCaveEffect();
     }
@@ -350,6 +351,7 @@ void LeaderboardHistoryLayer::createList() {
     float totalH = std::max(listH, cellH * (float)pageCount);
 
     auto scrollView = geode::ScrollLayer::create({listW, listH});
+    if (scrollView) scrollView->setAnchorPoint({0.f, 0.f});
     scrollView->setPosition({winSize.width / 2 - listW / 2, 20.f});
 
     auto content = CCLayer::create();
@@ -509,13 +511,13 @@ void LeaderboardHistoryLayer::onCellClick(CCObject* sender) {
         levelToUse = level;
     }
 
-    auto layer = LevelInfoLayer::create(levelToUse, false);
+    auto layer = paimon::compat::createLevelInfoLayer(levelToUse, false);
     auto infoScene = CCScene::create();
     infoScene->addChild(layer);
     TransitionManager::get().pushScene(infoScene);
 }
 
-void LeaderboardHistoryLayer::loadLevelsFinished(CCArray* levels, char const* key) {
+void LeaderboardHistoryLayer::loadLevelsFinished(CCArray* levels, char const*) {
     if (!levels) return;
 
     for (auto* level : CCArrayExt<GJGameLevel*>(levels)) {
@@ -531,10 +533,10 @@ void LeaderboardHistoryLayer::loadLevelsFinished(CCArray* levels, char const* ke
     createList();
 }
 
-void LeaderboardHistoryLayer::loadLevelsFailed(char const* key) {
+void LeaderboardHistoryLayer::loadLevelsFailed(char const*) {
 }
 
-void LeaderboardHistoryLayer::setupPageInfo(gd::string, char const*) {
+void LeaderboardHistoryLayer::setupPageInfo(std::string, char const*) {
 }
 
 LeaderboardHistoryLayer::~LeaderboardHistoryLayer() {

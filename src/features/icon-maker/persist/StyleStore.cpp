@@ -1,9 +1,11 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "StyleStore.hpp"
 
 #include "IconPaths.hpp"
 #include "../data/IconProject.hpp"
 
 #include <Geode/utils/file.hpp>
+#include "../../../utils/AtomicFileWrite.hpp"
 #include <matjson.hpp>
 
 #include <algorithm>
@@ -39,7 +41,7 @@ void StyleStore::load() {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return;
 
-    auto rd = geode::utils::file::readJson(path);
+    auto rd = geode::utils::file::readJson(paimon::paths::toSdkPath(path));
     if (!rd) {
         log::warn("[icon-maker] styles.json read failed: {}", rd.unwrapErr());
         return;
@@ -78,9 +80,9 @@ geode::Result<> StyleStore::save() {
     auto doc = matjson::Value::object();
     doc["styles"] = arr;
 
-    auto wr = geode::utils::file::writeString(IconPaths::stylesFile(), doc.dump());
+    auto wr = paimon::file::writeAtomically(IconPaths::stylesFile(), doc.dump());
     if (!wr) {
-        return Err("writeString styles.json: {}", wr.unwrapErr());
+        return Err("Unable to atomically save styles.json");
     }
     return Ok();
 }

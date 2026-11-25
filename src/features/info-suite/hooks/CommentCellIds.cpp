@@ -26,17 +26,11 @@ class $modify(PaimonInfoSuiteCommentCell, CommentCell) {
     void loadFromComment(GJComment* comment) {
         CommentCell::loadFromComment(comment);
         if (!commentIdsEnabled() || !comment) return;
-        if (this->getChildByID(kBadgeID)) return;
 
         int id = comment->m_commentID;
         if (id <= 0) return;
 
-        auto* badge = paimon::info::makeIdBadge(fmt::format("#{}", id), 0.36f);
-        if (!badge) return;
-
-        badge->setID(kBadgeID);
-        badge->setAnchorPoint({1.f, 0.f});
-        badge->setPosition({this->getContentSize().width - 5.f, 3.f});
-        this->addChild(badge, 100);
+        paimon::info::attachIdBadge(this, kBadgeID, fmt::format("#{}", id), 0.36f,
+            {1.f, 0.f}, {this->getContentSize().width - 5.f, 3.f});
     }
 };

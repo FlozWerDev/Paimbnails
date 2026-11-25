@@ -14,6 +14,7 @@ namespace paimon::versus {
 
 class VersusLeaderboardLayer : public cocos2d::CCLayer {
 public:
+    using cocos2d::CCLayer::init;
     static VersusLeaderboardLayer* create(Mode mode);
     static cocos2d::CCScene* scene(Mode mode);
 

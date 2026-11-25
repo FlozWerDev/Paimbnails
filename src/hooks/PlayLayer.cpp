@@ -17,6 +17,7 @@
 #include <Geode/loader/SettingV3.hpp>
 #include <Geode/utils/Keyboard.hpp>
 #include "../features/capture/ui/CapturePreviewPopup.hpp"
+#include "../features/capture/ui/CaptureMenuPopup.hpp"
 #include "../features/capture/ui/CaptureLayerEditorPopup.hpp"
 #include "../features/capture/ui/CaptureAssetBrowserPopup.hpp"
 #include "../features/capture/services/FramebufferCapture.hpp"
@@ -44,12 +45,14 @@
 #include "../features/smooth-scroll/services/SmoothScrollController.hpp"
 #include "../core/RuntimeLifecycle.hpp"
 #include "../utils/ActivePauseLayer.hpp"
+#include "../utils/SceneIdentity.hpp"
 #include "../utils/ExtendedKeybind.hpp"
 #include "../utils/ThreadTracker.hpp"
 #include <algorithm>
 #include <cstring>
 #include <memory>
 #include <chrono>
+#include <cstdint>
 #include <initializer_list>
 
 #ifdef GEODE_IS_WINDOWS
@@ -60,6 +63,7 @@
 #include "../features/menu-loop/services/MenuLoopManager.hpp"
 #include "../features/menu-loop/services/MenuLoopControl.hpp"
 #include "../features/menu-music/services/MenuMusicPlayer.hpp"
+#include "../features/menu-music/services/SpotifyService.hpp"
 
 using namespace geode::prelude;
 
@@ -67,6 +71,7 @@ namespace {
     // keybind-capture flow guard (keypress until popup close), distinct from
     // iscaptureinprogress() (gpu flight only); both are checked on acquire
     std::atomic_bool s_captureFlowActive{false};
+    std::atomic<std::uint64_t> s_captureFlowGeneration{0};
     constexpr float kPauseZoomStep = 0.18f;
     constexpr float kPauseZoomMin = 1.0f;
     constexpr float kPauseZoomMax = 4.0f;
@@ -165,21 +170,16 @@ namespace {
         }
     }
 
-    float getPauseZoomSensitivity() {
-        return static_cast<float>(Mod::get()->getSavedValue<double>("zoom-sensitivity", 1.0));
-    }
-
-    bool pauseZoomAutoHideMenu() {
-        return Mod::get()->getSavedValue<bool>("zoom-auto-hide-menu", true);
-    }
-
-    bool pauseZoomAutoShowMenu() {
-        return Mod::get()->getSavedValue<bool>("zoom-auto-show-menu", true);
-    }
-
-    bool pauseZoomAltDisablesScroll() {
-        return Mod::get()->getSavedValue<bool>("zoom-alt-disables-scroll", true);
-    }
+    // E2: the pause-zoom tick and scroll handlers read these on every frame/
+    // event. a frame-gated cache serves every entry point from one refresh
+    // per frame; values always converge on the next tick, so a settings edit
+    // can lag by at most one frame instead of going stale.
+    struct PauseZoomSettings {
+        float sensitivity = 1.0f;
+        bool autoHideMenu = true;
+        bool autoShowMenu = true;
+        bool altDisablesScroll = true;
+    };
 
     float clampZoomValue(float value, float minValue, float maxValue);
     CCSize getGameplayScreenSize();
@@ -196,6 +196,7 @@ namespace {
         void onPause() {
             if (m_isPaused) return;
             if (!paimon::modules::isEnabled("paimbnails.pausezoom.gameplay")) return;
+            m_playLayer = paimon::NodeIdentity(PlayLayer::get());
             m_isPaused = true;
             m_isPanning = false;
             m_menuForcedHidden = false;
@@ -206,7 +207,7 @@ namespace {
 
         void onResume() {
             if (m_isPaused) {
-                if (auto* playLayer = PlayLayer::get()) {
+                if (auto* playLayer = PlayLayer::get(); m_playLayer.matches(playLayer)) {
                     resetPlayLayerZoom(playLayer);
                 }
             }
@@ -215,9 +216,11 @@ namespace {
             m_isPanning = false;
             m_menuForcedHidden = false;
             m_pauseLayerMissingFrames = 0;
+            m_playLayer = {};
         }
 
         void resetForNewLevel() {
+            m_playLayer = {};
             m_isPaused = false;
             m_isPanning = false;
             m_menuForcedHidden = false;
@@ -226,7 +229,29 @@ namespace {
             paimon::setPauseZoomHidden(false);
         }
 
-        void update(float dt) {
+        PauseZoomSettings const& pauseZoomSettings() {
+            if (!m_settingsValid || m_settingsFrame != m_frame) {
+                m_settingsFrame = m_frame;
+                m_settingsValid = true;
+                m_settingsCache.sensitivity = static_cast<float>(Mod::get()->getSavedValue<double>("zoom-sensitivity", 1.0));
+                m_settingsCache.autoHideMenu = Mod::get()->getSavedValue<bool>("zoom-auto-hide-menu", true);
+                m_settingsCache.autoShowMenu = Mod::get()->getSavedValue<bool>("zoom-auto-show-menu", true);
+                m_settingsCache.altDisablesScroll = Mod::get()->getSavedValue<bool>("zoom-alt-disables-scroll", true);
+            }
+            return m_settingsCache;
+        }
+
+        float getPauseZoomSensitivity() { return pauseZoomSettings().sensitivity; }
+        bool pauseZoomAutoHideMenu() { return pauseZoomSettings().autoHideMenu; }
+        bool pauseZoomAutoShowMenu() { return pauseZoomSettings().autoShowMenu; }
+        bool pauseZoomAltDisablesScroll() { return pauseZoomSettings().altDisablesScroll; }
+
+        void update(float) {
+            ++m_frame;
+            if (!paimon::modules::isEnabled("paimbnails.pausezoom.gameplay")) {
+                this->onResume();
+                return;
+            }
             auto* playLayer = PlayLayer::get();
             if (!playLayer || !playLayer->m_isPaused) {
                 this->onResume();
@@ -247,6 +272,7 @@ namespace {
 
             if (hasBlockingPopup()) {
                 m_isPanning = false;
+                m_lastMousePos = cocos::getMousePos();
                 return;
             }
 
@@ -352,20 +378,67 @@ namespace {
         }
 
         void reset() {
-            if (m_isPaused && hasBlockingPopup()) return;
+            if (!m_isPaused || hasBlockingPopup()) return;
             if (auto* playLayer = PlayLayer::get()) {
                 resetPlayLayerZoom(playLayer);
             }
             restorePauseMenuVisible();
         }
 
+        bool isPausedAndZoomable() {
+            auto* pl = PlayLayer::get();
+            if (!pl || !pl->m_isPaused || !getPauseLayer()) return false;
+            return !hasBlockingPopup();
+        }
+
+        void pinchZoomAt(float scaleRatio, CCPoint focusPoint) {
+            if (!isPausedAndZoomable()) return;
+            auto* playLayer = PlayLayer::get();
+            if (!playLayer) return;
+            auto contentSize = playLayer->getContentSize();
+            if (contentSize.width <= 0.f || contentSize.height <= 0.f) return;
+
+            float oldScale = std::max(playLayer->getScale(), 0.001f);
+            float newScale = clampZoomValue(oldScale * scaleRatio, kPauseZoomMin, kPauseZoomMax);
+            if (std::fabs(newScale - oldScale) < 1e-4f) return;
+
+            CCPoint anchorPoint{
+                focusPoint.x - contentSize.width * 0.5f,
+                focusPoint.y - contentSize.height * 0.5f
+            };
+            CCPoint deltaFromAnchor = playLayer->getPosition() - anchorPoint;
+            playLayer->setPosition(anchorPoint);
+            playLayer->setScale(newScale);
+            playLayer->setPosition(anchorPoint + deltaFromAnchor * (newScale / oldScale));
+            clampPlayLayerZoomPosition(playLayer);
+
+            if (newScale > 1.01f && pauseZoomAutoHideMenu()) {
+                hidePauseMenu();
+            } else if (newScale <= 1.01f && pauseZoomAutoShowMenu() && m_menuForcedHidden) {
+                restorePauseMenuVisible();
+            }
+        }
+
+        void panByDelta(CCPoint deltaPoints) {
+            if (!isPausedAndZoomable()) return;
+            auto* playLayer = PlayLayer::get();
+            if (!playLayer || playLayer->getScale() <= 1.01f) return;
+            playLayer->setPosition(playLayer->getPosition() + deltaPoints);
+            clampPlayLayerZoomPosition(playLayer);
+        }
+
     private:
+        paimon::NodeIdentity<PlayLayer> m_playLayer;
         bool m_isPaused = false;
         bool m_isPanning = false;
         bool m_menuForcedHidden = false;
         int m_pauseLayerMissingFrames = 0;
         CCPoint m_lastMousePos = ccp(0.f, 0.f);
         CCPoint m_deltaMousePos = ccp(0.f, 0.f);
+        std::uint64_t m_frame = 0;
+        PauseZoomSettings m_settingsCache;
+        std::uint64_t m_settingsFrame = 0;
+        bool m_settingsValid = false;
 
         PauseLayer* getPauseLayer() {
             auto* playLayer = PlayLayer::get();
@@ -374,6 +447,8 @@ namespace {
         }
 
         bool hasBlockingPopup() {
+            if (!paimon::modules::isEnabled("paimbnails.pausezoom.gameplay") ||
+                paimon::isCaptureInProgress()) return true;
             auto* scene = CCDirector::get() ? CCDirector::get()->getRunningScene() : nullptr;
             if (!scene) return false;
             auto* pauseLayer = getPauseLayer();
@@ -383,7 +458,8 @@ namespace {
                 if (!node || !node->isVisible()) continue;
                 if (node == pauseLayer) continue;
 
-                if (typeinfo_cast<FLAlertLayer*>(node)) {
+                if (typeinfo_cast<FLAlertLayer*>(node) || typeinfo_cast<CCBlockLayer*>(node) ||
+                    typeinfo_cast<DialogLayer*>(node)) {
                     return true;
                 }
 
@@ -598,7 +674,7 @@ static void uploadCapturedThumbnail(int levelID, std::shared_ptr<uint8_t> const&
     }
     if (username.empty()) username = "unknown";
     if (accountID <= 0) {
-        PaimonNotify::create(Localization::get().getString("level.account_required"), NotificationIcon::Error)->show();
+        PaimonNotify::show(Localization::get().getString("level.account_required"), NotificationIcon::Error);
         return;
     }
 
@@ -629,7 +705,7 @@ static void uploadCapturedThumbnail(int levelID, std::shared_ptr<uint8_t> const&
                 LevelColors::get().set(levelID, A, B);
 
                 if (!encoded) {
-                    PaimonNotify::create(Localization::get().getString("capture.save_png_error"), NotificationIcon::Error)->show();
+                    PaimonNotify::show(Localization::get().getString("capture.save_png_error"), NotificationIcon::Error);
                     return;
                 }
 
@@ -638,16 +714,16 @@ static void uploadCapturedThumbnail(int levelID, std::shared_ptr<uint8_t> const&
                         bool isPending = (msg.find("pending") != std::string::npos || msg.find("verification") != std::string::npos);
                         if (isPending) {
                             PendingQueue::get().addOrBump(levelID, PendingCategory::Verify, username, {}, false);
-                            PaimonNotify::create(Localization::get().getString("capture.suggested"), NotificationIcon::Success)->show();
+                            PaimonNotify::show(Localization::get().getString("capture.suggested"), NotificationIcon::Success);
                         } else {
                             PendingQueue::get().removeForLevel(levelID);
-                            PaimonNotify::create(Localization::get().getString("capture.upload_success"), NotificationIcon::Success)->show();
+                            PaimonNotify::show(Localization::get().getString("capture.upload_success"), NotificationIcon::Success);
                         }
                     } else {
-                        PaimonNotify::create(
+                        PaimonNotify::show(
                             Localization::get().getString("capture.upload_error") + (msg.empty() ? std::string("") : (" (" + msg + ")")),
                             NotificationIcon::Error
-                        )->show();
+                        );
                     }
                 }, levelMeta);
             });
@@ -658,21 +734,14 @@ static std::atomic<bool> s_hideP1ForCapture{false};
 static std::atomic<bool> s_hideP2ForCapture{false};
 
 // the preview popup pauses gameplay; resume only when no pauselayer took over
-static void resumePlayLayerAfterPopup() {
+static void resumePlayLayerAfterPopup(WeakRef<PlayLayer> const& owner) {
     if (paimon::isRuntimeShuttingDown()) return;
-    auto* pl = PlayLayer::get();
-    if (!pl || !pl->m_isPaused) return;
-    if (auto* sc = CCDirector::get() ? CCDirector::get()->getRunningScene() : nullptr) {
-        for (auto child : CCArrayExt<CCNode*>(sc->getChildren())) {
-            if (typeinfo_cast<PauseLayer*>(child)) return;
-        }
-    }
-    auto* d = CCDirector::get();
-    if (!d || !d->getScheduler() || !d->getActionManager()) return;
-    d->getScheduler()->resumeTarget(pl);
-    d->getActionManager()->resumeTarget(pl);
-    pl->m_isPaused = false;
-    PauseZoomManager::get().onResume();
+    auto play = owner.lock();
+    auto* director = CCDirector::get();
+    if (!play || play.data() != PlayLayer::get() || !play->getParent() || !play->m_isPaused
+        || !director || director->getNextScene() || paimon::hasPauseLayerInScene()) return;
+    // use the bound native resume so audio and other mods receive the lifecycle too.
+    play->resume();
 }
 
 static void ensurePauseZoomTicker();
@@ -685,6 +754,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
     }
 
     struct Fields {
+        std::uint64_t m_captureFlowGeneration = 0;
         float m_frameTimer = 0.0f;
         std::chrono::steady_clock::time_point m_forYouSessionStart;
         bool m_performanceApplied = false;
@@ -693,7 +763,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
     };
 
     $override
-    bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
+    bool init(GJGameLevel* level, bool dontCreateObjects) {
         if (auto* gameManager = GameManager::get();
             paimon::gameplayperf::isEnabled() && gameManager) {
             m_fields->m_previousPerformanceMode = gameManager->m_performanceMode;
@@ -710,10 +780,11 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
         }
 
         AudioContextCoordinator::get().notifyGameplayStarted(level);
+        paimon::menumusic::SpotifyService::get().onEnterLevel();
 
         s_hideP1ForCapture = false;
         s_hideP2ForCapture = false;
-        if (!PlayLayer::init(level, useReplay, dontCreateObjects)) {
+        if (!PlayLayer::init(level, dontCreateObjects)) {
             this->restorePerformanceMode();
             return false;
         }
@@ -745,7 +816,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
         if (Mod::get()->getSettingValue<bool>("enable-thumbnail-taking")) {
             this->addEventListener(
                 KeybindSettingPressedEventV3(Mod::get(), "capture-keybind"),
-                [this](Keybind const& keybind, bool down, bool repeat, double timestamp) {
+                [this](Keybind const&, bool down, bool repeat, double) {
                     if (!down || repeat) return;
                     if (PlayLayer::get() != this) return;
                     if (this->m_isPaused) return;
@@ -755,6 +826,8 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
 
                     bool expected = false;
                     if (!s_captureFlowActive.compare_exchange_strong(expected, true)) return;
+                    auto const generation = ++s_captureFlowGeneration;
+                    m_fields->m_captureFlowGeneration = generation;
 
     // button and keybind capture share one guard
                     if (paimon::isCaptureInProgress()) {
@@ -779,15 +852,19 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
 
                     int levelID = this->m_level->m_levelID;
                     WeakRef<PlayLayer> weakRef = this;
-                    FramebufferCapture::requestCapture(levelID, [weakRef, levelID](bool success, CCTexture2D* texture, std::shared_ptr<uint8_t> rgbaData, int width, int height) {
+                    FramebufferCapture::requestCapture(levelID, [weakRef, levelID, generation](bool success, CCTexture2D* texture, std::shared_ptr<uint8_t> rgbaData, int width, int height) {
                         Ref<CCTexture2D> texRef = texture;
-                        Loader::get()->queueInMainThread([weakRef, success, texRef, rgbaData, width, height, levelID]() {
+                        Loader::get()->queueInMainThread([weakRef, generation, success, texRef, rgbaData, width, height, levelID]() {
+                            if (generation != s_captureFlowGeneration.load()) return;
                             // restore capture state on every early exit
-                            auto cleanup = []() {
+                            auto cleanup = [weakRef]() {
                                 s_captureFlowActive.store(false);
                                 paimon::setCaptureInProgress(false);
-                                if (auto* engine = FMODAudioEngine::sharedEngine()) {
-                                    if (engine->m_backgroundMusicChannel) engine->m_backgroundMusicChannel->setPaused(false);
+                                auto play = weakRef.lock();
+                                if (play && play.data() == PlayLayer::get() && !play->m_isPaused) {
+                                    if (auto* engine = FMODAudioEngine::sharedEngine()) {
+                                        if (engine->m_backgroundMusicChannel) engine->m_backgroundMusicChannel->setPaused(false);
+                                    }
                                 }
                             };
                             if (paimon::isRuntimeShuttingDown()) {
@@ -808,10 +885,10 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
 
                             if (!success || !texture || !rgbaData) {
                                 cleanup();
-                                PaimonNotify::create(
+                                PaimonNotify::show(
                                     Localization::get().getString("pause.capture_error").c_str(),
                                     NotificationIcon::Error
-                                )->show();
+                                );
                                 return;
                             }
 
@@ -829,11 +906,12 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
 
                             auto* popup = CapturePreviewPopup::create(
                                 texture, levelID, rgbaData, width, height,
-                                [levelID, pausedByPopup](bool okSave, int levelIDAccepted, std::shared_ptr<uint8_t> buf, int W, int H, std::string mode, std::string replaceId){
-                                    s_captureFlowActive.store(false);
-                                    if (pausedByPopup) {
-                                        geode::Loader::get()->queueInMainThread([]() {
-                                            resumePlayLayerAfterPopup();
+                                [pausedByPopup, weakRef, generation](bool okSave, int levelIDAccepted, std::shared_ptr<uint8_t> buf, int W, int H, std::string, std::string){
+                                    bool const current = generation == s_captureFlowGeneration.load();
+                                    if (current) s_captureFlowActive.store(false);
+                                    if (pausedByPopup && current) {
+                                        geode::Loader::get()->queueInMainThread([weakRef]() {
+                                            resumePlayLayerAfterPopup(weakRef);
                                         });
                                     }
                                     if (okSave && levelIDAccepted > 0 && buf) {
@@ -862,7 +940,10 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                                 s_hideP1ForCapture, s_hideP2ForCapture
                             );
                             if (popup) { popup->setPausedMusic(true); popup->show(); }
-                            else { s_captureFlowActive.store(false); }
+                            else {
+                                cleanup();
+                                if (pausedByPopup) resumePlayLayerAfterPopup(weakRef);
+                            }
                         });
                     });
                 }
@@ -930,6 +1011,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
 
     $override
     void onQuit() {
+        cancelKeybindCaptureFlow();
         bool const skipExitTransition = m_fields->m_performanceApplied;
         this->restorePerformanceMode();
         PauseZoomManager::get().onResume();
@@ -964,8 +1046,20 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
 
     $override
     void onExit() {
+        cancelKeybindCaptureFlow();
         this->restorePerformanceMode();
         PlayLayer::onExit();
+    }
+
+    void cancelKeybindCaptureFlow() {
+        if (!m_fields->m_captureFlowGeneration ||
+            m_fields->m_captureFlowGeneration != s_captureFlowGeneration.load()) return;
+        ++s_captureFlowGeneration;
+        m_fields->m_captureFlowGeneration = 0;
+        if (s_captureFlowActive.exchange(false)) {
+            FramebufferCapture::cancelPending();
+            paimon::setCaptureInProgress(false);
+        }
     }
 
     void restorePerformanceMode() {
@@ -981,17 +1075,19 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
     }
 
     void captureScreenshot(CapturePreviewPopup* existingPopup = nullptr) {
-        if (s_captureFlowActive.load()) return;
+        if (s_captureFlowActive.load() || paimon::isCaptureInProgress() || PlayLayer::get() != this) return;
         if (!this->m_level || this->m_level->m_levelID <= 0) return;
 
         auto validation = FramebufferCapture::validateCaptureConditions();
         if (!validation.canCapture) {
-            PaimonNotify::create(validation.reason.c_str(), NotificationIcon::Warning)->show();
+            PaimonNotify::show(validation.reason.c_str(), NotificationIcon::Warning);
             if (existingPopup) existingPopup->setVisible(true);
             return;
         }
 
         s_captureFlowActive.store(true);
+        auto const generation = ++s_captureFlowGeneration;
+        m_fields->m_captureFlowGeneration = generation;
         paimon::setCaptureInProgress(true);
 
         int const levelID = this->m_level->m_levelID;
@@ -1001,10 +1097,11 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
         WeakRef<CapturePreviewPopup> weakPopup = existingPopup;
 
         FramebufferCapture::requestCapture(levelID,
-            [self, weakPopup, levelID, hideP1, hideP2](bool success, CCTexture2D* texture,
+            [self, weakPopup, levelID, hideP1, hideP2, generation, hadPopup = existingPopup != nullptr](bool success, CCTexture2D* texture,
                 std::shared_ptr<uint8_t> rgbaData, int width, int height) {
                 Ref<CCTexture2D> texRef = texture;
-                Loader::get()->queueInMainThread([self, weakPopup, success, texRef, rgbaData, width, height, levelID, hideP1, hideP2]() {
+                Loader::get()->queueInMainThread([self, weakPopup, generation, hadPopup, success, texRef, rgbaData, width, height, levelID, hideP1, hideP2]() {
+                    if (generation != s_captureFlowGeneration.load()) return;
                     auto cleanup = []() {
                         s_captureFlowActive.store(false);
                         paimon::setCaptureInProgress(false);
@@ -1027,12 +1124,13 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                         : nullptr;
 
                     cleanup();
+                    if (hadPopup && (!popupPtr || !popupPtr->getParent() || !popupPtr->isRunning())) return;
 
                     if (!success || !texRef.data() || !rgbaData) {
-                        PaimonNotify::create(
+                        PaimonNotify::show(
                             Localization::get().getString("pause.capture_error").c_str(),
                             NotificationIcon::Error
-                        )->show();
+                        );
                         if (popupPtr) popupPtr->setVisible(true);
                         return;
                     }
@@ -1054,11 +1152,12 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
 
                     auto* popup = CapturePreviewPopup::create(
                         texRef.data(), levelID, rgbaData, width, height,
-                        [levelID, pausedByPopup](bool okSave, int levelIDAccepted, std::shared_ptr<uint8_t> buf, int W, int H, std::string mode, std::string replaceId) {
-                            s_captureFlowActive.store(false);
-                            if (pausedByPopup) {
-                                Loader::get()->queueInMainThread([]() {
-                                    resumePlayLayerAfterPopup();
+                        [pausedByPopup, self, generation](bool okSave, int levelIDAccepted, std::shared_ptr<uint8_t> buf, int W, int H, std::string, std::string) {
+                            bool const current = generation == s_captureFlowGeneration.load();
+                            if (current) s_captureFlowActive.store(false);
+                            if (pausedByPopup && current) {
+                                Loader::get()->queueInMainThread([self]() {
+                                    resumePlayLayerAfterPopup(WeakRef<PlayLayer>(self.lock().data()));
                                 });
                             }
                             if (okSave && levelIDAccepted > 0 && buf) {
@@ -1084,6 +1183,9 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                     );
 
                     if (popup) popup->show();
+                    else if (pausedByPopup) {
+                        resumePlayLayerAfterPopup(WeakRef<PlayLayer>(layer.data()));
+                    }
                 });
             },
             nullptr,
@@ -1103,20 +1205,23 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
 
     $override
     void resume() {
-        PauseZoomManager::get().onResume();
         PlayLayer::resume();
+        paimon::synchronizePauseLayers(this);
+        if (this == PlayLayer::get() && !m_isPaused) PauseZoomManager::get().onResume();
     }
 
     $override
     void resumeAndRestart(bool fromStart) {
-        PauseZoomManager::get().onResume();
         PlayLayer::resumeAndRestart(fromStart);
+        paimon::synchronizePauseLayers(this);
+        if (this == PlayLayer::get() && !m_isPaused) PauseZoomManager::get().onResume();
     }
 
     $override
     void startGame() {
-        PauseZoomManager::get().onResume();
         PlayLayer::startGame();
+        paimon::synchronizePauseLayers(this);
+        if (this == PlayLayer::get() && !m_isPaused) PauseZoomManager::get().onResume();
     }
 };
 
@@ -1194,5 +1299,42 @@ class $modify(PaimonPauseZoomVisitFilter, CCNode) {
 namespace paimon::pausezoom {
     void dispatchScroll(float y, float x) {
         PauseZoomManager::get().onScroll(y, x);
+    }
+    bool isPausedAndZoomable() {
+        return PauseZoomManager::get().isPausedAndZoomable();
+    }
+    void zoomInStep() {
+        PauseZoomManager::get().zoomInStep();
+    }
+    void zoomOutStep() {
+        PauseZoomManager::get().zoomOutStep();
+    }
+    void resetZoom() {
+        PauseZoomManager::get().reset();
+    }
+    void toggleMenu() {
+        PauseZoomManager::get().togglePauseMenu();
+    }
+    void pinchZoomAt(float scaleRatio, cocos2d::CCPoint focusPoint) {
+        PauseZoomManager::get().pinchZoomAt(scaleRatio, focusPoint);
+    }
+    void panByDelta(cocos2d::CCPoint deltaPoints) {
+        PauseZoomManager::get().panByDelta(deltaPoints);
+    }
+}
+
+namespace paimon::capture {
+    void triggerCaptureFromGesture() {
+        auto* pl = PlayLayer::get();
+        if (!pl) {
+            CaptureMenuPopup::toggle();
+            return;
+        }
+        auto* mod = Mod::get();
+        if (!mod || !mod->getSettingValue<bool>("enable-thumbnail-taking")) return;
+        Keybind synthetic;
+        KeybindSettingPressedEventV3(std::string(mod->getID()), "capture-keybind").send(
+            synthetic, true, false, 0.0
+        );
     }
 }

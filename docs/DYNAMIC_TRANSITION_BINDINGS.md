@@ -1,8 +1,8 @@
 # Inventario de Dynamic Transition
 
-Fuente: `build-win/_deps/bindings-src/bindings/2.2081/Entry.bro` y todos sus includes.
+Fuente: bindings de GD `2.2091` del build configurado y todos sus includes.
 
-Se revisaron **940 clases** y se extrajeron **380 candidatos** de interfaz, controles y efectos. Este inventario describe cobertura por herencia y puntos de entrada; la validacion visual en Geometry Dash sigue pendiente.
+Se revisaron **1123 clases** y se extrajeron **471 candidatos** de interfaz, controles y efectos. Este inventario describe cobertura por herencia y puntos de entrada; la validacion visual en Geometry Dash sigue pendiente.
 
 Regenerar sin compilar: `python3 tests/audit_dynamic_transition_bindings.py --write`.
 
@@ -22,100 +22,165 @@ Regenerar sin compilar: `python3 tests/audit_dynamic_transition_bindings.py --wr
 | Panel bloqueante | 3 |
 | Escena / navegador superpuesto | 1 |
 | Dialogo | 1 |
-| Panel desplegable | 14 |
+| Panel desplegable | 15 |
 | Punto comun del motor | 5 |
 | Escena de gameplay / editor conservada | 5 |
 | Carga / animacion nativa conservada | 2 |
-| Popup del juego | 201 |
-| Navegacion de escenas | 26 |
-| Componente / animacion nativa conservada | 74 |
-| Control o efecto / animacion nativa conservada | 48 |
+| Popup del juego | 280 |
+| Navegacion de escenas | 25 |
+| Componente / animacion nativa conservada | 84 |
+| Control o efecto / animacion nativa conservada | 50 |
 
 ## Popup del juego
 
 | Clase | Metodos propios detectados |
 | --- | --- |
+| `AccountBanPopup` | `keyBackClicked`, `onClose` |
 | `AccountLoginLayer` | `keyBackClicked`, `onClose` |
 | `AccountRegisterLayer` | `keyBackClicked`, `onClose` |
+| `AccountReviewPopup` | `onClose` |
+| `AdminActionConfirmPopup` | `keyBackClicked`, `onClose` |
 | `AudioAssetsBrowser` | `keyBackClicked`, `onClose` |
+| `AudioAssetsPopup` | `keyBackClicked`, `onClose` |
+| `AutoBackupOptionsPopup` | Heredados |
+| `AutoBackupPopup` | `onClose` |
+| `AutoSaveSettingsLayer` | `onClose` |
 | `BrowseSmartKeyLayer` | `onBack` |
 | `BrowseSmartTemplateLayer` | `keyBackClicked`, `onBack`, `onClose` |
 | `ChallengesPage` | `keyBackClicked`, `onClose`, `show` |
 | `CharacterColorPage` | `keyBackClicked`, `onClose`, `show` |
-| `CollisionBlockPopup` | `keyBackClicked`, `onClose`, `show` |
+| `ClearPlatformerSavesOptionsPopup` | Heredados |
+| `ClearPlatformerSavesPopup` | `keyBackClicked`, `onClose` |
+| `CollisionBlockPopup` | Heredados |
 | `ColorSelectLiveOverlay` | `keyBackClicked`, `show` |
 | `ColorSelectPopup` | `keyBackClicked`, `show` |
+| `CommentOptionsPopup` | `keyBackClicked`, `onClose` |
 | `CommunityCreditsPage` | `keyBackClicked`, `onClose`, `show` |
 | `ConfigureValuePopup` | `keyBackClicked`, `onClose` |
+| `ControlSlotsPopup` | `onClose` |
 | `CreateGuidelinesLayer` | `keyBackClicked`, `keyDown`, `keyUp`, `onClose` |
 | `CreateParticlePopup` | `keyBackClicked`, `onClose` |
+| `CreateStartPosPopup` | `onClose` |
+| `CreatorSettingsPopup` | `onClose` |
 | `CustomSongLayer` | `keyBackClicked`, `onClose`, `show` |
 | `CustomizeObjectLayer` | `keyBackClicked`, `onClose` |
 | `CustomizeObjectSettingsPopup` | `onClose` |
 | `DailyLevelPage` | `keyBackClicked`, `onClose`, `show` |
+| `DailyRecallUnlockPopup` | Heredados |
+| `DeathMarkerSettingsPopup` | `keyBackClicked`, `onClose` |
+| `DeathStatsPopup` | `keyBackClicked`, `onClose` |
+| `DeathTrackerOptionsPopup` | `keyBackClicked`, `onClose` |
+| `DeathTrackerPopup` | `keyBackClicked`, `keyDown`, `onClose`, `show` |
 | `DemonFilterSelectLayer` | `keyBackClicked`, `onClose` |
 | `DemonInfoPopup` | `keyBackClicked`, `onClose` |
+| `DropdownListPopup` | `keyBackClicked` |
+| `EasingSelectPopup` | `onClose` |
 | `EditGameObjectPopup` | Heredados |
 | `EditTriggersPopup` | `onClose` |
+| `EditorCommandsPopup` | Heredados |
 | `EditorOptionsLayer` | `onClose` |
-| `FLAlertLayer` | `keyBackClicked`, `keyDown`, `onBtn1`, `onBtn2`, `onEnter`, `show` |
+| `EditorSFXActionConfigLayer` | `onClose` |
+| `EditorSFXSettingsPopup` | Heredados |
+| `EditorSoundBrowserLayer` | `onClose` |
+| `EditorSoundConfigInfoLayer` | `onClose` |
+| `EditorSoundConfigUploadPopup` | `keyBackClicked`, `onCancel`, `onClose` |
+| `EditorSoundsLayer` | `onClose` |
+| `EditorSoundsSettingsPopup` | `keyBackClicked`, `onClose` |
+| `EditorWindowPopup` | `keyDown`, `onClose`, `onExit`, `show` |
+| `EmotePickerPopup` | `keyDown`, `onClose`, `show` |
+| `FLAlertLayer` | `keyBackClicked`, `keyDown`, `onEnter`, `show` |
 | `FRequestProfilePage` | `keyBackClicked`, `onClose` |
 | `FindBPMLayer` | `onClose` |
+| `FindObjectOptionsLayer` | Heredados |
 | `FindObjectPopup` | Heredados |
 | `FollowRewardPage` | `keyBackClicked`, `onClose`, `show` |
+| `FriendPickerPopup` | `onClose` |
 | `FriendRequestPopup` | `keyBackClicked`, `onClose` |
-| `FriendsProfilePage` | `keyBackClicked`, `onClose` |
+| `FriendsProfilePage` | `onClose` |
 | `GJAccountSettingsLayer` | `keyBackClicked`, `onClose` |
 | `GJColorSetupLayer` | `keyBackClicked`, `onClose` |
-| `GJFollowCommandLayer` | `onClose` |
+| `GJFollowCommandLayer` | Heredados |
 | `GJMessagePopup` | `keyBackClicked`, `onClose` |
 | `GJOptionsLayer` | Heredados |
-| `GJPFollowCommandLayer` | `onClose` |
+| `GJPFollowCommandLayer` | Heredados |
 | `GJPathPage` | `keyBackClicked`, `onBack`, `show` |
 | `GJPathRewardPopup` | `keyBackClicked` |
 | `GJPathsLayer` | `keyBackClicked`, `onClose`, `onExit`, `show` |
 | `GJPromoPopup` | `keyBackClicked`, `onClose`, `onExit`, `show` |
+| `GJRateEditorSoundLayer` | `onClose` |
 | `GJRateLevelLayer` | `keyBackClicked`, `onClose` |
-| `GJRotateCommandLayer` | `onClose` |
+| `GJRateLevelListLayer` | `keyBackClicked`, `onClose` |
 | `GJSpecialColorSelect` | `keyBackClicked`, `onClose` |
 | `GJWriteMessagePopup` | `keyBackClicked`, `onClose` |
 | `GameLevelOptionsLayer` | Heredados |
 | `GameOptionsLayer` | Heredados |
+| `GameSettingsLayer` | `onClose` |
+| `GridSettingsLayer` | Heredados |
 | `HSVLiveOverlay` | `keyBackClicked`, `show` |
 | `HSVWidgetPopup` | `keyBackClicked`, `onClose` |
-| `InfoLayer` | `keyBackClicked`, `onClose`, `show` |
+| `IDNameBrowserPopup` | `keyBackClicked`, `onClose`, `show` |
+| `InfoLayer` | `keyBackClicked`, `keyDown`, `onClose`, `show` |
+| `InvitesPopup` | Heredados |
 | `ItemInfoPopup` | `keyBackClicked`, `onClose` |
-| `KeybindingsLayer` | `keyBackClicked`, `onClose` |
+| `KeybindCapturePopup` | `fadeButtonSprite`, `keyDown`, `keyUp`, `onClose` |
+| `KeybindingsLayer` | `onClose` |
+| `KeybindingsSettingsPopup` | `keyBackClicked`, `onClose` |
+| `LevelBadgePopup` | `keyBackClicked`, `show` |
+| `LevelBindingsLayer` | `onClose` |
 | `LevelFeatureLayer` | `keyBackClicked`, `onClose` |
 | `LevelLeaderboard` | `keyBackClicked`, `onClose`, `show` |
 | `LevelOptionsLayer` | Heredados |
 | `LevelOptionsLayer2` | Heredados |
+| `LevelPickerPopup` | Heredados |
 | `LevelSettingsLayer` | `keyBackClicked`, `onClose` |
+| `LevelStatsInfoPopup` | `keyBackClicked`, `onClose` |
 | `LikeItemLayer` | `keyBackClicked`, `onClose` |
+| `MemberListPopup` | Heredados |
+| `MessageThreadsPage` | `keyBackClicked`, `onClose`, `show` |
 | `MessagesProfilePage` | `keyBackClicked`, `onClose` |
 | `MoreOptionsLayer` | `keyBackClicked`, `onClose` |
 | `MoreSearchLayer` | `keyBackClicked`, `onClose` |
 | `MoreVideoOptionsLayer` | `keyBackClicked`, `onClose` |
+| `MoveStepPopup` | Heredados |
 | `MultiTriggerPopup` | Heredados |
 | `MusicBrowser` | `keyBackClicked`, `onClose` |
+| `MusicChangelogPopup` | Heredados |
+| `MyStuffPopup` | `keyBackClicked`, `onClose` |
 | `NCSInfoLayer` | `keyBackClicked`, `onClose` |
+| `NewThreadPopup` | `keyBackClicked`, `keyDown`, `onClose`, `show` |
 | `NewgroundsInfoLayer` | `keyBackClicked`, `onClose` |
+| `NewsPopup` | `keyBackClicked`, `keyDown`, `onClose` |
+| `NotificationFilterPopup` | `keyBackClicked`, `onClose` |
+| `NotificationsPage` | `keyBackClicked`, `onClose` |
 | `NumberInputLayer` | `keyBackClicked`, `onClose` |
 | `OptionsScrollLayer` | `keyBackClicked`, `onClose` |
+| `PagedListPopup` | `keyBackClicked`, `onClose`, `show` |
+| `ParentalGateLayer` | Heredados |
 | `ParentalOptionsLayer` | `keyBackClicked`, `onClose` |
+| `ParentalPrivacyPopup` | Heredados |
+| `PlatformerControlsPopup` | `onClose` |
 | `ProfilePage` | `keyBackClicked`, `onClose`, `show` |
 | `PromoInterstitial` | `keyBackClicked`, `onClose`, `show` |
 | `PurchaseItemPopup` | `keyBackClicked`, `onClose` |
 | `RateDemonLayer` | `keyBackClicked`, `onClose` |
 | `RateLevelLayer` | `keyBackClicked`, `onClose` |
 | `RateStarsLayer` | `keyBackClicked`, `onClose` |
+| `RateStarsModLayer` | `keyBackClicked`, `onClose` |
+| `RenameThreadPopup` | `keyBackClicked`, `onClose` |
+| `ReportPopup` | `keyBackClicked`, `onClose` |
+| `ReportQueuePopup` | Heredados |
+| `ReviewChoiceSheet` | `keyBackClicked`, `onClose` |
 | `RewardUnlockLayer` | `keyBackClicked`, `onClose` |
 | `RewardsPage` | `keyBackClicked`, `onClose`, `show` |
 | `SFXBrowser` | `keyBackClicked`, `onClose` |
-| `SearchSFXPopup` | Heredados |
+| `SFXChangelogPopup` | Heredados |
+| `SFXFolderPickerPopup` | `keyBackClicked`, `onClose` |
+| `SFXSettingsPopup` | `onClose` |
+| `ScrollViewPopup` | `keyBackClicked`, `onClose` |
 | `SelectArtLayer` | `keyBackClicked`, `onClose` |
 | `SelectEventLayer` | `keyBackClicked`, `onClose` |
 | `SelectFontLayer` | `keyBackClicked`, `onClose` |
+| `SelectFontLayer2` | `keyBackClicked`, `onClose` |
 | `SelectListIconLayer` | `keyBackClicked`, `onClose` |
 | `SelectPremadeLayer` | `keyBackClicked`, `onClose` |
 | `SelectSFXSortLayer` | `keyBackClicked`, `onClose` |
@@ -153,8 +218,8 @@ Regenerar sin compilar: `python3 tests/audit_dynamic_transition_bindings.py --wr
 | `SetupCheckpointPopup` | Heredados |
 | `SetupCoinLayer` | Heredados |
 | `SetupCollisionStateTriggerPopup` | Heredados |
-| `SetupCollisionTriggerPopup` | `onClose` |
-| `SetupCountTriggerPopup` | `onClose` |
+| `SetupCollisionTriggerPopup` | Heredados |
+| `SetupCountTriggerPopup` | Heredados |
 | `SetupDashRingPopup` | Heredados |
 | `SetupEndPopup` | `onClose` |
 | `SetupEnterEffectPopup` | `onClose` |
@@ -176,7 +241,7 @@ Regenerar sin compilar: `python3 tests/audit_dynamic_transition_bindings.py --wr
 | `SetupMoveCommandPopup` | Heredados |
 | `SetupObjectControlPopup` | Heredados |
 | `SetupObjectOptions2Popup` | Heredados |
-| `SetupObjectOptionsPopup` | `keyBackClicked`, `onClose`, `show` |
+| `SetupObjectOptionsPopup` | `keyBackClicked`, `keyDown`, `onClose`, `show` |
 | `SetupObjectTogglePopup` | `onClose` |
 | `SetupOpacityPopup` | `onClose` |
 | `SetupOptionsTriggerPopup` | Heredados |
@@ -185,6 +250,7 @@ Regenerar sin compilar: `python3 tests/audit_dynamic_transition_bindings.py --wr
 | `SetupPlatformerEndPopup` | Heredados |
 | `SetupPlayerControlPopup` | Heredados |
 | `SetupPortalPopup` | `keyBackClicked`, `onClose` |
+| `SetupProgressPopup` | Heredados |
 | `SetupPulsePopup` | `onClose`, `show` |
 | `SetupRandAdvTriggerPopup` | `onClose` |
 | `SetupRandTriggerPopup` | `onClose` |
@@ -212,18 +278,31 @@ Regenerar sin compilar: `python3 tests/audit_dynamic_transition_bindings.py --wr
 | `SetupTimerTriggerPopup` | Heredados |
 | `SetupTouchTogglePopup` | `onClose` |
 | `SetupTransformPopup` | Heredados |
-| `SetupTriggerPopup` | `keyBackClicked`, `onClose`, `show` |
+| `SetupTriggerPopup` | `keyBackClicked`, `keyDown`, `onClose`, `show` |
 | `SetupZoomTriggerPopup` | `onClose` |
 | `ShardsPage` | `keyBackClicked`, `onClose`, `show` |
 | `ShareCommentLayer` | `keyBackClicked`, `onClose` |
 | `ShareLevelLayer` | `keyBackClicked`, `onClose` |
 | `ShareLevelSettingsLayer` | `keyBackClicked`, `onClose` |
 | `ShareListLayer` | `keyBackClicked`, `onClose` |
+| `SocialLinksPopup` | `keyBackClicked`, `onClose` |
 | `SongInfoLayer` | `keyBackClicked`, `onClose` |
 | `SongOptionsLayer` | `keyBackClicked`, `onClose` |
+| `SongUsagePopup` | `keyBackClicked`, `onClose` |
+| `SoundPackDescPopup` | `keyBackClicked`, `onClose` |
 | `StarInfoPopup` | `keyBackClicked`, `onClose` |
+| `StartPosBrowser` | `keyBackClicked`, `onClose` |
+| `StartPosLayer` | `onClose` |
 | `TOSPopup` | `keyBackClicked`, `onClose` |
+| `TabbedPopupLayer` | Heredados |
+| `ThreadDescPopup` | `keyBackClicked`, `onClose` |
+| `ThreadMessageOptionsPopup` | `keyBackClicked`, `onClose` |
+| `ThreadOptionsPopup` | `keyBackClicked`, `onClose` |
+| `ThreadRequestPopup` | `keyBackClicked`, `onClose` |
+| `ThreadSearchPopup` | `keyBackClicked`, `onClose` |
+| `ThreadViewPopup` | `keyBackClicked`, `keyDown`, `onClose`, `show` |
 | `TopArtistsLayer` | `keyBackClicked`, `onClose`, `show` |
+| `TouchControlEditLayer` | `keyBackClicked`, `onEnter`, `onExit` |
 | `TutorialLayer` | `keyBackClicked`, `onClose` |
 | `TutorialPopup` | `animateMenu`, `keyBackClicked`, `show` |
 | `UIObjectSettingsPopup` | Heredados |
@@ -250,6 +329,7 @@ Regenerar sin compilar: `python3 tests/audit_dynamic_transition_bindings.py --wr
 | `GJSongBrowser` | `exitLayer` |
 | `OptionsLayer` | `exitLayer`, `layerHidden` |
 | `RetryLevelLayer` | `enterAnimFinished`, `keyBackClicked`, `keyDown`, `keyUp`, `onMenu`, `onReplay`, `showLayer` |
+| `SelectSmartTemplateLayer` | Heredados |
 | `SlideInLayer` | `enterAnimFinished`, `enterLayer`, `exitLayer`, `hideLayer`, `keyBackClicked`, `layerHidden`, `layerVisible`, `showLayer` |
 | `SongsLayer` | Heredados |
 | `StatsLayer` | Heredados |
@@ -292,7 +372,7 @@ Regenerar sin compilar: `python3 tests/audit_dynamic_transition_bindings.py --wr
 | `LevelAreaLayer` | `fadeInsideTower`, `keyBackClicked`, `onBack`, `onExit`, `scene` |
 | `LevelInfoLayer` | `keyBackClicked`, `keyDown`, `onBack`, `scene` |
 | `LevelListLayer` | `onBack`, `onEnter`, `onExit`, `scene` |
-| `LevelSearchLayer` | `keyBackClicked`, `onBack`, `onClose`, `scene` |
+| `LevelSearchLayer` | `keyBackClicked`, `keyDown`, `onBack`, `onClose`, `scene` |
 | `LevelSelectLayer` | `keyBackClicked`, `keyDown`, `onBack`, `scene` |
 | `MPLobbyLayer` | `keyBackClicked`, `keyDown`, `keyUp`, `onBack`, `onBtn1`, `onBtn2`, `scene` |
 | `MapSelectLayer` | `keyBackClicked`, `onBack`, `onExit`, `scene` |
@@ -303,7 +383,6 @@ Regenerar sin compilar: `python3 tests/audit_dynamic_transition_bindings.py --wr
 | `SecretLayer3` | `animateEyes`, `keyBackClicked`, `onBack`, `onExit`, `scene` |
 | `SecretLayer4` | `keyBackClicked`, `onBack`, `onExit`, `scene` |
 | `SecretLayer5` | `animateHead`, `fadeInMessage`, `fadeInSubmitMessage`, `fadeOutMessage`, `keyBackClicked`, `onBack`, `onExit`, `scene` |
-| `SecretLayer6` | `keyBackClicked`, `onBack`, `scene` |
 | `SecretRewardsLayer` | `fadeInMusic`, `fadeInOutMusic`, `keyBackClicked`, `onBack`, `onExit`, `scene` |
 | `WorldSelectLayer` | `animateInActiveIsland`, `keyBackClicked`, `onBack`, `onExit`, `scene` |
 
@@ -336,17 +415,24 @@ Regenerar sin compilar: `python3 tests/audit_dynamic_transition_bindings.py --wr
 | `BoomScrollLayer` | Heredados |
 | `ButtonPage` | Heredados |
 | `CCContentLayer` | Heredados |
+| `CCMenuExtra` | Heredados |
 | `CCScrollLayerExt` | Heredados |
-| `CCTextInputNode` | Heredados |
+| `CCTextInputMenu` | Heredados |
+| `CCTextInputNode` | `onExit` |
 | `CommentCell` | Heredados |
 | `CurrencyRewardLayer` | Heredados |
 | `CustomListView` | Heredados |
 | `CustomMusicCell` | Heredados |
 | `CustomSFXCell` | Heredados |
+| `CustomSFXRowMenu` | Heredados |
 | `CustomSongCell` | Heredados |
+| `DpadMenu` | Heredados |
 | `DrawGridLayer` | Heredados |
+| `EditorSoundConfigCell` | Heredados |
 | `ExtendedLayer` | Heredados |
+| `FontPreviewCell` | Heredados |
 | `GJCommentListLayer` | Heredados |
+| `GJCompactUserCell` | Heredados |
 | `GJFlyGroundLayer` | Heredados |
 | `GJGameLoadingLayer` | `onEnter`, `transitionToLoadingLayer` |
 | `GJGradientLayer` | Heredados |
@@ -356,12 +442,13 @@ Regenerar sin compilar: `python3 tests/audit_dynamic_transition_bindings.py --wr
 | `GJLocalLevelScoreCell` | Heredados |
 | `GJMGLayer` | Heredados |
 | `GJMessageCell` | Heredados |
+| `GJNotificationCell` | Heredados |
 | `GJRequestCell` | Heredados |
 | `GJRotationControl` | Heredados |
 | `GJScaleControl` | Heredados |
 | `GJScoreCell` | Heredados |
+| `GJThreadCell` | Heredados |
 | `GJTransformControl` | Heredados |
-| `GJUserCell` | Heredados |
 | `GameCell` | Heredados |
 | `LevelCell` | Heredados |
 | `LevelListCell` | Heredados |
@@ -372,8 +459,10 @@ Regenerar sin compilar: `python3 tests/audit_dynamic_transition_bindings.py --wr
 | `MenuGameLayer` | Heredados |
 | `OptionsCell` | Heredados |
 | `ParticlePreviewLayer` | Heredados |
+| `ScrollableContentLayer` | Heredados |
 | `ScrollingLayer` | Heredados |
 | `SecretGame01Layer` | Heredados |
+| `SecretLayer6` | `keyBackClicked`, `onBack` |
 | `SecretNumberLayer` | Heredados |
 | `ShaderLayer` | Heredados |
 | `Slider` | Heredados |
@@ -435,6 +524,8 @@ Regenerar sin compilar: `python3 tests/audit_dynamic_transition_bindings.py --wr
 | `LoadingCircleSprite` | `fadeInCircle` |
 | `PlayerFireBoostSprite` | `animateFireIn`, `animateFireOut` |
 | `PlayerObject` | `animatePlatformerJump`, `animationFinished`, `fadeOutStreak2` |
+| `RowPressItem` | `selected`, `unselected` |
+| `SectionedContentNode` | `addChild`, `removeAllChildrenWithCleanup` |
 | `SpriteAnimationManager` | `animationFinished`, `finishAnimation`, `runAnimation`, `runQueuedAnimation` |
 | `TextArea` | `fadeIn`, `fadeInCharacters`, `fadeOut`, `fadeOutAndRemove` |
 | `cocos2d::CCClippingNode` | `onEnter`, `onExit` |
@@ -472,7 +563,9 @@ La lista completa con parametros, archivo, linea y bindings por plataforma esta 
 
 | Direccion | Metodos |
 | --- | --- |
-| `0x30bc70` | `UploadListPopup::show`, `UploadPopup::show` |
-| `0x3c53b0` | `ProfilePage::show`, `RewardsPage::show` |
-| `0x867f0` | `ChallengesPage::show`, `CharacterColorPage::show`, `DailyLevelPage::show`, `FollowRewardPage::show`, `GJPathPage::show`, `GJPathsLayer::show`, `GJPromoPopup::show`, `LevelLeaderboard::show`, `ShardsPage::show`, `TopArtistsLayer::show` |
-| `0x8baf0` | `CollisionBlockPopup::show`, `ColorSelectLiveOverlay::show`, `HSVLiveOverlay::show`, `SetTextPopup::show`, `SetupObjectOptionsPopup::show`, `SetupSmartBlockLayer::show`, `SetupTriggerPopup::show` |
+| `0x1262f0` | `ColorSelectLiveOverlay::show`, `HSVLiveOverlay::show`, `SetupObjectOptionsPopup::show`, `SetupSmartBlockLayer::show` |
+| `0x3a83c0` | `SetTextPopup::show`, `SetupTriggerPopup::show` |
+| `0x433f60` | `UploadListPopup::show`, `UploadPopup::show` |
+| `0x559380` | `ProfilePage::show`, `RewardsPage::show` |
+| `0x9eec0` | `ChallengesPage::show`, `CharacterColorPage::show`, `DailyLevelPage::show`, `FollowRewardPage::show`, `GJPathPage::show`, `GJPathsLayer::show`, `GJPromoPopup::show`, `LevelLeaderboard::show`, `ShardsPage::show`, `TopArtistsLayer::show` |
+| `0xc39c0` | `DeathTrackerPopup::show`, `PagedListPopup::show`, `ThreadViewPopup::show` |

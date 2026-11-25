@@ -23,7 +23,7 @@ struct HubActionMeta {
     std::function<void(PaimonHubLayer*)> onPress;
     int categoryIndex = 0;
     std::string desc;
-    std::string id;
+    std::string id = {};
 };
 
 struct GranularSettingMeta {
@@ -32,8 +32,8 @@ struct GranularSettingMeta {
     int categoryIndex;
 };
 
-std::vector<HubCategoryMeta> getHubCategories();
+std::vector<HubCategoryMeta> const& getHubCategories();
 std::vector<HubActionMeta> getHubActions(int categoryIndex);
-std::vector<GranularSettingMeta> getGranularSettings();
+std::vector<GranularSettingMeta> const& getGranularSettings();
 
 } // namespace paimon::hubdata

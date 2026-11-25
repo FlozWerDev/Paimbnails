@@ -1,0 +1,87 @@
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+#include <cassert>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+struct CCNode {
+    virtual ~CCNode() = default;
+    std::string id;
+    std::vector<CCNode*> children;
+    std::string_view getID() { return id; }
+    auto* getChildren() { return &children; }
+};
+struct CCMenu : CCNode {};
+struct CCMenuItem : CCNode {};
+struct PauseLayer : CCNode {};
+struct SliderTouchLogic : CCMenu {};
+struct Slider : CCNode { SliderTouchLogic* m_touchLogic = nullptr; };
+template<class To, class From> To typeinfo_cast(From* value) { return dynamic_cast<To>(value); }
+template<class T> struct CCArrayExt {
+    std::vector<CCNode*>* nodes;
+    CCArrayExt(std::vector<CCNode*>* value) : nodes(value) {}
+    auto begin() const { return nodes->begin(); }
+    auto end() const { return nodes->end(); }
+};
+struct EditableMenuButton {
+    CCMenu* menu;
+    CCNode* node;
+    std::vector<CCNode*> followers;
+    std::string key;
+    std::string label;
+};
+struct MainMenuLayoutManager {
+    static std::string rootClassName(CCNode*) { return "PauseLayer"; }
+};
+std::string buttonKey(CCMenuItem* item, CCNode*) { return item->id; }
+std::string buttonLabel(CCMenu*, CCNode* node, std::string const&) { return node->id; }
+@@function|src/features/main-menu-layout/services/MainMenuLayoutManager.cpp|void collectButtonsRecursive(@@
+
+int main() {
+    PauseLayer pause;
+    CCNode progress, best, current, legacyNormal, legacyPractice, coins;
+    CCMenu startPositions, nativeActions;
+    CCMenuItem previous, next, resume, thumb;
+    Slider music, sfx;
+    SliderTouchLogic musicTouch, sfxTouch;
+    progress.id = "progress-bar";
+    progress.children = {&best, &current};
+    legacyNormal.id = "normal-progress-bar";
+    legacyPractice.id = "practice-progress-bar";
+    coins.id = "coin-container";
+    startPositions.id = "startpos-container";
+    startPositions.children = {&previous, &next};
+    nativeActions.children = {&resume};
+    resume.id = "play-button";
+    music.id = "music-slider";
+    sfx.id = "sfx-slider";
+    music.m_touchLogic = &musicTouch;
+    sfx.m_touchLogic = &sfxTouch;
+    music.children = {&musicTouch};
+    sfx.children = {&sfxTouch};
+    musicTouch.children = {&thumb};
+    pause.children = {&progress, &legacyNormal, &legacyPractice, &music, &sfx, &coins, &startPositions, &nativeActions};
+
+    std::vector<EditableMenuButton> buttons;
+    collectButtonsRecursive(&pause, &pause, buttons);
+    assert(buttons.size() == 8);
+    auto find = [&](CCNode* node) -> EditableMenuButton* {
+        for (auto& button : buttons) if (button.node == node) return &button;
+        return nullptr;
+    };
+    assert(find(&progress) && !find(&best) && !find(&current));
+    assert(find(&legacyNormal) && find(&legacyPractice));
+    assert(find(&music) && find(&music)->menu == &musicTouch);
+    assert(find(&sfx) && find(&sfx)->menu == &sfxTouch);
+    assert(find(&music)->key == "PauseLayer/widgets/music-slider");
+    assert(!find(&thumb));
+    assert(find(&coins));
+    assert(find(&startPositions)->menu == &startPositions);
+    assert(!find(&previous) && !find(&next));
+    assert(find(&resume) && find(&resume)->menu == &nativeActions);
+    buttons.clear();
+    collectButtonsRecursive(nullptr, &pause, buttons);
+    assert(buttons.empty());
+}

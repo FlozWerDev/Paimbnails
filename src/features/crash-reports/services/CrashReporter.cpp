@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "CrashReporter.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
@@ -57,13 +58,13 @@ std::vector<LogFile> collectLogs(std::filesystem::path const& dir) {
 // crash's session log is the closest last-write, skipping the live one.
 std::filesystem::path sessionLogFor(std::filesystem::file_time_type crashTime) {
     std::error_code ec;
-    auto current = std::filesystem::weakly_canonical(log::getCurrentLogPath(), ec);
+    auto current = std::filesystem::weakly_canonical(paimon::paths::toStdPath(log::getCurrentLogPath()), ec);
     if (ec) current.clear();
 
     std::filesystem::path best;
     std::filesystem::file_time_type::duration bestDistance{};
 
-    for (auto const& file : collectLogs(dirs::getGeodeLogDir())) {
+    for (auto const& file : collectLogs(paimon::paths::toStdPath(dirs::getGeodeLogDir()))) {
         ec.clear();
         auto canonical = std::filesystem::weakly_canonical(file.path, ec);
         if (!ec && !current.empty() && canonical == current) continue;
@@ -152,7 +153,7 @@ void uploadCrashlog(LogFile const& file, std::string const& geodeVersion, std::s
     auto crashTime = file.time;
 
     HttpClient::CrashReport report;
-    report.crashlogName = utils::string::pathToString(path.filename());
+    report.crashlogName = paimon::paths::toUtf8(path.filename());
     report.crashlog = readCapped(path, kMaxCrashBytes, false);
     if (report.crashlog.empty()) {
         log::warn("[CrashReports] Could not read {}", report.crashlogName);
@@ -192,26 +193,32 @@ namespace paimon::crash {
 void reportPendingCrashes() {
     if (!modules::isEnabled(kModuleId)) return;
 
-    auto crashlogs = collectLogs(dirs::getCrashlogsDir());
-    if (crashlogs.empty()) return;
-    if (crashlogs.size() > kMaxPerLaunch) crashlogs.resize(kMaxPerLaunch);
-
+    // read on the main thread: loader fills the game version lazily, and the
+    // saved sent-list is loader state too.
     auto sent = readSentList();
-    std::vector<LogFile> pending;
-    for (auto const& file : crashlogs) {
-        auto name = utils::string::pathToString(file.path.filename());
-        if (std::find(sent.begin(), sent.end(), name) == sent.end()) pending.push_back(file);
-    }
-    if (pending.empty()) return;
-
-    log::info("[CrashReports] {} crashlog(s) pending upload", pending.size());
-
-    // read on the main thread: loader fills the game version lazily.
     auto geodeVersion = Loader::get()->getVersion().toVString();
     auto gameVersion = Loader::get()->getGameVersion();
+    auto crashlogsDir = paimon::paths::toStdPath(dirs::getCrashlogsDir());
 
-    ThreadTracker::get().spawn([pending = std::move(pending), geodeVersion, gameVersion]() {
+    // enumerating and stat-ing the crashlog dir stays off the main thread.
+    ThreadTracker::get().spawn([sent = std::move(sent), geodeVersion, gameVersion,
+        crashlogsDir = std::move(crashlogsDir)]() {
         geode::utils::thread::setName("PaimonCrashReports");
+        if (isRuntimeShuttingDown()) return;
+
+        auto crashlogs = collectLogs(crashlogsDir);
+        if (crashlogs.empty()) return;
+        if (crashlogs.size() > kMaxPerLaunch) crashlogs.resize(kMaxPerLaunch);
+
+        std::vector<LogFile> pending;
+        for (auto const& file : crashlogs) {
+            auto name = paimon::paths::toUtf8(file.path.filename());
+            if (std::find(sent.begin(), sent.end(), name) == sent.end()) pending.push_back(file);
+        }
+        if (pending.empty()) return;
+
+        log::info("[CrashReports] {} crashlog(s) pending upload", pending.size());
+
         for (auto const& file : pending) {
             if (isRuntimeShuttingDown()) return;
             uploadCrashlog(file, geodeVersion, gameVersion);

@@ -7,6 +7,7 @@
 #include "../ui/GradientLayer.hpp"
 #include "../../garage-hub/GarageButtonHub.hpp"
 #include "../../../utils/Localization.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 
 #include <utility>
 
@@ -193,10 +194,16 @@ bool GradientGarageLayer::init() {
     updateGradient();
 
     Loader::get()->queueInMainThread([self = Ref(this)] {
-        CircleButtonSprite* spr = CircleButtonSprite::createWithSpriteFrameName(
-            "GJ_paintBtn_001.png", 0.87f, CircleBaseColor::Gray, CircleBaseSize::Small
-        );
-        spr->getTopNode()->setRotation(8);
+        CircleButtonSprite* spr = nullptr;
+        if (CCSprite* glyph = paimon::SpriteHelper::safeCreate("paim_garage_gradients.png"_spr)) {
+            spr = CircleButtonSprite::create(glyph, CircleBaseColor::Gray, CircleBaseSize::Medium);
+        }
+        if (!spr) {
+            spr = CircleButtonSprite::createWithSpriteFrameName(
+                "GJ_paintBtn_001.png", 0.87f, CircleBaseColor::Gray, CircleBaseSize::Small
+            );
+            spr->getTopNode()->setRotation(8);
+        }
 
         CCMenuItemSpriteExtra* btn = CCMenuItemSpriteExtra::create(spr, self, menu_selector(GradientGarageLayer::onGradient));
         btn->setID("gradient-button"_spr);

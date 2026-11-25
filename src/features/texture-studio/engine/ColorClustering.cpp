@@ -357,4 +357,115 @@ ClusterSet ColorClustering::compute(ImageBuffer const& sprite, ClusteringOptions
     return out;
 }
 
+ClusterSet ColorClustering::computeWeighted(std::vector<WeightedColor> const& colors,
+                                            std::uint64_t seed,
+                                            ClusteringOptions options) {
+    ClusterSet out;
+    if (colors.empty()) return out;
+
+    std::vector<Point> points;
+    points.reserve(colors.size());
+    int totalPixels = 0;
+    for (auto const& color : colors) {
+        if (color.count <= 0 || color.weight <= 0.0f) continue;
+        float radH = color.h * kDegToRad;
+        points.push_back({color.h, color.s, color.v, color.weight,
+                          std::cos(radH), std::sin(radH)});
+        totalPixels += color.count;
+    }
+    out.totalPixels = totalPixels;
+    if (points.empty()) return out;
+
+    // k-means runs on the heaviest colors when there are too many: a stride
+    // could skip a dominant color. The final pass still assigns every color.
+    std::vector<Point> sampled;
+    std::vector<Point> const* iterPts = &points;
+    if (options.maxSamples > 0 &&
+        static_cast<int>(points.size()) > options.maxSamples) {
+        std::vector<std::size_t> order(points.size());
+        for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
+        auto cut = order.begin() + options.maxSamples;
+        std::nth_element(order.begin(), cut, order.end(), [&](std::size_t a, std::size_t b) {
+            return points[a].w > points[b].w;
+        });
+        order.resize(static_cast<std::size_t>(options.maxSamples));
+        std::sort(order.begin(), order.end());  // keep scan order: deterministic seeding.
+        sampled.reserve(order.size());
+        for (auto i : order) sampled.push_back(points[i]);
+        iterPts = &sampled;
+    }
+
+    int k = std::min(options.k, static_cast<int>(iterPts->size()));
+    if (k <= 0) return out;
+
+    std::vector<Centroid> best;
+    float bestInertia = kFarAway;
+    int restarts = std::max(1, options.restarts);
+    for (int r = 0; r < restarts; ++r) {
+        std::vector<Centroid> cents;
+        std::uint64_t runSeed = splitMix64(seed + static_cast<std::uint64_t>(r) * 0x9E3779B97F4A7C15ULL);
+        float inertia = runKMeans(*iterPts, k, options, runSeed, cents);
+        if (inertia < bestInertia) {
+            bestInertia = inertia;
+            best = std::move(cents);
+        }
+    }
+    if (best.empty()) return out;
+
+    mergeCloseCentroids(best, options);
+
+    // final pass over every distinct color: exact pixel counts plus polished means.
+    int n = static_cast<int>(best.size());
+    std::vector<int>   counts(n, 0);
+    std::vector<float> sumHueX(n, 0.0f), sumHueY(n, 0.0f);
+    std::vector<float> sumS(n, 0.0f), sumV(n, 0.0f), sumW(n, 0.0f);
+    std::size_t index = 0;
+    for (auto const& color : colors) {
+        if (color.count <= 0 || color.weight <= 0.0f) continue;
+        auto const& p = points[index++];
+        float bestD = kFarAway;
+        int   bestC = 0;
+        for (int c = 0; c < n; ++c) {
+            float d = pointDist(p, best[c], options);
+            if (d < bestD) { bestD = d; bestC = c; }
+        }
+        counts[bestC] += color.count;
+        sumHueX[bestC] += p.w * p.cosH;
+        sumHueY[bestC] += p.w * p.sinH;
+        sumS[bestC]    += p.w * p.s;
+        sumV[bestC]    += p.w * p.v;
+        sumW[bestC]    += p.w;
+    }
+
+    out.clusters.reserve(n);
+    for (int c = 0; c < n; ++c) {
+        if (counts[c] == 0) continue;
+        ColorCluster cl;
+        if (sumW[c] > 0.0f) {
+            float invW = 1.0f / sumW[c];
+            float h = std::atan2(sumHueY[c] * invW, sumHueX[c] * invW) * kRadToDeg;
+            if (h < 0.0f) h += 360.0f;
+            cl.h = h;
+            cl.s = sumS[c] * invW;
+            cl.v = sumV[c] * invW;
+        } else {
+            cl.h = best[c].h;
+            cl.s = best[c].s;
+            cl.v = best[c].v;
+        }
+        auto rgb = paimon::icons::math::fromHSV({cl.h, cl.s, cl.v});
+        cl.r = rgb.r;
+        cl.g = rgb.g;
+        cl.b = rgb.b;
+        cl.pixelCount = counts[c];
+        out.clusters.push_back(cl);
+    }
+
+    std::sort(out.clusters.begin(), out.clusters.end(),
+        [](ColorCluster const& a, ColorCluster const& b) {
+            return a.pixelCount > b.pixelCount;
+        });
+    return out;
+}
+
 }  // namespace paimon::texture_studio

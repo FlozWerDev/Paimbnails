@@ -1,0 +1,75 @@
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <iostream>
+#include <string>
+struct CCRect {
+    float x, width;
+    float getMinX() const { return x; }
+    float getMaxX() const { return x + width; }
+};
+struct CCSprite {
+    float x = 480.f, y = 260.f, scale = 0.7f;
+    bool visible = false;
+    void setVisible(bool value) { visible = value; }
+    float getPositionX() const { return x; }
+    void setPositionX(float value) { x = value; }
+};
+struct CCLabelBMFont : CCSprite {
+    std::string text = "0";
+    float anchor = 0.5f;
+    CCRect boundingBox() const {
+        float const width = text.size() * 12.f * scale;
+        return {x - anchor * width, width};
+    }
+    void setString(char const* value) { text = value; }
+    float getPositionX() const { return x; }
+    void setPositionX(float value) { x = value; }
+};
+@@function|src/features/official-slots/ui/SlotVisuals.cpp|void updatePageStars(@@
+@@function|src/features/official-slots/ui/SlotVisuals.cpp|void updatePageOrbs(@@
+
+int main() {
+    for (float anchor : {0.f, 0.5f, 1.f}) {
+        for (float scale : {0.4f, 0.7f, 1.f}) {
+            CCLabelBMFont label;
+            CCSprite icon;
+            label.anchor = anchor;
+            label.scale = scale;
+            float const right = label.boundingBox().getMaxX();
+            float const y = label.y;
+            float const iconX = icon.x, iconY = icon.y, iconScale = icon.scale;
+            for (int stars : {67, 100, 1, 0, 10}) {
+                updatePageStars(&label, &icon, stars);
+                assert(label.text == std::to_string(stars));
+                assert(std::abs(label.boundingBox().getMaxX() - right) < 0.001f);
+                assert(label.y == y && label.scale == scale);
+                assert(icon.x == iconX && icon.y == iconY && icon.scale == iconScale);
+                assert(icon.visible && label.visible);
+            }
+            CCLabelBMFont orbs;
+            CCSprite orbsIcon;
+            orbs.text = "0/0";
+            orbs.anchor = anchor;
+            orbs.scale = scale;
+            orbs.x = 10.f;
+            float const orbsLeft = orbs.boundingBox().getMinX();
+            float const nativeIconGap = 8.f;
+            orbsIcon.x = orbs.boundingBox().getMaxX() + nativeIconGap;
+            for (auto [percent, shown] : {std::pair{0, "0/500"}, {10, "50/500"}, {11, "55/500"},
+                    {80, "400/500"}, {100, "500/500"}, {-1, "0/500"}, {150, "500/500"}}) {
+                updatePageOrbs(&orbs, &orbsIcon, percent);
+                assert(orbs.text == shown);
+                assert(std::abs(orbs.boundingBox().getMinX() - orbsLeft) < 0.001f);
+                assert(std::abs(orbsIcon.x - orbs.boundingBox().getMaxX() - nativeIconGap) < 0.001f);
+                assert(orbs.y == y && orbs.scale == scale);
+                assert(orbsIcon.y == iconY && orbsIcon.scale == iconScale);
+            }
+        }
+    }
+    updatePageStars(nullptr, nullptr, 67);
+    updatePageOrbs(nullptr, nullptr, 10);
+    std::cout << "Native counters: right-aligned stars, left-aligned orbs with adjacent icon and stable baseline passed\n";
+}

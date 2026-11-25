@@ -110,6 +110,11 @@ void ShopImages::finish(std::string const& url, CCTexture2D* texture) {
 
 void ShopImages::clear() {
     // m_active untouched: in-flight downloads decrement on return.
+    for (auto& [url, waiters] : m_pending) {
+        for (auto& waiter : waiters) {
+            if (waiter) waiter(nullptr);
+        }
+    }
     m_cache.clear();
     m_failed.clear();
     m_pending.clear();

@@ -51,6 +51,7 @@ bool VersusDeckPopup::init() {
     m_mainLayer->addChild(hint, 3);
 
     m_scroll = ScrollLayer::create({kListW, kListH});
+    if (m_scroll) m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setPosition({(kPopupW - kListW) / 2.f, 14.f});
     m_mainLayer->addChild(m_scroll, 1);
 

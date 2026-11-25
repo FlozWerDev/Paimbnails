@@ -1,17 +1,17 @@
-// shades each own-profile slot by index (ship doubles as jetpack; re-shade on
-// 1p/2p toggle), after zilko's "icon gradients" (independent implementation; idea credit zilko144, unlicensed).
+// shades each own-profile slot by index and refreshes on the 1p/2p toggle.
+// independent implementation inspired by zilko's "icon gradients".
 
 #include "GradientProfilePage.hpp"
 #include "../GradientCache.hpp"
 #include "../GradientUtils.hpp"
+#include "../../global-icon/GlobalIconGradients.hpp"
 
 using namespace geode::prelude;
 using namespace paimon::icon_gradients;
 
-// slot index -> icon kind. slot 1 shows the ship doll, or the jetpack
-// one while the ship toggle is off.
-static IconType slotKind(int slot, bool shipOn) {
-    return (slot == 1 && !shipOn) ? IconType::Jetpack : static_cast<IconType>(slot);
+// GD 2.2091 displays ship and jetpack in separate slots.
+static IconType slotKind(int slot) {
+    return static_cast<IconType>(slot);
 }
 
 void GradientProfilePage::onSwap(CCObject* sender) {
@@ -23,18 +23,22 @@ void GradientProfilePage::onSwap(CCObject* sender) {
 }
 
 void GradientProfilePage::updateGradient() {
-    if (!m_ownProfile || !moduleEnabled()) return;
+    if (!moduleEnabled()) return;
+    // other players: the gradients they linked to their global icon, if any.
+    if (!m_ownProfile) {
+        paimon::globalicon::renderProfileGradients(this);
+        return;
+    }
 
     CCNode* menu = m_mainLayer->getChildByID("player-menu");
     if (!menu) return;
 
     bool p2 = m_fields->m_isSecondPlayer;
-    bool shipOn = m_fields->m_isShip;
 
     int slot = 0;
     for (CCNode* entry : menu->getChildrenExt<CCNode*>()) {
         if (SimplePlayer* doll = entry->getChildByType<SimplePlayer>(0))
-            GradientUtils::applyGradient(doll, GradientUtils::getGradient(slotKind(slot, shipOn), p2), false, p2, 99);
+            GradientUtils::applyGradient(doll, GradientUtils::getGradient(slotKind(slot), p2), false, p2, 99);
         slot++;
     }
 }
@@ -55,10 +59,3 @@ void GradientProfilePage::getUserInfoFinished(GJUserScore* p0) {
     });
 }
 
-void GradientProfilePage::toggleShip(CCObject* p0) {
-    ProfilePage::toggleShip(p0);
-
-    m_fields->m_isShip = !m_fields->m_isShip;
-
-    Loader::get()->queueInMainThread([self = Ref(this)] { self->updateGradient(); });
-}

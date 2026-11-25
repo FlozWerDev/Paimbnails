@@ -13,6 +13,7 @@ class GDProgressBar;
 // cross-level gains split into one segment per level so the fill never snaps back.
 class XPBarNode : public cocos2d::CCNode {
 public:
+    using cocos2d::CCNode::init;
     static XPBarNode* create(float width, float height);
 
     void setTier(Tier const& tier);

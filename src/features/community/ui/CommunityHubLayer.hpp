@@ -7,8 +7,12 @@
 #include <Geode/binding/GJUserScore.hpp>
 #include <Geode/ui/TextInput.hpp>
 #include <Geode/ui/LoadingSpinner.hpp>
+#include <Geode/ui/NineSlice.hpp>
 #include "../../compat-mods/services/ModlyTypes.hpp"
 #include <fmod.hpp>
+#include <matjson.hpp>
+#include <ctime>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -30,14 +34,29 @@ public:
     };
 
 protected:
+    // why the last request failed; picks the message in the empty state.
+    enum class LoadIssue {
+        None,
+        Locked,   // ban verification failed, so the mod blocks every request
+        Storage,  // backend answered STORAGE_ERROR
+        Network,
+        Server,
+        BadData
+    };
+
     bool init() override;
     void onExit() override;
     void keyBackClicked() override;
     void onEnterTransitionDidFinish() override;
     void update(float dt) override;
+    void keyDown(cocos2d::enumKeyCodes key, double timestamp) override;
 
     void onBack(cocos2d::CCObject* sender);
     void onTab(cocos2d::CCObject* sender);
+    void selectTab(Tab tab);
+    void onScrollTop(cocos2d::CCObject* sender);
+    void onCreatorRow(cocos2d::CCObject* sender);
+    void onThumbRow(cocos2d::CCObject* sender);
     void onModProfile(cocos2d::CCObject* sender);
     void onCompatMod(cocos2d::CCObject* sender);
     void onInfoButton(cocos2d::CCObject* sender);
@@ -52,6 +71,23 @@ protected:
     void retryLoadTab(Tab tab, int attempt);
     void scheduleRetry(Tab tab, int attempt);
 
+    // shared response path for the backend tabs: parse, snapshot, retry or fall back.
+    void handleTabResponse(Tab tab, int attempt, bool success, std::string const& response);
+    bool parseTabData(Tab tab, matjson::Value const& json);
+    bool parseModerators(matjson::Value const& json);
+    bool parseCreators(matjson::Value const& json);
+    bool parseThumbnails(matjson::Value const& json);
+    void prepareModeratorScores();
+    void clearTabData(Tab tab);
+    bool tabHasEntries(Tab tab) const;
+    LoadIssue classifyFailure(std::string const& response, int& httpCode) const;
+    std::string issueMessage() const;
+
+    // last good response per tab on disk, shown when the server can't answer.
+    void saveSnapshot(Tab tab, matjson::Value const& data);
+    std::optional<matjson::Value> loadSnapshot(Tab tab, std::time_t& savedAt) const;
+
+    void buildCurrentList();
     void buildModeratorsList();
     void buildCreatorsList();
     void buildThumbnailsList();
@@ -60,20 +96,34 @@ protected:
 
     // gd-style chrome, built once and kept across tabs
     void buildChrome();
-    CCMenuItemToggler* createTabButton(std::string const& text, char const* id, cocos2d::CCPoint pos);
+    CCMenuItemToggler* createTabButton(std::string const& text, char const* id, cocos2d::CCPoint pos, float width);
     void playIntro();
     cocos2d::CCNode* beginList();
     cocos2d::CCNode* addScrollList(float contentHeight);
     cocos2d::CCLayerColor* addCell(cocos2d::CCNode* content, float height, int index, float totalHeight);
     void animateCellIn(cocos2d::CCLayerColor* cell, int index);
-    void showEmptyState();
+    void showEmptyState(bool error = false);
     void finishTabLoad();
+
+    // ambient fx: accent-tinted particles, hover glow on rows, back-to-top button.
+    cocos2d::ccColor3B accentFor(Tab tab) const;
+    void spawnParticle();
+    void updateAccent(float dt);
+    void updateHover(float dt);
+    void updateScrollTop();
+    void registerHoverRow(cocos2d::CCNode* cell);
+    cocos2d::CCMenu* addRowMenu(cocos2d::CCNode* content, float totalH);
+    CCMenuItemSpriteExtra* addRowButton(cocos2d::CCMenu* menu, float totalH, float cellH,
+        int row, int tag, cocos2d::SEL_MenuHandler handler);
+    cocos2d::CCNode* makeMetricBar(float width, float fraction, cocos2d::ccColor3B color);
 
     // decorated chrome extras, built once with the chrome and kept across tabs
     void buildHeader();
     void buildToolbar();
     void buildFooter();
     void updateTabHeader();
+    void layoutToolbar(bool sortable);
+    void setSortLabel(std::string const& text);
     void updateFooter(int shown, bool fromCache);
     char const* tabIconFrame(Tab tab) const;
     std::string tabSubtitle(Tab tab) const;
@@ -114,13 +164,18 @@ protected:
     geode::ScrollLayer* m_scrollView = nullptr;
     CCMenuItemSpriteExtra* m_infoButton = nullptr;
     cocos2d::CCLabelBMFont* m_title = nullptr;
+    cocos2d::CCNodeRGBA* m_card = nullptr;
+    cocos2d::CCRect m_cardRect;
     cocos2d::CCNode* m_listFrame = nullptr;
     float m_listW = 356.f;
     float m_listH = 0.f;
     cocos2d::CCPoint m_listCenter = {0.f, 0.f};
     float m_tabBaseY = 0.f;
+    float m_toolbarY = 0.f;
+    float m_subtitleY = 0.f;
 
     cocos2d::CCLabelBMFont* m_subtitle = nullptr;
+    geode::NineSlice* m_searchBg = nullptr;
     geode::TextInput* m_searchInput = nullptr;
     std::string m_searchFilter;
     CCMenuItemSpriteExtra* m_sortButton = nullptr;
@@ -128,10 +183,32 @@ protected:
     CCMenuItemSpriteExtra* m_refreshButton = nullptr;
     geode::LoadingSpinner* m_refreshSpinner = nullptr;
     cocos2d::CCLabelBMFont* m_footerLabel = nullptr;
+    cocos2d::CCNode* m_statusDot = nullptr;
     cocos2d::CCNode* m_toolbarMenu = nullptr;
     // sort mode per ranking tab; creators/thumbnails cycle, moderators keep role order.
     int m_sortMode = 0;
     bool m_lastLoadFromCache = false;
+    bool m_loadFailed = false;
+    LoadIssue m_issue = LoadIssue::None;
+    int m_issueCode = 0;
+    bool m_fromSnapshot = false;
+    std::time_t m_snapshotAt = 0;
+    int m_slideDir = 1;
+
+    cocos2d::CCNode* m_fxLayer = nullptr;
+    cocos2d::CCNodeRGBA* m_listBorder = nullptr;
+    CCMenuItemSpriteExtra* m_topButton = nullptr;
+    cocos2d::ccColor3B m_accent = {170, 130, 255};
+    cocos2d::ccColor3B m_accentTarget = {170, 130, 255};
+    cocos2d::ccColor3B m_appliedAccent = {0, 0, 0};
+    float m_fxClock = 0.f;
+    bool m_topShown = false;
+
+    struct HoverRow {
+        geode::Ref<cocos2d::CCLayerColor> glow;
+        geode::Ref<cocos2d::CCNode> cell;
+    };
+    std::vector<HoverRow> m_hoverRows;
 
     struct ModEntry {
         std::string username;

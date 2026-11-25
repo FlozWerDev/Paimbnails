@@ -306,9 +306,8 @@ bool VideoPlayer::uploadFrameGPU(const IVideoDecoder::Frame& frame) {
             thread_local std::vector<uint8_t> scratch;
             size_t needed = static_cast<size_t>(planeW) * planeH;
             scratch.resize(needed);
-            for (int row = 0; row < planeH; ++row) {
-                std::memcpy(scratch.data() + row * planeW, data + row * stride, planeW);
-            }
+            paimon::copyStridedRows(scratch.data(), static_cast<size_t>(planeW), data,
+                static_cast<size_t>(stride), static_cast<size_t>(planeW), planeH);
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, planeW, planeH,
                             GL_LUMINANCE, GL_UNSIGNED_BYTE, scratch.data());
         }
@@ -555,38 +554,46 @@ void VideoPlayer::update(float dt) {
 
     bool timeToProcess = m_timeSinceLastUpload >= minInterval;
 
-    if (timeToProcess && !m_pendingUpload) {
+    if (!m_pendingUpload) {
+        // keep the newest due frame until it can be displayed. Discarding it
+        // between upload ticks starves playback when the decoder runs behind.
         while (true) {
             double headPTS = m_decoder->peekNextPTS();
             if (headPTS > m_playbackTime) break;
 
             double nextPTS = m_decoder->peekSecondPTS();
-            if (nextPTS <= m_playbackTime) {
-                if (!m_decoder->skipFrame()) break;
-                continue;
-            }
-            const IVideoDecoder::Frame* f = m_decoder->peekFrame();
-            if (!f) break;
-            bool ok = uploadFrame(*f);
-            m_decoder->releaseFrame();
-
-            if (ok) {
-                ++m_frameCounter;
-                m_timeSinceLastUpload = 0.0;
-            } else {
-                m_pendingUpload = true;
-            }
-            break;
-        }
-    } else if (!m_pendingUpload) {
-        while (m_decoder->peekNextPTS() <= m_playbackTime) {
+            // a backwards timestamp belongs to the next loop. Let that frame
+            // become the head so the clock can wrap on the following update.
+            if (nextPTS < headPTS || nextPTS > m_playbackTime) break;
             if (!m_decoder->skipFrame()) break;
+        }
+
+        if (timeToProcess) {
+            if (const auto* frame = m_decoder->peekFrame();
+                frame && frame->pts <= m_playbackTime) {
+                bool const uploaded = uploadFrame(*frame);
+                m_decoder->releaseFrame();
+                if (uploaded) {
+                    ++m_frameCounter;
+                    m_timeSinceLastUpload = 0.0;
+                } else {
+                    m_pendingUpload = true;
+                }
+            }
         }
     }
 
     if (m_decoder->isFinished() && m_decoder->peekNextPTS() >= DBL_MAX) {
         geode::log::info("[VideoPlayer] end of stream reached, loop={}", m_loop);
         if (m_loop) {
+            if (m_loopFrameAtLastRestart == m_frameCounter) {
+                m_decoderStalled = true;
+                m_playing = false;
+                stopAudio(true);
+                if (m_onFinished) m_onFinished();
+                return;
+            }
+            m_loopFrameAtLastRestart = m_frameCounter;
             m_decoder->seekTo(0.0);
             m_decoder->startDecoding();
             m_playbackTime = 0.0;
@@ -607,6 +614,7 @@ void VideoPlayer::play() {
     m_playing = true;
     m_timeSincePlay = 0.0;
     m_decoderStalled = false;
+    m_loopFrameAtLastRestart = ~0ull;
     m_decoder->startDecoding();
     
     if (!m_pboInitAttempted && m_texWidth > 0 && m_texHeight > 0) {
@@ -637,6 +645,7 @@ void VideoPlayer::resume() {
         m_decoder->seekTo(0.0);
         m_playbackTime = 0.0;
         m_hasVisibleFrame = false;
+        m_loopFrameAtLastRestart = ~0ull;
         if (m_pboUploader.isInitialized()) {
             m_pboUploader.clearFences();
         }
@@ -830,6 +839,40 @@ void VideoPlayer::releaseGPUResolveCache() {
     m_locCS = -1;
 }
 
+void VideoPlayer::invalidateGLResources() {
+    // gamemanager::reloadall recreates the gl context: drop every gl name now,
+    // while the old context is still alive, so no upload or draw touches dead
+    // names afterwards. cpu-side frame state (rgba staging buffer, visible flag,
+    // playback clock, decoder) is preserved; textures, the resolve target and
+    // pbos are rebuilt lazily by prepareGPUPipeline on the next update.
+    if (!isOnMainThread()) {
+        geode::log::warn("[VideoPlayer] invalidateGLResources called off main thread - skipping");
+        return;
+    }
+
+    ++m_glGeneration;
+
+    try { m_pboUploader.shutdown(); } catch (...) {}
+    try { m_pboUploaderYUV.shutdown(); } catch (...) {}
+    m_pboInitAttempted = false;
+
+    if (m_texture) { m_texture->release(); m_texture = nullptr; }
+    if (m_texY)  { m_texY->release();  m_texY = nullptr; }
+    if (m_texCb) { m_texCb->release(); m_texCb = nullptr; }
+    if (m_texCr) { m_texCr->release(); m_texCr = nullptr; }
+    if (m_resolveSprite) { m_resolveSprite->release(); m_resolveSprite = nullptr; }
+    if (m_resolveRT) { m_resolveRT->release(); m_resolveRT = nullptr; }
+    if (m_readbackFBO) { glDeleteFramebuffers(1, &m_readbackFBO); m_readbackFBO = 0; }
+    m_resolvedRGBA = nullptr;
+    m_resolvedAtFrame = 0;
+    m_locCb = m_locCr = m_locY = m_locCS = -1;
+    // a pending cpu-side retry references a dead texture; the next update
+    // re-uploads a fresh decoder frame instead.
+    m_pendingUpload = false;
+}
+
+uint64_t VideoPlayer::getGLGeneration() const { return m_glGeneration; }
+
 cocos2d::CCTexture2D* VideoPlayer::getTextureCb() const {
     return m_useGPUYuv ? m_texCb : nullptr;
 }
@@ -899,71 +942,24 @@ void VideoPlayer::setOnFinished(std::function<void()> cb) {
     m_onFinished = std::move(cb);
 }
 
-void VideoPlayer::fadeAudioIn(float duration) {
-    if (!m_audio) return;
-
+void VideoPlayer::runAudioFade(float duration, std::function<float(float)> volumeAt,
+                               std::function<void()> onFinish) {
     auto generation = ++(*m_audioFadeGeneration);
-    float targetVolume = std::clamp(m_volume > 0.0f ? m_volume : 1.0f, 0.0f, 1.0f);
-    m_audio->setVolume(0.0f);
-    m_audio->play(m_playbackTime);
-
-    if (!m_audio->isPlaying()) return;
-
     int totalSteps = std::max(1, static_cast<int>(std::ceil(std::max(0.01f, duration) / 0.05f)));
     auto fadeGeneration = m_audioFadeGeneration;
+    auto finish = std::make_shared<std::function<void()>>(std::move(onFinish));
     auto* track = m_audio.get();
 
     auto fadeStep = std::make_shared<std::function<void(int)>>();
     std::weak_ptr<std::function<void(int)>> weakFadeStep = fadeStep;
-    *fadeStep = [generation, totalSteps, targetVolume, weakFadeStep, track, fadeGeneration](int step) {
-        // a newer fade (or a stop) bumps the generation and owns the track from then on.
+    *fadeStep = [generation, totalSteps, volumeAt = std::move(volumeAt), weakFadeStep, finish, track, fadeGeneration](int step) {
         if (generation != fadeGeneration->load(std::memory_order_acquire)) return;
 
         float t = static_cast<float>(step) / static_cast<float>(totalSteps);
-        track->setVolume(std::clamp(targetVolume * t, 0.0f, 1.0f));
-        if (step >= totalSteps) return;
-
-        if (auto strong = weakFadeStep.lock()) {
-            paimon::scheduleMainThreadDelay(0.05f, [strong, step]() {
-                (*strong)(step + 1);
-            });
-        }
-    };
-
-    (*fadeStep)(0);
-}
-
-void VideoPlayer::fadeAudioOut(float duration, std::function<void()> onComplete) {
-    if (!m_audio || !m_audio->isPlaying()) {
-        if (onComplete) onComplete();
-        return;
-    }
-
-    auto generation = ++(*m_audioFadeGeneration);
-
-    if (duration <= 0.0f) {
-        m_audio->stop();
-        if (onComplete) onComplete();
-        return;
-    }
-
-    float startVol = m_audio->getVolume();
-    int totalSteps = std::max(1, static_cast<int>(std::ceil(std::max(0.01f, duration) / 0.05f)));
-    auto callback = std::make_shared<std::function<void()>>(std::move(onComplete));
-    auto fadeGeneration = m_audioFadeGeneration;
-    auto* track = m_audio.get();
-
-    auto fadeStep = std::make_shared<std::function<void(int)>>();
-    std::weak_ptr<std::function<void(int)>> weakFadeStep = fadeStep;
-    *fadeStep = [generation, totalSteps, startVol, weakFadeStep, callback, track, fadeGeneration](int step) {
-        if (generation != fadeGeneration->load(std::memory_order_acquire)) return;
-
-        float t = static_cast<float>(step) / static_cast<float>(totalSteps);
-        track->setVolume(std::clamp(startVol * (1.0f - t), 0.0f, 1.0f));
+        track->setVolume(std::clamp(volumeAt(t), 0.0f, 1.0f));
         if (step >= totalSteps) {
-            track->stop();
-            if (*callback) {
-                auto cb = std::move(*callback);
+            if (*finish) {
+                auto cb = std::move(*finish);
                 cb();
             }
             return;
@@ -977,6 +973,45 @@ void VideoPlayer::fadeAudioOut(float duration, std::function<void()> onComplete)
     };
 
     (*fadeStep)(0);
+}
+
+void VideoPlayer::fadeAudioIn(float duration) {
+    if (!m_audio) return;
+
+    float targetVolume = std::clamp(m_volume > 0.0f ? m_volume : 1.0f, 0.0f, 1.0f);
+
+    // bump the generation before play() so a stale fade cannot touch the track.
+    ++(*m_audioFadeGeneration);
+    m_audio->setVolume(0.0f);
+    m_audio->play(m_playbackTime);
+
+    if (!m_audio->isPlaying()) return;
+
+    runAudioFade(duration,
+        [targetVolume](float t) { return targetVolume * t; }, nullptr);
+}
+
+void VideoPlayer::fadeAudioOut(float duration, std::function<void()> onComplete) {
+    if (!m_audio || !m_audio->isPlaying()) {
+        if (onComplete) onComplete();
+        return;
+    }
+
+    if (duration <= 0.0f) {
+        ++(*m_audioFadeGeneration);
+        m_audio->stop();
+        if (onComplete) onComplete();
+        return;
+    }
+
+    float startVol = m_audio->getVolume();
+    auto* track = m_audio.get();
+    runAudioFade(duration,
+        [startVol](float t) { return startVol * (1.0f - t); },
+        [track, callback = std::move(onComplete)]() mutable {
+            track->stop();
+            if (callback) callback();
+        });
 }
 
 bool VideoPlayer::hasAudio() const { return m_audio != nullptr; }

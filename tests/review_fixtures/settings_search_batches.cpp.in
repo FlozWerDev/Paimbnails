@@ -1,0 +1,167 @@
+#include <algorithm>
+#include <cassert>
+#include <cctype>
+#include <functional>
+#include <memory>
+#include <string>
+#include <vector>
+
+struct Point { float x, y; };
+struct Size { float width = 368, height = 36; };
+struct CCNode : std::enable_shared_from_this<CCNode> {
+    static std::vector<std::shared_ptr<CCNode>> autorelease;
+    std::vector<std::shared_ptr<CCNode>> children;
+    CCNode* parent = nullptr;
+    Size size;
+    virtual ~CCNode() = default;
+    static CCNode* create() {
+        auto node = std::make_shared<CCNode>();
+        autorelease.push_back(node);
+        return node.get();
+    }
+    auto* getChildren() { return &children; }
+    Size getContentSize() const { return size; }
+    void setPosition(Point) {}
+    void addChild(CCNode* node, int = 0) { children.push_back(node->shared_from_this()); node->parent = this; }
+    void removeAllChildren() { for (auto& child : children) child->parent = nullptr; children.clear(); }
+    void removeFromParent() {
+        auto* owner = parent;
+        parent = nullptr;
+        if (owner) std::erase_if(owner->children, [this](auto const& child) { return child.get() == this; });
+    }
+};
+std::vector<std::shared_ptr<CCNode>> CCNode::autorelease;
+struct CCLabelBMFont : CCNode {
+    std::string text;
+    static CCLabelBMFont* create(std::string text) {
+        auto label = std::make_shared<CCLabelBMFont>();
+        label->text = std::move(text);
+        autorelease.push_back(label);
+        return label.get();
+    }
+    char const* getString() const { return text.c_str(); }
+};
+template<class T> T typeinfo_cast(CCNode* node) { return dynamic_cast<T>(node); }
+template<class T> struct CCArrayExt {
+    std::vector<T> nodes;
+    CCArrayExt(std::vector<std::shared_ptr<CCNode>> const* children) {
+        if (children) for (auto const& child : *children) nodes.push_back(static_cast<T>(child.get()));
+    }
+    auto begin() { return nodes.begin(); }
+    auto end() { return nodes.end(); }
+};
+template<class T> struct Ref {
+    std::shared_ptr<T> node;
+    Ref(T* value) : node(std::static_pointer_cast<T>(value->shared_from_this())) {}
+    T* data() const { return node.get(); }
+    T* operator->() const { return node.get(); }
+};
+namespace geode::utils::string {
+    std::string toLower(std::string text) {
+        for (auto& ch : text) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        return text;
+    }
+}
+namespace paimon::settings_ui {
+    struct SettingsSubcategory { std::function<void(CCNode*, float)> buildContent; };
+    struct SettingsGroup { std::vector<SettingsSubcategory> subcategories; };
+    std::vector<SettingsGroup> groups;
+    auto const& getAllGroups() { return groups; }
+    CCNode* createHintRow(char const* text, float) {
+        auto* row = CCNode::create();
+        row->addChild(CCLabelBMFont::create(text));
+        return row;
+    }
+}
+struct Localization {
+    enum class Language { ENGLISH, SPANISH };
+    static Localization& get() { static Localization locale; return locale; }
+    Language getLanguage() const { return Language::SPANISH; }
+};
+struct Scroll {
+    std::shared_ptr<CCNode> content = std::make_shared<CCNode>();
+    CCNode* m_contentLayer = content.get();
+    void setContentLayerSize(Size size) { content->size = size; }
+    void moveToTop() {}
+};
+class PaimonMultiSettingsPanel {
+public:
+    using Selector = void (PaimonMultiSettingsPanel::*)(float);
+    std::vector<Selector> scheduled;
+    Scroll* m_scrollLayer = nullptr;
+    bool m_isClosing = false;
+    std::string m_searchQuery;
+    std::vector<paimon::settings_ui::SettingsSubcategory const*> m_searchJobs;
+    std::vector<Ref<CCNode>> m_searchRows;
+    std::size_t m_searchJobIndex = 0;
+    static constexpr float CONTENT_W = 368, CONTENT_H = 252;
+    int categoryRebuilds = 0;
+    void schedule(Selector selector) { scheduled.push_back(selector); }
+    void scheduleOnce(Selector selector, float) { scheduled.push_back(selector); }
+    void unschedule(Selector selector) { std::erase(scheduled, selector); }
+    void rebuildContent() { cancelSearch(); ++categoryRebuilds; }
+    void onSearchChanged(std::string const&);
+    void cancelSearch();
+    void startPendingSearch(float);
+    void buildSearchResults(std::string const&);
+    void processSearchBatch(float);
+    void showSearchResults();
+};
+#define schedule_selector(method) &method
+@@function|src/features/settings-panel/ui/PaimonMultiSettingsPanel.cpp|void PaimonMultiSettingsPanel::onSearchChanged(@@
+@@function|src/features/settings-panel/ui/PaimonMultiSettingsPanel.cpp|void PaimonMultiSettingsPanel::cancelSearch()@@
+@@function|src/features/settings-panel/ui/PaimonMultiSettingsPanel.cpp|void PaimonMultiSettingsPanel::startPendingSearch(@@
+@@function|src/features/settings-panel/ui/PaimonMultiSettingsPanel.cpp|void PaimonMultiSettingsPanel::buildSearchResults(@@
+@@function|src/features/settings-panel/ui/PaimonMultiSettingsPanel.cpp|void PaimonMultiSettingsPanel::processSearchBatch(@@
+@@function|src/features/settings-panel/ui/PaimonMultiSettingsPanel.cpp|void PaimonMultiSettingsPanel::showSearchResults()@@
+
+int main() {
+    int builds = 0;
+    auto builder = [&](std::string text) {
+        return [&, text](CCNode* container, float) {
+            ++builds;
+            auto* row = CCNode::create();
+            row->addChild(CCLabelBMFont::create(text));
+            row->addChild(CCLabelBMFont::create(text)); // two matching labels still make one row
+            container->addChild(row);
+        };
+    };
+    paimon::settings_ui::groups = {{{{builder("Volume")}, {builder("Nothing")}}}, {{{builder("Volume curve")}}}};
+    Scroll scroll;
+    PaimonMultiSettingsPanel panel;
+    panel.m_scrollLayer = &scroll;
+    panel.onSearchChanged("VOL");
+    assert(builds == 0 && panel.scheduled.size() == 1);
+    panel.startPendingSearch(0);
+    assert(builds == 0 && panel.m_searchJobs.size() == 3);
+    panel.processSearchBatch(0);
+    CCNode::autorelease.clear();
+    assert(builds == 1 && panel.m_searchRows.size() == 1); // retained across autorelease drains
+
+    panel.onSearchChanged("curve"); // old results and work are discarded immediately
+    assert(panel.m_searchRows.empty() && panel.m_searchJobs.empty());
+    panel.startPendingSearch(0);
+    for (int expected = 2; expected <= 4; ++expected) {
+        panel.processSearchBatch(0);
+        CCNode::autorelease.clear();
+        assert(builds == expected);
+    }
+    assert(scroll.content->children.size() == 1 && panel.scheduled.empty());
+    assert(panel.m_searchRows.empty()); // visible parent now owns the rows
+
+    panel.onSearchChanged("not present");
+    panel.startPendingSearch(0);
+    for (int i = 0; i < 3; ++i) { panel.processSearchBatch(0); CCNode::autorelease.clear(); }
+    assert(scroll.content->children.size() == 1); // no-results hint
+    panel.onSearchChanged("");
+    assert(panel.categoryRebuilds == 1 && panel.scheduled.empty());
+
+    panel.onSearchChanged("volume");
+    panel.startPendingSearch(0);
+    panel.m_isClosing = true;
+    auto const beforeClose = builds;
+    panel.processSearchBatch(0);
+    assert(builds == beforeClose && panel.scheduled.empty() && panel.m_searchJobs.empty());
+    scroll.content->removeAllChildren();
+    CCNode::autorelease.clear();
+}

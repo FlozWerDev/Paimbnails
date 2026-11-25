@@ -1,7 +1,7 @@
 #pragma once
 #include "../../../ui/PaimonPopup.hpp"
-// one-screen icon creation: gamemode, name, starting point (blank or official
-// shape). returns the created id.
+// one-screen icon creation: gamemode, name, starting point (official, starter
+// shape, or blank). returns the created id.
 
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
@@ -22,10 +22,12 @@ public:
     static NewIconPopup* create(CreatedCallback onCreated);
 
 protected:
+    enum class StartMode : int { Official = 0, StarterShape = 1, Blank = 2 };
+
     bool init(CreatedCallback onCreated);
 
     void selectType(IconType type);
-    void setStartFromTemplate(bool fromTemplate);
+    void setStartMode(StartMode mode);
     void pickTemplate();
     void refreshStartRow();
     void onCreate();
@@ -34,7 +36,7 @@ protected:
     geode::TextInput* m_nameInput = nullptr;
     IconType m_selectedType = IconType::Cube;
 
-    bool m_fromTemplate = true;
+    StartMode m_startMode = StartMode::Official;
     int m_templateIcon = 1;
 
     struct TypeButton {

@@ -1,5 +1,6 @@
 #include "VersusNet.hpp"
 #include "VersusGlobed.hpp"
+#include "../../../core/BanGate.hpp"
 
 #include <Geode/Geode.hpp>
 
@@ -7,10 +8,7 @@
 #include <chrono>
 #include <vector>
 
-#if __has_include(<globed/core/Event.hpp>)
-    #include <globed/core/Event.hpp>
-    #define PAIMON_VERSUS_GLOBED 1
-#endif
+#include "../../../framework/compat/GlobedAPI.hpp"
 
 using namespace geode::prelude;
 
@@ -155,7 +153,7 @@ struct VsState : globed::ServerEvent<VsState, globed::EventServer::Game> {
 
     static Result<VsState> decode(std::span<uint8_t const> data) {
         if (data.size() < 6) return Err("short vs-state");
-        if (data[0] > static_cast<uint8_t>(StateKind::Spent)) return Err("unknown state kind");
+        if (data[0] > static_cast<uint8_t>(StateKind::Revive)) return Err("unknown state kind");
         VsState out;
         out.data.kind = static_cast<StateKind>(data[0]);
         out.data.value = data[1];
@@ -193,7 +191,7 @@ globed::EventOptions optionsFor(bool reliable, bool urgent) {
 }
 
 bool fromRival(globed::EventOptions const& opts) {
-    return s_rival != 0 && opts.sender == s_rival;
+    return paimon::ban::networkAuthorization() && s_rival != 0 && opts.sender == s_rival;
 }
 
 #endif
@@ -215,7 +213,7 @@ void registerEvents() {
 }
 
 void setRival(int accountId) {
-    s_rival = accountId;
+    s_rival = paimon::ban::networkAuthorization() ? accountId : 0;
     s_budget = kBudgetPerSecond;
     s_lastRefill = {};
 }
@@ -254,6 +252,7 @@ void stopListening() {
 
 void sendTick(Tick const& tick) {
 #ifdef PAIMON_VERSUS_GLOBED
+    if (!paimon::ban::networkAuthorization()) return;
     if (!gl::inSession() || s_rival == 0) return;
     if (!spend()) return;
     VsTick(tick).send(optionsFor(false, true));
@@ -264,6 +263,7 @@ void sendTick(Tick const& tick) {
 
 void sendCard(CardMsg const& card) {
 #ifdef PAIMON_VERSUS_GLOBED
+    if (!paimon::ban::networkAuthorization()) return;
     if (!gl::inSession() || s_rival == 0) return;
     VsCard(card).send(optionsFor(true, true));
 #else
@@ -273,6 +273,7 @@ void sendCard(CardMsg const& card) {
 
 void sendState(StateMsg const& state) {
 #ifdef PAIMON_VERSUS_GLOBED
+    if (!paimon::ban::networkAuthorization()) return;
     if (!gl::present() || s_rival == 0) return;
     VsState(state).send(optionsFor(true, true));
 #else

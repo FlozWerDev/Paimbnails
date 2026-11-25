@@ -1,4 +1,5 @@
 #include <Geode/Geode.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 #include <Geode/modify/LevelListLayer.hpp>
 #include "../framework/HookConventions.hpp"
 #include <Geode/modify/LevelBrowserLayer.hpp>
@@ -163,8 +164,7 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         auto* infoMenu = typeinfo_cast<CCMenu*>(getChildByID("info-menu"));
         if (!infoMenu) return;
 
-        auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_smallModeIcon_001.png");
-        if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_filterBtn_001.png");
+        auto spr = paimon::SpriteHelper::createWithFallback("GJ_smallModeIcon_001.png", "GJ_filterBtn_001.png");
         if (!spr) return;
 
         m_fields->m_compactButton = spr;
@@ -203,13 +203,19 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         m_fields->m_prefetchInterval = 1.0f;
         this->schedule(schedule_selector(ContextTrackingBrowser::prefetchVisibleLevelCells), m_fields->m_prefetchInterval);
         this->prefetchVisibleLevelCells(0.0f);
+        this->addOnEnterCallback([this] {
+            this->handleEnter();
+            return true;
+        });
+        this->addOnExitCallback([this] {
+            this->handleExit();
+            return true;
+        });
 
         return true;
     }
 
-    $override
-    void onEnter() {
-        LevelBrowserLayer::onEnter();
+    void handleEnter() {
         setCompactButtonColor();
         // re-arm prefetch after custom transitions or back navigation
         this->unschedule(schedule_selector(ContextTrackingBrowser::prefetchVisibleLevelCells));
@@ -240,15 +246,12 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         }
     }
 
-    $override
-    void onExit() {
+    void handleExit() {
         this->unschedule(schedule_selector(ContextTrackingBrowser::prefetchVisibleLevelCells));
-        LevelBrowserLayer::onExit();
     }
 
     CCMenuItemSpriteExtra* createGearButton(float sprScale) {
-        auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn_001.png");
-        if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn02_001.png");
+        auto spr = paimon::SpriteHelper::createWithFallback("GJ_optionsBtn_001.png", "GJ_optionsBtn02_001.png");
         if (!spr) return nullptr;
         spr->setScale(sprScale);
         auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ContextTrackingBrowser::onLevelCellSettings));
@@ -300,8 +303,7 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
     void addRefreshButton() {
         if (!paimon::modules::isEnabled("paimbnails.thumbnails.browser")) return;
 
-        auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_updateBtn_001.png");
-        if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_replayBtn_001.png");
+        auto spr = paimon::SpriteHelper::createWithFallback("GJ_updateBtn_001.png", "GJ_replayBtn_001.png");
         if (!spr) return;
         spr->setScale(0.7f);
 
@@ -326,7 +328,7 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         collectLevelCellIDs(this, scan);
 
         if (scan.orderedLevelIDs.empty()) {
-            PaimonNotify::create("No thumbnails to refresh", geode::NotificationIcon::Warning, 2.f)->show();
+            PaimonNotify::show("No thumbnails to refresh", geode::NotificationIcon::Warning, 2.f);
             return;
         }
 
@@ -342,7 +344,7 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         loader.prefetchLevels(scan.orderedLevelIDs, ThumbnailLoader::PriorityVisibleCell);
 
         auto msg = fmt::format("Refreshing {} thumbnails...", scan.orderedLevelIDs.size());
-        PaimonNotify::create(msg, geode::NotificationIcon::Info, 2.f)->show();
+        PaimonNotify::show(msg, geode::NotificationIcon::Info, 2.f);
     }
 
     void prefetchVisibleLevelCells(float) {

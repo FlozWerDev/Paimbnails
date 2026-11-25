@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../../../utils/FilesystemPath.hpp"
 
 #include <Geode/Geode.hpp>
 #include <string>
@@ -89,7 +90,7 @@ public:
     void setVibecodedVentilla(bool value) { m_vibecodedVentilla = value; }
     bool getVibecodedVentilla() const { return m_vibecodedVentilla; }
 
-    std::filesystem::path getConfigDir() const { return Mod::get()->getConfigDir(); }
+    std::filesystem::path getConfigDir() const { return paimon::paths::toStdPath(Mod::get()->getConfigDir()); }
     void saveLastMenuLoop();
 
     unsigned long getHashedCurrentSong() const { return m_hashedCurrentSong; }

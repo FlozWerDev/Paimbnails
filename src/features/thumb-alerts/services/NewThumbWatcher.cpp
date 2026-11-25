@@ -118,8 +118,9 @@ void NewThumbWatcher::saveSeen() {
         if (!joined.empty()) joined.push_back('|');
         joined += id;
     }
+    // Updating in-memory saved data lets Geode persist on exit/regular save
+    // without stalling the main thread with saveData() every poll/alert.
     Mod::get()->setSavedValue<std::string>(kSeenKey, joined);
-    paimon::requestDeferredModSave();
 }
 
 void NewThumbWatcher::suppressLevel(int levelId) {
@@ -265,6 +266,6 @@ $execute {
     ButtonSettingPressedEventV3(Mod::get(), "thumbalert-check-now").listen([](auto buttonKey) {
         if (buttonKey != "run") return;
         paimon::thumbalerts::NewThumbWatcher::get().pollNow();
-        PaimonNotify::create("Checking for new thumbnails...", NotificationIcon::Info)->show();
+        PaimonNotify::show("Checking for new thumbnails...", NotificationIcon::Info);
     }).leak();
 }

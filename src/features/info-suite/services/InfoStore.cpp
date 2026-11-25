@@ -1,5 +1,7 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "InfoStore.hpp"
 #include "../../../utils/JsonHelper.hpp"
+#include "../../../utils/AtomicFileWrite.hpp"
 #include <Geode/Geode.hpp>
 #include <algorithm>
 #include <climits>
@@ -17,12 +19,7 @@ constexpr size_t kMaxLevelDates = 5000;
 constexpr size_t kMaxCommentSamples = 4000;
 
 std::filesystem::path storePath() {
-    return Mod::get()->getSaveDir() / "info_suite.json";
-}
-
-std::string asString(matjson::Value const& value) {
-    auto res = value.asString();
-    return res.isOk() ? res.unwrap() : std::string{};
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "info_suite.json";
 }
 
 int64_t asInt(matjson::Value const& value) {
@@ -75,7 +72,7 @@ void InfoStore::load() {
             auto key = entry.getKey();
             if (!key) continue;
             auto id = geode::utils::numFromString<int>(*key);
-            if (id.isOk()) m_usernames[id.unwrap()] = asString(entry);
+            if (id.isOk()) m_usernames[id.unwrap()] = paimon::json::stringOr(entry);
         }
     }
     if (root["levelDates"].isObject()) {
@@ -84,7 +81,7 @@ void InfoStore::load() {
             auto key = entry.getKey();
             if (!key) continue;
             auto id = geode::utils::numFromString<int>(*key);
-            if (id.isOk()) m_levelDates[id.unwrap()] = asString(entry);
+            if (id.isOk()) m_levelDates[id.unwrap()] = paimon::json::stringOr(entry);
         }
     }
 
@@ -124,14 +121,11 @@ void InfoStore::save() {
     }
     root["commentSamples"] = samples;
 
-    std::ofstream file(storePath(), std::ios::trunc);
-    if (!file.is_open()) {
+    auto payload = root.dump(matjson::NO_INDENTATION);
+    if (!paimon::file::writeAtomically(storePath(), payload)) {
         log::warn("[Paimbnails] no se pudo escribir info_suite.json");
         return;
     }
-    file << root.dump(matjson::NO_INDENTATION);
-    file.close();
-    if (!file) return;
     m_dirty = false;
 }
 
@@ -184,7 +178,9 @@ std::string InfoStore::levelDate(int levelID) const {
 
 void InfoStore::setLevelDate(int levelID, std::string const& isoDate) {
     if (levelID <= 0 || isoDate.empty()) return;
-    if (m_levelDates.size() >= kMaxLevelDates && !m_levelDates.count(levelID)) {
+    auto it = m_levelDates.find(levelID);
+    if (it != m_levelDates.end() && it->second == isoDate) return;
+    if (m_levelDates.size() >= kMaxLevelDates && it == m_levelDates.end()) {
         m_levelDates.erase(m_levelDates.begin());
     }
     m_levelDates[levelID] = isoDate;

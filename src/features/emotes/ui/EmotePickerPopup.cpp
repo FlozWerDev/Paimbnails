@@ -181,7 +181,7 @@ void EmotePickerPopup::applyWindowBg() {
     std::string cornerBase = "paimon-corner"_spr;
     if (auto c = m_mainLayer->getChildByID(cornerBase + "-bottom-left")) c->removeFromParent();
     if (auto c = m_mainLayer->getChildByID(cornerBase + "-bottom-right")) c->removeFromParent();
-    paimon::ui::addCorners(m_mainLayer, {m_popupW, m_popupH}, geode::SideArtStyle::PopupGold, 0.32f, false);
+    paimon::ui::addCorners(m_mainLayer, {m_popupW, m_popupH}, geode::SideArtStyle::PopupGold, 0.52f, false);
 }
 
 void EmotePickerPopup::buildChrome() {
@@ -263,7 +263,9 @@ void EmotePickerPopup::buildBody() {
     float toolbarY = m_popupH - TITLE_H - PAD - TOOLBAR_H;
 
     float keepW = 24.f;
-    float sliderW = 70.f;
+    // the size slider's groove is ~210 * 0.46 = 97px wide, centred on its
+    // node; reserving less than that lets it spill past the popup edge.
+    float sliderW = 104.f;
     float searchW = contentW - keepW - sliderW - PAD * 2;
 
     auto searchBg = paimon::ui::makeInset({searchW, TOOLBAR_H}, 255, {12, 12, 12});
@@ -272,7 +274,7 @@ void EmotePickerPopup::buildBody() {
     m_mainLayer->addChild(searchBg, 4);
 
     m_searchInput = TextInput::create(searchW - 16, "Buscar...", "chatFont.fnt");
-    m_searchInput->setCommonFilter(CommonFilter::Any);
+    m_searchInput->setCommonFilter(CommonFilter::Text);
     m_searchInput->setMaxCharCount(40);
     m_searchInput->setAnchorPoint({0.5f, 0.5f});
     m_searchInput->setPosition({PAD + searchW / 2.f, toolbarY + TOOLBAR_H / 2.f});
@@ -301,6 +303,7 @@ void EmotePickerPopup::buildBody() {
     m_mainLayer->addChild(m_sizeSlider, 6);
 
     m_tabStrip = ScrollLayer::create({contentW, TABSTRIP_H});
+    if (m_tabStrip) m_tabStrip->setAnchorPoint({0.f, 0.f});
     m_tabStrip->setID("paimon-emote-tabstrip"_spr);
     m_mainLayer->addChild(m_tabStrip, 4);
     m_tabMenu = CCMenu::create();
@@ -308,12 +311,14 @@ void EmotePickerPopup::buildBody() {
     m_tabStrip->m_contentLayer->addChild(m_tabMenu);
 
     m_scroll = ScrollLayer::create({contentW, 60.f});
+    if (m_scroll) m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setID("paimon-emote-grid-scroll"_spr);
     m_mainLayer->addChild(m_scroll, 3);
     m_contentNode = CCNode::create();
     m_scroll->m_contentLayer->addChild(m_contentNode);
 
-    m_renderPreviewBg = paimon::ui::makeInset({contentW, PREVIEW_H}, 235, {12, 12, 12});
+    // reserve the bottom-right corner for the resize handle.
+    m_renderPreviewBg = paimon::ui::makeInset({contentW - RESIZE_SZ - 4.f, PREVIEW_H}, 235, {12, 12, 12});
     m_renderPreviewBg->setID("paimon-emote-preview-bg"_spr);
     m_mainLayer->addChild(m_renderPreviewBg, 3);
 
@@ -344,7 +349,7 @@ void EmotePickerPopup::relayout() {
     float toolbarY = m_popupH - TITLE_H - PAD - TOOLBAR_H;
 
     float keepW = 24.f;
-    float sliderW = 70.f;
+    float sliderW = 104.f;
     float searchW = contentW - keepW - sliderW - PAD * 2;
 
     if (auto sbg = m_mainLayer->getChildByID("paimon-emote-search-bg"_spr)) {
@@ -377,13 +382,13 @@ void EmotePickerPopup::relayout() {
     float previewY = PAD;
     if (m_renderPreviewBg) {
         m_renderPreviewBg->removeFromParent();
-        m_renderPreviewBg = paimon::ui::makeInset({contentW, PREVIEW_H}, 235, {12, 12, 12});
+        m_renderPreviewBg = paimon::ui::makeInset({contentW - RESIZE_SZ - 4.f, PREVIEW_H}, 235, {12, 12, 12});
         m_renderPreviewBg->setID("paimon-emote-preview-bg"_spr);
         m_renderPreviewBg->setPosition({PAD, previewY});
         m_mainLayer->addChild(m_renderPreviewBg, 3);
     }
     if (m_previewName) m_previewName->setPosition({PAD + 6.f, previewY + PREVIEW_H / 2.f});
-    if (m_previewCode) m_previewCode->setPosition({PAD + contentW - 6.f, previewY + PREVIEW_H / 2.f});
+    if (m_previewCode) m_previewCode->setPosition({PAD + contentW - RESIZE_SZ - 10.f, previewY + PREVIEW_H / 2.f});
 
     float gridTop = tabY - PAD;
     float gridBottom = previewY + PREVIEW_H + PAD;
@@ -421,10 +426,22 @@ void EmotePickerPopup::rebuildTabStrip() {
     float x = gap;
     float h = TABSTRIP_H - 2.f;
 
+    // the strip only scrolls vertically, so tabs past the right edge would
+    // be unreachable: shrink every tab until the whole strip fits.
+    float availW = m_tabStrip->getContentSize().width;
+    float naturalW = gap;
+    for (auto const& d : defs) {
+        auto probe = CCLabelBMFont::create(d.label.c_str(), "bigFont.fnt");
+        probe->setScale(0.28f);
+        naturalW += probe->getScaledContentWidth() + 14.f + gap;
+    }
+    float fit = naturalW > availW && naturalW > 0.f
+        ? std::max(0.45f, availW / naturalW) : 1.f;
+
     for (auto const& d : defs) {
         auto lbl = CCLabelBMFont::create(d.label.c_str(), "bigFont.fnt");
-        lbl->setScale(0.28f);
-        float bw = lbl->getScaledContentWidth() + 14.f;
+        lbl->setScale(0.28f * fit);
+        float bw = lbl->getScaledContentWidth() + 14.f * fit;
 
         auto container = CCNode::create();
         container->setContentSize({bw, h});
@@ -735,7 +752,7 @@ void EmotePickerPopup::onRefreshCatalog(CCObject*) {
     if (m_isRefreshingCatalog) return;
     auto& service = EmoteService::get();
     if (service.isFetching()) {
-        PaimonNotify::create("Los emotes ya se estan actualizando.", NotificationIcon::Info)->show();
+        PaimonNotify::show("Los emotes ya se estan actualizando.", NotificationIcon::Info);
         return;
     }
 
@@ -757,9 +774,9 @@ void EmotePickerPopup::onRefreshCatalog(CCObject*) {
                 popup->rebuildTabStrip();
                 popup->refreshGrid();
                 EmoteCache::get().preloadAllToDisk();
-                PaimonNotify::create("Catalogo de emotes actualizado.", NotificationIcon::Success)->show();
+                PaimonNotify::show("Catalogo de emotes actualizado.", NotificationIcon::Success);
             } else {
-                PaimonNotify::create("No se pudo actualizar el catalogo de emotes.", NotificationIcon::Error)->show();
+                PaimonNotify::show("No se pudo actualizar el catalogo de emotes.", NotificationIcon::Error);
             }
         });
     });
@@ -842,11 +859,16 @@ void EmotePickerPopup::update(float dt) {
     if ((m_hoverFrameSkip++ & 1) != 0) return;
     float effDt = dt * 2.f;
 
-    CCPoint mouseGL = geode::cocos::getMousePos();
     CCPoint scrollWorld = m_scroll->convertToWorldSpace({0, 0});
     CCSize scrollSize = m_scroll->getContentSize();
     CCRect scrollRect(scrollWorld.x, scrollWorld.y, scrollSize.width, scrollSize.height);
+#if defined(GEODE_IS_MOBILE)
+    bool const mouseInScroll = false;
+    CCPoint const mouseGL{0.f, 0.f};
+#else
+    CCPoint mouseGL = geode::cocos::getMousePos();
     bool mouseInScroll = scrollRect.containsPoint(mouseGL);
+#endif
 
     float lerpAmt = std::min(1.f, effDt * 5.5f);
     float cell = m_cellSize;
@@ -898,8 +920,13 @@ void EmotePickerPopup::update(float dt) {
     }
 
     if (m_previewName && m_previewCode) {
-        m_previewName->setString(hoveredName.empty() ? "Pasa el raton sobre un emote" : hoveredName.c_str());
-        m_previewName->setColor(hoveredName.empty() ? ccColor3B{110, 110, 110} : ccColor3B{235, 235, 235});
+        bool const hasHover = !hoveredName.empty();
+#if defined(GEODE_IS_MOBILE)
+        m_previewName->setString(hasHover ? hoveredName.c_str() : "Toca un emote para seleccionarlo");
+#else
+        m_previewName->setString(hasHover ? hoveredName.c_str() : "Pasa el raton sobre un emote");
+#endif
+        m_previewName->setColor(hasHover ? ccColor3B{235, 235, 235} : ccColor3B{110, 110, 110});
         m_previewCode->setString(hoveredCode.c_str());
     }
 
@@ -1024,7 +1051,7 @@ static bool nodeContainsTouch(CCNode* node, CCTouch* touch) {
                   node->getContentSize().height).containsPoint(local);
 }
 
-bool EmotePickerPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
+bool EmotePickerPopup::ccTouchBegan(CCTouch* touch, CCEvent*) {
     m_draggingTitle = false;
     m_draggingResize = false;
     m_touchHitOutside = false;
@@ -1049,7 +1076,7 @@ bool EmotePickerPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
     return true;
 }
 
-void EmotePickerPopup::ccTouchMoved(CCTouch* touch, CCEvent* event) {
+void EmotePickerPopup::ccTouchMoved(CCTouch* touch, CCEvent*) {
     auto winSize = CCDirector::get()->getWinSize();
     CCPoint delta = touch->getLocation() - m_dragStartTouch;
 
@@ -1093,7 +1120,7 @@ void EmotePickerPopup::ccTouchMoved(CCTouch* touch, CCEvent* event) {
     }
 }
 
-void EmotePickerPopup::ccTouchEnded(CCTouch* touch, CCEvent* event) {
+void EmotePickerPopup::ccTouchEnded(CCTouch* touch, CCEvent*) {
     if (m_draggingTitle || m_draggingResize) {
         bool wasResize = m_draggingResize;
         m_draggingTitle = false;

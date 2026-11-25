@@ -231,7 +231,7 @@ class $modify(SmoothTextInput, CCTextInputNode) {
         snapshot();
     }
 
-    void setString(gd::string text) {
+    void setString(std::string text) {
         m_fields->programmatic = true;
         CCTextInputNode::setString(text);
         m_fields->programmatic = false;

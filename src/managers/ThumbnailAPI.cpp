@@ -124,6 +124,12 @@ void ThumbnailAPI::syncVerificationQueue(PendingCategory category, QueueCallback
 void ThumbnailAPI::claimQueueItem(int levelId, PendingCategory category, std::string const& username, ActionCallback callback, std::string const& type) {
     ModerationService::get().claimQueueItem(levelId, category, username, std::move(callback), type);
 }
+void ThumbnailAPI::unclaimQueueItem(int levelId, PendingCategory category, std::string const& username, ActionCallback callback, std::string const& type, bool force) {
+    ModerationService::get().unclaimQueueItem(levelId, category, username, std::move(callback), type, force);
+}
+void ThumbnailAPI::takeoverQueueItem(int levelId, PendingCategory category, std::string const& username, ActionCallback callback, std::string const& type) {
+    ModerationService::get().takeoverQueueItem(levelId, category, username, std::move(callback), type);
+}
 void ThumbnailAPI::acceptQueueItem(int levelId, PendingCategory category, std::string const& username, ActionCallback callback, std::string const& targetFilename, std::string const& type, bool acceptAll) {
     ModerationService::get().acceptQueueItem(levelId, category, username, std::move(callback), targetFilename, type, acceptAll);
 }

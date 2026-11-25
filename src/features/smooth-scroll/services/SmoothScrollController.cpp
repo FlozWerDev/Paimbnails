@@ -13,9 +13,9 @@ using namespace geode::prelude;
 namespace paimon::smoothscroll {
 
 namespace {
-    // user-scaled base values: gain = base * sensitivity, decay = base / smoothness
-    constexpr double kBaseWheelGain = 3.5;
-    constexpr double kBaseDecayRate = 12.0;
+    // user-scaled base values: pixels = base * sensitivity, response = base / smoothness
+    constexpr double kBaseResponse = 12.0;
+    constexpr double kMaxActionSteps = 8.0;
 
     double boundedSetting(double value, double minimum, double maximum, double fallback) {
         if (!std::isfinite(value)) return fallback;
@@ -28,12 +28,23 @@ namespace {
         auto* handlers = dispatcher ? dispatcher->m_pMouseHandlers : nullptr;
         if (!handlers) return nullptr;
 
-        // match dispatcher first-live-delegate order so momentum can't leak into an unintended view.
-        for (unsigned i = 0; i < handlers->count(); ++i) {
-            auto* handler = static_cast<CCMouseHandler*>(handlers->objectAtIndex(i));
-            if (handler && handler->m_pDelegate) return handler->m_pDelegate;
+        // the dispatcher visits the newest delegate first (count - 1 down to zero).
+        // forward traversal can mistake the editor's background for the zoom recipient.
+        // hidden lists are muted during the replay, so they are not the recipient either.
+        for (auto i = handlers->count(); i > 0; --i) {
+            auto* handler = static_cast<CCMouseHandler*>(handlers->objectAtIndex(i - 1));
+            if (!handler || !handler->m_pDelegate) continue;
+            if (hiddenScrollList(handler->m_pDelegate)) continue;
+            return handler->m_pDelegate;
         }
         return nullptr;
+    }
+
+    bool isEditorUIActiveTarget() {
+        auto* editorLayer = LevelEditorLayer::get();
+        if (!editorLayer || !editorLayer->m_editorUI) return false;
+        auto* editorTarget = static_cast<CCMouseDelegate*>(editorLayer->m_editorUI);
+        return currentScrollTarget() == editorTarget;
     }
 
     float signUnit(float value) {
@@ -44,28 +55,30 @@ namespace {
     float externalSmoothStep(float value) {
         if (!std::isfinite(value) || std::abs(value) < 0.0001f) return 0.f;
         // prevter spreads one event over frames: keep fractions, not full actions per frame.
-        constexpr float kExternalUnitsPerStep = 12.f;
-        return std::clamp(value / kExternalUnitsPerStep, -8.f, 8.f);
+        return std::clamp(
+            value / static_cast<float>(kInputUnitsPerStep),
+            -8.f,
+            8.f
+        );
     }
 
-    double currentWheelGain() {
-        double const s = boundedSetting(
+    double currentSensitivity() {
+        return boundedSetting(
             paimon::settings::smoothscroll::sensitivity(),
             paimon::settings::smoothscroll::kSensitivityMin,
             paimon::settings::smoothscroll::kSensitivityMax,
             paimon::settings::smoothscroll::kSensitivityDefault
         );
-        return kBaseWheelGain * s;
     }
 
-    double currentDecayRate() {
+    double currentResponse() {
         double const m = boundedSetting(
             paimon::settings::smoothscroll::smoothness(),
             paimon::settings::smoothscroll::kSmoothnessMin,
             paimon::settings::smoothscroll::kSmoothnessMax,
             paimon::settings::smoothscroll::kSmoothnessDefault
         );
-        return kBaseDecayRate / m;
+        return kBaseResponse / m;
     }
 
     double currentEditorZoomSensitivity() {
@@ -77,24 +90,27 @@ namespace {
         );
     }
 
-    double currentEditorZoomGain() {
-        return kBaseWheelGain * currentEditorZoomSensitivity();
-    }
-
-    double currentEditorZoomDecayRate() {
+    double currentEditorZoomResponse() {
         double const m = boundedSetting(
             paimon::settings::smoothscroll::editorZoomSmoothness(),
             paimon::settings::smoothscroll::kEditorZoomSmoothnessMin,
             paimon::settings::smoothscroll::kEditorZoomSmoothnessMax,
             paimon::settings::smoothscroll::kEditorZoomSmoothnessDefault
         );
-        return kBaseDecayRate / m;
+        return kBaseResponse / m;
     }
 }
 
 SmoothScrollController& SmoothScrollController::get() {
     static SmoothScrollController instance;
     return instance;
+}
+
+CCScrollLayerExt* hiddenScrollList(CCMouseDelegate* delegate) {
+    if (!delegate) return nullptr;
+    auto* list = typeinfo_cast<CCScrollLayerExt*>(delegate);
+    if (!list || geode::cocos::nodeIsVisible(list)) return nullptr;
+    return list;
 }
 
 bool SmoothScrollController::isActive() const {
@@ -116,22 +132,28 @@ bool shouldBypassSmoothScroll() {
         }
     }
 
-    if (isEditorZoomGesture() && !paimon::settings::smoothscroll::editorZoomEnabled()) {
-        return true;
+    // Editor panning uses EditorUI::scrollWheel/updatePanDecay in dispatcher/sign units
+    // rather than menu-list pixels; feeding pixel momentum across many frames launches
+    // the editor camera. Only Ctrl+scroll zoom uses smooth scroll in the editor.
+    if (isEditorUIActiveTarget()) {
+        auto* kb = CCKeyboardDispatcher::get();
+        bool const ctrlHeld = kb && kb->getControlKeyPressed();
+        if (!ctrlHeld || !paimon::settings::smoothscroll::editorZoomEnabled()) {
+            return true;
+        }
     }
 
     return false;
 }
 
 bool isEditorZoomGesture() {
-    auto* editorLayer = LevelEditorLayer::get();
-    if (!editorLayer || !editorLayer->m_editorUI) return false;
+    if (!isEditorUIActiveTarget()) return false;
     auto* kb = CCKeyboardDispatcher::get();
-    if (!kb || !kb->getControlKeyPressed()) return false;
+    return kb && kb->getControlKeyPressed();
+}
 
-    // ctrl may hover over a popup/list above the editor: only editorui-as-sink counts as zoom.
-    auto* editorTarget = static_cast<CCMouseDelegate*>(editorLayer->m_editorUI);
-    return currentScrollTarget() == editorTarget;
+float SmoothScrollController::pixelsPerNotch() const {
+    return static_cast<float>(kBasePixelsPerNotch * currentSensitivity());
 }
 
 bool SmoothScrollController::queueInput(float wheelY, float wheelX) {
@@ -152,15 +174,11 @@ bool SmoothScrollController::queueInput(float wheelY, float wheelX) {
     m_editorZoomMode = editorZoom;
     m_scrollTarget = target;
 
-    double const contentGain = editorZoom ? currentEditorZoomGain() : currentWheelGain();
-    double const actionGain = editorZoom ? currentEditorZoomSensitivity() : 1.0;
-
+    // the dispatcher hands out a fixed amount of units per notch, so the
+    // input is normalized once here and every consumer works in notches.
     return m_filter.queue(
-        static_cast<double>(wheelY),
-        static_cast<double>(wheelX),
-        contentGain,
-        actionGain,
-        kInputUnitsPerStep
+        static_cast<double>(wheelY) / kInputUnitsPerStep,
+        static_cast<double>(wheelX) / kInputUnitsPerStep
     );
 }
 
@@ -195,16 +213,27 @@ void SmoothScrollController::tick(float dt, ScrollDispatchFn const& dispatch) {
         return;
     }
 
-    double const decayRate = m_editorZoomMode ? currentEditorZoomDecayRate() : currentDecayRate();
-    auto const frame = m_filter.step(static_cast<double>(dt), decayRate);
-    m_replayActions = frame.actions;
+    double const response = m_editorZoomMode ? currentEditorZoomResponse() : currentResponse();
+    ScrollVector const frame = m_filter.step(dt, response);
 
-    bool const hasOutput = frame.content.y != 0.0 || frame.content.x != 0.0 ||
-                           frame.actions.y != 0.0 || frame.actions.x != 0.0;
+    // discrete consumers (zooms, button steps) work in notch fractions.
+    double const actionGain = m_editorZoomMode ? currentEditorZoomSensitivity() : 1.0;
+    m_replayActions = {
+        std::clamp(frame.y * actionGain, -kMaxActionSteps, kMaxActionSteps),
+        std::clamp(frame.x * actionGain, -kMaxActionSteps, kMaxActionSteps)
+    };
+
+    // content consumers (lists) work in pixels, the same value everywhere.
+    double const pixels = static_cast<double>(pixelsPerNotch());
+    ScrollVector const content = { frame.y * pixels, frame.x * pixels };
+
+    bool const hasOutput = content.y != 0.0 || content.x != 0.0 ||
+                           m_replayActions.y != 0.0 || m_replayActions.x != 0.0;
     if (!hasOutput) return;
 
     m_replaying = true;
-    dispatch(static_cast<float>(frame.content.y), static_cast<float>(frame.content.x));
+    m_driving = true;
+    dispatch(static_cast<float>(content.y), static_cast<float>(content.x));
     m_replaying = false;
     m_replayActions = {};
 }
@@ -221,10 +250,6 @@ float SmoothScrollController::replaySteps(bool negate) const {
         return negate ? -y : y;
     }
     return static_cast<float>(m_replayActions.x);
-}
-
-float SmoothScrollController::replayedWheelSteps() const {
-    return replaySteps(false);
 }
 
 float SmoothScrollController::replayedZoomSteps() const {
@@ -253,6 +278,7 @@ void SmoothScrollController::stop() {
     m_filter.reset();
     m_replayActions = {};
     m_scrollTarget = nullptr;
+    m_driving = false;
     m_editorZoomMode = false;
 }
 

@@ -25,6 +25,7 @@ struct ChartOptions {
 
 class StatsChartNode : public cocos2d::CCNode {
 public:
+    using cocos2d::CCNode::init;
     // zero-valued data still draws the grid and emptytext.
     static StatsChartNode* create(std::vector<float> const& values,
                                   cocos2d::CCSize const& size, ChartOptions const& options);

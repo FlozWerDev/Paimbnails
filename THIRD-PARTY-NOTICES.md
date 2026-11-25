@@ -377,6 +377,20 @@ subject to each site's own Terms of Service.
 
 ## 6. Dependencies & service interop (no code copied)
 
+- **Openverse** (https://openverse.org, API at
+  `https://api.openverse.org`): an index of openly licensed media
+  maintained by the WordPress project and powered by Creative Commons
+  technology. Openverse holds no copyright over the indexed works; every
+  sound keeps the license its author chose (Creative Commons or CC0).
+  The death-effects Online tab sends anonymous, key-less search requests
+  (`GET /v1/audio/`), downloads only the sound the user picks, and never
+  offers a result that lacks a license, a source page, or an
+  FMOD-readable format. Author, license name and URL, source page, and
+  the API attribution text are stored next to the downloaded file in
+  `credits.json`, shown on the sound's row, and listed under Credits.
+  No Openverse code or media is bundled with this mod; search results
+  link back to each work's source page, where the full license lives.
+
 - **More Icons** by **hiimjasmine00** (Geode id
   `hiimjustin000.more_icons`): a declared dependency in `mod.json`
   ("Requires the More Icons mod"). Paimbnails uses only its public API

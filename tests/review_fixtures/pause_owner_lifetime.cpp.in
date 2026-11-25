@@ -1,0 +1,156 @@
+#include <cassert>
+#include <chrono>
+#include <cstdint>
+#include <functional>
+#include <iostream>
+#include <memory>
+#include <new>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+namespace cocos2d {
+struct CCNode {
+    inline static unsigned nextID = 0;
+    unsigned m_uID = ++nextID;
+    int references = 1;
+    CCNode* parent = nullptr;
+    virtual ~CCNode() = default;
+    CCNode* getParent() { return parent; }
+    void retain() { ++references; }
+    void release() { if (--references == 0) delete this; }
+};
+struct CCScene : CCNode {
+    bool* loadNext = nullptr;
+    explicit CCScene(bool* ready = nullptr) : loadNext(ready) {}
+    ~CCScene() override { if (loadNext) *loadNext = true; }
+};
+struct CCTransitionScene : CCScene {};
+struct CCMenuItem : CCNode { bool isEnabled() { return true; } };
+struct CCDirector {
+    CCScene* scene = nullptr;
+    static CCDirector* get() { static CCDirector director; return &director; }
+    CCScene* getRunningScene() { return scene; }
+};
+}
+using namespace cocos2d;
+template<class To, class From> To typeinfo_cast(From* object) { return dynamic_cast<To>(object); }
+
+// Geode 5.11 WeakRefPool retains its managed object until a weak handle is
+// locked/destroyed. Dropping a handle via move assignment alone doesn't forget it.
+template<class T> struct Ref {
+    T* object;
+    explicit Ref(T* value) : object(value) { if (object) object->retain(); }
+    ~Ref() { if (object) object->release(); }
+    T* data() const { return object; }
+    explicit operator bool() const { return object != nullptr; }
+};
+template<class T> class WeakRef {
+    struct Controller { T* object; };
+    inline static std::unordered_map<T*, std::shared_ptr<Controller>> pool;
+    std::shared_ptr<Controller> controller;
+    static void forget(T* object) {
+        if (!object || !pool.contains(object)) return;
+        pool.at(object)->object = nullptr;
+        pool.erase(object);
+        object->release();
+    }
+    void check() const {
+        if (controller && controller->object && controller->object->references == 1)
+            forget(controller->object);
+    }
+public:
+    WeakRef() = default;
+    WeakRef(T* object) {
+        if (!object) return;
+        if (!pool.contains(object)) {
+            object->retain();
+            pool[object] = std::make_shared<Controller>(Controller{object});
+        }
+        controller = pool.at(object);
+    }
+    WeakRef(WeakRef const&) = default;
+    WeakRef(WeakRef&&) = default;
+    ~WeakRef() {
+        check();
+        if (controller && controller.use_count() == 2) forget(controller->object);
+    }
+    WeakRef& operator=(WeakRef&& other) noexcept {
+        controller = std::move(other.controller);
+        return *this;
+    }
+    WeakRef& operator=(T* object) {
+        assert(!object); // Only the null assignment path is needed here.
+        controller = nullptr;
+        return *this;
+    }
+    Ref<T> lock() const { check(); return Ref<T>(controller ? controller->object : nullptr); }
+};
+@@source|src/utils/SceneIdentity.hpp@@
+struct PlayLayer : CCNode {
+    inline static PlayLayer* current = nullptr;
+    bool* destroyed;
+    explicit PlayLayer(bool* flag) : destroyed(flag) {}
+    ~PlayLayer() override { *destroyed = true; }
+    static PlayLayer* get() { return current; }
+};
+struct PaimonLoadingOverlay : CCNode {};
+struct PauseState {
+    @@function|src/hooks/PauseLayer.cpp|struct Fields@@;
+    Fields fields;
+};
+namespace paimon {
+void setPauseZoomHidden(bool) {}
+namespace modules { bool isEnabled(char const*) { return true; } }
+}
+struct CCPoint { float x, y; };
+CCPoint ccp(float x, float y) { return {x, y}; }
+namespace cocos { CCPoint getMousePos() { return {}; } }
+int zoomResets = 0;
+void resetPlayLayerZoom(CCNode*) { ++zoomResets; }
+struct PauseZoom {
+    decltype(PauseState{}.fields.m_playLayer) m_playLayer;
+    bool m_isPaused = false, m_isPanning = false, m_menuForcedHidden = false;
+    int m_pauseLayerMissingFrames = 0;
+    CCPoint m_lastMousePos{}, m_deltaMousePos{};
+    @@function|src/hooks/PlayLayer.cpp|void onPause()@@
+    @@function|src/hooks/PlayLayer.cpp|void onResume()@@
+    @@function|src/hooks/PlayLayer.cpp|void resetForNewLevel()@@
+};
+int main() {
+    bool destroyed = false;
+    auto* play = new PlayLayer(&destroyed);
+    PlayLayer::current = play;
+    PauseState detachedPause;
+    detachedPause.fields.m_playLayer = decltype(detachedPause.fields.m_playLayer){play};
+    assert(play->references == 1 && "a retained pause callback must not retain the outgoing gameplay");
+    PauseZoom zoom;
+    zoom.onPause();
+    zoom.onResume();
+    assert(zoomResets == 1);
+    assert(play->references == 1 && "resetting pause zoom orphaned a pooled gameplay reference");
+    zoom.onPause();
+    zoom.resetForNewLevel();
+    PlayLayer::current = nullptr;
+    play->release();
+    assert(destroyed && "returning from gameplay must allow its loading-layer handoff");
+    zoom.onResume(); // no dereference of the old owner after gameplay destruction
+
+    // A new gameplay may reuse the exact address of the previous owner.
+    alignas(PlayLayer) unsigned char storage[sizeof(PlayLayer)];
+    bool oldDestroyed = false, newDestroyed = false;
+    auto* old = std::construct_at(reinterpret_cast<PlayLayer*>(storage), &oldDestroyed);
+    PlayLayer::current = old;
+    zoom.onPause();
+    std::destroy_at(old);
+    auto* replacement = std::construct_at(reinterpret_cast<PlayLayer*>(storage), &newDestroyed);
+    PlayLayer::current = replacement;
+    int const previousResets = zoomResets;
+    zoom.onResume();
+    assert(zoomResets == previousResets && "a recycled address does not identify the same gameplay");
+    assert(!detachedPause.fields.m_playLayer.matches(replacement));
+    std::destroy_at(replacement);
+    PlayLayer::current = nullptr;
+    std::cout << "Pause owner lifetime checks passed.\n";
+}

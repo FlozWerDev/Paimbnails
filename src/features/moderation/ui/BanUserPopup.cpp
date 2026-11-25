@@ -5,6 +5,9 @@
 #include "../../../utils/PaimonLoadingOverlay.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/Localization.hpp"
+#include "../../../utils/SafeText.hpp"
+#include "../../../core/ModAuthFlow.hpp"
+#include "../../../core/BanPolicy.hpp"
 #include "../../emotes/ui/EmoteButton.hpp"
 #include "../../emotes/ui/EmoteAutocomplete.hpp"
 #include "../../../ui/PaimonUI.hpp"
@@ -24,6 +27,8 @@ BanUserPopup* BanUserPopup::create(std::string const& username) {
 bool BanUserPopup::init(std::string const& username) {
     if (!PaimonPopup::init(300.f, 210.f)) return false;
 
+    // keep the exact target: sanitizing an identifier could silently point the
+    // action at a different account. Invalid names are rejected in onBan.
     m_username = username;
     this->setTitle(Localization::get().getString("ban.popup.title"));
     this->addInfoButton(Localization::get().getString("ban.popup.title"),
@@ -33,7 +38,8 @@ bool BanUserPopup::init(std::string const& username) {
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
 
-    auto lbl = CCLabelBMFont::create(fmt::format(fmt::runtime(Localization::get().getString("ban.popup.user")), username).c_str(), "goldFont.fnt");
+    auto const displayName = paimon::text::sanitizeDisplayText(m_username, 64);
+    auto lbl = CCLabelBMFont::create(fmt::format(fmt::runtime(Localization::get().getString("ban.popup.user")), displayName).c_str(), "goldFont.fnt");
     lbl->setScale(0.6f);
     lbl->setPosition({cx, content.height - 46.f});
     lbl->setID("username-label"_spr);
@@ -78,7 +84,7 @@ bool BanUserPopup::init(std::string const& username) {
 
     {
         auto ac = paimon::emotes::EmoteAutocomplete::create(
-            m_input->getInputNode(),
+            m_input,
             [this](std::string const& newText) {
                 if (m_input) m_input->setString(newText);
             }
@@ -102,25 +108,43 @@ bool BanUserPopup::init(std::string const& username) {
 }
 
 void BanUserPopup::onBan(CCObject*) {
-    std::string reason = m_input->getString();
-    if (reason.empty()) {
-        PaimonNotify::create(Localization::get().getString("ban.popup.enter_reason"), NotificationIcon::Error)->show();
+    if (m_pending) return;
+    if (!m_input || !paimon::modauth::isVerified()) {
+        PaimonNotify::show(Localization::get().getString("ban.verify_required"), NotificationIcon::Warning);
+        return;
+    }
+    if (!paimon::text::isSafeAccountName(m_username)) {
+        PaimonNotify::show(Localization::get().getString("ban.popup.invalid_user"), NotificationIcon::Error);
         return;
     }
 
+    std::string const reason = paimon::text::sanitizeDisplayText(m_input->getString(), 200);
+    if (reason.empty()) {
+        PaimonNotify::show(Localization::get().getString("ban.popup.enter_reason"), NotificationIcon::Error);
+        return;
+    }
+
+    auto* game = GameManager::get();
+    if (game && paimon::ban::sameAccountName(m_username, game->m_playerName)) {
+        PaimonNotify::show(Localization::get().getString("ban.profile.self_ban"), NotificationIcon::Warning);
+        return;
+    }
+
+    m_pending = true;
     auto spinner = PaimonLoadingOverlay::create("Loading...", 30.f);
     spinner->show(m_mainLayer, 100);
     Ref<PaimonLoadingOverlay> loading = spinner;
 
     WeakRef<BanUserPopup> self = this;
-    HttpClient::get().banUser(m_username, reason, [self, loading](bool success, std::string msg) {
+    HttpClient::get().banUser(m_username, reason, [self, loading](bool success, std::string) {
         if (auto popup = self.lock()) {
+            popup->m_pending = false;
             if (loading) loading->dismiss();
             if (success) {
-                PaimonNotify::create(Localization::get().getString("ban.popup.success"), NotificationIcon::Success)->show();
+                PaimonNotify::show(Localization::get().getString("ban.popup.success"), NotificationIcon::Success);
                 popup->onClose(nullptr);
             } else {
-                PaimonNotify::create(Localization::get().getString("ban.popup.error"), NotificationIcon::Error)->show();
+                PaimonNotify::show(Localization::get().getString("ban.popup.error"), NotificationIcon::Error);
             }
         }
     });

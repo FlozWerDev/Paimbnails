@@ -67,13 +67,19 @@ void syncGarage(GJGarageLayer* garage) {
 void installButton(GJGarageLayer* layer) {
     if (layer->getChildByIDRecursive("copied-icons-btn"_spr)) return;
 
-    // already a full button sprite (base included), so it goes in as-is.
-    auto* spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_profileButton_001.png");
-    if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plusBtn_001.png");
-    if (!spr) return;
-
-    float const dim = std::max(spr->getContentWidth(), spr->getContentHeight());
-    if (dim > 0.f) spr->setScale(28.f / dim);
+    CCNode* spr = nullptr;
+    if (auto* glyph = paimon::SpriteHelper::safeCreate("paim_garage_copiedIcons.png"_spr)) {
+        spr = CircleButtonSprite::create(glyph, CircleBaseColor::Blue, CircleBaseSize::Medium);
+    }
+    if (!spr) {
+        // vanilla fallbacks are full button sprites (base included), so they go in as-is.
+        CCSprite* full = paimon::SpriteHelper::safeCreateWithFrameName("GJ_profileButton_001.png");
+        if (!full) full = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plusBtn_001.png");
+        if (!full) return;
+        float const dim = std::max(full->getContentWidth(), full->getContentHeight());
+        if (dim > 0.f) full->setScale(28.f / dim);
+        spr = full;
+    }
 
     auto* btn = CCMenuItemExt::createSpriteExtra(spr, [](CCMenuItemSpriteExtra*) {
         if (auto* popup = CopiedIconsPopup::create()) popup->show();

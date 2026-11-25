@@ -4,7 +4,7 @@ Activa **Overlay para OBS** en el mod y copia su URL en una **Fuente de navegado
 
 - `/overlay`: fuente transparente con los datos del directo.
 - `/preview`: vista previa; muestra una demo cuando no hay partida ni requests.
-- `/gallery`: galería de los 19 estilos con enlaces individuales para copiar.
+- `/gallery`: galería de los 27 estilos con enlaces individuales para copiar.
 
 Cada fuente puede elegir su estilo, diseño, animación y escala sin cambiar los ajustes generales:
 
@@ -14,7 +14,7 @@ http://localhost:21680/overlay?style=gd&layout=ticker&anim=bounce&scale=0.8
 
 | Opción | Valores |
 | --- | --- |
-| `style` | `glass`, `gd`, `neon`, `synthwave`, `arcade`, `terminal`, `minimal`, `comic`, `glitch`, `holo`, `aurora`, `inferno`, `frost`, `galaxy`, `royal`, `pastel`, `brutal`, `cozy`, `esports` |
+| `style` | `glass`, `gd`, `neon`, `synthwave`, `arcade`, `terminal`, `minimal`, `comic`, `glitch`, `holo`, `aurora`, `inferno`, `frost`, `galaxy`, `royal`, `pastel`, `brutal`, `cozy`, `esports`, `gameboy`, `retro95`, `blueprint`, `cyberpunk`, `ticket`, `vhs`, `notebook`, `quest` |
 | `layout` | `cards`, `compact`, `ticker`, `sidebar`, `spotlight`, `corner`, `banner` |
 | `anim` | `flow`, `slide`, `pulse`, `none`, `bounce`, `flip`, `zoom`, `glitch`, `drop`, `blur`, `typewriter` |
 | `scale` | De `0.3` a `2` en la URL |
@@ -25,7 +25,7 @@ El estilo GD utiliza fuentes y sprites de la instalación del juego. Si no está
 
 ## Prueba del navegador sin compilar el mod
 
-`tests/stream_overlay_regression.mjs` sirve los archivos locales con datos simulados y comprueba las 133 combinaciones de estilo/diseño, las 11 animaciones, controles, alertas y enlaces de la galería. Requiere Playwright o Playwright Core y Chromium ya instalados:
+`tests/stream_overlay_regression.mjs` sirve los archivos locales con datos simulados y comprueba las 189 combinaciones de estilo/diseño, las 11 animaciones, controles, alertas y enlaces de la galería. Requiere Playwright o Playwright Core y Chromium ya instalados:
 
 ```sh
 PLAYWRIGHT_MODULE=/ruta/a/node_modules/playwright-core \

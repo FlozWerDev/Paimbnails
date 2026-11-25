@@ -1,0 +1,128 @@
+#include <algorithm>
+#include <cassert>
+#include <cstdint>
+#include <iostream>
+#include <memory>
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <vector>
+@@source|src/features/official-slots/OfficialSlots.hpp@@
+struct LevelId {
+    int number = 0;
+    int value() { return number; }
+    LevelId& operator=(int id) { number = id; return *this; }
+};
+struct GJGameLevel {
+    LevelId m_levelID;
+    std::string m_levelString;
+    int m_audioTrack = 0, m_songID = 0, m_levelLength = 0;
+    std::string m_songIDs, m_sfxIDs;
+    bool m_levelNotDownloaded = true;
+};
+template<class T> struct Ref {
+    T* pointer = nullptr;
+    Ref() = default;
+    Ref(T* value) : pointer(value) {}
+    T* data() const { return pointer; }
+    operator T*() const { return pointer; }
+    explicit operator bool() const { return pointer != nullptr; }
+};
+namespace paimon::modules {
+bool enabled = true;
+bool isEnabled(char const*) { return enabled; }
+}
+namespace paimon::officialslots {
+bool isOfficialId(int id) { return id >= 1 && id <= 22; }
+class SlotStore {
+public:
+    std::unordered_map<std::string, Slot> slots;
+    static SlotStore& get() { static SlotStore store; return store; }
+    std::optional<Slot> find(std::string const& id) {
+        auto it = slots.find(id);
+        return it == slots.end() ? std::nullopt : std::optional(it->second);
+    }
+    std::optional<Slot> slotForOfficial(int id) {
+        for (auto const& [key, slot] : slots) if (slot.replacesOfficialId == id && slot.enabled) return slot;
+        return std::nullopt;
+    }
+};
+void applyDisplayFields(GJGameLevel*, Slot const&) {}
+@@function|src/features/official-slots/services/SlotLevels.cpp|bool sameSource(@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|bool levelStringEmpty(@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|void copyPlayableData(@@
+
+class SlotLevelCache {
+public:
+    static SlotLevelCache& get() { static SlotLevelCache cache; return cache; }
+    struct Entry { Ref<GJGameLevel> level; Slot snapshot; };
+    std::unordered_map<std::string, Entry> m_levels;
+    std::vector<std::unique_ptr<GJGameLevel>> owned;
+    std::uint32_t m_nextFakeId = 0;
+    GJGameLevel* build(Slot const&, int id) {
+        auto level = std::make_unique<GJGameLevel>();
+        level->m_levelID = id;
+        auto* result = level.get();
+        owned.push_back(std::move(level));
+        return result;
+    }
+    GJGameLevel* levelForSlot(Slot const&);
+    std::optional<std::string> slotIdForLevel(GJGameLevel const*) const;
+    void invalidate(std::string const&);
+};
+@@function|src/features/official-slots/services/SlotLevels.cpp|GJGameLevel* SlotLevelCache::levelForSlot(@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|std::optional<std::string> SlotLevelCache::slotIdForLevel(@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|void SlotLevelCache::invalidate(std::string@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|int pageSourceLevelId(@@
+}
+
+int main() {
+    using namespace paimon::officialslots;
+    auto& cache = SlotLevelCache::get();
+    auto& store = SlotStore::get();
+    Slot slot;
+    slot.id = "custom";
+    slot.levelId = 123456;
+    store.slots[slot.id] = slot;
+    auto* first = cache.levelForSlot(slot);
+    assert(first->m_levelID.value() > 22); // Non-positive IDs render as coming-soon.
+    assert(pageSourceLevelId(first) == 123456); // Never fetch a thumbnail for the stand-in ID.
+    slot.name = "Renamed";
+    slot.stars = 10;
+    assert(cache.levelForSlot(slot) == first);
+    slot.levelId = 654321;
+    store.slots[slot.id] = slot;
+    auto* changed = cache.levelForSlot(slot);
+    assert(changed != first && changed->m_levelID.value() != first->m_levelID.value());
+    assert(pageSourceLevelId(changed) == 654321);
+    slot.source = Source::Gmd;
+    slot.gmdFile = "import.gmd";
+    store.slots[slot.id] = slot;
+    auto* imported = cache.levelForSlot(slot);
+    assert(imported != changed && pageSourceLevelId(imported) == 0);
+
+    GJGameLevel original;
+    original.m_levelID = 2;
+    assert(pageSourceLevelId(&original) == 2);
+    slot.source = Source::LevelId;
+    slot.replacesOfficialId = 2;
+    store.slots[slot.id] = slot;
+    assert(pageSourceLevelId(&original) == 654321);
+    slot.enabled = false;
+    store.slots[slot.id] = slot;
+    assert(pageSourceLevelId(&original) == 2);
+
+    GJGameLevel downloaded;
+    downloaded.m_levelString = "kS38,1;1,1,2,30,3,30;";
+    downloaded.m_audioTrack = 7;
+    downloaded.m_songID = 789;
+    downloaded.m_songIDs = "789,456";
+    downloaded.m_sfxIDs = "12,34";
+    downloaded.m_levelLength = 4;
+    copyPlayableData(imported, &downloaded);
+    assert(imported->m_levelString == downloaded.m_levelString);
+    assert(imported->m_audioTrack == 7 && imported->m_songID == 789);
+    assert(imported->m_songIDs == "789,456" && imported->m_sfxIDs == "12,34");
+    assert(imported->m_levelLength == 4 && !imported->m_levelNotDownloaded);
+    std::cout << "Custom levels: source changes, native card IDs, thumbnails and playable data passed\n";
+}

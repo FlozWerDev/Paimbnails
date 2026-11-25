@@ -53,8 +53,7 @@ bool ProfileBgPickerPopup::init(int accountID) {
                        SEL_MenuHandler selector,
                        cocos2d::ccColor3B labelColor) -> CCMenuItemSpriteExtra*
     {
-        auto spr = paimon::SpriteHelper::safeCreateWithFrameName(primaryFrame);
-        if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName(fallbackFrame);
+        auto spr = paimon::SpriteHelper::createWithFallback(primaryFrame, fallbackFrame);
         if (!spr) spr = CCSprite::create();
 
         float maxDim = std::max(spr->getContentWidth(), spr->getContentHeight());

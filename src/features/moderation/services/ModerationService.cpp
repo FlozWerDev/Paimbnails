@@ -7,6 +7,19 @@
 
 using namespace geode::prelude;
 
+namespace {
+
+// server sends ids as JSON numbers or numeric strings depending on the endpoint.
+int intFieldLoose(matjson::Value const& item, char const* key) {
+    if (item[key].isString())
+        return geode::utils::numFromString<int>(item[key].asString().unwrapOr("0")).unwrapOr(0);
+    if (item[key].isNumber())
+        return item[key].asInt().unwrapOr(0);
+    return 0;
+}
+
+} // namespace
+
 void ModerationService::checkModerator(std::string const& username, ModeratorCallback callback) {
     auto* account = GJAccountManager::get();
     checkModeratorAccount(username, account ? account->m_accountID : 0, std::move(callback));
@@ -74,7 +87,9 @@ void ModerationService::checkUserStatus(std::string const& username, ModeratorCa
         });
 }
 
-void ModerationService::addModerator(std::string const& username, std::string const& adminUser, ActionCallback callback) {
+void ModerationService::postModeratorChange(char const* endpoint, std::string const& username,
+                                            std::string const& adminUser, char const* successMessage,
+                                            ActionCallback callback) {
     if (!m_serverEnabled) { callback(false, "server disabled"); return; }
 
     auto* accountManager = GJAccountManager::get();
@@ -89,31 +104,35 @@ void ModerationService::addModerator(std::string const& username, std::string co
         {"accountID", accountManager->m_accountID}
     });
 
-    HttpClient::get().postWithAuth("/api/admin/add-moderator", json.dump(),
-        [callback](bool success, std::string const& response) {
-            callback(success, success ? "moderador anadido con exito" : response);
+    HttpClient::get().postWithAuth(endpoint, json.dump(),
+        [callback = std::move(callback), successMessage](bool success, std::string const& response) {
+            callback(success, success ? std::string(successMessage) : response);
         });
 }
 
-void ModerationService::removeModerator(std::string const& username, std::string const& adminUser, ActionCallback callback) {
-    if (!m_serverEnabled) { callback(false, "server disabled"); return; }
-
-    auto* accountManager = GJAccountManager::get();
-    if (!accountManager) {
-        callback(false, "account manager unavailable");
-        return;
-    }
-
-    matjson::Value json = matjson::makeObject({
-        {"username", username},
-        {"adminUser", adminUser},
-        {"accountID", accountManager->m_accountID}
-    });
-
-    HttpClient::get().postWithAuth("/api/admin/remove-moderator", json.dump(),
-        [callback](bool success, std::string const& response) {
-            callback(success, success ? "moderador eliminado con exito" : response);
+void ModerationService::postQueueAction(std::string const& endpoint, matjson::Value const& json,
+                                        ActionCallback callback, geode::CopyableFunction<void()> onSuccess) {
+    HttpClient::get().postWithAuth(endpoint, json.dump(),
+        [callback = std::move(callback), onSuccess = std::move(onSuccess)](bool success, std::string const& response) {
+            if (!success && (response.starts_with("HTTP 401") || response.starts_with("HTTP 403") ||
+                response.find("MOD_") != std::string::npos ||
+                response.find("SESSION_") != std::string::npos ||
+                response.find("AUTH_") != std::string::npos)) {
+                paimon::modauth::clearVerifiedSession();
+            }
+            if (success && onSuccess) onSuccess();
+            callback(success, response);
         });
+}
+
+void ModerationService::addModerator(std::string const& username, std::string const& adminUser, ActionCallback callback) {
+    postModeratorChange("/api/admin/add-moderator", username, adminUser,
+                        "moderador anadido con exito", std::move(callback));
+}
+
+void ModerationService::removeModerator(std::string const& username, std::string const& adminUser, ActionCallback callback) {
+    postModeratorChange("/api/admin/remove-moderator", username, adminUser,
+                        "moderador eliminado con exito", std::move(callback));
 }
 
 void ModerationService::syncVerificationQueue(PendingCategory category, QueueCallback callback) {
@@ -161,27 +180,14 @@ void ModerationService::syncVerificationQueue(PendingCategory category, QueueCal
         for (auto const& item : itemsRes.unwrap()) {
             PendingItem it{};
 
-            if (item["levelId"].isString())
-                it.levelID = geode::utils::numFromString<int>(item["levelId"].asString().unwrapOr("0")).unwrapOr(0);
-            else if (item["levelId"].isNumber())
-                it.levelID = item["levelId"].asInt().unwrapOr(0);
+            it.levelID = intFieldLoose(item, "levelId");
             if (it.levelID == 0) {
                 static const char* accountIdFields[] = {"accountID", "accountId", "account_id", "userID", "userId", "user_id"};
                 for (const char* fieldName : accountIdFields) {
-                    if (item.contains(fieldName)) {
-                        if (item[fieldName].isString()) {
-                            auto parsed = geode::utils::numFromString<int>(item[fieldName].asString().unwrapOr("0"));
-                            if (parsed.isOk() && parsed.unwrap() != 0) {
-                                it.levelID = parsed.unwrap();
-                                break;
-                            }
-                        } else if (item[fieldName].isNumber()) {
-                            int val = item[fieldName].asInt().unwrapOr(0);
-                            if (val != 0) {
-                                it.levelID = val;
-                                break;
-                            }
-                        }
+                    int const val = intFieldLoose(item, fieldName);
+                    if (val != 0) {
+                        it.levelID = val;
+                        break;
                     }
                 }
             }
@@ -202,6 +208,10 @@ void ModerationService::syncVerificationQueue(PendingCategory category, QueueCal
             it.submittedBy = item["submittedBy"].asString().unwrapOr("");
             it.note = item["note"].asString().unwrapOr("");
             it.claimedBy = item["claimedBy"].asString().unwrapOr("");
+            it.filename = item["filename"].asString().unwrapOr("");
+            if (item["claimedAt"].isNumber()) {
+                it.claimedAt = (int64_t)item["claimedAt"].asDouble().unwrapOr(0.0);
+            }
 
             it.status    = PendingStatus::Open;
             it.isCreator = false;
@@ -221,7 +231,7 @@ void ModerationService::syncVerificationQueue(PendingCategory category, QueueCal
                 }
             } else if (it.category == PendingCategory::Verify) {
                 Suggestion s;
-                std::string serverFilename = item["filename"].asString().unwrapOr("");
+                std::string serverFilename = it.filename;
                 if (!serverFilename.empty()) {
                     s.filename = serverFilename;
                 } else {
@@ -230,13 +240,15 @@ void ModerationService::syncVerificationQueue(PendingCategory category, QueueCal
                 s.submittedBy = it.submittedBy;
                 s.timestamp   = it.timestamp;
                 it.suggestions.push_back(s);
-            } else if (it.category == PendingCategory::ProfileBackground ||
-                       it.category == PendingCategory::ProfileImg) {
+            } else if ((it.category == PendingCategory::Update ||
+                        it.category == PendingCategory::ProfileBackground ||
+                        it.category == PendingCategory::ProfileImg) &&
+                       !it.filename.empty()) {
                 Suggestion s;
-                s.filename    = item["filename"].asString().unwrapOr("");
+                s.filename    = it.filename;
                 s.submittedBy = it.submittedBy;
                 s.timestamp   = it.timestamp;
-                if (!s.filename.empty()) it.suggestions.push_back(s);
+                it.suggestions.push_back(s);
             }
 
             it.type = item["type"].asString().unwrapOr("");
@@ -267,6 +279,21 @@ void ModerationService::syncVerificationQueue(PendingCategory category, QueueCal
     });
 }
 
+namespace {
+
+// base payload shared by every queue action; callers add their own fields.
+matjson::Value makeQueueJson(int levelId, PendingCategory category,
+                             std::string const& username, int accountID) {
+    return matjson::makeObject({
+        {"levelId", levelId},
+        {"category", PendingQueue::catToStr(category)},
+        {"username", username},
+        {"accountID", accountID}
+    });
+}
+
+} // namespace
+
 void ModerationService::claimQueueItem(int levelId, PendingCategory category,
                                        std::string const& username, ActionCallback callback,
                                        std::string const& type) {
@@ -276,22 +303,44 @@ void ModerationService::claimQueueItem(int levelId, PendingCategory category,
     if (auto* am = GJAccountManager::get()) accountID = am->m_accountID;
     if (username.empty() || accountID <= 0) { callback(false, "Account ID required"); return; }
 
-    std::string endpoint = fmt::format("/api/queue/claim/{}", levelId);
-    matjson::Value json = matjson::makeObject({
-        {"levelId", levelId},
-        {"category", PendingQueue::catToStr(category)},
-        {"username", username},
-        {"accountID", accountID}
-    });
+    matjson::Value json = makeQueueJson(levelId, category, username, accountID);
     if (!type.empty()) json["type"] = type;
-    std::string postData = json.dump();
 
-    HttpClient::get().postWithAuth(endpoint, postData,
-        [callback](bool success, std::string const& response) {
-            if (!success) paimon::modauth::clearVerifiedSession();
+    postQueueAction(fmt::format("/api/queue/claim/{}", levelId), json, std::move(callback));
+}
 
-            callback(success, response);
-        });
+void ModerationService::unclaimQueueItem(int levelId, PendingCategory category,
+                                         std::string const& username, ActionCallback callback,
+                                         std::string const& type, bool force) {
+    if (!m_serverEnabled) { callback(false, "servidor desactivado"); return; }
+
+    int accountID = 0;
+    if (auto* am = GJAccountManager::get()) accountID = am->m_accountID;
+    if (username.empty() || accountID <= 0) { callback(false, "Account ID required"); return; }
+
+    matjson::Value json = makeQueueJson(levelId, category, username, accountID);
+    json["action"] = "unclaim";
+    if (force) json["force"] = true;
+    if (!type.empty()) json["type"] = type;
+
+    postQueueAction(fmt::format("/api/queue/unclaim/{}", levelId), json, std::move(callback));
+}
+
+void ModerationService::takeoverQueueItem(int levelId, PendingCategory category,
+                                          std::string const& username, ActionCallback callback,
+                                          std::string const& type) {
+    if (!m_serverEnabled) { callback(false, "servidor desactivado"); return; }
+
+    int accountID = 0;
+    if (auto* am = GJAccountManager::get()) accountID = am->m_accountID;
+    if (username.empty() || accountID <= 0) { callback(false, "Account ID required"); return; }
+
+    matjson::Value json = makeQueueJson(levelId, category, username, accountID);
+    json["action"] = "takeover";
+    json["force"] = true;
+    if (!type.empty()) json["type"] = type;
+
+    postQueueAction(fmt::format("/api/queue/claim/{}", levelId), json, std::move(callback));
 }
 
 void ModerationService::acceptQueueItem(int levelId, PendingCategory category,
@@ -311,25 +360,14 @@ void ModerationService::acceptQueueItem(int levelId, PendingCategory category,
     }
 
     int accountID = accountManager->m_accountID;
-    std::string endpoint = fmt::format("/api/queue/accept/{}", levelId);
 
-    matjson::Value json = matjson::makeObject({
-        {"levelId", levelId},
-        {"category", PendingQueue::catToStr(category)},
-        {"username", username},
-        {"accountID", accountID}
-    });
+    matjson::Value json = makeQueueJson(levelId, category, username, accountID);
     if (acceptAll) json["acceptAll"] = true;
     else if (!targetFilename.empty()) json["targetFilename"] = targetFilename;
     if (!type.empty()) json["type"] = type;
-    std::string postData = json.dump();
 
-    HttpClient::get().postWithAuth(endpoint, postData,
-        [callback, levelId, category](bool success, std::string const& response) {
-            if (!success) paimon::modauth::clearVerifiedSession();
-            if (success) PendingQueue::get().accept(levelId, category);
-            callback(success, response);
-        });
+    postQueueAction(fmt::format("/api/queue/accept/{}", levelId), json, std::move(callback),
+        [levelId, category]() { PendingQueue::get().accept(levelId, category); });
 }
 
 void ModerationService::rejectQueueItem(int levelId, PendingCategory category,
@@ -349,25 +387,14 @@ void ModerationService::rejectQueueItem(int levelId, PendingCategory category,
     }
 
     int accountID = accountManager->m_accountID;
-    std::string endpoint = fmt::format("/api/queue/reject/{}", levelId);
 
-    matjson::Value json = matjson::makeObject({
-        {"levelId", levelId},
-        {"category", PendingQueue::catToStr(category)},
-        {"username", username},
-        {"reason", reason},
-        {"accountID", accountID}
-    });
+    matjson::Value json = makeQueueJson(levelId, category, username, accountID);
+    json["reason"] = reason;
     if (!type.empty()) json["type"] = type;
     if (!targetFilename.empty()) json["targetFilename"] = targetFilename;
-    std::string postData = json.dump();
 
-    HttpClient::get().postWithAuth(endpoint, postData,
-        [callback, levelId, category, reason](bool success, std::string const& response) {
-            if (!success) paimon::modauth::clearVerifiedSession();
-            if (success) PendingQueue::get().reject(levelId, category, reason);
-            callback(success, response);
-        });
+    postQueueAction(fmt::format("/api/queue/reject/{}", levelId), json, std::move(callback),
+        [levelId, category, reason]() { PendingQueue::get().reject(levelId, category, reason); });
 }
 
 void ModerationService::submitReport(int levelId, std::string const& username,

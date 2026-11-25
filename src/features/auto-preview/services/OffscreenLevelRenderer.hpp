@@ -18,6 +18,11 @@ struct OffscreenRenderResult {
 class OffscreenLevelRenderer {
 public:
     static OffscreenRenderResult render(GJGameLevel* level, int width, int height);
+    // shared level-string size / object-count guards (logs the skip reason);
+    // callers keep their own busy-context checks.
+    static bool passesSizeGuards(GJGameLevel* level, int levelID);
+    // reentrancy guard: true while a render owns PlayLayer::create on the main thread.
+    static bool isRendering();
 };
 
 } // namespace paimon::autopreview

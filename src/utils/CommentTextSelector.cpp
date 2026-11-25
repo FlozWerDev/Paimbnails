@@ -14,7 +14,6 @@ using namespace paimon;
 namespace {
 CommentTextSelector* g_activeSelector = nullptr;
 constexpr float kMinSelectionDistance = 6.f;
-constexpr float kLongPressDelay = 0.45f;
 constexpr float kTouchPadX = 4.f;
 constexpr float kTouchPadY = 3.f;
 
@@ -122,7 +121,7 @@ void CommentTextSelector::refresh(
 }
 
 void CommentTextSelector::registerWithTouchDispatcher() {
-    // Mobile must keep receiving list scroll gestures until the long press activates.
+    // mobile must keep receiving list scroll gestures until the long press activates.
 #ifdef GEODE_IS_DESKTOP
     constexpr bool swallowTouches = true;
 #else
@@ -294,7 +293,7 @@ void CommentTextSelector::cancelMentionTouches() {
         if (auto* menu = typeinfo_cast<CCMenu*>(child);
             menu && menu->m_eState == kCCMenuStateTrackingTouch) {
             if (menu->m_pSelectedItem) menu->m_pSelectedItem->unselected();
-            // The dispatcher still owes the menu its touch-ended callback.
+            // the dispatcher still owes the menu its touch-ended callback.
             menu->m_pSelectedItem = nullptr;
         }
     }

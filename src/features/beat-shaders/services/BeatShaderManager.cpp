@@ -7,6 +7,11 @@
 #include "../../../utils/Shaders.hpp"
 
 #include <Geode/Geode.hpp>
+#include <Geode/binding/LeaderboardsLayer.hpp>
+#include <Geode/binding/LevelBrowserLayer.hpp>
+#include <Geode/binding/LevelSearchLayer.hpp>
+#include <Geode/binding/LevelSelectLayer.hpp>
+#include <Geode/binding/ProfilePage.hpp>
 #include <Geode/cocos/CCDirector.h>
 
 using namespace geode::prelude;
@@ -38,7 +43,9 @@ public:
     struct SwappedSprite {
         Ref<cocos2d::CCSprite>           original;
         Ref<Shaders::ShaderBgSprite>     replacement;
-        Ref<cocos2d::CCNode>             parent;
+        // weak on purpose: the swap node is a child of the same layer, so a
+        // strong ref here would form a cycle and leak the layer.
+        WeakRef<cocos2d::CCNode>         parent;
         int                              originalZOrder = 0;
     };
 
@@ -87,7 +94,7 @@ public:
 
         std::vector<cocos2d::CCNode*> snapshot;
         snapshot.reserve(children->count());
-        for (int i = 0; i < children->count(); ++i) {
+        for (unsigned int i = 0; i < children->count(); ++i) {
             snapshot.push_back(static_cast<cocos2d::CCNode*>(children->objectAtIndex(i)));
         }
 
@@ -110,7 +117,7 @@ public:
         if (!parent) return;
         auto* siblings = parent->getChildren();
         if (!siblings) return;
-        for (int i = 0; i < siblings->count(); ++i) {
+        for (unsigned int i = 0; i < siblings->count(); ++i) {
             auto* sibling = static_cast<cocos2d::CCNode*>(siblings->objectAtIndex(i));
             if (!sibling || sibling == targetLayer) continue;
             auto id = std::string(sibling->getID());
@@ -150,7 +157,7 @@ public:
         if (!children) return;
         std::vector<cocos2d::CCNode*> snapshot;
         snapshot.reserve(children->count());
-        for (int i = 0; i < children->count(); ++i) {
+        for (unsigned int i = 0; i < children->count(); ++i) {
             snapshot.push_back(static_cast<cocos2d::CCNode*>(children->objectAtIndex(i)));
         }
         for (auto* c : snapshot) {
@@ -268,7 +275,7 @@ void collectShaderSprites(CCNode* node, std::vector<Shaders::ShaderBgSprite*>& o
     }
     auto* children = node->getChildren();
     if (!children) return;
-    for (int i = 0; i < children->count(); ++i) {
+    for (unsigned int i = 0; i < children->count(); ++i) {
         if (auto* child = static_cast<CCNode*>(children->objectAtIndex(i))) {
             collectShaderSprites(child, out);
         }
@@ -284,7 +291,7 @@ CCLayer* findLayerByKey(std::string const& key) {
     auto* children = scene->getChildren();
     if (!children) return nullptr;
 
-    for (int i = 0; i < children->count(); ++i) {
+    for (unsigned int i = 0; i < children->count(); ++i) {
         auto* child = static_cast<CCNode*>(children->objectAtIndex(i));
         if (!child) continue;
 
@@ -294,6 +301,16 @@ CCLayer* findLayerByKey(std::string const& key) {
             if (auto* l = typeinfo_cast<CreatorLayer*>(child)) return l;
         } else if (key == "levelinfo") {
             if (auto* l = typeinfo_cast<LevelInfoLayer*>(child)) return l;
+        } else if (key == "levelselect") {
+            if (auto* l = typeinfo_cast<LevelSelectLayer*>(child)) return l;
+        } else if (key == "browser") {
+            if (auto* l = typeinfo_cast<LevelBrowserLayer*>(child)) return l;
+        } else if (key == "search") {
+            if (auto* l = typeinfo_cast<LevelSearchLayer*>(child)) return l;
+        } else if (key == "leaderboards") {
+            if (auto* l = typeinfo_cast<LeaderboardsLayer*>(child)) return l;
+        } else if (key == "profile") {
+            if (auto* l = typeinfo_cast<ProfilePage*>(child)) return l;
         } else if (key == "garage") {
             if (auto* l = typeinfo_cast<GJGarageLayer*>(child)) return l;
         }
@@ -401,19 +418,27 @@ void BeatShaderManager::applyToLayer(CCLayer* layer, std::string const& layerKey
     auto& bgMgr = LayerBackgroundManager::get();
     auto bgCfg = bgMgr.getConfig(layerKey);
 
-    if (layerActive) {
-        bgCfg.shader = cfg.shaderName;
-    } else {
-        std::string s = bgCfg.shader;
-        if (s == "glitch-beat" || s == "wave-beat" || s == "chromatic-beat"
+    auto isBeatShader = [](std::string const& s) {
+        return s == "glitch-beat" || s == "wave-beat" || s == "chromatic-beat"
             || s == "pixelate-beat" || s == "shockwave-beat" || s == "rgb-split-beat"
             || s == "kaleidoscope-beat" || s == "zoom-pulse-beat" || s == "scanlines-beat"
             || s == "vortex-beat" || s == "edge-pulse-beat" || s == "hue-shift-beat"
-            || s == "liquid-beat" || s == "mosaic-beat" || s == "dream-beat") {
-            bgCfg.shader = "none";
+            || s == "liquid-beat" || s == "mosaic-beat" || s == "dream-beat";
+    };
+    auto const previousShaderKey = "beat-shaders-prev-shader-" + layerKey;
+
+    std::string const oldShader = bgCfg.shader;
+    if (layerActive) {
+        if (!isBeatShader(bgCfg.shader)) {
+            Mod::get()->setSavedValue(previousShaderKey, bgCfg.shader);
         }
+        bgCfg.shader = cfg.shaderName;
+    } else if (isBeatShader(bgCfg.shader)) {
+        bgCfg.shader = Mod::get()->getSavedValue<std::string>(previousShaderKey, "none");
     }
-    bgMgr.saveConfig(layerKey, bgCfg);
+    if (bgCfg.shader != oldShader) {
+        bgMgr.saveConfig(layerKey, bgCfg);
+    }
 
     if (layerActive) activateAudioIfNeeded();
 
@@ -498,7 +523,7 @@ void BeatShaderManager::refreshLiveSpriteUniforms() {
             swaps.push_back(sw);
         }
         if (auto* children = node->getChildren()) {
-            for (int i = 0; i < children->count(); ++i) {
+            for (unsigned int i = 0; i < children->count(); ++i) {
                 walk(static_cast<CCNode*>(children->objectAtIndex(i)));
             }
         }
@@ -537,8 +562,7 @@ void BeatShaderManager::shutdown() {
 
 void BeatShaderManager::activateAudioIfNeeded() {
     if (m_audioActive) return;
-    PaimonAudio::get().activate();
-    m_audioActive = true;
+    m_audioActive = PaimonAudio::get().activate();
 }
 
 void BeatShaderManager::deactivateAudioIfUnused() {

@@ -239,7 +239,9 @@ bool CollabEditorOverlay::init(LevelEditorLayer* editor) {
 }
 
 CollabEditorOverlay::~CollabEditorOverlay() {
-    // unregister before teardown; messages can arrive during playtest or polling.
+    // cancel subscriptions before teardown; net/voice ticks can arrive while the room closes.
+    unscheduleAllSelectors();
+    stopAllActions();
     m_uiShowListener.destroy();
     CollabManager::get().clearOverlay(this);
 

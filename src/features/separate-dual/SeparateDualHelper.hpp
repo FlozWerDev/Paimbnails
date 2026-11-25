@@ -127,6 +127,7 @@ public:
     void storeHaloEnabled(bool on);
     bool burstEnabled(Side side);
     void storeBurstEnabled(bool on);
+    void storeColor(int mode, int color);
     int slotIconForPreview(IconType type, Side side);
 
     // art + dressing.
@@ -153,6 +154,9 @@ public:
         geode::Mod::get()->setSavedValue<T>(key, value);
     }
 
+    KitSnapshot const& storedCache() const { return m_storedCache; }
+    void setStoredCache(KitSnapshot const& s) { m_storedCache = s; }
+
     geode::WeakRef<cocos2d::CCMotionStreak> m_exhaustMain = nullptr;
     geode::WeakRef<cocos2d::CCMotionStreak> m_exhaustSecond = nullptr;
 
@@ -163,6 +167,7 @@ private:
     bool m_exitSwap = true;
     bool m_spawning = false;
     bool m_primed = false;
+    KitSnapshot m_storedCache = {};
 };
 
 } // namespace paimon::separate_dual

@@ -25,7 +25,7 @@ cocos2d::CCTexture2D* checkerTexture();
 // drop it on gl reload; the texture dies with the context.
 void resetCheckerTexture();
 
-// rounded color swatch.
+// interactive rounded square color swatch with active selection border.
 cocos2d::CCNode* makeSwatch(float size, cocos2d::ccColor3B color, bool selected);
 
 struct ZoneChip {
@@ -61,6 +61,7 @@ struct LayerRowSpec {
     std::function<void()> onToggleLock;
     std::function<void()> onMoveUp;
     std::function<void()> onMoveDown;
+    std::function<void()> onDelete;
     std::function<void()> onMore;
 };
 
@@ -88,6 +89,16 @@ cocos2d::CCNode* makeDualButtonRow(float width,
                                    char const* leftText, std::function<void()> onLeft,
                                    char const* rightText, std::function<void()> onRight);
 
+// three compact side-by-side action buttons (e.g. + Forma, + Oficial, + Imagen).
+cocos2d::CCNode* makeTripleButtonRow(float width,
+                                     char const* t1, std::function<void()> cb1,
+                                     char const* t2, std::function<void()> cb2,
+                                     char const* t3, std::function<void()> cb3);
+
+// red destructive action row (e.g. Delete Icon).
+cocos2d::CCNode* makeDangerButtonRow(float width, char const* title, char const* desc,
+                                     char const* buttonText, std::function<void()> onPress);
+
 // small square preview of a texture on a transparency board.
 cocos2d::CCNode* makeThumb(float size, cocos2d::CCTexture2D* texture,
                            cocos2d::ccColor3B fallback);
@@ -106,10 +117,9 @@ enum class AlignMode : int {
 cocos2d::CCNode* makeAlignRow(float width, char const* title, char const* desc,
                               std::function<void(AlignMode)> onAlign);
 
-// centered empty-state message.
 cocos2d::CCNode* makeEmptyState(float width, char const* title, char const* desc);
 
-// four-arrow nudge control.
+// directional nudge pad for fine-tuning layer offset with recenter button.
 cocos2d::CCNode* makeNudgePad(float width, char const* title, char const* desc,
                               std::function<void(float dx, float dy)> onNudge,
                               std::function<void()> onCenter);

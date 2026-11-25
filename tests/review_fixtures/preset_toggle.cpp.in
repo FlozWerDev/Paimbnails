@@ -1,0 +1,37 @@
+#include "tests/review_fixtures/EngineLifetime.hpp"
+#include <cassert>
+#include <functional>
+#include <string_view>
+struct CCObject{};
+struct AdvancedQuery{};
+bool enabled=false;
+bool moduleEnabled(std::string_view key){assert(key=="info-mod-search-presets");return enabled;}
+enum class NotificationIcon{Success};
+struct PaimonNotify { static void show(char const*, NotificationIcon) {} };
+struct SearchPresetsPopup {
+    static inline int saves=0,picks=0;
+    static SearchPresetsPopup* createSaveDialog(AdvancedQuery,std::function<void()>){++saves;static SearchPresetsPopup value;return &value;}
+    static SearchPresetsPopup* createPicker(std::function<void(AdvancedQuery const&)>){++picks;static SearchPresetsPopup value;return &value;}
+    void show(){}
+};
+struct AdvancedSearchPopup : TestLifetime {
+    AdvancedQuery m_query;
+    int collected=0;
+    void collectInputs(){++collected;}
+    void applyQuery(AdvancedQuery const&){}
+    void onSavePreset(CCObject*);
+    void onPresets(CCObject*);
+};
+@@function|src/features/info-suite/ui/AdvancedSearchPopup.cpp|void AdvancedSearchPopup::onSavePreset(@@
+@@function|src/features/info-suite/ui/AdvancedSearchPopup.cpp|void AdvancedSearchPopup::onPresets(@@
+int main() {
+    AdvancedSearchPopup popup;
+    popup.onPresets(nullptr);popup.onSavePreset(nullptr);
+    assert(!SearchPresetsPopup::saves && !SearchPresetsPopup::picks && !popup.collected);
+    enabled=true;
+    popup.onPresets(nullptr);popup.onSavePreset(nullptr);
+    assert(SearchPresetsPopup::saves==1 && SearchPresetsPopup::picks==1 && popup.collected==1);
+    enabled=false;
+    popup.onPresets(nullptr);popup.onSavePreset(nullptr);
+    assert(SearchPresetsPopup::saves==1 && SearchPresetsPopup::picks==1 && popup.collected==1);
+}

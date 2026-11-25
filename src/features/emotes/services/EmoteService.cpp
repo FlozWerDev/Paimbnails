@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "EmoteService.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/WebHelper.hpp"
@@ -135,7 +136,7 @@ void EmoteService::fetchPage(int page, int limit, std::string const& timelast,
     }
 
     auto req = web::WebRequest();
-    req.timeout(std::chrono::seconds(15));
+    req.timeout(asp::Duration::fromSecs(15));
     req.acceptEncoding("gzip, deflate");
     req.header("Accept", "application/json");
 
@@ -222,12 +223,19 @@ static std::string toLowerStr(std::string const& s) {
 void EmoteService::buildIndex() {
     // must be called with m_mutex held
     m_nameIndex.clear();
+    m_lowerNames.clear();
     m_gifEmotes.clear();
     m_staticEmotes.clear();
 
+    m_lowerNames.reserve(m_allEmotes.size());
     for (size_t i = 0; i < m_allEmotes.size(); ++i) {
         auto const& e = m_allEmotes[i];
         m_nameIndex[toLowerStr(e.name)] = i;
+
+        // same per-char tolower searchEmotes used to apply on every keystroke.
+        std::string lower = e.name;
+        for (auto& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        m_lowerNames.push_back(std::move(lower));
 
         if (e.type == EmoteType::Gif) {
             m_gifEmotes.push_back(e);
@@ -255,9 +263,20 @@ std::vector<EmoteInfo> EmoteService::searchEmotes(std::string const& query, size
     std::vector<EmoteInfo> startsWithMatches;
     std::vector<EmoteInfo> containsMatches;
 
-    for (auto const& e : m_allEmotes) {
-        std::string ln = e.name;
-        for (auto& c : ln) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    // buildIndex keeps this parallel to m_allEmotes; fall back to computing
+    // inline if they ever drift (results identical either way).
+    bool const hasLower = m_lowerNames.size() == m_allEmotes.size();
+    std::string fallback;
+    for (size_t i = 0; i < m_allEmotes.size(); ++i) {
+        auto const& e = m_allEmotes[i];
+        std::string const* lnPtr = &fallback;
+        if (hasLower) {
+            lnPtr = &m_lowerNames[i];
+        } else {
+            fallback = e.name;
+            for (auto& c : fallback) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        std::string const& ln = *lnPtr;
 
         if (ln.starts_with(lq)) {
             startsWithMatches.push_back(e);
@@ -277,7 +296,7 @@ std::vector<EmoteInfo> EmoteService::searchEmotes(std::string const& query, size
 }
 
 static std::filesystem::path getCatalogPath() {
-    return Mod::get()->getSaveDir() / "emote_catalog.json";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "emote_catalog.json";
 }
 
 void EmoteService::saveCatalogToDisk() {

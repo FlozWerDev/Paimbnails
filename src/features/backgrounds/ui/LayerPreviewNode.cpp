@@ -1,8 +1,11 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "LayerPreviewNode.hpp"
+#include "LiveWallpaperNode.hpp"
+#include "SceneWallpaperNode.hpp"
 
 #include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
-#include "../../../utils/ImageLoadHelper.hpp"
+#include "../../../utils/AsyncImageLoad.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonShaderSprite.hpp"
 #include "../../../utils/Shaders.hpp"
@@ -129,6 +132,29 @@ CCNode* makePlayerIcon(float scale) {
     return player;
 }
 
+
+// boot LoadingLayer: logo, loading caption and progress slider.
+void mockLoading(CCNode* root, CCSize win) {
+    float const cx = win.width / 2.f;
+
+    addSpr(root, "GJ_logo_001.png", {cx, win.height - 78.f}, 1.f, 2);
+    addLabel(root, "Loading...", "bigFont.fnt", {cx, win.height * 0.42f}, 0.6f, {255, 255, 255}, 3);
+
+    float const barW = std::min(300.f, win.width - 80.f);
+    float const barY = win.height * 0.30f;
+    auto* groove = paimon::SpriteHelper::createColorPanel(barW, 10.f, {0, 0, 0}, 140, 3.f);
+    if (groove) {
+        groove->setAnchorPoint({0.5f, 0.5f});
+        groove->setPosition({cx, barY});
+        root->addChild(groove, 2);
+    }
+    auto* fill = paimon::SpriteHelper::createColorPanel(barW * 0.55f, 6.f, {255, 255, 255}, 220, 2.f);
+    if (fill) {
+        fill->setAnchorPoint({0.f, 0.5f});
+        fill->setPosition({cx - barW / 2.f + 2.f, barY});
+        root->addChild(fill, 3);
+    }
+}
 
 void mockMenu(CCNode* root, CCSize win) {
     float const cx = win.width / 2.f;
@@ -306,10 +332,18 @@ std::string displayNameForLayer(std::string const& layerKey) {
 }
 
 std::string describeConfig(LayerBgConfig const& cfg) {
+    if (!cfg.weTitle.empty()) {
+        if (!cfg.weAuthor.empty() && cfg.weAuthor != "Desconocido") {
+            return cfg.weTitle + " (" + cfg.weAuthor + ")";
+        }
+        return cfg.weTitle;
+    }
     std::string status;
     if (cfg.type == "default")      status = tr("pai.config.status.default", "Default");
     else if (cfg.type == "custom")  status = tr("pai.config.status.custom_image", "Custom Image");
     else if (cfg.type == "video")   status = tr("pai.config.status.video", "Video");
+    else if (cfg.type == "wallpaper") status = "Web Wallpaper (Live)";
+    else if (cfg.type == "scene") status = "Wallpaper Engine Scene (2D)";
     else if (cfg.type == "shader")  status = tr("pai.config.status.shader_bg", "Shader Background");
     else if (cfg.type == "random")  status = tr("pai.config.status.random", "Random");
     else if (cfg.type == "id")      status = tr("pai.config.status.level_id", "Level ID: ") + std::to_string(cfg.levelId);
@@ -323,7 +357,8 @@ CCNode* createSceneMock(std::string const& layerKey) {
     root->setContentSize(win);
     root->setAnchorPoint({0.f, 0.f});
 
-    if (layerKey == "menu")              mockMenu(root, win);
+    if (layerKey == "loading")           mockLoading(root, win);
+    else if (layerKey == "menu")         mockMenu(root, win);
     else if (layerKey == "levelselect")  mockLevelSelect(root, win);
     else if (layerKey == "levelinfo")    mockLevelInfo(root, win);
     else if (layerKey == "creator")      mockCreator(root, win);
@@ -521,6 +556,21 @@ void LayerPreviewNode::rebuildBackground() {
         return;
     }
 
+    if (cfg.type == "wallpaper" || cfg.type == "scene") {
+        addFlatFill({14, 16, 26, 255});
+        auto const path = paimon::assets::pathFromUtf8(cfg.customPath);
+        CCNode* wallpaper = cfg.type == "scene"
+            ? static_cast<CCNode*>(paimon::wallpaper::SceneWallpaperNode::create(path, m_frame, cfg))
+            : static_cast<CCNode*>(paimon::wallpaper::LiveWallpaperNode::create(path, m_frame, cfg));
+        if (wallpaper) {
+            m_bgHolder->addChild(wallpaper, 1);
+            addDarkOverlay(cfg);
+        } else {
+            addPlaceholder("No se pudo cargar el fondo", {255, 110, 110});
+        }
+        return;
+    }
+
     if (cfg.type == "video") {
         if (cfg.customPath.empty() || !paimon::assets::exists(cfg.customPath)) {
             addPlaceholder(tr("pai.config.preview.file_not_found", "File not found"), {255, 110, 110});
@@ -545,7 +595,7 @@ void LayerPreviewNode::rebuildBackground() {
         }
 
         auto const ext = geode::utils::string::toLower(
-            geode::utils::string::pathToString(paimon::assets::pathFromUtf8(cfg.customPath).extension()));
+            paimon::paths::toUtf8(paimon::assets::pathFromUtf8(cfg.customPath).extension()));
 
         if (ext == ".gif") {
             addFlatFill({20, 22, 34, 255});
@@ -573,31 +623,7 @@ void LayerPreviewNode::rebuildBackground() {
             return;
         }
 
-        auto loaded = ImageLoadHelper::loadStaticImage(cfg.customPath, 24);
-        if (!loaded.success || !loaded.texture) {
-            addPlaceholder(tr("pai.config.preview.load_error", "Load error"), {255, 110, 110});
-            return;
-        }
-
-        CCSprite* sprite = nullptr;
-        if (!cfg.shader.empty() && cfg.shader != "none") {
-            if (auto* shaderSpr = Shaders::ShaderBgSprite::createWithTexture(loaded.texture)) {
-                if (auto* program = Shaders::getBgShaderProgram(cfg.shader)) {
-                    shaderSpr->setShaderProgram(program);
-                    shaderSpr->m_shaderIntensity =
-                        Mod::get()->getSavedValue<float>("layerbg-shader-intensity", 0.5f);
-                    shaderSpr->m_screenW = m_frame.width;
-                    shaderSpr->m_screenH = m_frame.height;
-                    shaderSpr->schedule(schedule_selector(Shaders::ShaderBgSprite::updateShaderTime));
-                }
-                sprite = shaderSpr;
-            }
-        }
-        if (!sprite) sprite = CCSprite::createWithTexture(loaded.texture);
-        loaded.texture->release();
-
-        addCover(sprite);
-        addDarkOverlay(cfg);
+        loadCustomBackground(cfg);
         return;
     }
 
@@ -649,6 +675,42 @@ void LayerPreviewNode::rebuildBackground() {
     }
 
     addPlaceholder(tr("pai.config.preview.unknown_type", "Unknown type"), {200, 150, 150});
+}
+
+void LayerPreviewNode::loadCustomBackground(LayerBgConfig const& cfg) {
+    addFlatFill({20, 22, 34, 255});
+    int const generation = m_gen;
+    WeakRef<LayerPreviewNode> weak = this;
+    paimon::asyncimg::loadStaticSprite(paimon::assets::pathFromUtf8(cfg.customPath), 24,
+        [weak, generation, cfg](CCSprite* sprite) {
+            auto self = weak.lock();
+            if (!self || self->m_gen != generation || !self->m_bgHolder) return;
+            if (!sprite) {
+                self->addPlaceholder(tr("pai.config.preview.load_error", "Load error"), {255, 110, 110});
+                return;
+            }
+            self->m_bgHolder->removeAllChildren();
+            self->applyCustomTexture(sprite->getTexture(), cfg);
+        });
+}
+
+void LayerPreviewNode::applyCustomTexture(CCTexture2D* texture, LayerBgConfig const& cfg) {
+    CCSprite* sprite = nullptr;
+    if (!cfg.shader.empty() && cfg.shader != "none") {
+        if (auto* shaderSpr = Shaders::ShaderBgSprite::createWithTexture(texture)) {
+            if (auto* program = Shaders::getBgShaderProgram(cfg.shader)) {
+                shaderSpr->setShaderProgram(program);
+                shaderSpr->m_shaderIntensity = Mod::get()->getSavedValue<float>("layerbg-shader-intensity", 0.5f);
+                shaderSpr->m_screenW = m_frame.width;
+                shaderSpr->m_screenH = m_frame.height;
+                shaderSpr->schedule(schedule_selector(Shaders::ShaderBgSprite::updateShaderTime));
+            }
+            sprite = shaderSpr;
+        }
+    }
+    if (!sprite) sprite = CCSprite::createWithTexture(texture);
+    addCover(sprite);
+    addDarkOverlay(cfg);
 }
 
 } // namespace paimon::bgpreview

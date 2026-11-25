@@ -51,10 +51,8 @@ bool IconButton::init(CCObject* target, SEL_MenuHandler callback) {
 
     container->addChild(m_secondDot);
 
-    m_select = CCSprite::createWithSpriteFrameName("GJ_select_001.png");
-    m_select->setScale(0.62f);
+    m_select = makeSelectRing(0.62f);
     m_select->setPosition(center);
-    m_select->setVisible(false);
 
     container->addChild(m_select);
 

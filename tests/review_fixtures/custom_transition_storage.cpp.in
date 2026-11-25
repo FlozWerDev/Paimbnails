@@ -1,0 +1,83 @@
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <limits>
+#include <matjson.hpp>
+#include "src/features/transitions/services/TransitionTypes.hpp"
+#include "src/features/transitions/services/TransitionEvaluation.hpp"
+#include "src/utils/JsonHelper.hpp"
+
+class TransitionManager {
+public:
+    static TransitionType typeFromString(std::string const&);
+    static std::string typeToString(TransitionType);
+    static CommandAction actionFromString(std::string const&);
+    static std::string actionToString(CommandAction);
+    static TransitionEasing easingFromString(std::string const&);
+    static std::string easingToString(TransitionEasing);
+    static bool isValidTarget(std::string const&);
+    static int sanitizeCommand(TransitionCommand&);
+    static int sanitizeCommands(std::vector<TransitionCommand>&);
+    static int sanitizeConfig(TransitionConfig&);
+    static std::string commandsToJson(std::vector<TransitionCommand> const&);
+    static bool commandsFromJson(std::string const&, std::vector<TransitionCommand>&);
+};
+@@function|src/features/transitions/services/TransitionManager.cpp|struct TransitionTypeInfo@@;
+@@function|src/features/transitions/services/TransitionManager.cpp|constexpr TransitionTypeInfo kTransitionTypes@@;
+@@function|src/features/transitions/services/TransitionManager.cpp|TransitionTypeInfo const* findTypeInfo@@
+@@function|src/features/transitions/services/TransitionManager.cpp|TransitionType TransitionManager::typeFromString@@
+@@function|src/features/transitions/services/TransitionManager.cpp|std::string TransitionManager::typeToString@@
+@@function|src/features/transitions/services/TransitionManager.cpp|CommandAction TransitionManager::actionFromString@@
+@@function|src/features/transitions/services/TransitionManager.cpp|std::string TransitionManager::actionToString@@
+@@function|src/features/transitions/services/TransitionManager.cpp|TransitionEasing TransitionManager::easingFromString@@
+@@function|src/features/transitions/services/TransitionManager.cpp|std::string TransitionManager::easingToString@@
+@@function|src/features/transitions/services/TransitionManager.cpp|bool TransitionManager::isValidTarget@@
+@@function|src/features/transitions/services/TransitionManager.cpp|int TransitionManager::sanitizeCommand@@
+@@function|src/features/transitions/services/TransitionManager.cpp|int TransitionManager::sanitizeCommands@@
+@@function|src/features/transitions/services/TransitionManager.cpp|int TransitionManager::sanitizeConfig@@
+@@function|src/features/transitions/services/TransitionManager.cpp|static TransitionCommand parseCommand@@
+@@function|src/features/transitions/services/TransitionManager.cpp|static TransitionConfig parseConfig@@
+@@function|src/features/transitions/services/TransitionManager.cpp|static matjson::Value commandToJson@@
+@@function|src/features/transitions/services/TransitionManager.cpp|static matjson::Value configToJson@@
+@@function|src/features/transitions/services/TransitionManager.cpp|std::string TransitionManager::commandsToJson@@
+@@function|src/features/transitions/services/TransitionManager.cpp|bool TransitionManager::commandsFromJson@@
+
+int main() {
+    TransitionConfig project;
+    project.type = TransitionType::Custom; project.sceneCut = true;
+    project.duration = 3.f; project.cutPoint = .4f; project.customName = "Studio";
+    TransitionCommand object;
+    object.action = CommandAction::Image; object.solidObject = true;
+    object.startTime = .25f; object.duration = 2.f;
+    object.fromX = object.fromY = 0.f; // bottom-left is a valid explicit position
+    object.fromVal = object.toVal = 0.f; // invisible is a valid explicit alpha
+    object.r = 31; object.g = 127; object.b = 235;
+    object.objectName = "Panel"; object.objScale = .3f;
+    project.commands.push_back(object);
+    TransitionCommand cursor;
+    cursor.action = CommandAction::FollowCursor; cursor.targetObj = 0;
+    cursor.startTime = .75f; cursor.duration = .8f;
+    project.commands.push_back(cursor);
+    auto stored = configToJson(project);
+    auto restored = parseConfig(matjson::parse(stored.dump()).unwrap());
+    TransitionManager::sanitizeConfig(restored);
+    assert(restored.sceneCut && restored.cutPoint == project.cutPoint);
+    assert(restored.customName == "Studio" && restored.duration == 3.f);
+    assert(restored.commands[0].solidObject && restored.commands[0].objectName == "Panel");
+    assert(restored.commands[0].fromX == 0.f && restored.commands[0].fromY == 0.f);
+    assert(restored.commands[0].toVal == 0.f && restored.commands[0].fromVal == 0.f);
+    assert(restored.commands[0].r == 31 && restored.commands[0].b == 235);
+    assert(restored.commands[1].action == CommandAction::FollowCursor && restored.commands[1].targetObj == 0);
+    assert(restored.commands[1].startTime == .75f);
+    std::vector<TransitionCommand> shared;
+    assert(TransitionManager::commandsFromJson(TransitionManager::commandsToJson(project.commands), shared));
+    assert(shared.size() == 2 && shared[0].objectName == "Panel" && shared[1].startTime == .75f);
+
+    auto legacy = parseCommand(matjson::parse(R"({"action":"image","image":"old.png"})").unwrap());
+    TransitionManager::sanitizeCommand(legacy);
+    assert(legacy.startTime == -1.f && legacy.fromX == .5f && !legacy.solidObject);
+    object.startTime = std::numeric_limits<float>::quiet_NaN();
+    object.objScale = std::numeric_limits<float>::infinity();
+    TransitionManager::sanitizeCommand(object);
+    assert(std::isfinite(object.startTime) && std::isfinite(object.objScale));
+}

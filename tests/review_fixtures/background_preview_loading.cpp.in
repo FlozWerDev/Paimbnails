@@ -1,0 +1,56 @@
+#include "tests/review_fixtures/EngineLifetime.hpp"
+#include <cassert>
+#include <filesystem>
+#include <functional>
+#include <string>
+#include <vector>
+
+struct Color { unsigned char r, g, b, a = 255; };
+struct LayerBgConfig { std::string customPath, shader; };
+struct CCTexture2D {};
+struct CCSprite {
+    CCTexture2D texture;
+    CCTexture2D* getTexture() { return &texture; }
+};
+namespace paimon::assets { std::filesystem::path pathFromUtf8(std::string const& path) { return path; } }
+namespace paimon::asyncimg {
+    std::vector<std::function<void(CCSprite*)>> pending;
+    void loadStaticSprite(std::filesystem::path, std::size_t limit, std::function<void(CCSprite*)> callback) {
+        assert(limit == 24);
+        pending.push_back(std::move(callback));
+    }
+}
+std::string tr(char const*, char const* fallback) { return fallback; }
+struct LayerPreviewNode : TestLifetime {
+    int m_gen = 0;
+    struct Holder { void removeAllChildren() {} } holder;
+    Holder* m_bgHolder = &holder;
+    int fills = 0, errors = 0, applied = 0;
+    std::string shader;
+    void addFlatFill(Color) { ++fills; }
+    void addPlaceholder(std::string const&, Color) { ++errors; }
+    void applyCustomTexture(CCTexture2D*, LayerBgConfig const& cfg) { ++applied; shader = cfg.shader; }
+    void loadCustomBackground(LayerBgConfig const&);
+};
+@@function|src/features/backgrounds/ui/LayerPreviewNode.cpp|void LayerPreviewNode::loadCustomBackground(@@
+
+int main() {
+    auto preview = std::make_unique<LayerPreviewNode>();
+    preview->loadCustomBackground({"first.png", "first shader"});
+    assert(preview->applied == 0 && preview->fills == 1); // opening never decodes inline
+    ++preview->m_gen;
+    preview->loadCustomBackground({"second.png", "second shader"});
+    CCSprite sprite;
+    paimon::asyncimg::pending[0](&sprite);
+    assert(preview->applied == 0); // a previous selection cannot overwrite the current preview
+    paimon::asyncimg::pending[1](&sprite);
+    assert(preview->applied == 1 && preview->shader == "second shader");
+
+    preview->loadCustomBackground({"broken.png", "none"});
+    paimon::asyncimg::pending[2](nullptr);
+    assert(preview->errors == 1);
+    preview->loadCustomBackground({"closed.png", "none"});
+    preview.reset();
+    paimon::asyncimg::pending[3](&sprite); // no retained UI or callback into destroyed nodes
+    paimon::asyncimg::pending.clear();
+}

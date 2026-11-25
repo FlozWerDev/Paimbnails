@@ -36,7 +36,8 @@ void main() {
 
     float vv = sanitizeVar(texture2D(u_var, uv).r);
     float blur = safeSmoothstep(0.0, kVarCeil, vv);
-    phi = max(phi / (1.0 + blur * kVarGain), 8.0);
+    // Allow high variance areas (disocclusions) to smooth down to phi=2.5 to eliminate noise bursts
+    phi = max(phi / (1.0 + blur * kVarGain), 2.5);
 
     bool wide = u_wide > 0.5;
     int R = wide ? 2 : 1;
@@ -45,14 +46,15 @@ void main() {
     float wsum = 0.0;
 
     for (int y = -2; y <= 2; y++) {
+        if (abs(y) > R) continue;
         for (int x = -2; x <= 2; x++) {
-            if (abs(x) > R || abs(y) > R) continue;
+            if (abs(x) > R) continue;
             vec2 o = vec2(float(x), float(y)) * u_texel * u_stride;
             vec3 guide = texture2D(u_guide, uv + o).rgb;
             float dl = abs(luma(guide) - centerL);
             float dc = distance(guide, center);
             float b = wide ? bsplineW(x) * bsplineW(y) : bspline(x) * bspline(y);
-            float w = b * exp(-dl * phi - dc * phi * 0.5);
+            float w = b * exp(-dl * phi - dc * (phi * 0.25));
             sum += texture2D(u_src, uv + o) * w;
             wsum += w;
         }

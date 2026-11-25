@@ -690,6 +690,7 @@ void CaptureLayerEditorPopup::buildList() {
     float totalH = std::max(viewH, numVisible * rowH);
 
     m_scrollView = ScrollLayer::create({listW, viewH});
+    if (m_scrollView) m_scrollView->setAnchorPoint({0.f, 0.f});
     m_scrollView->setPosition({viewX, listBot});
     m_scrollView->m_contentLayer->setContentSize({listW, totalH});
 
@@ -880,6 +881,7 @@ void CaptureLayerEditorPopup::onFilterBtn(CCObject*) {
     float totalH = std::max(areaH, numOpts * optH);
 
     auto scroll = ScrollLayer::create({areaW, areaH});
+    if (scroll) scroll->setAnchorPoint({0.f, 0.f});
     scroll->setPosition({areaX, areaBot});
     scroll->m_contentLayer->setContentSize({areaW, totalH});
 
@@ -997,5 +999,5 @@ void CaptureLayerEditorPopup::onRestoreAllBtn(CCObject* sender) {
     buildList();
     refreshPreview();
 
-    PaimonNotify::create(loc("layers.restored").c_str(), NotificationIcon::Success)->show();
+    PaimonNotify::show(loc("layers.restored").c_str(), NotificationIcon::Success);
 }

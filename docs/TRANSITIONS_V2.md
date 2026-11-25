@@ -137,12 +137,40 @@ Los codecs disponibles dependen del backend y de la plataforma.
 Los presets nativos y sus aproximaciones historicas siguen disponibles; este cambio
 no convierte cada preset en un efecto equivalente de OBS.
 
+## Transition Studio (OBS-style) y layout PaiConfigKit
+
+El popup de Transitions y el editor custom usan PaiConfigKit (scroll + cards),
+sin paneles posicionados a mano: headings, toggles y botones no pueden solaparse.
+El editor custom es ahora el **Transition Studio**, con cuatro pestanas:
+
+- **Timeline**: tira visual de clips (color por destino A/B/ambos, duracion total),
+  lista clicable y editor por clip: accion, target (`from`/`to`/`both`), easing
+  por clip (Linear, EaseIn/Out/InOut, Sine, Back, Bounce, Elastic), enabled,
+  duracion/delay y parametros segun la accion (opacidad, escala, rotacion, skew,
+  movimiento con presets de direccion, color, intensidad de shake, tamano de
+  grupo paralelo, media). Herramientas: duplicar, mover, invertir valores, borrar.
+- **Presets**: clasicos OBS (Cut, Fade, Fade to Color, Swipe, Slide, Luma suave,
+  Stinger Cut) y extras (Zoom, Spin, Swirl, Push, Skew Slide, Shake, Glitch,
+  Cinematic, Bounce, Scale Swap, Dissolve, Flash), con modo Append.
+- **Studio**: nombre personalizado (`custom_name`), escala de tiempo, normalizar
+  duracion total, invertir timeline, espejar targets, easing global, wash de color.
+- **Share**: exportar/importar la timeline como JSON por portapapeles
+  (`commandsToJson`/`commandsFromJson`) y exportar como script legible.
+
+Nuevas primitivas del motor: acciones `Skew` y `Overlay` (wash de color a
+pantalla completa sobre ambas escenas), easing por comando y flag `enabled`
+(los clips desactivados se guardan pero no se compilan). Todo es retrocompatible:
+las claves nuevas son opcionales y solo se escriben si difieren del default.
+
 ## Verificacion
 
 Revision manual de codigo, firmas de bindings, ownership, temporizacion, alpha,
 validacion de manifiestos, rutas de fallback y callbacks. `git diff --check` sin errores.
 No se completo compilacion ni se ejecuto GD, por indicacion del usuario. No se afirma
 validacion visual, rendimiento medido ni compatibilidad probada con otros mods.
+(Actualizacion Studio: esta ronda si compilo con CMake/clang, empaqueto e instalo
+el `.geode` en la carpeta de mods local, con SHA-256 del instalado identico al
+generado; sigue sin validacion visual dentro de GD.)
 
 Para la futura comprobacion en GD: reemplazo/push/pop, preview y retorno al editor,
 entrada/salida de nivel con Smooth+, perfiles global/nivel, GIF con delays variables,
@@ -150,3 +178,26 @@ alpha sobre fondos claros/oscuros, cambio de pagina, reinicio con originales mov
 archivo ausente/corrupto, cierre del popup mientras importa, navegacion repetida y
 transiciones de otros mods. Comprobar ademas que onEnter/onExit y cleanup ocurren una
 sola vez y que el input se recupera al finalizar/interrumpir.
+
+## Transition Studio como layer completo (2026-10-26)
+
+- El editor de Custom ya no es un popup: `CustomTransitionLayer` es una escena
+  completa (stage con recuadros ESCENA A / ESCENA B, linea de tiempo inferior
+  arrastrable, panel PaiConfigKit a la derecha). El popup viejo
+  `CustomTransitionEditorPopup` se elimino.
+- Timeline: clic en un bloque lo selecciona, arrastrarlo cambia su retraso
+  (inicio), arrastrar el borde derecho cambia la duracion, clic en la regla
+  mueve el cursor de reproduccion. La vista previa se evalua en el propio
+  stage (sin empujar escenas), con Play/Pause y contador de tiempo.
+- Objetos: los clips `Image` son objetos colocables (importar imagen/GIF/video
+  con hojas, arrastrar en la escena, tamano relativo a cubrir pantalla).
+  Cualquier clip puede apuntar a un objeto (`targetObj`): Move en fracciones
+  de pantalla, Alpha (Fade), Rotate, Scale, Skew, Tint y el trigger nuevo
+  `FollowCursor` (sigue el cursor real, tambien a nivel de escena).
+- Imagenes a pantalla completa por defecto (cover-fit), corregido el bug de
+  "imagen diminuta en una esquina" del runtime anterior.
+- "Vista real" empuja `CustomTransitionScene` pero el retorno solo hace pop
+  si la escena de vista previa sigue siendo la activa (nunca pop ciego), para
+  evitar el crash de `WeakRefPool::forget` visto con la vista previa anterior.
+- La vista previa del Stinger ahora narra el progreso (tiempo, Escena A/B y
+  momento del corte) en la linea de estado.

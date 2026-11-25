@@ -1,0 +1,79 @@
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+#include <cassert>
+#include <cmath>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <vector>
+@@source|src/features/official-slots/OfficialSlots.hpp@@
+struct CCSize { float width, height; };
+struct CCNode {
+    CCSize size{36.f, 45.f};
+    float x = 0.f, y = 0.f, scale = 1.f;
+    std::vector<CCNode*> children;
+    std::vector<std::unique_ptr<CCNode>> owned;
+    CCSize getContentSize() const { return size; }
+    float getContentHeight() const { return size.height; }
+    float getPositionY() const { return y; }
+    void setPositionY(float value) { y = value; }
+    void setScale(float value) { scale = value; }
+    std::vector<CCNode*>* getChildren() { return &children; }
+};
+template<class T> struct CCArrayExt {
+    std::vector<CCNode*>* nodes;
+    CCArrayExt(std::vector<CCNode*>* value) : nodes(value) {}
+    auto begin() const { return nodes->begin(); }
+    auto end() const { return nodes->end(); }
+};
+struct CCSpriteFrame {
+    CCSize size{34.f, 32.f};
+    bool isUsingFallback() const { return false; }
+};
+struct CCSpriteFrameCache {
+    CCSpriteFrame frame;
+    static CCSpriteFrameCache* sharedSpriteFrameCache() { static CCSpriteFrameCache cache; return &cache; }
+    CCSpriteFrame* spriteFrameByName(char const*) { return &frame; }
+};
+enum class GJDifficultyName { Short };
+enum class GJFeatureState { None, Featured, Epic, Legendary, Mythic };
+struct GJDifficultySprite : CCNode {
+    static GJDifficultySprite* create(int, GJDifficultyName);
+    void setDisplayFrame(CCSpriteFrame* frame) { size = frame->size; }
+    void updateFeatureState(GJFeatureState state) {
+        if (state == GJFeatureState::None) return;
+        auto halo = std::make_unique<CCNode>();
+        halo->x = size.width / 2.f;
+        halo->y = size.height / 2.f;
+        children.push_back(halo.get());
+        owned.push_back(std::move(halo));
+    }
+};
+std::vector<std::unique_ptr<GJDifficultySprite>> sprites;
+GJDifficultySprite* GJDifficultySprite::create(int, GJDifficultyName) {
+    sprites.push_back(std::make_unique<GJDifficultySprite>());
+    return sprites.back().get();
+}
+namespace paimon::officialslots {
+int difficultyFace(Difficulty difficulty) { return static_cast<int>(difficulty); }
+namespace ui {
+@@function|src/features/official-slots/ui/SlotVisuals.cpp|GJFeatureState featureStateOf(@@
+@@function|src/features/official-slots/ui/SlotVisuals.cpp|CCNode* createDifficultyBadge(@@
+}
+}
+
+int main() {
+    using namespace paimon::officialslots;
+    // The native flame's opening aligns with the upper face in a 45px labeled
+    // icon; the face-only demon is 32px tall. Removing that label must shift its effects.
+    for (auto tier : {Tier::Featured, Tier::Epic, Tier::Legendary, Tier::Mythic}) {
+        auto* badge = ui::createDifficultyBadge(Difficulty::Demon, tier, 0.7f);
+        assert(badge && badge->children.size() == 1);
+        float const nativeFaceOffset = (45.f - 32.f) / 2.f;
+        auto* halo = badge->children.front();
+        assert(std::abs(halo->y + nativeFaceOffset - badge->getContentHeight() / 2.f) < 0.001f);
+        assert(halo->x == badge->getContentSize().width / 2.f);
+        assert(badge->scale == 0.7f);
+    }
+    std::cout << "Face-only badges preserve native flame alignment for every tier\n";
+}

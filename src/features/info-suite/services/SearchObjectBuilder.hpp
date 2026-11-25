@@ -1,6 +1,6 @@
 #pragma once
 
-// gjsearchobject::create's 22-argument overload can corrupt its gd::string fields and crash in getkey().
+// gjsearchobject::create's 22-argument overload can corrupt its std::string fields and crash in getkey().
 // everything builds through the two-argument overload and assigns fields afterwards.
 
 #include <Geode/binding/GJSearchObject.hpp>
@@ -11,10 +11,10 @@
 namespace paimon::info {
 
 struct SearchFilters {
-    gd::string query;
+    std::string query;
     // "-1" is what the game itself sends for "any"; see recommendationengine.
-    gd::string difficulty = "-1";
-    gd::string length = "-1";
+    std::string difficulty = "-1";
+    std::string length = "-1";
     int page = 0;
     bool star = false;
     bool uncompleted = false;
@@ -66,14 +66,18 @@ inline GJSearchObject* buildSearchObject(SearchType type, SearchFilters const& f
 inline std::string searchKey(GJSearchObject* obj) {
     if (!obj) return {};
     return fmt::format(
-        "{}|{}|{}|{}|{}|{}|{}{}{}{}{}{}{}{}{}{}{}",
+        "{}|{}:{}|{}:{}|{}:{}|{}|{}|{}|{}|{}{}{}{}{}{}{}{}{}{}{}{}{}",
         static_cast<int>(obj->m_searchType),
+        obj->m_searchQuery.size(),
         std::string(obj->m_searchQuery),
+        obj->m_difficulty.size(),
         std::string(obj->m_difficulty),
+        obj->m_length.size(),
         std::string(obj->m_length),
         obj->m_songID,
         obj->m_folder,
         static_cast<int>(obj->m_demonFilter),
+        obj->m_searchMode,
         obj->m_starFilter ? "s" : "",
         obj->m_noStarFilter ? "n" : "",
         obj->m_uncompletedFilter ? "u" : "",
@@ -83,7 +87,10 @@ inline std::string searchKey(GJSearchObject* obj) {
         obj->m_twoPlayerFilter ? "2" : "",
         obj->m_coinsFilter ? "$" : "",
         obj->m_epicFilter ? "e" : "",
-        obj->m_songFilter ? "m" : "");
+        obj->m_songFilter ? "m" : "",
+        obj->m_legendaryFilter ? "l" : "",
+        obj->m_mythicFilter ? "y" : "",
+        obj->m_customSongFilter ? "a" : "");
 }
 
 // pushes the level browser for a search object, with the usual gd fade.

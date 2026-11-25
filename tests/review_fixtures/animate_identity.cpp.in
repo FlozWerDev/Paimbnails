@@ -1,0 +1,101 @@
+#include "tests/review_fixtures/EngineLifetime.hpp"
+#include <algorithm>
+#include <cassert>
+#include <cctype>
+#include <chrono>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <random>
+#include <set>
+#include <string>
+#include <unordered_map>
+#include <vector>
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+struct CCString {
+    std::string text;
+    static CCString* create(std::string value){return new CCString{std::move(value)};}
+    char const* getCString()const{return text.c_str();}
+};
+template<class T>T typeinfo_cast(CCString* value){return static_cast<T>(value);}
+struct GJGameLevel : TestLifetime {
+    int m_levelID=0;
+    std::string m_levelName="Demo";
+    std::unique_ptr<CCString> identity;
+    CCString* getUserObject(char const*){return identity.get();}
+    void setUserObject(char const*,CCString* value){identity.reset(value);}
+};
+struct Document {std::vector<int> clips;};
+inline constexpr char const* kLevelIdentityKey="test-animate-identity";
+std::filesystem::path root;
+std::unordered_map<std::string,Document> docs;
+std::filesystem::path pathFor(std::string const& key){return root/(key+".json");}
+Document loadDocument(std::string const& key){return docs[key];}
+bool saveDocument(std::string const& key,Document const& doc){
+    std::filesystem::create_directories(root);
+    docs[key]=doc;std::ofstream(pathFor(key))<<"fixture";return true;
+}
+struct log {template<class...T>static void warn(T&&...){} };
+struct LocalLevelManager {
+    std::vector<GJGameLevel*> levels;
+    std::vector<GJGameLevel*>* m_localLevels=&levels;
+    static LocalLevelManager* get(){static LocalLevelManager value;return &value;}
+};
+template<class T>struct CCArrayExt {
+    std::vector<T>* values;
+    CCArrayExt(std::vector<T>* p):values(p){}
+    auto begin(){return values->begin();}auto end(){return values->end();}
+};
+@@function|src/features/editor-animate/services/AnimateStore.cpp|std::string legacyLevelKey(@@
+@@function|src/features/editor-animate/services/AnimateStore.cpp|std::unordered_map<std::string, WeakRef<GJGameLevel>>& identityOwners(@@
+@@function|src/features/editor-animate/services/AnimateStore.cpp|bool validIdentity(@@
+@@function|src/features/editor-animate/services/AnimateStore.cpp|std::string newIdentity(@@
+@@function|src/features/editor-animate/services/AnimateStore.cpp|void restoreLevelIdentity(@@
+@@function|src/features/editor-animate/services/AnimateStore.cpp|std::string levelKey(@@
+@@function|src/features/editor-animate/services/AnimateStore.cpp|void copyLevelDocument(@@
+@@function|src/features/editor-animate/services/AnimateStore.cpp|Document loadLevelDocument(@@
+int main() {
+    root=std::filesystem::current_path()/(
+        "animate-fixture-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    assert(root.parent_path()==std::filesystem::current_path());
+    auto first=std::make_unique<GJGameLevel>();
+    GJGameLevel second;
+    first->m_levelID=100;second.m_levelID=200;
+    auto const originalKey=levelKey(first.get());
+    assert(originalKey!=levelKey(&second));
+    first->m_levelName="Renamed";
+    assert(originalKey==levelKey(first.get()));
+    auto const savedIdentity=first->identity->text;
+    saveDocument(originalKey,{{10,20}});
+    GJGameLevel clone;
+    restoreLevelIdentity(&clone,savedIdentity);
+    auto cloneKey=levelKey(&clone);
+    assert(cloneKey!=originalKey && loadDocument(cloneKey).clips==std::vector<int>({10,20}));
+    saveDocument(cloneKey,{{30}});
+    assert(loadDocument(originalKey).clips==std::vector<int>({10,20}));
+    first.reset();
+    GJGameLevel reopened;
+    restoreLevelIdentity(&reopened,savedIdentity);
+    assert(levelKey(&reopened)==originalKey);
+    GJGameLevel copied;
+    copyLevelDocument(&reopened,&copied);
+    assert(levelKey(&copied)!=originalKey && loadDocument(levelKey(&copied)).clips.size()==2);
+    GJGameLevel untrusted;
+    restoreLevelIdentity(&untrusted,"../../escape");
+    assert(validIdentity(untrusted.identity->text));
+    GJGameLevel legacy;
+    legacy.m_levelName="Unique legacy";
+    LocalLevelManager::get()->levels={&legacy};
+    auto legacyKey=legacyLevelKey(&legacy);
+    saveDocument(legacyKey,{{42}});
+    assert(loadLevelDocument(&legacy).clips==std::vector<int>({42}));
+    assert(std::filesystem::exists(pathFor(legacyKey)));
+    saveDocument(levelKey(&legacy),{});
+    assert(loadLevelDocument(&legacy).clips.empty());
+    GJGameLevel ambiguousA,ambiguousB;
+    LocalLevelManager::get()->levels={&ambiguousA,&ambiguousB};
+    saveDocument(legacyLevelKey(&ambiguousA),{{99}});
+    assert(loadLevelDocument(&ambiguousA).clips.empty());
+    assert(std::filesystem::exists(pathFor(legacyLevelKey(&ambiguousA))));
+}

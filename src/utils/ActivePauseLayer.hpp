@@ -6,8 +6,8 @@
 #include <atomic>
 
 namespace paimon {
-    // raw atomic, identity-compared only: dodges the dangling-weakref crash
-    // in weakrefpool::check; stale values get overwritten.
+    // raw atomic, identity-compared only: a weakref would crash on dangling
+    // pause layers (weakrefpool::check). stale values get overwritten.
     inline std::atomic<PauseLayer*>& activePauseLayerAtomic() {
         static std::atomic<PauseLayer*> s_activePauseLayer{nullptr};
         return s_activePauseLayer;
@@ -22,7 +22,7 @@ namespace paimon {
     }
 
     inline void clearActivePauseLayer(PauseLayer* layer) {
-        // only clear when still ours; overlapping pauselayers must not clear the newer one.
+        // only clear when still ours; a closing layer must not clear a newer one.
         auto& slot = activePauseLayerAtomic();
         PauseLayer* expected = layer;
         slot.compare_exchange_strong(expected, nullptr, std::memory_order_acq_rel);
@@ -40,12 +40,12 @@ namespace paimon {
     }
 
     inline bool isPauseLayerOpen(PauseLayer* layer) {
-        if (!layer || !layer->getParent() || isPauseLayerClosing(layer)) return false;
+        if (!layer || !layer->isRunning() || !layer->getParent() || isPauseLayerClosing(layer)) return false;
         auto* director = cocos2d::CCDirector::get();
         auto* scene = director ? director->getRunningScene() : nullptr;
         auto* root = static_cast<cocos2d::CCNode*>(layer);
         while (root->getParent()) root = root->getParent();
-        return scene && root == scene;
+        return scene && !director->getNextScene() && root == scene;
     }
 
     inline PauseLayer* findOpenPauseLayerInScene() {
@@ -58,19 +58,22 @@ namespace paimon {
         auto* active = getActivePauseLayer();
         for (auto* obj : geode::cocos::CCArrayExt<cocos2d::CCObject*>(children)) {
             auto* layer = geode::cast::typeinfo_cast<PauseLayer*>(obj);
-            if (!layer || isPauseLayerClosing(layer)) continue;
+            if (!isPauseLayerOpen(layer)) continue;
             if (layer == active) return layer;
             fallback = layer;
         }
         return fallback;
     }
 
-    // tell pausezoommanager (playlayer.cpp) the layer is closing so its ticker
-    // stops calling showlayer()/setvisible() mid exit animation.
+    // tells pausezoommanager (playlayer.cpp) the layer is closing so its ticker
+    // stops calling showlayer()/setvisible() during the exit animation.
     void notifyPauseClosing();
 
-    // capture flag: keeps pausezoommanager::update() from restoring visibility
-    // mid-capture, which would leak the menu into the screenshot.
+    // native gameplay can resume without a PauseLayer button.
+    void synchronizePauseLayers(PlayLayer* playLayer);
+
+    // capture flag: pausezoommanager::update() must not restore visibility
+    // mid-capture or the menu leaks into the screenshot.
     inline std::atomic<bool>& captureInProgressFlag() {
         static std::atomic<bool> s_inProgress{false};
         return s_inProgress;
@@ -84,8 +87,8 @@ namespace paimon {
         captureInProgressFlag().store(inProgress, std::memory_order_release);
     }
 
-    // zoom-hide flag: visit() returns early when set, even though something
-    // else keeps flipping m_bvisible back to true.
+    // zoom-hide flag: visit() returns early when set, even though m_bvisible
+    // keeps being flipped back to true elsewhere.
     inline std::atomic<bool>& pauseZoomHiddenFlag() {
         static std::atomic<bool> s_zoomHidden{false};
         return s_zoomHidden;
@@ -95,7 +98,7 @@ namespace paimon {
         return pauseZoomHiddenFlag().load(std::memory_order_acquire);
     }
 
-    // ccnode::visit filter hook: enabled only while pause-zoom hides the layer,
+    // ccnode::visit filter hook: on only while pause-zoom hides the layer,
     // so normal frames pay no trampoline overhead.
     inline std::atomic<geode::Hook*>& pauseZoomVisitHookSlot() {
         static std::atomic<geode::Hook*> s_hook{nullptr};
@@ -115,8 +118,8 @@ namespace paimon {
         }
     }
 
-    // scan for a real pauselayer; the atomic misses ones predating customsetup
-    // (e.g. esc + capture key in the same frame).
+    // scan for a real pauselayer; the atomic misses ones that predate
+    // customsetup (e.g. esc + capture key in the same frame).
     inline bool hasPauseLayerInScene() {
         auto* director = cocos2d::CCDirector::get();
         if (!director) return false;

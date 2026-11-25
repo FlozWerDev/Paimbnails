@@ -115,25 +115,12 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
 
         CCSize nodeSize = this->getContentSize();
 
-        CCNode* bg = this->getChildByID("background");
-        if (!bg) bg = this->getChildByType<CCScale9Sprite>(0);
-
-        CCSize clipSize;
-        CCPoint clipPos;
-        CCPoint clipAnchor = ccp(0.5f, 0.5f);
         float padding = 3.f;
-
-        if (bg) {
-            clipSize = bg->getScaledContentSize();
-            clipPos  = bg->getPosition();
-            clipAnchor = bg->getAnchorPoint();
-        } else if (nodeSize.width >= 10.f) {
-            clipSize = nodeSize;
-            clipPos  = ccp(0.f, 0.f);
-        } else {
-            clipSize = CCSize(340.f, 230.f);
-            clipPos  = ccp(0.f, 0.f);
-        }
+        auto layout = paimon::SpriteHelper::resolveBgLayout(
+            this, nodeSize.width >= 10.f ? nodeSize : CCSize(340.f, 230.f), ccp(0.f, 0.f));
+        CCSize clipSize = layout.size;
+        CCPoint clipPos = layout.position;
+        CCPoint clipAnchor = layout.anchor;
 
         CCSize imgArea = CCSize(clipSize.width - padding * 2.f,
                                 clipSize.height - padding * 2.f);
@@ -187,6 +174,8 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
                     sprite->setShaderProgram(shader);
                 }
 
+                // a 0-size texture would make the scale inf and poison the transform.
+                if (sprite->getContentWidth() <= 0.f || sprite->getContentHeight() <= 0.f) return;
                 CCSize containerSize = fields->m_paimonClipper->getContentSize();
                 float sx = containerSize.width / sprite->getContentWidth();
                 float sy = containerSize.height / sprite->getContentHeight();

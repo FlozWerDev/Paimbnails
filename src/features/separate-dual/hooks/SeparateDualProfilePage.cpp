@@ -40,20 +40,7 @@ class $modify(PaimonSeparateDualProfile, ProfilePage) {
         paimon::hooks::afterNodeIdsOrLate(self, "ProfilePage::loadPageFromUserInfo");
     }
 
-    void toggleShip(CCObject* sender) {
-        ProfilePage::toggleShip(sender);
-        if (!moduleEnabled()) return;
 
-        if (sender->getTag() == 1 || sender->getTag() == 8) {
-            auto ship = static_cast<SimplePlayer*>(
-                static_cast<CCMenuItemSprite*>(sender)->getNormalImage());
-            auto vault = DualKitVault::get();
-            vault->dressDoll(
-                ship,
-                sender->getTag() == 1 ? IconType::Ship : IconType::Jetpack,
-                vault->sideActiveIsSecondary() ? Side::Secondary : Side::Primary);
-        }
-    }
 
     SimplePlayer* firstDoll(CCNode* node) {
         if (!node) return nullptr;

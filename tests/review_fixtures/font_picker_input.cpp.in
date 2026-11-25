@@ -1,0 +1,125 @@
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+#include <cassert>
+#include <functional>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
+struct Point { float x, y; };
+struct Size { float width, height; };
+constexpr Point CCPointZero{0, 0};
+struct CCRect {
+    Point origin;
+    Size size;
+    bool containsPoint(Point point) const {
+        return point.x >= origin.x && point.y >= origin.y &&
+            point.x <= origin.x + size.width && point.y <= origin.y + size.height;
+    }
+};
+struct CCTouch { Point location; Point getLocation() const { return location; } };
+struct CCEvent {};
+struct CCObject {};
+struct Control {
+    bool visible = true, touch = true, mouse = true;
+    int unfocuses = 0;
+    std::string value;
+    void setVisible(bool enabled) { visible = enabled; }
+    void setTouchEnabled(bool enabled) { touch = enabled; }
+    void setMouseEnabled(bool enabled) { mouse = enabled; }
+    void unfocus() { ++unfocuses; }
+    std::string getString() const { return value; }
+};
+struct ScrollLayer : Control {
+    Point origin{15, 20};
+    float scale = .75f;
+    Size size{348, 124};
+    Point convertToNodeSpace(Point point) const { return {(point.x - origin.x) / scale, (point.y - origin.y) / scale}; }
+    Size getContentSize() const { return size; }
+};
+struct CCMenu : Control {
+    int starts = 0, ends = 0, cancels = 0;
+    virtual ~CCMenu() = default;
+    bool init() { return true; }
+    void autorelease() {}
+    virtual bool ccTouchBegan(CCTouch*, CCEvent*) { ++starts; return true; }
+    virtual void ccTouchEnded(CCTouch*, CCEvent*) { ++ends; }
+    virtual void ccTouchCancelled(CCTouch*, CCEvent*) { ++cancels; }
+};
+@@function|src/features/fonts/ui/FontPickerPopup.cpp|class FontGridMenu : public CCMenu@@;
+
+struct CCFileUtils {
+    static CCFileUtils* sharedFileUtils() { static CCFileUtils files; return &files; }
+    std::string fullPathForFilename(char const* value, bool) const {
+        return std::string(value) == "myFont.fnt" ? "Resources/myFont.fnt" : value;
+    }
+    bool isFileExist(std::string const& value) const { return value == "Resources/myFont.fnt"; }
+};
+enum class NotificationIcon { Error };
+struct Notification {
+    static inline int errors = 0;
+    static Notification* create(char const*, NotificationIcon) { static Notification notification; return &notification; }
+    void show() { ++errors; }
+};
+char const* localized(char const*, char const* english) { return english; }
+struct FontPickerPopup {
+    enum class Tab { GDFonts, Custom };
+    Tab m_activeTab = Tab::GDFonts;
+    Control *m_scroll, *m_scrollbar, *m_customContainer, *m_customInput;
+    CCMenu* m_gridMenu;
+    bool m_fontPreviewsPending = false;
+    int highlights = 0;
+    std::vector<std::string> previews;
+    std::function<void(std::string const&)> m_onSelect;
+    void updateTabHighlights() { ++highlights; }
+    void showPreview(std::string const& id, std::string const& file) { assert(id == file); previews.push_back(file); }
+    void switchTab(Tab tab);
+    void onCustomApply(CCObject*);
+};
+@@function|src/features/fonts/ui/FontPickerPopup.cpp|void FontPickerPopup::switchTab(@@
+@@function|src/features/fonts/ui/FontPickerPopup.cpp|void FontPickerPopup::onCustomApply(@@
+
+int main() {
+    ScrollLayer scroll;
+    std::unique_ptr<FontGridMenu> menu(FontGridMenu::create(&scroll));
+    CCTouch inside{{30, 40}}, below{{30, 19}}, above{{30, 114}}, right{{277, 40}};
+    assert(menu->ccTouchBegan(&inside, nullptr) && menu->starts == 1);
+    for (auto* outside : {&below, &above, &right}) {
+        assert(!menu->ccTouchBegan(outside, nullptr));
+        menu->ccTouchEnded(outside, nullptr);
+    }
+    assert(menu->starts == 1 && menu->ends == 0 && menu->cancels == 3);
+    menu->ccTouchEnded(&inside, nullptr);
+    assert(menu->ends == 1);
+
+    Control scrollbar, custom, input;
+    FontPickerPopup popup;
+    popup.m_scroll = &scroll;
+    popup.m_scrollbar = &scrollbar;
+    popup.m_gridMenu = menu.get();
+    popup.m_customContainer = &custom;
+    popup.m_customInput = &input;
+    for (int round = 0; round < 2; ++round) {
+        popup.switchTab(FontPickerPopup::Tab::Custom);
+        assert(!scroll.visible && !scroll.touch && !scroll.mouse && !menu->touch);
+        assert(!scrollbar.visible && !scrollbar.touch && !scrollbar.mouse && custom.visible);
+        popup.switchTab(FontPickerPopup::Tab::GDFonts);
+        assert(scroll.visible && scroll.touch && scroll.mouse && menu->touch);
+        assert(scrollbar.visible && scrollbar.touch && scrollbar.mouse && !custom.visible);
+        assert(popup.m_fontPreviewsPending && input.unfocuses == round + 1);
+    }
+    std::vector<std::string> selected;
+    popup.m_onSelect = [&](auto const& value) { selected.push_back(value); };
+    popup.onCustomApply(nullptr);
+    assert(selected.empty() && Notification::errors == 0);
+    input.value = "missing";
+    popup.onCustomApply(nullptr);
+    assert(selected.empty() && popup.previews.empty() && Notification::errors == 1);
+    for (auto const* filename : {"myFont", "myFont.fnt"}) {
+        input.value = filename;
+        popup.onCustomApply(nullptr);
+        assert(selected.back() == "<f:myFont.fnt> " && popup.previews.back() == "myFont.fnt");
+    }
+    assert(selected.size() == 2 && Notification::errors == 1);
+}

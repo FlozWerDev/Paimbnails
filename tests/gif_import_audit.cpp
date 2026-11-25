@@ -34,7 +34,11 @@
 #include "../src/features/gif-import/services/GifGlowPass.cpp"
 #include "../src/features/gif-import/services/GifMotionPlanner.cpp"
 #include "../src/features/gif-import/services/GifPaintVectorizer.cpp"
+#include "../src/features/gif-import/services/GifSurfaceVectorizer.cpp"
+#include "../src/features/gif-import/services/GifSurfaceOptimizer.cpp"
+#include "../src/features/gif-import/services/GifPlanOptimizer.cpp"
 #include "../src/features/gif-import/services/ImageWatermark.cpp"
+#include "../src/features/gif-import/services/GifSmoothVectorizer.cpp"
 #include "../src/features/gif-import/services/GifImportPipeline.cpp"
 
 using namespace paimon::gifimport;

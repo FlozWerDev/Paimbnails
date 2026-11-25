@@ -1,0 +1,93 @@
+#include <algorithm>
+#include <cassert>
+#include <deque>
+#include <filesystem>
+#include <functional>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+struct CCTexture2D { int references = 0; };
+struct CCTextureCache {
+    std::unordered_map<std::string, CCTexture2D*> keys;
+    static CCTextureCache* sharedTextureCache() { static CCTextureCache cache; return &cache; }
+    CCTexture2D* textureForKey(char const* path) { auto it = keys.find(path); return it == keys.end() ? nullptr : it->second; }
+    CCTexture2D* addImage(char const* path, bool) { return textureForKey(path); }
+    void removeTextureForKey(char const* path) { keys.erase(path); }
+};
+namespace cocos2d { using ::CCTexture2D; using ::CCTextureCache; }
+namespace geode {
+    template<class T> struct Ref {
+        T* value;
+        Ref(T* texture) : value(texture) { if (value) ++value->references; }
+        ~Ref() { if (value) --value->references; }
+        T* data() const { return value; }
+    };
+}
+namespace paimon {
+    bool shuttingDown = false;
+    bool isRuntimeShuttingDown() { return shuttingDown; }
+    namespace assets { std::filesystem::path pathFromUtf8(std::string const& path) { return path; } }
+}
+namespace paimon::image {
+    void touchBudgeted(std::string const&, std::size_t budget = 24);
+    struct RetainedLazyTextureLoad {
+        struct State { std::function<void(CCTexture2D*, bool)> callback; std::string path; };
+        std::shared_ptr<State> state = std::make_shared<State>();
+        static std::vector<std::weak_ptr<State>> requests;
+        ~RetainedLazyTextureLoad() { reset(); }
+        void reset() { state->callback = nullptr; }
+        void loadFromFile(std::filesystem::path const& path, std::function<void(CCTexture2D*, bool)> callback) {
+            state->path = path.string(); state->callback = std::move(callback); requests.push_back(state);
+        }
+        static void complete(std::size_t index, CCTexture2D* texture) {
+            auto state = requests.at(index).lock();
+            if (!state || !state->callback) return;
+            if (texture) CCTextureCache::sharedTextureCache()->keys[state->path] = texture;
+            auto callback = std::move(state->callback);
+            callback(texture, texture != nullptr);
+        }
+    };
+    std::vector<std::weak_ptr<RetainedLazyTextureLoad::State>> RetainedLazyTextureLoad::requests;
+}
+
+@@source|src/utils/TextureBudget.cpp@@
+
+int main() {
+    using namespace paimon::image;
+    CCTexture2D texture;
+    int ready = 0;
+    for (int i = 0; i < 4; ++i) loadBudgetedAsync("cover.png", [&](CCTexture2D* loaded) {
+        assert(loaded == &texture && loaded->references > 0);
+        ++ready;
+    });
+    assert(ready == 0 && RetainedLazyTextureLoad::requests.size() == 1);
+    RetainedLazyTextureLoad::complete(0, &texture);
+    assert(ready == 4 && pendingTextures().empty() && texture.references == 0);
+    loadBudgetedAsync("cover.png", [&](CCTexture2D* loaded) { assert(loaded == &texture); ++ready; });
+    assert(ready == 5 && RetainedLazyTextureLoad::requests.size() == 1); // memory hit, no decode
+
+    int failed = 0;
+    loadBudgetedAsync("broken.png", [&](CCTexture2D* loaded) { assert(!loaded); ++failed; });
+    RetainedLazyTextureLoad::complete(1, nullptr);
+    assert(failed == 1 && pendingTextures().empty());
+    loadBudgetedAsync("broken.png", [&](CCTexture2D* loaded) { assert(!loaded); ++failed; });
+    dropBudgeted("broken.png");
+    RetainedLazyTextureLoad::complete(2, &texture);
+    assert(failed == 2 && !CCTextureCache::sharedTextureCache()->textureForKey("broken.png"));
+
+    loadBudgetedAsync("reentrant.png", [&](CCTexture2D* loaded) {
+        assert(loaded == &texture);
+        dropBudgeted("reentrant.png");
+        loadBudgetedAsync("next.png", [&](CCTexture2D* next) { assert(!next); ++failed; });
+    });
+    RetainedLazyTextureLoad::complete(3, &texture);
+    assert(pendingTextures().size() == 1);
+    clearBudgeted();
+    RetainedLazyTextureLoad::complete(4, &texture);
+    assert(failed == 3 && pendingTextures().empty());
+    paimon::shuttingDown = true;
+    loadBudgetedAsync("shutdown.png", [&](CCTexture2D* loaded) { assert(!loaded); ++failed; });
+    assert(failed == 4 && RetainedLazyTextureLoad::requests.size() == 5);
+}

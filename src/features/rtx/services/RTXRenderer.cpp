@@ -7,6 +7,9 @@
 #include <Geode/Geode.hpp>
 #include <Geode/binding/GJBaseGameLayer.hpp>
 #include <Geode/cocos/shaders/ccGLStateCache.h>
+#if defined(GEODE_IS_ANDROID)
+#include <EGL/egl.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -41,7 +44,11 @@ namespace {
 
 constexpr unsigned kIdleReleaseFrames = 300;
 
+#if defined(GEODE_IS_MOBILE)
 constexpr int kMaxTraceLongEdge = 1280;
+#else
+constexpr int kMaxTraceLongEdge = 3840;
+#endif
 
 constexpr float kMinAdaptiveScale = 0.20f;
 constexpr int kMinRaySteps = 4;
@@ -60,7 +67,7 @@ int contextMajorVersion() {
 }
 
 void bindTexture(GLuint unit, GLuint texture) {
-    // Texture edits require the active unit even when the binding is unchanged.
+    // texture edits require the active unit even when the binding is unchanged.
     glActiveTexture(GL_TEXTURE0 + unit);
     glBindTexture(GL_TEXTURE_2D, texture);
 }
@@ -124,7 +131,7 @@ public:
     }
 
     ~FrameState() {
-        // Raw GL calls leave Cocos' cached state unchanged across the pass.
+        // raw GL calls leave Cocos' cached state unchanged across the pass.
         for (GLuint i = 0; i < 3; ++i) {
             auto const& a = m_attributes[i];
             glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(a.buffer));
@@ -486,9 +493,11 @@ bool RTXRenderer::makeTarget(Target& t, int w, int h, bool hdr) {
     return true;
 }
 
-void RTXRenderer::dropTarget(Target& t) {
-    if (t.fbo) glDeleteFramebuffers(1, &t.fbo);
-    if (t.tex) glDeleteTextures(1, &t.tex);
+void RTXRenderer::dropTarget(Target& t, bool deleteHandles) {
+    if (deleteHandles) {
+        if (t.fbo) glDeleteFramebuffers(1, &t.fbo);
+        if (t.tex) glDeleteTextures(1, &t.tex);
+    }
     t = Target{};
 }
 
@@ -518,7 +527,8 @@ bool RTXRenderer::ensureFullTargets(int srcW, int srcH) {
         if (!makeTarget(m_bloomUp[i], w, h, true)) return false;
     }
 
-    int const rayLevel = std::min(kBloomLevels - 1, 2);
+    // high-definition god rays at half resolution (srcW/2, srcH/2)
+    int const rayLevel = 0;
     if (!makeTarget(m_rays, m_bloomDown[rayLevel].w, m_bloomDown[rayLevel].h, true)) return false;
 
     if (m_hdr) {
@@ -558,26 +568,26 @@ bool RTXRenderer::ensureTraceTargets(int srcW, int srcH, float scale) {
     return true;
 }
 
-void RTXRenderer::releaseAll() {
-    dropTarget(m_traceSrc);
-    dropTarget(m_guideHistory);
-    dropTarget(m_traceRT);
-    dropTarget(m_history[0]);
-    dropTarget(m_history[1]);
-    dropTarget(m_variance[0]);
-    dropTarget(m_variance[1]);
-    dropTarget(m_atrous[0]);
-    dropTarget(m_atrous[1]);
+void RTXRenderer::releaseAll(bool deleteHandles) {
+    dropTarget(m_traceSrc, deleteHandles);
+    dropTarget(m_guideHistory, deleteHandles);
+    dropTarget(m_traceRT, deleteHandles);
+    dropTarget(m_history[0], deleteHandles);
+    dropTarget(m_history[1], deleteHandles);
+    dropTarget(m_variance[0], deleteHandles);
+    dropTarget(m_variance[1], deleteHandles);
+    dropTarget(m_atrous[0], deleteHandles);
+    dropTarget(m_atrous[1], deleteHandles);
     for (int i = 0; i < kBloomLevels; ++i) {
-        dropTarget(m_bloomDown[i]);
-        dropTarget(m_bloomUp[i]);
+        dropTarget(m_bloomDown[i], deleteHandles);
+        dropTarget(m_bloomUp[i], deleteHandles);
     }
-    dropTarget(m_rays);
-    dropTarget(m_exposure[0]);
-    dropTarget(m_exposure[1]);
+    dropTarget(m_rays, deleteHandles);
+    dropTarget(m_exposure[0], deleteHandles);
+    dropTarget(m_exposure[1], deleteHandles);
 
     if (m_sceneTex) {
-        glDeleteTextures(1, &m_sceneTex);
+        if (deleteHandles) glDeleteTextures(1, &m_sceneTex);
         m_sceneTex = 0;
     }
     m_sceneW = 0;
@@ -590,23 +600,24 @@ void RTXRenderer::releaseAll() {
     m_hasExposure = false;
 }
 
-void RTXRenderer::onGLContextReload() {
-    // old context still alive: everything rebuilds lazily.
-    releaseAll();
+void RTXRenderer::onGLContextReload(bool deleteHandles) {
+    releaseAll(deleteHandles);
 
     if (m_vbo) {
-        glDeleteBuffers(1, &m_vbo);
+        if (deleteHandles) glDeleteBuffers(1, &m_vbo);
         m_vbo = 0;
     }
     if (m_blackTex) {
-        glDeleteTextures(1, &m_blackTex);
+        if (deleteHandles) glDeleteTextures(1, &m_blackTex);
         m_blackTex = 0;
     }
-    if (m_trace.id) glDeleteProgram(m_trace.id);
-    if (m_temporalProg.id) glDeleteProgram(m_temporalProg.id);
-    if (m_atrousProg.id) glDeleteProgram(m_atrousProg.id);
-    if (m_bloom.id) glDeleteProgram(m_bloom.id);
-    if (m_composite.id) glDeleteProgram(m_composite.id);
+    if (deleteHandles) {
+        if (m_trace.id) glDeleteProgram(m_trace.id);
+        if (m_temporalProg.id) glDeleteProgram(m_temporalProg.id);
+        if (m_atrousProg.id) glDeleteProgram(m_atrousProg.id);
+        if (m_bloom.id) glDeleteProgram(m_bloom.id);
+        if (m_composite.id) glDeleteProgram(m_composite.id);
+    }
 
     m_trace = TraceProgram{};
     m_temporalProg = TemporalProgram{};
@@ -884,8 +895,11 @@ void RTXRenderer::runFilter(RTXConfig const& cfg) {
         return;
     }
 
-    // high phi keeps edges, low phi cleans at the cost of flattening.
-    float const phi = 48.f - std::clamp(cfg.denoise, 0.f, 4.f) * 11.f;
+    // map denoise [0, 4] to phi:
+    // denoise 0 = 20.0 (preserves finest micro-details, least spatial blur)
+    // denoise 2 = 12.0 (balanced, smooth surfaces with crisp edge preservation)
+    // denoise 4 = 4.0  (aggressive smoothing for extreme noise)
+    float const phi = std::max(3.0f, 20.0f - std::clamp(cfg.denoise, 0.f, 4.f) * 4.0f);
 
     glUseProgram(m_atrousProg.id);
     glUniform2f(m_atrousProg.texel, texelX, texelY);
@@ -959,7 +973,7 @@ void RTXRenderer::runBloom(RTXConfig const& cfg) {
     m_bloomResultTex = m_bloomUp[0].tex;
 
     if (cfg.godRayStrength > 0.001f) {
-        Target const& src = m_bloomDown[std::min(levels - 1, 2)];
+        Target const& src = m_bloomDown[0];
         glUniform1f(m_bloom.mode, 3.f);
         glUniform2f(m_bloom.lightPos, cfg.godRayX, cfg.godRayY);
         glUniform1f(m_bloom.decay, cfg.godRayDecay);
@@ -1042,6 +1056,14 @@ void RTXRenderer::runComposite(RTXConfig const& cfg, GLint const* viewport, GLui
 
 void RTXRenderer::renderFrame() {
     if (paimon::isRuntimeShuttingDown() || m_broken) return;
+#if defined(GEODE_IS_ANDROID)
+    if (void const* curCtx = eglGetCurrentContext()) {
+        if (m_contextToken && m_contextToken != curCtx) {
+            onGLContextReload(false);
+        }
+        m_contextToken = curCtx;
+    }
+#endif
 
     auto const& cfg = RTXManager::get().config();
     if (!RTXManager::get().shouldRender()) {
@@ -1097,7 +1119,7 @@ void RTXRenderer::renderFrame() {
     if (ensureFullTargets(viewport[2], viewport[3])
         && ensureTraceTargets(viewport[2], viewport[3], m_activeScale)) {
 
-        // Target allocation binds offscreen FBOs; capture the presented frame explicitly.
+        // target allocation binds offscreen FBOs; capture the presented frame explicitly.
         glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(state.fbo));
         bindTexture(0, m_sceneTex);
         glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, viewport[0], viewport[1], m_sceneW, m_sceneH);

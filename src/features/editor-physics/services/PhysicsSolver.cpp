@@ -64,15 +64,6 @@ Vec2 angularVelocityAt(float angularVelocity, Vec2 radius) {
     return {-angularVelocity * radius.y, angularVelocity * radius.x};
 }
 
-Vec2 rotate(Vec2 point, float angle) {
-    float const cosine = std::cos(angle);
-    float const sine = std::sin(angle);
-    return {
-        point.x * cosine - point.y * sine,
-        point.x * sine + point.y * cosine,
-    };
-}
-
 float lengthSquared(Vec2 value) {
     return dot(value, value);
 }
@@ -217,16 +208,16 @@ int clipSegment(Vec2 const in[2], Vec2 normal, float limit, Vec2 out[2]) {
     return count;
 }
 
-// sat plus reference/incident face clipping, so a flat box reports both of its
-// corners instead of rocking on one point. the normal always points `a` to `b`.
+// sat plus reference/incident face clipping, so a flat box reports both of
+// its corners instead of rocking on one point. the normal always points `a` to `b`.
 bool collidePolygons(Shape const& a, Shape const& b, Manifold& manifold) {
     FaceQuery const queryA = deepestFace(a, b);
     if (queryA.separation > 0.f) return false;
     FaceQuery const queryB = deepestFace(b, a);
     if (queryB.separation > 0.f) return false;
 
-    // ties go to a so a body sliding along a flat floor keeps the same reference
-    // face frame by frame instead of flickering between the two.
+    // ties go to a: a body sliding along a flat floor keeps the same
+    // reference face frame by frame instead of flickering between the two.
     bool const referenceIsB = queryB.separation > queryA.separation + 0.001f;
     Shape const& reference = referenceIsB ? b : a;
     Shape const& incident = referenceIsB ? a : b;
@@ -341,7 +332,7 @@ float restitutionOf(BodySpec const& body, Fixture const& fixture) {
 }
 
 // weight and spin resistance from the collided shape: a disc resists half of
-// its bounding box, and a slope holds its mass in the corner it fills.
+// its bounding box, a slope holds its mass in the corner it fills.
 struct MassShape {
     float area = 0.f;
     Vec2 centroid;
@@ -422,7 +413,7 @@ float boundingRadius(BodySpec const& body) {
     return radius;
 }
 
-// rotation-invariant, so a body that spins never needs its bounds rebuilt.
+// rotation-invariant, so a spinning body never needs its bounds rebuilt.
 struct Bounds {
     Vec2 min;
     Vec2 max;
@@ -471,8 +462,8 @@ struct Constraint {
     float surfaceVelocity = 0.f;
 };
 
-// carrying last substep's impulses into the next one is what lets a stack stand
-// still instead of sinking a little further on every rebuild.
+// carrying last substep's impulses into the next one is what lets a stack
+// stand still instead of sinking a little further on every rebuild.
 struct CachedImpulse {
     float normalImpulse = 0.f;
     float tangentImpulse = 0.f;
@@ -508,8 +499,8 @@ void prepareConstraint(Constraint& constraint, State const& a, State const& b) {
         Vec2 const radiusB = contact.point - b.position;
         float const approach =
             dot(relativeVelocityAt(a, b, radiusA, radiusB), constraint.normal);
-        // restitution is locked in from the approach speed before any impulse lands,
-        // and a body that is merely settling gets none so it can come to rest.
+        // restitution is locked in from the approach speed before any impulse
+        // lands; a merely settling body gets none so it can come to rest.
         contact.bias = -approach > kRestingSpeed ? -constraint.restitution * approach : 0.f;
     }
 }
@@ -561,8 +552,8 @@ float solveConstraint(Constraint& constraint, State& a, State& b) {
             radiusTangentB * radiusTangentB * b.inverseInertia;
         if (tangentDenominator <= 0.00001f) continue;
 
-        // a conveyor face does not brake what it touches, it drags it towards the
-        // belt speed, so the target the friction aims at is shifted instead of zero.
+        // a conveyor face does not brake what it touches, it drags it towards
+        // the belt speed, so friction aims at a shifted target, not zero.
         float const slide = dot(relativeVelocityAt(a, b, radiusA, radiusB), tangent) -
             constraint.surfaceVelocity;
         float const limit = constraint.friction * contact.normalImpulse;
@@ -619,8 +610,8 @@ Vec2 jointVelocity(JointEnd const& end) {
     return end.state->velocity + angularVelocityAt(end.state->angularVelocity, end.arm);
 }
 
-// both ends pulled onto one point: a 2x2 effective mass, because the two axes of
-// a pin are coupled through each body's inertia.
+// both ends pulled onto one point: a 2x2 effective mass, because the two axes
+// of a pin are coupled through each body's inertia.
 void solvePinAxes(JointEnd& a, JointEnd& b, Vec2 target) {
     float const inverseMassA = a.state ? a.state->inverseMass : 0.f;
     float const inverseMassB = b.state ? b.state->inverseMass : 0.f;
@@ -657,8 +648,8 @@ void solveAngularAxis(State* a, State* b, float targetSpeed, float limit) {
     if (b) b->angularVelocity += impulse * inertiaB;
 }
 
-// along the line between the two ends only, which is what separates a rope that
-// may go slack from a pin that never does.
+// along the line between the two ends only: that separates a rope that may go
+// slack from a pin that never does.
 void solveDistanceAxis(JointEnd& a, JointEnd& b, float bias, bool pullOnly) {
     Vec2 const axis = normalized(b.point - a.point);
     if (axis.x == 0.f && axis.y == 0.f) return;
@@ -749,8 +740,8 @@ struct WorldData {
 
 namespace {
 
-// wind, blasts, whirlpools and water all end up here as an acceleration plus an
-// extra damping, which is all the integrator needs to know about them.
+// wind, blasts, whirlpools and water all end up here as an acceleration plus
+// an extra damping, which is all the integrator needs to know about them.
 struct FieldSample {
     Vec2 acceleration;
     float drag = 0.f;
@@ -790,8 +781,8 @@ FieldSample sampleField(
             return sample;
         }
         case FieldKind::Buoyancy: {
-            // how much of the body's bounding box is under the surface, which is
-            // enough to float a crate without integrating over its real outline.
+            // how much of the body's bounding box is under the surface: enough
+            // to float a crate without integrating over its real outline.
             float const top = field.position.y + field.halfSize.y;
             float const bottom = field.position.y - field.halfSize.y;
             float const reach = std::max(state.boundingRadius, 0.001f);

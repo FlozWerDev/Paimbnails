@@ -131,6 +131,12 @@ public:
     ccColor3B m_startColor = {255, 255, 255};
     ccColor3B m_endColor = {255, 255, 255};
 
+    // uniform locations cached per linked program (same scheme as PaimonShaderSprite).
+    cocos2d::CCGLProgram* m_cachedProgram = nullptr;
+    GLint m_locIntensity = -2;  // -2 = uninitialized, -1 = not present
+    GLint m_locTime      = -2;
+    GLint m_locTexSize   = -2;
+
     static PaimonShaderGradient* create(ccColor4B const& start, ccColor4B const& end) {
         auto sprite = new PaimonShaderGradient();
 
@@ -205,22 +211,27 @@ public:
     void draw() override {
         CC_NODE_DRAW_SETUP();
 
-        GLint intensityLoc = getShaderProgram()->getUniformLocationForName("u_intensity");
-        if (intensityLoc != -1) {
-            getShaderProgram()->setUniformLocationWith1f(intensityLoc, m_intensity);
+        auto* prog = getShaderProgram();
+        if (prog != m_cachedProgram) {
+            m_cachedProgram = prog;
+            m_locIntensity = prog ? prog->getUniformLocationForName("u_intensity") : -1;
+            m_locTime      = prog ? prog->getUniformLocationForName("u_time")       : -1;
+            m_locTexSize   = prog ? prog->getUniformLocationForName("u_texSize")    : -1;
         }
 
-        GLint timeLoc = getShaderProgram()->getUniformLocationForName("u_time");
-        if (timeLoc != -1) {
-            getShaderProgram()->setUniformLocationWith1f(timeLoc, m_time);
+        if (m_locIntensity != -1) {
+            prog->setUniformLocationWith1f(m_locIntensity, m_intensity);
         }
 
-        GLint sizeLoc = getShaderProgram()->getUniformLocationForName("u_texSize");
-        if (sizeLoc != -1) {
+        if (m_locTime != -1) {
+            prog->setUniformLocationWith1f(m_locTime, m_time);
+        }
+
+        if (m_locTexSize != -1) {
             CCSize texSize = m_texSize.width > 0.f && m_texSize.height > 0.f
                 ? m_texSize
                 : getContentSize();
-            getShaderProgram()->setUniformLocationWith2f(sizeLoc, texSize.width, texSize.height);
+            prog->setUniformLocationWith2f(m_locTexSize, texSize.width, texSize.height);
         }
 
         ccGLBlendFunc(m_sBlendFunc.src, m_sBlendFunc.dst);

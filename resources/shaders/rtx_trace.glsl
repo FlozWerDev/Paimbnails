@@ -45,17 +45,11 @@ float heightAt(vec2 uv) {
 
 // cone tolerance with slope bias against acne.
 float tolAt(float h0, float slopeMag, float thick, float nz, float t, float tN) {
-    return h0 + slopeMag * thick * 0.5 + nz * t * thick * (0.75 + 0.5 * tN);
+    return h0 + max(slopeMag * thick * 0.5, 0.006) + nz * t * thick * (0.75 + 0.5 * tN);
 }
 
 float emissiveOf(vec3 c, float range) {
     return safeSmoothstep(u_lightThreshold, u_lightThreshold + range, luma(c));
-}
-
-// per-frame ign offset.
-float ign(vec2 p, float frame) {
-    p += 5.588238 * mod(frame, 64.0);
-    return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
 }
 
 bool outside(vec2 p) {
@@ -98,6 +92,8 @@ void main() {
     float phase = mix(0.1, 0.9, rPhase);
     float invSpan = 1.0 / max(pow(g, steps) - 1.0, 0.0001);
     float gStart = pow(g, phase);
+    float tScale = dist * invSpan;
+    float linearStepSize = dist / steps;
 
     vec3  gi   = vec3(0.0);
     float occ  = 0.0;
@@ -106,9 +102,9 @@ void main() {
     for (int i = 0; i < kMaxRays; i++) {
         if (float(i) >= u_rayCount) break;
 
-        float j = hash12(frag + vec2(float(i) * 12.91, float(i) * 7.73)
-                         + fract(u_frame * 0.159) * 43.7);
-        float a = ((float(i) + j) / rayN + rotA) * kTau;
+        // Stratified low-discrepancy sampling: rays are spaced exactly (kTau / rayN)
+        // apart and rotated together by rotA. Guaranteed zero ray bunching or empty gaps!
+        float a = (float(i) + rotA) * (kTau / rayN);
         vec2 dirPx = vec2(cos(a), sin(a));
 
         float w = max(dot(dirPx, n.xy) * 0.5 + 0.5, 0.0);
@@ -122,8 +118,8 @@ void main() {
         for (int s = 0; s < kMaxSteps; s++) {
             if (float(s) >= steps) break;
 
-            float t = dist * (linearSteps ? (float(s) + phase) / steps
-                                         : (gPow - 1.0) * invSpan);
+            float t = linearSteps ? (float(s) + phase) * linearStepSize
+                                  : (gPow - 1.0) * tScale;
             gPow *= g;
 
             vec2 p = uv + dirUV * t;
@@ -170,6 +166,8 @@ void main() {
 
         float reflSteps = max(4.0, floor(steps * 0.6));
         float reflSpan = 1.0 / max(pow(g, reflSteps) - 1.0, 0.0001);
+        float reflTScale = dist * reflSpan;
+        float reflLinearStepSize = dist / reflSteps;
 
         vec3 specAcc = vec3(0.0);
         for (int k = 0; k < kSpecTaps; k++) {
@@ -220,8 +218,8 @@ void main() {
             for (int s = 0; s < kMaxSteps; s++) {
                 if (float(s) >= reflSteps) break;
 
-                float t = dist * (linearSteps ? (float(s) + specPhase) / reflSteps
-                                             : (gPow - 1.0) * reflSpan);
+                float t = linearSteps ? (float(s) + specPhase) * reflLinearStepSize
+                                      : (gPow - 1.0) * reflTScale;
                 gPow *= g;
 
                 vec2 p = uv + rdUV * t;
@@ -264,8 +262,8 @@ void main() {
             for (int s = 0; s < kMaxSteps; s++) {
                 if (float(s) >= reflSteps) break;
 
-                float t = dist * (linearSteps ? (float(s) + phase) / reflSteps
-                                             : (gPowT - 1.0) * reflSpan);
+                float t = linearSteps ? (float(s) + phase) * reflLinearStepSize
+                                      : (gPowT - 1.0) * reflTScale;
                 gPowT *= g;
 
                 vec2 p = uv + refrUV * t;

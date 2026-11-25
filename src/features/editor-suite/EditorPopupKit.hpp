@@ -9,7 +9,7 @@
 #include <functional>
 #include <string>
 
-// Building blocks shared by the editor tool popups (physics lab, gif import).
+// building blocks shared by the editor tool popups (physics lab, gif import).
 namespace paimon::editor::kit {
 
 inline constexpr float kValueBoxWidth = 54.f;
@@ -32,13 +32,13 @@ inline constexpr cocos2d::ccColor3B pink{255, 150, 220};
 inline constexpr cocos2d::ccColor3B silver{200, 200, 215};
 } // namespace tint
 
-// Mod frame first, then the gd fallback frame, then an empty sprite: never null.
+// mod frame first, then the gd fallback frame, then an empty sprite: never null.
 cocos2d::CCSprite* glyph(char const* paim, char const* fallback, float size,
     cocos2d::ccColor3B color = tint::white);
 
 CCMenuItemSpriteExtra* toolButton(char const* paim, char const* fallback,
     geode::EditorBaseColor color, float size, std::function<void()> onPress);
-// The callback receives the state the toggler is switching to.
+// the callback receives the state the toggler is switching to.
 CCMenuItemToggler* toolToggle(char const* paim, char const* fallback,
     geode::EditorBaseColor onColor, float size, bool value, std::function<void(bool)> onChange);
 
@@ -55,7 +55,7 @@ struct Pill {
     bool goldFont = true;
 };
 
-// GJ_button skinned capsule with an optional glyph; a null texture draws no plate.
+// gJ_button skinned capsule with an optional glyph; a null texture draws no plate.
 Pill pill(char const* paim, char const* fallback, char const* text, char const* texture,
     cocos2d::CCSize size, std::function<void()> onPress, char const* font = "goldFont.fnt",
     cocos2d::ccColor3B iconColor = tint::white);
@@ -72,7 +72,7 @@ struct StepperSpec {
     char const* title;
     cocos2d::ccColor3B color;
 };
-// One option row filling `row`: glyph, title, [-] value [+]. Returns the value label.
+// one option row filling `row`: glyph, title, [-] value [+]. Returns the value label.
 cocos2d::CCLabelBMFont* stepper(cocos2d::CCNode* parent, cocos2d::CCMenu* menu,
     StepperSpec const& spec, cocos2d::CCRect const& row, bool stripe,
     std::function<void(int)> onStep);
@@ -83,7 +83,7 @@ cocos2d::CCNode* checker(cocos2d::CCSize size, float cell, cocos2d::ccColor3B da
 
 cocos2d::CCLabelBMFont* label(char const* text, char const* font, float scale,
     cocos2d::ccColor3B color = tint::white);
-// Single line while it stays at minSingle or above, otherwise word-wrapped into the box.
+// single line while it stays at minSingle or above, otherwise word-wrapped into the box.
 void setWrapped(cocos2d::CCLabelBMFont* label, std::string const& text, cocos2d::CCSize box,
     float maxScale, float minSingle);
 

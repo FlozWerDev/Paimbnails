@@ -12,11 +12,14 @@ enum class FillType : int {
     Flat     = 0,
     Gradient = 1,
     Image    = 2,
+    Original = 3,  // preserve original imported RGBA colors (+ optional tint/adjust)
+    Pattern  = 4,  // procedural two-color patterns
 };
 
 enum class GradientKind : int {
     Linear = 0,
     Radial = 1,
+    Conic  = 2,
 };
 
 struct GradientStop {
@@ -26,8 +29,8 @@ struct GradientStop {
 
 struct GradientSpec {
     GradientKind kind = GradientKind::Linear;
-    float angleDeg = 0.f;   // linear: clockwise from "left to right"
-    float centerX = 0.5f;   // radial center, fraction of the piece bbox
+    float angleDeg = 0.f;   // linear/conic: clockwise degrees
+    float centerX = 0.5f;   // radial/conic center, fraction of the piece bbox
     float centerY = 0.5f;
     float radius = 0.7f;    // radial: fraction of half the bbox diagonal
     std::vector<GradientStop> stops{
@@ -55,6 +58,26 @@ struct ImageFillSpec {
     int opacity = 255;
 };
 
+enum class PatternKind : int {
+    Stripes    = 0,
+    Checker    = 1,
+    Dots       = 2,
+    Grid       = 3,
+    Chevron    = 4,
+    Carbon     = 5,
+    Concentric = 6,
+    Diagonal   = 7,
+};
+
+struct PatternSpec {
+    PatternKind kind = PatternKind::Stripes;
+    cocos2d::ccColor4B primary{70, 180, 255, 255};
+    cocos2d::ccColor4B secondary{20, 40, 90, 255};
+    float scale = 1.f;       // 0.2..4.0
+    float angleDeg = 0.f;    // -180..180
+    float thickness = 0.45f; // 0.1..0.9 ratio
+};
+
 // contour drawn *under* the painted shape, grown outwards from its alpha.
 struct OutlineSpec {
     bool enabled = false;
@@ -62,6 +85,30 @@ struct OutlineSpec {
     // number holds up across the -uhd / -hd / sd exports.
     float width = 6.f;
     cocos2d::ccColor4B color{0, 0, 0, 255};
+};
+
+// soft outer glow or drop shadow rendered behind the outline & shape.
+struct ShadowSpec {
+    bool enabled = false;
+    float blur = 8.f;        // radius in 240px authoring canvas pixels
+    float offsetX = 0.f;     // authoring canvas pixels (+right)
+    float offsetY = 0.f;     // authoring canvas pixels (+down)
+    cocos2d::ccColor4B color{0, 220, 255, 200};
+};
+
+// post-fill color adjustments (also works on FillType::Original imports).
+struct ColorAdjustSpec {
+    float hueDeg = 0.f;      // -180..180
+    float saturation = 1.f;  // 0..2
+    float brightness = 0.f;  // -1..1
+    float contrast = 1.f;    // 0.2..2.5
+};
+
+enum class BlendMode : int {
+    Normal   = 0,
+    Add      = 1,
+    Multiply = 2,
+    Screen   = 3,
 };
 
 // the "paint bucket": what gets painted through the piece's alpha mask.
@@ -74,10 +121,19 @@ struct FillSpec {
     // render white and let a runtime ticker hue-cycle the result (garage only).
     bool chroma = false;
 
+    // GD-style glossy top highlight & subtle inner bevel.
+    bool gloss = false;
+    float glossStrength = 0.35f;  // 0..1
+
+    BlendMode blendMode = BlendMode::Normal;
+
     cocos2d::ccColor4B flat{255, 255, 255, 255};
     GradientSpec gradient{};
     ImageFillSpec image{};
+    PatternSpec pattern{};
     OutlineSpec outline{};
+    ShadowSpec shadow{};
+    ColorAdjustSpec adjust{};
 };
 
 }  // namespace paimon::icon_maker

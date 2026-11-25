@@ -13,6 +13,7 @@ struct GmdInfo {
     std::string name;
     std::string author;
     int songId = 0;
+    int audioTrack = 0;
 };
 
 // reads the display fields of a .gmd. returns nullopt when the file cannot be

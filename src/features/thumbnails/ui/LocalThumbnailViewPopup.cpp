@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "LocalThumbnailViewPopup.hpp"
 #include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
@@ -26,6 +27,7 @@
 #include "../../../managers/ThumbnailAPI.hpp"
 #include "../services/ThumbnailLoader.hpp"
 #include "../services/ThumbnailCache.hpp"
+#include "../services/ThumbnailExport.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/VideoThumbnailSprite.hpp"
@@ -34,13 +36,13 @@
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/Constants.hpp"
 #include "../../../utils/ImageConverter.hpp"
-#include "../../../utils/RenderTexture.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/WebHelper.hpp"
 #include "../../../utils/UIBorderHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/ThreadTracker.hpp"
+#include "../../../utils/UrlKeyNormalize.hpp"
 #include "../../profiles/ui/RatePopup.hpp"
 #include "ReportInputPopup.hpp"
 #include "ThumbnailOrderPopup.hpp"
@@ -56,14 +58,19 @@ namespace {
 constexpr float kThumbnailRefreshCooldown = 5.f;
 constexpr GLubyte kRefreshBtnEnabledOpacity = 255;
 constexpr GLubyte kRefreshBtnDisabledOpacity = 105;
+void setBtnEnabled(CCMenuItemSpriteExtra* btn, bool enabled) {
+    if (!btn) return;
+    btn->setEnabled(enabled);
+    btn->setOpacity(enabled ? kRefreshBtnEnabledOpacity : kRefreshBtnDisabledOpacity);
+}
 }
 
 void LocalThumbnailViewPopup::updateOrderUiState() {
     bool canUseOrderTools = m_isAdmin && m_verificationCategory < 0 && !m_viewingLocal && m_thumbnails.size() > 1;
     if (m_orderEditBtn) {
         m_orderEditBtn->setVisible(canUseOrderTools);
-        m_orderEditBtn->setEnabled(canUseOrderTools);
-        m_orderEditBtn->setOpacity(canUseOrderTools ? 255 : 105);
+        setBtnEnabled(m_orderEditBtn, canUseOrderTools);
+        if (m_buttonMenu) m_buttonMenu->updateLayout();
     }
 }
 
@@ -90,11 +97,7 @@ void LocalThumbnailViewPopup::replaceRemoteThumbnails(std::vector<ThumbnailAPI::
         }
     }
 
-    if (newIndex >= static_cast<int>(m_thumbnails.size())) {
-        newIndex = static_cast<int>(m_thumbnails.size()) - 1;
-    }
-    if (newIndex < 0) newIndex = 0;
-    m_currentIndex = newIndex;
+    m_currentIndex = std::clamp(newIndex, 0, static_cast<int>(m_thumbnails.size()) - 1);
 
     if (m_leftArrow) m_leftArrow->setVisible(m_thumbnails.size() > 1);
     if (m_rightArrow) m_rightArrow->setVisible(m_thumbnails.size() > 1);
@@ -110,12 +113,13 @@ void LocalThumbnailViewPopup::replaceRemoteThumbnails(std::vector<ThumbnailAPI::
 void LocalThumbnailViewPopup::ensureOrderControls(float /*contentwidth*/) {
     if (!m_isAdmin || !m_buttonMenu || m_verificationCategory >= 0 || m_orderEditBtn) return;
 
-    auto orderSpr = ButtonSprite::create("Order", 50, true, "bigFont.fnt", "GJ_button_03.png", 18.f, 0.40f);
+    auto* orderSpr = paimon::ui::makeButtonSprite(Localization::get().getString("viewer.order").c_str(),
+        paimon::ui::Btn::Cyan, paimon::thumbviewer::kToolWidth, 0.65f, "goldFont.fnt");
     if (orderSpr) {
         m_orderEditBtn = CCMenuItemSpriteExtra::create(orderSpr, this, menu_selector(LocalThumbnailViewPopup::onOrderEdit));
         m_orderEditBtn->setID("thumbnail-order-edit-btn"_spr);
 
-        m_buttonMenu->addChild(m_orderEditBtn, -1);
+        m_buttonMenu->addChild(m_orderEditBtn);
         m_buttonMenu->updateLayout();
     }
 }
@@ -124,8 +128,7 @@ void LocalThumbnailViewPopup::updateRefreshButtonState() {
     if (!m_refreshBtn) return;
 
     bool enabled = !m_refreshCooldownActive && !m_isDownloading;
-    m_refreshBtn->setEnabled(enabled);
-    m_refreshBtn->setOpacity(enabled ? kRefreshBtnEnabledOpacity : kRefreshBtnDisabledOpacity);
+    setBtnEnabled(m_refreshBtn, enabled);
 
     if (auto image = typeinfo_cast<CCSprite*>(m_refreshBtn->getNormalImage())) {
         image->setOpacity(enabled ? kRefreshBtnEnabledOpacity : kRefreshBtnDisabledOpacity);
@@ -152,6 +155,10 @@ bool LocalThumbnailViewPopup::isUiAlive() {
 
 void LocalThumbnailViewPopup::onPrev(CCObject*) {
     m_navDirection = NavDirection::Left;
+    if (!m_suggestions.empty()) {
+        stepSuggestion(-1);
+        return;
+    }
     if (m_viewingLocal && !m_localThumbPaths.empty()) {
         int count = static_cast<int>(m_localThumbPaths.size());
         m_localCurrentIndex--;
@@ -160,8 +167,8 @@ void LocalThumbnailViewPopup::onPrev(CCObject*) {
         auto tex = LocalThumbs::get().loadTextureByIndex(m_levelID, m_localCurrentIndex);
         if (tex) {
             auto content = m_mainLayer->getContentSize();
-            float maxWidth = content.width - 40.f;
-            float maxHeight = content.height - 80.f;
+            float maxWidth = paimon::thumbviewer::imageArea(content).size.width;
+            float maxHeight = paimon::thumbviewer::imageArea(content).size.height;
             displayThumbnail(tex, maxWidth, maxHeight, content, false);
         }
         if (m_counterLabel) {
@@ -179,6 +186,10 @@ void LocalThumbnailViewPopup::onPrev(CCObject*) {
 
 void LocalThumbnailViewPopup::onNext(CCObject*) {
     m_navDirection = NavDirection::Right;
+    if (!m_suggestions.empty()) {
+        stepSuggestion(1);
+        return;
+    }
     if (m_viewingLocal && !m_localThumbPaths.empty()) {
         int count = static_cast<int>(m_localThumbPaths.size());
         m_localCurrentIndex++;
@@ -187,8 +198,8 @@ void LocalThumbnailViewPopup::onNext(CCObject*) {
         auto tex = LocalThumbs::get().loadTextureByIndex(m_levelID, m_localCurrentIndex);
         if (tex) {
             auto content = m_mainLayer->getContentSize();
-            float maxWidth = content.width - 40.f;
-            float maxHeight = content.height - 80.f;
+            float maxWidth = paimon::thumbviewer::imageArea(content).size.width;
+            float maxHeight = paimon::thumbviewer::imageArea(content).size.height;
             displayThumbnail(tex, maxWidth, maxHeight, content, false);
         }
         if (m_counterLabel) {
@@ -293,7 +304,7 @@ void LocalThumbnailViewPopup::onInfo(CCObject*) {
     if (alert) PopupManager::get().manage(alert).showInstant();
 }
 
-void LocalThumbnailViewPopup::FLAlert_Clicked(FLAlertLayer* alert, bool btn2) {
+void LocalThumbnailViewPopup::FLAlert_Clicked(FLAlertLayer*, bool btn2) {
     if (btn2 && m_cachedInfoId != "Unknown" && !m_cachedInfoId.empty()) {
         geode::utils::clipboard::write(m_cachedInfoId);
         PaimonNotify::show("ID copied to clipboard!", geode::NotificationIcon::Success);
@@ -342,6 +353,8 @@ void LocalThumbnailViewPopup::syncInfoBar() {
     m_infoBar->setLevelId(m_levelID);
     m_infoBar->setCreator(creator);
     m_infoBar->setCounter(index, total);
+    if (m_leftArrow) m_leftArrow->setVisible(m_focusTransition.progress() < 1.f && total > 1);
+    if (m_rightArrow) m_rightArrow->setVisible(m_focusTransition.progress() < 1.f && total > 1);
 }
 
 void LocalThumbnailViewPopup::refreshRating() {
@@ -406,6 +419,7 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
 
     int requestToken = ++m_galleryRequestToken;
     auto& thumb = m_thumbnails[index];
+    updateRefreshButtonState();
 
     // cache key is the thumbnail id, not the request token.
     std::string url = thumb.url;
@@ -445,8 +459,8 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
             }
 
             auto content = self->m_mainLayer->getContentSize();
-            float maxWidth = content.width - 40.f;
-            float maxHeight = content.height - 80.f;
+            float maxWidth = paimon::thumbviewer::imageArea(content).size.width;
+            float maxHeight = paimon::thumbviewer::imageArea(content).size.height;
 
             self->displayVideoThumbnail(videoSprite, maxWidth, maxHeight, content);
 
@@ -463,8 +477,8 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
             log::info("[ThumbnailViewPopup] loadThumbnailAt: instant RAM cache hit for index={}", index);
             m_isDownloading = false;
             auto content = m_mainLayer->getContentSize();
-            float maxWidth = content.width - 40.f;
-            float maxHeight = content.height - 80.f;
+            float maxWidth = paimon::thumbviewer::imageArea(content).size.width;
+            float maxHeight = paimon::thumbviewer::imageArea(content).size.height;
             displayThumbnail(ramTex.value(), maxWidth, maxHeight, content, false);
 
             int count = static_cast<int>(m_thumbnails.size());
@@ -490,7 +504,7 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
     // manual open clears the failure marker for a retry.
     {
         auto& cache = paimon::cache::ThumbnailCache::get();
-        std::string normalizedUrl = ThumbnailLoader::normalizeUrlKey(url);
+        std::string normalizedUrl = paimon::cache::normalizeUrlKey(url);
         std::string failKey = "url_" + normalizedUrl;
         if (cache.isFailed(failKey)) {
             log::info("[ThumbnailViewPopup] loadThumbnailAt: clearing failed cache for url to force retry");
@@ -506,8 +520,8 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
 
         if (success && tex) {
             auto content = self->m_mainLayer->getContentSize();
-            float maxWidth = content.width - 40.f;
-            float maxHeight = content.height - 80.f;
+            float maxWidth = paimon::thumbviewer::imageArea(content).size.width;
+            float maxHeight = paimon::thumbviewer::imageArea(content).size.height;
             self->displayThumbnail(tex, maxWidth, maxHeight, content, false);
 
             int count = static_cast<int>(self->m_thumbnails.size());
@@ -532,8 +546,8 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
                 auto localTex = LocalThumbs::get().loadTexture(self->m_levelID);
                 if (localTex) {
                     auto content = self->m_mainLayer->getContentSize();
-                    float maxWidth = content.width - 40.f;
-                    float maxHeight = content.height - 80.f;
+                    float maxWidth = paimon::thumbviewer::imageArea(content).size.width;
+                    float maxHeight = paimon::thumbviewer::imageArea(content).size.height;
                     log::info("[ThumbnailViewPopup] Fallback to LocalThumbs for levelID={}", self->m_levelID);
                     self->displayThumbnail(localTex, maxWidth, maxHeight, content, false);
                     fallbackApplied = true;
@@ -545,8 +559,8 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
                 if (!ramTex.has_value() || !ramTex.value()) ramTex = cache.getFromRam(self->m_levelID, true);
                 if (ramTex.has_value() && ramTex.value()) {
                     auto content = self->m_mainLayer->getContentSize();
-                    float maxWidth = content.width - 40.f;
-                    float maxHeight = content.height - 80.f;
+                    float maxWidth = paimon::thumbviewer::imageArea(content).size.width;
+                    float maxHeight = paimon::thumbviewer::imageArea(content).size.height;
                     log::info("[ThumbnailViewPopup] Fallback to RAM cache for levelID={}", self->m_levelID);
                     self->displayThumbnail(ramTex.value(), maxWidth, maxHeight, content, false);
                     fallbackApplied = true;
@@ -600,8 +614,8 @@ void LocalThumbnailViewPopup::loadCurrentSuggestion() {
 
         auto content = safeRef->m_mainLayer->getContentSize();
         if (success && tex) {
-            float maxWidth = content.width - 40.f;
-            float maxHeight = content.height - 80.f;
+            float maxWidth = paimon::thumbviewer::imageArea(content).size.width;
+            float maxHeight = paimon::thumbviewer::imageArea(content).size.height;
 
             safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, false);
         } else {
@@ -610,22 +624,19 @@ void LocalThumbnailViewPopup::loadCurrentSuggestion() {
     });
 }
 
-void LocalThumbnailViewPopup::onNextSuggestion(CCObject*) {
+void LocalThumbnailViewPopup::stepSuggestion(int delta) {
     if (m_suggestions.empty()) return;
-    m_currentIndex++;
-    if (m_currentIndex >= static_cast<int>(m_suggestions.size())) {
-        m_currentIndex = 0;
-    }
+    int size = static_cast<int>(m_suggestions.size());
+    m_currentIndex = (m_currentIndex + delta % size + size) % size;
     loadCurrentSuggestion();
 }
 
+void LocalThumbnailViewPopup::onNextSuggestion(CCObject*) {
+    stepSuggestion(1);
+}
+
 void LocalThumbnailViewPopup::onPrevSuggestion(CCObject*) {
-    if (m_suggestions.empty()) return;
-    m_currentIndex--;
-    if (m_currentIndex < 0) {
-        m_currentIndex = static_cast<int>(m_suggestions.size()) - 1;
-    }
-    loadCurrentSuggestion();
+    stepSuggestion(-1);
 }
 
 
@@ -637,6 +648,7 @@ void LocalThumbnailViewPopup::onExit() {
         return;
     }
     m_isExiting = true;
+    this->unschedule(schedule_selector(LocalThumbnailViewPopup::tickFocus));
     ++m_galleryRequestToken;
     ++m_ratingRequestToken;
     if (m_invalidationListenerId != 0) {
@@ -652,6 +664,10 @@ void LocalThumbnailViewPopup::onExit() {
     }
     m_thumbnailSprite = nullptr;
     m_clippingNode = nullptr;
+    m_imageStencil = nullptr;
+    m_imageBorder = nullptr;
+    m_imageBackdrop = nullptr;
+    m_headerButtonPoses.clear();
 
     m_videoPlaying = false;
     if (m_playBtnMenu) {
@@ -673,6 +689,7 @@ void LocalThumbnailViewPopup::onExit() {
     m_rightArrow = nullptr;
     m_orderEditBtn = nullptr;
     m_infoBar = nullptr;
+    m_sidebarBg = nullptr;
     m_hideChromeBtn = nullptr;
 
     Popup::onExit();
@@ -712,7 +729,7 @@ void LocalThumbnailViewPopup::setupRating() {
     applyRatingLabel();
 }
 
-void LocalThumbnailViewPopup::onRate(CCObject* sender) {
+void LocalThumbnailViewPopup::onRate(CCObject*) {
     std::string thumbnailId = "";
     if (m_currentIndex >= 0 && m_currentIndex < static_cast<int>(m_thumbnails.size())) {
         thumbnailId = m_thumbnails[m_currentIndex].id;
@@ -784,101 +801,73 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
         });
     }
 
-    if (m_bgSprite) {
-        m_bgSprite->setVisible(false);
-    }
+    if (m_bgSprite) m_bgSprite->setVisible(true);
 
-    auto content = this->m_mainLayer->getContentSize();
-
-    float maxWidth = content.width - 40.f;
-    float maxHeight = content.height - 80.f;
+    namespace tv = paimon::thumbviewer;
+    auto const content = m_mainLayer->getContentSize();
+    auto const image = tv::imageArea(content);
+    auto const actions = tv::actionArea(content);
+    float const maxWidth = image.size.width;
+    float const maxHeight = image.size.height;
 
     if (m_closeBtn) {
-         float topY = (content.height / 2 + 5.f) + (maxHeight / 2);
-         float leftX = (content.width - maxWidth) / 2;
-         m_closeBtn->setPosition({leftX - 3.f, topY + 3.f});
-
-         if (auto infoSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png")) {
-             infoSpr->setScale(0.9f);
-             auto infoBtn = CCMenuItemSpriteExtra::create(infoSpr, this, menu_selector(LocalThumbnailViewPopup::onInfo));
-
-             infoBtn->setPosition({380.000f, 246.000f});
-
-             if (auto menu = m_closeBtn->getParent()) {
-                 menu->addChild(infoBtn);
-             }
-         }
+        m_closeBtn->setScale(0.75f);
+        m_closeBtn->setPosition({4.f, content.height - 4.f});
     }
 
-    log::info("[ThumbnailViewPopup] Content size: {}x{}, Max area: {}x{}",
-        content.width, content.height, maxWidth, maxHeight);
-
-    auto stencil = PaimonDrawNode::create();
-    CCPoint rect[4] = { ccp(0,0), ccp(maxWidth,0), ccp(maxWidth,maxHeight), ccp(0,maxHeight) };
-    ccColor4F white = {1,1,1,1};
-    stencil->drawPolygon(rect, 4, white, 0, white);
-
-    auto clip = CCClippingNode::create(stencil);
+    auto* stencil = paimon::SpriteHelper::createRoundedRectStencil(maxWidth, maxHeight, 6.f);
+    m_imageStencil = stencil;
+    auto* clip = CCClippingNode::create(stencil);
     m_clippingNode = clip;
+    clip->setContentSize(image.size);
+    clip->setAnchorPoint({0.5f, 0.5f});
+    clip->setPosition({image.getMidX(), image.getMidY()});
+    m_mainLayer->addChild(clip, 1);
+    m_imageBackdrop = CCLayerColor::create({0, 0, 0, 255}, maxWidth, maxHeight);
+    clip->addChild(m_imageBackdrop, -1);
 
-    m_clippingNode->setContentSize({maxWidth, maxHeight});
-    m_clippingNode->setAnchorPoint({0.5f, 0.5f});
-    m_clippingNode->setPosition({content.width / 2, content.height / 2 + 5.f});
-    this->m_mainLayer->addChild(m_clippingNode, 1);
-
-    auto clippingBg = CCLayerColor::create({0, 0, 0, 255});
-    clippingBg->setOpacity(255);
-    clippingBg->setContentSize({maxWidth, maxHeight});
-    clippingBg->ignoreAnchorPointForPosition(false);
-    clippingBg->setAnchorPoint({0.5f, 0.5f});
-    clippingBg->setPosition({maxWidth / 2, maxHeight / 2});
-
-    if (m_clippingNode) {
-        m_clippingNode->addChild(clippingBg, -1);
-    }
-
-    auto border = paimon::SpriteHelper::safeCreateScale9("GJ_square07.png");
+    auto* border = NineSlice::create("GJ_square07.png");
+    m_imageBorder = border;
     if (border) {
-        border->setContentSize({maxWidth + 4.f, maxHeight + 4.f});
-        border->setPosition({content.width / 2, content.height / 2 + 5.f});
-        this->m_mainLayer->addChild(border, 2);
+        border->setContentSize({maxWidth + 3.f, maxHeight + 3.f});
+        border->setPosition({image.getMidX(), image.getMidY()});
+        m_mainLayer->addChild(border, 2);
     }
 
-    auto menu = CCMenu::create();
-    menu->setPosition({0, 0});
-    this->m_mainLayer->addChild(menu, 10);
+    m_sidebarBg = paimon::ui::makeInset(actions.size, 45);
+    m_sidebarBg->setPosition(actions.origin);
+    m_mainLayer->addChild(m_sidebarBg);
 
-    if (auto prevSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_01_001.png")) {
-        prevSpr->setScale(0.75f);
-        m_leftArrow = CCMenuItemSpriteExtra::create(prevSpr, this, menu_selector(LocalThumbnailViewPopup::onPrev));
-        m_leftArrow->setPosition({15.f, content.height / 2 + 5.f});
-        m_leftArrow->setVisible(false);
-        menu->addChild(m_leftArrow);
-    }
+    auto* navigation = CCMenu::create();
+    navigation->setPosition({0.f, 0.f});
+    m_mainLayer->addChild(navigation, 10);
+    auto addArrow = [&](bool next) {
+        auto* sprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_01_001.png");
+        if (!sprite) return;
+        sprite->setScale(0.4f);
+        sprite->setFlipX(next);
+        auto* button = CCMenuItemSpriteExtra::create(sprite, this, next
+            ? menu_selector(LocalThumbnailViewPopup::onNext)
+            : menu_selector(LocalThumbnailViewPopup::onPrev));
+        button->setPosition({next ? image.getMaxX() - 14.f : image.getMinX() + 14.f,
+            image.getMidY()});
+        button->setVisible(false);
+        navigation->addChild(button);
+        if (next) m_rightArrow = button;
+        else m_leftArrow = button;
+    };
+    addArrow(false);
+    addArrow(true);
 
-    if (auto nextSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_01_001.png")) {
-        nextSpr->setFlipX(true);
-        nextSpr->setScale(0.75f);
-        m_rightArrow = CCMenuItemSpriteExtra::create(nextSpr, this, menu_selector(LocalThumbnailViewPopup::onNext));
-        m_rightArrow->setPosition({content.width - 15.f, content.height / 2 + 5.f});
-        m_rightArrow->setVisible(false);
-        menu->addChild(m_rightArrow);
-    }
-
-    m_counterLabel = CCLabelBMFont::create("1/1", "bigFont.fnt");
-    m_counterLabel->setScale(0.4f);
-    m_counterLabel->setPosition({content.width / 2.f, 23.f});
-    m_counterLabel->setVisible(false);
-    this->m_mainLayer->addChild(m_counterLabel, 11);
-
-    // caption bar overlays the top edge of the image; width tracks the frame.
-    m_infoBar = paimon::thumbviewer::InfoBar::create(maxWidth);
+    m_infoBar = tv::InfoBar::create(content.width - 156.f);
     if (m_infoBar) {
-        float topY = (content.height / 2.f + 5.f) + (maxHeight / 2.f);
-        m_infoBar->setPosition({content.width / 2.f, topY - 17.f});
-        this->m_mainLayer->addChild(m_infoBar, 12);
+        m_infoBar->setPosition({28.f + m_infoBar->getContentWidth() / 2.f,
+            content.height - 20.f});
+        m_mainLayer->addChild(m_infoBar, 12);
         m_infoBar->setLevelId(m_levelID);
     }
+
+    buildControls(openedFromReport);
 
     this->setTouchEnabled(true);
 
@@ -1037,7 +1026,7 @@ void LocalThumbnailViewPopup::loadFromThumbnailLoader(float maxWidth, float maxH
 void LocalThumbnailViewPopup::tryDirectServerDownload(float maxWidth, float maxHeight, CCSize content, bool openedFromReport) {
     Ref<LocalThumbnailViewPopup> safeRef = this;
 
-    HttpClient::DownloadCallback cb = [safeRef, maxWidth, maxHeight, content, openedFromReport](bool success, std::vector<uint8_t> const& data, int w, int h) {
+    HttpClient::DownloadCallback cb = [safeRef, maxWidth, maxHeight, content, openedFromReport](bool success, std::vector<uint8_t> const& data, int, int) {
         if (!safeRef->getParent() || !safeRef->m_mainLayer) {
             return;
         }
@@ -1086,6 +1075,11 @@ void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoS
     }
 
     clearGalleryDisplay();
+    if (m_clippingNode) {
+        auto const area = m_clippingNode->getContentSize();
+        maxWidth = area.width;
+        maxHeight = area.height;
+    }
 
     // hidden until first frame: the stretched 1x1 placeholder glitches.
     m_videoPlaying = false;
@@ -1099,8 +1093,8 @@ void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoS
     m_viewWidth = maxWidth;
     m_viewHeight = maxHeight;
 
-    float centerX = content.width * 0.5f;
-    float centerY = content.height * 0.5f + 5.f;
+    float centerX = paimon::thumbviewer::imageArea(content).getMidX();
+    float centerY = paimon::thumbviewer::imageArea(content).getMidY();
 
     if (m_clippingNode) {
         m_clippingNode->addChild(videoSprite, 10);
@@ -1135,7 +1129,7 @@ void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoS
 
         float scaleX = maxWidth / cw;
         float scaleY = maxHeight / ch;
-        float scale = std::max(scaleX, scaleY);
+        float scale = std::min(scaleX, scaleY);
 
         readySprite->setScale(scale);
         safeRef->m_initialScale = scale;
@@ -1152,12 +1146,10 @@ void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoS
         }
 
         if (safeRef->m_playBtn) {
-            if (safeRef->m_clippingNode) {
-                safeRef->m_playBtn->setPosition({maxWidth / 2.f, maxHeight / 2.f});
-            } else {
-                safeRef->m_playBtn->setPosition({centerX, centerY});
-            }
+            safeRef->m_playBtn->setPosition({centerX, centerY});
         }
+        safeRef->m_hasFocusImagePose = false;
+        safeRef->applyFocusLayout();
     });
 
     if (m_playBtnMenu) {
@@ -1199,13 +1191,21 @@ void LocalThumbnailViewPopup::displayVideoThumbnail(VideoThumbnailSprite* videoS
     this->m_mainLayer->addChild(playBtnMenu, 20);
     m_playBtnMenu = playBtnMenu;
     updatePlayButton();
+    updateRefreshButtonState();
+    applyFocusLayout();
 }
 
-void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth, float maxHeight, CCSize content, bool openedFromReport) {
+void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth, float maxHeight, CCSize content, bool /*openedFromReport*/) {
     if (!tex || !m_mainLayer) {
         return;
     }
 
+    if (m_clippingNode) {
+        auto const area = m_clippingNode->getContentSize();
+        maxWidth = area.width;
+        maxHeight = area.height;
+    }
+    m_hasFocusImagePose = false;
     CCNode* oldSprite = m_thumbnailSprite;
     m_thumbnailSprite = nullptr;
     m_thumbnailTexture = nullptr;
@@ -1219,32 +1219,6 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
 
     if (auto node = m_mainLayer->getChildByID("nothumb-container"_spr)) {
         node->removeFromParent();
-    }
-
-    if (m_buttonMenu) {
-        m_buttonMenu->removeFromParent();
-        m_buttonMenu = nullptr;
-    }
-    if (m_settingsMenu) {
-        m_settingsMenu->removeFromParent();
-        m_settingsMenu = nullptr;
-    }
-    m_refreshBtn = nullptr;
-    m_orderEditBtn = nullptr;
-    m_hideChromeBtn = nullptr;
-    if (!m_suggestions.empty()) {
-        if (m_leftArrow) {
-            m_leftArrow->removeFromParent();
-            m_leftArrow = nullptr;
-        }
-        if (m_rightArrow) {
-            m_rightArrow->removeFromParent();
-            m_rightArrow = nullptr;
-        }
-        if (m_counterLabel) {
-            m_counterLabel->removeFromParent();
-            m_counterLabel = nullptr;
-        }
     }
 
     m_thumbnailTexture = tex;
@@ -1261,7 +1235,7 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
     if (canUseLevelGifCache) {
          auto path = ThumbnailLoader::get().getCachePath(m_levelID, true);
          Ref<LocalThumbnailViewPopup> safeRef = this;
-         AnimatedGIFSprite::createAsync(geode::utils::string::pathToString(path), [safeRef, maxWidth, maxHeight](AnimatedGIFSprite* anim) {
+         AnimatedGIFSprite::createAsync(paimon::paths::toUtf8(path), [safeRef, maxWidth, maxHeight](AnimatedGIFSprite* anim) {
              if (!safeRef->isUiAlive()) return;
              if (anim && safeRef->m_thumbnailSprite) {
                  auto oldSprite = safeRef->m_thumbnailSprite;
@@ -1273,12 +1247,14 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
                      anim->setAnchorPoint({0.5f, 0.5f});
                      float scaleX = maxWidth / anim->getContentWidth();
                      float scaleY = maxHeight / anim->getContentHeight();
-                     float scale = std::max(scaleX, scaleY);
+                     float scale = std::min(scaleX, scaleY);
                      anim->setScale(scale);
                      anim->setPosition(pos);
 
                      parent->addChild(anim, 10);
                      safeRef->m_thumbnailSprite = anim;
+                     safeRef->m_hasFocusImagePose = false;
+                     safeRef->applyFocusLayout();
                  }
              }
          });
@@ -1297,7 +1273,7 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
 
     float scaleX = maxWidth / sprite->getContentWidth();
     float scaleY = maxHeight / sprite->getContentHeight();
-    float scale = std::max(scaleX, scaleY);
+    float scale = std::min(scaleX, scaleY);
 
     sprite->setScale(scale);
     m_initialScale = scale;
@@ -1305,8 +1281,8 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
     m_maxScale = std::max(4.0f, scale * 6.0f);
     m_savedScale = scale;
 
-    float centerX = content.width * 0.5f;
-    float centerY = content.height * 0.5f + 5.f;
+    float centerX = paimon::thumbviewer::imageArea(content).getMidX();
+    float centerY = paimon::thumbviewer::imageArea(content).getMidY();
     sprite->setPosition({centerX, centerY});
     sprite->setID("thumbnail"_spr);
 
@@ -1325,228 +1301,149 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
 
     sprite->setVisible(true);
 
-    applyPopupTransition(sprite, oldSprite, maxWidth);
-
-    if (!m_suggestions.empty()) {
-        auto menu = CCMenu::create();
-        menu->setPosition({0, 0});
-        this->m_mainLayer->addChild(menu, 20);
-
-        if (auto leftSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_01_001.png")) {
-            leftSpr->setScale(0.75f);
-            m_leftArrow = CCMenuItemSpriteExtra::create(leftSpr, this, menu_selector(LocalThumbnailViewPopup::onPrevSuggestion));
-            m_leftArrow->setPosition({centerX - maxWidth/2 - 30.f, centerY});
-            menu->addChild(m_leftArrow);
-        }
-
-        if (auto rightSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_01_001.png")) {
-            rightSpr->setFlipX(true);
-            rightSpr->setScale(0.75f);
-            m_rightArrow = CCMenuItemSpriteExtra::create(rightSpr, this, menu_selector(LocalThumbnailViewPopup::onNextSuggestion));
-            m_rightArrow->setPosition({centerX + maxWidth/2 + 30.f, centerY});
-            menu->addChild(m_rightArrow);
-        }
-
-        m_counterLabel = CCLabelBMFont::create(fmt::format("{}/{}", m_currentIndex + 1, m_suggestions.size()).c_str(), "bigFont.fnt");
-        m_counterLabel->setScale(0.5f);
-        m_counterLabel->setPosition({centerX, centerY - maxHeight/2 - 15.f});
-        this->m_mainLayer->addChild(m_counterLabel, 20);
-
-        if (m_leftArrow) m_leftArrow->setVisible(m_suggestions.size() > 1);
-        if (m_rightArrow) m_rightArrow->setVisible(m_suggestions.size() > 1);
-    }
-
-    m_buttonMenu = CCMenu::create();
-    auto buttonMenu = m_buttonMenu;
-
-    namespace tv = paimon::thumbviewer;
-
-    if (m_verificationCategory < 0) {
-        auto refreshSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_updateBtn_001.png");
-        if (!refreshSpr) refreshSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_replayBtn_001.png");
-        if (refreshSpr) {
-            refreshSpr->setScale(0.5f);
-            m_refreshBtn = CCMenuItemSpriteExtra::create(refreshSpr, this, menu_selector(LocalThumbnailViewPopup::onRefreshBtn));
-            m_refreshBtn->setID("refresh-btn"_spr);
-            buttonMenu->addChild(m_refreshBtn);
-        }
-    }
-
-    if (auto fitBtn = tv::makeToolButton("GJ_resetBtn_001.png", 0.5f, nullptr, this, menu_selector(LocalThumbnailViewPopup::onFitReset))) {
-        fitBtn->setID("fit-reset-btn"_spr);
-        buttonMenu->addChild(fitBtn);
-    }
-
-    buttonMenu->addChild(tv::makeToolDivider(34.f));
-
-    auto downloadSprite = Assets::loadButtonSprite(
-        "popup-download",
-        "frame:GJ_downloadBtn_001.png",
-        [](){
-            if (auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_downloadBtn_001.png")) return spr;
-            if (auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_03_001.png")) return spr;
-            return paimon::SpriteHelper::safeCreateWithFrameName("GJ_button_01.png");
-        }
-    );
-    downloadSprite->setScale(0.7f);
-    auto downloadBtn = CCMenuItemSpriteExtra::create(downloadSprite, this, menu_selector(LocalThumbnailViewPopup::onDownloadBtn));
-
-    CCMenuItemSpriteExtra* centerBtn = nullptr;
-
-    if (m_verificationCategory >= 0 && m_verificationCategory != 2) {
-        auto acceptSpr = ButtonSprite::create(Localization::get().getString("level.accept_button").c_str(), 62, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f);
-        centerBtn = CCMenuItemSpriteExtra::create(acceptSpr, this, menu_selector(LocalThumbnailViewPopup::onAcceptThumbBtn));
-
-        auto rejectSpr = ButtonSprite::create(Localization::get().getString("level.reject_button").c_str(), 128, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.40f);
-        auto rejectBtn = CCMenuItemSpriteExtra::create(rejectSpr, this, menu_selector(LocalThumbnailViewPopup::onRejectThumbBtn));
-        if (rejectBtn) buttonMenu->addChild(rejectBtn);
-    } else if (openedFromReport) {
-        auto delSpr = ButtonSprite::create(Localization::get().getString("level.delete_button").c_str(), 116, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.40f);
-        centerBtn = CCMenuItemSpriteExtra::create(delSpr, this, menu_selector(LocalThumbnailViewPopup::onDeleteReportedThumb));
+    if (m_focusTransition.progress() > 0.f || m_focusTransition.running()) {
+        if (oldSprite) oldSprite->removeFromParent();
+        applyFocusLayout();
+        sprite->setOpacity(0);
+        sprite->runAction(CCFadeTo::create(0.18f, 255));
     } else {
-        auto reportSpr = ButtonSprite::create(Localization::get().getString("level.report_button").c_str(), 68, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.40f);
-        centerBtn = CCMenuItemSpriteExtra::create(reportSpr, this, menu_selector(LocalThumbnailViewPopup::onReportBtn));
+        applyPopupTransition(sprite, oldSprite, maxWidth);
     }
-
-    CCMenuItemSpriteExtra* acceptBtn = nullptr;
-    if (m_canAcceptUpload && m_verificationCategory < 0) {
-        auto acceptSpr = ButtonSprite::create(Localization::get().getString("level.accept_button").c_str(), 62, true, "bigFont.fnt", "GJ_button_01.png", 18.f, 0.40f);
-        acceptBtn = CCMenuItemSpriteExtra::create(acceptSpr, this, menu_selector(LocalThumbnailViewPopup::onAcceptThumbBtn));
-    }
-
-    if (auto rateSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starBtn_001.png")) {
-        rateSpr->setScale(0.7f);
-        auto rateBtn = CCMenuItemSpriteExtra::create(rateSpr, this, menu_selector(LocalThumbnailViewPopup::onRate));
-        rateBtn->setID("rate-btn"_spr);
-        buttonMenu->addChild(rateBtn);
-    }
-
-    buttonMenu->addChild(downloadBtn);
-
-    if (auto copyBtn = tv::makeToolButton("GJ_copyBtn_001.png", 0.6f, nullptr, this, menu_selector(LocalThumbnailViewPopup::onCopyLevelId))) {
-        copyBtn->setID("copy-id-btn"_spr);
-        buttonMenu->addChild(copyBtn);
-    }
-
-    if (auto ytSpr = paimon::SpriteHelper::safeCreateWithFrameName("gj_ytIcon_001.png")) {
-        ytSpr->setScale(0.7f);
-        auto ytBtn = CCMenuItemSpriteExtra::create(ytSpr, this, menu_selector(LocalThumbnailViewPopup::onYouTubeBtn));
-        ytBtn->setID("youtube-btn"_spr);
-        buttonMenu->addChild(ytBtn);
-    }
-
-    // moderation / destructive group is kept to the right behind a divider.
-    buttonMenu->addChild(tv::makeToolDivider(34.f));
-
-    if (acceptBtn) buttonMenu->addChild(acceptBtn);
-    if (centerBtn) buttonMenu->addChild(centerBtn);
-
-    auto gm = GameManager::get();
-    if (gm) {
-        auto username = gm->m_playerName;
-        float contentWidth = content.width;
-        int accountID = 0;
-        if (auto* am = GJAccountManager::get()) accountID = am->m_accountID;
-
-        WeakRef<LocalThumbnailViewPopup> self = this;
-        ThumbnailAPI::get().checkModeratorAccount(username, accountID, [self, contentWidth](bool isMod, bool isAdmin) {
-            auto popup = self.lock();
-            if (!popup) return;
-
-            popup->m_isAdmin = isAdmin;
-
-            if (isMod || isAdmin) {
-                auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_deleteServerBtn_001.png");
-                if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_deleteBtn_001.png");
-                if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_trashBtn_001.png");
-
-                if (spr) {
-                    spr->setScale(0.6f);
-                    auto btn = CCMenuItemSpriteExtra::create(
-                        spr,
-                        popup,
-                        menu_selector(LocalThumbnailViewPopup::onDeleteThumbnail)
-                    );
-                    btn->setID("mod-delete-btn"_spr);
-
-                    if (popup->m_buttonMenu) {
-                        popup->m_buttonMenu->addChild(btn);
-                        popup->m_buttonMenu->updateLayout();
-                    }
-                }
-            }
-
-            if (isAdmin && popup->m_buttonMenu && popup->m_verificationCategory < 0) {
-                popup->ensureOrderControls(contentWidth);
-                popup->updateOrderUiState();
-            }
-        });
-    }
-
-    buttonMenu->addChild(tv::makeToolDivider(34.f));
-    auto gearSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn_001.png");
-    if (!gearSpr) gearSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn02_001.png");
-    if (gearSpr) {
-        gearSpr->setScale(0.5f);
-        auto gearBtn = CCMenuItemSpriteExtra::create(gearSpr, this, menu_selector(LocalThumbnailViewPopup::onSettings));
-        gearBtn->setID("settings-gear-btn"_spr);
-        buttonMenu->addChild(gearBtn);
-    }
-
-    buttonMenu->ignoreAnchorPointForPosition(false);
-    buttonMenu->setAnchorPoint({0.5f, 0.5f});
-    buttonMenu->setContentSize({content.width - 24.f, 42.f});
-    buttonMenu->setPosition({content.width / 2, 24.f});
-
-    auto layout = RowLayout::create();
-    layout->setGap(7.f);
-    layout->setAxisAlignment(AxisAlignment::Center);
-    layout->setCrossAxisAlignment(AxisAlignment::Center);
-    layout->setGrowCrossAxis(false);
-    layout->setAutoScale(true);
-    layout->setDefaultScaleLimits(0.4f, 1.f);
-
-    buttonMenu->setLayout(layout);
-    buttonMenu->updateLayout();
-
-    this->m_mainLayer->addChild(buttonMenu, 10);
     updateRefreshButtonState();
-
-    // chrome toggle rides the corner so it stays reachable when the toolbar hides.
-    m_settingsMenu = CCMenu::create();
-    auto settingsMenu = m_settingsMenu;
-    settingsMenu->setPosition({0, 0});
-    settingsMenu->setID("thumbviewer-corner-menu"_spr);
-    this->m_mainLayer->addChild(settingsMenu, 15);
-
-    {
-        auto hideSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_zoomInBtn_001.png");
-        if (!hideSpr) hideSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_bigStar_noShadow_001.png");
-        if (hideSpr) {
-            hideSpr->setScale(0.5f);
-            m_hideChromeBtn = CCMenuItemSpriteExtra::create(hideSpr, this, menu_selector(LocalThumbnailViewPopup::toggleChrome));
-            // top-left, just inside the close button, clear of the toolbar row.
-            float topY = (content.height / 2.f + 5.f) + (maxHeight / 2.f);
-            m_hideChromeBtn->setPosition({46.f, topY + 3.f});
-            m_hideChromeBtn->setID("hide-chrome-btn"_spr);
-            settingsMenu->addChild(m_hideChromeBtn);
-        }
-    }
-
-    ensureOrderControls(content.width);
-
-    if (m_suggestions.empty() && m_thumbnails.size() > 1) {
-        if (m_leftArrow) m_leftArrow->setVisible(true);
-        if (m_rightArrow) m_rightArrow->setVisible(true);
-        if (m_counterLabel) {
-            m_counterLabel->setVisible(true);
-            m_counterLabel->setString(fmt::format("{}/{}", m_currentIndex + 1, m_thumbnails.size()).c_str());
-        }
-    }
-
     updateOrderUiState();
     syncInfoBar();
-    if (m_chromeHidden) setChromeVisible(false);
+    if (m_focusTransition.progress() > 0.f || m_focusTransition.running()) applyFocusLayout();
+}
+
+void LocalThumbnailViewPopup::buildControls(bool openedFromReport) {
+    namespace tv = paimon::thumbviewer;
+    auto const content = m_mainLayer->getContentSize();
+    auto const actions = tv::actionArea(content);
+    auto& localization = Localization::get();
+
+    m_settingsMenu = CCMenu::create();
+    m_settingsMenu->setPosition({0.f, 0.f});
+    m_settingsMenu->setID("thumbviewer-header-menu"_spr);
+    m_mainLayer->addChild(m_settingsMenu, 15);
+
+    auto addHeaderButton = [&](char const* frame, int slot, SEL_MenuHandler callback,
+                               std::string const& id) {
+        auto* button = tv::makeToolButton(frame, 0.6f, nullptr, this, callback);
+        if (!button) return button;
+        button->setPosition({content.width - 112.f + slot * 22.f, content.height - 20.f});
+        button->setID(id);
+        m_settingsMenu->addChild(button);
+        m_headerButtonPoses.push_back({button, button->getPosition()});
+        return button;
+    };
+
+    if (m_verificationCategory < 0) {
+        m_refreshBtn = addHeaderButton("GJ_updateBtn_001.png", 0,
+            menu_selector(LocalThumbnailViewPopup::onRefreshBtn), "refresh-btn"_spr);
+        if (!m_refreshBtn) {
+            m_refreshBtn = addHeaderButton("GJ_replayBtn_001.png", 0,
+                menu_selector(LocalThumbnailViewPopup::onRefreshBtn), "refresh-btn"_spr);
+        }
+    }
+    addHeaderButton("GJ_resetBtn_001.png", 1,
+        menu_selector(LocalThumbnailViewPopup::onFitReset), "fit-reset-btn"_spr);
+    m_hideChromeBtn = addHeaderButton("GJ_zoomInBtn_001.png", 2,
+        menu_selector(LocalThumbnailViewPopup::toggleChrome), "hide-chrome-btn"_spr);
+    addHeaderButton("GJ_optionsBtn_001.png", 3,
+        menu_selector(LocalThumbnailViewPopup::onSettings), "settings-gear-btn"_spr);
+    addHeaderButton("GJ_infoIcon_001.png", 4,
+        menu_selector(LocalThumbnailViewPopup::onInfo), "thumbnail-info-btn"_spr);
+
+    m_buttonMenu = CCMenu::create();
+    m_buttonMenu->ignoreAnchorPointForPosition(false);
+    m_buttonMenu->setAnchorPoint({0.5f, 0.5f});
+    m_buttonMenu->setContentSize({tv::kToolWidth, actions.size.height - 8.f});
+    m_buttonMenu->setPosition({actions.getMidX(), actions.getMidY()});
+    m_buttonMenu->setID("thumbviewer-actions-menu"_spr);
+    m_buttonMenu->setLayout(ColumnLayout::create()
+        ->setGap(4.f)->setAxisReverse(true)->setAxisAlignment(AxisAlignment::End)
+        ->setCrossAxisAlignment(AxisAlignment::Center)->setGrowCrossAxis(false)
+        ->setAutoScale(true)->setDefaultScaleLimits(0.65f, 1.f));
+    m_mainLayer->addChild(m_buttonMenu, 10);
+
+    auto addAction = [&](char const* frame, char const* caption, SEL_MenuHandler callback,
+                         std::string const& id, char const* background = "GJ_button_01.png") {
+        if (auto* button = tv::makeToolButton(frame, 0.7f, caption, this, callback,
+                {255, 255, 255}, background)) {
+            button->setID(id);
+            m_buttonMenu->addChild(button);
+        }
+    };
+    addAction("GJ_starBtn_001.png", localization.getString("viewer.rate").c_str(),
+        menu_selector(LocalThumbnailViewPopup::onRate), "rate-btn"_spr);
+
+    auto* downloadSprite = Assets::loadButtonSprite("popup-download",
+        "frame:GJ_downloadBtn_001.png", []() {
+            if (auto* sprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_downloadBtn_001.png")) return sprite;
+            return paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_03_001.png");
+        });
+    if (auto* button = tv::makeToolButton(downloadSprite, 0.7f,
+            localization.getString("level.download_button").c_str(), this,
+            menu_selector(LocalThumbnailViewPopup::onDownloadBtn),
+            {255, 255, 255}, "GJ_button_02.png")) {
+        button->setID("download-btn"_spr);
+        m_buttonMenu->addChild(button);
+    }
+    addAction("GJ_copyBtn_001.png", localization.getString("viewer.copy_id").c_str(),
+        menu_selector(LocalThumbnailViewPopup::onCopyLevelId), "copy-id-btn"_spr, "GJ_button_02.png");
+    addAction("gj_ytIcon_001.png", "YouTube",
+        menu_selector(LocalThumbnailViewPopup::onYouTubeBtn), "youtube-btn"_spr);
+
+    m_buttonMenu->addChild(tv::makeToolDivider(tv::kToolWidth));
+    auto addModerationAction = [&](char const* key, paimon::ui::Btn skin,
+                                    SEL_MenuHandler callback) {
+        auto* sprite = paimon::ui::makeButtonSprite(localization.getString(key).c_str(),
+            skin, tv::kToolWidth, 0.6f, "goldFont.fnt");
+        if (sprite) {
+            m_buttonMenu->addChild(CCMenuItemSpriteExtra::create(sprite, this, callback));
+        }
+    };
+    if (m_verificationCategory >= 0 && m_verificationCategory != 2) {
+        addModerationAction("level.accept_button", paimon::ui::Btn::Green,
+            menu_selector(LocalThumbnailViewPopup::onAcceptThumbBtn));
+        addModerationAction("level.reject_button", paimon::ui::Btn::Red,
+            menu_selector(LocalThumbnailViewPopup::onRejectThumbBtn));
+    } else if (openedFromReport) {
+        addModerationAction("level.delete_button", paimon::ui::Btn::Red,
+            menu_selector(LocalThumbnailViewPopup::onDeleteReportedThumb));
+    } else {
+        addModerationAction("level.report_button", paimon::ui::Btn::Red,
+            menu_selector(LocalThumbnailViewPopup::onReportBtn));
+    }
+    if (m_canAcceptUpload && m_verificationCategory < 0) {
+        addModerationAction("level.accept_button", paimon::ui::Btn::Green,
+            menu_selector(LocalThumbnailViewPopup::onAcceptThumbBtn));
+    }
+    m_buttonMenu->updateLayout();
+    updateRefreshButtonState();
+
+    if (auto* gm = GameManager::get()) {
+        int const accountID = GJAccountManager::get() ? GJAccountManager::get()->m_accountID : 0;
+        WeakRef<LocalThumbnailViewPopup> self = this;
+        ThumbnailAPI::get().checkModeratorAccount(gm->m_playerName, accountID,
+            [self](bool isMod, bool isAdmin) {
+                auto popup = self.lock();
+                if (!popup || popup->m_isExiting || !popup->m_buttonMenu) return;
+                popup->m_isAdmin = isAdmin;
+                if (isMod || isAdmin) {
+                    if (auto* button = paimon::thumbviewer::makeToolButton("GJ_deleteBtn_001.png",
+                            0.6f, Localization::get().getString("viewer.delete").c_str(), popup,
+                            menu_selector(LocalThumbnailViewPopup::onDeleteThumbnail),
+                            {255, 255, 255}, "GJ_button_06.png")) {
+                        button->setID("mod-delete-btn"_spr);
+                        popup->m_buttonMenu->addChild(button);
+                    }
+                }
+                popup->ensureOrderControls(popup->m_mainLayer->getContentWidth());
+                popup->updateOrderUiState();
+                popup->m_buttonMenu->updateLayout();
+            });
+    }
 }
 
 void LocalThumbnailViewPopup::clearGalleryDisplay() {
@@ -1560,19 +1457,15 @@ void LocalThumbnailViewPopup::clearGalleryDisplay() {
         m_thumbnailSprite = nullptr;
     }
     m_thumbnailTexture = nullptr;
+    m_hasFocusImagePose = false;
 
     // clip node survives; only its sprites swap.
     if (m_clippingNode) {
         m_clippingNode->removeAllChildren();
         // restore the clip background.
         auto content = m_clippingNode->getContentSize();
-        auto clippingBg = CCLayerColor::create({0, 0, 0, 255});
-        clippingBg->setOpacity(25);
-        clippingBg->setContentSize(content);
-        clippingBg->ignoreAnchorPointForPosition(false);
-        clippingBg->setAnchorPoint({0.5f, 0.5f});
-        clippingBg->setPosition({content.width / 2, content.height / 2});
-        m_clippingNode->addChild(clippingBg, -1);
+        m_imageBackdrop = CCLayerColor::create({0, 0, 0, 255}, content.width, content.height);
+        m_clippingNode->addChild(m_imageBackdrop, -1);
     }
 
     if (auto node = m_mainLayer->getChildByID("nothumb-container"_spr)) {
@@ -1592,12 +1485,12 @@ void LocalThumbnailViewPopup::applyPopupTransition(CCNode* newNode, CCNode* oldN
 
     auto* newSpr = static_cast<CCSprite*>(newNode);
 
+    std::string style = Mod::get()->getSavedValue<std::string>("popup-gallery-transition", "directional-elastic");
+    float dur = Mod::get()->getSavedValue<float>("popup-gallery-transition-duration", 0.45f);
+
     if (!oldNode || !oldNode->getParent()) {
         if (oldNode) oldNode->removeFromParent();
-        
-        std::string style = Mod::get()->getSavedValue<std::string>("popup-gallery-transition", "directional-elastic");
-        float dur = Mod::get()->getSavedValue<float>("popup-gallery-transition-duration", 0.45f);
-        
+
         newSpr->setOpacity(0);
         float sx = newNode->getScaleX();
         float sy = newNode->getScaleY();
@@ -1613,9 +1506,6 @@ void LocalThumbnailViewPopup::applyPopupTransition(CCNode* newNode, CCNode* oldN
         m_navDirection = NavDirection::None;
         return;
     }
-
-    std::string style = Mod::get()->getSavedValue<std::string>("popup-gallery-transition", "directional-elastic");
-    float dur = Mod::get()->getSavedValue<float>("popup-gallery-transition-duration", 0.45f);
 
     CCPoint targetPos = newNode->getPosition();
     float sx = newNode->getScaleX();
@@ -1850,10 +1740,10 @@ void LocalThumbnailViewPopup::applyPopupTransition(CCNode* newNode, CCNode* oldN
 void LocalThumbnailViewPopup::showNoThumbnail(CCSize content) {
     clearGalleryDisplay();
 
-    float centerX = content.width * 0.5f;
-    float centerY = content.height * 0.5f + 10.f;
-    float bgWidth = content.width - 60.f;
-    float bgHeight = content.height - 80.f;
+    float centerX = paimon::thumbviewer::imageArea(content).getMidX();
+    float centerY = paimon::thumbviewer::imageArea(content).getMidY();
+    float bgWidth = paimon::thumbviewer::imageArea(content).size.width;
+    float bgHeight = paimon::thumbviewer::imageArea(content).size.height;
 
     auto container = CCNode::create();
     container->setContentSize(content);
@@ -1879,6 +1769,7 @@ void LocalThumbnailViewPopup::showNoThumbnail(CCSize content) {
     container->addChild(noThumbLabel, 2);
 
     this->m_mainLayer->addChild(container, 1);
+    updateRefreshButtonState();
 }
 
 
@@ -1931,7 +1822,7 @@ void LocalThumbnailViewPopup::onYouTubeBtn(CCObject*) {
     std::string url = fmt::format("{}/api/ytlinks?id={}", serverUrl, m_levelID);
 
     auto req = geode::utils::web::WebRequest();
-    req.timeout(std::chrono::seconds(10));
+    req.timeout(asp::Duration::fromSecs(10));
     req.acceptEncoding("gzip, deflate");
     req.header("Accept", "application/json");
 
@@ -2005,8 +1896,8 @@ void LocalThumbnailViewPopup::onRefreshBtn(CCObject*) {
     auto spinner = PaimonLoadingOverlay::create("Loading...", 40.f);
     spinner->show(m_mainLayer, 5);
 
-    float maxWidth = content.width - 40.f;
-    float maxHeight = content.height - 80.f;
+    float maxWidth = paimon::thumbviewer::imageArea(content).size.width;
+    float maxHeight = paimon::thumbviewer::imageArea(content).size.height;
 
     WeakRef<LocalThumbnailViewPopup> self = this;
     int requestToken = m_galleryRequestToken;
@@ -2069,6 +1960,18 @@ void LocalThumbnailViewPopup::onOrderEdit(CCObject*) {
 void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
     if (m_isDownloading) return;
     m_isDownloading = true;
+    updateRefreshButtonState();
+
+    Ref<CCTexture2D> selectedTexture = m_thumbnailTexture;
+    if (auto* sprite = typeinfo_cast<CCSprite*>(m_thumbnailSprite)) {
+        selectedTexture = sprite->isVisible() ? sprite->getTexture() : nullptr;
+    }
+    std::optional<std::string> selectedLocalPath;
+    if (m_viewingLocal && m_localCurrentIndex >= 0
+        && m_localCurrentIndex < static_cast<int>(m_localThumbPaths.size())) {
+        selectedLocalPath = m_localThumbPaths[m_localCurrentIndex];
+    }
+    bool const allowLevelCache = m_thumbnails.empty() && m_suggestions.empty();
 
     Ref<LocalThumbnailViewPopup> safeRef = this;
     int levelID = m_levelID;
@@ -2079,33 +1982,37 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
         auto popup = weakRef.lock();
         if (!popup) return;
         popup->m_isDownloading = false;
+        popup->updateRefreshButtonState();
         if (ok) {
-            log::info("Image saved successfully to {}", geode::utils::string::pathToString(savePath));
-            PaimonNotify::create(Localization::get().getString("level.saved").c_str(), NotificationIcon::Success)->show();
+            log::info("Image saved successfully to {}", paimon::paths::toUtf8(savePath));
+            PaimonNotify::show(Localization::get().getString("level.saved").c_str(), NotificationIcon::Success);
         } else {
-            log::error("Failed to save image to {}", geode::utils::string::pathToString(savePath));
-            PaimonNotify::create(Localization::get().getString("level.save_error").c_str(), NotificationIcon::Error)->show();
+            log::error("Failed to save image to {}", paimon::paths::toUtf8(savePath));
+            PaimonNotify::show(Localization::get().getString("level.save_error").c_str(), NotificationIcon::Error);
         }
     };
 
-    auto doSave = [safeRef, weakRef, levelID, notifyResult](std::filesystem::path savePath) {
-        log::debug("Save path chosen: {}", geode::utils::string::pathToString(savePath));
+    auto doSave = [safeRef, weakRef, levelID, notifyResult, selectedTexture,
+                   selectedLocalPath, allowLevelCache](std::filesystem::path savePath) {
+        if (!safeRef->isUiAlive()) return;
+        log::debug("Save path chosen: {}", paimon::paths::toUtf8(savePath));
 
     // prefer existing thumb/cache files.
-        std::optional<std::string> pathStr = LocalThumbs::get().findAnyThumbnail(levelID);
+        std::optional<std::string> pathStr = selectedLocalPath;
+        if (!pathStr && allowLevelCache) pathStr = LocalThumbs::get().findAnyThumbnail(levelID);
         bool fromCache = false;
-        if (!pathStr) {
+        if (!pathStr && allowLevelCache) {
             auto cachePng = ThumbnailLoader::get().getCachePath(levelID, false);
             auto cacheGif = ThumbnailLoader::get().getCachePath(levelID, true);
             std::error_code ec;
             if (std::filesystem::exists(cachePng, ec)) {
-                pathStr = geode::utils::string::pathToString(cachePng);
+                pathStr = paimon::paths::toUtf8(cachePng);
                 fromCache = true;
             } else if (std::filesystem::exists(cacheGif, ec)) {
-                pathStr = geode::utils::string::pathToString(cacheGif);
+                pathStr = paimon::paths::toUtf8(cacheGif);
                 fromCache = true;
             }
-        } else {
+        } else if (pathStr) {
             std::filesystem::path p(*pathStr);
             fromCache = (p.extension() != ".rgb");
         }
@@ -2137,9 +2044,9 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
                 }
                 if (fromCache) {
                     std::filesystem::path srcP(srcPath);
-                    std::string ext = geode::utils::string::pathToString(srcP.extension());
+                    std::string ext = paimon::paths::toUtf8(srcP.extension());
                     if (ext.empty()) ext = ".png";
-                    std::filesystem::path destPath = savePath.parent_path() / (geode::utils::string::pathToString(savePath.stem()) + ext);
+                    std::filesystem::path destPath = savePath.parent_path() / (paimon::paths::toUtf8(savePath.stem()) + ext);
                     std::error_code ec;
                     std::filesystem::copy(srcP, destPath, std::filesystem::copy_options::overwrite_existing, ec);
                     ok = !ec;
@@ -2163,56 +2070,29 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
             return;
         }
 
-        // no disk path: persist the displayed texture.
-        if (safeRef->m_thumbnailTexture && safeRef->m_thumbnailTexture->getPixelsWide() > 0 && safeRef->m_thumbnailTexture->getPixelsHigh() > 0) {
-            int w = safeRef->m_thumbnailTexture->getPixelsWide();
-            int h = safeRef->m_thumbnailTexture->getPixelsHigh();
-            ::RenderTexture rt(static_cast<uint32_t>(w), static_cast<uint32_t>(h));
-            if (!rt.begin()) {
-                log::error("[LocalThumbnailViewPopup] Failed to begin render target");
-                safeRef->m_isDownloading = false;
-                return;
-            }
-            auto* spr = CCSprite::createWithTexture(safeRef->m_thumbnailTexture);
-            if (spr) {
-                spr->setPosition({ static_cast<float>(w) * 0.5f, static_cast<float>(h) * 0.5f });
-                spr->visit();
-            }
-            rt.end();
-            auto data = rt.getData();
-            if (data) {
-                int rowSize = w * 4;
-                std::vector<uint8_t> tempRow(rowSize);
-                uint8_t* buf = data.get();
-                for (int y = 0; y < h / 2; ++y) {
-                    uint8_t* topRow = buf + y * rowSize;
-                    uint8_t* bottomRow = buf + (h - y - 1) * rowSize;
-                    std::memcpy(tempRow.data(), topRow, rowSize);
-                    std::memcpy(topRow, bottomRow, rowSize);
-                    std::memcpy(bottomRow, tempRow.data(), rowSize);
-                }
-                size_t dataSize = static_cast<size_t>(w) * h * 4;
-                std::shared_ptr<uint8_t> buffer(new uint8_t[dataSize], std::default_delete<uint8_t[]>());
-                std::memcpy(buffer.get(), data.get(), dataSize);
-                paimon::ThreadTracker::get().spawn([weakRef, buffer, w, h, savePath, notifyResult]() {
-                    geode::utils::thread::setName("PaimonThumbSave");
+        // read the selected texture directly: popup matrices and clipping must
+        // never affect the downloaded image, even if the picker stays open.
+        auto pixels = std::make_shared<paimon::thumbviewer::TexturePixels>(
+            paimon::thumbviewer::readTexturePixels(selectedTexture.data()));
+        if (*pixels) {
+            paimon::ThreadTracker::get().spawn([weakRef, pixels, savePath, notifyResult]() {
+                geode::utils::thread::setName("PaimonThumbSave");
+                if (paimon::isRuntimeShuttingDown()) return;
+                bool const ok = ImageConverter::saveRGBAToPNG(pixels->rgba.data(),
+                    pixels->width, pixels->height, savePath);
+                if (paimon::isRuntimeShuttingDown()) return;
+                Loader::get()->queueInMainThread([weakRef, ok, savePath, notifyResult]() {
                     if (paimon::isRuntimeShuttingDown()) return;
-                    bool ok = ImageConverter::saveRGBAToPNG(buffer.get(), static_cast<uint32_t>(w), static_cast<uint32_t>(h), savePath);
-                    if (paimon::isRuntimeShuttingDown()) return;
-                    Loader::get()->queueInMainThread([weakRef, ok, savePath, notifyResult]() {
-                        if (paimon::isRuntimeShuttingDown()) return;
-                        auto popup = weakRef.lock();
-                        if (!popup || !popup->getParent()) return;
-                        notifyResult(ok, savePath);
-                    });
+                    auto popup = weakRef.lock();
+                    if (!popup || !popup->getParent()) return;
+                    notifyResult(ok, savePath);
                 });
-                return;
-            }
+            });
+            return;
         }
 
         log::error("Thumbnail path not found and no texture to save");
-        PaimonNotify::create(Localization::get().getString("level.no_thumbnail").c_str(), NotificationIcon::Error)->show();
-        safeRef->m_isDownloading = false;
+        notifyResult(false, savePath);
     };
 
     auto defaultImageName = std::string("miniatura") + ".png";
@@ -2225,13 +2105,13 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
             }
         }
         // picker canceled or unsupported: save in the mod folder.
-        auto saveDir = Mod::get()->getSaveDir() / "saved_thumbnails";
+        auto saveDir = paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "saved_thumbnails";
         std::error_code ec;
         if (!std::filesystem::exists(saveDir, ec)) {
             std::filesystem::create_directories(saveDir, ec);
         }
         auto savePath = saveDir / fmt::format("thumb_{}.png", levelID);
-        PaimonNotify::create(Localization::get().getString("level.saving_mod_folder").c_str(), NotificationIcon::Info)->show();
+        PaimonNotify::show(Localization::get().getString("level.saving_mod_folder").c_str(), NotificationIcon::Info);
         doSave(savePath);
     });
 }
@@ -2259,7 +2139,7 @@ void LocalThumbnailViewPopup::onDeleteReportedThumb(CCObject*) {
 
     if (accountID <= 0) {
         if (loading) loading->dismiss();
-        PaimonNotify::create(Localization::get().getString("level.account_required").c_str(), NotificationIcon::Error)->show();
+        PaimonNotify::show(Localization::get().getString("level.account_required").c_str(), NotificationIcon::Error);
         return;
     }
 
@@ -2269,7 +2149,7 @@ void LocalThumbnailViewPopup::onDeleteReportedThumb(CCObject*) {
         if (!popup) return;
         if (!isMod && !isAdmin) {
             if (loading) loading->dismiss();
-            PaimonNotify::create(Localization::get().getString("level.delete_moderator_only").c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::show(Localization::get().getString("level.delete_moderator_only").c_str(), NotificationIcon::Error);
             return;
         }
 
@@ -2282,7 +2162,7 @@ void LocalThumbnailViewPopup::onDeleteReportedThumb(CCObject*) {
 
             if (success) {
                 PendingQueue::get().accept(levelID, PendingCategory::Report);
-                PaimonNotify::create(Localization::get().getString("level.deleted_server").c_str(), NotificationIcon::Success)->show();
+                PaimonNotify::show(Localization::get().getString("level.deleted_server").c_str(), NotificationIcon::Success);
                 log::info("[ThumbnailViewPopup] Miniatura {} eliminada del servidor", levelID);
 
                 // invalidate cache and refresh the gallery.
@@ -2309,7 +2189,7 @@ void LocalThumbnailViewPopup::onDeleteReportedThumb(CCObject*) {
                     });
                 }
             } else {
-                PaimonNotify::create(Localization::get().getString("level.delete_error") + msg, NotificationIcon::Error)->show();
+                PaimonNotify::show(Localization::get().getString("level.delete_error") + msg, NotificationIcon::Error);
                 log::error("[ThumbnailViewPopup] Error al borrar miniatura: {}", msg);
             }
         });
@@ -2330,7 +2210,7 @@ void LocalThumbnailViewPopup::onAcceptThumbBtn(CCObject*) {
             log::warn("[ThumbnailViewPopup] GameManager::get() es null");
         }
 
-        PaimonNotify::create(Localization::get().getString("level.accepting").c_str(), NotificationIcon::Info)->show();
+        PaimonNotify::show(Localization::get().getString("level.accepting").c_str(), NotificationIcon::Info);
 
         std::string targetFilename = "";
         if (!m_suggestions.empty() && m_currentIndex >= 0 && m_currentIndex < static_cast<int>(m_suggestions.size())) {
@@ -2344,14 +2224,14 @@ void LocalThumbnailViewPopup::onAcceptThumbBtn(CCObject*) {
             [levelID = m_levelID, category = m_verificationCategory](bool success, std::string const& message) {
                 if (success) {
                     PendingQueue::get().accept(levelID, static_cast<PendingCategory>(category));
-                    PaimonNotify::create(Localization::get().getString("level.accepted").c_str(), NotificationIcon::Success)->show();
+                    PaimonNotify::show(Localization::get().getString("level.accepted").c_str(), NotificationIcon::Success);
                     log::info("[ThumbnailViewPopup] Miniatura aceptada para nivel {}", levelID);
 
                     // invalidate cache so the gallery reloads on return.
                     ThumbnailTransportClient::get().invalidateGalleryMetadata(levelID);
                     ThumbnailLoader::get().invalidateLevel(levelID);
                 } else {
-                    PaimonNotify::create(Localization::get().getString("level.accept_error") + message, NotificationIcon::Error)->show();
+                    PaimonNotify::show(Localization::get().getString("level.accept_error") + message, NotificationIcon::Error);
                     log::error("[ThumbnailViewPopup] Error aceptando miniatura: {}", message);
                 }
             },
@@ -2365,13 +2245,13 @@ void LocalThumbnailViewPopup::onAcceptThumbBtn(CCObject*) {
 
     auto pathOpt = LocalThumbs::get().getThumbPath(m_levelID);
     if (!pathOpt) {
-        PaimonNotify::create(Localization::get().getString("level.no_local_thumb").c_str(), NotificationIcon::Error)->show();
+        PaimonNotify::show(Localization::get().getString("level.no_local_thumb").c_str(), NotificationIcon::Error);
         return;
     }
 
     std::vector<uint8_t> pngData;
     if (!ImageConverter::loadRgbFileToPng(*pathOpt, pngData)) {
-        PaimonNotify::create(Localization::get().getString("level.png_error").c_str(), NotificationIcon::Error)->show();
+        PaimonNotify::show(Localization::get().getString("level.png_error").c_str(), NotificationIcon::Error);
         return;
     }
 
@@ -2380,14 +2260,14 @@ void LocalThumbnailViewPopup::onAcceptThumbBtn(CCObject*) {
              pngData.size(), pngData.size() / 1024.0, base64Size, base64Size / 1024.0);
 
     log::warn("[ThumbnailViewPopup] Server upload disabled - thumbnail saved locally only");
-    PaimonNotify::create(Localization::get().getString("level.saved_local_server_disabled").c_str(), NotificationIcon::Info)->show();
+    PaimonNotify::show(Localization::get().getString("level.saved_local_server_disabled").c_str(), NotificationIcon::Info);
 }
 
 void LocalThumbnailViewPopup::onRejectThumbBtn(CCObject*) {
     log::info("Rechazar thumbnail presionado en ThumbnailViewPopup para levelID={}", m_levelID);
 
     if (m_verificationCategory < 0) {
-        PaimonNotify::create(Localization::get().getString("level.reject_error").c_str(), NotificationIcon::Error)->show();
+        PaimonNotify::show(Localization::get().getString("level.reject_error").c_str(), NotificationIcon::Error);
         return;
     }
 
@@ -2399,7 +2279,7 @@ void LocalThumbnailViewPopup::onRejectThumbBtn(CCObject*) {
         log::warn("[ThumbnailViewPopup] GameManager::get() es null");
     }
 
-    PaimonNotify::create(Localization::get().getString("level.rejecting").c_str(), NotificationIcon::Info)->show();
+    PaimonNotify::show(Localization::get().getString("level.rejecting").c_str(), NotificationIcon::Info);
 
     ThumbnailAPI::get().rejectQueueItem(
         m_levelID,
@@ -2409,13 +2289,13 @@ void LocalThumbnailViewPopup::onRejectThumbBtn(CCObject*) {
         [levelID = m_levelID, category = m_verificationCategory](bool success, std::string const& message) {
             if (success) {
                 PendingQueue::get().reject(levelID, static_cast<PendingCategory>(category));
-                PaimonNotify::create(Localization::get().getString("level.rejected").c_str(), NotificationIcon::Warning)->show();
+                PaimonNotify::show(Localization::get().getString("level.rejected").c_str(), NotificationIcon::Warning);
                 log::info("[ThumbnailViewPopup] Miniatura rechazada para nivel {}", levelID);
 
                 ThumbnailTransportClient::get().invalidateGalleryMetadata(levelID);
                 ThumbnailLoader::get().invalidateLevel(levelID);
             } else {
-                PaimonNotify::create(Localization::get().getString("level.reject_error") + message, NotificationIcon::Error)->show();
+                PaimonNotify::show(Localization::get().getString("level.reject_error") + message, NotificationIcon::Error);
                 log::error("[ThumbnailViewPopup] Error rechazando miniatura: {}", message);
             }
         }
@@ -2432,12 +2312,12 @@ void LocalThumbnailViewPopup::onReportBtn(CCObject*) {
             user = gm->m_playerName;
         }
 
-        ThumbnailAPI::get().submitReport(levelID, user, reason, [levelID, reason](bool success, std::string const& message) {
+        ThumbnailAPI::get().submitReport(levelID, user, reason, [levelID, reason](bool success, std::string const&) {
             if (success) {
-                PaimonNotify::create(Localization::get().getString("report.sent_synced") + reason, NotificationIcon::Warning)->show();
+                PaimonNotify::show(Localization::get().getString("report.sent_synced") + reason, NotificationIcon::Warning);
                 log::info("[ThumbnailViewPopup] Reporte confirmado y enviado al servidor para nivel {}", levelID);
             } else {
-                PaimonNotify::create(Localization::get().getString("report.saved_local").c_str(), NotificationIcon::Info)->show();
+                PaimonNotify::show(Localization::get().getString("report.saved_local").c_str(), NotificationIcon::Info);
                 log::warn("[ThumbnailViewPopup] Reporte guardado solo localmente para nivel {}", levelID);
             }
         });
@@ -2456,7 +2336,7 @@ void LocalThumbnailViewPopup::onDeleteLocalThumb(CCObject*) {
     log::info("[ThumbnailViewPopup] Borrando thumbnail local indice {} de nivel {}", m_localCurrentIndex, m_levelID);
 
     if (!LocalThumbs::get().removeThumb(m_levelID, m_localCurrentIndex)) {
-        PaimonNotify::create("Error al borrar miniatura", NotificationIcon::Error)->show();
+        PaimonNotify::show("Error al borrar miniatura", NotificationIcon::Error);
         return;
     }
 
@@ -2470,7 +2350,7 @@ void LocalThumbnailViewPopup::onDeleteLocalThumb(CCObject*) {
         if (m_counterLabel) m_counterLabel->setVisible(false);
         auto content = m_mainLayer->getContentSize();
         showNoThumbnail(content);
-        PaimonNotify::create("Miniatura borrada", NotificationIcon::Success)->show();
+        PaimonNotify::show("Miniatura borrada", NotificationIcon::Success);
         return;
     }
 
@@ -2481,8 +2361,8 @@ void LocalThumbnailViewPopup::onDeleteLocalThumb(CCObject*) {
     auto tex = LocalThumbs::get().loadTextureByIndex(m_levelID, m_localCurrentIndex);
     if (tex) {
         auto content = m_mainLayer->getContentSize();
-        float maxWidth = content.width - 40.f;
-        float maxHeight = content.height - 80.f;
+        float maxWidth = paimon::thumbviewer::imageArea(content).size.width;
+        float maxHeight = paimon::thumbviewer::imageArea(content).size.height;
         displayThumbnail(tex, maxWidth, maxHeight, content, false);
     }
 
@@ -2493,7 +2373,7 @@ void LocalThumbnailViewPopup::onDeleteLocalThumb(CCObject*) {
         m_counterLabel->setString(fmt::format("{}/{}", m_localCurrentIndex + 1, newCount).c_str());
     }
 
-    PaimonNotify::create("Miniatura borrada", NotificationIcon::Success)->show();
+    PaimonNotify::show("Miniatura borrada", NotificationIcon::Success);
 }
 
 void LocalThumbnailViewPopup::onDeleteThumbnail(CCObject*) {
@@ -2518,12 +2398,12 @@ void LocalThumbnailViewPopup::onDeleteThumbnail(CCObject*) {
             if (!popup) return;
 
             if (!isMod && !isAdmin) {
-                 PaimonNotify::create(Localization::get().getString("level.no_permissions"), NotificationIcon::Error)->show();
+                 PaimonNotify::show(Localization::get().getString("level.no_permissions"), NotificationIcon::Error);
                  return;
             }
 
             if (count > 100 && !isAdmin) {
-                PaimonNotify::create(Localization::get().getString("level.admin_only_high_votes"), NotificationIcon::Error)->show();
+                PaimonNotify::show(Localization::get().getString("level.admin_only_high_votes"), NotificationIcon::Error);
                 return;
             }
 
@@ -2551,7 +2431,7 @@ void LocalThumbnailViewPopup::onDeleteThumbnail(CCObject*) {
                             if (!popup) return;
 
                             if (success) {
-                                PaimonNotify::create(Localization::get().getString("level.thumbnail_deleted"), NotificationIcon::Success)->show();
+                                PaimonNotify::show(Localization::get().getString("level.thumbnail_deleted"), NotificationIcon::Success);
 
                                 ThumbnailTransportClient::get().invalidateGalleryMetadata(levelID);
                                 ThumbnailLoader::get().invalidateLevel(levelID);
@@ -2573,7 +2453,7 @@ void LocalThumbnailViewPopup::onDeleteThumbnail(CCObject*) {
                                     popup->loadThumbnailAt(popup->m_currentIndex);
                                 });
                             } else {
-                                PaimonNotify::create(msg.c_str(), NotificationIcon::Error)->show();
+                                PaimonNotify::show(msg.c_str(), NotificationIcon::Error);
                             }
                         });
                     }
@@ -2596,7 +2476,8 @@ void LocalThumbnailViewPopup::onRecenter(CCObject*) {
         target = ccp(m_viewWidth * 0.5f, m_viewHeight * 0.5f);
     } else {
         auto content = this->m_mainLayer->getContentSize();
-        target = ccp(content.width * 0.5f, content.height * 0.5f + 10.f);
+        auto const image = paimon::thumbviewer::imageArea(content);
+        target = ccp(image.getMidX(), image.getMidY());
     }
 
     auto moveTo = CCMoveTo::create(0.3f, target);
@@ -2618,17 +2499,145 @@ void LocalThumbnailViewPopup::onCopyLevelId(CCObject*) {
     PaimonNotify::show(fmt::format("ID {} copiado", m_levelID), geode::NotificationIcon::Success);
 }
 
+void LocalThumbnailViewPopup::prepareFocusImagePose(bool preserveCurrent) {
+    if (!m_thumbnailSprite || !m_mainLayer) return;
+    auto const size = m_thumbnailSprite->getContentSize();
+    if (size.width <= 0.f || size.height <= 0.f) return;
+    auto const content = m_mainLayer->getContentSize();
+    auto const normal = paimon::thumbviewer::imageArea(content);
+    auto const expanded = paimon::thumbviewer::focusedImageArea(content);
+    float const normalFit = std::min(normal.size.width / size.width, normal.size.height / size.height);
+    float const expandedFit = std::min(expanded.size.width / size.width, expanded.size.height / size.height);
+    float const ratio = expandedFit / normalFit;
+    CCPoint const normalCenter{normal.size.width / 2.f, normal.size.height / 2.f};
+    m_collapsedImageScale = preserveCurrent ? m_thumbnailSprite->getScale() : normalFit;
+    m_collapsedImagePosition = preserveCurrent ? m_thumbnailSprite->getPosition() : normalCenter;
+    m_expandedImageScale = m_collapsedImageScale * ratio;
+    m_expandedImagePosition = CCPoint{expanded.size.width / 2.f, expanded.size.height / 2.f}
+        + (m_collapsedImagePosition - normalCenter) * ratio;
+    m_hasFocusImagePose = true;
+}
+
+void LocalThumbnailViewPopup::applyFocusLayout() {
+    if (!m_mainLayer || !m_clippingNode) return;
+    namespace tv = paimon::thumbviewer;
+    auto const content = m_mainLayer->getContentSize();
+    auto const normal = tv::imageArea(content);
+    auto const expanded = tv::focusedImageArea(content);
+    float const progress = m_focusTransition.progress();
+    auto mix = [progress](float from, float to) { return from + (to - from) * progress; };
+    CCRect const area{mix(normal.origin.x, expanded.origin.x), mix(normal.origin.y, expanded.origin.y),
+        mix(normal.size.width, expanded.size.width), mix(normal.size.height, expanded.size.height)};
+    m_clippingNode->setContentSize(area.size);
+    m_clippingNode->setPosition({area.getMidX(), area.getMidY()});
+    m_viewWidth = area.size.width;
+    m_viewHeight = area.size.height;
+    if (m_imageStencil) {
+        m_imageStencil->setScaleX(area.size.width / normal.size.width);
+        m_imageStencil->setScaleY(area.size.height / normal.size.height);
+    }
+    if (m_imageBackdrop) m_imageBackdrop->setContentSize(area.size);
+    if (m_imageBorder) {
+        m_imageBorder->setContentSize({area.size.width + 3.f, area.size.height + 3.f});
+        m_imageBorder->setPosition({area.getMidX(), area.getMidY()});
+    }
+    if (m_thumbnailSprite) {
+        if (!m_hasFocusImagePose && (progress > 0.f || m_focusTransition.running())) prepareFocusImagePose(false);
+        if (m_hasFocusImagePose) {
+            m_thumbnailSprite->setScale(mix(m_collapsedImageScale, m_expandedImageScale));
+            m_thumbnailSprite->setPosition({mix(m_collapsedImagePosition.x, m_expandedImagePosition.x),
+                mix(m_collapsedImagePosition.y, m_expandedImagePosition.y)});
+        }
+        auto const size = m_thumbnailSprite->getContentSize();
+        if (size.width > 0.f && size.height > 0.f) {
+            m_initialScale = std::min(area.size.width / size.width, area.size.height / size.height);
+            m_minScale = m_initialScale;
+            m_maxScale = std::max(4.f, m_initialScale * 6.f);
+        }
+    }
+    if (m_playBtn) m_playBtn->setPosition({area.getMidX(), area.getMidY()});
+    if (m_playBtnMenu) m_playBtnMenu->setEnabled(!m_focusTransition.running());
+
+    float const alpha = std::clamp(1.f - progress * 1.35f, 0.f, 1.f);
+    bool const shown = alpha > 0.f;
+    bool const interactive = !m_chromeHidden && !m_focusTransition.running();
+    auto const actions = tv::actionArea(content);
+    if (m_buttonMenu) {
+        m_buttonMenu->setPosition({actions.getMidX() + 12.f * progress, actions.getMidY()});
+        m_buttonMenu->setVisible(shown);
+        m_buttonMenu->setEnabled(interactive);
+        tv::setChromeFade(m_buttonMenu, alpha);
+    }
+    if (m_sidebarBg) {
+        m_sidebarBg->setPosition(actions.origin + CCPoint{12.f * progress, 0.f});
+        m_sidebarBg->setVisible(shown);
+        tv::setChromeFade(m_sidebarBg, alpha);
+    }
+    if (m_infoBar) {
+        m_infoBar->setPosition({28.f + m_infoBar->getContentWidth() / 2.f,
+            content.height - 20.f + 8.f * progress});
+        m_infoBar->setVisible(shown);
+        tv::setChromeFade(m_infoBar, alpha);
+    }
+    for (auto const& pose : m_headerButtonPoses) {
+        auto button = pose.button.lock();
+        if (!button) continue;
+        if (button.data() == m_hideChromeBtn) {
+            button->setPosition({mix(pose.position.x, content.width - 22.f),
+                mix(pose.position.y, content.height - 20.f)});
+            button->setVisible(true);
+            button->setEnabled(true);
+        } else {
+            button->setPosition(pose.position + CCPoint{0.f, 8.f * progress});
+            button->setVisible(shown);
+            button->setEnabled(interactive && (button.data() != m_refreshBtn
+                || (!m_refreshCooldownActive && !m_isDownloading)));
+            tv::setChromeFade(button.data(), alpha);
+        }
+    }
+    bool const multi = m_thumbnails.size() > 1 || m_suggestions.size() > 1 || m_localThumbPaths.size() > 1;
+    for (auto* arrow : {m_leftArrow, m_rightArrow}) {
+        if (!arrow) continue;
+        arrow->setVisible(shown && multi);
+        arrow->setEnabled(interactive);
+        tv::setChromeFade(arrow, alpha);
+    }
+}
+
 void LocalThumbnailViewPopup::setChromeVisible(bool visible) {
+    if (m_chromeHidden == !visible) return;
+    float const progress = m_focusTransition.progress();
+    if (!visible && progress == 0.f) {
+        if (m_thumbnailSprite) {
+            m_thumbnailSprite->stopAllActions();
+            clampSpritePosition();
+            if (typeinfo_cast<CCRGBAProtocol*>(m_thumbnailSprite)) {
+                m_thumbnailSprite->runAction(CCFadeTo::create(0.18f, 255));
+            }
+        }
+        prepareFocusImagePose(true);
+    } else if (visible && progress == 1.f && m_hasFocusImagePose && m_thumbnailSprite) {
+        m_thumbnailSprite->stopAllActions();
+        m_expandedImagePosition = m_thumbnailSprite->getPosition();
+        m_expandedImageScale = m_thumbnailSprite->getScale();
+    }
     m_chromeHidden = !visible;
+    m_focusTransition.setFocused(!visible);
+    m_touches.clear();
+    resetZoomGestureState();
+    applyFocusLayout();
+    this->schedule(schedule_selector(LocalThumbnailViewPopup::tickFocus));
+}
 
-    if (m_buttonMenu) m_buttonMenu->setVisible(visible);
-    if (m_infoBar) m_infoBar->setVisible(visible);
-    if (m_counterLabel && !visible) m_counterLabel->setVisible(false);
-
-    // arrows share the suggestion/gallery menu; keep them with the chrome.
-    bool multi = m_thumbnails.size() > 1 || m_suggestions.size() > 1 || m_localThumbPaths.size() > 1;
-    if (m_leftArrow && m_leftArrow->getParent()) m_leftArrow->setVisible(visible && multi);
-    if (m_rightArrow && m_rightArrow->getParent()) m_rightArrow->setVisible(visible && multi);
+void LocalThumbnailViewPopup::tickFocus(float dt) {
+    bool const running = m_focusTransition.advance(dt);
+    applyFocusLayout();
+    if (!running) {
+        this->unschedule(schedule_selector(LocalThumbnailViewPopup::tickFocus));
+        if (!m_chromeHidden) m_hasFocusImagePose = false;
+        resetZoomGestureState();
+        updateRefreshButtonState();
+    }
 }
 
 void LocalThumbnailViewPopup::toggleChrome(CCObject*) {
@@ -2636,6 +2645,7 @@ void LocalThumbnailViewPopup::toggleChrome(CCObject*) {
 }
 
 void LocalThumbnailViewPopup::keyDown(enumKeyCodes key, double timestamp) {
+    if (m_focusTransition.running() && (key == KEY_Left || key == KEY_Right || key == KEY_R)) return;
     switch (key) {
         case KEY_Left:
             onPrev(nullptr);
@@ -2735,6 +2745,31 @@ CCPoint LocalThumbnailViewPopup::getZoomFocusPoint() const {
 
     if (m_touches.size() == 1) {
         return (*m_touches.begin())->getLocation();
+    }
+
+    if (m_clippingNode && m_viewWidth > 0.f && m_viewHeight > 0.f) {
+        auto const mousePos = geode::cocos::getMousePos();
+        auto const local = m_clippingNode->convertToNodeSpace(mousePos);
+        bool cursorInPopup = true;
+        if (m_bgSprite) {
+            auto const bgLocal = m_bgSprite->convertToNodeSpace(mousePos);
+            auto const bgSize = m_bgSprite->getContentSize();
+            cursorInPopup = (bgLocal.x >= 0.f && bgLocal.x <= bgSize.width &&
+                             bgLocal.y >= 0.f && bgLocal.y <= bgSize.height);
+        } else if (m_mainLayer) {
+            auto const layerLocal = m_mainLayer->convertToNodeSpace(mousePos);
+            auto const layerSize = m_mainLayer->getContentSize();
+            cursorInPopup = (layerLocal.x >= 0.f && layerLocal.x <= layerSize.width &&
+                             layerLocal.y >= 0.f && layerLocal.y <= layerSize.height);
+        }
+
+        if (cursorInPopup) {
+            float const clampedX = clamp(local.x, 0.f, m_viewWidth);
+            float const clampedY = clamp(local.y, 0.f, m_viewHeight);
+            return m_clippingNode->convertToWorldSpace({clampedX, clampedY});
+        }
+
+        return m_clippingNode->convertToWorldSpace({m_viewWidth * 0.5f, m_viewHeight * 0.5f});
     }
 
     if (m_clippingNode) {
@@ -2855,7 +2890,7 @@ bool LocalThumbnailViewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
     if (!this->isVisible()) return false;
 
     auto findTouchedItem = [](CCMenu* menu, CCTouch* touch) -> CCMenuItem* {
-        if (!menu || !menu->isVisible()) return nullptr;
+        if (!menu || !menu->isVisible() || !menu->isEnabled()) return nullptr;
         auto point = menu->convertTouchToNodeSpace(touch);
         for (auto* obj : CCArrayExt<CCObject*>(menu->getChildren())) {
             auto item = typeinfo_cast<CCMenuItem*>(obj);
@@ -2876,15 +2911,19 @@ bool LocalThumbnailViewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
     if (!hit && m_leftArrow) {
         hit = findTouchedItem(static_cast<CCMenu*>(m_leftArrow->getParent()), touch);
     }
-    if (!hit && m_closeBtn) {
-        hit = findTouchedItem(static_cast<CCMenu*>(m_closeBtn->getParent()), touch);
-    }
 
     if (hit) {
         hit->selected();
         m_activatedItem = hit;
         return true;
     }
+
+    if (m_closeBtn && m_closeBtn->ccTouchBegan(touch, event)) {
+        m_activatedCloseBtn = true;
+        return true;
+    }
+
+    if (m_focusTransition.running()) return true;
 
     // tap on the video area toggles playback.
     if (m_videoPlaying && m_thumbnailSprite) {
@@ -2912,6 +2951,14 @@ bool LocalThumbnailViewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
         }
     }
 
+    if (m_clippingNode) {
+        auto const point = m_clippingNode->convertTouchToNodeSpace(touch);
+        auto const size = m_clippingNode->getContentSize();
+        if (point.x < 0.f || point.y < 0.f || point.x > size.width || point.y > size.height) {
+            return true;
+        }
+    }
+
     if (m_bgSprite) {
         auto local = m_bgSprite->convertTouchToNodeSpace(touch);
         auto size = m_bgSprite->getContentSize();
@@ -2931,6 +2978,10 @@ bool LocalThumbnailViewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
 }
 
 void LocalThumbnailViewPopup::ccTouchMoved(CCTouch* touch, CCEvent* event) {
+    if (m_activatedCloseBtn) {
+        if (m_closeBtn) m_closeBtn->ccTouchMoved(touch, event);
+        return;
+    }
     if (m_activatedItem) {
         auto menu = static_cast<CCMenu*>(m_activatedItem->getParent());
         if (menu) {
@@ -2943,7 +2994,7 @@ void LocalThumbnailViewPopup::ccTouchMoved(CCTouch* touch, CCEvent* event) {
         return;
     }
 
-    if (!m_thumbnailSprite) return;
+    if (m_focusTransition.running() || !m_thumbnailSprite) return;
 
     if (m_touches.size() == 1) {
         auto delta = touch->getDelta();
@@ -2975,6 +3026,11 @@ void LocalThumbnailViewPopup::ccTouchMoved(CCTouch* touch, CCEvent* event) {
 }
 
 void LocalThumbnailViewPopup::ccTouchEnded(CCTouch* touch, CCEvent* event) {
+    if (m_activatedCloseBtn) {
+        m_activatedCloseBtn = false;
+        if (m_closeBtn) m_closeBtn->ccTouchEnded(touch, event);
+        return;
+    }
     if (m_activatedItem) {
         m_activatedItem->unselected();
         m_activatedItem->activate();
@@ -2984,7 +3040,7 @@ void LocalThumbnailViewPopup::ccTouchEnded(CCTouch* touch, CCEvent* event) {
 
     m_touches.erase(touch);
 
-    if (!m_thumbnailSprite) return;
+    if (m_focusTransition.running() || !m_thumbnailSprite) return;
 
     if (m_wasZooming && m_touches.size() == 1) {
         auto scale = m_thumbnailSprite->getScale();
@@ -3009,19 +3065,20 @@ void LocalThumbnailViewPopup::ccTouchEnded(CCTouch* touch, CCEvent* event) {
     }
 }
 
-void LocalThumbnailViewPopup::scrollWheel(float x, float y) {
+bool LocalThumbnailViewPopup::scrollWheel(float x, float y) {
+    if (m_focusTransition.running()) return true;
     if (!m_mainLayer || !m_thumbnailSprite) {
-        return;
+        return true;
     }
 
     if (!m_thumbnailSprite->getParent()) {
         m_thumbnailSprite = nullptr;
-        return;
+        return true;
     }
 
     float const steps = paimon::smoothscroll::SmoothScrollController::get()
         .filteredZoomSteps(x, y);
-    if (std::abs(steps) < 0.000001f) return;
+    if (std::abs(steps) < 0.000001f) return true;
 
     float const baseFactor = steps > 0.f ? 1.12f : 0.89f;
     float const zoomFactor = std::pow(baseFactor, std::abs(steps));
@@ -3032,15 +3089,20 @@ void LocalThumbnailViewPopup::scrollWheel(float x, float y) {
     newScale = clamp(newScale, m_minScale, m_maxScale);
 
     if (std::abs(newScale - currentScale) < 0.001f) {
-        return;
+        return true;
     }
 
     m_wasZooming = true;
     applyZoomAtWorldPoint(newScale, getZoomFocusPoint());
     syncZoomGestureState();
+    return true;
 }
 
 void LocalThumbnailViewPopup::ccTouchCancelled(CCTouch* touch, CCEvent* event) {
+    if (m_activatedCloseBtn) {
+        m_activatedCloseBtn = false;
+        if (m_closeBtn) m_closeBtn->ccTouchCancelled(touch, event);
+    }
     if (m_activatedItem) {
         m_activatedItem->unselected();
         m_activatedItem = nullptr;
@@ -3052,7 +3114,7 @@ void LocalThumbnailViewPopup::ccTouchCancelled(CCTouch* touch, CCEvent* event) {
 
 LocalThumbnailViewPopup* LocalThumbnailViewPopup::create(int32_t levelID, bool canAcceptUpload) {
     auto ret = new LocalThumbnailViewPopup();
-    if (ret && ret->init(400.f, 280.f)) {
+    if (ret && ret->init(paimon::thumbviewer::kPopupWidth, paimon::thumbviewer::kPopupHeight)) {
         ret->setup({levelID, canAcceptUpload});
         ret->autorelease();
         return ret;

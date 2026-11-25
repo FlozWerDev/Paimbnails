@@ -1,14 +1,14 @@
 #pragma once
 #include "../../../ui/PaimonPopup.hpp"
 
-// graphical editor for one cosmetic official slot: fixed 440x320 two-column
-// popup, no scroll. everything here is paint over a local unrated stand-in.
+// the form stays mounted while the adjacent catalogue previews the draft's placement.
 
 #include "../OfficialSlots.hpp"
 
 #include <Geode/Geode.hpp>
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
@@ -43,9 +43,9 @@ protected:
     void buildStarsRow();
     void buildPreviewCard();
     void buildFooter();
-    // exact visible position, append mode only: replacements ride the
-    // official page, so there is nothing to place.
     void buildPositionRow(cocos2d::CCMenu* menu);
+    void rebuildPositionList(bool revealSelection = false);
+    std::string pageKey() const;
 
     void restyleSourceChips();
     void restyleDifficultyRow();
@@ -58,7 +58,7 @@ protected:
     void setDifficulty(Difficulty difficulty);
     void setTier(Tier tier);
     void setStars(int stars);
-    void setPosition(std::size_t pos);
+    void setSlotPosition(std::size_t pos);
     void refreshPositionLabel();
 
     void onImportById(cocos2d::CCObject*);
@@ -100,7 +100,9 @@ protected:
     cocos2d::CCNode* m_sourceRow = nullptr;
     cocos2d::CCNode* m_tierRowBox = nullptr;
     geode::LoadingSpinner* m_spinner = nullptr;
+    geode::ScrollLayer* m_positionScroll = nullptr;
     Slider* m_starsSlider = nullptr;
+    std::uint64_t m_importRequest = 0;
 
     std::vector<cocos2d::CCNode*> m_sourceChips;
     std::vector<cocos2d::CCNode*> m_difficultyFaces;

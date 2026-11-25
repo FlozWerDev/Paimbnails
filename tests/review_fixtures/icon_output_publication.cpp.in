@@ -1,0 +1,82 @@
+#include "tests/review_fixtures/ReviewQueue.hpp"
+#include "src/utils/ProjectStorage.hpp"
+#include "src/utils/StagedDirectory.hpp"
+namespace fs = std::filesystem;
+namespace ts {
+struct ImageBuffer {
+    int width() const { return 8; }
+    int height() const { return 8; }
+};
+}
+namespace paimon::file { class StagedDirectory; }
+namespace paimon::icon_maker {
+struct IconProject { std::string id="icon"; int type=0; };
+struct Slot { std::string key="main"; bool optional=false; };
+struct Anatomy { int partCount=1,canvasUhd=8; std::vector<Slot> slots{{}}; };
+inline Anatomy const* anatomyFor(int) { static Anatomy anatomy; return &anatomy; }
+inline std::string slotStorageKey(int,std::string const& key) { return key; }
+inline std::string frameName(std::string const&,int,int,std::string const&) { return "frame"; }
+inline fs::path fixtureRoot;
+struct IconPaths {
+    static fs::path rootDir() { return fixtureRoot; }
+    static fs::path imagesDir(std::string const&) { return fixtureRoot/"images"; }
+    static fs::path outputDir(std::string const&) { return fixtureRoot/"output"; }
+    static Result<> ensureSlotDirs(std::string const&) {
+        fs::create_directories(fixtureRoot/"images");
+        fs::create_directories(fixtureRoot/"output");
+        return Ok();
+    }
+};
+struct PieceRenderer { static Result<ts::ImageBuffer> renderSlot(IconProject const&,std::string const&,int,fs::path const&) { return Ok(ts::ImageBuffer{}); } };
+struct RenderedFrame { std::string name; ts::ImageBuffer pixels; float centerOffX=0,centerOffY=0; int canvasSize=0; bool placeholder=false; };
+inline bool trimFrame(ts::ImageBuffer const&,ts::ImageBuffer&,float&,float&) { return true; }
+inline ts::ImageBuffer makePlaceholder() { return {}; }
+struct CompiledQuality { fs::path png,plist; };
+struct CompiledIcon {
+    std::string exportName;
+    CompiledQuality uhd,hd,sd;
+    std::shared_ptr<paimon::file::StagedDirectory> staging;
+};
+inline bool failHd=true;
+inline Result<CompiledQuality> writeQuality(std::vector<RenderedFrame> const&,float factor,int,fs::path const& png,fs::path const& plist) {
+    { std::ofstream stream(png); stream<<"new"; }
+    { std::ofstream stream(plist); stream<<"new"; }
+    if(failHd && factor==0.5f) return Err("injected HD write failure");
+    return Ok(CompiledQuality{png,plist});
+}
+struct IconCompiler { static Result<CompiledIcon> compile(IconProject const&); };
+@@function|src/features/icon-maker/engine/IconCompiler.cpp|geode::Result<CompiledIcon> IconCompiler::compile@@
+}
+std::string readFile(fs::path const& path) { std::ifstream stream(path); return {std::istreambuf_iterator<char>(stream),{}}; }
+int main() {
+    using namespace paimon::icon_maker;
+    fixtureRoot=fs::current_path()/paimon::storage::newProjectId();
+    assert(fixtureRoot.is_absolute() && fixtureRoot.parent_path()==fs::current_path());
+    fs::create_directories(fixtureRoot/"output");
+    for(auto const& suffix:{"-uhd","-hd",""}) {
+        for(auto const& extension:{".png",".plist"}) {
+            std::ofstream stream(fixtureRoot/"output"/("icon"+std::string(suffix)+extension));stream<<"previous";
+        }
+    }
+    auto failed=IconCompiler::compile(IconProject{});
+    assert(!failed);
+    for(auto const& suffix:{"-uhd","-hd",""}) {
+        for(auto const& extension:{".png",".plist"}) {
+            assert(readFile(fixtureRoot/"output"/("icon"+std::string(suffix)+extension))=="previous");
+        }
+    }
+    failHd=false;
+    {
+        auto compiled=IconCompiler::compile(IconProject{});assert(compiled);
+        auto output=compiled.unwrap();
+        assert(output.staging && readFile(fixtureRoot/"output/icon-uhd.png")=="previous");
+        assert(readFile(output.uhd.png)=="new");
+        std::error_code error;
+        assert(output.staging->publishTo(fixtureRoot/"output",error));
+        assert(readFile(fixtureRoot/"output/icon-uhd.png")=="new");
+        output.staging->commit();
+    }
+    assert(fs::is_empty(fixtureRoot/"build-staging"));
+    fs::remove_all(fixtureRoot);
+    std::cout<<"Failed or unpublished renders preserve output; successful sets publish together\n";
+}

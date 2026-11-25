@@ -81,8 +81,8 @@ geode::ScrollLayer* makeScrollStack(
     std::vector<cocos2d::CCNode*> const& items,
     float gap = 8.f);
 
-bool queueWheelScroll(geode::ScrollLayer* scrollLayer, float x, float y,
-    float& targetY, bool& targetSet, float speed = 16.f);
+bool queueWheelScroll(geode::ScrollLayer* scrollLayer, float vertical, float horizontal,
+    float& targetY, bool& targetSet);
 void stepWheelScroll(geode::ScrollLayer* scrollLayer,
     float& targetY, bool& targetSet, float dt);
 

@@ -33,18 +33,11 @@ std::unordered_map<std::string_view, Module const*> const& byId() {
     return map;
 }
 
-// isenabled by id runs in per-frame hooks; slots cache it by position in all().
-// relaxed atomics: racing readers just compute twice, cheaper than locking.
-enum : uint8_t { kCacheUnknown = 0, kCacheOff = 1, kCacheOn = 2 };
-
-std::vector<std::atomic<uint8_t>>& enabledSlots() {
-    static std::vector<std::atomic<uint8_t>> slots(all().size());
+// isenabled by id runs in per-frame hooks; version-tagged atomic slots cache it
+// without linear clears or cross-thread invalidation races.
+std::vector<std::atomic<uint64_t>>& enabledSlots() {
+    static std::vector<std::atomic<uint64_t>> slots(all().size());
     return slots;
-}
-
-std::atomic<uint64_t>& cachedVersion() {
-    static std::atomic<uint64_t> version{UINT64_MAX};
-    return version;
 }
 
 std::string lower(std::string_view text) {
@@ -69,13 +62,42 @@ Module const* find(std::string_view id) {
     return it == map.end() ? nullptr : it->second;
 }
 
+bool isSupportedOnThisPlatform(Module const& mod) {
+#if !defined(GEODE_IS_DESKTOP)
+    std::string_view const id(mod.id ? mod.id : "");
+    if (id == "paimbnails.cursor.global" ||
+        id == "paimbnails.cursortransition.global" ||
+        id == "paimbnails.cursorclick.global" ||
+        id == "paimbnails.smoothscroll.global" ||
+        id == "paimbnails.inputscroll.editor" ||
+        id == "paimbnails.streamoverlay.menu" ||
+        id == "paimbnails.discordrpc.system") {
+        return false;
+    }
+    if (mod.backing == Backing::Setting && mod.key && *mod.key) {
+        if (auto* geodeMod = Mod::get(); geodeMod && !geodeMod->hasSetting(mod.key)) {
+            return false;
+        }
+    }
+    if (mod.parent && *mod.parent) {
+        if (auto* parent = find(mod.parent)) {
+            return isSupportedOnThisPlatform(*parent);
+        }
+    }
+#else
+    (void)mod;
+#endif
+    return true;
+}
+
 bool isSelfEnabled(Module const& mod) {
+    if (!isSupportedOnThisPlatform(mod)) return false;
     auto* geodeMod = Mod::get();
     if (!geodeMod) return false;
 
     switch (mod.backing) {
         case Backing::Setting:
-            if (!geodeMod->hasSetting(mod.key)) return mod.defaultOn;
+            if (!geodeMod->hasSetting(mod.key)) return false;
             return geodeMod->getSettingValue<bool>(mod.key);
         case Backing::Saved:
             return geodeMod->getSavedValue<bool>(mod.key, mod.defaultOn);
@@ -122,19 +144,20 @@ bool isEnabled(std::string_view id) {
 
     uint64_t const version = settings::internal::g_settingsVersion.load(std::memory_order_relaxed);
     auto& slots = enabledSlots();
-    if (cachedVersion().load(std::memory_order_relaxed) != version) {
-        cachedVersion().store(version, std::memory_order_relaxed);
-        for (auto& slot : slots) slot.store(kCacheUnknown, std::memory_order_relaxed);
-    }
 
     // find() hands back a pointer into all(), so the offset is the slot index.
+    // the slots vector is sized once from all(); never index it unchecked.
     auto const index = static_cast<size_t>(mod - all().data());
-    if (auto cached = slots[index].load(std::memory_order_relaxed); cached != kCacheUnknown) {
-        return cached == kCacheOn;
+    if (index >= slots.size()) return isEnabled(*mod);
+
+    uint64_t const versionBits = (version + 1ull) << 1;
+    uint64_t const packed = slots[index].load(std::memory_order_relaxed);
+    if ((packed & ~1ull) == versionBits) {
+        return (packed & 1ull) != 0;
     }
 
     bool const enabled = isEnabled(*mod);
-    slots[index].store(enabled ? kCacheOn : kCacheOff, std::memory_order_relaxed);
+    slots[index].store(versionBits | (enabled ? 1ull : 0ull), std::memory_order_relaxed);
     return enabled;
 }
 
@@ -171,13 +194,18 @@ std::vector<Module const*> search(std::string_view query) {
     auto needle = lower(query);
     std::vector<Module const*> out;
     if (needle.empty()) {
-        for (auto const& mod : all()) out.push_back(&mod);
+        out.reserve(all().size());
+        for (auto const& mod : all()) {
+            if (isSupportedOnThisPlatform(mod)) out.push_back(&mod);
+        }
         return out;
     }
+    out.reserve(16);
     auto hit = [&needle](char const* field) {
         return containsFolded(field, needle);
     };
     for (auto const& mod : all()) {
+        if (!isSupportedOnThisPlatform(mod)) continue;
         // the list shows localized names, so search those too.
         if (hit(mod.id)
             || hit(mod.name)

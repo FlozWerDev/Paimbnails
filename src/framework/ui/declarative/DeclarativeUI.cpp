@@ -23,18 +23,14 @@ static GLubyte channel(matjson::Value const& v, GLubyte def) {
     return static_cast<GLubyte>(std::clamp(n, 0, 255));
 }
 
+// CCSprite, CCLabelBMFont, CCScale9Sprite and CCLayerColor all funnel
+// through CCNodeRGBA; one branch covers every target above.
 static void setColorAny(CCNode* n, ccColor3B c) {
-    if (auto* s = typeinfo_cast<CCSprite*>(n)) { s->setColor(c); return; }
-    if (auto* l = typeinfo_cast<CCLabelBMFont*>(n)) { l->setColor(c); return; }
-    if (auto* sc = typeinfo_cast<CCScale9Sprite*>(n)) { sc->setColor(c); return; }
-    if (auto* lc = typeinfo_cast<CCLayerColor*>(n)) { lc->setColor(c); return; }
+    if (auto* rgba = typeinfo_cast<CCNodeRGBA*>(n)) rgba->setColor(c);
 }
 
 static void setOpacityAny(CCNode* n, GLubyte o) {
-    if (auto* s = typeinfo_cast<CCSprite*>(n)) { s->setOpacity(o); return; }
-    if (auto* l = typeinfo_cast<CCLabelBMFont*>(n)) { l->setOpacity(o); return; }
-    if (auto* sc = typeinfo_cast<CCScale9Sprite*>(n)) { sc->setOpacity(o); return; }
-    if (auto* lc = typeinfo_cast<CCLayerColor*>(n)) { lc->setOpacity(o); return; }
+    if (auto* rgba = typeinfo_cast<CCNodeRGBA*>(n)) rgba->setOpacity(o);
 }
 
 static CCPoint anchorIn(std::string const& a, CCSize s) {

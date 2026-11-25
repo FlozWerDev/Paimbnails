@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "ProfileImageService.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/JsonHelper.hpp"
@@ -104,14 +105,37 @@ std::string makeProfileGifKey(char const* prefix, int accountID) {
 }
 
 paimon::ThreadPool* s_profileImagePool = nullptr;
-std::mutex s_profileImagePoolMutex;
-std::vector<std::weak_ptr<ProfileImageService::DownloadCallback>> s_profileImageCompletions;
+std::atomic<bool> s_profileImageShuttingDown{false};
+std::atomic<bool> s_profileImageInitialized{false};
 
-paimon::ThreadPool& profileImagePool() {
-    std::lock_guard lock(s_profileImagePoolMutex);
-    if (paimon::isRuntimeShuttingDown()) throw std::runtime_error("profile image service is shutting down");
+std::mutex& profileImagePoolMutex() {
+    static auto* m = new std::mutex();
+    return *m;
+}
+
+std::mutex& profileImageCompletionsMutex() {
+    static auto* m = new std::mutex();
+    return *m;
+}
+
+std::vector<std::weak_ptr<ProfileImageService::DownloadCallback>>& profileImageCompletions() {
+    static auto* v = new std::vector<std::weak_ptr<ProfileImageService::DownloadCallback>>();
+    return *v;
+}
+
+paimon::ThreadPool* profileImagePool() {
+    if (s_profileImageShuttingDown.load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+        std::lock_guard lock(profileImagePoolMutex());
+        return s_profileImagePool;
+    }
+    std::lock_guard lock(profileImagePoolMutex());
+    // no new workers once teardown started; callers treat a null pool as
+    // "drop this job" instead of unwinding during exit.
+    if (s_profileImageShuttingDown.load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+        return s_profileImagePool;
+    }
     if (!s_profileImagePool) s_profileImagePool = new paimon::ThreadPool(2, "PaimonProfileImg");
-    return *s_profileImagePool;
+    return s_profileImagePool;
 }
 
 int profileImageMaxDim() {
@@ -126,8 +150,11 @@ void decodeStaticProfileImageAsync(std::shared_ptr<std::vector<uint8_t>> data,
                                    ProfileImageService::DownloadCallback callback) {
     if (!callback || paimon::isRuntimeShuttingDown()) return;
     auto completion = std::make_shared<ProfileImageService::DownloadCallback>(std::move(callback));
-    std::erase_if(s_profileImageCompletions, [](auto const& item) { return item.expired(); });
-    s_profileImageCompletions.emplace_back(completion);
+    {
+        std::lock_guard lock(profileImageCompletionsMutex());
+        std::erase_if(profileImageCompletions(), [](auto const& item) { return item.expired(); });
+        profileImageCompletions().emplace_back(completion);
+    }
     auto fail = [completion]() {
         queueInMainThread([completion]() {
             if (paimon::isRuntimeShuttingDown()) return;
@@ -140,23 +167,24 @@ void decodeStaticProfileImageAsync(std::shared_ptr<std::vector<uint8_t>> data,
         fail();
         return;
     }
+    auto* pool = profileImagePool();
+    if (!pool) {
+        fail();
+        return;
+    }
     try {
-        profileImagePool().enqueue([data = std::move(data), completion, fail]() {
+        pool->enqueue([data = std::move(data), completion, fail]() {
             if (paimon::isRuntimeShuttingDown()) return;
             try {
-                int w = 0, h = 0, channels = 0;
-                auto length = static_cast<int>(data->size());
-                if (!stbi_info_from_memory(data->data(), length, &w, &h, &channels) ||
-                    w <= 0 || h <= 0 || w > ImageLoadHelper::kMaxImageDim || h > ImageLoadHelper::kMaxImageDim) {
+                // same info-probe, dim-cap and stb decode as ImageLoadHelper;
+                // copyBuffer keeps the pixels alive for the downsample below.
+                auto decoded = ImageLoadHelper::loadWithSTBFromMemory(data->data(), data->size(), true);
+                if (!decoded.success || !decoded.buffer) {
                     fail();
                     return;
                 }
-                std::shared_ptr<unsigned char> pixels(
-                    stbi_load_from_memory(data->data(), length, &w, &h, &channels, 4), stbi_image_free);
-                if (!pixels || w <= 0 || h <= 0 || w > ImageLoadHelper::kMaxImageDim || h > ImageLoadHelper::kMaxImageDim) {
-                    fail();
-                    return;
-                }
+                int w = decoded.width, h = decoded.height;
+                std::shared_ptr<uint8_t> pixels = std::move(decoded.buffer);
                 std::shared_ptr<std::vector<uint8_t>> resized;
                 auto maxDim = profileImageMaxDim();
                 if (w > maxDim || h > maxDim) {
@@ -208,7 +236,7 @@ void pruneProfileImgCacheVariants(int accountID) {
         std::error_code typeEc;
         if (!entry.is_regular_file(typeEc) || typeEc || entry.path().extension() != ".dat") continue;
 
-        auto stem = geode::utils::string::pathToString(entry.path().stem());
+        auto stem = paimon::paths::toUtf8(entry.path().stem());
         if (stem != std::to_string(accountID) && stem.rfind(std::to_string(accountID) + "_", 0) != 0) {
             continue;
         }
@@ -223,28 +251,56 @@ void pruneProfileImgCacheVariants(int accountID) {
 }
 }
 
+bool ProfileImageService::isInitialized() {
+    return s_profileImageInitialized.load(std::memory_order_acquire);
+}
+
+ProfileImageService& ProfileImageService::get() {
+    // Heap-leaked: never destroy under DllMain loader lock.
+    static auto* instance = []() {
+        auto* service = new ProfileImageService();
+        s_profileImageInitialized.store(true, std::memory_order_release);
+        return service;
+    }();
+    return *instance;
+}
+
 ProfileImageService::ProfileImageService() {
     auto cacheDir = getProfileImgCacheDir();
     auto maxBytes = getProfileImgCacheMaxBytes();
-    if (!paimon::isRuntimeShuttingDown()) {
-        profileImagePool().enqueue([cacheDir, maxBytes]() { pruneProfileImgCache(cacheDir, maxBytes); });
+    if (auto* pool = profileImagePool()) {
+        pool->enqueue([cacheDir, maxBytes]() { pruneProfileImgCache(cacheDir, maxBytes); });
     }
 }
 
-void ProfileImageService::shutdown() {
-    // queued main-thread deliveries can outlive the weakref pool during exit.
-    for (auto const& weak : s_profileImageCompletions) {
+void ProfileImageService::requestShutdown() {
+    s_profileImageShuttingDown.store(true, std::memory_order_release);
+    std::vector<std::weak_ptr<DownloadCallback>> completions;
+    {
+        std::lock_guard lock(profileImageCompletionsMutex());
+        completions.swap(profileImageCompletions());
+    }
+    for (auto const& weak : completions) {
         if (auto completion = weak.lock()) *completion = nullptr;
     }
-    s_profileImageCompletions.clear();
+    std::lock_guard lock(profileImagePoolMutex());
+    if (s_profileImagePool) s_profileImagePool->requestStop();
+}
+
+void ProfileImageService::waitShutdown(std::chrono::steady_clock::time_point deadline) {
+    requestShutdown();
     paimon::ThreadPool* pool = nullptr;
     {
-        std::lock_guard lock(s_profileImagePoolMutex);
+        std::lock_guard lock(profileImagePoolMutex());
         pool = s_profileImagePool;
     }
-    if (pool) pool->shutdown();
+    if (pool) pool->waitShutdown(deadline);
     std::lock_guard lock(m_profileImgGifMutex);
     m_profileImgGifKeys.clear();
+}
+
+void ProfileImageService::shutdown() {
+    waitShutdown(std::chrono::steady_clock::now() + std::chrono::milliseconds(1500));
 }
 
 ProfileImageService::UploadCallback ProfileImageService::uploadCompletion(
@@ -280,15 +336,25 @@ void ProfileImageService::clearProfileImgGifKey(int accountID) {
 }
 
 
-void ProfileImageService::uploadProfile(int accountID, std::vector<uint8_t> const& pngData,
-                                        std::string const& username, UploadCallback callback) {
-    if (!callback || paimon::isRuntimeShuttingDown()) return;
+bool ProfileImageService::checkUploadPreconditions(int accountID, UploadCallback const& callback,
+                                                   char const* loginMessage) {
+    if (!callback || paimon::isRuntimeShuttingDown()) return false;
     auto* accountManager = GJAccountManager::get();
     if (!accountManager || accountManager->m_accountID <= 0) {
-        callback(false, "Debes estar logueado para subir miniaturas.");
-        return;
+        callback(false, loginMessage);
+        return false;
     }
-    if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
+    if (accountID != accountManager->m_accountID) {
+        callback(false, "La cuenta no coincide con la sesion.");
+        return false;
+    }
+    if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return false; }
+    return true;
+}
+
+void ProfileImageService::uploadProfile(int accountID, std::vector<uint8_t> const& pngData,
+                                        std::string const& username, UploadCallback callback) {
+    if (!checkUploadPreconditions(accountID, callback, "Debes estar logueado para subir miniaturas.")) return;
 
     HttpClient::get().uploadProfile(accountID, pngData, username,
         uploadCompletion(accountID, std::move(callback), true));
@@ -296,13 +362,7 @@ void ProfileImageService::uploadProfile(int accountID, std::vector<uint8_t> cons
 
 void ProfileImageService::uploadProfileGIF(int accountID, std::vector<uint8_t> const& gifData,
                                            std::string const& username, UploadCallback callback) {
-    if (!callback || paimon::isRuntimeShuttingDown()) return;
-    auto* accountManager = GJAccountManager::get();
-    if (!accountManager || accountManager->m_accountID <= 0) {
-        callback(false, "Debes estar logueado para subir miniaturas.");
-        return;
-    }
-    if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
+    if (!checkUploadPreconditions(accountID, callback, "Debes estar logueado para subir miniaturas.")) return;
 
     HttpClient::get().uploadProfileGIF(accountID, gifData, username,
         uploadCompletion(accountID, std::move(callback), true));
@@ -310,13 +370,7 @@ void ProfileImageService::uploadProfileGIF(int accountID, std::vector<uint8_t> c
 
 void ProfileImageService::uploadProfileVideo(int accountID, std::vector<uint8_t> const& mp4Data,
                                              std::string const& username, UploadCallback callback) {
-    if (!callback || paimon::isRuntimeShuttingDown()) return;
-    auto* accountManager = GJAccountManager::get();
-    if (!accountManager || accountManager->m_accountID <= 0) {
-        callback(false, "Debes estar logueado para subir miniaturas.");
-        return;
-    }
-    if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
+    if (!checkUploadPreconditions(accountID, callback, "Debes estar logueado para subir miniaturas.")) return;
 
     HttpClient::get().uploadProfileVideo(accountID, mp4Data, username,
         uploadCompletion(accountID, std::move(callback), true));
@@ -433,13 +487,7 @@ void ProfileImageService::uploadProfileImg(int accountID, std::vector<uint8_t> c
                                            std::string const& username,
                                            std::string const& contentType,
                                            UploadCallback callback) {
-    if (!callback || paimon::isRuntimeShuttingDown()) return;
-    auto* accountManager = GJAccountManager::get();
-    if (!accountManager || accountManager->m_accountID <= 0) {
-        callback(false, "Debes estar logueado para subir imagen de perfil.");
-        return;
-    }
-    if (!m_serverEnabled) { callback(false, "Funcionalidad de servidor desactivada"); return; }
+    if (!checkUploadPreconditions(accountID, callback, "Debes estar logueado para subir imagen de perfil.")) return;
 
     HttpClient::get().uploadProfileImg(accountID, imgData, username, contentType,
         uploadCompletion(accountID, std::move(callback), false));
@@ -468,7 +516,9 @@ void ProfileImageService::downloadProfileImg(int accountID, DownloadCallback cal
             saveProfileImgToDisk(profileAccountID, data);
             auto cacheDir = getProfileImgCacheDir();
             auto maxBytes = getProfileImgCacheMaxBytes();
-            profileImagePool().enqueue([cacheDir, maxBytes]() { pruneProfileImgCache(cacheDir, maxBytes); });
+            if (auto* pool = profileImagePool()) {
+                pool->enqueue([cacheDir, maxBytes]() { pruneProfileImgCache(cacheDir, maxBytes); });
+            }
 
             bool isMP4img = paimon::format::isMp4(data.data(), data.size());
             if (isMP4img) {

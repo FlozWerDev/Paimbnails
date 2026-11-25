@@ -24,7 +24,9 @@ bool containsAny(std::string const& haystack,
         if (haystack.find(t) != std::string::npos) return true;
     }
     return false;
-}bool isGameplayEffectFrame(std::string const& lower) {
+}
+
+bool isGameplayEffectFrame(std::string const& lower) {
     return containsAny(lower, {
         "portalshine",
         "playerdash",
@@ -44,48 +46,32 @@ bool isColorMeaningfulFrame(std::string const& lower) {
     return containsAny(lower, {
         "difficulty_",
         "difficon_",
+        // store icons depict purchasable content rather than neutral UI chrome.
+        "storeitemicon",
         // red demon face: difficulty identity, not chrome.
         "demonicon",
         // vault-guardian faces: character art, not the neutral secretlock padlocks (tintable via "lock" below).
         "gj_secretlock",
         // reward art baked in: tinting would recolor the advertised shards/gems/faces.
         "shardsbtn",
-        "normalbtn",
         "videoreward",
-        // baked-content buttons: chrome and content share one frame, stays vanilla; anchored tokens skip editor buttons.
-        "ratediff",
-        "starbtn",
-        "garagebtn",
-        "checkpointbtn",
-        "practicebtn",
-        "leaderboardbtn",
-        "achbtn",
-        "dailybtn",
-        "weeklybtn",
-        "gj_eventbtn",
-        "featuredbtn",
-        "mappacksbtn",
-        "pathsbtn",
-        "highscorebtn",
-        "worldlevelbtn",
-        "adchest",
-        "freechest",
-        "dailyreward",
-        "freestuff",
-        "rewardbtn",
-        "advideobtn",
         "gj_ngbtn",
         "gpbtn",
         "gpgbtn",
         "ncs",
         "everyplay",
         "modbadge",
-        "rankicon_",        "featuredcoin",
+        "rankicon_",
+        "featuredcoin",
+        // the editor's color-channel button shows the channel color itself.
+        "gj_colorbtn",
+        // brand play button carries the YouTube red.
+        "youtubeplaybutton",
     });
 }
 
 bool isCuratedButtonFrame(std::string const& lower) {
-    static constexpr std::array<char const*, 10> kExact = {
+    static constexpr std::array<char const*, 15> kExact = {
         "gj_arrow_01_001.png",
         "gj_arrow_02_001.png",
         "gj_arrow_03_001.png",
@@ -96,13 +82,38 @@ bool isCuratedButtonFrame(std::string const& lower) {
         "gj_taboff_001.png",
         "gj_chrsel_001.png",
         "gj_select_001.png",
+        "navarrowbtn_001.png",
+        "pbtn_arrow_001.png",
+        "pbtn_jump_001.png",
+        "pbtn_move_001.png",
+        "btn_chathistory_001.png",
     };
     for (auto const* n : kExact) {
         if (lower == n) return true;
     }
     if (lower.find("_tab_on") != std::string::npos) return true;
     if (lower.find("_tab_off") != std::string::npos) return true;
+    if (lower.find("controllerbtn_") != std::string::npos) return true;
+    if (lower.find("accountbtn_") != std::string::npos) return true;
+    if (lower.find("warpbtn") != std::string::npos) return true;
+    if (lower.find("warplock") != std::string::npos) return true;
     return false;
+}
+
+// content art living inside UI sheets: identity/reward colors must stay
+// vanilla even though the sheet itself is tintable chrome. Checked after
+// the button/menu tokens so e.g. fireShardLabel (a text label) still tints.
+bool isContentArtFrame(std::string const& lower) {
+    return containsAny(lower, {
+        "currency", "coin", "diamond",
+        "starsicon", "sstarsicon", "moonsicon", "pointsicon", "bigstar", "bigkey",
+        "shard", "tier1icon", "tier2icon", "tier3icon",
+        "chest", "shoprope", "dailycrown", "pathicon",
+        "discordicon", "yticon", "featuredicon", "likesicon", "completesicon",
+        "tiktokicon", "twitchicon", "instaicon", "robtoplogo",
+        "newmusicicon", "hammericon", "smallmodeicon", "collaborationicon",
+        "gj_square07", "shineburst", "sideart",
+    });
 }
 
 bool isMenuUiFrame(std::string const& lower) {
@@ -121,11 +132,18 @@ bool isMenuUiFrame(std::string const& lower) {
         "checkpoint",
         // difficulty-filter selection outline (white chrome).
         "difficultyselected",
-        // options chrome. no gj_square07/square01: the game recolors them at runtime (double-tint).
+        // options chrome and container panels
         "slider",
+        "groove",
         "loadingcircle",
         "smalldot",
         "progressbar",
+        "edit_barbg",
+        "controller_outline",
+        "square02",
+        "square04",
+        "panel",
+        "box",
         // furniture icons: menu controls and containers.
         "foldericon",
         "deleteicon", "deleteallicon",
@@ -142,7 +160,6 @@ bool isMenuUiFrame(std::string const& lower) {
         "deletefilter_",
         "edit_vline",
         "hearton", "heartoff",
-        "storeitemicon",
     });
 }
 
@@ -150,11 +167,24 @@ bool isMenuUiFrame(std::string const& lower) {
 
 bool UiSpriteCatalog::isUiSheet(std::string_view sheetBaseName) {
     return sheetBaseName == "GJ_GameSheet03"
-        || sheetBaseName == "GJ_GameSheet04";
+        || sheetBaseName == "GJ_GameSheet04"
+        || sheetBaseName == "GJ_GameSheetEditor"
+        || sheetBaseName == "GJ_LaunchSheet"
+        || sheetBaseName == "GJ_LaunchSheet2"
+        || sheetBaseName == "GJ_ShopSheet"
+        || sheetBaseName == "GauntletSheet"
+        || sheetBaseName == "TowerSheet"
+        || sheetBaseName == "SecretSheet"
+        || sheetBaseName == "WorldSheet"
+        || sheetBaseName == "TreasureRoomSheet"
+        || sheetBaseName == "DungeonSheet";
 }
 
 bool UiSpriteCatalog::isGameplaySheet(std::string_view sheetBaseName) {
     if (isUiSheet(sheetBaseName)) return false;
+    if (sheetBaseName == "GJ_GameSheet" || sheetBaseName == "GJ_GameSheet02") return true;
+    if (sheetBaseName.rfind("GJ_GameSheetIcons", 0) == 0) return true;
+    if (sheetBaseName.rfind("GJ_GameSheetGlow", 0) == 0) return true;
     if (sheetBaseName.rfind("GJ_GameSheet", 0) == 0) return true;
     if (sheetBaseName.rfind("FireSheet", 0) == 0) return true;
     if (sheetBaseName.rfind("PixelSheet", 0) == 0) return true;
@@ -178,6 +208,12 @@ SpriteKind UiSpriteCatalog::classify(std::string_view frameName,
     }
 
     if (isMenuUiFrame(lower)) return SpriteKind::MenuUi;
+
+    if (isContentArtFrame(lower)) return SpriteKind::Other;
+
+    // inside a UI sheet, anything not excluded above is menu chrome: paint
+    // it too instead of leaving random vanilla-colored UI pieces behind.
+    if (isUiSheet(sheetBaseName)) return SpriteKind::MenuUi;
 
     return SpriteKind::Other;
 }

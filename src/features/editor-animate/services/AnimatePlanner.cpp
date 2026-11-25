@@ -45,6 +45,15 @@ std::vector<int> parseGroupList(std::string_view value) {
     return groups;
 }
 
+std::string joinGroups(std::vector<int> const& groups) {
+    std::string value;
+    for (std::size_t i = 0; i < groups.size(); ++i) {
+        if (i > 0) value += '.';
+        value += fmt::format("{}", groups[i]);
+    }
+    return value;
+}
+
 class Emitter {
 public:
     Emitter(Clip const& clip, PlanLayout const& layout)
@@ -261,10 +270,7 @@ std::string serializeTriggers(std::vector<TriggerSpec> const& triggers, int edit
         out += ",87,1";
         if (!spec.groups.empty()) {
             out += ",57,";
-            for (std::size_t i = 0; i < spec.groups.size(); ++i) {
-                if (i > 0) out += '.';
-                out += fmt::format("{}", spec.groups[i]);
-            }
+            out += joinGroups(spec.groups);
         }
         if (editorLayer > 0) out += fmt::format(",20,{}", editorLayer);
         out += ';';
@@ -283,12 +289,7 @@ std::string rewriteGroups(std::string_view save, std::vector<int> const& strip, 
         if (add > 0 && std::find(groups.begin(), groups.end(), add) == groups.end()) {
             groups.push_back(add);
         }
-        std::string value;
-        for (std::size_t i = 0; i < groups.size(); ++i) {
-            if (i > 0) value += '.';
-            value += fmt::format("{}", groups[i]);
-        }
-        return value;
+        return joinGroups(groups);
     };
 
     std::string out;

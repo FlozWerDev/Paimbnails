@@ -17,6 +17,7 @@
 #include "../../thumbnails/ui/LevelCellSettingsPopup.hpp"
 #include "../../progressbar/ui/ProgressBarConfigPopup.hpp"
 #include "../../visuals/ui/ExtraEffectsPopup.hpp"
+#include "../../keybinds/ui/ManagerCutPopup.hpp"
 #include "../../volume-scroll/ui/ScrollKeybindsPopup.hpp"
 #include "../../smooth-scroll/ui/SmoothScrollConfigPopup.hpp"
 #include "../../custom-slider/ui/CustomSliderPopup.hpp"
@@ -108,12 +109,6 @@ std::function<void(PaimonGuideChatPopup*)> openIconMakerGallery() {
     };
 }
 
-std::function<void(PaimonGuideChatPopup*)> openIconMakerEditor() {
-    return [](PaimonGuideChatPopup*) {
-        paimon::icon_maker::IconEditorLayer::open(""); // opens the editor for the current/default slot
-    };
-}
-
 std::function<void(PaimonGuideChatPopup*)> openIconGradients() {
     return [](PaimonGuideChatPopup*) {
         if (auto* popup = paimon::icon_gradients::GradientLayer::create()) popup->show();
@@ -147,12 +142,6 @@ std::function<void(PaimonGuideChatPopup*)> openFrameInterpolation() {
 std::function<void(PaimonGuideChatPopup*)> openMyIconSets() {
     return [](PaimonGuideChatPopup*) {
         if (auto* popup = paimon::iconcopy::MyIconSetsPopup::create()) popup->show();
-    };
-}
-
-std::function<void(PaimonGuideChatPopup*)> openSettingsPanel() {
-    return [](PaimonGuideChatPopup*) {
-        SettingsPanelManager::get().open(0);
     };
 }
 
@@ -477,6 +466,7 @@ void PopupRegistry::registerAll() {
         m_entries.push_back(std::move(e));
     }
 
+#if defined(GEODE_IS_DESKTOP)
     {
         PopupEntry e;
         e.id = "custom-cursor";
@@ -500,6 +490,7 @@ void PopupRegistry::registerAll() {
         e.open = openSimple<CursorConfigPopup>();
         m_entries.push_back(std::move(e));
     }
+#endif
     {
         PopupEntry e;
         e.id = "discord-rich-presence";
@@ -707,6 +698,29 @@ void PopupRegistry::registerAll() {
 
     {
         PopupEntry e;
+        e.id = "manager-cut";
+        e.category = PopupCategory::QuickHub;
+        e.weight = 92;
+        e.displayNameByLang["english"] = "Manager Cut (Controls & Gestures)";
+        e.displayNameByLang["spanish"] = "Manager Cut (Teclas y Gestos)";
+        e.aliasesByLang["english"]     = {"manager cut", "controls", "keybinds", "gestures", "shortcuts", "hotkeys"};
+        e.aliasesByLang["spanish"]     = {"manager cut", "controles", "teclas", "gestos", "atajos"};
+        e.searchPhrasesByLang["english"] = {
+            "edit keybinds", "edit gestures", "change touch gestures", "all controls"
+        };
+        e.searchPhrasesByLang["spanish"] = {
+            "cambiar teclas", "editar gestos", "configurar gestos", "todos los controles"
+        };
+        e.descriptionByLang["english"] =
+            "<cy>Manager Cut!</c> View and edit every mod keybind and switch to customize touch gestures.";
+        e.descriptionByLang["spanish"] =
+            "<cy>Manager Cut!</c> Ver y modificar todos los controles de teclas o cambiar a gestos tactiles.";
+        e.open = openSimple<paimon::keybinds::ManagerCutPopup>();
+        m_entries.push_back(std::move(e));
+    }
+
+    {
+        PopupEntry e;
         e.id = "scroll-keybinds";
         e.category = PopupCategory::Volume;
         e.weight = 85;
@@ -827,9 +841,9 @@ void PopupRegistry::registerAll() {
             "abrir el foro", "publicaciones de la comunidad", "noticias de paimon"
         };
         e.descriptionByLang["english"] =
-            "<cy>Paimon Hub!</c> Forum, news, and community features.";
+            "<cy>Paimon Hub!</c> Features, forum, and community tools.";
         e.descriptionByLang["spanish"] =
-            "<cy>Paimon Hub!</c> Foro, noticias y features de comunidad.";
+            "<cy>Paimon Hub!</c> Funciones, foro y herramientas de comunidad.";
         e.open = openHub();
         m_entries.push_back(std::move(e));
     }
@@ -861,6 +875,7 @@ void PopupRegistry::registerAll() {
         m_entries.push_back(std::move(e));
     }
 
+#if defined(GEODE_IS_DESKTOP)
     {
         PopupEntry e;
         e.id = "smooth-scroll";
@@ -886,6 +901,7 @@ void PopupRegistry::registerAll() {
         e.open = openSimple<paimon::smoothscroll::SmoothScrollConfigPopup>();
         m_entries.push_back(std::move(e));
     }
+#endif
     {
         PopupEntry e;
         e.id = "custom-slider";
@@ -1022,12 +1038,19 @@ void PopupRegistry::registerAll() {
             "sacar foto del nivel", "captura limpia del nivel", "capturar mi nivel",
             "screenshot del nivel"
         };
+#if defined(GEODE_IS_MOBILE)
+        e.descriptionByLang["english"] =
+            "<cy>Capture Menu!</c> Take a clean thumbnail of your level. Opens from the pause menu button or your configured <cy>touch gesture</c> (Manager Cut -> Gestures).";
+        e.descriptionByLang["spanish"] =
+            "<cy>Menu de Captura!</c> Toma una miniatura limpia de tu nivel. Se abre desde el boton del menu de pausa o con tu <cy>gesto tactil</c> configurado (Manager Cut -> Gestos).";
+#else
         e.descriptionByLang["english"] =
             "<cy>Capture Menu!</c> Take a clean thumbnail of your level. Opens with right-click in "
             "menus/pause (or your capture keybind); also from the pause menu button.";
         e.descriptionByLang["spanish"] =
             "<cy>Menu de Captura!</c> Toma una miniatura limpia de tu nivel. Se abre con click derecho "
             "en menus/pausa (o tu tecla de captura); tambien desde el boton del menu de pausa.";
+#endif
         e.open = openCaptureMenu();
         m_entries.push_back(std::move(e));
     }

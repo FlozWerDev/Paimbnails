@@ -1,0 +1,76 @@
+#include <cassert>
+#include <charconv>
+#include <chrono>
+#include <functional>
+#include <string>
+#include <vector>
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+
+struct VerificationIdentity { int accountID; std::string username; };
+bool current = true;
+bool isCurrent(VerificationIdentity const&) { return current; }
+struct GJAccountManager {
+    std::string m_GJP2 = "local-gd-session";
+    static GJAccountManager* get() { static GJAccountManager account; return &account; }
+};
+struct HttpClient {
+    static std::string encodeQueryParamForm(std::string value) { return value; }
+};
+namespace web {
+struct Text {
+    std::string value;
+    std::string unwrapOr(char const*) const { return value; }
+};
+struct WebResponse {
+    bool ok() const { return true; }
+    Text string() const { return {"777"}; }
+};
+struct WebRequest {
+    bool followsRedirects = true;
+    std::string body, agent;
+    WebRequest& header(std::string, std::string) { return *this; }
+    WebRequest& userAgent(std::string value) { agent = std::move(value); return *this; }
+    WebRequest& followRedirects(bool value) { followsRedirects = value; return *this; }
+    WebRequest& timeout(std::chrono::seconds value) { assert(value.count() == 15); return *this; }
+    WebRequest& bodyString(std::string value) { body = std::move(value); return *this; }
+};
+}
+namespace WebHelper {
+struct Sent { web::WebRequest request; std::string method, url; };
+std::vector<Sent> sent;
+void dispatch(web::WebRequest request, std::string method, std::string url,
+              std::function<void(web::WebResponse)> callback) {
+    sent.push_back({std::move(request), std::move(method), std::move(url)});
+    callback({});
+}
+}
+
+@@function|src/features/twitch-requests/services/WebAccountVerification.cpp|int positiveCommentID(@@
+@@function|src/features/twitch-requests/services/WebAccountVerification.cpp|void postOfficial(@@
+
+int main() {
+    VerificationIdentity identity{17046382, "FlozWer"};
+    bool received = false;
+    postOfficial(identity, "uploadGJAccComment20.php", "comment=UEFJLUFCQzIzNA==", [&](bool ok, std::string body) {
+        assert(ok && body == "777"); received = true;
+    });
+    assert(received && WebHelper::sent.size() == 1);
+    auto const& sent = WebHelper::sent.front();
+    assert(sent.url == "https://www.boomlings.com/database/uploadGJAccComment20.php");
+    assert(sent.method == "POST" && !sent.request.followsRedirects);
+    assert(sent.request.agent.empty());
+    assert(sent.url.find("local-gd-session") == std::string::npos);
+    assert(sent.request.body.find("gjp2=local-gd-session") != std::string::npos);
+    current = false;
+    postOfficial(identity, "deleteGJAccComment20.php", "commentID=777", [](bool ok, auto) { assert(!ok); });
+    assert(WebHelper::sent.size() == 1);
+    current = true;
+    GJAccountManager::get()->m_GJP2.clear();
+    postOfficial(identity, "deleteGJAccComment20.php", "commentID=777", [](bool ok, auto) { assert(!ok); });
+    assert(WebHelper::sent.size() == 1);
+    assert(positiveCommentID("777\r\n") == 777);
+    for (std::string body : {"", "-1", "-10", "temp_123_reason", "123#other", "2147483648", "<html>777</html>"}) {
+        assert(positiveCommentID(body) == 0);
+    }
+}

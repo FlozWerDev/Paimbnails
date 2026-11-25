@@ -29,7 +29,7 @@ web::WebRequest baseRequest() {
     request.userAgent(kUserAgent)
         .acceptEncoding("gzip, deflate")
         .followRedirects(true)
-        .timeout(std::chrono::seconds(15));
+        .timeout(asp::Duration::fromSecs(15));
     return request;
 }
 
@@ -279,6 +279,15 @@ void ChatSourceBase::later(float seconds, std::function<void()> work) {
         if (life.expired()) return;
         work();
     });
+}
+
+void ChatSourceBase::retryPollOrFail(int& failures, char const* message, float delaySecs,
+                                     std::function<void()> pollAgain) {
+    if (++failures >= kMaxPollFailures) {
+        fail(message);
+        return;
+    }
+    later(delaySecs, std::move(pollAgain));
 }
 
 void ChatSourceBase::httpGet(

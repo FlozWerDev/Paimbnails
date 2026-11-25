@@ -31,7 +31,7 @@ struct ThumbnailApiMessageResult {
 
 struct ThumbnailTextureResult {
     bool success = false;
-    geode::Ref<cocos2d::CCTexture2D> texture;
+    geode::Ref<cocos2d::CCTexture2D> texture{};
 };
 
 struct ThumbnailDataResult {

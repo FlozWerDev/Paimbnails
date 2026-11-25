@@ -60,8 +60,8 @@ struct SearchPreset {
 };
 
 std::vector<SearchPreset> const& presets();
-void addPreset(std::string name, AdvancedQuery query);
-void removePreset(int index);
+bool addPreset(std::string name, AdvancedQuery query);
+bool removePreset(int index);
 
 // human readable one liner for a preset row.
 std::string describeQuery(AdvancedQuery const& query);

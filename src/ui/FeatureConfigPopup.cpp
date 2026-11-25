@@ -16,6 +16,7 @@
 #include "../features/dynamic-songs/ui/DynamicSongPopup.hpp"
 #include "../features/profile-music/ui/ProfileMusicPopup.hpp"
 #include "../layers/PaiConfigLayer.hpp"
+#include "../platform/PaimSettings.hpp"
 #include "../utils/PaimonNotification.hpp"
 
 #include <Geode/Geode.hpp>
@@ -34,26 +35,16 @@ using namespace paimon::settings_ui;
 namespace {
 
 template<typename T>
-T gset(const char* key) {
-    if (Mod::get()->hasSetting(key)) return Mod::get()->getSettingValue<T>(key);
-    return Mod::get()->getSavedValue<T>(key, T{});
-}
+T gset(const char* key) { return paimon::platform::gset<T>(key); }
 
 template<typename T>
-void sset(const char* key, T val) {
-    if (Mod::get()->hasSetting(key)) Mod::get()->setSettingValue<T>(key, val);
-    else Mod::get()->setSavedValue(key, val);
-}
+void sset(const char* key, T val) { paimon::platform::sset<T>(key, val); }
 
 template<typename T>
-T gsaved(const char* key, T def) {
-    return Mod::get()->getSavedValue<T>(key, def);
-}
+T gsaved(const char* key, T def) { return paimon::platform::gsaved<T>(key, def); }
 
 template<typename T>
-void ssaved(const char* key, T val) {
-    Mod::get()->setSavedValue(key, val);
-}
+void ssaved(const char* key, T val) { paimon::platform::ssaved<T>(key, val); }
 
 void openNativeSettings() {
     geode::openSettingsPopup(Mod::get(), false);
@@ -307,7 +298,7 @@ void buildProfileMusicGroup(CCNode* c, float w) {
             if (accountID > 0) {
                 if (auto* popup = ProfileMusicPopup::create(accountID)) popup->show();
             } else {
-                PaimonNotify::create("Necesitas iniciar sesion.", NotificationIcon::Warning)->show();
+                PaimonNotify::show("Necesitas iniciar sesion.", NotificationIcon::Warning);
             }
         },
         w));
@@ -404,6 +395,24 @@ void buildMenuLoopNotificationsGroup(CCNode* c, float w) {
         gset<std::string>("menuLoopCustomPrefix"),
         {"Now Playing", "Current Song", "Looping", "Song", "Music", "Playing", "[Empty]"},
         [](std::string const& v) { sset<std::string>("menuLoopCustomPrefix", v); },
+        w));
+
+    c->addChild(createDropdownRow("Notification Animation",
+        gset<std::string>("menuLoopNotificationStyle"),
+        {"expand", "slide", "bounce", "elastic", "fade", "none"},
+        [](std::string const& v) { sset<std::string>("menuLoopNotificationStyle", v); },
+        w));
+
+    c->addChild(createSliderRow("Notification Animation Speed (x)",
+        static_cast<float>(gset<double>("menuLoopNotificationSpeed")),
+        0.25f, 3.0f,
+        [](float v) { sset<double>("menuLoopNotificationSpeed", static_cast<double>(v)); },
+        w));
+
+    c->addChild(createSliderRow("Notification Animation Intensity",
+        static_cast<float>(gset<double>("menuLoopNotificationIntensity")),
+        0.0f, 1.0f,
+        [](float v) { sset<double>("menuLoopNotificationIntensity", static_cast<double>(v)); },
         w));
 }
 
@@ -617,6 +626,7 @@ void buildSmoothUIGroup(CCNode* c, float w) {
         [](bool v) { ssaved<bool>("smooth-ui-button-release-bounce", v); },
         w));
 
+#if defined(GEODE_IS_DESKTOP)
     c->addChild(createSectionHeader("Scroll & Editor Zoom", w));
 
     c->addChild(createToggleRow("Smooth Scroll",
@@ -652,6 +662,7 @@ void buildSmoothUIGroup(CCNode* c, float w) {
         0.25f, 3.0f,
         [](float v) { ssaved<double>("smooth-scroll-editor-zoom-smoothness", static_cast<double>(v)); },
         w));
+#endif
 
     c->addChild(createSectionHeader("Blur & Transitions", w));
 
@@ -710,7 +721,7 @@ std::unordered_map<std::string, FeatureGroup> const& featureGroupRegistry() {
         {"menu-loop",
             {"Bucle del Menu", "Shuffle, randomizar y restaurar.", &buildMenuLoopGroup}},
         {"menu-loop-notifications",
-            {"Notificaciones Now Playing", "Toggle, duracion y prefijo.", &buildMenuLoopNotificationsGroup}},
+            {"Notificaciones Now Playing", "Toggle, animacion, duracion y prefijo.", &buildMenuLoopNotificationsGroup}},
         {"popup-animation",
             {"Animacion de Popups", "Estilo y velocidad de entrada.", &buildPopupAnimationGroup}},
         {"popup-exit",
@@ -733,123 +744,103 @@ struct GranularRoute {
 };
 
 GranularRoute routeForGranular(std::string const& englishName) {
-    static const std::unordered_map<std::string, std::string> nameToGroup = {
-        {"Language / Idioma",                 "general"},
-        {"Auto Update",                       "general"},
-        {"Quick Search Key",                  "general"},
-        {"Realtime Search Preview",           "general"},
-        {"Settings Panel Keybind",            "general"},
-        {"Layout Editor Keybind",             "general"},
-        {"Debug Logs",                        "general"},
+    // one table for both route kinds; the dedicated action takes priority
+    // over the group key (see GranularRoute), so each name appears once.
+    static const std::unordered_map<std::string, GranularRoute> routes = {
+        {"Language / Idioma",                 {"general", {}}},
+        {"Auto Update",                       {"general", {}}},
+        {"Quick Search Key",                  {"general", {}}},
+        {"Realtime Search Preview",           {"general", {}}},
+        {"Settings Panel Keybind",            {"general", {}}},
+        {"Layout Editor Keybind",             {"general", {}}},
+        {"Debug Logs",                        {"general", {}}},
 
-        {"Thumbnail Size",                    "thumbnail-layout"},
-        {"Background Style (Cell)",           "thumbnail-layout"},
-        {"Background Blur (Cell)",            "thumbnail-layout"},
-        {"Darkness (Cell)",                   "thumbnail-layout"},
-        {"Show Separator",                    "thumbnail-layout"},
-        {"Show View Button",                  "thumbnail-layout"},
-        {"Compact Mode",                      "thumbnail-layout"},
-        {"Show Compact Toggle",               "thumbnail-layout"},
-        {"Auto-Cycle Gallery",                "thumbnail-gallery"},
-        {"Transition Type",                   "thumbnail-gallery"},
-        {"Transition Duration",               "thumbnail-gallery"},
-        {"Hover Effects",                     "thumbnail-hover"},
-        {"Animation Type",                    "thumbnail-hover"},
-        {"Animation Speed",                   "thumbnail-hover"},
-        {"Color Effect",                      "thumbnail-hover"},
-        {"Effect on Background",              "thumbnail-hover"},
-        {"Enable Capture Button",             "capture"},
-        {"Capture Thumbnail Key",             "capture"},
+        {"Thumbnail Size",                    {"thumbnail-layout", {}}},
+        {"Background Style (Cell)",           {"thumbnail-layout", {}}},
+        {"Background Blur (Cell)",            {"thumbnail-layout", {}}},
+        {"Darkness (Cell)",                   {"thumbnail-layout", {}}},
+        {"Show Separator",                    {"thumbnail-layout", {}}},
+        {"Show View Button",                  {"thumbnail-layout", {}}},
+        {"Compact Mode",                      {"thumbnail-layout", {}}},
+        {"Show Compact Toggle",               {"thumbnail-layout", {}}},
+        {"Auto-Cycle Gallery",                {"thumbnail-gallery", {}}},
+        {"Transition Type",                   {"thumbnail-gallery", {}}},
+        {"Transition Duration",               {"thumbnail-gallery", {}}},
+        {"Hover Effects",                     {"thumbnail-hover", {}}},
+        {"Animation Type",                    {"thumbnail-hover", {}}},
+        {"Animation Speed",                   {"thumbnail-hover", {}}},
+        {"Color Effect",                      {"thumbnail-hover", {}}},
+        {"Effect on Background",              {"thumbnail-hover", {}}},
+        {"Enable Capture Button",             {"capture", {}}},
+        {"Capture Thumbnail Key",             {"capture", {}}},
 
-        {"Background Style (Level)",          "level-info"},
-        {"Dynamic Song",                      "dynamic-song"},
+        {"Background Style (Level)",          {"level-info", {}}},
+        {"Dynamic Song",                      {"dynamic-song", {}}},
 
-        {"Enable Profile Music",              "profile-music"},
-        {"Enable Menu Music Player",          "menu-music-player"},
-        {"Show Playback Progress",            "menu-music-player"},
-        {"Menu Music Hotkeys",                "menu-music-player"},
-        {"Seek Step (ms)",                    "menu-music-player"},
-        {"Menu Loop Shuffle",                 "menu-loop"},
-        {"Remember Last Menu Loop",           "menu-loop"},
-        {"Randomize on Level Exit",           "menu-loop"},
-        {"Restore Position on Level Exit",    "menu-loop"},
-        {"Randomize on Editor Exit",          "menu-loop"},
-        {"Restore Position on Editor Exit",   "menu-loop"},
-        {"Now Playing Notifications",         "menu-loop-notifications"},
-        {"Notification Duration",             "menu-loop-notifications"},
-        {"Notification Prefix",               "menu-loop-notifications"},
+        {"Enable Profile Music",              {"profile-music", {}}},
+        {"Enable Menu Music Player",          {"menu-music-player", {}}},
+        {"Show Playback Progress",            {"menu-music-player", {}}},
+        {"Menu Music Hotkeys",                {"menu-music-player", {}}},
+        {"Seek Step (ms)",                    {"menu-music-player", {}}},
+        {"Menu Loop Shuffle",                 {"menu-loop", {}}},
+        {"Remember Last Menu Loop",           {"menu-loop", {}}},
+        {"Randomize on Level Exit",           {"menu-loop", {}}},
+        {"Restore Position on Level Exit",    {"menu-loop", {}}},
+        {"Randomize on Editor Exit",          {"menu-loop", {}}},
+        {"Restore Position on Editor Exit",   {"menu-loop", {}}},
+        {"Now Playing Notifications",         {"menu-loop-notifications", {}}},
+        {"Notification Duration",             {"menu-loop-notifications", {}}},
+        {"Notification Prefix",               {"menu-loop-notifications", {}}},
+        {"Notification Animation",            {"menu-loop-notifications", {}}},
+        {"Notification Animation Speed",      {"menu-loop-notifications", {}}},
+        {"Notification Animation Intensity",  {"menu-loop-notifications", {}}},
 
-        {"Smooth UI",                         "smooth-ui"},
-        {"Smooth Popups",                     "smooth-ui"},
-        {"Button Animations",                 "smooth-ui"},
-        {"Global UI Speed",                   "smooth-ui"},
-        {"Reduced Motion",                    "smooth-ui"},
-        {"Score Cell Style",                  "score-cell"},
-        {"Dynamic Popups",                    "popup-animation"},
-        {"Dynamic Popup Exit",                "popup-exit"},
-        {"Popup Blur",                        "popup-blur"},
-        {"Download Threads",                  "performance"},
-        {"Disk Cache",                        "performance"},
-        {"Clear Cache on Exit",               "performance"},
-        {"Open Thumbnails Folder",            "performance"},
-    };
+        {"Score Cell Style",                  {"score-cell", {}}},
+        {"Dynamic Popups",                    {"popup-animation", {}}},
+        {"Dynamic Popup Exit",                {"popup-exit", {}}},
+        {"Popup Blur",                        {"popup-blur", {}}},
+        {"Download Threads",                  {"performance", {}}},
+        {"Disk Cache",                        {"performance", {}}},
+        {"Clear Cache on Exit",               {"performance", {}}},
+        {"Open Thumbnails Folder",            {"performance", {}}},
 
-    if (englishName == "Smooth UI" ||
-        englishName == "Smooth Popups" ||
-        englishName == "Button Animations" ||
-        englishName == "Global UI Speed" ||
-        englishName == "Reduced Motion") {
-        return {{}, []() {
-            if (auto* p = paimon::ui::SmoothUIConfigPopup::create()) p->show();
-        }};
-    }
-    if (englishName == "Progress Bar") {
-        return {{}, []() { if (auto* p = ProgressBarConfigPopup::create()) p->show(); }};
-    }
-    if (englishName == "Enable Pet" ||
-        englishName == "Pet Sprite / Pet Type" ||
-        englishName == "Pet Scale" ||
-        englishName == "Pet Opacity") {
-        return {{}, []() { if (auto* p = PetConfigPopup::create()) p->show(); }};
-    }
-    if (englishName == "Custom Cursor" ||
-        englishName == "Cursor Trail" ||
-        englishName == "Cursor Scale") {
-        return {{}, []() { if (auto* p = CursorConfigPopup::create()) p->show(); }};
-    }
-    if (englishName == "Custom Hover") {
-        return {{}, [] { paimon::hover::open(); }};
-    }
-    if (englishName == "Custom Slider Thumb") {
-        return {{}, []() {
-            if (auto* p = paimon::slider::CustomSliderPopup::create()) p->show();
-        }};
-    }
-    if (englishName == "Editor Fondos" || englishName == "Configuracion Completa") {
-        return {{}, []() {
+        {"Smooth UI",           {{}, []() { if (auto* p = paimon::ui::SmoothUIConfigPopup::create()) p->show(); }}},
+        {"Smooth Popups",       {{}, []() { if (auto* p = paimon::ui::SmoothUIConfigPopup::create()) p->show(); }}},
+        {"Button Animations",   {{}, []() { if (auto* p = paimon::ui::SmoothUIConfigPopup::create()) p->show(); }}},
+        {"Global UI Speed",     {{}, []() { if (auto* p = paimon::ui::SmoothUIConfigPopup::create()) p->show(); }}},
+        {"Reduced Motion",      {{}, []() { if (auto* p = paimon::ui::SmoothUIConfigPopup::create()) p->show(); }}},
+        {"Progress Bar",        {{}, []() { if (auto* p = ProgressBarConfigPopup::create()) p->show(); }}},
+        {"Enable Pet",          {{}, []() { if (auto* p = PetConfigPopup::create()) p->show(); }}},
+        {"Pet Sprite / Pet Type", {{}, []() { if (auto* p = PetConfigPopup::create()) p->show(); }}},
+        {"Pet Scale",           {{}, []() { if (auto* p = PetConfigPopup::create()) p->show(); }}},
+        {"Pet Opacity",         {{}, []() { if (auto* p = PetConfigPopup::create()) p->show(); }}},
+#if defined(GEODE_IS_DESKTOP)
+        {"Custom Cursor",       {{}, []() { if (auto* p = CursorConfigPopup::create()) p->show(); }}},
+        {"Cursor Trail",        {{}, []() { if (auto* p = CursorConfigPopup::create()) p->show(); }}},
+        {"Cursor Scale",        {{}, []() { if (auto* p = CursorConfigPopup::create()) p->show(); }}},
+#endif
+        {"Custom Hover",        {{}, []() { paimon::hover::open(); }}},
+        {"Custom Slider Thumb", {{}, []() { if (auto* p = paimon::slider::CustomSliderPopup::create()) p->show(); }}},
+        {"Editor Fondos",       {{}, []() {
             SettingsPanelManager::get().close();
             PaiConfigLayer::openOverlay();
-        }};
-    }
-    if (englishName == "Transiciones de Fondos") {
-        return {{}, []() { if (auto* p = TransitionConfigPopup::create()) p->show(); }};
-    }
-    if (englishName == "Enable Discord Rich Presence" ||
-        englishName == "Configure Discord RPC") {
-        return {{}, []() {
-            if (auto* p = paimon::discord::DiscordConfigPopup::create()) p->show();
-        }};
-    }
-    if (englishName == "Refresh Discord Status") {
-        return {{}, []() {
-            paimon::discord::DiscordPresenceManager::get().refreshSoon();
-            PaimonNotify::create("Rich Presence actualizada.", NotificationIcon::Success)->show();
-        }};
-    }
+        }}},
+        {"Configuracion Completa", {{}, []() {
+            SettingsPanelManager::get().close();
+            PaiConfigLayer::openOverlay();
+        }}},
+        {"Transiciones de Fondos", {{}, []() { if (auto* p = TransitionConfigPopup::create()) p->show(); }}},
+        {"Enable Discord Rich Presence", {{}, []() { if (auto* p = paimon::discord::DiscordConfigPopup::create()) p->show(); }}},
+        {"Configure Discord RPC",        {{}, []() { if (auto* p = paimon::discord::DiscordConfigPopup::create()) p->show(); }}},
+        {"Refresh Discord Status", {{}, []() {
+            paimon::discord::DiscordPresenceManager::get().refreshNow(true);
+            PaimonNotify::show("Actualizacion de Rich Presence solicitada.", NotificationIcon::Info);
+        }}},
+    };
 
-    auto it = nameToGroup.find(englishName);
-    if (it != nameToGroup.end()) {
-        return {it->second, {}};
+    auto it = routes.find(englishName);
+    if (it != routes.end()) {
+        return it->second;
     }
 
     return {};
@@ -913,6 +904,7 @@ bool FeatureConfigPopup::init(std::string const& featureKey) {
     m_mainLayer->addChild(listInset);
 
     m_scroll = ScrollLayer::create({scrollW, scrollH});
+    if (m_scroll) m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setPosition({scrollX, scrollY});
     m_scroll->setID("paimon-feature-config-scroll"_spr);
     m_mainLayer->addChild(m_scroll);

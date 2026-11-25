@@ -1,0 +1,193 @@
+#include <matjson.hpp>
+#include "src/features/menu-music/services/MenuMusicLibrarySave.hpp"
+#include "src/utils/AtomicFileWrite.hpp"
+#include <atomic>
+#include <cassert>
+#include <chrono>
+#include <condition_variable>
+#include <fstream>
+#include <iterator>
+#include <thread>
+#include <vector>
+
+// The production queue is included verbatim. Its scheduler is injectable so
+// the tests can block the real worker and exercise actual filesystem writes.
+namespace paimon {
+struct ThreadTracker {
+    static ThreadTracker& get() { static ThreadTracker tracker; return tracker; }
+    bool spawn(std::function<void()>) { return false; }
+};
+}
+@@source|src/features/menu-music/services/MenuMusicLibrarySave.cpp@@
+
+using namespace paimon::menumusic;
+using namespace std::chrono_literals;
+namespace fs = std::filesystem;
+std::string readFile(fs::path const& path) {
+    std::ifstream file(path, std::ios::binary);
+    return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+}
+void writeFile(fs::path const& path, std::string const& content) {
+    std::ofstream file(path, std::ios::binary); file << content; assert(file.good());
+}
+MusicLibrarySnapshot snapshot(fs::path path, std::uint64_t id, std::uint64_t generation = 0) {
+    MusicLibrarySnapshot value;
+    value.path = std::move(path); value.idCounter = id; value.loadFailureGeneration = generation;
+    value.mode = PlaybackMode::Playlist; value.activePlaylistId = "playlist";
+    value.lastTrackId = "track";
+    MusicTrack track;
+    track.id = "track"; track.displayName = "title " + std::to_string(id);
+    track.audioPath = "song.mp3"; track.coverPath = "cover.png";
+    track.sourceUrl = "url"; track.artist = "artist"; track.favorite = true;
+    track.blacklisted = true; track.durationMs = 1234; track.addedUnixMs = 9876;
+    value.tracks.push_back(track);
+    MusicPlaylist playlist; playlist.id = "playlist"; playlist.name = "name";
+    playlist.createdUnixMs = 123; playlist.trackIds.push_back("track");
+    value.playlists.push_back(playlist);
+    return value;
+}
+struct Threads {
+    std::mutex mutex;
+    std::vector<std::thread> threads;
+    bool allow = true;
+    bool schedule(std::function<void()> work) {
+        std::lock_guard lock(mutex);
+        if (!allow) return false;
+        threads.emplace_back(std::move(work));
+        return true;
+    }
+    void join() {
+        std::vector<std::thread> copy;
+        { std::lock_guard lock(mutex); copy.swap(threads); }
+        for (auto& thread : copy) thread.join();
+    }
+    ~Threads() { join(); }
+};
+struct Barrier {
+    std::mutex mutex;
+    std::condition_variable changed;
+    bool entered = false, release = false;
+    void waitForEntry() { std::unique_lock lock(mutex); assert(changed.wait_for(lock, 5s, [&] { return entered; })); }
+    void unblock() { std::lock_guard lock(mutex); release = true; changed.notify_all(); }
+};
+int main() {
+    auto root = fs::temp_directory_path() / ("paimon-music-save-" +
+        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    fs::create_directories(root);
+    auto path = root / "library.json";
+    auto corrupt = root / "library.json.corrupt";
+    auto corrupt1 = root / "library.json.corrupt.1";
+    auto corrupt2 = root / "library.json.corrupt.2";
+    writeFile(path, "unreadable JSON"); writeFile(corrupt, "older corrupt backup");
+    Threads workers;
+    Barrier barrier;
+    std::atomic<int> writes = 0, completions = 0;
+    std::atomic<bool> callbackWasWorker = false;
+    auto ownerThread = std::this_thread::get_id();
+    MenuMusicLibrarySaveQueue queue([&](auto work) { return workers.schedule(std::move(work)); },
+        [&](auto const& file, std::string_view json) {
+            int index = ++writes;
+            if (index == 1) {
+                std::unique_lock lock(barrier.mutex); barrier.entered = true; barrier.changed.notify_all();
+                barrier.changed.wait(lock, [&] { return barrier.release; });
+            }
+            return paimon::file::writeAtomically(file, json);
+        });
+    auto complete = [&](bool ok, std::uint64_t generation) {
+        assert(ok && generation == 7); ++completions;
+        callbackWasWorker = std::this_thread::get_id() != ownerThread;
+    };
+    assert(queue.enqueue(snapshot(path, 1, 7), complete));
+    barrier.waitForEntry();
+    std::atomic<bool> submitted = false;
+    std::thread producer([&] {
+        assert(queue.enqueue(snapshot(path, 2, 7), complete));
+        assert(queue.enqueue(snapshot(path, 3, 7), complete));
+        submitted = true;
+    });
+    for (int i = 0; i < 200 && !submitted; ++i) std::this_thread::sleep_for(1ms);
+    bool wasNonblocking = submitted;
+    if (!wasNonblocking) barrier.unblock();
+    producer.join();
+    assert(wasNonblocking); // the producer did not wait for disk or the worker lock
+    std::atomic<bool> shutdownFinished = false;
+    bool shutdownResult = false;
+    std::thread closer([&] { shutdownResult = queue.shutdown(); shutdownFinished = true; });
+    std::this_thread::sleep_for(30ms);
+    assert(!shutdownFinished); // shutdown waits for the in-flight writer and newest snapshot
+    barrier.unblock(); closer.join();
+    assert(shutdownResult); workers.join();
+    assert(writes == 2 && completions == 2 && callbackWasWorker);
+    assert(readFile(corrupt) == "older corrupt backup");
+    assert(readFile(corrupt1) == "unreadable JSON" && !fs::exists(corrupt2));
+    auto parsed = matjson::parse(readFile(path)); assert(parsed);
+    auto const& saved = parsed.unwrap();
+    assert(saved["idCounter"].asInt().unwrap() == 3);
+    assert(saved["mode"].asInt().unwrap() == static_cast<int>(PlaybackMode::Playlist));
+    assert(saved["activePlaylistId"].asString().unwrap() == "playlist");
+    assert(saved["lastTrackId"].asString().unwrap() == "track");
+    assert(saved["tracks"][0]["displayName"].asString().unwrap() == "title 3");
+    assert(saved["tracks"][0]["artist"].asString().unwrap() == "artist");
+    assert(saved["tracks"][0]["favorite"].asBool().unwrap());
+    assert(saved["tracks"][0]["blacklisted"].asBool().unwrap());
+    assert(saved["tracks"][0]["durationMs"].asInt().unwrap() == 1234);
+    assert(saved["playlists"][0]["trackIds"][0].asString().unwrap() == "track");
+    assert(!queue.enqueue(snapshot(path, 4)));
+
+    // A failed write retains the newest snapshot and retries after disk recovery.
+    auto blocked = root / "blocked.json"; fs::create_directory(blocked);
+    Threads retryWorkers;
+    MenuMusicLibrarySaveQueue retry([&](auto work) { return retryWorkers.schedule(std::move(work)); });
+    std::mutex resultMutex; std::condition_variable resultChanged; int results = 0; bool last = true;
+    auto report = [&](bool ok, std::uint64_t) {
+        std::lock_guard lock(resultMutex); last = ok; ++results; resultChanged.notify_all();
+    };
+    assert(retry.enqueue(snapshot(blocked, 4), report));
+    { std::unique_lock lock(resultMutex); assert(resultChanged.wait_for(lock, 5s, [&] { return results == 1; })); assert(!last); }
+    retryWorkers.join();
+    assert(fs::is_directory(blocked)); assert(fs::remove(blocked));
+    assert(retry.retryPending());
+    assert(retry.shutdown()); retryWorkers.join();
+    assert(results == 2 && last);
+    auto recovered = matjson::parse(readFile(blocked)); assert(recovered && recovered.unwrap()["idCounter"].asInt().unwrap() == 4);
+
+    // Emptying a recovered library before the main-thread completion callback
+    // is processed is valid: the original corrupt file was already preserved.
+    auto sameGeneration = root / "same-generation.json"; writeFile(sameGeneration, "bad JSON");
+    auto sameCorrupt = root / "same-generation.json.corrupt";
+    auto secondCorrupt = root / "same-generation.json.corrupt.1";
+    Threads sameWorkers;
+    MenuMusicLibrarySaveQueue same([&](auto work) { return sameWorkers.schedule(std::move(work)); });
+    std::mutex sameMutex; std::condition_variable sameChanged; bool firstComplete = false;
+    assert(same.enqueue(snapshot(sameGeneration, 1, 15), [&](bool ok, std::uint64_t generation) {
+        assert(ok && generation == 15);
+        std::lock_guard lock(sameMutex); firstComplete = true; sameChanged.notify_all();
+    }));
+    { std::unique_lock lock(sameMutex); assert(sameChanged.wait_for(lock, 5s, [&] { return firstComplete; })); }
+    auto cleared = snapshot(sameGeneration, 2, 15); cleared.tracks.clear(); cleared.playlists.clear();
+    assert(same.enqueue(std::move(cleared)));
+    assert(same.shutdown()); sameWorkers.join();
+    auto clearedLibrary = matjson::parse(readFile(sameGeneration));
+    assert(clearedLibrary && clearedLibrary.unwrap()["tracks"].size() == 0);
+    assert(readFile(sameCorrupt) == "bad JSON" && !fs::exists(secondCorrupt));
+
+    // An unreadable library cannot be replaced with an empty snapshot.
+    auto damaged = root / "damaged.json"; writeFile(damaged, "broken");
+    Threads damagedWorkers;
+    MenuMusicLibrarySaveQueue damagedQueue([&](auto work) { return damagedWorkers.schedule(std::move(work)); });
+    auto empty = snapshot(damaged, 5, 42); empty.tracks.clear(); empty.playlists.clear();
+    assert(damagedQueue.enqueue(empty));
+    assert(!damagedQueue.shutdown()); damagedWorkers.join();
+    assert(readFile(damaged) == "broken");
+
+    // A rejected worker leaves the snapshot retryable, including during close.
+    auto later = root / "later.json"; Threads laterWorkers; laterWorkers.allow = false;
+    MenuMusicLibrarySaveQueue delayed([&](auto work) { return laterWorkers.schedule(std::move(work)); });
+    assert(!delayed.enqueue(snapshot(later, 6))); assert(!fs::exists(later));
+    laterWorkers.allow = true; assert(delayed.retryPending());
+    assert(delayed.shutdown()); laterWorkers.join(); assert(fs::exists(later));
+
+    fs::remove(path); fs::remove(corrupt); fs::remove(corrupt1); fs::remove(blocked); fs::remove(damaged); fs::remove(later);
+    fs::remove(sameGeneration); fs::remove(sameCorrupt);
+    fs::remove(root);
+}

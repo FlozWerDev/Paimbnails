@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "../../../ui/PaimonUI.hpp"
 #include "IconEditorLayer.hpp"
 
@@ -9,21 +10,25 @@
 #include "IconMakerUI.hpp"
 #include "IconNamePopup.hpp"
 #include "IconTryPopup.hpp"
+#include "ShapePickerPopup.hpp"
 #include "TemplatePickerPopup.hpp"
 #include "../data/IconAnatomy.hpp"
 #include "../data/IconPalettes.hpp"
 #include "../data/IconThemes.hpp"
 #include "../engine/PieceRenderer.hpp"
+#include "../engine/ShapeGenerator.hpp"
 #include "../engine/TemplateExtractor.hpp"
 #include "../persist/IconPaths.hpp"
 #include "../persist/IconProjectStore.hpp"
 #include "../persist/StyleStore.hpp"
+#include "../services/IconApplier.hpp"
 #include "../services/IconBuildService.hpp"
 #include "../services/IconShare.hpp"
 #include "../services/IconThumbs.hpp"
 #include "../../texture-studio/engine/SpritePreviewRenderer.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../ui/PaiConfigKit.hpp"
+#include "../../smooth-scroll/services/SmoothScrollController.hpp"
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/PaimonDrawNode.hpp"
 #include "../../../utils/SpriteHelper.hpp"
@@ -135,6 +140,8 @@ char const* fillTypeName(FillSpec const& fill) {
     switch (fill.type) {
         case FillType::Gradient: return "Degradado";
         case FillType::Image:    return "Imagen";
+        case FillType::Original: return "Original";
+        case FillType::Pattern:  return "Patron";
         case FillType::Flat:
         default:                 return "Color";
     }
@@ -149,6 +156,10 @@ ccColor3B fillSwatch(FillSpec const& fill) {
             auto const& c = fill.gradient.stops.front().color;
             return {c.r, c.g, c.b};
         }
+        case FillType::Pattern:
+            return {fill.pattern.primary.r, fill.pattern.primary.g, fill.pattern.primary.b};
+        case FillType::Original:
+            return {190, 230, 255};
         case FillType::Image:
             return {150, 200, 255};
         case FillType::Flat:
@@ -160,8 +171,10 @@ ccColor3B fillSwatch(FillSpec const& fill) {
 std::string layerSubtitle(IconPiece const& piece) {
     std::string text = fillTypeName(piece.fill);
     if (piece.fill.outline.enabled) text += " + borde";
-    if (piece.locked) text += "  (bloqueada)";
-    if (!piece.visible) text += "  (oculta)";
+    if (piece.fill.shadow.enabled) text += " + sombra";
+    if (piece.fill.gloss) text += " + brillo";
+    if (piece.locked) text += " (bloq)";
+    if (!piece.visible) text += " (oculta)";
     return text;
 }
 
@@ -170,7 +183,7 @@ geode::Result<std::string> importImageFile(std::string const& slotId,
                                            std::string const& pieceId,
                                            std::filesystem::path const& source,
                                            char const* prefix) {
-    auto ext = utils::string::pathToString(source.extension());
+    auto ext = paimon::paths::toUtf8(source.extension());
     if (ext.empty()) ext = ".png";
     auto fileName = IconPaths::sanitizeFilename(
         fmt::format("{}_{}{}", prefix, pieceId, ext));
@@ -349,7 +362,7 @@ void IconEditorLayer::keyBackClicked() {
 }
 
 void IconEditorLayer::onBack() {
-    if (m_dirty) saveProject(false);
+    if (m_dirty && !saveProject(false)) return;
     IconThumbs::get().invalidate(m_project.id);
     CCDirector::get()->popSceneWithTransition(0.4f, PopTransition::kPopTransitionFade);
 }
@@ -436,6 +449,8 @@ void IconEditorLayer::buildTopBar() {
         x -= half + 3.f;
     };
 
+    addCircle("GJ_trashBtn_001.png", 0.85f, CircleBaseColor::Pink, false,
+              [this] { this->onDeleteProject(); }, nullptr);
     addCircle("GJ_optionsBtn_001.png", 0.9f, CircleBaseColor::Gray, false,
               [this] { this->onProjectMenu(); }, nullptr);
     addCircle("GJ_arrow_03_001.png", 1.f, CircleBaseColor::Blue, true,
@@ -478,18 +493,14 @@ void IconEditorLayer::buildWorkspace() {
     };
     callbacks.onMove = [this](float dx, float dy) {
         m_gestureActive = true;
-        edit("canvas-move", [&] {
-            auto* piece = selectedPiece();
-            if (!piece) return;
+        editPiece("canvas-move", [&](IconPiece* piece) {
             piece->transform.offsetX = std::clamp(piece->transform.offsetX + dx, -1.f, 1.f);
             piece->transform.offsetY = std::clamp(piece->transform.offsetY + dy, -1.f, 1.f);
         });
     };
     callbacks.onScale = [this](float factorX, float factorY) {
         m_gestureActive = true;
-        edit("canvas-scale", [&] {
-            auto* piece = selectedPiece();
-            if (!piece) return;
+        editPiece("canvas-scale", [&](IconPiece* piece) {
             // shared stretch goes to overall size, remainder per axis, so diagonal
             // drags don't cap out early.
             float const uniform = std::sqrt(std::max(0.0001f, factorX * factorY));
@@ -500,9 +511,7 @@ void IconEditorLayer::buildWorkspace() {
     };
     callbacks.onRotate = [this](float deltaDeg) {
         m_gestureActive = true;
-        edit("canvas-rotate", [&] {
-            auto* piece = selectedPiece();
-            if (!piece) return;
+        editPiece("canvas-rotate", [&](IconPiece* piece) {
             float angle = piece->transform.rotationDeg + deltaDeg;
             while (angle > 180.f) angle -= 360.f;
             while (angle < -180.f) angle += 360.f;
@@ -607,9 +616,11 @@ void IconEditorLayer::buildWorkspace() {
         });
     makeToolButton(toolLeft + toolW * 2.5f, &m_isolateToolLabel,
         [this](CCMenuItemSpriteExtra*) {
-            m_isolateZone = !m_isolateZone;
-            if (m_canvas) m_canvas->setIsolate(m_isolateZone);
-            setStatus(m_isolateZone ? "Viendo solo esta zona." : "Viendo el icono entero.");
+            m_focusMode = (m_focusMode + 1) % 3;
+            if (m_canvas) m_canvas->setFocusMode(m_focusMode);
+            setStatus(m_focusMode == 2 ? "Viendo solo esta zona."
+                    : m_focusMode == 1 ? "Enfocando esta zona (resto atenuado)."
+                                       : "Viendo el icono entero al 100%.");
             refreshViewTools();
         });
     makeToolButton(toolLeft + toolW * 3.5f, &m_pickToolLabel,
@@ -653,9 +664,11 @@ void IconEditorLayer::refreshViewTools() {
     setLabel(m_guideToolLabel, m_showGuide
         ? (compact ? "Guia si" : "Guia: si")
         : (compact ? "Guia no" : "Guia: no"));
-    setLabel(m_isolateToolLabel, m_isolateZone
+    setLabel(m_isolateToolLabel, m_focusMode == 2
         ? (compact ? "Solo" : "Solo esta zona")
-        : (compact ? "Todo" : "Ver todo"));
+        : m_focusMode == 1
+            ? (compact ? "Foco" : "Enfocar zona")
+            : (compact ? "Todo" : "Ver todo"));
     setLabel(m_pickToolLabel, m_eyedropper
         ? (compact ? "Copiando" : "Copiando color")
         : (compact ? "Pipeta" : "Cuentagotas"));
@@ -959,14 +972,20 @@ std::vector<CCNode*> IconEditorLayer::buildLayersTab(float width) {
             });
             scheduleInspectorRebuild();
         };
+        spec.onDelete = [this, index] { this->onDeleteLayer(index); };
         spec.onMore = [this, index] { this->onLayerMenu(index); };
 
         rows.push_back(mkui::makeLayerRow(width, std::move(spec)));
     }
 
-    rows.push_back(mkui::makeDualButtonRow(width,
-        "+ Imagen", [this] { this->onAddImportLayer(); },
-        "+ Forma oficial", [this] { this->onAddTemplateLayer(); }));
+    rows.push_back(mkui::makeTripleButtonRow(width,
+        "+ Forma", [this] { this->onAddShapeLayer(false); },
+        "+ Oficial", [this] { this->onAddTemplateLayer(); },
+        "+ Imagen", [this] { this->onAddImportLayer(); }));
+
+    rows.push_back(kit::makeButtonRow(width, "Caras y accesorios",
+        "Ojos GD, bocas, coronas, cuernos, alas, rayos, calaveras y mas.",
+        "+ Agregar", [this] { this->onAddShapeLayer(true); }));
 
     return rows;
 }
@@ -982,20 +1001,118 @@ std::vector<CCNode*> IconEditorLayer::buildPaintTab(float width) {
         return rows;
     }
 
-    int const typeIndex = piece->fill.type == FillType::Gradient ? 1
-                        : piece->fill.type == FillType::Image ? 2 : 0;
-    rows.push_back(kit::makeTabBar(width, {"Color", "Degradado", "Imagen"}, typeIndex,
-        [this](int index) {
-            edit({}, [&] {
-                if (auto* p = selectedPiece()) {
-                    p->fill.type = static_cast<FillType>(index);
-                    p->fill.chroma = false;
-                }
+    bool const showOriginalTab = piece->shape.kind == PieceShape::Kind::Import ||
+                                 piece->fill.type == FillType::Original;
+    std::vector<std::string> fillLabels;
+    std::vector<FillType> fillOrder;
+    if (showOriginalTab) {
+        fillLabels = {"Orig.", "Color", "Degrad.", "Patron", "Img"};
+        fillOrder  = {FillType::Original, FillType::Flat, FillType::Gradient,
+                      FillType::Pattern, FillType::Image};
+    } else {
+        fillLabels = {"Color", "Degrad.", "Patron", "Imagen"};
+        fillOrder  = {FillType::Flat, FillType::Gradient, FillType::Pattern, FillType::Image};
+    }
+
+    int typeIndex = 0;
+    for (std::size_t i = 0; i < fillOrder.size(); ++i) {
+        if (fillOrder[i] == piece->fill.type) { typeIndex = static_cast<int>(i); break; }
+    }
+    rows.push_back(kit::makeTabBar(width, fillLabels, typeIndex,
+        [this, fillOrder](int index) {
+            if (index < 0 || index >= static_cast<int>(fillOrder.size())) return;
+            FillType chosen = fillOrder[static_cast<std::size_t>(index)];
+            editPiece({}, [&](IconPiece* p) {
+                p->fill.type = chosen;
+                p->fill.chroma = false;
             });
             scheduleInspectorRebuild();
         }));
 
     switch (piece->fill.type) {
+        case FillType::Original: {
+            rows.push_back(kit::makeHint(width,
+                "Conserva los colores originales de tu imagen sin convertirla a gris. "
+                "Puedes afinar matiz, brillo o efectos abajo."));
+            break;
+        }
+
+        case FillType::Pattern: {
+            std::vector<std::string> patNames{
+                "Rayas", "Tablero", "Puntos", "Cuadricula",
+                "Chevron", "Carbono", "Anillos", "Diagonal"
+            };
+            rows.push_back(kit::makeSelectRow(width, "Tipo de patron",
+                "Estampado vectorial nitido dentro de la capa.",
+                patNames, static_cast<int>(piece->fill.pattern.kind),
+                [this](int idx) {
+                    editPiece({}, [&](IconPiece* p) {
+                        p->fill.pattern.kind = static_cast<PatternKind>(idx);
+                    });
+                }));
+
+            rows.push_back(mkui::makeColorRow(width, "Color principal", nullptr,
+                piece->fill.pattern.primary,
+                [this] {
+                    auto* p = selectedPiece();
+                    if (!p) return;
+                    auto* picker = ColorPickPopup::create(p->fill.pattern.primary);
+                    if (!picker) return;
+                    Ref<IconEditorLayer> self = this;
+                    picker->setCallback([self](ccColor4B const& picked) {
+                        if (paimon::isRuntimeShuttingDown() || !self) return;
+                        self->editPiece("pat-col1", [&](IconPiece* p2) {
+                            p2->fill.pattern.primary = picked;
+                        });
+                        rememberColor({picked.r, picked.g, picked.b});
+                        self->scheduleInspectorRebuild();
+                    });
+                    picker->show();
+                }));
+
+            rows.push_back(mkui::makeColorRow(width, "Color secundario", nullptr,
+                piece->fill.pattern.secondary,
+                [this] {
+                    auto* p = selectedPiece();
+                    if (!p) return;
+                    auto* picker = ColorPickPopup::create(p->fill.pattern.secondary);
+                    if (!picker) return;
+                    Ref<IconEditorLayer> self = this;
+                    picker->setCallback([self](ccColor4B const& picked) {
+                        if (paimon::isRuntimeShuttingDown() || !self) return;
+                        self->editPiece("pat-col2", [&](IconPiece* p2) {
+                            p2->fill.pattern.secondary = picked;
+                        });
+                        rememberColor({picked.r, picked.g, picked.b});
+                        self->scheduleInspectorRebuild();
+                    });
+                    picker->show();
+                }));
+
+            rows.push_back(kit::makeNumberRow(width, "Escala del patron", nullptr,
+                piece->fill.pattern.scale, 0.25, 3.5, 0.1, 2,
+                [this](double v) {
+                    editPiece("pat-scale", [&](IconPiece* p) {
+                        p->fill.pattern.scale = static_cast<float>(v);
+                    });
+                }));
+            rows.push_back(kit::makeNumberRow(width, "Angulo (grados)", nullptr,
+                piece->fill.pattern.angleDeg, -180.0, 180.0, 15.0, 0,
+                [this](double v) {
+                    editPiece("pat-angle", [&](IconPiece* p) {
+                        p->fill.pattern.angleDeg = static_cast<float>(v);
+                    });
+                }));
+            rows.push_back(kit::makeNumberRow(width, "Grosor del patron", nullptr,
+                piece->fill.pattern.thickness, 0.10, 0.90, 0.05, 2,
+                [this](double v) {
+                    editPiece("pat-thick", [&](IconPiece* p) {
+                        p->fill.pattern.thickness = static_cast<float>(v);
+                    });
+                }));
+            break;
+        }
+
         case FillType::Flat: {
             rows.push_back(mkui::makeSwatchGrid(width, quickColors(), piece->fill.flat,
                 [this](ccColor3B color) { this->pickColor(color); },
@@ -1007,8 +1124,8 @@ std::vector<CCNode*> IconEditorLayer::buildPaintTab(float width) {
                     Ref<IconEditorLayer> self = this;
                     picker->setCallback([self](ccColor4B const& picked) {
                         if (paimon::isRuntimeShuttingDown() || !self) return;
-                        self->edit("flat-color", [&] {
-                            if (auto* p2 = self->selectedPiece()) p2->fill.flat = picked;
+                        self->editPiece("flat-color", [&](IconPiece* p2) {
+                        p2->fill.flat = picked;
                         });
                         rememberColor({picked.r, picked.g, picked.b});
                         self->scheduleInspectorRebuild();
@@ -1018,11 +1135,9 @@ std::vector<CCNode*> IconEditorLayer::buildPaintTab(float width) {
 
             rows.push_back(mkui::makeHexRow(width, piece->fill.flat,
                 [this](ccColor3B color) {
-                    edit("hex-color", [&] {
-                        if (auto* p = selectedPiece()) {
-                            p->fill.flat = {color.r, color.g, color.b, 255};
-                            p->fill.chroma = false;
-                        }
+                    editPiece("hex-color", [&](IconPiece* p) {
+                        p->fill.flat = {color.r, color.g, color.b, 255};
+                        p->fill.chroma = false;
                     });
                 }));
 
@@ -1051,8 +1166,8 @@ std::vector<CCNode*> IconEditorLayer::buildPaintTab(float width) {
                     auto* popup = GradientEditorPopup::create(p->fill.gradient,
                         [self](GradientSpec const& spec) {
                             if (paimon::isRuntimeShuttingDown() || !self) return;
-                            self->edit("gradient", [&] {
-                                if (auto* p2 = self->selectedPiece()) p2->fill.gradient = spec;
+                            self->editPiece("gradient", [&](IconPiece* p2) {
+                            p2->fill.gradient = spec;
                             });
                         });
                     if (popup) popup->show();
@@ -1068,8 +1183,8 @@ std::vector<CCNode*> IconEditorLayer::buildPaintTab(float width) {
                         actions.push_back({std::string(preset.name), "",
                             [self, spec] {
                                 if (paimon::isRuntimeShuttingDown() || !self) return;
-                                self->edit({}, [&] {
-                                    if (auto* p = self->selectedPiece()) p->fill.gradient = spec;
+                                self->editPiece({}, [&](IconPiece* p) {
+                                p->fill.gradient = spec;
                                 });
                                 self->scheduleInspectorRebuild();
                             }, false});
@@ -1106,8 +1221,8 @@ std::vector<CCNode*> IconEditorLayer::buildPaintTab(float width) {
                             return;
                         }
                         auto file = imported.unwrap();
-                        self->edit({}, [&] {
-                            if (auto* p2 = self->selectedPiece()) p2->fill.image.file = file;
+                        self->editPiece({}, [&](IconPiece* p2) {
+                        p2->fill.image.file = file;
                         });
                         self->scheduleInspectorRebuild();
                     });
@@ -1118,79 +1233,84 @@ std::vector<CCNode*> IconEditorLayer::buildPaintTab(float width) {
                 "Como se acomoda la imagen dentro de la forma.",
                 fits, static_cast<int>(piece->fill.image.fit),
                 [this](int index) {
-                    edit({}, [&] {
-                        if (auto* p = selectedPiece()) {
-                            p->fill.image.fit = static_cast<FillFitMode>(index);
-                        }
+                    editPiece({}, [&](IconPiece* p) {
+                        p->fill.image.fit = static_cast<FillFitMode>(index);
                     });
                 }));
 
             rows.push_back(kit::makeNumberRow(width, "Zoom de la imagen", nullptr,
                 piece->fill.image.scale, 0.05, 6.0, 0.05, 2,
                 [this](double v) {
-                    edit("fill-scale", [&] {
-                        if (auto* p = selectedPiece()) p->fill.image.scale = static_cast<float>(v);
+                    editPiece("fill-scale", [&](IconPiece* p) {
+                    p->fill.image.scale = static_cast<float>(v);
                     });
                 }));
             rows.push_back(kit::makeNumberRow(width, "Giro de la imagen (grados)", nullptr,
                 piece->fill.image.rotationDeg, -180.0, 180.0, 5.0, 0,
                 [this](double v) {
-                    edit("fill-rot", [&] {
-                        if (auto* p = selectedPiece()) {
-                            p->fill.image.rotationDeg = static_cast<float>(v);
-                        }
+                    editPiece("fill-rot", [&](IconPiece* p) {
+                        p->fill.image.rotationDeg = static_cast<float>(v);
                     });
                 }));
             rows.push_back(kit::makeNumberRow(width, "Opacidad de la imagen (%)", nullptr,
                 piece->fill.image.opacity / 2.55, 0.0, 100.0, 5.0, 0,
                 [this](double v) {
-                    edit("fill-opacity", [&] {
-                        if (auto* p = selectedPiece()) {
-                            p->fill.image.opacity = static_cast<int>(std::lround(v * 2.55));
-                        }
+                    editPiece("fill-opacity", [&](IconPiece* p) {
+                        p->fill.image.opacity = static_cast<int>(std::lround(v * 2.55));
                     });
                 }));
             break;
         }
     }
 
-    rows.push_back(kit::makeToggleRow(width, "Sombreado 3D",
-        "Conserva las sombras del dibujo original bajo el color.",
-        piece->fill.keepLuminance,
-        [this](bool value) {
-            edit({}, [&] {
-                if (auto* p = selectedPiece()) p->fill.keepLuminance = value;
-            });
-        }));
+    if (piece->fill.type != FillType::Original) {
+        rows.push_back(kit::makeToggleRow(width, "Sombreado 3D",
+            "Conserva las sombras del dibujo original bajo el color.",
+            piece->fill.keepLuminance,
+            [this](bool value) {
+                editPiece({}, [&](IconPiece* p) {
+                p->fill.keepLuminance = value;
+                });
+            }));
+    }
 
-    rows.push_back(kit::makeToggleRow(width, "Arcoiris animado",
-        "La capa cambia de color sola. Solo se anima en el garaje.",
-        piece->fill.chroma,
+    rows.push_back(kit::makeToggleRow(width, "Brillo / Bisel GD",
+        "Anade un reflejo brillante estilo Geometry Dash en la parte superior.",
+        piece->fill.gloss,
         [this](bool value) {
-            edit({}, [&] {
-                if (auto* p = selectedPiece()) p->fill.chroma = value;
+            editPiece({}, [&](IconPiece* p) {
+                p->fill.gloss = value;
             });
             scheduleInspectorRebuild();
         }));
 
-    // outline lives with the fill: another color pass over the same shape.
+    if (piece->fill.gloss) {
+        rows.push_back(kit::makeNumberRow(width, "Intensidad del brillo", nullptr,
+            piece->fill.glossStrength * 100.0, 5.0, 100.0, 5.0, 0,
+            [this](double v) {
+                editPiece("gloss-str", [&](IconPiece* p) {
+                    p->fill.glossStrength = static_cast<float>(v / 100.0);
+                });
+            }));
+    }
+
     rows.push_back(kit::makeToggleRow(width, "Borde",
         "Un contorno alrededor de la capa. Ayuda a que el icono se vea "
         "nitido en el juego.",
         piece->fill.outline.enabled,
         [this](bool value) {
-            edit({}, [&] {
-                if (auto* p = selectedPiece()) p->fill.outline.enabled = value;
+            editPiece({}, [&](IconPiece* p) {
+            p->fill.outline.enabled = value;
             });
             scheduleInspectorRebuild();
         }));
 
     if (piece->fill.outline.enabled) {
         rows.push_back(kit::makeNumberRow(width, "Grosor del borde", nullptr,
-            piece->fill.outline.width, 1.0, 20.0, 1.0, 0,
+            piece->fill.outline.width, 1.0, 24.0, 1.0, 0,
             [this](double v) {
-                edit("outline-width", [&] {
-                    if (auto* p = selectedPiece()) p->fill.outline.width = static_cast<float>(v);
+                editPiece("outline-width", [&](IconPiece* p) {
+                p->fill.outline.width = static_cast<float>(v);
                 });
             }));
         rows.push_back(mkui::makeColorRow(width, "Color del borde", nullptr,
@@ -1203,8 +1323,8 @@ std::vector<CCNode*> IconEditorLayer::buildPaintTab(float width) {
                 Ref<IconEditorLayer> self = this;
                 picker->setCallback([self](ccColor4B const& picked) {
                     if (paimon::isRuntimeShuttingDown() || !self) return;
-                    self->edit("outline-color", [&] {
-                        if (auto* p2 = self->selectedPiece()) p2->fill.outline.color = picked;
+                    self->editPiece("outline-color", [&](IconPiece* p2) {
+                    p2->fill.outline.color = picked;
                     });
                     rememberColor({picked.r, picked.g, picked.b});
                     self->scheduleInspectorRebuild();
@@ -1212,6 +1332,122 @@ std::vector<CCNode*> IconEditorLayer::buildPaintTab(float width) {
                 picker->show();
             }));
     }
+
+    rows.push_back(kit::makeToggleRow(width, "Resplandor / Sombra",
+        "Aura luminosa o sombra suave detras de la capa.",
+        piece->fill.shadow.enabled,
+        [this](bool value) {
+            editPiece({}, [&](IconPiece* p) {
+                p->fill.shadow.enabled = value;
+            });
+            scheduleInspectorRebuild();
+        }));
+
+    if (piece->fill.shadow.enabled) {
+        rows.push_back(kit::makeNumberRow(width, "Difuminado", nullptr,
+            piece->fill.shadow.blur, 1.0, 32.0, 1.0, 0,
+            [this](double v) {
+                editPiece("shadow-blur", [&](IconPiece* p) {
+                    p->fill.shadow.blur = static_cast<float>(v);
+                });
+            }));
+        rows.push_back(kit::makeNumberRow(width, "Sombra X", nullptr,
+            piece->fill.shadow.offsetX, -30.0, 30.0, 1.0, 0,
+            [this](double v) {
+                editPiece("shadow-ox", [&](IconPiece* p) {
+                    p->fill.shadow.offsetX = static_cast<float>(v);
+                });
+            }));
+        rows.push_back(kit::makeNumberRow(width, "Sombra Y", nullptr,
+            piece->fill.shadow.offsetY, -30.0, 30.0, 1.0, 0,
+            [this](double v) {
+                editPiece("shadow-oy", [&](IconPiece* p) {
+                    p->fill.shadow.offsetY = static_cast<float>(v);
+                });
+            }));
+        rows.push_back(mkui::makeColorRow(width, "Color del resplandor", nullptr,
+            piece->fill.shadow.color,
+            [this] {
+                auto* p = selectedPiece();
+                if (!p) return;
+                auto* picker = ColorPickPopup::create(p->fill.shadow.color);
+                if (!picker) return;
+                Ref<IconEditorLayer> self = this;
+                picker->setCallback([self](ccColor4B const& picked) {
+                    if (paimon::isRuntimeShuttingDown() || !self) return;
+                    self->editPiece("shadow-color", [&](IconPiece* p2) {
+                        p2->fill.shadow.color = picked;
+                    });
+                    rememberColor({picked.r, picked.g, picked.b});
+                    self->scheduleInspectorRebuild();
+                });
+                picker->show();
+            }));
+    }
+
+    rows.push_back(kit::makeSelectRow(width, "Modo de fusion",
+        "Como se mezcla esta capa con las capas de abajo.",
+        {"Normal", "Aditivo (brillo)", "Multiplicar", "Pantalla"},
+        static_cast<int>(piece->fill.blendMode),
+        [this](int idx) {
+            editPiece({}, [&](IconPiece* p) {
+                p->fill.blendMode = static_cast<BlendMode>(idx);
+            });
+        }));
+
+    rows.push_back(kit::makeToggleRow(width, "Ajustes de color",
+        "Matiz, saturacion, brillo y contraste para esta capa.",
+        m_showColorAdjust,
+        [this](bool value) {
+            m_showColorAdjust = value;
+            scheduleInspectorRebuild();
+        }));
+
+    if (m_showColorAdjust) {
+        rows.push_back(kit::makeNumberRow(width, "Matiz (Hue)", nullptr,
+            piece->fill.adjust.hueDeg, -180.0, 180.0, 5.0, 0,
+            [this](double v) {
+                editPiece("adj-hue", [&](IconPiece* p) {
+                    p->fill.adjust.hueDeg = static_cast<float>(v);
+                });
+            }));
+        rows.push_back(kit::makeNumberRow(width, "Saturacion", nullptr,
+            piece->fill.adjust.saturation, 0.0, 2.0, 0.05, 2,
+            [this](double v) {
+                editPiece("adj-sat", [&](IconPiece* p) {
+                    p->fill.adjust.saturation = static_cast<float>(v);
+                });
+            }));
+        rows.push_back(kit::makeNumberRow(width, "Brillo", nullptr,
+            piece->fill.adjust.brightness, -1.0, 1.0, 0.05, 2,
+            [this](double v) {
+                editPiece("adj-bri", [&](IconPiece* p) {
+                    p->fill.adjust.brightness = static_cast<float>(v);
+                });
+            }));
+        rows.push_back(kit::makeNumberRow(width, "Contraste", nullptr,
+            piece->fill.adjust.contrast, 0.2, 2.5, 0.05, 2,
+            [this](double v) {
+                editPiece("adj-con", [&](IconPiece* p) {
+                    p->fill.adjust.contrast = static_cast<float>(v);
+                });
+            }));
+        rows.push_back(kit::makeButtonRow(width, "Restablecer ajustes",
+            nullptr, "Reiniciar", [this] {
+                editPiece({}, [&](IconPiece* p) { p->fill.adjust = ColorAdjustSpec{}; });
+                scheduleInspectorRebuild();
+            }));
+    }
+
+    rows.push_back(kit::makeToggleRow(width, "Arcoiris animado",
+        "La capa cambia de color sola. Solo se anima en el garaje.",
+        piece->fill.chroma,
+        [this](bool value) {
+            editPiece({}, [&](IconPiece* p) {
+            p->fill.chroma = value;
+            });
+            scheduleInspectorRebuild();
+        }));
 
     rows.push_back(mkui::makeDualButtonRow(width,
         "Guardar pintura", [this] { this->onSaveStyle(); },
@@ -1245,80 +1481,148 @@ std::vector<CCNode*> IconEditorLayer::buildShapeTab(float width) {
         "En el icono puedes arrastrar la capa, estirarla por las esquinas y "
         "girarla con el tirador de arriba. Aqui pones los numeros exactos."));
 
+    if (piece->shape.kind == PieceShape::Kind::Primitive) {
+        auto const* pInfo = ShapeGenerator::infoFor(piece->shape.primitive);
+        rows.push_back(kit::makeToggleRow(width, "Marco hueco",
+            "Convierte la forma en un marco/anillo hueco.",
+            piece->shape.hollow,
+            [this](bool value) {
+                editPiece({}, [&](IconPiece* p) { p->shape.hollow = value; });
+                scheduleInspectorRebuild();
+            }));
+        if (piece->shape.hollow) {
+            rows.push_back(kit::makeNumberRow(width, "Grosor del marco", nullptr,
+                piece->shape.strokeWidth, 0.04, 0.45, 0.02, 2,
+                [this](double v) {
+                    editPiece("prim-stroke", [&](IconPiece* p) {
+                        p->shape.strokeWidth = static_cast<float>(v);
+                    });
+                }));
+        }
+        if (pInfo && pInfo->hasCornerRadius) {
+            rows.push_back(kit::makeNumberRow(width, "Redondeo", nullptr,
+                piece->shape.cornerRadius, 0.0, 0.48, 0.02, 2,
+                [this](double v) {
+                    editPiece("prim-corner", [&](IconPiece* p) {
+                        p->shape.cornerRadius = static_cast<float>(v);
+                    });
+                }));
+        }
+        if (pInfo && pInfo->hasPoints) {
+            rows.push_back(kit::makeNumberRow(width, "Puntas", nullptr,
+                static_cast<double>(piece->shape.points), 3.0, 12.0, 1.0, 0,
+                [this](double v) {
+                    editPiece("prim-points", [&](IconPiece* p) {
+                        p->shape.points = std::clamp(static_cast<int>(std::lround(v)), 3, 12);
+                    });
+                }));
+        }
+        if (pInfo && pInfo->hasInnerRatio) {
+            rows.push_back(kit::makeNumberRow(width, "Proporcion interior", nullptr,
+                piece->shape.innerRatio, 0.15, 0.85, 0.05, 2,
+                [this](double v) {
+                    editPiece("prim-inner", [&](IconPiece* p) {
+                        p->shape.innerRatio = static_cast<float>(v);
+                    });
+                }));
+        }
+    }
+
     rows.push_back(kit::makeNumberRow(width, "Tamano", nullptr,
         piece->transform.scale, 0.05, 3.0, 0.05, 2,
         [this](double v) {
-            edit("scale", [&] {
-                if (auto* p = selectedPiece()) p->transform.scale = static_cast<float>(v);
+            editPiece("scale", [&](IconPiece* p) {
+            p->transform.scale = static_cast<float>(v);
             });
         }));
 
     rows.push_back(kit::makeNumberRow(width, "Ancho", "Estira solo a lo ancho.",
         piece->scaleX, 0.25, 4.0, 0.05, 2,
         [this](double v) {
-            edit("scale-x", [&] {
-                if (auto* p = selectedPiece()) p->scaleX = static_cast<float>(v);
+            editPiece("scale-x", [&](IconPiece* p) {
+            p->scaleX = static_cast<float>(v);
             });
         }));
 
     rows.push_back(kit::makeNumberRow(width, "Alto", "Estira solo a lo alto.",
         piece->scaleY, 0.25, 4.0, 0.05, 2,
         [this](double v) {
-            edit("scale-y", [&] {
-                if (auto* p = selectedPiece()) p->scaleY = static_cast<float>(v);
+            editPiece("scale-y", [&](IconPiece* p) {
+            p->scaleY = static_cast<float>(v);
             });
         }));
 
     rows.push_back(kit::makeNumberRow(width, "Giro (grados)", nullptr,
         piece->transform.rotationDeg, -180.0, 180.0, 5.0, 0,
         [this](double v) {
-            edit("rotation", [&] {
-                if (auto* p = selectedPiece()) p->transform.rotationDeg = static_cast<float>(v);
+            editPiece("rotation", [&](IconPiece* p) {
+            p->transform.rotationDeg = static_cast<float>(v);
             });
         }));
 
     rows.push_back(kit::makeNumberRow(width, "Opacidad (%)", nullptr,
         piece->transform.opacity / 2.55, 0.0, 100.0, 5.0, 0,
         [this](double v) {
-            edit("opacity", [&] {
-                if (auto* p = selectedPiece()) {
-                    p->transform.opacity = static_cast<int>(std::lround(v * 2.55));
-                }
+            editPiece("opacity", [&](IconPiece* p) {
+                p->transform.opacity = static_cast<int>(std::lround(v * 2.55));
             });
         }));
 
     rows.push_back(kit::makeNumberRow(width, "Posicion horizontal", nullptr,
         piece->transform.offsetX, -1.0, 1.0, 0.02, 2,
         [this](double v) {
-            edit("offset-x", [&] {
-                if (auto* p = selectedPiece()) p->transform.offsetX = static_cast<float>(v);
+            editPiece("offset-x", [&](IconPiece* p) {
+            p->transform.offsetX = static_cast<float>(v);
             });
         }));
 
     rows.push_back(kit::makeNumberRow(width, "Posicion vertical", nullptr,
         piece->transform.offsetY, -1.0, 1.0, 0.02, 2,
         [this](double v) {
-            edit("offset-y", [&] {
-                if (auto* p = selectedPiece()) p->transform.offsetY = static_cast<float>(v);
+            editPiece("offset-y", [&](IconPiece* p) {
+            p->transform.offsetY = static_cast<float>(v);
             });
+        }));
+
+    rows.push_back(mkui::makeNudgePad(width, "Ajuste fino",
+        "Mueve la capa pixel a pixel o centrala de un toque.",
+        [this](float dx, float dy) {
+            editPiece("nudge", [&](IconPiece* p) {
+                p->transform.offsetX = std::clamp(p->transform.offsetX + dx, -1.f, 1.f);
+                p->transform.offsetY = std::clamp(p->transform.offsetY + dy, -1.f, 1.f);
+            });
+            scheduleInspectorRebuild();
+        },
+        [this] {
+            editPiece({}, [&](IconPiece* p) {
+                p->transform.offsetX = 0.f;
+                p->transform.offsetY = 0.f;
+            });
+            scheduleInspectorRebuild();
         }));
 
     rows.push_back(mkui::makeAlignRow(width, "Alinear",
         "Pega la capa a un lado del cuadro recomendado, o la centra.",
         [this](mkui::AlignMode mode) { this->alignSelected(mode); }));
 
+    rows.push_back(kit::makeButtonRow(width, "Duplicar en espejo",
+        "Crea una copia simetrica al lado opuesto (ideal para ojos, cuernos o alas).",
+        "Duplicar", [this] {
+            if (m_selectedPiece >= 0) this->onDuplicateMirrored(m_selectedPiece);
+        }));
+
     rows.push_back(kit::makeToggleRow(width, "Espejo horizontal", nullptr,
         piece->transform.flipX,
         [this](bool value) {
-            edit({}, [&] {
-                if (auto* p = selectedPiece()) p->transform.flipX = value;
+            editPiece({}, [&](IconPiece* p) {
+            p->transform.flipX = value;
             });
         }));
     rows.push_back(kit::makeToggleRow(width, "Espejo vertical", nullptr,
         piece->transform.flipY,
         [this](bool value) {
-            edit({}, [&] {
-                if (auto* p = selectedPiece()) p->transform.flipY = value;
+            editPiece({}, [&](IconPiece* p) {
+            p->transform.flipY = value;
             });
         }));
 
@@ -1326,8 +1630,8 @@ std::vector<CCNode*> IconEditorLayer::buildShapeTab(float width) {
         "Una capa bloqueada no se mueve ni se estira desde el icono.",
         piece->locked,
         [this](bool value) {
-            edit({}, [&] {
-                if (auto* p = selectedPiece()) p->locked = value;
+            editPiece({}, [&](IconPiece* p) {
+            p->locked = value;
             });
             pushCanvasSelection();
             scheduleInspectorRebuild();
@@ -1340,12 +1644,10 @@ std::vector<CCNode*> IconEditorLayer::buildShapeTab(float width) {
     rows.push_back(kit::makeButtonRow(width, "Restablecer",
         "Devuelve tamano, giro y posicion a como estaban al empezar.",
         "Reiniciar", [this] {
-            edit({}, [&] {
-                if (auto* p = selectedPiece()) {
-                    p->transform = ts::ImageTransform{};
-                    p->scaleX = 1.f;
-                    p->scaleY = 1.f;
-                }
+            editPiece({}, [&](IconPiece* p) {
+                p->transform = ts::ImageTransform{};
+                p->scaleX = 1.f;
+                p->scaleY = 1.f;
             });
             scheduleInspectorRebuild();
             setStatus("Forma restablecida.");
@@ -1405,13 +1707,22 @@ std::vector<CCNode*> IconEditorLayer::buildIconTab(float width) {
                 setStatus("No se pudo compartir: " + exported.unwrapErr(), false);
                 return;
             }
-            geode::utils::file::openFolder(exported.unwrap().parent_path());
+#if defined(GEODE_IS_MOBILE)
+            geode::utils::clipboard::write(paimon::paths::toUtf8(exported.unwrap()));
+            setStatus("Guardado (ruta copiada): " + paimon::paths::toUtf8(exported.unwrap().filename()));
+#else
+            geode::utils::file::openFolder(paimon::paths::toSdkPath(exported.unwrap().parent_path()));
             setStatus("Archivo listo para compartir.");
+#endif
         }));
 
     rows.push_back(kit::makeButtonRow(width, "Como funciona",
         "Que es una zona, que es una capa y que hace cada ajuste.",
         "Ayuda", [] { if (auto* p = IconHelpPopup::create()) p->show(); }));
+
+    rows.push_back(mkui::makeDangerButtonRow(width, "Borrar este icono",
+        "Elimina el icono de tu galeria y lo quita del garaje para siempre.",
+        "Borrar", [this] { this->onDeleteProject(); }));
 
     return rows;
 }
@@ -1546,6 +1857,12 @@ void IconEditorLayer::edit(std::string coalesceKey, std::function<void()> mutate
     refreshTopBar();
 }
 
+void IconEditorLayer::editPiece(std::string coalesceKey, std::function<void(IconPiece*)> mutate) {
+    edit(std::move(coalesceKey), [this, mutate = std::move(mutate)] {
+        if (auto* piece = selectedPiece(); piece && mutate) mutate(piece);
+    });
+}
+
 void IconEditorLayer::applyRestoredProject() {
     auto zones = visibleZones();
     m_zoneIndex = std::clamp(m_zoneIndex, 0,
@@ -1590,12 +1907,10 @@ void IconEditorLayer::pickColor(ccColor3B color) {
         setStatus("Elige una capa para pintarla.", false);
         return;
     }
-    edit({}, [&] {
-        if (auto* p = selectedPiece()) {
-            p->fill.type = FillType::Flat;
-            p->fill.flat = {color.r, color.g, color.b, 255};
-            p->fill.chroma = false;
-        }
+    editPiece({}, [&](IconPiece* p) {
+        p->fill.type = FillType::Flat;
+        p->fill.flat = {color.r, color.g, color.b, 255};
+        p->fill.chroma = false;
     });
     rememberColor(color);
     scheduleInspectorRebuild();
@@ -1643,9 +1958,7 @@ void IconEditorLayer::alignSelected(mkui::AlignMode mode) {
             dy = half - (static_cast<float>(render->boundsY) + render->boundsH / 2.f); break;
     }
 
-    edit({}, [&] {
-        auto* piece = selectedPiece();
-        if (!piece) return;
+    editPiece({}, [&](IconPiece* piece) {
         piece->transform.offsetX =
             std::clamp(piece->transform.offsetX + dx / half, -1.f, 1.f);
         // render rows run top-down, offset bottom-up.
@@ -1717,6 +2030,65 @@ void IconEditorLayer::onRename() {
     if (popup) popup->show();
 }
 
+void IconEditorLayer::onAddShapeLayer(bool startOnDecals) {
+    Ref<IconEditorLayer> self = this;
+    auto* popup = ShapePickerPopup::create(
+        [self](PieceShape const& chosenShape, std::string const& defaultName) {
+            if (paimon::isRuntimeShuttingDown() || !self) return;
+
+            IconPiece piece;
+            piece.id = self->m_project.makePieceId();
+            piece.name = defaultName;
+            piece.shape = chosenShape;
+
+            // Pick smart initial paint for the active zone so the added shape
+            // looks immediately crisp and visible on the canvas.
+            auto zones = self->visibleZones();
+            std::string zoneKey = zones.empty()
+                ? std::string("main")
+                : std::string(zones[static_cast<std::size_t>(
+                    std::clamp(self->m_zoneIndex, 0, static_cast<int>(zones.size()) - 1))].key);
+
+            piece.fill.type = FillType::Flat;
+            piece.fill.keepLuminance = false;
+            if (zoneKey == "glow") {
+                piece.fill.flat = {90, 240, 255, 255};
+                piece.fill.shadow.enabled = true;
+                piece.fill.shadow.blur = 8.f;
+                piece.fill.shadow.color = {90, 240, 255, 190};
+            } else if (zoneKey == "extra") {
+                piece.fill.flat = {255, 255, 255, 255};
+                piece.fill.outline.enabled = true;
+                piece.fill.outline.width = 4.f;
+                piece.fill.outline.color = {12, 14, 24, 255};
+            } else if (zoneKey == "secondary") {
+                piece.fill.flat = {60, 235, 220, 255};
+            } else if (zoneKey == "tertiary") {
+                piece.fill.flat = {195, 165, 255, 220};
+            } else {
+                piece.fill.flat = {75, 175, 255, 255};
+                piece.fill.outline.enabled = true;
+                piece.fill.outline.width = 5.f;
+                piece.fill.outline.color = {12, 14, 24, 255};
+            }
+
+            if (chosenShape.kind == PieceShape::Kind::Decal) {
+                piece.transform.scale = 0.78f;
+            }
+
+            self->edit({}, [&] {
+                auto& pieces = self->currentSlot().pieces;
+                pieces.push_back(std::move(piece));
+                self->m_selectedPiece = static_cast<int>(pieces.size()) - 1;
+            });
+            self->refreshZoneChips();
+            self->pushCanvasSelection();
+            self->scheduleInspectorRebuild();
+            self->setStatus(fmt::format("Agregado: {}", defaultName));
+        }, startOnDecals);
+    if (popup) popup->show();
+}
+
 void IconEditorLayer::onAddImportLayer() {
     Ref<IconEditorLayer> self = this;
     pt::pickImage([self](geode::Result<std::optional<std::filesystem::path>> res) {
@@ -1731,7 +2103,7 @@ void IconEditorLayer::onAddImportLayer() {
 
         IconPiece piece;
         piece.id = self->m_project.makePieceId();
-        piece.name = fmt::format("Capa {}", self->currentSlot().pieces.size() + 1);
+        piece.name = fmt::format("Imagen {}", self->currentSlot().pieces.size() + 1);
 
         auto imported = importImageFile(self->m_project.id, piece.id, *pathOpt, "imp");
         if (!imported) {
@@ -1740,6 +2112,9 @@ void IconEditorLayer::onAddImportLayer() {
         }
         piece.shape.kind = PieceShape::Kind::Import;
         piece.shape.file = imported.unwrap();
+        // Preserve full original RGBA colors on imported PNGs instead of turning them grayscale!
+        piece.fill.type = FillType::Original;
+        piece.fill.keepLuminance = false;
 
         self->edit({}, [&] {
             auto& pieces = self->currentSlot().pieces;
@@ -1749,7 +2124,7 @@ void IconEditorLayer::onAddImportLayer() {
         self->refreshZoneChips();
         self->pushCanvasSelection();
         self->scheduleInspectorRebuild();
-        self->setStatus("Capa agregada.");
+        self->setStatus("Imagen agregada con colores originales.");
     });
 }
 
@@ -1831,6 +2206,22 @@ void IconEditorLayer::onReplaceShape() {
 
     Ref<IconEditorLayer> self = this;
     std::vector<IconActionSheet::Action> actions{
+        {"Forma o accesorio", "Elige una forma geometrica, ojos, corona, cuernos...",
+         [self] {
+             if (!self) return;
+             auto* picker = ShapePickerPopup::create(
+                 [self](PieceShape const& chosenShape, std::string const&) {
+                     if (paimon::isRuntimeShuttingDown() || !self) return;
+                     self->editPiece({}, [&](IconPiece* p) {
+                         p->shape = chosenShape;
+                         if (p->fill.type == FillType::Original) {
+                             p->fill.type = FillType::Flat;
+                         }
+                     });
+                     self->scheduleInspectorRebuild();
+                 });
+             if (picker) picker->show();
+         }, false},
         {"Usar una imagen mia", "Elige un PNG de tu computadora.",
          [self] {
              if (!self) return;
@@ -1849,11 +2240,10 @@ void IconEditorLayer::onReplaceShape() {
                      return;
                  }
                  auto file = imported.unwrap();
-                 self->edit({}, [&] {
-                     if (auto* p = self->selectedPiece()) {
-                         p->shape.kind = PieceShape::Kind::Import;
-                         p->shape.file = file;
-                     }
+                 self->editPiece({}, [&](IconPiece* p) {
+                     p->shape.kind = PieceShape::Kind::Import;
+                     p->shape.file = file;
+                     p->fill.type = FillType::Original;
                  });
                  self->scheduleInspectorRebuild();
              });
@@ -1878,8 +2268,8 @@ void IconEditorLayer::onReplaceShape() {
                              NotificationIcon::Error, 3.f)->show();
                          return;
                      }
-                     self->edit({}, [&] {
-                         if (auto* p = self->selectedPiece()) p->shape = updated.shape;
+                     self->editPiece({}, [&](IconPiece* p) {
+                     p->shape = updated.shape;
                      });
                      self->scheduleInspectorRebuild();
                  },
@@ -1939,11 +2329,71 @@ void IconEditorLayer::adoptShapeFromProject(std::string const& projectId) {
 
     auto shape = sourcePiece.shape;
     shape.file = name;
-    edit({}, [&] {
-        if (auto* p = selectedPiece()) p->shape = shape;
+    editPiece({}, [&](IconPiece* p) {
+    p->shape = shape;
     });
     scheduleInspectorRebuild();
     setStatus(fmt::format("Forma copiada de \"{}\".", source.name));
+}
+
+void IconEditorLayer::onDeleteLayer(int pieceIndex) {
+    edit({}, [&] {
+        auto& list = currentSlot().pieces;
+        if (pieceIndex < 0 || pieceIndex >= static_cast<int>(list.size())) return;
+        list.erase(list.begin() + pieceIndex);
+        m_selectedPiece = list.empty()
+            ? -1 : std::min<int>(pieceIndex, static_cast<int>(list.size()) - 1);
+    });
+    refreshZoneChips();
+    pushCanvasSelection();
+    scheduleInspectorRebuild();
+    setStatus("Capa borrada.");
+}
+
+void IconEditorLayer::onDuplicateMirrored(int pieceIndex) {
+    edit({}, [&] {
+        auto& list = currentSlot().pieces;
+        if (pieceIndex < 0 || pieceIndex >= static_cast<int>(list.size())) return;
+        IconPiece copy = list[static_cast<std::size_t>(pieceIndex)];
+        copy.id = m_project.makePieceId();
+        copy.name += " (espejo)";
+        copy.transform.offsetX = -copy.transform.offsetX;
+        copy.transform.rotationDeg = -copy.transform.rotationDeg;
+        copy.transform.flipX = !copy.transform.flipX;
+        list.insert(list.begin() + pieceIndex + 1, std::move(copy));
+        m_selectedPiece = pieceIndex + 1;
+    });
+    refreshZoneChips();
+    pushCanvasSelection();
+    scheduleInspectorRebuild();
+    setStatus("Copia simetrica creada.");
+}
+
+void IconEditorLayer::onDeleteProject() {
+    std::string const projectId = m_project.id;
+    std::string const projectName = m_project.name;
+    IconType const projectType = m_project.type;
+
+    Ref<IconEditorLayer> self = this;
+    PopupManager::get().quickPopup(
+        "Borrar icono",
+        fmt::format("Seguro que quieres borrar <cy>{}</c>?\n"
+                    "Se eliminara para siempre y se quitara del garaje.", projectName),
+        "Cancelar", "Borrar",
+        [self, projectId, projectType](FLAlertLayer*, bool confirmed) {
+            if (!confirmed || paimon::isRuntimeShuttingDown() || !self) return;
+            IconApplier::get().onDeleteProject(projectId, projectType);
+            if (auto r = IconProjectStore::get().deleteProject(projectId); !r) {
+                Notification::create(("No se pudo borrar: " + r.unwrapErr()).c_str(),
+                    NotificationIcon::Error, 3.f)->show();
+                return;
+            }
+            IconThumbs::get().invalidate(projectId);
+            self->m_dirty = false;
+            self->m_autosaveCountdown = -1.f;
+            Notification::create("Icono borrado.", NotificationIcon::Success, 1.8f)->show();
+            CCDirector::get()->popSceneWithTransition(0.35f, PopTransition::kPopTransitionFade);
+        }).showInstant();
 }
 
 void IconEditorLayer::onLayerMenu(int pieceIndex) {
@@ -1986,23 +2436,12 @@ void IconEditorLayer::onLayerMenu(int pieceIndex) {
             self->pushCanvasSelection();
             self->scheduleInspectorRebuild();
         }, false},
+        {"Duplicar en espejo", "Copia simetrica al lado opuesto.",
+         [self, pieceIndex] { if (self) self->onDuplicateMirrored(pieceIndex); }, false},
         {"Copiar a otras zonas", "Repite esta capa en el resto de las zonas.",
          [self, pieceIndex] { if (self) self->onCopyLayerToZones(pieceIndex); }, false},
-        {"Borrar", "No se puede deshacer con el boton atras, pero si con deshacer.",
-         [self, pieceIndex] {
-             if (!self) return;
-             self->edit({}, [&] {
-                 auto& list = self->currentSlot().pieces;
-                 if (pieceIndex >= static_cast<int>(list.size())) return;
-                 list.erase(list.begin() + pieceIndex);
-                 self->m_selectedPiece = list.empty()
-                     ? -1 : std::min<int>(pieceIndex, static_cast<int>(list.size()) - 1);
-             });
-             self->refreshZoneChips();
-             self->pushCanvasSelection();
-             self->scheduleInspectorRebuild();
-             self->setStatus("Capa borrada.");
-         }, true},
+        {"Borrar capa", "Se puede recuperar con Deshacer.",
+         [self, pieceIndex] { if (self) self->onDeleteLayer(pieceIndex); }, true},
     };
 
     if (auto* sheet = IconActionSheet::create(name, std::move(actions))) sheet->show();
@@ -2104,12 +2543,10 @@ void IconEditorLayer::onApplyStyle() {
         auto fill = style.fill;
         actions.push_back({style.name, fillTypeName(fill), [self, fill] {
             if (paimon::isRuntimeShuttingDown() || !self) return;
-            self->edit({}, [&] {
-                if (auto* p = self->selectedPiece()) {
-                    auto outline = p->fill.outline;
-                    p->fill = fill;
-                    p->fill.outline = outline;
-                }
+            self->editPiece({}, [&](IconPiece* p) {
+                auto outline = p->fill.outline;
+                p->fill = fill;
+                p->fill.outline = outline;
             });
             self->scheduleInspectorRebuild();
             self->setStatus("Pintura aplicada.");
@@ -2158,6 +2595,8 @@ void IconEditorLayer::onProjectMenu() {
          [self] { if (self) self->onExport(); }, false},
         {"Como funciona", "Guia rapida del creador.",
          [] { if (auto* p = IconHelpPopup::create()) p->show(); }, false},
+        {"Borrar icono", "Elimina este icono para siempre.",
+         [self] { if (self) self->onDeleteProject(); }, true},
     };
     if (auto* sheet = IconActionSheet::create("Opciones", std::move(actions))) {
         sheet->show();
@@ -2249,16 +2688,17 @@ void IconEditorLayer::maybeShowTour() {
     }
 }
 
-void IconEditorLayer::saveProject(bool notify) {
+bool IconEditorLayer::saveProject(bool notify) {
     m_project.modifiedAt = nowUnixMs();
     if (auto r = IconProjectStore::get().saveProject(m_project); !r) {
         setStatus("No se pudo guardar: " + r.unwrapErr(), false);
-        return;
+        return false;
     }
     m_dirty = false;
     m_autosaveCountdown = -1.f;
     IconThumbs::get().invalidate(m_project.id);
     if (notify) setStatus("Guardado.");
+    return true;
 }
 
 void IconEditorLayer::setStatus(std::string const& text, bool good) {
@@ -2299,21 +2739,31 @@ void IconEditorLayer::update(float dt) {
     kickPreviewJob();
 }
 
-void IconEditorLayer::scrollWheel(float x, float y) {
+bool IconEditorLayer::scrollWheel(float vertical, float horizontal) {
     // wheel zooms over the canvas, scrolls the panel outside it.
     if (m_canvas) {
         auto const local = m_canvas->viewportFromScreen(geode::cocos::getMousePos());
         auto const size = m_canvas->getContentSize();
         if (local.x >= 0.f && local.y >= 0.f &&
             local.x <= size.width && local.y <= size.height) {
-            m_canvas->zoomAt(y < 0.f ? 1.12f : 1.f / 1.12f, local);
-            return;
+            // the zoom follows the notch count, so a smoothed scroll zooms the
+            // same amount as a raw one instead of one step per frame.
+            auto& smooth = paimon::smoothscroll::SmoothScrollController::get();
+            float const steps = smooth.filteredZoomSteps(vertical, horizontal);
+            if (std::abs(steps) > 0.000001f) {
+                float const factor = steps > 0.f
+                    ? std::pow(1.12f, steps)
+                    : std::pow(1.f / 1.12f, -steps);
+                m_canvas->zoomAt(factor, local);
+            }
+            return true;
         }
     }
-    if (kit::queueWheelScroll(m_inspector, x, y, m_wheelTargetY, m_wheelTargetSet)) {
-        return;
+    if (kit::queueWheelScroll(m_inspector, vertical, horizontal, m_wheelTargetY, m_wheelTargetSet)) {
+        return true;
     }
-    CCLayer::scrollWheel(x, y);
+    return CCLayer::scrollWheel(vertical, horizontal);
+
 }
 
 std::vector<std::string> IconEditorLayer::drawOrderKeys() const {
@@ -2416,7 +2866,7 @@ void IconEditorLayer::applyPreview(std::vector<std::pair<std::string, SlotRender
     }
 
     m_canvas->setZones(std::move(zones), activeKey);
-    m_canvas->setIsolate(m_isolateZone);
+    m_canvas->setFocusMode(m_focusMode);
     m_canvas->setEyedropper(m_eyedropper);
     pushCanvasSelection();
 
@@ -2429,7 +2879,7 @@ void IconEditorLayer::applyPreview(std::vector<std::pair<std::string, SlotRender
 
 
 void IconEditorLayer::onTry() {
-    if (m_dirty) saveProject(false);
+    if (m_dirty && !saveProject(false)) return;
     if (auto* popup = IconTryPopup::create(m_project)) popup->show();
 }
 
@@ -2438,7 +2888,7 @@ void IconEditorLayer::onApply() {
         setStatus("Un momento, todavia esta dibujando...");
         return;
     }
-    saveProject(false);
+    if (!saveProject(false)) return;
     setStatus("Preparando el icono...");
     m_compileBusy = true;
 
@@ -2462,7 +2912,7 @@ void IconEditorLayer::onExport() {
         setStatus("Un momento, todavia esta dibujando...");
         return;
     }
-    saveProject(false);
+    if (!saveProject(false)) return;
     setStatus("Generando los archivos...");
     m_compileBusy = true;
 
@@ -2492,10 +2942,17 @@ void IconEditorLayer::onExport() {
             [projectId, folder](FLAlertLayer*, bool toMoreIcons) {
                 auto outputDir = IconPaths::outputDir(projectId);
                 if (!toMoreIcons) {
-                    geode::utils::file::openFolder(outputDir);
+#if defined(GEODE_IS_MOBILE)
+                    geode::utils::clipboard::write(paimon::paths::toUtf8(outputDir));
+                    Notification::create(
+                        fmt::format("Exportado (ruta copiada): {}", paimon::paths::toUtf8(outputDir)),
+                        NotificationIcon::Success, 3.f)->show();
+#else
+                    geode::utils::file::openFolder(paimon::paths::toSdkPath(outputDir));
+#endif
                     return;
                 }
-                auto targetDir = Mod::get()->getConfigDir().parent_path()
+                auto targetDir = paimon::paths::toStdPath(Mod::get()->getConfigDir()).parent_path()
                     / "hiimjustin000.more_icons" / folder;
                 std::error_code ec;
                 std::filesystem::create_directories(targetDir, ec);

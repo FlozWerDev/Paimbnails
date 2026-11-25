@@ -86,6 +86,7 @@ void ModlyCommentsPopup::buildList(std::vector<ModlyComment> const& comments) {
     m_listHolder->removeAllChildren();
 
     auto scroll = ScrollLayer::create({kListW, kListH});
+    if (scroll) scroll->setAnchorPoint({0.f, 0.f});
     scroll->setPosition({(kWidth - kListW) / 2.f, 30.f});
     m_listHolder->addChild(scroll);
 

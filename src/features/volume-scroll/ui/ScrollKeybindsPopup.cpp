@@ -140,6 +140,7 @@ bool ScrollKeybindsPopup::init() {
     m_mainLayer->addChild(bg, 0);
 
     m_scrollLayer = ScrollLayer::create({scrollW, scrollH});
+    if (m_scrollLayer) m_scrollLayer->setAnchorPoint({0.f, 0.f});
     m_scrollLayer->setPosition({scrollX, scrollY});
     m_mainLayer->addChild(m_scrollLayer, 1);
 
@@ -181,6 +182,7 @@ bool ScrollKeybindsPopup::init() {
     addRow(makeSectionHeader("Captura", scrollW));
     addRow(makeKeybindRow("capture-keybind", "Capturar", scrollW, /*allowscroll=*/true));
     addRow(makeKeybindRow("capture-menu-keybind", "Abrir Menu Captura", scrollW, /*allowscroll=*/true));
+    addRow(makeKeybindRow("feedback-keybind", "Paimon Feedback", scrollW, /*allowscroll=*/true));
 
     addRow(makeSectionHeader("Pause Zoom", scrollW));
     addRow(makeKeybindRow("zoom-in-keybind",          "Zoom In",      scrollW, true));

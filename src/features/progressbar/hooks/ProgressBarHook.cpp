@@ -6,6 +6,7 @@
 #include "../services/ProgressBarManager.hpp"
 #include "../ui/ProgressBarConfigPopup.hpp"
 #include "../../gameplay-performance/GameplayPerformance.hpp"
+#include "../../../utils/PauseMenuNodes.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 
 using namespace geode::prelude;
@@ -31,7 +32,7 @@ public:
         if (paimon::gameplayperf::isOptionActive(
                 paimon::gameplayperf::kModVisualsModuleId)) return;
         if (auto* pl = PlayLayer::get()) {
-            ProgressBarManager::get().applyToPlayLayer(pl);
+            ProgressBarManager::get().applyToPlayLayer(pl, pl->m_isPracticeMode);
         }
     }
 };
@@ -97,7 +98,7 @@ public:
         auto* pl = PlayLayer::get();
         if (!pl) return false;
 
-        CCNode* bar = pl->getChildByIDRecursive("progress-bar");
+        CCNode* bar = mgr.getActiveBarNode(pl);
         if (!bar || !bar->getParent()) return false;
 
         auto worldPos = touch->getLocation();
@@ -133,12 +134,35 @@ public:
 
 class $modify(PaimonProgressBarPlayLayer, PlayLayer) {
     $override
-    bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
-        if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
+    bool init(GJGameLevel* level, bool dontCreateObjects) {
+        if (!PlayLayer::init(level, dontCreateObjects)) return false;
         ensureProgressBarTicker();
         // reset baseline so it's re-sampled on first enable.
         ProgressBarManager::get().invalidateBaseline();
         return true;
+    }
+
+    void resetLevel() {
+        PlayLayer::resetLevel();
+        auto& mgr = ProgressBarManager::get();
+        if (!mgr.config().enabled) return;
+        float startPct = this->getCurrentPercent();
+        if (!std::isfinite(startPct)) startPct = 0.f;
+        float bestPct = this->m_level
+            ? static_cast<float>(this->m_isPracticeMode ? this->m_level->m_practicePercent : this->m_level->m_normalPercent.value())
+            : 0.f;
+        mgr.notifyLevelReset(startPct, bestPct, this->m_isPlatformer, this->m_isPracticeMode);
+    }
+
+    void destroyPlayer(PlayerObject* player, GameObject* object) {
+        bool const realHit = player && (player == this->m_player1 || player == this->m_player2);
+        PlayLayer::destroyPlayer(player, object);
+        if (realHit && ProgressBarManager::get().config().enabled) {
+            float pct = this->getCurrentPercent();
+            if (std::isfinite(pct) && pct > 0.f) {
+                ProgressBarManager::get().notifyDeath(pct);
+            }
+        }
     }
 
     void onQuit() {
@@ -176,50 +200,38 @@ class $modify(PaimonProgressBarPauseLayer, PauseLayer) {
 
     void addProgressBarConfigButton() {
         // avoid duplicates if customsetup runs multiple times.
-        if (this->getChildByID("paimon-progressbar-config-button"_spr)) return;
-        auto winSize = CCDirector::get()->getWinSize();
+        if (this->getChildByIDRecursive("paimon-progressbar-config-button"_spr)) return;
 
-        // find a suitable menu (prefer geode.node-ids id, fall back to side-detection).
-        auto pickMenu = [&](char const* id, bool leftSide) -> CCMenu* {
-            if (auto byId = typeinfo_cast<CCMenu*>(this->getChildByID(id))) return byId;
-            CCMenu* best = nullptr;
-            float bestScore = -1.f;
-            if (auto* children = this->getChildren()) {
-                for (auto* obj : CCArrayExt<CCNode*>(children)) {
-                    auto menu = typeinfo_cast<CCMenu*>(obj);
-                    if (!menu) continue;
-                    float x = menu->getPositionX();
-                    bool sideMatch = leftSide
-                        ? (x < winSize.width * 0.5f)
-                        : (x > winSize.width * 0.5f);
-                    if (!sideMatch) continue;
-                    float score = static_cast<float>(menu->getChildrenCount());
-                    if (!best || score > bestScore) {
-                        best = menu;
-                        bestScore = score;
-                    }
-                }
-            }
-            return best;
-        };
-
-        auto* menu = pickMenu("left-button-menu", true);
-        if (!menu) menu = pickMenu("right-button-menu", false);
+        auto* menu = paimon::findPauseButtonMenu(this, "left-button-menu");
+        if (!menu) menu = paimon::findPauseButtonMenu(this, "right-button-menu");
         if (!menu) {
             log::warn("[ProgressBar] No suitable menu found in PauseLayer");
             return;
         }
 
-        // icon: try gd bar/settings frames, fall back to a generic button.
-        CCSprite* iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_percentagesBtn_001.png");
-        if (!iconSprite) iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn_001.png");
-        if (!iconSprite) iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_button_01.png");
+        // Use valid GD 2.2091 frames wrapped in CircleButtonSprite so PauseMenuLayout
+        // matches all other sidebar icons cleanly.
+        CCSprite* iconGlyph = paimon::SpriteHelper::safeCreateWithFrameName("GJ_timeIcon_001.png");
+        if (!iconGlyph) iconGlyph = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
+        if (!iconGlyph) iconGlyph = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn_001.png");
+
+        CCSprite* iconSprite = nullptr;
+        if (iconGlyph) {
+            iconSprite = CircleButtonSprite::create(
+                iconGlyph,
+                CircleBaseColor::Green,
+                CircleBaseSize::Medium
+            );
+        }
+        if (!iconSprite) {
+            iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn_001.png");
+        }
         if (!iconSprite) {
             log::warn("[ProgressBar] No fallback icon available for config button");
             return;
         }
 
-        const float kTargetSize = 30.f;
+        const float kTargetSize = 36.f;
         float cur = std::max(iconSprite->getContentSize().width,
                              iconSprite->getContentSize().height);
         if (cur > 0.f) iconSprite->setScale(kTargetSize / cur);

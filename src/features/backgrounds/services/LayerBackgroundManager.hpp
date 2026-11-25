@@ -14,12 +14,22 @@ namespace paimon::video {
 }
 
 struct LayerBgConfig {
-    std::string type = "default";   // default, custom, random, menu, id, video, shader
+    std::string type = "default";   // default, custom, random, menu, id, video, shader, wallpaper, scene
     std::string customPath;         // image/gif/video
     int levelId = 0;
     bool darkMode = false;
     float darkIntensity = 0.5f;
     std::string shader = "none";
+
+    // responsive Background & Wallpaper Engine options
+    std::string fitMode = "cover";       // cover, contain, stretch
+    bool audioReactive = true;
+    float audioSensitivity = 1.0f;
+    bool parallax = true;
+    float parallaxStrength = 0.5f;
+    std::string weTitle;
+    std::string weAuthor;
+    uint64_t weWorkshopId = 0;
 };
 
 struct LayerMusicConfig {
@@ -36,6 +46,7 @@ struct LayerMusicConfig {
 class LayerBackgroundManager {
 public:
     static LayerBackgroundManager& get();
+    static bool isInitialized();
 
     // release gl-owned textures before gamemanager::reloadall recreates the context.
     void onGLContextReload();
@@ -59,6 +70,7 @@ public:
     void saveGlobalMusicConfig(LayerMusicConfig const& cfg);
 
     static inline std::vector<std::pair<std::string, std::string>> LAYER_OPTIONS = {
+        {"loading",      "Loading Screen"},
         {"menu",         "Menu"},
         {"levelinfo",    "Level Info"},
         {"levelselect",  "Level Select"},
@@ -83,6 +95,11 @@ public:
     bool applyProceduralShaderBg(cocos2d::CCLayer* layer, LayerBgConfig const& cfg);
 
     void clearAppliedBackground(cocos2d::CCLayer* layer, bool suppressAudioResume = false);
+
+    cocos2d::CCTexture2D* getCachedStaticTexture(std::filesystem::path const& path);
+    cocos2d::CCTexture2D* loadStaticTextureCached(std::filesystem::path const& path);
+    void prewarmStaticBackground(std::filesystem::path const& path);
+    void preloadConfiguredStaticBackgrounds();
 
 private:
     LayerBackgroundManager() = default;

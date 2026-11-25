@@ -1,9 +1,8 @@
 #include "MoreIconsBridge.hpp"
 
 #include "../../../framework/compat/ModCompat.hpp"
-
-#define MORE_ICONS_EVENTS
-#include <hiimjustin000.more_icons/include/MoreIcons.hpp>
+#include "../../../framework/compat/MoreIconsAPI.hpp"
+#include "../../../utils/FilesystemPath.hpp"
 
 using namespace geode::prelude;
 
@@ -31,6 +30,13 @@ void pickQuality(CompiledIcon const& compiled,
     }
 }
 
+void purgeCachedTexture(std::filesystem::path const& png) {
+    if (auto* texCache = CCTextureCache::sharedTextureCache()) {
+        auto key = paimon::paths::toUtf8(png);
+        texCache->removeTextureForKey(key.c_str());
+    }
+}
+
 }  // anonymous namespace
 
 bool MoreIconsBridge::available() {
@@ -48,6 +54,8 @@ geode::Result<> MoreIconsBridge::registerIcon(IconProject const& project,
     std::filesystem::path png, plist;
     cocos2d::TextureQuality quality = cocos2d::kTextureQualityHigh;
     pickQuality(compiled, png, plist, quality);
+
+    purgeCachedTexture(png);
 
     auto regName = registeredName(project.id);
 

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 // persistent track/playlist store at [savedir]/menu-music/library.json. paths
 // are absolute utf-8 strings; the library is independent of fmod and ui.
@@ -7,12 +7,15 @@
 #include <Geode/Geode.hpp>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace paimon::menumusic {
+
+struct DownloadedSongSnapshot;
 
 class MenuMusicLibrary {
 public:
@@ -26,6 +29,7 @@ public:
 void load();                     // idempotent.
     void save();
     bool isLoaded() const { return m_loaded; }
+    bool hasFailedLoad() const { return m_loadFailed; }
 
     std::vector<MusicTrack>& tracks() { return m_tracks; }
     const std::vector<MusicTrack>& tracks() const { return m_tracks; }
@@ -43,8 +47,14 @@ void load();                     // idempotent.
     bool hasTracks() const { return !m_tracks.empty(); }
 
     std::size_t importFolder(const std::filesystem::path& folder, bool recursive = true);
-// force=false skips the scan while gd's downloaded-song count is unchanged.
+// force=false skips while GD metadata is unchanged; downloads invalidate the snapshot.
     std::size_t syncDownloadedSongs(bool force = true);
+    void syncDownloadedSongsAsync();
+    void invalidateDownloadedSongs() {
+        ++m_downloadSyncGeneration;
+        m_syncedSongCount = static_cast<std::size_t>(-1);
+    }
+    bool isSyncingDownloadedSongs() const { return m_downloadSyncPending; }
 
     std::vector<MusicPlaylist>& playlists() { return m_playlists; }
     const std::vector<MusicPlaylist>& playlists() const { return m_playlists; }
@@ -80,9 +90,16 @@ private:
     MenuMusicLibrary& operator=(const MenuMusicLibrary&) = delete;
 
     void ensureDirs();
+    void repairDownloadedCoversAsync();
     void notifyChanged();
     void rebuildTrackIndex();
     void markDirty();
+    void captureDownloadedSongBatch(std::shared_ptr<DownloadedSongSnapshot> const& snapshot);
+    void finishDownloadedSongCapture(std::shared_ptr<DownloadedSongSnapshot> const& snapshot);
+    void restartDownloadedSongSync();
+    std::size_t mergeDownloadedSongs(std::vector<MusicTrack> candidates, bool notifyWhenUnchanged = false);
+// snapshot of the last successfully parsed library.json.
+    void backupLastValidLibrary();
 
     std::vector<MusicTrack> m_tracks;
     std::unordered_map<std::string, size_t> m_trackIndex;
@@ -91,9 +108,15 @@ private:
     std::string m_activePlaylistId;
     std::string m_lastTrackId;
     std::uint64_t m_idCounter = 0;
-    // gd downloaded-song count at the last sync; size_max means never synced.
+    // known-song metadata count; songStateChanged invalidates completed downloads.
     std::size_t m_syncedSongCount = static_cast<std::size_t>(-1);
+    cocos2d::CCDictionary* m_syncedSongDictionary = nullptr; // identity only; never dereferenced
+    std::uint64_t m_downloadSyncGeneration = 0;
+    bool m_downloadSyncPending = false;
     bool m_loaded = false;
+// set when load() cannot parse the on-disk file: save() must not persist
+// the resulting empty in-memory state over it.
+    bool m_loadFailed = false;
     bool m_savePending = false;
 
     std::vector<std::pair<std::size_t, Listener>> m_listeners;

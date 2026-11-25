@@ -2,6 +2,8 @@
 // kept separate from menu-loop override so the features can be disabled independently.
 
 #include <Geode/modify/MenuLayer.hpp>
+#include <Geode/modify/MusicDownloadManager.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../framework/HookConventions.hpp"
 #include <Geode/utils/cocos.hpp>
@@ -14,6 +16,9 @@
 #include "../services/MenuMusicEffects.hpp"
 #include "../services/MenuMusicPlayer.hpp"
 #include "../services/MenuMusicCoverLog.hpp"
+#include "../services/SpotifyService.hpp"
+#include "../../../utils/AudioInterop.hpp"
+#include "../../audio/services/AudioContextCoordinator.hpp"
 
 using namespace geode::prelude;
 using namespace paimon::menumusic;
@@ -57,6 +62,7 @@ class $modify(PaimonMenuMusicMenuLayer, MenuLayer) {
             }
         }
         MenuMusicEffects::get().update();
+        SpotifyService::get().onEnterMenu();
 
         auto* rightMenu = typeinfo_cast<CCMenu*>(this->getChildByID("right-side-menu"));
         if (rightMenu) {
@@ -87,15 +93,17 @@ class $modify(PaimonMenuMusicMenuLayer, MenuLayer) {
         }
 
         this->schedule(schedule_selector(PaimonMenuMusicMenuLayer::tickAutoNext), 1.0f);
+        this->addOnExitCallback([this] {
+            this->handleExit();
+            return true;
+        });
 
         return true;
     }
 
-    $override
-    void onExit() {
+    void handleExit() {
         this->unschedule(schedule_selector(PaimonMenuMusicMenuLayer::tickAutoNext));
         this->unschedule(schedule_selector(PaimonMenuMusicMenuLayer::showToastNextFrame));
-        MenuLayer::onExit();
     }
 
     void onOpenMenuMusicPopup(CCObject*) {
@@ -113,12 +121,23 @@ class $modify(PaimonMenuMusicMenuLayer, MenuLayer) {
 
 // check once per second and advance in the final two seconds or after end.
     void tickAutoNext(float) {
-        MenuMusicEffects::get().update();
         auto& player = MenuMusicPlayer::get();
         auto& lib = MenuMusicLibrary::get();
 
-        if (lib.mode() == paimon::menumusic::PlaybackMode::Disabled || player.isPaused()
-            || !Mod::get()->getSettingValue<bool>("menuLoopConstantShuffle")) return;
+        if (!player.isManagingPlayback() ||
+            lib.mode() == paimon::menumusic::PlaybackMode::Disabled ||
+            player.isPaused() ||
+            !Mod::get()->getSettingValue<bool>("menuLoopConstantShuffle")) {
+            return;
+        }
+
+        auto& coordinator = AudioContextCoordinator::get();
+        if (coordinator.isGameplayActive() || coordinator.isProfileOpen() ||
+            paimon::isProfileMusicInteropActive() ||
+            paimon::isDynamicSongInteropActive() ||
+            paimon::isVideoAudioInteropActive()) {
+            return;
+        }
 
         if (player.state().currentTrackId.empty()) return;
 
@@ -131,6 +150,9 @@ class $modify(PaimonMenuMusicMenuLayer, MenuLayer) {
 
         FMOD::Channel* ch = nullptr;
         if (fmod->m_backgroundMusicChannel->getChannel(0, &ch) != FMOD_OK || !ch) return;
+
+        bool isPaused = false;
+        if (ch->getPaused(&isPaused) == FMOD_OK && isPaused) return;
 
         bool isPlaying = false;
         ch->isPlaying(&isPlaying);
@@ -152,5 +174,15 @@ class $modify(PaimonMenuMusicMenuLayer, MenuLayer) {
                 NowPlayingToast::showForCurrent(this);
             }
         }
+    }
+};
+
+// A finished download can keep the same metadata count. Invalidate without
+// enumerating files from the native songStateChanged callback.
+class $modify(PaimonMusicDownloadState, MusicDownloadManager) {
+    $override
+    void songStateChanged() {
+        MusicDownloadManager::songStateChanged();
+        MenuMusicLibrary::get().invalidateDownloadedSongs();
     }
 };

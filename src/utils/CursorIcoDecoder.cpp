@@ -215,12 +215,13 @@ DecodeResult decodeAni(uint8_t const* data, size_t size) {
     }
     if (icons.empty()) { res.error = "ani_no_frames"; return res; }
 
-    size_t const steps = seq.empty() ? icons.size() : seq.size();
+    bool const useSeq = !seq.empty();
+    size_t const steps = useSeq ? seq.size() : icons.size();
     std::vector<DecodedFrame> frames;
     frames.reserve(steps);
     decodedBytes = 0;
     for (size_t step = 0; step < steps; ++step) {
-        size_t const index = std::min<size_t>(seq.empty() ? step : seq[step], icons.size() - 1);
+        size_t const index = std::min<size_t>(useSeq ? seq[step] : step, icons.size() - 1);
         if (icons[index].rgba.size() > kMaxDecodedBytes - decodedBytes) {
             res.error = "ani_too_large";
             return res;

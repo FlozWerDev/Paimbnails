@@ -88,6 +88,7 @@ bool AudioContextCoordinator::isCurrentProfileSession(uint32_t sessionToken) con
 void AudioContextCoordinator::activateLevelSelect(int levelID, bool playImmediately) {
     m_gameplayActive = false;
     m_levelSelectLevelID = levelID;
+    m_levelSelectLevel = nullptr;
     // levelselect never reads it; don't hold the old level across the switch.
     m_levelInfoLevel = nullptr;
     m_dynamicContextLayer = DynSongLayer::LevelSelect;
@@ -104,6 +105,13 @@ void AudioContextCoordinator::activateLevelSelect(int levelID, bool playImmediat
     }
 }
 
+void AudioContextCoordinator::activateLevelSelectLevel(GJGameLevel* level, bool playImmediately) {
+    Ref<GJGameLevel> selected(level);
+    this->activateLevelSelect(level ? level->m_levelID.value() : 0, false);
+    m_levelSelectLevel = std::move(selected);
+    if (playImmediately) this->playDynamicForCurrentContext();
+}
+
 // backing out mid-dive: release the song, restore menu music.
 bool AudioContextCoordinator::exitDiveIfHandingOff() {
     auto* dsm = DynamicSongManager::get();
@@ -114,6 +122,7 @@ bool AudioContextCoordinator::exitDiveIfHandingOff() {
 }
 
 void AudioContextCoordinator::deactivateLevelSelect(bool stopSong) {    auto* dsm = DynamicSongManager::get();
+    m_levelSelectLevel = nullptr;
     dsm->exitLayer(DynSongLayer::LevelSelect);
 
     if (m_dynamicContextLayer == DynSongLayer::LevelSelect) {
@@ -133,6 +142,7 @@ void AudioContextCoordinator::deactivateLevelSelect(bool stopSong) {    auto* ds
 void AudioContextCoordinator::activateLevelInfo(GJGameLevel* level, bool playImmediately) {
     m_gameplayActive = false;
     m_levelInfoLevel = level;
+    m_levelSelectLevel = nullptr;
     m_dynamicContextLayer = DynSongLayer::LevelInfo;
 
     if (m_profileOpen) {
@@ -150,7 +160,7 @@ void AudioContextCoordinator::activateLevelInfo(GJGameLevel* level, bool playImm
     }
 }
 
-void AudioContextCoordinator::deactivateLevelInfo(bool returnsToLevelSelect) {
+void AudioContextCoordinator::deactivateLevelInfo(bool) {
     auto* dsm = DynamicSongManager::get();
     dsm->exitLayer(DynSongLayer::LevelInfo);
 
@@ -190,12 +200,18 @@ void AudioContextCoordinator::abortGameplayTransition(DynSongLayer restoredLayer
     m_preGameplayLayer = DynSongLayer::None;
 }
 
+void AudioContextCoordinator::prepareGameplayAudio(GJGameLevel* level) {
+    this->beginGameplayTransition();
+    DynamicSongManager::get()->finishGameplayHandoff(level ? level->m_levelID.value() : 0);
+}
+
 void AudioContextCoordinator::notifyGameplayStarted(GJGameLevel* level) {
     paimon::menumusic::MenuMusicEffects::get().deactivate();
     m_gameplayActive = true;
     m_dynamicContextLayer = DynSongLayer::None;
     m_preGameplayLayer = DynSongLayer::None;
     m_levelInfoLevel = nullptr;
+    m_levelSelectLevel = nullptr;
     DynamicSongManager::get()->finishGameplayHandoff(level ? level->m_levelID.value() : 0);
 }
 
@@ -234,7 +250,8 @@ void AudioContextCoordinator::activateProfile(int accountID, ProfileMusicManager
 }
 
 void AudioContextCoordinator::updateProfileMusicConfig(int accountID, ProfileMusicManager::ProfileMusicConfig const& config) {
-    // update config without bumping the session token to avoid double-activation desync
+    // A first async config opens a session; edits within it keep the same token.
+    if (!m_profileOpen || m_profileAccountID != accountID) ++m_profileSessionToken;
     m_profileOpen = true;
     m_profileAccountID = accountID;
     suspendDynamicForProfileMusicIfNeeded();
@@ -269,7 +286,7 @@ bool AudioContextCoordinator::restoreSuspendedDynamicSong() {
     return dsm->isActive();
 }
 
-void AudioContextCoordinator::restoreAfterProfileMusicStop(bool hadProfileAudio, uint32_t sessionToken) {
+void AudioContextCoordinator::restoreAfterProfileMusicStop(bool, uint32_t sessionToken) {
     if (!isCurrentProfileSession(sessionToken)) {
         return;
     }
@@ -317,6 +334,10 @@ bool AudioContextCoordinator::playDynamicForCurrentContext(bool ignoreProfileGat
         return false;
 
     case DynSongLayer::LevelSelect:
+        if (m_levelSelectLevel) {
+            dsm->playSong(m_levelSelectLevel);
+            return true;
+        }
         if (m_levelSelectLevelID > 0 && m_levelSelectLevelID <= kMainLevelCount) {
             auto* level = GJGameLevel::create();
             if (!level) return false;
@@ -343,6 +364,25 @@ void AudioContextCoordinator::restoreMenuMusic() {
 
     std::string menuTrack = gm->getMenuMusicFile();
     paimon::audio::clearMusicGroupPause();
+
+    if (engine->getActiveMusic(0) == menuTrack) {
+        if (auto* ch = paimon::audio::mainMusicChannel(engine)) {
+            bool playing = false;
+            bool paused = false;
+            if (ch->isPlaying(&playing) == FMOD_OK && playing
+                && ch->getPaused(&paused) == FMOD_OK && !paused) {
+                if (engine->m_backgroundMusicChannel) {
+                    engine->m_backgroundMusicChannel->setVolume(engine->m_musicVolume);
+                }
+                m_mainAudioOwner = MainAudioOwner::Menu;
+                m_mainAudioOwnerToken = 0;
+                m_savedMenuMusicPosMs = 0;
+                m_savedMenuMusicTrack.clear();
+                return;
+            }
+        }
+    }
+
     DynamicSongManager::s_selfPlayMusic = true;
     engine->playMusic(menuTrack, true, 0.0f, 0);
     DynamicSongManager::s_selfPlayMusic = false;

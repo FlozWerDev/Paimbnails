@@ -1,0 +1,36 @@
+#include <matjson.hpp>
+#include <cassert>
+#include <sstream>
+#include <string>
+#include <vector>
+enum class PendingCategory {Verify,Update,Report,ProfileBackground,ProfileImg};
+enum class PendingStatus {Open,Accepted,Rejected};
+struct PendingItem {
+    int levelID=123;PendingCategory category=PendingCategory::Report;long long timestamp=100;
+    std::string submittedBy="tester",note;
+    PendingStatus status=PendingStatus::Open;bool isCreator=false;
+};
+struct PendingQueue {
+    std::vector<PendingItem> m_items;
+    static char const* catToStr(PendingCategory);
+    static char const* statusToStr(PendingStatus);
+    static std::string escape(std::string const&);
+    std::string toJson()const;
+};
+@@function|src/features/moderation/services/PendingQueue.cpp|char const* PendingQueue::catToStr(@@
+@@function|src/features/moderation/services/PendingQueue.cpp|char const* PendingQueue::statusToStr(@@
+@@function|src/features/moderation/services/PendingQueue.cpp|std::string PendingQueue::escape(@@
+@@function|src/features/moderation/services/PendingQueue.cpp|std::string PendingQueue::toJson(@@
+int main() {
+    PendingQueue queue;
+    PendingItem item;
+    for(int i=0;i<32;++i)item.note.push_back(static_cast<char>(i));
+    item.note+="\"\\Unicode: ñ🎨";
+    item.submittedBy="quoted\"user\n";
+    queue.m_items.push_back(item);
+    auto parsed=matjson::parse(queue.toJson());
+    assert(parsed.isOk());
+    auto const& value=parsed.unwrap()["items"][0];
+    assert(value["note"].asString().unwrap()==item.note);
+    assert(value["submittedBy"].asString().unwrap()==item.submittedBy);
+}

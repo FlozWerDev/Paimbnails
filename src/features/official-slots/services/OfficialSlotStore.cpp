@@ -1,4 +1,6 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "OfficialSlotStore.hpp"
+#include "../../../utils/AtomicFileWrite.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/loader/Mod.hpp>
@@ -142,11 +144,11 @@ SlotStore& SlotStore::get() {
 }
 
 std::filesystem::path SlotStore::storePath() const {
-    return Mod::get()->getSaveDir() / kStoreFile;
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / kStoreFile;
 }
 
 std::filesystem::path SlotStore::gmdDir() const {
-    auto dir = Mod::get()->getSaveDir() / kGmdFolder;
+    auto dir = paimon::paths::toStdPath(Mod::get()->getSaveDir()) / kGmdFolder;
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     if (ec) {
@@ -158,15 +160,17 @@ std::filesystem::path SlotStore::gmdDir() const {
 void SlotStore::ensureLoaded() {
     if (m_loaded) return;
     m_loaded = true;
+    // first run and unreadable/corrupt settings still start with every original page.
+    this->loadOrder(matjson::makeObject({}));
 
     auto path = this->storePath();
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return;
 
-    auto contents = utils::file::readString(path);
+    auto contents = utils::file::readString(paimon::paths::toSdkPath(path));
     if (!contents) {
         log::warn("[OfficialSlots] Could not read {}: {}",
-                  utils::string::pathToString(path), contents.unwrapErr());
+                  paimon::paths::toUtf8(path), contents.unwrapErr());
         return;
     }
 
@@ -252,9 +256,8 @@ void SlotStore::save() {
         {"order", order},
     });
 
-    auto result = utils::file::writeString(this->storePath(), root.dump());
-    if (!result) {
-        log::warn("[OfficialSlots] Could not save the slot list: {}", result.unwrapErr());
+    if (!paimon::file::writeAtomically(this->storePath(), root.dump())) {
+        log::warn("[OfficialSlots] Could not atomically save the slot list");
     }
 }
 
@@ -360,19 +363,10 @@ bool SlotStore::remove(std::string const& slotId) {
 }
 
 void SlotStore::move(std::string const& slotId, int delta) {
-    this->ensureLoaded();
-    if (delta == 0) return;
-
-    auto it = std::find_if(m_slots.begin(), m_slots.end(),
-                          [&](Slot const& slot) { return slot.id == slotId; });
-    if (it == m_slots.end()) return;
-
-    auto index = static_cast<int>(std::distance(m_slots.begin(), it));
-    auto target = index + delta;
-    if (target < 0 || target >= static_cast<int>(m_slots.size())) return;
-
-    std::swap(m_slots[index], m_slots[target]);
-    this->save();
+    auto slot = this->find(slotId);
+    if (!slot) return;
+    this->movePage(slot->replacesOfficialId != 0
+        ? officialKey(slot->replacesOfficialId) : slotKey(slotId), delta);
 }
 
 std::vector<std::string> const& SlotStore::pageOrder() {
@@ -493,14 +487,19 @@ void SlotStore::setOfficialHidden(int levelId, bool hidden) {
     this->save();
 }
 
-std::optional<Slot> SlotStore::slotForOfficial(int levelId) {
+std::optional<Slot> SlotStore::replacementForOfficial(int levelId) {
     this->ensureLoaded();
     if (!isOfficialId(levelId)) return std::nullopt;
 
     for (auto const& slot : m_slots) {
-        if (slot.enabled && slot.replacesOfficialId == levelId) return slot;
+        if (slot.replacesOfficialId == levelId) return slot;
     }
     return std::nullopt;
+}
+
+std::optional<Slot> SlotStore::slotForOfficial(int levelId) {
+    auto replacement = this->replacementForOfficial(levelId);
+    return replacement && replacement->enabled ? replacement : std::nullopt;
 }
 
 std::optional<std::string> SlotStore::importGmd(std::filesystem::path const& source) {
@@ -516,7 +515,7 @@ std::optional<std::string> SlotStore::importGmd(std::filesystem::path const& sou
         return std::nullopt;
     }
 
-    auto stem = utils::string::pathToString(source.stem());
+    auto stem = paimon::paths::toUtf8(source.stem());
     // the name ends up as a path, so keep it to characters that behave on every
     // platform we ship on.
     std::string safe;

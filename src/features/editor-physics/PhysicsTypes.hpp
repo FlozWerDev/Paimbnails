@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -15,6 +16,12 @@ struct Vec2 {
     float x = 0.f;
     float y = 0.f;
 };
+
+inline Vec2 rotate(Vec2 value, float angle) {
+    float const cosine = std::cos(angle);
+    float const sine = std::sin(angle);
+    return {value.x * cosine - value.y * sine, value.x * sine + value.y * cosine};
+}
 
 // `radius` selects a circle, `vertices` a counter-clockwise polygon relative to
 // `offset`; negative friction/restitution falls back to the body's own value.

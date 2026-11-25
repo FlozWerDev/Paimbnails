@@ -44,6 +44,7 @@ private:
     mutable std::mutex m_mutex;
     bool m_scanned = false;
     std::unordered_set<int32_t> m_present;
+    std::unordered_set<int32_t> m_staleTextures; // guarded by m_mutex; GL refs stay on main
     std::unordered_set<int32_t> m_attempted;
     // notegenerated() runs on the autopreview worker while the main queue reads/resets.
     std::atomic<int> m_generatedThisSession{0};

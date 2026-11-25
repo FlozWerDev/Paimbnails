@@ -41,6 +41,9 @@ class $modify(PaimonInfoSuiteCommentTools, CommentCell) {
     void loadFromComment(GJComment* comment) {
         CommentCell::loadFromComment(comment);
         if (!comment) return;
+        if (unregProfilesEnabled() && comment->m_accountID <= 0 && comment->m_userID > 0) {
+            routeUnregisteredProfile(this);
+        }
 
         // remembering the name is what later lets a blank green name be filled
         // in, so it runs for that module rather than for comment tools.
@@ -55,23 +58,27 @@ class $modify(PaimonInfoSuiteCommentTools, CommentCell) {
 
         paimon::info::noteComment(comment->m_commentID, std::string(comment->m_uploadDate));
 
-        if (this->getChildByID(kDateBadgeID)) return;
         auto date = paimon::info::estimateCommentDate(comment->m_commentID);
         if (date.empty()) return;
 
-        auto* badge = paimon::info::makeIdBadge(fmt::format("~ {}", date), 0.34f);
-        if (!badge) return;
-
-        badge->setID(kDateBadgeID);
-        badge->setAnchorPoint({1.f, 1.f});
-        badge->setPosition({this->getContentSize().width - 5.f,
-                            this->getContentSize().height - 4.f});
-        this->addChild(badge, 100);
+        paimon::info::attachIdBadge(this, kDateBadgeID, fmt::format("~ {}", date), 0.34f,
+            {1.f, 1.f}, {this->getContentSize().width - 5.f,
+                         this->getContentSize().height - 4.f});
     }
 
     // tapping a green player's name does nothing in vanilla, since there is no
     // account to open. show what we can instead of a dead button.
-    void onViewProfile(CCObject* sender) {
+    void routeUnregisteredProfile(CCNode* node) {
+        if (auto* button = typeinfo_cast<CCMenuItemSprite*>(node)) {
+            auto* label = typeinfo_cast<CCLabelBMFont*>(button->getNormalImage());
+            if (label && m_comment && std::string_view(label->getString()) == m_comment->m_userName) {
+                button->setTarget(this, menu_selector(PaimonInfoSuiteCommentTools::onUnregisteredProfile));
+            }
+        }
+        for (auto* child : node->getChildrenExt<CCNode*>()) routeUnregisteredProfile(child);
+    }
+
+    void onUnregisteredProfile(CCObject*) {
         if (unregProfilesEnabled() && m_comment && m_comment->m_accountID <= 0
             && m_comment->m_userID > 0) {
             auto popup = paimon::info::UnregisteredProfilePopup::create(
@@ -81,7 +88,6 @@ class $modify(PaimonInfoSuiteCommentTools, CommentCell) {
                 return;
             }
         }
-        CommentCell::onViewProfile(sender);
     }
 };
 
@@ -95,8 +101,8 @@ class $modify(PaimonInfoSuiteCommentPages, InfoLayer) {
         int m_perPage = 0;
     };
 
-    bool init(GJGameLevel* level, GJUserScore* score, GJLevelList* list) {
-        if (!InfoLayer::init(level, score, list)) return false;
+    bool init(GJGameLevel* level, GJUserScore* score, GJLevelList* list, GJEditorSoundConfig* soundConfig) {
+        if (!InfoLayer::init(level, score, list, soundConfig)) return false;
         addJumpButton();
         return true;
     }

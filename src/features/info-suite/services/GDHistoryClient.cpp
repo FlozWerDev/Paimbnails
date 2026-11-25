@@ -1,10 +1,14 @@
 #include "GDHistoryClient.hpp"
 #include "InfoStore.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
+#include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/WebHelper.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/utils/web.hpp>
+#include <algorithm>
+#include <memory>
+#include <unordered_map>
 #include <unordered_set>
 
 using namespace geode::prelude;
@@ -27,6 +31,25 @@ std::unordered_set<int>& usersAsked() {
     return set;
 }
 
+std::unordered_map<int, UserHistory>& userHistoryCache() {
+    static std::unordered_map<int, UserHistory> map;
+    return map;
+}
+
+// the two requests behind one user lookup report here; the callback fires once both are done.
+struct UserLookup {
+    UserHistory result;
+    std::function<void(UserHistory const&, bool)> done;
+    int pending = 2;
+    bool ok = false;
+};
+
+void finishUserLookup(int userID, std::shared_ptr<UserLookup> const& lookup) {
+    if (--lookup->pending > 0) return;
+    if (lookup->ok) userHistoryCache()[userID] = lookup->result;
+    lookup->done(lookup->result, lookup->ok);
+}
+
 // official ids do not apply on private servers; detect known switchers because bindings expose no server.
 bool onPrivateServer() {
     auto* loader = Loader::get();
@@ -37,22 +60,48 @@ bool onPrivateServer() {
         || loader->isModLoaded("itzkiba.gdps_switcher");
 }
 
-std::string asString(matjson::Value const& value) {
-    auto res = value.asString();
-    return res.isOk() ? res.unwrap() : std::string{};
-}
-
 // the api returns an iso timestamp; only the date part is worth showing.
 std::string dateOnly(std::string const& iso) {
     if (iso.size() < 10) return iso;
     return iso.substr(0, 10);
 }
 
+// shared GET + json guards: onOk runs only for a 2xx with parseable json,
+// onFail (if given) covers both failure cases.
+void dispatchJson(std::string url, std::function<void(matjson::Value const&)> onOk,
+                  std::function<void()> onFail = nullptr) {
+    auto req = web::WebRequest();
+    req.timeout(asp::Duration::fromSecs(kTimeoutSeconds));
+
+    WebHelper::dispatch(std::move(req), "GET", std::move(url),
+        [onOk = std::move(onOk), onFail = std::move(onFail)](web::WebResponse res) mutable {
+            if (!res.ok()) {
+                if (onFail) onFail();
+                return;
+            }
+
+            auto json = res.json();
+            if (!json.isOk()) {
+                if (onFail) onFail();
+                return;
+            }
+
+            if (onOk) onOk(json.unwrap());
+        });
+}
+
 } // namespace
 
-bool available() {
-    if (!paimon::modules::isEnabled(kModuleId)) return false;
+bool enabled() {
+    return paimon::modules::isEnabled(kModuleId);
+}
+
+bool reachable() {
     return !onPrivateServer();
+}
+
+bool available() {
+    return enabled() && reachable();
 }
 
 void requestLevelDate(int levelID, std::function<void(std::string const&)> callback) {
@@ -67,19 +116,9 @@ void requestLevelDate(int levelID, std::function<void(std::string const&)> callb
     if (!available()) return;
     if (!levelsAsked().insert(levelID).second) return;
 
-    auto req = web::WebRequest();
-    req.timeout(std::chrono::seconds(kTimeoutSeconds));
-
-    WebHelper::dispatch(std::move(req), "GET",
-        fmt::format("{}/date/level/{}/", kBase, levelID),
-        [levelID, callback](web::WebResponse res) {
-            if (!res.ok()) return;
-
-            auto json = res.json();
-            if (!json.isOk()) return;
-
-            auto body = json.unwrap();
-            auto date = dateOnly(asString(body["approx"]["estimation"]));
+    dispatchJson(fmt::format("{}/date/level/{}/", kBase, levelID),
+        [levelID, callback](matjson::Value const& body) {
+            auto date = dateOnly(paimon::json::stringOr(body["approx"]["estimation"]));
             if (date.empty()) return;
 
             InfoStore::get().setLevelDate(levelID, date);
@@ -95,25 +134,72 @@ void requestLevelHistory(int levelID, std::function<void(matjson::Value)> callba
         return;
     }
 
-    auto req = web::WebRequest();
-    req.timeout(std::chrono::seconds(kTimeoutSeconds));
-
-    WebHelper::dispatch(std::move(req), "GET",
-        fmt::format("{}/level/{}/", kBase, levelID),
-        [callback = std::move(callback)](web::WebResponse res) mutable {
-            if (!res.ok()) {
-                callback(matjson::Value());
-                return;
-            }
-
-            auto json = res.json();
-            if (!json.isOk()) {
-                callback(matjson::Value());
-                return;
-            }
-
-            callback(json.unwrap());
+    dispatchJson(fmt::format("{}/level/{}/", kBase, levelID),
+        [callback = std::move(callback)](matjson::Value const& body) mutable {
+            callback(body);
+        },
+        [callback]() mutable {
+            callback(matjson::Value());
         });
+}
+
+void requestUserHistory(int userID, bool userInitiated,
+                        std::function<void(UserHistory const&, bool)> callback) {
+    if (!callback) return;
+    if (userID <= 0 || !reachable() || (!userInitiated && !enabled())) {
+        callback(UserHistory{}, false);
+        return;
+    }
+
+    auto cached = userHistoryCache().find(userID);
+    if (cached != userHistoryCache().end()) {
+        callback(cached->second, true);
+        return;
+    }
+
+    auto lookup = std::make_shared<UserLookup>();
+    lookup->done = std::move(callback);
+
+    // every record is one sighting of the user under one name.
+    dispatchJson(fmt::format("{}/user/{}/", kBase, userID),
+        [userID, lookup](matjson::Value const& body) {
+            paimon::json::forEachInArray(body["records"], [&](matjson::Value const& record) {
+                auto name = paimon::json::stringOr(record["username"]);
+                if (!name.empty()
+                        && std::find(lookup->result.names.begin(), lookup->result.names.end(), name)
+                            == lookup->result.names.end()) {
+                    lookup->result.names.push_back(name);
+                }
+
+                auto seen = dateOnly(paimon::json::stringOr(record["cache_created"]));
+                if (!seen.empty() && (lookup->result.firstSeen.empty() || seen < lookup->result.firstSeen)) {
+                    lookup->result.firstSeen = seen;
+                }
+            });
+            if (!lookup->result.names.empty() || !lookup->result.firstSeen.empty()) lookup->ok = true;
+            finishUserLookup(userID, lookup);
+        },
+        [userID, lookup]() { finishUserLookup(userID, lookup); });
+
+    // history dates levels, not users: a user id maps to the level uploaded around then.
+    dispatchJson(fmt::format("{}/date/user/{}/", kBase, userID),
+        [userID, lookup](matjson::Value const& body) {
+            auto levelID = paimon::json::integerOr<int64_t>(body["approx"]);
+            if (levelID <= 0) {
+                finishUserLookup(userID, lookup);
+                return;
+            }
+
+            dispatchJson(fmt::format("{}/date/level/{}/", kBase, levelID),
+                [userID, lookup](matjson::Value const& level) {
+                    lookup->result.createdApprox = dateOnly(
+                        paimon::json::stringOr(level["approx"]["estimation"]));
+                    if (!lookup->result.createdApprox.empty()) lookup->ok = true;
+                    finishUserLookup(userID, lookup);
+                },
+                [userID, lookup]() { finishUserLookup(userID, lookup); });
+        },
+        [userID, lookup]() { finishUserLookup(userID, lookup); });
 }
 
 void requestUsername(int userID) {
@@ -122,19 +208,9 @@ void requestUsername(int userID) {
     if (!available()) return;
     if (!usersAsked().insert(userID).second) return;
 
-    auto req = web::WebRequest();
-    req.timeout(std::chrono::seconds(kTimeoutSeconds));
-
-    WebHelper::dispatch(std::move(req), "GET",
-        fmt::format("{}/user/{}/brief/", kBase, userID),
-        [userID](web::WebResponse res) {
-            if (!res.ok()) return;
-
-            auto json = res.json();
-            if (!json.isOk()) return;
-
-            auto body = json.unwrap();
-            auto name = asString(body["username"]);
+    dispatchJson(fmt::format("{}/user/{}/brief/", kBase, userID),
+        [userID](matjson::Value const& body) {
+            auto name = paimon::json::stringOr(body["username"]);
             if (name.empty()) return;
 
             InfoStore::get().rememberUsername(userID, name);

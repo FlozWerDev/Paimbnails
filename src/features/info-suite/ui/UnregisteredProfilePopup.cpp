@@ -100,7 +100,7 @@ void UnregisteredProfilePopup::onLevels(CCObject*) {
 
 void UnregisteredProfilePopup::onCopyID(CCObject*) {
     clipboard::write(std::to_string(m_userID));
-    PaimonNotify::create("User ID copiado", NotificationIcon::Success)->show();
+    PaimonNotify::show("User ID copiado", NotificationIcon::Success);
 }
 
 } // namespace paimon::info

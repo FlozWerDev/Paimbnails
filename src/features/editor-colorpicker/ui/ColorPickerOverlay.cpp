@@ -256,8 +256,12 @@ void ColorPickerOverlay::buildHeader(float width, float height) {
     float const iconsLeft = width - 72.f;
     float const hintLeft = 28.f + title->getScaledContentSize().width + 10.f;
     auto* hint = kit::label(
+#if defined(GEODE_IS_MOBILE)
+        tr("pai.editorcp.shortcuts_mobile", "Tap/Drag: pick color").c_str(),
+#else
         tr("pai.editorcp.shortcuts",
             "Click/Space: pick   C: copy   Enter: apply   Tab: format   L: loupe   Up/Down: ID").c_str(),
+#endif
         "chatFont.fnt", 0.5f, kit::tint::muted);
     hint->limitLabelWidth(iconsLeft - hintLeft - 6.f, 0.5f, 0.2f);
     hint->setPosition({(hintLeft + iconsLeft) * 0.5f, y});
@@ -476,6 +480,16 @@ void ColorPickerOverlay::placeHud(bool animate) {
     if (m_dockDownBtn) m_dockDownBtn->setVisible(m_dockTop);
 }
 
+CCPoint ColorPickerOverlay::activePointerPos() const {
+#if defined(GEODE_IS_MOBILE)
+    if (m_hasTouchPos) return m_pointerPos;
+    auto win = CCDirector::get()->getWinSize();
+    return {win.width * 0.5f, win.height * 0.5f};
+#else
+    return m_hasTouchPos ? m_pointerPos : geode::cocos::getMousePos();
+#endif
+}
+
 void ColorPickerOverlay::onPreSwapSample() {
     if (s_instance) s_instance->liveSample();
 }
@@ -496,7 +510,7 @@ void ColorPickerOverlay::liveSample() {
     const int   fw = static_cast<int>(fs.width);
     const int   fh = static_cast<int>(fs.height);
 
-    CCPoint m = geode::cocos::getMousePos();
+    CCPoint m = activePointerPos();
     m.x = std::clamp(m.x, 0.f, win.width);
     m.y = std::clamp(m.y, 0.f, win.height);
 
@@ -508,6 +522,17 @@ void ColorPickerOverlay::liveSample() {
     int const h = std::min(want, fh);
     int const x0 = std::clamp(cxDev - w / 2, 0, fw - w);
     int const y0 = std::clamp(cyDev - h / 2, 0, fh - h);
+
+    // glReadPixels every frame stalls the pipeline; with the cursor still,
+    // re-sample every 4th frame (~15Hz) — enough for animated scenes, and a
+    // moved cursor still samples immediately.
+    ++m_framesSinceSample;
+    if (cxDev == m_lastSampleX && cyDev == m_lastSampleY
+        && want == m_lastSampleWant && m_framesSinceSample < 4) return;
+    m_framesSinceSample = 0;
+    m_lastSampleX = cxDev;
+    m_lastSampleY = cyDev;
+    m_lastSampleWant = want;
 
 while (glGetError() != GL_NO_ERROR) {}
 
@@ -559,8 +584,12 @@ void ColorPickerOverlay::updateReadout() {
 
 void ColorPickerOverlay::updateLoupe() {
     if (!m_loupe) return;
-    auto const mouse = geode::cocos::getMousePos();
+    auto const mouse = activePointerPos();
+#if defined(GEODE_IS_MOBILE)
+    bool const visible = m_loupeEnabled && m_dragging && m_hasTouchPos && !this->pointInHud(mouse) && m_loupeW > 1;
+#else
     bool const visible = m_loupeEnabled && !this->pointInHud(mouse) && m_loupeW > 1;
+#endif
     m_loupe->setVisible(visible);
     if (!visible) return;
 
@@ -691,27 +720,44 @@ void ColorPickerOverlay::update(float) {
 }
 
 bool ColorPickerOverlay::ccTouchBegan(CCTouch* touch, CCEvent*) {
-    if (!m_ready || m_closing) return false;
+    if (!m_ready || m_closing || !touch) return false;
     CCPoint p = touch->getLocation();
     if (pointInHud(p)) return true;
+    m_hasTouchPos = true;
+    m_pointerPos = p;
+    m_lastSampleX = -1;
+    m_lastSampleY = -1;
     m_dragging = true;
+    this->liveSample();
     this->pickAt();
     return true;
 }
 
 void ColorPickerOverlay::ccTouchMoved(CCTouch* touch, CCEvent*) {
-    if (!m_ready || m_closing || !m_dragging) return;
-    this->pickAt();
+    if (!m_ready || m_closing || !m_dragging || !touch) return;
+    CCPoint p = touch->getLocation();
+    m_hasTouchPos = true;
+    m_pointerPos = p;
+    if (!pointInHud(p)) {
+        this->liveSample();
+        this->pickAt();
+    }
 }
 
 void ColorPickerOverlay::ccTouchEnded(CCTouch*, CCEvent*) {
     // a drag only records its final colour, otherwise history fills with noise.
     if (m_dragging && m_hasSelection && !m_closing) this->pushRecent(m_selColor);
     m_dragging = false;
+#if !defined(GEODE_IS_MOBILE)
+    m_hasTouchPos = false;
+#endif
 }
 
 void ColorPickerOverlay::ccTouchCancelled(CCTouch*, CCEvent*) {
     m_dragging = false;
+#if !defined(GEODE_IS_MOBILE)
+    m_hasTouchPos = false;
+#endif
 }
 
 bool ColorPickerOverlay::handleKey(KeyboardInputData const& data) {
@@ -724,7 +770,8 @@ bool ColorPickerOverlay::handleKey(KeyboardInputData const& data) {
     bool const shift = (data.modifiers.value & uint8_t(KeyboardModifier::Shift)) != 0;
     switch (data.key) {
         case KEY_Space:
-            if (press && !self->pointInHud(geode::cocos::getMousePos())) {
+            if (press && !self->pointInHud(self->activePointerPos())) {
+                self->liveSample();
                 self->pickAt();
                 self->pushRecent(self->m_selColor);
             }

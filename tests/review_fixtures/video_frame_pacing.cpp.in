@@ -1,0 +1,128 @@
+#include <algorithm>
+#include <cassert>
+#include <cfloat>
+#include <cstdint>
+#include <deque>
+#include <functional>
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace cocos2d {
+struct CCDirector {
+    unsigned int frame = 1;
+    static CCDirector* get() { static CCDirector director; return &director; }
+    unsigned int getTotalFrames() const { return frame; }
+};
+}
+namespace geode::log {
+    template <class... Args> void warn(char const*, Args const&...) {}
+    template <class... Args> void info(char const*, Args const&...) {}
+}
+
+namespace paimon::video {
+constexpr double kLoopWrapGuard = 0.5;
+struct IVideoDecoder {
+    struct Frame { double pts; };
+    std::deque<Frame> frames;
+    int skipped = 0;
+    bool finished = false;
+    void stopDecoding() {}
+    void startDecoding() {}
+    void seekTo(double) {}
+    bool isFinished() const { return finished; }
+    double peekNextPTS() const { return frames.empty() ? DBL_MAX : frames.front().pts; }
+    double peekSecondPTS() const { return frames.size() < 2 ? DBL_MAX : frames[1].pts; }
+    Frame const* peekFrame() const { return frames.empty() ? nullptr : &frames.front(); }
+    void releaseFrame() { frames.pop_front(); }
+    bool skipFrame() {
+        if (frames.empty()) return false;
+        frames.pop_front();
+        ++skipped;
+        return true;
+    }
+};
+struct Audio {
+    double positionSeconds() const { return -1.; }
+    bool isPlaying() const { return false; }
+};
+struct VideoPlayer {
+    bool m_playing = true, m_hasVisibleFrame = true, m_decoderStalled = false;
+    bool m_pendingUpload = false, m_decoderLoops = true, m_loop = true;
+    unsigned int m_lastUpdateFrame = 0;
+    double m_playbackTime = 0., m_timeSincePlay = 0., m_timeSinceLastUpload = 0.;
+    int m_targetFPS = 30;
+    uint64_t m_frameCounter = 0, m_loopFrameAtLastRestart = ~0ull;
+    std::string m_filePath = "menu.mp4";
+    std::unique_ptr<IVideoDecoder> m_decoder = std::make_unique<IVideoDecoder>();
+    std::unique_ptr<Audio> m_audio;
+    std::function<void()> m_onFinished;
+    std::vector<double> presented;
+    bool uploadFrame(IVideoDecoder::Frame const& frame) {
+        presented.push_back(frame.pts);
+        m_hasVisibleFrame = true;
+        return true;
+    }
+    bool retryUploadFromRgbaBuffer() { return true; }
+    void playAudioFromCurrentTime(bool) {}
+    void stopAudio(bool) {}
+    void update(float dt);
+};
+@@function|src/video/VideoPlayer.cpp|void VideoPlayer::update(float dt)@@
+
+void tick(VideoPlayer& player, float dt) {
+    ++cocos2d::CCDirector::get()->frame;
+    player.update(dt);
+}
+
+void preservesDueFramesBetweenUploadTicks() {
+    VideoPlayer player;
+    // The menu ticks at 60 Hz while adaptive playback is capped at 30 FPS.
+    // Video timestamps need not fall on the upload tick's exact phase.
+    for (int frame = 0; frame < 90; ++frame) {
+        player.m_decoder->frames.push_back({0.01 + frame / 30.});
+    }
+    for (int tickIndex = 0; tickIndex < 120; ++tickIndex) tick(player, 1.f / 60.f);
+    assert(player.presented.size() >= 55); // continuous playback for two seconds
+    assert(player.presented.front() == 0.01);
+    assert(player.presented.back() > 1.9);
+}
+
+void preservesFrameUntilDecoderProvidesItsReplacement() {
+    VideoPlayer player;
+    player.m_decoder->frames = {{0.01}};
+    tick(player, 1.f / 60.f);
+    assert(player.presented.empty()); // upload budget is not due yet
+    tick(player, 1.f / 60.f);
+    assert(player.presented.size() == 1 && player.presented.front() == 0.01);
+}
+
+void keepsLoopHeadForTheNextPlaybackCycle() {
+    VideoPlayer player;
+    player.m_playbackTime = 1.95;
+    player.m_decoder->frames = {{1.96}, {1.99}, {0.}, {0.04}, {0.08}};
+    tick(player, 0.05f);
+    assert(player.presented.size() == 1 && player.presented.front() == 1.99);
+    assert(player.m_decoder->peekNextPTS() == 0.);
+    tick(player, 0.04f);
+    assert(player.presented.size() == 2 && player.presented.back() == 0.);
+}
+
+void skipsOutdatedFramesAndUpdatesSharedPlayersOnce() {
+    VideoPlayer player;
+    player.m_decoder->frames = {{0.}, {0.02}, {0.04}, {0.06}};
+    tick(player, 0.05f);
+    assert(player.presented.size() == 1 && player.presented.front() == 0.04);
+    auto const playbackTime = player.m_playbackTime;
+    player.update(0.05f); // another node shares this player in the same frame
+    assert(player.m_playbackTime == playbackTime && player.presented.size() == 1);
+}
+}
+
+int main() {
+    using namespace paimon::video;
+    preservesFrameUntilDecoderProvidesItsReplacement();
+    preservesDueFramesBetweenUploadTicks();
+    keepsLoopHeadForTheNextPlaybackCycle();
+    skipsOutdatedFramesAndUpdatesSharedPlayersOnce();
+}

@@ -1,0 +1,84 @@
+#include <cassert>
+#include <iostream>
+#include <memory>
+#include <vector>
+
+struct CCNode {
+    bool visible = true;
+    CCNode* parent = nullptr;
+    virtual ~CCNode() = default;
+    void setVisible(bool value) { visible = value; }
+    CCNode* getParent() { return parent; }
+    void addChild(CCNode* child) { child->parent = this; }
+    void removeFromParent() { parent = nullptr; }
+};
+template<class T> T typeinfo_cast(CCNode* node) { return dynamic_cast<T>(node); }
+struct CCSprite : CCNode {
+    static std::vector<std::unique_ptr<CCSprite>> sprites;
+    static CCSprite* createWithTexture(int) {
+        sprites.push_back(std::make_unique<CCSprite>());
+        return sprites.back().get();
+    }
+    int getTexture() { return 1; }
+    int getTextureRect() { return 0; }
+    void setTextureRect(int) {}
+    float getScale() { return 1.f; }
+    void setScale(float) {}
+};
+std::vector<std::unique_ptr<CCSprite>> CCSprite::sprites;
+struct CCArray {
+    std::vector<CCNode*> nodes;
+    unsigned count() const { return static_cast<unsigned>(nodes.size()); }
+    CCNode* objectAtIndex(unsigned index) { return nodes.at(index); }
+    void removeObjectAtIndex(unsigned index) { nodes.erase(nodes.begin() + index); }
+    void addObject(CCNode* node) { nodes.push_back(node); }
+};
+struct BoomScrollLayer {
+    CCArray* m_dots = nullptr;
+    CCArray* m_dynamicObjects = nullptr;
+    bool m_dotsVisible = true;
+    void updateDots(float) {}
+    void togglePageIndicators(bool visible) {
+        m_dotsVisible = visible;
+        for (auto* dot : m_dots->nodes) dot->setVisible(visible);
+    }
+};
+
+namespace cocos2d { using CCNode = ::CCNode; }
+namespace geode::cocos {
+    template<class T> auto const& CCArrayExt(CCArray* array) { return array->nodes; }
+}
+namespace paimon::compat {
+@@function|src/framework/compat/NativeUI.hpp|inline void setPageIndicatorsVisible(@@
+}
+
+@@function|src/features/official-slots/hooks/OfficialSlotHooks.cpp|void syncDots(BoomScrollLayer* scroll) {@@
+
+int main() {
+    CCNode parent;
+    CCArray dots, levels;
+    auto* first = CCSprite::createWithTexture(1);
+    parent.addChild(first);
+    dots.addObject(first);
+    BoomScrollLayer scroll{&dots, &levels};
+    scroll.togglePageIndicators(false);
+    for (int i = 0; i < 27; ++i) levels.addObject(&parent);
+    syncDots(&scroll);
+    assert(dots.count() == 27);
+    for (auto* dot : dots.nodes) assert(!dot->visible);
+
+    // Reordering and shrinking the catalogue must preserve the hidden row too.
+    levels.nodes.resize(3);
+    syncDots(&scroll);
+    assert(dots.count() == 3);
+    for (auto* dot : dots.nodes) assert(!dot->visible);
+
+    // Other scroll layers retain their native visible indicators.
+    scroll.togglePageIndicators(true);
+    levels.nodes.resize(8, &parent);
+    syncDots(&scroll);
+    assert(dots.count() == 8);
+    for (auto* dot : dots.nodes) assert(dot->visible);
+    syncDots(nullptr);
+    std::cout << "Page indicator visibility survives catalogue refreshes\n";
+}

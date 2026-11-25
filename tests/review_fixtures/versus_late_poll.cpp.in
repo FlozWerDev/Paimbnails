@@ -1,0 +1,56 @@
+
+#include <algorithm>
+#include <cassert>
+#include <cctype>
+#include <cstdint>
+#include <functional>
+#include <iostream>
+#include <optional>
+#include <span>
+#include <string>
+#include <utility>
+#include <vector>
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
+#include <chrono>
+#include <cstring>
+#include <sstream>
+#include <stdexcept>
+#include <filesystem>
+#include <fstream>
+#include <charconv>
+#include <string_view>
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+
+enum class Phase { Idle, Queued, Running, Finished, Banning };
+struct MatchInfo {std::string id;};
+struct VersusClient {
+ std::function<void(bool,MatchInfo const&)> pending;
+ static VersusClient& get(){static VersusClient value;return value;}
+ void pollLobby(std::function<void(bool,MatchInfo const&)> cb){pending=cb;}
+};
+constexpr float kLobbyPoll=2.f,kFoundPoll=1.f;
+struct VersusSession {
+ Phase m_phase=Phase::Queued; uint64_t m_pollGeneration=1,m_sessionGeneration=1; MatchInfo m_match;
+ bool adopted=false;
+ void poll();
+ void schedulePoll(float) {++m_pollGeneration;}
+ void applyLobby(MatchInfo const&) {adopted=true; m_phase=Phase::Banning;}
+};
+@@function|src/features/versus/services/VersusSession.cpp|void VersusSession::poll()@@
+int main() {
+ VersusSession session; session.poll();
+ // Same invalidation performed by reset/cancelQueue, while HTTP is pending.
+ session.m_phase=Phase::Idle; ++session.m_pollGeneration;
+ VersusClient::get().pending(true,MatchInfo{"cancelled-match"});
+ assert(!session.adopted && session.m_phase==Phase::Idle);
+ session.m_phase=Phase::Queued; ++session.m_sessionGeneration;
+ session.poll(); auto old=VersusClient::get().pending;
+ ++session.m_sessionGeneration; old(true,MatchInfo{"old-session"}); assert(!session.adopted);
+ session.poll(); VersusClient::get().pending(true,MatchInfo{"current-session"});
+ assert(session.adopted && session.m_phase==Phase::Banning);
+ std::cout << "PASS: versus_late_poll\n";
+}

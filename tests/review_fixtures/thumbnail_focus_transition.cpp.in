@@ -1,0 +1,42 @@
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+@@source|src/features/thumbnails/ui/FocusTransition.hpp@@
+
+int main() {
+    using paimon::thumbviewer::FocusTransition;
+    FocusTransition focus;
+    assert(focus.progress() == 0.f && !focus.running());
+    assert(focus.setFocused(true));
+    focus.advance(0.08f);
+    float const midway = focus.progress();
+    assert(midway > 0.f && midway < 1.f);
+    assert(focus.setFocused(false));
+    focus.advance(0.f);
+    assert(focus.progress() == midway); // reversal cannot jump to either endpoint
+    focus.advance(0.04f);
+    assert(focus.progress() > 0.f && focus.progress() < midway);
+    assert(focus.setFocused(true));
+    float const reversed = focus.progress();
+    focus.advance(-1.f);
+    assert(focus.progress() == reversed);
+    focus.advance(1.f);
+    assert(focus.progress() == 1.f && !focus.running());
+    assert(!focus.setFocused(true));
+    assert(focus.setFocused(false));
+    focus.advance(0.16f);
+    assert(std::abs(focus.progress() - 0.5f) < 0.0001f);
+    focus.advance(0.16f);
+    assert(focus.progress() == 0.f && !focus.running());
+
+    for (int toggle = 0; toggle < 1000; ++toggle) {
+        float const before = focus.progress();
+        focus.setFocused(toggle % 2 == 0);
+        assert(focus.progress() == before);
+        focus.advance(0.01f);
+        assert(focus.progress() >= 0.f && focus.progress() <= 1.f);
+    }
+    focus.setFocused(false);
+    focus.advance(1.f);
+    assert(focus.progress() == 0.f);
+}

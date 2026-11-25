@@ -1,0 +1,93 @@
+#include <cassert>
+#include <ctime>
+#include <cstdlib>
+#include <filesystem>
+#include <functional>
+#include <optional>
+#include <string>
+#include <vector>
+#include <matjson.hpp>
+
+bool mainThread = true, shuttingDown = false;
+bool s_menuServicesScheduled = true, s_menuServicesInitialized = false;
+std::vector<std::function<void()>> workers, completions;
+int configLoads = 0, applies = 0, reads = 0;
+namespace log {
+template<class... T> void info(T&&...) {}
+template<class... T> void warn(T&&...) {}
+}
+struct Config { bool enabled = false; };
+struct CursorManager {
+    Config value;
+    static CursorManager& get() { static CursorManager instance; return instance; }
+    Config& config() { assert(mainThread); return value; }
+    void loadConfig() { assert(mainThread); ++configLoads; }
+    void loadConfig(matjson::Value const&) { assert(mainThread); ++configLoads; value.enabled = true; }
+    void applyConfigLive() { assert(mainThread); ++applies; }
+};
+struct PetManager : CursorManager {
+    static PetManager& get() { static PetManager instance; return instance; }
+};
+struct Mod {
+    static Mod* get() { static Mod instance; return &instance; }
+    std::filesystem::path getSaveDir() { assert(mainThread); return "config"; }
+    template<class T> void setSettingValue(char const*, T) { assert(mainThread); }
+};
+namespace paimon {
+bool isRuntimeShuttingDown() { return shuttingDown; }
+struct ThreadTracker {
+    static ThreadTracker& get() { static ThreadTracker instance; return instance; }
+    bool spawn(std::function<void()> job) { workers.push_back(std::move(job)); return true; }
+};
+namespace volscroll { struct VolumeScrollManager {
+    static VolumeScrollManager& get() { static VolumeScrollManager instance; return instance; }
+    void init() { assert(mainThread); }
+}; }
+namespace dynvol { using DynamicVolumeManager = volscroll::VolumeScrollManager; }
+}
+namespace geode {
+namespace utils {
+namespace thread { void setName(char const*) {} }
+namespace file {
+struct ReadResult {
+    explicit operator bool() const { return true; }
+    std::string unwrap() const { return R"({"enabled":true})"; }
+    std::string unwrapErr() const { return "error"; }
+};
+ReadResult readString(std::filesystem::path const&) { assert(!mainThread); ++reads; return {}; }
+}
+}
+struct Loader {
+    static Loader* get() { static Loader instance; return &instance; }
+    void queueInMainThread(std::function<void()> callback) { completions.push_back(std::move(callback)); }
+};
+}
+void initPetTicker() { assert(mainThread); }
+void initCursorTicker() { assert(mainThread); }
+void initVolumeScrollTicker() { assert(mainThread); }
+void initDynamicVolumeTicker() { assert(mainThread); }
+struct Menu {
+@@function|src/hooks/MenuLayer.cpp|void deferredMenuServicesInit(float)@@
+};
+int main() {
+    Menu menu;
+    menu.deferredMenuServicesInit(0);
+    assert(workers.size() == 1 && configLoads == 0 && applies == 0);
+    mainThread = false;
+    workers.front()(); workers.clear();
+    assert(configLoads == 0 && applies == 0 && reads == 2 && completions.size() == 1);
+    mainThread = true;
+    completions.front()(); completions.clear();
+    assert(configLoads == 2 && applies == 2);
+    menu.deferredMenuServicesInit(0);
+    assert(workers.empty());
+
+    s_menuServicesInitialized = false;
+    menu.deferredMenuServicesInit(0);
+    mainThread = false;
+    workers.front()(); workers.clear();
+    mainThread = true;
+    shuttingDown = true;
+    completions.front()(); completions.clear();
+    assert(configLoads == 2 && applies == 2);
+}

@@ -36,6 +36,12 @@ public:
 
     bool isAvailable();
 
+    // worker thread only. Reuses/converts legacy WebP artwork to a PNG beside
+    // the original, preserving the original path if conversion fails.
+    static std::filesystem::path prepareCoverForDisplay(
+        std::filesystem::path const& coverPath,
+        std::filesystem::path const& ffmpegPath);
+
     // callbacks always run on the main thread.
     void download(
         const std::string& url,

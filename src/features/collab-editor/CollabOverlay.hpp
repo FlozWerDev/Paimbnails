@@ -15,6 +15,7 @@ namespace paimon::collab {
 // hud strip docks above the build toolbar; hides with editor ui and playtest.
 class CollabEditorOverlay : public cocos2d::CCNode {
 public:
+    using cocos2d::CCNode::init;
     static CollabEditorOverlay* create(LevelEditorLayer* editor);
 
     void onRemoteEdit(int clientId, std::string const& name, cocos2d::CCPoint worldPos, bool isDelete);

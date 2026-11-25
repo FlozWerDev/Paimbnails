@@ -16,6 +16,15 @@ struct Point {
 float pointDistance(Point const& first, Point const& second);
 float lineDistance(Point const& point, Point const& first, Point const& last);
 std::vector<Point> simplify(std::vector<Point> const& points, float tolerance);
+std::vector<Point> smoothPath(std::vector<Point> const& path, int iterations = 1);
+std::vector<Point> smoothLoop(std::vector<Point> const& loop, int iterations = 1);
+std::vector<Point> simplifyLoop(std::vector<Point> const& loop, float tolerance);
+std::vector<Point> smoothAndSimplify(
+    std::vector<Point> const& points,
+    bool closed,
+    int iterations,
+    float tolerance
+);
 
 std::array<int, 4> bounds(std::vector<int> const& positions, int width);
 
@@ -36,7 +45,7 @@ struct Skeleton {
 };
 
 Skeleton thin(std::vector<int> const& positions, int sourceWidth);
-std::vector<std::vector<int>> skeletonPaths(Skeleton const& skeleton);
+std::vector<std::vector<int>> skeletonPaths(Skeleton const& skeleton, bool pruneCornerShortcuts = false);
 
 std::vector<std::vector<int>> connectedComponents(
     std::vector<int> const& positions,

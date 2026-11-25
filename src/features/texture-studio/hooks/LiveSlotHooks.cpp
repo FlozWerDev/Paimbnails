@@ -1,12 +1,11 @@
 #include "../services/LiveSlotRuntime.hpp"
 
+#include <Geode/modify/CCLayerColor.hpp>
 #include <Geode/modify/CCSprite.hpp>
 #include <Geode/modify/CCSpriteBatchNode.hpp>
 #include <Geode/modify/CCTextureCache.hpp>
-#include <Geode/modify/CommentCell.hpp>
-#include <Geode/modify/CustomSFXCell.hpp>
-#include <Geode/modify/LevelCell.hpp>
-#include <Geode/modify/SmartTemplateCell.hpp>
+
+#include <algorithm>
 
 using namespace geode::prelude;
 using paimon::texture_studio::LiveSlotRuntime;
@@ -42,54 +41,23 @@ class $modify(PaimonLiveSlotTextures, CCTextureCache) {
 
     CCTexture2D* addUIImage(CCImage* image, char const* key) {
         auto* texture = CCTextureCache::addUIImage(image, key);
-        LiveSlotRuntime::get().refreshTextures();
+        LiveSlotRuntime::get().onTextureLoaded(key, texture, true);
         return texture;
     }
 };
 
-class $modify(PaimonLiveLevelCell, LevelCell) {
+// list backgrounds and every TableViewCell fill are CCLayerColors in GD's
+// brown family. Repainting the vertex colors for this draw covers all cell
+// types (levels, comments, scores, songs...) and wins over updateBGColor.
+class $modify(PaimonLiveLayerColor, CCLayerColor) {
     void draw() {
-        LevelCell::draw();
-        // after the original: wins over updatebgcolor every frame.
-        if (!m_backgroundLayer) return;
-        ccColor3B color;
-        if (LiveSlotRuntime::get().cellColor(m_indexPath.m_row, &color)) {
-            m_backgroundLayer->setColor(color);
-        }
-    }
-};
-
-class $modify(PaimonLiveCommentCell, CommentCell) {
-    void draw() {
-        CommentCell::draw();
-        // after the original: wins over updatebgcolor every frame.
-        if (!m_backgroundLayer) return;
-        ccColor3B color;
-        if (LiveSlotRuntime::get().cellColor(m_indexPath.m_row, &color)) {
-            m_backgroundLayer->setColor(color);
-        }
-    }
-};
-
-class $modify(PaimonLiveSFXCell, CustomSFXCell) {
-    void updateBGColor(int index) {
-        CustomSFXCell::updateBGColor(index);
-        if (!m_backgroundLayer) return;
-        ccColor3B color;
-        if (LiveSlotRuntime::get().cellColor(index, &color)) {
-            m_backgroundLayer->setColor(color);
-        }
-    }
-};
-
-class $modify(PaimonLiveTemplateCell, SmartTemplateCell) {
-    void updateBGColor(int index) {
-        SmartTemplateCell::updateBGColor(index);
-        if (!m_backgroundLayer) return;
-        ccColor3B color;
-        if (LiveSlotRuntime::get().cellColor(index, &color)) {
-            m_backgroundLayer->setColor(color);
-        }
+        auto& runtime = LiveSlotRuntime::get();
+        if (!runtime.enabled()) return CCLayerColor::draw();
+        ccColor4F saved[4];
+        std::copy(std::begin(m_pSquareColors), std::end(m_pSquareColors), saved);
+        if (!runtime.remapLayerColors(m_pSquareColors, 4)) return CCLayerColor::draw();
+        CCLayerColor::draw();
+        std::copy(std::begin(saved), std::end(saved), std::begin(m_pSquareColors));
     }
 };
 

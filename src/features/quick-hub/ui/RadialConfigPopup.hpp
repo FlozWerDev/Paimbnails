@@ -13,7 +13,7 @@ public:
 protected:
     bool init() override;
 
-    // working copy
+    // uncommitted local working copy of active action IDs; committed to QuickHub only upon clicking Save.
     std::vector<std::string> m_activeIds;
     int m_tab = 0;
 

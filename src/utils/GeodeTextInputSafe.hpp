@@ -4,23 +4,16 @@
 
 namespace paimon::ui {
 
-// detach ime/delegate first; late key events av in textinput::textchanged otherwise.
+// detach ime/callbacks first; late key events can fire after exit otherwise.
 inline void detachGeodeTextInput(geode::TextInput* input) {
     if (!input) return;
 
-    input->setCallbackEnabled(false);
-    input->defocus();
-
-    if (auto* node = input->getInputNode()) {
-        if (node->m_textField) {
-            node->m_textField->detachWithIME();
-        }
-        node->m_selected = false;
-        node->onClickTrackNode(false);
-        node->m_delegate = nullptr;
-    }
-
-    input->setDelegate(nullptr);
+    input->setCallback(nullptr);
+    input->setEnterCallback(nullptr);
+    input->setFocusCallback(nullptr);
+    input->setEnabled(false);
+    input->unfocus();
+    input->detachWithIME();
 }
 
 template <class Owner>

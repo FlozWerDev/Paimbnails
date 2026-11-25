@@ -43,29 +43,12 @@ constexpr float kScrollH = 168.f;
 
 // the preview icon needs its own shader cache slot so it never shares uniforms
 // with the one in gradientanimationpopup.
-constexpr int kPreviewShaderTag = 808;
+constexpr int kPreviewShaderTag = kCustomPreviewShaderTag;
 
 constexpr ccColor3B kLayerAccent = {255, 165, 210};
 constexpr ccColor3B kMasterAccent = {120, 210, 255};
 constexpr ccColor3B kPresetAccent = {255, 210, 100};
 constexpr ccColor3B kManageAccent = {170, 180, 200};
-
-struct PreviewIcon {
-    IconType type;
-    char const* name;
-};
-
-constexpr std::array kPreviewIcons = {
-    PreviewIcon{IconType::Cube, "Cube"},
-    PreviewIcon{IconType::Ship, "Ship"},
-    PreviewIcon{IconType::Ball, "Ball"},
-    PreviewIcon{IconType::Ufo, "UFO"},
-    PreviewIcon{IconType::Wave, "Wave"},
-    PreviewIcon{IconType::Robot, "Robot"},
-    PreviewIcon{IconType::Spider, "Spider"},
-    PreviewIcon{IconType::Swing, "Swing"},
-    PreviewIcon{IconType::Jetpack, "Jetpack"},
-};
 
 std::vector<std::string> motionNames() {
     std::vector<std::string> names;

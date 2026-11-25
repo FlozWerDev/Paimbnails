@@ -4,6 +4,7 @@
 #include "../../editor-suite/EditorHelpers.hpp"
 #include "../services/AnimateCompiler.hpp"
 #include "../services/AnimateSession.hpp"
+#include "../services/AnimateStore.hpp"
 #include "../ui/AnimateWidgets.hpp"
 #include "../ui/TimelinePanel.hpp"
 
@@ -12,9 +13,33 @@
 #include <Geode/modify/EditorPauseLayer.hpp>
 #include <Geode/modify/EditorUI.hpp>
 #include <Geode/modify/LevelEditorLayer.hpp>
+#include <Geode/modify/GJGameLevel.hpp>
 
 using namespace geode::prelude;
 using paimon::animate::AnimateSession;
+
+class $modify(PaimonAnimateLevelIdentity, GJGameLevel) {
+    void dataLoaded(DS_Dictionary* dict) {
+        GJGameLevel::dataLoaded(dict);
+        if (dict) {
+            auto const identity = std::string(dict->getStringForKey(paimon::animate::kLevelIdentityKey));
+            if (!identity.empty()) paimon::animate::restoreLevelIdentity(this, identity);
+        }
+    }
+
+    void encodeWithCoder(DS_Dictionary* dict) override {
+        GJGameLevel::encodeWithCoder(dict);
+        if (!dict) return;
+        if (auto* identity = typeinfo_cast<CCString*>(getUserObject(paimon::animate::kLevelIdentityKey))) {
+            dict->setStringForKey(paimon::animate::kLevelIdentityKey, identity->getCString());
+        }
+    }
+
+    void copyLevelInfo(GJGameLevel* source) {
+        GJGameLevel::copyLevelInfo(source);
+        paimon::animate::copyLevelDocument(source, this);
+    }
+};
 
 namespace {
 
@@ -141,7 +166,7 @@ class $modify(PaimonAnimateEditorUI, EditorUI) {
 
     // what you paste lands in the current frame, so it can't be filtered out as locked first.
     $override
-    CCArray* pasteObjects(gd::string str, bool withColor, bool noUndo) {
+    CCArray* pasteObjects(std::string str, bool withColor, bool noUndo) {
         if (!working(this)) return EditorUI::pasteObjects(str, withColor, noUndo);
         session().suspendLock(true);
         auto* objects = EditorUI::pasteObjects(str, withColor, noUndo);
@@ -172,25 +197,27 @@ class $modify(PaimonAnimateEditorUI, EditorUI) {
     }
 
     $override
-    void scrollWheel(float y, float x) {
+    bool scrollWheel(float y, float x) {
         auto* panel = paimon::animate::TimelinePanel::get();
-        if (panel && attachedTo(m_editorLayer) && panel->handleScroll(y, x)) return;
-        EditorUI::scrollWheel(y, x);
+        if (panel && attachedTo(m_editorLayer) && panel->handleScroll(y, x)) return true;
+        return EditorUI::scrollWheel(y, x);
+    
     }
 };
 
-class $modify(PaimonAnimatePauseLayer, EditorPauseLayer) {
+class $modify(PaimonAnimateSaveLayer, LevelEditorLayer) {
     // baking before the save lands the triggers in the saved level string.
     $override
-    void saveLevel() {
-        auto* editor = m_editorLayer;
+    bool saveLevel() {
+        auto* editor = this;
         bool const attached = attachedTo(editor);
         if (attached) {
             session().stopPlayback();
             paimon::animate::compileStale(editor);
         }
-        EditorPauseLayer::saveLevel();
+        bool const saved = LevelEditorLayer::saveLevel();
         if (attached) session().persist();
+        return saved;
     }
 };
 

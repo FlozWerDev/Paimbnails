@@ -127,6 +127,7 @@ void ModlyProfilePopup::buildProjects() {
     }
 
     auto scroll = ScrollLayer::create({kListW, kListH});
+    if (scroll) scroll->setAnchorPoint({0.f, 0.f});
     scroll->setPosition({(kWidth - kListW) / 2.f, 26.f});
     m_mainLayer->addChild(scroll, 2);
 

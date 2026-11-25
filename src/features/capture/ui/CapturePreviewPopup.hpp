@@ -5,8 +5,10 @@
 #include <Geode/binding/CCMenuItemToggler.hpp>
 #include <memory>
 #include <unordered_set>
+#include "../services/CaptureOperationState.hpp"
 
 class PauseLayer;
+class PlayLayer;
 
 class CapturePreviewPopup : public PaimonPopup {
 public:
@@ -39,7 +41,7 @@ public:
     bool isPlayer1Hidden() const { return m_isPlayer1Hidden; }
     bool isPlayer2Hidden() const { return m_isPlayer2Hidden; }
 
-    void setPausedMusic(bool v) { m_pausedMusic = v; }
+    void setPausedMusic(bool v);
 
 protected:
     bool init() override;
@@ -50,7 +52,7 @@ protected:
     void ccTouchCancelled(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void registerWithTouchDispatcher() override;
     void onExit() override;
-    void scrollWheel(float x, float y) override;
+    bool scrollWheel(float x, float y) override;
 
 private:
     geode::Ref<cocos2d::CCTexture2D> m_texture;
@@ -64,6 +66,8 @@ private:
     bool m_isPlayer2Hidden = false;
     bool m_isModerator = false;
     bool m_pausedMusic = false;
+    geode::WeakRef<PlayLayer> m_musicPlayLayer;
+    bool m_closed = false;
 
     cocos2d::CCSprite* m_previewSprite = nullptr;
     cocos2d::CCClippingNode* m_clippingNode = nullptr;
@@ -78,9 +82,11 @@ private:
     bool m_isCropped = false;
     bool m_hdrMode = false;
     bool m_callbackExecuted = false;
-    bool m_recapturePending = false;
+    paimon::capture::CaptureOperationState m_recapture;
+    geode::WeakRef<PlayLayer> m_recapturePlayLayer;
     geode::Ref<PauseLayer> m_recapturePauseLayer;
     bool m_recapturePauseWasVisible = false;
+    bool m_recapturePauseTouchEnabled = false;
     bool m_recaptureZoomWasHidden = false;
     bool m_recaptureHidPause = false;
 
@@ -102,6 +108,8 @@ private:
     void onRecaptureTimeout(float dt);
     void delayedRecapture(float dt);
     void restoreRecapturePauseState();
+    void cancelRecapture();
+    void notifyCaptureCanceled();
     void onClose(cocos2d::CCObject*) override;
 
     void onAcceptBtn(cocos2d::CCObject*);

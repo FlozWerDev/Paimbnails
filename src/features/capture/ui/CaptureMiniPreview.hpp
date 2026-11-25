@@ -9,6 +9,7 @@ namespace paimon::capture {
 // bursts coalesce into one render.
 class MiniPreview : public cocos2d::CCNode {
 public:
+    using cocos2d::CCNode::init;
     static MiniPreview* create(float width, float height);
 
     // mirror the popup's hidden players so the thumb matches the upload.

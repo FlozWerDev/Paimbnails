@@ -77,7 +77,7 @@ bool BeatShaderConfigLayer::init() {
                 BeatShaderManager::get().rebuildBackgrounds();
                 if (self && self->getParent()) self->rebuild();
             });
-            PaimonNotify::create("Beat Shaders restablecido", NotificationIcon::Success)->show();
+            PaimonNotify::show("Beat Shaders restablecido", NotificationIcon::Success);
         });
     resetBtn->setID("beat-shader-default-btn"_spr);
     resetBtn->setPosition({m_mainLayer->getContentSize().width / 2.f, 20.f});

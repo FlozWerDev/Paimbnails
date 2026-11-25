@@ -53,11 +53,7 @@ constexpr float kInputY = 74.f;
 constexpr float kHintY  = 53.f;
 constexpr float kChipsY = 28.f;
 
-std::string tr(char const* key, char const* fallback = "") {
-    auto v = Localization::get().getString(key);
-    if (v == key && fallback && fallback[0] != '\0') return fallback;
-    return v;
-}
+using paimon::loc::tr;
 
 bool isSpanish() {
     return Localization::get().getCurrentLanguageId() == "spanish";
@@ -277,6 +273,7 @@ void PaimonGuideChatPopup::buildChatArea() {
     m_mainLayer->addChild(chatFrame, 3);
 
     m_scroll = ScrollLayer::create({kChatScrollW, kChatScrollH});
+    if (m_scroll) m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setPosition({kChatFrameX + 4.f, kChatFrameY + 4.f});
     m_scroll->setID("guide-chat-scroll"_spr);
     m_mainLayer->addChild(m_scroll, 4);
@@ -445,20 +442,37 @@ cocos2d::CCNode* PaimonGuideChatPopup::makeBubble(std::string const& wrapped, bo
     label->setScale(kLabelScale);
     label->setAlignment(kCCTextAlignmentLeft);
 
+// gJ_square01 is a 9-slice: below its corner size it collapses into a thin
+// strip, which is exactly what happened with short texts ("help", "hola").
+// enforce a 9-slice-safe minimum and measure against the usable row width.
+    constexpr float kMinBubbleW = 64.f;
+    constexpr float kMinBubbleH = 28.f;
+    float const maxContentW = kChatRowW - kBubblePadX * 2.f;
+
     auto labelSize = label->getScaledContentSize();
-    float bubbleW = std::min(labelSize.width + kBubblePadX * 2.f, kChatRowW);
-    float bubbleH = std::max(18.f, labelSize.height + kBubblePadY * 2.f);
+// long lines: wrap inside the bubble instead of overflowing it. setWidth works
+// in unscaled points, so divide by the label scale.
+    if (labelSize.width > maxContentW && kLabelScale > 0.f) {
+        label->setWidth(maxContentW / kLabelScale);
+        labelSize = label->getScaledContentSize();
+    }
+
+    float bubbleW = std::clamp(labelSize.width + kBubblePadX * 2.f, kMinBubbleW, kChatRowW);
+    float bubbleH = std::max(labelSize.height + kBubblePadY * 2.f, kMinBubbleH);
 
     auto bg = CCScale9Sprite::create("GJ_square01.png");
     bg->setColor(fromUser ? ccColor3B{45, 90, 60} : ccColor3B{38, 44, 66});
     bg->setOpacity(230);
     bg->setContentSize({bubbleW, bubbleH});
-    bg->setAnchorPoint(fromUser ? CCPoint{1.f, 0.f} : CCPoint{0.f, 0.f});
+// keep anchor at (0,0) for both sides and position explicitly: anchoring the
+// user bubble at (1,0) shifted its children outside the visible rect on some
+// cocos builds, leaving an empty narrow strip with the text clipped away.
+    bg->setAnchorPoint(CCPoint{0.f, 0.f});
 
     auto row = CCNode::create();
     row->setContentSize({kChatRowW, bubbleH});
     row->setAnchorPoint({0.f, 0.f});
-    bg->setPosition(fromUser ? CCPoint{kChatRowW, 0.f} : CCPoint{0.f, 0.f});
+    bg->setPosition(fromUser ? CCPoint{kChatRowW - bubbleW, 0.f} : CCPoint{0.f, 0.f});
     row->addChild(bg);
 
 // anchor top-left so typewriter updates do not shift existing lines.

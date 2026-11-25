@@ -11,8 +11,6 @@ namespace paimon::twitch {
 
 namespace {
 
-constexpr int kMaxFailures = 4;
-
 // first "key":"value" in the page, unescaped: every field we read here is ascii.
 std::string jsonField(std::string const& html, std::string_view key) {
     auto needle = std::string("\"") + std::string(key) + "\":\"";
@@ -126,11 +124,8 @@ void YouTubeChatSource::poll() {
         [this](bool ok, std::string response) {
             if (stopped()) return;
             if (!ok || response.empty()) {
-                if (++m_failures >= kMaxFailures) {
-                    fail("Se corto el chat de YouTube");
-                    return;
-                }
-                later(4.f, [this] { poll(); });
+                retryPollOrFail(m_failures, "Se corto el chat de YouTube", 4.f,
+                                [this] { poll(); });
                 return;
             }
             m_failures = 0;
@@ -141,11 +136,8 @@ void YouTubeChatSource::poll() {
 void YouTubeChatSource::handlePoll(std::string const& body) {
     auto parsed = matjson::parse(body);
     if (!parsed) {
-        if (++m_failures >= kMaxFailures) {
-            fail("YouTube devolvio algo que no entendemos");
-            return;
-        }
-        later(5.f, [this] { poll(); });
+        retryPollOrFail(m_failures, "YouTube devolvio algo que no entendemos", 5.f,
+                        [this] { poll(); });
         return;
     }
 

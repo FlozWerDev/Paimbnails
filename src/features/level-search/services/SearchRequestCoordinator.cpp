@@ -211,7 +211,13 @@ void SearchRequestCoordinator::onTimeout(float) {
 }
 
 void SearchRequestCoordinator::dispatch(GameLevelManager* manager, Request const& request) {
-    if (!manager || !request.object) return;
+    // unreachable today (pump checks manager; request() rejects null objects
+    // and Request holds a strong Ref), but a silent return here would wedge
+    // the queue until onTimeout: m_inFlight is already true, so settle now.
+    if (!manager || !request.object) {
+        finishCurrent(false, nullptr);
+        return;
+    }
 
     switch (request.kind) {
         case SearchKind::Users:
@@ -295,13 +301,11 @@ SearchRequestCoordinator::CacheEntry const* SearchRequestCoordinator::lookup(
 
     if (nowSeconds() - it->second.timestamp > kCacheTtlSeconds) {
         m_cache.erase(it);
-        m_cacheOrder.erase(std::remove(m_cacheOrder.begin(), m_cacheOrder.end(), key), m_cacheOrder.end());
+        removeFromOrder(key);
         return nullptr;
     }
 
-    // touch for lru.
-    m_cacheOrder.erase(std::remove(m_cacheOrder.begin(), m_cacheOrder.end(), key), m_cacheOrder.end());
-    m_cacheOrder.push_back(key);
+    touch(key);
     return &it->second;
 }
 
@@ -317,9 +321,21 @@ bool SearchRequestCoordinator::isCurrentKey(char const* key) const {
     return m_inFlight && key && !m_current.key.empty() && m_current.key == key;
 }
 
+bool SearchRequestCoordinator::guardCurrent(char const* key) const {
+    return !paimon::isRuntimeShuttingDown() && isCurrentKey(key);
+}
+
+void SearchRequestCoordinator::removeFromOrder(std::string const& key) {
+    m_cacheOrder.erase(std::remove(m_cacheOrder.begin(), m_cacheOrder.end(), key), m_cacheOrder.end());
+}
+
+void SearchRequestCoordinator::touch(std::string const& key) {
+    removeFromOrder(key);
+    m_cacheOrder.push_back(key);
+}
+
 void SearchRequestCoordinator::loadLevelsFinished(CCArray* levels, char const* key) {
-    if (paimon::isRuntimeShuttingDown()) return;
-    if (!isCurrentKey(key)) return;
+    if (!guardCurrent(key)) return;
 
     if (m_currentPageInfo.empty()) {
         if (auto* manager = GameLevelManager::get()) {
@@ -333,8 +349,7 @@ void SearchRequestCoordinator::loadLevelsFinished(CCArray* levels, char const* k
 }
 
 void SearchRequestCoordinator::loadLevelsFailed(char const* key) {
-    if (paimon::isRuntimeShuttingDown()) return;
-    if (!isCurrentKey(key)) return;
+    if (!guardCurrent(key)) return;
     finishCurrent(false, nullptr);
 }
 
@@ -346,9 +361,8 @@ void SearchRequestCoordinator::loadLevelsFailed(char const* key, int) {
     loadLevelsFailed(key);
 }
 
-void SearchRequestCoordinator::setupPageInfo(gd::string info, char const* key) {
-    if (paimon::isRuntimeShuttingDown()) return;
-    if (!isCurrentKey(key)) return;
+void SearchRequestCoordinator::setupPageInfo(std::string info, char const* key) {
+    if (!guardCurrent(key)) return;
     m_currentPageInfo = info;
 }
 

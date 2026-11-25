@@ -1,0 +1,125 @@
+#include "src/features/thumbnails/services/DiskManifest.hpp"
+#include <matjson.hpp>
+#include <cassert>
+#include <condition_variable>
+#include <filesystem>
+#include <fstream>
+#include <future>
+#include <thread>
+#include <cstdio>
+#include <cstdlib>
+#undef assert
+#define assert(value) do { if (!(value)) { std::fprintf(stderr, "assertion failed at line %d: %s\n", __LINE__, #value); std::abort(); } } while (false)
+using namespace std::chrono_literals;
+
+std::mutex diskMutex;
+std::condition_variable diskReady;
+bool entered = false, released = false, failWrite = false;
+std::vector<std::string> published;
+namespace paimon::file {
+bool writeAtomically(std::filesystem::path const&, std::string const& data) {
+    std::unique_lock lock(diskMutex);
+    entered = true; diskReady.notify_all();
+    assert(diskReady.wait_for(lock, 3s, [] { return released; }));
+    if (failWrite) return false;
+    published.push_back(data);
+    return true;
+}
+}
+namespace fixturelog {
+template<class... T> void error(T const&...) {}
+template<class... T> void debug(T const&...) {}
+template<class... T> void warn(T const&...) {}
+}
+namespace paimon::cache {
+namespace log = fixturelog;
+@@function|src/features/thumbnails/services/DiskManifest.cpp|void DiskManifest::flush()@@
+@@function|src/features/thumbnails/services/DiskManifest.cpp|size_t DiskManifest::applyPrune(PruneResult const& result)@@
+}
+@@source|src/features/thumbnails/services/DiskManifestIndex.cpp@@
+
+int main() {
+    using namespace paimon::cache;
+    DiskManifest manifest;
+    DiskManifestEntry entry;
+    entry.levelID = 123; entry.filename = "123.png"; entry.width = 10;
+    manifest.upsert(123, false, entry);
+    std::thread saver([&] { manifest.flush(); });
+    {
+        std::unique_lock lock(diskMutex);
+        assert(diskReady.wait_for(lock, 2s, [] { return entered; }));
+    }
+    // Hold disk indefinitely until a UI lookup AND mutation have completed.
+    auto ui = std::async(std::launch::async, [&] {
+        assert(manifest.contains(123, false));
+        assert(manifest.getEntry(123, false)->width == 10);
+        entry.width = 20;
+        manifest.upsert(123, false, entry);
+        manifest.remove(999, false);
+        return manifest.entryCount();
+    });
+    bool const responsive = ui.wait_for(100ms) == std::future_status::ready;
+    { std::lock_guard lock(diskMutex); released = true; }
+    diskReady.notify_all(); saver.join();
+    assert(ui.get() == 1 && responsive);
+    assert(published.size() == 1);
+    auto parsed = matjson::parse(published.back());
+    assert(parsed.isOk());
+    auto root = parsed.unwrap();
+    assert(root["123"]["width"].asInt().unwrapOr(-1) == 10);
+    manifest.flush(); // must not lose the concurrent edit's dirty flag
+    assert(published.size() == 2);
+    parsed = matjson::parse(published.back());
+    assert(parsed.isOk());
+    root = parsed.unwrap();
+    assert(root["123"]["width"].asInt().unwrapOr(-1) == 20);
+    manifest.flush(); assert(published.size() == 2); // clean: no redundant I/O
+
+    entry.width = 30; manifest.upsert(123, false, entry);
+    failWrite = true; manifest.flush(); assert(published.size() == 2);
+    failWrite = false; manifest.flush(); assert(published.size() == 3);
+    parsed = matjson::parse(published.back());
+    assert(parsed.isOk());
+    root = parsed.unwrap();
+    assert(root["123"]["width"].asInt().unwrapOr(-1) == 30);
+
+    // Prune removes the stale entry and file.
+    {
+        DiskManifest pruneManifest;
+        DiskManifestEntry stale;
+        stale.levelID = 777;
+        stale.filename = "paimbnails-prune-fixture-777.png";
+        stale.byteSize = 4;
+        { std::ofstream out(stale.filename); out << "old"; }
+        pruneManifest.upsert(stale.levelID, false, stale);
+        auto prune = pruneManifest.computePrune(0, std::chrono::hours(1));
+        assert(prune.items.size() == 1);
+        assert(pruneManifest.applyPrune(prune) == 1);
+        assert(!std::filesystem::exists(stale.filename));
+        assert(!pruneManifest.contains(stale.levelID, false));
+    }
+
+    // A newer replacement of the same filename must survive an old prune plan.
+    {
+        DiskManifest pruneManifest;
+        DiskManifestEntry oldEntry;
+        oldEntry.levelID = 778;
+        oldEntry.filename = "paimbnails-prune-fixture-778.png";
+        oldEntry.byteSize = 4;
+        { std::ofstream out(oldEntry.filename); out << "old"; }
+        pruneManifest.upsert(oldEntry.levelID, false, oldEntry);
+        auto prune = pruneManifest.computePrune(0, std::chrono::hours(1));
+        assert(prune.items.size() == 1);
+
+        auto fresh = oldEntry;
+        fresh.byteSize = 7;
+        fresh.touchAccess();
+        { std::ofstream out(fresh.filename); out << "fresh"; }
+        pruneManifest.upsert(fresh.levelID, false, fresh);
+        assert(pruneManifest.applyPrune(prune) == 0);
+        assert(std::filesystem::exists(fresh.filename));
+        assert(pruneManifest.contains(fresh.levelID, false));
+        std::error_code ec;
+        std::filesystem::remove(fresh.filename, ec);
+    }
+}

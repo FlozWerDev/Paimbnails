@@ -2,6 +2,7 @@
 
 #include <Geode/Geode.hpp>
 
+#include <chrono>
 #include <memory>
 #include <string>
 #include <vector>
@@ -19,9 +20,10 @@ constexpr int kStreamOverlayAnimationCount = 11;
 
 enum class StreamOverlayStyle : int {
     Glass, GeometryDash, Neon, Synthwave, Arcade, Terminal, Minimal, Comic, Glitch,
-    Holo, Aurora, Inferno, Frost, Galaxy, Royal, Pastel, Brutal, Cozy, Esports
+    Holo, Aurora, Inferno, Frost, Galaxy, Royal, Pastel, Brutal, Cozy, Esports,
+    GameBoy, Retro95, Blueprint, Cyberpunk, Ticket, Vhs, Notebook, Quest
 };
-constexpr int kStreamOverlayStyleCount = 19;
+constexpr int kStreamOverlayStyleCount = 27;
 
 struct StreamOverlayConfig {
     StreamOverlayStyle style = StreamOverlayStyle::Glass;
@@ -60,8 +62,11 @@ void setStreamOverlayConfig(StreamOverlayConfig config);
 class StreamOverlayServer final {
 public:
     static StreamOverlayServer& get();
+    static bool isInitialized();
 
     void init();
+    void requestStop();
+    void waitShutdown(std::chrono::steady_clock::time_point deadline);
     void shutdown();
     void restart();
     void tick(float dt);
@@ -82,7 +87,7 @@ private:
     void stop();
 
     struct Impl;
-    std::unique_ptr<Impl> m_impl;
+    std::shared_ptr<Impl> m_impl;
     float m_refreshClock = 0.f;
     float m_restartClock = 0.f;
     uint64_t m_revision = 0;

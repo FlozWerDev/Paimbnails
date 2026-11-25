@@ -42,7 +42,7 @@ public:
     void loadLevelsFailed(char const* key) override;
     void loadLevelsFinished(cocos2d::CCArray* levels, char const* key, int) override;
     void loadLevelsFailed(char const* key, int) override;
-    void setupPageInfo(gd::string info, char const* key) override;
+    void setupPageInfo(std::string info, char const* key) override;
 
 private:
     struct Waiter {
@@ -95,6 +95,11 @@ private:
     CacheEntry const* lookup(SearchKind kind, std::string const& searchKey);
     void trimCache();
     bool isCurrentKey(char const* key) const;
+    // false when shutting down or the key is stale; callbacks should bail out.
+    bool guardCurrent(char const* key) const;
+    // moves key to the back of the lru order.
+    void touch(std::string const& key);
+    void removeFromOrder(std::string const& key);
 };
 
 } // namespace paimon::levelsearch

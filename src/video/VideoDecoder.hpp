@@ -24,6 +24,21 @@ namespace paimon {
 
 enum class VideoColorMatrix { Auto, BT601, BT709 };
 
+// copy `height` rows of `rowBytes` between strided planes; a single memcpy
+// when both planes are already packed.
+inline void copyStridedRows(uint8_t* dst, size_t dstStride,
+                            uint8_t const* src, size_t srcStride,
+                            size_t rowBytes, int height) {
+    if (dstStride == rowBytes && srcStride == rowBytes) {
+        std::memcpy(dst, src, rowBytes * static_cast<size_t>(height));
+        return;
+    }
+    for (int r = 0; r < height; ++r) {
+        std::memcpy(dst + static_cast<size_t>(r) * dstStride,
+                    src + static_cast<size_t>(r) * srcStride, rowBytes);
+    }
+}
+
 struct VideoFrame {
     uint8_t* planeY   = nullptr;
     uint8_t* planeCb  = nullptr;

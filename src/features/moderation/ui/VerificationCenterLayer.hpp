@@ -5,8 +5,12 @@
 class PaimonLoadingOverlay;
 #include "../services/PendingQueue.hpp"
 #include "../../../utils/ThumbnailTypes.hpp"
+#include <deque>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
-class VerificationCenterLayer : public cocos2d::CCLayer {
+class VerificationCenterLayer : public cocos2d::CCLayer, public LevelManagerDelegate {
 protected:
     cocos2d::CCMenu* m_tabsMenu = nullptr;
     PendingCategory m_current = PendingCategory::Verify;
@@ -40,6 +44,26 @@ protected:
     int m_selectedIndex = -1;
     int m_pendingLevelID = 0;
     int m_downloadCheckCount = 0;
+
+    // Fast level metadata batch-lookup & LRU preview cache
+    std::unordered_map<int, geode::Ref<GJGameLevel>> m_prefetchedLevels;
+    std::unordered_set<int> m_prefetchedDownloadStarted;
+    std::string m_pendingBatchSearchKey;
+    std::unordered_map<std::string, std::vector<uint8_t>> m_previewBytesCache;
+    std::deque<std::string> m_previewBytesOrder;
+    std::unordered_set<std::string> m_previewPrefetchInFlight;
+
+    void prefetchQueueLevelsBatch();
+    void prefetchLevelData(int levelId);
+    GJGameLevel* findCachedLevel(int levelId) const;
+    void cachePreviewBytes(std::string const& url, std::vector<uint8_t> const& data);
+    void prefetchPreviewNeighbors(int index);
+    std::string resolvePreviewUrl(PendingItem const& item, int sugIdx) const;
+    void applyRawPreviewBytes(std::vector<uint8_t> const& data);
+    void loadLevelsFinished(cocos2d::CCArray* levels, char const* key) override;
+    void loadLevelsFinished(cocos2d::CCArray* levels, char const* key, int) override;
+    void loadLevelsFailed(char const* key) override;
+    void loadLevelsFailed(char const* key, int) override;
 
     bool init() override;
     void onExit() override;

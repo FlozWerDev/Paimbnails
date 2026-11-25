@@ -20,7 +20,7 @@ struct RadialOptionDef {
     cocos2d::ccColor3B color; // hover glow
     bool custom = false;     // from game ui
     // action resolved at runtime by id.
-    std::string imagePath;   // "" = usar icon
+    std::string imagePath{}; // "" = usar icon
     float imageScale = 1.f;  // clamp 0.2..3.0
     float imageRotation = 0.f; // clamp -180..180
     bool imageFlipX = false;

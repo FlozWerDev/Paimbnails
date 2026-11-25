@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../utils/FilesystemPath.hpp"
 
 #include "Settings.hpp"
 #include <string>
@@ -8,7 +9,7 @@
 namespace paimon::quality {
 
 inline std::filesystem::path cacheDir() {
-    return geode::Mod::get()->getSaveDir() / settings::quality::cacheSubdir();
+    return paimon::paths::toStdPath(geode::Mod::get()->getSaveDir()) / settings::quality::cacheSubdir();
 }
 
 inline std::string thumbFilename(int levelID, bool isGif) {
@@ -28,7 +29,7 @@ inline std::filesystem::path profileCachePath(int accountID, bool isGif) {
 }
 
 inline void migrateLegacyCache() {
-    auto saveDir  = geode::Mod::get()->getSaveDir();
+    auto saveDir  = paimon::paths::toStdPath(geode::Mod::get()->getSaveDir());
     auto qualDir  = cacheDir();
     std::error_code ec;
 

@@ -1,3 +1,4 @@
+#include "../framework/compat/NativeUI.hpp"
 #include "LevelMetadata.hpp"
 
 #include <Geode/binding/GJGameLevel.hpp>
@@ -6,8 +7,8 @@
 using namespace geode::prelude;
 
 namespace {
-// explicit gd::string conversion; avoids dangling temporaries.
-inline std::string s(gd::string const& v) { return std::string(v); }
+// explicit std::string conversion; avoids dangling temporaries.
+inline std::string s(std::string const& v) { return std::string(v); }
 } // namespace
 
 namespace paimon {
@@ -29,7 +30,7 @@ std::string collectLevelMetadata(GJGameLevel* level) {
     j["levelDescUnpacked"]  = s(level->getUnpackedLevelDescription());
 
     j["difficulty"]        = static_cast<int>(level->m_difficulty);
-    j["averageDifficulty"] = level->getAverageDifficulty();
+    j["averageDifficulty"] = paimon::compat::averageDifficulty(level);
     j["demon"]             = level->m_demon.value();
     j["demonDifficulty"]   = level->m_demonDifficulty;
     j["autoLevel"]         = level->m_autoLevel;

@@ -12,29 +12,24 @@ using namespace geode::prelude;
 
 namespace paimon::ui {
 
+// enums are dense 1-based and filenames adjacent: index by value with fallback.
 char const* buttonTexture(Btn skin) {
-    switch (skin) {
-        case Btn::Green: return "GJ_button_01.png";
-        case Btn::Cyan:  return "GJ_button_02.png";
-        case Btn::Pink:  return "GJ_button_03.png";
-        case Btn::Gray:  return "GJ_button_04.png";
-        case Btn::Blue:  return "GJ_button_05.png";
-        case Btn::Red:   return "GJ_button_06.png";
-    }
-    return "GJ_button_01.png";
+    static constexpr char const* kTextures[] = {
+        "GJ_button_01.png", "GJ_button_02.png", "GJ_button_03.png",
+        "GJ_button_04.png", "GJ_button_05.png", "GJ_button_06.png",
+    };
+    auto i = static_cast<int>(skin) - static_cast<int>(Btn::Green);
+    return (i >= 0 && i < 6) ? kTextures[i] : kTextures[0];
 }
 
 char const* popupTexture(Bg bg) {
-    switch (bg) {
-        case Bg::Brown:  return "GJ_square01.png";
-        case Bg::Blue:   return "GJ_square02.png";
-        case Bg::Green:  return "GJ_square03.png";
-        case Bg::Purple: return "GJ_square04.png";
-        case Bg::Dark:   return "GJ_square05.png";
-        case Bg::Light:  return "GJ_square06.png";
-        case Bg::White:  return "GJ_square07.png";
-    }
-    return "GJ_square01.png";
+    static constexpr char const* kTextures[] = {
+        "GJ_square01.png", "GJ_square02.png", "GJ_square03.png",
+        "GJ_square04.png", "GJ_square05.png", "GJ_square06.png",
+        "GJ_square07.png",
+    };
+    auto i = static_cast<int>(bg) - static_cast<int>(Bg::Brown);
+    return (i >= 0 && i < 7) ? kTextures[i] : kTextures[0];
 }
 
 std::vector<std::string> const& popupStyles() {
@@ -67,6 +62,19 @@ NineSlice* makeInset(CCSize size, GLubyte opacity, ccColor3B color) {
     return panel;
 }
 
+CCMenu* makeZeroMenu(char const* id) {
+    auto* menu = CCMenu::create();
+    if (id) menu->setID(id);
+    menu->setPosition({0.f, 0.f});
+    return menu;
+}
+
+void shrinkLabelToFit(CCLabelBMFont* label, float maxW) {
+    if (!label) return;
+    float w = label->getScaledContentSize().width;
+    if (w > maxW && w > 0.f) label->setScale(label->getScale() * maxW / w);
+}
+
 namespace {
 
 // bigFont glyphs read much heavier than goldFont at the same scale.
@@ -82,7 +90,17 @@ void fitButtonLabel(ButtonSprite* sprite) {
 
 }
 
-ButtonSprite* makeButtonSprite(char const* text, char const* texture, float width, float scale, char const* font) {
+// menu items are hit-tested with their own content size and scale, not their children's.
+// scaling the sprite inside an item leaves the hit area at the sprite's unscaled size, so the
+// scale goes on the item. m_baseScale is the size the press animation returns to.
+static void setItemScale(CCMenuItemSpriteExtra* item, float scale) {
+    if (!item) return;
+    item->setScale(scale);
+    item->m_baseScale = scale;
+}
+
+// button art at its natural size: `width` is what it measures once `scale` is applied.
+static ButtonSprite* buildButtonArt(char const* text, char const* texture, float width, float scale, char const* font) {
     scale = std::max(0.1f, scale);
     if (!texture || texture[0] == '\0') texture = "GJ_button_01.png";
     if (!font || font[0] == '\0') font = "goldFont.fnt";
@@ -101,6 +119,14 @@ ButtonSprite* makeButtonSprite(char const* text, char const* texture, float widt
     } else {
         sprite = ButtonSprite::create(caption, font, texture, labelScale);
     }
+    return sprite;
+}
+
+ButtonSprite* makeButtonSprite(char const* text, char const* texture, float width, float scale, char const* font) {
+    scale = std::max(0.1f, scale);
+    auto* sprite = buildButtonArt(text, texture, width, scale, font);
+    // callers put this sprite straight into their own items, whose hit area stays unscaled.
+    // makeButton scales the item instead.
     if (sprite) sprite->setScale(scale);
     return sprite;
 }
@@ -111,10 +137,13 @@ ButtonSprite* makeButtonSprite(char const* text, Btn skin, float width, float sc
 
 CCMenuItemSpriteExtra* makeButton(char const* text, std::function<void()> onPress,
     char const* texture, float width, float scale, char const* font) {
-    return CCMenuItemExt::createSpriteExtra(makeButtonSprite(text, texture, width, scale, font),
+    scale = std::max(0.1f, scale);
+    auto* item = CCMenuItemExt::createSpriteExtra(buildButtonArt(text, texture, width, scale, font),
         [callback = std::move(onPress)](CCMenuItemSpriteExtra*) {
             if (callback) callback();
         });
+    setItemScale(item, scale);
+    return item;
 }
 
 CCMenuItemSpriteExtra* makeButton(char const* text, std::function<void()> onPress,
@@ -144,6 +173,51 @@ void matchButtonLabels(std::vector<CCMenuItemSpriteExtra*> const& buttons) {
     for (auto* label : labels) label->setScale(smallest);
 }
 
+void layoutButtonRow(
+    std::vector<CCMenuItem*> const& items,
+    float leftX, float rightX, float y,
+    float gap, RowAlign align
+) {
+    std::vector<CCMenuItem*> valid;
+    valid.reserve(items.size());
+    for (auto* it : items) {
+        if (it) valid.push_back(it);
+    }
+    if (valid.empty()) return;
+
+    float sumW = 0.f;
+    for (auto* it : valid) {
+        sumW += it->getContentSize().width * std::abs(it->getScaleX());
+    }
+    float const availW = std::max(1.f, rightX - leftX);
+    float const totalGaps = gap * static_cast<float>(valid.size() - 1);
+    if (sumW + totalGaps > availW && sumW > 0.f) {
+        float const shrink = std::clamp((availW - totalGaps) / sumW, 0.35f, 1.f);
+        sumW = 0.f;
+        for (auto* it : valid) {
+            float const newScale = it->getScale() * shrink;
+            it->setScale(newScale);
+            if (auto* extra = typeinfo_cast<CCMenuItemSpriteExtra*>(it)) {
+                extra->m_baseScale = newScale;
+            }
+            sumW += it->getContentSize().width * std::abs(it->getScaleX());
+        }
+    }
+
+    float const totalW = sumW + totalGaps;
+    float cursorX = leftX;
+    if (align == RowAlign::Center) {
+        cursorX = leftX + (availW - totalW) * 0.5f;
+    } else if (align == RowAlign::Right) {
+        cursorX = rightX - totalW;
+    }
+    for (auto* it : valid) {
+        float const w = it->getContentSize().width * std::abs(it->getScaleX());
+        it->setPosition({cursorX + w * 0.5f, y});
+        cursorX += w + gap;
+    }
+}
+
 CircleButtonSprite* makeCircleSprite(char const* frame, CircleBaseColor color,
     CircleBaseSize size, float topScale) {
     return CircleButtonSprite::createWithSpriteFrameName(frame, topScale, color, size);
@@ -158,10 +232,13 @@ CCMenuItemSpriteExtra* makeCircleButton(char const* frame, std::function<void()>
 }
 
 CCMenuItemSpriteExtra* makeFrameButton(char const* frame, float scale, std::function<void()> onPress) {
-    return CCMenuItemExt::createSpriteExtraWithFrameName(frame, scale,
+    // Geode scales the sprite itself, which would leave the hit area unscaled: scale the item instead.
+    auto* item = CCMenuItemExt::createSpriteExtraWithFrameName(frame, 1.f,
         [callback = std::move(onPress)](CCMenuItemSpriteExtra*) {
             if (callback) callback();
         });
+    setItemScale(item, scale);
+    return item;
 }
 
 CCMenuItemToggler* makeSwitch(CCObject* target, SEL_MenuHandler callback, bool value, float scale) {
@@ -235,22 +312,27 @@ CCNode* makePanel(CCSize size, char const* title, GLubyte opacity) {
 void addCorners(CCNode* to, CCSize size, SideArtStyle style, float scale, bool top) {
     if (!to) return;
     char const* frame = "dailyLevelCorner_001.png";
+    float baseOffset = 24.75f;
     switch (style) {
-        case SideArtStyle::PopupBlue: frame = "rewardCorner_001.png"; break;
-        case SideArtStyle::Layer:     frame = "GJ_sideArt_001.png"; break;
-        case SideArtStyle::LayerGray: frame = "gauntletCorner_001.png"; break;
+        case SideArtStyle::PopupBlue: frame = "rewardCorner_001.png";   baseOffset = 24.75f; break;
+        case SideArtStyle::Layer:     frame = "GJ_sideArt_001.png";     baseOffset = 35.f;   break;
+        case SideArtStyle::LayerGray: frame = "gauntletCorner_001.png"; baseOffset = 35.f;   break;
         default: break;
     }
-    constexpr float kPad = 3.f;
+    float const offset = baseOffset * scale;
     struct Spot { bool right; bool upper; };
     for (auto spot : {Spot{false, false}, Spot{true, false}, Spot{false, true}, Spot{true, true}}) {
         if (spot.upper && !top) continue;
         auto* corner = CCSprite::createWithSpriteFrameName(frame);
+        if (!corner) continue;
         corner->setScale(scale);
         corner->setFlipX(spot.right);
         corner->setFlipY(spot.upper);
-        corner->setAnchorPoint({spot.right ? 1.f : 0.f, spot.upper ? 1.f : 0.f});
-        corner->setPosition({spot.right ? size.width - kPad : kPad, spot.upper ? size.height - kPad : kPad});
+        corner->setAnchorPoint({0.5f, 0.5f});
+        corner->setPosition({
+            spot.right ? size.width - offset : offset,
+            spot.upper ? size.height - offset : offset
+        });
         corner->setID(std::string("paimon-corner"_spr) + (spot.upper ? "-top" : "-bottom")
             + (spot.right ? "-right" : "-left"));
         to->addChild(corner);

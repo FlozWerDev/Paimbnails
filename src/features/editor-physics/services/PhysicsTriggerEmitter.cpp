@@ -73,7 +73,7 @@ bool hasGroup(GameObject* object, int group) {
 std::vector<int> freeGroups(LevelEditorLayer* editor, std::size_t count) {
     std::vector<int> groups;
     groups.reserve(count);
-    gd::unordered_set<int> excluded;
+    std::unordered_set<int> excluded;
     for (std::size_t i = 0; i < count; ++i) {
         int const group = editor->getNextFreeGroupID(excluded);
         if (group <= 0 || group > 9999) break;
@@ -86,7 +86,7 @@ std::vector<int> freeGroups(LevelEditorLayer* editor, std::size_t count) {
 std::vector<int> freeBlocks(LevelEditorLayer* editor, std::size_t count) {
     std::vector<int> blocks;
     blocks.reserve(count);
-    gd::unordered_set<int> excluded;
+    std::unordered_set<int> excluded;
     for (std::size_t i = 0; i < count; ++i) {
         int const block = editor->getNextFreeBlockID(excluded);
         if (block <= 0 || block > 9999) break;
@@ -145,10 +145,32 @@ void rollbackParents(
     std::vector<ParentChange> const& parents
 ) {
     for (auto it = parents.rbegin(); it != parents.rend(); ++it) {
+        auto object = it->object.lock();
+        if (!object) continue;
         if (!it->previous && editor && it->group > 0) {
-            editor->removeGroupParent(it->group);
+            // the 2.2091 SDK does not expose removeGroupParent on Windows.
+            // remove only the role added by this emission, preserving the
+            // object's other parent groups.
+            auto* owners = editor->m_parentGroupsDict;
+            if (owners && owners->objectForKey(it->group) == object.data()) {
+                owners->removeObjectForKey(it->group);
+                editor->m_groupParents.erase(it->group);
+            }
+            if (auto* ids = editor->m_parentGroupIDs) {
+                if (auto* groups = static_cast<CCArray*>(ids->objectForKey(object->m_uniqueID))) {
+                    for (unsigned int i = groups->count(); i > 0; --i) {
+                        if (static_cast<CCInteger*>(groups->objectAtIndex(i - 1))->getValue() == it->group) {
+                            groups->removeObjectAtIndex(i - 1);
+                        }
+                    }
+                    if (!groups->count()) {
+                        ids->removeObjectForKey(object->m_uniqueID);
+                        object->m_hasGroupParentsString = false;
+                    }
+                }
+            }
         }
-        if (auto object = it->object.lock()) object->m_hasGroupParent = it->previous;
+        object->m_hasGroupParent = it->previous;
     }
 }
 
@@ -242,18 +264,6 @@ NativeBodyInput nativeInput(ResolvedBody const& body) {
     input.objectOffsets.reserve(body.visuals.size());
     for (auto const& visual : body.visuals) input.objectOffsets.push_back(visual.offset);
     return input;
-}
-
-int objectIDFor(NativeNodeKind kind) {
-    switch (kind) {
-        case NativeNodeKind::AdvancedFollow: return nativeids::AdvancedFollow;
-        case NativeNodeKind::AdvancedFollowEdit: return nativeids::AdvancedFollowEdit;
-        case NativeNodeKind::CollisionBlock: return nativeids::CollisionBlock;
-        case NativeNodeKind::CollisionTrigger: return nativeids::Collision;
-        case NativeNodeKind::Spawn: return nativeids::Spawn;
-        case NativeNodeKind::Rotate: return nativeids::Rotate;
-    }
-    return 0;
 }
 
 bool configureNativeNode(GameObject* raw, NativeNode const& node) {
@@ -690,7 +700,13 @@ Result<EmitReport> emitToEditor(
         for (auto* item : CCArrayExt<CCObject*>(created)) {
             if (auto* object = typeinfo_cast<GameObject*>(item)) editor->removeObject(object, true);
         }
+        for (int animation : animations) {
+            if (editor->m_keyframeGroups) {
+                editor->m_keyframeGroups->removeObjectForKey(static_cast<intptr_t>(animation));
+            }
+        }
         rollbackAssignments(editor, assigned);
+        editor->refreshKeyframeAnims();
         return Err(std::move(message));
     };
 
@@ -804,7 +820,7 @@ Result<EmitReport> emitToEditor(
 
     bool loggedNative = false;
     for (auto const& node : nativeGraph.nodes) {
-        int const objectID = objectIDFor(node.kind);
+        int const objectID = nativeObjectID(node.kind);
         if (objectID <= 0) return abort("El grafo contiene un tipo nativo desconocido.");
         auto* object = editor->createObject(
             objectID, {node.position.x, node.position.y}, true

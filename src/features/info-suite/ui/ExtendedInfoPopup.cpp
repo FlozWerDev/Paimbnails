@@ -49,9 +49,6 @@ constexpr int kZListBg = 2;
 constexpr int kZList = 3;
 constexpr int kZChrome = 4;
 
-constexpr ccColor3B kTabOn{255, 255, 255};
-constexpr ccColor3B kTabOff{125, 125, 125};
-
 constexpr int kSummaryTab = -1;
 
 std::string lower(std::string_view text) {
@@ -119,7 +116,7 @@ bool ExtendedInfoPopup::init(GJGameLevel* level) {
 
     this->setTitle(std::string(level->m_levelName).c_str(), "goldFont.fnt", 0.7f, 22.f);
     if (m_title) {
-        m_title->limitLabelWidth(kPopupW - 100.f, 0.7f, 0.1f);
+        m_title->setLimitLabelWidth(kPopupW - 100.f, 0.7f, 0.1f);
         m_title->setZOrder(kZChrome);
     }
 
@@ -145,6 +142,7 @@ bool ExtendedInfoPopup::init(GJGameLevel* level) {
     m_mainLayer->addChild(m_listBg, kZListBg);
 
     m_scroll = ScrollLayer::create({kListW, kListTopPlain - kListBottomOpen});
+    if (m_scroll) m_scroll->setAnchorPoint({0.f, 0.f});
     m_mainLayer->addChild(m_scroll, kZList);
 
     m_emptyLabel = CCLabelBMFont::create("Sin coincidencias", "bigFont.fnt");
@@ -239,9 +237,8 @@ void ExtendedInfoPopup::applyLayout() {
         m_tabMenu->setVisible(m_drawer < 0.97f);
         for (auto* btn : m_tabButtons) {
             if (!btn) continue;
-            float dim = btn->getTag() == m_tab ? 1.f : 0.78f;
             fadeButton(typeinfo_cast<ButtonSprite*>(btn->getNormalImage()),
-                       static_cast<GLubyte>(chromeAlpha * dim));
+                       chromeAlpha);
         }
     }
 
@@ -288,12 +285,13 @@ void ExtendedInfoPopup::buildTabBar(float centerX, float y) {
     auto menu = CCMenu::create();
     menu->setPosition({centerX, y});
     menu->setContentSize({kListW, 26.f});
-    menu->setLayout(RowLayout::create()->setGap(3.f)->setAxisAlignment(AxisAlignment::Center)->setDefaultScaleLimits(0.5f, 1.f));
+    menu->setLayout(RowLayout::create()->setGap(8.f)->setAxisAlignment(AxisAlignment::Center)->setDefaultScaleLimits(0.5f, 1.f));
     m_mainLayer->addChild(menu, kZChrome);
     m_tabMenu = menu;
 
     auto addTab = [&](char const* name, int tag) {
-        auto spr = ButtonSprite::create(name, 0, false, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.45f);
+        auto spr = ButtonSprite::create(name, 48, true, "goldFont.fnt",
+            paimon::ui::buttonTexture(paimon::ui::Btn::Cyan), 18.f, 0.55f);
         if (!spr) return;
         auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ExtendedInfoPopup::onTab));
         btn->setTag(tag);
@@ -313,11 +311,12 @@ void ExtendedInfoPopup::buildTabBar(float centerX, float y) {
 void ExtendedInfoPopup::refreshTabButtons() {
     for (auto* btn : m_tabButtons) {
         if (!btn) continue;
-        bool selected = btn->getTag() == m_tab;
-        btn->setColor(selected ? kTabOn : kTabOff);
+        bool const selected = btn->getTag() == m_tab;
+        paimon::ui::setButtonSkin(btn,
+            selected ? paimon::ui::Btn::Green : paimon::ui::Btn::Cyan);
         btn->stopAllActions();
         btn->runAction(CCEaseOut::create(
-            CCScaleTo::create(0.14f, selected ? 1.08f : 1.f), 2.f));
+            CCScaleTo::create(0.14f, selected ? 1.f : 1.f), 2.f));
     }
 }
 
@@ -506,9 +505,12 @@ void ExtendedInfoPopup::addThumbnailBanner(CCNode* block, float width, float hei
     clip->setContentSize({width, height});
     clip->addChild(sprite);
 
-    auto dark = CCLayerColor::create(ccc4(0, 0, 0, 170));
-    dark->setContentSize({width, height});
-    clip->addChild(dark, 1);
+    // extend past the clipping edge so its top and bottom pixels stay dimmed.
+    if (auto* dark = paimon::SpriteHelper::createRoundedRect(width + 2.f, height + 2.f,
+            0.f, {0.f, 0.f, 0.f, 170.f / 255.f})) {
+        dark->setPosition({-1.f, -1.f});
+        clip->addChild(dark, 1);
+    }
 
     block->addChild(clip, -1);
 }
@@ -733,7 +735,7 @@ void ExtendedInfoPopup::onRow(CCObject* sender) {
 
     auto text = fact.copyText.empty() ? fact.value : fact.copyText;
     clipboard::write(text);
-    PaimonNotify::create(fmt::format("{} copiado", fact.label), NotificationIcon::Success)->show();
+    PaimonNotify::show(fmt::format("{} copiado", fact.label), NotificationIcon::Success);
 }
 
 void ExtendedInfoPopup::runAction(Fact const& fact) {
@@ -761,12 +763,12 @@ void ExtendedInfoPopup::onCopyAll(CCObject*) {
 
     auto json = paimon::collectLevelMetadata(m_level.data());
     if (json.empty()) {
-        PaimonNotify::create("No hay datos que copiar", NotificationIcon::Error)->show();
+        PaimonNotify::show("No hay datos que copiar", NotificationIcon::Error);
         return;
     }
 
     clipboard::write(json);
-    PaimonNotify::create("Datos del nivel copiados como JSON", NotificationIcon::Success)->show();
+    PaimonNotify::show("Datos del nivel copiados como JSON", NotificationIcon::Success);
 }
 
 void ExtendedInfoPopup::requestExactDate() {

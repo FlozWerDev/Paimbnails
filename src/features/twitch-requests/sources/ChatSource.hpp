@@ -75,6 +75,15 @@ protected:
     void onMain(std::function<void()> work);
     void later(float seconds, std::function<void()> work);
 
+    // poll attempts tolerated before a polling source gives up via fail().
+    static constexpr int kMaxPollFailures = 4;
+
+    // counts one failed poll: reports `message` through fail() once the
+    // limit trips, otherwise schedules `pollAgain` after `delaySecs`.
+    // the caller returns right after, either way.
+    void retryPollOrFail(int& failures, char const* message, float delaySecs,
+                         std::function<void()> pollAgain);
+
     void httpGet(std::string url, std::function<void(bool ok, std::string body)> handler);
     void httpGetBinary(
         std::string url, std::function<void(bool ok, std::vector<uint8_t> body)> handler);

@@ -1,0 +1,205 @@
+
+#include <algorithm>
+#include <cassert>
+#include <cctype>
+#include <cstdint>
+#include <functional>
+#include <iostream>
+#include <optional>
+#include <span>
+#include <string>
+#include <utility>
+#include <vector>
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
+#include <chrono>
+#include <cstring>
+#include <sstream>
+#include <stdexcept>
+#include <filesystem>
+#include <fstream>
+#include <charconv>
+#include <string_view>
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+
+struct SeedInt {
+ int stored = 0;
+ int value() const { return stored; }
+ operator int() const { return stored; }
+};
+namespace gd { using string = std::string; }
+namespace cocos2d { struct CCDictionary { std::string response; }; }
+struct GJGameLevel {
+ std::string m_levelString; SeedInt m_levelID; SeedInt m_objectCount{};
+ static GJGameLevel* create(cocos2d::CCDictionary*, bool);
+};
+struct LevelDownloadDelegate {
+ virtual ~LevelDownloadDelegate()=default;
+ virtual void levelDownloadFinished(GJGameLevel*) {}
+ virtual void levelDownloadFailed(int) {}
+};
+struct GameLevelManager {
+ LevelDownloadDelegate* m_levelDownloadDelegate=nullptr;
+ GJGameLevel* saved=nullptr;
+ static GameLevelManager* get() { static GameLevelManager value; return &value; }
+ GJGameLevel* getSavedLevel(int id) { return saved && saved->m_levelID == id ? saved : nullptr; }
+ void downloadLevel(int,bool,int) { assert(false && "Preview must own its request"); }
+ static cocos2d::CCDictionary* responseToDict(gd::string, bool);
+};
+int parses = 0;
+bool rejectDictionary = false, rejectLevel = false;
+cocos2d::CCDictionary* GameLevelManager::responseToDict(gd::string response, bool colon) {
+ assert(colon); ++parses;
+ if (rejectDictionary) return nullptr;
+ static cocos2d::CCDictionary dict; dict.response = std::move(response); return &dict;
+}
+GJGameLevel* GJGameLevel::create(cocos2d::CCDictionary* dict, bool download) {
+ assert(dict && download);
+ if (rejectLevel) return nullptr;
+ static GJGameLevel level;
+ auto const& response = dict->response;
+ auto const separator = response.find(":4:");
+ if (!response.starts_with("1:") || separator == std::string::npos) return nullptr;
+ level.m_levelID.stored = std::stoi(response.substr(2, separator - 2));
+ level.m_levelString = response.substr(separator + 3);
+ return &level;
+}
+namespace geode {
+template<class T> using CopyableFunction = std::function<T>;
+template<class T> struct Ref { T* value; Ref(T* p):value(p){} T* data() const{return value;} explicit operator bool() const{return value;} T* operator->() const{return value;} };
+namespace log { template<class... T> void warn(T&&...){} template<class... T> void debug(T&&...){} }
+}
+using geode::Ref;
+@@source|src/features/auto-preview/services/LevelDataProvider.hpp@@
+namespace paimon {
+bool shuttingDown = false;
+bool isRuntimeShuttingDown() { return shuttingDown; }
+std::vector<std::function<void()>> timers;
+void scheduleMainThreadDelay(float,std::function<void()> f) { timers.push_back(std::move(f)); }
+namespace gd {
+enum class CachePolicy { None, Week };
+using PostCallback = std::function<void(bool, std::string)>;
+struct Request { std::string endpoint, body; PostCallback callback; };
+std::vector<Request> requests;
+void postCached(std::string endpoint, std::string body, PostCallback callback, CachePolicy policy) {
+ assert(policy == CachePolicy::None);
+ requests.push_back({std::move(endpoint), std::move(body), std::move(callback)});
+}
+}
+namespace autopreview {
+@@function|src/features/auto-preview/services/LevelDataProvider.cpp|LevelDataProvider& LevelDataProvider::get()@@
+@@function|src/features/auto-preview/services/LevelDataProvider.cpp|void LevelDataProvider::request(@@
+@@function|src/features/auto-preview/services/LevelDataProvider.cpp|void LevelDataProvider::completeRequest(@@
+@@function|src/features/auto-preview/services/LevelDataProvider.cpp|void LevelDataProvider::finish(@@
+@@function|src/features/auto-preview/services/LevelDataProvider.cpp|void LevelDataProvider::shutdown()@@
+}}
+int main() {
+ using paimon::autopreview::LevelDataProvider;
+ using paimon::gd::requests;
+ auto& provider=paimon::autopreview::LevelDataProvider::get();
+ auto* manager = GameLevelManager::get();
+ struct ForeignDelegate : LevelDownloadDelegate {
+  int calls = 0;
+  void levelDownloadFinished(GJGameLevel*) override { ++calls; }
+  void levelDownloadFailed(int) override { ++calls; }
+ } foreign;
+ manager->m_levelDownloadDelegate = &foreign;
+ int callbacks = 0;
+ provider.request(111,[&](GJGameLevel* result){ ++callbacks; assert(!result); });
+ assert(provider.busy() && manager->m_levelDownloadDelegate == &foreign);
+ assert(requests.back().endpoint == "downloadGJLevel22.php");
+ assert(requests.back().body.find("levelID=111&") != std::string::npos);
+ auto firstReply = requests.back().callback;
+ auto firstTimeout = paimon::timers.back();
+ requests.back().callback(false, "");
+ assert(callbacks == 1 && !provider.busy() && foreign.calls == 0);
+ firstTimeout(); assert(callbacks == 1);
+
+ // A reply from a timed-out request cannot complete a newer one, even for the same ID.
+ provider.request(222,[&](GJGameLevel* result){ ++callbacks; assert(!result); });
+ auto oldReply = requests.back().callback;
+ paimon::timers.back()(); assert(callbacks == 2 && !provider.busy());
+ GJGameLevel* delivered=nullptr;
+ provider.request(222,[&](GJGameLevel* result){ delivered=result; });
+ auto currentReply = requests.back().callback;
+ auto currentTimeout = paimon::timers.back();
+ oldReply(true,"1:222:4:old"); firstReply(true,"1:111:4:old");
+ assert(!delivered && provider.busy());
+ // Another screen can change (or destroy) its delegate during our independent request.
+ manager->m_levelDownloadDelegate = nullptr;
+ currentReply(true,"1:222:4:correct#hash");
+ assert(delivered && delivered->m_levelString == "correct" && !provider.busy());
+ assert(manager->m_levelDownloadDelegate == nullptr && foreign.calls == 0);
+ currentReply(false, ""); currentTimeout();
+ assert(delivered && delivered->m_levelString == "correct");
+
+ // Malformed, negative, wrong-ID, empty, oversized and native parser failures settle immediately.
+ for (auto const& response : {std::string("-1"),std::string(),std::string("invalid"),
+      std::string("1:444:4:wrong"),std::string("1:333:4:"),
+      std::string("1:333:4:") + std::string(LevelDataProvider::kMaxLevelStringBytes + 1, 'x')}) {
+  bool failed = false;
+  provider.request(333,[&](GJGameLevel* result){ failed = !result; });
+  requests.back().callback(true,response);
+  assert(failed && !provider.busy());
+ }
+ for (bool* reject : {&rejectDictionary, &rejectLevel}) {
+  *reject = true;
+  bool failed = false;
+  provider.request(333,[&](GJGameLevel* result){ failed = !result; });
+  requests.back().callback(true,"1:333:4:content");
+  assert(failed && !provider.busy()); *reject = false;
+ }
+ int const previousParses = parses;
+ provider.request(333,[](GJGameLevel* result){ assert(!result); });
+ requests.back().callback(true,std::string(4 * 1024 * 1024,'x'));
+ assert(parses == previousParses && !provider.busy());
+
+ // Cache hits need no request; oversized cache entries stay out of the renderer.
+ GJGameLevel saved{"cached",{777}};
+ manager->saved = &saved;
+ auto requestCount = requests.size();
+ provider.request(777,[&](GJGameLevel* result){ assert(result == &saved); });
+ assert(requests.size() == requestCount);
+ saved.m_levelString.assign(LevelDataProvider::kMaxLevelStringBytes + 1,'x');
+ provider.request(777,[](GJGameLevel* result){ assert(!result); });
+ assert(requests.size() == requestCount);
+ manager->saved = nullptr;
+ provider.request(0,[](GJGameLevel* result){ assert(!result); });
+ assert(requests.size() == requestCount);
+
+ // Busy requests fail without changing the active request or its deadline.
+ provider.request(888,[](GJGameLevel* result){ assert(!result); });
+ auto busyReply = requests.back().callback;
+ requestCount = requests.size();
+ bool busyRejected = false;
+ provider.request(999,[&](GJGameLevel* result){ busyRejected = !result; });
+ assert(busyRejected && provider.busy() && requests.size() == requestCount);
+ busyReply(false,""); assert(!provider.busy());
+
+ // The callback can start a new request; a prior deadline cannot cancel it.
+ provider.request(901,[&](GJGameLevel* result){
+  assert(!result);
+  provider.request(902,[](GJGameLevel* next){ assert(!next); });
+ });
+ auto reentrantTimeout = paimon::timers.back();
+ auto reentrantReply = requests.back().callback;
+ reentrantReply(false,""); assert(provider.busy());
+ reentrantTimeout(); assert(provider.busy());
+ requests.back().callback(false,""); assert(!provider.busy());
+
+ // Shutdown releases callbacks holding Cocos owners while the runtime is still alive.
+ auto owner = std::make_shared<int>(1);
+ std::weak_ptr<int> weakOwner = owner;
+ provider.request(903,[owner](GJGameLevel*) { assert(false && "Shutdown cancels callbacks"); });
+ auto shutdownReply = requests.back().callback;
+ owner.reset(); assert(!weakOwner.expired());
+ provider.shutdown(); assert(weakOwner.expired() && !provider.busy());
+ shutdownReply(true,"1:903:4:late");
+ requestCount = requests.size();
+ provider.request(904,[](GJGameLevel* result) { assert(!result); });
+ assert(requests.size() == requestCount);
+ std::cout << "PASS: auto_preview_late_response\n";
+}

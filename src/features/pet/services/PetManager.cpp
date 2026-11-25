@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "PetManager.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
@@ -14,6 +15,7 @@
 #include <ctime>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/utils/string.hpp>
+#include <string_view>
 #include <unordered_set>
 
 using namespace geode::prelude;
@@ -91,11 +93,11 @@ PetManager::~PetManager() {
 
 
 std::filesystem::path PetManager::configPath() const {
-    return Mod::get()->getSaveDir() / "pet_config.json";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "pet_config.json";
 }
 
 std::filesystem::path PetManager::galleryDir() const {
-    auto dir = Mod::get()->getSaveDir() / "pet_gallery";
+    auto dir = paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "pet_gallery";
     std::error_code ec;
     if (!std::filesystem::exists(dir, ec)) {
         std::filesystem::create_directories(dir, ec);
@@ -110,14 +112,18 @@ void PetManager::loadConfig() {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return;
 
-    auto rawRes = geode::utils::file::readString(path);
+    auto rawRes = geode::utils::file::readString(paimon::paths::toSdkPath(path));
     if (!rawRes) {
         log::error("[PetManager] Failed to open config file");
         return;
     }
     auto res = matjson::parse(rawRes.unwrap());
     if (res.isErr()) return;
-    auto j = res.unwrap();
+    loadConfig(res.unwrap());
+}
+
+void PetManager::loadConfig(matjson::Value const& j) {
+    if (!j.isObject()) return;
     bool const hasAllLayersKey = j.contains("allLayers");
 
         m_config.enabled         = j["enabled"].asBool().unwrapOr(false);
@@ -314,7 +320,7 @@ void PetManager::saveConfig() {
         j["reactionSpinSpeed"]    = static_cast<double>(m_config.reactionSpinSpeed);
 
         auto str = j.dump();
-        auto writeRes = geode::utils::file::writeString(configPath(), str);
+        auto writeRes = geode::utils::file::writeString(paimon::paths::toSdkPath(configPath()), str);
         if (!writeRes) {
             log::error("[PetManager] Failed to write config file: {}", writeRes.unwrapErr());
             return;
@@ -350,11 +356,11 @@ std::vector<std::string> PetManager::getGalleryImages() const {
     for (auto const& entry : std::filesystem::directory_iterator(dir, ec)) {
         if (ec) break;
         if (!entry.is_regular_file()) continue;
-        auto ext = geode::utils::string::pathToString(entry.path().extension());
+        auto ext = paimon::paths::toUtf8(entry.path().extension());
         ext = geode::utils::string::toLower(ext);
         if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".bmp" || ext == ".webp"
             || ext == ".tiff" || ext == ".tif" || ext == ".tga" || ext == ".psd" || ext == ".qoi" || ext == ".jxl") {
-            result.push_back(geode::utils::string::pathToString(entry.path().filename()));
+            result.push_back(paimon::paths::toUtf8(entry.path().filename()));
         }
     }
     std::sort(result.begin(), result.end());
@@ -363,14 +369,14 @@ std::vector<std::string> PetManager::getGalleryImages() const {
 
 std::string PetManager::addToGallery(std::filesystem::path const& srcPath) {
     auto dir = galleryDir();
-    auto filename = geode::utils::string::pathToString(srcPath.filename());
+    auto filename = paimon::paths::toUtf8(srcPath.filename());
 
     auto dest = dir / filename;
     int counter = 1;
     std::error_code existsEc;
     while (std::filesystem::exists(dest, existsEc) && !existsEc) {
-        auto stem = geode::utils::string::pathToString(srcPath.stem());
-        auto ext = geode::utils::string::pathToString(srcPath.extension());
+        auto stem = paimon::paths::toUtf8(srcPath.stem());
+        auto ext = paimon::paths::toUtf8(srcPath.extension());
         filename = fmt::format("{}_{}{}", stem, counter++, ext);
         dest = dir / filename;
     }
@@ -432,8 +438,51 @@ void PetManager::removeAllFromGallery() {
 }
 
 int PetManager::cleanupInvalidImages() {
+    // magic signatures as {min bytes, offset, pattern, group}: a group with
+    // several parts (webp) is valid only when every part matches.
+    struct MagicPart {
+        std::size_t minLen;
+        std::size_t offset;
+        std::string_view bytes;
+        unsigned group;
+    };
+    static constexpr MagicPart kMagicParts[] = {
+        {4, 0, "\x89PNG", 0},          // png: 89 50 4e 47
+        {3, 0, "\xFF\xD8\xFF", 1},      // jpeg: ff d8 ff
+        {4, 0, "GIF8", 2},             // gif: gif8
+        {12, 0, "RIFF", 3},            // webp: riff....webp
+        {12, 8, "WEBP", 3},
+        {2, 0, "BM", 4},               // bmp: bm
+        {4, 0, std::string_view("\x49\x49\x2A\x00", 4), 5}, // tiff le: ii*\0
+        {4, 0, "\x4D\x4D\x00\x2A", 6},  // tiff be: mm\0*
+        {4, 0, "qoif", 7},             // qoi: qoif
+        {12, 0, std::string_view("\x00\x00\x00\x0C" "JXL" "\x20\x0C", 9), 8}, // jxl
+    };
+    static constexpr unsigned kMagicGroups = 9;
+    auto matchesMagic = [](unsigned char const* header, std::size_t bytesRead) {
+        for (unsigned g = 0; g < kMagicGroups; ++g) {
+            bool any = false;
+            bool ok = true;
+            for (auto const& p : kMagicParts) {
+                if (p.group != g) continue;
+                any = true;
+                if (bytesRead < p.minLen || bytesRead - p.offset < p.bytes.size() ||
+                    std::string_view(reinterpret_cast<char const*>(header + p.offset), p.bytes.size()) != p.bytes) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (any && ok) return true;
+        }
+        return false;
+    };
+
     auto images = getGalleryImages();
     int removed = 0;
+    auto reject = [&](std::string const& img) {
+        removeFromGallery(img);
+        ++removed;
+    };
 
     for (auto& img : images) {
         auto path = galleryDir() / paimon::assets::pathFromUtf8(img);
@@ -442,51 +491,26 @@ int PetManager::cleanupInvalidImages() {
 
         std::ifstream f(path, std::ios::binary);
         if (!f.is_open()) {
-                removeFromGallery(img);
-                removed++;
-                continue;
-            }
+            reject(img);
+            continue;
+        }
 
-            unsigned char header[12] = {};
-            f.read(reinterpret_cast<char*>(header), 12);
-            auto bytesRead = f.gcount();
-            f.close();
+        unsigned char header[12] = {};
+        f.read(reinterpret_cast<char*>(header), 12);
+        auto bytesRead = static_cast<std::size_t>(f.gcount());
+        f.close();
 
-            if (bytesRead < 4) {
-                log::warn("[PetManager] File too small, removing: {}", img);
-                removeFromGallery(img);
-                removed++;
-                continue;
-            }
+        if (bytesRead < 4) {
+            log::warn("[PetManager] File too small, removing: {}", img);
+            reject(img);
+            continue;
+        }
 
-            bool valid = false;
-            // png: 89 50 4e 47
-            if (header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47) valid = true;
-            // jpeg: ff d8 ff
-            else if (header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF) valid = true;
-            // gif: gif8
-            else if (header[0] == 'G' && header[1] == 'I' && header[2] == 'F' && header[3] == '8') valid = true;
-            // webp: riff....webp
-            else if (bytesRead >= 12 && header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F'
-                && header[8] == 'W' && header[9] == 'E' && header[10] == 'B' && header[11] == 'P') valid = true;
-            // bmp: bm
-            else if (header[0] == 'B' && header[1] == 'M') valid = true;
-            // tiff: ii (little-endian) or mm (big-endian)
-            else if ((header[0] == 'I' && header[1] == 'I' && header[2] == 0x2A && header[3] == 0x00)
-                  || (header[0] == 'M' && header[1] == 'M' && header[2] == 0x00 && header[3] == 0x2A)) valid = true;
-            // qoi: qoif
-            else if (header[0] == 'q' && header[1] == 'o' && header[2] == 'i' && header[3] == 'f') valid = true;
-            // jxl: \x00\x00\x00\x0c jxl \x20\x0c (12 bytes)
-            else if (bytesRead >= 12 && header[0] == 0x00 && header[1] == 0x00 && header[2] == 0x00 && header[3] == 0x0C
-                     && header[4] == 'J' && header[5] == 'X' && header[6] == 'L' && header[7] == 0x20
-                     && header[8] == 0x0C) valid = true;
-
-            if (!valid) {
-                log::warn("[PetManager] Invalid image file, removing: {} (bytes: {:02x} {:02x} {:02x} {:02x})",
-                    img, header[0], header[1], header[2], header[3]);
-                removeFromGallery(img);
-                removed++;
-            }
+        if (!matchesMagic(header, bytesRead)) {
+            log::warn("[PetManager] Invalid image file, removing: {} (bytes: {:02x} {:02x} {:02x} {:02x})",
+                img, header[0], header[1], header[2], header[3]);
+            reject(img);
+        }
     }
 
     return removed;
@@ -562,7 +586,7 @@ std::string PetManager::resolveCurrentImageFile() const {
 void PetManager::purgeCachedImage(std::string const& filename) {
     if (filename.empty()) return;
     m_staticTextureCache.erase(filename);
-    AnimatedGIFSprite::remove(geode::utils::string::pathToString(galleryDir() / filename));
+    AnimatedGIFSprite::remove(paimon::paths::toUtf8(galleryDir() / filename));
 }
 
 CCSprite* PetManager::createSpriteForImage(std::string const& imageFile) {
@@ -573,7 +597,7 @@ CCSprite* PetManager::createSpriteForImage(std::string const& imageFile) {
     if (!std::filesystem::exists(path, ec) || ec) return nullptr;
 
     if (ImageLoadHelper::isAnimatedImage(path)) {
-        auto pathStr = geode::utils::string::pathToString(path);
+        auto pathStr = paimon::paths::toUtf8(path);
         if (auto* cached = AnimatedGIFSprite::createFromCache(pathStr)) {
             return cached;
         }
@@ -1205,6 +1229,23 @@ void PetManager::updateParticles(float dt) {
     }
 }
 
+ccColor4F PetManager::particleColor() const {
+    return {
+        m_config.particleColor.r / 255.f,
+        m_config.particleColor.g / 255.f,
+        m_config.particleColor.b / 255.f, 1.f
+    };
+}
+
+void PetManager::attachParticle(CCDrawNode* draw, CCPoint const& pos, float vx, float vy) {
+    if (!draw) return;
+    draw->setAnchorPoint({0.5f, 0.5f});
+    draw->setPosition(pos);
+    auto* data = CCString::createWithFormat("%.2f|%.2f|%.3f", vx, vy, m_config.particleLifetime);
+    draw->setUserObject(data);
+    m_particleNode->addChild(draw);
+}
+
 void PetManager::emitParticle() {
     if (!m_particleNode || !m_petSprite) return;
 
@@ -1216,82 +1257,46 @@ void PetManager::emitParticle() {
     float vx = (rand() % 200 - 100) / 100.f * 20.f;
     float vy = (rand() % 100) / 100.f * 30.f + 10.f;
 
+    float s = m_config.particleSize;
+    ccColor4F col = particleColor();
+    CCPoint pos{petPos.x + rx, petPos.y + ry};
+
+    auto draw = CCDrawNode::create();
+    if (!draw) return;
+
     auto type = static_cast<PetParticleType>(m_config.particleType);
 
     switch (type) {
         case PetParticleType::Hearts: {
-            auto draw = CCDrawNode::create();
-            if (draw) {
-                float s = m_config.particleSize;
-                CCPoint pts[] = {
-                    ccp(-s * 0.5f, 0), ccp(0, -s * 0.7f), ccp(s * 0.5f, 0),
-                    ccp(s * 0.25f, s * 0.3f), ccp(0, s * 0.15f), ccp(-s * 0.25f, s * 0.3f)
-                };
-                ccColor4F col = {
-                    m_config.particleColor.r / 255.f,
-                    m_config.particleColor.g / 255.f,
-                    m_config.particleColor.b / 255.f, 1.f
-                };
-                draw->drawPolygon(pts, 6, col, 0, col);
-                draw->setContentSize(CCSizeMake(s, s));
-                draw->setAnchorPoint({0.5f, 0.5f});
-                draw->setPosition({petPos.x + rx, petPos.y + ry});
-                auto* data = CCString::createWithFormat("%.2f|%.2f|%.3f", vx, vy, m_config.particleLifetime);
-                draw->setUserObject(data);
-                m_particleNode->addChild(draw);
-                return;
-            }
+            CCPoint pts[] = {
+                ccp(-s * 0.5f, 0), ccp(0, -s * 0.7f), ccp(s * 0.5f, 0),
+                ccp(s * 0.25f, s * 0.3f), ccp(0, s * 0.15f), ccp(-s * 0.25f, s * 0.3f)
+            };
+            draw->drawPolygon(pts, 6, col, 0, col);
+            draw->setContentSize(CCSizeMake(s, s));
             break;
         }
         case PetParticleType::Stars: {
-            auto draw = CCDrawNode::create();
-            if (draw) {
-                float s = m_config.particleSize;
-                std::vector<CCPoint> starPts;
-                for (int i = 0; i < 10; i++) {
-                    float angle = (i * 36.f) * 3.14159f / 180.f - 90.f * 3.14159f / 180.f;
-                    float r = (i % 2 == 0) ? s : s * 0.4f;
-                    starPts.push_back(ccp(cosf(angle) * r, sinf(angle) * r));
-                }
-                ccColor4F col = {
-                    m_config.particleColor.r / 255.f,
-                    m_config.particleColor.g / 255.f,
-                    m_config.particleColor.b / 255.f, 1.f
-                };
-                draw->drawPolygon(starPts.data(), static_cast<unsigned int>(starPts.size()), col, 0, col);
-                draw->setContentSize(CCSizeMake(s * 2, s * 2));
-                draw->setAnchorPoint({0.5f, 0.5f});
-                draw->setPosition({petPos.x + rx, petPos.y + ry});
-                auto* data = CCString::createWithFormat("%.2f|%.2f|%.3f", vx, vy, m_config.particleLifetime);
-                draw->setUserObject(data);
-                m_particleNode->addChild(draw);
-                return;
+            std::vector<CCPoint> starPts;
+            for (int i = 0; i < 10; i++) {
+                float angle = (i * 36.f) * 3.14159f / 180.f - 90.f * 3.14159f / 180.f;
+                float r = (i % 2 == 0) ? s : s * 0.4f;
+                starPts.push_back(ccp(cosf(angle) * r, sinf(angle) * r));
             }
+            draw->drawPolygon(starPts.data(), static_cast<unsigned int>(starPts.size()), col, 0, col);
+            draw->setContentSize(CCSizeMake(s * 2, s * 2));
             break;
         }
         case PetParticleType::Bubbles:
         case PetParticleType::Sparkles:
         default: {
-            auto draw = CCDrawNode::create();
-            if (draw) {
-                float s = m_config.particleSize;
-                ccColor4F col = {
-                    m_config.particleColor.r / 255.f,
-                    m_config.particleColor.g / 255.f,
-                    m_config.particleColor.b / 255.f, 1.f
-                };
-                draw->drawDot(ccp(0, 0), s, col);
-                draw->setContentSize(CCSizeMake(s * 2, s * 2));
-                draw->setAnchorPoint({0.5f, 0.5f});
-                draw->setPosition({petPos.x + rx, petPos.y + ry});
-                auto* data = CCString::createWithFormat("%.2f|%.2f|%.3f", vx, vy, m_config.particleLifetime);
-                draw->setUserObject(data);
-                m_particleNode->addChild(draw);
-                return;
-            }
+            draw->drawDot(ccp(0, 0), s, col);
+            draw->setContentSize(CCSizeMake(s * 2, s * 2));
             break;
         }
     }
+
+    attachParticle(draw, pos, vx, vy);
 }
 
 
@@ -1342,7 +1347,6 @@ void PetManager::showSpeechBubble(std::string const& message) {
         ccColor4F borderCol = {1.f, 1.f, 1.f, 0.5f};
 
         float w = bubbleW, h = bubbleH;
-        float radius = 4.f;
         CCPoint rect[4] = {
             ccp(-w/2.f, -h/2.f), ccp(w/2.f, -h/2.f),
             ccp(w/2.f, h/2.f), ccp(-w/2.f, h/2.f)

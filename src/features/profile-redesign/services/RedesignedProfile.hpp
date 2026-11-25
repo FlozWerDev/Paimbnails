@@ -10,6 +10,7 @@ namespace cocos2d {
 class GJUserScore;
 class GJCommentListLayer;
 class GJComment;
+class CommentCell;
 
 namespace paimon::profile_redesign {
 void prepareInPlace(cocos2d::CCLayer* mainLayer);
@@ -32,5 +33,9 @@ bool needsSettlePass(
     cocos2d::CCNode* buttonMenu,
     bool ownProfile
 );
+
+// puts the redesigned post look back after the cell rebuilt itself. Does
+// nothing for cells the redesigned profile did not create.
+void restyleAccountCommentCell(CommentCell* cell);
 
 }

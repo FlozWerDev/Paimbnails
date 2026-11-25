@@ -1,0 +1,74 @@
+#include <Geode/Result.hpp>
+#include <cassert>
+#include <chrono>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <span>
+#include <string>
+#include <vector>
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+namespace geode {
+template<class... Args> requires(sizeof...(Args)>0)
+auto Err(fmt::format_string<Args...> pattern,Args&&... args){
+    return Err(fmt::format(pattern,std::forward<Args>(args)...));
+}
+}
+using namespace geode;
+std::filesystem::path root;
+bool writable=false;
+namespace paimon::file {
+bool writeAtomically(std::filesystem::path const& path,std::span<uint8_t const> bytes){
+    assert(path.parent_path()==root);
+    if(!writable)return false;
+    std::ofstream file(path,std::ios::binary);
+    file.write(reinterpret_cast<char const*>(bytes.data()),bytes.size());return bool(file);
+}
+}
+namespace geode::utils {
+namespace string {std::string pathToString(std::filesystem::path const& path){return path.string();}}
+namespace file {
+Result<std::vector<uint8_t>> readBinary(std::filesystem::path const& path){
+    std::ifstream stream(path,std::ios::binary);
+    if(!stream)return Err("read failed");
+    return Ok(std::vector<uint8_t>(std::istreambuf_iterator<char>(stream),{}));
+}
+}
+}
+struct ImageBuffer {
+    static constexpr size_t kMaxEncodedBytes=128*1024*1024;
+    static Result<ImageBuffer> loadFromMemory(std::span<uint8_t const>){return Ok(ImageBuffer{});}
+    Result<std::vector<uint8_t>> encodeAsPng()const{return Ok(std::vector<uint8_t>{'P','N','G'});}
+};
+struct GIFDecoder {static bool isGIF(uint8_t const* data,size_t n){return n && data[0]=='G';}};
+struct SlotPaths {
+    static Result<> ensureSlotDirs(std::string_view){return Ok();}
+    static std::filesystem::path fusionTextureFile(std::string_view,std::string_view sprite,std::string_view ext){
+        return root/(std::string(sprite)+std::string(ext));
+    }
+};
+std::string lowerExt(std::filesystem::path const& path){return path.extension().string();}
+struct FusionStore {
+    static Result<std::filesystem::path> importTexture(std::string_view,std::string_view,std::filesystem::path const&);
+};
+@@function|src/features/texture-studio/persist/FusionStore.cpp|geode::Result<std::filesystem::path> FusionStore::importTexture(@@
+int main() {
+    root=std::filesystem::current_path()/(
+        "fusion-fixture-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    assert(root.parent_path()==std::filesystem::current_path());
+    std::filesystem::create_directories(root);
+    auto sourceGif=root/"source.gif",sourcePng=root/"source.png";
+    std::ofstream(sourceGif)<<"GIF89a";std::ofstream(sourcePng)<<"PNG";
+    auto oldPng=root/"gifcase.png",oldGif=root/"pngcase.gif";
+    std::ofstream(oldPng)<<"previous static";std::ofstream(oldGif)<<"previous animated";
+    assert(!FusionStore::importTexture("slot","gifcase",sourceGif));
+    assert(std::filesystem::exists(oldPng));
+    assert(!FusionStore::importTexture("slot","pngcase",sourcePng));
+    assert(std::filesystem::exists(oldGif));
+    writable=true;
+    assert(FusionStore::importTexture("slot","gifcase",sourceGif));
+    assert(!std::filesystem::exists(oldPng) && std::filesystem::exists(root/"gifcase.gif"));
+    assert(FusionStore::importTexture("slot","pngcase",sourcePng));
+    assert(!std::filesystem::exists(oldGif) && std::filesystem::exists(root/"pngcase.png"));
+}

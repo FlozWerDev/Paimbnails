@@ -1,5 +1,6 @@
 #pragma once
 #include <Geode/Geode.hpp>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <string>
@@ -20,5 +21,7 @@ using MediaCallback = std::function<void(std::shared_ptr<TransitionMedia>, std::
 // uploads and callbacks run on the main thread, never inside a scene hook.
 void prepareTransitionMedia(std::string const& path, MediaCallback callback = {});
 std::shared_ptr<TransitionMedia> findTransitionMedia(std::string const& path);
+void requestStopTransitionMedia();
+void finishShutdownTransitionMedia(std::chrono::steady_clock::time_point deadline);
 void shutdownTransitionMedia();
 } // namespace paimon::transitions

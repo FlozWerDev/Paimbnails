@@ -7,6 +7,7 @@
 #include <Geode/ui/Popup.hpp>
 
 #include "../IconCopyStore.hpp"
+#include "../../global-icon/GlobalIconTypes.hpp"
 
 namespace paimon::iconcopy {
 
@@ -17,6 +18,8 @@ public:
     static CopyIconsPopup* create(IconSet const& set, bool saved = false);
 
 protected:
+    enum class Mode { CopyAndUse, Copy, Use };
+
     bool init(IconSet const& set, bool saved);
 
     void onCopyAndUse(cocos2d::CCObject*);
@@ -26,7 +29,15 @@ protected:
     void buildStrip(float centreX, float centreY);
     void openDetail(IconType type, cocos2d::CCNode* slot);
 
+    // asks which parts to take when the player's global icon shares more than vanilla.
+    void choose(Mode mode);
+    void perform(Mode mode, paimon::globalicon::LinkOptions options);
+    paimon::globalicon::LinkOptions extras() const;
+
     IconSet m_set;
+    paimon::globalicon::GlobalIconMeta m_meta;
+    bool m_metaLoaded = false;
+    cocos2d::CCLabelBMFont* m_hint = nullptr;
 };
 
 }  // namespace paimon::iconcopy

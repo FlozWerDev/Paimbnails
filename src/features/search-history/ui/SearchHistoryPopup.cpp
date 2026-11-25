@@ -88,7 +88,6 @@ bool SearchHistoryPopup::init(std::function<void(int)> callback) {
     float scrollW = POPUP_W - 44.f;
     float scrollH = POPUP_H - 88.f;
 
-    // dark backdrop behind the list.
     auto listBg = CCScale9Sprite::create("square02b_001.png");
     listBg->setContentSize({ scrollW + 8.f, scrollH + 8.f });
     listBg->setColor({ 0, 0, 0 });
@@ -96,22 +95,20 @@ bool SearchHistoryPopup::init(std::function<void(int)> callback) {
     m_mainLayer->addChildAtPosition(listBg, Anchor::Center, { 0.f, 4.f });
 
     m_scroll = ScrollLayer::create({ scrollW, scrollH });
+    if (m_scroll) m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setID("history-scroll"_spr);
     m_mainLayer->addChildAtPosition(m_scroll, Anchor::Center, { -scrollW / 2.f, -scrollH / 2.f + 4.f });
 
-    // decorative border around the scroll.
     auto borders = geode::ListBorders::create();
     borders->setContentSize({ scrollW + 6.f, scrollH });
     m_mainLayer->addChildAtPosition(borders, Anchor::Center, { 0.f, 4.f });
 
-    // saved-search count (bottom left).
     m_countLabel = CCLabelBMFont::create("", "goldFont.fnt");
     m_countLabel->setScale(0.4f);
     m_countLabel->setAnchorPoint({ 0.f, 0.5f });
     m_countLabel->setOpacity(190);
     m_mainLayer->addChildAtPosition(m_countLabel, Anchor::BottomLeft, { 26.f, 22.f });
 
-    // clear button (bottom).
     auto clearSpr = paimon::ui::makeButtonSprite("Clear", paimon::ui::Btn::Red, 0.f, 0.6f, "bigFont.fnt");
     auto clearBtn = CCMenuItemSpriteExtra::create(clearSpr, this, menu_selector(SearchHistoryPopup::onClear));
     clearBtn->setID("clear-button"_spr);
@@ -204,7 +201,6 @@ void SearchHistoryPopup::rebuild() {
         sub->setPosition({ 32.f, (ROW_H - 4.f) * 0.28f });
         rowBg->addChild(sub);
 
-        // relative date (row top right).
         auto when = CCLabelBMFont::create(timeAgo(e.time).c_str(), "chatFont.fnt");
         when->setAnchorPoint({ 1.f, 0.5f });
         when->setScale(0.4f);

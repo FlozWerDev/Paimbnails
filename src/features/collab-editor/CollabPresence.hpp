@@ -24,6 +24,7 @@ private:
 
     bool m_started = false;
     int m_accountId = 0;
+    int m_retryAttempts = 0;
     std::string m_token;
     uint64_t m_gen = 0;
     std::shared_ptr<std::atomic<bool>> m_lifetime = std::make_shared<std::atomic<bool>>(true);

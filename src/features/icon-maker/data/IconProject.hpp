@@ -14,19 +14,73 @@
 
 namespace paimon::icon_maker {
 
+// analytical procedural shapes rendered via crisp SDF at any resolution.
+enum class PrimitiveKind : int {
+    RoundedSquare = 0,
+    Circle        = 1,
+    Triangle      = 2,
+    Diamond       = 3,
+    Hexagon       = 4,
+    Octagon       = 5,
+    Star          = 6,
+    Cross         = 7,
+    Heart         = 8,
+    Capsule       = 9,
+    Shield        = 10,
+    Crescent      = 11,
+};
+
+// built-in Geometry Dash icon accessories, faces, eyes and emblems.
+enum class DecalKind : int {
+    EyesClassic = 0,
+    EyesAngry   = 1,
+    EyesHappy   = 2,
+    EyesCross   = 3,
+    EyeCyclops  = 4,
+    VisorCyber  = 5,
+    MouthSmile  = 6,
+    MouthFangs  = 7,
+    Lightning   = 8,
+    Crown       = 9,
+    Horns       = 10,
+    Wings       = 11,
+    Skull       = 12,
+    Gem         = 13,
+    Crosshair   = 14,
+    Flame       = 15,
+    Shuriken    = 16,
+    Gear        = 17,
+};
+
 struct PieceShape {
     // frozen values.
-    enum class Kind : int { Import = 0, Template = 1 };
+    enum class Kind : int {
+        Import    = 0,
+        Template  = 1,
+        Primitive = 2,
+        Decal     = 3,
+    };
 
     Kind kind = Kind::Import;
 
-    // import: filename inside the project's images/ dir.
+    // import/template: filename inside the project's images/ dir.
     std::string file;
 
     // template: vanilla icon reference; the shape is extracted lazily from
     // gd's sheets and cached in images/ under `file`.
     int templateIconId = 1;
     std::string templateFrameSuffix;  // full suffix incl. robot part, e.g. "_02_glow_001"
+
+    // primitive parameters
+    PrimitiveKind primitive = PrimitiveKind::RoundedSquare;
+    float cornerRadius = 0.14f;  // 0..0.5 fraction of shape half-size
+    int points = 5;              // star points (4..12)
+    float innerRatio = 0.45f;    // star inner radius / cross thickness (0.15..0.85)
+    bool hollow = false;         // draw as frame/ring instead of solid
+    float strokeWidth = 0.18f;   // hollow thickness (0.04..0.48)
+
+    // decal selection
+    DecalKind decal = DecalKind::EyesClassic;
 };
 
 struct IconPiece {
@@ -51,7 +105,7 @@ struct IconSlotContent {
 };
 
 struct IconProject {
-    int schemaVersion = 1;
+    int schemaVersion = 2;
 
     std::string id;
     std::string name;
@@ -70,6 +124,7 @@ struct IconProject {
     std::map<std::string, IconSlotContent> slots;
 
     std::string makePieceId() const;
+    bool hasSafeAssetReferences() const;
 };
 
 // style library stores loose fills, so these two stay public to share the format.

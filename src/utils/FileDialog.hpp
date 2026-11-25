@@ -2,6 +2,7 @@
 
 #include <Geode/utils/file.hpp>
 #include <functional>
+#include <filesystem>
 
 namespace pt {
 

@@ -100,28 +100,31 @@ void apply(IconSet const& set) {
     auto* gm = GameManager::get();
     if (!gm) return;
 
-    gm->setPlayerFrame(std::max(set.cube, 1));
-    gm->setPlayerShip(std::max(set.ship, 1));
-    gm->setPlayerBall(std::max(set.ball, 1));
-    gm->setPlayerBird(std::max(set.ufo, 1));
-    gm->setPlayerDart(std::max(set.wave, 1));
-    gm->setPlayerRobot(std::max(set.robot, 1));
-    gm->setPlayerSpider(std::max(set.spider, 1));
-    gm->setPlayerSwing(std::max(set.swing, 1));
-    gm->setPlayerJetpack(std::max(set.jetpack, 1));
+    auto iconID = [](int value) { return std::clamp(value, 1, 9999); };
+    auto colorID = [](int value) { return std::clamp(value, 0, 127); };
 
-    gm->setPlayerColor(set.color1);
-    gm->setPlayerColor2(set.color2);
+    gm->setPlayerFrame(iconID(set.cube));
+    gm->setPlayerShip(iconID(set.ship));
+    gm->setPlayerBall(iconID(set.ball));
+    gm->setPlayerBird(iconID(set.ufo));
+    gm->setPlayerDart(iconID(set.wave));
+    gm->setPlayerRobot(iconID(set.robot));
+    gm->setPlayerSpider(iconID(set.spider));
+    gm->setPlayerSwing(iconID(set.swing));
+    gm->setPlayerJetpack(iconID(set.jetpack));
+
+    gm->setPlayerColor(colorID(set.color1));
+    gm->setPlayerColor2(colorID(set.color2));
     gm->setPlayerGlow(set.glow);
     // -1 means the profile had no custom glow color; writing it would put an
     // out-of-palette index into the save, so leave ours alone in that case.
-    if (set.glowColor >= 0) gm->setPlayerColor3(set.glowColor);
+    if (set.glowColor >= 0) gm->setPlayerColor3(colorID(set.glowColor));
 
     // trails don't travel in the profile response, so they usually stay at 0.
-    if (set.trail > 0) gm->setPlayerStreak(set.trail);
+    if (set.trail > 0) gm->setPlayerStreak(iconID(set.trail));
     if (set.deathEffect > 0) {
-        gm->setPlayerDeathEffect(set.deathEffect);
-        gm->loadDeathEffect(set.deathEffect);
+        gm->setPlayerDeathEffect(iconID(set.deathEffect));
+        gm->loadDeathEffect(iconID(set.deathEffect));
     }
 }
 

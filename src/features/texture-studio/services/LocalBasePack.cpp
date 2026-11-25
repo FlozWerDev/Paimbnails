@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "LocalBasePack.hpp"
 
 #include "../data/GdResourcesLocator.hpp"
@@ -9,6 +10,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <fstream>
 
 using namespace geode::prelude;
 
@@ -36,7 +38,7 @@ std::string replaceExtensionSuffix(std::string const& pngRelPath,
 }
 
 std::string lowerExt(std::filesystem::path const& p) {
-    auto ext = geode::utils::string::pathToString(p.extension());
+    auto ext = paimon::paths::toUtf8(p.extension());
     std::transform(ext.begin(), ext.end(), ext.begin(),
         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return ext;
@@ -117,7 +119,7 @@ void LocalBasePack::rebuildIndexLocked() {
             if (!entry.is_regular_file()) continue;
             auto const& p = entry.path();
             auto ext = lowerExt(p);
-            std::string name = geode::utils::string::pathToString(p.filename());
+            std::string name = paimon::paths::toUtf8(p.filename());
             if (ext == ".fnt") {
                 addFile(prefix + name, p);
             } else if (ext == ".png") {
@@ -136,6 +138,18 @@ void LocalBasePack::rebuildIndexLocked() {
         for (auto const& s : vanilla.unwrap()) addPaired("", s);
     }
     sweepLooseFiles(GdResourcesLocator::resourcesDir(), "");
+#if defined(GEODE_IS_MOBILE)
+    if (!std::filesystem::is_directory(GdResourcesLocator::resourcesDir())) {
+        // Also expose core vanilla fonts from the APK when no filesystem dir exists.
+        for (auto const* fontName : {"bigFont-uhd.fnt", "bigFont-hd.fnt", "bigFont.fnt",
+                                     "goldFont-uhd.fnt", "goldFont-hd.fnt", "goldFont.fnt",
+                                     "chatFont.fnt"}) {
+            if (GdResourcesLocator::bundledAssetExists(fontName)) {
+                addFile(fontName, std::filesystem::path("apk://") / fontName);
+            }
+        }
+    }
+#endif
 
     // mod + geode sheets, rels prefixed so sheetretarget::locate resolves them.
     std::string ownId;
@@ -153,10 +167,10 @@ void LocalBasePack::rebuildIndexLocked() {
 
             std::filesystem::path dir;
             if (id == "geode.loader") {
-                dir = dirs::getGeodeResourcesDir() / "geode.loader";
+                dir = paimon::paths::toStdPath(dirs::getGeodeResourcesDir()) / "geode.loader";
             } else {
                 try {
-                    dir = mod->getResourcesDir();
+                    dir = paimon::paths::toStdPath(mod->getResourcesDir());
                 } catch (...) { continue; }
             }
             if (dir.empty()) continue;
@@ -193,31 +207,53 @@ geode::Result<std::filesystem::path> LocalBasePack::ensureFile(
     if (!isSafeRelativePath(relativePath)) {
         return geode::Err("unsafe path: {}", relativePath);
     }
+    std::filesystem::path resolved;
     {
-        std::lock_guard lock(m_mutex);
-        if (m_scanned) {
-            auto it = m_index.find(relativePath);
-            if (it == m_index.end()) {
-                return geode::Err("local base pack has no {}", relativePath);
+        std::unique_lock lock(m_mutex);
+        if (!m_scanned) {
+            lock.unlock();
+            GEODE_UNWRAP(ensureManifest());
+            lock.lock();
+        }
+        auto it = m_index.find(relativePath);
+        if (it == m_index.end()) {
+            return geode::Err("local base pack has no {}", relativePath);
+        }
+        resolved = it->second;
+    }
+
+    std::error_code ec;
+    if (std::filesystem::is_regular_file(resolved, ec) && !ec) {
+        return geode::Ok(resolved);
+    }
+
+#if defined(GEODE_IS_MOBILE)
+    // Virtual APK asset: extract once into our local cache so file-based readers work seamlessly.
+    std::vector<std::uint8_t> bytes;
+    std::string const lookupName = (resolved.begin() != resolved.end() && *resolved.begin() == "apk:")
+        ? paimon::paths::toUtf8(resolved.filename())
+        : relativePath;
+    if (GdResourcesLocator::readBundledAsset(lookupName, bytes) && !bytes.empty()) {
+        auto cachePath = SlotPaths::rootDir() / "android-vanilla-cache" / relativePath;
+        std::filesystem::create_directories(cachePath.parent_path(), ec);
+        if (std::filesystem::is_regular_file(cachePath, ec) && !ec) {
+            std::lock_guard lock(m_mutex);
+            m_index[relativePath] = cachePath;
+            return geode::Ok(cachePath);
+        }
+        std::ofstream out(cachePath, std::ios::binary | std::ios::trunc);
+        if (out && out.write(reinterpret_cast<char const*>(bytes.data()),
+                             static_cast<std::streamsize>(bytes.size()))) {
+            out.flush();
+            if (out.good()) {
+                std::lock_guard lock(m_mutex);
+                m_index[relativePath] = cachePath;
+                return geode::Ok(cachePath);
             }
-            std::error_code ec;
-            if (!std::filesystem::is_regular_file(it->second, ec) || ec) {
-                return geode::Err("local file vanished: {}", relativePath);
-            }
-            return geode::Ok(it->second);
         }
     }
-    GEODE_UNWRAP(ensureManifest());
-    std::lock_guard lock(m_mutex);
-    auto it = m_index.find(relativePath);
-    if (it == m_index.end()) {
-        return geode::Err("local base pack has no {}", relativePath);
-    }
-    std::error_code ec;
-    if (!std::filesystem::is_regular_file(it->second, ec) || ec) {
-        return geode::Err("local file vanished: {}", relativePath);
-    }
-    return geode::Ok(it->second);
+#endif
+    return geode::Err("local file vanished: {}", relativePath);
 }
 
 geode::Result<std::optional<std::filesystem::path>> LocalBasePack::ensureOptionalFile(

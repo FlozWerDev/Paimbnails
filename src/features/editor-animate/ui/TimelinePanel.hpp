@@ -12,6 +12,7 @@ namespace paimon::animate {
 
 class TimelinePanel : public cocos2d::CCLayer {
 public:
+    using cocos2d::CCLayer::init;
     static TimelinePanel* create(LevelEditorLayer* editor);
     static TimelinePanel* get();
 

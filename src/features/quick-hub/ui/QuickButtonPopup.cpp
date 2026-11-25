@@ -95,6 +95,7 @@ protected:
         }
 
         auto scroll = ScrollLayer::create({listW, listH});
+        if (scroll) scroll->setAnchorPoint({0.f, 0.f});
         scroll->setPosition({listX, listY});
         m_mainLayer->addChild(scroll, 1);
 
@@ -226,7 +227,7 @@ bool QuickButtonPopup::init() {
     addFieldLabel("Nombre", 267.f);
 
     m_nameInput = TextInput::create(kFieldW / 0.8f, "Nombre del acceso", "chatFont.fnt");
-    m_nameInput->setCommonFilter(CommonFilter::Any);
+    m_nameInput->setCommonFilter(CommonFilter::TextEmojis);
     m_nameInput->setMaxCharCount(32);
     m_nameInput->setString(m_candidate.name);
     m_nameInput->setScale(0.8f);
@@ -339,7 +340,7 @@ void QuickButtonPopup::setIcon(std::string frame) {
     rebuildPreview();
 }
 
-void QuickButtonPopup::setColor(cocos2d::ccColor3B color) {
+void QuickButtonPopup::setButtonColor(cocos2d::ccColor3B color) {
     m_candidate.color = color;
     rebuildPreview();
     rebuildColorSwatches();
@@ -460,7 +461,7 @@ void QuickButtonPopup::rebuildColorSwatches() {
         }
 
         auto* button = CCMenuItemExt::createSpriteExtra(holder, [this, color](CCMenuItemSpriteExtra*) {
-            this->setColor(color);
+            this->setButtonColor(color);
         });
         button->setPosition({x, 0.f});
         m_colorMenu->addChild(button);
@@ -481,7 +482,7 @@ void QuickButtonPopup::rebuildPreview() {
 void QuickButtonPopup::onSave(CCObject*) {
     std::string name = m_nameInput ? std::string(m_nameInput->getString()) : std::string();
     if (name.empty()) {
-        PaimonNotify::create("Ponle un nombre al acceso.", NotificationIcon::Warning)->show();
+        PaimonNotify::show("Ponle un nombre al acceso.", NotificationIcon::Warning);
         return;
     }
 
@@ -492,8 +493,8 @@ void QuickButtonPopup::onSave(CCObject*) {
         std::error_code ec;
         if (!std::filesystem::is_regular_file(m_candidate.imagePath, ec) || ec) {
             m_candidate.imagePath.clear();
-            PaimonNotify::create(
-                "La imagen ya no existe: se usa el frame del juego.", NotificationIcon::Warning)->show();
+            PaimonNotify::show(
+                "La imagen ya no existe: se usa el frame del juego.", NotificationIcon::Warning);
         }
     }
     if (m_candidate.sfxKind < 0 || m_candidate.sfxKind > 3) m_candidate.sfxKind = 0;
@@ -505,8 +506,8 @@ void QuickButtonPopup::onSave(CCObject*) {
     m_candidate.sfxFadeOutMs = std::max(0, m_candidate.sfxFadeOutMs);
     if (m_candidate.sfxEndMs != 0 && m_candidate.sfxEndMs <= m_candidate.sfxStartMs) {
         m_candidate.sfxEndMs = 0;
-        PaimonNotify::create(
-            "El fin era menor que el inicio: suena entero.", NotificationIcon::Warning)->show();
+        PaimonNotify::show(
+            "El fin era menor que el inicio: suena entero.", NotificationIcon::Warning);
     }
 
     // id derives from the name at creation only; edits keep it so saved order and wheel slots survive.
@@ -519,13 +520,13 @@ void QuickButtonPopup::onSave(CCObject*) {
     if (!isActive && static_cast<int>(activeOptions.size()) >= MAX_RADIAL_OPTIONS) {
         std::string message =
             fmt::format("El Quick Hub admite hasta {} botones.", MAX_RADIAL_OPTIONS);
-        PaimonNotify::create(message.c_str(), NotificationIcon::Warning)->show();
+        PaimonNotify::show(message.c_str(), NotificationIcon::Warning);
         return;
     }
 
     m_candidate.name = std::move(name);
     if (!QuickHubManager::get().saveCustomButton(m_candidate)) {
-        PaimonNotify::create("No se pudo guardar el boton.", NotificationIcon::Error)->show();
+        PaimonNotify::show("No se pudo guardar el boton.", NotificationIcon::Error);
         return;
     }
 
@@ -536,9 +537,9 @@ void QuickButtonPopup::onSave(CCObject*) {
 
     if (m_onSaved) m_onSaved(m_candidate.id);
 
-    PaimonNotify::create(
+    PaimonNotify::show(
         m_editing ? "Boton actualizado!" : "Boton anadido al Quick Hub!",
-        NotificationIcon::Success)->show();
+        NotificationIcon::Success);
     this->keyBackClicked();
 }
 

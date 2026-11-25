@@ -84,13 +84,6 @@ bool CursorConfigPopup::init() {
     m_mainLayer->addChild(m_advancedTab, 5);
 
     createTabButtons();
-    buildGalleryTab();
-    buildShopTab();
-    buildSettingsTab();
-    buildTrailTab();
-    buildTransitionTab();
-    buildClickTab();
-    buildAdvancedTab();
 
     this->schedule(schedule_selector(CursorConfigPopup::updateSmoothScroll));
     this->schedule(schedule_selector(CursorConfigPopup::updateTrailPreview));
@@ -105,6 +98,7 @@ void CursorConfigPopup::onExit() {
     flushTrailSave();
     flushTransitionSave();
     flushClickSave();
+    CursorManager::get().saveConfig();
     if (m_shopTab) m_shopTab->shutdown();
     this->unschedule(schedule_selector(CursorConfigPopup::checkScrollPosition));
     this->unschedule(schedule_selector(CursorConfigPopup::updateSmoothScroll));
@@ -117,35 +111,30 @@ void CursorConfigPopup::onExit() {
     Popup::onExit();
 }
 
-void CursorConfigPopup::scrollWheel(float x, float y) {
+bool CursorConfigPopup::scrollWheel(float x, float y) {
     if (m_currentTab == 6) {
-        kit::queueWheelScroll(m_advancedScroll, x, y, m_advancedScrollTargetY, m_advancedScrollTargetSet);
-        return;
+        return kit::queueWheelScroll(m_advancedScroll, x, y, m_advancedScrollTargetY, m_advancedScrollTargetSet);
     }
     if (m_currentTab == 5) {
-        kit::queueWheelScroll(m_clickScroll, x, y, m_clickScrollTargetY, m_clickScrollTargetSet);
-        return;
+        return kit::queueWheelScroll(m_clickScroll, x, y, m_clickScrollTargetY, m_clickScrollTargetSet);
     }
     if (m_currentTab == 4) {
-        kit::queueWheelScroll(m_transitionScroll, x, y, m_transitionScrollTargetY, m_transitionScrollTargetSet);
-        return;
+        return kit::queueWheelScroll(m_transitionScroll, x, y, m_transitionScrollTargetY, m_transitionScrollTargetSet);
     }
     if (m_currentTab == 3) {
-        kit::queueWheelScroll(m_trailScroll, x, y, m_trailScrollTargetY, m_trailScrollTargetSet);
-        return;
+        return kit::queueWheelScroll(m_trailScroll, x, y, m_trailScrollTargetY, m_trailScrollTargetSet);
     }
     if (m_currentTab == 2) {
-        kit::queueWheelScroll(m_scrollLayer, x, y, m_settingsScrollTargetY, m_settingsScrollTargetSet);
-        return;
+        return kit::queueWheelScroll(m_scrollLayer, x, y, m_settingsScrollTargetY, m_settingsScrollTargetSet);
     }
     if (m_currentTab == 1) {
         if (m_shopTab) m_shopTab->handleScrollWheel(x, y);
-        return;
+        return true;
     }
     if (m_currentTab == 0) {
-        kit::queueWheelScroll(m_thumbScroll, x, y, m_thumbScrollTargetY, m_thumbScrollTargetSet);
-        return;
+        return kit::queueWheelScroll(m_thumbScroll, x, y, m_thumbScrollTargetY, m_thumbScrollTargetSet);
     }
+    return false;
 }
 
 void CursorConfigPopup::updateSmoothScroll(float dt) {
@@ -173,70 +162,36 @@ void CursorConfigPopup::createTabButtons() {
     m_mainLayer->addChildAtPosition(menu, Anchor::Top, {0.f, -38.f});
     menu->setZOrder(10);
 
-    auto spr1 = ButtonSprite::create("Galeria", "bigFont.fnt", "GJ_button_04.png", 0.9f);
-    spr1->setScale(0.5f);
-    auto tab1 = CCMenuItemSpriteExtra::create(spr1, this, menu_selector(CursorConfigPopup::onTabSwitch));
-    tab1->setTag(0);
-    tab1->setID("cursor-gallery-tab-btn"_spr);
-    menu->addChild(tab1);
-    m_tabs.push_back(tab1);
-
-    auto sprShop = ButtonSprite::create("Tienda", "bigFont.fnt", "GJ_button_04.png", 0.9f);
-    sprShop->setScale(0.5f);
-    auto tabShop = CCMenuItemSpriteExtra::create(sprShop, this, menu_selector(CursorConfigPopup::onTabSwitch));
-    tabShop->setTag(1);
-    tabShop->setID("cursor-shop-tab-btn"_spr);
-    menu->addChild(tabShop);
-    m_tabs.push_back(tabShop);
-
-    auto spr2 = ButtonSprite::create("Ajustes", "bigFont.fnt", "GJ_button_04.png", 0.9f);
-    spr2->setScale(0.5f);
-    auto tab2 = CCMenuItemSpriteExtra::create(spr2, this, menu_selector(CursorConfigPopup::onTabSwitch));
-    tab2->setTag(2);
-    tab2->setID("cursor-settings-tab-btn"_spr);
-    menu->addChild(tab2);
-    m_tabs.push_back(tab2);
-
-    auto spr3 = ButtonSprite::create("Estela", "bigFont.fnt", "GJ_button_04.png", 0.9f);
-    spr3->setScale(0.5f);
-    auto tab3 = CCMenuItemSpriteExtra::create(spr3, this, menu_selector(CursorConfigPopup::onTabSwitch));
-    tab3->setTag(3);
-    tab3->setID("cursor-trail-tab-btn"_spr);
-    menu->addChild(tab3);
-    m_tabs.push_back(tab3);
-
-    auto spr4 = ButtonSprite::create("Transicion", "bigFont.fnt", "GJ_button_04.png", 0.9f);
-    spr4->setScale(0.5f);
-    auto tab4 = CCMenuItemSpriteExtra::create(spr4, this, menu_selector(CursorConfigPopup::onTabSwitch));
-    tab4->setTag(4);
-    tab4->setID("cursor-transition-tab-btn"_spr);
-    menu->addChild(tab4);
-    m_tabs.push_back(tab4);
-
-    auto spr5 = ButtonSprite::create("Click", "bigFont.fnt", "GJ_button_04.png", 0.9f);
-    spr5->setScale(0.5f);
-    auto tab5 = CCMenuItemSpriteExtra::create(spr5, this, menu_selector(CursorConfigPopup::onTabSwitch));
-    tab5->setTag(5);
-    tab5->setID("cursor-click-tab-btn"_spr);
-    menu->addChild(tab5);
-    m_tabs.push_back(tab5);
-
-    auto spr6 = ButtonSprite::create("Avanzado", "bigFont.fnt", "GJ_button_04.png", 0.9f);
-    spr6->setScale(0.5f);
-    auto tab6 = CCMenuItemSpriteExtra::create(spr6, this, menu_selector(CursorConfigPopup::onTabSwitch));
-    tab6->setTag(6);
-    tab6->setID("cursor-advanced-tab-btn"_spr);
-    menu->addChild(tab6);
-    m_tabs.push_back(tab6);
+    std::pair<char const*, std::string> const tabs[] = {
+        {"Galeria", "cursor-gallery-tab-btn"_spr},
+        {"Tienda", "cursor-shop-tab-btn"_spr},
+        {"Ajustes", "cursor-settings-tab-btn"_spr},
+        {"Estela", "cursor-trail-tab-btn"_spr},
+        {"Transicion", "cursor-transition-tab-btn"_spr},
+        {"Click", "cursor-click-tab-btn"_spr},
+        {"Avanzado", "cursor-advanced-tab-btn"_spr},
+    };
+    int tag = 0;
+    for (auto const& [label, id] : tabs) {
+        auto spr = ButtonSprite::create(label, "bigFont.fnt", "GJ_button_04.png", 0.9f);
+        spr->setScale(0.5f);
+        auto tab = CCMenuItemSpriteExtra::create(spr, this, menu_selector(CursorConfigPopup::onTabSwitch));
+        tab->setTag(tag++);
+        tab->setID(id);
+        menu->addChild(tab);
+        m_tabs.push_back(tab);
+    }
 
     menu->updateLayout();
-    onTabSwitch(tab1);
+    onTabSwitch(m_tabs.front());
 }
 
 void CursorConfigPopup::onTabSwitch(CCObject* sender) {
     auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
     if (!btn) return;
+    if (btn->getTag() < 0 || btn->getTag() >= 7) return;
     m_currentTab = btn->getTag();
+    buildTabIfNeeded(m_currentTab);
 
     m_galleryTab->setVisible(m_currentTab == 0);
     if (m_shopTab)     m_shopTab->setVisible(m_currentTab == 1);
@@ -266,17 +221,23 @@ void CursorConfigPopup::onTabSwitch(CCObject* sender) {
     }
 }
 
+void CursorConfigPopup::buildTabIfNeeded(int tab) {
+    if (tab < 0 || tab >= 7 || m_builtTabs[tab]) return;
+    m_builtTabs[tab] = true;
+    switch (tab) {
+        case 0: buildGalleryTab(); break;
+        case 1: buildShopTab(); break;
+        case 2: buildSettingsTab(); break;
+        case 3: buildTrailTab(); break;
+        case 4: buildTransitionTab(); break;
+        case 5: buildClickTab(); break;
+        case 6: buildAdvancedTab(); break;
+    }
+}
+
 
 char const* CursorConfigPopup::slotDisplayName(CursorState state) {
-    switch (state) {
-        case CursorState::Move:     return "Mover";
-        case CursorState::Hover:    return "Boton";
-        case CursorState::Click:    return "Click";
-        case CursorState::Text:     return "Texto";
-        case CursorState::Disabled: return "Bloqueado";
-        case CursorState::Idle:
-        default:                    return "Normal";
-    }
+    return cursorStateName(state);
 }
 
 std::string CursorConfigPopup::currentPack() const {
@@ -384,6 +345,7 @@ void CursorConfigPopup::buildGalleryTab() {
     float scrollH = scrollTop - scrollBottom;
 
     m_thumbScroll = ScrollLayer::create({scrollW, scrollH});
+    if (m_thumbScroll) m_thumbScroll->setAnchorPoint({0.f, 0.f});
     m_thumbScroll->setPosition({(content.width - scrollW) / 2.f, scrollBottom});
     m_galleryTab->addChild(m_thumbScroll, 1);
     // cells live in geode's contentlayer.
@@ -670,8 +632,8 @@ void CursorConfigPopup::onPackNext(CCObject*) {
 void CursorConfigPopup::onDeletePack(CCObject*) {
     std::string pack = currentPack();
     if (pack.empty()) {
-        PaimonNotify::create("Elige un pack para borrar (las imagenes sueltas no se borran como pack).",
-            NotificationIcon::Info)->show();
+        PaimonNotify::show("Elige un pack para borrar (las imagenes sueltas no se borran como pack).",
+            NotificationIcon::Info);
         return;
     }
 
@@ -685,7 +647,7 @@ void CursorConfigPopup::onDeletePack(CCObject*) {
             auto popup = self.lock();
             if (!popup || !popup->getParent()) return;
             CursorManager::get().removePack(pack);
-            PaimonNotify::create("Pack borrado", NotificationIcon::Success)->show();
+            PaimonNotify::show("Pack borrado", NotificationIcon::Success);
             auto* p = static_cast<CursorConfigPopup*>(popup.data());
             p->m_currentPackIdx = 0;
             p->refreshPackList();
@@ -716,15 +678,15 @@ void CursorConfigPopup::onSelectImage(CCObject* sender) {
     syncEnableUI(nowEnabled);
 
     if (!wasEnabled && nowEnabled) {
-        PaimonNotify::create(
+        PaimonNotify::show(
             fmt::format("Cursor {} asignado y activado!", slotDisplayName(m_activeSlot)),
             NotificationIcon::Success
-        )->show();
+        );
     } else {
-        PaimonNotify::create(
+        PaimonNotify::show(
             fmt::format("Cursor {} asignado!", slotDisplayName(m_activeSlot)),
             NotificationIcon::Success
-        )->show();
+        );
     }
     refreshGallery();
     refreshTransitionPreviewSprites();
@@ -748,7 +710,7 @@ void CursorConfigPopup::onDeleteImage(CCObject* sender) {
             auto popup = self.lock();
             if (!popup || !popup->getParent()) return;
             CursorManager::get().removeFromGallery(filename);
-            PaimonNotify::create("Imagen eliminada", NotificationIcon::Info)->show();
+            PaimonNotify::show("Imagen eliminada", NotificationIcon::Info);
             auto* p = static_cast<CursorConfigPopup*>(popup.data());
             p->refreshGallery();
             p->refreshTransitionPreviewSprites();
@@ -759,7 +721,7 @@ void CursorConfigPopup::onDeleteImage(CCObject* sender) {
 void CursorConfigPopup::onDeleteAllImages(CCObject*) {
     auto images = CursorManager::get().getGalleryImages();
     if (images.empty()) {
-        PaimonNotify::create("La galeria ya esta vacia", NotificationIcon::Info)->show();
+        PaimonNotify::show("La galeria ya esta vacia", NotificationIcon::Info);
         return;
     }
 
@@ -785,7 +747,7 @@ void CursorConfigPopup::onDeleteAllImages(CCObject*) {
             if (cleaned > 0) {
                 note += fmt::format(" ({} archivos corruptos eliminados)", cleaned);
             }
-            PaimonNotify::create(note, NotificationIcon::Success)->show();
+            PaimonNotify::show(note, NotificationIcon::Success);
             auto* p = static_cast<CursorConfigPopup*>(popup.data());
             p->m_currentPackIdx = 0;
             p->refreshPackList();
@@ -809,19 +771,19 @@ void CursorConfigPopup::onAddImage(CCObject*) {
             if (reason.empty()) {
                 reason = "Formatos validos: imagenes, .cur/.ani/.ico y packs .zip.";
             }
-            PaimonNotify::create(reason, NotificationIcon::Error)->show();
+            PaimonNotify::show(reason, NotificationIcon::Error);
             return;
         }
 
         auto* p = static_cast<CursorConfigPopup*>(popup.data());
 
         if (imported.size() == 1) {
-            PaimonNotify::create("Cursor anadido!", NotificationIcon::Success)->show();
+            PaimonNotify::show("Cursor anadido!", NotificationIcon::Success);
         } else {
-            PaimonNotify::create(
+            PaimonNotify::show(
                 fmt::format("Se importaron {} cursores en un pack nuevo!", imported.size()),
                 NotificationIcon::Success
-            )->show();
+            );
         }
 
         CursorState slot = p->m_activeSlot;
@@ -843,7 +805,6 @@ void CursorConfigPopup::buildSettingsTab() {
     float innerW = kit::cardInnerWidth(scrollW);
 
     auto& cfg = CursorManager::get().config();
-    auto save = [] { CursorManager::get().saveConfig(); };
 
     auto* hero = kit::makeHeroToggle(scrollW,
         "Cursor personalizado",
@@ -854,10 +815,10 @@ void CursorConfigPopup::buildSettingsTab() {
             c.enabled = v;
             applyLive();
             if (c.enabled && c.idleImage.empty() && c.moveImage.empty()) {
-                PaimonNotify::create(
+                PaimonNotify::show(
                     "Elige primero una imagen Normal o Mover en la Galeria. Hasta entonces se vera el cursor del sistema.",
                     NotificationIcon::Info
-                )->show();
+                );
             }
         },
         &m_enableToggle, &m_enableStateLabel);
@@ -892,9 +853,9 @@ void CursorConfigPopup::buildSettingsTab() {
                 c.trailEnabled = v;
                 applyLive();
                 if (v && !c.enabled) {
-                    PaimonNotify::create(
+                    PaimonNotify::show(
                         "Activa el Cursor personalizado: la estela va con el.",
-                        NotificationIcon::Info)->show();
+                        NotificationIcon::Info);
                 }
             }),
         kit::makeButtonRow(innerW,
@@ -953,48 +914,48 @@ void CursorConfigPopup::buildAdvancedTab() {
             "Cambiar sobre botones",
             "Usa la imagen 'Boton' al pasar sobre algo clickeable.",
             cfg.hoverEnabled,
-            [this, save](bool v) {
+            [save](bool v) {
                 auto& c = CursorManager::get().config();
                 c.hoverEnabled = v; save();
                 if (v && c.hoverImage.empty()) {
-                    PaimonNotify::create("Asigna una imagen 'Boton' en la Galeria para ver este estado.",
-                        NotificationIcon::Info)->show();
+                    PaimonNotify::show("Asigna una imagen 'Boton' en la Galeria para ver este estado.",
+                        NotificationIcon::Info);
                 }
             }),
         kit::makeToggleRow(innerW,
             "Cambiar al hacer click",
             "Usa la imagen 'Click' mientras mantienes el boton izquierdo.",
             cfg.clickEnabled,
-            [this, save](bool v) {
+            [save](bool v) {
                 auto& c = CursorManager::get().config();
                 c.clickEnabled = v; save();
                 if (v && c.clickImage.empty()) {
-                    PaimonNotify::create("Asigna una imagen 'Click' en la Galeria para ver este estado.",
-                        NotificationIcon::Info)->show();
+                    PaimonNotify::show("Asigna una imagen 'Click' en la Galeria para ver este estado.",
+                        NotificationIcon::Info);
                 }
             }),
         kit::makeToggleRow(innerW,
             "Cambiar sobre texto",
             "Usa la imagen 'Texto' sobre campos de escritura.",
             cfg.textEnabled,
-            [this, save](bool v) {
+            [save](bool v) {
                 auto& c = CursorManager::get().config();
                 c.textEnabled = v; save();
                 if (v && c.textImage.empty()) {
-                    PaimonNotify::create("Asigna una imagen 'Texto' en la Galeria para ver este estado.",
-                        NotificationIcon::Info)->show();
+                    PaimonNotify::show("Asigna una imagen 'Texto' en la Galeria para ver este estado.",
+                        NotificationIcon::Info);
                 }
             }),
         kit::makeToggleRow(innerW,
             "Cambiar sobre botones bloqueados",
             "Usa la imagen 'Bloqueado' sobre botones desactivados.",
             cfg.disabledEnabled,
-            [this, save](bool v) {
+            [save](bool v) {
                 auto& c = CursorManager::get().config();
                 c.disabledEnabled = v; save();
                 if (v && c.disabledImage.empty()) {
-                    PaimonNotify::create("Asigna una imagen 'Bloqueado' en la Galeria para ver este estado.",
-                        NotificationIcon::Info)->show();
+                    PaimonNotify::show("Asigna una imagen 'Bloqueado' en la Galeria para ver este estado.",
+                        NotificationIcon::Info);
                 }
             }),
         kit::makeButtonRow(innerW,
@@ -1870,7 +1831,7 @@ void CursorConfigPopup::rebuildClickControls() {
         kit::makeSelectRow(innerW,
             "Al apretar", "Se reproduce en el momento del click.",
             soundNames, static_cast<int>(c.pressSound),
-            [this, touch](int index) {
+            [touch](int index) {
                 auto& conf = CursorManager::get().config();
                 conf.click.pressSound = static_cast<fx::ClickSound>(index);
                 touch();
@@ -1880,7 +1841,7 @@ void CursorConfigPopup::rebuildClickControls() {
         kit::makeSelectRow(innerW,
             "Al soltar", "Se reproduce al levantar el boton.",
             soundNames, static_cast<int>(c.releaseSound),
-            [this, touch](int index) {
+            [touch](int index) {
                 auto& conf = CursorManager::get().config();
                 conf.click.releaseSound = static_cast<fx::ClickSound>(index);
                 touch();
@@ -2198,7 +2159,7 @@ void CursorConfigPopup::updateClickPreview(float dt) {
     }
 }
 
-void CursorConfigPopup::checkScrollPosition(float dt) {
+void CursorConfigPopup::checkScrollPosition(float) {
     if (!m_scrollArrow || !m_scrollLayer) return;
     float totalH = m_scrollLayer->m_contentLayer->getContentSize().height;
     float viewH = m_scrollLayer->getContentSize().height;

@@ -83,7 +83,7 @@ void AnimateSession::attach(LevelEditorLayer* editor) {
     if (!editor || m_editor == editor) return;
     m_editor = editor;
     m_key = levelKey(editor->m_level);
-    m_doc = loadDocument(m_key);
+    m_doc = loadLevelDocument(editor->m_level);
     m_prefs = loadPrefs();
     m_open = Mod::get()->getSavedValue<bool>(kOpenKey, false);
     m_playing = false;
@@ -638,7 +638,7 @@ std::unordered_set<int> AnimateSession::reservedGroups() const {
 int AnimateSession::allocateGroup(std::unordered_set<int>& taken) const {
     auto* editor = this->editor();
     if (!editor) return 0;
-    gd::unordered_set<int> exclude;
+    std::unordered_set<int> exclude;
     for (int group : taken) exclude.insert(group);
     int const group = editor->getNextFreeGroupID(exclude);
     if (group <= 0 || group > kMaxGroup) return 0;

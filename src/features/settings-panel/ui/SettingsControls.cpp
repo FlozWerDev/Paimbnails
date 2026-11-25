@@ -342,7 +342,7 @@ CCNode* createTextInputRow(const char* label, std::string const& initialValue,
 
     float inputW = std::max(width * 0.5f, 140.f);
     auto input = geode::TextInput::create(inputW / 0.72f, placeholder ? placeholder : "", "chatFont.fnt");
-    input->setCommonFilter(geode::CommonFilter::Any);
+    input->setCommonFilter(geode::CommonFilter::Text);
     if (maxChars > 0) input->setMaxCharCount(maxChars);
     input->setString(initialValue);
     input->setPosition({width - inputW / 2.f - 10.f, ROW_HEIGHT / 2.f});

@@ -23,9 +23,7 @@ constexpr float kCellHeight = 86.f;
 constexpr float kCellGap    = 6.f;
 // cards per view; each drags a thumb download, so keep it low even when the request brings more.
 constexpr int kPageSize = 20;
-// grid shows ~2 rows; at default speed (16) each wheel notch skipped a whole one.
-constexpr float kScrollSpeed = 5.f;
-// deep-search page cap.
+// max page crawl requests dispatched per deep search to avoid rate limiting remote cursor sources.
 constexpr int kDeepSearchRequests = 12;
 
 std::string toLower(std::string value) {
@@ -99,7 +97,7 @@ void CursorShopTab::buildChrome(CCSize size) {
 
     m_search = TextInput::create(150.f, "Buscar...", "chatFont.fnt");
     m_search->setMaxCharCount(24);
-    m_search->setTextAlign(TextInputAlign::Left);
+    m_search->setAlignment(Label::Alignment::Left);
     m_search->setScale(0.85f);
     m_search->setPosition({size.width - 92.f, storeRowY});
     m_search->setCallback([this](std::string const& text) {
@@ -157,6 +155,7 @@ void CursorShopTab::buildChrome(CCSize size) {
     this->addChild(backdrop, 0);
 
     m_grid = ScrollLayer::create({gridWidth, gridHeight});
+    if (m_grid) m_grid->setAnchorPoint({0.f, 0.f});
     m_grid->setPosition({12.f, gridBottom});
     this->addChild(m_grid, 1);
 
@@ -767,7 +766,7 @@ void CursorShopTab::onCard(CCObject* sender) {
 }
 
 void CursorShopTab::handleScrollWheel(float x, float y) {
-    kit::queueWheelScroll(m_grid, x, y, m_gridScrollTargetY, m_gridScrollTargetSet, kScrollSpeed);
+    kit::queueWheelScroll(m_grid, x, y, m_gridScrollTargetY, m_gridScrollTargetSet);
 }
 
 void CursorShopTab::stepScroll(float dt) {

@@ -33,9 +33,14 @@ const PLATFORMS = {
 const PARTICLES = {
   gd: 'squares', neon: 'sparks', synthwave: 'sparks', arcade: 'pixels', terminal: 'rain', glitch: 'pixels',
   holo: 'sparkles', aurora: 'dust', inferno: 'embers', frost: 'snow', galaxy: 'stars', royal: 'sparkles',
-  pastel: 'hearts', cozy: 'dust',
+  pastel: 'hearts', cozy: 'dust', cyberpunk: 'sparks', quest: 'dust',
 };
-const SOUND = { gd: [784, 1047, 1319], arcade: [523, 659, 784, 1047], terminal: [880, 880], glitch: [330, 990] };
+const SOUND = {
+  gd: [784, 1047, 1319], arcade: [523, 659, 784, 1047], terminal: [880, 880], glitch: [330, 990],
+  gameboy: [1046, 1318, 1568], cyberpunk: [440, 660, 880], retro95: [988, 1319], vhs: [220, 330],
+};
+const SQUARE_WAVE = new Set(['arcade', 'gd', 'gameboy', 'cyberpunk', 'retro95']);
+const PIXEL_BURST = new Set(['gd', 'arcade', 'gameboy']);
 
 const agoEs = sec => sec < 60 ? 'ahora' : sec < 3600 ? `hace ${Math.floor(sec / 60)} min` : `hace ${Math.floor(sec / 3600)} h`;
 const agoEn = sec => sec < 60 ? 'now' : sec < 3600 ? `${Math.floor(sec / 60)}m ago` : `${Math.floor(sec / 3600)}h ago`;
@@ -58,13 +63,64 @@ const COPY = {
     platformer: 'Platformer', closed: 'Closed', count: n => `${n} Requests`, ago: agoEn,
     stats: s => `Received ${s.received}  ·  Played ${s.played}  ·  Avg wait ${fmtWait(s.averageWait)}`,
   },
+  neon: {
+    brand: 'Level Requests', now: 'En el aire', waiting: 'Apagado', next: 'Proximos', newReq: 'Nuevo neon',
+    count: n => `${n} en cola`,
+  },
   arcade: {
-    now: 'NOW PLAYING', waiting: 'INSERT COIN', waitTitle: 'PRESS START', next: 'NEXT STAGE',
+    brand: '1UP  LEVEL REQUESTS', now: 'NOW PLAYING', waiting: 'INSERT COIN', waitTitle: 'PRESS START', next: 'NEXT STAGE',
     complete: 'STAGE CLEAR!', best: 'HI-SCORE!', newReq: 'NEW CHALLENGER!', progress: 'STAGE', attempt: 'CREDIT',
+    bestLabel: 'HI', by: 'BY ', req: 'P2 ', ago: agoEn, closed: 'GAME OVER', count: n => `CREDIT ${String(n).padStart(2, '0')}`,
+    empty: 'INSERT COIN TO PLAY',
   },
   terminal: {
-    now: 'now_playing', waiting: 'idle', waitTitle: 'awaiting input', next: 'queue --next',
+    brand: 'paimbnails@obs:~$ queue', now: 'now_playing', waiting: 'idle', waitTitle: 'awaiting input', next: 'queue --next',
     complete: 'exit 0: nivel completado', best: 'record++', newReq: 'incoming request', progress: 'progress',
+    by: 'author=', req: 'from=', bestLabel: 'best', attempt: 'tries', ago: agoEn, closed: 'queue: closed', count: n => `[${n} pending]`,
+    empty: '# queue empty. waiting for requests...',
+  },
+  minimal: {
+    brand: 'Requests', now: 'Ahora', waiting: 'En espera', next: 'Despues', count: n => `${String(n).padStart(2, '0')} en cola`,
+    by: '', req: '',
+  },
+  gameboy: {
+    brand: 'Level Requests', now: 'NOW PLAYING', waiting: 'PAUSE', waitTitle: 'PRESS START', next: 'NEXT', complete: 'STAGE CLEAR!',
+    best: 'NEW RECORD!', newReq: 'NEW ITEM!', progress: 'LV', attempt: 'TRY', bestLabel: 'HI', by: 'BY ', req: 'FROM ', ago: agoEn,
+    count: n => `${n} QUEUED`, empty: 'NO ITEMS. PRESS A.',
+  },
+  retro95: {
+    brand: 'Requests.exe', now: 'Reproduciendo', waiting: 'Inactivo', waitTitle: 'Esperando un nivel…', next: 'Cola de niveles',
+    complete: 'Operacion completada', best: 'Nuevo record', newReq: 'Nuevo mensaje', count: n => `${n} elementos`,
+    empty: 'Esta carpeta esta vacia.',
+  },
+  blueprint: {
+    brand: 'PLANO NIVEL-REQ', now: 'FIG. 1 - ACTUAL', waiting: 'SIN DATOS', waitTitle: 'esperando especificacion', next: 'LISTA DE PIEZAS',
+    complete: 'APROBADO', best: 'REV. MEJORADA', newReq: 'NUEVA PIEZA', progress: 'AVANCE', count: n => `${n} PIEZAS`,
+  },
+  cyberpunk: {
+    brand: 'NET//REQUESTS', now: 'LIVE FEED', waiting: 'OFFLINE', waitTitle: 'AWAITING UPLINK', next: 'INCOMING',
+    complete: 'MISSION COMPLETE', best: 'NEW PEAK', newReq: 'INCOMING GIG', progress: 'SYNC', attempt: 'RUN',
+    count: n => `${n} IN BUFFER`, closed: 'LINK CLOSED', ago: agoEn, by: 'BY ', req: 'FROM ',
+  },
+  ticket: {
+    brand: 'Level Requests', now: 'En cartelera', waiting: 'Sala vacia', waitTitle: 'Proxima funcion en breve', next: 'Proximas funciones',
+    complete: 'FUNCION COMPLETA', best: 'NUEVO RECORD', newReq: 'Nueva entrada', count: n => `${n} entradas`,
+    attempt: 'Fila', empty: 'Sin entradas. ¡Pide la tuya en el chat!',
+  },
+  vhs: {
+    brand: 'REC', now: 'PLAY', waiting: 'PAUSE', waitTitle: 'NO SIGNAL', next: 'NEXT TAPE', complete: 'END OF TAPE',
+    best: 'NEW BEST', newReq: 'NEW TAPE', progress: 'TRACKING', count: n => `SP ${n} TAPES`, by: 'DIR ', req: 'FROM ',
+    attempt: 'TAKE', ago: agoEn, empty: 'NO TAPES IN QUEUE',
+  },
+  notebook: {
+    brand: 'Mis requests', now: 'Estoy jugando', waiting: 'Descansando', waitTitle: 'a la espera de otro nivel…', next: 'Pendientes',
+    complete: '¡Lo logre!', best: '¡Nuevo record!', newReq: '¡Nuevo pedido!', count: n => `${n} pendientes`,
+    empty: 'Nada pendiente. Todo hecho.',
+  },
+  quest: {
+    brand: 'Tablon de misiones', now: 'Mision en curso', waiting: 'Sin mision', waitTitle: 'El heraldo trae noticias…', next: 'Misiones disponibles',
+    complete: '¡Mision cumplida!', best: '¡Nueva hazaña!', newReq: 'Nueva mision', progress: 'Avance', attempt: 'Intento',
+    count: n => `${n} encargos`, by: 'forjado por ', req: 'encargo de ', empty: 'El tablon esta vacio.',
   },
   esports: { now: 'LIVE // NOW', waiting: 'STANDBY', next: 'UP NEXT', newReq: 'INCOMING', complete: 'GG!', best: 'PERSONAL BEST' },
   comic: { complete: '¡BOOM! ¡Completado!', best: '¡POW! ¡Récord!', newReq: '¡ZAS! Nuevo request' },
@@ -103,6 +159,8 @@ let prevPercent = null, celebratedKey = '', bestKey = '', lastMilestone = 0;
 let seenLatest = null, pendingToast = null;
 
 /* ---------- geometry dash assets ---------- */
+
+const GD_DECOR = { side: 'GJ_sideArt_001.png', arrow: 'GJ_arrow_01_001.png', info: 'GJ_infoIcon_001.png' };
 
 const GD = {
   fonts: {}, sprites: {}, fontsReady: false, sheetReady: false, fontLoad: null, sheetLoad: null,
@@ -145,7 +203,7 @@ const GD = {
   },
 
   async loadSheet() {
-    const wanted = new Set(['GJ_starsIcon_001.png', 'GJ_moonsIcon_001.png']);
+    const wanted = new Set(['GJ_starsIcon_001.png', 'GJ_moonsIcon_001.png', ...Object.values(GD_DECOR)]);
     Object.values(DIFF).forEach(d => wanted.add(`diffIcon_${d[2]}_btn_001.png`));
     const [xml, img] = await Promise.all([
       fetch('/gd/sheet.plist').then(r => { if (!r.ok) throw new Error('sheet'); return r.text(); }),
@@ -183,6 +241,10 @@ const GD = {
         ctx.drawImage(img, x, y, w, h, 0, 0, w, h);
       }
       this.sprites[name] = canvas.toDataURL();
+    }
+    // css decorations (corners, arrows) read these as background images.
+    for (const [key, name] of Object.entries(GD_DECOR)) {
+      if (this.sprites[name]) document.documentElement.style.setProperty(`--gd-${key}`, `url("${this.sprites[name]}")`);
     }
   },
 
@@ -309,7 +371,7 @@ const FX = {
         x: rect.left + rect.width * (.25 + Math.random() * .5), y: rect.top + rect.height * .45,
         vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, rot: Math.random() * 6, spin: (Math.random() - .5) * 14,
         w: 5 + Math.random() * 6, h: 3 + Math.random() * 5, life: 0, max: 1.6 + Math.random() * 1.2,
-        color: colors[i % colors.length], square: styleKey === 'gd' || styleKey === 'arcade',
+        color: colors[i % colors.length], square: PIXEL_BURST.has(styleKey),
       });
     }
     this.wake();
@@ -465,7 +527,7 @@ function chime() {
     audio ??= new AudioContext();
     if (audio.state === 'suspended') audio.resume();
     const notes = SOUND[styleKey] || [660, 990];
-    const square = styleKey === 'arcade' || styleKey === 'gd';
+    const square = SQUARE_WAVE.has(styleKey);
     const t = audio.currentTime + .02;
     notes.forEach((freq, i) => {
       const osc = audio.createOscillator(), gain = audio.createGain();
@@ -527,7 +589,8 @@ function metaSpan(prefix, value, cls = '', font) {
 function scene() {
   const el = node('div', 'scene');
   el.setAttribute('aria-hidden', 'true');
-  el.append(node('i', 'scene-bg'), node('i', 'scene-ground'), node('i', 'scene-spike'), node('i', 'scene-cube'));
+  el.append(node('i', 'scene-bg'), node('i', 'scene-glow'), node('i', 'scene-block'), node('i', 'scene-orb'),
+    node('i', 'scene-ground'), node('i', 'scene-spike'), node('i', 'scene-cube'));
   return el;
 }
 
@@ -859,14 +922,16 @@ function applyConfig(c) {
 
   if (styleKey === 'gd') GD.ensureFonts();
   // the sheet decodes to ~16 mb; a gallery of iframes only pays that for the gd card.
-  if (c.showDifficulty && (!embedded || styleKey === 'gd')) GD.ensureSheet();
+  if ((c.showDifficulty || styleKey === 'gd') && (!embedded || styleKey === 'gd')) GD.ensureSheet();
   FX.accent = getComputedStyle(body).getPropertyValue('--accent').trim() || '#ffffff';
   FX.setKind(c.showParticles ? PARTICLES[styleKey] || 'none' : 'none');
+  tickClock();
 
   const brand = overlay.querySelector('.brand');
   unpaintGD(document);
   label(brand, copy.brand, 'gold');
   paintGD(overlay.querySelector('.header'));
+  paintGD(overlay.querySelector('.next-title'));
   return true;
 }
 
@@ -963,7 +1028,7 @@ function update(raw, forced = false) {
   const closed = $('closed');
   closed.hidden = s.accepting !== false;
   closed.textContent = copy.closed;
-  $('next-label').textContent = s.random ? copy.random : copy.next;
+  setText($('next-label'), s.random ? copy.random : copy.next);
   $('order-label').textContent = s.random ? copy.randomHint : '';
 
   const level = JSON.stringify([p.active, p.id]);
@@ -1016,6 +1081,19 @@ async function poll() {
     setTimeout(poll, 650);
   }
 }
+
+/* ---------- clock ---------- */
+
+// vhs, terminal and retro95 print the time through css content.
+const CLOCK_STYLES = new Set(['vhs', 'terminal', 'retro95']);
+const two = n => String(n).padStart(2, '0');
+function tickClock() {
+  if (!CLOCK_STYLES.has(styleKey)) return;
+  const d = new Date(), rootStyle = document.documentElement.style;
+  rootStyle.setProperty('--clock-hm', `"${two(d.getHours())}:${two(d.getMinutes())}"`);
+  rootStyle.setProperty('--clock-hms', `"${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}"`);
+}
+setInterval(tickClock, 1000);
 
 FX.init();
 poll();

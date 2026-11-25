@@ -8,6 +8,7 @@ namespace paimon::progression {
 // tier medal: effects are plain sprites, a new tier is one table row.
 class TierBadgeNode : public cocos2d::CCNode {
 public:
+    using cocos2d::CCNode::init;
     static TierBadgeNode* create(int level, float size);
 
     void setLevel(int level);

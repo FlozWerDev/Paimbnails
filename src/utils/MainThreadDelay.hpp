@@ -2,6 +2,7 @@
 
 #include <Geode/Geode.hpp>
 #include "../core/RuntimeLifecycle.hpp"
+#include "../platform/PaimSettings.hpp"
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -109,9 +110,7 @@ inline void requestDeferredModSave(float delay = 0.2f) {
     auto generation = ++g_deferredModSaveGeneration;
     scheduleMainThreadDelay(std::max(0.f, delay), [generation]() {
         if (generation != g_deferredModSaveGeneration.load(std::memory_order_acquire)) return;
-        auto* mod = geode::Mod::get();
-        if (!mod) return;
-        (void)mod->saveData();
+        paimon::platform::activeBackend().saveData();
     });
 }
 

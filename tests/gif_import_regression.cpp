@@ -20,7 +20,11 @@
 #include "../src/features/gif-import/services/GifGlowPass.cpp"
 #include "../src/features/gif-import/services/GifMotionPlanner.cpp"
 #include "../src/features/gif-import/services/GifPaintVectorizer.cpp"
+#include "../src/features/gif-import/services/GifSurfaceVectorizer.cpp"
+#include "../src/features/gif-import/services/GifSurfaceOptimizer.cpp"
+#include "../src/features/gif-import/services/GifPlanOptimizer.cpp"
 #include "../src/features/gif-import/services/ImageWatermark.cpp"
+#include "../src/features/gif-import/services/GifSmoothVectorizer.cpp"
 #include "../src/features/gif-import/services/GifImportPipeline.cpp"
 
 using namespace paimon::gifimport;
@@ -234,6 +238,7 @@ bool budgetLowersResolution() {
         }
     }
     auto options = exactOptions(16);
+    options.autoResolution = true;
     options.maxColors = 2;
     options.objectBudget = 100;
     auto result = buildPlan(source, options);
@@ -626,6 +631,9 @@ bool paintModeAvoidsInvisibleRepairs() {
         if (object.kind == PrimitiveKind::Circle &&
             std::min(object.width, object.height) < 1.25f) {
             ++tiny;
+            std::cout << "  tiny circle: x=" << object.x << " y=" << object.y
+                      << " w=" << object.width << " h=" << object.height
+                      << " layer=" << object.layer << '\n';
         }
     }
     std::size_t const hidden = hiddenPaintObjects(result.plan, objects);
@@ -749,6 +757,10 @@ bool paintModeDoesNotDotEveryJoin() {
         for (auto const& object : objects) {
             strokes += object.kind == PrimitiveKind::Stroke;
             circles += object.kind == PrimitiveKind::Circle;
+            if (!gridExact && object.kind == PrimitiveKind::Circle) {
+                std::cout << "  smooth join circle: x=" << object.x << " y=" << object.y
+                          << " d=" << object.width << '\n';
+            }
         }
         std::cout << "paint-joins" << (gridExact ? "-pixel" : "-smooth")
                   << ": objects=" << objects.size()
@@ -1269,6 +1281,7 @@ bool imageWatermarkIsDistributedAndDetectable() {
     auto budgetOptions = exactOptions(16);
     budgetOptions.maxColors = 2;
     budgetOptions.objectBudget = 100;
+    budgetOptions.autoResolution = true;
     auto budgetResult = buildPlan(budgetSource, budgetOptions);
     auto const budgetEvidence = budgetResult
         ? inspectImageWatermark(watermarkPayload(budgetResult.plan, false, false))
@@ -1319,6 +1332,7 @@ bool progressReachesEveryMode() {
 bool renderModeRefinesWithoutBlowingTheBudget() {
     auto options = paintOptions(48);
     options.mode = ImportMode::Render;
+    options.autoResolution = true;
     options.objectBudget = 800;
 
     auto result = buildPlan(paintAntialiasedScene(), options);
@@ -1369,6 +1383,7 @@ bool renderAnimationStaysIncrementalSized() {
     }
     auto options = paintOptions(20);
     options.mode = ImportMode::Render;
+    options.autoResolution = true;
     options.objectBudget = 120;
     auto result = buildPlan(source, options);
     bool const pass = result && result.plan.renderPasses >= 3 &&
@@ -1430,6 +1445,7 @@ bool softModesPreserveLightAndBudget() {
             pixels = renderPlanFrame(result.plan, 0, 4);
             if (pixels[3] == 0 || pixels[3] == 255) return false;
             options.objectBudget = 300;
+            options.autoResolution = true;
             source = animation(16, 16, 2, 80, 120, 160);
             for (int y = 0; y < 16; ++y) for (int x = 8; x < 16; ++x)
                 setPixel(source, 1, x, y, 240, 20, 30);
@@ -1580,7 +1596,108 @@ bool glowAddsBlendedHalos() {
     return pass;
 }
 
-int main() {
+SourceAnimation detailedAnimation() {
+    auto source = animation(48, 32, 12);
+    std::uint32_t random = 12345;
+    for (int frame = 0; frame < 12; ++frame) {
+        source.frames[frame].delayMs = 40 + frame * 10;
+        for (int y = 0; y < source.height; ++y) {
+            for (int x = 0; x < source.width; ++x) {
+                random ^= random << 13;
+                random ^= random >> 17;
+                random ^= random << 5;
+                auto const value = static_cast<std::uint8_t>((random & 1) ? 240 : 20);
+                setPixel(source, frame, x, y, value, value, value);
+            }
+        }
+    }
+    return source;
+}
+
+bool resolutionControlsPreserveDetailAndDuration() {
+    auto const source = detailedAnimation();
+    auto options = exactOptions(48);
+    options.maxColors = 2;
+    options.objectBudget = 2500;
+    options.motion = false;
+    auto const high = buildPlan(source, options);
+    options.maxDimension = 24;
+    auto const low = buildPlan(source, options);
+    options.maxDimension = 48;
+    options.autoResolution = true;
+    auto const automatic = buildPlan(source, options);
+    auto preservesDuration = [&](BuildResult const& result) {
+        int sourceDuration = 0, outputDuration = 0;
+        for (auto const& frame : source.frames) sourceDuration += frame.delayMs;
+        for (auto const& frame : result.plan.frames) outputDuration += frame.delayMs;
+        return result && sourceDuration == outputDuration && result.plan.frames.size() >= 2 &&
+            result.plan.totalObjects <= static_cast<std::size_t>(options.objectBudget);
+    };
+    std::cout << "resolution: high=" << high.plan.actualDimension
+              << " low=" << low.plan.actualDimension
+              << " auto=" << automatic.plan.actualDimension
+              << " frames=" << high.plan.frames.size() << '\n';
+    return preservesDuration(high) && preservesDuration(low) && preservesDuration(automatic) &&
+        high.plan.actualDimension == 48 && low.plan.actualDimension == 24 &&
+        automatic.plan.actualDimension >= 24 && high.plan.frames.size() < source.frames.size();
+}
+
+bool manualResolutionNeverSilentlyShrinks() {
+    auto source = detailedAnimation();
+    source.frames.resize(1);
+    auto options = exactOptions(48);
+    options.maxColors = 2;
+    options.objectBudget = 100;
+    auto const result = buildPlan(source, options);
+    std::cout << "fixed-resolution-budget: " << result.error << '\n';
+    return !result && result.error.find("Auto") != std::string::npos;
+}
+
+bool highResolutionAndRenderHonorTheSelectedSize() {
+    auto source = animation(680, 384, 2, 230, 40, 60);
+    for (int y = 0; y < source.height; ++y) for (int x = 0; x < source.width; ++x)
+        setPixel(source, 1, x, y, 30, 180, 230);
+    auto options = exactOptions(680);
+    auto const high = buildPlan(source, options);
+    options = exactOptions(48);
+    options.mode = ImportMode::Render;
+    auto const rendered = buildPlan(animation(48, 32, 1, 230, 40, 60), options);
+    std::cout << "selected-size: high=" << high.plan.actualDimension
+              << " render=" << rendered.plan.actualDimension << '\n';
+    return high && high.plan.width == 680 && high.plan.height == 384 &&
+        rendered && rendered.plan.actualDimension == 48;
+}
+
+bool motionPreservesMergedFrameSampling() {
+    auto source = slidingSprite(6);
+    source.frames.insert(source.frames.begin(), 2, source.frames.front());
+    for (std::size_t i = 0; i < source.frames.size(); ++i)
+        source.frames[i].delayMs = 50 + static_cast<int>(i) * 10;
+    auto options = exactOptions(20);
+    auto const moved = buildPlan(source, options);
+    options.motion = false;
+    auto const plain = buildPlan(source, options);
+    if (!moved || !plain || moved.plan.motionTracks.empty() ||
+        moved.plan.sampledFrames != static_cast<int>(source.frames.size()) ||
+        moved.plan.frames.size() != plain.plan.frames.size()) return false;
+    for (std::size_t i = 0; i < plain.plan.frames.size(); ++i) {
+        if (moved.plan.frames[i].delayMs != plain.plan.frames[i].delayMs ||
+            moved.plan.frames[i].cells != plain.plan.frames[i].cells) return false;
+    }
+    return true;
+}
+
+int main(int argc, char** argv) {
+    bool const resolution = resolutionControlsPreserveDetailAndDuration();
+    bool const fixedResolution = manualResolutionNeverSilentlyShrinks();
+    bool const selectedSize = highResolutionAndRenderHonorTheSelectedSize();
+    bool const motionSampling = motionPreservesMergedFrameSampling();
+    if (!resolution) std::cerr << "FAIL: resolution controls lost detail or animation duration\n";
+    if (!fixedResolution) std::cerr << "FAIL: manual resolution silently shrank to fit the budget\n";
+    if (!selectedSize) std::cerr << "FAIL: high resolution or render ignored the selected size\n";
+    if (!motionSampling) std::cerr << "FAIL: motion changed sampling or merged-frame timing\n";
+    if (argc > 1 && std::string(argv[1]) == "--resolution-only")
+        return resolution && fixedResolution && selectedSize && motionSampling ? 0 : 1;
     bool const softModes = softModesPreserveLightAndBudget();
     if (!softModes) std::cerr << "FAIL: soft modes lost light, native masks or object budget\n";
     bool const blurCompaction = blurCompactionPreservesCoverageAndCenters();
@@ -1680,7 +1797,7 @@ int main() {
     if (!render) std::cerr << "FAIL: render mode did not refine within its object budget\n";
     if (!renderBalance) std::cerr << "FAIL: render mode kept adding objects after reaching its target\n";
     if (!renderAnimation) std::cerr << "FAIL: render animation exceeded its object budget\n";
-    return softModes && blurCompaction && solid && watermark && blockSweeps && background && backgroundSolid && temporal && duplicates && schedule && noLoop && playback &&
+    return resolution && fixedResolution && selectedSize && motionSampling && softModes && blurCompaction && solid && watermark && blockSweeps && background && backgroundSolid && temporal && duplicates && schedule && noLoop && playback &&
         budget && circle && stroke && triangle && curve && colors && artAnimation &&
         motion && motionFrames && glow &&
         paintCoverage && paintStrokes && paintRepairs && paintSolidRect && paintMergedRects &&

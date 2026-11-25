@@ -8,6 +8,7 @@ namespace paimon::icon_gradients {
 class IconButton : public CCMenuItemSpriteExtra {
 
 private:
+    using CCMenuItemSpriteExtra::setColor;
 
     ColorNode* m_dot = nullptr;
     ColorNode* m_secondDot = nullptr;

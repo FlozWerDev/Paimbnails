@@ -8,6 +8,7 @@ namespace paimon::versus {
 
 class VersusRankBadgeNode : public cocos2d::CCNode {
 public:
+    using cocos2d::CCNode::init;
     static VersusRankBadgeNode* create(RankInfo const& rank, float size);
 
     void setRank(RankInfo const& rank);

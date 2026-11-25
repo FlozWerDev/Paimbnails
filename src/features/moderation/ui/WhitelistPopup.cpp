@@ -183,28 +183,28 @@ void WhitelistPopup::rebuildList() {
 void WhitelistPopup::onAdd(CCObject*) {
     std::string target = m_input->getString();
     if (target.empty()) {
-        PaimonNotify::create("Enter a username", NotificationIcon::Error)->show();
+        PaimonNotify::show("Enter a username", NotificationIcon::Error);
         return;
     }
 
     if (HttpClient::get().getModCode().empty()) {
-        PaimonNotify::create("Mod Code required", NotificationIcon::Error)->show();
+        PaimonNotify::show("Mod Code required", NotificationIcon::Error);
         return;
     }
 
     auto self = WeakRef<WhitelistPopup>(this);
-    HttpClient::get().addToWhitelist(target, "profilebackground", [self, target](bool success, std::string const& resp) {
+    HttpClient::get().addToWhitelist(target, "profilebackground", [self, target](bool success, std::string const&) {
         auto popup = self.lock();
         if (!popup) return;
 
         if (success) {
-            PaimonNotify::create(
+            PaimonNotify::show(
                 fmt::format("Added '{}' to whitelist", target).c_str(),
-                NotificationIcon::Success)->show();
+                NotificationIcon::Success);
             popup->m_input->setString("");
             popup->fetchWhitelist();
         } else {
-            PaimonNotify::create("Failed to add user", NotificationIcon::Error)->show();
+            PaimonNotify::show("Failed to add user", NotificationIcon::Error);
         }
     });
 }
@@ -218,22 +218,22 @@ void WhitelistPopup::onRemove(CCObject* sender) {
     std::string target = strObj->getCString();
 
     if (HttpClient::get().getModCode().empty()) {
-        PaimonNotify::create("Mod Code required", NotificationIcon::Error)->show();
+        PaimonNotify::show("Mod Code required", NotificationIcon::Error);
         return;
     }
 
     auto self = WeakRef<WhitelistPopup>(this);
-    HttpClient::get().removeFromWhitelist(target, "profilebackground", [self, target](bool success, std::string const& resp) {
+    HttpClient::get().removeFromWhitelist(target, "profilebackground", [self, target](bool success, std::string const&) {
         auto popup = self.lock();
         if (!popup) return;
 
         if (success) {
-            PaimonNotify::create(
+            PaimonNotify::show(
                 fmt::format("Removed '{}' from whitelist", target).c_str(),
-                NotificationIcon::Warning)->show();
+                NotificationIcon::Warning);
             popup->fetchWhitelist();
         } else {
-            PaimonNotify::create("Failed to remove user", NotificationIcon::Error)->show();
+            PaimonNotify::show("Failed to remove user", NotificationIcon::Error);
         }
     });
 }

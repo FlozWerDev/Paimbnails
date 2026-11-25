@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <Geode/Geode.hpp>
+#include <cctype>
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -18,6 +19,8 @@ struct EmoteToken {
     std::string name;
     size_t start = 0;
     size_t end = 0;
+    // one of GD's built-in emotes (":exclaim:", ":normal:", ...), not the catalog
+    bool native = false;
 };
 
 struct MentionToken {
@@ -27,6 +30,18 @@ struct MentionToken {
 };
 
 using CommentToken = std::variant<TextToken, EmoteToken, MentionToken>;
+
+// valid emote name: 2+ chars of [alnum_-]; shared by the renderer and the
+// autocomplete partial check.
+inline bool isValidEmoteName(std::string const& name) {
+    if (name.size() < 2) return false;
+    for (char c : name) {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-') {
+            return false;
+        }
+    }
+    return true;
+}
 
 class EmoteRenderer {
 public:

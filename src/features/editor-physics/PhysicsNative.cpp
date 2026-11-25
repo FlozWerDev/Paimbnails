@@ -19,12 +19,6 @@ float clampStrength(float value) {
     return std::clamp(value, 0.25f, 3.f);
 }
 
-Vec2 rotate(Vec2 value, float angle) {
-    float const c = std::cos(angle);
-    float const s = std::sin(angle);
-    return {value.x * c - value.y * s, value.x * s + value.y * c};
-}
-
 float directionOf(Vec2 velocity) {
     if (std::abs(velocity.x) < 0.0001f && std::abs(velocity.y) < 0.0001f) return 0.f;
     // advanced follow uses 0 = up, 90 = right, 180 = down, 270 = left.

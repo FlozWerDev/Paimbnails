@@ -1,3 +1,4 @@
+#include "../../../framework/compat/NativeUI.hpp"
 #include "LevelFacts.hpp"
 #include "ProgressTracker.hpp"
 #include <Geode/Geode.hpp>
@@ -10,7 +11,7 @@ namespace paimon::info {
 
 namespace {
 
-std::string s(gd::string const& v) { return std::string(v); }
+std::string s(std::string const& v) { return std::string(v); }
 
 void add(std::vector<Fact>& out, FactTab tab, std::string label, std::string value,
          bool accent = false) {
@@ -99,7 +100,7 @@ int difficultyValue(GJGameLevel* level) {
     // online levels ship m_difficulty unset, the rating is what the browser
     // reads. main levels are the other way around.
     if (level->m_levelType == GJLevelType::Main) return static_cast<int>(level->m_difficulty);
-    return level->getAverageDifficulty();
+    return paimon::compat::averageDifficulty(level);
 }
 
 // stars the creator asked for, mapped onto the same face values. 0 when the

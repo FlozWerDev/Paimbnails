@@ -1,0 +1,43 @@
+
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <limits>
+#include <cctype>
+#include <cstdint>
+#include <functional>
+#include <iostream>
+#include <optional>
+#include <span>
+#include <string>
+#include <utility>
+#include <vector>
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
+#include <chrono>
+#include <cstring>
+#include <sstream>
+#include <stdexcept>
+#include <filesystem>
+#include <fstream>
+#include <charconv>
+#include <string_view>
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+
+struct Mod {
+ static Mod* get(){static Mod value;return &value;}
+ template<class T> T getSettingValue(char const*) {return static_cast<T>(volume);}
+ double volume=0;
+};
+@@function|src/features/collab-editor/CollabVoice.cpp|float voiceVolume()@@
+int main() {
+ Mod::get()->volume=0.5; assert(voiceVolume()==0.5f);
+ Mod::get()->volume=0; assert(voiceVolume()==0.f);
+ Mod::get()->volume=-1; assert(voiceVolume()==0.f);
+ Mod::get()->volume=3; assert(voiceVolume()==1.f);
+ Mod::get()->volume=std::numeric_limits<double>::quiet_NaN(); assert(voiceVolume()==1.f);
+ std::cout << "PASS: collab_voice_zero_volume\n";
+}

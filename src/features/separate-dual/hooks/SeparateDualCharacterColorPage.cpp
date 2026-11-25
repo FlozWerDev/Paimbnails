@@ -1,6 +1,7 @@
 #include "../SeparateDualHelper.hpp"
 #include <Geode/Geode.hpp>
 #include <Geode/modify/CharacterColorPage.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 
 using namespace geode::prelude;
 using paimon::separate_dual::DualKitVault;
@@ -41,8 +42,8 @@ class $modify(PaimonSeparateDualColor, CharacterColorPage) {
     };
 
     static void onModify(auto& self) {
-        (void)self.setHookPriorityPre("CharacterColorPage::onPlayerColor", Priority::Last);
-        (void)self.setHookPriorityPre("CharacterColorPage::toggleGlow", Priority::Last);
+        (void)self.setHookPriorityPre("CharacterColorPage::onPlayerColor", Priority::VeryLate);
+        (void)self.setHookPriorityPre("CharacterColorPage::toggleGlow", Priority::VeryLate);
     }
 
     void hangSideTag(char const* text, ccColor3B color, float anchorX, float insetX) {
@@ -59,6 +60,13 @@ class $modify(PaimonSeparateDualColor, CharacterColorPage) {
     bool init() {
         if (!moduleEnabled()) return CharacterColorPage::init();
         if (!CharacterColorPage::init()) return false;
+        this->addOnExitCallback([this] {
+            if (moduleEnabled() && m_fields->sideTag) {
+                m_fields->sideTag->removeFromParentAndCleanup(true);
+                m_fields->sideTag = nullptr;
+            }
+            return true;
+        });
         auto vault = DualKitVault::get();
 
         if (vault->sideActiveIsSecondary()) {
@@ -136,7 +144,7 @@ class $modify(PaimonSeparateDualColor, CharacterColorPage) {
                 static_cast<CCNode*>(m_cursors->objectAtIndex(m_colorMode))->setPosition(
                     m_mainLayer->convertToNodeSpace(m_buttonMenu->convertToWorldSpace(
                         static_cast<CCNode*>(sender)->getPosition())));
-                vault->save<int64_t>(key, sender->getTag());
+                vault->storeColor(m_colorMode, sender->getTag());
             } else {
                 m_delegate->showUnlockPopup(sender->getTag(), unlock);
             }
@@ -172,16 +180,6 @@ class $modify(PaimonSeparateDualColor, CharacterColorPage) {
                 icon->m_hasGlowOutline = vault->haloEnabled(Side::Secondary);
                 icon->updateColors();
             }
-        }
-    }
-
-    void onExit() {
-        CharacterColorPage::onExit();
-        if (!moduleEnabled()) return;
-
-        if (m_fields->sideTag) {
-            m_fields->sideTag->removeFromParentAndCleanup(true);
-            m_fields->sideTag = nullptr;
         }
     }
 };

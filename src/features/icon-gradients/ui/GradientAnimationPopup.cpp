@@ -25,7 +25,7 @@ constexpr float kPopupW = 480.f;
 constexpr float kPopupH = 320.f;
 
 // one shader cache slot for the live preview, kept away from the editor's slot.
-constexpr int kPreviewShaderTag = 807;
+constexpr int kPreviewShaderTag = kGradientPreviewShaderTag;
 
 constexpr float kGridX = 236.f;
 constexpr float kGridTop = 236.f;
@@ -37,38 +37,12 @@ constexpr float kCardH = 42.f;
 constexpr float kCardGapX = 8.f;
 constexpr float kCardGapY = 8.f;
 
-struct PreviewIcon {
-    IconType type;
-    char const* name;
-};
-
-constexpr std::array kPreviewIcons = {
-    PreviewIcon{IconType::Cube, "Cube"},
-    PreviewIcon{IconType::Ship, "Ship"},
-    PreviewIcon{IconType::Ball, "Ball"},
-    PreviewIcon{IconType::Ufo, "UFO"},
-    PreviewIcon{IconType::Wave, "Wave"},
-    PreviewIcon{IconType::Robot, "Robot"},
-    PreviewIcon{IconType::Spider, "Spider"},
-    PreviewIcon{IconType::Swing, "Swing"},
-    PreviewIcon{IconType::Jetpack, "Jetpack"},
-};
-
 float speedFromSlider(float value) {
     return kSpeedMin + std::clamp(value, 0.f, 1.f) * (kSpeedMax - kSpeedMin);
 }
 
 float speedToSlider(float speed) {
     return std::clamp((speed - kSpeedMin) / (kSpeedMax - kSpeedMin), 0.f, 1.f);
-}
-
-CCLabelBMFont* addLabel(CCNode* parent, char const* text, CCPoint position,
-                        float scale = 0.34f, char const* font = "bigFont.fnt") {
-    auto label = CCLabelBMFont::create(text, font);
-    label->setScale(scale);
-    label->setPosition(position);
-    parent->addChild(label, 2);
-    return label;
 }
 
 // recurse the preview doll and force the animation off on its gradient shaders.
@@ -139,7 +113,7 @@ void GradientAnimationPopup::buildPreviewStage() {
     stage->setID("animation-preview-panel"_spr);
     m_mainLayer->addChild(stage);
 
-    addLabel(m_mainLayer, "LIVE PREVIEW", {115.f, 224.f}, 0.3f, "goldFont.fnt");
+    makeGradientLabel(m_mainLayer, "LIVE PREVIEW", {115.f, 224.f}, 0.3f, "goldFont.fnt");
 
     auto menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
@@ -192,7 +166,7 @@ void GradientAnimationPopup::buildPreviewStage() {
     next->setID("next-preview-icon"_spr);
     menu->addChild(next);
 
-    m_iconLabel = addLabel(m_mainLayer, "Cube - P1", {104.f, 132.f}, 0.3f);
+    m_iconLabel = makeGradientLabel(m_mainLayer, "Cube - P1", {104.f, 132.f}, 0.3f);
     m_iconLabel->setAnchorPoint({0.f, 0.5f});
 
     auto swapSprite = CCSprite::createWithSpriteFrameName("GJ_replayBtn_001.png");
@@ -225,9 +199,9 @@ void GradientAnimationPopup::buildPreviewStage() {
     random->setID("randomize-button"_spr);
     menu->addChild(random);
 
-    m_typeLabel = addLabel(m_mainLayer, "Flow", {115.f, 72.f}, 0.4f, "goldFont.fnt");
+    m_typeLabel = makeGradientLabel(m_mainLayer, "Flow", {115.f, 72.f}, 0.4f, "goldFont.fnt");
 
-    m_descriptionLabel = addLabel(m_mainLayer, "", {115.f, 56.f}, 0.42f, "chatFont.fnt");
+    m_descriptionLabel = makeGradientLabel(m_mainLayer, "", {115.f, 56.f}, 0.42f, "chatFont.fnt");
     m_descriptionLabel->setOpacity(195);
     m_descriptionLabel->limitLabelWidth(196.f, 0.42f, 0.26f);
 }
@@ -238,10 +212,11 @@ void GradientAnimationPopup::buildPresetGrid() {
     panel->setID("animation-presets-panel"_spr);
     m_mainLayer->addChild(panel);
 
-    addLabel(m_mainLayer, "PRESETS", {kGridX + kGridW / 2.f, kGridTop + 10.f},
+    makeGradientLabel(m_mainLayer, "PRESETS", {kGridX + kGridW / 2.f, kGridTop + 10.f},
              0.3f, "goldFont.fnt");
 
     auto scroll = ScrollLayer::create({kGridW, kGridH});
+    if (scroll) scroll->setAnchorPoint({0.f, 0.f});
     scroll->setPosition({kGridX, kGridTop - kGridH});
     scroll->setID("animation-presets-scroll"_spr);
     m_mainLayer->addChild(scroll);
@@ -305,25 +280,25 @@ void GradientAnimationPopup::buildParameters() {
     menu->setPosition({0.f, 0.f});
     m_mainLayer->addChild(menu, 5);
 
-    auto speedTitle = addLabel(m_mainLayer, "SPEED", {24.f, 68.f}, 0.26f, "goldFont.fnt");
+    auto speedTitle = makeGradientLabel(m_mainLayer, "SPEED", {24.f, 68.f}, 0.26f, "goldFont.fnt");
     speedTitle->setAnchorPoint({0.f, 0.5f});
     m_speedSlider = Slider::create(this, menu_selector(GradientAnimationPopup::onSpeed), 0.6f);
     m_speedSlider->setPosition({118.f, 68.f});
     m_mainLayer->addChild(m_speedSlider, 3);
-    m_speedLabel = addLabel(m_mainLayer, "1.0x", {206.f, 68.f}, 0.3f);
+    m_speedLabel = makeGradientLabel(m_mainLayer, "1.0x", {206.f, 68.f}, 0.3f);
     m_speedLabel->setAnchorPoint({1.f, 0.5f});
 
-    auto intensityTitle = addLabel(m_mainLayer, "INTENSITY", {24.f, 44.f}, 0.26f, "goldFont.fnt");
+    auto intensityTitle = makeGradientLabel(m_mainLayer, "INTENSITY", {24.f, 44.f}, 0.26f, "goldFont.fnt");
     intensityTitle->setAnchorPoint({0.f, 0.5f});
     m_intensitySlider = Slider::create(
         this, menu_selector(GradientAnimationPopup::onIntensity), 0.6f
     );
     m_intensitySlider->setPosition({118.f, 44.f});
     m_mainLayer->addChild(m_intensitySlider, 3);
-    m_intensityLabel = addLabel(m_mainLayer, "60%", {206.f, 44.f}, 0.3f);
+    m_intensityLabel = makeGradientLabel(m_mainLayer, "60%", {206.f, 44.f}, 0.3f);
     m_intensityLabel->setAnchorPoint({1.f, 0.5f});
 
-    auto enabledLabel = addLabel(m_mainLayer, "On", {18.f, 22.f}, 0.3f);
+    auto enabledLabel = makeGradientLabel(m_mainLayer, "On", {18.f, 22.f}, 0.3f);
     enabledLabel->setAnchorPoint({0.f, 0.5f});
     m_enabledToggle = CCMenuItemToggler::createWithStandardSprites(
         this, menu_selector(GradientAnimationPopup::onEnabled), 0.5f
@@ -332,7 +307,7 @@ void GradientAnimationPopup::buildParameters() {
     m_enabledToggle->setID("animation-enabled-toggle"_spr);
     menu->addChild(m_enabledToggle);
 
-    auto reverseLabel = addLabel(m_mainLayer, "Reverse", {74.f, 22.f}, 0.3f);
+    auto reverseLabel = makeGradientLabel(m_mainLayer, "Reverse", {74.f, 22.f}, 0.3f);
     reverseLabel->setAnchorPoint({0.f, 0.5f});
     m_reverseToggle = CCMenuItemToggler::createWithStandardSprites(
         this, menu_selector(GradientAnimationPopup::onReverse), 0.5f
@@ -361,7 +336,7 @@ void GradientAnimationPopup::buildParameters() {
     edit->setID("edit-custom-animation-button"_spr);
     menu->addChild(edit);
 
-    auto note = addLabel(
+    auto note = makeGradientLabel(
         m_mainLayer, "Changes are saved automatically", {kGridX + kGridW / 2.f, 48.f},
         0.34f, "chatFont.fnt"
     );

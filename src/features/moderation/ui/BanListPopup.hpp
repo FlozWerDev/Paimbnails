@@ -17,6 +17,7 @@ protected:
     geode::ScrollLayer* m_scroll = nullptr;
     cocos2d::CCSize m_scrollViewSize = {0, 0};
     std::map<std::string, BanDetail> m_banDetails;
+    bool m_unbanPending = false;
 
     bool init();
     void rebuildList(std::vector<std::string> const& users);

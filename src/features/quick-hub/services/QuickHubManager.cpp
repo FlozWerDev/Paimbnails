@@ -1,7 +1,10 @@
 #include "QuickHubManager.hpp"
 #include "../data/QuickHubCategories.hpp"
+#include "../../../utils/JsonHelper.hpp"
 #include <matjson.hpp>
 #include <algorithm>
+#include <cmath>
+#include <unordered_set>
 
 using namespace geode::prelude;
 
@@ -53,6 +56,92 @@ void QuickHubManager::resetToDefault() {
 
 static constexpr char const* kCustomButtonsKey = "quick-hub-custom-buttons";
 
+CustomQuickButton customQuickButtonFromJson(matjson::Value const& v) {
+    CustomQuickButton b;
+    if (!v.isObject()) return b;
+    b.id            = paimon::json::stringOr(v["id"]);
+    b.name          = paimon::json::stringOr(v["name"]);
+    b.icon          = paimon::json::stringOr(v["icon"]);
+    b.labelText     = paimon::json::stringOr(v["labelText"]);
+    b.targetNodeId  = paimon::json::stringOr(v["targetNodeId"]);
+    b.parentId      = paimon::json::stringOr(v["parentId"]);
+    b.ownerClass    = paimon::json::stringOr(v["ownerClass"]);
+    b.sceneClass    = paimon::json::stringOr(v["sceneClass"]);
+    b.itemClass     = paimon::json::stringOr(v["itemClass"]);
+    b.listenerClass = paimon::json::stringOr(v["listenerClass"]);
+    b.relX          = paimon::json::floatOr(v["relX"], -1.f);
+    b.relY          = paimon::json::floatOr(v["relY"], -1.f);
+    b.tag           = paimon::json::integerOr<int>(v["tag"]);
+    b.shape         = static_cast<RadialButtonShape>(paimon::json::integerOr<int>(v["shape"]));
+    // skin/sfx: missing keys = old defaults.
+    b.imagePath     = paimon::json::stringOr(v["imagePath"]);
+    b.imageScale    = paimon::json::floatOr(v["imageScale"], 1.f);
+    b.imageRotation = paimon::json::floatOr(v["imageRotation"]);
+    b.imageFlipX    = v["imageFlipX"].asBool().unwrapOr(false);
+    b.imageFlipY    = v["imageFlipY"].asBool().unwrapOr(false);
+    b.sfxKind       = paimon::json::integerOr<int>(v["sfxKind"]);
+    b.sfxPath       = paimon::json::stringOr(v["sfxPath"]);
+    b.sfxId         = paimon::json::integerOr<int>(v["sfxId"]);
+    b.sfxVolume     = paimon::json::floatOr(v["sfxVolume"], 1.f);
+    b.sfxSpeed      = paimon::json::floatOr(v["sfxSpeed"], 1.f);
+    b.sfxStartMs    = paimon::json::integerOr<int>(v["sfxStartMs"]);
+    b.sfxEndMs      = paimon::json::integerOr<int>(v["sfxEndMs"]);
+    b.sfxFadeInMs   = paimon::json::integerOr<int>(v["sfxFadeInMs"]);
+    b.sfxFadeOutMs  = paimon::json::integerOr<int>(v["sfxFadeOutMs"]);
+    b.color.r       = static_cast<GLubyte>(paimon::json::integerOr<int>(v["colorR"], 120));
+    b.color.g       = static_cast<GLubyte>(paimon::json::integerOr<int>(v["colorG"], 200));
+    b.color.b       = static_cast<GLubyte>(paimon::json::integerOr<int>(v["colorB"], 255));
+    paimon::json::forEachInArray(v["nodePath"], [&](matjson::Value const& n) {
+        b.nodePath.push_back(paimon::json::integerOr<int>(n));
+    });
+    paimon::json::forEachInArray(v["idPath"], [&](matjson::Value const& n) {
+        b.idPath.push_back(paimon::json::stringOr(n));
+    });
+    return b;
+}
+
+matjson::Value customQuickButtonToJson(CustomQuickButton const& b) {
+    auto o = matjson::Value::object();
+    o["id"]            = b.id;
+    o["name"]          = b.name;
+    o["icon"]          = b.icon;
+    o["labelText"]     = b.labelText;
+    o["targetNodeId"]  = b.targetNodeId;
+    o["parentId"]      = b.parentId;
+    o["ownerClass"]    = b.ownerClass;
+    o["sceneClass"]    = b.sceneClass;
+    o["itemClass"]     = b.itemClass;
+    o["listenerClass"] = b.listenerClass;
+    o["relX"]          = b.relX;
+    o["relY"]          = b.relY;
+    o["tag"]           = b.tag;
+    o["shape"]         = static_cast<int>(b.shape);
+    o["imagePath"]     = b.imagePath;
+    o["imageScale"]    = b.imageScale;
+    o["imageRotation"] = b.imageRotation;
+    o["imageFlipX"]    = b.imageFlipX;
+    o["imageFlipY"]    = b.imageFlipY;
+    o["sfxKind"]       = b.sfxKind;
+    o["sfxPath"]       = b.sfxPath;
+    o["sfxId"]         = b.sfxId;
+    o["sfxVolume"]     = b.sfxVolume;
+    o["sfxSpeed"]      = b.sfxSpeed;
+    o["sfxStartMs"]    = b.sfxStartMs;
+    o["sfxEndMs"]      = b.sfxEndMs;
+    o["sfxFadeInMs"]   = b.sfxFadeInMs;
+    o["sfxFadeOutMs"]  = b.sfxFadeOutMs;
+    o["colorR"]        = static_cast<int>(b.color.r);
+    o["colorG"]        = static_cast<int>(b.color.g);
+    o["colorB"]        = static_cast<int>(b.color.b);
+    auto np = matjson::Value::array();
+    for (int i : b.nodePath) np.push(matjson::Value(i));
+    o["nodePath"] = np;
+    auto ip = matjson::Value::array();
+    for (auto const& s : b.idPath) ip.push(matjson::Value(s));
+    o["idPath"] = ip;
+    return o;
+}
+
 std::vector<CustomQuickButton> QuickHubManager::getCustomButtons() const {
     std::vector<CustomQuickButton> out;
     auto saved = Mod::get()->getSavedValue<matjson::Value>(kCustomButtonsKey, matjson::Value());
@@ -61,54 +150,7 @@ std::vector<CustomQuickButton> QuickHubManager::getCustomButtons() const {
     if (!arrRes.isOk()) return out;
     for (auto const& v : arrRes.unwrap()) {
         if (!v.isObject()) continue;
-        CustomQuickButton b;
-        b.id            = v["id"].asString().unwrapOr("");
-        b.name          = v["name"].asString().unwrapOr("");
-        b.icon          = v["icon"].asString().unwrapOr("");
-        b.labelText     = v["labelText"].asString().unwrapOr("");
-        b.targetNodeId  = v["targetNodeId"].asString().unwrapOr("");
-        b.parentId      = v["parentId"].asString().unwrapOr("");
-        b.ownerClass    = v["ownerClass"].asString().unwrapOr("");
-        b.sceneClass    = v["sceneClass"].asString().unwrapOr("");
-        b.itemClass     = v["itemClass"].asString().unwrapOr("");
-        b.listenerClass = v["listenerClass"].asString().unwrapOr("");
-        b.relX          = static_cast<float>(v["relX"].asDouble().unwrapOr(-1.0));
-        b.relY          = static_cast<float>(v["relY"].asDouble().unwrapOr(-1.0));
-        b.tag           = static_cast<int>(v["tag"].asInt().unwrapOr(0));
-        b.shape         = static_cast<RadialButtonShape>(static_cast<int>(v["shape"].asInt().unwrapOr(0)));
-        // skin/sfx: missing keys = old defaults.
-        b.imagePath     = v["imagePath"].asString().unwrapOr("");
-        b.imageScale    = static_cast<float>(v["imageScale"].asDouble().unwrapOr(1.0));
-        b.imageRotation = static_cast<float>(v["imageRotation"].asDouble().unwrapOr(0.0));
-        b.imageFlipX    = v["imageFlipX"].asBool().unwrapOr(false);
-        b.imageFlipY    = v["imageFlipY"].asBool().unwrapOr(false);
-        b.sfxKind       = static_cast<int>(v["sfxKind"].asInt().unwrapOr(0));
-        b.sfxPath       = v["sfxPath"].asString().unwrapOr("");
-        b.sfxId         = static_cast<int>(v["sfxId"].asInt().unwrapOr(0));
-        b.sfxVolume     = static_cast<float>(v["sfxVolume"].asDouble().unwrapOr(1.0));
-        b.sfxSpeed      = static_cast<float>(v["sfxSpeed"].asDouble().unwrapOr(1.0));
-        b.sfxStartMs    = static_cast<int>(v["sfxStartMs"].asInt().unwrapOr(0));
-        b.sfxEndMs      = static_cast<int>(v["sfxEndMs"].asInt().unwrapOr(0));
-        b.sfxFadeInMs   = static_cast<int>(v["sfxFadeInMs"].asInt().unwrapOr(0));
-        b.sfxFadeOutMs  = static_cast<int>(v["sfxFadeOutMs"].asInt().unwrapOr(0));
-        b.color.r       = static_cast<GLubyte>(v["colorR"].asInt().unwrapOr(120));
-        b.color.g       = static_cast<GLubyte>(v["colorG"].asInt().unwrapOr(200));
-        b.color.b       = static_cast<GLubyte>(v["colorB"].asInt().unwrapOr(255));
-        if (v["nodePath"].isArray()) {
-            if (auto npRes = v["nodePath"].asArray(); npRes.isOk()) {
-                for (auto const& n : npRes.unwrap()) {
-                    b.nodePath.push_back(static_cast<int>(n.asInt().unwrapOr(0)));
-                }
-            }
-        }
-        if (v["idPath"].isArray()) {
-            if (auto ipRes = v["idPath"].asArray(); ipRes.isOk()) {
-                for (auto const& n : ipRes.unwrap()) {
-                    b.idPath.push_back(n.asString().unwrapOr(""));
-                }
-            }
-        }
-        out.push_back(std::move(b));
+        out.push_back(customQuickButtonFromJson(v));
     }
     return out;
 }
@@ -134,45 +176,7 @@ std::vector<RadialOptionDef> QuickHubManager::getAllRadialOptions() const {
 void QuickHubManager::writeCustomButtons(std::vector<CustomQuickButton> const& all) {
     auto arr = matjson::Value::array();
     for (auto const& b : all) {
-        auto o = matjson::Value::object();
-        o["id"]            = b.id;
-        o["name"]          = b.name;
-        o["icon"]          = b.icon;
-        o["labelText"]     = b.labelText;
-        o["targetNodeId"]  = b.targetNodeId;
-        o["parentId"]      = b.parentId;
-        o["ownerClass"]    = b.ownerClass;
-        o["sceneClass"]    = b.sceneClass;
-        o["itemClass"]     = b.itemClass;
-        o["listenerClass"] = b.listenerClass;
-        o["relX"]          = b.relX;
-        o["relY"]          = b.relY;
-        o["tag"]           = b.tag;
-        o["shape"]         = static_cast<int>(b.shape);
-        o["imagePath"]     = b.imagePath;
-        o["imageScale"]    = b.imageScale;
-        o["imageRotation"] = b.imageRotation;
-        o["imageFlipX"]    = b.imageFlipX;
-        o["imageFlipY"]    = b.imageFlipY;
-        o["sfxKind"]       = b.sfxKind;
-        o["sfxPath"]       = b.sfxPath;
-        o["sfxId"]         = b.sfxId;
-        o["sfxVolume"]     = b.sfxVolume;
-        o["sfxSpeed"]      = b.sfxSpeed;
-        o["sfxStartMs"]    = b.sfxStartMs;
-        o["sfxEndMs"]      = b.sfxEndMs;
-        o["sfxFadeInMs"]   = b.sfxFadeInMs;
-        o["sfxFadeOutMs"]  = b.sfxFadeOutMs;
-        o["colorR"]        = static_cast<int>(b.color.r);
-        o["colorG"]        = static_cast<int>(b.color.g);
-        o["colorB"]        = static_cast<int>(b.color.b);
-        auto np = matjson::Value::array();
-        for (int i : b.nodePath) np.push(matjson::Value(i));
-        o["nodePath"] = np;
-        auto ip = matjson::Value::array();
-        for (auto const& s : b.idPath) ip.push(matjson::Value(s));
-        o["idPath"] = ip;
-        arr.push(o);
+        arr.push(customQuickButtonToJson(b));
     }
     Mod::get()->setSavedValue(kCustomButtonsKey, arr);
 }
@@ -205,10 +209,15 @@ bool QuickHubManager::deleteCustomButton(std::string const& id) {
 }
 
 std::string QuickHubManager::makeUniqueCustomId(std::string const& suggestedName) {
+    // load the id set once: getCustomButton would re-parse the saved json
+    // for every candidate suffix.
+    std::unordered_set<std::string> used;
+    for (auto const& b : getCustomButtons()) used.insert(b.id);
+
     std::string base = "custom:" + slugify(suggestedName);
     std::string candidate = base;
     int n = 1;
-    while (getCustomButton(candidate).has_value()) {
+    while (used.contains(candidate)) {
         candidate = base + "-" + std::to_string(++n);
     }
     return candidate;
@@ -219,7 +228,74 @@ bool QuickHubManager::isHoldCtrlEnabled() {
 }
 
 void QuickHubManager::setHoldCtrlEnabled(bool enabled) {
+    abortActiveHold();
     Mod::get()->setSavedValue<bool>(kHoldCtrlKey, enabled);
+}
+
+std::vector<paimon::keybinds::ExtendedKeybind> const& QuickHubManager::holdButtonOptions() {
+    using namespace paimon::keybinds;
+    static auto const options = [] {
+        std::vector<ExtendedKeybind> buttons;
+        auto addKey = [&](enumKeyCodes key) {
+            ExtendedKeybind button;
+            button.kind = ExtendedKind::Keyboard;
+            button.key = key;
+            buttons.push_back(button);
+        };
+        for (auto key : {KEY_Control, KEY_Shift, KEY_Alt, KEY_LeftWindowsKey,
+                         KEY_Tab, KEY_Space, KEY_Enter, KEY_Backspace,
+                         KEY_Insert, KEY_Delete, KEY_Home, KEY_End, KEY_PageUp, KEY_PageDown}) {
+            addKey(key);
+        }
+        for (int key = KEY_A; key <= KEY_Z; ++key) addKey(static_cast<enumKeyCodes>(key));
+        for (int key = KEY_Zero; key <= KEY_Nine; ++key) addKey(static_cast<enumKeyCodes>(key));
+        for (int key = KEY_F1; key <= KEY_F12; ++key) addKey(static_cast<enumKeyCodes>(key));
+        for (auto mouse : {MouseButton::Left, MouseButton::Right, MouseButton::Middle,
+                           MouseButton::Button4, MouseButton::Button5}) {
+            ExtendedKeybind button;
+            button.kind = ExtendedKind::Mouse;
+            button.button = mouse;
+            buttons.push_back(button);
+        }
+        return buttons;
+    }();
+    return options;
+}
+
+paimon::keybinds::ExtendedKeybind QuickHubManager::holdButton() {
+    using namespace paimon::keybinds;
+    auto saved = loadExtendedKeybind("quick-hub-hold-button");
+    for (auto const& option : holdButtonOptions()) {
+        if (saved.kind == option.kind &&
+            ((saved.kind == ExtendedKind::Keyboard && saved.key == option.key) ||
+             (saved.kind == ExtendedKind::Mouse && saved.button == option.button))) {
+            return option;
+        }
+    }
+#ifdef GEODE_IS_MACOS
+    return holdButtonOptions()[3]; // Command on macOS, Ctrl on other platforms.
+#else
+    return holdButtonOptions().front();
+#endif
+}
+
+void QuickHubManager::setHoldButton(paimon::keybinds::ExtendedKeybind const& button) {
+    abortActiveHold();
+    paimon::keybinds::saveExtendedKeybind("quick-hub-hold-button", button);
+}
+
+float QuickHubManager::holdSeconds() {
+    float v = Mod::get()->getSavedValue<float>(kHoldSecondsKey, kHoldSecondsDefault);
+    if (!std::isfinite(v)) return kHoldSecondsDefault;
+    return std::clamp(v, kHoldSecondsMin, kHoldSecondsMax);
+}
+
+void QuickHubManager::setHoldSeconds(float seconds) {
+    abortActiveHold();
+    if (!std::isfinite(seconds)) seconds = kHoldSecondsDefault;
+    Mod::get()->setSavedValue<float>(
+        kHoldSecondsKey, std::clamp(std::round(seconds * 10.f) / 10.f,
+                                   kHoldSecondsMin, kHoldSecondsMax));
 }
 
 bool QuickHubManager::canOpenInCurrentContext() {

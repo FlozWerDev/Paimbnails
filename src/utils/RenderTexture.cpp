@@ -29,7 +29,20 @@ RenderTexture::RenderTexture(uint32_t width, uint32_t height) : m_width(width), 
         return;
     }
 
+    // gl calls require a live context on the gl thread; without it every
+    // glGen*/glTexImage2D below is undefined behaviour (usually a crash).
+    auto* director = cocos2d::CCDirector::get();
+    auto* view = director ? director->getOpenGLView() : nullptr;
+    if (!director || !view) return;
+
+    GLint maxTex = 0;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTex);
+    if (maxTex > 0 && (width > static_cast<uint32_t>(maxTex) || height > static_cast<uint32_t>(maxTex))) {
+        return;
+    }
+
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    if (glGetError() != GL_NO_ERROR) return;
     glGenTextures(1, &m_texture);
     glBindTexture(GL_TEXTURE_2D, m_texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);

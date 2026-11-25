@@ -1,0 +1,130 @@
+#include <algorithm>
+#include <cassert>
+#include <deque>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#define GEODE_IS_WINDOWS
+namespace geode::log {
+    template <class... Args> void info(char const*, Args const&...) {}
+    template <class... Args> void debug(char const*, Args const&...) {}
+    template <class... Args> void warn(char const*, Args const&...) {}
+}
+namespace paimon {
+struct ThreadTracker {
+    std::vector<std::function<void()>> pending;
+    bool reject = false;
+    static ThreadTracker& get() { static ThreadTracker tracker; return tracker; }
+    bool spawn(std::function<void()> work) {
+        if (reject) return false;
+        pending.push_back(std::move(work));
+        return true;
+    }
+    void run() {
+        auto work = std::move(pending.front());
+        pending.erase(pending.begin());
+        work();
+    }
+};
+}
+namespace winrt {
+enum class apartment_type { multi_threaded };
+int apartments = 0;
+void init_apartment(apartment_type) { ++apartments; }
+void uninit_apartment() { --apartments; }
+std::string to_string(std::string const& value) { return value; }
+struct hresult_error : std::runtime_error {
+    hresult_error() : std::runtime_error("session unavailable") {}
+    std::string message() const { return what(); }
+};
+template <class T> struct Operation {
+    T value;
+    T get() const { return value; }
+};
+namespace Windows::Media::Control {
+struct Session {
+    std::string source;
+    std::shared_ptr<std::vector<std::string>> commands =
+        std::make_shared<std::vector<std::string>>();
+    std::string SourceAppUserModelId() const { return source; }
+    Operation<bool> record(std::string const& command) const {
+        commands->push_back(command);
+        return {true};
+    }
+    Operation<bool> TryPlayAsync() const { return record("play"); }
+    Operation<bool> TryPauseAsync() const { return record("pause"); }
+    Operation<bool> TryTogglePlayPauseAsync() const { return record("play_pause"); }
+    Operation<bool> TrySkipNextAsync() const { return record("next"); }
+    Operation<bool> TrySkipPreviousAsync() const { return record("prev"); }
+};
+std::vector<Session> sessions;
+bool failRequest = false;
+struct GlobalSystemMediaTransportControlsSessionManager {
+    static Operation<GlobalSystemMediaTransportControlsSessionManager> RequestAsync() {
+        if (failRequest) throw hresult_error();
+        return {{}};
+    }
+    std::vector<Session> const& GetSessions() const { return sessions; }
+};
+}
+}
+@@source|src/features/menu-music/services/SpotifyMediaControl.cpp@@
+
+namespace paimon::menumusic {
+struct SpotifyService { void sendMediaCommand(std::string const&); };
+@@function|src/features/menu-music/services/SpotifyService.cpp|void SpotifyService::sendMediaCommand(@@
+}
+
+int main() {
+    using namespace winrt::Windows::Media::Control;
+    using namespace paimon::menumusic;
+    auto& threads = paimon::ThreadTracker::get();
+    SpotifyService service;
+
+    sessions = {{"chrome.exe"}, {"msedge.exe"}, {"firefox.exe"}};
+    service.sendMediaCommand("play");
+    service.sendMediaCommand("pause");
+    service.sendMediaCommand("play_pause");
+    assert(threads.pending.size() == 1); // one worker preserves command order
+    threads.run();
+    for (auto const& browser : sessions) assert(browser.commands->empty());
+    assert(winrt::apartments == 0);
+
+    sessions.push_back({"Spotify.exe"});
+    for (auto const& command : {"play", "pause", "play_pause", "next", "prev"}) {
+        service.sendMediaCommand(command);
+    }
+    threads.run();
+    assert((*sessions.back().commands ==
+        std::vector<std::string>{"play", "pause", "play_pause", "next", "prev"}));
+    for (std::size_t index = 0; index < 3; ++index) assert(sessions[index].commands->empty());
+
+    sessions = {{"chrome.exe"}, {"SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify"}};
+    service.sendMediaCommand("pause");
+    threads.run();
+    assert(sessions[0].commands->empty());
+    assert(*sessions[1].commands == std::vector<std::string>{"pause"});
+    assert(isSpotifyMediaSource("SPOTIFY.EXE"));
+    assert(!isSpotifyMediaSource("spotify.com"));
+    assert(!isSpotifyMediaSource("Spotify.exe.browser"));
+
+    failRequest = true;
+    service.sendMediaCommand("play");
+    threads.run();
+    assert(winrt::apartments == 0);
+    failRequest = false;
+    threads.reject = true;
+    service.sendMediaCommand("play");
+    assert(threads.pending.empty());
+    threads.reject = false;
+    service.sendMediaCommand("play");
+    threads.run();
+    assert(sessions[1].commands->back() == "play");
+    service.sendMediaCommand("unknown");
+    assert(threads.pending.empty());
+}

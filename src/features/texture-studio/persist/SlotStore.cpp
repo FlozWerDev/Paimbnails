@@ -1,9 +1,13 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "SlotStore.hpp"
 
 #include "SlotPaths.hpp"
 #include "TextureProjectSerialize.hpp"
 
 #include <Geode/utils/file.hpp>
+#include <Geode/utils/string.hpp>
+#include "../../../utils/AtomicFileWrite.hpp"
+#include "../../../utils/ProjectStorage.hpp"
 #include <matjson.hpp>
 
 #include <algorithm>
@@ -57,22 +61,25 @@ void SlotStore::loadIndex() {
     auto path = SlotPaths::slotsIndexFile();
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) {
+        recoverUnindexedProjects();
         return;
     }
 
-    auto rd = geode::utils::file::readJson(path);
+    auto rd = geode::utils::file::readJson(paimon::paths::toSdkPath(path));
     if (!rd) {
         log::warn("[texture-studio] slots.json read failed: {}", rd.unwrapErr());
+        recoverUnindexedProjects();
         return;
     }
     auto doc = rd.unwrap();
 
     m_activeSlotId = doc["activeSlotId"].asString().unwrapOr("");
+    if (!paimon::storage::resolveProjectDirectory(SlotPaths::slotsDir(), m_activeSlotId)) m_activeSlotId.clear();
 
     if (auto arr = doc["slots"].asArray(); arr.isOk()) {
         for (auto const& entry : arr.unwrap()) {
             auto e = indexEntryFromJson(entry);
-            if (!e.id.empty()) {
+            if (paimon::storage::resolveProjectDirectory(SlotPaths::slotsDir(), e.id) && !exists(e.id)) {
                 m_index.push_back(std::move(e));
             }
         }
@@ -81,8 +88,34 @@ void SlotStore::loadIndex() {
         [](SlotIndexEntry const& a, SlotIndexEntry const& b) {
             return a.modifiedAt > b.modifiedAt;
         });
+    recoverUnindexedProjects();
 
     log::info("[texture-studio] loaded {} slot(s) from index", m_index.size());
+}
+
+void SlotStore::recoverUnindexedProjects() {
+    auto originalCount = m_index.size();
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it(SlotPaths::slotsDir(), ec), end;
+         !ec && it != end; it.increment(ec)) {
+        std::error_code typeError;
+        if (!it->is_directory(typeError)) continue;
+        auto id = paimon::paths::toUtf8(it->path().filename());
+        if (exists(id) || !paimon::storage::resolveProjectDirectory(SlotPaths::slotsDir(), id)) continue;
+        auto json = geode::utils::file::readJson(paimon::paths::toSdkPath(SlotPaths::projectFile(id)));
+        if (!json) continue;
+        auto parsed = json.unwrap().as<TextureProject>();
+        if (!parsed || parsed.unwrap().id != id) continue;
+        auto project = parsed.unwrap();
+        m_projects[id] = project;
+        m_index.push_back({id, project.name, project.modifiedAt, project.createdAt, project.hasBuiltOnce});
+    }
+    if (m_index.size() != originalCount) {
+        rebuildIndexCache();
+        if (auto saved = saveIndex(); !saved) {
+            log::warn("[texture-studio] Recovered projects; index save failed: {}", saved.unwrapErr());
+        }
+    }
 }
 
 geode::Result<> SlotStore::saveIndex() {
@@ -98,15 +131,16 @@ geode::Result<> SlotStore::saveIndex() {
     for (auto const& e : m_index) arr.push(indexEntryToJson(e));
     doc["slots"] = arr;
 
-    auto wr = geode::utils::file::writeString(SlotPaths::slotsIndexFile(), doc.dump());
+    auto wr = paimon::file::writeAtomically(SlotPaths::slotsIndexFile(), doc.dump());
     if (!wr) {
-        return Err("writeString slots.json: {}", wr.unwrapErr());
+        return Err("Unable to atomically save slots.json");
     }
     return Ok();
 }
 
 geode::Result<> SlotStore::setActiveSlot(std::string id) {
     loadIndex();
+    id = canonicalId(id);
     if (!id.empty() && !exists(id)) return Err("Slot does not exist");
     if (m_activeSlotId == id) return Ok();
     auto previous = m_activeSlotId;
@@ -118,30 +152,29 @@ geode::Result<> SlotStore::setActiveSlot(std::string id) {
     return Ok();
 }
 
+std::string SlotStore::canonicalId(std::string_view id) const {
+    auto key = paimon::storage::projectIdKey(id);
+    for (auto const& entry : m_index) {
+        if (paimon::storage::projectIdKey(entry.id) == key) return entry.id;
+    }
+    return std::string(id);
+}
+
 bool SlotStore::exists(std::string_view id) const {
     for (auto const& e : m_index) {
-        if (e.id == id) return true;
+        if (paimon::storage::projectIdKey(e.id) == paimon::storage::projectIdKey(id)) return true;
     }
     return false;
 }
 
-std::string SlotStore::makeUniqueId(std::string desiredId) const {
-    if (!exists(desiredId)) return desiredId;
-
-    for (int i = 2; i < 1000; ++i) {
-        auto candidate = desiredId + "_" + std::to_string(i);
-        if (!exists(candidate)) return candidate;
-    }
-    return desiredId + "_" + std::to_string(nowUnixMs());
-}
 
 geode::Result<std::string> SlotStore::createSlot(TextureProject seed) {
     loadIndex();
 
-    if (seed.id.empty()) {
-        return Err("SlotStore::createSlot: id is empty");
-    }
-    auto finalId = makeUniqueId(seed.id);
+    std::error_code reserveError;
+    auto directory = paimon::storage::reserveProjectDirectory(SlotPaths::slotsDir(), reserveError);
+    if (directory.empty()) return Err("Unable to reserve project directory: {}", reserveError.message());
+    auto finalId = paimon::paths::toUtf8(directory.filename());
     seed.id = finalId;
 
     auto now = nowUnixMs();
@@ -153,9 +186,9 @@ geode::Result<std::string> SlotStore::createSlot(TextureProject seed) {
     }
 
     auto json = matjson::Value(seed);
-    auto wr = geode::utils::file::writeString(SlotPaths::projectFile(finalId), json.dump());
+    auto wr = paimon::file::writeAtomically(SlotPaths::projectFile(finalId), json.dump());
     if (!wr) {
-        return Err("writeString project: {}", wr.unwrapErr());
+        return Err("Unable to atomically save project");
     }
 
     m_projects[finalId] = seed;
@@ -176,6 +209,10 @@ geode::Result<std::string> SlotStore::createSlot(TextureProject seed) {
 
 geode::Result<TextureProject> SlotStore::loadSlot(std::string_view id) {
     loadIndex();
+    auto storedId = canonicalId(id);
+    id = storedId;
+    if (!paimon::storage::resolveProjectDirectory(SlotPaths::slotsDir(), id))
+        return Err("Invalid or unconfined project ID");
 
     auto it = m_projects.find(std::string(id));
     if (it != m_projects.end()) {
@@ -187,7 +224,7 @@ geode::Result<TextureProject> SlotStore::loadSlot(std::string_view id) {
     if (!std::filesystem::exists(path, ec)) {
         return Err("slot '{}' has no project.json", id);
     }
-    auto rd = geode::utils::file::readJson(path);
+    auto rd = geode::utils::file::readJson(paimon::paths::toSdkPath(path));
     if (!rd) {
         return Err("readJson project.json: {}", rd.unwrapErr());
     }
@@ -196,23 +233,33 @@ geode::Result<TextureProject> SlotStore::loadSlot(std::string_view id) {
         return Err("project.json parse error: {}", parsed.unwrapErr());
     }
     auto p = parsed.unwrap();
+    if (paimon::storage::projectIdKey(p.id) != paimon::storage::projectIdKey(id))
+        return Err("Project ID does not match its directory");
+    p.id = std::string(id);
     m_projects[std::string(id)] = p;
     return Ok(std::move(p));
 }
 
 geode::Result<> SlotStore::saveSlot(TextureProject const& project) {
     loadIndex();
+    auto storedId = canonicalId(project.id);
+    if (storedId != project.id) {
+        auto normalized = project;
+        normalized.id = std::move(storedId);
+        return saveSlot(normalized);
+    }
 
-    if (project.id.empty()) return Err("saveSlot: id is empty");
+    if (!paimon::storage::resolveProjectDirectory(SlotPaths::slotsDir(), project.id))
+        return Err("Invalid or unconfined project ID");
 
     if (auto r = ensureProjectDirectory(project); !r) {
         return Err("saveSlot dir setup: {}", r.unwrapErr());
     }
 
     auto json = matjson::Value(project);
-    auto wr = geode::utils::file::writeString(SlotPaths::projectFile(project.id), json.dump());
+    auto wr = paimon::file::writeAtomically(SlotPaths::projectFile(project.id), json.dump());
     if (!wr) {
-        return Err("writeString project: {}", wr.unwrapErr());
+        return Err("Unable to atomically save project");
     }
 
     m_projects[project.id] = project;
@@ -246,6 +293,10 @@ geode::Result<> SlotStore::saveSlot(TextureProject const& project) {
 
 geode::Result<> SlotStore::deleteSlot(std::string_view id) {
     loadIndex();
+    auto storedId = canonicalId(id);
+    id = storedId;
+    auto directory = paimon::storage::resolveProjectDirectory(SlotPaths::slotsDir(), id);
+    if (!directory || !exists(id)) return Err("Invalid or unknown project ID");
     auto previousIndex = m_index;
     auto previousActive = m_activeSlotId;
     std::erase_if(m_index, [&](SlotIndexEntry const& entry) { return entry.id == id; });
@@ -257,8 +308,8 @@ geode::Result<> SlotStore::deleteSlot(std::string_view id) {
     }
     m_projects.erase(std::string(id));
     std::error_code ec;
-    std::filesystem::remove_all(SlotPaths::slotDir(id), ec);
-    if (ec) log::warn("[texture-studio] delete slot '{}': {}", id, ec.message());
+    std::filesystem::remove_all(*directory, ec);
+    if (ec) return Err("Unable to remove slot: {}", ec.message());
     return Ok();
 }
 

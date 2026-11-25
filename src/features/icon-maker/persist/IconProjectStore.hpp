@@ -35,7 +35,7 @@ public:
 
     std::vector<IconIndexEntry> const& list() const { return m_index; }
 
-    // returns the assigned id (derived from name, made unique on collision).
+    // returns a new persistent ID, independent of the name or imported identity.
     geode::Result<std::string> createProject(IconProject seed);
 
     geode::Result<IconProject> loadProject(std::string_view id);
@@ -50,6 +50,7 @@ public:
     geode::Result<> setFavorite(std::string_view id, bool favorite);
 
     bool exists(std::string_view id) const;
+    std::uint64_t revision(std::string_view id) const;
 
 private:
     IconProjectStore() = default;
@@ -58,9 +59,12 @@ private:
     IconProjectStore& operator=(IconProjectStore const&) = delete;
 
     void sortIndex();
+    void recoverUnindexedProjects();
+    std::string canonicalId(std::string_view id) const;
     void upsertIndexEntry(IconProject const& project);
-    std::string makeUniqueId(std::string desiredId) const;
 
+    std::uint64_t m_nextRevision = 0;
+    std::map<std::string, std::uint64_t> m_revisions;
     bool m_indexLoaded = false;
     std::vector<IconIndexEntry> m_index;
     std::map<std::string, IconProject> m_projects;

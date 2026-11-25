@@ -16,7 +16,7 @@ class $modify(PaimonDynVolFMOD, FMODAudioEngine) {
     }
 
     $override
-    void playMusic(gd::string path, bool shouldLoop, float fadeInTime, int channel) {
+    void playMusic(std::string path, bool shouldLoop, float fadeInTime, int channel) {
         FMODAudioEngine::playMusic(path, shouldLoop, fadeInTime, channel);
         if (paimon::isRuntimeShuttingDown()) return;
         DynamicVolumeManager::get().notifySongChanged(static_cast<std::string>(path));

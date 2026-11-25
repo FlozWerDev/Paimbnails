@@ -281,7 +281,7 @@ void AddModeratorPopup::rebuildList() {
 void AddModeratorPopup::onAdd(CCObject*) {
     std::string username = m_usernameInput->getString();
     if (username.empty()) {
-        PaimonNotify::create(Localization::get().getString("rolemgr.enter_username").c_str(), NotificationIcon::Warning)->show();
+        PaimonNotify::show(Localization::get().getString("rolemgr.enter_username").c_str(), NotificationIcon::Warning);
         return;
     }
 
@@ -310,11 +310,11 @@ void AddModeratorPopup::onAdd(CCObject*) {
                     if (popup->m_loadingSpinner) { popup->m_loadingSpinner->dismiss(); popup->m_loadingSpinner = nullptr; }
 
                     if (success) {
-                        PaimonNotify::create(
+                        PaimonNotify::show(
                             fmt::format(fmt::runtime(Localization::get().getString("rolemgr.add_success")),
                                         targetName, popup->roleDisplayName(role)).c_str(),
                             NotificationIcon::Success
-                        )->show();
+                        );
                         popup->m_usernameInput->setString("");
                         paimon::roles::RoleService::get().clear();
                         if (popup->m_callback) popup->m_callback(true, targetName);
@@ -356,11 +356,11 @@ void AddModeratorPopup::onRemove(CCObject* sender) {
                     if (popup->m_loadingSpinner) { popup->m_loadingSpinner->dismiss(); popup->m_loadingSpinner = nullptr; }
 
                     if (success) {
-                        PaimonNotify::create(
+                        PaimonNotify::show(
                             fmt::format(fmt::runtime(Localization::get().getString("rolemgr.remove_success")),
                                         username, popup->roleDisplayName(role)).c_str(),
                             NotificationIcon::Success
-                        )->show();
+                        );
                         paimon::roles::RoleService::get().clear();
                         popup->fetchMembers();
                     } else {

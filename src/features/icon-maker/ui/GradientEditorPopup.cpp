@@ -103,10 +103,13 @@ void GradientEditorPopup::rebuildBody() {
 
     // kind picker stays pinned next to the preview: it is the one choice that
     // changes what every control below means.
-    auto* tabs = kit::makeTabBar(bodyW, {"Lineal", "Radial"},
-        m_spec.kind == GradientKind::Radial ? 1 : 0,
+    int const kindIdx = m_spec.kind == GradientKind::Radial ? 1
+                      : m_spec.kind == GradientKind::Conic ? 2 : 0;
+    auto* tabs = kit::makeTabBar(bodyW, {"Lineal", "Radial", "Conico"},
+        kindIdx,
         [this](int index) {
-            m_spec.kind = index == 1 ? GradientKind::Radial : GradientKind::Linear;
+            m_spec.kind = index == 1 ? GradientKind::Radial
+                        : index == 2 ? GradientKind::Conic : GradientKind::Linear;
             refreshPreview();
             notifyChanged();
             scheduleBodyRebuild();
@@ -160,6 +163,32 @@ void GradientEditorPopup::rebuildBody() {
             [](double v) { return fmt::format("{}deg", static_cast<int>(v)); },
             [this](double v) {
                 m_spec.angleDeg = static_cast<float>(v);
+                refreshPreview();
+                notifyChanged();
+            }));
+    } else if (m_spec.kind == GradientKind::Conic) {
+        rows.push_back(kit::makeSliderRow(bodyW, "Angulo inicial",
+            "Rota el abanico de colores.",
+            m_spec.angleDeg, 0.0, 360.0,
+            [](double v) { return fmt::format("{}deg", static_cast<int>(v)); },
+            [this](double v) {
+                m_spec.angleDeg = static_cast<float>(v);
+                refreshPreview();
+                notifyChanged();
+            }));
+        rows.push_back(kit::makeSliderRow(bodyW, "Centro horizontal", nullptr,
+            m_spec.centerX, 0.0, 1.0,
+            [](double v) { return fmt::format("{:.2f}", v); },
+            [this](double v) {
+                m_spec.centerX = static_cast<float>(v);
+                refreshPreview();
+                notifyChanged();
+            }));
+        rows.push_back(kit::makeSliderRow(bodyW, "Centro vertical", nullptr,
+            m_spec.centerY, 0.0, 1.0,
+            [](double v) { return fmt::format("{:.2f}", v); },
+            [this](double v) {
+                m_spec.centerY = static_cast<float>(v);
                 refreshPreview();
                 notifyChanged();
             }));

@@ -91,6 +91,15 @@ std::string makeLevelCellBlurCacheKey(int32_t levelID, int galleryIndex, float b
     );
 }
 
+template <typename Enum, std::size_t N>
+Enum lookupTable(std::pair<std::string_view, Enum> const (&table)[N],
+                 std::string const& s, Enum fallback) {
+    for (auto const& [key, val] : table) {
+        if (key == s) return val;
+    }
+    return fallback;
+}
+
 PaimonAnimType parseAnimType(std::string const& s) {
     static constexpr std::pair<std::string_view, PaimonAnimType> table[] = {
         {"zoom-slide", PaimonAnimType::ZoomSlide}, {"zoom", PaimonAnimType::Zoom},
@@ -99,10 +108,7 @@ PaimonAnimType parseAnimType(std::string const& s) {
         {"shake", PaimonAnimType::Shake}, {"pulse", PaimonAnimType::Pulse},
         {"swing", PaimonAnimType::Swing},
     };
-    for (auto const& [key, val] : table) {
-        if (key == s) return val;
-    }
-    return PaimonAnimType::None;
+    return lookupTable(table, s, PaimonAnimType::None);
 }
 
 PaimonAnimEffect parseAnimEffect(std::string const& s) {
@@ -118,10 +124,7 @@ PaimonAnimEffect parseAnimEffect(std::string const& s) {
         {"grayscale", PaimonAnimEffect::Grayscale}, {"invert", PaimonAnimEffect::Invert},
         {"blur", PaimonAnimEffect::Blur}, {"glitch", PaimonAnimEffect::Glitch},
     };
-    for (auto const& [key, val] : table) {
-        if (key == s) return val;
-    }
-    return PaimonAnimEffect::None;
+    return lookupTable(table, s, PaimonAnimEffect::None);
 }
 
 PaimonBgType parseBgType(std::string const& s) {
@@ -144,10 +147,7 @@ PaimonGalleryTransition parseGalleryTransition(std::string const& s) {
         {"spiral", PaimonGalleryTransition::Spiral}, {"wave", PaimonGalleryTransition::Wave},
         {"pop", PaimonGalleryTransition::Pop}, {"random", PaimonGalleryTransition::Random},
     };
-    for (auto const& [key, val] : table) {
-        if (key == s) return val;
-    }
-    return PaimonGalleryTransition::Crossfade;
+    return lookupTable(table, s, PaimonGalleryTransition::Crossfade);
 }
 
 PaimonGalleryTransition resolveRandomTransition() {

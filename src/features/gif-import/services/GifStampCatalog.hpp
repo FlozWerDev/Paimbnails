@@ -35,6 +35,12 @@ void setStampCatalog(std::vector<CatalogEntry> entries);
 std::vector<StampVariant> const& stampVariants();
 
 // analytic fallback masks use the same formulas and resolution as the soft stamp fitter.
+enum class AnalyticAlphaKind { RadialGlow, VerticalGradient, QuarterGlow };
+
+// alpha (0..1) of an analytic mask at normalized texel coords; shared by the
+// fallback masks below and the soft stamp fitter's targets.
+float analyticAlpha(AnalyticAlphaKind kind, float u, float v);
+
 StampMask analyticRadialGlowMask();
 StampMask analyticVerticalGradientMask();
 StampMask analyticQuarterGlowMask();

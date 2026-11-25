@@ -21,6 +21,10 @@ public:
     
     static bool rgbaToPngBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>& outPngData);
 
+    // lossy JPEG for opaque images; alpha is dropped, so callers must only
+    // pass fully opaque pixels. quality is 1..100.
+    static bool rgbaToJpegBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>& outData, int quality = 82);
+
     // quality is 0..100; 100 is lossless.
     static bool rgbaToWebpBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>& outData, float quality = 75.f);
 

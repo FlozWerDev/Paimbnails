@@ -25,12 +25,6 @@ struct Rect {
     float maxY = 0.f;
 };
 
-Vec2 rotate(Vec2 value, float angle) {
-    float const c = std::cos(angle);
-    float const s = std::sin(angle);
-    return {value.x * c - value.y * s, value.x * s + value.y * c};
-}
-
 bool overlaps(Rect const& a, Rect const& b) {
     return a.minX < b.maxX && a.maxX > b.minX && a.minY < b.maxY && a.maxY > b.minY;
 }

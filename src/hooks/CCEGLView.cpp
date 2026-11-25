@@ -6,7 +6,9 @@
 #include <atomic>
 #include "../features/capture/services/FramebufferCapture.hpp"
 #include "../features/capture/ui/CaptureMenuPopup.hpp"
+#if defined(GEODE_IS_DESKTOP)
 #include "../features/cursor/services/CursorManager.hpp"
+#endif
 #include "../features/editor-colorpicker/ui/ColorPickerOverlay.hpp"
 #include "../features/pet/services/PetManager.hpp"
 #include "../features/quick-hub/services/QuickHubButtonCapture.hpp"
@@ -14,6 +16,7 @@
 #include "../blur/BlurSystem.hpp"
 #include "../core/RuntimeLifecycle.hpp"
 #include "../framework/HookConventions.hpp"
+#include "../utils/FramePerf.hpp"
 
 using namespace geode::prelude;
 
@@ -38,6 +41,7 @@ $execute {
         // alt+right-click stays with the editor.
         if (isPress && !(data.modifiers & KeyboardModifier::Alt)
             && (!pl || pl->m_isPaused)
+            && Mod::get()->hasSetting("capture-menu-rightclick")
             && Mod::get()->getSettingValue<bool>("capture-menu-rightclick")) {
             // quick hub owns clicks over its buttons.
             if (paimon::quickhub::handleQuickButtonRightClick()) return true;
@@ -68,7 +72,9 @@ $execute {
     ).leak();
 }
 
-// swapbuffers only exists on windows/android views; other platforms use other classes.
+// these hooks bind through the vtable / exported symbols, so they need no
+// .bro address; the geode log confirms them live on win/android. other
+// platforms present frames through different classes.
 #if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_ANDROID)
 
 class $modify(CaptureView, CCEGLView) {
@@ -78,6 +84,12 @@ class $modify(CaptureView, CCEGLView) {
     }
 
     void swapBuffers() {
+        if (paimon::isRuntimeShuttingDown()) {
+            CCEGLView::swapBuffers();
+            return;
+        }
+        {
+        paimon::frameperf::Scope perf(paimon::frameperf::Stage::Capture);
         if (FramebufferCapture::hasPendingCapture()) {
             log::debug("[CaptureView] Executing capture in swapBuffers (back buffer)");
             FramebufferCapture::executeIfPending();
@@ -85,23 +97,41 @@ class $modify(CaptureView, CCEGLView) {
             // sample before drawing the cursor so the picker never sees it.
             paimon::editorcp::ColorPickerOverlay::onPreSwapSample();
         }
+        }
 
-        // rtx before cursor
-        paimon::rtx::RTXRenderer::get().renderFrame();
+        // post-processing shaders run before the cursor overlay so the custom cursor is not blurred or ray-traced.
+        {
+            paimon::frameperf::Scope perf(paimon::frameperf::Stage::RTX);
+            paimon::rtx::RTXRenderer::get().renderFrame();
+        }
 
-        // cursor last: visible but out of screenshots
-        CursorManager::get().renderOverlay();
+        // cursor last: visible but out of screenshots (desktop only)
+#if defined(GEODE_IS_DESKTOP)
+        {
+            paimon::frameperf::Scope perf(paimon::frameperf::Stage::Cursor);
+            CursorManager::get().renderOverlay();
+        }
+#endif
 
-        CCEGLView::swapBuffers();
+        {
+            paimon::frameperf::Scope perf(paimon::frameperf::Stage::Present);
+            CCEGLView::swapBuffers();
+        }
 
-        FramebufferCapture::processDeferredCallbacks();
+        {
+            paimon::frameperf::Scope perf(paimon::frameperf::Stage::CaptureCallbacks);
+            FramebufferCapture::processDeferredCallbacks();
+        }
     }
 
+#ifdef GEODE_IS_WINDOWS
     void setFrameSize(float w, float h) {
         CCEGLView::setFrameSize(w, h);
+        if (paimon::isRuntimeShuttingDown()) return;
         BlurSystem::getInstance()->onWindowResized(
             static_cast<int>(w), static_cast<int>(h));
     }
+#endif
 
 };
 
@@ -123,6 +153,15 @@ class $modify(CaptureTouchView, CCEGLViewProtocol) {
             PetManager::get().registerClick({xs[i], ys[i]});
         }
     }
+
+#if defined(GEODE_IS_ANDROID)
+    void setFrameSize(float w, float h) {
+        CCEGLViewProtocol::setFrameSize(w, h);
+        if (paimon::isRuntimeShuttingDown()) return;
+        BlurSystem::getInstance()->onWindowResized(
+            static_cast<int>(w), static_cast<int>(h));
+    }
+#endif
 };
 
 #endif // defined(geode_is_windows) || defined(geode_is_mobile)

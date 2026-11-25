@@ -1,7 +1,9 @@
 ﻿#pragma once
+#include "../../../utils/FilesystemPath.hpp"
 
 #include "MenuLoopManager.hpp"
 #include "../../menu-music/services/MenuMusicCopy.hpp"
+#include "../../../utils/MusicChannel.hpp"
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/ui/GeodeUI.hpp>
@@ -76,7 +78,7 @@ namespace MenuLoopControl {
         auto* fmod = FMODAudioEngine::get();
         if (!fmod || !fmod->m_backgroundMusicChannel) return;
         float vol = 0.f;
-        auto res = fmod->m_backgroundMusicChannel->getVolume(&vol);
+        fmod->m_backgroundMusicChannel->getVolume(&vol);
         if (fmod->m_musicVolume <= 0.0f || fmod->getBackgroundMusicVolume() <= 0.0f || vol <= 0.0f) {
             if (sm.getAdvancedLogs()) log::info("MISSION ABORT - volume is 0");
             return;
@@ -184,8 +186,8 @@ namespace MenuLoopControl {
 
         auto favPath = sm.getConfigDir() / "favorites.txt";
         {
-            auto existing = geode::utils::file::readString(favPath).unwrapOr("");
-            (void)geode::utils::file::writeString(favPath, existing + fmt::format("{}\n", current));
+            auto existing = geode::utils::file::readString(paimon::paths::toSdkPath(favPath)).unwrapOr("");
+            (void)geode::utils::file::writeString(paimon::paths::toSdkPath(favPath), existing + fmt::format("{}\n", current));
         }
 
         Notification::create(fmt::format("Favorited {}!", sm.getCurrentSongDisplayName()), NotificationIcon::Success)->show();
@@ -222,8 +224,8 @@ namespace MenuLoopControl {
 
         auto blPath = sm.getConfigDir() / "blacklist.txt";
         {
-            auto existing = geode::utils::file::readString(blPath).unwrapOr("");
-            (void)geode::utils::file::writeString(blPath, existing + fmt::format("{}\n", current));
+            auto existing = geode::utils::file::readString(paimon::paths::toSdkPath(blPath)).unwrapOr("");
+            (void)geode::utils::file::writeString(paimon::paths::toSdkPath(blPath), existing + fmt::format("{}\n", current));
         }
 
         stopMenuMusic();
@@ -273,7 +275,7 @@ namespace MenuLoopControl {
         if (fullLength <= 0) return;
 
         sm.setPauseSongPositionTracking(true);
-        auto* ch = fmod->getActiveMusicChannel(0);
+        auto* ch = paimon::audio::activeMusicChannel(fmod, 0);
         if (ch) {
             int target = static_cast<int>(
                 static_cast<float>(fullLength) * (std::clamp(percentage, 0, 100) / 100.f));
@@ -299,7 +301,7 @@ namespace MenuLoopControl {
 
         sm.setPauseSongPositionTracking(true);
         int newPos = 0;
-        auto* ch = fmod->getActiveMusicChannel(0);
+        auto* ch = paimon::audio::activeMusicChannel(fmod, 0);
         if (!ch) { sm.setPauseSongPositionTracking(false); return; }
 
         if ((lastPos - jump) < 0) {
@@ -333,7 +335,7 @@ namespace MenuLoopControl {
         const int jump = getJumpAmountMs();
 
         sm.setPauseSongPositionTracking(true);
-        auto* ch = fmod->getActiveMusicChannel(0);
+        auto* ch = paimon::audio::activeMusicChannel(fmod, 0);
         if (!ch) { sm.setPauseSongPositionTracking(false); return; }
 
         int newPos = 0;

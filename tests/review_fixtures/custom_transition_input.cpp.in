@@ -1,0 +1,197 @@
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <functional>
+#include <memory>
+#include <string>
+#include <vector>
+#include "src/features/transitions/services/TransitionEvaluation.hpp"
+
+// The canvas callbacks are extracted from production. Only the engine's
+// geometry/dispatcher and rendering entry points are replaced here.
+namespace cocos2d {
+struct CCPoint { float x = 0.f, y = 0.f; };
+struct CCSize { float width = 0.f, height = 0.f; };
+struct CCRect {
+    float x, y, width, height;
+    bool containsPoint(CCPoint p) const { return p.x >= x && p.y >= y && p.x <= x + width && p.y <= y + height; }
+};
+struct CCTouch { CCPoint point; CCPoint getLocation() const { return point; } };
+struct CCEvent {};
+struct CCNode {
+    CCPoint position, anchor;
+    CCSize size;
+    float scale = 1.f;
+    bool ignoreAnchor = false, visible = true;
+    virtual ~CCNode() = default;
+    virtual bool init() { return true; }
+    void setPosition(CCPoint value) { position = value; }
+    void setAnchorPoint(CCPoint value) { anchor = value; }
+    void ignoreAnchorPointForPosition(bool value) { ignoreAnchor = value; }
+    void setScale(float value) { scale = value; }
+    bool isVisible() const { return visible; }
+    CCSize getContentSize() const { return size; }
+    CCPoint origin() const {
+        return {position.x + anchor.x * size.width * ((ignoreAnchor ? 1.f : 0.f) - scale),
+            position.y + anchor.y * size.height * ((ignoreAnchor ? 1.f : 0.f) - scale)};
+    }
+    CCPoint convertToNodeSpace(CCPoint p) const { auto o = origin(); return {(p.x - o.x) / scale, (p.y - o.y) / scale}; }
+};
+struct CCLayer : CCNode {
+    CCLayer() { anchor = {.5f, .5f}; ignoreAnchor = true; }
+    virtual void keyBackClicked() {}
+    virtual void registerWithTouchDispatcher() {}
+    virtual void update(float) {}
+    virtual bool ccTouchBegan(CCTouch*, CCEvent*) { return false; }
+    virtual void ccTouchMoved(CCTouch*, CCEvent*) {}
+    virtual void ccTouchEnded(CCTouch*, CCEvent*) {}
+    virtual void ccTouchCancelled(CCTouch*, CCEvent*) {}
+};
+struct CCScene : CCNode {};
+struct CCSprite : CCNode {};
+struct CCLayerRGBA : CCLayer {};
+struct CCLayerColor : CCLayer {};
+struct CCLabelBMFont : CCNode {};
+struct CCDrawNode : CCNode {};
+struct CCTouchDispatcher {
+    CCLayer* canvas = nullptr;
+    int priority = 0, modalPriority = -500;
+    bool swallows = false, claimed = false;
+    int getTargetPrio() const { return modalPriority; }
+    void addTargetedDelegate(CCLayer* layer, int value, bool swallow) { canvas = layer; priority = value; swallows = swallow; }
+    bool begin(CCTouch* touch) {
+        // Property menus register at targetPrio - 2. Canvas gestures must get
+        // the first chance in their own bounds, even with a modal underneath.
+        claimed = priority < modalPriority - 2 && canvas->ccTouchBegan(touch, nullptr);
+        return claimed;
+    }
+    void move(CCTouch* touch) { if (claimed) canvas->ccTouchMoved(touch, nullptr); }
+    void end(CCTouch* touch) { if (claimed) canvas->ccTouchEnded(touch, nullptr); claimed = false; }
+};
+struct CCDirector {
+    CCTouchDispatcher dispatcher;
+    static CCDirector* get() { static CCDirector director; return &director; }
+    CCTouchDispatcher* getTouchDispatcher() { return &dispatcher; }
+};
+}
+namespace geode { struct TextInput {}; struct ScrollLayer : cocos2d::CCLayer {}; }
+namespace paimon::transitions { struct TransitionMedia {}; }
+using namespace cocos2d;
+using namespace paimon::transitions;
+constexpr float panelVirtualWidth = 280.f, timelineHeight = 96.f, trackHeight = 12.f, trackLabelWidth = 108.f;
+constexpr int visibleTracks = 4;
+
+#define private public
+@@source|src/features/transitions/ui/CustomTransitionLayer.hpp@@
+#undef private
+
+int evaluations = 0;
+void CustomTransitionLayer::keyBackClicked() {}
+void CustomTransitionLayer::evaluate() { ++evaluations; }
+void CustomTransitionLayer::refreshTimeline() {}
+void CustomTransitionLayer::queuePanel() {}
+void CustomTransitionLayer::refreshDocument() { m_evaluator.configure(m_commands, m_config.duration); evaluate(); }
+void CustomTransitionLayer::selectCommand(int index) { m_selected = index; }
+@@function|src/features/transitions/ui/CustomTransitionLayer.cpp|void CustomTransitionLayer::registerWithTouchDispatcher@@
+@@function|src/features/transitions/ui/CustomTransitionLayer.cpp|void CustomTransitionLayer::layoutPropertyPanel@@
+@@function|src/features/transitions/ui/CustomTransitionLayer.cpp|float CustomTransitionLayer::totalDuration@@
+@@function|src/features/transitions/ui/CustomTransitionLayer.cpp|float CustomTransitionLayer::timeX@@
+@@function|src/features/transitions/ui/CustomTransitionLayer.cpp|float CustomTransitionLayer::timeAt@@
+@@function|src/features/transitions/ui/CustomTransitionLayer.cpp|float CustomTransitionLayer::trackY@@
+@@function|src/features/transitions/ui/CustomTransitionLayer.cpp|bool CustomTransitionLayer::ccTouchBegan@@
+@@function|src/features/transitions/ui/CustomTransitionLayer.cpp|void CustomTransitionLayer::ccTouchMoved@@
+@@function|src/features/transitions/ui/CustomTransitionLayer.cpp|void CustomTransitionLayer::ccTouchEnded@@
+@@function|src/features/transitions/ui/CustomTransitionLayer.cpp|void CustomTransitionLayer::ccTouchCancelled@@
+@@function|src/features/transitions/ui/CustomTransitionLayer.cpp|void CustomTransitionLayer::update@@
+@@function|src/features/transitions/ui/CustomTransitionLayer.cpp|CustomTransitionLayer::TriggerTarget CustomTransitionLayer::newTriggerTarget@@
+@@function|src/features/transitions/ui/CustomTransitionLayer.cpp|void CustomTransitionLayer::addTrigger@@
+
+bool close(float a, float b) { return std::abs(a - b) < .001f; }
+int main() {
+    CustomTransitionLayer editor;
+    CCNode timeline, stage;
+    timeline.position = {10.f, 6.f}; stage.position = {20.f, 140.f};
+    editor.m_timeline = &timeline; editor.m_stage = &stage;
+    editor.m_stageSize = {100.f, 50.f}; editor.m_win = {568.f, 320.f};
+    editor.m_timelineWidth = 548.f; editor.m_viewDuration = 2.f;
+    editor.m_config.duration = 2.f; editor.m_config.sceneCut = true;
+    TransitionCommand image;
+    image.action = CommandAction::Image; image.startTime = .2f; image.duration = 1.f;
+    image.fromX = image.fromY = .5f; image.fromVal = image.toVal = 255.f;
+    TransitionCommand move;
+    move.action = CommandAction::Move; move.startTime = .5f; move.duration = .5f;
+    move.targetObj = 0; move.fromX = move.fromY = .5f; move.toX = .8f; move.toY = .5f;
+    editor.m_commands = {image, move}; editor.refreshDocument();
+    editor.registerWithTouchDispatcher();
+    auto* dispatcher = CCDirector::get()->getTouchDispatcher();
+    assert(dispatcher->canvas == &editor && dispatcher->swallows);
+    assert(dispatcher->priority < dispatcher->getTargetPrio() - 2);
+
+    // Press + drag on the ruler changes time immediately, including backwards.
+    CCTouch touch{{10.f + editor.timeX(.3f), 6.f + 74.f}};
+    assert(dispatcher->begin(&touch));
+    assert(close(editor.m_playTime, .3f));
+    touch.point.x = 10.f + editor.timeX(.75f); dispatcher->move(&touch);
+    assert(close(editor.m_playTime, .75f));
+    auto frame = editor.m_evaluator.sample(editor.m_playTime, {1000.f, 500.f}, {});
+    assert(close(frame.objects[0].position.x, 650.f));
+    touch.point.x = 10.f + editor.timeX(.1f); dispatcher->move(&touch);
+    assert(close(editor.m_playTime, .1f)); dispatcher->end(&touch);
+
+    // Moving a clip changes its absolute start without moving another track.
+    touch.point = {10.f + editor.timeX(.6f), 6.f + editor.trackY(0) + 6.f};
+    assert(dispatcher->begin(&touch));
+    touch.point.x += (editor.m_timelineWidth - trackLabelWidth - 8.f) / 2.f * .25f;
+    dispatcher->move(&touch); dispatcher->end(&touch);
+    assert(close(editor.m_commands[0].startTime, .45f));
+    assert(editor.m_commands[1].startTime == .5f);
+
+    touch.point = {10.f + editor.timeX(1.45f) - 1.f, 6.f + editor.trackY(0) + 6.f};
+    assert(dispatcher->begin(&touch));
+    touch.point.x += (editor.m_timelineWidth - trackLabelWidth - 8.f) / 2.f * .3f;
+    dispatcher->move(&touch); dispatcher->end(&touch);
+    assert(close(editor.m_commands[0].duration, 1.3f));
+
+    // A/B cut, object dragging, and controls outside the canvas all have distinct gestures.
+    touch.point = {10.f + editor.timeX(1.2f), 66.f};
+    assert(dispatcher->begin(&touch)); assert(close(editor.m_config.cutPoint, .6f)); dispatcher->end(&touch);
+    CCSprite sprite; sprite.size = {30.f, 20.f}; sprite.position = {20.f, 140.f};
+    editor.m_objects.push_back({0, &sprite, {}, 1.f});
+    touch.point = {25.f, 145.f}; assert(dispatcher->begin(&touch));
+    touch.point = {45.f, 155.f}; dispatcher->move(&touch); dispatcher->end(&touch);
+    assert(close(editor.m_commands[0].fromX, .7f) && close(editor.m_commands[0].fromY, .7f));
+    assert(close(editor.m_commands[1].fromX, .7f));
+    touch.point = {500.f, 250.f}; assert(!dispatcher->begin(&touch)); // property panel
+    touch.point = {40.f, 300.f}; assert(!dispatcher->begin(&touch)); // toolbar
+    touch.point = {500.f, 93.f}; assert(!dispatcher->begin(&touch)); // track paging
+
+    editor.m_playTime = 1.9f; editor.m_playing = true; editor.m_sceneGuides = false;
+    editor.update(.2f);
+    assert(editor.m_playTime == 2.f && !editor.m_playing && editor.m_sceneGuides);
+
+    geode::ScrollLayer panel; panel.size = {280.f, 190.f}; editor.m_panel = &panel;
+    panel.setScale(198.8f / 280.f); panel.setPosition({359.2f, 108.f});
+    assert(panel.origin().x > 399.f); // reproduces the old ~40-point drift seen in the screenshot
+    for (float width : {568.f, 850.f, 1024.f}) {
+        editor.m_win.width = width; editor.m_panelWidth = std::clamp(width * .35f, 180.f, 260.f);
+        editor.layoutPropertyPanel();
+        auto origin = panel.origin();
+        assert(close(origin.x, width - editor.m_panelWidth - 10.f));
+        assert(close(origin.y, editor.m_mainBottom));
+        assert(close(origin.x + panel.size.width * panel.scale, width - 10.f));
+    }
+    assert(evaluations > 8);
+
+    // Opening a Stinger starts with its first image selected. Its quick Alpha
+    // must affect that image, even if the scene selector still says Scene A.
+    editor.m_selected = 0; editor.m_tab = 0; editor.m_targetObject = -1;
+    editor.m_playTime = .5f;
+    auto imageTarget = editor.newTriggerTarget();
+    assert(imageTarget.object == 0);
+    editor.addTrigger(CommandAction::FadeOut, imageTarget);
+    assert(editor.m_commands.back().targetObj == 0);
+    frame = editor.m_evaluator.sample(.9f, {1000.f, 500.f}, {});
+    assert(frame.objects[0].visible && close(frame.objects[0].opacity, 0.f));
+    editor.m_tab = 1; editor.m_targetObject = -1; editor.m_targetScene = "to";
+    assert(editor.newTriggerTarget().object == -1 && editor.newTriggerTarget().scene == "to");
+}

@@ -94,6 +94,10 @@ void add(GJSearchObject* search, std::vector<int> difficulties, std::vector<int>
 
     std::erase(history, obj);
     history.insert(history.begin(), std::move(obj));
+    constexpr size_t kMaxHistory = 100;
+    if (history.size() > kMaxHistory) {
+        history.resize(kMaxHistory);
+    }
 }
 
 void remove(int index) {

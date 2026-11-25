@@ -15,6 +15,7 @@ namespace paimon::icon_maker {
 
 class EditorCanvas : public cocos2d::CCLayer {
 public:
+    using cocos2d::CCLayer::init;
     struct Zone {
         std::string key;
         // editor-owned texture shared by canvas and zone strip thumbnails.
@@ -40,6 +41,8 @@ public:
     void setZones(std::vector<Zone> zones, std::string const& activeKey);
     void setSelection(std::string const& zoneKey, int pieceIndex, bool locked);
     void setActiveZone(std::string const& key);
+    // 0 = full icon at 100%, 1 = dim inactive zones, 2 = active zone only.
+    void setFocusMode(int mode);
     void setIsolate(bool isolate);
     void setBackgroundMode(int mode);
     void setGuideVisible(bool visible);
@@ -93,7 +96,8 @@ protected:
     int m_selPiece = -1;
     bool m_selLocked = false;
 
-    bool m_isolate = false;
+    int m_focusMode = 0;  // 0 = todo 100%, 1 = enfocar zona, 2 = solo zona
+    bool m_showGuide = true;
     bool m_eyedropper = false;
 
     cocos2d::CCNode* m_world = nullptr;

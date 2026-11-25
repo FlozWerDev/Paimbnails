@@ -78,14 +78,17 @@ std::array<Primitive, 2> splitPrimitive(Primitive const& object, std::size_t ind
         second.x += secondShift * cosine;
         second.y += secondShift * sine;
     } else {
+        float const yAngle = (object.rotation + object.skew) * kPi / 180.f;
+        float const yCosine = std::cos(yAngle);
+        float const ySine = std::sin(yAngle);
         first.height = object.height * ratio;
         second.height = object.height - first.height;
         float const firstShift = -second.height * 0.5f;
         float const secondShift = first.height * 0.5f;
-        first.x -= firstShift * sine;
-        first.y += firstShift * cosine;
-        second.x -= secondShift * sine;
-        second.y += secondShift * cosine;
+        first.x -= firstShift * ySine;
+        first.y += firstShift * yCosine;
+        second.x -= secondShift * ySine;
+        second.y += secondShift * yCosine;
     }
     return {first, second};
 }

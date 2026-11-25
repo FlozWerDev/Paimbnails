@@ -1,0 +1,132 @@
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+#include <cassert>
+#include <cstdint>
+#include <functional>
+#include <string>
+#include <vector>
+#include "src/features/profile-redesign/services/ProfileLevelCatalog.hpp"
+using namespace paimon::profile_redesign;
+namespace log { template<class... Args> void warn(char const*, Args&&...) {} }
+
+struct CCNode {
+    bool visible = true, running = false;
+    void setVisible(bool value) { visible = value; }
+    void onEnter() { running = true; }
+    void onExit() { running = false; }
+};
+struct Scroll {
+    bool touch = true, mouse = true;
+    float offset = 0;
+    void setTouchEnabled(bool value) { touch = value; }
+    void setMouseEnabled(bool value) { mouse = value; }
+};
+struct Request { int cancellations = 0; void cancel() { ++cancellations; } };
+struct Label { std::string text; void setString(char const* value) { text = value; } };
+template<class T> struct WeakRef {
+    T* ptr;
+    WeakRef(T* value) : ptr(value) {}
+    T* lock() const { return ptr; }
+};
+namespace paimon {
+std::vector<std::function<void()>> pending;
+void scheduleMainThreadDelay(float, std::function<void()> cb) { pending.push_back(std::move(cb)); }
+}
+int storedMetadata = 0;
+void storeLevelMetadata(std::string const&) { ++storedMetadata; }
+
+struct ProfileLevelsPanel : CCNode {
+    bool m_active = false, m_loading = false;
+    uint64_t m_generation = 0;
+    std::size_t m_page = 0;
+    ProfileLevelCatalog m_catalog;
+    int m_userID = 42, requests = 0, renders = 0, errors = 0;
+    Scroll* m_scroll;
+    Request m_request;
+    Label* m_pageLabel;
+    void requestNextPage() { ++requests; m_loading = true; }
+    void showError() { ++errors; }
+    void renderPage() { ++renders; }
+    void setActive(bool active);
+    void onEnter();
+    void onExit();
+    void cancelLoading();
+    void retryLoading();
+    void acceptPage(bool ok, std::string response);
+};
+@@function|src/features/profile-redesign/services/ProfileLevelsPanel.cpp|void ProfileLevelsPanel::setActive(@@
+@@function|src/features/profile-redesign/services/ProfileLevelsPanel.cpp|void ProfileLevelsPanel::onEnter(@@
+@@function|src/features/profile-redesign/services/ProfileLevelsPanel.cpp|void ProfileLevelsPanel::onExit(@@
+@@function|src/features/profile-redesign/services/ProfileLevelsPanel.cpp|void ProfileLevelsPanel::cancelLoading(@@
+@@function|src/features/profile-redesign/services/ProfileLevelsPanel.cpp|void ProfileLevelsPanel::retryLoading(@@
+@@function|src/features/profile-redesign/services/ProfileLevelsPanel.cpp|void ProfileLevelsPanel::acceptPage(@@
+
+int main() {
+    ProfileLevelsPanel panel;
+    Scroll scroll;
+    Label label;
+    panel.m_scroll = &scroll;
+    panel.m_pageLabel = &label;
+    panel.setActive(false);
+    assert(!panel.visible && !scroll.touch && !scroll.mouse && panel.requests == 0);
+    panel.setActive(true);
+    panel.setActive(true);
+    assert(scroll.touch && panel.requests == 1);
+    panel.acceptPage(true, "1:1:6:42:14:5###2:0:1\r\n");
+    assert(panel.renders == 0 && paimon::pending.size() == 1 && storedMetadata == 1);
+    panel.setActive(false);
+    assert(panel.m_request.cancellations == 1 && !panel.m_loading);
+    paimon::pending.front()(); // leaving the tab cancels the queued next page
+    assert(panel.requests == 1);
+    panel.setActive(true);
+    assert(panel.requests == 2 && panel.m_catalog.nextPage() == 1);
+    panel.acceptPage(false, "");
+    assert(panel.errors == 1 && !panel.m_catalog.complete());
+    panel.acceptPage(true, "1:2:6:42:14:100###2:1:1");
+    assert(panel.renders == 1 && panel.m_catalog.levels().front().id == 2);
+    panel.setActive(false);
+    panel.setActive(true);
+    assert(panel.requests == 2); // completed results survive switching tabs
+    panel.m_page = 1;
+    scroll.offset = 37;
+    for (int trip = 0; trip < 2; ++trip) {
+        auto const generation = panel.m_generation;
+        panel.onExit(); // opening a level pushes a scene and exits the profile tree
+        assert(panel.m_active && panel.visible && !panel.running && !panel.m_loading);
+        assert(panel.m_generation == generation + 1);
+        panel.onEnter(); // popping the level scene re-enters the same profile tree
+        assert(panel.m_active && panel.visible && panel.running && scroll.touch && scroll.mouse);
+        assert(panel.requests == 2 && panel.renders == 1); // retain the existing rows
+        assert(panel.m_page == 1 && scroll.offset == 37);
+    }
+    panel.retryLoading(); // retry also recovers a finished catalogue with a rendering error
+    assert(!panel.m_catalog.complete() && panel.m_catalog.nextPage() == 0 && panel.m_page == 0 && panel.requests == 3);
+
+    ProfileLevelsPanel empty;
+    empty.m_scroll = &scroll;
+    empty.m_pageLabel = &label;
+    empty.setActive(true);
+    empty.acceptPage(true, "-1\n");
+    assert(empty.m_catalog.complete() && empty.renders == 1 && empty.errors == 0);
+
+    ProfileLevelsPanel loading;
+    loading.m_scroll = &scroll;
+    loading.m_pageLabel = &label;
+    loading.onEnter();
+    loading.setActive(true);
+    loading.acceptPage(true, "1:1:6:42:14:5###2:0:1");
+    auto const pendingPage = paimon::pending.back();
+    loading.onExit();
+    assert(loading.m_active && !loading.m_loading && loading.m_request.cancellations == 1);
+    loading.onEnter();
+    assert(loading.requests == 2 && loading.m_loading && loading.m_catalog.nextPage() == 1);
+    pendingPage(); // a pre-navigation delayed callback cannot start an extra request
+    assert(loading.requests == 2);
+    loading.acceptPage(true, "1:2:6:42:14:100###2:1:1");
+    assert(loading.m_catalog.complete() && loading.renders == 1);
+    loading.setActive(false);
+    loading.onExit();
+    loading.onEnter();
+    assert(!loading.m_active && !loading.visible && !scroll.touch && !scroll.mouse);
+    assert(loading.requests == 2); // navigating back never selects an inactive tab
+}

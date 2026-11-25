@@ -1,0 +1,144 @@
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <vector>
+
+namespace fixture {
+using GLuint = unsigned;
+using GLint = int;
+using GLenum = unsigned;
+using GLubyte = unsigned char;
+using GLfloat = float;
+constexpr int GL_TRUE = 1, GL_NO_ERROR = 0;
+constexpr int GL_VIEWPORT = 1, GL_FRAMEBUFFER_BINDING = 2, GL_FRAMEBUFFER = 3;
+constexpr int GL_DRAW_FRAMEBUFFER = 4, GL_READ_FRAMEBUFFER = 5, GL_COLOR_BUFFER_BIT = 6;
+constexpr int GL_LINEAR = 7, GL_ARRAY_BUFFER = 8, GL_FLOAT = 9, GL_FALSE = 0;
+constexpr int GL_ONE = 10, GL_ZERO = 11, GL_SRC_ALPHA = 12, GL_ONE_MINUS_SRC_ALPHA = 13;
+constexpr int GL_TRIANGLES = 14;
+constexpr int kCCVertexAttribFlag_Position = 1, kCCVertexAttribFlag_TexCoords = 2;
+constexpr int kCCVertexAttrib_Position = 0, kCCVertexAttrib_TexCoords = 1;
+
+namespace log { template<class... Args> void warn(Args const&...) {} }
+struct Draw { int width, height; GLuint framebuffer, texture; float radius, x, y; };
+std::vector<Draw> draws;
+GLint viewport[] = {13, 7, 1280, 720};
+GLuint framebuffer = 0, texture = 0;
+float radius = 0, directionX = 0, directionY = 0;
+bool blitAvailable = true;
+void glGetIntegerv(GLenum name, GLint* result) {
+    if (name == GL_VIEWPORT) std::copy_n(viewport, 4, result);
+    else *result = static_cast<int>(framebuffer);
+}
+int glIsBuffer(GLuint) { return GL_TRUE; }
+GLenum glGetError() { return GL_NO_ERROR; }
+void glBindFramebuffer(GLenum target, GLuint value) {
+    if (target != GL_READ_FRAMEBUFFER) framebuffer = value;
+}
+bool paimonBlitFramebuffer(int, int, int, int, int, int, int, int, int, int) {
+    return blitAvailable;
+}
+void ccGLUseProgram(GLuint) {}
+void ccGLBindVAO(int) {}
+void glBindBuffer(GLenum, GLuint) {}
+void ccGLEnableVertexAttribs(int) {}
+void glVertexAttribPointer(int, int, int, int, unsigned long long, void*) {}
+void glUniform2f(int location, float x, float y) {
+    if (location == 2) { directionX = x; directionY = y; }
+}
+void glUniform1f(int location, float value) { if (location == 3) radius = value; }
+void glUniform3f(int, float, float, float) {}
+void ccGLBindTexture2DN(int, GLuint value) { texture = value; }
+void ccGLBlendFunc(int, int) {}
+void glViewport(int x, int y, int width, int height) {
+    viewport[0] = x; viewport[1] = y; viewport[2] = width; viewport[3] = height;
+}
+void glDrawArrays(int, int, int) {
+    draws.push_back({viewport[2], viewport[3], framebuffer, texture, radius, directionX, directionY});
+}
+
+struct BlurProgram {
+    GLuint prog = 1;
+    int locTexSize = 1, locDir = 2, locRadius = 3, locColorMul = 4, locAlpha = 5;
+};
+BlurProgram& sharedProgram() { static BlurProgram program; return program; }
+bool ensureProgram() { return true; }
+bool createQuadVBO(GLuint& value) { value = 1; return true; }
+float intensityToEclipseRadius(float value) { return value * .01f; }
+constexpr int kSteadyRefreshInterval = 2;
+
+namespace paimon::frameperf {
+enum class Stage { PopupBlur };
+struct Scope { Scope(Stage) {} };
+}
+
+class PaiblurNode {
+public:
+    GLuint m_vbo = 1, m_fboA = 1, m_fboB = 2, m_texA = 10, m_texB = 20;
+    int m_blurW = 640, m_blurH = 360, m_steadyFrames = 0;
+    float m_intensity = 4.f, m_darkness = .28f, m_lastRadius = -1.f;
+    bool m_broken = false, m_hasCachedBlur = false, visible = true;
+    GLubyte opacity = 255;
+    bool isVisible() const { return visible; }
+    GLubyte getDisplayedOpacity() const { return opacity; }
+    bool ensureRenderTargets(int, int) { return true; }
+    void visit();
+};
+
+@@function|src/blur/PaiblurNode.cpp|void PaiblurNode::visit()@@
+
+void checkComposite(Draw const& draw) {
+    assert(draw.framebuffer == 0);
+    assert(draw.width == 1280 && draw.height == 720);
+    assert(draw.texture == 10); // both cached blur axes have completed
+    assert(draw.radius == 0.f); // only one texture sample at full resolution
+}
+
+void run() {
+    PaiblurNode node;
+    node.visit();
+    assert(draws.size() == 3);
+    assert(draws[0].x == 1.f && draws[0].y == 0.f);
+    assert(draws[1].x == 0.f && draws[1].y == 1.f);
+    for (int i = 0; i < 2; ++i) {
+        assert(draws[i].framebuffer != 0 && draws[i].radius > 0.f);
+        assert(draws[i].width == 640 && draws[i].height == 360);
+    }
+    checkComposite(draws.back());
+    assert(viewport[0] == 13 && viewport[1] == 7); // letterboxing survives
+
+    draws.clear();
+    node.visit();
+    assert(draws.size() == 1);
+    checkComposite(draws.back());
+
+    draws.clear();
+    node.visit();
+    assert(draws.size() == 3); // live background refresh still runs
+    checkComposite(draws.back());
+
+    draws.clear();
+    node.opacity = 128;
+    node.visit();
+    assert(draws.size() == 3); // animated radius still follows the fade
+    checkComposite(draws.back());
+
+    draws.clear();
+    node.opacity = 0;
+    node.visit();
+    assert(draws.empty());
+    node.opacity = 255;
+    node.visible = false;
+    node.visit();
+    assert(draws.empty());
+
+    node.visible = true;
+    node.m_hasCachedBlur = false;
+    blitAvailable = false;
+    node.visit();
+    assert(node.m_broken && draws.empty() && framebuffer == 0);
+    node.visit();
+    assert(draws.empty());
+}
+}
+
+int main() { fixture::run(); }

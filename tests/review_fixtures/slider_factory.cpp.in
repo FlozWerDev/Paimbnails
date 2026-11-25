@@ -1,0 +1,64 @@
+#include <cassert>
+#include <cstdint>
+#include <string_view>
+
+struct CCNode {
+    void onSlider(CCNode*) {}
+};
+using SEL_MenuHandler = void (CCNode::*)(CCNode*);
+struct Slider : CCNode {
+    static inline bool fail = false;
+    static inline CCNode* receivedTarget = nullptr;
+    static inline SEL_MenuHandler receivedHandler = nullptr;
+    bool constructed = false;
+    int scheduled = 0;
+    static Slider* create(CCNode* target, SEL_MenuHandler handler, char const* bar,
+                          char const* groove, char const* thumb, char const* thumbSel,
+                          float scale) {
+        assert(std::string_view(bar) == "bar" && std::string_view(groove) == "groove");
+        assert(std::string_view(thumb) == "thumb" && std::string_view(thumbSel) == "selected");
+        assert(scale == 0.75f);
+        receivedTarget = target;
+        receivedHandler = handler;
+        static Slider slider;
+        slider.scheduled = 0;
+        slider.constructed = true;
+        return fail ? nullptr : &slider;
+    }
+    void scheduleOnce(int, float delay) {
+        assert(constructed && delay == 0.f);
+        ++scheduled;
+    }
+};
+struct CustomSliderManager {
+    struct Config { bool enabled = true; } settings;
+    static CustomSliderManager& get() { static CustomSliderManager manager; return manager; }
+    Config& config() { return settings; }
+};
+#define schedule_selector(...) 1
+struct PaimonSlider : Slider {
+@@function|src/features/custom-slider/hooks/SliderThumbHook.cpp|static Slider* create(CCNode* target, SEL_MenuHandler handler, char const* bar,@@
+};
+
+int main() {
+    // The Geode mod list creates a slider with a null target and callback.
+    auto* slider = PaimonSlider::create(nullptr, nullptr, "bar", "groove", "thumb", "selected", 0.75f);
+    assert(slider && slider->constructed && slider->scheduled == 1);
+    assert(!Slider::receivedTarget && !Slider::receivedHandler);
+    // Preserve the full factory result, including the upper bits on x64.
+    if constexpr (sizeof(void*) == 8) assert(reinterpret_cast<std::uintptr_t>(slider) > UINT32_MAX);
+    assert(slider == Slider::create(nullptr, nullptr, "bar", "groove", "thumb", "selected", 0.75f));
+
+    CCNode target;
+    auto handler = &CCNode::onSlider;
+    slider = PaimonSlider::create(&target, handler, "bar", "groove", "thumb", "selected", 0.75f);
+    assert(slider && Slider::receivedTarget == &target && Slider::receivedHandler == handler);
+    assert(slider->scheduled == 1);
+
+    CustomSliderManager::get().settings.enabled = false;
+    slider = PaimonSlider::create(nullptr, nullptr, "bar", "groove", "thumb", "selected", 0.75f);
+    assert(slider && slider->scheduled == 0);
+    Slider::fail = true;
+    CustomSliderManager::get().settings.enabled = true;
+    assert(!PaimonSlider::create(nullptr, nullptr, "bar", "groove", "thumb", "selected", 0.75f));
+}

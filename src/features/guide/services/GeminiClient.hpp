@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Geode/Geode.hpp>
-#include <Geode/utils/web.hpp>
-#include <Geode/utils/async.hpp>
 #include <string>
 #include <vector>
 

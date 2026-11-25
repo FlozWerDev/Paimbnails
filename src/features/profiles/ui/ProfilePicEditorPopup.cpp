@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "ProfilePicEditorPopup.hpp"
 #include "ProfilePicIconsDetailPopup.hpp"
 #include "../../../ui/PaimonUI.hpp"
@@ -280,7 +281,6 @@ CCNode* ProfilePicEditorPopup::createPhotoTab() {
     root->setContentSize(area);
 
     auto photo = paimon::profile_pic::resolveProfilePhoto(m_editConfig);
-    bool customActive = m_editConfig.photoSource == "custom";
 
     float srcY = area.height - 9.f;
     auto srcLbl = smallLabel("Source", 0.42f);
@@ -313,7 +313,7 @@ CCNode* ProfilePicEditorPopup::createPhotoTab() {
 
     std::string status;
     if (photo.source == paimon::profile_pic::ResolvedProfilePhoto::Source::Custom && !m_editConfig.photoPath.empty()) {
-        auto name = utils::string::pathToString(
+        auto name = paimon::paths::toUtf8(
             paimon::assets::pathFromUtf8(m_editConfig.photoPath).filename());
         if (name.size() > 28) name = name.substr(0, 25) + "...";
         status = fmt::format("Custom image: {}", name);
@@ -429,7 +429,7 @@ void ProfilePicEditorPopup::onPickCustomPhoto(CCObject*) {
 
         auto imported = paimon::assets::importToBucket(*pathOpt, "profile_photo", paimon::assets::Kind::Image);
         if (!imported.success || imported.path.empty()) {
-            PaimonNotify::create("Failed to import image", NotificationIcon::Error)->show();
+            PaimonNotify::show("Failed to import image", NotificationIcon::Error);
             return;
         }
         popup->m_editConfig.photoSource = "custom";
@@ -1078,7 +1078,7 @@ void ProfilePicEditorPopup::onAddDeco(CCObject* sender) {
     if (idx < 0 || idx >= (int)cat.decorations.size()) return;
 
     if ((int)m_editConfig.decorations.size() >= kMaxDecos) {
-        PaimonNotify::create(fmt::format("Max {} decorations reached", kMaxDecos), NotificationIcon::Warning)->show();
+        PaimonNotify::show(fmt::format("Max {} decorations reached", kMaxDecos), NotificationIcon::Warning);
         return;
     }
 
@@ -1186,7 +1186,7 @@ void ProfilePicEditorPopup::onDecoZDown(CCObject*) {
 void ProfilePicEditorPopup::onDecoDuplicate(CCObject*) {
     if (m_selectedDecoIdx < 0 || m_selectedDecoIdx >= (int)m_editConfig.decorations.size()) return;
     if ((int)m_editConfig.decorations.size() >= kMaxDecos) {
-        PaimonNotify::create(fmt::format("Max {} decorations reached", kMaxDecos), NotificationIcon::Warning)->show();
+        PaimonNotify::show(fmt::format("Max {} decorations reached", kMaxDecos), NotificationIcon::Warning);
         return;
     }
     auto copy = m_editConfig.decorations[m_selectedDecoIdx];
@@ -1386,7 +1386,7 @@ CCNode* ProfilePicEditorPopup::createStyleTab() {
     CCSize area = m_tabContent->getContentSize();
     root->setContentSize(area);
 
-    float topY = area.height - 14.f;
+    float topY = area.height - 9.f;
 
     auto presetLbl = smallLabel("Presets", 0.42f);
     presetLbl->setAnchorPoint({0.f, 0.5f});
@@ -1395,14 +1395,14 @@ CCNode* ProfilePicEditorPopup::createStyleTab() {
 
     auto actionMenu = CCMenu::create();
     actionMenu->setAnchorPoint({0.5f, 0.5f});
-    actionMenu->setPosition({area.width * 0.5f, topY - 18.f});
-    actionMenu->setContentSize({area.width - 20.f, 22.f});
+    actionMenu->setPosition({area.width * 0.5f, topY - 16.f});
+    actionMenu->setContentSize({area.width - 20.f, 20.f});
     root->addChild(actionMenu);
     actionMenu->setLayout(
         RowLayout::create()->setGap(4.f)->setAutoScale(false)
     );
 
-    auto mkActBtn = [&](char const* text, char const* bg, SEL_MenuHandler sel, float sc = 0.45f) {
+    auto mkActBtn = [&](char const* text, char const* bg, SEL_MenuHandler sel, float sc = 0.43f) {
         auto spr = ButtonSprite::create(text, "goldFont.fnt", bg, 0.7f);
         spr->setScale(sc);
         return CCMenuItemSpriteExtra::create(spr, this, sel);
@@ -1413,7 +1413,7 @@ CCNode* ProfilePicEditorPopup::createStyleTab() {
     actionMenu->addChild(mkActBtn("Reset", "GJ_button_06.png", menu_selector(ProfilePicEditorPopup::onResetAll)));
     actionMenu->updateLayout();
 
-    float fontY = topY - 50.f;
+    float fontY = topY - 36.f;
     auto fontLbl = smallLabel("Font", 0.42f);
     fontLbl->setAnchorPoint({0.f, 0.5f});
     fontLbl->setPosition({14.f, fontY});
@@ -1426,14 +1426,21 @@ CCNode* ProfilePicEditorPopup::createStyleTab() {
             fonts.push_back(f);
     }
 
+    float scrollW = area.width - 20.f;
+    float scrollH = 40.f;
+    auto fontScroll = geode::ScrollLayer::create({scrollW, scrollH});
+    if (fontScroll) fontScroll->setAnchorPoint({0.f, 0.f});
+    fontScroll->setPosition({10.f, fontY - 6.f - scrollH});
+    fontScroll->setTouchEnabled(true);
+    root->addChild(fontScroll);
+
     auto fontMenu = CCMenu::create();
-    fontMenu->setAnchorPoint({0.5f, 0.5f});
-    fontMenu->setPosition({area.width * 0.5f, fontY - 22.f});
-    fontMenu->setContentSize({area.width - 20.f, 60.f});
-    root->addChild(fontMenu);
+    fontMenu->setContentSize({scrollW, 0.f});
+    fontMenu->setAnchorPoint({0.f, 0.f});
     fontMenu->setLayout(
         RowLayout::create()->setGap(3.f)->setGrowCrossAxis(true)
-            ->setCrossAxisOverflow(false)->setAutoScale(false)
+            ->setCrossAxisOverflow(true)->setAutoScale(false)
+            ->setAxisAlignment(AxisAlignment::Start)
     );
 
     for (size_t i = 0; i < fonts.size(); i++) {
@@ -1441,16 +1448,17 @@ CCNode* ProfilePicEditorPopup::createStyleTab() {
         bool selected = m_editConfig.profileFont == font.first;
 
         auto cellBg = paimon::SpriteHelper::createColorPanel(
-            44.f, 22.f,
+            44.f, 18.f,
             selected ? ccColor3B{60, 160, 60} : ccColor3B{40, 40, 40},
             selected ? 200 : 120, 3.f
         );
 
         auto lbl = CCLabelBMFont::create(font.second.c_str(), font.first.c_str());
         if (lbl) {
-            lbl->setScale(0.32f);
+            lbl->setScale(0.28f);
+            lbl->limitLabelWidth(40.f, 0.28f, 0.1f);
             lbl->setAnchorPoint({0.5f, 0.5f});
-            lbl->setPosition({22.f, 11.f});
+            lbl->setPosition({22.f, 9.f});
             cellBg->addChild(lbl);
         }
 
@@ -1459,8 +1467,13 @@ CCNode* ProfilePicEditorPopup::createStyleTab() {
         fontMenu->addChild(btn);
     }
     fontMenu->updateLayout();
+    float fontMenuH = fontMenu->getContentSize().height;
+    fontMenu->setPositionY(std::max(0.f, scrollH - fontMenuH));
+    fontScroll->m_contentLayer->setContentSize({scrollW, std::max(scrollH, fontMenuH)});
+    fontScroll->m_contentLayer->addChild(fontMenu);
+    fontScroll->moveToTop();
 
-    float hoverY = fontY - 56.f;
+    float hoverY = fontY - 6.f - scrollH - 9.f;
     auto hoverLbl = smallLabel("Hover FX", 0.42f);
     hoverLbl->setAnchorPoint({0.f, 0.5f});
     hoverLbl->setPosition({14.f, hoverY});
@@ -1468,21 +1481,21 @@ CCNode* ProfilePicEditorPopup::createStyleTab() {
 
     auto hoverMenu = CCMenu::create();
     hoverMenu->setAnchorPoint({0.5f, 0.5f});
-    hoverMenu->setPosition({area.width * 0.5f, hoverY - 20.f});
-    hoverMenu->setContentSize({area.width - 20.f, 40.f});
+    hoverMenu->setPosition({area.width * 0.5f, hoverY - 15.f});
+    hoverMenu->setContentSize({area.width - 20.f, 20.f});
     root->addChild(hoverMenu);
     hoverMenu->setLayout(
-        RowLayout::create()->setGap(3.f)->setGrowCrossAxis(true)
-            ->setCrossAxisOverflow(false)->setAutoScale(false)
+        RowLayout::create()->setGap(2.f)->setAutoScale(false)
     );
 
     auto hovers = ProfilePicCustomizer::getHoverShaders();
     for (size_t i = 0; i < hovers.size(); i++) {
         bool sel = m_editConfig.hoverShader == hovers[i].first;
         auto cell = paimon::SpriteHelper::createColorPanel(
-            44.f, 18.f, sel ? ccColor3B{60, 160, 60} : ccColor3B{40, 40, 40}, sel ? 200 : 120, 3.f);
-        auto l = smallLabel(hovers[i].second, 0.3f, "chatFont.fnt");
-        l->setPosition({22.f, 9.f});
+            40.f, 18.f, sel ? ccColor3B{60, 160, 60} : ccColor3B{40, 40, 40}, sel ? 200 : 120, 3.f);
+        auto l = smallLabel(hovers[i].second, 0.28f, "chatFont.fnt");
+        l->limitLabelWidth(36.f, 0.28f, 0.1f);
+        l->setPosition({20.f, 9.f});
         cell->addChild(l);
         auto btn = CCMenuItemSpriteExtra::create(cell, this, menu_selector(ProfilePicEditorPopup::onHoverSelect));
         btn->setTag(static_cast<int>(i));
@@ -1490,19 +1503,20 @@ CCNode* ProfilePicEditorPopup::createStyleTab() {
     }
     hoverMenu->updateLayout();
 
-    if (m_editConfig.hoverShader != "none" && !m_editConfig.hoverShader.empty()) {
-        addSliderRow(root, this, area, "Intensity", hoverY - 48.f,
+    bool hasHover = m_editConfig.hoverShader != "none" && !m_editConfig.hoverShader.empty();
+    if (hasHover) {
+        addSliderRow(root, this, area, "Intensity", hoverY - 33.f,
             std::clamp(m_editConfig.hoverIntensity / 2.f, 0.f, 1.f),
             menu_selector(ProfilePicEditorPopup::onHoverIntensityChanged),
             fmt::format("{:.1f}", m_editConfig.hoverIntensity),
             m_hoverIntensitySlider, m_hoverIntensityLabel);
     }
 
-    auto tipLbl = smallLabel("Font + hover effect apply to your profile picture", 0.3f, "chatFont.fnt");
+    auto tipLbl = smallLabel("Font + hover effect apply to your profile picture", 0.28f, "chatFont.fnt");
     tipLbl->setColor({180, 180, 200});
     tipLbl->setOpacity(200);
     tipLbl->setAnchorPoint({0.5f, 0.5f});
-    tipLbl->setPosition({area.width * 0.5f, 12.f});
+    tipLbl->setPosition({area.width * 0.5f, hasHover ? 4.f : 10.f});
     root->addChild(tipLbl);
 
     return root;
@@ -1589,7 +1603,6 @@ CCNode* ProfilePicEditorPopup::createNameTab() {
         if (nc.enabled) paimon::profile_name::decorate(prev, nc);
     }
 
-    // scrollable font grid.
     float gridTop = topY - 44.f;
     auto fontTitle = smallLabel("Font", 0.38f);
     fontTitle->setAnchorPoint({0.f, 0.5f});
@@ -1598,6 +1611,7 @@ CCNode* ProfilePicEditorPopup::createNameTab() {
 
     float scrollH = 42.f;
     auto scroll = geode::ScrollLayer::create({area.width - 16.f, scrollH});
+    if (scroll) scroll->setAnchorPoint({0.f, 0.f});
     scroll->setPosition({8.f, gridTop - scrollH - 2.f});
     scroll->setTouchEnabled(true);
     root->addChild(scroll);
@@ -1643,7 +1657,7 @@ CCNode* ProfilePicEditorPopup::createNameTab() {
 
     float rowY = gridTop - scrollH - 20.f;
 
-    auto cycleBtn = [&](char const* label, float x, float w, SEL_MenuHandler sel) {
+    auto cycleBtn = [&](char const* label, float x, float, SEL_MenuHandler sel) {
         auto spr = ButtonSprite::create(label, "goldFont.fnt", "GJ_button_04.png", 0.7f);
         spr->setScale(0.42f);
         auto b = CCMenuItemSpriteExtra::create(spr, this, sel);
@@ -1665,7 +1679,6 @@ CCNode* ProfilePicEditorPopup::createNameTab() {
 
     rowY -= 26.f;
 
-    // color swatches: solid, grad A/B/C.
     auto solid = makeSwatch(nc.color, this, menu_selector(ProfilePicEditorPopup::onNameColorPick));
     solid->setPosition({24.f, rowY});
     optMenu->addChild(solid);
@@ -1866,7 +1879,7 @@ void ProfilePicEditorPopup::onPreset(CCObject*) {
                 rebuildCurrentTab();
                 rebuildPreview();
                 closeOverlay();
-                PaimonNotify::create("Preset applied!", NotificationIcon::Success)->show();
+                PaimonNotify::show("Preset applied!", NotificationIcon::Success);
             }
         );
         btnMenu->addChild(btn);
@@ -1933,7 +1946,7 @@ void ProfilePicEditorPopup::onRandomize(CCObject*) {
     m_selectedDecoIdx = -1;
     rebuildCurrentTab();
     rebuildPreview();
-    PaimonNotify::create("Randomized!", NotificationIcon::Success)->show();
+    PaimonNotify::show("Randomized!", NotificationIcon::Success);
 }
 
 void ProfilePicEditorPopup::onResetAll(CCObject*) {
@@ -1948,7 +1961,7 @@ void ProfilePicEditorPopup::onResetAll(CCObject*) {
     m_decoPage = 0;
     rebuildCurrentTab();
     rebuildPreview();
-    PaimonNotify::create("Config reset", NotificationIcon::Info)->show();
+    PaimonNotify::show("Config reset", NotificationIcon::Info);
 }
 
 void ProfilePicEditorPopup::rebuildPreview() {
@@ -2011,6 +2024,6 @@ void ProfilePicEditorPopup::onSave(CCObject*) {
     ProfilePicCustomizer::get().save();
     ProfilePicCustomizer::get().setDirty(true);
 
-    PaimonNotify::create("Profile photo saved!", NotificationIcon::Success)->show();
+    PaimonNotify::show("Profile photo saved!", NotificationIcon::Success);
     this->onClose(nullptr);
 }

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/Geode.hpp>
 #include <Geode/utils/web.hpp>
@@ -33,6 +33,7 @@ public:
     };
 
     static UpdateChecker& get();
+    static bool isInitialized();
 
     void checkAsync(bool force = false, std::function<void(bool, std::string)> onDone = {});
 

@@ -1,4 +1,6 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "AdvancedSearch.hpp"
+#include "../../../utils/AtomicFileWrite.hpp"
 #include "SearchObjectBuilder.hpp"
 #include "../../../utils/JsonHelper.hpp"
 #include <Geode/Geode.hpp>
@@ -26,7 +28,7 @@ std::vector<SearchPreset>& presetList() {
 bool g_presetsLoaded = false;
 
 std::filesystem::path presetPath() {
-    return Mod::get()->getSaveDir() / "info_search_presets.json";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "info_search_presets.json";
 }
 
 std::string joinInts(std::vector<int> const& values, char const* fallback) {
@@ -166,7 +168,7 @@ void loadPresets() {
     });
 }
 
-void savePresets() {
+bool savePresets() {
     auto root = matjson::Value::object();
     auto list = matjson::Value::array();
     for (auto const& preset : presetList()) {
@@ -177,12 +179,11 @@ void savePresets() {
     }
     root["presets"] = list;
 
-    std::ofstream file(presetPath(), std::ios::trunc);
-    if (!file.is_open()) {
+    if (!paimon::file::writeAtomically(presetPath(), root.dump(matjson::NO_INDENTATION))) {
         log::warn("[Paimbnails] no se pudo escribir info_search_presets.json");
-        return;
+        return false;
     }
-    file << root.dump(matjson::NO_INDENTATION);
+    return true;
 }
 
 } // namespace
@@ -279,11 +280,12 @@ std::vector<SearchPreset> const& presets() {
     return presetList();
 }
 
-void addPreset(std::string name, AdvancedQuery query) {
+bool addPreset(std::string name, AdvancedQuery query) {
     loadPresets();
-    if (name.empty()) return;
+    if (name.empty()) return false;
 
     auto& list = presetList();
+    auto previous = list;
     auto existing = std::find_if(list.begin(), list.end(),
         [&](SearchPreset const& preset) { return preset.name == name; });
 
@@ -293,15 +295,20 @@ void addPreset(std::string name, AdvancedQuery query) {
         if (list.size() >= kMaxPresets) list.erase(list.begin());
         list.push_back({std::move(name), std::move(query)});
     }
-    savePresets();
+    if (savePresets()) return true;
+    list = std::move(previous);
+    return false;
 }
 
-void removePreset(int index) {
+bool removePreset(int index) {
     loadPresets();
     auto& list = presetList();
-    if (index < 0 || index >= static_cast<int>(list.size())) return;
+    if (index < 0 || index >= static_cast<int>(list.size())) return false;
+    auto previous = list;
     list.erase(list.begin() + index);
-    savePresets();
+    if (savePresets()) return true;
+    list = std::move(previous);
+    return false;
 }
 
 std::string describeQuery(AdvancedQuery const& q) {

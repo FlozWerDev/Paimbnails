@@ -9,7 +9,7 @@
 
 namespace paimon::gifimport {
 
-// tracing thread cap. 0 lets the machine decide.
+// includes the calling import thread; bounded to keep the editor responsive.
 unsigned int workerLimit();
 
 // the tracked import thread joins all local workers before returning.
@@ -17,8 +17,8 @@ unsigned int parallelThreads(std::size_t count);
 void enterParallelRegion();
 void leaveParallelRegion();
 
-// splits [0, count) across threads. never nested: render passes already take
-// the whole machine and nesting only oversubscribes.
+// splits [0, count) across workers. Never nested: Render passes share the same
+// worker budget and nesting would oversubscribe it.
 template <typename Fn>
 void parallelFor(std::size_t count, Fn body) {
     unsigned int const threads = parallelThreads(count);

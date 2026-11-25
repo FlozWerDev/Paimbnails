@@ -247,6 +247,13 @@ struct matjson::Serialize<paimon::texture_studio::TextureProject> {
         if (p.liveRendering) {
             obj["alternativeGlowOverlay"] = p.alternativeGlowOverlay;
             obj["tintScope"] = static_cast<int>(p.tintScope);
+            obj["colorSurface"] = serial::colorToJson(p.colorSurface);
+            obj["colorBackground"] = serial::colorToJson(p.colorBackground);
+            obj["autoSurface"] = p.autoSurface;
+            obj["autoBackground"] = p.autoBackground;
+            obj["toneSpread"] = p.toneSpread;
+            obj["livePaintBackgrounds"] = p.livePaintBackgrounds;
+            obj["livePaintLists"] = p.livePaintLists;
             return obj;
         }
 
@@ -322,6 +329,13 @@ struct matjson::Serialize<paimon::texture_studio::TextureProject> {
         p.colorGlow  = serial::colorFromJson(v["colorGlow"],  p.colorGlow);
         p.colorDetail = serial::colorFromJson(v["colorDetail"], p.colorDetail);
         p.brightness = static_cast<int>(v["brightness"].asInt().unwrapOr(160));
+        p.colorSurface = serial::colorFromJson(v["colorSurface"], p.colorSurface);
+        p.colorBackground = serial::colorFromJson(v["colorBackground"], p.colorBackground);
+        p.autoSurface = v["autoSurface"].asBool().unwrapOr(true);
+        p.autoBackground = v["autoBackground"].asBool().unwrapOr(true);
+        p.toneSpread = static_cast<float>(std::clamp(v["toneSpread"].asDouble().unwrapOr(0.6), 0.0, 1.0));
+        p.livePaintBackgrounds = v["livePaintBackgrounds"].asBool().unwrapOr(true);
+        p.livePaintLists = v["livePaintLists"].asBool().unwrapOr(true);
 
         p.maskSoftness = static_cast<float>(
             v["maskSoftness"].asDouble().unwrapOr(0.35));

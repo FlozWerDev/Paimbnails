@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/Geode.hpp>
 #include "FormatDetect.hpp"
@@ -19,6 +19,7 @@
 #include <atomic>
 #include <filesystem>
 #include <chrono>
+#include <memory>
 
 // animated gif with shared cache and incremental loading.
 class AnimatedGIFSprite : public cocos2d::CCSprite {
@@ -63,6 +64,7 @@ protected:
     static std::filesystem::path getDiskCacheDir();
 
     static void evictIfNeeded();
+    static void trimCacheLocked(size_t byteLimit);
 
     std::vector<GIFFrame*> m_frames;
     std::vector<std::pair<cocos2d::ccColor3B, cocos2d::ccColor3B>> m_frameColors; // per frame: {a, b}.
@@ -106,12 +108,15 @@ public:
     GLint m_locScreenSize = -2;
     cocos2d::CCGLProgram* m_cachedShaderProgram = nullptr;
 
+    static void requestStopWorker();
+    static void waitShutdownWorker(std::chrono::steady_clock::time_point deadline);
     static void clearCache();
     // drop gl textures on reload; worker keeps running.
     static void clearCacheForReload();
     static void remove(std::string const& filename);
     static bool isCached(std::string const& filename);
     static size_t currentCacheBytes();
+    static void trimCacheToBudget(size_t byteLimit);
 
     using AsyncCallback = geode::CopyableFunction<void(AnimatedGIFSprite*)>;
     static void createAsync(std::string const& path, AsyncCallback callback);
@@ -146,14 +151,25 @@ private:
         bool isData = false;
     };
 
-    static std::deque<GIFTask> s_taskQueue;
-    static std::mutex s_queueMutex;
-    static std::condition_variable s_queueCV;
-    static std::vector<std::thread> s_workerThreads;
-    static std::atomic<bool> s_workerRunning;
+    struct WorkerState {
+        std::deque<GIFTask> taskQueue;
+        std::mutex queueMutex;
+        std::condition_variable queueCV;
+        std::condition_variable doneCV;
+        std::atomic<bool> workerRunning{false};
+        size_t aliveWorkers = 0;
+    };
+
+    struct WorkerThread {
+        std::thread thread;
+        std::shared_ptr<std::atomic<bool>> exited;
+    };
+
+    static std::shared_ptr<WorkerState>& workerState();
+    static std::vector<WorkerThread> s_workerThreads;
     static std::atomic<bool> s_shutdownMode;
     static std::mutex s_workerLifecycleMutex;
-    static void workerLoop();
+    static void workerLoop(std::shared_ptr<WorkerState> state, std::shared_ptr<std::atomic<bool>> exited);
     static bool initWorker();
     static void shutdownWorker();
 

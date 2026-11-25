@@ -72,6 +72,21 @@ CCLabelBMFont* makeIdBadge(std::string const& text, float scale) {
     return label;
 }
 
+CCLabelBMFont* attachIdBadge(CCNode* parent, char const* nodeID,
+                             std::string const& text, float scale,
+                             CCPoint anchor, CCPoint position) {
+    if (!parent || parent->getChildByID(nodeID)) return nullptr;
+
+    auto* badge = makeIdBadge(text, scale);
+    if (!badge) return nullptr;
+
+    badge->setID(nodeID);
+    badge->setAnchorPoint(anchor);
+    badge->setPosition(position);
+    parent->addChild(badge, 100);
+    return badge;
+}
+
 void applyAdaptiveIdBadgeContrast(CCLabelBMFont* label) {
     // difference blending needs premultiplied glyph rgb to preserve transparent pixels.
     if (!label || !label->isOpacityModifyRGB()) return;

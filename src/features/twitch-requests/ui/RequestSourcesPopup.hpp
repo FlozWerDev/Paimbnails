@@ -18,7 +18,7 @@ public:
 protected:
     bool init() override;
     void update(float dt) override;
-    void scrollWheel(float x, float y) override;
+    bool scrollWheel(float x, float y) override;
 
 private:
     void rebuild();

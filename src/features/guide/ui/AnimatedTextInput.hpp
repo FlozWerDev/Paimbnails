@@ -1,16 +1,16 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/Geode.hpp>
 #include <functional>
 #include <string>
 
 // animated wrapper over geode::textinput (glow, typing dot, send sweep).
-// no native enter callback: a relay delegate forwards to geode's and fires onsubmit.
 
 namespace paimon::guide {
 
 class AnimatedTextInput : public cocos2d::CCNode {
 public:
+    using cocos2d::CCNode::init;
     static AnimatedTextInput* create(float width, std::string const& placeholder);
 
     void setCallback(std::function<void(std::string const&)> cb);
@@ -35,43 +35,11 @@ protected:
     static constexpr int kGlowPulseTag = 2001;
     static constexpr int kSweepTag     = 2002;
 
-    // delegate interposed between the cctextinputnode and geode's textinput:
-    // forwards everything to the original delegate and reports enter presses.
-    class EnterRelayDelegate : public TextInputDelegate {
-    public:
-        TextInputDelegate* forward = nullptr;
-        std::function<void()> onEnter;
-
-        void textChanged(CCTextInputNode* n) override {
-            if (forward) forward->textChanged(n);
-        }
-        void textInputOpened(CCTextInputNode* n) override {
-            if (forward) forward->textInputOpened(n);
-        }
-        void textInputClosed(CCTextInputNode* n) override {
-            if (forward) forward->textInputClosed(n);
-        }
-        void textInputShouldOffset(CCTextInputNode* n, float offset) override {
-            if (forward) forward->textInputShouldOffset(n, offset);
-        }
-        void textInputReturn(CCTextInputNode* n) override {
-            if (forward) forward->textInputReturn(n);
-        }
-        bool allowTextInput(CCTextInputNode* n) override {
-            return forward ? forward->allowTextInput(n) : true;
-        }
-        void enterPressed(CCTextInputNode* n) override {
-            if (forward) forward->enterPressed(n);
-            if (onEnter) onEnter();
-        }
-    };
-
     geode::TextInput* m_input = nullptr;
     cocos2d::extension::CCScale9Sprite* m_glow = nullptr;
     cocos2d::CCSprite* m_typingDot = nullptr;
     std::function<void(std::string const&)> m_userCallback;
     std::function<void()> m_onSubmit;
-    EnterRelayDelegate m_enterRelay;
 
     float m_width = 0.f;
 };

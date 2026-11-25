@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "CustomSliderManager.hpp"
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/SimplePlayer.hpp>
@@ -74,11 +75,11 @@ CustomSliderManager& CustomSliderManager::get() {
 }
 
 std::filesystem::path CustomSliderManager::configPath() const {
-    return Mod::get()->getSaveDir() / "custom-slider.json";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "custom-slider.json";
 }
 
 std::filesystem::path CustomSliderManager::imagesDir() const {
-    auto dir = Mod::get()->getSaveDir() / "slider-images";
+    auto dir = paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "slider-images";
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     return dir;
@@ -91,7 +92,7 @@ void CustomSliderManager::loadConfig() {
     std::error_code ec;
     auto const size = std::filesystem::file_size(path, ec);
     if (ec || size > 2ull * 1024 * 1024) return;
-    auto res = geode::utils::file::readFromJson<matjson::Value>(path);
+    auto res = geode::utils::file::readFromJson<matjson::Value>(paimon::paths::toSdkPath(path));
     if (!res) return;
 
     auto json = res.unwrap();
@@ -222,7 +223,7 @@ void CustomSliderManager::saveConfig() {
     targets["garageSliders"]  = m_config.targets.garageSliders;
     json["targets"] = targets;
 
-    if (auto result = geode::utils::file::writeToJson(configPath(), json); result.isErr()) {
+    if (auto result = geode::utils::file::writeToJson(paimon::paths::toSdkPath(configPath()), json); result.isErr()) {
         log::warn("[CustomSlider] failed to save config: {}", result.unwrapErr());
     }
 }
@@ -384,7 +385,7 @@ CCTexture2D* CustomSliderManager::imageTexture() {
     std::error_code ec;
     if (!std::filesystem::exists(imgPath, ec)) return nullptr;
 
-    std::string pathStr = geode::utils::string::pathToString(imgPath);
+    std::string pathStr = paimon::paths::toUtf8(imgPath);
     if (pathStr != m_imageTexturePath) {
         invalidateImageCache();
         m_imageTexturePath = pathStr;
@@ -440,7 +441,7 @@ CCNode* CustomSliderManager::createGifNode(bool isSelected) {
     std::error_code ec;
     if (!std::filesystem::exists(gifPath, ec)) return nullptr;
 
-    std::string pathStr = geode::utils::string::pathToString(gifPath);
+    std::string pathStr = paimon::paths::toUtf8(gifPath);
     auto* gifSpr = AnimatedGIFSprite::create(pathStr);
     if (!gifSpr) {
         return createImageNode();

@@ -231,7 +231,7 @@ void PointsLayer::ccTouchMoved(CCTouch* touch, CCEvent* event) {
     }
 }
 
-void PointsLayer::ccTouchEnded(CCTouch* touch, CCEvent* event) {
+void PointsLayer::ccTouchEnded(CCTouch*, CCEvent*) {
     m_isMoving = false; setPointsHidden(m_pointsHidden, 0.3f);
     m_layer->pointReleased();
 }
@@ -276,7 +276,7 @@ void PointsLayer::updatePointScale(float value) {
     }
 }
 
-void PointsLayer::updateGradient(GradientConfig config, ColorType colorType, bool force) {
+void PointsLayer::updateGradient(GradientConfig config, ColorType colorType, bool) {
     GradientUtils::applyGradient(m_icon, config, colorType, false, m_layer->isSecondPlayer(), 1000);
 
     m_currentColor = colorType;
@@ -313,7 +313,7 @@ void PointsLayer::setPointsHidden(bool hidden, float time) {
 
     float delay = time / m_points.size();
 
-    for (int i = 0; i < m_points.size(); i++) {
+    for (size_t i = 0; i < m_points.size(); i++) {
         m_points[i]->setHidden(hidden, delay * (i + 1) + (time > 0.f ? 0.1f : 0.f));
     }
 
@@ -353,7 +353,7 @@ void PointsLayer::loadPoints(GradientConfig config, bool animate) {
         }
     }
 
-    for (int i = 0; i < m_currentConfig.points.size(); i++) {
+    for (size_t i = 0; i < m_currentConfig.points.size(); i++) {
         if (i == points.size()) break;
 
         replacedPoints.insert(m_currentConfig.points[i]);

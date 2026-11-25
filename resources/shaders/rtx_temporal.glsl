@@ -47,12 +47,16 @@ void main() {
     vec4 histRaw = texture2D(u_history, histUV);
     vec3 guideNow = texture2D(u_guideNow, uv).rgb;
     vec3 guidePrev = texture2D(u_guidePrev, histUV).rgb;
-    float agreement = exp(-distance(guideNow, guidePrev) * 24.0
-                          - abs(luma(guideNow) - luma(guidePrev)) * 16.0);
+    float dDist = distance(guideNow, guidePrev);
+    float dLuma = abs(luma(guideNow) - luma(guidePrev));
+    float agreement = exp(-dDist * 12.0 - dLuma * 8.0);
 
     vec2 vpx = (histUV - uv) / max(u_texel, vec2(0.0000001));
-    float adapt = exp(-length(vpx) * 0.12);
-    float fb = clamp(u_temporal, 0.0, 0.97) * adapt * agreement;
+    // Gentle velocity dampening: prevent accumulation blur during camera motion,
+    // but never destroy history on normal scrolling (which caused in-game static).
+    float speed = length(vpx);
+    float adapt = clamp(1.0 - speed * 0.004, 0.70, 1.0);
+    float fb = clamp(u_temporal, 0.0, 0.95) * adapt * agreement;
 
     if (varPass) {
         vec3 d = sanitizeColor(current.rgb) - sanitizeColor(histRaw.rgb);
@@ -81,9 +85,8 @@ void main() {
 
     vec4 hist = histRaw;
     if (u_clampSigma >= 0.0) {
-        // intersection never empty: mn <= m1 <= mx.
-        vec4 lo = max(mn, m1 - sigma * u_clampSigma);
-        vec4 hi = min(mx, m1 + sigma * u_clampSigma);
+        vec4 lo = m1 - sigma * u_clampSigma;
+        vec4 hi = m1 + sigma * u_clampSigma;
         hist = clamp(hist, lo, hi);
     }
 

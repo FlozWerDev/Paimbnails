@@ -110,7 +110,8 @@ void ThumbFeedSocket::connect() {
     m_connecting = true;
     auto const generation = ++m_generation;
 
-    // callbacks land on the reader thread: hop to main before touching cocos or saves.
+    // WebSocket deliveries are gated on main; the generation also invalidates
+    // this service's own delayed work after a reconnect.
     bool const started = socket->connect(
         std::move(options),
         [generation] {

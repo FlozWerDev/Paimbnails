@@ -77,11 +77,15 @@ bool parseThumbnailResponse(std::string const& response, std::vector<TransportTh
         if (thumbnails.size() >= kMaxThumbnails) break;
 
         TransportThumbnailInfo info;
-        info.id = item["id"].asString().unwrapOr("");
-        if (item.contains("thumbnailId") && info.id.empty()) {
+        info.id = item.isObject() ? item["id"].asString().unwrapOr("") : "";
+        if (item.isObject() && item.contains("thumbnailId") && info.id.empty()) {
             info.id = item["thumbnailId"].asString().unwrapOr("");
         }
-        info.url = item["url"].asString().unwrapOr("");
+        info.url = item.isObject() ? item["url"].asString().unwrapOr("") : "";
+        // junk items (null, {}, or id-less and url-less) carry nothing to
+        // render or download; skipping beats a phantom entry that trips
+        // hasGalleryMetadataCached and perturbs the position sort.
+        if (info.id.empty() && info.url.empty()) continue;
         info.type = item["type"].asString().unwrapOr("");
         info.format = item["format"].asString().unwrapOr("");
         info.position = item["position"].asInt().unwrapOr(1);
@@ -110,12 +114,29 @@ bool parseThumbnailResponse(std::string const& response, std::vector<TransportTh
 
 } // namespace
 
+bool ThumbnailTransportClient::isUrlAllowed(std::string const& url) {
+    if (url.empty() || url.size() > 2048) return false;
+    // allowlist: http(s) only — rejects file://, data:, javascript:, etc.
+    std::string prefix = url.substr(0, 8);
+    for (auto& c : prefix) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + ('a' - 'A'));
+    }
+    if (!prefix.starts_with("http://") && !prefix.starts_with("https://")) return false;
+    // SSRF: delegates private/loopback/link-local rejection to HttpClient's guard.
+    return HttpClient::isUrlSafe(url);
+}
+
 bool ThumbnailTransportClient::isGIFData(std::vector<uint8_t> const& data) {
     return data.size() >= 6 && paimon::format::isGif(data.data(), data.size());
 }
 
 cocos2d::CCTexture2D* ThumbnailTransportClient::bytesToTexture(std::vector<uint8_t> const& data) {
     if (data.empty()) return nullptr;
+    // abort temprano antes del decode: un mp4 de 500 MB nunca debe llegar a STB.
+    if (data.size() > kMaxUrlDownloadBytes) {
+        log::debug("[ThumbTransport] bytesToTexture: skipped oversize payload bytes={}", data.size());
+        return nullptr;
+    }
     log::debug("[ThumbTransport] bytesToTexture: {} bytes", data.size());
 
     auto loaded = ImageLoadHelper::loadWithSTBFromMemory(data.data(), data.size(), false /* no buffer copy needed */);
@@ -129,6 +150,13 @@ cocos2d::CCTexture2D* ThumbnailTransportClient::bytesToTexture(std::vector<uint8
 
 cocos2d::CCTexture2D* ThumbnailTransportClient::webpToTexture(std::vector<uint8_t> const& data) {
     if (data.empty()) return nullptr;
+    int wpW = 0;
+    int wpH = 0;
+    if (!paimon::format::probeWebpDimensions(data.data(), data.size(), wpW, wpH) ||
+        wpW <= 0 || wpH <= 0 || wpW > 4096 || wpH > 4096) {
+        log::warn("[ThumbTransport] rejected unsafe or oversized WebP ({}x{})", wpW, wpH);
+        return nullptr;
+    }
 
     auto* img = new CCImage();
     if (!img->initWithImageData(const_cast<uint8_t*>(data.data()), data.size())) {
@@ -236,6 +264,7 @@ void ThumbnailTransportClient::getThumbnails(int levelId, ThumbnailListCallback 
     {
         std::lock_guard<std::mutex> lock(m_batchListMutex);
         m_batchListPending.push_back(levelId);
+        if (forceRefresh) m_batchListForceRefresh.insert(levelId);
     }
     scheduleBatchListFlush();
 }
@@ -262,6 +291,7 @@ void ThumbnailTransportClient::scheduleBatchListFlush() {
 
 void ThumbnailTransportClient::flushBatchList() {
     std::vector<int> ids;
+    std::unordered_set<int> forced;
     bool moreLeft = false;
     {
         std::lock_guard<std::mutex> lock(m_batchListMutex);
@@ -277,6 +307,11 @@ void ThumbnailTransportClient::flushBatchList() {
                 ids.push_back(id);
                 if (ids.size() >= BATCH_LIST_MAX_IDS) break;
             }
+        }
+        // consume the force flags for the ids leaving in this dispatch; ids
+        // left behind in remaining keep theirs.
+        for (int id : ids) {
+            if (m_batchListForceRefresh.erase(id) > 0) forced.insert(id);
         }
         if (ids.size() >= BATCH_LIST_MAX_IDS && m_batchListPending.size() > BATCH_LIST_MAX_IDS) {
             std::vector<int> remaining;
@@ -308,7 +343,7 @@ void ThumbnailTransportClient::flushBatchList() {
     log::info("[ThumbTransport] flushBatchList: dispatching {} ids in single request", ids.size());
 
     HttpClient::get().getThumbnailsBatch(ids,
-        [this, ids, generations = std::move(generations)]
+        [this, ids, generations = std::move(generations), forced = std::move(forced)]
         (bool success, std::unordered_map<int, std::string> const& itemsJson) {
             for (int levelId : ids) {
                 std::vector<ThumbnailListCallback> callbacks;
@@ -357,7 +392,7 @@ void ThumbnailTransportClient::flushBatchList() {
                         entry.fetchedAt = std::chrono::steady_clock::now();
                         m_galleryCache[levelId] = std::move(entry);
                         callbackSuccess = true;
-                    } else if (currentGeneration == requestGeneration) {
+                    } else if (currentGeneration == requestGeneration && forced.count(levelId) == 0) {
                         auto cacheIt = m_galleryCache.find(levelId);
                         if (cacheIt != m_galleryCache.end()) {
                             thumbnails = cacheIt->second.thumbnails;
@@ -508,8 +543,18 @@ void ThumbnailTransportClient::getThumbnail(int levelId, DownloadCallback callba
 }
 
 void ThumbnailTransportClient::downloadFromUrl(std::string const& url, DownloadCallback callback) {
+    if (!isUrlAllowed(url)) {
+        log::debug("[ThumbTransport] downloadFromUrl: skipped unsafe url");
+        callback(false, nullptr);
+        return;
+    }
     log::debug("[ThumbTransport] downloadFromUrl: {}", url);
     HttpClient::get().downloadFromUrl(url, [callback, url](bool success, std::vector<uint8_t> const& data, int, int) {
+        if (success && data.size() > kMaxUrlDownloadBytes) {
+            log::debug("[ThumbTransport] downloadFromUrl: skipped oversize bytes={}", data.size());
+            callback(false, nullptr);
+            return;
+        }
         if (success && !data.empty()) {
             log::debug("[ThumbTransport] downloadFromUrl callback: OK bytes={}", data.size());
             callback(success, bytesToTexture(data));
@@ -533,7 +578,17 @@ void ThumbnailTransportClient::downloadFromUrl(std::string const& url, DownloadC
 }
 
 void ThumbnailTransportClient::downloadFromUrlData(std::string const& url, DownloadDataCallback callback) {
+    if (!isUrlAllowed(url)) {
+        log::debug("[ThumbTransport] downloadFromUrlData: skipped unsafe url");
+        callback(false, {});
+        return;
+    }
     HttpClient::get().downloadFromUrl(url, [callback](bool success, std::vector<uint8_t> const& data, int, int) {
+        if (success && data.size() > kMaxUrlDownloadBytes) {
+            log::debug("[ThumbTransport] downloadFromUrlData: skipped oversize bytes={}", data.size());
+            callback(false, {});
+            return;
+        }
         callback(success, data);
     });
 }

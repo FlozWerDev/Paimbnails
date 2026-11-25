@@ -4,6 +4,8 @@
 #include "GradientCache.hpp"
 #include "../../core/modules/ModuleRegistry.hpp"
 
+#include <array>
+
 namespace paimon::icon_gradients {
 
 inline constexpr char kSavedGradientsKey[] = "icon-gradients-saved-gradients";
@@ -67,5 +69,41 @@ public:
     static void hideSprite(CCSprite*);
 
 };
+
+// shared ui sprites/label for the gradient editor widgets and popups.
+
+// fresh color-button swatch (GJ_colorBtn_001) at a final `scale`.
+cocos2d::CCSprite* makeColorSwatch(float scale);
+
+// fresh selection ring (GJ_select_001) at `scale`, hidden until selected.
+cocos2d::CCSprite* makeSelectRing(float scale);
+
+// editor label in the shared style, added to `parent` at z-order 2.
+cocos2d::CCLabelBMFont* makeGradientLabel(cocos2d::CCNode* parent, char const* text,
+                                          cocos2d::CCPoint position, float scale = 0.34f,
+                                          char const* font = "bigFont.fnt");
+
+struct PreviewIcon {
+    IconType type;
+    char const* name;
+};
+
+// icon types offered by the animation popups' live preview, in cycle order.
+inline constexpr std::array kPreviewIcons = {
+    PreviewIcon{IconType::Cube, "Cube"},
+    PreviewIcon{IconType::Ship, "Ship"},
+    PreviewIcon{IconType::Ball, "Ball"},
+    PreviewIcon{IconType::Ufo, "UFO"},
+    PreviewIcon{IconType::Wave, "Wave"},
+    PreviewIcon{IconType::Robot, "Robot"},
+    PreviewIcon{IconType::Spider, "Spider"},
+    PreviewIcon{IconType::Swing, "Swing"},
+    PreviewIcon{IconType::Jetpack, "Jetpack"},
+};
+
+// shader cache slots for each animation popup's live preview; kept distinct
+// so the two previews never share uniforms.
+inline constexpr int kGradientPreviewShaderTag = 807;
+inline constexpr int kCustomPreviewShaderTag = 808;
 
 } // namespace paimon::icon_gradients

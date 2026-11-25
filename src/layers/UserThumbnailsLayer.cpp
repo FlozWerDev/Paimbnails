@@ -70,6 +70,7 @@ bool UserThumbnailsLayer::init(std::string const& username, int accountID) {
 
     auto scrollSize = CCSize{win.width - 40.f, win.height - 100.f};
     m_scrollLayer = geode::ScrollLayer::create(scrollSize);
+    if (m_scrollLayer) m_scrollLayer->setAnchorPoint({0.f, 0.f});
     m_scrollLayer->setPosition({20.f, 50.f});
     m_scrollLayer->setVisible(false);
     this->addChild(m_scrollLayer);
@@ -192,10 +193,10 @@ void UserThumbnailsLayer::onLevelClicked(CCObject* sender) {
     if (auto glm = GameLevelManager::sharedState()) {
         glm->getOnlineLevels(GJSearchObject::create(SearchType::Search, std::to_string(levelId)));
     }
-    PaimonNotify::create(
+    PaimonNotify::show(
         fmt::format("Opening level {}...", levelId).c_str(),
         NotificationIcon::Info
-    )->show();
+    );
 }
 
 void UserThumbnailsLayer::onBack(CCObject*) {

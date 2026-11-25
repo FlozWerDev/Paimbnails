@@ -1,0 +1,90 @@
+#include <cassert>
+#include <string>
+#include <vector>
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+
+struct CCObject {};
+struct CCTexture2D {};
+struct CCSize { float width, height; };
+struct CCPoint { float x, y; };
+struct CCRect {
+    CCPoint origin;
+    CCSize size;
+    CCRect(float x, float y, float width, float height) : origin{x, y}, size{width, height} {}
+};
+struct CCNode {
+    CCSize getContentSize() const { return {488.f, 292.f}; }
+};
+struct CCLabelBMFont { void setString(char const*) {} };
+struct LocalThumbs {
+    CCTexture2D texture;
+    int loadedIndex = -1;
+    static LocalThumbs& get() { static LocalThumbs store; return store; }
+    CCTexture2D* loadTextureByIndex(int, int index) {
+        loadedIndex = index;
+        return &texture;
+    }
+};
+namespace paimon::thumbviewer {
+@@function|src/features/thumbnails/ui/ThumbViewerChrome.cpp|CCRect imageArea(@@
+}
+
+class LocalThumbnailViewPopup {
+public:
+    enum class NavDirection { None, Left, Right };
+    NavDirection m_navDirection = NavDirection::None;
+    std::vector<int> m_suggestions, m_thumbnails;
+    std::vector<std::string> m_localThumbPaths;
+    int m_currentIndex = 0, m_localCurrentIndex = 0, m_levelID = 7;
+    bool m_viewingLocal = false, m_isDownloading = false;
+    CCNode main;
+    CCNode* m_mainLayer = &main;
+    CCLabelBMFont* m_counterLabel = nullptr;
+    int remoteLoads = 0, localDisplays = 0, suggestionLoads = 0, syncs = 0;
+    void stepSuggestion(int delta) {
+        ++suggestionLoads;
+        int const count = static_cast<int>(m_suggestions.size());
+        m_currentIndex = (m_currentIndex + delta + count) % count;
+    }
+    void loadThumbnailAt(int index) { assert(index == m_currentIndex); ++remoteLoads; }
+    void displayThumbnail(CCTexture2D*, float, float, CCSize, bool) { ++localDisplays; }
+    void syncInfoBar() { ++syncs; }
+    void onPrev(CCObject*);
+    void onNext(CCObject*);
+};
+@@function|src/features/thumbnails/ui/LocalThumbnailViewPopup.cpp|void LocalThumbnailViewPopup::onPrev(@@
+@@function|src/features/thumbnails/ui/LocalThumbnailViewPopup.cpp|void LocalThumbnailViewPopup::onNext(@@
+
+int main() {
+    LocalThumbnailViewPopup remote;
+    remote.m_thumbnails = {1, 2, 3};
+    remote.onPrev(nullptr);
+    assert(remote.m_currentIndex == 2 && remote.remoteLoads == 1);
+    remote.onNext(nullptr);
+    assert(remote.m_currentIndex == 0 && remote.remoteLoads == 2);
+    remote.m_isDownloading = true;
+    remote.onNext(nullptr);
+    assert(remote.m_currentIndex == 0 && remote.remoteLoads == 2);
+
+    LocalThumbnailViewPopup local;
+    local.m_viewingLocal = true;
+    local.m_localThumbPaths = {"first.png", "second.png"};
+    local.onPrev(nullptr);
+    assert(local.m_localCurrentIndex == 1 && LocalThumbs::get().loadedIndex == 1);
+    local.onNext(nullptr);
+    assert(local.m_localCurrentIndex == 0 && local.localDisplays == 2 && local.syncs == 2);
+
+    LocalThumbnailViewPopup verification;
+    verification.m_suggestions = {1, 2};
+    verification.onPrev(nullptr);
+    assert(verification.m_currentIndex == 1 && verification.suggestionLoads == 1);
+    verification.onNext(nullptr);
+    assert(verification.m_currentIndex == 0 && verification.suggestionLoads == 2);
+    assert(verification.remoteLoads == 0 && verification.localDisplays == 0);
+
+    LocalThumbnailViewPopup empty;
+    empty.onPrev(nullptr);
+    empty.onNext(nullptr);
+    assert(empty.remoteLoads == 0 && empty.suggestionLoads == 0 && empty.localDisplays == 0);
+}

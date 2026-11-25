@@ -1,4 +1,6 @@
+#include "../utils/FilesystemPath.hpp"
 #include <Geode/modify/LevelInfoLayer.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 #include <Geode/modify/GameLevelOptionsLayer.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/LeaderboardsLayer.hpp>
@@ -10,6 +12,7 @@
 #include <Geode/ui/LoadingSpinner.hpp>
 #include "../utils/PaimonNotification.hpp"
 #include "../utils/SpriteHelper.hpp"
+#include "../utils/ThreadTracker.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
@@ -51,6 +54,7 @@
 #include "../features/main-menu-layout/services/MainMenuLayoutManager.hpp"
 #include "../features/moderation/ui/SetDailyWeeklyPopup.hpp"
 #include "../framework/state/SessionState.hpp"
+#include "../framework/compat/CDCThumbsCompat.hpp"
 
 #include "../utils/Shaders.hpp"
 #include "../utils/GLSLLoader.hpp"
@@ -241,36 +245,40 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             return;
         }
 
-        std::string_view const levelString{
-            level->m_levelString.c_str(), level->m_levelString.size()};
-        gd::string unpacked;
-        if (levelString.find(';') == std::string_view::npos) {
-            unpacked = cocos2d::ZipUtils::decompressString(
-                level->m_levelString, false, 0);
-        }
-        std::string_view const unpackedLevelString{
-            unpacked.c_str(), unpacked.size()};
-        auto const evidence = paimon::gifimport::inspectStoredImageWatermark(
-            levelString, unpackedLevelString);
-        if (!evidence.detected()) return;
-
         m_fields->m_imageWarningQueued = true;
         WeakRef<PaimonLevelInfoLayer> safeRef = this;
-        Loader::get()->queueInMainThread([safeRef] {
-            auto selfRef = safeRef.lock();
-            if (!selfRef || !selfRef->getParent() ||
-                !paimon::modules::isEnabled(paimon::gifimport::kImageWarningModule)) {
-                return;
+        std::string compressed(level->m_levelString.c_str(), level->m_levelString.size());
+        paimon::ThreadTracker::get().spawn([safeRef, compressed = std::move(compressed)]() mutable {
+            if (paimon::isRuntimeShuttingDown()) return;
+
+            std::string_view const levelString{compressed.data(), compressed.size()};
+            std::string unpacked;
+            if (levelString.find(';') == std::string_view::npos) {
+                auto decoded = cocos2d::ZipUtils::decompressString(
+                    std::string(compressed), false, 0);
+                unpacked.assign(decoded.c_str(), decoded.size());
             }
-            auto* self = static_cast<PaimonLevelInfoLayer*>(selfRef.data());
-            auto* alert = FLAlertLayer::create(
-                "Advertencia de imagen",
-                "Este nivel contiene una <cy>imagen o GIF convertido a objetos</c>.\n"
-                "Puede usar muchos objetos y afectar el rendimiento.",
-                "Entendido");
-            if (!alert) return;
-            alert->m_scene = self;
-            alert->show();
+            std::string_view const unpackedLevelString{unpacked.data(), unpacked.size()};
+            auto const evidence = paimon::gifimport::inspectStoredImageWatermark(
+                levelString, unpackedLevelString);
+            if (!evidence.detected()) return;
+
+            Loader::get()->queueInMainThread([safeRef] {
+                auto selfRef = safeRef.lock();
+                if (!selfRef || !selfRef->getParent() ||
+                    !paimon::modules::isEnabled(paimon::gifimport::kImageWarningModule)) {
+                    return;
+                }
+                auto* self = static_cast<PaimonLevelInfoLayer*>(selfRef.data());
+                auto* alert = FLAlertLayer::create(
+                    "Advertencia de imagen",
+                    "Este nivel contiene una <cy>imagen o GIF convertido a objetos</c>.\n"
+                    "Puede usar muchos objetos y afectar el rendimiento.",
+                    "Entendido");
+                if (!alert) return;
+                alert->m_scene = self;
+                alert->show();
+            });
         });
     }
 
@@ -536,6 +544,17 @@ int m_fallbackOrigin = -1;
         }
     }
     
+    // CDC installs its level background asynchronously; while ours is up,
+    // keep theirs hidden so Paimbnails replaces it even if it lands late.
+    void cdcBackgroundGuardTick(float) {
+        auto* bg = m_fields->m_pixelBg.data();
+        if (!bg || !bg->getParent()) {
+            this->unschedule(schedule_selector(PaimonLevelInfoLayer::cdcBackgroundGuardTick));
+            return;
+        }
+        paimon::compat::hideCDCLevelInfoBackground(this);
+    }
+
     void scheduleBackgroundVisibilityGuard() {
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::backgroundVisibilityGuardTick));
         m_fields->m_bgGuardTicks = 0;
@@ -583,7 +602,6 @@ int m_fallbackOrigin = -1;
         paimon::ThumbnailBackgroundChangedEvent::s_lastLevelID = levelID;
         paimon::ThumbnailBackgroundChangedEvent::setLastTexture(tex);
 
-        auto subCount = paimon::EventBus::get().subscriberCount<paimon::ThumbnailBackgroundChangedEvent>();
         paimon::EventBus::get().publish(paimon::ThumbnailBackgroundChangedEvent{levelID, tex});
 
         m_fields->m_initLoadState = Fields::InitLoadState::Applying;
@@ -831,10 +849,11 @@ int m_fallbackOrigin = -1;
 #endif
 
             if (bgStyle == "paimonblur" && m_fields->m_pixelBg) {
-                PaimonAudio::get().activate();
-                m_fields->m_paimonAudioActive = true;
-                m_fields->m_paimonAudioBaseDarkness = this->getAppliedDarknessSetting();
-                this->schedule(schedule_selector(PaimonLevelInfoLayer::updatePaimonAudio));
+                if (PaimonAudio::get().activate()) {
+                    m_fields->m_paimonAudioActive = true;
+                    m_fields->m_paimonAudioBaseDarkness = this->getAppliedDarknessSetting();
+                    this->schedule(schedule_selector(PaimonLevelInfoLayer::updatePaimonAudio));
+                }
             } else if (m_fields->m_paimonAudioActive) {
                 PaimonAudio::get().deactivate();
                 m_fields->m_paimonAudioActive = false;
@@ -873,8 +892,11 @@ int m_fallbackOrigin = -1;
             if (m_fields->m_pixelOverlay) m_fields->m_pixelOverlay->stopAllActions();
 
             preparedSprite->setID("paimon-levelinfo-pixel-bg"_spr);
+            paimon::compat::hideCDCLevelInfoBackground(this);
             this->addChild(preparedSprite, kBackgroundZOrder);
             m_fields->m_pixelBg = preparedSprite;
+            this->unschedule(schedule_selector(PaimonLevelInfoLayer::cdcBackgroundGuardTick));
+            this->schedule(schedule_selector(PaimonLevelInfoLayer::cdcBackgroundGuardTick), 0.5f);
 
             {
                 if (m_fields->m_extraDarknessLayer && m_fields->m_extraDarknessLayer->getParent()) {
@@ -1134,8 +1156,10 @@ int m_fallbackOrigin = -1;
                     if (oldBg) {
                         oldBg->removeFromParent();
                     }
-                    preparedSprite->setOpacity(0);
-                    preparedSprite->runAction(CCFadeIn::create(0.3f));
+                    // first background of the layer: show it at full opacity
+                    // right away; a fade-in from 0 read as a black flash
+                    // because the vanilla background is already hidden.
+                    preparedSprite->setOpacity(255);
                 }
 
                 m_fields->m_bgNavDirection = Fields::BgNavDir::Right;
@@ -1149,7 +1173,7 @@ int m_fallbackOrigin = -1;
 
         bool hasGifBackground = ThumbnailLoader::get().hasGIFData(levelID);
         std::string gifPath = hasGifBackground
-            ? geode::utils::string::pathToString(ThumbnailLoader::get().getCachePath(levelID, true))
+            ? paimon::paths::toUtf8(ThumbnailLoader::get().getCachePath(levelID, true))
             : std::string();
 
         if (hasGifBackground) {
@@ -1329,20 +1353,24 @@ int m_fallbackOrigin = -1;
         AudioContextCoordinator::get().activateLevelInfo(m_level, true);
     }
 
+    void reloadCachedBgSettings() {
+        m_fields->m_cachedBgStyle = Mod::get()->getSavedValue<std::string>("levelinfo-background-style-override", "");
+        if (m_fields->m_cachedBgStyle.empty()) {
+            m_fields->m_cachedBgStyle = Mod::get()->getSettingValue<std::string>("levelinfo-background-style");
+        }
+        m_fields->m_cachedEffectIntensity = std::clamp(
+            static_cast<int>(Mod::get()->getSavedValue<int>("levelinfo-effect-intensity", 4)), 1, 10);
+        m_fields->m_cachedExtraStyles = Mod::get()->getSavedValue<std::string>("levelinfo-extra-styles", "");
+        m_fields->m_cachedAutoCycle = Mod::get()->getSavedValue<bool>("levelcell-gallery-autocycle", true);
+        m_fields->m_dynamicShaders = Mod::get()->getSavedValue<bool>("levelinfo-dynamic-shaders", false);
+        m_fields->m_dynamicShadersDelay = Mod::get()->getSavedValue<float>("levelinfo-dynamic-shaders-delay", 0.0f);
+    }
+
     void refreshDarknessOverlay(float /*dt*/) {
         uint64_t currentVersion = paimon::settings::internal::g_settingsVersion.load(std::memory_order_relaxed);
         if (m_fields->m_loadedSettingsVersion < static_cast<int>(currentVersion)) {
             m_fields->m_loadedSettingsVersion = static_cast<int>(currentVersion);
-            m_fields->m_cachedBgStyle = Mod::get()->getSavedValue<std::string>("levelinfo-background-style-override", "");
-            if (m_fields->m_cachedBgStyle.empty()) {
-                m_fields->m_cachedBgStyle = Mod::get()->getSettingValue<std::string>("levelinfo-background-style");
-            }
-            m_fields->m_cachedEffectIntensity = std::clamp(
-                static_cast<int>(Mod::get()->getSavedValue<int>("levelinfo-effect-intensity", 4)), 1, 10);
-            m_fields->m_cachedExtraStyles = Mod::get()->getSavedValue<std::string>("levelinfo-extra-styles", "");
-            m_fields->m_cachedAutoCycle = Mod::get()->getSavedValue<bool>("levelcell-gallery-autocycle", true);
-            m_fields->m_dynamicShaders = Mod::get()->getSavedValue<bool>("levelinfo-dynamic-shaders", false);
-            m_fields->m_dynamicShadersDelay = Mod::get()->getSavedValue<float>("levelinfo-dynamic-shaders-delay", 0.0f);
+            reloadCachedBgSettings();
         }
         applyDarknessSetting(readDarknessSetting());
     }
@@ -1489,7 +1517,7 @@ int m_fallbackOrigin = -1;
         m_fields->m_targetClickState = 0.0f;
     }
 
-    void updateCursorFromMouse(float dt) {
+    void updateCursorFromMouse(float) {
         // touch callbacks already drive the cursor on mobile; polling here
         // would clobber it with a stale position, so never fight an active touch
         if (m_fields->m_touchActive) return;
@@ -1517,7 +1545,7 @@ int m_fallbackOrigin = -1;
         }
 
         m_fields->m_videoSprite->setOnFirstVisibleFrame({});
-        m_fields->m_videoSprite->stop();
+        m_fields->m_videoSprite->forceStop();
         if (m_fields->m_pixelBg.data() == m_fields->m_videoSprite.data()) {
             m_fields->m_pixelBg = nullptr;
         }
@@ -1551,6 +1579,7 @@ int m_fallbackOrigin = -1;
         }
 
         this->applyThumbnailBackground(tex, levelID);
+        paimon::compat::hideCDCLevelInfoBackground(this);
 
         if (auto oldBg = this->getChildByID("paimon-levelinfo-pixel-bg"_spr)) {
             oldBg->removeFromParent();
@@ -1564,8 +1593,8 @@ int m_fallbackOrigin = -1;
 
         videoSprite->stopAllActions();
         videoSprite->setVisible(true);
-        videoSprite->setOpacity(0);
-        videoSprite->runAction(CCFadeTo::create(0.15f, 255));
+        // first visible frame: full opacity immediately, no fade from black
+        videoSprite->setOpacity(255);
         m_fields->m_pixelBg = videoSprite;
     }
 
@@ -1611,8 +1640,7 @@ int m_fallbackOrigin = -1;
         videoSprite->play();
     }
 
-    $override
-    void onExit() {
+    void handleExit() {
 
         if (clearActiveLevelInfoForOverlay(this)) {
             s_levelInfoOverlayPauseDepth = 0;
@@ -1631,6 +1659,7 @@ int m_fallbackOrigin = -1;
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::refreshDarknessOverlay));
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::forcePlayDynamic));
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::backgroundVisibilityGuardTick));
+        this->unschedule(schedule_selector(PaimonLevelInfoLayer::cdcBackgroundGuardTick));
 
         if (m_fields->m_paimonAudioActive) {
             PaimonAudio::get().deactivate();
@@ -1672,8 +1701,6 @@ int m_fallbackOrigin = -1;
         if (auto vanillaBg = this->getChildByID("background")) {
             vanillaBg->setVisible(true);
         }
-
-        LevelInfoLayer::onExit();
     }
 
     void addSetDailyWeeklyButton() {
@@ -1710,7 +1737,7 @@ int m_fallbackOrigin = -1;
         }
     }
 
-    void onSetDailyWeekly(CCObject* sender) {
+    void onSetDailyWeekly(CCObject*) {
         if (!m_level || m_level->m_levelID.value() <= 0) return;
         SetDailyWeeklyPopup::create(m_level->m_levelID.value())->show();
     }
@@ -1728,6 +1755,10 @@ int m_fallbackOrigin = -1;
         log::info("[LevelInfoLayer] init: levelID={} challenge={}", level ? level->m_levelID.value() : 0, challenge);
 
         if (!LevelInfoLayer::init(level, challenge)) return false;
+        this->addOnExitCallback([this] {
+            this->handleExit();
+            return true;
+        });
 
         setActiveLevelInfoForOverlay(this);
         s_levelInfoOverlayPauseDepth = 0;
@@ -1782,16 +1813,7 @@ int m_fallbackOrigin = -1;
                 return true;
             }
 
-            m_fields->m_cachedBgStyle = Mod::get()->getSavedValue<std::string>("levelinfo-background-style-override", "");
-            if (m_fields->m_cachedBgStyle.empty()) {
-                m_fields->m_cachedBgStyle = Mod::get()->getSettingValue<std::string>("levelinfo-background-style");
-            }
-            m_fields->m_cachedEffectIntensity = std::clamp(
-                static_cast<int>(Mod::get()->getSavedValue<int>("levelinfo-effect-intensity", 4)), 1, 10);
-            m_fields->m_cachedExtraStyles = Mod::get()->getSavedValue<std::string>("levelinfo-extra-styles", "");
-            m_fields->m_cachedAutoCycle = Mod::get()->getSavedValue<bool>("levelcell-gallery-autocycle", true);
-            m_fields->m_dynamicShaders = Mod::get()->getSavedValue<bool>("levelinfo-dynamic-shaders", false);
-            m_fields->m_dynamicShadersDelay = Mod::get()->getSavedValue<float>("levelinfo-dynamic-shaders-delay", 0.0f);
+            reloadCachedBgSettings();
 
             if (m_fields->m_dynamicShaders) {
                 this->setTouchEnabled(true);
@@ -1856,13 +1878,10 @@ int m_fallbackOrigin = -1;
 
             m_fields->m_extraMenu = static_cast<CCMenu*>(leftMenu);
             
-            CCSprite* iconSprite = paimon::SpriteHelper::safeCreate("paim_BotonMostrarThumbnails.png"_spr);
+            CCSprite* iconSprite = paimon::SpriteHelper::safeCreate("paim_ui_showThumb.png"_spr);
             if (!iconSprite) iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png");
             if (!iconSprite) iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plusBtn_001.png");
             if (!iconSprite) return true;
-
-            iconSprite->setRotation(-90.0f);
-            iconSprite->setScale(0.8f);
 
             auto btnSprite = CircleButtonSprite::create(
                 iconSprite,
@@ -1943,9 +1962,9 @@ int m_fallbackOrigin = -1;
 
             {
                 bool localAdmin = paimon::modauth::isVerified(true);
-                bool hasModCode = !HttpClient::get().getModCode().empty();
+                bool hasAuthCred = HttpClient::get().hasSessionToken() || !HttpClient::get().getModCode().empty();
 
-                if (localAdmin && hasModCode) {
+                if (localAdmin && hasAuthCred) {
                     this->addSetDailyWeeklyButton();
                 }
             }
@@ -1955,7 +1974,7 @@ int m_fallbackOrigin = -1;
                 if (auto am = GJAccountManager::get()) accountID = am->m_accountID;
                 
                 Ref<LevelInfoLayer> selfMod = this;
-                ThumbnailAPI::get().checkModeratorAccount(username, accountID, [selfMod](bool isMod, bool isAdmin) {
+                ThumbnailAPI::get().checkModeratorAccount(username, accountID, [selfMod](bool, bool isAdmin) {
                     auto* self = static_cast<PaimonLevelInfoLayer*>(selfMod.data());
                     if (!self || !self->getParent()) return;
                     if (isAdmin) {
@@ -1997,7 +2016,7 @@ int m_fallbackOrigin = -1;
             popup->show();
         } else {
             log::error("Failed to create thumbnail view popup");
-            PaimonNotify::create("Error al abrir miniatura", NotificationIcon::Error)->show();
+            PaimonNotify::show("Error al abrir miniatura", NotificationIcon::Error);
         }
     }
 
@@ -2009,7 +2028,7 @@ int m_fallbackOrigin = -1;
     void onUploadLocalThumbnail(CCObject*) {
         
         if (!m_level) {
-            PaimonNotify::create(Localization::get().getString("level.error_prefix") + "nivel no encontrado", NotificationIcon::Error)->show();
+            PaimonNotify::show(Localization::get().getString("level.error_prefix") + "nivel no encontrado", NotificationIcon::Error);
             return;
         }
         
@@ -2017,7 +2036,7 @@ int m_fallbackOrigin = -1;
         int32_t levelID = level->m_levelID.value();
         
         if (!LocalThumbs::get().has(levelID)) {
-            PaimonNotify::create(Localization::get().getString("level.no_local_thumb").c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::show(Localization::get().getString("level.no_local_thumb").c_str(), NotificationIcon::Error);
             return;
         }
         
@@ -2032,19 +2051,19 @@ int m_fallbackOrigin = -1;
             username = "Unknown";
         }
         if (accountID <= 0) {
-            PaimonNotify::create(Localization::get().getString("level.account_required").c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::show(Localization::get().getString("level.account_required").c_str(), NotificationIcon::Error);
             return;
         }
         
         auto pathOpt = LocalThumbs::get().getThumbPath(levelID);
         if (!pathOpt) {
-            PaimonNotify::create("No se pudo encontrar la miniatura", NotificationIcon::Error)->show();
+            PaimonNotify::show("No se pudo encontrar la miniatura", NotificationIcon::Error);
             return;
         }
         
         std::vector<uint8_t> pngData;
         if (!ImageConverter::loadRgbFileToPng(*pathOpt, pngData)) {
-            PaimonNotify::create(Localization::get().getString("level.png_error").c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::show(Localization::get().getString("level.png_error").c_str(), NotificationIcon::Error);
             return;
         }
         
@@ -2062,15 +2081,15 @@ int m_fallbackOrigin = -1;
                     bool isPending = (msg.find("pending") != std::string::npos || msg.find("verification") != std::string::npos);
                     if (isPending) {
                         PendingQueue::get().addOrBump(levelID, PendingCategory::Verify, username, {}, false);
-                        PaimonNotify::create(Localization::get().getString("capture.suggested").c_str(), NotificationIcon::Success)->show();
+                        PaimonNotify::show(Localization::get().getString("capture.suggested").c_str(), NotificationIcon::Success);
                     } else {
                         PendingQueue::get().removeForLevel(levelID);
-                        PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
+                        PaimonNotify::show(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success);
                         ThumbnailLoader::get().invalidateLevel(levelID);
                         layer->refreshGalleryData(levelID, true);
                     }
                 } else {
-                    PaimonNotify::create(Localization::get().getString("capture.upload_error") + msg, NotificationIcon::Error)->show();
+                    PaimonNotify::show(Localization::get().getString("capture.upload_error") + msg, NotificationIcon::Error);
                 }
             }, levelMeta);
         });
@@ -2208,8 +2227,8 @@ int m_fallbackOrigin = -1;
         });
     }
     
-    void onRateBtn(CCObject* sender) {
-        if (m_fields->m_currentThumbnailIndex < 0 || m_fields->m_currentThumbnailIndex >= m_fields->m_thumbnails.size()) return;
+    void onRateBtn(CCObject*) {
+        if (m_fields->m_currentThumbnailIndex < 0 || static_cast<size_t>(m_fields->m_currentThumbnailIndex) >= m_fields->m_thumbnails.size()) return;
         
         auto& thumb = m_fields->m_thumbnails[m_fields->m_currentThumbnailIndex];
         if (!m_level) return;
@@ -2300,16 +2319,16 @@ int m_fallbackOrigin = -1;
 
         if (tracker.isCreatorFavorited(creatorID)) {
             tracker.onUnfavoriteCreator(creatorID);
-            PaimonNotify::create(
+            PaimonNotify::show(
                 Localization::get().getString("foryou.fav_creator_removed").c_str(),
                 NotificationIcon::Info
-            )->show();
+            );
         } else {
             tracker.onFavoriteCreator(creatorID);
-            PaimonNotify::create(
+            PaimonNotify::show(
                 Localization::get().getString("foryou.fav_creator_added").c_str(),
                 NotificationIcon::Success
-            )->show();
+            );
         }
         tracker.save();
         updateFavoriteButtonStates();
@@ -2322,22 +2341,22 @@ int m_fallbackOrigin = -1;
 
         if (tracker.isLevelFavorited(levelID)) {
             tracker.onUnfavoriteLevel(levelID);
-            PaimonNotify::create(
+            PaimonNotify::show(
                 Localization::get().getString("foryou.fav_level_removed").c_str(),
                 NotificationIcon::Info
-            )->show();
+            );
         } else {
             tracker.onFavoriteLevel(levelID);
-            PaimonNotify::create(
+            PaimonNotify::show(
                 Localization::get().getString("foryou.fav_level_added").c_str(),
                 NotificationIcon::Success
-            )->show();
+            );
         }
         tracker.save();
         updateFavoriteButtonStates();
     }
     
-    void updateGallery(float dt) {
+    void updateGallery(float) {
         if (m_fields->m_overlayPaused) return;
         if (!m_fields->m_cycling || m_fields->m_thumbnails.size() <= 1) return;
         m_fields->m_bgNavDirection = Fields::BgNavDir::Right;
@@ -2363,7 +2382,7 @@ int m_fallbackOrigin = -1;
     }
     
     void loadThumbnail(int index) {
-        if (index < 0 || index >= m_fields->m_thumbnails.size()) return;
+        if (index < 0 || static_cast<size_t>(index) >= m_fields->m_thumbnails.size()) return;
         
         auto& thumb = m_fields->m_thumbnails[index];
         int requestToken = ++m_fields->m_bgRequestToken;
@@ -2481,7 +2500,7 @@ int m_fallbackOrigin = -1;
 
         int const galleryToken = m_fields->m_galleryToken;
         WeakRef<LevelInfoLayer> weakSelf = this;
-        ThumbnailLoader::get().requestUrlLoad(purl, [weakSelf, index, galleryToken](CCTexture2D* tex, bool success) {
+        ThumbnailLoader::get().requestUrlLoad(purl, [weakSelf, galleryToken](CCTexture2D*, bool success) {
             auto selfRef = weakSelf.lock();
             if (!selfRef) return;
             auto* self = static_cast<PaimonLevelInfoLayer*>(selfRef.data());
@@ -2549,16 +2568,7 @@ void LocalThumbnailViewPopup::onSettings(CCObject*) {
         paimon->refreshDarknessOverlay(0.0f);
 
         if (texRef) {
-            paimon->m_fields->m_cachedBgStyle = Mod::get()->getSavedValue<std::string>("levelinfo-background-style-override", "");
-            if (paimon->m_fields->m_cachedBgStyle.empty()) {
-                paimon->m_fields->m_cachedBgStyle = Mod::get()->getSettingValue<std::string>("levelinfo-background-style");
-            }
-            paimon->m_fields->m_cachedEffectIntensity = std::clamp(
-                static_cast<int>(Mod::get()->getSavedValue<int>("levelinfo-effect-intensity", 4)), 1, 10);
-            paimon->m_fields->m_cachedExtraStyles = Mod::get()->getSavedValue<std::string>("levelinfo-extra-styles", "");
-            paimon->m_fields->m_cachedAutoCycle = Mod::get()->getSavedValue<bool>("levelcell-gallery-autocycle", true);
-            paimon->m_fields->m_dynamicShaders = Mod::get()->getSavedValue<bool>("levelinfo-dynamic-shaders", false);
-            paimon->m_fields->m_dynamicShadersDelay = Mod::get()->getSavedValue<float>("levelinfo-dynamic-shaders-delay", 0.0f);
+            paimon->reloadCachedBgSettings();
             paimon->applyThumbnailBackground(texRef, levelID);
         }
     });

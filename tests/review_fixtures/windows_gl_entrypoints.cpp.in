@@ -1,0 +1,45 @@
+#include <cassert>
+#include <cstdint>
+#include <limits>
+#include <string_view>
+
+using PROC = void(*)();
+using PFN_FENCESYNC = PROC;
+using PFN_CLIENTWAITSYNC = PROC;
+using PFN_DELETESYNC = PROC;
+using PFN_MAPBUFFERRANGE = PROC;
+using PFN_UNMAPBUFFER = PROC;
+PFN_FENCESYNC pglFenceSync = nullptr;
+PFN_CLIENTWAITSYNC pglClientWaitSync = nullptr;
+PFN_DELETESYNC pglDeleteSync = nullptr;
+PFN_MAPBUFFERRANGE pglMapBufferRange = nullptr;
+PFN_UNMAPBUFFER pglUnmapBuffer = nullptr;
+std::uintptr_t missing = 0;
+bool mapAvailable = true, syncAvailable = true;
+void validFunction() {}
+void* GetModuleHandleA(char const*) { return nullptr; }
+PROC wglGetProcAddress(char const* name) {
+    bool mapping = std::string_view(name) == "glMapBufferRange" || std::string_view(name) == "glUnmapBuffer";
+    return (mapping ? mapAvailable : syncAvailable) ? &validFunction : reinterpret_cast<PROC>(missing);
+}
+namespace geode::log {
+template<class... T> void warn(T&&...) {}
+}
+@@function|src/video/PBOUploader.cpp|static void loadGLSyncFunctions()@@
+int main() {
+    for (auto sentinel : {std::uintptr_t{0}, std::uintptr_t{1}, std::uintptr_t{2},
+                          std::uintptr_t{3}, std::numeric_limits<std::uintptr_t>::max()}) {
+        pglFenceSync = pglClientWaitSync = pglDeleteSync = nullptr;
+        missing = sentinel;
+        syncAvailable = false;
+        loadGLSyncFunctions();
+        assert(!pglFenceSync && !pglClientWaitSync && !pglDeleteSync);
+    }
+    syncAvailable = true;
+    loadGLSyncFunctions();
+    assert(pglFenceSync && pglClientWaitSync && pglDeleteSync);
+    // A replacement context can have fewer capabilities than the previous one.
+    syncAvailable = false;
+    loadGLSyncFunctions();
+    assert(!pglFenceSync && !pglClientWaitSync && !pglDeleteSync);
+}

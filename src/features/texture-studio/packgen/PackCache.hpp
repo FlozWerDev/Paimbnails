@@ -4,20 +4,40 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <list>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include "../../../utils/AtomicFileWrite.hpp"
 #include "ContentHash.hpp"
 
 namespace paimon::texture_studio::packgen {
 
+// disk entry layout: {magic u32, version u32, payloadLen u64, fnv1a64 u64}
+// followed by payloadLen raw bytes. version mirrors NodeKey::version so a
+// pipeline bump invalidates entries even if the file name collides.
+inline constexpr std::uint32_t kPackCacheDiskMagic = 0x50434b31u;  // "PCK1"
+inline constexpr std::size_t kPackCacheDiskHeaderSize = 24u;
+inline constexpr std::size_t kDefaultMaxDiskEntryBytes = 256u * 1024u * 1024u;
+
 class PackCache {
 public:
     using Bytes = std::vector<std::uint8_t>;
+
+    struct DiskHeader {
+        std::uint32_t magic = 0;
+        std::uint32_t version = 0;
+        std::uint64_t payloadLen = 0;
+        std::uint64_t checksum = 0;
+    };
+    static_assert(sizeof(DiskHeader) == kPackCacheDiskHeaderSize,
+                  "disk header must stay a packed 24 bytes");
 
     struct Stats {
         std::size_t hits = 0;
@@ -46,6 +66,10 @@ public:
         m_budget = bytes ? bytes : 1;
         enforceBudget();
     }
+    void setMaxDiskEntryBytes(std::size_t bytes) {
+        m_maxDiskEntryBytes = bytes ? bytes : 1;
+    }
+    std::size_t maxDiskEntryBytes() const { return m_maxDiskEntryBytes; }
 
     void clear() {
         m_map.clear();
@@ -116,10 +140,9 @@ private:
     std::list<NodeKey> m_lru;  // front = most recently used
     std::size_t m_bytes = 0;
     std::size_t m_budget = 256u * 1024u * 1024u;
+    std::size_t m_maxDiskEntryBytes = kDefaultMaxDiskEntryBytes;
     std::filesystem::path m_diskDir;
     Stats m_stats;
-
-    auto findLive(typename decltype(m_map)::iterator end) { return end; }
 
     typename decltype(m_map)::iterator findLive(NodeKey const& key) {
         return m_map.find(key);
@@ -173,32 +196,89 @@ private:
     }
 
     bool loadFromDisk(NodeKey const& key, Bytes& out) {
-        std::ifstream f(diskPath(key), std::ios::binary);
+        out.clear();
+        auto const path = diskPath(key);
+        // NOTE (Windows): MSVC opens ifstream without delete-sharing, so
+        // remove() fails while the handle is open. dropPoison always closes
+        // the stream first; close() on a non-open stream is a no-op.
+        std::ifstream f;
+        auto const dropPoison = [&path, &f] {
+            f.close();
+            std::error_code rmEc;
+            std::filesystem::remove(path, rmEc);
+        };
+        // pre-size bound: a corrupt/foreign multi-GB .bin must never reach
+        // vector::resize (bad_alloc/OOM, crash #6). oversize reads as a miss.
+        std::error_code ec;
+        auto const fileBytes = std::filesystem::file_size(path, ec);
+        if (ec) return false;
+        if (fileBytes < kPackCacheDiskHeaderSize ||
+            fileBytes > kPackCacheDiskHeaderSize + m_maxDiskEntryBytes) {
+            dropPoison();
+            return false;
+        }
+        f.open(path, std::ios::binary);
         if (!f) return false;
-        f.seekg(0, std::ios::end);
-        std::streampos end = f.tellg();
-        if (end < 0) return false;
-        f.seekg(0, std::ios::beg);
-        out.resize(static_cast<std::size_t>(end));
+        DiskHeader header{};
+        static_assert(sizeof(header) == kPackCacheDiskHeaderSize);
+        f.read(reinterpret_cast<char*>(&header), static_cast<std::streamsize>(sizeof(header)));
+        if (!f) {
+            dropPoison();
+            return false;
+        }
+        if (header.magic != kPackCacheDiskMagic ||
+            header.version != static_cast<std::uint32_t>(key.version) ||
+            header.payloadLen > m_maxDiskEntryBytes ||
+            header.payloadLen >
+                static_cast<std::uint64_t>((std::numeric_limits<std::streamsize>::max)()) ||
+            static_cast<std::uint64_t>(fileBytes) !=
+                kPackCacheDiskHeaderSize + header.payloadLen) {
+            dropPoison();
+            return false;
+        }
+        out.resize(static_cast<std::size_t>(header.payloadLen));
         if (!out.empty()) {
             f.read(reinterpret_cast<char*>(out.data()),
                    static_cast<std::streamsize>(out.size()));
             if (!f) {
                 out.clear();
+                dropPoison();
                 return false;
             }
+        }
+        // rename-published entries are never truncated mid-write, but a
+        // foreign .bin with trailing garbage must not be accepted as a hit.
+        if (f.get() != std::char_traits<char>::eof()) {
+            out.clear();
+            dropPoison();
+            return false;
+        }
+        if (hashBytes(out.data(), out.size()) != header.checksum) {
+            out.clear();
+            dropPoison();
+            return false;
         }
         return true;
     }
 
     void saveToDisk(NodeKey const& key, Bytes const& blob) {
-        std::ofstream f(diskPath(key), std::ios::binary | std::ios::trunc);
-        if (!f) return;
-        if (!blob.empty()) {
-            f.write(reinterpret_cast<char const*>(blob.data()),
-                    static_cast<std::streamsize>(blob.size()));
-            if (f) ++m_stats.diskStores;
-        } else {
+        if (blob.size() > m_maxDiskEntryBytes) return;
+        if (blob.size() >
+            static_cast<std::size_t>((std::numeric_limits<std::streamsize>::max)())) {
+            return;
+        }
+        DiskHeader header{};
+        header.magic = kPackCacheDiskMagic;
+        header.version = static_cast<std::uint32_t>(key.version);
+        header.payloadLen = static_cast<std::uint64_t>(blob.size());
+        header.checksum = hashBytes(blob.data(), blob.size());
+        // single contiguous wire image so publication via tmp+rename is
+        // all-or-nothing: readers never observe a truncated entry.
+        Bytes wire(sizeof(header) + blob.size());
+        std::memcpy(wire.data(), &header, sizeof(header));
+        if (!blob.empty()) std::memcpy(wire.data() + sizeof(header), blob.data(), blob.size());
+        if (paimon::file::writeAtomically(
+                diskPath(key), std::span<std::uint8_t const>(wire.data(), wire.size()))) {
             ++m_stats.diskStores;
         }
     }

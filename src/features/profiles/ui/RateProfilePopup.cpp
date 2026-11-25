@@ -89,13 +89,11 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     m_mainLayer->addChild(starMenu, 2);
 
     for (int i = 1; i <= 5; i++) {
-        auto baseSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
-        if (!baseSpr) baseSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starBtn_001.png");
+        auto baseSpr = paimon::SpriteHelper::createWithFallback("GJ_starsIcon_001.png", "GJ_starBtn_001.png");
         if (!baseSpr) baseSpr = CCSprite::create();
         baseSpr->setColor({80, 80, 80});
 
-        auto fillSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
-        if (!fillSpr) fillSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starBtn_001.png");
+        auto fillSpr = paimon::SpriteHelper::createWithFallback("GJ_starsIcon_001.png", "GJ_starBtn_001.png");
         if (!fillSpr) fillSpr = CCSprite::create();
         fillSpr->setColor({255, 255, 50});
 
@@ -145,7 +143,7 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     m_messageInput->setID("message-input"_spr);
     m_messageInput->setPosition({centerX, contentSize.height - 186.f});
     m_messageInput->setMaxCharCount(150);
-    m_messageInput->setCommonFilter(CommonFilter::Any);
+    m_messageInput->setCommonFilter(CommonFilter::TextEmojis);
     m_messageInput->setScale(0.85f);
     m_mainLayer->addChild(m_messageInput, 2);
 
@@ -171,7 +169,7 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
 
     {
         auto ac = paimon::emotes::EmoteAutocomplete::create(
-            m_messageInput->getInputNode(),
+            m_messageInput,
             [this](std::string const& newText) {
                 if (m_messageInput) m_messageInput->setString(newText);
             }
@@ -347,13 +345,13 @@ void RateProfilePopup::loadExistingRating() {
 
 void RateProfilePopup::onSubmit(CCObject* sender) {
     if (m_rating <= 0.f) {
-        PaimonNotify::create("Select a rating first", NotificationIcon::Error)->show();
+        PaimonNotify::show("Select a rating first", NotificationIcon::Error);
         return;
     }
 
     auto* accountManager = GJAccountManager::get();
     if (!accountManager || accountManager->m_accountID <= 0) {
-        PaimonNotify::create("You must be logged in to rate", NotificationIcon::Error)->show();
+        PaimonNotify::show("You must be logged in to rate", NotificationIcon::Error);
         return;
     }
 
@@ -392,21 +390,21 @@ void RateProfilePopup::onSubmit(CCObject* sender) {
                 auto root = parsed.unwrap();
                 if (root["error"].isString()) {
                     if (btn) btn->setEnabled(true);
-                    PaimonNotify::create(root["error"].asString().unwrapOr("Unknown error"), NotificationIcon::Error)->show();
+                    PaimonNotify::show(root["error"].asString().unwrapOr("Unknown error"), NotificationIcon::Error);
                     return;
                 }
                 bool updated = false;
                 if (root["updated"].isBool()) updated = root["updated"].asBool().unwrapOr(false);
                 if (updated) {
-                    PaimonNotify::create("Rating updated!", NotificationIcon::Success)->show();
+                    PaimonNotify::show("Rating updated!", NotificationIcon::Success);
                 } else {
-                    PaimonNotify::create("Rating submitted!", NotificationIcon::Success)->show();
+                    PaimonNotify::show("Rating submitted!", NotificationIcon::Success);
                 }
                 popup->onClose(nullptr);
                 return;
             }
 
-            PaimonNotify::create("Rating submitted!", NotificationIcon::Success)->show();
+            PaimonNotify::show("Rating submitted!", NotificationIcon::Success);
             popup->onClose(nullptr);
         } else {
             if (btn) btn->setEnabled(true);
@@ -422,17 +420,17 @@ void RateProfilePopup::onSubmit(CCObject* sender) {
                     errorMsg += ": " + msg;
                 }
             }
-            PaimonNotify::create(errorMsg.c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::show(errorMsg.c_str(), NotificationIcon::Error);
         }
     });
 }
 
-void RateProfilePopup::onReport(CCObject* sender) {
+void RateProfilePopup::onReport(CCObject*) {
     auto popup = ReportUserPopup::create(m_accountID, m_targetUsername);
     if (popup) popup->show();
 }
 
-void RateProfilePopup::onViewReviews(CCObject* sender) {
+void RateProfilePopup::onViewReviews(CCObject*) {
     auto popup = ProfileReviewsPopup::create(m_accountID);
     if (popup) popup->show();
 }

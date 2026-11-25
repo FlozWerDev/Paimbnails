@@ -8,7 +8,10 @@
 #include <fmod.hpp>
 
 #include <chrono>
+#include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <cstdint>
 
 using namespace geode::prelude;
 
@@ -55,7 +58,7 @@ FMOD::System* fmodSystem() {
 
 float voiceVolume() {
     double v = Mod::get()->getSettingValue<double>("collab-voice-volume");
-    return static_cast<float>(v <= 0.0 ? 1.0 : v);
+    return std::isfinite(v) ? static_cast<float>(std::clamp(v, 0.0, 1.0)) : 1.f;
 }
 
 float vadThreshold() {
@@ -73,21 +76,30 @@ float levelFromPeak(int peak) {
 }
 
 struct CollabVoice::Speaker {
+    // fifo behind a shared tap so an in-flight mixer callback never touches a freed speaker.
+    struct Tap {
+        std::mutex mutex;
+        std::deque<int16_t> fifo;
+    };
+
     FMOD::Sound* stream = nullptr;
     FMOD::Channel* channel = nullptr;
     std::string name;
-    std::mutex mutex;
-    std::deque<int16_t> fifo;
+    uint64_t tapId = 0;
+    std::shared_ptr<Tap> tap;
     double lastFrameAt = 0.0;
     float level = 0.f; // 0..1 from the last frame.
 
-    ~Speaker() {
-        if (channel) channel->stop();
-        if (stream) stream->release();
-    }
+    ~Speaker();
 };
 
 namespace {
+
+// generation-keyed taps: the mixer callback resolves its id under lock, so dropPeer/stopAll
+// can unsubscribe (erase) before stopping and releasing the fmod stream.
+std::mutex g_tapMutex;
+std::unordered_map<uint64_t, std::weak_ptr<CollabVoice::Speaker::Tap>> g_taps;
+std::atomic_uint64_t g_tapGen{1};
 
 // fmod mixer callback: drain the peer fifo and silence underruns.
 FMOD_RESULT F_CALLBACK voicePcmRead(FMOD_SOUND* sound, void* data, unsigned int datalen) {
@@ -95,21 +107,49 @@ FMOD_RESULT F_CALLBACK voicePcmRead(FMOD_SOUND* sound, void* data, unsigned int 
     reinterpret_cast<FMOD::Sound*>(sound)->getUserData(&userdata);
     auto* out = static_cast<int16_t*>(data);
     unsigned int samples = datalen / sizeof(int16_t);
-    auto* speaker = static_cast<CollabVoice::Speaker*>(userdata);
-    if (!speaker) {
+    std::shared_ptr<CollabVoice::Speaker::Tap> tap;
+    if (userdata) {
+        uint64_t id = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(userdata));
+        std::lock_guard lock(g_tapMutex);
+        if (auto it = g_taps.find(id); it != g_taps.end()) tap = it->second.lock();
+    }
+    if (!tap) {
         std::memset(data, 0, datalen);
         return FMOD_OK;
     }
-    std::lock_guard lock(speaker->mutex);
+    std::lock_guard lock(tap->mutex);
     unsigned int n = 0;
-    for (; n < samples && !speaker->fifo.empty(); ++n) {
-        out[n] = speaker->fifo.front();
-        speaker->fifo.pop_front();
+    for (; n < samples && !tap->fifo.empty(); ++n) {
+        out[n] = tap->fifo.front();
+        tap->fifo.pop_front();
     }
     for (; n < samples; ++n) out[n] = 0;
     return FMOD_OK;
 }
 
+void detachSpeaker(CollabVoice::Speaker& speaker) {
+    // unsubscribe first: later mixer callbacks resolve nothing and stay silent,
+    // while one already running keeps the tap alive through its local copy.
+    if (speaker.tapId != 0) {
+        std::lock_guard lock(g_tapMutex);
+        g_taps.erase(speaker.tapId);
+        speaker.tapId = 0;
+    }
+    if (speaker.channel) {
+        speaker.channel->stop();
+        speaker.channel = nullptr;
+    }
+    if (speaker.stream) {
+        speaker.stream->release();
+        speaker.stream = nullptr;
+    }
+    speaker.tap.reset();
+}
+
+}
+
+CollabVoice::Speaker::~Speaker() {
+    detachSpeaker(*this);
 }
 
 CollabVoice& CollabVoice::get() {
@@ -254,6 +294,13 @@ CollabVoice::Speaker* CollabVoice::speakerFor(int clientId, std::string const& n
 
     auto speaker = std::make_unique<Speaker>();
     speaker->name = name;
+    speaker->tap = std::make_shared<Speaker::Tap>();
+    speaker->tapId = g_tapGen.fetch_add(1, std::memory_order_relaxed);
+    if (speaker->tapId == 0) speaker->tapId = g_tapGen.fetch_add(1, std::memory_order_relaxed);
+    {
+        std::lock_guard lock(g_tapMutex);
+        g_taps.emplace(speaker->tapId, speaker->tap);
+    }
 
     FMOD_CREATESOUNDEXINFO exinfo = {};
     exinfo.cbsize = sizeof(exinfo);
@@ -263,15 +310,15 @@ CollabVoice::Speaker* CollabVoice::speakerFor(int clientId, std::string const& n
     exinfo.length = kSampleRate * sizeof(int16_t);
     exinfo.decodebuffersize = kSampleRate / 10; // 100 ms pulls.
     exinfo.pcmreadcallback = voicePcmRead;
-    exinfo.userdata = speaker.get();
+    exinfo.userdata = reinterpret_cast<void*>(static_cast<uintptr_t>(speaker->tapId));
 
     FMOD_MODE mode = FMOD_OPENUSER | FMOD_LOOP_NORMAL | FMOD_CREATESTREAM;
     if (system->createSound(nullptr, mode, &exinfo, &speaker->stream) != FMOD_OK) {
+        detachSpeaker(*speaker);
         return nullptr;
     }
     if (system->playSound(speaker->stream, nullptr, false, &speaker->channel) != FMOD_OK) {
-        speaker->stream->release();
-        speaker->stream = nullptr;
+        detachSpeaker(*speaker);
         return nullptr;
     }
     speaker->channel->setVolume(voiceVolume());
@@ -289,19 +336,20 @@ void CollabVoice::onRemoteFrame(int from, std::string const& name, std::string c
     if (!paimon::base64Decode(b64, bytes)) return;
     if (bytes.empty() || bytes.size() > kFifoMaxSamples) return;
     auto* speaker = speakerFor(from, name);
-    if (!speaker) return;
+    if (!speaker || !speaker->tap) return;
 
     int peak = 0;
     {
-        std::lock_guard lock(speaker->mutex);
+        auto tap = speaker->tap;
+        std::lock_guard lock(tap->mutex);
         for (uint8_t b : bytes) {
             int16_t s = muLawDecode(b);
             peak = std::max(peak, std::abs(static_cast<int>(s)));
-            speaker->fifo.push_back(s);
+            tap->fifo.push_back(s);
         }
         // trim accumulated fifo latency after slow poll bursts.
-        if (speaker->fifo.size() > kFifoMaxSamples) {
-            while (speaker->fifo.size() > kFifoCatchupSamples) speaker->fifo.pop_front();
+        if (tap->fifo.size() > kFifoMaxSamples) {
+            while (tap->fifo.size() > kFifoCatchupSamples) tap->fifo.pop_front();
         }
     }
     speaker->level = levelFromPeak(peak);
@@ -323,12 +371,18 @@ std::vector<SpeakingInfo> CollabVoice::speakingNow() const {
 }
 
 void CollabVoice::dropPeer(int clientId) {
-    m_speakers.erase(clientId);
+    auto it = m_speakers.find(clientId);
+    if (it == m_speakers.end()) return;
+    // cancel the mixer subscription before releasing the speaker.
+    detachSpeaker(*it->second);
+    m_speakers.erase(it);
 }
 
 void CollabVoice::stopAll() {
     stopRecording();
     m_micEnabled = false;
+    // unsubscribe every tap before releasing any stream.
+    for (auto& [id, speaker] : m_speakers) detachSpeaker(*speaker);
     m_speakers.clear();
 }
 

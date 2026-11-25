@@ -1,6 +1,7 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/Geode.hpp>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -37,15 +38,20 @@ struct DrawShapeLayout {
     float scale = 1.f;
     float scaleX = 1.f;
     float scaleY = 1.f;
+    float rotation = 0.f;
     float opacity = 0.75f;
     bool hidden = false;
+    bool locked = false;
     float width = 110.f;
     float height = 70.f;
     float cornerRadius = 18.f;
     cocos2d::ccColor3B color = { 90, 220, 255 };
+    float strokeWidth = 0.f;
+    cocos2d::ccColor3B strokeColor = { 255, 255, 255 };
     int zOrder = 0;
     int layer = 0;
     std::string linkGroup;
+    std::string scene;
 };
 
 struct EditableMenuButton {
@@ -73,13 +79,26 @@ public:
 
     std::vector<EditableMenuButton> collectButtons(cocos2d::CCNode* root) const;
     void captureDefaultsAndApply(cocos2d::CCNode* root);
+    // applies the saved custom layout only, without capturing or saving
+    // defaults. Safe during init/onEnter: the layer is then drawn for the first
+    // time already in place instead of showing vanilla positions for a frame.
+    void applyCustom(cocos2d::CCNode* root);
     void applyDefaults(cocos2d::CCNode* root);
     void applySnapshot(std::vector<EditableMenuButton> const& buttons, LayoutSnapshot const& snapshot, cocos2d::CCNode* root);
     void commit(std::vector<EditableMenuButton> const& buttons, cocos2d::CCNode* root);
     void resetAll();
+    LayoutSnapshot exportCustomSnapshot();
+    bool replaceCustomSnapshot(LayoutSnapshot const& snapshot);
+    uint64_t customRevision() const { return m_customRevision; }
     // merge: update only the given keys, erase from custom when == default.
     // leaves other scenes and shapes alone; used by the editor on save.
     void mergeCustomFromButtons(std::unordered_map<std::string, MenuButtonLayout> const& buttons);
+    void mergeCustomAndShapes(
+        std::unordered_map<std::string, MenuButtonLayout> const& buttons,
+        std::string const& scene,
+        std::vector<DrawShapeLayout> const& sceneShapes);
+    std::vector<DrawShapeLayout> getShapesForScene(std::string const& scene) const;
+    std::vector<DrawShapeLayout> getAllShapes() const;
     void syncShapes(cocos2d::CCNode* root, std::vector<DrawShapeLayout> const& shapes);
 
     std::optional<MenuButtonLayout> getDefaultLayout(std::string const& key) const;
@@ -100,11 +119,13 @@ private:
     MainMenuLayoutManager() = default;
 
     std::filesystem::path configPath() const;
+    matjson::Value serializeConfig() const;
     void ensureLoaded();
     void ensureLabelFollowerOffsets(EditableMenuButton const& eb);
     void syncLabelFollowerNodes(EditableMenuButton const& eb);
 
     bool m_loaded = false;
+    uint64_t m_customRevision = 0;
     std::unordered_map<std::string, MenuButtonLayout> m_defaults;
     std::unordered_map<std::string, MenuButtonLayout> m_custom;
     std::vector<DrawShapeLayout> m_shapes;

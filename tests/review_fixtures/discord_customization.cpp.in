@@ -1,0 +1,117 @@
+#include "src/features/discord-presence/model/PresenceContext.hpp"
+#include "src/features/discord-presence/services/DiscordIpcClient.hpp"
+#include <matjson.hpp>
+#include <cassert>
+#include <cstdio>
+#include <ctime>
+
+namespace paimon::discord {
+PresenceConfiguration configuration;
+PresenceContext snapshot;
+PresenceConfiguration readPresenceConfiguration() { return configuration; }
+class DiscordPresenceManager {
+public:
+    int64_t m_startTimestamp = 10;
+    std::string m_activityKey = "game", m_levelKey = "level", m_attemptKey = "attempt";
+    int64_t m_activityTimestamp = 11, m_levelTimestamp = 12, m_attemptTimestamp = 13;
+    PresenceContext captureContext(PresenceConfiguration const&) { return snapshot; }
+    DiscordActivity buildActivity();
+};
+@@function|src/features/discord-presence/services/DiscordPresenceComposer.cpp|DiscordActivity DiscordPresenceManager::buildActivity()@@
+@@function|src/features/discord-presence/services/DiscordIpcClient.cpp|std::string jsonEscape(@@
+@@function|src/features/discord-presence/services/DiscordIpcClient.cpp|void appendField(@@
+@@function|src/features/discord-presence/services/DiscordIpcClient.cpp|std::string buildActivityJson(@@
+
+void flag(std::string_view key, bool value) {
+    for (std::size_t i = 0; i < kBooleanOptions.size(); ++i) {
+        if (key == kBooleanOptions[i].key) { configuration.flags[i] = value; return; }
+    }
+    assert(false);
+}
+void setting(std::string_view key, std::string value) {
+    for (std::size_t i = 0; i < kTextOptions.size(); ++i) {
+        if (key == kTextOptions[i].key) { configuration.texts[i] = std::move(value); return; }
+    }
+    assert(false);
+}
+}
+
+int main() {
+    using namespace paimon::discord;
+    std::string emoji = "\xf0\x9f\x98\x80";
+    assert(cleanText("ab" + emoji, 5) == "ab");
+    assert(cleanText("ab" + emoji, 6) == "ab" + emoji);
+    assert(cleanText("\n A \t B \r") == "A B");
+    assert(cleanText(std::string("Hi") + char(0xff) + "!") == "Hi!");
+    assert(imageReference(" PLAY-KEY ") == "play-key");
+    assert(imageReference("http://example.com/image.png") == "http://example.com/image.png");
+    assert(imageReference("https://example.com/" + std::string(260, 'a')).empty());
+    assert(validLink("HTTPS://example.com/asset.png"));
+    assert(!validLink("javascript:alert(1)") && !validLink("https://") && !validLink("https://user@example.com"));
+    assert(validApplicationID("1503220958910218260") && !validApplicationID("abc"));
+    assert(!validChoice("discord-rpc-activity-type", "Streaming"));
+    assert(validChoice("discord-rpc-timer-mode", "Attempt"));
+    PresenceTokens safe{{"mode", "Practice"}};
+    assert(expandTemplate("{mode} {level}", safe) == "Practice");
+    assert(expandTemplate("{unknown}", safe) == "{unknown}");
+    assert(expandTemplate("{{level}", safe) == "{level}");
+
+    snapshot.category = "gameplay";
+    snapshot.activityKey = "game"; snapshot.levelKey = "level"; snapshot.attemptKey = "attempt";
+    snapshot.automatic.details = "Automatic details";
+    snapshot.automatic.state = "Playing";
+    snapshot.tokens = {{"level", "Allowed level"}, {"progress", "34"}};
+    snapshot.partySize = 2; snapshot.partyMax = 8;
+    DiscordPresenceManager manager;
+    setting("discord-rpc-timer-mode", "Level");
+    auto activity = manager.buildActivity();
+    assert(activity.startTimestamp == 12);
+    snapshot.tokens[1].second = "35";
+    assert(manager.buildActivity().startTimestamp == 12); // Progress does not restart the timer.
+    flag("discord-rpc-override-details", true);
+    setting("discord-rpc-custom-details", "{level}");
+    assert(manager.buildActivity().details == "Allowed level");
+    setting("discord-rpc-gameplay-details", "Context: {level}");
+    assert(manager.buildActivity().details == "Context: Allowed level");
+    activity = manager.buildActivity();
+    // Buttons are fixed; there is no setting for custom links.
+    assert(activity.button1Label == "Paimbnails Page" && activity.button1Url == "https://github.com/FlozWerDev/Paimbnails");
+    assert(activity.button2Label == "Paimbnails Discord" && activity.button2Url == "https://discord.gg/5N5vpSfZwY");
+    setting("discord-rpc-sharing-scope", "Menus only");
+    assert(manager.buildActivity().hidden);
+    setting("discord-rpc-sharing-scope", "Everywhere");
+    setting("discord-rpc-timer-mode", "Attempt");
+    assert(manager.buildActivity().startTimestamp == 13);
+    snapshot.attemptKey = "attempt-2";
+    assert(manager.buildActivity().startTimestamp > 13);
+
+    setting("discord-rpc-large-image-key", "https://example.com/private.png");
+    setting("discord-rpc-large-text", "Private custom text");
+    setting("discord-rpc-application-id", "123456789012345678");
+    flag("discord-rpc-private-mode", true);
+    snapshot.automatic.details = "Playing Geometry Dash";
+    snapshot.automatic.state = "Private session";
+    activity = manager.buildActivity();
+    assert(activity.details == "Playing Geometry Dash" && activity.state == "Private session");
+    assert(activity.largeImage == "paimbnails" && activity.largeText == "Geometry Dash");
+    assert(activity.button1Url == "https://github.com/FlozWerDev/Paimbnails" && activity.button2Url == "https://discord.gg/5N5vpSfZwY");
+    assert(activity.applicationId == kDefaultApplicationID && activity.partySize == 0);
+
+    activity = {};
+    activity.type = DiscordActivityType::Listening;
+    activity.details = "Quote \" and newline\n";
+    activity.largeImage = "art";
+    activity.button2Label = "Only second";
+    activity.button2Url = "https://example.com/button";
+    activity.partySize = 2; activity.partyMax = 8;
+    auto parsed = matjson::parse(buildActivityJson(activity));
+    assert(parsed);
+    assert(parsed.unwrap()["type"].asInt().unwrap() == 2);
+    assert(parsed.unwrap()["details"].asString().unwrap() == activity.details);
+    assert(parsed.unwrap()["buttons"].asArray().unwrap().size() == 1);
+    assert(!parsed.unwrap().contains("state_url") && !parsed.unwrap()["assets"].contains("large_url"));
+    auto identical = activity;
+    assert(identical == activity);
+    identical.button2Url += "?changed";
+    assert(!(identical == activity));
+}

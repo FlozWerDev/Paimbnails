@@ -169,6 +169,7 @@ void EditorCanvas::setZones(std::vector<Zone> zones, std::string const& activeKe
         CCSprite* sprite = zone.texture
             ? CCSprite::createWithTexture(zone.texture) : nullptr;
         if (sprite) {
+            sprite->setBlendFunc({GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA});
             sprite->setPosition({m_side / 2.f, m_side / 2.f});
             float const longest = std::max(sprite->getContentSize().width,
                                            sprite->getContentSize().height);
@@ -185,8 +186,16 @@ void EditorCanvas::setActiveZone(std::string const& key) {
     for (std::size_t i = 0; i < m_sprites.size(); ++i) {
         if (!m_sprites[i]) continue;
         bool const active = m_zones[i].key == key;
-        m_sprites[i]->setVisible(!m_isolate || active);
-        m_sprites[i]->setOpacity(active ? 255 : 96);
+        if (m_focusMode == 2) {
+            m_sprites[i]->setVisible(active);
+            m_sprites[i]->setOpacity(255);
+        } else if (m_focusMode == 1) {
+            m_sprites[i]->setVisible(true);
+            m_sprites[i]->setOpacity(active ? 255 : 92);
+        } else {
+            m_sprites[i]->setVisible(true);
+            m_sprites[i]->setOpacity(255);
+        }
     }
     redrawOverlay();
 }
@@ -198,9 +207,13 @@ void EditorCanvas::setSelection(std::string const& zoneKey, int pieceIndex, bool
     redrawOverlay();
 }
 
-void EditorCanvas::setIsolate(bool isolate) {
-    m_isolate = isolate;
+void EditorCanvas::setFocusMode(int mode) {
+    m_focusMode = std::clamp(mode, 0, 2);
     setActiveZone(m_activeKey);
+}
+
+void EditorCanvas::setIsolate(bool isolate) {
+    setFocusMode(isolate ? 2 : 0);
 }
 
 void EditorCanvas::setBackgroundMode(int mode) {
@@ -212,7 +225,9 @@ void EditorCanvas::setBackgroundMode(int mode) {
 }
 
 void EditorCanvas::setGuideVisible(bool visible) {
+    m_showGuide = visible;
     if (m_guide) m_guide->setVisible(visible);
+    redrawOverlay();
 }
 
 void EditorCanvas::setEyedropper(bool on) {
@@ -324,6 +339,26 @@ int EditorCanvas::corneredAt(CCPoint const& viewport) const {
 void EditorCanvas::redrawOverlay() {
     if (!m_overlay) return;
     m_overlay->clear();
+
+    if (m_showGuide) {
+        // Draw crisp center crosshairs and recommended GD icon frame.
+        float const q1 = m_side * 0.25f;
+        float const q3 = m_side * 0.75f;
+        float const mid = m_side * 0.5f;
+        ccColor4F const guideCol{1.f, 1.f, 1.f, 0.24f};
+        ccColor4F const axisCol{1.f, 1.f, 1.f, 0.14f};
+        CCPoint const gbl = toViewport({q1, q1});
+        CCPoint const gbr = toViewport({q3, q1});
+        CCPoint const gtr = toViewport({q3, q3});
+        CCPoint const gtl = toViewport({q1, q3});
+        m_overlay->drawSegment(gbl, gbr, 0.45f, guideCol);
+        m_overlay->drawSegment(gbr, gtr, 0.45f, guideCol);
+        m_overlay->drawSegment(gtr, gtl, 0.45f, guideCol);
+        m_overlay->drawSegment(gtl, gbl, 0.45f, guideCol);
+        m_overlay->drawSegment(toViewport({mid, q1}), toViewport({mid, q3}), 0.35f, axisCol);
+        m_overlay->drawSegment(toViewport({q1, mid}), toViewport({q3, mid}), 0.35f, axisCol);
+    }
+
     if (m_eyedropper) return;
 
     float l, b, r, t;
@@ -372,7 +407,7 @@ bool EditorCanvas::pieceAt(CCPoint const& canvasPoint,
                            std::string& outZone, int& outPiece) const {
     for (int z = static_cast<int>(m_zones.size()) - 1; z >= 0; --z) {
         auto const& zone = m_zones[static_cast<std::size_t>(z)];
-        if (m_isolate && zone.key != m_activeKey) continue;
+        if (m_focusMode == 2 && zone.key != m_activeKey) continue;
 
         for (int i = static_cast<int>(zone.pieces.size()) - 1; i >= 0; --i) {
             auto const& piece = zone.pieces[static_cast<std::size_t>(i)];
@@ -397,7 +432,7 @@ bool EditorCanvas::pieceAt(CCPoint const& canvasPoint,
 ccColor4B EditorCanvas::sampleAt(CCPoint const& canvasPoint) const {
     for (int z = static_cast<int>(m_zones.size()) - 1; z >= 0; --z) {
         auto const& zone = m_zones[static_cast<std::size_t>(z)];
-        if (m_isolate && zone.key != m_activeKey) continue;
+        if (m_focusMode == 2 && zone.key != m_activeKey) continue;
         auto const& image = zone.composite;
         if (image.empty()) continue;
 

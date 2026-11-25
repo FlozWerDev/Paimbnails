@@ -6,7 +6,7 @@
 !LICENSE
 
 # keep logo.png
-!Logo.png
+!logo.png
 
 # keep all .md files
 !*.md
@@ -16,6 +16,14 @@
 
 # keep cmakelists.txt
 !CMakeLists.txt
+
+# keep build helpers and local tooling referenced by cmake/tests
+!cmake/
+!cmake/**
+!tools/
+!tools/**
+!compilar-desde-cero.cmd
+!compilar-desde-cero.ps1
 
 # keep src/ and all its contents
 !src/
@@ -40,10 +48,26 @@ tests/**/*.pyc
 !docs/
 !docs/**
 
-# private / local-only: do not publish servers or reverse-engineering notes
+# private / local-only: do not publish servers, migrations, or reverse-engineering notes
 betteredit-reference.md
 cloudflare-server/
 collab-editor-render/
+tools/paimon-server/
+tools/paimind_v2/
+tools/migrate_bunny_to_b2.mjs
+tools/salvage_local_cache.mjs
+tools/seed_b2_from_local_cache.mjs
+tools/sync_bunny_b2.mjs
+docs/bunny-to-b2-migration.md
+docs/PAIMIND_*.md
+docs/KAGGLE_PAIMIND.md
+docs/REVISION_PAIMIND_V2_2026-11-12.md
+docs/BENCHMARK_PAIGORIT_VS_PAIMIND.md
+ideaspaimbnails.md
+audit_extract.md
+**/__pycache__/
+**/*.pyc
+**/*.pyo
 
 # keep installer/ scripts only (not binaries)
 !installer/
@@ -129,3 +153,13 @@ gen-art/
 gen-images/
 gen-sprites/
 gen-textures/
+
+# Paimind v2: secretos locales, corpus, bins, checkpoints y capturas
+tools/paimind_v2/.env
+tools/paimind_v2/data/
+tools/paimind_v2/screenshots/
+tools/paimind_v2/kaggle_upload/
+tools/paimind_v2/kaggle_upload.zip
+tools/paimind_v2/**/__pycache__/
+tools/paimind_v2/**/*.pyc
+model_api_key.txt

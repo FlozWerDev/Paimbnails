@@ -2,6 +2,7 @@
 
 #include <Geode/Geode.hpp>
 #include <algorithm>
+#include <exception>
 
 #include "AutoPreviewStore.hpp"
 #include "../AutoPreviewConfig.hpp"
@@ -21,12 +22,21 @@ std::unique_ptr<uint8_t[]> downscaleRGBA(
 
 void storeCapturedFrame(int32_t levelID, std::shared_ptr<uint8_t> rgba, int width, int height) {
     if (levelID <= 0 || !rgba || width <= 0 || height <= 0) return;
+    // sanity: never queue absurd frames into the scaler (OOM risk on bad captures).
+    constexpr int64_t kMaxPixels = static_cast<int64_t>(3840) * 2160 * 2;
+    int64_t const pixels = static_cast<int64_t>(width) * height;
+    if (pixels > kMaxPixels) {
+        geode::log::debug("[AutoPreview] skip captured frame for level {} ({}x{} too large)",
+                          levelID, width, height);
+        return;
+    }
 
     int const dstW = config::previewWidth();
     int const dstH = config::previewHeight();
 
     paimon::ThreadTracker::get().spawn([levelID, rgba, width, height, dstW, dstH]() {
         geode::utils::thread::setName("PaimonAutoPreview");
+        try {
         if (paimon::isRuntimeShuttingDown()) return;
         int targetW = dstW;
         int targetH = dstH;
@@ -56,6 +66,13 @@ void storeCapturedFrame(int32_t levelID, std::shared_ptr<uint8_t> rgba, int widt
             if (paimon::isRuntimeShuttingDown()) return;
             ThumbnailLoader::get().invalidateLevel(levelID);
         });
+        } catch (std::exception const& ex) {
+            geode::log::debug("[AutoPreview] captured frame for level {} dropped ({}x{} threw: {})",
+                              levelID, width, height, ex.what());
+        } catch (...) {
+            geode::log::debug("[AutoPreview] captured frame for level {} dropped ({}x{} threw unknown)",
+                              levelID, width, height);
+        }
     });
 }
 

@@ -1,22 +1,26 @@
 #pragma once
 #include <Geode/Geode.hpp>
-#include "../features/forum/services/ForumApi.hpp"
-#include "../utils/PaimonLoadingOverlay.hpp"
+
+namespace paimon::forum {
+class ForumPanel;
+}
 
 class PaimonHubLayer : public cocos2d::CCLayer {
 protected:
     ~PaimonHubLayer();
     bool init() override;
     void keyBackClicked() override;
-    void scrollWheel(float x, float y) override;
+    bool scrollWheel(float x, float y) override;
     void update(float dt) override;
+
+    // liquid Glass (src/features/liquid-glass): plates on the home and forum panels.
+    // buttons are covered by the global ButtonSprite hook.
+    void setupGlassChrome();
 
     cocos2d::CCMenu* m_mainMenu = nullptr;
     cocos2d::CCLayerRGBA* m_homeTab = nullptr;
-    cocos2d::CCLayerRGBA* m_newsTab = nullptr;
     cocos2d::CCLayerRGBA* m_forumTab = nullptr;
     cocos2d::CCMenu* m_homeMenu = nullptr;
-    cocos2d::CCMenu* m_newsMenu = nullptr;
     cocos2d::CCMenu* m_forumMenu = nullptr;
     cocos2d::CCMenu* m_homeActionsMenu = nullptr;
     geode::ScrollLayer* m_homeActionsScroll = nullptr;
@@ -42,50 +46,13 @@ protected:
     cocos2d::ccColor3B m_bgColorHome = {20, 20, 32};
     cocos2d::ccColor3B m_bgColorSub = {160, 170, 195};
 
-    cocos2d::CCNode* m_forumPostList = nullptr;
-    cocos2d::CCMenu* m_tagMenu = nullptr;
-    std::vector<std::string> m_forumTags;
-    std::vector<std::string> m_customTags;
-    std::vector<std::string> m_activePredefTags;
-    std::vector<std::string> m_visibleTags;
-    std::vector<std::string> m_selectedTags;
-    cocos2d::CCLabelBMFont* m_noPostsLabel = nullptr;
-    cocos2d::CCLabelBMFont* m_emptyTagsHint = nullptr;
-
-    enum class SortMode { Recent = 0, TopRated = 1, MostLiked = 2 };
-    SortMode m_sortMode = SortMode::Recent;
-    std::vector<CCMenuItemSpriteExtra*> m_sortBtns;
-
-    int m_forumSubTab = 0;
-    cocos2d::CCNode* m_forumBrowseNode = nullptr;
-    cocos2d::CCNode* m_forumCreateNode = nullptr;
-    cocos2d::CCLabelBMFont* m_forumHeaderTitle = nullptr;
-    cocos2d::CCLabelBMFont* m_forumHeaderSubtitle = nullptr;
-
-    geode::TextInput* m_createTitleInput = nullptr;
-    geode::TextInput* m_createDescInput = nullptr;
-    cocos2d::CCMenu* m_createTagMenu = nullptr;
-    cocos2d::CCLabelBMFont* m_createTagsHint = nullptr;
-    std::vector<std::string> m_createSelectedTags;
-
-    cocos2d::CCNode* m_createPostOverlay = nullptr;
-    cocos2d::CCNode* m_createTagOverlay = nullptr;
-    cocos2d::CCNode* m_predefPickerOverlay = nullptr;
-    geode::TextInput* m_newTagInput = nullptr;
-
-    void onCloseCreateTag(cocos2d::CCObject*);
-    void onSubmitTag(cocos2d::CCObject*);
-    void onOpenPredefPicker(cocos2d::CCObject*);
-    void onClosePredefPicker(cocos2d::CCObject*);
-    void onTogglePredefTag(cocos2d::CCObject* sender);
-    void onSortChanged(cocos2d::CCObject* sender);
+    paimon::forum::ForumPanel* m_forumPanel = nullptr;
 
     void onTabSwitch(cocos2d::CCObject* sender);
     void switchTab(int idx);
 
     void buildHomeTab();
     void buildHomeFilterBar();
-    void buildNewsTab();
     void buildForumTab();
     void refreshHomeCategorySelector();
     void switchHomeCategory(int idx);
@@ -107,27 +74,6 @@ public:
 
 protected:
     cocos2d::CCLabelBMFont* m_versionLabel = nullptr;
-
-    geode::ScrollLayer* m_newsScroll = nullptr;
-    void rebuildNewsList();
-    void onRefreshNews(cocos2d::CCObject*);
-    void onCreatePost(cocos2d::CCObject*);
-    void onFilterByTag(cocos2d::CCObject*);
-    void onCreateTag(cocos2d::CCObject*);
-
-    void refreshForumPosts();
-    void renderPosts(std::vector<paimon::forum::Post> const& posts);
-    void refreshTagButtons();
-
-    void showForumLoading();
-    void hideForumLoading();
-
-    void onForumSubTabSwitch(cocos2d::CCObject* sender);
-    void switchForumSubTab(int idx);
-    void onCreateToggleTag(cocos2d::CCObject* sender);
-    void onCreateSubmit(cocos2d::CCObject*);
-
-    PaimonLoadingOverlay* m_forumLoadingSpinner = nullptr;
 
     bool m_gdMode = false;
     int m_gdHomeState = 0;

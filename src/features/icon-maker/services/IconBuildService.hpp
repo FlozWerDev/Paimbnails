@@ -22,6 +22,9 @@ public:
     // only compiles; leaves the icon un-applied.
     static void build(IconProject project, DoneCallback onDone);
 
+    // main-thread exit cleanup, before Cocos releases its reference pools.
+    static void shutdown();
+
 private:
     IconBuildService() = delete;
 };

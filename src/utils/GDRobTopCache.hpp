@@ -30,6 +30,7 @@ CachePolicy policyForEndpoint(std::string const& endpoint);
 class GDRobTopCache {
 public:
     static GDRobTopCache& get();
+    static bool isInitialized();
 
     void init();
     void shutdown();

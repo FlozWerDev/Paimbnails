@@ -34,6 +34,17 @@ GlobalIconMeta parseMetaJson(matjson::Value const& v) {
     meta.accountID = static_cast<int>(jInt(v["accountID"]));
     meta.username  = jStr(v["username"]);
     meta.enabled   = jBool(v["enabled"]);
+    auto const& share = v["share"];
+    meta.share = LinkOptions{jBool(share["vanilla"]), jBool(share["gradients"]), jBool(share["custom"])};
+    if (meta.share.vanilla && v["vanilla"].isObject()) meta.vanilla = v["vanilla"];
+    if (meta.share.gradients && v["gradients"].isObject()) meta.gradients = v["gradients"];
+    if (v["assets"].isObject()) {
+        for (auto const& entry : v["assets"]) {
+            auto sha = entry.getKey();
+            auto url = jStr(entry);
+            if (sha && sha->size() == 64 && !url.empty()) meta.assets[*sha] = url;
+        }
+    }
 
     auto const& icons = v["icons"];
     if (icons.isObject()) {
@@ -65,13 +76,6 @@ GlobalIconMeta parseMetaJson(matjson::Value const& v) {
 GlobalIconClient& GlobalIconClient::get() {
     static GlobalIconClient instance;
     return instance;
-}
-
-std::string GlobalIconClient::baseUrl() const {
-    std::string base = Mod::get()->getSettingValue<std::string>("global-icon-server-url");
-    if (base.empty()) base = std::string(GLOBAL_ICON_BASE);
-    while (!base.empty() && base.back() == '/') base.pop_back();
-    return base;
 }
 
 bool GlobalIconClient::lookup(int accountID, CacheEntry& out) const {
@@ -123,7 +127,7 @@ void GlobalIconClient::getMetadata(int accountID, MetaCallback cb) {
     auto& waiters = m_inflight[accountID];
     if (cb) waiters.push_back(std::move(cb));
 
-    std::string url = baseUrl() + "/api/icons/" + std::to_string(accountID);
+    std::string url = "/api/community/icons/" + std::to_string(accountID);
     HttpClient::get().get(url, [accountID](bool success, std::string const& resp) {
         auto& self = GlobalIconClient::get();
 
@@ -133,7 +137,7 @@ void GlobalIconClient::getMetadata(int accountID, MetaCallback cb) {
             auto parsed = matjson::parse(resp);
             if (parsed.isOk()) {
                 meta = parseMetaJson(parsed.unwrap());
-                found = meta.enabled && !meta.icons.empty();
+                found = meta.enabled;
             } else {
                 success = false;
             }
@@ -162,24 +166,6 @@ void GlobalIconClient::downloadFile(std::string const& url, FileCallback cb) {
         [cb = std::move(cb)](bool success, std::vector<uint8_t> const& data, int, int) {
             if (cb) cb(success, data);
         });
-}
-
-void GlobalIconClient::syncIcons(std::string const& jsonBody, SyncCallback cb) {
-    std::string url = baseUrl() + "/api/icons/sync";
-    // post() already includes the x-api-key header the server requires.
-    HttpClient::get().post(url, jsonBody, [cb = std::move(cb)](bool success, std::string const& resp) {
-        if (cb) cb(success, resp);
-    });
-}
-
-void GlobalIconClient::clearIcons(int accountID, std::string const& username, SyncCallback cb) {
-    matjson::Value body = matjson::makeObject({
-        {"accountID", accountID},
-        {"username", username},
-        {"enabled", false},
-        {"icons", matjson::Value::array()},
-    });
-    syncIcons(body.dump(matjson::NO_INDENTATION), std::move(cb));
 }
 
 } // namespace paimon::globalicon

@@ -208,7 +208,7 @@ CCNode* makeSliderRow(
     valLbl->setPosition({width - 11.f, rowH - kPad + 1.f});
     row->addChild(valLbl);
 
-    // full-row slider.
+    // scale the vanilla slider groove to span the row width while clamping to a valid visual aspect ratio.
     float const grooveW = width - 26.f;
     float const sliderScale = std::clamp(grooveW / 210.f, 0.3f, 1.f);
     float const sliderCY = kPad + kSliderH / 2.f - 2.f;
@@ -387,9 +387,9 @@ CCNode* makeTabBar(
     return paimon::configkit::makeTabBar(width, labels, selected, std::move(onSelect));
 }
 
-bool queueWheelScroll(geode::ScrollLayer* scrollLayer, float x, float y,
-                      float& targetY, bool& targetSet, float speed) {
-    return paimon::configkit::queueWheelScroll(scrollLayer, x, y, targetY, targetSet, speed);
+bool queueWheelScroll(geode::ScrollLayer* scrollLayer, float vertical, float horizontal,
+                      float& targetY, bool& targetSet) {
+    return paimon::configkit::queueWheelScroll(scrollLayer, vertical, horizontal, targetY, targetSet);
 }
 
 void stepWheelScroll(geode::ScrollLayer* scrollLayer,

@@ -1,9 +1,7 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "YtDlpBootstrap.hpp"
+#include "ToolBinaryFetch.hpp"
 
-#include "../../../core/RuntimeLifecycle.hpp"
-#include "../../../utils/WebHelper.hpp"
-
-#include <Geode/loader/Loader.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/string.hpp>
@@ -29,7 +27,7 @@ std::filesystem::path YtDlpBootstrap::bundledPath() const {
 #else
     constexpr const char* kName = "yt-dlp_linux";
 #endif
-    return Mod::get()->getSaveDir() / "yt-dlp" / kName;
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "yt-dlp" / kName;
 }
 
 bool YtDlpBootstrap::exists() const {
@@ -59,132 +57,59 @@ void YtDlpBootstrap::ensureInstalled(
     BootstrapProgressCallback onProgress,
     BootstrapCompleteCallback onComplete
 ) {
-    if (exists()) {
-        auto path = geode::utils::string::pathToString(bundledPath());
-        if (onComplete) {
-            Loader::get()->queueInMainThread([onComplete, path]() {
-                if (paimon::isRuntimeShuttingDown()) return;
-                if (onComplete) onComplete(true, path);
-            });
-        }
-        return;
-    }
-
-    auto url = releaseUrl();
-    if (url.empty()) {
-        if (onComplete) {
-            Loader::get()->queueInMainThread([onComplete]() {
-                if (paimon::isRuntimeShuttingDown()) return;
-                if (onComplete) onComplete(false,
-                    "yt-dlp is not supported on mobile. Use the 'Import local file' "
-                    "option instead.");
-            });
-        }
-        return;
-    }
-
-    bool expected = false;
-    if (!m_downloading.compare_exchange_strong(expected, true)) {
-        if (onComplete) {
-            Loader::get()->queueInMainThread([onComplete]() {
-                if (paimon::isRuntimeShuttingDown()) return;
-                if (onComplete) onComplete(false, "A download is already in progress.");
-            });
-        }
-        return;
-    }
-
     auto destPath = bundledPath();
-    std::error_code ec;
-    std::filesystem::create_directories(destPath.parent_path(), ec);
+    toolfetch::FetchConfig config;
+    config.url = releaseUrl();
+    config.unsupportedMessage =
+        "yt-dlp is not supported on mobile. Use the 'Import local file' "
+        "option instead.";
+    config.userAgent = "Paimbnails-MenuMusic/1.0 (yt-dlp-bootstrap)";
+    config.timeout = std::chrono::minutes(5);
+    config.resolvingMessage = "Contacting github.com...";
+    config.downloadingVerb = "Downloading yt-dlp... ";
+    config.downloadCap = 0.95f;
+    config.httpErrorFor = [](int code) {
+        return fmt::format(
+            "Failed to download yt-dlp ({} {}).\n"
+            "Try again or install it at the destination below.",
+            code < 0 ? "request error" : "HTTP", code);
+    };
+    config.sizeErrorFor = [](std::size_t bytes) {
+        return fmt::format("Downloaded file is suspiciously small ({} bytes). "
+                           "The binary may have failed to fetch.", bytes);
+    };
 
-    if (onProgress) {
-        Loader::get()->queueInMainThread([onProgress]() {
-            if (paimon::isRuntimeShuttingDown()) return;
-            onProgress({"resolving", 0.f, "Contacting github.com..."});
-        });
-    }
-
-    auto progressShared = std::make_shared<BootstrapProgressCallback>(std::move(onProgress));
-    auto completeShared = std::make_shared<BootstrapCompleteCallback>(std::move(onComplete));
-
-    auto req = web::WebRequest()
-        .timeout(std::chrono::minutes(5))
-        .userAgent("Paimbnails-MenuMusic/1.0 (yt-dlp-bootstrap)");
-
-    // geode despacha onprogress en un worker thread, asi que re-encolamos
-    // en main thread antes de tocar ui.
-    req.onProgress([progressShared](web::WebProgress const& p) {
-        if (!progressShared || !*progressShared) return;
-        auto downloaded = static_cast<uint64_t>(p.downloaded());
-        auto total = static_cast<uint64_t>(p.downloadTotal());
-        Loader::get()->queueInMainThread([progressShared, downloaded, total]() {
-            if (paimon::isRuntimeShuttingDown()) return;
-            if (!progressShared || !*progressShared) return;
-            float pct = (total > 0)
-                ? std::min(0.95f, static_cast<float>(downloaded) / static_cast<float>(total) * 0.95f)
-                : 0.f;
-            std::string msg = (total > 0)
-                ? fmt::format("Downloading yt-dlp... {:.2f} / {:.2f} MB",
-                    downloaded / 1'048'576.0, total / 1'048'576.0)
-                : fmt::format("Downloading yt-dlp... {:.2f} MB", downloaded / 1'048'576.0);
-            (*progressShared)({"downloading", pct, std::move(msg)});
-        });
-    });
-
-    WebHelper::dispatch(std::move(req), "GET", url,
-        [this, destPath, progressShared, completeShared](web::WebResponse res) {
-            m_downloading = false;
-
-            auto fail = [completeShared](std::string err) {
-                if (completeShared && *completeShared) (*completeShared)(false, std::move(err));
-            };
-
-            if (!res.ok()) {
-                int code = res.code();
-                fail(fmt::format(
-                    "Failed to download yt-dlp (HTTP {}). "
-                    "Check your internet connection or place the binary manually at:\n{}",
-                    code, geode::utils::string::pathToString(destPath)));
-                return;
-            }
-
-            auto data = res.data();
-            // yt-dlp.exe is ~14-20mb; under 1mb means broken redirect or html error page.
-            if (data.size() < 1'000'000) {
-                fail(fmt::format("Downloaded file is suspiciously small ({} bytes). "
-                                 "The binary may have failed to fetch.", data.size()));
-                return;
-            }
-
+    toolfetch::fetchToolBinary<BootstrapProgress>(
+        std::move(config), destPath, exists(), destPath.parent_path(),
+        m_downloading, std::move(onProgress), std::move(onComplete),
+        [destPath](geode::ByteVector data,
+                   std::shared_ptr<BootstrapProgressCallback> progressShared,
+                   std::shared_ptr<BootstrapCompleteCallback> completeShared) {
+            // yt-dlp.exe is ~14-20mb; the fetch helper already rejected
+            // anything under 1mb as a broken redirect or html error page.
             if (progressShared && *progressShared) {
                 (*progressShared)({"installing", 0.97f,
                     fmt::format("Installing ({:.1f} MB)...", data.size() / 1'048'576.0)});
             }
 
-            auto writeRes = geode::utils::file::writeBinary(destPath, data);
+            auto writeRes = geode::utils::file::writeBinary(paimon::paths::toSdkPath(destPath), data);
             if (!writeRes) {
-                fail(fmt::format("Failed to write binary: {}", writeRes.unwrapErr()));
+                if (completeShared && *completeShared) {
+                    (*completeShared)(false,
+                        fmt::format("Failed to write binary: {}", writeRes.unwrapErr()));
+                }
                 return;
             }
 
-#ifndef GEODE_IS_WINDOWS
-            std::error_code permEc;
-            std::filesystem::permissions(destPath,
-                std::filesystem::perms::owner_exec |
-                std::filesystem::perms::group_exec |
-                std::filesystem::perms::others_exec,
-                std::filesystem::perm_options::add, permEc);
-#endif
+            toolfetch::makeExecutable(destPath);
 
             if (progressShared && *progressShared) {
                 (*progressShared)({"done", 1.f, "yt-dlp installed"});
             }
             if (completeShared && *completeShared) {
-                (*completeShared)(true, geode::utils::string::pathToString(destPath));
+                (*completeShared)(true, paimon::paths::toUtf8(destPath));
             }
-        }
-    );
+        });
 }
 
 } // namespace paimon::menumusic

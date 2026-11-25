@@ -165,6 +165,8 @@ private:
     void load();
     void save();
     void saveCustom();
+    void persistAndRefresh();
+    void persistCustomAndRefresh();
     void apply(cocos2d::CCGLProgram* program) const;
 
     GradientAnimationConfig m_config;

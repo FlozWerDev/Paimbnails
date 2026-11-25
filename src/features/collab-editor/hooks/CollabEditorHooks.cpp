@@ -15,6 +15,7 @@
 #include <Geode/modify/LevelCell.hpp>
 #include <Geode/modify/LevelEditorLayer.hpp>
 #include <Geode/modify/LevelSettingsLayer.hpp>
+#include <Geode/modify/SongSelectNode.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
 #include <Geode/ui/Notification.hpp>
 #include <Geode/ui/PopupManager.hpp>
@@ -255,7 +256,7 @@ class $modify(PaimonCollabEditorUI, EditorUI) {
     }
 
     $override
-    CCArray* pasteObjects(gd::string str, bool withColor, bool noUndo) {
+    CCArray* pasteObjects(std::string str, bool withColor, bool noUndo) {
         auto* objects = EditorUI::pasteObjects(str, withColor, noUndo);
         if (collabActive()) {
             paimon::collab::CollabManager::get().sendCreatedObjects(objects);
@@ -278,9 +279,9 @@ class $modify(PaimonCollabEditorUI, EditorUI) {
     }
 
     $override
-    void transformObject(GameObject* object, EditCommand command, bool noOffset) {
-        EditorUI::transformObject(object, command, noOffset);
-        if (collabActive()) paimon::collab::CollabManager::get().sendUpdatedObject(object);
+    void transformObjectCall(EditCommand command) {
+        EditorUI::transformObjectCall(command);
+        if (collabActive()) paimon::collab::CollabManager::get().sendUpdatedObjects(this->getSelectedObjects());
     }
 
     $override
@@ -296,8 +297,8 @@ class $modify(PaimonCollabEditorUI, EditorUI) {
     }
 
     $override
-    void rotateObjects(CCArray* objects, float rotation, CCPoint pivotPoint) {
-        EditorUI::rotateObjects(objects, rotation, pivotPoint);
+    void rotateObjects(CCArray* objects, float rotation, CCPoint pivotPoint, bool lock) {
+        EditorUI::rotateObjects(objects, rotation, pivotPoint, lock);
         if (collabActive()) paimon::collab::CollabManager::get().sendRotatedObjects(objects);
     }
 
@@ -314,8 +315,8 @@ class $modify(PaimonCollabEditorUI, EditorUI) {
     }
 
     $override
-    void onPasteColor(CCObject* sender) {
-        EditorUI::onPasteColor(sender);
+    void onPasteState(CCObject* sender) {
+        EditorUI::onPasteState(sender);
         auto& mgr = paimon::collab::CollabManager::get();
         if (collabActive() && !mgr.isApplyingRemote()) {
             mgr.reconcileObjects(this->getSelectedObjects());
@@ -397,21 +398,23 @@ class $modify(PaimonCollabEditorPauseLayer, EditorPauseLayer) {
     }
 
     $override
-    void onSong(CCObject* sender) {
-        if (!paimon::collab::CollabManager::get().clientCanOpenSong()) {
-            showBlocked("musica");
-            return;
-        }
-        EditorPauseLayer::onSong(sender);
-    }
-
-    $override
     void onOptions(CCObject* sender) {
         if (!paimon::collab::CollabManager::get().clientCanOpenOptions()) {
             showBlocked("options");
             return;
         }
         EditorPauseLayer::onOptions(sender);
+    }
+};
+
+class $modify(PaimonCollabSongSelect, SongSelectNode) {
+    $override
+    void showCustomSongSelect() {
+        if (collabActive() && !paimon::collab::CollabManager::get().clientCanOpenSong()) {
+            showBlocked("musica");
+            return;
+        }
+        SongSelectNode::showCustomSongSelect();
     }
 };
 

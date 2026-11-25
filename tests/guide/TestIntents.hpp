@@ -21,7 +21,6 @@ inline GuideIntent func(std::string id, int weight,
     it.id = std::move(id);
     it.kind = IntentKind::Functional;
     it.weight = weight;
-    it.priority = 50;
     it.categoryId = std::move(categoryId);
     std::vector<std::string> en{enName};
     for (auto& a : enAliases) en.push_back(a);
@@ -41,7 +40,6 @@ inline GuideIntent conv(std::string id, int weight,
     it.id = std::move(id);
     it.kind = IntentKind::Conversational;
     it.weight = weight;
-    it.priority = 20;
     it.keywordsByLang["english"] = std::move(en);
     it.keywordsByLang["spanish"] = std::move(es);
     return it;
@@ -393,8 +391,8 @@ inline std::vector<GuideIntent> makeIntents() {
         {"thanks", "thank you", "ty", "thx", "appreciate"},
         {"gracias", "muchas gracias", "thank you", "te agradezco"}));
     v.push_back(conv("greeting", 30,
-        {"hi", "hello", "hey", "good morning", "good evening", "good afternoon", "yo", "sup"},
-        {"hola", "buenas", "buenos dias", "buenas tardes", "buenas noches", "ey", "que tal", "saludos"}));
+        {"hi", "hello", "hey", "good morning", "good evening", "good afternoon", "yo", "sup", "helo", "hii", "hey there"},
+        {"hola", "buenas", "buenos dias", "buenas tardes", "buenas noches", "ey", "que tal", "saludos", "ola", "holi", "holis", "wenas"}));
     v.push_back(conv("how-are-you", 30,
         {"how are you", "are you ok", "how do you do", "you fine"},
         {"como estas", "que tal estas", "como te va", "estas bien", "como andas"}));
@@ -454,6 +452,15 @@ inline std::vector<GuideIntent> makeIntents() {
     v.push_back(conv("origin", 22,
         {"where are you from", "where do you live", "where were you born", "are you from teyvat", "your home"},
         {"de donde eres", "donde vives", "donde naciste", "eres de teyvat", "tu hogar"}));
+    v.push_back(conv("acknowledgement", 26,
+        {"ok", "okay", "got it", "understood", "i see", "alright", "sounds good"},
+        {"ok", "vale", "genial", "perfecto", "entendido", "de acuerdo", "ya veo", "suena bien", "dale"}));
+    v.push_back(conv("affirmation", 24,
+        {"yes", "yeah", "yep", "yup", "sure", "of course", "exactly"},
+        {"si", "sip", "claro", "exacto", "exactamente", "por supuesto", "asi es"}));
+    v.push_back(conv("negation", 24,
+        {"no", "nope", "not really", "not that", "other", "another one"},
+        {"no", "nop", "no eso", "otro", "otra cosa", "ese no"}));
 
     return v;
 }

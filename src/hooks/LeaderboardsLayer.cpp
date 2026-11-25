@@ -1,6 +1,8 @@
+#include "../utils/FilesystemPath.hpp"
 #include "../ui/PaimonPopup.hpp"
 #include "../ui/PaimonUI.hpp"
 #include <Geode/modify/LeaderboardsLayer.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 #include "../core/ModAuthFlow.hpp"
 #include "../framework/HookConventions.hpp"
 #include "../utils/DynamicPopupRegistry.hpp"
@@ -23,10 +25,12 @@
 #include "../utils/SpriteHelper.hpp"
 #include "../utils/BetaUploadWarning.hpp"
 #include "../features/community/ui/CommunityHubLayer.hpp"
+#include "../features/community/ui/CommunityHubIcon.hpp"
 #include "../managers/ThumbnailAPI.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
 #include "../utils/stb_image.h"
+#include "../utils/ImageLoadHelper.hpp"
 #include "../core/RuntimeLifecycle.hpp"
 #include "../utils/ThreadTracker.hpp"
 #include "../features/scorecell/ui/LeaderboardLayoutPopup.hpp"
@@ -111,6 +115,43 @@ public:
     }
 };
 
+namespace {
+
+// bounded worker-side read for profile uploads: size policy is enforced
+// before touching the main thread. on failure the error toast is posted to
+// main (text produced there) and nullopt comes back; an empty file yields an
+// empty buffer, which callers treat as before.
+std::optional<std::vector<uint8_t>> readProfileUploadBytes(
+    std::filesystem::path const& path, std::uintmax_t maxBytes,
+    std::function<std::string()> openErrorText,
+    std::function<std::string()> tooLargeText) {
+    auto failWith = [](std::function<std::string()> const& makeText) {
+        geode::Loader::get()->queueInMainThread([makeText] {
+            if (paimon::isRuntimeShuttingDown()) return;
+            PaimonNotify::show(makeText().c_str(), NotificationIcon::Error);
+        });
+    };
+
+    std::error_code sizeEc;
+    auto const onDisk = std::filesystem::file_size(path, sizeEc);
+    if (sizeEc) {
+        failWith(openErrorText);
+        return std::nullopt;
+    }
+    if (onDisk > maxBytes) {
+        failWith(tooLargeText);
+        return std::nullopt;
+    }
+    auto data = paimon::file::readBytes(path, maxBytes + 1);
+    if (data.empty() && onDisk > 0) {
+        failWith(openErrorText);
+        return std::nullopt;
+    }
+    return data;
+}
+
+} // namespace
+
 class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     static void onModify(auto& self) {
         paimon::hooks::afterNodeIdsOrLate(self, "LeaderboardsLayer::init");
@@ -119,6 +160,10 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     $override
     bool init(LeaderboardType type, LeaderboardStat stat) {
         if (!LeaderboardsLayer::init(type, stat)) return false;
+        this->addOnExitCallback([this] {
+            ProfileThumbs::get().clearAllCache();
+            return true;
+        });
         log::info("[LeaderboardsLayer] init: type={}", static_cast<int>(type));
         
         LayerBackgroundManager::get().applyBackground(this, "leaderboards");
@@ -154,27 +199,21 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
 
         std::vector<std::string> tabIDs = {"top-100-menu", "global-menu", "creators-menu", "friends-menu"};
 
-        for (size_t i = 0; i < tabIDs.size(); ++i) {
-            auto* menu = getTabMenu(tabIDs[i], i);
-            auto* btn = menu ? menu->getChildByType<CCMenuItemSpriteExtra>(0) : nullptr;
-            if (btn) btn->setColor({255, 255, 255});
-        }
-
-        std::string activeID;
+        size_t activeIdx = tabIDs.size();
         switch (type) {
-            case LeaderboardType::Default: activeID = "top-100-menu"; break;
-            case LeaderboardType::Global: activeID = "global-menu"; break;
-            case LeaderboardType::Creator: activeID = "creators-menu"; break;
-            case LeaderboardType::Friends: activeID = "friends-menu"; break;
+            case LeaderboardType::Default: activeIdx = 0; break;
+            case LeaderboardType::Global: activeIdx = 1; break;
+            case LeaderboardType::Creator: activeIdx = 2; break;
+            case LeaderboardType::Friends: activeIdx = 3; break;
             default: break;
         }
 
-        if (!activeID.empty()) {
-            auto it = std::find(tabIDs.begin(), tabIDs.end(), activeID);
-            size_t idx = it == tabIDs.end() ? 0 : static_cast<size_t>(std::distance(tabIDs.begin(), it));
-            auto* menu = getTabMenu(activeID, idx);
+        // one pass: the active lookup is deterministic, so coloring inline
+        // gives the same menu the second getTabMenu call would return.
+        for (size_t i = 0; i < tabIDs.size(); ++i) {
+            auto* menu = getTabMenu(tabIDs[i], i);
             auto* btn = menu ? menu->getChildByType<CCMenuItemSpriteExtra>(0) : nullptr;
-            if (btn) btn->setColor({0, 255, 0});
+            if (btn) btn->setColor(i == activeIdx ? ccColor3B{0, 255, 0} : ccColor3B{255, 255, 255});
         }
     }
 
@@ -205,10 +244,8 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
         menu->setPosition({30, 100}); 
         this->addChild(menu);
 
-        auto modSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png");
-        if (modSprite) {
-            modSprite->setScale(0.8f);
-        }
+        CCNode* modSprite = paimon::community::createCommunityHubButtonSprite();
+        if (modSprite) modSprite->setScale(0.7f);
 
         auto modBtn = CCMenuItemSpriteExtra::create(
             modSprite,
@@ -293,12 +330,12 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
 
             auto path = std::move(*pathOpt);
             auto ext = geode::utils::string::toLower(
-                geode::utils::string::pathToString(path.extension())
+                paimon::paths::toUtf8(path.extension())
             );
 
             if (ext == ".gif") {
                 if (!canUploadGIF) {
-                     PaimonNotify::create("GIFs are restricted to Mods/Admins/Donators", NotificationIcon::Error)->show();
+                     PaimonNotify::show("GIFs are restricted to Mods/Admins/Donators", NotificationIcon::Error);
                      return;
                 }
                 layer->processProfileGIF(path);
@@ -311,41 +348,35 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     void processProfileGIF(std::filesystem::path path) {
         paimon::ThreadTracker::get().spawn([path]() {
             geode::utils::thread::setName("PaimonProfileGIF");
-            std::ifstream file(path, std::ios::binary);
-            if (!file) {
-                geode::Loader::get()->queueInMainThread([] {
-                    if (paimon::isRuntimeShuttingDown()) return;
-                    PaimonNotify::create("Failed to read GIF file", NotificationIcon::Error)->show();
-                });
-                return;
-            }
-            std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-            file.close();
-            
+            // bounded read on the worker: the 10 mb policy is enforced before
+            // touching the main thread (empty file still uploads, as before).
+            constexpr std::uintmax_t kMaxGifBytes = 10ull * 1024 * 1024;
+            auto dataOpt = readProfileUploadBytes(path, kMaxGifBytes,
+                [] { return std::string("Failed to read GIF file"); },
+                [] { return std::string("GIF too large (max 10MB)"); });
+            if (!dataOpt) return;
+            auto data = std::move(*dataOpt);
+
             geode::Loader::get()->queueInMainThread([data = std::move(data)]() mutable {
                 if (paimon::isRuntimeShuttingDown()) return;
-                if (data.size() > 10 * 1024 * 1024) {
-                     PaimonNotify::create("GIF too large (max 10MB)", NotificationIcon::Error)->show();
-                     return;
-                }
 
                 auto* accountManager = GJAccountManager::get();
                 if (!accountManager) {
-                    PaimonNotify::create("Account manager unavailable", NotificationIcon::Error)->show();
+                    PaimonNotify::show("Account manager unavailable", NotificationIcon::Error);
                     return;
                 }
 
                 int accountID = accountManager->m_accountID;
                 std::string username = accountManager->m_username;
 
-                PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
+                PaimonNotify::show(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info);
 
                 paimon::showBetaUploadWarningIfNeeded([accountID, data = std::move(data), username]() mutable {
                     ThumbnailAPI::get().uploadProfileGIF(accountID, data, username, [](bool success, std::string const& msg) {
                         if (success) {
-                            PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
+                            PaimonNotify::show(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success);
                         } else {
-                            PaimonNotify::create((Localization::get().getString("capture.upload_error") + ": " + msg).c_str(), NotificationIcon::Error)->show();
+                            PaimonNotify::show((Localization::get().getString("capture.upload_error") + ": " + msg).c_str(), NotificationIcon::Error);
                         }
                     });
                 });
@@ -356,24 +387,14 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     void processProfileImage(std::filesystem::path path) {
         paimon::ThreadTracker::get().spawn([path]() {
             geode::utils::thread::setName("PaimonProfileImage");
-            std::ifstream file(path, std::ios::binary);
-            if (!file) {
-                geode::Loader::get()->queueInMainThread([]{
-                    if (paimon::isRuntimeShuttingDown()) return;
-                    PaimonNotify::create(Localization::get().getString("profile.image_open_error").c_str(), NotificationIcon::Error)->show(); 
-                });
-                return;
-            }
-            std::vector<uint8_t> rawData((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-            file.close();
-
-            if (rawData.size() > 7 * 1024 * 1024) {
-                 geode::Loader::get()->queueInMainThread([]{
-                     if (paimon::isRuntimeShuttingDown()) return;
-                     PaimonNotify::create("Image too large (max 7MB)", NotificationIcon::Error)->show();
-                 });
-                 return;
-            }
+            // bounded read on the worker: the 7 mb policy is enforced before
+            // decoding or touching the main thread.
+            constexpr std::uintmax_t kMaxImageBytes = 7ull * 1024 * 1024;
+            auto rawOpt = readProfileUploadBytes(path, kMaxImageBytes,
+                [] { return Localization::get().getString("profile.image_open_error"); },
+                [] { return std::string("Image too large (max 7MB)"); });
+            if (!rawOpt) return;
+            auto rawData = std::move(*rawOpt);
 
             int w = 0, h = 0, ch = 0;
             unsigned char* px = stbi_load_from_memory(rawData.data(), static_cast<int>(rawData.size()), &w, &h, &ch, 4);
@@ -386,7 +407,7 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
                 auto* accountManager = GJAccountManager::get();
                 if (!accountManager) {
                     if (px) stbi_image_free(px);
-                    PaimonNotify::create("Account manager unavailable", NotificationIcon::Error)->show();
+                    PaimonNotify::show("Account manager unavailable", NotificationIcon::Error);
                     return;
                 }
 
@@ -396,12 +417,10 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
                 CCTexture2D* texture = nullptr;
                 if (px) {
                     if (w > 0 && h > 0) {
-                        auto* tex = new CCTexture2D();
-                        if (tex->initWithData(px, kCCTexture2DPixelFormat_RGBA8888, w, h, CCSize(static_cast<float>(w), static_cast<float>(h)))) {
-                            texture = tex;
+                        auto img = ImageLoadHelper::createFromRGBA(px, w, h, false);
+                        if (img.success) {
+                            texture = img.texture;
                             texture->autorelease();
-                        } else {
-                            tex->release();
                         }
                     }
                     stbi_image_free(px);
@@ -411,14 +430,14 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
                     auto* image = new CCImage();
                     if (!image->initWithImageData(const_cast<uint8_t*>(rawData.data()), rawData.size())) {
                         image->release();
-                        PaimonNotify::create("Failed to decode image", NotificationIcon::Error)->show();
+                        PaimonNotify::show("Failed to decode image", NotificationIcon::Error);
                         return;
                     }
                     auto* tex = new CCTexture2D();
                     if (!tex->initWithImage(image)) {
                         image->release();
                         tex->release();
-                        PaimonNotify::create("Failed to create texture", NotificationIcon::Error)->show();
+                        PaimonNotify::show("Failed to create texture", NotificationIcon::Error);
                         return;
                     }
                     image->release();
@@ -427,29 +446,22 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
                 }
 
                 auto popup = ProfilePreviewPopup::create(rawData, username, texture, [rawData, accountID, username]() {
-                    PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
+                    PaimonNotify::show(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info);
                     ThumbnailAPI::get().uploadProfile(accountID, rawData, username, [](bool success, std::string const& msg) {
                         if (success) {
                             bool isPending = (msg.find("pending") != std::string::npos || msg.find("verification") != std::string::npos);
                             if (isPending) {
-                                PaimonNotify::create("Background submitted! Pending moderator verification.", NotificationIcon::Warning)->show();
+                                PaimonNotify::show("Background submitted! Pending moderator verification.", NotificationIcon::Warning);
                             } else {
-                                PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
+                                PaimonNotify::show(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success);
                             }
                         } else {
-                            PaimonNotify::create((Localization::get().getString("capture.upload_error") + ": " + msg).c_str(), NotificationIcon::Error)->show();
+                            PaimonNotify::show((Localization::get().getString("capture.upload_error") + ": " + msg).c_str(), NotificationIcon::Error);
                         }
                     });
                 });
                 if (popup) popup->show();
             });
         });
-    }
-    
-
-    $override
-    void onExit() {
-        ProfileThumbs::get().clearAllCache();
-        LeaderboardsLayer::onExit();
     }
 };

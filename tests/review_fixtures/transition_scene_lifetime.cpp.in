@@ -1,0 +1,177 @@
+#include <cassert>
+#include <chrono>
+#include <cstdint>
+#include <functional>
+#include <iostream>
+#include <memory>
+#include <new>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+namespace cocos2d {
+struct CCNode {
+    inline static unsigned nextID = 0;
+    unsigned m_uID = ++nextID;
+    int references = 1;
+    CCNode* parent = nullptr;
+    virtual ~CCNode() = default;
+    CCNode* getParent() { return parent; }
+    void retain() { ++references; }
+    void release() { if (--references == 0) delete this; }
+};
+struct CCScene : CCNode {
+    bool* loadNext = nullptr;
+    explicit CCScene(bool* ready = nullptr) : loadNext(ready) {}
+    ~CCScene() override { if (loadNext) *loadNext = true; }
+};
+struct CCTransitionScene : CCScene {};
+struct CCMenuItem : CCNode { bool isEnabled() { return true; } };
+struct CCDirector {
+    CCScene* scene = nullptr;
+    static CCDirector* get() { static CCDirector director; return &director; }
+    CCScene* getRunningScene() { return scene; }
+};
+}
+using namespace cocos2d;
+template<class To, class From> To typeinfo_cast(From* object) { return dynamic_cast<To>(object); }
+
+// Geode 5.11 WeakRefPool retains its managed object until a weak handle is
+// locked/destroyed. Dropping a handle via move assignment alone doesn't forget it.
+template<class T> struct Ref {
+    T* object;
+    explicit Ref(T* value) : object(value) { if (object) object->retain(); }
+    ~Ref() { if (object) object->release(); }
+    T* data() const { return object; }
+    explicit operator bool() const { return object != nullptr; }
+};
+template<class T> class WeakRef {
+    struct Controller { T* object; };
+    inline static std::unordered_map<T*, std::shared_ptr<Controller>> pool;
+    std::shared_ptr<Controller> controller;
+    static void forget(T* object) {
+        if (!object || !pool.contains(object)) return;
+        pool.at(object)->object = nullptr;
+        pool.erase(object);
+        object->release();
+    }
+    void check() const {
+        if (controller && controller->object && controller->object->references == 1)
+            forget(controller->object);
+    }
+public:
+    WeakRef() = default;
+    WeakRef(T* object) {
+        if (!object) return;
+        if (!pool.contains(object)) {
+            object->retain();
+            pool[object] = std::make_shared<Controller>(Controller{object});
+        }
+        controller = pool.at(object);
+    }
+    WeakRef(WeakRef const&) = default;
+    WeakRef(WeakRef&&) = default;
+    ~WeakRef() {
+        check();
+        if (controller && controller.use_count() == 2) forget(controller->object);
+    }
+    WeakRef& operator=(WeakRef&& other) noexcept {
+        controller = std::move(other.controller);
+        return *this;
+    }
+    WeakRef& operator=(T* object) {
+        assert(!object); // Only the null assignment path is needed here.
+        controller = nullptr;
+        return *this;
+    }
+    Ref<T> lock() const { check(); return Ref<T>(controller ? controller->object : nullptr); }
+};
+struct Loader {
+    std::vector<std::function<void()>> queued;
+    static Loader* get() { static Loader loader; return &loader; }
+    void queueInMainThread(std::function<void()> callback) { queued.push_back(std::move(callback)); }
+    void flush() { auto callbacks = std::exchange(queued, {}); for (auto& callback : callbacks) callback(); }
+};
+
+@@source|src/utils/SceneIdentity.hpp@@
+
+namespace paimon::transitions::dynamic {
+struct Rect { float x = 0, y = 0, width = 20, height = 20; };
+@@function|src/features/transitions/services/DynamicTransitionManager.cpp|struct ButtonOrigin@@;
+@@function|src/features/transitions/services/DynamicTransitionManager.cpp|struct Route@@;
+ButtonOrigin s_button;
+decltype(s_button.scene) s_backScene;
+std::vector<Route> s_routes;
+unsigned s_backDepth = 0;
+uint64_t s_backGeneration = 0;
+bool isEnabled() { return true; }
+Rect buttonRect(CCNode*) { return {}; }
+bool isBackButton(CCMenuItem*) { return false; }
+void finishPanelAnimation() {}
+void clearPanelHistory() {}
+void discardButton();
+@@function|src/features/transitions/services/DynamicTransitionManager.cpp|void captureButton(@@
+@@function|src/features/transitions/services/DynamicTransitionManager.cpp|void discardButton(@@
+@@function|src/features/transitions/services/DynamicTransitionManager.cpp|void deferDiscardButton(@@
+@@function|src/features/transitions/services/DynamicTransitionManager.cpp|bool currentButton(@@
+@@function|src/features/transitions/services/DynamicTransitionManager.cpp|void beginBackInput(@@
+@@function|src/features/transitions/services/DynamicTransitionManager.cpp|void endBackInput(@@
+@@function|src/features/transitions/services/DynamicTransitionManager.cpp|bool hasBackInput(@@
+@@function|src/features/transitions/services/DynamicTransitionManager.cpp|void clearHistory(@@
+}
+
+namespace paimon::quickhub {
+struct QuickHubRadial { static bool isOpen() { return false; } };
+}
+namespace holdInput {
+@@function|src/features/quick-hub/services/QuickHubKeybind.cpp|struct HoldState@@;
+HoldState s_hold;
+void cleanupProgressBar() {}
+void syncHoldTicking() {}
+@@function|src/features/quick-hub/services/QuickHubKeybind.cpp|void resetHold(@@
+@@function|src/features/quick-hub/services/QuickHubKeybind.cpp|void beginHold(@@
+}
+
+int main() {
+    using namespace paimon::transitions::dynamic;
+    // The editor's destruction is what signals GJGameLoadingLayer to load gameplay.
+    for (int input = 0; input < 4; ++input) {
+        bool gameplayLoaded = false;
+        auto* editor = new CCScene(&gameplayLoaded);
+        CCDirector::get()->scene = editor;
+        CCMenuItem saveAndPlay;
+        saveAndPlay.parent = editor;
+        if (input == 3) {
+            holdInput::beginHold(17);
+            holdInput::resetHold();
+        } else if (input == 2) {
+            beginBackInput();
+            assert(hasBackInput());
+            endBackInput();
+            Loader::get()->flush();
+        } else {
+            captureButton(&saveAndPlay);
+            Rect origin;
+            bool back = true;
+            assert(currentButton(editor, origin, back));
+            if (input == 0) { deferDiscardButton(); Loader::get()->flush(); }
+            else clearHistory();
+        }
+        CCDirector::get()->scene = nullptr;
+        editor->release();
+        assert(gameplayLoaded && "input bookkeeping retained the editor and blocked loading");
+        clearHistory();
+    }
+    // An allocator may reuse a scene address. Cocos object IDs distinguish it.
+    alignas(CCScene) unsigned char storage[sizeof(CCScene)];
+    auto* oldScene = new (storage) CCScene();
+    paimon::SceneIdentity oldIdentity(oldScene);
+    assert(oldIdentity.matches(oldScene));
+    oldScene->~CCScene();
+    auto* newScene = new (storage) CCScene();
+    assert(!oldIdentity.matches(newScene));
+    assert(!oldIdentity.matches(nullptr));
+    newScene->~CCScene();
+    std::cout << "PASS: button/back/hold bookkeeping releases the editor for Save and Play\n";
+}

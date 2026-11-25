@@ -6,6 +6,7 @@
 #include "CaptureVisibilityState.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/PlayerToggleHelper.hpp"
+#include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/RgbaScaler.hpp"
 #include "../../../utils/RenderTexture.hpp"
 #include "../../../utils/ThreadTracker.hpp"
@@ -495,8 +496,8 @@ std::vector<HiddenGameObjectState> hidePracticeAndEffectObjects() {
         obj->m_isHide = true;
     };
 
-    if (pl->m_currentCheckpoint) {
-        hideObj(pl->m_currentCheckpoint->m_physicalCheckpointObject);
+    if (auto* checkpoint = pl->getLastCheckpoint()) {
+        hideObj(checkpoint->m_physicalCheckpointObject);
     }
     if (pl->m_checkpointArray) {
         for (auto* cp : CCArrayExt<CheckpointObject*>(pl->m_checkpointArray)) {
@@ -578,15 +579,14 @@ void forceAlphaOpaque(uint8_t* data, size_t bytes) {
 }
 
 CCTexture2D* makeTextureRGBA(uint8_t const* data, int W, int H) {
-    auto* tex = new CCTexture2D();
-    if (!tex->initWithData(data, kCCTexture2DPixelFormat_RGBA8888, W, H,
-                           CCSize(static_cast<float>(W), static_cast<float>(H)))) {
+    // retained (+1), as before; callers autorelease or release.
+    auto loaded = ImageLoadHelper::createFromRGBA(data, W, H, false);
+    if (!loaded.success || !loaded.texture) {
         log::error("[FramebufferCapture] CCTexture2D init failed ({}x{})", W, H);
-        tex->release();
         return nullptr;
     }
-    tex->setAntiAliasTexParameters();
-    return tex;
+    loaded.texture->setAntiAliasTexParameters();
+    return loaded.texture;
 }
 
 void applyFXAA(uint8_t* data, int W, int H) {
@@ -1381,6 +1381,10 @@ void FramebufferCapture::executeIfPending() {
 void FramebufferCapture::dispatchProcessing(
     std::shared_ptr<std::vector<uint8_t>> rawPixels, int W, int H)
 {
+    if (W <= 0 || H <= 0 || !rawPixels || rawPixels->empty()) {
+        finishPendingFailure();
+        return;
+    }
     int targetW = resolveTargetWidth(s_request.levelID, W);
     int targetH = std::max(1, static_cast<int>(
         std::round(static_cast<double>(H) * targetW / W)));

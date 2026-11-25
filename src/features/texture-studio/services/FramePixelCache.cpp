@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "FramePixelCache.hpp"
 #include <Geode/utils/string.hpp>
 
@@ -31,8 +32,8 @@ geode::Result<FramePixelCache::FrameData> FramePixelCache::frameData(
 
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    std::string sourceKey = geode::utils::string::pathToString(plistPath) + "\n" +
-                            geode::utils::string::pathToString(pngPath);
+    std::string sourceKey = paimon::paths::toUtf8(plistPath) + "\n" +
+                            paimon::paths::toUtf8(pngPath);
     std::string frameKey = sourceKey + "\n" + frameName;
 
     std::error_code plistEc;
@@ -49,7 +50,7 @@ geode::Result<FramePixelCache::FrameData> FramePixelCache::frameData(
 
     if (sourceChanged) {
         m_atlas = ImageBuffer();
-        m_frames.clear();
+        setFrames({});
         m_cachedKey.clear();
         m_frameCache.clear();
         m_frameOrder.clear();
@@ -58,7 +59,7 @@ geode::Result<FramePixelCache::FrameData> FramePixelCache::frameData(
         GEODE_UNWRAP_INTO(auto parsed, PlistParser::parseFile(plistPath));
         GEODE_UNWRAP_INTO(auto atlas, ImageBuffer::loadFromFile(pngPath));
 
-        m_frames = std::move(parsed.frames);
+        setFrames(std::move(parsed.frames));
         m_atlas = std::move(atlas);
         m_cachedKey = sourceKey;
         m_cachedPlistMtime = plistMtime;
@@ -68,9 +69,7 @@ geode::Result<FramePixelCache::FrameData> FramePixelCache::frameData(
 
     if (auto it = m_frameCache.find(frameKey); it != m_frameCache.end()) {
         ++m_hits;
-        auto infoIt = std::find_if(m_frames.begin(), m_frames.end(),
-            [&frameName](SpriteFrameInfo const& f) { return f.name == frameName; });
-        if (infoIt != m_frames.end()) return Ok(FrameData{it->second, *infoIt});
+        return Ok(it->second);
     }
 
     ++m_misses;
@@ -80,46 +79,36 @@ geode::Result<FramePixelCache::FrameData> FramePixelCache::frameData(
             m_hits, total, total ? (100.0 * m_hits / total) : 0.0);
     }
 
-    for (auto const& f : m_frames) {
-        if (f.name != frameName) continue;
+    auto idxIt = m_frameIndex.find(frameName);
+    if (idxIt == m_frameIndex.end() || idxIt->second >= m_frames.size()) {
+        return Err("frame '{}' not found in {}", frameName, paimon::paths::toUtf8(plistPath));
+    }
+    {
+        auto const& f = m_frames[idxIt->second];
         auto pixels = SpritesheetReader::extractFrame(m_atlas, f);
         if (pixels.empty()) {
             return Err("frame '{}' extracted empty (bad rect?)", frameName);
         }
 
         std::size_t bytes = pixels.byteSize();
-        m_frameCache.emplace(frameKey, pixels);
+        m_frameCache.emplace(frameKey, FrameData{pixels, f});
         m_frameOrder.push_back(frameKey);
         m_frameCacheBytes += bytes;
-        while (m_frameCacheBytes > m_byteBudget && !m_frameOrder.empty()) {
-            auto const oldKey = m_frameOrder.front();
-            m_frameOrder.pop_front();
-            if (auto oldIt = m_frameCache.find(oldKey); oldIt != m_frameCache.end()) {
-                m_frameCacheBytes -= oldIt->second.byteSize();
-                m_frameCache.erase(oldIt);
-            }
-        }
+        evictWhileOverBudget();
 
         return Ok(FrameData{std::move(pixels), f});
     }
-    return Err("frame '{}' not found in {}", frameName, geode::utils::string::pathToString(plistPath));
 }
 
 void FramePixelCache::setByteBudget(std::size_t bytes) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_byteBudget = std::max(bytes, kFrameCacheByteFloor);
-    while (m_frameCacheBytes > m_byteBudget && !m_frameOrder.empty()) {
-        auto const oldKey = m_frameOrder.front();
-        m_frameOrder.pop_front();
-        if (auto it = m_frameCache.find(oldKey); it != m_frameCache.end()) {
-            m_frameCacheBytes -= it->second.byteSize();
-            m_frameCache.erase(it);
-        }
-    }
+    evictWhileOverBudget();
     log::debug("[texture-studio] frame cache budget set to {} KB", m_byteBudget / 1024);
 }
 
 std::size_t FramePixelCache::byteBudget() const {
+    std::lock_guard lock(m_mutex);
     return m_byteBudget;
 }
 
@@ -128,13 +117,32 @@ void FramePixelCache::clear() {
     m_cachedKey.clear();
     m_haveMtimes = false;
     m_atlas = ImageBuffer();
-    m_frames.clear();
+    setFrames({});
     m_frames.shrink_to_fit();
     m_frameCache.clear();
     m_frameOrder.clear();
     m_frameCacheBytes = 0;
     m_hits = 0;
     m_misses = 0;
+}
+
+void FramePixelCache::evictWhileOverBudget() {
+    while (m_frameCacheBytes > m_byteBudget && !m_frameOrder.empty()) {
+        auto const oldKey = m_frameOrder.front();
+        m_frameOrder.pop_front();
+        if (auto oldIt = m_frameCache.find(oldKey); oldIt != m_frameCache.end()) {
+            m_frameCacheBytes -= oldIt->second.pixels.byteSize();
+            m_frameCache.erase(oldIt);
+        }
+    }
+}
+
+void FramePixelCache::setFrames(std::vector<SpriteFrameInfo> frames) {
+    m_frames = std::move(frames);
+    m_frameIndex.clear();
+    for (std::size_t i = 0; i < m_frames.size(); ++i) {
+        m_frameIndex.emplace(m_frames[i].name, i);
+    }
 }
 
 }  // namespace paimon::texture_studio

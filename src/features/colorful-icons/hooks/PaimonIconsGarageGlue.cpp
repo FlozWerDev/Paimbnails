@@ -6,6 +6,7 @@
 
 #include <Geode/Geode.hpp>
 #include "../../../core/RuntimeLifecycle.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 
 using namespace geode::prelude;
 
@@ -144,25 +145,32 @@ CCMenu* colorColumnOf(GJGarageLayer* layer) {
     return typeinfo_cast<CCMenu*>(anchor->getParent());
 }
 
-// return the button's mini simpleplayer for ticker updates.
+// return the button's mini simpleplayer for ticker updates; null when the button uses its glyph.
 SimplePlayer* installPaimonIconsButton(GJGarageLayer* layer) {
     if (!layer) return nullptr;
     if (layer->getChildByID("paimbnails/paimon-icons-btn"_spr)) return nullptr;
 
+    SimplePlayer* mini = nullptr;
+    CircleButtonSprite* spr = nullptr;
+    if (auto* glyph = paimon::SpriteHelper::safeCreate("paim_garage_paimonIcons.png"_spr)) {
+        spr = CircleButtonSprite::create(glyph, CircleBaseColor::Cyan, CircleBaseSize::Medium);
+    }
+    if (!spr) {
 // simpleplayer has zero content size; wrap or basedbuttonsprite scales infinitely.
-    auto* mini = SimplePlayer::create(1);
-    if (!mini) return nullptr;
-    auto* wrap = CCNode::create();
-    wrap->setContentSize({32.f, 32.f});
-    wrap->setAnchorPoint({0.5f, 0.5f});
-    mini->setPosition({16.f, 16.f});
-    wrap->addChild(mini);
+        mini = SimplePlayer::create(1);
+        if (!mini) return nullptr;
+        auto* wrap = CCNode::create();
+        wrap->setContentSize({32.f, 32.f});
+        wrap->setAnchorPoint({0.5f, 0.5f});
+        mini->setPosition({16.f, 16.f});
+        wrap->addChild(mini);
 
-    auto* spr = CircleButtonSprite::create(
-        wrap,
-        CircleBaseColor::Cyan,
-        CircleBaseSize::Medium
-    );
+        spr = CircleButtonSprite::create(
+            wrap,
+            CircleBaseColor::Cyan,
+            CircleBaseSize::Medium
+        );
+    }
     if (!spr) return nullptr;
 
     auto* btn = CCMenuItemExt::createSpriteExtra(spr, [](CCMenuItemSpriteExtra*) {

@@ -25,6 +25,14 @@ float hash12(vec2 p) {
     return fract((p3.x + p3.y) * p3.z);
 }
 
+// Jimenez's Interleaved Gradient Noise with Golden Ratio temporal sequence.
+// Adding the temporal sequence inside the inner dot product preserves 2D high-frequency
+// blue-noise-like spatial distribution while completely eliminating repeating strobing patterns.
+float ign(vec2 p, float frame) {
+    float framePhi = fract(frame * 0.618033988749895);
+    return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y + framePhi));
+}
+
 // GLSL smoothstep requires distinct, increasing edges.
 float safeSmoothstep(float e0, float e1, float x) {
     if (abs(e1 - e0) < 0.00001) return step(e0, x);

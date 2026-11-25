@@ -90,7 +90,7 @@ std::string PackMetadataBuilder::buildPackJson(std::string_view packName,
     return obj.dump(4);
 }
 
-// ui colors.
+// generates Geode loader ui-colors.json theme metadata mapping pack colors to UI widgets and panels.
 std::string PackMetadataBuilder::buildUiColorsJson(PackExportConfig const& cfg) {
     auto primary   = cfg.colors.color1;
     auto secondary = cfg.colors.color2;
@@ -158,7 +158,7 @@ std::string PackMetadataBuilder::buildUiColorsJson(PackExportConfig const& cfg) 
     return obj.dump(4);
 }
 
-// mods layer json.
+// generates Geode ModListLayer layout JSON with custom frame background and search styling.
 std::string PackMetadataBuilder::buildModsLayerJson(PackExportConfig const& cfg) {
     auto frameBg = matjson::Value::object();
     {
@@ -198,7 +198,7 @@ std::string PackMetadataBuilder::buildModsLayerJson(PackExportConfig const& cfg)
     return nodeChild("mod-list-frame", std::move(modListFrame)).dump(4);
 }
 
-// loading layer json.
+// generates LoadingLayer backdrop JSON configuration matching custom pack backgrounds or tinted gradients.
 std::string PackMetadataBuilder::buildLoadingLayerJson(PackExportConfig const& cfg) {
     auto bgTexture = matjson::Value::object();
     auto attrs = matjson::Value::object();

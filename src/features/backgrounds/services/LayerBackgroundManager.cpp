@@ -1,4 +1,11 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "LayerBackgroundManager.hpp"
+#include "BackgroundConfigChanged.hpp"
+#include "../../dynamic-ambient/services/AmbientAnalyzer.hpp"
+#include "../../dynamic-ambient/services/AmbientRuntime.hpp"
+#include "../../../framework/EventBus.hpp"
+#include "../ui/LiveWallpaperNode.hpp"
+#include "../ui/SceneWallpaperNode.hpp"
 #include "../../thumbnails/services/LocalThumbs.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
@@ -21,6 +28,7 @@
 #include <atomic>
 #include <cstring>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "../../../utils/ThreadTracker.hpp"
 #include "../../../utils/Shaders.hpp"
@@ -35,12 +43,7 @@ namespace {
 std::atomic<uint32_t> g_layerBgSaveGeneration{0};
 std::atomic<bool> g_layerBgShutdown{false};
 
-// savedata is nodiscard; these paths don't branch on the result.
-void saveDataQuiet() {
-    (void)Mod::get()->saveData();
-}
-
-// cache custom textures by path, mtime, and size; keep the cache alive through gl shutdown.
+// cache custom textures by path, mtime, and size; kept alive through gl shutdown.
 struct CustomBgCacheEntry {
     geode::Ref<CCTexture2D> texture;
     std::filesystem::file_time_type mtime{};
@@ -60,7 +63,7 @@ uint64_t& customBgCacheUseCounter() {
 
 CCTexture2D* customBgCacheGet(std::filesystem::path const& path) {
     auto& cache = customBgCache();
-    auto it = cache.find(geode::utils::string::pathToString(path));
+    auto it = cache.find(paimon::paths::toUtf8(path));
     if (it == cache.end()) return nullptr;
 
     std::error_code ec;
@@ -86,7 +89,7 @@ void customBgCachePut(std::filesystem::path const& path, CCTexture2D* tex) {
     if (ec) return;
 
     auto& cache = customBgCache();
-    constexpr size_t kMaxEntries = 4;
+    constexpr size_t kMaxEntries = 16;
     while (cache.size() >= kMaxEntries) {
         auto oldest = cache.begin();
         for (auto it = cache.begin(); it != cache.end(); ++it) {
@@ -100,7 +103,56 @@ void customBgCachePut(std::filesystem::path const& path, CCTexture2D* tex) {
     entry.mtime = mtime;
     entry.fileSize = size;
     entry.lastUse = ++customBgCacheUseCounter();
-    cache.emplace(geode::utils::string::pathToString(path), std::move(entry));
+    cache.emplace(paimon::paths::toUtf8(path), std::move(entry));
+}
+
+bool isStaticCustomBgPath(std::filesystem::path const& path) {
+    if (path.empty()) return false;
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec) || ec) return false;
+    auto ext = geode::utils::string::toLower(paimon::paths::toUtf8(path.extension()));
+    return ext != ".gif";
+}
+
+void schedulePrewarmStaticPaths(std::vector<std::filesystem::path> paths) {
+    if (paths.empty() || g_layerBgShutdown.load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+        return;
+    }
+
+    paimon::ThreadTracker::get().spawn([paths = std::move(paths)]() mutable {
+        geode::utils::thread::setName("PaimonBgPreload");
+        for (auto const& path : paths) {
+            if (g_layerBgShutdown.load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+                return;
+            }
+            auto bytes = ImageLoadHelper::readBinaryFile(path, 32);
+            if (bytes.empty()) continue;
+
+            int w = 0, h = 0;
+            ImageLoadHelper::StbDecodeError err = ImageLoadHelper::StbDecodeError::None;
+            auto decoded = ImageLoadHelper::decodeRGBAFromMemory(bytes.data(), bytes.size(), w, h, &err);
+            if (!decoded || w <= 0 || h <= 0) continue;
+
+            auto pixels = std::make_shared<std::vector<uint8_t>>(
+                decoded.get(), decoded.get() + static_cast<size_t>(w) * static_cast<size_t>(h) * 4);
+            decoded.reset();
+
+            geode::Loader::get()->queueInMainThread([path, pixels = std::move(pixels), w, h]() {
+                if (g_layerBgShutdown.load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+                    return;
+                }
+                if (customBgCacheGet(path)) return;
+                auto img = ImageLoadHelper::createFromRGBA(pixels->data(), w, h, /*copyBuffer=*/false);
+                if (img.success && img.texture) {
+                    img.texture->autorelease();
+                    customBgCachePut(path, img.texture);
+                    if (paimon::ambient::AmbientRuntime::get().active()) {
+                        paimon::ambient::AmbientAnalyzer::get().cacheTexturePalette(img.texture);
+                    }
+                }
+            });
+        }
+    });
 }
 
 void addLayerBgDarkOverlay(CCNode* container, CCSize const& winSize, bool darkMode, float darkIntensity) {
@@ -128,27 +180,21 @@ bool tintVanillaBackgroundNode(CCNode* node) {
     return false;
 }
 
+// visits every known vanilla background child by id; returns whether any
+// visit reported handling it. the id tables differ per caller.
+template <typename Visit>
+bool forEachVanillaBgByID(CCLayer* layer, char const* const* ids, Visit&& visit) {
+    bool handled = false;
+    for (int i = 0; ids[i]; ++i) {
+        if (auto* bg = layer->getChildByID(ids[i])) handled = visit(bg) || handled;
+    }
+    return handled;
+}
+
 // heap-owned so gl-context reload can reset it without static destruction.
 Ref<CCTexture2D>& proceduralBaseTextureSlot() {
     static auto* s_texture = new Ref<CCTexture2D>();
     return *s_texture;
-}
-
-CCTexture2D* createProceduralBaseTexture() {
-    auto& slot = proceduralBaseTextureSlot();
-    if (slot) {
-        return slot.data();
-    }
-
-    unsigned char whitePixel[4] = {255, 255, 255, 255};
-    auto* tex = new CCTexture2D();
-    if (!tex->initWithData(whitePixel, kCCTexture2DPixelFormat_RGBA8888, 1, 1, CCSizeMake(1.f, 1.f))) {
-        tex->release();
-        return nullptr;
-    }
-    tex->autorelease();
-    slot = tex;
-    return slot.data();
 }
 
 // async video callbacks check this flag before touching a container.
@@ -226,7 +272,8 @@ void scheduleLayerBgSave() {
     });
 }
 
-// posters only cover decoder warmup: store downscaled, full-res rgba would stall transitions.
+// posters only cover decoder warmup: stored downscaled, since full-res rgba
+// would stall transitions.
 
 // longest edge of a stored poster frame.
 constexpr int kVideoPreviewMaxDim = 512;
@@ -321,13 +368,16 @@ struct VideoBackgroundUpdateNode : public CCNode {
     std::unique_ptr<paimon::video::VideoPlayer> player;
     std::shared_ptr<paimon::video::VideoPlayer> sharedPlayer;
     Ref<CCSprite> m_visibleSprite = nullptr;
+    // blur displays are owned by videoblurnode (it rebuilds itself); only raw
+    // and shader sprites are rebound after a gl context reload.
+    bool m_visibleSpriteIsBlurDisplay = false;
     bool m_didSuspendDynSong = false;
     bool m_ownsVideoAudioFlag = false;
     bool m_suppressResume = false;
     bool m_shutdown = false;
     bool m_firstVisibleFrameShown = false;
     bool m_previewSaved = false;
-    // seconds left before capturing the poster frame; 0 means nothing pending.
+    // seconds left before capturing the poster frame; 0 = nothing pending.
     float m_previewCaptureCountdown = 0.f;
     bool m_audioFadeOutPending = false;
     std::string m_videoPath;
@@ -516,7 +566,8 @@ struct VideoBackgroundUpdateNode : public CCNode {
                 m_pausedForVisibility = true;
             }
             return;
-        } else if (m_pausedForVisibility) {
+        }
+        if (m_pausedForVisibility) {
             if (player && !player->isPlaying()) {
                 player->resume();
             }
@@ -562,7 +613,8 @@ struct VideoBackgroundUpdateNode : public CCNode {
                 m_visibleSprite->setOpacity(0);
                 m_visibleSprite->runAction(CCFadeTo::create(0.15f, 255));
 
-                // poster readback stalls the gpu; wait for settled playback, not first frames.
+                // poster readback stalls the gpu: wait for settled playback,
+                // not the first frames.
                 if (!m_previewSaved && !m_videoPath.empty()
                     && !LayerBackgroundManager::hasVideoBgPreview(m_videoPath)) {
                     m_previewCaptureCountdown = kPreviewCaptureDelay;
@@ -575,6 +627,16 @@ struct VideoBackgroundUpdateNode : public CCNode {
                     m_previewCaptureCountdown = 0.f;
                     m_previewSaved = true;
                     LayerBackgroundManager::saveVideoBgPreview(m_videoPath, p);
+                }
+            }
+
+            // gl context reloads swap the player texture objects: rebind the
+            // sprite once the player serves frames from the new context.
+            if (!m_visibleSpriteIsBlurDisplay && m_visibleSprite && p->hasVisibleFrame()) {
+                if (auto* fresh = p->getResolvedRGBATexture()) {
+                    if (fresh != m_visibleSprite->getTexture()) {
+                        m_visibleSprite->setTexture(fresh);
+                    }
                 }
             }
         }
@@ -590,7 +652,7 @@ struct VideoBackgroundUpdateNode : public CCNode {
 }
 
 std::filesystem::path LayerBackgroundManager::getVideoBgPreviewDir() {
-    return geode::Mod::get()->getSaveDir() / "bg_previews";
+    return paimon::paths::toStdPath(geode::Mod::get()->getSaveDir()) / "bg_previews";
 }
 
 std::filesystem::path LayerBackgroundManager::getVideoBgPreviewPath(std::string const& videoPath) {
@@ -680,9 +742,21 @@ void LayerBackgroundManager::saveVideoBgPreview(std::string const& videoPath,
     }
 }
 
+namespace {
+std::atomic<bool> s_layerBgInitialized{false};
+} // namespace
+
+bool LayerBackgroundManager::isInitialized() {
+    return s_layerBgInitialized.load(std::memory_order_acquire);
+}
+
 LayerBackgroundManager& LayerBackgroundManager::get() {
     // detached video teardown may still be active at process exit.
-    static auto* s_instance = new LayerBackgroundManager();
+    static auto* s_instance = []() {
+        auto* mgr = new LayerBackgroundManager();
+        s_layerBgInitialized.store(true, std::memory_order_release);
+        return mgr;
+    }();
     return *s_instance;
 }
 
@@ -690,6 +764,24 @@ void LayerBackgroundManager::onGLContextReload() {
     customBgCache().clear();
     videoPreviewCache().clear();
     proceduralBaseTextureSlot() = nullptr;
+
+    // shared players outlive the context (unlike cctexturecache entries):
+    // drop their gl names now, while the old context is alive, so the next
+    // update rebuilds them lazily instead of uploading to dead names.
+    // snapshot under the lock; invalidation itself is main-thread only.
+    std::vector<std::shared_ptr<paimon::video::VideoPlayer>> players;
+    {
+        std::lock_guard lk(m_sharedVideosMutex);
+        players.reserve(m_sharedVideos.size());
+        for (auto& [path, entry] : m_sharedVideos) {
+            if (entry.player) {
+                players.push_back(entry.player);
+            }
+        }
+    }
+    for (auto& p : players) {
+        if (p) p->invalidateGLResources();
+    }
 }
 
 LayerBgConfig LayerBackgroundManager::getConfig(std::string const& key) const {
@@ -708,6 +800,14 @@ LayerBgConfig LayerBackgroundManager::getConfig(std::string const& key) const {
     cfg.darkMode      = mod->getSavedValue<bool>(prefix + "dark", false);
     cfg.darkIntensity = mod->getSavedValue<float>(prefix + "dark-intensity", 0.5f);
     cfg.shader        = mod->getSavedValue<std::string>(prefix + "shader", "none");
+    cfg.fitMode          = mod->getSavedValue<std::string>(prefix + "fit", "cover");
+    cfg.audioReactive    = mod->getSavedValue<bool>(prefix + "audio-reactive", true);
+    cfg.audioSensitivity = mod->getSavedValue<float>(prefix + "audio-sens", 1.0f);
+    cfg.parallax         = mod->getSavedValue<bool>(prefix + "parallax", true);
+    cfg.parallaxStrength = mod->getSavedValue<float>(prefix + "parallax-str", 0.5f);
+    cfg.weTitle          = mod->getSavedValue<std::string>(prefix + "we-title", "");
+    cfg.weAuthor         = mod->getSavedValue<std::string>(prefix + "we-author", "");
+    cfg.weWorkshopId     = mod->getSavedValue<uint64_t>(prefix + "we-wid", 0);
 
     {
         std::lock_guard<std::mutex> lock(m_configCacheMutex);
@@ -728,7 +828,19 @@ void LayerBackgroundManager::saveConfig(std::string const& key, LayerBgConfig co
     Mod::get()->setSavedValue("layerbg-" + key + "-dark", cfg.darkMode);
     Mod::get()->setSavedValue("layerbg-" + key + "-dark-intensity", cfg.darkIntensity);
     Mod::get()->setSavedValue("layerbg-" + key + "-shader", cfg.shader);
+    Mod::get()->setSavedValue("layerbg-" + key + "-fit", cfg.fitMode);
+    Mod::get()->setSavedValue("layerbg-" + key + "-audio-reactive", cfg.audioReactive);
+    Mod::get()->setSavedValue("layerbg-" + key + "-audio-sens", cfg.audioSensitivity);
+    Mod::get()->setSavedValue("layerbg-" + key + "-parallax", cfg.parallax);
+    Mod::get()->setSavedValue("layerbg-" + key + "-parallax-str", cfg.parallaxStrength);
+    Mod::get()->setSavedValue("layerbg-" + key + "-we-title", cfg.weTitle);
+    Mod::get()->setSavedValue("layerbg-" + key + "-we-author", cfg.weAuthor);
+    Mod::get()->setSavedValue("layerbg-" + key + "-we-wid", cfg.weWorkshopId);
     scheduleLayerBgSave();
+    if (cfg.type == "custom" && !cfg.customPath.empty()) {
+        prewarmStaticBackground(paimon::assets::normalizePath(cfg.customPath));
+    }
+    paimon::EventBus::get().publish(paimon::wallpaper::BackgroundConfigChanged{key});
 }
 
 bool LayerBackgroundManager::hasCustomBackground(std::string const& layerKey) const {
@@ -752,6 +864,14 @@ LayerBgConfig LayerBackgroundManager::resolveConfig(std::string const& layerKey)
                 resolvedCfg.type = menuCfg.type;
                 resolvedCfg.customPath = menuCfg.customPath;
                 resolvedCfg.levelId = menuCfg.levelId;
+                resolvedCfg.fitMode = menuCfg.fitMode;
+                resolvedCfg.audioReactive = menuCfg.audioReactive;
+                resolvedCfg.audioSensitivity = menuCfg.audioSensitivity;
+                resolvedCfg.parallax = menuCfg.parallax;
+                resolvedCfg.parallaxStrength = menuCfg.parallaxStrength;
+                resolvedCfg.weTitle = menuCfg.weTitle;
+                resolvedCfg.weAuthor = menuCfg.weAuthor;
+                resolvedCfg.weWorkshopId = menuCfg.weWorkshopId;
                 resolvedType = menuCfg.type;
                 continue;
             } else {
@@ -773,6 +893,14 @@ LayerBgConfig LayerBackgroundManager::resolveConfig(std::string const& layerKey)
             resolvedCfg.type = refCfg.type;
             resolvedCfg.customPath = refCfg.customPath;
             resolvedCfg.levelId = refCfg.levelId;
+            resolvedCfg.fitMode = refCfg.fitMode;
+            resolvedCfg.audioReactive = refCfg.audioReactive;
+            resolvedCfg.audioSensitivity = refCfg.audioSensitivity;
+            resolvedCfg.parallax = refCfg.parallax;
+            resolvedCfg.parallaxStrength = refCfg.parallaxStrength;
+            resolvedCfg.weTitle = refCfg.weTitle;
+            resolvedCfg.weAuthor = refCfg.weAuthor;
+            resolvedCfg.weWorkshopId = refCfg.weWorkshopId;
             resolvedType = refCfg.type;
             if (resolvedType == "default") return resolvedCfg;
             continue;
@@ -842,7 +970,9 @@ void LayerBackgroundManager::migrateFromLegacy() {
     }
 
     Mod::get()->setSavedValue("layerbg-migrated-v2", true);
-    saveDataQuiet();
+    // coalesced: the three startup migrations used to write the whole save
+    // three times on the main thread before the menu appeared.
+    paimon::requestDeferredModSave();
     log::info("[LayerBackgroundManager] Legacy settings migrated to v2 format");
 
     migrateToGlobalMusic();
@@ -903,11 +1033,9 @@ void LayerBackgroundManager::migrateExternalAssetsToManagedStorage() {
     }
 
     Mod::get()->setSavedValue("layerbg-assets-migrated-v1", true);
+    paimon::requestDeferredModSave();
     if (changed) {
-        saveDataQuiet();
         log::info("[LayerBackgroundManager] Migrated external local assets to managed storage");
-    } else {
-        saveDataQuiet();
     }
 }
 
@@ -929,7 +1057,7 @@ void LayerBackgroundManager::migrateToGlobalMusic() {
     }
 
     Mod::get()->setSavedValue("layermusic-migrated-global", true);
-    saveDataQuiet();
+    paimon::requestDeferredModSave();
 }
 
 void LayerBackgroundManager::hideOriginalBg(CCLayer* layer) {
@@ -976,13 +1104,10 @@ void LayerBackgroundManager::showOriginalBg(CCLayer* layer) {
         nullptr
     };
 
-    bool foundByID = false;
-    for (int i = 0; bgNodeIDs[i]; ++i) {
-        if (auto* bg = layer->getChildByID(bgNodeIDs[i])) {
-            bg->setVisible(true);
-            foundByID = true;
-        }
-    }
+    bool foundByID = forEachVanillaBgByID(layer, bgNodeIDs, [](CCNode* bg) {
+        bg->setVisible(true);
+        return true;
+    });
     if (foundByID) return;
 
     auto* children = layer->getChildren();
@@ -1014,10 +1139,9 @@ void LayerBackgroundManager::applyVanillaBackgroundTintFix(CCLayer* layer) {
         nullptr,
     };
 
-    bool changed = false;
-    for (int i = 0; bgNodeIDs[i]; ++i) {
-        changed = tintVanillaBackgroundNode(layer->getChildByID(bgNodeIDs[i])) || changed;
-    }
+    bool changed = forEachVanillaBgByID(layer, bgNodeIDs, [](CCNode* bg) {
+        return tintVanillaBackgroundNode(bg);
+    });
     if (changed) {
         return;
     }
@@ -1044,27 +1168,68 @@ void LayerBackgroundManager::applyVanillaBackgroundTintFix(CCLayer* layer) {
     }
 }
 
+CCTexture2D* LayerBackgroundManager::getCachedStaticTexture(std::filesystem::path const& path) {
+    if (path.empty()) return nullptr;
+    auto normalized = paimon::assets::normalizePath(paimon::paths::toUtf8(path));
+    return customBgCacheGet(normalized);
+}
+
+CCTexture2D* LayerBackgroundManager::loadStaticTextureCached(std::filesystem::path const& path) {
+    if (path.empty()) return nullptr;
+    auto normalized = paimon::assets::normalizePath(paimon::paths::toUtf8(path));
+    if (!isStaticCustomBgPath(normalized)) return nullptr;
+
+    if (auto* cached = customBgCacheGet(normalized)) {
+        return cached;
+    }
+
+    auto img = ImageLoadHelper::loadStaticImage(normalized, 32, /*copyBuffer=*/false);
+    if (img.success && img.texture) {
+        img.texture->autorelease();
+        customBgCachePut(normalized, img.texture);
+        return img.texture;
+    }
+    return nullptr;
+}
+
+void LayerBackgroundManager::prewarmStaticBackground(std::filesystem::path const& path) {
+    auto normalized = paimon::assets::normalizePath(paimon::paths::toUtf8(path));
+    if (!isStaticCustomBgPath(normalized) || customBgCacheGet(normalized)) return;
+    schedulePrewarmStaticPaths({std::move(normalized)});
+}
+
+void LayerBackgroundManager::preloadConfiguredStaticBackgrounds() {
+    if (!paimon::modules::isEnabled("paimbnails.backgrounds.global")) return;
+
+    std::vector<std::filesystem::path> paths;
+    std::unordered_set<std::string> seen;
+
+    auto collectKey = [&](std::string const& key) {
+        auto resolved = resolveConfig(key);
+        if (resolved.type != "custom" || resolved.customPath.empty()) return;
+        auto normalized = paimon::assets::normalizePath(resolved.customPath);
+        if (!isStaticCustomBgPath(normalized) || customBgCacheGet(normalized)) return;
+        auto utf8 = paimon::paths::toUtf8(normalized);
+        if (seen.insert(std::move(utf8)).second) {
+            paths.push_back(std::move(normalized));
+        }
+    };
+
+    collectKey("menu");
+    for (auto const& [key, _] : LAYER_OPTIONS) {
+        collectKey(key);
+    }
+    collectKey("community_hub");
+    collectKey("versus");
+    collectKey("versus_board");
+
+    schedulePrewarmStaticPaths(std::move(paths));
+}
+
 CCTexture2D* LayerBackgroundManager::loadTextureForConfig(LayerBgConfig const& cfg) {
     log::debug("[LayerBgMgr] loadTextureForConfig: type={} id={}", cfg.type, cfg.levelId);
     if (cfg.type == "custom" && !cfg.customPath.empty()) {
-        std::error_code ec;
-        auto normalizedPath = paimon::assets::normalizePath(cfg.customPath);
-        if (std::filesystem::exists(normalizedPath, ec)) {
-            auto ext = geode::utils::string::pathToString(normalizedPath.extension());
-            for (auto& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            if (ext == ".gif") return nullptr;
-
-            if (auto* cached = customBgCacheGet(normalizedPath)) {
-                return cached;
-            }
-
-            auto img = ImageLoadHelper::loadStaticImage(normalizedPath, 32);
-            if (img.success && img.texture) {
-                img.texture->autorelease();
-                customBgCachePut(normalizedPath, img.texture);
-                return img.texture;
-            }
-        }
+        return loadStaticTextureCached(paimon::assets::normalizePath(cfg.customPath));
     } else if (cfg.type == "id" && cfg.levelId > 0) {
         return LocalThumbs::get().loadTexture(cfg.levelId);
     } else if (cfg.type == "random") {
@@ -1100,6 +1265,22 @@ bool LayerBackgroundManager::applyStaticBg(CCLayer* layer, CCTexture2D* tex, Lay
     container->setID("paimon-layerbg-container"_spr);
     container->setZOrder(-10);
 
+    if (!cfg.weTitle.empty()) {
+        std::string creditText = cfg.weTitle;
+        if (!cfg.weAuthor.empty() && cfg.weAuthor != "Desconocido") {
+            creditText += " · " + cfg.weAuthor;
+        }
+        auto* creditLabel = CCLabelBMFont::create(creditText.c_str(), "chatFont.fnt");
+        if (creditLabel) {
+            creditLabel->setScale(0.42f);
+            creditLabel->setOpacity(120);
+            creditLabel->setAnchorPoint({1.f, 0.f});
+            creditLabel->setPosition({winSize.width - 6.f, 4.f});
+            creditLabel->setID("paimon-we-credit-label"_spr);
+            container->addChild(creditLabel, 20);
+        }
+    }
+
     bool useShader = !cfg.shader.empty() && cfg.shader != "none";
     CCSprite* sprite = nullptr;
 
@@ -1127,9 +1308,17 @@ bool LayerBackgroundManager::applyStaticBg(CCLayer* layer, CCTexture2D* tex, Lay
 
     float scX = winSize.width / sprite->getContentWidth();
     float scY = winSize.height / sprite->getContentHeight();
-    sprite->setScale(std::max(scX, scY));
+    if (cfg.fitMode == "stretch") {
+        sprite->setScaleX(scX);
+        sprite->setScaleY(scY);
+    } else if (cfg.fitMode == "contain") {
+        sprite->setScale(std::min(scX, scY));
+    } else {
+        sprite->setScale(std::max(scX, scY));
+    }
     sprite->setPosition(winSize / 2);
     sprite->setAnchorPoint({0.5f, 0.5f});
+    sprite->setID("paimon-bg-sprite"_spr);
 
 
     clearAppliedBackground(layer, false);
@@ -1139,6 +1328,9 @@ bool LayerBackgroundManager::applyStaticBg(CCLayer* layer, CCTexture2D* tex, Lay
 
     hideOriginalBg(layer);
     layer->addChild(container);
+    if (paimon::ambient::AmbientRuntime::get().active()) {
+        paimon::ambient::AmbientAnalyzer::get().seedLayerFromTexture(layer, tex, true);
+    }
     return true;
 }
 
@@ -1153,6 +1345,22 @@ void LayerBackgroundManager::applyGifBg(CCLayer* layer, std::string const& path,
     container->setAnchorPoint({0, 0});
     container->setID("paimon-layerbg-container"_spr);
     container->setZOrder(-10);
+
+    if (!cfg.weTitle.empty()) {
+        std::string creditText = cfg.weTitle;
+        if (!cfg.weAuthor.empty() && cfg.weAuthor != "Desconocido") {
+            creditText += " · " + cfg.weAuthor;
+        }
+        auto* creditLabel = CCLabelBMFont::create(creditText.c_str(), "chatFont.fnt");
+        if (creditLabel) {
+            creditLabel->setScale(0.42f);
+            creditLabel->setOpacity(120);
+            creditLabel->setAnchorPoint({1.f, 0.f});
+            creditLabel->setPosition({winSize.width - 6.f, 4.f});
+            creditLabel->setID("paimon-we-credit-label"_spr);
+            container->addChild(creditLabel, 20);
+        }
+    }
     layer->addChild(container);
 
     CCNode* rawContainer = container;
@@ -1191,7 +1399,15 @@ void LayerBackgroundManager::applyGifBg(CCLayer* layer, std::string const& path,
         if (auto* parentLayer = typeinfo_cast<CCLayer*>(container->getParent())) {
             LayerBackgroundManager::get().hideOriginalBg(parentLayer);
         }
+        anim->setID("paimon-bg-sprite"_spr);
         container->addChild(anim);
+        if (auto* parentLayer = typeinfo_cast<CCLayer*>(container->getParent())) {
+            if (paimon::ambient::AmbientRuntime::get().active()) {
+                if (auto* tex = anim->getTexture()) {
+                    paimon::ambient::AmbientAnalyzer::get().seedLayerFromTexture(parentLayer, tex, true);
+                }
+            }
+        }
 
         addLayerBgDarkOverlay(container, winSize, darkMode, darkIntensity);
 
@@ -1216,6 +1432,22 @@ bool LayerBackgroundManager::applyProceduralShaderBg(CCLayer* layer, LayerBgConf
     container->setAnchorPoint({0, 0});
     container->setID("paimon-layerbg-container"_spr);
     container->setZOrder(-10);
+
+    if (!cfg.weTitle.empty()) {
+        std::string creditText = cfg.weTitle;
+        if (!cfg.weAuthor.empty() && cfg.weAuthor != "Desconocido") {
+            creditText += " · " + cfg.weAuthor;
+        }
+        auto* creditLabel = CCLabelBMFont::create(creditText.c_str(), "chatFont.fnt");
+        if (creditLabel) {
+            creditLabel->setScale(0.42f);
+            creditLabel->setOpacity(120);
+            creditLabel->setAnchorPoint({1.f, 0.f});
+            creditLabel->setPosition({winSize.width - 6.f, 4.f});
+            creditLabel->setID("paimon-we-credit-label"_spr);
+            container->addChild(creditLabel, 20);
+        }
+    }
 
     auto* sprite = PaimonShaderGradient::create({255, 255, 255, 255}, {255, 255, 255, 255});
     if (!sprite) return false;
@@ -1272,6 +1504,11 @@ struct VideoBlurNode : public CCNode {
     Ref<CCSprite> m_displaySprite;
     CCSize m_winSize, m_halfSize, m_quarterSize, m_eighthSize;
     bool   m_isPaimon = false;
+    float  m_intensity = 0.f;
+    // set when the player drops its gl objects on context reload; tick
+    // rebuilds lazily once the player serves frames from the new context.
+    bool     m_glInvalid = false;
+    uint64_t m_playerGLGeneration = 0;
     uint64_t m_lastFrameCounter = 0;
     ccTexParams m_linear = {GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
 
@@ -1322,6 +1559,8 @@ struct VideoBlurNode : public CCNode {
         if (!CCNode::init()) return false;
         m_player   = std::move(player);
         m_isPaimon = isPaimon;
+        m_intensity = intensity;
+        m_playerGLGeneration = m_player ? m_player->getGLGeneration() : 0;
         m_winSize  = winSize;
         m_halfSize    = CCSize(std::max(std::floor(winSize.width  * 0.5f),   4.f),
                                std::max(std::floor(winSize.height * 0.5f),   4.f));
@@ -1438,9 +1677,68 @@ struct VideoBlurNode : public CCNode {
         CCNode::onExit();
     }
 
-    void tick(float dt) {
+    // drops every gl object this node owns; the display sprite is hidden and
+    // detached so nothing draws dead names until the lazy rebuild below.
+    void invalidateForGLReload() {
+        if (m_displaySprite) {
+            m_displaySprite->setVisible(false);
+            m_displaySprite->removeFromParentAndCleanup(true);
+        }
+        m_displaySprite = nullptr;
+        m_srcSprite = nullptr;
+        m_midSprite = nullptr;
+        m_pSpr0 = nullptr;
+        m_pSpr1 = nullptr;
+        m_pSpr2 = nullptr;
+        m_pSprU2 = nullptr;
+        m_pSprU1 = nullptr;
+        m_pSprU0 = nullptr;
+        m_rtA = nullptr;
+        m_rtB = nullptr;
+        m_pD0 = nullptr;
+        m_pD1 = nullptr;
+        m_pD2 = nullptr;
+        m_pU1 = nullptr;
+        m_pU0 = nullptr;
+        m_pFinal = nullptr;
+        m_glInvalid = true;
+    }
+
+    // re-runs the init path against the player's fresh texture; retry-safe
+    // (ref overwrite releases partial state) so tick can poll until ready.
+    bool rebuildAfterGLReload() {
+        auto* videoTex = m_player ? m_player->getResolvedRGBATexture() : nullptr;
+        if (!videoTex) return false;
+        if (!(m_isPaimon ? initPaimon(videoTex, m_intensity)
+                         : initGaussian(videoTex, m_intensity))) {
+            return false;
+        }
+        if (!m_displaySprite) return false;
+
+        CCSize dc = m_displaySprite->getContentSize();
+        float dsx = m_winSize.width  / std::max(dc.width,  1.f);
+        float dsy = m_winSize.height / std::max(dc.height, 1.f);
+        m_displaySprite->setScale(std::max(dsx, dsy));
+        m_displaySprite->setAnchorPoint({0.5f, 0.5f});
+        m_displaySprite->setPosition(m_winSize * 0.5f);
+        m_displaySprite->setFlipY(false);
+        m_displaySprite->setVisible(true);
+        this->addChild(m_displaySprite);
+        m_lastFrameCounter = m_player->getFrameCounter();
+        m_glInvalid = false;
+        return true;
+    }
+
+    void tick(float) {
         if (!m_player || !m_player->isPlaying()) return;
         if (!isVisible()) return;
+        // the player drops its gl objects on context reload: discard the
+        // render targets built from them and rebuild once frames flow again.
+        if (m_player->getGLGeneration() != m_playerGLGeneration) {
+            m_playerGLGeneration = m_player->getGLGeneration();
+            invalidateForGLReload();
+        }
+        if (m_glInvalid && !rebuildAfterGLReload()) return;
         uint64_t fc = m_player->getFrameCounter();
         if (fc == m_lastFrameCounter) return;
         m_lastFrameCounter = fc;
@@ -1508,7 +1806,7 @@ struct VideoBlurNode : public CCNode {
     ~VideoBlurNode() override = default;
 };
 
-// apply saved rotation without losing screen coverage.
+// applies saved rotation without losing screen coverage.
 static void applyVideoRotation(CCNode* sprite, CCSize const& winSize) {
     if (!sprite) return;
     int rot = paimon::settings::video::videoRotation();
@@ -1543,6 +1841,22 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
     container->setID("paimon-layerbg-container"_spr);
     container->setZOrder(-10);
 
+    if (!cfg.weTitle.empty()) {
+        std::string creditText = cfg.weTitle;
+        if (!cfg.weAuthor.empty() && cfg.weAuthor != "Desconocido") {
+            creditText += " · " + cfg.weAuthor;
+        }
+        auto* creditLabel = CCLabelBMFont::create(creditText.c_str(), "chatFont.fnt");
+        if (creditLabel) {
+            creditLabel->setScale(0.42f);
+            creditLabel->setOpacity(120);
+            creditLabel->setAnchorPoint({1.f, 0.f});
+            creditLabel->setPosition({winSize.width - 6.f, 4.f});
+            creditLabel->setID("paimon-we-credit-label"_spr);
+            container->addChild(creditLabel, 20);
+        }
+    }
+
     layer->addChild(container);
 
     // reuse-only: async fallback beats building a decoder that freezes the transition.
@@ -1560,6 +1874,7 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                 std::string blurType      = paimon::settings::video::videoBlurType();
                 float       blurIntensity = paimon::settings::video::videoBlurIntensity();
                 CCSprite*   visibleSprite = nullptr;
+                bool usedBlurDisplay = false;
 
                 if (blurType != "none") {
                     bool isPaimon = (blurType == "paimonblur");
@@ -1567,6 +1882,7 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                         blurNode->getDisplaySprite()->setVisible(true);
                         container->addChild(blurNode);
                         visibleSprite = blurNode->getDisplaySprite();
+                        usedBlurDisplay = true;
                     }
                 }
 
@@ -1630,9 +1946,13 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                         shared, path, didSuspendDynSong, ownsVideoAudio, visibleSprite);
                     if (updateNode) {
                         updateNode->setID("paimon-video-update"_spr);
+                        updateNode->m_visibleSpriteIsBlurDisplay = usedBlurDisplay;
                         container->addChild(updateNode);
                     }
                     log::info("[LayerBgMgr] applyVideoBg: instant reuse via Same As for: {}", path);
+                    if (paimon::ambient::AmbientRuntime::get().active()) {
+                        paimon::ambient::AmbientAnalyzer::get().seedLayerFromTexture(layer, videoTex, true);
+                    }
                     return;
                 }
             }
@@ -1668,12 +1988,14 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                     auto* container = self->getParent();
                     if (!container) return;
                     CCSprite* visibleSprite = nullptr;
+                    bool usedBlurDisplay = false;
                     if (!blurType.empty() && blurType != "none") {
                         bool isPaimon = (blurType == "paimonblur");
                         if (auto blurNode = VideoBlurNode::create(shared, winSize, blurIntensity, isPaimon)) {
                             blurNode->getDisplaySprite()->setVisible(true);
                             container->addChild(blurNode);
                             visibleSprite = blurNode->getDisplaySprite();
+                            usedBlurDisplay = true;
                         }
                     }
                     if (!visibleSprite) {
@@ -1719,6 +2041,7 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                         }
                     }
                     self->m_visibleSprite = visibleSprite;
+                    self->m_visibleSpriteIsBlurDisplay = usedBlurDisplay;
                     applyVideoRotation(visibleSprite, winSize);
                 };
                 container->addChild(updateNode);
@@ -1740,6 +2063,9 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
             applyVideoRotation(previewSprite, winSize);
             container->addChild(previewSprite);
             hideOriginalBg(layer);
+            if (paimon::ambient::AmbientRuntime::get().active()) {
+                paimon::ambient::AmbientAnalyzer::get().seedLayerFromTexture(layer, previewTex, true);
+            }
         }
     }
 
@@ -1791,12 +2117,14 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                 auto* container = self->getParent();
                 if (!container) return;
                 CCSprite* visibleSprite = nullptr;
+                bool usedBlurDisplay = false;
                 if (!blurType.empty() && blurType != "none") {
                     bool isPaimon = (blurType == "paimonblur");
                     if (auto blurNode = VideoBlurNode::create(shared, winSize, blurIntensity, isPaimon)) {
                         blurNode->getDisplaySprite()->setVisible(true);
                         container->addChild(blurNode);
                         visibleSprite = blurNode->getDisplaySprite();
+                        usedBlurDisplay = true;
                     }
                 }
                 if (!visibleSprite) {
@@ -1843,6 +2171,7 @@ void LayerBackgroundManager::applyVideoBg(CCLayer* layer, std::string const& pat
                 }
                 // let the update node fade in the first frame.
                 self->m_visibleSprite = visibleSprite;
+                self->m_visibleSpriteIsBlurDisplay = usedBlurDisplay;
                 applyVideoRotation(visibleSprite, winSize);
             };
             targetContainer->addChild(updateNode);
@@ -1936,6 +2265,12 @@ bool LayerBackgroundManager::applyBackground(CCLayer* layer, std::string const& 
                 resolvedCfg.customPath = menuCfg.customPath;
                 resolvedCfg.levelId = menuCfg.levelId;
                 resolvedCfg.shader = menuCfg.shader;
+                // wallpaper options belong to the menu background being reused.
+                resolvedCfg.fitMode = menuCfg.fitMode;
+                resolvedCfg.audioReactive = menuCfg.audioReactive;
+                resolvedCfg.audioSensitivity = menuCfg.audioSensitivity;
+                resolvedCfg.parallax = menuCfg.parallax;
+                resolvedCfg.parallaxStrength = menuCfg.parallaxStrength;
                 continue;
             } else {
                 std::string menuType = Mod::get()->getSavedValue<std::string>("bg-type", "default");
@@ -1998,8 +2333,27 @@ bool LayerBackgroundManager::applyBackground(CCLayer* layer, std::string const& 
         resolvedType == "video" && paimon::settings::video::audioEnabled());
     showOriginalBg(layer);
 
+    if ((resolvedType == "wallpaper" || resolvedType == "scene") && !resolvedPath.empty()) {
+        auto const win = CCDirector::get()->getWinSize();
+        auto const path = paimon::assets::pathFromUtf8(resolvedPath);
+        CCNode* wallpaper = resolvedType == "scene"
+            ? static_cast<CCNode*>(paimon::wallpaper::SceneWallpaperNode::create(path, win, resolvedCfg))
+            : static_cast<CCNode*>(paimon::wallpaper::LiveWallpaperNode::create(path, win, resolvedCfg));
+        if (!wallpaper) return false;
+        auto* container = CCNode::create();
+        container->setID("paimon-layerbg-container"_spr);
+        container->setContentSize(win);
+        container->setAnchorPoint({0.f, 0.f});
+        container->setZOrder(-10);
+        container->addChild(wallpaper);
+        addLayerBgDarkOverlay(container, win, cfg.darkMode, cfg.darkIntensity);
+        hideOriginalBg(layer);
+        layer->addChild(container);
+        return true;
+    }
+
     if (resolvedType == "custom" && !resolvedPath.empty()) {
-        auto ext = geode::utils::string::pathToString(paimon::assets::pathFromUtf8(resolvedPath).extension());
+        auto ext = paimon::paths::toUtf8(paimon::assets::pathFromUtf8(resolvedPath).extension());
         for (auto& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         if (ext == ".gif" && paimon::assets::exists(resolvedPath)) {
             applyGifBg(layer, resolvedPath, cfg);
@@ -2073,7 +2427,14 @@ bool LayerBackgroundManager::applyBackground(CCLayer* layer, std::string const& 
 // stop decoders off-thread; release gl resources on the main thread.
 static void scheduleSharedVideoTeardown(std::shared_ptr<paimon::video::VideoPlayer> player) {
     if (!player) return;
-    paimon::ThreadTracker::get().spawn([player]() mutable {
+    if (g_layerBgShutdown.load(std::memory_order_acquire) ||
+        paimon::isRuntimeShuttingDown() ||
+        paimon::ThreadTracker::get().isShuttingDown()) {
+        player->forceStop();
+        player.reset();
+        return;
+    }
+    bool spawned = paimon::ThreadTracker::get().spawn([player]() mutable {
         geode::utils::thread::setName("VideoBg Teardown");
         player->forceStop();
         if (g_layerBgShutdown.load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
@@ -2084,6 +2445,10 @@ static void scheduleSharedVideoTeardown(std::shared_ptr<paimon::video::VideoPlay
             player.reset();
         });
     });
+    if (!spawned) {
+        player->forceStop();
+        player.reset();
+    }
 }
 
 void LayerBackgroundManager::evictExpiredSharedVideos() {
@@ -2220,7 +2585,11 @@ std::shared_ptr<paimon::video::VideoPlayer> LayerBackgroundManager::acquireExist
     };
 
     if (!it->second.player->isPlaying() || !it->second.player->hasVisibleFrame()) {
-        discard("unhealthy");
+        // a live player (refCount > 0) can read unhealthy transiently between
+        // loops or while a frame decodes; tearing it down here would run
+        // forceStop on a worker thread against the owner's main-thread tick.
+        // leave it alone — release/expiry reaps it once unreferenced.
+        if (it->second.refCount <= 0) discard("unhealthy");
         return nullptr;
     }
 
@@ -2420,10 +2789,12 @@ void LayerBackgroundManager::releaseAllSharedVideos() {
     }
     for (auto& player : playersToRelease) {
         if (player) {
-            scheduleSharedVideoTeardown(std::move(player));
+            player->forceStop();
+            player.reset();
         }
     }
     for (auto& parked : takeParkedSharedVideos()) {
+        if (parked) parked->forceStop();
         parked.reset();
     }
     if (count > 0) {

@@ -1,6 +1,7 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/CommentCell.hpp>
 #include "../framework/HookConventions.hpp"
+#include "../features/translator/ui/TextSwapAnimation.hpp"
 #include "../utils/FluidReveal.hpp"
 #include "../core/RuntimeLifecycle.hpp"
 #include <chrono>
@@ -21,6 +22,8 @@ class $modify(PaimonCommentFadeIn, CommentCell) {
         CommentCell::loadFromComment(comment);
 
         if (!comment || paimon::isRuntimeShuttingDown()) return;
+        // a language swap animates only the text, not the whole cell
+        if (this->getUserObject(paimon::translate::ui::textSwapMarker())) return;
 
         // recycled cells refire on fast scroll; debounce the fade
         auto now = std::chrono::steady_clock::now();

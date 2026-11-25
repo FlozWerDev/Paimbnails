@@ -1,6 +1,7 @@
 #include "../SeparateDualHelper.hpp"
 #include <Geode/Geode.hpp>
 #include <Geode/modify/GJBaseGameLayer.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 
 using namespace geode::prelude;
 using paimon::separate_dual::DualKitVault;
@@ -70,17 +71,16 @@ class $modify(PaimonSeparateDualBase, GJBaseGameLayer) {
         DualKitVault::get()->resetRunState();
         DualKitVault::get()->ensureBurstArt(
             DualKitVault::get()->slotIcon(IconSlot::Death, Side::Secondary));
+        this->addOnExitCallback([this] {
+            if (!moduleEnabled()) return true;
+            DualKitVault::get()->resetRunState();
+            DualKitVault::get()->releaseBurstArt(
+                DualKitVault::get()->slotIcon(IconSlot::Death, Side::Secondary));
+            DualKitVault::get()->m_exhaustMain = nullptr;
+            DualKitVault::get()->m_exhaustSecond = nullptr;
+            return true;
+        });
         return true;
-    }
-
-    void onExit() {
-        GJBaseGameLayer::onExit();
-        if (!moduleEnabled()) return;
-        DualKitVault::get()->resetRunState();
-        DualKitVault::get()->releaseBurstArt(
-            DualKitVault::get()->slotIcon(IconSlot::Death, Side::Secondary));
-        DualKitVault::get()->m_exhaustMain = nullptr;
-        DualKitVault::get()->m_exhaustSecond = nullptr;
     }
 
     void playExitDualEffect(PlayerObject* p0) {

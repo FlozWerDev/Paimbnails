@@ -35,9 +35,19 @@ inline std::filesystem::path menuLoopUtf8Path(std::string const& value) {
 
 template <class Cancelled, class Consume>
 void readMenuLoopList(std::filesystem::path const& path, Cancelled cancelled, Consume consume) {
+    // bound the parse: a hand-edited multi-GB list must not OOM the scan worker.
+    constexpr std::uintmax_t kMaxListBytes = 1 * 1024 * 1024;
+    constexpr size_t kMaxLineChars = 4096;
+    constexpr size_t kMaxLines = 100000;
+    std::error_code ec;
+    auto size = std::filesystem::file_size(path, ec);
+    if (ec || size > kMaxListBytes) return;
     std::ifstream stream(path);
     std::string line;
+    size_t lines = 0;
     while (!cancelled() && std::getline(stream, line)) {
+        if (++lines > kMaxLines) break;
+        if (line.size() > kMaxLineChars) continue;
         auto first = line.find_first_not_of(" \t\r\n");
         if (first == std::string::npos || line[first] == '#') continue;
         auto last = line.find_last_not_of(" \t\r\n");
@@ -76,9 +86,19 @@ MenuLoopScanResult scanMenuLoopSongs(MenuLoopScanInput const& input, Cancelled c
         auto scan = [&](std::filesystem::path const& dir) {
             if (dir.empty()) return;
             std::error_code ec;
+            // no follow: a symlinked music folder must not escape into system dirs
+            // or loop forever. cap total entries so huge libraries stay bounded.
+            constexpr size_t kMaxScanEntries = 20000;
+            size_t scanned = 0;
             std::filesystem::recursive_directory_iterator it(
                 dir, std::filesystem::directory_options::skip_permission_denied, ec), end;
             while (!ec && it != end && !cancelled()) {
+                if (++scanned > kMaxScanEntries) break;
+                std::error_code linkEc;
+                if (it->is_symlink(linkEc) || linkEc) {
+                    it.increment(ec);
+                    continue;
+                }
                 auto ext = menuLoopPathString(it->path().extension());
                 std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
                     return static_cast<char>(std::tolower(c));

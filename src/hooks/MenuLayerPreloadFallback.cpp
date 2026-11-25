@@ -2,6 +2,7 @@
 // bootstrap shares the claim, so re-entry never duplicates the work
 
 #include <Geode/modify/MenuLayer.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 
 #include <fmt/format.h>
 
@@ -49,16 +50,19 @@ class $modify(PaimonMenuLayerPreload, MenuLayer) {
             this->schedulePreloadLabelUpdates();
         }
 
+        this->addOnExitCallback([this] {
+            this->handleExit();
+            return true;
+        });
+
         return true;
     }
 
-    $override
-    void onExit() {
+    void handleExit() {
         this->unschedule(schedule_selector(PaimonMenuLayerPreload::updatePreloadLabel));
         this->unschedule(schedule_selector(PaimonMenuLayerPreload::removePreloadLabel));
         m_fields->progressLabel = nullptr;
         m_fields->updateScheduled = false;
-        MenuLayer::onExit();
     }
 
     void createPreloadLabel() {

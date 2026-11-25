@@ -23,6 +23,12 @@ public:
     // filter stopwords from a token list.
     static std::vector<std::string> removeStopwords(std::vector<std::string> const& tokens);
 
+    // lowercase, collapse spaces, and strip common es/pt/fr accents.
+    static std::string normalize(std::string s);
+
+    // split normalized text on whitespace and basic ascii punctuation.
+    static std::vector<std::string> tokenize(std::string const& normalized);
+
 private:
     // static shared en/es stopword table.
     static std::unordered_set<std::string> const& stopwords();

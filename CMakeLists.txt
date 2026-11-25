@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if ("${CMAKE_SYSTEM_NAME}" STREQUAL "iOS" OR IOS)
     set(CMAKE_OSX_ARCHITECTURES "arm64")
@@ -11,7 +12,9 @@ endif()
 
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
-project(Paimbnails VERSION 1.2.0)
+project(Paimbnails VERSION 1.2.5)
+
+# Geometry Dash 2.2091 is supported by Geode SDK v6.0.0 or newer.
 
 # cpm
 set(CPM_DOWNLOAD_VERSION 0.40.2)
@@ -115,12 +118,23 @@ endif()
 
 add_library(${PROJECT_NAME} SHARED ${SOURCES})
 
+option(PAIMBNAILS_EXTRA_WARNINGS "Enable extra warnings for the mod during maintenance" OFF)
+if (PAIMBNAILS_EXTRA_WARNINGS)
+    if (MSVC)
+        target_compile_options(${PROJECT_NAME} PRIVATE /W4)
+    else()
+        target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+endif()
+
 # preserve nan/inf checks used to validate decoded and user-provided values.
 if (MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE
         /bigobj
-        /O2
         /fp:precise
+        $<$<CONFIG:Release>:/O2>
+        $<$<CONFIG:RelWithDebInfo>:/O2>
+        $<$<CONFIG:MinSizeRel>:/O1>
     )
     # /gl + /ltcg disabled: breaks geode $modify linking (lnk2001 on
     # undefined gd functions). icf also disabled to preserve function
@@ -129,9 +143,12 @@ if (MSVC)
         target_link_options(${PROJECT_NAME} PRIVATE LINKER:/OPT:NOICF)
     endif()
 
-    # workaround: msvc v180 ice on /o2 for these tus; /o1 has no measurable cost
-    if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND MSVC_VERSION GREATER_EQUAL 1950)
+    # workaround: msvc (v17.14/19.44 and v18/19.50+) ice on /o2 for these
+    # tus; /o1 has no measurable cost
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND MSVC_VERSION GREATER_EQUAL 1940)
         set_source_files_properties(
+            src/features/collab-editor/CollabNetClient.cpp
+            src/features/collab-editor/CollabPresence.cpp
             src/features/community/ui/LeaderboardHistoryLayer.cpp
             src/features/community/ui/LeaderboardLayer.cpp
             src/features/cursor/hooks/CursorHook.cpp
@@ -151,11 +168,13 @@ if (MSVC)
     endif()
 else()
     target_compile_options(${PROJECT_NAME} PRIVATE
-        -O3
         -fno-fast-math
         -fvisibility=hidden
         -ffunction-sections
         -fdata-sections
+        $<$<CONFIG:Release>:-O3>
+        $<$<CONFIG:RelWithDebInfo>:-O2>
+        $<$<CONFIG:MinSizeRel>:-Os>
     )
     if (NOT APPLE AND (NOT WIN32 OR MINGW))
         target_link_options(${PROJECT_NAME} PRIVATE
@@ -172,6 +191,7 @@ endif()
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     VIDEO_RING_BUFFER_SIZE=8
     $<$<PLATFORM_ID:Windows>:USE_MEDIA_FOUNDATION=1>
+    $<$<PLATFORM_ID:Windows>:PAIM_GIF_COMPUTE=1>
     $<$<PLATFORM_ID:Android>:USE_MEDIA_NDK=1>
     $<$<BOOL:${APPLE}>:USE_AV_FOUNDATION=1>
 )
@@ -192,7 +212,9 @@ if (WIN32)
         ws2_32.lib
         winmm.lib
         winhttp.lib
+        windowsapp.lib
         opengl32.lib
+        bcrypt.lib
     )
 elseif (ANDROID)
     target_link_libraries(${PROJECT_NAME}
@@ -231,6 +253,7 @@ endif()
 target_link_libraries(${PROJECT_NAME} pl_mpeg)
 target_link_libraries(${PROJECT_NAME} rapidfuzz)
 target_link_libraries(${PROJECT_NAME} yuv)
+include(cmake/WebWallpaper.cmake)
 
 # discord rich presence uses our own self-contained ipc client
 # (src/features/discord-presence/services/discordipcclient.*), so there's no
@@ -248,24 +271,76 @@ else()
     message(STATUS "Found Geode: $ENV{GEODE_SDK}")
 endif()
 
+if (NOT EXISTS "$ENV{GEODE_SDK}/VERSION")
+    message(FATAL_ERROR "Geode SDK VERSION file not found at $ENV{GEODE_SDK}")
+endif()
 file(READ "$ENV{GEODE_SDK}/VERSION" PAIMBNAILS_GEODE_SDK_VERSION)
 string(STRIP "${PAIMBNAILS_GEODE_SDK_VERSION}" PAIMBNAILS_GEODE_SDK_VERSION)
-if (PAIMBNAILS_GEODE_SDK_VERSION VERSION_LESS "5.11.1")
-    message(FATAL_ERROR "Paimbnails requires Geode SDK 5.11.1 or newer. Run: geode sdk update 5.11.1")
+if (PAIMBNAILS_GEODE_SDK_VERSION VERSION_LESS "6.0.0")
+    message(FATAL_ERROR "Paimbnails requires Geode SDK 6.0.0 or newer. Run: geode sdk update v6.0.0 && geode sdk install-binaries")
+endif()
+
+# Keep clean builds on the same reviewed .bro files; explicit local overrides
+# remain available for bindings development.
+set(PAIMBNAILS_BINDINGS_REVISION "ab98d45ccb3cab07162a7e2746ea61e423632ff9")
+if (NOT GEODE_BINDINGS_REPO_PATH AND NOT DEFINED ENV{GEODE_BINDINGS_REPO_PATH})
+    CPMAddPackage(
+        NAME bindings
+        GITHUB_REPOSITORY geode-sdk/bindings
+        GIT_TAG ${PAIMBNAILS_BINDINGS_REVISION}
+        DOWNLOAD_ONLY YES
+        NO_CACHE YES
+    )
+    set(GEODE_BINDINGS_REPO_PATH "${bindings_SOURCE_DIR}")
 endif()
 
 # Cached SDK dependencies must match the loader's async ABI.
-set(GEODE_ARC_VERSION "@1.5.11" CACHE STRING "Geode arc version" FORCE)
-set(GEODE_ASP_VERSION "#ecea33b" CACHE STRING "Geode asp version" FORCE)
+set(GEODE_ARC_VERSION "@1.6.6" CACHE STRING "Geode arc version" FORCE)
+set(GEODE_ASP_VERSION "@1.6.4" CACHE STRING "Geode asp version" FORCE)
+
+option(GEODE_PACKAGE_ZSTD "Use Zstd compression for the .geode package" ON)
+option(GEODE_LINK_NIGHTLY "Link the Geode nightly binaries instead of the release binaries" OFF)
+
+# Treat Geode/cocos headers as system headers so SDK warnings stay out of
+# our build; the mod's own code keeps full warnings (PAIMBNAILS_EXTRA_WARNINGS).
+set(GEODE_SET_TARGET_AS_SYSTEM ON CACHE BOOL
+    "Sets the target include directories for Geode as SYSTEM, silencing Geode related warning on mod build." FORCE)
 
 add_subdirectory($ENV{GEODE_SDK} ${CMAKE_CURRENT_BINARY_DIR}/geode)
 
-setup_geode_mod(${PROJECT_NAME})
+if (NOT GEODE_GD_VERSION STREQUAL "2.2091")
+    message(FATAL_ERROR
+        "Paimbnails targets Geometry Dash 2.2091, but the Geode SDK is configured for ${GEODE_GD_VERSION}.")
+endif()
+
+if (GEODE_PACKAGE_ZSTD)
+    execute_process(
+        COMMAND "${GEODE_CLI}" package new --help
+        OUTPUT_VARIABLE PAIMBNAILS_PACKAGE_HELP
+        RESULT_VARIABLE PAIMBNAILS_PACKAGE_HELP_RESULT
+    )
+    if (NOT PAIMBNAILS_PACKAGE_HELP_RESULT EQUAL 0 OR NOT PAIMBNAILS_PACKAGE_HELP MATCHES "--zstd")
+        message(FATAL_ERROR "The Geode CLI must support --zstd. Update the CLI or set GEODE_PACKAGE_ZSTD=OFF.")
+    endif()
+endif()
+
+include(cmake/LocalModDeploy.cmake)
+include(cmake/GifComputeShaders.cmake)
+if (PAIMBNAILS_DEPLOY_LOCAL_MOD)
+    setup_geode_mod(${PROJECT_NAME} DONT_INSTALL)
+else()
+    setup_geode_mod(${PROJECT_NAME})
+endif()
+paimbnails_deploy_mod(${PROJECT_NAME})
+target_compile_definitions(${PROJECT_NAME} PRIVATE PAIM_USE_GEODE=1)
 
 # globed is an optional dependency; its headers are only needed for the soft
 # link api, and every use of them is behind __has_include so the mod still
 # builds if the dependency is not fetched.
-target_include_directories(${PROJECT_NAME} PRIVATE
+target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/geode-deps/dankmeme.globed2/include)
 
 message(STATUS "Paimbnails: ${CMAKE_SYSTEM_NAME} | HW decoder: native | SW fallback: pl_mpeg")
+
+enable_testing()
+add_subdirectory(tests)

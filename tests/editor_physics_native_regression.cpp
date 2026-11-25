@@ -284,11 +284,10 @@ bool rejectsUnsafeSpawnCycle() {
 }
 
 bool catalogMatchesEmitterIDs() {
-    auto const* follow = nativeTriggerInfo(nativeids::AdvancedFollow);
-    auto const* edit = nativeTriggerInfo(nativeids::AdvancedFollowEdit);
-    auto const* collision = nativeTriggerInfo(nativeids::Collision);
-    auto const* block = nativeTriggerInfo(nativeids::CollisionBlock);
-    return follow && edit && collision && block && follow->isTrigger && !block->isTrigger;
+    return nativeObjectID(NativeNodeKind::AdvancedFollow) == nativeids::AdvancedFollow &&
+        nativeObjectID(NativeNodeKind::AdvancedFollowEdit) == nativeids::AdvancedFollowEdit &&
+        nativeObjectID(NativeNodeKind::CollisionTrigger) == nativeids::Collision &&
+        nativeObjectID(NativeNodeKind::CollisionBlock) == nativeids::CollisionBlock;
 }
 
 } // namespace

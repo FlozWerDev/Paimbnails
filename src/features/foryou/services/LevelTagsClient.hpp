@@ -64,8 +64,6 @@ public:
 private:
     LevelTagsClient() = default;
 
-    static std::string urlEncode(std::string const& value);
-
     void parseCatalog(matjson::Value const& root);
     LevelTagMap parseLevelTags(matjson::Value const& root) const;
 

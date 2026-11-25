@@ -93,6 +93,17 @@ struct TextureProject {
     cocos2d::ccColor3B colorDetail{255, 255, 255};
     int  brightness = 160;
 
+    // live engine: panels/lists (brown UI) and scene backgrounds. auto derives
+    // them from the palette; a picked color turns auto off.
+    cocos2d::ccColor3B colorSurface{60, 120, 130};
+    cocos2d::ccColor3B colorBackground{70, 110, 20};
+    bool autoSurface    = true;
+    bool autoBackground = true;
+    // how far blue/pink/red/gray UI shades move away from the palette (0..1).
+    float toneSpread    = 0.6f;
+    bool livePaintBackgrounds = true;
+    bool livePaintLists       = true;
+
     // tint engine parameters; see spritepreviewoptions.
     float maskSoftness     = 0.35f;
     int   clusterPrecision = 5;
@@ -120,7 +131,7 @@ struct TextureProject {
     std::map<std::string, ManualOverrideRef> overrides;
     std::map<std::string, AutoCacheRef>      autoCache;
     std::map<std::string, SpriteSetting>     spriteSettings;
-    TintScope tintScope = TintScope::ButtonsOnly;
+    TintScope tintScope = TintScope::ButtonsAndMenuUi;
 
     bool         hasBuiltOnce  = false;
     std::int64_t lastBuiltAt   = 0;

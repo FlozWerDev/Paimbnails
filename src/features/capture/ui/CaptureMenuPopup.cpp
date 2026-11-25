@@ -1,7 +1,9 @@
 #include "CaptureMenuPopup.hpp"
 #include "CaptureOverlay.hpp"
+#include "../../keybinds/ui/ManagerCutPopup.hpp"
 #include "../../volume-scroll/ui/ScrollKeybindsPopup.hpp"
 #include "../../quick-hub/services/QuickHubManager.hpp"
+#include "../../quick-hub/ui/RadialConfigPopup.hpp"
 #include "../../menu-physics/services/MenuPhysicsManager.hpp"
 #include "../../smooth-scroll/ui/SmoothScrollConfigPopup.hpp"
 #include "../../../utils/ActivePauseLayer.hpp"
@@ -36,7 +38,7 @@ void markCaptureChild(CCNode* node) {
 ButtonSprite* makeHoldCtrlButtonSprite(bool enabled) {
     char const* bg = enabled ? "GJ_button_01.png" : "GJ_button_06.png";
     auto* spr = ButtonSprite::create(
-        "Hold Ctrl", 72, true, "bigFont.fnt", bg, 18.f, 0.40f);
+        "Hold", 72, true, "bigFont.fnt", bg, 18.f, 0.40f);
     return spr;
 }
 } // namespace
@@ -76,10 +78,18 @@ bool CaptureMenuPopup::initContents() {
     s_instance = this;
 
     this->setTitle("Captura de Pantalla");
+#if defined(GEODE_IS_DESKTOP)
     this->addInfoButton("Captura de Pantalla",
         "<cg>Capturar</c> toma una foto del nivel. <cy>Atajos</c> configura las teclas.\n"
-        "<co>Hold Ctrl</c> abre el menu radial manteniendo Ctrl.\n"
+        "<co>Hold</c> abre Quick Hub al mantener el boton elegido. "
+        "El engranaje permite cambiar el boton y la duracion.\n"
         "<cr>Invertir Inputs</c>: clic derecho pasa a ser saltar.");
+#else
+    this->addInfoButton("Captura de Pantalla",
+        "<cg>Capturar</c> toma una foto del nivel. <cy>Atajos</c> abre Manager Cut para ver y editar gestos.\n"
+        "<co>Hold</c> abre Quick Hub con un gesto tactil configurado. "
+        "El engranaje permite cambiar opciones de Quick Hub y la duracion.");
+#endif
 
     auto content = m_mainLayer->getContentSize();
 
@@ -127,6 +137,16 @@ bool CaptureMenuPopup::initContents() {
     holdCtrlBtn->setPosition({leftCX, panelBot + panelH - 112.f});
     menu->addChild(holdCtrlBtn);
 
+    auto* holdSettings = paimon::ui::makeFrameButton("GJ_optionsBtn_001.png", .35f, [] {
+        QuickHubManager::abortActiveHold();
+        if (auto* popup = paimon::quickhub::RadialConfigPopup::create()) {
+            markCaptureChild(popup);
+            popup->show();
+        }
+    });
+    holdSettings->setPosition({sideMargin + leftW - 14.f, panelBot + panelH - 112.f});
+    menu->addChild(holdSettings);
+
     const float rowX0 = sideMargin + leftW + gap;
     const float toggleX = rowX0 + rightW - 20.f;
     const float labelX = rowX0 + 12.f;
@@ -141,6 +161,7 @@ bool CaptureMenuPopup::initContents() {
         m_mainLayer->addChild(lbl);
     };
 
+#if defined(GEODE_IS_DESKTOP)
     bool const invertOn = Mod::get()->getSavedValue<bool>("invert-mouse-inputs", false);
     auto* invOff = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
     auto* invOn  = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
@@ -154,6 +175,7 @@ bool CaptureMenuPopup::initContents() {
     menu->addChild(invertToggle);
     addLabel("Invertir Inputs", rowY);
     rowY -= rowStep;
+#endif
 
     bool const physicsOn = Mod::get()->getSettingValue<bool>("menu-physics-enable");
     auto* phyOff = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
@@ -167,9 +189,11 @@ bool CaptureMenuPopup::initContents() {
     physicsToggle->setPosition({toggleX, rowY});
     menu->addChild(physicsToggle);
     addLabel("Menu Physics", rowY);
+#if defined(GEODE_IS_DESKTOP)
     rowY -= rowStep;
 
-    bool const smoothOn = Mod::get()->getSettingValue<bool>("smooth-scroll");
+    bool const smoothOn = Mod::get()->hasSetting("smooth-scroll")
+        && Mod::get()->getSettingValue<bool>("smooth-scroll");
     auto* smoothOff = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
     auto* smoothOnSpr = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
     smoothOff->setScale(.6f);
@@ -190,6 +214,7 @@ bool CaptureMenuPopup::initContents() {
         gearBtn->setPosition({toggleX - 26.f, rowY});
         menu->addChild(gearBtn);
     }
+#endif
 
     // opt-in to the mod's theme/animations/dynamic blur (dynamicpopuphook).
     paimon::markDynamicPopup(this);
@@ -206,9 +231,9 @@ void CaptureMenuPopup::onExit() {
 
 void CaptureMenuPopup::onCapture(CCObject*) {
     if (paimon::isCaptureInProgress()) {
-        PaimonNotify::create(
+        PaimonNotify::show(
             Localization::get().getString("pause.capture_busy").c_str(),
-            NotificationIcon::Info)->show();
+            NotificationIcon::Info);
         return;
     }
     // hide popup and drop only its blur; underneath popups keep theirs for the shot.
@@ -221,7 +246,7 @@ void CaptureMenuPopup::onCapture(CCObject*) {
 void CaptureMenuPopup::onOpenShortcuts(CCObject*) {
     // queue on main thread to avoid modifying scene during touch dispatch.
     geode::Loader::get()->queueInMainThread([]() {
-        if (auto* popup = paimon::volscroll::ScrollKeybindsPopup::create()) {
+        if (auto* popup = paimon::keybinds::ManagerCutPopup::create()) {
             markCaptureChild(popup);
             popup->show();
         }
@@ -232,10 +257,10 @@ void CaptureMenuPopup::onOpenShortcuts(CCObject*) {
 void CaptureMenuPopup::onToggleInvert(CCObject*) {
     bool const now = !Mod::get()->getSavedValue<bool>("invert-mouse-inputs", false);
     Mod::get()->setSavedValue<bool>("invert-mouse-inputs", now);
-    PaimonNotify::create(
+    PaimonNotify::show(
         now ? "Inputs invertidos: clic derecho = saltar" : "Inputs normales restaurados",
         NotificationIcon::Info
-    )->show();
+    );
 }
 
 void CaptureMenuPopup::onTogglePhysics(CCObject*) {
@@ -247,19 +272,20 @@ void CaptureMenuPopup::onTogglePhysics(CCObject*) {
     } else {
         paimon::menuphysics::MenuPhysicsManager::get().clearFromCurrentScene();
     }
-    PaimonNotify::create(
+    PaimonNotify::show(
         now ? "Menu Physics activado" : "Menu Physics desactivado",
         NotificationIcon::Info
-    )->show();
+    );
 }
 
 void CaptureMenuPopup::onToggleSmoothScroll(CCObject*) {
+    if (!Mod::get()->hasSetting("smooth-scroll")) return;
     bool const now = !Mod::get()->getSettingValue<bool>("smooth-scroll");
     Mod::get()->setSettingValue<bool>("smooth-scroll", now);
-    PaimonNotify::create(
+    PaimonNotify::show(
         now ? "Smooth Scroll activado" : "Smooth Scroll desactivado",
         NotificationIcon::Info
-    )->show();
+    );
 }
 
 void CaptureMenuPopup::onOpenSmoothScrollConfig(CCObject*) {
@@ -280,12 +306,9 @@ void CaptureMenuPopup::refreshHoldCtrlButton() {
 void CaptureMenuPopup::onToggleHoldCtrl(CCObject*) {
     bool const now = !QuickHubManager::isHoldCtrlEnabled();
     QuickHubManager::setHoldCtrlEnabled(now);
-    if (!now) {
-        QuickHubManager::abortActiveHold();
-    }
     refreshHoldCtrlButton();
-    PaimonNotify::create(
-        now ? "Hold Ctrl activado (menu radial)" : "Hold Ctrl desactivado",
+    PaimonNotify::show(
+        now ? "Hold activado (Quick Hub)" : "Hold desactivado",
         NotificationIcon::Info
-    )->show();
+    );
 }

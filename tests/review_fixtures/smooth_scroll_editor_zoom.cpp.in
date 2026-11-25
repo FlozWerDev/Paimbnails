@@ -1,0 +1,302 @@
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <cstdlib>
+#include <functional>
+#include <iostream>
+#include <vector>
+
+#define GEODE_IS_WINDOWS 1
+
+namespace geode {
+template <class Signature>
+using CopyableFunction = std::function<Signature>;
+namespace prelude {}
+namespace cocos {
+inline bool nodeIsVisible(void const*) { return true; }
+}
+}
+
+template <class Target, class Src>
+Target typeinfo_cast(Src* p) {
+    return dynamic_cast<Target>(p);
+}
+
+namespace cocos2d {
+struct CCPoint {
+    float x = 0.f;
+    float y = 0.f;
+};
+struct CCMouseDelegate {
+    virtual ~CCMouseDelegate() = default;
+    virtual bool scrollWheel(float, float) { return false; }
+};
+}
+using cocos2d::CCMouseDelegate;
+using cocos2d::CCPoint;
+struct CCScrollLayerExt : CCMouseDelegate {
+    bool visible = true;
+};
+struct CCMouseHandler { CCMouseDelegate* m_pDelegate = nullptr; };
+struct CCArray {
+    std::vector<CCMouseHandler*> handlers;
+    unsigned count() const { return static_cast<unsigned>(handlers.size()); }
+    CCMouseHandler* objectAtIndex(unsigned index) { return handlers.at(index); }
+};
+struct CCMouseDispatcher {
+    CCArray* m_pMouseHandlers = nullptr;
+    void dispatchScrollMSG(float y, float x) {
+        // GD 2.2091 dispatches from count - 1 down to zero, stopping at the consumer.
+        for (auto i = m_pMouseHandlers->count(); i > 0; --i) {
+            auto* handler = m_pMouseHandlers->objectAtIndex(i - 1);
+            if (handler && handler->m_pDelegate && handler->m_pDelegate->scrollWheel(y, x)) return;
+        }
+    }
+};
+struct CCDirector {
+    CCMouseDispatcher mouse;
+    static CCDirector* get() { static CCDirector instance; return &instance; }
+    CCMouseDispatcher* getMouseDispatcher() { return &mouse; }
+};
+struct CCKeyboardDispatcher {
+    bool control = true, alt = false;
+    static CCKeyboardDispatcher* get() { static CCKeyboardDispatcher instance; return &instance; }
+    bool getControlKeyPressed() { return control; }
+    bool getAltKeyPressed() { return alt; }
+};
+struct ObjectLayer {
+    float scale = 1.f;
+    float getScale() { return scale; }
+};
+struct EditorUI;
+struct LevelEditorLayer {
+    ObjectLayer* m_objectLayer = nullptr;
+    EditorUI* m_editorUI = nullptr;
+    static LevelEditorLayer* get() { static LevelEditorLayer instance; return &instance; }
+};
+struct EditorUI : CCMouseDelegate {
+    LevelEditorLayer* m_editorLayer = LevelEditorLayer::get();
+    int panCalls = 0;
+    float lastPanY = 0.f;
+    float lastPanX = 0.f;
+    bool usePointZoomInScrollWheel = false;
+    bool singleArgCallsPointZoom = false;
+
+    virtual void updateZoom(float zoom) {
+        if (singleArgCallsPointZoom) {
+            updateZoom(zoom, CCPoint{});
+            return;
+        }
+        m_editorLayer->m_objectLayer->scale = zoom;
+    }
+    virtual void updateZoom(float zoom, CCPoint) {
+        m_editorLayer->m_objectLayer->scale = zoom;
+    }
+    bool scrollWheel(float y, float x) override {
+        if (!CCKeyboardDispatcher::get()->control) {
+            ++panCalls;
+            lastPanY = y;
+            lastPanX = x;
+            return true;
+        }
+        // Native editor zoom uses only the sign, even for a fractional wheel event.
+        float const direction = y > 0.f || x > 0.f ? -1.f : 1.f;
+        float const next = std::clamp(m_editorLayer->m_objectLayer->scale + direction * 0.1f, 0.1f, 4.f);
+        if (usePointZoomInScrollWheel) {
+            updateZoom(next, CCPoint{});
+        } else {
+            updateZoom(next);
+        }
+        return true;
+    }
+};
+
+namespace paimon::settings {
+namespace general { inline bool enabled = true; bool smoothScroll() { return enabled; } }
+namespace smoothui { bool reducedMotion() { return false; } }
+namespace smoothscroll {
+inline constexpr double kSensitivityMin = 0.25, kSensitivityMax = 5.0, kSensitivityDefault = 2.0;
+inline constexpr double kSmoothnessMin = 0.25, kSmoothnessMax = 3.0, kSmoothnessDefault = 1.0;
+inline constexpr double kEditorZoomSensitivityMin = 0.25, kEditorZoomSensitivityMax = 3.0;
+inline constexpr double kEditorZoomSensitivityDefault = 1.0;
+inline constexpr double kEditorZoomSmoothnessMin = 0.25, kEditorZoomSmoothnessMax = 3.0;
+inline constexpr double kEditorZoomSmoothnessDefault = 1.15;
+inline bool zoomEnabled = true;
+inline double zoomSensitivity = 1.0, zoomSmoothness = 1.15;
+double sensitivity() { return kSensitivityDefault; }
+double smoothness() { return kSmoothnessDefault; }
+bool editorZoomEnabled() { return zoomEnabled; }
+bool fixEditorScroll() { return true; }
+double editorZoomSensitivity() { return zoomSensitivity; }
+double editorZoomSmoothness() { return zoomSmoothness; }
+}
+}
+namespace paimon::compat {
+struct ModCompat {
+    static bool isPrevterSmoothScrollLoaded() { return false; }
+    static bool isQuickVolumeControlsLoaded() { return false; }
+};
+}
+namespace paimon::volscroll { bool isVolumeGestureActive() { return false; } }
+
+#include "src/features/smooth-scroll/services/ScrollInputFilter.hpp"
+@@source|src/features/smooth-scroll/services/SmoothScrollController.hpp@@
+@@source|src/features/smooth-scroll/services/SmoothScrollController.cpp@@
+
+namespace {
+bool s_applyingFilteredEditorZoom = false;
+
+struct ScopedFilteredZoomGuard {
+    bool previous;
+    ScopedFilteredZoomGuard() : previous(s_applyingFilteredEditorZoom) {
+        s_applyingFilteredEditorZoom = true;
+    }
+    ~ScopedFilteredZoomGuard() {
+        s_applyingFilteredEditorZoom = previous;
+    }
+};
+
+@@function|src/features/smooth-scroll/hooks/SmoothScrollHook.cpp|bool computeFilteredEditorZoom(EditorUI* ui, float& outZoom)@@
+}
+
+struct FilteredEditorUI : EditorUI {
+    @@function|src/features/smooth-scroll/hooks/SmoothScrollHook.cpp|void updateZoom(float zoom)@@
+    @@function|src/features/smooth-scroll/hooks/SmoothScrollHook.cpp|void updateZoom(float zoom, cocos2d::CCPoint point)@@
+    @@function|src/features/smooth-scroll/hooks/SmoothScrollHook.cpp|bool scrollWheel(float y, float x)@@
+};
+
+int main() {
+    using namespace paimon::smoothscroll;
+    namespace settings = paimon::settings::smoothscroll;
+    auto& controller = SmoothScrollController::get();
+    ObjectLayer objects;
+    FilteredEditorUI editor;
+    CCMouseDelegate background;
+    CCMouseDelegate popup;
+    CCMouseHandler backgroundHandler{&background}, editorHandler{&editor}, popupHandler{&popup};
+    CCArray handlers{{&backgroundHandler, &editorHandler}};
+    auto* dispatcher = CCDirector::get()->getMouseDispatcher();
+    dispatcher->m_pMouseHandlers = &handlers;
+    LevelEditorLayer::get()->m_editorUI = &editor;
+    LevelEditorLayer::get()->m_objectLayer = &objects;
+
+    auto const tick = [&](float dt) {
+        controller.tick(dt, [&](float y, float x) { dispatcher->dispatchScrollMSG(y, x); });
+    };
+    auto const finish = [&](float dt) {
+        int frames = 0;
+        while (controller.hasMomentum() && frames++ < 4000) tick(dt);
+        assert(!controller.hasMomentum());
+    };
+    auto const expectScale = [&](float expected) {
+        if (std::abs(objects.scale - expected) > 0.0001f) {
+            std::cerr << "Expected zoom " << expected << ", got " << objects.scale << '\n';
+            std::abort();
+        }
+    };
+
+    // One notch remains one tenth of zoom, independently of replay frame count.
+    for (float fps : {30.f, 60.f, 144.f, 240.f}) {
+        controller.reset();
+        objects.scale = 1.f;
+        assert(controller.queueInput(-5.f, 0.f));
+        tick(1.f / fps);
+        float const firstFrameZoom = objects.scale;
+        finish(1.f / fps);
+        expectScale(1.1f);
+        assert(firstFrameZoom > 1.f && firstFrameZoom < 1.1f);
+        assert(isEditorZoomGesture());
+    }
+
+    // Partial wheel input, both directions and axes, respects zoom sensitivity.
+    for (float sensitivity : {0.25f, 1.f, 3.f}) {
+        settings::zoomSensitivity = sensitivity;
+        for (auto input : {ScrollVector{-1.0, 0.0}, ScrollVector{1.0, 0.0}, ScrollVector{0.0, 1.0}}) {
+            controller.reset();
+            objects.scale = 1.f;
+            assert(controller.queueInput(static_cast<float>(input.y), static_cast<float>(input.x)));
+            finish(1.f / 60.f);
+            float const direction = static_cast<float>(input.y != 0.0 ? -input.y : input.x);
+            expectScale(1.f + direction * 0.02f * sensitivity);
+        }
+    }
+    settings::zoomSensitivity = 1.0;
+
+    // Smoothness changes the time to arrive, preserving the requested distance.
+    float firstSlowFrame = 0.f;
+    for (double smoothness : {3.0, 0.25}) {
+        controller.reset();
+        objects.scale = 1.f;
+        settings::zoomSmoothness = smoothness;
+        assert(controller.queueInput(-5.f, 0.f));
+        tick(1.f / 60.f);
+        if (smoothness == 3.0) firstSlowFrame = objects.scale;
+        else assert(objects.scale > firstSlowFrame);
+        finish(1.f / 60.f);
+        expectScale(1.1f);
+    }
+
+    // A newer popup takes priority and cancels queued editor momentum.
+    controller.reset();
+    assert(controller.queueInput(-5.f, 0.f));
+    handlers.handlers.push_back(&popupHandler);
+    assert(!isEditorZoomGesture());
+    float const beforePopup = objects.scale;
+    tick(1.f / 60.f);
+    assert(!controller.hasMomentum());
+    expectScale(beforePopup);
+    handlers.handlers.pop_back();
+
+    // Skip empty handlers and stop zoom immediately when Ctrl is released.
+    handlers.handlers.push_back(nullptr);
+    assert(isEditorZoomGesture());
+    assert(controller.queueInput(-5.f, 0.f));
+    CCKeyboardDispatcher::get()->control = false;
+    // Non-Ctrl scrolling on EditorUI bypasses smooth scroll so editor panning stays 1x.
+    assert(shouldBypassSmoothScroll());
+    tick(1.f / 60.f);
+    assert(!controller.hasMomentum());
+    expectScale(beforePopup);
+
+    // GD 2.2091 2-arg updateZoom(float, CCPoint) and nested calls stay normalized.
+    CCKeyboardDispatcher::get()->control = true;
+    for (bool nested : {false, true}) {
+        editor.usePointZoomInScrollWheel = true;
+        editor.singleArgCallsPointZoom = nested;
+        controller.reset();
+        objects.scale = 1.f;
+        assert(controller.queueInput(-5.f, 0.f));
+        finish(1.f / 60.f);
+        expectScale(1.1f);
+
+        editor.usePointZoomInScrollWheel = false;
+        controller.reset();
+        objects.scale = 1.f;
+        assert(controller.queueInput(-5.f, 0.f));
+        finish(1.f / 60.f);
+        expectScale(1.1f);
+    }
+    editor.singleArgCallsPointZoom = false;
+
+    // A declining overlay delegate above EditorUI must not bombard EditorUI::scrollWheel
+    // with dozens of pan frames; it stops momentum after a single native step.
+    struct DecliningOverlay : CCMouseDelegate {
+        bool scrollWheel(float, float) override { return false; }
+    } declining;
+    CCMouseHandler decliningHandler{&declining};
+    handlers.handlers.push_back(&decliningHandler);
+    CCKeyboardDispatcher::get()->control = false;
+    controller.reset();
+    editor.panCalls = 0;
+    assert(controller.queueInput(5.f, 0.f));
+    finish(1.f / 60.f);
+    assert(editor.panCalls == 1);
+    assert(std::abs(editor.lastPanY - 5.f) < 0.001f);
+    handlers.handlers.pop_back();
+
+    CCKeyboardDispatcher::get()->control = true;
+    settings::zoomEnabled = false;
+    assert(shouldBypassSmoothScroll());
+    assert(!controller.isReplaying());
+    std::cout << "Editor smooth zoom regressions passed\n";
+}

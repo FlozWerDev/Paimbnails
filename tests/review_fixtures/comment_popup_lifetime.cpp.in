@@ -1,0 +1,46 @@
+#include "tests/review_fixtures/EngineLifetime.hpp"
+#include <cassert>
+#include <functional>
+#include <string>
+#include <vector>
+struct ThumbnailInfo {};
+struct ProfileConfig {int commentBgThumbnailPos=1;};
+struct Input {std::string getString()const{return "123";}};
+struct ThumbnailAPI {
+    static ThumbnailAPI& get(){static ThumbnailAPI value;return value;}
+    std::function<void(bool,std::vector<ThumbnailInfo>const&)> pending;
+    void getThumbnails(int,std::function<void(bool,std::vector<ThumbnailInfo>const&)> cb){pending=std::move(cb);}
+};
+namespace geode::utils {
+template<class T>struct Parsed {
+    bool operator!()const{return false;}
+    T unwrap()const{return 123;}
+};
+template<class T>Parsed<T> numFromString(std::string const&){return {};}
+}
+struct CommentBgSettingsPopup : TestLifetime {
+    Input input;Input* m_inputField=&input;
+    int m_thumbRequestToken=0;
+    ProfileConfig config;ProfileConfig* m_configPtr=&config;
+    std::vector<ThumbnailInfo> m_cachedThumbnails;
+    int updates=0;
+    void updateThumbnailPreview(){++updates;}
+    void refreshPreview(){++updates;}
+    void fetchThumbnailsForLevel();
+};
+@@function|src/features/profiles/ui/CommentBgSettingsPopup.cpp|void CommentBgSettingsPopup::fetchThumbnailsForLevel(@@
+int main() {
+    auto* popup=new CommentBgSettingsPopup;
+    popup->fetchThumbnailsForLevel();
+    auto delayed=ThumbnailAPI::get().pending;
+    delete popup;
+    delayed(true,{ThumbnailInfo{}}); // ASan: the expired guard must run before member access.
+    CommentBgSettingsPopup active;
+    active.fetchThumbnailsForLevel();
+    auto old=ThumbnailAPI::get().pending;
+    active.fetchThumbnailsForLevel();
+    old(true,{ThumbnailInfo{}});
+    assert(active.updates==0);
+    ThumbnailAPI::get().pending(true,{ThumbnailInfo{}});
+    assert(active.updates==2 && active.m_cachedThumbnails.size()==1);
+}

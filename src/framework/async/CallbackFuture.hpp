@@ -19,7 +19,13 @@ arc::Future<T> awaitCallback(StartFn&& start) {
 
     geode::CopyableFunction<void(T)> completion = [heldSender](T value) {
         geode::Loader::get()->queueInMainThread([heldSender, value = std::move(value)]() mutable {
-            if (paimon::isRuntimeShuttingDown()) return;
+            if (paimon::isRuntimeShuttingDown()) {
+                // shutdown: resolve the oneshot anyway so the suspended
+                // `co_await receiver.recv()` below wakes and the coroutine
+                // frame is released instead of leaking.
+                (void)heldSender->send(T{});
+                return;
+            }
             (void)heldSender->send(std::move(value));
         });
     };

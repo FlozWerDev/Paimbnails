@@ -5,6 +5,7 @@
 #include "../services/LevelEntryEffects.hpp"
 #include "../services/TransitionManager.hpp"
 #include "../services/DynamicTransitionManager.hpp"
+#include "../services/NativeSceneNavigation.hpp"
 #include "../ui/CustomTransitionScene.hpp"
 #include "../ui/DynamicTransitionScene.hpp"
 
@@ -146,6 +147,10 @@ class $modify(PaimonDirector, CCDirector) {
 
         CCScene* realDest = nativeTrans ? unwrapTransition(nativeTrans) : scene;
         if (!realDest) return CCDirector::replaceScene(scene);
+        if (paimon::transitions::requiresNativeSceneNavigation(m_pRunningScene, realDest)) {
+            paimon::transitions::dynamic::clearHistory();
+            return CCDirector::replaceScene(scene);
+        }
 
         Ref<CCScene> safeDest = realDest;
         {
@@ -205,6 +210,10 @@ class $modify(PaimonDirector, CCDirector) {
 
         CCScene* realDest = nativeTrans ? unwrapTransition(nativeTrans) : scene;
         if (!realDest) return CCDirector::pushScene(scene);
+        if (paimon::transitions::requiresNativeSceneNavigation(m_pRunningScene, realDest)) {
+            paimon::transitions::dynamic::clearHistory();
+            return CCDirector::pushScene(scene);
+        }
 
         Ref<CCScene> safeDest = realDest;
         {
@@ -255,6 +264,10 @@ class $modify(PaimonDirector, CCDirector) {
         if (!destScene) {
             return CCDirector::popSceneWithTransition(duration, type);
         }
+        if (paimon::transitions::requiresNativeSceneNavigation(m_pRunningScene, destScene)) {
+            paimon::transitions::dynamic::clearHistory();
+            return CCDirector::popSceneWithTransition(duration, type);
+        }
 
         // capture fromscene before popping, so the replacement keeps the right source.
         auto* fromScene = m_pRunningScene;
@@ -290,6 +303,11 @@ class $modify(PaimonDirector, CCDirector) {
             return;
         }
         auto* destination = typeinfo_cast<CCScene*>(m_pobScenesStack->objectAtIndex(m_pobScenesStack->count() - 2));
+        if (paimon::transitions::requiresNativeSceneNavigation(m_pRunningScene, destination)) {
+            paimon::transitions::dynamic::clearHistory();
+            CCDirector::popScene();
+            return;
+        }
         auto* transition = paimon::transitions::dynamic::createTransition(destination, true, true);
         if (!transition) {
             CCDirector::popScene();

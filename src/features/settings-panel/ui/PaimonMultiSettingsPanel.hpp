@@ -2,8 +2,11 @@
 
 #include <Geode/Geode.hpp>
 
+namespace paimon::settings_ui { struct SettingsSubcategory; }
+
 class PaimonMultiSettingsPanel : public cocos2d::CCLayer {
 protected:
+    using cocos2d::CCLayer::init;
     cocos2d::CCSprite* m_blurBg = nullptr;
     cocos2d::CCLayerColor* m_darkOverlay = nullptr;
 
@@ -22,6 +25,10 @@ protected:
     geode::ScrollLayer* m_scrollLayer = nullptr;
 
     geode::TextInput* m_searchInput = nullptr;
+    std::string m_searchQuery;
+    std::vector<paimon::settings_ui::SettingsSubcategory const*> m_searchJobs;
+    std::vector<geode::Ref<cocos2d::CCNode>> m_searchRows;
+    std::size_t m_searchJobIndex = 0;
 
     bool m_isDragging = false;
     cocos2d::CCPoint m_dragOffset;
@@ -53,6 +60,10 @@ protected:
 
     void onSearchChanged(std::string const& query);
     void buildSearchResults(std::string const& query);
+    void startPendingSearch(float);
+    void processSearchBatch(float);
+    void cancelSearch();
+    void showSearchResults();
 
     void runEntryAnimation();
 

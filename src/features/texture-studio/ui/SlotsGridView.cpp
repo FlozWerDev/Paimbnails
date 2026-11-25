@@ -87,7 +87,8 @@ void SlotsGridView::refresh() {
     SlotStore::get().loadIndex();
     auto const& list = SlotStore::get().list();
 
-    int columns = std::max(1, static_cast<int>((m_widgetWidth + kCardGap) / (kCardW + kCardGap)));
+    int columns = std::max(1, static_cast<int>((m_widgetWidth - kCardGap) / (kCardW + kCardGap)));
+    float gridLeft = (m_widgetWidth - columns * kCardW - (columns - 1) * kCardGap) * .5f;
     int rowsRequired = (static_cast<int>(list.size()) + 1 + columns - 1) / columns;
     float totalH = std::max(m_widgetHeight, rowsRequired * (kCardH + kCardGap) + kCardGap);
     m_contentLayer->setContentHeight(totalH);
@@ -96,7 +97,7 @@ void SlotsGridView::refresh() {
         if (!card) return;
         int col = idx % columns;
         int row = idx / columns;
-        float x = kCardGap + col * (kCardW + kCardGap) + kCardW / 2.f;
+        float x = gridLeft + col * (kCardW + kCardGap) + kCardW / 2.f;
         float y = totalH - kCardGap - row * (kCardH + kCardGap) - kCardH / 2.f;
         card->setAnchorPoint({0.5f, 0.5f});
         card->setPosition({x, y});
@@ -130,9 +131,10 @@ CCNode* SlotsGridView::makeSlotCard(std::string const& id,
     if (!card) return nullptr;
     card->setContentSize({kCardW, kCardH});
 
+    bool active = SlotStore::get().activeSlotId() == id;
     if (auto* bg = CCScale9Sprite::create("GJ_square01.png")) {
         bg->setContentSize({kCardW, kCardH});
-        bg->setColor({46, 46, 54});
+        bg->setColor(active ? ccColor3B{32, 68, 62} : ccColor3B{34, 40, 55});
         card->addChildAtPosition(bg, Anchor::Center);
     }
 
@@ -146,6 +148,7 @@ CCNode* SlotsGridView::makeSlotCard(std::string const& id,
             (formatRelativeTime(modifiedAt) + (SlotStore::get().activeSlotId() == id ? "   Active" : "   Saved")).c_str(),
             "bigFont.fnt")) {
         metaLbl->setScale(0.32f);
+        metaLbl->limitLabelWidth(kCardW - 58.f, .28f, .16f);
         metaLbl->setColor(SlotStore::get().activeSlotId() == id ? ccColor3B{120, 210, 130} : ccColor3B{170, 170, 178});
         card->addChildAtPosition(metaLbl, Anchor::Top, {18.f, -34.f});
     }

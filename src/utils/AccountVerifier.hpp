@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/Geode.hpp>
 #include <string>
@@ -32,9 +32,18 @@ public:
         auto* gm = GameManager::get();
         if (!gm) return result;
 
-        // accountmanager and gamemanager must agree.
+        // accountmanager and gamemanager must agree when both are populated.
         std::string gmName(gm->m_playerName);
-        if (result.username.empty()) result.username = gmName;
+        if (result.username.empty()) {
+            result.username = gmName;
+        } else if (!gmName.empty()) {
+            bool const namesMatch = result.username.size() == gmName.size()
+                && std::equal(result.username.begin(), result.username.end(), gmName.begin(),
+                    [](unsigned char a, unsigned char b) { return std::tolower(a) == std::tolower(b); });
+            if (!namesMatch) {
+                return result;
+            }
+        }
 
         // gamemanager userid (seedvalue).
         result.userID = gm->m_playerUserID;

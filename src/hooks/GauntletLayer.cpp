@@ -3,6 +3,7 @@
 #include "../framework/HookConventions.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../utils/Debug.hpp"
+#include "../utils/GLSLLoader.hpp"
 #include "../utils/Shaders.hpp"
 #include "../blur/BlurSystem.hpp"
 
@@ -29,7 +30,7 @@ static char const* g_vertexShader = R"(
     }
 )";
 
-// dual kawase blur
+// dual Kawase upsample filter pass: 8-tap weighted cross kernel (4x center, 1x diagonals, 2x cardinal axes) normalized by 12.
 static char const* g_fragmentShaderDualKawase = R"(
     #ifdef GL_ES
     precision highp float;
@@ -206,8 +207,10 @@ public:
             shader->setUniformLocationWith1f(locIntensity, 0.5f);
 
             nextSprite->setShaderProgram(shader);
-        } else if (auto* shader = Shaders::getOrCreateShader(
+        } else if (auto* shader = paimon::shaders::loadShader(
             "paimon-gauntlet-dual-kawase"_spr,
+            "",
+            "",
             g_vertexShader,
             g_fragmentShaderDualKawase
         )) {

@@ -3,6 +3,8 @@
 
 #include <Geode/cocos/include/ccTypes.h>
 
+#include <vector>
+
 namespace cocos2d {
     class CCNode;
 }
@@ -48,6 +50,8 @@ public:
 private:
     IconRecolorEngine() = default;
     bool isAreaEnabled(RecolorArea area) const;
+    void recolorMany(std::vector<GJItemIcon*> const& icons, RecolorArea area);
+    void restoreMany(std::vector<GJItemIcon*> const& icons);
     void restoreOne(GJItemIcon* icon);
 };
 

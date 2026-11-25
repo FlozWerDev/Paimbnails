@@ -1,0 +1,83 @@
+#include <cassert>
+#include <string>
+#include <vector>
+
+namespace paimon::menumusic {
+enum class PlaybackMode { Disabled };
+struct MenuMusicEffects {
+    static MenuMusicEffects& get() { static MenuMusicEffects effects; return effects; }
+    void update() {}
+};
+std::vector<std::string> commands;
+struct SpotifyService {
+    static SpotifyService& get() { static SpotifyService service; return service; }
+    bool linked = true, autoSync = true;
+    bool isLinked() const { return linked; }
+    bool isAutoSyncEnabled() const { return autoSync; }
+    void sendMediaCommand(std::string const& command) { commands.push_back(command); }
+    void onEnterMenu();
+    void onEnterLevel();
+};
+@@function|src/features/menu-music/services/SpotifyService.cpp|void SpotifyService::onEnterMenu()@@
+@@function|src/features/menu-music/services/SpotifyService.cpp|void SpotifyService::onEnterLevel()@@
+struct MenuMusicPlayer {
+    struct State { std::string currentTrackId; } stateValue;
+    static MenuMusicPlayer& get() { static MenuMusicPlayer player; return player; }
+    bool isPaused() const { return false; }
+    State const& state() const { return stateValue; }
+    bool playNext() { return false; }
+};
+struct MenuMusicLibrary {
+    static MenuMusicLibrary& get() { static MenuMusicLibrary library; return library; }
+    PlaybackMode mode() const { return PlaybackMode::Disabled; }
+};
+}
+using namespace paimon::menumusic;
+struct Mod {
+    static Mod* get() { static Mod mod; return &mod; }
+    template <class T> T getSettingValue(char const*) const { return true; }
+};
+constexpr int FMOD_OK = 0, FMOD_TIMEUNIT_MS = 0;
+namespace FMOD {
+struct Sound { int getLength(unsigned int*, int) { return 0; } };
+struct Channel {
+    void isPlaying(bool*) {}
+    int getPosition(unsigned int*, int) { return 0; }
+    int getCurrentSound(Sound**) { return 0; }
+};
+struct ChannelGroup {
+    void getNumChannels(int*) {}
+    int getChannel(int, Channel**) { return 0; }
+};
+}
+struct FMODAudioEngine {
+    FMOD::ChannelGroup* m_backgroundMusicChannel = nullptr;
+    static FMODAudioEngine* sharedEngine() { return nullptr; }
+};
+struct NowPlayingToast { static void showForCurrent(void*) {} };
+struct MenuHook {
+    void tickAutoNext(float);
+};
+#define tickAutoNext MenuHook::tickAutoNext
+@@function|src/features/menu-music/hooks/MenuMusicMenuLayerHook.cpp|void tickAutoNext(float)@@
+#undef tickAutoNext
+
+int main() {
+    MenuHook menu;
+    for (int second = 0; second < 10; ++second) menu.tickAutoNext(1.f);
+    assert(commands.empty()); // idle menu must never toggle the browser every second
+    auto& spotify = SpotifyService::get();
+    spotify.onEnterMenu();
+    spotify.onEnterLevel();
+    assert((commands == std::vector<std::string>{"play", "pause"}));
+    commands.clear();
+    spotify.autoSync = false;
+    spotify.onEnterMenu();
+    spotify.onEnterLevel();
+    assert(commands.empty());
+    spotify.autoSync = true;
+    spotify.linked = false;
+    spotify.onEnterMenu();
+    spotify.onEnterLevel();
+    assert(commands.empty());
+}

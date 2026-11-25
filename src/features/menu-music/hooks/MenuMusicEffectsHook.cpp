@@ -10,7 +10,7 @@ class $modify(PaimonMenuMusicEffectsFMOD, FMODAudioEngine) {
     }
 
     $override
-    void playMusic(gd::string path, bool shouldLoop, float fadeInTime, int channel) {
+    void playMusic(std::string path, bool shouldLoop, float fadeInTime, int channel) {
         FMODAudioEngine::playMusic(path, shouldLoop, fadeInTime, channel);
         paimon::menumusic::MenuMusicEffects::get().onMusicStarted(
             static_cast<std::string>(path));

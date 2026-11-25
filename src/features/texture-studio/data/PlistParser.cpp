@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "PlistParser.hpp"
 
 #include <Geode/utils/file.hpp>
@@ -513,16 +514,14 @@ geode::Result<ParsedSpritesheet> PlistParser::parseString(std::string_view xml) 
 }
 
 geode::Result<ParsedSpritesheet> PlistParser::parseFile(std::filesystem::path const& path) {
-    std::error_code ec;
-    auto size = std::filesystem::file_size(path, ec);
-    if (ec || size > kMaxPlistBytes) {
-        return Err("PlistParser::parseFile: invalid file size for {}",
-            geode::utils::string::pathToString(path));
-    }
-    auto content = geode::utils::file::readString(path);
+    auto content = geode::utils::file::readString(paimon::paths::toSdkPath(path));
     if (!content) {
         return Err("PlistParser::parseFile: cannot read {}: {}",
-            geode::utils::string::pathToString(path), content.unwrapErr());
+            paimon::paths::toUtf8(path), content.unwrapErr());
+    }
+    if (content.unwrap().size() > kMaxPlistBytes) {
+        return Err("PlistParser::parseFile: invalid file size for {}",
+            paimon::paths::toUtf8(path));
     }
     return parseString(content.unwrap());
 }

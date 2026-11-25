@@ -1,0 +1,120 @@
+#include <cassert>
+#include <iostream>
+#include <string_view>
+#include <typeinfo>
+#include <vector>
+
+#define $override
+struct CCNode {
+    CCNode* parent = nullptr;
+    std::vector<CCNode*> children;
+    virtual ~CCNode() = default;
+    CCNode* getParent() { return parent; }
+    auto getChildren() { return children; }
+    void addChild(CCNode* child) { children.push_back(child); child->parent = this; }
+};
+namespace cocos2d {
+struct CCScene : CCNode {};
+struct CCDirector {
+    CCScene* scene = nullptr;
+    static CCDirector* get() { static CCDirector director; return &director; }
+    CCScene* getRunningScene() { return scene; }
+};
+}
+template<class To, class From> To typeinfo_cast(From* object) { return dynamic_cast<To>(object); }
+template<class T> using CCArrayExt = std::vector<T>;
+enum class SearchType { UsersLevels = 5, MyLevels = 98 };
+struct GJSearchObject { SearchType m_searchType; };
+struct LevelBrowserLayer : CCNode { GJSearchObject* m_searchObject = nullptr; };
+struct LevelListLayer : LevelBrowserLayer {};
+struct GJGameLevel {};
+struct LevelCell : CCNode { void onEnter() {} };
+namespace paimon::hooks {
+bool g_suppressCompactLevelCellsInContext = false;
+bool g_suppressLevelCellEnhancements = false;
+}
+struct PaimonLevelCell : LevelCell {
+    struct Fields { bool m_isBeingDestroyed = false; } fields;
+    struct FieldAccess {
+        Fields* fields;
+        Fields* self() { return fields; }
+    } m_fields{&fields};
+    GJGameLevel* m_level = nullptr;
+    bool m_compactView = false;
+    int m_cellMode = 0;
+    int loads = 0;
+    int reloads = 0;
+    void ensureMaintenanceTickScheduled() {}
+    void ensureInvalidationListener() {}
+    void refreshRuntimeScheduling() {}
+    bool isInsideProfilePageContext() { return false; }
+    void loadFromLevel(GJGameLevel*) { ++reloads; }
+    void loadCustomLevelCell() { ++reloads; }
+    void tryLoadThumbnail() { ++loads; }
+    @@function|src/hooks/LevelCell.cpp|bool isInCompactExcludedContext()@@
+    @@function|src/hooks/LevelCell.cpp|$override void onEnter()@@
+};
+
+int main() {
+    GJSearchObject localSearch{SearchType::MyLevels};
+    GJSearchObject onlineSearch{SearchType::UsersLevels};
+    LevelBrowserLayer local, online;
+    local.m_searchObject = &localSearch;
+    online.m_searchObject = &onlineSearch;
+    cocos2d::CCScene outgoing;
+    outgoing.addChild(&local);
+    cocos2d::CCDirector::get()->scene = &outgoing;
+    GJGameLevel uploadedLevel;
+
+    // A warm-cache response builds unparented online cells before replaceScene.
+    PaimonLevelCell uploaded;
+    uploaded.m_level = &uploadedLevel;
+    assert(!uploaded.isInCompactExcludedContext() &&
+           "outgoing My Levels screen incorrectly suppressed the uploaded list");
+    online.addChild(&uploaded);
+    uploaded.onEnter();
+    assert(uploaded.loads == 1 && "onEnter must start a thumbnail skipped during construction");
+    uploaded.fields.m_isBeingDestroyed = true;
+    uploaded.onEnter();
+    assert(!uploaded.fields.m_isBeingDestroyed);
+    assert(uploaded.loads == 2 && "reattached cells must resume their thumbnail pipeline");
+
+    // Cold-cache responses arrive after the new browser is already visible.
+    cocos2d::CCScene incoming;
+    incoming.addChild(&online);
+    cocos2d::CCDirector::get()->scene = &incoming;
+    PaimonLevelCell coldCacheCell;
+    coldCacheCell.m_level = &uploadedLevel;
+    assert(!coldCacheCell.isInCompactExcludedContext());
+    online.addChild(&coldCacheCell);
+    coldCacheCell.onEnter();
+    assert(coldCacheCell.loads == 1);
+
+    // Local editor lists and level-list screens keep their own appearance.
+    PaimonLevelCell localCell;
+    localCell.m_level = &uploadedLevel;
+    local.addChild(&localCell);
+    assert(localCell.isInCompactExcludedContext());
+    localCell.onEnter();
+    assert(localCell.loads == 0);
+    LevelListLayer list;
+    PaimonLevelCell listCell;
+    listCell.m_level = &uploadedLevel;
+    list.addChild(&listCell);
+    assert(listCell.isInCompactExcludedContext());
+    listCell.onEnter();
+    assert(listCell.loads == 0);
+
+    // Creation-time suppression applies before a local cell has a parent.
+    paimon::hooks::g_suppressCompactLevelCellsInContext = true;
+    PaimonLevelCell localBuilding;
+    assert(localBuilding.isInCompactExcludedContext());
+    paimon::hooks::g_suppressCompactLevelCellsInContext = false;
+    paimon::hooks::g_suppressLevelCellEnhancements = true;
+    PaimonLevelCell preview;
+    preview.m_level = &uploadedLevel;
+    online.addChild(&preview);
+    preview.onEnter();
+    assert(preview.loads == 0);
+    std::cout << "PASS: uploaded thumbnails load with warm/cold cache and on re-entry; local lists remain excluded\n";
+}

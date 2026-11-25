@@ -25,7 +25,7 @@ bool isBlankName(std::string const& name) {
 } // namespace
 
 class $modify(PaimonInfoSuiteNames, GameLevelManager) {
-    void storeUserName(int userID, int accountID, gd::string userName) {
+    void storeUserName(int userID, int accountID, std::string userName) {
         GameLevelManager::storeUserName(userID, accountID, userName);
         if (!greenUsersEnabled()) return;
 
@@ -34,7 +34,7 @@ class $modify(PaimonInfoSuiteNames, GameLevelManager) {
         paimon::info::InfoStore::get().rememberUsername(userID, name);
     }
 
-    gd::string userNameForUserID(int id) {
+    std::string userNameForUserID(int id) {
         auto result = GameLevelManager::userNameForUserID(id);
         if (!greenUsersEnabled()) return result;
 
@@ -48,6 +48,6 @@ class $modify(PaimonInfoSuiteNames, GameLevelManager) {
             paimon::info::gdhistory::requestUsername(id);
             return result;
         }
-        return gd::string(cached);
+        return std::string(cached);
     }
 };

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/Geode.hpp>
 #include "../models/EmoteModels.hpp"
@@ -20,8 +20,16 @@ namespace paimon::emotes {
 class EmoteCache {
 public:
     static EmoteCache& get() {
-        static EmoteCache instance;
-        return instance;
+        // Heap-leaked: ~EmoteCache() must never join decode workers under DllMain loader-lock.
+        static auto* instance = []() {
+            auto* cache = new EmoteCache();
+            s_initialized.store(true, std::memory_order_release);
+            return cache;
+        }();
+        return *instance;
+    }
+    static bool isInitialized() {
+        return s_initialized.load(std::memory_order_acquire);
     }
 
     using TextureCallback = geode::CopyableFunction<void(cocos2d::CCTexture2D* tex, bool isGif, std::vector<uint8_t> const& gifData)>;
@@ -41,6 +49,8 @@ public:
 
     void cancelPreload();
 
+    void requestShutdown();
+    void waitShutdown(std::chrono::steady_clock::time_point deadline);
     void shutdown();
 
 private:
@@ -103,21 +113,38 @@ private:
         TextureCallback callback;
     };
 
+    struct DecodeWorker {
+        std::thread thread;
+        std::shared_ptr<std::atomic<bool>> exited;
+    };
+
+    struct DecodeDoneState {
+        std::mutex mutex;
+        std::condition_variable cv;
+        size_t aliveWorkers = 0;
+    };
+
     bool initDecodeWorker();
+    void requestStopWorker();
+    void waitShutdownWorker(std::chrono::steady_clock::time_point deadline);
     void shutdownDecodeWorker();
     void enqueueDecode(DecodeTask task);
-    static void decodeWorkerLoop(EmoteCache* self);
+    static void decodeWorkerLoop(EmoteCache* self,
+                                 std::shared_ptr<std::atomic<bool>> exited,
+                                 std::shared_ptr<DecodeDoneState> doneState);
     void finalizeStaticDecodeOnMainThread(EmoteInfo info,
                                           std::vector<uint8_t> rgba,
                                           int width, int height,
                                           size_t originalByteSize,
                                           TextureCallback callback);
 
+    static inline std::atomic<bool> s_initialized{false};
     std::deque<DecodeTask> m_decodeQueue;
     std::mutex m_decodeLifecycleMutex;
     std::mutex m_decodeMutex;
     std::condition_variable m_decodeCV;
-    std::vector<std::thread> m_decodeWorkers;
+    std::shared_ptr<DecodeDoneState> m_decodeDone = std::make_shared<DecodeDoneState>();
+    std::vector<DecodeWorker> m_decodeWorkers;
     std::atomic<bool> m_decodeRunning{false};
 };
 

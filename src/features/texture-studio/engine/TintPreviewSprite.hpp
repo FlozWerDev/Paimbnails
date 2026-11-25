@@ -9,6 +9,7 @@ namespace paimon::texture_studio {
 // gpu re-tint per draw from the role mask (uniforms only); layer-owned, dies with the editor.
 class TintPreviewSprite : public cocos2d::CCSprite {
 public:
+    using cocos2d::CCSprite::init;
     static TintPreviewSprite* create(cocos2d::CCTexture2D* base,
                                      cocos2d::CCTexture2D* mask);
     bool init(cocos2d::CCTexture2D* base, cocos2d::CCTexture2D* mask);

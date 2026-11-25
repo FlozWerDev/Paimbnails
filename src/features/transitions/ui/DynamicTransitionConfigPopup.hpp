@@ -11,7 +11,7 @@ namespace paimon::transitions::dynamic {
 
 class Visual;
 
-// Looping miniature of the real compositor, with the active curve plotted underneath.
+// looping miniature of the real compositor, with the active curve plotted underneath.
 class ConfigPreview : public cocos2d::CCNode {
 public:
     static ConfigPreview* create(float width);

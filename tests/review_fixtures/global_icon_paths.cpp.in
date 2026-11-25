@@ -1,0 +1,59 @@
+#include "src/features/global-icon/services/CachePathPolicy.hpp"
+#include <cassert>
+#include <chrono>
+#include <fstream>
+#include <iostream>
+#include <vector>
+using namespace paimon::globalicon;
+struct Mod {
+    static Mod* get() { static Mod value; return &value; }
+    std::filesystem::path root;
+    std::filesystem::path getSaveDir() const { return root; }
+};
+struct GlobalIconSlot {std::string type="cube",name="remote",pngFile,pngUrl,plistFile,plistUrl;};
+bool validCachedFile(std::filesystem::path const& path) { return std::filesystem::exists(path); }
+bool iconTypeFromString(std::string const& type) { return type=="cube" || type=="ship"; }
+struct GlobalIconStorage {
+    struct SlotFiles {std::filesystem::path png,plist;bool needPlist=false,pngMissing=false,plistMissing=false;};
+    std::filesystem::path cacheDir(int,std::string const&) const;
+    SlotFiles resolveFiles(int,GlobalIconSlot const&) const;
+    void pruneSlotDir(std::filesystem::path const&,SlotFiles const&) const;
+};
+@@function|src/features/global-icon/services/GlobalIconStorage.cpp|std::filesystem::path GlobalIconStorage::cacheDir(@@
+@@function|src/features/global-icon/services/GlobalIconStorage.cpp|GlobalIconStorage::SlotFiles GlobalIconStorage::resolveFiles(@@
+@@function|src/features/global-icon/services/GlobalIconStorage.cpp|void GlobalIconStorage::pruneSlotDir(@@
+int main() {
+    auto root=std::filesystem::current_path()/(
+        "global-icon-fixture-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    assert(root.parent_path()==std::filesystem::current_path());
+    Mod::get()->root=root;
+    GlobalIconStorage storage;
+    GlobalIconSlot slot;
+    for(auto bad:{"../../../victim/a.png","/tmp/a.png","C:\\a.png","a/b.png","a\\b.png",
+                  "a:stream","CON.png","LPT1.plist","a.","a ",".."}) {
+        slot.pngFile=bad;
+        assert(storage.resolveFiles(123,slot).png.empty());
+    }
+    slot.pngFile="safe.png"; slot.plistUrl="remote";slot.plistFile="../bad.plist";
+    assert(storage.resolveFiles(123,slot).png.empty());
+    slot.plistUrl=""; slot.type="../cube";
+    assert(storage.resolveFiles(123,slot).png.empty());
+    slot.type="cube";
+    assert(storage.resolveFiles(0,slot).png.empty());
+    auto files=storage.resolveFiles(123,slot);
+    assert(!files.png.empty() && files.pngMissing);
+    std::filesystem::create_directories(files.png.parent_path());
+    std::ofstream(files.png)<<"current";
+    auto stale=files.png.parent_path()/"obsolete.png";
+    std::ofstream(stale)<<"obsolete";
+    auto outside=root/"unrelated-project.json";
+    std::ofstream(outside)<<"unrelated";
+    storage.pruneSlotDir(files.png.parent_path(),files);
+    assert(std::filesystem::exists(files.png) && !std::filesystem::exists(stale));
+    GlobalIconStorage::SlotFiles escaped;
+    escaped.png=outside;
+    storage.pruneSlotDir(root,escaped);
+    assert(std::filesystem::exists(outside));
+    assert(!isInsideCache(root/"global_icons_cache",outside));
+    std::cout<<"PASS: cache paths reject traversal and pruning preserves unrelated files\n";
+}

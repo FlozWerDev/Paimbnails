@@ -1,4 +1,5 @@
 #include "FileDialog.hpp"
+#include "FilesystemPath.hpp"
 
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/general.hpp>
@@ -9,12 +10,30 @@ namespace gfile = geode::utils::file;
 
 // holder keeps the pending pick alive; one dialog at a time.
 using FilePickHolder =
-    geode::async::TaskHolder<Result<std::optional<std::filesystem::path>>>;
+    geode::async::TaskHolder<Result<std::optional<asp::fs::Path>>>;
 
 // leaked on purpose: async runtime outlives teardown.
 static FilePickHolder& s_filePickHolder = *new FilePickHolder();
 
 namespace pt {
+namespace {
+
+auto stdPickCallback(FilePickCallback callback) {
+    return [callback = std::move(callback)](Result<std::optional<asp::fs::Path>> result) {
+        if (result.isErr()) {
+            callback(Err(std::move(result).unwrapErr()));
+            return;
+        }
+        auto selected = std::move(result).unwrap();
+        if (!selected) {
+            callback(Ok(std::optional<std::filesystem::path>{}));
+            return;
+        }
+        callback(Ok(std::optional<std::filesystem::path>{paimon::paths::toStdPath(*selected)}));
+    };
+}
+
+} // namespace
 
 gfile::FilePickOptions::Filter imageFilter() {
     gfile::FilePickOptions::Filter f;
@@ -91,91 +110,91 @@ gfile::FilePickOptions::Filter jsonFilter() {
 void pickImage(FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
         gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {imageFilter()}}),
-        std::move(cb)
+        stdPickCallback(std::move(cb))
     );
 }
 
 void pickCursorAsset(FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
         gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {cursorAssetFilter()}}),
-        std::move(cb)
+        stdPickCallback(std::move(cb))
     );
 }
 
 void pickGif(FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
         gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {gifFilter()}}),
-        std::move(cb)
+        stdPickCallback(std::move(cb))
     );
 }
 
 void pickGmd(FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
         gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {gmdFilter()}}),
-        std::move(cb)
+        stdPickCallback(std::move(cb))
     );
 }
 
 void pickJson(FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
         gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {jsonFilter()}}),
-        std::move(cb)
+        stdPickCallback(std::move(cb))
     );
 }
 
 void pickAudio(FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
         gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {audioFilter()}}),
-        std::move(cb)
+        stdPickCallback(std::move(cb))
     );
 }
 
 void pickVideo(FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
         gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {videoFilter()}}),
-        std::move(cb)
+        stdPickCallback(std::move(cb))
     );
 }
 
 void pickMedia(FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
         gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {mediaFilter()}}),
-        std::move(cb)
+        stdPickCallback(std::move(cb))
     );
 }
 
 void saveImage(std::string const& defaultName, FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
-        gfile::pick(gfile::PickMode::SaveFile, {std::filesystem::path(defaultName), {pngFilter()}}),
-        std::move(cb)
+        gfile::pick(gfile::PickMode::SaveFile, {asp::fs::Path(defaultName), {pngFilter()}}),
+        stdPickCallback(std::move(cb))
     );
 }
 
 void saveJson(std::string const& defaultName, FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
-        gfile::pick(gfile::PickMode::SaveFile, {std::filesystem::path(defaultName), {jsonFilter()}}),
-        std::move(cb)
+        gfile::pick(gfile::PickMode::SaveFile, {asp::fs::Path(defaultName), {jsonFilter()}}),
+        stdPickCallback(std::move(cb))
     );
 }
 
 void pickFolder(FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
         gfile::pick(gfile::PickMode::OpenFolder, {}),
-        std::move(cb)
+        stdPickCallback(std::move(cb))
     );
 }
 
 void pickFolder(std::filesystem::path const& defaultPath, FilePickCallback cb) {
-    std::optional<std::filesystem::path> defPath;
+    std::optional<asp::fs::Path> defPath;
     if (!defaultPath.empty()) {
         std::error_code ec;
         if (std::filesystem::is_directory(defaultPath, ec)) {
-            defPath = defaultPath;
+            defPath = paimon::paths::toSdkPath(defaultPath);
         }
     }
     s_filePickHolder.spawn("Paimbnails FilePicker",
         gfile::pick(gfile::PickMode::OpenFolder, {defPath, {}}),
-        std::move(cb)
+        stdPickCallback(std::move(cb))
     );
 }
 

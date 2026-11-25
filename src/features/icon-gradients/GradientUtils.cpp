@@ -22,20 +22,21 @@ namespace {
 
 struct IconRow {
     IconType type;
+    char const* name;
     int (*live)(GameManager*);
     char const* sdiKey;
 };
 
 constexpr IconRow kIconRows[] = {
-    {IconType::Cube, [](GameManager* gm) { return gm->getPlayerFrame(); }, "cube"},
-    {IconType::Ship, [](GameManager* gm) { return gm->getPlayerShip(); }, "ship"},
-    {IconType::Ball, [](GameManager* gm) { return gm->getPlayerBall(); }, "roll"},
-    {IconType::Ufo, [](GameManager* gm) { return gm->getPlayerBird(); }, "bird"},
-    {IconType::Wave, [](GameManager* gm) { return gm->getPlayerDart(); }, "dart"},
-    {IconType::Robot, [](GameManager* gm) { return gm->getPlayerRobot(); }, "robot"},
-    {IconType::Spider, [](GameManager* gm) { return gm->getPlayerSpider(); }, "spider"},
-    {IconType::Swing, [](GameManager* gm) { return gm->getPlayerSwing(); }, "swing"},
-    {IconType::Jetpack, [](GameManager* gm) { return gm->getPlayerJetpack(); }, "jetpack"},
+    {IconType::Cube, "cube", [](GameManager* gm) { return gm->getPlayerFrame(); }, "cube"},
+    {IconType::Ship, "ship", [](GameManager* gm) { return gm->getPlayerShip(); }, "ship"},
+    {IconType::Ball, "ball", [](GameManager* gm) { return gm->getPlayerBall(); }, "roll"},
+    {IconType::Ufo, "ufo", [](GameManager* gm) { return gm->getPlayerBird(); }, "bird"},
+    {IconType::Wave, "wave", [](GameManager* gm) { return gm->getPlayerDart(); }, "dart"},
+    {IconType::Robot, "robot", [](GameManager* gm) { return gm->getPlayerRobot(); }, "robot"},
+    {IconType::Spider, "spider", [](GameManager* gm) { return gm->getPlayerSpider(); }, "spider"},
+    {IconType::Swing, "swing", [](GameManager* gm) { return gm->getPlayerSwing(); }, "swing"},
+    {IconType::Jetpack, "jetpack", [](GameManager* gm) { return gm->getPlayerJetpack(); }, "jetpack"},
 };
 
 IconRow const* findIconRow(IconType type) {
@@ -63,9 +64,11 @@ ColorRow const* findColorRow(ColorType type) {
     return nullptr;
 }
 
-constexpr char const* kIconNames[] = {
-    "cube", "ship", "ball", "ufo", "wave", "robot", "spider", "swing", "jetpack",
-};
+// saved second-player value when `useSdi`, else the live GameManager value.
+int sdiOrLive(int (*live)(GameManager*), char const* sdiKey, bool useSdi,
+              int64_t sdiDefault, GameManager* gm) {
+    return useSdi ? static_cast<int>(sdiSaved<int64_t>(sdiKey, sdiDefault)) : live(gm);
+}
 
 // one sprite plus the id its shader program is cached under.
 struct PaintTarget {
@@ -375,17 +378,16 @@ ccColor3B GradientUtils::getPlayerColor(ColorType colorType, bool secondPlayer) 
     ColorRow const* row = findColorRow(colorType);
     if (!row) return ccWHITE;
 
-    int index = (secondPlayer && sdiEnabled() && isSettingEnabled(P2_SEPARATE))
-        ? static_cast<int>(sdiSaved<int64_t>(row->sdiKey, row->sdiDefault))
-        : row->live(gm);
+    int index = sdiOrLive(row->live, row->sdiKey,
+        secondPlayer && sdiEnabled() && isSettingEnabled(P2_SEPARATE),
+        row->sdiDefault, gm);
     return gm->colorForIdx(index);
 }
 
 int GradientUtils::getIconID(IconType type, bool secondPlayer) {
     IconRow const* row = findIconRow(type);
-    if (secondPlayer && sdiEnabled())
-        return static_cast<int>(sdiSaved<int64_t>(row->sdiKey, 1));
-    return row->live(GameManager::get());
+    return sdiOrLive(row->live, row->sdiKey, secondPlayer && sdiEnabled(), 1,
+                     GameManager::get());
 }
 
 bool GradientUtils::isGradientSaved(GradientConfig config) {
@@ -520,9 +522,10 @@ void GradientUtils::setIconColors(SimplePlayer* icon, ColorType, bool white, boo
 }
 
 std::string GradientUtils::getTypeID(IconType type) {
-    int index = static_cast<int>(type);
-    if (index < 0 || index >= static_cast<int>(std::size(kIconNames))) return "global";
-    return kIconNames[index];
+    // names live on the icon rows; anything without a row is "global".
+    for (auto const& row : kIconRows)
+        if (row.type == type) return row.name;
+    return "global";
 }
 
 std::string GradientUtils::getTypeID(SpriteType type) {
@@ -835,3 +838,29 @@ void GradientUtils::hideSprite(CCSprite* sprite) {
 
     sprite->setShaderProgram(shader);
 }
+
+namespace paimon::icon_gradients {
+
+CCSprite* makeColorSwatch(float scale) {
+    auto* swatch = CCSprite::createWithSpriteFrameName("GJ_colorBtn_001.png");
+    swatch->setScale(scale);
+    return swatch;
+}
+
+CCSprite* makeSelectRing(float scale) {
+    auto* ring = CCSprite::createWithSpriteFrameName("GJ_select_001.png");
+    ring->setScale(scale);
+    ring->setVisible(false);
+    return ring;
+}
+
+CCLabelBMFont* makeGradientLabel(CCNode* parent, char const* text,
+                                 CCPoint position, float scale, char const* font) {
+    auto label = CCLabelBMFont::create(text, font);
+    label->setScale(scale);
+    label->setPosition(position);
+    parent->addChild(label, 2);
+    return label;
+}
+
+} // namespace paimon::icon_gradients

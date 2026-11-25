@@ -34,6 +34,18 @@ arc::Future<ThumbnailModeratorResult> moderatorFrom(auto&& start) {
     });
 }
 
+// E4: el filename se concatena al asset URL servidor; extrae basename y
+// rechaza traversal ("..", "/", "\") antes de tocar red.
+std::string sanitizeSuggestionFilename(std::string const& filename) {
+    if (filename.empty() || filename.size() > 128) return {};
+    auto pos = filename.find_last_of("/\\");
+    std::string base = (pos == std::string::npos) ? filename : filename.substr(pos + 1);
+    if (base.empty() || base == "." || base == "..") return {};
+    if (base.find("..") != std::string::npos) return {};
+    if (base.find('/') != std::string::npos || base.find('\\') != std::string::npos) return {};
+    return base;
+}
+
 } // namespace
 
 arc::Future<ThumbnailGalleryResult> getThumbnails(int levelId, bool forceRefresh) {
@@ -199,8 +211,13 @@ arc::Future<ThumbnailTextureResult> downloadSuggestion(int levelId) {
 }
 
 arc::Future<ThumbnailTextureResult> downloadSuggestionImage(std::string const& filename) {
-    return textureFrom([=](auto inner) {
-        ThumbnailAPI::get().downloadSuggestionImage(filename, std::move(inner));
+    std::string safe = sanitizeSuggestionFilename(filename);
+    if (safe.empty()) {
+        log::debug("[ThumbAPI] downloadSuggestionImage: skipped unsafe filename");
+        return textureFrom([](auto inner) { inner(false, nullptr); });
+    }
+    return textureFrom([safe = std::move(safe)](auto inner) {
+        ThumbnailAPI::get().downloadSuggestionImage(safe, std::move(inner));
     });
 }
 

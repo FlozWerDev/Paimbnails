@@ -189,7 +189,7 @@ bool PaimonModulesLayer::init() {
     window->setAnchorPoint({0.f, 0.f});
     window->setPosition({8.f, 8.f});
     this->addChild(window, 1);
-    paimon::ui::addCorners(window, window->getContentSize(), SideArtStyle::PopupGold, 0.4f);
+    paimon::ui::addCorners(window, window->getContentSize(), SideArtStyle::PopupGold, 1.f);
 
     m_menu = CCMenu::create();
     m_menu->setPosition({0.f, 0.f});
@@ -232,7 +232,7 @@ bool PaimonModulesLayer::init() {
     float const searchW = m_innerW - 22.f;
     m_searchInput = TextInput::create(searchW / kSearchScale,
         text("Buscar modulo, grupo o id...", "Search module, group or id..."), "chatFont.fnt");
-    m_searchInput->setCommonFilter(CommonFilter::Any);
+    m_searchInput->setCommonFilter(CommonFilter::Text);
     m_searchInput->setMaxCharCount(32);
     m_searchInput->setScale(kSearchScale);
     m_searchInput->setPosition({m_contentX + searchW / 2.f, searchY});
@@ -260,6 +260,7 @@ bool PaimonModulesLayer::init() {
     float const listTop = filterY - kit::kTabBarHeight / 2.f - 5.f;
     float const listBot = panelBot + 6.f;
     m_scroll = ScrollLayer::create({m_innerW, listTop - listBot});
+    if (m_scroll) m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setPosition({m_contentX, listBot});
     this->addChild(m_scroll, 5);
 
@@ -697,15 +698,15 @@ void PaimonModulesLayer::applyToVisible(bool useDefaults, bool value) {
         mods::setEnabled(*mod, target);
     }
     if (snapshot.empty()) {
-        PaimonNotify::create(text("No habia nada que cambiar.", "Nothing to change."), NotificationIcon::Info)->show();
+        PaimonNotify::show(text("No habia nada que cambiar.", "Nothing to change."), NotificationIcon::Info);
         return;
     }
     size_t const changed = snapshot.size();
     pushUndo(std::move(snapshot));
     refreshAllRows();
-    PaimonNotify::create(fmt::format(fmt::runtime(text(
+    PaimonNotify::show(fmt::format(fmt::runtime(text(
         "{} modulo(s) cambiados. Deshacer los revierte.",
-        "{} module(s) changed. Undo reverts them.")), changed), NotificationIcon::Success)->show();
+        "{} module(s) changed. Undo reverts them.")), changed), NotificationIcon::Success);
 }
 
 void PaimonModulesLayer::copyActiveIds() {
@@ -718,13 +719,13 @@ void PaimonModulesLayer::copyActiveIds() {
         count++;
     }
     if (count == 0) {
-        PaimonNotify::create(text("No hay modulos activos en la vista.", "No active modules in this view."),
-            NotificationIcon::Info)->show();
+        PaimonNotify::show(text("No hay modulos activos en la vista.", "No active modules in this view."),
+            NotificationIcon::Info);
         return;
     }
     geode::utils::clipboard::write(out);
-    PaimonNotify::create(fmt::format(fmt::runtime(text("{} id(s) copiados.", "{} id(s) copied.")), count),
-        NotificationIcon::Success)->show();
+    PaimonNotify::show(fmt::format(fmt::runtime(text("{} id(s) copiados.", "{} id(s) copied.")), count),
+        NotificationIcon::Success);
 }
 
 void PaimonModulesLayer::setCompatForced(bool forced) {
@@ -738,11 +739,11 @@ void PaimonModulesLayer::setCompatForced(bool forced) {
     Loader::get()->queueInMainThread([self] {
         if (self->getParent()) self->rebuild();
     });
-    PaimonNotify::create(
+    PaimonNotify::show(
         forced ? text("Modulos de Info forzados junto a BetterInfo.", "Info modules forced alongside BetterInfo.")
                : text("Modulos de Info en pausa mientras BetterInfo este instalado.",
                    "Info modules paused while BetterInfo is installed."),
-        forced ? NotificationIcon::Warning : NotificationIcon::Info)->show();
+        forced ? NotificationIcon::Warning : NotificationIcon::Info);
 }
 
 void PaimonModulesLayer::openActions() {
@@ -885,8 +886,8 @@ void PaimonModulesLayer::onUndo(CCObject*) {
     for (auto const& [mod, value] : snapshot) mods::setEnabled(*mod, value);
     refreshAllRows();
     refreshUndo();
-    PaimonNotify::create(fmt::format(fmt::runtime(text("Deshecho: {} modulo(s).", "Undone: {} module(s).")),
-        snapshot.size()), NotificationIcon::Info)->show();
+    PaimonNotify::show(fmt::format(fmt::runtime(text("Deshecho: {} modulo(s).", "Undone: {} module(s).")),
+        snapshot.size()), NotificationIcon::Info);
 }
 
 void PaimonModulesLayer::onBack(CCObject*) { CCDirector::get()->popScene(); }

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Geode/Geode.hpp>
+#include <atomic>
+#include <chrono>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -15,11 +17,11 @@ public:
     using DownloadCallback = geode::CopyableFunction<void(bool success, cocos2d::CCTexture2D* texture)>;
     using ActionCallback   = geode::CopyableFunction<void(bool success, std::string const& message)>;
 
-    static ProfileImageService& get() {
-        static ProfileImageService instance;
-        return instance;
-    }
+    static ProfileImageService& get();
+    static bool isInitialized();
 
+    void requestShutdown();
+    void waitShutdown(std::chrono::steady_clock::time_point deadline);
     void shutdown();
 
     void setServerEnabled(bool enabled) { m_serverEnabled = enabled; }
@@ -59,6 +61,8 @@ public:
 
 private:
     UploadCallback uploadCompletion(int accountID, UploadCallback callback, bool background);
+    // shared upload guard chain; emits the error on `callback` and returns false.
+    bool checkUploadPreconditions(int accountID, UploadCallback const& callback, char const* loginMessage);
     ProfileImageService();
     ProfileImageService(ProfileImageService const&) = delete;
     ProfileImageService& operator=(ProfileImageService const&) = delete;

@@ -23,12 +23,6 @@ void dispatchForumCallback(Callback const& cb, Args&&... args) {
     cb(std::forward<Args>(args)...);
 }
 
-template<typename Fallback>
-void dispatchForumFallback(Fallback const& fallback) {
-    if (paimon::isRuntimeShuttingDown()) return;
-    fallback();
-}
-
 } // namespace
 
 static std::string jsonStr(matjson::Value const& v, std::string const& def = "") {
@@ -292,25 +286,40 @@ void ForumApi::listPosts(ListFilter const& filter, ListCallback cb) {
     }
 
     auto fallback = [this, filter, cb]() {
+        m_lastListOffline = true;
+        auto toLower = [](std::string s) {
+            for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            return s;
+        };
+        std::string const queryLower = toLower(filter.query);
+
         std::vector<Post> out;
         out.reserve(m_cache.size());
         for (auto const& p : m_cache) {
             if (!filter.tags.empty()) {
                 bool match = false;
                 for (auto const& t : filter.tags) {
+                    std::string const tl = toLower(t);
                     for (auto const& pt : p.tags) {
-                        if (pt == t) { match = true; break; }
+                        if (toLower(pt) == tl) { match = true; break; }
                     }
                     if (match) break;
                 }
                 if (!match) continue;
             }
-            if (!filter.query.empty()) {
-                std::string q = filter.query;
-                for (auto& c : q) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                std::string title = p.title;
-                for (auto& c : title) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                if (title.find(q) == std::string::npos) continue;
+            if (!queryLower.empty()) {
+                bool matched = toLower(p.title).find(queryLower) != std::string::npos
+                    || toLower(p.description).find(queryLower) != std::string::npos
+                    || toLower(p.author.username).find(queryLower) != std::string::npos;
+                if (!matched) {
+                    for (auto const& pt : p.tags) {
+                        if (toLower(pt).find(queryLower) != std::string::npos) {
+                            matched = true;
+                            break;
+                        }
+                    }
+                }
+                if (!matched) continue;
             }
             out.push_back(p);
         }
@@ -332,16 +341,26 @@ void ForumApi::listPosts(ListFilter const& filter, ListCallback cb) {
                 });
                 break;
         }
+        int const page = std::max(1, filter.page);
+        int const limit = std::max(1, filter.limit);
+        size_t const start = static_cast<size_t>(page - 1) * static_cast<size_t>(limit);
+        if (start >= out.size()) {
+            out.clear();
+        } else {
+            size_t const count = std::min(static_cast<size_t>(limit), out.size() - start);
+            out = std::vector<Post>(out.begin() + static_cast<std::ptrdiff_t>(start),
+                                    out.begin() + static_cast<std::ptrdiff_t>(start + count));
+        }
         dispatchForumCallback(cb, makeOk(std::move(out)));
     };
 
-    if (!hasServer()) { dispatchForumFallback(fallback); return; }
+    if (!hasServer()) { dispatchForumCallback(fallback); return; }
 
     HttpClient::get().get(forumBaseUrl() + "/api/forum/posts" + qs,
-        [cb, fallback](bool ok, std::string const& resp) {
-            if (!ok) { dispatchForumFallback(fallback); return; }
+        [this, cb, fallback, filter](bool ok, std::string const& resp) {
+            if (!ok) { dispatchForumCallback(fallback); return; }
             auto parsed = matjson::parse(resp);
-            if (!parsed.isOk()) { dispatchForumFallback(fallback); return; }
+            if (!parsed.isOk()) { dispatchForumCallback(fallback); return; }
             auto root = parsed.unwrap();
             std::vector<Post> posts;
             if (root.isArray()) {
@@ -349,6 +368,26 @@ void ForumApi::listPosts(ListFilter const& filter, ListCallback cb) {
             } else if (root["posts"].isArray()) {
                 for (auto const& v : root["posts"]) posts.push_back(Post::fromJson(v));
             }
+            m_lastListOffline = false;
+            if (filter.page == 1 && filter.tags.empty() && filter.query.empty() && filter.sort == SortMode::Recent) {
+                std::vector<Post> nextCache;
+                nextCache.reserve(posts.size() + 8);
+                for (auto const& existing : m_cache) {
+                    if (existing.id.rfind("local-", 0) == 0) {
+                        nextCache.push_back(existing);
+                    }
+                }
+                for (auto const& srvPost : posts) {
+                    if (!srvPost.id.empty()) nextCache.push_back(srvPost);
+                }
+                m_cache = std::move(nextCache);
+            } else {
+                for (auto const& srvPost : posts) {
+                    if (!srvPost.id.empty()) upsertCache(srvPost);
+                }
+            }
+            if (m_cache.size() > 100) m_cache.resize(100);
+            saveCache();
             dispatchForumCallback(cb, makeOk(std::move(posts)));
         });
 }
@@ -362,14 +401,14 @@ void ForumApi::getPost(std::string const& postId, PostCallback cb) {
         }
     };
 
-    if (!hasServer()) { dispatchForumFallback(fallback); return; }
+    if (!hasServer()) { dispatchForumCallback(fallback); return; }
 
     int accountId = Author::currentUser().accountID;
     HttpClient::get().get(forumBaseUrl() + "/api/forum/posts/" + urlEncode(postId) + "?_aid=" + std::to_string(accountId),
         [cb, fallback](bool ok, std::string const& resp) {
-            if (!ok) { dispatchForumFallback(fallback); return; }
+            if (!ok) { dispatchForumCallback(fallback); return; }
             auto parsed = matjson::parse(resp);
-            if (!parsed.isOk()) { dispatchForumFallback(fallback); return; }
+            if (!parsed.isOk()) { dispatchForumCallback(fallback); return; }
             dispatchForumCallback(cb, makeOk(Post::fromJson(parsed.unwrap())));
         });
 }
@@ -434,6 +473,12 @@ void ForumApi::createPost(CreatePostRequest const& req, PostCallback cb) {
                 return;
             }
             auto srv = Post::fromJson(parsed.unwrap());
+            for (auto it = m_cache.begin(); it != m_cache.end(); ++it) {
+                if (it->id == localId) {
+                    m_cache.erase(it);
+                    break;
+                }
+            }
             upsertCache(srv);
             saveCache();
             markPostCooldown(3);
@@ -460,7 +505,13 @@ void ForumApi::deletePost(std::string const& postId, BoolCallback cb) {
 }
 
 void ForumApi::togglePostLike(std::string const& postId, BoolCallback cb) {
+    bool hadCached = false;
+    bool prevLiked = false;
+    int prevLikes = 0;
     if (auto* p = findCached(postId)) {
+        hadCached = true;
+        prevLiked = p->likedByMe;
+        prevLikes = p->likes;
         p->likedByMe = !p->likedByMe;
         p->likes += p->likedByMe ? 1 : -1;
         if (p->likes < 0) p->likes = 0;
@@ -472,7 +523,33 @@ void ForumApi::togglePostLike(std::string const& postId, BoolCallback cb) {
     matjson::Value body = matjson::makeObject({{"postId", postId}, {"author", Author::currentUser().toJson()}});
     HttpClient::get().postWithAuth(forumBaseUrl() + "/api/forum/posts/" + urlEncode(postId) + "/like",
         body.dump(),
-        [cb](bool ok, std::string const&) { dispatchForumCallback(cb, makeOk(ok)); });
+        [this, cb, postId, hadCached, prevLiked, prevLikes](bool ok, std::string const& resp) {
+            if (!ok) {
+                if (hadCached) {
+                    if (auto* p = findCached(postId)) {
+                        p->likedByMe = prevLiked;
+                        p->likes = prevLikes;
+                        saveCache();
+                    }
+                }
+                int code = extractHttpStatus(resp);
+                std::string msg = code == 401 ? "Login required to like posts." : "Failed to update like.";
+                dispatchForumCallback(cb, makeErr<bool>(msg));
+                return;
+            }
+            auto parsed = matjson::parse(resp);
+            if (parsed.isOk()) {
+                auto srv = Post::fromJson(parsed.unwrap());
+                if (!srv.id.empty()) {
+                    if (auto* p = findCached(postId)) {
+                        p->likes = srv.likes;
+                        p->likedByMe = srv.likedByMe;
+                        saveCache();
+                    }
+                }
+            }
+            dispatchForumCallback(cb, makeOk(true));
+        });
 }
 
 void ForumApi::reportPost(std::string const& postId, std::string const& reason, BoolCallback cb) {
@@ -502,13 +579,15 @@ void ForumApi::createReply(CreateReplyRequest const& req, ReplyCallback cb) {
     r.content       = req.content;
     r.createdAt     = nowEpoch();
 
-    if (auto* p = findCached(req.postId)) {
-        p->replies.push_back(r);
-        p->replyCount++;
-        saveCache();
+    if (!hasServer()) {
+        if (auto* p = findCached(req.postId)) {
+            p->replies.push_back(r);
+            p->replyCount++;
+            saveCache();
+        }
+        dispatchForumCallback(cb, makeOk(r));
+        return;
     }
-
-    if (!hasServer()) { dispatchForumCallback(cb, makeOk(r)); return; }
 
     matjson::Value body = matjson::makeObject({
         {"postId", req.postId},
@@ -520,21 +599,27 @@ void ForumApi::createReply(CreateReplyRequest const& req, ReplyCallback cb) {
     HttpClient::get().postWithAuth(
         forumBaseUrl() + "/api/forum/posts/" + urlEncode(req.postId) + "/replies",
         body.dump(),
-        [this, cb](bool ok, std::string const& resp) {
+        [this, cb, postId = req.postId](bool ok, std::string const& resp) {
             if (!ok) {
                 int code = extractHttpStatus(resp);
                 if (code == 429) {
                     markReplyCooldown(15);
                     dispatchForumCallback(cb, makeErr<Reply>("Rate limited. Please wait before replying again."));
                 } else {
-                    dispatchForumCallback(cb, makeErr<Reply>("Server error"));
+                    dispatchForumCallback(cb, makeErr<Reply>(code == 401 ? "Login required to reply." : "Server error"));
                 }
                 return;
             }
             auto parsed = matjson::parse(resp);
             if (!parsed.isOk()) { dispatchForumCallback(cb, makeErr<Reply>("Bad JSON")); return; }
+            auto srv = Reply::fromJson(parsed.unwrap());
+            if (auto* p = findCached(postId)) {
+                p->replies.push_back(srv);
+                p->replyCount = std::max(p->replyCount + 1, static_cast<int>(p->replies.size()));
+                saveCache();
+            }
             markReplyCooldown(3);
-            dispatchForumCallback(cb, makeOk(Reply::fromJson(parsed.unwrap())));
+            dispatchForumCallback(cb, makeOk(srv));
         });
 }
 
@@ -559,23 +644,63 @@ void ForumApi::deleteReply(std::string const& replyId, BoolCallback cb) {
 }
 
 void ForumApi::toggleReplyLike(std::string const& replyId, BoolCallback cb) {
+    bool hadCached = false;
+    bool prevLiked = false;
+    int prevLikes = 0;
     for (auto& p : m_cache) {
         for (auto& r : p.replies) {
             if (r.id == replyId) {
+                hadCached = true;
+                prevLiked = r.likedByMe;
+                prevLikes = r.likes;
                 r.likedByMe = !r.likedByMe;
                 r.likes += r.likedByMe ? 1 : -1;
                 if (r.likes < 0) r.likes = 0;
             }
         }
     }
-    saveCache();
+    if (hadCached) saveCache();
 
     if (!hasServer()) { dispatchForumCallback(cb, makeOk(true)); return; }
 
     matjson::Value body = matjson::makeObject({{"replyId", replyId}, {"author", Author::currentUser().toJson()}});
     HttpClient::get().postWithAuth(forumBaseUrl() + "/api/forum/replies/" + urlEncode(replyId) + "/like",
         body.dump(),
-        [cb](bool ok, std::string const&) { dispatchForumCallback(cb, makeOk(ok)); });
+        [this, cb, replyId, hadCached, prevLiked, prevLikes](bool ok, std::string const& resp) {
+            if (!ok) {
+                if (hadCached) {
+                    for (auto& p : m_cache) {
+                        for (auto& r : p.replies) {
+                            if (r.id == replyId) {
+                                r.likedByMe = prevLiked;
+                                r.likes = prevLikes;
+                            }
+                        }
+                    }
+                    saveCache();
+                }
+                int code = extractHttpStatus(resp);
+                std::string msg = code == 401 ? "Login required to like replies." : "Failed to update like.";
+                dispatchForumCallback(cb, makeErr<bool>(msg));
+                return;
+            }
+            auto parsed = matjson::parse(resp);
+            if (parsed.isOk()) {
+                auto srv = Reply::fromJson(parsed.unwrap());
+                if (!srv.id.empty()) {
+                    for (auto& p : m_cache) {
+                        for (auto& r : p.replies) {
+                            if (r.id == replyId) {
+                                r.likes = srv.likes;
+                                r.likedByMe = srv.likedByMe;
+                            }
+                        }
+                    }
+                    saveCache();
+                }
+            }
+            dispatchForumCallback(cb, makeOk(true));
+        });
 }
 
 void ForumApi::reportReply(std::string const& replyId, std::string const& reason, BoolCallback cb) {
@@ -600,12 +725,12 @@ void ForumApi::listTags(TagsCallback cb) {
         };
         dispatchForumCallback(cb, makeOk(std::move(defaults)));
     };
-    if (!hasServer()) { dispatchForumFallback(fallback); return; }
+    if (!hasServer()) { dispatchForumCallback(fallback); return; }
     HttpClient::get().get(forumBaseUrl() + "/api/forum/tags",
         [cb, fallback](bool ok, std::string const& resp) {
-            if (!ok) { dispatchForumFallback(fallback); return; }
+            if (!ok) { dispatchForumCallback(fallback); return; }
             auto parsed = matjson::parse(resp);
-            if (!parsed.isOk()) { dispatchForumFallback(fallback); return; }
+            if (!parsed.isOk()) { dispatchForumCallback(fallback); return; }
             auto root = parsed.unwrap();
             std::vector<std::string> out;
             if (root.isArray()) {
@@ -613,7 +738,7 @@ void ForumApi::listTags(TagsCallback cb) {
             } else if (root["tags"].isArray()) {
                 for (auto const& v : root["tags"]) out.push_back(jsonStr(v));
             }
-            if (out.empty()) { dispatchForumFallback(fallback); return; }
+            if (out.empty()) { dispatchForumCallback(fallback); return; }
             dispatchForumCallback(cb, makeOk(std::move(out)));
         });
 }

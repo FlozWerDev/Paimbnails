@@ -4,6 +4,7 @@
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/ScissorClipNode.hpp"
 #include "../../emotes/EmoteRenderer.hpp"
 #include "../../emotes/services/EmoteService.hpp"
@@ -308,10 +309,8 @@ void ProfileReviewsPopup::loadReviews() {
         }
         auto root = parsed.unwrap();
 
-        float avg = 0.f;
-        int count = 0;
-        if (root["average"].isNumber()) avg = static_cast<float>(root["average"].asDouble().unwrapOr(0.0));
-        if (root["count"].isNumber()) count = static_cast<int>(root["count"].asInt().unwrapOr(0));
+        float avg = paimon::json::floatOr(root["average"], 0.f);
+        int count = paimon::json::integerOr<int>(root["count"], 0);
 
         popup->applyResponse(avg, count, root["reviews"]);
     });
@@ -328,7 +327,7 @@ void ProfileReviewsPopup::applyResponse(float average, int count, matjson::Value
             if (!item.isObject()) continue;
             Review review;
             review.username = item["username"].asString().unwrapOr("???");
-            review.stars = static_cast<float>(item["stars"].asDouble().unwrapOr(0.0));
+            review.stars = paimon::json::floatOr(item["stars"], 0.f);
             review.message = item["message"].asString().unwrapOr("");
             review.bucket = std::clamp(static_cast<int>(std::lround(review.stars)), 1, 5);
             review.order = order++;
@@ -430,6 +429,7 @@ void ProfileReviewsPopup::rebuildList() {
     totalH = std::max(totalH, scrollH);
 
     auto* scroll = geode::ScrollLayer::create({scrollW, scrollH});
+    if (scroll) scroll->setAnchorPoint({0.f, 0.f});
     scroll->setPosition({kMargin + 4.f, kListY + 4.f});
     scroll->m_contentLayer->setContentSize({scrollW, totalH});
 

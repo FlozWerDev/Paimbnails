@@ -27,19 +27,25 @@ struct Timeline {
 template<class Commands, class IsSpawn>
 Timeline compileTimeline(Commands const& commands, IsSpawn isSpawn) {
     Timeline result;
-    for (std::size_t i = 0; i < commands.size();) {
-        auto const& command = commands[i];
+    std::vector<std::size_t> order;
+    for (std::size_t i = 0; i < commands.size(); ++i)
+        if (commands[i].enabled) order.push_back(i);
+    for (std::size_t k = 0; k < order.size();) {
+        auto const& command = commands[order[k]];
         float groupStart = result.duration;
-        std::size_t end = i + 1;
+        std::size_t end = k + 1;
         if (isSpawn(command)) {
             groupStart += bounded(command.delay, 0.f, 0.f, 30.f);
-            end = std::min(commands.size(), i + 1 + static_cast<std::size_t>(std::clamp(command.spawnCount, 0, 16)));
-            ++i;
+            end = std::min(order.size(), k + 1 + static_cast<std::size_t>(std::clamp(command.spawnCount, 0, 16)));
+            ++k;
         }
-        result.duration = groupStart;
-        for (; i < end; ++i) {
+        result.duration = std::max(result.duration, groupStart);
+        for (; k < end; ++k) {
+            auto i = order[k];
             if (isSpawn(commands[i])) continue; // nested groups are deliberately not recursive
-            float start = groupStart + bounded(commands[i].delay, 0.f, 0.f, 30.f);
+            float start = commands[i].startTime >= 0.f
+                ? bounded(commands[i].startTime, 0.f, 0.f, 30.f)
+                : groupStart + bounded(commands[i].delay, 0.f, 0.f, 30.f);
             float duration = bounded(commands[i].duration, .3f, .001f, 30.f);
             result.clips.push_back({i, start, duration});
             result.duration = std::max(result.duration, start + duration);

@@ -1,0 +1,159 @@
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <memory>
+#include <string>
+#include <vector>
+#include "src/features/profile-redesign/services/ProfileLevelCatalog.hpp"
+#include "src/features/profile-redesign/services/ProfileLayout.hpp"
+using namespace paimon::profile_redesign;
+
+struct Size { float width = 0, height = 0; };
+struct Point { float x = 0, y = 0; };
+struct CCNode {
+    virtual ~CCNode() = default;
+    Size size;
+    Point position, anchor;
+    float scale = 1;
+    bool visible = true, profile = false;
+    CCNode* parent = nullptr;
+    std::vector<std::unique_ptr<CCNode>> children;
+    static CCNode* create() { return new CCNode; }
+    void addChild(CCNode* child) { children.emplace_back(child); child->parent = this; }
+    void removeAllChildren() { children.clear(); }
+    void setContentSize(Size value) { size = value; }
+    void setPosition(Point value) { position = value; }
+    void setAnchorPoint(Point value) { anchor = value; }
+    void ignoreAnchorPointForPosition(bool) {}
+    void setScale(float value) { scale = value; }
+    void setVisible(bool value) { visible = value; }
+    float getContentWidth() const { return size.width; }
+    float getContentHeight() const { return size.height; }
+};
+struct Button : CCNode {
+    bool enabled = true;
+    void setEnabled(bool value) { enabled = value; }
+    void setOpacity(int) {}
+};
+struct Label : CCNode {
+    std::string text;
+    void setString(char const* value) { text = value; }
+    void limitLabelWidth(float, float, float) {}
+};
+struct Scroll : CCNode {
+    CCNode content;
+    CCNode* m_contentLayer = &content;
+    int getTouchPriority() const { return -500; }
+    void scrollToFromTop(float offset) {
+        content.position.y = size.height - content.size.height + offset;
+        // Geode GenericContentLayer culls its direct children when moved.
+        for (auto const& child : content.children) {
+            float const y = content.position.y + child->position.y;
+            float const height = child->size.height * child->scale;
+            float const top = child->scale * (y + (1 - child->anchor.y) * height);
+            float const bottom = child->scale * (y - child->anchor.y * height);
+            child->visible = top > 0 && bottom < size.height;
+        }
+    }
+    void scrollToTop() { scrollToFromTop(0); }
+};
+struct GJGameLevel {
+    static GJGameLevel* create(std::string const* dictionary, bool) {
+        static GJGameLevel level;
+        return dictionary ? &level : nullptr;
+    }
+};
+struct GameLevelManager {
+    static std::string const* responseToDict(std::string const& encoded, bool) { return &encoded; }
+};
+struct LevelCell : CCNode {
+    float naturalWidth, naturalHeight;
+    bool loadedInProfile = false, loadedWithSize = false;
+    static LevelCell* create(float width, float height) {
+        auto* cell = new LevelCell;
+        cell->naturalWidth = width;
+        cell->naturalHeight = height;
+        return cell;
+    }
+    void loadFromLevel(GJGameLevel*) {
+        loadedWithSize = size.width == naturalWidth && size.height == naturalHeight;
+        for (auto* node = parent; node; node = node->parent) loadedInProfile |= node->profile;
+    }
+};
+void prepareCellMenus(CCNode*, int) {}
+char const* localized(char const*, char const* english) { return english; }
+namespace log { template<class... Args> void warn(char const*, Args&&...) {} }
+
+struct ProfileLevelsPanel : CCNode {
+    ProfileLevelCatalog m_catalog;
+    std::size_t m_page = 0;
+    std::vector<GJGameLevel*> m_visibleLevels;
+    Scroll* m_scroll;
+    Button* m_retry;
+    Button* m_previous;
+    Button* m_next;
+    Label* m_pageLabel;
+    void showStatus(std::string const&) { m_scroll->content.removeAllChildren(); }
+    void showError() { assert(false && "Unexpected rendering error"); }
+    void renderPage();
+};
+@@function|src/features/profile-redesign/services/ProfileLevelsPanel.cpp|void ProfileLevelsPanel::renderPage(@@
+
+void inspectCells(CCNode const& node) {
+    if (auto const* cell = dynamic_cast<LevelCell const*>(&node)) {
+        assert(cell->loadedInProfile && cell->loadedWithSize);
+    }
+    for (auto const& child : node.children) inspectCells(*child);
+}
+
+int main() {
+    for (auto const size : {Size{440, 290}, Size{360, 280}, Size{480, 320}, Size{600, 400}}) {
+        auto const layout = profileLayout(280, 160, size.width, size.height);
+        Scroll scroll;
+        scroll.size = {layout.activity.width - 8, layout.activity.height - 50};
+        Button retry, previous, next;
+        Label label;
+        ProfileLevelsPanel panel;
+        panel.profile = true;
+        scroll.content.parent = &panel;
+        panel.m_scroll = &scroll;
+        panel.m_retry = &retry;
+        panel.m_previous = &previous;
+        panel.m_next = &next;
+        panel.m_pageLabel = &label;
+        std::string response;
+        for (int id = 1; id <= 23; ++id) {
+            if (!response.empty()) response += '|';
+            response += fmt::format("1:{}:6:42:14:{}", id, id);
+        }
+        assert(panel.m_catalog.appendResponse(response + "###23:0:30", 42));
+        for (std::size_t page = 0; page < panel.m_catalog.pageCount(); ++page) {
+            panel.m_page = page;
+            panel.renderPage();
+            inspectCells(scroll.content);
+            auto const count = panel.m_catalog.page(page).size();
+            assert(scroll.content.children.size() == count);
+            assert(previous.enabled == (page > 0));
+            assert(next.enabled == (page + 1 < panel.m_catalog.pageCount()));
+            auto const& first = *scroll.content.children[0];
+            auto const& second = *scroll.content.children[1];
+            float const offset = scroll.content.position.y;
+            assert(first.visible && second.visible);
+            assert(second.position.y + offset >= -.001f);
+            assert(first.position.y + first.size.height * first.scale + offset <= scroll.size.height + .001f);
+            assert(second.position.y + second.size.height * second.scale <= first.position.y);
+            // Every intersecting row stays visible throughout wheel/drag scrolling.
+            float const maxOffset = scroll.content.size.height - scroll.size.height;
+            for (float delta = 0; delta <= maxOffset; delta += .5f) {
+                scroll.scrollToFromTop(delta);
+                for (auto const& row : scroll.content.children) {
+                    float const bottom = row->position.y + scroll.content.position.y;
+                    bool const intersects = bottom < scroll.size.height && bottom + row->size.height * row->scale > 0;
+                    assert(row->visible == intersects);
+                }
+            }
+        }
+    }
+}

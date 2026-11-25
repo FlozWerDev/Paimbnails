@@ -1,0 +1,98 @@
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <iostream>
+#include <limits>
+#include <type_traits>
+#include <vector>
+
+enum enumKeyCodes {
+    KEY_None = 0, KEY_Backspace = 8, KEY_Tab = 9, KEY_Enter = 13,
+    KEY_Shift = 16, KEY_Control = 17, KEY_Alt = 18, KEY_Space = 32,
+    KEY_PageUp = 33, KEY_PageDown = 34, KEY_End = 35, KEY_Home = 36,
+    KEY_Insert = 45, KEY_Delete = 46, KEY_Zero = 48, KEY_Nine = 57,
+    KEY_A = 65, KEY_Q = 81, KEY_Z = 90, KEY_LeftWindowsKey = 91,
+    KEY_F1 = 112, KEY_F12 = 123
+};
+namespace paimon::keybinds {
+enum class ExtendedKind { None, Keyboard, Mouse, ScrollUp };
+enum class MouseButton { Left, Right, Middle, Button4, Button5 };
+struct ExtendedKeybind {
+    ExtendedKind kind = ExtendedKind::None;
+    enumKeyCodes key = KEY_None;
+    MouseButton button = MouseButton::Left;
+};
+ExtendedKeybind saved;
+ExtendedKeybind loadExtendedKeybind(char const*) { return saved; }
+void saveExtendedKeybind(char const*, ExtendedKeybind const& button) { saved = button; }
+}
+struct Mod {
+    float seconds = 1.5f;
+    bool enabled = true;
+    static Mod* get() { static Mod mod; return &mod; }
+    template<class T> T getSavedValue(char const*, T) {
+        if constexpr (std::is_same_v<T, bool>) return enabled;
+        else return seconds;
+    }
+    template<class T> void setSavedValue(char const*, T value) {
+        if constexpr (std::is_same_v<T, bool>) enabled = value;
+        else seconds = value;
+    }
+};
+namespace paimon::quickhub {
+struct QuickHubManager {
+    static constexpr float kHoldSecondsMin = .3f, kHoldSecondsMax = 5.f, kHoldSecondsDefault = 1.5f;
+    static constexpr char const* kHoldSecondsKey = "seconds";
+    static constexpr char const* kHoldCtrlKey = "enabled";
+    inline static int aborted = 0;
+    static void abortActiveHold() { ++aborted; }
+    static bool isHoldCtrlEnabled();
+    static void setHoldCtrlEnabled(bool);
+    static float holdSeconds();
+    static void setHoldSeconds(float);
+    static paimon::keybinds::ExtendedKeybind holdButton();
+    static void setHoldButton(paimon::keybinds::ExtendedKeybind const&);
+    static std::vector<paimon::keybinds::ExtendedKeybind> const& holdButtonOptions();
+};
+@@function|src/features/quick-hub/services/QuickHubManager.cpp|bool QuickHubManager::isHoldCtrlEnabled@@
+@@function|src/features/quick-hub/services/QuickHubManager.cpp|void QuickHubManager::setHoldCtrlEnabled@@
+@@function|src/features/quick-hub/services/QuickHubManager.cpp|std::vector<paimon::keybinds::ExtendedKeybind> const& QuickHubManager::holdButtonOptions@@
+@@function|src/features/quick-hub/services/QuickHubManager.cpp|paimon::keybinds::ExtendedKeybind QuickHubManager::holdButton@@
+@@function|src/features/quick-hub/services/QuickHubManager.cpp|void QuickHubManager::setHoldButton@@
+@@function|src/features/quick-hub/services/QuickHubManager.cpp|float QuickHubManager::holdSeconds@@
+@@function|src/features/quick-hub/services/QuickHubManager.cpp|void QuickHubManager::setHoldSeconds@@
+}
+int main() {
+    using Manager = paimon::quickhub::QuickHubManager;
+    using namespace paimon::keybinds;
+    assert(Manager::holdSeconds() == 1.5f);
+    Manager::setHoldSeconds(0.f);
+    assert(Manager::holdSeconds() == .3f);
+    Manager::setHoldSeconds(99.f);
+    assert(Manager::holdSeconds() == 5.f);
+    Manager::setHoldSeconds(1.64f);
+    assert(Manager::holdSeconds() == 1.6f);
+    Mod::get()->seconds = std::numeric_limits<float>::quiet_NaN();
+    assert(Manager::holdSeconds() == 1.5f);
+    Manager::setHoldSeconds(std::numeric_limits<float>::infinity());
+    assert(Manager::holdSeconds() == 1.5f);
+    assert(Manager::holdButton().key == KEY_Control);
+    ExtendedKeybind key;
+    key.kind = ExtendedKind::Keyboard;
+    key.key = KEY_Q;
+    Manager::setHoldButton(key);
+    assert(Manager::holdButton().kind == ExtendedKind::Keyboard);
+    assert(Manager::holdButton().key == KEY_Q);
+    key.kind = ExtendedKind::Mouse;
+    key.button = MouseButton::Button4;
+    Manager::setHoldButton(key);
+    assert(Manager::holdButton().kind == ExtendedKind::Mouse);
+    assert(Manager::holdButton().button == MouseButton::Button4);
+    key.kind = ExtendedKind::ScrollUp;
+    Manager::setHoldButton(key);
+    assert(Manager::holdButton().key == KEY_Control);
+    Manager::setHoldCtrlEnabled(false);
+    assert(!Manager::isHoldCtrlEnabled());
+    assert(Manager::aborted == 8);
+    std::cout << "PASS: persisted duration limits, invalid values, keyboard/mouse and setting cancellation\n";
+}

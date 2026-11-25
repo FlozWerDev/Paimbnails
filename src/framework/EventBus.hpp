@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <algorithm>
 #include <functional>
 #include <string>
 #include <vector>
@@ -36,8 +37,17 @@ public:
     }
 
     void removeSubscriber(SubscriptionHandle handle) override {
-        std::lock_guard lock(m_entriesMutex);
-        std::erase_if(m_entries, [handle](Entry const& e) { return e.handle == handle; });
+        // destroyed after unlocking: the callback can hold the last reference
+        // to a node whose destructor unsubscribes again.
+        std::function<void(Event const&)> removed;
+        {
+            std::lock_guard lock(m_entriesMutex);
+            auto it = std::find_if(m_entries.begin(), m_entries.end(),
+                [handle](Entry const& e) { return e.handle == handle; });
+            if (it == m_entries.end()) return;
+            removed.swap(it->callback);
+            m_entries.erase(it);
+        }
     }
 
     void dispatch(Event const& event) const {
@@ -83,21 +93,35 @@ public:
     }
 
     void unsubscribe(SubscriptionHandle handle) {
-        std::lock_guard lock(m_mutex);
-        auto it = m_handleToType.find(handle);
-        if (it == m_handleToType.end()) return;
-        auto listIt = m_subscribers.find(it->second);
-        if (listIt == m_subscribers.end()) return;
-        listIt->second->removeSubscriber(handle);
-        m_handleToType.erase(it);
+        std::shared_ptr<ISubscriberList> list;
+        {
+            std::lock_guard lock(m_mutex);
+            auto it = m_handleToType.find(handle);
+            if (it == m_handleToType.end()) return;
+            auto listIt = m_subscribers.find(it->second);
+            m_handleToType.erase(it);
+            if (listIt == m_subscribers.end()) return;
+            list = listIt->second;
+        }
+        // outside m_mutex: dropping the callback can run a node destructor
+        // that calls unsubscribe() again.
+        list->removeSubscriber(handle);
     }
 
     void beginShutdown() {
-        std::lock_guard lock(m_mutex);
-        m_shuttingDown.store(true, std::memory_order_release);
         // weakref<ccnode> captured in lambdas die in atexit; clear them here instead.
-        m_subscribers.clear();
-        m_handleToType.clear();
+        // the lambdas are destroyed after unlocking: one can release the last
+        // reference to a node (e.g. a menulayer kept only by the weakref pool)
+        // whose fields destructor calls unsubscribe(). locking m_mutex again
+        // on the same thread throws, and inside a destructor that terminates.
+        decltype(m_subscribers) subscribers;
+        decltype(m_handleToType) handles;
+        {
+            std::lock_guard lock(m_mutex);
+            m_shuttingDown.store(true, std::memory_order_release);
+            subscribers.swap(m_subscribers);
+            handles.swap(m_handleToType);
+        }
     }
 
     template <typename Event>

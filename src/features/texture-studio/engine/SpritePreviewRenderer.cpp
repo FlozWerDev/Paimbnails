@@ -47,7 +47,9 @@ MaskBuildResult SpritePreviewRenderer::renderMasks(
     ClusteringOptions copts;
     copts.k = std::clamp(options.clusterPrecision, 2, 10);
     auto clusters   = ColorClustering::compute(framePixels, copts);
-    auto classified = ClusterClassifier::classify(clusters, framePixels);
+    auto classified = options.groupUiShades
+        ? ClusterClassifier::classifyUi(clusters, framePixels)
+        : ClusterClassifier::classify(clusters, framePixels);
 
     MaskBuilderOptions mopts;
     mopts.softness   = options.maskSoftness;

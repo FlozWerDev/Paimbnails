@@ -108,7 +108,7 @@ inline float cubicBezier(float t, float x1, float y1, float x2, float y2) {
     return sample(y1, y2, s);
 }
 
-// Fold in the damped spring's residual so t = 1 lands exactly.
+// fold in the damped spring's residual so t = 1 lands exactly.
 inline float springEase(float t, float overshoot) {
     float amount = limit(overshoot, .035f, 0.f, .25f);
     float zeta = 1.f;
@@ -145,7 +145,7 @@ inline float smooth01(float value) {
     return x * x * (3.f - 2.f * x);
 }
 
-// Lengths are tuned for GD's 320-point design height, so smaller stages scale them down.
+// lengths are tuned for GD's 320-point design height, so smaller stages scale them down.
 inline float unitScale(float height) {
     return limit(height / 320.f, 1.f, .05f, 4.f);
 }
@@ -191,7 +191,7 @@ inline Rect offsetRect(Rect rect, float dx, float dy) {
     return {rect.x + dx, rect.y + dy, rect.width, rect.height};
 }
 
-// Negative expansion (spring undershoot on return) shrinks the start rect instead of inverting it.
+// negative expansion (spring undershoot on return) shrinks the start rect instead of inverting it.
 inline Rect expandRect(Rect from, Rect to, float expansion) {
     if (expansion < 0.f) {
         return scaleRect(from, std::max(.2f, 1.f + expansion),
@@ -276,7 +276,7 @@ inline Frame evaluate(Config const& config, Rect origin, float width, float heig
             if (config.style == Style::App && config.buttonBlend > 0.f) {
                 float blend = smooth01(shown / config.buttonBlend);
                 foreground.opacity = blend;
-                // The opaque button patch sits under the fading layer, so the crossfade never shows the background.
+                // the opaque button patch sits under the fading layer, so the crossfade never shows the background.
                 button.opacity = blend < 1.f ? 1.f : 0.f;
                 button.clip = foreground.clip;
                 button.radius = foreground.radius;
@@ -300,7 +300,7 @@ inline Frame evaluate(Config const& config, Rect origin, float width, float heig
             if (travel >= 0.f) {
                 foreground.clip = foreground.content = offsetRect(screen, dx * travel, dy * travel);
             } else {
-                // Overshoot stretches the layer past its leading edge instead of opening a gap behind it.
+                // overshoot stretches the layer past its leading edge instead of opening a gap behind it.
                 float stretch = -travel;
                 Rect clip = screen;
                 if (dx != 0.f) clip.width += width * stretch;
@@ -390,7 +390,7 @@ inline Config reducedMotionConfig(Config config) {
     return config;
 }
 
-// A long first frame usually carries the capture cost, so it advances one nominal frame.
+// a long first frame usually carries the capture cost, so it advances one nominal frame.
 inline float frameStep(float dt, bool first) {
     if (!std::isfinite(dt) || dt <= 0.f) return 0.f;
     return std::min(dt, first ? 1.f / 60.f : .1f);

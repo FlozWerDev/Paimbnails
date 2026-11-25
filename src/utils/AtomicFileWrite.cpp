@@ -5,6 +5,7 @@
 #include <chrono>
 #include <fstream>
 #include <limits>
+#include <mutex>
 #include <utility>
 
 #ifdef GEODE_IS_WINDOWS
@@ -51,6 +52,11 @@ bool writeAtomically(std::filesystem::path const& path, std::span<uint8_t const>
     }
     // windows needs an explicit replace flag; rename replaces on posix.
 #ifdef GEODE_IS_WINDOWS
+    // concurrent MoveFileExW calls can transiently deny access to the same
+    // destination even after both temporary streams have closed. Keep file
+    // creation/writes parallel and serialize only publication in this process.
+    static std::mutex publishMutex;
+    std::lock_guard publishLock(publishMutex);
     return MoveFileExW(temp.path.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING) != 0;
 #else
     std::filesystem::rename(temp.path, path, ec);

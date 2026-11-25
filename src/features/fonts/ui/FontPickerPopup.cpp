@@ -1,247 +1,217 @@
 #include "FontPickerPopup.hpp"
-#include "../../../utils/DynamicPopupRegistry.hpp"
-#include "../../../utils/SpriteHelper.hpp"
 #include "../../../ui/PaimonUI.hpp"
-#include <Geode/binding/CCMenuItemSpriteExtra.hpp>
+#include "../../../utils/Localization.hpp"
+#include <Geode/ui/Notification.hpp>
+#include <Geode/ui/Scrollbar.hpp>
+#include <algorithm>
+#include <memory>
 
 using namespace geode::prelude;
 using namespace cocos2d;
 using namespace paimon::fonts;
 
-static constexpr float POPUP_W   = 360.f;
-static constexpr float POPUP_H   = 218.f;
-static constexpr float PAD       = 8.f;
-static constexpr float PREVIEW_H = 36.f;
-static constexpr float SIDEBAR_W = 76.f;
-static constexpr float CELL_SIZE = 44.f;
-static constexpr float CELL_GAP  = 4.f;
+namespace {
+constexpr float POPUP_W = 400.f;
+constexpr float POPUP_H = 300.f;
+constexpr float GRID_X = 22.f;
+constexpr float GRID_Y = 59.f;
+constexpr float GRID_W = 348.f;
+constexpr float GRID_H = 124.f;
+constexpr float CELL_W = 52.f;
+constexpr float CELL_H = 38.f;
+constexpr float CELL_GAP = 5.f;
+constexpr int GRID_COLS = 6;
 
-static std::vector<std::pair<std::string, std::string>> getGDFonts() {
-    std::vector<std::pair<std::string, std::string>> v;
-    v.reserve(59);
-    for (int i = 1; i <= 59; ++i) {
-        char id[8], file[32];
-        std::snprintf(id, sizeof(id), "%02d", i);
-        std::snprintf(file, sizeof(file), "gjFont%02d.fnt", i);
-        v.push_back({id, file});
-    }
-    return v;
+struct QuickFont {
+    char const* spanish;
+    char const* english;
+    char const* file;
+    char const* id;
+};
+constexpr QuickFont QUICK_FONTS[] = {
+    {"Grande", "Big", "bigFont.fnt", "big"},
+    {"Chat", "Chat", "chatFont.fnt", "chat"},
+    {"Dorada", "Gold", "goldFont.fnt", "gold"},
+};
+
+char const* localized(char const* spanish, char const* english) {
+    return Localization::get().getLanguage() == Localization::Language::SPANISH ? spanish : english;
 }
 
-FontPickerPopup* FontPickerPopup::create(
-        CopyableFunction<void(std::string const&)> onSelect) {
-    auto ret = new FontPickerPopup();
-    if (ret && ret->init(std::move(onSelect))) {
-        ret->autorelease();
-        return ret;
-    }
-    CC_SAFE_DELETE(ret);
-    return nullptr;
+void fitCellBackground(ButtonSprite* background) {
+    background->setScaleX(CELL_W / background->getContentWidth());
+    background->setScaleY(CELL_H / background->getContentHeight());
 }
 
-bool FontPickerPopup::init(
-        CopyableFunction<void(std::string const&)> onSelect) {
+// a clipped row may still have a menu hitbox outside the visible list.
+class FontGridMenu : public CCMenu {
+public:
+    static FontGridMenu* create(ScrollLayer* scroll) {
+        auto menu = std::make_unique<FontGridMenu>();
+        if (!menu->init()) return nullptr;
+        menu->m_scroll = scroll;
+        menu->autorelease();
+        return menu.release();
+    }
+
+    bool ccTouchBegan(CCTouch* touch, CCEvent* event) override {
+        return containsTouch(touch) && CCMenu::ccTouchBegan(touch, event);
+    }
+
+    void ccTouchEnded(CCTouch* touch, CCEvent* event) override {
+        if (containsTouch(touch)) CCMenu::ccTouchEnded(touch, event);
+        else CCMenu::ccTouchCancelled(touch, event);
+    }
+
+private:
+    ScrollLayer* m_scroll = nullptr;
+
+    bool containsTouch(CCTouch* touch) const {
+        auto const point = m_scroll->convertToNodeSpace(touch->getLocation());
+        return CCRect{CCPointZero, m_scroll->getContentSize()}.containsPoint(point);
+    }
+};
+}
+
+FontPickerPopup* FontPickerPopup::create(CopyableFunction<void(std::string const&)> onSelect) {
+    auto popup = std::make_unique<FontPickerPopup>();
+    if (!popup->init(std::move(onSelect))) return nullptr;
+    popup->autorelease();
+    return popup.release();
+}
+
+bool FontPickerPopup::init(CopyableFunction<void(std::string const&)> onSelect) {
+    if (!PaimonPopup::init(POPUP_W, POPUP_H)) return false;
     m_onSelect = std::move(onSelect);
+    setID("font-picker-popup"_spr);
+    setTitle(localized("Fuentes", "Fonts"));
+    addInfoButton(localized("Fuentes", "Fonts"),
+        localized("Elige una fuente para tu texto. <cg>Fuentes GD</c> incluye las 59 fuentes del juego. "
+            "<cy>Personalizada</c> permite usar un archivo .fnt de los recursos del juego. "
+            "<cr>Normal</c> restaura la fuente original.",
+            "Choose a font for your text. <cg>GD Fonts</c> includes the game's 59 numbered fonts. "
+            "<cy>Custom</c> accepts a .fnt file from the game resources. "
+            "<cr>Default</c> restores the original font."));
 
-    if (!PaimonPopup::init(POPUP_W, POPUP_H))
-        return false;
-    paimon::markDynamicPopup(this);
+    auto* tabMenu = paimon::ui::makeZeroMenu("font-tabs-menu"_spr);
+    m_mainLayer->addChild(tabMenu, 3);
+    m_tabGD = paimon::ui::makeButton(localized("Fuentes GD", "GD Fonts"),
+        [this] { switchTab(Tab::GDFonts); }, paimon::ui::Btn::Green, 130.f, .65f, "bigFont.fnt");
+    m_tabGD->setID("font-tab-gd"_spr);
+    m_tabGD->setPosition({130.f, 254.f});
+    tabMenu->addChild(m_tabGD);
+    m_tabCustom = paimon::ui::makeButton(localized("Personalizada", "Custom"),
+        [this] { switchTab(Tab::Custom); }, paimon::ui::Btn::Gray, 130.f, .65f, "bigFont.fnt");
+    m_tabCustom->setID("font-tab-custom"_spr);
+    m_tabCustom->setPosition({270.f, 254.f});
+    tabMenu->addChild(m_tabCustom);
+    paimon::ui::matchButtonLabels({m_tabGD, m_tabCustom});
 
-    if (m_closeBtn) m_closeBtn->setVisible(false);
-
-    this->setTitle("Fonts");
-    this->addInfoButton("Font Picker",
-        "Insert a <cy>font tag</c> into your text. <cg>GD Fonts</c> are the game's "
-        "numbered fonts; <co>Custom</c> lets you type any <cy>.fnt</c> name present in "
-        "the game resources. <cr>None</c> clears the font back to default.");
-
-    float pvW = POPUP_W - PAD * 2;
-    float pvY = POPUP_H - PAD - PREVIEW_H - 24.f;
-
-    auto pvBg = paimon::ui::makeInset({pvW, PREVIEW_H}, 230);
-    pvBg->setPosition({PAD, pvY});
-    m_mainLayer->addChild(pvBg, 1);
-
+    auto* previewBackground = paimon::ui::makeInset({372.f, 42.f}, 110);
+    previewBackground->setPosition({14.f, 198.f});
+    m_mainLayer->addChild(previewBackground, 1);
     m_previewContainer = CCNode::create();
-    m_previewContainer->setContentSize({pvW, PREVIEW_H});
-    m_previewContainer->setPosition({PAD, pvY});
+    m_previewContainer->setID("font-preview"_spr);
+    m_previewContainer->setContentSize({372.f, 42.f});
+    m_previewContainer->setPosition({14.f, 198.f});
     m_mainLayer->addChild(m_previewContainer, 2);
-
-    m_previewLabel = CCLabelBMFont::create("Pick a font!", "chatFont.fnt");
-    m_previewLabel->setScale(0.32f);
-    m_previewLabel->setPosition({pvW / 2.f, PREVIEW_H / 2.f});
-    m_previewLabel->setColor(paimon::ui::palette::muted);
+    auto* previewTitle = paimon::ui::makeTitle(localized("Vista previa", "Preview"), 100.f, .35f);
+    previewTitle->setAnchorPoint({0.f, .5f});
+    previewTitle->setPosition({12.f, 29.f});
+    m_previewContainer->addChild(previewTitle);
+    m_previewLabel = CCLabelBMFont::create("", "chatFont.fnt");
+    m_previewLabel->setAnchorPoint({0.f, .5f});
+    m_previewLabel->setPosition({12.f, 13.f});
     m_previewContainer->addChild(m_previewLabel);
 
-    float botH = pvY - PAD;
-    float botY = PAD;
-    float botW = POPUP_W - PAD * 2;
-
-    auto botBg = paimon::ui::makeInset({botW, botH}, 90);
-    botBg->setPosition({PAD, botY});
-    m_mainLayer->addChild(botBg, 1);
-
-    float sideX = PAD + 4;
-
-    m_sideMenu = CCMenu::create();
-    m_sideMenu->setID("font-sidebar-menu"_spr);
-    m_sideMenu->setContentSize({SIDEBAR_W, botH - 4.f});
-    m_sideMenu->setAnchorPoint({0.f, 1.f});
-    m_sideMenu->ignoreAnchorPointForPosition(false);
-    m_sideMenu->setPosition({sideX, botY + botH - 2.f});
-    m_sideMenu->setLayout(
-        ColumnLayout::create()
-            ->setGap(4.f)
-            ->setAxisAlignment(AxisAlignment::Start)
-            ->setCrossAxisAlignment(AxisAlignment::Center)
-            ->setAxisReverse(true)
-    );
-    m_mainLayer->addChild(m_sideMenu, 3);
-
-    auto makeTabBtn = [&](const char* text, SEL_MenuHandler sel) -> CCMenuItemSpriteExtra* {
-        auto spr = paimon::ui::makeButtonSprite(text, paimon::ui::Btn::Gray,
-            SIDEBAR_W - 8.f, 0.5f, "bigFont.fnt");
-        return CCMenuItemSpriteExtra::create(spr, this, sel);
-    };
-
-    m_tabGD = makeTabBtn("GD Fonts",
-        menu_selector(FontPickerPopup::onTabGD));
-    m_sideMenu->addChild(m_tabGD);
-
-    m_tabCustom = makeTabBtn("Custom",
-        menu_selector(FontPickerPopup::onTabCustom));
-    m_sideMenu->addChild(m_tabCustom);
-
-    auto divLine = paimon::ui::makeDivider(SIDEBAR_W - 16.f);
-    m_sideMenu->addChild(divLine);
-
-    auto qpLabel = paimon::ui::makeLabel("Quick Pick", SIDEBAR_W - 10.f, 0.3f,
-        paimon::ui::palette::gold);
-    m_sideMenu->addChild(qpLabel);
-
-    struct QuickFont { const char* display; const char* fontFile; const char* fontId; };
-    QuickFont quickFonts[] = {
-        {"Big",  "bigFont.fnt",  "big"},
-        {"Chat", "chatFont.fnt", "chat"},
-        {"Gold", "goldFont.fnt", "gold"},
-    };
-
-    float qpBtnH = 18.f;
-
-    for (int i = 0; i < 3; ++i) {
-        float bw = SIDEBAR_W - 8;
-        auto container = CCNode::create();
-        container->setContentSize({bw, qpBtnH});
-
-        auto cellBg = paimon::ui::makeInset({bw, qpBtnH}, 150);
-        cellBg->setPosition({0, 0});
-        container->addChild(cellBg);
-
-        auto lbl = CCLabelBMFont::create(quickFonts[i].display, quickFonts[i].fontFile);
-        if (lbl) {
-            float maxW = bw - 8.f;
-            float scX = maxW / lbl->getContentSize().width;
-            float scY = (qpBtnH - 6.f) / lbl->getContentSize().height;
-            lbl->setScale(std::min({scX, scY, 0.28f}));
-            lbl->setPosition({bw / 2, qpBtnH / 2});
-            container->addChild(lbl, 1);
-        }
-
-        auto btn = CCMenuItemSpriteExtra::create(
-            container, this, menu_selector(FontPickerPopup::onQuickPick));
-        btn->setUserObject(CCString::create(quickFonts[i].fontId));
-        m_sideMenu->addChild(btn);
-    }
-
-    {
-        auto spr = paimon::ui::makeButtonSprite("None", paimon::ui::Btn::Red,
-            SIDEBAR_W - 8.f, 0.4f, "bigFont.fnt");
-        auto btn = CCMenuItemSpriteExtra::create(
-            spr, this, menu_selector(FontPickerPopup::onRemoveFont));
-        m_sideMenu->addChild(btn);
-    }
-
-    m_sideMenu->updateLayout();
-
-    float divX = PAD + SIDEBAR_W + 4;
-    auto divider = paimon::ui::makeInset({2.f, botH - 8.f}, 70);
-    divider->setPosition({divX, botY + 4.f});
-    m_mainLayer->addChild(divider, 2);
-
-    float gridX = divX + 6.f;
-    float gridW = PAD + botW - gridX + PAD;
-    float gridH = botH - 4.f;
-
-    m_scroll = ScrollLayer::create({gridW, gridH});
-    m_scroll->setPosition({gridX, botY + 2.f});
+    auto* gridBackground = paimon::ui::makeInset({372.f, 138.f}, 90);
+    gridBackground->setPosition({14.f, 52.f});
+    m_mainLayer->addChild(gridBackground, 1);
+    m_scroll = ScrollLayer::create({GRID_W, GRID_H});
+    if (m_scroll) m_scroll->setAnchorPoint({0.f, 0.f});
+    m_scroll->setID("font-grid-scroll"_spr);
+    m_scroll->setPosition({GRID_X, GRID_Y});
+    m_scroll->setStealingTouches(true);
     m_mainLayer->addChild(m_scroll, 3);
+    m_scrollbar = Scrollbar::create(m_scroll);
+    m_scrollbar->setID("font-grid-scrollbar"_spr);
+    m_scrollbar->setPosition({380.f, GRID_Y + GRID_H * .5f});
+    m_mainLayer->addChild(m_scrollbar, 4);
 
     m_contentNode = CCNode::create();
-    m_contentNode->setContentSize({gridW, gridH});
+    m_contentNode->setAnchorPoint({0.f, 0.f});
+    m_contentNode->ignoreAnchorPointForPosition(false);
     m_scroll->m_contentLayer->addChild(m_contentNode);
+    buildGDFontGrid();
 
     m_customContainer = CCNode::create();
-    m_customContainer->setContentSize({gridW, gridH});
-    m_customContainer->setPosition({gridX, botY + 2.f});
-    m_customContainer->setVisible(false);
-    m_mainLayer->addChild(m_customContainer, 4);
-
-    float cardW = gridW - 16.f;
-    float cardH = 84.f;
-    float cardX = 8.f;
-    float cardY = std::max(14.f, gridH - cardH - 12.f);
-
-    auto cardBg = paimon::ui::makeInset({cardW, cardH}, 150);
-    cardBg->setPosition({cardX, cardY});
-    m_customContainer->addChild(cardBg);
-
-    auto customLabel = paimon::ui::makeLabel("Enter font name:", cardW - 16.f, 0.4f,
-        paimon::ui::palette::muted);
-    customLabel->setPosition({gridW / 2.f, cardY + cardH - 12.f});
-    m_customContainer->addChild(customLabel);
-
-    m_customInput = TextInput::create(cardW - 24.f, "myFont.fnt");
+    m_customContainer->setID("font-custom-panel"_spr);
+    m_customContainer->setContentSize({GRID_W, GRID_H});
+    m_customContainer->setPosition({GRID_X, GRID_Y});
+    m_mainLayer->addChild(m_customContainer, 3);
+    auto* customTitle = paimon::ui::makeTitle(localized("Fuente personalizada", "Custom font"), 300.f, .45f);
+    customTitle->setPosition({GRID_W * .5f, 108.f});
+    m_customContainer->addChild(customTitle);
+    auto* customHint = paimon::ui::makeText(
+        localized("Nombre del archivo en los recursos del juego", "Font filename in the game resources"),
+        310.f, .6f, paimon::ui::palette::muted, kCCTextAlignmentCenter);
+    customHint->setPosition({GRID_W * .5f, 87.f});
+    m_customContainer->addChild(customHint);
+    m_customInput = TextInput::create(280.f, "myFont.fnt", "chatFont.fnt");
+    m_customInput->setID("font-custom-input"_spr);
     m_customInput->setFilter("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.");
     m_customInput->setMaxCharCount(64);
-    m_customInput->setScale(0.64f);
-    m_customInput->setPosition({gridW / 2.f, cardY + cardH / 2.f + 1.f});
+    m_customInput->setScale(.85f);
+    m_customInput->setPosition({GRID_W * .5f, 60.f});
     m_customContainer->addChild(m_customInput);
+    auto* customMenu = paimon::ui::makeZeroMenu();
+    m_customContainer->addChild(customMenu, 1);
+    auto* apply = paimon::ui::makeButton(localized("Usar", "Apply"),
+        [this] { onCustomApply(nullptr); }, paimon::ui::Btn::Green, 96.f, .7f, "bigFont.fnt");
+    apply->setID("font-custom-apply"_spr);
+    apply->setPosition({GRID_W * .5f, 25.f});
+    customMenu->addChild(apply);
 
-    auto applySpr = paimon::ui::makeButtonSprite("Apply", paimon::ui::Btn::Green,
-        82.f, 0.5f, "bigFont.fnt");
-    auto applyBtn = CCMenuItemSpriteExtra::create(
-        applySpr, this, menu_selector(FontPickerPopup::onCustomApply));
-    applyBtn->setPosition({gridW / 2.f, cardY + 14.f});
+    auto* presets = paimon::ui::makeZeroMenu("font-presets-menu"_spr);
+    m_mainLayer->addChild(presets, 3);
+    for (std::size_t index = 0; index < std::size(QUICK_FONTS); ++index) {
+        auto const& font = QUICK_FONTS[index];
+        auto* sprite = paimon::ui::makeButtonSprite(localized(font.spanish, font.english),
+            paimon::ui::Btn::Gray, 78.f, .65f, font.file);
+        auto* button = CCMenuItemSpriteExtra::create(sprite, this,
+            menu_selector(FontPickerPopup::onQuickPick));
+        button->setID(fmt::format("font-preset-{}", font.id));
+        button->setUserObject(CCString::create(font.id));
+        button->setPosition({71.f + 86.f * static_cast<float>(index), 27.f});
+        presets->addChild(button);
+        m_quickButtons.push_back(button);
+    }
+    auto* reset = paimon::ui::makeButton(localized("Normal", "Default"),
+        [this] { onRemoveFont(nullptr); }, paimon::ui::Btn::Red, 78.f, .65f, "bigFont.fnt");
+    reset->setID("font-reset"_spr);
+    reset->setPosition({329.f, 27.f});
+    presets->addChild(reset);
 
-    auto customMenu = CCMenu::create();
-    customMenu->setPosition({0.f, 0.f});
-    customMenu->setContentSize({gridW, gridH});
-    m_customContainer->addChild(customMenu, 10);
-    customMenu->addChild(applyBtn);
-
-    auto hintLabel = paimon::ui::makeLabel(
-        ".fnt file in game resources", gridW - 10.f, 0.3f, paimon::ui::palette::dim);
-    hintLabel->setPosition({gridW / 2.f, cardY - 8.f});
-    m_customContainer->addChild(hintLabel);
-
-    updateTabHighlights();
+    showPreview("", "chatFont.fnt");
     switchTab(Tab::GDFonts);
-
+    scheduleUpdate();
     return true;
 }
-
-void FontPickerPopup::onTabGD(CCObject*)     { switchTab(Tab::GDFonts); }
-void FontPickerPopup::onTabCustom(CCObject*) { switchTab(Tab::Custom); }
 
 void FontPickerPopup::switchTab(Tab tab) {
     m_activeTab = tab;
     updateTabHighlights();
-
-    bool isGD = (tab == Tab::GDFonts);
+    bool const isGD = tab == Tab::GDFonts;
     m_scroll->setVisible(isGD);
+    m_scroll->setTouchEnabled(isGD);
+    m_scroll->setMouseEnabled(isGD);
+    m_gridMenu->setTouchEnabled(isGD);
+    m_scrollbar->setVisible(isGD);
+    m_scrollbar->setTouchEnabled(isGD);
+    m_scrollbar->setMouseEnabled(isGD);
     m_customContainer->setVisible(!isGD);
-
-    if (isGD) buildGDFontGrid();
+    if (isGD) m_customInput->unfocus();
+    m_fontPreviewsPending = true;
 }
 
 void FontPickerPopup::updateTabHighlights() {
@@ -249,208 +219,152 @@ void FontPickerPopup::updateTabHighlights() {
         m_activeTab == Tab::GDFonts ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray);
     paimon::ui::setButtonSkin(m_tabCustom,
         m_activeTab == Tab::Custom ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray);
+    paimon::ui::matchButtonLabels({m_tabGD, m_tabCustom});
 }
 
 void FontPickerPopup::buildGDFontGrid() {
-    m_contentNode->removeAllChildren();
-
-    auto gdFonts = getGDFonts();
-    float gridW = m_scroll->getContentSize().width;
-    float gridH = m_scroll->getContentSize().height;
-    int cols = std::max(1,
-        static_cast<int>((gridW + CELL_GAP) / (CELL_SIZE + CELL_GAP)));
-    int rows = (static_cast<int>(gdFonts.size()) + cols - 1) / cols;
-    float contentH = rows * (CELL_SIZE + CELL_GAP);
-    float totalH = std::max(contentH, gridH);
-
-    m_contentNode->setContentSize({gridW, totalH});
-    m_scroll->m_contentLayer->setContentSize({gridW, totalH});
-
-    auto menu = CCMenu::create();
-    menu->setPosition({0, 0});
-    menu->setContentSize({gridW, totalH});
-    menu->setLayout(
-        RowLayout::create()
-            ->setGap(CELL_GAP)
-            ->setGrowCrossAxis(true)
-            ->setCrossAxisOverflow(false)
-            ->setAutoScale(false)
-            ->setAxisAlignment(AxisAlignment::Start)
-            ->setCrossAxisAlignment(AxisAlignment::End)
-    );
-    m_contentNode->addChild(menu);
-
-    for (int i = 0; i < static_cast<int>(gdFonts.size()); ++i) {
-        auto const& [fontId, fontFile] = gdFonts[i];
-
-        auto cellBg = paimon::ui::makeInset({CELL_SIZE, CELL_SIZE}, 150);
-
-        auto container = CCNode::create();
-        container->setContentSize({CELL_SIZE, CELL_SIZE});
-        cellBg->setPosition({0, 0});
-        container->addChild(cellBg);
-
-        auto preview = CCLabelBMFont::create("Abc", fontFile.c_str());
-        if (preview) {
-            float maxW = CELL_SIZE - 8.f;
-            float maxH = CELL_SIZE - 16.f;
-            float scX = maxW / preview->getContentSize().width;
-            float scY = maxH / preview->getContentSize().height;
-            preview->setScale(std::min({scX, scY, 0.45f}));
-            preview->setPosition({CELL_SIZE / 2, CELL_SIZE / 2 + 4});
-            container->addChild(preview, 1);
-        }
-
-        auto idLbl = CCLabelBMFont::create(fontId.c_str(), "chatFont.fnt");
-        idLbl->setScale(0.22f);
-        idLbl->setColor(paimon::ui::palette::dim);
-        idLbl->setPosition({CELL_SIZE / 2, 7.f});
-        container->addChild(idLbl, 1);
-
-        auto btn = CCMenuItemSpriteExtra::create(
-            container, this,
+    constexpr int count = 59;
+    constexpr int rows = (count + GRID_COLS - 1) / GRID_COLS;
+    constexpr float totalH = rows * CELL_H + (rows - 1) * CELL_GAP;
+    constexpr float left = (GRID_W - GRID_COLS * CELL_W - (GRID_COLS - 1) * CELL_GAP) * .5f;
+    m_contentNode->setContentSize({GRID_W, totalH});
+    m_scroll->m_contentLayer->setContentSize({GRID_W, totalH});
+    m_gridMenu = FontGridMenu::create(m_scroll);
+    m_gridMenu->setID("font-grid-menu"_spr);
+    m_gridMenu->setPosition({0.f, 0.f});
+    m_gridMenu->setContentSize({GRID_W, totalH});
+    m_contentNode->addChild(m_gridMenu);
+    m_fontPreviews.reserve(count);
+    for (int index = 0; index < count; ++index) {
+        auto const fontId = fmt::format("{:02}", index + 1);
+        auto* face = CCNode::create();
+        face->setContentSize({CELL_W, CELL_H});
+        auto* background = paimon::ui::makeButtonSprite("", paimon::ui::Btn::Gray, CELL_W, 1.f);
+        fitCellBackground(background);
+        background->setPosition({CELL_W * .5f, CELL_H * .5f});
+        face->addChild(background);
+        auto* number = CCLabelBMFont::create(fontId.c_str(), "chatFont.fnt");
+        number->setScale(.5f);
+        number->setPosition({CELL_W * .5f, 7.f});
+        face->addChild(number, 1);
+        m_fontPreviews.push_back({face, background, fmt::format("gjFont{}.fnt", fontId)});
+        auto* button = CCMenuItemSpriteExtra::create(face, this,
             menu_selector(FontPickerPopup::onFontClicked));
-        btn->setUserObject(CCString::create(fontId));
-        menu->addChild(btn);
+        button->setID(fmt::format("font-{}", fontId));
+        button->setUserObject(CCString::create(fontId));
+        button->m_scaleMultiplier = 1.06f;
+        button->setPosition({left + CELL_W * .5f + (index % GRID_COLS) * (CELL_W + CELL_GAP),
+            totalH - CELL_H * .5f - (index / GRID_COLS) * (CELL_H + CELL_GAP)});
+        m_gridMenu->addChild(button);
     }
-
-    menu->updateLayout();
-    m_scroll->moveToTop();
+    m_scroll->scrollToTop();
 }
 
-void FontPickerPopup::showPreview(
-        std::string const& fontId, std::string const& fontFile) {
+void FontPickerPopup::update(float) {
+    if (m_activeTab != Tab::GDFonts) return;
+    float const scrollY = m_scroll->m_contentLayer->getPositionY();
+    if (!m_fontPreviewsPending && scrollY == m_lastPreviewScrollY) return;
+    m_lastPreviewScrollY = scrollY;
+    m_fontPreviewsPending = false;
+    // load one visible atlas per frame and retain it when switching tabs.
+    for (auto& entry : m_fontPreviews) {
+        if (entry.loaded) continue;
+        auto const center = m_scroll->convertToNodeSpace(
+            entry.cell->convertToWorldSpace({CELL_W * .5f, CELL_H * .5f}));
+        if (center.y < -CELL_H || center.y > GRID_H + CELL_H) continue;
+        entry.loaded = true;
+        if (auto* preview = CCLabelBMFont::create("ABC", entry.file.c_str())) {
+            float const sx = (CELL_W - 10.f) / std::max(1.f, preview->getContentWidth());
+            float const sy = (CELL_H - 16.f) / std::max(1.f, preview->getContentHeight());
+            preview->setScale(std::min({sx, sy, .55f}));
+            preview->setPosition({CELL_W * .5f, CELL_H * .5f + 5.f});
+            entry.cell->addChild(preview, 1);
+        }
+        m_fontPreviewsPending = true;
+        break;
+    }
+}
+
+void FontPickerPopup::showPreview(std::string const& fontId, std::string const& fontFile) {
     if (m_previewFontSprite) {
         m_previewFontSprite->removeFromParent();
         m_previewFontSprite = nullptr;
     }
-
-    auto pvSize = m_previewContainer->getContentSize();
-    float pvH = pvSize.height;
-
-    auto preview = CCLabelBMFont::create("AaBbCc", fontFile.c_str());
+    auto* preview = CCLabelBMFont::create("GEOMETRY DASH", fontFile.c_str());
     if (preview) {
-        float maxD = pvH - 8.f;
-        float sc = maxD / std::max(
-            preview->getContentSize().width,
-            preview->getContentSize().height);
-        sc = std::min(sc, 0.42f);
-        preview->setScale(sc);
-        preview->setPosition({pvH / 2 + 6.f, pvH / 2});
+        preview->setScale(std::min({226.f / std::max(1.f, preview->getContentWidth()),
+            28.f / std::max(1.f, preview->getContentHeight()), .7f}));
+        preview->setPosition({246.f, 21.f});
         m_previewContainer->addChild(preview, 1);
         m_previewFontSprite = preview;
     }
-
-    m_previewLabel->setString(fmt::format("Font: {}", fontId).c_str());
-    m_previewLabel->setAnchorPoint({0.f, 0.5f});
-    m_previewLabel->setPosition({pvH + 10.f, pvH / 2});
+    m_previewLabel->setString(fontId.empty() ? localized("Normal", "Default") : fontId.c_str());
+    m_previewLabel->limitLabelWidth(100.f, .65f, .15f);
+    for (auto const& entry : m_fontPreviews) {
+        if (entry.file != m_selectedFontFile && entry.file != fontFile) continue;
+        entry.background->updateBGImage(paimon::ui::buttonTexture(
+            entry.file == fontFile ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray));
+        fitCellBackground(entry.background);
+    }
+    m_selectedFontFile = fontFile;
+    for (std::size_t index = 0; index < m_quickButtons.size(); ++index) {
+        paimon::ui::setButtonSkin(m_quickButtons[index],
+            fontId == QUICK_FONTS[index].id ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray);
+    }
 }
 
 void FontPickerPopup::onQuickPick(CCObject* sender) {
-    auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
-    if (!btn) return;
-    auto nameObj = typeinfo_cast<CCString*>(btn->getUserObject());
-    if (!nameObj) return;
-
-    std::string fontId = nameObj->getCString();
-    std::string fontFile;
-    if (fontId == "big")       fontFile = "bigFont.fnt";
-    else if (fontId == "chat") fontFile = "chatFont.fnt";
-    else if (fontId == "gold") fontFile = "goldFont.fnt";
-    else                       fontFile = "chatFont.fnt";
-
-    showPreview(fontId, fontFile);
-
-    std::string tag = "<f:" + fontId + "> ";
-    if (m_onSelect) m_onSelect(tag);
+    auto* button = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
+    auto* name = button ? typeinfo_cast<CCString*>(button->getUserObject()) : nullptr;
+    if (!name) return;
+    for (auto const& font : QUICK_FONTS) {
+        if (font.id != std::string_view(name->getCString())) continue;
+        showPreview(font.id, font.file);
+        if (m_onSelect) m_onSelect(fmt::format("<f:{}> ", font.id));
+        return;
+    }
 }
 
 void FontPickerPopup::onFontClicked(CCObject* sender) {
-    auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
-    if (!btn) return;
-    if (!isInsideVisibleScroll(btn)) return;
-    auto nameObj = typeinfo_cast<CCString*>(btn->getUserObject());
-    if (!nameObj) return;
-
-    std::string fontId = nameObj->getCString();
-    std::string fontFile = fmt::format("gjFont{}.fnt", fontId);
-
-    showPreview(fontId, fontFile);
-
-    std::string tag = "<f:" + fontId + "> ";
-    if (m_onSelect) m_onSelect(tag);
+    if (m_activeTab != Tab::GDFonts) return;
+    auto* button = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
+    auto* name = button ? typeinfo_cast<CCString*>(button->getUserObject()) : nullptr;
+    if (!name) return;
+    std::string const fontId = name->getCString();
+    showPreview(fontId, fmt::format("gjFont{}.fnt", fontId));
+    if (m_onSelect) m_onSelect(fmt::format("<f:{}> ", fontId));
 }
 
 void FontPickerPopup::onCustomApply(CCObject*) {
-    if (!m_customInput) return;
-
-    std::string val = m_customInput->getString();
-    if (val.empty()) return;
-
-    while (!val.empty() && val.front() == ' ') val.erase(val.begin());
-    while (!val.empty() && val.back() == ' ') val.pop_back();
-    if (val.empty()) return;
-
-    if (val.size() < 4 || val.substr(val.size() - 4) != ".fnt") {
-        val += ".fnt";
+    auto value = m_customInput->getString();
+    if (value.empty()) return;
+    if (!value.ends_with(".fnt")) value += ".fnt";
+    auto* files = CCFileUtils::sharedFileUtils();
+    auto const path = files->fullPathForFilename(value.c_str(), false);
+    if (path.empty() || !files->isFileExist(path)) {
+        Notification::create(localized("No se encontro la fuente", "Font not found"), NotificationIcon::Error)->show();
+        return;
     }
-
-    showPreview(val, val);
-
-    std::string tag = "<f:" + val + "> ";
-    if (m_onSelect) m_onSelect(tag);
+    showPreview(value, value);
+    if (m_onSelect) m_onSelect(fmt::format("<f:{}> ", value));
 }
 
 void FontPickerPopup::onRemoveFont(CCObject*) {
-    // empty tag removes the current font.
+    showPreview("", "chatFont.fnt");
     if (m_onSelect) m_onSelect("");
-
-    if (m_previewFontSprite) {
-        m_previewFontSprite->removeFromParent();
-        m_previewFontSprite = nullptr;
-    }
-    m_previewLabel->setAnchorPoint({0.5f, 0.5f});
-    auto pvSize = m_previewContainer->getContentSize();
-    m_previewLabel->setPosition({pvSize.width / 2.f, pvSize.height / 2.f});
-    m_previewLabel->setString("Default font");
 }
 
-bool FontPickerPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
-    auto loc = touch->getLocation();
-    auto local = m_mainLayer->convertToNodeSpace(loc);
-    auto size = m_mainLayer->getContentSize();
-    m_touchHitOutside = !CCRect(0, 0, size.width, size.height).containsPoint(local);
+bool FontPickerPopup::ccTouchBegan(CCTouch* touch, CCEvent*) {
+    auto const point = m_mainLayer->convertToNodeSpace(touch->getLocation());
+    m_touchHitOutside = !CCRect{CCPointZero, m_mainLayer->getContentSize()}.containsPoint(point);
     return true;
 }
 
-void FontPickerPopup::ccTouchEnded(CCTouch* touch, CCEvent* event) {
-    if (m_touchHitOutside) {
-        auto loc = touch->getLocation();
-        auto local = m_mainLayer->convertToNodeSpace(loc);
-        auto size = m_mainLayer->getContentSize();
-        if (!CCRect(0, 0, size.width, size.height).containsPoint(local)) {
-            onClose(nullptr);
-            return;
-        }
+void FontPickerPopup::ccTouchEnded(CCTouch* touch, CCEvent*) {
+    auto const point = m_mainLayer->convertToNodeSpace(touch->getLocation());
+    if (m_touchHitOutside && !CCRect{CCPointZero, m_mainLayer->getContentSize()}.containsPoint(point)) {
+        onClose(nullptr);
     }
-}
-
-bool FontPickerPopup::isInsideVisibleScroll(CCNode* item) {
-    if (!m_scroll || !item) return false;
-    auto scrollWorld = m_scroll->convertToWorldSpace({0, 0});
-    auto scrollSize = m_scroll->getContentSize();
-    auto itemWorld = item->getParent()->convertToWorldSpace(item->getPosition());
-    float half = CELL_SIZE * 0.5f;
-    return itemWorld.x + half >= scrollWorld.x && itemWorld.x - half <= scrollWorld.x + scrollSize.width
-        && itemWorld.y + half >= scrollWorld.y && itemWorld.y - half <= scrollWorld.y + scrollSize.height;
-}
-
-void FontPickerPopup::positionBelow(CCNode* anchor, float gap) {
-    (void)anchor;
-    auto winSize = CCDirector::get()->getWinSize();
-    float halfH = POPUP_H * 0.5f;
-    float y = std::clamp(halfH + gap, halfH, winSize.height - halfH);
-    m_mainLayer->setPosition({winSize.width * 0.5f, y});
 }
 
 void FontPickerPopup::closeAnimated() {

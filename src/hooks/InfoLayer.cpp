@@ -1,5 +1,6 @@
 #include <Geode/binding/InfoLayer.hpp>
 #include <Geode/modify/InfoLayer.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 #include "../framework/HookConventions.hpp"
 #include <Geode/binding/GJUserScore.hpp>
 #include <Geode/binding/GJGameLevel.hpp>
@@ -22,6 +23,9 @@
 #include "../framework/EventBus.hpp"
 #include "../framework/ModEvents.hpp"
 #include "../core/RuntimeLifecycle.hpp"
+#include "../features/translator/TranslatorConfig.hpp"
+#include "../features/translator/ui/TextSwapAnimation.hpp"
+#include "../features/translator/ui/TranslateToggle.hpp"
 #include <algorithm>
 #include <tuple>
 
@@ -41,6 +45,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         int m_styleTickCount = 0;
         bool m_bgSettled = false;
         uintptr_t m_lastBgTex = 0;
+        WeakRef<cocos2d::CCNode> m_descToggle;
 
         ~Fields() {
             if (paimon::isRuntimeShuttingDown()) return;
@@ -56,23 +61,9 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         if (!layer) return {nullptr, CCSizeZero, CCPointZero};
 
         auto layerSize = layer->getContentSize();
-        CCSize popupSize = CCSize(440.f, 290.f);
-        CCPoint popupCenter = ccp(layerSize.width * 0.5f, layerSize.height * 0.5f);
-
-        if (auto bg = layer->getChildByID("background")) {
-            popupSize = bg->getScaledContentSize();
-            popupCenter = bg->getPosition();
-        } else {
-            for (auto* child : CCArrayExt<CCNode*>(layer->getChildren())) {
-                if (typeinfo_cast<CCScale9Sprite*>(child)) {
-                    popupSize = child->getScaledContentSize();
-                    popupCenter = child->getPosition();
-                    break;
-                }
-            }
-        }
-
-        return {layer, popupSize, popupCenter};
+        auto layout = paimon::SpriteHelper::resolveBgLayout(
+            layer, CCSize(440.f, 290.f), ccp(layerSize.width * 0.5f, layerSize.height * 0.5f));
+        return {layer, layout.size, layout.position};
     }
 
     CCClippingNode* buildBlurBackgroundClip(CCSprite* backgroundSprite, CCSize const& imgArea, CCPoint popupCenter) {
@@ -80,7 +71,8 @@ class $modify(PaimonInfoLayer, InfoLayer) {
 
         backgroundSprite->setPosition(ccp(imgArea.width * 0.5f, imgArea.height * 0.5f));
 
-        auto stencil = paimon::SpriteHelper::createRectStencil(imgArea.width, imgArea.height);
+        // same corner radius as the level leaderboard popup background
+        auto stencil = paimon::SpriteHelper::createRoundedRectStencil(imgArea.width, imgArea.height, 8.f);
         auto clip = CCClippingNode::create();
         if (!stencil || !clip) return nullptr;
 
@@ -141,6 +133,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
 
         styleInfoLayerBgs(layer);
         addInfoAreaPanel();
+        ensureDescriptionTranslator();
         this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
         // short catch-up for cells that finish loading after clip setup
         m_fields->m_styleTickCount = 0;
@@ -148,8 +141,15 @@ class $modify(PaimonInfoLayer, InfoLayer) {
     }
 
     $override
-    bool init(GJGameLevel* level, GJUserScore* score, GJLevelList* list) {
-        if (!InfoLayer::init(level, score, list)) return false;
+    bool init(GJGameLevel* level, GJUserScore* score, GJLevelList* list, GJEditorSoundConfig* soundConfig) {
+        if (!InfoLayer::init(level, score, list, soundConfig)) return false;
+        this->addOnExitCallback([this] {
+            this->handleExit();
+            return true;
+        });
+
+        // the description text area is created by GD after init returns
+        this->scheduleOnce(schedule_selector(PaimonInfoLayer::onDescriptionTranslatorDelay), 0.25f);
 
         if (score) {
             int accountID = score->m_accountID;
@@ -207,7 +207,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                 std::string fileName = fmt::format("{}.png", levelID);
                 Ref<InfoLayer> safeRef = this;
                 ThumbnailLoader::get().requestLoad(levelID, fileName,
-                    [safeRef](CCTexture2D* tex, bool success) {
+                    [safeRef](CCTexture2D* tex, bool) {
                         auto* self = static_cast<PaimonInfoLayer*>(safeRef.data());
                         if (self->getParent() && tex) {
                             self->applyBlurredBackground(tex);
@@ -323,7 +323,15 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         GJCommentListLayer* commentList = nullptr;
         auto findNodes = [&](auto const& self, CCNode* node) -> void {
             if (!node || (descText && commentList)) return;
-            if (!descText) descText = typeinfo_cast<TextArea*>(node);
+            if (!descText) {
+                auto* area = typeinfo_cast<TextArea*>(node);
+                // comment text areas live inside cells, not the level description
+                bool inCell = false;
+                for (auto* p = node->getParent(); p && !inCell; p = p->getParent()) {
+                    inCell = typeinfo_cast<CommentCell*>(p) != nullptr;
+                }
+                if (area && !inCell) descText = area;
+            }
             if (!commentList) commentList = typeinfo_cast<GJCommentListLayer*>(node);
             if (auto* children = node->getChildren()) {
                 for (auto* child : CCArrayExt<CCNode*>(children)) {
@@ -359,6 +367,65 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         layer->addChild(panel, 0);
     }
 
+    // level descriptions live in a TextArea outside the comment cells.
+    void ensureDescriptionTranslator() {
+        if (paimon::isRuntimeShuttingDown()) return;
+        auto* layer = this->m_mainLayer;
+        if (!layer || !this->m_level) return;
+        if (layer->getChildByID("paimon-desc-translator"_spr)) return;
+
+        std::string original = this->m_level->m_levelDesc;
+        if (original.empty()) return;
+
+        TextArea* descText = nullptr;
+        std::function<void(CCNode*)> walk = [&](CCNode* node) {
+            if (!node || descText) return;
+            if (auto* area = typeinfo_cast<TextArea*>(node)) {
+                bool inCell = false;
+                for (auto* p = node->getParent(); p && !inCell; p = p->getParent()) {
+                    inCell = typeinfo_cast<CommentCell*>(p) != nullptr;
+                }
+                if (!inCell) {
+                    descText = area;
+                    return;
+                }
+            }
+            if (auto* children = node->getChildren()) {
+                for (auto* child : CCArrayExt<CCNode*>(children)) walk(child);
+            }
+        };
+        walk(layer);
+        if (!descText) return;
+
+        WeakRef<TextArea> weakDesc = descText;
+        auto* toggle = paimon::translate::TranslateToggle::create(original,
+            [weakDesc](std::string const& text) {
+                auto desc = weakDesc.lock();
+                if (!desc) return;
+                desc->setString(text);
+                paimon::translate::ui::animateTextSwap(desc.data());
+            });
+        if (!toggle) return;
+
+        toggle->setID("paimon-desc-translator"_spr);
+        auto const size = descText->getScaledContentSize();
+        auto const bottomLeft = layer->convertToNodeSpace(descText->convertToWorldSpace({0.f, 0.f}));
+        float x = bottomLeft.x - 20.f;
+        if (x < 22.f) x = bottomLeft.x + size.width + 20.f;
+        toggle->setPosition({x, bottomLeft.y + 12.f});
+        toggle->setVisible(paimon::translate::loadSettings().enabled);
+        layer->addChild(toggle, 6);
+        m_fields->m_descToggle = toggle;
+
+        if (paimon::translate::loadSettings().autoTranslate) {
+            static_cast<paimon::translate::TranslateToggle*>(toggle)->translate(true);
+        }
+    }
+
+    void onDescriptionTranslatorDelay(float) {
+        ensureDescriptionTranslator();
+    }
+
     void styleInfoLayerBgs(CCNode* root) {
         if (!root) return;
 
@@ -388,7 +455,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                         }
                     }
 
-                    hideCommentCellBgs(commentList);
+                    paimon::commentbg::hideCommentCellBgs(commentList);
                 }
 
                 self(self, child);
@@ -398,12 +465,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         walk(walk, root);
     }
 
-    void hideCommentCellBgs(CCNode* listNode) {
-        paimon::commentbg::hideCommentCellBgs(listNode);
-    }
-
-    void cleanupOldBgClip(float) {
-        auto* layer = this->m_mainLayer;
+    void cleanupOldBgClip(float) {        auto* layer = this->m_mainLayer;
         if (!layer) return;
         if (auto* old = layer->getChildByID("paimon-infolayer-bg-clip-old"_spr)) old->removeFromParent();
     }
@@ -467,14 +529,12 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         InfoLayer::onClose(sender);
     }
 
-    $override
-    void onExit() {
+    void handleExit() {
         restoreMusicEffect();
         this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
         this->unschedule(schedule_selector(PaimonInfoLayer::cleanupOldBgClip));
         removeAllInfoLayerBgClips();
         stopBackgroundUpdates();
-        InfoLayer::onExit();
     }
 
     void restoreMusicEffect() {

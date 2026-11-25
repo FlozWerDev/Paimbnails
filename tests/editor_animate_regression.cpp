@@ -262,6 +262,10 @@ void testGroupInput() {
     check(parseGroupInput("5-3 5 0 x 10000") == std::vector<int>{5, 4, 3}, "reverse range, junk and repeats");
     check(parseGroupInput("1-9999").size() == static_cast<std::size_t>(kMaxFrames), "range cap");
     check(parseGroupInput("").empty(), "empty input");
+    check(parseGroupInput("1000000000-2000000000").empty(), "large invalid range is rejected without iteration");
+    check(parseGroupInput("2147483647-2147483646").empty(), "range near INT_MAX cannot overflow");
+    check(parseGroupInput("10001-9997") == std::vector<int>{9999, 9998, 9997}, "descending range intersects valid groups");
+    check(parseGroupInput("0-3") == std::vector<int>{1, 2, 3}, "ascending range intersects valid groups");
 }
 
 void testSanitize() {

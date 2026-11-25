@@ -64,7 +64,9 @@ void SlotOrderPopup::buildList() {
 
     m_scroll = ScrollLayer::create({scrollW, scrollH});
     if (!m_scroll) return;
+    m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setPosition({15.f, kListY});
+    m_scroll->setStealingTouches(true);
     m_scroll->m_contentLayer->setID("order-scroll-content"_spr);
     m_mainLayer->addChild(m_scroll, 2);
 }
@@ -88,7 +90,8 @@ void SlotOrderPopup::buildControls() {
     totalW -= 8.f;
     float x = (kWidth - totalW) / 2.f;
     for (auto const& [text, w, action] : defs) {
-        auto* spr = ButtonSprite::create(text, w, true, "bigFont.fnt", "GJ_button_02.png", 18.f, 0.45f);
+        auto* spr = paimon::ui::makeButtonSprite(text, paimon::ui::Btn::Cyan,
+            static_cast<float>(w), 0.6f, "bigFont.fnt");
         if (!spr) continue;
         auto* item = CCMenuItemExt::createSpriteExtra(
             spr, [this, action](CCMenuItemSpriteExtra*) {

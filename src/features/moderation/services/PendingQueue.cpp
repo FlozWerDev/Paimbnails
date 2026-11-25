@@ -1,4 +1,6 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "PendingQueue.hpp"
+#include "../../../utils/AtomicFileWrite.hpp"
 #include <Geode/loader/Mod.hpp>
 #include <Geode/loader/Log.hpp>
 #include <Geode/utils/file.hpp>
@@ -12,7 +14,7 @@ PendingQueue& PendingQueue::get() {
 }
 
 std::filesystem::path PendingQueue::jsonPath() const {
-    return Mod::get()->getSaveDir() / "thumbnails" / "pending_queue.json";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "thumbnails" / "pending_queue.json";
 }
 
 char const* PendingQueue::catToStr(PendingCategory c) {
@@ -51,12 +53,9 @@ PendingStatus PendingQueue::strToStatus(std::string const& s) {
 }
 
 std::string PendingQueue::escape(std::string const& s) {
-    std::string out; out.reserve(s.size()+8);
-    for (char c : s) {
-        if (c == '"' || c == '\\') out.push_back('\\');
-        out.push_back(c);
-    }
-    return out;
+    // let the JSON serializer handle all control characters and UTF-8.
+    auto quoted = matjson::Value(s).dump(matjson::NO_INDENTATION);
+    return quoted.substr(1, quoted.size() - 2);
 }
 
 void PendingQueue::load() {
@@ -65,7 +64,7 @@ void PendingQueue::load() {
     auto p = jsonPath();
     std::error_code ec;
     if (!std::filesystem::exists(p, ec) || ec) return;
-    auto data = geode::utils::file::readString(p).unwrapOr("");
+    auto data = geode::utils::file::readString(paimon::paths::toSdkPath(p)).unwrapOr("");
     if (data.empty()) return;
 
     auto jsonRes = matjson::parse(data);
@@ -99,8 +98,9 @@ void PendingQueue::save() {
     std::string json = toJson();
     auto p = jsonPath();
     std::error_code ec; std::filesystem::create_directories(p.parent_path(), ec);
-    std::ofstream out(p, std::ios::binary | std::ios::trunc);
-    out << json; out.close();
+    if (!paimon::file::writeAtomically(p, json)) {
+        log::warn("[PendingQueue] Could not save the local moderation queue");
+    }
 }
 
 std::string PendingQueue::toJson() const {

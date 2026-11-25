@@ -41,7 +41,7 @@ bool LevelHistoryDetailPopup::init(HistoryEntry const& entry) {
 
     auto title = entry.levelName.empty() ? std::string("Registro") : entry.levelName;
     setTitle(title.c_str(), "goldFont.fnt", 0.62f, 20.f);
-    if (m_title) m_title->limitLabelWidth(kInnerW - 60.f, 0.62f, 0.1f);
+    if (m_title) m_title->setLimitLabelWidth(kInnerW - 60.f, 0.62f, 0.1f);
     this->addInfoButton("Detalle del registro",
         "Todos los datos guardados de este intento o record: "
         "<cy>fecha</c>, <cy>fuente</c> y los campos reportados por el servidor. "
@@ -86,6 +86,7 @@ bool LevelHistoryDetailPopup::init(HistoryEntry const& entry) {
 
     auto* scroll = ScrollLayer::create({kInnerW, kListH});
     if (!scroll) return false;
+    scroll->setAnchorPoint({0.f, 0.f});
     scroll->setPosition({left, listY});
     m_mainLayer->addChild(scroll, 2);
 

@@ -79,6 +79,37 @@ void normalize(MusicEffectsConfig& cfg) {
     cfg.spatialMotionSpeed = std::clamp(cfg.spatialMotionSpeed, 1.f, 60.f);
 }
 
+bool nearEq(float a, float b) {
+    return std::abs(a - b) < 1e-4f;
+}
+
+bool musicEffectsConfigEqual(MusicEffectsConfig const& a, MusicEffectsConfig const& b) {
+    return a.enabled == b.enabled
+        && a.preset == b.preset
+        && nearEq(a.speed, b.speed)
+        && nearEq(a.gainDb, b.gainDb)
+        && nearEq(a.pan, b.pan)
+        && nearEq(a.bassDb, b.bassDb)
+        && nearEq(a.midDb, b.midDb)
+        && nearEq(a.trebleDb, b.trebleDb)
+        && nearEq(a.lowpassHz, b.lowpassHz)
+        && nearEq(a.highpassHz, b.highpassHz)
+        && nearEq(a.reverbMix, b.reverbMix)
+        && nearEq(a.reverbDecay, b.reverbDecay)
+        && nearEq(a.reverbRoom, b.reverbRoom)
+        && nearEq(a.reverbHighCut, b.reverbHighCut)
+        && nearEq(a.echoMix, b.echoMix)
+        && nearEq(a.echoDelay, b.echoDelay)
+        && nearEq(a.echoFeedback, b.echoFeedback)
+        && a.spatialEnabled == b.spatialEnabled
+        && a.spatialPreset == b.spatialPreset
+        && a.spatialMotion == b.spatialMotion
+        && nearEq(a.spatialWidth, b.spatialWidth)
+        && nearEq(a.spatialAngle, b.spatialAngle)
+        && nearEq(a.spatialRoom, b.spatialRoom)
+        && nearEq(a.spatialMotionSpeed, b.spatialMotionSpeed);
+}
+
 } // namespace
 
 char const* musicEffectsPresetId(MusicEffectsPreset preset) {
@@ -426,20 +457,16 @@ bool MenuMusicEffects::ensureDsps() {
     }
 
     m_attachedGroup = group;
+    m_configApplied = false;
+    // Attach at TAIL in reverse order so the DSP chain flows
+    // eq -> lowpass -> highpass -> spatialPan -> spatialReverb -> reverb -> echo -> gain -> meter -> output
+    // without displacing DynamicVolumeManager's head DSP indices.
     FMOD::DSP* chain[] = {
-        m_eqDsp, m_lowpassDsp, m_highpassDsp,
-        m_spatialPanDsp, m_spatialReverbDsp,
-        m_reverbDsp, m_echoDsp, m_gainDsp,
+        m_gainDsp, m_echoDsp, m_reverbDsp,
+        m_spatialReverbDsp, m_spatialPanDsp,
+        m_highpassDsp, m_lowpassDsp, m_eqDsp,
     };
-    for (auto* dsp : chain) {
-        if (group->addDSP(FMOD_CHANNELCONTROL_DSP_HEAD, dsp) != FMOD_OK) {
-            log::warn("[MenuMusicEffects] could not attach the FMOD effect chain");
-            detachDsps();
-            return false;
-        }
-        dsp->setActive(true);
-    }
-    if (group->addDSP(FMOD_CHANNELCONTROL_DSP_HEAD, m_meterDsp) != FMOD_OK) {
+    if (group->addDSP(FMOD_CHANNELCONTROL_DSP_TAIL, m_meterDsp) != FMOD_OK) {
         log::warn("[MenuMusicEffects] could not attach the output meter");
         detachDsps();
         return false;
@@ -448,6 +475,14 @@ bool MenuMusicEffects::ensureDsps() {
     m_meterDsp->setBypass(false);
     m_meterDsp->setParameterFloat(FMOD_DSP_FADER_GAIN, 0.f);
     m_meterDsp->setMeteringEnabled(false, true);
+    for (auto* dsp : chain) {
+        if (group->addDSP(FMOD_CHANNELCONTROL_DSP_TAIL, dsp) != FMOD_OK) {
+            log::warn("[MenuMusicEffects] could not attach the FMOD effect chain");
+            detachDsps();
+            return false;
+        }
+        dsp->setActive(true);
+    }
     return true;
 }
 
@@ -545,8 +580,19 @@ void MenuMusicEffects::update() {
         return;
     }
     if (!ensureDsps()) return;
+    bool const spatialOn = spatialModuleOn();
+    if (m_configApplied
+        && m_appliedAuditionBypassed == m_auditionBypassed
+        && m_appliedSpatialModuleOn == spatialOn
+        && musicEffectsConfigEqual(m_appliedCfg, m_cfg)) {
+        return;
+    }
     if (m_auditionBypassed) bypassDsps();
     else applyConfig();
+    m_appliedCfg = m_cfg;
+    m_appliedSpatialModuleOn = spatialOn;
+    m_appliedAuditionBypassed = m_auditionBypassed;
+    m_configApplied = true;
 }
 
 void MenuMusicEffects::tick(float dt) {
@@ -627,6 +673,7 @@ void MenuMusicEffects::deactivate() {
 }
 
 void MenuMusicEffects::detachDsps() {
+    m_configApplied = false;
     if (m_attachedGroup) {
         m_attachedGroup->setPitch(1.f);
         m_attachedGroup->setPan(0.f);

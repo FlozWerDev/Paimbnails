@@ -150,18 +150,6 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         return clip;
     }
 
-    // m_bgspr is recreated; verify it is still mounted.
-    bool isValidChild(CCNode* child) {
-        if (!child) return false;
-        auto* children = this->getChildren();
-        if (!children) return false;
-        int count = children->count();
-        for (int i = 0; i < count; ++i) {
-            if (children->objectAtIndex(i) == static_cast<CCObject*>(child)) return true;
-        }
-        return false;
-    }
-
     bool swapBg() {
         if (m_fields->m_clipper && m_fields->m_clipper->getParent() == this) {
             m_fields->m_clipperBuilt = true;
@@ -171,7 +159,7 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
             m_fields->m_clipperBuilt = false;
         }
         if (m_fields->m_clipperBuilt) return true;
-        CCNode* bgNode = (m_bgSpr && isValidChild(m_bgSpr)) ? m_bgSpr : nullptr;
+        CCNode* bgNode = (m_bgSpr && m_bgSpr->getParent() == this) ? m_bgSpr : nullptr;
         if (!bgNode) bgNode = this->getChildByID("bg");
         if (!bgNode) {
             log::debug("[PaimonCSW] swapBg: no bg node found");
@@ -275,7 +263,9 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
         auto* widget = asBase();
         uint32_t const generation = m_fields->m_callbackGeneration;
 
-        BlurSystem::getInstance()->buildPaimonBlurAsync(
+        // visible surface: use the priority path like the other on-screen
+        // blurs; the queued batch path could wait seconds behind other jobs.
+        BlurSystem::getInstance()->buildPaimonBlurPriority(
             texture,
             sz,
             6.0f,
@@ -381,11 +371,12 @@ class $modify(PaimonCustomSongWidget, CustomSongWidget) {
     $override
     bool init(SongInfoObject* songInfo, CustomSongDelegate* delegate,
               bool showSongSelect, bool showPlayMusic, bool showDownload,
-              bool isRobtopSong, bool unkBool, bool isMusicLibrary, int unk)
+              bool isRobtopSong, bool unkBool, bool isMusicLibrary, int unk,
+              bool extraSong, bool editorContext)
     {
         if (!CustomSongWidget::init(songInfo, delegate, showSongSelect,
                                      showPlayMusic, showDownload,
-                                     isRobtopSong, unkBool, isMusicLibrary, unk))
+                                     isRobtopSong, unkBool, isMusicLibrary, unk, extraSong, editorContext))
             return false;
 
         if (isPassthroughMode()) {

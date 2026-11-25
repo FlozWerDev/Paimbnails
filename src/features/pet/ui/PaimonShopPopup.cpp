@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "PaimonShopPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../services/PetManager.hpp"
@@ -8,6 +9,7 @@
 #include "../../../utils/InfoButton.hpp"
 #include "../../../utils/ImageConverter.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
+#include "../../../utils/AtomicFileWrite.hpp"
 #include "../../../ui/PaimonUI.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
@@ -70,6 +72,7 @@ bool PaimonShopPopup::init() {
     m_mainLayer->addChild(listBg, 4);
 
     m_scrollLayer = ScrollLayer::create({scrollW, scrollH});
+    if (m_scrollLayer) m_scrollLayer->setAnchorPoint({0.f, 0.f});
     m_scrollLayer->setPosition({8.f, 8.f});
     m_scrollLayer->setVisible(false);
     m_mainLayer->addChild(m_scrollLayer, 5);
@@ -151,7 +154,6 @@ void PaimonShopPopup::buildList() {
     menu->setContentSize({scrollW, totalH});
     sc->addChild(menu, 10);
 
-    float cx = scrollW / 2.f;
     float y = totalH - 30.f;
 
     for (auto& item : m_items) {
@@ -215,7 +217,7 @@ void PaimonShopPopup::onDownload(CCObject* sender) {
     if (m_downloading.count(itemId)) return; // already downloading
     m_downloading.insert(itemId);
 
-    PaimonNotify::create("Downloading " + name + "...", NotificationIcon::Info)->show();
+    PaimonNotify::show("Downloading " + name + "...", NotificationIcon::Info);
 
         WeakRef<PaimonShopPopup> self = this;
     HttpClient::get().downloadPetShopItem(itemId, format,
@@ -227,7 +229,7 @@ void PaimonShopPopup::onDownload(CCObject* sender) {
 
             if (!success || data.empty()) {
                 log::error("[PetShop] Download failed for '{}' (success={}, dataSize={})", name, success, data.size());
-                PaimonNotify::create("Failed to download " + name, NotificationIcon::Error)->show();
+                PaimonNotify::show("Failed to download " + name, NotificationIcon::Error);
                 return;
             }
 
@@ -236,28 +238,16 @@ void PaimonShopPopup::onDownload(CCObject* sender) {
             std::string filename = itemId + "." + format;
             auto path = PetManager::get().galleryDir() / filename;
             {
-                std::error_code ec;
-                std::filesystem::create_directories(PetManager::get().galleryDir(), ec);
-                std::ofstream f(path, std::ios::binary);
-                if (!f.is_open()) {
-                    log::error("[PetShop] Could not open file for writing: {}", geode::utils::string::pathToString(path));
-                    PaimonNotify::create("Failed to save " + name, NotificationIcon::Error)->show();
-                    return;
-                }
-                f.write(reinterpret_cast<char const*>(data.data()), data.size());
-                f.close();
-
-                std::error_code verifyEc;
-                if (f.fail() || !std::filesystem::exists(path, verifyEc) || std::filesystem::file_size(path, verifyEc) != data.size()) {
-                    log::error("[PetShop] File write verification failed for: {}", geode::utils::string::pathToString(path));
-                    std::filesystem::remove(path, verifyEc);
-                    PaimonNotify::create("Failed to save " + name, NotificationIcon::Error)->show();
+                // tmp+rename: gallery readers never see a half-written file.
+                if (!paimon::file::writeAtomically(path, std::span<uint8_t const>(data.data(), data.size()))) {
+                    log::error("[PetShop] Could not save gallery file: {}", paimon::paths::toUtf8(path));
+                    PaimonNotify::show("Failed to save " + name, NotificationIcon::Error);
                     return;
                 }
 
-                log::info("[PetShop] Saved '{}' to gallery: {}", name, geode::utils::string::pathToString(path));
+                log::info("[PetShop] Saved '{}' to gallery: {}", name, paimon::paths::toUtf8(path));
 
-                PaimonNotify::create(name + " added to gallery!", NotificationIcon::Success)->show();
+                PaimonNotify::show(name + " added to gallery!", NotificationIcon::Success);
 
                 if (PetManager::get().config().selectedImage.empty()) {
                     PetManager::get().setImage(filename);
@@ -287,24 +277,24 @@ void PaimonShopPopup::onUploadPet(CCObject*) {
         if (format == "gif") {
             std::ifstream f(filepath, std::ios::binary | std::ios::ate);
             if (!f) {
-                PaimonNotify::create("Failed to read file", NotificationIcon::Error)->show();
+                PaimonNotify::show("Failed to read file", NotificationIcon::Error);
                 return;
             }
             std::streamoff const size = f.tellg();
             if (size <= 0 || size > 16ll * 1024 * 1024) {
-                PaimonNotify::create("Empty file or too large (>16MB)", NotificationIcon::Error)->show();
+                PaimonNotify::show("Empty file or too large (>16MB)", NotificationIcon::Error);
                 return;
             }
             f.seekg(0, std::ios::beg);
             data.resize(static_cast<size_t>(size));
             if (!f.read(reinterpret_cast<char*>(data.data()), size)) {
-                PaimonNotify::create("Failed to read file", NotificationIcon::Error)->show();
+                PaimonNotify::show("Failed to read file", NotificationIcon::Error);
                 return;
             }
         } else {
             auto loaded = ImageLoadHelper::loadStaticImage(filepath, 16);
             if (!loaded.success || !loaded.texture || !loaded.buffer || loaded.width <= 0 || loaded.height <= 0) {
-                PaimonNotify::create("Failed to convert image to PNG", NotificationIcon::Error)->show();
+                PaimonNotify::show("Failed to convert image to PNG", NotificationIcon::Error);
                 return;
             }
 
@@ -313,43 +303,43 @@ void PaimonShopPopup::onUploadPet(CCObject*) {
                     static_cast<uint32_t>(loaded.height),
                     data)) {
                 loaded.texture->release();
-                PaimonNotify::create("Failed to convert image to PNG", NotificationIcon::Error)->show();
+                PaimonNotify::show("Failed to convert image to PNG", NotificationIcon::Error);
                 return;
             }
             loaded.texture->release();
         }
 
         if (data.empty()) {
-            PaimonNotify::create("Empty file", NotificationIcon::Error)->show();
+            PaimonNotify::show("Empty file", NotificationIcon::Error);
             return;
         }
 
-        std::string defaultName = geode::utils::string::pathToString(filepath.stem());
+        std::string defaultName = paimon::paths::toUtf8(filepath.stem());
 
         auto* accountManager = GJAccountManager::get();
         if (!accountManager) {
-            PaimonNotify::create("Account manager unavailable", NotificationIcon::Error)->show();
+            PaimonNotify::show("Account manager unavailable", NotificationIcon::Error);
             return;
         }
 
         std::string creator = accountManager->m_username;
         if (creator.empty()) {
-            PaimonNotify::create("You must be logged in to upload pets", NotificationIcon::Error)->show();
+            PaimonNotify::show("You must be logged in to upload pets", NotificationIcon::Error);
             return;
         }
 
-        PaimonNotify::create("Uploading " + defaultName + "...", NotificationIcon::Info)->show();
+        PaimonNotify::show("Uploading " + defaultName + "...", NotificationIcon::Info);
 
         HttpClient::get().uploadPetShopItem(defaultName, creator, data, format,
             [self, defaultName](bool success, std::string const& response) {
                 auto popup = self.lock();
                 if (success) {
-                    PaimonNotify::create(defaultName + " uploaded to shop!", NotificationIcon::Success)->show();
+                    PaimonNotify::show(defaultName + " uploaded to shop!", NotificationIcon::Success);
                     if (popup) {
                         popup->fetchShopList();
                     }
                 } else {
-                    PaimonNotify::create("Upload failed: " + response, NotificationIcon::Error)->show();
+                    PaimonNotify::show("Upload failed: " + response, NotificationIcon::Error);
                 }
             }
         );

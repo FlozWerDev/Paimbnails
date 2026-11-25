@@ -27,12 +27,14 @@ class $modify(PaimonTwitchRequestsSearchLayer, LevelSearchLayer) {
         if (!menu) menu = paimon::compat::LevelBrowserLocator::findSearchMenu(this);
         if (!menu || menu->getChildByID("twitch-requests-button"_spr)) return true;
 
-        char const* iconName = "GJ_chatBtn_001.png";
-        if (!paimon::SpriteHelper::safeCreateWithFrameName(iconName)) {
-            iconName = "GJ_starsIcon_001.png";
+        CircleButtonSprite* base = nullptr;
+        if (auto* icon = paimon::SpriteHelper::safeCreate("paim_ui_requests.png"_spr)) {
+            base = CircleButtonSprite::create(icon, CircleBaseColor::DarkPurple, CircleBaseSize::MediumAlt);
         }
-        auto* base = CircleButtonSprite::createWithSpriteFrameName(
-            iconName, 1.f, CircleBaseColor::DarkPurple, CircleBaseSize::MediumAlt);
+        if (!base) {
+            base = CircleButtonSprite::createWithSpriteFrameName(
+                "GJ_chatBtn_001.png", 1.f, CircleBaseColor::DarkPurple, CircleBaseSize::MediumAlt);
+        }
         if (!base) return true;
 
         // row buttons are ~35px; the mediumalt base runs larger.

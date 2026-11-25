@@ -2,11 +2,14 @@
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/PlayLayer.hpp>
+#include <Geode/binding/LevelEditorLayer.hpp>
 #include <Geode/binding/GJGameLevel.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/GameObject.hpp>
 #include <algorithm>
+#include <atomic>
 #include <cstring>
+#include <exception>
 
 #include "PreviewZonePicker.hpp"
 #include "AutoPreviewGenerator.hpp"   // downscalergba
@@ -20,6 +23,30 @@ using namespace geode::prelude;
 namespace paimon::autopreview {
 
 namespace {
+
+constexpr size_t kMaxLevelStringBytes = 3 * 1024 * 1024; // hard ~3MB pre-guard
+constexpr size_t kUnknownCountMaxBytes = 512 * 1024;    // strict cap when m_objectCount unknown
+
+std::atomic<bool>& renderFlag() {
+    static std::atomic<bool> flag{false};
+    return flag;
+}
+
+struct FlagReset {
+    ~FlagReset() { renderFlag().store(false, std::memory_order_relaxed); }
+};
+
+// PlayLayer::create mutates gm->m_playLayer as a side effect; restore it on
+// every exit path (early-return, throw, success) so a real session never
+// keeps pointing at the offscreen layer.
+struct PlayLayerGuard {
+    GameManager* gm = nullptr;
+    PlayLayer* prev = nullptr;
+    explicit PlayLayerGuard(GameManager* g) : gm(g), prev(g ? g->m_playLayer : nullptr) {}
+    ~PlayLayerGuard() { if (gm) gm->m_playLayer = prev; }
+    PlayLayerGuard(PlayLayerGuard const&) = delete;
+    PlayLayerGuard& operator=(PlayLayerGuard const&) = delete;
+};
 
 constexpr float kDesignH = 320.f;          // gd camera height in world units (zoom 1)
 constexpr int   kSupersample = 2;          // render at nx then downscale for aa/sharpness
@@ -89,8 +116,6 @@ int setupWindow(PlayLayer* pl, float zoneX, float designW) {
 
     pl->m_gameState.m_cameraPosition.x = camLeftX;
     pl->m_gameState.m_cameraPosition.y = camBottomY;
-    pl->m_gameState.m_cameraPosition2.x = camLeftX;
-    pl->m_gameState.m_cameraPosition2.y = camBottomY;
     if (pl->m_objectLayer) {
         pl->m_objectLayer->setPosition(-camLeftX, -camBottomY);
     }
@@ -112,15 +137,66 @@ bool renderWindow(CCNode* scene, int rw, int rh, std::vector<uint8_t>& out) {
 
 }
 
+bool OffscreenLevelRenderer::isRendering() {
+    return renderFlag().load(std::memory_order_relaxed);
+}
+
+bool OffscreenLevelRenderer::passesSizeGuards(GJGameLevel* level, int levelID) {
+    size_t const levelSize = level->m_levelString.size();
+    long const objCount = static_cast<long>(level->m_objectCount.value());
+    long const cap = static_cast<long>(config::maxObjects());
+    if (levelSize > kMaxLevelStringBytes) {
+        log::debug("[AutoPreview] skip level {} (size {} > {} bytes, objects {})",
+                   levelID, levelSize, kMaxLevelStringBytes, objCount);
+        return false;
+    }
+    if (objCount <= 0) {
+        // unknown object count: only allow small strings; the renderer's
+        // post-create guard re-checks the real count after PlayLayer::create.
+        if (levelSize > kUnknownCountMaxBytes) {
+            log::debug("[AutoPreview] skip level {} (unknown objects, size {} bytes)",
+                       levelID, levelSize);
+            return false;
+        }
+    } else if (objCount > cap) {
+        log::debug("[AutoPreview] skip level {} ({} objects > cap {})",
+                   levelID, objCount, cap);
+        return false;
+    }
+    return true;
+}
+
 OffscreenRenderResult OffscreenLevelRenderer::render(GJGameLevel* level, int width, int height) {
 OffscreenRenderResult result;
     if (!level || width <= 0 || height <= 0) return result;
     if (paimon::isRuntimeShuttingDown()) return result;
 
+    int const levelID = level->m_levelID.value();
+    size_t const levelSize = level->m_levelString.size();
+    long const objCount = static_cast<long>(level->m_objectCount.value());
+    long const cap = static_cast<long>(config::maxObjects());
+
     auto* dir = CCDirector::get();
     if (!dir || !dir->getOpenGLView()) return result;
-    if (PlayLayer::get() != nullptr) return result;
+    if (PlayLayer::get() != nullptr) {
+        log::debug("[AutoPreview] skip level {} (PlayLayer active, objects {}, size {})",
+                   levelID, objCount, levelSize);
+        return result;
+    }
+    if (LevelEditorLayer::get() != nullptr) {
+        log::debug("[AutoPreview] skip level {} (LevelEditor active, objects {}, size {})",
+                   levelID, objCount, levelSize);
+        return result;
+    }
     if (level->m_levelString.empty()) return result;
+    if (!passesSizeGuards(level, levelID)) return result;
+
+    if (renderFlag().exchange(true, std::memory_order_acquire)) {
+        log::debug("[AutoPreview] skip level {} (render already in progress, objects {}, size {})",
+                   levelID, objCount, levelSize);
+        return result;
+    }
+    FlagReset resetFlag;
 
     // playlayer::create runs every mod's init hook; skip or globed announces the level online.
     if (paimon::compat::ModCompat::isGlobedLoaded()) {
@@ -134,21 +210,41 @@ OffscreenRenderResult result;
     }
 
     auto* gm = GameManager::get();
-    PlayLayer* prevPlayLayer = gm ? gm->m_playLayer : nullptr;
+    PlayLayerGuard playLayerGuard(gm);
 
-    PlayLayer* pl = PlayLayer::create(level, false, false);
-    if (!pl) {
-        if (gm) gm->m_playLayer = prevPlayLayer;
+    PlayLayer* pl = nullptr;
+    try {
+        pl = PlayLayer::create(level, false);
+    } catch (std::exception const& ex) {
+        log::debug("[AutoPreview] skip level {} (PlayLayer::create threw: {}, objects {}, size {})",
+                   levelID, ex.what(), objCount, levelSize);
         return result;
+    } catch (...) {
+        log::debug("[AutoPreview] skip level {} (PlayLayer::create threw unknown, objects {}, size {})",
+                   levelID, objCount, levelSize);
+        return result;
+    }
+    if (!pl) {
+        return result;
+    }
+
+    // post-create guard: m_objectCount==0 levels can expand past the cap.
+    {
+        int const actualCount = pl->m_objects ? pl->m_objects->count() : 0;
+        if (actualCount > cap) {
+            log::debug("[AutoPreview] skip level {} (post-create {} objects > cap {}, size {})",
+                       levelID, actualCount, cap, levelSize);
+            return result;
+        }
     }
 
     Ref<CCScene> scene = CCScene::create();
     if (!scene) {
-        if (gm) gm->m_playLayer = prevPlayLayer;
         return result;
     }
-    scene->addChild(pl);
-    pl->updateLevelColors();
+    try {
+        scene->addChild(pl);
+        pl->updateLevelColors();
 
     bool const hasObjects = pl->m_objects && pl->m_objects->count() > 0;
 
@@ -191,8 +287,19 @@ OffscreenRenderResult result;
         }
     }
 
+    } catch (std::exception const& ex) {
+        log::debug("[AutoPreview] skip level {} (offscreen render threw: {}, objects {}, size {})",
+                   levelID, ex.what(), objCount, levelSize);
+        scene->removeChild(pl, true);
+        return result;
+    } catch (...) {
+        log::debug("[AutoPreview] skip level {} (offscreen render threw unknown, objects {}, size {})",
+                   levelID, objCount, levelSize);
+        scene->removeChild(pl, true);
+        return result;
+    }
+
     scene->removeChild(pl, true);
-    if (gm) gm->m_playLayer = prevPlayLayer;
     return result;
 }
 

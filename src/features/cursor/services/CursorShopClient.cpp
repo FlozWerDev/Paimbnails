@@ -1,4 +1,6 @@
 #include "CursorShopClient.hpp"
+#include "../../../utils/HttpClient.hpp"
+#include "../../../utils/HttpUrl.hpp"
 #include "../../../utils/WebHelper.hpp"
 
 #include <Geode/utils/web.hpp>
@@ -40,7 +42,7 @@ web::WebRequest makeRequest(int timeoutSeconds) {
     req.userAgent(kUserAgent);
     req.header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");
     req.header("Accept-Language", "en-US,en;q=0.9");
-    req.timeout(std::chrono::seconds(timeoutSeconds));
+    req.timeout(asp::Duration::fromSecs(timeoutSeconds));
     req.followRedirects(true);
     return req;
 }
@@ -414,25 +416,6 @@ ListingPage parseRwMixed(std::string const& html, int page) {
     return out;
 }
 
-std::string urlEncode(std::string const& value) {
-    static constexpr char kHex[] = "0123456789ABCDEF";
-    std::string out;
-    out.reserve(value.size() * 3);
-    for (unsigned char c : value) {
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-            c == '-' || c == '_' || c == '.' || c == '~') {
-            out.push_back(static_cast<char>(c));
-        } else if (c == ' ') {
-            out.push_back('+');
-        } else {
-            out.push_back('%');
-            out.push_back(kHex[c >> 4]);
-            out.push_back(kHex[c & 0x0f]);
-        }
-    }
-    return out;
-}
-
 ListingPage parseCcPacks(std::string const& html, int page) {
     ListingPage out;
     out.page = page;
@@ -552,6 +535,10 @@ Detail parseCcDetail(std::string const& html, std::string const& fallbackName) {
 
 void fetchHtml(std::string const& url, int timeoutSeconds,
                geode::CopyableFunction<void(Result<std::string>)> cb) {
+    if (!url.starts_with("https://") || !paimon::net::isPublicHttpUrl(url)) {
+        cb(Err("URL de tienda no permitida"));
+        return;
+    }
     WebHelper::dispatch(makeRequest(timeoutSeconds), "GET", url,
                         [cb, url](web::WebResponse res) mutable {
         if (!res.ok()) {
@@ -665,9 +652,9 @@ void ShopClient::fetchListing(Store store, Category const& category, int page, L
 
         // /cursor-library is cursors-only; /gallery needs "cursors" in the query.
         auto url = safePage == 0
-            ? fmt::format("{}/cursor-library?search={}", kRwBase, urlEncode(query))
+            ? fmt::format("{}/cursor-library?search={}", kRwBase, HttpClient::encodeQueryParamForm(query))
             : fmt::format("{}/gallery?search={}&page={}", kRwBase,
-                          urlEncode(query + " cursors"), safePage + 1);
+                          HttpClient::encodeQueryParamForm(query + " cursors"), safePage + 1);
 
         fetchHtml(url, 25, [cb, safePage](Result<std::string> res) mutable {
             if (!res) {
@@ -782,6 +769,14 @@ void ShopClient::download(std::string const& url, BytesCallback cb) {
 }
 
 void ShopClient::download(std::string const& url, std::string const& fallbackUrl, BytesCallback cb) {
+    if (!url.starts_with("https://") || !paimon::net::isPublicHttpUrl(url)) {
+        if (!fallbackUrl.empty()) {
+            ShopClient::download(fallbackUrl, "", std::move(cb));
+            return;
+        }
+        cb(Err("URL de descarga no permitida"));
+        return;
+    }
     WebHelper::dispatch(makeRequest(40), "GET", url,
                         [cb, fallbackUrl](web::WebResponse res) mutable {
         auto failed = !res.ok();

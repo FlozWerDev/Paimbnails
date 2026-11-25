@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../utils/FilesystemPath.hpp"
 
 #include "../model/MenuMusicTypes.hpp"
 #include "MenuMusicPlayer.hpp"
@@ -35,7 +36,7 @@ inline std::optional<int> tryParseGDSongIdFromStem(std::string const& stem) {
 
 inline std::optional<int> tryParseGDSongIdFromPath(std::string const& path) {
     if (path.empty()) return std::nullopt;
-    auto stem = geode::utils::string::pathToString(std::filesystem::path(path).stem());
+    auto stem = paimon::paths::toUtf8(std::filesystem::path(path).stem());
     return tryParseGDSongIdFromStem(stem);
 }
 
@@ -77,7 +78,7 @@ inline std::optional<int> resolveGDSongId(
 
 inline std::string fallbackTrackLabel(MusicTrack const& track) {
     if (!track.displayName.empty()) return track.displayName;
-    return geode::utils::string::pathToString(std::filesystem::path(track.audioPath).stem());
+    return paimon::paths::toUtf8(std::filesystem::path(track.audioPath).stem());
 }
 
 inline std::string fallbackPathLabel(
@@ -86,7 +87,7 @@ inline std::string fallbackPathLabel(
 ) {
     if (!displayName.empty()) return displayName;
     if (path.empty()) return {};
-    return geode::utils::string::pathToString(std::filesystem::path(path).stem());
+    return paimon::paths::toUtf8(std::filesystem::path(path).stem());
 }
 
 // clipboard value: id when known, else the visible name.
@@ -110,7 +111,7 @@ inline std::string resolvePathCopyValue(
 
 inline bool isVanillaMenuLoopPath(std::string const& path) {
     if (path.empty()) return true;
-    auto filename = geode::utils::string::pathToString(std::filesystem::path(path).filename());
+    auto filename = paimon::paths::toUtf8(std::filesystem::path(path).filename());
     return filename == "menuLoop.mp3";
 }
 

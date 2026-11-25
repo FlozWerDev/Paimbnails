@@ -1,8 +1,63 @@
 #include "LightLemmatizer.hpp"
 
 #include <algorithm>
+#include <cctype>
 
 namespace paimon::guide {
+
+namespace {
+
+// minimal "accented -> plain letter" map to normalize user queries (common es/pt/fr, utf-8 0xc3 0xxx).
+std::string stripBasicAccents(std::string const& in) {
+    std::string out;
+    out.reserve(in.size());
+    for (size_t i = 0; i < in.size();) {
+        unsigned char c = static_cast<unsigned char>(in[i]);
+
+        if (c == 0xC3 && i + 1 < in.size()) {
+            unsigned char c2 = static_cast<unsigned char>(in[i + 1]);
+            char replacement = 0;
+            switch (c2) {
+                case 0xA1: case 0xA0: case 0xA2: case 0xA3: case 0xA4: case 0xA5:
+                    replacement = 'a'; break;
+                case 0xA9: case 0xA8: case 0xAA: case 0xAB:
+                    replacement = 'e'; break;
+                case 0xAD: case 0xAC: case 0xAE: case 0xAF:
+                    replacement = 'i'; break;
+                case 0xB3: case 0xB2: case 0xB4: case 0xB5: case 0xB6:
+                    replacement = 'o'; break;
+                case 0xBA: case 0xB9: case 0xBB: case 0xBC:
+                    replacement = 'u'; break;
+                case 0xB1:
+                    replacement = 'n'; break; // n with tilde (lower)
+                case 0x81: case 0x80: case 0x82: case 0x83: case 0x84: case 0x85:
+                    replacement = 'a'; break;
+                case 0x89: case 0x88: case 0x8A: case 0x8B:
+                    replacement = 'e'; break;
+                case 0x8D: case 0x8C: case 0x8E: case 0x8F:
+                    replacement = 'i'; break;
+                case 0x93: case 0x92: case 0x94: case 0x95: case 0x96:
+                    replacement = 'o'; break;
+                case 0x9A: case 0x99: case 0x9B: case 0x9C:
+                    replacement = 'u'; break;
+                case 0x91:
+                    replacement = 'n'; break; // n with tilde (upper)
+                default: break;
+            }
+            if (replacement != 0) {
+                out.push_back(replacement);
+                i += 2;
+                continue;
+            }
+        }
+
+        out.push_back(static_cast<char>(c));
+        ++i;
+    }
+    return out;
+}
+
+} // namespace
 
 // shared normalized en/es stopwords.
 
@@ -146,6 +201,65 @@ std::unordered_map<std::string, std::string> const& LightLemmatizer::synonyms() 
         {"leaderboard","ranking"},
         {"leaderboards","ranking"},
         {"ranking",    "ranking"},
+        // ---- round 10: conversational + gd shorthand (helps short queries) ----
+        {"ola",        "hola"},
+        {"holas",      "hola"},
+        {"hello",      "hi"},
+        {"hey",        "hi"},
+        {"okay",       "ok"},
+        {"oke",        "ok"},
+        {"vale",       "ok"},
+        {"ok",         "ok"},
+        {"grax",       "gracias"},
+        {"gracia",     "gracias"},
+        {"thanku",     "thanks"},
+        {"thankyou",   "thanks"},
+        {"chao",       "adios"},
+        {"bye",        "adios"},
+        {"pantalla",   "background"},
+        {"screen",     "background"},
+        {"flecha",     "cursor"},
+        {"arrow",      "cursor"},
+        {"melodia",    "music"},
+        {"melody",     "music"},
+        {"cancioncita","music"},
+        {"fotito",     "picture"},
+        {"fotillo",    "picture"},
+        {"cap",        "capture"},
+        {"capturar",   "capture"},
+        {"foto",       "picture"},
+        {"fotos",      "picture"},
+        {"imagen",     "picture"},
+        {"imagenes",   "picture"},
+        {"deamon",     "demon"},
+        {"demons",     "demon"},
+        {"lvl",        "level"},
+        {"niv",        "level"},
+        {"nivel",      "level"},
+        {"levels",     "level"},
+        {"niveles",    "level"},
+        {"ajuste",     "settings"},
+        {"ajustes",    "settings"},
+        {"configuracion", "settings"},
+        {"opciones",   "settings"},
+        {"option",     "settings"},
+        {"options",    "settings"},
+        {"personalizar","custom"},
+        {"customizar", "custom"},
+        {"customize",  "custom"},
+        {"customise",  "custom"},
+        {"cambiar",    "change"},
+        {"cambia",     "change"},
+        {"cambio",     "change"},
+        {"pon",        "put"},
+        {"ponme",      "put"},
+        {"quita",      "remove"},
+        {"saca",       "remove"},
+        {"muestrame",   "show"},
+        {"ensename",   "show"},
+        {"dime",       "tell"},
+        {"explicame",  "explain"},
+        {"explain",    "explain"},
         {"layout",     "layout"},
         {"typography", "fonts"},
         {"font",       "fonts"},
@@ -267,6 +381,19 @@ std::string LightLemmatizer::stem(std::string const& t) {
     if (t.size() >= 5 && endsWith("ando"))  return t.substr(0, t.size() - 4);
     if (t.size() >= 6 && endsWith("mente")) return t.substr(0, t.size() - 5);
     if (t.size() >= 5 && endsWith("cion"))  return t.substr(0, t.size() - 4);
+    // spanish participles: configurado -> configur, personalizada -> personaliz
+    if (t.size() >= 6 && (endsWith("ados") || endsWith("idos")
+                       || endsWith("adas") || endsWith("idas"))) {
+        return t.substr(0, t.size() - 4);
+    }
+    if (t.size() >= 5 && (endsWith("ado") || endsWith("ido")
+                       || endsWith("ada") || endsWith("ida"))) {
+        return t.substr(0, t.size() - 3);
+    }
+    // spanish infinitives (only len>=6 so nouns like "lugar" keep their root).
+    if (t.size() >= 6 && (endsWith("ar") || endsWith("er") || endsWith("ir"))) {
+        return t.substr(0, t.size() - 2);
+    }
     if (t.size() >= 4 && endsWith("ing"))   return t.substr(0, t.size() - 3);
     if (t.size() >= 4 && endsWith("ed"))    return t.substr(0, t.size() - 2);
     if (t.size() >= 4 && endsWith("es"))    return t.substr(0, t.size() - 2);
@@ -320,6 +447,47 @@ std::vector<std::string> LightLemmatizer::removeStopwords(
         if (!isStopword(t)) out.push_back(t);
     }
     return out;
+}
+
+std::string LightLemmatizer::normalize(std::string s) {
+    s = stripBasicAccents(s);
+    std::string out;
+    out.reserve(s.size());
+    bool lastSpace = true;
+    for (char c : s) {
+        unsigned char u = static_cast<unsigned char>(c);
+        if (u < 0x80) {
+            char low = static_cast<char>(std::tolower(u));
+            if (std::isalnum(static_cast<unsigned char>(low))) {
+                out.push_back(low);
+                lastSpace = false;
+            } else {
+                if (!lastSpace) {
+                    out.push_back(' ');
+                    lastSpace = true;
+                }
+            }
+        } else {
+            out.push_back(c);
+            lastSpace = false;
+        }
+    }
+    while (!out.empty() && out.back() == ' ') out.pop_back();
+    return out;
+}
+
+std::vector<std::string> LightLemmatizer::tokenize(std::string const& normalized) {
+    std::vector<std::string> tokens;
+    std::string cur;
+    for (char c : normalized) {
+        if (c == ' ') {
+            if (!cur.empty()) { tokens.push_back(cur); cur.clear(); }
+        } else {
+            cur.push_back(c);
+        }
+    }
+    if (!cur.empty()) tokens.push_back(cur);
+    return tokens;
 }
 
 }

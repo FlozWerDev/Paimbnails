@@ -12,6 +12,33 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
+namespace {
+
+// step an option index with wraparound.
+void stepOptionIndex(int& index, int count, int dir) {
+    index = (index + dir + count) % count;
+}
+
+// persist an option; fps/quality also drop the settings snapshot so new
+// decode slots see the change immediately.
+template <typename T>
+void commitOption(char const* key, T const& value, bool invalidateCache) {
+    Mod::get()->setSavedValue(key, value);
+    if (invalidateCache) paimon::settings::internal::invalidateSettingsCache();
+    paimon::requestDeferredModSave();
+}
+
+// first index of `current` in `options`, or `fallback` when absent.
+template <typename T, typename U>
+int indexOfOption(std::vector<T> const& options, U const& current, int fallback) {
+    for (int i = 0; i < static_cast<int>(options.size()); i++) {
+        if (options[i] == current) return i;
+    }
+    return fallback;
+}
+
+} // namespace
+
 VideoSettingsPopup* VideoSettingsPopup::create() {
     auto ret = new VideoSettingsPopup();
     if (ret && ret->init()) {
@@ -36,22 +63,13 @@ bool VideoSettingsPopup::init() {
     float cx = content.width / 2.f;
 
     int currentFps = paimon::settings::video::fpsLimit();
-    m_fpsIndex = 2;
-    for (int i = 0; i < (int)FPS_OPTIONS.size(); i++) {
-        if (FPS_OPTIONS[i] == currentFps) { m_fpsIndex = i; break; }
-    }
+    m_fpsIndex = indexOfOption(FPS_OPTIONS, currentFps, 2);
 
     int currentQuality = paimon::settings::video::videoQuality();
-    m_qualityIndex = 0;
-    for (int i = 0; i < (int)QUALITY_OPTIONS.size(); i++) {
-        if (QUALITY_OPTIONS[i] == currentQuality) { m_qualityIndex = i; break; }
-    }
+    m_qualityIndex = indexOfOption(QUALITY_OPTIONS, currentQuality, 0);
 
     std::string currentBlurType = paimon::settings::video::videoBlurType();
-    m_blurTypeIndex = 0;
-    for (int i = 0; i < (int)BLUR_TYPE_OPTIONS.size(); i++) {
-        if (BLUR_TYPE_OPTIONS[i] == currentBlurType) { m_blurTypeIndex = i; break; }
-    }
+    m_blurTypeIndex = indexOfOption(BLUR_TYPE_OPTIONS, currentBlurType, 0);
 
     float currentIntensity = paimon::settings::video::videoBlurIntensity();
     m_blurIntensityIndex = 4;
@@ -62,25 +80,15 @@ bool VideoSettingsPopup::init() {
     }
 
     int currentRotation = paimon::settings::video::videoRotation();
-    m_rotationIndex = 0;
-    for (int i = 0; i < (int)ROTATION_OPTIONS.size(); i++) {
-        if (ROTATION_OPTIONS[i] == currentRotation) { m_rotationIndex = i; break; }
-    }
+    m_rotationIndex = indexOfOption(ROTATION_OPTIONS, currentRotation, 0);
 
     auto menu = CCMenu::create();
     menu->setPosition({0, 0});
     m_mainLayer->addChild(menu, 10);
 
-    auto makeArrowL = [&](float x, float y, SEL_MenuHandler sel) {
+    auto makeArrow = [&](float x, float y, SEL_MenuHandler sel, bool flip) {
         auto spr = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
-        spr->setFlipX(true);
-        spr->setScale(0.35f);
-        auto btn = CCMenuItemSpriteExtra::create(spr, this, sel);
-        btn->setPosition({x, y});
-        menu->addChild(btn);
-    };
-    auto makeArrowR = [&](float x, float y, SEL_MenuHandler sel) {
-        auto spr = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
+        spr->setFlipX(flip);
         spr->setScale(0.35f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this, sel);
         btn->setPosition({x, y});
@@ -130,26 +138,26 @@ bool VideoSettingsPopup::init() {
         fpsTitle->setScale(0.30f);
         fpsTitle->setPosition({titleX, fpsY});
         m_mainLayer->addChild(fpsTitle, 1);
-        makeArrowL(prevX, fpsY, menu_selector(VideoSettingsPopup::onFpsPrev));
+        makeArrow(prevX, fpsY, menu_selector(VideoSettingsPopup::onFpsPrev), true);
         m_fpsLabel = CCLabelBMFont::create("30", "bigFont.fnt");
         m_fpsLabel->setScale(0.38f);
         m_fpsLabel->setColor({100, 255, 100});
         m_fpsLabel->setPosition({valX, fpsY});
         m_mainLayer->addChild(m_fpsLabel, 1);
-        makeArrowR(nextX, fpsY, menu_selector(VideoSettingsPopup::onFpsNext));
+        makeArrow(nextX, fpsY, menu_selector(VideoSettingsPopup::onFpsNext), false);
         updateFpsLabel();
 
         auto qualityTitle = CCLabelBMFont::create("Quality:", "bigFont.fnt");
         qualityTitle->setScale(0.30f);
         qualityTitle->setPosition({titleX, qualityY});
         m_mainLayer->addChild(qualityTitle, 1);
-        makeArrowL(prevX, qualityY, menu_selector(VideoSettingsPopup::onQualityPrev));
+        makeArrow(prevX, qualityY, menu_selector(VideoSettingsPopup::onQualityPrev), true);
         m_qualityLabel = CCLabelBMFont::create("Auto", "bigFont.fnt");
         m_qualityLabel->setScale(0.38f);
         m_qualityLabel->setColor({100, 200, 255});
         m_qualityLabel->setPosition({valX, qualityY});
         m_mainLayer->addChild(m_qualityLabel, 1);
-        makeArrowR(nextX, qualityY, menu_selector(VideoSettingsPopup::onQualityNext));
+        makeArrow(nextX, qualityY, menu_selector(VideoSettingsPopup::onQualityNext), false);
         updateQualityLabel();
 
         auto audioTitle = CCLabelBMFont::create("Audio:", "bigFont.fnt");
@@ -178,13 +186,13 @@ bool VideoSettingsPopup::init() {
         blurTitle->setScale(0.30f);
         blurTitle->setPosition({titleX, blurTypeY});
         m_mainLayer->addChild(blurTitle, 1);
-        makeArrowL(prevX, blurTypeY, menu_selector(VideoSettingsPopup::onBlurTypePrev));
+        makeArrow(prevX, blurTypeY, menu_selector(VideoSettingsPopup::onBlurTypePrev), true);
         m_blurTypeLabel = CCLabelBMFont::create("None", "bigFont.fnt");
         m_blurTypeLabel->setScale(0.35f);
         m_blurTypeLabel->setColor({180, 180, 180});
         m_blurTypeLabel->setPosition({valX, blurTypeY});
         m_mainLayer->addChild(m_blurTypeLabel, 1);
-        makeArrowR(nextX, blurTypeY, menu_selector(VideoSettingsPopup::onBlurTypeNext));
+        makeArrow(nextX, blurTypeY, menu_selector(VideoSettingsPopup::onBlurTypeNext), false);
         updateBlurTypeLabel();
 
         m_blurIntensityTitleLabel = CCLabelBMFont::create("Intensity:", "bigFont.fnt");
@@ -224,13 +232,13 @@ bool VideoSettingsPopup::init() {
         rotTitle->setScale(0.30f);
         rotTitle->setPosition({titleX, rotationY});
         m_mainLayer->addChild(rotTitle, 1);
-        makeArrowL(prevX, rotationY, menu_selector(VideoSettingsPopup::onRotationPrev));
+        makeArrow(prevX, rotationY, menu_selector(VideoSettingsPopup::onRotationPrev), true);
         m_rotationLabel = CCLabelBMFont::create("0", "bigFont.fnt");
         m_rotationLabel->setScale(0.38f);
         m_rotationLabel->setColor({100, 255, 200});
         m_rotationLabel->setPosition({valX, rotationY});
         m_mainLayer->addChild(m_rotationLabel, 1);
-        makeArrowR(nextX, rotationY, menu_selector(VideoSettingsPopup::onRotationNext));
+        makeArrow(nextX, rotationY, menu_selector(VideoSettingsPopup::onRotationNext), false);
         updateRotationLabel();
     }
 
@@ -279,21 +287,17 @@ bool VideoSettingsPopup::init() {
 
 
 void VideoSettingsPopup::onFpsPrev(CCObject*) {
-    if (--m_fpsIndex < 0) m_fpsIndex = (int)FPS_OPTIONS.size() - 1;
+    stepOptionIndex(m_fpsIndex, static_cast<int>(FPS_OPTIONS.size()), -1);
     int newFPS = FPS_OPTIONS[m_fpsIndex];
-    Mod::get()->setSavedValue("video-fps-limit", newFPS);
-    paimon::settings::internal::invalidateSettingsCache();
-    paimon::requestDeferredModSave();
+    commitOption("video-fps-limit", newFPS, true);
     LayerBackgroundManager::get().broadcastFPSUpdate(newFPS);
     updateFpsLabel();
 }
 
 void VideoSettingsPopup::onFpsNext(CCObject*) {
-    if (++m_fpsIndex >= (int)FPS_OPTIONS.size()) m_fpsIndex = 0;
+    stepOptionIndex(m_fpsIndex, static_cast<int>(FPS_OPTIONS.size()), 1);
     int newFPS = FPS_OPTIONS[m_fpsIndex];
-    Mod::get()->setSavedValue("video-fps-limit", newFPS);
-    paimon::settings::internal::invalidateSettingsCache();
-    paimon::requestDeferredModSave();
+    commitOption("video-fps-limit", newFPS, true);
     LayerBackgroundManager::get().broadcastFPSUpdate(newFPS);
     updateFpsLabel();
 }
@@ -305,19 +309,14 @@ void VideoSettingsPopup::updateFpsLabel() {
 
 
 void VideoSettingsPopup::onQualityPrev(CCObject*) {
-    if (--m_qualityIndex < 0) m_qualityIndex = (int)QUALITY_OPTIONS.size() - 1;
-    Mod::get()->setSavedValue("video-quality", QUALITY_OPTIONS[m_qualityIndex]);
-        // invalidate decode/fps snapshots so new slots see changes immediately.
-    paimon::settings::internal::invalidateSettingsCache();
-    paimon::requestDeferredModSave();
+    stepOptionIndex(m_qualityIndex, static_cast<int>(QUALITY_OPTIONS.size()), -1);
+    commitOption("video-quality", QUALITY_OPTIONS[m_qualityIndex], true);
     updateQualityLabel();
 }
 
 void VideoSettingsPopup::onQualityNext(CCObject*) {
-    if (++m_qualityIndex >= (int)QUALITY_OPTIONS.size()) m_qualityIndex = 0;
-    Mod::get()->setSavedValue("video-quality", QUALITY_OPTIONS[m_qualityIndex]);
-    paimon::settings::internal::invalidateSettingsCache();
-    paimon::requestDeferredModSave();
+    stepOptionIndex(m_qualityIndex, static_cast<int>(QUALITY_OPTIONS.size()), 1);
+    commitOption("video-quality", QUALITY_OPTIONS[m_qualityIndex], true);
     updateQualityLabel();
 }
 
@@ -343,17 +342,15 @@ void VideoSettingsPopup::onAudioToggle(CCObject* sender) {
 
 
 void VideoSettingsPopup::onBlurTypePrev(CCObject*) {
-    if (--m_blurTypeIndex < 0) m_blurTypeIndex = (int)BLUR_TYPE_OPTIONS.size() - 1;
-    Mod::get()->setSavedValue("video-blur-type", BLUR_TYPE_OPTIONS[m_blurTypeIndex]);
-    paimon::requestDeferredModSave();
+    stepOptionIndex(m_blurTypeIndex, static_cast<int>(BLUR_TYPE_OPTIONS.size()), -1);
+    commitOption("video-blur-type", BLUR_TYPE_OPTIONS[m_blurTypeIndex], false);
     updateBlurTypeLabel();
     updateBlurIntensityVisibility();
 }
 
 void VideoSettingsPopup::onBlurTypeNext(CCObject*) {
-    if (++m_blurTypeIndex >= (int)BLUR_TYPE_OPTIONS.size()) m_blurTypeIndex = 0;
-    Mod::get()->setSavedValue("video-blur-type", BLUR_TYPE_OPTIONS[m_blurTypeIndex]);
-    paimon::requestDeferredModSave();
+    stepOptionIndex(m_blurTypeIndex, static_cast<int>(BLUR_TYPE_OPTIONS.size()), 1);
+    commitOption("video-blur-type", BLUR_TYPE_OPTIONS[m_blurTypeIndex], false);
     updateBlurTypeLabel();
     updateBlurIntensityVisibility();
 }
@@ -377,16 +374,14 @@ void VideoSettingsPopup::updateBlurIntensityVisibility() {
 
 
 void VideoSettingsPopup::onBlurIntensityPrev(CCObject*) {
-    if (--m_blurIntensityIndex < 0) m_blurIntensityIndex = (int)BLUR_INTENSITY_OPTIONS.size() - 1;
-    Mod::get()->setSavedValue("video-blur-intensity", BLUR_INTENSITY_OPTIONS[m_blurIntensityIndex]);
-    paimon::requestDeferredModSave();
+    stepOptionIndex(m_blurIntensityIndex, static_cast<int>(BLUR_INTENSITY_OPTIONS.size()), -1);
+    commitOption("video-blur-intensity", BLUR_INTENSITY_OPTIONS[m_blurIntensityIndex], false);
     updateBlurIntensityLabel();
 }
 
 void VideoSettingsPopup::onBlurIntensityNext(CCObject*) {
-    if (++m_blurIntensityIndex >= (int)BLUR_INTENSITY_OPTIONS.size()) m_blurIntensityIndex = 0;
-    Mod::get()->setSavedValue("video-blur-intensity", BLUR_INTENSITY_OPTIONS[m_blurIntensityIndex]);
-    paimon::requestDeferredModSave();
+    stepOptionIndex(m_blurIntensityIndex, static_cast<int>(BLUR_INTENSITY_OPTIONS.size()), 1);
+    commitOption("video-blur-intensity", BLUR_INTENSITY_OPTIONS[m_blurIntensityIndex], false);
     updateBlurIntensityLabel();
 }
 
@@ -397,19 +392,17 @@ void VideoSettingsPopup::updateBlurIntensityLabel() {
 
 
 void VideoSettingsPopup::onRotationPrev(CCObject*) {
-    if (--m_rotationIndex < 0) m_rotationIndex = (int)ROTATION_OPTIONS.size() - 1;
+    stepOptionIndex(m_rotationIndex, static_cast<int>(ROTATION_OPTIONS.size()), -1);
     int newRot = ROTATION_OPTIONS[m_rotationIndex];
-    Mod::get()->setSavedValue("video-rotation", newRot);
-    paimon::requestDeferredModSave();
+    commitOption("video-rotation", newRot, false);
     updateRotationLabel();
     LayerBackgroundManager::get().broadcastRotationUpdate(newRot);
 }
 
 void VideoSettingsPopup::onRotationNext(CCObject*) {
-    if (++m_rotationIndex >= (int)ROTATION_OPTIONS.size()) m_rotationIndex = 0;
+    stepOptionIndex(m_rotationIndex, static_cast<int>(ROTATION_OPTIONS.size()), 1);
     int newRot = ROTATION_OPTIONS[m_rotationIndex];
-    Mod::get()->setSavedValue("video-rotation", newRot);
-    paimon::requestDeferredModSave();
+    commitOption("video-rotation", newRot, false);
     updateRotationLabel();
     LayerBackgroundManager::get().broadcastRotationUpdate(newRot);
 }

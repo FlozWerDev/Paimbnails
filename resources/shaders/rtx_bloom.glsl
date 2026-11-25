@@ -20,7 +20,7 @@ uniform float u_adaptRate;
 uniform vec3 u_reprojRow0;
 uniform vec3 u_reprojRow1;
 
-const int kRaySamples = 24;
+const int kRaySamples = 48;
 // luma-approx shadows, no g-buffer.
 const float kVolBlock = 0.35;
 
@@ -104,7 +104,7 @@ void main() {
         outColor = vec3(mix(texture2D(u_add, vec2(0.5)).r, lum, u_adaptRate));
     } else if (u_mode > 2.5) {
         vec2 delta = (uv - u_lightPos) * u_density / float(kRaySamples);
-        float j0 = hash12(gl_FragCoord.xy);
+        float j0 = ign(gl_FragCoord.xy, 0.0);
         vec2 p = uv - delta * j0;
         float illum = 1.0;
         float trans = 1.0;
@@ -123,9 +123,9 @@ void main() {
             trans *= exp(-min(luma(s), 8.0) * kVolBlock);
             illum *= decay;
         }
-        vec2 npc = (uv - u_lightPos) * vec2(u_texel.y / u_texel.x, 1.0) * 6.0;
+        vec2 npc = (uv - u_lightPos) * vec2(u_texel.y / u_texel.x, 1.0) * 8.0;
         float vn = vnoise(npc * 3.0) * 0.65 + vnoise(npc * 7.0 + 13.7) * 0.35;
-        float dens = mix(0.75, 1.25, clamp(vn, 0.0, 1.0));
+        float dens = mix(0.92, 1.08, clamp(vn, 0.0, 1.0));
         outColor = acc / max(wsum, 0.0001) * dens;
     } else if (u_mode > 1.5) {
         vec2 spread = u_texel * u_radius * vec2(1.0 + u_anamorphic * 3.0, 1.0);
@@ -140,7 +140,7 @@ void main() {
             && all(lessThanEqual(histUV, vec2(1.0)))) {
             vec3 currentGuide = texture2D(u_src, uv).rgb;
             vec3 historyGuide = texture2D(u_guide, histUV).rgb;
-            float agreement = exp(-distance(currentGuide, historyGuide) * 24.0);
+            float agreement = exp(-distance(currentGuide, historyGuide) * 12.0);
             lighting = softClampHi(texture2D(u_add, histUV).rgb) * u_giMix * agreement;
         }
         outColor = knee(down13(uv, u_texel, 1.0) + lighting);

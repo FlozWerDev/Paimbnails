@@ -128,6 +128,9 @@ std::vector<int> parseGroupInput(std::string_view text) {
         }
         if (!number(part.substr(0, dash), from) || !number(part.substr(dash + 1), to)) continue;
         int const step = from <= to ? 1 : -1;
+        if (std::max(from, to) < 1 || std::min(from, to) > kMaxGroup) continue;
+        from = std::clamp(from, 1, kMaxGroup);
+        to = std::clamp(to, 1, kMaxGroup);
         for (int group = from; groups.size() < static_cast<std::size_t>(kMaxFrames); group += step) {
             add(group);
             if (group == to) break;

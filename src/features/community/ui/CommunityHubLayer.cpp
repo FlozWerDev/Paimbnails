@@ -1,9 +1,14 @@
 #include "../../../ui/PaimonUI.hpp"
 #include "CommunityHubLayer.hpp"
 #include "../../audio/services/CaveAudio.hpp"
+#include <Geode/utils/string.hpp>
+#include "../../../core/BanGate.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
+#include "../../../utils/AtomicFileWrite.hpp"
+#include "../../../utils/FilesystemPath.hpp"
 #include "../../../utils/HttpClient.hpp"
+#include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/ModProfileCache.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
@@ -22,6 +27,7 @@
 #include "../../../utils/Shaders.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../blur/BlurSystem.hpp"
+#include "../../thumbnails/ui/LocalThumbnailViewPopup.hpp"
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <Geode/binding/GameLevelManager.hpp>
@@ -33,7 +39,12 @@
 #include <Geode/ui/PopupManager.hpp>
 #include <matjson.hpp>
 #include <algorithm>
+#include <cmath>
+#include <cstdlib>
 #include <ctime>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 
 using namespace geode::prelude;
 
@@ -42,6 +53,50 @@ namespace {
     constexpr int kMaxIconsInFlight = 3;
     constexpr int kMaxIconAttempts = 3;
     constexpr float kIconTickInterval = 0.3f;
+    constexpr int kMaxParticles = 16;
+    constexpr float kTopButtonThreshold = 90.f;
+
+    // card geometry: tabs, toolbar, list and status line share one panel.
+    constexpr float kCardPad = 6.f;
+    constexpr float kTabsH = 24.f;
+    constexpr float kToolbarH = 22.f;
+    constexpr float kFooterH = 16.f;
+    constexpr float kScrollGutter = 12.f;
+    constexpr float kToolButton = 22.f;
+    constexpr float kSortButtonW = 84.f;
+    constexpr float kSearchScale = 0.75f;
+    constexpr GLubyte kBorderOpacity = 150;
+    constexpr std::uintmax_t kMaxSnapshotBytes = 4 * 1024 * 1024;
+
+    std::string formatStamp(std::time_t when, bool withDate) {
+        std::tm tmv{};
+#if defined(GEODE_IS_WINDOWS)
+        localtime_s(&tmv, &when);
+#else
+        localtime_r(&when, &tmv);
+#endif
+        char buf[24];
+        std::strftime(buf, sizeof(buf), withDate ? "%d/%m %H:%M" : "%H:%M", &tmv);
+        return buf;
+    }
+
+    GLubyte stepChannel(GLubyte cur, GLubyte target, float k) {
+        int diff = static_cast<int>(target) - static_cast<int>(cur);
+        if (diff == 0) return cur;
+        int step = static_cast<int>(std::lround(static_cast<float>(diff) * k));
+        // integer rounding would otherwise stall a few units short of the target.
+        if (step == 0) step = diff > 0 ? 1 : -1;
+        return static_cast<GLubyte>(static_cast<int>(cur) + step);
+    }
+
+    ccColor3B stepColor(ccColor3B cur, ccColor3B target, float k) {
+        return {stepChannel(cur.r, target.r, k), stepChannel(cur.g, target.g, k),
+                stepChannel(cur.b, target.b, k)};
+    }
+
+    bool sameColor(ccColor3B a, ccColor3B b) {
+        return a.r == b.r && a.g == b.g && a.b == b.b;
+    }
 
     struct CachedModEntry {
         std::string username;
@@ -49,7 +104,8 @@ namespace {
         int accountID = 0;
     };
     static std::vector<CachedModEntry> s_cachedModEntries;
-    // intentionally heap-allocated to avoid atexit destructor crash (ref<> releasing ccobject after ccpoolmanager is gone)
+    // intentionally heap-allocated: ref<> releasing ccobject after
+    // ccpoolmanager is gone would crash at atexit.
     static Ref<CCArray>& getCachedModScores() {
         static auto* s_ptr = new Ref<CCArray>();
         return *s_ptr;
@@ -57,10 +113,6 @@ namespace {
     static std::time_t s_modCacheTimestamp = 0;
     static bool s_modCacheValid = false;
     static constexpr std::time_t k_modCacheTTL = 900;
-
-    std::string toLowerCopy(std::string const& value) {
-        return geode::utils::string::toLower(value);
-    }
 
     // shares the score cache lifetime: both hold the same gjuserscore objects.
     std::unordered_set<std::string>& iconReadyNames() {
@@ -174,7 +226,7 @@ namespace {
     }
 
     std::string accountIDKey(std::string const& username) {
-        return fmt::format("gd-accid-{}", toLowerCopy(username));
+        return fmt::format("gd-accid-{}", geode::utils::string::toLower(username));
     }
 
     int rememberedAccountID(std::string const& username) {
@@ -233,6 +285,7 @@ bool CommunityHubLayer::init() {
     this->setTouchPriority(0);
 #if defined(GEODE_IS_WINDOWS)
     this->setMouseEnabled(true);
+    this->setKeyboardEnabled(true);
 #endif
 
     applyCaveEffect();
@@ -251,43 +304,63 @@ void CommunityHubLayer::buildChrome() {
         paimon::ui::decorateScene(this);
     }
 
-    m_listW = std::min(384.f, winSize.width - 44.f);
+    m_accent = m_accentTarget = accentFor(Tab::Moderators);
+    m_fxLayer = CCNode::create();
+    this->addChild(m_fxLayer, 0);
 
-    // header (title+subtitle) sits up top, tabs below it, then a toolbar strip,
-    // the list, and a footer summary at the very bottom.
-    float headerY = winSize.height - 20.f;
-    float tabsY = winSize.height - 74.f;
-    float toolbarY = tabsY - 30.f;
-    float footerH = 20.f;
-    float listTop = toolbarY - 22.f;
-    float listBottom = 14.f + footerH;
+    // one card holds the tabs, toolbar, list and status line; the header floats above it.
+    float cardW = std::min(410.f, winSize.width - 110.f);
+    float cardTop = winSize.height - 50.f;
+    float cardBottom = 10.f;
+    float cardH = cardTop - cardBottom;
+    m_cardRect = CCRect(winSize.width / 2.f - cardW / 2.f, cardBottom, cardW, cardH);
+
+    m_tabBaseY = cardTop - kCardPad - kTabsH / 2.f;
+    m_toolbarY = m_tabBaseY - kTabsH / 2.f - 5.f - kToolbarH / 2.f;
+    float listTop = m_toolbarY - kToolbarH / 2.f - 5.f;
+    float listBottom = cardBottom + kFooterH + 4.f;
+    m_listW = cardW - kCardPad * 2.f - kScrollGutter;
     m_listH = listTop - listBottom;
-    m_listCenter = ccp(winSize.width / 2.f, listBottom + m_listH / 2.f);
-    m_tabBaseY = tabsY;
+    m_listCenter = ccp(m_cardRect.getMinX() + kCardPad + m_listW / 2.f, listBottom + m_listH / 2.f);
 
+    float headerY = winSize.height - 19.f;
+    m_subtitleY = winSize.height - 39.f;
     m_title = CCLabelBMFont::create(loc.getString("community.title").c_str(), "goldFont.fnt");
-    m_title->setScale(0.9f);
+    m_title->setScale(0.8f);
+    m_title->limitLabelWidth(std::max(120.f, winSize.width - 160.f), 0.8f, 0.4f);
     m_title->setPosition({winSize.width / 2.f, headerY});
     this->addChild(m_title, 10);
+
+    m_card = CCNodeRGBA::create();
+    m_card->setCascadeOpacityEnabled(true);
+    m_card->setContentSize({cardW, cardH});
+    m_card->setAnchorPoint({0.5f, 0.5f});
+    m_card->setPosition({m_cardRect.getMidX(), m_cardRect.getMidY()});
+    this->addChild(m_card, 1);
+    m_card->addChild(paimon::ui::makeInset({cardW, cardH}, 125), 0);
+
+    // recessed track behind the segmented tabs.
+    auto* track = paimon::ui::makeInset({cardW - kCardPad * 2.f, kTabsH + 4.f}, 110);
+    track->setPosition({kCardPad, cardH - kCardPad - kTabsH - 2.f});
+    m_card->addChild(track, 1);
 
     m_listFrame = CCNode::create();
     m_listFrame->setContentSize({m_listW, m_listH});
     m_listFrame->setAnchorPoint({0.5f, 0.5f});
     m_listFrame->setPosition(m_listCenter);
-    this->addChild(m_listFrame, 1);
+    this->addChild(m_listFrame, 2);
+    m_listFrame->addChild(paimon::ui::makeInset({m_listW, m_listH}, 70));
 
-    auto* panel = paimon::ui::makeInset({m_listW, m_listH}, 95);
-    m_listFrame->addChild(panel);
-    paimon::ui::addCorners(m_listFrame, {m_listW, m_listH});
-
-    auto* titleIcon = paimon::SpriteHelper::safeCreateWithFrameName("gj_eventCrown_001.png");
-    if (titleIcon) {
-        titleIcon->setScale(0.8f);
-        float half = m_title->getScaledContentSize().width / 2.f;
-        titleIcon->setPosition({winSize.width / 2.f - half - 16.f, headerY});
-        this->addChild(titleIcon, 10);
+    // accent outline around the card; follows the active tab color.
+    if (auto* border = paimon::SpriteHelper::safeCreateScale9("GJ_square07.png")) {
+        border->setContentSize({cardW + 4.f, cardH + 4.f});
+        border->setAnchorPoint({0.5f, 0.5f});
+        border->setPosition({m_cardRect.getMidX(), m_cardRect.getMidY()});
+        border->setColor(m_accent);
+        border->setOpacity(kBorderOpacity);
+        this->addChild(border, 6);
+        m_listBorder = border;
     }
-
     auto menu = CCMenu::create();
     menu->setPosition(0, 0);
     menu->setZOrder(20);
@@ -311,7 +384,8 @@ void CommunityHubLayer::buildChrome() {
     }
     m_infoButton = CCMenuItemSpriteExtra::create(
         infoFace, this, menu_selector(CommunityHubLayer::onInfoButton));
-    m_infoButton->setPosition({24.f, 24.f});
+    // top-right keeps it clear of the side art in the bottom corners.
+    m_infoButton->setPosition({winSize.width - 25.f, winSize.height - 25.f});
     menu->addChild(m_infoButton);
 
     m_tabsMenu = CCMenu::create();
@@ -319,8 +393,10 @@ void CommunityHubLayer::buildChrome() {
     m_tabsMenu->setZOrder(10);
     this->addChild(m_tabsMenu);
 
-    float step = m_listW / 4.f;
-    float firstX = m_listCenter.x - step * 1.5f;
+    constexpr float kSegGap = 2.f;
+    float trackW = cardW - kCardPad * 2.f - 4.f;
+    float segW = (trackW - kSegGap * 3.f) / 4.f;
+    float firstX = m_cardRect.getMinX() + kCardPad + 2.f + segW / 2.f;
 
     char const* ids[] = {"mods", "creators", "thumbnails", "compat_mods"};
     char const* keys[] = {
@@ -329,12 +405,12 @@ void CommunityHubLayer::buildChrome() {
     };
 
     for (int i = 0; i < 4; i++) {
-        auto tab = createTabButton(loc.getString(keys[i]), ids[i], {firstX + step * i, m_tabBaseY});
+        auto tab = createTabButton(loc.getString(keys[i]), ids[i],
+            {firstX + (segW + kSegGap) * static_cast<float>(i), m_tabBaseY}, segW);
         m_tabsMenu->addChild(tab);
     }
 
     m_tabs.front()->toggle(true);
-    m_tabs.front()->setPositionY(m_tabBaseY + 4.f);
     m_tabs.front()->setZOrder(2);
 
     buildHeader();
@@ -349,7 +425,7 @@ void CommunityHubLayer::buildHeader() {
     m_subtitle->setScale(0.5f);
     m_subtitle->setColor({205, 205, 215});
     m_subtitle->setOpacity(220);
-    m_subtitle->setPosition({winSize.width / 2.f, winSize.height - 44.f});
+    m_subtitle->setPosition({winSize.width / 2.f, m_subtitleY});
     this->addChild(m_subtitle, 10);
 }
 
@@ -364,78 +440,158 @@ char const* CommunityHubLayer::tabIconFrame(Tab tab) const {
 }
 
 std::string CommunityHubLayer::tabSubtitle(Tab tab) const {
+    auto& loc = Localization::get();
     switch (tab) {
-        case Tab::Moderators: return "Equipo oficial que gestiona las miniaturas";
-        case Tab::TopCreators: return "Creadores con mas miniaturas y mejor valoradas";
-        case Tab::TopThumbnails: return "Las miniaturas mejor valoradas por la comunidad";
-        case Tab::CompatibleMods: return "Mods y packs compatibles de modly.web.app";
+        case Tab::Moderators: return loc.getString("community.sub_mods");
+        case Tab::TopCreators: return loc.getString("community.sub_creators");
+        case Tab::TopThumbnails: return loc.getString("community.sub_thumbs");
+        case Tab::CompatibleMods: return loc.getString("community.sub_compat");
     }
     return "";
 }
 
+ccColor3B CommunityHubLayer::accentFor(Tab tab) const {
+    switch (tab) {
+        case Tab::Moderators: return {170, 130, 255};
+        case Tab::TopCreators: return {255, 200, 80};
+        case Tab::TopThumbnails: return {255, 125, 175};
+        case Tab::CompatibleMods: return {110, 225, 150};
+    }
+    return {255, 255, 255};
+}
+
 void CommunityHubLayer::updateTabHeader() {
-    if (m_subtitle) m_subtitle->setString(tabSubtitle(m_currentTab).c_str());
+    m_accentTarget = accentFor(m_currentTab);
+    if (m_subtitle) {
+        std::string next = tabSubtitle(m_currentTab);
+        std::string prev = m_subtitle->getString();
+        bool changed = next != prev;
+        m_subtitle->setString(next.c_str());
+        // first fill belongs to playIntro, which reads the node position as its destination.
+        if (changed && !prev.empty() && paimon::ui::motionEnabled()) {
+            auto base = ccp(CCDirector::get()->getWinSize().width / 2.f, m_subtitleY);
+            m_subtitle->stopAllActions();
+            m_subtitle->setPosition({base.x, base.y - 5.f});
+            m_subtitle->setOpacity(0);
+            m_subtitle->runAction(CCFadeTo::create(0.28f, 220));
+            m_subtitle->runAction(CCEaseSineOut::create(CCMoveTo::create(0.28f, base)));
+        }
+    }
     // creators/thumbnails are the only tabs with a meaningful sort toggle.
     bool sortable = m_currentTab == Tab::TopCreators || m_currentTab == Tab::TopThumbnails;
     if (m_sortButton) m_sortButton->setVisible(sortable);
-    if (m_sortLabel) m_sortLabel->setVisible(sortable);
+    layoutToolbar(sortable);
 }
 
 void CommunityHubLayer::buildToolbar() {
-    auto winSize = CCDirector::get()->getWinSize();
-    float toolbarY = m_listCenter.y + m_listH / 2.f + 20.f;
-    float left = m_listCenter.x - m_listW / 2.f;
-    float right = m_listCenter.x + m_listW / 2.f;
+    auto& loc = Localization::get();
+    float left = m_cardRect.getMinX() + kCardPad;
+    float right = m_cardRect.getMaxX() - kCardPad;
+    float y = m_toolbarY;
 
-    m_searchInput = TextInput::create(m_listW - 92.f, "Buscar...", "chatFont.fnt");
-    m_searchInput->setScale(0.8f);
-    m_searchInput->setPosition({left + (m_listW - 92.f) * 0.8f / 2.f + 2.f, toolbarY});
-    m_searchInput->setCallback([this](std::string const& text) { onSearchChanged(text); });
-    this->addChild(m_searchInput, 10);
+    // custom field: the input's own background is hidden so the glass can sit inside it.
+    m_searchBg = paimon::ui::makeInset({120.f, kToolbarH}, 140);
+    m_searchBg->setPosition({left, y - kToolbarH / 2.f});
+    this->addChild(m_searchBg, 10);
 
-    auto* magnifier = paimon::SpriteHelper::safeCreateWithFrameName("GJ_searchBtn_001.png");
-    if (magnifier) {
-        magnifier->setScale(0.42f);
-        magnifier->setPosition({left + 10.f, toolbarY});
-        this->addChild(magnifier, 11);
+    if (auto* glass = paimon::SpriteHelper::createWithFallback("gj_findBtn_001.png", "GJ_searchBtn_001.png")) {
+        glass->setScale(12.f / std::max(glass->getContentSize().height, 1.f));
+        glass->setOpacity(170);
+        glass->setPosition({left + 12.f, y});
+        this->addChild(glass, 11);
     }
+
+    m_searchInput = TextInput::create(120.f, loc.getString("community.search"), "chatFont.fnt");
+    m_searchInput->setScale(kSearchScale);
+    m_searchInput->setMaxCharCount(40);
+    m_searchInput->setCommonFilter(CommonFilter::Text);
+    m_searchInput->setAlignment(Label::Alignment::Left);
+    if (auto* bg = m_searchInput->getBGSprite()) bg->setVisible(false);
+    m_searchInput->setCallback([this](std::string const& text) { onSearchChanged(text); });
+    this->addChild(m_searchInput, 11);
 
     m_toolbarMenu = CCMenu::create();
     m_toolbarMenu->setPosition(0, 0);
     m_toolbarMenu->setZOrder(12);
     this->addChild(m_toolbarMenu);
+    auto* toolbarMenu = static_cast<CCMenu*>(m_toolbarMenu);
 
-    m_refreshButton = paimon::ui::makeFrameButton("GJ_updateBtn_001.png", 0.7f,
-        [this] { onRefresh(nullptr); });
-    m_refreshButton->setPosition({right - 14.f, toolbarY});
-    static_cast<CCMenu*>(m_toolbarMenu)->addChild(m_refreshButton);
+    auto* refreshSprite = CCSprite::createWithSpriteFrameName("GJ_updateBtn_001.png");
+    refreshSprite->setScale(kToolButton / std::max(refreshSprite->getContentSize().height, 1.f));
+    m_refreshButton = CCMenuItemSpriteExtra::create(
+        refreshSprite, this, menu_selector(CommunityHubLayer::onRefresh));
+    m_refreshButton->setPosition({right - kToolButton / 2.f, y});
+    toolbarMenu->addChild(m_refreshButton);
 
-    m_sortButton = paimon::ui::makeFrameButton("GJ_sortIcon_001.png", 0.7f,
-        [this] { onSort(nullptr); });
-    m_sortButton->setPosition({right - 44.f, toolbarY});
-    static_cast<CCMenu*>(m_toolbarMenu)->addChild(m_sortButton);
+    // sort pill shows the active order, so the toolbar never needs a floating caption.
+    auto* sortFace = CCNode::create();
+    sortFace->setContentSize({kSortButtonW, kToolbarH});
+    sortFace->addChild(paimon::ui::makeInset({kSortButtonW, kToolbarH}, 140), 0);
+    if (auto* icon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_sortIcon_001.png")) {
+        icon->setScale(12.f / std::max(icon->getContentSize().height, 1.f));
+        icon->setPosition({12.f, kToolbarH / 2.f});
+        sortFace->addChild(icon, 1);
+    }
+    m_sortLabel = CCLabelBMFont::create("", "bigFont.fnt");
+    m_sortLabel->setAnchorPoint({0.f, 0.5f});
+    m_sortLabel->setColor(paimon::ui::palette::muted);
+    m_sortLabel->setPosition({22.f, kToolbarH / 2.f + 1.f});
+    sortFace->addChild(m_sortLabel, 2);
+    m_sortButton = CCMenuItemSpriteExtra::create(
+        sortFace, this, menu_selector(CommunityHubLayer::onSort));
+    m_sortButton->m_scaleMultiplier = 1.06f;
+    m_sortButton->setPosition({right - kToolButton - 4.f - kSortButtonW / 2.f, y});
+    toolbarMenu->addChild(m_sortButton);
 
-    m_sortLabel = CCLabelBMFont::create("", "chatFont.fnt");
-    m_sortLabel->setScale(0.34f);
-    m_sortLabel->setColor({205, 205, 215});
-    m_sortLabel->setAnchorPoint({1.f, 0.5f});
-    m_sortLabel->setPosition({right - 60.f, toolbarY - 13.f});
-    this->addChild(m_sortLabel, 11);
+    // appears once the list is scrolled; sits inside the list's bottom-right corner.
+    if (auto* sprite = paimon::ui::makeCircleSprite("edit_upBtn_001.png",
+            CircleBaseColor::Blue, CircleBaseSize::Small)) {
+        sprite->setScale(0.6f);
+        m_topButton = CCMenuItemSpriteExtra::create(
+            sprite, this, menu_selector(CommunityHubLayer::onScrollTop));
+        m_topButton->setPosition({m_listCenter.x + m_listW / 2.f - 20.f, m_listCenter.y - m_listH / 2.f + 22.f});
+        m_topButton->setScale(0.f);
+        m_topButton->m_baseScale = 1.f;
+        m_topButton->setEnabled(false);
+        toolbarMenu->addChild(m_topButton, 5);
+    }
+
+    layoutToolbar(false);
+}
+
+// the field takes whatever the sort pill leaves free.
+void CommunityHubLayer::layoutToolbar(bool sortable) {
+    float left = m_cardRect.getMinX() + kCardPad;
+    float right = m_cardRect.getMaxX() - kCardPad;
+    float fieldRight = right - kToolButton - 4.f - (sortable ? kSortButtonW + 4.f : 0.f);
+    float fieldW = std::max(80.f, fieldRight - left);
+    if (m_searchBg) m_searchBg->setContentSize({fieldW, kToolbarH});
+    if (m_searchInput) {
+        float inputW = fieldW - 26.f;
+        m_searchInput->setContentWidth(inputW / kSearchScale);
+        m_searchInput->setPosition({left + 22.f + inputW / 2.f, m_toolbarY});
+    }
+}
+
+void CommunityHubLayer::setSortLabel(std::string const& text) {
+    if (!m_sortLabel) return;
+    m_sortLabel->setString(text.c_str());
+    m_sortLabel->setScale(0.32f);
+    fitLabel(m_sortLabel, kSortButtonW - 28.f);
 }
 
 void CommunityHubLayer::buildFooter() {
-    auto winSize = CCDirector::get()->getWinSize();
     m_footerLabel = CCLabelBMFont::create("", "chatFont.fnt");
     m_footerLabel->setScale(0.42f);
     m_footerLabel->setColor({195, 200, 215});
     m_footerLabel->setOpacity(205);
-    m_footerLabel->setPosition({m_listCenter.x, m_listCenter.y - m_listH / 2.f - 11.f});
+    m_footerLabel->setPosition({m_cardRect.getMidX() + 5.f, m_cardRect.getMinY() + kFooterH / 2.f + 2.f});
     this->addChild(m_footerLabel, 10);
 }
 
-CCMenuItemToggler* CommunityHubLayer::createTabButton(std::string const& text, char const* id, CCPoint pos) {
-    float tabW = m_listW / 4.f - 4.f;
-    float tabH = 28.f;
+CCMenuItemToggler* CommunityHubLayer::createTabButton(std::string const& text, char const* id, CCPoint pos, float width) {
+    float tabW = width;
+    float tabH = kTabsH;
 
     Tab tab = Tab::Moderators;
     std::string ids = id;
@@ -443,40 +599,33 @@ CCMenuItemToggler* CommunityHubLayer::createTabButton(std::string const& text, c
     else if (ids == "thumbnails") tab = Tab::TopThumbnails;
     else if (ids == "compat_mods") tab = Tab::CompatibleMods;
     char const* iconFrame = tabIconFrame(tab);
+    ccColor3B accent = accentFor(tab);
 
+    // segmented control: the active segment is filled with its tab's accent, the rest sit on the track.
     auto buildFace = [&](bool active) -> CCNode* {
         auto node = CCNode::create();
         node->setContentSize({tabW, tabH});
 
-        auto* skin = paimon::SpriteHelper::safeCreateScale9WithFrameName(
-            active ? "GJ_tabOn_001.png" : "GJ_tabOff_001.png");
-        if (!skin) {
-            skin = paimon::SpriteHelper::safeCreateScale9WithFrameName(
-                active ? "GJ_longBtn01_001.png" : "GJ_longBtn02_001.png");
-        }
-        if (skin) {
-            skin->setContentSize({tabW, tabH});
-            skin->setAnchorPoint({0.f, 0.f});
-            skin->setColor(active ? ccColor3B{255, 255, 255} : ccColor3B{125, 132, 150});
-            node->addChild(skin, 0);
+        if (active) {
+            node->addChild(paimon::ui::makeInset({tabW, tabH}, 235, accent), 0);
         }
 
         float textX = tabW / 2.f;
         if (auto* icon = paimon::SpriteHelper::safeCreateWithFrameName(iconFrame)) {
             float h = icon->getContentSize().height;
-            if (h > 0.f) icon->setScale(14.f / h);
-            icon->setPosition({12.f, tabH / 2.f + (active ? 0.f : -1.f)});
-            if (!active) icon->setOpacity(200);
+            if (h > 0.f) icon->setScale(13.f / h);
+            icon->setPosition({12.f, tabH / 2.f});
+            if (!active) icon->setOpacity(150);
             node->addChild(icon, 2);
             textX = tabW / 2.f + 7.f;
         }
 
         auto label = CCLabelBMFont::create(text.c_str(), "bigFont.fnt");
-        label->setScale(0.34f);
-        fitLabel(label, tabW - 26.f);
-        label->setPosition({textX, tabH / 2.f + (active ? 0.f : -1.f)});
-        label->setColor(active ? ccColor3B{255, 255, 255} : ccColor3B{198, 204, 220});
-        if (!active) label->setOpacity(215);
+        label->setScale(0.32f);
+        fitLabel(label, tabW - 28.f);
+        label->setPosition({textX, tabH / 2.f + 1.f});
+        label->setColor(active ? ccColor3B{255, 255, 255} : ccColor3B{175, 182, 200});
+        if (!active) label->setOpacity(200);
         node->addChild(label, 1);
 
         return node;
@@ -509,14 +658,28 @@ void CommunityHubLayer::playIntro() {
             nullptr));
     }
 
+    if (m_card) {
+        m_card->setOpacity(0);
+        m_card->runAction(CCFadeIn::create(0.25f));
+    }
     if (m_listFrame) {
-        m_listFrame->setScale(0.9f);
-        m_listFrame->runAction(CCEaseBackOut::create(CCScaleTo::create(0.45f, 1.f)));
+        m_listFrame->setScale(0.96f);
+        m_listFrame->runAction(CCEaseBackOut::create(CCScaleTo::create(0.4f, 1.f)));
+    }
+    if (m_searchBg) {
+        m_searchBg->setOpacity(0);
+        m_searchBg->runAction(CCSequence::create(
+            CCDelayTime::create(0.1f), CCFadeTo::create(0.25f, 140), nullptr));
     }
 
     paimon::ui::animateIn(m_subtitle, 0.1f);
-    paimon::ui::animateIn(m_searchInput, 0.14f);
     paimon::ui::animateIn(m_footerLabel, 0.2f);
+
+    if (m_listBorder) {
+        m_listBorder->setOpacity(0);
+        m_listBorder->runAction(CCSequence::create(
+            CCDelayTime::create(0.2f), CCFadeTo::create(0.4f, kBorderOpacity), nullptr));
+    }
 }
 
 void CommunityHubLayer::onExit() {
@@ -537,6 +700,151 @@ void CommunityHubLayer::onEnterTransitionDidFinish() {
 void CommunityHubLayer::update(float dt) {
     if (m_isExiting) return;
     if (!m_caveApplied) applyCaveEffect();
+
+    dt = std::min(dt, 0.1f);
+    updateAccent(dt);
+
+    if (paimon::ui::motionEnabled() && m_fxLayer) {
+        m_fxClock += dt;
+        if (m_fxClock >= 0.5f) {
+            m_fxClock = 0.f;
+            if (static_cast<int>(m_fxLayer->getChildrenCount()) < kMaxParticles) spawnParticle();
+        }
+    }
+
+    updateScrollTop();
+    updateHover(dt);
+}
+
+void CommunityHubLayer::updateAccent(float dt) {
+    m_accent = stepColor(m_accent, m_accentTarget, std::min(1.f, dt * 7.f));
+    if (sameColor(m_accent, m_appliedAccent)) return;
+    m_appliedAccent = m_accent;
+    if (m_listBorder) m_listBorder->setColor(m_accent);
+}
+
+void CommunityHubLayer::spawnParticle() {
+    if (!m_fxLayer) return;
+    static char const* const frames[] = {
+        "GJ_starsIcon_001.png", "particle_01_001.png", "particle_02_001.png"};
+    auto* particle = paimon::SpriteHelper::safeCreateWithFrameName(frames[std::rand() % 3]);
+    if (!particle) return;
+
+    auto winSize = CCDirector::get()->getWinSize();
+    particle->setColor(m_accent);
+    particle->setScale(0.07f + static_cast<float>(std::rand() % 12) / 100.f);
+    particle->setPosition({static_cast<float>(std::rand() % static_cast<int>(winSize.width)), -8.f});
+    particle->setOpacity(0);
+    m_fxLayer->addChild(particle);
+
+    float duration = 6.f + static_cast<float>(std::rand() % 40) / 10.f;
+    float drift = static_cast<float>((std::rand() % 100) - 50) * 0.6f;
+    auto peak = static_cast<GLubyte>(60 + std::rand() % 80);
+    particle->runAction(CCSpawn::create(
+        CCMoveBy::create(duration, {drift, winSize.height + 16.f}),
+        CCRotateBy::create(duration, (std::rand() % 2 ? 1.f : -1.f) * (30.f + static_cast<float>(std::rand() % 60))),
+        CCSequence::create(
+            CCFadeTo::create(0.8f, peak),
+            CCDelayTime::create(duration - 2.3f),
+            CCFadeTo::create(1.5f, 0),
+            CCRemoveSelf::create(),
+            nullptr),
+        nullptr));
+}
+
+void CommunityHubLayer::updateScrollTop() {
+    if (!m_topButton) return;
+    bool want = m_scrollView && std::abs(m_scrollView->getScrollFromTop()) > kTopButtonThreshold;
+    if (want == m_topShown) return;
+    m_topShown = want;
+    m_topButton->setEnabled(want);
+    m_topButton->stopAllActions();
+    if (!paimon::ui::motionEnabled()) {
+        m_topButton->setScale(want ? 1.f : 0.f);
+        return;
+    }
+    m_topButton->runAction(want
+        ? static_cast<CCActionInterval*>(CCEaseBackOut::create(CCScaleTo::create(0.25f, 1.f)))
+        : static_cast<CCActionInterval*>(CCEaseBackIn::create(CCScaleTo::create(0.2f, 0.f))));
+}
+
+void CommunityHubLayer::onScrollTop(CCObject*) {
+    if (m_scrollView) m_scrollView->scrollToTop();
+}
+
+void CommunityHubLayer::registerHoverRow(CCNode* cell) {
+    if (!cell) return;
+    auto* glow = CCLayerColor::create(ccc4(m_accent.r, m_accent.g, m_accent.b, 0));
+    glow->setContentSize(cell->getContentSize());
+    glow->setCascadeOpacityEnabled(false);
+    cell->addChild(glow, 2);
+    m_hoverRows.push_back({glow, cell});
+}
+
+void CommunityHubLayer::updateHover(float dt) {
+#if defined(GEODE_IS_DESKTOP)
+    if (m_hoverRows.empty() || !m_listFrame) return;
+
+    auto mouse = geode::cocos::getMousePos();
+    auto local = m_listFrame->convertToNodeSpace(mouse);
+    bool inList = local.x >= 0.f && local.x <= m_listW && local.y >= 0.f && local.y <= m_listH;
+
+    float const speed = std::min(1.f, dt * 14.f);
+    for (auto& row : m_hoverRows) {
+        if (!row.cell || !row.glow || !row.cell->getParent()) continue;
+        bool hot = false;
+        if (inList) {
+            auto p = row.cell->convertToNodeSpace(mouse);
+            auto size = row.cell->getContentSize();
+            hot = p.x >= 0.f && p.x <= size.width && p.y >= 0.f && p.y <= size.height;
+        }
+        int cur = row.glow->getOpacity();
+        int target = hot ? 46 : 0;
+        if (cur == target) continue;
+        int step = static_cast<int>(std::lround(static_cast<float>(target - cur) * speed));
+        if (step == 0) step = target > cur ? 1 : -1;
+        row.glow->setColor(m_accent);
+        row.glow->setOpacity(static_cast<GLubyte>(cur + step));
+    }
+#else
+    (void)dt;
+#endif
+}
+
+void CommunityHubLayer::keyDown(enumKeyCodes key, double timestamp) {
+    auto* kb = CCDirector::get()->getKeyboardDispatcher();
+    // dialogs and popups sit in the same scene; leave keys to them.
+    if (auto* scene = CCDirector::get()->getRunningScene()) {
+        for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
+            if (typeinfo_cast<FLAlertLayer*>(child)) {
+                CCLayer::keyDown(key, timestamp);
+                return;
+            }
+        }
+    }
+    bool typing = m_searchInput && m_searchInput->isFocused();
+
+    if (kb && kb->getControlKeyPressed() && key == KEY_F && m_searchInput) {
+        m_searchInput->focus();
+        return;
+    }
+    if (typing) {
+        CCLayer::keyDown(key, timestamp);
+        return;
+    }
+
+    int current = static_cast<int>(m_currentTab);
+    switch (key) {
+        case KEY_Left: selectTab(static_cast<Tab>((current + 3) % 4)); return;
+        case KEY_Right: selectTab(static_cast<Tab>((current + 1) % 4)); return;
+        case KEY_One: selectTab(Tab::Moderators); return;
+        case KEY_Two: selectTab(Tab::TopCreators); return;
+        case KEY_Three: selectTab(Tab::TopThumbnails); return;
+        case KEY_Four: selectTab(Tab::CompatibleMods); return;
+        case KEY_F5: if (m_refreshButton && m_refreshButton->isVisible()) onRefresh(nullptr); return;
+        default: break;
+    }
+    CCLayer::keyDown(key, timestamp);
 }
 
 void CommunityHubLayer::applyCaveEffect() {
@@ -589,6 +897,17 @@ void CommunityHubLayer::onTab(CCObject* sender) {
         toggler->toggle(true);
         return;
     }
+    selectTab(newTab);
+}
+
+void CommunityHubLayer::selectTab(Tab newTab) {
+    size_t index = static_cast<size_t>(newTab);
+    if (m_currentTab == newTab || index >= m_tabs.size()) return;
+    // tabs are disabled while a load is in flight.
+    if (!m_tabs[index]->isEnabled()) return;
+    auto* toggler = m_tabs[index];
+
+    m_slideDir = newTab > m_currentTab ? 1 : -1;
 
     // leaving thumbnails tab: drop pending downloads to free loader slots.
     if (m_currentTab == Tab::TopThumbnails) {
@@ -611,9 +930,8 @@ void CommunityHubLayer::onTab(CCObject* sender) {
         tab->setEnabled(false);
         tab->setZOrder(active ? 2 : 1);
         tab->stopAllActions();
-        tab->runAction(CCEaseBackOut::create(
-            CCMoveTo::create(0.3f, {tab->getPositionX(), m_tabBaseY + (active ? 4.f : 0.f)})));
-        if (active) {
+        tab->setScale(1.f);
+        if (active && paimon::ui::motionEnabled()) {
             tab->setScale(0.9f);
             tab->runAction(CCEaseBackOut::create(CCScaleTo::create(0.3f, 1.f)));
         }
@@ -625,6 +943,7 @@ void CommunityHubLayer::onTab(CCObject* sender) {
         m_listContainer = nullptr;
         m_scrollView = nullptr;
         m_iconSlots.clear();
+        m_hoverRows.clear();
         leaving->runAction(CCSequence::create(
             CCEaseSineIn::create(CCScaleTo::create(0.16f, 0.92f)),
             CCRemoveSelf::create(),
@@ -642,6 +961,7 @@ void CommunityHubLayer::clearList() {
     }
     m_scrollView = nullptr;
     m_iconSlots.clear();
+    m_hoverRows.clear();
 }
 
 void CommunityHubLayer::showLoading() {
@@ -686,8 +1006,8 @@ CCNode* CommunityHubLayer::addScrollList(float contentHeight) {
     m_scrollView = scroll;
 
     if (auto* bar = Scrollbar::create(scroll)) {
-        bar->setContentSize({8.f, m_listH - 10.f});
-        bar->setPosition({m_listCenter.x + m_listW / 2.f + 10.f, m_listCenter.y});
+        bar->setContentSize({6.f, m_listH - 8.f});
+        bar->setPosition({m_listCenter.x + m_listW / 2.f + kScrollGutter / 2.f, m_listCenter.y});
         m_listContainer->addChild(bar, 10);
     }
 
@@ -710,7 +1030,7 @@ void CommunityHubLayer::animateCellIn(CCLayerColor* cell, int index) {
     GLubyte target = cell->getOpacity();
     float delay = std::min(index, 12) * 0.035f;
     auto pos = cell->getPosition();
-    cell->setPosition({pos.x + 24.f, pos.y});
+    cell->setPosition({pos.x + 24.f * static_cast<float>(m_slideDir), pos.y});
     cell->setOpacity(0);
     cell->runAction(CCSequence::create(
         CCDelayTime::create(delay),
@@ -722,22 +1042,126 @@ void CommunityHubLayer::animateCellIn(CCLayerColor* cell, int index) {
         nullptr));
 }
 
-void CommunityHubLayer::showEmptyState() {
+void CommunityHubLayer::showEmptyState(bool error) {
     if (!m_listContainer) return;
+    auto& loc = Localization::get();
+    bool filtered = !m_searchFilter.empty();
+    std::string detail = error ? issueMessage() : std::string();
+    float cx = m_listCenter.x;
+    float y = m_listCenter.y + (detail.empty() ? 34.f : 46.f);
 
-    auto lbl = CCLabelBMFont::create(
-        Localization::get().getString("community.no_data").c_str(), "goldFont.fnt");
-    lbl->setScale(0.6f);
+    // a lock reads better than a tinted tab icon when the mod itself is holding requests back.
+    CCSprite* icon = nullptr;
+    if (error && m_issue == LoadIssue::Locked) icon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_lock_001.png");
+    if (!icon) icon = paimon::SpriteHelper::safeCreateWithFrameName(tabIconFrame(m_currentTab));
+    if (icon) {
+        float h = icon->getContentSize().height;
+        if (h > 0.f) icon->setScale(32.f / h);
+        icon->setColor(error ? paimon::ui::palette::danger : m_accentTarget);
+        icon->setOpacity(0);
+        icon->setPosition({cx, y});
+        m_listContainer->addChild(icon, 10);
+        icon->runAction(CCFadeTo::create(0.4f, 150));
+        if (paimon::ui::motionEnabled()) {
+            icon->runAction(CCRepeatForever::create(CCSequence::create(
+                CCEaseSineInOut::create(CCMoveBy::create(1.1f, {0.f, 3.f})),
+                CCEaseSineInOut::create(CCMoveBy::create(1.1f, {0.f, -3.f})),
+                nullptr)));
+        }
+    }
+    y -= 32.f;
+
+    char const* key = error ? "community.error" : (filtered ? "community.no_results" : "community.no_data");
+    auto lbl = CCLabelBMFont::create(loc.getString(key).c_str(), "bigFont.fnt");
+    lbl->setScale(0.45f);
+    lbl->setColor(error ? ccColor3B{255, 170, 160} : ccColor3B{255, 255, 255});
     lbl->setOpacity(0);
-    lbl->setPosition(m_listCenter);
+    lbl->setPosition({cx, y});
+    fitLabel(lbl, m_listW - 40.f);
     m_listContainer->addChild(lbl, 10);
-    lbl->runAction(CCFadeTo::create(0.35f, 190));
+    lbl->runAction(CCFadeTo::create(0.35f, 230));
+    y -= 14.f;
+
+    if (!detail.empty()) {
+        auto* text = paimon::ui::makeText(detail.c_str(), m_listW - 80.f, 0.5f,
+            paimon::ui::palette::muted, kCCTextAlignmentCenter);
+        text->setAnchorPoint({0.5f, 1.f});
+        text->setPosition({cx, y});
+        text->setOpacity(0);
+        m_listContainer->addChild(text, 10);
+        text->runAction(CCFadeTo::create(0.35f, 220));
+        y -= text->getScaledContentSize().height + 4.f;
+    }
+
+    if (!error && !filtered) return;
+    auto menu = CCMenu::create();
+    menu->setPosition(cx, y - 14.f);
+    m_listContainer->addChild(menu, 11);
+    auto* button = error
+        ? paimon::ui::makeButton(loc.getString("community.retry").c_str(),
+              [this] { onRefresh(nullptr); }, paimon::ui::Btn::Green, 110.f, 0.6f)
+        : paimon::ui::makeButton(loc.getString("community.clear_search").c_str(),
+              [this] { if (m_searchInput) m_searchInput->setString("", true); },
+              paimon::ui::Btn::Blue, 130.f, 0.6f);
+    menu->addChild(button);
+    paimon::ui::animateIn(menu, 0.1f);
+}
+
+CCMenu* CommunityHubLayer::addRowMenu(CCNode* content, float totalH) {
+    auto* menu = CCMenu::create();
+    menu->setPosition(CCPointZero);
+    menu->setContentSize({m_listW, totalH});
+    content->addChild(menu, 20);
+    return menu;
+}
+
+// full-width invisible hit area over a row; presses barely scale so rows don't bounce.
+CCMenuItemSpriteExtra* CommunityHubLayer::addRowButton(CCMenu* menu, float totalH, float cellH,
+    int row, int tag, SEL_MenuHandler handler) {
+    auto* hit = CCLayerColor::create({0, 0, 0, 0}, m_listW, cellH);
+    auto* btn = CCMenuItemSpriteExtra::create(hit, this, handler);
+    btn->setTag(tag);
+    btn->m_scaleMultiplier = 1.015f;
+    btn->setPosition({m_listW / 2.f, totalH - (static_cast<float>(row) + 0.5f) * cellH});
+    menu->addChild(btn);
+    return btn;
+}
+
+// thin track with a filled part; the fill grows in when motion is on.
+CCNode* CommunityHubLayer::makeMetricBar(float width, float fraction, ccColor3B color) {
+    constexpr float kBarH = 4.f;
+    fraction = std::clamp(fraction, 0.f, 1.f);
+    auto* node = CCNode::create();
+    node->setContentSize({width, kBarH});
+    if (auto* track = paimon::SpriteHelper::createRoundedRect(width, kBarH, kBarH / 2.f,
+            {0.f, 0.f, 0.f, 0.55f})) {
+        node->addChild(track, 0);
+    }
+    float fillW = std::max(kBarH, width * fraction);
+    if (auto* fill = paimon::SpriteHelper::createRoundedRect(fillW, kBarH, kBarH / 2.f,
+            {color.r / 255.f, color.g / 255.f, color.b / 255.f, 0.95f})) {
+        node->addChild(fill, 1);
+        if (paimon::ui::motionEnabled()) {
+            fill->setScaleX(0.f);
+            fill->runAction(CCSequence::create(
+                CCDelayTime::create(0.2f),
+                CCEaseSineOut::create(CCScaleTo::create(0.5f, 1.f, 1.f)),
+                nullptr));
+        }
+    }
+    return node;
 }
 
 void CommunityHubLayer::loadTab(Tab tab) {
     // unschedule first: a stale retry timer would refire for the previous tab.
     this->unschedule(schedule_selector(CommunityHubLayer::onRetryTimer));
     ++m_retryTag;
+    m_loadFailed = false;
+    m_compatLoadFailed = false;
+    m_issue = LoadIssue::None;
+    m_issueCode = 0;
+    m_fromSnapshot = false;
+    m_snapshotAt = 0;
 
     if (m_infoButton) m_infoButton->setTag(static_cast<int>(tab));
 
@@ -801,60 +1225,248 @@ void CommunityHubLayer::loadModerators(int attempt) {
             if (paimon::isRuntimeShuttingDown()) return;
             auto layer = self.lock();
             if (!layer || layer->m_isExiting || layer->m_retryTag != tag) return;
-
-            if (!success) {
-                log::warn("[CommunityHub] loadModerators failed (attempt {}): {}", attempt, response);
-                if (attempt < 3) {
-                    layer->scheduleRetry(Tab::Moderators, attempt + 1);
-                    return;
-                }
-                layer->hideLoading();
-                layer->buildModeratorsList();
-                return;
-            }
-
-            auto res = matjson::parse(response);
-            if (!res.isOk()) {
-                layer->hideLoading();
-                layer->buildModeratorsList();
-                return;
-            }
-
-            auto json = res.unwrap();
-            if (json.contains("moderators") && json["moderators"].isArray()) {
-                if (auto arrRes = json["moderators"].asArray(); arrRes.isOk()) {
-                    for (auto const& item : arrRes.unwrap()) {
-                        ModEntry entry;
-                        entry.username = item["username"].asString().unwrapOr("");
-                        entry.role = item["role"].asString().unwrapOr("mod");
-                        entry.accountID = item["accountID"].asInt().unwrapOr(0);
-                        if (!entry.username.empty()) layer->m_modEntries.push_back(entry);
-                    }
-                }
-            }
-
-            if (layer->m_modEntries.empty()) {
-                layer->hideLoading();
-                layer->buildModeratorsList();
-                return;
-            }
-
-            for (auto const& entry : layer->m_modEntries) {
-                ModProfileCache::get().store(entry.username, entry.role);
-
-                auto score = GJUserScore::create();
-                int accountID = entry.accountID > 0 ? entry.accountID : rememberedAccountID(entry.username);
-                fillPlaceholderScore(score, entry.username, entry.role == "admin", accountID);
-                layer->m_modScores->addObject(score);
-                iconReadyNames().erase(toLowerCopy(entry.username));
-            }
-
-            layer->cacheModerators();
-            layer->hideLoading();
-            layer->sortModerators();
-            layer->buildModeratorsList();
+            layer->handleTabResponse(Tab::Moderators, attempt, success, response);
         });
     });
+}
+
+void CommunityHubLayer::handleTabResponse(Tab tab, int attempt, bool success, std::string const& response) {
+    LoadIssue issue = LoadIssue::BadData;
+    int httpCode = 0;
+    if (success) {
+        auto parsed = matjson::parse(response);
+        if (parsed.isOk() && parseTabData(tab, parsed.unwrap())) {
+            saveSnapshot(tab, parsed.unwrap());
+            if (tab == Tab::Moderators && !m_modEntries.empty()) cacheModerators();
+            hideLoading();
+            buildCurrentList();
+            return;
+        }
+    } else {
+        issue = classifyFailure(response, httpCode);
+    }
+
+    log::warn("[CommunityHub] tab {} failed (attempt {}, issue {}): {}", static_cast<int>(tab), attempt,
+        static_cast<int>(issue), response.substr(0, 200));
+
+    // a locked gate or a malformed body won't change in a few seconds; storage gets one more try.
+    int maxRetries = 3;
+    if (issue == LoadIssue::Locked || issue == LoadIssue::BadData) maxRetries = 0;
+    else if (issue == LoadIssue::Storage) maxRetries = 1;
+    if (attempt < maxRetries) {
+        scheduleRetry(tab, attempt + 1);
+        return;
+    }
+
+    m_issue = issue;
+    m_issueCode = httpCode;
+    std::time_t savedAt = 0;
+    auto snapshot = loadSnapshot(tab, savedAt);
+    if (snapshot && parseTabData(tab, *snapshot) && tabHasEntries(tab)) {
+        log::info("[CommunityHub] tab {} showing the copy saved at {}", static_cast<int>(tab), formatStamp(savedAt, true));
+        m_fromSnapshot = true;
+        m_snapshotAt = savedAt;
+        m_loadFailed = false;
+    } else {
+        clearTabData(tab);
+        m_fromSnapshot = false;
+        m_loadFailed = true;
+    }
+    hideLoading();
+    buildCurrentList();
+}
+
+bool CommunityHubLayer::parseTabData(Tab tab, matjson::Value const& json) {
+    switch (tab) {
+        case Tab::Moderators:
+            if (!parseModerators(json)) return false;
+            prepareModeratorScores();
+            return true;
+        case Tab::TopCreators: return parseCreators(json);
+        case Tab::TopThumbnails: return parseThumbnails(json);
+        case Tab::CompatibleMods: return false;
+    }
+    return false;
+}
+
+bool CommunityHubLayer::parseModerators(matjson::Value const& json) {
+    if (!json.isObject() || !json.contains("moderators") || !json["moderators"].isArray()) return false;
+    auto arrRes = json["moderators"].asArray();
+    if (!arrRes.isOk()) return false;
+    m_modEntries.clear();
+    for (auto const& item : arrRes.unwrap()) {
+        ModEntry entry;
+        entry.username = paimon::json::stringOr(item["username"]);
+        entry.role = paimon::json::stringOr(item["role"], "mod");
+        entry.accountID = paimon::json::integerOr<int>(item["accountID"]);
+        if (!entry.username.empty()) m_modEntries.push_back(entry);
+    }
+    return true;
+}
+
+bool CommunityHubLayer::parseCreators(matjson::Value const& json) {
+    if (!json.isObject() || !json.contains("creators") || !json["creators"].isArray()) return false;
+    auto arrRes = json["creators"].asArray();
+    if (!arrRes.isOk()) return false;
+    m_creatorEntries.clear();
+    for (auto const& item : arrRes.unwrap()) {
+        CreatorEntry entry;
+        entry.username = paimon::json::stringOr(item["username"], "Unknown");
+        entry.accountID = paimon::json::integerOr<int>(item["accountID"]);
+        entry.uploadCount = paimon::json::integerOr<int>(item["uploadCount"]);
+        entry.avgRating = paimon::json::floatOr(item["avgRating"]);
+        m_creatorEntries.push_back(entry);
+    }
+    return true;
+}
+
+bool CommunityHubLayer::parseThumbnails(matjson::Value const& json) {
+    if (!json.isObject() || !json.contains("thumbnails") || !json["thumbnails"].isArray()) return false;
+    auto arrRes = json["thumbnails"].asArray();
+    if (!arrRes.isOk()) return false;
+    m_thumbnailEntries.clear();
+    for (auto const& item : arrRes.unwrap()) {
+        ThumbnailEntry entry;
+        entry.levelId = paimon::json::integerOr<int>(item["levelId"]);
+        entry.rating = paimon::json::floatOr(item["rating"]);
+        entry.count = paimon::json::integerOr<int>(item["count"]);
+        entry.uploadedBy = paimon::json::stringOr(item["uploadedBy"], "Unknown");
+        entry.accountID = paimon::json::integerOr<int>(item["accountID"]);
+        if (entry.levelId > 0) m_thumbnailEntries.push_back(entry);
+    }
+    return true;
+}
+
+void CommunityHubLayer::prepareModeratorScores() {
+    m_modScores = CCArray::create();
+    m_iconStates.clear();
+    for (auto const& entry : m_modEntries) {
+        ModProfileCache::get().store(entry.username, entry.role);
+
+        auto score = GJUserScore::create();
+        int accountID = entry.accountID > 0 ? entry.accountID : rememberedAccountID(entry.username);
+        fillPlaceholderScore(score, entry.username, entry.role == "admin", accountID);
+        m_modScores->addObject(score);
+        iconReadyNames().erase(geode::utils::string::toLower(entry.username));
+    }
+    sortModerators();
+}
+
+void CommunityHubLayer::clearTabData(Tab tab) {
+    switch (tab) {
+        case Tab::Moderators:
+            m_modEntries.clear();
+            m_modScores = CCArray::create();
+            break;
+        case Tab::TopCreators: m_creatorEntries.clear(); break;
+        case Tab::TopThumbnails: m_thumbnailEntries.clear(); break;
+        case Tab::CompatibleMods: m_compatMods.clear(); break;
+    }
+}
+
+bool CommunityHubLayer::tabHasEntries(Tab tab) const {
+    switch (tab) {
+        case Tab::Moderators: return !m_modEntries.empty();
+        case Tab::TopCreators: return !m_creatorEntries.empty();
+        case Tab::TopThumbnails: return !m_thumbnailEntries.empty();
+        case Tab::CompatibleMods: return !m_compatMods.empty();
+    }
+    return false;
+}
+
+CommunityHubLayer::LoadIssue CommunityHubLayer::classifyFailure(std::string const& response, int& httpCode) const {
+    httpCode = 0;
+    // HttpClient formats failures as "HTTP <code>: <body>".
+    if (response.rfind("HTTP ", 0) == 0) {
+        if (auto parsed = geode::utils::numFromString<int>(response.substr(5))) {
+            httpCode = parsed.unwrap();
+        }
+    }
+    if (response.find("STORAGE_ERROR") != std::string::npos ||
+        response.find("download_cap_exceeded") != std::string::npos) {
+        return LoadIssue::Storage;
+    }
+    if (httpCode <= 0) {
+        // WebHelper answers with an empty response while BanGate denies the request.
+        return paimon::ban::networkAuthorization() == 0 ? LoadIssue::Locked : LoadIssue::Network;
+    }
+    return LoadIssue::Server;
+}
+
+std::string CommunityHubLayer::issueMessage() const {
+    auto& loc = Localization::get();
+    switch (m_issue) {
+        case LoadIssue::Locked: return loc.getString("community.issue_locked");
+        case LoadIssue::Storage: return loc.getString("community.issue_storage");
+        case LoadIssue::Network: return loc.getString("community.issue_network");
+        case LoadIssue::Server:
+            return m_issueCode > 0
+                ? fmt::format("{} (HTTP {})", loc.getString("community.issue_server"), m_issueCode)
+                : loc.getString("community.issue_server");
+        case LoadIssue::BadData: return loc.getString("community.issue_data");
+        case LoadIssue::None: break;
+    }
+    return "";
+}
+
+namespace {
+    std::filesystem::path snapshotFile(char const* name) {
+        return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "community-hub" / fmt::format("{}.json", name);
+    }
+
+    char const* snapshotName(int tab) {
+        switch (tab) {
+            case 0: return "moderators";
+            case 1: return "top-creators";
+            case 2: return "top-thumbnails";
+            default: return nullptr;
+        }
+    }
+}
+
+void CommunityHubLayer::saveSnapshot(Tab tab, matjson::Value const& data) {
+    char const* name = snapshotName(static_cast<int>(tab));
+    if (!name) return;
+    auto path = snapshotFile(name);
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    auto doc = matjson::makeObject({
+        {"savedAt", static_cast<int64_t>(std::time(nullptr))},
+        {"data", data},
+    });
+    if (!paimon::file::writeAtomically(path, doc.dump(matjson::NO_INDENTATION))) {
+        log::warn("[CommunityHub] could not save the {} snapshot", name);
+    }
+}
+
+std::optional<matjson::Value> CommunityHubLayer::loadSnapshot(Tab tab, std::time_t& savedAt) const {
+    savedAt = 0;
+    char const* name = snapshotName(static_cast<int>(tab));
+    if (!name) return std::nullopt;
+    auto path = snapshotFile(name);
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(path, ec)) return std::nullopt;
+    auto size = std::filesystem::file_size(path, ec);
+    if (ec || size == 0 || size > kMaxSnapshotBytes) return std::nullopt;
+
+    std::ifstream file(path, std::ios::binary);
+    if (!file) return std::nullopt;
+    std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    auto parsed = matjson::parse(text);
+    if (!parsed.isOk()) return std::nullopt;
+    auto doc = parsed.unwrap();
+    if (!doc.isObject() || !doc.contains("data")) return std::nullopt;
+    savedAt = static_cast<std::time_t>(doc["savedAt"].asInt().unwrapOr(0));
+    return doc["data"];
+}
+
+void CommunityHubLayer::buildCurrentList() {
+    switch (m_currentTab) {
+        case Tab::Moderators: buildModeratorsList(); break;
+        case Tab::TopCreators: buildCreatorsList(); break;
+        case Tab::TopThumbnails: buildThumbnailsList(); break;
+        case Tab::CompatibleMods: buildCompatibleModsList(); break;
+    }
 }
 
 void CommunityHubLayer::sortModerators() {
@@ -879,7 +1491,7 @@ void CommunityHubLayer::buildModeratorsList() {
     beginList();
 
     if (!m_modScores || m_modScores->count() == 0) {
-        showEmptyState();
+        showEmptyState(m_loadFailed);
         updateFooter(0, m_lastLoadFromCache);
         return;
     }
@@ -902,7 +1514,7 @@ void CommunityHubLayer::buildModeratorsList() {
     int i = 0;
     for (auto* score : visible) {
         std::string username = score->m_userName;
-        std::string key = toLowerCopy(username);
+        std::string key = geode::utils::string::toLower(username);
         bool admin = score->m_modBadge == 2;
         float mid = cellH / 2.f;
 
@@ -910,6 +1522,7 @@ void CommunityHubLayer::buildModeratorsList() {
         if (isIconReady(key)) state.done = true;
 
         auto* cell = addCell(content, cellH, i, totalH);
+        registerHoverRow(cell);
 
         auto banner = CCNode::create();
         cell->addChild(banner, 1);
@@ -1419,35 +2032,7 @@ void CommunityHubLayer::loadTopCreators(int attempt) {
             if (paimon::isRuntimeShuttingDown()) return;
             auto layer = self.lock();
             if (!layer || layer->m_isExiting || layer->m_retryTag != tag) return;
-
-            if (!success) {
-                log::warn("[CommunityHub] loadTopCreators failed (attempt {}): {}", attempt, response);
-                if (attempt < 3) {
-                    layer->scheduleRetry(Tab::TopCreators, attempt + 1);
-                    return;
-                }
-            }
-
-            if (success) {
-                if (auto res = matjson::parse(response); res.isOk()) {
-                    auto json = res.unwrap();
-                    if (json.contains("creators") && json["creators"].isArray()) {
-                        if (auto arrRes = json["creators"].asArray(); arrRes.isOk()) {
-                            for (auto const& item : arrRes.unwrap()) {
-                                CreatorEntry entry;
-                                entry.username = item["username"].asString().unwrapOr("Unknown");
-                                entry.accountID = item["accountID"].asInt().unwrapOr(0);
-                                entry.uploadCount = item["uploadCount"].asInt().unwrapOr(0);
-                                entry.avgRating = static_cast<float>(item["avgRating"].asDouble().unwrapOr(0.0));
-                                layer->m_creatorEntries.push_back(entry);
-                            }
-                        }
-                    }
-                }
-            }
-
-            layer->hideLoading();
-            layer->buildCreatorsList();
+            layer->handleTabResponse(Tab::TopCreators, attempt, success, response);
         });
     });
 }
@@ -1457,12 +2042,12 @@ void CommunityHubLayer::buildCreatorsList() {
     beginList();
 
     auto& loc = Localization::get();
-    if (m_sortLabel) m_sortLabel->setString(m_sortMode == 0
-        ? loc.getString("community.uploads").c_str()
-        : loc.getString("community.avg_rating").c_str());
+    setSortLabel(m_sortMode == 0
+        ? loc.getString("community.uploads")
+        : loc.getString("community.avg_rating"));
 
     if (m_creatorEntries.empty()) {
-        showEmptyState();
+        showEmptyState(m_loadFailed);
         updateFooter(0, false);
         return;
     }
@@ -1493,7 +2078,7 @@ void CommunityHubLayer::buildCreatorsList() {
             names.push_back(e.username);
             faces.push_back(nullptr);
             subs.push_back(m_sortMode == 0
-                ? fmt::format("{} subidas", e.uploadCount)
+                ? fmt::format("{} {}", e.uploadCount, loc.getString("community.uploads"))
                 : fmt::format("{:.1f}", e.avgRating));
         }
         auto* podium = buildPodium(names, faces, subs);
@@ -1503,14 +2088,31 @@ void CommunityHubLayer::buildCreatorsList() {
         }
     }
 
+    int maxUploads = 1;
+    float maxRating = 0.001f;
+    for (auto const& e : m_creatorEntries) {
+        maxUploads = std::max(maxUploads, e.uploadCount);
+        maxRating = std::max(maxRating, e.avgRating);
+    }
+
+    auto* rowMenu = addRowMenu(content, totalH);
+
     int row = 0;
     for (int idx : visible) {
         auto& entry = m_creatorEntries[idx];
         auto* cell = addCell(content, cellH, 0, 0.f);
         cell->setPosition({0.f, totalH - podH - static_cast<float>(row + 1) * cellH});
         cell->setOpacity(idx % 2 == 0 ? 110 : 55);
+        registerHoverRow(cell);
         float mid = cellH / 2.f;
 
+        auto rankColor = idx == 0 ? ccColor3B{255, 206, 66}
+                       : idx == 1 ? ccColor3B{206, 212, 224}
+                       : idx == 2 ? ccColor3B{205, 140, 86}
+                                  : m_accentTarget;
+        auto accent = CCLayerColor::create(ccc4(rankColor.r, rankColor.g, rankColor.b, idx < 3 ? 225 : 120));
+        accent->setContentSize({3.f, cellH});
+        cell->addChild(accent, 4);
         if (auto* medal = makeRankMedal(idx + 1)) {
             float h = medal->getContentSize().height;
             if (h > 0.f) medal->setScale(24.f / h);
@@ -1540,6 +2142,39 @@ void CommunityHubLayer::buildCreatorsList() {
         statsLbl->setPosition({42.f, mid - 8.f});
         cell->addChild(statsLbl, 10);
 
+        // right block: headline metric of the active sort mode plus a bar
+        // relative to the best entry.
+        constexpr float kBlockW = 66.f;
+        float blockX = m_listW - 14.f - kBlockW;
+        bool byUploads = m_sortMode == 0;
+        auto metricLbl = CCLabelBMFont::create(byUploads
+            ? fmt::format("{}", entry.uploadCount).c_str()
+            : fmt::format("{:.1f}", entry.avgRating).c_str(), "goldFont.fnt");
+        metricLbl->setScale(0.4f);
+        metricLbl->setAnchorPoint({1.f, 0.5f});
+        metricLbl->setPosition({blockX + kBlockW, mid + 6.f});
+        cell->addChild(metricLbl, 10);
+        if (!byUploads) {
+            if (auto* star = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png")) {
+                float h = star->getContentSize().height;
+                if (h > 0.f) star->setScale(11.f / h);
+                star->setPosition({blockX + kBlockW - metricLbl->getScaledContentSize().width - 8.f, mid + 6.f});
+                cell->addChild(star, 10);
+            }
+        }
+        float fraction = byUploads
+            ? static_cast<float>(entry.uploadCount) / static_cast<float>(maxUploads)
+            : entry.avgRating / maxRating;
+        if (auto* bar = makeMetricBar(kBlockW, fraction, rankColor)) {
+            bar->setPosition({blockX, mid - 10.f});
+            cell->addChild(bar, 10);
+        }
+
+        if (entry.accountID > 0) {
+            addRowButton(rowMenu, totalH, cellH, 0, entry.accountID, menu_selector(CommunityHubLayer::onCreatorRow))
+                ->setPositionY(totalH - podH - (static_cast<float>(row) + 0.5f) * cellH);
+        }
+
         animateCellIn(cell, row);
         row++;
     }
@@ -1557,36 +2192,7 @@ void CommunityHubLayer::loadTopThumbnails(int attempt) {
             if (paimon::isRuntimeShuttingDown()) return;
             auto layer = self.lock();
             if (!layer || layer->m_isExiting || layer->m_retryTag != tag) return;
-
-            if (!success) {
-                log::warn("[CommunityHub] loadTopThumbnails failed (attempt {}): {}", attempt, response);
-                if (attempt < 3) {
-                    layer->scheduleRetry(Tab::TopThumbnails, attempt + 1);
-                    return;
-                }
-            }
-
-            if (success) {
-                if (auto res = matjson::parse(response); res.isOk()) {
-                    auto json = res.unwrap();
-                    if (json.contains("thumbnails") && json["thumbnails"].isArray()) {
-                        if (auto arrRes = json["thumbnails"].asArray(); arrRes.isOk()) {
-                            for (auto const& item : arrRes.unwrap()) {
-                                ThumbnailEntry entry;
-                                entry.levelId = item["levelId"].asInt().unwrapOr(0);
-                                entry.rating = static_cast<float>(item["rating"].asDouble().unwrapOr(0.0));
-                                entry.count = item["count"].asInt().unwrapOr(0);
-                                entry.uploadedBy = item["uploadedBy"].asString().unwrapOr("Unknown");
-                                entry.accountID = item["accountID"].asInt().unwrapOr(0);
-                                if (entry.levelId > 0) layer->m_thumbnailEntries.push_back(entry);
-                            }
-                        }
-                    }
-                }
-            }
-
-            layer->hideLoading();
-            layer->buildThumbnailsList();
+            layer->handleTabResponse(Tab::TopThumbnails, attempt, success, response);
         });
     });
 }
@@ -1596,12 +2202,12 @@ void CommunityHubLayer::buildThumbnailsList() {
     beginList();
 
     auto& loc = Localization::get();
-    if (m_sortLabel) m_sortLabel->setString(m_sortMode == 0
-        ? loc.getString("community.rating").c_str()
-        : loc.getString("community.votes").c_str());
+    setSortLabel(m_sortMode == 0
+        ? loc.getString("community.rating")
+        : loc.getString("community.votes"));
 
     if (m_thumbnailEntries.empty()) {
-        showEmptyState();
+        showEmptyState(m_loadFailed);
         updateFooter(0, false);
         return;
     }
@@ -1621,6 +2227,7 @@ void CommunityHubLayer::buildThumbnailsList() {
     float cellH = 56.f;
     float totalH = std::max(m_listH, cellH * static_cast<float>(visible.size()));
     auto* content = addScrollList(totalH);
+    auto* rowMenu = addRowMenu(content, totalH);
 
     int row = 0;
     for (int idx : visible) {
@@ -1628,6 +2235,7 @@ void CommunityHubLayer::buildThumbnailsList() {
         auto* cell = addCell(content, cellH, 0, 0.f);
         cell->setPosition({0.f, totalH - static_cast<float>(row + 1) * cellH});
         cell->setOpacity(idx % 2 == 0 ? 110 : 55);
+        registerHoverRow(cell);
         float mid = cellH / 2.f;
 
         float thumbH = cellH - 10.f;
@@ -1704,6 +2312,27 @@ void CommunityHubLayer::buildThumbnailsList() {
         infoLbl->setPosition({textX, mid - 14.f});
         cell->addChild(infoLbl, 10);
 
+        // rating chip pinned top-right, tinted by rank so the podium picks stand out.
+        auto chipColor = idx == 0 ? ccColor3B{255, 206, 66}
+                       : idx == 1 ? ccColor3B{206, 212, 224}
+                       : idx == 2 ? ccColor3B{205, 140, 86}
+                                  : ccColor3B{255, 255, 255};
+        auto ratingLbl = CCLabelBMFont::create(fmt::format("{:.1f}", entry.rating).c_str(), "goldFont.fnt");
+        ratingLbl->setScale(0.42f);
+        ratingLbl->setAnchorPoint({1.f, 0.5f});
+        ratingLbl->setColor(chipColor);
+        ratingLbl->setPosition({m_listW - 12.f, mid + 15.f});
+        cell->addChild(ratingLbl, 10);
+        if (auto* star = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png")) {
+            float h = star->getContentSize().height;
+            if (h > 0.f) star->setScale(12.f / h);
+            star->setPosition({m_listW - 12.f - ratingLbl->getScaledContentSize().width - 8.f, mid + 15.f});
+            cell->addChild(star, 10);
+        }
+
+        addRowButton(rowMenu, totalH, cellH, 0, entry.levelId, menu_selector(CommunityHubLayer::onThumbRow))
+            ->setPositionY(totalH - (static_cast<float>(row) + 0.5f) * cellH);
+
         animateCellIn(cell, row);
         row++;
     }
@@ -1721,6 +2350,9 @@ void CommunityHubLayer::loadCompatibleMods() {
 
         layer->m_compatMods = ok ? paimon::compat_mods::ModlyRepo::get().mods() : std::vector<paimon::compat_mods::ModlyMod>{};
         layer->m_compatLoadFailed = !ok;
+        if (!ok) {
+            layer->m_issue = paimon::ban::networkAuthorization() == 0 ? LoadIssue::Locked : LoadIssue::Network;
+        }
         layer->hideLoading();
         layer->buildCompatibleModsList();
     });
@@ -1735,30 +2367,15 @@ void CommunityHubLayer::buildCompatibleModsList() {
     auto& loc = Localization::get();
 
     if (m_compatMods.empty()) {
-        auto lbl = CCLabelBMFont::create(
-            loc.getString(m_compatLoadFailed ? "community.error" : "community.no_data").c_str(),
-            "goldFont.fnt");
-        lbl->setScale(0.55f);
-        lbl->setOpacity(0);
-        lbl->setPosition({m_listCenter.x, m_listCenter.y + 12.f});
-        m_listContainer->addChild(lbl, 10);
-        lbl->runAction(CCFadeTo::create(0.35f, 190));
-
-        auto hint = CCLabelBMFont::create(loc.getString("community.compat_mods_source").c_str(), "chatFont.fnt");
-        hint->setScale(0.45f);
-        hint->setOpacity(0);
-        hint->setPosition({m_listCenter.x, m_listCenter.y - 16.f});
-        fitLabel(hint, m_listW - 20.f);
-        m_listContainer->addChild(hint, 10);
-        hint->runAction(CCFadeTo::create(0.35f, 140));
-
-        if (m_compatLoadFailed) {
-            auto menu = CCMenu::create();
-            menu->setPosition(m_listCenter.x, m_listCenter.y - 46.f);
-            m_listContainer->addChild(menu, 11);
-            auto* retry = paimon::ui::makeButton("Reintentar", [this] { onRefresh(nullptr); },
-                paimon::ui::Btn::Green, 110.f, 0.6f);
-            menu->addChild(retry);
+        showEmptyState(m_compatLoadFailed);
+        if (!m_compatLoadFailed) {
+            auto hint = CCLabelBMFont::create(loc.getString("community.compat_mods_source").c_str(), "chatFont.fnt");
+            hint->setScale(0.45f);
+            hint->setOpacity(0);
+            hint->setPosition({m_listCenter.x, m_listCenter.y - 16.f});
+            fitLabel(hint, m_listW - 20.f);
+            m_listContainer->addChild(hint, 10);
+            hint->runAction(CCFadeTo::create(0.35f, 140));
         }
         updateFooter(0, false);
         return;
@@ -1793,6 +2410,7 @@ void CommunityHubLayer::buildCompatibleModsList() {
         auto* cell = addCell(content, cellH, 0, 0.f);
         cell->setPosition({0.f, totalH - static_cast<float>(row + 1) * cellH});
         cell->setOpacity(modIndex % 2 == 0 ? 110 : 55);
+        registerHoverRow(cell);
         float mid = cellH / 2.f;
 
         auto* logo = createAvatar(repo.logoUrl(mod), mod.hasLogo, mod.name, 32.f, 7.f);
@@ -1848,6 +2466,7 @@ void CommunityHubLayer::buildCompatibleModsList() {
         auto* hit = CCLayerColor::create({0, 0, 0, 0}, m_listW, cellH);
         auto* btn = CCMenuItemSpriteExtra::create(hit, this, menu_selector(CommunityHubLayer::onCompatMod));
         btn->setTag(modIndex);
+        btn->m_scaleMultiplier = 1.015f;
         btn->setPosition({m_listW / 2.f, totalH - (static_cast<float>(row) + 0.5f) * cellH});
         menu->addChild(btn);
 
@@ -1894,25 +2513,23 @@ void CommunityHubLayer::onInfoButton(CCObject* sender) {
             break;
     }
 
+#if defined(GEODE_IS_DESKTOP)
+    body += "\n\n" + loc.getString("community.shortcuts");
+#endif
     PopupManager::get().alert(title, body, "OK", nullptr, 350.f).showInstant();
 }
 
 bool CommunityHubLayer::rowMatchesFilter(std::string const& name) const {
     if (m_searchFilter.empty()) return true;
-    return toLowerCopy(name).find(m_searchFilter) != std::string::npos;
+    return geode::utils::string::toLower(name).find(m_searchFilter) != std::string::npos;
 }
 
 void CommunityHubLayer::onSearchChanged(std::string const& text) {
-    std::string next = toLowerCopy(text);
+    std::string next = geode::utils::string::toLower(text);
     if (next == m_searchFilter) return;
     m_searchFilter = next;
     // data is already in memory; rebuilding filters without any network hit.
-    switch (m_currentTab) {
-        case Tab::Moderators: buildModeratorsList(); break;
-        case Tab::TopCreators: buildCreatorsList(); break;
-        case Tab::TopThumbnails: buildThumbnailsList(); break;
-        case Tab::CompatibleMods: buildCompatibleModsList(); break;
-    }
+    buildCurrentList();
 }
 
 void CommunityHubLayer::onSort(CCObject*) {
@@ -1936,15 +2553,28 @@ void CommunityHubLayer::onSort(CCObject*) {
 }
 
 void CommunityHubLayer::onRefresh(CCObject*) {
+    // moderators serve from a 15 min cache; a manual refresh must bypass it.
+    if (m_currentTab == Tab::Moderators) s_modCacheValid = false;
     setToolbarBusy(true);
     showLoading();
     loadTab(m_currentTab);
 }
 
+void CommunityHubLayer::onCreatorRow(CCObject* sender) {
+    int accountID = sender->getTag();
+    if (accountID > 0) ProfilePage::create(accountID, false)->show();
+}
+
+void CommunityHubLayer::onThumbRow(CCObject* sender) {
+    int levelID = sender->getTag();
+    if (levelID <= 0) return;
+    if (auto* popup = LocalThumbnailViewPopup::create(levelID, false)) popup->show();
+}
+
 void CommunityHubLayer::setToolbarBusy(bool busy) {
     if (m_refreshButton) m_refreshButton->setVisible(!busy);
     if (busy && !m_refreshSpinner && m_refreshButton) {
-        m_refreshSpinner = LoadingSpinner::create(16.f);
+        m_refreshSpinner = LoadingSpinner::create(kToolButton - 4.f);
         m_refreshSpinner->setPosition(m_refreshButton->getPosition());
         this->addChild(m_refreshSpinner, 13);
     } else if (!busy && m_refreshSpinner) {
@@ -1955,27 +2585,45 @@ void CommunityHubLayer::setToolbarBusy(bool busy) {
 
 void CommunityHubLayer::updateFooter(int shown, bool fromCache) {
     if (!m_footerLabel) return;
+    auto& loc = Localization::get();
     std::string label;
     switch (m_currentTab) {
-        case Tab::Moderators:   label = fmt::format("{} moderadores", shown); break;
-        case Tab::TopCreators:  label = fmt::format("{} creadores", shown); break;
-        case Tab::TopThumbnails:label = fmt::format("{} miniaturas", shown); break;
-        case Tab::CompatibleMods:label = fmt::format("{} mods", shown); break;
+        case Tab::Moderators:   label = fmt::format("{} {}", shown, loc.getString("community.unit_mods")); break;
+        case Tab::TopCreators:  label = fmt::format("{} {}", shown, loc.getString("community.unit_creators")); break;
+        case Tab::TopThumbnails:label = fmt::format("{} {}", shown, loc.getString("community.unit_thumbs")); break;
+        case Tab::CompatibleMods:label = fmt::format("{} {}", shown, loc.getString("community.unit_compat")); break;
     }
-    std::time_t now = std::time(nullptr);
-    std::tm tmv{};
-#if defined(GEODE_IS_WINDOWS)
-    localtime_s(&tmv, &now);
-#else
-    localtime_r(&now, &tmv);
-#endif
-    char buf[16];
-    std::strftime(buf, sizeof(buf), "%H:%M", &tmv);
-    label += fromCache ? fmt::format("  |  cache {}", buf)
-                       : fmt::format("  |  act. {}", buf);
+
+    // the dot says where the rows came from: live, session cache, saved copy, or nothing.
+    bool failed = m_currentTab == Tab::CompatibleMods ? m_compatLoadFailed : m_loadFailed;
+    ccColor3B dot = paimon::ui::palette::success;
+    if (failed) {
+        label += fmt::format("  |  {}", loc.getString("community.status_error"));
+        dot = paimon::ui::palette::danger;
+    } else if (m_fromSnapshot) {
+        label += fmt::format("  |  {} {}", loc.getString("community.status_saved"), formatStamp(m_snapshotAt, true));
+        dot = paimon::ui::palette::warning;
+    } else if (fromCache) {
+        label += fmt::format("  |  {} {}", loc.getString("community.cached"), formatStamp(s_modCacheTimestamp, false));
+        dot = paimon::ui::palette::info;
+    } else {
+        label += fmt::format("  |  {} {}", loc.getString("community.updated"), formatStamp(std::time(nullptr), false));
+    }
+
     m_footerLabel->setString(label.c_str());
+    m_footerLabel->setScale(0.42f);
+    fitLabel(m_footerLabel, m_cardRect.size.width - 40.f);
     m_footerLabel->setOpacity(0);
     m_footerLabel->runAction(CCFadeTo::create(0.3f, 205));
+
+    if (m_statusDot) m_statusDot->removeFromParent();
+    m_statusDot = paimon::SpriteHelper::createRoundedRect(6.f, 6.f, 3.f,
+        {dot.r / 255.f, dot.g / 255.f, dot.b / 255.f, 1.f});
+    if (m_statusDot) {
+        float labelLeft = m_footerLabel->getPositionX() - m_footerLabel->getScaledContentSize().width / 2.f;
+        m_statusDot->setPosition({labelLeft - 10.f, m_footerLabel->getPositionY() - 3.f});
+        this->addChild(m_statusDot, 10);
+    }
 }
 
 CCSprite* CommunityHubLayer::makeRankMedal(int rank) {
@@ -2004,40 +2652,99 @@ CCNode* CommunityHubLayer::buildPodium(std::vector<std::string> const& names,
 
     char const* crowns[] = {"gj_eventCrown_001.png", "gj_weeklyCrown_001.png", "gj_dailyCrown_001.png"};
     float slotX[] = {m_listW / 2.f, m_listW / 2.f - 108.f, m_listW / 2.f + 108.f};
-    float slotY[] = {podH / 2.f + 6.f, podH / 2.f - 4.f, podH / 2.f - 4.f};
+    float slotY[] = {podH / 2.f + 2.f, podH / 2.f - 6.f, podH / 2.f - 6.f};
     float iconScale[] = {1.3f, 1.0f, 1.0f};
 
     int count = std::min<int>(3, static_cast<int>(names.size()));
     for (int i = 0; i < count; i++) {
         float cx = slotX[i];
         float cy = slotY[i];
+        ccColor3B tint = i == 0 ? ccColor3B{255, 206, 66}
+                       : i == 1 ? ccColor3B{206, 212, 224}
+                                : ccColor3B{205, 140, 86};
+
+        // each place is its own node so it can pop in; children use slot-local coordinates.
+        auto* slot = CCNode::create();
+        slot->setPosition({cx, cy});
+        node->addChild(slot, 1);
+
+        // soft halo behind the crown; the winner also gets a slow sunburst.
+        if (auto* halo = paimon::SpriteHelper::safeCreateWithFrameName("d_circle_02_001.png")) {
+            float w = halo->getContentSize().width;
+            if (w > 0.f) halo->setScale((i == 0 ? 46.f : 34.f) / w);
+            halo->setBlendFunc({GL_SRC_ALPHA, GL_ONE});
+            halo->setColor(tint);
+            halo->setOpacity(i == 0 ? 55 : 38);
+            halo->setPosition({0.f, 17.f});
+            slot->addChild(halo, 0);
+            if (paimon::ui::motionEnabled()) {
+                halo->runAction(CCRepeatForever::create(CCSequence::create(
+                    CCEaseSineInOut::create(CCFadeTo::create(1.2f, 20)),
+                    CCEaseSineInOut::create(CCFadeTo::create(1.2f, i == 0 ? 70 : 50)),
+                    nullptr)));
+            }
+        }
+        if (i == 0) {
+            if (auto* burst = paimon::SpriteHelper::safeCreateWithFrameName("shineBurst_001.png")) {
+                float w = burst->getContentSize().width;
+                if (w > 0.f) burst->setScale(60.f / w);
+                burst->setBlendFunc({GL_SRC_ALPHA, GL_ONE});
+                burst->setColor(tint);
+                burst->setOpacity(80);
+                burst->setPosition({0.f, 17.f});
+                slot->addChild(burst, 0);
+                if (paimon::ui::motionEnabled()) {
+                    burst->runAction(CCRepeatForever::create(CCRotateBy::create(12.f, 360.f)));
+                }
+            }
+        }
 
         if (auto* crown = paimon::SpriteHelper::safeCreateWithFrameName(crowns[i])) {
-            crown->setScale(0.55f * iconScale[i]);
-            crown->setPosition({cx, cy + 30.f * iconScale[i]});
-            node->addChild(crown, 3);
+            // cap the crown at ~30px tall and keep its top inside the
+            // podium panel, or the scroll stencil clips it.
+            float crownH = crown->getContentSize().height;
+            if (crownH > 0.f) crown->setScale(30.f / crownH * iconScale[i]);
+            crown->setPosition({0.f, 17.f});
+            slot->addChild(crown, 3);
+            if (paimon::ui::motionEnabled()) {
+                crown->runAction(CCRepeatForever::create(CCSequence::create(
+                    CCDelayTime::create(0.25f * static_cast<float>(i)),
+                    CCEaseSineInOut::create(CCMoveBy::create(1.1f, {0.f, 2.f})),
+                    CCEaseSineInOut::create(CCMoveBy::create(1.1f, {0.f, -2.f})),
+                    nullptr)));
+            }
         }
 
         if (i < static_cast<int>(faces.size()) && faces[i]) {
             auto* face = faces[i];
             face->setScale(face->getScale() * iconScale[i]);
-            face->setPosition({cx, cy + 6.f});
-            node->addChild(face, 2);
+            face->setPosition({0.f, 6.f});
+            slot->addChild(face, 2);
         }
 
         auto nameLbl = CCLabelBMFont::create(names[i].c_str(), "bigFont.fnt");
         nameLbl->setScale(0.34f);
         fitLabel(nameLbl, 92.f);
-        nameLbl->setPosition({cx, cy - 16.f});
-        node->addChild(nameLbl, 4);
+        nameLbl->setPosition({0.f, -16.f});
+        slot->addChild(nameLbl, 4);
 
         if (i < static_cast<int>(subs.size()) && !subs[i].empty()) {
             auto subLbl = CCLabelBMFont::create(subs[i].c_str(), "chatFont.fnt");
             subLbl->setScale(0.32f);
             subLbl->setColor({255, 206, 90});
             fitLabel(subLbl, 92.f);
-            subLbl->setPosition({cx, cy - 28.f});
-            node->addChild(subLbl, 4);
+            subLbl->setPosition({0.f, -28.f});
+            slot->addChild(subLbl, 4);
+        }
+
+        if (paimon::ui::motionEnabled()) {
+            // winner lands last, like a reveal.
+            static constexpr float kDelay[] = {0.3f, 0.12f, 0.2f};
+            slot->setScale(0.f);
+            slot->runAction(CCSequence::create(
+                CCDelayTime::create(kDelay[i]),
+                CCEaseBackOut::create(CCScaleTo::create(0.4f, 1.f)),
+                nullptr));
         }
     }
 

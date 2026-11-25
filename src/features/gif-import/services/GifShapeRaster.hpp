@@ -22,13 +22,20 @@ struct ShapeXform {
     float extentY = 0.f;
     PrimitiveKind kind = PrimitiveKind::Block;
     StampMask const* mask = nullptr;
+    float skewTangent = 0.f;
+    float skewCosine = 1.f;
+    float yCosine = 1.f;
+    float ySine = 0.f;
 
     bool contains(float px, float py) const {
         if (width <= 0.f || height <= 0.f) return false;
         float const dx = px - x;
         float const dy = py - y;
-        float const localX = dx * cosine + dy * sine;
-        float const localY = -dx * sine + dy * cosine;
+        float const rotatedX = dx * cosine + dy * sine;
+        float const rotatedY = -dx * sine + dy * cosine;
+        if (std::abs(skewCosine) < 0.000001f) return false;
+        float const localX = rotatedX + skewTangent * rotatedY;
+        float const localY = rotatedY / skewCosine;
 
         if (kind == PrimitiveKind::Circle) {
             float const nx = localX / (width * 0.5f);

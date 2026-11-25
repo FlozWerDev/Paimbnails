@@ -1,9 +1,13 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "IconProjectStore.hpp"
 
 #include "IconPaths.hpp"
 #include "../data/IconAnatomy.hpp"
 
 #include <Geode/utils/file.hpp>
+#include <Geode/utils/string.hpp>
+#include "../../../utils/AtomicFileWrite.hpp"
+#include "../../../utils/ProjectStorage.hpp"
 #include <matjson.hpp>
 
 #include <algorithm>
@@ -55,12 +59,14 @@ void IconProjectStore::loadIndex() {
     auto path = IconPaths::indexFile();
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) {
+        recoverUnindexedProjects();
         return;
     }
 
-    auto rd = geode::utils::file::readJson(path);
+    auto rd = geode::utils::file::readJson(paimon::paths::toSdkPath(path));
     if (!rd) {
         log::warn("[icon-maker] icons.json read failed: {}", rd.unwrapErr());
+        recoverUnindexedProjects();
         return;
     }
     auto doc = rd.unwrap();
@@ -68,14 +74,39 @@ void IconProjectStore::loadIndex() {
     if (auto arr = doc["icons"].asArray(); arr.isOk()) {
         for (auto const& entry : arr.unwrap()) {
             auto e = indexEntryFromJson(entry);
-            if (!e.id.empty()) {
+            if (paimon::storage::resolveProjectDirectory(IconPaths::slotsDir(), e.id) && !exists(e.id)) {
                 m_index.push_back(std::move(e));
             }
         }
     }
     sortIndex();
+    recoverUnindexedProjects();
 
     log::info("[icon-maker] loaded {} icon(s) from index", m_index.size());
+}
+
+void IconProjectStore::recoverUnindexedProjects() {
+    auto originalCount = m_index.size();
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it(IconPaths::slotsDir(), ec), end;
+         !ec && it != end; it.increment(ec)) {
+        std::error_code typeError;
+        if (!it->is_directory(typeError)) continue;
+        auto id = paimon::paths::toUtf8(it->path().filename());
+        if (exists(id) || !paimon::storage::resolveProjectDirectory(IconPaths::slotsDir(), id)) continue;
+        auto json = geode::utils::file::readJson(paimon::paths::toSdkPath(IconPaths::projectFile(id)));
+        if (!json) continue;
+        auto parsed = json.unwrap().as<IconProject>();
+        if (!parsed || parsed.unwrap().id != id) continue;
+        auto project = parsed.unwrap();
+        m_projects[id] = project;
+        upsertIndexEntry(project);
+    }
+    if (m_index.size() != originalCount) {
+        if (auto saved = saveIndex(); !saved) {
+            log::warn("[icon-maker] Recovered projects; index save failed: {}", saved.unwrapErr());
+        }
+    }
 }
 
 geode::Result<> IconProjectStore::saveIndex() {
@@ -90,14 +121,17 @@ geode::Result<> IconProjectStore::saveIndex() {
     for (auto const& e : m_index) arr.push(indexEntryToJson(e));
     doc["icons"] = arr;
 
-    auto wr = geode::utils::file::writeString(IconPaths::indexFile(), doc.dump());
+    auto wr = paimon::file::writeAtomically(IconPaths::indexFile(), doc.dump());
     if (!wr) {
-        return Err("writeString icons.json: {}", wr.unwrapErr());
+        return Err("Unable to atomically save icons.json");
     }
     return Ok();
 }
 
 geode::Result<> IconProjectStore::setFavorite(std::string_view id, bool favorite) {
+    loadIndex();
+    auto storedId = canonicalId(id);
+    id = storedId;
     for (auto& entry : m_index) {
         if (entry.id != id) continue;
         entry.favorite = favorite;
@@ -106,22 +140,21 @@ geode::Result<> IconProjectStore::setFavorite(std::string_view id, bool favorite
     return Err("No existe ese icono");
 }
 
+std::string IconProjectStore::canonicalId(std::string_view id) const {
+    auto key = paimon::storage::projectIdKey(id);
+    for (auto const& entry : m_index) {
+        if (paimon::storage::projectIdKey(entry.id) == key) return entry.id;
+    }
+    return std::string(id);
+}
+
 bool IconProjectStore::exists(std::string_view id) const {
     for (auto const& e : m_index) {
-        if (e.id == id) return true;
+        if (paimon::storage::projectIdKey(e.id) == paimon::storage::projectIdKey(id)) return true;
     }
     return false;
 }
 
-std::string IconProjectStore::makeUniqueId(std::string desiredId) const {
-    if (!exists(desiredId)) return desiredId;
-
-    for (int i = 2; i < 1000; ++i) {
-        auto candidate = desiredId + "_" + std::to_string(i);
-        if (!exists(candidate)) return candidate;
-    }
-    return desiredId + "_" + std::to_string(nowUnixMs());
-}
 
 void IconProjectStore::upsertIndexEntry(IconProject const& project) {
     for (auto& e : m_index) {
@@ -149,13 +182,10 @@ void IconProjectStore::upsertIndexEntry(IconProject const& project) {
 geode::Result<std::string> IconProjectStore::createProject(IconProject seed) {
     loadIndex();
 
-    if (seed.id.empty()) {
-        seed.id = IconPaths::sanitizeFilename(seed.name);
-    }
-    if (seed.id.empty() || seed.id == "_unnamed") {
-        seed.id = "icono";
-    }
-    auto finalId = makeUniqueId(seed.id);
+    std::error_code reserveError;
+    auto directory = paimon::storage::reserveProjectDirectory(IconPaths::slotsDir(), reserveError);
+    if (directory.empty()) return Err("Unable to reserve project directory: {}", reserveError.message());
+    auto finalId = paimon::paths::toUtf8(directory.filename());
     seed.id = finalId;
 
     auto now = nowUnixMs();
@@ -167,16 +197,17 @@ geode::Result<std::string> IconProjectStore::createProject(IconProject seed) {
     }
 
     auto json = matjson::Value(seed);
-    auto wr = geode::utils::file::writeString(IconPaths::projectFile(finalId), json.dump());
+    auto wr = paimon::file::writeAtomically(IconPaths::projectFile(finalId), json.dump());
     if (!wr) {
-        return Err("writeString project: {}", wr.unwrapErr());
+        return Err("Unable to atomically save project");
     }
 
     m_projects[finalId] = seed;
+    m_revisions[paimon::storage::projectIdKey(finalId)] = ++m_nextRevision;
     upsertIndexEntry(seed);
 
     if (auto r = saveIndex(); !r) {
-        log::warn("[icon-maker] saveIndex (createProject): {}", r.unwrapErr());
+        return Err("Icon saved, but index write failed: {}", r.unwrapErr());
     }
 
     return Ok(finalId);
@@ -184,6 +215,10 @@ geode::Result<std::string> IconProjectStore::createProject(IconProject seed) {
 
 geode::Result<IconProject> IconProjectStore::loadProject(std::string_view id) {
     loadIndex();
+    auto storedId = canonicalId(id);
+    id = storedId;
+    if (!paimon::storage::resolveProjectDirectory(IconPaths::slotsDir(), id))
+        return Err("Invalid or unconfined project ID");
 
     auto it = m_projects.find(std::string(id));
     if (it != m_projects.end()) {
@@ -195,7 +230,7 @@ geode::Result<IconProject> IconProjectStore::loadProject(std::string_view id) {
     if (!std::filesystem::exists(path, ec)) {
         return Err("el icono '{}' no tiene project.json", id);
     }
-    auto rd = geode::utils::file::readJson(path);
+    auto rd = geode::utils::file::readJson(paimon::paths::toSdkPath(path));
     if (!rd) {
         return Err("readJson project.json: {}", rd.unwrapErr());
     }
@@ -204,30 +239,41 @@ geode::Result<IconProject> IconProjectStore::loadProject(std::string_view id) {
         return Err("project.json: {}", parsed.unwrapErr());
     }
     auto p = parsed.unwrap();
+    if (paimon::storage::projectIdKey(p.id) != paimon::storage::projectIdKey(id))
+        return Err("Project ID does not match its directory");
+    p.id = std::string(id);
     m_projects[std::string(id)] = p;
     return Ok(std::move(p));
 }
 
 geode::Result<> IconProjectStore::saveProject(IconProject const& project) {
     loadIndex();
+    auto storedId = canonicalId(project.id);
+    if (storedId != project.id) {
+        auto normalized = project;
+        normalized.id = std::move(storedId);
+        return saveProject(normalized);
+    }
 
-    if (project.id.empty()) return Err("saveProject: id vacio");
+    if (!paimon::storage::resolveProjectDirectory(IconPaths::slotsDir(), project.id))
+        return Err("Invalid or unconfined project ID");
 
     if (auto r = IconPaths::ensureSlotDirs(project.id); !r) {
         return Err("saveProject dirs: {}", r.unwrapErr());
     }
 
     auto json = matjson::Value(project);
-    auto wr = geode::utils::file::writeString(IconPaths::projectFile(project.id), json.dump());
+    auto wr = paimon::file::writeAtomically(IconPaths::projectFile(project.id), json.dump());
     if (!wr) {
-        return Err("writeString project: {}", wr.unwrapErr());
+        return Err("Unable to atomically save project");
     }
 
     m_projects[project.id] = project;
+    m_revisions[paimon::storage::projectIdKey(project.id)] = ++m_nextRevision;
     upsertIndexEntry(project);
 
     if (auto r = saveIndex(); !r) {
-        log::warn("[icon-maker] saveIndex (saveProject): {}", r.unwrapErr());
+        return Err("Icon saved, but index write failed: {}", r.unwrapErr());
     }
     return Ok();
 }
@@ -265,32 +311,31 @@ geode::Result<std::string> IconProjectStore::duplicateProject(std::string_view i
     return Ok(newId);
 }
 
+std::uint64_t IconProjectStore::revision(std::string_view id) const {
+    auto it = m_revisions.find(paimon::storage::projectIdKey(id));
+    return it == m_revisions.end() ? 0 : it->second;
+}
+
 geode::Result<> IconProjectStore::deleteProject(std::string_view id) {
     loadIndex();
-
+    auto storedId = canonicalId(id);
+    id = storedId;
+    auto directory = paimon::storage::resolveProjectDirectory(IconPaths::slotsDir(), id);
+    if (!directory || !exists(id)) return Err("Invalid or unknown project ID");
+    auto previousIndex = m_index;
+    std::erase_if(m_index, [&](IconIndexEntry const& e) { return e.id == id; });
+    if (auto result = saveIndex(); !result) {
+        m_index = std::move(previousIndex);
+        return result;
+    }
     m_projects.erase(std::string(id));
-
-    m_index.erase(
-        std::remove_if(m_index.begin(), m_index.end(),
-            [&](IconIndexEntry const& e) { return e.id == id; }),
-        m_index.end());
-
-    // tolerate failure (e.g. file held open); next saveindex forgets it anyway.
-    auto dir = IconPaths::slotDir(id);
+    m_revisions.erase(paimon::storage::projectIdKey(id));
     std::error_code ec;
-    if (std::filesystem::exists(dir, ec)) {
-        std::filesystem::remove_all(dir, ec);
-        if (ec) {
-            log::warn("[icon-maker] remove_all '{}': {}",
-                geode::utils::string::pathToString(dir), ec.message());
-        }
-    }
-
-    if (auto r = saveIndex(); !r) {
-        log::warn("[icon-maker] saveIndex (deleteProject): {}", r.unwrapErr());
-    }
+    std::filesystem::remove_all(*directory, ec);
+    if (ec) return Err("Unable to remove project: {}", ec.message());
     return Ok();
 }
+
 
 void IconProjectStore::sortIndex() {
     std::sort(m_index.begin(), m_index.end(),

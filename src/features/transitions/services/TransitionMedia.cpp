@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "TransitionMedia.hpp"
 #include "TransitionTimeline.hpp"
 #include "../../gif-import/services/GifVideoSource.hpp"
@@ -6,6 +7,7 @@
 #include "../../../utils/LocalAssetStore.hpp"
 #include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/BoundedFileRead.hpp"
+#include "../../../utils/JoinWithWarning.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/stb_image.h"
 #include <Geode/utils/file.hpp>
@@ -83,13 +85,13 @@ bool loadManifest(std::filesystem::path const& path, Decoded& out) {
         if (budget > kBudget) return false;
         out.pages.push_back(std::move(page));
     }
-    out.manifest = utils::string::pathToString(path);
+    out.manifest = paimon::paths::toUtf8(path);
     return true;
 }
 Decoded importMedia(std::string const& source, std::filesystem::path const& root) {
     Decoded out;
     auto path = paimon::assets::pathFromUtf8(source);
-    if (utils::string::toLower(utils::string::pathToString(path.extension())) == ".pttransition") {
+    if (utils::string::toLower(paimon::paths::toUtf8(path.extension())) == ".pttransition") {
         if (!loadManifest(path, out)) { out = {}; out.error = "Sheet invalido o incompleto. Importa el original de nuevo."; }
         return out;
     }
@@ -196,12 +198,12 @@ Decoded importMedia(std::string const& source, std::filesystem::path const& root
     }
     json["delays"] = delays;
     auto temp = dir / "animation.tmp";
-    if (!utils::file::writeString(temp, json.dump())) { out.error = "No se pudo guardar el indice."; return out; }
+    if (!utils::file::writeString(paimon::paths::toSdkPath(temp), json.dump())) { out.error = "No se pudo guardar el indice."; return out; }
     // publish only after every page is complete; a missing manifest rebuilds.
     std::filesystem::remove(manifest, ec);
     std::filesystem::rename(temp, manifest, ec);
     if (ec) { out.error = "No se pudo publicar el indice."; return out; }
-    out.manifest = utils::string::pathToString(manifest);
+    out.manifest = paimon::paths::toUtf8(manifest);
     return out;
 }
 std::shared_ptr<TransitionMedia> uploadMedia(Decoded& decoded) {
@@ -266,27 +268,44 @@ void deliverMedia(std::string const& path, Decoded& decoded) {
 
 struct Job { std::string path; std::filesystem::path root; };
 class ImportWorker {
-    std::mutex mutex;
-    std::condition_variable cv;
-    std::deque<Job> jobs;
-    std::atomic<bool> stopping{false};
+    struct State {
+        std::mutex mutex;
+        std::condition_variable cv;
+        std::condition_variable exitCv;
+        std::deque<Job> jobs;
+        std::atomic<bool> stopping{false};
+        std::atomic<bool> exited{false};
+    };
+    std::shared_ptr<State> state = std::make_shared<State>();
     std::thread worker;
 public:
-    ImportWorker() : worker([this] {
+    ImportWorker() : worker([state = this->state] {
+        struct ExitSignal {
+            std::shared_ptr<State> state;
+            ~ExitSignal() {
+                if (state) {
+                    {
+                        std::lock_guard lock(state->mutex);
+                        state->exited.store(true, std::memory_order_release);
+                    }
+                    state->exitCv.notify_all();
+                }
+            }
+        } exitSignal{state};
         geode::utils::thread::setName("PaimonTransitionImport");
         for (;;) {
             Job job;
             {
-                std::unique_lock lock(mutex);
-                cv.wait(lock, [this] { return stopping || !jobs.empty(); });
-                if (stopping) return;
-                job = std::move(jobs.front()); jobs.pop_front();
+                std::unique_lock lock(state->mutex);
+                state->cv.wait(lock, [&state] { return state->stopping || !state->jobs.empty(); });
+                if (state->stopping) return;
+                job = std::move(state->jobs.front()); state->jobs.pop_front();
             }
             auto decoded = std::make_shared<Decoded>();
             try { *decoded = importMedia(job.path, job.root); }
             catch (std::exception const& e) { decoded->error = e.what(); }
             catch (...) { decoded->error = "No se pudo importar el medio."; }
-            if (stopping.load() || paimon::isRuntimeShuttingDown()) return;
+            if (state->stopping.load() || paimon::isRuntimeShuttingDown()) return;
             auto delivered = std::make_shared<std::atomic<bool>>(false);
             Loader::get()->queueInMainThread([path = job.path, decoded, delivered] {
                 struct Completion {
@@ -297,18 +316,41 @@ public:
             });
             // at most one decoded animation waits for gpu upload, even when a
             // legacy script requests many assets at startup.
-            while (!delivered->load() && !stopping.load())
+            while (!delivered->load() && !state->stopping.load() && !paimon::isRuntimeShuttingDown())
                 std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            if (stopping.load()) return;
+            if (state->stopping.load() || paimon::isRuntimeShuttingDown()) return;
         }
     }) {}
+    void requestStop() {
+        {
+            std::lock_guard lock(state->mutex);
+            state->stopping.store(true, std::memory_order_release);
+            state->jobs.clear();
+        }
+        state->cv.notify_all();
+    }
+    void waitStop(std::chrono::steady_clock::time_point deadline) {
+        requestStop();
+        if (!worker.joinable()) return;
+        {
+            std::unique_lock lock(state->mutex);
+            state->exitCv.wait_until(lock, deadline, [state = this->state] {
+                return state->exited.load(std::memory_order_acquire);
+            });
+        }
+        if (state->exited.load(std::memory_order_acquire)) {
+            worker.join();
+        } else {
+            geode::log::warn("[ThreadJoin] TransitionMedia worker exceeded deadline; detaching orphan (shared state keeps it alive)");
+            worker.detach();
+        }
+    }
     ~ImportWorker() {
-        { std::lock_guard lock(mutex); stopping = true; }
-        cv.notify_one(); worker.join();
+        waitStop(std::chrono::steady_clock::now() + std::chrono::milliseconds(1500));
     }
     void enqueue(Job job) {
-        { std::lock_guard lock(mutex); jobs.push_back(std::move(job)); }
-        cv.notify_one();
+        { std::lock_guard lock(state->mutex); state->jobs.push_back(std::move(job)); }
+        state->cv.notify_one();
     }
 };
 std::unordered_map<std::string, std::string> aliases;
@@ -332,19 +374,31 @@ void prepareTransitionMedia(std::string const& path, MediaCallback callback) {
     if (!inserted) return;
     try {
         if (!worker) worker = std::make_unique<ImportWorker>();
-        worker->enqueue({path, Mod::get()->getSaveDir() / "transitions" / "sheets"});
+        worker->enqueue({path, paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "transitions" / "sheets"});
     } catch (std::exception const& error) {
         Decoded failed;
         failed.error = error.what();
         deliverMedia(path, failed);
     }
 }
-void shutdownTransitionMedia() {
+void requestStopTransitionMedia() {
     mediaStopped = true;
-    worker.reset();
+    if (worker) worker->requestStop();
+}
+
+void finishShutdownTransitionMedia(std::chrono::steady_clock::time_point deadline) {
+    mediaStopped = true;
+    if (worker) {
+        worker->waitStop(deadline);
+        worker.reset();
+    }
     pending.clear();
     aliases.clear();
     cache.clear();
+}
+
+void shutdownTransitionMedia() {
+    finishShutdownTransitionMedia(std::chrono::steady_clock::now() + std::chrono::milliseconds(1500));
 }
 void TransitionMedia::apply(CCSprite* sprite, double seconds) const {
     if (!sprite || pages.empty() || endsMs.empty() || perPage <= 0 || columns <= 0) return;

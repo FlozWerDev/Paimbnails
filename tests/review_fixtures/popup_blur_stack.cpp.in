@@ -1,0 +1,88 @@
+#include <cassert>
+#include <functional>
+#include <unordered_map>
+#include <vector>
+
+struct CCNode {
+    CCNode* parent = nullptr;
+    bool visible = true;
+    int z = 0;
+    unsigned order = 0;
+    CCNode* getParent() const { return parent; }
+    bool isVisible() const { return visible; }
+    void setVisible(bool value) { visible = value; }
+    int getZOrder() const { return z; }
+    unsigned getOrderOfArrival() const { return order; }
+    void removeFromParent() { parent = nullptr; }
+    void stopAllActions() {}
+    void runAction(int) {}
+};
+template<class T> struct Ref {
+    T* ptr = nullptr;
+    Ref(T* value = nullptr) : ptr(value) {}
+    T* data() const { return ptr; }
+    explicit operator bool() const { return ptr != nullptr; }
+};
+template<class T> struct WeakRef {
+    T* ptr = nullptr;
+    WeakRef(T* value = nullptr) : ptr(value) {}
+    Ref<T> lock() const { return Ref<T>(ptr); }
+    bool valid() const { return ptr != nullptr; }
+};
+struct RegistryEntry {
+    Ref<CCNode> blurRef;
+    WeakRef<CCNode> blurWeak, parentWeak;
+    float ageSeconds = 0.f;
+    bool fadingOut = false;
+};
+@@function|src/blur/PopupBlurService.cpp|static CCNode* liveBlur(@@
+@@function|src/blur/PopupBlurService.cpp|static bool parentAlive(@@
+@@function|src/blur/PopupBlurService.cpp|static std::unordered_map<CCNode*, RegistryEntry>& blurRegistry()@@
+@@function|src/blur/PopupBlurService.cpp|static void updateBlurVisibility()@@
+
+struct Loader {
+    std::vector<std::function<void()>> jobs;
+    static Loader* get() { static Loader loader; return &loader; }
+    void queueInMainThread(std::function<void()> job) { jobs.push_back(std::move(job)); }
+    void drain() { for (auto& job : jobs) job(); jobs.clear(); }
+};
+namespace paimon { bool isRuntimeShuttingDown() { return false; } }
+void unscheduleWatchdogIfIdle() {}
+struct CCFadeTo { static int create(float, int) { return 0; } };
+struct CCCallFunc { static int create(CCNode*, int) { return 0; } };
+struct CCSequence { static int create(int, int, void*) { return 0; } };
+#define callfunc_selector(...) 0
+@@function|src/blur/PopupBlurService.cpp|static void cleanupImpl(@@
+
+int main() {
+    CCNode scene;
+    CCNode a{&scene, false, 1, 1}, b{&scene, false, 1, 2}, c{&scene, true, 1, 3};
+    CCNode popupA, popupB, popupC;
+    auto& registry = blurRegistry();
+    registry[&popupA] = {&a, &a, &scene};
+    registry[&popupB] = {&b, &b, &scene};
+    registry[&popupC] = {&c, &c, &scene};
+
+    cleanupImpl(&popupC, 0.f);
+    assert(!a.visible && b.visible); // closing the third popup restores only the second
+    Loader::get()->drain();
+    assert(c.parent == nullptr);
+
+    cleanupImpl(&popupA, 0.f); // removing an obscured popup must not affect the top
+    assert(b.visible);
+    Loader::get()->drain();
+    cleanupImpl(&popupB, 0.f);
+    Loader::get()->drain();
+    assert(registry.empty());
+
+    a.parent = &scene; b.parent = &scene;
+    a.z = 4; b.z = 2;
+    registry[&popupA] = {&a, &a, &scene};
+    registry[&popupB] = {&b, &b, &scene};
+    updateBlurVisibility();
+    assert(a.visible && !b.visible); // z takes precedence over insertion order
+    a.parent = nullptr;
+    updateBlurVisibility();
+    assert(b.visible); // orphaned surfaces cannot hide a live popup
+    registry.clear();
+}

@@ -102,6 +102,7 @@ bool TagPreferencesPopup::init() {
     }
 
     m_scroll = ScrollLayer::create({kScrollWidth, kScrollHeight});
+    if (m_scroll) m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setPosition({cx - kScrollWidth / 2.f, 34.f});
     m_mainLayer->addChild(m_scroll);
 

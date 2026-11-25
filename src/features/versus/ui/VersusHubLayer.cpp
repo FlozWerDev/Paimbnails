@@ -246,6 +246,7 @@ void VersusHubLayer::buildFormatPanel(CCRect const& area) {
     m_formatPanel->addChild(hint, 1);
 
     m_formatList = ScrollLayer::create({body.size.width, body.size.height - 20.f});
+    if (m_formatList) m_formatList->setAnchorPoint({0.f, 0.f});
     m_formatList->setPosition({body.origin.x, body.origin.y});
     m_formatPanel->addChild(m_formatList, 1);
 }

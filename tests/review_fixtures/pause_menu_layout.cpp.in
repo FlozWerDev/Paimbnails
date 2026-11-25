@@ -1,0 +1,209 @@
+#include <algorithm>
+#include <array>
+#include <cassert>
+#include <cmath>
+#include <cstddef>
+#include <memory>
+#include <limits>
+#include <string>
+#include <string_view>
+#include <vector>
+
+constexpr char const* operator""_spr(char const* value, std::size_t) { return value; }
+namespace cocos2d {
+struct CCPoint { float x = 0.f, y = 0.f; };
+struct CCSize { float width = 40.f, height = 40.f; };
+struct ccColor3B { unsigned char r, g, b; };
+struct CCNode {
+    virtual ~CCNode() = default;
+    std::string id;
+    CCNode* parent = nullptr;
+    std::vector<CCNode*> children;
+    CCPoint position;
+    CCSize size;
+    float scale = 1.f, rotation = 0.f;
+    bool visible = true;
+    auto const& getID() const { return id; }
+    void setID(std::string_view value) { id = value; }
+    CCNode* getChildByID(std::string_view value) {
+        for (auto* child : children) if (child->id == value) return child;
+        return nullptr;
+    }
+    auto const& getChildren() const { return children; }
+    CCNode* getParent() const { return parent; }
+    void addChild(CCNode* child) { children.push_back(child); child->parent = this; }
+    void setPosition(CCPoint value) { position = value; }
+    void setScale(float value) { scale = value; }
+    float getScale() const { return scale; }
+    void setRotation(float value) { rotation = value; }
+    float getRotation() const { return rotation; }
+    CCSize getContentSize() const { return size; }
+    void setVisible(bool value) { visible = value; }
+    CCPoint convertToWorldSpace(CCPoint p) const {
+        float const angle = rotation * .01745329252f;
+        CCPoint result{position.x + scale * (p.x * std::cos(angle) - p.y * std::sin(angle)),
+            position.y + scale * (p.x * std::sin(angle) + p.y * std::cos(angle))};
+        return parent ? parent->convertToWorldSpace(result) : result;
+    }
+    CCPoint convertToNodeSpace(CCPoint p) const {
+        if (parent) p = parent->convertToNodeSpace(p);
+        float const angle = -rotation * .01745329252f;
+        p = {(p.x - position.x) / scale, (p.y - position.y) / scale};
+        return {p.x * std::cos(angle) - p.y * std::sin(angle),
+            p.x * std::sin(angle) + p.y * std::cos(angle)};
+    }
+};
+struct CCMenu : CCNode {
+    bool layout = true;
+    void setLayout(std::nullptr_t) { layout = false; }
+};
+struct CCMenuItem : CCNode {
+    int tag = 17, activations = 0;
+    void activate() { ++activations; }
+};
+struct CCLabelBMFont : CCNode {
+    static std::vector<std::unique_ptr<CCLabelBMFont>> labels;
+    std::string text;
+    static CCLabelBMFont* create(char const*, char const*) {
+        labels.push_back(std::make_unique<CCLabelBMFont>());
+        return labels.back().get();
+    }
+    void setString(char const* value) { text = value; }
+    void limitLabelWidth(float, float value, float) { scale = value; }
+    void setColor(ccColor3B) {}
+};
+std::vector<std::unique_ptr<CCLabelBMFont>> CCLabelBMFont::labels;
+struct CCDirector {
+    CCSize size{568.f, 320.f};
+    static CCDirector* get() { static CCDirector value; return &value; }
+    CCSize getWinSize() { return size; }
+};
+}
+class PauseLayer : public cocos2d::CCNode {};
+class CCMenuItemSpriteExtra : public cocos2d::CCMenuItem { public: float m_baseScale = 1.f; };
+template<class T> using CCArrayExt = std::vector<T>;
+template<class To, class From> To typeinfo_cast(From* node) { return dynamic_cast<To>(node); }
+namespace geode {
+namespace cast { using ::typeinfo_cast; }
+namespace prelude { using namespace cocos2d; using ::typeinfo_cast; }
+}
+class Localization {
+public:
+    enum class Language { SPANISH, ENGLISH };
+    Language language = Language::SPANISH;
+    static Localization& get() { static Localization value; return value; }
+    Language getLanguage() { return language; }
+};
+namespace paimon::compat {
+struct ModCompat {
+    inline static bool compact = false;
+    static bool isCompactPauseMenuLoaded() { return compact; }
+};
+}
+@@source|src/utils/PauseMenuNodes.hpp@@
+@@source|src/features/main-menu-layout/services/PauseMenuGrid.hpp@@
+@@source|src/features/main-menu-layout/services/PauseMenuLayout.cpp@@
+
+using namespace cocos2d;
+using namespace paimon::menu_layout;
+bool close(float a, float b) { return std::abs(a - b) < .002f; }
+void namedChild(CCNode& root, CCNode& node, char const* name) {
+    node.setID(name);
+    root.addChild(&node);
+}
+int main() {
+    assert(pauseMenuSlots(568, 320, 0, false).empty());
+    assert(pauseMenuSlots(std::numeric_limits<float>::quiet_NaN(), 320, 8, false).empty());
+    assert(pauseMenuSlots(568, std::numeric_limits<float>::infinity(), 8, false).empty());
+    assert(pauseMenuSlots(200, 100, 8, false).empty());
+    for (auto const size : {CCSize{480, 320}, CCSize{568, 320}, CCSize{720, 320}, CCSize{960, 540}, CCSize{320, 180}}) {
+        for (std::size_t count = 1; count <= 16; ++count) {
+            auto left = pauseMenuSlots(size.width, size.height, count, false);
+            auto right = pauseMenuSlots(size.width, size.height, count, true);
+            assert(left.size() == count && right.size() == count);
+            for (std::size_t i = 0; i < count; ++i) {
+                assert(close(left[i].y, right[i].y));
+                assert(left[i].x - left[i].iconSize / 2 > 0);
+                assert(right[i].x + right[i].iconSize / 2 < size.width);
+                assert(left[i].y - left[i].iconSize / 2 > 36);
+                assert(left[i].y + left[i].iconSize / 2 < size.height - 36);
+                for (std::size_t j = i + 1; j < count; ++j) {
+                    assert(std::abs(left[i].x - left[j].x) >= left[i].iconSize ||
+                        std::abs(left[i].y - left[j].y) >= left[i].iconSize);
+                }
+            }
+        }
+    }
+
+    PauseLayer pause;
+    CCNode main, popup;
+    CCMenu left, right, center, legacy, foreign;
+    namedChild(pause, legacy, "right-button-menu");
+    assert(paimon::findPauseButtonMenu(&pause, "right-button-menu") == &legacy);
+    namedChild(pause, main, "main-layer");
+    namedChild(main, left, "left-button-menu");
+    namedChild(main, right, "right-button-menu");
+    namedChild(main, center, "center-button-menu");
+    namedChild(pause, popup, "popup");
+    namedChild(popup, foreign, "right-button-menu");
+    assert(paimon::findPauseButtonMenu(&pause, "right-button-menu") == &right);
+    assert(!paimon::findPauseButtonMenu(nullptr, "right-button-menu"));
+    assert(!paimon::findPauseButtonMenu(&pause, "missing"));
+
+    // Menus have nonzero local origins; arranging must keep their parents intact.
+    left.position = {36, 160};
+    right.position = {532, 160};
+    center.position = {284, 160};
+    CCMenuItemSpriteExtra deaths, markers, comments, quests, damage, controls;
+    namedChild(left, comments, "comments-button");
+    namedChild(left, deaths, "death-tracker-button");
+    namedChild(left, controls, "platformer-ui-button");
+    namedChild(left, markers, "death-markers-button");
+    namedChild(left, damage, "ignore-damage-button");
+    namedChild(left, quests, "quests-button");
+    CCMenuItemSpriteExtra options, hide, speed, practiceUI, capture, upload, unknown;
+    namedChild(right, unknown, "another-mod/button");
+    namedChild(right, capture, "thumbnail-capture-button");
+    namedChild(right, speed, "speed-modifier-button");
+    namedChild(right, options, "options-button");
+    namedChild(right, upload, "thumbnail-select-button");
+    namedChild(right, practiceUI, "practice-ui-button");
+    namedChild(right, hide, "hide-pause-menu-button");
+    capture.rotation = -90;
+    CCMenuItemSpriteExtra exit, play, retry, practice;
+    play.size = {80, 80};
+    namedChild(center, exit, "exit-button");
+    namedChild(center, practice, "practice-button");
+    namedChild(center, play, "play-button");
+    namedChild(center, retry, "retry-button");
+    auto leftOrder = left.children;
+    auto rightOrder = right.children;
+    assert(arrangePauseMenu(&pause));
+    assert(left.children == leftOrder && right.children == rightOrder);
+    assert(!left.layout && !right.layout && !center.layout);
+    assert(left.position.x == 36 && right.position.x == 532);
+    assert(deaths.position.y > comments.position.y);
+    assert(options.position.y > speed.position.y && speed.position.y > capture.position.y);
+    assert(retry.position.x < play.position.x && play.position.x < practice.position.x && practice.position.x < exit.position.x);
+    assert(play.scale == play.m_baseScale && play.scale > 0 && play.scale <= 1);
+    assert(unknown.parent == &right && unknown.tag == 17);
+    unknown.activate();
+    assert(unknown.activations == 1);
+    auto* caption = typeinfo_cast<CCLabelBMFont*>(capture.getChildByID("pause-action-caption"));
+    assert(caption && caption->text == "Capturar");
+    auto worldCaption = caption->convertToWorldSpace({0, 0});
+    auto worldCapture = capture.convertToWorldSpace({0, 0});
+    assert(close(worldCaption.x, worldCapture.x) && worldCaption.y < worldCapture.y);
+
+    auto const oldLabelCount = CCLabelBMFont::labels.size();
+    auto const oldPosition = options.position;
+    options.visible = false; // a saved hidden button must still reserve its slot
+    Localization::get().language = Localization::Language::ENGLISH;
+    assert(arrangePauseMenu(&pause));
+    assert(!options.visible && close(options.position.y, oldPosition.y));
+    assert(CCLabelBMFont::labels.size() == oldLabelCount && caption->text == "Capture");
+    paimon::compat::ModCompat::compact = true;
+    options.position.x = 999;
+    assert(!arrangePauseMenu(&pause) && options.position.x == 999);
+    assert(!arrangePauseMenu(nullptr));
+}

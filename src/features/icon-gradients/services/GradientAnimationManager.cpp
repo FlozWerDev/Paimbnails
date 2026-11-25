@@ -157,6 +157,16 @@ void GradientAnimationManager::saveCustom() {
     paimon::requestDeferredModSave();
 }
 
+void GradientAnimationManager::persistAndRefresh() {
+    save();
+    refreshPrograms();
+}
+
+void GradientAnimationManager::persistCustomAndRefresh() {
+    saveCustom();
+    refreshPrograms();
+}
+
 GradientAnimationConfig const& GradientAnimationManager::config() const {
     return m_config;
 }
@@ -173,44 +183,37 @@ void GradientAnimationManager::setEnabled(bool enabled) {
 
 void GradientAnimationManager::setType(GradientAnimationType type) {
     m_config.type = validType(static_cast<int>(type));
-    save();
-    refreshPrograms();
+    persistAndRefresh();
 }
 
 void GradientAnimationManager::setSpeed(float speed) {
     m_config.speed = bounded(speed, 1.f, 0.1f, 4.f);
-    save();
-    refreshPrograms();
+    persistAndRefresh();
 }
 
 void GradientAnimationManager::setIntensity(float intensity) {
     m_config.intensity = bounded(intensity, 0.6f, 0.f, 1.f);
-    save();
-    refreshPrograms();
+    persistAndRefresh();
 }
 
 void GradientAnimationManager::setReverse(bool reverse) {
     m_config.reverse = reverse;
-    save();
-    refreshPrograms();
+    persistAndRefresh();
 }
 
 void GradientAnimationManager::setPhaseOffset(float phase) {
     m_config.phaseOffset = bounded(phase, 0.f, 0.f, 1.f);
-    save();
-    refreshPrograms();
+    persistAndRefresh();
 }
 
 void GradientAnimationManager::setPingPong(bool pingPong) {
     m_config.pingPong = pingPong;
-    save();
-    refreshPrograms();
+    persistAndRefresh();
 }
 
 void GradientAnimationManager::setEasing(GradientEasing easing) {
     m_config.easing = validEasing(static_cast<int>(easing));
-    save();
-    refreshPrograms();
+    persistAndRefresh();
 }
 
 void GradientAnimationManager::randomize() {
@@ -235,8 +238,7 @@ void GradientAnimationManager::randomize() {
     m_config.pingPong = unit(rng) < 0.4f;
     m_config.easing = static_cast<GradientEasing>(easePick(rng));
 
-    save();
-    refreshPrograms();
+    persistAndRefresh();
 }
 
 void GradientAnimationManager::reset() {
@@ -246,8 +248,7 @@ void GradientAnimationManager::reset() {
     m_config.custom = std::move(custom);
 
     Mod::get()->setSavedValue<bool>(kEnabledKey, true);
-    save();
-    refreshPrograms();
+    persistAndRefresh();
 }
 
 std::vector<GradientAnimationLayer> const& GradientAnimationManager::customLayers() const {
@@ -258,8 +259,7 @@ bool GradientAnimationManager::addCustomLayer() {
     if (m_config.custom.size() >= kMaxCustomLayers) return false;
 
     m_config.custom.push_back({});
-    saveCustom();
-    refreshPrograms();
+    persistCustomAndRefresh();
     return true;
 }
 
@@ -271,8 +271,7 @@ bool GradientAnimationManager::duplicateCustomLayer(size_t index) {
         m_config.custom.begin() + static_cast<ptrdiff_t>(index) + 1,
         m_config.custom[index]
     );
-    saveCustom();
-    refreshPrograms();
+    persistCustomAndRefresh();
     return true;
 }
 
@@ -280,16 +279,14 @@ void GradientAnimationManager::updateCustomLayer(size_t index, GradientAnimation
     if (index >= m_config.custom.size()) return;
 
     m_config.custom[index] = clampLayer(layer);
-    saveCustom();
-    refreshPrograms();
+    persistCustomAndRefresh();
 }
 
 void GradientAnimationManager::removeCustomLayer(size_t index) {
     if (index >= m_config.custom.size()) return;
 
     m_config.custom.erase(m_config.custom.begin() + static_cast<ptrdiff_t>(index));
-    saveCustom();
-    refreshPrograms();
+    persistCustomAndRefresh();
 }
 
 size_t GradientAnimationManager::moveCustomLayer(size_t index, int delta) {
@@ -299,8 +296,7 @@ size_t GradientAnimationManager::moveCustomLayer(size_t index, int delta) {
     if (target < 0 || target >= static_cast<int64_t>(m_config.custom.size())) return index;
 
     std::swap(m_config.custom[index], m_config.custom[static_cast<size_t>(target)]);
-    saveCustom();
-    refreshPrograms();
+    persistCustomAndRefresh();
     return static_cast<size_t>(target);
 }
 
@@ -312,14 +308,12 @@ void GradientAnimationManager::setCustomLayers(std::vector<GradientAnimationLaye
         m_config.custom.push_back(clampLayer(layer));
     }
 
-    saveCustom();
-    refreshPrograms();
+    persistCustomAndRefresh();
 }
 
 void GradientAnimationManager::clearCustomLayers() {
     m_config.custom.clear();
-    saveCustom();
-    refreshPrograms();
+    persistCustomAndRefresh();
 }
 
 void GradientAnimationManager::track(CCGLProgram* program) {

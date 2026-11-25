@@ -1,0 +1,59 @@
+#include <cassert>
+#include <cstddef>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+
+constexpr char const* operator""_spr(char const* value, std::size_t) { return value; }
+struct CCNode {
+    std::unordered_map<std::string, CCNode*> children;
+    CCNode* getChildByID(std::string const& id) {
+        auto found = children.find(id);
+        return found == children.end() ? nullptr : found->second;
+    }
+};
+@@function|src/features/badges/hooks/BadgeHooks.cpp|CCNode* findCommentTextArea(CCNode* mainLayer)@@
+namespace paimon {
+    struct CommentTextSelector {
+        static inline CCNode* selected = nullptr;
+        static void attach(CCNode*, std::string const&, CCNode* node) { selected = node; }
+    };
+}
+struct BadgeCommentCell {
+    CCNode* m_mainLayer = nullptr;
+@@function|src/features/badges/hooks/BadgeHooks.cpp|void refreshCommentTextSelector(std::string const& text)@@
+};
+
+int main() {
+    CCNode layer, area, legacyArea, compact, overlay;
+    BadgeCommentCell cell{&layer};
+    auto selected = [&] { return paimon::CommentTextSelector::selected; };
+
+    layer.children["comment-text-area-label"] = &area;
+    cell.refreshCommentTextSelector("multiline");
+    assert(selected() == &area);
+    layer.children["comment-text-area"] = &legacyArea;
+    cell.refreshCommentTextSelector("prefer current ID");
+    assert(selected() == &area);
+
+    layer.children.clear();
+    layer.children["comment-text-area"] = &area;
+    cell.refreshCommentTextSelector("legacy IDs");
+    assert(selected() == &area);
+
+    layer.children.clear();
+    layer.children["comment-text-label"] = &compact;
+    cell.refreshCommentTextSelector("compact");
+    assert(selected() == &compact);
+
+    layer.children["comment-text-area-label"] = &area;
+    layer.children["paimon-emote-overlay"] = &overlay;
+    cell.refreshCommentTextSelector("emotes");
+    assert(selected() == &overlay);
+    layer.children.clear();
+    cell.refreshCommentTextSelector("missing");
+    assert(!selected());
+    cell.m_mainLayer = nullptr;
+    cell.refreshCommentTextSelector("detached");
+    assert(!findCommentTextArea(nullptr));
+}

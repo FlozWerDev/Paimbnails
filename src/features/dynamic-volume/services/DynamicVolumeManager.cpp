@@ -328,7 +328,8 @@ float DynamicVolumeManager::readGroupGainDb() const {
     return 20.0f * std::log10(volume);
 }
 
-float DynamicVolumeManager::readMomentaryLufs() const {
+float DynamicVolumeManager::readLoudness(
+    float (FMOD_DSP_LOUDNESS_METER_INFO_TYPE::*field)) const {
     if (!m_meterDsp) return kInvalidLufs;
     FMOD_DSP_LOUDNESS_METER_INFO_TYPE* info = nullptr;
     if (m_meterDsp->getParameterData(FMOD_DSP_LOUDNESS_METER_INFO,
@@ -336,21 +337,17 @@ float DynamicVolumeManager::readMomentaryLufs() const {
         return kInvalidLufs;
     }
     if (!info) return kInvalidLufs;
-    return isValidLufs(info->momentaryloudness)
-        ? info->momentaryloudness - readGroupGainDb() : kInvalidLufs;
+    float const value = info->*field;
+    return isValidLufs(value) ? value - readGroupGainDb() : kInvalidLufs;
+}
+
+float DynamicVolumeManager::readMomentaryLufs() const {
+    return readLoudness(&FMOD_DSP_LOUDNESS_METER_INFO_TYPE::momentaryloudness);
 }
 
 float DynamicVolumeManager::readWindowPeakLufs() const {
-    if (!m_meterDsp) return kInvalidLufs;
-    FMOD_DSP_LOUDNESS_METER_INFO_TYPE* info = nullptr;
-    if (m_meterDsp->getParameterData(FMOD_DSP_LOUDNESS_METER_INFO,
-                                     reinterpret_cast<void**>(&info), nullptr, nullptr, 0) != FMOD_OK) {
-        return kInvalidLufs;
-    }
-    if (!info) return kInvalidLufs;
     // peak momentary loudness survives fade-ins; averages would under-duck drops.
-    return isValidLufs(info->maxmomentaryloudness)
-        ? info->maxmomentaryloudness - readGroupGainDb() : kInvalidLufs;
+    return readLoudness(&FMOD_DSP_LOUDNESS_METER_INFO_TYPE::maxmomentaryloudness);
 }
 
 SafeDropLevels DynamicVolumeManager::readOutputLevels() const {

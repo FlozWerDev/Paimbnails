@@ -77,8 +77,11 @@ bool ConversationMemory::looksLikeFollowUp(std::string const& normalized) {
     static char const* const kFollowUpTokens[] = {
         "y", "como", "donde", "cuando", "porque", "y como", "y donde",
         "y eso", "y ahora", "mas", "otra vez", "explicame",
+        "que", "que es", "que son", "cual", "cuales", "y que", "y eso que",
+        "como asi", "y luego", "y despues", "para que", "de que",
         "how", "where", "when", "why", "more", "again", "explain",
-        "and", "and how", "and where",
+        "and", "and how", "and where", "what", "which", "what about",
+        "tell me more", "and then", "what else",
     };
 
     for (auto const* tok : kFollowUpTokens) {

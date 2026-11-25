@@ -207,10 +207,17 @@ std::vector<TopicKnowledge> buildTopicKnowledge() {
                 "thumb-capture",
                 {"capture", "take", "shoot", "screenshot", "clean"},
                 {"capturar", "tomar", "sacar", "screenshot", "limpia"},
+#if defined(GEODE_IS_MOBILE)
+                "To take a clean thumbnail: use <cy>Capture</c> from the pause menu or your "
+                "<cy>Capture gesture</c> in Manager Cut -> Gestures.",
+                "Para tomar una miniatura limpia: usa <cy>Captura</c> en el menu de pausa o tu "
+                "<cy>gesto de Captura</c> en Manager Cut -> Gestos.",
+#else
                 "To take a clean thumbnail: use <cy>Capture</c> (right-click or your capture "
                 "key). It saves a clean frame of the level.",
                 "Para tomar una miniatura limpia: usa <cy>Captura</c> (click derecho o tu tecla "
                 "de captura). Guarda un frame limpio del nivel.",
+#endif
                 "Capture", "Captura",
             },
         };
@@ -383,11 +390,19 @@ std::vector<TopicKnowledge> buildTopicKnowledge() {
                 "capture-rightclick",
                 {"right click", "rightclick", "right", "mouse"},
                 {"click derecho", "derecho", "raton"},
+#if defined(GEODE_IS_MOBILE)
+                "Right-click capture is PC-only. On mobile, use the pause button or set a "
+                "<cy>Capture Menu gesture</c> in Manager Cut.",
+                "La apertura con click derecho es solo para PC. En movil usa el boton de pausa "
+                "o configura un <cy>gesto</c> en Manager Cut.",
+                "Gestures", "Gestos",
+#else
                 "Right-click opens the capture menu by default. Disable it in <cy>Mod "
                 "Settings</c> if you prefer only the key.",
                 "El click derecho abre el menu de captura por defecto. Desactivalo en "
                 "<cy>Ajustes del Mod</c> si prefieres solo la tecla.",
                 "Right-click", "Click derecho",
+#endif
             },
         };
         t.enMoreReply = "With <cy>Capture</c> you can also: <cy>resolution</c>, "

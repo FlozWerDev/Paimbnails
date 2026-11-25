@@ -73,17 +73,24 @@ inline matjson::Value shapeToJson(DrawShapeLayout const& layout) {
     value["scale"] = layout.scale;
     value["scaleX"] = layout.scaleX;
     value["scaleY"] = layout.scaleY;
+    value["rotation"] = layout.rotation;
     value["opacity"] = layout.opacity;
     value["hidden"] = layout.hidden;
+    value["locked"] = layout.locked;
     value["width"] = layout.width;
     value["height"] = layout.height;
     value["cornerRadius"] = layout.cornerRadius;
     value["r"] = layout.color.r;
     value["g"] = layout.color.g;
     value["b"] = layout.color.b;
+    value["strokeWidth"] = layout.strokeWidth;
+    value["sr"] = layout.strokeColor.r;
+    value["sg"] = layout.strokeColor.g;
+    value["sb"] = layout.strokeColor.b;
     value["zOrder"] = layout.zOrder;
     value["layer"] = layout.layer;
     value["linkGroup"] = layout.linkGroup;
+    value["scene"] = layout.scene;
     return value;
 }
 
@@ -97,17 +104,24 @@ inline DrawShapeLayout shapeFromJson(matjson::Value const& value) {
     layout.scale = serialization_detail::number(value, "scale", 1.0);
     layout.scaleX = serialization_detail::number(value, "scaleX", layout.scale);
     layout.scaleY = serialization_detail::number(value, "scaleY", layout.scale);
+    layout.rotation = serialization_detail::number(value, "rotation", 0.0);
     layout.opacity = serialization_detail::number(value, "opacity", 0.75);
     layout.hidden = value["hidden"].asBool().unwrapOr(false);
+    layout.locked = value["locked"].asBool().unwrapOr(false);
     layout.width = serialization_detail::number(value, "width", 110.0);
     layout.height = serialization_detail::number(value, "height", 70.0);
     layout.cornerRadius = serialization_detail::number(value, "cornerRadius", 18.0);
     layout.color.r = serialization_detail::color(value, "r", 90);
     layout.color.g = serialization_detail::color(value, "g", 220);
     layout.color.b = serialization_detail::color(value, "b", 255);
+    layout.strokeWidth = std::max(0.f, serialization_detail::number(value, "strokeWidth", 0.0));
+    layout.strokeColor.r = serialization_detail::color(value, "sr", 255);
+    layout.strokeColor.g = serialization_detail::color(value, "sg", 255);
+    layout.strokeColor.b = serialization_detail::color(value, "sb", 255);
     layout.zOrder = serialization_detail::integer(value, "zOrder");
     layout.layer = serialization_detail::integer(value, "layer");
     layout.linkGroup = value["linkGroup"].asString().unwrapOr("");
+    layout.scene = value["scene"].asString().unwrapOr("");
     return layout;
 }
 

@@ -1,0 +1,82 @@
+#include "src/utils/HmacSha256.cpp"
+#include "src/utils/SafeText.hpp"
+#include <algorithm>
+#include <array>
+#include <cassert>
+#include <chrono>
+#include <cstdint>
+#include <cstring>
+#include <limits>
+#include <optional>
+#include <span>
+#include <string>
+#include <vector>
+
+constexpr std::size_t kMaxBanCacheBytes = 4096, kMacBytes = 32, kMaxReasonBytes = 512;
+constexpr std::uint32_t kBanCacheVersion = 1;
+constexpr std::uint8_t kBanMagic[8] = {'P', 'A', 'I', 'M', 'O', 'N', 'B', 'G'};
+enum class CacheState { Missing, Valid, Stale, Tampered };
+struct BanRecord {
+    std::int32_t accountID = 0;
+    std::int64_t checkedAt = 0;
+    bool banned = false;
+    std::string reason;
+};
+struct CacheRead { CacheState state = CacheState::Missing; BanRecord record; };
+std::int32_t accountID = 123;
+std::int64_t now = 1000;
+std::int32_t currentAccountID() { return accountID; }
+std::int64_t nowEpochSeconds() { return now; }
+
+@@function|src/core/BanGate.cpp|std::array<std::uint8_t, 32> const& sealKey()@@
+@@function|src/core/BanGate.cpp|void appendU32(@@
+@@function|src/core/BanGate.cpp|void appendU64(@@
+@@function|src/core/BanGate.cpp|bool takeU8(@@
+@@function|src/core/BanGate.cpp|bool takeU32(@@
+@@function|src/core/BanGate.cpp|bool takeU64(@@
+@@function|src/core/BanGate.cpp|std::vector<std::uint8_t> sealRecord(@@
+@@function|src/core/BanGate.cpp|CacheRead openRecord(@@
+
+int main() {
+    auto allowed = sealRecord({123, 900, false, ""});
+    assert(openRecord(allowed).state == CacheState::Valid);
+    auto banned = sealRecord({123, 900, true, "abuse"});
+    auto opened = openRecord(banned);
+    assert(opened.state == CacheState::Valid && opened.record.banned && opened.record.reason == "abuse");
+    accountID = 456;
+    assert(openRecord(banned).state == CacheState::Stale);
+    accountID = 123;
+    now = 1; // Rolling the system clock back cannot erase a signed ban.
+    assert(openRecord(banned).state == CacheState::Valid && openRecord(banned).record.banned);
+    assert(openRecord(allowed).state == CacheState::Tampered);
+    now = 1000;
+    for (std::size_t i = 0; i < banned.size(); ++i) {
+        auto edited = banned;
+        edited[i] ^= 1;
+        assert(openRecord(edited).state == CacheState::Tampered);
+    }
+    for (std::size_t size = 1; size < banned.size(); ++size) {
+        assert(openRecord(std::span(banned).first(size)).state == CacheState::Tampered);
+    }
+    auto malformed = banned;
+    malformed[24] = 2; // Even a MAC-valid record must contain a Boolean byte.
+    paimon::crypto::hmacSha256(sealKey(),
+        std::span(malformed).first(malformed.size() - kMacBytes),
+        malformed.data() + malformed.size() - kMacBytes);
+    assert(openRecord(malformed).state == CacheState::Tampered);
+    std::vector<std::uint8_t> oversized(kMaxBanCacheBytes + 1, 0);
+    assert(openRecord(oversized).state == CacheState::Tampered);
+    auto longReason = sealRecord({123, 900, true, std::string(1024, 'x')});
+    assert(openRecord(longReason).record.reason.size() == kMaxReasonBytes);
+
+    // Display text is normalized before sealing and after opening.
+    auto control = sealRecord({123, 900, true, "ab\tcd\r\nef"});
+    assert(openRecord(control).record.reason == "ab cd\nef");
+    auto embeddedNul = sealRecord({123, 900, true, std::string("ab\0cd", 5)});
+    assert(openRecord(embeddedNul).record.reason == "abcd");
+
+    // A multi-byte character that crosses the byte cap is dropped whole.
+    auto splitUtf8 = sealRecord({123, 900, true, std::string(511, 'a') + "\xC3\xA9"});
+    assert(openRecord(splitUtf8).state == CacheState::Valid);
+    assert(openRecord(splitUtf8).record.reason.size() == 511);
+}

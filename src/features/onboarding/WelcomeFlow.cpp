@@ -1,9 +1,12 @@
+#include "../../utils/FilesystemPath.hpp"
 #include "WelcomeFlow.hpp"
 
 #include "../../ui/PaimonUI.hpp"
 #include "../../layers/PaiConfigLayer.hpp"
+#if defined(GEODE_IS_DESKTOP)
 #include "../../features/cursor/ui/CursorConfigPopup.hpp"
 #include "../../features/cursor/services/CursorManager.hpp"
+#endif
 #include "../../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../../features/updates/services/UpdateChecker.hpp"
 #include "../../features/crash-reports/services/CrashReporter.hpp"
@@ -13,12 +16,13 @@
 #include "../../features/thumb-alerts/services/NewThumbWatcher.hpp"
 #include "../../features/thumb-alerts/services/ThumbFeedSocket.hpp"
 #include "../../utils/Localization.hpp"
-#include <Geode/binding/ButtonSprite.hpp>
+#include "../../utils/UnicodeLabel.hpp"
 #include <Geode/ui/ScrollLayer.hpp>
 #include <Geode/ui/TextArea.hpp>
 #include <Geode/utils/file.hpp>
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <ctime>
 #include <filesystem>
 #include <functional>
@@ -30,8 +34,8 @@ namespace paimon::onboarding {
 namespace {
 
 constexpr int kTermsVersion = 1;
-constexpr float kWidth = 440.f;
-constexpr float kHeight = 300.f;
+constexpr float kWidth = 460.f;
+constexpr float kHeight = 320.f;
 
 struct Option {
     char const* key;
@@ -70,12 +74,19 @@ std::vector<Step> const& steps() {
                 {"smooth-text-enabled", "Texto animado", "Animated text", "Anima los caracteres al escribir.", "Animates characters as you type."},
                 {"global-icons-enabled", "Iconos compartidos", "Shared icons", "Con More Icons, muestra iconos de otros.", "With More Icons, shows other players' icons."},
             }},
+#if defined(GEODE_IS_DESKTOP)
         {"Cursor", "Cursor", "Activa un cursor propio y abre su editor para elegir imagen y efectos.",
             "Enable a custom cursor and open its editor for images and effects.", {
-                {"custom-cursor-enable", "Cursor personalizado", "Custom cursor", "Reemplaza el cursor del sistema.", "Replaces the system cursor."},
+                {"custom-cursor-enable", "Cursor personalizado", "Custom cursor", "Replaces the system cursor.", "Replaces the system cursor."},
                 {"custom-slider-enabled", "Barra de desplazamiento propia", "Custom scroll thumb", "Personaliza los controles deslizantes.", "Customizes slider controls."},
                 {"smooth-scroll", "Desplazamiento suave", "Smooth scrolling", "Suaviza el movimiento de listas.", "Smooths list movement."},
             }},
+#else
+        {"Controles", "Controls", "Personaliza las barras deslizantes de los menus y gestos tactiles.",
+            "Customize menu sliders and touch controls.", {
+                {"custom-slider-enabled", "Barra de desplazamiento propia", "Custom scroll thumb", "Personaliza los controles deslizantes.", "Customizes slider controls."},
+            }},
+#endif
         {"Miniaturas y niveles", "Thumbnails and levels", "Vista de niveles, capturas y vistas previas.",
             "Level view, captures and previews.", {
                 {"auto-preview-enable", "Vistas previas automaticas", "Automatic previews", "Genera miniaturas al jugar niveles.", "Creates thumbnails while playing levels."},
@@ -165,7 +176,18 @@ std::string localized(char const* es, char const* en) {
 }
 
 std::filesystem::path welcomePath() {
-    return Mod::get()->getSaveDir() / "welcome.json";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "welcome.json";
+}
+
+// -1 unknown, 0 not accepted, 1 accepted. several startup paths ask before the
+// menu exists; each answer used to re-read and re-parse welcome.json.
+std::atomic<int>& acceptedCache() {
+    static auto* value = new std::atomic<int>{-1};
+    return *value;
+}
+
+void setAcceptedCache(bool accepted) {
+    acceptedCache().store(accepted ? 1 : 0, std::memory_order_release);
 }
 
 bool readOption(std::string const& key) {
@@ -181,22 +203,62 @@ void writeOption(std::string const& key, bool value) {
         LayerBackgroundManager::get().saveConfig("menu", cfg);
     } else if (key == "bg-adaptive-colors") {
         Mod::get()->setSavedValue(key, value);
+#if defined(GEODE_IS_DESKTOP)
     } else if (key == "custom-cursor-enable") {
         auto& cursor = CursorManager::get();
         cursor.config().enabled = value;
         cursor.saveConfig();
         Mod::get()->setSettingValue<bool>(key, value);
         cursor.applyConfigLive();
+#endif
     } else {
         Mod::get()->setSettingValue<bool>(key, value);
     }
 }
 
-CCMenuItemSpriteExtra* button(std::string const& label, char const* texture,
-    std::function<void()> action, float scale = 0.48f) {
-    auto* sprite = ButtonSprite::create(label.c_str(), "goldFont.fnt", texture, scale);
-    return CCMenuItemExt::createSpriteExtra(sprite,
-        [action = std::move(action)](CCMenuItemSpriteExtra*) { action(); });
+// gold progress bar (track + fill) spanning the content width.
+void addProgressBar(CCNode* parent, int current, int total, float y) {
+    float const x = 22.f;
+    float const w = kWidth - 44.f;
+    float const frac = total > 0
+        ? std::clamp(static_cast<float>(current) / static_cast<float>(total), 0.f, 1.f) : 0.f;
+    auto* track = CCLayerColor::create({0, 0, 0, 110}, w, 6.f);
+    track->ignoreAnchorPointForPosition(false);
+    track->setAnchorPoint({0.f, 0.5f});
+    track->setPosition({x, y});
+    parent->addChild(track);
+    if (frac > 0.f) {
+        auto* fill = CCLayerColor::create({255, 210, 90, 255}, w * frac, 6.f);
+        fill->ignoreAnchorPointForPosition(false);
+        fill->setAnchorPoint({0.f, 0.5f});
+        fill->setPosition({x, y});
+        parent->addChild(fill);
+    }
+}
+
+// header counter label ("Paso 3 / 11") at the left of the progress bar.
+void addCounterLabel(CCNode* parent, std::string const& text, float y) {
+    auto* label = paimon::ui::makeTitle(text.c_str(), 220.f, 0.45f);
+    if (!label) return;
+    label->setAnchorPoint({0.f, 0.5f});
+    label->setPosition({22.f, y});
+    parent->addChild(label);
+}
+
+void addFooterDivider(CCNode* parent) {
+    auto* divider = paimon::ui::makeDivider(kWidth - 44.f, paimon::ui::palette::gold, 80);
+    if (!divider) return;
+    divider->setPosition({kWidth / 2.f, 48.f});
+    parent->addChild(divider);
+}
+
+CCMenuItemSpriteExtra* addFooterButton(CCMenu* menu, std::string const& label,
+    paimon::ui::Btn skin, float x, std::function<void()> action) {
+    auto* item = paimon::ui::makeButton(label.c_str(), std::move(action), skin, 126.f, 0.55f);
+    if (!item) return nullptr;
+    item->setPosition({x, 28.f});
+    menu->addChild(item);
+    return item;
 }
 
 void addText(CCNode* parent, std::string const& value, float x, float y,
@@ -211,13 +273,24 @@ void addText(CCNode* parent, std::string const& value, float x, float y,
 }
 
 bool isAccepted() {
-    auto result = geode::utils::file::readString(welcomePath());
-    if (!result) return false;
-    auto parsed = matjson::parse(result.unwrap());
-    if (!parsed) return false;
-    auto const& data = parsed.unwrap();
-    return data.isObject() && data.contains("accepted_terms_version") &&
-        data["accepted_terms_version"].asInt().unwrapOr(0) == kTermsVersion;
+    int cached = acceptedCache().load(std::memory_order_acquire);
+    if (cached >= 0) return cached == 1;
+
+    bool accepted = false;
+    if (auto result = geode::utils::file::readString(paimon::paths::toSdkPath(welcomePath()))) {
+        if (auto parsed = matjson::parse(result.unwrap())) {
+            auto const& data = parsed.unwrap();
+            accepted = data.isObject() && data.contains("accepted_terms_version") &&
+                data["accepted_terms_version"].asInt().unwrapOr(0) == kTermsVersion;
+        }
+    }
+
+    // only publish if nobody else did: finish() writing the file concurrently
+    // must win over a stale "not accepted" read from an older worker.
+    int expected = -1;
+    acceptedCache().compare_exchange_strong(expected, accepted ? 1 : 0,
+        std::memory_order_acq_rel, std::memory_order_acquire);
+    return acceptedCache().load(std::memory_order_acquire) == 1;
 }
 
 WelcomePopup* WelcomePopup::create() {
@@ -236,6 +309,14 @@ bool WelcomePopup::init() {
     m_content->setContentSize({kWidth, kHeight});
     m_content->setPosition({0.f, 0.f});
     m_mainLayer->addChild(m_content);
+    addCorners();
+    addInfoButton(localized("Bienvenido a Paimbnails", "Welcome to Paimbnails"),
+        localized("Este asistente configura las funciones principales del mod paso a paso.\n"
+                  "<cy>Saltar</c> deja cada opcion como esta; puedes cambiar todo despues en los ajustes.\n"
+                  "Al final se muestran los <cy>terminos</c>: aceptarlos es obligatorio para usar el mod.",
+                  "This assistant sets up the mod's main features step by step.\n"
+                  "<cy>Skipping</c> leaves each option as it is; you can change everything later in settings.\n"
+                  "The <cy>terms</c> are shown at the end: accepting them is required to use the mod."));
     std::error_code ec;
     if (std::filesystem::exists(welcomePath(), ec)) {
         m_skippedTutorial = true;
@@ -276,30 +357,82 @@ void WelcomePopup::showStep() {
     m_content->removeAllChildren();
     auto const& step = steps().at(m_step);
     setTitle(localized(step.titleEs, step.titleEn).c_str());
-    addText(m_content, fmt::format("{} / {}", m_step + 1, steps().size()), 22.f, 262.f, 90.f, 0.48f, true);
-    addText(m_content, localized(step.hintEs, step.hintEn), 22.f, 239.f, 385.f, 0.53f);
+
+    addCounterLabel(m_content,
+        fmt::format("{} {} / {}", localized("Paso", "Step"), m_step + 1, steps().size()),
+        kHeight - 48.f);
+    addProgressBar(m_content, m_step + 1, static_cast<int>(steps().size()), kHeight - 62.f);
+
+    auto* hint = paimon::ui::makeText(localized(step.hintEs, step.hintEn).c_str(),
+        kWidth - 44.f, 0.5f, paimon::ui::palette::muted);
+    if (hint) {
+        hint->setAnchorPoint({0.f, 1.f});
+        hint->setPosition({22.f, kHeight - 72.f});
+        m_content->addChild(hint);
+    }
+
+    // editor shortcut (backgrounds / cursor steps) in the header row.
+#if defined(GEODE_IS_DESKTOP)
+    bool const showStepEditor = (m_step == 1 || m_step == 3);
+#else
+    bool const showStepEditor = (m_step == 1);
+#endif
+    if (showStepEditor) {
+        auto* detailMenu = paimon::ui::makeZeroMenu();
+        m_content->addChild(detailMenu);
+        auto* detail = paimon::ui::makeButton(
+            (m_step == 1 ? localized("Editor de Fondos", "Background Editor")
+                         : localized("Editor de Cursor", "Cursor Editor")).c_str(),
+            [this] {
+                applyStep();
+                m_pending.clear();
+                if (m_step == 1) PaiConfigLayer::openOverlay();
+#if defined(GEODE_IS_DESKTOP)
+                else if (auto* popup = CursorConfigPopup::create()) popup->show();
+#endif
+            }, paimon::ui::Btn::Cyan, 126.f, 0.5f);
+        if (detail) {
+            detail->setPosition({kWidth - 85.f, kHeight - 48.f});
+            detailMenu->addChild(detail);
+        }
+    }
+
+    constexpr float panelW = kWidth - 36.f;
+    constexpr float panelH = 152.f;
+    auto* panel = paimon::ui::makePanel({panelW, panelH},
+        step.options.empty() ? nullptr : localized("Opciones", "Options").c_str());
+    panel->setPosition({18.f, 54.f});
+    m_content->addChild(panel);
+    paimon::ui::animateIn(panel);
 
     if (m_step == 0) {
-        auto* menu = CCMenu::create();
-        menu->setPosition({0.f, 0.f});
-        m_content->addChild(menu);
+        auto* menu = paimon::ui::makeZeroMenu();
+        panel->addChild(menu);
         for (int i = 0; i < 2; ++i) {
             std::string language = i == 0 ? "spanish" : "english";
-            std::string label = i == 0 ? "Espanol" : "English";
+            std::string label = Localization::languageDisplayName(Localization::languageFromId(language));
             bool selected = Localization::get().getCurrentLanguageId() == language;
-            auto* item = button(label + (selected ? "  OK" : ""),
-                selected ? "GJ_button_01.png" : "GJ_button_04.png",
-                [this, language] { selectLanguage(language); }, 0.65f);
-            item->setPosition({145.f + i * 150.f, 145.f});
+            auto* item = paimon::ui::makeButton("",
+                [this, language] { selectLanguage(language); },
+                selected ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray, 150.f, 0.6f);
+            if (!item) continue;
+            auto* face = item->getNormalImage();
+            auto* caption = paimon::ui::createUnicodeLabel(label + (selected ? "  OK" : ""), "goldFont.fnt");
+            if (caption) {
+                caption->setLimitLabelWidth(face->getContentWidth() - 14.f, .8f, .4f);
+                caption->setPosition(face->getContentSize() / 2.f);
+                face->addChild(caption, 2);
+            }
+            item->setPosition({panelW / 2.f + (i == 0 ? -84.f : 84.f), panelH / 2.f});
             menu->addChild(item);
         }
     } else {
-        auto* scrollInset = paimon::ui::makeInset({402.f, 168.f});
-        scrollInset->setPosition({19.f, 60.f});
-        m_content->addChild(scrollInset);
-        auto* scroll = ScrollLayer::create({398.f, 164.f});
-        scroll->setPosition({21.f, 62.f});
-        m_content->addChild(scroll);
+        float const scrollW = panelW - 16.f;
+        float const scrollH = panelH - paimon::ui::kPanelHeader - 14.f;
+        auto* scroll = ScrollLayer::create({scrollW, scrollH});
+        if (scroll) scroll->setAnchorPoint({0.f, 0.f});
+        scroll->setPosition({8.f, 7.f});
+        panel->addChild(scroll);
         std::vector<Option const*> visibleOptions;
         for (auto const& option : step.options) {
             if (std::string(option.key) == "menu-background-dark" ||
@@ -308,104 +441,94 @@ void WelcomePopup::showStep() {
                 visibleOptions.push_back(&option);
             }
         }
-        float total = std::max(164.f, static_cast<float>(visibleOptions.size()) * 43.f + 8.f);
-        scroll->m_contentLayer->setContentSize({398.f, total});
-        auto* menu = CCMenu::create();
-        menu->setPosition({0.f, 0.f});
+        float total = std::max(scrollH, static_cast<float>(visibleOptions.size()) * 44.f + 8.f);
+        scroll->m_contentLayer->setContentSize({scrollW, total});
+        auto* menu = paimon::ui::makeZeroMenu();
         scroll->m_contentLayer->addChild(menu);
         for (size_t i = 0; i < visibleOptions.size(); ++i) {
             auto const& option = *visibleOptions[i];
             auto it = m_pending.try_emplace(option.key, readOption(option.key)).first;
-            float y = total - 14.f - static_cast<float>(i) * 43.f;
+            float y = total - 14.f - static_cast<float>(i) * 44.f;
+            if (i > 0) {
+                auto* divider = paimon::ui::makeDivider(scrollW - 12.f, paimon::ui::palette::gold, 55);
+                if (divider) {
+                    divider->setPosition({scrollW / 2.f, y + 22.f});
+                    scroll->m_contentLayer->addChild(divider);
+                }
+            }
             addText(scroll->m_contentLayer, localized(option.es, option.en), 8.f, y, 290.f, 0.52f, true);
             addText(scroll->m_contentLayer, localized(option.detailEs, option.detailEn), 8.f, y - 17.f, 300.f, 0.40f);
             // ignore the toggler's reported state; toggleOption flips m_pending and rebuilds.
             auto* item = paimon::ui::makeToggle(it->second,
                 [this, key = std::string(option.key)](bool) { toggleOption(key); }, 0.7f);
-            item->setPosition({360.f, y - 10.f});
+            item->setPosition({scrollW - 28.f, y - 10.f});
             menu->addChild(item);
         }
         scroll->moveToTop();
-        if (m_step == 1 || m_step == 3) {
-            auto* detail = button(m_step == 1 ? localized("Editor de Fondos", "Background Editor")
-                                                : localized("Editor de Cursor", "Cursor Editor"),
-                "GJ_button_04.png", [this] {
-                    applyStep();
-                    m_pending.clear();
-                    if (m_step == 1) PaiConfigLayer::openOverlay();
-                    else if (auto* popup = CursorConfigPopup::create()) popup->show();
-                }, 0.42f);
-            detail->setPosition({345.f, 250.f});
-            auto* detailMenu = CCMenu::create();
-            detailMenu->setPosition({0.f, 0.f});
-            detailMenu->addChild(detail);
-            m_content->addChild(detailMenu);
-        }
     }
 
-    auto* footer = CCMenu::create();
-    footer->setPosition({0.f, 0.f});
+    addFooterDivider(m_content);
+    auto* footer = paimon::ui::makeZeroMenu();
     m_content->addChild(footer);
-    auto* skipAll = button(localized("Saltar tutorial", "Skip tutorial"), "GJ_button_04.png",
-        [this] { m_skippedTutorial = true; m_step = static_cast<int>(steps().size()); showTerms(); }, 0.46f);
-    skipAll->setPosition({72.f, 28.f});
-    footer->addChild(skipAll);
+    addFooterButton(footer, localized("Saltar tutorial", "Skip tutorial"), paimon::ui::Btn::Gray, 84.f,
+        [this] { m_skippedTutorial = true; m_step = static_cast<int>(steps().size()); showTerms(); });
     if (m_step > 0) {
-        auto* skip = button(localized("Saltar seccion", "Skip section"), "GJ_button_04.png",
-            [this] { nextStep(); }, 0.46f);
-        skip->setPosition({218.f, 28.f});
-        footer->addChild(skip);
+        addFooterButton(footer, localized("Saltar seccion", "Skip section"), paimon::ui::Btn::Gray, kWidth / 2.f,
+            [this] { nextStep(); });
     }
-    auto* next = button(localized("Continuar", "Continue"), "GJ_button_01.png",
-        [this] { applyStep(); nextStep(); }, 0.52f);
-    next->setPosition({360.f, 28.f});
-    footer->addChild(next);
+    addFooterButton(footer, localized("Continuar", "Continue"), paimon::ui::Btn::Green, kWidth - 84.f,
+        [this] { applyStep(); nextStep(); });
 }
 
 void WelcomePopup::showTerms() {
     m_content->removeAllChildren();
     auto const& page = termsPages().at(m_termsPage);
     setTitle(localized("Terminos y condiciones", "Terms and conditions").c_str());
-    addText(m_content, fmt::format("{} / {} - {}", m_termsPage + 1, termsPages().size(),
-        localized(page.titleEs, page.titleEn)), 22.f, 260.f, 395.f, 0.53f, true);
 
-    auto* scrollInset = paimon::ui::makeInset({400.f, 192.f});
-    scrollInset->setPosition({20.f, 52.f});
-    m_content->addChild(scrollInset);
-    auto* scroll = ScrollLayer::create({396.f, 188.f});
-    scroll->setPosition({22.f, 54.f});
-    m_content->addChild(scroll);
-    auto* body = SimpleTextArea::create(localized(page.bodyEs, page.bodyEn), "chatFont.fnt", 0.52f, 375.f);
+    addCounterLabel(m_content,
+        fmt::format("{} {} / {}", localized("Pagina", "Page"), m_termsPage + 1, termsPages().size()),
+        kHeight - 48.f);
+    addProgressBar(m_content, m_termsPage + 1, static_cast<int>(termsPages().size()), kHeight - 62.f);
+
+    constexpr float panelW = kWidth - 36.f;
+    constexpr float panelH = 178.f;
+    auto* panel = paimon::ui::makePanel({panelW, panelH},
+        localized(page.titleEs, page.titleEn).c_str());
+    panel->setPosition({18.f, 54.f});
+    m_content->addChild(panel);
+    paimon::ui::animateIn(panel);
+
+    float const scrollW = panelW - 16.f;
+    float const scrollH = panelH - paimon::ui::kPanelHeader - 14.f;
+    auto* scroll = ScrollLayer::create({scrollW, scrollH});
+    if (scroll) scroll->setAnchorPoint({0.f, 0.f});
+    scroll->setPosition({8.f, 7.f});
+    panel->addChild(scroll);
+    auto* body = SimpleTextArea::create(localized(page.bodyEs, page.bodyEn), "chatFont.fnt", 0.52f, scrollW - 18.f);
     if (body) {
-        float contentHeight = std::max(188.f, body->getContentSize().height + 16.f);
-        scroll->m_contentLayer->setContentSize({396.f, contentHeight});
+        float contentHeight = std::max(scrollH, body->getContentSize().height + 16.f);
+        scroll->m_contentLayer->setContentSize({scrollW, contentHeight});
         body->setAnchorPoint({0.f, 1.f});
         body->setPosition({9.f, contentHeight - 6.f});
         scroll->m_contentLayer->addChild(body);
         scroll->moveToTop();
     }
 
-    auto* footer = CCMenu::create();
-    footer->setPosition({0.f, 0.f});
+    addFooterDivider(m_content);
+    auto* footer = paimon::ui::makeZeroMenu();
     m_content->addChild(footer);
-    auto* decline = button(localized("Rechazar", "Decline"), "GJ_button_06.png",
-        [this] { onClose(nullptr); }, 0.46f);
-    decline->setPosition({70.f, 28.f});
-    footer->addChild(decline);
+    addFooterButton(footer, localized("Rechazar", "Decline"), paimon::ui::Btn::Red, 84.f,
+        [this] { onClose(nullptr); });
     if (m_termsPage > 0) {
-        auto* previous = button(localized("Anterior", "Previous"), "GJ_button_04.png",
-            [this] { --m_termsPage; showTerms(); }, 0.46f);
-        previous->setPosition({215.f, 28.f});
-        footer->addChild(previous);
+        addFooterButton(footer, localized("Anterior", "Previous"), paimon::ui::Btn::Gray, kWidth / 2.f,
+            [this] { --m_termsPage; showTerms(); });
     }
-    auto* next = button(m_termsPage + 1 == static_cast<int>(termsPages().size())
-            ? localized("Acepto", "I accept") : localized("Siguiente", "Next"),
-        "GJ_button_01.png", [this] {
-            if (m_termsPage + 1 == static_cast<int>(termsPages().size())) finish();
+    bool const lastPage = m_termsPage + 1 == static_cast<int>(termsPages().size());
+    addFooterButton(footer, lastPage ? localized("Acepto", "I accept") : localized("Siguiente", "Next"),
+        paimon::ui::Btn::Green, kWidth - 84.f, [this, lastPage] {
+            if (lastPage) finish();
             else { ++m_termsPage; showTerms(); }
-        }, 0.52f);
-    next->setPosition({360.f, 28.f});
-    footer->addChild(next);
+        });
 }
 
 void WelcomePopup::finish() {
@@ -416,12 +539,13 @@ void WelcomePopup::finish() {
         {"language", Localization::get().getCurrentLanguageId()},
         {"tutorial_skipped", m_skippedTutorial},
     });
-    auto result = geode::utils::file::writeStringSafe(welcomePath(), data.dump());
+    auto result = geode::utils::file::writeStringSafe(paimon::paths::toSdkPath(welcomePath()), data.dump());
     if (!result) {
         Notification::create(localized("No se pudo guardar welcome.json", "Could not save welcome.json"),
             NotificationIcon::Error)->show();
         return;
     }
+    setAcceptedCache(true);
     onClose(nullptr);
     if (paimon::ban::runStartupBanGate()) return;
     paimon::discord::DiscordPresenceManager::get().resumeAfterConsent();

@@ -1,6 +1,8 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "MenuMusicPlayer.hpp"
 #include "MenuMusicEffects.hpp"
 #include "MenuMusicLibrary.hpp"
+#include "SpotifyService.hpp"
 
 #include "../../menu-loop/services/MenuLoopManager.hpp"
 #include "../../../utils/MusicChannel.hpp"
@@ -77,6 +79,30 @@ std::string MenuMusicPlayer::pickRandomExcept(const std::string& exceptId) const
 
 bool MenuMusicPlayer::applyOverrideAndPlay(const std::string& trackId,
                                            const std::string& audioPath) {
+    if (trackId.rfind("spotify_", 0) == 0) {
+        auto& lib = MenuMusicLibrary::get();
+        auto* track = lib.findTrack(trackId);
+        auto* fmod = FMODAudioEngine::sharedEngine();
+        if (fmod && fmod->m_backgroundMusicChannel) {
+            fmod->m_backgroundMusicChannel->stop();
+        }
+
+        m_state.currentTrackId = trackId;
+        m_state.currentAudioPath = "";
+        m_state.mode = lib.mode();
+        m_state.isPlaying = true;
+        m_paused = false;
+
+        if (track && !track->sourceUrl.empty()) {
+            SpotifyService::get().openTrack(track->sourceUrl);
+        } else {
+            SpotifyService::get().sendMediaCommand("play_pause");
+        }
+
+        notifyChanged();
+        return true;
+    }
+
     std::error_code existsEc;
     if (audioPath.empty() || !std::filesystem::exists(audioPath, existsEc) || existsEc) {
         log::warn("[MenuMusic] audio file missing for track {}: '{}'",
@@ -90,7 +116,7 @@ bool MenuMusicPlayer::applyOverrideAndPlay(const std::string& trackId,
     loop.setCurrentSongDisplayName(
         MenuMusicLibrary::get().findTrack(trackId)
             ? MenuMusicLibrary::get().findTrack(trackId)->displayName
-            : geode::utils::string::pathToString(std::filesystem::path(audioPath).stem()));
+            : paimon::paths::toUtf8(std::filesystem::path(audioPath).stem()));
 
     auto* fmod = FMODAudioEngine::sharedEngine();
     if (fmod && fmod->m_backgroundMusicChannel) {

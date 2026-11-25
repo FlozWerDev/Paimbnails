@@ -1,0 +1,176 @@
+#define FMT_HEADER_ONLY
+#include <matjson.hpp>
+#include <fmt/format.h>
+#include <algorithm>
+#include <cassert>
+#include <charconv>
+#include <chrono>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <optional>
+#include <random>
+#include <string>
+#include <vector>
+
+namespace geode {
+struct Mod {
+    static Mod* get() { static Mod mod; return &mod; }
+    std::filesystem::path getSaveDir() { return std::filesystem::current_path() / "official-slot-test"; }
+};
+namespace log { template<class... T> void warn(char const*, T const&...) {} }
+namespace utils {
+template<class T> Result<T> numFromString(std::string const& text) {
+    T value{};
+    auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (error != std::errc{} || end != text.data() + text.size()) return Err("invalid integer");
+    return Ok(value);
+}
+namespace string { std::string pathToString(std::filesystem::path const& path) { return path.string(); } }
+namespace file {
+Result<std::string> readString(std::filesystem::path const& path) {
+    std::ifstream stream(path);
+    if (!stream) return Err("cannot read");
+    return Ok(std::string(std::istreambuf_iterator<char>(stream), {}));
+}
+}
+}
+namespace prelude { using namespace geode; using namespace geode::utils; }
+}
+namespace paimon::file {
+bool writeAtomically(std::filesystem::path const& path, std::string const& text) {
+    std::ofstream stream(path);
+    stream << text;
+    return stream.good();
+}
+}
+#include "src/utils/JsonHelper.hpp"
+@@source|src/features/official-slots/OfficialSlots.hpp@@
+namespace paimon::officialslots {
+bool isOfficialId(int id) { return id >= 1 && id <= 22; }
+int difficultyFace(Difficulty difficulty) { return static_cast<int>(difficulty); }
+std::vector<Difficulty> const& allDifficulties() {
+    static std::vector<Difficulty> values = {Difficulty::Unrated, Difficulty::Easy};
+    return values;
+}
+}
+@@source|src/features/official-slots/services/OfficialSlotStore.hpp@@
+@@source|src/features/official-slots/services/OfficialSlotStore.cpp@@
+@@source|src/features/official-slots/services/GmdImporter.hpp@@
+@@source|src/features/official-slots/services/GmdImporter.cpp@@
+
+int main(int argc, char** argv) {
+    using namespace paimon::officialslots;
+    auto const directory = geode::Mod::get()->getSaveDir();
+    std::filesystem::create_directories(directory);
+    auto& store = SlotStore::get();
+    if (argc == 1) {
+        std::filesystem::remove(directory / "official-slots.json");
+        for (char const* scenario : {"cold", "reload", "lifecycle", "malformed"}) {
+            if (std::string(scenario) == "malformed") {
+                std::ofstream(directory / "official-slots.json") << "{broken";
+            }
+            auto command = std::string("\"") + argv[0] + "\" " + scenario;
+            assert(std::system(command.c_str()) == 0);
+        }
+        std::cout << "Official slots: first run, replacement, ordering, hiding and persistence passed\n";
+        return 0;
+    }
+    std::string const scenario = argv[1];
+    if (scenario == "malformed") {
+        assert(store.visiblePages().size() == 22);
+        assert(store.pageOrder().front() == "o:1");
+        return 0;
+    }
+    if (scenario == "reload") {
+        assert(store.slots().size() == 2);
+        assert(store.pageOrder().size() == 23);
+        assert(store.visiblePages().size() == 22);
+        assert(store.isOfficialHidden(2));
+        assert(store.slotForOfficial(2)->levelId == 987654);
+        assert(store.visiblePosition(SlotStore::slotKey(store.slots().front().id)) == 1);
+        store.setOfficialHidden(2, false);
+        assert(store.visiblePages().size() == 23);
+        return 0;
+    }
+    if (scenario == "lifecycle") {
+        auto previous = *store.slotForOfficial(2);
+        Slot next;
+        next.levelId = 777777;
+        next.replacesOfficialId = 2;
+        auto const nextId = store.add(next);
+        assert(store.find(previous.id)->replacesOfficialId == 0);
+        assert(store.find(previous.id)->levelId == 987654);
+        assert(store.visiblePosition(SlotStore::slotKey(previous.id)) != 0);
+        assert(store.slotForOfficial(2)->id == nextId);
+        store.remove(nextId);
+        assert(!store.slotForOfficial(2));
+        for (int i = 1; i <= 22; ++i) assert(store.visiblePosition(SlotStore::officialKey(i)) != 0);
+        return 0;
+    }
+    // A missing settings file must retain every original, including after the first add.
+    assert(store.visiblePages().size() == 22);
+    assert(store.pageOrder().front() == "o:1" && store.pageOrder().back() == "o:22");
+    Slot custom;
+    custom.levelId = 123456;
+    custom.name = "Inserted level";
+    auto const id = store.add(custom, store.orderIndexForVisiblePos(3));
+    auto const key = SlotStore::slotKey(id);
+    assert(!id.empty());
+    assert(store.visiblePages().size() == 23);
+    assert(store.visiblePosition(key) == 3);
+    for (int i = 1; i <= 22; ++i) assert(store.visiblePosition(SlotStore::officialKey(i)) != 0);
+
+    // Row arrows must move the actual selector page, across original/custom boundaries.
+    store.move(id, -1);
+    assert(store.visiblePosition(key) == 2);
+    store.movePageToVisible(key, 23);
+    assert(store.visiblePosition(key) == 23);
+    store.movePageToVisible(key, 1);
+    assert(store.visiblePosition(key) == 1);
+
+    Slot replacement;
+    replacement.levelId = 345678;
+    replacement.replacesOfficialId = 2;
+    auto replacementId = store.add(replacement);
+    assert(store.visiblePages().size() == 23);
+    auto edited = *store.find(replacementId);
+    edited.levelId = 987654;
+    assert(store.update(edited));
+    assert(store.slotForOfficial(2)->id == replacementId);
+    assert(store.slotForOfficial(2)->levelId == 987654);
+
+    store.setOfficialHidden(2, true);
+    assert(store.visiblePages().size() == 22);
+    assert(store.visiblePosition("o:2") == 0);
+    assert(store.find(replacementId)); // Hiding never deletes the user's replacement.
+    auto visible = store.visiblePages();
+    assert(visible[0] == key && visible[1] == "o:1" && visible[2] == "o:3");
+
+    // Hiding an inserted page compacts the list and preserves its place for restoration.
+    auto inserted = *store.find(id);
+    inserted.enabled = false;
+    store.update(inserted);
+    assert(store.visiblePages().size() == 21 && store.visiblePages().front() == "o:1");
+    inserted.enabled = true;
+    store.update(inserted);
+    assert(store.visiblePosition(key) == 1);
+
+    auto const source = directory / "source.gmd";
+    std::ofstream(source) << "<d><k>k2</k><s>User &amp; level</s><k>k5</k><s>Author</s>"
+        "<k>k4</k><s>kS38,1;1,1,2,30,3,30;</s><k>k8</k><i>5</i><k>k45</k><i>789</i></d>";
+    auto const parsed = readGmd(source);
+    assert(parsed.info && parsed.info->name == "User & level" && !parsed.levelString.empty());
+    assert(parsed.info->songId == 789 && parsed.info->audioTrack == 5);
+    auto imported = store.importGmd(source);
+    assert(imported && std::filesystem::exists(source));
+    Slot fileSlot;
+    fileSlot.source = Source::Gmd;
+    fileSlot.gmdFile = *imported;
+    auto const fileId = store.add(fileSlot);
+    assert(store.find(fileId)->gmdFile == *imported);
+    store.remove(fileId);
+    assert(!std::filesystem::exists(store.gmdDir() / *imported));
+    assert(std::filesystem::exists(source));
+}

@@ -43,7 +43,7 @@ bool ReportUserPopup::init(int accountID, std::string const& username) {
     m_mainLayer->addChild(infoLabel);
 
     m_textInput = geode::TextInput::create(280.f, "Reason for reporting...", "chatFont.fnt");
-    m_textInput->setCommonFilter(geode::CommonFilter::Any);
+    m_textInput->setCommonFilter(geode::CommonFilter::TextEmojis);
     m_textInput->setMaxCharCount(200);
     m_textInput->setPosition({cx, contentSize.height - 80.f});
     m_textInput->setScale(0.9f);
@@ -71,7 +71,7 @@ bool ReportUserPopup::init(int accountID, std::string const& username) {
 
     {
         auto ac = paimon::emotes::EmoteAutocomplete::create(
-            m_textInput->getInputNode(),
+            m_textInput,
             [this](std::string const& newText) {
                 if (m_textInput) m_textInput->setString(newText);
             }
@@ -94,13 +94,13 @@ bool ReportUserPopup::init(int accountID, std::string const& username) {
 void ReportUserPopup::onSend(CCObject*) {
     std::string reason = m_textInput ? std::string(m_textInput->getString()) : std::string();
     if (reason.empty()) {
-        PaimonNotify::create("Please provide a reason", NotificationIcon::Warning)->show();
+        PaimonNotify::show("Please provide a reason", NotificationIcon::Warning);
         return;
     }
 
     auto* accountManager = GJAccountManager::get();
     if (!accountManager || accountManager->m_accountID <= 0) {
-        PaimonNotify::create("You must be logged in", NotificationIcon::Error)->show();
+        PaimonNotify::show("You must be logged in", NotificationIcon::Error);
         return;
     }
 
@@ -128,11 +128,11 @@ void ReportUserPopup::onSend(CCObject*) {
             if (parsed.isOk()) {
                 auto root = parsed.unwrap();
                 if (root["error"].isString()) {
-                    PaimonNotify::create(root["error"].asString().unwrapOr("Error"), NotificationIcon::Error)->show();
+                    PaimonNotify::show(root["error"].asString().unwrapOr("Error"), NotificationIcon::Error);
                     return;
                 }
             }
-            PaimonNotify::create("Report submitted!", NotificationIcon::Success)->show();
+            PaimonNotify::show("Report submitted!", NotificationIcon::Success);
             popup->onClose(nullptr);
         } else {
             std::string errorMsg = "Failed to send report";
@@ -143,7 +143,7 @@ void ReportUserPopup::onSend(CCObject*) {
                     errorMsg = root["error"].asString().unwrapOr(errorMsg);
                 }
             }
-            PaimonNotify::create(errorMsg.c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::show(errorMsg.c_str(), NotificationIcon::Error);
         }
     });
 }

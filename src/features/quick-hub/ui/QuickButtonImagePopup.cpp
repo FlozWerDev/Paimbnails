@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "QuickButtonImagePopup.hpp"
 
 #include "QuickButtonEditKit.hpp"
@@ -185,15 +186,15 @@ void QuickButtonImagePopup::importImage(std::filesystem::path const& src) {
         src, quickHubImagesDir(), stem,
         [](std::filesystem::path const& srcPath, std::string const& destStr) {
             auto ext = geode::utils::string::toLower(
-                geode::utils::string::pathToString(srcPath.extension()));
+                paimon::paths::toUtf8(srcPath.extension()));
             if (ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".webp") {
-                PaimonNotify::create("Usa un PNG o JPG.", NotificationIcon::Warning)->show();
+                PaimonNotify::show("Usa un PNG o JPG.", NotificationIcon::Warning);
                 return false;
             }
             std::error_code ec;
             auto fsize = std::filesystem::file_size(srcPath, ec);
             if (!ec && fsize > 8 * 1024 * 1024) {
-                PaimonNotify::create("Imagen muy pesada (max 8 MB).", NotificationIcon::Warning)->show();
+                PaimonNotify::show("Imagen muy pesada (max 8 MB).", NotificationIcon::Warning);
                 return false;
             }
             // check cocos really loads it.
@@ -203,7 +204,7 @@ void QuickButtonImagePopup::importImage(std::filesystem::path const& src) {
                 ok = px.width > 2.f || px.height > 2.f;
             }
             if (!ok) {
-                PaimonNotify::create("Ese archivo no es una imagen valida.", NotificationIcon::Error)->show();
+                PaimonNotify::show("Ese archivo no es una imagen valida.", NotificationIcon::Error);
                 return false;
             }
             return true;

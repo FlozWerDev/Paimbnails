@@ -1,5 +1,7 @@
+#include "FilesystemPath.hpp"
 #include "GDRobTopCache.hpp"
 
+#include "ProjectStorage.hpp"
 #include "WebHelper.hpp"
 #include "ThreadTracker.hpp"
 #include "JsonHelper.hpp"
@@ -47,7 +49,7 @@ std::string hashKey(std::string const& input) {
 
 std::string sanitizeCategory(std::string category) {
     for (auto& ch : category) {
-        if (!std::isalnum(static_cast<unsigned char>(ch)) && ch != '-' && ch != '_') {
+        if (!paimon::storage::isPortableChar(static_cast<unsigned char>(ch))) {
             ch = '_';
         }
     }
@@ -105,8 +107,20 @@ std::string cacheKeyForPostBody(std::string const& endpoint, std::string const& 
     return hashKey(endpoint + "\n" + body);
 }
 
+namespace {
+std::atomic<bool> s_gdRobTopCacheInitialized{false};
+} // namespace
+
+bool GDRobTopCache::isInitialized() {
+    return s_gdRobTopCacheInitialized.load(std::memory_order_acquire);
+}
+
 GDRobTopCache& GDRobTopCache::get() {
-    static GDRobTopCache* inst = new GDRobTopCache();
+    static GDRobTopCache* inst = []() {
+        auto* cache = new GDRobTopCache();
+        s_gdRobTopCacheInitialized.store(true, std::memory_order_release);
+        return cache;
+    }();
     return *inst;
 }
 
@@ -115,7 +129,7 @@ bool GDRobTopCache::isEnabled() const {
 }
 
 std::filesystem::path GDRobTopCache::cacheDir() const {
-    return Mod::get()->getSaveDir() / "gd-cache";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "gd-cache";
 }
 
 std::string GDRobTopCache::entryKey(std::string const& category, std::string const& key) const {
@@ -141,7 +155,7 @@ void GDRobTopCache::init() {
         ec.clear();
     }
 
-    log::info("[GDRobTopCache] initialized at {}", utils::string::pathToString(dir));
+    log::info("[GDRobTopCache] initialized at {}", paimon::paths::toUtf8(dir));
 
     // pruneexpired() does heavy disk i/o (once froze startup); background only.
     // lookup/readdisk tolerate entries vanishing mid-prune.
@@ -218,12 +232,24 @@ void GDRobTopCache::store(
 }
 
 void GDRobTopCache::evictLRU() {
-    while (!m_ram.empty() && (m_ram.size() > kMaxRamEntries || m_ramBytes > kMaxRamBytes)) {
-        auto oldest = std::min_element(m_ram.begin(), m_ram.end(), [](auto const& a, auto const& b) {
-            return a.second.lastAccess < b.second.lastAccess;
-        });
-        m_ramBytes -= oldest->second.body.size();
-        m_ram.erase(oldest);
+    if (m_ram.empty() || (m_ram.size() <= kMaxRamEntries && m_ramBytes <= kMaxRamBytes)) {
+        return;
+    }
+    // evict oldest-first in a single sorted pass instead of re-scanning for
+    // the minimum once per evicted entry.
+    std::vector<std::pair<std::chrono::steady_clock::time_point, std::string>> byAge;
+    byAge.reserve(m_ram.size());
+    for (auto const& [key, entry] : m_ram) {
+        byAge.emplace_back(entry.lastAccess, key);
+    }
+    std::stable_sort(byAge.begin(), byAge.end(),
+        [](auto const& a, auto const& b) { return a.first < b.first; });
+    for (auto const& [_, key] : byAge) {
+        if (m_ram.size() <= kMaxRamEntries && m_ramBytes <= kMaxRamBytes) break;
+        auto it = m_ram.find(key);
+        if (it == m_ram.end()) continue;
+        m_ramBytes -= it->second.body.size();
+        m_ram.erase(it);
     }
 }
 
@@ -271,6 +297,8 @@ void GDRobTopCache::writeDisk(
     std::string const& response,
     std::time_t ttl
 ) const {
+    if (m_shuttingDown.load(std::memory_order_acquire)) return;
+
     matjson::Value json = matjson::Value::object();
     json["cachedAt"] = static_cast<double>(std::time(nullptr));
     json["ttl"] = static_cast<double>(ttl);
@@ -278,9 +306,12 @@ void GDRobTopCache::writeDisk(
     auto content = json.dump();
     if (content.size() > static_cast<size_t>(kMaxCachedFileBytes)) return;
 
-    std::lock_guard lock(m_diskMutex);
-    if (m_shuttingDown.load(std::memory_order_acquire)) return;
-    (void)paimon::file::writeAtomically(path, std::string_view(content));
+    (void)paimon::ThreadTracker::get().spawn([this, path, content = std::move(content)]() {
+        if (m_shuttingDown.load(std::memory_order_acquire)) return;
+        std::lock_guard lock(m_diskMutex);
+        if (m_shuttingDown.load(std::memory_order_acquire)) return;
+        (void)paimon::file::writeAtomically(path, std::string_view(content));
+    });
 }
 
 void GDRobTopCache::touchRam(std::string const& entryKey, std::string response, std::time_t expiresAt) {
@@ -353,7 +384,7 @@ void postCached(
     auto ttl = ttlForPolicy(policy);
     if (policy == CachePolicy::None || ttl <= 0 || !GDRobTopCache::get().isEnabled()) {
         auto req = web::WebRequest();
-        req.timeout(std::chrono::seconds(15));
+        req.timeout(asp::Duration::fromSecs(15));
         req.header("Content-Type", "application/x-www-form-urlencoded");
         req.bodyString(body);
         WebHelper::dispatch(std::move(req), "POST", std::string(kRobTopBaseUrl) + endpoint,
@@ -385,7 +416,7 @@ void postCached(
     }
 
     auto req = web::WebRequest();
-    req.timeout(std::chrono::seconds(15));
+    req.timeout(asp::Duration::fromSecs(15));
     req.header("Content-Type", "application/x-www-form-urlencoded");
     req.bodyString(body);
 

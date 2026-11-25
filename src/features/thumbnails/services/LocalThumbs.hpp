@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/DefaultInclude.hpp>
 #include <cstdint>
@@ -11,12 +11,15 @@
 #include <vector>
 #include <mutex>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 
 class LocalThumbs {
 public:
     static constexpr int MAX_THUMBS_PER_LEVEL = 10;
 
     static LocalThumbs& get();
+    static bool isInitialized();
 
     std::optional<std::string> getThumbPath(int32_t levelID) const;
 
@@ -57,6 +60,8 @@ public:
     bool removeThumb(int32_t levelID, int index);
 
     void loadMappings();
+    void markShuttingDown();
+    void waitShutdown(std::chrono::steady_clock::time_point deadline);
     void shutdown();
 
     void invalidateLookup(int32_t levelID);
@@ -72,6 +77,8 @@ private:
     
     std::unordered_set<int32_t> m_availableLevels;
     mutable std::mutex m_mutex;
+    mutable std::mutex m_initMutex;
+    std::condition_variable m_initCv;
     std::atomic<bool> m_cacheInitialized{false};
     std::atomic<bool> m_shuttingDown{false};
 

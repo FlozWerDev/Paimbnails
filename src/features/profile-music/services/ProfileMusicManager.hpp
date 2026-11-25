@@ -8,6 +8,7 @@
 #include <atomic>
 #include <filesystem>
 #include <cstdint>
+#include "ProfilePlaybackRequest.hpp"
 
 class ProfileMusicManager {
 public:
@@ -59,6 +60,7 @@ public:
     void resumeProfileMusic();
 
     void stopProfileMusic();
+    void cancelPendingProfilePlayback();
 
     bool isPlaying() const { return m_isPlaying; }
 
@@ -128,6 +130,9 @@ private:
     FMOD::Channel* m_pausedChannel = nullptr;
     int m_currentProfileID = 0;
     uint32_t m_profileSessionToken = 0;
+    using PlaybackRequest = paimon::profile_music::ProfilePlaybackRequest;
+    PlaybackRequest m_profileRequest;
+    bool isCurrentProfileRequest(PlaybackRequest::Token request) const;
     std::string m_currentAudioPath;
     PlaybackKind m_playbackKind = PlaybackKind::None;
 
@@ -161,15 +166,18 @@ private:
     bool isCacheValid(int accountID, ProfileMusicConfig const& config);
 
     // version appended as cache-buster: changed clips fetch fresh, not stale cdn copies.
-    void downloadMusicFragment(int accountID, std::string const& version, DownloadCallback callback);
+    void downloadMusicFragment(int accountID, std::string const& version,
+        PlaybackRequest::Token request, DownloadCallback callback);
 
     std::vector<float> analyzeWaveform(std::string const& filePath, int numPeaks, int& outDurationMs);
 
     std::vector<uint8_t> extractAudioFragment(std::string const& filePath, int startMs, int endMs);
 
     void loadProfileOnMainChannel(const std::string& path, bool loop, int startMs, int endMs, float volume);
-    void playAudioFile(std::string const& path, bool loop, int startMs = 0, int endMs = 0);
-    void playProfileMusicWithConfig(int accountID, ProfileMusicConfig const& config);
+    void playAudioFile(std::string const& path, bool loop, int startMs, int endMs,
+        PlaybackRequest::Token request);
+    void playProfileMusicWithConfig(int accountID, ProfileMusicConfig const& config,
+        PlaybackRequest::Token request);
     void stopOwnedAudioPlayback();
     void stopCurrentAudio(bool restoreContext = true);
 

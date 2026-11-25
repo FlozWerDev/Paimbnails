@@ -4,6 +4,8 @@
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../global-icon/services/GlobalIconService.hpp"
+#include "../../global-icon/ui/GlobalIconLinkPopup.hpp"
+#include "../../community-base/services/CommunityClient.hpp"
 #include "../../../framework/compat/ModCompat.hpp"
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/ui/PopupManager.hpp>
@@ -106,16 +108,14 @@ bool ProfileSettingsPopup::init(int accountID) {
         if (!spr) spr = CCSprite::create();
         float maxDim = std::max(spr->getContentWidth(), spr->getContentHeight());
         if (maxDim > 0) spr->setScale(32.f / maxDim);
-        spr->setColor({120, 120, 120});
 
-        auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ProfileSettingsPopup::onConfigureCommentBgSoon));
+        auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ProfileSettingsPopup::onConfigureCommentBg));
         btn->setPosition({cx - 45.f, botRowY});
         btn->setID("commentbg-button"_spr);
         menu->addChild(btn);
 
         auto label = CCLabelBMFont::create(Localization::get().getString("profilesettings.comment_label").c_str(), "bigFont.fnt");
         label->setScale(0.30f);
-        label->setColor({120, 120, 120});
         label->setPosition({cx - 45.f, botRowY + labelOffsetY});
         m_mainLayer->addChild(label);
     }
@@ -195,12 +195,10 @@ void ProfileSettingsPopup::onAddProfileImg(CCObject*) {
     if (cb) cb();
 }
 
-void ProfileSettingsPopup::onConfigureCommentBgSoon(CCObject*) {
-    PopupManager::get().alert(
-        Localization::get().getString("profilesettings.comment_soon_title"),
-        Localization::get().getString("profilesettings.comment_soon_body"),
-        Localization::get().getString("profilesettings.info_ok")
-    ).showInstant();
+void ProfileSettingsPopup::onConfigureCommentBg(CCObject*) {
+    auto cb = m_onCommentBgCallback;
+    this->onClose(nullptr);
+    if (cb) cb();
 }
 
 void ProfileSettingsPopup::applyGlobalIconColor() {
@@ -215,21 +213,19 @@ void ProfileSettingsPopup::applyGlobalIconColor() {
 }
 
 void ProfileSettingsPopup::onToggleGlobalIcon(CCObject*) {
-    if (!paimon::compat::ModCompat::isMoreIconsLoaded()) {
-        PopupManager::get().alert(
-            Localization::get().getString("globalicon.requires_moreicons_title"),
-            Localization::get().getString("globalicon.requires_moreicons_body"),
-            Localization::get().getString("profilesettings.info_ok")
-        ).showInstant();
-        return;
-    }
-
-    m_globalIconEnabled = !m_globalIconEnabled;
-    applyGlobalIconColor();
-
-    auto cb = m_onGlobalIconCallback;
-    bool desired = m_globalIconEnabled;
-    if (cb) cb(desired);
+    // vanilla icons and gradients do not need more icons; only custom textures do,
+    // and the link popup greys that row out by itself.
+    WeakRef<ProfileSettingsPopup> self = this;
+    auto* popup = paimon::globalicon::GlobalIconLinkPopup::create(
+        paimon::globalicon::GlobalIconService::savedOptions(), m_globalIconEnabled,
+        [self](bool link, paimon::globalicon::LinkOptions options) {
+            auto popup = self.lock();
+            if (!popup) return;
+            popup->m_globalIconEnabled = link;
+            popup->applyGlobalIconColor();
+            if (popup->m_onGlobalIconCallback) popup->m_onGlobalIconCallback(link, options);
+        });
+    paimon::community::showOnTop(popup);
 }
 
 void ProfileSettingsPopup::onInfo(CCObject*) {

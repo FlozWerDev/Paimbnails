@@ -39,7 +39,7 @@ bool AnimatedTextInput::init(float width, std::string const& placeholder) {
 
     m_input = TextInput::create(width, placeholder.c_str(), "chatFont.fnt");
     if (m_input) {
-        m_input->setCommonFilter(CommonFilter::Any);
+        m_input->setCommonFilter(CommonFilter::TextEmojis);
         m_input->setMaxCharCount(120);
         m_input->setAnchorPoint({0.5f, 0.5f});
         m_input->setPosition({width * 0.5f, kHeight * 0.5f});
@@ -49,20 +49,13 @@ bool AnimatedTextInput::init(float width, std::string const& placeholder) {
                 static_cast<AnimatedTextInput*>(self.data())->onTextChanged(s);
             }
         });
-        this->addChild(m_input, 1);
-
-        // relay enter presses to onsubmit; everything else keeps flowing to geode.
-        if (auto* node = m_input->getInputNode()) {
-            m_enterRelay.forward = node->m_delegate;
-            geode::WeakRef<AnimatedTextInput> weakSelf = this;
-            m_enterRelay.onEnter = [weakSelf]() {
-                auto self = weakSelf.lock();
-                if (!self) return;
+        m_input->setEnterCallback([weak](std::string const&) {
+            if (auto self = weak.lock()) {
                 auto* input = static_cast<AnimatedTextInput*>(self.data());
                 if (input->m_onSubmit) input->m_onSubmit();
-            };
-            node->m_delegate = &m_enterRelay;
-        }
+            }
+        });
+        this->addChild(m_input, 1);
     }
 
     m_typingDot = CCSprite::createWithSpriteFrameName("uiDot_001.png");
@@ -85,8 +78,6 @@ bool AnimatedTextInput::init(float width, std::string const& placeholder) {
 }
 
 void AnimatedTextInput::onExit() {
-    m_enterRelay.onEnter = nullptr;
-    m_enterRelay.forward = nullptr;
     paimon::ui::detachGeodeTextInput(m_input);
     m_input = nullptr;
     CCNode::onExit();

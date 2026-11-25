@@ -1,4 +1,7 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "FusionStore.hpp"
+#include "../../../utils/AtomicFileWrite.hpp"
+#include "LECodec.hpp"
 #include "SlotPaths.hpp"
 #include "../engine/FusionAsset.hpp"
 #include "../data/ImageBuffer.hpp"
@@ -19,35 +22,11 @@ namespace paimon::texture_studio {
 
 namespace {
 
-void writeU16LE(std::vector<std::uint8_t>& out, std::uint16_t v) {
-    out.push_back(static_cast<std::uint8_t>(v & 0xFF));
-    out.push_back(static_cast<std::uint8_t>((v >> 8) & 0xFF));
-}
-
-void writeU32LE(std::vector<std::uint8_t>& out, std::uint32_t v) {
-    out.push_back(static_cast<std::uint8_t>(v & 0xFF));
-    out.push_back(static_cast<std::uint8_t>((v >> 8) & 0xFF));
-    out.push_back(static_cast<std::uint8_t>((v >> 16) & 0xFF));
-    out.push_back(static_cast<std::uint8_t>((v >> 24) & 0xFF));
-}
-
 void writeF32LE(std::vector<std::uint8_t>& out, float v) {
     static_assert(sizeof(float) == 4);
     std::uint32_t bits = 0;
     std::memcpy(&bits, &v, 4);
     writeU32LE(out, bits);
-}
-
-std::uint16_t readU16LE(std::uint8_t const* p) {
-    return static_cast<std::uint16_t>(p[0])
-         | (static_cast<std::uint16_t>(p[1]) << 8);
-}
-
-std::uint32_t readU32LE(std::uint8_t const* p) {
-    return static_cast<std::uint32_t>(p[0])
-         | (static_cast<std::uint32_t>(p[1]) << 8)
-         | (static_cast<std::uint32_t>(p[2]) << 16)
-         | (static_cast<std::uint32_t>(p[3]) << 24);
 }
 
 float readF32LE(std::uint8_t const* p) {
@@ -58,19 +37,11 @@ float readF32LE(std::uint8_t const* p) {
 }
 
 std::string lowerExt(std::filesystem::path const& path) {
-    auto e = utils::string::pathToString(path.extension());
+    auto e = paimon::paths::toUtf8(path.extension());
     for (char& c : e) {
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
     return e;
-}
-
-bool maskNonEmpty(MaskBuffer const& m) {
-    if (m.empty()) return false;
-    for (auto v : m.data) {
-        if (v != 0) return true;
-    }
-    return false;
 }
 
 // header layout (48 bytes):
@@ -104,7 +75,7 @@ geode::Result<> FusionStore::save(std::filesystem::path const& path,
                                   FusionPayload const& payload) {
     if (!maskNonEmpty(payload.mask)) {
         return Err("FusionStore::save: empty mask for {}",
-            geode::utils::string::pathToString(path));
+            paimon::paths::toUtf8(path));
     }
     int W = payload.mask.width;
     int H = payload.mask.height;
@@ -171,14 +142,12 @@ geode::Result<> FusionStore::save(std::filesystem::path const& path,
         std::filesystem::create_directories(parent, ec);
         if (ec) {
             return Err("create_directories {}: {}",
-                geode::utils::string::pathToString(parent), ec.message());
+                paimon::paths::toUtf8(parent), ec.message());
         }
     }
 
-    auto wr = geode::utils::file::writeBinary(path, buf);
-    if (!wr) {
-        return Err("writeBinary {}: {}",
-            geode::utils::string::pathToString(path), wr.unwrapErr());
+    if (!paimon::file::writeAtomically(path, std::span<uint8_t const>(buf.data(), buf.size()))) {
+        return Err("atomic write failed: {}", paimon::paths::toUtf8(path));
     }
     return Ok();
 }
@@ -188,12 +157,12 @@ geode::Result<FusionPayload> FusionStore::load(std::filesystem::path const& path
     auto size = std::filesystem::file_size(path, ec);
     if (ec || size > kHeaderSize + 16 + 8192ull * 8192ull) {
         return Err("invalid fusion file size for {}",
-            geode::utils::string::pathToString(path));
+            paimon::paths::toUtf8(path));
     }
-    auto rd = geode::utils::file::readBinary(path);
+    auto rd = geode::utils::file::readBinary(paimon::paths::toSdkPath(path));
     if (!rd) {
         return Err("readBinary {}: {}",
-            geode::utils::string::pathToString(path), rd.unwrapErr());
+            paimon::paths::toUtf8(path), rd.unwrapErr());
     }
     auto const& bytes = rd.unwrap();
     if (bytes.size() < kHeaderSize) {
@@ -275,7 +244,7 @@ geode::Result<> FusionStore::deleteMaskForSlot(std::string_view slotId,
     std::filesystem::remove(path, ec);
     if (ec) {
         return Err("remove {}: {}",
-            geode::utils::string::pathToString(path), ec.message());
+            paimon::paths::toUtf8(path), ec.message());
     }
     return Ok();
 }
@@ -288,7 +257,7 @@ geode::Result<> FusionStore::deleteForSlot(std::string_view slotId,
         std::filesystem::remove(p, ec);
         if (ec) {
             return Err("remove {}: {}",
-                geode::utils::string::pathToString(p), ec.message());
+                paimon::paths::toUtf8(p), ec.message());
         }
         return Ok();
     };
@@ -310,16 +279,16 @@ geode::Result<std::filesystem::path> FusionStore::importTexture(
     auto size = std::filesystem::file_size(sourcePath, sizeEc);
     if (sizeEc || size > ImageBuffer::kMaxEncodedBytes) {
         return Err("invalid texture file size for {}",
-            geode::utils::string::pathToString(sourcePath));
+            paimon::paths::toUtf8(sourcePath));
     }
     if (auto r = SlotPaths::ensureSlotDirs(slotId); !r) {
         return Err(r.unwrapErr());
     }
 
-    auto bytes = geode::utils::file::readBinary(sourcePath);
+    auto bytes = geode::utils::file::readBinary(paimon::paths::toSdkPath(sourcePath));
     if (!bytes) {
         return Err("cannot read {}: {}",
-            geode::utils::string::pathToString(sourcePath), bytes.unwrapErr());
+            paimon::paths::toUtf8(sourcePath), bytes.unwrapErr());
     }
 
     std::string ext = lowerExt(sourcePath);
@@ -330,15 +299,13 @@ geode::Result<std::filesystem::path> FusionStore::importTexture(
     if (isGif) {
         // keep original gif bytes: multi-frame animation survives.
         dst = SlotPaths::fusionTextureFile(slotId, spriteName, ".gif");
-        // drop the stale static sibling.
+        if (!paimon::file::writeAtomically(dst, std::span<uint8_t const>(bytes.unwrap().data(), bytes.unwrap().size()))) {
+            return Err("atomic GIF write failed: {}", paimon::paths::toUtf8(dst));
+        }
+        // remove the previous format only after the replacement is committed.
         std::error_code ec;
         std::filesystem::remove(
             SlotPaths::fusionTextureFile(slotId, spriteName, ".png"), ec);
-        auto wr = geode::utils::file::writeBinary(dst, bytes.unwrap());
-        if (!wr) {
-            return Err("write GIF {}: {}",
-                geode::utils::string::pathToString(dst), wr.unwrapErr());
-        }
         return Ok(std::move(dst));
     }
 
@@ -349,12 +316,14 @@ geode::Result<std::filesystem::path> FusionStore::importTexture(
         return Err("decode image: {}", imgRes.unwrapErr());
     }
     dst = SlotPaths::fusionTextureFile(slotId, spriteName, ".png");
+    auto encoded = imgRes.unwrap().encodeAsPng();
+    if (!encoded) return Err(encoded.unwrapErr());
+    if (!paimon::file::writeAtomically(dst, std::span<uint8_t const>(encoded.unwrap().data(), encoded.unwrap().size()))) {
+        return Err("atomic PNG write failed: {}", paimon::paths::toUtf8(dst));
+    }
     std::error_code ec;
     std::filesystem::remove(
         SlotPaths::fusionTextureFile(slotId, spriteName, ".gif"), ec);
-    if (auto wr = imgRes.unwrap().saveToPng(dst); !wr) {
-        return Err(wr.unwrapErr());
-    }
     return Ok(std::move(dst));
 }
 

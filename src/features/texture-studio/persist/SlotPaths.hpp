@@ -3,6 +3,7 @@
 #include <Geode/Geode.hpp>
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -36,6 +37,11 @@ public:
     static std::filesystem::path fusionTextureFile(std::string_view slotId,
                                                    std::string_view spriteName,
                                                    std::string_view ext);
+
+    // the fusion texture on disk: gif preferred when `preferAnimated`, png
+    // otherwise, the other format when only it exists; nullopt when neither.
+    static std::optional<std::filesystem::path> resolveFusionTexture(
+        std::string_view slotId, std::string_view spriteName, bool preferAnimated);
 
     static std::filesystem::path autoCacheFile(std::string_view slotId);
 

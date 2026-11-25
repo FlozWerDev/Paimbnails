@@ -1,3 +1,4 @@
+#include "../utils/FilesystemPath.hpp"
 #include "../features/custom-hover/CustomHover.hpp"
 #include "FactoryResetActions.hpp"
 #include <Geode/utils/string.hpp>
@@ -35,6 +36,8 @@
 #include <Geode/ui/PopupManager.hpp>
 
 #include <filesystem>
+#include <array>
+#include <ctime>
 
 extern void clearProfileImgCache();
 
@@ -43,7 +46,41 @@ using namespace geode::prelude;
 namespace {
 bool shouldPreserveSaveEntry(std::string const& name) {
     auto lower = geode::utils::string::toLower(name);
-    return lower == "yt-dlp" || lower == "ffmpeg";
+    return lower == "yt-dlp" || lower == "ffmpeg"
+        || lower.starts_with("factory-reset-backup-");
+}
+
+void backupUserContent(std::filesystem::path const& saveDir) {
+    static constexpr std::array<char const*, 4> kUserDirs = {
+        "icon-maker", "texture-studio", "menu-music", "capture"
+    };
+    std::error_code ec;
+    auto backup = saveDir / ("factory-reset-backup-" + std::to_string(std::time(nullptr)));
+    bool any = false;
+    for (auto name : kUserDirs) {
+        auto source = saveDir / name;
+        if (!std::filesystem::exists(source, ec) || ec) {
+            ec.clear();
+            continue;
+        }
+        if (!any) {
+            std::filesystem::create_directories(backup, ec);
+            if (ec) {
+                log::warn("[FactoryReset] Cannot create backup directory: {}", ec.message());
+                return;
+            }
+            any = true;
+        }
+        std::filesystem::rename(source, backup / name, ec);
+        if (ec) {
+            log::warn("[FactoryReset] Cannot move {} to backup: {}", name, ec.message());
+            ec.clear();
+        }
+    }
+    if (any) {
+        log::info("[FactoryReset] User content backed up to {}",
+            paimon::paths::toUtf8(backup));
+    }
 }
 
 void wipeDirectoryContents(std::filesystem::path const& dir) {
@@ -52,7 +89,7 @@ void wipeDirectoryContents(std::filesystem::path const& dir) {
 
     for (auto const& entry : std::filesystem::directory_iterator(dir, ec)) {
         if (ec) break;
-        auto name = geode::utils::string::pathToString(entry.path().filename());
+        auto name = paimon::paths::toUtf8(entry.path().filename());
         if (shouldPreserveSaveEntry(name)) continue;
         std::filesystem::remove_all(entry.path(), ec);
         ec.clear();
@@ -60,7 +97,6 @@ void wipeDirectoryContents(std::filesystem::path const& dir) {
 }
 
 void clearRuntimeCaches() {
-    ThumbnailLoader::get().cleanup();
     ThumbnailLoader::get().clearPendingQueue();
     ThumbnailLoader::get().clearCache();
     ThumbnailLoader::get().clearDiskCache();
@@ -73,7 +109,7 @@ void clearRuntimeCaches() {
     ProfileMusicManager::get().stopPreview();
     ProfileMusicManager::get().clearCache();
 
-    AnimatedGIFSprite::clearCache();
+    AnimatedGIFSprite::clearCacheForReload();
     clearProfileImgCache();
     HttpClient::get().cleanTasks();
 
@@ -179,6 +215,9 @@ void resetFeatureManagers() {
 
     paimon::quickhub::QuickHubManager::get().resetToDefault();
     paimon::quickhub::QuickHubManager::get().setHoldCtrlEnabled(true);
+    paimon::quickhub::QuickHubManager::setHoldSeconds(
+        paimon::quickhub::QuickHubManager::kHoldSecondsDefault);
+    paimon::keybinds::saveExtendedKeybind("quick-hub-hold-button", {});
 
     auto& tm = TransitionManager::get();
     tm.setGlobalConfig(TransitionConfig{});
@@ -201,10 +240,11 @@ void execute() {
     clearRuntimeCaches();
 
     auto* mod = Mod::get();
-    auto saveDir = mod->getSaveDir();
-    auto configDir = mod->getConfigDir();
+    auto saveDir = paimon::paths::toStdPath(mod->getSaveDir());
+    auto configDir = paimon::paths::toStdPath(mod->getConfigDir());
 
     std::error_code ec;
+    backupUserContent(saveDir);
     wipeDirectoryContents(saveDir);
     wipeDirectoryContents(configDir);
 
@@ -233,10 +273,10 @@ void execute() {
     paimon::discord::DiscordPresenceManager::get().refreshSoon();
 
     log::info("[FactoryReset] Completed");
-    PaimonNotify::create(
+    PaimonNotify::show(
         "Ajustes reiniciados. El menu se ha recargado con valores por defecto.",
         NotificationIcon::Success
-    )->show();
+    );
 }
 
 void requestWithConfirmation() {

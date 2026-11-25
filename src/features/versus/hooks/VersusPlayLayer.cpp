@@ -38,8 +38,8 @@ class $modify(PaimonVersusPlayLayer, PlayLayer) {
     };
 
     $override
-    bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
-        if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
+    bool init(GJGameLevel* level, bool dontCreateObjects) {
+        if (!PlayLayer::init(level, dontCreateObjects)) return false;
 
         auto& session = VersusSession::get();
         if (session.idle() || session.phase() == Phase::Finished) return true;

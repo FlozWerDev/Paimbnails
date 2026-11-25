@@ -26,10 +26,10 @@ std::vector<DetachedEntry> s_detached;
 Ref<ProgressBarEditOverlay> s_activeOverlay;
 
 CCNode* findProgressBar(CCNode* root) {
-    return root ? root->getChildByIDRecursive("progress-bar") : nullptr;
+    return ProgressBarManager::get().getActiveBarNode(root);
 }
 CCNode* findPercentageLabel(CCNode* root) {
-    return root ? root->getChildByIDRecursive("percentage-label") : nullptr;
+    return ProgressBarManager::get().getActiveLabelNode(root);
 }
 CCPoint worldPos(CCNode* n) {
     if (!n || !n->getParent()) return {0, 0};
@@ -220,8 +220,13 @@ void ProgressBarEditOverlay::rebuildSelectionUI() {
 
 void ProgressBarEditOverlay::update(float) {
     validateSelection();
+    if (m_dragAction != Action::None) return;
+    // nothing selected and nothing drawn: skip the per-frame rebuild,
+    // which otherwise recreates every handle node 60 times a second.
+    if (m_selectedTarget == Target::None
+        && (!m_selContainer || m_selContainer->getChildrenCount() == 0)) return;
 // rebuild selection ui while idle so handles follow the selected element.
-    if (m_dragAction == Action::None) rebuildSelectionUI();
+    rebuildSelectionUI();
 }
 
 
@@ -290,7 +295,7 @@ bool ProgressBarEditOverlay::ccTouchBegan(CCTouch* touch, CCEvent*) {
     if (!pl) return false;
 
     auto tryHitBody = [&](CCNode* n, Target t, int decoIdx = -1) {
-        if (!n || !n->getParent()) return false;
+        if (!n || !n->getParent() || !n->isVisible()) return false;
         CCRect r = nodeAABB(n);
         if (!r.containsPoint(pos)) return false;
 
@@ -520,7 +525,7 @@ void ProgressBarEditOverlay::onResetPosition(CCObject*) {
     cfg.userRotation = 0.f;
     ProgressBarManager::get().saveConfig();
     rebuildSelectionUI();
-    PaimonNotify::create("Position reset", NotificationIcon::Info)->show();
+    PaimonNotify::show("Position reset", NotificationIcon::Info);
 }
 
 void ProgressBarEditOverlay::onFont(CCObject*) {
@@ -530,7 +535,7 @@ void ProgressBarEditOverlay::onFont(CCObject*) {
             std::string fntFile = res.hasTag ? res.fontFile : std::string("bigFont.fnt");
             ProgressBarManager::get().config().percentageFont = fntFile;
             ProgressBarManager::get().saveConfig();
-            PaimonNotify::create("Font: " + fntFile, NotificationIcon::Success)->show();
+            PaimonNotify::show("Font: " + fntFile, NotificationIcon::Success);
         }
     );
     if (picker) picker->show();
@@ -544,7 +549,7 @@ void ProgressBarEditOverlay::onAddImage(CCObject*) {
         auto imported = paimon::assets::importToBucket(
             *opt, "progressbar_decorations", paimon::assets::Kind::Image);
         if (!imported.success || imported.path.empty()) {
-            PaimonNotify::create("Failed to import image", NotificationIcon::Error)->show();
+            PaimonNotify::show("Failed to import image", NotificationIcon::Error);
             return;
         }
 
@@ -558,7 +563,7 @@ void ProgressBarEditOverlay::onAddImage(CCObject*) {
 
         int idx = ProgressBarManager::get().addDecoration(d);
         if (idx < 0) {
-            PaimonNotify::create("Failed to add decoration", NotificationIcon::Error)->show();
+            PaimonNotify::show("Failed to add decoration", NotificationIcon::Error);
             return;
         }
         auto& cfg = ProgressBarManager::get().config();
@@ -566,9 +571,9 @@ void ProgressBarEditOverlay::onAddImage(CCObject*) {
             cfg.enabled = true;
             ProgressBarManager::get().saveConfig();
         }
-        PaimonNotify::create(
+        PaimonNotify::show(
             fmt::format("Image added (#{})", idx + 1),
-            NotificationIcon::Success)->show();
+            NotificationIcon::Success);
     });
 }
 

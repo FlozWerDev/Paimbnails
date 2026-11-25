@@ -1,0 +1,40 @@
+#include <algorithm>
+#include <cassert>
+#include <charconv>
+#include <cctype>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
+
+@@source|src/utils/HttpUrl.hpp@@
+
+int main() {
+    using namespace paimon::net;
+
+    assert(isPublicHttpUrl("https://example.com/path"));
+    assert(isPublicHttpUrl("http://cdn.example.org/image.png"));
+    assert(isPublicHttpUrl("https://[2001:db8::1]/asset"));
+
+    assert(!isPublicHttpUrl("http://127.0.0.1:21680/"));
+    assert(!isPublicHttpUrl("http://localhost/"));
+    assert(!isPublicHttpUrl("http://[::1]/"));
+    assert(!isPublicHttpUrl("http://[::ffff:127.0.0.1]/"));
+    assert(!isPublicHttpUrl("http://[::ffff:7f00:1]/"));
+    assert(!isPublicHttpUrl("http://[0:0:0:0:0:ffff:127.0.0.1]/"));
+    assert(!isPublicHttpUrl("http://2130706433/"));
+    assert(!isPublicHttpUrl("http://0x7f000001/"));
+    assert(!isPublicHttpUrl("http://0177.0.0.1/"));
+    assert(!isPublicHttpUrl("http://127.1/"));
+    assert(!isPublicHttpUrl("http://10.1.2.3/"));
+    assert(!isPublicHttpUrl("http://172.20.0.1/"));
+    assert(!isPublicHttpUrl("http://192.168.1.1/"));
+    assert(!isPublicHttpUrl("http://169.254.169.254/"));
+    assert(!isPublicHttpUrl("http://100.64.0.1/"));
+    assert(!isPublicHttpUrl("http://[fe80::1]/"));
+    assert(!isPublicHttpUrl("http://[fd00::1]/"));
+    assert(!isPublicHttpUrl("file:///etc/passwd"));
+    assert(!isPublicHttpUrl("javascript:alert(1)"));
+
+    return 0;
+}

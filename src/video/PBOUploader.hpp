@@ -72,6 +72,16 @@ private:
     bool isSlotReady(int idx);
     bool checkAndClearFence(int idx);
     void deleteAllFences();
+    // shared init preamble: drop previous state, pin the owner thread,
+    // validate the upload entry points and drain a bounded number of stale errors.
+    bool beginInit();
+    // slot-count ladder shared by both init overloads; big/mid are the
+    // byte thresholds for 3 and 5 slots (6 below mid).
+    static int slotCountFor(int totalBytes, int big, int mid);
+    // gen + size a run of PBOs; on failure all generated names are deleted
+    // (names past the failure have no buffer object, so deleting them is a
+    // no-op) and false comes back.
+    static bool allocPBOs(GLuint* pbos, int count, int size, char const* label);
 
     static constexpr int kPBOCount = 6;
 

@@ -1,0 +1,25 @@
+#include <algorithm>
+#include <cassert>
+#include <string>
+#include <vector>
+struct AdvancedQuery {int value=0;};
+struct SearchPreset {std::string name;AdvancedQuery query;};
+constexpr int kMaxPresets=2;
+std::vector<SearchPreset> entries;
+std::vector<SearchPreset>& presetList(){return entries;}
+void loadPresets(){}
+bool writable=true;
+bool savePresets(){return writable;}
+@@function|src/features/info-suite/services/AdvancedSearch.cpp|bool addPreset(@@
+@@function|src/features/info-suite/services/AdvancedSearch.cpp|bool removePreset(@@
+int main() {
+    assert(addPreset("a",{1}) && addPreset("b",{2}));
+    writable=false;
+    assert(!addPreset("a",{10}) && entries[0].query.value==1);
+    assert(!addPreset("c",{3}) && entries.size()==2 && entries[0].name=="a");
+    assert(!removePreset(0) && entries.size()==2 && entries[0].name=="a");
+    writable=true;
+    assert(addPreset("a",{10}) && entries[0].query.value==10);
+    assert(removePreset(0) && entries.size()==1 && entries[0].name=="b");
+    assert(!removePreset(-1) && !addPreset("",{}));
+}

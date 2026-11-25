@@ -31,21 +31,8 @@ void ColorToggle::fitToSprite() {
     setAnchorPoint({0, 0});
 }
 
-namespace {
-
-// fresh color-button swatch at the toggle's scale.
-CCSprite* makeSwatch(float scale) {
-    CCSprite* swatch = CCSprite::createWithSpriteFrameName("GJ_colorBtn_001.png");
-    swatch->setScale(0.6f * scale);
-    return swatch;
-}
-
-} // namespace
-
 void ColorToggle::addSelectOverlay(float scale) {
-    m_select = CCSprite::createWithSpriteFrameName("GJ_select_001.png");
-    m_select->setScale(0.7f * scale);
-    m_select->setVisible(false);
+    m_select = makeSelectRing(0.7f * scale);
 
     CCPoint center = m_sprite->getContentSize() * m_sprite->getScale() / 2.f;
     m_select->setPosition(center);
@@ -62,7 +49,7 @@ static CCLabelBMFont* makeIndexBadge(std::string const& text, float scale) {
 }
 
 bool ColorToggle::init(CCObject* target, SEL_MenuHandler callback, bool number, float scale) {
-    m_sprite = makeSwatch(scale);
+    m_sprite = makeColorSwatch(0.6f * scale);
 
     addChild(m_sprite);
 
@@ -86,7 +73,7 @@ bool ColorToggle::init(CCObject* target, SEL_MenuHandler callback, bool number, 
 
     addChild(m_numberLabel, 10);
 
-    m_secondSprite = makeSwatch(scale);
+    m_secondSprite = makeColorSwatch(0.6f * scale);
     m_secondSprite->setOpacity(0);
 
     addChild(m_secondSprite);
@@ -206,7 +193,7 @@ void ColorToggle::setForceDisabled(bool off) {
         return;
     }
 
-    m_dimSprite = CCSprite::createWithSpriteFrameName("GJ_colorBtn_001.png");
+    m_dimSprite = makeColorSwatch(m_sprite->getScale());
     m_dimSprite->setPosition(getContentSize() / 2.f);
     m_dimSprite->setScale(m_sprite->getScale());
     m_dimSprite->setColor({0, 0, 0});

@@ -128,7 +128,7 @@ SetDailyWeeklyPopup* SetDailyWeeklyPopup::create(int levelID) {
     return nullptr;
 }
 
-void SetDailyWeeklyPopup::onSetDaily(CCObject* sender) {
+void SetDailyWeeklyPopup::onSetDaily(CCObject*) {
     WeakRef<SetDailyWeeklyPopup> self = this;
     PopupManager::get().quickPopup(
         "Confirm",
@@ -141,7 +141,7 @@ void SetDailyWeeklyPopup::onSetDaily(CCObject* sender) {
                 auto gm = GameManager::get();
                 auto* accountManager = GJAccountManager::get();
                 if (!gm || !accountManager) {
-                    PaimonNotify::create("Account manager unavailable", NotificationIcon::Error)->show();
+                    PaimonNotify::show("Account manager unavailable", NotificationIcon::Error);
                     return;
                 }
                 std::string username = gm->m_playerName;
@@ -161,10 +161,10 @@ void SetDailyWeeklyPopup::onSetDaily(CCObject* sender) {
                     if (loadingRef) loadingRef->dismiss();
                     if (auto popup = self.lock()) {
                         if (success) {
-                            PaimonNotify::create("Daily set successfully", NotificationIcon::Success)->show();
+                            PaimonNotify::show("Daily set successfully", NotificationIcon::Success);
                             popup->onClose(nullptr);
                         } else {
-                            PaimonNotify::create("Failed to set daily: " + msg, NotificationIcon::Error)->show();
+                            PaimonNotify::show("Failed to set daily: " + msg, NotificationIcon::Error);
                         }
                     }
                 });
@@ -173,7 +173,7 @@ void SetDailyWeeklyPopup::onSetDaily(CCObject* sender) {
     ).showInstant();
 }
 
-void SetDailyWeeklyPopup::onSetWeekly(CCObject* sender) {
+void SetDailyWeeklyPopup::onSetWeekly(CCObject*) {
     WeakRef<SetDailyWeeklyPopup> self = this;
     PopupManager::get().quickPopup(
         "Confirm",
@@ -186,7 +186,7 @@ void SetDailyWeeklyPopup::onSetWeekly(CCObject* sender) {
                 auto gm = GameManager::get();
                 auto* accountManager = GJAccountManager::get();
                 if (!gm || !accountManager) {
-                    PaimonNotify::create("Account manager unavailable", NotificationIcon::Error)->show();
+                    PaimonNotify::show("Account manager unavailable", NotificationIcon::Error);
                     return;
                 }
                 std::string username = gm->m_playerName;
@@ -206,10 +206,10 @@ void SetDailyWeeklyPopup::onSetWeekly(CCObject* sender) {
                     if (loadingRef) loadingRef->dismiss();
                     if (auto popup = self.lock()) {
                         if (success) {
-                            PaimonNotify::create("Weekly set successfully", NotificationIcon::Success)->show();
+                            PaimonNotify::show("Weekly set successfully", NotificationIcon::Success);
                             popup->onClose(nullptr);
                         } else {
-                            PaimonNotify::create("Failed to set weekly: " + msg, NotificationIcon::Error)->show();
+                            PaimonNotify::show("Failed to set weekly: " + msg, NotificationIcon::Error);
                         }
                     }
                 });
@@ -218,7 +218,7 @@ void SetDailyWeeklyPopup::onSetWeekly(CCObject* sender) {
     ).showInstant();
 }
 
-void SetDailyWeeklyPopup::onUnset(CCObject* sender) {
+void SetDailyWeeklyPopup::onUnset(CCObject*) {
     WeakRef<SetDailyWeeklyPopup> self = this;
     PopupManager::get().quickPopup(
         "Confirm",
@@ -245,10 +245,10 @@ void SetDailyWeeklyPopup::onUnset(CCObject* sender) {
                     if (loadingRef) loadingRef->dismiss();
                     if (auto popup = self.lock()) {
                         if (success) {
-                            PaimonNotify::create("Unset successfully", NotificationIcon::Success)->show();
+                            PaimonNotify::show("Unset successfully", NotificationIcon::Success);
                             popup->onClose(nullptr);
                         } else {
-                            PaimonNotify::create("Failed to unset: " + msg, NotificationIcon::Error)->show();
+                            PaimonNotify::show("Failed to unset: " + msg, NotificationIcon::Error);
                         }
                     }
                 });

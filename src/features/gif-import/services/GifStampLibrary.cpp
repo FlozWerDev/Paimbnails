@@ -272,18 +272,13 @@ SoftStampLibrary buildSoftStampLibrary() {
     std::array<float, side * side> radialTarget{};
     std::array<float, side * side> verticalTarget{};
     std::array<float, side * side> quarterTarget{};
-    float const radialEdge = std::exp(-4.f);
     for (int y = 0; y < side; ++y) for (int x = 0; x < side; ++x) {
         std::size_t const index = static_cast<std::size_t>(y) * side + x;
         float const u = (x + 0.5f) / side;
         float const v = (y + 0.5f) / side;
-        float const radius2 = 4.f * ((u - 0.5f) * (u - 0.5f) +
-            (v - 0.5f) * (v - 0.5f));
-        radialTarget[index] = std::max(0.f, (std::exp(-4.f * radius2) -
-            radialEdge) / (1.f - radialEdge));
-        verticalTarget[index] = 1.f - v;
-        quarterTarget[index] = std::pow(std::max(0.f, 1.f -
-            std::sqrt((1.f - u) * (1.f - u) + (1.f - v) * (1.f - v))), 1.3f);
+        radialTarget[index] = analyticAlpha(AnalyticAlphaKind::RadialGlow, u, v);
+        verticalTarget[index] = analyticAlpha(AnalyticAlphaKind::VerticalGradient, u, v);
+        quarterTarget[index] = analyticAlpha(AnalyticAlphaKind::QuarterGlow, u, v);
     }
 
     auto install = [&](int kind, int id, int quarter, StampMask mask, CCSize content) {

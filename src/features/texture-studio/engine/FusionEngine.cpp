@@ -10,12 +10,11 @@ namespace paimon::texture_studio {
 
 namespace {
 
-inline float rgbDist(std::uint8_t const* a, std::uint8_t r, std::uint8_t g,
-                     std::uint8_t b) {
-    float dr = static_cast<float>(a[0]) - static_cast<float>(r);
-    float dg = static_cast<float>(a[1]) - static_cast<float>(g);
-    float db = static_cast<float>(a[2]) - static_cast<float>(b);
-    return std::sqrt(dr * dr + dg * dg + db * db);
+// default fill: texture covers the painted region.
+inline void normalizeStampTransform(ImageTransform& transform) {
+    if (transform.isDefault()) {
+        transform.fitMode = ImageFitMode::Fill;
+    }
 }
 
 // luma-tolerant distance groups same-hue shades; strict chroma excludes white rings/glyphs.
@@ -169,10 +168,7 @@ ImageBuffer FusionEngine::buildStampCanvas(ImageBuffer const& texture,
                                            int pixelOffsetY) {
     if (texture.empty() || frameW <= 0 || frameH <= 0) return ImageBuffer();
     transform.opacity = 255;
-    // default fill: texture covers the painted region.
-    if (transform.isDefault()) {
-        transform.fitMode = ImageFitMode::Fill;
-    }
+    normalizeStampTransform(transform);
 
     int bx = 0, by = 0, bw = frameW, bh = frameH;
     if (mask && !mask->empty()
@@ -476,9 +472,7 @@ void FusionEngine::apply(ImageBuffer& base,
     if (base.width() != mask.width || base.height() != mask.height) return;
 
     ImageTransform local = options.transform;
-    if (local.isDefault()) {
-        local.fitMode = ImageFitMode::Fill;
-    }
+    normalizeStampTransform(local);
     // integer placement bakes into sampling so masked edge pixels survive.
     auto stamp = buildStampCanvas(texture, base.width(), base.height(), local, &mask,
                                   options.pixelOffsetX, options.pixelOffsetY);

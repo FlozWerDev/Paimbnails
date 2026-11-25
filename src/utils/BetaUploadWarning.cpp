@@ -78,7 +78,7 @@ namespace paimon {
             if (onProceed) onProceed();
             return;
         }
-        if (auto popup = BetaUploadWarningPopup::create(std::move(onProceed))) {
+        if (auto popup = BetaUploadWarningPopup::create(onProceed)) {
             popup->show();
         } else {
             if (onProceed) onProceed();

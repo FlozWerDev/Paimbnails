@@ -208,7 +208,9 @@ bool SongSearchPopup::init(SelectCallback callback) {
     m_searchInput->setPosition({winSize.width / 2.f, winSize.height - 38.f});
     m_searchInput->setMaxCharCount(60);
     m_searchInput->setID("song-search-input"_spr);
-    m_searchInput->setDelegate(this);
+    m_searchInput->setCallback([this](std::string const&) {
+        this->runSearch();
+    });
     m_mainLayer->addChild(m_searchInput, 11);
 
     m_resultsLabel = CCLabelBMFont::create("0", "goldFont.fnt");
@@ -419,11 +421,8 @@ bool SongSearchPopup::fuzzyMatch(std::string const& query, std::string const& ta
 }
 
 
-void SongSearchPopup::textChanged(CCTextInputNode*) {
-    runSearch();
-}
-
 void SongSearchPopup::onClose(cocos2d::CCObject* sender) {
+    if (m_searchInput) m_searchInput->setCallback(nullptr);
     auto* fmod = FMODAudioEngine::sharedEngine();
     if (fmod && fmod->m_backgroundMusicChannel) {
         fmod->m_backgroundMusicChannel->stop();
@@ -449,9 +448,11 @@ void SongSearchPopup::ccTouchEnded(CCTouch* touch, CCEvent* event) {
     Popup::ccTouchEnded(touch, event);
 }
 
-void SongSearchPopup::scrollWheel(float vertical, float ) {
-    m_yScroll -= vertical * 1.5f;
+bool SongSearchPopup::scrollWheel(float vertical, float ) {
+    // the travel already arrives smoothed and in pixels
+    m_yScroll -= vertical;
     updateScrollLayout(false);
+    return true;
 }
 
 

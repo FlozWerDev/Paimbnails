@@ -1,0 +1,87 @@
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <cstdint>
+#include <vector>
+
+using GLint = int;
+using GLuint = unsigned;
+constexpr int GL_FRAMEBUFFER_BINDING = 1, GL_PACK_ALIGNMENT = 2, GL_FRAMEBUFFER = 3;
+constexpr int GL_COLOR_ATTACHMENT0 = 4, GL_TEXTURE_2D = 5, GL_FRAMEBUFFER_COMPLETE = 6;
+constexpr int GL_RGBA = 7, GL_UNSIGNED_BYTE = 8, GL_NO_ERROR = 0;
+GLuint boundFramebuffer = 77, attachedTexture = 0;
+GLint packAlignment = 8;
+bool complete = true, readError = false;
+int generated = 0, deleted = 0, readCount = 0;
+std::vector<uint8_t> uploaded(4 * 4 * 4, 0);
+void glGetIntegerv(int name, GLint* value) {
+    *value = name == GL_FRAMEBUFFER_BINDING ? static_cast<GLint>(boundFramebuffer) : packAlignment;
+}
+void glGenFramebuffers(int, GLuint* value) { ++generated; *value = 100; }
+void glDeleteFramebuffers(int, GLuint const*) { ++deleted; }
+void glBindFramebuffer(int, GLuint value) { boundFramebuffer = value; }
+void glPixelStorei(int, GLint value) { packAlignment = value; }
+void glFramebufferTexture2D(int, int, int, GLuint value, int) { attachedTexture = value; }
+int glCheckFramebufferStatus(int) { return complete ? GL_FRAMEBUFFER_COMPLETE : -1; }
+void glReadPixels(int x, int y, unsigned width, unsigned height, int, int, void* output) {
+    ++readCount;
+    assert(x == 0 && y == 0 && attachedTexture == 42 && packAlignment == 1);
+    auto* bytes = static_cast<uint8_t*>(output);
+    for (unsigned row = 0; row < height; ++row) {
+        std::copy_n(uploaded.data() + row * 4 * 4, width * 4, bytes + row * width * 4);
+    }
+}
+int glGetError() { return readError ? 1 : GL_NO_ERROR; }
+namespace cocos2d {
+struct CCSize { float width = 2.f, height = 2.f; };
+struct CCTexture2D {
+    CCSize content;
+    bool premultiplied = false;
+    unsigned getName() const { return 42; }
+    unsigned getPixelsWide() const { return 4; }
+    unsigned getPixelsHigh() const { return 4; }
+    CCSize getContentSizeInPixels() const { return content; }
+    bool hasPremultipliedAlpha() const { return premultiplied; }
+};
+struct CCDirector {
+    static CCDirector* get() { static CCDirector director; return &director; }
+    void* getOpenGLView() { return this; }
+};
+}
+@@source|src/features/thumbnails/services/ThumbnailExport.hpp@@
+@@source|src/features/thumbnails/services/ThumbnailExport.cpp@@
+
+int main() {
+    // Four source colors in a padded texture. Export must preserve colors, row
+    // order and the source size instead of saving the padding or a black canvas.
+    std::vector<uint8_t> const expected = {
+        255, 0, 0, 255, 0, 255, 0, 255,
+        0, 0, 255, 255, 255, 255, 255, 255
+    };
+    std::copy_n(expected.data(), 8, uploaded.data());
+    std::copy_n(expected.data() + 8, 8, uploaded.data() + 16);
+    cocos2d::CCTexture2D texture;
+    auto pixels = paimon::thumbviewer::readTexturePixels(&texture);
+    assert(pixels && pixels.width == 2 && pixels.height == 2 && pixels.rgba == expected);
+    assert(boundFramebuffer == 77 && packAlignment == 8 && generated == deleted);
+
+    texture.premultiplied = true;
+    uploaded[0] = 64; uploaded[1] = 32; uploaded[2] = 16; uploaded[3] = 128;
+    pixels = paimon::thumbviewer::readTexturePixels(&texture);
+    assert(pixels.rgba[0] == 128 && pixels.rgba[1] == 64 && pixels.rgba[2] == 32);
+
+    complete = false;
+    assert(!paimon::thumbviewer::readTexturePixels(&texture));
+    assert(boundFramebuffer == 77 && packAlignment == 8 && generated == deleted);
+    complete = true;
+    readError = true;
+    assert(!paimon::thumbviewer::readTexturePixels(&texture));
+    assert(boundFramebuffer == 77 && packAlignment == 8 && generated == deleted);
+    readError = false;
+
+    int const priorReads = readCount;
+    texture.content.width = 0;
+    assert(!paimon::thumbviewer::readTexturePixels(&texture));
+    assert(!paimon::thumbviewer::readTexturePixels(nullptr));
+    assert(readCount == priorReads);
+}

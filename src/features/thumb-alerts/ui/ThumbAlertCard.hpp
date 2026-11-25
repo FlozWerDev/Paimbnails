@@ -12,6 +12,7 @@ namespace paimon::thumbalerts {
 // level data over its own thumbnail in a popup frame. one tick drives pose+opacity together: no mid-animation drift.
 class ThumbAlertCard : public cocos2d::CCNodeRGBA {
 public:
+    using cocos2d::CCNodeRGBA::init;
     static ThumbAlertCard* create(NewThumb const& item, Config const& config,
                                   cocos2d::CCTexture2D* thumbnail);
 

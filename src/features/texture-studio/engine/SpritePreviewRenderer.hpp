@@ -21,6 +21,9 @@ struct SpritePreviewOptions {
     // edge-aware refinement (0..4): kills speckle, keeps real edges.
     int   edgeCleanup = 1;
 
+    // live UI: merge shadows of the same hue instead of assigning color2.
+    bool groupUiShades = false;
+
     // pixels darker than this rec.601 luminance are never tinted (0 = off).
     int   outlineProtect = 0;
 

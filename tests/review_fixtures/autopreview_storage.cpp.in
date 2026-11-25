@@ -1,0 +1,102 @@
+#include <algorithm>
+#include <atomic>
+#include <cassert>
+#include <charconv>
+#include <cstdint>
+#include <cstring>
+#include <deque>
+#include <unordered_map>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <mutex>
+#include <thread>
+#include <unordered_set>
+#include <vector>
+#include "src/utils/ProjectStorage.hpp"
+#include "src/utils/AtomicFileWrite.hpp"
+namespace fs=std::filesystem;
+namespace geode::utils {
+namespace string {
+std::string pathToString(fs::path const& path) { auto utf8=path.u8string();return {utf8.begin(),utf8.end()}; }
+}
+struct ParsedInteger {
+    int value=0;bool valid=false;
+    bool isOk()const{return valid;}int unwrap()const{return value;}
+};
+template<class T> ParsedInteger numFromString(std::string const& value) {
+    T number{};auto result=std::from_chars(value.data(),value.data()+value.size(),number);
+    return {static_cast<int>(number),result.ec==std::errc{}&&result.ptr==value.data()+value.size()};
+}
+}
+struct Mod {
+    fs::path saveDir;
+    static Mod* get(){static Mod mod;return &mod;}
+    fs::path getSaveDir()const{return saveDir;}
+};
+inline auto guiThread=std::this_thread::get_id();
+namespace cocos2d {struct CCTexture2D {int releases=0;void release(){assert(std::this_thread::get_id()==guiThread);++releases;}};}
+namespace paimon::autopreview {
+namespace log {
+template<class...T>void error(T const&...){}
+template<class...T>void info(T const&...){}
+}
+struct RGBHeader {uint32_t width,height;};
+constexpr uint64_t kMaxRgbPixels=16ull*1024*1024;
+using Texture=cocos2d::CCTexture2D;
+struct AutoPreviewStore {
+    std::mutex m_mutex;bool m_scanned=false;std::unordered_set<int32_t>m_present,m_staleTextures;
+    std::mutex m_texMutex;std::unordered_map<int32_t,Texture*>m_texCache;std::deque<int32_t>m_texLru;
+    Texture* cachedTexture(int32_t);
+    fs::path dir()const;
+    fs::path pathFor(int32_t)const;
+    void ensureScanned();
+    bool has(int32_t);
+    bool save(int32_t,uint8_t const*,uint32_t,uint32_t);
+};
+@@function|src/features/auto-preview/services/AutoPreviewStore.cpp|std::filesystem::path AutoPreviewStore::dir@@
+@@function|src/features/auto-preview/services/AutoPreviewStore.cpp|cocos2d::CCTexture2D* AutoPreviewStore::cachedTexture@@
+@@function|src/features/auto-preview/services/AutoPreviewStore.cpp|std::filesystem::path AutoPreviewStore::pathFor@@
+@@function|src/features/auto-preview/services/AutoPreviewStore.cpp|void AutoPreviewStore::ensureScanned@@
+@@function|src/features/auto-preview/services/AutoPreviewStore.cpp|bool AutoPreviewStore::has@@
+@@function|src/features/auto-preview/services/AutoPreviewStore.cpp|bool AutoPreviewStore::save@@
+}
+int main(){
+    using namespace paimon::autopreview;
+    auto root=fs::current_path()/paimon::storage::newProjectId();
+    assert(root.is_absolute()&&root.parent_path()==fs::current_path());
+    Mod::get()->saveDir=root/fs::path(u"usuario-\u00f1-\u4e2d");
+    AutoPreviewStore unicode;
+    bool unicodePreserved=unicode.dir()==Mod::get()->saveDir/"auto-previews";
+    std::cout<<"Unicode path preserved: "<<unicodePreserved<<std::endl;
+    Mod::get()->saveDir=root/"ascii";
+    AutoPreviewStore store;
+    std::vector<uint8_t>a(64*64*4,0x11),b(a.size(),0xee);
+    std::atomic<int> failures{0};
+    auto write=[&](auto const& pixels){for(int i=0;i<64;++i)if(!store.save(71,pixels.data(),64,64))++failures;};
+    std::thread writer([&]{write(a);});write(b);writer.join();
+    auto file=store.pathFor(71);std::ifstream stream(file,std::ios::binary);
+    std::vector<uint8_t> bytes{std::istreambuf_iterator<char>(stream),{}};
+    stream.close();
+    bool intact=bytes.size()==sizeof(RGBHeader)+64*64*3;
+    if(intact){
+        auto first=bytes[sizeof(RGBHeader)];intact=first==0x11||first==0xee;
+        intact=intact&&std::all_of(bytes.begin()+sizeof(RGBHeader),bytes.end(),[&](uint8_t value){return value==first;});
+    }
+    std::cout<<"Concurrent write failures: "<<failures<<"; intact final payload: "<<intact<<std::endl;
+    (void)store.cachedTexture(71);
+    Texture oldTexture;store.m_texCache[71]=&oldTexture;store.m_texLru.push_back(71);
+    bool saved=false;std::thread replace([&]{saved=store.save(71,a.data(),64,64);});replace.join();
+    assert(saved && oldTexture.releases==0);
+    bool refreshed=store.cachedTexture(71)==nullptr && oldTexture.releases==1;
+    std::cout<<"Old GPU texture invalidated after save: "<<refreshed<<std::endl;
+#ifdef _WIN32
+    Texture currentTexture;store.m_texCache[71]=&currentTexture;store.m_texLru.push_back(71);
+    std::ifstream locked(file,std::ios::binary);assert(locked);
+    assert(!store.save(71,b.data(),64,64));
+    assert(store.cachedTexture(71)==&currentTexture && currentTexture.releases==0);
+    locked.close();store.m_texCache.clear();store.m_texLru.clear();
+#endif
+    fs::remove_all(root);
+    assert(refreshed);assert(unicodePreserved);assert(failures==0);assert(intact);assert(store.has(71));
+}

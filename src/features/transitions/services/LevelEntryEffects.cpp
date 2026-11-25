@@ -249,6 +249,7 @@ class LevelEffectsTransitionScene final : public CCTransitionScene {
 // manual handoff, not cctransitionscene's: the switch defers to
 // switchtoincoming, so base enter/exit are skipped.
 public:
+    using CCTransitionScene::init;
     static LevelEffectsTransitionScene* create(
         CCScene* destination,
         LevelEntryEffectsConfig config,
@@ -820,13 +821,23 @@ private:
         auto* objects = m_playLayer->m_objects;
         if (!objects) return;
 
-        for (size_t i = 0; i < count; ++i) {
-            auto* candidate = reinterpret_cast<CCObject*>(m_playLayer->m_activeObjects[i]);
-            // active slots outlive their objects during exit teardown; m_objects owns them.
-            if (!candidate || !objects->containsObject(candidate)) continue;
+        std::unordered_set<CCObject*> aliveObjects;
+        bool const useLookup = count > 256;
+        if (useLookup) {
+            aliveObjects.reserve(objects->count());
+            for (auto* entry : CCArrayExt<CCObject*>(objects)) {
+                if (entry) aliveObjects.insert(entry);
+            }
+        }
 
-            auto* object = typeinfo_cast<GameObject*>(candidate);
-            if (!object || !object->getParent()) continue;
+        for (size_t i = 0; i < count; ++i) {
+            // active slots outlive their objects during exit teardown; m_objects owns them.
+            auto* object = m_playLayer->m_activeObjects[i];
+            if (!object) continue;
+            bool const alive = useLookup
+                ? aliveObjects.contains(object)
+                : objects->containsObject(object);
+            if (!alive || !object->getParent()) continue;
 
             capture(object);
             auto opacity = object->getOpacity();

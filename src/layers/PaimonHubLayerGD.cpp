@@ -22,18 +22,14 @@ using namespace paimon::hubdata;
 
 namespace {
 
-std::string tr(char const* key, char const* fallback = "") {
-    auto value = Localization::get().getString(key);
-    if (value == key && fallback && fallback[0] != '\0') return fallback;
-    return value;
+using paimon::loc::tr;
+
+void setItemScale(CCMenuItemSpriteExtra* item, float scale) {
+    if (!item) return;
+    item->setScale(scale);
+    item->m_baseScale = scale;
 }
 
-CCMenu* makeZeroMenu(char const* id = nullptr) {
-    auto* menu = CCMenu::create();
-    if (id) menu->setID(id);
-    menu->setPosition({0.f, 0.f});
-    return menu;
-}
 
 constexpr float kPanelL = 15.f;
 constexpr float kPanelB = 15.f;
@@ -50,12 +46,6 @@ constexpr std::array<char const*, 7> kCatButtonFiles = {
     "GJ_button_02.png",
 };
 
-void shrinkLabelToFit(CCLabelBMFont* label, float maxW) {
-    float w = label->getScaledContentSize().width;
-    if (w > maxW && w > 0.f) {
-        label->setScale(label->getScale() * (maxW / w));
-    }
-}
 
 CCScale9Sprite* makeGDTile(
     std::string const& bgFile,
@@ -82,7 +72,7 @@ CCScale9Sprite* makeGDTile(
 
     auto titleLbl = CCLabelBMFont::create(title.c_str(), "bigFont.fnt");
     titleLbl->setScale(0.32f);
-    shrinkLabelToFit(titleLbl, w - 14.f);
+    paimon::ui::shrinkLabelToFit(titleLbl, w - 14.f);
     titleLbl->setPosition({textLeft, desc.empty() ? h / 2.f : h - 15.f});
     bg->addChild(titleLbl, 1);
 
@@ -91,7 +81,7 @@ CCScale9Sprite* makeGDTile(
         descLbl->setScale(0.155f);
         descLbl->setColor({235, 240, 255});
         descLbl->setOpacity(210);
-        shrinkLabelToFit(descLbl, w - 14.f);
+        paimon::ui::shrinkLabelToFit(descLbl, w - 14.f);
         descLbl->setPosition({textLeft, 11.f});
         bg->addChild(descLbl, 1);
     }
@@ -137,13 +127,13 @@ void PaimonHubLayer::buildGDShell() {
         m_bgColorSub  = {0, 102, 255};
     }
 
-    m_mainMenu = makeZeroMenu("paimon-hub-main-menu"_spr);
+    m_mainMenu = paimon::ui::makeZeroMenu("paimon-hub-main-menu"_spr);
     this->addChild(m_mainMenu, 10);
 
     auto backSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
     auto backBtn = CCMenuItemSpriteExtra::create(backSpr, this, menu_selector(PaimonHubLayer::onBack));
     backBtn->setPosition({20.f, top - 20.f});
-    backBtn->setScale(0.75f);
+    setItemScale(backBtn, 0.75f);
     m_mainMenu->addChild(backBtn);
 
     auto title = CCLabelBMFont::create(tr("pai.hub.title", "Paimbnails").c_str(), "goldFont.fnt");
@@ -154,28 +144,27 @@ void PaimonHubLayer::buildGDShell() {
 
     std::vector<std::string> tabNames = {
         tr("pai.hub.tab.home", "Inicio"),
-        tr("pai.hub.tab.news", "News"),
         tr("pai.hub.tab.forum", "Forum")
     };
     auto tabBar = CCMenu::create();
     tabBar->setID("paimon-hub-tab-bar"_spr);
-    tabBar->setPosition({cx + 40.f, top - 20.f});
-    tabBar->setContentSize({200.f, 24.f});
+    tabBar->setPosition({cx + 24.f, top - 20.f});
+    tabBar->setContentSize({140.f, 24.f});
     tabBar->setAnchorPoint({0.5f, 0.5f});
     tabBar->setLayout(
         RowLayout::create()
-            ->setGap(6.f)
+            ->setGap(8.f)
             ->setAutoScale(false)
             ->setAxisAlignment(AxisAlignment::Center)
     );
     this->addChild(tabBar, 10);
 
     m_tabBtns.clear();
-    static char const* kTabIds[] = {"home-tab-btn"_spr, "news-tab-btn"_spr, "forum-tab-btn"_spr};
-    for (int i = 0; i < 3; i++) {
+    static char const* kTabIds[] = {"home-tab-btn"_spr, "forum-tab-btn"_spr};
+    for (int i = 0; i < 2; i++) {
         auto spr = ButtonSprite::create(tabNames[i].c_str(), "bigFont.fnt", "GJ_button_04.png", .8f);
-        spr->setScale(0.38f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(PaimonHubLayer::onTabSwitch));
+        setItemScale(btn, 0.38f);
         btn->setTag(i);
         btn->setID(kTabIds[i]);
         tabBar->addChild(btn);
@@ -184,15 +173,15 @@ void PaimonHubLayer::buildGDShell() {
     tabBar->updateLayout();
 
     auto uiSpr = ButtonSprite::create(tr("pai.hub.style.classic", "UI: Clasica").c_str(), "bigFont.fnt", "GJ_button_06.png", .8f);
-    uiSpr->setScale(0.32f);
     auto uiBtn = CCMenuItemSpriteExtra::create(uiSpr, this, menu_selector(PaimonHubLayer::onToggleUIStyle));
+    setItemScale(uiBtn, 0.32f);
     uiBtn->setID("ui-style-btn"_spr);
     uiBtn->setPosition({winSize.width - 42.f, top - 20.f});
     m_mainMenu->addChild(uiBtn);
 
     auto updSpr = ButtonSprite::create(tr("pai.hub.btn.updates", "Updates").c_str(), "bigFont.fnt", "GJ_button_02.png", .8f);
-    updSpr->setScale(0.32f);
     auto updBtn = CCMenuItemSpriteExtra::create(updSpr, this, menu_selector(PaimonHubLayer::onCheckUpdate));
+    setItemScale(updBtn, 0.32f);
     updBtn->setID("updates-btn"_spr);
     updBtn->setPosition({winSize.width - 100.f, top - 20.f});
     m_mainMenu->addChild(updBtn);
@@ -203,32 +192,30 @@ void PaimonHubLayer::buildGDShell() {
         tab->setCascadeOpacityEnabled(true);
         tab->setVisible(visible);
         this->addChild(tab, 5);
-        menu = makeZeroMenu(menuId);
+        menu = paimon::ui::makeZeroMenu(menuId);
         menu->setVisible(visible);
         this->addChild(menu, 11);
     };
     addTab(m_homeTab, m_homeMenu, "home-tab"_spr, "home-menu"_spr, true);
-    addTab(m_newsTab, m_newsMenu, "news-tab"_spr, "news-menu"_spr, false);
     addTab(m_forumTab, m_forumMenu, "forum-tab"_spr, "forum-menu"_spr, false);
 
     gdBuildHome();
-    buildNewsTab();
     buildForumTab();
     switchTab(0);
 
     {
         auto& chk = paimon::updates::UpdateChecker::get();
         std::string verText = fmt::format(
-            fmt::runtime(tr("pai.hub.version", "Version: {}")), chk.localVersion()
+            fmt::runtime(tr("pai.hub.version", "Version: {}")), fmt::format("v{}", chk.localVersion())
         );
         auto verLbl = CCLabelBMFont::create(verText.c_str(), "bigFont.fnt");
-        verLbl->setScale(0.2f);
         verLbl->setColor({180, 195, 235});
         verLbl->setOpacity(160);
 
         auto* verBtn = CCMenuItemExt::createSpriteExtra(verLbl, [](CCMenuItemSpriteExtra*) {
             if (auto popup = paimon::updates::UpdateCenterPopup::create()) popup->show();
         });
+        setItemScale(verBtn, 0.2f);
         verBtn->setID("hub-version-btn"_spr);
         verBtn->setAnchorPoint({0.f, 0.5f});
         verBtn->setPosition({17.f, 7.f});
@@ -261,7 +248,7 @@ void PaimonHubLayer::gdBuildHome() {
     }
 
     m_searchInput = TextInput::create(120.f, tr("pai.hub.search", "Buscar...").c_str(), "chatFont.fnt");
-    m_searchInput->setCommonFilter(CommonFilter::Any);
+    m_searchInput->setCommonFilter(CommonFilter::Text);
     m_searchInput->setMaxCharCount(20);
     m_searchInput->setPosition({winSize.width - 88.f, 243.f});
     m_searchInput->setScale(0.62f);
@@ -300,12 +287,12 @@ void PaimonHubLayer::gdBuildHome() {
     m_homeTab->addChild(m_gdHintLabel, 3);
 
     auto tourSpr = ButtonSprite::create(tr("pai.hub.gd.tour", "Guia").c_str(), "goldFont.fnt", "GJ_button_06.png", .8f);
-    tourSpr->setScale(0.42f);
     auto tourBtn = CCMenuItemExt::createSpriteExtra(tourSpr, [hubRef](CCMenuItemSpriteExtra*) {
         auto selfRef = hubRef.lock();
         auto* hub = selfRef.data();
         if (hub && hub->getParent()) hub->gdStartTour();
     });
+    setItemScale(tourBtn, 0.42f);
     tourBtn->setID("gd-tour-btn"_spr);
     tourBtn->setPosition({winSize.width - kPanelL - 47.f, kHintBarY + kHintBarH / 2.f});
     m_homeMenu->addChild(tourBtn, 5);
@@ -314,7 +301,7 @@ void PaimonHubLayer::gdBuildHome() {
     m_gdContent->setID("gd-home-content"_spr);
     m_homeTab->addChild(m_gdContent, 2);
 
-    m_gdContentMenu = makeZeroMenu("gd-home-content-menu"_spr);
+    m_gdContentMenu = paimon::ui::makeZeroMenu("gd-home-content-menu"_spr);
     m_homeMenu->addChild(m_gdContentMenu, 3);
 
     gdShowCategories(true);
@@ -335,7 +322,7 @@ void PaimonHubLayer::gdSetHint(std::string const& text) {
     float maxW = (winSize.width - 30.f - 24.f - 76.f) - 32.f;
     m_gdHintLabel->setString(text.c_str());
     m_gdHintLabel->setScale(0.185f);
-    shrinkLabelToFit(m_gdHintLabel, maxW);
+    paimon::ui::shrinkLabelToFit(m_gdHintLabel, maxW);
     m_gdHintLabel->stopAllActions();
     m_gdHintLabel->setOpacity(0);
     m_gdHintLabel->runAction(CCFadeTo::create(0.25f, 255));
@@ -416,12 +403,12 @@ void PaimonHubLayer::gdShowCategory(int idx) {
     WeakRef<PaimonHubLayer> self = this;
 
     auto backSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
-    backSpr->setScale(0.62f);
     auto backBtn = CCMenuItemExt::createSpriteExtra(backSpr, [self](CCMenuItemSpriteExtra*) {
         auto selfRef = self.lock();
         auto* hub = selfRef.data();
         if (hub && hub->getParent()) hub->gdShowCategories();
     });
+    setItemScale(backBtn, 0.62f);
     backBtn->setID("gd-cat-back-btn"_spr);
     backBtn->setPosition({34.f, 241.f});
     m_gdContentMenu->addChild(backBtn);
@@ -454,7 +441,7 @@ void PaimonHubLayer::gdShowCategory(int idx) {
             }
         }
     );
-    infoBtn->setScale(0.42f);
+    setItemScale(infoBtn, 0.42f);
     infoBtn->setPosition({
         52.f + crumbHome->getScaledContentSize().width + 6.f
             + crumbCat->getScaledContentSize().width + 12.f,
@@ -475,7 +462,7 @@ void PaimonHubLayer::gdShowCategory(int idx) {
     desc->setScale(0.185f);
     desc->setColor({195, 200, 220});
     desc->setPosition({52.f + step->getScaledContentSize().width + 12.f, 228.f});
-    shrinkLabelToFit(desc, winSize.width - 100.f - step->getScaledContentSize().width);
+    paimon::ui::shrinkLabelToFit(desc, winSize.width - 100.f - step->getScaledContentSize().width);
     m_gdContent->addChild(desc);
 
     auto actions = getHubActions(idx);
@@ -500,12 +487,12 @@ void PaimonHubLayer::gdShowCategory(int idx) {
                 bool newState = !PaimonGuideService::get().isEnabled();
                 PaimonGuideService::get().setEnabled(newState);
                 GuideEnabledChangedEvent(kGuideEventFilter).send(newState);
-                PaimonNotify::create(
+                PaimonNotify::show(
                     newState
                         ? Localization::get().getString("pai.guide.toggle.on")
                         : Localization::get().getString("pai.guide.toggle.off"),
                     newState ? NotificationIcon::Success : NotificationIcon::None
-                )->show();
+                );
                 hub->gdShowCategory(0); // refresh the on/off label
             },
             0, "Asistente Paimon en el menu"
@@ -644,6 +631,7 @@ void PaimonHubLayer::gdShowSearchResults(std::string const& query) {
     float scrollW = winSize.width - 60.f;
     float scrollH = 168.f;
     m_gdScroll = ScrollLayer::create(CCSize{scrollW, scrollH});
+    if (m_gdScroll) m_gdScroll->setAnchorPoint({0.f, 0.f});
     m_gdScroll->setPosition({30.f, 42.f});
     m_gdScroll->setID("gd-search-scroll"_spr);
     m_homeTab->addChild(m_gdScroll, 3);
@@ -707,9 +695,9 @@ std::vector<GDTourStep> makeTourSteps(CCSize winSize) {
         {{winSize.width - 130.f, 230.f, 92.f, 26.f},
          tr("pai.hub.gd.tour3.title", "Busqueda total"),
          tr("pai.hub.gd.tour3.body", "Escribe cualquier ajuste y\nabrelo directo, sin navegar\npor menus.")},
-        {{cx - 40.f, winSize.height - 32.f, 170.f, 24.f},
-         tr("pai.hub.gd.tour4.title", "Noticias y Foro"),
-         tr("pai.hub.gd.tour4.body", "Novedades del mod y el foro\nde la comunidad, en pestanas.")},
+        {{cx - 40.f, winSize.height - 32.f, 150.f, 24.f},
+         tr("pai.hub.gd.tour4.title", "Foro Comunitario"),
+         tr("pai.hub.gd.tour4.body", "Explora el foro de la comunidad\ny publica ideas desde la pestana superior.")},
         {{kPanelL + 9.f, kHintBarY - 3.f, winSize.width - 30.f - 21.f - 76.f + 6.f, kHintBarH + 6.f},
          tr("pai.hub.gd.tour5.title", "Barra de ayuda"),
          tr("pai.hub.gd.tour5.body", "Aqui salen consejos segun donde\nestes. Con 'UI: Clasica' arriba\nvuelves al estilo original.")},
@@ -781,14 +769,14 @@ void PaimonHubLayer::gdShowTourStep(int step) {
 
     auto title = CCLabelBMFont::create(st.title.c_str(), "goldFont.fnt");
     title->setScale(0.42f);
-    shrinkLabelToFit(title, cardW - 40.f);
+    paimon::ui::shrinkLabelToFit(title, cardW - 40.f);
     title->setPosition({cardX, cardY + cardH / 2.f - 16.f});
     overlay->addChild(title, 3);
 
     auto body = CCLabelBMFont::create(
         st.body.c_str(), "bigFont.fnt", kCCLabelAutomaticWidth, kCCTextAlignmentCenter);
     body->setScale(0.19f);
-    shrinkLabelToFit(body, cardW - 24.f);
+    paimon::ui::shrinkLabelToFit(body, cardW - 24.f);
     body->setPosition({cardX, cardY + 2.f});
     body->setColor({225, 228, 240});
     overlay->addChild(body, 3);
@@ -829,12 +817,12 @@ void PaimonHubLayer::gdShowTourStep(int step) {
     bool isLast = (step + 1 >= static_cast<int>(steps.size()));
 
     if (auto closeSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_closeBtn_001.png")) {
-        closeSpr->setScale(0.5f);
         auto closeBtn = CCMenuItemExt::createSpriteExtra(closeSpr, [self](CCMenuItemSpriteExtra*) {
             auto selfRef = self.lock();
             auto* hub = selfRef.data();
             if (hub && hub->getParent()) hub->gdEndTour();
         });
+        setItemScale(closeBtn, 0.5f);
         closeBtn->setPosition({cardX - cardW / 2.f + 6.f, cardY + cardH / 2.f - 6.f});
         menu->addChild(closeBtn);
     }
@@ -843,7 +831,6 @@ void PaimonHubLayer::gdShowTourStep(int step) {
         isLast ? tr("pai.hub.gd.tour.done", "Listo!").c_str()
                : tr("pai.hub.gd.tour.next", "Siguiente").c_str(),
         "goldFont.fnt", "GJ_button_01.png", .8f);
-    nextSpr->setScale(0.5f);
     auto nextBtn = CCMenuItemExt::createSpriteExtra(nextSpr, [self, step, isLast](CCMenuItemSpriteExtra*) {
         auto selfRef = self.lock();
         auto* hub = selfRef.data();
@@ -851,6 +838,7 @@ void PaimonHubLayer::gdShowTourStep(int step) {
         if (isLast) hub->gdEndTour();
         else hub->gdShowTourStep(step + 1);
     });
+    setItemScale(nextBtn, 0.5f);
     nextBtn->setPosition({cardX + cardW / 2.f - 46.f, cardY - cardH / 2.f + 14.f});
     menu->addChild(nextBtn);
 

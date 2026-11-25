@@ -8,6 +8,7 @@
 #include "PreloadProgress.hpp"
 #include "RuntimeLifecycle.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
+#include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../features/global-icon/services/GlobalIconStorage.hpp"
 #include "../utils/HttpClient.hpp"
 #include "../utils/MainThreadDelay.hpp"
@@ -54,7 +55,7 @@ void schedulePrefetchMainLevels() {
                 },
                 ThumbnailLoader::PriorityBootstrap
             );
-        }, 1, 0.1f);
+        }, 4, 0.06f);
 
         log::info(
             "[Paimbnails Preload] Stagger-queued {} main level thumbnails",
@@ -71,6 +72,10 @@ void startFullPreload() {
     // geode is still loading: publish the total now for the menu label, nothing else.
     g_thumbsTotal.store(paimon::kMainLevelMaxID - paimon::kMainLevelMinID + 1,
         std::memory_order_release);
+    scheduleAfterGameLoaded(0.15f, []() {
+        if (paimon::isRuntimeShuttingDown()) return;
+        LayerBackgroundManager::get().preloadConfiguredStaticBackgrounds();
+    });
     scheduleAfterGameLoaded(1.0f, []() {
         if (paimon::isRuntimeShuttingDown()) return;
         schedulePrefetchMainLevels();

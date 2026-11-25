@@ -1,4 +1,6 @@
+#include "../framework/compat/NativeUI.hpp"
 #include <Geode/modify/LevelSelectLayer.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 #include <Geode/modify/GameManager.hpp>
 #include <Geode/modify/FMODAudioEngine.hpp>
 #include <Geode/utils/cocos.hpp>
@@ -8,11 +10,16 @@
 #include <Geode/binding/GJGroundLayer.hpp>
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
+#include "../features/official-slots/services/SlotLevels.hpp"
+#include "../features/official-slots/services/OfficialSlotStore.hpp"
+#include "../features/official-slots/services/SlotListRefresh.hpp"
 #include "../features/audio/services/AudioContextCoordinator.hpp"
 #include "../features/dynamic-songs/services/DynamicSongManager.hpp"
+#include "../features/dynamic-songs/services/DynamicSongConfig.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 #include "../features/menu-loop/services/MenuLoopManager.hpp"
 #include "../utils/AudioInterop.hpp"
+#include "../utils/EditorContext.hpp"
 #include "../utils/Shaders.hpp"
 #include "../blur/BlurSystem.hpp"
 #include "../utils/SpriteHelper.hpp"
@@ -20,6 +27,7 @@
 #include "../framework/ModEvents.hpp"
 #include "../framework/compat/SceneLocators.hpp"
 #include "../framework/HookConventions.hpp"
+#include "../ui/PageSliderInput.hpp"
 #include <functional>
 #include <unordered_map>
 
@@ -76,6 +84,9 @@ class $modify(PaimonGameManager, GameManager) {
             });
         };
 
+        if (paimon::isDynamicSongInteropActive() && !dsm->isActive()) {
+            paimon::setDynamicSongInteropActive(false);
+        }
         if (paimon::isDynamicSongInteropActive() && dsm->isInValidLayer()) {
             notifyBlocked("paimon-dynamic");
             return;
@@ -84,10 +95,15 @@ class $modify(PaimonGameManager, GameManager) {
             notifyBlocked("paimon-dynamic-suspended");
             return;
         }
-        if (paimon::isDynamicSongInteropActive() && !dsm->isActive()) paimon::setDynamicSongInteropActive(false);
         if (paimon::isProfileMusicInteropActive()) {
-            notifyBlocked("paimon-profile-music");
-            return;
+            auto& pmm = ProfileMusicManager::get();
+            if (!pmm.isPlaying() && !pmm.isFadingOut() &&
+                !AudioContextCoordinator::get().isProfileOpen()) {
+                paimon::setProfileMusicInteropActive(false);
+            } else {
+                notifyBlocked("paimon-profile-music");
+                return;
+            }
         }
         if (paimon::isVideoAudioInteropActive()) {
             notifyBlocked("paimon-video-audio");
@@ -105,9 +121,11 @@ class $modify(PaimonFMODAudioEngine, FMODAudioEngine) {
     }
 
     $override
-    void playMusic(gd::string path, bool shouldLoop, float fadeInTime, int channel) {
+    void playMusic(std::string path, bool shouldLoop, float fadeInTime, int channel) {
         bool passthrough = Mod::get()->getSavedValue<bool>("music-hook-passthrough", false);
-        if (passthrough) {
+        // downloaded Songs uses this same entry point for editor previews.
+        // audio ownership from a previous menu must not suppress those calls.
+        if (passthrough || paimon::isEditorScene()) {
             FMODAudioEngine::playMusic(path, shouldLoop, fadeInTime, channel);
             return;
         }
@@ -158,11 +176,17 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         Ref<CCNode> m_bottomGradient = nullptr;
         Ref<CCNodeRGBA> m_pageSlider = nullptr;
         Ref<CCNode> m_pageSliderThumb = nullptr;
+        Ref<paimon::ui::PageSliderInput> m_pageSliderInput = nullptr;
         WeakRef<CCNode> m_soundtrackButton;
         float m_sliderBgWidth = 0.f;
-        float m_sliderStartX = 0.f;
+        float m_sliderLeftX = 0.f;
         float m_sliderThumbWidth = 0.f;
         int m_currentLevelID = 0;
+        int m_audioPageId = 0;
+        std::uint64_t m_audioRequest = 0;
+        Ref<GJGameLevel> m_audioLevel = nullptr;
+        bool m_audioLoading = false;
+        bool m_audioFailed = false;
         float m_pageCheckTimer = 0.f;
         float m_smoothedPeak = 0.f;
         int m_verifyFrameCounter = 0;
@@ -183,6 +207,9 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     $override
     bool init(int p0) {
         if (!LevelSelectLayer::init(p0)) return false;
+        // init is bound by Geode on this class. Inherited lifecycle callbacks
+        // are not, so restore the selector context here on every native return.
+        AudioContextCoordinator::get().activateLevelSelect(0, false);
 
         auto win = CCDirector::get()->getWinSize();
 
@@ -197,7 +224,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         this->updateThumbnailBackground(levelID);
 
         if (m_scrollLayer) {
-            m_scrollLayer->togglePageIndicators(false);
+            paimon::compat::setPageIndicatorsVisible(m_scrollLayer, false);
 
             float sliderW = win.width * 0.6f;
             float sliderH = 6.f;
@@ -223,7 +250,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
                 slider->addChild(sliderBg);
             }
 
-            const int totalPages = 24;
+            int const totalPages = this->visiblePageCount();
             float thumbW = std::max(sliderW / totalPages, 10.f);
             auto thumb = paimon::SpriteHelper::createRoundedRect(
                 thumbW, sliderH, sliderH * 0.5f,
@@ -237,8 +264,19 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
                 slider->addChild(thumb, 1);
                 m_fields->m_pageSliderThumb = thumb;
                 m_fields->m_sliderBgWidth = sliderW;
-                m_fields->m_sliderStartX = sliderLeftX + thumbW / 2;
+                m_fields->m_sliderLeftX = sliderLeftX;
                 m_fields->m_sliderThumbWidth = thumbW;
+
+                auto* input = paimon::ui::PageSliderInput::create(sliderW, [this](float progress) {
+                    this->scrubToPage(progress);
+                });
+                if (input) {
+                    input->setID("paimon-page-slider-input"_spr);
+                    input->setPosition({sliderLeftX, sliderY - input->getContentHeight() * 0.5f});
+                    input->setThumbState(thumbW, 0.f);
+                    slider->addChild(input, 2);
+                    m_fields->m_pageSliderInput = input;
+                }
             }
 
             slider->runAction(CCSequence::create(
@@ -295,33 +333,24 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         this->schedule(schedule_selector(PaimonLevelSelectLayer::checkPageLoop));
 
         m_fields->m_cachedDynamicSong = Mod::get()->getSettingValue<bool>("dynamic-song");
-        
+
+        this->addOnExitCallback([this] {
+            if (!AudioContextCoordinator::get().isGameplayActive()) {
+                cleanupDynamicSong();
+            }
+        });
+
         return true;
     }
 
-    $override
-    void onEnter() {
-        LevelSelectLayer::onEnter();
-        int levelID = this->resolveVisibleLevelID();
-        m_fields->m_currentLevelID = levelID;
-        if (levelID > 0 && levelID <= 22) {
-            this->syncLevelSelectSong(true);
-        }
-    }
-
-    $override
-    void onEnterTransitionDidFinish() {
-        LevelSelectLayer::onEnterTransitionDidFinish();
-        // render blur only after the transition; ram hits apply immediately
-        m_fields->m_transitionFinished = true;
-        this->updateThumbnailBackground(m_fields->m_currentLevelID);
-    }
-
-    $override
-    void onExit() {
-        this->unschedule(schedule_selector(PaimonLevelSelectLayer::checkPageLoop));
-        this->unschedule(schedule_selector(PaimonLevelSelectLayer::forcePlayMusic));
-        LevelSelectLayer::onExit();
+    GJGameLevel* visiblePageLevel() {
+        auto* scroll = m_scrollLayer;
+        if (!scroll || !scroll->m_dynamic || !scroll->m_dynamicObjects || !scroll->m_extendedLayer ||
+            scroll->m_dynamicObjects->count() == 0 || scroll->getContentWidth() <= 0.f) return nullptr;
+        int const page = static_cast<int>(std::round(
+            -scroll->m_extendedLayer->getPositionX() / scroll->getContentWidth()));
+        return typeinfo_cast<GJGameLevel*>(
+            scroll->m_dynamicObjects->objectAtIndex(scroll->getRelativePageForNum(page)));
     }
 
     int resolveVisibleLevelID() {
@@ -340,8 +369,8 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         if (m_scrollLayer->m_dynamic && levels && levels->count() > 0) {
             int index = m_scrollLayer->getRelativePageForNum(page);
             auto* level = typeinfo_cast<GJGameLevel*>(levels->objectAtIndex(index));
-            if (level && level->m_levelID >= 1 && level->m_levelID <= 22) return level->m_levelID;
-            return -1;
+            int const sourceId = paimon::officialslots::pageSourceLevelId(level);
+            return sourceId > 0 ? sourceId : -1;
         }
 
         const int totalLevels = 22;
@@ -356,30 +385,96 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         return -1;
     }
 
+    int visiblePageCount() const {
+        if (m_scrollLayer && m_scrollLayer->m_dynamic && m_scrollLayer->m_dynamicObjects) {
+            return std::max(1, static_cast<int>(m_scrollLayer->m_dynamicObjects->count()));
+        }
+        return 24;
+    }
+
+    void scrubToPage(float progress) {
+        if (!m_scrollLayer || m_fields->m_exitAnimated) return;
+        int const target = static_cast<int>(std::round(
+            std::clamp(progress, 0.f, 1.f) * (this->visiblePageCount() - 1)));
+        if (m_scrollLayer->m_page == target && !m_scrollLayer->m_pageMoving) return;
+
+        // instantMoveToPage cancels the native page animation before moving.
+        // repaint the recycled cards as well when the catalogue is dynamic.
+        if (m_scrollLayer->m_dynamic) {
+            paimon::officialslots::selectVisiblePage(this, target);
+        } else {
+            m_scrollLayer->instantMoveToPage(target);
+        }
+    }
+
     void syncLevelSelectSong(bool force = false) {
+        using namespace paimon::officialslots;
         if (m_fields->m_audioCleanedUp) return;
 
         auto& coordinator = AudioContextCoordinator::get();
         if (coordinator.isGameplayActive() || coordinator.isProfileOpen()) return;
+        if (!Mod::get()->getSettingValue<bool>("dynamic-song") || !paimon::dynsong::config().inLevelSelect) return;
 
-        int levelID = m_fields->m_currentLevelID;
-        if (levelID <= 0 || levelID > 22) return;
-
+        auto* visible = this->visiblePageLevel();
+        int const pageId = visible ? static_cast<int>(visible->m_levelID) : 0;
+        if (pageId != m_fields->m_audioPageId) {
+            ++m_fields->m_audioRequest;
+            m_fields->m_audioPageId = pageId;
+            m_fields->m_audioLevel = nullptr;
+            m_fields->m_audioLoading = false;
+            m_fields->m_audioFailed = false;
+        }
         auto* dsm = DynamicSongManager::get();
+        if (pageId <= 0) {
+            if (coordinator.getDynamicContextLayer() == DynSongLayer::LevelSelect &&
+                coordinator.getCurrentLevelSelectID() != 0) {
+                dsm->stopSong();
+                coordinator.activateLevelSelect(0, false);
+            }
+            return;
+        }
+        if (!m_fields->m_audioLevel) {
+            if (m_fields->m_audioLoading || m_fields->m_audioFailed) return;
+            if (auto slotId = SlotLevelCache::get().slotIdForLevel(visible)) {
+                auto slot = SlotStore::get().find(*slotId);
+                if (!slot || !slot->enabled) return;
+                m_fields->m_audioLoading = true;
+                auto const request = m_fields->m_audioRequest;
+                WeakRef<PaimonLevelSelectLayer> weak(this);
+                loadSlotLevel(*slot, [weak, request, pageId](GJGameLevel* ready) {
+                    auto ref = weak.lock();
+                    auto* self = ref ? static_cast<PaimonLevelSelectLayer*>(ref.data()) : nullptr;
+                    if (!self || !self->getParent() || self->m_fields->m_audioRequest != request) return;
+                    auto* current = self->visiblePageLevel();
+                    if (!current || current->m_levelID != pageId) return;
+                    self->m_fields->m_audioLoading = false;
+                    self->m_fields->m_audioFailed = !ready;
+                    self->m_fields->m_audioLevel = ready;
+                    if (ready) self->syncLevelSelectSong(true);
+                });
+                return;
+            }
+            m_fields->m_audioLevel = visible;
+        }
+
+        auto* level = m_fields->m_audioLevel.data();
+        int const levelID = level->m_levelID;
+        bool const sameContext = coordinator.getDynamicContextLayer() == DynSongLayer::LevelSelect &&
+            coordinator.getCurrentLevelSelectLevel() == level;
+        if (sameContext && dsm->isStreamingPreviewPending()) return;
         bool needsSync = force ||
-            coordinator.getDynamicContextLayer() != DynSongLayer::LevelSelect ||
+            !sameContext ||
             coordinator.getCurrentLevelSelectID() != levelID ||
             !dsm->isActive() ||
             dsm->getCurrentPlayingLevelID() != levelID ||
             !dsm->verifyPlayback();
         if (!needsSync) return;
 
-        coordinator.activateLevelSelect(levelID, true);
+        coordinator.activateLevelSelectLevel(level, true);
     }
 
-    void forcePlayMusic(float dt) {
+    void forcePlayMusic(float) {
         int levelID = this->resolveVisibleLevelID();
-        if (levelID <= 0) levelID = 1;
         m_fields->m_currentLevelID = levelID;
 
         this->syncLevelSelectSong(true);
@@ -435,26 +530,32 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
 
             this->updateThumbnailBackground(levelID);
 
-            if (levelID > 0 && levelID <= 22) {
-                this->syncLevelSelectSong(true);
-            }
+            this->syncLevelSelectSong(true);
         }
 
         if (m_fields->m_pageSliderThumb && m_scrollLayer && m_scrollLayer->m_extendedLayer) {
-            const int totalPages = 24;
+            int const totalPages = this->visiblePageCount();
             float pageWidth = m_scrollLayer->getContentSize().width;
             if (pageWidth > 0.f) {
                 float scrollX = -m_scrollLayer->m_extendedLayer->getPositionX();
                 float exactPage = scrollX / pageWidth;
                 float looped = std::fmod(std::fmod(exactPage, static_cast<float>(totalPages)) + totalPages, static_cast<float>(totalPages));
-                float progress = looped / static_cast<float>(totalPages - 1);
+                float progress = totalPages > 1 ? looped / static_cast<float>(totalPages - 1) : 0.f;
                 if (progress > 1.f) progress = 1.f;
-                float maxTravel = m_fields->m_sliderBgWidth - m_fields->m_sliderThumbWidth;
-                float targetX = m_fields->m_sliderStartX + progress * maxTravel;
+                float const thumbW = std::min(m_fields->m_sliderBgWidth,
+                    std::max(m_fields->m_sliderBgWidth / totalPages, 10.f));
+                auto* input = m_fields->m_pageSliderInput.data();
+                if (input) {
+                    input->setThumbState(thumbW, progress);
+                    if (input->isDragging()) progress = input->progress();
+                }
+                float maxTravel = m_fields->m_sliderBgWidth - thumbW;
+                float targetX = m_fields->m_sliderLeftX + thumbW * 0.5f + progress * maxTravel;
                 auto* thumb = m_fields->m_pageSliderThumb.data();
+                thumb->setScaleX(thumbW / m_fields->m_sliderThumbWidth);
                 float curX = thumb->getPositionX();
                 float newX;
-                if (std::fabs(targetX - curX) > maxTravel * 0.5f) {
+                if ((input && input->isDragging()) || std::fabs(targetX - curX) > maxTravel * 0.5f) {
                     newX = targetX;
                 } else {
                     newX = curX + (targetX - curX) * std::min(1.f, dt * 14.f);
@@ -522,9 +623,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     void updateThumbnailBackground(int levelID) {
         if (levelID == m_fields->m_appliedLevelID && m_fields->m_bgSprite) return;
 
-        bool isMainLevel = (levelID >= 1 && levelID <= 22);
-
-        if (!isMainLevel) {
+        if (levelID <= 0) {
              this->applyBackground(nullptr, levelID);
              return;
         }
@@ -636,56 +735,11 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         }
 
         auto texSize = tex->getContentSize();
-        float scaleX = win.width / texSize.width;
-        float scaleY = win.height / texSize.height;
-        float scale = std::max(scaleX, scaleY);
-
-        if (!m_fields->m_sharpBgSprite) {
-            auto spr = CCSprite::createWithTexture(tex);
-            spr->setPosition(win / 2);
-            spr->setZOrder(-11);
-            spr->setColor({80, 80, 80});
-            this->addChild(spr);
-            m_fields->m_sharpBgSprite = spr;
-            spr->runAction(CCRepeatForever::create(CCSequence::create(
-                CCScaleTo::create(10.0f, scale * 1.3f),
-                CCScaleTo::create(10.0f, scale),
-                nullptr
-            )));
-        } else {
-            m_fields->m_sharpBgSprite->setTexture(tex);
-            m_fields->m_sharpBgSprite->setTextureRect(CCRect{0, 0, texSize.width, texSize.height});
-        }
-        m_fields->m_sharpBgSprite->stopActionByTag(kBgFadeActionTag);
-        m_fields->m_sharpBgSprite->setScale(scale);
-        m_fields->m_sharpBgSprite->setVisible(true);
-        m_fields->m_sharpBgSprite->setOpacity(255);
+        m_fields->m_sharpBgSprite = ensureBgSprite(m_fields->m_sharpBgSprite.data(), tex, texSize, -11, true);
 
         if (blurTex && m_fields->m_transitionFinished) {
             auto blurSize = blurTex->getContentSize();
-            float bScaleX = win.width / blurSize.width;
-            float bScaleY = win.height / blurSize.height;
-            float bScale = std::max(bScaleX, bScaleY);
-
-            if (!m_fields->m_bgSprite) {
-                auto spr = CCSprite::createWithTexture(blurTex);
-                spr->setPosition(win / 2);
-                spr->setZOrder(-10);
-                this->addChild(spr);
-                m_fields->m_bgSprite = spr;
-                spr->runAction(CCRepeatForever::create(CCSequence::create(
-                    CCScaleTo::create(10.0f, bScale * 1.3f),
-                    CCScaleTo::create(10.0f, bScale),
-                    nullptr
-                )));
-            } else {
-                m_fields->m_bgSprite->setTexture(blurTex);
-                m_fields->m_bgSprite->setTextureRect(CCRect{0, 0, blurSize.width, blurSize.height});
-            }
-            m_fields->m_bgSprite->stopActionByTag(kBgFadeActionTag);
-            m_fields->m_bgSprite->setScale(bScale);
-            m_fields->m_bgSprite->setVisible(true);
-            m_fields->m_bgSprite->setOpacity(255);
+            m_fields->m_bgSprite = ensureBgSprite(m_fields->m_bgSprite.data(), blurTex, blurSize, -10, false);
         } else if (m_fields->m_bgSprite) {
             m_fields->m_bgSprite->setVisible(false);
         }
@@ -696,6 +750,33 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         }
     }
 
+    // creates the fill sprite on first use, otherwise swaps its texture;
+    // both background layers share create/position/action/tail handling.
+    CCSprite* ensureBgSprite(CCSprite* existing, CCTexture2D* tex, CCSize const& texSize, float zOrder, bool dimmed) {
+        auto win = CCDirector::get()->getWinSize();
+        float scale = std::max(win.width / texSize.width, win.height / texSize.height);
+        CCSprite* spr = existing;
+        if (!spr) {
+            spr = CCSprite::createWithTexture(tex);
+            spr->setPosition(win / 2);
+            spr->setZOrder(zOrder);
+            if (dimmed) spr->setColor({80, 80, 80});
+            this->addChild(spr);
+            spr->runAction(CCRepeatForever::create(CCSequence::create(
+                CCScaleTo::create(10.0f, scale * 1.3f),
+                CCScaleTo::create(10.0f, scale),
+                nullptr
+            )));
+        } else {
+            spr->setTexture(tex);
+            spr->setTextureRect(CCRect{0, 0, texSize.width, texSize.height});
+        }
+        spr->stopActionByTag(kBgFadeActionTag);
+        spr->setScale(scale);
+        spr->setVisible(true);
+        spr->setOpacity(255);
+        return spr;
+    }
     // fade vanilla bg nodes without touching ours or other mods'
     void hideVanillaBackgroundWithFade() {
         if (m_fields->m_vanillaHidden) return;
@@ -759,6 +840,11 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     void animateExit() {
         if (m_fields->m_exitAnimated) return;
         m_fields->m_exitAnimated = true;
+
+        if (auto* input = m_fields->m_pageSliderInput.data()) {
+            input->cancelDrag();
+            input->setTouchEnabled(false);
+        }
 
         if (auto* slider = m_fields->m_pageSlider.data()) {
             slider->stopAllActions();

@@ -1,0 +1,96 @@
+#include "src/features/discord-presence/services/DiscordActivityMailbox.hpp"
+#include <cassert>
+#include <functional>
+#include <thread>
+#include <vector>
+#include <string>
+#include <condition_variable>
+using namespace std::chrono_literals;
+#define PAIMON_HAS_DISCORD_RPC
+
+std::mutex peerMutex;
+std::condition_variable peerReady;
+bool peerEntered = false, peerReleased = false;
+std::atomic<int> ipcCalls{0}, closeCalls{0};
+std::thread::id gameThread = std::this_thread::get_id();
+std::vector<std::thread> workers;
+std::mutex mainMutex;
+std::vector<std::function<void()>> mainJobs;
+namespace geode::utils::thread { void setName(char const*) {} }
+namespace geode::log { template<class... Args> void warn(char const*, Args&&...) {} }
+struct Loader {
+    static Loader* get() { static Loader loader; return &loader; }
+    void queueInMainThread(std::function<void()> job) {
+        std::lock_guard lock(mainMutex); mainJobs.push_back(std::move(job));
+    }
+};
+namespace paimon {
+    bool isRuntimeShuttingDown() { return false; }
+    namespace onboarding { bool isAccepted() { return true; } }
+    struct ThreadTracker {
+        static ThreadTracker& get() { static ThreadTracker tracker; return tracker; }
+        bool spawn(std::function<void()> job) { workers.emplace_back(std::move(job)); return true; }
+    };
+}
+namespace paimon::discord {
+constexpr char const* kApplicationID = "fixture";
+DiscordIpcClient& DiscordIpcClient::get() { static auto* instance = new DiscordIpcClient; return *instance; }
+void DiscordIpcClient::setClientID(std::string id) { m_clientID = std::move(id); }
+void DiscordIpcClient::poll() { assert(std::this_thread::get_id() != gameThread); }
+void DiscordIpcClient::update(DiscordActivity const&) {
+    assert(std::this_thread::get_id() != gameThread);
+    ++ipcCalls;
+    std::unique_lock lock(peerMutex); peerEntered = true; peerReady.notify_one();
+    assert(peerReady.wait_for(lock, 2s, [] { return peerReleased; }));
+}
+void DiscordIpcClient::clear() { assert(std::this_thread::get_id() != gameThread); }
+void DiscordIpcClient::close() { assert(std::this_thread::get_id() != gameThread); ++closeCalls; }
+class DiscordPresenceManager {
+public:
+    bool m_shutdown = false, m_refreshScheduled = false;
+    int refreshes = 0;
+    std::shared_ptr<DiscordActivityMailbox> m_ipcMailbox;
+    void ensureWorker(); void shutdown();
+    void refreshNow() { ++refreshes; }
+};
+@@function|src/features/discord-presence/services/DiscordPresenceManager.cpp|void DiscordPresenceManager::ensureWorker()@@
+@@function|src/features/discord-presence/services/DiscordPresenceManager.cpp|void DiscordPresenceManager::shutdown()@@
+}
+int main() {
+    using namespace paimon::discord;
+    DiscordActivityMailbox mailbox;
+    DiscordActivity first, last;
+    first.details = "first"; last.details = "last";
+    assert(mailbox.publish(first) && mailbox.publish(last));
+    std::optional<DiscordActivity> taken;
+    assert(mailbox.take(taken, 0ms) && taken && taken->details == "last");
+    assert(!mailbox.take(taken, 0ms));
+    assert(mailbox.publish(std::nullopt)); // clear has a value distinct from an empty mailbox
+    assert(mailbox.take(taken, 0ms) && !taken);
+    assert(mailbox.claimRefresh() && !mailbox.claimRefresh());
+    mailbox.finishRefresh(); assert(mailbox.claimRefresh());
+    mailbox.requestClear(); assert(mailbox.publish(last));
+    assert(mailbox.take(taken, 0ms) && taken && taken->details == "last");
+    assert(mailbox.takeClearRequest() && !mailbox.takeClearRequest()); // Clear cannot be overwritten by the latest activity.
+    mailbox.setRefreshInterval(1); assert(mailbox.refreshInterval() == 2000);
+    mailbox.stop(); assert(!mailbox.publish(last) && !mailbox.take(taken, 0ms));
+
+    DiscordPresenceManager manager;
+    manager.ensureWorker(); manager.ensureWorker();
+    assert(workers.size() == 1);
+    manager.m_ipcMailbox->publish(first);
+    {
+        std::unique_lock lock(peerMutex);
+        assert(peerReady.wait_for(lock, 1s, [] { return peerEntered; }));
+    }
+    auto start = std::chrono::steady_clock::now();
+    for (int i = 0; i < 1000; ++i) manager.m_ipcMailbox->publish(last);
+    manager.shutdown(); // must also return while Discord is blocked
+    assert(std::chrono::steady_clock::now() - start < 100ms);
+    { std::lock_guard lock(peerMutex); peerReleased = true; }
+    peerReady.notify_one();
+    for (auto& worker : workers) worker.join();
+    assert(ipcCalls == 1 && closeCalls == 1);
+    for (auto& job : mainJobs) job();
+    assert(manager.refreshes == 0); // queued scene refreshes cannot revive shutdown IPC
+}

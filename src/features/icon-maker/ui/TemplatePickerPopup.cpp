@@ -3,6 +3,7 @@
 #include "IconMakerKit.hpp"
 #include "IconMakerUI.hpp"
 #include "../persist/IconProjectStore.hpp"
+#include "../services/IconApplier.hpp"
 #include "../services/IconThumbs.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
@@ -182,6 +183,7 @@ void TemplatePickerPopup::rebuildPage() {
 }
 
 void TemplatePickerPopup::rebuildVanillaPage(CCMenu* menu) {
+    IconApplier::VanillaScope vanillaGuard;
     int const total = iconCount();
     int const first = m_page * kPerPage + 1;
     float const originX = -kSpacing * (kCols - 1) / 2.f;

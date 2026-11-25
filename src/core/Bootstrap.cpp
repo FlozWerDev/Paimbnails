@@ -3,7 +3,9 @@
 #include "../features/versus/VersusInit.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
+#if defined(GEODE_IS_DESKTOP)
 #include "../features/cursor/services/CursorManager.hpp"
+#endif
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/thumbnails/services/LevelColors.hpp"
 #include "../utils/Localization.hpp"
@@ -15,6 +17,7 @@
 #include "../features/crash-reports/services/CrashReporter.hpp"
 #include "../features/onboarding/WelcomeFlow.hpp"
 #include "RuntimeLifecycle.hpp"
+#include "../platform/PaimSettings.hpp"
 #include "StartupIncompatibilityCheck.hpp"
 #include "ModCompatWarnings.hpp"
 #include "BanGate.hpp"
@@ -61,7 +64,13 @@ namespace paimon {
 void bootstrap() {
     log::info("[PaimonThumbnails][Init] Loaded event start");
 
-    // fail-open without cache; revalidates async
+    // ban enforced async earlier in this session: refuse re-init, game keeps running.
+    if (paimon::ban::isBanned()) {
+        log::warn("[PaimonThumbnails][Init] Aborting init: user is banned");
+        return;
+    }
+
+    // known bans block init; online access requires a live session verdict.
     if (paimon::ban::runStartupBanGate()) {
         log::warn("[PaimonThumbnails][Init] Aborting init: user is banned");
         return;
@@ -98,20 +107,29 @@ void bootstrap() {
     bool const clearCacheAtStartup = paimon::settings::general::clearCacheOnExit();
 
     paimon::ThreadTracker::get().spawn([clearCacheAtStartup]() {
+#ifdef PAIM_USE_GEODE
         geode::utils::thread::setName("PaimonMigrations");
+#endif
         if (paimon::isRuntimeShuttingDown()) return;
 
         if (clearCacheAtStartup) {
             cleanupDiskCache("startup-safety");
-            auto saveDir = Mod::get()->getSaveDir();
+            auto saveDir = paimon::platform::activeBackend().getSaveDir();
             std::error_code ec;
             std::filesystem::remove(saveDir / "manifest_cache.json", ec);
             // geode state must update on the main thread.
-            geode::queueInMainThread([]() {
+            paimon::platform::activeBackend().queueInMainThread([]() {
                 if (paimon::isRuntimeShuttingDown()) return;
+#ifdef PAIM_USE_GEODE
                 Mod::get()->setSavedValue("thumbnail-disk-cache", matjson::Value::object());
+#endif
             });
         }
+
+        if (paimon::isRuntimeShuttingDown()) return;
+        // stat the 44 main-level thumbnails first: the +1s preload asks for
+        // this from the main thread and would otherwise stat them itself.
+        paimon::warmMainLevelsDiskCache();
 
         if (paimon::isRuntimeShuttingDown()) return;
         LevelColors::get().preloadIndexFromDisk();
@@ -126,38 +144,55 @@ void bootstrap() {
     applyLanguageSetting(langStr);
     bool expected = false;
     if (g_languageListenerRegistered.compare_exchange_strong(expected, true)) {
-        geode::listenForSettingChanges<std::string>("language", +[](std::string value) {
-            applyLanguageSetting(value);
-            log::info("[PaimonThumbnails][Language] Changed to '{}'", value);
+        paimon::platform::activeBackend().observeSetting("language", +[](std::string_view) {
+            // geode may fire this off the main thread: cocos/ui work below is main-only.
+            paimon::platform::activeBackend().queueInMainThread([]() {
+                if (paimon::isRuntimeShuttingDown()) return;
+                std::string value = paimon::platform::gset<std::string>("language");
+                applyLanguageSetting(value);
+                log::info("[PaimonThumbnails][Language] Changed to '{}'", value);
+            });
         });
 
+#if defined(GEODE_IS_DESKTOP)
         // geode can fire setting callbacks on any thread.
         static std::atomic<bool> s_cursorSyncGuard{false};
-        geode::listenForSettingChanges<bool>("custom-cursor-enable", +[](bool value) {
-            if (s_cursorSyncGuard.exchange(true, std::memory_order_acq_rel)) return;
-            CursorManager::get().config().enabled = value;
-            CursorManager::get().applyConfigLive();
-            s_cursorSyncGuard.store(false, std::memory_order_release);
+        paimon::platform::activeBackend().observeSetting("custom-cursor-enable", +[](std::string_view) {
+            paimon::platform::activeBackend().queueInMainThread([]() {
+                if (paimon::isRuntimeShuttingDown()) return;
+                bool value = paimon::platform::gset<bool>("custom-cursor-enable");
+                if (CursorManager::get().config().enabled == value) return;
+                if (s_cursorSyncGuard.exchange(true, std::memory_order_acq_rel)) return;
+                CursorManager::get().config().enabled = value;
+                CursorManager::get().applyConfigLive();
+                s_cursorSyncGuard.store(false, std::memory_order_release);
+            });
         });
+#endif
 
         // settings panel bypasses setenabled: invalidate the settings cache.
-        geode::listenForAllSettingChanges(
-            +[](std::string_view, std::shared_ptr<geode::SettingV3>) {
-                paimon::settings::internal::invalidateSettingsCache();
+        paimon::platform::activeBackend().observeAll(
+            +[](std::string_view) {
+                paimon::platform::invalidateSettingsCache();
             });
     }
 
     log::info("[PaimonThumbnails][Init] Startup init complete");
 
-    paimon::scheduleMainThreadDelay(8.0f, []() {
-        if (paimon::isRuntimeShuttingDown()) return;
-        if (!paimon::onboarding::isAccepted()) return;
+    // both deferred checks share the same shutdown/acceptance guards.
+    auto scheduleIfAccepted = [](float delay, geode::CopyableFunction<void()> fn) {
+        paimon::scheduleMainThreadDelay(delay, [fn = std::move(fn)]() mutable {
+            if (paimon::isRuntimeShuttingDown()) return;
+            if (!paimon::onboarding::isAccepted()) return;
+            if (fn) fn();
+        });
+    };
+
+    scheduleIfAccepted(8.0f, []() {
         paimon::updates::UpdateChecker::get().checkAsync();
     });
 
-    paimon::scheduleMainThreadDelay(15.0f, []() {
-        if (paimon::isRuntimeShuttingDown()) return;
-        if (!paimon::onboarding::isAccepted()) return;
+    scheduleIfAccepted(15.0f, []() {
         paimon::crash::reportPendingCrashes();
     });
 }

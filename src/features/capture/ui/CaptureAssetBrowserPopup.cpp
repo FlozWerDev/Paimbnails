@@ -206,7 +206,7 @@ bool CaptureAssetBrowserPopup::init() {
     if (m_search) {
         // numeric queries match object ids; text also matches localized category names.
         m_search->setMaxCharCount(12);
-        m_search->setTextAlign(TextInputAlign::Left);
+        m_search->setAlignment(Label::Alignment::Left);
         m_search->setScale(C::SEARCH_SCALE);
         m_search->setAnchorPoint({0.5f, 0.5f});
         m_search->setPosition({colX + C::SEARCH_WIDTH * C::SEARCH_SCALE * 0.5f,
@@ -473,6 +473,7 @@ void CaptureAssetBrowserPopup::buildList() {
     float totalH = std::max(viewH, static_cast<float>(rows.size()) * rowH);
 
     m_scrollView = ScrollLayer::create({listW, viewH});
+    if (m_scrollView) m_scrollView->setAnchorPoint({0.f, 0.f});
     m_scrollView->setPosition({viewX, listBot});
     m_scrollView->m_contentLayer->setContentSize({listW, totalH});
 
@@ -907,7 +908,7 @@ void CaptureAssetBrowserPopup::onRestoreAllBtn(CCObject*) {
     updateStats();
     refreshPreview();
 
-    PaimonNotify::create(loc("assets.restored").c_str(), NotificationIcon::Success)->show();
+    PaimonNotify::show(loc("assets.restored").c_str(), NotificationIcon::Success);
 }
 
 void CaptureAssetBrowserPopup::onShowAllBtn(CCObject*) {

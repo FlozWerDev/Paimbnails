@@ -2,6 +2,7 @@
 
 #include <Geode/Geode.hpp>
 #include <string>
+#include "../features/discord-presence/model/PresenceCustomization.hpp"
 
 namespace paimon::settings {
 
@@ -10,204 +11,194 @@ namespace internal {
 // single source for saved-value defaults, used by startup migration and reset.
 inline void applyDefaults(bool force) {
     auto* mod = geode::Mod::get();
+    if (!mod) return;
 
     auto set = [&](const char* key, auto val) {
         if (force || !mod->hasSavedValue(key)) mod->setSavedValue(key, val);
     };
-    auto& setB = set;
-    auto& setI = set;
-    auto& setF = set;
-    auto& setD = set;
     auto setS = [&](const char* key, std::string val) { set(key, val); };
 
-    setB("discord-rpc-private-mode", false);
-    setB("discord-rpc-idle-when-unfocused", true);
-    setB("discord-rpc-show-progress", true);
-    setB("discord-rpc-include-paimbnails-features", true);
-    setS("discord-rpc-large-text", "");
-    setS("discord-rpc-large-image-key", "");
-    setS("discord-rpc-small-image-key", "");
-    setS("discord-rpc-small-text", "");
-    setS("discord-rpc-activity-type", "Playing");
-    setB("discord-rpc-show-timestamp", true);
-    setB("discord-rpc-override-details", false);
-    setS("discord-rpc-custom-details", "");
-    setB("discord-rpc-override-state", false);
-    setS("discord-rpc-custom-state", "");
+    // preserve the old progress opt-out when introducing a separate best toggle.
+    if (!force && !mod->hasSavedValue("discord-rpc-show-best")) {
+        mod->setSavedValue("discord-rpc-show-best", mod->getSavedValue<bool>("discord-rpc-show-progress", true));
+    }
+    for (auto const& option : paimon::discord::kBooleanOptions) set(option.key, option.value);
+    for (auto const& option : paimon::discord::kTextOptions) setS(option.key, option.value);
 
     setS("paidraw-server-url", "https://paimbnailsbot.onrender.com");
     setS("paimon-emote-server-url", "https://paimbnailsbot.onrender.com");
     setS("paidraw-display-name", "");
     setS("paidraw-word-language", "es");
-    setB("paidraw-sound-effects", true);
-    setB("paidraw-invite-notifications", true);
-    setB("paidraw-show-ping", true);
+    set("paidraw-sound-effects", true);
+    set("paidraw-invite-notifications", true);
+    set("paidraw-show-ping", true);
 
     setS("levelcell-background-type", "thumbnail");
-    setD("levelcell-background-blur", 3.0);
-    setD("levelcell-background-darkness", 0.2);
-    setD("levelcell-thumbnail-edge-blend", 0.65);
-    setB("levelcell-show-separator", true);
-    setB("levelcell-show-view-button", true);
-    setB("compact-list-show-toggle", true);
-    setB("transparent-list-mode", false);
-    setB("transparent-background-mode", false);
-    setB("levelcell-gallery-autocycle", true);
+    set("levelcell-background-blur", 3.0);
+    set("levelcell-background-darkness", 0.2);
+    set("levelcell-thumbnail-edge-blend", 0.65);
+    set("levelcell-show-separator", true);
+    set("levelcell-show-view-button", true);
+    set("compact-list-show-toggle", true);
+    set("transparent-list-mode", false);
+    set("transparent-background-mode", false);
+    set("levelcell-gallery-autocycle", true);
     setS("levelcell-gallery-transition", "crossfade");
-    setD("levelcell-gallery-transition-duration", 0.6);
+    set("levelcell-gallery-transition-duration", 0.6);
     setS("popup-gallery-transition", "directional-elastic");
-    setD("popup-gallery-transition-duration", 0.45);
+    set("popup-gallery-transition-duration", 0.45);
     setS("levelinfo-bg-transition", "crossfade");
-    setD("levelinfo-bg-transition-duration", 0.5);
+    set("levelinfo-bg-transition-duration", 0.5);
 
     setS("levelcell-anim-type", "zoom-slide");
-    setD("levelcell-anim-speed", 1.0);
+    set("levelcell-anim-speed", 1.0);
     setS("levelcell-anim-effect", "none");
-    setB("levelcell-effect-on-gradient", false);
-    setB("levelcell-mythic-particles", true);
-    setB("levelcell-animated-gradient", true);
+    set("levelcell-effect-on-gradient", false);
+    set("levelcell-mythic-particles", true);
+    set("levelcell-animated-gradient", true);
 
     setS("levelinfo-extra-styles", "");
-    setI("levelinfo-effect-intensity", 4);
-    setI("levelinfo-bg-darkness", 27);
-    setB("dynamic-song-stream-preview", true);
+    set("levelinfo-effect-intensity", 4);
+    set("levelinfo-bg-darkness", 27);
+    set("dynamic-song-stream-preview", true);
     setS("dynsong-start-mode", "random");
-    setI("dynsong-random-min-pct", 15);
-    setI("dynsong-random-max-pct", 85);
+    set("dynsong-random-min-pct", 15);
+    set("dynsong-random-max-pct", 85);
     setS("dynsong-rotation-mode", "rotate");
-    setI("dynsong-volume-pct", 100);
-    setF("dynsong-fade-seconds", 0.35f);
-    setB("dynsong-in-level-select", true);
-    setB("dynsong-submerge-enabled", true);
+    set("dynsong-volume-pct", 100);
+    set("dynsong-fade-seconds", 0.35f);
+    set("dynsong-in-level-select", true);
+    set("dynsong-submerge-enabled", true);
     setS("dynsong-submerge-preset", "underwater");
-    setF("dynsong-submerge-dive-seconds", 0.55f);
-    setF("dynsong-submerge-surface-seconds", 1.10f);
-    setB("dynsong-submerge-on-level-exit", true);
-    setF("dynsong-submerge-hold-seconds", 0.7f);
+    set("dynsong-submerge-dive-seconds", 0.55f);
+    set("dynsong-submerge-surface-seconds", 1.10f);
+    set("dynsong-submerge-on-level-exit", true);
+    set("dynsong-submerge-hold-seconds", 0.7f);
 
-    setB("profile-music-crossfade", true);
-    setD("profile-music-fade-duration", 0.3);
+    set("profile-music-crossfade", true);
+    set("profile-music-fade-duration", 0.3);
 
-    setI("realtime-search-debounce-ms", 350);
+    set("realtime-search-debounce-ms", 350);
 
     setS("dynamic-popup-style", "paimonUI");
-    setD("dynamic-popup-speed", 1.0);
-    setD("dynamic-exit-speed", 1.0);
-    setI("dynamic-transition-style", 0);
-    setI("dynamic-transition-curve", 0);
-    setI("dynamic-transition-origin", 0);
-    setI("dynamic-transition-reduced-motion", 0);
-    setI("dynamic-transition-panel-style", 0);
-    setB("dynamic-transition-back", true);
-    setB("dynamic-transition-keyboard-back", true);
-    setB("dynamic-transition-popups", true);
-    setB("dynamic-transition-dropdowns", true);
-    setB("dynamic-transition-blocking-layers", true);
-    setB("dynamic-transition-dialogs", true);
-    setB("dynamic-transition-editor-panels", true);
-    setB("dynamic-transition-gameplay-panels", true);
-    setB("dynamic-transition-other-mods", false);
-    setB("dynamic-transition-instant", true);
-    setB("dynamic-transition-only-buttons", false);
-    setB("dynamic-transition-sync-smooth-ui", true);
-    setD("dynamic-transition-duration", .42);
-    setD("dynamic-transition-back-duration", .32);
-    setD("dynamic-transition-corners", 18.0);
-    setD("dynamic-transition-background-scale", .96);
-    setD("dynamic-transition-dim", .22);
-    setD("dynamic-transition-spring", .035);
-    setD("dynamic-transition-button-blend", .24);
-    setD("dynamic-transition-shadow", .5);
-    setD("dynamic-transition-quality", 1.0);
+    set("dynamic-popup-speed", 1.0);
+    set("dynamic-exit-speed", 1.0);
+    set("dynamic-transition-style", 0);
+    set("dynamic-transition-curve", 0);
+    set("dynamic-transition-origin", 0);
+    set("dynamic-transition-reduced-motion", 0);
+    set("dynamic-transition-panel-style", 0);
+    set("dynamic-transition-back", true);
+    set("dynamic-transition-keyboard-back", true);
+    set("dynamic-transition-popups", true);
+    set("dynamic-transition-dropdowns", true);
+    set("dynamic-transition-blocking-layers", true);
+    set("dynamic-transition-dialogs", true);
+    set("dynamic-transition-editor-panels", true);
+    set("dynamic-transition-gameplay-panels", true);
+    set("dynamic-transition-other-mods", false);
+    set("dynamic-transition-instant", true);
+    set("dynamic-transition-only-buttons", false);
+    set("dynamic-transition-sync-smooth-ui", true);
+    set("dynamic-transition-duration", .42);
+    set("dynamic-transition-back-duration", .32);
+    set("dynamic-transition-corners", 18.0);
+    set("dynamic-transition-background-scale", .96);
+    set("dynamic-transition-dim", .22);
+    set("dynamic-transition-spring", .035);
+    set("dynamic-transition-button-blend", .24);
+    set("dynamic-transition-shadow", .5);
+    set("dynamic-transition-quality", 1.0);
 
     setS("smooth-ui-preset", "balanced");
-    setB("smooth-ui-reduced-motion", false);
-    setD("smooth-ui-global-speed", 1.0);
-    setD("smooth-ui-motion-strength", 1.0);
-    setB("smooth-ui-animate-buttons", true);
+    set("smooth-ui-reduced-motion", false);
+    set("smooth-ui-global-speed", 1.0);
+    set("smooth-ui-motion-strength", 1.0);
+    set("smooth-ui-animate-buttons", true);
     setS("smooth-ui-button-scope", "all");
-    setD("smooth-ui-button-press-scale", 0.94);
-    setB("smooth-ui-button-release-bounce", true);
+    set("smooth-ui-button-press-scale", 0.94);
+    set("smooth-ui-button-release-bounce", true);
 
     setS("popup-blur-style", "paiblur");
-    setD("popup-blur-intensity", 4.0);
-    setD("popup-blur-darkness", 0.28);
-    setD("popup-blur-padding", 4.0);
-    setD("popup-blur-corner-radius", 8.0);
-    setD("popup-blur-fade-duration", 0.18);
-    setB("popup-blur-show-placeholder", true);
+    set("popup-blur-intensity", 4.0);
+    set("popup-blur-darkness", 0.28);
+    set("popup-blur-padding", 4.0);
+    set("popup-blur-corner-radius", 8.0);
+    set("popup-blur-fade-duration", 0.18);
+    set("popup-blur-show-placeholder", true);
 
-    setB("for-you-use-tags", true);
-    setI("for-you-feed-size", 12);
+    set("for-you-use-tags", true);
+    set("for-you-feed-size", 12);
 // searches per refresh: tag lookups first, gd search for the rest.
-    setI("for-you-query-budget", 6);
+    set("for-you-query-budget", 6);
 // feed share reserved for uncertain recommendations.
-    setD("for-you-exploration", 0.2);
+    set("for-you-exploration", 0.2);
 
-    setD("custom-cursor-scale", 0.3);
-    setB("custom-cursor-trail", false);
-    setB("custom-cursor-hide-in-gameplay", true);
+    set("custom-cursor-scale", 0.3);
+    set("custom-cursor-trail", false);
+    set("custom-cursor-hide-in-gameplay", true);
 
-    setB("menuLoopSaveSongOnGameClose", false);
+    set("menuLoopSaveSongOnGameClose", false);
     setS("menuLoopButtonMode", "Reduced");
-    setB("menuLoopEnableShuffleButton", true);
-    setB("menuLoopEnableBlacklistButton", true);
-    setB("menuLoopEnableFavoriteButton", true);
-    setB("menuLoopEnableHoldSongButton", true);
-    setB("menuLoopEnablePreviousButton", true);
-    setB("menuLoopEnableAddToPlaylistButton", true);
-    setB("menuLoopEnableViewSongListButton", true);
-    setB("menuLoopEnableCopySongID", true);
-    setB("menuLoopEnableNotification", true);
-    setB("menuLoopEnableNewNotification", true);
-    setD("menuLoopNotificationTime", 2.0);
+    set("menuLoopEnableShuffleButton", true);
+    set("menuLoopEnableBlacklistButton", true);
+    set("menuLoopEnableFavoriteButton", true);
+    set("menuLoopEnableHoldSongButton", true);
+    set("menuLoopEnablePreviousButton", true);
+    set("menuLoopEnableAddToPlaylistButton", true);
+    set("menuLoopEnableViewSongListButton", true);
+    set("menuLoopEnableCopySongID", true);
+    set("menuLoopEnableNotification", true);
+    set("menuLoopEnableNewNotification", true);
+    set("menuLoopNotificationTime", 2.0);
     setS("menuLoopCustomPrefix", "Now Playing");
     setS("menuLoopSongFormatNGML", "Song Name, Artist, Song ID");
-    setB("menuLoopLoadPlaylistFile", false);
+    set("menuLoopLoadPlaylistFile", false);
     setS("menuLoopPlaylistFile", "");
     setS("menuLoopAdditionalFolder", "");
-    setB("menuLoopAdvancedLogs", false);
-    setI("menuLoopSeekAmountMs", 5000);
-    setB("menuLoopShowPlaybackProgress", true);
-    setB("menuLoopEnableKeyboardShortcuts", true);
-    setB("menuLoopRandomizeOnLevelExit", false);
-    setB("menuLoopRandomizeOnEditorExit", false);
-    setB("menuLoopRestoreOnLevelExit", true);
-    setB("menuLoopRestoreOnEditorExit", true);
-    setB("menuLoopSongIndicators", true);
-    setB("menuLoopCompactSongList", false);
-    setB("menuLoopFavoritesOnlyFilter", false);
-    setB("menuLoopShowBlacklisted", false);
-    setB("menuLoopAutoScrollCurrent", true);
+    set("menuLoopAdvancedLogs", false);
+    set("menuLoopSeekAmountMs", 5000);
+    set("menuLoopShowPlaybackProgress", true);
+    set("menuLoopEnableKeyboardShortcuts", true);
+    set("menuLoopRandomizeOnLevelExit", false);
+    set("menuLoopRandomizeOnEditorExit", false);
+    set("menuLoopRestoreOnLevelExit", true);
+    set("menuLoopRestoreOnEditorExit", true);
+    set("menuLoopSongIndicators", true);
+    set("menuLoopCompactSongList", false);
+    set("menuLoopFavoritesOnlyFilter", false);
+    set("menuLoopShowBlacklisted", false);
+    set("menuLoopAutoScrollCurrent", true);
     setS("menuLoopSortMode", "alphabetical");
-    setB("menuLoopSortReverse", false);
+    set("menuLoopSortReverse", false);
 
-    setD("menuMusicBlurIntensity", 5.0);
-    setD("menuMusicBlurDarkness", 0.45);
-    setB("menuMusicAutoplayOnBoot", false);
+    set("menuMusicBlurIntensity", 5.0);
+    set("menuMusicBlurDarkness", 0.45);
+    set("menuMusicAutoplayOnBoot", false);
     setS("menuMusicDownloadFormat", "mp3");
 
-    setB("gif-ram-cache", true);
-    setB("disable-video-chunks", true);
+    set("gif-ram-cache", true);
+    set("disable-video-chunks", true);
 
-    setB("main-menu-layout-grid-snap", true);
-    setI("main-menu-layout-grid-size", 10);
-    setI("main-menu-layout-snap-distance", 10);
-    setB("main-menu-layout-show-guides", true);
-    setB("main-menu-layout-snap-to-edges", true);
+    set("main-menu-layout-grid-snap", true);
+    set("main-menu-layout-grid-size", 10);
+    set("main-menu-layout-snap-distance", 10);
+    set("main-menu-layout-show-guides", true);
+    set("main-menu-layout-snap-to-edges", true);
 
-    setD("zoom-sensitivity", 1.0);
-    setB("zoom-auto-hide-menu", true);
-    setB("zoom-auto-show-menu", true);
-    setB("zoom-alt-disables-scroll", true);
+    set("zoom-sensitivity", 1.0);
+    set("zoom-auto-hide-menu", true);
+    set("zoom-auto-show-menu", true);
+    set("zoom-alt-disables-scroll", true);
 
 // -1 keeps profile backgrounds behind the comment list.
-    setI("profile-img-zlayer", -1);
+    set("profile-img-zlayer", -1);
 }
 
 // idempotent migrations that rewrite existing values, guarded when needed.
 inline void runOneShotMigrations() {
     auto* mod = geode::Mod::get();
+    if (!mod) return;
 
 // move saved urls from retired hosts to the render endpoint.
     {

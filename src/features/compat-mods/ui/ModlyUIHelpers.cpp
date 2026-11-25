@@ -64,8 +64,9 @@ CCNode* createImageSlot(std::string const& url, float width, float height,
     sprite->setOpacity(0);
     clipper->addChild(sprite, 1);
 
-    Ref<LazySprite> safeSprite = sprite;
-    sprite->setLoadCallback([safeSprite, width, height](Result<> res) {
+    WeakRef<LazySprite> weakSprite = sprite;
+    sprite->setLoadCallback([weakSprite, width, height](Result<> res) {
+        auto safeSprite = weakSprite.lock();
         if (!res.isOk() || !safeSprite || !safeSprite->getParent()) return;
         auto size = safeSprite->getContentSize();
         if (size.width <= 0.f || size.height <= 0.f) return;

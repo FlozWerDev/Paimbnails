@@ -1,22 +1,19 @@
 #include "RedesignedProfile.hpp"
+#include "ProfileLayout.hpp"
+#include "ProfileLevelsPanel.hpp"
+#include "ProfileScrollLayer.hpp"
 
 #include <Geode/Geode.hpp>
-#include <Geode/ui/LoadingSpinner.hpp>
 #include <Geode/ui/PopupManager.hpp>
 #include <Geode/ui/Notification.hpp>
 #include <Geode/utils/general.hpp>
-#include <Geode/utils/web.hpp>
 #include <Geode/utils/cocos.hpp>
 
 #include <Geode/binding/GJUserScore.hpp>
-#include <Geode/binding/GJGameLevel.hpp>
-#include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
 #include <Geode/binding/GameToolbox.hpp>
-#include <Geode/binding/LevelCell.hpp>
 #include <Geode/binding/GJSearchObject.hpp>
-#include <Geode/binding/LevelManagerDelegate.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/GJCommentListLayer.hpp>
@@ -28,8 +25,12 @@
 #include "../../../framework/compat/SceneLocators.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/HttpClient.hpp"
+#include "../../../utils/Localization.hpp"
+#include "../../../utils/UnicodeLabel.hpp"
 #include "../../profiles/services/ProfilePicCustomizer.hpp"
 #include "../../profiles/services/ProfileNameDecorator.hpp"
+#include "../../profiles/services/ProfileIdentityStore.hpp"
+#include "../../profiles/ui/ProfileIdentityPopup.hpp"
 #include "../../forum/services/ForumApi.hpp"
 #include "../../emotes/EmoteRenderer.hpp"
 #include "../../emotes/services/EmoteService.hpp"
@@ -39,6 +40,7 @@
 #include <Geode/cocos/extensions/GUI/CCControlExtension/CCScale9Sprite.h>
 
 #include <algorithm>
+#include <memory>
 #include <string_view>
 #include <unordered_set>
 #include <vector>
@@ -47,203 +49,32 @@
 using namespace geode::prelude;
 
 namespace paimon::profile_redesign {
-class ProfileRecentLevelLoader : public cocos2d::CCObject, public LevelManagerDelegate {
+class ProfileActivityPanel : public cocos2d::CCNode {
 public:
-    Ref<CCNode> m_container;
-    CCSize      m_area = {0.f, 0.f};
-    int         m_userID = 0;
-    std::string m_key;
-    bool        m_done = false;
-    LoadingSpinner* m_spinner = nullptr;
-
-    static ProfileRecentLevelLoader* create(CCNode* container, CCSize area, int userID) {
-        auto r = new ProfileRecentLevelLoader();
-        r->m_container = container;
-        r->m_area = area;
-        r->m_userID = userID;
-        r->autorelease();
-        return r;
-    }
-
-    ~ProfileRecentLevelLoader() override {
-        if (auto* glm = GameLevelManager::get()) {
-            if (glm->m_levelManagerDelegate == this) glm->m_levelManagerDelegate = nullptr;
-        }
-    }
-
-    void clearArea() {
-        if (m_spinner) { m_spinner->removeFromParent(); m_spinner = nullptr; }
-        if (m_container) m_container->removeAllChildrenWithCleanup(true);
-    }
-
-    void start() { load(); }
-
-    void load() {
-        if (!m_container) return;
-        auto glm = GameLevelManager::get();
-        if (!glm) return;
-
-        auto obj = GJSearchObject::create(SearchType::UsersLevels, std::to_string(m_userID));
-        auto keyC = obj->getKey();
-        std::string key = keyC ? std::string(keyC) : "";
-
-        CCArray* levels = (!key.empty()) ? glm->getStoredOnlineLevels(key.c_str()) : nullptr;
-        if (!levels || levels->count() == 0) {
-            if (!key.empty() && m_key == key && m_done) { showNone(); return; }
-            m_key = key;
-            glm->m_levelManagerDelegate = this;
-            if (!key.empty()) glm->getOnlineLevels(obj);
-            clearArea();
-            m_spinner = LoadingSpinner::create(24.f);
-            if (m_spinner) {
-                m_spinner->setPosition({m_area.width / 2.f, m_area.height / 2.f});
-                m_container->addChild(m_spinner);
-            }
-            return;
-        }
-        GJGameLevel* firstLevel = nullptr;
-        GJGameLevel* ratedLevel = nullptr;
-        for (int i = 0; i < levels->count(); ++i) {
-            auto* l = typeinfo_cast<GJGameLevel*>(levels->objectAtIndex(i));
-            if (!l) continue;
-            if (!firstLevel) firstLevel = l;
-            if (l->m_stars > 0) { ratedLevel = l; break; }
-        }
-        GJGameLevel* lvl = ratedLevel ? ratedLevel : firstLevel;
-        if (!lvl) { showNone(); return; }
-        showCell(lvl);
-    }
-
-    void showCell(GJGameLevel* level) {
-        clearArea();
-        auto cell = LevelCell::create(m_area.width, m_area.height);
-        if (!cell) { showNone(); return; }
-        cell->setContentSize(m_area);
-        cell->loadFromLevel(level);
-        cell->setPosition({0.f, 0.f});
-
-        if (cell->m_backgroundLayer) cell->m_backgroundLayer->setVisible(false);
-        for (auto* ch : CCArrayExt<CCNode*>(cell->getChildren())) {
-            if (typeinfo_cast<cocos2d::CCLayerColor*>(ch)) ch->setVisible(false);
-        }
-        if (cell->m_mainLayer) {
-            for (auto* ch : CCArrayExt<CCNode*>(cell->m_mainLayer->getChildren())) {
-                if (typeinfo_cast<cocos2d::CCLayerColor*>(ch)) ch->setVisible(false);
-            }
-        }
-        if (cell->m_mainMenu) {
-            for (auto* ch : CCArrayExt<CCNode*>(cell->m_mainMenu->getChildren())) {
-                auto* item = typeinfo_cast<cocos2d::CCMenuItem*>(ch);
-                if (item && item != cell->m_button) {
-                    item->setVisible(false);
-                    item->setEnabled(false);
-                }
-            }
-        }
-        std::function<void(CCNode*)> hideGoldLabels = [&](CCNode* node) {
-            if (!node) return;
-            for (auto* ch : CCArrayExt<CCNode*>(node->getChildren())) {
-                if (auto* lbl = typeinfo_cast<CCLabelBMFont*>(ch)) {
-                    const char* fnt = lbl->getFntFile();
-                    if (fnt && std::string_view(fnt).find("goldFont") != std::string_view::npos) {
-                        lbl->setVisible(false);
-                        continue;
-                    }
-                }
-                hideGoldLabels(ch);
-            }
-        };
-        hideGoldLabels(cell);
-        const float radius = std::clamp(std::min(m_area.width, m_area.height) * 0.22f, 6.f, 12.f);
-        if (auto* stencil = paimon::SpriteHelper::createRoundedRectStencil(m_area.width, m_area.height, radius)) {
-            if (auto* clip = cocos2d::CCClippingNode::create(stencil)) {
-                clip->setContentSize(m_area);
-                clip->setAnchorPoint({0.f, 0.f});
-                clip->setPosition({0.f, 0.f});
-                clip->setID("rd-level-cell-round-clip"_spr);
-                clip->addChild(cell);
-                m_container->addChild(clip);
-                return;
-            }
-        }
-        m_container->addChild(cell);
-    }
-
-    void showNone() {
-        clearArea();
-        auto l = CCLabelBMFont::create("No levels", "goldFont.fnt");
-        l->setScale(0.45f);
-        l->setPosition({m_area.width / 2.f, m_area.height / 2.f});
-        m_container->addChild(l);
-    }
-
-    void loadLevelsFinished(cocos2d::CCArray*, char const* key) override {
-        if (!key || m_key.empty() || m_key != key) return;
-        m_done = true;
-        load();
-    }
-    void loadLevelsFailed(char const* key) override {
-        if (!key || m_key.empty() || m_key != key) return;
-        m_done = true;
-        showNone();
-    }
-};
-class DualScrollLayer : public geode::ScrollLayer {
-public:
-    CCScrollLayerExt* m_commentScroller = nullptr;
-    cocos2d::CCNode* m_commentClip = nullptr;
-
-    DualScrollLayer(cocos2d::CCRect const& rect, bool sw, bool v)
-        : geode::ScrollLayer(rect, sw, v) {}
-
-    static DualScrollLayer* create(cocos2d::CCSize const& size) {
-        auto r = new DualScrollLayer({0.f, 0.f, size.width, size.height}, true, true);
-        r->autorelease();
-        return r;
-    }
-
-    static cocos2d::CCRect worldRect(cocos2d::CCNode* n) {
-        auto bl = n->convertToWorldSpace({0.f, 0.f});
-        auto tr = n->convertToWorldSpace(n->getContentSize());
-        return cocos2d::CCRect(std::min(bl.x, tr.x), std::min(bl.y, tr.y),
-                               std::fabs(tr.x - bl.x), std::fabs(tr.y - bl.y));
-    }
-
-    void scrollWheel(float y, float x) override {
-        auto mp = geode::cocos::getMousePos();
-        if (worldRect(this).containsPoint(mp)) {
-            geode::ScrollLayer::scrollWheel(y, x);
-        } else if (m_commentClip && m_commentScroller &&
-                   worldRect(m_commentClip).containsPoint(mp)) {
-            m_commentScroller->scrollLayer(y);
-        }
-    }
-};class ProfileSidePanel : public cocos2d::CCNode {
-public:
-    enum class Mode { Reviews, Views };
+    using cocos2d::CCNode::init;
+    enum class Mode { Posts, Reviews, Views, Levels };
 
     int m_accountID = 0;
-    Mode m_mode = Mode::Reviews;
+    int m_userID = 0;
+    Mode m_mode = Mode::Posts;
     cocos2d::CCSize m_area = {0.f, 0.f};
-    DualScrollLayer* m_scroll = nullptr;
-    ButtonSprite* m_toggleSpr = nullptr;
+    ProfileScrollLayer* m_scroll = nullptr;
+    ProfileLevelsPanel* m_levels = nullptr;
+    std::vector<CCMenuItemSpriteExtra*> m_tabs;
+    float m_offsets[4] = {};
     uint64_t m_gen = 0;
-    void setCommentRouting(cocos2d::CCNode* clip, CCScrollLayerExt* scroller) {
-        if (!m_scroll) return;
-        m_scroll->m_commentClip = clip;
-        m_scroll->m_commentScroller = scroller;
+
+    static ProfileActivityPanel* create(int accountID, int userID, cocos2d::CCSize area) {
+        auto panel = std::make_unique<ProfileActivityPanel>();
+        if (!panel->init(accountID, userID, area)) return nullptr;
+        panel->autorelease();
+        return panel.release();
     }
 
-    static ProfileSidePanel* create(int accountID, cocos2d::CCSize area) {
-        auto r = new ProfileSidePanel();
-        if (r && r->init(accountID, area)) { r->autorelease(); return r; }
-        CC_SAFE_DELETE(r);
-        return nullptr;
-    }
-
-    bool init(int accountID, cocos2d::CCSize area) {
+    bool init(int accountID, int userID, cocos2d::CCSize area) {
         if (!CCNode::init()) return false;
         m_accountID = accountID;
+        m_userID = userID;
         m_area = area;
         this->setContentSize(area);
         this->setAnchorPoint({0.5f, 0.5f});
@@ -256,29 +87,87 @@ public:
         menu->setPosition({0.f, 0.f});
         this->addChild(menu, 2);
 
-        m_toggleSpr = ButtonSprite::create("Reviews", "bigFont.fnt", "GJ_button_05.png", 0.7f);
-        if (m_toggleSpr) {
-            m_toggleSpr->setScale(0.46f);
-            if (auto btn = CCMenuItemExt::createSpriteExtra(m_toggleSpr,
-                    [this](CCMenuItemSpriteExtra*) { this->toggle(); })) {
-                btn->setPosition({area.width * 0.5f, area.height - 9.f});
-                menu->addChild(btn);
-            }
+        bool const spanish = Localization::get().getLanguage() == Localization::Language::SPANISH;
+        char const* const titles[] = {spanish ? "Publicaciones" : "Posts",
+            spanish ? "Resenas" : "Reviews", spanish ? "Visitas" : "Views", spanish ? "Niveles" : "Levels"};
+        auto const tabs = profileActivityTabs(area.width, area.height);
+        char const* const tabIDs[] = {"rd-activity-posts"_spr, "rd-activity-reviews"_spr, "rd-activity-views"_spr, "rd-activity-levels"_spr};
+        for (std::size_t index = 0; index < tabs.size(); ++index) {
+            auto const& tab = tabs[index];
+            auto* face = CCNode::create();
+            face->setContentSize({tab.width, tab.height});
+            auto* background = ButtonSprite::create("", static_cast<int>(tab.width), true,
+                "goldFont.fnt", "GJ_button_02.png", 30.f, .8f);
+            auto* label = paimon::ui::createUnicodeLabel(titles[index], "goldFont.fnt");
+            if (!background || !label) return false;
+            background->setID("tab-background");
+            background->setScaleX(tab.width / background->getContentWidth());
+            background->setScaleY(tab.height / background->getContentHeight());
+            background->setPosition({tab.width * .5f, tab.height * .5f});
+            face->addChild(background);
+            label->setID("tab-label");
+            label->setLimitLabelSize({tab.width - 10.f, tab.height - 7.f}, .42f, .1f);
+            label->setPosition({tab.width * .5f, tab.height * .5f});
+            face->addChild(label, 1);
+            auto const mode = static_cast<Mode>(index);
+            auto* button = CCMenuItemExt::createSpriteExtra(face,
+                [this, mode](CCMenuItemSpriteExtra*) { selectMode(mode); });
+            button->setID(tabIDs[index]);
+            button->setPosition({tab.centerX(), tab.centerY()});
+            button->m_scaleMultiplier = 1.04f;
+            menu->addChild(button);
+            m_tabs.push_back(button);
         }
 
-        float scrollH = std::max(10.f, area.height - 20.f);
-        m_scroll = DualScrollLayer::create({area.width, scrollH});
-        m_scroll->setPosition({0.f, 0.f});
+        float const scrollH = std::max(10.f, area.height - 30.f);
+        m_scroll = ProfileScrollLayer::create({area.width - 8.f, scrollH});
+        m_scroll->setPosition({4.f, 4.f});
+        m_scroll->setStealingTouches(true);
         this->addChild(m_scroll, 1);
+        m_levels = ProfileLevelsPanel::create(userID, {area.width - 8.f, scrollH});
+        if (!m_levels) return false;
+        m_levels->setID("rd-creator-levels"_spr);
+        m_levels->setPosition({4.f, 4.f});
+        addChild(m_levels, 1);
 
-        load();
+        updateVisibility();
         return true;
     }
 
-    void toggle() {
-        m_mode = (m_mode == Mode::Reviews) ? Mode::Views : Mode::Reviews;
-        if (m_toggleSpr) m_toggleSpr->setString(m_mode == Mode::Reviews ? "Reviews" : "Viewers");
-        load();
+    void updateVisibility() {
+        bool const posts = m_mode == Mode::Posts;
+        bool const secondary = m_mode == Mode::Reviews || m_mode == Mode::Views;
+        m_scroll->setVisible(secondary);
+        m_scroll->setTouchEnabled(secondary);
+        m_scroll->setMouseEnabled(secondary);
+        if (m_levels) m_levels->setActive(m_mode == Mode::Levels);
+        for (std::size_t index = 0; index < m_tabs.size(); ++index) {
+            auto* background = typeinfo_cast<ButtonSprite*>(m_tabs[index]->getNormalImage()->getChildByID("tab-background"));
+            if (background) background->updateBGImage(index == static_cast<std::size_t>(m_mode)
+                ? "GJ_button_01.png" : "GJ_button_02.png");
+        }
+        auto* layer = getParent();
+        if (!layer) return;
+        if (auto* navigation = layer->getChildByID("rd-comment-navigation"_spr)) {
+            navigation->setVisible(posts);
+        }
+        if (auto* scroll = typeinfo_cast<ScrollLayer*>(layer->getChildByID("rd-comment-content"_spr))) {
+            scroll->setVisible(posts);
+            scroll->setTouchEnabled(posts);
+            scroll->setMouseEnabled(posts);
+        }
+        if (auto* actions = layer->getChildByID("rd-review-actions"_spr)) {
+            actions->setVisible(m_mode == Mode::Reviews);
+        }
+    }
+
+    void selectMode(Mode mode) {
+        if (mode == m_mode) return;
+        if (m_mode == Mode::Reviews || m_mode == Mode::Views) m_offsets[static_cast<int>(m_mode)] = m_scroll->getScrollFromTop();
+        m_mode = mode;
+        ++m_gen; // Discard a late Reviews/Views response when returning to Posts.
+        updateVisibility();
+        if (mode == Mode::Reviews || mode == Mode::Views) loadActivity();
     }
 
     void clearScroll() {
@@ -293,15 +182,16 @@ public:
         lbl->setScale(0.42f);
         lbl->setColor({160, 160, 170});
         lbl->setAnchorPoint({0.5f, 0.5f});
-        lbl->setPosition({m_area.width * 0.5f, h * 0.5f});
-        m_scroll->m_contentLayer->setContentSize({m_area.width, h});
+        lbl->limitLabelWidth(m_area.width - 20.f, .45f, .25f);
+        lbl->setPosition({m_scroll->getContentWidth() * 0.5f, h * 0.5f});
+        m_scroll->m_contentLayer->setContentSize({m_scroll->getContentWidth(), h});
         m_scroll->m_contentLayer->addChild(lbl);
         m_scroll->scrollToTop();
     }
 
     void stackCells(std::vector<cocos2d::CCNode*>& cells) {
         if (!m_scroll) return;
-        float w = m_area.width;
+        float w = m_scroll->getContentWidth();
         float scrollH = m_scroll->getContentSize().height;
         float pad = 3.f;
         float totalH = 0.f;
@@ -317,10 +207,10 @@ public:
         }
         m_scroll->m_contentLayer->setContentSize({w, totalH});
         m_scroll->m_contentLayer->addChild(container);
-        m_scroll->scrollToTop();
+        m_scroll->scrollToFromTop(m_offsets[static_cast<int>(m_mode)]);
     }
 
-    void load() {
+    void loadActivity() {
         ++m_gen;
         showMessage("Loading...");
         if (m_mode == Mode::Reviews) loadReviews();
@@ -333,7 +223,7 @@ public:
         std::string endpoint = fmt::format("/api/profile-ratings/{}?username={}",
             m_accountID, HttpClient::encodeQueryParam(username));
         uint64_t gen = m_gen;
-        WeakRef<ProfileSidePanel> self = this;
+        WeakRef<ProfileActivityPanel> self = this;
         HttpClient::get().get(endpoint, [self, gen](bool ok, std::string const& resp) {
             auto p = self.lock();
             if (!p || gen != p->m_gen) return;
@@ -362,7 +252,7 @@ public:
 
     void loadViews() {
         uint64_t gen = m_gen;
-        WeakRef<ProfileSidePanel> self = this;
+        WeakRef<ProfileActivityPanel> self = this;
         paimon::forum::ForumApi::get().getProfileViews(m_accountID,
             [self, gen](paimon::forum::Result<std::vector<paimon::forum::ProfileView>> result) {
                 auto p = self.lock();
@@ -387,7 +277,7 @@ public:
     }
 
     cocos2d::CCNode* makeReviewCell(std::string const& user, float stars, std::string const& msg) {
-        float w = m_area.width;
+        float w = m_scroll->getContentWidth();
         bool hasMsg = !msg.empty();
         float maxMsgW = w - 12.f;
         cocos2d::CCNode* msgNode = nullptr;
@@ -450,7 +340,7 @@ public:
     }
 
     cocos2d::CCNode* makeViewCell(std::string const& user, int64_t viewedAt) {
-        float w = m_area.width;
+        float w = m_scroll->getContentWidth();
         float h = 16.f;
         auto cell = cocos2d::CCNode::create();
         cell->setContentSize({w, h});
@@ -494,11 +384,68 @@ static void removeGeneratedChildren(CCNode* parent) {
     for (auto* child : generated) child->removeFromParent();
 }
 
+static std::string accountRailSignature(CCNode* menu) {
+    if (!menu || !menu->getChildren()) return {};
+    std::string result;
+    for (auto* node : CCArrayExt<CCNode*>(menu->getChildren())) {
+        result += fmt::format("{}:{};", node->getID(), node->isVisible());
+    }
+    return result;
+}
+
+static bool arrangeAccountRail(CCMenu* menu, ProfileRect const& area) {
+    if (!menu) return false;
+    constexpr std::string_view order[] = {
+        "message-button", "requests-button", "comment-button", "profile-info-button"_spr,
+        "profile-settings-button"_spr,
+        "thumbs-gear-button"_spr, "add-moderator-button"_spr,
+        "block-button", "unblock-button", "report-button", "mod-button", "ban-user-button"_spr,
+        "friend-button", "notifications-button", "settings-button", "follow-button", "socials-button",
+    };
+    std::vector<CCNode*> buttons;
+    for (auto* node : CCArrayExt<CCNode*>(menu->getChildren())) {
+        if (node->isVisible()) buttons.push_back(node);
+    }
+    std::stable_sort(buttons.begin(), buttons.end(), [&](auto* left, auto* right) {
+        return std::find(std::begin(order), std::end(order), left->getID()) <
+            std::find(std::begin(order), std::end(order), right->getID());
+    });
+    menu->setLayout(nullptr);
+    float const height = std::min(area.height, static_cast<float>(buttons.size()) * 36.f + 8.f);
+    float const rowHeight = (height - 8.f) / std::max(1.f, static_cast<float>(buttons.size()));
+    float const iconSize = std::max(1.f, std::min(26.f, rowHeight - 6.f));
+    menu->setContentSize({area.width, height});
+    menu->setPosition({area.centerX(), area.top() - height * .5f});
+    for (std::size_t index = 0; index < buttons.size(); ++index) {
+        auto* node = buttons[index];
+        auto const bounds = node->getContentSize();
+        float const scale = std::min(1.f, iconSize / std::max(1.f, std::max(bounds.width, bounds.height)));
+        node->setScale(scale);
+        if (auto* item = typeinfo_cast<CCMenuItemSpriteExtra*>(node)) item->m_baseScale = scale;
+        node->setPosition({area.width * .5f, height - 4.f - rowHeight * (static_cast<float>(index) + .5f)});
+    }
+    menu->setUserObject("rd-layout-signature"_spr, CCString::create(accountRailSignature(menu)));
+    return !buttons.empty();
+}
+
 static void collectNodesByID(CCNode* root, std::string const& id, std::vector<CCNode*>& out) {
     if (!root) return;
+    // content cells have their own badges and controls; they belong to the post/level.
+    if (root->getID() == "rd-comment-content"_spr || root->getID() == "rd-level-container"_spr ||
+        root->getID() == "rd-activity-panel"_spr) return;
     if (root->getID() == id) out.push_back(root);
     if (auto* kids = root->getChildren()) {
         for (auto* k : CCArrayExt<CCNode*>(kids)) collectNodesByID(k, id, out);
+    }
+}
+
+static void hideInlineSocialButtons(CCNode* layer) {
+    // the native My Socials popup owns the networks and their URL handling.
+    // also hide copies left in a previous layout when rebuilding the page.
+    for (auto const* id : {"youtube-button", "twitter-button", "twitch-button", "instagram-button", "tiktok-button"}) {
+        std::vector<CCNode*> duplicates;
+        collectNodesByID(layer, id, duplicates);
+        for (auto* node : duplicates) node->setVisible(false);
     }
 }
 
@@ -513,12 +460,15 @@ static CCMenuItem* findVanillaStatButton(CCNode* layer, char const* statID) {
 }
 
 // ids adopted by buildinplace(); needssettlepass() uses the same set.
-static std::vector<std::string> relocatableIDs(bool ownProfile) {
+static std::vector<std::string> relocatableIDs(bool /*ownProfile*/) {
     std::vector<std::string> ids = {
         "close-button", "refresh-button",
-        "message-button", "friend-button",
+        "message-button", "friend-button", "settings-button", "requests-button", "comment-button",
+        "notifications-button", "block-button", "unblock-button", "report-button", "mod-button",
+        "prev-page-button", "next-page-button", "info-button",
+        "socials-button",
         "comment-history-button", "my-levels-button", "my-lists-button", "follow-button",
-        "profile-settings-button"_spr, "thumbs-gear-button"_spr,
+        "profile-settings-button"_spr, "thumbs-gear-button"_spr, "profile-info-button"_spr,
         "add-moderator-button"_spr, "ban-user-button"_spr,
         "paimon-moderator-badge"_spr, "paimon-admin-badge"_spr,
         "paimon-custom-badge"_spr, "paimon-user-status-dot"_spr,
@@ -527,11 +477,6 @@ static std::vector<std::string> relocatableIDs(bool ownProfile) {
         "paimon-thumb-count-btn"_spr, "profile-music-pause-button"_spr,
         "copy-icons-button"_spr,
     };
-    if (ownProfile) {
-        ids.insert(ids.end(), {"settings-button", "requests-button", "comment-button"});
-    } else {
-        ids.push_back("block-button");
-    }
     return ids;
 }
 
@@ -553,6 +498,12 @@ static bool hasVisibleVanillaCommentList(cocos2d::CCLayer* layer) {
 
 bool needsSettlePass(cocos2d::CCLayer* layer, cocos2d::CCNode* buttonMenu, bool ownProfile) {
     if (!layer) return false;
+    for (auto const* id : {"rd-options-rail"_spr, "rd-socials-rail"_spr}) {
+        if (auto* rail = layer->getChildByID(id)) {
+            auto* signature = typeinfo_cast<CCString*>(rail->getUserObject("rd-layout-signature"_spr));
+            if (signature && signature->getCString() != accountRailSignature(rail)) return true;
+        }
+    }
 // vanilla refresh rebuilds comments and invalidates the previous layout.
     if (hasVisibleVanillaCommentList(layer)) return true;
     auto const ids = relocatableIDs(ownProfile);
@@ -562,6 +513,7 @@ bool needsSettlePass(cocos2d::CCLayer* layer, cocos2d::CCNode* buttonMenu, bool 
     auto walk = [&](auto const& self, CCNode* node, bool insideRd) -> void {
         if (!node || needs) return;
         auto const id = std::string(node->getID());
+        if (id == "rd-comment-content"_spr || id == "rd-level-container"_spr || id == "rd-activity-panel"_spr) return;
         bool const rd = insideRd || id.rfind(rdPrefix, 0) == 0;
         if (!id.empty() && std::find(ids.begin(), ids.end(), id) != ids.end()) {
             if (!rd || !seen.insert(id).second) { needs = true; return; }
@@ -651,6 +603,25 @@ static void setMenuTouchPriority(CCNode* root, int priority) {
     }
 }
 
+// remembered on every redesigned post. A later loadFromComment (the translator
+// repaints text that way) rebuilds GD's brown bubble and fresh menus, so the
+// same look and touch priority have to be put back.
+class AccountCellStyle : public cocos2d::CCObject {
+public:
+    float width = 0.f;
+    float height = 0.f;
+    int touchPriority = 0;
+
+    static AccountCellStyle* create(float width, float height, int touchPriority) {
+        auto* style = new AccountCellStyle();
+        style->width = width;
+        style->height = height;
+        style->touchPriority = touchPriority;
+        style->autorelease();
+        return style;
+    }
+};
+
 static void styleAccountCommentCell(CommentCell* cell, float w, float h) {
     if (!cell) return;
     stripCommentDecorations(cell);
@@ -670,12 +641,20 @@ static void styleAccountCommentCell(CommentCell* cell, float w, float h) {
     }
 }
 
+void restyleAccountCommentCell(CommentCell* cell) {
+    if (!cell) return;
+    auto* style = typeinfo_cast<AccountCellStyle*>(cell->getUserObject("paimon-rd-cell-style"_spr));
+    if (!style) return;
+    styleAccountCommentCell(cell, style->width, style->height);
+    setMenuTouchPriority(cell, style->touchPriority);
+}
+
 static void hideVanillaChrome(CCNode* root) {
     if (!root) return;
 
     static constexpr std::string_view exactIDs[] = {
         "username-menu", "stats-menu", "socials-menu",
-        "left-menu", "right-menu", "bottom-menu", "icon-background",
+        "left-menu", "right-menu", "bottom-menu", "icon-background", "icon-background-border", "follow-hint",
         "floor-line", "username-label", "global-rank-label",
         "global-rank-icon", "my-stuff-label", "my-stuff-arrow",
         "my-levels-hint", "my-lists-hint",
@@ -685,6 +664,12 @@ static void hideVanillaChrome(CCNode* root) {
     };
 
     auto hide = [&](auto&& self, CCNode* node) -> void {
+        // comment cells reuse the same node ids as the profile header
+        // ("username-label", "username-menu"), so walking into them erased the
+        // author of every comment on the page. The icon row ("icon-background")
+        // is still treated as chrome and hidden below.
+        if (typeinfo_cast<CommentCell*>(node) || asVanillaCommentList(node)) return;
+
         auto const id = std::string(node->getID());
         if (!id.empty()) {
             bool shouldHide = std::find(exactIDs, std::end(exactIDs), id) != std::end(exactIDs);
@@ -747,7 +732,8 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
     const float hw = sz.width * 0.5f;
     const float hh = sz.height * 0.5f;
     const bool backdrop = hasActiveBackdrop(layer);
-    const GLubyte cardA = backdrop ? 105 : 135;
+    const GLubyte cardA = backdrop ? 175 : 195;
+    auto const layout = profileLayout(c.x, c.y, sz.width, sz.height);
 
     constexpr int Z_CARD = 55;
     constexpr int Z_CONTENT = 58;
@@ -755,23 +741,16 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
     const float railXLeft = c.x - hw + 24.f;
     const float railXRight = c.x + hw - 24.f;
     const float cornerY = c.y + hh - 24.f;
-    const float contentW = std::max(260.f, sz.width - 104.f);
-    const float contentLeft = c.x - contentW * 0.5f;
-    const float contentRight = c.x + contentW * 0.5f;
-    const float headerY = c.y + hh - 33.f;
-    const float iconsY = c.y + hh - 80.f;
-    const float levelY = c.y + hh - 129.f;
-    const float commentsY = c.y - hh + 84.f;
-    const float bottomY = c.y - hh + 24.f;
+    const float contentW = layout.header.width;
+    const float contentLeft = layout.header.x;
+    const float contentRight = contentLeft + contentW;
+    const float contentX = layout.header.centerX();
+    const float headerY = layout.header.centerY();
+    const float iconsY = layout.icons.centerY();
+    const float bottomY = layout.footer.centerY();
 
     Ref<GJUserScore> scoreRef = score;
     prepareInPlace(layer);
-    constexpr float commentsH = 64.f;
-    const float commentsGap = 10.f;
-    const float commentsLeftW = (contentW - commentsGap) * 0.58f;
-    const float commentsRightW = (contentW - commentsGap) * 0.42f;
-    const float commentsLeftX = contentLeft + commentsLeftW * 0.5f;
-    const float commentsRightX = contentRight - commentsRightW * 0.5f;
 // remove stale clips from older builds; they broke vanilla scroll state.
     removeByID(layer, "rd-comments-clip"_spr);
 // refresh can leave old lists behind; hide every account-comments list.
@@ -790,7 +769,7 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
     }
 
     for (auto const& id : {
-        "rd-header-card"_spr, "rd-icons-card"_spr, "rd-level-card"_spr,
+        "rd-header-card"_spr, "rd-icons-card"_spr, "rd-level-card"_spr, "rd-level-container"_spr,
         "rd-comments-card"_spr, "rd-side-card"_spr, "rd-comments-title"_spr,
         "rd-options-rail-bg"_spr, "rd-socials-rail-bg"_spr,
         "rd-close-bg"_spr, "rd-swap-bg"_spr, "rd-bottom-row-bg"_spr,
@@ -828,21 +807,10 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
         return menu;
     };
 
-    auto iconBtn = [&](CCMenu* rail, std::string const& id, char const* frame,
-                       float scale, std::function<void()> cb) {
-        auto spr = paimon::SpriteHelper::safeCreateWithFrameName(frame);
-        if (!spr) return;
-        spr->setScale(scale);
-        if (auto btn = CCMenuItemExt::createSpriteExtra(spr, [cb](CCMenuItemSpriteExtra*) { if (cb) cb(); })) {
-            btn->setID(id);
-            rail->addChild(btn);
-        }
-    };
-
     auto makeRail = [&](CCPoint position, CCSize size, std::string const& id) -> CCMenu* {
         if (auto* bg = paimon::SpriteHelper::safeCreateScale9("square02_small.png")) {
             bg->setContentSize({size.width + 6.f, size.height + 6.f});
-            bg->setOpacity(backdrop ? 115 : 145);
+            bg->setOpacity(backdrop ? 170 : 190);
             bg->setColor({38, 41, 55});
             bg->setAnchorPoint({0.5f, 0.5f});
             bg->setPosition(position);
@@ -887,40 +855,15 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
         return true;
     };
 
-// size each rail to its buttons instead of the full popup height.
-    auto fitRail = [&](CCMenu* menu, std::string const& id, CCPoint center, float maxH) {
+    auto fitAccountRail = [&](CCMenu* menu, std::string const& id, ProfileRect const& area) {
         if (!menu) return;
-        auto* bg = layer->getChildByID(id + "-bg");
-// hidden buttons do not contribute to rail layout.
-        int n = 0;
-        constexpr float gap = 5.f;
-    constexpr float innerPad = 8.f;
-        float content = 0.f;
-        for (auto* ch : CCArrayExt<CCNode*>(menu->getChildren())) {
-            if (!ch->isVisible()) continue;
-            content += ch->getScaledContentSize().height;
-            ++n;
-        }
-        if (n <= 0) {
-            menu->setVisible(false);
-            if (bg) bg->setVisible(false);
-            return;
-        }
-        menu->setVisible(true);
-        if (bg) bg->setVisible(true);
-        content += gap * static_cast<float>(n - 1);
-
-        float h = std::clamp(content + innerPad, 40.f, maxH);
-        const float w = menu->getContentSize().width;
-// keep the rail top-aligned so buttons grow downward.
-        const float topY = center.y + maxH * 0.5f;
-        const CCPoint anchored = {center.x, topY - h * 0.5f};
-        menu->setContentSize({w, h});
-        menu->setPosition(anchored);
-        menu->updateLayout();
-        if (bg) {
-            bg->setContentSize({w + 6.f, h + 6.f});
-            bg->setPosition(anchored);
+        bool const visible = arrangeAccountRail(menu, area);
+        menu->setVisible(visible);
+        if (auto* bg = layer->getChildByID(id + "-bg")) {
+            bg->setVisible(visible);
+            auto const size = menu->getContentSize();
+            bg->setContentSize({size.width + 6.f, size.height + 6.f});
+            bg->setPosition(menu->getPosition());
         }
     };
 
@@ -935,84 +878,96 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
 
 // hide the whole vanilla menu so asynchronously added buttons cannot flash.
     if (buttonMenu) buttonMenu->setVisible(false);
-    const CCSize railSize = {34.f, sz.height - 88.f};
-    const float railY = c.y - 12.f;
-    auto* optionsRail = makeRail({railXLeft, railY}, railSize, "rd-options-rail"_spr);
+    auto const& accountArea = layout.accountRail;
+    const CCSize railSize = {accountArea.width, accountArea.height};
+    const CCPoint accountCenter{accountArea.centerX(), accountArea.centerY()};
+    auto* optionsRail = makeRail(accountCenter, railSize, "rd-options-rail"_spr);
     removeGeneratedChildren(optionsRail);
-    if (ownProfile) {
-        relocate(optionsRail, "settings-button");
-        relocate(optionsRail, "friend-button");
-        relocate(optionsRail, "requests-button");
-        relocate(optionsRail, "message-button");
-        relocate(optionsRail, "comment-button");
-    } else {
-        relocate(optionsRail, "message-button");
-        relocate(optionsRail, "friend-button");
-        relocate(optionsRail, "block-button");
-    }
+    for (auto const* id : {"message-button", "requests-button", "comment-button",
+        "block-button", "unblock-button", "report-button", "mod-button"}) relocate(optionsRail, id);
 
     for (auto const& id : {
+        "flozwer.paimbnails2/profile-info-button",
         "flozwer.paimbnails2/profile-settings-button",
         "flozwer.paimbnails2/thumbs-gear-button",
         "flozwer.paimbnails2/add-moderator-button",
         "flozwer.paimbnails2/ban-user-button",
     }) relocate(optionsRail, id);
-    optionsRail->updateLayout();
-    fitRail(optionsRail, "rd-options-rail"_spr, {railXLeft, railY}, railSize.height);
-    auto* socialsRail = makeRail({railXRight, railY}, railSize, "rd-socials-rail"_spr);
+    auto const& socialArea = layout.socialRail;
+    const CCPoint socialCenter{socialArea.centerX(), socialArea.centerY()};
+    auto* socialsRail = makeRail(socialCenter, {socialArea.width, socialArea.height}, "rd-socials-rail"_spr);
     removeGeneratedChildren(socialsRail);
-    relocate(socialsRail, "flozwer.paimbnails2/copy-icons-button");
-    auto addSocial = [&](gd::string const& url, char const* frame, std::string const& base) {
-        std::string u = std::string(url);
-        if (u.empty()) return;
-        auto const id = fmt::format("{}rd-generated-social-{}", ""_spr, socialsRail->getChildrenCount());
-        iconBtn(socialsRail, id, frame, 0.78f,
-            [base, u] { web::openLinkInBrowser(base + u); });
-    };
-    addSocial(score->m_youtubeURL, "gj_ytIcon_001.png", "https://youtube.com/channel/");
-    addSocial(score->m_twitterURL, "gj_twIcon_001.png", "https://twitter.com/");
-    addSocial(score->m_twitchURL, "gj_twitchIcon_001.png", "https://twitch.tv/");
-    addSocial(score->m_instagramURL, "gj_instaIcon_001.png", "https://instagram.com/");
-    addSocial(score->m_tiktokURL, "gj_tiktokIcon_001.png", "https://tiktok.com/@");
-    socialsRail->updateLayout();
-    fitRail(socialsRail, "rd-socials-rail"_spr, {railXRight, railY}, railSize.height);
+    // separate the previous second column into its own panel on the right.
+    for (auto const* id : {"friend-button", "notifications-button", "settings-button", "follow-button", "socials-button"}) {
+        relocate(socialsRail, id);
+    }
+    hideInlineSocialButtons(layer);
+    // only My Socials is governed by these parental controls; the other
+    // account controls now share this panel and retain native visibility.
+    if (auto* socials = socialsRail->getChildByID("socials-button")) {
+        auto const restricted = gm->getGameVariable("0218") || gm->getGameVariable("0219");
+        auto* nativeVisibility = typeinfo_cast<CCBool*>(socials->getUserObject("rd-native-social-visibility"_spr));
+        if (restricted) {
+            if (!nativeVisibility) socials->setUserObject("rd-native-social-visibility"_spr, CCBool::create(socials->isVisible()));
+            socials->setVisible(false);
+        } else if (nativeVisibility) {
+            socials->setVisible(nativeVisibility->getValue());
+            socials->setUserObject("rd-native-social-visibility"_spr, nullptr);
+        }
+    }
+    fitAccountRail(optionsRail, "rd-options-rail"_spr, accountArea);
+    fitAccountRail(socialsRail, "rd-socials-rail"_spr, socialArea);
 
-    makeCard("rd-header-card"_spr, {c.x, headerY}, {contentW, 48.f}, cardA);
-    makeCard("rd-icons-card"_spr, {c.x, iconsY}, {contentW, 40.f}, cardA);
-    makeCard("rd-comments-card"_spr, {commentsLeftX, commentsY}, {commentsLeftW, commentsH + 6.f}, cardA);
-    makeCard("rd-side-card"_spr, {commentsRightX, commentsY}, {commentsRightW, commentsH + 6.f}, cardA);
+    makeCard("rd-header-card"_spr, {contentX, headerY}, {contentW, layout.header.height}, cardA);
+    makeCard("rd-icons-card"_spr, {contentX, iconsY}, {contentW, layout.icons.height}, cardA);
+    makeCard("rd-comments-card"_spr, {contentX, layout.activity.centerY()}, {contentW, layout.activity.height}, cardA);
     {
-        auto* sidePanel = typeinfo_cast<ProfileSidePanel*>(layer->getChildByID("rd-side-panel"_spr));
+        auto* sidePanel = typeinfo_cast<ProfileActivityPanel*>(layer->getChildByID("rd-activity-panel"_spr));
+        auto previousMode = ProfileActivityPanel::Mode::Posts;
+        float previousOffsets[4] = {};
+        if (sidePanel && (sidePanel->m_accountID != accountId || sidePanel->m_userID != score->m_userID ||
+            sidePanel->m_area.width != contentW || sidePanel->m_area.height != layout.activity.height)) {
+            if (sidePanel->m_accountID == accountId) {
+                previousMode = sidePanel->m_mode;
+                std::copy(std::begin(sidePanel->m_offsets), std::end(sidePanel->m_offsets), previousOffsets);
+            }
+            ++sidePanel->m_gen;
+            sidePanel->removeFromParent();
+            sidePanel = nullptr;
+        }
         if (!sidePanel) {
-            sidePanel = ProfileSidePanel::create(accountId, {commentsRightW - 8.f, commentsH});
+            sidePanel = ProfileActivityPanel::create(accountId, score->m_userID, {contentW, layout.activity.height});
             if (sidePanel) {
-                sidePanel->setID("rd-side-panel"_spr);
+                sidePanel->setID("rd-activity-panel"_spr);
                 sidePanel->setZOrder(Z_CONTENT);
                 layer->addChild(sidePanel);
+                std::copy(std::begin(previousOffsets), std::end(previousOffsets), sidePanel->m_offsets);
+                sidePanel->selectMode(previousMode);
             }
         }
-        if (sidePanel) sidePanel->setPosition({commentsRightX, commentsY});
+        if (sidePanel) sidePanel->setPosition({contentX, layout.activity.centerY()});
     }
     {
-        const float innerW = std::max(20.f, commentsLeftW - 6.f);
-        const float innerH = std::max(20.f, commentsH + 2.f);
+        const float innerW = layout.posts.width;
+        const float innerH = layout.posts.height;
 
         auto* scroll = typeinfo_cast<geode::ScrollLayer*>(
             layer->getChildByID("rd-comment-content"_spr));
         if (!scroll) {
-            scroll = geode::ScrollLayer::create({innerW, innerH});
+            scroll = ProfileScrollLayer::create({innerW, innerH});
             scroll->setID("rd-comment-content"_spr);
             scroll->ignoreAnchorPointForPosition(false);
             scroll->setAnchorPoint({0.5f, 0.5f});
             scroll->setStealingTouches(true);
             scroll->setUserFlag("alk.better-touch-prio/steals-touch", true);
-            scroll->setMouseEnabled(false);
             layer->addChild(scroll);
         }
-        scroll->setPosition({commentsLeftX, commentsY});
+        scroll->setPosition({layout.posts.centerX(), layout.posts.centerY()});
+        scroll->setContentSize({innerW, innerH});
         scroll->setZOrder(Z_CONTENT + 1);
         int count = comments ? comments->count() : 0;
         std::string sig = !commentsLoaded ? "loading" : ("n" + std::to_string(count));
+        sig += fmt::format("-{}x{}", innerW, innerH);
         if (commentsLoaded && count > 0) {
             if (auto* c0 = typeinfo_cast<GJComment*>(comments->objectAtIndex(0)))
                 sig += "_" + std::to_string(c0->m_commentID);
@@ -1065,6 +1020,8 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
                     if (!cell) continue;
                     styleAccountCommentCell(cell, naturalW, naturalH);
                     setMenuTouchPriority(cell, cellPrio);
+                    cell->setUserObject("paimon-rd-cell-style"_spr,
+                        AccountCellStyle::create(naturalW, naturalH, cellPrio));
                     cell->ignoreAnchorPointForPosition(false);
                     cell->setAnchorPoint({0.f, 0.f});
                     cell->setPosition({0.f, 0.f});
@@ -1082,19 +1039,20 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
             }
             scroll->scrollToTop();
         }
-        if (auto* sp = typeinfo_cast<ProfileSidePanel*>(
-                layer->getChildByID("rd-side-panel"_spr))) {
-            sp->setCommentRouting(scroll, scroll);
-        }
     }
     {
+        // name stays centered; the official badge hugs its left edge and the
+        // connection dot its right edge, so late arrivals never shift the name.
+        constexpr float kRowH = 22.f;
+        constexpr float kSideReserve = 76.f;
+        constexpr float kNameGap = 6.f;
+        constexpr float kSlotW = 22.f;
+        float const rowW = std::max(120.f, contentW - kSideReserve * 2.f);
         auto* menu = getOrCreateMenu(
-            "rd-username"_spr, {contentLeft + 8.f, headerY + 10.f}, {contentW - 98.f, 24.f}
+            "rd-username"_spr, {contentX, headerY + 17.f}, {rowW, kRowH}
         );
-        menu->setAnchorPoint({0.f, 0.5f});
         removeGeneratedChildren(menu);
-        menu->setLayout(RowLayout::create()->setAxisAlignment(AxisAlignment::Start)
-            ->setGap(5.f)->setCrossAxisOverflow(false)->setAutoScale(true));
+        menu->setLayout(nullptr);
 
         auto const picCfg = ProfilePicCustomizer::get().getConfig();
         bool ownProfile = false;
@@ -1105,18 +1063,27 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
             ? picCfg.profileFont.c_str() : "bigFont.fnt";
 
         auto nameLabel = CCLabelBMFont::create(std::string(score->m_userName).c_str(), nameFont);
-        nameLabel->limitLabelWidth(contentW - 112.f, 0.72f, 0.35f);
+        nameLabel->limitLabelWidth(rowW - (kSlotW + kNameGap) * 2.f, 0.62f, 0.3f);
         if (ownProfile && picCfg.nameConfig.enabled) {
             paimon::profile_name::decorate(nameLabel, picCfg.nameConfig);
         }
-        if (auto nameBtn = CCMenuItemExt::createSpriteExtra(nameLabel, [scoreRef](CCMenuItemSpriteExtra*) {
-                if (scoreRef) {
-                    geode::utils::clipboard::write(std::string(scoreRef->m_userName));
-                    Notification::create("Username copied", NotificationIcon::Info, 1.0f)->show();
+        CCNode* nameNode = nullptr;
+        if (auto nameBtn = CCMenuItemExt::createSpriteExtra(nameLabel, [scoreRef, layer](CCMenuItemSpriteExtra*) {
+                if (!scoreRef) return;
+                std::string const name = scoreRef->m_userName;
+                auto* store = paimon::profiles::IdentityStore::get(layer);
+                if (store && !store->entries().empty()) {
+                    if (auto* popup = ProfileIdentityPopup::create(name, store->entries())) {
+                        popup->show();
+                    }
+                    return;
                 }
+                geode::utils::clipboard::write(name);
+                Notification::create("Username copied", NotificationIcon::Info, 1.0f)->show();
             })) {
             nameBtn->setID("rd-generated-username"_spr);
             menu->addChild(nameBtn);
+            nameNode = nameBtn;
         }
 
         if (score->m_modBadge > 0) {
@@ -1133,18 +1100,39 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
         for (auto const& id : {
             "flozwer.paimbnails2/paimon-moderator-badge",
             "flozwer.paimbnails2/paimon-admin-badge",
-            "flozwer.paimbnails2/paimon-custom-badge",
             "flozwer.paimbnails2/paimon-user-status-dot",
-            "flozwer.paimbnails2/paimon-level-badge",
         }) relocate(menu, id);
-        menu->updateLayout();
+
+        float const midX = rowW / 2.f;
+        float const midY = kRowH / 2.f;
+        float const nameHalf = nameNode ? nameNode->getScaledContentSize().width / 2.f : 0.f;
+        if (nameNode) nameNode->setPosition({midX, midY});
+
+        // nearest to the name first, then outward.
+        float leftEdge = midX - nameHalf - kNameGap;
+        for (auto const& id : std::vector<std::string>{
+            "flozwer.paimbnails2/paimon-admin-badge",
+            "flozwer.paimbnails2/paimon-moderator-badge",
+            "rd-generated-gd-badge"_spr,
+        }) {
+            auto* node = menu->getChildByID(id);
+            if (!node) continue;
+            float const w = node->getScaledContentSize().width;
+            node->setPosition({leftEdge - w / 2.f, midY});
+            leftEdge -= w + kNameGap;
+        }
+
+        if (auto* dot = menu->getChildByID("flozwer.paimbnails2/paimon-user-status-dot")) {
+            float const w = dot->getScaledContentSize().width;
+            dot->setPosition({midX + nameHalf + kNameGap + w / 2.f, midY});
+        }
 
         if (score->m_globalRank > 0) {
             auto* rankTitle = CCLabelBMFont::create("GLOBAL", "chatFont.fnt");
             rankTitle->setID("rd-rank-title"_spr);
             rankTitle->setScale(0.36f);
             rankTitle->setColor({170, 205, 235});
-            rankTitle->setPosition({contentRight - 48.f, headerY + 14.f});
+            rankTitle->setPosition({contentRight - 48.f, headerY + 24.f});
             rankTitle->setZOrder(Z_CONTENT);
             layer->addChild(rankTitle);
 
@@ -1153,19 +1141,25 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
             rankValue->setID("rd-rank-value"_spr);
             rankValue->limitLabelWidth(54.f, 0.35f, 0.22f);
             rankValue->setColor({255, 226, 92});
-            rankValue->setPosition({contentRight - 48.f, headerY + 2.f});
+            rankValue->setPosition({contentRight - 48.f, headerY + 13.f});
             rankValue->setZOrder(Z_CONTENT);
             layer->addChild(rankValue);
         }
     }
     {
         auto* menu = getOrCreateMenu(
-            "rd-stats"_spr, {c.x, headerY - 13.f}, {contentW - 8.f, 18.f}
+            "rd-stats"_spr, {contentX, headerY - 4.f}, {contentW - 12.f, 16.f}
         );
+        auto* secondary = getOrCreateMenu(
+            "rd-secondary-stats"_spr, {contentX, headerY - 20.f}, {contentW - 12.f, 16.f});
         menu->setAnchorPoint({0.5f, 0.5f});
         removeGeneratedChildren(menu);
+        removeGeneratedChildren(secondary);
         menu->setLayout(RowLayout::create()->setAxisAlignment(AxisAlignment::Center)
-            ->setGap(9.f)->setCrossAxisOverflow(false)->setAutoScale(true));
+            ->setGap(10.f)->setCrossAxisOverflow(false)->setAutoScale(true));
+        secondary->setLayout(RowLayout::create()->setAxisAlignment(AxisAlignment::Center)
+            ->setGap(10.f)->setCrossAxisOverflow(false)->setAutoScale(true));
+        CCMenu* destination = menu;
 
         int statIndex = 0;
         auto addStat = [&](int value, char const* iconFrame, ccColor3B color,
@@ -1202,12 +1196,12 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
                             }
                         })) {
                     btn->setID(chipID);
-                    menu->addChild(btn);
+                    destination->addChild(btn);
                     return;
                 }
             }
             chip->setID(chipID);
-            menu->addChild(chip);
+            destination->addChild(chip);
         };
 // prefer live local stats so async rebuilds keep the own profile current.
         if (ownProfile) {
@@ -1221,15 +1215,15 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
         int const secretCoins = score->m_secretCoins;
         addStat(stars, "GJ_starsIcon_001.png", {233, 253, 113}, "stars");
         addStat(moons, "GJ_moonsIcon_001.png", {109, 215, 249}, "moons");
-        if (diamonds > 0)
-            addStat(diamonds, "GJ_diamondsIcon_001.png", {90, 245, 255}, "diamonds");
         addStat(demons, "GJ_demonIcon_001.png", {240, 140, 140}, "demons");
-        if (score->m_creatorPoints > 0)
-            addStat(score->m_creatorPoints, "GJ_hammerIcon_001.png", {182, 186, 186},
-                    "creator-points");
+        addStat(score->m_creatorPoints, "GJ_hammerIcon_001.png", {182, 186, 186}, "creator-points");
+        destination = secondary;
+        addStat(diamonds, "GJ_diamondsIcon_001.png", {90, 245, 255}, "diamonds");
         addStat(userCoins, "GJ_coinsIcon2_001.png", {255, 255, 255}, "user-coins");
         addStat(secretCoins, "GJ_coinsIcon_001.png", {248, 138, 0}, "coins");
+        addStat(score->m_followers, "GJ_followIcon_001.png", {153, 226, 170}, "followers");
         menu->updateLayout();
+        secondary->updateLayout();
     }
     {
         removeByID(layer, "rd-icons"_spr);
@@ -1241,39 +1235,11 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
             float sc = 1.f;
             if (src.width > 1.f) sc = std::min(1.f, (contentW - 18.f) / src.width);
             playerMenu->setScale(sc);
-            playerMenu->setPosition({c.x, iconsY});
+            playerMenu->setPosition({contentX, iconsY});
             playerMenu->setZOrder(Z_CONTENT);
         }
     }
 
-    {
-        const CCSize levelArea = {contentW - 6.f, 44.f};
-        makeCard("rd-level-card"_spr, {c.x, levelY}, {contentW, 48.f}, cardA);
-        auto* lc = layer->getChildByID("rd-level-container"_spr);
-        if (!lc) {
-            auto container = CCNode::create();
-            container->setID("rd-level-container"_spr);
-            container->setContentSize(levelArea);
-            container->setAnchorPoint({0.5f, 0.5f});
-            container->setZOrder(Z_CONTENT);
-            layer->addChild(container);
-            lc = container;
-            auto loader = ProfileRecentLevelLoader::create(container, levelArea, score->m_userID);
-            layer->setUserObject("rd-level-loader"_spr, loader);
-            loader->start();
-        }
-        lc->setContentSize(levelArea);
-        lc->setPosition({c.x, levelY});
-    }
-
-    auto* commentsTitle = CCLabelBMFont::create("LATEST POST", "chatFont.fnt");
-    commentsTitle->setID("rd-comments-title"_spr);
-    commentsTitle->setScale(0.34f);
-    commentsTitle->setColor({190, 214, 235});
-    commentsTitle->setAnchorPoint({0.f, 0.5f});
-    commentsTitle->setPosition({contentLeft + 8.f, commentsY + commentsH * 0.5f + 7.f});
-    commentsTitle->setZOrder(Z_CONTENT + 1);
-    layer->addChild(commentsTitle);
     auto* row = typeinfo_cast<CCMenu*>(layer->getChildByID("rd-bottom-row"_spr));
     if (!row) {
         row = CCMenu::create();
@@ -1284,8 +1250,10 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
         layer->addChild(row);
     }
     row->setVisible(true);
-    row->setContentSize({contentW - 8.f, 32.f});
-    row->setPosition({c.x, bottomY});
+    // native comment/review actions live beside the footer, freeing the tab row.
+    float const footerWidth = contentW - 112.f;
+    row->setContentSize({footerWidth, 28.f});
+    row->setPosition({contentX, bottomY});
     {
         auto* rowLayout = RowLayout::create()->setGap(7.f)->setAxisAlignment(AxisAlignment::Center)
             ->setCrossAxisOverflow(false)->setAutoScale(true);
@@ -1294,21 +1262,21 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
     }
     {
         if (auto* bg = paimon::SpriteHelper::safeCreateScale9("square02_small.png")) {
-            bg->setContentSize({contentW, 38.f});
-            bg->setOpacity(backdrop ? 115 : 145);
+            bg->setContentSize({footerWidth, 30.f});
+            bg->setOpacity(backdrop ? 170 : 190);
             bg->setColor({38, 41, 55});
             bg->setAnchorPoint({0.5f, 0.5f});
-            bg->setPosition({c.x, bottomY});
+            bg->setPosition({contentX, bottomY});
             bg->setZOrder(Z_CARD);
             bg->setID("rd-bottom-row-bg"_spr);
             layer->addChild(bg);
         }
 
         for (auto const* id : {
-            "comment-history-button", "my-levels-button", "my-lists-button", "follow-button"
+            "comment-history-button", "my-levels-button", "my-lists-button"
         }) relocate(row, id);
         for (auto const* id : {
-            "profile-reviews-btn", "rate-profile-btn", "paimon-thumb-count-btn"
+            "paimon-thumb-count-btn", "copy-icons-button"
         }) relocate(row, std::string("flozwer.paimbnails2/") + id);
         if (ownProfile) {
             int const userID = score->m_userID;
@@ -1316,6 +1284,8 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
                                     char const* iconFrame, char const* caption,
                                     std::function<void()> cb) {
                 if (row->getChildByID(id)) return;
+                if (id == "rd-generated-my-levels"_spr && row->getChildByID("my-levels-button")) return;
+                if (id == "rd-generated-my-lists"_spr && row->getChildByID("my-lists-button")) return;
                 CCNode* content = nullptr;
                 if (baseFrame) {
                     if (auto base = paimon::SpriteHelper::safeCreateWithFrameName(baseFrame)) {
@@ -1369,9 +1339,9 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
             } else {
                 bg->setVisible(true);
                 content += gap * static_cast<float>(n - 1);
-                const float w = std::clamp(content + 18.f, 60.f, contentW);
-                bg->setContentSize({w, 38.f});
-                bg->setPosition({c.x, bottomY});
+                const float w = std::clamp(content + 18.f, 60.f, footerWidth);
+                bg->setContentSize({w, 30.f});
+                bg->setPosition({contentX, bottomY});
             }
         }
     }
@@ -1379,28 +1349,46 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
 
     {
         auto* menu = getOrCreateMenu(
-            "rd-corner"_spr, {contentRight - 14.f, headerY + 9.f}, {24.f, 24.f}
+            "rd-corner"_spr, {contentRight - 14.f, headerY + 18.f}, {20.f, 20.f}
         );
         removeGeneratedChildren(menu);
         menu->setLayout(RowLayout::create());
-        if (auto infoSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png")) {
-            infoSpr->setScale(0.58f);
-            if (auto infoBtn = CCMenuItemExt::createSpriteExtra(infoSpr, [scoreRef](CCMenuItemSpriteExtra*) {
-                    if (!scoreRef) return;
-                    auto msg = fmt::format(
-                        "AccountID: {}\nUserID: {}\nStars: {}\nMoons: {}\nDemons: {}\nUser Coins: {}",
-                        scoreRef->m_accountID, scoreRef->m_userID,
-                        GameToolbox::pointsToString(scoreRef->m_stars),
-                        GameToolbox::pointsToString(scoreRef->m_moons),
-                        GameToolbox::pointsToString(scoreRef->m_demons),
-                        GameToolbox::pointsToString(scoreRef->m_userCoins));
-                    PopupManager::get().alert(std::string(scoreRef->m_userName), msg).showInstant();
-                })) {
-                infoBtn->setID("rd-generated-info"_spr);
-                menu->addChild(infoBtn);
+        if (!relocate(menu, "info-button")) {
+            if (auto infoSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png")) {
+                infoSpr->setScale(0.58f);
+                if (auto infoBtn = CCMenuItemExt::createSpriteExtra(infoSpr, [scoreRef](CCMenuItemSpriteExtra*) {
+                        if (!scoreRef) return;
+                        auto msg = fmt::format(
+                            "AccountID: {}\nUserID: {}\nStars: {}\nMoons: {}\nDemons: {}\nUser Coins: {}",
+                            scoreRef->m_accountID, scoreRef->m_userID,
+                            GameToolbox::pointsToString(scoreRef->m_stars),
+                            GameToolbox::pointsToString(scoreRef->m_moons),
+                            GameToolbox::pointsToString(scoreRef->m_demons),
+                            GameToolbox::pointsToString(scoreRef->m_userCoins));
+                        PopupManager::get().alert(std::string(scoreRef->m_userName), msg).showInstant();
+                    })) {
+                    infoBtn->setID("rd-generated-info"_spr);
+                    menu->addChild(infoBtn);
+                }
             }
         }
         menu->updateLayout();
+    }
+    {
+        auto const position = CCPoint{contentRight - 28.f, bottomY};
+        auto* navigation = getOrCreateMenu("rd-comment-navigation"_spr, position, {48.f, 20.f});
+        navigation->setLayout(RowLayout::create()->setGap(6.f)->setCrossAxisOverflow(false));
+        relocate(navigation, "prev-page-button");
+        relocate(navigation, "next-page-button");
+        navigation->updateLayout();
+        auto* reviews = getOrCreateMenu("rd-review-actions"_spr, position, {48.f, 20.f});
+        reviews->setLayout(RowLayout::create()->setGap(6.f)->setCrossAxisOverflow(false));
+        relocate(reviews, "profile-reviews-btn"_spr);
+        relocate(reviews, "rate-profile-btn"_spr);
+        reviews->updateLayout();
+        if (auto* activity = typeinfo_cast<ProfileActivityPanel*>(layer->getChildByID("rd-activity-panel"_spr))) {
+            activity->updateVisibility();
+        }
     }
 }
 

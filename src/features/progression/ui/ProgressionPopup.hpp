@@ -26,7 +26,7 @@ protected:
     void onTab(cocos2d::CCObject* sender);
     void onCategory(cocos2d::CCObject* sender);
     void onBadge(cocos2d::CCObject* sender);
-    void onFormulaInfo(cocos2d::CCObject* sender);
+    void onShowcaseBadge(cocos2d::CCObject* sender);
 
     BadgeContext m_ctx;
     int m_tab = 0;
@@ -35,8 +35,9 @@ protected:
     cocos2d::CCNode* m_page = nullptr;
     geode::ScrollLayer* m_grid = nullptr;
     std::vector<cocos2d::CCNode*> m_tabs;
-    std::vector<cocos2d::CCNode*> m_categoryChips;
+    std::vector<CCMenuItemSpriteExtra*> m_categoryBtns;
     std::vector<BadgeDef const*> m_gridBadges;
+    std::vector<BadgeDef const*> m_showcaseBadges;
 };
 
 } // namespace paimon::progression

@@ -23,8 +23,9 @@ void GradientSimplePlayer::updatePlayerFrame(int p0, IconType type) {
 
     if (!moduleEnabled() || !paimon::modules::isEnabled("paimbnails.paimonicons.global")) return;
 
+    auto* scene = CCDirector::get() ? CCDirector::get()->getRunningScene() : nullptr;
     bool p2 = sdiEnabled()
-        && CCDirector::get()->getRunningScene()->getChildByType<GJGarageLayer>(0)
+        && scene && scene->getChildByType<GJGarageLayer>(0)
         && sdiSaved<bool>("2pselected", false);
 
     Loader::get()->queueInMainThread([self = Ref(this), p2] {

@@ -1,5 +1,6 @@
 #include "AdvancedSearchPopup.hpp"
 #include "SearchPresetsPopup.hpp"
+#include "../InfoModule.hpp"
 #include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/GeodeTextInputSafe.hpp"
@@ -147,11 +148,13 @@ bool AdvancedSearchPopup::init() {
     menu->setLayout(RowLayout::create()->setGap(10.f)->setAxisAlignment(AxisAlignment::Center));
     m_mainLayer->addChild(menu);
 
-    menu->addChild(paimon::ui::makeButton("Presets",
-        [this] { this->onPresets(nullptr); }, paimon::ui::Btn::Gray, 0.f, 0.6f, "bigFont.fnt"));
+    if (moduleEnabled("info-mod-search-presets")) {
+        menu->addChild(paimon::ui::makeButton("Presets",
+            [this] { this->onPresets(nullptr); }, paimon::ui::Btn::Gray, 0.f, 0.6f, "bigFont.fnt"));
 
-    menu->addChild(paimon::ui::makeButton("Guardar",
-        [this] { this->onSavePreset(nullptr); }, paimon::ui::Btn::Pink, 0.f, 0.6f, "bigFont.fnt"));
+        menu->addChild(paimon::ui::makeButton("Guardar",
+            [this] { this->onSavePreset(nullptr); }, paimon::ui::Btn::Pink, 0.f, 0.6f, "bigFont.fnt"));
+    }
 
     menu->addChild(paimon::ui::makeButton("Buscar",
         [this] { this->onSearch(nullptr); }, paimon::ui::Btn::Green, 0.f, 0.7f));
@@ -242,6 +245,7 @@ void AdvancedSearchPopup::buildServerTab(CCNode* parent, float width) {
     // flags, two per row inside a scroll so the popup never has to grow.
     float scrollH = 62.f;
     auto scroll = ScrollLayer::create({width - 20.f, scrollH});
+    if (scroll) scroll->setAnchorPoint({0.f, 0.f});
     scroll->setPosition({10.f, top - 92.f - 14.f - scrollH});
     parent->addChild(scroll);
 
@@ -430,6 +434,7 @@ void AdvancedSearchPopup::onSearch(CCObject*) {
 }
 
 void AdvancedSearchPopup::onSavePreset(CCObject*) {
+    if (!moduleEnabled("info-mod-search-presets")) return;
     collectInputs();
 
     auto query = m_query;
@@ -437,13 +442,14 @@ void AdvancedSearchPopup::onSavePreset(CCObject*) {
     auto popup = SearchPresetsPopup::createSaveDialog(query, [self]() {
         auto ref = self.lock();
         if (ref) {
-            PaimonNotify::create("Preset guardado", NotificationIcon::Success)->show();
+            PaimonNotify::show("Preset guardado", NotificationIcon::Success);
         }
     });
     if (popup) popup->show();
 }
 
 void AdvancedSearchPopup::onPresets(CCObject*) {
+    if (!moduleEnabled("info-mod-search-presets")) return;
     auto self = WeakRef<AdvancedSearchPopup>(this);
     auto popup = SearchPresetsPopup::createPicker([self](AdvancedQuery const& query) {
         auto ref = self.lock();

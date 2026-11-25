@@ -47,7 +47,11 @@ private:
     bool m_ready    = false;
     bool m_closing  = false;
     bool m_dragging = false;
+    bool m_hasTouchPos = false;
+    cocos2d::CCPoint m_pointerPos{0.f, 0.f};
     bool m_priorityScheduled = false;
+
+    cocos2d::CCPoint activePointerPos() const;
 
     cocos2d::CCNode* m_hud = nullptr;
     cocos2d::CCMenu* m_controlsMenu = nullptr;
@@ -77,6 +81,13 @@ private:
     int m_loupeCX = 0;
     int m_loupeCY = 0;
     bool m_loupeDirty = false;
+
+    // glReadPixels throttling: last sampled device pixel and region size,
+    // plus a frame counter so a still cursor still refreshes ~15Hz.
+    int m_lastSampleX = -1;
+    int m_lastSampleY = -1;
+    int m_lastSampleWant = 0;
+    int m_framesSinceSample = 0;
 
     cocos2d::ccColor3B m_liveColor{255, 255, 255};
     cocos2d::ccColor3B m_selColor{255, 255, 255};

@@ -35,6 +35,19 @@ enum class CursorState {
 
 inline constexpr int CURSOR_STATE_COUNT = 6;
 
+// shared display name for a cursor state (Spanish UI label).
+inline char const* cursorStateName(CursorState state) {
+    switch (state) {
+        case CursorState::Move:     return "Mover";
+        case CursorState::Hover:    return "Boton";
+        case CursorState::Click:    return "Click";
+        case CursorState::Text:     return "Texto";
+        case CursorState::Disabled: return "Bloqueado";
+        case CursorState::Idle:
+        default:                    return "Normal";
+    }
+}
+
 struct CursorConfig {
     bool enabled             = false;
 
@@ -68,11 +81,8 @@ struct CursorConfig {
     int   clickPreset        = 0;
     paimon::cursorfx::ClickSettings click{};
 
-    std::set<std::string> visibleLayers = {
-        "MenuLayer", "LevelBrowserLayer", "LevelInfoLayer",
-        "CreatorLayer", "LevelSearchLayer", "GauntletSelectLayer",
-        "ProfilePage", "LevelListLayer", "LevelEditorLayer"
-    };
+    std::set<std::string> visibleLayers{
+        CURSOR_LAYER_OPTIONS.begin(), CURSOR_LAYER_OPTIONS.end()};
 };
 
 
@@ -89,6 +99,8 @@ public:
 
     CursorConfig& config() { return m_config; }
     void loadConfig();
+    // apply an already parsed snapshot on the main thread.
+    void loadConfig(matjson::Value const& config);
     void saveConfig();
     void applyConfigLive();
     void applyTrailLive();

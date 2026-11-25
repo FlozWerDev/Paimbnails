@@ -1,10 +1,11 @@
+#include "../../../framework/compat/NativeUI.hpp"
 // anonymous-namespace body for hooks/levelsearchlayer.cpp; it depends on that hook's context.
 
 #include "SearchRequestCoordinator.hpp"
 
 namespace {
-    // keep this preview scoped to normal level search. list search uses
-    // different result objects and should continue using gd's normal flow.
+    // scoped to normal level search: list search uses different result
+    // objects and keeps gd's normal flow.
     bool kEnableRealtimeSearchPreview() {
         return Mod::get()->getSettingValue<bool>("realtime-search-preview");
     }
@@ -16,12 +17,12 @@ namespace {
     // short text queries are too broad; numeric ids still allow exact lookup.
     constexpr std::size_t kRealtimeMinQueryChars = 3;
 
-    // wildcard searches expand into one request per digit. only this many are
-    // fetched up front; the rest arrive as the user scrolls.
+    // wildcard searches expand into one request per digit; only this many
+    // are fetched up front, the rest arrive as the user scrolls.
     constexpr std::size_t kSmartInitialBatch = 2;
 
-    // guards the per-frame auto-load poll so a short page cannot re-request in
-    // consecutive frames.
+    // cooldown for the per-frame auto-load poll so a short page cannot
+    // re-request in consecutive frames.
     constexpr float kAutoLoadCooldown = 0.75f;
     constexpr float kPreviewFallbackWidth = 356.f;
     constexpr float kPreviewFallbackHeight = 136.f;
@@ -237,13 +238,6 @@ namespace {
         }
     }
 
-    std::string toLowerCopy(std::string value) {
-        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
-            return static_cast<char>(std::tolower(c));
-        });
-        return value;
-    }
-
     bool isDigitWildcardQuery(std::string const& query) {
         if (query.empty()) return false;
         int wildcardCount = 0;
@@ -282,7 +276,7 @@ namespace {
             if (score->m_userID > 0) return {2, static_cast<std::int64_t>(score->m_userID)};
             // anonymous entries can only be told apart by name.
             return {3, static_cast<std::int64_t>(
-                std::hash<std::string>{}(toLowerCopy(static_cast<std::string>(score->m_userName)))
+                std::hash<std::string>{}(geode::utils::string::toLower(static_cast<std::string>(score->m_userName)))
             )};
         }
         if (auto list = typeinfo_cast<GJLevelList*>(object)) {
@@ -300,7 +294,7 @@ namespace {
         }
     }
 
-    std::string trimQuery(gd::string const& value) {
+    std::string trimQuery(std::string const& value) {
         std::string text = value;
         auto first = text.find_first_not_of(" \t\r\n");
         if (first == std::string::npos) return "";
@@ -364,6 +358,7 @@ namespace {
 
 
     class RealtimeSearchBrowserPreview : public CCNode {    public:
+    using CCNode::init;
         static RealtimeSearchBrowserPreview* create(LevelSearchLayer* owner) {
             auto ret = new RealtimeSearchBrowserPreview();
             if (ret && ret->init(owner)) {
@@ -410,7 +405,7 @@ namespace {
         void shutdown(bool removeChildren = true) {
             if (m_shuttingDown) return;
             m_shuttingDown = true;
-            // scene-level popup outlives us, its delegate would dangle
+            // scene-level popup outlives us; its delegate would dangle.
             if (auto jump = m_pageJumpPopup.lock()) jump->removeFromParentAndCleanup(true);
             m_pageJumpPopup = nullptr;
             cancelPendingSearch();
@@ -485,7 +480,7 @@ namespace {
                 return;
             }
 
-            // below the minimum length nothing is dispatched, so say so instead
+            // below the minimum length nothing is dispatched: say so instead
             // of leaving a spinner that will never resolve.
             if (queryRequiredForCurrentMode() && !queryLongEnough(m_pendingQuery)) {
                 cancelActiveRequest();
@@ -709,8 +704,8 @@ namespace {
             auto rightPageX = rightNextX - kPagerStep;
             auto rightPrevX = rightPageX - kPagerStep;
 
-            // these four values define the level row geometry and are deliberately
-            // unchanged by the redesign: the list keeps its current size.
+            // these four values define the level row geometry and are
+            // deliberately unchanged by the redesign: the list keeps its size.
             auto resultsBottomY = -frameH / 2.f + 4.f;
             auto resultsHeight = std::max(64.f, frameH - 8.f);
             auto countY = resultsBottomY + 7.f;
@@ -806,7 +801,7 @@ namespace {
             m_container->addChild(m_statusLabel, 4);
 
             // spinner for background page loads, so appending a page no longer
-            // needs to blank the list to show progress.
+            // blanks the list to show progress.
             if (auto* spinner = paimon::SpriteHelper::safeCreate("loadingCircle.png")) {
                 spinner->setScale(0.38f);
                 spinner->setPosition({0.f, resultsCenterY});
@@ -816,8 +811,8 @@ namespace {
                 m_loadingIndicator = spinner;
             }
 
-            // unchanged: same clip size, so level rows keep their current width
-            // and the 45px cell height still fits exactly as before.
+            // unchanged: same clip size, so level rows keep their width and
+            // the 45px cell height still fits exactly as before.
             auto resultsSize = CCSize{
                 std::max(1.f, frameW - 18.f),
                 std::max(1.f, resultsHeight - 8.f)
@@ -835,6 +830,7 @@ namespace {
             m_container->addChild(m_resultsClip, 3);
 
             m_scrollLayer = ScrollLayer::create(resultsSize);
+            if (m_scrollLayer) m_scrollLayer->setAnchorPoint({0.f, 0.f});
             m_scrollLayer->setPosition({0.f, 0.f});
             m_resultsClip->addChild(m_scrollLayer);
 
@@ -877,7 +873,7 @@ namespace {
             return btn;
         }
 
-        // reuse the label inside the existing sprite: rebuilding it per response is wasteful.
+        // reuse the label inside the existing sprite; rebuilding it per response is wasteful.
         void setButtonText(CCMenuItemSpriteExtra* btn, char const* text, float width) {
             if (!btn || !text) return;
 
@@ -900,7 +896,8 @@ namespace {
         SmartSearchKind classifySmartSearch(std::string const& query) const {
             if (query.empty()) return SmartSearchKind::None;
 
-            // gd's user search already prefix-matches: one request plus client-side ranking replaces the old 37-request fan-out.
+            // gd's user search already prefix-matches: one request plus
+            // client-side ranking replaces the old 37-request fan-out.
             if (m_primaryMode != PreviewPrimaryMode::Levels) {
                 return SmartSearchKind::None;
             }
@@ -940,15 +937,15 @@ namespace {
         }
 
         float currentDebounceDelay() const {
-            // the wildcard path issues several requests, so give the user longer
-            // to finish typing before committing to it.
+            // the wildcard path issues several requests: give the user longer
+            // to finish typing before committing.
             return classifySmartSearch(m_pendingQuery) == SmartSearchKind::LevelWildcard
                 ? std::max(0.8f, getRealtimeSearchDelay())
                 : getRealtimeSearchDelay();
         }
 
-        // a text query has to be long enough to be worth a round trip. numeric
-        // ids bypass this because they are exact lookups.
+        // a text query has to be long enough to be worth a round trip;
+        // numeric ids bypass this because they are exact lookups.
         bool queryLongEnough(std::string const& query) const {
             if (query.empty()) return false;
             if (isNumericQuery(query) || isDigitWildcardQuery(query)) return true;
@@ -1030,7 +1027,7 @@ namespace {
             if (m_shuttingDown || paimon::isRuntimeShuttingDown()) return;
 
             // only fetch a bounded batch up front; the rest is pulled in by
-            // maybeautoloadmore() when the user actually scrolls that far.
+            // maybeautoloadmore() when the user scrolls that far.
             if (m_smartQueryIndex >= m_smartQueries.size() ||
                 (!m_smartLoadAll && m_smartDispatched >= kSmartInitialBatch)) {
                 finalizeSmartSearch();
@@ -1301,7 +1298,7 @@ namespace {
             return arr;
         }
 
-        void applyPageInfo(gd::string const& info) {
+        void applyPageInfo(std::string const& info) {
             auto parts = splitString(info, ':');
             if (parts.size() < 3) return;
             int totalItems = parseIntSafe(parts[0]);
@@ -1326,8 +1323,9 @@ namespace {
                 std::sort(m_loadedPageOrder.begin(), m_loadedPageOrder.end());
             }
 
-            // the old eviction loop never dropped anything (infinite scroll marks every
-            // page loaded), so evict by age and keep the merged list consistent.
+            // the old eviction loop never dropped anything (infinite scroll
+            // marks every page loaded), so evict by age and keep the merged
+            // list consistent.
             while (static_cast<int>(m_cachedPageOrder.size()) > kPreviewMaxCachedPages) {
                 int pageToDrop = m_cachedPageOrder.front();
                 if (pageToDrop == page) break;
@@ -1489,7 +1487,7 @@ namespace {
             auto levelToUse = savedLevel ? savedLevel : level;
             if (!levelToUse) return;
 
-            auto layer = LevelInfoLayer::create(levelToUse, false);
+            auto layer = paimon::compat::createLevelInfoLayer(levelToUse, false);
             auto scene = CCScene::create();
             scene->addChild(layer);
 

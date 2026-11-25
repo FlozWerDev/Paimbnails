@@ -3,6 +3,9 @@
 #include "QuickButtonPopup.hpp"
 #include "../services/QuickHubManager.hpp"
 #include "../data/QuickHubCategories.hpp"
+#if defined(GEODE_IS_MOBILE)
+#include "../../keybinds/ui/ManagerCutPopup.hpp"
+#endif
 #include "../../../ui/PaiConfigKit.hpp"
 #include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/SpriteHelper.hpp"
@@ -19,16 +22,16 @@ namespace paimon::quickhub {
 namespace {
 
 constexpr float kPopupW = 440.f;
-constexpr float kPopupH = 280.f;
+constexpr float kPopupH = 336.f;
 
 constexpr float kPreviewSize = 148.f;
 constexpr float kPreviewCx   = 104.f;
-constexpr float kPreviewCy   = 158.f;
+constexpr float kPreviewCy   = 210.f;
 
 constexpr float kListX = 200.f;
 constexpr float kListW = 222.f;
 constexpr float kListY = 40.f;
-constexpr float kListH = 160.f;
+constexpr float kListH = 150.f;
 
 constexpr float kRowH = 30.f;
 constexpr float kRowGap = 4.f;
@@ -75,16 +78,29 @@ bool RadialConfigPopup::init() {
         "Arma tu rueda radial de accesos rapidos.\n\n"
         "<cy>Activos</c> es lo que sale en la rueda; <cj>Anadir</c> lista lo disponible. "
         "Usa las flechas para ordenar, el <co>+</c> para anadir y la papelera para quitar. "
+#if defined(GEODE_IS_MOBILE)
+        "Manten pulsado en cualquier boton del juego para crear un acceso.\n\n"
+        "Elige el <cy>gesto en Gestos (Manager Cut)</c> y la <cy>duracion</c> de la pulsacion. "
+#else
         "Haz <cg>click derecho</c> en cualquier boton del juego para crear un acceso.\n\n"
+        "Elige el <cy>boton para mantener</c> y la <cy>duracion</c> de la pulsacion. "
+#endif
+        "Un toque corto cancela la apertura. Estos ajustes se aplican al cambiarlos.\n\n"
         "<cg>Guardar</c> aplica los cambios; <cr>Reset</c> vuelve a los valores por defecto.");
 
     namespace ui = paimon::ui;
     auto size = m_mainLayer->getContentSize();
     m_activeIds = QuickHubManager::get().getActiveOptions();
 
+#if defined(GEODE_IS_MOBILE)
+    auto* subtitle = ui::makeText(
+        "Manten pulsado un boton del juego para anadirlo o abre Gestos.",
+        size.width - 60.f, 0.5f, ui::palette::muted, kCCTextAlignmentCenter);
+#else
     auto* subtitle = ui::makeText(
         "Click derecho en cualquier boton del juego para anadirlo aqui.",
         size.width - 60.f, 0.5f, ui::palette::muted, kCCTextAlignmentCenter);
+#endif
     subtitle->setPosition({size.width / 2.f, size.height - 38.f});
     m_mainLayer->addChild(subtitle, 2);
 
@@ -103,12 +119,54 @@ bool RadialConfigPopup::init() {
     m_mainLayer->addChild(m_countLabel, 2);
 
     auto* holdRow = paimon::configkit::makeToggleRow(kPreviewSize + 8.f,
-        "Abrir con Ctrl",
-        "Manten Ctrl para abrirla.",
+        "Abrir al mantener",
+        "Usa el boton elegido.",
         QuickHubManager::isHoldCtrlEnabled(),
         [](bool v) { QuickHubManager::setHoldCtrlEnabled(v); });
-    holdRow->setPosition({kPreviewCx - (kPreviewSize + 8.f) / 2.f, 30.f});
+    holdRow->setPosition({kPreviewCx - (kPreviewSize + 8.f) / 2.f, 72.f});
     m_mainLayer->addChild(holdRow, 2);
+
+    auto* timeRow = paimon::configkit::makeSliderRow(kPreviewSize + 8.f,
+        "Duracion",
+        "",
+        static_cast<double>(QuickHubManager::holdSeconds()),
+        static_cast<double>(QuickHubManager::kHoldSecondsMin),
+        static_cast<double>(QuickHubManager::kHoldSecondsMax),
+        [](double v) { return fmt::format("{:.1f} s", v); },
+        [](double v) { QuickHubManager::setHoldSeconds(static_cast<float>(v)); });
+    timeRow->setPosition({kPreviewCx - (kPreviewSize + 8.f) / 2.f, 20.f});
+    m_mainLayer->addChild(timeRow, 2);
+
+#if defined(GEODE_IS_MOBILE)
+    auto* buttonRow = paimon::configkit::makeButtonRow(kListW,
+        "Gesto para abrir", "Configura el gesto en Manager Cut.", "Gestos",
+        [] {
+            if (auto* p = paimon::keybinds::ManagerCutPopup::create(
+                    paimon::keybinds::ManagerCutPopup::Mode::Gestures)) {
+                p->show();
+            }
+        },
+        ui::Btn::Cyan);
+#else
+    std::vector<std::string> buttonNames;
+    int selectedButton = 0;
+    auto const selected = QuickHubManager::holdButton();
+    auto const& buttons = QuickHubManager::holdButtonOptions();
+    for (size_t i = 0; i < buttons.size(); ++i) {
+        auto const& button = buttons[i];
+        buttonNames.push_back(button.toDisplayString());
+        if (button.kind == selected.kind &&
+            ((button.kind == paimon::keybinds::ExtendedKind::Keyboard && button.key == selected.key) ||
+             (button.kind == paimon::keybinds::ExtendedKind::Mouse && button.button == selected.button))) {
+            selectedButton = static_cast<int>(i);
+        }
+    }
+    auto* buttonRow = paimon::configkit::makeSelectRow(kListW,
+        "Boton para mantener", "", std::move(buttonNames), selectedButton,
+        [](int index) { QuickHubManager::setHoldButton(QuickHubManager::holdButtonOptions().at(index)); });
+#endif
+    buttonRow->setPosition({kListX, 226.f});
+    m_mainLayer->addChild(buttonRow, 2);
 
     auto* tabs = paimon::configkit::makeTabBar(kListW, {"Activos", "Anadir"}, m_tab,
         [this](int index) { this->setTab(index); });
@@ -121,6 +179,7 @@ bool RadialConfigPopup::init() {
     }
 
     m_scrollLayer = ScrollLayer::create({kListW, kListH});
+    if (m_scrollLayer) m_scrollLayer->setAnchorPoint({0.f, 0.f});
     m_scrollLayer->setPosition({kListX, kListY});
     m_mainLayer->addChild(m_scrollLayer, 1);
 
@@ -372,7 +431,7 @@ void RadialConfigPopup::onRemoveOption(int idx) {
     if (idx < 0 || idx >= static_cast<int>(m_activeIds.size())) return;
 
     if (m_activeIds.size() <= 1) {
-        PaimonNotify::create("Necesitas al menos 1 opcion.", NotificationIcon::Warning)->show();
+        PaimonNotify::show("Necesitas al menos 1 opcion.", NotificationIcon::Warning);
         return;
     }
 
@@ -385,7 +444,7 @@ void RadialConfigPopup::onAddOption(std::string const& id) {
     if (std::ranges::find(m_activeIds, id) != m_activeIds.end()) return;
     if (static_cast<int>(m_activeIds.size()) >= MAX_RADIAL_OPTIONS) {
         std::string message = fmt::format("Maximo {} opciones.", MAX_RADIAL_OPTIONS);
-        PaimonNotify::create(message.c_str(), NotificationIcon::Warning)->show();
+        PaimonNotify::show(message.c_str(), NotificationIcon::Warning);
         return;
     }
 
@@ -426,7 +485,7 @@ void RadialConfigPopup::onDeleteCustom(std::string const& id) {
 
 void RadialConfigPopup::onSave(CCObject*) {
     QuickHubManager::get().setActiveOptions(m_activeIds);
-    PaimonNotify::create("Quick Hub guardado!", NotificationIcon::Success)->show();
+    PaimonNotify::show("Quick Hub guardado!", NotificationIcon::Success);
     this->keyBackClicked();
 }
 
@@ -434,7 +493,7 @@ void RadialConfigPopup::onReset(CCObject*) {
     m_activeIds = getDefaultRadialOrder();
     rebuildList();
     rebuildPreview();
-    PaimonNotify::create("Restaurado a valores por defecto.", NotificationIcon::Success)->show();
+    PaimonNotify::show("Restaurado a valores por defecto.", NotificationIcon::Success);
 }
 
 } // namespace paimon::quickhub

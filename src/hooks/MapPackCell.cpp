@@ -46,6 +46,7 @@ class $modify(PaimonMapPackCell, MapPackCell) {
     }
 
     void createCarousel() {
+        if (m_fields->m_carousel) return;
         auto pack = m_fields->m_pack;
         if (!pack) return;
 

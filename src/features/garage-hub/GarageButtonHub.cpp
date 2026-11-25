@@ -97,7 +97,8 @@ std::string labelOf(CCNode* btn) {
 void installHubButton(GJGarageLayer* layer) {
     if (!layer || layer->getChildByIDRecursive(kHubButtonID)) return;
 
-    auto* face = paimon::SpriteHelper::safeCreate("paim_Paimon.png"_spr);
+    auto* face = paimon::SpriteHelper::safeCreate("paim_garage_hub.png"_spr);
+    if (!face) face = paimon::SpriteHelper::safeCreate("paim_Paimon.png"_spr);
     if (!face) face = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plusBtn_001.png");
     if (!face) return;
 

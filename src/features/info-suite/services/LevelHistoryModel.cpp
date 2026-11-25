@@ -1,5 +1,6 @@
 #include "LevelHistoryModel.hpp"
 #include "LevelFacts.hpp"
+#include "../../../utils/JsonHelper.hpp"
 
 #include <Geode/Geode.hpp>
 #include <algorithm>
@@ -9,10 +10,6 @@ using namespace geode::prelude;
 namespace paimon::info {
 
 namespace {
-
-std::string text(matjson::Value const& value) {
-    return value.asString().unwrapOr("");
-}
 
 int64_t number(matjson::Value const& value, int64_t fallback = 0) {
     if (!value.isNumber()) return fallback;
@@ -37,8 +34,8 @@ std::string clockOf(std::string const& iso) {
 }
 
 std::string timestampOf(matjson::Value const& record) {
-    auto stamp = text(record["real_date"]);
-    if (stamp.empty()) stamp = text(record["cache_real_date"]);
+    auto stamp = paimon::json::stringOr(record["real_date"]);
+    if (stamp.empty()) stamp = paimon::json::stringOr(record["cache_real_date"]);
     return stamp;
 }
 
@@ -116,7 +113,7 @@ bool featureIsExact(matjson::Value const& record) {
 // glm dumps date the dump upload, not the sighting: listed but never deciding
 // when anything changed.
 bool isLiveSnapshot(matjson::Value const& record) {
-    return text(record["record_type"]).rfind("glm_", 0) != 0;
+    return paimon::json::stringOr(record["record_type"]).rfind("glm_", 0) != 0;
 }
 
 HistoryMilestone featureMilestone(GJFeatureState state) {
@@ -128,17 +125,17 @@ HistoryMilestone featureMilestone(GJFeatureState state) {
 }
 
 std::string usernameOf(matjson::Value const& record) {
-    auto name = text(record["username"]);
-    if (name.empty()) name = text(record["cached_user_info"]["username"]);
-    if (name.empty()) name = text(record["cached_user_info"]["non_player_username"]);
-    if (name.empty()) name = text(record["real_user_record"]["username"]);
+    auto name = paimon::json::stringOr(record["username"]);
+    if (name.empty()) name = paimon::json::stringOr(record["cached_user_info"]["username"]);
+    if (name.empty()) name = paimon::json::stringOr(record["cached_user_info"]["non_player_username"]);
+    if (name.empty()) name = paimon::json::stringOr(record["real_user_record"]["username"]);
     return name;
 }
 
 std::string songOf(matjson::Value const& record) {
-    auto name = text(record["song"]["song_name"]);
+    auto name = paimon::json::stringOr(record["song"]["song_name"]);
     if (name.empty()) return "";
-    auto artist = text(record["song"]["artist_name"]);
+    auto artist = paimon::json::stringOr(record["song"]["artist_name"]);
     return artist.empty() ? name : fmt::format("{} - {}", name, artist);
 }
 
@@ -150,10 +147,10 @@ HistoryEntry buildEntry(matjson::Value const& record) {
     entry.date = dayOf(stamp);
     entry.clock = clockOf(stamp);
 
-    entry.levelName = text(record["level_name"]);
+    entry.levelName = paimon::json::stringOr(record["level_name"]);
     entry.username = usernameOf(record);
     entry.song = songOf(record);
-    entry.source = sourceName(text(record["record_type"]));
+    entry.source = sourceName(paimon::json::stringOr(record["record_type"]));
     entry.recordID = number(record["id"]);
     entry.invalid = truthy(record["is_invalid"]);
 
@@ -239,8 +236,8 @@ void markMilestones(std::vector<matjson::Value> const& records, LevelHistory& hi
 // today comes from the api's own cache: user-uploaded old snapshots may arrive
 // out of order with stale counters.
 void fillCurrentState(matjson::Value const& root, LevelHistory& history) {
-    history.levelName = text(root["cache_level_name"]);
-    history.username = text(root["cache_username"]);
+    history.levelName = paimon::json::stringOr(root["cache_level_name"]);
+    history.username = paimon::json::stringOr(root["cache_username"]);
     history.downloads = number(root["cache_downloads"], -1);
     history.likes = number(root["cache_likes"], -1);
     history.objects = number(root["cache_object_count"], -1);
@@ -249,7 +246,7 @@ void fillCurrentState(matjson::Value const& root, LevelHistory& history) {
     history.feature = featureFromTiers(number(root["cache_epic"]), number(root["cache_featured"]));
     history.dailyID = static_cast<int>(number(root["cache_daily_id"]));
     history.deleted = truthy(root["is_deleted"]);
-    history.deletedDate = dayOf(text(root["deleted_date"]));
+    history.deletedDate = dayOf(paimon::json::stringOr(root["deleted_date"]));
 
     // faces need demon kind, kept by full snapshots only; the api cache stops
     // at stars. a glm dump fills in when nothing live exists.
@@ -359,7 +356,7 @@ std::vector<HistoryField> describeEntry(HistoryEntry const& entry) {
     }
 
     add("Nombre", entry.levelName);
-    if (!truthy(record["description_encoded"])) add("Descripcion", text(record["description"]));
+    if (!truthy(record["description_encoded"])) add("Descripcion", paimon::json::stringOr(record["description"]));
 
     add("Creador", entry.username);
     addCount("User ID", record["real_user_record"]["user_id"]);
@@ -413,7 +410,7 @@ std::vector<HistoryField> describeEntry(HistoryEntry const& entry) {
     if (auto rawSize = number(stringInfo["decompressed_file_size"]); rawSize > 0) {
         add("Tamano descomprimido", fmt::format("{} KB", formatThousands(rawSize / 1024)));
     }
-    if (auto hash = text(stringInfo["sha256"]); hash.size() > 16) {
+    if (auto hash = paimon::json::stringOr(stringInfo["sha256"]); hash.size() > 16) {
         add("SHA256", hash.substr(0, 16) + "...");
     }
 

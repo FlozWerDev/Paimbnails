@@ -8,8 +8,10 @@
 #include <Geode/Geode.hpp>
 
 #include <functional>
+#include <cstdint>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace paimon::officialslots {
@@ -23,6 +25,7 @@ public:
     // null level on failure (network error, deleted level, ...).
     using FetchCallback = std::function<void(GJGameLevel*)>;
     void fetch(int levelId, FetchCallback callback);
+    GJGameLevel* cachedLevel(int levelId) const;
 
     void levelDownloadFinished(GJGameLevel* level) override;
     void levelDownloadFailed(int response) override;
@@ -31,6 +34,8 @@ private:
     SlotDownloads() = default;
 
     void startNext();
+    void requestNetwork();
+    void rememberLevel(GJGameLevel* level, bool persist);
     void finishPending(GJGameLevel* level);
 
     struct Pending {
@@ -40,6 +45,7 @@ private:
     std::optional<Pending> m_pending;
     std::vector<Pending> m_queue;
     LevelDownloadDelegate* m_previous = nullptr;
+    std::unordered_map<int, geode::Ref<GJGameLevel>> m_cached;
 };
 
 // cache keyed by slot id; rebuilt when the stored slot changes.
@@ -66,11 +72,22 @@ private:
         Slot snapshot;
     };
     std::unordered_map<std::string, Entry> m_levels;
-    int m_nextFakeId = 0;
+    std::uint32_t m_nextFakeId = 0;
 };
 
-// undownloaded level-id slots show the game's spinner; gmd slots without
-// level data toast and stay cosmetic-only.
+// resolve the user's payload into its local page, sharing any pending ID download.
+using SlotReadyCallback = std::function<void(GJGameLevel*)>;
+void loadSlotLevel(Slot const& slot, SlotReadyCallback callback);
+
+// warm persistent level data and the main song as soon as the user saves a slot.
+void cacheSlotLevel(Slot const& slot);
+
+// start gameplay directly, downloading the level and its main song when needed.
 void openSlotLevel(Slot const& slot);
+// rebuild the selector on the same page after directly launched custom gameplay.
+bool returnFromSlotLevel(GJGameLevel* level);
+
+// resolve a page's source for thumbnails without ever requesting the stand-in's synthetic ID.
+int pageSourceLevelId(GJGameLevel* level);
 
 } // namespace paimon::officialslots

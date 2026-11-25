@@ -4,10 +4,12 @@
 #include <Geode/utils/Keyboard.hpp>
 
 #include "../services/VolumeScrollManager.hpp"
+#include "../../gestures/GestureManager.hpp"
 #include "../../../utils/ExtendedKeybind.hpp"
 #include "../../../utils/Debug.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <unordered_set>
 
@@ -254,13 +256,6 @@ class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
         auto musicExt = paimon::keybinds::loadExtendedKeybind(musicKey);
         auto sfxExt   = paimon::keybinds::loadExtendedKeybind(sfxKey);
 
-        // this path runs on every wheel event; keep debug formatting guarded.
-        PaimonDebug::log("[VolScroll] scroll y={:.2f} editor={} music={{kbKey={:#x},kbMods={:#x},extKind={}}} sfx={{kbKey={:#x},kbMods={:#x},extKind={}}} state ctrl={} shift={} alt={}",
-            y, editor,
-            (int)musicBind.key, (int)musicBind.modifiers.value, (int)musicExt.kind,
-            (int)sfxBind.key,   (int)sfxBind.modifiers.value,   (int)sfxExt.kind,
-            g_ctrlDown, g_shiftDown, g_altDown);
-
         VolumeKind kind;
         bool match = false;
         if (isKeybindActive(musicBind) || paimon::keybinds::isExtendedHeld(musicExt)) {
@@ -273,8 +268,9 @@ class $modify(PaimonVolumeScrollMouseHook, CCMouseDispatcher) {
 
         if (!match) return notOurs();
 
-        PaimonDebug::log("[VolScroll] consuming scroll: kind={} y={}",
-                  kind == VolumeKind::Music ? "music" : "sfx", y);
+        PaimonDebug::log("[VolScroll] consuming scroll: kind={} y={} editor={} state ctrl={} shift={} alt={}",
+            kind == VolumeKind::Music ? "music" : "sfx", y, editor,
+            g_ctrlDown, g_shiftDown, g_altDown);
 
         const float delta = (y > 0.f) ? -kVolumeStep : +kVolumeStep;
         VolumeScrollManager::get().onScroll(kind, delta);
@@ -302,25 +298,24 @@ class $modify(PaimonPauseZoomMouseHook, CCMouseDispatcher) {
 };
 #endif
 
-// three-finger drag replaces the wheel; touches are only observed (post,
-// never consumed) and stay out of unpaused gameplay.
+// Multi-finger drag adjusts audio volume; touches are observed (post, never
+// consumed) in point space using persistent touch IDs, staying out of active gameplay.
 #if defined(GEODE_IS_MOBILE)
 #include <Geode/modify/CCEGLViewProtocol.hpp>
+#include <utility>
+#include <vector>
 
 namespace {
-// raw handletouches coords are view pixels with y down, so dragging up
-// on screen decreases the average y.
-constexpr float kTouchDeadzonePx = 36.f; // drift before the first step
-constexpr float kTouchStepPx     = 28.f; // pixels per volume step
-constexpr int   kGestureFingers  = 3;
+// Deadzone and step sizes in Cocos UI points (independent of device DPI).
+constexpr float kTouchDeadzonePt = 16.f;
+constexpr float kTouchStepPt     = 14.f;
 
 struct VolumeTouchState {
-    int fingerCount = 0;
+    std::vector<std::pair<int, CCPoint>> touches;
     bool baselineValid = false;
-    float lastAvgX = 0.f;
-    float lastAvgY = 0.f;
-    float accUp = 0.f;    // > 0 = dragged up
-    float accRight = 0.f; // > 0 = dragged right
+    CCPoint lastAvg{0.f, 0.f};
+    float accMusic = 0.f;
+    float accSFX   = 0.f;
 };
 
 VolumeTouchState g_volTouch;
@@ -334,35 +329,54 @@ bool volumeTouchAllowed() {
 }
 
 void volumeTouchReset() {
-    g_volTouch.fingerCount = 0;
+    g_volTouch.touches.clear();
     g_volTouch.baselineValid = false;
-    g_volTouch.accUp = 0.f;
-    g_volTouch.accRight = 0.f;
+    g_volTouch.accMusic = 0.f;
+    g_volTouch.accSFX = 0.f;
 }
 
-void volumeTouchSyncCount() {
-    if (g_volTouch.fingerCount != kGestureFingers) {
-        g_volTouch.baselineValid = false;
-        g_volTouch.accUp = 0.f;
-        g_volTouch.accRight = 0.f;
+CCPoint volumeCentroid(std::vector<std::pair<int, CCPoint>> const& pts) {
+    if (pts.empty()) return CCPointZero;
+    float sx = 0.f, sy = 0.f;
+    for (auto const& [id, pt] : pts) {
+        sx += pt.x;
+        sy += pt.y;
     }
+    float const inv = 1.f / static_cast<float>(pts.size());
+    return {sx * inv, sy * inv};
 }
 
-// feed one axis: deadzone first, then one step per ktouchsteppx.
-void volumeTouchPush(VolumeKind kind, float deltaPixels, float& acc) {
-    acc += deltaPixels;
+void volumeTouchPush(VolumeKind kind, float deltaPt, float& acc) {
+    float const sens = std::clamp(
+        paimon::gestures::GestureManager::get().comfort().swipeSensitivity, 0.5f, 2.0f);
+    float const stepPt = kTouchStepPt / sens;
+    acc += deltaPt;
     float sign = (acc < 0.f) ? -1.f : 1.f;
-    float over = std::fabs(acc) - kTouchDeadzonePx;
-    if (over < kTouchStepPx) return;
-    float steps = std::floor(over / kTouchStepPx);
+    float over = std::fabs(acc) - kTouchDeadzonePt;
+    if (over < stepPt) return;
+    float steps = std::floor(over / stepPt);
     VolumeScrollManager::get().onScroll(kind, sign * steps * kVolumeStep);
-    acc = sign * (kTouchDeadzonePx + (over - steps * kTouchStepPx));
+    acc = sign * (kTouchDeadzonePt + (over - steps * stepPt));
 }
 
-float touchAvg(float const* v, int n) {
-    float sum = 0.f;
-    for (int i = 0; i < n; ++i) sum += v[i];
-    return n > 0 ? sum / static_cast<float>(n) : 0.f;
+bool matchDragBinding(paimon::gestures::GestureKind dragKind, int activeFingers, CCPoint delta, float& outAxis) {
+    using GK = paimon::gestures::GestureKind;
+    switch (dragKind) {
+        case GK::Drag2FVertical:
+            if (activeFingers == 2) { outAxis = delta.y; return true; }
+            return false;
+        case GK::Drag2FHorizontal:
+            if (activeFingers == 2) { outAxis = delta.x; return true; }
+            return false;
+        case GK::Drag3FVertical:
+            if (activeFingers == 3) { outAxis = delta.y; return true; }
+            return false;
+        case GK::Drag3FHorizontal:
+            if (activeFingers == 3) { outAxis = delta.x; return true; }
+            return false;
+        default:
+            return false;
+    }
 }
 }
 
@@ -375,58 +389,72 @@ class $modify(VolumeScrollTouchView, CCEGLViewProtocol) {
         (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesCancel", geode::Priority::Normal);
     }
 
-    void trackBegin(int num, float xs[], float ys[]) {
-        g_volTouch.fingerCount += num;
-        volumeTouchSyncCount();
-        if (g_volTouch.fingerCount == kGestureFingers && volumeTouchAllowed()) {
-            g_volTouch.baselineValid = true;
-            g_volTouch.lastAvgX = touchAvg(xs, num);
-            g_volTouch.lastAvgY = touchAvg(ys, num);
-        } else {
-            g_volTouch.baselineValid = false;
-        }
-    }
-
     void handleTouchesBegin(int num, int ids[], float xs[], float ys[], double timestamp) {
         CCEGLViewProtocol::handleTouchesBegin(num, ids, xs, ys, timestamp);
-        trackBegin(num, xs, ys);
+        for (int i = 0; i < num; ++i) {
+            CCPoint pt = paimon::gestures::GestureManager::viewPixelsToPoint(xs[i], ys[i]);
+            auto it = std::find_if(g_volTouch.touches.begin(), g_volTouch.touches.end(),
+                [id = ids[i]](auto const& e) { return e.first == id; });
+            if (it != g_volTouch.touches.end()) it->second = pt;
+            else g_volTouch.touches.push_back({ids[i], pt});
+        }
+        g_volTouch.baselineValid = false;
+        g_volTouch.accMusic = 0.f;
+        g_volTouch.accSFX = 0.f;
     }
 
     void handleTouchesMove(int num, int ids[], float xs[], float ys[], double timestamp) {
         CCEGLViewProtocol::handleTouchesMove(num, ids, xs, ys, timestamp);
 
-        if (g_volTouch.fingerCount != kGestureFingers) return;
-        if (!volumeTouchAllowed()) {
-            volumeTouchReset();
-            return;
+        for (int i = 0; i < num; ++i) {
+            CCPoint pt = paimon::gestures::GestureManager::viewPixelsToPoint(xs[i], ys[i]);
+            for (auto& [id, p] : g_volTouch.touches) {
+                if (id == ids[i]) { p = pt; break; }
+            }
         }
-        // only full-set moves feed: partial subsets would skew the average.
-        if (num != kGestureFingers) {
+
+        int const fingers = static_cast<int>(g_volTouch.touches.size());
+        if (fingers < 2) {
             g_volTouch.baselineValid = false;
             return;
         }
-        float avgX = touchAvg(xs, num);
-        float avgY = touchAvg(ys, num);
-        if (!g_volTouch.baselineValid) {
-            g_volTouch.baselineValid = true;
-            g_volTouch.lastAvgX = avgX;
-            g_volTouch.lastAvgY = avgY;
+        if (!volumeTouchAllowed()) {
+            g_volTouch.baselineValid = false;
             return;
         }
-        float dx = avgX - g_volTouch.lastAvgX;
-        float dy = avgY - g_volTouch.lastAvgY;
-        g_volTouch.lastAvgX = avgX;
-        g_volTouch.lastAvgY = avgY;
-        volumeTouchPush(VolumeKind::Music, -dy, g_volTouch.accUp);
-        volumeTouchPush(VolumeKind::SFX, dx, g_volTouch.accRight);
+
+        auto& gm = paimon::gestures::GestureManager::get();
+        auto const musicKind = gm.getBinding(paimon::gestures::GestureActionId::VolumeMusic);
+        auto const sfxKind   = gm.getBinding(paimon::gestures::GestureActionId::VolumeSFX);
+
+        CCPoint avg = volumeCentroid(g_volTouch.touches);
+        if (!g_volTouch.baselineValid) {
+            g_volTouch.baselineValid = true;
+            g_volTouch.lastAvg = avg;
+            return;
+        }
+
+        CCPoint delta{avg.x - g_volTouch.lastAvg.x, avg.y - g_volTouch.lastAvg.y};
+        g_volTouch.lastAvg = avg;
+
+        float musicDelta = 0.f;
+        if (matchDragBinding(musicKind, fingers, delta, musicDelta)) {
+            volumeTouchPush(VolumeKind::Music, musicDelta, g_volTouch.accMusic);
+        }
+        float sfxDelta = 0.f;
+        if (matchDragBinding(sfxKind, fingers, delta, sfxDelta)) {
+            volumeTouchPush(VolumeKind::SFX, sfxDelta, g_volTouch.accSFX);
+        }
     }
 
     void handleTouchesEnd(int num, int ids[], float xs[], float ys[], double timestamp) {
         CCEGLViewProtocol::handleTouchesEnd(num, ids, xs, ys, timestamp);
-        g_volTouch.fingerCount -= num;
-        if (g_volTouch.fingerCount < 0) g_volTouch.fingerCount = 0;
-        volumeTouchSyncCount();
+        for (int i = 0; i < num; ++i) {
+            std::erase_if(g_volTouch.touches, [id = ids[i]](auto const& e) { return e.first == id; });
+        }
         g_volTouch.baselineValid = false;
+        g_volTouch.accMusic = 0.f;
+        g_volTouch.accSFX = 0.f;
     }
 
     void handleTouchesCancel(int num, int ids[], float xs[], float ys[], double timestamp) {

@@ -1,0 +1,209 @@
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <functional>
+#include <iostream>
+#include <memory>
+#include <utility>
+#include <vector>
+
+namespace cocos2d {
+struct CCPoint { float x = 0.f, y = 0.f; };
+struct CCSize { float width = 0.f, height = 0.f; };
+struct CCRect {
+    float x, y, width, height;
+    bool containsPoint(CCPoint point) const {
+        return point.x >= x && point.x <= x + width && point.y >= y && point.y <= y + height;
+    }
+};
+struct CCNode {
+    CCNode* parent = nullptr;
+    bool visible = true;
+    CCPoint position;
+    CCSize size;
+    virtual ~CCNode() = default;
+    CCNode* getParent() { return parent; }
+    bool isVisible() { return visible; }
+    void setContentSize(CCSize value) { size = value; }
+    float getContentWidth() const { return size.width; }
+    float getContentHeight() const { return size.height; }
+    void setAnchorPoint(CCPoint) {}
+    void autorelease() {}
+    CCPoint convertToNodeSpace(CCPoint world) {
+        for (auto* node = this; node; node = node->parent) {
+            world.x -= node->position.x;
+            world.y -= node->position.y;
+        }
+        return world;
+    }
+};
+struct CCTouch {
+    int id = 1;
+    CCPoint location;
+    int getID() { return id; }
+    CCPoint getLocation() { return location; }
+};
+struct CCEvent {};
+struct CCLayer : CCNode {
+    bool touchEnabled = false, exited = false;
+    virtual bool init() { return true; }
+    void setTouchEnabled(bool enabled) { touchEnabled = enabled; }
+    bool isTouchEnabled() { return touchEnabled; }
+    virtual void onExit() { exited = true; }
+    virtual void registerWithTouchDispatcher() {}
+    virtual bool ccTouchBegan(CCTouch*, CCEvent*) { return false; }
+    virtual void ccTouchMoved(CCTouch*, CCEvent*) {}
+    virtual void ccTouchEnded(CCTouch*, CCEvent*) {}
+    virtual void ccTouchCancelled(CCTouch*, CCEvent*) {}
+};
+struct Dispatcher {
+    int priority = 0;
+    bool swallows = false;
+    void addTargetedDelegate(CCLayer*, int value, bool swallow) { priority = value; swallows = swallow; }
+};
+struct CCDirector {
+    Dispatcher dispatcher;
+    static CCDirector* get() { static CCDirector director; return &director; }
+    Dispatcher* getTouchDispatcher() { return &dispatcher; }
+};
+}
+namespace geode::prelude { using namespace cocos2d; }
+using namespace cocos2d;
+@@source|src/ui/PageSliderInput.hpp@@
+@@source|src/ui/PageSliderInput.cpp@@
+
+struct Scroll {
+    bool m_dynamic = true, m_pageMoving = false;
+    int m_page = 0, moves = 0;
+    void instantMoveToPage(int page) { m_page = page; m_pageMoving = false; ++moves; }
+};
+struct Selector;
+namespace paimon::officialslots { void selectVisiblePage(Selector*, int); }
+struct Selector {
+    struct Fields { bool m_exitAnimated = false; } fields;
+    Fields* m_fields = &fields;
+    Scroll* m_scrollLayer = nullptr;
+    int pages = 27;
+    int visiblePageCount() { return pages; }
+    @@function|src/hooks/LevelSelectLayer.cpp|void scrubToPage(float progress)@@
+};
+namespace paimon::officialslots {
+void selectVisiblePage(Selector* select, int page) { select->m_scrollLayer->instantMoveToPage(page); }
+}
+
+int main() {
+    using paimon::ui::PageSliderInput;
+    CCNode scene, animatedTrack;
+    animatedTrack.parent = &scene;
+    animatedTrack.position = {0.f, -10.f};
+    Scroll scroll;
+    Selector selector;
+    selector.m_scrollLayer = &scroll;
+    std::vector<float> changes;
+    std::unique_ptr<PageSliderInput> input(PageSliderInput::create(300.f, [&](float progress) {
+        changes.push_back(progress);
+        selector.scrubToPage(progress);
+    }));
+    assert(input);
+    input->parent = &animatedTrack;
+    input->position = {115.f, 20.f};
+    input->setThumbState(20.f, 0.f);
+    input->registerWithTouchDispatcher();
+    auto const& dispatcher = CCDirector::get()->dispatcher;
+    assert(dispatcher.priority < -138 && dispatcher.swallows);
+
+    // A track click selects the matching visible index, including both ends.
+    CCTouch touch{1, {265.f, 22.f}}; // Local midpoint after the soundtrack offset.
+    assert(input->ccTouchBegan(&touch, nullptr));
+    assert(scroll.m_page == 13);
+    input->ccTouchEnded(&touch, nullptr);
+    assert(!input->isDragging());
+    touch.location.x = 415.f;
+    assert(input->ccTouchBegan(&touch, nullptr));
+    assert(scroll.m_page == 26);
+
+    // Continuous scrubbing reaches intermediate levels and clamps outside the track.
+    touch.location = {185.f, 80.f};
+    input->ccTouchMoved(&touch, nullptr);
+    assert(scroll.m_page == 6);
+    touch.location.x = -100.f;
+    input->ccTouchMoved(&touch, nullptr);
+    assert(scroll.m_page == 0);
+    touch.location.x = 1000.f;
+    input->ccTouchMoved(&touch, nullptr);
+    assert(scroll.m_page == 26);
+    input->ccTouchEnded(&touch, nullptr);
+
+    // Grabbing the side of the thumb must not jump before dragging starts.
+    input->setThumbState(20.f, 0.5f);
+    touch.location = {270.f, 22.f}; // Five pixels right of the thumb's center.
+    assert(input->ccTouchBegan(&touch, nullptr));
+    assert(std::abs(input->progress() - 0.5f) < 0.0001f);
+    touch.location.x += 28.f;
+    input->ccTouchMoved(&touch, nullptr);
+    assert(std::abs(input->progress() - 0.6f) < 0.0001f);
+    input->setThumbState(20.f, 0.f); // Native card snapping must not pull the drag back.
+    assert(std::abs(input->progress() - 0.6f) < 0.0001f);
+
+    // A second finger cannot steal or end an active drag.
+    CCTouch second{2, {265.f, 22.f}};
+    auto const count = changes.size();
+    assert(!input->ccTouchBegan(&second, nullptr));
+    input->ccTouchMoved(&second, nullptr);
+    input->ccTouchEnded(&second, nullptr);
+    input->ccTouchCancelled(&second, nullptr);
+    assert(input->isDragging() && changes.size() == count);
+    input->ccTouchCancelled(&touch, nullptr);
+    assert(!input->isDragging() && changes.size() == count);
+
+    // Hidden, disabled and detached controls must leave gestures to the scene.
+    touch.location = {265.f, 22.f};
+    animatedTrack.visible = false;
+    assert(!input->ccTouchBegan(&touch, nullptr));
+    animatedTrack.visible = true;
+    input->setTouchEnabled(false);
+    assert(!input->ccTouchBegan(&touch, nullptr));
+    input->setTouchEnabled(true);
+    input->parent = nullptr;
+    assert(!input->ccTouchBegan(&touch, nullptr));
+    input->parent = &animatedTrack;
+    touch.location.y = 100.f;
+    assert(!input->ccTouchBegan(&touch, nullptr));
+
+    // Losing visibility during a drag cancels it without another page change.
+    touch.location.y = 22.f;
+    assert(input->ccTouchBegan(&touch, nullptr));
+    animatedTrack.visible = false;
+    auto const hiddenCount = changes.size();
+    input->ccTouchMoved(&touch, nullptr);
+    assert(!input->isDragging() && changes.size() == hiddenCount);
+    animatedTrack.visible = true;
+
+    // Resized catalogues, a single remaining page and native static pages work too.
+    selector.pages = 3;
+    input->setThumbState(100.f, 0.f);
+    touch.location.x = 415.f;
+    assert(input->ccTouchBegan(&touch, nullptr));
+    assert(scroll.m_page == 2);
+    input->ccTouchEnded(&touch, nullptr);
+    selector.pages = 1;
+    input->setThumbState(300.f, 0.f);
+    touch.location.x = 265.f;
+    assert(input->ccTouchBegan(&touch, nullptr));
+    assert(scroll.m_page == 0 && input->progress() == 0.f);
+    input->onExit();
+    assert(input->exited && !input->isDragging());
+    selector.pages = 24;
+    scroll.m_dynamic = false;
+    selector.scrubToPage(1.f);
+    assert(scroll.m_page == 23);
+    scroll.m_pageMoving = true;
+    selector.scrubToPage(1.f);
+    assert(!scroll.m_pageMoving);
+    auto const moves = scroll.moves;
+    selector.fields.m_exitAnimated = true;
+    selector.scrubToPage(0.f);
+    assert(scroll.moves == moves);
+    assert(PageSliderInput::create(0.f, {}) == nullptr);
+    std::cout << "Page slider: taps, dragging, endpoints, touch ownership and catalogue changes passed\n";
+}

@@ -55,7 +55,7 @@ static void registerDefaultHooks() {
     });
 
     static std::atomic<int> s_uploadCount{0};
-    hooks.addPreHook("security-check", [](HookContext const& ctx) -> HookResult {
+    hooks.addPreHook("security-check", [](HookContext const&) -> HookResult {
         constexpr int MAX_UPLOADS_PER_SESSION = 50;
         if (s_uploadCount.load(std::memory_order_relaxed) >= MAX_UPLOADS_PER_SESSION) {
             return HookResult::deny("Limite de uploads por sesion alcanzado");
@@ -70,7 +70,7 @@ static void registerDefaultHooks() {
 static void registerDynamicSongHooks() {
     auto& hooks = HookInterceptor::get();
 
-    hooks.addPreHook("dynamic-play", [](HookContext const& ctx) -> HookResult {
+    hooks.addPreHook("dynamic-play", [](HookContext const&) -> HookResult {
         if (paimon::isVideoAudioInteropActive()) {
             return HookResult::deny("Video audio is active");
         }

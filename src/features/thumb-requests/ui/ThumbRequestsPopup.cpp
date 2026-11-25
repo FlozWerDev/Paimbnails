@@ -99,7 +99,7 @@ bool ThumbRequestsPopup::init() {
         "Use the top <cy>filter</c> tabs to show all, pending or sent requests. "
         "Tap <cg>play</c> to open a level, or the <cr>video</c> icon to watch its clip.");
 
-    if (auto* logo = paimon::SpriteHelper::safeCreate("Logo.png"_spr)) {
+    if (auto* logo = paimon::SpriteHelper::safeCreate("logo.png"_spr)) {
         logo->setScale(0.11f);
         logo->setPosition({30.f, kPopupH - 26.f});
         logo->setOpacity(210);
@@ -127,6 +127,7 @@ bool ThumbRequestsPopup::init() {
     m_mainLayer->addChild(listInset, 0);
 
     m_scroll = ScrollLayer::create({kListW, kListH});
+    if (m_scroll) m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setPosition({(kPopupW - kListW) / 2.f, 16.f});
     m_mainLayer->addChild(m_scroll, 1);
 

@@ -21,4 +21,4 @@ namespace PaimonNotify {
         }
     }
 
-} // namespace paimonnotify
+} // namespace PaimonNotify

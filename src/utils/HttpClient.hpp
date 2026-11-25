@@ -35,8 +35,17 @@ public:
     using UserRolesCallback = geode::CopyableFunction<void(UserRoleFlags const& flags, bool ok)>;
 
     static HttpClient& get() {
-        static HttpClient instance;
-        return instance;
+        // Heap-leaked: never destroy mutexes/state under Windows DllMain loader lock.
+        static auto* instance = []() {
+            auto* client = new HttpClient();
+            s_initialized.store(true, std::memory_order_release);
+            return client;
+        }();
+        return *instance;
+    }
+
+    static bool isInitialized() {
+        return s_initialized.load(std::memory_order_acquire);
     }
 
     std::string getServerURL() const { return m_serverURL; }
@@ -50,17 +59,30 @@ public:
     void setForumServerURL(std::string const& url);
 
     static std::string encodeQueryParam(std::string const& value);
+    // same encoding but with space as `+` (application/x-www-form-urlencoded).
+    static std::string encodeQueryParamForm(std::string const& value);
 
     std::string getModCode() const { return m_modCode; }
     void setModCode(std::string const& code);
     void startModCodeSetup(std::string const& username, int accountID, GenericCallback callback);
     void completeModCodeSetup(std::string const& challengeToken, GenericCallback callback);
 
+    // Unified v3 session token (works for all users: regular, VIP, helper, idea, mod, admin).
+    // Bound to the exact Geometry Dash accountID that authenticated; never sent for another account.
+    std::string getSessionToken() const;
+    void setSessionToken(std::string const& token, std::string const& username, int accountID, int64_t expiresAt);
+    bool hasSessionToken() const;
+    void clearAllAuthTokens();
+    void startUnifiedAuth(std::string const& username, int accountID, GenericCallback callback);
+    void completeUnifiedAuth(std::string const& challengeToken, GenericCallback callback);
+    void fetchAuthSession(GenericCallback callback);
+    void logoutAuthSession(GenericCallback callback);
+
     // ownership proof for non-moderators: the signed token proves the account
     // is yours; a public gd server lookup proves nothing.
     std::string getViewerToken() const { return m_viewerToken; }
     void setViewerToken(std::string const& token);
-    bool hasViewerToken() const { return !m_viewerToken.empty(); }
+    bool hasViewerToken() const { return !m_viewerToken.empty() || hasSessionToken(); }
     void startAccountVerification(std::string const& username, GenericCallback callback);
     void checkAccountVerification(std::string const& username, GenericCallback callback);
 
@@ -76,7 +98,8 @@ public:
 
     using BatchListCallback = geode::CopyableFunction<void(bool success, std::unordered_map<int, std::string> const& itemsJson)>;
     void getThumbnailsBatch(std::vector<int> const& levelIds, BatchListCallback callback);
-
+    // single-request worker; getThumbnailsBatch fans out to one chunk per call.
+    void getThumbnailsBatchChunk(std::vector<int> const& levelIds, BatchListCallback callback);
     void reorderThumbnails(int levelId, std::vector<std::string> const& thumbnailIds, GenericCallback callback);
 
     void getThumbnailInfo(int levelId, GenericCallback callback);
@@ -172,6 +195,17 @@ public:
     void post(std::string const& endpoint, std::string const& data, GenericCallback callback);
     void postWithAuth(std::string const& endpoint, std::string const& data, GenericCallback callback);
     void postWithoutModCode(std::string const& endpoint, std::string const& data, GenericCallback callback);
+    // multipart post with x-api-key, viewer token and the stored mod code.
+    void uploadMultipart(std::string const& endpoint,
+        std::vector<std::pair<std::string, std::string>> const& fields,
+        std::string const& fileField, std::string const& filename,
+        std::vector<uint8_t> const& data, std::string const& contentType,
+        GenericCallback callback);
+    // binary get with x-api-key and the stored mod code (moderation media).
+    void getBinaryWithAuth(std::string const& endpoint,
+        geode::CopyableFunction<void(bool, std::vector<uint8_t> const&)> callback);
+    void getRawBinaryWithAuth(std::string const& endpoint,
+        geode::CopyableFunction<void(bool, std::vector<uint8_t> const&, int)> callback);
 
     void getWhitelist(std::string const& type, GenericCallback callback);
     void addToWhitelist(std::string const& targetUsername, std::string const& type, GenericCallback callback);
@@ -249,8 +283,9 @@ public:
     void loadManifestFromDisk();
 
     // like performbinaryrequest plus http status: 404 caches negative,
-    // transient failures retry.
+    // transient failures retry. maxBytes caps the buffered body (default 8MiB).
     using BinaryStatusCallback = geode::CopyableFunction<void(bool, std::vector<uint8_t> const&, int status)>;
+    static constexpr size_t MAX_BINARY_BYTES = 8 * 1024 * 1024;
     void performBinaryRequestEx(
         std::string const& url,
         std::vector<std::string> const& headers,
@@ -258,7 +293,8 @@ public:
         int timeoutSeconds = 15,
         bool includeModCode = false,
         bool validateImage = true,
-        unsigned redirectsLeft = 5
+        unsigned redirectsLeft = 5,
+        size_t maxBytes = MAX_BINARY_BYTES
     );
 
 private:
@@ -273,6 +309,13 @@ private:
     std::string m_apiKey;
     std::string m_modCode;
     std::string m_viewerToken;
+    std::string m_sessionToken;
+    std::string m_sessionUsername;
+    int m_sessionAccountID = 0;
+    int64_t m_sessionExpiresAt = 0;
+
+    std::string activeSessionToken() const;
+    std::string activeModCode() const;
 
     // credentials only leave toward our own backends (worker, forum), never
     // toward the cdn or urls from a response.
@@ -310,11 +353,15 @@ private:
     void resolveInflight(int levelId, bool success, std::vector<uint8_t> const& data);
     // worker fetch with missing-vs-transient classification; reports via resolveinflight.
     void fetchViaWorker(int levelId, bool dropManifestEntry);
+    // cdn attempt with worker fallback; bestEffort picks cold-manifest log
+    // lines and keeps the manifest entry on miss.
+    void fetchViaCdn(int levelId, std::string const& cdnUrl, bool dropManifestEntry, bool bestEffort);
 
     // short-lived negative cache for downloads failed on both endpoints;
     // avoids retry loops while transient errors recover.
     mutable std::unordered_map<int, std::chrono::steady_clock::time_point> m_notFoundCache;
     mutable std::mutex m_notFoundMutex;
+    inline static std::atomic<bool> s_initialized{false};
     static constexpr int NOT_FOUND_TTL_SECONDS = 5 * 60;
 
     // coalesce concurrent moderator checks for the same username.
@@ -348,5 +395,95 @@ private:
         std::vector<std::string> const& headers,
         geode::CopyableFunction<void(bool, std::string const&)> callback,
         std::string const& contentType = "image/png"
+    );
+
+    // shared body for the profile background uploads; kindLabel is "" / "GIF " / "video ".
+    void uploadProfileMedia(
+        int accountID,
+        std::vector<uint8_t> const& data,
+        std::string const& username,
+        UploadCallback callback,
+        char const* endpoint,
+        char const* ext,
+        char const* contentType,
+        char const* kindLabel,
+        bool checkPendingVerification
+    );
+
+    struct LevelMediaSpec {
+        char const* endpoint;
+        char const* ext;
+        char const* contentType;
+        char const* pathField;
+        char const* kindLabel; // "thumbnail as PNG" / "GIF" / "video"
+        char const* failLogLabel; // "Upload" / "GIF upload" / "Video upload"
+        char const* failPrefix; // "Upload failed: " / "GIF Upload failed: " / ...
+        bool logSuccess;
+    };
+    // shared body for the level thumbnail/gif/video uploads.
+    void uploadLevelMedia(
+        int levelId,
+        std::vector<uint8_t> const& data,
+        std::string const& username,
+        UploadCallback callback,
+        std::string const& levelMeta,
+        LevelMediaSpec const& spec
+    );
+
+    // shared body for suggestion/update uploads ("suggestion" / "update").
+    void uploadLevelExtra(
+        int levelId,
+        std::vector<uint8_t> const& pngData,
+        std::string const& username,
+        UploadCallback callback,
+        std::string const& levelMeta,
+        char const* kind,
+        char const* kindLabel
+    );
+    // shared body for suggestion/update downloads.
+    void downloadLevelExtra(
+        int levelId,
+        DownloadCallback callback,
+        char const* kind,
+        char const* kindLabel
+    );
+    // shared body for admin add-role/remove-role posts.
+    void postRoleChange(
+        char const* endpoint,
+        std::string const& role,
+        std::string const& username,
+        int targetAccountID,
+        GenericCallback callback
+    );
+    // shared body for the top-creators/top-thumbnails feeds.
+    void getTopList(char const* name, GenericCallback callback);
+    // shared guard + headers for arbitrary-url downloads.
+    bool guardUrlSafe(std::string const& url, DownloadCallback const& callback);
+    std::vector<std::string> urlDownloadHeaders(std::string const& url);
+    // shared body for whitelist add/remove posts.
+    void postWhitelist(
+        char const* endpoint,
+        std::string const& targetUsername,
+        std::string const& type,
+        GenericCallback callback
+    );
+    // shared multipart post used by the custom-badge endpoints.
+    void postBadgeForm(std::string const& url, geode::utils::web::MultipartForm form, GenericCallback callback);
+    // validates a manifest object key and fills the entry; stampNow=true
+    // stamps cachedAt with now (server payloads), false reads it from the
+    // object (disk cache). false = skip the entry.
+    static bool parseManifestEntry(std::string const& key, matjson::Value& val,
+        int& levelIdOut, ManifestEntry& entryOut, bool stampNow);
+    // shared body for the binary batch downloads (thumbnails, profile
+    // backgrounds, profile images); warnExhausted keeps the thumbnails path
+    // logging its "skipped" warning.
+    void downloadBatchAssets(
+        std::vector<int> const& ids,
+        char const* idsKey,
+        size_t maxBatch,
+        char const* endpoint,
+        char const* logLabel,
+        bool warnExhausted,
+        BatchDownloadCallback callback
     );
 };

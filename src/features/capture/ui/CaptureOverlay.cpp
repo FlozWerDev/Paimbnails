@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "CaptureOverlay.hpp"
 #include <Geode/utils/string.hpp>
 #include <Geode/utils/file.hpp>
@@ -14,6 +15,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <chrono>
+#include <unordered_set>
 #include <iomanip>
 #include <sstream>
 #include "../../../utils/ThreadTracker.hpp"
@@ -153,12 +155,10 @@ void CaptureOverlay::checkSceneChanged(float) {
     if (m_docked && !m_isClosing) {
         std::vector<geode::WeakRef<cocos2d::CCNode>> alerts;
         collectVisibleAlerts(running, alerts);
+        std::unordered_set<cocos2d::CCNode*> dockedPtrs;
+        for (auto const& docked : m_alertsAtDock) dockedPtrs.insert(docked.lock().data());
         for (auto const& a : alerts) {
-            bool known = false;
-            for (auto const& docked : m_alertsAtDock) {
-                if (docked.lock().data() == a.lock().data()) { known = true; break; }
-            }
-            if (!known) {
+            if (!dockedPtrs.contains(a.lock().data())) {
                 this->onClose(nullptr);
                 return;
             }
@@ -170,7 +170,7 @@ void CaptureOverlay::registerWithTouchDispatcher() {
     CCDirector::get()->getTouchDispatcher()->addTargetedDelegate(this, -505, true);
 }
 
-bool CaptureOverlay::ccTouchBegan(CCTouch* touch, CCEvent* event) {
+bool CaptureOverlay::ccTouchBegan(CCTouch* touch, CCEvent*) {
     if (m_isClosing) return false;
 // invisible until the capture lands: never swallow game/pause touches underneath.
     if (!this->isVisible()) return false;
@@ -190,7 +190,7 @@ bool CaptureOverlay::ccTouchBegan(CCTouch* touch, CCEvent* event) {
     return false;
 }
 
-void CaptureOverlay::onClose(CCObject* sender) {
+void CaptureOverlay::onClose(CCObject*) {
     if (m_isClosing) return;
     m_isClosing = true;
 
@@ -266,6 +266,7 @@ void CaptureOverlay::triggerCaptureProcess(float) {
                 self->m_captureWidth = w;
                 self->m_captureHeight = h;
 
+#if defined(GEODE_IS_WINDOWS)
                 {
                     auto rgbaCopy = rgba;
                     int const cw = w;
@@ -277,19 +278,22 @@ void CaptureOverlay::triggerCaptureProcess(float) {
                         Loader::get()->queueInMainThread([ok]() {
                             if (paimon::isRuntimeShuttingDown()) return;
                             if (ok) {
-                                PaimonNotify::create(
+                                PaimonNotify::show(
                                     "Captura copiada al portapapeles",
                                     NotificationIcon::Success
-                                )->show();
+                                );
                             } else {
-                                PaimonNotify::create(
+                                PaimonNotify::show(
                                     "No se pudo copiar al portapapeles",
                                     NotificationIcon::Warning
-                                )->show();
+                                );
                             }
                         });
                     });
                 }
+#else
+                PaimonNotify::show("Captura lista", NotificationIcon::Success);
+#endif
 
                 if (self->m_dimBg) {
                     self->m_dimBg->runAction(CCFadeTo::create(0.25f, 120));
@@ -479,18 +483,18 @@ void CaptureOverlay::revealPreviewControls() {
     startAutoDismissTimer();
 }
 
-void CaptureOverlay::onDownload(CCObject* sender) {
+void CaptureOverlay::onDownload(CCObject*) {
     if (!m_rgbaBuffer) {
-        PaimonNotify::create("No hay datos de captura disponibles.", NotificationIcon::Error)->show();
+        PaimonNotify::show("No hay datos de captura disponibles.", NotificationIcon::Error);
         return;
     }
 
-    auto capturesDir = Mod::get()->getSaveDir() / "captures";
+    auto capturesDir = paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "captures";
     std::error_code ec;
     if (!std::filesystem::exists(capturesDir, ec)) {
         std::filesystem::create_directories(capturesDir, ec);
         if (ec) {
-            PaimonNotify::create("Error al crear carpeta de capturas.", NotificationIcon::Error)->show();
+            PaimonNotify::show("Error al crear carpeta de capturas.", NotificationIcon::Error);
             return;
         }
     }
@@ -514,7 +518,7 @@ void CaptureOverlay::onDownload(CCObject* sender) {
     std::memcpy(bufCopy.get(), m_rgbaBuffer.get(), dataSize);
     int w = m_captureWidth, h = m_captureHeight;
 
-    PaimonNotify::create("Guardando captura...", NotificationIcon::Info)->show();
+    PaimonNotify::show("Guardando captura...", NotificationIcon::Info);
 
     startAutoDismissTimer();
 
@@ -525,31 +529,37 @@ void CaptureOverlay::onDownload(CCObject* sender) {
             if (paimon::isRuntimeShuttingDown()) return;
             Loader::get()->queueInMainThread([filePath]() {
                 if (paimon::isRuntimeShuttingDown()) return;
-                PaimonNotify::create("Captura de pantalla guardada con exito!", NotificationIcon::Success)->show();
+                PaimonNotify::show("Captura de pantalla guardada con exito!", NotificationIcon::Success);
             });
         } else {
             if (paimon::isRuntimeShuttingDown()) return;
             Loader::get()->queueInMainThread([]() {
                 if (paimon::isRuntimeShuttingDown()) return;
-                PaimonNotify::create("Error al guardar la captura.", NotificationIcon::Error)->show();
+                PaimonNotify::show("Error al guardar la captura.", NotificationIcon::Error);
             });
         }
     });
 }
 
-void CaptureOverlay::onOpenFolder(CCObject* sender) {
+void CaptureOverlay::onOpenFolder(CCObject*) {
     startAutoDismissTimer();
 
-    auto capturesDir = Mod::get()->getSaveDir() / "captures";
+    auto capturesDir = paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "captures";
     std::error_code ec;
     std::filesystem::create_directories(capturesDir, ec);
 
     // openfolder keeps the path wide: shellexecutea mangles non-ascii user dirs silently.
-    if (ec || !geode::utils::file::openFolder(capturesDir)) {
-        PaimonNotify::create("No se pudo abrir la carpeta de capturas.",
-            NotificationIcon::Error)->show();
+#if defined(GEODE_IS_MOBILE)
+    geode::utils::clipboard::write(paimon::paths::toUtf8(capturesDir));
+    PaimonNotify::show(fmt::format("Capturas (ruta copiada): {}", paimon::paths::toUtf8(capturesDir)),
+        NotificationIcon::Info, 3.0f);
+#else
+    if (ec || !geode::utils::file::openFolder(paimon::paths::toSdkPath(capturesDir))) {
+        PaimonNotify::show("No se pudo abrir la carpeta de capturas.",
+            NotificationIcon::Error);
         return;
     }
 
-    PaimonNotify::create("Carpeta de capturas abierta.", NotificationIcon::Success)->show();
+    PaimonNotify::show("Carpeta de capturas abierta.", NotificationIcon::Success);
+#endif
 }

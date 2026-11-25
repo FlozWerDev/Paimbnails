@@ -11,7 +11,30 @@ namespace paimon::gifimport {
 
 namespace {
 
-int skeletonNeighbors(Skeleton const& skeleton, int position, std::array<int, 8>& output) {
+std::vector<Point> subdivide(std::vector<Point> const& current, bool closed) {
+    std::vector<Point> next;
+    if (current.empty()) return next;
+    next.reserve(current.size() * 2 + 2);
+    if (!closed) next.push_back(current.front());
+    std::size_t const segments = closed ? current.size() : current.size() - 1;
+    for (std::size_t i = 0; i < segments; ++i) {
+        auto const& first = current[i];
+        auto const& second = current[(i + 1) % current.size()];
+        next.push_back({
+            first.x * 0.75f + second.x * 0.25f,
+            first.y * 0.75f + second.y * 0.25f
+        });
+        next.push_back({
+            first.x * 0.25f + second.x * 0.75f,
+            first.y * 0.25f + second.y * 0.75f
+        });
+    }
+    if (!closed) next.push_back(current.back());
+    return next;
+}
+
+int skeletonNeighbors(Skeleton const& skeleton, int position, std::array<int, 8>& output,
+    bool pruneCornerShortcuts) {
     int const x = position % skeleton.width;
     int const y = position / skeleton.width;
     int count = 0;
@@ -21,6 +44,11 @@ int skeletonNeighbors(Skeleton const& skeleton, int position, std::array<int, 8>
             int const xx = x + dx;
             int const yy = y + dy;
             if (xx < 0 || yy < 0 || xx >= skeleton.width || yy >= skeleton.height) continue;
+            // A diagonal shortcut across an occupied right-angle corner makes
+            // a triangle in the graph and invents a three-way junction.
+            if (pruneCornerShortcuts && dx != 0 && dy != 0 &&
+                (skeleton.cells[static_cast<std::size_t>(y) * skeleton.width + xx] ||
+                 skeleton.cells[static_cast<std::size_t>(yy) * skeleton.width + x])) continue;
             int const next = yy * skeleton.width + xx;
             if (skeleton.cells[static_cast<std::size_t>(next)]) output[count++] = next;
         }
@@ -120,6 +148,63 @@ std::vector<Point> simplify(std::vector<Point> const& points, float tolerance) {
     return output;
 }
 
+std::vector<Point> smoothLoop(std::vector<Point> const& loop, int iterations) {
+    std::vector<Point> current = loop;
+    for (int pass = 0; pass < iterations; ++pass) {
+        current = subdivide(current, true);
+    }
+    return current;
+}
+
+std::vector<Point> smoothPath(std::vector<Point> const& path, int iterations) {
+    std::vector<Point> current = path;
+    for (int pass = 0; pass < iterations && current.size() > 2; ++pass) {
+        current = subdivide(current, false);
+    }
+    return current;
+}
+
+std::vector<Point> simplifyLoop(std::vector<Point> const& loop, float tolerance) {
+    if (loop.size() < 4) return loop;
+    Point centroid;
+    for (auto const& point : loop) {
+        centroid.x += point.x;
+        centroid.y += point.y;
+    }
+    centroid.x /= static_cast<float>(loop.size());
+    centroid.y /= static_cast<float>(loop.size());
+
+    std::size_t anchor = 0;
+    float farthest = -1.f;
+    for (std::size_t i = 0; i < loop.size(); ++i) {
+        float const distance = pointDistance(loop[i], centroid);
+        if (distance > farthest) {
+            farthest = distance;
+            anchor = i;
+        }
+    }
+
+    std::vector<Point> chain;
+    chain.reserve(loop.size() + 1);
+    for (std::size_t i = 0; i <= loop.size(); ++i) {
+        chain.push_back(loop[(anchor + i) % loop.size()]);
+    }
+    auto reduced = simplify(chain, tolerance);
+    if (reduced.size() > 1) reduced.pop_back();
+    return reduced;
+}
+
+std::vector<Point> smoothAndSimplify(
+    std::vector<Point> const& points,
+    bool closed,
+    int iterations,
+    float tolerance
+) {
+    return closed
+        ? simplifyLoop(smoothLoop(points, iterations), tolerance)
+        : simplify(smoothPath(points, iterations), tolerance);
+}
+
 std::vector<float> distanceField(
     std::vector<std::uint8_t> const& cells,
     int width,
@@ -137,25 +222,25 @@ std::vector<float> distanceField(
     std::vector<int> hull(static_cast<std::size_t>(span));
     std::vector<float> breaks(static_cast<std::size_t>(span) + 1);
 
-    for (int x = 0; x < width; ++x) {
-        for (int y = 0; y < height; ++y) {
-            source[static_cast<std::size_t>(y)] = work[static_cast<std::size_t>(y) * width + x];
+    // separable EDT: gather each line, run the 1D transform, scatter back.
+    auto pass = [&](int lines, int lineLen, auto&& index, auto&& store) {
+        for (int line = 0; line < lines; ++line) {
+            for (int i = 0; i < lineLen; ++i) {
+                source[static_cast<std::size_t>(i)] = work[index(line, i)];
+            }
+            transformRow(source, target, hull, breaks, lineLen);
+            for (int i = 0; i < lineLen; ++i) {
+                store(line, i, target[static_cast<std::size_t>(i)]);
+            }
         }
-        transformRow(source, target, hull, breaks, height);
-        for (int y = 0; y < height; ++y) {
-            work[static_cast<std::size_t>(y) * width + x] = target[static_cast<std::size_t>(y)];
-        }
-    }
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            source[static_cast<std::size_t>(x)] = work[static_cast<std::size_t>(y) * width + x];
-        }
-        transformRow(source, target, hull, breaks, width);
-        for (int x = 0; x < width; ++x) {
-            distance[static_cast<std::size_t>(y) * width + x] =
-                std::sqrt(target[static_cast<std::size_t>(x)]);
-        }
-    }
+    };
+    auto at = [&](int y, int x) { return static_cast<std::size_t>(y) * width + x; };
+    pass(width, height,
+        [&](int x, int y) { return at(y, x); },
+        [&](int x, int y, float v) { work[at(y, x)] = v; });
+    pass(height, width,
+        [&](int y, int x) { return at(y, x); },
+        [&](int y, int x, float v) { distance[at(y, x)] = std::sqrt(v); });
     return distance;
 }
 
@@ -232,7 +317,7 @@ Skeleton thin(std::vector<int> const& positions, int sourceWidth) {
     return skeleton;
 }
 
-std::vector<std::vector<int>> skeletonPaths(Skeleton const& skeleton) {
+std::vector<std::vector<int>> skeletonPaths(Skeleton const& skeleton, bool pruneCornerShortcuts) {
     std::unordered_set<std::uint64_t> visited;
     std::vector<std::vector<int>> paths;
 
@@ -245,7 +330,7 @@ std::vector<std::vector<int>> skeletonPaths(Skeleton const& skeleton) {
             path.push_back(current);
             if (current == start && path.size() > 2) break;
             std::array<int, 8> neighbors{};
-            int const count = skeletonNeighbors(skeleton, current, neighbors);
+            int const count = skeletonNeighbors(skeleton, current, neighbors, pruneCornerShortcuts);
             if (current != start && count != 2) break;
             int following = -1;
             for (int i = 0; i < count; ++i) {
@@ -266,7 +351,7 @@ std::vector<std::vector<int>> skeletonPaths(Skeleton const& skeleton) {
     for (int position = 0; position < static_cast<int>(skeleton.cells.size()); ++position) {
         if (!skeleton.cells[static_cast<std::size_t>(position)]) continue;
         std::array<int, 8> neighbors{};
-        int const count = skeletonNeighbors(skeleton, position, neighbors);
+        int const count = skeletonNeighbors(skeleton, position, neighbors, pruneCornerShortcuts);
         if (count == 2) continue;
         for (int i = 0; i < count; ++i) {
             if (!visited.contains(edgeKey(position, neighbors[i]))) walk(position, neighbors[i]);
@@ -275,7 +360,7 @@ std::vector<std::vector<int>> skeletonPaths(Skeleton const& skeleton) {
     for (int position = 0; position < static_cast<int>(skeleton.cells.size()); ++position) {
         if (!skeleton.cells[static_cast<std::size_t>(position)]) continue;
         std::array<int, 8> neighbors{};
-        int const count = skeletonNeighbors(skeleton, position, neighbors);
+        int const count = skeletonNeighbors(skeleton, position, neighbors, pruneCornerShortcuts);
         for (int i = 0; i < count; ++i) {
             if (!visited.contains(edgeKey(position, neighbors[i]))) walk(position, neighbors[i]);
         }

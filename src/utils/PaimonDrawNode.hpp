@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/cocos/platform/CCGL.h>
 #include <Geode/cocos/draw_nodes/CCDrawNode.h>
@@ -6,6 +6,7 @@
 #include <Geode/cocos/textures/CCTextureCache.h>
 #include <Geode/cocos/CCDirector.h>
 #include <Geode/utils/cocos.hpp>
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -144,6 +145,107 @@ public:
 
         this->drawPolygon(outline.data(), static_cast<unsigned int>(outline.size()),
                           color, 0.f, cocos2d::ccc4f(0.f, 0.f, 0.f, 0.f));
+    }
+
+    // Direct triangle append without CCDrawNode::drawPolygon miter extrusion.
+    void drawTriangle(cocos2d::CCPoint p1, cocos2d::CCPoint p2, cocos2d::CCPoint p3,
+                      cocos2d::ccColor4F const& color) {
+        ensureCapacity(3);
+        cocos2d::ccColor4B c4b = cocos2d::ccc4BFromccc4F(color);
+        auto* v = m_pBuffer + m_nBufferCount;
+        v[0] = {{p1.x, p1.y}, c4b, {0.5f, 0.5f}};
+        v[1] = {{p2.x, p2.y}, c4b, {0.5f, 0.5f}};
+        v[2] = {{p3.x, p3.y}, c4b, {0.5f, 0.5f}};
+        m_nBufferCount += 3;
+        m_bDirty = true;
+    }
+
+    // Triangulates a simple (convex or concave) polygon via ear-clipping without
+    // Cocos2d-x border/AA miter extrusion, avoiding spikes on duplicate or sharp vertices.
+    void drawSolidPolygon(std::vector<cocos2d::CCPoint> const& inputVerts,
+                          cocos2d::ccColor4F const& color) {
+        std::vector<cocos2d::CCPoint> pts;
+        pts.reserve(inputVerts.size());
+        constexpr float kEpsSq = 1e-6f;
+        for (auto const& p : inputVerts) {
+            if (!pts.empty()) {
+                float dx = p.x - pts.back().x;
+                float dy = p.y - pts.back().y;
+                if (dx * dx + dy * dy < kEpsSq) continue;
+            }
+            pts.push_back(p);
+        }
+        while (pts.size() > 1) {
+            float dx = pts.front().x - pts.back().x;
+            float dy = pts.front().y - pts.back().y;
+            if (dx * dx + dy * dy < kEpsSq) pts.pop_back();
+            else break;
+        }
+        if (pts.size() < 3) return;
+
+        // Ensure counter-clockwise winding.
+        double area2 = 0.0;
+        for (size_t i = 0; i < pts.size(); ++i) {
+            size_t j = (i + 1) % pts.size();
+            area2 += static_cast<double>(pts[i].x) * pts[j].y
+                   - static_cast<double>(pts[j].x) * pts[i].y;
+        }
+        if (std::fabs(area2) < 1e-6) return;
+        if (area2 < 0.0) std::reverse(pts.begin(), pts.end());
+
+        auto cross2 = [](cocos2d::CCPoint a, cocos2d::CCPoint b, cocos2d::CCPoint c) {
+            return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+        };
+        auto pointInTri = [&](cocos2d::CCPoint p, cocos2d::CCPoint a,
+                              cocos2d::CCPoint b, cocos2d::CCPoint c) {
+            float c1 = cross2(a, b, p);
+            float c2 = cross2(b, c, p);
+            float c3 = cross2(c, a, p);
+            return (c1 >= -1e-5f && c2 >= -1e-5f && c3 >= -1e-5f);
+        };
+
+        std::vector<int> idx(pts.size());
+        for (size_t i = 0; i < pts.size(); ++i) idx[i] = static_cast<int>(i);
+
+        float minCross = 1e-6f;
+        while (idx.size() > 3) {
+            bool clipped = false;
+            size_t m = idx.size();
+            for (size_t i = 0; i < m; ++i) {
+                int iPrev = idx[(i + m - 1) % m];
+                int iCurr = idx[i];
+                int iNext = idx[(i + 1) % m];
+                auto a = pts[iPrev], b = pts[iCurr], c = pts[iNext];
+                if (cross2(a, b, c) <= minCross) continue;
+
+                bool containsOther = false;
+                for (size_t j = 0; j < m; ++j) {
+                    int k = idx[j];
+                    if (k == iPrev || k == iCurr || k == iNext) continue;
+                    if (pointInTri(pts[k], a, b, c)) {
+                        containsOther = true;
+                        break;
+                    }
+                }
+                if (containsOther) continue;
+
+                drawTriangle(a, b, c, color);
+                idx.erase(idx.begin() + static_cast<ptrdiff_t>(i));
+                clipped = true;
+                minCross = 1e-6f;
+                break;
+            }
+            if (!clipped) {
+                if (minCross > -1e-4f) {
+                    minCross = -1e-4f;
+                } else {
+                    break;
+                }
+            }
+        }
+        if (idx.size() == 3) {
+            drawTriangle(pts[idx[0]], pts[idx[1]], pts[idx[2]], color);
+        }
     }
 
     void draw() override {

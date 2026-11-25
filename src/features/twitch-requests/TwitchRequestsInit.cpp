@@ -28,9 +28,11 @@ $on_mod(Loaded) {
     listenForSettingChanges<bool>("twitch-requests-web-enabled", +[](bool) {
         TwitchRequestManager::get().restartWebRequests();
     });
+#if defined(GEODE_IS_DESKTOP)
     listenForSettingChanges<bool>("twitch-requests-obs-enabled", +[](bool) {
         paimon::twitch::StreamOverlayServer::get().restart();
     });
+#endif
 }
 
 $on_game(Loaded) {

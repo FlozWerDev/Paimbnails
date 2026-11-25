@@ -1,5 +1,8 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "ManualOverrideStore.hpp"
+#include "../../../utils/AtomicFileWrite.hpp"
 
+#include "LECodec.hpp"
 #include "SlotPaths.hpp"
 
 #include <Geode/utils/file.hpp>
@@ -13,38 +16,6 @@ using namespace geode::prelude;
 namespace paimon::texture_studio {
 
 namespace {
-
-void writeU16LE(std::vector<std::uint8_t>& out, std::uint16_t v) {
-    out.push_back(static_cast<std::uint8_t>(v & 0xFF));
-    out.push_back(static_cast<std::uint8_t>((v >> 8) & 0xFF));
-}
-
-void writeU32LE(std::vector<std::uint8_t>& out, std::uint32_t v) {
-    out.push_back(static_cast<std::uint8_t>(v & 0xFF));
-    out.push_back(static_cast<std::uint8_t>((v >> 8) & 0xFF));
-    out.push_back(static_cast<std::uint8_t>((v >> 16) & 0xFF));
-    out.push_back(static_cast<std::uint8_t>((v >> 24) & 0xFF));
-}
-
-std::uint16_t readU16LE(std::uint8_t const* p) {
-    return static_cast<std::uint16_t>(p[0])
-         | (static_cast<std::uint16_t>(p[1]) << 8);
-}
-
-std::uint32_t readU32LE(std::uint8_t const* p) {
-    return static_cast<std::uint32_t>(p[0])
-         | (static_cast<std::uint32_t>(p[1]) << 8)
-         | (static_cast<std::uint32_t>(p[2]) << 16)
-         | (static_cast<std::uint32_t>(p[3]) << 24);
-}
-
-bool maskNonEmpty(MaskBuffer const& m) {
-    if (m.empty()) return false;
-    for (auto v : m.data) {
-        if (v != 0) return true;
-    }
-    return false;
-}
 
 void appendMask(std::vector<std::uint8_t>& out, MaskBuffer const& m) {
     out.insert(out.end(), m.data.begin(), m.data.end());
@@ -68,7 +39,7 @@ geode::Result<> ManualOverrideStore::save(std::filesystem::path const& path,
     bool hasOL   = maskNonEmpty(masks.outline);
 
     if (!(hasC1 || hasC2 || hasGlow || hasOL)) {
-        return Err("ManualOverrideStore::save: all masks empty for {}", geode::utils::string::pathToString(path));
+        return Err("ManualOverrideStore::save: all masks empty for {}", paimon::paths::toUtf8(path));
     }
 
     int W = 0, H = 0;
@@ -118,13 +89,12 @@ geode::Result<> ManualOverrideStore::save(std::filesystem::path const& path,
     if (!parent.empty()) {
         std::filesystem::create_directories(parent, ec);
         if (ec) {
-            return Err("create_directories {}: {}", geode::utils::string::pathToString(parent), ec.message());
+            return Err("create_directories {}: {}", paimon::paths::toUtf8(parent), ec.message());
         }
     }
 
-    auto wr = geode::utils::file::writeBinary(path, buf);
-    if (!wr) {
-        return Err("writeBinary {}: {}", geode::utils::string::pathToString(path), wr.unwrapErr());
+    if (!paimon::file::writeAtomically(path, std::span<uint8_t const>(buf.data(), buf.size()))) {
+        return Err("atomic write failed: {}", paimon::paths::toUtf8(path));
     }
     return Ok();
 }
@@ -134,11 +104,11 @@ geode::Result<MaskSet> ManualOverrideStore::load(std::filesystem::path const& pa
     auto size = std::filesystem::file_size(path, ec);
     if (ec || size > 16 + 4ull * 8192ull * 8192ull) {
         return Err("invalid override file size for {}",
-            geode::utils::string::pathToString(path));
+            paimon::paths::toUtf8(path));
     }
-    auto rd = geode::utils::file::readBinary(path);
+    auto rd = geode::utils::file::readBinary(paimon::paths::toSdkPath(path));
     if (!rd) {
-        return Err("readBinary {}: {}", geode::utils::string::pathToString(path), rd.unwrapErr());
+        return Err("readBinary {}: {}", paimon::paths::toUtf8(path), rd.unwrapErr());
     }
     auto const& bytes = rd.unwrap();
     if (bytes.size() < 16) {
@@ -210,7 +180,7 @@ geode::Result<> ManualOverrideStore::deleteForSlot(std::string_view slotId,
     }
     std::filesystem::remove(path, ec);
     if (ec) {
-        return Err("remove {}: {}", geode::utils::string::pathToString(path), ec.message());
+        return Err("remove {}: {}", paimon::paths::toUtf8(path), ec.message());
     }
     return Ok();
 }

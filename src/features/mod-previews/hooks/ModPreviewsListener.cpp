@@ -26,6 +26,7 @@ constexpr float kEdgePad = 6.f;
 // visibility follows the active tab automatically.
 class PreviewRibbon : public CCNode {
 public:
+    using CCNode::init;
     std::string m_prefix; // ".../previews/preview-" without "<n>.png"
     int m_top = 0;        // highest probe index that finished loading
     CCMenu* m_row = nullptr;
@@ -49,13 +50,6 @@ public:
         this->setContentSize({width, kRibbonH});
         this->setAnchorPoint({0.5f, 0.5f});
 
-        auto shade = CCScale9Sprite::create("square02b_001.png");
-        shade->setContentSize(this->getContentSize() / 0.5f);
-        shade->setScale(0.5f);
-        shade->setColor({0, 0, 0});
-        shade->setOpacity(140);
-        this->addChildAtPosition(shade, Anchor::Center);
-
         m_row = CCMenu::create();
         m_row->setContentSize(this->getContentSize());
         m_row->ignoreAnchorPointForPosition(false);
@@ -66,12 +60,20 @@ public:
             auto slot = LazySprite::create({110, 60}, false);
             m_slots.push_back(slot);
             int probe = i;
-            slot->setLoadCallback([this, probe, slot](Result<> res) {
-                if (res.isOk()) this->onCell(probe, slot);
+            slot->setLoadCallback([self = WeakRef<PreviewRibbon>(this), probe, slot](Result<> res) {
+                auto ribbon = self.lock();
+                if (!ribbon || !res.isOk()) return;
+                ribbon->onCell(probe, slot);
             });
             slot->loadFromUrl(m_prefix + std::to_string(i) + ".png");
         }
         return true;
+    }
+
+    ~PreviewRibbon() override {
+        for (auto& slot : m_slots) {
+            if (slot) slot->cancelLoad();
+        }
     }
 
     void onCell(int probe, LazySprite* slot) {
@@ -110,7 +112,7 @@ public:
 };
 
 void attachRibbon(Ref<FLAlertLayer> popup, std::string prefix) {
-    if (!popup) return;
+    if (!popup || !popup->getParent() || !popup->isRunning()) return;
     auto desc = popup->getChildByIDRecursive("description-container");
     if (!desc) return;
     if (desc->getChildByID("mod-image-ribbon"_spr)) return;
@@ -146,6 +148,7 @@ void handleModPopup(FLAlertLayer* popup) {
     std::string assetBase = source.assetBase;
     WebHelper::dispatch(web::WebRequest(), "GET", assetBase + "/main/mod.json",
         [popupRef, assetBase](web::WebResponse res) {
+            if (!popupRef || !popupRef->getParent() || !popupRef->isRunning()) return;
             std::string branch = res.ok() ? "main" : "master";
             attachRibbon(popupRef, assetBase + "/" + branch + "/previews/preview-");
         });

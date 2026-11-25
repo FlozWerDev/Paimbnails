@@ -71,7 +71,6 @@ void FontButton::onToggle(CCObject*) {
 
     if (picker) {
         picker->show();
-        picker->positionBelow(this, 0.f);
         m_activePicker = picker;
     }
 }

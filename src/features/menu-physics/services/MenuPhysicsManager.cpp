@@ -11,8 +11,8 @@ namespace paimon::menuphysics {
 namespace {
     bool hasMenuButtons(CCNode* n) {
         if (!n) return false;
-        if (auto* item = typeinfo_cast<CCMenuItem*>(n)) {
-            if (typeinfo_cast<CCMenu*>(n->getParent())) return true;
+        if (typeinfo_cast<CCMenuItem*>(n) && typeinfo_cast<CCMenu*>(n->getParent())) {
+            return true;
         }
         if (auto* children = n->getChildren()) {
             for (int i = 0; i < static_cast<int>(children->count()); ++i) {

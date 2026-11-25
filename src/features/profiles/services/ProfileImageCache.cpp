@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 
 #include "ProfileImageCache.hpp"
 #include "ProfileImageService.hpp"
@@ -94,7 +95,7 @@ CCTexture2D* getProfileImgCachedTexture(int accountID) {
 }
 
 std::filesystem::path getProfileImgCacheDir() {
-    return Mod::get()->getSaveDir() / "profileimg_cache";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "profileimg_cache";
 }
 
 std::mutex& profileImgDiskMutex() {

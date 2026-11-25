@@ -6,6 +6,7 @@ namespace paimon::scorecell {
 
 class ScoreCellHoverWatcher : public cocos2d::CCNode {
 public:
+    using cocos2d::CCNode::init;
     static ScoreCellHoverWatcher* create(std::string const& type, float intensity);
 
     void setTransformTarget(cocos2d::CCNode* target,

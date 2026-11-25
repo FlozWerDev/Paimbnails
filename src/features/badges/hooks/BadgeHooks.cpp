@@ -1,4 +1,5 @@
 #include <Geode/Geode.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 #include <Geode/modify/CommentCell.hpp>
 #include "../../../framework/HookConventions.hpp"
 #include "../../../managers/ThumbnailAPI.hpp"
@@ -23,6 +24,8 @@
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../services/RoleService.hpp"
 #include "../services/RoleBadges.hpp"
+#include "../../community-base/services/CommunityClient.hpp"
+#include "../../community-base/services/CommunityMediaCache.hpp"
 
 using namespace geode::prelude;
 
@@ -49,6 +52,12 @@ static void deferEmoteRetry(WeakRef<CommentCell> weakSelf,
                             std::string text, std::string font, int retries);
 
 namespace {
+CCNode* findCommentTextArea(CCNode* mainLayer) {
+    if (!mainLayer) return nullptr;
+    if (auto* area = mainLayer->getChildByID("comment-text-area-label")) return area;
+    return mainLayer->getChildByID("comment-text-area");
+}
+
 constexpr GLubyte kCommentDarkPanelOpacity = 60;
 constexpr cocos2d::ccColor3B kCommentPanelColor = {30, 33, 48};
 constexpr float kCommentInsetX = 2.0f;
@@ -81,6 +90,7 @@ class $modify(BadgeCommentCell, CommentCell) {
     }
 
     struct Fields {
+        bool m_exitCallbackInstalled = false;
         Ref<CCNode> m_commentBgPanel = nullptr;
         Ref<CCClippingNode> m_commentBgClip = nullptr;
         Ref<CCLayerColor> m_commentBgDarkOverlay = nullptr;
@@ -245,6 +255,22 @@ class $modify(BadgeCommentCell, CommentCell) {
             m_fields->m_commentBgPanel = panel;
             ensureVanillaBgLayerHidden();
         }
+        else if (config.commentBgType == "community") {
+            if (!paimon::community::isCommunityId(config.commentBgCommunityId)) return;
+            int accountID = m_comment ? m_comment->m_accountID : 0;
+            int token = m_fields->m_commentBgToken;
+            WeakRef<BadgeCommentCell> weakSelf = this;
+            // one download per background for the whole comment list.
+            paimon::community::CommunityMediaCache::get().load(
+                paimon::community::CommunityClient::backgroundUrl(config.commentBgCommunityId),
+                [weakSelf, token, accountID, layout, config, cellSize](CCTexture2D* texture) {
+                    if (paimon::isRuntimeShuttingDown() || !texture) return;
+                    auto selfRef = weakSelf.lock();
+                    auto* self = static_cast<BadgeCommentCell*>(selfRef.data());
+                    if (!self || !self->shouldHandleCommentProfileResult(token, accountID)) return;
+                    self->installImageCommentBackground(layout, texture, config, cellSize);
+                });
+        }
         else if (config.commentBgType == "thumbnail" || config.commentBgType == "banner") {
             int accountID = m_comment ? m_comment->m_accountID : 0;
             int token = m_fields->m_commentBgToken;
@@ -347,7 +373,7 @@ class $modify(BadgeCommentCell, CommentCell) {
         }
     }
 
-    void installImageCommentBackground(CommentBackgroundLayout const& layout, CCTexture2D* texture, ProfileConfig const& config, CCSize const& cellSize) {
+    void installImageCommentBackground(CommentBackgroundLayout const& layout, CCTexture2D* texture, ProfileConfig const& config, CCSize const&) {
         if (!texture) return;
 
         if (m_fields->m_commentBgClip) {
@@ -377,10 +403,10 @@ class $modify(BadgeCommentCell, CommentCell) {
         if (darkness > 0.0f) {
             auto overlay = CCLayerColor::create({0, 0, 0, static_cast<GLubyte>(darkness * 255)});
             overlay->setContentSize(layout.size);
-            overlay->setPosition(layout.origin);
-            overlay->setZOrder(-12);
+            // lives inside the rounded clip so its corners match the image
+            overlay->setPosition({0.f, 0.f});
             overlay->setID("paimon-comment-bg-dark"_spr);
-            this->addChild(overlay);
+            clipper->addChild(overlay, 5);
             m_fields->m_commentBgDarkOverlay = overlay;
         }
 
@@ -418,7 +444,9 @@ class $modify(BadgeCommentCell, CommentCell) {
         std::string cacheKey = fmt::format("cbg:{}:{}:{}", accountID,
             config.commentBgType == "thumbnail"
                 ? fmt::format("t{}_{}", config.commentBgThumbnailId, config.commentBgThumbnailPos)
-                : fmt::format("b{}", config.commentBgBannerMode),
+                : config.commentBgType == "community"
+                    ? fmt::format("c{}", config.commentBgCommunityId)
+                    : fmt::format("b{}", config.commentBgBannerMode),
             usePaimonBlur ? "p" : "g");
 
         Ref<CCTexture2D> texRef = texture;
@@ -439,7 +467,7 @@ class $modify(BadgeCommentCell, CommentCell) {
         }
     }
 
-    void installGifCommentBackground(CommentBackgroundLayout const& layout, std::string const& gifKey, ProfileConfig const& config, CCSize const& cellSize) {
+    void installGifCommentBackground(CommentBackgroundLayout const& layout, std::string const& gifKey, ProfileConfig const& config, CCSize const&) {
         if (gifKey.empty()) return;
 
         if (m_fields->m_commentBgClip) {
@@ -510,10 +538,10 @@ class $modify(BadgeCommentCell, CommentCell) {
         if (darkness > 0.0f) {
             auto overlay = CCLayerColor::create({0, 0, 0, static_cast<GLubyte>(darkness * 255)});
             overlay->setContentSize(layout.size);
-            overlay->setPosition(layout.origin);
-            overlay->setZOrder(-12);
+            // lives inside the rounded clip so its corners match the image
+            overlay->setPosition({0.f, 0.f});
             overlay->setID("paimon-comment-bg-dark"_spr);
-            this->addChild(overlay);
+            clipper->addChild(overlay, 5);
             m_fields->m_commentBgDarkOverlay = overlay;
         }
     }
@@ -558,13 +586,6 @@ class $modify(BadgeCommentCell, CommentCell) {
         });
     }
 
-    $override
-    void onExit() {
-        this->unschedule(schedule_selector(BadgeCommentCell::hideVanillaBgLayerTick));
-        clearCommentProfileBackground();
-        CommentCell::onExit();
-    }
-
     // briefly re-hide gd's background after updatebgcolor().
     void hideVanillaBgLayerTick(float) {
         if (!(m_fields->m_commentBgPanel || m_fields->m_commentBgClip)) {
@@ -602,9 +623,17 @@ class $modify(BadgeCommentCell, CommentCell) {
     $override
     void loadFromComment(GJComment* comment) {
         this->unschedule(schedule_selector(BadgeCommentCell::hideVanillaBgLayerTick));
+        if (!m_fields->m_exitCallbackInstalled) {
+            m_fields->m_exitCallbackInstalled = true;
+            this->addOnExitCallback([this] {
+                this->unschedule(schedule_selector(BadgeCommentCell::hideVanillaBgLayerTick));
+                this->clearCommentProfileBackground();
+                return true;
+            });
+        }
         clearCommentProfileBackground();
         this->setUserObject("paimon-comment-bgs-hidden"_spr, nullptr);
-        // Recycled cells must release overlays before GD replaces their text nodes.
+        // recycled cells must release overlays before GD replaces their text nodes.
         if (m_mainLayer) {
             if (auto* selector = m_mainLayer->getChildByID("paimon-text-selector"_spr)) {
                 selector->removeFromParent();
@@ -617,7 +646,7 @@ class $modify(BadgeCommentCell, CommentCell) {
         
         if (!comment || !m_mainLayer) return;
 
-        if (auto* textArea = m_mainLayer->getChildByID("comment-text-area")) {
+        if (auto* textArea = findCommentTextArea(m_mainLayer)) {
             textArea->setVisible(true);
         }
         if (auto* textLabel = m_mainLayer->getChildByID("comment-text-label")) {
@@ -758,7 +787,7 @@ class $modify(BadgeCommentCell, CommentCell) {
     void refreshCommentTextSelector(std::string const& text) {
         if (!m_mainLayer) return;
         CCNode* textNode = m_mainLayer->getChildByID("paimon-emote-overlay"_spr);
-        if (!textNode) textNode = m_mainLayer->getChildByID("comment-text-area");
+        if (!textNode) textNode = findCommentTextArea(m_mainLayer);
         if (!textNode) textNode = m_mainLayer->getChildByID("comment-text-label");
         paimon::CommentTextSelector::attach(m_mainLayer, text, textNode);
     }
@@ -774,7 +803,7 @@ class $modify(BadgeCommentCell, CommentCell) {
         float maxWidth = 315.f;
         float fontSize = 1.f;
 
-        if (auto* textArea = typeinfo_cast<TextArea*>(m_mainLayer->getChildByID("comment-text-area"))) {
+        if (auto* textArea = typeinfo_cast<TextArea*>(findCommentTextArea(m_mainLayer))) {
             targetNode = textArea;
             maxWidth = textArea->m_width * textArea->getScaleX();
             fontSize = textArea->m_scale * textArea->getScale();
@@ -800,7 +829,7 @@ class $modify(BadgeCommentCell, CommentCell) {
 
         if (!targetNode) return false;
 
-        // Leave room for emotes in long comments.
+        // leave room for emotes in long comments.
         float adjustedFontSize = fontSize;
         size_t textLen = commentText.size();
         if (textLen > 80) {

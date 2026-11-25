@@ -154,7 +154,7 @@ def image_math_checks():
     assert "* u_ca * 2.0 * u_texel" in composite
     assert "gi * u_giStrength + refl + trans" in SHADERS["trace"]
     assert "u_giStrength" not in composite
-    assert "max(phi / (1.0 + blur * kVarGain), 8.0)" in SHADERS["atrous"]
+    assert "phi = max(phi / (1.0 + blur * kVarGain), 2.5)" in SHADERS["atrous"]
     assert "atan(" not in SHADERS["bloom"] and "u_frame" not in SHADERS["bloom"]
     print("PASS: neutral colors, aspect ratios, ray endpoints, independent reflections, and stable rays")
 

@@ -3,6 +3,7 @@
 #include <Geode/Geode.hpp>
 #include "ModAuthFlow.hpp"
 #include <string>
+#include <string_view>
 #include <atomic>
 #include <cstdint>
 #include <climits>
@@ -16,6 +17,19 @@ namespace internal {
 // until restart.
     inline void invalidateSettingsCache() {
         g_settingsVersion.fetch_add(1, std::memory_order_relaxed);
+    }
+
+// getSettingValue throws when the key is missing or the type mismatches
+// (stale config, hand-edited json). hot paths must not crash on that.
+    template <typename T>
+    inline T safeSetting(std::string_view key, T fallback) {
+        try {
+            auto* mod = geode::Mod::get();
+            if (!mod || !mod->hasSetting(key)) return fallback;
+            return mod->getSettingValue<T>(std::string(key));
+        } catch (...) {
+            return fallback;
+        }
     }
 }
 
@@ -36,7 +50,7 @@ namespace thumbnails {
         return geode::Mod::get()->getSavedValue<bool>("levelcell-show-view-button", true);
     }
     inline bool hoverEffects() {
-        return geode::Mod::get()->getSettingValue<bool>("levelcell-hover-effects");
+        return internal::safeSetting<bool>("levelcell-hover-effects", true);
     }
     inline std::string animType() {
         return geode::Mod::get()->getSavedValue<std::string>("levelcell-anim-type", "zoom-slide");
@@ -219,7 +233,7 @@ namespace video {
         return geode::Mod::get()->getSavedValue<int>("video-min-fps", 12);
     }
 
-    static constexpr size_t kMaxVideoFileSize = 2ULL * 1024 * 1024 * 1024;
+    static constexpr size_t kMaxVideoFileSize = 64ULL * 1024 * 1024;
 }
 
 namespace profiles {
@@ -258,7 +272,9 @@ namespace moderation {
         return paimon::modauth::isVerified(true);
     }
     inline bool isVerifiedVip() {
-        return geode::Mod::get()->getSavedValue<bool>("is-verified-vip", false);
+        // volatile server verdict only; the persisted flag is a ui hint and
+        // editing it in config must never grant upload tiers.
+        return paimon::modauth::isVerifiedVip();
     }
     inline bool canUploadGIF() {
         return isVerifiedVip() || isVerifiedModerator() || isVerifiedAdmin();
@@ -267,7 +283,8 @@ namespace moderation {
 
 namespace general {
     inline bool smoothScroll() {
-        return geode::Mod::get()->getSettingValue<bool>("smooth-scroll");
+        auto* mod = geode::Mod::get();
+        return mod && mod->hasSetting("smooth-scroll") && mod->getSettingValue<bool>("smooth-scroll");
     }
     inline bool clearCacheOnExit() {
         return geode::Mod::get()->getSettingValue<bool>("clear-cache-on-exit");
@@ -301,7 +318,8 @@ namespace smoothscroll {
     inline constexpr double kEditorZoomSmoothnessMax      = 3.0;
 
     inline bool enabled() {
-        return geode::Mod::get()->getSettingValue<bool>("smooth-scroll");
+        auto* mod = geode::Mod::get();
+        return mod && mod->hasSetting("smooth-scroll") && mod->getSettingValue<bool>("smooth-scroll");
     }
     inline double sensitivity() {
         return geode::Mod::get()->getSavedValue<double>("smooth-scroll-sensitivity", kSensitivityDefault);
@@ -352,9 +370,28 @@ namespace smoothui {
     }
 }
 
+namespace dynamicpopup {
+    inline bool enabled() {
+        return geode::Mod::get()->getSettingValue<bool>("dynamic-popup-enabled");
+    }
+    inline bool exitEnabled() {
+        return geode::Mod::get()->getSettingValue<bool>("dynamic-exit-enabled");
+    }
+    inline std::string style() {
+        return geode::Mod::get()->getSavedValue<std::string>("dynamic-popup-style", "paimonUI");
+    }
+    inline double popupSpeed() {
+        return geode::Mod::get()->getSavedValue<double>("dynamic-popup-speed", 1.0);
+    }
+    inline double exitSpeed() {
+        return geode::Mod::get()->getSavedValue<double>("dynamic-exit-speed", 1.0);
+    }
+}
+
 namespace discord_rpc {
     inline bool enabled() {
-        return geode::Mod::get()->getSettingValue<bool>("discord-rpc-enabled");
+        auto* mod = geode::Mod::get();
+        return mod && mod->hasSetting("discord-rpc-enabled") && mod->getSettingValue<bool>("discord-rpc-enabled");
     }
     inline bool privateMode() {
         return geode::Mod::get()->getSavedValue<bool>("discord-rpc-private-mode", false);
@@ -414,25 +451,36 @@ namespace cursor {
 
 namespace input_scroll {
     inline bool enabled() {
-        return geode::Mod::get()->getSettingValue<bool>("input-scroll-enable");
+        auto* mod = geode::Mod::get();
+        return mod && mod->hasSetting("input-scroll-enable") && mod->getSettingValue<bool>("input-scroll-enable");
     }
     inline int intStep() {
-        return static_cast<int>(geode::Mod::get()->getSettingValue<int64_t>("input-scroll-step"));
+        auto* mod = geode::Mod::get();
+        return (mod && mod->hasSetting("input-scroll-step"))
+            ? static_cast<int>(mod->getSettingValue<int64_t>("input-scroll-step")) : 1;
     }
     inline std::string decimalModifier() {
-        return geode::Mod::get()->getSettingValue<std::string>("input-scroll-decimal-modifier");
+        auto* mod = geode::Mod::get();
+        return (mod && mod->hasSetting("input-scroll-decimal-modifier"))
+            ? mod->getSettingValue<std::string>("input-scroll-decimal-modifier") : std::string("shift");
     }
     inline double decimalStep() {
-        return geode::Mod::get()->getSettingValue<double>("input-scroll-decimal-step");
+        auto* mod = geode::Mod::get();
+        return (mod && mod->hasSetting("input-scroll-decimal-step"))
+            ? mod->getSettingValue<double>("input-scroll-decimal-step") : 0.10;
     }
     inline int decimalPlaces() {
-        return static_cast<int>(geode::Mod::get()->getSettingValue<int64_t>("input-scroll-decimal-places"));
+        auto* mod = geode::Mod::get();
+        return (mod && mod->hasSetting("input-scroll-decimal-places"))
+            ? static_cast<int>(mod->getSettingValue<int64_t>("input-scroll-decimal-places")) : 2;
     }
     inline bool focusOnly() {
-        return geode::Mod::get()->getSettingValue<bool>("input-scroll-focus-only");
+        auto* mod = geode::Mod::get();
+        return mod && mod->hasSetting("input-scroll-focus-only") && mod->getSettingValue<bool>("input-scroll-focus-only");
     }
     inline bool wrap() {
-        return geode::Mod::get()->getSettingValue<bool>("input-scroll-wrap");
+        auto* mod = geode::Mod::get();
+        return mod && mod->hasSetting("input-scroll-wrap") && mod->getSettingValue<bool>("input-scroll-wrap");
     }
 }
 

@@ -7,7 +7,7 @@
 #include <Geode/binding/BoomListView.hpp>
 #include <Geode/binding/TableView.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
-#include <Geode/binding/GJWriteMessagePopup.hpp>
+#include <Geode/binding/NewThreadPopup.hpp>
 #include <Geode/binding/CCTextInputNode.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/SimplePlayer.hpp>
@@ -667,17 +667,9 @@ class $modify(PaimonMessageCell, GJMessageCell) {
     void onPaimonQuickReply(CCObject*) {
         auto* msg = m_message;
         if (!msg) return;
-        auto* popup = GJWriteMessagePopup::create(msg->m_accountID, msg->m_messageID);
-        if (!popup) return;
-        if (!msg->m_outgoing && popup->m_subjectInput) {
-            std::string current = popup->m_subjectInput->getString();
-            if (current.empty()) {
-                std::string subject = msg->m_title;
-                if (subject.rfind("Re:", 0) != 0) subject = "Re: " + subject;
-                if (subject.size() > 35) subject = subject.substr(0, 35);
-                popup->m_subjectInput->setString(subject);
-            }
-        }
-        popup->show();
+        // GD 2.2091 replies through the native thread composer.
+        std::string subject = msg->m_title;
+        if (subject.rfind("Re: ", 0) != 0) subject = "Re: " + subject;
+        if (auto* popup = NewThreadPopup::create(msg->m_accountID, subject, "")) popup->show();
     }
 };

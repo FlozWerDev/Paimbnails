@@ -17,7 +17,7 @@ void GradientCharacterColorPage::updateGradient() {
     Loader::get()->queueInMainThread([self = Ref(this), p2] {
         CCArrayExt<SimplePlayer*> dolls = CCArrayExt<SimplePlayer*>(self->m_playerObjects);
 
-        for (int i = 0; i < dolls.size(); i++) {
+        for (size_t i = 0; i < dolls.size(); i++) {
             // slot 1 is the ship doll, or the jetpack one when toggled.
             IconType kind = (i == 1 && !self->m_fields->m_isShip)
                 ? IconType::Jetpack

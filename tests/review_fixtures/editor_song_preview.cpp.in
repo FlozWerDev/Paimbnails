@@ -1,0 +1,129 @@
+#include <cassert>
+#include <iostream>
+#include <string>
+
+namespace gd { using string = std::string; }
+
+namespace paimon {
+bool editorScene = false;
+bool dynamicActive = false;
+bool profileActive = false;
+bool videoActive = false;
+bool isEditorScene() { return editorScene; }
+bool isDynamicSongInteropActive() { return dynamicActive; }
+bool isProfileMusicInteropActive() { return profileActive; }
+bool isVideoAudioInteropActive() { return videoActive; }
+}
+
+struct Mod {
+    bool passthrough = false;
+    static Mod* get() { static Mod mod; return &mod; }
+    template<class T> T getSavedValue(char const*, bool) { return passthrough; }
+};
+struct GameManager {
+    static GameManager* get() { static GameManager manager; return &manager; }
+    std::string getMenuMusicFile() { return "menuLoop.mp3"; }
+};
+struct DynamicSongManager {
+    static inline bool s_selfPlayMusic = false;
+    bool validLayer = false, suspended = false;
+    static DynamicSongManager* get() { static DynamicSongManager manager; return &manager; }
+    bool isInValidLayer() { return validLayer; }
+    bool hasSuspendedPlayback() { return suspended; }
+};
+struct ProfileMusicManager {
+    int stops = 0;
+    static ProfileMusicManager& get() { static ProfileMusicManager manager; return manager; }
+    void forceStop() { ++stops; paimon::profileActive = false; }
+};
+struct FMODAudioEngine {
+    int calls = 0;
+    std::string requestedPath;
+    bool loop = false;
+    float fade = 0.f;
+    int musicChannel = -1;
+    void playMusic(gd::string path, bool shouldLoop, float fadeInTime, int channel) {
+        ++calls;
+        requestedPath = path;
+        loop = shouldLoop;
+        fade = fadeInTime;
+        musicChannel = channel;
+    }
+};
+struct PreviewEngine : FMODAudioEngine {
+@@function|src/hooks/LevelSelectLayer.cpp|void playMusic(std::string path, bool shouldLoop, float fadeInTime, int channel)@@
+};
+
+void reset() {
+    paimon::editorScene = false;
+    paimon::dynamicActive = false;
+    paimon::profileActive = false;
+    paimon::videoActive = false;
+    Mod::get()->passthrough = false;
+    *DynamicSongManager::get() = {};
+    DynamicSongManager::s_selfPlayMusic = false;
+    ProfileMusicManager::get().stops = 0;
+}
+
+int main() {
+    // Editor previews must reach GD even if the previous scene's audio owner
+    // is still active. Cover downloaded songs and a song matching the menu loop.
+    for (int owners = 0; owners < 16; ++owners) {
+        for (auto const* path : {"807662.mp3", "10012982.ogg", "menuLoop.mp3"}) {
+            reset();
+            paimon::editorScene = true;
+            paimon::dynamicActive = (owners & 1) != 0;
+            paimon::profileActive = (owners & 2) != 0;
+            paimon::videoActive = (owners & 4) != 0;
+            DynamicSongManager::get()->validLayer = true;
+            DynamicSongManager::get()->suspended = (owners & 8) != 0;
+            PreviewEngine engine;
+            engine.playMusic(path, false, 0.25f, 2);
+            assert(engine.calls == 1);
+            assert(engine.requestedPath == path);
+            assert(!engine.loop && engine.fade == 0.25f && engine.musicChannel == 2);
+            assert(ProfileMusicManager::get().stops == 0);
+        }
+    }
+
+    // Outside the editor, keep menu restarts from replacing owned audio.
+    for (int owner = 0; owner < 4; ++owner) {
+        reset();
+        paimon::dynamicActive = owner == 0;
+        DynamicSongManager::get()->validLayer = true;
+        paimon::profileActive = owner == 1;
+        paimon::videoActive = owner == 2;
+        DynamicSongManager::get()->suspended = owner == 3;
+        PreviewEngine engine;
+        engine.playMusic("menuLoop.mp3", true, 0.f, 0);
+        assert(engine.calls == 0);
+    }
+
+    reset();
+    PreviewEngine ordinary;
+    ordinary.playMusic("807662.mp3", false, 0.f, 0);
+    assert(ordinary.calls == 1);
+
+    reset();
+    paimon::profileActive = true;
+    PreviewEngine profile;
+    profile.playMusic("807662.mp3", false, 0.f, 0);
+    assert(profile.calls == 1 && ProfileMusicManager::get().stops == 1);
+
+    reset();
+    paimon::dynamicActive = true;
+    DynamicSongManager::get()->validLayer = true;
+    Mod::get()->passthrough = true;
+    PreviewEngine passthrough;
+    passthrough.playMusic("807662.mp3", false, 0.f, 0);
+    assert(passthrough.calls == 1);
+
+    reset();
+    paimon::dynamicActive = true;
+    DynamicSongManager::get()->validLayer = true;
+    DynamicSongManager::s_selfPlayMusic = true;
+    PreviewEngine self;
+    self.playMusic("807662.mp3", true, 0.f, 0);
+    assert(self.calls == 1);
+    std::cout << "Editor song previews and menu audio ownership passed\n";
+}

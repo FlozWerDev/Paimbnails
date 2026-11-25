@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "SheetRetarget.hpp"
 
 #include "../data/ImageBuffer.hpp"
@@ -17,10 +18,10 @@ namespace {
 // geode.loader unpacks to geode/resources; every other mod to its runtime dir.
 std::filesystem::path installedResourceDir(std::string const& modId) {
     if (modId == "geode.loader") {
-        return dirs::getGeodeResourcesDir() / "geode.loader";
+        return paimon::paths::toStdPath(dirs::getGeodeResourcesDir()) / "geode.loader";
     }
     if (auto* mod = Loader::get()->getInstalledMod(modId)) {
-        return mod->getResourcesDir();
+        return paimon::paths::toStdPath(mod->getResourcesDir());
     }
     return {};
 }

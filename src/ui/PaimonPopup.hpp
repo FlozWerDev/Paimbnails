@@ -21,5 +21,5 @@ protected:
     CCMenuItemSpriteExtra* addInfoButton(std::string const& title, std::string const& body,
         geode::Anchor anchor = geode::Anchor::TopRight, cocos2d::CCPoint offset = {-18.f, -18.f});
     void addCorners(geode::SideArtStyle style = geode::SideArtStyle::PopupGold,
-        float scale = 0.45f, bool top = false);
+        float scale = 1.f, bool top = false);
 };

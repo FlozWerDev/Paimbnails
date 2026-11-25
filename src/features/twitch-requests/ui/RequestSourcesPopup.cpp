@@ -296,9 +296,10 @@ private:
         kit::stepWheelScroll(m_scroll, m_wheelTargetY, m_wheelTargetSet, dt);
     }
 
-    void scrollWheel(float x, float y) override {
-        if (kit::queueWheelScroll(m_scroll, x, y, m_wheelTargetY, m_wheelTargetSet)) return;
-        Popup::scrollWheel(x, y);
+    bool scrollWheel(float x, float y) override {
+        if (kit::queueWheelScroll(m_scroll, x, y, m_wheelTargetY, m_wheelTargetSet)) return true;
+        return Popup::scrollWheel(x, y);
+    
     }
 
     ScrollLayer* m_scroll = nullptr;
@@ -449,10 +450,11 @@ void RequestSourcesPopup::update(float dt) {
     if (!covered) kit::stepWheelScroll(m_scroll, m_wheelTargetY, m_wheelTargetSet, dt);
 }
 
-void RequestSourcesPopup::scrollWheel(float x, float y) {
-    if (hasPopupAbove(this)) return;
-    if (kit::queueWheelScroll(m_scroll, x, y, m_wheelTargetY, m_wheelTargetSet)) return;
-    Popup::scrollWheel(x, y);
+bool RequestSourcesPopup::scrollWheel(float x, float y) {
+    if (hasPopupAbove(this)) return false;
+    if (kit::queueWheelScroll(m_scroll, x, y, m_wheelTargetY, m_wheelTargetSet)) return true;
+    return Popup::scrollWheel(x, y);
+
 }
 
 } // namespace paimon::twitch

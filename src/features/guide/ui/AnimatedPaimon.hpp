@@ -10,6 +10,7 @@ namespace paimon::guide {
 
 class AnimatedPaimon : public cocos2d::CCNode {
 public:
+    using cocos2d::CCNode::init;
     enum class Animation {
         Idle,
         Blink,

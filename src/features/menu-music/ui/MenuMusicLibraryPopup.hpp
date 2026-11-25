@@ -1,9 +1,11 @@
 ﻿#pragma once
 #include "../../../ui/PaimonPopup.hpp"
+#include "../../../utils/VisibleRows.hpp"
 
 #include <Geode/Geode.hpp>
 #include <string>
 #include <unordered_set>
+#include <unordered_map>
 #include <vector>
 
 class ButtonSprite;
@@ -18,6 +20,10 @@ protected:
     bool init(float width, float height);
     void onExit() override;
     void keyDown(cocos2d::enumKeyCodes key, double timestamp) override;
+    void update(float dt) override;
+    void refreshVisibleCards();
+    void clearTrackCards();
+    void rebuildAfterSearch(float);
 
     void buildHeader();
     void buildList();
@@ -56,6 +62,10 @@ protected:
     bool m_blacklistedOnly = false;
     bool m_sortReverse = false;
     bool m_compact = false;
+    std::vector<std::string> m_trackIds;
+    std::unordered_map<std::size_t, cocos2d::CCNode*> m_trackCards;
+    paimon::ui::VisibleRowRange m_cardRange;
+    bool m_cardsDirty = true;
     ButtonSprite* m_sortSprite = nullptr;
     ButtonSprite* m_localSprite = nullptr;
     ButtonSprite* m_favoritesSprite = nullptr;

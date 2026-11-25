@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <Geode/Geode.hpp>
+#include <Geode/utils/function.hpp>
 #include <optional>
 #include <string>
 #include <vector>
@@ -11,7 +12,6 @@
 #include "PopupRegistry.hpp"
 #include "ConversationalEngine.hpp"
 #include "GuideTopicKnowledge.hpp"
-#include "GeminiClient.hpp"
 
 // local guide service with conversation memory and an optional gemini mode.
 
@@ -52,12 +52,6 @@ public:
 private:
     PaimonGuideService();
     void registerIntents();
-
-    // lowercase, collapse spaces, and strip common es/pt/fr accents.
-    static std::string normalize(std::string s);
-
-    // split normalized text on whitespace and basic ascii punctuation.
-    static std::vector<std::string> tokenize(std::string const& normalized);
 
     // build a localized fallback with close matches and recommendations.
     GuideAnswer makeFallback(std::vector<GuideIntent const*> const& suggestions,

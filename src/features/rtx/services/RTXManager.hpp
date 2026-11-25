@@ -5,6 +5,7 @@
 #include "RTXConfig.hpp"
 
 #include <filesystem>
+#include <matjson.hpp>
 
 namespace paimon::rtx {
 
@@ -19,6 +20,8 @@ public:
     void loadConfig();
     void saveConfig();
     void resetToDefaults();
+    matjson::Value exportConfig() const;
+    bool importConfig(matjson::Value const& configuration);
 
     // own switch, ignoring module and scene.
     bool isEnabled() const;

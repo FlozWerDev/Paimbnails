@@ -76,7 +76,6 @@ cocos2d::CCNode* makeButtonRow(
     char const* buttonText,
     std::function<void()> onPress);
 
-// standalone informational text.
 cocos2d::CCNode* makeHint(float width, char const* text);
 
 // card with a gold title, accent dot, separator, and rows.
@@ -100,8 +99,8 @@ cocos2d::CCNode* makeTabBar(
     std::function<void(int)> onSelect);
 
 // smooth wheel scrolling shared by the other popups.
-bool queueWheelScroll(geode::ScrollLayer* scrollLayer, float x, float y,
-                      float& targetY, bool& targetSet, float speed = 16.f);
+bool queueWheelScroll(geode::ScrollLayer* scrollLayer, float vertical, float horizontal,
+                      float& targetY, bool& targetSet);
 void stepWheelScroll(geode::ScrollLayer* scrollLayer,
                      float& targetY, bool& targetSet, float dt);
 

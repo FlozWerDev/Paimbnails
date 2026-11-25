@@ -8,6 +8,7 @@ namespace paimon::versus {
 
 class VersusCardNode : public cocos2d::CCNode {
 public:
+    using cocos2d::CCNode::init;
     static VersusCardNode* create(CardId id, float width);
 
     void setCard(CardId id);

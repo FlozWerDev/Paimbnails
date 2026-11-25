@@ -40,6 +40,29 @@ CCMenuItemSpriteExtra* makeTextButton(cocos2d::CCNode* target, char const* text,
     return button;
 }
 
+// centered sliced background: nine-slice first, scale-9 as fallback.
+// false when neither builds (callers just continue without a background).
+bool placeSlicedBg(cocos2d::CCNode* parent, char const* frame, geode::NineSlice::Insets const& insets,
+    cocos2d::CCSize size, cocos2d::ccColor3B color, GLubyte opacity) {
+    auto place = [&](auto* bg) {
+        bg->setContentSize(size);
+        bg->setAnchorPoint({0.5f, 0.5f});
+        bg->setPosition({size.width / 2.f, size.height / 2.f});
+        bg->setColor(color);
+        bg->setOpacity(opacity);
+        parent->addChild(bg, 0);
+    };
+    if (auto* bg = paimon::SpriteHelper::safeCreateNineSlice(frame, insets)) {
+        place(bg);
+        return true;
+    }
+    if (auto* bg = paimon::SpriteHelper::safeCreateScale9(frame)) {
+        place(bg);
+        return true;
+    }
+    return false;
+}
+
 namespace theme {
     constexpr cocos2d::ccColor3B kPanelTint        {237, 244, 255};
     constexpr cocos2d::ccColor3B kPanelInnerTint   {237, 244, 255};
@@ -54,12 +77,9 @@ namespace theme {
 
     constexpr cocos2d::ccColor3B kTextOnDark       {237, 244, 255};
     constexpr cocos2d::ccColor3B kTextSubtle       {162, 180, 205};
-    constexpr cocos2d::ccColor3B kTextMuted        {132, 153, 182};
 
-    constexpr cocos2d::ccColor3B kChipDarkFill     { 35,  40,  60};
     constexpr cocos2d::ccColor3B kChipDangerFill   { 80,  20,  20};
     constexpr cocos2d::ccColor3B kChipOkFill       { 20,  60,  20};
-    constexpr cocos2d::ccColor3B kChipWarnFill     { 70,  50,  10};
     constexpr cocos2d::ccColor3B kChipGoldFill     { 60,  45,  15};
 }
 
@@ -94,27 +114,8 @@ CCNode* makeSectionStrip(std::string const& title, float width,
     auto* container = CCNode::create();
 
     float stripH = 26.f;
-    bool placed = false;
-    if (auto* drag = paimon::SpriteHelper::safeCreateNineSlice(
-            "GJ_dragBar_001.png", {4.f, 8.f, 4.f, 8.f})) {
-        drag->setContentSize({width, stripH});
-        drag->setAnchorPoint({0.5f, 0.5f});
-        drag->setPosition({width / 2.f, stripH / 2.f});
-        drag->setColor(stripTint);
-        drag->setOpacity(220);
-        container->addChild(drag, 0);
-        placed = true;
-    }
-    if (!placed) {
-        if (auto* drag = paimon::SpriteHelper::safeCreateScale9("GJ_dragBar_001.png")) {
-            drag->setContentSize({width, stripH});
-            drag->setAnchorPoint({0.5f, 0.5f});
-            drag->setPosition({width / 2.f, stripH / 2.f});
-            drag->setColor(stripTint);
-            drag->setOpacity(220);
-            container->addChild(drag, 0);
-        }
-    }
+    placeSlicedBg(container, "GJ_dragBar_001.png", {4.f, 8.f, 4.f, 8.f},
+        {width, stripH}, stripTint, 220);
 
     auto* label = CCLabelBMFont::create(title.c_str(), "goldFont.fnt");
     label->setScale(fontScale);
@@ -195,27 +196,7 @@ CCNode* makeChip(std::string const& text, cocos2d::ccColor3B textColor, cocos2d:
     node->setContentSize({w, h});
     node->setAnchorPoint({0.5f, 0.5f});
 
-    bool placed = false;
-    if (auto* bg = paimon::SpriteHelper::safeCreateNineSlice(
-            "GJ_square05.png", {6.f, 6.f, 6.f, 6.f})) {
-        bg->setContentSize({w, h});
-        bg->setAnchorPoint({0.5f, 0.5f});
-        bg->setPosition({w / 2.f, h / 2.f});
-        bg->setColor(fillColor);
-        bg->setOpacity(235);
-        node->addChild(bg, 0);
-        placed = true;
-    }
-    if (!placed) {
-        if (auto* bg = paimon::SpriteHelper::safeCreateScale9("GJ_square05.png")) {
-            bg->setContentSize({w, h});
-            bg->setAnchorPoint({0.5f, 0.5f});
-            bg->setPosition({w / 2.f, h / 2.f});
-            bg->setColor(fillColor);
-            bg->setOpacity(235);
-            node->addChild(bg, 0);
-        }
-    }
+    placeSlicedBg(node, "GJ_square05.png", {6.f, 6.f, 6.f, 6.f}, {w, h}, fillColor, 235);
 
     label->setColor(textColor);
     label->setAnchorPoint({0.5f, 0.5f});
@@ -342,6 +323,7 @@ void PaiDrawLobbyLayer::buildLayout() {
         panelW - kScrollMargin * 2.f,
         scrollTop - scrollBottom
     });
+    if (m_onlineScroll) m_onlineScroll->setAnchorPoint({0.f, 0.f});
     m_onlineScroll->setPosition({panelX + kScrollMargin, scrollBottom});
     this->addChild(m_onlineScroll, 3);
 
@@ -612,6 +594,7 @@ void PaiDrawRoomsLayer::buildLayout() {
         panelW - kScrollMargin * 2.f,
         scrollTop - scrollBottom
     });
+    if (m_roomScroll) m_roomScroll->setAnchorPoint({0.f, 0.f});
     m_roomScroll->setPosition({panelX + kScrollMargin, scrollBottom});
     this->addChild(m_roomScroll, 3);
 
@@ -1192,6 +1175,7 @@ void PaiDrawRoomLayer::buildLayout() {
         leftW - kScrollMargin * 2.f,
         panelH - kHeaderInside - kScrollMargin
     });
+    if (m_playerScroll) m_playerScroll->setAnchorPoint({0.f, 0.f});
     m_playerScroll->setPosition({leftX + kScrollMargin, panelBottom + kScrollMargin});
     this->addChild(m_playerScroll, 3);
 
@@ -1199,6 +1183,7 @@ void PaiDrawRoomLayer::buildLayout() {
         rightW - kScrollMargin * 2.f,
         panelH - kHeaderInside - kScrollMargin - kChatInputArea
     });
+    if (m_chatScroll) m_chatScroll->setAnchorPoint({0.f, 0.f});
     m_chatScroll->setPosition({rightX + kScrollMargin, panelBottom + kScrollMargin + kChatInputArea});
     this->addChild(m_chatScroll, 3);
 
@@ -1686,7 +1671,7 @@ bool PaiDrawGameLayer::init() {
     m_roomSub = paimon::EventBus::get().subscribe<RoomUpdatedEvent>([weakSelf](RoomUpdatedEvent const&) {
         auto self = weakSelf.lock();
         if (!self) return;
-        self->refreshState();
+        self->scheduleStateRefresh();
     });
     m_chatSub = paimon::EventBus::get().subscribe<ChatUpdatedEvent>([weakSelf](ChatUpdatedEvent const&) {
         auto self = weakSelf.lock();
@@ -1696,7 +1681,7 @@ bool PaiDrawGameLayer::init() {
     m_roundSub = paimon::EventBus::get().subscribe<RoundUpdatedEvent>([weakSelf](RoundUpdatedEvent const&) {
         auto self = weakSelf.lock();
         if (!self) return;
-        self->refreshState();
+        self->scheduleStateRefresh();
     });
     m_strokeSub = paimon::EventBus::get().subscribe<StrokeEvent>([weakSelf](StrokeEvent const& ev) {
         auto self = weakSelf.lock();
@@ -1787,6 +1772,7 @@ void PaiDrawGameLayer::buildLayout() {
 
     constexpr float kBrushAreaH = 38.f;
     m_scoreScroll = geode::ScrollLayer::create({leftW - 14.f, playH - 44.f - kBrushAreaH});
+    if (m_scoreScroll) m_scoreScroll->setAnchorPoint({0.f, 0.f});
     m_scoreScroll->setPosition({kSidePad + 7.f, playBottom + 8.f + kBrushAreaH});
     this->addChild(m_scoreScroll, 3);
 
@@ -1820,6 +1806,7 @@ void PaiDrawGameLayer::buildLayout() {
 
     constexpr float kGuessAreaH = 38.f;
     m_chatScroll = geode::ScrollLayer::create({rightW - 14.f, playH - 44.f - kGuessAreaH});
+    if (m_chatScroll) m_chatScroll->setAnchorPoint({0.f, 0.f});
     m_chatScroll->setPosition({rightX + 7.f, playBottom + 8.f + kGuessAreaH});
     this->addChild(m_chatScroll, 3);
 
@@ -2074,6 +2061,17 @@ void PaiDrawGameLayer::rebuildChat() {
     fillScroll(m_chatScroll, rows, 31.f, 4.f);
 }
 
+void PaiDrawGameLayer::scheduleStateRefresh() {
+    if (m_stateRefreshScheduled) return;
+    m_stateRefreshScheduled = true;
+    scheduleOnce(schedule_selector(PaiDrawGameLayer::refreshStateTick), 0.f);
+}
+
+void PaiDrawGameLayer::refreshStateTick(float) {
+    m_stateRefreshScheduled = false;
+    refreshState();
+}
+
 void PaiDrawGameLayer::refreshState() {
     auto state = PaiDrawManager::get().snapshot();
     if (state.currentRoom.state == RoomState::InGame) m_seenActiveRound = true;
@@ -2098,6 +2096,8 @@ void PaiDrawGameLayer::refreshState() {
 }
 
 void PaiDrawGameLayer::onExit() {
+    this->unschedule(schedule_selector(PaiDrawGameLayer::refreshStateTick));
+    m_stateRefreshScheduled = false;
     this->unschedule(schedule_selector(PaiDrawGameLayer::tickLocalTimer));
     paimon::EventBus::get().unsubscribe(m_roomSub);
     paimon::EventBus::get().unsubscribe(m_chatSub);
@@ -2308,6 +2308,7 @@ void PaiDrawResultsLayer::buildLayout() {
     constexpr float kScrollMargin = 12.f;
     float scrollH = tableH - 40.f - kScrollMargin;
     m_tableScroll = geode::ScrollLayer::create({tableW - kScrollMargin * 2.f, scrollH});
+    if (m_tableScroll) m_tableScroll->setAnchorPoint({0.f, 0.f});
     m_tableScroll->setPosition({tableX + kScrollMargin, tableBottom + kScrollMargin});
     this->addChild(m_tableScroll, 3);
 

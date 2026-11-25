@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cctype>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -116,6 +117,69 @@ inline std::optional<std::string> resolveHttpRedirect(std::string_view base, std
         return std::nullopt;
     }
     return target;
+}
+
+// rejects loopback, private, link-local, CGNAT, multicast and ambiguous
+// numeric hosts. Used before server-provided URLs reach the HTTP client.
+inline bool isPublicHttpUrl(std::string_view url) {
+    auto parsed = parseHttpUrl(url);
+    if (!parsed) return false;
+    auto const& host = parsed->host;
+    if (host.empty()) return false;
+
+    // iPv6 literals: require valid hex/colons only and global unicast (2000::/3),
+    // rejecting loopback, link-local, unique-local, IPv4-mapped (::ffff:) and documentation (2001:db8::).
+    if (host.find(':') != std::string::npos) {
+        if (host.size() < 4 || host.front() == ':' || (host.front() != '2' && host.front() != '3')) {
+            return false;
+        }
+        bool validChars = std::all_of(host.begin(), host.end(), [](unsigned char c) {
+            return std::isxdigit(c) || c == ':';
+        });
+        if (!validChars) return false;
+        if (host.starts_with("2001:db8:") || host.starts_with("2001:0db8:")) return false;
+        return true;
+    }
+
+    // numeric hosts: reject single-integer IPv4 and octal forms.
+    if (std::all_of(host.begin(), host.end(), [](unsigned char c) {
+            return std::isdigit(c) || c == '.';
+        })) {
+        size_t parts = 0;
+        bool leadingZero = false;
+        size_t start = 0;
+        while (start <= host.size()) {
+            auto dot = host.find('.', start);
+            auto end = dot == std::string::npos ? host.size() : dot;
+            if (end == start) return false;
+            ++parts;
+            if (end - start > 1 && host[start] == '0') leadingZero = true;
+            if (dot == std::string::npos) break;
+            start = dot + 1;
+        }
+        if (parts != 4 || leadingZero) return false;
+    }
+    if (host.starts_with("0x") || host.starts_with("0X")) return false;
+
+    if (host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0") {
+        return false;
+    }
+    if (host.starts_with("127.") || host.starts_with("0.")) return false;
+    if (host.starts_with("10.") || host.starts_with("192.168.") || host.starts_with("169.254.")) {
+        return false;
+    }
+
+    auto secondOctetIn = [&host](int lo, int hi) {
+        size_t dot = host.find('.', 4);
+        if (dot == std::string::npos) return false;
+        int octet = 0;
+        auto [ptr, ec] = std::from_chars(host.data() + 4, host.data() + dot, octet);
+        return ec == std::errc{} && ptr == host.data() + dot && octet >= lo && octet <= hi;
+    };
+    if (host.starts_with("100.") && secondOctetIn(64, 127)) return false;
+    if (host.starts_with("172.") && secondOctetIn(16, 31)) return false;
+
+    return true;
 }
 
 } // namespace paimon::net

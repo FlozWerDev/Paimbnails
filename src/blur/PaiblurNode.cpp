@@ -1,4 +1,5 @@
 #include "PaiblurNode.hpp"
+#include "../utils/FramePerf.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/cocos/CCDirector.h>
@@ -10,6 +11,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <mutex>
+#include <unordered_set>
+#include <vector>
 
 #ifdef GEODE_IS_ANDROID
 #include <EGL/egl.h>
@@ -197,6 +201,43 @@ bool ensureProgram() {
     return true;
 }
 
+// live instances surviving across a gl context reload (held by blurRegistry).
+// guarded by mutex; insert in ctor, erase in dtor (no gl calls there).
+std::mutex& liveMutex() {
+    static std::mutex m;
+    return m;
+}
+
+std::unordered_set<PaiblurNode*>& liveSet() {
+    static std::unordered_set<PaiblurNode*> s;
+    return s;
+}
+
+constexpr GLfloat kBlurQuad[] = {
+    -1.f,  1.f,  0.f, 1.f,
+    -1.f, -1.f,  0.f, 0.f,
+     1.f, -1.f,  1.f, 0.f,
+
+    -1.f,  1.f,  0.f, 1.f,
+     1.f, -1.f,  1.f, 0.f,
+     1.f,  1.f,  1.f, 1.f,
+};
+
+bool createQuadVBO(GLuint& vbo) {
+    vbo = 0;
+    glGenBuffers(1, &vbo);
+    if (!vbo) return false;
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(kBlurQuad), kBlurQuad, GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    return true;
+}
+
+}
+
+PaiblurNode::PaiblurNode() {
+    std::lock_guard<std::mutex> lock(liveMutex());
+    liveSet().insert(this);
 }
 
 PaiblurNode* PaiblurNode::create(CCSize const& winSize, float intensity, float darkness) {
@@ -222,30 +263,10 @@ bool PaiblurNode::initWithWinSize(CCSize const& winSize, float intensity, float 
         return false;
     }
 
-    static constexpr GLfloat kQuad[] = {
-        -1.f,  1.f,  0.f, 1.f,
-        -1.f, -1.f,  0.f, 0.f,
-         1.f, -1.f,  1.f, 0.f,
+    if (!createQuadVBO(m_vbo)) return false;
 
-        -1.f,  1.f,  0.f, 1.f,
-         1.f, -1.f,  1.f, 0.f,
-         1.f,  1.f,  1.f, 1.f,
-    };
-    glGenBuffers(1, &m_vbo);
-    if (!m_vbo) return false;
-    glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(kQuad), kQuad, GL_STATIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-    auto* director = CCDirector::get();
-    auto* glView = director ? director->getOpenGLView() : nullptr;
-    CCSize frame = glView ? glView->getFrameSize() : CCSizeZero;
-    int fw = static_cast<int>(frame.width);
-    int fh = static_cast<int>(frame.height);
-    if (fw > 0 && fh > 0 && !ensureRenderTargets(fw, fh)) {
-        log::warn("[Paiblur] blur FBO creation failed - Paiblur disabled");
-        return false;
-    }
+    // allocate on the first visible visit using the actual pixel viewport.
+    // frame size can differ under dpi scaling/letterboxing and used to allocate twice.
 
     setID("paimon-paiblur-node"_spr);
     setContentSize(winSize);
@@ -254,6 +275,10 @@ bool PaiblurNode::initWithWinSize(CCSize const& winSize, float intensity, float 
 }
 
 PaiblurNode::~PaiblurNode() {
+    {
+        std::lock_guard<std::mutex> lock(liveMutex());
+        liveSet().erase(this);
+    }
 // during shutdown the gl context may already be gone; avoid deleting gl objects.
     if (paimon::isRuntimeShuttingDown()) return;
     releaseRenderTargets();
@@ -263,9 +288,34 @@ PaiblurNode::~PaiblurNode() {
     }
 }
 
+void PaiblurNode::onGLContextReload(bool deleteHandles) {
+    releaseRenderTargets(deleteHandles);
+    if (m_vbo) {
+        if (deleteHandles) glDeleteBuffers(1, &m_vbo);
+        m_vbo = 0;
+    }
+    sharedProgram() = BlurProgram{};
+    m_broken = false;
+}
+
+void PaiblurNode::onGLContextReloadAll(bool deleteHandles) {
+    std::vector<PaiblurNode*> live;
+    {
+        std::lock_guard<std::mutex> lock(liveMutex());
+        live.reserve(liveSet().size());
+        for (auto* node : liveSet()) {
+            if (node) live.push_back(node);
+        }
+    }
+    for (auto* node : live) node->onGLContextReload(deleteHandles);
+}
+
 bool PaiblurNode::ensureRenderTargets(int srcW, int srcH) {
     if (srcW <= 0 || srcH <= 0) return false;
-    if (m_fboA && srcW == m_lastSrcW && srcH == m_lastSrcH) return true;
+    if (m_fboA && srcW == m_lastSrcW && srcH == m_lastSrcH) {
+        if (glIsFramebuffer(m_fboA) == GL_TRUE && glIsFramebuffer(m_fboB) == GL_TRUE) return true;
+        // handles died with a previous gl context; fall through and rebuild.
+    }
 
     int bw = std::max(2, srcW / 2);
     int bh = std::max(2, srcH / 2);
@@ -304,7 +354,7 @@ bool PaiblurNode::ensureRenderTargets(int srcW, int srcH) {
 
     if (!ok) {
         log::warn("[Paiblur] blur FBO incomplete ({}x{})", bw, bh);
-        releaseRenderTargets();
+        releaseRenderTargets(true);
         return false;
     }
 
@@ -316,11 +366,13 @@ bool PaiblurNode::ensureRenderTargets(int srcW, int srcH) {
     return true;
 }
 
-void PaiblurNode::releaseRenderTargets() {
-    if (m_fboA) glDeleteFramebuffers(1, &m_fboA);
-    if (m_fboB) glDeleteFramebuffers(1, &m_fboB);
-    if (m_texA) glDeleteTextures(1, &m_texA);
-    if (m_texB) glDeleteTextures(1, &m_texB);
+void PaiblurNode::releaseRenderTargets(bool deleteHandles) {
+    if (deleteHandles) {
+        if (m_fboA) glDeleteFramebuffers(1, &m_fboA);
+        if (m_fboB) glDeleteFramebuffers(1, &m_fboB);
+        if (m_texA) glDeleteTextures(1, &m_texA);
+        if (m_texB) glDeleteTextures(1, &m_texB);
+    }
     m_fboA = m_fboB = m_texA = m_texB = 0;
     m_blurW = m_blurH = 0;
     m_lastSrcW = m_lastSrcH = 0;
@@ -340,6 +392,15 @@ void PaiblurNode::fadeIn(float duration) {
 
 void PaiblurNode::visit() {
     if (m_broken || !isVisible()) return;
+#if defined(GEODE_IS_ANDROID)
+    if (void const* curCtx = eglGetCurrentContext()) {
+        if (m_contextToken && m_contextToken != curCtx) {
+            onGLContextReload(false);
+        }
+        m_contextToken = curCtx;
+    }
+#endif
+    paimon::frameperf::Scope perf(paimon::frameperf::Stage::PopupBlur);
 
     GLubyte op = getDisplayedOpacity();
     if (op == 0) return;
@@ -355,11 +416,20 @@ void PaiblurNode::visit() {
     int srcH = vp[3];
     if (srcW <= 0 || srcH <= 0) return;
 
+    if (!m_vbo || glIsBuffer(m_vbo) != GL_TRUE) {
+        if (!createQuadVBO(m_vbo)) {
+            m_broken = true;
+            return;
+        }
+    }
+
     if (!ensureRenderTargets(srcW, srcH)) {
         m_broken = true;
         return;
     }
 
+// the program handle dies with the gl context; rebuild it lazily if needed.
+    if (!ensureProgram()) return;
     auto& prg = sharedProgram();
     if (!prg.prog) return;
 
@@ -369,8 +439,7 @@ void PaiblurNode::visit() {
     float radius = intensityToEclipseRadius(m_intensity) * eased;
     bool steady = (op >= 254);
 
-// re-run capture/horizontal blur only when fading, radius, or refresh requires it.
-// otherwise reuse m_texb and re-composite.
+// cache both blur axes. Only the inexpensive composite runs at full resolution.
     bool needFull = !m_hasCachedBlur || !steady || std::abs(radius - m_lastRadius) > 0.001f;
     if (!needFull) {
         if (++m_steadyFrames >= kSteadyRefreshInterval) {
@@ -427,6 +496,11 @@ void PaiblurNode::visit() {
         ccGLBindTexture2DN(0, m_texA);
         ccGLBlendFunc(GL_ONE, GL_ZERO);
         glDrawArrays(GL_TRIANGLES, 0, 6);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, m_fboA);
+        glUniform2f(prg.locDir, 0.f, 1.f);
+        ccGLBindTexture2DN(0, m_texB);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
         m_hasCachedBlur = true;
         m_lastRadius = radius;
     }
@@ -434,7 +508,10 @@ void PaiblurNode::visit() {
     glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFbo));
     glViewport(vp[0], vp[1], vp[2], vp[3]);
     float dark = 1.f - m_darkness * eased;
-    glUniform2f(prg.locDir, 0.f, 1.f);
+    // radius zero exits the kernel before any extra samples. keep darkness and
+    // opacity here so the fade stays smooth even when the cached blur is reused.
+    glUniform1f(prg.locRadius, 0.f);
+    glUniform2f(prg.locDir, 0.f, 0.f);
     glUniform3f(prg.locColorMul, dark, dark, dark);
     if (op >= 254) {
         glUniform1f(prg.locAlpha, 1.f);
@@ -443,7 +520,7 @@ void PaiblurNode::visit() {
         glUniform1f(prg.locAlpha, eased);
         ccGLBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
-    ccGLBindTexture2DN(0, m_texB);
+    ccGLBindTexture2DN(0, m_texA);
     glDrawArrays(GL_TRIANGLES, 0, 6);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);

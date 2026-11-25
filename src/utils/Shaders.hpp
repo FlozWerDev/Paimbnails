@@ -9,10 +9,6 @@
 
 namespace Shaders {
 
-    cocos2d::CCGLProgram* getOrCreateShader(char const* key, char const* vertexSrc, char const* fragmentSrc);
-
-
-
     void applyBlurPass(cocos2d::CCSprite* input, cocos2d::CCRenderTexture* output, cocos2d::CCGLProgram* program, cocos2d::CCSize const& size, float radius);
 
     float intensityToBlurRadius(float intensity);

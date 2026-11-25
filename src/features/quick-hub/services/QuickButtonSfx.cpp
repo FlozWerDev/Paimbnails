@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "QuickButtonSfx.hpp"
 
 #include "../data/QuickHubCategories.hpp"
@@ -85,16 +86,16 @@ void scheduleFireStop(float delaySec, float fadeOutMs, float baseVolume, unsigne
 } // namespace
 
 std::filesystem::path quickHubImagesDir() {
-    return Mod::get()->getConfigDir() / "quick-hub" / "images";
+    return paimon::paths::toStdPath(Mod::get()->getConfigDir()) / "quick-hub" / "images";
 }
 
 std::filesystem::path quickHubSfxDir() {
-    return Mod::get()->getConfigDir() / "quick-hub" / "sfx";
+    return paimon::paths::toStdPath(Mod::get()->getConfigDir()) / "quick-hub" / "sfx";
 }
 
 bool isQuickHubAudioFile(std::filesystem::path const& path) {
     auto ext = geode::utils::string::toLower(
-        geode::utils::string::pathToString(path.extension()));
+        paimon::paths::toUtf8(path.extension()));
     static constexpr std::array<std::string_view, 7> supported = {
         ".mp3", ".ogg", ".wav", ".flac", ".oga", ".m4a", ".opus"};
     return std::find(supported.begin(), supported.end(), ext) != supported.end();
@@ -123,7 +124,7 @@ std::string resolveQuickButtonSfxPath(CustomQuickButton const& b) {
         if (!mdm) return "";
         if (!mdm->isSFXDownloaded(b.sfxId)) {
             mdm->downloadSFX(b.sfxId);
-            PaimonNotify::create("Descargando SFX... pulsa Probar de nuevo.", NotificationIcon::Warning)->show();
+            PaimonNotify::show("Descargando SFX... pulsa Probar de nuevo.", NotificationIcon::Warning);
             return "";
         }
         std::string p(mdm->pathForSFX(b.sfxId));
@@ -231,6 +232,10 @@ void clearQuickButtonSfxSuppress() {
     s_suppressArmed.store(false);
 }
 
+bool isQuickButtonSfxSuppressArmed() {
+    return s_suppressArmed.load() && std::chrono::steady_clock::now() <= s_suppressUntil;
+}
+
 void activateItemWithQuickButtonSfx(cocos2d::CCMenuItem* item, CustomQuickButton const& def) {
     if (!item) return;
     if (static_cast<QuickButtonSfxKind>(def.sfxKind) == QuickButtonSfxKind::None) {
@@ -246,11 +251,11 @@ void activateItemWithQuickButtonSfx(cocos2d::CCMenuItem* item, CustomQuickButton
 }
 
 class $modify(QuickHubSfxEngine, FMODAudioEngine) {
-    $override int playEffect(gd::string path, float speed, float unknown, float volume) {
+    $override int playEffect(std::string path, float speed, float unknown, float volume) {
         if (consumeQuickButtonSfxSuppress()) return 1;
         return FMODAudioEngine::playEffect(path, speed, unknown, volume);
     }
-    $override int playEffect(gd::string path) {
+    $override int playEffect(std::string path) {
         if (consumeQuickButtonSfxSuppress()) return 1;
         return FMODAudioEngine::playEffect(path);
     }

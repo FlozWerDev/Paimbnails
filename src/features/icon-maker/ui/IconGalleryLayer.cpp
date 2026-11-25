@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "../../../ui/PaimonUI.hpp"
 #include "IconGalleryLayer.hpp"
 
@@ -37,8 +38,8 @@ namespace paimon::icon_maker {
 namespace {
 
 constexpr float kHeaderH = 74.f;
-constexpr float kCardW = 118.f;
-constexpr float kCardH = 132.f;
+constexpr float kCardW = 122.f;
+constexpr float kCardH = 142.f;
 constexpr float kCardGap = 10.f;
 
 std::string formatDate(std::int64_t unixMs) {
@@ -61,7 +62,6 @@ std::string lowered(std::string text) {
     return text;
 }
 
-// an icon is "in use" when active for its gamemode, via more icons or the own applier.
 bool isInUse(IconIndexEntry const& entry) {
     if (MoreIconsBridge::available()) {
         return MoreIconsBridge::activeOursSlotId(entry.type) == entry.id;
@@ -74,6 +74,13 @@ IconIndexEntry const* entryFor(std::string const& id) {
         if (entry.id == id) return &entry;
     }
     return nullptr;
+}
+
+CCSprite* makeTrashSprite() {
+    if (auto* spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_trashBtn_001.png")) {
+        return spr;
+    }
+    return paimon::SpriteHelper::safeCreateWithFrameName("GJ_deleteIcon_001.png");
 }
 
 }  // anonymous namespace
@@ -185,7 +192,6 @@ void IconGalleryLayer::buildHeader() {
     sortMenu->setPosition({0.f, 0.f});
     addChild(sortMenu, 10);
 
-    // right cluster first; the search box takes whatever width is left.
     float const rowCY = win.height - 52.f;
     float const tabsW = std::clamp(win.width * 0.34f, 150.f, 210.f);
     auto* tabs = kit::makeTabBar(tabsW, {"Recientes", "Nombre", "Creacion"}, 0,
@@ -205,7 +211,6 @@ void IconGalleryLayer::buildHeader() {
 
     float toolX = win.width - 26.f - tabsW;
 
-    // gamemode filter hides behind a button: ten chips don't fit.
     constexpr float kFilterW = 62.f;
     constexpr float kFilterH = 18.f;
     auto* filterHolder = CCNode::create();
@@ -261,8 +266,6 @@ void IconGalleryLayer::buildHeader() {
         m_search->setCallback([self](std::string const& value) {
             if (paimon::isRuntimeShuttingDown() || !self) return;
             self->m_query = lowered(value);
-            // out of the input's own callback: rebuilding tears down the
-            // scroll layer the touch dispatcher may still be walking.
             Loader::get()->queueInMainThread([self] {
                 if (paimon::isRuntimeShuttingDown() || !self) return;
                 if (self->getParent()) self->rebuildGrid();
@@ -332,7 +335,6 @@ void IconGalleryLayer::rebuildGrid() {
         entries.push_back(entry);
     }
 
-    // favorites always on top; chosen sort decides the rest.
     Sort const sort = m_sort;
     std::sort(entries.begin(), entries.end(),
         [sort](IconIndexEntry const& a, IconIndexEntry const& b) {
@@ -352,7 +354,8 @@ void IconGalleryLayer::rebuildGrid() {
                 : "Nada con ese filtro",
             m_query.empty() && !m_onlyFavorites && m_typeFilter < 0
                 ? "Toca Crear para hacer el primero. Puedes partir de un icono "
-                  "del juego y solo cambiarle los colores."
+                  "oficial, una forma base o el lienzo en blanco. Los iconos "
+                  "que crees tambien aparecen al final de la barra del garaje."
                 : "Prueba con otras palabras, o quita el filtro de gamemode y "
                   "el de favoritos.");
         if (empty) {
@@ -369,6 +372,7 @@ void IconGalleryLayer::rebuildGrid() {
 
     m_scroll = ScrollLayer::create({scrollW, scrollH});
     if (!m_scroll) return;
+    m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setPosition({0.f, 0.f});
     m_scrollHost->addChild(m_scroll);
 
@@ -406,69 +410,80 @@ CCNode* IconGalleryLayer::buildCard(std::string const& id, float width) {
         card->addChild(panel, -1);
     }
 
-    float const thumbBox = width - 20.f;
-    float const thumbCY = kCardH - 12.f - thumbBox / 2.f;
+    // Well sits cleanly in the upper portion with clear room below for name + buttons.
+    float const thumbBox = 86.f;
+    float const thumbY = kCardH - 10.f - thumbBox;
+    float const thumbCY = thumbY + thumbBox * 0.5f;
 
-    if (auto* well = paimon::ui::makeInset({thumbBox, thumbBox}, 110)) {
-        well->setPosition({10.f, thumbCY - thumbBox / 2.f});
+    if (auto* well = paimon::ui::makeInset({thumbBox, thumbBox}, 115)) {
+        well->setPosition({(width - thumbBox) * 0.5f, thumbY});
         card->addChild(well);
     }
 
-    // the real icon, rendered in the background; until it lands the card shows
-    // the vanilla default of the gamemode so the grid never looks broken.
-    auto* placeholder = SimplePlayer::create(1);
-    if (placeholder) {
-        placeholder->updatePlayerFrame(1, entry->type);
-        placeholder->setPosition({width / 2.f, thumbCY});
-        placeholder->setScale(0.85f);
-        placeholder->setOpacity(90);
-        card->addChild(placeholder, 1);
+    // Subtle loading placeholder (protected with VanillaScope) that gets REMOVED
+    // the moment the real rendered thumbnail lands — zero ghost overlap!
+    Ref<CCNode> placeholderRef;
+    {
+        IconApplier::VanillaScope vanillaGuard;
+        if (auto* placeholder = SimplePlayer::create(1)) {
+            placeholder->updatePlayerFrame(1, entry->type);
+            placeholder->setPosition({width / 2.f, thumbCY});
+            placeholder->setScale(0.75f);
+            placeholder->setOpacity(65);
+            card->addChild(placeholder, 1);
+            placeholderRef = placeholder;
+        }
     }
 
     Ref<CCNode> cardRef = card;
-    IconThumbs::get().request(id, [cardRef, width, thumbCY, thumbBox](CCTexture2D* texture) {
-        if (paimon::isRuntimeShuttingDown() || !cardRef || !texture) return;
+    IconThumbs::get().request(id, [cardRef, placeholderRef, width, thumbCY, thumbBox](CCTexture2D* texture) {
+        if (paimon::isRuntimeShuttingDown() || !cardRef) return;
+        if (placeholderRef) {
+            placeholderRef->removeFromParent();
+        }
+        if (!texture) return;
         auto* sprite = CCSprite::createWithTexture(texture);
         if (!sprite) return;
+        sprite->setBlendFunc({GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA});
         float longest = std::max(sprite->getContentSize().width,
                                  sprite->getContentSize().height);
-        if (longest > 0.f) sprite->setScale(thumbBox / longest);
+        if (longest > 0.f) sprite->setScale((thumbBox * 1.15f) / longest);
         sprite->setPosition({width / 2.f, thumbCY});
         cardRef->addChild(sprite, 2);
     });
 
     if (auto* name = CCLabelBMFont::create(entry->name.c_str(), "bigFont.fnt")) {
         name->setAnchorPoint({0.5f, 0.5f});
-        name->limitLabelWidth(width - 30.f, 0.4f, 0.14f);
-        name->setPosition({width / 2.f - 6.f, 28.f});
+        name->limitLabelWidth(width - 48.f, 0.38f, 0.14f);
+        name->setPosition({width / 2.f, 31.f});
         card->addChild(name, 3);
     }
 
     if (isInUse(*entry)) {
         if (auto* badge = paimon::SpriteHelper::createColorPanel(
-                40.f, 12.f, {70, 200, 110}, 235, 3.f)) {
+                42.f, 13.f, {70, 200, 110}, 240, 3.f)) {
             badge->setAnchorPoint({1.f, 1.f});
-            badge->setPosition({width - 7.f, kCardH - 7.f});
+            badge->setPosition({width - 6.f, kCardH - 6.f});
             card->addChild(badge, 4);
         }
         if (auto* text = CCLabelBMFont::create("En uso", "bigFont.fnt")) {
             text->setAnchorPoint({1.f, 1.f});
-            text->limitLabelWidth(36.f, 0.3f, 0.12f);
-            text->setPosition({width - 9.f, kCardH - 8.f});
+            text->limitLabelWidth(38.f, 0.3f, 0.12f);
+            text->setPosition({width - 8.f, kCardH - 7.f});
             card->addChild(text, 5);
         }
     }
 
-    std::string info = entry->hasBuiltOnce ? "Listo para usar" : "Sin terminar";
+    std::string info = entry->hasBuiltOnce ? "Listo" : "Borrador";
     if (auto const* def = anatomyFor(entry->type)) {
-        info = fmt::format("{}  -  {}", def->displayName, formatDate(entry->modifiedAt));
+        info = fmt::format("{} - {}", def->displayName, formatDate(entry->modifiedAt));
     }
     if (auto* infoLbl = CCLabelBMFont::create(info.c_str(), "chatFont.fnt")) {
         infoLbl->setAnchorPoint({0.5f, 0.5f});
         infoLbl->setScale(0.36f);
         infoLbl->setColor(kit::kDescColor);
-        infoLbl->limitLabelWidth(width - 16.f, 0.36f, 0.16f);
-        infoLbl->setPosition({width / 2.f, 13.f});
+        infoLbl->limitLabelWidth(width - 14.f, 0.36f, 0.16f);
+        infoLbl->setPosition({width / 2.f, 12.f});
         card->addChild(infoLbl, 3);
     }
 
@@ -478,39 +493,50 @@ CCNode* IconGalleryLayer::buildCard(std::string const& id, float width) {
         CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2);
     card->addChild(menu, 5);
 
-    // the card body opens the editor; the corner button holds everything else.
+    // Tapping the thumbnail / upper area opens the editor.
     auto* hit = CCNode::create();
     hit->setAnchorPoint({0.5f, 0.5f});
-    hit->setContentSize({width, kCardH - 22.f});
+    hit->setContentSize({width - 8.f, thumbBox + 4.f});
     auto* openBtn = CCMenuItemExt::createSpriteExtra(hit,
         [this, id](CCMenuItemSpriteExtra*) { this->onEditIcon(id); });
-    openBtn->setPosition({width / 2.f, kCardH / 2.f + 11.f});
+    openBtn->setPosition({width / 2.f, thumbCY});
     menu->addChild(openBtn);
 
+    // Direct red Delete Icon button right on the card (bottom-left)!
+    if (auto* trash = makeTrashSprite()) {
+        trash->setScale(0.46f);
+        auto* delBtn = CCMenuItemExt::createSpriteExtra(trash,
+            [this, id](CCMenuItemSpriteExtra*) { this->onDeleteIcon(id); });
+        delBtn->setPosition({14.f, 30.f});
+        delBtn->setSizeMult(1.25f);
+        menu->addChild(delBtn);
+    }
+
+    // Overflow actions menu (bottom-right).
     if (auto* more = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png")) {
-        more->setScale(0.3f);
+        more->setScale(0.32f);
         auto* btn = CCMenuItemExt::createSpriteExtra(more,
             [this, id](CCMenuItemSpriteExtra*) { this->onIconMenu(id); });
-        btn->setPosition({width - 13.f, 28.f});
+        btn->setPosition({width - 14.f, 30.f});
+        btn->setSizeMult(1.25f);
         menu->addChild(btn);
     }
 
+    // Favorite star (top-left).
     if (auto* star = CCSprite::createWithSpriteFrameName("GJ_starsIcon_001.png")) {
         star->setScale(0.5f);
         star->setOpacity(entry->favorite ? 255 : 90);
         auto* btn = CCMenuItemExt::createSpriteExtra(star,
             [this, id](CCMenuItemSpriteExtra*) { this->onToggleFavorite(id); });
-        btn->setPosition({12.f, kCardH - 10.f});
+        btn->setPosition({13.f, kCardH - 12.f});
         menu->addChild(btn);
     }
 
     return card;
 }
 
-
 void IconGalleryLayer::onEnter() {
     CCLayer::onEnter();
-    // names, dates and thumbnails may have changed while we were in the editor.
     if (m_enteredOnce) rebuildGrid();
     m_enteredOnce = true;
 }
@@ -519,11 +545,11 @@ void IconGalleryLayer::update(float dt) {
     kit::stepWheelScroll(m_scroll, m_wheelTargetY, m_wheelTargetSet, dt);
 }
 
-void IconGalleryLayer::scrollWheel(float x, float y) {
+bool IconGalleryLayer::scrollWheel(float x, float y) {
     if (kit::queueWheelScroll(m_scroll, x, y, m_wheelTargetY, m_wheelTargetSet)) {
-        return;
+        return true;
     }
-    CCLayer::scrollWheel(x, y);
+    return CCLayer::scrollWheel(x, y);
 }
 
 void IconGalleryLayer::keyBackClicked() {
@@ -537,7 +563,6 @@ void IconGalleryLayer::onBack() {
 void IconGalleryLayer::setStatus(std::string const& text) {
     if (m_statusLabel) m_statusLabel->setString(text.c_str());
 }
-
 
 void IconGalleryLayer::onNewIcon() {
     Ref<IconGalleryLayer> self = this;
@@ -556,13 +581,26 @@ void IconGalleryLayer::onEditIcon(std::string const& slotId) {
 void IconGalleryLayer::onIconMenu(std::string const& slotId) {
     auto const* entry = entryFor(slotId);
     std::string title = entry ? entry->name : slotId;
+    bool const equipped = entry && isInUse(*entry);
+    IconType const entryType = entry ? entry->type : IconType::Cube;
 
     Ref<IconGalleryLayer> self = this;
     std::vector<IconActionSheet::Action> actions{
         {"Editar", "Abre el creador con este icono.",
          [self, slotId] { if (self) self->onEditIcon(slotId); }, false},
-        {"Usar ahora", "Compila el icono y te lo pone en el kit.",
-         [self, slotId] { if (self) self->onUseIcon(slotId); }, false},
+        {equipped ? "Quitar del kit" : "Usar ahora",
+         equipped ? "Vuelve al icono normal del juego." : "Compila el icono y te lo pone en el kit.",
+         [self, slotId, equipped, entryType] {
+             if (!self) return;
+             if (equipped) {
+                 IconApplier::get().clearActive(entryType);
+                 MoreIconsBridge::clearIcon(entryType, slotId);
+                 self->rebuildGrid();
+                 self->setStatus("Icono quitado del kit.");
+             } else {
+                 self->onUseIcon(slotId);
+             }
+         }, false},
         {"Renombrar", "", [self, slotId] { if (self) self->onRenameIcon(slotId); }, false},
         {"Duplicar", "Una copia para probar cambios sin miedo.",
          [self, slotId] { if (self) self->onDuplicateIcon(slotId); }, false},
@@ -634,7 +672,14 @@ void IconGalleryLayer::onShareIcon(std::string const& slotId) {
         return;
     }
     setStatus("Archivo .paimbicon creado.");
-    geode::utils::file::openFolder(exported.unwrap().parent_path());
+#if defined(GEODE_IS_MOBILE)
+    geode::utils::clipboard::write(paimon::paths::toUtf8(exported.unwrap()));
+    Notification::create(
+        fmt::format("Exportado (ruta copiada): {}", paimon::paths::toUtf8(exported.unwrap())),
+        NotificationIcon::Success, 3.0f)->show();
+#else
+    geode::utils::file::openFolder(paimon::paths::toSdkPath(exported.unwrap().parent_path()));
+#endif
 }
 
 void IconGalleryLayer::onDuplicateIcon(std::string const& slotId) {
@@ -674,6 +719,7 @@ void IconGalleryLayer::onRenameIcon(std::string const& slotId) {
 void IconGalleryLayer::onDeleteIcon(std::string const& slotId) {
     auto const* entry = entryFor(slotId);
     std::string name = entry ? entry->name : slotId;
+    IconType const entryType = entry ? entry->type : IconType::Cube;
 
     Ref<IconGalleryLayer> self = this;
     PopupManager::get().quickPopup(
@@ -681,11 +727,14 @@ void IconGalleryLayer::onDeleteIcon(std::string const& slotId) {
         fmt::format("Seguro que quieres borrar <cy>{}</c>?\n"
                     "Esto no se puede deshacer.", name),
         "Cancelar", "Borrar",
-        [self, slotId](FLAlertLayer*, bool confirmed) {
+        [self, slotId, entryType](FLAlertLayer*, bool confirmed) {
             if (!confirmed || paimon::isRuntimeShuttingDown() || !self) return;
+            IconApplier::get().onDeleteProject(slotId, entryType);
             if (auto r = IconProjectStore::get().deleteProject(slotId); !r) {
                 Notification::create(("No se pudo borrar: " + r.unwrapErr()).c_str(),
                     NotificationIcon::Error, 3.f)->show();
+            } else {
+                self->setStatus("Icono borrado.");
             }
             IconThumbs::get().invalidate(slotId);
             self->rebuildGrid();

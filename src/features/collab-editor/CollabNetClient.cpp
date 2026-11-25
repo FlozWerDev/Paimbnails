@@ -41,6 +41,19 @@ std::string normalizeRoomCode(std::string const& value) {
     }
     return out;
 }
+
+// server error envelope {error:{code,message}} with per-call fallbacks.
+std::pair<std::string, std::string> parseErrorBody(
+    geode::Result<matjson::Value, matjson::ParseError> const& parsed, std::string code, std::string message) {
+    if (parsed) {
+        auto v = parsed.unwrap();
+        if (v.contains("error")) {
+            code = v["error"]["code"].asString().unwrapOr(code);
+            message = v["error"]["message"].asString().unwrapOr(message);
+        }
+    }
+    return {std::move(code), std::move(message)};
+}
 }
 
 CollabNetClient::~CollabNetClient() {
@@ -184,7 +197,7 @@ void CollabNetClient::requestResync() {
         {"client", static_cast<int64_t>(m_clientId)},
     });
     auto req = web::WebRequest();
-    req.timeout(std::chrono::seconds(20));
+    req.timeout(asp::Duration::fromSecs(20));
     req.header("Content-Type", "application/json");
     req.header("Authorization", "Bearer " + m_sessionToken);
     req.bodyString(body.dump(matjson::NO_INDENTATION));
@@ -242,15 +255,7 @@ void CollabNetClient::emitError(std::string const& code, std::string const& mess
     if (onState) onState(ConnState::Disconnected, message);
 }
 
-void CollabNetClient::doJoin() {
-    uint64_t gen = m_gen;
-    auto lifetime = std::weak_ptr<uint8_t>(m_lifetime);
-
-    auto body = matjson::makeObject({
-        {"roomCode", m_room},
-        {"username", m_user},
-        {"protocol", static_cast<int64_t>(kProtocolVersion)},
-    });
+void CollabNetClient::applyAppearanceBody(matjson::Value& body) const {
     body["accountID"] = static_cast<int64_t>(m_appearance.accountID);
     body["iconID"] = static_cast<int64_t>(m_appearance.iconID);
     body["iconType"] = static_cast<int64_t>(m_appearance.iconType);
@@ -264,10 +269,22 @@ void CollabNetClient::doJoin() {
         body["cursorScale"] = static_cast<double>(m_appearance.cursorScale);
         body["cursorOpacity"] = static_cast<int64_t>(m_appearance.cursorOpacity);
     }
+}
+
+void CollabNetClient::doJoin() {
+    uint64_t gen = m_gen;
+    auto lifetime = std::weak_ptr<uint8_t>(m_lifetime);
+
+    auto body = matjson::makeObject({
+        {"roomCode", m_room},
+        {"username", m_user},
+        {"protocol", static_cast<int64_t>(kProtocolVersion)},
+    });
+    applyAppearanceBody(body);
 
     auto req = web::WebRequest();
     // allow slow vps startup or a temporarily busy host.
-    req.timeout(std::chrono::seconds(45));
+    req.timeout(asp::Duration::fromSecs(45));
     req.header("Content-Type", "application/json");
     req.bodyString(body.dump(matjson::NO_INDENTATION));
 
@@ -284,15 +301,7 @@ void CollabNetClient::doJoin() {
             }
 
             log::warn("[Collab] join failed HTTP {} body={}", res.code(), res.string().unwrapOr(""));
-            std::string message = "No se pudo unir a la sala";
-            std::string code = "join_failed";
-            if (parsed) {
-                auto v = parsed.unwrap();
-                if (v.contains("error")) {
-                    code = v["error"]["code"].asString().unwrapOr(code);
-                    message = v["error"]["message"].asString().unwrapOr(message);
-                }
-            }
+            auto [code, message] = parseErrorBody(parsed, "join_failed", "No se pudo unir a la sala");
 
             // join never auto-creates; retry startup/reconnect 404s first.
             if (res.code() == 404 && code == "room_not_found") {
@@ -347,23 +356,11 @@ void CollabNetClient::doCreate() {
         {"initialObjects", matjson::Value::array()},
     });
     if (!m_resumeToken.empty()) body["resumeToken"] = m_resumeToken;
-    body["accountID"] = static_cast<int64_t>(m_appearance.accountID);
-    body["iconID"] = static_cast<int64_t>(m_appearance.iconID);
-    body["iconType"] = static_cast<int64_t>(m_appearance.iconType);
-    body["color1"] = static_cast<int64_t>(m_appearance.color1);
-    body["color2"] = static_cast<int64_t>(m_appearance.color2);
-    body["glowColor"] = static_cast<int64_t>(m_appearance.glowColor);
-    body["glowEnabled"] = m_appearance.glowEnabled;
-    if (m_appearance.hasCustomCursor && !m_appearance.cursorData.empty()) {
-        body["hasCustomCursor"] = true;
-        body["cursorData"] = m_appearance.cursorData;
-        body["cursorScale"] = static_cast<double>(m_appearance.cursorScale);
-        body["cursorOpacity"] = static_cast<int64_t>(m_appearance.cursorOpacity);
-    }
+    applyAppearanceBody(body);
 
     auto req = web::WebRequest();
     // same slow-start allowance as join.
-    req.timeout(std::chrono::seconds(45));
+    req.timeout(asp::Duration::fromSecs(45));
     req.header("Content-Type", "application/json");
     req.bodyString(body.dump(matjson::NO_INDENTATION));
 
@@ -380,15 +377,7 @@ void CollabNetClient::doCreate() {
             }
 
             log::warn("[Collab] create-room failed HTTP {} body={}", res.code(), res.string().unwrapOr(""));
-            std::string message = "No se pudo crear la sala";
-            std::string code = "create_failed";
-            if (parsed) {
-                auto v = parsed.unwrap();
-                if (v.contains("error")) {
-                    code = v["error"]["code"].asString().unwrapOr(code);
-                    message = v["error"]["message"].asString().unwrapOr(message);
-                }
-            }
+            auto [code, message] = parseErrorBody(parsed, "create_failed", "No se pudo crear la sala");
 
             // create mode never silently joins another room; a taken code asks for a new one.
             if (res.code() == 409 && code == "room_exists") {
@@ -406,7 +395,7 @@ void CollabNetClient::poll() {
     auto lifetime = std::weak_ptr<uint8_t>(m_lifetime);
 
     auto req = web::WebRequest();
-    req.timeout(std::chrono::seconds(35));
+    req.timeout(asp::Duration::fromSecs(35));
     req.header("Authorization", "Bearer " + m_sessionToken);
     std::string url = apiUrl(fmt::format("/api/poll?room={}&client={}", m_room, m_clientId));
 
@@ -456,7 +445,7 @@ void CollabNetClient::scheduleDelayed(uint64_t gen, int ms, RetryAction action) 
     auto lifetime = std::weak_ptr<uint8_t>(m_lifetime);
     ThreadTracker::get().spawn([this, lifetime, gen, ms, action]() {
         geode::utils::thread::setName("PaimonCollabRetry");
-        std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+        if (paimon::waitForShutdownOr(std::chrono::milliseconds(ms))) return;
         if (lifetime.expired()) return;
         Loader::get()->queueInMainThread([this, lifetime, gen, action]() {
             if (lifetime.expired()) return;
@@ -489,7 +478,7 @@ void CollabNetClient::dispatchStateJson(std::string channel, std::string suffix,
     uint64_t gen = m_gen;
     auto lifetime = std::weak_ptr<uint8_t>(m_lifetime);
     auto req = web::WebRequest();
-    req.timeout(std::chrono::seconds(6));
+    req.timeout(asp::Duration::fromSecs(6));
     req.header("Content-Type", "application/json");
     req.header("Authorization", "Bearer " + m_sessionToken);
     req.bodyString(body.dump(matjson::NO_INDENTATION));
@@ -611,7 +600,7 @@ void CollabNetClient::sendJson(matjson::Value const& value) {
     auto req = web::WebRequest();
     // voice/pings/claims are perishable: short timeout caps slow-connection pileup.
     bool ephemeral = (t == "voice" || t == "ping" || t == "claim_layer");
-    req.timeout(std::chrono::seconds(ephemeral ? 6 : 15));
+    req.timeout(asp::Duration::fromSecs(ephemeral ? 6 : 15));
     req.header("Content-Type", "application/json");
     req.header("Authorization", "Bearer " + m_sessionToken);
     req.bodyString(body.dump(matjson::NO_INDENTATION));
@@ -634,7 +623,7 @@ void CollabNetClient::sendOps(matjson::Value const& ops, OpsCb cb) {
     });
 
     auto req = web::WebRequest();
-    req.timeout(std::chrono::seconds(20));
+    req.timeout(asp::Duration::fromSecs(20));
     req.header("Content-Type", "application/json");
     req.header("Authorization", "Bearer " + m_sessionToken);
     req.bodyString(body.dump(matjson::NO_INDENTATION));
@@ -669,7 +658,7 @@ void CollabNetClient::sendSeed(matjson::Value const& objects, bool finalChunk, S
 
     auto req = web::WebRequest();
     // big levels: a chunk can be ~1mb of json; give the host time to upload.
-    req.timeout(std::chrono::seconds(45));
+    req.timeout(asp::Duration::fromSecs(45));
     req.header("Content-Type", "application/json");
     req.header("Authorization", "Bearer " + m_sessionToken);
     req.bodyString(body.dump(matjson::NO_INDENTATION));
@@ -694,6 +683,8 @@ void CollabNetClient::sendInvite(int accountId, std::string const& fromName, Inv
         if (cb) cb(false, false, "No estas conectado a la sala");
         return;
     }
+    uint64_t gen = m_gen;
+    auto lifetime = std::weak_ptr<uint8_t>(m_lifetime);
 
     auto body = matjson::makeObject({
         {"room", m_room},
@@ -703,14 +694,16 @@ void CollabNetClient::sendInvite(int accountId, std::string const& fromName, Inv
     });
 
     auto req = web::WebRequest();
-    req.timeout(std::chrono::seconds(15));
+    req.timeout(asp::Duration::fromSecs(15));
     req.header("Content-Type", "application/json");
     req.header("Authorization", "Bearer " + m_sessionToken);
     req.bodyString(body.dump(matjson::NO_INDENTATION));
 
     WebHelper::dispatch(std::move(req), "POST", apiUrl("/api/invite"),
-        [cb = std::move(cb)](web::WebResponse res) {
+        [this, lifetime, gen, cb = std::move(cb)](web::WebResponse res) {
             if (!cb) return;
+            // new generation means stop()/start() ran mid-flight; stay silent.
+            if (lifetime.expired() || gen != m_gen) return;
             auto parsed = matjson::parse(res.string().unwrapOr(""));
             if (res.code() == 200 && parsed) {
                 auto v = parsed.unwrap();

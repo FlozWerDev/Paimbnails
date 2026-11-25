@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "FusionAsset.hpp"
 
 #include "../../../utils/GIFDecoder.hpp"
@@ -17,7 +18,7 @@ namespace paimon::texture_studio {
 namespace {
 
 std::string lowerExt(std::filesystem::path const& path) {
-    auto e = utils::string::pathToString(path.extension());
+    auto e = paimon::paths::toUtf8(path.extension());
     for (char& c : e) {
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
@@ -70,16 +71,14 @@ std::shared_ptr<FusionAsset> FusionAssetLoader::fromStatic(ImageBuffer img,
 
 geode::Result<std::shared_ptr<FusionAsset>> FusionAssetLoader::loadFromFile(
     std::filesystem::path const& path) {
-    std::error_code ec;
-    auto size = std::filesystem::file_size(path, ec);
-    if (ec || size > ImageBuffer::kMaxEncodedBytes) {
-        return Err("FusionAsset: invalid file size for {}",
-            geode::utils::string::pathToString(path));
-    }
-    auto bytes = geode::utils::file::readBinary(path);
+    auto bytes = geode::utils::file::readBinary(paimon::paths::toSdkPath(path));
     if (!bytes) {
         return Err("FusionAsset: cannot read {}: {}",
-            geode::utils::string::pathToString(path), bytes.unwrapErr());
+            paimon::paths::toUtf8(path), bytes.unwrapErr());
+    }
+    if (bytes.unwrap().size() > ImageBuffer::kMaxEncodedBytes) {
+        return Err("FusionAsset: invalid file size for {}",
+            paimon::paths::toUtf8(path));
     }
     return loadFromMemory(
         std::span<std::uint8_t const>(bytes.unwrap().data(), bytes.unwrap().size()),

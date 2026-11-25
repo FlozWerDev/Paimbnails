@@ -62,7 +62,7 @@ bool RTXConfigLayer::init() {
             RTXManager::get().resetToDefaults();
             m_dirty = false;
             scheduleRebuild();
-            PaimonNotify::create("Paimon RTX restablecido", NotificationIcon::Success)->show();
+            PaimonNotify::show("Paimon RTX restablecido", NotificationIcon::Success);
         });
     resetBtn->setID("rtx-default-btn"_spr);
     resetBtn->setPosition({m_mainLayer->getContentSize().width - 62.f, 20.f});
@@ -153,7 +153,7 @@ void RTXConfigLayer::rebuild() {
         "Paimon RTX",
         "Luz rebotada, oclusion y reflejos trazados sobre la imagen del juego.",
         cfg.enabled,
-        [this](bool v) {
+        [](bool v) {
             RTXManager::get().setEnabled(v);
         });
 

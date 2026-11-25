@@ -19,7 +19,7 @@ class $modify(PaimonAudioAssetsBrowser, AudioAssetsBrowser) {
         if (resume) DynamicSongManager::get()->resumeSuspendedPlayback();
     }
 
-    bool init(gd::vector<int>& songIds, gd::vector<int>& sfxIds) {
+    bool init(std::vector<int>& songIds, std::vector<int>& sfxIds) {
         if (!AudioAssetsBrowser::init(songIds, sfxIds)) return false;
 
         auto* dynamic = DynamicSongManager::get();

@@ -12,9 +12,19 @@
 
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/Localization.hpp"
+#include "../../../utils/SafeText.hpp"
+#include "../../../core/ModAuthFlow.hpp"
+
+#include <unordered_set>
 
 using namespace geode::prelude;
 using namespace cocos2d;
+
+namespace {
+// the server can return an unbounded list; keep the scroll layer and labels
+// within a sane budget.
+constexpr std::size_t kMaxBanListEntries = 500;
+}
 
 BanListPopup* BanListPopup::create() {
     auto ret = new BanListPopup();
@@ -27,6 +37,10 @@ BanListPopup* BanListPopup::create() {
 }
 
 bool BanListPopup::init() {
+    if (!paimon::modauth::isVerified()) {
+        PaimonNotify::show(Localization::get().getString("ban.verify_required"), NotificationIcon::Warning);
+        return false;
+    }
     if (!PaimonPopup::init(360.f, 260.f)) return false;
 
     this->setTitle(Localization::get().getString("ban.list.title"));
@@ -70,39 +84,58 @@ bool BanListPopup::init() {
         if (!popup) return;
 
         std::vector<std::string> users;
+        std::unordered_set<std::string> seen;
+        bool parsedOk = false;
 
         if (success) {
             auto parsed = matjson::parse(jsonData);
             if (parsed.isOk()) {
                 auto root = parsed.unwrap();
+                if (root.isObject()) {
+                    parsedOk = true;
 
-                auto bannedArr = root["banned"].asArray();
-                if (bannedArr.isOk()) {
-                    for (auto const& v : bannedArr.unwrap()) {
-                        auto s = v.asString().unwrapOr("");
-                        if (!s.empty()) users.push_back(s);
+                    auto bannedArr = root["banned"].asArray();
+                    if (bannedArr.isOk()) {
+                        for (auto const& v : bannedArr.unwrap()) {
+                            if (users.size() >= kMaxBanListEntries) break;
+                            auto name = v.asString().unwrapOr("");
+                            if (!paimon::text::isSafeAccountName(name)) continue;
+                            if (!seen.insert(name).second) continue;
+                            users.push_back(std::move(name));
+                        }
                     }
-                }
 
-                // matjson iterators throw on non-containers, so guard 'details':
-                // a missing/scalar value would crash here.
-                if (root["details"].isObject()) {
-                    for (auto const& val : root["details"]) {
-                        if (!val.isObject()) continue;
-                        auto keyOpt = val.getKey();
-                        if (!keyOpt) continue;
+                    // matjson iterators throw on non-containers, so guard 'details':
+                    // a missing/scalar value would crash here.
+                    if (root["details"].isObject()) {
+                        std::size_t detailCount = 0;
+                        for (auto const& val : root["details"]) {
+                            if (detailCount++ >= kMaxBanListEntries) break;
+                            if (!val.isObject()) continue;
+                            auto keyOpt = val.getKey();
+                            if (!keyOpt) continue;
 
-                        BanDetail d;
-                        d.reason   = val["reason"].asString().unwrapOr("");
-                        d.bannedBy = val["bannedBy"].asString().unwrapOr("");
-                        d.date     = val["date"].asString().unwrapOr("");
+                            auto key = *keyOpt;
+                            if (!paimon::text::isSafeAccountName(key)) continue;
 
-                        popup->m_banDetails[*keyOpt] = d;
+                            BanDetail d;
+                            d.reason = paimon::text::sanitizeDisplayText(
+                                val["reason"].asString().unwrapOr(""), 200);
+                            d.bannedBy = paimon::text::sanitizeDisplayText(
+                                val["bannedBy"].asString().unwrapOr(""), 64);
+                            d.date = paimon::text::sanitizeDisplayText(
+                                val["date"].asString().unwrapOr(""), 32);
+
+                            popup->m_banDetails[std::move(key)] = std::move(d);
+                        }
                     }
                 }
             }
         }
 
+        if (!success || !parsedOk) {
+            PaimonNotify::show(Localization::get().getString("ban.list.error"), NotificationIcon::Error);
+        }
         if (popup->getParent()) {
             popup->rebuildList(users);
         }
@@ -195,7 +228,8 @@ void BanListPopup::onInfo(CCObject* sender) {
     auto strObj = typeinfo_cast<CCString*>(btn->getUserObject());
     if (!strObj) return;
     
-    std::string username = strObj->getCString();
+    std::string const username = strObj->getCString();
+    if (!paimon::text::isSafeAccountName(username)) return;
     std::string body = Localization::get().getString("ban.info.no_info");
     
     if (m_banDetails.count(username)) {
@@ -214,12 +248,22 @@ void BanListPopup::onInfo(CCObject* sender) {
 }
 
 void BanListPopup::onUnban(CCObject* sender) {
+    if (m_unbanPending) return;
+    if (!paimon::modauth::isVerified()) {
+        PaimonNotify::show(Localization::get().getString("ban.verify_required"), NotificationIcon::Warning);
+        return;
+    }
+
     auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
     if (!btn) return;
     auto strObj = typeinfo_cast<CCString*>(btn->getUserObject());
     if (!strObj) return;
-    
-    std::string username = strObj->getCString();
+
+    std::string const username = strObj->getCString();
+    if (!paimon::text::isSafeAccountName(username)) {
+        PaimonNotify::show(Localization::get().getString("ban.popup.invalid_user"), NotificationIcon::Error);
+        return;
+    }
 
     Ref<BanListPopup> self = this;
     PopupManager::get().quickPopup(
@@ -227,16 +271,17 @@ void BanListPopup::onUnban(CCObject* sender) {
         fmt::format(fmt::runtime(Localization::get().getString("ban.unban.confirm")), username),
         "Cancel", Localization::get().getString("ban.list.unban_btn").c_str(),
         [self, username](auto, bool btn2) {
-            if (btn2) {
-                HttpClient::get().unbanUser(username, [self](bool success, std::string const& msg) {
-                    if (success) {
-                        PaimonNotify::create(Localization::get().getString("ban.unban.success"), NotificationIcon::Success)->show();
-                        self->onClose(nullptr);
-                    } else {
-                        PaimonNotify::create(Localization::get().getString("ban.unban.error"), NotificationIcon::Error)->show();
-                    }
-                });
-            }
+            if (!btn2 || self->m_unbanPending) return;
+            self->m_unbanPending = true;
+            HttpClient::get().unbanUser(username, [self](bool success, std::string const&) {
+                self->m_unbanPending = false;
+                if (success) {
+                    PaimonNotify::show(Localization::get().getString("ban.unban.success"), NotificationIcon::Success);
+                    self->onClose(nullptr);
+                } else {
+                    PaimonNotify::show(Localization::get().getString("ban.unban.error"), NotificationIcon::Error);
+                }
+            });
         }
     ).showInstant();
 }

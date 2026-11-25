@@ -1,0 +1,51 @@
+#include <cassert>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <iostream>
+#include <optional>
+#include <string>
+#include <matjson.hpp>
+#include "src/utils/AtomicFileWrite.hpp"
+#include "src/utils/JsonHelper.hpp"
+@@source|src/features/official-slots/services/SlotPayloadCache.hpp@@
+@@source|src/features/official-slots/services/SlotPayloadCache.cpp@@
+
+int main() {
+    using namespace paimon::officialslots;
+    auto directory = std::filesystem::temp_directory_path() / "paim-official-slot-cache-regression";
+    std::filesystem::remove_all(directory);
+    CachedSlotPayload source;
+    source.levelId = 123456;
+    source.levelString = "kS38,1_2_3;kA1,0;opaque,\"payload\";";
+    source.songId = 1516520;
+    source.audioTrack = 4;
+    source.songIds = "1516520,6789";
+    source.sfxIds = "22,33";
+    source.levelLength = 3;
+    source.name = "Cached level";
+    source.author = "Creator";
+    assert(!readSlotPayload(directory, source.levelId));
+    assert(writeSlotPayload(directory, source));
+    auto loaded = readSlotPayload(directory, source.levelId);
+    assert(loaded && loaded->levelString == source.levelString);
+    assert(loaded->songId == source.songId && loaded->audioTrack == 4);
+    assert(loaded->songIds == source.songIds && loaded->sfxIds == source.sfxIds);
+    assert(loaded->levelLength == 3 && loaded->name == source.name && loaded->author == source.author);
+    assert(!readSlotPayload(directory, 987654));
+    std::filesystem::copy_file(directory / "123456.json", directory / "987654.json");
+    assert(!readSlotPayload(directory, 987654)); // Reject a cache file for a different source.
+    { std::ofstream corrupt(directory / "123456.json"); corrupt << "{bad json"; }
+    assert(!readSlotPayload(directory, source.levelId));
+    assert(writeSlotPayload(directory, source)); // A valid download repairs corrupt cache.
+    assert(readSlotPayload(directory, source.levelId));
+    auto empty = source;
+    empty.levelString.clear();
+    assert(!writeSlotPayload(directory, empty));
+    assert(readSlotPayload(directory, source.levelId)->levelString == source.levelString);
+    std::filesystem::resize_file(directory / "123456.json", 65ull * 1024 * 1024);
+    assert(!readSlotPayload(directory, source.levelId));
+    assert(!readSlotPayload(directory, -1));
+    std::filesystem::remove_all(directory);
+    std::cout << "Persistent source payload, songs/SFX, corrupt recovery and file bounds passed\n";
+}

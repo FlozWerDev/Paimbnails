@@ -1,8 +1,9 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "IconPaths.hpp"
+#include "../../../utils/ProjectStorage.hpp"
 
 #include <Geode/utils/string.hpp>
 
-#include <cctype>
 #include <system_error>
 
 using namespace geode::prelude;
@@ -23,7 +24,7 @@ constexpr std::string_view kThumbFile   = "thumb.png";
 }  // anonymous namespace
 
 std::filesystem::path IconPaths::rootDir() {
-    return Mod::get()->getSaveDir() / std::string(kRootName);
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / std::string(kRootName);
 }
 
 std::filesystem::path IconPaths::indexFile() {
@@ -39,7 +40,7 @@ std::filesystem::path IconPaths::slotsDir() {
 }
 
 std::filesystem::path IconPaths::slotDir(std::string_view slotId) {
-    return slotsDir() / std::string(slotId);
+    return paimon::storage::projectDirectory(slotsDir(), slotId);
 }
 
 std::filesystem::path IconPaths::projectFile(std::string_view slotId) {
@@ -63,30 +64,19 @@ std::filesystem::path IconPaths::thumbFile(std::string_view slotId) {
 }
 
 std::string IconPaths::sanitizeFilename(std::string_view name) {
-    std::string out;
-    out.reserve(name.size());
-    for (char c : name) {
-        unsigned char uc = static_cast<unsigned char>(c);
-        if (std::isalnum(uc) || c == '.' || c == '-' || c == '_') {
-            out += c;
-        } else {
-            out += '_';
-        }
-    }
-    if (out.empty()) out = "_unnamed";
-    // defensive cap below the windows 255-char path-component limit.
-    if (out.size() > 200) out.resize(200);
-    return out;
+    return paimon::storage::sanitizeFilename(name);
 }
 
 geode::Result<> IconPaths::ensureSlotDirs(std::string_view slotId) {
+    if (!paimon::storage::resolveProjectDirectory(slotsDir(), slotId))
+        return Err("Invalid or unconfined project ID");
     std::error_code ec;
     auto base = slotDir(slotId);
 
     auto mk = [&](std::filesystem::path const& p) -> geode::Result<> {
         std::filesystem::create_directories(p, ec);
         if (ec) {
-            return Err("create_directories({}): {}", geode::utils::string::pathToString(p), ec.message());
+            return Err("create_directories({}): {}", paimon::paths::toUtf8(p), ec.message());
         }
         return Ok();
     };

@@ -18,6 +18,7 @@ public:
     void shutdown();
 
     SessionState snapshot() const;
+    ActivitySnapshot activitySnapshot(bool includeRoomName = false) const;
     bool isReady() const;
 
     void ensureConnected();
@@ -91,6 +92,8 @@ private:
     void queueStrokeFlush();
     void flushPendingStrokes();
     void applyRequestFailure(std::string const& message, bool disconnectTransport = false);
+    // snapshot of the session state, taken under the lock.
+    SessionState copyState() const;
 
     mutable std::mutex m_mutex;
     SessionState m_state;

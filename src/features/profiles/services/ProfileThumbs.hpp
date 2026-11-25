@@ -41,6 +41,8 @@ struct ProfileConfig {
     std::string commentBgBlurType = "gaussian";
     float commentBgBlur = 5.0f;
     float commentBgDarkness = 0.35f;
+    // approved paimon base background used when commentBgType == "community".
+    std::string commentBgCommunityId = "";
 };
 
 struct ProfileCacheEntry {
@@ -117,6 +119,10 @@ private:
     void processBinaryQueueIndividual();
     void touchCacheEntry(int accountID);
     void clearOldCache();
+    // periodic cleanup tick; call with m_cacheMutex held.
+    void noteInsertLocked();
+    // insert preserving the previous entry's config, then touch; mutex held.
+    void storeEntryLocked(int accountID, ProfileCacheEntry entry);
     void removeFromNoProfileCache(int accountID);
     
     std::unordered_map<int, ProfileCacheEntry> m_profileCache;

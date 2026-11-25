@@ -36,7 +36,7 @@ public:
     std::string const& activeSlotId() const { return m_activeSlotId; }
     geode::Result<> setActiveSlot(std::string id);
 
-    // makeuniqueid() suffixes on collision.
+    // reserves a fresh persistent directory; imported IDs are never reused.
     geode::Result<std::string> createSlot(TextureProject seed);
 
     geode::Result<TextureProject> loadSlot(std::string_view id);
@@ -54,8 +54,9 @@ private:
     SlotStore& operator=(SlotStore const&) = delete;
 
     void rebuildIndexCache();
+    void recoverUnindexedProjects();
+    std::string canonicalId(std::string_view id) const;
 
-    std::string makeUniqueId(std::string desiredId) const;
 
     bool m_indexLoaded = false;
     std::vector<SlotIndexEntry> m_index;

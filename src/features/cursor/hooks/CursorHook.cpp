@@ -1,54 +1,11 @@
 #include "CursorHook.hpp"
+#if defined(GEODE_IS_DESKTOP)
 #include "../services/CursorManager.hpp"
 #include <Geode/Geode.hpp>
 #include <Geode/utils/Keyboard.hpp>
 
-#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-#include <Geode/modify/CCTouchDispatcher.hpp>
-#endif
-
 using namespace geode::prelude;
 using namespace cocos2d;
-
-#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-// no mouse on mobile: press/release comes from touches, hooked before buttons swallow them.
-namespace {
-void feedTouch(CCSet* touches, int state) {
-    if (!touches) return;
-
-    auto& cm = CursorManager::get();
-    for (auto it = touches->begin(); it != touches->end(); ++it) {
-        if (auto* touch = static_cast<CCTouch*>(*it)) {
-            cm.setTouchPoint(touch->getLocation());
-        }
-    }
-    if (state >= 0) cm.setMouseDown(state != 0);
-}
-} // namespace
-
-class $modify(PaimonClickTouchDispatcher, CCTouchDispatcher) {
-    $override
-    void touchesBegan(CCSet* touches, CCEvent* event) {
-        feedTouch(touches, 1);
-        CCTouchDispatcher::touchesBegan(touches, event);
-    }
-    $override
-    void touchesMoved(CCSet* touches, CCEvent* event) {
-        feedTouch(touches, -1);
-        CCTouchDispatcher::touchesMoved(touches, event);
-    }
-    $override
-    void touchesEnded(CCSet* touches, CCEvent* event) {
-        feedTouch(touches, 0);
-        CCTouchDispatcher::touchesEnded(touches, event);
-    }
-    $override
-    void touchesCancelled(CCSet* touches, CCEvent* event) {
-        feedTouch(touches, 0);
-        CCTouchDispatcher::touchesCancelled(touches, event);
-    }
-};
-#endif
 
 // avoids hooking ccscheduler::update directly, which geode discourages.
 class CursorTickerNode : public CCNode {
@@ -79,7 +36,6 @@ public:
             cm.detachFromScene();
         }
 
-        // click fx run with the cursor off (mobile has none).
         cm.update(dt);
     }
 };
@@ -121,6 +77,17 @@ void shutdownCursorTicker() {
     (void)s_cursorTicker.take();
 }
 
+// Geode 6 clears OverlayManager when textures unload; attach again right away
+// instead of waiting for the next ticker update.
+$on_game(TexturesLoaded) {
+    auto& cm = CursorManager::get();
+    if (cm.config().enabled && !cm.isAttached()) cm.attachToOverlay();
+}
+
 $on_game(Exiting) {
     shutdownCursorTicker();
 }
+#else
+void initCursorTicker() {}
+void shutdownCursorTicker() {}
+#endif

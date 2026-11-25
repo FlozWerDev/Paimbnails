@@ -10,17 +10,25 @@ class PaiblurNode : public cocos2d::CCNodeRGBA {
 public:
     static PaiblurNode* create(cocos2d::CCSize const& winSize, float intensity, float darkness);
 
+    PaiblurNode();
+    ~PaiblurNode() override;
+
     void fadeIn(float duration);
 
     void visit() override;
 
-    ~PaiblurNode() override;
+    // called while the old gl context is still current (GameManager::reloadAll)
+    // or with deleteHandles=false after an Android EGL context loss:
+    // releases/resets fbos/textures/vbo handles and drops the shared program so
+    // visit() rebuilds everything lazily under the new context.
+    void onGLContextReload(bool deleteHandles = true);
+    static void onGLContextReloadAll(bool deleteHandles = true);
 
 protected:
     bool initWithWinSize(cocos2d::CCSize const& winSize, float intensity, float darkness);
 
     bool ensureRenderTargets(int srcW, int srcH);
-    void releaseRenderTargets();
+    void releaseRenderTargets(bool deleteHandles = true);
 
     GLuint m_fboA = 0;
     GLuint m_texA = 0;
@@ -38,10 +46,11 @@ protected:
     // set on unrecoverable gl failure; visit() no-ops
     bool m_broken = false;
 
-    // steady-state throttle: reuse m_texb, full pass every nth frame
+    // both blur axes are cached in m_texa; full pass every nth steady frame.
     bool m_hasCachedBlur = false;
     float m_lastRadius = -1.f;
     int m_steadyFrames = 0;
+    void const* m_contextToken = nullptr;
 };
 
 } // namespace paimon::paiblur

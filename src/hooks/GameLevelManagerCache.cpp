@@ -18,7 +18,7 @@ void deliverCachedResponse(
     GameLevelManager* self,
     std::string const& response,
     std::string const& tag,
-    void (GameLevelManager::*handler)(gd::string, gd::string)
+    void (GameLevelManager::*handler)(std::string, std::string)
 ) {
     Loader::get()->queueInMainThread([self, response, tag, handler]() {
         if (paimon::isRuntimeShuttingDown()) return;
@@ -26,7 +26,7 @@ void deliverCachedResponse(
     });
 }
 
-void maybeStore(std::string const& category, std::string const& key, gd::string const& response, std::time_t ttl) {
+void maybeStore(std::string const& category, std::string const& key, std::string const& response, std::time_t ttl) {
     if (!shouldUseCache() || key.empty()) return;
     auto body = static_cast<std::string>(response);
     if (body.empty() || body == "-1") return;
@@ -37,7 +37,7 @@ bool tryServeCached(
     GameLevelManager* self,
     char const* key,
     std::string const& category,
-    void (GameLevelManager::*handler)(gd::string, gd::string)
+    void (GameLevelManager::*handler)(std::string, std::string)
 ) {
     if (!key || !*key) return false;
     auto cached = paimon::gd::GDRobTopCache::get().lookup(category, key);
@@ -59,7 +59,7 @@ class $modify(PaimonRobTopCacheGameLevelManager, GameLevelManager) {
         GameLevelManager::getUsers(object);
     }
 
-    void onGetUsersCompleted(gd::string response, gd::string tag) {
+    void onGetUsersCompleted(std::string response, std::string tag) {
         maybeStore("users", static_cast<std::string>(tag), response, paimon::gd::kCacheTTLWeek);
         GameLevelManager::onGetUsersCompleted(response, tag);
     }

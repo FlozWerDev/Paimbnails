@@ -1,5 +1,6 @@
 #include "TemplateExtractor.hpp"
 
+#include "../data/IconAnatomy.hpp"
 #include "../../texture-studio/data/GdResourcesLocator.hpp"
 #include "../../texture-studio/data/SpritesheetReader.hpp"
 
@@ -17,18 +18,8 @@ namespace paimon::icon_maker {
 namespace {
 
 std::string_view vanillaPrefix(IconType type) {
-    switch (type) {
-        case IconType::Cube:    return "player_";
-        case IconType::Ship:    return "ship_";
-        case IconType::Ball:    return "player_ball_";
-        case IconType::Ufo:     return "bird_";
-        case IconType::Wave:    return "dart_";
-        case IconType::Robot:   return "robot_";
-        case IconType::Spider:  return "spider_";
-        case IconType::Swing:   return "swing_";
-        case IconType::Jetpack: return "jetpack_";
-        default:                return "player_";
-    }
+    auto const* def = anatomyFor(type);
+    return def ? def->vanillaPrefix : "player_";
 }
 
 struct SheetPick {

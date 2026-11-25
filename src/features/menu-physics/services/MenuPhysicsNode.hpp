@@ -34,7 +34,7 @@ private:
         float rotation = 0.f;
         float scaleX = 1.f;
         float scaleY = 1.f;
-        cocos2d::CCPoint returnStartPos;
+        cocos2d::CCPoint returnStartPos{0.f, 0.f};
         float returnStartRotation = 0.f;
         float returnStartScaleX = 1.f;
         float returnStartScaleY = 1.f;

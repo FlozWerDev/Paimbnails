@@ -143,6 +143,7 @@ void ModlyModPopup::buildBody() {
     }
 
     auto scroll = ScrollLayer::create({kScrollW, kScrollH});
+    if (scroll) scroll->setAnchorPoint({0.f, 0.f});
     scroll->setPosition({(kWidth - kScrollW) / 2.f, 68.f});
     m_mainLayer->addChild(scroll, 2);
 

@@ -1,0 +1,79 @@
+
+#include <algorithm>
+#include <cassert>
+#include <cctype>
+#include <cstdint>
+#include <functional>
+#include <iostream>
+#include <optional>
+#include <span>
+#include <string>
+#include <utility>
+#include <vector>
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
+#include <chrono>
+#include <cstring>
+#include <sstream>
+#include <stdexcept>
+#include <filesystem>
+#include <fstream>
+#include <charconv>
+#include <string_view>
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+
+using LevelTagMap=std::unordered_map<int,std::vector<std::string>>;
+namespace matjson {
+ struct Json{bool object=true;bool isObject()const{return object;}};
+ struct Parsed {bool valid=false;Json json;bool isOk()const{return valid;}Json unwrap()const{return json;}};
+ Parsed parse(std::string const& text){return {text=="{}" || text=="[]",{text!="[]"}};}
+}
+namespace web {
+ struct WebResponse {
+  bool success=false;std::string body;
+  bool ok()const{return success;}
+  struct String {std::string value;std::string unwrapOr(char const*)const{return value;}};
+  String string()const{return {body};}
+ };
+ struct WebRequest {template<class T>void timeout(T){} void acceptEncoding(char const*){}};
+}
+struct WebHelper {
+ static inline std::vector<std::function<void(web::WebResponse)>> requests;
+ static void dispatch(web::WebRequest,std::string,std::string,std::function<void(web::WebResponse)> cb) {
+  requests.push_back(std::move(cb));
+ }
+};
+struct LevelTagsClient {
+ std::mutex m_mutex; LevelTagMap m_levelTags; bool m_dirty=false;
+ static constexpr size_t kFetchChunkSize=50;
+ static bool isAvailable(){return true;}
+ static std::string serverURL(){return "stub";}
+ void fetchTags(std::vector<int>const&,std::function<void(LevelTagMap)>);
+ LevelTagMap parseLevelTags(matjson::Json)const{return {};}
+ void saveDiskCache(){}
+};
+@@function|src/features/foryou/services/LevelTagsClient.cpp|void LevelTagsClient::fetchTags(@@
+int main() {
+ LevelTagsClient client; int completed=0;
+ client.fetchTags({123},[&](LevelTagMap){++completed;});
+ assert(WebHelper::requests.size()==1);
+ auto fail=WebHelper::requests[0]; fail(web::WebResponse{});
+ assert(completed==1 && !client.m_levelTags.contains(123) && !client.m_dirty);
+ client.fetchTags({123},[&](LevelTagMap){++completed;});
+ assert(WebHelper::requests.size()==2 && completed==1);
+ auto retry=WebHelper::requests.back();retry({true,"[]"});
+ assert(!client.m_levelTags.contains(123) && completed==2);
+ client.fetchTags({123},[&](LevelTagMap){++completed;});
+ auto invalid=WebHelper::requests.back();invalid({true,"invalid JSON"});
+ assert(!client.m_levelTags.contains(123) && completed==3);
+ client.fetchTags({123},[&](LevelTagMap){++completed;});
+ auto valid=WebHelper::requests.back();valid({true,"{}"});
+ assert(client.m_levelTags.contains(123) && client.m_dirty && completed==4);
+ auto count=WebHelper::requests.size();
+ client.fetchTags({123},[&](LevelTagMap){++completed;});
+ assert(WebHelper::requests.size()==count && completed==5);
+ std::cout << "PASS: level_tags_failed_request_cache\n";
+}

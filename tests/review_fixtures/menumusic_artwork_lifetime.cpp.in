@@ -1,0 +1,175 @@
+#include "tests/review_fixtures/EngineLifetime.hpp"
+#include <algorithm>
+#include <cassert>
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <string>
+#include <vector>
+
+using GLubyte = unsigned char;
+struct CCSize { float width, height; };
+struct CCPoint { float x, y; };
+struct Color { unsigned char r, g, b; };
+namespace cocos2d { using ccColor3B = Color; }
+using cocos2d::ccColor3B;
+struct CCTexture2D {
+    int references = 1;
+    void retain() { ++references; }
+    void release() { assert(references > 0); --references; }
+};
+#define CC_SAFE_RETAIN(pointer) do { if (pointer) (pointer)->retain(); } while (false)
+#define CC_SAFE_RELEASE(pointer) do { if (pointer) (pointer)->release(); } while (false)
+#define CC_SAFE_RELEASE_NULL(pointer) do { CC_SAFE_RELEASE(pointer); (pointer) = nullptr; } while (false)
+struct CCNode : TestLifetime {
+    bool visible = true, attached = true;
+    virtual ~CCNode() = default;
+    void removeFromParent() { attached = false; }
+    void setVisible(bool value) { visible = value; }
+    void addChild(CCNode* node, int) { node->attached = true; }
+    void unschedule(int) {}
+    virtual void onExit() {}
+};
+struct CCSprite : CCNode {
+    static std::vector<std::unique_ptr<CCSprite>> pool;
+    GLubyte opacity = 255;
+    Color color{255, 255, 255};
+    CCSize getContentSize() const { return {400, 300}; }
+    static CCSprite* createWithTexture(CCTexture2D*) { pool.push_back(std::make_unique<CCSprite>()); return pool.back().get(); }
+    void setScale(float) {} void setAnchorPoint(CCPoint) {} void setPosition(CCPoint) {}
+    void setOpacity(GLubyte value) { opacity = value; }
+    void setColor(Color value) { color = value; }
+};
+std::vector<std::unique_ptr<CCSprite>> CCSprite::pool;
+namespace geode { template<class T> using WeakRef = ::WeakRef<T>; }
+namespace paimon::image {
+    std::vector<std::function<void(CCTexture2D*)>> requests;
+    void loadBudgetedAsync(std::string const&, std::function<void(CCTexture2D*)> callback) { requests.push_back(std::move(callback)); }
+}
+struct VinylDisc : CCNode {
+    CCNode clip, rotating;
+    CCNode* m_coverClip = &clip;
+    CCNode* m_rotating = &rotating;
+    CCSprite* m_coverSprite = nullptr;
+    CCTexture2D* m_currentCoverTexture = nullptr;
+    std::string m_coverPath;
+    std::uint64_t m_coverGeneration = 0;
+    bool m_coverLoading = false, m_paused = false;
+    float m_radius = 60;
+    float m_labelRatio = 0.46f;
+    void setCoverFromPath(std::string const&);
+    void applyCoverTexture(CCTexture2D*);
+    void setPausedAppearance(bool);
+    void startSpinning() {} void stopSpinning() {}
+};
+struct CoverHero : CCNode {
+    CCNode clip, fallback;
+    CCNode* m_clip = &clip;
+    CCNode* m_fallback = &fallback;
+    VinylDisc* m_smallDisc = nullptr;
+    CCSprite* m_coverSprite = nullptr;
+    std::string m_coverPath;
+    std::uint64_t m_coverGeneration = 0;
+    bool m_coverLoading = false, m_paused = false;
+    CCSize m_size{200, 140};
+    void setCoverFromPath(std::string const&);
+    void applyCoverTexture(CCTexture2D*);
+    void setPausedAppearance(bool);
+    void onExit() override;
+};
+#define schedule_selector(...) 0
+@@function|src/features/menu-music/ui/components/VinylDisc.cpp|void VinylDisc::setCoverFromPath(@@
+@@function|src/features/menu-music/ui/components/VinylDisc.cpp|void VinylDisc::applyCoverTexture(@@
+@@function|src/features/menu-music/ui/components/VinylDisc.cpp|void VinylDisc::setPausedAppearance(@@
+@@function|src/features/menu-music/ui/components/CoverHero.cpp|void CoverHero::setCoverFromPath(@@
+@@function|src/features/menu-music/ui/components/CoverHero.cpp|void CoverHero::applyCoverTexture(@@
+@@function|src/features/menu-music/ui/components/CoverHero.cpp|void CoverHero::setPausedAppearance(@@
+@@function|src/features/menu-music/ui/components/CoverHero.cpp|void CoverHero::onExit()@@
+
+struct Mod {
+    static Mod* get() { static Mod mod; return &mod; }
+    template<class T> T getSavedValue(char const*, T value) { return value; }
+};
+struct CoverBlurBackground : CCNode {
+    std::string m_lastPath;
+    float m_lastIntensity = -1;
+    std::uint64_t m_generation = 0;
+    bool m_blurPending = false;
+    CCSprite* m_currentBlur = nullptr;
+    int builds = 0;
+    void buildBlur(CCTexture2D*, std::uint64_t, float) { ++builds; }
+    void setCoverFromPath(std::string const&);
+    void onExit() override;
+};
+@@function|src/features/menu-music/ui/components/CoverBlurBackground.cpp|void CoverBlurBackground::setCoverFromPath(@@
+@@function|src/features/menu-music/ui/components/CoverBlurBackground.cpp|void CoverBlurBackground::onExit()@@
+
+struct CCObject {};
+struct MenuMusicLibrary {
+    bool pending = true;
+    static MenuMusicLibrary& get() { static MenuMusicLibrary library; return library; }
+    bool isSyncingDownloadedSongs() const { return pending; }
+};
+struct MenuMusicPopup : CCNode {
+    CCNode backdrop;
+    CCNode* m_fullscreenBackdrop = &backdrop;
+    CCSprite* m_fullscreenBlur = nullptr;
+    std::uint64_t m_fullscreenBlurGen = 0;
+    bool m_fullscreenBlurPending = false;
+    std::string m_lastCoverPath;
+    int builds = 0;
+    int playbackRequests = 0;
+    bool m_playAfterSync = false;
+    void onModeLibrary(CCObject*) { ++playbackRequests; }
+    void finishPendingPlayback();
+    void buildFullscreenBlur(CCTexture2D*, std::uint64_t) { ++builds; }
+    void applyFullscreenCover(std::string const&);
+};
+@@function|src/features/menu-music/ui/MenuMusicPopup.cpp|void MenuMusicPopup::applyFullscreenCover(@@
+@@function|src/features/menu-music/ui/MenuMusicPopup.cpp|void MenuMusicPopup::finishPendingPlayback()@@
+
+int main() {
+    auto& requests = paimon::image::requests;
+    CCTexture2D texture;
+    auto hero = std::make_unique<CoverHero>();
+    hero->setPausedAppearance(true);
+    hero->setCoverFromPath("first"); hero->setCoverFromPath("first");
+    assert(requests.size() == 1 && !hero->m_coverSprite);
+    hero->setCoverFromPath("second");
+    requests[0](&texture); assert(!hero->m_coverSprite);
+    requests[1](&texture);
+    assert(hero->m_coverSprite && hero->m_coverSprite->opacity == 200 && hero->m_coverSprite->color.r == 130);
+    hero->setCoverFromPath(""); assert(!hero->m_coverSprite && hero->fallback.visible);
+    hero->setCoverFromPath("closed");
+    hero->onExit(); requests[2](&texture); assert(!hero->m_coverSprite);
+    hero.reset(); requests[2](&texture);
+
+    VinylDisc disc;
+    disc.setPausedAppearance(true); disc.setCoverFromPath("disc");
+    requests[3](&texture);
+    assert(disc.m_coverSprite && disc.m_coverSprite->opacity == 200 && disc.m_coverSprite->color.r == 130);
+    assert(texture.references == 2);
+    disc.applyCoverTexture(&texture);
+    assert(texture.references == 2);
+    disc.setCoverFromPath("");
+    assert(texture.references == 1 && !disc.m_currentCoverTexture);
+
+    CoverBlurBackground background;
+    background.setCoverFromPath("cover"); background.setCoverFromPath("cover");
+    assert(requests.size() == 5);
+    background.setCoverFromPath("changed");
+    requests[4](&texture); assert(background.builds == 0);
+    background.onExit(); requests[5](&texture); assert(background.builds == 0);
+
+    MenuMusicPopup popup;
+    popup.applyFullscreenCover("cover"); popup.applyFullscreenCover("cover");
+    popup.applyFullscreenCover("changed");
+    // The fullscreen backdrop was removed; artwork must not start hidden work.
+    assert(requests.size() == 6 && popup.builds == 0);
+    popup.m_playAfterSync = true;
+    popup.finishPendingPlayback(); assert(popup.playbackRequests == 0);
+    MenuMusicLibrary::get().pending = false;
+    popup.finishPendingPlayback(); assert(popup.playbackRequests == 1 && !popup.m_playAfterSync);
+    popup.finishPendingPlayback(); assert(popup.playbackRequests == 1);
+    requests.clear();
+}

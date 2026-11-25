@@ -1,0 +1,38 @@
+#include <cassert>
+#include <cstddef>
+#include <string>
+
+enum class ConnectionState { Disabled, NeedsChannel, Offline, Connecting, Connected, Error };
+enum class PrimaryTone { Green, Amber, Cyan, Red };
+struct PrimaryAction {
+    char const* label;
+    PrimaryTone tone;
+};
+
+@@function|src/features/twitch-requests/ui/TwitchRequestsLayer.cpp|PrimaryAction primaryAction(@@
+
+int main() {
+    // Chat platforms: pending edits win, then pause/connect follow the live state.
+    auto action = primaryAction(false, false, true, 1, ConnectionState::Connected);
+    assert(std::string(action.label) == "Guardar y conectar" && action.tone == PrimaryTone::Green);
+
+    action = primaryAction(false, false, false, 1, ConnectionState::Connected);
+    assert(std::string(action.label) == "Pausar" && action.tone == PrimaryTone::Amber);
+
+    action = primaryAction(false, false, false, 0, ConnectionState::Connecting);
+    assert(std::string(action.label) == "Conectando..." && action.tone == PrimaryTone::Cyan);
+
+    action = primaryAction(false, false, false, 0, ConnectionState::Offline);
+    assert(std::string(action.label) == "Conectar" && action.tone == PrimaryTone::Green);
+
+    // A connected chat still reads as "pause" while another platform is open on screen.
+    action = primaryAction(false, false, false, 2, ConnectionState::Offline);
+    assert(std::string(action.label) == "Pausar");
+
+    // Web mode ignores chat state and edits: it only toggles the public page.
+    action = primaryAction(true, false, true, 3, ConnectionState::Connected);
+    assert(std::string(action.label) == "Activar pagina" && action.tone == PrimaryTone::Green);
+
+    action = primaryAction(true, true, false, 0, ConnectionState::Offline);
+    assert(std::string(action.label) == "Apagar pagina" && action.tone == PrimaryTone::Red);
+}

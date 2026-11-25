@@ -1,6 +1,9 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "EmoteCache.hpp"
 #include "EmoteService.hpp"
 #include "../../../utils/HttpClient.hpp"
+#include "../../../utils/AtomicFileWrite.hpp"
+#include "../../../utils/FormatDetect.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/JoinWithWarning.hpp"
 #include "../../../utils/ThreadTracker.hpp"
@@ -93,7 +96,7 @@ CCTexture2D* pixelsToStaticTexture(DecodedPixels const& decoded) {
 } // namespace
 
 std::filesystem::path EmoteCache::getDiskCacheDir() const {
-    return Mod::get()->getSaveDir() / "emote_cache";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "emote_cache";
 }
 
 std::filesystem::path EmoteCache::getDiskPath(std::string const& filename) const {
@@ -148,10 +151,9 @@ void EmoteCache::saveToDisk(std::string const& filename, std::vector<uint8_t> co
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
 
-    std::ofstream ofs(path, std::ios::binary);
-    if (ofs.is_open()) {
-        ofs.write(reinterpret_cast<char const*>(data.data()), data.size());
-    }
+    // tmp+rename: a crash mid-write must not leave a truncated emote file
+    // that later decodes as garbage and pins a broken ram entry.
+    paimon::file::writeAtomically(path, std::span<uint8_t const>(data.data(), data.size()));
 }
 
 void EmoteCache::addToRam(std::string const& name, RamEntry entry) {
@@ -271,8 +273,9 @@ void EmoteCache::loadEmote(EmoteInfo const& info, TextureCallback callback) {
 
                 if (paimon::isRuntimeShuttingDown()) return;
 
-                if (!success || data.empty() || data.size() > MAX_FILE_BYTES) {
-                    log::warn("[EmoteCache] Failed to download emote: {} (url: {})", emoteName, emoteUrl);
+                if (!success || data.empty() || data.size() > MAX_FILE_BYTES ||
+                    !paimon::format::isSafeImageHeader(data.data(), data.size(), 4096)) {
+                    log::warn("[EmoteCache] Rejected or failed download for emote: {} (url: {})", emoteName, emoteUrl);
                     dispatchTextureCallback(std::move(callback), nullptr, false, {});
                     return;
                 }
@@ -302,9 +305,18 @@ void EmoteCache::loadEmote(EmoteInfo const& info, TextureCallback callback) {
     });
 }
 
-void EmoteCache::shutdown() {
+void EmoteCache::requestShutdown() {
     cancelPreload();
-    shutdownDecodeWorker();
+    requestStopWorker();
+}
+
+void EmoteCache::waitShutdown(std::chrono::steady_clock::time_point deadline) {
+    cancelPreload();
+    waitShutdownWorker(deadline);
+}
+
+void EmoteCache::shutdown() {
+    waitShutdown(std::chrono::steady_clock::now() + std::chrono::milliseconds(1500));
 }
 
 void EmoteCache::clearAll() {
@@ -437,7 +449,8 @@ void EmoteCache::preloadAllToDisk(PreloadCallback callback, PreloadProgressCallb
                 (*strongNext)();
                 return;
             }
-            if (success && !data.empty() && data.size() <= MAX_FILE_BYTES) {
+            if (success && !data.empty() && data.size() <= MAX_FILE_BYTES &&
+                paimon::format::isSafeImageHeader(data.data(), data.size(), 4096)) {
                 saveToDisk(filename, data);
                 ++(*downloaded);
             }
@@ -470,7 +483,23 @@ bool EmoteCache::initDecodeWorker() {
         m_decodeWorkers.reserve(NUM_DECODE_WORKERS);
         m_decodeRunning.store(true, std::memory_order_release);
         for (int i = 0; i < NUM_DECODE_WORKERS; ++i) {
-            m_decodeWorkers.emplace_back(&EmoteCache::decodeWorkerLoop, this);
+            auto exited = std::make_shared<std::atomic<bool>>(false);
+            auto doneState = m_decodeDone;
+            {
+                std::lock_guard<std::mutex> doneLock(doneState->mutex);
+                ++doneState->aliveWorkers;
+            }
+            try {
+                std::thread t(&EmoteCache::decodeWorkerLoop, this, exited, doneState);
+                m_decodeWorkers.push_back({std::move(t), std::move(exited)});
+            } catch (...) {
+                {
+                    std::lock_guard<std::mutex> doneLock(doneState->mutex);
+                    if (doneState->aliveWorkers > 0) --doneState->aliveWorkers;
+                }
+                doneState->cv.notify_all();
+                throw;
+            }
         }
     } catch (...) {
         {
@@ -478,8 +507,19 @@ bool EmoteCache::initDecodeWorker() {
             m_decodeRunning.store(false, std::memory_order_release);
         }
         m_decodeCV.notify_all();
-        for (auto& thread : m_decodeWorkers) {
-            paimon::joinWithWarning(thread, std::chrono::seconds(5));
+        auto const fallbackDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        for (auto& w : m_decodeWorkers) {
+            auto const now = std::chrono::steady_clock::now();
+            auto const remaining = now < fallbackDeadline
+                ? std::chrono::duration_cast<std::chrono::milliseconds>(fallbackDeadline - now)
+                : std::chrono::milliseconds(0);
+#ifdef _WIN32
+            paimon::joinOrDetachAfter(w.thread, remaining, "EmoteCache");
+#else
+            paimon::joinOrDetachWithWarning(w.thread, remaining, "EmoteCache", [&w]() {
+                return w.exited && w.exited->load(std::memory_order_acquire);
+            });
+#endif
         }
         m_decodeWorkers.clear();
         log::error("[EmoteCache] Unable to start decode workers");
@@ -488,20 +528,48 @@ bool EmoteCache::initDecodeWorker() {
     return true;
 }
 
-void EmoteCache::shutdownDecodeWorker() {
-    std::lock_guard<std::mutex> lock(m_decodeLifecycleMutex);
-
+void EmoteCache::requestStopWorker() {
     {
-        std::lock_guard<std::mutex> lock(m_decodeMutex);
+        std::lock_guard<std::mutex> queueLock(m_decodeMutex);
         m_decodeRunning.store(false, std::memory_order_release);
         m_decodeQueue.clear();
     }
     m_decodeCV.notify_all();
+}
 
-    for (auto& t : m_decodeWorkers) {
-        paimon::joinWithWarning(t, std::chrono::seconds(5));
+void EmoteCache::waitShutdownWorker(std::chrono::steady_clock::time_point deadline) {
+    requestStopWorker();
+    std::vector<DecodeWorker> workers;
+    {
+        std::lock_guard<std::mutex> lock(m_decodeLifecycleMutex);
+        if (m_decodeWorkers.empty()) return;
+        workers.swap(m_decodeWorkers);
     }
-    m_decodeWorkers.clear();
+    auto doneState = m_decodeDone;
+    if (doneState) {
+        std::unique_lock<std::mutex> doneLock(doneState->mutex);
+        doneState->cv.wait_until(doneLock, deadline, [s = doneState.get()]() {
+            return s->aliveWorkers == 0;
+        });
+    }
+    for (auto& w : workers) {
+        if (!w.thread.joinable()) continue;
+        auto const now = std::chrono::steady_clock::now();
+        auto const remaining = now < deadline
+            ? std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now)
+            : std::chrono::milliseconds(0);
+#ifdef _WIN32
+        paimon::joinOrDetachAfter(w.thread, remaining, "EmoteCache");
+#else
+        paimon::joinOrDetachWithWarning(w.thread, remaining, "EmoteCache", [&w]() {
+            return w.exited && w.exited->load(std::memory_order_acquire);
+        });
+#endif
+    }
+}
+
+void EmoteCache::shutdownDecodeWorker() {
+    waitShutdownWorker(std::chrono::steady_clock::now() + std::chrono::milliseconds(1500));
 }
 
 void EmoteCache::enqueueDecode(DecodeTask task) {
@@ -520,7 +588,9 @@ void EmoteCache::enqueueDecode(DecodeTask task) {
     dispatchTextureCallback(std::move(task.callback), nullptr, false, {});
 }
 
-void EmoteCache::decodeWorkerLoop(EmoteCache* self) {
+void EmoteCache::decodeWorkerLoop(EmoteCache* self,
+                                  std::shared_ptr<std::atomic<bool>> exited,
+                                  std::shared_ptr<DecodeDoneState> doneState) {
     geode::utils::thread::setName("PaimonEmoteDecode");
     while (true) {
         DecodeTask task;
@@ -533,7 +603,7 @@ void EmoteCache::decodeWorkerLoop(EmoteCache* self) {
 
             if (!self->m_decodeRunning.load(std::memory_order_acquire) &&
                 self->m_decodeQueue.empty()) {
-                return;
+                break;
             }
 
             task = std::move(self->m_decodeQueue.front());
@@ -618,6 +688,14 @@ void EmoteCache::decodeWorkerLoop(EmoteCache* self) {
         }
         dispatchTextureCallback(std::move(task.callback), nullptr, false, {});
     }
+    if (exited) exited->store(true, std::memory_order_release);
+    if (doneState) {
+        {
+            std::lock_guard<std::mutex> doneLock(doneState->mutex);
+            if (doneState->aliveWorkers > 0) --doneState->aliveWorkers;
+        }
+        doneState->cv.notify_all();
+    }
 }
 
 void EmoteCache::finalizeStaticDecodeOnMainThread(EmoteInfo info,
@@ -625,6 +703,7 @@ void EmoteCache::finalizeStaticDecodeOnMainThread(EmoteInfo info,
                                                   int width, int height,
                                                   size_t originalByteSize,
                                                   TextureCallback callback) {
+    if (paimon::isRuntimeShuttingDown()) return;
     Loader::get()->queueInMainThread(
         [this, info = std::move(info), rgba = std::move(rgba),
          width, height, originalByteSize, callback = std::move(callback)]() mutable {

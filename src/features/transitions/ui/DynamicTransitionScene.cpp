@@ -48,7 +48,7 @@ Rect grow(Rect rect, float amount, float drop = 0.f) {
     return {rect.x - amount, rect.y - amount - drop, rect.width + amount * 2.f, rect.height + amount * 2.f};
 }
 
-// Outlines with the same segment count line up point by point, so rings can join them directly.
+// outlines with the same segment count line up point by point, so rings can join them directly.
 int outline(Rect rect, float radius, int segments, Outline& points) {
     radius = std::clamp(radius, 0.f, std::min(rect.width, rect.height) / 2.f);
     std::array<CCPoint, 4> centers{{
@@ -100,7 +100,7 @@ public:
         ring(inner, outer, count, color, kClear);
     }
 
-    // Two rings approximate a gaussian falloff; the shadow sits slightly below its card.
+    // two rings approximate a gaussian falloff; the shadow sits slightly below its card.
     void shadow(Rect rect, float radius, float blur, float strength) {
         int segments = cornerSegments(radius + blur, m_pixels);
         Outline edge, middle, outer;
@@ -147,7 +147,7 @@ private:
 };
 
 void sealAlpha() {
-    // Translucent sprites lower the destination alpha; a sealed capture never shows what is behind it.
+    // translucent sprites lower the destination alpha; a sealed capture never shows what is behind it.
     GLfloat clear[4];
     GLboolean mask[4];
     glGetFloatv(GL_COLOR_CLEAR_VALUE, clear);
@@ -213,7 +213,7 @@ Ref<CCTexture2D> Visual::capture(CCNode* node, CCSize size, float quality) {
         std::sqrt(2097152.f / (size.width * size.height)) / pixelScale});
     int width = std::max(1, static_cast<int>(size.width * scale));
     int height = std::max(1, static_cast<int>(size.height * scale));
-    // Keep stencil for clipped nodes; only the texture survives the capture.
+    // keep stencil for clipped nodes; only the texture survives the capture.
     Ref<CCRenderTexture> surface = CCRenderTexture::create(width, height,
         kCCTexture2DPixelFormat_RGBA8888, GL_DEPTH24_STENCIL8);
     if (!surface || !surface->getSprite() || !surface->getSprite()->getTexture()) return nullptr;
@@ -299,7 +299,7 @@ void Visual::draw() {
     if (!textured || !plain) return;
 
     ccGLBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    // Client arrays keep foreign VBO state out of the draw.
+    // client arrays keep foreign VBO state out of the draw.
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     constexpr GLsizei stride = sizeof(Vertex);
     for (auto const& batch : m_batches) {
@@ -344,7 +344,7 @@ DynamicTransitionScene* DynamicTransitionScene::create(CCScene* destination,
 void DynamicTransitionScene::onEnter() {
     CCTransitionScene::onEnter();
     m_size = CCDirector::get()->getWinSize();
-    // The destination is captured on the next frame so the two captures never share one hitch.
+    // the destination is captured on the next frame so the two captures never share one hitch.
     auto from = Visual::capture(m_pOutScene, m_size, m_config.quality);
     m_visual = from ? Visual::create(from, nullptr, m_size, m_config, m_origin,
         m_backwards, m_morphButton) : nullptr;

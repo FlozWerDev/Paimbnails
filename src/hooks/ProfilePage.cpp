@@ -1,3 +1,4 @@
+#include "../utils/FilesystemPath.hpp"
 #include <Geode/binding/GJAccountManager.hpp>
 #include <Geode/binding/GJCommentListLayer.hpp>
 #include <Geode/binding/SimplePlayer.hpp>
@@ -16,11 +17,16 @@
 #include "../layers/UserThumbnailsLayer.hpp"
 #include <chrono>
 #include <cmath>
+#include <cstdint>
+#include <filesystem>
+#include <initializer_list>
 #include <optional>
 #include <vector>
 #include <mutex>
 #include <atomic>
 #include <list>
+#include <unordered_map>
+#include <unordered_set>
 #include "../utils/FileDialog.hpp"
 #include "../managers/ThumbnailAPI.hpp"
 #include "../features/capture/ui/CapturePreviewPopup.hpp"
@@ -46,7 +52,9 @@
 #include "../core/RuntimeLifecycle.hpp"
 #include "../utils/Shaders.hpp"
 #include "../utils/ImageLoadHelper.hpp"
+#include "../utils/ThreadTracker.hpp"
 #include <Geode/ui/LoadingSpinner.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 #include "../utils/PaimonNotification.hpp"
 #include "../utils/PaimonLoadingOverlay.hpp"
 #include "../utils/PaimonDrawNode.hpp"
@@ -72,6 +80,7 @@
 #include "../features/profiles/ui/CommentBgSettingsPopup.hpp"
 #include "../features/profiles/ui/CustomBadgePickerPopup.hpp"
 #include "../features/profiles/services/CustomBadgeService.hpp"
+#include "../features/profiles/services/ProfileIdentityStore.hpp"
 #include "../features/foryou/services/TasteProfile.hpp"
 #include "../features/profiles/ui/ProfileViewsPopup.hpp"
 #include "../features/global-icon/GlobalIconRender.hpp"
@@ -80,10 +89,44 @@
 #include "../features/icon-copy/IconCopyStore.hpp"
 #include "../features/icon-copy/ui/CopyIconsPopup.hpp"
 #include "../features/icon-copy/ui/IconSetPreview.hpp"
+#include "../features/info-suite/InfoModule.hpp"
+#include "../features/info-suite/ui/ProfileInfoPopup.hpp"
 #include <Geode/ui/BasedButtonSprite.hpp>
 #include "../core/modules/ModuleRegistry.hpp"
 
 using namespace geode::prelude;
+
+namespace {
+constexpr std::uintmax_t kProfileImgSyncReadLimit = 8 * 1024 * 1024;
+std::mutex s_profileImgBytesMutex;
+std::unordered_map<int, std::shared_ptr<std::vector<uint8_t>>> s_profileImgBytes;
+std::unordered_set<int> s_profileImgBytesPending;
+
+std::shared_ptr<std::vector<uint8_t>> cachedProfileImgBytes(int accountID) {
+    std::lock_guard lock(s_profileImgBytesMutex);
+    auto it = s_profileImgBytes.find(accountID);
+    return it == s_profileImgBytes.end() ? nullptr : it->second;
+}
+
+void storeProfileImgBytes(int accountID, std::shared_ptr<std::vector<uint8_t>> bytes) {
+    std::lock_guard lock(s_profileImgBytesMutex);
+    s_profileImgBytesPending.erase(accountID);
+    if (bytes && !bytes->empty()) s_profileImgBytes[accountID] = std::move(bytes);
+    else s_profileImgBytes.erase(accountID);
+}
+
+void clearProfileImgBytes(int accountID) {
+    std::lock_guard lock(s_profileImgBytesMutex);
+    s_profileImgBytes.erase(accountID);
+    s_profileImgBytesPending.erase(accountID);
+}
+
+bool profileImgCacheIsLarge(int accountID) {
+    std::error_code ec;
+    auto const size = std::filesystem::file_size(getProfileImgCachePath(accountID), ec);
+    return !ec && size > kProfileImgSyncReadLimit;
+}
+}
 
 class $modify(PaimonProfilePage, ProfilePage) {
     static void onModify(auto& self) {
@@ -117,6 +160,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         bool m_leaveForClose = false;
         bool m_pausedForTemporaryExit = false;
         bool m_audioCleanedUp = false;
+        uint32_t m_audioSessionToken = 0;
         // statsmenu can be rebuilt by other mods; no raw label pointer
         WeakRef<CCLabelBMFont> m_thumbCountLabel;
         int64_t m_statusLastSeen = 0;
@@ -134,6 +178,12 @@ class $modify(PaimonProfilePage, ProfilePage) {
         Ref<CCNode> m_iconBackgroundCached = nullptr;
         Ref<CCNode> m_specialBorderCached = nullptr;
         bool m_styleTargetsResolved = false;
+        int m_cacheAccountID = 0;
+
+        ~Fields() {
+            if (paimon::isRuntimeShuttingDown()) return;
+            if (m_cacheAccountID > 0) clearProfileImgBytes(m_cacheAccountID);
+        }
     };
 
     // cache the recursive lookup; discard if another mod rebuilt the node
@@ -175,58 +225,89 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (curSize > 0) spr->setScale(targetSize / curSize);
     }
 
-    void ensureGearButton(CCMenu* menu) {
-        if (!menu || m_fields->m_gearBtn) return;
-        if (menu->getChildByID("thumbs-gear-button"_spr)) return;
+    // shared builder for the small buttons docked in the profile left menu.
+    void ensureLeftButton(CCMenu* menu, geode::Ref<CCMenuItemSpriteExtra>& slot, std::string const& id,
+            std::string const& assetKey, std::string const& primaryFrame,
+            geode::CopyableFunction<CCSprite*()> factory, cocos2d::SEL_MenuHandler selector) {
+        if (!menu || slot.data()) return;
+        if (menu->getChildByID(id)) return;
+        auto spr = Assets::loadButtonSprite(assetKey, primaryFrame, std::move(factory));
+        scaleToFit(spr, 26.f);
+        auto btn = CCMenuItemSpriteExtra::create(spr, this, selector);
+        btn->setID(id);
+        menu->addChild(btn);
+        slot = btn;
+    }
 
-        auto gearSpr = Assets::loadButtonSprite(
-            "profile-gear",
-            "frame:GJ_optionsBtn02_001.png",
+    void clearIds(std::initializer_list<std::string> ids) {
+        for (auto const& id : ids) {
+            while (auto* btn = this->getChildByIDRecursive(id)) {
+                btn->removeFromParent();
+            }
+        }
+    }
+
+    void ensureGearButton(CCMenu* menu) {
+        ensureLeftButton(menu, m_fields->m_gearBtn, "thumbs-gear-button"_spr,
+            "profile-gear", "frame:GJ_optionsBtn02_001.png",
             [](){
                 auto s = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn02_001.png");
                 if (!s) s = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn_001.png");
                 if (!s) s = CCSprite::create();
                 return s;
-            }
-        );
-        scaleToFit(gearSpr, 26.f);
-        auto gearBtn = CCMenuItemSpriteExtra::create(gearSpr, this, menu_selector(PaimonProfilePage::onOpenThumbsCenter));
-        gearBtn->setID("thumbs-gear-button"_spr);
-        menu->addChild(gearBtn);
-        m_fields->m_gearBtn = gearBtn;
+            },
+            menu_selector(PaimonProfilePage::onOpenThumbsCenter));
     }
 
-    void ensureAddModeratorButton(CCMenu* menu) {        if (!menu || m_fields->m_addModBtn) return;
-        if (menu->getChildByID("add-moderator-button"_spr)) return;
-
-        auto addModSpr = Assets::loadButtonSprite(
-            "add-moderator",
-            "frame:GJ_plus2Btn_001.png",
+    void ensureAddModeratorButton(CCMenu* menu) {
+        ensureLeftButton(menu, m_fields->m_addModBtn, "add-moderator-button"_spr,
+            "add-moderator", "frame:GJ_plus2Btn_001.png",
             [](){
                 auto s = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plus2Btn_001.png");
                 if (!s) s = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plusBtn_001.png");
                 if (!s) s = paimon::SpriteHelper::safeCreateWithFrameName("GJ_button_01.png");
                 return s;
-            }
-        );
-        scaleToFit(addModSpr, 26.f);
-        auto addModBtn = CCMenuItemSpriteExtra::create(addModSpr, this, menu_selector(PaimonProfilePage::onOpenAddModerator));
-        addModBtn->setID("add-moderator-button"_spr);
-        menu->addChild(addModBtn);
-        m_fields->m_addModBtn = addModBtn;
+            },
+            menu_selector(PaimonProfilePage::onOpenAddModerator));
     }
 
     bool ensureReviewsButton(CCMenu* menu) {
         if (!menu) return false;
         if (!paimonProfilesEnabled()) return false;
         if (this->getChildByIDRecursive("profile-reviews-btn"_spr)) return false;
-        auto reviewIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_chatBtn_001.png");
+        CCNode* reviewIcon = nullptr;
+        if (auto* icon = paimon::SpriteHelper::safeCreate("paim_ui_reviews.png"_spr)) {
+            reviewIcon = CircleButtonSprite::create(icon, CircleBaseColor::Green, CircleBaseSize::Medium);
+        }
+        if (!reviewIcon) reviewIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_chatBtn_001.png");
         if (!reviewIcon) reviewIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plainBtn_001.png");
         if (!reviewIcon) return false;
         scaleToFit(reviewIcon, 26.f);
         auto reviewBtn = CCMenuItemSpriteExtra::create(reviewIcon, this, menu_selector(PaimonProfilePage::onProfileReviews));
         reviewBtn->setID("profile-reviews-btn"_spr);
         menu->addChild(reviewBtn);
+        return true;
+    }
+
+    bool ensureInfoButton(CCMenu* menu) {
+        if (!menu) return false;
+        if (!paimon::info::subEnabled("info-mod-ids", "info-ids-users", true)) return false;
+        if (this->getChildByIDRecursive("profile-info-button"_spr)) return false;
+        // gold "i" on the vanilla square account base, matching the stock message/friends buttons.
+        CCNode* infoIcon = nullptr;
+        if (auto* glyph = paimon::SpriteHelper::safeCreate("paim_ui_info.png"_spr)) {
+            if (auto* square = AccountButtonSprite::create(glyph, AccountBaseColor::Purple)) {
+                square->setTopRelativeScale(1.1f);
+                infoIcon = square;
+            }
+        }
+        // the stock icon is already a cyan round button; a base around it would ring it twice.
+        if (!infoIcon) infoIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png");
+        if (!infoIcon) return false;
+        scaleToFit(infoIcon, 26.f);
+        auto infoBtn = CCMenuItemSpriteExtra::create(infoIcon, this, menu_selector(PaimonProfilePage::onProfileInfo));
+        infoBtn->setID("profile-info-button"_spr);
+        menu->addChild(infoBtn);
         return true;
     }
 
@@ -240,7 +321,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         m_fields->m_banBtn = banBtn;
     }
 
-    void verifyButtonIntegrity(float dt) {
+    void verifyButtonIntegrity(float) {
         if (!this->getParent()) return;
         if (!this->m_mainLayer) return;
         auto* leftMenu = getLeftMenu();
@@ -263,6 +344,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
 
         if (ensureReviewsButton(leftMenu)) needsLayout = true;
+        if (ensureInfoButton(leftMenu)) needsLayout = true;
 
         if (this->m_ownProfile && (m_fields->m_isApprovedMod || m_fields->m_isAdmin)) {
             if (!m_fields->m_gearBtn || !m_fields->m_gearBtn->getParent()) {
@@ -353,11 +435,18 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
     }
 
-    void addUserStatusIndicator(bool online, int64_t lastSeen) {
-        m_fields->m_statusOnline = online;
-        m_fields->m_statusLastSeen = lastSeen;
+    static void paintStatusDot(PaimonDrawNode* dotNode, bool online) {
+        constexpr float dotRadius = 4.0f;
+        ccColor4F const fillColor = online
+            ? ccc4f(0.0f, 1.0f, 0.0f, 1.0f)
+            : ccc4f(0.5f, 0.5f, 0.5f, 1.0f);
+        dotNode->clear();
+        dotNode->drawSolidCircle({dotRadius, dotRadius}, dotRadius, fillColor);
+    }
 
-        auto menu = getUsernameMenu();
+    // created before the server answers, so the dot never pops into the header later.
+    void ensureUserStatusDot() {
+        auto menu = typeinfo_cast<CCMenu*>(getUsernameMenu());
         if (!menu) return;
 
         if (this->getChildByIDRecursive("paimon-user-status-dot"_spr)) return;
@@ -366,26 +455,32 @@ class $modify(PaimonProfilePage, ProfilePage) {
         auto* dotNode = PaimonDrawNode::create();
         if (!dotNode) return;
 
-        ccColor4F fillColor;
-        if (online) {
-            fillColor = ccc4f(0.0f, 1.0f, 0.0f, 1.0f);
-        } else {
-            fillColor = ccc4f(0.5f, 0.5f, 0.5f, 1.0f);
-        }
-        dotNode->drawSolidCircle({dotRadius, dotRadius}, dotRadius, fillColor);
+        paintStatusDot(dotNode, m_fields->m_statusOnline);
         dotNode->setContentSize({dotRadius * 2, dotRadius * 2});
         dotNode->setAnchorPoint({0.5f, 0.5f});
         dotNode->ignoreAnchorPointForPosition(false);
 
-        if (auto menuNode = typeinfo_cast<CCMenu*>(menu)) {
-            auto dotBtn = CCMenuItemSpriteExtra::create(dotNode, this, menu_selector(PaimonProfilePage::onUserStatusDotClicked));
-            dotBtn->setID("paimon-user-status-dot"_spr);
-            menuNode->addChild(dotBtn);
-            menuNode->updateLayout();
+        auto dotBtn = CCMenuItemSpriteExtra::create(dotNode, this, menu_selector(PaimonProfilePage::onUserStatusDotClicked));
+        dotBtn->setID("paimon-user-status-dot"_spr);
+        menu->addChild(dotBtn);
+        menu->updateLayout();
+    }
+
+    void addUserStatusIndicator(bool online, int64_t lastSeen) {
+        m_fields->m_statusOnline = online;
+        m_fields->m_statusLastSeen = lastSeen;
+
+        ensureUserStatusDot();
+
+        if (auto* dotBtn = typeinfo_cast<CCMenuItemSpriteExtra*>(
+                this->getChildByIDRecursive("paimon-user-status-dot"_spr))) {
+            if (auto* dotNode = typeinfo_cast<PaimonDrawNode*>(dotBtn->getNormalImage())) {
+                paintStatusDot(dotNode, online);
+            }
         }
     }
 
-    void onUserStatusDotClicked(CCObject* sender) {
+    void onUserStatusDotClicked(CCObject*) {
         if (this->m_ownProfile && paimonProfilesEnabled()) {
             if (auto popup = ProfileViewsPopup::create(this->m_accountID)) {
                 popup->show();
@@ -406,7 +501,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     void fetchAndShowUserStatus(int accountID) {
         Ref<ProfilePage> self = this;
-        paimon::forum::ForumApi::get().sendHeartbeat([self, accountID](paimon::forum::Result<bool> hbResult) {
+        paimon::forum::ForumApi::get().sendHeartbeat([self, accountID](paimon::forum::Result<bool>) {
             paimon::forum::ForumApi::get().getUserStatus(accountID,
                 [self, accountID](paimon::forum::Result<paimon::forum::UserStatus> result) {
                     Loader::get()->queueInMainThread([self, accountID, result]() {
@@ -424,6 +519,14 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     void addCustomBadgeToProfile(std::string const& emoteName) {
         if (emoteName.empty()) return;
+
+        // the redesigned header keeps the name row clean; the badge lives in the name popup.
+        if (paimon::settings::profiles::redesignEnabled()) {
+            if (auto* store = paimon::profiles::IdentityStore::get(this->m_mainLayer, true)) {
+                store->set({"custom-badge", 2, nullptr, nullptr, emoteName});
+            }
+            return;
+        }
 
         auto menu = getUsernameMenu();
         if (!menu) return;
@@ -486,7 +589,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         int accountID = this->m_accountID;
         
         if (username.empty() || accountID <= 0) {
-            PaimonNotify::create("Unable to load thumbnails", NotificationIcon::Warning)->show();
+            PaimonNotify::show("Unable to load thumbnails", NotificationIcon::Warning);
             return;
         }
         
@@ -615,17 +718,17 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     void onBanUser(CCObject*) {
         if (!canShowModerationControls()) {
-            PaimonNotify::create(Localization::get().getString("ban.profile.mod_only"), NotificationIcon::Warning)->show();
+            PaimonNotify::show(Localization::get().getString("ban.profile.mod_only"), NotificationIcon::Warning);
             return;
         }
         if (this->m_ownProfile) {
-            PaimonNotify::create(Localization::get().getString("ban.profile.self_ban"), NotificationIcon::Warning)->show();
+            PaimonNotify::show(Localization::get().getString("ban.profile.self_ban"), NotificationIcon::Warning);
             return;
         }
 
         std::string target = getViewedUsername();
         if (target.empty()) {
-            PaimonNotify::create(Localization::get().getString("ban.profile.read_error"), NotificationIcon::Error)->show();
+            PaimonNotify::show(Localization::get().getString("ban.profile.read_error"), NotificationIcon::Error);
             return;
         }
         
@@ -633,9 +736,49 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     static std::shared_ptr<std::vector<uint8_t>> readProfileImgCacheBytes(int accountID) {
+        if (auto cached = cachedProfileImgBytes(accountID)) return cached;
         auto bytes = ImageLoadHelper::readBinaryFile(getProfileImgCachePath(accountID), 64);
         if (bytes.empty()) return nullptr;
-        return std::make_shared<std::vector<uint8_t>>(std::move(bytes));
+        auto shared = std::make_shared<std::vector<uint8_t>>(std::move(bytes));
+        storeProfileImgBytes(accountID, shared);
+        return shared;
+    }
+
+    bool prefetchProfileImgCache(int accountID) {
+        if (cachedProfileImgBytes(accountID)) return false;
+        if (m_fields->m_cacheAccountID != accountID) {
+            if (m_fields->m_cacheAccountID > 0) clearProfileImgBytes(m_fields->m_cacheAccountID);
+            m_fields->m_cacheAccountID = accountID;
+        }
+        {
+            std::lock_guard lock(s_profileImgBytesMutex);
+            if (!s_profileImgBytesPending.insert(accountID).second) return true;
+        }
+        WeakRef<PaimonProfilePage> weakSelf = this;
+        paimon::ThreadTracker::get().spawn([weakSelf, accountID] {
+            geode::utils::thread::setName("PaimonProfileImgCacheRead");
+            auto bytes = ImageLoadHelper::readBinaryFile(getProfileImgCachePath(accountID), 64);
+            auto shared = bytes.empty()
+                ? nullptr
+                : std::make_shared<std::vector<uint8_t>>(std::move(bytes));
+            Loader::get()->queueInMainThread([weakSelf, accountID, shared]() mutable {
+                if (paimon::isRuntimeShuttingDown()) {
+                    storeProfileImgBytes(accountID, nullptr);
+                    return;
+                }
+                auto page = weakSelf.lock();
+                if (!page) {
+                    storeProfileImgBytes(accountID, nullptr);
+                    return;
+                }
+                storeProfileImgBytes(accountID, std::move(shared));
+                auto* profile = static_cast<PaimonProfilePage*>(page.data());
+                if (!profile->tryShowCachedProfileMedia(accountID)) {
+                    profile->refreshProfileBackdropAfterVanillaLayout();
+                }
+            });
+        });
+        return true;
     }
 
     static void addProfileImgDarkOverlay(CCNode* clip, CCSize const& imgArea) {
@@ -848,6 +991,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
             displayProfileImg(accountID, cachedTex);
             return true;
         }
+        if (profileImgCacheIsLarge(accountID) && !cachedProfileImgBytes(accountID)) {
+            return false;
+        }
         auto* diskTex = diskBytes
             ? decodeProfileImgBytes(diskBytes->data(), diskBytes->size())
             : loadProfileImgFromDisk(accountID);
@@ -927,6 +1073,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
     bool ensureAnimatedProfileImg(int accountID,
                                   std::shared_ptr<std::vector<uint8_t>>* outBytes = nullptr) {
         if (!paimonProfilesEnabled()) return false;
+        if (m_fields->m_cacheAccountID != accountID) {
+            if (m_fields->m_cacheAccountID > 0) clearProfileImgBytes(m_fields->m_cacheAccountID);
+            m_fields->m_cacheAccountID = accountID;
+        }
 
         auto gifKey = getProfileImgGifCacheKey(accountID);
         auto videoKey = fmt::format("profileimg_video_{}", accountID);
@@ -940,6 +1090,11 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (!gifKey.empty() && AnimatedGIFSprite::isCached(gifKey)) {
             displayProfileImgGif(gifKey);
             return true;
+        }
+
+        if (profileImgCacheIsLarge(accountID) && !cachedProfileImgBytes(accountID)) {
+            prefetchProfileImgCache(accountID);
+            return false;
         }
 
         auto bytes = readProfileImgCacheBytes(accountID);
@@ -1039,7 +1194,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
                 CCTexture2D* cachedTex = getProfileImgCachedTexture(accountID);
                 if (cachedTex) {
                     this->displayProfileImg(accountID, cachedTex);
-                } else {
+                } else if (!profileImgCacheIsLarge(accountID) || cachedProfileImgBytes(accountID)) {
                     auto* diskTex = diskBytes
                         ? decodeProfileImgBytes(diskBytes->data(), diskBytes->size())
                         : loadProfileImgFromDisk(accountID);
@@ -1179,7 +1334,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         }
 
-        hideCommentCellBgs(commentList);
+        paimon::commentbg::hideCommentCellBgs(commentList);
     }
 
     void resolveStyleTargets(CCNode* root) {
@@ -1240,10 +1395,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         m_fields->m_styleTargetsResolved = false;
     }
 
-    void hideCommentCellBgs(CCNode* listNode) {
-        paimon::commentbg::hideCommentCellBgs(listNode);
-    }
-
     $override
     void getUserInfoFinished(GJUserScore* score) {
         ProfilePage::getUserInfoFinished(score);
@@ -1275,6 +1426,25 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
     }
 
+    void onProfileInfo(CCObject*) {
+        if (!this->m_score) {
+            PaimonNotify::show("El perfil aun no cargo", NotificationIcon::Warning);
+            return;
+        }
+
+        // presence arrives from a separate request; only pass what the page already knows.
+        std::string presence;
+        if (m_fields->m_statusOnline) {
+            presence = "En linea";
+        } else if (m_fields->m_statusLastSeen > 0) {
+            presence = "Visto " + paimon::forum::formatAbsoluteTime(m_fields->m_statusLastSeen);
+        }
+
+        if (auto popup = paimon::info::ProfileInfoPopup::create(this->m_score, std::move(presence))) {
+            popup->show();
+        }
+    }
+
     void onCopyIcons(CCObject*) {
         auto set = m_fields->m_iconSet;
         if (set.accountID <= 0 && set.username.empty()) {
@@ -1299,24 +1469,24 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (tracker.isCreatorFavorited(creatorID)) {
             tracker.onUnfavoriteCreator(creatorID);
             if (auto spr = typeinfo_cast<CCSprite*>(item->getNormalImage())) spr->setOpacity(120);
-            PaimonNotify::create(
+            PaimonNotify::show(
                 Localization::get().getString("foryou.fav_creator_removed").c_str(),
                 NotificationIcon::Info
-            )->show();
+            );
         } else {
             tracker.onFavoriteCreator(creatorID);
             if (auto spr = typeinfo_cast<CCSprite*>(item->getNormalImage())) spr->setOpacity(255);
-            PaimonNotify::create(
+            PaimonNotify::show(
                 Localization::get().getString("foryou.fav_creator_added").c_str(),
                 NotificationIcon::Success
-            )->show();
+            );
         }
         tracker.save();
     }
 
     void onRateProfile(CCObject*) {
         if (this->m_ownProfile) {
-            PaimonNotify::create(Localization::get().getString("profile.cant_rate_own").c_str(), NotificationIcon::Warning)->show();
+            PaimonNotify::show(Localization::get().getString("profile.cant_rate_own").c_str(), NotificationIcon::Warning);
             return;
         }
 
@@ -1331,17 +1501,13 @@ class $modify(PaimonProfilePage, ProfilePage) {
     void cleanPaimonButtons(CCMenu* menu) {
         if (!menu) return;
         // remove relocated copies before rebuilding
-        static std::string const relocatableIDs[] = {
+        clearIds({
             "profile-reviews-btn"_spr,
+            "profile-info-button"_spr,
             "ban-user-button"_spr,
             "thumbs-gear-button"_spr,
             "add-moderator-button"_spr,
-        };
-        for (auto const& id : relocatableIDs) {
-            while (auto* btn = this->getChildByIDRecursive(id)) {
-                btn->removeFromParent();
-            }
-        }
+        });
         while (auto* btn = menu->getChildByID("fav-creator-btn"_spr)) {
             btn->removeFromParent();
         }
@@ -1352,18 +1518,13 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     void cleanPaimonSocialsButtons(CCMenu* menu) {
         if (!menu) return;
-        static std::string const paimonSocialIDs[] = {
+        clearIds({
             "profile-settings-button"_spr,
             "profile-music-button"_spr,
             "add-profileimg-button"_spr,
             "profile-music-pause-button"_spr,
             "copy-icons-button"_spr,
-        };
-        for (auto const& id : paimonSocialIDs) {
-            while (auto* btn = this->getChildByIDRecursive(id)) {
-                btn->removeFromParent();
-            }
-        }
+        });
         m_fields->m_musicPauseBtn = nullptr;
     }
 
@@ -1458,6 +1619,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         m_fields->m_thumbCountLabel = nullptr;
 
         ensureReviewsButton(menu);
+        ensureInfoButton(menu);
 
         if (!this->m_ownProfile && paimonProfilesEnabled()) {
             if (auto bottomMenu = this->m_mainLayer->getChildByIDRecursive("bottom-menu")) {
@@ -1504,14 +1666,12 @@ class $modify(PaimonProfilePage, ProfilePage) {
         menu->updateLayout();
 
         auto* socialsMenu = getSocialsMenu();
-        bool createdSocialsMenu = false;
         if (!socialsMenu) {
             auto newSocialsMenu = CCMenu::create();
             newSocialsMenu->setID("socials-menu");
             newSocialsMenu->setZOrder(10);
             this->m_mainLayer->addChild(newSocialsMenu);
             socialsMenu = newSocialsMenu;
-            createdSocialsMenu = true;
 
             float socialsX = popCenter.x + popSize.width / 2 - 18.f;
             float socialsY = popCenter.y;
@@ -1542,9 +1702,13 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
 
         {
-            auto pauseSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_fxOnBtn_001.png");
+            // 2.2091 renombro el boton de musica del perfil: el frame viejo
+            // (GJ_fxOnBtn_001.png) ya no existe y Geode genera un sprite de
+            // reserva por cada intento. Se prueba el nombre nuevo primero.
+            auto pauseSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_audioOnBtn_001.png");
+            if (!pauseSpr) pauseSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_fxOnBtn_001.png");
             if (!pauseSpr) pauseSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_pauseBtn_001.png");
-            if (!pauseSpr) pauseSpr = CCSprite::create();
+            if (!pauseSpr) pauseSpr = cocos2d::CCSprite::create();
             scaleToFit(pauseSpr, 20.f);
             auto pauseBtn = CCMenuItemSpriteExtra::create(pauseSpr, this, menu_selector(PaimonProfilePage::onToggleProfileMusic));
             pauseBtn->setID("profile-music-pause-button"_spr);
@@ -1572,6 +1736,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         socialsMenu->updateLayout();
 
+        if (auto* store = paimon::profiles::IdentityStore::get(this->m_mainLayer)) {
+            store->remove("custom-badge");
+        }
+
         if (auto* usernameMenu = getUsernameMenu()) {
             while (auto* old = usernameMenu->getChildByID("paimon-custom-badge"_spr))
                 old->removeFromParent();
@@ -1580,6 +1748,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
 
         if (this->m_accountID > 0) {
+            ensureUserStatusDot();
             fetchAndShowUserStatus(this->m_accountID);
         }
 
@@ -1722,7 +1891,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
     }
 
-    void displayProfileImg(int accountID, CCTexture2D* tex) {
+    void displayProfileImg(int, CCTexture2D* tex) {
         if (!tex) return;
 
         auto texSize = tex->getContentSize();
@@ -1769,6 +1938,14 @@ class $modify(PaimonProfilePage, ProfilePage) {
     $override
     bool init(int accountID, bool ownProfile) {
         if (!ProfilePage::init(accountID, ownProfile)) return false;
+        this->addOnEnterTransitionDidFinishCallback([this] {
+            this->handleEnterTransitionDidFinish();
+            return true;
+        });
+        this->addOnExitCallback([this] {
+            this->handleExit();
+            return true;
+        });
 
 
             m_fields->m_isApprovedMod = false;
@@ -1784,10 +1961,12 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
             if (ownProfile) {
                 auto gm = GameManager::get();
-                if (gm && !gm->m_playerName.empty()) {
+                auto am = GJAccountManager::get();
+                if (gm && !gm->m_playerName.empty() && am && am->m_accountID > 0) {
                     std::string username = gm->m_playerName;
+                    int selfAccountID = am->m_accountID;
                     Ref<ProfilePage> self = this;
-                    ThumbnailAPI::get().checkModerator(username, [self](bool isApproved, bool isAdmin) {
+                    ThumbnailAPI::get().checkModeratorAccount(username, selfAccountID, [self](bool isApproved, bool isAdmin) {
                         Loader::get()->queueInMainThread([self, isApproved, isAdmin]() {
                             if (paimon::isRuntimeShuttingDown()) return;
                             if (!self->getParent()) return;
@@ -1845,10 +2024,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     void onAddProfileImg(CCObject*) {
         if (!this->m_ownProfile) {
-            PaimonNotify::create(
+            PaimonNotify::show(
                 Localization::get().getString("profile.cant_edit_other").c_str(),
                 NotificationIcon::Warning
-            )->show();
+            );
             return;
         }
 
@@ -1900,7 +2079,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
             if (!page) return;
             auto pathOpt = std::move(result).unwrapOr(std::nullopt);
             if (!pathOpt || pathOpt->empty()) {
-                PaimonNotify::create(Localization::get().getString("profile.no_image_selected").c_str(), NotificationIcon::Warning)->show();
+                PaimonNotify::show(Localization::get().getString("profile.no_image_selected").c_str(), NotificationIcon::Warning);
                 return;
             }
             page->processProfileImg(std::move(*pathOpt));
@@ -1909,10 +2088,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     void applyProfileBgIconGradient(std::string const& effect = "none", float speed = 1.0f) {
         if (!this->m_ownProfile) {
-            PaimonNotify::create(
+            PaimonNotify::show(
                 Localization::get().getString("profile.cant_edit_other").c_str(),
                 NotificationIcon::Warning
-            )->show();
+            );
             return;
         }
 
@@ -1943,22 +2122,22 @@ class $modify(PaimonProfilePage, ProfilePage) {
                     [self, accountID, cfg, loadingRef](bool success, std::string const& msg) {
                         if (loadingRef) loadingRef->dismiss();
                         if (!success) {
-                            PaimonNotify::create(
+                            PaimonNotify::show(
                                 fmt::format("{}: {}",
                                     Localization::get().getString("profilebg.gradient.failed"),
                                     msg
                                 ).c_str(),
                                 NotificationIcon::Error
-                            )->show();
+                            );
                             return;
                         }
 
                         ProfileThumbs::get().cacheProfileConfig(accountID, cfg);
 
-                        PaimonNotify::create(
+                        PaimonNotify::show(
                             Localization::get().getString("profilebg.gradient.applied").c_str(),
                             NotificationIcon::Success
-                        )->show();
+                        );
 
                         if (auto page = self.lock()) {
                             cocos2d::ccColor3B liveA, liveB;
@@ -1975,10 +2154,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     void applyProfileBgVideoAudio() {
         if (!this->m_ownProfile) {
-            PaimonNotify::create(
+            PaimonNotify::show(
                 Localization::get().getString("profile.cant_edit_other").c_str(),
                 NotificationIcon::Warning
-            )->show();
+            );
             return;
         }
 
@@ -1995,10 +2174,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         }
         if (!hasVideo) {
-            PaimonNotify::create(
+            PaimonNotify::show(
                 Localization::get().getString("profilebg.picker.video_audio_no_video").c_str(),
                 NotificationIcon::Warning
-            )->show();
+            );
             return;
         }
 
@@ -2021,7 +2200,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         auto* accountManager = GJAccountManager::get();
                         std::string username = accountManager ? std::string(accountManager->m_username) : std::string();
                         ProfileMusicManager::get().deleteProfileMusic(accountID, username,
-                            [accountID](bool delOk, std::string const& delMsg) {
+                            [](bool delOk, std::string const&) {
                                 if (delOk) {
                                 } else {
                                 }
@@ -2030,32 +2209,32 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
                         if (loadingRef) loadingRef->dismiss();
                         if (!success) {
-                            PaimonNotify::create(
+                            PaimonNotify::show(
                                 fmt::format("{}: {}",
                                     Localization::get().getString("profilebg.video_audio.failed"),
                                     msg
                                 ).c_str(),
                                 NotificationIcon::Error
-                            )->show();
+                            );
                             return;
                         }
 
                         ProfileThumbs::get().cacheProfileConfig(accountID, cfg);
 
-                        PaimonNotify::create(
+                        PaimonNotify::show(
                             Localization::get().getString("profilebg.video_audio.applied").c_str(),
                             NotificationIcon::Success
-                        )->show();
+                        );
                     });
             });
     }
 
     void confirmProfileBgReset() {
         if (!this->m_ownProfile) {
-            PaimonNotify::create(
+            PaimonNotify::show(
                 Localization::get().getString("profile.cant_edit_other").c_str(),
                 NotificationIcon::Warning
-            )->show();
+            );
             return;
         }
 
@@ -2078,21 +2257,21 @@ class $modify(PaimonProfilePage, ProfilePage) {
             [self, accountID, cfg, loadingRef](bool success, std::string const& msg) {
                 if (loadingRef) loadingRef->dismiss();
                 if (!success) {
-                    PaimonNotify::create(
+                    PaimonNotify::show(
                         fmt::format("{}: {}",
                             Localization::get().getString("profilebg.reset.failed"),
                             msg
                         ).c_str(),
                         NotificationIcon::Error
-                    )->show();
+                    );
                     return;
                 }
 
                 ProfileThumbs::get().cacheProfileConfig(accountID, cfg);
-                PaimonNotify::create(
+                PaimonNotify::show(
                     Localization::get().getString("profilebg.reset.applied").c_str(),
                     NotificationIcon::Success
-                )->show();
+                );
 
                 if (auto page = self.lock()) {
                     page->clearProfileBgVisual();
@@ -2155,109 +2334,143 @@ class $modify(PaimonProfilePage, ProfilePage) {
         f->m_backdropKind = ProfileBackdropKind::None;
     }
 
+    // post-read half of processProfileImg for videos; runs on the main thread.
+    void finishProfileImgVideo(std::vector<uint8_t> videoData) {
+        if (videoData.empty()) {
+            PaimonNotify::show(Localization::get().getString("profile.video_open_error").c_str(), NotificationIcon::Error);
+            return;
+        }
+
+        int accountID = this->m_accountID;
+        auto* accountManager = GJAccountManager::get();
+        if (!accountManager) {
+            PaimonNotify::show("Account manager unavailable", NotificationIcon::Error);
+            return;
+        }
+        std::string username = accountManager->m_username;
+
+        auto videoSpinner = PaimonLoadingOverlay::create("Uploading video...", 30.f);
+        videoSpinner->show(this, 100);
+        Ref<PaimonLoadingOverlay> loading = videoSpinner;
+
+        Ref<ProfilePage> videoUploadRef = this;
+
+        paimon::showBetaUploadWarningIfNeeded([videoUploadRef, accountID, videoData = std::move(videoData), username, loading]() mutable {
+            ThumbnailAPI::get().uploadProfileVideo(accountID, videoData, username, [videoUploadRef, accountID, videoData, loading](bool success, std::string const& msg) {
+                if (loading) loading->dismiss();
+
+                if (success) {
+                    PaimonNotify::show("Profile video uploaded!", NotificationIcon::Success);
+                    saveProfileImgToDisk(accountID, videoData);
+                    ProfileImageService::get().rememberProfileImgGifKey(accountID, fmt::format("profileimg_video_{}", accountID));
+                    auto* page = static_cast<PaimonProfilePage*>(videoUploadRef.data());
+                    if (!page || !page->getParent() || page->m_accountID != accountID) return;
+                    page->syncConfigForUploadedMediaBackground(accountID);
+                    page->ensureAnimatedProfileImg(accountID);
+                } else {
+                    PaimonNotify::show("Upload failed: " + msg, NotificationIcon::Error);
+                }
+            });
+        });
+    }
+
+    // post-read half of processProfileImg for gifs; runs on the main thread.
+    void finishProfileImgGif(std::vector<uint8_t> imgData) {
+        if (imgData.empty()) {
+            PaimonNotify::show(Localization::get().getString("profile.image_open_error").c_str(), NotificationIcon::Error);
+            return;
+        }
+
+        int accountID = this->m_accountID;
+        auto* accountManager = GJAccountManager::get();
+        if (!accountManager) {
+            PaimonNotify::show("Account manager unavailable", NotificationIcon::Error);
+            return;
+        }
+        std::string username = accountManager->m_username;
+
+        auto gifSpinner = PaimonLoadingOverlay::create("Uploading...", 30.f);
+        gifSpinner->show(this, 100);
+        Ref<PaimonLoadingOverlay> loading = gifSpinner;
+
+        Ref<ProfilePage> imgGifSafeRef = this;
+
+        paimon::showBetaUploadWarningIfNeeded([imgGifSafeRef, accountID, imgData = std::move(imgData), username, loading]() mutable {
+            ThumbnailAPI::get().uploadProfileImgGIF(accountID, imgData, username, [imgGifSafeRef, accountID, imgData, loading](bool success, std::string const& msg) {
+                if (loading) loading->dismiss();
+
+                if (success) {
+                    PaimonNotify::show("Profile image uploaded!", NotificationIcon::Success);
+
+                    saveProfileImgToDisk(accountID, imgData);
+                    ProfileImageService::get().rememberProfileImgGifKey(accountID, getProfileImgGifCacheKey(accountID));
+                    auto* page = static_cast<PaimonProfilePage*>(imgGifSafeRef.data());
+                    if (page) page->syncConfigForUploadedMediaBackground(accountID);
+                    if (page && page->ensureAnimatedProfileImg(accountID)) {
+                        return;
+                    }
+
+                    if (paimon::format::isGif(imgData.data(), imgData.size())) {
+                        auto gifResult = GIFDecoder::decode(imgData.data(), imgData.size(), 1);
+                        if (!gifResult.frames.empty()) {
+                            auto& firstFrame = gifResult.frames[0];
+                            if (firstFrame.width > 0 && firstFrame.height > 0) {
+                                    auto img = ImageLoadHelper::createFromRGBA(
+                                        firstFrame.pixels.data(), firstFrame.width, firstFrame.height, false);
+                                    if (img.success && img.texture) {
+                                        cacheProfileImgTexture(accountID, img.texture);
+                                        if (auto* page = static_cast<PaimonProfilePage*>(imgGifSafeRef.data())) {
+                                            page->displayProfileImg(accountID, img.texture);
+                                        }
+                                        img.texture->autorelease();
+                                    }
+                            }
+                        }
+                    }
+                } else {
+                    PaimonNotify::show("Upload failed: " + msg, NotificationIcon::Error);
+                }
+            });
+        });
+    }
+
     void processProfileImg(std::filesystem::path path) {
         std::string ext = geode::utils::string::toLower(
-            geode::utils::string::pathToString(path.extension()));
+            paimon::paths::toUtf8(path.extension()));
         bool isVideo = (ext == ".mp4" || ext == ".mov" || ext == ".m4v");
 
         if (isVideo) {
-    auto videoData = ImageLoadHelper::readBinaryFile(path, 50);
-            if (videoData.empty()) {
-                PaimonNotify::create(Localization::get().getString("profile.video_open_error").c_str(), NotificationIcon::Error)->show();
-                return;
-            }
-
-            int accountID = this->m_accountID;
-            auto* accountManager = GJAccountManager::get();
-            if (!accountManager) {
-                PaimonNotify::create("Account manager unavailable", NotificationIcon::Error)->show();
-                return;
-            }
-            std::string username = accountManager->m_username;
-
-            auto videoSpinner = PaimonLoadingOverlay::create("Uploading video...", 30.f);
-            videoSpinner->show(this, 100);
-            Ref<PaimonLoadingOverlay> loading = videoSpinner;
-
-            Ref<ProfilePage> videoUploadRef = this;
-
-            paimon::showBetaUploadWarningIfNeeded([videoUploadRef, accountID, videoData = std::move(videoData), username, loading]() mutable {
-                ThumbnailAPI::get().uploadProfileVideo(accountID, videoData, username, [videoUploadRef, accountID, videoData, loading](bool success, std::string const& msg) {
-                    if (loading) loading->dismiss();
-
-                    if (success) {
-                        PaimonNotify::create("Profile video uploaded!", NotificationIcon::Success)->show();
-                        saveProfileImgToDisk(accountID, videoData);
-                        ProfileImageService::get().rememberProfileImgGifKey(accountID, fmt::format("profileimg_video_{}", accountID));
-                        auto* page = static_cast<PaimonProfilePage*>(videoUploadRef.data());
-                        if (!page || !page->getParent() || page->m_accountID != accountID) return;
-                        page->syncConfigForUploadedMediaBackground(accountID);
-                        page->ensureAnimatedProfileImg(accountID);
-                    } else {
-                        PaimonNotify::create("Upload failed: " + msg, NotificationIcon::Error)->show();
-                    }
-                });
+            // up to 50MB: read off the main thread, then finishProfileImgVideo.
+            WeakRef<PaimonProfilePage> weakSelf = this;
+            paimon::ThreadTracker::get().spawn([weakSelf, path] {
+                geode::utils::thread::setName("PaimonProfileImgRead");
+                auto videoData = ImageLoadHelper::readBinaryFile(path, 50);
+                Loader::get()->queueInMainThread(
+                    [weakSelf, videoData = std::move(videoData)]() mutable {
+                        if (paimon::isRuntimeShuttingDown()) return;
+                        auto locked = weakSelf.lock();
+                        auto* page = static_cast<PaimonProfilePage*>(locked.data());
+                        if (!page) return;
+                        page->finishProfileImgVideo(std::move(videoData));
+                    });
             });
             return;
         }
 
         if (ImageLoadHelper::isGIF(path)) {
-            auto imgData = ImageLoadHelper::readBinaryFile(path, 25);
-            if (imgData.empty()) {
-                PaimonNotify::create(Localization::get().getString("profile.image_open_error").c_str(), NotificationIcon::Error)->show();
-                return;
-            }
-
-            int accountID = this->m_accountID;
-            auto* accountManager = GJAccountManager::get();
-            if (!accountManager) {
-                PaimonNotify::create("Account manager unavailable", NotificationIcon::Error)->show();
-                return;
-            }
-            std::string username = accountManager->m_username;
-
-            auto gifSpinner = PaimonLoadingOverlay::create("Uploading...", 30.f);
-            gifSpinner->show(this, 100);
-            Ref<PaimonLoadingOverlay> loading = gifSpinner;
-
-            Ref<ProfilePage> imgGifSafeRef = this;
-
-            paimon::showBetaUploadWarningIfNeeded([imgGifSafeRef, accountID, imgData = std::move(imgData), username, loading]() mutable {
-                ThumbnailAPI::get().uploadProfileImgGIF(accountID, imgData, username, [imgGifSafeRef, accountID, imgData, loading](bool success, std::string const& msg) {
-                    if (loading) loading->dismiss();
-
-                    if (success) {
-                        PaimonNotify::create("Profile image uploaded!", NotificationIcon::Success)->show();
-
-                        saveProfileImgToDisk(accountID, imgData);
-                        ProfileImageService::get().rememberProfileImgGifKey(accountID, getProfileImgGifCacheKey(accountID));
-                        auto* page = static_cast<PaimonProfilePage*>(imgGifSafeRef.data());
-                        if (page) page->syncConfigForUploadedMediaBackground(accountID);
-                        if (page && page->ensureAnimatedProfileImg(accountID)) {
-                            return;
-                        }
-
-                        if (paimon::format::isGif(imgData.data(), imgData.size())) {
-                            auto gifResult = GIFDecoder::decode(imgData.data(), imgData.size(), 1);
-                            if (!gifResult.frames.empty()) {
-                                auto& firstFrame = gifResult.frames[0];
-                                if (firstFrame.width > 0 && firstFrame.height > 0) {
-                                        auto img = ImageLoadHelper::createFromRGBA(
-                                            firstFrame.pixels.data(), firstFrame.width, firstFrame.height, false);
-                                        if (img.success && img.texture) {
-                                            cacheProfileImgTexture(accountID, img.texture);
-                                            if (auto* page = static_cast<PaimonProfilePage*>(imgGifSafeRef.data())) {
-                                                page->displayProfileImg(accountID, img.texture);
-                                            }
-                                            img.texture->autorelease();
-                                        }
-                                }
-                            }
-                        }
-                    } else {
-                        PaimonNotify::create("Upload failed: " + msg, NotificationIcon::Error)->show();
-                    }
-                });
+            // up to 25MB: read off the main thread, then finishProfileImgGif.
+            WeakRef<PaimonProfilePage> weakSelf = this;
+            paimon::ThreadTracker::get().spawn([weakSelf, path] {
+                geode::utils::thread::setName("PaimonProfileImgRead");
+                auto imgData = ImageLoadHelper::readBinaryFile(path, 25);
+                Loader::get()->queueInMainThread(
+                    [weakSelf, imgData = std::move(imgData)]() mutable {
+                        if (paimon::isRuntimeShuttingDown()) return;
+                        auto locked = weakSelf.lock();
+                        auto* page = static_cast<PaimonProfilePage*>(locked.data());
+                        if (!page) return;
+                        page->finishProfileImgGif(std::move(imgData));
+                    });
             });
             return;
         }
@@ -2266,9 +2479,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (!loaded.success) {
             std::string errKey = loaded.error;
             if (errKey == "image_open_error" || errKey == "invalid_image_data" || errKey == "texture_error") {
-                PaimonNotify::create(Localization::get().getString("profile." + errKey).c_str(), NotificationIcon::Error)->show();
+                PaimonNotify::show(Localization::get().getString("profile." + errKey).c_str(), NotificationIcon::Error);
             } else {
-                PaimonNotify::create(errKey.c_str(), NotificationIcon::Error)->show();
+                PaimonNotify::show(errKey.c_str(), NotificationIcon::Error);
             }
             return;
         }
@@ -2282,7 +2495,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
             loaded.buffer,
             loaded.width,
             loaded.height,
-            [previewCbRef, accountID](bool ok, int id, std::shared_ptr<uint8_t> buf, int w, int h, std::string mode, std::string replaceId) {
+            [previewCbRef, accountID](bool ok, int, std::shared_ptr<uint8_t> buf, int w, int h, std::string, std::string) {
                 auto* page = static_cast<PaimonProfilePage*>(previewCbRef.data());
                 if (!page || !page->getParent()) return;
                 if (ok && buf) {
@@ -2293,7 +2506,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
                         auto* accountManager = GJAccountManager::get();
                         if (!accountManager) {
-                            PaimonNotify::create("Account manager unavailable", NotificationIcon::Error)->show();
+                            PaimonNotify::show("Account manager unavailable", NotificationIcon::Error);
                             return;
                         }
                         std::string username = accountManager->m_username;
@@ -2311,9 +2524,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
                     bool isPending = (msg.find("pending") != std::string::npos || msg.find("verification") != std::string::npos);
 
                                 if (isPending) {
-                                    PaimonNotify::create("Image submitted! Pending moderator verification.", NotificationIcon::Warning)->show();
+                                    PaimonNotify::show("Image submitted! Pending moderator verification.", NotificationIcon::Warning);
                                 } else {
-                                    PaimonNotify::create("Profile image uploaded!", NotificationIcon::Success)->show();
+                                    PaimonNotify::show("Profile image uploaded!", NotificationIcon::Success);
                                 }
 
                     saveProfileImgToDisk(accountID, pngData);
@@ -2333,7 +2546,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
                                     }
                                 }
                             } else {
-                                PaimonNotify::create("Upload failed: " + msg, NotificationIcon::Error)->show();
+                                PaimonNotify::show("Upload failed: " + msg, NotificationIcon::Error);
                             }
                         });
                 }
@@ -2381,39 +2594,27 @@ class $modify(PaimonProfilePage, ProfilePage) {
                 if (popup) popup->show();
             });
         });
-        popup->setOnGlobalIconCallback([self](bool enabled) {
+        popup->setOnGlobalIconCallback([self](bool link, paimon::globalicon::LinkOptions options) {
             auto page = self.lock();
             if (!page) return;
-            int accID = page->m_accountID;
-            auto* am = GJAccountManager::get();
-            std::string username = am ? std::string(am->m_username) : std::string();
-            if (enabled) {
-                PaimonNotify::create(Localization::get().getString("globalicon.uploading").c_str(), NotificationIcon::Info)->show();
-                paimon::globalicon::GlobalIconService::get().uploadActiveIcons(accID, username,
-                    [](bool ok, std::string const& msg) {
-                        paimon::globalicon::GlobalIconService::setEnabledLocally(ok);
-                        if (ok) {
-                            PaimonNotify::create(Localization::get().getString("globalicon.upload_ok").c_str(), NotificationIcon::Success)->show();
-                        } else if (msg == "no custom icons") {
-                            PaimonNotify::create(Localization::get().getString("globalicon.no_custom").c_str(), NotificationIcon::Warning)->show();
-                        } else if (msg == "More Icons not installed") {
-                            PaimonNotify::create(Localization::get().getString("globalicon.requires_moreicons_title").c_str(), NotificationIcon::Error)->show();
-                        } else {
-                            log::warn("[GlobalIcon] upload failed: {}", msg);
-                            PaimonNotify::create(
-                                paimon::globalicon::GlobalIconService::describeSyncError(msg).c_str(),
-                                NotificationIcon::Error)->show();
-                        }
-                    });
+            auto& service = paimon::globalicon::GlobalIconService::get();
+            if (link) {
+                PaimonNotify::show(Localization::get().getString("globalicon.uploading").c_str(), NotificationIcon::Info);
+                service.publish(options, [](bool ok, std::string const& msg) {
+                    if (ok) {
+                        PaimonNotify::show(Localization::get().getString("globalicon.upload_ok").c_str(), NotificationIcon::Success);
+                        return;
+                    }
+                    log::warn("[GlobalIcon] link failed: {}", msg);
+                    PaimonNotify::show(msg.c_str(), NotificationIcon::Error);
+                });
             } else {
-                PaimonNotify::create(Localization::get().getString("globalicon.clearing").c_str(), NotificationIcon::Info)->show();
-                paimon::globalicon::GlobalIconService::get().clearIcons(accID, username,
-                    [](bool ok, std::string const&) {
-                        paimon::globalicon::GlobalIconService::setEnabledLocally(false);
-                        PaimonNotify::create(
-                            Localization::get().getString(ok ? "globalicon.cleared" : "globalicon.clear_failed").c_str(),
-                            ok ? NotificationIcon::Success : NotificationIcon::Error)->show();
-                    });
+                PaimonNotify::show(Localization::get().getString("globalicon.clearing").c_str(), NotificationIcon::Info);
+                service.clearIcons([](bool ok, std::string const& msg) {
+                    PaimonNotify::show(
+                        ok ? Localization::get().getString("globalicon.cleared").c_str() : msg.c_str(),
+                        ok ? NotificationIcon::Success : NotificationIcon::Error);
+                });
             }
         });
         popup->show();
@@ -2421,7 +2622,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     void onConfigureProfileMusic(CCObject*) {
         if (!this->m_ownProfile) {
-            PaimonNotify::create("You can only configure music on your own profile", NotificationIcon::Warning)->show();
+            PaimonNotify::show("You can only configure music on your own profile", NotificationIcon::Warning);
             return;
         }
 
@@ -2432,7 +2633,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
     void onToggleProfileMusic(CCObject*) {
         auto& musicManager = ProfileMusicManager::get();
 
-        if (musicManager.isPlaying()) {
+        if (musicManager.isPlaying() && musicManager.getCurrentPlayingProfile() == m_accountID
+            && m_fields->m_audioSessionToken != 0
+            && AudioContextCoordinator::get().isCurrentProfileSession(m_fields->m_audioSessionToken)) {
             if (musicManager.isPaused()) {
                 musicManager.resumeProfileMusic();
                 m_fields->m_musicPlaying = true;
@@ -2444,6 +2647,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         } else {
             AudioContextCoordinator::get().activateProfile(this->m_accountID);
+            m_fields->m_audioSessionToken = AudioContextCoordinator::get().getCurrentProfileSessionToken();
             m_fields->m_musicPlaying = true;
             updatePauseButtonSprite(true);
         }
@@ -2454,10 +2658,13 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         CCSprite* newSpr = nullptr;
         if (isPlaying) {
-            newSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_fxOnBtn_001.png");
+            // 2.2091 renombro estos frames; el nombre viejo no existe.
+            newSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_audioOnBtn_001.png");
+            if (!newSpr) newSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_fxOnBtn_001.png");
             if (!newSpr) newSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_pauseBtn_001.png");
         } else {
-            newSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_fxOffBtn_001.png");
+            newSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_audioOffBtn_001.png");
+            if (!newSpr) newSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_fxOffBtn_001.png");
             if (!newSpr) newSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_playBtn_001.png");
         }
 
@@ -2518,8 +2725,11 @@ class $modify(PaimonProfilePage, ProfilePage) {
             bool alreadyHandlingThisProfile = musicMgr.getCurrentPlayingProfile() == accountID &&
                 (musicMgr.isPlaying() || musicMgr.isPaused() || musicMgr.isFadingOut());
 
-            if (!alreadyHandlingThisProfile) {
+            bool ownsSession = m_fields->m_audioSessionToken != 0
+                && AudioContextCoordinator::get().isCurrentProfileSession(m_fields->m_audioSessionToken);
+            if (!alreadyHandlingThisProfile || !ownsSession) {
                 AudioContextCoordinator::get().activateProfile(accountID, cachedConfig);
+                m_fields->m_audioSessionToken = AudioContextCoordinator::get().getCurrentProfileSessionToken();
                 m_fields->m_musicPlaying = true;
                 updatePauseButtonSprite(true);
             } else {
@@ -2586,6 +2796,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
 
             AudioContextCoordinator::get().updateProfileMusicConfig(accountID, config);
+            page->m_fields->m_audioSessionToken = AudioContextCoordinator::get().getCurrentProfileSessionToken();
             page->m_fields->m_musicPlaying = true;
             page->updatePauseButtonSprite(true);
         };
@@ -2611,9 +2822,12 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (m_fields->m_audioCleanedUp) return;
         m_fields->m_audioCleanedUp = true;
 
+        auto sessionToken = m_fields->m_audioSessionToken;
+        if (sessionToken == 0 || !AudioContextCoordinator::get().isCurrentProfileSession(sessionToken)) return;
+
         auto& musicMgr = ProfileMusicManager::get();
+        musicMgr.cancelPendingProfilePlayback();
         bool hadProfileAudio = musicMgr.isPlaying() || musicMgr.isPaused() || musicMgr.isFadingOut();
-        auto sessionToken = AudioContextCoordinator::get().getCurrentProfileSessionToken();
         if (hadProfileAudio) {
             musicMgr.forceStop();
         }
@@ -2648,9 +2862,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         ProfilePage::onClose(sender);
     }
 
-    $override
-    void onEnterTransitionDidFinish() {
-        ProfilePage::onEnterTransitionDidFinish();
+    void handleEnterTransitionDidFinish() {
         refreshProfileBackdropAfterVanillaLayout();
         auto& musicMgr = ProfileMusicManager::get();
         if (m_fields->m_pausedForTemporaryExit && m_fields->m_musicPlaying &&
@@ -2661,16 +2873,13 @@ class $modify(PaimonProfilePage, ProfilePage) {
         m_fields->m_pausedForTemporaryExit = false;
     }
 
-    $override
-    void onExit() {
+    void handleExit() {
         unscheduleProfileTimers();
 
         cleanupProfileAudio();
-
-        ProfilePage::onExit();
     }
 
-    void fadeMenuMusicStep(Ref<ProfilePage> safeRef, int step, int totalSteps, float fromVol, float toVol) {
+    void fadeMenuMusicStep(Ref<ProfilePage>, int step, int totalSteps, float fromVol, float toVol) {
         float stepDelay = 500.0f / static_cast<float>(totalSteps) / 1000.0f;
 
         if (step >= totalSteps) {

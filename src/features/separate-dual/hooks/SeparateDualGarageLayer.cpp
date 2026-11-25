@@ -45,7 +45,7 @@ constexpr int kSelectionTransitionTag = 2401;
 constexpr float kSelectionTransitionDuration = 0.2f;
 
 CircleButtonSprite* makeSwapSprite() {
-    if (auto* own = paimon::SpriteHelper::safeCreate("GJ_2PSwapBtn.png"_spr)) {
+    if (auto* own = paimon::SpriteHelper::safeCreate("paim_garage_swap2p.png"_spr)) {
         return CircleButtonSprite::create(own, CircleBaseColor::Green, CircleBaseSize::Medium);
     }
 
@@ -63,8 +63,6 @@ CircleButtonSprite* makeSwapSprite() {
 
 class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
     struct Fields {
-        Ref<CCSprite> arrow1 = nullptr;
-        Ref<CCSprite> arrow2 = nullptr;
         Ref<SimplePlayer> secondDoll = nullptr;
 
         Ref<CCSprite> cursorSecond = nullptr;
@@ -75,8 +73,8 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
 
     static void onModify(auto& self) {
         paimon::hooks::afterNodeIdsOrLate(self, "GJGarageLayer::init");
-        (void)self.setHookPriorityPre("GJGarageLayer::onSelect", Priority::Last);
-        (void)self.setHookPriorityPre("GJGarageLayer::onSpecial", Priority::Last);
+        (void)self.setHookPriorityPre("GJGarageLayer::onSelect", Priority::VeryLate);
+        (void)self.setHookPriorityPre("GJGarageLayer::onSpecial", Priority::VeryLate);
     }
 
     CCMenu* iconPageMenu() {
@@ -105,64 +103,47 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
         cursor->setVisible(true);
     }
 
-    void playSelectPulse(CCNode* node, float scale, GLubyte opacity) {
-        if (!node) return;
+    void updateSideLabel(Side side, bool selected, bool animate) {
+        auto const secondary = side == Side::Secondary;
+        auto* label = secondary ? m_fields->player2Label.data() : m_fields->player1Label.data();
+        auto* doll = secondary ? m_fields->secondDoll.data() : m_playerObject;
+        if (!label || !doll) return;
 
-        node->stopActionByTag(kSelectionTransitionTag);
-        auto pop = CCSequence::create(
-            CCEaseSineOut::create(CCScaleTo::create(
-                kSelectionTransitionDuration * 0.45f,
-                scale * 1.04f
-            )),
-            CCEaseSineInOut::create(CCScaleTo::create(
-                kSelectionTransitionDuration * 0.55f,
-                scale
-            )),
+        constexpr int labelTransitionTag = 2402;
+        constexpr float duration = 0.28f;
+        auto const direction = secondary ? 1.f : -1.f;
+        auto const hiddenPosition = doll->getPosition() + CCPoint{direction * 18.f, 0.f};
+        auto const visiblePosition = doll->getPosition() + CCPoint{direction * 34.f, 0.f};
+        auto const targetPosition = selected ? visiblePosition : hiddenPosition;
+        GLubyte const targetOpacity = selected ? 255 : 0;
+        auto const running = label->getActionByTag(labelTransitionTag) != nullptr;
+
+        if (!animate) {
+            // icon and page refreshes must let an in-flight selection finish.
+            if (running) return;
+            label->setPosition(targetPosition);
+            label->setOpacity(targetOpacity);
+            return;
+        }
+
+        label->stopActionByTag(labelTransitionTag);
+        // reverse from the current position on rapid switches; replay on a fresh click.
+        if (selected && !running) {
+            label->setPosition(hiddenPosition);
+            label->setOpacity(0);
+        }
+        auto transition = CCSpawn::create(
+            CCEaseSineOut::create(CCMoveTo::create(duration, targetPosition)),
+            CCEaseSineInOut::create(CCFadeTo::create(duration, targetOpacity)),
             nullptr
         );
-        auto pulse = CCSpawn::create(
-            pop,
-            CCEaseSineInOut::create(CCFadeTo::create(
-                kSelectionTransitionDuration,
-                opacity
-            )),
-            nullptr
-        );
-        pulse->setTag(kSelectionTransitionTag);
-        node->runAction(pulse);
+        transition->setTag(labelTransitionTag);
+        label->runAction(transition);
     }
 
     void refreshSideEmphasis(bool secondActive, bool animate) {
-        auto paintLabel = [&](CCLabelBMFont* label, bool selected) {
-            if (!label) return;
-            auto scale = selected ? 0.42f : 0.34f;
-            auto opacity = selected ? 255 : 150;
-            if (animate) {
-                playSelectPulse(label, scale, opacity);
-            } else {
-                label->stopActionByTag(kSelectionTransitionTag);
-                label->setScale(scale);
-                label->setOpacity(opacity);
-            }
-        };
-
-        auto paintArrow = [&](CCSprite* arrow, bool selected) {
-            if (!arrow) return;
-            if (animate) {
-                arrow->setVisible(true);
-                playSelectPulse(arrow, selected ? 0.44f : 0.4f, selected ? 255 : 0);
-            } else {
-                arrow->stopActionByTag(kSelectionTransitionTag);
-                arrow->setVisible(selected);
-                arrow->setScale(0.4f);
-                arrow->setOpacity(selected ? 255 : 0);
-            }
-        };
-
-        paintLabel(m_fields->player1Label, !secondActive);
-        paintLabel(m_fields->player2Label, secondActive);
-        paintArrow(m_fields->arrow1, !secondActive);
-        paintArrow(m_fields->arrow2, secondActive);
+        updateSideLabel(Side::Primary, !secondActive, animate);
+        updateSideLabel(Side::Secondary, secondActive, animate);
 
         if (m_playerObject) {
             m_playerObject->stopActionByTag(kSelectionTransitionTag);
@@ -231,10 +212,9 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
     void on2PToggle(CCObject* sender) {
         if (!moduleEnabled()) return;
         auto node = typeinfo_cast<CCNode*>(sender);
-        bool second = node && node->getID() == "player2-button";
-        bool changed = DualKitVault::get()->sideActiveIsSecondary() != second;
+        bool second = node && node->getID() == "player2-button"_spr;
         DualKitVault::get()->chooseSide(second);
-        refreshCursors(changed);
+        refreshCursors(true);
     }
 
     void swapSecondKit(CCObject*) {
@@ -293,30 +273,8 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
         return true;
     }
 
-    bool init() {
-        if (!moduleEnabled()) return GJGarageLayer::init();
-        auto vault = DualKitVault::get();
-        vault->chooseSide(false);
-
-        auto makeCursor = [](char const* id) {
-            auto cursor = CCSprite::createWithSpriteFrameName("GJ_select_001.png");
-            cursor->setScale(0.85f);
-            cursor->setID(id);
-            cursor->setVisible(false);
-            return cursor;
-        };
-        m_fields->cursorSecond = makeCursor("cursor-3"_spr);
-        m_fields->cursorSecondAlt = makeCursor("cursor-4"_spr);
-
-        if (!GJGarageLayer::init()) return false;
-
-        auto winSize = CCDirector::get()->getWinSize();
-
-        m_cursor1->setZOrder(101);
-        m_cursor2->setZOrder(101);
-        this->addChild(m_fields->cursorSecond, 101);
-        this->addChild(m_fields->cursorSecondAlt, 101);
-
+    // P1/P2 tags on every cursor so each selection says whose kit it belongs to.
+    void buildCursorTags() {
         auto tagCursor = [](CCSprite* cursor, char const* text, ccColor3B color,
                             float anchorX, char const* id, float insetX) {
             auto tag = CCLabelBMFont::create(text, "bigFont.fnt");
@@ -333,6 +291,12 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
             m_fields->cursorSecond->getContentWidth() - 2.5f);
         tagCursor(m_fields->cursorSecondAlt, "P2", {0, 255, 255}, 1.f, "c4-player-label"_spr,
             m_fields->cursorSecondAlt->getContentWidth() - 2.5f);
+    }
+
+    // moves the P1 doll left and places the P2 doll on the right.
+    void buildSecondDoll() {
+        auto vault = DualKitVault::get();
+        auto winSize = CCDirector::get()->getWinSize();
 
         m_playerObject->setPositionX(m_playerObject->getPositionX() - winSize.width / 12);
 
@@ -352,77 +316,125 @@ class $modify(PaimonSeparateDualGarage, GJGarageLayer) {
             Side::Secondary
         );
         this->addChild(m_fields->secondDoll);
+    }
 
+    // labels slide outwards from the previews; the hint stays below the icon-type tabs.
+    void buildSideLabels() {
         auto makeSideLabel = [](char const* text, ccColor3B color, char const* id) {
             auto label = CCLabelBMFont::create(text, "bigFont.fnt");
-            label->setScale(0.35f);
+            label->setScale(0.42f);
+            label->setOpacity(0);
             label->setColor(color);
             label->setID(id);
             return label;
         };
 
+        auto p1Pos = m_playerObject->getPosition();
+        auto p2Pos = m_fields->secondDoll->getPosition();
+
         m_fields->player1Label = makeSideLabel("P1", {255, 255, 0}, "player1-label"_spr);
-        m_fields->player1Label->setPosition({m_playerObject->getPositionX(), m_playerObject->getPositionY() - 30.f});
+        m_fields->player1Label->setAnchorPoint({1.f, 0.5f});
+        m_fields->player1Label->setPosition(p1Pos);
         this->addChild(m_fields->player1Label, 102);
 
         m_fields->player2Label = makeSideLabel("P2", {0, 255, 255}, "player2-label"_spr);
-        m_fields->player2Label->setPosition({m_fields->secondDoll->getPositionX(), m_fields->secondDoll->getPositionY() - 30.f});
+        m_fields->player2Label->setAnchorPoint({0.f, 0.5f});
+        m_fields->player2Label->setPosition(p2Pos);
         this->addChild(m_fields->player2Label, 102);
 
+        auto hint = CCLabelBMFont::create(
+            Localization::get().getString("dual.hint").c_str(), "bigFont.fnt");
+        hint->setScale(0.22f);
+        hint->setOpacity(170);
+        hint->setID("side-hint"_spr);
+        hint->setPosition({(p1Pos.x + p2Pos.x) / 2.f, p1Pos.y - 64.f});
+        this->addChild(hint, 102);
+    }
+
+    // invisible touch areas over each doll: tapping one picks the side being edited.
+    void buildSideButtons() {
         auto playerMenu = CCMenu::create();
-        playerMenu->setContentSize(winSize);
+        playerMenu->setContentSize(CCDirector::get()->getWinSize());
         playerMenu->setPosition({0, 0});
         playerMenu->setID("player-buttons-menu"_spr);
         this->addChild(playerMenu);
 
-        auto hitAreaFor = [] {
+        auto makeButton = [&](CCNode* doll, char const* id) {
             auto hit = CCSprite::create("GJ_button_01.png");
             hit->setOpacity(0);
-            return hit;
+            auto button = CCMenuItemSpriteExtra::create(
+                hit, this, menu_selector(PaimonSeparateDualGarage::on2PToggle));
+            button->setPosition(doll->getPosition());
+            button->setContentSize({70.f, 50.f});
+            button->setID(id);
+            playerMenu->addChild(button);
         };
-        auto pickFirst = CCMenuItemSpriteExtra::create(hitAreaFor(), this, menu_selector(PaimonSeparateDualGarage::on2PToggle));
-        auto pickSecond = CCMenuItemSpriteExtra::create(hitAreaFor(), this, menu_selector(PaimonSeparateDualGarage::on2PToggle));
+        makeButton(m_playerObject, "player1-button"_spr);
+        makeButton(m_fields->secondDoll, "player2-button"_spr);
+    }
 
-        pickFirst->setPosition(m_playerObject->getPosition());
-        pickSecond->setPosition(m_fields->secondDoll->getPosition());
-        pickFirst->setContentSize({70.f, 50.f});
-        pickFirst->setID("player1-button"_spr);
-        pickSecond->setContentSize({70.f, 50.f});
-        pickSecond->setID("player2-button"_spr);
+    void onDualHelp(CCObject*) {
+        auto& loc = Localization::get();
+        FLAlertLayer::create(
+            loc.getString("dual.help_title").c_str(),
+            loc.getString("dual.help_body"),
+            "OK"
+        )->show();
+    }
 
-        playerMenu->addChild(pickFirst);
-        playerMenu->addChild(pickSecond);
+    // info button centred in the gap between the player previews.
+    void buildHelpButton() {
+        auto menu = CCMenu::create();
+        menu->setPosition({0, 0});
+        menu->setID("dual-help-menu"_spr);
 
-        m_fields->arrow1 = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
-        m_fields->arrow2 = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
+        auto icon = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
+        icon->setScale(0.55f);
+        auto button = CCMenuItemSpriteExtra::create(
+            icon, this, menu_selector(PaimonSeparateDualGarage::onDualHelp));
+        button->setID("dual-help-button"_spr);
+        button->setPosition({
+            (m_playerObject->getPositionX() + m_fields->secondDoll->getPositionX()) / 2.f,
+            m_playerObject->getPositionY() - 12.f
+        });
+        menu->addChild(button);
+        this->addChild(menu, 103);
+    }
 
-        m_fields->arrow1->setScale(0.4f);
-        m_fields->arrow1->setPosition({m_playerObject->getPositionX() - winSize.width / 12, m_playerObject->getPositionY()});
-        m_fields->arrow1->setID("arrow-1"_spr);
-
-        m_fields->arrow2->setScale(0.4f);
-        m_fields->arrow2->setFlipX(true);
-        m_fields->arrow2->setPosition({m_fields->secondDoll->getPositionX() + winSize.width / 12, m_fields->secondDoll->getPositionY()});
-        m_fields->arrow2->setID("arrow-2"_spr);
-
-        auto driftRight = CCArray::create();
-        driftRight->addObject(CCMoveBy::create(0.5, {5, 0}));
-        driftRight->addObject(CCMoveBy::create(0.5, {-5, 0}));
-
-        auto driftLeft = CCArray::create();
-        driftLeft->addObject(CCMoveBy::create(0.5, {-5, 0}));
-        driftLeft->addObject(CCMoveBy::create(0.5, {5, 0}));
-
-        m_fields->arrow1->runAction(CCRepeatForever::create(CCSequence::create(driftRight)));
-        m_fields->arrow2->runAction(CCRepeatForever::create(CCSequence::create(driftLeft)));
-
-        this->addChild(m_fields->arrow1);
-        this->addChild(m_fields->arrow2);
-
+    void buildSwapButton() {
         auto swapBtn = CCMenuItemSpriteExtra::create(makeSwapSprite(), this, menu_selector(PaimonSeparateDualGarage::swapSecondKit));
         swapBtn->setID("swap-2p-button"_spr);
         paimon::garage_hub::addButton(
             this, swapBtn, Localization::get().getString("garage-hub.swap-2p"), 40);
+    }
+
+    bool init() {
+        if (!moduleEnabled()) return GJGarageLayer::init();
+        DualKitVault::get()->chooseSide(false);
+
+        auto makeCursor = [](char const* id) {
+            auto cursor = CCSprite::createWithSpriteFrameName("GJ_select_001.png");
+            cursor->setScale(0.85f);
+            cursor->setID(id);
+            cursor->setVisible(false);
+            return cursor;
+        };
+        m_fields->cursorSecond = makeCursor("cursor-3"_spr);
+        m_fields->cursorSecondAlt = makeCursor("cursor-4"_spr);
+
+        if (!GJGarageLayer::init()) return false;
+
+        m_cursor1->setZOrder(101);
+        m_cursor2->setZOrder(101);
+        this->addChild(m_fields->cursorSecond, 101);
+        this->addChild(m_fields->cursorSecondAlt, 101);
+
+        buildCursorTags();
+        buildSecondDoll();
+        buildSideLabels();
+        buildSideButtons();
+        buildHelpButton();
+        buildSwapButton();
 
         refreshCursors();
 

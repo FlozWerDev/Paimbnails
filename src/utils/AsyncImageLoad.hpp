@@ -7,34 +7,72 @@
 #include "ImageLoadHelper.hpp"
 #include "ThreadPool.hpp"
 #include "../core/RuntimeLifecycle.hpp"
+#include <atomic>
+#include <chrono>
 #include <filesystem>
-#include <memory>
 #include <limits>
+#include <memory>
+#include <mutex>
 
 namespace paimon::asyncimg {
 
 using SpriteCallback = geode::CopyableFunction<void(cocos2d::CCSprite*)>;
 
 namespace detail {
-// shared lifetime pool (heap, no atexit destructor); 2 threads.
-inline paimon::ThreadPool& pool() {
-    static auto* p = new paimon::ThreadPool(2, "PaimonAsyncImg");
+inline std::mutex& poolMutex() {
+    static auto* m = new std::mutex();
+    return *m;
+}
+
+inline std::atomic<paimon::ThreadPool*>& poolPtr() {
+    static auto* p = new std::atomic<paimon::ThreadPool*>(nullptr);
     return *p;
 }
+
+// lazy heap pool (no atexit destructor); never allocates after shutdown begins.
+inline paimon::ThreadPool* getOrCreatePool() {
+    if (paimon::isRuntimeShuttingDown()) {
+        return poolPtr().load(std::memory_order_acquire);
+    }
+    std::lock_guard<std::mutex> lock(poolMutex());
+    if (paimon::isRuntimeShuttingDown()) {
+        return poolPtr().load(std::memory_order_acquire);
+    }
+    auto* p = poolPtr().load(std::memory_order_relaxed);
+    if (!p) {
+        p = new paimon::ThreadPool(2, "PaimonAsyncImg");
+        poolPtr().store(p, std::memory_order_release);
+    }
+    return p;
+}
 } // namespace detail
+
+inline void requestShutdown() {
+    if (auto* p = detail::poolPtr().load(std::memory_order_acquire)) {
+        p->requestStop();
+    }
+}
+
+inline void waitShutdown(std::chrono::steady_clock::time_point deadline) {
+    if (auto* p = detail::poolPtr().load(std::memory_order_acquire)) {
+        p->waitShutdown(deadline);
+    }
+}
 
 // autoreleased ccsprite* on main thread (nullptr on failure).
 // caller guards its own lifetime in the callback.
 inline void loadStaticSprite(std::filesystem::path path, size_t maxSizeMB, SpriteCallback callback) {
-    if (paimon::isRuntimeShuttingDown()) {
+    auto* p = detail::getOrCreatePool();
+    if (paimon::isRuntimeShuttingDown() || !p || p->isStopped()) {
         if (callback) callback(nullptr);
         return;
     }
 
-    detail::pool().enqueue([path, maxSizeMB, callback = std::move(callback)]() mutable {
+    p->enqueue([path, maxSizeMB, callback = std::move(callback)]() mutable {
         if (paimon::isRuntimeShuttingDown()) return;
 
         auto fail = [&callback]() {
+            if (paimon::isRuntimeShuttingDown()) return;
             geode::Loader::get()->queueInMainThread([callback = std::move(callback)]() mutable {
                 if (paimon::isRuntimeShuttingDown()) return;
                 if (callback) callback(nullptr);
@@ -48,21 +86,16 @@ inline void loadStaticSprite(std::filesystem::path path, size_t maxSizeMB, Sprit
         }
 
         // cpu-only decode; no gl calls.
-        int w = 0, h = 0, channels = 0;
-        if (!stbi_info_from_memory(fileData.data(), static_cast<int>(fileData.size()), &w, &h, &channels)
-            || w <= 0 || h <= 0 || w > ImageLoadHelper::kMaxImageDim || h > ImageLoadHelper::kMaxImageDim) {
-            fail();
-            return;
-        }
-        std::unique_ptr<unsigned char, decltype(&stbi_image_free)> px(
-            stbi_load_from_memory(fileData.data(), static_cast<int>(fileData.size()), &w, &h, &channels, 4),
-            &stbi_image_free);
-        if (!px || w <= 0 || h <= 0 || w > 4096 || h > 4096) {
+        int w = 0, h = 0;
+        auto px = ImageLoadHelper::decodeRGBAFromMemory(fileData.data(), fileData.size(), w, h);
+        if (!px) {
             fail();
             return;
         }
 
         auto rgba = std::shared_ptr<unsigned char>(px.release(), &stbi_image_free);
+
+        if (paimon::isRuntimeShuttingDown()) return;
 
         // gl texture creation must run on main thread.
         geode::Loader::get()->queueInMainThread(

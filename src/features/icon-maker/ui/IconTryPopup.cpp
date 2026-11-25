@@ -6,6 +6,7 @@
 #include "../data/IconPalettes.hpp"
 #include "../engine/PieceRenderer.hpp"
 #include "../persist/IconPaths.hpp"
+#include "../services/IconApplier.hpp"
 #include "../../texture-studio/engine/SpritePreviewRenderer.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
@@ -113,18 +114,21 @@ bool IconTryPopup::init(IconProject project) {
     m_mainLayer->addChild(m_stage, 3);
 
     // vanilla gamemode icon alongside as a size reference.
-    m_vanilla = SimplePlayer::create(1);
-    if (m_vanilla) {
-        if (auto* gm = GameManager::get()) {
-            m_vanilla->updatePlayerFrame(
-                gm->activeIconForType(m_project.type), m_project.type);
-            m_vanilla->setColor(gm->colorForIdx(gm->getPlayerColor()));
-            m_vanilla->setSecondColor(gm->colorForIdx(gm->getPlayerColor2()));
+    {
+        IconApplier::VanillaScope vanillaGuard;
+        m_vanilla = SimplePlayer::create(1);
+        if (m_vanilla) {
+            if (auto* gm = GameManager::get()) {
+                m_vanilla->updatePlayerFrame(
+                    gm->activeIconForType(m_project.type), m_project.type);
+                m_vanilla->setColor(gm->colorForIdx(gm->getPlayerColor()));
+                m_vanilla->setSecondColor(gm->colorForIdx(gm->getPlayerColor2()));
+            }
+            m_vanilla->setPosition({stageW - 32.f, kStageH / 2.f});
+            m_vanilla->setScale(0.9f);
+            m_vanilla->setOpacity(150);
+            m_stage->addChild(m_vanilla, 10);
         }
-        m_vanilla->setPosition({stageW - 32.f, kStageH / 2.f});
-        m_vanilla->setScale(0.9f);
-        m_vanilla->setOpacity(150);
-        m_stage->addChild(m_vanilla, 10);
     }
 
     m_statusLabel = CCLabelBMFont::create("Dibujando el icono...", "chatFont.fnt");
@@ -240,6 +244,7 @@ void IconTryPopup::rebuildPreview() {
 
             auto* sprite = CCSprite::createWithTexture(zone.texture);
             if (!sprite) continue;
+            sprite->setBlendFunc({GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA});
             float const longest = std::max(sprite->getContentSize().width,
                                            sprite->getContentSize().height);
             if (longest > 0.f) sprite->setScale(base * 2.f / longest);

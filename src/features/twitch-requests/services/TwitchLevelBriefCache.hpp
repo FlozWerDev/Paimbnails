@@ -63,7 +63,7 @@ private:
 
     void loadLevelsFinished(cocos2d::CCArray* levels, char const* key) override;
     void loadLevelsFailed(char const* key) override;
-    void setupPageInfo(gd::string info, char const* key) override;
+    void setupPageInfo(std::string info, char const* key) override;
 
     std::unordered_map<int, LevelBrief> m_cache;
     std::unordered_map<int, geode::Ref<GJGameLevel>> m_levels;

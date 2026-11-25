@@ -1,4 +1,4 @@
-﻿# Paimbnails
+# Paimbnails
 
 Developed by <cg>F</c><cg>l</c><cl>o</c><cl>z</c><cl>W</c><cg>e</c><cg>r</c> : [Profile](user:17046382)
 
@@ -100,6 +100,9 @@ If you are one of these authors and want the wording changed, open an issue or r
 * [Discord Server](https://discord.gg/5N5vpSfZwY)
 
 ## Special Thanks
+
+<cg>Collab Editor Servers</c>:
+Gracias a <cl>edgarjuman</c> por los servidores para Collab Editor.
 
 <cr>Admins</c>:
 [AlvaroEter](user:17431458)

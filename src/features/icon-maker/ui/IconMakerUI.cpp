@@ -169,7 +169,6 @@ CCNode* makeZoneChips(float width, std::vector<ZoneChip> const& zones,
         holder->setAnchorPoint({0.5f, 0.5f});
         holder->setContentSize({chipW, kChipH});
 
-// vanilla-style zone tabs.
         auto* face = kit::makeTabFace(zone.label.c_str(), isSelected, chipW, kChipH);
         if (face) {
             face->setPosition({chipW / 2.f, kChipH / 2.f});
@@ -181,13 +180,14 @@ CCNode* makeZoneChips(float width, std::vector<ZoneChip> const& zones,
             }
         }
 
-// corner chip shows at a glance whether the zone has content and what it paints with.
+        // corner preview shows at a glance whether the zone has content and what texture it renders.
         if (zone.layerCount > 0) {
             auto faceSize = face ? face->getScaledContentSize() : CCSize{chipW, kChipH};
             CCPoint const corner{chipW / 2.f + faceSize.width / 2.f - 9.f,
                                  kChipH / 2.f + faceSize.height / 2.f - 9.f};
             if (zone.preview) {
                 if (auto* mini = CCSprite::createWithTexture(zone.preview)) {
+                    mini->setBlendFunc({GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA});
                     float const longest = std::max(mini->getContentSize().width,
                                                    mini->getContentSize().height);
                     if (longest > 0.f) mini->setScale(13.f / longest);
@@ -251,7 +251,8 @@ CCNode* makeLayerRow(float width, LayerRowSpec spec) {
     x += 17.f;
 
 // thumbnail and name share one large selection target.
-    float const nameW = std::max(24.f, width - x - kThumb - 92.f);
+    float const rightControlsW = spec.onDelete ? 106.f : 90.f;
+    float const nameW = std::max(24.f, width - x - kThumb - rightControlsW);
     auto* hit = CCNode::create();
     hit->setAnchorPoint({0.f, 0.5f});
     hit->setContentSize({kThumb + 6.f + nameW, kRowH - 4.f});
@@ -284,21 +285,34 @@ CCNode* makeLayerRow(float width, LayerRowSpec spec) {
     selectBtn->setPosition({x, kRowH / 2.f});
     menu->addChild(selectBtn);
 
-// right-aligned lock, order arrows and overflow menu.
-    if (auto* lock = paimon::SpriteHelper::safeCreateWithFrameName(
-            spec.locked ? "GJ_lock_001.png" : "GJ_lock_open_001.png")) {
-        lock->setScale(0.34f);
-        if (!spec.locked) lock->setOpacity(110);
-        auto* btn = CCMenuItemExt::createSpriteExtra(lock,
-            [cb = spec.onToggleLock](CCMenuItemSpriteExtra*) { if (cb) cb(); });
-        btn->setPosition({width - 74.f, kRowH / 2.f});
+// right-aligned lock, order arrows, delete, and overflow menu.
+    float rx = width - 14.f;
+    if (auto* more = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png")) {
+        more->setScale(0.30f);
+        auto* btn = CCMenuItemExt::createSpriteExtra(more,
+            [cb = spec.onMore](CCMenuItemSpriteExtra*) { if (cb) cb(); });
+        btn->setPosition({rx, kRowH / 2.f});
         menu->addChild(btn);
+        rx -= 19.f;
+    }
+
+    if (spec.onDelete) {
+        auto* trash = paimon::SpriteHelper::safeCreateWithFrameName("GJ_trashBtn_001.png");
+        if (!trash) trash = paimon::SpriteHelper::safeCreateWithFrameName("GJ_deleteIcon_001.png");
+        if (trash) {
+            trash->setScale(0.38f);
+            auto* btn = CCMenuItemExt::createSpriteExtra(trash,
+                [cb = spec.onDelete](CCMenuItemSpriteExtra*) { if (cb) cb(); });
+            btn->setPosition({rx, kRowH / 2.f});
+            menu->addChild(btn);
+            rx -= 19.f;
+        }
     }
 
     auto addArrow = [&](float px, bool up, bool enabled, std::function<void()> action) {
         auto* spr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
         if (!spr) return;
-        spr->setScale(0.36f);
+        spr->setScale(0.34f);
         spr->setRotation(up ? 90.f : -90.f);
         if (!enabled) spr->setOpacity(70);
         auto* btn = CCMenuItemExt::createSpriteExtra(spr,
@@ -306,14 +320,18 @@ CCNode* makeLayerRow(float width, LayerRowSpec spec) {
         btn->setPosition({px, kRowH / 2.f});
         menu->addChild(btn);
     };
-    addArrow(width - 56.f, true, spec.canMoveUp, spec.onMoveUp);
-    addArrow(width - 38.f, false, spec.canMoveDown, spec.onMoveDown);
+    addArrow(rx, false, spec.canMoveDown, spec.onMoveDown);
+    rx -= 17.f;
+    addArrow(rx, true, spec.canMoveUp, spec.onMoveUp);
+    rx -= 18.f;
 
-    if (auto* more = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png")) {
-        more->setScale(0.32f);
-        auto* btn = CCMenuItemExt::createSpriteExtra(more,
-            [cb = spec.onMore](CCMenuItemSpriteExtra*) { if (cb) cb(); });
-        btn->setPosition({width - 16.f, kRowH / 2.f});
+    if (auto* lock = paimon::SpriteHelper::safeCreateWithFrameName(
+            spec.locked ? "GJ_lock_001.png" : "GJ_lock_open_001.png")) {
+        lock->setScale(0.32f);
+        if (!spec.locked) lock->setOpacity(110);
+        auto* btn = CCMenuItemExt::createSpriteExtra(lock,
+            [cb = spec.onToggleLock](CCMenuItemSpriteExtra*) { if (cb) cb(); });
+        btn->setPosition({rx, kRowH / 2.f});
         menu->addChild(btn);
     }
 
@@ -434,8 +452,11 @@ CCNode* makeGradientRow(float width, GradientSpec const& spec, char const* butto
     auto* kindLbl = CCLabelBMFont::create(
         spec.kind == GradientKind::Radial
             ? fmt::format("Radial  -  {} colores", spec.stops.size()).c_str()
-            : fmt::format("Lineal {}deg  -  {} colores",
-                          static_cast<int>(spec.angleDeg), spec.stops.size()).c_str(),
+            : spec.kind == GradientKind::Conic
+                ? fmt::format("Conico {}deg  -  {} colores",
+                              static_cast<int>(spec.angleDeg), spec.stops.size()).c_str()
+                : fmt::format("Lineal {}deg  -  {} colores",
+                              static_cast<int>(spec.angleDeg), spec.stops.size()).c_str(),
         "chatFont.fnt");
     kindLbl->setAnchorPoint({0.f, 0.5f});
     kindLbl->setScale(0.42f);
@@ -480,6 +501,76 @@ CCNode* makeDualButtonRow(float width,
     add(leftText, width * 0.27f, "GJ_button_01.png", std::move(onLeft));
     add(rightText, width * 0.73f, "GJ_button_04.png", std::move(onRight));
 
+    return row;
+}
+
+CCNode* makeTripleButtonRow(float width,
+                            char const* t1, std::function<void()> cb1,
+                            char const* t2, std::function<void()> cb2,
+                            char const* t3, std::function<void()> cb3) {
+    constexpr float kRowH = 32.f;
+    constexpr float kGap = 4.f;
+
+    auto* row = CCNode::create();
+    row->setAnchorPoint({0.f, 0.f});
+    row->setContentSize({width, kRowH});
+
+    auto* menu = rowMenu(row);
+    float const btnW = (width - kGap * 2.f) / 3.f;
+
+    auto add = [&](char const* text, int idx, paimon::ui::Btn skin,
+                   std::function<void()> action) {
+        auto* face = paimon::ui::makeButtonSprite(text, skin, btnW, 0.56f, "goldFont.fnt");
+        if (!face) return;
+        auto* btn = CCMenuItemExt::createSpriteExtra(face,
+            [action](CCMenuItemSpriteExtra*) { if (action) action(); });
+        btn->setPosition({
+            btnW * 0.5f + static_cast<float>(idx) * (btnW + kGap),
+            kRowH * 0.5f,
+        });
+        menu->addChild(btn);
+    };
+    add(t1, 0, paimon::ui::Btn::Green, std::move(cb1));
+    add(t2, 1, paimon::ui::Btn::Blue,  std::move(cb2));
+    add(t3, 2, paimon::ui::Btn::Gray,  std::move(cb3));
+
+    return row;
+}
+
+CCNode* makeDangerButtonRow(float width, char const* title, char const* desc,
+                            char const* buttonText, std::function<void()> onPress) {
+    constexpr float kPad = 6.f;
+    constexpr float kTitleH = 14.f;
+    float const textMaxW = std::max(40.f, width - 92.f);
+
+    CCLabelBMFont* descLbl = nullptr;
+    float descH = 0.f;
+    if (desc && desc[0] != '\0') {
+        descLbl = descLabel(desc, textMaxW);
+        descH = scaledHeight(descLbl) + 2.f;
+    }
+    float const rowH = std::max(kPad + kTitleH + descH + kPad, 38.f);
+
+    auto* row = plateRow(width, rowH);
+
+    auto* titleLbl = titleLabel(title, textMaxW);
+    titleLbl->setColor(kAccentDanger);
+    titleLbl->setPosition({11.f, rowH - kPad});
+    row->addChild(titleLbl);
+    if (descLbl) {
+        descLbl->setPosition({11.f, rowH - kPad - kTitleH - 1.f});
+        row->addChild(descLbl);
+    }
+
+    auto* menu = rowMenu(row);
+    auto* spr = ButtonSprite::create(buttonText, "goldFont.fnt", "GJ_button_06.png", 0.7f);
+    if (spr) spr->setScale(0.52f);
+    auto* btn = CCMenuItemExt::createSpriteExtra(spr,
+        [cb = std::move(onPress)](CCMenuItemSpriteExtra*) { if (cb) cb(); });
+    if (btn) {
+        btn->setPosition({width - 11.f - btn->getScaledContentSize().width * 0.5f, rowH * 0.5f});
+        menu->addChild(btn);
+    }
     return row;
 }
 
@@ -579,6 +670,7 @@ CCNode* makeThumb(float size, CCTexture2D* texture, ccColor3B fallback) {
         node->addChild(board, -1);
     }
     if (auto* sprite = CCSprite::createWithTexture(texture)) {
+        sprite->setBlendFunc({GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA});
         float const longest = std::max(sprite->getContentSize().width,
                                        sprite->getContentSize().height);
         if (longest > 0.f) sprite->setScale((size - 4.f) / longest);

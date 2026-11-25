@@ -41,7 +41,7 @@ private:
     void refreshMetaLabels();
     void setShape(RadialButtonShape shape);
     void setIcon(std::string frame);
-    void setColor(cocos2d::ccColor3B color);
+    void setButtonColor(cocos2d::ccColor3B color);
     void onChangeIcon(cocos2d::CCObject*);
     void onPickImage(cocos2d::CCObject*);
     void onEditSfx(cocos2d::CCObject*);

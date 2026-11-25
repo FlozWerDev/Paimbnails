@@ -26,7 +26,11 @@
 #include "../src/features/gif-import/services/GifGlowPass.cpp"
 #include "../src/features/gif-import/services/GifMotionPlanner.cpp"
 #include "../src/features/gif-import/services/GifPaintVectorizer.cpp"
+#include "../src/features/gif-import/services/GifSurfaceVectorizer.cpp"
+#include "../src/features/gif-import/services/GifSurfaceOptimizer.cpp"
+#include "../src/features/gif-import/services/GifPlanOptimizer.cpp"
 #include "../src/features/gif-import/services/ImageWatermark.cpp"
+#include "../src/features/gif-import/services/GifSmoothVectorizer.cpp"
 #include "../src/features/gif-import/services/GifImportPipeline.cpp"
 
 using namespace paimon::gifimport;
@@ -1026,18 +1030,22 @@ bool circleVectorizerHandlesDisconnectedComponents() {
 //     pintura debe detectar el angulo principal por la envolvente convexa.
 // un fondo opaco tambien debe permitir lados diagonales, sin reconstruir la
 // escalera con parches. se mide el resultado del pipeline, incluidas costuras.
-bool paintPrunesBoundaryTeeth() {
+bool paintPrunesCoveredPiecesAndKeepsVisibleEdges() {
     std::vector<Primitive> objects{
         {16.f, 16.f, 20.f, 20.f, 0.f, 0, PrimitiveKind::Circle, 0},
-        {23.5f, 22.5f, 1.f, 1.f, 0.f, 0, PrimitiveKind::Block, 1}
+        {20.5f, 20.5f, 1.f, 1.f, 0.f, 0, PrimitiveKind::Block, 1}
     };
     prunePaintObjects(objects, 32, 32);
-    std::cout << "paint-boundary-teeth: objects=" << objects.size() << '\n';
+    std::cout << "paint-covered-pieces: objects=" << objects.size() << '\n';
     if (objects.size() != 1 || objects.front().kind != PrimitiveKind::Circle) return false;
     // un detalle de otro color en el mismo punto debe conservarse.
-    objects.push_back({23.5f, 22.5f, 1.f, 1.f, 0.f, 1, PrimitiveKind::Block, 2});
+    objects.push_back({20.5f, 20.5f, 1.f, 1.f, 0.f, 1, PrimitiveKind::Block, 2});
     prunePaintObjects(objects, 32, 32);
-    return objects.size() == 2;
+    if (objects.size() != 2) return false;
+    // A same-color piece crossing the curved edge contributes real coverage.
+    objects.push_back({23.5f, 22.5f, 1.f, 1.f, 0.f, 0, PrimitiveKind::Block, 3});
+    prunePaintObjects(objects, 32, 32);
+    return objects.size() == 3;
 }
 
 bool paintSeparateDiscsStayRound() {
@@ -1327,9 +1335,9 @@ std::vector<std::uint8_t> paintMask(std::vector<int> const& cells, int size) {
     return mask;
 }
 
-// 31. un codo de 90 grados lleva disco y el pico exterior baja de 1 celda
-//     (sin disco pasa de 1.4), sin dejar huecos ni disparar los objetos.
-bool paintRoundJointCapsElbow() {
+// 31. Native ribbons cover a right-angle joint without spikes or gaps.
+// The fitting may choose shared block caps instead of adding a circle.
+bool paintJointCoversElbow() {
     constexpr int size = 40;
     std::vector<int> cells;
     for (int y = 17; y <= 20; ++y) {
@@ -1345,9 +1353,9 @@ bool paintRoundJointCapsElbow() {
     std::cout << "paint-elbow-joint: objects=" << objects.size()
               << " circles=" << stats.circles
               << " spike=" << spike << " missing=" << missing << '\n';
-    bool const pass = stats.circles >= 1 && spike < 1.f && missing == 0 &&
+    bool const pass = spike < 1.f && missing == 0 &&
         objects.size() <= 15;
-    if (!pass) std::cerr << "FAIL: elbow did not get a round joint cap\n";
+    if (!pass) std::cerr << "FAIL: elbow has a gap, spike or excessive objects\n";
     return pass;
 }
 
@@ -1375,10 +1383,8 @@ bool paintRoundJointLeavesRingClean() {
     return pass;
 }
 
-// 33. un zigzag de codos de 90 pone discos en los codos y el pico maximo
-//     baja, sin dejar huecos. los empalmes con angulo conocido tambien
-//     licitan aunque el punto sea muy agudo.
-bool paintRoundJointCoversZigzag() {
+// 33. Several right-angle joints keep coverage with bounded outer spikes.
+bool paintJointCoversZigzag() {
     constexpr int size = 40;
     std::vector<int> cells;
     auto bar = [&](int x0, int x1, int y0, int y1) {
@@ -1398,9 +1404,9 @@ bool paintRoundJointCoversZigzag() {
     std::cout << "paint-zigzag-joint: objects=" << objects.size()
               << " circles=" << stats.circles
               << " spike=" << spike << " missing=" << missing << '\n';
-    bool const pass = stats.circles >= 3 && spike < 1.6f && missing == 0 &&
+    bool const pass = spike < 1.6f && missing == 0 &&
         objects.size() <= 30;
-    if (!pass) std::cerr << "FAIL: zigzag elbows did not get round joints\n";
+    if (!pass) std::cerr << "FAIL: zigzag has a gap, spike or excessive objects\n";
     return pass;
 }
 
@@ -1488,7 +1494,7 @@ bool paintFragmentsJoinSteepSteps() {
     smoothPaintFragments(objects, cells, {0}, size, size);
     bool const rotated = std::any_of(objects.begin(), objects.end(), [](auto const& object) {
         return object.kind == PrimitiveKind::Stroke &&
-            std::abs(std::sin(object.rotation * kPi / 90.f)) > 0.1f;
+            std::abs(std::sin(object.rotation * paimon::gifimport::kPi / 90.f)) > 0.1f;
     });
     std::cout << "paint-fragment-steep: before=" << before << " after=" << objects.size() << '\n';
     return objects.size() < before && rotated && fragmentCentersMatch(objects, cells, size, size);
@@ -1686,12 +1692,26 @@ bool paintRoundFragmentsPreserveCoverage() {
     return roundedCases >= 10;
 }
 
-bool paintSmoothJointsRoundShallowBends() {
-    float const shallow = std::cos(24.f * kPi / 180.f);
-    return needsPaintRoundJoint(shallow, 1.f, false) &&
-        !needsPaintRoundJoint(shallow, 1.f, true) &&
-        !needsPaintRoundJoint(1.f, 3.f, false) &&
-        !needsPaintRoundJoint(shallow, 0.4f, false);
+bool paintSmoothJointsKeepSharedCaps() {
+    std::vector<int> positions;
+    for (int x = 2; x < 38; ++x) {
+        int const phase = x % 6;
+        int const y = 9 + (phase <= 3 ? phase : 6 - phase);
+        for (int offset = -1; offset <= 1; ++offset) positions.push_back((y + offset) * 40 + x);
+    }
+    auto smooth = vectorizePaint(positions, 40, 24, 0, 0, {}, {}, false);
+    auto pixel = vectorizePaint(positions, 40, 24, 0, 0, {}, {}, true);
+    if (!std::any_of(smooth.begin(), smooth.end(), [](auto const& object) { return std::abs(object.skew) > 1.f; }))
+        return false;
+    if (!std::all_of(pixel.begin(), pixel.end(), [](auto const& object) {
+            return object.kind == PrimitiveKind::Block && object.skew == 0.f;
+        })) return false;
+    auto const shapes = xformsOf(smooth);
+    return std::all_of(positions.begin(), positions.end(), [&](int position) {
+        return std::any_of(shapes.begin(), shapes.end(), [&](auto const& shape) {
+            return shape.contains(position % 40 + 0.5f, position / 40 + 0.5f);
+        });
+    });
 }
 
 bool paintRoundFragmentsKeepHiddenEnds() {
@@ -1801,10 +1821,10 @@ int main() {
     bool const p09 = paintModeFitsDiamondAsTiltedBox();
     bool const p10 = paintModeSineWaveCoverage();
     bool const p11 = paintModeMulticolorCurvesNoGaps();
-    bool const p15 = paintPrunesBoundaryTeeth();
-    bool const p16 = paintRoundJointCapsElbow();
+    bool const p15 = paintPrunesCoveredPiecesAndKeepsVisibleEdges();
+    bool const p16 = paintJointCoversElbow();
     bool const p17 = paintRoundJointLeavesRingClean();
-    bool const p18 = paintRoundJointCoversZigzag();
+    bool const p18 = paintJointCoversZigzag();
     bool const p14 = paintSeparateDiscsStayRound();
     bool const p13 = paintRepairsKeepLongDiagonal();
     bool const p12 = paintModeSmoothDiamondOverBackground();
@@ -1815,7 +1835,7 @@ int main() {
     bool const f05 = paintFragmentsUseRoundPatches();
     bool const f06 = paintFragmentsPreserveInteriorAndForeground();
     bool const f07 = paintRoundFragmentsPreserveCoverage();
-    bool const f08 = paintSmoothJointsRoundShallowBends();
+    bool const f08 = paintSmoothJointsKeepSharedCaps();
     bool const f09 = paintRoundFragmentsKeepHiddenEnds();
     bool const f10 = paintRoundCapsProtectForegroundSamples();
     bool const a01 = autoPaintKeepsSmallAndFlatSources();
@@ -1853,10 +1873,10 @@ int main() {
     if (!p09) std::cerr << "FAIL: paintModeFitsDiamondAsTiltedBox\n";
     if (!p10) std::cerr << "FAIL: paintModeSineWaveCoverage\n";
     if (!p11) std::cerr << "FAIL: paintModeMulticolorCurvesNoGaps\n";
-    if (!p15) std::cerr << "FAIL: paintPrunesBoundaryTeeth\n";
-    if (!p16) std::cerr << "FAIL: paintRoundJointCapsElbow\n";
+    if (!p15) std::cerr << "FAIL: paintPrunesCoveredPiecesAndKeepsVisibleEdges\n";
+    if (!p16) std::cerr << "FAIL: paintJointCoversElbow\n";
     if (!p17) std::cerr << "FAIL: paintRoundJointLeavesRingClean\n";
-    if (!p18) std::cerr << "FAIL: paintRoundJointCoversZigzag\n";
+    if (!p18) std::cerr << "FAIL: paintJointCoversZigzag\n";
     if (!p14) std::cerr << "FAIL: paintSeparateDiscsStayRound\n";
     if (!p13) std::cerr << "FAIL: paintRepairsKeepLongDiagonal\n";
     if (!p12) std::cerr << "FAIL: paintModeSmoothDiamondOverBackground\n";
@@ -1873,7 +1893,7 @@ int main() {
     if (!f05) std::cerr << "FAIL: paintFragmentsUseRoundPatches\n";
     if (!f06) std::cerr << "FAIL: paintFragmentsPreserveInteriorAndForeground\n";
     if (!f07) std::cerr << "FAIL: paintRoundFragmentsPreserveCoverage\n";
-    if (!f08) std::cerr << "FAIL: paintSmoothJointsRoundShallowBends\n";
+    if (!f08) std::cerr << "FAIL: paintSmoothJointsKeepSharedCaps\n";
     if (!f09) std::cerr << "FAIL: paintRoundFragmentsKeepHiddenEnds\n";
     if (!f10) std::cerr << "FAIL: paintRoundCapsProtectForegroundSamples\n";
     if (!a01) std::cerr << "FAIL: autoPaintKeepsSmallAndFlatSources\n";

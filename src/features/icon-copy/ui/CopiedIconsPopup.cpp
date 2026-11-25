@@ -150,6 +150,7 @@ void CopiedIconsPopup::rebuild() {
     }
 
     auto* scroll = ScrollLayer::create({kBodyWidth, kBodyHeight});
+    if (scroll) scroll->setAnchorPoint({0.f, 0.f});
     scroll->m_contentLayer->setContentSize({kBodyWidth, totalHeight});
     scroll->m_contentLayer->addChild(container);
     scroll->scrollToTop();

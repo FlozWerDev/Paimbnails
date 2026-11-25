@@ -1,6 +1,8 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "ProfilePicCustomizer.hpp"
 #include "ProfileShapes.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/ShapeStencil.hpp"
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/file.hpp>
@@ -17,12 +19,6 @@ bool canUseSpriteFrame(std::string const& frameName) {
     return paimon::SpriteHelper::safeCreateWithFrameName(frameName.c_str()) != nullptr;
 }
 
-void addDecorationIfAvailable(std::vector<NamedSprite>& out, char const* stem, char const* label) {
-    auto frameName = std::string(stem) + ".png";
-    if (canUseSpriteFrame(frameName)) {
-        out.emplace_back(std::move(frameName), label);
-    }
-}
 }
 
 ProfilePicCustomizer& ProfilePicCustomizer::get() {
@@ -45,7 +41,7 @@ void ProfilePicCustomizer::setConfig(ProfilePicConfig const& config) {
 }
 
 void ProfilePicCustomizer::save() {
-    auto savePath = Mod::get()->getSaveDir() / "profile_pic_config.json";
+    auto savePath = paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "profile_pic_config.json";
 
     matjson::Value root;
     root["scaleX"] = m_config.scaleX;
@@ -155,7 +151,7 @@ void ProfilePicCustomizer::save() {
     root["customIcons"] = customIconsArray;
     root["selectedCustomIconIndex"] = m_config.selectedCustomIconIndex;
 
-    auto res = geode::utils::file::writeStringSafe(savePath, root.dump());
+    auto res = geode::utils::file::writeStringSafe(paimon::paths::toSdkPath(savePath), root.dump());
     if (!res) {
         log::error("[ProfilePicCustomizer] Failed to save config: {}", res.unwrapErr());
         return;
@@ -165,42 +161,42 @@ void ProfilePicCustomizer::save() {
 }
 
 void ProfilePicCustomizer::load() {
-    auto savePath = Mod::get()->getSaveDir() / "profile_pic_config.json";
+    auto savePath = paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "profile_pic_config.json";
 
-    auto contentRes = geode::utils::file::readString(savePath);
+    auto contentRes = geode::utils::file::readString(paimon::paths::toSdkPath(savePath));
     if (!contentRes) return;
 
     auto parsed = matjson::parse(contentRes.unwrap());
     if (!parsed.isOk()) return;
     auto root = parsed.unwrap();
 
-    if (root.contains("scaleX")) m_config.scaleX = root["scaleX"].asDouble().unwrapOr(1.0);
-    if (root.contains("scaleY")) m_config.scaleY = root["scaleY"].asDouble().unwrapOr(1.0);
-    if (root.contains("size")) m_config.size = root["size"].asDouble().unwrapOr(120.0);
-    if (root.contains("rotation")) m_config.rotation = root["rotation"].asDouble().unwrapOr(0.0);
+    if (root.contains("scaleX")) m_config.scaleX = paimon::json::floatOr(root["scaleX"], 1.f);
+    if (root.contains("scaleY")) m_config.scaleY = paimon::json::floatOr(root["scaleY"], 1.f);
+    if (root.contains("size")) m_config.size = paimon::json::floatOr(root["size"], 120.f);
+    if (root.contains("rotation")) m_config.rotation = paimon::json::floatOr(root["rotation"], 0.f);
     if (root.contains("photoSource")) m_config.photoSource = root["photoSource"].asString().unwrapOr("custom");
     if (m_config.photoSource == "profile") {
         m_config.photoSource = m_config.photoPath.empty() ? "none" : "custom";
     }
     if (root.contains("photoPath")) m_config.photoPath = root["photoPath"].asString().unwrapOr("");
-    if (root.contains("imageZoom")) m_config.imageZoom = root["imageZoom"].asDouble().unwrapOr(1.0);
-    if (root.contains("imageRotation")) m_config.imageRotation = root["imageRotation"].asDouble().unwrapOr(0.0);
-    if (root.contains("imageOffsetX")) m_config.imageOffsetX = root["imageOffsetX"].asDouble().unwrapOr(0.0);
-    if (root.contains("imageOffsetY")) m_config.imageOffsetY = root["imageOffsetY"].asDouble().unwrapOr(0.0);
+    if (root.contains("imageZoom")) m_config.imageZoom = paimon::json::floatOr(root["imageZoom"], 1.f);
+    if (root.contains("imageRotation")) m_config.imageRotation = paimon::json::floatOr(root["imageRotation"], 0.f);
+    if (root.contains("imageOffsetX")) m_config.imageOffsetX = paimon::json::floatOr(root["imageOffsetX"], 0.f);
+    if (root.contains("imageOffsetY")) m_config.imageOffsetY = paimon::json::floatOr(root["imageOffsetY"], 0.f);
     if (root.contains("imageFlipX")) m_config.imageFlipX = root["imageFlipX"].asBool().unwrapOr(false);
     if (root.contains("imageFlipY")) m_config.imageFlipY = root["imageFlipY"].asBool().unwrapOr(false);
-    if (root.contains("imageOpacity")) m_config.imageOpacity = root["imageOpacity"].asDouble().unwrapOr(255.0);
+    if (root.contains("imageOpacity")) m_config.imageOpacity = paimon::json::floatOr(root["imageOpacity"], 255.f);
     if (root.contains("frameEnabled")) m_config.frameEnabled = root["frameEnabled"].asBool().unwrapOr(false);
     if (root.contains("stencilSprite")) m_config.stencilSprite = root["stencilSprite"].asString().unwrapOr("circle");
     m_config.stencilSprite = paimon::profile_shapes::canonicalId(m_config.stencilSprite);
 
     if (root.contains("frame")) {
         auto& f = root["frame"];
-        if (f.contains("colorR")) m_config.frame.color.r = f["colorR"].asInt().unwrapOr(255);
-        if (f.contains("colorG")) m_config.frame.color.g = f["colorG"].asInt().unwrapOr(255);
-        if (f.contains("colorB")) m_config.frame.color.b = f["colorB"].asInt().unwrapOr(255);
-        if (f.contains("opacity")) m_config.frame.opacity = f["opacity"].asDouble().unwrapOr(255.0);
-        if (f.contains("thickness")) m_config.frame.thickness = f["thickness"].asDouble().unwrapOr(4.0);
+        if (f.contains("colorR")) m_config.frame.color.r = static_cast<GLubyte>(paimon::json::integerOr<int>(f["colorR"], 255));
+        if (f.contains("colorG")) m_config.frame.color.g = static_cast<GLubyte>(paimon::json::integerOr<int>(f["colorG"], 255));
+        if (f.contains("colorB")) m_config.frame.color.b = static_cast<GLubyte>(paimon::json::integerOr<int>(f["colorB"], 255));
+        if (f.contains("opacity")) m_config.frame.opacity = paimon::json::floatOr(f["opacity"], 255.f);
+        if (f.contains("thickness")) m_config.frame.thickness = paimon::json::floatOr(f["thickness"], 4.f);
     }
 
     if (root.contains("decorations") && root["decorations"].isArray()) {
@@ -210,17 +206,17 @@ void ProfilePicCustomizer::load() {
         for (auto& d : decoArr.unwrap()) {
             PicDecoration deco;
             deco.spriteName = d["spriteName"].asString().unwrapOr("");
-            deco.posX = d["posX"].asDouble().unwrapOr(0.0);
-            deco.posY = d["posY"].asDouble().unwrapOr(0.0);
-            deco.scale = d["scale"].asDouble().unwrapOr(1.0);
-            deco.rotation = d["rotation"].asDouble().unwrapOr(0.0);
-            deco.color.r = d["colorR"].asInt().unwrapOr(255);
-            deco.color.g = d["colorG"].asInt().unwrapOr(255);
-            deco.color.b = d["colorB"].asInt().unwrapOr(255);
-            deco.opacity = d["opacity"].asDouble().unwrapOr(255.0);
+            deco.posX = paimon::json::floatOr(d["posX"], 0.f);
+            deco.posY = paimon::json::floatOr(d["posY"], 0.f);
+            deco.scale = paimon::json::floatOr(d["scale"], 1.f);
+            deco.rotation = paimon::json::floatOr(d["rotation"], 0.f);
+            deco.color.r = static_cast<GLubyte>(paimon::json::integerOr<int>(d["colorR"], 255));
+            deco.color.g = static_cast<GLubyte>(paimon::json::integerOr<int>(d["colorG"], 255));
+            deco.color.b = static_cast<GLubyte>(paimon::json::integerOr<int>(d["colorB"], 255));
+            deco.opacity = paimon::json::floatOr(d["opacity"], 255.f);
             deco.flipX = d["flipX"].asBool().unwrapOr(false);
             deco.flipY = d["flipY"].asBool().unwrapOr(false);
-            deco.zOrder = d["zOrder"].asInt().unwrapOr(0);
+            deco.zOrder = paimon::json::integerOr<int>(d["zOrder"], 0);
             if (!deco.spriteName.empty()) {
                 m_config.decorations.push_back(deco);
             }
@@ -231,7 +227,7 @@ void ProfilePicCustomizer::load() {
     if (root.contains("profileFont")) m_config.profileFont = root["profileFont"].asString().unwrapOr("goldFont.fnt");
 
     if (root.contains("hoverShader")) m_config.hoverShader = root["hoverShader"].asString().unwrapOr("none");
-    if (root.contains("hoverIntensity")) m_config.hoverIntensity = root["hoverIntensity"].asDouble().unwrapOr(1.0);
+    if (root.contains("hoverIntensity")) m_config.hoverIntensity = paimon::json::floatOr(root["hoverIntensity"], 1.f);
 
     if (root.contains("nameConfig")) {
         auto& n = root["nameConfig"];
@@ -239,50 +235,50 @@ void ProfilePicCustomizer::load() {
             if (!n.contains(key)) return fallback;
             auto& v = n[key];
             return cocos2d::ccColor3B{
-                static_cast<GLubyte>(v["r"].asInt().unwrapOr(fallback.r)),
-                static_cast<GLubyte>(v["g"].asInt().unwrapOr(fallback.g)),
-                static_cast<GLubyte>(v["b"].asInt().unwrapOr(fallback.b))
+                static_cast<GLubyte>(paimon::json::integerOr<int>(v["r"], fallback.r)),
+                static_cast<GLubyte>(paimon::json::integerOr<int>(v["g"], fallback.g)),
+                static_cast<GLubyte>(paimon::json::integerOr<int>(v["b"], fallback.b))
             };
         };
         auto& nc = m_config.nameConfig;
         nc.enabled = n["enabled"].asBool().unwrapOr(nc.enabled);
         nc.color = readCol("color", nc.color);
-        nc.gradientMode = n["gradientMode"].asInt().unwrapOr(nc.gradientMode);
+        nc.gradientMode = paimon::json::integerOr<int>(n["gradientMode"], nc.gradientMode);
         nc.gradA = readCol("gradA", nc.gradA);
         nc.gradB = readCol("gradB", nc.gradB);
         nc.gradC = readCol("gradC", nc.gradC);
         nc.gradAnim = n["gradAnim"].asString().unwrapOr(nc.gradAnim);
-        nc.gradSpeed = n["gradSpeed"].asDouble().unwrapOr(nc.gradSpeed);
+        nc.gradSpeed = paimon::json::floatOr(n["gradSpeed"], nc.gradSpeed);
         nc.outline = n["outline"].asBool().unwrapOr(nc.outline);
         nc.outlineColor = readCol("outlineColor", nc.outlineColor);
         nc.glow = n["glow"].asBool().unwrapOr(nc.glow);
         nc.glowColor = readCol("glowColor", nc.glowColor);
         nc.letterAnim = n["letterAnim"].asString().unwrapOr(nc.letterAnim);
-        nc.letterSpeed = n["letterSpeed"].asDouble().unwrapOr(nc.letterSpeed);
-        nc.letterAmount = n["letterAmount"].asDouble().unwrapOr(nc.letterAmount);
+        nc.letterSpeed = paimon::json::floatOr(n["letterSpeed"], nc.letterSpeed);
+        nc.letterAmount = paimon::json::floatOr(n["letterAmount"], nc.letterAmount);
     }
 
     if (root.contains("onlyIconMode")) m_config.onlyIconMode = root["onlyIconMode"].asBool().unwrapOr(false);
     if (root.contains("iconConfig")) {
         auto& ic = root["iconConfig"];
-        if (ic.contains("iconId")) m_config.iconConfig.iconId = ic["iconId"].asInt().unwrapOr(0);
-        if (ic.contains("iconType")) m_config.iconConfig.iconType = ic["iconType"].asInt().unwrapOr(0);
-        if (ic.contains("color1R")) m_config.iconConfig.color1.r = ic["color1R"].asInt().unwrapOr(255);
-        if (ic.contains("color1G")) m_config.iconConfig.color1.g = ic["color1G"].asInt().unwrapOr(255);
-        if (ic.contains("color1B")) m_config.iconConfig.color1.b = ic["color1B"].asInt().unwrapOr(255);
-        if (ic.contains("color2R")) m_config.iconConfig.color2.r = ic["color2R"].asInt().unwrapOr(255);
-        if (ic.contains("color2G")) m_config.iconConfig.color2.g = ic["color2G"].asInt().unwrapOr(255);
-        if (ic.contains("color2B")) m_config.iconConfig.color2.b = ic["color2B"].asInt().unwrapOr(255);
+        if (ic.contains("iconId")) m_config.iconConfig.iconId = paimon::json::integerOr<int>(ic["iconId"], 0);
+        if (ic.contains("iconType")) m_config.iconConfig.iconType = paimon::json::integerOr<int>(ic["iconType"], 0);
+        if (ic.contains("color1R")) m_config.iconConfig.color1.r = static_cast<GLubyte>(paimon::json::integerOr<int>(ic["color1R"], 255));
+        if (ic.contains("color1G")) m_config.iconConfig.color1.g = static_cast<GLubyte>(paimon::json::integerOr<int>(ic["color1G"], 255));
+        if (ic.contains("color1B")) m_config.iconConfig.color1.b = static_cast<GLubyte>(paimon::json::integerOr<int>(ic["color1B"], 255));
+        if (ic.contains("color2R")) m_config.iconConfig.color2.r = static_cast<GLubyte>(paimon::json::integerOr<int>(ic["color2R"], 255));
+        if (ic.contains("color2G")) m_config.iconConfig.color2.g = static_cast<GLubyte>(paimon::json::integerOr<int>(ic["color2G"], 255));
+        if (ic.contains("color2B")) m_config.iconConfig.color2.b = static_cast<GLubyte>(paimon::json::integerOr<int>(ic["color2B"], 255));
         if (ic.contains("glowEnabled")) m_config.iconConfig.glowEnabled = ic["glowEnabled"].asBool().unwrapOr(false);
-        if (ic.contains("glowColorR")) m_config.iconConfig.glowColor.r = ic["glowColorR"].asInt().unwrapOr(255);
-        if (ic.contains("glowColorG")) m_config.iconConfig.glowColor.g = ic["glowColorG"].asInt().unwrapOr(255);
-        if (ic.contains("glowColorB")) m_config.iconConfig.glowColor.b = ic["glowColorB"].asInt().unwrapOr(0);
-        if (ic.contains("colorSource")) m_config.iconConfig.colorSource = static_cast<IconColorSource>(ic["colorSource"].asInt().unwrapOr(0));
-        if (ic.contains("glowColorSource")) m_config.iconConfig.glowColorSource = static_cast<IconColorSource>(ic["glowColorSource"].asInt().unwrapOr(0));
-        if (ic.contains("scale")) m_config.iconConfig.scale = ic["scale"].asDouble().unwrapOr(1.0);
-        if (ic.contains("animationType")) m_config.iconConfig.animationType = ic["animationType"].asInt().unwrapOr(0);
-        if (ic.contains("animationSpeed")) m_config.iconConfig.animationSpeed = ic["animationSpeed"].asDouble().unwrapOr(1.0);
-        if (ic.contains("animationAmount")) m_config.iconConfig.animationAmount = ic["animationAmount"].asDouble().unwrapOr(1.0);
+        if (ic.contains("glowColorR")) m_config.iconConfig.glowColor.r = static_cast<GLubyte>(paimon::json::integerOr<int>(ic["glowColorR"], 255));
+        if (ic.contains("glowColorG")) m_config.iconConfig.glowColor.g = static_cast<GLubyte>(paimon::json::integerOr<int>(ic["glowColorG"], 255));
+        if (ic.contains("glowColorB")) m_config.iconConfig.glowColor.b = static_cast<GLubyte>(paimon::json::integerOr<int>(ic["glowColorB"], 0));
+        if (ic.contains("colorSource")) m_config.iconConfig.colorSource = static_cast<IconColorSource>(paimon::json::integerOr<int>(ic["colorSource"], 0));
+        if (ic.contains("glowColorSource")) m_config.iconConfig.glowColorSource = static_cast<IconColorSource>(paimon::json::integerOr<int>(ic["glowColorSource"], 0));
+        if (ic.contains("scale")) m_config.iconConfig.scale = paimon::json::floatOr(ic["scale"], 1.f);
+        if (ic.contains("animationType")) m_config.iconConfig.animationType = paimon::json::integerOr<int>(ic["animationType"], 0);
+        if (ic.contains("animationSpeed")) m_config.iconConfig.animationSpeed = paimon::json::floatOr(ic["animationSpeed"], 1.f);
+        if (ic.contains("animationAmount")) m_config.iconConfig.animationAmount = paimon::json::floatOr(ic["animationAmount"], 1.f);
         if (ic.contains("iconImageEnabled")) m_config.iconConfig.iconImageEnabled = ic["iconImageEnabled"].asBool().unwrapOr(false);
         if (ic.contains("iconImagePath")) m_config.iconConfig.iconImagePath = ic["iconImagePath"].asString().unwrapOr("");
     }
@@ -302,7 +298,7 @@ void ProfilePicCustomizer::load() {
             }
         }
     }
-    if (root.contains("selectedCustomIconIndex")) m_config.selectedCustomIconIndex = root["selectedCustomIconIndex"].asInt().unwrapOr(-1);
+    if (root.contains("selectedCustomIconIndex")) m_config.selectedCustomIconIndex = paimon::json::integerOr<int>(root["selectedCustomIconIndex"], -1);
 
     log::info("[ProfilePicCustomizer] Config loaded ({} decorations)", m_config.decorations.size());
 }

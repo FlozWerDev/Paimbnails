@@ -1,7 +1,10 @@
 #include <Geode/modify/LevelPage.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 #include <Geode/binding/GJGameLevel.hpp>
 #include <Geode/utils/cocos.hpp>
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
+#include "../features/official-slots/services/SlotLevels.hpp"
+#include "../features/audio/services/AudioContextCoordinator.hpp"
 #include "../core/modules/ModuleRegistry.hpp"
 #include "../managers/ThumbnailAPI.hpp"
 #include "../utils/Assets.hpp"
@@ -27,7 +30,26 @@ class $modify(PaimonLevelPage, LevelPage) {
         float m_cycleTimer = 0.f;
         int m_cycleToken = 0;
         int m_invalidationListenerId = 0;
+        int m_galleryMisses = 0;
     };
+
+    $override
+    bool init(GJGameLevel* level) {
+        if (!LevelPage::init(level)) return false;
+        this->addOnExitCallback([this] {
+            this->handleExit();
+            return true;
+        });
+        return true;
+    }
+
+    $override
+    void playStep2() {
+        // officials and custom pages release the preview before loadMusic;
+        // doing this only in PlayLayer::init can stop an already preloaded song.
+        AudioContextCoordinator::get().prepareGameplayAudio(m_level);
+        LevelPage::playStep2();
+    }
 
     $override
     void updateDynamicPage(GJGameLevel* level) {
@@ -35,11 +57,13 @@ class $modify(PaimonLevelPage, LevelPage) {
         
         if (!level) return;
         
-        if (m_fields->m_levelID > 0 && m_fields->m_levelID != level->m_levelID) {
+        int const thumbnailId = paimon::officialslots::pageSourceLevelId(level);
+        if (m_fields->m_levelID > 0 && m_fields->m_levelID != thumbnailId) {
             ThumbnailLoader::get().cancelLoad(m_fields->m_levelID);
         }
         
-        m_fields->m_levelID = level->m_levelID;
+        m_fields->m_levelID = thumbnailId;
+        ++m_fields->m_cycleToken;
         m_fields->m_cycleTimer = 0.f;
         m_fields->m_currentThumbnailIndex = 0;
         this->unschedule(schedule_selector(PaimonLevelPage::updateGalleryCycle));
@@ -50,12 +74,10 @@ class $modify(PaimonLevelPage, LevelPage) {
                 auto ref = safeRef.lock();
                 auto* self = static_cast<PaimonLevelPage*>(ref.data());
                 if (!self || !self->getParent()) return;
-                if (!self->m_level || self->m_level->m_levelID != invalidLevelID) return;
+                if (paimon::officialslots::pageSourceLevelId(self->m_level) != invalidLevelID) return;
                 self->updateDynamicPage(self->m_level);
             });
         }
-        
-        if (level->m_levelID <= 0) return;
         
         if (this->m_levelDisplay) {
             // reset to vanilla preview first; replacement fades in when ready
@@ -72,9 +94,9 @@ class $modify(PaimonLevelPage, LevelPage) {
                 }
             }
 
-            if (!paimon::modules::isEnabled("paimbnails.thumbnails.browser")) return;
+            if (thumbnailId <= 0 || !paimon::modules::isEnabled("paimbnails.thumbnails.browser")) return;
 
-            int capturedLevelID = level->m_levelID;
+            int capturedLevelID = thumbnailId;
             int token = ++m_fields->m_cycleToken;
             Ref<LevelPage> safeRef = this;
             ThumbnailAPI::get().getThumbnails(capturedLevelID, [safeRef, capturedLevelID, token](bool success, std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbs) {
@@ -83,6 +105,7 @@ class $modify(PaimonLevelPage, LevelPage) {
 
                 if (success && !thumbs.empty()) {
                     self->m_fields->m_thumbnails = thumbs;
+                    self->m_fields->m_galleryMisses = 0;
                     self->loadThumbnailAt(0);
                     if (thumbs.size() >= 2 && Mod::get()->getSavedValue<bool>("levelcell-gallery-autocycle", true)) {
                         self->schedule(schedule_selector(PaimonLevelPage::updateGalleryCycle), 0.f);
@@ -100,15 +123,13 @@ class $modify(PaimonLevelPage, LevelPage) {
         }
     }
 
-    $override
-    void onExit() {
+    void handleExit() {
         this->unschedule(schedule_selector(PaimonLevelPage::updateGalleryCycle));
         if (m_fields->m_invalidationListenerId != 0) {
             ThumbnailLoader::get().removeInvalidationListener(m_fields->m_invalidationListenerId);
             m_fields->m_invalidationListenerId = 0;
         }
         m_fields->m_cycleToken++;
-        LevelPage::onExit();
     }
 
     void updateGalleryCycle(float dt) {
@@ -136,8 +157,10 @@ class $modify(PaimonLevelPage, LevelPage) {
             auto* self = static_cast<PaimonLevelPage*>(safeRef.data());
             if (!self->getParent() || self->m_fields->m_cycleToken != token || self->m_fields->m_levelID != capturedLevelID) return;
             if (success && tex) {
+                self->m_fields->m_galleryMisses = 0;
                 self->applyThumbnail(tex);
-            } else if (self->m_fields->m_thumbnails.size() > 1) {
+            } else if (self->m_fields->m_thumbnails.size() > 1
+                && ++self->m_fields->m_galleryMisses < 3) {
                 self->loadThumbnailAt((attemptIndex + 1) % static_cast<int>(self->m_fields->m_thumbnails.size()));
             }
         });
@@ -163,6 +186,8 @@ class $modify(PaimonLevelPage, LevelPage) {
         clipper->setAnchorPoint({0.5f, 0.5f});
         clipper->setPosition(boxSize / 2);
 
+        // a 0-size texture would make the scale inf and poison the transform.
+        if (sprite->getContentSize().width <= 0.f || sprite->getContentSize().height <= 0.f) return;
         float scaleX = boxSize.width / sprite->getContentSize().width;
         float scaleY = boxSize.height / sprite->getContentSize().height;
         float scale = std::max(scaleX, scaleY);
@@ -182,7 +207,7 @@ class $modify(PaimonLevelPage, LevelPage) {
         darkOverlay->setPosition(boxSize / 2);
         clipper->addChild(darkOverlay, 2);
 
-        // behind vanilla labels
+        // negative z-order (-1) keeps thumbnail and dark overlay behind vanilla level title, difficulty face, and star labels.
         clipper->setID("paimbnails-clipper"_spr);
         m_levelDisplay->addChild(clipper, -1);
 

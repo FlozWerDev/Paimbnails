@@ -7,6 +7,7 @@
 #include "../../core/modules/ModuleRegistry.hpp"
 #include "../../core/RuntimeLifecycle.hpp"
 #include "../../utils/MainThreadDelay.hpp"
+#include "../../utils/Utf8Cut.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -66,14 +67,6 @@ std::string trimCopy(std::string value) {
         value.pop_back();
     }
     return value;
-}
-
-// trim utf-8 by code point so saved queue json stays valid.
-void clampUtf8(std::string& text, size_t limit) {
-    if (text.size() <= limit) return;
-    size_t cut = limit;
-    while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80) --cut;
-    text.resize(cut);
 }
 
 // migrate legacy channel values into per-platform settings.
@@ -327,7 +320,7 @@ std::string TwitchRequestManager::commandsSetting(Platform platform) const {
 
 void TwitchRequestManager::setCommandsSetting(Platform platform, std::string value) {
     value = trimCopy(std::move(value));
-    clampUtf8(value, 400);
+    paimon::utf8::clampToLimit(value, 400);
     auto& commands = m_routing.platforms[static_cast<size_t>(platform)].commands;
     if (commands == value) return;
     commands = std::move(value);
@@ -337,7 +330,7 @@ void TwitchRequestManager::setCommandsSetting(Platform platform, std::string val
 void TwitchRequestManager::setRouting(RequestRoutingConfig config) {
     for (auto& platform : config.platforms) {
         platform.commands = trimCopy(std::move(platform.commands));
-        clampUtf8(platform.commands, 400);
+        paimon::utf8::clampToLimit(platform.commands, 400);
         platform.queue = normalizeQueueName(platform.queue);
     }
     std::vector<RequestRoute> routes;
@@ -693,7 +686,7 @@ void TwitchRequestManager::addRequest(
         m_lastRewardID = incoming.rewardID;
         ++m_rewardDetectionRevision;
         m_lastRewardText = incoming.text;
-        clampUtf8(m_lastRewardText, 300);
+        paimon::utf8::clampToLimit(m_lastRewardText, 300);
         if (!m_routing.pointsEnabled) {
             m_lastIntakeStatus = "Canje detectado; activa puntos y vincula su destino";
             return;
@@ -720,7 +713,7 @@ void TwitchRequestManager::addRequest(
     if (!incoming.messageID.empty()) {
         incoming.messageID = std::string(platformKey(platform)) + ':'
             + channel(platform) + ':' + incoming.messageID;
-        clampUtf8(incoming.messageID, 300);
+        paimon::utf8::clampToLimit(incoming.messageID, 300);
         if (std::ranges::any_of(m_requests, [&incoming](LevelRequest const& request) {
             return request.eventID == incoming.messageID;
         })) return;
@@ -783,23 +776,23 @@ std::string TwitchRequestManager::enqueueRequest(
 
     requester = trimCopy(std::move(requester));
     if (requester.empty()) requester = platformName(platform);
-    clampUtf8(requester, 64);
-    clampUtf8(message, 1500);
-    clampUtf8(parsed.description, 1000);
-    clampUtf8(metadata.userID, 128);
-    clampUtf8(metadata.messageID, 300);
+    paimon::utf8::clampToLimit(requester, 64);
+    paimon::utf8::clampToLimit(message, 1500);
+    paimon::utf8::clampToLimit(parsed.description, 1000);
+    paimon::utf8::clampToLimit(metadata.userID, 128);
+    paimon::utf8::clampToLimit(metadata.messageID, 300);
     parsed.url = trimCopy(std::move(parsed.url));
     if (!isValidVideoUrl(parsed.url)) parsed.url.clear();
 
     if (m_filters.verifiedOnly && !requesterVerified) return "unverified";
-    if (m_filters.blockDuplicates
-        && std::ranges::any_of(m_requests, [id = parsed.levelID, &queue](LevelRequest const& request) {
-            return request.queue == queue && request.levelID == id;
-        })) {
-        return "duplicate";
-    }
+    LevelRequest request;
+    request.levelID = parsed.levelID;
+    request.queue = std::move(queue);
+    auto const error = validateQueueInsert(m_requests, request,
+        {static_cast<size_t>(maxQueueSize()), m_filters.blockDuplicates});
+    if (!error.empty()) return std::string(error);
 
-    auto const userKey = userQueueKey(platform, requester, metadata.userID, queue);
+    auto const userKey = userQueueKey(platform, requester, metadata.userID, request.queue);
     if (m_filters.maxPerUser > 0) {
         int const pending = static_cast<int>(std::ranges::count_if(
             m_requests, [&userKey](LevelRequest const& request) {
@@ -818,36 +811,60 @@ std::string TwitchRequestManager::enqueueRequest(
         }
     }
 
-    if (static_cast<int>(m_requests.size()) >= maxQueueSize()) return "full";
     // known levels that fail filters never enter the queue.
     if (auto passes = requestPasses(parsed.levelID, !parsed.url.empty()); passes && !*passes) return "filtered";
 
-    LevelRequest request;
-    request.entryID = m_nextEntryID++;
-    request.levelID = parsed.levelID;
     request.webRequestID = std::move(webRequestID);
     request.requesterAccountID = requesterVerified ? requesterAccountID : 0;
     request.requester = std::move(requester);
     request.requesterVerified = requesterVerified;
     request.message = std::move(message);
     request.description = std::move(parsed.description);
-    request.queue = std::move(queue);
     request.command = std::move(parsed.command);
     request.rewardID = std::move(metadata.rewardID);
     request.sourceName = std::move(sourceName);
     request.eventID = std::move(metadata.messageID);
     request.userID = std::move(metadata.userID);
-    request.receivedAt = now;
     request.videoUrl = std::move(parsed.url);
     request.platform = platform;
+    m_lastRequestAt[userKey] = now;
+    appendRequest(std::move(request));
+    return {};
+}
+
+std::string TwitchRequestManager::addManualRequest(std::string_view body, std::string requester) {
+    auto parsed = parseRequestBody(body);
+    if (!parsed) return "invalid";
+
+    LevelRequest request;
+    request.levelID = parsed->levelID;
+    request.queue = m_selectedQueue.empty() ? "General" : m_selectedQueue;
+    auto const error = validateQueueInsert(m_requests, request,
+        {static_cast<size_t>(maxQueueSize()), m_filters.blockDuplicates});
+    if (!error.empty()) return std::string(error);
+    if (auto passes = requestPasses(request.levelID, !parsed->url.empty()); passes && !*passes) return "filtered";
+
+    request.requester = trimCopy(std::move(requester));
+    if (request.requester.empty()) request.requester = "Streamer";
+    paimon::utf8::clampToLimit(request.requester, 64);
+    request.description = std::move(parsed->description);
+    paimon::utf8::clampToLimit(request.description, 1000);
+    request.videoUrl = std::move(parsed->url);
+    request.sourceName = "Manual";
+    request.platform = m_selected;
+    appendRequest(std::move(request));
+    return {};
+}
+
+void TwitchRequestManager::appendRequest(LevelRequest request) {
+    request.entryID = m_nextEntryID++;
+    request.receivedAt = unixTime();
     rememberEvent(request.eventID);
     m_requests.push_back(std::move(request));
-    m_lastRequestAt[userKey] = now;
     ++m_session.received;
     ++m_queueRevision;
     saveQueue();
     showRequestNotify(m_requests.back());
-    return {};
 }
 
 void TwitchRequestManager::setAccepting(bool accepting) {
@@ -905,6 +922,27 @@ void TwitchRequestManager::setFilters(RequestFilters filters) {
 size_t TwitchRequestManager::pendingCount() const {
     return static_cast<size_t>(std::ranges::count_if(m_requests,
         [this](LevelRequest const& request) { return inSelectedQueue(request) && !request.played; }));
+}
+
+size_t TwitchRequestManager::reviewedCount() const {
+    return selectedRequestCount() - pendingCount();
+}
+
+size_t TwitchRequestManager::removeReviewed() {
+    auto const removed = removeReviewedRequests(m_requests, m_selectedQueue);
+    if (removed > 0) {
+        ++m_queueRevision;
+        saveQueue();
+    }
+    return removed;
+}
+
+std::vector<int> TwitchRequestManager::pendingLevelIDs() const {
+    return paimon::twitch::pendingLevelIDs(m_requests, m_selectedQueue);
+}
+
+std::optional<size_t> TwitchRequestManager::indexForEntry(int64_t entryID) const {
+    return requestIndexByEntryID(m_requests, entryID);
 }
 
 size_t TwitchRequestManager::filteredCount() const {
@@ -988,6 +1026,19 @@ void TwitchRequestManager::remove(size_t index) {
     ++m_session.removed;
     ++m_queueRevision;
     saveQueue();
+}
+
+bool TwitchRequestManager::restore(LevelRequest request, size_t index) {
+    if (request.entryID <= 0 || requestIndexByEntryID(m_requests, request.entryID)) return false;
+    if (!validateQueueInsert(m_requests, request,
+            {static_cast<size_t>(maxQueueSize()), m_filters.blockDuplicates}).empty()) return false;
+
+    index = std::min(index, m_requests.size());
+    m_requests.insert(m_requests.begin() + static_cast<std::ptrdiff_t>(index), std::move(request));
+    if (m_session.removed > 0) --m_session.removed;
+    ++m_queueRevision;
+    saveQueue();
+    return true;
 }
 
 void TwitchRequestManager::moveToFront(size_t index) {
@@ -1102,11 +1153,11 @@ void TwitchRequestManager::loadQueue() {
                 }
             }
         }
-        clampUtf8(request.requester, 64);
-        clampUtf8(request.message, 1500);
-        clampUtf8(request.description, 1000);
-        clampUtf8(request.eventID, 300);
-        clampUtf8(request.userID, 128);
+        paimon::utf8::clampToLimit(request.requester, 64);
+        paimon::utf8::clampToLimit(request.message, 1500);
+        paimon::utf8::clampToLimit(request.description, 1000);
+        paimon::utf8::clampToLimit(request.eventID, 300);
+        paimon::utf8::clampToLimit(request.userID, 128);
         rememberEvent(request.eventID);
         if (request.receivedAt > 0) {
             auto const key = userQueueKey(request.platform, request.requester, request.userID, request.queue);

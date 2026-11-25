@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "CustomSliderPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../hooks/SliderThumbHook.hpp"
@@ -21,9 +22,7 @@ namespace kit = paimon::configkit;
 const char* kIconTypeNames[] = { "Cubo", "Nave", "Bola", "OVNI", "Onda", "Robot", "Arana", "Swing" };
 constexpr int kIconTypeCount = 8;
 const char* kModeNames[] = { "Icono", "Imagen", "GIF" };
-constexpr int kModeCount = 3;
 const char* kAnimTypeNames[] = { "Ninguna", "Rebote", "Girar", "Ambas" };
-constexpr int kAnimTypeCount = 4;
 }
 
 CustomSliderPopup* CustomSliderPopup::create() {
@@ -214,7 +213,7 @@ std::vector<CCNode*> CustomSliderPopup::buildBasicCards(float scrollW, float inn
     } else {
         std::string fileName = cfg.customImagePath.empty()
             ? "Ningun archivo elegido"
-            : geode::utils::string::pathToString(
+            : paimon::paths::toUtf8(
                   std::filesystem::path(cfg.customImagePath).filename());
         if (fileName.size() > 28) fileName = fileName.substr(0, 25) + "...";
 
@@ -408,7 +407,7 @@ void CustomSliderPopup::onPickImage() {
         auto dest = CustomSliderManager::get().imagesDir() / path.filename();
         std::error_code ec;
         std::filesystem::copy_file(path, dest, std::filesystem::copy_options::overwrite_existing, ec);
-        cfg.customImagePath = ec ? geode::utils::string::pathToString(path) : geode::utils::string::pathToString(dest);
+        cfg.customImagePath = ec ? paimon::paths::toUtf8(path) : paimon::paths::toUtf8(dest);
         CustomSliderManager::get().invalidateImageCache();
         auto* p = static_cast<CustomSliderPopup*>(popup.data());
         p->reapplyAllSliders();

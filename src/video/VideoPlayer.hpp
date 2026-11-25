@@ -71,6 +71,12 @@ public:
 
     void releaseGPUResolveCache();
 
+    // main thread only. drops every gl object (rgba/yuv textures, resolve
+    // target, readback fbo, pbos) before gamemanager recreates the context;
+    // cpu-side frame state is kept so playback resumes on the next update.
+    void invalidateGLResources();
+    uint64_t getGLGeneration() const;
+
     // audio api kept for layerbackgroundmanager compatibility.
     void fadeAudioIn(float duration = 0.5f);
     void fadeAudioOut(float duration = 0.5f, std::function<void()> onComplete = nullptr);
@@ -81,6 +87,11 @@ public:
 private:
     VideoPlayer() = default;
     bool init(const std::string& videoPath, const VideoPlayerCreateOptions& options);
+
+    // stepped volume ramp on the main thread; a newer fade (or a stop) bumps
+    // the generation and owns the track from then on.
+    void runAudioFade(float duration, std::function<float(float)> volumeAt,
+                      std::function<void()> onFinish);
 
     void initTexture(int width, int height);
     void initYUVTextures(int width, int height);
@@ -132,6 +143,7 @@ private:
     double m_timeSinceLastUpload = 0.0;
     double m_timeSincePlay = 0.0;
     uint64_t m_frameCounter = 0;
+    uint64_t m_loopFrameAtLastRestart = ~0ull;
 
     // avoid duplicate updates when several nodes share a player.
     unsigned int m_lastUpdateFrame = 0;
@@ -153,6 +165,8 @@ private:
     GLint m_locCS = -1;
     float m_colorSpace = 0.0f;  // 0=bt.601, 1=bt.709
     uint64_t m_resolvedAtFrame = 0;
+    // bumped by invalidateGLResources on the main thread; observers rebind.
+    uint64_t m_glGeneration = 0;
     mutable GLuint m_readbackFBO = 0;
     bool ensureResolveTarget();
     bool resolveYUVToRGBA();

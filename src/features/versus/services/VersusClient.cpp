@@ -18,7 +18,7 @@ namespace {
 
 constexpr char const* kDefaultBase = "https://vs-paimbnails.vercel.app";
 constexpr char const* kLegacyBase = "https://paimon-versus.vercel.app";
-constexpr auto kTimeout = std::chrono::seconds(12);
+constexpr auto kTimeout = asp::Duration::fromSecs(12);
 
 std::string trimSlash(std::string url) {
     while (!url.empty() && url.back() == '/') url.pop_back();

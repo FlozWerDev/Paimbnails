@@ -104,7 +104,7 @@ void fadeInTree(CCNode* root, float duration) {
 }
 
 void fadeOutTree(CCNode* root, float duration) {
-    if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(root)) {
+    if (typeinfo_cast<CCRGBAProtocol*>(root)) {
         root->stopAllActions();
         root->runAction(CCFadeTo::create(duration, 0));
     }
@@ -696,6 +696,7 @@ bool CollabPeersPopup::init() {
         Anchor::Center, {0.f, -8.f});
 
     m_scroll = ScrollLayer::create({kScrollW, kScrollH});
+    if (m_scroll) m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setPosition({kScrollX, kScrollY});
     m_mainLayer->addChild(m_scroll);
 
@@ -972,7 +973,7 @@ bool CollabInvitePopup::init() {
 
     m_search = TextInput::create(kScrollW - 42.f, "Buscar amigo...", "chatFont.fnt");
     m_search->setMaxCharCount(20);
-    m_search->setTextAlign(TextInputAlign::Left);
+    m_search->setAlignment(Label::Alignment::Left);
     m_search->setPosition({kScrollX + 32.f + (kScrollW - 42.f) / 2.f, searchY});
     m_search->setCallback([this](std::string const&) { rebuildRows(); });
     m_mainLayer->addChild(m_search, 5);
@@ -985,6 +986,7 @@ bool CollabInvitePopup::init() {
     m_mainLayer->addChild(bg);
 
     m_scroll = ScrollLayer::create({kScrollW, kScrollH});
+    if (m_scroll) m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setPosition({kScrollX, kScrollY});
     m_mainLayer->addChild(m_scroll);
 
@@ -1210,6 +1212,7 @@ bool CollabChatPopup::init() {
     m_mainLayer->addChildAtPosition(makeCard(kChatW + 8.f, kChatH + 8.f), Anchor::Center, {0.f, 16.f});
 
     m_scroll = ScrollLayer::create({kChatW, kChatH});
+    if (m_scroll) m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setPosition({(m_mainLayer->getContentWidth() - kChatW) / 2.f, 82.f});
     m_mainLayer->addChild(m_scroll, 1);
 

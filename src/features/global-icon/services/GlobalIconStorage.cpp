@@ -1,14 +1,19 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "GlobalIconStorage.hpp"
 #include "GlobalIconClient.hpp"
+#include "CachePathPolicy.hpp"
 #include "../../../framework/compat/ModCompat.hpp"
+#include "../../../utils/AtomicFileWrite.hpp"
 #include "../../../utils/Debug.hpp"
+#include "../../../utils/FormatDetect.hpp"
 
-#define MORE_ICONS_EVENTS
-#include <hiimjustin000.more_icons/include/MoreIcons.hpp>
+#include "../../../framework/compat/MoreIconsAPI.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <fstream>
 #include <memory>
+#include <span>
 #include <system_error>
 
 using namespace geode::prelude;
@@ -23,16 +28,36 @@ namespace {
     }
 
     bool writeFile(std::filesystem::path const& path, std::vector<uint8_t> const& data) {
-        std::ofstream out(path, std::ios::binary | std::ios::trunc);
-        if (!out) return false;
-        out.write(reinterpret_cast<char const*>(data.data()), static_cast<std::streamsize>(data.size()));
-        return out.good();
+        return paimon::file::writeAtomically(
+            path, std::span<uint8_t const>(data.data(), data.size()));
     }
 
     bool fileExists(std::filesystem::path const& path) {
         if (path.empty()) return false;
         std::error_code ec;
         return std::filesystem::exists(path, ec) && !ec;
+    }
+
+    bool hasPrefix(std::filesystem::path const& path, std::string_view prefix) {
+        std::ifstream in(path, std::ios::binary);
+        if (!in) return false;
+        char header[8]{};
+        in.read(header, sizeof(header));
+        auto const read = static_cast<size_t>(in.gcount());
+        return read >= prefix.size()
+            && std::equal(prefix.begin(), prefix.end(), header);
+    }
+
+    bool validCachedFile(std::filesystem::path const& path) {
+        auto ext = geode::utils::string::toLower(
+            paimon::paths::toUtf8(path.extension()));
+        if (ext == ".png") {
+            return hasPrefix(path, std::string_view("\x89PNG\r\n\x1a\n", 8));
+        }
+        if (ext == ".plist") {
+            return hasPrefix(path, "<?xml") || hasPrefix(path, "bplist");
+        }
+        return fileExists(path);
     }
 }
 
@@ -50,29 +75,38 @@ std::string GlobalIconStorage::registeredName(int accountID, GlobalIconSlot cons
 }
 
 std::filesystem::path GlobalIconStorage::cacheDir(int accountID, std::string const& type) const {
-    return Mod::get()->getSaveDir() / "global_icons_cache" / std::to_string(accountID) / type;
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "global_icons_cache" / std::to_string(accountID) / type;
 }
 
 GlobalIconStorage::SlotFiles GlobalIconStorage::resolveFiles(int accountID, GlobalIconSlot const& slot) const {
-    auto dir = cacheDir(accountID, slot.type);
-
     SlotFiles files;
-    files.png = dir / (slot.pngFile.empty() ? (slot.name + ".png") : slot.pngFile);
+    if (accountID <= 0 || !iconTypeFromString(slot.type)) return files;
+    auto const pngName = slot.pngFile.empty() ? slot.name + ".png" : slot.pngFile;
+    auto const plistName = slot.plistFile.empty() ? slot.name + ".plist" : slot.plistFile;
     files.needPlist = !slot.plistUrl.empty();
+    if (!safeCacheFilename(pngName) || (files.needPlist && !safeCacheFilename(plistName))) return {};
+    auto const root = paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "global_icons_cache";
+    auto const dir = cacheDir(accountID, slot.type);
+    files.png = dir / pngName;
     if (files.needPlist) {
-        files.plist = dir / (slot.plistFile.empty() ? (slot.name + ".plist") : slot.plistFile);
+        files.plist = dir / plistName;
     }
-    files.pngMissing = !fileExists(files.png);
-    files.plistMissing = files.needPlist && !fileExists(files.plist);
+    if (!isInsideCache(root, files.png) || (files.needPlist && !isInsideCache(root, files.plist))) return {};
+    files.pngMissing = !validCachedFile(files.png);
+    files.plistMissing = files.needPlist && !validCachedFile(files.plist);
     return files;
 }
 
 void GlobalIconStorage::pruneSlotDir(std::filesystem::path const& dir, SlotFiles const& files) const {
+    auto const root = paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "global_icons_cache";
+    if (files.png.empty() || files.png.parent_path() != dir ||
+        !isInsideCache(root, dir) || !isInsideCache(root, files.png) ||
+        (files.needPlist && (files.plist.parent_path() != dir || !isInsideCache(root, files.plist)))) return;
     std::error_code ec;
     if (!std::filesystem::is_directory(dir, ec) || ec) return;
     for (auto const& entry : std::filesystem::directory_iterator(dir, ec)) {
         if (ec) return;
-        if (!entry.is_regular_file(ec) || ec) continue;
+        if (entry.is_symlink(ec) || ec || !entry.is_regular_file(ec) || ec) continue;
         auto const& path = entry.path();
         if (path == files.png || (files.needPlist && path == files.plist)) continue;
         std::error_code rmEc;
@@ -110,6 +144,7 @@ bool GlobalIconStorage::isReady(int accountID, GlobalIconSlot const& slot) const
 }
 
 void GlobalIconStorage::fetchSlot(GlobalIconSlot const& slot, SlotFiles const& files, FetchCallback cb) {
+    if (files.png.empty()) { if (cb) cb(false); return; }
     if (!files.pngMissing && !files.plistMissing) {
         if (cb) cb(true);
         return;
@@ -125,7 +160,9 @@ void GlobalIconStorage::fetchSlot(GlobalIconSlot const& slot, SlotFiles const& f
         }
         GlobalIconClient::get().downloadFile(slot.plistUrl,
             [files, inner = std::move(inner)](bool ok, std::vector<uint8_t> const& data) {
-                bool good = ok && !data.empty() && writeFile(files.plist, data);
+                bool good = ok && !data.empty() &&
+                    paimon::format::isSafePlistBytes(data.data(), data.size()) &&
+                    writeFile(files.plist, data);
                 if (inner) inner(good);
             });
     };
@@ -137,7 +174,10 @@ void GlobalIconStorage::fetchSlot(GlobalIconSlot const& slot, SlotFiles const& f
 
     GlobalIconClient::get().downloadFile(slot.pngUrl,
         [files, cb = std::move(cb), fetchPlist](bool ok, std::vector<uint8_t> const& data) mutable {
-            if (!ok || data.empty() || !writeFile(files.png, data)) {
+            if (!ok || data.empty() ||
+                paimon::format::detect(data.data(), data.size()) != paimon::format::ImageFormat::PNG ||
+                !paimon::format::isSafeImageHeader(data.data(), data.size(), 4096) ||
+                !writeFile(files.png, data)) {
                 if (cb) cb(false);
                 return;
             }
@@ -171,6 +211,7 @@ void GlobalIconStorage::ensureIcon(int accountID, GlobalIconSlot const& slot, En
     }
 
     auto files = resolveFiles(accountID, slot);
+    if (files.png.empty()) { if (cb) cb(false, ""); return; }
     if (!files.pngMissing && !files.plistMissing) {
         bool ok = registerWithMoreIcons(regName, slot, type, files.png, files.plist, true);
         if (cb) cb(ok, ok ? regName : "");
@@ -180,7 +221,7 @@ void GlobalIconStorage::ensureIcon(int accountID, GlobalIconSlot const& slot, En
     auto& waiters = m_pending[regName];
     if (cb) waiters.push_back(std::move(cb));
 
-    fetchSlot(slot, files, [accountID, slot, files, type, regName](bool ok) {
+    fetchSlot(slot, files, [slot, files, type, regName](bool ok) {
         auto& self = GlobalIconStorage::get();
         bool registered = ok && self.registerWithMoreIcons(regName, slot, type, files.png, files.plist, true);
         if (registered) self.pruneSlotDir(files.png.parent_path(), files);
@@ -227,6 +268,7 @@ void GlobalIconStorage::ensureIcons(int accountID, std::vector<GlobalIconSlot> c
         job.type = *typeOpt;
         job.regName = registeredName(accountID, slot);
         job.files = resolveFiles(accountID, slot);
+        if (job.files.png.empty()) continue;
         state->jobs.push_back(std::move(job));
     }
 
@@ -273,7 +315,7 @@ void GlobalIconStorage::ensureIcons(int accountID, std::vector<GlobalIconSlot> c
 }
 
 void GlobalIconStorage::pruneCache() {
-    auto root = Mod::get()->getSaveDir() / "global_icons_cache";
+    auto root = paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "global_icons_cache";
     std::error_code ec;
     if (!std::filesystem::is_directory(root, ec) || ec) return;
 

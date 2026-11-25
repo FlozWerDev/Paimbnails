@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "ExternalSongsPopup.hpp"
 
 #include "../services/MenuMusicLibrary.hpp"
@@ -60,13 +61,13 @@ bool ExternalSongsPopup::init(float width, float height) {
     for (const auto& t : MenuMusicLibrary::get().tracks()) {
         if (t.audioPath.empty()) continue;
         std::string label = t.displayName.empty()
-            ? geode::utils::string::pathToString(std::filesystem::path(t.audioPath).stem())
+            ? paimon::paths::toUtf8(std::filesystem::path(t.audioPath).stem())
             : t.displayName;
         addUnique(t.audioPath, label, "library");
     }
     for (const auto& s : paimon::menuloop::MenuLoopManager::get().getSongs()) {
         if (s.empty()) continue;
-        addUnique(s, geode::utils::string::pathToString(std::filesystem::path(s).stem()), "menu-loop");
+        addUnique(s, paimon::paths::toUtf8(std::filesystem::path(s).stem()), "menu-loop");
     }
     if (auto* mdm = MusicDownloadManager::sharedState()) {
         for (auto* song : CCArrayExt<SongInfoObject*>(mdm->getDownloadedSongs())) {
@@ -77,11 +78,11 @@ bool ExternalSongsPopup::init(float width, float height) {
             std::error_code ec;
             if (!std::filesystem::exists(songPath, ec) || ec) continue;
             auto ext = geode::utils::string::toLower(
-                geode::utils::string::pathToString(std::filesystem::path(songPath).extension()));
+                paimon::paths::toUtf8(std::filesystem::path(songPath).extension()));
             if (ext != ".mp3" && ext != ".ogg" && ext != ".wav" &&
                 ext != ".flac" && ext != ".oga" && ext != ".m4a") continue;
             std::string label = song->m_songName.empty()
-                ? geode::utils::string::pathToString(std::filesystem::path(songPath).stem())
+                ? paimon::paths::toUtf8(std::filesystem::path(songPath).stem())
                 : std::string(song->m_songName);
             addUnique(songPath, label, "downloaded");
         }
@@ -151,6 +152,7 @@ void ExternalSongsPopup::buildList() {
 
     m_scroll = ScrollLayer::create(scrollSize);
     if (!m_scroll) return;
+    m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setPosition({15.f, 12.f});
     m_scroll->setID("song-list-scroll"_spr);
     m_scroll->m_contentLayer->setID("song-list-content"_spr);
@@ -294,7 +296,7 @@ void ExternalSongsPopup::playSongPath(const std::string& path) {
     if (!std::filesystem::exists(path, ec) || ec) {
         Notification::create(
             fmt::format("File not found: {}",
-                geode::utils::string::pathToString(std::filesystem::path(path).filename())),
+                paimon::paths::toUtf8(std::filesystem::path(path).filename())),
             NotificationIcon::Error)->show();
         return;
     }
@@ -305,7 +307,7 @@ void ExternalSongsPopup::playSongPath(const std::string& path) {
             MenuMusicPlayer::get().playSpecific(t.id);
             Notification::create(
                 fmt::format("Playing: {}", t.displayName.empty()
-                    ? geode::utils::string::pathToString(std::filesystem::path(path).stem())
+                    ? paimon::paths::toUtf8(std::filesystem::path(path).stem())
                     : t.displayName),
                 NotificationIcon::Info)->show();
             return;
@@ -318,7 +320,7 @@ void ExternalSongsPopup::playSongPath(const std::string& path) {
     loop.setOverride(path);
     loop.setCurrentSong(path);
     loop.setCurrentSongDisplayName(
-        geode::utils::string::pathToString(std::filesystem::path(path).stem()));
+        paimon::paths::toUtf8(std::filesystem::path(path).stem()));
 
     auto* fmod = FMODAudioEngine::sharedEngine();
     if (fmod && fmod->m_backgroundMusicChannel) fmod->m_backgroundMusicChannel->stop();
@@ -326,7 +328,7 @@ void ExternalSongsPopup::playSongPath(const std::string& path) {
 
     Notification::create(
         fmt::format("Playing: {}",
-            geode::utils::string::pathToString(std::filesystem::path(path).stem())),
+            paimon::paths::toUtf8(std::filesystem::path(path).stem())),
         NotificationIcon::Info)->show();
 }
 

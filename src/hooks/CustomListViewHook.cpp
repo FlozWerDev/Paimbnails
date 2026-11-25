@@ -8,7 +8,6 @@
 using namespace geode::prelude;
 
 // fallback when gd returns no value
-static constexpr float NORMAL_LEVEL_CELL_HEIGHT = 90.f;
 static constexpr float COMPACT_LEVEL_CELL_HEIGHT = 45.f;
 
 // cached: getsettingvalue() locks, and getcellheight runs per frame while scrolling
@@ -33,14 +32,15 @@ static bool isLevelListType(BoomListType type) {
 
 class $modify(PaimonCustomListView, CustomListView) {
     // compact mode: gd renders level4 half-height, so swap level→level4 at create time
+    // param order follows GeometryDash.bro: (entries, delegate, height, width, page, type, y).
     static CustomListView* create(cocos2d::CCArray* entries, TableViewCellDelegate* delegate,
-                                   float width, float height, int count, BoomListType type,
-                                   float cellHeight) {
+                                   float height, float width, int page, BoomListType type,
+                                   float y) {
         bool forceCompact = paimon::hooks::g_forceCompactLevelCells;
 
         // compactlists already swaps; avoid applying it twice
         if (paimon::compat::ModCompat::isCompactListsLoaded()) {
-            return CustomListView::create(entries, delegate, width, height, count, type, cellHeight);
+            return CustomListView::create(entries, delegate, height, width, page, type, y);
         }
 
         // the suppress flag only skips levelcell enhancements, not this swap
@@ -48,13 +48,13 @@ class $modify(PaimonCustomListView, CustomListView) {
 
         if (compactEnabled && type == BoomListType::Level) {
             type = BoomListType::Level4;
-            // some lists pass an explicit height; halve it too
-            if (cellHeight > 0.f && cellHeight <= 200.f) {
-                cellHeight *= 0.5f;
+            // some lists pass an explicit extent in the last arg; halve it too
+            if (y > 0.f && y <= 200.f) {
+                y *= 0.5f;
             }
         }
 
-        return CustomListView::create(entries, delegate, width, height, count, type, cellHeight);
+        return CustomListView::create(entries, delegate, height, width, page, type, y);
     }
 
     // covers lists created before the setting changed

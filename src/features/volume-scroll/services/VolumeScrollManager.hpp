@@ -1,6 +1,8 @@
 ﻿#pragma once
 
 #include <Geode/Geode.hpp>
+#include <Geode/ui/NineSlice.hpp>
+#include <array>
 
 namespace paimon::volscroll {
 
@@ -9,8 +11,7 @@ enum class VolumeKind {
     SFX     // shift + scroll
 };
 
-// volume overlay, fmod updates, auto-hide, and the scroll-held state quick hub reads.
-
+// Classic GD volume HUD overlay anchored to the bottom-right corner.
 class VolumeScrollManager {
 public:
     static VolumeScrollManager& get();
@@ -25,42 +26,72 @@ public:
 private:
     VolumeScrollManager() = default;
 
-    // hidden -> slidingin -> expanding -> visible -> collapsing -> slidingout.
-    enum class State {
+    enum class Phase {
         Hidden,
-        SlidingIn,
-        Expanding,
+        Entering,
         Visible,
-        Collapsing,
-        SlidingOut
+        Exiting
     };
 
     void ensureOverlayBuilt();
     void attachToRunningScene();
     void detachFromScene();
-    void rebuildContent();
+    void refreshChannelVisuals();
+    void applyVisualPose(float dt);
     void resetAutoHideTimer();
-    void redrawPill();
-    void redrawBar();
-    void applyExpandProgress();
 
     float readVolume(VolumeKind kind) const;
     void  writeVolume(VolumeKind kind, float value);
 
-    State m_state = State::Hidden;
+    Phase m_phase = Phase::Hidden;
     VolumeKind m_currentKind = VolumeKind::Music;
-    float m_animProgress = 0.f;    // 0 hidden, 1 visible
-    float m_expandProgress = 0.f;  // 0 compact, 1 expanded
-    float m_visibleTimer = 0.f;    // time left visible
-    float m_displayedVolume = 0.f; // smoothed display value
-    float m_targetVolume = 0.f;    // target value
+    float m_phaseProgress = 0.f;    // 0 -> 1 on Entering, 1 -> 0 on Exiting
+    float m_visibleTimer = 0.f;     // seconds left before Exiting
+    float m_displayedVolume = 0.f;  // smoothly interpolated volume
+    float m_targetVolume = 0.f;     // authoritative target volume
+    float m_kindBlend = 0.f;        // 0 = Music palette, 1 = SFX palette
 
-    geode::Ref<cocos2d::CCLayerRGBA> m_overlay;
-    geode::Ref<cocos2d::CCNode> m_pillNode;
-    geode::Ref<cocos2d::CCLabelBMFont> m_iconLabel;
-    geode::Ref<cocos2d::CCLabelBMFont> m_label;
-    geode::Ref<cocos2d::CCDrawNode> m_barDraw;
-    float m_barAlpha = 0.f;
+    // Smooth icon cross-fade weights (Music, SFX, Mute).
+    float m_musicIconAlpha = 1.f;
+    float m_sfxIconAlpha = 0.f;
+    float m_muteIconAlpha = 0.f;
+    float m_muteBlend = 0.f;
+
+    // Dynamic kinetic impulses (all smoothly damped inside update).
+    float m_tickEnergy = 0.f;       // 0..1 lively pulse on scroll ticks
+    float m_tickDir = 0.f;          // +1 up, -1 down
+    float m_swapPulse = 0.f;        // 0..1 crisp transition pulse on channel/mute change
+    float m_limitRecoil = 0.f;      // 0..1 corner recoil when hitting 0% / 100%
+    float m_limitDir = 1.f;
+    bool  m_sparkleActive = false;
+    float m_sparkleTimer = 0.f;
+    int m_lastDisplayedPct = -1;
+
+    float m_barArtH = 20.f;
+    float m_barScale = 0.5f;
+    float m_thumbBaseScale = 0.5f;
+    float m_musicIconBaseScale = 0.5f;
+    float m_sfxIconBaseScale = 0.5f;
+    float m_muteIconBaseScale = 0.5f;
+
+    geode::Ref<cocos2d::CCNode> m_overlay;
+    geode::Ref<geode::NineSlice> m_shadow;
+    geode::Ref<geode::NineSlice> m_panel;
+    geode::Ref<geode::NineSlice> m_innerWell;
+
+    geode::Ref<cocos2d::CCLabelBMFont> m_titleLabel;
+    geode::Ref<cocos2d::CCLabelBMFont> m_pctLabel;
+    geode::Ref<cocos2d::extension::CCScale9Sprite> m_barGroove;
+    geode::Ref<cocos2d::extension::CCScale9Sprite> m_barFill;
+    geode::Ref<cocos2d::CCSprite> m_barThumb;
+
+    geode::Ref<cocos2d::CCNode> m_iconSlot;
+    geode::Ref<geode::NineSlice> m_iconFrame;
+    geode::Ref<cocos2d::CCSprite> m_musicIcon;
+    geode::Ref<cocos2d::CCSprite> m_sfxIcon;
+    geode::Ref<cocos2d::CCSprite> m_muteIcon;
+
+    std::array<geode::Ref<cocos2d::CCSprite>, 2> m_sparkles;
     cocos2d::CCScene* m_attachedScene = nullptr;
 };
 

@@ -23,6 +23,24 @@ struct SpriteHelper {
         return stencil;
     }
 
+    // geometry of a popup background: the "background" child (or the first
+    // scale9 child) wins; otherwise the caller's fallback frame.
+    struct BgLayout {
+        cocos2d::CCSize size;
+        cocos2d::CCPoint position;
+        cocos2d::CCPoint anchor;
+    };
+
+    static BgLayout resolveBgLayout(cocos2d::CCNode* parent, cocos2d::CCSize fallbackSize,
+                                    cocos2d::CCPoint fallbackPos) {
+        if (parent) {
+            cocos2d::CCNode* bg = parent->getChildByID("background");
+            if (!bg) bg = parent->getChildByType<cocos2d::extension::CCScale9Sprite>(0);
+            if (bg) return {bg->getScaledContentSize(), bg->getPosition(), bg->getAnchorPoint()};
+        }
+        return {fallbackSize, fallbackPos, {0.5f, 0.5f}};
+    }
+
     static cocos2d::CCDrawNode* createDiagonalStencil(float width, float height, float skewOffset) {
         auto stencil = PaimonDrawNode::create();
         cocos2d::CCPoint poly[4] = {
@@ -51,6 +69,13 @@ struct SpriteHelper {
         if (!frame || frame->isUsingFallback()) return nullptr;
         auto spr = cocos2d::CCSprite::createWithSpriteFrame(frame);
         if (!isValidSprite(spr)) return nullptr;
+        return spr;
+    }
+
+    // primary frame, falling back to a second frame; nullptr if neither resolves.
+    static cocos2d::CCSprite* createWithFallback(const char* primary, const char* fallback) {
+        auto spr = safeCreateWithFrameName(primary);
+        if (!spr) spr = safeCreateWithFrameName(fallback);
         return spr;
     }
 

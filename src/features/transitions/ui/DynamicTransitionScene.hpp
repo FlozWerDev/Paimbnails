@@ -6,7 +6,7 @@
 
 namespace paimon::transitions::dynamic {
 
-// Composites two opaque captures as rounded, antialiased meshes; no stencil or live scene visits.
+// composites two opaque captures as rounded, antialiased meshes; no stencil or live scene visits.
 class Visual : public cocos2d::CCNode {
 public:
     struct Batch {

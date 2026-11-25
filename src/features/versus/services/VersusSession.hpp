@@ -86,12 +86,18 @@ private:
     void poll();
     void scheduleWatch(float delay);
     void watchTick();
+    // bump the generation counter and run `fn` after `delay` unless a newer
+    // schedule superseded this one or the runtime is shutting down.
+    void scheduleGuarded(uint64_t VersusSession::* generationMember, float delay,
+                         geode::CopyableFunction<void()> fn);
     void applyLobby(MatchInfo const& info);
     void wireNet();
     void pushTick(bool force);
     // ladder and relay: takes the segment for us if neither side holds it yet.
     void claimSegment(int segment);
     void evaluate();
+    // tally the ladder segments each side currently holds.
+    void countSegments(int& own, int& rival) const;
     // relay is the one format the finish line does not settle, so it gets its
     // own reading of the four segments.
     void evaluateRelay();
@@ -135,6 +141,7 @@ private:
     int m_extraAttempts = 0;
 
     uint64_t m_pollGeneration = 0;
+    uint64_t m_sessionGeneration = 0;
     uint64_t m_watchGeneration = 0;
     bool m_watching = false;
     std::vector<std::pair<void const*, std::function<void()>>> m_listeners;

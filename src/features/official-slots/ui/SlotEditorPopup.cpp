@@ -1,3 +1,5 @@
+#include "../../../framework/compat/NativeUI.hpp"
+#include "../../../utils/FilesystemPath.hpp"
 #include "SlotEditorPopup.hpp"
 
 #include "SlotVisuals.hpp"
@@ -12,7 +14,6 @@
 #include "../../../utils/PaimonNotification.hpp"
 
 #include <Geode/binding/ButtonSprite.hpp>
-#include <Geode/binding/GJDifficultySprite.hpp>
 #include <Geode/binding/Slider.hpp>
 #include <Geode/utils/general.hpp>
 
@@ -28,10 +29,99 @@ namespace paimon::officialslots::ui {
 
 namespace {
 
-// popup size. fixed on purpose: every control stays on screen next to the
-// live preview, so there is no scroll position to lose while typing.
-constexpr float kWidth = 460.f;
-constexpr float kHeight = 360.f;
+constexpr float kWidth = 560.f;
+constexpr float kHeight = 380.f;
+constexpr float kFormWidth = 296.f;
+constexpr float kCatalogueX = 328.f;
+constexpr float kCatalogueWidth = 216.f;
+constexpr float kPlacementRowHeight = 28.f;
+
+// only the highlighted row starts a drag; the rest of the catalogue scrolls normally.
+class PlacementScrollLayer : public ScrollLayer {
+public:
+    std::function<void(std::size_t)> onPlace;
+    std::size_t selectedIndex = 0;
+    std::size_t rowCount = 1;
+
+    static PlacementScrollLayer* create(CCSize size) {
+        auto* list = new PlacementScrollLayer({0.f, 0.f, size.width, size.height});
+        list->setAnchorPoint({0.f, 0.f});
+        list->autorelease();
+        list->setStealingTouches(true);
+        return list;
+    }
+
+    bool isDragging() const { return m_dragging; }
+
+protected:
+    explicit PlacementScrollLayer(CCRect rect) : ScrollLayer(rect, true, true) {}
+
+    bool ccTouchBegan(CCTouch* touch, CCEvent* event) override {
+        auto const point = this->convertToNodeSpace(touch->getLocation());
+        if (!geode::cocos::nodeIsVisible(this) ||
+            !CCRect{0.f, 0.f, getContentWidth(), getContentHeight()}.containsPoint(point)) return false;
+        auto const contentPoint = m_contentLayer->convertToNodeSpace(touch->getLocation());
+        auto const index = static_cast<int>(std::floor(
+            (m_contentLayer->getContentHeight() - contentPoint.y) / kPlacementRowHeight));
+        m_dragging = index >= 0 && static_cast<std::size_t>(index) == selectedIndex;
+        return m_dragging || ScrollLayer::ccTouchBegan(touch, event);
+    }
+
+    void ccTouchMoved(CCTouch* touch, CCEvent* event) override {
+        if (!m_dragging) {
+            ScrollLayer::ccTouchMoved(touch, event);
+            return;
+        }
+        auto const point = this->convertToNodeSpace(touch->getLocation());
+        float const height = m_contentLayer->getContentHeight();
+        float const viewport = getContentHeight();
+        float offset = m_contentLayer->getPositionY();
+        if (point.y < 14.f) offset += 12.f;
+        else if (point.y > viewport - 14.f) offset -= 12.f;
+        m_contentLayer->setPositionY(std::clamp(offset, std::min(0.f, viewport - height), 0.f));
+        auto const contentPoint = m_contentLayer->convertToNodeSpace(touch->getLocation());
+        int const index = std::clamp(static_cast<int>(std::floor(
+            (height - contentPoint.y) / kPlacementRowHeight)), 0, static_cast<int>(rowCount) - 1);
+        if (static_cast<std::size_t>(index) != selectedIndex && onPlace) {
+            selectedIndex = static_cast<std::size_t>(index);
+            onPlace(selectedIndex + 1);
+        }
+    }
+
+    void ccTouchEnded(CCTouch* touch, CCEvent* event) override {
+        if (!m_dragging) ScrollLayer::ccTouchEnded(touch, event);
+        m_dragging = false;
+    }
+
+    void ccTouchCancelled(CCTouch* touch, CCEvent* event) override {
+        if (!m_dragging) ScrollLayer::ccTouchCancelled(touch, event);
+        m_dragging = false;
+    }
+
+private:
+    bool m_dragging = false;
+};
+
+ButtonSprite* formButton(std::string const& text, float width, char const* background,
+    float height = 22.f) {
+    auto* button = ButtonSprite::create(text.c_str(), static_cast<int>(width), true,
+        "bigFont.fnt", background, height, 0.42f);
+    if (button) {
+        auto const size = button->getContentSize();
+        button->setScale(std::min({1.f, width / std::max(1.f, size.width),
+            height / std::max(1.f, size.height)}));
+    }
+    return button;
+}
+
+CCMenu* makeMenu(CCNode* parent, char const* id, CCSize size) {
+    auto* menu = CCMenu::create();
+    menu->setPosition({0.f, 0.f});
+    menu->setContentSize(size);
+    menu->setID(id);
+    parent->addChild(menu, 3);
+    return menu;
+}
 
 constexpr ccColor3B kOnColor = {255, 255, 255};
 constexpr ccColor3B kOffColor = {96, 102, 120};
@@ -104,7 +194,7 @@ int levelFaceValue(GJGameLevel* level) {
             default: return 6;
         }
     }
-    return level->getAverageDifficulty();
+    return paimon::compat::averageDifficulty(level);
 }
 
 Tier levelTier(GJGameLevel* level) {
@@ -155,29 +245,21 @@ bool SlotEditorPopup::init(
         m_draft.replacesOfficialId = replacesOfficialId;
     }
 
-    if (!m_isNew) {
-        int pos = 0;
-        auto const& all = store.slots();
-        for (int i = 0; i < static_cast<int>(all.size()); ++i) {
-            if (all[i].id == m_draft.id) { pos = i + 1; break; }
-        }
-        if (pos > 0) {
-            this->setTitle(fmt::format(fmt::runtime(tr("slot.editor.title_pos")),
-                                       pos, all.size()));
-        } else {
-            this->setTitle(tr("slot.editor.title"));
-        }
-    } else if (m_draft.replacesOfficialId != 0) {
+    if (m_draft.replacesOfficialId != 0) {
         this->setTitle(fmt::format(fmt::runtime(tr("slot.editor.replace_title")),
                                    officialName(m_draft.replacesOfficialId)));
-    } else {
+    } else if (m_isNew) {
         this->setTitle(tr("slot.editor.add_title"));
+    } else {
+        this->setTitle(tr("slot.editor.title"));
     }
 
     this->addInfoButton(tr("slot.editor.title"),
         "Edita como se ve un slot oficial personalizado: elige <cy>fuente</c> "
         "(ID o archivo .gmd), dificultad, tier de rate, estrellas y monedas. "
-        "La <cg>vista previa</c> muestra el resultado. <cg>Guardar</c> aplica los cambios.");
+        "El recuadro verde muestra su posicion entre los demas niveles. "
+        "Arrastra el recuadro, toca una fila o usa las flechas para moverlo. "
+        "<cg>Guardar</c> aplica los cambios.");
 
     this->buildDifficultyRow();
     this->buildTierRow();
@@ -205,41 +287,39 @@ void SlotEditorPopup::buildSourceRow() {
     auto* layer = m_mainLayer;
 
     m_sourceRow = CCNode::create();
-    m_sourceRow->setContentSize({268.f, 114.f});
-    m_sourceRow->setPosition({12.f, 96.f});
+    m_sourceRow->setContentSize({kFormWidth, 84.f});
+    m_sourceRow->setPosition({16.f, 264.f});
     m_sourceRow->setID("source-row"_spr);
     layer->addChild(m_sourceRow, 3);
 
     // source chips: two text buttons, the inactive one dimmed in place.
     auto* menu = CCMenu::create();
-    menu->setPosition({134.f, 100.f});
-    menu->setContentSize({268.f, 28.f});
+    menu->setPosition({0.f, 0.f});
+    menu->setContentSize({kFormWidth, 84.f});
     menu->setID("source-menu"_spr);
     m_sourceRow->addChild(menu, 1);
 
     struct ChipDef { Source source; char const* key; float width; float x; };
     ChipDef const chips[] = {
-        {Source::LevelId, "slot.editor.source_id", 124.f, 64.f},
-        {Source::Gmd, "slot.editor.source_gmd", 130.f, 200.f},
+        {Source::LevelId, "slot.editor.source_id", 142.f, 71.f},
+        {Source::Gmd, "slot.editor.source_gmd", 142.f, 225.f},
     };
     for (auto const& chip : chips) {
-        auto* spr = ButtonSprite::create(
-            tr(chip.key).c_str(), static_cast<int>(chip.width), true,
-            "bigFont.fnt", "GJ_button_01.png", 24.f, 0.5f);
+        auto* spr = formButton(tr(chip.key), chip.width, "GJ_button_01.png");
         auto* item = CCMenuItemExt::createSpriteExtra(spr, [this, source = chip.source](CCMenuItemSpriteExtra*) {
             this->setSource(source);
         });
-        item->setPosition({chip.x, 14.f});
+        item->setPosition({chip.x, 68.f});
         menu->addChild(item);
         m_sourceChips.push_back(spr);
     }
 
-    // level-id input + import button.
-    m_idInput = TextInput::create(150.f, tr("slot.editor.level_id_hint").c_str());
+    // source row controls: toggled between online Level ID download and local .gmd file picker.
+    m_idInput = TextInput::create(246.f, tr("slot.editor.level_id_hint").c_str());
     if (m_idInput) {
         m_idInput->setCommonFilter(geode::CommonFilter::Uint);
         m_idInput->setMaxCharCount(10);
-        m_idInput->setPosition({77.f, 62.f});
+        m_idInput->setPosition({123.f, 32.f});
         m_idInput->setID("id-input"_spr);
         if (m_draft.source == Source::LevelId && m_draft.levelId > 0) {
             m_idInput->setString(fmt::format("{}", m_draft.levelId));
@@ -252,38 +332,37 @@ void SlotEditorPopup::buildSourceRow() {
     }
 
     if (auto* dlSpr = CCSprite::createWithSpriteFrameName("GJ_downloadBtn_001.png")) {
-        dlSpr->setScale(0.7f);
+        dlSpr->setScale(0.65f);
         auto* importBtn = CCMenuItemExt::createSpriteExtra(dlSpr, [this](CCMenuItemSpriteExtra*) {
             this->onImportById(nullptr);
         });
         auto* importMenu = CCMenu::create();
-        importMenu->setPosition({196.f, 62.f});
-        importMenu->setContentSize({60.f, 30.f});
+        importMenu->setPosition({0.f, 0.f});
+        importMenu->setContentSize({kFormWidth, 84.f});
+        importBtn->setPosition({274.f, 32.f});
         importMenu->setID("import-menu"_spr);
         importMenu->addChild(importBtn);
         m_sourceRow->addChild(importMenu, 1);
     }
 
-    // .gmd filename + browse button.
     m_gmdLabel = CCLabelBMFont::create("", "bigFont.fnt");
     if (m_gmdLabel) {
         m_gmdLabel->setScale(0.4f);
         m_gmdLabel->setAnchorPoint({0.f, 0.5f});
-        m_gmdLabel->setPosition({4.f, 24.f});
+        m_gmdLabel->setPosition({4.f, 32.f});
         m_gmdLabel->setID("gmd-label"_spr);
-        m_gmdLabel->limitLabelWidth(140.f, 0.4f, 0.1f);
+        m_gmdLabel->limitLabelWidth(180.f, 0.4f, 0.1f);
         m_sourceRow->addChild(m_gmdLabel, 1);
     }
 
-    auto* browseSpr = ButtonSprite::create(
-        tr("slot.editor.browse").c_str(), 110, true,
-        "bigFont.fnt", "GJ_button_01.png", 24.f, 0.5f);
+    auto* browseSpr = formButton(tr("slot.editor.browse"), 102.f, "GJ_button_01.png");
     auto* browseBtn = CCMenuItemExt::createSpriteExtra(browseSpr, [this](CCMenuItemSpriteExtra*) {
         this->onBrowseGmd(nullptr);
     });
     auto* browseMenu = CCMenu::create();
-    browseMenu->setPosition({208.f, 24.f});
-    browseMenu->setContentSize({120.f, 30.f});
+    browseMenu->setPosition({0.f, 0.f});
+    browseMenu->setContentSize({kFormWidth, 84.f});
+    browseBtn->setPosition({245.f, 32.f});
     browseMenu->setID("browse-menu"_spr);
     browseMenu->addChild(browseBtn);
     m_sourceRow->addChild(browseMenu, 1);
@@ -317,6 +396,8 @@ void SlotEditorPopup::restyleSourceChips() {
 
 void SlotEditorPopup::setSource(Source source) {
     if (m_draft.source == source) return;
+    ++m_importRequest;
+    this->showSpinner(false);
     m_draft.source = source;
     this->restyleSourceChips();
 }
@@ -325,25 +406,22 @@ void SlotEditorPopup::refreshGmdLabel() {
     if (!m_gmdLabel) return;
     std::string text = tr("slot.editor.gmd_hint");
     if (!m_pendingGmd.empty()) {
-        text = geode::utils::string::pathToString(m_pendingGmd.filename());
+        text = paimon::paths::toUtf8(m_pendingGmd.filename());
     } else if (!m_draft.gmdFile.empty()) {
         text = m_draft.gmdFile;
     }
     m_gmdLabel->setString(text.c_str());
-    m_gmdLabel->limitLabelWidth(140.f, 0.4f, 0.1f);
+    m_gmdLabel->limitLabelWidth(180.f, 0.4f, 0.1f);
 }
 
 void SlotEditorPopup::buildDataRows() {
     auto* layer = m_mainLayer;
 
-    m_nameInput = TextInput::create(268.f, tr("slot.editor.name").c_str());
+    m_nameInput = TextInput::create(kFormWidth, tr("slot.editor.name").c_str());
     if (m_nameInput) {
         m_nameInput->setCommonFilter(geode::CommonFilter::Any);
-        if (auto* inner = m_nameInput->getInputNode()) {
-            inner->m_allowedChars = geode::getCommonFilterAllowedChars(geode::CommonFilter::Any);
-        }
         m_nameInput->setMaxCharCount(60);
-        m_nameInput->setPosition({146.f, 140.f});
+        m_nameInput->setPosition({164.f, 258.f});
         m_nameInput->setID("name-input"_spr);
         if (!m_draft.name.empty()) m_nameInput->setString(m_draft.name);
         m_nameInput->setCallback([this](std::string const& text) {
@@ -353,14 +431,11 @@ void SlotEditorPopup::buildDataRows() {
         layer->addChild(m_nameInput, 3);
     }
 
-    m_authorInput = TextInput::create(268.f, tr("slot.editor.author").c_str());
+    m_authorInput = TextInput::create(kFormWidth, tr("slot.editor.author").c_str());
     if (m_authorInput) {
         m_authorInput->setCommonFilter(geode::CommonFilter::Any);
-        if (auto* inner = m_authorInput->getInputNode()) {
-            inner->m_allowedChars = geode::getCommonFilterAllowedChars(geode::CommonFilter::Any);
-        }
         m_authorInput->setMaxCharCount(40);
-        m_authorInput->setPosition({146.f, 110.f});
+        m_authorInput->setPosition({164.f, 226.f});
         m_authorInput->setID("author-input"_spr);
         if (!m_draft.author.empty()) m_authorInput->setString(m_draft.author);
         m_authorInput->setCallback([this](std::string const& text) {
@@ -378,7 +453,7 @@ void SlotEditorPopup::buildDifficultyRow() {
     if (title) {
         title->setScale(0.45f);
         title->setAnchorPoint({0.f, 0.5f});
-        title->setPosition({12.f, 318.f});
+        title->setPosition({16.f, 199.f});
         title->setID("difficulty-title"_spr);
         layer->addChild(title, 3);
     }
@@ -388,9 +463,9 @@ void SlotEditorPopup::buildDifficultyRow() {
     auto const& diffs = allDifficulties();
     std::vector<CCNode*> faces;
     for (auto diff : diffs) {
-        auto* face = GJDifficultySprite::create(difficultyFace(diff), GJDifficultyName::Short);
+        auto* face = createDifficultyBadge(diff, Tier::None, 1.f);
         if (!face) continue;
-        face->updateFeatureState(GJFeatureState::None);
+        face->setTag(static_cast<int>(diff));
         faces.push_back(face);
     }
     if (faces.empty()) return;
@@ -399,8 +474,8 @@ void SlotEditorPopup::buildDifficultyRow() {
     float const baseH = faces.front()->getContentSize().height;
     constexpr float kGap = 6.f;
     constexpr size_t kPerRow = 6;
-    float const availW = kWidth - 24.f - 90.f; // room past the title
-    float scale = std::min(0.6f, 30.f / std::max(1.f, baseH));
+    float const availW = kFormWidth;
+    float scale = std::min(0.48f, 24.f / std::max(1.f, baseH));
     scale = std::min(scale, (availW - kGap * (kPerRow - 1)) / (kPerRow * std::max(1.f, baseW)));
 
     auto* menu = CCMenu::create();
@@ -410,27 +485,25 @@ void SlotEditorPopup::buildDifficultyRow() {
     layer->addChild(menu, 3);
 
     float const rowW = kPerRow * baseW * scale + kGap * (kPerRow - 1);
-    float const startX = 100.f + (availW - rowW) / 2.f;
-    float const ys[] = {300.f, 268.f};
+    float const startX = 16.f + (availW - rowW) / 2.f;
+    float const ys[] = {177.f, 145.f};
     for (size_t i = 0; i < faces.size(); i++) {
         size_t const row = i / kPerRow;
         size_t const col = i % kPerRow;
         faces[i]->setScale(scale);
-        Difficulty const diff = diffs[i];
+        Difficulty const diff = static_cast<Difficulty>(faces[i]->getTag());
         auto* item = CCMenuItemExt::createSpriteExtra(faces[i], [this, diff](CCMenuItemSpriteExtra*) {
             this->setDifficulty(diff);
         });
         item->setPosition({startX + col * (baseW * scale + kGap) + baseW * scale / 2.f, ys[row]});
-        item->setContentSize({baseW * scale + kGap, 34.f});
         menu->addChild(item);
     }
     m_difficultyFaces = std::move(faces);
 }
 
 void SlotEditorPopup::restyleDifficultyRow() {
-    auto const& diffs = allDifficulties();
-    for (size_t i = 0; i < m_difficultyFaces.size() && i < diffs.size(); i++) {
-        tintIcon(m_difficultyFaces[i], diffs[i] == m_draft.difficulty);
+    for (auto* face : m_difficultyFaces) {
+        tintIcon(face, face->getTag() == static_cast<int>(m_draft.difficulty));
     }
 }
 
@@ -457,21 +530,13 @@ void SlotEditorPopup::buildTierRow() {
         if (title) {
             title->setScale(0.45f);
             title->setAnchorPoint({0.f, 0.5f});
-            title->setPosition({12.f, 236.f});
+            title->setPosition({16.f, 118.f});
             title->setID("tier-title"_spr);
             layer->addChild(title, 3);
         }
     }
     m_tierRowBox->removeAllChildren();
     m_tierFaces.clear();
-
-    std::vector<std::pair<Tier, GJFeatureState>> const states = {
-        {Tier::None, GJFeatureState::None},
-        {Tier::Featured, GJFeatureState::Featured},
-        {Tier::Epic, GJFeatureState::Epic},
-        {Tier::Legendary, GJFeatureState::Legendary},
-        {Tier::Mythic, GJFeatureState::Mythic},
-    };
 
     auto* menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
@@ -480,14 +545,11 @@ void SlotEditorPopup::buildTierRow() {
     m_tierRowBox->addChild(menu, 1);
 
     std::vector<CCNode*> faces;
-    std::vector<Tier> faceTiers;
-    for (auto [tier, state] : states) {
-        auto* face = GJDifficultySprite::create(
-            difficultyFace(m_draft.difficulty), GJDifficultyName::Short);
+    for (auto tier : allTiers()) {
+        auto* face = createDifficultyBadge(m_draft.difficulty, tier, 1.f);
         if (!face) continue;
-        face->updateFeatureState(state);
+        face->setTag(static_cast<int>(tier));
         faces.push_back(face);
-        faceTiers.push_back(tier);
         m_tierFaces.push_back(face);
     }
     if (faces.empty()) return;
@@ -497,28 +559,26 @@ void SlotEditorPopup::buildTierRow() {
     float const baseW = faces.front()->getContentSize().width;
     float const baseH = faces.front()->getContentSize().height;
     constexpr float kGap = 10.f;
-    float const availW = kWidth - 24.f - 90.f;
-    float scale = std::min(0.6f, 30.f / std::max(1.f, baseH));
+    float const availW = kFormWidth;
+    float scale = std::min(0.46f, 22.f / std::max(1.f, baseH));
     scale = std::min(scale, (availW - kGap * (faces.size() - 1)) / (faces.size() * std::max(1.f, baseW)));
 
     float const rowW = faces.size() * baseW * scale + kGap * (faces.size() - 1);
-    float const startX = 100.f + (availW - rowW) / 2.f;
+    float const startX = 16.f + (availW - rowW) / 2.f;
     for (size_t i = 0; i < faces.size(); i++) {
         faces[i]->setScale(scale);
-        Tier const tier = faceTiers[i];
+        Tier const tier = static_cast<Tier>(faces[i]->getTag());
         auto* item = CCMenuItemExt::createSpriteExtra(faces[i], [this, tier](CCMenuItemSpriteExtra*) {
             this->setTier(tier);
         });
-        item->setPosition({startX + i * (baseW * scale + kGap) + baseW * scale / 2.f, 236.f});
-        item->setContentSize({baseW * scale + kGap, 34.f});
+        item->setPosition({startX + i * (baseW * scale + kGap) + baseW * scale / 2.f, 92.f});
         menu->addChild(item);
     }
 }
 
 void SlotEditorPopup::restyleTierRow() {
-    auto const& tiers = allTiers();
-    for (size_t i = 0; i < m_tierFaces.size() && i < tiers.size(); i++) {
-        tintIcon(m_tierFaces[i], tiers[i] == m_draft.tier);
+    for (auto* face : m_tierFaces) {
+        tintIcon(face, face->getTag() == static_cast<int>(m_draft.tier));
     }
 }
 
@@ -536,7 +596,7 @@ void SlotEditorPopup::buildStarsRow() {
     if (title) {
         title->setScale(0.45f);
         title->setAnchorPoint({0.f, 0.5f});
-        title->setPosition({12.f, 66.f});
+        title->setPosition({16.f, 54.f});
         title->setID("stars-title"_spr);
         layer->addChild(title, 3);
     }
@@ -547,34 +607,34 @@ void SlotEditorPopup::buildStarsRow() {
     menu->setID("stars-menu"_spr);
     layer->addChild(menu, 3);
 
-    auto* minusSpr = ButtonSprite::create("-", 30, true, "bigFont.fnt", "GJ_button_04.png", 22.f, 0.6f);
+    auto* minusSpr = formButton("-", 24.f, "GJ_button_04.png");
     auto* minus = CCMenuItemExt::createSpriteExtra(minusSpr, [this](CCMenuItemSpriteExtra*) {
         this->setStars(m_draft.stars - 1);
     });
-    minus->setPosition({110.f, 66.f});
+    minus->setPosition({94.f, 54.f});
     menu->addChild(minus);
 
     m_starsLabel = CCLabelBMFont::create("0", "bigFont.fnt");
     if (m_starsLabel) {
-        m_starsLabel->setScale(0.55f);
-        m_starsLabel->setPosition({140.f, 66.f});
+        m_starsLabel->setScale(0.45f);
+        m_starsLabel->setPosition({123.f, 54.f});
         m_starsLabel->setID("stars-label"_spr);
         layer->addChild(m_starsLabel, 3);
     }
 
-    auto* plusSpr = ButtonSprite::create("+", 30, true, "bigFont.fnt", "GJ_button_04.png", 22.f, 0.6f);
+    auto* plusSpr = formButton("+", 24.f, "GJ_button_04.png");
     auto* plus = CCMenuItemExt::createSpriteExtra(plusSpr, [this](CCMenuItemSpriteExtra*) {
         this->setStars(m_draft.stars + 1);
     });
-    plus->setPosition({170.f, 66.f});
+    plus->setPosition({152.f, 54.f});
     menu->addChild(plus);
 
     auto* cb = StarsSliderCallback::create([this](double value) {
         this->setStars(static_cast<int>(std::lround(value)));
     });
-    auto* slider = Slider::create(cb, menu_selector(StarsSliderCallback::onChanged), 0.55f);
+    auto* slider = Slider::create(cb, menu_selector(StarsSliderCallback::onChanged), 0.32f);
     cb->m_slider = slider;
-    slider->setPosition({265.f, 66.f});
+    slider->setPosition({210.f, 54.f});
     slider->setValue(m_draft.stars / 100.f);
     slider->setUserObject(cb); // keep the wrapper alive with the slider
     slider->setID("stars-slider"_spr);
@@ -583,21 +643,20 @@ void SlotEditorPopup::buildStarsRow() {
 
     auto* coinsTitle = CCLabelBMFont::create(tr("slot.editor.coins").c_str(), "goldFont.fnt");
     if (coinsTitle) {
-        coinsTitle->setScale(0.45f);
+        coinsTitle->setScale(0.35f);
         coinsTitle->setAnchorPoint({0.f, 0.5f});
-        coinsTitle->setPosition({352.f, 66.f});
+        coinsTitle->setPosition({267.f, 64.f});
         coinsTitle->setID("coins-title"_spr);
         layer->addChild(coinsTitle, 3);
     }
 
-    if (auto* coins = createCoinRow(0.45f)) {
+    if (auto* coins = createCoinRow(0.32f)) {
         auto* chip = CCMenuItemExt::createSpriteExtra(coins, [this](CCMenuItemSpriteExtra*) {
             m_draft.coins = !m_draft.coins;
             tintIcon(m_coinsChip, m_draft.coins);
             this->refreshPreview();
         });
-        chip->setPosition({420.f, 66.f});
-        chip->setContentSize({44.f, 26.f});
+        chip->setPosition({288.f, 47.f});
         menu->addChild(chip);
         m_coinsChip = coins;
         tintIcon(m_coinsChip, m_draft.coins);
@@ -625,29 +684,30 @@ void SlotEditorPopup::buildPreviewCard() {
     if (title) {
         title->setScale(0.45f);
         title->setAnchorPoint({0.f, 0.5f});
-        title->setPosition({292.f, 200.f});
+        title->setPosition({kCatalogueX, 350.f});
         title->setID("preview-title"_spr);
         layer->addChild(title, 3);
     }
 
-    if (auto* bg = createCardBackground({156.f, 112.f})) {
-        bg->setPosition({292.f, 86.f});
+    if (auto* bg = createCardBackground({kCatalogueWidth, 88.f})) {
+        bg->setAnchorPoint({0.f, 0.f});
+        bg->setPosition({kCatalogueX, 252.f});
         bg->setID("preview-bg"_spr);
         layer->addChild(bg, 1);
     }
 
     m_previewBox = CCNode::create();
-    m_previewBox->setContentSize({156.f, 112.f});
-    m_previewBox->setPosition({292.f, 86.f});
+    m_previewBox->setContentSize({kCatalogueWidth, 88.f});
+    m_previewBox->setPosition({kCatalogueX, 252.f});
     m_previewBox->setID("preview-box"_spr);
     layer->addChild(m_previewBox, 2);
 
     auto* note = CCLabelBMFont::create(
         tr("slot.editor.cosmetic_note").c_str(), "chatFont.fnt",
-        150.f / 0.32f, kCCTextAlignmentCenter);
+        kCatalogueWidth / 0.32f, kCCTextAlignmentCenter);
     if (note) {
         note->setScale(0.32f);
-        note->setPosition({370.f, 66.f});
+        note->setPosition({kCatalogueX + kCatalogueWidth / 2.f, 48.f});
         note->setColor({170, 180, 200});
         note->setOpacity(220);
         note->setID("cosmetic-note"_spr);
@@ -659,19 +719,19 @@ void SlotEditorPopup::refreshPreview() {
     if (!m_previewBox) return;
     m_previewBox->removeAllChildren();
 
-    constexpr float kCX = 78.f;
+    constexpr float kCX = kCatalogueWidth / 2.f;
 
-    if (auto* face = createDifficultyBadge(m_draft.difficulty, m_draft.tier, 0.85f)) {
-        face->setPosition({kCX, 80.f});
+    if (auto* face = createDifficultyBadge(m_draft.difficulty, m_draft.tier, 0.65f)) {
+        face->setPosition({42.f, 54.f});
         m_previewBox->addChild(face);
     }
     if (auto* stars = createStarBadge(m_draft.stars, 0.8f)) {
-        stars->setPosition({kCX, 48.f});
+        stars->setPosition({110.f, 54.f});
         m_previewBox->addChild(stars);
     }
     if (m_draft.coins) {
-        if (auto* coins = createCoinRow(0.45f)) {
-            coins->setPosition({kCX, 30.f});
+        if (auto* coins = createCoinRow(0.38f)) {
+            coins->setPosition({174.f, 54.f});
             m_previewBox->addChild(coins);
         }
     }
@@ -679,10 +739,11 @@ void SlotEditorPopup::refreshPreview() {
     std::string name = m_draft.name.empty() ? tr("slot.level.unnamed") : m_draft.name;
     auto* nameLbl = CCLabelBMFont::create(name.c_str(), "bigFont.fnt");
     if (nameLbl) {
-        nameLbl->limitLabelWidth(140.f, 0.4f, 0.1f);
+        nameLbl->limitLabelWidth(kCatalogueWidth - 16.f, 0.4f, 0.1f);
         nameLbl->setPosition({kCX, 14.f});
         m_previewBox->addChild(nameLbl);
     }
+    if (m_positionScroll) this->rebuildPositionList();
 }
 
 void SlotEditorPopup::buildFooter() {
@@ -694,92 +755,167 @@ void SlotEditorPopup::buildFooter() {
     menu->setID("footer-menu"_spr);
     layer->addChild(menu, 3);
 
-    float x = kWidth - 12.f;
+    float x = kWidth - 16.f;
     auto addButton = [&](char const* key, int width, char const* bg, auto onPress) {
-        auto* spr = ButtonSprite::create(
-            tr(key).c_str(), width, true,
-            "bigFont.fnt", bg, 18.f, 0.40f);
+        auto* spr = formButton(tr(key), static_cast<float>(width), bg);
         auto* item = CCMenuItemExt::createSpriteExtra(spr, onPress);
         x -= width / 2.f;
-        item->setPosition({x, 26.f});
+        item->setPosition({x, 22.f});
         x -= width / 2.f + 8.f;
         menu->addChild(item);
     };
 
-    addButton("slot.editor.save", 90, "GJ_button_01.png", [this](CCMenuItemSpriteExtra*) {
+    addButton("slot.editor.save", 88, "GJ_button_01.png", [this](CCMenuItemSpriteExtra*) {
         this->onSave(nullptr);
     });
-    addButton("slot.editor.surprise", 100, "GJ_button_03.png", [this](CCMenuItemSpriteExtra*) {
+    addButton("slot.editor.surprise", 108, "GJ_button_03.png", [this](CCMenuItemSpriteExtra*) {
         this->onSurprise(nullptr);
     });
-    addButton("slot.editor.test", 80, "GJ_button_02.png", [this](CCMenuItemSpriteExtra*) {
+    addButton("slot.editor.test", 72, "GJ_button_02.png", [this](CCMenuItemSpriteExtra*) {
         this->onTest(nullptr);
     });
     if (m_draft.replacesOfficialId != 0) {
-        addButton("slot.editor.hide_official", 150, "GJ_button_06.png", [this](CCMenuItemSpriteExtra*) {
+        addButton("slot.editor.hide_official", 184, "GJ_button_06.png", [this](CCMenuItemSpriteExtra*) {
             this->onHideOfficial(nullptr);
         });
-    } else {
-        this->buildPositionRow(menu);
     }
+    this->buildPositionRow(menu);
+}
+
+std::string SlotEditorPopup::pageKey() const {
+    return m_draft.replacesOfficialId != 0
+        ? SlotStore::officialKey(m_draft.replacesOfficialId)
+        : SlotStore::slotKey(m_draft.id);
 }
 
 void SlotEditorPopup::buildPositionRow(CCMenu* menu) {
-    auto* layer = m_mainLayer;
-
     auto& store = SlotStore::get();
-    m_positionMax = store.visiblePages().size() + (m_isNew ? 1 : 0);
-    m_position = m_positionMax;
-    if (!m_isNew) {
-        if (std::size_t pos = store.visiblePosition(SlotStore::slotKey(m_draft.id))) {
-            m_position = pos;
-        }
-    }
-    if (m_positionMax < 1) m_positionMax = 1;
-    if (m_position < 1 || m_position > m_positionMax) m_position = m_positionMax;
+    auto const currentPosition = store.visiblePosition(this->pageKey());
+    m_positionMax = std::max(std::size_t{1}, store.visiblePages().size() + (currentPosition == 0 ? 1 : 0));
+    m_position = currentPosition != 0 ? currentPosition : m_positionMax;
 
-    // stepper hugs the title; the footer buttons start past x150.
-    float labelW = 40.f;
     if (auto* title = CCLabelBMFont::create(tr("slot.editor.position").c_str(), "goldFont.fnt")) {
-        title->setScale(0.45f);
+        title->setScale(0.4f);
         title->setAnchorPoint({0.f, 0.5f});
-        title->setPosition({10.f, 26.f});
+        title->setPosition({kCatalogueX, 234.f});
         title->setID("position-title"_spr);
-        layer->addChild(title, 3);
-        labelW = title->getContentSize().width * title->getScale();
+        m_mainLayer->addChild(title, 3);
     }
-    float const x0 = 10.f + labelW;
     auto addStep = [&](char const* text, float x, auto onPress) {
-        auto* spr = ButtonSprite::create(
-            text, 26, true, "bigFont.fnt", "GJ_button_04.png", 18.f, 0.40f);
+        auto* spr = formButton(text, 24.f, "GJ_button_04.png", 20.f);
         auto* item = CCMenuItemExt::createSpriteExtra(spr, onPress);
-        item->setPosition({x, 26.f});
+        item->setPosition({x, 234.f});
         menu->addChild(item);
     };
-    addStep("-", x0 + 16.f, [this](CCMenuItemSpriteExtra*) {
-        this->setPosition(m_position - 1);
+    addStep("^", 500.f, [this](CCMenuItemSpriteExtra*) {
+        if (m_position > 1) this->setSlotPosition(m_position - 1);
     });
 
     m_positionLabel = CCLabelBMFont::create("", "bigFont.fnt");
     if (m_positionLabel) {
-        m_positionLabel->setScale(0.5f);
-        m_positionLabel->setPosition({x0 + 48.f, 26.f});
+        m_positionLabel->setScale(0.42f);
+        m_positionLabel->setPosition({448.f, 234.f});
         m_positionLabel->setID("position-label"_spr);
-        layer->addChild(m_positionLabel, 3);
+        m_mainLayer->addChild(m_positionLabel, 3);
     }
 
-    addStep("+", x0 + 80.f, [this](CCMenuItemSpriteExtra*) {
-        this->setPosition(m_position + 1);
+    addStep("v", 530.f, [this](CCMenuItemSpriteExtra*) {
+        this->setSlotPosition(m_position + 1);
     });
+    if (auto* hint = CCLabelBMFont::create(tr("slot.editor.position_hint").c_str(), "chatFont.fnt")) {
+        hint->setPosition({kCatalogueX + kCatalogueWidth / 2.f, 216.f});
+        hint->limitLabelWidth(kCatalogueWidth, 0.4f, 0.2f);
+        m_mainLayer->addChild(hint, 3);
+    }
+    auto* panel = paimon::ui::makeInset({kCatalogueWidth, 146.f}, 100);
+    panel->setPosition({kCatalogueX, 64.f});
+    m_mainLayer->addChild(panel, 1);
+    auto* placement = PlacementScrollLayer::create({kCatalogueWidth - 6.f, 140.f});
+    placement->onPlace = [this](std::size_t position) { this->setSlotPosition(position); };
+    m_positionScroll = placement;
+    if (m_positionScroll) {
+        m_positionScroll->setPosition({kCatalogueX + 3.f, 67.f});
+        m_positionScroll->setID("position-list"_spr);
+        m_mainLayer->addChild(m_positionScroll, 3);
+        this->rebuildPositionList(true);
+    }
     this->refreshPositionLabel();
 }
 
-void SlotEditorPopup::setPosition(std::size_t pos) {
+void SlotEditorPopup::rebuildPositionList(bool revealSelection) {
+    if (!m_positionScroll) return;
+    auto* content = m_positionScroll->m_contentLayer;
+    float const previousY = content->getPositionY();
+    content->removeAllChildren();
+    auto& store = SlotStore::get();
+    auto pages = store.visiblePages();
+    auto const ownKey = this->pageKey();
+    std::erase(pages, ownKey);
+    auto const index = std::min(m_position - 1, pages.size());
+    pages.insert(pages.begin() + static_cast<std::ptrdiff_t>(index), ownKey);
+    constexpr float rowHeight = kPlacementRowHeight;
+    float const width = m_positionScroll->getContentSize().width;
+    float const viewport = m_positionScroll->getContentSize().height;
+    float const height = std::max(viewport, pages.size() * rowHeight);
+    auto* placement = static_cast<PlacementScrollLayer*>(m_positionScroll);
+    placement->selectedIndex = index;
+    placement->rowCount = pages.size();
+    content->setContentHeight(height);
+    for (std::size_t i = 0; i < pages.size(); ++i) {
+        bool const isDraft = i == index;
+        std::string name;
+        int officialId = 0;
+        if (isDraft) name = slotDisplayName(m_draft);
+        else if (SlotStore::officialKeyId(pages[i], officialId)) {
+            auto replacement = store.slotForOfficial(officialId);
+            name = replacement ? slotDisplayName(*replacement) : officialName(officialId);
+        } else if (auto slot = store.find(pages[i].substr(2))) name = slotDisplayName(*slot);
+
+        auto* row = CCNode::create();
+        row->setContentSize({width, rowHeight});
+        row->setPosition({0.f, height - (i + 1) * rowHeight});
+        content->addChild(row);
+        auto* background = paimon::ui::makeInset({width - 2.f, rowHeight - 3.f},
+            isDraft ? 220 : 70, isDraft ? ccColor3B{65, 140, 45} : ccColor3B{0, 0, 0});
+        background->setPosition({1.f, 1.f});
+        row->addChild(background);
+        if (auto* label = CCLabelBMFont::create(
+                fmt::format("{}{}  {}", isDraft ? "> " : "", i + 1, name).c_str(), "bigFont.fnt")) {
+            label->setAnchorPoint({0.f, 0.5f});
+            label->setPosition({6.f, rowHeight / 2.f});
+            label->limitLabelWidth(width - 12.f, 0.35f, 0.12f);
+            row->addChild(label, 2);
+        }
+        if (!isDraft) {
+            auto* rowMenu = makeMenu(row, "position-row-menu"_spr, {width, rowHeight});
+            auto* hitArea = CCSprite::create();
+            hitArea->setTextureRect({0.f, 0.f, width, rowHeight - 2.f});
+            hitArea->setOpacity(0);
+            auto* item = CCMenuItemExt::createSpriteExtra(hitArea, [this, position = i + 1](CCMenuItemSpriteExtra*) {
+                this->setSlotPosition(position);
+            });
+            item->setPosition({width / 2.f, rowHeight / 2.f});
+            rowMenu->addChild(item);
+        }
+    }
+    float const selectedY = height - (index + 0.5f) * rowHeight;
+    float const offset = revealSelection ? viewport / 2.f - selectedY : previousY;
+    content->setPositionY(std::clamp(offset, viewport - height, 0.f));
+}
+
+void SlotEditorPopup::setSlotPosition(std::size_t pos) {
     if (m_positionMax < 1) return;
     pos = std::clamp(pos, std::size_t{1}, m_positionMax);
+    if (pos == m_position) return;
     m_position = pos;
     m_positionDirty = true;
     this->refreshPositionLabel();
+    // row taps execute inside the list: rebuild only after the touch dispatch completes.
+    WeakRef<SlotEditorPopup> weak(this);
+    bool const reveal = !m_positionScroll || !static_cast<PlacementScrollLayer*>(m_positionScroll)->isDragging();
+    Loader::get()->queueInMainThread([weak, reveal] {
+        if (auto self = weak.lock(); self && self->getParent()) self->rebuildPositionList(reveal);
+    });
 }
 
 void SlotEditorPopup::refreshPositionLabel() {
@@ -797,32 +933,36 @@ void SlotEditorPopup::onImportById(CCObject*) {
     this->restyleSourceChips();
     this->showSpinner(true);
 
+    auto const request = ++m_importRequest;
     geode::WeakRef<CCNode> weakThis(this);
-    SlotDownloads::get().fetch(levelId, [weakThis](GJGameLevel* level) {
-        geode::Loader::get()->queueInMainThread([weakThis, level] {
+    SlotDownloads::get().fetch(levelId, [weakThis, levelId, request](GJGameLevel* level) {
+        geode::Loader::get()->queueInMainThread([weakThis, levelId, request, retained = Ref<GJGameLevel>(level)] {
             auto ref = weakThis.lock();
             if (!ref) return;
             auto* self = typeinfo_cast<SlotEditorPopup*>(ref.data());
-            if (!self || !self->m_alive.load()) return;
+            if (!self || !self->m_alive.load() || self->m_importRequest != request) return;
             self->showSpinner(false);
-            if (!level) {
+            if (self->m_draft.source != Source::LevelId || self->m_draft.levelId != levelId) return;
+            if (!retained) {
                 toast(tr("slot.editor.import_failed"), NotificationIcon::Error);
                 return;
             }
-            self->prefillFromLevel(level);
+            self->prefillFromLevel(retained);
             toast(tr("slot.editor.imported"), NotificationIcon::Success);
         });
     });
 }
 
 void SlotEditorPopup::onBrowseGmd(CCObject*) {
+    auto const request = ++m_importRequest;
+    this->showSpinner(false);
     geode::WeakRef<CCNode> weakThis(this);
-    pt::pickGmd([weakThis](Result<std::optional<std::filesystem::path>> res) {
-        geode::Loader::get()->queueInMainThread([weakThis, res] {
+    pt::pickGmd([weakThis, request](Result<std::optional<std::filesystem::path>> res) {
+        geode::Loader::get()->queueInMainThread([weakThis, request, res] {
             auto ref = weakThis.lock();
             if (!ref) return;
             auto* self = typeinfo_cast<SlotEditorPopup*>(ref.data());
-            if (!self || !self->m_alive.load()) return;
+            if (!self || !self->m_alive.load() || self->m_importRequest != request) return;
             if (!res) return;
             auto picked = res.unwrap();
             if (!picked.has_value()) return;
@@ -859,8 +999,8 @@ void SlotEditorPopup::prefillFromLevel(GJGameLevel* level) {
 }
 
 void SlotEditorPopup::prefillFromGmd(std::filesystem::path const& path) {
-    auto info = readGmdInfo(path);
-    if (!info) {
+    auto imported = readGmd(path);
+    if (!imported.info || imported.levelString.empty()) {
         toast(tr("slot.editor.import_failed"), NotificationIcon::Error);
         return;
     }
@@ -868,6 +1008,7 @@ void SlotEditorPopup::prefillFromGmd(std::filesystem::path const& path) {
     // pending path is just a draft field, so cancelling costs nothing.
     m_pendingGmd = path;
     m_draft.source = Source::Gmd;
+    auto const& info = imported.info;
     if (!info->name.empty()) {
         m_draft.name = info->name;
         if (m_nameInput) m_nameInput->setString(m_draft.name);
@@ -928,15 +1069,13 @@ std::string SlotEditorPopup::saveDraft() {
     slot.stars = std::clamp(slot.stars, kMinStars, kMaxStars);
 
     auto& store = SlotStore::get();
+    std::string importedFile;
     if (slot.source == Source::LevelId) {
         if (slot.levelId <= 0) {
             toast(tr("slot.editor.invalid_id"), NotificationIcon::Warning);
             return {};
         }
-        if (!slot.gmdFile.empty()) {
-            store.discardGmd(slot.gmdFile);
-            slot.gmdFile.clear();
-        }
+        slot.gmdFile.clear();
     } else {
         std::string file = slot.gmdFile;
         if (!m_pendingGmd.empty()) {
@@ -946,14 +1085,11 @@ std::string SlotEditorPopup::saveDraft() {
                 return {};
             }
             file = *imported;
-            m_pendingGmd.clear();
+            importedFile = file;
         }
         if (file.empty()) {
             toast(tr("slot.editor.pick_gmd_first"), NotificationIcon::Warning);
             return {};
-        }
-        if (file != slot.gmdFile && !slot.gmdFile.empty()) {
-            store.discardGmd(slot.gmdFile);
         }
         slot.gmdFile = file;
     }
@@ -967,18 +1103,26 @@ std::string SlotEditorPopup::saveDraft() {
         } else {
             id = store.add(slot);
         }
-    } else if (slot.replacesOfficialId == 0 && m_positionDirty) {
-        store.movePageToVisible(SlotStore::slotKey(id), m_position);
     }
     if (id.empty()) {
+        if (!importedFile.empty()) store.discardGmd(importedFile);
         toast(tr("slot.editor.import_failed"), NotificationIcon::Error);
         return {};
+    }
+    if (m_positionDirty) {
+        store.movePageToVisible(slot.replacesOfficialId != 0
+            ? SlotStore::officialKey(slot.replacesOfficialId) : SlotStore::slotKey(id), m_position);
     }
 
     m_draft = slot;
     m_draft.id = id;
     m_isNew = false;
-    SlotLevelCache::get().invalidate(id);
+    m_positionDirty = false;
+    m_pendingGmd.clear();
+    // saving starts the shared persistent cache even with dynamic songs off.
+    cacheSlotLevel(m_draft);
+    // levelForSlot detects source changes during sync, after the current page's
+    // identity has been read. Keeping the old entry until then preserves selection.
     refreshOfficialList();
     if (m_onSaved) m_onSaved();
     return id;
@@ -1008,12 +1152,7 @@ void SlotEditorPopup::onHideOfficial(CCObject*) {
         return;
     }
     auto& store = SlotStore::get();
-    // hiding wins over replacing: drop the replacement so no orphan slot
-    // lingers behind the hidden page.
-    if (auto existing = store.slotForOfficial(officialId)) {
-        SlotLevelCache::get().invalidate(existing->id);
-        store.remove(existing->id);
-    }
+    // keep the user's replacement so showing the page again restores the same level.
     store.setOfficialHidden(officialId, true);
     refreshOfficialList();
     toast(tr("slot.official.hidden"), NotificationIcon::Success);

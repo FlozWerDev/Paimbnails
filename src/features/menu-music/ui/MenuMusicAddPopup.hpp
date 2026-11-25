@@ -1,10 +1,16 @@
-﻿#pragma once
+#pragma once
 #include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
 #include <string>
 
 namespace paimon::menumusic {
+
+enum class MusicSourceTab {
+    YouTube,
+    SoundCloud,
+    Spotify
+};
 
 class MenuMusicAddPopup : public PaimonPopup {
 public:
@@ -19,6 +25,13 @@ protected:
     void buildProgressBar();
     void refreshStatus();
 
+    void switchSourceTab(MusicSourceTab tab);
+    void refreshSpotifyUI();
+    void onLinkSpotify();
+    void onUnlinkSpotify();
+    void onSpotifyMediaCmd(std::string const& cmd);
+    void onAddSpotifyTrack();
+
     void setProgressBarVisible(bool visible);
     void updateProgressBar(float ratio01);
 
@@ -30,6 +43,14 @@ protected:
     void onPasteUrl(cocos2d::CCObject*);
 
     void finalizeLocalImport();
+
+    MusicSourceTab m_currentSourceTab = MusicSourceTab::YouTube;
+    cocos2d::CCNode* m_urlPanel = nullptr;
+    cocos2d::CCNode* m_urlSubContainer = nullptr;
+    cocos2d::CCNode* m_spotifySubContainer = nullptr;
+    cocos2d::CCLabelBMFont* m_sourceDescLabel = nullptr;
+    geode::TextInput* m_spotifyUserInput = nullptr;
+    geode::TextInput* m_spotifyTrackInput = nullptr;
 
     geode::TextInput* m_urlInput = nullptr;
     geode::TextInput* m_nameInput = nullptr;

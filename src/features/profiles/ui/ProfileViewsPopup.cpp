@@ -189,6 +189,7 @@ void ProfileViewsPopup::buildViewsList(const std::vector<ProfileView>& views) {
     }
 
     auto scroll = geode::ScrollLayer::create({scrollW, scrollH});
+    if (scroll) scroll->setAnchorPoint({0.f, 0.f});
     scroll->setPosition({scrollX, scrollY});
     scroll->m_contentLayer->addChild(container);
     scroll->m_contentLayer->setContentSize({scrollW, totalH});

@@ -1,0 +1,38 @@
+#include <cassert>
+#include <string>
+#include "src/features/profile-redesign/services/ProfileLevelCatalog.hpp"
+using namespace paimon::profile_redesign;
+
+int main() {
+    ProfileLevelCatalog catalog;
+    assert(catalog.nextPage() == 0 && !catalog.complete());
+    // The first native page is recent-first; popularity must span all pages.
+    assert(catalog.appendResponse("1:102:2:New:6:42:14:5|1:101:2:Older:6:42:14:20###4:0:2#hash", 42));
+    assert(!catalog.complete() && catalog.nextPage() == 1);
+    auto const size = catalog.levels().size();
+    assert(!catalog.appendResponse("1:99:2:Foreign:6:7:14:999###4:2:2#hash", 42));
+    assert(catalog.levels().size() == size && catalog.nextPage() == 1);
+    assert(!catalog.appendResponse("1:99:2:Bad:6:42:14:999###4:0:2#hash", 42));
+    assert(!catalog.appendResponse("<html>server error</html>", 42));
+    assert(!catalog.appendResponse("1:99:2:Bad:6:42:14:99999999999999999###4:2:2#hash", 42));
+    assert(catalog.appendResponse("1:90:2:Popular:6:42:14:100|1:80:2:Disliked:6:42:14:-3###4:2:2#hash", 42));
+    assert(catalog.complete() && catalog.levels().size() == 4);
+    assert(catalog.levels()[0].id == 90 && catalog.levels()[1].id == 101);
+    assert(catalog.levels()[2].id == 102 && catalog.levels()[3].likes == -3);
+    assert(catalog.pageCount(2) == 2 && catalog.page(1, 2).front().id == 102);
+    assert(catalog.page(9, 2).empty());
+    assert(!catalog.appendResponse("-1", 42));
+
+    ProfileLevelCatalog empty;
+    assert(empty.appendResponse("-1", 42) && empty.complete() && empty.levels().empty());
+    ProfileLevelCatalog duplicates;
+    assert(duplicates.appendResponse("1:1:6:42:14:9|1:2:6:42:14:9###3:0:2", 42));
+    assert(duplicates.appendResponse("1:1:6:42:14:9|1:3:6:42:14:1###3:2:2", 42));
+    assert(duplicates.complete() && duplicates.levels().size() == 3);
+    assert(duplicates.levels()[0].id == 2 && duplicates.levels()[1].id == 1);
+    assert(duplicates.pageCount(10) == 1);
+    assert(duplicates.pageCount(0) == 0 && duplicates.page(0, 0).empty());
+    ProfileLevelCatalog truncated;
+    assert(truncated.appendResponse("1:1:6:42:14:9###20:0:10", 42));
+    assert(!truncated.appendResponse("-1", 42) && !truncated.complete());
+}

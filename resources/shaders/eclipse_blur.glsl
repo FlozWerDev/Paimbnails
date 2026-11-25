@@ -1,7 +1,5 @@
 // two-way blur ported from eclipsemenu (epl-2.0); fast mode uses linear weights.
 
-#version 120
-
 #ifdef GL_ES
 precision mediump float;
 #endif

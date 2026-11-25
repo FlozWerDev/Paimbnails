@@ -6,6 +6,7 @@
 
 class ListThumbnailCarousel : public cocos2d::CCNode {
 protected:
+    using cocos2d::CCNode::init;
     std::vector<int> m_levelIDs;
     int m_currentIndex = 0;
     cocos2d::CCSprite* m_currentSprite = nullptr;

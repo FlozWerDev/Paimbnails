@@ -20,7 +20,7 @@ public:
 protected:
     bool init() override;
     void onExit() override;
-    void scrollWheel(float x, float y) override;
+    bool scrollWheel(float x, float y) override;
 
 private:
     paimon::cursorshop::Listing m_listing;

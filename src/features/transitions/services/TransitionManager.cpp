@@ -1,6 +1,9 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "TransitionManager.hpp"
 #include "DynamicTransitionManager.hpp"
+#include "NativeSceneNavigation.hpp"
 #include "TransitionTimeline.hpp"
+#include "TransitionEvaluation.hpp"
 #include "../ui/CustomTransitionScene.hpp"
 #include "../../../utils/LocalAssetStore.hpp"
 #include "../../../utils/BoundedFileRead.hpp"
@@ -58,326 +61,118 @@ void TransitionManager::tripCustomSafeMode(std::string const& reason) {
     m_customSafeModeTripped = true;
 }
 
+namespace {
+
+// single source for the type <-> string mappings; allTypes() order is the
+// table order. fallbacks stay per-function (unknown id -> Fade, unknown
+// type -> "fade" / "Fade" / "").
+struct TransitionTypeInfo {
+    TransitionType type;
+    char const* id;
+    char const* displayName;
+    char const* description;
+};
+
+constexpr TransitionTypeInfo kTransitionTypes[] = {
+    {TransitionType::Fade, "fade", "Fade (Black)", "Fades to black, then reveals the new screen."},
+    {TransitionType::FadeWhite, "fade_white", "Fade (White)", "Fades to white, then reveals the new screen."},
+    {TransitionType::FadeColor, "fade_color", "Fade (Color)", "Fades to a color you pick, then reveals."},
+    {TransitionType::CrossFade, "crossfade", "Cross Fade", "Both screens blend together smoothly."},
+    {TransitionType::SlideLeft, "slide_left", "Slide Left", "New screen slides in from the left."},
+    {TransitionType::SlideRight, "slide_right", "Slide Right", "New screen slides in from the right."},
+    {TransitionType::SlideUp, "slide_up", "Slide Up", "New screen slides in from the top."},
+    {TransitionType::SlideDown, "slide_down", "Slide Down", "New screen slides in from the bottom."},
+    {TransitionType::MoveInLeft, "move_in_left", "Move In Left", "New screen moves over the old one from left."},
+    {TransitionType::MoveInRight, "move_in_right", "Move In Right", "New screen moves over the old one from right."},
+    {TransitionType::MoveInTop, "move_in_top", "Move In Top", "New screen moves over the old one from top."},
+    {TransitionType::MoveInBottom, "move_in_bottom", "Move In Bottom", "New screen moves over the old one from bottom."},
+    {TransitionType::ZoomIn, "zoom_in", "Zoom Flip In", "3D zoom flip to reveal the new screen."},
+    {TransitionType::ZoomOut, "zoom_out", "Zoom Flip Out", "3D zoom flip outward to the new screen."},
+    {TransitionType::ZoomFlipYUp, "zoom_flip_y_up", "Zoom Flip Y Up", "3D zoom flip upward along Y axis."},
+    {TransitionType::ZoomFlipYDown, "zoom_flip_y_down", "Zoom Flip Y Down", "3D zoom flip downward along Y axis."},
+    {TransitionType::FlipX, "flip_x", "Flip Horizontal", "Flips horizontally like a card."},
+    {TransitionType::FlipY, "flip_y", "Flip Vertical", "Flips vertically like a card."},
+    {TransitionType::FlipAngular, "flip_angular", "Flip Angular", "Flips diagonally for a dynamic look."},
+    {TransitionType::ShrinkGrow, "shrink_grow", "Shrink & Grow", "Old screen shrinks, new one grows in."},
+    {TransitionType::RotoZoom, "roto_zoom", "Roto Zoom", "Rotates and zooms between screens."},
+    {TransitionType::JumpZoom, "jump_zoom", "Jump Zoom", "Jumps and zooms to the new screen."},
+    {TransitionType::FadeTR, "fade_tr", "Tiles (Top-Right)", "Tiles appear from top-right corner."},
+    {TransitionType::FadeBL, "fade_bl", "Tiles (Bottom-Left)", "Tiles appear from bottom-left corner."},
+    {TransitionType::FadeUp, "fade_up", "Tiles (Upward)", "Tiles appear sweeping upward."},
+    {TransitionType::FadeDown, "fade_down", "Tiles (Downward)", "Tiles appear sweeping downward."},
+    {TransitionType::TurnOffTiles, "turn_off_tiles", "Turn Off Tiles", "Tiles randomly disappear like a TV off."},
+    {TransitionType::SplitCols, "split_cols", "Split Columns", "Screen splits into vertical columns."},
+    {TransitionType::SplitRows, "split_rows", "Split Rows", "Screen splits into horizontal rows."},
+    {TransitionType::ProgressRadialCW, "progress_cw", "Radial CW", "Circular wipe clockwise, like a clock."},
+    {TransitionType::ProgressRadialCCW, "progress_ccw", "Radial CCW", "Circular wipe counter-clockwise."},
+    {TransitionType::ProgressInOut, "progress_inout", "Circle Iris", "Circle iris opens/closes like a camera."},
+    {TransitionType::ProgressOutIn, "progress_outin", "Circle Iris Out", "Circle starts open and closes inward."},
+    {TransitionType::ProgressHorizontal, "progress_h", "Horizontal Wipe", "Horizontal bar wipe from left to right."},
+    {TransitionType::ProgressVertical, "progress_v", "Vertical Wipe", "Vertical bar wipe from top to bottom."},
+    {TransitionType::PageForward, "page_forward", "Page Curl ->", "Page curls forward like a book."},
+    {TransitionType::PageBackward, "page_backward", "Page Curl <-", "Page curls backward."},
+    {TransitionType::FadeBounce, "fade_bounce", "Fade Bounce", "Fades to black, new screen bounces in."},
+    {TransitionType::SlideOverLeft, "slide_over_left", "Slide Over Left", "Old slides out left, new slides in from right."},
+    {TransitionType::SlideOverRight, "slide_over_right", "Slide Over Right", "Old slides out right, new slides in from left."},
+    {TransitionType::SlideOverUp, "slide_over_up", "Slide Over Up", "Old slides up and away, new enters from below."},
+    {TransitionType::SlideOverDown, "slide_over_down", "Slide Over Down", "Old slides down and away, new enters from above."},
+    {TransitionType::ZoomShrinkFade, "zoom_shrink_fade", "Zoom Shrink Fade", "Old shrinks and fades, new zooms into view."},
+    {TransitionType::SpinCW, "spin_cw", "Spin CW", "Scene spins clockwise while transitioning."},
+    {TransitionType::SpinCCW, "spin_ccw", "Spin CCW", "Scene spins counter-clockwise while transitioning."},
+    {TransitionType::PixelateFade, "pixelate_fade", "Pixelate Fade", "Random tiles dissolve in a mosaic pattern."},
+    {TransitionType::DiamondWipe, "diamond_wipe", "Diamond Wipe", "Diamond-shaped iris reveals new screen."},
+    {TransitionType::DoubleDoor, "double_door", "Double Door", "Screen splits open like double doors."},
+    {TransitionType::Blinds, "blinds", "Venetian Blinds", "Venetian blinds effect between scenes."},
+    {TransitionType::Swirl, "swirl", "Swirl Zoom", "Spiral zoom swirl into the new screen."},
+    {TransitionType::Glitch, "glitch", "Glitch", "Quick shake + crossfade glitch effect."},
+    {TransitionType::CinematicBars, "cinematic_bars", "Cinematic Bars", "Letterbox bars fade in, then reveal new scene."},
+    {TransitionType::FlashWhite, "flash_white", "Flash White", "Quick white flash, then reveals the new screen."},
+    {TransitionType::HeartIris, "heart_iris", "Heart Iris", "Fast circle iris with a soft, cute feel."},
+    {TransitionType::WaveSlide, "wave_slide", "Wave Slide", "New screen slides in with a wave-like motion."},
+    {TransitionType::Random, "random", "Random!", "A random transition is picked every time!"},
+    {TransitionType::Custom, "custom", "Custom (DSL)", "Define your own transition with commands!"},
+    {TransitionType::Stinger, "stinger", "Stinger (OBS)", "Image, GIF or video overlay with a configurable scene cut"},
+    {TransitionType::None, "none", "None (Instant)", "Instant switch, no animation."},
+};
+
+TransitionTypeInfo const* findTypeInfo(TransitionType type) {
+    for (auto const& info : kTransitionTypes) {
+        if (info.type == type) return &info;
+    }
+    return nullptr;
+}
+
+} // namespace
+
 std::vector<TransitionType> const& TransitionManager::allTypes() {
-    static const std::vector<TransitionType> types = {
-        TransitionType::Fade,
-        TransitionType::FadeWhite,
-        TransitionType::FadeColor,
-        TransitionType::CrossFade,
-        TransitionType::SlideLeft,
-        TransitionType::SlideRight,
-        TransitionType::SlideUp,
-        TransitionType::SlideDown,
-        TransitionType::MoveInLeft,
-        TransitionType::MoveInRight,
-        TransitionType::MoveInTop,
-        TransitionType::MoveInBottom,
-        TransitionType::ZoomIn,
-        TransitionType::ZoomOut,
-        TransitionType::ZoomFlipYUp,
-        TransitionType::ZoomFlipYDown,
-        TransitionType::FlipX,
-        TransitionType::FlipY,
-        TransitionType::FlipAngular,
-        TransitionType::ShrinkGrow,
-        TransitionType::RotoZoom,
-        TransitionType::JumpZoom,
-        TransitionType::FadeTR,
-        TransitionType::FadeBL,
-        TransitionType::FadeUp,
-        TransitionType::FadeDown,
-        TransitionType::TurnOffTiles,
-        TransitionType::SplitCols,
-        TransitionType::SplitRows,
-        TransitionType::ProgressRadialCW,
-        TransitionType::ProgressRadialCCW,
-        TransitionType::ProgressInOut,
-        TransitionType::ProgressOutIn,
-        TransitionType::ProgressHorizontal,
-        TransitionType::ProgressVertical,
-        TransitionType::PageForward,
-        TransitionType::PageBackward,
-        TransitionType::FadeBounce,
-        TransitionType::SlideOverLeft,
-        TransitionType::SlideOverRight,
-        TransitionType::SlideOverUp,
-        TransitionType::SlideOverDown,
-        TransitionType::ZoomShrinkFade,
-        TransitionType::SpinCW,
-        TransitionType::SpinCCW,
-        TransitionType::PixelateFade,
-        TransitionType::DiamondWipe,
-        TransitionType::DoubleDoor,
-        TransitionType::Blinds,
-        TransitionType::Swirl,
-        TransitionType::Glitch,
-        TransitionType::CinematicBars,
-        TransitionType::FlashWhite,
-        TransitionType::HeartIris,
-        TransitionType::WaveSlide,
-        TransitionType::Random,
-        TransitionType::Custom,
-        TransitionType::Stinger,
-        TransitionType::None,
-    };
+    static const std::vector<TransitionType> types = [] {
+        std::vector<TransitionType> out;
+        out.reserve(sizeof(kTransitionTypes) / sizeof(kTransitionTypes[0]));
+        for (auto const& info : kTransitionTypes) out.push_back(info.type);
+        return out;
+    }();
     return types;
 }
 
 TransitionType TransitionManager::typeFromString(std::string const& s) {
-    if (s == "fade")             return TransitionType::Fade;
-    if (s == "fade_white")       return TransitionType::FadeWhite;
-    if (s == "fade_color")       return TransitionType::FadeColor;
-    if (s == "crossfade")        return TransitionType::CrossFade;
-    if (s == "slide_left")       return TransitionType::SlideLeft;
-    if (s == "slide_right")      return TransitionType::SlideRight;
-    if (s == "slide_up")         return TransitionType::SlideUp;
-    if (s == "slide_down")       return TransitionType::SlideDown;
-    if (s == "move_in_left")     return TransitionType::MoveInLeft;
-    if (s == "move_in_right")    return TransitionType::MoveInRight;
-    if (s == "move_in_top")      return TransitionType::MoveInTop;
-    if (s == "move_in_bottom")   return TransitionType::MoveInBottom;
-    if (s == "zoom_in")          return TransitionType::ZoomIn;
-    if (s == "zoom_out")         return TransitionType::ZoomOut;
-    if (s == "zoom_flip_y_up")   return TransitionType::ZoomFlipYUp;
-    if (s == "zoom_flip_y_down") return TransitionType::ZoomFlipYDown;
-    if (s == "flip_x")           return TransitionType::FlipX;
-    if (s == "flip_y")           return TransitionType::FlipY;
-    if (s == "flip_angular")     return TransitionType::FlipAngular;
-    if (s == "shrink_grow")      return TransitionType::ShrinkGrow;
-    if (s == "roto_zoom")        return TransitionType::RotoZoom;
-    if (s == "jump_zoom")        return TransitionType::JumpZoom;
-    if (s == "fade_tr")          return TransitionType::FadeTR;
-    if (s == "fade_bl")          return TransitionType::FadeBL;
-    if (s == "fade_up")          return TransitionType::FadeUp;
-    if (s == "fade_down")        return TransitionType::FadeDown;
-    if (s == "turn_off_tiles")   return TransitionType::TurnOffTiles;
-    if (s == "split_cols")       return TransitionType::SplitCols;
-    if (s == "split_rows")       return TransitionType::SplitRows;
-    if (s == "progress_cw")      return TransitionType::ProgressRadialCW;
-    if (s == "progress_ccw")     return TransitionType::ProgressRadialCCW;
-    if (s == "progress_inout")   return TransitionType::ProgressInOut;
-    if (s == "progress_outin")   return TransitionType::ProgressOutIn;
-    if (s == "progress_h")       return TransitionType::ProgressHorizontal;
-    if (s == "progress_v")       return TransitionType::ProgressVertical;
-    if (s == "page_forward")     return TransitionType::PageForward;
-    if (s == "page_backward")    return TransitionType::PageBackward;
-    if (s == "fade_bounce")      return TransitionType::FadeBounce;
-    if (s == "slide_over_left")  return TransitionType::SlideOverLeft;
-    if (s == "slide_over_right") return TransitionType::SlideOverRight;
-    if (s == "slide_over_up")    return TransitionType::SlideOverUp;
-    if (s == "slide_over_down")  return TransitionType::SlideOverDown;
-    if (s == "zoom_shrink_fade") return TransitionType::ZoomShrinkFade;
-    if (s == "spin_cw")          return TransitionType::SpinCW;
-    if (s == "spin_ccw")         return TransitionType::SpinCCW;
-    if (s == "pixelate_fade")    return TransitionType::PixelateFade;
-    if (s == "diamond_wipe")     return TransitionType::DiamondWipe;
-    if (s == "double_door")      return TransitionType::DoubleDoor;
-    if (s == "blinds")           return TransitionType::Blinds;
-    if (s == "swirl")            return TransitionType::Swirl;
-    if (s == "glitch")           return TransitionType::Glitch;
-    if (s == "cinematic_bars")   return TransitionType::CinematicBars;
-    if (s == "flash_white")      return TransitionType::FlashWhite;
-    if (s == "heart_iris")       return TransitionType::HeartIris;
-    if (s == "wave_slide")       return TransitionType::WaveSlide;
-    if (s == "random")           return TransitionType::Random;
-    if (s == "stinger") return TransitionType::Stinger;
-    if (s == "custom")           return TransitionType::Custom;
-    if (s == "none")             return TransitionType::None;
+    for (auto const& info : kTransitionTypes) {
+        if (s == info.id) return info.type;
+    }
     return TransitionType::Fade;
 }
 
 std::string TransitionManager::typeToString(TransitionType t) {
-    switch (t) {
-        case TransitionType::Fade:              return "fade";
-        case TransitionType::FadeWhite:         return "fade_white";
-        case TransitionType::FadeColor:         return "fade_color";
-        case TransitionType::CrossFade:         return "crossfade";
-        case TransitionType::SlideLeft:         return "slide_left";
-        case TransitionType::SlideRight:        return "slide_right";
-        case TransitionType::SlideUp:           return "slide_up";
-        case TransitionType::SlideDown:         return "slide_down";
-        case TransitionType::MoveInLeft:        return "move_in_left";
-        case TransitionType::MoveInRight:       return "move_in_right";
-        case TransitionType::MoveInTop:         return "move_in_top";
-        case TransitionType::MoveInBottom:      return "move_in_bottom";
-        case TransitionType::ZoomIn:            return "zoom_in";
-        case TransitionType::ZoomOut:           return "zoom_out";
-        case TransitionType::ZoomFlipYUp:       return "zoom_flip_y_up";
-        case TransitionType::ZoomFlipYDown:     return "zoom_flip_y_down";
-        case TransitionType::FlipX:             return "flip_x";
-        case TransitionType::FlipY:             return "flip_y";
-        case TransitionType::FlipAngular:       return "flip_angular";
-        case TransitionType::ShrinkGrow:        return "shrink_grow";
-        case TransitionType::RotoZoom:          return "roto_zoom";
-        case TransitionType::JumpZoom:          return "jump_zoom";
-        case TransitionType::FadeTR:            return "fade_tr";
-        case TransitionType::FadeBL:            return "fade_bl";
-        case TransitionType::FadeUp:            return "fade_up";
-        case TransitionType::FadeDown:          return "fade_down";
-        case TransitionType::TurnOffTiles:      return "turn_off_tiles";
-        case TransitionType::SplitCols:         return "split_cols";
-        case TransitionType::SplitRows:         return "split_rows";
-        case TransitionType::ProgressRadialCW:  return "progress_cw";
-        case TransitionType::ProgressRadialCCW: return "progress_ccw";
-        case TransitionType::ProgressInOut:     return "progress_inout";
-        case TransitionType::ProgressOutIn:     return "progress_outin";
-        case TransitionType::ProgressHorizontal: return "progress_h";
-        case TransitionType::ProgressVertical:  return "progress_v";
-        case TransitionType::PageForward:       return "page_forward";
-        case TransitionType::PageBackward:      return "page_backward";
-        case TransitionType::FadeBounce:        return "fade_bounce";
-        case TransitionType::SlideOverLeft:     return "slide_over_left";
-        case TransitionType::SlideOverRight:    return "slide_over_right";
-        case TransitionType::SlideOverUp:       return "slide_over_up";
-        case TransitionType::SlideOverDown:     return "slide_over_down";
-        case TransitionType::ZoomShrinkFade:    return "zoom_shrink_fade";
-        case TransitionType::SpinCW:            return "spin_cw";
-        case TransitionType::SpinCCW:           return "spin_ccw";
-        case TransitionType::PixelateFade:      return "pixelate_fade";
-        case TransitionType::DiamondWipe:       return "diamond_wipe";
-        case TransitionType::DoubleDoor:        return "double_door";
-        case TransitionType::Blinds:            return "blinds";
-        case TransitionType::Swirl:             return "swirl";
-        case TransitionType::Glitch:            return "glitch";
-        case TransitionType::CinematicBars:     return "cinematic_bars";
-        case TransitionType::FlashWhite:        return "flash_white";
-        case TransitionType::HeartIris:         return "heart_iris";
-        case TransitionType::WaveSlide:         return "wave_slide";
-        case TransitionType::Random:            return "random";
-        case TransitionType::Stinger:           return "stinger";
-        case TransitionType::Custom:            return "custom";
-        case TransitionType::None:              return "none";
-    }
+    if (auto const* info = findTypeInfo(t)) return info->id;
     return "fade";
 }
 
 std::string TransitionManager::typeDisplayName(TransitionType t) {
-    switch (t) {
-        case TransitionType::Stinger: return "Stinger (OBS)";
-        case TransitionType::Fade:              return "Fade (Black)";
-        case TransitionType::FadeWhite:         return "Fade (White)";
-        case TransitionType::FadeColor:         return "Fade (Color)";
-        case TransitionType::CrossFade:         return "Cross Fade";
-        case TransitionType::SlideLeft:         return "Slide Left";
-        case TransitionType::SlideRight:        return "Slide Right";
-        case TransitionType::SlideUp:           return "Slide Up";
-        case TransitionType::SlideDown:         return "Slide Down";
-        case TransitionType::MoveInLeft:        return "Move In Left";
-        case TransitionType::MoveInRight:       return "Move In Right";
-        case TransitionType::MoveInTop:         return "Move In Top";
-        case TransitionType::MoveInBottom:      return "Move In Bottom";
-        case TransitionType::ZoomIn:            return "Zoom Flip In";
-        case TransitionType::ZoomOut:           return "Zoom Flip Out";
-        case TransitionType::ZoomFlipYUp:       return "Zoom Flip Y Up";
-        case TransitionType::ZoomFlipYDown:     return "Zoom Flip Y Down";
-        case TransitionType::FlipX:             return "Flip Horizontal";
-        case TransitionType::FlipY:             return "Flip Vertical";
-        case TransitionType::FlipAngular:       return "Flip Angular";
-        case TransitionType::ShrinkGrow:        return "Shrink & Grow";
-        case TransitionType::RotoZoom:          return "Roto Zoom";
-        case TransitionType::JumpZoom:          return "Jump Zoom";
-        case TransitionType::FadeTR:            return "Tiles (Top-Right)";
-        case TransitionType::FadeBL:            return "Tiles (Bottom-Left)";
-        case TransitionType::FadeUp:            return "Tiles (Upward)";
-        case TransitionType::FadeDown:          return "Tiles (Downward)";
-        case TransitionType::TurnOffTiles:      return "Turn Off Tiles";
-        case TransitionType::SplitCols:         return "Split Columns";
-        case TransitionType::SplitRows:         return "Split Rows";
-        case TransitionType::ProgressRadialCW:  return "Radial CW";
-        case TransitionType::ProgressRadialCCW: return "Radial CCW";
-        case TransitionType::ProgressInOut:     return "Circle Iris";
-        case TransitionType::ProgressOutIn:     return "Circle Iris Out";
-        case TransitionType::ProgressHorizontal: return "Horizontal Wipe";
-        case TransitionType::ProgressVertical:  return "Vertical Wipe";
-        case TransitionType::PageForward:       return "Page Curl ->";
-        case TransitionType::PageBackward:      return "Page Curl <-";
-        case TransitionType::FadeBounce:        return "Fade Bounce";
-        case TransitionType::SlideOverLeft:     return "Slide Over Left";
-        case TransitionType::SlideOverRight:    return "Slide Over Right";
-        case TransitionType::SlideOverUp:       return "Slide Over Up";
-        case TransitionType::SlideOverDown:     return "Slide Over Down";
-        case TransitionType::ZoomShrinkFade:    return "Zoom Shrink Fade";
-        case TransitionType::SpinCW:            return "Spin CW";
-        case TransitionType::SpinCCW:           return "Spin CCW";
-        case TransitionType::PixelateFade:      return "Pixelate Fade";
-        case TransitionType::DiamondWipe:       return "Diamond Wipe";
-        case TransitionType::DoubleDoor:        return "Double Door";
-        case TransitionType::Blinds:            return "Venetian Blinds";
-        case TransitionType::Swirl:             return "Swirl Zoom";
-        case TransitionType::Glitch:            return "Glitch";
-        case TransitionType::CinematicBars:     return "Cinematic Bars";
-        case TransitionType::FlashWhite:        return "Flash White";
-        case TransitionType::HeartIris:         return "Heart Iris";
-        case TransitionType::WaveSlide:         return "Wave Slide";
-        case TransitionType::Random:            return "Random!";
-        case TransitionType::Custom:            return "Custom (DSL)";
-        case TransitionType::None:              return "None (Instant)";
-    }
+    if (auto const* info = findTypeInfo(t)) return info->displayName;
     return "Fade";
 }
 
 std::string TransitionManager::typeDescription(TransitionType t) {
-    switch (t) {
-        case TransitionType::Stinger: return "Image, GIF or video overlay with a configurable scene cut";
-        case TransitionType::Fade:              return "Fades to black, then reveals the new screen.";
-        case TransitionType::FadeWhite:         return "Fades to white, then reveals the new screen.";
-        case TransitionType::FadeColor:         return "Fades to a color you pick, then reveals.";
-        case TransitionType::CrossFade:         return "Both screens blend together smoothly.";
-        case TransitionType::SlideLeft:         return "New screen slides in from the left.";
-        case TransitionType::SlideRight:        return "New screen slides in from the right.";
-        case TransitionType::SlideUp:           return "New screen slides in from the top.";
-        case TransitionType::SlideDown:         return "New screen slides in from the bottom.";
-        case TransitionType::MoveInLeft:        return "New screen moves over the old one from left.";
-        case TransitionType::MoveInRight:       return "New screen moves over the old one from right.";
-        case TransitionType::MoveInTop:         return "New screen moves over the old one from top.";
-        case TransitionType::MoveInBottom:      return "New screen moves over the old one from bottom.";
-        case TransitionType::ZoomIn:            return "3D zoom flip to reveal the new screen.";
-        case TransitionType::ZoomOut:           return "3D zoom flip outward to the new screen.";
-        case TransitionType::ZoomFlipYUp:       return "3D zoom flip upward along Y axis.";
-        case TransitionType::ZoomFlipYDown:     return "3D zoom flip downward along Y axis.";
-        case TransitionType::FlipX:             return "Flips horizontally like a card.";
-        case TransitionType::FlipY:             return "Flips vertically like a card.";
-        case TransitionType::FlipAngular:       return "Flips diagonally for a dynamic look.";
-        case TransitionType::ShrinkGrow:        return "Old screen shrinks, new one grows in.";
-        case TransitionType::RotoZoom:          return "Rotates and zooms between screens.";
-        case TransitionType::JumpZoom:          return "Jumps and zooms to the new screen.";
-        case TransitionType::FadeTR:            return "Tiles appear from top-right corner.";
-        case TransitionType::FadeBL:            return "Tiles appear from bottom-left corner.";
-        case TransitionType::FadeUp:            return "Tiles appear sweeping upward.";
-        case TransitionType::FadeDown:          return "Tiles appear sweeping downward.";
-        case TransitionType::TurnOffTiles:      return "Tiles randomly disappear like a TV off.";
-        case TransitionType::SplitCols:         return "Screen splits into vertical columns.";
-        case TransitionType::SplitRows:         return "Screen splits into horizontal rows.";
-        case TransitionType::ProgressRadialCW:  return "Circular wipe clockwise, like a clock.";
-        case TransitionType::ProgressRadialCCW: return "Circular wipe counter-clockwise.";
-        case TransitionType::ProgressInOut:     return "Circle iris opens/closes like a camera.";
-        case TransitionType::ProgressOutIn:     return "Circle starts open and closes inward.";
-        case TransitionType::ProgressHorizontal: return "Horizontal bar wipe from left to right.";
-        case TransitionType::ProgressVertical:  return "Vertical bar wipe from top to bottom.";
-        case TransitionType::PageForward:       return "Page curls forward like a book.";
-        case TransitionType::PageBackward:      return "Page curls backward.";
-        case TransitionType::FadeBounce:        return "Fades to black, new screen bounces in.";
-        case TransitionType::SlideOverLeft:     return "Old slides out left, new slides in from right.";
-        case TransitionType::SlideOverRight:    return "Old slides out right, new slides in from left.";
-        case TransitionType::SlideOverUp:       return "Old slides up and away, new enters from below.";
-        case TransitionType::SlideOverDown:     return "Old slides down and away, new enters from above.";
-        case TransitionType::ZoomShrinkFade:    return "Old shrinks and fades, new zooms into view.";
-        case TransitionType::SpinCW:            return "Scene spins clockwise while transitioning.";
-        case TransitionType::SpinCCW:           return "Scene spins counter-clockwise while transitioning.";
-        case TransitionType::PixelateFade:      return "Random tiles dissolve in a mosaic pattern.";
-        case TransitionType::DiamondWipe:       return "Diamond-shaped iris reveals new screen.";
-        case TransitionType::DoubleDoor:        return "Screen splits open like double doors.";
-        case TransitionType::Blinds:            return "Venetian blinds effect between scenes.";
-        case TransitionType::Swirl:             return "Spiral zoom swirl into the new screen.";
-        case TransitionType::Glitch:            return "Quick shake + crossfade glitch effect.";
-        case TransitionType::CinematicBars:     return "Letterbox bars fade in, then reveal new scene.";
-        case TransitionType::FlashWhite:        return "Quick white flash, then reveals the new screen.";
-        case TransitionType::HeartIris:         return "Fast circle iris with a soft, cute feel.";
-        case TransitionType::WaveSlide:         return "New screen slides in with a wave-like motion.";
-        case TransitionType::Random:            return "A random transition is picked every time!";
-        case TransitionType::Custom:            return "Define your own transition with commands!";
-        case TransitionType::None:              return "Instant switch, no animation.";
-    }
+    if (auto const* info = findTypeInfo(t)) return info->description;
     return "";
 }
 
@@ -395,6 +190,9 @@ CommandAction TransitionManager::actionFromString(std::string const& s) {
     if (s == "image")     return CommandAction::Image;
     if (s == "shake")     return CommandAction::Shake;
     if (s == "bounce")    return CommandAction::Bounce;
+    if (s == "skew")      return CommandAction::Skew;
+    if (s == "overlay")   return CommandAction::Overlay;
+    if (s == "follow_cursor") return CommandAction::FollowCursor;
     return CommandAction::Wait;
 }
 
@@ -413,12 +211,65 @@ std::string TransitionManager::actionToString(CommandAction a) {
         case CommandAction::Image:      return "image";
         case CommandAction::Shake:      return "shake";
         case CommandAction::Bounce:     return "bounce";
+        case CommandAction::Skew:       return "skew";
+        case CommandAction::Overlay:    return "overlay";
+        case CommandAction::FollowCursor: return "follow_cursor";
     }
     return "wait";
 }
 
+TransitionEasing TransitionManager::easingFromString(std::string const& s) {
+    if (s == "ease_in") return TransitionEasing::EaseIn;
+    if (s == "ease_out") return TransitionEasing::EaseOut;
+    if (s == "ease_in_out") return TransitionEasing::EaseInOut;
+    if (s == "sine") return TransitionEasing::Sine;
+    if (s == "back") return TransitionEasing::Back;
+    if (s == "bounce") return TransitionEasing::Bounce;
+    if (s == "elastic") return TransitionEasing::Elastic;
+    return TransitionEasing::Linear;
+}
+
+std::string TransitionManager::easingToString(TransitionEasing e) {
+    switch (e) {
+        case TransitionEasing::EaseIn: return "ease_in";
+        case TransitionEasing::EaseOut: return "ease_out";
+        case TransitionEasing::EaseInOut: return "ease_in_out";
+        case TransitionEasing::Sine: return "sine";
+        case TransitionEasing::Back: return "back";
+        case TransitionEasing::Bounce: return "bounce";
+        case TransitionEasing::Elastic: return "elastic";
+        default: return "linear";
+    }
+}
+
+std::string TransitionManager::easingDisplayName(TransitionEasing e) {
+    switch (e) {
+        case TransitionEasing::EaseIn: return "Ease In";
+        case TransitionEasing::EaseOut: return "Ease Out";
+        case TransitionEasing::EaseInOut: return "Ease In+Out";
+        case TransitionEasing::Sine: return "Sine";
+        case TransitionEasing::Back: return "Back";
+        case TransitionEasing::Bounce: return "Bounce";
+        case TransitionEasing::Elastic: return "Elastic";
+        default: return "Linear";
+    }
+}
+
+std::vector<TransitionEasing> const& TransitionManager::allEasings() {
+    static const std::vector<TransitionEasing> easings = {
+        TransitionEasing::Linear, TransitionEasing::EaseIn, TransitionEasing::EaseOut,
+        TransitionEasing::EaseInOut, TransitionEasing::Sine, TransitionEasing::Back,
+        TransitionEasing::Bounce, TransitionEasing::Elastic,
+    };
+    return easings;
+}
+
+float TransitionManager::easeValue(TransitionEasing e, float t) {
+    return paimon::transitions::transitionEase(e, t);
+}
+
 bool TransitionManager::isValidTarget(std::string const& target) {
-    return target == "from" || target == "to";
+    return target == "from" || target == "to" || target == "both";
 }
 
 int TransitionManager::sanitizeCommand(TransitionCommand& cmd) {
@@ -431,7 +282,19 @@ int TransitionManager::sanitizeCommand(TransitionCommand& cmd) {
         }
     };
 
+    auto clampCounted = [&fixes](auto& field, auto lo, auto hi) {
+        auto clamped = std::clamp(field, lo, hi);
+        if (clamped != field) {
+            field = clamped;
+            fixes++;
+        }
+    };
+
     sanitizeFloat(cmd.duration, 0.3f);
+    sanitizeFloat(cmd.startTime, -1.f);
+    sanitizeFloat(cmd.objScale, 1.f);
+    cmd.startTime = std::clamp(cmd.startTime, -1.f, 30.f);
+    if (cmd.objectName.size() > 48) cmd.objectName.resize(48);
     sanitizeFloat(cmd.delay, 0.f);
     sanitizeFloat(cmd.fromX, 0.f);
     sanitizeFloat(cmd.fromY, 0.f);
@@ -446,27 +309,12 @@ int TransitionManager::sanitizeCommand(TransitionCommand& cmd) {
         fixes++;
     }
 
-    if (cmd.duration < 0.01f) {
-        cmd.duration = 0.01f;
-        fixes++;
-    } else if (cmd.duration > 30.f) {
-        cmd.duration = 30.f;
-        fixes++;
-    }
-
-    if (cmd.delay < 0.f) {
-        cmd.delay = 0.f;
-        fixes++;
-    } else if (cmd.delay > 10.f) {
-        cmd.delay = 10.f;
-        fixes++;
-    }
+    clampCounted(cmd.duration, 0.01f, 30.f);
+    clampCounted(cmd.delay, 0.f, 10.f);
 
     if (cmd.action == CommandAction::Scale) {
-        float newFrom = std::clamp(cmd.fromVal, 0.01f, 10.f);
-        float newTo = std::clamp(cmd.toVal, 0.01f, 10.f);
-        if (newFrom != cmd.fromVal) { cmd.fromVal = newFrom; fixes++; }
-        if (newTo != cmd.toVal) { cmd.toVal = newTo; fixes++; }
+        clampCounted(cmd.fromVal, 0.01f, 10.f);
+        clampCounted(cmd.toVal, 0.01f, 10.f);
     } else if (
         cmd.action == CommandAction::FadeOut ||
         cmd.action == CommandAction::FadeIn ||
@@ -474,35 +322,49 @@ int TransitionManager::sanitizeCommand(TransitionCommand& cmd) {
         cmd.action == CommandAction::EaseOut ||
         cmd.action == CommandAction::Bounce
     ) {
-        float newFrom = std::clamp(cmd.fromVal, 0.f, 255.f);
-        float newTo = std::clamp(cmd.toVal, 0.f, 255.f);
-        if (newFrom != cmd.fromVal) { cmd.fromVal = newFrom; fixes++; }
-        if (newTo != cmd.toVal) { cmd.toVal = newTo; fixes++; }
+        clampCounted(cmd.fromVal, 0.f, 255.f);
+        clampCounted(cmd.toVal, 0.f, 255.f);
     }
 
     if (cmd.action == CommandAction::Color) {
-        int nr = std::clamp(cmd.r, 0, 255);
-        int ng = std::clamp(cmd.g, 0, 255);
-        int nb = std::clamp(cmd.b, 0, 255);
-        if (nr != cmd.r) { cmd.r = nr; fixes++; }
-        if (ng != cmd.g) { cmd.g = ng; fixes++; }
-        if (nb != cmd.b) { cmd.b = nb; fixes++; }
+        clampCounted(cmd.r, 0, 255);
+        clampCounted(cmd.g, 0, 255);
+        clampCounted(cmd.b, 0, 255);
     }
 
     if (cmd.action == CommandAction::Shake) {
-        float ni = std::clamp(cmd.intensity, 0.5f, 50.f);
-        if (ni != cmd.intensity) {
-            cmd.intensity = ni;
-            fixes++;
-        }
+        clampCounted(cmd.intensity, 0.5f, 50.f);
     }
 
     if (cmd.action == CommandAction::Spawn) {
-        int sc = std::clamp(cmd.spawnCount, 0, 16);
-        if (sc != cmd.spawnCount) {
-            cmd.spawnCount = sc;
-            fixes++;
-        }
+        clampCounted(cmd.spawnCount, 0, 16);
+    }
+
+    if (cmd.action == CommandAction::Skew) {
+        clampCounted(cmd.fromVal, -60.f, 60.f);
+        clampCounted(cmd.toVal, -60.f, 60.f);
+    }
+    if (cmd.action == CommandAction::Overlay) {
+        clampCounted(cmd.fromVal, 0.f, 255.f);
+        clampCounted(cmd.toVal, 0.f, 255.f);
+        clampCounted(cmd.r, 0, 255);
+        clampCounted(cmd.g, 0, 255);
+        clampCounted(cmd.b, 0, 255);
+    }
+    if (cmd.action == CommandAction::Image) {
+        // object position is a screen fraction; 0,0 in old files means unset.
+        if (cmd.startTime < 0.f && cmd.fromX == 0.f && cmd.fromY == 0.f) { cmd.fromX = .5f; cmd.fromY = .5f; fixes++; }
+        clampCounted(cmd.fromX, 0.f, 1.f);
+        clampCounted(cmd.fromY, 0.f, 1.f);
+        clampCounted(cmd.objScale, .05f, 4.f);
+        cmd.fromVal = std::clamp(cmd.fromVal, 0.f, 255.f);
+        cmd.toVal = std::clamp(cmd.toVal, 0.f, 255.f);
+        cmd.r = std::clamp(cmd.r, 0, 255); cmd.g = std::clamp(cmd.g, 0, 255); cmd.b = std::clamp(cmd.b, 0, 255);
+    }
+    if (cmd.targetObj < -1) { cmd.targetObj = -1; fixes++; }
+    if (static_cast<int>(cmd.easing) < 0 || static_cast<int>(cmd.easing) > 7) {
+        cmd.easing = TransitionEasing::Linear;
+        fixes++;
     }
 
     return fixes;
@@ -514,10 +376,23 @@ int TransitionManager::sanitizeCommands(std::vector<TransitionCommand>& commands
     for (auto& cmd : commands) {
         fixes += sanitizeCommand(cmd);
     }
+    // object references must point at an Image command other than themselves.
+    for (std::size_t i = 0; i < commands.size(); ++i) {
+        int obj = commands[i].targetObj;
+        if (obj < 0) continue;
+        if (obj >= (int)commands.size() || obj == (int)i ||
+            commands[obj].action != CommandAction::Image) {
+            commands[i].targetObj = -1;
+            ++fixes;
+        }
+    }
 
     if (commands.empty()) {
-        commands.push_back({CommandAction::FadeOut, "from", 0.15f, 0, 0, 0, 0, 255.f, 0.f});
-        commands.push_back({CommandAction::FadeIn, "to", 0.15f, 0, 0, 0, 0, 0.f, 255.f});
+        TransitionCommand fade;
+        fade.action = CommandAction::FadeOut; fade.duration = .15f; fade.fromVal = 255.f; fade.toVal = 0.f;
+        commands.push_back(fade);
+        fade.action = CommandAction::FadeIn; fade.target = "to"; fade.fromVal = 0.f; fade.toVal = 255.f;
+        commands.push_back(fade);
         fixes += 2;
     }
     return fixes;
@@ -550,7 +425,7 @@ int TransitionManager::sanitizeConfig(TransitionConfig& cfg) {
 
 
 std::filesystem::path TransitionManager::getConfigPath() const {
-    return Mod::get()->getSaveDir() / "transitions.json";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "transitions.json";
 }
 
 
@@ -573,6 +448,14 @@ static TransitionCommand parseCommand(matjson::Value const& obj) {
     cmd.spawnCount = paimon::json::integerOr<int>(obj["spawn_count"]);
     cmd.delay = paimon::json::floatOr(obj["delay"], cmd.delay);
     cmd.intensity = paimon::json::floatOr(obj["intensity"], cmd.intensity);
+    cmd.easing = TransitionManager::easingFromString(obj["easing"].asString().unwrapOr("linear"));
+    cmd.enabled = obj["enabled"].asBool().unwrapOr(true);
+    cmd.targetObj = paimon::json::integerOr<int>(obj["obj"], -1);
+    cmd.objScale = paimon::json::floatOr(obj["oscale"], cmd.objScale);
+    cmd.startTime = paimon::json::floatOr(obj["start"], -1.f);
+    cmd.solidObject = obj["solid"].asBool().unwrapOr(false);
+    cmd.stretchMedia = obj["stretch_media"].asBool().unwrapOr(false);
+    cmd.objectName = obj["name"].asString().unwrapOr("");
     return cmd;
 }
 
@@ -589,6 +472,8 @@ static TransitionConfig parseConfig(matjson::Value const& obj) {
     }
     cfg.mediaPath = obj["media"].asString().unwrapOr("");
     cfg.cutPoint = paimon::json::floatOr(obj["cut_point"], cfg.cutPoint);
+    cfg.sceneCut = obj["scene_cut"].asBool().unwrapOr(false);
+    cfg.customName = obj["custom_name"].asString().unwrapOr("");
     cfg.scriptPath = obj["script"].asString().unwrapOr("");
     if (obj["commands"].isArray()) {
         cfg.commands.reserve(std::min<size_t>(256, obj["commands"].size()));
@@ -606,7 +491,7 @@ static bool migrateConfigImages(TransitionConfig& cfg) {
 
     for (auto& cmd : cfg.commands) {
         if (cmd.imagePath.empty()) continue;
-        auto extension = geode::utils::string::pathToString(paimon::assets::pathFromUtf8(cmd.imagePath).extension());
+        auto extension = paimon::paths::toUtf8(paimon::assets::pathFromUtf8(cmd.imagePath).extension());
         if (geode::utils::string::toLower(extension) == ".pttransition") continue;
         auto imported = paimon::assets::importStoredPath(cmd.imagePath, "transitions", paimon::assets::Kind::Image);
         if (imported.success && !imported.path.empty()) {
@@ -626,20 +511,32 @@ static matjson::Value commandToJson(TransitionCommand const& cmd) {
     obj.set("action",   TransitionManager::actionToString(cmd.action));
     obj.set("target",   cmd.target);
     obj.set("duration", static_cast<double>(cmd.duration));
+    if (cmd.startTime >= 0.f) obj.set("start", static_cast<double>(cmd.startTime));
+    if (cmd.solidObject) obj.set("solid", true);
+    if (cmd.stretchMedia) obj.set("stretch_media", true);
+    if (!cmd.objectName.empty()) obj.set("name", cmd.objectName);
     if (cmd.delay > 0.f) obj.set("delay", static_cast<double>(cmd.delay));
-    if (cmd.action == CommandAction::Move) {
+    if (cmd.action == CommandAction::Move || cmd.action == CommandAction::Image) {
         obj.set("from_x", static_cast<double>(cmd.fromX));
         obj.set("from_y", static_cast<double>(cmd.fromY));
         obj.set("to_x",   static_cast<double>(cmd.toX));
         obj.set("to_y",   static_cast<double>(cmd.toY));
     }
+    if (cmd.action == CommandAction::Image) {
+        obj.set("from_val", static_cast<double>(cmd.fromVal));
+        obj.set("to_val",   static_cast<double>(cmd.toVal));
+    }
+    if (cmd.targetObj >= 0) obj.set("obj", cmd.targetObj);
+    if (cmd.action == CommandAction::Image && cmd.objScale != 1.f)
+        obj.set("oscale", static_cast<double>(cmd.objScale));
     if (cmd.action != CommandAction::Move && cmd.action != CommandAction::Wait &&
-        cmd.action != CommandAction::Color && cmd.action != CommandAction::Spawn &&
+        cmd.action != CommandAction::Spawn &&
         cmd.action != CommandAction::Image) {
         obj.set("from_val", static_cast<double>(cmd.fromVal));
         obj.set("to_val",   static_cast<double>(cmd.toVal));
     }
-    if (cmd.action == CommandAction::Color) {
+    if (cmd.action == CommandAction::Move) { /* from/to already written above */ }
+    if (cmd.action == CommandAction::Color || cmd.action == CommandAction::Overlay || cmd.solidObject) {
         obj.set("r", cmd.r); obj.set("g", cmd.g); obj.set("b", cmd.b);
     }
     if (cmd.action == CommandAction::Spawn) {
@@ -651,6 +548,8 @@ static matjson::Value commandToJson(TransitionCommand const& cmd) {
     if (cmd.action == CommandAction::Shake) {
         obj.set("intensity", static_cast<double>(cmd.intensity));
     }
+    if (cmd.easing != TransitionEasing::Linear) obj.set("easing", TransitionManager::easingToString(cmd.easing));
+    if (!cmd.enabled) obj.set("enabled", false);
     return obj;
 }
 
@@ -659,6 +558,8 @@ static matjson::Value configToJson(TransitionConfig const& cfg) {
     obj.set("type", TransitionManager::typeToString(cfg.type));
     obj.set("media", cfg.mediaPath);
     obj.set("cut_point", static_cast<double>(cfg.cutPoint));
+    if (cfg.sceneCut) obj.set("scene_cut", true);
+    if (!cfg.customName.empty()) obj.set("custom_name", cfg.customName);
     obj.set("duration", static_cast<double>(cfg.duration));
     auto colorArr = matjson::Value::array();
     colorArr.push(cfg.colorR); colorArr.push(cfg.colorG); colorArr.push(cfg.colorB);
@@ -670,6 +571,36 @@ static matjson::Value configToJson(TransitionConfig const& cfg) {
         obj.set("commands", cmdsArr);
     }
     return obj;
+}
+
+std::string TransitionManager::commandsToJson(std::vector<TransitionCommand> const& commands) {
+    auto arr = matjson::Value::array();
+    for (auto const& cmd : commands) arr.push(commandToJson(cmd));
+    auto root = matjson::makeObject({});
+    root.set("paimbnails_transition", 1);
+    root.set("commands", arr);
+    return root.dump(matjson::TAB_INDENTATION);
+}
+
+bool TransitionManager::commandsFromJson(std::string const& text, std::vector<TransitionCommand>& out) {
+    auto parseRes = matjson::parse(text);
+    if (!parseRes) return false;
+    auto const& root = parseRes.unwrap();
+    matjson::Value const* arr = nullptr;
+    if (root.isArray()) arr = &root;
+    else if (root.isObject() && root["commands"].isArray()) arr = &root["commands"];
+    else return false;
+    std::vector<TransitionCommand> parsed;
+    parsed.reserve(std::min<size_t>(256, arr->size()));
+    for (auto const& c : *arr) {
+        if (parsed.size() >= 256) break;
+        if (!c.isObject()) continue;
+        parsed.push_back(parseCommand(c));
+    }
+    if (parsed.empty()) return false;
+    sanitizeCommands(parsed);
+    out = std::move(parsed);
+    return true;
 }
 
 
@@ -752,13 +683,27 @@ void TransitionManager::saveConfig() {
     }
 
     auto str = root.dump(matjson::TAB_INDENTATION);
-    auto res = geode::utils::file::writeString(getConfigPath(), str);
+    auto res = geode::utils::file::writeString(paimon::paths::toSdkPath(getConfigPath()), str);
     if (!res) log::warn("[TransitionManager] Failed to save: {}", res.unwrapErr());
 }
 
 
 TransitionConfig TransitionManager::getLevelEntryConfig() const {
     return m_hasLevelEntryConfig ? m_levelEntryConfig : m_globalConfig;
+}
+
+bool TransitionManager::isCustomActive() const {
+    // if the safe mode tripped, Custom fell back to a native fade and no
+    // longer owns scene changes, so Dynamic may resume.
+    return m_enabled && !m_customSafeModeTripped &&
+        m_globalConfig.type == TransitionType::Custom;
+}
+
+bool TransitionManager::isCustomActiveFor(CCScene* dest) const {
+    if (!m_enabled || m_customSafeModeTripped) return false;
+    if (dest && m_hasLevelEntryConfig && dest->getChildByType<PlayLayer>(0))
+        return m_levelEntryConfig.type == TransitionType::Custom;
+    return m_globalConfig.type == TransitionType::Custom;
 }
 
 void TransitionManager::setGlobalConfig(TransitionConfig const& cfg) {
@@ -859,6 +804,33 @@ std::vector<TransitionCommand> TransitionManager::buildPreviewCommands(Transitio
 }
 
 
+CCScene* TransitionManager::createStudioScene(std::vector<TransitionCommand> commands,
+                                              CCScene* dest, bool isPush,
+                                              TransitionConfig const& cfg, bool custom,
+                                              bool logFallback) const {
+    sanitizeCommands(commands);
+    auto fromScene = CCDirector::get()->getRunningScene();
+    if (fromScene && dest && !commands.empty()) {
+        float cutPoint = -1.f;
+        float minDuration = 0.f;
+        if (custom) {
+            bool const absolute = std::any_of(commands.begin(), commands.end(),
+                [](auto const& c) { return c.startTime >= 0.f; });
+            cutPoint = cfg.sceneCut ? cfg.cutPoint : -1.f;
+            minDuration = (cfg.sceneCut || absolute) ? cfg.duration : 0.f;
+        }
+        if (auto* transScene = CustomTransitionScene::create(
+                fromScene, dest, commands, isPush, cutPoint, minDuration)) {
+            return transScene;
+        }
+    }
+    if (logFallback) {
+        log::debug("[Transitions] Custom media not ready or timeline invalid; using fade");
+    }
+    return CCTransitionFade::create(cfg.duration, dest);
+}
+
+
 CCScene* TransitionManager::createTransition(
     TransitionConfig const& cfg,
     CCScene* dest,
@@ -867,6 +839,9 @@ CCScene* TransitionManager::createTransition(
     if (!m_loaded) loadConfig();
     if (!dest) return nullptr;
     if (dest == CCDirector::get()->getRunningScene()) return dest;
+    if (paimon::transitions::requiresNativeSceneNavigation(CCDirector::get()->getRunningScene(), dest)) {
+        return dest;
+    }
 
     if (cfg.type == TransitionType::None) return dest;
     if (CustomTransitionScene::isActive()) return dest;
@@ -906,15 +881,7 @@ CCScene* TransitionManager::createTransition(
         auto commands = safeCfg.commands;
         if (commands.empty() && !safeCfg.scriptPath.empty())
             commands = parseScriptFile(safeCfg.scriptPath);
-        sanitizeCommands(commands);
-
-        auto fromScene = CCDirector::get()->getRunningScene();
-        if (fromScene && dest && !commands.empty()) {
-            auto* transScene = CustomTransitionScene::create(fromScene, dest, commands, isPush);
-            if (transScene) return transScene;
-        }
-        log::debug("[Transitions] Custom media not ready or timeline invalid; using fade");
-        return CCTransitionFade::create(safeCfg.duration, dest);
+        return createStudioScene(std::move(commands), dest, isPush, safeCfg, true, true);
     }
 
     bool isCreativeType = false;
@@ -942,14 +909,8 @@ CCScene* TransitionManager::createTransition(
         if (m_customSafeModeTripped) {
             return CCTransitionFade::create(safeCfg.duration, dest);
         }
-        auto commands = buildPreviewCommands(safeCfg.type, safeCfg.duration);
-        sanitizeCommands(commands);
-        auto fromScene = CCDirector::get()->getRunningScene();
-        if (fromScene && dest && !commands.empty()) {
-            auto* transScene = CustomTransitionScene::create(fromScene, dest, commands, isPush);
-            if (transScene) return transScene;
-        }
-        return CCTransitionFade::create(safeCfg.duration, dest);
+        return createStudioScene(buildPreviewCommands(safeCfg.type, safeCfg.duration),
+            dest, isPush, safeCfg, false, false);
     }
 
     auto* trans = createNativeTransition(safeCfg, dest);
@@ -960,37 +921,28 @@ CCScene* TransitionManager::createTransition(
     return dest;
 }
 
-void TransitionManager::replaceScene(CCScene* dest) {
+void TransitionManager::navigateScene(CCScene* dest, bool isPush) {
     if (!dest) return;
+    auto* dir = CCDirector::get();
     if (auto* dynamic = paimon::transitions::dynamic::createTransition(dest)) {
-        CCDirector::get()->replaceScene(dynamic);
+        if (isPush) dir->pushScene(dynamic);
+        else dir->replaceScene(dynamic);
         return;
     }
 
+    CCScene* target = dest;
     if (m_enabled) {
         if (!m_loaded) loadConfig();
-        auto* trans = createTransition(m_globalConfig, dest);
-        CCDirector::get()->replaceScene(trans ? trans : dest);
-    } else {
-        CCDirector::get()->replaceScene(dest);
+        auto* trans = createTransition(m_globalConfig, dest, isPush);
+        target = trans ? trans : dest;
     }
+    if (isPush) dir->pushScene(target);
+    else dir->replaceScene(target);
 }
 
-void TransitionManager::pushScene(CCScene* dest) {
-    if (!dest) return;
-    if (auto* dynamic = paimon::transitions::dynamic::createTransition(dest)) {
-        CCDirector::get()->pushScene(dynamic);
-        return;
-    }
+void TransitionManager::replaceScene(CCScene* dest) { navigateScene(dest, false); }
 
-    if (m_enabled) {
-        if (!m_loaded) loadConfig();
-        auto* trans = createTransition(m_globalConfig, dest, true);
-        CCDirector::get()->pushScene(trans ? trans : dest);
-    } else {
-        CCDirector::get()->pushScene(dest);
-    }
-}
+void TransitionManager::pushScene(CCScene* dest) { navigateScene(dest, true); }
 
 CCTransitionScene* TransitionManager::createNativeTransition(TransitionConfig const& cfg, CCScene* dest) const {
     if (!dest) return nullptr;
@@ -1060,7 +1012,7 @@ CCTransitionScene* TransitionManager::createNativeTransition(TransitionConfig co
 
 std::vector<TransitionCommand> TransitionManager::parseScriptFile(std::string const& scriptPath) const {
     std::vector<TransitionCommand> commands;
-    auto fullPath = Mod::get()->getSaveDir() / paimon::assets::pathFromUtf8(scriptPath);
+    auto fullPath = paimon::paths::toStdPath(Mod::get()->getSaveDir()) / paimon::assets::pathFromUtf8(scriptPath);
     std::error_code ec;
     if (!std::filesystem::exists(fullPath, ec)) { log::warn("[TransitionManager] parseScriptFile: file not found"); return commands; }
 

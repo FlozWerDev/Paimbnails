@@ -138,6 +138,11 @@ public:
     static constexpr size_t URL_CACHE_MAX_ENTRIES = 80;
     static constexpr size_t URL_CACHE_MAX_BYTES = 32ull * 1024 * 1024;
 
+    // safety valves for very long sessions: oldest entries expire first,
+    // so trimming preserves the existing expiry order.
+    static constexpr size_t FAILED_CACHE_MAX_ENTRIES = 2048;
+    static constexpr size_t NOT_FOUND_CACHE_MAX_ENTRIES = 4096;
+
     static constexpr auto FAILED_CACHE_TTL = std::chrono::minutes(5);
     // staggered backoff 15s → 30s → 60s → 300s; first step isn't 2s to avoid hammering on mass failures.
     static constexpr int FAILED_BACKOFF_STEPS[] = {15, 30, 60, 300};
@@ -164,8 +169,8 @@ private:
     static int makeRamKey(int levelID, bool isGif);
     static int64_t nowEpoch();
 
-    void evictRamLocked();
-    void evictUrlRamLocked();
+    void evictRamLocked(size_t byteLimit);
+    void evictUrlRamLocked(size_t byteLimit);
 
     std::unordered_map<int, RamEntry> m_ramCache;
     mutable std::shared_mutex m_ramMutex;

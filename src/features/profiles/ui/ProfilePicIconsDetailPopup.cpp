@@ -384,7 +384,7 @@ void ProfilePicIconsDetailPopup::onPickIconBgImage(CCObject*) {
 
         auto imported = paimon::assets::importToBucket(*pathOpt, "profile_icon_bg", paimon::assets::Kind::Image);
         if (!imported.success || imported.path.empty()) {
-            PaimonNotify::create("Failed to import image", NotificationIcon::Error)->show();
+            PaimonNotify::show("Failed to import image", NotificationIcon::Error);
             return;
         }
         popup->m_cfg->iconConfig.iconImagePath = paimon::assets::normalizePathString(imported.path);

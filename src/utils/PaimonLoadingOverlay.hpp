@@ -19,6 +19,7 @@ protected:
     int m_dotCount = 0;
     bool m_dismissed = false;
 
+    using cocos2d::CCLayerColor::init;
     bool init(std::string const& statusText, float spinnerSize);
     void showAt(cocos2d::CCNode* parent, cocos2d::CCPoint const& position, cocos2d::CCSize const& size, int zOrder);
     void positionStatusLabel();

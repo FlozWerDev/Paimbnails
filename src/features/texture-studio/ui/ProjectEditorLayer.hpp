@@ -26,6 +26,7 @@ class ParamSliderRow;
 // pack/tune/extra/sprite tabs; fusion lives in fusioneditorlayer.
 class ProjectEditorLayer : public cocos2d::CCLayer {
 public:
+    using cocos2d::CCLayer::init;
     static ProjectEditorLayer* create(std::string slotId);
     static cocos2d::CCScene* scene(std::string slotId);
     static void open(std::string slotId);
@@ -98,6 +99,7 @@ protected:
     void markEdited(bool affectsPreview);
     void setBusy(bool busy);
     void setStatus(std::string const& text);
+    bool saveForNavigation();
 
     SpritePreviewOptions makePreviewOptions() const;
 
@@ -122,7 +124,6 @@ private:
 
     bool        m_hasSelection = false;
     Entry       m_selected;
-    int         m_selectedCellTag = -1;
 
     cocos2d::CCNode*   m_originalHost = nullptr;
     cocos2d::CCNode*   m_resultHost   = nullptr;
@@ -152,10 +153,7 @@ private:
     ParamSliderRow*    m_brightnessRow = nullptr;
     int m_presetIndex = 0;
 
-    cocos2d::CCLabelBMFont* m_scopeBtnLbl = nullptr;
-
     cocos2d::CCLabelBMFont* m_spriteNameLbl = nullptr;
-    cocos2d::CCLabelBMFont* m_spriteHintLbl = nullptr;
     CCMenuItemSpriteExtra*  m_modeGlobalBtn = nullptr;
     CCMenuItemSpriteExtra*  m_modeCustomBtn = nullptr;
     CCMenuItemSpriteExtra*  m_modeSkipBtn   = nullptr;

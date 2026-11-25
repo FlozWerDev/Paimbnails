@@ -29,10 +29,10 @@ namespace {
 constexpr float kTickInterval = 0.25f;
 constexpr float kLobbyPoll = 2.0f;
 constexpr float kFoundPoll = 1.0f;
-// watching for an incoming friendly, which is nobody's hurry.
+// slow poll while waiting for an incoming friendly.
 constexpr float kWatchPoll = 4.0f;
 
-// a rival that stops ticking for this long is treated as gone; the server still
+// a rival that stops ticking this long is treated as gone; the server still
 // decides what that costs them.
 constexpr float kRivalTimeout = 30.f;
 
@@ -47,8 +47,8 @@ int64_t nowSeconds() {
 } // namespace
 
 VersusSession& VersusSession::get() {
-    static VersusSession instance;
-    return instance;
+    static VersusSession* instance = new VersusSession();
+    return *instance;
 }
 
 void VersusSession::addListener(void const* owner, std::function<void()> listener) {
@@ -61,8 +61,8 @@ void VersusSession::removeListener(void const* owner) {
 }
 
 void VersusSession::notifyListeners() {
-    // a listener can close a popup, which unregisters it mid-walk, so the list
-    // is copied before firing.
+    // a listener can close a popup, unregistering itself mid-walk: copy the
+    // list before firing.
     auto const snapshot = m_listeners;
     for (auto const& [owner, listener] : snapshot) {
         if (listener) listener();
@@ -76,6 +76,7 @@ void VersusSession::setPhase(Phase phase) {
 }
 
 void VersusSession::reset() {
+    ++m_sessionGeneration;
     m_pollGeneration++;
     m_phase = Phase::Idle;
     m_match = {};
@@ -105,6 +106,7 @@ void VersusSession::reset() {
     net::stopListening();
     gl::restoreVisibility();
     gl::clearShield();
+    if (m_watching) scheduleWatch(kWatchPoll);
 }
 
 void VersusSession::beginQueue(Mode mode, Format format) {
@@ -113,7 +115,9 @@ void VersusSession::beginQueue(Mode mode, Format format) {
     m_match.format = format;
     setPhase(Phase::Queued);
 
-    VersusClient::get().joinQueue(mode, format, [this](bool ok, QueueTicket const& ticket) {
+    auto const generation = m_sessionGeneration;
+    VersusClient::get().joinQueue(mode, format, [this, generation](bool ok, QueueTicket const& ticket) {
+        if (generation != m_sessionGeneration || m_phase != Phase::Queued) return;
         if (!ok) {
             reset();
             notifyListeners();
@@ -144,12 +148,19 @@ void VersusSession::endWatch() {
     m_watchGeneration++;
 }
 
-void VersusSession::scheduleWatch(float delay) {
-    uint64_t const generation = ++m_watchGeneration;
-    paimon::scheduleMainThreadDelay(delay, [this, generation]() {
+void VersusSession::scheduleGuarded(uint64_t VersusSession::* generationMember, float delay,
+                                    geode::CopyableFunction<void()> fn) {
+    uint64_t const generation = ++(this->*generationMember);
+    paimon::scheduleMainThreadDelay(delay, [this, generation, generationMember, fn = std::move(fn)]() {
         if (paimon::isRuntimeShuttingDown()) return;
-        if (!m_watching || generation != m_watchGeneration) return;
-        watchTick();
+        if (generation != this->*generationMember) return;
+        fn();
+    });
+}
+
+void VersusSession::scheduleWatch(float delay) {
+    scheduleGuarded(&VersusSession::m_watchGeneration, delay, [this]() {
+        if (m_watching) watchTick();
     });
 }
 
@@ -161,14 +172,17 @@ void VersusSession::watchTick() {
         return;
     }
 
-    VersusClient::get().pollLobby([this](bool ok, MatchInfo const& info) {
-        // past the veto it is a duel we already walked out of; adopting it would
-        // reopen the lobby on top of a match that is over for us.
+    auto const generation = m_sessionGeneration;
+    auto const watchGeneration = m_watchGeneration;
+    VersusClient::get().pollLobby([this, generation, watchGeneration](bool ok, MatchInfo const& info) {
+        if (generation != m_sessionGeneration || !m_watching || watchGeneration != m_watchGeneration) return;
+        // past the veto it is a duel we already walked out of; adopting it
+        // would reopen the lobby over a match that is over for us.
         bool const joinable = info.serverPhase == "found" || info.serverPhase == "banning";
         if (ok && !info.id.empty() && joinable && idle()) {
             applyLobby(info);
-            // from here the duel owns the lobby: the watch stands down and only
-            // the fast poll moves the phase on.
+            // from here the duel owns the lobby: only the fast poll moves
+            // the phase on.
             schedulePoll(kFoundPoll);
         }
         scheduleWatch(kWatchPoll);
@@ -176,12 +190,7 @@ void VersusSession::watchTick() {
 }
 
 void VersusSession::schedulePoll(float delay) {
-    uint64_t const generation = ++m_pollGeneration;
-    paimon::scheduleMainThreadDelay(delay, [this, generation]() {
-        if (paimon::isRuntimeShuttingDown()) return;
-        if (generation != m_pollGeneration) return;
-        poll();
-    });
+    scheduleGuarded(&VersusSession::m_pollGeneration, delay, [this]() { poll(); });
 }
 
 void VersusSession::poll() {
@@ -194,7 +203,13 @@ void VersusSession::poll() {
         return;
     }
 
-    VersusClient::get().pollLobby([this](bool ok, MatchInfo const& info) {
+    auto const generation = m_sessionGeneration;
+    auto const pollGeneration = m_pollGeneration;
+    auto const matchID = m_match.id;
+    VersusClient::get().pollLobby([this, generation, pollGeneration, matchID](bool ok, MatchInfo const& info) {
+        if (generation != m_sessionGeneration || pollGeneration != m_pollGeneration ||
+            m_phase == Phase::Idle || m_phase == Phase::Finished ||
+            m_match.id != matchID || (!matchID.empty() && !info.id.empty() && info.id != matchID)) return;
         float const next = m_phase == Phase::Queued ? kLobbyPoll : kFoundPoll;
         if (!ok || info.id.empty()) {
             schedulePoll(next);
@@ -208,8 +223,8 @@ void VersusSession::poll() {
 void VersusSession::applyLobby(MatchInfo const& info) {
     bool const isNew = m_match.id != info.id;
 
-    // the server closed it without us: a dodge, a void, or a rival that walked
-    // before the level opened. nothing to submit, just drop back to the hub.
+    // the server closed it without us: a dodge, a void, or a rival that left
+    // before the level opened. nothing to submit, drop back to the hub.
     if (info.serverPhase == "done" && m_phase != Phase::Finished) {
         reset();
         notifyListeners();
@@ -221,8 +236,8 @@ void VersusSession::applyLobby(MatchInfo const& info) {
     if (isNew) {
         net::setRival(info.rival.accountId);
         wireNet();
-        // a friendly opened with a code is already a yes from both sides, so it
-        // arrives past the accept step and there is nothing to agree to.
+        // a friendly opened with code is already a yes from both sides: it
+        // arrives past the accept step.
         setPhase(info.serverPhase == "banning" ? Phase::Banning
                  : info.levelId != 0           ? Phase::Loading
                                                : Phase::Found);
@@ -239,7 +254,7 @@ void VersusSession::applyLobby(MatchInfo const& info) {
         setPhase(Phase::Loading);
         return;
     }
-    // the lobby countdown is the only clock out here; once the level is up
+    // the lobby countdown is the only clock out here; once the level is up,
     // onleveltick owns it, so a late answer would rewind it.
     if (info.countdownMs > 0 && !m_inLevel && m_phase != Phase::Running) {
         m_startsIn = info.countdownMs / 1000.f;
@@ -251,7 +266,10 @@ void VersusSession::applyLobby(MatchInfo const& info) {
 void VersusSession::accept(bool yes) {
     if (m_match.id.empty()) return;
 
-    VersusClient::get().acceptMatch(m_match.id, yes, [this, yes](bool ok, std::string const& message) {
+    auto const generation = m_sessionGeneration;
+    auto const matchID = m_match.id;
+    VersusClient::get().acceptMatch(matchID, yes, [this, yes, generation, matchID](bool ok, std::string const& message) {
+        if (generation != m_sessionGeneration || matchID != m_match.id) return;
         if (!yes || !ok) {
             if (!message.empty()) PaimonNotify::show(message.c_str(), NotificationIcon::Warning);
             reset();
@@ -265,7 +283,10 @@ void VersusSession::accept(bool yes) {
 void VersusSession::ban(int levelId) {
     if (m_match.id.empty()) return;
 
-    VersusClient::get().banLevel(m_match.id, levelId, [this](bool ok, MatchInfo const& info) {
+    auto const generation = m_sessionGeneration;
+    auto const matchID = m_match.id;
+    VersusClient::get().banLevel(matchID, levelId, [this, generation, matchID](bool ok, MatchInfo const& info) {
+        if (generation != m_sessionGeneration || matchID != m_match.id || info.id != matchID) return;
         if (!ok) return;
         applyLobby(info);
     });
@@ -277,8 +298,8 @@ bool VersusSession::enterLevel() {
     auto* glm = GameLevelManager::get();
     if (!glm) return false;
 
-    // the starting pool is main levels, so nothing has to be downloaded before
-    // the countdown. online levels come with the curated rotation.
+    // the starting pool is main levels: nothing to download before the
+    // countdown. online levels come with the curated rotation.
     auto* level = glm->getMainLevel(m_match.levelId, false);
     if (!level) level = glm->getSavedLevel(m_match.levelId);
     if (!level) {
@@ -287,11 +308,14 @@ bool VersusSession::enterLevel() {
         return false;
     }
 
-    VersusClient::get().reportReady(m_match.id, [this](bool ok, MatchInfo const& info) {
+    auto const generation = m_sessionGeneration;
+    auto const matchID = m_match.id;
+    VersusClient::get().reportReady(matchID, [this, generation, matchID](bool ok, MatchInfo const& info) {
+        if (generation != m_sessionGeneration || matchID != m_match.id || info.id != matchID) return;
         if (ok) applyLobby(info);
     });
 
-    auto* scene = PlayLayer::scene(level, false, false);
+    auto* scene = PlayLayer::scene(level, false);
     if (!scene) return false;
     CCDirector::get()->pushScene(CCTransitionFade::create(0.5f, scene));
     return true;
@@ -409,8 +433,8 @@ void VersusSession::onLevelTick(float dt, float percent, int attempt, bool pract
         }
     }
 
-    // practice runs and spent attempts park the percent, but the shared state keeps
-    // moving: frozen numbers would let one side call the duel on its own.
+    // practice runs and spent attempts park the percent, but the shared state
+    // keeps moving: frozen numbers would let one side call the duel alone.
     m_practice = practice;
     bool const counts = !practice && !m_own.spent;
     if (counts) {
@@ -426,8 +450,8 @@ void VersusSession::onLevelTick(float dt, float percent, int attempt, bool pract
     } else if (def.id == Format::KingOfTheHill) {
         m_hillHeld = m_own.percent > m_rival.percent ? m_hillHeld + dt : 0.f;
     } else if (def.id == Format::TugOfWar) {
-        // both clients run this off the same two percentages, so the rope lands
-        // on the same side without anything having to be sent.
+        // both clients run this off the same two percentages, so the rope
+        // lands on the same side without anything being sent.
         float const pull = (m_own.percent - m_rival.percent) / kRopeLead / kRopeSeconds;
         m_rope = std::clamp(m_rope + pull * dt, -1.f, 1.f);
     }
@@ -461,8 +485,8 @@ void VersusSession::buildMilestones() {
 void VersusSession::checkMilestones() {
     if (m_milestones.empty() || m_nextMilestone >= m_milestones.size()) return;
 
-    // spark pulls the next one closer, the hourglass halves what is left to
-    // every one of them; both only ever move our own copy of the list.
+    // spark pulls the next milestone closer, the hourglass halves what is
+    // left to every one of them; both only move our own copy of the list.
     float threshold = m_milestones[m_nextMilestone] - m_milestoneShift;
     if (m_hourglass > 0.f) {
         threshold = m_own.percent + (threshold - m_own.percent) * 0.5f;
@@ -482,8 +506,8 @@ void VersusSession::drawCard() {
                                modeMask, deficit, m_match.catchUp);
 
     m_hand.push_back(card);
-    // a third card pushes the oldest out, which is what makes holding a
-    // legendary through a hard section an actual decision.
+    // a third card pushes the oldest out: that's what makes holding a
+    // legendary through a hard section a real decision.
     if (static_cast<int>(m_hand.size()) > kHandSize) m_hand.erase(m_hand.begin());
     notifyListeners();
 }
@@ -499,8 +523,8 @@ bool VersusSession::playCard(int slot) {
     auto const& def = cardAt(card);
     switch (def.target) {
         case CardTarget::Self:
-            // heart is bookkeeping, not an effect: the attempt limit is the session's
-            // to move, and played on the spending death it hands the run back.
+            // heart is bookkeeping, not an effect: the attempt limit is the
+            // session's to move, and on the spending death it hands the run back.
             if (card == CardId::Heart) {
                 m_extraAttempts++;
                 if (m_own.spent && m_own.attempt < attemptLimit()) {
@@ -530,8 +554,8 @@ void VersusSession::receiveCard(CardId card, bool alreadyReflected) {
     auto const& def = cardAt(card);
 
     if (def.target == CardTarget::Rival) {
-        // rebound sends it straight back instead of eating it, and a card that
-        // has already bounced once cannot bounce again.
+        // rebound sends it straight back instead of eating it; a card that
+        // already bounced once cannot bounce again.
         if (!alreadyReflected && VersusEffects::get().consumeReflect()) {
             net::sendCard({card, 0, true, m_levelTime});
             return;
@@ -548,8 +572,7 @@ void VersusSession::receiveCard(CardId card, bool alreadyReflected) {
         return;
     }
 
-    // wraith is cast on themselves but acted on here: we are the ones who have
-    // to stop drawing them.
+    // wraith is cast on themselves but acted on here: we stop drawing them.
     if (card == CardId::Ghost) VersusEffects::get().apply(card, true);
 }
 
@@ -663,10 +686,7 @@ void VersusSession::evaluate() {
 
     if (def.id == Format::Ladder) {
         int own = 0, rival = 0;
-        for (int i = 0; i < kLadderSegments; i++) {
-            if (m_own.segments & (1u << i)) own++;
-            if (m_rival.segments & (1u << i)) rival++;
-        }
+        countSegments(own, rival);
         if (own >= kLadderToWin) { finish(Outcome::Win); return; }
         if (rival >= kLadderToWin) { finish(Outcome::Loss); return; }
     } else if (def.id == Format::KingOfTheHill && m_hillHeld >= kHillSeconds) {
@@ -691,14 +711,20 @@ void VersusSession::evaluate() {
     }
 }
 
-// segments are claimed once and never handed over, so a 90% run keeps what
-// it took: closing the last one doesn't always win.
-void VersusSession::evaluateRelay() {
-    int own = 0, rival = 0;
+void VersusSession::countSegments(int& own, int& rival) const {
+    own = 0;
+    rival = 0;
     for (int i = 0; i < kLadderSegments; i++) {
         if (m_own.segments & (1u << i)) own++;
         if (m_rival.segments & (1u << i)) rival++;
     }
+}
+
+// segments are claimed once and never handed over, so a 90% run keeps what
+// it took: closing the last one doesn't always win.
+void VersusSession::evaluateRelay() {
+    int own = 0, rival = 0;
+    countSegments(own, rival);
 
     auto const& def = format();
     bool const closed = own + rival >= kLadderSegments;

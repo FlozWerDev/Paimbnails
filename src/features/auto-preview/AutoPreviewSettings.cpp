@@ -11,6 +11,6 @@ $execute {
     ButtonSettingPressedEventV3(Mod::get(), "auto-preview-clear").listen([](auto buttonKey) {
         if (buttonKey != "run") return;
         paimon::autopreview::AutoPreviewStore::get().clearAll();
-        PaimonNotify::create("Generated previews cleared.", NotificationIcon::Success)->show();
+        PaimonNotify::show("Generated previews cleared.", NotificationIcon::Success);
     }).leak();
 }

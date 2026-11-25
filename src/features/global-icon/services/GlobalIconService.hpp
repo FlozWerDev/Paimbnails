@@ -1,9 +1,12 @@
 #pragma once
 
-// uploads the local player's active custom icons to the global icon server:
-// reads them via more icons and base64-encodes png/plist for /api/icons/sync.
+// links the local player's icon to their global icon in paimon base: the
+// vanilla set (ids and colors), the icon gradients and the custom more icons
+// textures. files go up one by one to /api/community/assets, then a single
+// /api/community/icons call links them.
 
 #include <Geode/Geode.hpp>
+#include "../GlobalIconTypes.hpp"
 #include <string>
 
 namespace paimon::globalicon {
@@ -14,20 +17,26 @@ public:
 
     using ResultCallback = geode::CopyableFunction<void(bool success, std::string const& message)>;
 
-    void uploadActiveIcons(int accountID, std::string const& username, ResultCallback cb);
-    // disable/clear the player's icons on the server (icons: []).
-    void clearIcons(int accountID, std::string const& username, ResultCallback cb);
+    // uploads the chosen parts and links them; message is readable on failure.
+    void publish(LinkOptions options, ResultCallback cb);
+    // stops sharing and frees the uploaded files.
+    void clearIcons(ResultCallback cb);
+    bool busy() const { return m_busy; }
 
     // local flag (user intent) so the button can render without hitting the server each time.
     static bool isEnabledLocally();
     static void setEnabledLocally(bool enabled);
+    static LinkOptions savedOptions();
+    static void saveOptions(LinkOptions options);
 
-    // turns a raw sync failure ("http 401: {...}") into something a player can
-    // act on, instead of a truncated response body.
-    static std::string describeSyncError(std::string const& response);
+    // more icons is loaded and at least one gamemode uses a custom icon.
+    static bool hasCustomIcons();
+    // the player has saved at least one icon gradient.
+    static bool hasGradients();
 
 private:
     GlobalIconService() = default;
+    bool m_busy = false;
 };
 
 } // namespace paimon::globalicon

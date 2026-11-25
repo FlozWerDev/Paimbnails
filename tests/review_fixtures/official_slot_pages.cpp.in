@@ -1,0 +1,196 @@
+#include <algorithm>
+#include <cassert>
+#include <iostream>
+#include <memory>
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+struct CCObject { virtual ~CCObject() = default; };
+std::vector<std::unique_ptr<CCObject>> objects;
+template<class T> T* make() {
+    auto object = std::make_unique<T>();
+    auto* result = object.get();
+    objects.push_back(std::move(object));
+    return result;
+}
+template<class T> T typeinfo_cast(CCObject* object) { return dynamic_cast<T>(object); }
+template<class T> struct Ref {
+    T* value;
+    Ref(T* object) : value(object) {}
+    T* operator->() const { return value; }
+};
+struct CCNode : CCObject {};
+struct CCArray : CCObject {
+    std::vector<CCObject*> values;
+    static CCArray* create() { return make<CCArray>(); }
+    void addObject(CCObject* value) { values.push_back(value); }
+    void addObjectsFromArray(CCArray* other) { values.insert(values.end(), other->values.begin(), other->values.end()); }
+    void removeAllObjects() { values.clear(); }
+    unsigned count() const { return static_cast<unsigned>(values.size()); }
+    CCObject* objectAtIndex(int index) { return values.at(index); }
+};
+template<class T> struct CCArrayExt {
+    std::vector<T> values;
+    explicit CCArrayExt(CCArray* array) { for (auto* item : array->values) values.push_back(static_cast<T>(item)); }
+    auto begin() const { return values.begin(); }
+    auto end() const { return values.end(); }
+};
+struct GJGameLevel : CCObject {
+    int m_levelID = 0;
+    static GJGameLevel* create() { return make<GJGameLevel>(); }
+};
+struct BoomScrollLayer {
+    bool m_dynamic = true;
+    CCArray* m_dynamicObjects = CCArray::create();
+    CCArray* m_pages = CCArray::create();
+    int m_page = 0;
+    unsigned dots = 0;
+    std::unordered_map<std::string, CCObject*> userObjects;
+    int getRelativePageForNum(int page) const {
+        int count = static_cast<int>(m_dynamicObjects->count());
+        assert(count > 0);
+        return ((page % count) + count) % count;
+    }
+    CCObject* getUserObject(std::string const& key) { return userObjects[key]; }
+    void setUserObject(std::string const& key, CCObject* object) { userObjects[key] = object; }
+    void instantMoveToPage(int page) { m_page = page; }
+    CCNode* getPage(int page) { return static_cast<CCNode*>(m_pages->objectAtIndex(((page % 3) + 3) % 3)); }
+};
+struct LevelSelectLayer {
+    BoomScrollLayer* m_scrollLayer;
+    std::unordered_map<CCNode*, GJGameLevel*> painted;
+    void updatePageWithObject(CCNode* page, CCObject* level) { painted[page] = static_cast<GJGameLevel*>(level); }
+};
+struct GameLevelManager {
+    std::unordered_map<int, GJGameLevel*> levels;
+    static GameLevelManager* get() { static GameLevelManager manager; return &manager; }
+    GJGameLevel* getMainLevel(int id, bool) { return levels.at(id); }
+};
+bool slotsEnabled() { return true; }
+
+namespace paimon::officialslots {
+bool isOfficialId(int id) { return id >= 1 && id <= 22; }
+constexpr char const* kVanillaLevelsKey = "vanilla";
+struct Slot { std::string id; int replacesOfficialId = 0; };
+struct SlotStore {
+    std::vector<std::string> visible;
+    std::unordered_map<int, Slot> replacements;
+    static SlotStore& get() { static SlotStore store; return store; }
+    static std::string officialKey(int id) { return "o:" + std::to_string(id); }
+    static std::string slotKey(std::string const& id) { return "s:" + id; }
+    static bool officialKeyId(std::string const& key, int& id) {
+        if (!key.starts_with("o:")) return false;
+        id = std::stoi(key.substr(2));
+        return true;
+    }
+    std::vector<std::string> visiblePages() const { return visible; }
+    std::optional<Slot> find(std::string const& id) {
+        for (auto const& [official, slot] : replacements) if (slot.id == id) return slot;
+        return Slot{id};
+    }
+    std::optional<Slot> slotForOfficial(int id) {
+        auto found = replacements.find(id);
+        return found == replacements.end() ? std::nullopt : std::optional(found->second);
+    }
+};
+struct SlotLevelCache {
+    std::unordered_map<std::string, GJGameLevel*> levels;
+    static SlotLevelCache& get() { static SlotLevelCache cache; return cache; }
+    std::optional<std::string> slotIdForLevel(GJGameLevel const* level) {
+        for (auto const& [id, cached] : levels) if (cached == level) return id;
+        return std::nullopt;
+    }
+    GJGameLevel* levelForSlot(Slot const& slot) { return levels.at(slot.id); }
+};
+void syncDots(BoomScrollLayer* scroll) { scroll->dots = scroll->m_dynamicObjects->count(); }
+@@function|src/features/official-slots/hooks/OfficialSlotHooks.cpp|std::string levelIdentity(@@
+@@function|src/features/official-slots/hooks/OfficialSlotHooks.cpp|CCArray* shallowCopy(@@
+@@function|src/features/official-slots/hooks/OfficialSlotHooks.cpp|void selectVisiblePage(@@
+@@function|src/features/official-slots/hooks/OfficialSlotHooks.cpp|void syncPages(@@
+}
+
+int main() {
+    using namespace paimon::officialslots;
+    BoomScrollLayer scroll;
+    for (int i = 0; i < 3; ++i) scroll.m_pages->addObject(make<CCNode>());
+    auto& manager = *GameLevelManager::get();
+    auto& store = SlotStore::get();
+    for (int id = 1; id <= 22; ++id) {
+        auto* level = GJGameLevel::create();
+        level->m_levelID = id;
+        manager.levels[id] = level;
+        scroll.m_dynamicObjects->addObject(level);
+        store.visible.push_back(SlotStore::officialKey(id));
+    }
+    auto* comingSoon = GJGameLevel::create();
+    scroll.m_dynamicObjects->addObject(comingSoon);
+    LevelSelectLayer select{&scroll, {}};
+    auto* custom = GJGameLevel::create();
+    custom->m_levelID = 1'000'000'000;
+    SlotLevelCache::get().levels["custom"] = custom;
+    store.visible.insert(store.visible.begin() + 1, "s:custom");
+    scroll.m_page = 4; // Keep the current original selected after insertion.
+    syncPages(&select);
+    assert(scroll.m_dynamicObjects->count() == 24 && scroll.dots == 24);
+    assert(scroll.m_dynamicObjects->objectAtIndex(1) == custom);
+    assert(scroll.m_dynamicObjects->objectAtIndex(scroll.m_page) == manager.levels[5]);
+    assert(select.painted.size() == 3);
+
+    scroll.m_page = 1; // Reordering must follow the selected custom page.
+    std::swap(store.visible[1], store.visible[8]);
+    syncPages(&select);
+    assert(scroll.m_page == 8 && scroll.m_dynamicObjects->objectAtIndex(8) == custom);
+    std::erase(store.visible, "s:custom");
+    std::erase(store.visible, "o:2");
+    syncPages(&select);
+    assert(scroll.m_dynamicObjects->count() == 22 && scroll.dots == 22);
+    assert(std::find(scroll.m_dynamicObjects->values.begin(), scroll.m_dynamicObjects->values.end(), custom)
+        == scroll.m_dynamicObjects->values.end());
+    assert(std::find(scroll.m_dynamicObjects->values.begin(), scroll.m_dynamicObjects->values.end(), manager.levels[2])
+        == scroll.m_dynamicObjects->values.end());
+    assert(scroll.m_dynamicObjects->values.back() == comingSoon);
+
+    // Hiding the entire list must not keep drawing the last visible originals.
+    store.visible.clear();
+    syncPages(&select);
+    assert(scroll.m_dynamicObjects->count() == 1 && scroll.m_dynamicObjects->values.front() == comingSoon);
+    assert(scroll.dots == 1);
+    for (auto const& [page, level] : select.painted) assert(level == comingSoon);
+    store.visible = {"o:3", "s:custom", "o:1"};
+    syncPages(&select);
+    assert(scroll.m_dynamicObjects->count() == 4);
+    assert(scroll.m_dynamicObjects->values[0] == manager.levels[3]);
+    assert(scroll.m_dynamicObjects->values[1] == custom);
+    assert(scroll.m_dynamicObjects->values[2] == manager.levels[1]);
+    selectVisiblePage(&select, 1); // Return to the custom's visible index after a fresh sync.
+    assert(scroll.m_page == 1 && scroll.m_dynamicObjects->objectAtIndex(scroll.m_page) == custom);
+    assert(select.painted[scroll.getPage(1)] == custom);
+    selectVisiblePage(&select, 100); // A shortened list safely clamps the saved index.
+    assert(scroll.m_page == 3);
+
+    // Replacing a page uses the user's payload, while every other original stays intact.
+    auto* replacement = GJGameLevel::create();
+    replacement->m_levelID = 1'000'000'001;
+    store.replacements[3] = Slot{"replacement", 3};
+    SlotLevelCache::get().levels["replacement"] = replacement;
+    scroll.m_page = 0;
+    syncPages(&select);
+    assert(scroll.m_dynamicObjects->values[0] == replacement);
+    assert(scroll.m_dynamicObjects->values[2] == manager.levels[1]);
+    assert(manager.levels[3]->m_levelID == 3);
+    std::swap(store.visible[0], store.visible[2]);
+    syncPages(&select);
+    assert(scroll.m_page == 2 && scroll.m_dynamicObjects->values[2] == replacement);
+
+    BoomScrollLayer bare;
+    for (int i = 0; i < 3; ++i) bare.m_pages->addObject(make<CCNode>());
+    bare.m_dynamicObjects->addObject(manager.levels[1]);
+    store.visible.clear();
+    LevelSelectLayer emptySelect{&bare, {}};
+    syncPages(&emptySelect);
+    assert(bare.m_dynamicObjects->count() == 1);
+    assert(static_cast<GJGameLevel*>(bare.m_dynamicObjects->values.front())->m_levelID == 0);
+    std::cout << "Recycled pages: insert, reorder, hide, empty list and restore passed\n";
+}

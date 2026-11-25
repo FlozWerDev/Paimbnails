@@ -2,15 +2,24 @@
 
 #include "../VideoDecoder.hpp"
 #include <pl_mpeg.h>
+#include <Geode/loader/Log.hpp>
 #include <Geode/utils/string.hpp>
 #include <Geode/utils/general.hpp>
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include "../../utils/JoinWithWarning.hpp"
 
 namespace paimon {
 
+// crash #9: everything the decode worker touches (plm handle, ring, flags)
+// lives in State under shared_ptr. The worker captures its own copy at
+// spawn, so a detach after a timed-out join never leaves the orphan
+// writing freed memory. Local file reads return fast (corrupt streams fail
+// via plm_decode_video == nullptr), and the stop flag is re-checked every
+// iteration, so the bounded join below is the last resort, not the norm.
 class DecoderPLM final : public IVideoDecoder {
 public:
     DecoderPLM() = default;
@@ -19,168 +28,214 @@ public:
 
     bool open(const std::string& path) override {
         closeInternal();
+        auto st = std::make_shared<State>();
 #ifdef _WIN32
         // fopen takes ansi paths, so a utf-8 folder (accents/cjk) never opens.
         FILE* fh = nullptr;
         if (_wfopen_s(&fh, geode::utils::string::utf8ToWide(path).c_str(), L"rb") != 0) return false;
-        m_plm = plm_create_with_file(fh, TRUE);
+        st->plm = plm_create_with_file(fh, TRUE);
 #else
-        m_plm = plm_create_with_filename(path.c_str());
+        st->plm = plm_create_with_filename(path.c_str());
 #endif
-        if (!m_plm) return false;
+        if (!st->plm) return false;
 
-        plm_set_audio_enabled(m_plm, false);
+        plm_set_audio_enabled(st->plm, false);
 
-        int w = plm_get_width(m_plm);
-        int h = plm_get_height(m_plm);
-        if (w <= 0 || h <= 0) {
-            closeInternal();
-            return false;
-        }
+        int w = plm_get_width(st->plm);
+        int h = plm_get_height(st->plm);
+        if (w <= 0 || h <= 0) return false;
 
-        if (!m_ring.init(w, h)) {
-            closeInternal();
-            return false;
-        }
+        if (!st->ring.init(w, h)) return false;
 
-        m_duration = plm_get_duration(m_plm);
-        m_finished.store(false, std::memory_order_relaxed);
-        m_decoding.store(false, std::memory_order_relaxed);
+        st->duration = plm_get_duration(st->plm);
+        m_state = std::move(st);
         return true;
     }
 
     void startDecoding() override {
-        if (m_decoding.load(std::memory_order_relaxed)) return;
-        if (!m_plm) return;
-        m_decoding.store(true, std::memory_order_relaxed);
-        m_finished.store(false, std::memory_order_relaxed);
-        m_thread = std::thread(&DecoderPLM::decodeLoop, this);
+        auto st = m_state;
+        if (!st || !st->plm) return;
+        if (st->decoding.load(std::memory_order_relaxed)) return;
+        // never run two workers on one state: an orphan detached by a
+        // timed-out stop still owns this state until it exits.
+        if (!st->threadDone.load(std::memory_order_acquire)) {
+            geode::log::warn("DecoderPLM: previous worker still draining, start deferred");
+            return;
+        }
+        st->decoding.store(true, std::memory_order_relaxed);
+        st->finished.store(false, std::memory_order_relaxed);
+        st->threadDone.store(false, std::memory_order_release);
+        m_thread = std::thread([st] { st->decodeLoop(); });
     }
 
     void stopDecoding() override {
-        m_decoding.store(false, std::memory_order_relaxed);
-        m_ring.wakeAll();
-        if (m_thread.joinable()) paimon::joinWithWarning(m_thread, std::chrono::seconds(3));
+        auto st = m_state;
+        if (!st) {
+            if (m_thread.joinable()) m_thread.join();
+            return;
+        }
+        st->decoding.store(false, std::memory_order_relaxed);
+        st->ring.wakeAll();
+        if (m_thread.joinable()) {
+            paimon::joinOrDetachWithWarning(m_thread, std::chrono::seconds(3), "DecoderPLM", [&] {
+                return st->threadDone.load(std::memory_order_acquire);
+            });
+        }
     }
 
     bool skipFrame() override {
-        return m_ring.skipRead();
+        auto st = m_state;
+        return st ? st->ring.skipRead() : false;
     }
 
     void seekTo(double seconds) override {
-        if (!m_plm) return;
-        bool wasDecoding = m_decoding.load(std::memory_order_relaxed);
+        auto st = m_state;
+        if (!st || !st->plm) return;
+        bool wasDecoding = st->decoding.load(std::memory_order_relaxed);
         stopDecoding();
+        // an orphan detached by a timed-out stop still owns the stream.
+        if (!st->threadDone.load(std::memory_order_acquire)) {
+            geode::log::warn("DecoderPLM: orphan worker still owns stream, seek skipped");
+            return;
+        }
 
-        while (m_ring.nextRead()) m_ring.commitRead();
+        while (st->ring.nextRead()) st->ring.commitRead();
 
-        plm_seek(m_plm, seconds, false);
-        m_finished.store(false, std::memory_order_relaxed);
+        plm_seek(st->plm, seconds, false);
+        st->finished.store(false, std::memory_order_relaxed);
 
         if (wasDecoding) startDecoding();
     }
 
-    double getDuration() const override { return m_duration; }
-    int getWidth()  const override { return m_ring.getWidth(); }
-    int getHeight() const override { return m_ring.getHeight(); }
+    double getDuration() const override {
+        auto st = m_state;
+        return st ? st->duration : 0.0;
+    }
+    int getWidth()  const override {
+        auto st = m_state;
+        return st ? st->ring.getWidth() : 0;
+    }
+    int getHeight() const override {
+        auto st = m_state;
+        return st ? st->ring.getHeight() : 0;
+    }
     // mpeg-1 streams are bt.601 limited; range/rotation defaults already fit.
     VideoColorMatrix getColorMatrix() const override { return VideoColorMatrix::BT601; }
 
     bool isFinished() const override {
-        return m_finished.load(std::memory_order_acquire);
+        auto st = m_state;
+        return st ? st->finished.load(std::memory_order_acquire) : false;
     }
 
     double peekNextPTS() const override {
-        return m_ring.peekNextPTS();
+        auto st = m_state;
+        return st ? st->ring.peekNextPTS() : DBL_MAX;
     }
 
     double peekSecondPTS() const override {
-        return m_ring.peekSecondPTS();
+        auto st = m_state;
+        return st ? st->ring.peekSecondPTS() : DBL_MAX;
     }
 
     const Frame* peekFrame() override {
-        return m_ring.peekRead();
+        auto st = m_state;
+        return st ? st->ring.peekRead() : nullptr;
     }
 
     void releaseFrame() override {
+        auto st = m_state;
         // guard so releaseframe() on an empty ring doesn't advance read idx.
-        if (m_ring.peekRead()) m_ring.commitRead();
+        if (st && st->ring.peekRead()) st->ring.commitRead();
     }
 
     bool setLooping(bool loop) override {
-        m_looping.store(loop, std::memory_order_relaxed);
+        if (auto st = m_state) st->looping.store(loop, std::memory_order_relaxed);
         return true;
     }
 
 private:
-    // plm planes have no stride; width is the row stride.
-    static void copyPlane(const plm_plane_t& plane, uint8_t* dst, int dstStride, int width, int height) {
-        int rowBytes = std::min(width, static_cast<int>(plane.width));
-        int rows = std::min(height, static_cast<int>(plane.height));
-        for (int r = 0; r < rows; ++r) {
-            std::memcpy(dst + r * dstStride,
-                        plane.data + r * plane.width, rowBytes);
-        }
-    }
-
-    void decodeLoop() {
-        geode::utils::thread::setName("PaimonDecodePLM");
-        plm_set_video_decode_callback(m_plm, nullptr, nullptr);
-
-        while (m_decoding.load(std::memory_order_relaxed)) {
-        // block briefly if the ring is full, then re-check m_decoding.
-        if (m_ring.isFull()) {
-                m_ring.waitForWritable(50, &m_decoding);
-                continue;
+    struct State {
+        ~State() {
+            if (plm) {
+                plm_destroy(plm);
+                plm = nullptr;
             }
+        }
 
-            plm_frame_t* frame = plm_decode_video(m_plm);
-            if (!frame) {
-                if (!m_looping.load(std::memory_order_relaxed)) {
-                    m_finished.store(true, std::memory_order_release);
-                    break;
+        void decodeLoop() {
+            ThreadExitSignal exitSignal(threadDone);
+            geode::utils::thread::setName("PaimonDecodePLM");
+            plm_set_video_decode_callback(plm, nullptr, nullptr);
+
+            while (decoding.load(std::memory_order_relaxed)) {
+            // block briefly if the ring is full, then re-check decoding.
+            if (ring.isFull()) {
+                    ring.waitForWritable(50, &decoding);
+                    continue;
                 }
-                plm_seek(m_plm, 0.0, false);
-                frame = plm_decode_video(m_plm);
+
+                plm_frame_t* frame = plm_decode_video(plm);
                 if (!frame) {
-                    m_finished.store(true, std::memory_order_release);
-                    break;
+                    if (!looping.load(std::memory_order_relaxed)) {
+                        finished.store(true, std::memory_order_release);
+                        break;
+                    }
+                    plm_seek(plm, 0.0, false);
+                    frame = plm_decode_video(plm);
+                    if (!frame) {
+                        finished.store(true, std::memory_order_release);
+                        break;
+                    }
                 }
+                // stop requested while blocked above: never publish a frame
+                // the owner may already be tearing down for.
+                if (!decoding.load(std::memory_order_relaxed)) break;
+
+                auto* slot = ring.nextWrite();
+                if (!slot) {
+                    ring.waitForWritable(50, &decoding);
+                    continue;
+                }
+
+                // mpeg planes include macroblock padding beyond the visible frame.
+                copyPlane(frame->y, slot->planeY, slot->strideY, slot->width, slot->height);
+                int const uvWidth = (slot->width + 1) / 2;
+                int const uvHeight = (slot->height + 1) / 2;
+                copyPlane(frame->cb, slot->planeCb, slot->strideCb, uvWidth, uvHeight);
+                copyPlane(frame->cr, slot->planeCr, slot->strideCr, uvWidth, uvHeight);
+
+                slot->pts = frame->time;
+                ring.commitWrite();
             }
-
-            auto* slot = m_ring.nextWrite();
-            if (!slot) {
-                m_ring.waitForWritable(50, &m_decoding);
-                continue;
-            }
-
-            // mpeg planes include macroblock padding beyond the visible frame.
-            copyPlane(frame->y, slot->planeY, slot->strideY, slot->width, slot->height);
-            int const uvWidth = (slot->width + 1) / 2;
-            int const uvHeight = (slot->height + 1) / 2;
-            copyPlane(frame->cb, slot->planeCb, slot->strideCb, uvWidth, uvHeight);
-            copyPlane(frame->cr, slot->planeCr, slot->strideCr, uvWidth, uvHeight);
-
-            slot->pts = frame->time;
-            m_ring.commitWrite();
         }
-    }
+
+        // plm planes have no stride; width is the row stride.
+        static void copyPlane(const plm_plane_t& plane, uint8_t* dst, int dstStride, int width, int height) {
+            int rowBytes = std::min(width, static_cast<int>(plane.width));
+            int rows = std::min(height, static_cast<int>(plane.height));
+            copyStridedRows(dst, static_cast<size_t>(dstStride), plane.data,
+                            plane.width, static_cast<size_t>(rowBytes), rows);
+        }
+
+        plm_t*            plm = nullptr;
+        VideoRingBuffer   ring;
+        double            duration = 0.0;
+        std::atomic<bool> decoding{false};
+        std::atomic<bool> finished{false};
+        std::atomic<bool> looping{false};
+        // set on every worker exit path; bounds the join in stopDecoding().
+        std::atomic<bool> threadDone{true};
+    };
 
     void closeInternal() {
         stopDecoding();
-        if (m_plm) {
-            plm_destroy(m_plm);
-            m_plm = nullptr;
-        }
+        // plm handle + ring live in State: a detached orphan keeps its copy
+        // alive until it exits, so this never frees memory it still uses.
+        m_state.reset();
     }
 
-    plm_t*              m_plm = nullptr;
-    VideoRingBuffer     m_ring;
-    double              m_duration = 0.0;
-    std::atomic<bool>   m_decoding{false};
-    std::atomic<bool>   m_finished{false};
-    std::atomic<bool>   m_looping{false};
-    std::thread         m_thread;
+    std::shared_ptr<State> m_state;
+    std::thread            m_thread;
 };
 
 } // namespace paimon

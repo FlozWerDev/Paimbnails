@@ -150,6 +150,7 @@ void PaimonMultiSettingsPanel::buildContentArea() {
     float scrollH = CONTENT_H;
 
     m_scrollLayer = geode::ScrollLayer::create({scrollW, scrollH});
+    if (m_scrollLayer) m_scrollLayer->setAnchorPoint({0.f, 0.f});
     m_scrollLayer->setPosition({SIDEBAR_W, 0.f});
     m_scrollLayer->setTouchEnabled(true);
     m_scrollLayer->setTouchPriority(m_childTouchPrio);
@@ -169,6 +170,7 @@ void PaimonMultiSettingsPanel::selectCategory(int index) {
 }
 
 void PaimonMultiSettingsPanel::rebuildContent() {
+    cancelSearch();
     if (!m_scrollLayer) return;
 
     auto contentLayer = m_scrollLayer->m_contentLayer;
@@ -283,87 +285,89 @@ void PaimonMultiSettingsPanel::updateSidebarAccent() {
 }
 
 void PaimonMultiSettingsPanel::onSearchChanged(std::string const& query) {
-    std::string lowerQuery = geode::utils::string::toLower(query);
-
-    if (lowerQuery.empty()) {
+    cancelSearch();
+    if (m_isClosing) return;
+    m_searchQuery = geode::utils::string::toLower(query);
+    if (m_searchQuery.empty()) {
         rebuildContent();
         return;
     }
+    scheduleOnce(schedule_selector(PaimonMultiSettingsPanel::startPendingSearch), 0.12f);
+}
 
-    buildSearchResults(lowerQuery);
+void PaimonMultiSettingsPanel::cancelSearch() {
+    unschedule(schedule_selector(PaimonMultiSettingsPanel::startPendingSearch));
+    unschedule(schedule_selector(PaimonMultiSettingsPanel::processSearchBatch));
+    m_searchJobs.clear();
+    m_searchRows.clear();
+    m_searchJobIndex = 0;
+}
+
+void PaimonMultiSettingsPanel::startPendingSearch(float) {
+    buildSearchResults(m_searchQuery);
 }
 
 void PaimonMultiSettingsPanel::buildSearchResults(std::string const& query) {
-    if (!m_scrollLayer) return;
-
-    auto contentLayer = m_scrollLayer->m_contentLayer;
-    contentLayer->removeAllChildren();
-
-    std::vector<CCNode*> matchingRows;
+    cancelSearch();
+    if (!m_scrollLayer || m_isClosing) return;
+    m_searchQuery = query;
     auto const& groups = paimon::settings_ui::getAllGroups();
-
     for (auto const& group : groups) {
-        for (auto const& sub : group.subcategories) {
-            auto tempContainer = CCNode::create();
-            sub.buildContent(tempContainer, CONTENT_W);
+        for (auto const& sub : group.subcategories) m_searchJobs.push_back(&sub);
+    }
+    schedule(schedule_selector(PaimonMultiSettingsPanel::processSearchBatch));
+}
 
-            auto children = tempContainer->getChildren();
-            if (!children) continue;
-
-            std::vector<CCNode*> toExtract;
-            for (auto* child : CCArrayExt<CCNode*>(children)) {
-
-                bool matches = false;
-                auto rowChildren = child->getChildren();
-                if (rowChildren) {
-                    for (auto* subChild : CCArrayExt<CCNode*>(rowChildren)) {
-                        auto label = typeinfo_cast<CCLabelBMFont*>(subChild);
-                        if (label) {
-                            std::string labelText = geode::utils::string::toLower(label->getString());
-                            if (labelText.find(query) != std::string::npos) {
-                                matches = true;
-                                break;
-                            }
-                        }
-                    }
+void PaimonMultiSettingsPanel::processSearchBatch(float) {
+    if (m_isClosing || !m_scrollLayer) { cancelSearch(); return; }
+    // build only one subcategory per frame. Temporary controls are released at
+    // the end of this frame; only matching rows survive until publication.
+    if (m_searchJobIndex < m_searchJobs.size()) {
+        auto* container = CCNode::create();
+        m_searchJobs[m_searchJobIndex++]->buildContent(container, CONTENT_W);
+        std::vector<CCNode*> matches;
+        for (auto* row : CCArrayExt<CCNode*>(container->getChildren())) {
+            for (auto* child : CCArrayExt<CCNode*>(row->getChildren())) {
+                auto* label = typeinfo_cast<CCLabelBMFont*>(child);
+                if (label && geode::utils::string::toLower(label->getString()).find(m_searchQuery) != std::string::npos) {
+                    matches.push_back(row);
+                    break;
                 }
-
-                if (matches) {
-                    toExtract.push_back(child);
-                }
-            }
-
-            for (auto* row : toExtract) {
-                row->retain();
-                row->removeFromParent();
-                matchingRows.push_back(row);
             }
         }
+        for (auto* row : matches) {
+            m_searchRows.emplace_back(row);
+            row->removeFromParent();
+        }
     }
+    if (m_searchJobIndex == m_searchJobs.size()) showSearchResults();
+}
 
-    if (matchingRows.empty()) {
+void PaimonMultiSettingsPanel::showSearchResults() {
+    auto* contentLayer = m_scrollLayer->m_contentLayer;
+    contentLayer->removeAllChildren();
+    if (m_searchRows.empty()) {
         auto* hint = paimon::settings_ui::createHintRow(
             Localization::get().getLanguage() == Localization::Language::SPANISH
                 ? "Sin resultados. Prueba otro nombre." : "No results. Try another name.", CONTENT_W);
-        hint->retain();
-        matchingRows.push_back(hint);
+        m_searchRows.emplace_back(hint);
     }
     float totalH = 0.f;
-    for (auto* row : matchingRows) totalH += row->getContentSize().height;
+    for (auto const& row : m_searchRows) totalH += row->getContentSize().height;
 
     float contentH = std::max(totalH, CONTENT_H);
     m_scrollLayer->setContentLayerSize({CONTENT_W, contentH});
 
     float currentY = contentH;
-    for (auto* row : matchingRows) {
+    for (auto const& row : m_searchRows) {
         float h = row->getContentSize().height;
         currentY -= h;
         row->setPosition({0.f, currentY});
-        contentLayer->addChild(row, 0);
-        row->release();
+        contentLayer->addChild(row.data(), 0);
     }
 
     m_scrollLayer->moveToTop();
+    cancelSearch();
 }
 
 void PaimonMultiSettingsPanel::runEntryAnimation() {
@@ -384,6 +388,7 @@ void PaimonMultiSettingsPanel::runEntryAnimation() {
 void PaimonMultiSettingsPanel::animateClose() {
     if (m_isClosing) return;
     m_isClosing = true;
+    cancelSearch();
 
     paimon::ui::detachGeodeTextInput(m_searchInput);
 
@@ -423,6 +428,7 @@ void PaimonMultiSettingsPanel::onClose(CCObject*) {
 }
 
 void PaimonMultiSettingsPanel::onExit() {
+    cancelSearch();
     paimon::ui::detachGeodeTextInput(m_searchInput);
     m_searchInput = nullptr;
     paimon::popupblur::cleanup(this);
@@ -456,7 +462,7 @@ void PaimonMultiSettingsPanel::keyBackClicked() {
     animateClose();
 }
 
-bool PaimonMultiSettingsPanel::ccTouchBegan(CCTouch* touch, CCEvent* event) {
+bool PaimonMultiSettingsPanel::ccTouchBegan(CCTouch* touch, CCEvent*) {
     if (m_isClosing) return false;
 
     auto touchPos = touch->getLocation();
@@ -475,7 +481,7 @@ bool PaimonMultiSettingsPanel::ccTouchBegan(CCTouch* touch, CCEvent* event) {
     return true;
 }
 
-void PaimonMultiSettingsPanel::ccTouchMoved(CCTouch* touch, CCEvent* event) {
+void PaimonMultiSettingsPanel::ccTouchMoved(CCTouch* touch, CCEvent*) {
     if (!m_isDragging) return;
     auto touchPos = touch->getLocation();
     auto const win = CCDirector::get()->getWinSize();
@@ -487,10 +493,10 @@ void PaimonMultiSettingsPanel::ccTouchMoved(CCTouch* touch, CCEvent* event) {
     m_panelContainer->setPosition(position);
 }
 
-void PaimonMultiSettingsPanel::ccTouchEnded(CCTouch* touch, CCEvent* event) {
+void PaimonMultiSettingsPanel::ccTouchEnded(CCTouch*, CCEvent*) {
     m_isDragging = false;
 }
 
-void PaimonMultiSettingsPanel::ccTouchCancelled(CCTouch* touch, CCEvent* event) {
+void PaimonMultiSettingsPanel::ccTouchCancelled(CCTouch*, CCEvent*) {
     m_isDragging = false;
 }

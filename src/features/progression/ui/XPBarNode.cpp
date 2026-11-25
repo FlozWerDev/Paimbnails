@@ -42,9 +42,9 @@ bool XPBarNode::init(float width, float height) {
         this->addChild(m_bar, 0);
     }
 
-    m_label = CCLabelBMFont::create("", "chatFont.fnt");
+    m_label = CCLabelBMFont::create("", "bigFont.fnt");
     if (m_label) {
-        m_label->setScale(std::clamp(height * 0.028f, 0.30f, 0.42f));
+        m_label->setScale(std::clamp(height * 0.021f, 0.24f, 0.34f));
         m_label->setPosition({width / 2.f, height / 2.f});
         m_label->setColor({255, 255, 255});
         this->addChild(m_label, 2);
@@ -111,6 +111,8 @@ void XPBarNode::applyExp(int64_t exp, int level) {
             formatCount(exp - base),
             span > 0 ? formatCount(span) : std::string("MAX")
         ).c_str());
+        float const baseScale = std::clamp(m_height * 0.021f, 0.24f, 0.34f);
+        m_label->limitLabelWidth(std::max(10.f, m_width - 14.f), baseScale, 0.16f);
     }
 }
 
@@ -145,7 +147,9 @@ void XPBarNode::flashLevelUp() {
     auto* flash = GDProgressBar::makeCapsule();
     if (!flash) return;
 
-    flash->setContentSize({m_width, m_height});
+    float const s = std::max(0.1f, m_height / 20.f);
+    flash->setContentSize({m_width / s, 20.f});
+    flash->setScale(s);
     flash->setPosition({m_width / 2.f, m_height / 2.f});
     flash->runAction(CCSequence::create(
         CCFadeTo::create(0.35f, 0),

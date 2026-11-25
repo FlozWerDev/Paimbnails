@@ -9,6 +9,7 @@ class GradientLayer;
 class ColorToggle : public CCMenuItemSpriteExtra {
 
 private:
+    using CCMenuItemSpriteExtra::setColor;
 
     // owning editor and channel identity.
     GradientLayer* m_layer = nullptr;
@@ -23,7 +24,6 @@ private:
 
     CCLabelBMFont* m_numberLabel = nullptr;
 
-    // sticky state.
     bool m_forceDisabled = false;
     bool m_isSelected = false;
 
@@ -47,17 +47,14 @@ public:
 
     static ColorToggle* create(CCObject*, SEL_MenuHandler, ColorType, GradientLayer*, bool = true, float = 1.f, bool = true);
 
-    // state queries.
     bool isSelected() override;
     ColorType getColorType();
     CCSprite* getMainSprite();
 
-    // selection and enabled state.
     void setSelected(bool);
     void setEnabled(bool) override;
     void setForceDisabled(bool);
 
-    // appearance.
     void setColor(const ccColor3B&, float = 0.f);
     void applyGradient(GradientConfig, bool, bool);
 

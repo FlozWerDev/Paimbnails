@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "CapturePreviewPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -21,6 +22,7 @@
 #include "../../../utils/ActivePauseLayer.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/ImageConverter.hpp"
+#include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/ThreadTracker.hpp"
 #include "../../../ui/PaimonUI.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
@@ -64,7 +66,7 @@ float computePreviewScale(CCSprite* sprite, float viewWidth, float viewHeight, b
 }
 
 std::filesystem::path downloadedThumbnailsDir() {
-    return Mod::get()->getSaveDir() / "downloaded_thumbnails";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "downloaded_thumbnails";
 }
 }
 
@@ -118,12 +120,8 @@ void CapturePreviewPopup::registerWithTouchDispatcher() {
 }
 
 void CapturePreviewPopup::onExit() {
-    if (auto* director = CCDirector::get(); director && director->getScheduler()) {
-        director->getScheduler()->unscheduleSelector(
-            schedule_selector(CapturePreviewPopup::delayedRecapture), this
-        );
-    }
-    this->unschedule(schedule_selector(CapturePreviewPopup::onRecaptureTimeout));
+    cancelRecapture();
+    notifyCaptureCanceled();
     Popup::onExit();
 }
 
@@ -653,25 +651,16 @@ void CapturePreviewPopup::onRecenterBtn(CCObject*) {
 }
 
 void CapturePreviewPopup::onClose(CCObject* sender) {
-    if (m_recapturePending) {
-        if (auto* director = CCDirector::get(); director && director->getScheduler()) {
-            director->getScheduler()->unscheduleSelector(
-                schedule_selector(CapturePreviewPopup::delayedRecapture), this
-            );
-        }
-        FramebufferCapture::cancelPending();
-        restoreRecapturePauseState();
-    }
-    m_recapturePending = false;
-    this->unschedule(schedule_selector(CapturePreviewPopup::onRecaptureTimeout));
+    if (m_closed) return;
+    Ref<CapturePreviewPopup> keepAlive = this;
+    m_closed = true;
+    cancelRecapture();
     CaptureLayerEditorPopup::restoreAllLayers();
     CaptureAssetBrowserPopup::restoreAllAssets();
 
-    // cancel pending recapture callbacks before closing.
-    FramebufferCapture::cancelPending();
-
     // resume music only if keybind capture paused it.
-    if (m_pausedMusic) {
+    auto musicPlay = m_musicPlayLayer.lock();
+    if (m_pausedMusic && musicPlay && musicPlay.data() == PlayLayer::get() && !musicPlay->m_isPaused) {
         if (auto* engine = FMODAudioEngine::sharedEngine()) {
             if (engine->m_backgroundMusicChannel) {
                 engine->m_backgroundMusicChannel->setPaused(false);
@@ -685,21 +674,43 @@ void CapturePreviewPopup::onClose(CCObject* sender) {
 
     // popup::onclose removes the touch delegate.
 
-    if (!m_callbackExecuted && m_callback) {
-        m_callback(false, m_levelID, m_buffer, m_width, m_height, "", "");
-        m_callbackExecuted = true;
-    }
+    notifyCaptureCanceled();
     Popup::onClose(sender);
+}
+
+void CapturePreviewPopup::setPausedMusic(bool paused) {
+    m_pausedMusic = paused;
+    m_musicPlayLayer = paused ? PlayLayer::get() : nullptr;
+}
+
+void CapturePreviewPopup::notifyCaptureCanceled() {
+    if (m_callbackExecuted) return;
+    m_callbackExecuted = true;
+    if (m_callback) m_callback(false, m_levelID, m_buffer, m_width, m_height, "", "");
+}
+
+void CapturePreviewPopup::cancelRecapture() {
+    bool const owned = m_recapture.cancel();
+    unschedule(schedule_selector(CapturePreviewPopup::delayedRecapture));
+    unschedule(schedule_selector(CapturePreviewPopup::onRecaptureTimeout));
+    if (!owned) return;
+    FramebufferCapture::cancelPending();
+    restoreRecapturePauseState();
 }
 
 void CapturePreviewPopup::restoreRecapturePauseState() {
     paimon::setCaptureInProgress(false);
+    if (paimon::isRuntimeShuttingDown()) {
+        m_recaptureHidPause = false;
+        m_recapturePauseLayer = nullptr;
+        return;
+    }
     if (!m_recaptureHidPause) return;
 
     if (auto* pause = m_recapturePauseLayer.data()) {
         if (auto* play = PlayLayer::get(); play && play->m_isPaused && paimon::isPauseLayerOpen(pause)) {
             pause->setVisible(m_recapturePauseWasVisible);
-            pause->setTouchEnabled(m_recapturePauseWasVisible);
+            pause->setTouchEnabled(m_recapturePauseTouchEnabled);
         }
     }
     if (!m_recaptureZoomWasHidden && paimon::isPauseLayerOpen(m_recapturePauseLayer.data())) {
@@ -711,25 +722,26 @@ void CapturePreviewPopup::restoreRecapturePauseState() {
 }
 
 void CapturePreviewPopup::recapture() {
-    if (FramebufferCapture::hasPendingCapture()) {
-        PaimonNotify::create(
+    if (m_closed || !getParent() || !isRunning()) return;
+    if (m_recapture.active() || paimon::isCaptureInProgress() || FramebufferCapture::hasPendingCapture()) {
+        PaimonNotify::show(
             Localization::get().getString("layers.recapturing").c_str(),
-            NotificationIcon::Warning)->show();
+            NotificationIcon::Warning);
         return;
     }
 
     auto validation = FramebufferCapture::validateCaptureConditions();
     if (!validation.canCapture) {
-        PaimonNotify::create(validation.reason.c_str(), NotificationIcon::Warning)->show();
+        PaimonNotify::show(validation.reason.c_str(), NotificationIcon::Warning);
         return;
     }
 
-    this->unschedule(schedule_selector(CapturePreviewPopup::delayedRecapture));
-    restoreRecapturePauseState();
+    auto* play = PlayLayer::get();
+    if (!play || !play->m_level || play->m_level->m_levelID != m_levelID) return;
+    m_recapturePlayLayer = play;
 
-    Ref<CapturePreviewPopup> safeRef = this;
     this->setVisible(false);
-    m_recapturePending = true;
+    m_recapture.begin();
     this->scheduleOnce(schedule_selector(CapturePreviewPopup::onRecaptureTimeout),
         paimon::capture::preview::RECAPTURE_TIMEOUT_SEC);
 
@@ -738,6 +750,7 @@ void CapturePreviewPopup::recapture() {
     if (pauseLayer && !m_recaptureHidPause) {
         m_recapturePauseLayer = pauseLayer;
         m_recapturePauseWasVisible = pauseLayer->isVisible();
+        m_recapturePauseTouchEnabled = pauseLayer->isTouchEnabled();
         m_recaptureZoomWasHidden = paimon::isPauseZoomHidden();
         pauseLayer->setVisible(false);
         pauseLayer->setTouchEnabled(false);
@@ -767,34 +780,43 @@ void CapturePreviewPopup::delayedRecapture(float) {
             schedule_selector(CapturePreviewPopup::delayedRecapture), this
         );
     }
-    if (!m_recapturePending) return;
+    if (!m_recapture.active()) return;
+    auto play = m_recapturePlayLayer.lock();
+    if (m_closed || !getParent() || !isRunning() || !play || play.data() != PlayLayer::get()) {
+        cancelRecapture();
+        return;
+    }
 
     Ref<CapturePreviewPopup> safeRef = this;
+    auto const token = m_recapture.token();
     int const levelID = m_levelID;
     bool const hideP1 = m_isPlayer1Hidden;
     bool const hideP2 = m_isPlayer2Hidden;
 
     FramebufferCapture::requestCapture(levelID,
-        [safeRef](bool success, CCTexture2D* texture,
+        [safeRef, token](bool success, CCTexture2D* texture,
                std::shared_ptr<uint8_t> rgbaData, int width, int height) {
             Ref<CCTexture2D> texRef = texture;
             Loader::get()->queueInMainThread(
-                [safeRef, success, texRef, rgbaData, width, height]() {
+                [safeRef, token, success, texRef, rgbaData, width, height]() {
+                    // A timeout/close may already have handed ownership to a newer request.
+                    if (!safeRef->m_recapture.finish(token)) return;
                     if (paimon::isRuntimeShuttingDown()) {
                         safeRef->restoreRecapturePauseState();
                         return;
                     }
                     CCTexture2D* texture = texRef.data();
-                    safeRef->m_recapturePending = false;
                     safeRef->unschedule(schedule_selector(CapturePreviewPopup::onRecaptureTimeout));
                     safeRef->restoreRecapturePauseState();
-                    if (!safeRef->getParent()) return;
+                    auto play = safeRef->m_recapturePlayLayer.lock();
+                    if (safeRef->m_closed || !safeRef->getParent() || !safeRef->isRunning()
+                        || !play || play.data() != PlayLayer::get()) return;
                     if (success && texture && rgbaData) {
                         safeRef->updateContent(texture, rgbaData, width, height);
                     } else {
-                        PaimonNotify::create(
+                        PaimonNotify::show(
                             Localization::get().getString("layers.recapture_error").c_str(),
-                            NotificationIcon::Error)->show();
+                            NotificationIcon::Error);
                     }
                     safeRef->setVisible(true);
                 });
@@ -806,17 +828,11 @@ void CapturePreviewPopup::delayedRecapture(float) {
 }
 
 void CapturePreviewPopup::onRecaptureTimeout(float) {
-    if (!m_recapturePending) return;
-    m_recapturePending = false;
-    if (auto* director = CCDirector::get(); director && director->getScheduler()) {
-        director->getScheduler()->unscheduleSelector(
-            schedule_selector(CapturePreviewPopup::delayedRecapture), this
-        );
-    }
-    FramebufferCapture::cancelPending();
-    restoreRecapturePauseState();
+    if (!m_recapture.active()) return;
+    cancelRecapture();
+    if (m_closed || !getParent() || !isRunning()) return;
     this->setVisible(true);
-    PaimonNotify::create(Localization::get().getString("layers.recapture_error").c_str(), NotificationIcon::Warning)->show();
+    PaimonNotify::show(Localization::get().getString("layers.recapture_error").c_str(), NotificationIcon::Warning);
 }
 
 void CapturePreviewPopup::liveRecapture() {
@@ -828,19 +844,16 @@ void CapturePreviewPopup::liveRecapture() {
 }
 
 void CapturePreviewPopup::onAcceptBtn(CCObject* sender) {
-    if (!sender) return;
+    if (!sender || m_closed) return;
     m_callbackExecuted = true;
     ThumbnailLoader::get().invalidateLevel(m_levelID);
 
     // cache the accepted thumbnail so levelinfolayer shows it pre-upload.
     if (m_buffer && m_width > 0 && m_height > 0) {
-        auto* tex = new CCTexture2D();
-        if (tex->initWithData(m_buffer.get(), kCCTexture2DPixelFormat_RGBA8888,
-                m_width, m_height, CCSize((float)m_width, (float)m_height))) {
-            tex->autorelease();
-            ThumbnailLoader::get().updateSessionCache(m_levelID, tex);
-        } else {
-            tex->release();
+        auto loaded = ImageLoadHelper::createFromRGBA(m_buffer.get(), m_width, m_height, false);
+        if (loaded.success && loaded.texture) {
+            loaded.texture->autorelease();
+            ThumbnailLoader::get().updateSessionCache(m_levelID, loaded.texture);
         }
     }
 
@@ -930,7 +943,7 @@ void CapturePreviewPopup::updateResBadge() {
     }
 }
 
-void CapturePreviewPopup::onCycleResolution(CCObject* sender) {
+void CapturePreviewPopup::onCycleResolution(CCObject*) {
     std::string current = geode::Mod::get()->getSettingValue<std::string>("capture-resolution");
 
     std::string next;
@@ -946,7 +959,7 @@ void CapturePreviewPopup::onCycleResolution(CCObject* sender) {
     std::string msg = loc.getString("preview.res_changed");
     auto pos = msg.find("{}");
     if (pos != std::string::npos) msg.replace(pos, 2, next);
-    PaimonNotify::create(msg.c_str(), NotificationIcon::Info)->show();
+    PaimonNotify::show(msg.c_str(), NotificationIcon::Info);
 
 // same routing as player/hdr toggles: recapture in-level, owner re-renders outside, else local.
     if (PlayLayer::get()) {
@@ -969,22 +982,22 @@ void CapturePreviewPopup::onCropBtn(CCObject* sender) {
     if (!m_buffer || m_width <= 0 || m_height <= 0) return;
 
     if (m_isCropped) {
-        PaimonNotify::create(Localization::get().getString("preview.borders_removed").c_str(),
-            NotificationIcon::Info)->show();
+        PaimonNotify::show(Localization::get().getString("preview.borders_removed").c_str(),
+            NotificationIcon::Info);
         return;
     }
 
     auto cropRect = detectBlackBorders();
     if (cropRect.width == m_width && cropRect.height == m_height) {
-        PaimonNotify::create(Localization::get().getString("preview.no_borders").c_str(),
-            NotificationIcon::Info)->show();
+        PaimonNotify::show(Localization::get().getString("preview.no_borders").c_str(),
+            NotificationIcon::Info);
         return;
     }
 
     applyCrop(cropRect);
     m_isCropped = true;
-    PaimonNotify::create(Localization::get().getString("preview.borders_deleted").c_str(),
-        NotificationIcon::Success)->show();
+    PaimonNotify::show(Localization::get().getString("preview.borders_deleted").c_str(),
+        NotificationIcon::Success);
 }
 
 CapturePreviewPopup::CropRect CapturePreviewPopup::detectBlackBorders() {
@@ -1043,23 +1056,19 @@ void CapturePreviewPopup::applyCrop(const CropRect& rect) {
         memcpy(dstRow, srcRow, rect.width * 4);
     }
 
-    auto* newTexture = new CCTexture2D();
-    if (newTexture->initWithData(croppedBuffer.get(), kCCTexture2DPixelFormat_RGBA8888,
-            rect.width, rect.height,
-            CCSize(static_cast<float>(rect.width), static_cast<float>(rect.height)))) {
-        newTexture->setAntiAliasTexParameters();
-        newTexture->autorelease();
-        updateContent(newTexture, croppedBuffer, rect.width, rect.height);
-    } else {
-        newTexture->release();
+    auto loaded = ImageLoadHelper::createFromRGBA(croppedBuffer.get(), rect.width, rect.height, false);
+    if (loaded.success && loaded.texture) {
+        loaded.texture->setAntiAliasTexParameters();
+        loaded.texture->autorelease();
+        updateContent(loaded.texture, croppedBuffer, rect.width, rect.height);
     }
 }
 
 void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
     if (!sender) return;
     if (!m_buffer || m_width <= 0 || m_height <= 0) {
-        PaimonNotify::create(Localization::get().getString("preview.no_image").c_str(),
-            NotificationIcon::Error)->show();
+        PaimonNotify::show(Localization::get().getString("preview.no_image").c_str(),
+            NotificationIcon::Error);
         return;
     }
 
@@ -1067,8 +1076,8 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
     std::error_code ec;
     std::filesystem::create_directories(downloadDir, ec);
     if (!std::filesystem::is_directory(downloadDir, ec)) {
-        PaimonNotify::create(Localization::get().getString("preview.folder_error").c_str(),
-            NotificationIcon::Error)->show();
+        PaimonNotify::show(Localization::get().getString("preview.folder_error").c_str(),
+            NotificationIcon::Error);
         return;
     }
 
@@ -1089,15 +1098,15 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
         if (ImageConverter::saveRGBAToPNG(bufCopy.get(), w, h, filePath)) {
             geode::Loader::get()->queueInMainThread([filePath, levelID]() {
                 if (paimon::isRuntimeShuttingDown()) return;
-                PaimonNotify::create(Localization::get().getString("preview.downloaded").c_str(),
-                    geode::NotificationIcon::Success)->show();
+                PaimonNotify::show(Localization::get().getString("preview.downloaded").c_str(),
+                    geode::NotificationIcon::Success);
                 ThumbnailLoader::get().invalidateLevel(levelID);
             });
         } else {
             geode::Loader::get()->queueInMainThread([]() {
                 if (paimon::isRuntimeShuttingDown()) return;
-                PaimonNotify::create(Localization::get().getString("preview.save_error").c_str(),
-                    geode::NotificationIcon::Error)->show();
+                PaimonNotify::show(Localization::get().getString("preview.save_error").c_str(),
+                    geode::NotificationIcon::Error);
             });
         }
     });
@@ -1108,16 +1117,22 @@ void CapturePreviewPopup::onOpenDownloadsFolder(CCObject*) {
     std::error_code ec;
     std::filesystem::create_directories(downloadDir, ec);
     if (!std::filesystem::is_directory(downloadDir, ec)) {
-        PaimonNotify::create(Localization::get().getString("preview.folder_error").c_str(),
-            NotificationIcon::Error)->show();
+        PaimonNotify::show(Localization::get().getString("preview.folder_error").c_str(),
+            NotificationIcon::Error);
         return;
     }
 
+#if defined(GEODE_IS_MOBILE)
+    geode::utils::clipboard::write(paimon::paths::toUtf8(downloadDir));
+    PaimonNotify::show(fmt::format("Descargas (ruta copiada): {}", paimon::paths::toUtf8(downloadDir)),
+        NotificationIcon::Info, 3.0f);
+#else
     // openfolder may report false on success, so never show an error here.
-    if (!geode::utils::file::openFolder(downloadDir)) {
+    if (!geode::utils::file::openFolder(paimon::paths::toSdkPath(downloadDir))) {
         log::warn("[CapturePreview] openFolder devolvio false para {}",
-            geode::utils::string::pathToString(downloadDir));
+            paimon::paths::toUtf8(downloadDir));
     }
+#endif
 }
 
 void CapturePreviewPopup::clampSpritePosition() {
@@ -1190,9 +1205,10 @@ void CapturePreviewPopup::clampSpritePositionAnimated() {
     }
 }
 
-bool CapturePreviewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
+bool CapturePreviewPopup::ccTouchBegan(CCTouch* touch, CCEvent*) {
+    if (m_closed) return false;
     // hidden only during recapture: swallow the touch so it never falls through mid-capture.
-    if (!this->isVisible()) return m_recapturePending;
+    if (!this->isVisible()) return m_recapture.active();
 
     auto findTouchedItem = [](CCMenu* menu, CCTouch* t) -> CCMenuItem* {
         if (!menu || !menu->isVisible()) return nullptr;
@@ -1270,7 +1286,7 @@ bool CapturePreviewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
     return true;
 }
 
-void CapturePreviewPopup::ccTouchMoved(CCTouch* touch, CCEvent* event) {
+void CapturePreviewPopup::ccTouchMoved(CCTouch* touch, CCEvent*) {
     if (m_activatedItem) {
         auto* parent = m_activatedItem->getParent();
         if (auto* menu = typeinfo_cast<CCMenu*>(parent)) {
@@ -1313,7 +1329,7 @@ void CapturePreviewPopup::ccTouchMoved(CCTouch* touch, CCEvent* event) {
     }
 }
 
-void CapturePreviewPopup::ccTouchEnded(CCTouch* touch, CCEvent* event) {
+void CapturePreviewPopup::ccTouchEnded(CCTouch* touch, CCEvent*) {
     if (m_activatedItem) {
         m_activatedItem->unselected();
         m_activatedItem->activate();
@@ -1335,7 +1351,7 @@ void CapturePreviewPopup::ccTouchEnded(CCTouch* touch, CCEvent* event) {
     if (m_activeTouches.empty()) clampSpritePositionAnimated();
 }
 
-void CapturePreviewPopup::ccTouchCancelled(CCTouch* touch, CCEvent* event) {
+void CapturePreviewPopup::ccTouchCancelled(CCTouch* touch, CCEvent*) {
     if (m_activatedItem) {
         m_activatedItem->unselected();
         m_activatedItem = nullptr;
@@ -1345,20 +1361,46 @@ void CapturePreviewPopup::ccTouchCancelled(CCTouch* touch, CCEvent* event) {
     if (m_activeTouches.empty()) clampSpritePosition();
 }
 
-void CapturePreviewPopup::scrollWheel(float x, float y) {
+bool CapturePreviewPopup::scrollWheel(float x, float y) {
     namespace C = paimon::capture::preview;
-    if (!m_previewSprite || !m_previewSprite->getParent()) return;
+    if (!m_previewSprite || !m_previewSprite->getParent()) return true;
 
     float const steps = paimon::smoothscroll::SmoothScrollController::get()
         .filteredZoomSteps(x, y);
-    if (std::abs(steps) < 0.000001f) return;
+    if (std::abs(steps) < 0.000001f) return true;
 
     float const baseFactor = steps > 0.f ? C::SCROLL_ZOOM_IN : C::SCROLL_ZOOM_OUT;
     float const zoomFactor = std::pow(baseFactor, std::abs(steps));
     float curScale    = m_previewSprite->getScale();
     float newScale    = clampF(curScale * zoomFactor, m_minScale, m_maxScale);
-    if (std::abs(newScale - curScale) < 0.001f) return;
+    if (std::abs(newScale - curScale) < 0.001f) return true;
+
+    auto* parent = m_previewSprite->getParent();
+    auto const mousePos = geode::cocos::getMousePos();
+    CCPoint focusInParent = parent->convertToNodeSpace(mousePos);
+    if (m_viewWidth > 0.f && m_viewHeight > 0.f) {
+        focusInParent.x = clampF(focusInParent.x, 0.f, m_viewWidth);
+        focusInParent.y = clampF(focusInParent.y, 0.f, m_viewHeight);
+    }
+
+    CCPoint position = m_previewSprite->getPosition();
+    CCPoint anchor = m_previewSprite->getAnchorPoint();
+    CCSize contentSize = m_previewSprite->getContentSize();
+    CCPoint anchorOffset = {
+        contentSize.width * anchor.x,
+        contentSize.height * anchor.y,
+    };
+
+    CCPoint localFocus = {
+        ((focusInParent.x - position.x) / curScale) + anchorOffset.x,
+        ((focusInParent.y - position.y) / curScale) + anchorOffset.y,
+    };
 
     m_previewSprite->setScale(newScale);
+    m_previewSprite->setPosition(ccp(
+        focusInParent.x - (localFocus.x - anchorOffset.x) * newScale,
+        focusInParent.y - (localFocus.y - anchorOffset.y) * newScale
+    ));
     clampSpritePosition();
+    return true;
 }

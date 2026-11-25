@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "ProfileMusicManager.hpp"
 #include "../../audio/services/AudioContextCoordinator.hpp"
 #include "../../dynamic-songs/services/DynamicSongManager.hpp"
@@ -35,6 +36,12 @@ void releaseSound(FMOD::Sound* sound) {
     sound->release();
 }
 
+// a captured lifetime token stays valid only while its owner lives and the
+// runtime is up; every async hop re-checks before touching state.
+bool alive(std::shared_ptr<std::atomic<bool>> const& token) {
+    return token->load(std::memory_order_acquire) && !paimon::isRuntimeShuttingDown();
+}
+
 int pcmBits(FMOD_SOUND_FORMAT format) {
     switch (format) {
         case FMOD_SOUND_FORMAT_PCM8: return 8;
@@ -61,7 +68,7 @@ std::mutex& getProfileMusicCachePruneMutex() {
 }
 
 std::filesystem::path getProfileMusicCacheDirStatic() {
-    return Mod::get()->getSaveDir() / "profile_music";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "profile_music";
 }
 
 size_t getProfileMusicCacheMaxBytes() {
@@ -164,7 +171,12 @@ static FMOD::Channel* getMainBgChannel(FMODAudioEngine* engine) {
 ProfileMusicManager::ProfileMusicManager() {
     std::error_code ec;
     std::filesystem::create_directories(getCacheDir(), ec);
-    pruneProfileMusicCache();
+    // pruning walks and stats the whole cache dir; keep it off the main thread.
+    paimon::ThreadTracker::get().spawn([] {
+        geode::utils::thread::setName("PaimonProfileMusicPrune");
+        if (paimon::isRuntimeShuttingDown()) return;
+        pruneProfileMusicCache();
+    });
 }
 
 std::filesystem::path ProfileMusicManager::getCacheDir() {
@@ -217,7 +229,7 @@ bool ProfileMusicManager::tryGetImmediateConfig(int accountID, ProfileMusicConfi
         return false;
     }
 
-    auto readRes = geode::utils::file::readString(metaPath);
+    auto readRes = geode::utils::file::readString(paimon::paths::toSdkPath(metaPath));
     if (readRes.isErr()) return false;
 
     std::string content = readRes.unwrap();
@@ -281,7 +293,7 @@ void ProfileMusicManager::getProfileMusicConfig(int accountID, ConfigCallback ca
     auto token = m_lifetimeToken;
     HttpClient::get().get(endpoint, [this, token, accountID, callback](bool success, std::string const& response) {
         Loader::get()->queueInMainThread([this, token, accountID, callback, success, response]() {
-            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
+            if (!alive(token)) return;
             if (!success) {
                 log::error("[ProfileMusic] Failed to fetch config for account {}: {}", accountID, response);
                 callback(false, ProfileMusicConfig{});
@@ -322,7 +334,7 @@ void ProfileMusicManager::uploadFragment(int accountID, std::string const& usern
     auto token = m_lifetimeToken;
     paimon::ThreadTracker::get().spawn([this, token, filePath, accountID, username, config, isCustom, callback]() {
         geode::utils::thread::setName("PaimonProfileMusic");
-        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+        if (!alive(token)) {
             return;
         }
 
@@ -330,7 +342,7 @@ void ProfileMusicManager::uploadFragment(int accountID, std::string const& usern
 
         if (fragmentData.empty()) {
             Loader::get()->queueInMainThread([token, callback, isCustom]() {
-                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+                if (!alive(token)) {
                     return;
                 }
 
@@ -364,22 +376,22 @@ void ProfileMusicManager::uploadFragment(int accountID, std::string const& usern
 
         std::string jsonData = payload.dump();
 
-        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+        if (!alive(token)) {
             return;
         }
 
         Loader::get()->queueInMainThread([this, token, jsonData = std::move(jsonData), accountID, isCustom, callback]() {
-            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+            if (!alive(token)) {
                 return;
             }
 
             HttpClient::get().postWithAuth("/api/profile-music/upload", jsonData, [this, token, accountID, isCustom, callback](bool success, std::string const& response) {
-                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+                if (!alive(token)) {
                     return;
                 }
 
                 Loader::get()->queueInMainThread([this, token, accountID, isCustom, callback, success, response]() {
-                    if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+                    if (!alive(token)) {
                         return;
                     }
 
@@ -603,11 +615,11 @@ void ProfileMusicManager::deleteProfileMusic(int accountID, std::string const& u
     std::string jsonData = payload.dump();
 
     HttpClient::get().postWithAuth("/api/profile-music/delete", jsonData, [this, token, accountID, callback](bool success, std::string const& response) {
-        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+        if (!alive(token)) {
             return;
         }
         Loader::get()->queueInMainThread([this, token, accountID, callback, success, response]() {
-            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+            if (!alive(token)) {
                 return;
             }
             if (success) {
@@ -633,7 +645,7 @@ void ProfileMusicManager::uploadCustomProfileMusic(int accountID, std::string co
 
     if (!canUploadCustomMusic()) {
         Loader::get()->queueInMainThread([token, callback]() {
-            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
+            if (!alive(token)) return;
             callback(false, "You don't have permission to upload custom music. Requires Moderator, VIP, or Whitelist.");
         });
         return;
@@ -646,12 +658,12 @@ void ProfileMusicManager::getLocalSongInfo(std::string const& filePath, SongInfo
     auto token = m_lifetimeToken;
     paimon::ThreadTracker::get().spawn([token, filePath, callback]() {
         geode::utils::thread::setName("PaimonProfileMusic");
-        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
+        if (!alive(token)) return;
 
         auto engine = FMODAudioEngine::sharedEngine();
         if (!engine || !engine->m_system) {
             Loader::get()->queueInMainThread([token, callback]() {
-                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
+                if (!alive(token)) return;
                 callback(false, "", "", 0);
             });
             return;
@@ -663,7 +675,7 @@ void ProfileMusicManager::getLocalSongInfo(std::string const& filePath, SongInfo
             log::warn("[ProfileMusic] getLocalSongInfo: FMOD createSound failed (err {}) for '{}'",
                 static_cast<int>(res), filePath);
             Loader::get()->queueInMainThread([token, callback]() {
-                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
+                if (!alive(token)) return;
                 callback(false, "", "", 0);
             });
             return;
@@ -676,11 +688,11 @@ void ProfileMusicManager::getLocalSongInfo(std::string const& filePath, SongInfo
         int durationMs = static_cast<int>(lengthMs);
 
         std::filesystem::path p(filePath);
-        std::string songName = geode::utils::string::pathToString(p.stem());
+        std::string songName = paimon::paths::toUtf8(p.stem());
         std::string artistName = "Local File";
 
         Loader::get()->queueInMainThread([token, callback, songName, artistName, durationMs]() {
-            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
+            if (!alive(token)) return;
             callback(true, songName, artistName, durationMs);
         });
     });
@@ -690,21 +702,22 @@ void ProfileMusicManager::getWaveformPeaksForFile(std::string const& filePath, W
     auto token = m_lifetimeToken;
     paimon::ThreadTracker::get().spawn([this, token, filePath, callback]() {
         geode::utils::thread::setName("PaimonProfileMusic");
-        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
+        if (!alive(token)) return;
 
         int durationMs = 0;
         auto peaks = analyzeWaveform(filePath, 200, durationMs);
 
-        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
+        if (!alive(token)) return;
 
         Loader::get()->queueInMainThread([token, callback, peaks, durationMs]() {
-            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
+            if (!alive(token)) return;
             callback(!peaks.empty(), peaks, durationMs);
         });
     });
 }
 
-void ProfileMusicManager::downloadMusicFragment(int accountID, std::string const& version, DownloadCallback callback) {
+void ProfileMusicManager::downloadMusicFragment(int accountID, std::string const& version,
+    PlaybackRequest::Token request, DownloadCallback callback) {
     auto token = m_lifetimeToken;
     std::string url = fmt::format("{}/api/profile-music/{}/audio", HttpClient::get().getServerURL(), accountID);
     std::string verToken;
@@ -720,14 +733,15 @@ void ProfileMusicManager::downloadMusicFragment(int accountID, std::string const
 
     log::info("[ProfileMusic] Downloading music from: {}", url);
 
-    HttpClient::get().downloadFromUrlRaw(url, [this, token, accountID, callback](bool success, std::vector<uint8_t> const& data, int, int) {
-        if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+    HttpClient::get().downloadFromUrlRaw(url, [this, token, accountID, request, callback](bool success, std::vector<uint8_t> const& data, int, int) {
+        if (!alive(token)) {
             return;
         }
+        if (!isCurrentProfileRequest(request)) return;
         if (!success || data.empty()) {
             log::error("[ProfileMusic] Failed to download music for account {}", accountID);
             Loader::get()->queueInMainThread([token, callback]() {
-                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
+                if (!alive(token)) return;
                 callback(false, "");
             });
             return;
@@ -737,18 +751,18 @@ void ProfileMusicManager::downloadMusicFragment(int accountID, std::string const
         std::error_code ec;
         std::filesystem::create_directories(cachePath.parent_path(), ec);
 
-        auto writeRes = geode::utils::file::writeBinary(cachePath, data);
+        auto writeRes = geode::utils::file::writeBinary(paimon::paths::toSdkPath(cachePath), data);
         if (writeRes.isOk()) {
             pruneProfileMusicCache();
             log::info("[ProfileMusic] Downloaded and cached music for account {} ({} bytes)", accountID, data.size());
             Loader::get()->queueInMainThread([token, callback, cachePath]() {
-                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
-                callback(true, geode::utils::string::pathToString(cachePath));
+                if (!alive(token)) return;
+                callback(true, paimon::paths::toUtf8(cachePath));
             });
         } else {
             log::error("[ProfileMusic] Failed to write cache file for account {}: {}", accountID, writeRes.unwrapErr());
             Loader::get()->queueInMainThread([token, callback]() {
-                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
+                if (!alive(token)) return;
                 callback(false, "");
             });
         }
@@ -779,15 +793,19 @@ void ProfileMusicManager::playProfileMusic(int accountID) {
         return;
     }
 
-    if (m_isPlaying && m_currentProfileID == accountID && !m_isPaused && !m_isFadingOut) {
+    if (m_isPlaying && m_currentProfileID == accountID && !m_isPaused && !m_isFadingOut
+        && AudioContextCoordinator::get().isCurrentProfileSession(m_profileSessionToken)) {
         log::info("[ProfileMusic] Already playing music for this account");
         return;
     }
 
     forceStop();
     m_currentProfileID = accountID;
+    m_profileSessionToken = AudioContextCoordinator::get().getCurrentProfileSessionToken();
+    auto request = m_profileRequest.begin(accountID, m_profileSessionToken);
 
-    getProfileMusicConfig(accountID, [this, accountID](bool success, ProfileMusicConfig const& config) {
+    getProfileMusicConfig(accountID, [this, accountID, request](bool success, ProfileMusicConfig const& config) {
+        if (!isCurrentProfileRequest(request)) return;
         if (!success || (!config.enabled) || (config.songID <= 0 && !config.isCustom && !config.useVideoAudio)) {
             log::info("[ProfileMusic] No valid config from server for account {}", accountID);
             return;
@@ -796,7 +814,7 @@ void ProfileMusicManager::playProfileMusic(int accountID) {
             log::info("[ProfileMusic] Profile changed while fetching config, aborting");
             return;
         }
-        playProfileMusicWithConfig(accountID, config);
+        playProfileMusicWithConfig(accountID, config, request);
     });
 }
 
@@ -824,17 +842,35 @@ void ProfileMusicManager::playProfileMusic(int accountID, ProfileMusicConfig con
         return;
     }
 
-    if (m_isPlaying && m_currentProfileID == accountID && !m_isPaused && !m_isFadingOut) {
+    if (m_isPlaying && m_currentProfileID == accountID && !m_isPaused && !m_isFadingOut
+        && AudioContextCoordinator::get().isCurrentProfileSession(m_profileSessionToken)) {
         log::info("[ProfileMusic] Already playing music for this account");
         return;
     }
 
     forceStop();
     m_currentProfileID = accountID;
-    playProfileMusicWithConfig(accountID, config);
+    m_profileSessionToken = AudioContextCoordinator::get().getCurrentProfileSessionToken();
+    auto request = m_profileRequest.begin(accountID, m_profileSessionToken);
+    playProfileMusicWithConfig(accountID, config, request);
 }
 
-void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusicConfig const& config) {
+bool ProfileMusicManager::isCurrentProfileRequest(PlaybackRequest::Token request) const {
+    auto& context = AudioContextCoordinator::get();
+    return !paimon::isRuntimeShuttingDown()
+        && m_profileRequest.current(request, context.getCurrentProfileSessionToken(), context.isProfileOpen());
+}
+
+void ProfileMusicManager::cancelPendingProfilePlayback() {
+    m_profileRequest.cancel();
+    if (!m_isPlaying && !m_isPaused && !m_isFadingIn && !m_isFadingOut) {
+        m_currentProfileID = 0;
+    }
+}
+
+void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusicConfig const& config,
+    PlaybackRequest::Token request) {
+    if (!isCurrentProfileRequest(request)) return;
     if (config.useVideoAudio) {
         std::string videoPath = config.videoAudioPath;
         if (videoPath.empty()) {
@@ -855,7 +891,7 @@ void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusic
         std::string wavPath = paimon::video::getCachedWavPath(videoPath);
         if (!wavPath.empty()) {
             log::info("[ProfileMusic] Playing cached video-audio WAV for account {}: {}", accountID, wavPath);
-            playAudioFile(wavPath, true, 0, 0);
+            playAudioFile(wavPath, true, 0, 0, request);
             return;
         }
 
@@ -863,14 +899,14 @@ void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusic
         // capture the lifetime token to avoid post-shutdown callbacks.
         log::info("[ProfileMusic] Extracting video-audio in background for account {}: {}", accountID, videoPath);
         auto lifetime = m_lifetimeToken;
-        paimon::setProfileMusicInteropActive(true);
         paimon::ThreadTracker::get().spawn(
-            [this, accountID, videoPath, lifetime]() {
+            [this, accountID, videoPath, lifetime, request]() {
                 geode::utils::thread::setName("PaimonProfileMusic");
                 std::string extracted = paimon::video::extractAudioToWav(videoPath);
-                Loader::get()->queueInMainThread([this, accountID, extracted, lifetime]() {
+                Loader::get()->queueInMainThread([this, accountID, extracted, lifetime, request]() {
                     if (!lifetime->load(std::memory_order_acquire)) return;
                     if (paimon::isRuntimeShuttingDown()) return;
+                    if (!isCurrentProfileRequest(request)) return;
                     if (m_currentProfileID != accountID) {
                         log::info("[ProfileMusic] Profile changed during video-audio extraction, dropping");
                         return;
@@ -881,7 +917,7 @@ void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusic
                         return;
                     }
                     log::info("[ProfileMusic] Background extraction complete, playing: {}", extracted);
-                    playAudioFile(extracted, true, 0, 0);
+                    playAudioFile(extracted, true, 0, 0, request);
                 });
             }
         );
@@ -894,8 +930,8 @@ void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusic
 
     if (cacheExists && isCacheValid(accountID, config)) {
         log::info("[ProfileMusic] Cache is valid and up-to-date, playing from cache: {}",
-            geode::utils::string::pathToString(cachePath));
-        playAudioFile(geode::utils::string::pathToString(cachePath), true, 0, 0);
+            paimon::paths::toUtf8(cachePath));
+        playAudioFile(paimon::paths::toUtf8(cachePath), true, 0, 0, request);
         return;
     }
 
@@ -905,20 +941,23 @@ void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusic
     }
 
     log::info("[ProfileMusic] Downloading fresh music fragment...");
-    downloadMusicFragment(accountID, config.updatedAt, [this, accountID, config](bool dlSuccess, std::string const& path) {
+    downloadMusicFragment(accountID, config.updatedAt, request, [this, accountID, config, request](bool dlSuccess, std::string const& path) {
+        if (!isCurrentProfileRequest(request)) return;
         if (dlSuccess && m_currentProfileID == accountID) {
             saveMetaFile(accountID, config);
             log::info("[ProfileMusic] Download successful, playing: {}", path);
-            playAudioFile(path, true, 0, 0);
+            playAudioFile(path, true, 0, 0, request);
         } else {
             log::error("[ProfileMusic] Download failed for account {}", accountID);
         }
     });
 }
 
-void ProfileMusicManager::playAudioFile(std::string const& path, bool loop, int startMs, int endMs) {
+void ProfileMusicManager::playAudioFile(std::string const& path, bool loop, int startMs, int endMs,
+    PlaybackRequest::Token request) {
+    if (!isCurrentProfileRequest(request)) return;
     auto generation = ++m_fadeGeneration;
-    m_profileSessionToken = AudioContextCoordinator::get().getCurrentProfileSessionToken();
+    m_profileSessionToken = request.session;
     m_playbackKind = PlaybackKind::Profile;
 
     m_isFadingIn = false;
@@ -957,16 +996,20 @@ void ProfileMusicManager::playAudioFile(std::string const& path, bool loop, int 
         } else {
             AudioContextCoordinator::get().suspendDynamicForProfileMusicIfNeeded();
             loadProfileOnMainChannel(path, loop, startMs, endMs, 0.0f);
-            m_isPlaying = true;
-            m_isFadingIn = true;
-            executeDipFadeIn(0, FADE_STEPS, 0.0f, gameVolume, generation);
+            if (paimon::isProfileMusicInteropActive()) {
+                m_isPlaying = true;
+                m_isFadingIn = true;
+                executeDipFadeIn(0, FADE_STEPS, 0.0f, gameVolume, generation);
+            }
         }
     } else {
         if (engine->m_backgroundMusicChannel) {
             engine->m_backgroundMusicChannel->stop();
         }
         loadProfileOnMainChannel(path, loop, startMs, endMs, gameVolume);
-        m_isPlaying = true;
+        if (paimon::isProfileMusicInteropActive()) {
+            m_isPlaying = true;
+        }
     }
 }
 
@@ -984,19 +1027,25 @@ void ProfileMusicManager::loadProfileOnMainChannel(const std::string& path, bool
         engine->m_backgroundMusicChannel->setVolume(volume);
     }
 
+    auto* bgCh = getMainBgChannel(engine);
+    if (!bgCh) {
+        paimon::setProfileMusicInteropActive(false);
+        return;
+    }
+
+    FMOD::Sound* sound = nullptr;
+    bgCh->getCurrentSound(&sound);
+    if (!sound) {
+        paimon::setProfileMusicInteropActive(false);
+        return;
+    }
+
     paimon::setProfileMusicInteropActive(true);
     if (m_playbackKind == PlaybackKind::Preview) {
         AudioContextCoordinator::get().claimPreviewAudio(m_profileSessionToken);
     } else {
         AudioContextCoordinator::get().claimProfileAudio(m_profileSessionToken);
     }
-
-    auto* bgCh = getMainBgChannel(engine);
-    if (!bgCh) return;
-
-    FMOD::Sound* sound = nullptr;
-    bgCh->getCurrentSound(&sound);
-    if (!sound) return;
 
     unsigned int lengthMs = 0;
     sound->getLength(&lengthMs, FMOD_TIMEUNIT_MS);
@@ -1131,6 +1180,7 @@ void ProfileMusicManager::executeDipFadeIn(int step, int totalSteps,
 }
 
 void ProfileMusicManager::stopOwnedAudioPlayback() {
+    m_profileRequest.cancel();
     ++m_fadeGeneration;
     ++m_caveGeneration;
 
@@ -1194,6 +1244,7 @@ void ProfileMusicManager::stopProfileMusic() {
         stopPreview();
         return;
     }
+    cancelPendingProfilePlayback();
 
     if (!m_isPlaying && !m_isPaused && !m_isFadingOut && !m_isFadingIn) {
         return;
@@ -1328,19 +1379,19 @@ void ProfileMusicManager::getWaveformPeaks(int songID, WaveformCallback callback
 
         paimon::ThreadTracker::get().spawn([this, token, path, callback]() {
             geode::utils::thread::setName("PaimonProfileMusic");
-            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+            if (!alive(token)) {
                 return;
             }
 
             int durationMs = 0;
             auto peaks = analyzeWaveform(path, 200, durationMs);
 
-            if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+            if (!alive(token)) {
                 return;
             }
 
             Loader::get()->queueInMainThread([token, callback, peaks, durationMs]() {
-                if (!token->load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+                if (!alive(token)) {
                     return;
                 }
 
@@ -1504,7 +1555,7 @@ void ProfileMusicManager::saveMetaFile(int accountID, ProfileMusicConfig const& 
     std::string content = fmt::format("{}|{}|{}|{}|{}",
         config.songID, config.startMs, config.endMs, config.updatedAt,
         config.isCustom ? "1" : "0");
-    auto writeRes = geode::utils::file::writeString(metaPath, content);
+    auto writeRes = geode::utils::file::writeString(paimon::paths::toSdkPath(metaPath), content);
     if (writeRes.isOk()) {
         pruneProfileMusicCache();
         log::info("[ProfileMusic] Saved meta for account {}: songID={}, {}ms-{}ms, updatedAt={}, isCustom={}",
@@ -1520,7 +1571,7 @@ bool ProfileMusicManager::isCacheValid(int accountID, ProfileMusicConfig const& 
         return false;
     }
 
-    auto metaReadRes = geode::utils::file::readString(metaPath);
+    auto metaReadRes = geode::utils::file::readString(paimon::paths::toSdkPath(metaPath));
     if (metaReadRes.isErr()) return false;
 
     std::string content = metaReadRes.unwrap();

@@ -67,9 +67,9 @@ bool FrameInterpPopup::init() {
             FrameInterpolator::get().resetToDefaults();
             m_dirty = false;
             scheduleRebuild();
-            PaimonNotify::create(
+            PaimonNotify::show(
                 tr("Frame interpolation reset", "Interpolacion restablecida"),
-                NotificationIcon::Success)->show();
+                NotificationIcon::Success);
         });
     resetBtn->setID("frame-interp-default-btn"_spr);
     resetBtn->setPosition({m_mainLayer->getContentSize().width - 62.f, 20.f});

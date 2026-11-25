@@ -16,6 +16,22 @@ constexpr float kSpanSlack = 0.002f;
 // a quarter-cell corner through that showed as a peak when scaled up.
 constexpr int kFitSamples = 8;
 
+// visits each kFitSamples-grid sub-sample of cell (x, y) covered by the
+// shape; stops early when the visitor returns false.
+template <typename Visit>
+void forEachCoveredSample(ShapeXform const& placed, int x, int y, Visit&& visit) {
+    for (int sampleY = 0; sampleY < kFitSamples; ++sampleY) {
+        for (int sampleX = 0; sampleX < kFitSamples; ++sampleX) {
+            if (!placed.contains(
+                    static_cast<float>(x) + (sampleX + 0.5f) / kFitSamples,
+                    static_cast<float>(y) + (sampleY + 0.5f) / kFitSamples)) {
+                continue;
+            }
+            if (!visit(sampleX, sampleY)) return;
+        }
+    }
+}
+
 } // namespace
 
 ShapeXform xformOf(Primitive const& object) {
@@ -27,10 +43,15 @@ ShapeXform xformOf(Primitive const& object) {
     shape.height = object.height;
     shape.cosine = std::cos(angle);
     shape.sine = std::sin(angle);
+    float const skewAngle = object.skew * kPi / 180.f;
+    shape.skewCosine = std::cos(skewAngle);
+    shape.skewTangent = std::tan(skewAngle);
+    shape.yCosine = std::cos(angle + skewAngle);
+    shape.ySine = std::sin(angle + skewAngle);
     shape.extentX = std::abs(shape.cosine) * object.width * 0.5f +
-        std::abs(shape.sine) * object.height * 0.5f;
+        std::abs(shape.ySine) * object.height * 0.5f;
     shape.extentY = std::abs(shape.sine) * object.width * 0.5f +
-        std::abs(shape.cosine) * object.height * 0.5f;
+        std::abs(shape.yCosine) * object.height * 0.5f;
     shape.kind = object.kind;
     // stamp indices address the library during tracing and the compact list after plan collection.
     if (object.kind == PrimitiveKind::Stamp) {
@@ -97,8 +118,8 @@ bool xformSpan(ShapeXform const& shape, float y, float& fromX, float& toX) {
     int count = 0;
     auto corner = [&](float localX, float localY) {
         corners[static_cast<std::size_t>(count++)] = {
-            shape.x + localX * shape.cosine - localY * shape.sine,
-            shape.y + localX * shape.sine + localY * shape.cosine
+            shape.x + localX * shape.cosine - localY * shape.ySine,
+            shape.y + localX * shape.sine + localY * shape.yCosine
         };
     };
     corner(-halfWidth, -halfHeight);
@@ -144,15 +165,12 @@ bool shapeStaysInside(
     for (int y = box[1]; y <= box[3]; ++y) {
         for (int x = box[0]; x <= box[2]; ++x) {
             if (permitted[static_cast<std::size_t>(y) * width + x]) continue;
-            for (int sampleY = 0; sampleY < kFitSamples; ++sampleY) {
-                for (int sampleX = 0; sampleX < kFitSamples; ++sampleX) {
-                    if (placed.contains(
-                            static_cast<float>(x) + (sampleX + 0.5f) / kFitSamples,
-                            static_cast<float>(y) + (sampleY + 0.5f) / kFitSamples)) {
-                        return false;
-                    }
-                }
-            }
+            bool hit = false;
+            forEachCoveredSample(placed, x, y, [&](int, int) {
+                hit = true;
+                return false;
+            });
+            if (hit) return false;
         }
     }
     return true;
@@ -171,17 +189,11 @@ float shapeSpill(
     for (int y = box[1]; y <= box[3]; ++y) {
         for (int x = box[0]; x <= box[2]; ++x) {
             bool const allowed = permitted[static_cast<std::size_t>(y) * width + x] != 0;
-            for (int sampleY = 0; sampleY < kFitSamples; ++sampleY) {
-                for (int sampleX = 0; sampleX < kFitSamples; ++sampleX) {
-                    if (!placed.contains(
-                            static_cast<float>(x) + (sampleX + 0.5f) / kFitSamples,
-                            static_cast<float>(y) + (sampleY + 0.5f) / kFitSamples)) {
-                        continue;
-                    }
-                    ++covered;
-                    spilled += !allowed;
-                }
-            }
+            forEachCoveredSample(placed, x, y, [&](int, int) {
+                ++covered;
+                spilled += !allowed;
+                return true;
+            });
         }
     }
     return covered > 0 ? static_cast<float>(spilled) / covered : 0.f;

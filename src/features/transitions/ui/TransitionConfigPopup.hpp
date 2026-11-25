@@ -3,62 +3,21 @@
 #include <Geode/Geode.hpp>
 #include "../services/TransitionManager.hpp"
 
-// full ui for configuring transitions
-
+// scroll/card layout (PaiConfigKit): no hand-placed panels, so headings,
+// toggles and buttons can never overlap.
 class TransitionConfigPopup : public PaimonPopup {
 protected:
     bool init();
+    void rebuild();
+    void previewConfig(TransitionConfig const& cfg);
 
     TransitionConfig m_editingGlobal;
     TransitionConfig m_editingLevel;
-    bool m_editingIsGlobal = true; // which section we last interacted with
+    bool m_enabled = true;
+    bool m_useLevel = false;
 
-    cocos2d::CCLabelBMFont* m_globalNameLabel = nullptr;
-    cocos2d::CCLabelBMFont* m_globalDescLabel = nullptr;
-    cocos2d::CCLabelBMFont* m_globalDurLabel = nullptr;
-    cocos2d::CCLabelBMFont* m_globalIndexLabel = nullptr;
-    CCMenuItemSpriteExtra* m_globalColorBtn = nullptr;
-    CCMenuItemSpriteExtra* m_globalCustomBtn = nullptr;
-    cocos2d::CCLayerColor* m_globalColorSwatch = nullptr;
-
-    cocos2d::CCLabelBMFont* m_levelNameLabel = nullptr;
-    cocos2d::CCLabelBMFont* m_levelDescLabel = nullptr;
-    cocos2d::CCLabelBMFont* m_levelDurLabel = nullptr;
-    cocos2d::CCLabelBMFont* m_levelIndexLabel = nullptr;
-    CCMenuItemSpriteExtra* m_levelColorBtn = nullptr;
-    CCMenuItemSpriteExtra* m_levelCustomBtn = nullptr;
-    cocos2d::CCLayerColor* m_levelColorSwatch = nullptr;
-
-    CCMenuItemToggler* m_enableToggle = nullptr;
-    CCMenuItemToggler* m_levelToggle = nullptr;
+    geode::ScrollLayer* m_scroll = nullptr;
     cocos2d::CCLabelBMFont* m_statusLabel = nullptr;
-
-    void updateGlobalDisplay();
-    void updateLevelDisplay();
-    void updateConditionalButtons();
-    int getTypeIndex(TransitionType t) const;
-
-    void onToggleEnabled(cocos2d::CCObject*);
-    void onToggleLevelEntry(cocos2d::CCObject*);
-    void onGlobalPrevType(cocos2d::CCObject*);
-    void onGlobalNextType(cocos2d::CCObject*);
-    void onGlobalDurDown(cocos2d::CCObject*);
-    void onGlobalDurUp(cocos2d::CCObject*);
-    void onGlobalColor(cocos2d::CCObject*);
-    void onGlobalCustom(cocos2d::CCObject*);
-    void onLevelPrevType(cocos2d::CCObject*);
-    void onLevelNextType(cocos2d::CCObject*);
-    void onLevelDurDown(cocos2d::CCObject*);
-    void onLevelDurUp(cocos2d::CCObject*);
-    void onLevelColor(cocos2d::CCObject*);
-    void onLevelCustom(cocos2d::CCObject*);
-    void onLevelEffects(cocos2d::CCObject*);
-    void onSave(cocos2d::CCObject*);
-    void onInfoGlobal(cocos2d::CCObject*);
-    void onInfoLevel(cocos2d::CCObject*);
-    void onInfoType(cocos2d::CCObject*);
-    void onInfoDuration(cocos2d::CCObject*);
-    void onInfoCustom(cocos2d::CCObject*);
 
 public:
     static TransitionConfigPopup* create();

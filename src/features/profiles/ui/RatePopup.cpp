@@ -175,13 +175,13 @@ void RatePopup::loadExistingRating() {
 
 void RatePopup::onSubmit(CCObject* sender) {
     if (m_rating == 0) {
-        PaimonNotify::create("Please select a rating", NotificationIcon::Error)->show();
+        PaimonNotify::show("Please select a rating", NotificationIcon::Error);
         return;
     }
     
     auto* accountManager = GJAccountManager::get();
     if (!accountManager || accountManager->m_accountID <= 0) {
-        PaimonNotify::create("You must be logged in to vote", NotificationIcon::Error)->show();
+        PaimonNotify::show("You must be logged in to vote", NotificationIcon::Error);
         return;
     }
 
@@ -206,7 +206,7 @@ void RatePopup::onSubmit(CCObject* sender) {
             
             if (success) {
                 paimon::foryou::TasteProfile::get().onThumbnailRated(trackedLevelID, trackedRating);
-                PaimonNotify::create("Rating submitted!", NotificationIcon::Success)->show();
+                PaimonNotify::show("Rating submitted!", NotificationIcon::Success);
                 if (popup->m_onRateCallback) {
                     popup->m_onRateCallback();
                 }
@@ -217,7 +217,7 @@ void RatePopup::onSubmit(CCObject* sender) {
                 if (!msg.empty()) {
                     errorMsg += ": " + msg;
                 }
-                PaimonNotify::create(errorMsg.c_str(), NotificationIcon::Error)->show();
+                PaimonNotify::show(errorMsg.c_str(), NotificationIcon::Error);
             }
         }
     });

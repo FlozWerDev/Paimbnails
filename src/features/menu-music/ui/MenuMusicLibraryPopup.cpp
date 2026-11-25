@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "MenuMusicLibraryPopup.hpp"
 #include "MenuMusicAddPopup.hpp"
 
@@ -9,6 +10,7 @@
 #include "../../menu-loop/services/MenuLoopControl.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include <Geode/ui/LazySprite.hpp>
 #include "../../../utils/TextureBudget.hpp"
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/LocalAssetStore.hpp"
@@ -39,6 +41,19 @@ static constexpr float kCompactCardHeight = 38.f;
 static constexpr float kCardGap = 4.f;
 
 namespace {
+    bool isLocalTrack(MusicTrack const& track) {
+        return track.source == TrackSource::Local
+            || track.source == TrackSource::Downloaded;
+    }
+
+    void cancelCardCover(CCNode* card) {
+        auto* clip = card ? card->getChildByID("card-cover-clip"_spr) : nullptr;
+        auto* cover = clip ? typeinfo_cast<LazySprite*>(clip->getChildByID("card-cover"_spr)) : nullptr;
+        if (!cover) return;
+        cover->cancelLoad();
+        cover->setLoadCallback(nullptr);
+    }
+
     bool isTrackAvailable(const MusicTrack& track) {
         std::error_code ec;
         return !track.audioPath.empty()
@@ -48,7 +63,7 @@ namespace {
     int geometryDashSongId(const MusicTrack& track) {
         if (track.source != TrackSource::GeometryDash) return 0;
 
-        auto stem = geode::utils::string::pathToString(
+        auto stem = paimon::paths::toUtf8(
             std::filesystem::path(track.audioPath).stem());
         if (auto songId = parseNewgroundsSongId(stem); songId > 0) return songId;
 
@@ -106,7 +121,8 @@ bool MenuMusicLibraryPopup::init(float width, float height) {
         "Your music library. Row icons: <cg>play</c> the song, <co>+</c> add it to a "
         "playlist, <cy>star</c> to favorite, <cr>flag</c> to block it from shuffle, and "
         "<cr>trash</c> to remove it. The filter row toggles <cy>sort order</c> and "
-        "shows only Local, Favorites or Blocked songs.");
+        "shows only Local, Favorites or Blocked songs. Local includes imported "
+        "files and URL downloads.");
 
     MenuMusicLibrary::get().load();
     MenuMusicLibrary::get().syncDownloadedSongs();
@@ -124,6 +140,7 @@ bool MenuMusicLibraryPopup::init(float width, float height) {
     buildHeader();
     buildList();
     rebuildList();
+    scheduleUpdate();
 
     m_libListenerToken = MenuMusicLibrary::get().addListener([this]() {
         this->rebuildList();
@@ -135,6 +152,9 @@ bool MenuMusicLibraryPopup::init(float width, float height) {
 }
 
 void MenuMusicLibraryPopup::onExit() {
+    unscheduleUpdate();
+    unschedule(schedule_selector(MenuMusicLibraryPopup::rebuildAfterSearch));
+    clearTrackCards();
     if (m_libListenerToken) {
         MenuMusicLibrary::get().removeListener(m_libListenerToken);
         m_libListenerToken = 0;
@@ -252,6 +272,7 @@ void MenuMusicLibraryPopup::buildList() {
 
     m_scroll = ScrollLayer::create({size.width - 30.f, scrollH});
     if (!m_scroll) return;
+    m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setPosition({15.f, 12.f});
     m_scroll->m_contentLayer->setID("library-scroll-content"_spr);
     m_mainLayer->addChild(m_scroll, 2);
@@ -268,6 +289,8 @@ static bool matchesQuery(const MusicTrack& t, const std::string& qLower) {
 
 void MenuMusicLibraryPopup::rebuildList() {
     if (!m_scroll) return;
+    unschedule(schedule_selector(MenuMusicLibraryPopup::rebuildAfterSearch));
+    clearTrackCards();
     m_scroll->m_contentLayer->removeAllChildren();
 
     auto& lib = MenuMusicLibrary::get();
@@ -280,25 +303,29 @@ void MenuMusicLibraryPopup::rebuildList() {
         return geode::utils::string::toLower(a.displayName) <
                geode::utils::string::toLower(b.displayName);
     };
-    auto fileSize = [](const MusicTrack& track) {
-        std::error_code ec;
-        auto size = std::filesystem::file_size(track.audioPath, ec);
-        return ec ? std::uintmax_t{} : size;
-    };
+    // A filesystem stat for every comparison made size sorting needlessly slow.
+    std::unordered_map<std::string, std::uintmax_t> fileSizes;
+    if (m_sortMode == "size") {
+        for (auto const& track : tracks) {
+            std::error_code ec;
+            auto const bytes = std::filesystem::file_size(paimon::assets::pathFromUtf8(track.audioPath), ec);
+            fileSizes.emplace(track.id, ec ? 0 : bytes);
+        }
+    }
     auto trackLess = [&](const MusicTrack& a, const MusicTrack& b) {
         if (m_sortMode == "date") {
             if (a.addedUnixMs != b.addedUnixMs) return a.addedUnixMs < b.addedUnixMs;
         } else if (m_sortMode == "length") {
             if (a.durationMs != b.durationMs) return a.durationMs < b.durationMs;
         } else if (m_sortMode == "size") {
-            const auto aSize = fileSize(a);
-            const auto bSize = fileSize(b);
+            const auto aSize = fileSizes.at(a.id);
+            const auto bSize = fileSizes.at(b.id);
             if (aSize != bSize) return aSize < bSize;
         } else if (m_sortMode == "extension") {
             auto aExt = geode::utils::string::toLower(
-                utils::string::pathToString(paimon::assets::pathFromUtf8(a.audioPath).extension()));
+                paimon::paths::toUtf8(paimon::assets::pathFromUtf8(a.audioPath).extension()));
             auto bExt = geode::utils::string::toLower(
-                utils::string::pathToString(paimon::assets::pathFromUtf8(b.audioPath).extension()));
+                paimon::paths::toUtf8(paimon::assets::pathFromUtf8(b.audioPath).extension()));
             if (aExt != bExt) return aExt < bExt;
         }
         return alphaLess(a, b);
@@ -319,7 +346,7 @@ void MenuMusicLibraryPopup::rebuildList() {
         auto* track = lib.findTrack(tid);
         if (!track) continue;
         if (!matchesQuery(*track, qLower)) continue;
-        if (m_localOnly && track->source != TrackSource::Local) continue;
+        if (m_localOnly && !isLocalTrack(*track)) continue;
         if (m_favoritesOnly && !track->favorite) continue;
         if (m_blacklistedOnly != track->blacklisted) {
             if (m_blacklistedOnly || track->blacklisted) continue;
@@ -328,20 +355,16 @@ void MenuMusicLibraryPopup::rebuildList() {
     }
 
     const float cardHeight = m_compact ? kCompactCardHeight : kCardHeight;
-    const float cardW = m_scroll->getContentSize().width - 4.f;
     float totalH = static_cast<float>(visibleIds.size()) * (cardHeight + kCardGap);
     if (totalH > 0.f) totalH -= kCardGap;
     totalH = std::max(totalH, m_scroll->getContentSize().height);
 
     if (visibleIds.empty()) {
-        const bool hasLocalTracks = std::any_of(
-            tracks.begin(), tracks.end(), [](const MusicTrack& track) {
-                return track.source == TrackSource::Local;
-            });
+        const bool hasLocalTracks = std::any_of(tracks.begin(), tracks.end(), isLocalTrack);
         const char* message = tracks.empty()
             ? "Library empty - tap 'Add' to import or download a song."
             : m_localOnly && !hasLocalTracks
-                ? "No local songs - tap 'Folder' to import music."
+                ? "No local songs - tap 'Add' to import or download music."
                 : "No tracks match your filters.";
         auto label = paimon::ui::makeText(message,
             m_scroll->getContentSize().width - 24.f, 0.5f,
@@ -351,22 +374,55 @@ void MenuMusicLibraryPopup::rebuildList() {
                                 m_scroll->getContentSize().height / 2.f});
             m_scroll->m_contentLayer->addChild(label);
         }
-    } else {
-        float y = totalH - cardHeight;
-        for (const auto& tid : visibleIds) {
-            auto card = buildTrackCard(tid, cardW, cardHeight);
-            if (!card) continue;
-            card->setPosition({2.f, y});
-            m_scroll->m_contentLayer->addChild(card);
-            y -= (cardHeight + kCardGap);
-        }
     }
 
+    m_trackIds = std::move(visibleIds);
+    m_cardsDirty = true;
     m_scroll->m_contentLayer->setContentHeight(totalH);
     if (Mod::get()->getSavedValue<bool>("menuLoopAutoScrollCurrent", true)) {
         onScrollCurrent(nullptr);
     } else {
         m_scroll->scrollToTop();
+    }
+    refreshVisibleCards();
+}
+
+void MenuMusicLibraryPopup::clearTrackCards() {
+    for (auto const& [index, card] : m_trackCards) {
+        cancelCardCover(card);
+        card->removeFromParent();
+    }
+    m_trackCards.clear();
+    m_cardsDirty = true;
+}
+
+void MenuMusicLibraryPopup::update(float) {
+    refreshVisibleCards();
+}
+
+void MenuMusicLibraryPopup::refreshVisibleCards() {
+    if (!m_scroll) return;
+    auto* content = m_scroll->m_contentLayer;
+    float const height = m_compact ? kCompactCardHeight : kCardHeight;
+    auto const range = paimon::ui::visibleRows(m_trackIds.size(), height + kCardGap,
+        content->getContentSize().height, m_scroll->getContentSize().height, content->getPositionY());
+    if (!m_cardsDirty && range == m_cardRange) return;
+    m_cardRange = range;
+    m_cardsDirty = false;
+
+    for (auto it = m_trackCards.begin(); it != m_trackCards.end();) {
+        if (it->first >= range.begin && it->first < range.end) { ++it; continue; }
+        cancelCardCover(it->second);
+        it->second->removeFromParent();
+        it = m_trackCards.erase(it);
+    }
+    for (auto index = range.begin; index < range.end; ++index) {
+        if (m_trackCards.contains(index)) continue;
+        auto* card = buildTrackCard(m_trackIds[index], m_scroll->getContentSize().width - 4.f, height);
+        if (!card) continue;
+        card->setPosition({2.f, content->getContentSize().height - height - index * (height + kCardGap)});
+        content->addChild(card);
+        m_trackCards.emplace(index, card);
     }
 }
 
@@ -418,49 +474,54 @@ cocos2d::CCNode* MenuMusicLibraryPopup::buildTrackCard(
         node->addChild(thumbBg, 1);
     }
 
-    bool hasCover = false;
+    LazySprite* pendingCover = nullptr;
     auto coverPath = coverPathForTrack(*track);
     if (!coverPath.empty()) {
-        if (auto* tex = paimon::image::loadBudgeted(coverPath)) {
-            if (auto* cover = CCSprite::createWithTexture(tex)) {
-                const float inset = 3.f;
-                const float coverWidth = bannerWidth - inset * 2.f;
-                const float coverHeight = bannerHeight - inset * 2.f;
-                auto coverSize = cover->getContentSize();
-                const float scale = std::max(
-                    coverWidth / std::max(coverSize.width, 1.f),
-                    coverHeight / std::max(coverSize.height, 1.f));
-                cover->setScale(scale);
-                cover->setPosition({coverWidth / 2.f, coverHeight / 2.f});
-                cover->setOpacity(available ? 255 : 145);
-                cover->setID("card-cover"_spr);
+        if (auto* cover = LazySprite::create({1.f, 1.f}, false)) {
+            const float inset = 3.f;
+            const float coverWidth = bannerWidth - inset * 2.f;
+            const float coverHeight = bannerHeight - inset * 2.f;
+            cover->setVisible(false);
+            cover->setPosition({coverWidth / 2.f, coverHeight / 2.f});
+            cover->setOpacity(available ? 255 : 145);
+            cover->setID("card-cover"_spr);
 
-                auto* stencil = paimon::SpriteHelper::createRoundedRectStencil(
-                    coverWidth, coverHeight, 3.f);
-                if (auto* clip = stencil ? CCClippingNode::create(stencil) : nullptr) {
-                    clip->setContentSize({coverWidth, coverHeight});
-                    clip->setAnchorPoint({0.f, 0.f});
-                    clip->setPosition({bannerX + inset, bannerY + inset});
-                    clip->setAlphaThreshold(0.05f);
-                    clip->setID("card-cover-clip"_spr);
-                    clip->addChild(cover);
-                    node->addChild(clip, 2);
-                    hasCover = true;
-                }
+            auto* stencil = paimon::SpriteHelper::createRoundedRectStencil(coverWidth, coverHeight, 3.f);
+            if (auto* clip = stencil ? CCClippingNode::create(stencil) : nullptr) {
+                clip->setContentSize({coverWidth, coverHeight});
+                clip->setAnchorPoint({0.f, 0.f});
+                clip->setPosition({bannerX + inset, bannerY + inset});
+                clip->setAlphaThreshold(0.05f);
+                clip->setID("card-cover-clip"_spr);
+                clip->addChild(cover);
+                node->addChild(clip, 2);
+                pendingCover = cover;
+                WeakRef<LazySprite> weakCover = cover;
+                cover->setLoadCallback([weakCover, coverWidth, coverHeight, coverPath](Result<> result) {
+                    auto loaded = weakCover.lock();
+                    if (!loaded || result.isErr()) return;
+                    paimon::image::touchBudgeted(coverPath);
+                    auto const size = loaded->getContentSize();
+                    loaded->setScale(std::max(coverWidth / std::max(1.f, size.width),
+                        coverHeight / std::max(1.f, size.height)));
+                    loaded->setVisible(true);
+                    auto* clip = loaded->getParent();
+                    auto* card = clip ? clip->getParent() : nullptr;
+                    if (auto* fallback = card ? card->getChildByID("card-cover-fallback"_spr) : nullptr)
+                        fallback->setVisible(false);
+                });
             }
         }
     }
-    if (!hasCover) {
-        if (auto* music = paimon::SpriteHelper::safeCreateWithFrameName(
-                "GJ_musicOnBtn_001.png")) {
-            const float scale = bannerHeight * 0.52f
-                / std::max(music->getContentSize().width, 1.f);
-            music->setScale(scale);
-            music->setPosition({bannerX + bannerWidth / 2.f, cardHeight / 2.f});
-            music->setOpacity(available ? 255 : 140);
-            node->addChild(music, 2);
-        }
+    if (auto* music = paimon::SpriteHelper::safeCreateWithFrameName("GJ_musicOnBtn_001.png")) {
+        const float scale = bannerHeight * 0.52f / std::max(music->getContentSize().width, 1.f);
+        music->setScale(scale);
+        music->setPosition({bannerX + bannerWidth / 2.f, cardHeight / 2.f});
+        music->setOpacity(available ? 255 : 140);
+        music->setID("card-cover-fallback"_spr);
+        node->addChild(music, 2);
     }
+    if (pendingCover) pendingCover->loadFromFile(paimon::paths::toSdkPath(paimon::assets::pathFromUtf8(coverPath)));
 
     const float textX = bannerX + bannerWidth + 9.f;
     const float textAreaW = widthOverride - textX - 150.f;
@@ -598,6 +659,11 @@ cocos2d::CCNode* MenuMusicLibraryPopup::buildTrackCard(
 
 void MenuMusicLibraryPopup::onSearchChanged(const std::string& query) {
     m_query = query;
+    unschedule(schedule_selector(MenuMusicLibraryPopup::rebuildAfterSearch));
+    scheduleOnce(schedule_selector(MenuMusicLibraryPopup::rebuildAfterSearch), .12f);
+}
+
+void MenuMusicLibraryPopup::rebuildAfterSearch(float) {
     rebuildList();
 }
 
@@ -651,6 +717,12 @@ void MenuMusicLibraryPopup::onDownloadTrack(CCObject* sender) {
         return;
     }
 
+#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
+    Notification::create(
+        "Re-descargar desde URL (yt-dlp) solo esta disponible en PC.",
+        NotificationIcon::Warning, 3.5f)->show();
+    return;
+#endif
     if (!m_downloadingTrackIds.insert(id).second) return;
     const std::string sourceUrl = track->sourceUrl;
     YtDlpDownloader::get().download(sourceUrl, id, {},
@@ -843,19 +915,18 @@ void MenuMusicLibraryPopup::onScrollTop(CCObject*) {
 void MenuMusicLibraryPopup::onScrollCurrent(CCObject*) {
     if (!m_scroll) return;
     const auto& currentId = MenuMusicPlayer::get().state().currentTrackId;
-    auto* card = currentId.empty()
-        ? nullptr
-        : m_scroll->m_contentLayer->getChildByID(
-            fmt::format("{}track-card-{}", ""_spr, currentId));
-    if (!card) {
+    auto const current = std::find(m_trackIds.begin(), m_trackIds.end(), currentId);
+    if (current == m_trackIds.end()) {
         m_scroll->scrollToTop();
         return;
     }
 
     const float viewHeight = m_scroll->getContentSize().height;
     const float contentHeight = m_scroll->m_contentLayer->getContentSize().height;
+    float const height = m_compact ? kCompactCardHeight : kCardHeight;
+    float const cardY = contentHeight - height - (current - m_trackIds.begin()) * (height + kCardGap);
     const float target = viewHeight / 2.f
-        - (card->getPositionY() + card->getContentSize().height / 2.f);
+        - (cardY + height / 2.f);
     m_scroll->m_contentLayer->setPositionY(
         std::clamp(target, std::min(0.f, viewHeight - contentHeight), 0.f));
 }

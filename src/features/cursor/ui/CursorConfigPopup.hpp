@@ -10,7 +10,7 @@
 class CursorConfigPopup : public PaimonPopup {
 protected:
     void onExit() override;
-    void scrollWheel(float x, float y) override;
+    bool scrollWheel(float x, float y) override;
 
     // smooth-scroll targets for each scrollable area.
     float m_thumbScrollTargetY      = 0.f;
@@ -112,10 +112,12 @@ protected:
     cocos2d::CCNode* m_clickTab    = nullptr;
     cocos2d::CCNode* m_advancedTab = nullptr;
     std::vector<CCMenuItemSpriteExtra*> m_tabs;
+    bool m_builtTabs[7] = {};
 
     bool init() override;
     void createTabButtons();
     void onTabSwitch(cocos2d::CCObject* sender);
+    void buildTabIfNeeded(int tab);
 
     void buildGalleryTab();
     void buildShopTab();

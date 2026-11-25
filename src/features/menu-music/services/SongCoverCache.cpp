@@ -1,10 +1,15 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "SongCoverCache.hpp"
 #include "MenuMusicCoverLog.hpp"
 
 #include "../../thumbnails/services/ThumbnailLoader.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
+#include "../../../utils/AtomicFileWrite.hpp"
+#include "../../../utils/JsonHelper.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
+#include "../../../utils/ThreadTracker.hpp"
 
 #include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/binding/GJGameLevel.hpp>
@@ -88,8 +93,8 @@ bool copyThumbnailFileToSongCover(int songID, int levelID) {
         if (!std::filesystem::exists(src, ec) || ec) {
             coverlog::warn("[SongCoverCache] no thumbnail file for levelID={} songID={} (gifPath={}, pngPath={})",
                 levelID, songID,
-                geode::utils::string::pathToString(ThumbnailLoader::get().getCachePath(levelID, true)),
-                geode::utils::string::pathToString(ThumbnailLoader::get().getCachePath(levelID, false)));
+                paimon::paths::toUtf8(ThumbnailLoader::get().getCachePath(levelID, true)),
+                paimon::paths::toUtf8(ThumbnailLoader::get().getCachePath(levelID, false)));
             return false;
         }
     }
@@ -104,8 +109,8 @@ bool copyThumbnailFileToSongCover(int songID, int levelID) {
     if (ec) {
         coverlog::warn("[SongCoverCache] copy failed levelID={} songID={}: {} -> {} ({})",
             levelID, songID,
-            geode::utils::string::pathToString(src),
-            geode::utils::string::pathToString(dst),
+            paimon::paths::toUtf8(src),
+            paimon::paths::toUtf8(dst),
             ec.message());
         return false;
     }
@@ -335,35 +340,197 @@ void SongCoverCache::noteServerRateLimit() {
 }
 
 std::filesystem::path SongCoverCache::getCoversDir() const {
-    return Mod::get()->getSaveDir() / "menu-music" / "song-covers";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "menu-music" / "song-covers";
 }
 
 std::filesystem::path SongCoverCache::getSongDir(int songID) const {
     return getCoversDir() / std::to_string(songID);
 }
 
+SongCoverCache::DiskCoverSnapshot SongCoverCache::readDiskCoverSnapshot(
+    std::filesystem::path const& coversDir, int songID
+) {
+    DiskCoverSnapshot result;
+    auto songDir = coversDir / std::to_string(songID);
+    auto data = geode::utils::file::readString(paimon::paths::toSdkPath(songDir / "manifest.json"));
+    if (data) {
+        auto parsed = matjson::parse(data.unwrap());
+        if (parsed && parsed.unwrap().isObject()) {
+            auto const& root = parsed.unwrap();
+            SongManifest manifest;
+            if (root["levelIds"].isArray()) {
+                for (auto const& item : root["levelIds"].asArray().unwrap())
+                    if (auto id = item.asInt()) manifest.levelIds.push_back(static_cast<int>(id.unwrap()));
+            }
+            if (root["names"].isObject()) {
+                for (auto const& [key, value] : root["names"]) {
+                    auto id = geode::utils::numFromString<int>(key);
+                    auto name = value.asString();
+                    if (id && name) manifest.levelNames[id.unwrap()] = name.unwrap();
+                }
+            }
+            if (root["files"].isArray()) {
+                for (auto const& item : root["files"].asArray().unwrap()) {
+                    auto file = item.asString();
+                    if (!file) continue;
+                    auto path = songDir / file.unwrap();
+                    std::error_code ec;
+                    if (std::filesystem::exists(path, ec) && !ec)
+                        manifest.coverPaths.push_back(paimon::paths::toUtf8(path));
+                }
+            }
+            if (!manifest.coverPaths.empty()) result.manifest = std::move(manifest);
+        }
+    }
+    if (!result.manifest) {
+        for (char const* extension : {".png", ".gif"}) {
+            auto path = coversDir / fmt::format("{}{}", songID, extension);
+            std::error_code ec;
+            if (std::filesystem::exists(path, ec) && !ec) {
+                result.legacyPaths.push_back(paimon::paths::toUtf8(path));
+                break;
+            }
+        }
+    }
+    auto negative = geode::utils::file::readString(paimon::paths::toSdkPath(coversDir / "negative.json"));
+    if (negative) {
+        auto parsed = matjson::parse(negative.unwrap());
+        if (parsed && parsed.unwrap().isObject())
+            for (auto const& [key, value] : parsed.unwrap()) result.negativeEntries[key] = paimon::json::doubleOr(value, 0.0);
+    }
+    return result;
+}
+
+std::vector<std::string> SongCoverCache::peekCachedCoverPaths(int songID) const {
+    auto manifest = m_manifestMemo.find(songID);
+    if (manifest != m_manifestMemo.end() && manifest->second) return manifest->second->coverPaths;
+    auto legacy = m_legacyMemo.find(songID);
+    return legacy == m_legacyMemo.end() ? std::vector<std::string>{} : legacy->second;
+}
+
+std::vector<SongCoverCache::CoverEntry> SongCoverCache::peekCachedCoverEntries(int songID) const {
+    auto manifest = m_manifestMemo.find(songID);
+    if (manifest == m_manifestMemo.end() || !manifest->second) return {};
+    // getCachedCoverEntries uses the already populated manifest; no file I/O.
+    return getCachedCoverEntries(songID);
+}
+
+void SongCoverCache::finishCachedCoverLookup(int songID, std::uint64_t serial,
+    std::optional<DiskCoverSnapshot> snapshot) {
+    auto it = m_pendingDiskLookups.find(songID);
+    if (it == m_pendingDiskLookups.end() || it->second.serial != serial) return;
+    auto pending = std::move(it->second);
+    m_pendingDiskLookups.erase(it);
+    if (pending.version != m_manifestVersions[songID]) {
+        // a new manifest won the race; issue a fresh lookup instead of applying
+        // stale filesystem results or dropping callbacks.
+        for (auto& callback : pending.callbacks) requestCachedCoversAsync(songID, std::move(callback));
+        return;
+    }
+    if (snapshot) {
+        m_manifestMemo[songID] = std::move(snapshot->manifest);
+        m_legacyMemo[songID] = std::move(snapshot->legacyPaths);
+        if (!m_negativeMemo) m_negativeMemo = std::move(snapshot->negativeEntries);
+    } else {
+        // a rejected/failed worker must not lead the UI back to synchronous I/O.
+        if (!m_manifestMemo.contains(songID)) m_manifestMemo[songID] = std::nullopt;
+        if (!m_legacyMemo.contains(songID)) m_legacyMemo[songID] = {};
+        if (!m_negativeMemo) m_negativeMemo = std::unordered_map<std::string, double>{};
+    }
+    auto paths = peekCachedCoverPaths(songID);
+    for (auto& callback : pending.callbacks) if (callback) callback(paths, !paths.empty());
+}
+
+void SongCoverCache::requestCachedCoversAsync(int songID, CoversCallback callback) {
+    if (songID <= 0 || paimon::isRuntimeShuttingDown()) {
+        if (callback) callback({}, false);
+        return;
+    }
+    if (auto it = m_pendingDiskLookups.find(songID); it != m_pendingDiskLookups.end()) {
+        if (callback) it->second.callbacks.push_back(std::move(callback));
+        return;
+    }
+    PendingDiskLookup request;
+    request.serial = ++m_diskLookupSerial;
+    request.version = m_manifestVersions[songID];
+    if (callback) request.callbacks.push_back(std::move(callback));
+    auto serial = request.serial;
+    m_pendingDiskLookups.emplace(songID, std::move(request));
+
+    auto directory = getCoversDir();
+    bool started = false;
+    try {
+        started = paimon::ThreadTracker::get().spawn([directory = std::move(directory), songID, serial] {
+            std::optional<DiskCoverSnapshot> snapshot;
+            try { snapshot = readDiskCoverSnapshot(directory, songID); } catch (...) {}
+            if (paimon::isRuntimeShuttingDown()) return;
+            Loader::get()->queueInMainThread([songID, serial, snapshot = std::move(snapshot)]() mutable {
+                if (!paimon::isRuntimeShuttingDown()) SongCoverCache::get().finishCachedCoverLookup(songID, serial, std::move(snapshot));
+            });
+        });
+    } catch (...) {}
+    if (!started) {
+        finishCachedCoverLookup(songID, serial, std::nullopt);
+    }
+}
+
+void SongCoverCache::validateCoverPathsAsync(std::vector<std::string> paths, CoversCallback callback) {
+    if (!callback) return;
+    if (paths.empty() || paimon::isRuntimeShuttingDown()) { callback({}, false); return; }
+    auto ready = std::make_shared<CoversCallback>(std::move(callback));
+    bool started = false;
+    try {
+        started = paimon::ThreadTracker::get().spawn([paths = std::move(paths), ready]() mutable {
+            std::vector<std::string> valid;
+            for (auto const& path : paths) {
+                try {
+                    std::error_code ec;
+                    if (!path.empty() && std::filesystem::exists(paimon::assets::pathFromUtf8(path), ec) && !ec) valid.push_back(path);
+                } catch (...) {}
+            }
+            if (paimon::isRuntimeShuttingDown()) return;
+            Loader::get()->queueInMainThread([ready, valid = std::move(valid)] {
+                if (!paimon::isRuntimeShuttingDown() && *ready) (*ready)(valid, !valid.empty());
+            });
+        });
+    } catch (...) {}
+    if (!started) (*ready)({}, false);
+}
+
 bool SongCoverCache::loadManifest(int songID, SongManifest& out) const {
+    if (auto memo = m_manifestMemo.find(songID); memo != m_manifestMemo.end()) {
+        if (!memo->second) {
+            out = {};
+            return false;
+        }
+        out = *memo->second;
+        return true;
+    }
+
     out = {};
     auto manifestPath = getSongDir(songID) / "manifest.json";
     std::error_code ec;
     if (!std::filesystem::exists(manifestPath, ec) || ec) {
         if (m_loggedMissingManifests.insert(songID).second) {
             coverlog::info("[SongCoverCache] manifest missing songID={} path={}",
-                songID, geode::utils::string::pathToString(manifestPath));
+                songID, paimon::paths::toUtf8(manifestPath));
         }
+        m_manifestMemo[songID] = std::nullopt;
         return false;
     }
 
-    auto data = geode::utils::file::readString(manifestPath);
+    auto data = geode::utils::file::readString(paimon::paths::toSdkPath(manifestPath));
     if (!data) {
         coverlog::warn("[SongCoverCache] manifest unreadable songID={} path={}",
-            songID, geode::utils::string::pathToString(manifestPath));
+            songID, paimon::paths::toUtf8(manifestPath));
+        m_manifestMemo[songID] = std::nullopt;
         return false;
     }
 
     auto parsed = matjson::parse(data.unwrap());
     if (!parsed.isOk()) {
         coverlog::warn("[SongCoverCache] manifest parse error songID={}", songID);
+        m_manifestMemo[songID] = std::nullopt;
         return false;
     }
 
@@ -391,7 +558,7 @@ bool SongCoverCache::loadManifest(int songID, SongManifest& out) const {
             if (auto file = item.asString()) {
                 auto path = getSongDir(songID) / file.unwrap();
                 if (std::filesystem::exists(path, ec) && !ec) {
-                    out.coverPaths.push_back(geode::utils::string::pathToString(path));
+                    out.coverPaths.push_back(paimon::paths::toUtf8(path));
                 }
             }
         }
@@ -400,8 +567,11 @@ bool SongCoverCache::loadManifest(int songID, SongManifest& out) const {
     if (out.coverPaths.empty()) {
         coverlog::warn("[SongCoverCache] manifest has no valid files songID={} levelIds={}",
             songID, out.levelIds.size());
+        m_manifestMemo[songID] = std::nullopt;
+        return false;
     }
-    return !out.coverPaths.empty();
+    m_manifestMemo[songID] = out;
+    return true;
 }
 
 void SongCoverCache::saveManifest(
@@ -420,7 +590,7 @@ void SongCoverCache::saveManifest(
 
     auto fileArr = matjson::Value::array();
     for (auto const& fullPath : coverPaths) {
-        fileArr.push(geode::utils::string::pathToString(
+        fileArr.push(paimon::paths::toUtf8(
             std::filesystem::path(fullPath).filename()));
     }
     root["files"] = fileArr;
@@ -434,8 +604,12 @@ void SongCoverCache::saveManifest(
     }
     root["names"] = nameObj;
 
-    std::ofstream file(getSongDir(songID) / "manifest.json", std::ios::trunc);
-    if (file) file << root.dump();
+    // invalidate in-flight reads before publishing the newly persisted manifest.
+    ++m_manifestVersions[songID];
+    bool saved = paimon::file::writeAtomically(getSongDir(songID) / "manifest.json", root.dump());
+    m_manifestMemo.erase(songID);
+    m_legacyMemo.erase(songID);
+    if (saved) m_manifestMemo[songID] = SongManifest{levelIds, coverPaths, levelNames};
 }
 
 bool SongCoverCache::hasCachedCovers(int songID) const {
@@ -450,16 +624,19 @@ std::vector<std::string> SongCoverCache::getCachedCoverPaths(int songID) const {
         return manifest.coverPaths;
     }
 
+    if (auto memo = m_legacyMemo.find(songID); memo != m_legacyMemo.end()) return memo->second;
     std::vector<std::string> legacy;
     std::error_code ec;
     for (bool isGif : {false, true}) {
         auto ext = isGif ? ".gif" : ".png";
         auto path = getCoversDir() / fmt::format("{}{}", songID, ext);
         if (std::filesystem::exists(path, ec) && !ec) {
-            legacy.push_back(geode::utils::string::pathToString(path));
+            legacy.push_back(paimon::paths::toUtf8(path));
+            m_legacyMemo[songID] = legacy;
             return legacy;
         }
     }
+    m_legacyMemo[songID] = {};
     return {};
 }
 
@@ -490,34 +667,40 @@ std::filesystem::path SongCoverCache::negativeCachePath() const {
     return getCoversDir() / "negative.json";
 }
 
-bool SongCoverCache::isNegativelyCached(int songID) const {
-    auto data = geode::utils::file::readString(negativeCachePath());
-    if (!data) return false;
+void SongCoverCache::loadNegativeMemo() const {
+    m_negativeMemo = std::unordered_map<std::string, double>{};
+    auto data = geode::utils::file::readString(paimon::paths::toSdkPath(negativeCachePath()));
+    if (!data) return;
     auto parsed = matjson::parse(data.unwrap());
-    if (!parsed.isOk()) return false;
-    auto root = parsed.unwrap();
-    if (!root.isObject() || !root.contains(std::to_string(songID))) return false;
-    auto when = root[std::to_string(songID)].asDouble().unwrapOr(0.0);
+    if (!parsed.isOk() || !parsed.unwrap().isObject()) return;
+    for (auto const& [key, value] : parsed.unwrap()) {
+        (*m_negativeMemo)[key] = paimon::json::doubleOr(value, 0.0);
+    }
+}
+
+bool SongCoverCache::isNegativelyCached(int songID) const {
+    if (!m_negativeMemo) loadNegativeMemo();
+    auto it = m_negativeMemo->find(std::to_string(songID));
+    if (it == m_negativeMemo->end()) return false;
     double const nowUnix = std::chrono::duration<double>(
         std::chrono::system_clock::now().time_since_epoch()).count();
-    return (nowUnix - when) < kNegativeTtlSec;
+    return (nowUnix - it->second) < kNegativeTtlSec;
 }
 
 void SongCoverCache::markNegative(int songID) const {
-    matjson::Value root = matjson::Value::object();
-    if (auto data = geode::utils::file::readString(negativeCachePath())) {
-        if (auto parsed = matjson::parse(data.unwrap()); parsed.isOk() && parsed.unwrap().isObject()) {
-            root = parsed.unwrap();
-        }
-    }
+    if (!m_negativeMemo) loadNegativeMemo();
     double const nowUnix = std::chrono::duration<double>(
         std::chrono::system_clock::now().time_since_epoch()).count();
-    root[std::to_string(songID)] = nowUnix;
+    (*m_negativeMemo)[std::to_string(songID)] = nowUnix;
 
-    std::error_code ec;
-    std::filesystem::create_directories(getCoversDir(), ec);
-    std::ofstream file(negativeCachePath(), std::ios::trunc);
-    if (file) file << root.dump();
+    matjson::Value root = matjson::Value::object();
+    for (auto const& [key, when] : *m_negativeMemo) {
+        root[key] = when;
+    }
+
+    // atomic write (also creates the dir): a torn negative-cache must not
+    // wedge "no covers" state across restarts.
+    paimon::file::writeAtomically(negativeCachePath(), root.dump());
 }
 
 void SongCoverCache::ensureSearchNode() {
@@ -585,6 +768,7 @@ void SongCoverCache::requestCovers(int songID, CoversCallback callback) {
     if (isCooldownActive()) {
         coverlog::warn("[SongCoverCache] requestCovers skipped songID={}: rate-limit cooldown ({:.0f}s left)",
             songID, m_cooldownUntil - nowSeconds());
+        if (callback) callback({}, false);
         return;
     }
 
@@ -598,12 +782,24 @@ void SongCoverCache::requestCovers(int songID, CoversCallback callback) {
     if (songChanged) {
         coverlog::info("[SongCoverCache] song changed {} -> {}, debouncing {:.1f}s",
             previousSongID, songID, kDebounceSec);
+        std::vector<CoversCallback> discarded;
         for (auto it = m_deferredCallbacks.begin(); it != m_deferredCallbacks.end(); ) {
-            if (it->first != songID) it = m_deferredCallbacks.erase(it);
-            else ++it;
+            if (it->first != songID) {
+                std::move(it->second.begin(), it->second.end(), std::back_inserter(discarded));
+                it = m_deferredCallbacks.erase(it);
+            } else {
+                ++it;
+            }
         }
-        abortActiveWork();
+        auto discardedQueue = std::move(m_queue);
         m_queue.clear();
+        abortActiveWork();
+        for (auto& cb : discarded) {
+            if (cb) cb({}, false);
+        }
+        for (auto& batch : discardedQueue) {
+            dispatchCallbacks(batch, {}, false);
+        }
         scheduleDebouncedFlush(kDebounceSec);
         return;
     }
@@ -624,6 +820,13 @@ void SongCoverCache::flushDeferredRequests() {
     if (isCooldownActive()) {
         coverlog::warn("[SongCoverCache] flushDeferredRequests aborted: cooldown ({:.0f}s left)",
             m_cooldownUntil - nowSeconds());
+        if (auto it = m_deferredCallbacks.find(m_targetSongID); it != m_deferredCallbacks.end()) {
+            auto callbacks = std::move(it->second);
+            m_deferredCallbacks.erase(it);
+            for (auto& cb : callbacks) {
+                if (cb) cb({}, false);
+            }
+        }
         return;
     }
 
@@ -684,7 +887,11 @@ void SongCoverCache::flushDeferredRequests() {
     batch.callbacks = std::move(deferredIt->second);
     m_deferredCallbacks.erase(deferredIt);
 
+    auto discardedQueue = std::move(m_queue);
     m_queue.clear();
+    for (auto& old : discardedQueue) {
+        dispatchCallbacks(old, {}, false);
+    }
     m_queue.push_back(std::move(batch));
 
     coverlog::info("[SongCoverCache] debounced level search for songID={}", songID);
@@ -692,6 +899,7 @@ void SongCoverCache::flushDeferredRequests() {
 }
 
 void SongCoverCache::cancelPending(int songID) {
+    m_pendingDiskLookups.erase(songID);
     m_deferredCallbacks.erase(songID);
     if (m_targetSongID == songID) {
         m_targetSongID = 0;
@@ -712,6 +920,7 @@ void SongCoverCache::cancelAllPending() {
     m_targetSongID = 0;
     m_debouncePending = false;
     m_deferredCallbacks.clear();
+    m_pendingDiskLookups.clear();
     m_queue.clear();
     m_searchInFlight = false;
 }
@@ -780,6 +989,11 @@ void SongCoverCache::pumpQueue() {
     if (paimon::isRuntimeShuttingDown()) return;
     if (isCooldownActive()) {
         coverlog::warn("[SongCoverCache] pumpQueue blocked: cooldown");
+        auto discarded = std::move(m_queue);
+        m_queue.clear();
+        for (auto& batch : discarded) {
+            dispatchCallbacks(batch, {}, false);
+        }
         return;
     }
 
@@ -951,13 +1165,13 @@ void SongCoverCache::loadThumbnailsForLevels(int songID, std::vector<int> const&
 
                 if (success) {
                     if (persistLevelCover(state->songID, levelID, tex)) {
-                        auto path = geode::utils::string::pathToString(
+                        auto path = paimon::paths::toUtf8(
                             getSongDir(state->songID) / fmt::format("{}.png", levelID));
                         std::error_code ec;
                         if (!std::filesystem::exists(path, ec) || ec) {
                             auto gifPath = getSongDir(state->songID) / fmt::format("{}.gif", levelID);
                             if (std::filesystem::exists(gifPath, ec) && !ec) {
-                                path = geode::utils::string::pathToString(gifPath);
+                                path = paimon::paths::toUtf8(gifPath);
                             }
                         }
                         if (std::filesystem::exists(path, ec) && !ec) {

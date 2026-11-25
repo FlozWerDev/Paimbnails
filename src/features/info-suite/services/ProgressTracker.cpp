@@ -1,4 +1,6 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "ProgressTracker.hpp"
+#include "../../../utils/AtomicFileWrite.hpp"
 #include "../InfoModule.hpp"
 #include "../../../utils/JsonHelper.hpp"
 #include <Geode/Geode.hpp>
@@ -14,7 +16,7 @@ namespace paimon::info {
 namespace {
 
 std::filesystem::path progressPath() {
-    return Mod::get()->getSaveDir() / "info_progress.json";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "info_progress.json";
 }
 
 int64_t nowSeconds() {
@@ -194,14 +196,10 @@ void ProgressTracker::save() {
     auto root = matjson::Value::object();
     root["levels"] = levels;
 
-    std::ofstream file(progressPath(), std::ios::trunc);
-    if (!file.is_open()) {
+    if (!paimon::file::writeAtomically(progressPath(), root.dump(matjson::NO_INDENTATION))) {
         log::warn("[Paimbnails] no se pudo escribir info_progress.json");
         return;
     }
-    file << root.dump(matjson::NO_INDENTATION);
-    file.close();
-    if (!file) return;
     m_dirty = false;
 }
 

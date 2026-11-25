@@ -99,12 +99,12 @@ int demonFilter(int preferredDifficulty, int preferredDemonDifficulty) {
     }
 }
 
-// avoid the 22-argument create overload; its binding can corrupt gd::string fields.
+// avoid the 22-argument create overload; its binding can corrupt std::string fields.
 GJSearchObject* makeSearchObject(
     SearchType type,
-    gd::string query,
-    gd::string difficulty,
-    gd::string length,
+    std::string query,
+    std::string difficulty,
+    std::string length,
     int page,
     bool starOnly,
     bool featuredOnly,
@@ -160,7 +160,7 @@ RecommendationEngine& RecommendationEngine::get() {
 
 
 std::vector<FeedQuery> RecommendationEngine::buildTagQueries(
-    std::vector<int> const& pool, FeedSource source
+    std::vector<int> const& pool, FeedSource 
 ) {
     std::vector<FeedQuery> queries;
     if (pool.empty()) return queries;
@@ -178,47 +178,32 @@ std::vector<FeedQuery> RecommendationEngine::buildTagQueries(
     return queries;
 }
 
-FeedQuery RecommendationEngine::buildDifficultyMatch(TasteSnapshot const& taste) {
-    std::uniform_int_distribution<int> pageDist(0, 4);
+FeedQuery RecommendationEngine::buildFiltered(SearchType type, TasteSnapshot const& taste,
+                                              int pageMax, bool featuredFlag, bool epicFlag) {
+    std::uniform_int_distribution<int> pageDist(0, pageMax);
     auto obj = makeSearchObject(
-        SearchType::Awarded, "",
+        type, "",
         difficultyFilter(taste.preferredDifficulty),
         lengthFilter(taste.preferredLength, taste.platformerRatio >= 0.99f),
         pageDist(rng()),
         taste.starRatedRatio >= 0.99f,
-        taste.featuredRatio >= 0.7f,
-        taste.epicRatio >= 0.4f,
+        featuredFlag && taste.featuredRatio >= 0.7f,
+        epicFlag && taste.epicRatio >= 0.4f,
         0, false,
         demonFilter(taste.preferredDifficulty, taste.preferredDemonDifficulty));
     return {obj};
+}
+
+FeedQuery RecommendationEngine::buildDifficultyMatch(TasteSnapshot const& taste) {
+    return buildFiltered(SearchType::Awarded, taste, 4, true, true);
 }
 
 FeedQuery RecommendationEngine::buildFeatured(TasteSnapshot const& taste) {
-    std::uniform_int_distribution<int> pageDist(0, 4);
-    auto obj = makeSearchObject(
-        SearchType::Featured, "",
-        difficultyFilter(taste.preferredDifficulty),
-        lengthFilter(taste.preferredLength, taste.platformerRatio >= 0.99f),
-        pageDist(rng()),
-        taste.starRatedRatio >= 0.99f, false,
-        taste.epicRatio >= 0.4f,
-        0, false,
-        demonFilter(taste.preferredDifficulty, taste.preferredDemonDifficulty));
-    return {obj};
+    return buildFiltered(SearchType::Featured, taste, 4, false, true);
 }
 
 FeedQuery RecommendationEngine::buildTrending(TasteSnapshot const& taste) {
-    std::uniform_int_distribution<int> pageDist(0, 2);
-    auto obj = makeSearchObject(
-        SearchType::Trending, "",
-        difficultyFilter(taste.preferredDifficulty),
-        lengthFilter(taste.preferredLength, taste.platformerRatio >= 0.99f),
-        pageDist(rng()),
-        taste.starRatedRatio >= 0.99f,
-        taste.featuredRatio >= 0.7f, false,
-        0, false,
-        demonFilter(taste.preferredDifficulty, taste.preferredDemonDifficulty));
-    return {obj};
+    return buildFiltered(SearchType::Trending, taste, 2, true, false);
 }
 
 FeedQuery RecommendationEngine::buildSimilar(TasteSnapshot const&) {
@@ -230,26 +215,29 @@ FeedQuery RecommendationEngine::buildSimilar(TasteSnapshot const&) {
     return {obj};
 }
 
-FeedQuery RecommendationEngine::buildFavoriteCreator(TasteSnapshot const& taste) {
-    if (taste.favoriteCreators.empty()) return {};
-
-    std::uniform_int_distribution<size_t> dist(0, taste.favoriteCreators.size() - 1);
-    int creatorID = *std::next(taste.favoriteCreators.begin(), dist(rng()));
+FeedQuery RecommendationEngine::buildUserLevels(geode::CopyableFunction<int()> pickCreator) {
+    int creatorID = pickCreator();
+    if (creatorID < 0) return {};
 
     auto obj = makeSearchObject(SearchType::UsersLevels, std::to_string(creatorID),
                                 "-1", "-1", 0, false, false, false, 0, false, 0);
     return {obj};
 }
 
+FeedQuery RecommendationEngine::buildFavoriteCreator(TasteSnapshot const& taste) {
+    return buildUserLevels([&taste]() -> int {
+        if (taste.favoriteCreators.empty()) return -1;
+        std::uniform_int_distribution<size_t> dist(0, taste.favoriteCreators.size() - 1);
+        return *std::next(taste.favoriteCreators.begin(), dist(rng()));
+    });
+}
+
 FeedQuery RecommendationEngine::buildTopCreator(TasteSnapshot const& taste) {
-    if (taste.topCreators.empty()) return {};
-
-    std::uniform_int_distribution<size_t> dist(0, taste.topCreators.size() - 1);
-    int creatorID = taste.topCreators[dist(rng())];
-
-    auto obj = makeSearchObject(SearchType::UsersLevels, std::to_string(creatorID),
-                                "-1", "-1", 0, false, false, false, 0, false, 0);
-    return {obj};
+    return buildUserLevels([&taste]() -> int {
+        if (taste.topCreators.empty()) return -1;
+        std::uniform_int_distribution<size_t> dist(0, taste.topCreators.size() - 1);
+        return taste.topCreators[dist(rng())];
+    });
 }
 
 FeedQuery RecommendationEngine::buildSongMatch(TasteSnapshot const& taste) {

@@ -1,0 +1,34 @@
+#include "tests/review_fixtures/ReviewQueue.hpp"
+struct CCObject{};
+namespace PopTransition{constexpr int kPopTransitionFade=0;}
+struct CCDirector{int pops=0;static CCDirector*get(){static CCDirector d;return &d;}void popSceneWithTransition(float,int){++pops;}};
+struct IconThumbs{int invalidations=0;static IconThumbs&get(){static IconThumbs s;return s;}void invalidate(std::string const&){++invalidations;}};
+struct IconEditorLayer {
+ struct Project{std::string id="icon";}m_project;
+ bool m_dirty=true,saveOkay=false;
+ bool saveProject(bool){return saveOkay;}
+ void onBack();
+};
+@@function|src/features/icon-maker/ui/IconEditorLayer.cpp|void IconEditorLayer::onBack@@
+struct SlotStore {
+ bool saveOkay=false;
+ static SlotStore&get(){static SlotStore s;return s;}
+ Result<> saveSlot(int){return saveOkay?Ok():Result<>(Err("disk full"));}
+};
+struct FusionEditorLayer{static inline int opens=0;static void open(std::string const&,std::string const&){++opens;}};
+struct ProjectEditorLayer {
+ int m_project=0;bool m_hasSelection=false;struct Selection{std::string frameName;}m_selected;std::string m_slotId="slot";
+ bool saveForNavigation(){return SlotStore::get().saveOkay;}
+ void onBack(CCObject*);
+ void onOpenFusionLayer();
+};
+@@function|src/features/texture-studio/ui/ProjectEditorLayer.cpp|void ProjectEditorLayer::onBack@@
+@@function|src/features/texture-studio/ui/ProjectEditorLayer.cpp|void ProjectEditorLayer::onOpenFusionLayer@@
+int main(){
+ IconEditorLayer icon;icon.onBack();assert(CCDirector::get()->pops==0&&IconThumbs::get().invalidations==0);
+ icon.saveOkay=true;icon.onBack();assert(CCDirector::get()->pops==1);
+ ProjectEditorLayer texture;texture.onBack(nullptr);texture.onOpenFusionLayer();
+ assert(CCDirector::get()->pops==1&&FusionEditorLayer::opens==0);
+ SlotStore::get().saveOkay=true;texture.onBack(nullptr);texture.onOpenFusionLayer();
+ assert(CCDirector::get()->pops==2&&FusionEditorLayer::opens==1);
+}

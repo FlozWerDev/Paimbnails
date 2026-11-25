@@ -1,3 +1,4 @@
+#include "../../../framework/compat/NativeUI.hpp"
 #include "TwitchLevelOpen.hpp"
 
 #include "TwitchLevelBriefCache.hpp"
@@ -32,10 +33,10 @@ void pushLevelInfo(GJGameLevel* level, bool replaceScene, int64_t entryID) {
 
     auto const previousEntryID = g_currentEntryID;
     g_currentEntryID = entryID;
-    auto* layer = LevelInfoLayer::create(level, false);
+    auto* layer = paimon::compat::createLevelInfoLayer(level, false);
     if (!layer) {
         g_currentEntryID = previousEntryID;
-        PaimonNotify::create("No se pudo abrir el nivel", NotificationIcon::Error)->show();
+        PaimonNotify::show("No se pudo abrir el nivel", NotificationIcon::Error);
         return;
     }
     if (entryID > 0) {
@@ -68,13 +69,13 @@ void beginOpen(int levelID, bool replaceScene, int64_t entryID) {
     }
 
     g_opening = true;
-    PaimonNotify::create("Buscando el nivel...", NotificationIcon::Loading)->show();
+    PaimonNotify::show("Buscando el nivel...", NotificationIcon::Loading);
     TwitchLevelBriefCache::get().fetch(levelID, [replaceScene, entryID, generation](GJGameLevel* level) {
         if (generation != g_openGeneration) return;
         g_opening = false;
         if (paimon::isRuntimeShuttingDown()) return;
         if (!level) {
-            PaimonNotify::create("Ese nivel ya no existe", NotificationIcon::Error)->show();
+            PaimonNotify::show("Ese nivel ya no existe", NotificationIcon::Error);
             return;
         }
         pushLevelInfo(level, replaceScene, entryID);
@@ -108,13 +109,15 @@ void playRequestAt(size_t index, bool replaceScene) {
 std::optional<size_t> indexOfRequest(int levelID) {
     auto& manager = TwitchRequestManager::get();
     auto const requests = manager.requests();
+    // the exact entry wins wherever it sits; otherwise the first match in the
+    // selected queue.
+    std::optional<size_t> fallback;
     for (size_t index = 0; index < requests.size(); ++index) {
-        if (requests[index].levelID == levelID && requests[index].entryID == g_currentEntryID) return index;
+        if (requests[index].levelID != levelID) continue;
+        if (requests[index].entryID == g_currentEntryID) return index;
+        if (!fallback && manager.inSelectedQueue(requests[index])) fallback = index;
     }
-    for (size_t index = 0; index < requests.size(); ++index) {
-        if (requests[index].levelID == levelID && manager.inSelectedQueue(requests[index])) return index;
-    }
-    return std::nullopt;
+    return fallback;
 }
 
 std::optional<size_t> adjacentRequestIndex(int levelID, bool forward) {

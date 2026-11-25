@@ -118,7 +118,9 @@ DynamicSongManager::~DynamicSongManager() {
     if (paimon::isRuntimeShuttingDown()) {
         m_fadeNode = nullptr;
         m_streamPollNode = nullptr;
+        m_streamRetireNode = nullptr;
         m_handoffWatchNode = nullptr;
+        m_retiringStreamSounds.clear();
         return;
     }
 
@@ -130,10 +132,21 @@ DynamicSongManager::~DynamicSongManager() {
 
     stopStreamingPreview();
 
+    for (auto* sound : m_retiringStreamSounds) {
+        if (sound) sound->release();
+    }
+    m_retiringStreamSounds.clear();
+
     if (m_streamPollNode) {
         m_streamPollNode->unscheduleAllSelectors();
         m_streamPollNode->release();
         m_streamPollNode = nullptr;
+    }
+
+    if (m_streamRetireNode) {
+        m_streamRetireNode->unscheduleAllSelectors();
+        m_streamRetireNode->release();
+        m_streamRetireNode = nullptr;
     }
 
     if (m_handoffWatchNode) {
@@ -439,12 +452,7 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
         // it: tear it down instead of leaving it buffering.
         if (m_streamingPreview || isStreamingPreviewPending() || m_awaitingDownloadOnly) {
             cancelFade();
-            stopStreamingPreview();
-            m_state = DynState::Idle;
-            m_activeSongPath.clear();
-            m_currentPlayingLevelID = 0;
-            paimon::setDynamicSongInteropActive(false);
-            AudioContextCoordinator::get().clearDynamicAudio();
+            goIdle();
         }
         return;
     }
@@ -465,7 +473,7 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
     int levelId = level->m_levelID.value();
     float targetVol = dynamicTargetVolume();
 
-    if (m_state == DynState::Handoff) {
+    if (isHandingOff()) {
         if (levelId == m_currentPlayingLevelID) {
             cancelGameplayHandoff();
             return;
@@ -475,12 +483,7 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
 
     if (levelId != m_currentPlayingLevelID && (m_streamingPreview || isStreamingPreviewPending() || m_awaitingDownloadOnly)) {
         cancelFade();
-        stopStreamingPreview();
-        m_state = DynState::Idle;
-        m_activeSongPath.clear();
-        m_currentPlayingLevelID = 0;
-        paimon::setDynamicSongInteropActive(false);
-        AudioContextCoordinator::get().clearDynamicAudio();
+        goIdle();
     }
 
     if (isActive() && levelId == m_currentPlayingLevelID && !m_activeSongPath.empty()) {
@@ -501,7 +504,7 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
         return;
     }
 
-    if (m_state == DynState::Suspended) {
+    if (hasSuspendedPlayback()) {
         m_state = DynState::Idle;
     }
 
@@ -576,7 +579,7 @@ void DynamicSongManager::stopSong() {
         return;
     }
 
-    if (m_state == DynState::Suspended) {
+    if (hasSuspendedPlayback()) {
         goIdle();
         SubmergeEffect::get().release();
         loadMenuTrack(FMODAudioEngine::sharedEngine()->m_musicVolume);
@@ -1001,12 +1004,12 @@ bool DynamicSongManager::verifyPlayback() {
     if (isStreamingPreviewPending() || m_streamingPreview) return true;
 
     // suspension is intentional external audio, not a hijack.
-    if (m_state == DynState::Suspended) {
+    if (hasSuspendedPlayback()) {
         return true;
     }
 
     // gameplay handoff temporarily gives ownership up while audio remains audible.
-    if (m_state == DynState::Handoff) {
+    if (isHandingOff()) {
         return true;
     }
 
@@ -1042,8 +1045,6 @@ bool DynamicSongManager::verifyPlayback() {
 
     return fileName(m_activeSongPath) == fileName(currentName);
 }
-
-// streaming preview.
 
 // poll for the local download and swap to it when ready.
 class DynStreamPollNode : public CCNode {
@@ -1083,6 +1084,100 @@ private:
         DynamicSongManager::get()->checkPreviewSwap();
     }
 };
+
+// Reclaims FMOD non-blocking stream sounds only after FMOD finishes opening/errored,
+// so releasing a mid-handshake HTTP stream never freezes the main thread for 4-6s.
+class DynStreamRetireNode : public CCNode {
+public:
+    static DynStreamRetireNode* create() {
+        auto* node = new DynStreamRetireNode();
+        if (node && node->init()) {
+            node->autorelease();
+            return node;
+        }
+        CC_SAFE_DELETE(node);
+        return nullptr;
+    }
+
+    void startReclaiming() {
+        auto* scheduler = cocos2d::CCDirector::get()->getScheduler();
+        scheduler->unscheduleSelector(schedule_selector(DynStreamRetireNode::retireTick), this);
+        scheduler->scheduleSelector(
+            schedule_selector(DynStreamRetireNode::retireTick),
+            this, 0.25f, kCCRepeatForever, 0.0f, false
+        );
+    }
+
+    void stopReclaiming() {
+        auto* scheduler = cocos2d::CCDirector::get()->getScheduler();
+        scheduler->unscheduleSelector(schedule_selector(DynStreamRetireNode::retireTick), this);
+    }
+
+private:
+    void retireTick(float dt) {
+        if (paimon::isRuntimeShuttingDown()) {
+            stopReclaiming();
+            return;
+        }
+        DynamicSongManager::get()->pumpRetiringStreamSounds(dt);
+    }
+};
+
+void DynamicSongManager::retirePreviewSound(FMOD::Sound* sound) {
+    if (!sound) return;
+
+    FMOD_OPENSTATE openState = FMOD_OPENSTATE_READY;
+    bool diskBusy = false;
+    FMOD_RESULT res = sound->getOpenState(&openState, nullptr, nullptr, &diskBusy);
+    bool const safeNow = (res != FMOD_OK) ||
+        (!diskBusy && (openState == FMOD_OPENSTATE_READY || openState == FMOD_OPENSTATE_ERROR));
+    if (safeNow) {
+        sound->release();
+        return;
+    }
+
+    m_retiringStreamSounds.push_back(sound);
+    if (!m_streamRetireNode) {
+        m_streamRetireNode = DynStreamRetireNode::create();
+        if (m_streamRetireNode) m_streamRetireNode->retain();
+    }
+    if (m_streamRetireNode) {
+        static_cast<DynStreamRetireNode*>(m_streamRetireNode)->startReclaiming();
+    }
+}
+
+void DynamicSongManager::pumpRetiringStreamSounds(float /*dt*/) {
+    if (m_retiringStreamSounds.empty()) {
+        if (m_streamRetireNode) {
+            static_cast<DynStreamRetireNode*>(m_streamRetireNode)->stopReclaiming();
+        }
+        return;
+    }
+
+    auto it = m_retiringStreamSounds.begin();
+    while (it != m_retiringStreamSounds.end()) {
+        FMOD::Sound* sound = *it;
+        if (!sound) {
+            it = m_retiringStreamSounds.erase(it);
+            continue;
+        }
+        FMOD_OPENSTATE openState = FMOD_OPENSTATE_READY;
+        bool diskBusy = false;
+        FMOD_RESULT res = sound->getOpenState(&openState, nullptr, nullptr, &diskBusy);
+        bool const readyToRelease = (res != FMOD_OK) ||
+            (!diskBusy && (openState == FMOD_OPENSTATE_READY || openState == FMOD_OPENSTATE_ERROR));
+        if (readyToRelease) {
+            sound->release();
+            it = m_retiringStreamSounds.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    if (m_retiringStreamSounds.empty() && m_streamRetireNode) {
+        static_cast<DynStreamRetireNode*>(m_streamRetireNode)->stopReclaiming();
+    }
+}
 
 void DynamicSongManager::startStreamingPreview(GJGameLevel* level) {
     if (m_streamingPreview || isStreamingPreviewPending() || m_awaitingDownloadOnly) return;
@@ -1180,9 +1275,11 @@ void DynamicSongManager::stopStreamingPreview() {
         m_previewChannel = nullptr;
     }
     if (m_previewStreamSound) {
-        m_previewStreamSound->release();
+        FMOD::Sound* retiring = m_previewStreamSound;
         m_previewStreamSound = nullptr;
+        retirePreviewSound(retiring);
     }
+    pumpRetiringStreamSounds(0.f);
 
     m_previewAwaitingSongInfo = false;
     m_streamingPreviewPending = false;

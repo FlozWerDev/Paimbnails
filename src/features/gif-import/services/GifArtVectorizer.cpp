@@ -162,8 +162,10 @@ void consider(
     float& bestScore
 ) {
     auto missing = uncovered(positions, width, objects);
-    auto residual = packBlocks(missing, width, height, color);
-    objects.insert(objects.end(), residual.begin(), residual.end());
+    if (!missing.empty()) {
+        auto residual = packBlocks(missing, width, height, color);
+        objects.insert(objects.end(), residual.begin(), residual.end());
+    }
     auto const extra = extraCoverage(positions, width, height, objects, blocked);
     bool const hasStroke = std::any_of(objects.begin(), objects.end(), [](Primitive const& object) {
         return object.kind == PrimitiveKind::Stroke;
@@ -257,7 +259,7 @@ std::vector<Primitive> skeletonStrokes(
             objects.push_back({
                 (first.x + last.x) * 0.5f,
                 (first.y + last.y) * 0.5f,
-                length + thickness * 0.55f,
+                length + thickness * 0.72f,
                 thickness * 1.05f,
                 std::atan2(last.y - first.y, last.x - first.x) * 180.f / kPi,
                 static_cast<std::uint16_t>(color),
@@ -543,6 +545,27 @@ std::vector<std::uint8_t> renderPlanFrame(
     int scale,
     bool antialias
 ) {
+    // composite all shapes on the same sample grid before filtering. Per-shape
+    // coverage alpha leaves dark seams between adjacent opaque objects.
+    if (antialias && usesPaintGeometry(plan.mode) && scale > 0 && scale <= 4) {
+        auto const samples = renderPlanFrame(plan, frame, scale * 2, false);
+        int const width = plan.width * scale, height = plan.height * scale;
+        std::vector<std::uint8_t> result(static_cast<std::size_t>(width) * height * 4, 0);
+        for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
+            std::array<unsigned int, 4> sum{};
+            for (int dy = 0; dy < 2; ++dy) for (int dx = 0; dx < 2; ++dx) {
+                auto const source = (static_cast<std::size_t>(y * 2 + dy) * width * 2 + x * 2 + dx) * 4;
+                unsigned int const alpha = samples[source + 3];
+                for (int channel = 0; channel < 3; ++channel) sum[channel] += samples[source + channel] * alpha;
+                sum[3] += alpha;
+            }
+            auto const target = (static_cast<std::size_t>(y) * width + x) * 4;
+            result[target + 3] = static_cast<std::uint8_t>((sum[3] + 2) / 4);
+            if (sum[3]) for (int channel = 0; channel < 3; ++channel)
+                result[target + channel] = static_cast<std::uint8_t>((sum[channel] + sum[3] / 2) / sum[3]);
+        }
+        return result;
+    }
     scale = std::clamp(scale, 1, 8);
     int const outputWidth = plan.width * scale;
     int const outputHeight = plan.height * scale;
@@ -553,8 +576,6 @@ std::vector<std::uint8_t> renderPlanFrame(
     std::vector<float> light;
     if (usesSoftGeometry(plan.mode)) light.assign(pixels.size(), 0.f);
 
-    // reuses the coverage scratch across preview primitives.
-    std::vector<std::uint8_t> previewCoverage;
     auto draw = [&](Primitive const& object) {
         if (object.color >= plan.palette.size()) return;
         auto const& color = plan.palette[object.color];
@@ -590,86 +611,21 @@ std::vector<std::uint8_t> renderPlanFrame(
             return;
         }
         auto const shape = xformOf(object, plan.stamps);
-        // preview supersamples; the normal renderer uses a binary mask.
-        bool const smoothPreview = antialias && usesPaintGeometry(plan.mode);
-        if (!smoothPreview) {
-            forEachSample(shape, plan.width, plan.height, scale, [&](int x, int y) {
-                std::size_t const index =
-                    (static_cast<std::size_t>(y) * outputWidth + x) * 4;
-                auto mix = [&](std::uint8_t channel, std::uint8_t over) {
-                    return static_cast<std::uint8_t>(
-                        over * opacity + channel * (1.f - opacity));
-                };
-                pixels[index] = mix(pixels[index], color.r);
-                pixels[index + 1] = mix(pixels[index + 1], color.g);
-                pixels[index + 2] = mix(pixels[index + 2], color.b);
-                pixels[index + 3] = std::max<std::uint8_t>(
-                    pixels[index + 3], static_cast<std::uint8_t>(255.f * opacity));
-                return false;
-            });
-            return;
-        }
-
-        constexpr int kPreviewSamples = 2;
-        int const sampleScale = scale * kPreviewSamples;
-        auto const box = xformBox(shape, plan.width, plan.height);
-        if (box[2] < box[0] || box[3] < box[1]) return;
-        int const minX = std::max(0, box[0] * scale);
-        int const minY = std::max(0, box[1] * scale);
-        int const maxX = std::min(outputWidth - 1, (box[2] + 1) * scale - 1);
-        int const maxY = std::min(outputHeight - 1, (box[3] + 1) * scale - 1);
-        int const localWidth = maxX - minX + 1;
-        int const localHeight = maxY - minY + 1;
-        if (localWidth <= 0 || localHeight <= 0) return;
-        previewCoverage.assign(
-            static_cast<std::size_t>(localWidth) * localHeight, 0);
-        forEachSample(shape, plan.width, plan.height, sampleScale, [&](int x, int y) {
-            int const outputX = x / kPreviewSamples;
-            int const outputY = y / kPreviewSamples;
-            if (outputX < minX || outputY < minY ||
-                outputX > maxX || outputY > maxY) return false;
-            auto& count = previewCoverage[
-                static_cast<std::size_t>(outputY - minY) * localWidth +
-                (outputX - minX)];
-            count = static_cast<std::uint8_t>(
-                std::min<int>(kPreviewSamples * kPreviewSamples, count + 1));
+        forEachSample(shape, plan.width, plan.height, scale, [&](int x, int y) {
+            auto const index = (static_cast<std::size_t>(y) * outputWidth + x) * 4;
+            float const alpha = std::clamp(opacity, 0.f, 1.f);
+            float const destinationAlpha = pixels[index + 3] / 255.f;
+            float const outputAlpha = alpha + destinationAlpha * (1.f - alpha);
+            if (outputAlpha <= 0.f) return false;
+            std::array<std::uint8_t, 3> const rgb{color.r, color.g, color.b};
+            for (int channel = 0; channel < 3; ++channel) {
+                pixels[index + channel] = static_cast<std::uint8_t>(std::lround(std::clamp(
+                    (rgb[channel] * alpha + pixels[index + channel] * destinationAlpha * (1.f - alpha)) /
+                        outputAlpha, 0.f, 255.f)));
+            }
+            pixels[index + 3] = static_cast<std::uint8_t>(std::lround(outputAlpha * 255.f));
             return false;
         });
-        float const coverageOpacity = std::clamp(opacity, 0.f, 1.f);
-        for (int y = minY; y <= maxY; ++y) {
-            for (int x = minX; x <= maxX; ++x) {
-                auto const count = previewCoverage[
-                    static_cast<std::size_t>(y - minY) * localWidth + (x - minX)];
-                if (count == 0) continue;
-                float const sourceAlpha =
-                    (static_cast<float>(count) /
-                     static_cast<float>(kPreviewSamples * kPreviewSamples)) *
-                    coverageOpacity;
-                std::size_t const index =
-                    (static_cast<std::size_t>(y) * outputWidth + x) * 4;
-                float const destinationAlpha = pixels[index + 3] / 255.f;
-                float const outputAlpha = sourceAlpha +
-                    destinationAlpha * (1.f - sourceAlpha);
-                if (outputAlpha <= 0.f) continue;
-                pixels[index] = static_cast<std::uint8_t>(std::lround(std::clamp(
-                    (color.r * sourceAlpha +
-                     pixels[index] * destinationAlpha * (1.f - sourceAlpha)) /
-                        outputAlpha,
-                    0.f, 255.f)));
-                pixels[index + 1] = static_cast<std::uint8_t>(std::lround(std::clamp(
-                    (color.g * sourceAlpha +
-                     pixels[index + 1] * destinationAlpha * (1.f - sourceAlpha)) /
-                        outputAlpha,
-                    0.f, 255.f)));
-                pixels[index + 2] = static_cast<std::uint8_t>(std::lround(std::clamp(
-                    (color.b * sourceAlpha +
-                     pixels[index + 2] * destinationAlpha * (1.f - sourceAlpha)) /
-                        outputAlpha,
-                    0.f, 255.f)));
-                pixels[index + 3] = static_cast<std::uint8_t>(
-                    std::lround(outputAlpha * 255.f));
-            }
-        }
     };
 
     std::vector<Primitive> moved;
@@ -711,6 +667,58 @@ std::vector<std::uint8_t> renderPlanFrame(
         }
     }
     return pixels;
+}
+
+std::vector<std::int32_t> renderPlanFrameIndices(
+    ImportPlan const& plan,
+    int frame,
+    int scale
+) {
+    scale = std::clamp(scale, 1, 8);
+    int const outputWidth = plan.width * scale;
+    int const outputHeight = plan.height * scale;
+    std::vector<std::int32_t> indices(
+        static_cast<std::size_t>(outputWidth) * outputHeight, -1);
+    frame = std::clamp(frame, 0, std::max(static_cast<int>(plan.frames.size()) - 1, 0));
+
+    std::vector<Primitive> moved;
+    for (auto const& track : plan.motionTracks) {
+        if (!visibleAt(track.mask, frame)) continue;
+        auto const* key = keyAt(track, frame);
+        if (!key) continue;
+        for (auto const& object : track.objects) {
+            auto shifted = object;
+            shifted.x += static_cast<float>(key->x);
+            shifted.y += static_cast<float>(key->y);
+            moved.push_back(shifted);
+        }
+    }
+
+    std::vector<Primitive const*> visible;
+    visible.reserve(plan.staticObjects.size() + moved.size());
+    for (auto const& object : plan.staticObjects) visible.push_back(&object);
+    for (auto const& object : moved) visible.push_back(&object);
+    for (auto const& track : plan.tracks) {
+        if (track.mask.empty() ||
+            (track.mask[static_cast<std::size_t>(frame / 64)] &
+             (std::uint64_t{1} << (frame % 64))) == 0) {
+            continue;
+        }
+        for (auto const& object : track.objects) visible.push_back(&object);
+    }
+    std::stable_sort(visible.begin(), visible.end(), [](auto* left, auto* right) {
+        return left->layer < right->layer;
+    });
+
+    for (auto const* object : visible) {
+        if (object->color >= plan.palette.size()) continue;
+        auto const shape = xformOf(*object, plan.stamps);
+        forEachSample(shape, plan.width, plan.height, scale, [&](int x, int y) {
+            indices[static_cast<std::size_t>(y) * outputWidth + x] = object->color;
+            return false;
+        });
+    }
+    return indices;
 }
 
 } // namespace paimon::gifimport

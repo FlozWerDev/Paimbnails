@@ -115,6 +115,10 @@ private:
     bool m_shuttingDown = false;
     bool m_menuTrackActive = false;
     bool m_auditionBypassed = false;
+    bool m_configApplied = false;
+    MusicEffectsConfig m_appliedCfg;
+    bool m_appliedSpatialModuleOn = false;
+    bool m_appliedAuditionBypassed = false;
     float m_spatialPhase = 0.f;
     float m_modulePollTime = 0.25f;
 

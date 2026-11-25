@@ -13,8 +13,10 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -24,6 +26,7 @@
 #include "../src/utils/stb_image_write.h"
 
 #include "../src/features/gif-import/services/GifImportPipeline.hpp"
+#include "../src/features/gif-import/services/GifPrimitiveSerializer.hpp"
 #include "../src/features/gif-import/services/ColorSpace.cpp"
 #include "../src/features/gif-import/services/GifParallel.cpp"
 #include "../src/features/gif-import/services/GifShapeRaster.cpp"
@@ -35,6 +38,10 @@
 #include "../src/features/gif-import/services/GifGlowPass.cpp"
 #include "../src/features/gif-import/services/GifMotionPlanner.cpp"
 #include "../src/features/gif-import/services/GifPaintVectorizer.cpp"
+#include "../src/features/gif-import/services/GifSurfaceVectorizer.cpp"
+#include "../src/features/gif-import/services/GifSmoothVectorizer.cpp"
+#include "../src/features/gif-import/services/GifSurfaceOptimizer.cpp"
+#include "../src/features/gif-import/services/GifPlanOptimizer.cpp"
 #include "../src/features/gif-import/services/ImageWatermark.cpp"
 #include "../src/features/gif-import/services/GifImportPipeline.cpp"
 
@@ -185,6 +192,90 @@ double gridFidelity(ImportPlan const& plan, int scale) {
         }
     }
     return compared > 0 ? 100.0 * static_cast<double>(correct) / compared : 100.0;
+}
+
+// premultiplied sRGB, same convention as the native-render report.
+double psnrDb(Image const& first, Image const& second) {
+    if (first.width != second.width || first.height != second.height) return 0.0;
+    double squared = 0.0;
+    std::size_t channels = 0;
+    for (std::size_t index = 0; index + 3 < first.rgba.size(); index += 4) {
+        for (int channel = 0; channel < 3; ++channel) {
+            double const left = first.rgba[index + channel] * first.rgba[index + 3] / 255.0;
+            double const right = second.rgba[index + channel] * second.rgba[index + 3] / 255.0;
+            double const delta = left - right;
+            squared += delta * delta;
+            ++channels;
+        }
+    }
+    double const mse = channels > 0 ? squared / static_cast<double>(channels) : 0.0;
+    return mse > 0.0 ? 10.0 * std::log10(255.0 * 255.0 / mse) : 100.0;
+}
+
+double lumaAt(Image const& image, int x, int y) {
+    std::size_t const index = (static_cast<std::size_t>(y) * image.width + x) * 4;
+    double const alpha = image.rgba[index + 3] / 255.0;
+    return (0.2126 * image.rgba[index] + 0.7152 * image.rgba[index + 1] +
+        0.0722 * image.rgba[index + 2]) * alpha;
+}
+
+// mean difference of adjacent-luma gradients, averaged over both axes.
+double edgeMae(Image const& first, Image const& second) {
+    if (first.width != second.width || first.height != second.height) return 0.0;
+    double total = 0.0;
+    std::size_t count = 0;
+    for (int y = 0; y < first.height; ++y) {
+        for (int x = 0; x + 1 < first.width; ++x) {
+            double const expected = lumaAt(first, x + 1, y) - lumaAt(first, x, y);
+            double const actual = lumaAt(second, x + 1, y) - lumaAt(second, x, y);
+            total += std::abs(expected - actual);
+            ++count;
+        }
+    }
+    for (int y = 0; y + 1 < first.height; ++y) {
+        for (int x = 0; x < first.width; ++x) {
+            double const expected = lumaAt(first, x, y + 1) - lumaAt(first, x, y);
+            double const actual = lumaAt(second, x, y + 1) - lumaAt(second, x, y);
+            total += std::abs(expected - actual);
+            ++count;
+        }
+    }
+    return count > 0 ? total / static_cast<double>(count) : 0.0;
+}
+
+// cells whose whole neighborhood shares one palette index but whose rendered
+// block is not fully painted: an interior hole the eye sees as a dark seam.
+int interiorHoles(ImportPlan const& plan, Image const& rendered, int scale) {
+    auto const& cells = plan.frames.front().cells;
+    int holes = 0;
+    for (int y = 1; y + 1 < plan.height; ++y) {
+        for (int x = 1; x + 1 < plan.width; ++x) {
+            int const center = cells[static_cast<std::size_t>(y) * plan.width + x];
+            if (center < 0 || center >= static_cast<int>(plan.palette.size())) continue;
+            bool interior = true;
+            for (int dy = -1; dy <= 1 && interior; ++dy)
+                for (int dx = -1; dx <= 1; ++dx)
+                    if (cells[static_cast<std::size_t>(y + dy) * plan.width + x + dx] != center) {
+                        interior = false;
+                        break;
+                    }
+            if (!interior) continue;
+            auto const& color = plan.palette[static_cast<std::size_t>(center)];
+            bool full = true;
+            for (int py = 0; py < scale && full; ++py)
+                for (int px = 0; px < scale; ++px) {
+                    std::size_t const pixel =
+                        (static_cast<std::size_t>(y * scale + py) * plan.width * scale + x * scale + px) * 4;
+                    if (rendered.rgba[pixel + 3] != 255 || rendered.rgba[pixel] != color.r ||
+                        rendered.rgba[pixel + 1] != color.g || rendered.rgba[pixel + 2] != color.b) {
+                        full = false;
+                        break;
+                    }
+                }
+            if (!full) ++holes;
+        }
+    }
+    return holes;
 }
 
 // entradas de la paleta que a la vista son la misma: cada una arrastra su propia
@@ -364,6 +455,53 @@ std::vector<PlanStamp> syntheticSoftStamps() {
     return stamps;
 }
 
+struct BenchRecord {
+    std::string name;
+    int gridWidth = 0;
+    int gridHeight = 0;
+    std::size_t objects = 0;
+    std::size_t palette = 0;
+    int micro = 0;
+    double grid = 0.0;
+    double near = 0.0;
+    double far = 0.0;
+    double similarity = 0.0;
+    int mergeable = 0;
+    int strokes = 0;
+    int stamps = 0;
+    double psnr = 0.0;
+    double edge = 0.0;
+    int holes = 0;
+};
+
+void writeJson(std::ostream& stream, std::vector<BenchRecord> const& records,
+    double averagePsnr, double averageEdge, double averageObjects) {
+    stream << std::fixed << std::setprecision(6);
+    stream << "{\n  \"images\": [\n";
+    for (std::size_t index = 0; index < records.size(); ++index) {
+        auto const& record = records[index];
+        stream << "    {\"name\": \"" << record.name << "\", "
+               << "\"grid\": [" << record.gridWidth << ", " << record.gridHeight << "], "
+               << "\"objects\": " << record.objects << ", "
+               << "\"palette\": " << record.palette << ", "
+               << "\"micro\": " << record.micro << ", "
+               << "\"grid_similarity\": " << record.grid << ", "
+               << "\"near\": " << record.near << ", "
+               << "\"far\": " << record.far << ", "
+               << "\"similarity\": " << record.similarity << ", "
+               << "\"mergeable\": " << record.mergeable << ", "
+               << "\"strokes\": " << record.strokes << ", "
+               << "\"stamps\": " << record.stamps << ", "
+               << "\"psnr_db\": " << record.psnr << ", "
+               << "\"edge_mae\": " << record.edge << ", "
+               << "\"interior_holes\": " << record.holes << "}"
+               << (index + 1 < records.size() ? "," : "") << '\n';
+    }
+    stream << "  ],\n  \"average\": {\"objects\": " << averageObjects
+           << ", \"psnr_db\": " << averagePsnr
+           << ", \"edge_mae\": " << averageEdge << "}\n}\n";
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -382,16 +520,27 @@ int main(int argc, char** argv) {
     options.background = BackgroundMode::Keep;
     options.sampling = SamplingMode::Smooth;
     fs::path dump;
+    fs::path json;
 
     for (int i = 2; i + 1 < argc; i += 2) {
         std::string const key = argv[i];
         std::string const value = argv[i + 1];
         if (key == "--mode") options.mode = parseMode(value);
+        else if (key == "--sampling") options.sampling = value == "pixel" ? SamplingMode::Pixel : SamplingMode::Smooth;
+        else if (key == "--background") options.background = value == "auto" ? BackgroundMode::AutoBorder : BackgroundMode::Keep;
+        else if (key == "--auto") options.autoResolution = value == "1";
+        else if (key == "--optimize") options.optimize = value == "1";
+        else if (key == "--palette") options.paletteRefine = value == "1";
+        else if (key == "--detail") options.detailRecovery = value == "1";
+        else if (key == "--dither") options.dither = value == "1";
+        else if (key == "--detail-percent") options.detailPercent = std::stoi(value);
+        else if (key == "--detail-stable") options.detailStableCount = value == "1";
         else if (key == "--dim") options.maxDimension = std::stoi(value);
         else if (key == "--colors") options.maxColors = std::stoi(value);
         else if (key == "--budget") options.objectBudget = std::stoi(value);
         else if (key == "--glow-scale") options.blurGlowDiameter = std::stof(value);
         else if (key == "--dump") dump = value;
+        else if (key == "--json") json = value;
         else if (key == "--stamps" && value == "sinteticos") {
             setStampCatalog(syntheticCatalog());
         }
@@ -419,7 +568,8 @@ int main(int argc, char** argv) {
 
     std::cout << "modo=" << modeName(options.mode) << " dim=" << options.maxDimension
               << " colores=" << options.maxColors << " presupuesto="
-              << options.objectBudget << "\n\n";
+              << options.objectBudget << " optimizacion="
+              << (options.optimize ? "si" : "no-contornos") << "\n\n";
     std::cout << std::left << std::setw(26) << "imagen"
               << std::right << std::setw(8) << "rejilla"
               << std::setw(9) << "objetos"
@@ -431,15 +581,22 @@ int main(int argc, char** argv) {
               << std::setw(9) << "revision"
               << std::setw(11) << "fusionab."
               << std::setw(8) << "tiras"
-              << std::setw(8) << "moldes" << '\n';
+              << std::setw(8) << "moldes"
+              << std::setw(10) << "PSNR"
+              << std::setw(9) << "bordes"
+              << std::setw(8) << "huecos" << '\n';
 
     double totalNear = 0.0;
     double totalFar = 0.0;
     double totalGrid = 0.0;
     double totalObjects = 0.0;
+    double totalPsnr = 0.0;
+    double totalEdge = 0.0;
+    int totalHoles = 0;
     int totalStacked = 0;
     int totalMicro = 0;
     int counted = 0;
+    std::vector<BenchRecord> records;
 
     for (auto const& input : inputs) {
         auto const image = loadImage(input);
@@ -463,6 +620,9 @@ int main(int argc, char** argv) {
         double const far = farDelta(rendered, reference, plan.width);
         auto const strokes = mergeablePairs(plan.staticObjects);
         double const grid = gridFidelity(plan, scale);
+        double const psnr = psnrDb(reference, rendered);
+        double const edge = edgeMae(reference, rendered);
+        int const holes = interiorHoles(plan, rendered, scale);
 
         std::vector<Primitive> everything = plan.staticObjects;
         for (auto const& track : plan.tracks) {
@@ -481,22 +641,69 @@ int main(int argc, char** argv) {
                   << std::setw(8) << std::setprecision(1) << plan.similarity << "%"
                   << std::setw(9) << strokes.mergeable
                   << std::setw(8) << strokes.strokes
-                  << std::setw(8) << plan.stampObjects << '\n';
+                  << std::setw(8) << plan.stampObjects
+                  << std::setw(10) << std::setprecision(4) << psnr
+                  << std::setw(9) << edge
+                  << std::setw(8) << holes << '\n';
         if (plan.gradientWash) {
             std::cout << std::string(26, ' ') << "  wash 2903 arriba="
                       << plan.washTop << " abajo=" << plan.washBottom << '\n';
         }
 
+        BenchRecord record;
+        record.name = input.filename().string();
+        record.gridWidth = plan.width;
+        record.gridHeight = plan.height;
+        record.objects = plan.totalObjects;
+        record.palette = plan.palette.size();
+        record.micro = microColors(plan.palette);
+        record.grid = grid;
+        record.near = near;
+        record.far = far;
+        record.similarity = plan.similarity;
+        record.mergeable = strokes.mergeable;
+        record.strokes = strokes.strokes;
+        record.stamps = plan.stampObjects;
+        record.psnr = psnr;
+        record.edge = edge;
+        record.holes = holes;
+        records.push_back(std::move(record));
+
         totalNear += near;
         totalFar += far;
         totalGrid += grid;
         totalObjects += static_cast<double>(plan.totalObjects);
+        totalPsnr += psnr;
+        totalEdge += edge;
+        totalHoles += holes;
         totalStacked += strokes.mergeable;
         totalMicro += microColors(plan.palette);
         ++counted;
 
         if (!dump.empty()) {
             auto const stem = input.stem().string();
+            // Serialize with the editor's actual transforms, then render this
+            // .level using tools/gd_renderer rather than trusting the preview.
+            std::string level = "kA6,1,kA7,1,kS38,";
+            for (std::size_t index = 0; index < plan.palette.size(); ++index) {
+                auto const color = plan.palette[index];
+                level += "1_" + std::to_string(color.r) + "_2_" + std::to_string(color.g) +
+                    "_3_" + std::to_string(color.b) + "_6_" + std::to_string(index + 1) + "_7_1|";
+            }
+            level += ';';
+            auto const shapes = defaultShapes();
+            PrimitivePlacement placement;
+            placement.imageHeight = plan.height;
+            for (auto const& object : plan.staticObjects) {
+                PrimitiveStyle const style{shapes[shapeIndex(object.kind)], object.color + 1,
+                    object.kind == PrimitiveKind::Stamp && object.stamp < plan.stamps.size()
+                        ? &plan.stamps[object.stamp] : nullptr};
+                appendSerializedPrimitive(level, object, style, placement);
+            }
+            std::ofstream(dump / (stem + ".level")) << level;
+            std::ofstream paletteFile(dump / (stem + "-palette.txt"));
+            for (auto const color : plan.palette) paletteFile << static_cast<int>(color.r) << ' '
+                << static_cast<int>(color.g) << ' ' << static_cast<int>(color.b) << '\n';
             auto const out = (dump / (stem + "-plan.png")).string();
             stbi_write_png(
                 out.c_str(), rendered.width, rendered.height, 4,
@@ -534,7 +741,15 @@ int main(int argc, char** argv) {
                   << " cerca=" << std::setprecision(4) << totalNear / counted
                   << " lejos=" << totalFar / counted
                   << " fusionables=" << totalStacked
-                  << " micro=" << totalMicro << '\n';
+                  << " micro=" << totalMicro
+                  << " psnr=" << std::setprecision(4) << totalPsnr / counted
+                  << " bordes=" << totalEdge / counted
+                  << " huecos=" << totalHoles << '\n';
+        if (!json.empty()) {
+            std::ofstream stream(json);
+            writeJson(stream, records, totalPsnr / counted, totalEdge / counted,
+                totalObjects / counted);
+        }
     }
     return 0;
 }

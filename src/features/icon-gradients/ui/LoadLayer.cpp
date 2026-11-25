@@ -1,6 +1,7 @@
 #include "LoadLayer.hpp"
 #include "GradientLayer.hpp"
 #include "../GradientUtils.hpp"
+#include <chrono>
 
 using namespace geode::prelude;
 using namespace paimon::icon_gradients;
@@ -25,7 +26,8 @@ void LoadLayer::updateGradient(float) {
         return;
     }
 
-    for (int i = 0; i < 10; i++) {
+    auto const started = std::chrono::steady_clock::now();
+    for (int i = 0; i < 4; i++) {
         if (m_updatedIndex >= m_toggles.size()) {
             unscheduleAllSelectors();
             return;
@@ -37,6 +39,7 @@ void LoadLayer::updateGradient(float) {
         auto it = m_toggleGradients.find(toggle);
         if (it != m_toggleGradients.end())
             toggle->applyGradient(it->second, false, false);
+        if (std::chrono::steady_clock::now() - started >= std::chrono::milliseconds(2)) break;
     }
 }
 
@@ -71,6 +74,10 @@ void LoadLayer::onDelete(CCObject*) {
     GradientUtils::removeSavedGradient(it->second);
 
     ColorToggle* doomed = m_selected;
+    auto const removed = std::find(m_toggles.begin(), m_toggles.end(), doomed);
+    if (removed != m_toggles.end() && static_cast<std::size_t>(removed - m_toggles.begin()) < m_updatedIndex)
+        --m_updatedIndex;
+    m_toggleGradients.erase(doomed);
     doomed->getParent()->removeFromParent();
     m_scrollLayer->m_contentLayer->updateLayout();
 
@@ -107,7 +114,7 @@ CCMenuItemSpriteExtra* LoadLayer::makeActionButton(const char* label, SEL_MenuHa
 }
 
 bool LoadLayer::init() {
-    PaimonPopup::init(246, 233);
+    if (!PaimonPopup::init(246, 233)) return false;
 
     std::vector<GradientConfig> gradients = GradientUtils::getSavedGradients();
     bool usable = !gradients.empty();
@@ -122,7 +129,7 @@ bool LoadLayer::init() {
     bg->setOpacity(49);
     bg->setContentSize({204, 159});
 
-    auto border = Border::create(bg, {0, 0, 0}, {204, 159}, {0, 0});
+    auto border = Border::create(bg, {0, 0, 0, 0}, {204, 159}, {0, 0});
     border->setPosition(m_size / 2.f + ccp(0, 1.5f) - bg->getContentSize() / 2.f);
 
     m_mainLayer->addChild(border);
@@ -138,6 +145,7 @@ bool LoadLayer::init() {
     m_mainLayer->addChild(lbl);
 
     m_scrollLayer = ScrollLayer::create({204, 159, 204, 159}, true, true);
+    if (m_scrollLayer) m_scrollLayer->setAnchorPoint({0.f, 0.f});
     m_scrollLayer->setPosition(border->getPosition());
 
     auto rows = RowLayout::create();
@@ -151,15 +159,10 @@ bool LoadLayer::init() {
     CCSize size = {30, 30};
     float scale = 1.1f;
 
-    // the first entries paint eagerly; the rest follow lazily on a timer.
-    int eager = 0;
+    // paint after showing the popup; no synchronous batch of shader previews.
     for (auto const& gradient : gradients) {
         auto toggle = ColorToggle::create(this, menu_selector(LoadLayer::onSelect), ColorType::Main, m_layer, false, scale, false);
         toggle->setPosition(size * scale * 0.5f);
-
-        if (eager++ < 100) {
-            toggle->applyGradient(gradient, false, false);
-        }
 
         auto container = CCMenu::create();
         container->addChild(toggle);
@@ -187,9 +190,7 @@ bool LoadLayer::init() {
         m_mainLayer->addChild(scrollbar);
     }
 
-    // beyond the eager batch, entries paint a few per frame.
-    bool lazy = m_toggles.size() > 100;
-    if (lazy)
+    if (usable)
         schedule(schedule_selector(LoadLayer::updateGradient), 0, kCCRepeatForever, 0);
 
     return true;

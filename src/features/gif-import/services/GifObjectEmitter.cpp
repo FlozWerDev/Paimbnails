@@ -1,6 +1,7 @@
 #include "GifObjectEmitter.hpp"
 #include "GifImportPipeline.hpp"
 #include "GifMotionPlanner.hpp"
+#include "GifPrimitiveSerializer.hpp"
 
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -36,21 +37,10 @@ namespace paimon::gifimport {
 
 namespace {
 
-constexpr int kSolidColorObject = 211;
-constexpr int kCircleObject = 3637;
-constexpr int kTriangleObject = 693;
-constexpr int kWideTriangleObject = 694;
 constexpr int kAlphaTrigger = 1007;
 constexpr int kSpawnTrigger = 1268;
 constexpr int kMoveTrigger = 901;
 constexpr int kGradientTrigger = 2903;
-
-struct ObjectShape {
-    int id = kSolidColorObject;
-    float width = 30.f;
-    float height = 30.f;
-    int zLayer = 0;
-};
 
 struct PreparedImport {
     std::string payload;
@@ -68,23 +58,6 @@ struct AsyncProgress {
     std::mutex mutex;
     std::optional<BuildResult> result;
 };
-
-using ShapeTable = std::array<ObjectShape, kPrimitiveKinds>;
-
-std::size_t shapeIndex(PrimitiveKind kind) {
-    return static_cast<std::size_t>(kind);
-}
-
-ShapeTable defaultShapes() {
-    ShapeTable shapes{};
-    shapes[shapeIndex(PrimitiveKind::Block)] = {kSolidColorObject, 30.f, 30.f};
-    shapes[shapeIndex(PrimitiveKind::Stroke)] = {kSolidColorObject, 30.f, 30.f};
-    shapes[shapeIndex(PrimitiveKind::Circle)] = {kCircleObject, 50.f, 50.f};
-    shapes[shapeIndex(PrimitiveKind::Triangle)] = {kTriangleObject, 30.f, 30.f};
-    shapes[shapeIndex(PrimitiveKind::WideTriangle)] = {kWideTriangleObject, 60.f, 30.f};
-    shapes[shapeIndex(PrimitiveKind::Glow)] = {kSolidColorObject, 30.f, 30.f};
-    return shapes;
-}
 
 void appendGroups(std::string& save, int group) {
     if (group > 0) save += fmt::format(",57,{}", group);
@@ -104,51 +77,13 @@ void appendPrimitive(
     int zLayer,
     int backdropZLayer
 ) {
-    auto const& shape = shapes[shapeIndex(object.kind)];
-    bool const stamped =
-        object.kind == PrimitiveKind::Stamp && object.stamp < stamps.size();
-    auto const& stamp = stamped ? stamps[object.stamp] : PlanStamp{};
-    float const boxWidth = object.width * pixelSize;
-    float const boxHeight = object.height * pixelSize;
-    // the mold is trimmed to what paints, so the whole object shifts to land
-    // that trim where the plan left it.
-    float x = origin.x + (object.x + stamp.offsetX * object.width + 0.5f) * pixelSize;
-    float y = origin.y +
-        (imageHeight - object.y - stamp.offsetY * object.height - 0.5f) * pixelSize;
-    float scaleX = boxWidth / shape.width;
-    float scaleY = boxHeight / shape.height;
-    if (stamped) {
-        // gd scales before rotating, so at a quarter turn the axes cross:
-        // box width comes from art height.
-        bool const quarter =
-            std::abs(std::fmod(std::abs(stamp.rotation), 180.f) - 90.f) < 0.5f;
-        scaleX = (quarter ? boxHeight : boxWidth) /
-            (quarter ? stamp.baseHeight : stamp.baseWidth);
-        scaleY = (quarter ? boxWidth : boxHeight) /
-            (quarter ? stamp.baseWidth : stamp.baseHeight);
-    }
-    // skipping a stray colour index would desync the object count the import
-    // checks against, so the last channel takes it instead.
-    int const color = colors[std::min<std::size_t>(object.color, colors.size() - 1)];
-    float const rotation = stamped ? stamp.rotation : object.rotation +
-        (object.kind == PrimitiveKind::Triangle || object.kind == PrimitiveKind::WideTriangle
-            ? 180.f : 0.f);
-    payload += fmt::format(
-        "1,{},2,{:.3f},3,{:.3f},21,{},64,1,67,1,121,1,134,1,128,{:.4f},129,{:.4f}",
-        stamped ? stamp.objectId : shape.id, x, y, color, scaleX, scaleY
-    );
-    if (std::abs(rotation) > 0.001f) {
-        payload += fmt::format(",6,{:.3f}", rotation);
-    }
-    if (stamped && stamp.flipX) payload += ",4,1";
-    if (layered) {
-        payload += fmt::format(",25,{}", std::clamp<int>(object.layer, -999, 999));
-        int const objectZLayer = backdropZLayer != 0 && object.layer == -999
-            ? backdropZLayer : zLayer;
-        if (objectZLayer != 0) payload += fmt::format(",24,{}", objectZLayer);
-    }
-    appendGroups(payload, group);
-    payload += ';';
+    auto const* stamp = object.kind == PrimitiveKind::Stamp && object.stamp < stamps.size()
+        ? &stamps[object.stamp] : nullptr;
+    PrimitiveStyle const style{shapes[shapeIndex(object.kind)],
+        colors[std::min<std::size_t>(object.color, colors.size() - 1)], stamp};
+    PrimitivePlacement const placement{pixelSize, origin.x, origin.y, imageHeight,
+        group, layered, zLayer, backdropZLayer};
+    appendSerializedPrimitive(payload, object, style, placement);
 }
 
 void appendAlpha(
@@ -232,7 +167,7 @@ std::vector<int> freeColorChannels(GJEffectManager* effects, std::size_t count) 
 std::vector<int> freeGroups(LevelEditorLayer* editor, std::size_t count) {
     std::vector<int> groups;
     groups.reserve(count);
-    gd::unordered_set<int> excluded;
+    std::unordered_set<int> excluded;
     for (std::size_t i = 0; i < count; ++i) {
         int const id = editor->getNextFreeGroupID(excluded);
         if (id <= 0 || id > 9999) break;
@@ -407,7 +342,9 @@ Result<PreparedImport> prepareImport(
     bool const layered = usesPaintGeometry(plan.mode) || usesSoftGeometry(plan.mode);
     int const zLayer = plan.mode == ImportMode::Blur
         ? static_cast<int>(ZLayer::T1)
-        : layered ? sharedZLayer(shapes, !plan.stamps.empty()) : 0;
+        : layered ? (sharedZLayer(shapes, !plan.stamps.empty()) != 0
+            ? sharedZLayer(shapes, !plan.stamps.empty())
+            : static_cast<int>(ZLayer::B3)) : 0;
     int const backdropZLayer = plan.mode == ImportMode::Blur
         ? static_cast<int>(ZLayer::B2) : 0;
     std::string payload;
@@ -433,7 +370,7 @@ Result<PreparedImport> prepareImport(
     }
 
     if (plan.gradientWash) {
-        gd::unordered_set<int> exclude;
+        std::unordered_set<int> exclude;
         int const gradientID = editor->getNextFreeGradientID(exclude);
         appendGradient(payload, origin.x, origin.y - 60.f, gradientID,
             channels[static_cast<std::size_t>(plan.washTop)],
@@ -616,7 +553,7 @@ public:
         CCPoint center
     ) {
         auto* ret = new BackgroundImportJob();
-        if (ret && ret->init(ui, std::move(source), options, center)) {
+        if (ret && ret->initialize(ui, std::move(source), options, center)) {
             ret->autorelease();
             return ret;
         }
@@ -630,7 +567,7 @@ private:
         Emitting,
     };
 
-    bool init(
+    bool initialize(
         EditorUI* ui,
         std::shared_ptr<SourceAnimation> source,
         Options const& options,

@@ -112,7 +112,7 @@ bool DynamicVolumePopup::init() {
             DynamicVolumeManager::get().saveConfig(m_cfg);
             DynamicVolumeManager::get().resetRuntimeState();
             scheduleRebuild();
-            PaimonNotify::create("Volumen Dinamico restablecido", NotificationIcon::Success)->show();
+            PaimonNotify::show("Volumen Dinamico restablecido", NotificationIcon::Success);
         }, paimon::ui::Btn::Red, 0.f, 0.6f);
     resetBtn->setID("dynamic-volume-default-btn"_spr);
     resetBtn->setPosition({m_mainLayer->getContentSize().width / 2.f, 20.f});

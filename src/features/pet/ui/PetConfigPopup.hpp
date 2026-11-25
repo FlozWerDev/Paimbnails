@@ -8,7 +8,7 @@
 class PetConfigPopup : public PaimonPopup {
 protected:
     void onExit() override;
-    void scrollWheel(float x, float y) override;
+    bool scrollWheel(float x, float y) override;
 
     cocos2d::CCMenu* m_galleryMenu = nullptr;
     cocos2d::CCSprite* m_previewSprite = nullptr;

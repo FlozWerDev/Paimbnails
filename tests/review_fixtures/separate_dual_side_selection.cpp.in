@@ -1,0 +1,83 @@
+#include <cassert>
+#include <cstddef>
+#include <string>
+#include <utility>
+#include <vector>
+
+// Geode's _spr literal prefixes node IDs with the mod ID.
+std::string operator""_spr(char const* text, std::size_t length) {
+    return "flozwer.paimbnails2/" + std::string(text, length);
+}
+
+struct CCObject {
+    virtual ~CCObject() = default;
+};
+
+struct CCNode : CCObject {
+    std::string id;
+    explicit CCNode(std::string value) : id(std::move(value)) {}
+    std::string const& getID() const { return id; }
+};
+
+template <typename T>
+T typeinfo_cast(CCObject* object) {
+    return dynamic_cast<T>(object);
+}
+
+bool enabled = true;
+bool moduleEnabled() { return enabled; }
+
+struct DualKitVault {
+    bool secondary = false;
+    int selections = 0;
+    static DualKitVault* get() {
+        static DualKitVault vault;
+        return &vault;
+    }
+    bool sideActiveIsSecondary() const { return secondary; }
+    void chooseSide(bool second) {
+        secondary = second;
+        ++selections;
+    }
+};
+
+struct Garage {
+    std::vector<bool> animatedRefreshes;
+    void refreshCursors(bool animate) { animatedRefreshes.push_back(animate); }
+
+    @@function|src/features/separate-dual/hooks/SeparateDualGarageLayer.cpp|void on2PToggle(@@
+};
+
+int main() {
+    Garage garage;
+    CCNode p1("player1-button"_spr);
+    CCNode p2("player2-button"_spr);
+    auto* vault = DualKitVault::get();
+
+    // Clicking the real namespaced P2 button changes the editable kit.
+    garage.on2PToggle(&p2);
+    assert(vault->sideActiveIsSecondary());
+    assert(garage.animatedRefreshes.back());
+
+    // Clicking the same side again replays the label entrance.
+    garage.on2PToggle(&p2);
+    assert(vault->sideActiveIsSecondary());
+    assert(garage.animatedRefreshes.back());
+
+    // P1 remains reachable after editing P2; switching back to P2 still works.
+    garage.on2PToggle(&p1);
+    assert(!vault->sideActiveIsSecondary());
+    assert(garage.animatedRefreshes.back());
+    garage.on2PToggle(&p2);
+    assert(vault->sideActiveIsSecondary());
+    assert(garage.animatedRefreshes.back());
+
+    // A disabled module must not change the selected kit or refresh the UI.
+    enabled = false;
+    auto const selections = vault->selections;
+    auto const refreshes = garage.animatedRefreshes.size();
+    garage.on2PToggle(&p1);
+    assert(vault->sideActiveIsSecondary());
+    assert(vault->selections == selections);
+    assert(garage.animatedRefreshes.size() == refreshes);
+}

@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "PackExporter.hpp"
 #include <Geode/utils/string.hpp>
 
@@ -205,7 +206,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
         }
     }
 
-    auto zipRes = geode::utils::file::Zip::create(outputZipPath);
+    auto zipRes = geode::utils::file::Zip::create(paimon::paths::toSdkPath(outputZipPath));
     if (!zipRes) {
         result.errorMessage = std::string("cannot open zip for write: ") + zipRes.unwrapErr();
         return Err(result.errorMessage);
@@ -561,7 +562,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
             logMessages.push_back(rel + ": local file missing");
             continue;
         }
-        auto bytes = geode::utils::file::readBinary(path.unwrap());
+        auto bytes = geode::utils::file::readBinary(paimon::paths::toSdkPath(path.unwrap()));
         if (!bytes) {
             logMessages.push_back(rel + ": read failed");
             continue;
@@ -737,7 +738,7 @@ geode::Result<PackExportResult> PackExporter::exportPack(
 
     log::info("[texture-studio] export OK: {} ({} bytes), {}/{} sheets, "
               "{} standalone (+{} failed), localExtras={}",
-        geode::utils::string::pathToString(outputZipPath), result.outputZipSizeBytes,
+        paimon::paths::toUtf8(outputZipPath), result.outputZipSizeBytes,
         std::count_if(result.sheetResults.begin(), result.sheetResults.end(),
                       [](auto const& s) { return s.success; }),
         result.sheetResults.size(),

@@ -1,0 +1,143 @@
+#include <cassert>
+#include <cstdint>
+#include <functional>
+#include <string>
+#include <vector>
+
+constexpr char const* operator""_spr(char const* value, std::size_t) { return value; }
+struct CCNode {
+    virtual ~CCNode() = default;
+    std::string id;
+    bool visible = true;
+    CCNode* parent = nullptr;
+    std::vector<CCNode*> children;
+    void setVisible(bool value) { visible = value; }
+    CCNode* getParent() { return parent; }
+    CCNode* getChildByID(std::string const& key) {
+        for (auto* child : children) if (child->id == key) return child;
+        return nullptr;
+    }
+    void addChild(CCNode* node) { children.push_back(node); node->parent = this; }
+};
+struct ButtonSprite : CCNode {
+    std::string texture;
+    void updateBGImage(char const* value) { texture = value; }
+};
+struct CCMenuItemSpriteExtra : CCNode {
+    CCNode* face;
+    explicit CCMenuItemSpriteExtra(CCNode* value) : face(value) {}
+    CCNode* getNormalImage() { return face; }
+};
+struct ScrollLayer : CCNode {
+    bool touch = true, mouse = true;
+    float offset = 0;
+    void setTouchEnabled(bool value) { touch = value; }
+    void setMouseEnabled(bool value) { mouse = value; }
+    float getScrollFromTop() { return offset; }
+};
+struct ProfileLevelsPanel {
+    bool active = false;
+    int activations = 0;
+    void setActive(bool value) { if (value && !active) ++activations; active = value; }
+};
+template<class To, class From> To typeinfo_cast(From* value) { return dynamic_cast<To>(value); }
+template<class T> struct Ref {
+    T* ptr;
+    T* operator->() { return ptr; }
+    explicit operator bool() { return ptr != nullptr; }
+};
+template<class T> struct WeakRef {
+    T* ptr;
+    WeakRef(T* value) : ptr(value) {}
+    Ref<T> lock() const { return {ptr}; }
+};
+namespace paimon::forum {
+struct ProfileView {};
+template<class T> struct Result { bool ok; T data; };
+struct ForumApi {
+    using Callback = std::function<void(Result<std::vector<ProfileView>>)>;
+    std::vector<Callback> callbacks;
+    static ForumApi& get() { static ForumApi value; return value; }
+    void getProfileViews(int, Callback cb) { callbacks.push_back(std::move(cb)); }
+};
+}
+struct ProfileActivityPanel : CCNode {
+    enum class Mode { Posts, Reviews, Views, Levels };
+    Mode m_mode = Mode::Posts;
+    ScrollLayer* m_scroll = nullptr;
+    ProfileLevelsPanel* m_levels = nullptr;
+    std::vector<CCMenuItemSpriteExtra*> m_tabs;
+    float m_offsets[4] = {};
+    uint64_t m_gen = 0;
+    int m_accountID = 42, reviewLoads = 0, renderedViews = 0;
+    void showMessage(std::string const&) { m_scroll->offset = 0; }
+    void loadReviews() { ++reviewLoads; }
+    void renderViews(std::vector<paimon::forum::ProfileView> const&) { ++renderedViews; }
+    @@function|src/features/profile-redesign/services/RedesignedProfile.cpp|void updateVisibility()@@
+    @@function|src/features/profile-redesign/services/RedesignedProfile.cpp|void selectMode(Mode mode)@@
+    @@function|src/features/profile-redesign/services/RedesignedProfile.cpp|void loadActivity()@@
+    @@function|src/features/profile-redesign/services/RedesignedProfile.cpp|void loadViews()@@
+};
+
+int main() {
+    CCNode layer, navigation, reviews;
+    navigation.id = "rd-comment-navigation";
+    reviews.id = "rd-review-actions";
+    ScrollLayer posts, secondary;
+    posts.id = "rd-comment-content";
+    posts.offset = 37;
+    for (auto* node : {&navigation, &reviews, static_cast<CCNode*>(&posts)}) layer.addChild(node);
+    ProfileActivityPanel panel;
+    layer.addChild(&panel);
+    panel.m_scroll = &secondary;
+    ProfileLevelsPanel creatorLevels;
+    panel.m_levels = &creatorLevels;
+    CCNode face0, face1, face2;
+    ButtonSprite plate0, plate1, plate2;
+    plate0.id = plate1.id = plate2.id = "tab-background";
+    face0.addChild(&plate0); face1.addChild(&plate1); face2.addChild(&plate2);
+    CCMenuItemSpriteExtra tab0{&face0}, tab1{&face1}, tab2{&face2};
+    panel.m_tabs = {&tab0, &tab1, &tab2};
+    using Mode = ProfileActivityPanel::Mode;
+    panel.updateVisibility();
+    assert(posts.visible && posts.touch && posts.mouse && navigation.visible);
+    assert(!secondary.visible && !secondary.touch && !secondary.mouse && !reviews.visible);
+    assert(plate0.texture == "GJ_button_01.png" && plate1.texture == "GJ_button_02.png" && plate2.texture == "GJ_button_02.png");
+    assert(paimon::forum::ForumApi::get().callbacks.empty());
+
+    panel.selectMode(Mode::Reviews);
+    assert(panel.reviewLoads == 1 && !posts.visible && !posts.touch && !posts.mouse);
+    assert(!navigation.visible && reviews.visible);
+    assert(secondary.visible && secondary.touch && secondary.mouse);
+    assert(plate1.texture == "GJ_button_01.png" && plate0.texture == "GJ_button_02.png");
+    assert(posts.offset == 37);
+    secondary.offset = 19;
+    panel.selectMode(Mode::Views);
+    assert(panel.m_offsets[1] == 19 && !reviews.visible);
+    auto& requests = paimon::forum::ForumApi::get().callbacks;
+    assert(requests.size() == 1);
+    auto const generation = panel.m_gen;
+    panel.selectMode(Mode::Views);
+    assert(requests.size() == 1 && panel.m_gen == generation);
+
+    panel.selectMode(Mode::Posts);
+    assert(panel.m_gen > generation && posts.visible && posts.offset == 37);
+    requests[0]({true, {}}); // a late response must not paint the previous tab
+    assert(panel.renderedViews == 0);
+    panel.selectMode(Mode::Views);
+    assert(requests.size() == 2);
+    requests[1]({true, {}});
+    assert(panel.renderedViews == 1);
+    panel.updateVisibility(); // an asynchronous profile rebuild preserves the selection
+    assert(secondary.visible && !posts.visible && !reviews.visible);
+    secondary.offset = 29;
+    auto const viewRequests = requests.size();
+    panel.selectMode(Mode::Levels);
+    assert(creatorLevels.active && creatorLevels.activations == 1);
+    assert(!secondary.visible && !secondary.touch && !posts.visible && !navigation.visible && !reviews.visible);
+    assert(panel.m_offsets[2] == 29 && requests.size() == viewRequests);
+    panel.updateVisibility();
+    assert(creatorLevels.activations == 1);
+    panel.selectMode(Mode::Posts);
+    assert(!creatorLevels.active && posts.visible && posts.touch);
+}

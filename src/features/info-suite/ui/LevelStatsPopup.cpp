@@ -80,7 +80,7 @@ bool LevelStatsPopup::init(GJGameLevel* level) {
     }
 
     this->setTitle(std::string(level->m_levelName).c_str(), "goldFont.fnt", 0.5f, 17.f);
-    if (m_title) m_title->limitLabelWidth(kPopupW - 90.f, 0.5f, 0.1f);
+    if (m_title) m_title->setLimitLabelWidth(kPopupW - 90.f, 0.5f, 0.1f);
 
     if (auto* btn = paimon::ui::makeFrameButton("GJ_infoIcon_001.png", 0.7f,
             [this] { this->onFullInfo(nullptr); })) {

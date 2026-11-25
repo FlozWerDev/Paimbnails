@@ -1,11 +1,15 @@
+#include "../utils/FilesystemPath.hpp"
 #include <Geode/modify/MenuLayer.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 #include "../framework/HookConventions.hpp"
 #include "../core/modules/ModuleRegistry.hpp"
 #include <Geode/utils/cocos.hpp>
 #include "../framework/state/SessionState.hpp"
 #include <Geode/utils/file.hpp>
 #include "../features/pet/services/PetManager.hpp"
+#if defined(GEODE_IS_DESKTOP)
 #include "../features/cursor/services/CursorManager.hpp"
+#endif
 #include "../features/volume-scroll/services/VolumeScrollManager.hpp"
 #include "../features/dynamic-volume/services/DynamicVolumeManager.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
@@ -14,6 +18,10 @@
 #include "../layers/PaiConfigLayer.hpp"
 #include "../layers/PaimonHubLayer.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
+#include "../features/backgrounds/services/BackgroundConfigChanged.hpp"
+#include "../features/dynamic-ambient/services/AmbientAnalyzer.hpp"
+#include "../features/dynamic-ambient/services/AmbientRuntime.hpp"
+#include "../framework/EventBus.hpp"
 #include "../features/beat-shaders/services/BeatShaderManager.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
 #include "../utils/DominantColors.hpp"
@@ -39,6 +47,7 @@
 #include "../features/onboarding/WelcomeFlow.hpp"
 #include <random>
 #include <filesystem>
+#include <optional>
 #include <string>
 
 using namespace geode::prelude;
@@ -70,6 +79,13 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         int m_badgeFrameCounter = 0;
         // decode custom backgrounds off-thread; the loader cancels on scene exit
         paimon::image::RetainedLazyTextureLoad m_bgStaticLoad;
+        paimon::SubscriptionHandle m_bgConfigSubscription = 0;
+
+        ~Fields() {
+            if (m_bgConfigSubscription && !paimon::isRuntimeShuttingDown()) {
+                paimon::EventBus::get().unsubscribe(m_bgConfigSubscription);
+            }
+        }
     };
 
     void setVanillaBackgroundVisible(bool visible) {
@@ -79,16 +95,22 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         }
     }
 
-    void failBackgroundLoad(CCNode* container, std::string const& reason) {
-        if (container && container->getParent()) {
-            container->removeFromParent();
-        }
+    // shared tail for every return-to-vanilla path: re-show the stock bg,
+    // drop our sprite refs, and reset tint/beat/adaptive state.
+    void resetToVanillaBackground() {
         this->setVanillaBackgroundVisible(true);
         m_fields->m_bgSprite = nullptr;
         m_fields->m_bgOverlay = nullptr;
         LayerBackgroundManager::get().applyVanillaBackgroundTintFix(this);
         paimon::beat_shaders::BeatShaderManager::get().applyToLayer(this, "menu");
         this->applyAdaptiveColor({255, 255, 255});
+    }
+
+    void failBackgroundLoad(CCNode* container, std::string const& reason) {
+        if (container && container->getParent()) {
+            container->removeFromParent();
+        }
+        this->resetToVanillaBackground();
         log::warn("[MenuLayer] Background load failed: {}", reason);
     }
 
@@ -118,7 +140,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
     }
 
     CCMenuItemSpriteExtra* createPaimonHubButton() {
-        auto logoSpr = CCSprite::create("Logo.png"_spr);
+        auto logoSpr = CCSprite::create("logo.png"_spr);
         if (!logoSpr || logoSpr->isUsingFallback()) {
             logoSpr = CCSprite::create("paim_Paimon.png"_spr);
         }
@@ -174,7 +196,11 @@ class $modify(PaimonMenuLayer, MenuLayer) {
 
         paimon::SessionState::get().currentListID = 0;
 
-        this->scheduleUpdate();
+        this->schedule(schedule_selector(PaimonMenuLayer::tickMenu), 1.f / 60.f);
+        this->addOnExitCallback([this] {
+            this->handleExit();
+            return true;
+        });
 
         if (paimon::SessionState::consumeFlag(paimon::SessionState::get().verification.reopenQueue)) {
             this->scheduleOnce(schedule_selector(PaimonMenuLayer::openVerificationQueue), 0.6f);
@@ -208,6 +234,14 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         }
 
         this->updateBackground();
+        WeakRef<MenuLayer> weakMenu = this;
+        m_fields->m_bgConfigSubscription = paimon::EventBus::get().subscribe<paimon::wallpaper::BackgroundConfigChanged>(
+            [weakMenu](paimon::wallpaper::BackgroundConfigChanged const& ev) {
+                if (ev.layerKey != "menu") return;
+                if (auto menu = weakMenu.lock()) {
+                    static_cast<PaimonMenuLayer*>(menu.data())->updateBackground();
+                }
+            });
         this->updateProfileButton();
 
         paimon::hidden_paimon::attach(this);
@@ -215,10 +249,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         return true;
     }
 
-    $override
-    void update(float dt) {
-        MenuLayer::update(dt);
-
+    void tickMenu(float dt) {
         if (m_fields->m_adaptiveColors && m_fields->m_bgSprite &&
             ++m_fields->m_adaptiveFrameCounter >= 4) {
             m_fields->m_adaptiveFrameCounter = 0;
@@ -295,7 +326,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         }
     }
 
-    void openVerificationQueue(float dt) {
+    void openVerificationQueue(float) {
         if (auto scene = VerificationCenterLayer::scene()) TransitionManager::get().pushScene(scene);
     }
 
@@ -320,54 +351,81 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         paimon::dynvol::DynamicVolumeManager::get().init();
         initDynamicVolumeTicker();
 
-// load pet/cursor config off-thread; apply on the main thread
-        paimon::ThreadTracker::get().spawn([]() {
+        // workers only read/parse snapshots: tickers already read the live config.
+        auto saveDir = paimon::paths::toStdPath(Mod::get()->getSaveDir());
+        paimon::ThreadTracker::get().spawn([saveDir = std::move(saveDir)]() {
             geode::utils::thread::setName("PaimonPetCursorLoad");
             if (paimon::isRuntimeShuttingDown()) return;
 
-            PetManager::get().loadConfig();
+            auto readConfig = [](std::filesystem::path const& path) -> std::optional<matjson::Value> {
+                auto raw = geode::utils::file::readString(paimon::paths::toSdkPath(path));
+                if (!raw) return std::nullopt;
+                auto parsed = matjson::parse(raw.unwrap());
+                if (parsed.isErr()) {
+                    log::warn("[MenuLayer] Invalid overlay config '{}': {}",
+                        path.filename().string(), parsed.unwrapErr());
+                    return std::nullopt;
+                }
+                return parsed.unwrap();
+            };
+            auto petConfig = readConfig(saveDir / "pet_config.json");
             if (paimon::isRuntimeShuttingDown()) return;
-            CursorManager::get().loadConfig();
+#if defined(GEODE_IS_DESKTOP)
+            auto cursorConfig = readConfig(saveDir / "cursor_config.json");
+#else
+            std::optional<matjson::Value> cursorConfig;
+#endif
 
             if (paimon::isRuntimeShuttingDown()) return;
 
-            geode::Loader::get()->queueInMainThread([]() {
+            geode::Loader::get()->queueInMainThread([
+                petConfig = std::move(petConfig), cursorConfig = std::move(cursorConfig)
+            ]() {
                 if (paimon::isRuntimeShuttingDown()) return;
 
-                std::srand(static_cast<unsigned int>(std::time(nullptr)));
+                // seed once: re-seeding on every menu init would restart the sequence.
+                static bool seedRand = [] { std::srand(static_cast<unsigned int>(std::time(nullptr))); return true; }();
+                (void)seedRand;
 
+#if defined(GEODE_IS_DESKTOP)
                 {
                     auto& cm = CursorManager::get();
-                    Mod::get()->setSettingValue<bool>("custom-cursor-enable", cm.config().enabled);
+                    if (cursorConfig) cm.loadConfig(*cursorConfig);
+                    if (Mod::get()->hasSetting("custom-cursor-enable")) {
+                        Mod::get()->setSettingValue<bool>("custom-cursor-enable", cm.config().enabled);
+                    }
                     cm.applyConfigLive();
                 }
+#else
+                (void)cursorConfig;
+#endif
 
-                PetManager::get().applyConfigLive();
+                auto& pet = PetManager::get();
+                if (petConfig) pet.loadConfig(*petConfig);
+                pet.applyConfigLive();
 
                 log::info("[PaimonThumbnails] Pet/Cursor config loaded and applied");
             });
         });
     }
 
-    void tickHeartbeat(float dt) {
+    void tickHeartbeat(float) {
         if (paimon::onboarding::isAccepted()) {
             paimon::forum::ForumApi::get().sendHeartbeat([](paimon::forum::Result<bool>) {});
         }
     }
 
-    $override
-    void onExit() {
+    void handleExit() {
         this->unschedule(schedule_selector(PaimonMenuLayer::tickHeartbeat));
         this->unschedule(schedule_selector(PaimonMenuLayer::deferredMenuServicesInit));
         if (!s_menuServicesInitialized) s_menuServicesScheduled = false;
         this->unschedule(schedule_selector(PaimonMenuLayer::openVerificationQueue));
         this->unschedule(schedule_selector(PaimonMenuLayer::openWelcomeFlow));
-        this->unscheduleUpdate();
+        this->unschedule(schedule_selector(PaimonMenuLayer::tickMenu));
         if (auto* shaderSpr = typeinfo_cast<Shaders::ShaderBgSprite*>(m_fields->m_bgSprite.data())) {
             shaderSpr->unschedule(schedule_selector(Shaders::ShaderBgSprite::updateShaderTime));
         }
         m_fields->m_bgStaticLoad.reset();
-        MenuLayer::onExit();
     }
 
     void onBackgroundConfig(CCObject*) {
@@ -384,26 +442,26 @@ class $modify(PaimonMenuLayer, MenuLayer) {
     }
 
     void updateBackground() {
+        static bool s_updating = false;
+        if (s_updating) return;
+        struct Guard {
+            bool& b;
+            explicit Guard(bool& v) : b(v) { b = true; }
+            ~Guard() { b = false; }
+        } guard(s_updating);
+
         auto cfg = LayerBackgroundManager::get().getConfig("menu");
 
         // legacy migration runs once at startup; the unified saved value is the source of truth after
         if (cfg.type == "default"
             || !paimon::modules::isEnabled("paimbnails.backgrounds.global")) {
-            if (auto bg = this->getChildByID("main-menu-bg")) {
-                bg->setVisible(true);
-                bg->setZOrder(-10);
-            }
             LayerBackgroundManager::get().cleanupOldVideoCache(this, "");
             if (auto oldContainer = this->getChildByID("paimon-bg-container"_spr)) {
                 oldContainer->removeFromParent();
             }
             LayerBackgroundManager::get().clearAppliedBackground(this, false);
             LayerBackgroundManager::get().forceEvictAllStaleVideos();
-            LayerBackgroundManager::get().applyVanillaBackgroundTintFix(this);
-            paimon::beat_shaders::BeatShaderManager::get().applyToLayer(this, "menu");
-            m_fields->m_bgSprite = nullptr;
-            m_fields->m_bgOverlay = nullptr;
-            this->applyAdaptiveColor({255, 255, 255});
+            this->resetToVanillaBackground();
             return;
         }
 
@@ -425,6 +483,15 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         LayerBackgroundManager::get().clearAppliedBackground(this, nextOwnsVideoAudio);
         m_fields->m_bgSprite = nullptr;
         m_fields->m_bgOverlay = nullptr;
+
+        if (resolvedMenuCfg.type == "wallpaper" || resolvedMenuCfg.type == "scene") {
+            if (LayerBackgroundManager::get().applyBackground(this, "menu")) {
+                this->setVanillaBackgroundVisible(false);
+            } else {
+                this->failBackgroundLoad(nullptr, "wallpaper renderer could not initialize");
+            }
+            return;
+        }
 
         auto winSize = CCDirector::get()->getWinSize();
 
@@ -527,13 +594,22 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                         self->m_fields->m_bgOverlay = overlay;
                     }
 
+                    anim->setID("paimon-bg-sprite"_spr);
                     safeContainer->addChild(anim);
                     self->m_fields->m_bgSprite = anim;
                     self->setVanillaBackgroundVisible(false);
+                    if (paimon::ambient::AmbientRuntime::get().active()) {
+                        if (auto* animTex = anim->getTexture()) {
+                            paimon::ambient::AmbientAnalyzer::get().seedLayerFromTexture(self, animTex, true);
+                        }
+                    }
                 });
                 return;
             } else {
-                CCTextureCache::sharedTextureCache()->removeTextureForKey(resolvedPath.c_str());
+                if (auto* cachedTex = LayerBackgroundManager::get().loadStaticTextureCached(backgroundPath)) {
+                    this->finalizeBackgroundWithTexture(container, cachedTex, cfg, "custom", resolvedPath);
+                    return;
+                }
 
                 Ref<CCNode> safeContainer = container;
                 Ref<MenuLayer> safeThis = this;
@@ -553,7 +629,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                         }
                         self->finalizeBackgroundWithTexture(safeContainer, loadedTex, cfgCopy, "custom", pathCopy);
                     },
-                    /*ignorecache=*/true);
+                    /*ignorecache=*/false);
                 return;
             }
         } else if (resolvedType == "id" && resolvedId > 0) {
@@ -565,7 +641,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                 LayerBackgroundManager::get().forceReleaseSharedVideoByPath(resolvedPath);
                 LayerBackgroundManager::get().forceEvictAllStaleVideos();
                 this->failBackgroundLoad(container, "video file not found");
-                PaimonNotify::create("Video file not found", NotificationIcon::Warning)->show();
+                PaimonNotify::show("Video file not found", NotificationIcon::Warning);
                 return;
             }
             container->removeFromParent();
@@ -673,12 +749,19 @@ class $modify(PaimonMenuLayer, MenuLayer) {
 
         float scaleX = winSize.width / sprite->getContentWidth();
         float scaleY = winSize.height / sprite->getContentHeight();
-        float scale = std::max(scaleX, scaleY);
+        if (cfg.fitMode == "stretch") {
+            sprite->setScaleX(scaleX);
+            sprite->setScaleY(scaleY);
+        } else if (cfg.fitMode == "contain") {
+            sprite->setScale(std::min(scaleX, scaleY));
+        } else {
+            sprite->setScale(std::max(scaleX, scaleY));
+        }
 
-        sprite->setScale(scale);
         sprite->setPosition(winSize / 2);
         sprite->ignoreAnchorPointForPosition(false);
         sprite->setAnchorPoint({0.5f, 0.5f});
+        sprite->setID("paimon-bg-sprite"_spr);
 
         if (cfg.darkMode) {
             GLubyte alpha = static_cast<GLubyte>(cfg.darkIntensity * 200.0f);
@@ -692,6 +775,9 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         container->addChild(sprite);
         m_fields->m_bgSprite = sprite;
         this->setVanillaBackgroundVisible(false);
+        if (paimon::ambient::AmbientRuntime::get().active()) {
+            paimon::ambient::AmbientAnalyzer::get().seedLayerFromTexture(this, tex, true);
+        }
 
         bool adaptive = Mod::get()->getSavedValue<bool>("bg-adaptive-colors", false);
         m_fields->m_adaptiveColors = adaptive;

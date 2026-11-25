@@ -98,6 +98,7 @@ void VersusLeaderboardLayer::buildChrome() {
     }
 
     m_scroll = ScrollLayer::create({listW, listH});
+    if (m_scroll) m_scroll->setAnchorPoint({0.f, 0.f});
     frame->addChild(m_scroll, 1);
 
     auto* borders = ListBorders::create();

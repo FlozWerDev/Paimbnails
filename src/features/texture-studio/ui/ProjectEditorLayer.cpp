@@ -134,27 +134,8 @@ char const* fitModeLabel(ImageFitMode mode) {
     }
 }
 
-char const* fusionBlendLabel(FusionBlendMode mode) {
-    switch (mode) {
-        case FusionBlendMode::Replace:      return "Replace";
-        case FusionBlendMode::Overlay:      return "Overlay";
-        case FusionBlendMode::MultiplyLuma:
-        default:                            return "Luma";
-    }
-}
-
 std::string percentFmt(float v) {
     return fmt::format("{:.0f}%", v * 100.f);
-}
-
-std::string toLowerCopy(std::string const& s) {
-    std::string out;
-    out.reserve(s.size());
-    for (char c : s) {
-        out.push_back(static_cast<char>(
-            std::tolower(static_cast<unsigned char>(c))));
-    }
-    return out;
 }
 
 void fitSpriteIntoBox(CCSprite* spr, float boxSize) {
@@ -249,15 +230,23 @@ void ProjectEditorLayer::keyBackClicked() {
     onBack(nullptr);
 }
 
+bool ProjectEditorLayer::saveForNavigation() {
+    if (auto result = SlotStore::get().saveSlot(m_project); !result) {
+        setStatus("No se pudo guardar: " + result.unwrapErr());
+        return false;
+    }
+    return true;
+}
+
 void ProjectEditorLayer::onBack(CCObject*) {
-    (void)SlotStore::get().saveSlot(m_project);
+    if (!saveForNavigation()) return;
     CCDirector::get()->popSceneWithTransition(0.4f, PopTransition::kPopTransitionFade);
 }
 
 void ProjectEditorLayer::onOpenFusionLayer() {
     std::string frame;
     if (m_hasSelection) frame = m_selected.frameName;
-    (void)SlotStore::get().saveSlot(m_project);
+    if (!saveForNavigation()) return;
     FusionEditorLayer::open(m_slotId, frame);
 }
 
@@ -490,7 +479,7 @@ void ProjectEditorLayer::buildBrowserPanel() {
         search->setScale(0.7f);
         search->setID("sprite-search"_spr);
         search->setCallback([this](std::string const& text) {
-            m_search = toLowerCopy(text);
+            m_search = geode::utils::string::toLower(text);
             applyFilter();
         });
         search->setPosition({c0 + kSearchW * 0.5f * 0.7f + 8.f, toolbarY});
@@ -1480,11 +1469,9 @@ void ProjectEditorLayer::loadFusionForSelection() {
             auto r = FusionAssetLoader::loadFromFile(p);
             if (r) asset = r.unwrap();
         };
-        std::error_code ec;
-        auto gifPath = SlotPaths::fusionTextureFile(slotId, frameName, ".gif");
-        auto pngPath = SlotPaths::fusionTextureFile(slotId, frameName, ".png");
-        if (std::filesystem::exists(gifPath, ec)) tryLoad(gifPath);
-        else if (std::filesystem::exists(pngPath, ec)) tryLoad(pngPath);
+        if (auto texPath = SlotPaths::resolveFusionTexture(slotId, frameName, true)) {
+            tryLoad(*texPath);
+        }
 
         Loader::get()->queueInMainThread(
             [weakSelf, closed, frameName, mask, asset]() {
@@ -1571,7 +1558,7 @@ void ProjectEditorLayer::applyFilter() {
         }
 
         if (!m_search.empty()) {
-            if (toLowerCopy(e.frameName).find(m_search) == std::string::npos) {
+            if (geode::utils::string::toLower(e.frameName).find(m_search) == std::string::npos) {
                 continue;
             }
         }
@@ -1815,13 +1802,10 @@ void ProjectEditorLayer::requestThumbnails(std::vector<Entry> entries, int gener
                     auto payload = std::move(maskRes).unwrap();
                     if (payload.mask.width == preview.image.width()
                         && payload.mask.height == preview.image.height()) {
-                        auto gifPath = SlotPaths::fusionTextureFile(
-                            slotId, entry.frameName, ".gif");
-                        auto pngPath = SlotPaths::fusionTextureFile(
-                            slotId, entry.frameName, ".png");
-                        std::error_code ec;
-                        std::filesystem::path texPath =
-                            std::filesystem::exists(gifPath, ec) ? gifPath : pngPath;
+                        auto texPath = SlotPaths::resolveFusionTexture(
+                                slotId, entry.frameName, true)
+                            .value_or(SlotPaths::fusionTextureFile(
+                                slotId, entry.frameName, ".png"));
                         auto texRes = FusionAssetLoader::loadStaticFrame(texPath);
                         if (texRes) {
                             FusionApplyOptions fopts;

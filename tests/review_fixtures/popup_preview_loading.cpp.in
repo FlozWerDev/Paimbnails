@@ -1,0 +1,95 @@
+#include <algorithm>
+#include <cassert>
+#include <memory>
+#include <string>
+#include <vector>
+
+class CursorConfigPopup {
+public:
+    bool m_builtTabs[7] = {};
+    int builds[7] = {};
+    void buildGalleryTab() { ++builds[0]; }
+    void buildShopTab() { ++builds[1]; }
+    void buildSettingsTab() { ++builds[2]; }
+    void buildTrailTab() { ++builds[3]; }
+    void buildTransitionTab() { ++builds[4]; }
+    void buildClickTab() { ++builds[5]; }
+    void buildAdvancedTab() { ++builds[6]; }
+    void buildTabIfNeeded(int);
+};
+@@function|src/features/cursor/ui/CursorConfigPopup.cpp|void CursorConfigPopup::buildTabIfNeeded(@@
+
+struct Point { float x, y; };
+struct Size { float width = 44, height = 100; };
+struct CCNode {
+    float y = 0.f;
+    Size size;
+    int children = 0;
+    virtual ~CCNode() = default;
+    Point convertToWorldSpace(Point point) const { return {point.x, point.y + y}; }
+    Point convertToNodeSpace(Point point) const { return point; }
+    Size getContentSize() const { return size; }
+    float getPositionY() const { return y; }
+    void addChild(CCNode*, int) { ++children; }
+};
+struct CCLabelBMFont : CCNode {
+    static std::vector<std::unique_ptr<CCLabelBMFont>> pool;
+    static CCLabelBMFont* create(char const*, char const*) {
+        pool.push_back(std::make_unique<CCLabelBMFont>());
+        return pool.back().get();
+    }
+    void setScale(float) {}
+    void setPosition(Point) {}
+};
+std::vector<std::unique_ptr<CCLabelBMFont>> CCLabelBMFont::pool;
+constexpr float CELL_SIZE = 44.f;
+struct Scroll : CCNode {
+    CCNode content;
+    CCNode* m_contentLayer = &content;
+};
+class FontPickerPopup {
+public:
+    enum class Tab { GDFonts, Custom };
+    Tab m_activeTab = Tab::GDFonts;
+    struct FontPreview { CCNode* cell; std::string file; bool loaded = false; };
+    std::vector<FontPreview> m_fontPreviews;
+    Scroll* m_scroll = nullptr;
+    float m_lastPreviewScrollY = 0;
+    bool m_fontPreviewsPending = true;
+    void update(float);
+};
+@@function|src/features/fonts/ui/FontPickerPopup.cpp|void FontPickerPopup::update(@@
+
+int main() {
+    CursorConfigPopup cursor;
+    cursor.buildTabIfNeeded(0);
+    for (int i = 1; i < 7; ++i) assert(cursor.builds[i] == 0);
+    for (int visit = 0; visit < 4; ++visit)
+        for (int tab = -1; tab <= 7; ++tab) cursor.buildTabIfNeeded(tab);
+    for (int count : cursor.builds) assert(count == 1);
+
+    Scroll scroll;
+    CCNode offscreen, first, second;
+    offscreen.y = 500;
+    first.y = 5;
+    second.y = 55;
+    FontPickerPopup fonts;
+    fonts.m_scroll = &scroll;
+    fonts.m_fontPreviews = {{&offscreen, "01"}, {&first, "02"}, {&second, "03"}};
+    fonts.update(0);
+    assert(first.children == 1 && second.children == 0 && offscreen.children == 0);
+    fonts.update(0);
+    assert(second.children == 1 && offscreen.children == 0);
+    fonts.update(0);
+    for (int i = 0; i < 1000; ++i) fonts.update(0);
+    assert(CCLabelBMFont::pool.size() == 2);
+
+    scroll.content.y = 1; // simulate a scroll bringing the third cell into view
+    offscreen.y = 15;
+    fonts.update(0);
+    assert(offscreen.children == 1 && CCLabelBMFont::pool.size() == 3);
+    fonts.m_activeTab = FontPickerPopup::Tab::Custom;
+    fonts.m_fontPreviews.push_back({&first, "04"});
+    fonts.update(0);
+    assert(CCLabelBMFont::pool.size() == 3);
+}

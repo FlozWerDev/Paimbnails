@@ -4,6 +4,7 @@
 #include "../features/backgrounds/ui/LayerPreviewNode.hpp"
 #include "../features/backgrounds/ui/SameAsPickerPopup.hpp"
 #include "../features/backgrounds/ui/VideoSettingsPopup.hpp"
+#include "../features/backgrounds/ui/WallpaperPickerPopup.hpp"
 #include "../features/cursor/ui/CursorConfigPopup.hpp"
 #include "../features/emotes/services/EmoteCache.hpp"
 #include "../features/emotes/services/EmoteService.hpp"
@@ -111,11 +112,7 @@ static std::vector<std::pair<std::string, std::string>> const PROCEDURAL_BGS = {
 
 namespace {
 
-std::string tr(char const* key, char const* fallback = "") {
-    auto value = Localization::get().getString(key);
-    if (value == key && fallback && fallback[0] != '\0') return fallback;
-    return value;
-}
+using paimon::loc::tr;
 
 CCNode* gdWindow(CCSize size) {
     auto* window = NineSlice::create("GJ_square01.png");
@@ -126,6 +123,15 @@ CCNode* gdWindow(CCSize size) {
 
 CCNode* gdPlate(CCSize size, GLubyte opacity = 255) {
     return paimon::ui::makeInset(size, std::min<GLubyte>(opacity, 90));
+}
+
+// row shell shared by the config rows: plate-backed node sized to the row.
+CCNode* gdRow(float width, float height) {
+    auto* row = CCNode::create();
+    row->setAnchorPoint({0.f, 0.f});
+    row->setContentSize({width, height});
+    if (auto* plate = gdPlate({width, height}, 235)) row->addChild(plate, 0);
+    return row;
 }
 
 CCLabelBMFont* gdLabel(char const* text, char const* font, float maxWidth, float scale,
@@ -162,6 +168,7 @@ void setButtonTexture(CCMenuItemSpriteExtra* btn, char const* texture) {
 }
 
 ccColor3B screenColor(std::string const& key) {
+    if (key == "loading")      return {255, 170, 90};
     if (key == "menu")         return {110, 235, 130};
     if (key == "levelinfo")    return {120, 200, 255};
     if (key == "levelselect")  return {170, 160, 255};
@@ -207,9 +214,16 @@ CCScene* PaiConfigLayer::scene() {
 PaiConfigLayer* PaiConfigLayer::openOverlay() {
     auto* scene = CCDirector::get()->getRunningScene();
     if (!scene) return nullptr;
+    // single instance: reopening while open just refocuses instead of
+    // stacking duplicate 5000-z overlays that leak input + scroll state.
+    if (auto* existing = scene->getChildByID("paimon-config-overlay")) {
+        if (auto* overlay = typeinfo_cast<PaiConfigLayer*>(existing)) return overlay;
+        existing->removeFromParent();
+    }
     auto* layer = PaiConfigLayer::create();
     if (!layer) return nullptr;
     layer->m_overlayMode = true;
+    layer->setID("paimon-config-overlay");
     scene->addChild(layer, 5000);
     return layer;
 }
@@ -257,10 +271,11 @@ void PaiConfigLayer::update(float dt) {
     paimon::configkit::stepWheelScroll(m_screenScroll, m_screenTargetY, m_screenTargetSet, dt);
 }
 
-void PaiConfigLayer::scrollWheel(float x, float y) {
-    if (paimon::configkit::queueWheelScroll(m_controlsScroll, x, y, m_controlsTargetY, m_controlsTargetSet)) return;
-    if (paimon::configkit::queueWheelScroll(m_screenScroll, x, y, m_screenTargetY, m_screenTargetSet)) return;
-    CCLayer::scrollWheel(x, y);
+bool PaiConfigLayer::scrollWheel(float x, float y) {
+    if (paimon::configkit::queueWheelScroll(m_controlsScroll, x, y, m_controlsTargetY, m_controlsTargetSet)) return true;
+    if (paimon::configkit::queueWheelScroll(m_screenScroll, x, y, m_screenTargetY, m_screenTargetSet)) return true;
+    return CCLayer::scrollWheel(x, y);
+
 }
 
 
@@ -604,14 +619,15 @@ CCNode* PaiConfigLayer::rowSources(float width) {
     };
 
     std::vector<SourceDef> const defs = {
-        {"pai.config.background.src_image",   "Image",    "GJ_button_01.png", "custom", [this] { onPickImage(); }},
-        {"pai.config.background.src_video",   "Video",    "GJ_button_02.png", "video",  [this] { onPickVideo(); }},
-        {"pai.config.background.src_shader",  "Shader",   "GJ_button_03.png", "shader", [this] { onUseShaderBg(); }},
-        {"pai.config.background.src_random",  "Random",   "GJ_button_04.png", "random", [this] { onUseRandom(); }},
-        {"pai.config.background.src_dynamic", "Dynamic",  "GJ_button_03.png", "",       [this] { onUseDynamicShader(); }},
-        {"pai.config.background.src_sameas",  "Same as",  "GJ_button_02.png", "",       [this] { onUseSameAs(); }},
-        {"pai.config.background.src_id",      "Level ID", "GJ_button_04.png", "id",     [this] { onUseLevelId(); }},
-        {"pai.config.background.src_default", "Default",  "GJ_button_05.png", "default",[this] { onUseDefault(); }},
+        {"pai.config.background.src_image",     "Image",       "GJ_button_01.png", "custom",    [this] { onPickImage(); }},
+        {"pai.config.background.src_video",     "Video",       "GJ_button_02.png", "video",     [this] { onPickVideo(); }},
+        {"pai.config.background.src_wallpaper", "Wallpaper",   "GJ_button_01.png", "wallpaper", [this] { onOpenWallpaperPicker(); }},
+        {"pai.config.background.src_shader",    "Shader",      "GJ_button_03.png", "shader",    [this] { onUseShaderBg(); }},
+        {"pai.config.background.src_random",    "Random",      "GJ_button_04.png", "random",    [this] { onUseRandom(); }},
+        {"pai.config.background.src_dynamic",   "Dynamic",     "GJ_button_03.png", "",          [this] { onUseDynamicShader(); }},
+        {"pai.config.background.src_sameas",    "Same as",     "GJ_button_02.png", "",          [this] { onUseSameAs(); }},
+        {"pai.config.background.src_id",        "Level ID",    "GJ_button_04.png", "id",        [this] { onUseLevelId(); }},
+        {"pai.config.background.src_default",   "Default",     "GJ_button_05.png", "default",   [this] { onUseDefault(); }},
     };
 
     int const cols = width >= 232.f ? 4 : (width >= 155.f ? 3 : 2);
@@ -622,10 +638,7 @@ CCNode* PaiConfigLayer::rowSources(float width) {
     float const titleH = 20.f;
     float const height = titleH + rowCount * cellH + 4.f;
 
-    auto* row = CCNode::create();
-    row->setAnchorPoint({0.f, 0.f});
-    row->setContentSize({width, height});
-    if (auto* plate = gdPlate({width, height}, 235)) row->addChild(plate, 0);
+    auto* row = gdRow(width, height);
 
     if (auto* title = gdLabel(tr("pai.config.background.source", "Source").c_str(), "goldFont.fnt",
                               width - 12.f, 0.34f)) {
@@ -657,10 +670,7 @@ CCNode* PaiConfigLayer::rowLevelId(float width) {
     float const height = 32.f;
     float const labelW = std::clamp(width * 0.25f, 48.f, 70.f);
     float const buttonW = std::clamp(width * 0.22f, 42.f, 54.f);
-    auto* row = CCNode::create();
-    row->setAnchorPoint({0.f, 0.f});
-    row->setContentSize({width, height});
-    if (auto* plate = gdPlate({width, height}, 235)) row->addChild(plate, 0);
+    auto* row = gdRow(width, height);
 
     if (auto* title = gdLabel(tr("pai.config.background.level_id", "Level ID").c_str(), "bigFont.fnt",
                               labelW - 12.f, 0.32f, {200, 215, 240})) {
@@ -700,10 +710,7 @@ CCNode* PaiConfigLayer::rowLevelId(float width) {
 
 CCNode* PaiConfigLayer::rowDarken(float width) {
     float const height = 44.f;
-    auto* row = CCNode::create();
-    row->setAnchorPoint({0.f, 0.f});
-    row->setContentSize({width, height});
-    if (auto* plate = gdPlate({width, height}, 235)) row->addChild(plate, 0);
+    auto* row = gdRow(width, height);
 
     if (auto* title = gdLabel(tr("pai.config.background.dark", "Darken").c_str(), "bigFont.fnt",
                               width * 0.5f, 0.32f)) {
@@ -740,10 +747,7 @@ CCNode* PaiConfigLayer::rowDarken(float width) {
 
 CCNode* PaiConfigLayer::rowFilter(float width) {
     float const height = 52.f;
-    auto* row = CCNode::create();
-    row->setAnchorPoint({0.f, 0.f});
-    row->setContentSize({width, height});
-    if (auto* plate = gdPlate({width, height}, 235)) row->addChild(plate, 0);
+    auto* row = gdRow(width, height);
 
     m_filterTitle = gdLabel(tr("pai.config.filter", "Filter").c_str(), "goldFont.fnt",
                             width * 0.55f, 0.32f);
@@ -800,10 +804,7 @@ CCNode* PaiConfigLayer::rowFilter(float width) {
 
 CCNode* PaiConfigLayer::rowAdaptive(float width) {
     float const height = 30.f;
-    auto* row = CCNode::create();
-    row->setAnchorPoint({0.f, 0.f});
-    row->setContentSize({width, height});
-    if (auto* plate = gdPlate({width, height}, 235)) row->addChild(plate, 0);
+    auto* row = gdRow(width, height);
 
     if (auto* title = gdLabel(tr("pai.config.background.adaptive_colors", "Adaptive Colors").c_str(),
                               "bigFont.fnt", width - 44.f, 0.3f)) {
@@ -828,10 +829,7 @@ CCNode* PaiConfigLayer::rowAdaptive(float width) {
 CCNode* PaiConfigLayer::rowVideoSettings(float width) {
     float const height = 30.f;
     float const buttonW = std::clamp(width * 0.25f, 48.f, 66.f);
-    auto* row = CCNode::create();
-    row->setAnchorPoint({0.f, 0.f});
-    row->setContentSize({width, height});
-    if (auto* plate = gdPlate({width, height}, 235)) row->addChild(plate, 0);
+    auto* row = gdRow(width, height);
 
     if (auto* title = gdLabel(tr("pai.config.background.video_settings", "Video Settings").c_str(),
                               "bigFont.fnt", width - buttonW - 22.f, 0.3f)) {
@@ -878,9 +876,9 @@ CCNode* PaiConfigLayer::rowModuleWarning(float width) {
                                   buttonW, 22.f, 0.44f,
                                   [this] {
                                       paimon::modules::setEnabled("paimbnails.backgrounds.global", true);
-                                      PaimonNotify::create(
+                                      PaimonNotify::show(
                                           tr("pai.config.module_on_done", "Backgrounds enabled!"),
-                                          NotificationIcon::Success)->show();
+                                          NotificationIcon::Success);
                                       refreshAll();
                                   })) {
         btn->setPosition({width - 7.f - buttonW / 2.f, height / 2.f});
@@ -892,10 +890,7 @@ CCNode* PaiConfigLayer::rowModuleWarning(float width) {
 CCNode* PaiConfigLayer::rowCopyToAll(float width) {
     float const height = 34.f;
     float const buttonW = std::clamp(width * 0.24f, 48.f, 64.f);
-    auto* row = CCNode::create();
-    row->setAnchorPoint({0.f, 0.f});
-    row->setContentSize({width, height});
-    if (auto* plate = gdPlate({width, height}, 235)) row->addChild(plate, 0);
+    auto* row = gdRow(width, height);
 
     if (auto* title = gdLabel(tr("pai.config.copy_all", "Copy to all screens").c_str(),
                               "bigFont.fnt", width - buttonW - 22.f, 0.3f, {210, 220, 240})) {
@@ -939,7 +934,7 @@ void PaiConfigLayer::mutateConfig(std::function<void(LayerBgConfig&)> const& fn,
     fn(cfg);
     LayerBackgroundManager::get().saveConfig(m_selectedKey, cfg);
     if (toastKey) {
-        PaimonNotify::create(tr(toastKey, toastFallback), NotificationIcon::Success)->show();
+        PaimonNotify::show(tr(toastKey, toastFallback), NotificationIcon::Success);
     }
     refreshAll();
 }
@@ -1139,15 +1134,15 @@ void PaiConfigLayer::onPickImage() {
         auto imported = paimon::assets::importToBucket(*pathOpt, "background_" + key,
                                                        paimon::assets::Kind::Image);
         if (!imported.success || imported.path.empty()) {
-            PaimonNotify::create("Failed to import image", NotificationIcon::Error)->show();
+            PaimonNotify::show("Failed to import image", NotificationIcon::Error);
             return;
         }
         auto cfg = LayerBackgroundManager::get().getConfig(key);
         cfg.type = "custom";
         cfg.customPath = paimon::assets::normalizePathString(imported.path);
         LayerBackgroundManager::get().saveConfig(key, cfg);
-        PaimonNotify::create(tr("pai.config.notify.custom_image_set", "Custom image set!"),
-                             NotificationIcon::Success)->show();
+        PaimonNotify::show(tr("pai.config.notify.custom_image_set", "Custom image set!"),
+                             NotificationIcon::Success);
         layer->refreshAll();
     });
 }
@@ -1164,7 +1159,7 @@ void PaiConfigLayer::onPickVideo() {
         auto imported = paimon::assets::importToBucket(*pathOpt, "background_" + key,
                                                        paimon::assets::Kind::Video);
         if (!imported.success || imported.path.empty()) {
-            PaimonNotify::create("Failed to import video", NotificationIcon::Error)->show();
+            PaimonNotify::show("Failed to import video", NotificationIcon::Error);
             return;
         }
         auto const pathStr = paimon::assets::normalizePathString(imported.path);
@@ -1179,10 +1174,22 @@ void PaiConfigLayer::onPickVideo() {
         cfg.type = "video";
         cfg.customPath = pathStr;
         LayerBackgroundManager::get().saveConfig(key, cfg);
-        PaimonNotify::create(tr("pai.config.notify.video_set", "Video background set!"),
-                             NotificationIcon::Success)->show();
+        PaimonNotify::show(tr("pai.config.notify.video_set", "Video background set!"),
+                             NotificationIcon::Success);
         layer->refreshAll();
     });
+}
+
+void PaiConfigLayer::onOpenWallpaperPicker() {
+    auto const key = m_selectedKey;
+    WeakRef<PaiConfigLayer> self = this;
+    if (auto* popup = WallpaperPickerPopup::create(key, [self](paimon::wallpaper::WallpaperItem const&) {
+        if (auto layer = self.lock()) {
+            layer->refreshAll();
+        }
+    })) {
+        popup->show();
+    }
 }
 
 void PaiConfigLayer::onUseShaderBg() {
@@ -1218,12 +1225,12 @@ void PaiConfigLayer::onUseLevelId() {
     if (!m_levelIdInput) return;
     auto const idStr = m_levelIdInput->getString();
     if (idStr.empty()) {
-        PaimonNotify::create(tr("pai.config.notify.invalid_id", "Invalid ID"), NotificationIcon::Error)->show();
+        PaimonNotify::show(tr("pai.config.notify.invalid_id", "Invalid ID"), NotificationIcon::Error);
         return;
     }
     auto res = geode::utils::numFromString<int>(idStr);
     if (!res || res.unwrap() <= 0) {
-        PaimonNotify::create(tr("pai.config.notify.invalid_id", "Invalid ID"), NotificationIcon::Error)->show();
+        PaimonNotify::show(tr("pai.config.notify.invalid_id", "Invalid ID"), NotificationIcon::Error);
         return;
     }
     int const levelId = res.unwrap();
@@ -1240,9 +1247,9 @@ void PaiConfigLayer::onUseSameAs() {
         auto cfg = LayerBackgroundManager::get().getConfig(key);
         cfg.type = picked;
         LayerBackgroundManager::get().saveConfig(key, cfg);
-        PaimonNotify::create(
+        PaimonNotify::show(
             (tr("pai.config.notify.same_as_prefix", "Using same bg as ") + bgp::displayNameForLayer(picked) + "!").c_str(),
-            NotificationIcon::Success)->show();
+            NotificationIcon::Success);
         if (auto layer = self.lock()) layer->refreshAll();
     });
     if (popup) popup->show();
@@ -1368,8 +1375,8 @@ void PaiConfigLayer::onCopyToAllScreens() {
                 if (key == from) continue;
                 LayerBackgroundManager::get().saveConfig(key, source);
             }
-            PaimonNotify::create(tr("pai.config.notify.copied_all", "Copied to every screen!"),
-                                 NotificationIcon::Success)->show();
+            PaimonNotify::show(tr("pai.config.notify.copied_all", "Copied to every screen!"),
+                                 NotificationIcon::Success);
             if (auto layer = self.lock()) layer->refreshAll();
         }
     ).showInstant();
@@ -1530,7 +1537,7 @@ void PaiConfigLayer::onProfileImage() {
         auto imported = paimon::assets::importToBucket(*pathOpt, "profile_photo",
                                                        paimon::assets::Kind::Image);
         if (!imported.success || imported.path.empty()) {
-            PaimonNotify::create("Failed to import image", NotificationIcon::Error)->show();
+            PaimonNotify::show("Failed to import image", NotificationIcon::Error);
             return;
         }
         auto cfg = ProfilePicCustomizer::get().getConfig();
@@ -1540,8 +1547,8 @@ void PaiConfigLayer::onProfileImage() {
         ProfilePicCustomizer::get().save();
         ProfilePicCustomizer::get().setDirty(true);
 
-        PaimonNotify::create(tr("pai.config.notify.profile_image_set", "Profile image set!"),
-                             NotificationIcon::Success)->show();
+        PaimonNotify::show(tr("pai.config.notify.profile_image_set", "Profile image set!"),
+                             NotificationIcon::Success);
         layer->rebuildProfilePreview();
     });
 }
@@ -1554,8 +1561,8 @@ void PaiConfigLayer::onProfileClear() {
     ProfilePicCustomizer::get().save();
     ProfilePicCustomizer::get().setDirty(true);
 
-    PaimonNotify::create(tr("pai.config.notify.profile_image_cleared", "Profile image cleared!"),
-                         NotificationIcon::Success)->show();
+    PaimonNotify::show(tr("pai.config.notify.profile_image_cleared", "Profile image cleared!"),
+                         NotificationIcon::Success);
     rebuildProfilePreview();
 }
 
@@ -1602,10 +1609,12 @@ void PaiConfigLayer::buildExtrasTab() {
          "pai.config.extras.pet_info.title", "Pet",
          "pai.config.extras.pet_info.body", "A cute pet follows your cursor.\nThis feature is in <cr>BETA</c>.",
          [] { if (auto* p = PetConfigPopup::create()) p->show(); }},
+#if defined(GEODE_IS_DESKTOP)
         {"pai.config.extras.custom_cursor", "Custom Cursor", "GJ_button_02.png",
          "pai.config.extras.custom_cursor_info.title", "Custom Cursor",
          "pai.config.extras.custom_cursor_info.body", "Open the full custom cursor editor.",
          [] { if (auto* p = CursorConfigPopup::create()) p->show(); }},
+#endif
         {"pai.config.extras.transitions", "Transitions", "GJ_button_04.png",
          "pai.config.extras.transitions_info.title", "Transitions",
          "pai.config.extras.transitions_info.body", "Configure custom scene transition effects.",
@@ -1691,8 +1700,8 @@ void PaiConfigLayer::onClearAllCache() {
             paimon::emotes::EmoteService::get().clearCatalog();
             layer->rebuildProfilePreview();
             log::info("[PaiConfigLayer] All caches cleared by user");
-            PaimonNotify::create(tr("pai.config.notify.cache_cleared", "All caches cleared!"),
-                                 NotificationIcon::Success)->show();
+            PaimonNotify::show(tr("pai.config.notify.cache_cleared", "All caches cleared!"),
+                                 NotificationIcon::Success);
         }
     ).showInstant();
 }

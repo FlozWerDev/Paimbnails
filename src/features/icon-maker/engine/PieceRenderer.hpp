@@ -40,8 +40,8 @@ struct SlotRender {
 
 class PieceRenderer final {
 public:
-    // canvas is square (anatomy canvasuhd). missing piece files are skipped
-    // with a log instead of failing the whole slot.
+    // canvas is square (anatomy canvasUhd, or smaller for thumbnails).
+    // missing piece files are skipped with a log instead of failing the whole slot.
     static geode::Result<texture_studio::ImageBuffer> renderSlot(
         IconProject const& project,
         std::string const& slotKey,
@@ -56,11 +56,14 @@ public:
         int maskSize,
         std::filesystem::path const& imagesDir);
 
-    // one placed + filled piece on a canvassize canvas.
+    // one placed + filled piece on a canvasSize canvas.
+    // `guideRatio` is guideUhd / canvasUhd (typically 0.5) so imports & shapes
+    // scale identically across editor (240px), thumbnails (128px), and exports.
     static geode::Result<texture_studio::ImageBuffer> renderPiece(
         IconPiece const& piece,
         int canvasSize,
-        int guideSize,
+        float guideRatio,
+        float canvasScale,
         std::filesystem::path const& imagesDir);
 
 private:

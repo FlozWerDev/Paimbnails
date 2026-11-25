@@ -1,9 +1,11 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "AnimateStore.hpp"
 
 #include "../../../utils/AtomicFileWrite.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
 
 #include <Geode/binding/GJGameLevel.hpp>
+#include <Geode/binding/LocalLevelManager.hpp>
 #include <Geode/utils/file.hpp>
 #include <fmt/format.h>
 
@@ -11,6 +13,8 @@
 #include <cctype>
 #include <cstdint>
 #include <filesystem>
+#include <random>
+#include <unordered_map>
 
 using namespace geode::prelude;
 
@@ -22,7 +26,7 @@ constexpr int kVersion = 1;
 constexpr char const* kPrefsKey = "editor-animate-view-v1";
 
 std::filesystem::path pathFor(std::string const& key) {
-    return Mod::get()->getSaveDir() / "animate" / (key + ".json");
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "animate" / (key + ".json");
 }
 
 template <class E>
@@ -151,7 +155,7 @@ Clip decodeClip(matjson::Value const& json) {
 
 } // namespace
 
-std::string levelKey(GJGameLevel* level) {
+std::string legacyLevelKey(GJGameLevel* level) {
     std::string name = level ? std::string(level->m_levelName) : std::string();
     if (name.empty()) name = "unnamed";
 
@@ -170,6 +174,90 @@ std::string levelKey(GJGameLevel* level) {
     while (!safe.empty() && safe.back() == '-') safe.pop_back();
     if (safe.empty()) safe = "level";
     return fmt::format("{}-{:08x}", safe, hash);
+}
+
+namespace {
+std::unordered_map<std::string, WeakRef<GJGameLevel>>& identityOwners() {
+    static std::unordered_map<std::string, WeakRef<GJGameLevel>> owners;
+    return owners;
+}
+
+bool validIdentity(std::string const& value) {
+    return value.size() == 32 && std::all_of(value.begin(), value.end(), [](char c) {
+        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+    });
+}
+
+std::string newIdentity() {
+    static auto random = [] {
+        std::random_device entropy;
+        std::seed_seq seeds{entropy(), entropy(), entropy(), entropy()};
+        return std::mt19937_64(seeds);
+    }();
+    return fmt::format("{:016x}{:016x}", random(), random());
+}
+} // namespace
+
+void restoreLevelIdentity(GJGameLevel* level, std::string const& identity) {
+    if (!level) return;
+    std::string chosen = identity;
+    auto& owners = identityOwners();
+    auto existing = owners.find(chosen);
+    auto owner = existing != owners.end() ? existing->second.lock() : Ref<GJGameLevel>();
+    bool const duplicate = validIdentity(chosen) && owner && owner.data() != level;
+    if (!validIdentity(chosen) || duplicate) {
+        do { chosen = newIdentity(); } while (owners.contains(chosen));
+    }
+    owners[chosen] = level;
+    level->setUserObject(kLevelIdentityKey, CCString::create(chosen));
+    if (duplicate) {
+        // a clone receives its own document; changing it must not edit its source.
+        auto const doc = loadDocument("level-" + identity);
+        if (!doc.clips.empty()) saveDocument("level-" + chosen, doc);
+    }
+}
+
+std::string levelKey(GJGameLevel* level) {
+    if (!level) return {};
+    auto* stored = typeinfo_cast<CCString*>(level->getUserObject(kLevelIdentityKey));
+    if (!stored || !validIdentity(stored->getCString())) {
+        restoreLevelIdentity(level, "");
+        stored = typeinfo_cast<CCString*>(level->getUserObject(kLevelIdentityKey));
+    }
+    return "level-" + std::string(stored->getCString());
+}
+
+void copyLevelDocument(GJGameLevel* source, GJGameLevel* destination) {
+    if (!source || !destination || source == destination) return;
+    auto* identity = typeinfo_cast<CCString*>(source->getUserObject(kLevelIdentityKey));
+    if (!identity) return;
+    auto const doc = loadDocument(levelKey(source));
+    restoreLevelIdentity(destination, "");
+    if (!doc.clips.empty()) saveDocument(levelKey(destination), doc);
+}
+
+Document loadLevelDocument(GJGameLevel* level) {
+    if (!level) return {};
+    auto const key = levelKey(level);
+    std::error_code ec;
+    if (std::filesystem::exists(pathFor(key), ec)) return loadDocument(key);
+
+    auto const legacy = legacyLevelKey(level);
+    if (!std::filesystem::exists(pathFor(legacy), ec)) return {};
+    int matches = 0;
+    if (auto* manager = LocalLevelManager::get(); manager && manager->m_localLevels) {
+        for (auto* candidate : CCArrayExt<GJGameLevel*>(manager->m_localLevels)) {
+            if (candidate && candidate->m_levelName == level->m_levelName) ++matches;
+        }
+    }
+    if (matches > 1) {
+        log::warn("[Animate] Ambiguous legacy timeline {}; original file preserved for recovery", legacy);
+        return {};
+    }
+    auto doc = loadDocument(legacy);
+    if (!doc.clips.empty()) saveDocument(key, doc);
+    // keep the original as a recovery copy; never delete an ambiguous old document.
+    return doc;
 }
 
 matjson::Value encodeDocument(Document const& doc) {
@@ -206,7 +294,7 @@ Document loadDocument(std::string const& key) {
     auto const path = pathFor(key);
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return {};
-    auto raw = geode::utils::file::readString(path);
+    auto raw = geode::utils::file::readString(paimon::paths::toSdkPath(path));
     if (!raw) {
         log::warn("[Animate] No se pudo leer {}: {}", key, raw.unwrapErr());
         return {};
@@ -222,10 +310,8 @@ Document loadDocument(std::string const& key) {
 bool saveDocument(std::string const& key, Document const& doc) {
     auto const path = pathFor(key);
     std::error_code ec;
-    if (doc.clips.empty()) {
-        std::filesystem::remove(path, ec);
-        return true;
-    }
+    // an empty document is also a migration tombstone: do not resurrect the
+    // legacy name-based timeline after the user removes the final clip.
     std::filesystem::create_directories(path.parent_path(), ec);
     bool const ok = paimon::file::writeAtomically(path, encodeDocument(doc).dump(matjson::NO_INDENTATION));
     if (!ok) log::error("[Animate] No se pudo guardar {}", key);

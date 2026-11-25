@@ -95,7 +95,7 @@ bool StreamOverlayPopup::init() {
     items.push_back(kit::makeCard(width, "Estilo", {255, 120, 200}, {
         kit::makeSelectRow(
             inner,
-            "Estilo visual", "19 temas, incluido uno con las fuentes y caras reales de GD.",
+            "Estilo visual", fmt::format("{} temas, incluido uno con las fuentes y caras reales de GD.", kStreamOverlayStyleCount).c_str(),
             streamOverlayStyleNames(), static_cast<int>(m_config.style),
             [this](int index) {
                 this->apply([index](StreamOverlayConfig& config) {
@@ -314,12 +314,12 @@ void StreamOverlayPopup::setEnabled(bool enabled) {
 void StreamOverlayPopup::copyOverlayUrl() {
     auto const url = StreamOverlayServer::get().overlayUrl();
     geode::utils::clipboard::write(url);
-    PaimonNotify::create("Link de OBS copiado", NotificationIcon::Success)->show();
+    PaimonNotify::show("Link de OBS copiado", NotificationIcon::Success);
 }
 
 void StreamOverlayPopup::openOverlayPage(std::string const& url, char const* warn) {
     if (!StreamOverlayServer::get().isRunning()) {
-        PaimonNotify::create(warn, NotificationIcon::Warning)->show();
+        PaimonNotify::show(warn, NotificationIcon::Warning);
         return;
     }
     geode::utils::web::openLinkInBrowser(url);
@@ -350,11 +350,16 @@ void StreamOverlayPopup::refreshStatus() {
 
 void StreamOverlayPopup::update(float dt) {
     kit::stepWheelScroll(m_scroll, m_wheelTargetY, m_wheelTargetSet, dt);
-    refreshStatus();
+    m_statusElapsed += dt;
+    if (m_statusElapsed >= .25f) {
+        m_statusElapsed = 0.f;
+        refreshStatus();
+    }
 }
 
-void StreamOverlayPopup::scrollWheel(float x, float y) {
-    kit::queueWheelScroll(m_scroll, x, y, m_wheelTargetY, m_wheelTargetSet);
+bool StreamOverlayPopup::scrollWheel(float x, float y) {
+    return kit::queueWheelScroll(m_scroll, x, y, m_wheelTargetY, m_wheelTargetSet);
+
 }
 
 } // namespace paimon::twitch

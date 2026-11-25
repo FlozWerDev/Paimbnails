@@ -63,18 +63,8 @@ PackExportConfig TextureProject::toExportConfig() const {
             SpriteFusionOverride fus;
             fus.maskPath = SlotPaths::fusionMaskFile(id, frameName);
             // gif when animated else png; export needs one path.
-            auto gifPath = SlotPaths::fusionTextureFile(id, frameName, ".gif");
-            auto pngPath = SlotPaths::fusionTextureFile(id, frameName, ".png");
-            std::error_code ec;
-            if (setting.fusionAnimated && std::filesystem::exists(gifPath, ec)) {
-                fus.texturePath = std::move(gifPath);
-            } else if (std::filesystem::exists(pngPath, ec)) {
-                fus.texturePath = std::move(pngPath);
-            } else if (std::filesystem::exists(gifPath, ec)) {
-                fus.texturePath = std::move(gifPath);
-            } else {
-                fus.texturePath = std::move(pngPath);
-            }
+            fus.texturePath = SlotPaths::resolveFusionTexture(id, frameName, setting.fusionAnimated)
+                .value_or(SlotPaths::fusionTextureFile(id, frameName, ".png"));
             fus.blendMode = setting.fusionBlend;
             fus.opacity   = setting.fusionOpacity;
             fus.transform = setting.fusionTransform;

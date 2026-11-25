@@ -24,6 +24,7 @@ class ParamSliderRow;
 // own scene (not a pack-editor tab). mask paints first; fill runs on original colors, never pack-tinted.
 class FusionEditorLayer : public cocos2d::CCLayer {
 public:
+    using cocos2d::CCLayer::init;
     static FusionEditorLayer* create(std::string slotId, std::string frameName = {});
     static cocos2d::CCScene* scene(std::string slotId, std::string frameName = {});
     static void open(std::string slotId, std::string frameName = {});

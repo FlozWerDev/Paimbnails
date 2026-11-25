@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/utils/cocos.hpp>
 #include <filesystem>
@@ -9,14 +9,18 @@
 #include <shared_mutex>
 #include <unordered_map>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <utility>
 
 namespace paimon::blur {
 
 class BlurDiskCache {
 public:
     static BlurDiskCache& get();
+    static bool isInitialized();
 
     using ReadyCallback = std::function<void(cocos2d::CCTexture2D* texture)>;
 
@@ -25,6 +29,8 @@ public:
     bool hasEntry(std::string const& key) const;
     void storeFromTextureAsync(std::string const& key, cocos2d::CCTexture2D* tex, int width, int height);
     void clear();
+    void requestShutdown();
+    void waitShutdown(std::chrono::steady_clock::time_point deadline);
     void shutdown();
 
 private:
@@ -43,6 +49,9 @@ private:
 
     cocos2d::CCTexture2D* uploadRawRGBA(std::vector<uint8_t> const& pixels, int w, int h);
 
+    // validates a .pblur header; returns {width, height} or nullopt.
+    static std::optional<std::pair<int, int>> parseHeaderDims(std::uint32_t const header[5]);
+
     // writes the finished rgba blob on the i/o pool and indexes it.
     void persistPixelsAsync(std::string key, std::shared_ptr<std::vector<uint8_t>> pixels, int w, int h);
 
@@ -51,10 +60,14 @@ private:
 
     mutable std::shared_mutex m_mutex;
     std::unordered_map<std::string, IndexEntry> m_index;
+    // running sum of IndexEntry::byteSize, kept in sync under m_mutex so
+    // eviction never has to re-sum the whole index.
+    std::int64_t m_totalBytes = 0;
     std::atomic<bool> m_initialized{false};
     std::atomic<bool> m_shuttingDown{false};
 
-    // raw 512x288 blurs are ~576kb each (256mb = ~450 entries).
+    // persisted blur tiles are stored at 1x point resolution, not at the
+    // game's (often 4x) content scale. a 569x320 tile is ~730kb on disk.
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
     static constexpr std::int64_t MAX_DISK_SIZE_BYTES = 64LL * 1024 * 1024;
 #else
@@ -62,8 +75,9 @@ private:
 #endif
 
     // format: magic(4) + version(4) + width(4) + height(4) + reserved(4) + raw rgba8888.
+    // v2 stores 1x point-space pixels; v1 files are discarded at startup.
     static constexpr std::uint32_t MAGIC = 0x504C4255u;
-    static constexpr std::uint32_t VERSION = 1u;
+    static constexpr std::uint32_t VERSION = 2u;
     static constexpr std::size_t HEADER_SIZE = 20;
     static constexpr std::uint64_t MAX_PIXEL_COUNT = 16ull * 1024 * 1024;
 };

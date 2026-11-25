@@ -96,11 +96,61 @@ void releaseMfObjectsSafely(ID3D11Texture2D*& stagingTex, IMFSourceReader*& read
     }
 }
 
+// __try is illegal in functions that require C++ unwinding (/EHsc), so the
+// SEH-protected Flush lives in this raw-pointer-only helper, mirroring
+// releaseMfObjectsSafely above.
+void flushReaderSafely(IMFSourceReader* reader) {
+    if (!reader) return;
+    __try {
+        reader->Flush(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM));
+    } __except(EXCEPTION_ACCESS_VIOLATION == GetExceptionCode()
+               ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+    }
+}
+
+}
+
+DecoderMF::State::~State() {
+    {
+        std::lock_guard lk(g_d3d11Mutex);
+        if (m_dxgiMgr) {
+            m_dxgiMgr->Release();
+            m_dxgiMgr = nullptr;
+        }
+        if (m_sharedD3D) {
+            m_d3dCtx    = nullptr;
+            m_d3dDevice = nullptr;
+        } else {
+            if (m_d3dCtx) {
+                m_d3dCtx->Release();
+                m_d3dCtx = nullptr;
+            }
+            if (m_d3dDevice) {
+                m_d3dDevice->Release();
+                m_d3dDevice = nullptr;
+            }
+        }
+    }
+    if (m_sharedD3D) {
+        releaseSharedD3D11();
+        m_sharedD3D = false;
+    }
+
+    // no mfshutdown: process-wide; seh covers unload race.
+    // runs on the owner thread normally, or on the orphan worker if a
+    // timed-out stop detached it; either way handles outlive the worker.
+    releaseMfObjectsSafely(m_stagingTex, m_reader);
+
+    Frame::freeAligned(m_scratch.planeY);
+    Frame::freeAligned(m_scratch.planeCb);
+    Frame::freeAligned(m_scratch.planeCr);
+    m_scratch.planeY = m_scratch.planeCb = m_scratch.planeCr = nullptr;
 }
 
 bool DecoderMF::open(const std::string& path) {
     closeInternal();
-    m_videoPath = path;
+    auto st = std::make_shared<State>();
+    st->m_videoPath = path;
 
     HRESULT hr = MFStartup(MF_VERSION, MFSTARTUP_FULL);
     if (FAILED(hr)) {
@@ -108,44 +158,41 @@ bool DecoderMF::open(const std::string& path) {
         return false;
     }
 
-    if (!setupD3D11()) {
+    if (!st->setupD3D11()) {
         geode::log::warn("DecoderMF: D3D11 setup failed, continuing without HW accel");
     }
 
-    if (!setupReader(path)) {
-        closeInternal();
+    if (!st->setupReader(path)) {
         return false;
     }
 
-    if (!m_ring.init(m_outWidth, m_outHeight)) {
-        closeInternal();
+    if (!st->m_ring.init(st->m_outWidth, st->m_outHeight)) {
         return false;
     }
 
-    if (m_downscaleFactor > 1) {
-        int uvW = (m_width + 1) / 2;
-        int uvH = (m_height + 1) / 2;
-        m_scratch.planeY  = Frame::allocAligned(Frame::alignedSize(m_width, m_height));
-        m_scratch.planeCb = Frame::allocAligned(Frame::alignedSize(uvW, uvH));
-        m_scratch.planeCr = Frame::allocAligned(Frame::alignedSize(uvW, uvH));
-        m_scratch.strideY  = Frame::alignedStride(m_width);
-        m_scratch.strideCb = Frame::alignedStride(uvW);
-        m_scratch.strideCr = Frame::alignedStride(uvW);
-        m_scratch.width  = m_width;
-        m_scratch.height = m_height;
-        if (!m_scratch.planeY || !m_scratch.planeCb || !m_scratch.planeCr) {
+    if (st->m_downscaleFactor > 1) {
+        int uvW = (st->m_width + 1) / 2;
+        int uvH = (st->m_height + 1) / 2;
+        st->m_scratch.planeY  = Frame::allocAligned(Frame::alignedSize(st->m_width, st->m_height));
+        st->m_scratch.planeCb = Frame::allocAligned(Frame::alignedSize(uvW, uvH));
+        st->m_scratch.planeCr = Frame::allocAligned(Frame::alignedSize(uvW, uvH));
+        st->m_scratch.strideY  = Frame::alignedStride(st->m_width);
+        st->m_scratch.strideCb = Frame::alignedStride(uvW);
+        st->m_scratch.strideCr = Frame::alignedStride(uvW);
+        st->m_scratch.width  = st->m_width;
+        st->m_scratch.height = st->m_height;
+        if (!st->m_scratch.planeY || !st->m_scratch.planeCb || !st->m_scratch.planeCr) {
             geode::log::warn("DecoderMF: scratch alloc failed, disabling downscale");
-            closeInternal();
             return false;
         }
     }
 
-    m_finished.store(false, std::memory_order_relaxed);
-    m_decoding.store(false, std::memory_order_relaxed);
+    // fresh state: decoding/finished/threadDone already idle.
+    m_state = std::move(st);
     return true;
 }
 
-bool DecoderMF::setupD3D11() {
+bool DecoderMF::State::setupD3D11() {
     if (!acquireSharedD3D11(m_d3dDevice, m_d3dCtx)) {
         return false;
     }
@@ -169,7 +216,7 @@ bool DecoderMF::setupD3D11() {
     return true;
 }
 
-bool DecoderMF::setupReader(const std::string& path) {
+bool DecoderMF::State::setupReader(const std::string& path) {
     IMFAttributes* attrs = nullptr;
     HRESULT hr = MFCreateAttributes(&attrs, 3);
     if (FAILED(hr)) return false;
@@ -285,7 +332,7 @@ bool DecoderMF::setupReader(const std::string& path) {
     return true;
 }
 
-bool DecoderMF::setOutputFormat() {
+bool DecoderMF::State::setOutputFormat() {
     const GUID formatsToTry[] = {
         MFVideoFormat_NV12,
         MFVideoFormat_I420,
@@ -365,7 +412,7 @@ static int detectLinearStride(size_t bufLen, int width, int visibleHeight, int h
     return -1;
 }
 
-bool DecoderMF::copyPlanesToSlot2D(BYTE* scanline0, LONG lStride, Frame& slot, size_t bufferSize) {
+bool DecoderMF::State::copyPlanesToSlot2D(BYTE* scanline0, LONG lStride, Frame& slot, size_t bufferSize) {
     // yuv surfaces are top-down; a negative stride is not a supported layout.
     if (!scanline0 || bufferSize == 0 || m_width <= 0 || m_height <= 0 || lStride < m_width) return false;
     if (!slot.planeY || !slot.planeCb || !slot.planeCr) return false;
@@ -394,18 +441,8 @@ bool DecoderMF::copyPlanesToSlot2D(BYTE* scanline0, LONG lStride, Frame& slot, s
         return false;
     }
 
-    auto const copyRows = [](BYTE* dst, int dstStride, BYTE const* src, size_t srcStride,
-                             int width, int height) {
-        if (static_cast<size_t>(width) == srcStride && dstStride == width) {
-            std::memcpy(dst, src, static_cast<size_t>(width) * height);
-            return;
-        }
-        for (int row = 0; row < height; ++row) {
-            std::memcpy(dst + static_cast<size_t>(row) * dstStride,
-                        src + static_cast<size_t>(row) * srcStride, width);
-        }
-    };
-    copyRows(slot.planeY, slot.strideY, scanline0, static_cast<size_t>(stride), m_width, m_height);
+    paimon::copyStridedRows(slot.planeY, static_cast<size_t>(slot.strideY), scanline0,
+        static_cast<size_t>(stride), static_cast<size_t>(m_width), m_height);
 
     if (m_pixelFormat == MFVideoFormat_NV12) {
         libyuv::SplitUVPlane(scanline0 + static_cast<size_t>(uvStart), lStride,
@@ -414,14 +451,16 @@ bool DecoderMF::copyPlanesToSlot2D(BYTE* scanline0, LONG lStride, Frame& slot, s
         auto* cb = scanline0 + static_cast<size_t>(uvStart);
         auto* cr = scanline0 + static_cast<size_t>(secondPlane);
         if (m_pixelFormat == MFVideoFormat_YV12) std::swap(cb, cr);
-        copyRows(slot.planeCb, slot.strideCb, cb, static_cast<size_t>(uvStride), uvW, uvH);
-        copyRows(slot.planeCr, slot.strideCr, cr, static_cast<size_t>(uvStride), uvW, uvH);
+        paimon::copyStridedRows(slot.planeCb, static_cast<size_t>(slot.strideCb), cb,
+            static_cast<size_t>(uvStride), static_cast<size_t>(uvW), uvH);
+        paimon::copyStridedRows(slot.planeCr, static_cast<size_t>(slot.strideCr), cr,
+            static_cast<size_t>(uvStride), static_cast<size_t>(uvW), uvH);
     }
     return true;
 }
 
 // wine hides imf2dbuffer; padded rows need stride detect.
-void DecoderMF::refreshLinearStride() {
+void DecoderMF::State::refreshLinearStride() {
     m_linearStride = m_width;
     if (!m_reader) return;
 
@@ -448,7 +487,7 @@ void DecoderMF::refreshLinearStride() {
     }
 }
 
-bool DecoderMF::copyPlanesToSlotLinear(BYTE* data, DWORD bufLen, Frame& slot) {
+bool DecoderMF::State::copyPlanesToSlotLinear(BYTE* data, DWORD bufLen, Frame& slot) {
     if (!data || bufLen == 0) return false;
     int const hinted = std::max(m_width, m_linearStride);
     int const stride = detectLinearStride(bufLen, m_width, m_height, hinted);
@@ -457,7 +496,7 @@ bool DecoderMF::copyPlanesToSlotLinear(BYTE* data, DWORD bufLen, Frame& slot) {
     return copyPlanesToSlot2D(data, stride, slot, bufLen);
 }
 
-bool DecoderMF::createStagingTexture() {
+bool DecoderMF::State::createStagingTexture() {
     if (!m_d3dDevice || m_width <= 0 || m_height <= 0) return false;
 
     if (m_stagingTex) {
@@ -484,7 +523,7 @@ bool DecoderMF::createStagingTexture() {
     return true;
 }
 
-bool DecoderMF::copyPlanesFromD3D11(ID3D11Texture2D* srcTexture, UINT subresource, Frame& slot) {
+bool DecoderMF::State::copyPlanesFromD3D11(ID3D11Texture2D* srcTexture, UINT subresource, Frame& slot) {
     if (!m_d3dCtx || !srcTexture) return false;
 
     D3D11_TEXTURE2D_DESC srcDesc = {};
@@ -554,32 +593,48 @@ bool DecoderMF::copyPlanesFromD3D11(ID3D11Texture2D* srcTexture, UINT subresourc
 }
 
 void DecoderMF::startDecoding() {
-    if (m_decoding.load(std::memory_order_relaxed)) return;
-    m_decoding.store(true, std::memory_order_relaxed);
-    m_finished.store(false, std::memory_order_relaxed);
-    m_thread = std::thread(&DecoderMF::decodeLoop, this);
+    auto st = m_state;
+    if (!st) return;
+    if (st->m_decoding.load(std::memory_order_relaxed)) return;
+    // never run two workers on one state: an orphan detached by a
+    // timed-out stop still owns this state until it exits.
+    if (!st->m_threadDone.load(std::memory_order_acquire)) {
+        geode::log::warn("DecoderMF: previous worker still draining, start deferred");
+        return;
+    }
+    st->m_decoding.store(true, std::memory_order_relaxed);
+    st->m_finished.store(false, std::memory_order_relaxed);
+    st->m_threadDone.store(false, std::memory_order_release);
+    m_thread = std::thread([st] { st->decodeLoop(); });
 }
 
 void DecoderMF::stopDecoding() {
-    constexpr auto kJoinTimeout = std::chrono::milliseconds(1000);
-
-    m_decoding.store(false, std::memory_order_release);
-    m_ring.wakeAll();
-    if (!m_thread.joinable()) return;
-
-    // flush wakes readsample(); seh covers force-close after mf unload.
-    if (m_reader) {
-        __try {
-            m_reader->Flush(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM));
-        } __except(EXCEPTION_ACCESS_VIOLATION == GetExceptionCode()
-                   ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
-        }
+    auto st = m_state;
+    if (!st) {
+        if (m_thread.joinable()) m_thread.join();
+        return;
     }
 
-    paimon::joinWithWarning(m_thread, kJoinTimeout);
+    st->m_decoding.store(false, std::memory_order_release);
+    st->m_ring.wakeAll();
+
+    // flush wakes a worker blocked in ReadSample() so the bounded join below
+    // never waits on an infinite network read; corrupt files fail fast in
+    // the loop. seh covers force-close after mf unload (see flushReaderSafely:
+    // __try cannot live here because shared_ptr<State> requires unwinding).
+    flushReaderSafely(st->m_reader);
+
+    if (m_thread.joinable()) {
+        paimon::joinOrDetachWithWarning(m_thread, std::chrono::milliseconds(25), "DecoderMF", [&] {
+            return st->m_threadDone.load(std::memory_order_acquire);
+        });
+    }
 }
 
-void DecoderMF::decodeLoop() {
+void DecoderMF::State::decodeLoop() {
+    // every exit path below signals threadDone, bounding the join in
+    // stopDecoding(); the stop flag is re-checked after each ReadSample.
+    ThreadExitSignal exitSignal(m_threadDone);
     geode::utils::thread::setName("PaimonDecodeMF");
     // com must be initialized on the decode thread.
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
@@ -755,7 +810,7 @@ void DecoderMF::decodeLoop() {
 }
 
 
-bool DecoderMF::fallbackToSoftwareDecode(const std::string& path) {
+bool DecoderMF::State::fallbackToSoftwareDecode(const std::string& path) {
     m_dxvaEnabled = false;
     m_dxvaReadbackFailures = 0;
 
@@ -818,23 +873,29 @@ bool DecoderMF::fallbackToSoftwareDecode(const std::string& path) {
 }
 
 void DecoderMF::seekTo(double seconds) {
-    if (!m_reader) return;
-    bool wasDecoding = m_decoding.load(std::memory_order_relaxed);
+    auto st = m_state;
+    if (!st || !st->m_reader) return;
+    bool wasDecoding = st->m_decoding.load(std::memory_order_relaxed);
     stopDecoding();
+    // an orphan detached by a timed-out stop still owns the reader.
+    if (!st->m_threadDone.load(std::memory_order_acquire)) {
+        geode::log::warn("DecoderMF: orphan worker still owns reader, seek skipped");
+        return;
+    }
 
-    while (m_ring.nextRead()) m_ring.commitRead();
+    while (st->m_ring.nextRead()) st->m_ring.commitRead();
 
     PROPVARIANT var;
     var.vt = VT_I8;
     var.hVal.QuadPart = static_cast<LONGLONG>(seconds * 10000000.0);
-    m_reader->SetCurrentPosition(GUID_NULL, var);
+    st->m_reader->SetCurrentPosition(GUID_NULL, var);
     PropVariantClear(&var);
 
-    m_finished.store(false, std::memory_order_relaxed);
+    st->m_finished.store(false, std::memory_order_relaxed);
     if (wasDecoding) startDecoding();
 }
 
-void DecoderMF::downscalePlanes(const Frame& src, Frame& dst, int) {
+void DecoderMF::State::downscalePlanes(const Frame& src, Frame& dst, int) {
     libyuv::ScalePlane(src.planeY, src.strideY, m_width, m_height,
                        dst.planeY, dst.strideY, m_outWidth, m_outHeight,
                        libyuv::kFilterBox);
@@ -849,76 +910,60 @@ void DecoderMF::downscalePlanes(const Frame& src, Frame& dst, int) {
 }
 
 bool DecoderMF::skipFrame() {
-    return m_ring.skipRead();
+    auto st = m_state;
+    return st ? st->m_ring.skipRead() : false;
 }
 
-double DecoderMF::getDuration() const { return m_duration; }
-int DecoderMF::getWidth()  const { return m_outWidth  > 0 ? m_outWidth  : m_width; }
-int DecoderMF::getHeight() const { return m_outHeight > 0 ? m_outHeight : m_height; }
-int DecoderMF::getNativeWidth()  const { return m_width; }
-int DecoderMF::getNativeHeight() const { return m_height; }
+double DecoderMF::getDuration() const {
+    auto st = m_state;
+    return st ? st->m_duration : 0.0;
+}
+int DecoderMF::getWidth()  const {
+    auto st = m_state;
+    return st ? (st->m_outWidth  > 0 ? st->m_outWidth  : st->m_width) : 0;
+}
+int DecoderMF::getHeight() const {
+    auto st = m_state;
+    return st ? (st->m_outHeight > 0 ? st->m_outHeight : st->m_height) : 0;
+}
+int DecoderMF::getNativeWidth()  const {
+    auto st = m_state;
+    return st ? st->m_width : 0;
+}
+int DecoderMF::getNativeHeight() const {
+    auto st = m_state;
+    return st ? st->m_height : 0;
+}
 bool DecoderMF::isFinished() const {
-    return m_finished.load(std::memory_order_acquire);
+    auto st = m_state;
+    return st ? st->m_finished.load(std::memory_order_acquire) : false;
 }
 
 double DecoderMF::peekNextPTS() const {
-    return m_ring.peekNextPTS();
+    auto st = m_state;
+    return st ? st->m_ring.peekNextPTS() : DBL_MAX;
 }
 
 double DecoderMF::peekSecondPTS() const {
-    return m_ring.peekSecondPTS();
+    auto st = m_state;
+    return st ? st->m_ring.peekSecondPTS() : DBL_MAX;
 }
 
 const VideoFrame* DecoderMF::peekFrame() {
-    return m_ring.peekRead();
+    auto st = m_state;
+    return st ? st->m_ring.peekRead() : nullptr;
 }
 
 void DecoderMF::releaseFrame() {
-    if (m_ring.peekRead()) m_ring.commitRead();
+    auto st = m_state;
+    if (st && st->m_ring.peekRead()) st->m_ring.commitRead();
 }
 
 void DecoderMF::closeInternal() {
     stopDecoding();
-
-    {
-        std::lock_guard lk(g_d3d11Mutex);
-        if (m_dxgiMgr) {
-            m_dxgiMgr->Release();
-            m_dxgiMgr = nullptr;
-        }
-        if (m_sharedD3D) {
-            m_d3dCtx    = nullptr;
-            m_d3dDevice = nullptr;
-        } else {
-            if (m_d3dCtx) {
-                m_d3dCtx->Release();
-                m_d3dCtx = nullptr;
-            }
-            if (m_d3dDevice) {
-                m_d3dDevice->Release();
-                m_d3dDevice = nullptr;
-            }
-        }
-    }
-    if (m_sharedD3D) {
-        releaseSharedD3D11();
-        m_sharedD3D = false;
-    }
-
-    // no mfshutdown: process-wide; seh covers unload race.
-    releaseMfObjectsSafely(m_stagingTex, m_reader);
-    m_dxvaEnabled = false;
-    m_dxvaReadbackFailures = 0;
-    m_stagingFormat = DXGI_FORMAT_UNKNOWN;
-    m_stagingWidth = 0;
-    m_stagingHeight = 0;
-    m_videoPath.clear();
-
-    Frame::freeAligned(m_scratch.planeY);
-    Frame::freeAligned(m_scratch.planeCb);
-    Frame::freeAligned(m_scratch.planeCr);
-    m_scratch.planeY = m_scratch.planeCb = m_scratch.planeCr = nullptr;
-    m_downscaleFactor = 1;
+    // reader + ring + staging live in State: a detached orphan keeps its
+    // copy alive until it exits, so this never frees memory it still writes.
+    m_state.reset();
 }
 
 }

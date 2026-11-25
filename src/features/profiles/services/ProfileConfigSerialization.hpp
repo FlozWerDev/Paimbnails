@@ -43,6 +43,12 @@ inline ProfileConfig parseConfig(matjson::Value const& json) {
     config.commentBgBlurType = json["commentBgBlurType"].asString().unwrapOr(config.commentBgBlurType);
     config.commentBgBlur = number("commentBgBlur", config.commentBgBlur, 0.f, 10.f);
     config.commentBgDarkness = number("commentBgDarkness", config.commentBgDarkness, 0.f, 1.f);
+    // only a paimon base id (32 lowercase hex) is ever turned into a url.
+    auto communityId = json["commentBgCommunityId"].asString().unwrapOr("");
+    if (communityId.size() == 32 && communityId.find_first_not_of("0123456789abcdef") == std::string::npos) {
+        config.commentBgCommunityId = communityId;
+    }
+    if (config.commentBgType == "community" && config.commentBgCommunityId.empty()) config.commentBgType = "none";
     return config;
 }
 
@@ -61,7 +67,7 @@ inline matjson::Value serializeConfig(ProfileConfig const& config) {
         {"commentBgThumbnailPos", config.commentBgThumbnailPos}, {"commentBgBannerMode", config.commentBgBannerMode},
         {"commentBgSolidColor", color(config.commentBgSolidColor)}, {"commentBgSolidOpacity", config.commentBgSolidOpacity},
         {"commentBgBlurType", config.commentBgBlurType}, {"commentBgBlur", config.commentBgBlur},
-        {"commentBgDarkness", config.commentBgDarkness}
+        {"commentBgDarkness", config.commentBgDarkness}, {"commentBgCommunityId", config.commentBgCommunityId}
     });
     return json;
 }

@@ -6,16 +6,15 @@ namespace paimon::gifimport {
 
 namespace {
 
-std::atomic<unsigned int> g_workerLimit{0};
 thread_local bool t_inParallel = false;
 
 } // namespace
 
 unsigned int workerLimit() {
-    unsigned int limit = g_workerLimit.load(std::memory_order_relaxed);
-    if (limit == 0) limit = std::thread::hardware_concurrency();
-    // one core belongs to the game, still drawing mid-import.
-    return std::max(1u, limit > 2 ? limit - 1 : limit);
+    // tracing shares the process with the editor. Leave half the logical CPUs
+    // available, with at most four workers even on high-core-count machines.
+    auto const available = std::thread::hardware_concurrency();
+    return std::clamp(available / 2, 1u, 4u);
 }
 
 unsigned int parallelThreads(std::size_t count) {

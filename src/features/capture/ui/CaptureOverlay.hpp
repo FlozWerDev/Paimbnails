@@ -14,9 +14,9 @@ public:
     virtual void onExit() override;
 
     virtual bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
-    virtual void ccTouchMoved(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override {}
-    virtual void ccTouchEnded(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override {}
-    virtual void ccTouchCancelled(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override {}
+    virtual void ccTouchMoved(cocos2d::CCTouch*, cocos2d::CCEvent*) override {}
+    virtual void ccTouchEnded(cocos2d::CCTouch*, cocos2d::CCEvent*) override {}
+    virtual void ccTouchCancelled(cocos2d::CCTouch*, cocos2d::CCEvent*) override {}
 
     virtual void registerWithTouchDispatcher() override;
 

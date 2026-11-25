@@ -193,7 +193,7 @@ bool QuickButtonSfxPopup::init() {
     auto* testBtn = ui::makeButton("Probar", [this] {
         syncInputs();
         if (!playQuickButtonSfx(*m_target)) {
-            PaimonNotify::create("Sin sonido: elige o descarga primero.", NotificationIcon::Warning)->show();
+            PaimonNotify::show("Sin sonido: elige o descarga primero.", NotificationIcon::Warning);
         }
         refresh();
     }, ui::Btn::Cyan, 0.f, 0.55f, "bigFont.fnt");
@@ -256,7 +256,7 @@ void QuickButtonSfxPopup::refresh() {
         auto* dl = makeMiniButton("Probar", false, [this] {
             syncInputs();
             if (!playQuickButtonSfx(*m_target)) {
-                PaimonNotify::create("Descargando o sin ID...", NotificationIcon::Warning)->show();
+                PaimonNotify::show("Descargando o sin ID...", NotificationIcon::Warning);
             }
             refresh();
         });
@@ -360,12 +360,12 @@ void QuickButtonSfxPopup::importAudio(std::filesystem::path const& src) {
         src, quickHubSfxDir(), stem,
         [](std::filesystem::path const& srcPath, std::string const& destStr) {
             if (!isQuickHubAudioFile(srcPath)) {
-                PaimonNotify::create("Usa mp3, ogg, wav o flac.", NotificationIcon::Warning)->show();
+                PaimonNotify::show("Usa mp3, ogg, wav o flac.", NotificationIcon::Warning);
                 return false;
             }
             unsigned int ms = 0;
             if (!probeQuickButtonSfxDuration(destStr, &ms) || ms == 0) {
-                PaimonNotify::create("FMOD no pudo abrir ese audio.", NotificationIcon::Error)->show();
+                PaimonNotify::show("FMOD no pudo abrir ese audio.", NotificationIcon::Error);
                 return false;
             }
             return true;

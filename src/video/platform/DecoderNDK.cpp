@@ -90,7 +90,7 @@ static int getFormatInt32(AMediaFormat* fmt, const char* key, int fallback) {
     return static_cast<int>(value);
 }
 
-bool DecoderNDK::isSemiPlanar(int colorFormat) const {
+bool DecoderNDK::State::isSemiPlanar(int colorFormat) const {
     switch (colorFormat) {
         case kCF_YUV420SemiPlanar:
         case kCF_YUV420PackedSemiPlanar:
@@ -102,7 +102,7 @@ bool DecoderNDK::isSemiPlanar(int colorFormat) const {
     }
 }
 
-bool DecoderNDK::isReadableColorFormat(int colorFormat) const {
+bool DecoderNDK::State::isReadableColorFormat(int colorFormat) const {
     switch (colorFormat) {
         case kCF_YUV420Planar:
         case kCF_YUV420PackedPlanar:
@@ -119,7 +119,7 @@ bool DecoderNDK::isReadableColorFormat(int colorFormat) const {
     }
 }
 
-void DecoderNDK::updateOutputFormat() {
+void DecoderNDK::State::updateOutputFormat() {
     if (!m_codec) return;
     AMediaFormat* fmt = AMediaCodec_getOutputFormat(m_codec);
     if (!fmt) return;
@@ -141,101 +141,108 @@ void DecoderNDK::updateOutputFormat() {
     AMediaFormat_delete(fmt);
 }
 
+DecoderNDK::State::~State() {
+    if (m_codec) {
+        // never stop an unstarted codec; crashes some mali/powervr drivers.
+        if (m_codecStarted) {
+            AMediaCodec_stop(m_codec);
+        }
+        AMediaCodec_delete(m_codec);
+        m_codec = nullptr;
+    }
+    if (m_extractor) {
+        AMediaExtractor_delete(m_extractor);
+        m_extractor = nullptr;
+    }
+    releaseImageReader();
+}
+
 bool DecoderNDK::open(const std::string& path) {
     closeInternal();
+    auto st = std::make_shared<State>();
 
-    m_extractor = AMediaExtractor_new();
-    if (!m_extractor) {
+    st->m_extractor = AMediaExtractor_new();
+    if (!st->m_extractor) {
         geode::log::warn("DecoderNDK: AMediaExtractor_new failed");
         return false;
     }
 
-    int rc = AMediaExtractor_setDataSource(m_extractor, path.c_str());
+    int rc = AMediaExtractor_setDataSource(st->m_extractor, path.c_str());
     if (rc != AMEDIA_OK) {
         geode::log::warn("DecoderNDK: setDataSource failed ({})", rc);
-        closeInternal();
         return false;
     }
 
-    if (!findVideoTrack()) {
+    if (!st->findVideoTrack()) {
         geode::log::warn("DecoderNDK: no video track found");
-        closeInternal();
         return false;
     }
 
-    AMediaFormat* trackFmt = AMediaExtractor_getTrackFormat(m_extractor, m_trackIdx);
+    AMediaFormat* trackFmt = AMediaExtractor_getTrackFormat(st->m_extractor, st->m_trackIdx);
     if (!trackFmt) {
-        closeInternal();
         return false;
     }
     const char* mime = nullptr;
     AMediaFormat_getString(trackFmt, AMEDIAFORMAT_KEY_MIME, &mime);
     if (!mime) {
         AMediaFormat_delete(trackFmt);
-        closeInternal();
         return false;
     }
 
-    m_codec = AMediaCodec_createDecoderByType(mime);
-    if (!m_codec) {
+    st->m_codec = AMediaCodec_createDecoderByType(mime);
+    if (!st->m_codec) {
         geode::log::warn("DecoderNDK: createDecoderByType({}) failed", mime);
         AMediaFormat_delete(trackFmt);
-        closeInternal();
         return false;
     }
 
     // static container metadata; read before trackfmt is consumed by configure.
-    m_rotation = ((getFormatInt32(trackFmt, "rotation-degrees", 0) % 360) + 360) % 360;
-    readColorAspects(trackFmt);
+    st->m_rotation = ((getFormatInt32(trackFmt, "rotation-degrees", 0) % 360) + 360) % 360;
+    st->readColorAspects(trackFmt);
 
 // prefer aimagereader; it normalises the output layout across vendors.
-    m_useImageReader = setupImageReader();
+    st->m_useImageReader = st->setupImageReader();
 
     ANativeWindow* target = nullptr;
-    if (m_useImageReader) target = m_readerWindow;
+    if (st->m_useImageReader) target = st->m_readerWindow;
 
 // avoid opaque output: the raw-buffer path needs cpu-readable planes.
     if (!target) {
         AMediaFormat_setInt32(trackFmt, "color-format", kCF_YUV420Flexible);
     }
 
-    media_status_t status = AMediaCodec_configure(m_codec, trackFmt, target, nullptr, 0);
+    media_status_t status = AMediaCodec_configure(st->m_codec, trackFmt, target, nullptr, 0);
     AMediaFormat_delete(trackFmt);
 
     if (status != AMEDIA_OK) {
         geode::log::warn("DecoderNDK: configure failed ({})", static_cast<int>(status));
-        AMediaCodec_delete(m_codec);
-        m_codec = nullptr;
-        closeInternal();
         return false;
     }
-    m_codecConfigured = true;
+    st->m_codecConfigured = true;
 
-    status = AMediaCodec_start(m_codec);
+    status = AMediaCodec_start(st->m_codec);
     if (status != AMEDIA_OK) {
         geode::log::warn("DecoderNDK: start failed ({})", static_cast<int>(status));
-        closeInternal();
         return false;
     }
-    m_codecStarted = true;
+    st->m_codecStarted = true;
 
-    AMediaExtractor_selectTrack(m_extractor, m_trackIdx);
-    m_outputStride = m_width;
-    m_outputSliceHeight = m_height;
-    m_outputColorFormat = 0;
-    m_outputFormatValid.store(false, std::memory_order_release);
+    AMediaExtractor_selectTrack(st->m_extractor, st->m_trackIdx);
+    st->m_outputStride = st->m_width;
+    st->m_outputSliceHeight = st->m_height;
+    st->m_outputColorFormat = 0;
+    st->m_outputFormatValid.store(false, std::memory_order_release);
 
-    if (!m_ring.init(m_width, m_height)) {
-        closeInternal();
+    if (!st->m_ring.init(st->m_width, st->m_height)) {
         return false;
     }
 
-    m_finished.store(false, std::memory_order_relaxed);
-    m_decoding.store(false, std::memory_order_relaxed);
+    // fresh state: decoding/finished/threadDone already idle.
+    m_state = std::move(st);
     return true;
 }
 
-bool DecoderNDK::setupImageReader() {
+bool DecoderNDK::State::setupImageReader() {
     const auto& api = imageReaderApi();
     if (!api.ok || m_width <= 0 || m_height <= 0) return false;
 
@@ -255,7 +262,7 @@ bool DecoderNDK::setupImageReader() {
     return true;
 }
 
-void DecoderNDK::releaseImageReader() {
+void DecoderNDK::State::releaseImageReader() {
     const auto& api = imageReaderApi();
     if (m_imageReader && api.deleteReader) {
         api.deleteReader(m_imageReader);
@@ -265,7 +272,7 @@ void DecoderNDK::releaseImageReader() {
     m_useImageReader = false;
 }
 
-bool DecoderNDK::drainImageReader(int64_t presentationTimeUs) {
+bool DecoderNDK::State::drainImageReader(int64_t presentationTimeUs) {
     const auto& api = imageReaderApi();
     if (!m_imageReader) return false;
 
@@ -345,7 +352,7 @@ bool DecoderNDK::drainImageReader(int64_t presentationTimeUs) {
     return true;
 }
 
-bool DecoderNDK::findVideoTrack() {
+bool DecoderNDK::State::findVideoTrack() {
     size_t numTracks = AMediaExtractor_getTrackCount(m_extractor);
     for (size_t i = 0; i < numTracks; ++i) {
         AMediaFormat* fmt = AMediaExtractor_getTrackFormat(m_extractor, i);
@@ -374,22 +381,43 @@ bool DecoderNDK::findVideoTrack() {
 }
 
 void DecoderNDK::startDecoding() {
-    if (m_decoding.load(std::memory_order_relaxed)) return;
-    if (!m_codec || !m_codecStarted) return;
-    m_decoding.store(true, std::memory_order_relaxed);
-    m_finished.store(false, std::memory_order_relaxed);
-    m_thread = std::thread(&DecoderNDK::decodeLoop, this);
+    auto st = m_state;
+    if (!st || !st->m_codec || !st->m_codecStarted) return;
+    if (st->m_decoding.load(std::memory_order_relaxed)) return;
+    // never run two workers on one state: an orphan detached by a
+    // timed-out stop still owns this state until it exits.
+    if (!st->m_threadDone.load(std::memory_order_acquire)) {
+        geode::log::warn("DecoderNDK: previous worker still draining, start deferred");
+        return;
+    }
+    st->m_decoding.store(true, std::memory_order_relaxed);
+    st->m_finished.store(false, std::memory_order_relaxed);
+    st->m_threadDone.store(false, std::memory_order_release);
+    m_thread = std::thread([st] { st->decodeLoop(); });
 }
 
 void DecoderNDK::stopDecoding() {
-    m_decoding.store(false, std::memory_order_relaxed);
-    m_ring.wakeAll();
+    auto st = m_state;
+    if (!st) {
+        if (m_thread.joinable()) m_thread.join();
+        return;
+    }
+    st->m_decoding.store(false, std::memory_order_relaxed);
+    st->m_ring.wakeAll();
+    // input/output dequeues use 5ms timeouts and drainImageReader re-checks
+    // the stop flag, so no read depends on an infinite network stall; the
+    // bounded join below detaches instead of hanging the owner.
     if (m_thread.joinable()) {
-        paimon::joinWithWarning(m_thread, std::chrono::seconds(3));
+        paimon::joinOrDetachWithWarning(m_thread, std::chrono::seconds(3), "DecoderNDK", [&] {
+            return st->m_threadDone.load(std::memory_order_acquire);
+        });
     }
 }
 
-void DecoderNDK::decodeLoop() {
+void DecoderNDK::State::decodeLoop() {
+    // every exit path below signals threadDone, bounding the join in
+    // stopDecoding(); the stop flag also gates each dequeue/read below.
+    ThreadExitSignal exitSignal(m_threadDone);
     geode::utils::thread::setName("PaimonDecodeNDK");
     bool inputDone = false;
     int frameCount = 0;
@@ -569,36 +597,49 @@ void DecoderNDK::decodeLoop() {
 }
 
 void DecoderNDK::seekTo(double seconds) {
-    if (!m_extractor) return;
-    bool wasDecoding = m_decoding.load(std::memory_order_relaxed);
+    auto st = m_state;
+    if (!st || !st->m_extractor) return;
+    bool wasDecoding = st->m_decoding.load(std::memory_order_relaxed);
     stopDecoding();
+    // an orphan detached by a timed-out stop still owns codec/extractor.
+    if (!st->m_threadDone.load(std::memory_order_acquire)) {
+        geode::log::warn("DecoderNDK: orphan worker still owns codec, seek skipped");
+        return;
+    }
 
-    while (m_ring.nextRead()) m_ring.commitRead();
+    while (st->m_ring.nextRead()) st->m_ring.commitRead();
 
-    AMediaExtractor_seekTo(m_extractor,
+    AMediaExtractor_seekTo(st->m_extractor,
                            static_cast<int64_t>(seconds * 1000000.0),
                            AMEDIAEXTRACTOR_SEEK_CLOSEST_SYNC);
 
-    if (m_codec && m_codecStarted) {
-        AMediaCodec_flush(m_codec);
+    if (st->m_codec && st->m_codecStarted) {
+        AMediaCodec_flush(st->m_codec);
     }
-    m_finished.store(false, std::memory_order_relaxed);
+    st->m_finished.store(false, std::memory_order_relaxed);
 
     if (wasDecoding) startDecoding();
 }
 
 bool DecoderNDK::skipFrame() {
-    return m_ring.skipRead();
+    auto st = m_state;
+    return st ? st->m_ring.skipRead() : false;
 }
 
-double DecoderNDK::getDuration() const { return m_duration; }
-int DecoderNDK::getWidth()  const { return m_width; }
-int DecoderNDK::getHeight() const { return m_height; }
-VideoColorMatrix DecoderNDK::getColorMatrix() const { return m_colorMatrix; }
-bool DecoderNDK::isFullRange() const { return m_fullRange; }
-int DecoderNDK::getRotationDegrees() const { return m_rotation; }
+double DecoderNDK::getDuration() const {
+    auto st = m_state;
+    return st ? st->m_duration : 0.0;
+}
+int DecoderNDK::getWidth()  const {
+    auto st = m_state;
+    return st ? st->m_width : 0;
+}
+int DecoderNDK::getHeight() const {
+    auto st = m_state;
+    return st ? st->m_height : 0;
+}
 
-void DecoderNDK::readColorAspects(AMediaFormat* fmt) {
+void DecoderNDK::State::readColorAspects(AMediaFormat* fmt) {
     // mediaformat values also work with ndk headers for older api levels.
     switch (getFormatInt32(fmt, "color-standard", 0)) {
         case 1:         m_colorMatrix = VideoColorMatrix::BT709; break;
@@ -612,47 +653,35 @@ void DecoderNDK::readColorAspects(AMediaFormat* fmt) {
     }
 }
 bool DecoderNDK::isFinished() const {
-    return m_finished.load(std::memory_order_acquire);
+    auto st = m_state;
+    return st ? st->m_finished.load(std::memory_order_acquire) : false;
 }
 
 double DecoderNDK::peekNextPTS() const {
-    return m_ring.peekNextPTS();
+    auto st = m_state;
+    return st ? st->m_ring.peekNextPTS() : DBL_MAX;
 }
 
 double DecoderNDK::peekSecondPTS() const {
-    return m_ring.peekSecondPTS();
+    auto st = m_state;
+    return st ? st->m_ring.peekSecondPTS() : DBL_MAX;
 }
 
 const VideoFrame* DecoderNDK::peekFrame() {
-    return m_ring.peekRead();
+    auto st = m_state;
+    return st ? st->m_ring.peekRead() : nullptr;
 }
 
 void DecoderNDK::releaseFrame() {
-    if (m_ring.peekRead()) m_ring.commitRead();
+    auto st = m_state;
+    if (st && st->m_ring.peekRead()) st->m_ring.commitRead();
 }
 
 void DecoderNDK::closeInternal() {
     stopDecoding();
-
-    if (m_codec) {
-        if (m_codecStarted) {
-            AMediaCodec_stop(m_codec);
-        }
-        AMediaCodec_delete(m_codec);
-        m_codec = nullptr;
-    }
-    if (m_extractor) {
-        AMediaExtractor_delete(m_extractor);
-        m_extractor = nullptr;
-    }
-    releaseImageReader();
-    m_codecConfigured = false;
-    m_codecStarted = false;
-    m_trackIdx = -1;
-    m_colorMatrix = VideoColorMatrix::Auto;
-    m_fullRange = false;
-    m_rotation = 0;
-    m_outputFormatValid.store(false, std::memory_order_release);
+    // codec + extractor + ring live in State: a detached orphan keeps its
+    // copy alive until it exits, so this never frees memory it still uses.
+    m_state.reset();
 }
 
 }

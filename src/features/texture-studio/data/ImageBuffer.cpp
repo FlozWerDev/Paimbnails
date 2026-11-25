@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "ImageBuffer.hpp"
 
 #include "../../../utils/stb_image.h"
@@ -190,15 +191,13 @@ ImageBuffer ImageBuffer::resizedBilinear(int width, int height) const {
 }
 
 geode::Result<ImageBuffer> ImageBuffer::loadFromFile(std::filesystem::path const& path) {
-    std::error_code ec;
-    auto size = std::filesystem::file_size(path, ec);
-    if (ec || size > kMaxEncodedBytes) {
-        return Err("ImageBuffer::loadFromFile: invalid file size");
-    }
-    auto bytes = geode::utils::file::readBinary(path);
+    auto bytes = geode::utils::file::readBinary(paimon::paths::toSdkPath(path));
     if (!bytes) {
         return Err("ImageBuffer::loadFromFile: cannot read {}: {}",
-            geode::utils::string::pathToString(path), bytes.unwrapErr());
+            paimon::paths::toUtf8(path), bytes.unwrapErr());
+    }
+    if (bytes.unwrap().size() > kMaxEncodedBytes) {
+        return Err("ImageBuffer::loadFromFile: invalid file size");
     }
     return loadFromMemory(std::span<std::uint8_t const>(
         bytes.unwrap().data(), bytes.unwrap().size()));
@@ -240,7 +239,7 @@ geode::Result<> ImageBuffer::saveToPng(std::filesystem::path const& path) const 
     auto encoded = encodeAsPng();
     if (!encoded) return Err(encoded.unwrapErr());
 
-    auto res = geode::utils::file::writeBinary(path, encoded.unwrap());
+    auto res = geode::utils::file::writeBinary(paimon::paths::toSdkPath(path), encoded.unwrap());
     if (!res) {
         return Err("ImageBuffer::saveToPng: write failed: {}", res.unwrapErr());
     }

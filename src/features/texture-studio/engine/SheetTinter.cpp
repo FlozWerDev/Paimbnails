@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "SheetTinter.hpp"
 #include <Geode/utils/string.hpp>
 
@@ -115,7 +116,7 @@ ImageBuffer loadCustomCanvas(SheetTinterRequest const& req, std::string const& f
     auto custom = ImageBuffer::loadFromFile(it->second.path);
     if (!custom) {
         log::warn("[texture-studio] custom image '{}' unavailable: {}",
-            geode::utils::string::pathToString(it->second.path), custom.unwrapErr());
+            paimon::paths::toUtf8(it->second.path), custom.unwrapErr());
         return ImageBuffer();
     }
     overlayMode = it->second.overlay;
@@ -134,7 +135,7 @@ bool applyFusionIfAny(SheetTinterRequest const& req, std::string const& frameNam
     auto maskRes = FusionStore::load(it->second.maskPath);
     if (!maskRes) {
         log::warn("[texture-studio] fusion mask '{}': {}",
-            geode::utils::string::pathToString(it->second.maskPath),
+            paimon::paths::toUtf8(it->second.maskPath),
             maskRes.unwrapErr());
         return false;
     }
@@ -149,7 +150,7 @@ bool applyFusionIfAny(SheetTinterRequest const& req, std::string const& frameNam
     auto texRes = FusionAssetLoader::loadStaticFrame(it->second.texturePath);
     if (!texRes) {
         log::warn("[texture-studio] fusion texture '{}': {}",
-            geode::utils::string::pathToString(it->second.texturePath),
+            paimon::paths::toUtf8(it->second.texturePath),
             texRes.unwrapErr());
         return false;
     }
@@ -179,6 +180,19 @@ std::string outputTextureName(SheetTinterRequest const& req) {
         texName = texName.substr(slash + 1);
     }
     return texName;
+}
+
+// normalized output metadata shared by the in-place and repack paths.
+void setOutputMetadata(ParsedSpritesheet& outSheet, ParsedSpritesheet const& parsed,
+                       int width, int height, SheetTinterRequest const& req) {
+    outSheet.metadata = parsed.metadata;
+    outSheet.metadata.format              = 3;
+    outSheet.metadata.sizeW               = width;
+    outSheet.metadata.sizeH               = height;
+    outSheet.metadata.textureFileName     = outputTextureName(req);
+    outSheet.metadata.realTextureFileName = outSheet.metadata.textureFileName;
+    // pngs use straight rgba, like gd's sheets.
+    outSheet.metadata.premultiplyAlpha    = false;
 }
 
 geode::Result<SheetTinterOutput> buildOutput(ImageBuffer const& atlas,
@@ -294,14 +308,7 @@ geode::Result<SheetTinterOutput> processInPlace(SheetTinterRequest const& req,
 
     // preserve original frame layout; normalize metadata only.
     ParsedSpritesheet outSheet;
-    outSheet.metadata = parsed.metadata;
-    outSheet.metadata.format              = 3;
-    outSheet.metadata.sizeW               = out.width();
-    outSheet.metadata.sizeH               = out.height();
-    outSheet.metadata.textureFileName     = outputTextureName(req);
-    outSheet.metadata.realTextureFileName = outSheet.metadata.textureFileName;
-    // pngs use straight rgba, like gd's sheets.
-    outSheet.metadata.premultiplyAlpha    = false;
+    setOutputMetadata(outSheet, parsed, out.width(), out.height(), req);
     outSheet.frames = parsed.frames;
 
     int frameCount = static_cast<int>(parsed.frames.size());
@@ -538,13 +545,7 @@ geode::Result<SheetTinterOutput> processRepack(SheetTinterRequest const& req,
         outSheet.frames.push_back(std::move(info));
     }
 
-    outSheet.metadata = parsed.metadata;
-    outSheet.metadata.format              = 3;
-    outSheet.metadata.sizeW               = pack.sheetWidth;
-    outSheet.metadata.sizeH               = pack.sheetHeight;
-    outSheet.metadata.textureFileName     = outputTextureName(req);
-    outSheet.metadata.realTextureFileName = outSheet.metadata.textureFileName;
-    outSheet.metadata.premultiplyAlpha    = false;
+    setOutputMetadata(outSheet, parsed, pack.sheetWidth, pack.sheetHeight, req);
 
     return buildOutput(outAtlas, outSheet, req,
                        static_cast<int>(tinted.size()), tintedCount, needsReviewCount);

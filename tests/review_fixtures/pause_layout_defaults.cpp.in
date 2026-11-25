@@ -1,0 +1,168 @@
+#include <cassert>
+#include <cmath>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
+namespace cocos2d {
+struct CCPoint { float x, y; };
+struct ccColor3B { unsigned char r, g, b; };
+}
+using cocos2d::CCPoint;
+CCPoint ccpSub(CCPoint a, CCPoint b) { return {a.x - b.x, a.y - b.y}; }
+@@function|src/features/main-menu-layout/services/MainMenuLayoutManager.hpp|struct MenuButtonLayout@@;
+namespace cocos2d {
+struct CCNode {
+    virtual ~CCNode() = default;
+    MenuButtonLayout layout;
+    std::unordered_map<std::string, CCNode*> children;
+    CCNode* getChildByID(std::string_view id) {
+        auto found = children.find(std::string(id));
+        return found == children.end() ? nullptr : found->second;
+    }
+    CCPoint getPosition() { return layout.position; }
+};
+struct CCMenu : CCNode {
+    bool hasLayout = true;
+    bool getLayout() { return hasLayout; }
+    void setLayout(std::nullptr_t) { hasLayout = false; }
+};
+}
+using namespace cocos2d;
+struct PauseLayer : CCNode {};
+template<class To, class From> To typeinfo_cast(From* node) { return dynamic_cast<To>(node); }
+namespace geode::cast { using ::typeinfo_cast; }
+@@source|src/utils/PauseMenuNodes.hpp@@
+using paimon::findPauseButtonMenu;
+namespace paimon::modules {
+bool enabled = true;
+bool isEnabled(char const*) { return enabled; }
+}
+struct MainMenuLayoutEditor {
+    inline static bool active = false;
+    static bool isActive() { return active; }
+};
+struct EditableMenuButton {
+    CCMenu* menu;
+    CCNode* node;
+    std::vector<CCNode*> labelGroupFollowers;
+    std::string key;
+};
+CCNode* nativeButton = nullptr;
+float modePosition = 20.f;
+int arrangements = 0;
+bool arrangePauseMenu(PauseLayer* pause) {
+    assert(pause);
+    ++arrangements;
+    nativeButton->layout.position = {modePosition, 30};
+    nativeButton->layout.scale = nativeButton->layout.scaleX = nativeButton->layout.scaleY = .8f;
+    return true;
+}
+constexpr float kPositionEpsilon = .05f, kScaleEpsilon = .001f;
+@@function|src/features/main-menu-layout/services/MainMenuLayoutManager.cpp|bool approximatelyEqual(@@
+struct MainMenuLayoutManager {
+    std::unordered_map<std::string, MenuButtonLayout> m_defaults, m_sessionDefaults, m_custom;
+    std::unordered_map<std::string, std::vector<CCPoint>> m_labelFollowerOffsets;
+    std::vector<int> m_shapes;
+    std::vector<EditableMenuButton> buttons;
+    int saves = 0;
+    void ensureLoaded() {}
+    auto collectButtons(CCNode*) { return buttons; }
+    static MenuButtonLayout readLayout(CCNode* node) { return node->layout; }
+    static void applyLayout(EditableMenuButton const& button, MenuButtonLayout const& layout) {
+        button.node->layout = layout;
+    }
+    static std::string rootClassName(CCNode*) { return "PauseLayer"; }
+    void syncShapes(CCNode*, std::vector<int> const&) {}
+    void save() { ++saves; }
+    void captureDefaultsAndApply(CCNode* root);
+    void applyCustom(CCNode* root);
+    void applyDefaults(CCNode* root);
+};
+@@function|src/features/main-menu-layout/services/MainMenuLayoutManager.cpp|void MainMenuLayoutManager::captureDefaultsAndApply(@@
+@@function|src/features/main-menu-layout/services/MainMenuLayoutManager.cpp|void MainMenuLayoutManager::applyCustom(@@
+@@function|src/features/main-menu-layout/services/MainMenuLayoutManager.cpp|void MainMenuLayoutManager::applyDefaults(@@
+
+int main() {
+    PauseLayer pause;
+    CCNode main, button;
+    CCMenu right;
+    pause.children["main-layer"] = &main;
+    main.children["right-button-menu"] = &right;
+    nativeButton = &button;
+    std::string const key = "PauseLayer/main-layer/right-button-menu/options-button";
+    MainMenuLayoutManager layouts;
+    layouts.buttons.push_back({&right, &button, {}, key});
+    auto custom = button.layout;
+    custom.position = {900, 800};
+    custom.scale = custom.scaleX = custom.scaleY = 1.7f;
+    custom.hidden = true;
+    custom.opacity = .2f;
+    custom.rotation = 45;
+    layouts.m_custom[key] = custom;
+    auto oldDefault = button.layout;
+    oldDefault.position = {77, 88}; // cached geometry from GD 2.2081
+    layouts.m_defaults[key] = oldDefault;
+
+    layouts.captureDefaultsAndApply(&pause);
+    assert(layouts.m_defaults.at(key).position.x == 20);
+    assert(!layouts.m_defaults.at(key).hidden && layouts.m_defaults.at(key).opacity == 1);
+    assert(layouts.m_defaults.at(key).rotation == 0);
+    assert(button.layout.position.x == 900 && button.layout.hidden);
+    assert(layouts.m_custom.at(key).scale == 1.7f);
+
+    // A different set of available controls can move the default slot.
+    modePosition = 40;
+    layouts.captureDefaultsAndApply(&pause);
+    auto const refreshed = layouts.m_sessionDefaults.at(key);
+    assert(refreshed.position.x == 40 && refreshed.scale == .8f);
+    assert(!refreshed.hidden && refreshed.opacity == 1 && refreshed.rotation == 0);
+    assert(button.layout.position.x == 900 && button.layout.hidden);
+    auto const oldSaves = layouts.saves;
+    layouts.captureDefaultsAndApply(&pause);
+    assert(layouts.saves == oldSaves);
+    layouts.applyDefaults(&pause);
+    assert(button.layout.position.x == 40 && !button.layout.hidden && button.layout.opacity == 1);
+
+    // Deferred hook passes cannot overwrite a drag while the editor is open.
+    MainMenuLayoutEditor::active = true;
+    button.layout.position.x = 555;
+    int const oldArrangements = arrangements;
+    layouts.captureDefaultsAndApply(&pause);
+    assert(button.layout.position.x == 555 && arrangements == oldArrangements);
+    MainMenuLayoutEditor::active = false;
+    paimon::modules::enabled = false;
+    layouts.captureDefaultsAndApply(&pause);
+    assert(button.layout.position.x == 555 && arrangements == oldArrangements);
+    paimon::modules::enabled = true;
+    layouts.captureDefaultsAndApply(nullptr);
+    assert(arrangements == oldArrangements);
+
+    // The synchronous pass used by the hooks must place the saved layout
+    // without capturing defaults: it runs before GD finished positioning every
+    // button, so reading geometry there would poison the reset values.
+    button.layout = layouts.m_defaults.at(key);
+    int const beforeSaves = layouts.saves;
+    auto const storedDefault = layouts.m_defaults.at(key);
+    layouts.applyCustom(&pause);
+    assert(button.layout.position.x == 900 && button.layout.hidden);
+    assert(button.layout.rotation == 45 && std::abs(button.layout.scale - 1.7f) < .001f);
+    assert(layouts.m_defaults.at(key).position.x == storedDefault.position.x);
+    assert(layouts.saves == beforeSaves);
+
+    // No saved layout for any button: nothing is touched.
+    MainMenuLayoutManager empty;
+    empty.buttons = layouts.buttons;
+    button.layout.position.x = 123;
+    empty.applyCustom(&pause);
+    assert(button.layout.position.x == 123);
+
+    // The editor owns the live values while it is open.
+    MainMenuLayoutEditor::active = true;
+    button.layout.position.x = 321;
+    layouts.applyCustom(&pause);
+    assert(button.layout.position.x == 321);
+    MainMenuLayoutEditor::active = false;
+}

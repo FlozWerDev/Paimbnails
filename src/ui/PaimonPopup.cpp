@@ -9,7 +9,7 @@ using namespace geode::prelude;
 bool PaimonPopup::init(float width, float height, char const* bg, CCRect bgRect) {
     if (!bg || bg[0] == '\0') bg = "GJ_square01.png";
     if (!Popup::init(width, height, bg, bgRect)) return false;
-    // Popup adds the window at z 0; content insets use negative z and must stay above it.
+    // popup adds the window at z 0; content insets use negative z and must stay above it.
     m_mainLayer->reorderChild(m_bgSprite, -10);
     paimon::markDynamicPopup(this);
     m_noElasticity = true;
@@ -23,7 +23,7 @@ bool PaimonPopup::init(CCSize size, char const* bg, CCRect bgRect) {
 void PaimonPopup::setTitle(ZStringView title, char const*, float scale, float offset) {
     scale = std::min(scale, 0.75f);
     Popup::setTitle(title, "goldFont.fnt", scale, offset);
-    m_title->limitLabelWidth(std::max(1.f, m_size.width - 70.f), scale, 0.2f);
+    m_title->setLimitLabelWidth(std::max(1.f, m_size.width - 70.f), scale, 0.2f);
 }
 
 CCMenuItemSpriteExtra* PaimonPopup::addInfoButton(std::string const& title, std::string const& body,

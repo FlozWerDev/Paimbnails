@@ -1,0 +1,179 @@
+// Execute the production download completion against deterministic tool outputs.
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+#include <matjson.hpp>
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cassert>
+#include <chrono>
+#include <deque>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace fs = std::filesystem;
+fs::path testRoot;
+void writeFile(fs::path const& path, std::string const& bytes) {
+    fs::create_directories(path.parent_path());
+    std::ofstream out(path, std::ios::binary);
+    out << bytes;
+    assert(out.good());
+}
+namespace geode {
+namespace log {
+template<class... T> void info(T const&...) {}
+template<class... T> void debug(T const&...) {}
+template<class... T> void warn(T const&...) {}
+}
+struct Loader {
+    std::deque<std::function<void()>> jobs;
+    static Loader* get() { static Loader loader; return &loader; }
+    void queueInMainThread(std::function<void()> job) { jobs.push_back(std::move(job)); }
+    void flush() {
+        while (!jobs.empty()) {
+            auto job = std::move(jobs.front()); jobs.pop_front(); job();
+        }
+    }
+};
+namespace utils {
+namespace string {
+std::string toLower(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+        [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    return value;
+}
+}
+namespace thread { void setName(char const*) {} }
+namespace file {
+struct ReadResult {
+    std::string bytes;
+    std::string unwrapOr(char const*) const { return bytes; }
+};
+ReadResult readString(fs::path const& path) {
+    std::ifstream in(path);
+    return {std::string(std::istreambuf_iterator<char>(in), {})};
+}
+}
+}
+}
+namespace paimon {
+bool isRuntimeShuttingDown() { return false; }
+struct ThreadTracker {
+    std::deque<std::function<void()>> jobs;
+    static ThreadTracker& get() { static ThreadTracker tracker; return tracker; }
+    bool spawn(std::function<void()> job) { jobs.push_back(std::move(job)); return true; }
+    void flush() {
+        while (!jobs.empty()) {
+            auto job = std::move(jobs.front()); jobs.pop_front(); job();
+        }
+    }
+};
+}
+struct Mod {
+    static Mod* get() { static Mod mod; return &mod; }
+    template<class T> T getSavedValue(char const*, T fallback) { return fallback; }
+};
+
+@@source|src/features/menu-music/services/YtDlpDownloader.hpp@@
+
+namespace paimon::menumusic {
+using geode::Loader;
+namespace log = geode::log;
+struct FfmpegBootstrap {
+    static FfmpegBootstrap& get() { static FfmpegBootstrap bootstrap; return bootstrap; }
+    fs::path bundledPath() const { return testRoot / "ffmpeg.exe"; }
+    bool exists() const { return fs::is_regular_file(bundledPath()); }
+};
+struct MenuMusicLibrary {
+    static MenuMusicLibrary& get() { static MenuMusicLibrary library; return library; }
+    fs::path getTracksDir() const { return testRoot / "tracks"; }
+    fs::path getCoversDir() const { return testRoot / "covers"; }
+};
+std::vector<std::string> downloadArguments;
+bool failConversion = false;
+int conversions = 0;
+int runAndCaptureArgv(std::vector<std::string> const& argv,
+                      std::function<void(std::string const&)> const&, int timeout) {
+    assert(timeout > 0);
+    if (argv.front() != "yt-dlp") {
+        ++conversions;
+        writeFile(fs::path(argv.back()), failConversion ? "partial" : "PNG image");
+        return failConversion ? -2 : 0;
+    }
+    downloadArguments = argv;
+    auto output = std::find(argv.begin(), argv.end(), "-o");
+    assert(output != argv.end());
+    auto base = fs::path(*std::next(output));
+    auto filename = base.filename().string();
+    filename.resize(filename.find(".%(ext)s"));
+    auto stem = base.parent_path() / filename;
+    writeFile(fs::path(stem.string() + ".mp3"), "audio");
+    auto conversion = std::find(argv.begin(), argv.end(), "--convert-thumbnails");
+    bool png = conversion != argv.end() && *std::next(conversion) == "png";
+    writeFile(fs::path(stem.string() + (png ? ".png" : ".webp")), png ? "PNG image" : "RIFF WEBP");
+    writeFile(fs::path(stem.string() + ".info.json"), R"({"title":"Song","artist":"Artist"})");
+    return 0;
+}
+float parseProgressLine(std::string const&) { return -1.f; }
+@@function|src/features/menu-music/services/YtDlpDownloader.cpp|static bool fileExists(@@
+@@function|src/features/menu-music/services/YtDlpDownloader.cpp|YtDlpDownloader& YtDlpDownloader::get()@@
+std::string YtDlpDownloader::locateBinary() { return "yt-dlp"; }
+@@function|src/features/menu-music/services/YtDlpDownloader.cpp|std::filesystem::path YtDlpDownloader::prepareCoverForDisplay(@@
+@@function|src/features/menu-music/services/YtDlpDownloader.cpp|void YtDlpDownloader::download(@@
+}
+
+int main() {
+    using namespace paimon::menumusic;
+    testRoot = fs::current_path() / ("yt-dlp-artwork-" + std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count()));
+    fs::create_directories(testRoot / "tracks");
+    writeFile(testRoot / "ffmpeg.exe", "tool");
+    std::optional<YtDlpResult> result;
+    auto complete = [&](YtDlpResult value) { result = std::move(value); };
+    auto& downloader = YtDlpDownloader::get();
+    downloader.download("https://example.com/song", "first", {}, complete);
+    assert(downloader.isBusy() && !result);
+    paimon::ThreadTracker::get().flush();
+    geode::Loader::get()->flush();
+    assert(result && result->success && !downloader.isBusy());
+    auto const conversion = std::find(downloadArguments.begin(), downloadArguments.end(), "--convert-thumbnails");
+    assert(conversion != downloadArguments.end() && *std::next(conversion) == "png");
+    assert(fs::is_regular_file(result->audioPath));
+    assert(fs::is_regular_file(result->coverPath));
+    assert(fs::path(result->coverPath).extension() == ".png"
+        && "Downloaded artwork must use a format recognized by automatic image loading");
+    auto const firstCover = result->coverPath;
+    result.reset();
+    downloader.download("https://example.com/song", "second", {}, complete);
+    paimon::ThreadTracker::get().flush();
+    geode::Loader::get()->flush();
+    assert(result && result->success && result->coverPath != firstCover);
+    assert(fs::is_regular_file(firstCover) && fs::is_regular_file(result->coverPath));
+
+    auto const legacy = testRoot / "legacy art.WEBP";
+    writeFile(legacy, "RIFF WEBP");
+    auto const prepared = YtDlpDownloader::prepareCoverForDisplay(legacy, testRoot / "ffmpeg.exe");
+    assert(prepared.extension() == ".png" && fs::is_regular_file(prepared));
+    assert(fs::is_regular_file(legacy) && conversions == 1);
+    // A completed conversion can be reused even when the tool is unavailable.
+    assert(YtDlpDownloader::prepareCoverForDisplay(legacy, {}) == prepared && conversions == 1);
+    assert(YtDlpDownloader::prepareCoverForDisplay(prepared, {}) == prepared);
+
+    auto const broken = testRoot / "failed.webp";
+    writeFile(broken, "RIFF WEBP");
+    failConversion = true;
+    assert(YtDlpDownloader::prepareCoverForDisplay(broken, testRoot / "ffmpeg.exe") == broken);
+    assert(fs::is_regular_file(broken) && !fs::exists(testRoot / "failed.png"));
+    assert(conversions == 2);
+    for (auto const& entry : fs::directory_iterator(testRoot)) {
+        assert(entry.path().filename().string().find(".tmp.png") == std::string::npos);
+    }
+    assert(YtDlpDownloader::prepareCoverForDisplay(testRoot / "missing.webp", {})
+        == testRoot / "missing.webp");
+    fs::remove_all(testRoot);
+}

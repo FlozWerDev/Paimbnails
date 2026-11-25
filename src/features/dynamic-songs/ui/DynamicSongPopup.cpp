@@ -103,7 +103,7 @@ bool DynamicSongPopup::init() {
             saveConfig(m_cfg);
             m_cfg = config();
             scheduleRebuild();
-            PaimonNotify::create("Cancion Dinamica restablecida", NotificationIcon::Success)->show();
+            PaimonNotify::show("Cancion Dinamica restablecida", NotificationIcon::Success);
         });
     resetBtn->setID("dynamic-song-default-btn"_spr);
     resetBtn->setPosition({m_mainLayer->getContentSize().width / 2.f, 20.f});
@@ -133,8 +133,9 @@ void DynamicSongPopup::update(float dt) {
     }
 }
 
-void DynamicSongPopup::scrollWheel(float x, float y) {
-    kit::queueWheelScroll(m_scroll, x, y, m_scrollTargetY, m_scrollTargetSet);
+bool DynamicSongPopup::scrollWheel(float x, float y) {
+    return kit::queueWheelScroll(m_scroll, x, y, m_scrollTargetY, m_scrollTargetSet);
+
 }
 
 void DynamicSongPopup::scheduleRebuild() {
@@ -155,7 +156,7 @@ void DynamicSongPopup::persist() {
 
 void DynamicSongPopup::previewDive() {
     if (!m_cfg.submerge.enabled) {
-        PaimonNotify::create("Activa el efecto para probarlo", NotificationIcon::Warning)->show();
+        PaimonNotify::show("Activa el efecto para probarlo", NotificationIcon::Warning);
         return;
     }
     if (DynamicSongManager::get()->isHandingOff()) return;

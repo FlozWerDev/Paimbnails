@@ -7,6 +7,7 @@ class GJGameLevel;
 
 #include <atomic>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -36,6 +37,13 @@ public:
     std::vector<std::string> getCachedCoverPaths(int songID) const;
     std::vector<CoverEntry> getCachedCoverEntries(int songID) const;
 
+    // non-blocking variants used by the player popup. Callbacks run on the
+    // main thread; filesystem access and manifest parsing happen on a worker.
+    void requestCachedCoversAsync(int songID, CoversCallback callback);
+    std::vector<std::string> peekCachedCoverPaths(int songID) const;
+    std::vector<CoverEntry> peekCachedCoverEntries(int songID) const;
+    static void validateCoverPathsAsync(std::vector<std::string> paths, CoversCallback callback);
+
     void requestCovers(int songID, CoversCallback callback);
     void cancelPending(int songID);
     void cancelAllPending();
@@ -61,6 +69,19 @@ private:
         std::vector<std::string> coverPaths;
         std::unordered_map<int, std::string> levelNames;
     };
+    struct DiskCoverSnapshot {
+        std::optional<SongManifest> manifest;
+        std::vector<std::string> legacyPaths;
+        std::unordered_map<std::string, double> negativeEntries;
+    };
+    struct PendingDiskLookup {
+        std::uint64_t serial = 0;
+        std::uint64_t version = 0;
+        std::vector<CoversCallback> callbacks;
+    };
+
+    static DiskCoverSnapshot readDiskCoverSnapshot(std::filesystem::path const& coversDir, int songID);
+    void finishCachedCoverLookup(int songID, std::uint64_t serial, std::optional<DiskCoverSnapshot> snapshot);
 
     bool loadManifest(int songID, SongManifest& out) const;
     void saveManifest(int songID, std::vector<int> const& levelIds,
@@ -68,6 +89,7 @@ private:
         std::unordered_map<int, std::string> const& levelNames) const;
 
     std::filesystem::path negativeCachePath() const;
+    void loadNegativeMemo() const;
     bool isNegativelyCached(int songID) const;
     void markNegative(int songID) const;
 
@@ -88,6 +110,15 @@ private:
     bool m_debouncePending = false;
     std::atomic<uint32_t> m_debounceGeneration{0};
     mutable std::unordered_set<int> m_loggedMissingManifests;
+    // parsed manifest.json per song (nullopt = known to have none); this class
+    // is the only writer, and saveManifest drops the entry it rewrites.
+    mutable std::unordered_map<int, std::optional<SongManifest>> m_manifestMemo;
+    mutable std::unordered_map<int, std::vector<std::string>> m_legacyMemo;
+    mutable std::unordered_map<int, std::uint64_t> m_manifestVersions;
+    std::unordered_map<int, PendingDiskLookup> m_pendingDiskLookups;
+    std::uint64_t m_diskLookupSerial = 0;
+    // negative.json contents, loaded once; markNegative updates it in place.
+    mutable std::optional<std::unordered_map<std::string, double>> m_negativeMemo;
     std::unordered_map<int, std::vector<CoversCallback>> m_deferredCallbacks;
     std::vector<PendingBatch> m_queue;
     bool m_searchInFlight = false;

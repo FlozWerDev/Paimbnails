@@ -1,0 +1,246 @@
+#include <algorithm>
+#include <cassert>
+#include <cstdint>
+#include <iostream>
+#include <utility>
+#include <vector>
+
+#define $override
+#define schedule_selector(method) 1
+struct CCObject { virtual ~CCObject() = default; };
+struct CCNode : CCObject {
+    inline static unsigned nextID = 0;
+    unsigned m_uID = ++nextID;
+    CCNode* parent = nullptr;
+    std::vector<CCNode*> children;
+    bool running = true, visible = true;
+    CCNode* getParent() { return parent; }
+    auto getChildren() { return children; }
+    bool isRunning() { return running; }
+    bool isVisible() { return visible; }
+    void setVisible(bool value) { visible = value; }
+    void addChild(CCNode* node) { children.push_back(node); node->parent = this; }
+    virtual void onExit() {}
+    void removeFromParentAndCleanup(bool) {
+        if (parent) onExit();
+        if (parent) std::erase(parent->children, this);
+        parent = nullptr;
+        running = false;
+    }
+};
+struct CCScene : CCNode {};
+namespace cocos2d { using CCScene = ::CCScene; }
+@@source|src/utils/SceneIdentity.hpp@@
+struct CCDirector {
+    CCScene* scene = nullptr;
+    CCScene* next = nullptr;
+    static CCDirector* get() { static CCDirector director; return &director; }
+    CCScene* getRunningScene() { return scene; }
+    CCScene* getNextScene() { return next; }
+};
+template<class T> struct Ref {
+    T* ptr;
+    Ref(T* value = nullptr) : ptr(value) {}
+    T* data() const { return ptr; }
+    T* operator->() const { return ptr; }
+    explicit operator bool() const { return ptr; }
+};
+template<class T> struct WeakRef {
+    T* ptr = nullptr;
+    WeakRef(T* value = nullptr) : ptr(value) {}
+    Ref<T> lock() const { return ptr; }
+};
+template<class T> using CCArrayExt = std::vector<T>;
+template<class T, class U> T typeinfo_cast(U* value) { return dynamic_cast<T>(value); }
+namespace log { template<class... T> void warn(T&&...) {} }
+struct PlayLayer : CCNode {
+    inline static PlayLayer* current = nullptr;
+    bool m_isPaused = true;
+    bool rejectResume = false;
+    static PlayLayer* get() { return current; }
+    virtual void resume() { if (!rejectResume) m_isPaused = false; }
+    void resumeAndRestart(bool) { resume(); }
+    void startGame() { resume(); }
+};
+struct PauseLayer : CCNode {
+    bool touch = true, keypad = true, keyboard = true, closing = false;
+    bool scheduled = false;
+    bool leaveAttached = false;
+    bool forcePriorityRegistered = true;
+    void incrementForcePrio() { forcePriorityRegistered = true; }
+    void decrementForcePrio() { forcePriorityRegistered = false; }
+    int nativeResumes = 0;
+    void setTouchEnabled(bool value) { touch = value; }
+    void setKeypadEnabled(bool value) { keypad = value; }
+    void setKeyboardEnabled(bool value) { keyboard = value; }
+    void schedule(int, float = 0.f) { scheduled = true; }
+    void unschedule(int) { scheduled = false; }
+    void onResume(CCObject*) {
+        ++nativeResumes;
+        PlayLayer::get()->resume();
+        if (!leaveAttached && !PlayLayer::get()->m_isPaused) removeFromParentAndCleanup(true);
+    }
+    void goEdit() { ++nativeEdits; }
+    int nativeEdits = 0;
+};
+struct PaimonLoadingOverlay {};
+struct FramebufferCapture {
+    inline static int cancellations = 0;
+    static void cancelPending() { ++cancellations; }
+};
+struct PauseZoomManager {
+    int resets = 0;
+    static PauseZoomManager& get() { static PauseZoomManager zoom; return zoom; }
+    void onResume() { ++resets; }
+};
+namespace paimon {
+PauseLayer* active = nullptr;
+bool shutdown = false;
+bool captureInProgress = false;
+void setCaptureInProgress(bool value) { captureInProgress = value; }
+void setPauseLayerClosing(PauseLayer* layer, bool value) { layer->closing = value; }
+void setActivePauseLayer(PauseLayer* layer) { active = layer; }
+PauseLayer* getActivePauseLayer() { return active; }
+void clearActivePauseLayer(PauseLayer* layer) { if (active == layer) active = nullptr; }
+bool isPauseLayerOpen(PauseLayer* layer) {
+    return layer && layer->running && layer->parent && !layer->closing;
+}
+PauseLayer* findOpenPauseLayerInScene() {
+    for (auto* child : CCDirector::get()->scene->children)
+        if (auto* pause = typeinfo_cast<PauseLayer*>(child); isPauseLayerOpen(pause)) return pause;
+    return nullptr;
+}
+void notifyPauseClosing() { PauseZoomManager::get().onResume(); }
+bool isRuntimeShuttingDown() { return shutdown; }
+void synchronizePauseLayers(PlayLayer* playLayer);
+}
+struct PaimonPauseLayer : PauseLayer {
+    @@function|src/hooks/PauseLayer.cpp|struct Fields@@;
+    Fields fields;
+    Fields* m_fields = &fields;
+    void removeLoadingOverlay() {}
+    @@function|src/hooks/PauseLayer.cpp|void finishPauseCapture(@@
+    @@function|src/hooks/PauseLayer.cpp|void stopPauseWork(@@
+    @@function|src/hooks/PauseLayer.cpp|void onPauseEnter()@@
+    @@function|src/hooks/PauseLayer.cpp|void onPauseExit()@@
+    void onExit() override { onPauseExit(); }
+    @@function|src/hooks/PauseLayer.cpp|bool canUsePauseLayer()@@
+    @@function|src/hooks/PauseLayer.cpp|void markClosing()@@
+    @@function|src/hooks/PauseLayer.cpp|void synchronizePauseState(float)@@
+    @@function|src/hooks/PauseLayer.cpp|bool belongsToPlayLayer(@@
+    @@function|src/hooks/PauseLayer.cpp|bool beginPauseAction(@@
+    @@function|src/hooks/PauseLayer.cpp|void finishPauseAction()@@
+    template<class Base>
+    @@function|src/hooks/PauseLayer.cpp|void forwardPauseAction(@@
+    @@function|src/hooks/PauseLayer.cpp|void onResume(CCObject* sender)@@
+    @@function|src/hooks/PauseLayer.cpp|void goEdit()@@
+};
+namespace paimon {
+@@function|src/hooks/PauseLayer.cpp|void synchronizePauseLayers(PlayLayer* playLayer)@@
+}
+struct PaimonCapturePlayLayer : PlayLayer {
+    @@function|src/hooks/PlayLayer.cpp|void resume()@@
+    @@function|src/hooks/PlayLayer.cpp|void resumeAndRestart(bool fromStart)@@
+    @@function|src/hooks/PlayLayer.cpp|void startGame()@@
+};
+
+void attach(PaimonPauseLayer& pause, PlayLayer& play, CCScene& scene) {
+    pause.fields.m_playLayer = paimon::NodeIdentity(&play);
+    scene.addChild(&pause);
+    pause.onPauseEnter();
+}
+
+int main() {
+    CCScene scene;
+    CCDirector::get()->scene = &scene;
+    PaimonCapturePlayLayer play;
+    PlayLayer::current = &play;
+    scene.addChild(&play);
+
+    // Native resume is callable without a PauseLayer button (other mods, callbacks).
+    PaimonPauseLayer externalResume;
+    attach(externalResume, play, scene);
+    externalResume.fields.m_captureInProgress = true;
+    paimon::setCaptureInProgress(true);
+    play.resume();
+    assert(!play.m_isPaused);
+    assert(!externalResume.isVisible() && "gameplay resumed but the pause menu stayed visible");
+    assert(!externalResume.touch && !externalResume.keyboard && !externalResume.keypad);
+    assert(!externalResume.getParent());
+    assert(FramebufferCapture::cancellations == 1 && !paimon::captureInProgress);
+    assert(!externalResume.forcePriorityRegistered && "a retained detached menu must release forced input priority");
+
+    // A native button must tolerate resume retiring its layer before returning.
+    play.m_isPaused = true;
+    PaimonPauseLayer button;
+    attach(button, play, scene);
+    button.leaveAttached = true;
+    button.onResume(nullptr);
+    button.onResume(nullptr);
+    assert(button.nativeResumes == 1);
+    assert(!button.getParent() && !button.isVisible());
+
+    // A rejected resume leaves the original pause fully usable.
+    play.m_isPaused = true;
+    play.rejectResume = true;
+    PaimonPauseLayer rejected;
+    attach(rejected, play, scene);
+    rejected.onResume(nullptr);
+    assert(rejected.getParent() && rejected.isVisible() && rejected.touch);
+    assert(rejected.keyboard && rejected.keypad && !rejected.fields.m_closing);
+    assert(rejected.forcePriorityRegistered);
+    rejected.removeFromParentAndCleanup(true);
+    play.rejectResume = false;
+
+    // Timers also recover paths that change the native state without calling resume.
+    play.m_isPaused = true;
+    PaimonPauseLayer stateChanged;
+    attach(stateChanged, play, scene);
+    assert(stateChanged.scheduled);
+    stateChanged.synchronizePauseState(0.f);
+    assert(stateChanged.getParent() && stateChanged.isVisible());
+    play.m_isPaused = false;
+    stateChanged.synchronizePauseState(0.f);
+    assert(!stateChanged.getParent() && !stateChanged.isVisible() && !stateChanged.scheduled);
+    stateChanged.goEdit();
+    assert(stateChanged.nativeEdits == 0 && "a delayed editor callback cannot run after resume");
+
+    // Both restart and startGame can resume outside the menu's own handlers.
+    for (int route = 0; route < 2; ++route) {
+        play.m_isPaused = true;
+        PaimonPauseLayer pause;
+        attach(pause, play, scene);
+        if (route == 0) play.resumeAndRestart(true);
+        else play.startGame();
+        assert(!pause.getParent() && !pause.isVisible());
+    }
+
+    // Inspect every pause in a snapshot: removing one must not skip its sibling.
+    play.m_isPaused = true;
+    PaimonPauseLayer first, second;
+    attach(first, play, scene);
+    attach(second, play, scene);
+    play.resume();
+    assert(!first.getParent() && !second.getParent());
+    assert(!paimon::active);
+
+    // Resuming an outgoing gameplay cannot dismiss a newer gameplay's menu.
+    PaimonCapturePlayLayer newer;
+    PlayLayer::current = &newer;
+    PaimonPauseLayer current;
+    attach(current, newer, scene);
+    play.resume();
+    assert(current.getParent() && current.isVisible() && paimon::active == &current);
+
+    // Scene teardown owns removal once a transition is already pending.
+    CCScene next;
+    CCDirector::get()->next = &next;
+    newer.m_isPaused = false;
+    current.synchronizePauseState(0.f);
+    assert(current.getParent());
+    CCDirector::get()->next = nullptr;
+    current.synchronizePauseState(0.f);
+    assert(!current.getParent());
+
+    std::cout << "Pause lifecycle regression checks passed.\n";
+}

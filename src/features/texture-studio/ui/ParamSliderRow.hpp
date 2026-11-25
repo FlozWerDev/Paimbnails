@@ -12,6 +12,7 @@ namespace paimon::texture_studio {
 // compact label-slider-value row. values are floats in [min,max]; step snaps (1.0 = int, 0 = continuous).
 class ParamSliderRow : public cocos2d::CCNode {
 public:
+    using cocos2d::CCNode::init;
     using ChangeCallback = std::function<void(float)>;
     // raw value to right-side text (e.g. "35%").
     using Formatter = std::function<std::string(float)>;

@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+namespace geode { class Scrollbar; }
+
 namespace paimon::fonts {
 
 class FontPickerPopup : public PaimonPopup {
@@ -12,7 +14,6 @@ public:
     enum class Tab { GDFonts, Custom };
 
     static FontPickerPopup* create(geode::CopyableFunction<void(std::string const&)> onSelect);
-    void positionBelow(cocos2d::CCNode* anchor, float gap = 4.f);
     void closeAnimated();
 
 protected:
@@ -22,13 +23,25 @@ protected:
     cocos2d::CCNode* m_previewFontSprite = nullptr;
     cocos2d::CCLabelBMFont* m_previewLabel = nullptr;
 
-    cocos2d::CCMenu* m_sideMenu = nullptr;
     CCMenuItemSpriteExtra* m_tabGD = nullptr;
     CCMenuItemSpriteExtra* m_tabCustom = nullptr;
+    std::vector<CCMenuItemSpriteExtra*> m_quickButtons;
     Tab m_activeTab = Tab::GDFonts;
 
     geode::ScrollLayer* m_scroll = nullptr;
+    geode::Scrollbar* m_scrollbar = nullptr;
+    cocos2d::CCMenu* m_gridMenu = nullptr;
     cocos2d::CCNode* m_contentNode = nullptr;
+    struct FontPreview {
+        cocos2d::CCNode* cell;
+        ButtonSprite* background;
+        std::string file;
+        bool loaded = false;
+    };
+    std::vector<FontPreview> m_fontPreviews;
+    float m_lastPreviewScrollY = 0.f;
+    bool m_fontPreviewsPending = true;
+    std::string m_selectedFontFile;
 
     cocos2d::CCNode* m_customContainer = nullptr;
     geode::TextInput* m_customInput = nullptr;
@@ -37,15 +50,13 @@ protected:
 
     bool ccTouchBegan(cocos2d::CCTouch*, cocos2d::CCEvent*) override;
     void ccTouchEnded(cocos2d::CCTouch*, cocos2d::CCEvent*) override;
-    bool isInsideVisibleScroll(cocos2d::CCNode* item);
 
     bool init(geode::CopyableFunction<void(std::string const&)> onSelect);
     void switchTab(Tab tab);
     void updateTabHighlights();
     void buildGDFontGrid();
+    void update(float dt) override;
     void showPreview(std::string const& fontId, std::string const& fontFile);
-    void onTabGD(cocos2d::CCObject*);
-    void onTabCustom(cocos2d::CCObject*);
     void onQuickPick(cocos2d::CCObject* sender);
     void onFontClicked(cocos2d::CCObject* sender);
     void onCustomApply(cocos2d::CCObject*);

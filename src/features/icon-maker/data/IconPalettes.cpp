@@ -16,6 +16,26 @@ GradientSpec linearOf(float angle, std::vector<GradientStop> stops) {
     return spec;
 }
 
+GradientSpec radialOf(std::vector<GradientStop> stops) {
+    GradientSpec spec;
+    spec.kind = GradientKind::Radial;
+    spec.centerX = 0.5f;
+    spec.centerY = 0.5f;
+    spec.radius = 0.75f;
+    spec.stops = std::move(stops);
+    return spec;
+}
+
+GradientSpec conicOf(float angle, std::vector<GradientStop> stops) {
+    GradientSpec spec;
+    spec.kind = GradientKind::Conic;
+    spec.angleDeg = angle;
+    spec.centerX = 0.5f;
+    spec.centerY = 0.5f;
+    spec.stops = std::move(stops);
+    return spec;
+}
+
 std::vector<cocos2d::ccColor3B>& recentList() {
     static std::vector<cocos2d::ccColor3B> colors;
     static bool loaded = false;
@@ -29,16 +49,6 @@ std::vector<cocos2d::ccColor3B>& recentList() {
         }
     }
     return colors;
-}
-
-GradientSpec radialOf(std::vector<GradientStop> stops) {
-    GradientSpec spec;
-    spec.kind = GradientKind::Radial;
-    spec.centerX = 0.5f;
-    spec.centerY = 0.5f;
-    spec.radius = 0.75f;
-    spec.stops = std::move(stops);
-    return spec;
 }
 
 }  // anonymous namespace
@@ -67,6 +77,23 @@ std::vector<GradientPreset> const& gradientPresets() {
                                       {1.00f, { 90,  60, 190, 255}}})},
         {"Neon",      linearOf(45.f, {{0.00f, { 60, 255, 220, 255}},
                                       {1.00f, {180,  70, 255, 255}}})},
+        {"Cyber",     linearOf(135.f, {{0.00f, {255,  40, 170, 255}},
+                                       {0.50f, { 80,  60, 255, 255}},
+                                       {1.00f, { 40, 240, 255, 255}}})},
+        {"Galaxia",   radialOf({{0.00f, {240, 140, 255, 255}},
+                                {0.45f, { 95,  55, 200, 255}},
+                                {1.00f, { 16,  14,  48, 255}}})},
+        {"Esmeralda", linearOf(90.f, {{0.00f, {160, 255, 175, 255}},
+                                      {0.55f, { 40, 210, 130, 255}},
+                                      {1.00f, { 12,  95,  75, 255}}})},
+        {"Sakura",    linearOf(90.f, {{0.00f, {255, 230, 242, 255}},
+                                      {0.55f, {255, 145, 195, 255}},
+                                      {1.00f, {210,  70, 135, 255}}})},
+        {"Prisma",    conicOf(0.f,  {{0.00f, {255,  70, 100, 255}},
+                                     {0.25f, {255, 220,  60, 255}},
+                                     {0.50f, { 60, 240, 160, 255}},
+                                     {0.75f, { 80, 140, 255, 255}},
+                                     {1.00f, {255,  70, 100, 255}}})},
         {"Arcoiris",  linearOf(0.f,  {{0.00f, {255,  60,  60, 255}},
                                       {0.25f, {255, 220,  60, 255}},
                                       {0.50f, { 80, 235, 110, 255}},

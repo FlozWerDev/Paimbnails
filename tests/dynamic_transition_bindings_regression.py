@@ -3,6 +3,8 @@
 import json
 import re
 from collections import defaultdict
+from pathlib import Path
+from build_paths import build_directory
 
 from audit_dynamic_transition_bindings import ROOT, bindings_directory, collect, inventory, markdown
 
@@ -19,12 +21,13 @@ def blocks(source):
 def run():
     directory = bindings_directory()
     classes, _ = collect(directory)
-    generated = ROOT / "build-win/bindings/bindings/Geode/modify"
+    generated = build_directory() / "bindings/bindings/Geode/modify"
     hooks = defaultdict(list)
     count = 0
     for path in (
         ROOT / "src/features/transitions/hooks/DynamicTransitionPanelHook.cpp",
         ROOT / "src/features/transitions/hooks/DynamicTransitionKeyboardHook.cpp",
+        ROOT / "src/features/transitions/hooks/TransitionHook.cpp",
         ROOT / "src/hooks/DynamicPopupHook.cpp",
     ):
         source = path.read_text(encoding="utf-8-sig")
@@ -36,7 +39,9 @@ def run():
             for method in re.findall(r'^    (?:bool|void) (\w+)\(', body, re.M):
                 if method not in ("show", "showLayer", "hideLayer", "animateInRandomSide",
                                   "dispatchKeyboardMSG", "dispatchKeypadMSG", "addChild",
-                                  "removeChild", "removeAllChildrenWithCleanup"):
+                                  "removeChild", "removeAllChildrenWithCleanup",
+                                  "replaceScene", "pushScene", "popScene",
+                                  "popSceneWithTransition"):
                     continue
                 assert method in methods, f"Missing binding: {qualified}::{method}"
                 header = (generated / f"{name}.hpp").read_text()
@@ -59,6 +64,10 @@ def run():
 
     data = inventory(directory)
     saved = json.loads((ROOT / "docs/DYNAMIC_TRANSITION_BINDINGS.json").read_text())
+    # Hashes identify the bindings contents; their build/cache locations may differ.
+    for snapshot in (data, saved):
+        for item in snapshot["classes"]:
+            item["source"] = Path(item["source"].replace("\\", "/")).name
     assert data == saved, "The UI inventory is out of date"
     assert markdown(data) == (ROOT / "docs/DYNAMIC_TRANSITION_BINDINGS.md").read_text()
     families = {item["name"]: item["family"] for item in data["classes"]}

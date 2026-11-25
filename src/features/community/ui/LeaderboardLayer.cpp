@@ -1,3 +1,4 @@
+#include "../../../framework/compat/NativeUI.hpp"
 #include "../../../utils/MusicChannel.hpp"
 #include "LeaderboardLayer.hpp"
 #include "../../audio/services/CaveAudio.hpp"
@@ -574,7 +575,7 @@ static int lbDifficultySpriteValue(GJGameLevel* level) {
             default: return 6;
         }
     }
-    int diff = level->getAverageDifficulty();
+    int diff = paimon::compat::averageDifficulty(level);
     if (level->m_levelType == GJLevelType::Main) {
         diff = static_cast<int>(level->m_difficulty);
     }
@@ -1307,6 +1308,7 @@ void LeaderboardLayer::createForYouList() {
     }
 
     auto scroll = ScrollLayer::create({listW - 8.f, listH - 10.f});
+    if (scroll) scroll->setAnchorPoint({0.f, 0.f});
     scroll->setPosition({listCX - (listW - 8.f) / 2.f, listCY - (listH - 10.f) / 2.f});
     container->addChild(scroll, 10);
     m_scroll = scroll;
@@ -1611,9 +1613,9 @@ void LeaderboardLayer::onForYouDismiss(CCObject* sender) {
         return pick.level && static_cast<int>(pick.level->m_levelID) == levelID;
     });
 
-    PaimonNotify::create(
+    PaimonNotify::show(
         Localization::get().getString("foryou.dismissed").c_str(),
-        NotificationIcon::Info)->show();
+        NotificationIcon::Info);
 
     createForYouList();
 }
@@ -1627,7 +1629,7 @@ void LeaderboardLayer::onForYouPlayLevel(CCObject* sender) {
     auto savedLevel = GameLevelManager::get()->getSavedLevel(level->m_levelID);
     GJGameLevel* levelToUse = savedLevel ? savedLevel : level;
 
-    auto layer = LevelInfoLayer::create(levelToUse, false);
+    auto layer = paimon::compat::createLevelInfoLayer(levelToUse, false);
     auto infoScene = CCScene::create();
     infoScene->addChild(layer);
     TransitionManager::get().pushScene(infoScene);
@@ -1645,7 +1647,7 @@ void LeaderboardLayer::onViewLevel(CCObject* sender) {
             levelToUse = savedLevel;
         }
 
-        auto layer = LevelInfoLayer::create(levelToUse, false);
+        auto layer = paimon::compat::createLevelInfoLayer(levelToUse, false);
         auto infoScene = CCScene::create();
         infoScene->addChild(layer);
         TransitionManager::get().pushScene(infoScene);
@@ -1857,7 +1859,7 @@ void LeaderboardLayer::updateBackground(int levelID) {
     }
 }
 
-void LeaderboardLayer::loadLevelsFinished(CCArray* levels, char const* key) {
+void LeaderboardLayer::loadLevelsFinished(CCArray* levels, char const*) {
     if (!levels) return;
 
     if (m_forYouActive) {
@@ -1901,7 +1903,7 @@ void LeaderboardLayer::loadLevelsFinished(CCArray* levels, char const* key) {
     updateLevelInfo();
 }
 
-void LeaderboardLayer::loadLevelsFailed(char const* key) {
+void LeaderboardLayer::loadLevelsFailed(char const*) {
     if (m_forYouActive) {
         if (m_currentType != "foryou") return;
         if (m_pendingLevelGeneration != m_requestGeneration) return;
@@ -1918,7 +1920,7 @@ void LeaderboardLayer::loadLevelsFailed(char const* key) {
     if (m_pendingLevelGeneration != m_requestGeneration) return;
 }
 
-void LeaderboardLayer::setupPageInfo(gd::string, char const*) {
+void LeaderboardLayer::setupPageInfo(std::string, char const*) {
 }
 
 void LeaderboardLayer::updateLevelInfo() {
@@ -2020,7 +2022,7 @@ void LeaderboardLayer::createThemeParticles() {
     }
 }
 
-void LeaderboardLayer::spawnThemeParticle(float dt) {
+void LeaderboardLayer::spawnThemeParticle(float) {
     if (!m_particleContainer) return;
     
     if (m_particleContainer->getChildrenCount() > 25) return;

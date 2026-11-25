@@ -63,6 +63,7 @@ protected:
 
     void onPickImage();
     void onPickVideo();
+    void onOpenWallpaperPicker();
     void onUseShaderBg();
     void onUseRandom();
     void onUseDynamicShader();
@@ -147,6 +148,6 @@ protected:
     bool m_controlsTargetSet = false;
     float m_screenTargetY = 0.f;
     bool m_screenTargetSet = false;
-    void scrollWheel(float x, float y) override;
+    bool scrollWheel(float x, float y) override;
     void update(float dt) override;
 };

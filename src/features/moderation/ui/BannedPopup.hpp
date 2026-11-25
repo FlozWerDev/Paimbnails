@@ -8,6 +8,7 @@ protected:
     std::string m_reason;
 
     bool init(std::string const& reason);
+    void onExit() override;
     void onDisableMod(cocos2d::CCObject*);
 
 public:
@@ -17,4 +18,7 @@ public:
 namespace paimon::ban {
     // shows the non-dismissable banned popup. safe to call from the main thread.
     void showBannedPopup(std::string const& reason);
+    // true while the forced popup exists. BanGate uses it to avoid duplicates
+    // and to re-show the popup if a scene transition removed it.
+    bool isBannedPopupActive();
 }

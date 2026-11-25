@@ -2,10 +2,15 @@
 #include "ColorSpace.hpp"
 #include "GifArtVectorizer.hpp"
 #include "GifCircleVectorizer.hpp"
+#include "GifCompute.hpp"
 #include "GifFreeVectorizer.hpp"
 #include "GifGlowPass.hpp"
 #include "GifMotionPlanner.hpp"
 #include "GifPaintVectorizer.hpp"
+#include "GifPlanOptimizer.hpp"
+#include "GifSmoothVectorizer.hpp"
+#include "GifSurfaceVectorizer.hpp"
+#include "GifSurfaceOptimizer.hpp"
 #include "GifParallel.hpp"
 #include "GifStampCatalog.hpp"
 #include "ImageWatermark.hpp"
@@ -21,6 +26,7 @@
 #include <map>
 #include <mutex>
 #include <numeric>
+#include <optional>
 #include <queue>
 #include <utility>
 
@@ -93,9 +99,13 @@ PreviewImage gridPreviewImage(
     int width,
     int height
 ) {
+    if (width <= 0 || height <= 0) return PreviewImage{0, 0, {}};
+    std::size_t const count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+    if (cells.size() < count) return PreviewImage{width, height,
+        std::vector<std::uint8_t>(count * 4, 0)};
     PreviewImage out{width, height,
-        std::vector<std::uint8_t>(static_cast<std::size_t>(width) * height * 4, 0)};
-    for (int i = 0; i < width * height; ++i) {
+        std::vector<std::uint8_t>(count * 4, 0)};
+    for (std::size_t i = 0; i < count; ++i) {
         int const color = cells[static_cast<std::size_t>(i)];
         if (color < 0 || color >= static_cast<int>(palette.size())) continue;
         auto const& chosen = palette[static_cast<std::size_t>(color)];
@@ -157,7 +167,7 @@ struct BucketKey {
 };
 
 Options sanitize(Options options) {
-    options.maxDimension = std::clamp(options.maxDimension, 4, 320);
+    options.maxDimension = std::clamp(options.maxDimension, 4, kMaxImportDimension);
     options.minDimension = std::clamp(options.minDimension, 4, options.maxDimension);
     options.maxColors = std::clamp(options.maxColors, 1, 64);
     options.maxFrames = std::clamp(options.maxFrames, 1, 120);
@@ -437,7 +447,7 @@ float paintResolutionLoss(SourceAnimation const& source, int dimension) {
                     contrast = std::max(contrast, high[channel] - low[channel]);
                     sum[channel] /= count;
                 }
-                // Low-contrast texture should not force a larger object grid.
+                // low-contrast texture should not force a larger object grid.
                 if (contrast <= 32) continue;
                 for (int sy = y0; sy < y1; ++sy) {
                     for (int sx = x0; sx < x1; ++sx) {
@@ -464,7 +474,7 @@ int autoPaintDimension(SourceAnimation const& source) {
     if (ceiling <= 320) return 320;
     for (int const candidate : {320, 480}) {
         if (candidate >= ceiling) return ceiling;
-        if (paintResolutionLoss(source, candidate) <= 2.f) return candidate;
+        if (paintResolutionLoss(source, candidate) <= 0.25f) return candidate;
     }
     return ceiling;
 }
@@ -525,6 +535,52 @@ std::vector<ReducedFrame> reduceFrames(
     return output;
 }
 
+std::vector<std::uint8_t> reducedRgba(ReducedFrame const& frame) {
+    std::vector<std::uint8_t> pixels;
+    pixels.reserve(frame.pixels.size() * 4);
+    for (auto pixel : frame.pixels) {
+        pixels.push_back(pixel.r);
+        pixels.push_back(pixel.g);
+        pixels.push_back(pixel.b);
+        pixels.push_back(pixel.a);
+    }
+    return pixels;
+}
+
+struct AbsoluteReference {
+    int width = 0;
+    int height = 0;
+    std::vector<std::uint8_t> rgba;
+};
+
+// fixed-resolution source used to compare plans built on different grids.
+AbsoluteReference makeAbsoluteReference(
+    SourceAnimation const& source,
+    Options const& options,
+    int frameLimit,
+    int dimension
+) {
+    AbsoluteReference reference;
+    if (!usesPaintGeometry(options.mode) || dimension <= 0) return reference;
+    int width = dimension;
+    int height = dimension;
+    if (source.width >= source.height) {
+        height = std::max(1, static_cast<int>(std::lround(
+            static_cast<double>(dimension) * source.height / source.width)));
+    } else {
+        width = std::max(1, static_cast<int>(std::lround(
+            static_cast<double>(dimension) * source.width / source.height)));
+    }
+    auto const selected = selectFrames(source, frameLimit);
+    auto const masks = backgroundMasks(source, selected, options);
+    auto const reduced = reduceFrames(source, selected, masks, width, height, options);
+    if (reduced.empty()) return reference;
+    reference.width = width;
+    reference.height = height;
+    reference.rgba = reducedRgba(reduced.front());
+    return reference;
+}
+
 struct PaletteBin {
     std::uint64_t weight = 0;
     std::uint64_t r = 0;
@@ -561,7 +617,7 @@ int colorDistanceSq(Pixel const& pixel, Color const& color) {
 
 constexpr int kFlatColorDistance = 20;
 
-// orla is no true color: weighs by flat neighborhood.
+// the fringe is no true color: weigh by flat neighborhood.
 template <typename Sample>
 std::uint64_t flatnessWeight(Sample const& sample, int x, int y, int width, int height) {
     Color center;
@@ -709,49 +765,84 @@ std::vector<Color> medianCut(Histogram const& histogram, int maxColors) {
     return palette;
 }
 
-// snaps each entry to the most-repeated flat tone and fuses equals.
-std::vector<Color> refinePalette(Histogram const& histogram, std::vector<Color> palette) {
+// refine every centroid instead of snapping several onto the dominant tone,
+// which discarded small accents like blush and highlights.
+std::vector<Color> refinePalette(
+    Histogram const& histogram,
+    std::vector<Color> palette,
+    bool seedFromPalette = false
+) {
     if (palette.size() < 2) return palette;
-
     struct Center {
         OkLab lab;
         double weight = 0.0;
-        double peak = 0.0;
-        OkLab peakLab;
     };
-    std::vector<Center> centers(palette.size());
-    for (std::size_t i = 0; i < palette.size(); ++i) {
-        centers[i].lab = rgbToOkLab(palette[i]);
-    }
-
+    struct Sample {
+        OkLab lab;
+        double weight;
+    };
+    std::vector<Sample> samples;
     for (auto const& bin : histogram) {
         if (bin.weight == 0) continue;
-        Color const color{
+        samples.push_back({rgbToOkLab({
             static_cast<std::uint8_t>(bin.r / bin.weight),
             static_cast<std::uint8_t>(bin.g / bin.weight),
-            static_cast<std::uint8_t>(bin.b / bin.weight)
-        };
-        OkLab const lab = rgbToOkLab(color);
-        std::size_t best = 0;
-        float bestDistance = std::numeric_limits<float>::max();
-        for (std::size_t i = 0; i < centers.size(); ++i) {
-            float const distance = oklabDistance(lab, centers[i].lab);
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                best = i;
+            static_cast<std::uint8_t>(bin.b / bin.weight)}), static_cast<double>(bin.weight)});
+    }
+    std::vector<Center> centers;
+    if (seedFromPalette) {
+        // the median-cut centers already partition the color space; k-means
+        // from them reaches a different optimum than the greedy seed.
+        centers.reserve(palette.size());
+        for (auto const& color : palette) centers.push_back({rgbToOkLab(color), 0.0});
+    } else {
+        // seed by weighted unexplained color error; starting several centers
+        // on the dominant tone left none for small pink or blue details.
+        auto first = std::max_element(samples.begin(), samples.end(), [](auto const& a, auto const& b) {
+            return a.weight < b.weight;
+        });
+        if (first == samples.end()) return palette;
+        centers.push_back({first->lab, 0.0});
+        std::vector<float> nearest(samples.size(), std::numeric_limits<float>::max());
+        while (centers.size() < palette.size()) {
+            std::size_t chosen = 0;
+            double bestError = 0.0;
+            for (std::size_t index = 0; index < samples.size(); ++index) {
+                nearest[index] = std::min(nearest[index], oklabDistance(samples[index].lab, centers.back().lab));
+                double const error = nearest[index] * nearest[index] * samples[index].weight;
+                if (error > bestError) { bestError = error; chosen = index; }
             }
-        }
-        auto& center = centers[best];
-        double const weight = static_cast<double>(bin.weight);
-        center.weight += weight;
-        if (weight > center.peak) {
-            center.peak = weight;
-            center.peakLab = lab;
+            if (bestError < 0.000001) break;
+            centers.push_back({samples[chosen].lab, 0.0});
         }
     }
-
-    for (auto& center : centers) {
-        if (center.peak > 0.0) center.lab = center.peakLab;
+    if (centers.empty()) return palette;
+    for (int iteration = 0; iteration < 12; ++iteration) {
+        std::vector<std::array<double, 4>> sums(centers.size());
+        for (auto const& sample : samples) {
+            std::size_t best = 0;
+            float distance = std::numeric_limits<float>::max();
+            for (std::size_t index = 0; index < centers.size(); ++index) {
+                float const candidate = oklabDistance(sample.lab, centers[index].lab);
+                if (candidate < distance) { distance = candidate; best = index; }
+            }
+            auto& sum = sums[best];
+            sum[0] += sample.lab.L * sample.weight;
+            sum[1] += sample.lab.a * sample.weight;
+            sum[2] += sample.lab.b * sample.weight;
+            sum[3] += sample.weight;
+        }
+        float movement = 0.f;
+        for (std::size_t index = 0; index < centers.size(); ++index) {
+            auto const& sum = sums[index];
+            centers[index].weight = sum[3];
+            if (sum[3] <= 0.0) continue;
+            OkLab const next{static_cast<float>(sum[0] / sum[3]),
+                static_cast<float>(sum[1] / sum[3]), static_cast<float>(sum[2] / sum[3])};
+            movement = std::max(movement, oklabDistance(centers[index].lab, next));
+            centers[index].lab = next;
+        }
+        if (movement < 0.0001f) break;
     }
 
     bool merged = true;
@@ -798,6 +889,28 @@ std::vector<Color> refinePalette(Histogram const& histogram, std::vector<Color> 
     return refined.empty() ? palette : refined;
 }
 
+double paletteWeightedError(Histogram const& histogram, std::vector<Color> const& palette) {
+    if (palette.empty()) return std::numeric_limits<double>::max();
+    std::vector<OkLab> labs;
+    labs.reserve(palette.size());
+    for (auto const& color : palette) labs.push_back(rgbToOkLab(color));
+    double total = 0.0;
+    double weight = 0.0;
+    for (auto const& bin : histogram) {
+        if (bin.weight == 0) continue;
+        OkLab const lab = rgbToOkLab({
+            static_cast<std::uint8_t>(bin.r / bin.weight),
+            static_cast<std::uint8_t>(bin.g / bin.weight),
+            static_cast<std::uint8_t>(bin.b / bin.weight)});
+        float best = std::numeric_limits<float>::max();
+        for (auto const& candidate : labs)
+            best = std::min(best, oklabDistance(lab, candidate));
+        total += static_cast<double>(best) * static_cast<double>(bin.weight);
+        weight += static_cast<double>(bin.weight);
+    }
+    return weight > 0.0 ? total / weight : 0.0;
+}
+
 int nearestColor(float r, float g, float b, std::vector<OkLab> const& paletteLabs) {
     OkLab const query = rgbToOkLab({
         static_cast<std::uint8_t>(std::clamp(std::lround(r), 0L, 255L)),
@@ -818,17 +931,24 @@ int nearestColor(float r, float g, float b, std::vector<OkLab> const& paletteLab
 
 // single table quantizing every source pixel.
 std::vector<std::int16_t> paletteLookup(std::vector<Color> const& palette) {
+    std::vector<std::int16_t> lookup(32768, 0);
+    if (palette.size() <= 1) return lookup;
+    // these bin centers never change between palettes, resolutions or frames:
+    // cache the expensive cube roots once, across render passes.
+    static auto const queries = [] {
+        std::array<OkLab, 32768> result{};
+        for (int key = 0; key < 32768; ++key) result[static_cast<std::size_t>(key)] = rgbToOkLab({
+            static_cast<std::uint8_t>(((key >> 10) & 31) << 3 | 4),
+            static_cast<std::uint8_t>(((key >> 5) & 31) << 3 | 4),
+            static_cast<std::uint8_t>((key & 31) << 3 | 4)});
+        return result;
+    }();
     std::vector<OkLab> labs;
     labs.reserve(palette.size());
     for (auto const& color : palette) labs.push_back(rgbToOkLab(color));
 
-    std::vector<std::int16_t> lookup(32768, 0);
     for (int key = 0; key < 32768; ++key) {
-        OkLab const query = rgbToOkLab({
-            static_cast<std::uint8_t>(((key >> 10) & 31) << 3 | 4),
-            static_cast<std::uint8_t>(((key >> 5) & 31) << 3 | 4),
-            static_cast<std::uint8_t>((key & 31) << 3 | 4)
-        });
+        auto const& query = queries[static_cast<std::size_t>(key)];
         int best = 0;
         float bestDistance = std::numeric_limits<float>::max();
         for (int i = 0; i < static_cast<int>(labs.size()); ++i) {
@@ -865,7 +985,9 @@ std::vector<GridFrame> quantizeFromSource(
         GridFrame grid;
         grid.delayMs = selected[index].delayMs;
         grid.cells.assign(static_cast<std::size_t>(width) * height, -1);
-        for (int y = 0; y < height; ++y) {
+        bool const computed = computeQuantizedFrame(frame, removed, lookup, source.width, source.height,
+            width, height, stride, options.alphaThreshold, static_cast<int>(palette.size()), grid.cells);
+        if (!computed) for (int y = 0; y < height; ++y) {
             int const y0 = y * source.height / height;
             int const y1 = std::max(y0 + 1, ((y + 1) * source.height + height - 1) / height);
             for (int x = 0; x < width; ++x) {
@@ -976,7 +1098,7 @@ std::vector<GridFrame> quantize(
     return output;
 }
 
-// source histogram; in paint flatness weighs, not orla.
+// source histogram; in paint flatness weighs, not the fringe.
 std::vector<Color> buildPalette(
     SourceAnimation const& source,
     std::vector<SelectedFrame> const& selected,
@@ -1038,7 +1160,13 @@ std::vector<Color> buildPalette(
             }
         }
     }
-    return refinePalette(histogram, medianCut(histogram, maxColors));
+    auto cut = medianCut(histogram, maxColors);
+    auto seeded = refinePalette(histogram, cut, false);
+    auto fromCut = refinePalette(histogram, cut, true);
+    // both seeds are deterministic; keep whichever explains the histogram better.
+    return paletteWeightedError(histogram, fromCut) <
+            paletteWeightedError(histogram, seeded)
+        ? fromCut : seeded;
 }
 
 constexpr int kSpeckleColorDistance = 50;
@@ -1548,8 +1676,75 @@ void compactPaintSpeckles(
     }
 }
 
+// removes one-pixel teeth between similar paint tones before fitting geometry.
+// strong edges, thin lines and color accents stay intact.
+void smoothPaintLabels(std::vector<GridFrame>& frames, std::vector<ReducedFrame> const& source,
+    std::vector<Color> const& palette, int width, int height) {
+    if (frames.size() != source.size()) return;
+    for (std::size_t frameIndex = 0; frameIndex < frames.size(); ++frameIndex) {
+        auto& labels = frames[frameIndex].cells;
+        for (int pass = 0; pass < 3; ++pass) {
+            auto next = labels;
+            for (int y = 1; y + 1 < height; ++y) for (int x = 1; x + 1 < width; ++x) {
+                auto const cell = static_cast<std::size_t>(y) * width + x;
+                int const current = labels[cell];
+                if (current < 0) continue;
+                std::array<int, 8> neighbors{labels[cell - width - 1], labels[cell - width], labels[cell - width + 1],
+                    labels[cell - 1], labels[cell + 1], labels[cell + width - 1], labels[cell + width], labels[cell + width + 1]};
+                if (std::count(neighbors.begin(), neighbors.end(), current) > 3) continue;
+                if ((neighbors[0] == current && neighbors[7] == current) ||
+                    (neighbors[1] == current && neighbors[6] == current) ||
+                    (neighbors[2] == current && neighbors[5] == current) ||
+                    (neighbors[3] == current && neighbors[4] == current)) continue;
+                int replacement = current;
+                for (int other : neighbors) if (other >= 0 && other != current &&
+                    std::count(neighbors.begin(), neighbors.end(), other) >= 5) { replacement = other; break; }
+                if (replacement == current || colorDistanceSq(palette[current], palette[replacement]) > 2500) continue;
+                auto const pixel = source[frameIndex].pixels[cell];
+                auto error = [&](Color color) {
+                    return std::abs(pixel.r - color.r) + std::abs(pixel.g - color.g) + std::abs(pixel.b - color.b);
+                };
+                if (error(palette[replacement]) <= error(palette[current]) + 9) next[cell] = replacement;
+            }
+            labels = std::move(next);
+        }
+    }
+}
+
+// channel medians minimize source rgb error after the final region assignment;
+// palette seeding keeps rare accents, geometry gains no extra pieces.
+void fitPaintPalette(std::vector<Color>& palette, std::vector<GridFrame> const& frames,
+    std::vector<ReducedFrame> const& source) {
+    using Histogram = std::array<std::array<std::uint64_t, 256>, 3>;
+    std::vector<Histogram> histograms(palette.size());
+    std::vector<std::uint64_t> weights(palette.size(), 0);
+    for (std::size_t frame = 0; frame < frames.size(); ++frame)
+        for (std::size_t cell = 0; cell < frames[frame].cells.size(); ++cell) {
+            int const color = frames[frame].cells[cell];
+            if (color < 0) continue;
+            auto const pixel = source[frame].pixels[cell];
+            histograms[color][0][pixel.r] += pixel.a;
+            histograms[color][1][pixel.g] += pixel.a;
+            histograms[color][2][pixel.b] += pixel.a;
+            weights[color] += pixel.a;
+        }
+    for (std::size_t color = 0; color < palette.size(); ++color) {
+        if (!weights[color]) continue;
+        auto median = [&](int channel) {
+            std::uint64_t sum = 0;
+            for (int value = 0; value < 256; ++value) {
+                sum += histograms[color][channel][value];
+                if (sum * 2 >= weights[color]) return static_cast<std::uint8_t>(value);
+            }
+            return std::uint8_t{255};
+        };
+        palette[color] = {median(0), median(1), median(2)};
+    }
+}
+
 struct GeometryContext {
     ImportMode mode = ImportMode::Blocks;
+    bool smoothContours = false;
     bool quarterGlow = false;
     int blurSourceColors = 0;
     int blurStride = 1;
@@ -1732,8 +1927,7 @@ void compactBlurFrames(
 }
 
 inline bool paintPathIsGridExact(ImportMode mode, SamplingMode sampling) {
-    (void)sampling;
-    return mode == ImportMode::Blocks;
+    return mode == ImportMode::Blocks || (usesPaintGeometry(mode) && sampling == SamplingMode::Pixel);
 }
 
 std::vector<Primitive> buildGeometry(
@@ -1775,7 +1969,7 @@ std::vector<Primitive> buildGeometry(
                     int const blockY = (position / width) / context.blurStride;
                     x = blockX * context.blurStride + context.blurStride * 0.5f;
                     y = blockY * context.blurStride + context.blurStride * 0.5f;
-                } else if (color < context.blurPositionOffsets.size()) {
+                } else if (color >= 0 && static_cast<std::size_t>(color) < context.blurPositionOffsets.size()) {
                     x += context.blurPositionOffsets[color];
                     y += context.blurPositionOffsets[color];
                 }
@@ -1801,6 +1995,13 @@ std::vector<Primitive> buildGeometry(
                 positions, width, height, color,
                 context.obstacles[static_cast<std::size_t>(color)]);
         case ImportMode::Paint:
+            if (context.smoothContours) {
+                return vectorizeSmoothPaint(
+                    positions, width, height, color,
+                    context.ranks[static_cast<std::size_t>(color)] * kPaintSublayers,
+                    context.obstacles[static_cast<std::size_t>(color)]);
+            }
+            [[fallthrough]];
         case ImportMode::Render:
             return vectorizePaint(
                 positions, width, height, color,
@@ -2257,6 +2458,35 @@ void collectStamps(ImportPlan& plan) {
     }
 }
 
+// 255 * sqrt(3): the longest possible distance between two rgb colors.
+constexpr double kColorDistanceNorm = 255.0 * 1.7320508075688772935;
+
+template <typename ExpectedAt>
+float scoreFrameSimilarity(
+    std::vector<std::uint8_t> const& preview,
+    std::size_t count,
+    ExpectedAt&& expectedAt
+) {
+    double score = 0.0;
+    std::size_t compared = 0;
+    for (std::size_t position = 0; position < count; ++position) {
+        std::size_t const pixel = position * 4;
+        bool const visible = preview[pixel + 3] != 0;
+        auto const expected = expectedAt(position);
+        bool const sourceVisible = expected.has_value();
+        if (!sourceVisible && !visible) continue;
+        ++compared;
+        if (!sourceVisible || !visible) continue;
+        double const dr = static_cast<double>(preview[pixel]) - expected->r;
+        double const dg = static_cast<double>(preview[pixel + 1]) - expected->g;
+        double const db = static_cast<double>(preview[pixel + 2]) - expected->b;
+        score += 1.0 - std::sqrt(dr * dr + dg * dg + db * db) / kColorDistanceNorm;
+    }
+    return compared > 0
+        ? static_cast<float>(100.0 * score / static_cast<double>(compared))
+        : 100.f;
+}
+
 float paintPlanSimilarity(
     ImportPlan const& plan,
     std::vector<GridFrame> const& reference,
@@ -2267,39 +2497,24 @@ float paintPlanSimilarity(
         static_cast<int>(plan.frames.size()), static_cast<int>(reference.size()));
     bool const compareSource = sourceReference.size() == reference.size();
     for (int frame = 0; frame < frameCount; ++frame) {
-        double score = 0.0;
-        std::size_t compared = 0;
         auto const preview = renderPlanFrame(plan, frame, 1);
         auto const& cells = reference[static_cast<std::size_t>(frame)].cells;
-        for (std::size_t position = 0; position < cells.size(); ++position) {
-            std::size_t const pixel = position * 4;
-            bool const visible = preview[pixel + 3] != 0;
-            int const expected = cells[position];
-            Pixel expectedPixel;
-            bool sourceVisible = false;
-            if (compareSource) {
-                expectedPixel = sourceReference[static_cast<std::size_t>(frame)].pixels[position];
-                sourceVisible = expectedPixel.a != 0;
-            } else {
-                sourceVisible = expected >= 0;
-                if (sourceVisible && expected < static_cast<int>(plan.palette.size())) {
-                    auto const& color = plan.palette[static_cast<std::size_t>(expected)];
-                    expectedPixel = {color.r, color.g, color.b, 255};
+        auto const frameScore = scoreFrameSimilarity(
+            preview, cells.size(),
+            [&](std::size_t position) -> std::optional<Pixel> {
+                if (compareSource) {
+                    auto const& expected =
+                        sourceReference[static_cast<std::size_t>(frame)].pixels[position];
+                    if (expected.a == 0) return std::nullopt;
+                    return expected;
                 }
-            }
-            if (!sourceVisible && !visible) continue;
-            ++compared;
-            if (!sourceVisible || !visible) continue;
-            double const dr = static_cast<double>(preview[pixel]) - expectedPixel.r;
-            double const dg = static_cast<double>(preview[pixel + 1]) - expectedPixel.g;
-            double const db = static_cast<double>(preview[pixel + 2]) - expectedPixel.b;
-            score += 1.0 - std::sqrt(dr * dr + dg * dg + db * db) /
-                (255.0 * std::sqrt(3.0));
-        }
-        if (compared > 0) {
-            minimum = std::min(
-                minimum, static_cast<float>(100.0 * score / compared));
-        }
+                int const expected = cells[position];
+                if (expected < 0) return std::nullopt;
+                if (expected >= static_cast<int>(plan.palette.size())) return Pixel{};
+                auto const& color = plan.palette[static_cast<std::size_t>(expected)];
+                return Pixel{color.r, color.g, color.b, 255};
+            });
+        minimum = std::min(minimum, frameScore);
     }
     return minimum;
 }
@@ -2319,26 +2534,13 @@ float sourcePlanSimilarity(
         if (expected.size() != pixels) return plan.similarity;
 
         auto const preview = renderPlanFrame(plan, frame, scale);
-        double score = 0.0;
-        std::size_t compared = 0;
-        for (std::size_t position = 0; position < pixels; ++position) {
-            std::size_t const pixel = position * 4;
-            bool const visible = preview[pixel + 3] != 0;
-            bool const sourceVisible = expected[position].a != 0;
-            if (!visible && !sourceVisible) continue;
-            ++compared;
-            if (!visible || !sourceVisible) continue;
-
-            double const dr = static_cast<double>(preview[pixel]) - expected[position].r;
-            double const dg = static_cast<double>(preview[pixel + 1]) - expected[position].g;
-            double const db = static_cast<double>(preview[pixel + 2]) - expected[position].b;
-            score += 1.0 - std::sqrt(dr * dr + dg * dg + db * db) /
-                (255.0 * std::sqrt(3.0));
-        }
-        if (compared > 0) {
-            minimum = std::min(
-                minimum, static_cast<float>(100.0 * score / compared));
-        }
+        auto const frameScore = scoreFrameSimilarity(
+            preview, pixels,
+            [&](std::size_t position) -> std::optional<Pixel> {
+                if (expected[position].a == 0) return std::nullopt;
+                return expected[position];
+            });
+        minimum = std::min(minimum, frameScore);
     }
     return minimum;
 }
@@ -2350,7 +2552,9 @@ BuildResult buildAt(
     int frameLimit,
     bool compactSpeckles,
     StageProgress const& progress = {},
-    PreviewThrottle* preview = nullptr
+    PreviewThrottle* preview = nullptr,
+    bool allowTrim = true,
+    AbsoluteReference const* absoluteReference = nullptr
 ) {
     report(progress, BuildStage::Preparing, 0.f);
     int width = dimension;
@@ -2390,6 +2594,11 @@ BuildResult buildAt(
         if (compactSpeckles) {
             compactPaintSpeckles(frames, reduced, palette, width, height);
         }
+        if ((options.mode == ImportMode::Paint || options.mode == ImportMode::Free) &&
+            options.sampling == SamplingMode::Smooth && !options.dither) {
+            smoothPaintLabels(frames, reduced, palette, width, height);
+            fitPaintPalette(palette, frames, reduced);
+        }
     }
     // geometry reviews against the clean grid, never the preview.
     if (preview) {
@@ -2412,6 +2621,7 @@ BuildResult buildAt(
     context.blurStride = options.mode == ImportMode::Blur ? 1 : blurStride;
     context.blurPositionOffsets = std::move(blurPositionOffsets);
     context.gridExact = paintPathIsGridExact(options.mode, options.sampling);
+    context.smoothContours = !options.optimize && options.mode == ImportMode::Paint;
     context.quarterGlow = options.mode == ImportMode::Blur &&
         options.softStamps.size() == 7 && !options.softStamps[0].objectId;
     context.glowDiameter = options.blurGlowDiameter;
@@ -2436,13 +2646,22 @@ BuildResult buildAt(
             int const color = frames.front().cells[static_cast<std::size_t>(position)];
             if (color >= 0) positions[static_cast<std::size_t>(color)].push_back(position);
         }
-        chosen.strategy = "estatico";
+        chosen.strategy = context.smoothContours ? "estatico+contorno-suave" : "estatico";
         std::vector<std::vector<Primitive>> byColor(palette.size());
         std::vector<std::atomic<bool>> colorDone(palette.size());
         for (auto& flag : colorDone) flag.store(false, std::memory_order_relaxed);
         parallelFor(palette.size(), [&](std::size_t color) {
             byColor[color] = buildGeometry(
                 positions[color], width, height, static_cast<int>(color), context);
+            if ((context.mode == ImportMode::Paint || context.mode == ImportMode::Free) &&
+                options.sampling == SamplingMode::Smooth && !context.smoothContours &&
+                byColor[color].size() > 1) {
+                auto surfaces = vectorizePaintSurface(positions[color], width, height,
+                    static_cast<int>(color), context.ranks[color] * kPaintSublayers,
+                    context.obstacles[color]);
+                if (!surfaces.empty() && surfaces.size() < byColor[color].size())
+                    byColor[color] = std::move(surfaces);
+            }
             colorDone[color].store(true, std::memory_order_release);
             if (!preview || usesSoftGeometry(options.mode)) return;
             auto claim = preview->claim();
@@ -2469,7 +2688,7 @@ BuildResult buildAt(
         sortByLayer(chosen.staticObjects);
         if (usesPaintGeometry(context.mode)) {
             prunePaintObjects(chosen.staticObjects, width, height);
-            if (matchesGridExactly(context.mode)) {
+            if (context.mode == ImportMode::Paint || context.mode == ImportMode::Render) {
                 // repairs add fill: prune and repair again.
                 repairPaintSeams(
                     chosen.staticObjects, frames.front().cells, context.ranks,
@@ -2481,9 +2700,18 @@ BuildResult buildAt(
                 // stitched seams merge with their strips too.
                 mergePaintSolids(chosen.staticObjects);
             }
-            if (context.mode == ImportMode::Paint) {
+            if (context.mode == ImportMode::Paint || context.mode == ImportMode::Free) {
                 smoothPaintFragments(chosen.staticObjects, frames.front().cells,
                     context.ranks, width, height);
+                prunePaintObjects(chosen.staticObjects, width, height);
+            }
+            // render has the same static geometry, so it uses the same surface fits.
+            if ((context.mode == ImportMode::Paint || context.mode == ImportMode::Free ||
+                 context.mode == ImportMode::Render) &&
+                options.sampling == SamplingMode::Smooth && !context.smoothContours) {
+                auto const sourcePixels = reducedRgba(reduced.front());
+                SurfaceImage const image{width, height, palette, context.ranks, context.obstacles, sourcePixels};
+                optimizePaintSurfaces(chosen.staticObjects, positions, image);
             }
         }
     } else {
@@ -2518,6 +2746,7 @@ BuildResult buildAt(
     plan.width = width;
     plan.height = height;
     plan.sourceFrames = static_cast<int>(source.frames.size());
+    plan.sampledFrames = static_cast<int>(selected.size());
     plan.actualDimension = std::max(width, height);
     plan.sourceColorCount = sourceColorCount;
     plan.mode = options.mode;
@@ -2528,6 +2757,24 @@ BuildResult buildAt(
     plan.tracks = std::move(chosen.tracks);
     plan.motionTracks = std::move(chosen.motionTracks);
     plan.strategy = std::move(chosen.strategy);
+    bool const rateDistortion = options.mode != ImportMode::Paint || options.optimize;
+    std::size_t const objectsBeforeDetail = plan.staticObjects.size() + plan.triggerObjects;
+    // detail goes below the watermark: the mark must stay on top.
+    if (allowTrim && options.detailRecovery && rateDistortion &&
+        plan.frames.size() == 1 && matchesGridExactly(plan.mode) && !reduced.empty()) {
+        auto const sourcePixels = reducedRgba(reduced.front());
+        restorePlanDetail(plan, options.objectBudget, sourcePixels, options.alphaThreshold,
+            options.detailPercent);
+        // detail must not inflate the count: trade the lowest-value existing
+        // pieces for the new patches instead of only adding.
+        std::size_t const stableTarget = std::min<std::size_t>(
+            options.objectBudget, objectsBeforeDetail);
+        if (options.detailStableCount && stableTarget > 0 &&
+            plan.staticObjects.size() + plan.triggerObjects > stableTarget) {
+            trimPlanToBudget(
+                plan, stableTarget, sourcePixels, options.alphaThreshold);
+        }
+    }
     applyImageWatermark(plan, options.objectBudget);
     if (usesSoftGeometry(options.mode)) {
         plan.stamps = options.softStamps;
@@ -2599,6 +2846,45 @@ BuildResult buildAt(
     } else {
         collectStamps(plan);
     }
+    pruneMicroObjects(plan.staticObjects, plan.width, plan.height);
+    for (auto& track : plan.tracks) pruneMicroObjects(track.objects, plan.width, plan.height);
+    for (auto& track : plan.motionTracks) pruneMicroObjects(track.objects, plan.width, plan.height);
+    if (plan.frames.size() == 1 &&
+        (plan.mode == ImportMode::Paint || plan.mode == ImportMode::Render) &&
+        std::all_of(plan.frames.front().cells.begin(), plan.frames.front().cells.end(),
+                    [](int color) { return color >= 0; })) {
+        // fully opaque sources need an opaque native base too. The analytic
+        // preview can cover an edge that a filtered sprite only partly paints.
+        std::vector<int> borderColors(plan.palette.size(), 0);
+        auto const& cells = plan.frames.front().cells;
+        for (int x = 0; x < width; ++x) {
+            ++borderColors[static_cast<std::size_t>(cells[x])];
+            ++borderColors[static_cast<std::size_t>(cells[(height - 1) * width + x])];
+        }
+        for (int y = 1; y + 1 < height; ++y) {
+            ++borderColors[static_cast<std::size_t>(cells[y * width])];
+            ++borderColors[static_cast<std::size_t>(cells[y * width + width - 1])];
+        }
+        auto const background = static_cast<std::uint16_t>(
+            std::max_element(borderColors.begin(), borderColors.end()) - borderColors.begin());
+        plan.staticObjects.insert(plan.staticObjects.begin(), {
+            width * 0.5f, height * 0.5f, static_cast<float>(width), static_cast<float>(height),
+            0.f, background, PrimitiveKind::Block, -999});
+    }
+    if (rateDistortion && plan.frames.size() == 1 && matchesGridExactly(plan.mode) &&
+        !reduced.empty()) {
+        auto const sourcePixels = reducedRgba(reduced.front());
+        // colors are free to improve: geometry and object count do not move.
+        if (options.paletteRefine)
+            refinePaletteAgainstRender(plan, sourcePixels, options.alphaThreshold);
+        plan.triggerObjects = chosen.triggers;
+        if (allowTrim &&
+            plan.staticObjects.size() + plan.triggerObjects > options.objectBudget) {
+            auto const trimmed = trimPlanToBudget(
+                plan, options.objectBudget, sourcePixels, options.alphaThreshold);
+            plan.budgetTrimmed = trimmed.fitted;
+        }
+    }
     plan.visualObjects = plan.staticObjects.size();
     for (auto const& track : plan.tracks) plan.visualObjects += track.objects.size();
     for (auto const& track : plan.motionTracks) plan.visualObjects += track.objects.size();
@@ -2641,6 +2927,12 @@ BuildResult buildAt(
                 source, selected, masks, width * 2, height * 2, options);
             plan.detailSimilarity = sourcePlanSimilarity(plan, detailed, 2);
         }
+        if (absoluteReference && plan.frames.size() == 1 &&
+            matchesGridExactly(plan.mode)) {
+            plan.absoluteSimilarity = absolutePlanSimilarity(plan,
+                absoluteReference->rgba, absoluteReference->width,
+                absoluteReference->height);
+        }
     }
     report(progress, BuildStage::Reviewing, 1.f);
     return {std::move(plan), {}};
@@ -2679,8 +2971,12 @@ bool betterRenderPlan(
     ImportPlan const& best,
     std::size_t softLimit
 ) {
-    float const quality = renderQuality(candidate);
-    float const bestQuality = renderQuality(best);
+    auto qualityOf = [](ImportPlan const& plan) {
+        return plan.absoluteSimilarity >= 0.f
+            ? plan.absoluteSimilarity : renderQuality(plan);
+    };
+    float const quality = qualityOf(candidate);
+    float const bestQuality = qualityOf(best);
     bool const candidateFitsSoftLimit = candidate.totalObjects <= softLimit;
     bool const bestFitsSoftLimit = best.totalObjects <= softLimit;
     if (!bestFitsSoftLimit && candidateFitsSoftLimit &&
@@ -2707,6 +3003,8 @@ BuildResult buildRenderPlan(
     int const passes = static_cast<int>(dimensions.size());
     std::size_t const softLimit = std::min<std::size_t>(
         options.objectBudget, source.frames.size() > 1 ? 6000 : 2500);
+    AbsoluteReference absolute = makeAbsoluteReference(
+        source, options, frameLimit, options.maxDimension);
 
     // independent passes in parallel; ordered pick after.
     std::vector<BuildResult> results(static_cast<std::size_t>(passes));
@@ -2734,10 +3032,13 @@ BuildResult buildRenderPlan(
             shares[index].store(value, std::memory_order_relaxed);
             publish();
         };
-        auto result = buildAt(source, options, dimension, frameLimit, true, share, preview);
+        auto result = buildAt(source, options, dimension, frameLimit, true, share, preview,
+            true, &absolute);
         if (result && result.plan.geometrySimilarity < kPaintReviewGate) {
-            auto plain = buildAt(source, options, dimension, frameLimit, false, share, preview);
-            if (plain && plain.plan.geometrySimilarity > result.plan.geometrySimilarity) {
+            auto plain = buildAt(source, options, dimension, frameLimit, false, share, preview,
+                true, &absolute);
+            if (plain && plain.plan.geometrySimilarity > result.plan.geometrySimilarity &&
+                (!planFits(result.plan, options) || planFits(plain.plan, options))) {
                 result = std::move(plain);
             }
         }
@@ -2773,51 +3074,106 @@ BuildResult buildRenderPlan(
     return {std::move(best), {}};
 }
 
+BuildResult tryMotionPlan(
+    SourceAnimation const& source, Options const& options, BuildResult best);
+
+int reducedFrameLimit(int frameLimit, ImportPlan const& plan, Options const& options) {
+    double const ratio = static_cast<double>(options.objectBudget) /
+        std::max<std::size_t>(plan.totalObjects, 1);
+    int const next = static_cast<int>(std::floor(
+        frameLimit * std::clamp(ratio * 0.94, 0.5, 0.9)));
+    return std::max(2, std::min(frameLimit - 1, next));
+}
+
 BuildResult buildRegularPlan(
     SourceAnimation const& source,
     Options const& options,
     int frameLimit,
     BuildProgressCallback const& progress,
-    PreviewThrottle* preview = nullptr
+    PreviewThrottle* preview = nullptr,
+    bool allowMotion = false
 ) {
     int dimension = options.maxDimension;
+    int const minimumAutomaticFrames = std::max(2, frameLimit / 3);
     BuildResult result;
     ImportPlan best;
     bool hasBest = false;
+    AbsoluteReference absolute;
+    if (options.autoResolution && matchesGridExactly(options.mode)) {
+        absolute = makeAbsoluteReference(source, options, frameLimit, options.maxDimension);
+    }
+    AbsoluteReference const* absolutePtr = absolute.rgba.empty() ? nullptr : &absolute;
 
-    for (int attempt = 0; attempt < 20; ++attempt) {
+    constexpr int attempts = 32;
+    for (int attempt = 0; attempt < attempts; ++attempt) {
         float const start = attempt == 0
             ? 0.01f
-            : 0.75f + 0.23f * (attempt - 1) / 19.f;
-        float const length = attempt == 0 ? 0.74f : 0.23f / 19.f;
+            : 0.75f + 0.23f * (attempt - 1) / (attempts - 1);
+        float const length = attempt == 0 ? 0.74f : 0.23f / (attempts - 1);
         auto compactProgress = progressRange(progress, start, length * 0.68f);
         result = buildAt(
-            source, options, dimension, frameLimit, true, compactProgress, preview);
+            source, options, dimension, frameLimit, true, compactProgress, preview,
+            true, absolutePtr);
         if (!result) {
             finishProgress(progress);
             return result;
         }
         result.plan.requestedDimension = options.maxDimension;
+        // reusing moving shapes can save the requested size before any fallback.
+        if (allowMotion && !planFits(result.plan, options)) {
+            result = tryMotionPlan(source, options, std::move(result));
+        }
         if (matchesGridExactly(options.mode) &&
             result.plan.geometrySimilarity < kPaintReviewGate) {
             auto plainProgress = progressRange(
                 progress, start + length * 0.68f, length * 0.3f);
             auto plain = buildAt(
-                source, options, dimension, frameLimit, false, plainProgress, preview);
-            if (plain && plain.plan.geometrySimilarity > result.plan.geometrySimilarity) {
+                source, options, dimension, frameLimit, false, plainProgress, preview,
+                true, absolutePtr);
+            if (plain && plain.plan.geometrySimilarity > result.plan.geometrySimilarity &&
+                (!planFits(result.plan, options) || planFits(plain.plan, options))) {
                 result = std::move(plain);
                 result.plan.requestedDimension = options.maxDimension;
             }
         }
         if (planFits(result.plan, options)) {
-            if (!matchesGridExactly(options.mode) ||
+            // a trimmed plan competes with one lower resolution step before
+            // being accepted: quality at the requested size decides.
+            if (result.plan.budgetTrimmed && options.autoResolution &&
+                matchesGridExactly(options.mode) && dimension > options.minDimension &&
+                result.plan.absoluteSimilarity >= 0.f) {
+                int const next = std::max(options.minDimension,
+                    static_cast<int>(std::floor(dimension * 0.9)));
+                if (next < dimension) {
+                    auto degraded = buildAt(source, options, next, frameLimit, true, {},
+                        preview, false, absolutePtr);
+                    if (degraded && planFits(degraded.plan, options) &&
+                        degraded.plan.absoluteSimilarity >
+                            result.plan.absoluteSimilarity + 0.25f) {
+                        degraded.plan.requestedDimension = options.maxDimension;
+                        finishProgress(progress);
+                        return degraded;
+                    }
+                }
+            }
+            if (!options.autoResolution || !matchesGridExactly(options.mode) ||
                 result.plan.geometrySimilarity >= kPaintReviewGate ||
                 (attempt == 0 && result.plan.geometrySimilarity >= 90.f)) {
                 finishProgress(progress);
                 return result;
             }
-            bool const improved = !hasBest ||
-                result.plan.geometrySimilarity > best.geometrySimilarity;
+            auto qualityOf = [](ImportPlan const& plan) {
+                return plan.absoluteSimilarity >= 0.f
+                    ? plan.absoluteSimilarity : plan.geometrySimilarity;
+            };
+            float const tolerance =
+                result.plan.absoluteSimilarity >= 0.f && best.absoluteSimilarity >= 0.f
+                ? 0.25f : 0.f;
+            float const quality = qualityOf(result.plan);
+            float const bestQuality = hasBest ? qualityOf(best) : -1.f;
+            bool const improved = !hasBest || quality > bestQuality + tolerance ||
+                (std::abs(quality - bestQuality) <= tolerance &&
+                 result.plan.totalObjects < best.totalObjects);
             if (improved) {
                 best = result.plan;
                 hasBest = true;
@@ -2831,22 +3187,37 @@ BuildResult buildRegularPlan(
             continue;
         }
 
+        if (!options.autoResolution) {
+            if (frameLimit > 2 && result.plan.frames.size() > 2) {
+                frameLimit = reducedFrameLimit(frameLimit, result.plan, options);
+                continue;
+            }
+            finishProgress(progress);
+            return {{}, "No cabe a " + std::to_string(dimension) +
+                " px con el presupuesto de " + std::to_string(options.objectBudget) +
+                " objetos y los limites de animacion. Aumenta Presupuesto, "
+                "baja Resolucion o elige Auto."};
+        }
+
         if (dimension > options.minDimension) {
             double const ratio = std::sqrt(
                 static_cast<double>(options.objectBudget) /
                 std::max<std::size_t>(result.plan.totalObjects, 1));
             int next = static_cast<int>(std::floor(
                 dimension * std::clamp(ratio * 0.94, 0.5, 0.9)));
+            // auto shares the cost between space and time before losing most detail.
+            if (next < options.maxDimension / 2 &&
+                frameLimit > minimumAutomaticFrames && result.plan.frames.size() > 2) {
+                frameLimit = std::max(minimumAutomaticFrames,
+                    reducedFrameLimit(frameLimit, result.plan, options));
+                continue;
+            }
             dimension = std::max(
                 options.minDimension, std::min(dimension - 1, next));
             continue;
         }
         if (frameLimit > 2) {
-            double const ratio = static_cast<double>(options.objectBudget) /
-                                 std::max<std::size_t>(result.plan.totalObjects, 1);
-            int next = static_cast<int>(std::floor(
-                frameLimit * std::clamp(ratio * 0.94, 0.5, 0.9)));
-            frameLimit = std::max(2, std::min(frameLimit - 1, next));
+            frameLimit = reducedFrameLimit(frameLimit, result.plan, options);
             continue;
         }
         break;
@@ -2856,20 +3227,24 @@ BuildResult buildRegularPlan(
     return {{}, "No cabe en el presupuesto ni con la resolucion y frames minimos."};
 }
 
-// motion goes last: its edge would poison the search.
+// rebuild at the same sampling rate, including frames merged after quantization.
 BuildResult tryMotionPlan(
     SourceAnimation const& source,
     Options const& options,
     BuildResult best
 ) {
-    if (!best || !best.plan.animated()) return best;
+    if (!best || !best.plan.animated() || !best.plan.motionTracks.empty()) return best;
     auto motionOptions = options;
     motionOptions.motion = true;
     auto moved = buildAt(
         source, motionOptions, best.plan.actualDimension,
-        static_cast<int>(best.plan.frames.size()), true);
+        best.plan.sampledFrames, true);
     if (!moved || moved.plan.motionTracks.empty()) return best;
-    if (moved.plan.totalObjects * 20 >= best.plan.totalObjects * 19) return best;
+    bool const bestFits = planFits(best.plan, options);
+    bool const movedFits = planFits(moved.plan, options);
+    if (bestFits && !movedFits) return best;
+    if ((bestFits || !movedFits) &&
+        moved.plan.totalObjects * 20 >= best.plan.totalObjects * 19) return best;
     if (usesPaintGeometry(options.mode) &&
         moved.plan.similarity + 1.5f < best.plan.similarity) {
         return best;
@@ -2972,9 +3347,14 @@ BuildResult buildPlan(
     PreviewThrottle throttle{std::move(preview)};
     // no callback means nobody to notify: pass null and skip the raster.
     PreviewThrottle* previewPtr = throttle.callback ? &throttle : nullptr;
-    auto result = options.mode == ImportMode::Render
+    bool const adaptiveRender = options.mode == ImportMode::Render && options.autoResolution;
+    auto result = adaptiveRender
         ? buildRenderPlan(source, searchOptions, frameLimit, progress, previewPtr)
-        : buildRegularPlan(source, searchOptions, frameLimit, progress, previewPtr);
+        : buildRegularPlan(source, searchOptions, frameLimit, progress, previewPtr, options.motion);
+    if (result && options.mode == ImportMode::Render && !adaptiveRender) {
+        result.plan.renderPasses = 1;
+        result.plan.strategy = "render/" + result.plan.strategy;
+    }
     if (options.motion) result = tryMotionPlan(source, options, std::move(result));
     // glow last: the halo must not lower the grid.
     if (result && !usesSoftGeometry(options.mode)) {

@@ -7,7 +7,7 @@
 using namespace geode::prelude;
 
 bool GIFDecoder::isGIF(uint8_t const* data, size_t size) {
-    if (size < 6) return false;
+    if (!data || size < 6) return false;
     return (memcmp(data, "GIF87a", 6) == 0 || memcmp(data, "GIF89a", 6) == 0);
 }
 
@@ -19,7 +19,7 @@ bool GIFDecoder::getDimensions(uint8_t const* data, size_t size, int& width, int
 }
 
 GIFDecoder::GIFData GIFDecoder::decode(uint8_t const* data, size_t size, int maxFrames) {
-    GIFData result;
+    GIFData result{};
     result.isAnimated = false;
 
     if (!isGIF(data, size)) {
@@ -47,7 +47,6 @@ GIFDecoder::GIFData GIFDecoder::decode(uint8_t const* data, size_t size, int max
     if (ptr >= end) return result;
     uint8_t flags = *ptr++;
     bool hasGlobalColorTable = (flags & 0x80) != 0;
-    int colorResolution = ((flags & 0x70) >> 4) + 1;
     int globalColorTableSize = 1 << ((flags & 0x07) + 1);
 
     if (ptr + 2 > end) return result;
@@ -64,7 +63,7 @@ GIFDecoder::GIFData GIFDecoder::decode(uint8_t const* data, size_t size, int max
     int frameCount = 0;
     size_t decodedBytes = 0;
     constexpr size_t kMaxDecodedBytes = 256ull * 1024ull * 1024ull;
-    int currentDelay = 100; // default: 100 ms
+    int currentDelay = 100; // ms
     int transparentIndex = -1;
     bool hasTransparency = false;
     int disposalMethod = 0; // 0 none, 1 keep, 2 clear, 3 restore previous
@@ -181,11 +180,16 @@ GIFDecoder::GIFData GIFDecoder::decode(uint8_t const* data, size_t size, int max
                 frame.pixels = canvas;
                 decodedBytes += canvas.size();
 
-                result.frames.push_back(frame);
+                result.frames.push_back(std::move(frame));
                 frameCount++;
 
                 prevDisposal = disposalMethod;
-                prevRawFrame = rawFrame;
+                prevRawFrame = std::move(rawFrame);
+                // a graphic control extension belongs only to the next image.
+                currentDelay = 100;
+                transparentIndex = -1;
+                hasTransparency = false;
+                disposalMethod = 0;
 
             } else {
                 break;
@@ -226,7 +230,6 @@ bool GIFDecoder::parseColorTable(uint8_t const*& ptr, uint8_t const* end, std::v
 static bool lzwDecode(std::vector<uint8_t> const& compressed, std::vector<uint8_t>& output, int minCodeSize, int pixelCount) {
     int clearCode = 1 << minCodeSize;
     int eoiCode = clearCode + 1;
-    int nextCode = eoiCode + 1;
     int currentCodeSize = minCodeSize + 1;
     int codeMask = (1 << currentCodeSize) - 1;
 
@@ -256,7 +259,7 @@ static bool lzwDecode(std::vector<uint8_t> const& compressed, std::vector<uint8_
     std::vector<uint8_t> sequence;
     sequence.reserve(4096);
 
-    while (output.size() < pixelCount) {
+    while (output.size() < static_cast<size_t>(pixelCount)) {
         while (bitCount < currentCodeSize) {
             if (bytePos >= compressedSize) break;
             bitBuffer |= static_cast<uint32_t>(compressed[bytePos++]) << bitCount;
@@ -272,7 +275,6 @@ static bool lzwDecode(std::vector<uint8_t> const& compressed, std::vector<uint8_
             currentCodeSize = minCodeSize + 1;
             codeMask = (1 << currentCodeSize) - 1;
             dictSize = eoiCode + 1;
-            nextCode = eoiCode + 1;
             oldCode = -1;
             continue;
         }
@@ -317,8 +319,6 @@ static bool lzwDecode(std::vector<uint8_t> const& compressed, std::vector<uint8_
         output.insert(output.end(), sequence.begin(), sequence.end());
 
         if (dictSize < 4096) {
-            int temp = oldCode;
-
             uint8_t firstChar = sequence[0];
             dictionary[dictSize] = { oldCode, firstChar, dictionary[oldCode].length + 1 };
             dictSize++;
@@ -413,7 +413,7 @@ bool GIFDecoder::parseFrame(uint8_t const*& ptr, uint8_t const* end, RawFrame& f
             if (currentX == frame.width) {
                 currentX = 0;
                 currentY += passInc[currentPass];
-                if (currentY >= frame.height) {
+                while (currentY >= frame.height && currentPass < 4) {
                     currentPass++;
                     if (currentPass < 4) {
                         currentY = passOffsets[currentPass];

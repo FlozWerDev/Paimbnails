@@ -64,7 +64,7 @@ private:
     void ccTouchMoved(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchEnded(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchCancelled(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
-    void scrollWheel(float vertical, float horizontal) override;
+    bool scrollWheel(float vertical, float horizontal) override;
 
     LabConfig m_config;
     std::vector<ResolvedBody> m_resolved;

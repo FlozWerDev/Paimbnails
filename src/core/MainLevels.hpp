@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "../utils/FilesystemPath.hpp"
 
 #include <Geode/loader/Log.hpp>
 #include <Geode/loader/Mod.hpp>
@@ -23,10 +24,10 @@ inline bool isMainLevelID(int levelID) {
 // accepts only "<id>.png"/"<id>.gif" with id in [1, 22].
 inline bool isMainLevelCacheFile(std::filesystem::path const& filename) {
     auto ext = geode::utils::string::toLower(
-        geode::utils::string::pathToString(filename.extension()));
+        paimon::paths::toUtf8(filename.extension()));
     if (ext != ".png" && ext != ".gif") return false;
 
-    auto stem = geode::utils::string::pathToString(filename.stem());
+    auto stem = paimon::paths::toUtf8(filename.stem());
     auto idResult = geode::utils::numFromString<int>(stem);
     if (!idResult) return false;
     return isMainLevelID(idResult.unwrap());
@@ -57,7 +58,7 @@ inline std::pair<int, int> clearCachePreservingMainLevels(
     for (auto const& entry : it) {
         std::error_code dummy;
         auto const path = entry.path();
-        auto filename = geode::utils::string::pathToString(path.filename());
+        auto filename = paimon::paths::toUtf8(path.filename());
 
         if (entry.is_directory(dummy)) {
             bool keep = false;
@@ -83,7 +84,7 @@ inline std::pair<int, int> clearCachePreservingMainLevels(
         if (rmEc) {
             geode::log::warn(
                 "[Paimbnails] clearCachePreservingMainLevels: failed to remove {}: {}",
-                geode::utils::string::pathToString(path), rmEc.message()
+                paimon::paths::toUtf8(path), rmEc.message()
             );
         } else {
             removed++;
@@ -136,8 +137,21 @@ inline std::atomic<int>& mainLevelsFreshCache() {
     return value;
 }
 
+// the disk half of the freshness check stats up to 44 files; bootstrap warms
+// it on a worker so the first main-thread query is a plain atomic read.
+inline std::atomic<int>& mainLevelsDiskCache() {
+    static std::atomic<int> value{-1}; // -1 unknown, 0 no, 1 yes
+    return value;
+}
+
+inline void warmMainLevelsDiskCache() {
+    mainLevelsDiskCache().store(allMainLevelThumbnailsOnDisk() ? 1 : 0,
+        std::memory_order_release);
+}
+
 inline void invalidateMainLevelsFreshCache() {
     mainLevelsFreshCache().store(-1, std::memory_order_release);
+    mainLevelsDiskCache().store(-1, std::memory_order_release);
 }
 
 inline void markMainLevelsCached() {
@@ -149,9 +163,15 @@ inline bool areMainLevelsFreshlyCached() {
     int cached = mainLevelsFreshCache().load(std::memory_order_acquire);
     if (cached >= 0) return cached == 1;
 
+    int disk = mainLevelsDiskCache().load(std::memory_order_acquire);
+    bool onDisk = disk >= 0 ? (disk == 1) : allMainLevelThumbnailsOnDisk();
+    if (disk < 0) {
+        mainLevelsDiskCache().store(onDisk ? 1 : 0, std::memory_order_release);
+    }
+
     int64_t cachedAt = mainLevelsCachedAtEpoch();
     bool fresh = isMainLevelsCacheAgeFresh(cachedAt, mainLevelsNowEpoch())
-        && allMainLevelThumbnailsOnDisk();
+        && onDisk;
 
     mainLevelsFreshCache().store(fresh ? 1 : 0, std::memory_order_release);
     return fresh;

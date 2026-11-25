@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <vector>
 
 namespace cocos2d {
 
@@ -62,6 +63,21 @@ struct CCRect {
 
 class CCNode {
 public:
+    virtual ~CCNode() = default;
+
+    void addChild(CCNode* child) {
+        m_children.push_back(child);
+        child->m_parent = this;
+    }
+
+    template <class T>
+    T* getChildByType(int index) {
+        for (auto* child : m_children) {
+            if (auto* match = dynamic_cast<T*>(child); match && index-- == 0) return match;
+        }
+        return nullptr;
+    }
+
     float getScaleX() const { return m_scaleX; }
     float getScaleY() const { return m_scaleY; }
     void setScaleX(float scale) { m_scaleX = scale; }
@@ -77,11 +93,32 @@ private:
     float m_rotation = 0.f;
     CCPoint m_position;
     CCNode* m_parent = nullptr;
+    std::vector<CCNode*> m_children;
+};
+
+class CCLayer : public CCNode {};
+class CCScene : public CCNode {};
+class CCTransitionScene : public CCScene {
+public:
+    CCScene* m_pInScene = nullptr;
 };
 
 }
 
+class LoadingLayer : public cocos2d::CCLayer {};
+class GJGameLoadingLayer : public cocos2d::CCLayer {};
+class LevelEditorLayer : public cocos2d::CCLayer {};
+class EditorUI : public cocos2d::CCLayer {};
+class PlayLayer : public cocos2d::CCLayer {};
+
 namespace geode {
+
+namespace cast {
+template <class To, class From>
+To typeinfo_cast(From* object) {
+    return dynamic_cast<To>(object);
+}
+}
 
 template <class T>
 class Ref {

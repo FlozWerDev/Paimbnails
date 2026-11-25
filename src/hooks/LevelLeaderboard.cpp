@@ -1,4 +1,5 @@
 #include <Geode/modify/LevelLeaderboard.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 #include "../framework/HookConventions.hpp"
 #include <Geode/binding/LevelLeaderboard.hpp>
 #include <Geode/binding/GJCommentListLayer.hpp>
@@ -61,6 +62,10 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
     $override
     bool init(GJGameLevel* level, LevelLeaderboardType type, LevelLeaderboardMode mode) {
         if (!LevelLeaderboard::init(level, type, mode)) return false;
+        this->addOnExitCallback([this] {
+            this->handleExit();
+            return true;
+        });
         if (!level || level->m_levelID <= 0) return true;
 
         int levelID = level->m_levelID.value();
@@ -75,7 +80,7 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
             ThumbnailLoader::get().requestLoad(
                 levelID,
                 fmt::format("{}.png", levelID),
-                [safeRef, levelID](CCTexture2D* tex, bool ok) {
+                [safeRef](CCTexture2D* tex, bool ok) {
                     if (!ok || !tex) return;
                     auto ref = safeRef.lock();
                     auto* self = static_cast<PaimonLevelLeaderboard*>(ref.data());
@@ -110,16 +115,10 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         auto* layer = this->m_mainLayer;
         if (!layer) return;
 
-        CCSize popupSize = {440.f, 290.f};
-        CCPoint popupCenter = {layer->getContentSize().width * 0.5f,
-                               layer->getContentSize().height * 0.5f};
-
-        CCNode* bgNode = layer->getChildByID("background");
-        if (!bgNode) bgNode = findChildOfType<CCScale9Sprite*>(layer);
-        if (bgNode) {
-            popupSize   = bgNode->getScaledContentSize();
-            popupCenter = bgNode->getPosition();
-        }
+        auto layout = paimon::SpriteHelper::resolveBgLayout(layer, {440.f, 290.f},
+            {layer->getContentSize().width * 0.5f, layer->getContentSize().height * 0.5f});
+        CCSize popupSize = layout.size;
+        CCPoint popupCenter = layout.position;
 
         float padding   = 3.f;
         CCSize imgArea  = {popupSize.width - padding * 2.f, popupSize.height - padding * 2.f};
@@ -138,7 +137,7 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         clip->setID("paimon-leaderboard-bg-clip"_spr);
         clip->addChild(blurredSprite);
 
-        // legibility
+        // contrast scrim dims custom thumbnail so player names, ranks, and score text remain legible.
         auto dark = CCLayerColor::create(ccc4(0, 0, 0, 130));
         dark->setContentSize(imgArea);
         dark->setAnchorPoint({0.f, 0.f});
@@ -172,7 +171,7 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
         }
     }
 
-    // hide vanilla's alternating pattern
+    // strip vanilla opaque brown/blue cell plates so custom level backdrop shows through uniformly.
     void normalizeCellBackgrounds(GJCommentListLayer* list) {
         auto* contentLayer = findLeaderboardContentLayer(list);
         if (!contentLayer) return;
@@ -228,7 +227,7 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
             if (auto* ch = cell->getChildren()) {
                 for (auto* child : CCArrayExt<CCNode*>(ch)) {
                     if (child == static_cast<CCNode*>(cell->m_backgroundLayer)) continue;
-                    if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(child)) {
+                    if (typeinfo_cast<CCRGBAProtocol*>(child)) {
                         child->runAction(CCSequence::create(
                             CCDelayTime::create(delay),
                             CCFadeTo::create(duration, 255),
@@ -265,9 +264,7 @@ class $modify(PaimonLevelLeaderboard, LevelLeaderboard) {
 
     // safety net: unsubscribe if the layer dies via scene-replace/popscene or
     // any path skipping keybackclicked; otherwise the listener leaks as a zombie
-    $override
-    void onExit() {
+    void handleExit() {
         unsubscribeBg();
-        LevelLeaderboard::onExit();
     }
 };

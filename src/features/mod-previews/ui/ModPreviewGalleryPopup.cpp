@@ -34,8 +34,6 @@ bool ModPreviewGalleryPopup::init(int index, int total, std::string base) {
     m_mainLayer->addChildAtPosition(photoInset, Anchor::Center,
         {-(kPhotoW + 8.f) / 2.f, 12.f - (kPhotoH + 8.f) / 2.f});
 
-    m_sprite = LazySprite::create({120, 60});
-    m_mainLayer->addChildAtPosition(m_sprite, Anchor::Center, {0, 12});
 
     m_caption = CCLabelBMFont::create("", "bigFont.fnt");
     m_caption->setScale(0.5f);
@@ -47,7 +45,7 @@ bool ModPreviewGalleryPopup::init(int index, int total, std::string base) {
     bar->setAnchorPoint({0.5f, 0.5f});
     m_mainLayer->addChildAtPosition(bar, Anchor::Bottom, {0, 14});
 
-    auto mkArrow = [this, bar](bool flip) {
+    auto mkArrow = [this](bool flip) {
         auto spr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
         if (flip) spr->setFlipX(true);
         auto btn = CCMenuItemSpriteExtra::create(
@@ -70,11 +68,24 @@ void ModPreviewGalleryPopup::openIndex(int index) {
     m_gen++;
     int gen = m_gen;
 
-    if (m_sprite->isLoading()) m_sprite->cancelLoad();
-    m_sprite->setVisible(false);
-    m_sprite->setLoadCallback([this, gen](Result<> res) {
-        if (gen != m_gen || res.isErr()) return;
-        auto spr = m_sprite;
+    if (m_sprite) {
+        m_sprite->cancelLoad();
+        m_sprite->setLoadCallback(nullptr);
+        m_sprite->removeFromParent();
+        m_sprite = nullptr;
+    }
+    // A loaded LazySprite cannot be reused for another URL on Geode 5.11.
+    auto* sprite = LazySprite::create({120, 60});
+    if (!sprite) { refreshChrome(); return; }
+    m_sprite = sprite;
+    sprite->setVisible(false);
+    m_mainLayer->addChildAtPosition(sprite, Anchor::Center, {0, 12});
+    WeakRef<ModPreviewGalleryPopup> weakSelf = this;
+    sprite->setLoadCallback([weakSelf, gen](Result<> res) {
+        auto self = weakSelf.lock();
+        if (!self || gen != self->m_gen || res.isErr()) return;
+        auto* spr = self->m_sprite;
+        if (!spr) return;
         float w = spr->getContentWidth();
         float h = spr->getContentHeight();
         if (w > 0.f && h > 0.f) {
@@ -83,7 +94,7 @@ void ModPreviewGalleryPopup::openIndex(int index) {
         }
         spr->setVisible(true);
     });
-    m_sprite->loadFromUrl(m_base + std::to_string(m_index) + ".png");
+    sprite->loadFromUrl(m_base + std::to_string(m_index) + ".png");
     refreshChrome();
 }
 

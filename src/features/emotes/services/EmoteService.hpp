@@ -70,6 +70,9 @@ private:
     std::vector<EmoteInfo> m_gifEmotes;
     std::vector<EmoteInfo> m_staticEmotes;
     std::unordered_map<std::string, size_t> m_nameIndex;
+    // parallel to m_allEmotes; searchEmotes compares against these instead of
+    // lowercasing the whole catalog on every keystroke.
+    std::vector<std::string> m_lowerNames;
 
     std::string m_timelast;
     size_t m_catalogGeneration = 0;

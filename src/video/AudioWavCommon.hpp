@@ -1,17 +1,27 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <mutex>
 #include <string>
 
 // wav-cache helpers shared by all audio backends.
 namespace paimon::video::detail {
 
+// shared audio cache dir (creates it). Also used by VideoDiskCache wipes.
+std::filesystem::path getAudioCacheDir();
+
 // recursive: extractaudiotowav wraps extractaudiotopcm.
 std::recursive_mutex& audioExtractorMutex();
 
 // stable hash of the video path.
 std::string makeWavPath(const std::string& videoPath);
+
+// quota sweep for the vid_*.wav cache: keep the newest 20 files totalling at
+// most 512MB by mtime, deleting the oldest first. Never throws. Called after
+// each successful write and once lazily at startup; deleteAllCaches() in
+// VideoDiskCache stays as the manual full wipe.
+void pruneAudioCache();
 
 // canonical 44-byte pcm wav header. sizes are patched after the data is known.
 #pragma pack(push, 1)
@@ -34,7 +44,8 @@ struct WavHeader {
 
 static_assert(sizeof(WavHeader) == 44, "WAV header must be 44 bytes");
 
-// removes any partial file on failure.
+// UTF-8 path on every platform. Rejects incomplete PCM frames and WAV size/rate
+// overflow before opening the file; removes any partial file on write failure.
 bool writeWavFile(const std::string& wavPath,
                   const uint8_t* pcm, size_t pcmBytes,
                   uint16_t numChannels, uint32_t sampleRate,

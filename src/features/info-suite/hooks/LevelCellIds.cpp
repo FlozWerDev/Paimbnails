@@ -51,25 +51,18 @@ CCLabelBMFont* findTitleLabel(CCNode* cell, std::string const& title) {
 // keep the badge under the cell so recycling removes it with the other content.
 void attachBadge(CCNode* cell, std::string const& title, int id) {
     if (!cell || id <= 0) return;
-    if (cell->getChildByID(kBadgeID)) return;
-
-    auto* badge = paimon::info::makeIdBadge(fmt::format("#{}", id));
-    if (!badge) return;
-
-    badge->setID(kBadgeID);
-    paimon::info::applyAdaptiveIdBadgeContrast(badge);
 
     auto* titleLabel = inlinePlacement() ? findTitleLabel(cell, title) : nullptr;
+    CCPoint anchor(1.f, 0.f);
+    CCPoint position(cell->getContentSize().width - 6.f, 4.f);
     if (titleLabel) {
-        badge->setAnchorPoint({1.f, 0.5f});
-        badge->setPosition({350.f, 44.f});
-    } else {
-        auto cellSize = cell->getContentSize();
-        badge->setAnchorPoint({1.f, 0.f});
-        badge->setPosition({cellSize.width - 6.f, 4.f});
+        anchor = CCPoint(1.f, 0.5f);
+        position = CCPoint(350.f, 44.f);
     }
 
-    cell->addChild(badge, 100);
+    auto* badge = paimon::info::attachIdBadge(cell, kBadgeID, fmt::format("#{}", id), 0.4f, anchor, position);
+    if (!badge) return;
+    paimon::info::applyAdaptiveIdBadgeContrast(badge);
 }
 
 } // namespace

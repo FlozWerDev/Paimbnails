@@ -69,6 +69,7 @@ private:
     void stopInternal(bool notifyServer);
     void doJoin();
     void doCreate();
+    void applyAppearanceBody(matjson::Value& body) const;
     void onJoinLikeSuccess(matjson::Value value);
     void poll();
     enum class RetryAction : std::uint8_t { Join, Poll };

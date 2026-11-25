@@ -1,0 +1,275 @@
+#include <algorithm>
+#include <cassert>
+#include <chrono>
+#include <cstdint>
+#include <functional>
+#include <iostream>
+#include <optional>
+
+// Compile the production input listeners and scheduler with a deterministic engine.
+#define GEODE_IS_WINDOWS
+#define $execute void registerInputs()
+#define schedule_selector(method) nullptr
+constexpr int VK_CONTROL = 0x11, VK_SHIFT = 0x10, VK_MENU = 0x12;
+constexpr int VK_LWIN = 0x5b, VK_RWIN = 0x5c;
+constexpr int VK_LBUTTON = 1, VK_RBUTTON = 2, VK_MBUTTON = 4;
+constexpr int VK_XBUTTON1 = 5, VK_XBUTTON2 = 6;
+bool physicalDown[256]{};
+bool focused = true;
+short GetAsyncKeyState(int key) { return physicalDown[key] ? short(0x8000) : 0; }
+using DWORD = unsigned long;
+void* GetForegroundWindow() { return focused ? reinterpret_cast<void*>(1) : nullptr; }
+DWORD GetCurrentProcessId() { return 42; }
+DWORD GetWindowThreadProcessId(void*, DWORD* process) { *process = 42; return 1; }
+
+namespace cocos2d {
+enum enumKeyCodes {
+    KEY_None = 0, KEY_Tab = 9, KEY_Shift = 0x10, KEY_Control = 0x11, KEY_Alt = 0x12,
+    KEY_Space = 0x20, KEY_C = 0x43, KEY_Q = 0x51, KEY_A = 0x41,
+    KEY_LeftWindowsKey = 0x5b, KEY_RightWindowsKey = 0x5c,
+    KEY_LeftShift = 0xa0, KEY_RightShift = 0xa1, KEY_LeftControl = 0xa2,
+    KEY_RightContol = 0xa3, KEY_LeftMenu = 0xa4, KEY_RightMenu = 0xa5
+};
+struct CCSize { float width = 640, height = 360; };
+struct CCPoint { float x, y; };
+struct Color { int r, g, b, a; };
+class CCNode {
+public:
+    inline static unsigned nextID = 0;
+    unsigned m_uID = ++nextID;
+    bool init() { return true; }
+    void retain() {}
+    void removeFromParent() {}
+    void setPosition(CCPoint) {}
+    void setAnchorPoint(CCPoint) {}
+    void setContentSize(CCSize) {}
+    void setZOrder(int) {}
+    void addChild(CCNode*, int = 0) {}
+    static CCNode* create() { static CCNode node; return &node; }
+};
+class CCScene : public CCNode {};
+class CCLayerColor : public CCNode {
+public:
+    static CCLayerColor* create(Color) { static CCLayerColor layer; return &layer; }
+};
+struct Scheduler {
+    void scheduleSelector(std::nullptr_t, CCNode*, float, bool) {}
+    void unscheduleSelector(std::nullptr_t, CCNode*) {}
+};
+class CCDirector {
+public:
+    CCScene scene;
+    Scheduler scheduler;
+    static CCDirector* get() { static CCDirector director; return &director; }
+    CCScene* getRunningScene() { return &scene; }
+    CCSize getWinSize() { return {}; }
+    Scheduler* getScheduler() { return &scheduler; }
+};
+}
+namespace geode {
+template <class T> class WeakRef {
+    T* pointer = nullptr;
+public:
+    struct Locked {
+        T* pointer;
+        T* data() const { return pointer; }
+        T* operator->() const { return pointer; }
+        explicit operator bool() const { return pointer != nullptr; }
+    };
+    WeakRef& operator=(T* value) { pointer = value; return *this; }
+    Locked lock() const { return {pointer}; }
+};
+struct KeyboardModifier {
+    enum : uint8_t { None = 0, Shift = 1, Control = 2, Alt = 4, Super = 8 };
+    uint8_t value = 0;
+};
+struct KeyboardInputData {
+    enum class Action { Press, Release, Repeat };
+    struct { uint64_t code = 0, extra = 0; } native;
+    double timestamp = 0;
+    cocos2d::enumKeyCodes key;
+    Action action;
+    KeyboardModifier modifiers;
+};
+struct MouseInputData {
+    enum class Action { Press, Release };
+    enum class Button { Left, Right, Middle, Button4, Button5 };
+    Button button;
+    Action action;
+    KeyboardModifier modifiers;
+};
+template <class Data> struct InputEvent {
+    inline static std::function<bool(Data&)> callback;
+    InputEvent& listen(bool (*listener)(Data&)) { callback = listener; return *this; }
+    void leak() {}
+};
+using KeyboardInputEvent = InputEvent<KeyboardInputData>;
+using MouseInputEvent = InputEvent<MouseInputData>;
+namespace prelude { using namespace geode; }
+}
+namespace paimon::keybinds {
+enum class ExtendedKind { None, Keyboard, Mouse };
+enum class MouseButton { Left, Right, Middle, Button4, Button5 };
+struct ExtendedKeybind {
+    ExtendedKind kind = ExtendedKind::Keyboard;
+    cocos2d::enumKeyCodes key = cocos2d::KEY_Control;
+    MouseButton button = MouseButton::Left;
+};
+}
+namespace paimon::modules {
+bool enabled = true;
+bool isEnabled(char const*) { return enabled; }
+}
+namespace paimon::volscroll {
+void onModifierKeysChanged(bool, bool, bool, bool) {}
+}
+namespace paimon::quickhub {
+struct QuickHubManager {
+    inline static paimon::keybinds::ExtendedKeybind binding;
+    inline static float seconds = 1.5f;
+    inline static bool enabled = true, contextAllowed = true;
+    static bool isHoldCtrlEnabled() { return enabled; }
+    static float holdSeconds() { return seconds; }
+    static auto holdButton() { return binding; }
+    static bool canOpenInCurrentContext() { return contextAllowed; }
+    static void abortActiveHold();
+};
+struct QuickHubRadial {
+    inline static bool open = false;
+    static bool isOpen() { return open; }
+    static void openRadial() { open = true; }
+    static void closeRadial() { open = false; }
+};
+}
+
+@@source|src/utils/SceneIdentity.hpp@@
+@@source|src/features/quick-hub/services/QuickHubKeybind.cpp@@
+
+void sendKey(cocos2d::enumKeyCodes key, geode::KeyboardInputData::Action action,
+             uint8_t modifiers = 0) {
+    geode::KeyboardInputData event;
+    event.key = key;
+    event.action = action;
+    event.modifiers.value = modifiers;
+    event.native.code = static_cast<uint64_t>(key);
+    geode::KeyboardInputEvent::callback(event);
+}
+
+int main() {
+    using Action = geode::KeyboardInputData::Action;
+    using Manager = paimon::quickhub::QuickHubManager;
+    using Radial = paimon::quickhub::QuickHubRadial;
+    registerInputs();
+
+    // A stale Ctrl flag on another key's RELEASE must never begin a new hold.
+    sendKey(KEY_Control, Action::Press, KeyboardModifier::Control);
+    sendKey(KEY_Control, Action::Release, KeyboardModifier::Control);
+    sendKey(KEY_LeftShift, Action::Release, KeyboardModifier::Control);
+    assert(!s_hold.buttonDown && "stale modifier flags restarted a released hold");
+
+    // A missing release is cancelled from the physical state before opening.
+    sendKey(KEY_Control, Action::Press, KeyboardModifier::Control);
+    QuickHubScheduler::get()->onUpdate(10.f);
+    assert(!Radial::isOpen());
+    assert(!s_hold.buttonDown);
+    // dt includes time before the key press and must not complete a fresh hold.
+    physicalDown[VK_CONTROL] = true;
+    physicalDown[KEY_LeftControl] = true;
+    sendKey(KEY_LeftControl, Action::Press, KeyboardModifier::Control);
+    QuickHubScheduler::get()->onUpdate(10.f);
+    assert(!Radial::isOpen());
+    s_hold.startedAt -= std::chrono::seconds(2);
+    QuickHubScheduler::get()->onUpdate(0.f);
+    assert(Radial::isOpen());
+    sendKey(KEY_Control, Action::Release, KeyboardModifier::Control | KeyboardModifier::Super);
+    assert(!s_hold.buttonDown);
+    assert(Radial::isOpen());
+    Manager::abortActiveHold();
+
+    // A shortcut and repeats cannot rearm the cancelled hold.
+    sendKey(KEY_Control, Action::Press);
+    sendKey(KEY_C, Action::Press, KeyboardModifier::Control);
+    sendKey(KEY_Control, Action::Repeat, KeyboardModifier::Control);
+    s_hold.startedAt -= std::chrono::seconds(2);
+    QuickHubScheduler::get()->onUpdate(0.f);
+    assert(!Radial::isOpen());
+    sendKey(KEY_Control, Action::Release);
+    sendKey(KEY_Control, Action::Repeat, KeyboardModifier::Control);
+    assert(!s_hold.buttonDown);
+
+    // Configured durations are respected and a fresh press works after cancellation.
+    Manager::seconds = .3f;
+    sendKey(KEY_Control, Action::Press);
+    s_hold.startedAt -= std::chrono::milliseconds(100);
+    QuickHubScheduler::get()->onUpdate(0.f);
+    assert(!Radial::isOpen());
+    s_hold.startedAt -= std::chrono::milliseconds(300);
+    QuickHubScheduler::get()->onUpdate(0.f);
+    assert(Radial::isOpen());
+    Manager::abortActiveHold();
+    Manager::seconds = 5.f;
+    sendKey(KEY_Control, Action::Press);
+    s_hold.startedAt -= std::chrono::seconds(2);
+    QuickHubScheduler::get()->onUpdate(0.f);
+    assert(!Radial::isOpen());
+    Manager::abortActiveHold();
+
+    // Losing focus, context, or module permission cancels pending holds.
+    Manager::seconds = .3f;
+    sendKey(KEY_Control, Action::Press);
+    focused = false;
+    QuickHubScheduler::get()->onUpdate(1.f);
+    assert(!s_hold.buttonDown);
+    focused = true;
+    sendKey(KEY_Control, Action::Press);
+    Manager::contextAllowed = false;
+    QuickHubScheduler::get()->onUpdate(1.f);
+    assert(!s_hold.buttonDown);
+    Manager::contextAllowed = true;
+    sendKey(KEY_Control, Action::Press);
+    paimon::modules::enabled = false;
+    QuickHubScheduler::get()->onUpdate(1.f);
+    assert(!s_hold.buttonDown);
+    paimon::modules::enabled = true;
+    sendKey(KEY_Control, Action::Press);
+    paimon::quickhub::notifyVolumeScrollUsed();
+    s_hold.startedAt -= std::chrono::seconds(2);
+    QuickHubScheduler::get()->onUpdate(0.f);
+    assert(!Radial::isOpen());
+    Manager::abortActiveHold();
+
+    // Ordinary keyboard keys and mouse buttons can replace Ctrl.
+    Manager::binding.key = KEY_Q;
+    physicalDown[KEY_Q] = true;
+    sendKey(KEY_Control, Action::Press, KeyboardModifier::Control);
+    assert(!s_hold.buttonDown);
+    sendKey(KEY_Q, Action::Press);
+    s_hold.startedAt -= std::chrono::seconds(2);
+    QuickHubScheduler::get()->onUpdate(0.f);
+    assert(Radial::isOpen());
+    sendKey(KEY_Q, Action::Release);
+    assert(!s_hold.buttonDown);
+    Manager::abortActiveHold();
+    Manager::binding.kind = paimon::keybinds::ExtendedKind::Mouse;
+    Manager::binding.button = paimon::keybinds::MouseButton::Middle;
+    geode::MouseInputData mouse{geode::MouseInputData::Button::Middle,
+                               geode::MouseInputData::Action::Press, {}};
+    physicalDown[VK_MBUTTON] = true;
+    geode::MouseInputEvent::callback(mouse);
+    mouse.action = geode::MouseInputData::Action::Release;
+    geode::MouseInputEvent::callback(mouse);
+    assert(!s_hold.buttonDown);
+    mouse.action = geode::MouseInputData::Action::Press;
+    geode::MouseInputEvent::callback(mouse);
+    physicalDown[VK_MBUTTON] = false;
+    s_hold.startedAt -= std::chrono::seconds(2);
+    QuickHubScheduler::get()->onUpdate(0.f);
+    assert(!Radial::isOpen());
+    physicalDown[VK_MBUTTON] = true;
+    geode::MouseInputEvent::callback(mouse);
+    s_hold.startedAt -= std::chrono::seconds(2);
+    QuickHubScheduler::get()->onUpdate(0.f);
+    assert(Radial::isOpen());
+    Manager::abortActiveHold();
+    std::cout << "PASS: hold release, stale flags, duration, shortcuts, focus, keys and mouse\n";
+}

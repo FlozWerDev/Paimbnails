@@ -60,6 +60,11 @@ private:
     FeedQuery buildDifficultyMatch(TasteSnapshot const& taste);
     FeedQuery buildFeatured(TasteSnapshot const& taste);
     FeedQuery buildTrending(TasteSnapshot const& taste);
+    // shared flavour-filtered search; the two flags gate the taste thresholds.
+    FeedQuery buildFiltered(SearchType type, TasteSnapshot const& taste, int pageMax,
+                            bool featuredFlag, bool epicFlag);
+    // users-levels search for the creator `pickCreator` chooses (-1 = none).
+    FeedQuery buildUserLevels(geode::CopyableFunction<int()> pickCreator);
     FeedQuery buildSimilar(TasteSnapshot const& taste);
     FeedQuery buildFavoriteCreator(TasteSnapshot const& taste);
     FeedQuery buildTopCreator(TasteSnapshot const& taste);

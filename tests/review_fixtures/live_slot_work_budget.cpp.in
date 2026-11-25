@@ -1,0 +1,124 @@
+#include <algorithm>
+#include <atomic>
+#include <cassert>
+#include <functional>
+#include <limits>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+// Small injectable budgets exercise the production eviction policy without GL.
+constexpr std::size_t kMaskCacheBudget = 2048;
+constexpr unsigned int kKeepRecentMaskFrames = 120;
+std::vector<std::function<void()>> scheduled;
+namespace paimon {
+bool isRuntimeShuttingDown() { return false; }
+void scheduleMainThreadDelay(float, std::function<void()> callback) {
+    scheduled.push_back(std::move(callback));
+}
+}
+
+class LiveSlotRuntime {
+public:
+    struct Source {
+        std::shared_ptr<int> mask;
+        int width = 16, height = 16;
+        std::size_t maskBytes = 1024;
+        unsigned int lastUsedFrame = 0;
+        bool requested = true, analyzed = false;
+        std::vector<int> textures{1};
+    };
+    std::vector<Source> m_sources;
+    std::unordered_map<std::string, std::size_t> m_sourcesByName, m_sourcesByPath;
+    std::unordered_map<int*, std::size_t> m_textures;
+    std::shared_ptr<std::atomic<unsigned>> m_generation = std::make_shared<std::atomic<unsigned>>(0);
+    bool m_enabled = true, m_workerRunning = false, m_maskBuildQueued = false;
+    bool m_textureRefreshQueued = false, m_pending = false;
+    std::size_t m_maskBytes = 0;
+    unsigned int m_cachedTextureCount = 0, m_lastCacheCheckFrame = 0, m_lastMaskTrimFrame = 0;
+    int starts = 0, refreshes = 0;
+    static LiveSlotRuntime* active;
+    static LiveSlotRuntime& get() { return *active; }
+    void startNextMask() { ++starts; m_workerRunning = true; }
+    void refreshTextures() { ++refreshes; }
+    void unbindMasks() {}
+    void requestMaskBuild();
+    void requestTextureRefresh();
+    void releaseSources();
+    void trimUnusedMasks(unsigned int, std::size_t);
+};
+LiveSlotRuntime* LiveSlotRuntime::active = nullptr;
+
+@@function|src/features/texture-studio/services/LiveSlotRuntime.cpp|void LiveSlotRuntime::requestMaskBuild(@@
+@@function|src/features/texture-studio/services/LiveSlotRuntime.cpp|void LiveSlotRuntime::requestTextureRefresh(@@
+@@function|src/features/texture-studio/services/LiveSlotRuntime.cpp|void LiveSlotRuntime::releaseSources(@@
+@@function|src/features/texture-studio/services/LiveSlotRuntime.cpp|void LiveSlotRuntime::trimUnusedMasks(@@
+
+void tick() {
+    assert(!scheduled.empty());
+    auto callback = std::move(scheduled.front());
+    scheduled.erase(scheduled.begin());
+    callback();
+}
+
+int main() {
+    LiveSlotRuntime runtime;
+    LiveSlotRuntime::active = &runtime;
+    runtime.m_sources.resize(1);
+    runtime.m_sources[0].requested = false;
+    runtime.requestMaskBuild();
+    assert(scheduled.empty()); // Hidden textures create no workers.
+    runtime.m_sources[0].requested = true;
+    for (int i = 0; i < 100; ++i) runtime.requestMaskBuild();
+    assert(scheduled.size() == 1 && runtime.starts == 0);
+    tick();
+    assert(runtime.starts == 1 && runtime.m_workerRunning);
+    runtime.requestMaskBuild();
+    assert(scheduled.empty()); // Never overlap workers/results.
+
+    runtime.m_workerRunning = false;
+    runtime.requestMaskBuild(); // Old generation, still queued.
+    auto oldGeneration = runtime.m_generation->load();
+    runtime.releaseSources();
+    assert(runtime.m_generation->load() != oldGeneration);
+    runtime.m_sources.resize(1);
+    runtime.requestMaskBuild(); // New generation.
+    assert(scheduled.size() == 2);
+    tick();
+    assert(runtime.m_maskBuildQueued && runtime.starts == 1);
+    tick();
+    assert(runtime.starts == 2);
+    runtime.releaseSources();
+    assert(runtime.m_workerRunning); // Cancellation waits for the old worker's completion slot.
+    assert(runtime.m_sources.empty() && runtime.m_maskBytes == 0);
+
+    runtime.m_sources.resize(1);
+    for (int i = 0; i < 100; ++i) runtime.requestTextureRefresh();
+    assert(scheduled.size() == 1 && runtime.refreshes == 0);
+    tick();
+    assert(runtime.refreshes == 1 && !runtime.m_textureRefreshQueued);
+
+    runtime.m_sources.resize(3);
+    for (auto& source : runtime.m_sources) {
+        source.mask = std::make_shared<int>(1);
+        source.analyzed = true;
+    }
+    runtime.m_sources[0].lastUsedFrame = 10;
+    runtime.m_sources[1].lastUsedFrame = 20;
+    runtime.m_sources[2].lastUsedFrame = 199;
+    runtime.m_maskBytes = 3072;
+    runtime.trimUnusedMasks(200, 1024);
+    assert(!runtime.m_sources[0].mask && !runtime.m_sources[1].mask);
+    assert(runtime.m_sources[2].mask && runtime.m_maskBytes == 1024);
+    assert(!runtime.m_sources[0].requested && !runtime.m_sources[0].analyzed);
+    assert(runtime.m_sources[2].analyzed); // Visible texture survives.
+    runtime.trimUnusedMasks(200, 4096);
+    assert(runtime.m_sources[2].mask); // An oversized visible set cannot thrash the cache.
+
+    runtime.m_sources[2].lastUsedFrame = std::numeric_limits<unsigned int>::max() - 3;
+    runtime.trimUnusedMasks(2, 4096);
+    assert(runtime.m_sources[2].mask); // Frame counter rollover is recent, not ancient.
+    runtime.releaseSources();
+    assert(runtime.m_maskBytes == 0 && runtime.m_textures.empty());
+}

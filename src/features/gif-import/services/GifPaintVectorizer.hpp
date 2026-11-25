@@ -2,6 +2,8 @@
 
 #include "../GifImportTypes.hpp"
 
+#include <span>
+
 namespace paimon::gifimport {
 
 constexpr int kPaintSublayers = 3;
@@ -19,7 +21,13 @@ void prunePaintObjects(
     int height
 );
 
-// Seam repairs may only merge when their union adds no paint.
+void pruneMicroObjects(
+    std::vector<Primitive>& objects,
+    int width,
+    int height
+);
+
+// seam repairs may only merge when their union adds no paint.
 void mergePaintSolids(std::vector<Primitive>& objects);
 
 void smoothPaintFragments(
@@ -56,5 +64,10 @@ std::vector<Primitive> vectorizePaint(
     std::vector<std::uint8_t> const& empty = {},
     bool gridExact = true
 );
+
+// trace thin regions along their centerlines with rotated bodies and round joins.
+std::vector<Primitive> vectorizeRoundedPaintStrokes(
+    std::vector<int> const& positions, int width, int height, int color, int layer,
+    std::vector<std::uint8_t> const& coveredLater, std::span<float const> sourceCoverage = {});
 
 } // namespace paimon::gifimport

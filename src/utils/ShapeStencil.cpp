@@ -382,7 +382,7 @@ static std::vector<CCPoint> getCircleVerts(float half, float radius) {
     return verts;
 }
 
-static std::vector<CCPoint> getRoundedSquareVerts(float half, float size, float radius) {
+static std::vector<CCPoint> getRoundedSquareVerts(float, float size, float radius) {
     float h = size * 0.5f;
     float r = std::min(radius, h * 0.5f);
     std::vector<CCPoint> verts;

@@ -4,7 +4,7 @@
 
 namespace paimon::transitions::dynamic {
 
-// Holds the panel's animation until the native show finishes positioning it.
+// holds the panel's animation until the native show finishes positioning it.
 class PanelOpenScope {
 public:
     PanelOpenScope(cocos2d::CCNode* panel, cocos2d::CCNode* parent);

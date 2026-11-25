@@ -1,0 +1,85 @@
+#include "tests/review_fixtures/ReviewQueue.hpp"
+#include "src/utils/ProjectStorage.hpp"
+namespace fs = std::filesystem;
+inline int diskReads = 0;
+inline fs::path slotsRoot;
+struct CCTexture2D {};
+struct CCRect { CCRect(int,int,int,int) {} };
+struct CCPoint { CCPoint(int,int) {} };
+struct CCSize { CCSize(int,int) {} };
+struct CCSpriteFrame {
+    static CCSpriteFrame* createWithTexture(CCTexture2D*, CCRect, bool, CCPoint, CCSize) { return nullptr; }
+};
+struct CCSpriteFrameCache {
+    static CCSpriteFrameCache* sharedSpriteFrameCache() { static CCSpriteFrameCache cache; return &cache; }
+    void addSpriteFrame(CCSpriteFrame*, char const*) {}
+};
+struct FrameInfo { std::string name; int rectX=0,rectY=0,rectW=0,rectH=0,offsetX=0,offsetY=0,sourceW=0,sourceH=0;bool rotated=false; };
+namespace ts {
+struct Parsed { std::vector<FrameInfo> frames; };
+struct PlistParser {
+    static Result<Parsed> parseFile(fs::path const&) { ++diskReads; return Err("fixture: no plist"); }
+};
+struct ImageBuffer { static Result<int> loadFromFile(fs::path const&) { return Err("no atlas"); } };
+struct SpritePreviewRenderer { static CCTexture2D* createTexture(int) { return nullptr; } };
+}
+struct SelectionEntry {
+    std::string key, id;
+    std::optional<std::string> getKey() const { return key; }
+    struct JsonString { std::string value; std::string unwrapOr(char const*) const { return value; } };
+    JsonString asString() const { return {id}; }
+};
+namespace matjson {
+struct Value {
+    std::vector<SelectionEntry> entries;
+    static Value object() { return {}; }
+    bool isObject() const { return true; }
+    auto begin() const { return entries.begin(); }
+    auto end() const { return entries.end(); }
+};
+}
+struct Mod {
+    matjson::Value saved;
+    static Mod* get() { static Mod mod; return &mod; }
+    template<class T> T getSavedValue(char const*, T) const { return saved; }
+};
+namespace geode::utils {
+template<class T> Result<T> numFromString(std::string const& value) {
+    try { return Ok(static_cast<T>(std::stoi(value))); } catch (...) { return Err("bad integer"); }
+}
+}
+namespace paimon::icon_maker {
+namespace log = geode::log;
+constexpr char const* kActiveKey = "active";
+enum class IconType { Cube=0, Ship=1, Ball=2 };
+inline int const* anatomyFor(IconType) { static int definition; return &definition; }
+inline std::string qualitySuffix() { return ""; }
+struct IconPaths {
+    static fs::path slotsDir() { return slotsRoot; }
+    static fs::path outputDir(std::string_view id) { return paimon::storage::requireProjectDirectory(slotsRoot,id)/"output"; }
+};
+struct IconApplier {
+    struct LoadedSheet { std::vector<std::string> frameNames; CCTexture2D* texture=nullptr; bool valid=false; };
+    bool m_selectionLoaded=false;
+    std::map<int,std::string> m_active;
+    std::map<std::string,LoadedSheet> m_sheets;
+    void loadSelection();
+    LoadedSheet* ensureLoaded(std::string const&);
+};
+@@function|src/features/icon-maker/services/IconApplier.cpp|void IconApplier::loadSelection@@
+@@function|src/features/icon-maker/services/IconApplier.cpp|IconApplier::LoadedSheet* IconApplier::ensureLoaded@@
+}
+int main() {
+    using namespace paimon::icon_maker;
+    slotsRoot=fs::current_path();
+    Mod::get()->saved.entries={{"0",".."},{"1","../../other"},{"2","legacy-safe"}};
+    IconApplier applier;
+    bool threw=false;
+    try { assert(applier.ensureLoaded("..") == nullptr); } catch (...) { threw=true; }
+    assert(!threw && diskReads==0);
+    assert(applier.ensureLoaded("legacy-safe")==nullptr && diskReads==1);
+    assert(applier.ensureLoaded("legacy-safe")==nullptr && diskReads==1);
+    applier.loadSelection();
+    assert(applier.m_active.size()==1 && applier.m_active.at(2)=="legacy-safe");
+    std::cout<<"Unsafe saved selections fall back without throwing or touching outside files\n";
+}

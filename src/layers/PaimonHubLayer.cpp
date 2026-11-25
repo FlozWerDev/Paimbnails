@@ -20,27 +20,34 @@
 #include "../features/profiles/ui/ProfileSettingsPopup.hpp"
 #include "../features/transitions/ui/TransitionConfigPopup.hpp"
 #include "../features/transitions/ui/DynamicTransitionConfigPopup.hpp"
+#include "../features/keybinds/ui/ManagerCutPopup.hpp"
+#if defined(GEODE_IS_DESKTOP)
 #include "../features/cursor/ui/CursorConfigPopup.hpp"
+#include "../features/smooth-scroll/ui/SmoothScrollConfigPopup.hpp"
+#endif
 #include "../features/pet/ui/PetConfigPopup.hpp"
 #include "../features/profile-music/ui/ProfileMusicPopup.hpp"
 #include "../features/progressbar/ui/ProgressBarConfigPopup.hpp"
+#include "../features/liquid-glass/services/GlassDecorator.hpp"
+#include "../features/liquid-glass/ui/GlassConfigPopup.hpp"
+#include "../features/dynamic-ambient/services/AmbientDecorator.hpp"
+#include "../features/dynamic-ambient/ui/AmbientConfigPopup.hpp"
 #include "../features/custom-slider/ui/CustomSliderPopup.hpp"
-#include "../features/smooth-scroll/ui/SmoothScrollConfigPopup.hpp"
 #include "../features/discord-presence/ui/DiscordConfigPopup.hpp"
 #include "../features/discord-presence/services/DiscordPresenceManager.hpp"
 #include "../features/beat-shaders/ui/BeatShaderConfigLayer.hpp"
 #include "../features/rtx/ui/RTXConfigLayer.hpp"
+#include "../features/paimon-shop/ui/PaimonShopLayer.hpp"
 #include "../features/dynamic-songs/ui/DynamicSongPopup.hpp"
 #include "../features/dynamic-volume/ui/DynamicVolumePopup.hpp"
 #include "../features/settings-panel/services/SettingsPanelManager.hpp"
 #include "../features/settings-panel/ui/SettingsCategoryBuilder.hpp"
 #include "../features/settings-panel/ui/SettingsControls.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
-#include "../features/forum/services/ForumApi.hpp"
-#include "../features/forum/ui/CreatePostPopup.hpp"
-#include "../features/forum/ui/PostDetailPopup.hpp"
+#include "../features/forum/ui/ForumPanel.hpp"
 #include "../features/dev-tools/ui/GifToSheetPopup.hpp"
 #include "../features/thumb-requests/ui/ThumbRequestsPopup.hpp"
+#include "../core/ModAuthFlow.hpp"
 #include "../core/modules/ModuleRegistry.hpp"
 #include "../features/updates/services/UpdateChecker.hpp"
 #include "../features/updates/ui/UpdateProgressPopup.hpp"
@@ -50,7 +57,6 @@
 #include "../ui/SmoothUIConfigPopup.hpp"
 #include "../ui/HubFeatureInfo.hpp"
 #include "../utils/PaimonNotification.hpp"
-#include "../utils/PaimonLoadingOverlay.hpp"
 #include "../utils/SpriteHelper.hpp"
 #include "../utils/DynamicPopupRegistry.hpp"
 #include "../utils/InfoButton.hpp"
@@ -72,33 +78,14 @@
 #include "../utils/GeodeTextInputSafe.hpp"
 #include <Geode/ui/ScrollLayer.hpp>
 #include <Geode/ui/General.hpp>
+#include "../features/community-base/ui/CommunityBasePopup.hpp"
 
 using namespace geode::prelude;
 
 namespace {
-std::string tr(char const* key, char const* fallback = "") {
-    auto value = Localization::get().getString(key);
-    if (value == key && fallback && fallback[0] != '\0') return fallback;
-    return value;
-}
+using paimon::loc::tr;
 
-std::string toLower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return s;
-}
 
-void shrinkLabelToFit(CCLabelBMFont* label, float maxW) {
-    if (!label) return;
-    float w = label->getScaledContentSize().width;
-    if (w > maxW) label->setScale(label->getScale() * maxW / w);
-}
-
-CCMenu* makeZeroMenu(char const* id = nullptr) {
-    auto* menu = CCMenu::create();
-    if (id) menu->setID(id);
-    menu->setPosition({0.f, 0.f});
-    return menu;
-}
 
 constexpr float kHomeBottom = 15.f;
 constexpr float kHomeSidebarX = 15.f;
@@ -113,27 +100,9 @@ float homeDetailsW(CCSize const& win) { return win.width - kHomeDetailsX - 15.f;
 float homeInnerW(CCSize const& win) { return homeDetailsW(win) - 24.f; }
 float homeTop(CCSize const& win) { return win.height - 70.f; }
 
-void dismissOverlay(CCNode*& node) {
-    if (node) {
-        if (node->getParent()) node->removeFromParent();
-        node = nullptr;
-    }
-}
-
 void animateActionCard(CCMenuItemSpriteExtra* button, float x, float y, float delay) {
     button->setPosition({x, y});
     paimon::ui::animateIn(button, delay);
-}
-
-constexpr char const* kPillOff = "GJ_button_04.png";
-constexpr char const* kPillOn  = "GJ_button_01.png";
-
-CCSprite* makePillFace(char const* text, char const* texture, float scale) {
-    return paimon::ui::makeButtonSprite(text, texture, 0.f, std::clamp(scale * 2.f, 0.36f, 0.85f), "bigFont.fnt");
-}
-
-void setPillSelected(CCMenuItemSpriteExtra* button, bool selected) {
-    paimon::ui::setButtonSkin(button, selected ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray);
 }
 
 CCSprite* makeCategoryIcon(std::string const& frame, float size) {
@@ -182,7 +151,6 @@ CCMenuItemSpriteExtra* makeActionCardBtn(
     favoriteMenu->setTouchPriority(CCDirector::get()->getTouchDispatcher()->getTargetPrio() - 2);
     auto* star = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
     if (star && !action.id.empty()) {
-        star->setScale(0.36f);
         auto favorites = Mod::get()->getSavedValue<std::vector<std::string>>("hub-favorites", {});
         bool const favorite = std::find(favorites.begin(), favorites.end(), action.id) != favorites.end();
         star->setColor(favorite ? ccColor3B{255, 255, 255} : ccColor3B{90, 90, 90});
@@ -190,8 +158,9 @@ CCMenuItemSpriteExtra* makeActionCardBtn(
         auto* pin = CCMenuItemExt::createSpriteExtra(star, [self, id = action.id](CCMenuItemSpriteExtra*) {
             if (auto hub = self.lock()) hub->toggleHubFavorite(id);
         });
+        pin->setScale(0.36f);
+        pin->m_baseScale = 0.36f;
         pin->setPosition({width - 13.f, headY});
-        pin->setSizeMult(1.4f);
         favoriteMenu->addChild(pin);
     }
     face->addChild(favoriteMenu, 5);
@@ -208,13 +177,6 @@ bool contains(std::vector<T> const& v, T const& x) {
     return std::find(v.begin(), v.end(), x) != v.end();
 }
 
-template <typename T>
-void eraseOne(std::vector<T>& v, T const& x) {
-    auto it = std::find(v.begin(), v.end(), x);
-    if (it != v.end()) v.erase(it);
-}
-
-
 } // namespace
 
 namespace paimon::hubdata {
@@ -225,30 +187,34 @@ bool discordSupported() {
     return mod && mod->hasSetting("discord-rpc-enabled");
 }
 
-std::vector<HubCategoryMeta> getHubCategories() {
-    std::vector<HubCategoryMeta> cats = {
-        {"General", "Idioma, updates y mantenimiento.", {130, 240, 170}, paimon::ui::getGeneralInfo, "GJ_optionsBtn02_001.png"},
-        {"Miniaturas", "Layout, galeria, efectos y captura.", {120, 210, 255}, paimon::ui::getThumbnailsInfo, "GJ_extendedIcon_001.png"},
-        {"Nivel", "Pantalla de info, fondo y transiciones.", {170, 190, 255}, paimon::ui::getLevelInfoScreenInfo, "GJ_starsIcon_001.png"},
-        {"Audio", "Profile music, menu music y capas.", {255, 165, 210}, paimon::ui::getAudioInfo, "GJ_musicIcon_001.png"},
-        {"Fondos", "Fondos por capa, video y transiciones.", {140, 245, 200}, paimon::ui::getBackgroundsInfo, "GJ_sMagicIcon_001.png"},
-        {"Extras", "Mascota, cursor, popups y rendimiento.", {255, 140, 140}, paimon::ui::getExtrasInfo, "GJ_diamondsIcon_001.png"},
-    };
-    if (discordSupported()) {
-        cats.push_back({"Discord", "Rich Presence completa.", {140, 160, 255}, paimon::ui::getDiscordInfo, "gj_discordIcon_001.png"});
-    }
-    cats.push_back({"Crear", "Iconos, texturas y recursos propios.", {182, 161, 255}, [] {
-        return std::vector<paimon::ui::InfoSection>{
-            {"Iconos", "Crea, importa y organiza tus iconos. La galeria conserva proyectos y favoritos.", {182, 161, 255}},
-            {"Texturas", "Organiza paquetes y edita sus colores con una vista previa en el juego.", {116, 204, 255}},
-            {"GIF a Sheet", "Convierte una animacion en una hoja de sprites para tus recursos.", {255, 208, 128}}
+std::vector<HubCategoryMeta> const& getHubCategories() {
+    // membership only depends on load-time setting registration; build once.
+    static std::vector<HubCategoryMeta> const cats = [] {
+        std::vector<HubCategoryMeta> result = {
+            {"General", "Idioma, updates y mantenimiento.", {130, 240, 170}, paimon::ui::getGeneralInfo, "GJ_optionsBtn02_001.png"},
+            {"Miniaturas", "Layout, galeria, efectos y captura.", {120, 210, 255}, paimon::ui::getThumbnailsInfo, "GJ_extendedIcon_001.png"},
+            {"Nivel", "Pantalla de info, fondo y transiciones.", {170, 190, 255}, paimon::ui::getLevelInfoScreenInfo, "GJ_starsIcon_001.png"},
+            {"Audio", "Profile music, menu music y capas.", {255, 165, 210}, paimon::ui::getAudioInfo, "GJ_musicIcon_001.png"},
+            {"Fondos", "Fondos por capa, video y transiciones.", {140, 245, 200}, paimon::ui::getBackgroundsInfo, "GJ_sMagicIcon_001.png"},
+            {"Extras", "Mascota, cursor, popups y rendimiento.", {255, 140, 140}, paimon::ui::getExtrasInfo, "GJ_diamondsIcon_001.png"},
         };
-    }, "GJ_paintBtn_001.png"});
+        if (discordSupported()) {
+            result.push_back({"Discord", "Rich Presence completa.", {140, 160, 255}, paimon::ui::getDiscordInfo, "gj_discordIcon_001.png"});
+        }
+        result.push_back({"Crear", "Iconos, texturas y recursos propios.", {182, 161, 255}, [] {
+            return std::vector<paimon::ui::InfoSection>{
+                {"Iconos", "Crea, importa y organiza tus iconos. La galeria conserva proyectos y favoritos.", {182, 161, 255}},
+                {"Texturas", "Organiza paquetes y edita sus colores con una vista previa en el juego.", {116, 204, 255}},
+                {"GIF a Sheet", "Convierte una animacion en una hoja de sprites para tus recursos.", {255, 208, 128}}
+            };
+        }, "GJ_paintBtn_001.png"});
+        return result;
+    }();
     return cats;
 }
 
 std::vector<HubActionMeta> getHubActions(int categoryIndex) {
-    // The creation category follows the optional Discord category.
+    // the creation category follows the optional Discord category.
     const bool discord = discordSupported();
     const int devIndex = discord ? 7 : 6;
     if (categoryIndex == devIndex) {
@@ -267,17 +233,29 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
     switch (categoryIndex) {
         case 0:
             return {
+                {"Mi Cuenta", "GJ_button_01.png", [](PaimonHubLayer*) {
+                    paimon::modauth::showPanel();
+                }, 0, "Inicia sesion unificada y consulta tus permisos"},
                 {"Modulos", "GJ_button_03.png", [](PaimonHubLayer*) {
                     auto scene = PaimonModulesLayer::scene();
                     if (scene) CCDirector::get()->pushScene(scene);
                 }, 0, "Activa o desactiva funciones"},
                 {"Configurar", "GJ_button_01.png", [](PaimonHubLayer*) { SettingsPanelManager::get().open(0); }, 0, "Idioma, updates y basicos"},
+                {"Manager Cut", "GJ_button_04.png", [](PaimonHubLayer*) {
+                    if (auto popup = paimon::keybinds::ManagerCutPopup::create()) popup->show();
+                }, 0, "Teclas, atajos y gestos"},
                 {"Actualizaciones", "GJ_button_02.png", [](PaimonHubLayer*) {
                     if (auto popup = paimon::updates::UpdateCenterPopup::create()) popup->show();
                 }, 0, "Nueva version y versiones antiguas"},
                 {"Comunidad", "GJ_button_02.png", [](PaimonHubLayer*) {
                     if (auto* scene = CommunityHubLayer::scene()) CCDirector::get()->pushScene(scene);
                 }, 0, "Creadores, miniaturas y mods compatibles"},
+                {"Paimon Base", "GJ_button_01.png", [](PaimonHubLayer*) {
+                    paimon::community::CommunityBasePopup::open();
+                }, 0, "Ajustes en la nube y sugerencias"},
+                {"Paimon Shop", "GJ_button_05.png", [](PaimonHubLayer*) {
+                    paimon::shop::PaimonShopLayer::open();
+                }, 0, "Presets de layout, RTX y shaders con preview"},
                 {"Versus", "GJ_button_05.png", [](PaimonHubLayer*) {
                     if (auto* scene = paimon::versus::VersusHubLayer::scene()) CCDirector::get()->pushScene(scene);
                 }, 0, "Partidas, mazos y clasificaciones"},
@@ -316,7 +294,7 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
                     if (accountID > 0) {
                         if (auto popup = ProfileMusicPopup::create(accountID)) popup->show();
                     } else {
-                        PaimonNotify::create("Necesitas iniciar sesion.", NotificationIcon::Warning)->show();
+                        PaimonNotify::show("Necesitas iniciar sesion.", NotificationIcon::Warning);
                     }
                 }, 3, "Tu cancion en tu perfil"},
                 {"Volumen Dinamico", "GJ_button_05.png", [](PaimonHubLayer*) {
@@ -333,6 +311,8 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
         case 4:
             return {
                 {"Editor Fondos", "GJ_button_01.png", [](PaimonHubLayer* self) { self->onOpenConfig(nullptr); }, 4, "Fondo por pantalla, en vivo"},
+                {"Liquid Glass", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = paimon::glass::GlassConfigPopup::create()) popup->show(); }, 4, "Popups y botones de cristal"},
+                {"Dynamic Ambient", "GJ_button_03.png", [](PaimonHubLayer*) { if (auto popup = paimon::ambient::AmbientConfigPopup::create()) popup->show(); }, 4, "Luz dinamica segun el fondo"},
                 {"Transiciones", "GJ_button_04.png", [](PaimonHubLayer*) { if (auto popup = TransitionConfigPopup::create()) popup->show(); }, 4, "Animaciones entre escenas"},
             };
         case 5:
@@ -350,10 +330,14 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
                     if (auto popup = paimon::transitions::dynamic::DynamicTransitionConfigPopup::create()) popup->show();
                 }, 5, "Los layers se abren desde su boton"},
                 {"Mascota", "GJ_button_03.png", [](PaimonHubLayer*) { if (auto popup = PetConfigPopup::create()) popup->show(); }, 5, "Companero en pantalla"},
+#if defined(GEODE_IS_DESKTOP)
                 {"Cursor", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = CursorConfigPopup::create()) popup->show(); }, 5, "Cursor personalizado"},
+#endif
                 {"Hover", "GJ_button_01.png", [](PaimonHubLayer*) { paimon::hover::open(); }, 5, "Animaciones al pasar cursor o touch"},
                 {"Slider", "GJ_button_01.png", [](PaimonHubLayer*) { if (auto popup = paimon::slider::CustomSliderPopup::create()) popup->show(); }, 5, "Barra de scroll custom"},
+#if defined(GEODE_IS_DESKTOP)
                 {"Scroll", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = paimon::smoothscroll::SmoothScrollConfigPopup::create()) popup->show(); }, 5, "Desplazamiento suave"},
+#endif
                 {"Beat Shaders", "GJ_button_04.png", [](PaimonHubLayer*) {
                     if (auto popup = paimon::beat_shaders::BeatShaderConfigLayer::create()) {
                         popup->show();
@@ -370,16 +354,19 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
             if (!discord) return {};
             return {
                 {"Configurar", "GJ_button_02.png", [](PaimonHubLayer*) { if (auto popup = paimon::discord::DiscordConfigPopup::create()) popup->show(); }, 6, "Rich Presence a tu gusto"},
-                {"Refrescar", "GJ_button_05.png", [](PaimonHubLayer*) { paimon::discord::DiscordPresenceManager::get().refreshSoon(); PaimonNotify::create("Rich Presence actualizada.", NotificationIcon::Success)->show(); }, 6, "Fuerza la actualizacion"},
+                {"Refrescar", "GJ_button_05.png", [](PaimonHubLayer*) { paimon::discord::DiscordPresenceManager::get().refreshNow(true); PaimonNotify::show("Actualizacion de Rich Presence solicitada.", NotificationIcon::Info); }, 6, "Solicita una actualizacion"},
             };
         default:
             return {};
     }
 }
 
-std::vector<GranularSettingMeta> getGranularSettings() {
-    std::vector<GranularSettingMeta> settings = {
+std::vector<GranularSettingMeta> const& getGranularSettings() {
+    // static catalog; was rebuilt on every search keystroke.
+    static std::vector<GranularSettingMeta> const settings = [] {
+        std::vector<GranularSettingMeta> result = {
         {"Language / Idioma", "Idioma / Language", 0},
+        {"Manager Cut (Keybinds & Gestures)", "Manager Cut (Teclas y Gestos)", 0},
         {"Auto Update", "Auto Actualizar", 0},
         {"Quick Search Key", "Tecla de Busqueda Rapida", 0},
         {"Realtime Search Preview", "Vista Previa en Tiempo Real", 0},
@@ -416,6 +403,9 @@ std::vector<GranularSettingMeta> getGranularSettings() {
         {"Now Playing Notifications", "Notificaciones de Reproduccion", 3},
         {"Notification Duration", "Duracion de la Notificacion", 3},
         {"Notification Prefix", "Prefijo de Notificacion", 3},
+        {"Notification Animation", "Animacion de la Notificacion", 3},
+        {"Notification Animation Speed", "Velocidad de la Animacion de Notificacion", 3},
+        {"Notification Animation Intensity", "Intensidad de la Animacion de Notificacion", 3},
         {"Seek Step (ms)", "Paso de Busqueda (ms)", 3},
         {"Show Playback Progress", "Mostrar Progreso de Reproduccion", 3},
         {"Menu Music Hotkeys", "Teclas Rapidas de Musica", 3},
@@ -438,9 +428,11 @@ std::vector<GranularSettingMeta> getGranularSettings() {
         {"Pet Sprite / Pet Type", "Sprite de Mascota / Tipo de Mascota", 5},
         {"Pet Scale", "Escala de Mascota", 5},
         {"Pet Opacity", "Opacidad de Mascota", 5},
+#if defined(GEODE_IS_DESKTOP)
         {"Custom Cursor", "Cursor Personalizado", 5},
         {"Cursor Trail", "Estela de Cursor", 5},
         {"Cursor Scale", "Escala de Cursor", 5},
+#endif
         {"Score Cell Style", "Estilo de Celda de Puntuacion", 5},
         {"Custom Hover", "Animaciones Hover", 5},
         {"Custom Slider Thumb", "Barra de Desplazamiento Personalizada", 5},
@@ -453,13 +445,15 @@ std::vector<GranularSettingMeta> getGranularSettings() {
         {"Clear Cache on Exit", "Limpiar Cache al Salir", 5},
         {"Open Thumbnails Folder", "Abrir Carpeta de Miniaturas", 5},
 
-    };
-    // hide discord rows on mobile to keep indices stable.
-    if (discordSupported()) {
-        settings.push_back({"Enable Discord Rich Presence", "Activar Discord Rich Presence", 6});
-        settings.push_back({"Configure Discord RPC", "Configurar Discord RPC", 6});
-        settings.push_back({"Refresh Discord Status", "Refrescar Estado de Discord", 6});
-    }
+        };
+        // hide discord rows on mobile to keep indices stable.
+        if (discordSupported()) {
+            result.push_back({"Enable Discord Rich Presence", "Activar Discord Rich Presence", 6});
+            result.push_back({"Configure Discord RPC", "Configurar Discord RPC", 6});
+            result.push_back({"Refresh Discord Status", "Refrescar Estado de Discord", 6});
+        }
+        return result;
+    }();
     return settings;
 }
 
@@ -481,9 +475,7 @@ CCScene* PaimonHubLayer::scene() {
 }
 
 PaimonHubLayer::~PaimonHubLayer() {
-    for (auto* n : {m_createPostOverlay, m_createTagOverlay, m_predefPickerOverlay}) {
-        if (n && n->getParent()) n->removeFromParent();
-    }
+    paimon::ui::detachGeodeTextInput(m_searchInput);
 }
 
 bool PaimonHubLayer::init() {
@@ -492,13 +484,6 @@ bool PaimonHubLayer::init() {
     this->setTouchEnabled(true);
     this->setMouseEnabled(true);
     this->scheduleUpdate();
-
-    m_forumTags = {
-        "Guide", "Tip", "Question", "Bug", "Suggestion",
-        "Showcase", "Discussion", "Help", "News", "Update",
-        "Level", "Video", "Art", "Music", "Story",
-        "Theory", "Challenge", "Competition", "Feedback", "Other"
-    };
 
     m_gdMode = Mod::get()->getSavedValue<std::string>("hub-ui-style", "original") == "gd";
     if (m_gdMode) {
@@ -518,9 +503,9 @@ bool PaimonHubLayer::init() {
     window->setPosition({8.f, 8.f});
     window->setID("paimon-hub-window"_spr);
     this->addChild(window, 1);
-    paimon::ui::addCorners(window, window->getContentSize(), SideArtStyle::PopupGold, 0.4f);
+    paimon::ui::addCorners(window, window->getContentSize(), SideArtStyle::PopupGold, 1.f);
 
-    m_mainMenu = makeZeroMenu("paimon-hub-main-menu"_spr);
+    m_mainMenu = paimon::ui::makeZeroMenu("paimon-hub-main-menu"_spr);
     this->addChild(m_mainMenu, 10);
 
     bool const narrow = winSize.width < 500.f;
@@ -533,24 +518,23 @@ bool PaimonHubLayer::init() {
     auto backBtn = paimon::ui::makeBackButton([this] { onBack(nullptr); });
     backBtn->setPosition({20.f, top - 18.f});
     backBtn->setScale(0.62f);
+    backBtn->m_baseScale = 0.62f;
     m_mainMenu->addChild(backBtn);
 
-    auto helpSpr = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
-    helpSpr->setScale(0.7f);
-    auto helpBtn = CCMenuItemSpriteExtra::create(helpSpr, this, menu_selector(PaimonHubLayer::onOpenHelp));
+    auto* helpBtn = paimon::ui::makeFrameButton("GJ_infoIcon_001.png", 0.7f, [this] { onOpenHelp(nullptr); });
     helpBtn->setID("help-btn"_spr);
     helpBtn->setPosition({winSize.width - 20.f, top - 18.f});
     m_mainMenu->addChild(helpBtn);
 
-    auto uiSpr = paimon::ui::makeButtonSprite("GD", paimon::ui::Btn::Gray, 0.f, 0.5f);
-    auto uiBtn = CCMenuItemSpriteExtra::create(uiSpr, this, menu_selector(PaimonHubLayer::onToggleUIStyle));
+    auto* uiBtn = paimon::ui::makeButton("GD", [this] { onToggleUIStyle(nullptr); },
+        paimon::ui::Btn::Gray, 0.f, 0.5f);
     uiBtn->setID("ui-style-btn"_spr);
     uiBtn->setPosition({winSize.width - 50.f, top - 18.f});
     m_mainMenu->addChild(uiBtn);
 
-    auto updSpr = paimon::ui::makeButtonSprite(tr("pai.hub.btn.updates", "Updates").c_str(),
+    auto* updBtn = paimon::ui::makeButton(tr("pai.hub.btn.updates", "Updates").c_str(),
+        [this] { onCheckUpdate(nullptr); },
         paimon::ui::Btn::Cyan, narrow ? 54.f : 68.f, 0.5f);
-    auto updBtn = CCMenuItemSpriteExtra::create(updSpr, this, menu_selector(PaimonHubLayer::onCheckUpdate));
     updBtn->setID("updates-btn"_spr);
     updBtn->setPosition({winSize.width - (narrow ? 102.f : 110.f), top - 18.f});
     m_mainMenu->addChild(updBtn);
@@ -558,27 +542,26 @@ bool PaimonHubLayer::init() {
     float tabY = top - 18.f;
     std::vector<std::string> tabNames = {
         tr("pai.hub.tab.home", "Home"),
-        tr("pai.hub.tab.news", "News"),
         tr("pai.hub.tab.forum", "Forum")
     };
 
     auto tabBar = CCMenu::create();
     tabBar->setID("paimon-hub-tab-bar"_spr);
     tabBar->setPosition({cx + (winSize.width < 500.f ? 2.f : 4.f), tabY});
-    tabBar->setContentSize({190.f, 20.f});
+    tabBar->setContentSize({130.f, 20.f});
     tabBar->setAnchorPoint({0.5f, 0.5f});
     tabBar->setLayout(
         RowLayout::create()
-            ->setGap(4.f)
+            ->setGap(6.f)
             ->setAutoScale(false)
             ->setAxisAlignment(AxisAlignment::Center)
     );
     this->addChild(tabBar, 10);
 
-    static char const* kTabIds[] = {"home-tab-btn"_spr, "news-tab-btn"_spr, "forum-tab-btn"_spr};
-    for (int i = 0; i < 3; i++) {
-        auto spr = paimon::ui::makeButtonSprite(tabNames[i].c_str(), paimon::ui::Btn::Gray, 56.f, 0.5f);
-        auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(PaimonHubLayer::onTabSwitch));
+    static char const* kTabIds[] = {"home-tab-btn"_spr, "forum-tab-btn"_spr};
+    for (int i = 0; i < 2; i++) {
+        auto* btn = paimon::ui::makeButton(tabNames[i].c_str(), [this, i] { switchTab(i); },
+            paimon::ui::Btn::Gray, 60.f, 0.5f);
         btn->setTag(i);
         btn->setID(kTabIds[i]);
         tabBar->addChild(btn);
@@ -592,17 +575,16 @@ bool PaimonHubLayer::init() {
         tab->setCascadeOpacityEnabled(false);
         tab->setVisible(visible);
         this->addChild(tab, 5);
-        menu = makeZeroMenu(menuId);
+        menu = paimon::ui::makeZeroMenu(menuId);
         menu->setVisible(visible);
         this->addChild(menu, 11);
     };
     addTab(m_homeTab, m_homeMenu, "home-tab"_spr, "home-menu"_spr, true);
-    addTab(m_newsTab, m_newsMenu, "news-tab"_spr, "news-menu"_spr, false);
     addTab(m_forumTab, m_forumMenu, "forum-tab"_spr, "forum-menu"_spr, false);
 
     buildHomeTab();
-    buildNewsTab();
     buildForumTab();
+    setupGlassChrome();
     switchTab(0);
     this->schedule(schedule_selector(PaimonHubLayer::refreshUpdateBadge), 1.f);
     refreshUpdateBadge(0.f);
@@ -639,19 +621,29 @@ void PaimonHubLayer::onTabSwitch(CCObject* sender) {
     switchTab(idx);
 }
 
+void PaimonHubLayer::setupGlassChrome() {
+    // buttons get their plates from the global ButtonSprite hook, and a
+    // skin change (selected tab or category) re-tints them. Only the
+    // panels need plates here. Plates stay inert while the material
+    // or its "Popups & panels" scope is off.
+    if (m_gdMode) return;
+    paimon::glass::attachGlass(m_sidebarBg, paimon::glass::GlassKind::Panel, paimon::glass::GlassScope::Popups);
+    paimon::glass::attachGlass(m_detailsBg, paimon::glass::GlassKind::Panel, paimon::glass::GlassScope::Popups);
+    if (m_forumPanel) m_forumPanel->setupGlassChrome();
+}
+
 void PaimonHubLayer::switchTab(int idx) {
+    idx = (idx == 1) ? 1 : 0;
     int prev = m_currentTab;
     m_currentTab = idx;
 
     m_homeTab->setVisible(idx == 0);
     m_homeMenu->setVisible(idx == 0);
-    m_newsTab->setVisible(idx == 1);
-    m_newsMenu->setVisible(idx == 1);
-    m_forumTab->setVisible(idx == 2);
-    m_forumMenu->setVisible(idx == 2);
+    m_forumTab->setVisible(idx == 1);
+    m_forumMenu->setVisible(idx == 1);
 
-    auto* activeTab = idx == 0 ? m_homeTab : idx == 1 ? m_newsTab : m_forumTab;
-    auto* activeMenu = idx == 0 ? m_homeMenu : idx == 1 ? m_newsMenu : m_forumMenu;
+    auto* activeTab = idx == 0 ? m_homeTab : m_forumTab;
+    auto* activeMenu = idx == 0 ? m_homeMenu : m_forumMenu;
     if (activeTab) {
         activeTab->stopAllActions();
         activeTab->setPosition({0.f, 0.f});
@@ -672,7 +664,7 @@ void PaimonHubLayer::switchTab(int idx) {
         }
     }
     if (!m_gdMode) paimon::ui::matchButtonLabels(m_tabBtns);
-    if (idx == 2) refreshForumPosts();
+    if (idx == 1 && m_forumPanel) m_forumPanel->onTabActivated();
 }
 
 void PaimonHubLayer::buildHomeTab() {
@@ -685,10 +677,10 @@ void PaimonHubLayer::buildHomeTab() {
     m_sidebarBg = paimon::ui::makeInset({kHomeSidebarW, panelH}, 80);
     m_sidebarBg->setPosition({kHomeSidebarX, kHomeBottom});
     m_homeTab->addChild(m_sidebarBg);
-    m_sidebarMenu = makeZeroMenu("paimon-sidebar-menu"_spr);
+    m_sidebarMenu = paimon::ui::makeZeroMenu("paimon-sidebar-menu"_spr);
     m_homeTab->addChild(m_sidebarMenu, 3);
 
-    // Quick Hub and the version label own the bottom 50 units of the sidebar.
+    // quick Hub and the version label own the bottom 50 units of the sidebar.
     float const firstY = panelTop - 16.f;
     float const listSpan = firstY - (kHomeBottom + 50.f);
     float const spacing = std::min(23.f,
@@ -696,9 +688,9 @@ void PaimonHubLayer::buildHomeTab() {
     float const buttonScale = std::clamp(spacing / 30.f * 0.82f, 0.45f, 0.6f);
     m_homeCategoryBtns.clear();
     for (size_t i = 0; i < categories.size(); ++i) {
-        auto* face = paimon::ui::makeButtonSprite(categories[i].title.c_str(), paimon::ui::Btn::Gray,
-            kHomeSidebarW - 16.f, buttonScale, "bigFont.fnt");
-        auto* button = CCMenuItemSpriteExtra::create(face, this, menu_selector(PaimonHubLayer::onTabSwitch));
+        auto* button = paimon::ui::makeButton(categories[i].title.c_str(),
+            [this, idx = static_cast<int>(i)] { switchHomeCategory(idx); },
+            paimon::ui::Btn::Gray, kHomeSidebarW - 16.f, buttonScale, "bigFont.fnt");
         button->setPosition({sideCx, firstY - static_cast<float>(i) * spacing});
         button->setTag(100 + static_cast<int>(i));
         m_sidebarMenu->addChild(button);
@@ -709,7 +701,7 @@ void PaimonHubLayer::buildHomeTab() {
     }, paimon::ui::Btn::Pink, kHomeSidebarW - 28.f, 0.55f);
     quick->setPosition({sideCx, kHomeBottom + 30.f});
     m_sidebarMenu->addChild(quick);
-    auto* version = CCLabelBMFont::create(paimon::updates::UpdateChecker::get().localVersion().c_str(), "chatFont.fnt");
+    auto* version = CCLabelBMFont::create(fmt::format("v{}", paimon::updates::UpdateChecker::get().localVersion()).c_str(), "chatFont.fnt");
     version->setScale(0.4f);
     version->setColor(paimon::ui::palette::muted);
     version->setPosition({sideCx, kHomeBottom + 11.f});
@@ -733,7 +725,6 @@ void PaimonHubLayer::buildHomeTab() {
 
     auto* infoSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png");
     if (infoSprite) {
-        infoSprite->setScale(0.55f);
         m_homeCategoryInfoBtn = CCMenuItemExt::createSpriteExtra(infoSprite, [self = WeakRef<PaimonHubLayer>(this)](CCMenuItemSpriteExtra*) {
             if (auto hub = self.lock()) {
                 auto cats = getHubCategories();
@@ -741,6 +732,8 @@ void PaimonHubLayer::buildHomeTab() {
                     cats[hub->m_homeSelectedCategory].getInfo())) popup->show();
             }
         });
+        m_homeCategoryInfoBtn->setScale(0.55f);
+        m_homeCategoryInfoBtn->m_baseScale = 0.55f;
         m_homeCategoryInfoBtn->setPosition({rightX - 8.f, top});
         m_sidebarMenu->addChild(m_homeCategoryInfoBtn);
     }
@@ -750,7 +743,7 @@ void PaimonHubLayer::buildHomeTab() {
     float const searchY = top - kHomeSearchDrop;
     m_searchInput = TextInput::create(searchW / kSearchScale,
         es ? "Buscar funciones y ajustes..." : "Find features and settings...", "chatFont.fnt");
-    m_searchInput->setCommonFilter(CommonFilter::Any);
+    m_searchInput->setCommonFilter(CommonFilter::Text);
     m_searchInput->setMaxCharCount(64);
     m_searchInput->setScale(kSearchScale);
     m_searchInput->setPosition({kHomeContentX + searchW / 2.f, searchY});
@@ -765,7 +758,7 @@ void PaimonHubLayer::buildHomeTab() {
     clear->setPosition({rightX - 8.f, searchY});
     m_sidebarMenu->addChild(clear);
     buildHomeFilterBar();
-    m_homeActionsMenu = makeZeroMenu();
+    m_homeActionsMenu = paimon::ui::makeZeroMenu();
     m_homeMenu->addChild(m_homeActionsMenu);
     switchHomeCategory(std::clamp(Mod::get()->getSavedValue<int>("hub-last-category", 0),
         0, static_cast<int>(categories.size()) - 1));
@@ -834,10 +827,11 @@ void PaimonHubLayer::toggleHubFavorite(std::string const& id) {
     });
 }
 
-void PaimonHubLayer::scrollWheel(float x, float y) {
+bool PaimonHubLayer::scrollWheel(float x, float y) {
     if (m_currentTab == 0 && paimon::configkit::queueWheelScroll(m_homeActionsScroll,
-        x, y, m_homeScrollTarget, m_homeScrollTargetSet)) return;
-    CCLayer::scrollWheel(x, y);
+        x, y, m_homeScrollTarget, m_homeScrollTargetSet)) return true;
+    if (m_currentTab == 1 && m_forumPanel && m_forumPanel->handleScrollWheel(x, y)) return true;
+    return CCLayer::scrollWheel(x, y);
 }
 
 void PaimonHubLayer::update(float dt) {
@@ -856,6 +850,7 @@ void PaimonHubLayer::onOpenHelp(CCObject*) {
     }
 
     bool const es = Localization::get().getLanguage() == Localization::Language::SPANISH;
+#if defined(GEODE_IS_DESKTOP)
     auto body = fmt::format(fmt::runtime(es
         ? "Busca funciones por nombre, descripcion o ajuste.\n\n"
           "Toca la estrella para guardar un favorito. Recientes muestra tus ultimos doce accesos.\n\n"
@@ -866,6 +861,18 @@ void PaimonHubLayer::onOpenHelp(CCObject*) {
           "Tap a selector value to search its options.\n\n"
           "<cy>Esc</c>: close. <cy>{}</c>: menu/pause layout, configurable in Geode."),
         layoutKeybind);
+#else
+    (void)layoutKeybind;
+    std::string body = es
+        ? "Busca funciones por nombre, descripcion o ajuste.\n\n"
+          "Toca la estrella para guardar un favorito. Recientes muestra tus ultimos doce accesos.\n\n"
+          "Pulsa el valor de un selector para buscar entre sus opciones.\n\n"
+          "Configura tus <cy>gestos tactiles</c> desde <cg>General -> Manager Cut</c>."
+        : "Find features by name, description or setting.\n\n"
+          "Tap a star to save a favorite. Recent shows your last twelve visits.\n\n"
+          "Tap a selector value to search its options.\n\n"
+          "Customize <cy>touch gestures</c> in <cg>General -> Manager Cut</c>.";
+#endif
 
     PopupManager::get().alert(es ? "Ayuda del hub" : "Hub help", body).showInstant();
 }
@@ -884,7 +891,7 @@ void PaimonHubLayer::rebuildHomeCategoryCards(bool resetScroll) {
     m_homeScrollTargetSet = false;
     auto categories = getHubCategories();
     auto const& category = categories[m_homeSelectedCategory];
-    std::string const query = toLower(m_searchInput ? m_searchInput->getString() : "");
+    std::string const query = geode::utils::string::toLower(m_searchInput ? m_searchInput->getString() : "");
     auto favorites = Mod::get()->getSavedValue<std::vector<std::string>>("hub-favorites", {});
     auto recent = Mod::get()->getSavedValue<std::vector<std::string>>("hub-recent", {});
     bool const es = Localization::get().getLanguage() == Localization::Language::SPANISH;
@@ -893,7 +900,7 @@ void PaimonHubLayer::rebuildHomeCategoryCards(bool resetScroll) {
         action.categoryIndex = categoryIndex;
         if (m_homeFilter == 1 && !contains(favorites, action.id)) return;
         if (m_homeFilter == 2 && !contains(recent, action.id)) return;
-        if (!query.empty() && toLower(action.title + " " + action.desc + " " + categories[categoryIndex].title).find(query) == std::string::npos) return;
+        if (!query.empty() && geode::utils::string::toLower(action.title + " " + action.desc + " " + categories[categoryIndex].title).find(query) == std::string::npos) return;
         if (m_homeFilter == 0 && query.empty() && categoryIndex != m_homeSelectedCategory) return;
         if (m_homeFilter != 0 || !query.empty()) action.desc = categories[categoryIndex].title + " / " + action.desc;
         actions.push_back(std::move(action));
@@ -938,6 +945,7 @@ void PaimonHubLayer::rebuildHomeCategoryCards(bool resetScroll) {
     float const scrollY = kHomeBottom + 8.f;
     float const scrollH = std::max(40.f, homeTop(win) - kHomeListDrop - scrollY);
     m_homeActionsScroll = ScrollLayer::create({scrollW, scrollH});
+    if (m_homeActionsScroll) m_homeActionsScroll->setAnchorPoint({0.f, 0.f});
     m_homeActionsScroll->setPosition({kHomeContentX, scrollY});
     m_homeActionsScroll->setID("search-actions-scroll"_spr);
     m_homeTab->addChild(m_homeActionsScroll, 3);
@@ -966,7 +974,7 @@ void PaimonHubLayer::rebuildHomeCategoryCards(bool resetScroll) {
     int const rows = (static_cast<int>(actions.size()) + columns - 1) / columns;
     float const contentH = std::max(scrollH, rows * (cardH + kCardGap));
     content->setContentSize({scrollW, contentH});
-    auto* menu = makeZeroMenu();
+    auto* menu = paimon::ui::makeZeroMenu();
     content->addChild(menu);
     for (size_t i = 0; i < actions.size(); ++i) {
         int const column = static_cast<int>(i) % columns;
@@ -983,489 +991,13 @@ void PaimonHubLayer::rebuildHomeCategoryCards(bool resetScroll) {
     else content->setPositionY(std::clamp(scrollH - contentH + previousOffset, scrollH - contentH, 0.f));
 }
 
-namespace {
-    struct NewsItem {
-        std::string title;
-        std::string desc;
-        bool highlight = false;
-    };
-
-    std::vector<NewsItem> buildNewsItems() {
-        std::vector<NewsItem> items;
-
-        auto& chk = paimon::updates::UpdateChecker::get();
-        if (chk.state() == paimon::updates::UpdateChecker::State::UpdateAvailable) {
-            items.push_back({
-                fmt::format(
-                    fmt::runtime(tr("pai.hub.news.update.title", "Update {} available!")),
-                    chk.remoteVersion()
-                ),
-                tr("pai.hub.news.update.desc", "Go to Extras > Update to install it."),
-                true
-            });
-        } else {
-            items.push_back({
-                fmt::format(
-                    fmt::runtime(tr("pai.hub.news.version.title", "Version {} installed")),
-                    chk.localVersion()
-                ),
-                tr("pai.hub.news.version.desc", "Your current version of Paimbnails."),
-                false
-            });
-        }
-
-        items.push_back({
-            tr("pai.hub.news.item1.title", "Welcome to Paimon Hub!"),
-            tr("pai.hub.news.item1.desc", "Check out our new hub with news and forum sections.")
-        });
-        items.push_back({
-            tr("pai.hub.news.item3.title", "Custom Profiles"),
-            tr("pai.hub.news.item3.desc", "Create and share your custom profile pictures.")
-        });
-        return items;
-    }
-
-    // GD's own list cell colors (CustomListView).
-    constexpr cocos2d::ccColor4B kListRowDark  = {161, 88, 44, 255};
-    constexpr cocos2d::ccColor4B kListRowLight = {194, 114, 62, 255};
-    constexpr auto kListTextSoft = paimon::ui::palette::muted;
-
-    void addGDListChrome(
-        cocos2d::CCNode* parent,
-        float centerX, float centerY,
-        float listW, float listH
-    ) {
-        auto* inset = paimon::ui::makeInset({listW + 4.f, listH + 4.f}, 110);
-        inset->setPosition({centerX - listW / 2.f - 2.f, centerY - listH / 2.f - 2.f});
-        parent->addChild(inset, 1);
-        auto* borders = CCNode::create();
-        borders->setID("paimon-list-borders"_spr);
-        parent->addChild(borders, 4);
-        geode::addListBorders(borders, {centerX, centerY}, {listW + 6.f, listH + 6.f});
-    }
-
-    cocos2d::CCNode* makeGDRefreshSprite() {
-        auto spr = CCSprite::createWithSpriteFrameName("GJ_updateBtn_001.png");
-        spr->setScale(0.6f);
-        return spr;
-    }
-} // namespace
-
-void PaimonHubLayer::buildNewsTab() {
-    auto winSize = CCDirector::get()->getWinSize();
-    float cx = winSize.width / 2.f;
-    float panelW = winSize.width - 30.f;
-
-    auto titleLbl = CCLabelBMFont::create(
-        tr("pai.hub.news.title", "Latest News").c_str(), "goldFont.fnt"
-    );
-    titleLbl->limitLabelWidth(panelW - 120.f, 0.75f, 0.3f);
-    titleLbl->setPosition({cx, 258.f});
-    m_newsTab->addChild(titleLbl, 2);
-
-    if (auto emote = paimon::SpriteHelper::safeCreate("paim_Paimon.png"_spr)) {
-        float h = emote->getContentSize().height;
-        if (h > 1.f) emote->setScale(26.f / h);
-        emote->setPosition({cx - titleLbl->getScaledContentSize().width / 2.f - 20.f, 258.f});
-        m_newsTab->addChild(emote, 2);
-    }
-
-    float listW = panelW - 36.f;
-    float listH = 204.f;
-    float listX = 33.f;
-    float listY = 30.f;
-
-    addGDListChrome(m_newsTab, cx, listY + listH / 2.f, listW, listH);
-
-    m_newsScroll = ScrollLayer::create({listW, listH});
-    m_newsScroll->setPosition({listX, listY});
-    m_newsScroll->setID("news-scroll"_spr);
-    m_newsTab->addChild(m_newsScroll, 2);
-
-    auto refreshBtn = CCMenuItemSpriteExtra::create(
-        makeGDRefreshSprite(), this, menu_selector(PaimonHubLayer::onRefreshNews)
-    );
-    refreshBtn->setID("news-refresh"_spr);
-    refreshBtn->setPosition({winSize.width - 26.f, 26.f});
-    m_newsMenu->addChild(refreshBtn);
-
-    rebuildNewsList();
-}
-
-void PaimonHubLayer::rebuildNewsList() {
-    if (!m_newsScroll) return;
-    auto* content = m_newsScroll->m_contentLayer;
-    content->removeAllChildren();
-    auto const items = buildNewsItems();
-    float const listW = m_newsScroll->getContentSize().width;
-    float const listH = m_newsScroll->getContentSize().height;
-    float totalH = 0.f;
-    std::vector<CCNodeRGBA*> rows;
-    for (size_t i = 0; i < items.size(); ++i) {
-        auto* desc = CCLabelBMFont::create(items[i].desc.c_str(), "chatFont.fnt",
-            (listW - 28.f) / 0.46f, kCCTextAlignmentLeft);
-        desc->setScale(0.46f);
-        desc->setColor(paimon::ui::palette::muted);
-        desc->setAnchorPoint({0.f, 1.f});
-        float const rowH = std::max(52.f, 38.f + desc->getScaledContentSize().height);
-        auto* row = CCNodeRGBA::create();
-        row->setContentSize({listW, rowH});
-        row->setAnchorPoint({0.f, 0.f});
-        row->setCascadeOpacityEnabled(true);
-        auto* cell = CCLayerColor::create(i % 2 == 0 ? kListRowLight : kListRowDark, listW, rowH);
-        row->addChild(cell, -1);
-        desc->setColor({255, 255, 255});
-        desc->setPosition({14.f, rowH - 28.f});
-        row->addChild(desc);
-        auto* title = CCLabelBMFont::create(items[i].title.c_str(), "goldFont.fnt");
-        title->setAnchorPoint({0.f, 1.f});
-        title->limitLabelWidth(listW - (items[i].highlight ? 75.f : 28.f), 0.5f, 0.2f);
-        title->setPosition({14.f, rowH - 9.f});
-        row->addChild(title);
-        if (items[i].highlight) {
-            auto* badge = CCSprite::createWithSpriteFrameName("exMark_001.png");
-            badge->setScale(0.5f);
-            badge->setPosition({listW - 16.f, rowH - 16.f});
-            row->addChild(badge);
-        }
-        totalH += rowH;
-        rows.push_back(row);
-        content->addChild(row);
-    }
-    float const contentH = std::max(listH, totalH);
-    content->setContentSize({listW, contentH});
-    float y = contentH;
-    for (size_t i = 0; i < rows.size(); ++i) {
-        y -= rows[i]->getContentSize().height;
-        rows[i]->setPosition({0.f, y});
-        paimon::fluid::RevealOpts reveal;
-        reveal.startDelay = 0.02f * static_cast<float>(i);
-        paimon::fluid::revealNode(rows[i], reveal);
-    }
-    m_newsScroll->moveToTop();
-}
-
-namespace {
-    constexpr float kForumHeaderY     = 260.f;
-    constexpr float kForumSubtitleY   = 243.f;
-    constexpr float kForumToolbarY    = 225.f;
-    constexpr float kForumChipsY      = 205.f;
-    constexpr float kForumListTop     = 192.f;
-    constexpr float kForumListBottom  = 30.f;
-
-    static CCNode* makeForumPill(
-        char const* text,
-        char const* bg,
-        float scale,
-        cocos2d::SEL_MenuHandler handler,
-        cocos2d::CCObject* target,
-        int tag = 0
-    ) {
-        auto spr = makePillFace(text, bg, scale);
-        auto btn = CCMenuItemSpriteExtra::create(spr, target, handler);
-        btn->setTag(tag);
-        return btn;
-    }
-}
-
 void PaimonHubLayer::buildForumTab() {
-    auto winSize = CCDirector::get()->getWinSize();
-    float cx = winSize.width / 2.f;
-    float panelW = winSize.width - 30.f;
-    float contentLeft = 33.f;
-    float contentRight = winSize.width - 33.f;
-
-    m_forumHeaderTitle = CCLabelBMFont::create(
-        tr("pai.hub.forum.title", "Community Forum").c_str(),
-        "goldFont.fnt"
-    );
-    m_forumHeaderTitle->setScale(0.7f);
-    m_forumHeaderTitle->setPosition({cx, kForumHeaderY});
-    m_forumTab->addChild(m_forumHeaderTitle, 2);
-
-    if (auto emote = paimon::SpriteHelper::safeCreate("paim_Paimon.png"_spr)) {
-        float h = emote->getContentSize().height;
-        if (h > 1.f) emote->setScale(24.f / h);
-        emote->setPosition({cx - 118.f, kForumHeaderY});
-        m_forumTab->addChild(emote, 2);
-    }
-
-    m_forumHeaderSubtitle = CCLabelBMFont::create(
-        tr("pai.hub.forum.subtitle",
-            "Share guides, tips and showcases with the community.").c_str(),
-        "bigFont.fnt"
-    );
-    m_forumHeaderSubtitle->setScale(0.26f);
-    m_forumHeaderSubtitle->setColor(kListTextSoft);
-    m_forumHeaderSubtitle->setPosition({cx, kForumSubtitleY});
-    m_forumTab->addChild(m_forumHeaderSubtitle, 2);
-
-    m_forumBrowseNode = CCNode::create();
-    m_forumBrowseNode->setPosition({0, 0});
-    m_forumBrowseNode->setContentSize(winSize);
-    m_forumTab->addChild(m_forumBrowseNode, 1);
-
-    auto browseMenu = makeZeroMenu("forum-browse-menu"_spr);
-    browseMenu->setContentSize(winSize);
-    m_forumBrowseNode->addChild(browseMenu, 2);
-
-    {
-        auto sortLabel = CCLabelBMFont::create(
-            tr("pai.hub.forum.sort", "Sort:").c_str(), "bigFont.fnt"
-        );
-        sortLabel->setScale(0.32f);
-        sortLabel->setAnchorPoint({0.f, 0.5f});
-        sortLabel->setPosition({contentLeft, kForumToolbarY});
-        m_forumBrowseNode->addChild(sortLabel, 1);
-
-        auto sortMenu = CCMenu::create();
-        sortMenu->setID("forum-sort"_spr);
-        sortMenu->setContentSize({170.f, 24.f});
-        sortMenu->setAnchorPoint({0.f, 0.5f});
-        sortMenu->setPosition(
-            {contentLeft + sortLabel->getScaledContentSize().width + 8.f, kForumToolbarY}
-        );
-        sortMenu->setLayout(
-            RowLayout::create()
-                ->setGap(4.f)
-                ->setAutoScale(false)
-                ->setAxisAlignment(AxisAlignment::Start)
-        );
-        m_forumBrowseNode->addChild(sortMenu, 1);
-
-        std::array<std::pair<const char*, const char*>, 3> sortOptions = {{
-            {"pai.hub.forum.sort.recent", "Recent"},
-            {"pai.hub.forum.sort.top",    "Top"},
-            {"pai.hub.forum.sort.liked",  "Liked"},
-        }};
-        m_sortBtns.clear();
-        for (size_t i = 0; i < sortOptions.size(); ++i) {
-            auto btn = makeForumPill(
-                tr(sortOptions[i].first, sortOptions[i].second).c_str(),
-                kPillOff, 0.3f,
-                menu_selector(PaimonHubLayer::onSortChanged), this,
-                static_cast<int>(i)
-            );
-            sortMenu->addChild(btn);
-            m_sortBtns.push_back(static_cast<CCMenuItemSpriteExtra*>(btn));
-        }
-        sortMenu->updateLayout();
-
-        for (size_t i = 0; i < m_sortBtns.size(); ++i) {
-            setPillSelected(m_sortBtns[i], static_cast<int>(m_sortMode) == static_cast<int>(i));
-        }
-
-        auto tagMenuBar = CCMenu::create();
-        tagMenuBar->setID("forum-tag-toolbar"_spr);
-        tagMenuBar->setContentSize({190.f, 24.f});
-        tagMenuBar->setAnchorPoint({1.f, 0.5f});
-        tagMenuBar->setPosition({contentRight, kForumToolbarY});
-        tagMenuBar->setLayout(
-            RowLayout::create()
-                ->setGap(5.f)
-                ->setAutoScale(false)
-                ->setAxisAlignment(AxisAlignment::End)
-        );
-        m_forumBrowseNode->addChild(tagMenuBar, 1);
-
-        auto tagLabel = CCLabelBMFont::create(
-            tr("pai.hub.forum.tags", "Tags:").c_str(), "bigFont.fnt"
-        );
-        tagLabel->setScale(0.32f);
-        tagMenuBar->addChild(tagLabel);
-
-        tagMenuBar->addChild(makeForumPill(
-            tr("pai.hub.forum.predef", "Predef").c_str(),
-            "GJ_button_05.png", 0.3f,
-            menu_selector(PaimonHubLayer::onOpenPredefPicker), this
-        ));
-        tagMenuBar->addChild(makeForumPill(
-            "+", "GJ_button_01.png", 0.3f,
-            menu_selector(PaimonHubLayer::onCreateTag), this
-        ));
-        tagMenuBar->updateLayout();
-
-        auto newPostSpr = paimon::ui::makeButtonSprite(tr("pai.hub.forum.create.cta", "+ New Post").c_str(),
-            paimon::ui::Btn::Green, 0.f, 0.6f);
-        auto newPostBtn = CCMenuItemSpriteExtra::create(
-            newPostSpr, this, menu_selector(PaimonHubLayer::onForumSubTabSwitch)
-        );
-        newPostBtn->setTag(1);
-        newPostBtn->setID("forum-new-post"_spr);
-        newPostBtn->setPosition({
-            contentRight - newPostSpr->getScaledContentSize().width / 2.f + 4.f,
-            kForumHeaderY
-        });
-        browseMenu->addChild(newPostBtn);
-
-        auto refreshCircle = CCMenuItemExt::createSpriteExtra(
-            makeGDRefreshSprite(),
-            [self = WeakRef<PaimonHubLayer>(this)](CCMenuItemSpriteExtra*) {
-                auto selfRef = self.lock();
-                auto* hub = selfRef.data();
-                if (hub && hub->getParent()) hub->refreshForumPosts();
-            }
-        );
-        refreshCircle->setID("forum-refresh"_spr);
-        refreshCircle->setPosition({winSize.width - 26.f, 26.f});
-        browseMenu->addChild(refreshCircle);
-    }
-
-    float tagAreaW = panelW - 36.f;
-    float tagAreaH = 22.f;
-
-    m_tagMenu = CCMenu::create();
-    m_tagMenu->setID("forum-tags"_spr);
-    m_tagMenu->setContentSize({tagAreaW, tagAreaH});
-    m_tagMenu->setAnchorPoint({0.5f, 0.5f});
-    m_tagMenu->setPosition({cx, kForumChipsY});
-    m_tagMenu->setLayout(
-        RowLayout::create()
-            ->setGap(4.f)
-            ->setGrowCrossAxis(true)
-            ->setCrossAxisOverflow(false)
-            ->setAutoScale(false)
-            ->setAxisAlignment(AxisAlignment::Center)
-    );
-    m_forumBrowseNode->addChild(m_tagMenu, 1);
-
-    m_emptyTagsHint = CCLabelBMFont::create(
-        tr("pai.hub.forum.tags.empty",
-           "No active filter - tap [Predef] or [+] to add tags").c_str(),
-        "bigFont.fnt"
-    );
-    m_emptyTagsHint->setScale(0.26f);
-    m_emptyTagsHint->setColor(kListTextSoft);
-    m_emptyTagsHint->setPosition({cx, kForumChipsY});
-    m_forumBrowseNode->addChild(m_emptyTagsHint, 1);
-
-    refreshTagButtons();
-
-    float listW = panelW - 36.f;
-    float listH = kForumListTop - kForumListBottom;
-
-    addGDListChrome(m_forumBrowseNode, cx, kForumListBottom + listH / 2.f, listW, listH);
-
-    m_noPostsLabel = CCLabelBMFont::create(
-        tr("pai.hub.forum.no_posts",
-           "No posts here yet - tap +New Post to start the conversation.").c_str(),
-        "bigFont.fnt"
-    );
-    m_noPostsLabel->setScale(0.30f);
-    m_noPostsLabel->setColor(kListTextSoft);
-    shrinkLabelToFit(m_noPostsLabel, listW - 20.f);
-    m_noPostsLabel->setPosition({cx, kForumListBottom + listH / 2.f});
-    m_forumBrowseNode->addChild(m_noPostsLabel, 3);
-
-    m_forumPostList = CCNode::create();
-    m_forumPostList->setPosition({cx, kForumListTop});
-    m_forumPostList->setContentSize({listW, listH});
-    m_forumBrowseNode->addChild(m_forumPostList, 2);
-
-    refreshForumPosts();
-
-    m_forumCreateNode = CCNode::create();
-    m_forumCreateNode->setPosition({0, 0});
-    m_forumCreateNode->setContentSize(winSize);
-    m_forumCreateNode->setVisible(false);
-    m_forumTab->addChild(m_forumCreateNode, 1);
-
-    auto lblTitle = CCLabelBMFont::create(
-        tr("pai.hub.forum.title_placeholder", "Title").c_str(), "bigFont.fnt");
-    lblTitle->setScale(0.35f);
-    lblTitle->setAnchorPoint({0.f, 0.5f});
-    lblTitle->setPosition({contentLeft, 198.f});
-    m_forumCreateNode->addChild(lblTitle, 1);
-
-    m_createTitleInput = TextInput::create(panelW - 36.f, "Post title...", "chatFont.fnt");
-    m_createTitleInput->setCommonFilter(CommonFilter::Any);
-    m_createTitleInput->setMaxCharCount(80);
-    m_createTitleInput->setPosition({cx, 180.f});
-    m_createTitleInput->setScale(0.85f);
-    m_forumCreateNode->addChild(m_createTitleInput, 1);
-
-    auto lblDesc = CCLabelBMFont::create(
-        tr("pai.hub.forum.desc_placeholder", "Description").c_str(), "bigFont.fnt");
-    lblDesc->setScale(0.35f);
-    lblDesc->setAnchorPoint({0.f, 0.5f});
-    lblDesc->setPosition({contentLeft, 158.f});
-    m_forumCreateNode->addChild(lblDesc, 1);
-
-    m_createDescInput = TextInput::create(panelW - 36.f, "Description...", "chatFont.fnt");
-    m_createDescInput->setCommonFilter(CommonFilter::Any);
-    m_createDescInput->setMaxCharCount(500);
-    m_createDescInput->setPosition({cx, 140.f});
-    m_createDescInput->setScale(0.85f);
-    m_forumCreateNode->addChild(m_createDescInput, 1);
-
-    auto lblTags = CCLabelBMFont::create(
-        tr("pai.hub.forum.create.tags", "Tags (tap to toggle)").c_str(), "bigFont.fnt");
-    lblTags->setScale(0.32f);
-    lblTags->setAnchorPoint({0.f, 0.5f});
-    lblTags->setPosition({contentLeft, 118.f});
-    m_forumCreateNode->addChild(lblTags, 1);
-
-    auto predefMenu = CCMenu::create();
-    predefMenu->setContentSize({panelW - 36.f, 38.f});
-    predefMenu->setAnchorPoint({0.5f, 1.f});
-    predefMenu->setPosition({cx, 110.f});
-    predefMenu->setLayout(
-        RowLayout::create()
-            ->setGap(4.f)
-            ->setGrowCrossAxis(true)
-            ->setCrossAxisOverflow(true)
-            ->setAutoScale(false)
-            ->setAxisAlignment(AxisAlignment::Center)
-            ->setCrossAxisAlignment(AxisAlignment::Center)
-    );
-    m_forumCreateNode->addChild(predefMenu, 1);
-
-    for (size_t i = 0; i < m_forumTags.size(); ++i) {
-        auto chipSpr = makePillFace(m_forumTags[i].c_str(), kPillOff, 0.26f);
-        auto chipBtn = CCMenuItemSpriteExtra::create(
-            chipSpr, this, menu_selector(PaimonHubLayer::onCreateToggleTag)
-        );
-        chipBtn->setTag(static_cast<int>(i));
-        predefMenu->addChild(chipBtn);
-    }
-    predefMenu->updateLayout();
-
-    m_createTagsHint = CCLabelBMFont::create(
-        tr("pai.hub.forum.create.tags_hint",
-           "Tap a tag above to attach it to your post").c_str(),
-        "bigFont.fnt"
-    );
-    m_createTagsHint->setScale(0.26f);
-    m_createTagsHint->setColor(kListTextSoft);
-    m_createTagsHint->setPosition({cx, 64.f});
-    m_forumCreateNode->addChild(m_createTagsHint, 1);
-
-    m_createTagMenu = CCMenu::create();
-    m_createTagMenu->setID("inline-create-tags"_spr);
-    m_createTagMenu->setVisible(false);
-    m_forumCreateNode->addChild(m_createTagMenu, 1);
-
-    auto btnMenu = makeZeroMenu();
-    btnMenu->setContentSize(winSize);
-    m_forumCreateNode->addChild(btnMenu, 1);
-
-    auto cancelSpr = paimon::ui::makeButtonSprite(tr("pai.hub.forum.cancel", "Cancel").c_str(),
-        paimon::ui::Btn::Red, 100.f, 0.75f);
-    auto cancelBtn = CCMenuItemSpriteExtra::create(
-        cancelSpr, this, menu_selector(PaimonHubLayer::onForumSubTabSwitch)
-    );
-    cancelBtn->setTag(0);
-    cancelBtn->setPosition({cx - 70.f, 32.f});
-    btnMenu->addChild(cancelBtn);
-
-    auto submitSpr = paimon::ui::makeButtonSprite(tr("pai.hub.forum.publish", "Publish").c_str(),
-        paimon::ui::Btn::Green, 100.f, 0.75f);
-    auto submitBtn = CCMenuItemSpriteExtra::create(
-        submitSpr, this, menu_selector(PaimonHubLayer::onCreateSubmit)
-    );
-    submitBtn->setPosition({cx + 70.f, 32.f});
-    btnMenu->addChild(submitBtn);
-
+    auto const winSize = CCDirector::get()->getWinSize();
+    CCSize const panelSize{winSize.width - 30.f, winSize.height - 58.f};
+    m_forumPanel = paimon::forum::ForumPanel::create(panelSize, m_gdMode);
+    if (!m_forumPanel) return;
+    m_forumPanel->setPosition({15.f, 15.f});
+    m_forumTab->addChild(m_forumPanel, 2);
 }
 
 void PaimonHubLayer::onOpenConfig(CCObject*) {
@@ -1519,575 +1051,22 @@ void PaimonHubLayer::refreshUpdateBadge(float) {
 
     if (wanted && !dot) {
         auto* mark = CCSprite::createWithSpriteFrameName("exMark_001.png");
-        mark->setScale(0.42f);
+        float const parentScale = std::max(0.1f, btn->getScale());
+        float const baseScale = 0.42f / parentScale;
+        float const pulseScale = 0.48f / parentScale;
+        float const inset = 3.f / parentScale;
+        mark->setScale(baseScale);
         mark->setID("updates-btn-dot"_spr);
         mark->setAnchorPoint({0.5f, 0.5f});
         auto size = btn->getContentSize();
-        mark->setPosition({size.width - 3.f, size.height - 3.f});
+        mark->setPosition({size.width - inset, size.height - inset});
         btn->addChild(mark, 100);
         if (paimon::ui::motionEnabled()) mark->runAction(CCRepeatForever::create(CCSequence::create(
-            CCScaleTo::create(0.45f, 0.48f),
-            CCScaleTo::create(0.45f, 0.42f),
+            CCScaleTo::create(0.45f, pulseScale),
+            CCScaleTo::create(0.45f, baseScale),
             nullptr
         )));
     } else if (!wanted && dot) {
         dot->removeFromParent();
     }
-}
-
-void PaimonHubLayer::onRefreshNews(CCObject*) {
-    auto& chk = paimon::updates::UpdateChecker::get();
-    if (chk.state() != paimon::updates::UpdateChecker::State::Checking) chk.checkAsync();
-    rebuildNewsList();
-    PaimonNotify::create(tr("pai.hub.news.refreshed", "News refreshed!"), NotificationIcon::Success)->show();
-}
-
-void PaimonHubLayer::onCreatePost(CCObject*) {
-    std::vector<std::string> available = m_forumTags;
-    for (auto const& t : m_customTags) {
-        if (!contains(available, t)) available.push_back(t);
-    }
-
-    auto popup = CreatePostPopup::create(
-        std::move(available),
-        [self = WeakRef<PaimonHubLayer>(this)](paimon::forum::Post const& p) {
-            auto* hub = self.lock().data();
-            if (!hub || !hub->getParent()) return;
-            for (auto const& t : p.tags) {
-                if (!contains(hub->m_forumTags, t) && !contains(hub->m_customTags, t))
-                    hub->m_customTags.push_back(t);
-            }
-            hub->refreshTagButtons();
-            hub->refreshForumPosts();
-        }
-    );
-    if (popup) popup->show();
-}
-
-void PaimonHubLayer::onFilterByTag(CCObject* sender) {
-    int idx = static_cast<CCNode*>(sender)->getTag();
-    if (idx >= 0 && idx < (int)m_visibleTags.size()) {
-        std::string tag = m_visibleTags[idx];
-        if (contains(m_selectedTags, tag)) eraseOne(m_selectedTags, tag);
-        else m_selectedTags.push_back(tag);
-    }
-    refreshTagButtons();
-    refreshForumPosts();
-}
-
-void PaimonHubLayer::onCreateTag(CCObject*) {
-    auto winSize = CCDirector::get()->getWinSize();
-
-    auto overlay = CCLayerColor::create(ccc4(0, 0, 0, 180));
-    overlay->setContentSize(winSize);
-    overlay->setPosition({0, 0});
-    overlay->setID("create-tag-overlay"_spr);
-    this->addChild(overlay, 50);
-    m_createTagOverlay = overlay;
-
-    auto* panel = NineSlice::create("GJ_square01.png");
-    panel->setContentSize({260.f, 130.f});
-    panel->setPosition(winSize / 2.f);
-    overlay->addChild(panel);
-
-    auto titleLbl = CCLabelBMFont::create(
-        tr("pai.hub.forum.create_tag", "Create Custom Tag").c_str(),
-        "goldFont.fnt"
-    );
-    titleLbl->limitLabelWidth(200.f, 0.65f, 0.3f);
-    titleLbl->setPosition({winSize.width / 2, winSize.height / 2 + 42});
-    overlay->addChild(titleLbl, 1);
-
-    m_newTagInput = TextInput::create(180, tr("pai.hub.forum.new_tag", "Tag name"));
-    m_newTagInput->setPosition(winSize / 2.f);
-    m_newTagInput->setScale(0.6f);
-    overlay->addChild(m_newTagInput, 51);
-
-    auto btnMenu = makeZeroMenu("create-tag-menu"_spr);
-    btnMenu->setContentSize(winSize);
-    overlay->addChild(btnMenu, 52);
-
-    auto closeSpr = CCSprite::createWithSpriteFrameName("GJ_closeBtn_001.png");
-    closeSpr->setScale(0.7f);
-    auto closeBtn = CCMenuItemSpriteExtra::create(closeSpr, this, menu_selector(PaimonHubLayer::onCloseCreateTag));
-    closeBtn->setPosition({winSize.width / 2 - 130.f + 3.f, winSize.height / 2 + 65.f - 3.f});
-    btnMenu->addChild(closeBtn);
-
-    auto createSpr = paimon::ui::makeButtonSprite(tr("pai.hub.forum.create", "Create").c_str(),
-        paimon::ui::Btn::Green, 96.f, 0.75f);
-    auto createBtn = CCMenuItemSpriteExtra::create(createSpr, this, menu_selector(PaimonHubLayer::onSubmitTag));
-    createBtn->setPosition({winSize.width / 2, winSize.height / 2 - 35});
-    btnMenu->addChild(createBtn);
-}
-
-void PaimonHubLayer::onCloseCreateTag(CCObject*) {
-    dismissOverlay(m_createTagOverlay);
-    m_newTagInput = nullptr;
-}
-
-void PaimonHubLayer::onSubmitTag(CCObject*) {
-    std::string tag = m_newTagInput ? m_newTagInput->getString() : "";
-    if (!tag.empty() && !contains(m_forumTags, tag) && !contains(m_customTags, tag)) {
-        m_customTags.push_back(tag);
-        refreshTagButtons();
-    }
-    dismissOverlay(m_createTagOverlay);
-    m_newTagInput = nullptr;
-}
-
-void PaimonHubLayer::showForumLoading() {
-    if (m_forumLoadingSpinner) return;
-    m_forumLoadingSpinner = PaimonLoadingOverlay::create("Loading...", 40.f);
-    m_forumLoadingSpinner->show(this, 300);
-}
-
-void PaimonHubLayer::hideForumLoading() {
-    if (!m_forumLoadingSpinner) return;
-    m_forumLoadingSpinner->dismiss();
-    m_forumLoadingSpinner = nullptr;
-}
-
-void PaimonHubLayer::refreshForumPosts() {
-    if (!m_forumPostList) return;
-    m_forumPostList->removeAllChildren();
-    showForumLoading();
-
-    paimon::forum::ListFilter filter;
-    switch (m_sortMode) {
-        case SortMode::TopRated:  filter.sort = paimon::forum::SortMode::TopRated;  break;
-        case SortMode::MostLiked: filter.sort = paimon::forum::SortMode::MostLiked; break;
-        case SortMode::Recent:
-        default:                  filter.sort = paimon::forum::SortMode::Recent;    break;
-    }
-    filter.tags = m_selectedTags;
-    filter.limit = 50;
-
-    WeakRef<PaimonHubLayer> self = this;
-    paimon::forum::ForumApi::get().listPosts(filter,
-        [self](paimon::forum::Result<std::vector<paimon::forum::Post>> res) {
-            auto selfRef = self.lock();
-            auto* hub = selfRef.data();
-            if (!hub || !hub->getParent() || !hub->m_forumPostList) return;
-            hub->hideForumLoading();
-            hub->renderPosts(res.ok ? res.data : std::vector<paimon::forum::Post>{});
-        });
-}
-
-void PaimonHubLayer::renderPosts(std::vector<paimon::forum::Post> const& posts) {
-    if (!m_forumPostList) return;
-    m_forumPostList->removeAllChildren();
-
-    bool hasPosts = !posts.empty();
-    if (m_noPostsLabel) m_noPostsLabel->setVisible(!hasPosts);
-    if (!hasPosts) return;
-
-    auto* gm = GameManager::get();
-
-    float listW = m_forumPostList->getContentSize().width;
-    float listH = m_forumPostList->getContentSize().height;
-    if (listH <= 0.f) listH = 180.f;
-
-    constexpr float kPostH = 56.f;
-    constexpr float kIconSize = 20.f;
-    constexpr float kPad = 8.f;
-    float totalH = static_cast<float>(posts.size()) * kPostH;
-    if (totalH < listH) totalH = listH;
-
-    auto scroll = ScrollLayer::create({listW, listH});
-    scroll->setPosition({-listW / 2.f, -listH});
-    scroll->setID("forum-scroll"_spr);
-    m_forumPostList->addChild(scroll, 1);
-    scroll->m_contentLayer->setContentSize({listW, totalH});
-
-    float cardW = listW;
-    float cardX = 0.f;
-
-    float y = totalH;
-    int i = 0;
-    for (auto const& post : posts) {
-        y -= kPostH;
-
-        auto cardContainer = cocos2d::CCNodeRGBA::create();
-        cardContainer->setContentSize({cardW, kPostH});
-        cardContainer->setAnchorPoint({0.f, 0.f});
-        cardContainer->setPosition({cardX, y});
-        cardContainer->setCascadeOpacityEnabled(true);
-        scroll->m_contentLayer->addChild(cardContainer, 1);
-
-        auto bg = CCLayerColor::create(i % 2 == 0 ? kListRowLight : kListRowDark);
-        bg->setContentSize({cardW, kPostH});
-        bg->setPosition({0.f, 0.f});
-        cardContainer->addChild(bg, 0);
-
-        auto cardMenu = makeZeroMenu();
-        cardMenu->setContentSize({cardW, kPostH});
-        cardMenu->ignoreAnchorPointForPosition(true);
-        cardContainer->addChild(cardMenu, 4);
-
-        WeakRef<PaimonHubLayer> selfRef = this;
-        std::string postId = post.id;
-        auto openPostDetail = [selfRef, postId]() {
-            if (auto hubRef = selfRef.lock(); hubRef.data() && hubRef.data()->getParent()) {
-                hubRef.data()->showForumLoading();
-            }
-            paimon::forum::ForumApi::get().getPost(postId,
-                [selfRef](paimon::forum::Result<paimon::forum::Post> res) {
-                    auto hubRef = selfRef.lock();
-                    auto* hub = hubRef.data();
-                    if (!hub || !hub->getParent()) return;
-                    hub->hideForumLoading();
-                    if (!res.ok) return;
-                    auto popup = PostDetailPopup::create(res.data, [selfRef]() {
-                        auto hubRef = selfRef.lock();
-                        auto* hub = hubRef.data();
-                        if (hub && hub->getParent()) hub->refreshForumPosts();
-                    });
-                    if (popup) popup->show();
-                });
-        };
-
-        {
-            auto hitArea = CCNode::create();
-            hitArea->setContentSize({cardW, kPostH});
-            auto hitBtn = CCMenuItemExt::createSpriteExtra(
-                hitArea,
-                [openPostDetail](CCMenuItemSpriteExtra*) { openPostDetail(); }
-            );
-            hitBtn->setPosition({cardW / 2.f, kPostH / 2.f});
-            cardMenu->addChild(hitBtn);
-        }
-
-        int iconID = std::max(1, post.author.iconID);
-        if (auto* player = SimplePlayer::create(iconID)) {
-            if (post.author.iconType > 0) {
-                player->updatePlayerFrame(iconID, static_cast<IconType>(post.author.iconType));
-            }
-            if (gm) {
-                auto col1 = gm->colorForIdx(post.author.color1);
-                auto col2 = gm->colorForIdx(post.author.color2);
-                player->setColor(col1);
-                player->setSecondColor(col2);
-                if (post.author.glowEnabled) player->setGlowOutline(col2);
-                else                          player->disableGlowOutline();
-            }
-            float maxDim = std::max(player->getContentSize().width, player->getContentSize().height);
-            float gdRefSize = 30.f;
-            float scale = (maxDim > 10.f && maxDim < 80.f) ? (kIconSize / maxDim) : (kIconSize / gdRefSize);
-            player->setScale(std::max(scale, 0.55f));
-            player->setPosition({kPad + kIconSize / 2.f, kPostH - kPad - kIconSize / 2.f});
-            cardContainer->addChild(player, 5);
-        }
-
-        float headerY = kPostH - kPad - kIconSize / 2.f;
-        auto nameLbl = CCLabelBMFont::create(
-            post.author.username.empty() ? "Anonymous" : post.author.username.c_str(),
-            "bigFont.fnt"
-        );
-        nameLbl->setScale(0.32f);
-        nameLbl->setAnchorPoint({0.f, 0.5f});
-        nameLbl->setPosition({kPad + kIconSize + 7.f, headerY});
-        cardContainer->addChild(nameLbl, 1);
-
-        auto dateLbl = CCLabelBMFont::create(
-            paimon::forum::formatRelativeTime(post.createdAt).c_str(),
-            "chatFont.fnt"
-        );
-        dateLbl->setScale(0.38f);
-        dateLbl->setColor({255, 230, 190});
-        dateLbl->setAnchorPoint({1.f, 0.5f});
-        dateLbl->setPosition({cardW - kPad, headerY});
-        cardContainer->addChild(dateLbl, 1);
-
-        float titleY = kPostH - kPad - kIconSize - 5.f;
-        auto titleLbl = CCLabelBMFont::create(
-            post.title.empty() ? "(untitled)" : post.title.c_str(),
-            "goldFont.fnt"
-        );
-        titleLbl->setScale(0.48f);
-        titleLbl->setAnchorPoint({0.f, 0.5f});
-        titleLbl->setPosition({kPad, titleY});
-        shrinkLabelToFit(titleLbl, cardW - kPad * 2.f);
-        cardContainer->addChild(titleLbl, 1);
-
-        float footerY = 10.f;
-
-        auto stats = CCLabelBMFont::create(
-            fmt::format("{}  Likes  -  {}  Replies", post.likes, post.replyCount).c_str(),
-            "bigFont.fnt"
-        );
-        stats->setScale(0.26f);
-        stats->setColor(post.likedByMe ? ccColor3B{255, 140, 170} : ccColor3B{255, 255, 255});
-        stats->setAnchorPoint({1.f, 0.5f});
-        stats->setPosition({cardW - kPad, footerY});
-        cardContainer->addChild(stats, 1);
-        float statsLeft = cardW - kPad - stats->getScaledContentSize().width;
-
-        float tagX = kPad;
-        int tagsShown = 0;
-        for (auto const& t : post.tags) {
-            if (tagsShown >= 2) break;
-            auto chip = makePillFace(t.c_str(), "GJ_button_05.png", 0.18f);
-            chip->setAnchorPoint({0.f, 0.5f});
-            chip->setPosition({tagX, footerY});
-            cardContainer->addChild(chip, 2);
-            tagX += chip->getScaledContentSize().width + 4.f;
-            ++tagsShown;
-        }
-        if ((int)post.tags.size() > tagsShown) {
-            auto more = CCLabelBMFont::create(
-                fmt::format("+{}", static_cast<int>(post.tags.size()) - tagsShown).c_str(),
-                "chatFont.fnt"
-            );
-            more->setScale(0.38f);
-            more->setColor(kListTextSoft);
-            more->setAnchorPoint({0.f, 0.5f});
-            more->setPosition({tagX, footerY});
-            cardContainer->addChild(more, 2);
-            tagX += more->getScaledContentSize().width + 6.f;
-        } else if (tagsShown > 0) {
-            tagX += 2.f;
-        }
-
-        std::string preview = post.description;
-        if (preview.size() > 90) preview = preview.substr(0, 87);
-        if (!preview.empty()) {
-            float preMaxW = statsLeft - tagX - 10.f;
-            if (preMaxW > 40.f) {
-                auto pre = CCLabelBMFont::create(preview.c_str(), "chatFont.fnt");
-                pre->setScale(0.36f);
-                pre->setColor({255, 240, 220});
-                pre->setAnchorPoint({0.f, 0.5f});
-                pre->setPosition({tagX, footerY});
-                while (pre->getScaledContentSize().width > preMaxW && preview.size() > 10) {
-                    preview.resize(preview.size() - 6);
-                    pre->setString((preview + "...").c_str());
-                }
-                cardContainer->addChild(pre, 1);
-            }
-        }
-
-        paimon::fluid::RevealOpts reveal;
-        reveal.startDelay = 0.02f * i;
-        paimon::fluid::revealNode(cardContainer, reveal);
-
-        ++i;
-    }
-
-    scroll->scrollToTop();
-}
-
-void PaimonHubLayer::refreshTagButtons() {
-    if (!m_tagMenu) return;
-    m_tagMenu->removeAllChildren();
-    m_visibleTags = m_activePredefTags;
-    m_visibleTags.insert(m_visibleTags.end(), m_customTags.begin(), m_customTags.end());
-    if (m_emptyTagsHint) m_emptyTagsHint->setVisible(m_visibleTags.empty());
-
-    for (size_t i = 0; i < m_visibleTags.size(); i++) {
-        bool isSelected = contains(m_selectedTags, m_visibleTags[i]);
-        std::string label = isSelected ? (m_visibleTags[i] + "  x") : m_visibleTags[i];
-        auto tagSpr = makePillFace(label.c_str(), isSelected ? kPillOn : kPillOff, 0.3f);
-        auto tagBtn = CCMenuItemSpriteExtra::create(tagSpr, this, menu_selector(PaimonHubLayer::onFilterByTag));
-        tagBtn->setTag(static_cast<int>(i));
-        m_tagMenu->addChild(tagBtn);
-    }
-    m_tagMenu->updateLayout();
-}
-
-void PaimonHubLayer::onSortChanged(CCObject* sender) {
-    int idx = static_cast<CCNode*>(sender)->getTag();
-    if (idx < 0 || idx > 2) return;
-    m_sortMode = static_cast<SortMode>(idx);
-
-    for (size_t i = 0; i < m_sortBtns.size(); i++) {
-        setPillSelected(m_sortBtns[i], idx == static_cast<int>(i));
-    }
-
-    refreshForumPosts();
-}
-
-void PaimonHubLayer::onOpenPredefPicker(CCObject*) {
-    if (m_predefPickerOverlay) return;
-
-    auto winSize = CCDirector::get()->getWinSize();
-
-    m_predefPickerOverlay = CCLayerColor::create(ccc4(0, 0, 0, 180));
-    static_cast<CCLayerColor*>(m_predefPickerOverlay)->setContentSize(winSize);
-    m_predefPickerOverlay->setPosition({0, 0});
-    m_predefPickerOverlay->setID("predef-picker-overlay"_spr);
-    this->addChild(m_predefPickerOverlay, 50);
-
-    float panelW = 380.f;
-    float panelH = 220.f;
-    float panelX = winSize.width / 2.f - panelW / 2.f;
-    float panelY = winSize.height / 2.f - panelH / 2.f;
-
-    auto* panel = NineSlice::create("GJ_square01.png");
-    panel->setContentSize({panelW, panelH});
-    panel->setAnchorPoint({0.f, 0.f});
-    panel->setPosition({panelX, panelY});
-    m_predefPickerOverlay->addChild(panel);
-    paimon::ui::addCorners(panel, {panelW, panelH}, SideArtStyle::PopupGold, 0.4f);
-
-    auto titleLbl = CCLabelBMFont::create(
-        tr("pai.hub.forum.predef.title", "Pick Predefined Tags").c_str(),
-        "goldFont.fnt"
-    );
-    titleLbl->limitLabelWidth(panelW - 70.f, 0.65f, 0.3f);
-    titleLbl->setPosition({winSize.width / 2.f, panelY + panelH - 20.f});
-    m_predefPickerOverlay->addChild(titleLbl, 1);
-
-    auto hintLbl = CCLabelBMFont::create(
-        tr("pai.hub.forum.predef.hint", "Tap to enable/disable").c_str(),
-        "bigFont.fnt"
-    );
-    hintLbl->setScale(0.3f);
-    hintLbl->setColor(paimon::ui::palette::muted);
-    hintLbl->setPosition({winSize.width / 2.f, panelY + panelH - 40.f});
-    m_predefPickerOverlay->addChild(hintLbl, 1);
-
-    auto closeMenu = makeZeroMenu("predef-picker-close"_spr);
-    closeMenu->setContentSize(winSize);
-    m_predefPickerOverlay->addChild(closeMenu, 52);
-
-    auto closeSpr = CCSprite::createWithSpriteFrameName("GJ_closeBtn_001.png");
-    closeSpr->setScale(0.7f);
-    auto closeBtn = CCMenuItemSpriteExtra::create(
-        closeSpr, this, menu_selector(PaimonHubLayer::onClosePredefPicker)
-    );
-    closeBtn->setPosition({panelX + 3.f, panelY + panelH - 3.f});
-    closeMenu->addChild(closeBtn);
-
-    auto chipsMenu = CCMenu::create();
-    chipsMenu->setContentSize({panelW - 24.f, panelH - 80.f});
-    chipsMenu->setAnchorPoint({0.5f, 0.5f});
-    chipsMenu->setPosition({winSize.width / 2.f, panelY + (panelH - 60.f) / 2.f});
-    chipsMenu->setLayout(
-        RowLayout::create()
-            ->setGap(4.f)
-            ->setGrowCrossAxis(true)
-            ->setCrossAxisOverflow(false)
-            ->setAutoScale(false)
-            ->setAxisAlignment(AxisAlignment::Center)
-    );
-    m_predefPickerOverlay->addChild(chipsMenu, 51);
-
-    for (size_t i = 0; i < m_forumTags.size(); i++) {
-        bool isActive = std::find(m_activePredefTags.begin(), m_activePredefTags.end(),
-            m_forumTags[i]) != m_activePredefTags.end();
-
-        auto chipSpr = makePillFace(m_forumTags[i].c_str(), isActive ? kPillOn : kPillOff, 0.32f);
-        auto chipBtn = CCMenuItemSpriteExtra::create(
-            chipSpr, this, menu_selector(PaimonHubLayer::onTogglePredefTag)
-        );
-        chipBtn->setTag(static_cast<int>(i));
-        chipsMenu->addChild(chipBtn);
-    }
-    chipsMenu->updateLayout();
-}
-
-void PaimonHubLayer::onClosePredefPicker(CCObject*) {
-    dismissOverlay(m_predefPickerOverlay);
-}
-
-void PaimonHubLayer::onTogglePredefTag(CCObject* sender) {
-    int idx = static_cast<CCNode*>(sender)->getTag();
-    if (idx < 0 || idx >= (int)m_forumTags.size()) return;
-
-    std::string const& tag = m_forumTags[idx];
-    if (contains(m_activePredefTags, tag)) {
-        eraseOne(m_activePredefTags, tag);
-        eraseOne(m_selectedTags, tag);
-    } else {
-        m_activePredefTags.push_back(tag);
-    }
-
-    if (auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender)) {
-        setPillSelected(btn, contains(m_activePredefTags, tag));
-    }
-    refreshTagButtons();
-}
-
-void PaimonHubLayer::onForumSubTabSwitch(CCObject* sender) {
-    int idx = static_cast<CCNode*>(sender)->getTag();
-    switchForumSubTab(idx);
-}
-
-void PaimonHubLayer::switchForumSubTab(int idx) {
-    m_forumSubTab = idx;
-
-    if (m_forumBrowseNode) m_forumBrowseNode->setVisible(idx == 0);
-    if (m_forumCreateNode) m_forumCreateNode->setVisible(idx == 1);
-
-    if (m_forumHeaderTitle) {
-        m_forumHeaderTitle->setString(idx == 0
-            ? tr("pai.hub.forum.title", "Community Forum").c_str()
-            : tr("pai.hub.forum.create.title", "Create New Post").c_str());
-    }
-    if (m_forumHeaderSubtitle) {
-        m_forumHeaderSubtitle->setString(idx == 0
-            ? tr("pai.hub.forum.subtitle",
-                 "Share guides, tips and showcases with the community.").c_str()
-            : tr("pai.hub.forum.create.subtitle",
-                 "Pick a clear title, add details and relevant tags.").c_str());
-    }
-
-    if (idx == 0) {
-        if (m_createTitleInput) m_createTitleInput->setString("");
-        if (m_createDescInput) m_createDescInput->setString("");
-        m_createSelectedTags.clear();
-        if (m_createTagMenu) m_createTagMenu->removeAllChildren();
-        refreshForumPosts();
-    }
-}
-
-void PaimonHubLayer::onCreateToggleTag(CCObject* sender) {
-    int idx = static_cast<CCNode*>(sender)->getTag();
-    if (idx < 0 || idx >= (int)m_forumTags.size()) return;
-    std::string const& tag = m_forumTags[idx];
-
-    bool wasSelected = contains(m_createSelectedTags, tag);
-    if (wasSelected) eraseOne(m_createSelectedTags, tag);
-    else m_createSelectedTags.push_back(tag);
-
-    if (auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender)) {
-        setPillSelected(btn, !wasSelected);
-    }
-
-    if (!m_createTagsHint) return;
-    if (m_createSelectedTags.empty()) {
-        m_createTagsHint->setString(tr("pai.hub.forum.create.tags_hint",
-            "Tap a tag above to attach it to your post").c_str());
-        m_createTagsHint->setColor(kListTextSoft);
-    } else {
-        std::string joined;
-        for (size_t i = 0; i < m_createSelectedTags.size(); ++i) {
-            if (i) joined += ", ";
-            joined += m_createSelectedTags[i];
-        }
-        m_createTagsHint->setString(("Selected: " + joined).c_str());
-        m_createTagsHint->setColor(paimon::ui::palette::success);
-    }
-}
-
-void PaimonHubLayer::onCreateSubmit(CCObject*) {
-    std::string title = m_createTitleInput ? std::string(m_createTitleInput->getString()) : "";
-    std::string desc  = m_createDescInput  ? std::string(m_createDescInput->getString())  : "";
-    if (title.empty()) {
-        PaimonNotify::create("Please enter a title", NotificationIcon::Warning)->show();
-        return;
-    }
-
-    paimon::forum::CreatePostRequest req{title, desc, m_createSelectedTags};
-    WeakRef<PaimonHubLayer> self = this;
-    paimon::forum::ForumApi::get().createPost(req, [self](paimon::forum::Result<paimon::forum::Post> res) {
-        auto* hub = self.lock().data();
-        if (!hub || !hub->getParent()) return;
-        if (!res.ok) {
-            PaimonNotify::create(("Failed: " + res.error).c_str(), NotificationIcon::Error)->show();
-            return;
-        }
-        PaimonNotify::create("Post published!", NotificationIcon::Success)->show();
-        hub->switchForumSubTab(0);
-    });
 }

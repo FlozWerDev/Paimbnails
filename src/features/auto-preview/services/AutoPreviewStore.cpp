@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "AutoPreviewStore.hpp"
 
 #include <Geode/Geode.hpp>
@@ -5,6 +6,9 @@
 #include <fstream>
 #include <vector>
 #include "../../../utils/ImageConverter.hpp"
+#include "../../../utils/AtomicFileWrite.hpp"
+#include "../../../utils/ImageLoadHelper.hpp"
+#include <cstring>
 
 using namespace geode::prelude;
 
@@ -26,13 +30,9 @@ AutoPreviewStore& AutoPreviewStore::get() {
 }
 
 std::filesystem::path AutoPreviewStore::dir() const {
-    std::filesystem::path base(geode::utils::string::pathToString(Mod::get()->getSaveDir()));
-    auto d = base / "auto-previews";
-    std::error_code ec;
-    if (!std::filesystem::exists(d, ec)) {
-        std::filesystem::create_directories(d, ec);
-    }
-    return d;
+    // pure path math (no stat/mkdir syscalls): writeAtomically() creates
+    // parents on save; readers tolerate a missing directory.
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "auto-previews";
 }
 
 std::filesystem::path AutoPreviewStore::pathFor(int32_t levelID) const {
@@ -49,7 +49,7 @@ void AutoPreviewStore::ensureScanned() {
         if (ec) break;
         if (!entry.is_regular_file()) continue;
         if (entry.path().extension() != ".rgb") continue;
-        auto stem = geode::utils::string::pathToString(entry.path().stem());
+        auto stem = paimon::paths::toUtf8(entry.path().stem());
         if (auto res = geode::utils::numFromString<int32_t>(stem); res.isOk()) {
             m_present.insert(res.unwrap());
         }
@@ -70,55 +70,49 @@ bool AutoPreviewStore::save(int32_t levelID, uint8_t const* rgba, uint32_t width
         static_cast<uint64_t>(width) * height > kMaxRgbPixels) return false;
 
     size_t const pixelCount = static_cast<size_t>(width) * height;
-    std::vector<uint8_t> rgb(pixelCount * 3);
+    std::vector<uint8_t> encoded(sizeof(RGBHeader) + pixelCount * 3);
+    RGBHeader head{width, height};
+    std::memcpy(encoded.data(), &head, sizeof(head));
+    auto* rgb = encoded.data() + sizeof(head);
     for (size_t i = 0; i < pixelCount; ++i) {
         rgb[i * 3 + 0] = rgba[i * 4 + 0];
         rgb[i * 3 + 1] = rgba[i * 4 + 1];
         rgb[i * 3 + 2] = rgba[i * 4 + 2];
     }
 
-    auto finalPath = pathFor(levelID);
-    auto tmpPath = finalPath;
-    tmpPath += ".tmp";
-
-    bool writeOk = false;
-    {
-        std::ofstream out(tmpPath, std::ios::binary | std::ios::trunc);
-        if (!out) {
-            log::error("[AutoPreview] cannot open tmp file for level {}", levelID);
-            return false;
-        }
-        RGBHeader head{ width, height };
-        out.write(reinterpret_cast<char const*>(&head), sizeof(head));
-        out.write(reinterpret_cast<char const*>(rgb.data()), static_cast<std::streamsize>(rgb.size()));
-        writeOk = out.good();
-    }
-
-    std::error_code ec;
-    if (!writeOk) {
-        std::filesystem::remove(tmpPath, ec);
-        return false;
-    }
-    std::filesystem::rename(tmpPath, finalPath, ec);
-    if (ec) {
-        std::filesystem::remove(tmpPath, ec);
-        log::error("[AutoPreview] rename failed for level {}: {}", levelID, ec.message());
-        return false;
-    }
-
+    // serialize publication with clearAll and the presence index. The shared
+    // writer uses a unique temporary file, including for simultaneous saves.
     {
         std::lock_guard<std::mutex> lock(m_mutex);
+        if (!paimon::file::writeAtomically(pathFor(levelID),
+                std::span<uint8_t const>(encoded.data(), encoded.size()))) {
+            log::error("[AutoPreview] atomic write failed for level {}", levelID);
+            return false;
+        }
         ensureScanned();
         m_present.insert(levelID);
+        // workers only mark IDs; the next main-thread lookup releases the GL texture.
+        m_staleTextures.insert(levelID);
     }
     log::info("[AutoPreview] saved generated preview for level {} ({}x{})", levelID, width, height);
     return true;
 }
 
 cocos2d::CCTexture2D* AutoPreviewStore::cachedTexture(int32_t levelID) {
+    bool stale;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        stale = m_staleTextures.erase(levelID) != 0;
+    }
     std::lock_guard<std::mutex> lock(m_texMutex);
     auto it = m_texCache.find(levelID);
     if (it == m_texCache.end()) return nullptr;
+    if (stale) {
+        it->second->release();
+        m_texCache.erase(it);
+        std::erase(m_texLru, levelID);
+        return nullptr;
+    }
     auto lruIt = std::find(m_texLru.begin(), m_texLru.end(), levelID);
     if (lruIt != m_texLru.end()) m_texLru.erase(lruIt);
     m_texLru.push_back(levelID);
@@ -180,18 +174,14 @@ cocos2d::CCTexture2D* AutoPreviewStore::loadTexture(int32_t levelID) {
     auto rgba = std::make_unique<uint8_t[]>(pixelCount * 4);
     ImageConverter::rgbToRgbaFast(rgb.get(), rgba.get(), pixelCount);
 
-    auto* tex = new CCTexture2D();
-    if (!tex->initWithData(rgba.get(), kCCTexture2DPixelFormat_RGBA8888,
-                           head.width, head.height,
-                           CCSize(static_cast<float>(head.width), static_cast<float>(head.height)))) {
-        tex->release();
-        return nullptr;
-    }
-    ccTexParams params{ GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE };
-    tex->setTexParameters(&params);
-    tex->autorelease();
-    cacheTexture(levelID, tex);
-    return tex;
+    // previews can exceed the shared 4096 cap, so the helper limit follows
+    // this store's own 16384 bound (validated above).
+    auto img = ImageLoadHelper::createFromRGBA(
+        rgba.get(), static_cast<int>(head.width), static_cast<int>(head.height), false, 16384);
+    if (!img.success || !img.texture) return nullptr;
+    img.texture->autorelease();
+    cacheTexture(levelID, img.texture);
+    return img.texture;
 }
 
 void AutoPreviewStore::clearRamCache() {
@@ -222,6 +212,7 @@ void AutoPreviewStore::clearAll() {
             }
         }
         m_present.clear();
+        m_staleTextures.clear();
         m_attempted.clear();
         m_scanned = true;
         m_generatedThisSession = 0;

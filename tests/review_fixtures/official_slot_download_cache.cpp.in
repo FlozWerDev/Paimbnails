@@ -1,0 +1,186 @@
+#include <cassert>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <iostream>
+#include <memory>
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <vector>
+#include <matjson.hpp>
+#include "src/utils/AtomicFileWrite.hpp"
+#include "src/utils/JsonHelper.hpp"
+@@source|src/features/official-slots/services/SlotPayloadCache.hpp@@
+@@source|src/features/official-slots/services/SlotPayloadCache.cpp@@
+namespace gd { using string = std::string; }
+template<class T> struct Ref {
+    T* pointer = nullptr;
+    Ref(T* value = nullptr) : pointer(value) {}
+    Ref& operator=(T* value) { pointer = value; return *this; }
+    T* data() const { return pointer; }
+    operator T*() const { return pointer; }
+};
+namespace geode { template<class T> using Ref = ::Ref<T>; }
+struct LevelId {
+    int number = 0;
+    int value() const { return number; }
+    LevelId& operator=(int value) { number = value; return *this; }
+    operator int() const { return number; }
+};
+enum class GJDifficulty { NA };
+namespace paimon {
+bool insideWorker = false;
+bool isRuntimeShuttingDown() { return false; }
+struct ThreadTracker {
+    std::vector<std::function<void()>> workers;
+    static ThreadTracker& get() { static ThreadTracker tracker; return tracker; }
+    template<class F> bool spawn(F&& fn) { workers.push_back(std::forward<F>(fn)); return true; }
+};
+}
+struct Loader {
+    std::vector<std::function<void()>> main;
+    static Loader* get() { static Loader loader; return &loader; }
+    template<class F> void queueInMainThread(F&& fn) { main.push_back(std::forward<F>(fn)); }
+};
+void drain() {
+    while (!paimon::ThreadTracker::get().workers.empty() || !Loader::get()->main.empty()) {
+        auto workers = std::move(paimon::ThreadTracker::get().workers);
+        paimon::ThreadTracker::get().workers.clear();
+        paimon::insideWorker = true;
+        for (auto& fn : workers) fn();
+        paimon::insideWorker = false;
+        auto callbacks = std::move(Loader::get()->main);
+        Loader::get()->main.clear();
+        for (auto& fn : callbacks) fn();
+    }
+}
+struct GJGameLevel {
+    LevelId m_levelID;
+    std::string m_levelString, m_songIDs, m_sfxIDs, m_levelName, m_creatorName;
+    int m_audioTrack = 0, m_songID = 0, m_levelLength = 0;
+    GJDifficulty m_difficulty = GJDifficulty::NA;
+    int m_ratings = 0, m_ratingsSum = 0, m_demonDifficulty = 0;
+    int m_coins = 0, m_featured = 0, m_isEpic = 0;
+    LevelId m_demon, m_stars;
+    bool m_autoLevel = false;
+    bool m_levelNotDownloaded = true;
+    static GJGameLevel* create() {
+        assert(!paimon::insideWorker);
+        static std::vector<std::unique_ptr<GJGameLevel>> owned;
+        owned.push_back(std::make_unique<GJGameLevel>());
+        return owned.back().get();
+    }
+};
+struct LevelDownloadDelegate {
+    virtual void levelDownloadFinished(GJGameLevel*) {}
+    virtual void levelDownloadFailed(int) {}
+};
+struct GameLevelManager {
+    std::unordered_map<int, GJGameLevel*> saved;
+    LevelDownloadDelegate* m_levelDownloadDelegate = nullptr;
+    std::vector<int> network;
+    static GameLevelManager* get() { static GameLevelManager glm; return &glm; }
+    GJGameLevel* getSavedLevel(int id) { auto it = saved.find(id); return it == saved.end() ? nullptr : it->second; }
+    void downloadLevel(int id, bool, int) { network.push_back(id); }
+};
+struct Mod {
+    std::filesystem::path directory;
+    static Mod* get() { static Mod mod; return &mod; }
+    std::filesystem::path getSaveDir() const { return directory; }
+};
+namespace geode::log { template<class... Args> void warn(char const*, Args&&...) {} }
+using namespace geode;
+namespace paimon::officialslots {
+@@function|src/features/official-slots/services/SlotLevels.cpp|std::string gdString(@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|bool levelStringEmpty(@@
+// A fresh instance models a restarted process without keeping the RAM map.
+#define private public
+@@function|src/features/official-slots/services/SlotLevels.hpp|class SlotDownloads :@@;
+#undef private
+@@function|src/features/official-slots/services/SlotLevels.cpp|SlotDownloads& SlotDownloads::get(@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|void SlotDownloads::fetch(@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|void SlotDownloads::startNext(@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|void SlotDownloads::requestNetwork(@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|GJGameLevel* SlotDownloads::cachedLevel(@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|void SlotDownloads::rememberLevel(@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|void SlotDownloads::finishPending(@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|void SlotDownloads::levelDownloadFinished(@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|void SlotDownloads::levelDownloadFailed(@@
+}
+
+int main() {
+    using namespace paimon::officialslots;
+    auto directory = std::filesystem::temp_directory_path() / "paim-slot-download-cache-regression";
+    std::filesystem::remove_all(directory);
+    Mod::get()->directory = directory;
+    auto* glm = GameLevelManager::get();
+    LevelDownloadDelegate previous;
+    glm->m_levelDownloadDelegate = &previous;
+    GJGameLevel original;
+    original.m_levelID = 123456;
+    original.m_levelString = "downloaded payload";
+    original.m_songID = 1516520;
+    original.m_songIDs = "1516520,5678";
+    original.m_sfxIDs = "12,34";
+    original.m_stars = 10;
+    original.m_demon = 1;
+    original.m_demonDifficulty = 6;
+    original.m_isEpic = 3;
+    glm->saved[123456] = &original;
+    SlotDownloads first;
+    int completed = 0;
+    first.fetch(123456, [&](auto* result) { assert(result == &original); ++completed; });
+    assert(completed == 1 && glm->network.empty());
+    drain();
+    glm->saved.clear();
+    first.fetch(123456, [&](auto* result) { assert(result == &original); ++completed; });
+    assert(completed == 2 && glm->network.empty()); // A page rebuild needs no network.
+
+    SlotDownloads restarted;
+    GJGameLevel* restored = nullptr;
+    restarted.fetch(123456, [&](auto* result) { restored = result; ++completed; });
+    restarted.fetch(123456, [&](auto* result) { assert(result == restored); ++completed; });
+    assert(completed == 2); // Reading persisted data is asynchronous, coalesced by source ID.
+    drain();
+    assert(completed == 4 && restored && glm->network.empty());
+    assert(restored->m_levelString == original.m_levelString);
+    assert(restored->m_songID == 1516520 && restored->m_songIDs == original.m_songIDs);
+    assert(restored->m_sfxIDs == original.m_sfxIDs && !restored->m_levelNotDownloaded);
+    assert(restored->m_stars.value() == 10 && restored->m_demon.value() == 1);
+    assert(restored->m_demonDifficulty == 6 && restored->m_isEpic == 3); // Import prefills survive restarts.
+    restarted.fetch(123456, [&](auto* result) { assert(result == restored); ++completed; });
+    assert(completed == 5 && paimon::ThreadTracker::get().workers.empty());
+
+    GJGameLevel networkLevel;
+    networkLevel.m_levelID = 456789;
+    networkLevel.m_levelString = "network payload";
+    restarted.fetch(456789, [&](auto* result) { assert(result == &networkLevel); ++completed; });
+    restarted.fetch(456789, [&](auto* result) { assert(result == &networkLevel); ++completed; });
+    drain();
+    assert(glm->network == std::vector<int>{456789});
+    assert(glm->m_levelDownloadDelegate == &restarted);
+    restarted.levelDownloadFinished(&original); // A foreign native download cannot finish ours.
+    assert(completed == 5);
+    restarted.levelDownloadFinished(&networkLevel);
+    assert(completed == 7 && glm->m_levelDownloadDelegate == &previous);
+    drain();
+    restarted.fetch(456789, [&](auto* result) { assert(result == &networkLevel); ++completed; });
+    assert(completed == 8 && glm->network.size() == 1);
+    SlotDownloads secondRestart;
+    secondRestart.fetch(456789, [&](auto* result) { assert(result && result->m_levelString == "network payload"); ++completed; });
+    drain();
+    assert(completed == 9 && glm->network.size() == 1);
+
+    restarted.fetch(999999, [&](auto* result) { assert(!result); ++completed; });
+    drain();
+    restarted.levelDownloadFailed(-1);
+    assert(completed == 10);
+    restarted.fetch(999999, [](auto*) {});
+    drain();
+    assert(glm->network.size() == 3); // Failed fetches remain retryable.
+    restarted.levelDownloadFailed(-1);
+    std::filesystem::remove_all(directory);
+    std::cout << "RAM/disk reuse across restarts, coalescing, delegate restore, no repeated download passed\n";
+}

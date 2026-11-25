@@ -1,0 +1,189 @@
+#include "src/utils/WebSocketClient.hpp"
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cassert>
+#include <chrono>
+#include <condition_variable>
+#include <cstdint>
+#include <cstring>
+#include <deque>
+#include <functional>
+#include <mutex>
+#include <thread>
+#include <vector>
+using namespace std::chrono_literals;
+#define GEODE_IS_WINDOWS
+using DWORD = uint32_t;
+using BOOL = int;
+struct Handle { bool closed = false; };
+using HINTERNET = Handle*;
+using WINHTTP_WEB_SOCKET_BUFFER_TYPE = int;
+constexpr int WINHTTP_ACCESS_TYPE_DEFAULT_PROXY = 0, INTERNET_DEFAULT_HTTPS_PORT = 443;
+constexpr int WINHTTP_FLAG_SECURE = 1, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET = 2;
+constexpr int WINHTTP_ADDREQ_FLAG_ADD = 1, WINHTTP_ADDREQ_FLAG_REPLACE = 2;
+constexpr int WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE = 3, WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE = 4;
+constexpr int WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE = 5, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE = 6;
+constexpr DWORD NO_ERROR = 0;
+constexpr auto WINHTTP_NO_PROXY_NAME = nullptr, WINHTTP_NO_PROXY_BYPASS = nullptr;
+constexpr auto WINHTTP_NO_REFERER = nullptr, WINHTTP_DEFAULT_ACCEPT_TYPES = nullptr;
+constexpr auto WINHTTP_NO_ADDITIONAL_HEADERS = nullptr, WINHTTP_NO_REQUEST_DATA = nullptr;
+auto const gameThread = std::this_thread::get_id();
+std::mutex peerMutex, mainMutex;
+std::condition_variable peerReady;
+bool releaseSend = false, blockOpen = false, openEntered = false;
+int readers = 0, sendEntered = 0;
+std::vector<std::unique_ptr<Handle>> handles;
+std::vector<std::pair<HINTERNET, std::string>> sent;
+std::deque<std::pair<HINTERNET, std::string>> incoming;
+HINTERNET newestSocket = nullptr;
+std::vector<std::function<void()>> mainJobs;
+std::vector<std::thread> workers;
+void networkOnly() { assert(std::this_thread::get_id() != gameThread); }
+DWORD GetLastError() { return 123; }
+HINTERNET makeHandle() {
+    networkOnly(); std::lock_guard lock(peerMutex);
+    handles.push_back(std::make_unique<Handle>()); return handles.back().get();
+}
+template<class... T> HINTERNET WinHttpOpen(T...) {
+    {
+        networkOnly(); std::unique_lock lock(peerMutex);
+        openEntered = true; peerReady.notify_all();
+        assert(peerReady.wait_for(lock, 3s, [] { return !blockOpen; }));
+    }
+    return makeHandle();
+}
+template<class... T> HINTERNET WinHttpConnect(T...) { return makeHandle(); }
+template<class... T> HINTERNET WinHttpOpenRequest(T...) { return makeHandle(); }
+template<class... T> HINTERNET WinHttpWebSocketCompleteUpgrade(T...) {
+    auto handle = makeHandle();
+    std::lock_guard lock(peerMutex); newestSocket = handle; return handle;
+}
+template<class... T> BOOL WinHttpSetTimeouts(T...) { networkOnly(); return true; }
+template<class... T> BOOL WinHttpSetOption(T...) { networkOnly(); return true; }
+template<class... T> BOOL WinHttpAddRequestHeaders(T...) { networkOnly(); return true; }
+template<class... T> BOOL WinHttpSendRequest(T...) { networkOnly(); return true; }
+template<class... T> BOOL WinHttpReceiveResponse(T...) { networkOnly(); return true; }
+BOOL WinHttpCloseHandle(HINTERNET handle) {
+    networkOnly(); std::lock_guard lock(peerMutex);
+    assert(!handle->closed); handle->closed = true; peerReady.notify_all(); return true;
+}
+DWORD WinHttpWebSocketSend(HINTERNET handle, int, void* bytes, DWORD size) {
+    networkOnly(); std::unique_lock lock(peerMutex);
+    ++sendEntered; peerReady.notify_all();
+    assert(peerReady.wait_for(lock, 3s, [] { return releaseSend; }));
+    assert(!handle->closed);
+    sent.emplace_back(handle, std::string(static_cast<char*>(bytes), size));
+    peerReady.notify_all(); return NO_ERROR;
+}
+DWORD WinHttpWebSocketReceive(HINTERNET handle, void* bytes, DWORD size, DWORD* count, int* type) {
+    networkOnly(); std::unique_lock lock(peerMutex);
+    ++readers; peerReady.notify_all();
+    auto next = [&] { return std::find_if(incoming.begin(), incoming.end(),
+        [handle](auto const& packet) { return packet.first == handle; }); };
+    assert(peerReady.wait_for(lock, 3s, [&] { return handle->closed || next() != incoming.end(); }));
+    if (handle->closed) return 123;
+    auto packet = next();
+    auto text = std::move(packet->second); incoming.erase(packet);
+    if (text == "close") { *count = 0; *type = WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE; return NO_ERROR; }
+    assert(text.size() <= size); std::memcpy(bytes, text.data(), text.size());
+    *count = static_cast<DWORD>(text.size()); *type = WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE;
+    return NO_ERROR;
+}
+namespace geode {
+namespace utils::string { std::wstring utf8ToWide(std::string const& text) { return {text.begin(), text.end()}; } }
+struct Loader {
+    static Loader* get() { static Loader value; return &value; }
+    void queueInMainThread(std::function<void()> job) {
+        std::lock_guard lock(mainMutex); mainJobs.push_back(std::move(job));
+    }
+};
+}
+namespace paimon {
+inline bool isRuntimeShuttingDown() { return false; }
+namespace ban {
+std::uint64_t authorization = 1;
+std::uint64_t networkAuthorization() { return authorization; }
+}
+struct ThreadTracker {
+    enum class ShutdownPolicy { Join, BestEffort };
+    static ThreadTracker& get() { static ThreadTracker value; return value; }
+    bool isShuttingDown() { return false; }
+    bool spawn(std::function<void()> job) { workers.emplace_back(std::move(job)); return true; }
+    bool spawnWithPolicy(char const*, ShutdownPolicy, std::function<void()> job) {
+        return spawn(std::move(job));
+    }
+};
+}
+@@source|src/utils/WebSocketClient.cpp@@
+void pump() {
+    std::vector<std::function<void()>> batch;
+    { std::lock_guard lock(mainMutex); batch.swap(mainJobs); }
+    for (auto& job : batch) job();
+}
+template<class F> void waitFor(F predicate) {
+    std::unique_lock lock(peerMutex); assert(peerReady.wait_for(lock, 2s, predicate));
+}
+void joinAll() { for (auto& worker : workers) worker.join(); workers.clear(); }
+int main() {
+    using paimon::net::WebSocketClient;
+    WebSocketClient client;
+    int opens = 0, messages = 0, closes = 0;
+    auto onOpen = [&] { assert(std::this_thread::get_id() == gameThread); ++opens; };
+    auto onMessage = [&](std::string text) { assert(std::this_thread::get_id() == gameThread); assert(text == "hello"); ++messages; };
+    auto onClose = [&](std::string) { assert(std::this_thread::get_id() == gameThread); ++closes; };
+    assert(client.connect({"test"}, onOpen, onMessage, onClose));
+    waitFor([] { return readers == 1; }); pump(); assert(opens == 1 && client.isOpen());
+    { std::lock_guard lock(peerMutex); incoming.emplace_back(newestSocket, "hello"); }
+    peerReady.notify_all(); waitFor([] { return readers == 2; }); pump(); assert(messages == 1);
+    assert(client.send("blocked")); waitFor([] { return sendEntered == 1; });
+    auto start = std::chrono::steady_clock::now();
+    int accepted = 0;
+    for (int i = 0; i < 1000; ++i) accepted += client.send("queued");
+    assert(accepted == 128 && !client.send(std::string(512 * 1024 + 1, 'x')));
+    client.disconnect(); // must not wait for the deliberately blocked sender
+    assert(std::chrono::steady_clock::now() - start < 100ms && !client.isOpen());
+    assert(client.connect({"new"}, onOpen, onMessage, onClose));
+    waitFor([] { return readers == 3; }); pump(); assert(opens == 2);
+    assert(client.send("first") && client.send("second"));
+    { std::lock_guard lock(peerMutex); releaseSend = true; }
+    peerReady.notify_all();
+    waitFor([] { return sent.size() == 3; });
+    {
+        std::lock_guard lock(peerMutex);
+        std::vector<std::string> fifo;
+        for (auto const& [handle, text] : sent) if (text != "blocked") fifo.push_back(text);
+        assert((fifo == std::vector<std::string>{"first", "second"}));
+        incoming.emplace_back(newestSocket, "hello");
+    }
+    peerReady.notify_all(); waitFor([] { return readers == 4; });
+    client.disconnect(); pump(); // pending message/close cannot touch a destroyed owner
+    assert(messages == 1 && closes == 0);
+    joinAll(); pump();
+    assert(messages == 1 && closes == 0);
+
+    assert(client.connect({"close"}, onOpen, onMessage, onClose));
+    waitFor([] { return readers == 5; }); pump();
+    { std::lock_guard lock(peerMutex); incoming.emplace_back(newestSocket, "close"); }
+    peerReady.notify_all(); joinAll(); pump();
+    assert(!client.isOpen() && closes == 1 && opens == 3);
+
+    { std::lock_guard lock(peerMutex); blockOpen = true; openEntered = false; }
+    assert(client.connect({"late"}, onOpen, onMessage, onClose));
+    waitFor([] { return openEntered; });
+    WebSocketClient::shutdownAll(); // cancellation before WinHttpOpen publishes its handle
+    { std::lock_guard lock(peerMutex); blockOpen = false; }
+    peerReady.notify_all(); joinAll(); pump();
+    assert(opens == 3);
+
+    paimon::ban::authorization = 0;
+    assert(!client.connect({"blocked"}, onOpen, onMessage, onClose));
+    paimon::ban::authorization = 2;
+    assert(client.connect({"revoked"}, onOpen, onMessage, onClose));
+    waitFor([] { return readers == 6; });
+    paimon::ban::authorization = 0;
+    pump(); // A queued onOpen cannot survive a revoked authorization.
+    assert(opens == 3 && !client.isOpen() && !client.send("denied"));
+    joinAll(); pump();
+    for (auto const& handle : handles) assert(handle->closed);
+}

@@ -4,6 +4,7 @@
 #include "../features/transitions/services/TransitionManager.hpp"
 #include "../features/transitions/ui/TransitionConfigPopup.hpp"
 #include "../features/transitions/ui/DynamicTransitionConfigPopup.hpp"
+#include "../platform/PaimSettings.hpp"
 
 #include <Geode/Geode.hpp>
 #include <fmt/format.h>
@@ -16,26 +17,16 @@ namespace {
 namespace kit = paimon::configkit;
 
 template<typename T>
-T gset(const char* key) {
-    if (Mod::get()->hasSetting(key)) return Mod::get()->getSettingValue<T>(key);
-    return Mod::get()->getSavedValue<T>(key, T{});
-}
+T gset(const char* key) { return paimon::platform::gset<T>(key); }
 
 template<typename T>
-void sset(const char* key, T val) {
-    if (Mod::get()->hasSetting(key)) Mod::get()->setSettingValue<T>(key, val);
-    else Mod::get()->setSavedValue(key, val);
-}
+void sset(const char* key, T val) { paimon::platform::sset<T>(key, val); }
 
 template<typename T>
-T gsaved(const char* key, T def) {
-    return Mod::get()->getSavedValue<T>(key, def);
-}
+T gsaved(const char* key, T def) { return paimon::platform::gsaved<T>(key, def); }
 
 template<typename T>
-void ssaved(const char* key, T val) {
-    Mod::get()->setSavedValue(key, val);
-}
+void ssaved(const char* key, T val) { paimon::platform::ssaved<T>(key, val); }
 
 std::vector<std::string> const kPresetIds = {
     "balanced", "subtle", "silky", "bouncy", "cinematic", "off"
@@ -89,7 +80,9 @@ void applySmoothUIPreset(std::string const& preset) {
         sset<bool>("dynamic-popup-enabled", false);
         sset<bool>("dynamic-exit-enabled", false);
         sset<bool>("dynamic-transition-enabled", false);
+#if defined(GEODE_IS_DESKTOP)
         sset<bool>("smooth-scroll", false);
+#endif
         ssaved<bool>("popup-blur-show-placeholder", true);
         TransitionManager::get().setEnabled(false);
         TransitionManager::get().saveConfig();
@@ -99,66 +92,55 @@ void applySmoothUIPreset(std::string const& preset) {
     sset<bool>("dynamic-popup-enabled", true);
     sset<bool>("dynamic-exit-enabled", true);
     sset<bool>("dynamic-transition-enabled", true);
+#if defined(GEODE_IS_DESKTOP)
     sset<bool>("smooth-scroll", true);
+#endif
     ssaved<bool>("popup-blur-show-placeholder", true);
 
-    if (preset == "subtle") {
-        setBase(true, 1.25f, 0.65f);
-        ssaved<std::string>("dynamic-popup-style", "zoom-fade");
-        ssaved<double>("dynamic-popup-speed", 1.35);
-        ssaved<double>("dynamic-exit-speed", 1.45);
-        ssaved<double>("popup-blur-fade-duration", 0.12);
-        ssaved<double>("smooth-scroll-smoothness", 0.75);
-        ssaved<double>("smooth-scroll-sensitivity", 1.55);
-        ssaved<double>("smooth-ui-button-press-scale", 0.97);
-        ssaved<bool>("smooth-ui-button-release-bounce", false);
-        setGlobalTransitionDuration(0.25f);
-    } else if (preset == "silky") {
-        setBase(true, 0.88f, 1.15f);
-        ssaved<std::string>("dynamic-popup-style", "paimonUI");
-        ssaved<double>("dynamic-popup-speed", 0.88);
-        ssaved<double>("dynamic-exit-speed", 0.95);
-        ssaved<double>("popup-blur-fade-duration", 0.24);
-        ssaved<double>("smooth-scroll-smoothness", 1.85);
-        ssaved<double>("smooth-scroll-sensitivity", 2.0);
-        ssaved<double>("smooth-ui-button-press-scale", 0.93);
-        ssaved<bool>("smooth-ui-button-release-bounce", true);
-        setGlobalTransitionDuration(0.48f);
-    } else if (preset == "bouncy") {
-        setBase(true, 0.95f, 1.25f);
-        ssaved<std::string>("dynamic-popup-style", "jelly");
-        ssaved<double>("dynamic-popup-speed", 0.90);
-        ssaved<double>("dynamic-exit-speed", 1.05);
-        ssaved<double>("popup-blur-fade-duration", 0.18);
-        ssaved<double>("smooth-scroll-smoothness", 1.35);
-        ssaved<double>("smooth-scroll-sensitivity", 2.15);
-        ssaved<double>("smooth-ui-button-press-scale", 0.90);
-        ssaved<bool>("smooth-ui-button-release-bounce", true);
-        setGlobalTransitionDuration(0.40f);
-    } else if (preset == "cinematic") {
-        setBase(true, 0.72f, 1.35f);
-        ssaved<std::string>("dynamic-popup-style", "elastic-drop");
-        ssaved<double>("dynamic-popup-speed", 0.78);
-        ssaved<double>("dynamic-exit-speed", 0.85);
-        ssaved<double>("popup-blur-fade-duration", 0.32);
-        ssaved<double>("smooth-scroll-smoothness", 2.2);
-        ssaved<double>("smooth-scroll-sensitivity", 1.8);
-        ssaved<double>("smooth-ui-button-press-scale", 0.92);
-        ssaved<bool>("smooth-ui-button-release-bounce", true);
-        TransitionManager::get().setEnabled(true);
-        setGlobalTransitionDuration(0.65f);
-    } else {
-        setBase(true, 1.0f, 1.0f);
-        ssaved<std::string>("dynamic-popup-style", "paimonUI");
-        ssaved<double>("dynamic-popup-speed", 1.0);
-        ssaved<double>("dynamic-exit-speed", 1.0);
-        ssaved<double>("popup-blur-fade-duration", 0.18);
-        ssaved<double>("smooth-scroll-smoothness", 1.0);
-        ssaved<double>("smooth-scroll-sensitivity", 2.0);
-        ssaved<double>("smooth-ui-button-press-scale", 0.94);
-        ssaved<bool>("smooth-ui-button-release-bounce", true);
-        setGlobalTransitionDuration(0.35f);
+    // every non-off preset writes the same nine keys; only the values differ.
+    struct SmoothPreset {
+        char const* id; // nullptr: fallback for unknown preset names
+        float globalSpeed;
+        float strength;
+        char const* popupStyle;
+        double popupSpeed;
+        double exitSpeed;
+        double blurFade;
+        double scrollSmoothness;
+        double scrollSensitivity;
+        double pressScale;
+        bool releaseBounce;
+        float transitionDuration;
+        bool enableTransitionManager; // only cinematic pokes the manager directly
+    };
+    constexpr SmoothPreset kPresets[] = {
+        {"subtle",    1.25f, 0.65f, "zoom-fade",    1.35, 1.45, 0.12, 0.75, 1.55, 0.97, false, 0.25f, false},
+        {"silky",     0.88f, 1.15f, "paimonUI",     0.88, 0.95, 0.24, 1.85, 2.0,  0.93, true,  0.48f, false},
+        {"bouncy",    0.95f, 1.25f, "jelly",        0.90, 1.05, 0.18, 1.35, 2.15, 0.90, true,  0.40f, false},
+        {"cinematic", 0.72f, 1.35f, "elastic-drop", 0.78, 0.85, 0.32, 2.2,  1.8,  0.92, true,  0.65f, true},
+    };
+    constexpr SmoothPreset kDefaultPreset{
+        nullptr, 1.0f, 1.0f, "paimonUI", 1.0, 1.0, 0.18, 1.0, 2.0, 0.94, true, 0.35f, false};
+
+    SmoothPreset const* chosen = &kDefaultPreset;
+    for (auto const& candidate : kPresets) {
+        if (preset == candidate.id) {
+            chosen = &candidate;
+            break;
+        }
     }
+
+    setBase(true, chosen->globalSpeed, chosen->strength);
+    ssaved<std::string>("dynamic-popup-style", chosen->popupStyle);
+    ssaved<double>("dynamic-popup-speed", chosen->popupSpeed);
+    ssaved<double>("dynamic-exit-speed", chosen->exitSpeed);
+    ssaved<double>("popup-blur-fade-duration", chosen->blurFade);
+    ssaved<double>("smooth-scroll-smoothness", chosen->scrollSmoothness);
+    ssaved<double>("smooth-scroll-sensitivity", chosen->scrollSensitivity);
+    ssaved<double>("smooth-ui-button-press-scale", chosen->pressScale);
+    ssaved<bool>("smooth-ui-button-release-bounce", chosen->releaseBounce);
+    if (chosen->enableTransitionManager) TransitionManager::get().setEnabled(true);
+    setGlobalTransitionDuration(chosen->transitionDuration);
 }
 
 SmoothUIConfigPopup* SmoothUIConfigPopup::create() {
@@ -334,6 +316,7 @@ void SmoothUIConfigPopup::rebuild() {
                 [](bool v) { ssaved<bool>("smooth-ui-button-release-bounce", v); }),
         }));
 
+#if defined(GEODE_IS_DESKTOP)
         items.push_back(kit::makeCard(scrollW, "Scroll y zoom del editor", {255, 170, 120}, {
             kit::makeToggleRow(innerW,
                 "Scroll suave",
@@ -362,6 +345,7 @@ void SmoothUIConfigPopup::rebuild() {
                 gsaved<double>("smooth-scroll-editor-zoom-smoothness", 1.15), 0.25, 3.0, fmtPlain,
                 [](double v) { ssaved<double>("smooth-scroll-editor-zoom-smoothness", v); }),
         }));
+#endif
 
         items.push_back(kit::makeCard(scrollW, "Blur y transiciones", {200, 180, 255}, {
             kit::makeToggleRow(innerW,

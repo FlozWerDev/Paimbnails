@@ -77,7 +77,7 @@ static int rotationFromTransform(CGAffineTransform t) {
     return 0;
 }
 
-void DecoderAVF::readTrackMetadata() {
+void DecoderAVF::State::readTrackMetadata() {
     AVAssetTrack* videoTrack = (__bridge AVAssetTrack*)m_videoTrack;
     if (!videoTrack) return;
     m_rotation = rotationFromTransform(videoTrack.preferredTransform);
@@ -99,8 +99,34 @@ void DecoderAVF::readTrackMetadata() {
     if (full) m_fullRange = CFBooleanGetValue(full) == TRUE;
 }
 
+DecoderAVF::State::~State() {
+    // runs on the owner thread normally, or on the orphan worker if a
+    // timed-out stop detached it; either way the ObjC objects stay alive
+    // until the last state copy drops.
+    @autoreleasepool {
+        if (m_trackOutput) {
+            auto* obj = (__bridge_transfer AVAssetReaderTrackOutput*)m_trackOutput;
+            obj = nil;
+            m_trackOutput = nullptr;
+        }
+        if (m_reader) {
+            auto* obj = (__bridge_transfer AVAssetReader*)m_reader;
+            [obj cancelReading];
+            obj = nil;
+            m_reader = nullptr;
+        }
+        if (m_asset) {
+            auto* obj = (__bridge_transfer AVAsset*)m_asset;
+            obj = nil;
+            m_asset = nullptr;
+        }
+        m_videoTrack = nullptr;  // weak ref, no release
+    }
+}
+
 bool DecoderAVF::open(const std::string& path) {
     closeInternal();
+    auto st = std::make_shared<State>();
 
     @autoreleasepool {
         NSString* nsPath = [NSString stringWithUTF8String:path.c_str()];
@@ -127,7 +153,7 @@ bool DecoderAVF::open(const std::string& path) {
         }
 
         CMTime dur = asset.duration;
-        m_duration = CMTimeGetSeconds(dur);
+        st->m_duration = CMTimeGetSeconds(dur);
 
         AVAssetTrack* videoTrack = nil;
         NSArray<AVAssetTrack*>* tracks = [asset tracksWithMediaType:AVMediaTypeVideo];
@@ -138,34 +164,32 @@ bool DecoderAVF::open(const std::string& path) {
         videoTrack = tracks[0];
 
         CGSize naturalSize = videoTrack.naturalSize;
-        m_width  = static_cast<int>(naturalSize.width);
-        m_height = static_cast<int>(naturalSize.height);
-        if (m_width <= 0 || m_height <= 0) {
-            geode::log::warn("DecoderAVF: invalid dimensions {}x{}", m_width, m_height);
+        st->m_width  = static_cast<int>(naturalSize.width);
+        st->m_height = static_cast<int>(naturalSize.height);
+        if (st->m_width <= 0 || st->m_height <= 0) {
+            geode::log::warn("DecoderAVF: invalid dimensions {}x{}", st->m_width, st->m_height);
             return false;
         }
 
-        m_asset      = (__bridge_retained void*) asset;
-        m_videoTrack = (__bridge void*) videoTrack;  // weak ref into asset
-        readTrackMetadata();
+        st->m_asset      = (__bridge_retained void*) asset;
+        st->m_videoTrack = (__bridge void*) videoTrack;  // weak ref into asset
+        st->readTrackMetadata();
     }
 
-    if (!m_ring.init(m_width, m_height)) {
-        closeInternal();
+    if (!st->m_ring.init(st->m_width, st->m_height)) {
         return false;
     }
 
-    if (!buildReader(0.0)) {
-        closeInternal();
+    if (!st->buildReader(0.0)) {
         return false;
     }
 
-    m_finished.store(false, std::memory_order_relaxed);
-    m_decoding.store(false, std::memory_order_relaxed);
+    // fresh state: decoding/finished/threadDone already idle.
+    m_state = std::move(st);
     return true;
 }
 
-bool DecoderAVF::buildReader(double startTimeSeconds) {
+bool DecoderAVF::State::buildReader(double startTimeSeconds) {
     if (!m_asset || !m_videoTrack) return false;
 
     releaseReaderOnly();
@@ -230,7 +254,7 @@ bool DecoderAVF::buildReader(double startTimeSeconds) {
     return true;
 }
 
-void DecoderAVF::releaseReaderOnly() {
+void DecoderAVF::State::releaseReaderOnly() {
     @autoreleasepool {
         if (m_trackOutput) {
             auto* obj = (__bridge_transfer AVAssetReaderTrackOutput*)m_trackOutput;
@@ -247,20 +271,45 @@ void DecoderAVF::releaseReaderOnly() {
 }
 
 void DecoderAVF::startDecoding() {
-    if (m_decoding.load(std::memory_order_relaxed)) return;
-    if (!m_reader) return;
-    m_decoding.store(true, std::memory_order_relaxed);
-    m_finished.store(false, std::memory_order_relaxed);
-    m_thread = std::thread(&DecoderAVF::decodeLoop, this);
+    auto st = m_state;
+    if (!st || !st->m_reader) return;
+    if (st->m_decoding.load(std::memory_order_relaxed)) return;
+    // never run two workers on one state: an orphan detached by a
+    // timed-out stop still owns this state until it exits.
+    if (!st->m_threadDone.load(std::memory_order_acquire)) {
+        geode::log::warn("DecoderAVF: previous worker still draining, start deferred");
+        return;
+    }
+    st->m_decoding.store(true, std::memory_order_relaxed);
+    st->m_finished.store(false, std::memory_order_relaxed);
+    st->m_threadDone.store(false, std::memory_order_release);
+    m_thread = std::thread([st] { st->decodeLoop(); });
 }
 
 void DecoderAVF::stopDecoding() {
-    m_decoding.store(false, std::memory_order_relaxed);
-    m_ring.wakeAll();
-    if (m_thread.joinable()) paimon::joinWithWarning(m_thread, std::chrono::seconds(3));
+    auto st = m_state;
+    if (!st) {
+        if (m_thread.joinable()) m_thread.join();
+        return;
+    }
+    st->m_decoding.store(false, std::memory_order_relaxed);
+    st->m_ring.wakeAll();
+    // copyNextSampleBuffer has no timeout API (local file reads return
+    // fast; asset keys already load with a 3s deadline in open()); the
+    // reader is deliberately NOT cancelled here so a later startDecoding()
+    // can resume it. The bounded join below detaches instead of hanging
+    // the owner on a stuck reader.
+    if (m_thread.joinable()) {
+        paimon::joinOrDetachWithWarning(m_thread, std::chrono::seconds(3), "DecoderAVF", [&] {
+            return st->m_threadDone.load(std::memory_order_acquire);
+        });
+    }
 }
 
-void DecoderAVF::decodeLoop() {
+void DecoderAVF::State::decodeLoop() {
+    // every exit path below (incl. the early return) signals threadDone,
+    // bounding the join in stopDecoding().
+    ThreadExitSignal exitSignal(m_threadDone);
     geode::utils::thread::setName("PaimonDecodeAVF");
     auto* trackOutput = (__bridge AVAssetReaderTrackOutput*)m_trackOutput;
     auto* reader      = (__bridge AVAssetReader*)m_reader;
@@ -383,61 +432,74 @@ void DecoderAVF::decodeLoop() {
 }
 
 void DecoderAVF::seekTo(double seconds) {
-    bool wasDecoding = m_decoding.load(std::memory_order_relaxed);
+    auto st = m_state;
+    if (!st) return;
+    bool wasDecoding = st->m_decoding.load(std::memory_order_relaxed);
     stopDecoding();
-
-    while (m_ring.nextRead()) m_ring.commitRead();
-
-    if (!buildReader(std::max(0.0, seconds))) {
-        geode::log::warn("DecoderAVF: seekTo({}) - buildReader failed", seconds);
-        m_finished.store(true, std::memory_order_release);
+    // an orphan detached by a timed-out stop still owns the reader.
+    if (!st->m_threadDone.load(std::memory_order_acquire)) {
+        geode::log::warn("DecoderAVF: orphan worker still owns reader, seek skipped");
         return;
     }
-    m_finished.store(false, std::memory_order_relaxed);
+
+    while (st->m_ring.nextRead()) st->m_ring.commitRead();
+
+    if (!st->buildReader(std::max(0.0, seconds))) {
+        geode::log::warn("DecoderAVF: seekTo({}) - buildReader failed", seconds);
+        st->m_finished.store(true, std::memory_order_release);
+        return;
+    }
+    st->m_finished.store(false, std::memory_order_relaxed);
     if (wasDecoding) startDecoding();
 }
 
 bool DecoderAVF::skipFrame() {
-    return m_ring.skipRead();
+    auto st = m_state;
+    return st ? st->m_ring.skipRead() : false;
 }
 
-double DecoderAVF::getDuration() const { return m_duration; }
-int DecoderAVF::getWidth()  const { return m_width; }
-int DecoderAVF::getHeight() const { return m_height; }
+double DecoderAVF::getDuration() const {
+    auto st = m_state;
+    return st ? st->m_duration : 0.0;
+}
+int DecoderAVF::getWidth()  const {
+    auto st = m_state;
+    return st ? st->m_width : 0;
+}
+int DecoderAVF::getHeight() const {
+    auto st = m_state;
+    return st ? st->m_height : 0;
+}
 bool DecoderAVF::isFinished() const {
-    return m_finished.load(std::memory_order_acquire);
+    auto st = m_state;
+    return st ? st->m_finished.load(std::memory_order_acquire) : false;
 }
 
 double DecoderAVF::peekNextPTS() const {
-    return m_ring.peekNextPTS();
+    auto st = m_state;
+    return st ? st->m_ring.peekNextPTS() : DBL_MAX;
 }
 
 double DecoderAVF::peekSecondPTS() const {
-    return m_ring.peekSecondPTS();
+    auto st = m_state;
+    return st ? st->m_ring.peekSecondPTS() : DBL_MAX;
 }
 
 const paimon::VideoFrame* DecoderAVF::peekFrame() {
-    return m_ring.peekRead();
+    auto st = m_state;
+    return st ? st->m_ring.peekRead() : nullptr;
 }
 
 void DecoderAVF::releaseFrame() {
-    if (m_ring.peekRead()) m_ring.commitRead();
+    auto st = m_state;
+    if (st && st->m_ring.peekRead()) st->m_ring.commitRead();
 }
 
 void DecoderAVF::closeInternal() {
     stopDecoding();
-
-    releaseReaderOnly();
-
-    @autoreleasepool {
-        if (m_asset) {
-            auto* obj = (__bridge_transfer AVAsset*)m_asset;
-            obj = nil;
-            m_asset = nullptr;
-        }
-        m_videoTrack = nullptr;  // weak ref, no release
-    }
-    m_pixelFormat = 0;
+    // reader + asset + ring live in State: a detached orphan keeps its copy
+    // alive until it exits, so this never frees memory it still uses.
+    m_state.reset();
 }
 
 } // namespace paimon

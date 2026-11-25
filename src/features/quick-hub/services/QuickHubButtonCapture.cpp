@@ -3,6 +3,7 @@
 #include "QuickButtonSfx.hpp"
 #include "QuickHubManager.hpp"
 #include "../ui/QuickButtonPopup.hpp"
+#include "../../button-skins/ButtonSkinEntry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 
@@ -18,6 +19,7 @@
 #include <map>
 #include <tuple>
 #include <typeinfo>
+#include <unordered_map>
 
 #ifndef _WIN32
 #include <cxxabi.h>
@@ -197,6 +199,22 @@ std::string iconFrameOfItem(CCMenuItem* item) {
     return spriteItem ? findIconFrame(spriteItem->getNormalImage()) : std::string();
 }
 
+// every named frame drawn by the asset, in tree order; labels draw text, not frames.
+void collectFrameNames(CCNode* node, std::string& out) {
+    if (!node || typeinfo_cast<CCLabelBMFont*>(node)) return;
+    if (auto* sprite = typeinfo_cast<CCSprite*>(node)) {
+        if (auto name = frameNameForSprite(sprite); !name.empty()) {
+            if (!out.empty()) out.push_back('|');
+            out += name;
+        }
+    }
+    if (auto* children = node->getChildren()) {
+        for (unsigned int i = 0; i < children->count(); ++i) {
+            collectFrameNames(typeinfo_cast<CCNode*>(children->objectAtIndex(i)), out);
+        }
+    }
+}
+
 std::string findLabelText(CCNode* node) {
     if (!node) return {};
     if (auto* bm = typeinfo_cast<CCLabelBMFont*>(node)) {
@@ -273,11 +291,13 @@ CCNode* resolvePath(CCScene* scene, std::vector<int> const& path) {
 }
 
 // depth-first search for the button matching idpath; dead ends keep searching other branches.
-CCMenuItem* resolveIdPath(CCNode* root, std::vector<std::string> const& path, size_t depth) {
+CCMenuItem* resolveIdPath(CCNode* root, std::vector<std::string> const& path, size_t depth,
+                          bool requireInteractable = true) {
     if (!root) return nullptr;
     if (depth >= path.size()) {
         auto* item = typeinfo_cast<CCMenuItem*>(root);
-        return item && isInteractable(item) ? item : nullptr;
+        if (!item) return nullptr;
+        return !requireInteractable || isInteractable(item) ? item : nullptr;
     }
 
     auto const& want = path[depth];
@@ -289,7 +309,7 @@ CCMenuItem* resolveIdPath(CCNode* root, std::vector<std::string> const& path, si
         if (!child) continue;
         // empty stretch in the original path accepts any middle node.
         if (!want.empty() && child->getID() != want) continue;
-        if (auto* found = resolveIdPath(child, path, depth + 1)) return found;
+        if (auto* found = resolveIdPath(child, path, depth + 1, requireInteractable)) return found;
     }
     return nullptr;
 }
@@ -421,12 +441,35 @@ CCMenuItem* locateButton(CustomQuickButton const& def) {
     auto* scene = director ? director->getRunningScene() : nullptr;
     if (!scene) return nullptr;
 
+    static std::unordered_map<std::string, WeakRef<CCMenuItem>> s_resolved;
+    static CCScene* s_resolvedScene = nullptr;
+    if (scene != s_resolvedScene) {
+        s_resolved.clear();
+        s_resolvedScene = scene;
+    }
+    if (!def.id.empty()) {
+        if (auto it = s_resolved.find(def.id); it != s_resolved.end()) {
+            if (auto item = it->second.lock()) {
+                auto wanted = usableOwnerClass(def);
+                if (isInteractable(item) &&
+                    (wanted.empty() || ownerLayerClass(item) == wanted)) {
+                    return item;
+                }
+            }
+            s_resolved.erase(it);
+        }
+    }
+    auto remember = [&](CCMenuItem* item) -> CCMenuItem* {
+        if (item && !def.id.empty()) s_resolved[def.id] = item;
+        return item;
+    };
+
     // id path first: survives nodes other mods add/remove, needs the button to have an id.
     if (!def.idPath.empty() && !def.idPath.back().empty()) {
         if (auto* item = resolveIdPath(scene, def.idPath, 0)) {
             // ids repeat across screens; check the layer matches.
             auto wanted = usableOwnerClass(def);
-            if (wanted.empty() || ownerLayerClass(item) == wanted) return item;
+            if (wanted.empty() || ownerLayerClass(item) == wanted) return remember(item);
         }
     }
 
@@ -434,14 +477,14 @@ CCMenuItem* locateButton(CustomQuickButton const& def) {
     if (hasAnyIdentity(def)) {
         ButtonMatch best;
         scanBestButton(scene, def, best);
-        if (best.item && best.score.accepted()) return best.item;
+        if (best.item && best.score.accepted()) return remember(best.item);
     }
 
     // 3. last resort: original index path.
     if (auto* item = typeinfo_cast<CCMenuItem*>(resolvePath(scene, def.nodePath))) {
         if (isInteractable(item)) {
             // no saved identity: nothing to verify; else the node there must be the same button.
-            if (!hasAnyIdentity(def) || evaluateCandidate(item, def).accepted()) return item;
+            if (!hasAnyIdentity(def) || evaluateCandidate(item, def).accepted()) return remember(item);
         }
     }
 
@@ -517,7 +560,7 @@ private:
             setTicking(false);
             std::string message = fmt::format("No encontre \"{}\" en {}.", m_def.name,
                                               friendlyScreenName(m_def.sceneClass));
-            PaimonNotify::create(message.c_str(), NotificationIcon::Warning)->show();
+            PaimonNotify::show(message.c_str(), NotificationIcon::Warning);
         }
     }
 
@@ -542,14 +585,9 @@ std::string humanName(std::string value) {
 
 } // namespace
 
-bool handleQuickButtonRightClick() {
-    if (QuickButtonPopup::isOpen()) return true;
-    auto* director = CCDirector::get();
-    auto* scene = director ? director->getRunningScene() : nullptr;
-    if (!scene) return false;
-
-    auto* button = findButtonAt(scene, geode::cocos::getMousePos());
-    if (!button) return false;
+CustomQuickButton captureButtonIdentity(CCMenuItem* button, CCScene* scene) {
+    CustomQuickButton candidate;
+    if (!button) return candidate;
 
     auto* spriteItem = typeinfo_cast<CCMenuItemSprite*>(button);
     std::string icon = spriteItem ? findIconFrame(spriteItem->getNormalImage()) : std::string();
@@ -560,9 +598,7 @@ bool handleQuickButtonRightClick() {
                                 : !nodeId.empty() ? nodeId
                                                   : icon;
 
-    CustomQuickButton candidate;
     candidate.name          = humanName(suggestedSource);
-    candidate.id            = QuickHubManager::get().makeUniqueCustomId(candidate.name);
     candidate.targetNodeId  = std::move(nodeId);
     candidate.icon          = std::move(icon);
     candidate.labelText     = std::move(label);
@@ -578,9 +614,91 @@ bool handleQuickButtonRightClick() {
     auto rel = normalizedCenterOf(button);
     candidate.relX = rel.x;
     candidate.relY = rel.y;
+    return candidate;
+}
 
-    if (auto* popup = QuickButtonPopup::create(std::move(candidate))) popup->show();
+std::string screenLayerClassOf(CCNode* node) {
+    if (!node || !typeinfo_cast<CCLayer*>(node)) return {};
+    auto cls = classNameOf(node);
+    return isGenericLayerClass(cls) ? std::string() : cls;
+}
+
+std::string usableOwnerClassOf(CustomQuickButton const& def) {
+    return usableOwnerClass(def);
+}
+
+std::string buttonVisualSignature(CCMenuItem* item) {
+    if (!item) return {};
+    std::string frames;
+    if (auto* toggler = typeinfo_cast<CCMenuItemToggler*>(item)) {
+        // both states, so flipping the toggle doesn't change which skins match it.
+        for (auto* state : {toggler->m_offButton, toggler->m_onButton}) {
+            std::string part;
+            if (state) collectFrameNames(state->getNormalImage(), part);
+            frames += part;
+            frames.push_back('/');
+        }
+        if (frames == "//") frames.clear();
+    } else if (auto* spriteItem = typeinfo_cast<CCMenuItemSprite*>(item)) {
+        collectFrameNames(spriteItem->getNormalImage(), frames);
+    }
+    if (!frames.empty()) return frames;
+    // text buttons (buttonsprite) draw a nine-slice with no frame name: the caption is their look.
+    auto label = findLabelText(item);
+    return label.empty() ? std::string() : "label:" + label;
+}
+
+CCMenuItem* locateButtonIn(CCScene* root, CustomQuickButton const& def,
+                           std::vector<CCMenuItem*> const& candidates, bool allowSweep) {
+    if (!root) return nullptr;
+    auto wanted = usableOwnerClass(def);
+
+    // hidden or disabled buttons still count here: their look must survive until they show up.
+    if (!def.idPath.empty() && !def.idPath.back().empty()) {
+        if (auto* item = resolveIdPath(root, def.idPath, 0, false)) {
+            if (wanted.empty() || ownerLayerClass(item) == wanted) return item;
+        }
+    }
+    if (!allowSweep) return nullptr;
+
+    if (hasAnyIdentity(def)) {
+        CCMenuItem* best = nullptr;
+        Score bestScore;
+        for (auto* item : candidates) {
+            if (!item) continue;
+            auto score = evaluateCandidate(item, def);
+            if (!best || score.total > bestScore.total) {
+                best = item;
+                bestScore = score;
+            }
+        }
+        if (best && bestScore.accepted()) return best;
+        return nullptr;
+    }
+
+    if (auto* item = typeinfo_cast<CCMenuItem*>(resolvePath(root, def.nodePath))) return item;
+    return nullptr;
+}
+
+bool handleQuickButtonRightClick() {
+    if (QuickButtonPopup::isOpen() || paimon::buttonskin::isButtonSkinUiOpen()) return true;
+    auto* director = CCDirector::get();
+    auto* scene = director ? director->getRunningScene() : nullptr;
+    if (!scene) return false;
+
+    auto* button = findButtonAt(scene, geode::cocos::getMousePos());
+    if (!button) return false;
+
+    paimon::buttonskin::openButtonActions(button, scene);
     return true;
+}
+
+void openQuickHubButtonPopup(CustomQuickButton candidate) {
+    if (QuickButtonPopup::isOpen()) return;
+    if (candidate.id.empty()) {
+        candidate.id = QuickHubManager::get().makeUniqueCustomId(candidate.name);
+    }
+    if (auto* popup = QuickButtonPopup::create(std::move(candidate))) popup->show();
 }
 
 bool isCustomQuickButtonReachable(std::string const& id) {
@@ -616,7 +734,7 @@ bool activateCustomQuickButton(std::string const& id) {
         ? fmt::format("\"{}\" no esta en esta pantalla.", definition->name)
         : fmt::format("\"{}\" vive en {}. Abre esa pantalla.", definition->name,
                       friendlyScreenName(definition->sceneClass));
-    PaimonNotify::create(message.c_str(), NotificationIcon::Warning)->show();
+    PaimonNotify::show(message.c_str(), NotificationIcon::Warning);
     return true;
 }
 

@@ -33,15 +33,7 @@ constexpr std::array<CursorState, CURSOR_STATE_COUNT> kStates = {
 } // namespace
 
 char const* CursorShopDetailPopup::stateName(CursorState state) {
-    switch (state) {
-        case CursorState::Move:     return "Mover";
-        case CursorState::Hover:    return "Boton";
-        case CursorState::Click:    return "Click";
-        case CursorState::Text:     return "Texto";
-        case CursorState::Disabled: return "Bloqueado";
-        case CursorState::Idle:
-        default:                    return "Normal";
-    }
+    return cursorStateName(state);
 }
 
 ccColor3B CursorShopDetailPopup::stateColor(CursorState state) {
@@ -109,8 +101,9 @@ void CursorShopDetailPopup::onExit() {
     Popup::onExit();
 }
 
-void CursorShopDetailPopup::scrollWheel(float x, float y) {
-    kit::queueWheelScroll(m_grid, x, y, m_gridScrollTargetY, m_gridScrollTargetSet, 6.f);
+bool CursorShopDetailPopup::scrollWheel(float x, float y) {
+    return kit::queueWheelScroll(m_grid, x, y, m_gridScrollTargetY, m_gridScrollTargetSet);
+
 }
 
 void CursorShopDetailPopup::updateSmoothScroll(float dt) {
@@ -168,6 +161,7 @@ void CursorShopDetailPopup::buildBody() {
     m_mainLayer->addChild(gridInset, 3);
 
     m_grid = ScrollLayer::create({gridW, gridTop - gridBottom});
+    if (m_grid) m_grid->setAnchorPoint({0.f, 0.f});
     m_grid->setPosition({12.f, gridBottom});
     m_mainLayer->addChild(m_grid, 4);
 

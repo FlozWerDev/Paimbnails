@@ -9,7 +9,7 @@
 using namespace geode::prelude;
 using namespace paimon::icon_gradients;
 
-bool GradientPlayerObject::shouldReturn(GJBaseGameLayer* gameLayer, bool secondPlayer) {
+bool GradientPlayerObject::shouldReturn(GJBaseGameLayer* gameLayer, bool) {
     if (!gameLayer) return !Mod::get()->getSavedValue<bool>("editor-gradient");
     return !gameLayer->m_player1 || !gameLayer->m_player2;
 }

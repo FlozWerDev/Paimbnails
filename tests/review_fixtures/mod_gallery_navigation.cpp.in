@@ -1,0 +1,39 @@
+#include "tests/review_fixtures/ReviewQueue.hpp"
+#include "tests/review_fixtures/EngineLifetime.hpp"
+struct Response { bool isErr()const{return false;} };
+// This fixture needs Result<>::isErr, supplied by ReviewQueue's result double.
+struct LazySprite {
+    bool loading=false,hasLoaded=false,visible=false,attached=true;
+    int requests=0;
+    std::function<void(Result<void>)> callback;
+    static std::vector<std::unique_ptr<LazySprite>> pool;
+    static LazySprite* create(std::pair<float,float>){pool.push_back(std::make_unique<LazySprite>());return pool.back().get();}
+    bool isLoading(){return loading;}
+    void cancelLoad(){loading=false;}
+    void removeFromParent(){attached=false;}
+    void setVisible(bool v){visible=v;}
+    void setLoadCallback(std::function<void(Result<void>)> cb){callback=std::move(cb);}
+    void loadFromUrl(std::string const&){if(loading||hasLoaded)return;loading=true;++requests;}
+    void complete(){loading=false;hasLoaded=true;if(callback)callback(Ok());}
+    float getContentWidth(){return 120;}float getContentHeight(){return 60;}void setScale(float){}
+};
+std::vector<std::unique_ptr<LazySprite>> LazySprite::pool;
+namespace Anchor{constexpr int Center=0;}
+struct MainLayer{void addChildAtPosition(LazySprite*,int,std::pair<float,float>){};};
+constexpr float kPhotoW=360,kPhotoH=200;
+struct ModPreviewGalleryPopup:TestLifetime {
+ int m_index=1,m_total=3,m_gen=0;std::string m_base="preview-";
+ LazySprite* m_sprite=nullptr;MainLayer layer;MainLayer* m_mainLayer=&layer;
+ void openIndex(int);void refreshChrome(){}
+};
+@@function|src/features/mod-previews/ui/ModPreviewGalleryPopup.cpp|void ModPreviewGalleryPopup::openIndex@@
+int main(){
+ auto popup=std::make_unique<ModPreviewGalleryPopup>();
+ popup->openIndex(1);auto* first=popup->m_sprite;first->complete();assert(first->visible);
+ popup->openIndex(2);auto* second=popup->m_sprite;assert(first!=second&&!first->attached);
+ second->complete();assert(second->visible&&second->requests==1);
+ popup->openIndex(1);auto* pending=popup->m_sprite;
+ popup->openIndex(3);auto* current=popup->m_sprite;
+ pending->complete();assert(!current->visible);current->complete();assert(current->visible);
+ popup->openIndex(2);auto* afterClose=popup->m_sprite;popup.reset();afterClose->complete();
+}

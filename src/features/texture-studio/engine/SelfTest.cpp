@@ -116,13 +116,13 @@ bool engineSelfTest() {
     }
 
     auto classified = ClusterClassifier::classify(clusters, sprite);
-    int outlineCount = 0, c1Count = 0, c2Count = 0, glowCount = 0;
+    int outlineCount = 0, c1Count = 0, c2Count = 0;
     for (auto const& c : classified.clusters) {
         switch (c.role) {
             case ClusterRole::Outline: ++outlineCount; break;
             case ClusterRole::Color1:  ++c1Count;      break;
             case ClusterRole::Color2:  ++c2Count;      break;
-            case ClusterRole::Glow:    ++glowCount;    break;
+            case ClusterRole::Glow:    break;
             default: break;
         }
         log::info("[texture-studio] selfTest: cluster RGB=({},{},{}) HSV=({:.0f},{:.2f},{:.2f}) "

@@ -3,6 +3,7 @@
 
 #include "ColorSelectLayer.hpp"
 #include "GradientLayer.hpp"
+#include "../GradientUtils.hpp"
 
 using namespace geode::prelude;
 using namespace paimon::icon_gradients;
@@ -63,9 +64,8 @@ void ColorSelectLayer::onColor(CCObject* sender) {
 }
 
 void ColorSelectLayer::createButton(int color, const CCPoint& pos) {
-    CCSprite* spr = CCSprite::createWithSpriteFrameName("GJ_colorBtn_001.png");
+    CCSprite* spr = makeColorSwatch(0.65f);
     spr->setColor(GameManager::get()->colorForIdx(color));
-    spr->setScale(0.65f);
 
     auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ColorSelectLayer::onColor));
     btn->setPosition(pos + ccp(10, -23));

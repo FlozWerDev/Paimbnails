@@ -1,6 +1,7 @@
 #include "RequestRouting.hpp"
 
 #include "TwitchRequestParser.hpp"
+#include "../../utils/Utf8Cut.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -20,11 +21,7 @@ std::string normalizeQueueName(std::string_view value) {
         space = false;
         name += static_cast<char>(ch);
     }
-    if (name.size() > 48) {
-        size_t cut = 48;
-        while (cut > 0 && (static_cast<unsigned char>(name[cut]) & 0xC0) == 0x80) --cut;
-        name.resize(cut);
-    }
+    paimon::utf8::clampToLimit(name, 48);
     while (!name.empty() && name.back() == ' ') name.pop_back();
     return name.empty() ? "General" : name;
 }

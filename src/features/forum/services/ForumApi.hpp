@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <Geode/Geode.hpp>
 #include <string>
 #include <vector>
@@ -139,6 +139,8 @@ namespace paimon::forum {
         void loadCache();
         void saveCache();
         bool hasServer() const;
+        bool lastListWasOffline() const { return m_lastListOffline; }
+        std::vector<Post> const& cachedPosts() const { return m_cache; }
 
         int64_t getPostCooldownRemaining() const;
         int64_t getReplyCooldownRemaining() const;
@@ -149,6 +151,7 @@ namespace paimon::forum {
         ForumApi();
         std::vector<Post> m_cache;
         bool m_loaded = false;
+        bool m_lastListOffline = false;
 
         int64_t m_postCooldownUntil = 0;
         int64_t m_replyCooldownUntil = 0;

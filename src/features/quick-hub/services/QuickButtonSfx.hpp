@@ -27,6 +27,8 @@ void stopQuickButtonSfx();
 void beginQuickButtonSfxSuppress();
 bool consumeQuickButtonSfxSuppress();
 void clearQuickButtonSfxSuppress();
+// true while an outer activate already owns the click sound.
+bool isQuickButtonSfxSuppressArmed();
 
 // no custom sfx: same as item->activate().
 void activateItemWithQuickButtonSfx(cocos2d::CCMenuItem* item, CustomQuickButton const& def);

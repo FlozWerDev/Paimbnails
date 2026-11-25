@@ -5,6 +5,7 @@
 #include <Geode/Geode.hpp>
 
 #include <filesystem>
+#include "../../../utils/StagedDirectory.hpp"
 
 namespace paimon::icon_maker {
 
@@ -18,12 +19,13 @@ struct CompiledIcon {
     CompiledQuality uhd;
     CompiledQuality hd;
     CompiledQuality sd;
+    std::shared_ptr<paimon::file::StagedDirectory> staging;
 };
 
 class IconCompiler final {
 public:
-    // pure cpu work — safe to call off the main thread. writes into
-    // iconpaths::outputdir(project.id).
+    // CPU work and private staged files; safe off the main thread. The caller
+    // publishes only after validating the project revision on the main thread.
     static geode::Result<CompiledIcon> compile(IconProject const& project);
 
 private:

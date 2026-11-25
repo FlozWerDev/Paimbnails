@@ -1,19 +1,33 @@
 @echo off
 setlocal
-call "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat" >nul 2>&1
 
 set ROOT=%~dp0..\..
-set CLANG="C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\Llvm\x64\bin\clang++.exe"
-set RAPIDFUZZ=%ROOT%\build\_deps\rapidfuzz-src
+set "CLANG=clang-cl"
+where clang-cl >nul 2>&1
+if errorlevel 1 (
+  echo clang-cl not found on PATH
+  exit /b 1
+)
+set "RAPIDFUZZ="
+for %%B in (build build-clang) do (
+  for /d %%D in ("%ROOT%\%%B\cpm-cache\rapidfuzz\*") do (
+    if exist "%%~D\rapidfuzz\fuzz.hpp" set "RAPIDFUZZ=%%~D"
+  )
+)
+if not defined RAPIDFUZZ (
+  echo RapidFuzz headers not found under build\cpm-cache
+  exit /b 1
+)
 set STUBS=%~dp0stubs
+set "EXE=%TEMP%\paimon-guide-matcher.exe"
 
-%CLANG% -std=c++20 -O1 -Wall -Wextra -Wno-unused-parameter ^
-  -I"%RAPIDFUZZ%" -I"%STUBS%" ^
-  "%~dp0harness.cpp" -o "%~dp0harness.exe"
+"%CLANG%" /nologo /std:c++20 /EHsc /O1 /W4 /wd4100 ^
+  /I"%RAPIDFUZZ%" /I"%STUBS%" ^
+  "%~dp0harness.cpp" /Fe:"%EXE%"
 if errorlevel 1 (
   echo BUILD FAILED
   exit /b 1
 )
 
-"%~dp0harness.exe"
+"%EXE%"
 exit /b %ERRORLEVEL%

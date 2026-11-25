@@ -69,7 +69,7 @@ void reduceFrame(
             auto* pixel = target + (static_cast<std::size_t>(y) * width + x) * 4;
             pixel[3] = static_cast<std::uint8_t>(alpha / std::max(weight, 1u));
             // without alpha weighting, transparent edge black bleeds into color
-            // and the drawing grows a dark orla.
+            // and the drawing grows a dark fringe.
             for (int channel = 0; channel < 3; ++channel) {
                 pixel[channel] = alpha > 0
                     ? static_cast<std::uint8_t>(color[channel] / alpha)

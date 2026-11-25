@@ -79,7 +79,9 @@ std::uint64_t maskFingerprint(StampMask const& mask) {
     return hash;
 }
 
-StampMask analyticMask(PrimitiveKind kind) {
+// fill a kStampMaskSide mask by sampling alphaAt(u, v) (0..1) per texel.
+template <typename Fn>
+StampMask buildAnalyticMask(Fn&& alphaAt) {
     StampMask mask;
     mask.width = kStampMaskSide;
     mask.height = kStampMaskSide;
@@ -89,20 +91,26 @@ StampMask analyticMask(PrimitiveKind kind) {
         for (int x = 0; x < kStampMaskSide; ++x) {
             float const u = (x + 0.5f) / kStampMaskSide;
             float const v = (y + 0.5f) / kStampMaskSide;
-            bool inside = true;
-            if (kind == PrimitiveKind::Circle) {
-                float const dx = u - 0.5f;
-                float const dy = v - 0.5f;
-                inside = dx * dx + dy * dy <= 0.25f;
-            } else if (kind == PrimitiveKind::Triangle ||
-                       kind == PrimitiveKind::WideTriangle) {
-                inside = u + v <= 1.f;
-            }
             mask.coverage[static_cast<std::size_t>(y) * kStampMaskSide + x] =
-                inside ? 255 : 0;
+                static_cast<std::uint8_t>(std::lround(alphaAt(u, v) * 255.f));
         }
     }
     return mask;
+}
+
+StampMask analyticMask(PrimitiveKind kind) {
+    return buildAnalyticMask([kind](float u, float v) {
+        bool inside = true;
+        if (kind == PrimitiveKind::Circle) {
+            float const dx = u - 0.5f;
+            float const dy = v - 0.5f;
+            inside = dx * dx + dy * dy <= 0.25f;
+        } else if (kind == PrimitiveKind::Triangle ||
+                   kind == PrimitiveKind::WideTriangle) {
+            inside = u + v <= 1.f;
+        }
+        return inside ? 1.f : 0.f;
+    });
 }
 
 std::vector<StampVariant> buildVariants(std::vector<CatalogEntry> const& entries) {
@@ -172,61 +180,40 @@ std::vector<CatalogEntry> builtinStampCatalog() {
     return entries;
 }
 
-StampMask analyticRadialGlowMask() {
-    StampMask mask;
-    mask.width = kStampMaskSide;
-    mask.height = kStampMaskSide;
-    mask.coverage.assign(
-        static_cast<std::size_t>(kStampMaskSide) * kStampMaskSide, 0);
-    float const falloff = 1.f - std::exp(-4.f);
-    for (int y = 0; y < kStampMaskSide; ++y) {
-        for (int x = 0; x < kStampMaskSide; ++x) {
-            float const u = (x + 0.5f) / kStampMaskSide;
-            float const v = (y + 0.5f) / kStampMaskSide;
+float analyticAlpha(AnalyticAlphaKind kind, float u, float v) {
+    switch (kind) {
+        case AnalyticAlphaKind::RadialGlow: {
+            float const falloff = 1.f - std::exp(-4.f);
             float const radius2 = 4.f * ((u - 0.5f) * (u - 0.5f) +
                 (v - 0.5f) * (v - 0.5f));
-            float const alpha = std::max(0.f,
+            return std::max(0.f,
                 (std::exp(-4.f * radius2) - std::exp(-4.f)) / falloff);
-            mask.coverage[static_cast<std::size_t>(y) * kStampMaskSide + x] =
-                static_cast<std::uint8_t>(std::lround(alpha * 255.f));
         }
+        case AnalyticAlphaKind::VerticalGradient:
+            return 1.f - v;
+        case AnalyticAlphaKind::QuarterGlow:
+            return std::pow(std::max(0.f, 1.f -
+                std::sqrt((1.f - u) * (1.f - u) + (1.f - v) * (1.f - v))), 1.3f);
     }
-    return mask;
+    return 0.f;
+}
+
+StampMask analyticRadialGlowMask() {
+    return buildAnalyticMask([](float u, float v) {
+        return analyticAlpha(AnalyticAlphaKind::RadialGlow, u, v);
+    });
 }
 
 StampMask analyticVerticalGradientMask() {
-    StampMask mask;
-    mask.width = kStampMaskSide;
-    mask.height = kStampMaskSide;
-    mask.coverage.assign(
-        static_cast<std::size_t>(kStampMaskSide) * kStampMaskSide, 0);
-    for (int y = 0; y < kStampMaskSide; ++y) {
-        for (int x = 0; x < kStampMaskSide; ++x) {
-            float const v = (y + 0.5f) / kStampMaskSide;
-            mask.coverage[static_cast<std::size_t>(y) * kStampMaskSide + x] =
-                static_cast<std::uint8_t>(std::lround((1.f - v) * 255.f));
-        }
-    }
-    return mask;
+    return buildAnalyticMask([](float u, float v) {
+        return analyticAlpha(AnalyticAlphaKind::VerticalGradient, u, v);
+    });
 }
 
 StampMask analyticQuarterGlowMask() {
-    StampMask mask;
-    mask.width = kStampMaskSide;
-    mask.height = kStampMaskSide;
-    mask.coverage.assign(
-        static_cast<std::size_t>(kStampMaskSide) * kStampMaskSide, 0);
-    for (int y = 0; y < kStampMaskSide; ++y) {
-        for (int x = 0; x < kStampMaskSide; ++x) {
-            float const u = (x + 0.5f) / kStampMaskSide;
-            float const v = (y + 0.5f) / kStampMaskSide;
-            float const alpha = std::pow(std::max(0.f, 1.f -
-                std::sqrt((1.f - u) * (1.f - u) + (1.f - v) * (1.f - v))), 1.3f);
-            mask.coverage[static_cast<std::size_t>(y) * kStampMaskSide + x] =
-                static_cast<std::uint8_t>(std::lround(alpha * 255.f));
-        }
-    }
-    return mask;
+    return buildAnalyticMask([](float u, float v) {
+        return analyticAlpha(AnalyticAlphaKind::QuarterGlow, u, v);
+    });
 }
 
 void setStampCatalog(std::vector<CatalogEntry> entries) {

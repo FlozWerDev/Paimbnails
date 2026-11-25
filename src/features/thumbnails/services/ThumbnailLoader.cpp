@@ -1,5 +1,7 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "ThumbnailLoader.hpp"
 #include "ThumbnailTransportClient.hpp"
+#include "CacheImagePolicy.hpp"
 #include "LocalThumbs.hpp"
 #include "LevelColors.hpp"
 #include "../../level-thumbs/services/LevelThumbsClient.hpp"
@@ -11,6 +13,7 @@
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/DominantColors.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
+#include "../../../utils/ImageConverter.hpp"
 #include "../../../utils/VideoThumbnailSprite.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/Debug.hpp"
@@ -18,6 +21,7 @@
 #include "../../../utils/MainThreadDelay.hpp"
 #include "../../../utils/FrameBudget.hpp"
 #include "../../../utils/UrlKeyNormalize.hpp"
+#include "../../../utils/AtomicFileWrite.hpp"
 #include "../../../utils/stb_image.h"
 #include <Geode/loader/Log.hpp>
 #include <Geode/loader/Mod.hpp>
@@ -59,13 +63,21 @@ bool readCacheFile(std::filesystem::path const& path, std::vector<uint8_t>& out)
 
 }
 
-std::string ThumbnailLoader::normalizeUrlKey(std::string const& url) {
-    return paimon::cache::normalizeUrlKey(url);
+namespace {
+std::atomic<bool> s_thumbnailLoaderInitialized{false};
+} // namespace
+
+bool ThumbnailLoader::isInitialized() {
+    return s_thumbnailLoaderInitialized.load(std::memory_order_acquire);
 }
 
 ThumbnailLoader& ThumbnailLoader::get() {
     // leaked: late worker callbacks must not race teardown.
-    static auto* instance = new ThumbnailLoader();
+    static auto* instance = []() {
+        auto* loader = new ThumbnailLoader();
+        s_thumbnailLoaderInitialized.store(true, std::memory_order_release);
+        return loader;
+    }();
     return *instance;
 }
 
@@ -95,7 +107,7 @@ ThumbnailLoader::~ThumbnailLoader() {
         return;
     }
     m_shuttingDown = true;
-    waitBackgroundWorkers();
+    waitBackgroundWorkers(std::chrono::steady_clock::now() + std::chrono::milliseconds(1500));
 
     if (paimon::cache::ThumbnailCache::isAlive()) {
         paimon::cache::ThumbnailCache::get().takeAllTextures();
@@ -139,10 +151,14 @@ void ThumbnailLoader::logShutdownSnapshot(char const* reason) {
 
 void ThumbnailLoader::initDiskCache() {
     spawnDisk([this]() {
+        if (m_shuttingDown.load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+            PaimonDebug::log("[ThumbnailLoader] shutdown durante init cache, abortando");
+            return;
+        }
         paimon::quality::migrateLegacyCache();
 
         auto path = paimon::quality::cacheDir();
-        PaimonDebug::log("[ThumbnailLoader] iniciando cache de disco en: {}", geode::utils::string::pathToString(path));
+        PaimonDebug::log("[ThumbnailLoader] iniciando cache de disco en: {}", paimon::paths::toUtf8(path));
         
         std::error_code ec;
         if (!std::filesystem::exists(path, ec)) {
@@ -150,13 +166,21 @@ void ThumbnailLoader::initDiskCache() {
             PaimonDebug::log("[ThumbnailLoader] carpeta de cache creada");
         }
 
-        if (m_shuttingDown.load(std::memory_order_acquire)) {
+        if (m_shuttingDown.load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
             PaimonDebug::log("[ThumbnailLoader] shutdown durante init cache, abortando");
             return;
         }
 
         auto& cache = paimon::cache::ThumbnailCache::get();
         cache.loadDiskIndex();
+        if (m_shuttingDown.load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) {
+            PaimonDebug::log("[ThumbnailLoader] shutdown durante init cache, abortando");
+            return;
+        }
+        // reclaim quota/age overflow from previous sessions with the same
+        // lru order the download path uses.
+        cache.evictDiskIfNeeded(paimon::settings::quality::diskCacheBytes(),
+            std::chrono::hours(24 * 30));
 
         PaimonDebug::log("[ThumbnailLoader] cache de disco lista. entradas: {}",
             cache.diskEntryCount());
@@ -255,7 +279,6 @@ void ThumbnailLoader::drainPendingCallbacks() {
     }
 
     constexpr int64_t CALLBACK_FRAME_BUDGET_US = 2000;
-    constexpr int64_t FRAME_TARGET_US = 16666;
     
     int64_t effectiveBudgetUs = isFrameLag ? 1500 : CALLBACK_FRAME_BUDGET_US;
     effectiveBudgetUs = std::min<int64_t>(effectiveBudgetUs,
@@ -330,6 +353,7 @@ void ThumbnailLoader::drainPendingCallbacks() {
                                                        std::memory_order_relaxed)) {
             auto& cache = paimon::cache::ThumbnailCache::get();
             cache.purgeUnusedTextures();
+            cache.evictRamIfNeeded();
             cache.purgeExpiredFailed();
         }
     }
@@ -357,7 +381,14 @@ void ThumbnailLoader::scheduleUploadDrain() {
 
 void ThumbnailLoader::drainPendingUploads() {
     m_uploadDrainScheduled.store(false, std::memory_order_release);
-    if (m_shuttingDown.load(std::memory_order_acquire)) return;
+    if (m_shuttingDown.load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
+
+    auto const remainingBudgetUs = paimon::framebudget::remainingUs(paimon::framebudget::Stage::Upload);
+    if (remainingBudgetUs <= 0) {
+        std::lock_guard<std::mutex> lock(m_uploadMutex);
+        if (!m_pendingUploads.empty()) scheduleUploadDrain();
+        return;
+    }
 
     std::vector<PendingUpload> batch;
     {
@@ -391,11 +422,10 @@ void ThumbnailLoader::drainPendingUploads() {
 
     auto frameStart = std::chrono::steady_clock::now();
     int uploaded = 0;
+    bool attemptedUpload = false;
     std::vector<PendingUpload> deferred;
 
-    int64_t uploadBudgetUs = std::min<int64_t>(UPLOAD_FRAME_BUDGET_US,
-        std::max<int64_t>(1, paimon::framebudget::remainingUs(
-            paimon::framebudget::Stage::Upload)));
+    int64_t const uploadBudgetUs = std::min<int64_t>(UPLOAD_FRAME_BUDGET_US, remainingBudgetUs);
 
     for (auto& pu : batch) {
         if (!pu.task || pu.task->cancelled) {
@@ -415,8 +445,9 @@ void ThumbnailLoader::drainPendingUploads() {
             continue;
         }
 
-        bool isVisibleCell = pu.task && pu.task->priority >= PriorityVisibleCell;
-        if (uploaded > 0 && !isVisibleCell) {
+        // queue ordering gives visible cells priority; every upload shares
+        // the time limit, even where a single upload is expensive.
+        if (attemptedUpload) {
             auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - frameStart).count();
             if (elapsed >= uploadBudgetUs) {
@@ -425,6 +456,7 @@ void ThumbnailLoader::drainPendingUploads() {
             }
         }
 
+        attemptedUpload = true;
         auto tex = new CCTexture2D();
         bool ok = false;
 
@@ -833,8 +865,8 @@ void ThumbnailLoader::startTask(std::shared_ptr<Task> task) {
 void ThumbnailLoader::workerLoadFromDisk(std::shared_ptr<Task> task) {
     PaimonDebug::log("[ThumbnailLoader] workerLoadFromDisk: key={} cancelled={}", task->levelID, task->cancelled);
 
-    // cancelled cells skip disk i/o.
-    if (task->cancelled && paimon::settings::general::enableDiskCache()) {
+    // cancelled cells skip both disk i/o and network.
+    if (task->cancelled) {
         if (!m_shuttingDown.load(std::memory_order_acquire) && !paimon::isRuntimeShuttingDown()) {
             Loader::get()->queueInMainThread([this, task]() {
                 finishTask(task, nullptr, false);
@@ -969,7 +1001,7 @@ void ThumbnailLoader::workerLoadFromDisk(std::shared_ptr<Task> task) {
     {
         bool actualIsGif = (!diskPath.empty() &&
             geode::utils::string::toLower(
-                geode::utils::string::pathToString(diskPath.extension())) == ".gif");
+                paimon::paths::toUtf8(diskPath.extension())) == ".gif");
         if (!wasInManifest) {
             paimon::cache::ThumbnailCache::DiskEntry de;
             de.levelID = realID;
@@ -999,8 +1031,11 @@ void ThumbnailLoader::workerLoadFromDisk(std::shared_ptr<Task> task) {
         return;
     }
 
-    spawnCpu([this, task, data = std::move(data), realID, isGif, diskPath]() {
-        auto decoded = decodeImageData(data, realID, decodeMaxDimForQuality(task->quality));
+    auto cacheData = std::make_shared<std::vector<uint8_t>>(std::move(data));
+    maybeCompactDiskImage(diskPath, realID, isGif, cacheData);
+
+    spawnCpu([this, task, data = std::move(cacheData), realID, isGif, diskPath]() {
+        auto decoded = decodeImageData(*data, realID, decodeMaxDimForQuality(task->quality));
 
         if (decoded.success && (decoded.image || !decoded.pixels.empty())) {
             if (decoded.isGif) {
@@ -1032,7 +1067,8 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
     bool isGif = task->levelID < 0;
     PaimonDebug::log("[ThumbnailLoader] workerDownload: levelID={} isGif={} cancelled={}", realID, isGif, task->cancelled);
 
-    // server already said nothing this session: re-batching only parks the fallback image another round trip.
+    // server already said nothing this session: re-batching would only park
+    // the fallback image another round trip.
     if (!task->externalFallback && HttpClient::get().isThumbnailNotFound(realID)
         && paimon::levelthumbs::shouldFallback(task->levelID)) {
         task->wasNotFound = true;
@@ -1075,8 +1111,10 @@ void ThumbnailLoader::processDownloadedData(std::shared_ptr<Task> task, std::vec
     auto self = this;
 
     spawnDisk([self, task, data = std::move(data), realID, taskCancelled]() {
-        bool dataIsGif = paimon::format::isGif(data.data(), data.size());
-        // level thumbnails owns its cache: writing it into ours would shadow a later real upload.
+        auto cacheData = std::make_shared<std::vector<uint8_t>>(std::move(data));
+        bool dataIsGif = paimon::format::isGif(cacheData->data(), cacheData->size());
+        // level thumbnails owns its cache: writing it into ours would shadow
+        // a later real upload.
         bool diskCacheEnabled = paimon::settings::general::enableDiskCache() && !task->externalFallback;
 
         if (diskCacheEnabled) {
@@ -1085,51 +1123,32 @@ void ThumbnailLoader::processDownloadedData(std::shared_ptr<Task> task, std::vec
             std::filesystem::create_directories(path.parent_path(), dirEc);
             if (dirEc) {
                 log::error("[ThumbnailLoader] create_directories fallo para {}: {}",
-                    geode::utils::string::pathToString(path.parent_path()), dirEc.message());
+                    paimon::paths::toUtf8(path.parent_path()), dirEc.message());
             }
 
-            // tmp + rename: crashes can't leave partial cache files.
-            auto tmpPath = path;
-            tmpPath += ".tmp";
-            bool writeOk = false;
-            {
-                std::ofstream file(tmpPath, std::ios::binary | std::ios::trunc);
-                if (file) {
-                    file.write(reinterpret_cast<char const*>(data.data()), data.size());
-                    writeOk = file.good();
-                }
-            }
-            if (writeOk) {
-                std::error_code renameEc;
-                std::filesystem::remove(path, renameEc);
-                renameEc.clear();
-                std::filesystem::rename(tmpPath, path, renameEc);
-                if (renameEc) {
-                    log::error("[ThumbnailLoader] rename fallo {}: {}",
-                        geode::utils::string::pathToString(tmpPath), renameEc.message());
-                    std::filesystem::remove(tmpPath, renameEc);
-                } else {
-                    PaimonDebug::log("[ThumbnailLoader] guardado en disco: {} ({} bytes)",
-                        geode::utils::string::pathToString(path), data.size());
+            if (paimon::file::writeAtomically(path, std::span<uint8_t const>(cacheData->data(), cacheData->size()))) {
+                PaimonDebug::log("[ThumbnailLoader] guardado en disco: {} ({} bytes)",
+                    paimon::paths::toUtf8(path), cacheData->size());
 
-                    auto& cache = paimon::cache::ThumbnailCache::get();
-                    paimon::cache::ThumbnailCache::DiskEntry de;
-                    de.levelID = realID;
-                    de.format = dataIsGif ? "gif" : "png";
-                    de.byteSize = data.size();
-                    de.isGif = dataIsGif;
-                    if (auto remote = HttpClient::get().getManifestEntry(realID)) {
-                        de.revisionToken = remote->revisionToken;
-                    }
-                    de.touchAccess();
-                    de.touchValidated();
-                    cache.upsertDisk(std::move(de));
+                auto& cache = paimon::cache::ThumbnailCache::get();
+                paimon::cache::ThumbnailCache::DiskEntry de;
+                de.levelID = realID;
+                de.format = dataIsGif ? "gif"
+                    : (paimon::format::isJpeg(cacheData->data(), cacheData->size()) ? "jpg"
+                    : (paimon::format::isWebp(cacheData->data(), cacheData->size()) ? "webp" : "png"));
+                de.byteSize = cacheData->size();
+                de.isGif = dataIsGif;
+                if (auto remote = HttpClient::get().getManifestEntry(realID)) {
+                    de.revisionToken = remote->revisionToken;
                 }
+                de.touchAccess();
+                de.touchValidated();
+                cache.upsertDisk(std::move(de));
+
+                self->maybeCompactDiskImage(path, realID, dataIsGif, cacheData);
             } else {
-                log::error("[ThumbnailLoader] no se pudo escribir archivo temporal: {}",
-                    geode::utils::string::pathToString(tmpPath));
-                std::error_code rmEc;
-                std::filesystem::remove(tmpPath, rmEc);
+                log::error("[ThumbnailLoader] no se pudo guardar la miniatura: {}",
+                    paimon::paths::toUtf8(path));
             }
 
             {
@@ -1170,8 +1189,8 @@ void ThumbnailLoader::processDownloadedData(std::shared_ptr<Task> task, std::vec
             return;
         }
 
-        self->spawnCpu([self, task, data = std::move(data), realID]() {
-            auto decoded = self->decodeImageData(data, realID, self->decodeMaxDimForQuality(task->quality));
+        self->spawnCpu([self, task, data = std::move(cacheData), realID]() {
+            auto decoded = self->decodeImageData(*data, realID, self->decodeMaxDimForQuality(task->quality));
 
             if (decoded.success && (decoded.image || !decoded.pixels.empty())) {
                 if (decoded.isGif) {
@@ -1182,8 +1201,10 @@ void ThumbnailLoader::processDownloadedData(std::shared_ptr<Task> task, std::vec
                     auto existingEntry = cache.getDiskEntry(realID, decoded.isGif);
                     if (existingEntry.has_value()) {
                         auto updated = existingEntry.value();
-                        updated.width = decoded.width;
-                        updated.height = decoded.height;
+                        // manifest describes the file on disk, not the
+                        // downsampled texture handed to the UI.
+                        updated.width = decoded.originalWidth;
+                        updated.height = decoded.originalHeight;
                         cache.upsertDisk(std::move(updated));
                     }
                 }
@@ -1203,6 +1224,95 @@ void ThumbnailLoader::processDownloadedData(std::shared_ptr<Task> task, std::vec
                 }
             }
         });
+    });
+}
+
+void ThumbnailLoader::maybeCompactDiskImage(std::filesystem::path const& path, int realID, bool isGif,
+                                            std::shared_ptr<std::vector<uint8_t>> data) {
+    if (isGif || !data || data->empty()) return;
+    if (m_shuttingDown.load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
+
+    int w = 0, h = 0, channels = 0;
+    if (!stbi_info_from_memory(data->data(), static_cast<int>(data->size()), &w, &h, &channels)) return;
+    bool const alreadyJpeg = paimon::format::isJpeg(data->data(), data->size());
+    if (!paimon::cache::shouldCompactDiskImage(w, h, DISK_CACHE_MAX_DIM,
+            data->size(), isGif, alreadyJpeg)) return;
+
+    // remember which file produced this data: a cache eviction or fresh
+    // download can replace the path while the compaction job is queued, and
+    // the old bytes must not overwrite the new thumbnail.
+    std::error_code statEc;
+    auto const expectedSize = std::filesystem::file_size(path, statEc);
+    if (statEc) return;
+    auto const expectedMtime = std::filesystem::last_write_time(path, statEc);
+    if (statEc) return;
+
+    // one compaction at a time and at most one every few seconds: a burst of
+    // oversized cache files must not become a new write spike.
+    static std::atomic<int64_t> s_lastCompactUs{0};
+    auto const nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    auto last = s_lastCompactUs.load(std::memory_order_relaxed);
+    if (nowUs - last < 5'000'000) return;
+    if (!s_lastCompactUs.compare_exchange_strong(last, nowUs, std::memory_order_acq_rel)) return;
+
+    spawnDisk([this, path, realID, isGif, data, w, h, expectedSize, expectedMtime]() {
+        if (m_shuttingDown.load(std::memory_order_acquire) || paimon::isRuntimeShuttingDown()) return;
+
+        auto unchanged = [&path, expectedSize, expectedMtime]() {
+            std::error_code ec;
+            auto const size = std::filesystem::file_size(path, ec);
+            if (ec) return false;
+            auto const mtime = std::filesystem::last_write_time(path, ec);
+            if (ec) return false;
+            return size == expectedSize && mtime == expectedMtime;
+        };
+        if (!unchanged()) return;
+
+        auto decoded = decodeImageData(*data, realID, DISK_CACHE_MAX_DIM);
+        if (!decoded.success || decoded.pixels.empty() || decoded.width <= 0 || decoded.height <= 0) return;
+
+        // opaque thumbnails store far smaller as jpeg at the same size;
+        // anything with real alpha keeps the lossless png path. the file name
+        // and decode path stay unchanged: readers sniff the bytes.
+        std::vector<uint8_t> encoded;
+        char const* outFormat = "png";
+        auto const pixelCount = static_cast<size_t>(decoded.width) * static_cast<size_t>(decoded.height);
+        if (paimon::cache::isFullyOpaqueRgba(decoded.pixels.data(), pixelCount)
+            && ImageConverter::rgbaToJpegBuffer(decoded.pixels.data(),
+                static_cast<uint32_t>(decoded.width), static_cast<uint32_t>(decoded.height),
+                encoded, paimon::cache::kCompactJpegQuality)
+            && paimon::cache::transcodeSavesEnough(data->size(), encoded.size())) {
+            outFormat = "jpg";
+        } else {
+            encoded.clear();
+            if (!ImageConverter::rgbaToPngBuffer(decoded.pixels.data(),
+                    static_cast<uint32_t>(decoded.width), static_cast<uint32_t>(decoded.height), encoded)) {
+                return;
+            }
+            if (encoded.empty() || encoded.size() >= data->size()) return;
+        }
+        // encoding can take long enough for another writer to replace the
+        // file; re-check right before the atomic rename.
+        if (!unchanged()) return;
+        if (!paimon::file::writeAtomically(path, std::span<uint8_t const>(encoded.data(), encoded.size()))) {
+            return;
+        }
+
+        auto& cache = paimon::cache::ThumbnailCache::get();
+        if (auto entry = cache.getDiskEntry(realID, isGif)) {
+            auto updated = *entry;
+            updated.format = outFormat;
+            updated.width = decoded.width;
+            updated.height = decoded.height;
+            updated.byteSize = encoded.size();
+            cache.upsertDisk(std::move(updated));
+        }
+
+        log::info("[ThumbnailLoader] cache compactada {}: {}x{} {} KB -> {}x{} {} KB ({})",
+            paimon::paths::toUtf8(path.filename()),
+            w, h, data->size() / 1024,
+            decoded.width, decoded.height, encoded.size() / 1024, outFormat);
     });
 }
 
@@ -1232,7 +1342,8 @@ bool ThumbnailLoader::finishLevelTaskLocked(std::shared_ptr<Task> const& task, c
     auto& cache = paimon::cache::ThumbnailCache::get();
     bool startFallback = false;
     int rid = std::abs(task->levelID);
-    // fallback reuses the task post-slot-release: second pass must not free the slot twice.
+    // fallback reuses the task post-slot-release: second pass must not free
+    // the slot twice.
     bool const fallbackPass = task->externalFallback;
 
     if (!shuttingDown && success && texture) {
@@ -1420,7 +1531,7 @@ void ThumbnailLoader::invalidateLevel(int levelID, bool isGif) {
     }
 
     {
-        auto gifPathStr = geode::utils::string::pathToString(getCachePath(levelID, true));
+        auto gifPathStr = paimon::paths::toUtf8(getCachePath(levelID, true));
         AnimatedGIFSprite::remove(gifPathStr);
     }
 
@@ -1435,7 +1546,7 @@ void ThumbnailLoader::invalidateLevel(int levelID, bool isGif) {
             if (std::filesystem::exists(gifPath, ec)) {
                 std::filesystem::remove(gifPath, ec);
             }
-            auto gifPathStr = geode::utils::string::pathToString(gifPath);
+            auto gifPathStr = paimon::paths::toUtf8(gifPath);
             auto gifDiskCachePath = AnimatedGIFSprite::getCachePath(gifPathStr);
             std::filesystem::remove(gifDiskCachePath, ec);
 
@@ -1495,16 +1606,26 @@ void ThumbnailLoader::updateSessionCache(int levelID, cocos2d::CCTexture2D* text
     paimon::cache::ThumbnailCache::get().addToRam(realID, isGif, texture);
 }
 
+void ThumbnailLoader::requestShutdown() {
+    m_shuttingDown.store(true, std::memory_order_release);
+    if (m_diskPool) m_diskPool->requestStop();
+    if (m_cpuPool) m_cpuPool->requestStop();
+}
+
 void ThumbnailLoader::cleanup() {
+    cleanupUntil(std::chrono::steady_clock::now() + std::chrono::milliseconds(1500));
+}
+
+void ThumbnailLoader::cleanupUntil(std::chrono::steady_clock::time_point deadline) {
     if (!beginCleanup("cleanup")) {
         return;
     }
     logShutdownSnapshot("cleanup begin");
 
     log::info("[ThumbnailLoader] cleanup: shutting down loader");
-    m_shuttingDown.store(true, std::memory_order_release);
+    requestShutdown();
     clearPendingQueue();
-    waitBackgroundWorkers();
+    waitBackgroundWorkers(deadline);
 
     {
         std::lock_guard<std::mutex> lock(m_pendingMutex);
@@ -1556,9 +1677,9 @@ void ThumbnailLoader::spawnCpu(std::function<void()> job) {
     if (m_cpuPool) m_cpuPool->enqueue(std::move(job));
 }
 
-void ThumbnailLoader::waitBackgroundWorkers() {
-    if (m_diskPool) m_diskPool->shutdown();
-    if (m_cpuPool) m_cpuPool->shutdown();
+void ThumbnailLoader::waitBackgroundWorkers(std::chrono::steady_clock::time_point deadline) {
+    if (m_diskPool) m_diskPool->waitShutdown(deadline);
+    if (m_cpuPool) m_cpuPool->waitShutdown(deadline);
 }
 
 bool ThumbnailLoader::isTextureSane(cocos2d::CCTexture2D* tex) {
@@ -1578,7 +1699,7 @@ void ThumbnailLoader::requestUrlLoad(std::string const& url, LoadCallback callba
     }
 
     auto& cache = paimon::cache::ThumbnailCache::get();
-    std::string cacheKey = normalizeUrlKey(url);
+    std::string cacheKey = paimon::cache::normalizeUrlKey(url);
 
     std::unique_lock<std::shared_mutex> lock(m_queueMutex);
 
@@ -1652,7 +1773,7 @@ void ThumbnailLoader::processUrlQueue() {
 }
 
 bool ThumbnailLoader::isUrlLoaded(std::string const& url) const {
-    return paimon::cache::ThumbnailCache::get().getUrlFromRam(normalizeUrlKey(url)).has_value();
+    return paimon::cache::ThumbnailCache::get().getUrlFromRam(paimon::cache::normalizeUrlKey(url)).has_value();
 }
 
 void ThumbnailLoader::workerUrlDownload(std::shared_ptr<Task> task) {
@@ -1748,53 +1869,104 @@ ThumbnailLoader::DecodeResult ThumbnailLoader::decodeImageData(std::vector<uint8
     DecodeResult result;
     auto t0 = std::chrono::steady_clock::now();
 
+    // the old 4096px guard sent anything larger to CCImage, which then uploaded
+    // the full-resolution texture on the main thread (a 5120x2880 cache entry
+    // meant a ~59 MB upload). Decode larger sources with stb and always
+    // downsample before the texture reaches the main thread.
+    constexpr int kMaxSourceDim = 8192;
+    constexpr uint64_t kMaxSourcePixels = 24ull * 1024 * 1024;
+
     {
-        int w = 0, h = 0, channels = 0;
-        unsigned char* pixelData = stbi_load_from_memory(data.data(), static_cast<int>(data.size()), &w, &h, &channels, 4);
-        if (pixelData && w > 0 && h > 0 && w <= 4096 && h <= 4096) {
-            bool isAnim = paimon::format::isGif(data.data(), data.size());
+        int infoW = 0, infoH = 0, infoChannels = 0;
+        bool const hasInfo = stbi_info_from_memory(
+            data.data(), static_cast<int>(data.size()), &infoW, &infoH, &infoChannels) != 0;
+        bool const sourceFits =
+            hasInfo && infoW > 0 && infoH > 0 &&
+            infoW <= kMaxSourceDim && infoH <= kMaxSourceDim &&
+            static_cast<uint64_t>(infoW) * static_cast<uint64_t>(infoH) <= kMaxSourcePixels;
 
-            result.width = w;
-            result.height = h;
-            result.originalWidth = w;
-            result.originalHeight = h;
-            result.isGif = isAnim;
+        if (sourceFits) {
+            int w = 0, h = 0, channels = 0;
+            unsigned char* pixelData = stbi_load_from_memory(
+                data.data(), static_cast<int>(data.size()), &w, &h, &channels, 4);
+            if (pixelData && w > 0 && h > 0) {
+                bool isAnim = paimon::format::isGif(data.data(), data.size());
 
-            if (realID > 0 && !LevelColors::get().getPair(realID)) {
-                LevelColors::get().extractFromRawData(realID, pixelData, w, h, true);
-            }
+                result.width = w;
+                result.height = h;
+                result.originalWidth = w;
+                result.originalHeight = h;
+                result.isGif = isAnim;
 
-            if (maxDim > 0 && (w > maxDim || h > maxDim)) {
-                auto ds = ImageLoadHelper::downsampleForCache(pixelData, w, h, maxDim);
-                if (!ds.pixels.empty() && ds.width > 0 && ds.height > 0) {
-                    result.pixels = std::move(ds.pixels);
-                    result.width = ds.width;
-                    result.height = ds.height;
+                if (realID > 0 && !LevelColors::get().getPair(realID)) {
+                    LevelColors::get().extractFromRawData(realID, pixelData, w, h, true);
+                }
+
+                if (maxDim > 0 && (w > maxDim || h > maxDim)) {
+                    auto ds = ImageLoadHelper::downsampleForCache(pixelData, w, h, maxDim);
+                    if (!ds.pixels.empty() && ds.width > 0 && ds.height > 0) {
+                        result.pixels = std::move(ds.pixels);
+                        result.width = ds.width;
+                        result.height = ds.height;
+                        result.success = true;
+                    }
+                }
+
+                if (!result.success) {
+                    size_t byteCount = static_cast<size_t>(w) * h * 4;
+                    result.pixels.assign(pixelData, pixelData + byteCount);
                     result.success = true;
                 }
-            }
 
-            if (!result.success) {
-                size_t byteCount = static_cast<size_t>(w) * h * 4;
-                result.pixels.assign(pixelData, pixelData + byteCount);
-                result.success = true;
+                stbi_image_free(pixelData);
+            } else if (pixelData) {
+                stbi_image_free(pixelData);
             }
-
-            stbi_image_free(pixelData);
-        } else if (pixelData) {
-            stbi_image_free(pixelData);
+        } else if (hasInfo) {
+            log::warn("[ThumbnailLoader] rechazando imagen {}x{} para nivel {} (limite {}px/{}MP)",
+                infoW, infoH, realID, kMaxSourceDim, kMaxSourcePixels / (1024 * 1024));
         }
     }
 
     if (!result.success && !data.empty()) {
         auto* img = new CCImage();
         if (img->initWithImageData(const_cast<uint8_t*>(data.data()), data.size())) {
-            result.image = img;
-            result.width = img->getWidth();
-            result.height = img->getHeight();
-            result.originalWidth = result.width;
-            result.originalHeight = result.height;
-            result.success = true;
+            int const w = img->getWidth();
+            int const h = img->getHeight();
+            uint64_t const pixels = static_cast<uint64_t>(w) * static_cast<uint64_t>(h);
+            // never hand a full-size CCImage to the main thread: convert it to
+            // RGBA and downsample here, on the worker.
+            if (w > 0 && h > 0 && w <= kMaxSourceDim && h <= kMaxSourceDim &&
+                pixels > 0 && pixels <= kMaxSourcePixels) {
+                int const components = img->hasAlpha() ? 4 : 3;
+                std::vector<uint8_t> rgba;
+                uint8_t const* src = img->getData();
+                if (components == 4) {
+                    rgba.assign(src, src + static_cast<size_t>(pixels) * 4);
+                } else {
+                    rgba.resize(static_cast<size_t>(pixels) * 4);
+                    ImageConverter::rgbToRgbaFast(src, rgba.data(), static_cast<size_t>(pixels));
+                }
+
+                result.originalWidth = w;
+                result.originalHeight = h;
+                result.width = w;
+                result.height = h;
+                if (maxDim > 0 && (w > maxDim || h > maxDim)) {
+                    auto ds = ImageLoadHelper::downsampleForCache(rgba.data(), w, h, maxDim);
+                    if (!ds.pixels.empty() && ds.width > 0 && ds.height > 0) {
+                        result.pixels = std::move(ds.pixels);
+                        result.width = ds.width;
+                        result.height = ds.height;
+                    }
+                } else {
+                    result.pixels = std::move(rgba);
+                }
+                result.success = !result.pixels.empty();
+            } else {
+                log::warn("[ThumbnailLoader] CCImage demasiado grande para subir: {}x{} (nivel {})", w, h, realID);
+            }
+            img->release();
         } else {
             img->release();
         }

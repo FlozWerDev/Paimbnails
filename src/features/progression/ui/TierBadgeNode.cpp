@@ -130,14 +130,14 @@ void TierBadgeNode::buildFrame(Tier const& tier) {
 
     m_levelLabel = CCLabelBMFont::create(std::to_string(m_level).c_str(), "bigFont.fnt");
     if (m_levelLabel) {
-        // crown recesses a base band, not a middle: number sits lower, smaller.
+        // crown recesses a base plaque, not the middle: number sits lower inside the plaque.
         bool const crown = tier.frame == TierFrame::Crown;
-        float const target = m_size * (crown ? 0.20f : (m_level >= 100 ? 0.30f : 0.38f));
+        float const target = m_size * (crown ? 0.205f : (m_level >= 100 ? 0.28f : 0.36f));
         m_levelLabel->limitLabelWidth(
-            m_size * (crown ? 0.58f : 0.52f),
+            m_size * (crown ? 0.46f : 0.48f),
             target / std::max(1.f, m_levelLabel->getContentSize().height), 0.05f);
-        m_levelLabel->setPosition({0.f, crown ? -m_size * 0.24f : 0.f});
-        m_levelLabel->setColor(mix(tier.accent, {255, 255, 255}, 0.72f));
+        m_levelLabel->setPosition({0.f, crown ? -m_size * 0.205f : 0.f});
+        m_levelLabel->setColor(mix(tier.accent, {255, 255, 255}, 0.78f));
         m_content->addChild(m_levelLabel, 3);
     }
 }
@@ -226,12 +226,12 @@ void TierBadgeNode::redrawRing(Tier const& tier) {
 
     if (!m_ring) {
         m_ring = CCNode::create();
-        m_content->addChild(m_ring, 1);
+        m_content->addChild(m_ring, -1);
 
         if (auto* track = paimon::SpriteHelper::safeCreate("paim_progRing.png"_spr)) {
             fitSquare(track, ringSize);
             track->setColor({0, 0, 0});
-            track->setOpacity(120);
+            track->setOpacity(135);
             m_ring->addChild(track, 0);
         }
 

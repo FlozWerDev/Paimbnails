@@ -10,11 +10,9 @@ CCNode* makeBlock(float width, float height, GLubyte opacity) {
     auto node = CCNode::create();
     node->setContentSize({width, height});
 
-    if (auto bg = paimon::SpriteHelper::safeCreateScale9("square02_001.png")) {
-        bg->setContentSize({width, height});
-        bg->setColor({0, 0, 0});
-        bg->setOpacity(opacity);
-        bg->setAnchorPoint({0.f, 0.f});
+    // A single fill avoids seams and overlapping slices in short translucent rows.
+    if (auto* bg = paimon::SpriteHelper::createRoundedRect(width, height, 6.f,
+            {0.f, 0.f, 0.f, static_cast<float>(opacity) / 255.f})) {
         node->addChild(bg, -1);
     }
     return node;

@@ -12,8 +12,10 @@ namespace {
 bool isPureReferenceToken(std::string const& t) {
     static std::vector<std::string> const kRef = {
         "that", "this", "it", "those", "these", "same", "there", "what", "about",
+        "here", "that one", "this one", "them", "they",
         "eso", "ese", "esa", "esto", "esta", "este", "aquel", "aquella",
-        "igual", "mismo", "misma", "lo", "la", "el", "que",
+        "igual", "mismo", "misma", "lo", "la", "el", "que", "ello", "ella",
+        "aquello", "ese mismo", "esto mismo",
     };
     return std::find(kRef.begin(), kRef.end(), t) != kRef.end();
 }
@@ -22,7 +24,9 @@ bool isPureReferenceToken(std::string const& t) {
 bool looksLikeMore(std::string const& normalized) {
     static std::vector<std::string> const kMore = {
         "que mas", "y que mas", "mas", "que mas hay", "algo mas", "algo mas de eso",
+        "que otra cosa", "que mas tiene", "y que mas tiene", "cuentame mas",
         "what else", "and what else", "more", "anything else", "what more",
+        "tell me more", "what other", "anything more",
     };
     for (auto const& m : kMore) {
         if (normalized == m) return true;
@@ -36,9 +40,12 @@ bool isActionVerb(std::string const& t) {
     static std::vector<std::string> const kVerb = {
         "change", "set", "make", "open", "enable", "disable", "configure",
         "use", "want", "need", "show", "get", "put", "add", "remove", "find",
+        "activate", "deactivate", "customize", "personalize", "install",
+        "download", "upload", "create", "delete", "edit",
         "cambiar", "poner", "hacer", "abrir", "activar", "desactivar",
         "configurar", "usar", "quiero", "necesito", "mostrar", "conseguir",
-        "agregar", "quitar", "encontrar",
+        "agregar", "quitar", "encontrar", "crear", "borrar", "descargar",
+        "instalar", "personalizar", "customizar",
     };
     return std::find(kVerb.begin(), kVerb.end(), t) != kVerb.end();
 }

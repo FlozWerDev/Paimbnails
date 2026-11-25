@@ -121,7 +121,7 @@ bool WebRequestSource::sendFeedback(std::string const& requestID, int levelID,
         .header("X-API-Key", HttpClient::get().getApiKey())
         .header("X-Request-Host", m_slug)
         .header("Authorization", "Bearer " + token)
-        .timeout(std::chrono::seconds(30))
+        .timeout(asp::Duration::fromSecs(30))
         .bodyString(body.dump(matjson::NO_INDENTATION));
     WebHelper::dispatch(std::move(request), "POST", m_serverBase + "/api/request-host/feedback",
         [callback = std::move(callback)](web::WebResponse response) mutable {
@@ -149,11 +149,13 @@ void WebRequestSource::registerHost() {
     web::WebRequest request;
     request.header("Content-Type", "application/json")
         .header("X-API-Key", HttpClient::get().getApiKey())
-        .timeout(std::chrono::seconds(12))
+        .timeout(asp::Duration::fromSecs(12))
         .bodyString(body.dump(matjson::NO_INDENTATION));
     if (!token.empty()) request.header("Authorization", "Bearer " + token);
     // account ownership proof: with the saved token lost, the server only
     // issues a new one when this proves the account is yours.
+    auto sessionToken = HttpClient::get().getSessionToken();
+    if (!sessionToken.empty()) request.header("X-Session-Token", sessionToken);
     auto modCode = HttpClient::get().getModCode();
     if (!modCode.empty()) request.header("X-Mod-Code", modCode);
     auto viewerToken = HttpClient::get().getViewerToken();
@@ -202,7 +204,7 @@ void WebRequestSource::handleRegisterError(int status, std::string code) {
 
     std::string error = "No pudimos registrar tu pagina de requests";
     if (code == "TOKEN_REQUIRED") {
-        error = "Esta pagina ya esta registrada en otro lugar; verifica tu cuenta de GD para crear un acceso nuevo";
+        error = "Pulsa Verificar cuenta para recuperar el acceso a tu pagina";
     } else if (code == "USERNAME_TAKEN") {
         error = "Otra cuenta de GD ya registro esa direccion";
     } else if (code == "ACCOUNT_MISMATCH" || code == "USERNAME_MISMATCH"

@@ -53,11 +53,7 @@ void NewgroundsBrowserPopup::buildHeader() {
 
     m_searchInput = TextInput::create(235.f, "Song name, artist, ID or URL", "chatFont.fnt");
     if (m_searchInput) {
-        m_searchInput->setCommonFilter(CommonFilter::Any);
-        // any doesn't include ':' '/' in some geode builds; urls need them.
-        if (auto* inner = m_searchInput->getInputNode()) {
-            inner->m_allowedChars = geode::getCommonFilterAllowedChars(CommonFilter::Any);
-        }
+        m_searchInput->setCommonFilter(CommonFilter::Text);
         m_searchInput->setMaxCharCount(300);
         m_searchInput->setPosition({140.f, size.height - 40.f});
         m_searchInput->setID("newgrounds-search"_spr);
@@ -122,6 +118,7 @@ void NewgroundsBrowserPopup::buildList() {
     }
     m_scroll = ScrollLayer::create({size.width - 24.f, size.height - 84.f});
     if (!m_scroll) return;
+    m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setPosition({12.f, 10.f});
     m_scroll->setID("newgrounds-results"_spr);
     m_mainLayer->addChild(m_scroll, 3);

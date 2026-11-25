@@ -6,8 +6,7 @@
 
 #include <Geode/Geode.hpp>
 
-#define MORE_ICONS_EVENTS
-#include <hiimjustin000.more_icons/include/MoreIcons.hpp>
+#include "../../framework/compat/MoreIconsAPI.hpp"
 
 using namespace geode::prelude;
 

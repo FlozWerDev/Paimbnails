@@ -6,6 +6,7 @@
 #include "../../core/Settings.hpp"
 #include "../../utils/MainThreadDelay.hpp"
 #include "../../utils/SpriteHelper.hpp"
+#include "../../utils/Utf8Cut.hpp"
 
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <Geode/ui/OverlayManager.hpp>
@@ -43,8 +44,6 @@ constexpr float kScreenMargin = 10.f;
 constexpr float kStackGap = 6.f;
 // keep at most three stacked notices; evict the oldest without animation.
 constexpr int kMaxLive = 3;
-
-constexpr ccColor3B kDescColor = {171, 197, 232};
 
 NotifyConfig g_config;
 
@@ -196,9 +195,7 @@ float animTime(float seconds) {
 
 std::string shorten(std::string text, size_t limit) {
     if (text.size() <= limit) return text;
-    size_t cut = limit > 3 ? limit - 3 : limit;
-    while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80) --cut;
-    text.resize(cut);
+    paimon::utf8::clampToLimit(text, limit > 3 ? limit - 3 : limit);
     text += "...";
     return text;
 }

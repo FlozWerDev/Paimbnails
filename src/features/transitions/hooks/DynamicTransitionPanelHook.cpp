@@ -13,6 +13,14 @@
 #include <Geode/modify/SetupPulsePopup.hpp>
 #include <Geode/modify/UploadPopup.hpp>
 #include <Geode/modify/DialogLayer.hpp>
+#include <Geode/modify/ColorSelectLiveOverlay.hpp>
+#include <Geode/modify/PagedListPopup.hpp>
+#include <Geode/modify/EditorWindowPopup.hpp>
+#include <Geode/modify/EmotePickerPopup.hpp>
+#include <Geode/modify/IDNameBrowserPopup.hpp>
+#include <Geode/modify/LevelBadgePopup.hpp>
+#include <Geode/modify/MessageThreadsPage.hpp>
+#include <Geode/modify/NewThreadPopup.hpp>
 #ifdef GEODE_IS_MACOS
 #include <Geode/modify/SlideInLayer.hpp>
 #endif
@@ -61,7 +69,7 @@ class $modify(PaimonDynamicRetryLevel, RetryLevelLayer) {
     }
 };
 
-// Several popup classes share each of these native show implementations.
+// several popup classes share each of these native show implementations.
 class $modify(PaimonDynamicChallenges, ChallengesPage) {
     void show() { dynamic::PanelShowGuard guard(this); ChallengesPage::show(); }
 };
@@ -92,6 +100,39 @@ class $modify(PaimonDynamicSetupPulse, SetupPulsePopup) {
 
 class $modify(PaimonDynamicUpload, UploadPopup) {
     void show() { dynamic::PanelShowGuard guard(this); UploadPopup::show(); }
+};
+
+// new 2.2091 implementations, with one hook per shared native address.
+class $modify(PaimonDynamicLiveColor, ColorSelectLiveOverlay) {
+    void show() { dynamic::PanelShowGuard guard(this); ColorSelectLiveOverlay::show(); }
+};
+
+class $modify(PaimonDynamicPagedList, PagedListPopup) {
+    void show() { dynamic::PanelShowGuard guard(this); PagedListPopup::show(); }
+};
+
+class $modify(PaimonDynamicEditorWindow, EditorWindowPopup) {
+    void show() { dynamic::PanelShowGuard guard(this); EditorWindowPopup::show(); }
+};
+
+class $modify(PaimonDynamicEmotePicker, EmotePickerPopup) {
+    void show() { dynamic::PanelShowGuard guard(this); EmotePickerPopup::show(); }
+};
+
+class $modify(PaimonDynamicIDBrowser, IDNameBrowserPopup) {
+    void show() { dynamic::PanelShowGuard guard(this); IDNameBrowserPopup::show(); }
+};
+
+class $modify(PaimonDynamicLevelBadge, LevelBadgePopup) {
+    void show() { dynamic::PanelShowGuard guard(this); LevelBadgePopup::show(); }
+};
+
+class $modify(PaimonDynamicMessageThreads, MessageThreadsPage) {
+    void show() { dynamic::PanelShowGuard guard(this); MessageThreadsPage::show(); }
+};
+
+class $modify(PaimonDynamicNewThread, NewThreadPopup) {
+    void show() { dynamic::PanelShowGuard guard(this); NewThreadPopup::show(); }
 };
 
 class $modify(PaimonDynamicDialog, DialogLayer) {

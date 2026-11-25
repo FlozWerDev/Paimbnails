@@ -9,7 +9,6 @@ using namespace geode::prelude;
 class $modify(GradientProfilePage, ProfilePage) {
 public:
     struct Fields {
-        bool m_isShip = true;
         bool m_isSecondPlayer = false;
 
         SEL_MenuHandler m_originalCallback = nullptr;
@@ -25,7 +24,6 @@ public:
 
     void getUserInfoFinished(GJUserScore*);
 
-    void toggleShip(CCObject*);
 };
 
 } // namespace paimon::icon_gradients

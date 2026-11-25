@@ -1,4 +1,5 @@
 #include "SearchPresetsPopup.hpp"
+#include "../InfoModule.hpp"
 #include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/GeodeTextInputSafe.hpp"
@@ -24,6 +25,7 @@ constexpr float kRowH = 34.f;
 
 SearchPresetsPopup* SearchPresetsPopup::createPicker(
     std::function<void(AdvancedQuery const&)> onPick) {
+    if (!moduleEnabled("info-mod-search-presets")) return nullptr;
     auto ret = new SearchPresetsPopup();
     if (ret && ret->init(false, {}, std::move(onPick), nullptr)) {
         ret->autorelease();
@@ -35,6 +37,7 @@ SearchPresetsPopup* SearchPresetsPopup::createPicker(
 
 SearchPresetsPopup* SearchPresetsPopup::createSaveDialog(
     AdvancedQuery query, std::function<void()> onSaved) {
+    if (!moduleEnabled("info-mod-search-presets")) return nullptr;
     auto ret = new SearchPresetsPopup();
     if (ret && ret->init(true, std::move(query), nullptr, std::move(onSaved))) {
         ret->autorelease();
@@ -103,6 +106,7 @@ bool SearchPresetsPopup::init(bool saveMode, AdvancedQuery query,
     m_mainLayer->addChild(bg, -1);
 
     m_scroll = ScrollLayer::create({kListW, listH});
+    if (m_scroll) m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setPosition({cx - kListW / 2.f, listCenterY - listH / 2.f});
     m_mainLayer->addChild(m_scroll);
 
@@ -182,6 +186,7 @@ void SearchPresetsPopup::rebuildList() {
 }
 
 void SearchPresetsPopup::onPick(CCObject* sender) {
+    if (!moduleEnabled("info-mod-search-presets")) return;
     int index = static_cast<CCNode*>(sender)->getTag();
     auto const& list = presets();
     if (index < 0 || index >= static_cast<int>(list.size())) return;
@@ -193,21 +198,29 @@ void SearchPresetsPopup::onPick(CCObject* sender) {
 }
 
 void SearchPresetsPopup::onDelete(CCObject* sender) {
+    if (!moduleEnabled("info-mod-search-presets")) return;
     int index = static_cast<CCNode*>(sender)->getTag();
-    removePreset(index);
+    if (!removePreset(index)) {
+        PaimonNotify::show("No se pudo guardar el cambio de presets", NotificationIcon::Error);
+        return;
+    }
     rebuildList();
 }
 
 void SearchPresetsPopup::onSave(CCObject*) {
+    if (!moduleEnabled("info-mod-search-presets")) return;
     if (!m_nameInput) return;
 
     std::string name(m_nameInput->getString());
     if (name.empty()) {
-        PaimonNotify::create("Ponle un nombre al preset", NotificationIcon::Warning)->show();
+        PaimonNotify::show("Ponle un nombre al preset", NotificationIcon::Warning);
         return;
     }
 
-    addPreset(name, m_query);
+    if (!addPreset(name, m_query)) {
+        PaimonNotify::show("No se pudo guardar el preset", NotificationIcon::Error);
+        return;
+    }
 
     auto callback = m_onSaved;
     this->onClose(nullptr);

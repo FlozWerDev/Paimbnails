@@ -12,6 +12,8 @@
 #include "../ui/TierBadgeNode.hpp"
 #include "../../versus/services/VersusClient.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
+#include "../../../core/Settings.hpp"
+#include "../../profiles/services/ProfileIdentityStore.hpp"
 #include "../../../framework/HookConventions.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 
@@ -36,16 +38,17 @@ CCNode* buildLevelChip(BadgeContext const& ctx, float height) {
     chip->setContentSize({width, height});
     chip->setAnchorPoint({0.5f, 0.5f});
 
-    if (auto* panel = GDProgressBar::makeCapsule()) {
-        panel->setContentSize({width / (height / 20.f), 20.f});
-        panel->setScale(height / 20.f);
+    if (auto* panel = geode::NineSlice::create("GJ_square05.png")) {
+        panel->setScaleMultiplier(0.32f);
+        panel->setContentSize({width, height});
         panel->setAnchorPoint({0.f, 0.5f});
         panel->setPosition({0.f, height / 2.f});
         panel->setColor({
-            static_cast<GLubyte>(tier.base.r * 0.42f),
-            static_cast<GLubyte>(tier.base.g * 0.42f),
-            static_cast<GLubyte>(tier.base.b * 0.42f),
+            static_cast<GLubyte>(tier.base.r * 0.48f),
+            static_cast<GLubyte>(tier.base.g * 0.48f),
+            static_cast<GLubyte>(tier.base.b * 0.48f),
         });
+        panel->setOpacity(235);
         chip->addChild(panel, 0);
     }
 
@@ -116,14 +119,31 @@ class $modify(ProgressionProfilePage, ProfilePage) {
     }
 
     void applyLevelChip() {
-        auto* menu = typeinfo_cast<CCMenu*>(this->getChildByIDRecursive("username-menu"));
-        if (!menu) return;
-
         // redesign moves the chip to its own header; a stale one may live elsewhere.
         std::string const id = "paimon-level-badge"_spr;
         while (auto* existing = this->getChildByIDRecursive(id)) {
             existing->removeFromParent();
         }
+
+        // the redesigned header keeps the name row clean; the chip lives in the name popup.
+        if (paimon::settings::profiles::redesignEnabled()) {
+            if (auto* store = paimon::profiles::IdentityStore::get(this->m_mainLayer, true)) {
+                auto ctx = m_fields->m_ctx;
+                auto username = m_fields->m_username;
+                store->set({
+                    "level", 0,
+                    [ctx](float height) { return buildLevelChip(ctx, height); },
+                    [ctx, username]() {
+                        if (auto* popup = ProgressionPopup::create(ctx, username)) popup->show();
+                    },
+                    ""
+                });
+            }
+            return;
+        }
+
+        auto* menu = typeinfo_cast<CCMenu*>(this->getChildByIDRecursive("username-menu"));
+        if (!menu) return;
 
         auto* chip = buildLevelChip(m_fields->m_ctx, 20.f);
         if (!chip) return;

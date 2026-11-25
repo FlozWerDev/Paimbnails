@@ -3,6 +3,7 @@
 #include "../../../ui/PaiConfigKit.hpp"
 #include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
+#include "../services/SmoothScrollController.hpp"
 
 #include <fmt/format.h>
 
@@ -37,7 +38,6 @@ bool SmoothScrollConfigPopup::init() {
 
     rebuild();
 
-    // pinned bottom button: restore defaults
     auto* resetBtn = paimon::ui::makeButton("Restaurar",
         [this] {
             (void)Mod::get()->setSavedValue<double>("smooth-scroll-sensitivity", ss::kSensitivityDefault);
@@ -75,7 +75,10 @@ void SmoothScrollConfigPopup::rebuild() {
     float scrollH = content.height - 36.f - 38.f; // title top, button bottom
     float innerW = kit::cardInnerWidth(scrollW);
 
-    auto fmtTimes = [](double v) { return fmt::format("x{:.2f}", v); };
+    auto fmtScrollSpeed = [](double v) {
+        return fmt::format("{:.0f} px", v * paimon::smoothscroll::kBasePixelsPerNotch);
+    };
+    auto fmtZoomSpeed = [](double v) { return fmt::format("x{:.2f}", v); };
     auto fmtPlain = [](double v) { return fmt::format("{:.2f}", v); };
 
     auto* hero = kit::makeHeroToggle(scrollW,
@@ -90,12 +93,11 @@ void SmoothScrollConfigPopup::rebuild() {
             scheduleRebuild();
         });
 
-    // card: menu behavior
     auto* menusCard = kit::makeCard(scrollW, "En los menus", {120, 210, 255}, {
         kit::makeSliderRow(innerW,
             "Velocidad",
             "Cuanto avanza cada giro de la rueda.",
-            ss::sensitivity(), ss::kSensitivityMin, ss::kSensitivityMax, fmtTimes,
+            ss::sensitivity(), ss::kSensitivityMin, ss::kSensitivityMax, fmtScrollSpeed,
             [](double v) { (void)Mod::get()->setSavedValue<double>("smooth-scroll-sensitivity", v); }),
         kit::makeSliderRow(innerW,
             "Suavidad",
@@ -104,7 +106,6 @@ void SmoothScrollConfigPopup::rebuild() {
             [](double v) { (void)Mod::get()->setSavedValue<double>("smooth-scroll-smoothness", v); }),
     });
 
-    // card: editor behavior
     auto* editorCard = kit::makeCard(scrollW, "En el editor", {130, 240, 170}, {
         kit::makeToggleRow(innerW,
             "Zoom suave",
@@ -114,7 +115,7 @@ void SmoothScrollConfigPopup::rebuild() {
         kit::makeSliderRow(innerW,
             "Velocidad del zoom",
             "Cuanto acerca o aleja cada giro.",
-            ss::editorZoomSensitivity(), ss::kEditorZoomSensitivityMin, ss::kEditorZoomSensitivityMax, fmtTimes,
+            ss::editorZoomSensitivity(), ss::kEditorZoomSensitivityMin, ss::kEditorZoomSensitivityMax, fmtZoomSpeed,
             [](double v) { (void)Mod::get()->setSavedValue<double>("smooth-scroll-editor-zoom-sensitivity", v); }),
         kit::makeSliderRow(innerW,
             "Suavidad del zoom",

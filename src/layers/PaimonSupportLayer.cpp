@@ -1,3 +1,4 @@
+#include "../utils/FilesystemPath.hpp"
 #include "PaimonSupportLayer.hpp"
 #include "../ui/PaimonUI.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
@@ -303,13 +304,13 @@ void PaimonSupportLayer::loadShowcaseThumbnails() {
     for (auto const& entry : std::filesystem::directory_iterator(cachePath, ec)) {
         if (ec) break;
         if (!entry.is_regular_file()) continue;
-        auto ext = geode::utils::string::pathToString(entry.path().extension());
+        auto ext = paimon::paths::toUtf8(entry.path().extension());
         if (ext != ".png" && ext != ".webp" && ext != ".jpg" && ext != ".jpeg" &&
             ext != ".qoi" && ext != ".jxl") continue;
         std::error_code sizeEc;
         auto fsize = entry.file_size(sizeEc);
         if (sizeEc || fsize < 5000) continue;
-        m_cachedThumbPaths.push_back(geode::utils::string::pathToString(entry.path()));
+        m_cachedThumbPaths.push_back(paimon::paths::toUtf8(entry.path()));
     }
     if (m_cachedThumbPaths.empty()) return;
 

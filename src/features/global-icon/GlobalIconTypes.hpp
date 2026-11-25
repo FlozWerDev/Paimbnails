@@ -2,8 +2,11 @@
 
 // shared types and mappings for the global icons feature; depends only on gd's
 // icontype enum (no more icons), so it compiles even when more icons is absent.
+// the data lives in paimon base (cloudflare d1) and the files in bunny, served
+// by the paimbnails worker under /api/community/icons and /community/assets.
 
 #include <Geode/Geode.hpp>
+#include <matjson.hpp>
 #include <string>
 #include <string_view>
 #include <optional>
@@ -11,9 +14,6 @@
 #include <unordered_map>
 
 namespace paimon::globalicon {
-
-// global icon server base url; override at runtime via the "global-icon-server-url" setting.
-inline constexpr std::string_view GLOBAL_ICON_BASE = "https://global-icons.vercel.app";
 
 // server string <-> gd icontype mapping. (special = trail, shipfire = fire.)
 inline std::string_view iconTypeToString(IconType type) {
@@ -73,11 +73,27 @@ struct GlobalIconSlot {
     std::string plistUrl;
 };
 
-// per-account metadata document (get /api/icons/<accountid>).
+// which parts of a player's icon are linked to their global icon.
+struct LinkOptions {
+    bool vanilla = true;
+    bool gradients = false;
+    bool custom = false;
+
+    bool any() const { return vanilla || gradients || custom; }
+};
+
+// per-account metadata document (get /api/community/icons/<accountid>).
 struct GlobalIconMeta {
     int accountID = 0;
     std::string username;
     bool enabled = false;
+    LinkOptions share{false, false, false};
+    // icon ids and colors: cube..jetpack, trail, deathEffect, color1, color2, glowColor, glow.
+    matjson::Value vanilla;
+    // icon gradients save format keyed by "icon-gradients-<type>[-p2]"; image
+    // points reference uploaded files as "asset:<sha256>".
+    matjson::Value gradients;
+    std::unordered_map<std::string, std::string> assets; // sha256 -> public url
     std::unordered_map<std::string, GlobalIconSlot> icons; // key = type id
 };
 

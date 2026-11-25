@@ -45,7 +45,7 @@ protected:
     
     void loadLevelsFinished(cocos2d::CCArray* levels, char const* key) override;
     void loadLevelsFailed(char const* key) override;
-    void setupPageInfo(gd::string, char const*) override;
+    void setupPageInfo(std::string, char const*) override;
     
     void updateLevelInfo();
     void checkLoadingComplete();

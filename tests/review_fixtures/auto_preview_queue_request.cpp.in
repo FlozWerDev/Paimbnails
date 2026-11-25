@@ -1,0 +1,107 @@
+#include <cassert>
+#include <chrono>
+#include <functional>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+struct SeedInt { int stored; int value() const { return stored; } };
+struct GJGameLevel { SeedInt m_levelID; std::string m_levelString; };
+template<class T> struct Ref {
+    T* value = nullptr;
+    Ref() = default;
+    Ref(T* p) : value(p) {}
+    T* data() const { return value; }
+    T* operator->() const { return value; }
+    explicit operator bool() const { return value; }
+};
+bool playing = false, editing = false, enabled = true, shuttingDown = false;
+struct PlayLayer { static void* get() { return playing ? &playing : nullptr; } };
+struct LevelEditorLayer { static void* get() { return editing ? &editing : nullptr; } };
+namespace paimon {
+bool isRuntimeShuttingDown() { return shuttingDown; }
+namespace autopreview {
+constexpr auto kStaleAfter = std::chrono::milliseconds(6000);
+namespace config {
+bool browserGenEnabled() { return enabled; }
+int maxPerSession() { return 10; }
+int dwellMs() { return 600; }
+}
+struct AutoPreviewStore {
+    std::vector<int> attempts;
+    static AutoPreviewStore& get() { static AutoPreviewStore store; return store; }
+    int generatedThisSession() { return 0; }
+    void markAttempted(int id) { attempts.push_back(id); }
+};
+struct LevelDataProvider {
+    bool active = false;
+    int requests = 0;
+    std::function<void(GJGameLevel*)> callback;
+    static LevelDataProvider& get() { static LevelDataProvider provider; return provider; }
+    bool busy() const { return active; }
+    void request(int, std::function<void(GJGameLevel*)> next) {
+        assert(!active); active = true; ++requests; callback = std::move(next);
+    }
+    void reply(GJGameLevel* level) {
+        active = false; auto done = std::move(callback); done(level);
+    }
+};
+struct AutoPreviewQueue {
+    struct Pending {
+        Ref<GJGameLevel> level;
+        std::chrono::steady_clock::time_point firstSeen, lastSeen;
+    };
+    std::mutex m_mutex;
+    std::unordered_map<int, Pending> m_pending;
+    bool m_active = false;
+    std::chrono::steady_clock::time_point m_lastGenAt{};
+    int renders = 0, scheduled = 0;
+    void processNext();
+    void generateFor(GJGameLevel*, int) { ++renders; }
+    void ensureTickScheduled() { ++scheduled; }
+    void enqueue(GJGameLevel& level) {
+        auto now = std::chrono::steady_clock::now();
+        m_pending.emplace(level.m_levelID.value(), Pending{&level, now - std::chrono::seconds(1), now});
+        m_lastGenAt = {};
+    }
+};
+@@function|src/features/auto-preview/services/AutoPreviewQueue.cpp|void AutoPreviewQueue::processNext()@@
+}}
+
+int main() {
+    using namespace paimon::autopreview;
+    AutoPreviewQueue queue;
+    auto& provider = LevelDataProvider::get();
+    auto& store = AutoPreviewStore::get();
+    GJGameLevel candidate{{11}, ""}, downloaded{{11}, "content"};
+    queue.enqueue(candidate);
+
+    provider.active = true;
+    queue.processNext();
+    assert(queue.m_pending.size() == 1 && store.attempts.empty() && !queue.m_active);
+    assert(provider.requests == 0);
+    provider.active = false;
+    queue.processNext();
+    assert(queue.m_pending.empty() && store.attempts == std::vector<int>{11});
+    assert(provider.requests == 1 && queue.m_active);
+
+    enabled = false;
+    provider.reply(&downloaded);
+    assert(queue.renders == 0 && !queue.m_active && queue.scheduled == 1);
+    enabled = true;
+    queue.enqueue(candidate);
+    queue.processNext();
+    provider.reply(&downloaded);
+    assert(queue.renders == 1 && !queue.m_active);
+
+    queue.enqueue(candidate);
+    playing = true; queue.processNext(); playing = false;
+    editing = true; queue.processNext(); editing = false;
+    assert(queue.m_pending.size() == 1 && provider.requests == 2);
+    queue.processNext();
+    shuttingDown = true;
+    provider.reply(&downloaded);
+    assert(queue.renders == 1 && !queue.m_active);
+}

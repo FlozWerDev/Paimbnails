@@ -38,7 +38,8 @@ struct MessageData {
         auto split = gstr::split(data, ":");
         int key = -1;
         for (auto const& str : split) {
-            if (key == -1) { key = toInt(str); continue; }
+            // an empty key segment desyncs every pair after it; skip it instead.
+            if (key == -1) { if (str.empty()) continue; key = toInt(str); continue; }
             switch (key) {
                 case 1: m.messageID = toInt(str); break;
                 case 4: m.title = paimon::base64UrlDecode(str); break;
@@ -58,7 +59,8 @@ struct FriendData {
         auto split = gstr::split(data, ":");
         int key = -1;
         for (auto const& str : split) {
-            if (key == -1) { key = toInt(str); continue; }
+            // an empty key segment desyncs every pair after it; skip it instead.
+            if (key == -1) { if (str.empty()) continue; key = toInt(str); continue; }
             switch (key) {
                 case 1:  f.username = str; break;
                 case 32: f.requestID = toInt(str); break;
@@ -93,10 +95,7 @@ public:
             geode::utils::thread::setName("PaimonMsgNotif");
             while (!shuttingDown()) {
                 int rate = (int)std::clamp<int64_t>(sInt("msgnotif-check-interval"), 60, 3600);
-                for (int i = 0; i < rate; ++i) {
-                    if (shuttingDown()) return;
-                    std::this_thread::sleep_for(std::chrono::seconds(1));
-                }
+                if (paimon::waitForShutdownOr(std::chrono::seconds(rate)) || shuttingDown()) return;
                 geode::Loader::get()->queueInMainThread([] {
                     if (paimon::isRuntimeShuttingDown()) return;
                     MessageWatcher::get().pollOnce();

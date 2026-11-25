@@ -24,7 +24,7 @@ cocos2d::CCSprite* IconLockStyler::findLockSprite(GJItemIcon* icon) {
     // gjitemicon::changetolockedstate adds "gj_lock_001.png" as a direct child.
     auto* children = icon->getChildren();
     if (!children) return nullptr;
-    for (int i = 0; i < children->count(); ++i) {
+    for (unsigned int i = 0; i < children->count(); ++i) {
         auto* node = static_cast<CCNode*>(children->objectAtIndex(i));
         if (typeinfo_cast<SimplePlayer*>(node)) continue;
         if (auto* spr = typeinfo_cast<CCSprite*>(node)) {

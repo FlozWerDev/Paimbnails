@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "AnimatedFusionExporter.hpp"
 
 #include "ClusterClassifier.hpp"
@@ -118,7 +119,7 @@ geode::Result<FrameLocate> locateFrame(PackExportConfig const& cfg,
 bool isAnimatedTexture(std::filesystem::path const& path) {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return false;
-    auto ext = utils::string::pathToString(path.extension());
+    auto ext = paimon::paths::toUtf8(path.extension());
     for (char& c : ext) {
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }

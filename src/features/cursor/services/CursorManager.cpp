@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "CursorManager.hpp"
 #include <Geode/utils/string.hpp>
 #include "../../../utils/ImageLoadHelper.hpp"
@@ -6,6 +7,7 @@
 #include "../../../utils/CursorIcoDecoder.hpp"
 #include "../../../utils/GifEncoder.hpp"
 #include "../../../utils/ImageConverter.hpp"
+#include "../../../utils/SafeUnzip.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include <Geode/binding/PlatformToolbox.hpp>
@@ -228,11 +230,11 @@ CursorManager& CursorManager::get() {
 }
 
 std::filesystem::path CursorManager::configPath() const {
-    return Mod::get()->getSaveDir() / "cursor_config.json";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "cursor_config.json";
 }
 
 std::filesystem::path CursorManager::galleryDir() const {
-    auto dir = Mod::get()->getSaveDir() / "cursor_gallery";
+    auto dir = paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "cursor_gallery";
     std::error_code ec;
     if (!std::filesystem::exists(dir, ec)) {
         std::filesystem::create_directories(dir, ec);
@@ -240,20 +242,22 @@ std::filesystem::path CursorManager::galleryDir() const {
     return dir;
 }
 
+// per-state image field, indexed by CursorState (Idle out-of-range fallback).
+static std::string CursorConfig::* imageFieldFor(CursorState state) {
+    static constexpr std::string CursorConfig::* kFields[CURSOR_STATE_COUNT] = {
+        &CursorConfig::idleImage, &CursorConfig::moveImage, &CursorConfig::hoverImage,
+        &CursorConfig::clickImage, &CursorConfig::textImage, &CursorConfig::disabledImage,
+    };
+    auto idx = static_cast<size_t>(state);
+    return kFields[idx < CURSOR_STATE_COUNT ? idx : 0];
+}
+
 std::string& CursorManager::configFieldForState(CursorState state) {
-    switch (state) {
-        case CursorState::Move:     return m_config.moveImage;
-        case CursorState::Hover:    return m_config.hoverImage;
-        case CursorState::Click:    return m_config.clickImage;
-        case CursorState::Text:     return m_config.textImage;
-        case CursorState::Disabled: return m_config.disabledImage;
-        case CursorState::Idle:
-        default:                    return m_config.idleImage;
-    }
+    return m_config.*imageFieldFor(state);
 }
 
 std::string CursorManager::imageForState(CursorState state) const {
-    return const_cast<CursorManager*>(this)->configFieldForState(state);
+    return m_config.*imageFieldFor(state);
 }
 
 void CursorManager::setImageForState(CursorState state, std::string const& filename) {
@@ -405,14 +409,18 @@ void CursorManager::loadConfig() {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return;
 
-    auto rawRes = geode::utils::file::readString(path);
+    auto rawRes = geode::utils::file::readString(paimon::paths::toSdkPath(path));
     if (!rawRes) {
         log::error("[CursorManager] Failed to open config file");
         return;
     }
     auto res = matjson::parse(rawRes.unwrap());
     if (res.isErr()) return;
-    auto j = res.unwrap();
+    loadConfig(res.unwrap());
+}
+
+void CursorManager::loadConfig(matjson::Value const& j) {
+    if (!j.isObject()) return;
 
     m_config.enabled       = j["enabled"].asBool().unwrapOr(false);
     m_config.idleImage     = j["idleImage"].asString().unwrapOr("");
@@ -560,15 +568,21 @@ void CursorManager::saveConfig() {
     j["visibleLayers"] = layers;
 
     auto str = j.dump();
-    auto writeRes = geode::utils::file::writeString(configPath(), str);
+    auto writeRes = geode::utils::file::writeString(paimon::paths::toSdkPath(configPath()), str);
     if (!writeRes) {
         log::error("[CursorManager] Failed to write config: {}", writeRes.unwrapErr());
     }
 
-    Mod::get()->setSettingValue<bool>("custom-cursor-enable", m_config.enabled);
+    if (Mod::get()->hasSetting("custom-cursor-enable") &&
+        Mod::get()->getSettingValue<bool>("custom-cursor-enable") != m_config.enabled) {
+        Mod::get()->setSettingValue<bool>("custom-cursor-enable", m_config.enabled);
+    }
 }
 
 bool CursorManager::shouldShowOnCurrentScene() const {
+#if !defined(GEODE_IS_DESKTOP)
+    return false;
+#else
     auto scene = CCDirector::get()->getRunningScene();
     if (!scene) return false;
 
@@ -579,6 +593,7 @@ bool CursorManager::shouldShowOnCurrentScene() const {
     }
 
     return sceneMatchesVisibleLayers(scene);
+#endif
 }
 
 bool CursorManager::sceneMatchesVisibleLayers(CCScene* scene) const {
@@ -610,7 +625,7 @@ std::filesystem::path CursorManager::packsDir() const {
 namespace {
 bool relPathIsImage(std::filesystem::path const& p) {
     auto ext = geode::utils::string::toLower(
-        geode::utils::string::pathToString(p.extension()));
+        paimon::paths::toUtf8(p.extension()));
     return ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif"
         || ext == ".bmp" || ext == ".webp" || ext == ".tiff" || ext == ".tif"
         || ext == ".tga" || ext == ".psd" || ext == ".qoi" || ext == ".jxl";
@@ -625,7 +640,7 @@ std::vector<std::string> CursorManager::getPacks() const {
     for (auto const& entry : std::filesystem::directory_iterator(dir, ec)) {
         if (ec) break;
         if (entry.is_directory()) {
-            result.push_back(geode::utils::string::pathToString(entry.path().filename()));
+            result.push_back(paimon::paths::toUtf8(entry.path().filename()));
         }
     }
     std::sort(result.begin(), result.end());
@@ -650,7 +665,7 @@ std::vector<std::string> CursorManager::getImagesInPack(std::string const& packN
         if (ec) break;
         if (!entry.is_regular_file()) continue;
         if (relPathIsImage(entry.path())) {
-            result.push_back(prefix + geode::utils::string::pathToString(entry.path().filename()));
+            result.push_back(prefix + paimon::paths::toUtf8(entry.path().filename()));
         }
     }
     std::sort(result.begin(), result.end());
@@ -668,13 +683,13 @@ std::vector<std::string> CursorManager::getGalleryImages() const {
 
 std::string CursorManager::addToGallery(std::filesystem::path const& srcPath) {
     auto dir = galleryDir();
-    auto filename = geode::utils::string::pathToString(srcPath.filename());
+    auto filename = paimon::paths::toUtf8(srcPath.filename());
     auto dest = dir / filename;
     int counter = 1;
     std::error_code existsEc;
     while (std::filesystem::exists(dest, existsEc) && !existsEc) {
-        auto stem = geode::utils::string::pathToString(srcPath.stem());
-        auto ext  = geode::utils::string::pathToString(srcPath.extension());
+        auto stem = paimon::paths::toUtf8(srcPath.stem());
+        auto ext  = paimon::paths::toUtf8(srcPath.extension());
         filename  = fmt::format("{}_{}{}", stem, counter++, ext);
         dest      = dir / filename;
     }
@@ -712,8 +727,8 @@ std::string sanitizeAsciiStem(std::string const& in) {
 
 std::string uniqueGalleryName(std::filesystem::path const& dir, std::string baseName) {
     std::filesystem::path candidate(baseName);
-    auto stem = geode::utils::string::pathToString(candidate.stem());
-    auto ext  = geode::utils::string::pathToString(candidate.extension());
+    auto stem = paimon::paths::toUtf8(candidate.stem());
+    auto ext  = paimon::paths::toUtf8(candidate.extension());
     if (ext.empty()) ext = ".png";
 
     std::string name = stem + ext;
@@ -766,7 +781,7 @@ std::string CursorManager::importSingleData(std::vector<uint8_t> const& data,
     std::filesystem::create_directories(dir, mkEc);
 
     std::filesystem::path namePath(displayName);
-    auto stem = sanitizeAsciiStem(geode::utils::string::pathToString(namePath.stem()));
+    auto stem = sanitizeAsciiStem(paimon::paths::toUtf8(namePath.stem()));
     if (stem.empty()) stem = "cursor";
 
     if (paimon::cursor_ico::isSupported(data.data(), data.size())) {
@@ -795,7 +810,7 @@ std::string CursorManager::importSingleData(std::vector<uint8_t> const& data,
                 return "";
             }
             auto name = uniqueGalleryName(dir, stem + ".gif");
-            auto writeRes = geode::utils::file::writeBinary(dir / name,
+            auto writeRes = geode::utils::file::writeBinary(paimon::paths::toSdkPath(dir / name),
                 geode::ByteVector(gifBytes.begin(), gifBytes.end()));
             if (!writeRes) {
                 log::error("[CursorManager] Failed to write '{}': {}", name, writeRes.unwrapErr());
@@ -814,7 +829,7 @@ std::string CursorManager::importSingleData(std::vector<uint8_t> const& data,
             return "";
         }
         auto name = uniqueGalleryName(dir, stem + ".png");
-        auto writeRes = geode::utils::file::writeBinary(dir / name,
+        auto writeRes = geode::utils::file::writeBinary(paimon::paths::toSdkPath(dir / name),
             geode::ByteVector(png.begin(), png.end()));
         if (!writeRes) {
             log::error("[CursorManager] Failed to write '{}': {}", name, writeRes.unwrapErr());
@@ -824,7 +839,7 @@ std::string CursorManager::importSingleData(std::vector<uint8_t> const& data,
     }
 
     auto ext = geode::utils::string::toLower(
-        geode::utils::string::pathToString(namePath.extension()));
+        paimon::paths::toUtf8(namePath.extension()));
     if (ext.empty() || !extensionLooksLikeImage(ext)) {
         using paimon::format::ImageFormat;
         switch (paimon::format::detect(data.data(), data.size())) {
@@ -837,7 +852,7 @@ std::string CursorManager::importSingleData(std::vector<uint8_t> const& data,
         }
     }
     auto name = uniqueGalleryName(dir, stem + ext);
-    auto writeRes = geode::utils::file::writeBinary(dir / name, geode::ByteVector(data.begin(), data.end()));
+    auto writeRes = geode::utils::file::writeBinary(paimon::paths::toSdkPath(dir / name), geode::ByteVector(data.begin(), data.end()));
     if (!writeRes) {
         log::error("[CursorManager] Failed to write '{}': {}", name, writeRes.unwrapErr());
         return "";
@@ -850,15 +865,26 @@ std::vector<std::string> CursorManager::importFromFile(std::filesystem::path con
     m_lastImportError.clear();
 
     auto ext = geode::utils::string::toLower(
-        geode::utils::string::pathToString(srcPath.extension()));
+        paimon::paths::toUtf8(srcPath.extension()));
 
     log::info("[CursorManager] importFromFile: '{}' (ext='{}')",
-        geode::utils::string::pathToString(srcPath), ext);
+        paimon::paths::toUtf8(srcPath), ext);
 
     m_lastImportedPack.clear();
 
     if (ext == ".zip") {
-        auto unzipRes = geode::utils::file::Unzip::create(srcPath);
+        std::string zipErr;
+        paimon::zip::ZipInspectionLimits zipLimits;
+        zipLimits.maxEntries = 1024;
+        zipLimits.maxSingleEntryBytes = 32ull * 1024 * 1024;
+        zipLimits.maxTotalUncompressedBytes = 64ull * 1024 * 1024;
+        if (!paimon::zip::inspectZipFile(srcPath, zipLimits, zipErr)) {
+            log::warn("[CursorManager] Rejected unsafe zip '{}': {}", paimon::paths::toUtf8(srcPath), zipErr);
+            m_lastImportError = zipErr;
+            return imported;
+        }
+
+        auto unzipRes = geode::utils::file::Unzip::create(paimon::paths::toSdkPath(srcPath));
         if (!unzipRes) {
             log::error("[CursorManager] Failed to open zip: {}", unzipRes.unwrapErr());
             m_lastImportError = "Couldn't open the .zip file.";
@@ -866,39 +892,26 @@ std::vector<std::string> CursorManager::importFromFile(std::filesystem::path con
         }
         auto& unzip = unzipRes.unwrap();
 
-        auto tmpDir = Mod::get()->getSaveDir() / "cursor_zip_tmp";
-        std::error_code ec;
-        std::filesystem::remove_all(tmpDir, ec);
-        std::filesystem::create_directories(tmpDir, ec);
-
-        auto extractRes = unzip.extractAllTo(tmpDir);
-        if (!extractRes) {
-            log::error("[CursorManager] extractAllTo failed: {}", extractRes.unwrapErr());
-            m_lastImportError = "Couldn't extract the .zip file.";
-            std::filesystem::remove_all(tmpDir, ec);
-            return imported;
-        }
-
         auto packName = uniquePackName(packsDir(),
-            geode::utils::string::pathToString(srcPath.stem()));
+            paimon::paths::toUtf8(srcPath.stem()));
         auto packDir  = packsDir() / packName;
         std::string relPrefix = "packs/" + packName + "/";
+        std::error_code ec;
         std::filesystem::create_directories(packDir, ec);
 
         int considered = 0, skipped = 0, failed = 0;
-        std::error_code itEc;
-        for (auto const& dirEntry :
-                std::filesystem::recursive_directory_iterator(tmpDir, itEc)) {
-            if (itEc) break;
-            if (!dirEntry.is_regular_file()) continue;
+        size_t totalReadBytes = 0;
+        for (auto const& entry : unzip.getEntries()) {
+            auto entryStr = paimon::paths::toUtf8(entry);
+            if (!paimon::zip::isSafeRelativeZipEntry(entryStr)) { skipped++; continue; }
+            if (entryStr.find("__MACOSX") != std::string::npos) { skipped++; continue; }
 
-            auto entryPath = dirEntry.path();
-            auto entryExt  = geode::utils::string::toLower(
-                geode::utils::string::pathToString(entryPath.extension()));
-            auto baseName  = geode::utils::string::pathToString(entryPath.filename());
-
+            std::filesystem::path entryPath = paimon::paths::toStdPath(entry);
+            auto baseName = paimon::paths::toUtf8(entryPath.filename());
             if (baseName.empty() || baseName.rfind("._", 0) == 0) { skipped++; continue; }
-            if (geode::utils::string::pathToString(entryPath).find("__MACOSX") != std::string::npos) { skipped++; continue; }
+
+            auto entryExt = geode::utils::string::toLower(
+                paimon::paths::toUtf8(entryPath.extension()));
             if (!extensionLooksLikeCursor(entryExt) && !extensionLooksLikeImage(entryExt)) {
                 log::debug("[CursorManager]   skip '{}' (ext '{}')", baseName, entryExt);
                 skipped++;
@@ -906,13 +919,20 @@ std::vector<std::string> CursorManager::importFromFile(std::filesystem::path con
             }
 
             considered++;
-            auto readRes = geode::utils::file::readBinary(entryPath);
-            if (!readRes) {
-                log::warn("[CursorManager]   read failed '{}': {}", baseName, readRes.unwrapErr());
+            auto bytesRes = unzip.extract(entry);
+            if (!bytesRes) {
+                log::warn("[CursorManager]   extract failed '{}': {}", baseName, bytesRes.unwrapErr());
                 failed++;
                 continue;
             }
-            auto bytes = readRes.unwrap();
+            auto bytes = bytesRes.unwrap();
+            if (bytes.size() > zipLimits.maxSingleEntryBytes ||
+                bytes.size() > zipLimits.maxTotalUncompressedBytes - totalReadBytes) {
+                log::warn("[CursorManager]   zip size cap exceeded at '{}'", baseName);
+                failed++;
+                break;
+            }
+            totalReadBytes += bytes.size();
             std::vector<uint8_t> vec(bytes.begin(), bytes.end());
 
             auto name = importSingleData(vec, baseName, packDir, relPrefix);
@@ -922,8 +942,6 @@ std::vector<std::string> CursorManager::importFromFile(std::filesystem::path con
                 failed++;
             }
         }
-
-        std::filesystem::remove_all(tmpDir, ec);
 
         log::info("[CursorManager] zip import done: pack='{}' considered={} imported={} skipped={} failed={}",
             packName, considered, imported.size(), skipped, failed);
@@ -943,7 +961,7 @@ std::vector<std::string> CursorManager::importFromFile(std::filesystem::path con
     }
 
     if (extensionLooksLikeCursor(ext)) {
-        auto readRes = geode::utils::file::readBinary(srcPath);
+        auto readRes = geode::utils::file::readBinary(paimon::paths::toSdkPath(srcPath));
         if (!readRes) {
             log::error("[CursorManager] Failed to read cursor file: {}", readRes.unwrapErr());
             m_lastImportError = "Couldn't read the file.";
@@ -952,7 +970,7 @@ std::vector<std::string> CursorManager::importFromFile(std::filesystem::path con
         auto bytes = readRes.unwrap();
         std::vector<uint8_t> vec(bytes.begin(), bytes.end());
         auto name = importSingleData(vec,
-            geode::utils::string::pathToString(srcPath.filename()), galleryDir(), "");
+            paimon::paths::toUtf8(srcPath.filename()), galleryDir(), "");
         if (!name.empty()) imported.push_back(name);
         else m_lastImportError = "Couldn't decode that cursor file.";
         return imported;
@@ -1005,8 +1023,8 @@ std::vector<std::string> CursorManager::importZipData(std::vector<uint8_t> const
     }
 
     // file::unzip only opens files, so the .zip goes through disk.
-    auto tmpPath = Mod::get()->getSaveDir() / "cursor_shop_download.zip";
-    auto writeRes = geode::utils::file::writeBinary(tmpPath, geode::ByteVector(data.begin(), data.end()));
+    auto tmpPath = paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "cursor_shop_download.zip";
+    auto writeRes = geode::utils::file::writeBinary(paimon::paths::toSdkPath(tmpPath), geode::ByteVector(data.begin(), data.end()));
     if (!writeRes) {
         log::error("[CursorManager] Failed to stage downloaded zip: {}", writeRes.unwrapErr());
         m_lastImportError = "No se pudo guardar el .zip descargado.";
@@ -1156,7 +1174,10 @@ void CursorManager::init() {
     loadConfig();
     m_config.scale = clampCursorScale(m_config.scale);
 
-    Mod::get()->setSettingValue<bool>("custom-cursor-enable", m_config.enabled);
+    if (Mod::get()->hasSetting("custom-cursor-enable") &&
+        Mod::get()->getSettingValue<bool>("custom-cursor-enable") != m_config.enabled) {
+        Mod::get()->setSettingValue<bool>("custom-cursor-enable", m_config.enabled);
+    }
 }
 
 CCSprite* CursorManager::loadSprite(std::string const& filename) {
@@ -1577,7 +1598,6 @@ void CursorManager::applyConfigLive() {
     }
     finishStateTransition();
     updateTrail();
-    saveConfig();
 }
 
 void CursorManager::applyTrailLive() {

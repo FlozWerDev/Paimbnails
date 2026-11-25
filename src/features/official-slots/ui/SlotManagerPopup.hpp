@@ -1,13 +1,8 @@
 #pragma once
 #include "../../../ui/PaimonPopup.hpp"
-
-// mutations rebuild the list and repaint the levelselect pages; appended
-// slots open for play here, having no vanilla page.
-
 #include "../OfficialSlots.hpp"
 
 #include <Geode/Geode.hpp>
-
 #include <functional>
 #include <string>
 
@@ -15,35 +10,26 @@ namespace paimon::officialslots::ui {
 
 class SlotManagerPopup : public PaimonPopup {
 public:
-    // onchanged runs after any mutation, so the opener can refresh its own
-    // buttons next to the page repaint refreshofficiallist() triggers.
     static SlotManagerPopup* create(std::function<void()> onChanged = nullptr);
 
 protected:
     bool init(std::function<void()> onChanged);
-
-    void buildHeader();
     void buildList();
     void buildFooter();
     void rebuild();
-
-    cocos2d::CCNode* buildSlotRow(Slot const& slot, float width);
-    cocos2d::CCNode* buildHiddenRow(int officialId, float width);
-    cocos2d::CCNode* buildSectionLabel(char const* key, float width);
-
-    void onAdd(cocos2d::CCObject*);
-    void onEditSlot(std::string const& slotId);
-    void onTestSlot(Slot slot);
-    void onDeleteSlot(Slot slot);
-    void onMoveSlot(std::string const& slotId, int delta);
+    cocos2d::CCNode* buildPageRow(std::string const& key, float width);
+    void openEditor(std::string const& key = {});
+    void onPlay(std::string const& key);
+    void onMove(std::string const& key, int delta);
+    void onToggle(std::string const& key);
+    void onDelete(std::string const& key);
     void onReorder();
-    void onToggleSlot(std::string const& slotId);
-    void onRestoreOfficial(int officialId);
-
     void mutated();
 
     std::function<void()> m_onChanged;
     geode::ScrollLayer* m_scroll = nullptr;
+    cocos2d::CCLabelBMFont* m_summary = nullptr;
+    bool m_listBuilt = false;
 };
 
 } // namespace paimon::officialslots::ui

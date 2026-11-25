@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "../../utils/GDRobTopCache.hpp"
+#include "../../utils/HttpClient.hpp"
 #include "../../utils/AccountVerifier.hpp"
 #include "../../utils/ThreadTracker.hpp"
 #include "../../utils/PaimonNotification.hpp"
@@ -92,10 +93,7 @@ public:
             geode::utils::thread::setName("PaimonMentions");
             while (!shuttingDown()) {
                 int rate = (int)std::clamp<int64_t>(sInt("mentions-refresh-rate"), 10, 300);
-                for (int i = 0; i < rate; ++i) {
-                    if (shuttingDown()) return;
-                    std::this_thread::sleep_for(std::chrono::seconds(1));
-                }
+                if (paimon::waitForShutdownOr(std::chrono::seconds(rate)) || shuttingDown()) return;
                 geode::Loader::get()->queueInMainThread([] {
                     if (paimon::isRuntimeShuttingDown()) return;
                     MentionWatcher::get().pollOnce();
@@ -152,6 +150,9 @@ private:
     // main thread. fires a comment request per watched level.
     void pollOnce() {
         if (shuttingDown() || !sBool("mentions-enabled")) return;
+        // responses are discarded while playing (see pollLevel), so skip the
+        // requests entirely; nothing is marked seen either way.
+        if (!sBool("mentions-show-while-playing") && PlayLayer::get()) return;
         updateAliases();
         if (!m_hasAliases) return;
 
@@ -173,6 +174,20 @@ private:
             [this](bool ok, std::string body) {
                 if (shuttingDown() || !ok) return;
 
+                // snapshot per response: settings cannot change mid-callback,
+                // and re-reading them per comment is pure overhead.
+                bool const ignoreSelf = sBool("mentions-ignore-self");
+                bool const showWhilePlaying = sBool("mentions-show-while-playing");
+                std::vector<std::string> blacklist;
+                for (auto const& b : listSetting("mentions-user-blacklist")) {
+                    blacklist.push_back(gstr::toLower(b));
+                }
+                std::vector<std::string> hiddenWords;
+                for (auto const& w : listSetting("mentions-word-blacklist")) {
+                    auto lw = gstr::toLower(w);
+                    if (!lw.empty()) hiddenWords.push_back(std::move(lw));
+                }
+
                 std::vector<std::string> seenNow;
                 std::vector<Mention> found;
                 for (auto const& c : gstr::split(gstr::split(body, "#")[0], "|")) {
@@ -188,12 +203,12 @@ private:
                     std::string text = paimon::base64UrlDecode(textIt->second);
                     if (!containsMention(text)) continue;
                     if (isSeen(msgIt->second)) continue;
-                    if (sBool("mentions-ignore-self") &&
+                    if (ignoreSelf &&
                         isSelf(au.count("16") ? au["16"] : "")) continue;
 
                     std::string user = au.count("1") ? au["1"] : "Someone";
-                    if (isBlacklisted(user)) continue;
-                    if (isHiddenWord(text)) continue;
+                    if (isBlacklisted(user, blacklist)) continue;
+                    if (isHiddenWord(text, hiddenWords)) continue;
 
                     seenNow.push_back(msgIt->second);
                     found.push_back({user, text});
@@ -201,7 +216,7 @@ private:
 
                 if (found.empty()) return;
                 // if playing and hidden, skip seen-marking so menu return re-detects.
-                if (!sBool("mentions-show-while-playing") && PlayLayer::get()) return;
+                if (!showWhilePlaying && PlayLayer::get()) return;
 
                 for (auto const& id : seenNow) markSeen(id);
                 notify(found);
@@ -260,21 +275,19 @@ private:
         return n && n.unwrap() == AccountVerifier::get().getAccountID();
     }
 
-    bool isBlacklisted(std::string const& user) {
+    bool isBlacklisted(std::string const& user, std::vector<std::string> const& loweredBlacklist) {
         auto lu = gstr::toLower(user);
-        for (auto const& b : listSetting("mentions-user-blacklist")) {
-            if (gstr::toLower(b) == lu) return true;
+        for (auto const& b : loweredBlacklist) {
+            if (b == lu) return true;
         }
         return false;
     }
 
-    bool isHiddenWord(std::string const& text) {
-        auto words = listSetting("mentions-word-blacklist");
-        if (words.empty()) return false;
+    bool isHiddenWord(std::string const& text, std::vector<std::string> const& loweredWords) {
+        if (loweredWords.empty()) return false;
         auto lt = gstr::toLower(text);
-        for (auto const& w : words) {
-            auto lw = gstr::toLower(w);
-            if (!lw.empty() && lt.find(lw) != std::string::npos) return true;
+        for (auto const& lw : loweredWords) {
+            if (lt.find(lw) != std::string::npos) return true;
         }
         return false;
     }
@@ -304,7 +317,8 @@ void paimon::mentions::openProfile(std::string const& username) {
                        geode::NotificationIcon::Loading, 0.7f);
 
     gdRequest("getGJUsers20.php",
-        fmt::format("str={}&page=0&secret={}", username, GD_SECRET),
+        fmt::format("str={}&page=0&secret={}",
+            HttpClient::encodeQueryParamForm(username), GD_SECRET),
         [username](bool ok, std::string body) {
             auto fail = [&] {
                 PaimonNotify::show(fmt::format("Couldn't find @{}", username),

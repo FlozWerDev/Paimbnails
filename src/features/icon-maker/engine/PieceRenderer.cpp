@@ -1,6 +1,7 @@
 #include "PieceRenderer.hpp"
 
 #include "FillRenderer.hpp"
+#include "ShapeGenerator.hpp"
 #include "../data/IconAnatomy.hpp"
 #include "../../texture-studio/engine/SpritePreviewRenderer.hpp"
 
@@ -14,7 +15,7 @@ namespace paimon::icon_maker {
 
 namespace {
 
-// squash direction is free (rendercustomimage refits either way); shrinking keeps the buffer small.
+// squash direction is free (renderCustomImage refits either way); shrinking keeps the buffer small.
 ts::ImageBuffer applyAxisScale(ts::ImageBuffer source, float scaleX, float scaleY) {
     float const longest = std::max(scaleX, scaleY);
     if (longest <= 0.f) return source;
@@ -42,21 +43,35 @@ std::vector<std::uint8_t> alphaMask(ts::ImageBuffer const& pixels, int maskSize)
 }  // namespace
 
 geode::Result<ts::ImageBuffer> PieceRenderer::renderPiece(
-        IconPiece const& piece, int canvasSize, int guideSize,
-        std::filesystem::path const& imagesDir) {
-    if (piece.shape.file.empty()) {
-        return Err("La pieza '{}' no tiene forma", piece.name);
+        IconPiece const& piece, int canvasSize, float guideRatio,
+        float canvasScale, std::filesystem::path const& imagesDir) {
+    ts::ImageBuffer source;
+    bool scaleToGuide = false;
+
+    if (piece.shape.kind == PieceShape::Kind::Primitive ||
+        piece.shape.kind == PieceShape::Kind::Decal) {
+        // Rasterize procedural SDF shapes at crisp high resolution for this canvas.
+        int const genSide = std::clamp(
+            static_cast<int>(std::lround(static_cast<float>(canvasSize) * std::max(guideRatio, 0.5f) * 1.5f)),
+            96, 360);
+        source = ShapeGenerator::rasterize(piece.shape, genSide);
+        scaleToGuide = true;
+    } else {
+        if (piece.shape.file.empty()) {
+            return Err("La pieza '{}' no tiene forma", piece.name);
+        }
+        auto loaded = ts::ImageBuffer::loadFromFile(imagesDir / piece.shape.file);
+        if (!loaded) {
+            return Err("Forma '{}': {}", piece.shape.file, loaded.unwrapErr());
+        }
+        source = loaded.unwrap();
+        scaleToGuide = (piece.shape.kind == PieceShape::Kind::Import);
     }
 
-    auto loaded = ts::ImageBuffer::loadFromFile(imagesDir / piece.shape.file);
-    if (!loaded) {
-        return Err("Forma '{}': {}", piece.shape.file, loaded.unwrapErr());
-    }
-
-    auto shape = applyAxisScale(loaded.unwrap(), piece.scaleX, piece.scaleY);
+    auto shape = applyAxisScale(std::move(source), piece.scaleX, piece.scaleY);
     auto transform = piece.transform;
-    if (piece.shape.kind == PieceShape::Kind::Import && canvasSize > 0 && guideSize > 0) {
-        transform.scale *= static_cast<float>(guideSize) / static_cast<float>(canvasSize);
+    if (scaleToGuide && guideRatio > 0.f) {
+        transform.scale *= guideRatio;
     }
 
     auto placed = ts::SpritePreviewRenderer::renderCustomImage(
@@ -65,16 +80,24 @@ geode::Result<ts::ImageBuffer> PieceRenderer::renderPiece(
         return Ok(ts::ImageBuffer(canvasSize, canvasSize));
     }
 
-    auto filled = FillRenderer::apply(placed, piece.fill, imagesDir);
+    auto filled = FillRenderer::apply(placed, piece.fill, imagesDir, canvasScale);
     if (!filled) return filled;
 
-    // the contour is grown from the same silhouette and sits behind the paint.
+    // Layer stack: outer shadow/glow (back) -> outline (middle) -> painted fill (front).
+    auto shadow = FillRenderer::renderShadow(
+        placed, piece.fill.shadow, transform.opacity, canvasScale);
     auto outline = FillRenderer::renderOutline(
-        placed, piece.fill.outline, transform.opacity);
-    if (outline.empty()) return filled;
+        placed, piece.fill.outline, transform.opacity, canvasScale);
 
-    ts::SpritePreviewRenderer::compositeOver(outline, filled.unwrap());
-    return Ok(std::move(outline));
+    if (shadow.empty() && outline.empty()) {
+        return filled;
+    }
+
+    ts::ImageBuffer combined(canvasSize, canvasSize);
+    if (!shadow.empty())  ts::SpritePreviewRenderer::compositeOver(combined, shadow);
+    if (!outline.empty()) ts::SpritePreviewRenderer::compositeOver(combined, outline);
+    ts::SpritePreviewRenderer::compositeOver(combined, filled.unwrap());
+    return Ok(std::move(combined));
 }
 
 geode::Result<ts::ImageBuffer> PieceRenderer::renderSlot(
@@ -86,17 +109,20 @@ geode::Result<ts::ImageBuffer> PieceRenderer::renderSlot(
     if (it == project.slots.end()) return Ok(std::move(canvas));
 
     auto const* anatomy = anatomyFor(project.type);
-    int guideSize = anatomy ? anatomy->guideUhd : canvasSize;
+    int const refCanvas = anatomy && anatomy->canvasUhd > 0 ? anatomy->canvasUhd : 240;
+    int const refGuide = anatomy && anatomy->guideUhd > 0 ? anatomy->guideUhd : 120;
+    float const guideRatio = static_cast<float>(refGuide) / static_cast<float>(refCanvas);
+    float const canvasScale = static_cast<float>(canvasSize) / static_cast<float>(refCanvas);
 
     for (auto const& piece : it->second.pieces) {
         if (!piece.visible) continue;
-        auto rendered = renderPiece(piece, canvasSize, guideSize, imagesDir);
+        auto rendered = renderPiece(piece, canvasSize, guideRatio, canvasScale, imagesDir);
         if (!rendered) {
             log::warn("[icon-maker] pieza '{}' en slot '{}' omitida: {}",
                 piece.name, slotKey, rendered.unwrapErr());
             continue;
         }
-        ts::SpritePreviewRenderer::compositeOver(canvas, rendered.unwrap());
+        FillRenderer::compositeBlend(canvas, rendered.unwrap(), piece.fill.blendMode);
     }
     return Ok(std::move(canvas));
 }
@@ -111,14 +137,17 @@ SlotRender PieceRenderer::renderSlotDetailed(
     if (it == project.slots.end()) return out;
 
     auto const* anatomy = anatomyFor(project.type);
-    int guideSize = anatomy ? anatomy->guideUhd : canvasSize;
+    int const refCanvas = anatomy && anatomy->canvasUhd > 0 ? anatomy->canvasUhd : 240;
+    int const refGuide = anatomy && anatomy->guideUhd > 0 ? anatomy->guideUhd : 120;
+    float const guideRatio = static_cast<float>(refGuide) / static_cast<float>(refCanvas);
+    float const canvasScale = static_cast<float>(canvasSize) / static_cast<float>(refCanvas);
 
     auto const& pieces = it->second.pieces;
     out.pieces.reserve(pieces.size());
 
     for (std::size_t i = 0; i < pieces.size(); ++i) {
         auto const& piece = pieces[i];
-        auto rendered = renderPiece(piece, canvasSize, guideSize, imagesDir);
+        auto rendered = renderPiece(piece, canvasSize, guideRatio, canvasScale, imagesDir);
         if (!rendered) {
             log::warn("[icon-maker] pieza '{}' en slot '{}' omitida: {}",
                 piece.name, slotKey, rendered.unwrapErr());
@@ -137,7 +166,7 @@ SlotRender PieceRenderer::renderSlotDetailed(
         if (piece.visible) {
             entry.mask = alphaMask(entry.pixels, maskSize);
             entry.maskSize = maskSize;
-            ts::SpritePreviewRenderer::compositeOver(out.composite, entry.pixels);
+            FillRenderer::compositeBlend(out.composite, entry.pixels, piece.fill.blendMode);
         }
         out.pieces.push_back(std::move(entry));
     }

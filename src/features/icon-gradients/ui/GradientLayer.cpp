@@ -181,7 +181,7 @@ void GradientLayer::setRGBInputs(ccColor3B color) {
 void GradientLayer::colorSelected(const ccColor3B& color) {
     setRGBInputs(color);
 
-    textChanged(nullptr);
+    onRGBInputChanged();
 }
 
 GradientLayer* GradientLayer::create() {
@@ -416,7 +416,7 @@ void GradientLayer::onIconButton(CCObject* sender) {
 }
 
 void GradientLayer::onTypeToggle(CCObject* sender) {
-    // linear/radial switch.
+    // mutually exclusive radio toggle between Linear and Radial gradient interpolation modes.
     CCMenuItemToggler* toggler = static_cast<CCMenuItemToggler*>(sender);
 
     bool isLinear = toggler == m_linearToggle;
@@ -519,7 +519,7 @@ void GradientLayer::onColorToggle(CCObject* sender) {
 
     for (ColorToggle* channel : channels) channel->setSelected(false);
 
-    // focus the new channel.
+    // activate selected channel (main/secondary/glow/white/line) and reload gradient points with transition animation.
     toggle->setSelected(true); m_currentColor = toggle->getColorType();
 
     load(m_selectedButton->getType(), m_currentColor, true, true, true);
@@ -538,7 +538,7 @@ void GradientLayer::onHideToggle(CCObject*) {
     m_pointsLayer->setPointsHidden(hidden, 0.15f);
 }
 
-void GradientLayer::textChanged(CCTextInputNode*) {
+void GradientLayer::onRGBInputChanged() {
     TextInput* inputs[] = {m_rInput, m_gInput, m_bInput};
     int rgb[3];
     for (int i = 0; i < 3; i++) rgb[i] = numFromString<int>(inputs[i]->getString()).unwrapOr(0);
@@ -644,16 +644,18 @@ void GradientLayer::keyDown(enumKeyCodes key, double timestamp) {
     return FLAlertLayer::keyDown(key, timestamp);
 }
 
-void GradientLayer::scrollWheel(float y, float x) {
-    if (m_buttons.empty() || Mod::get()->getSettingValue<bool>(kSettingDisableKeys)) return;
+bool GradientLayer::scrollWheel(float y, float x) {
+    if (m_buttons.empty() || Mod::get()->getSettingValue<bool>(kSettingDisableKeys)) return false;
 
     auto& smooth = paimon::smoothscroll::SmoothScrollController::get();
     if (smooth.isReplaying()) {
         m_scroll += smooth.filteredWheelSteps(y, x);
-        if (std::abs(m_scroll) < 0.999f) return;
+        if (std::abs(m_scroll) < 0.999f) return true;
     } else {
         m_scroll = m_smoothScroll ? m_scroll + y : y;
-        if (m_scroll < 12.f && m_scroll > -12.f && m_smoothScroll) return;
+        // one wheel notch is worth one step, whatever the platform reports per notch.
+        float const oneStep = static_cast<float>(paimon::smoothscroll::kInputUnitsPerStep);
+        if (m_scroll < oneStep && m_scroll > -oneStep && m_smoothScroll) return true;
     }
 
     int index = 0;
@@ -681,6 +683,7 @@ void GradientLayer::scrollWheel(float y, float x) {
     if (index < 0) index = count - 1;
 
     onIconButton(m_buttons[index]);
+    return true;
 }
 
 bool GradientLayer::init() {
@@ -725,11 +728,7 @@ bool GradientLayer::init() {
     };
 
     auto addCaption = [this](char const* text, CCPoint position, float scale = 0.34f) {
-        auto label = CCLabelBMFont::create(text, "goldFont.fnt");
-        label->setScale(scale);
-        label->setPosition(position);
-        m_mainLayer->addChild(label, 2);
-        return label;
+        return makeGradientLabel(m_mainLayer, text, position, scale, "goldFont.fnt");
     };
 
     auto const previewSize = CCSize{180.f, 134.f};
@@ -826,8 +825,10 @@ bool GradientLayer::init() {
         input->setScale(0.52f);
         input->setPosition({x, 145.f});
         input->setString("255");
-        input->getInputNode()->setDelegate(this);
-        input->getInputNode()->setAllowedChars("0123456789");
+        input->setCommonFilter(CommonFilter::Uint);
+        input->setCallback([this](std::string const&) {
+            this->onRGBInputChanged();
+        });
         m_mainLayer->addChild(input);
     };
 

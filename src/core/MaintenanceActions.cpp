@@ -1,3 +1,4 @@
+#include "../utils/FilesystemPath.hpp"
 #include <Geode/Geode.hpp>
 #include <Geode/loader/SettingV3.hpp>
 #include "../utils/PaimonNotification.hpp"
@@ -13,11 +14,11 @@ namespace {
 void revealFolder(std::filesystem::path const& dir, char const* doneMsg) {
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
-    auto pathStr = geode::utils::string::pathToString(dir);
-    if (!ec && geode::utils::file::openFolder(dir)) {
-        PaimonNotify::create(doneMsg, NotificationIcon::Success)->show();
+    auto pathStr = paimon::paths::toUtf8(dir);
+    if (!ec && geode::utils::file::openFolder(paimon::paths::toSdkPath(dir))) {
+        PaimonNotify::show(doneMsg, NotificationIcon::Success);
     } else {
-        PaimonNotify::create("Carpeta: " + pathStr, NotificationIcon::Info)->show();
+        PaimonNotify::show("Carpeta: " + pathStr, NotificationIcon::Info);
     }
 }
 
@@ -34,7 +35,7 @@ $execute {
 
     ButtonSettingPressedEventV3(Mod::get(), "open-menu-music-folder").listen([](auto buttonKey) {
         if (buttonKey != "run") return;
-        revealFolder(Mod::get()->getSaveDir() / "menu-music",
+        revealFolder(paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "menu-music",
             "Menu music folder opened (cover-debug.log is here).");
     }).leak();
 

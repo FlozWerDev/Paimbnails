@@ -43,6 +43,7 @@ MaskBuffer* maskPtrForRole(MaskSet& set, ClusterRole role) {
         case ClusterRole::Color2:  return &set.color2;
         case ClusterRole::Glow:    return &set.glow;
         case ClusterRole::Outline: return &set.outline;
+        case ClusterRole::Detail:  return &set.detail;
         default:                   return nullptr;
     }
 }
@@ -238,6 +239,7 @@ MaskBuffer&       MaskSet::get(ClusterRole r)       {
         case ClusterRole::Color2:  return color2;
         case ClusterRole::Glow:    return glow;
         case ClusterRole::Outline: return outline;
+        case ClusterRole::Detail:  return detail;
         default:                   return color1;
     }
 }
@@ -247,6 +249,7 @@ MaskBuffer const& MaskSet::get(ClusterRole r) const {
         case ClusterRole::Color2:  return color2;
         case ClusterRole::Glow:    return glow;
         case ClusterRole::Outline: return outline;
+        case ClusterRole::Detail:  return detail;
         default:                   return color1;
     }
 }

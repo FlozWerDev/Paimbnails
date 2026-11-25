@@ -1,4 +1,7 @@
 #include "CustomTransitionScene.hpp"
+#include "TransitionObjectVisual.hpp"
+#include "../../../features/cursor/services/CursorManager.hpp"
+#include <algorithm>
 #include <cmath>
 using namespace geode::prelude;
 using namespace paimon::transitions;
@@ -9,11 +12,12 @@ bool CustomTransitionScene::isActive() {
         typeinfo_cast<CustomTransitionScene*>(director->getNextScene());
 }
 CustomTransitionScene* CustomTransitionScene::create(CCScene* from, CCScene* to,
-    std::vector<TransitionCommand> const& commands, bool) {
+    std::vector<TransitionCommand> const& commands, bool, float cutPoint, float minimumDuration) {
     // ccdirector owns push/replace/pop; never touch its scene pointers.
     if (!from || from == to || from != CCDirector::get()->getRunningScene()) return nullptr;
     auto* result = new CustomTransitionScene();
-    if (result->initialize(to, commands)) { result->autorelease(); return result; }
+    result->m_sceneCut = cutPoint;
+    if (result->initialize(to, commands, minimumDuration)) { result->autorelease(); return result; }
     delete result; return nullptr;
 }
 CustomTransitionScene* CustomTransitionScene::createStinger(CCScene* to,
@@ -27,22 +31,22 @@ CustomTransitionScene* CustomTransitionScene::createStinger(CCScene* to,
     }
     delete result; return nullptr;
 }
-bool CustomTransitionScene::initialize(CCScene* to, std::vector<TransitionCommand> commands) {
+bool CustomTransitionScene::initialize(CCScene* to, std::vector<TransitionCommand> commands, float minimumDuration) {
     if (!to || commands.empty()) return false;
     TransitionManager::sanitizeCommands(commands);
     m_commands = std::move(commands);
-    m_timeline = compileTimeline(m_commands, [](auto const& c) { return c.action == CommandAction::Spawn; });
+    m_evaluator.configure(m_commands, minimumDuration);
+    m_timeline = m_evaluator.timeline();
     if (m_timeline.clips.empty() || m_timeline.duration > 30.f) return false;
-    m_done.resize(m_timeline.clips.size());
-    m_started.resize(m_timeline.clips.size());
-    m_origins.resize(m_timeline.clips.size());
+    m_objBase.assign(m_timeline.clips.size(), 0.f);
+    m_clipOfCommand.assign(m_commands.size(), -1);
     m_overlays.resize(m_timeline.clips.size());
     m_media.resize(m_timeline.clips.size());
     for (std::size_t i = 0; i < m_timeline.clips.size(); ++i) {
         auto const& command = m_commands[m_timeline.clips[i].command];
-        if (command.action == CommandAction::Image) {
+        m_clipOfCommand[m_timeline.clips[i].command] = static_cast<int>(i);
+        if (command.action == CommandAction::Image && !command.solidObject) {
             m_media[i] = findTransitionMedia(command.imagePath);
-            // no sync decode or half-invisible transition.
             if (!m_media[i]) { prepareTransitionMedia(command.imagePath); return false; }
         }
     }
@@ -95,6 +99,12 @@ void CustomTransitionScene::onEnter() {
             complete(); return;
         }
         m_to->setOpacity(0);
+        m_wash = CCLayerColor::create({0, 0, 0, 0}, size.width, size.height);
+        addChild(m_wash, 9);
+        // objects exist (hidden) from the start so triggers can animate them
+        // before/after their own clip plays.
+        for (std::size_t c = 0; c < m_commands.size(); ++c)
+            if (m_commands[c].action == CommandAction::Image) objectSprite((int)c);
     }
     update(0.f);
     if (!m_finished) scheduleUpdate();
@@ -118,14 +128,7 @@ void CustomTransitionScene::update(float dt) {
         float sourceTime = m_elapsed / m_fDuration * m_stinger->duration();
         m_stinger->apply(m_stingerSprite, sourceTime);
     } else {
-        for (std::size_t i = 0; i < m_timeline.clips.size(); ++i) {
-            auto const& clip = m_timeline.clips[i];
-            if (m_done[i] || m_elapsed < clip.start) continue;
-            float elapsed = m_elapsed - clip.start;
-            float progress = std::min(1.f, elapsed / clip.duration);
-            apply(i, progress, elapsed);
-            m_done[i] = progress >= 1.f;
-        }
+        applyFrame();
     }
     if (m_elapsed >= m_fDuration) complete();
 }
@@ -136,52 +139,57 @@ void CustomTransitionScene::complete() {
     // native finish keeps the director handoff and stack cleanup.
     finish();
 }
-void CustomTransitionScene::apply(std::size_t i, float t, float elapsed) {
-    auto const& command = m_commands[m_timeline.clips[i].command];
-    auto* target = command.target == "to" ? m_to : m_from;
-    if (command.action == CommandAction::Image) {
-        if (!m_overlays[i]) {
-            m_overlays[i] = CCSprite::create();
-            m_media[i]->apply(m_overlays[i], 0);
-            m_overlays[i]->setPosition(CCDirector::get()->getWinSize() / 2);
-            addChild(m_overlays[i], 10);
+CCSprite* CustomTransitionScene::objectSprite(int commandIndex) {
+    if (commandIndex < 0 || commandIndex >= static_cast<int>(m_clipOfCommand.size())) return nullptr;
+    int clip = m_clipOfCommand[commandIndex];
+    if (clip < 0) return nullptr;
+    auto const& cmd = m_commands[commandIndex];
+    if (!cmd.solidObject && !m_media[clip]) return nullptr;
+    if (!m_overlays[clip]) {
+        auto size = CCDirector::get()->getWinSize();
+        auto* sprite = cmd.solidObject ? createSolidTransitionSprite() : CCSprite::create();
+        if (!sprite) return nullptr;
+        if (cmd.solidObject) {
+            sprite->setTextureRect({0.f, 0.f, size.width, size.height});
+            m_objBase[clip] = cmd.objScale;
+        } else {
+            m_media[clip]->apply(sprite, 0);
+            m_objBase[clip] = std::max(size.width / std::max(1, m_media[clip]->width),
+                size.height / std::max(1, m_media[clip]->height)) * cmd.objScale;
         }
-        m_media[i]->apply(m_overlays[i], elapsed);
-        m_overlays[i]->setOpacity(static_cast<GLubyte>(255 * t));
-        return;
+        sprite->setVisible(false);
+        addChild(sprite, 10 + commandIndex);
+        m_overlays[clip] = sprite;
     }
-    if (!target) return;
-    if (!m_started[i]) { m_origins[i] = target->getPosition(); m_started[i] = true; }
-    float ease = t;
-    if (command.action == CommandAction::EaseIn) ease = t * t * t;
-    if (command.action == CommandAction::EaseOut) ease = 1.f - std::pow(1.f - t, 3.f);
-    if (command.action == CommandAction::Bounce) {
-        if (t < 1.f / 2.75f) ease = 7.5625f * t * t;
-        else if (t < 2.f / 2.75f) { float p = t - 1.5f / 2.75f; ease = 7.5625f * p * p + .75f; }
-        else if (t < 2.5f / 2.75f) { float p = t - 2.25f / 2.75f; ease = 7.5625f * p * p + .9375f; }
-        else { float p = t - 2.625f / 2.75f; ease = 7.5625f * p * p + .984375f; }
-    }
-    float value = command.fromVal + (command.toVal - command.fromVal) * ease;
-    switch (command.action) {
-        case CommandAction::FadeIn:
-        case CommandAction::FadeOut:
-        case CommandAction::EaseIn:
-        case CommandAction::EaseOut:
-        case CommandAction::Bounce:
-            target->setOpacity(static_cast<GLubyte>(std::clamp(value, 0.f, 255.f))); break;
-        case CommandAction::Move:
-            target->setPosition({command.fromX + (command.toX - command.fromX) * t,
-                command.fromY + (command.toY - command.fromY) * t}); break;
-        case CommandAction::Scale: target->setScale(std::clamp(value, .01f, 10.f)); break;
-        case CommandAction::Rotate: target->setRotation(value); break;
-        case CommandAction::Color:
-            target->setColor({static_cast<GLubyte>(command.r), static_cast<GLubyte>(command.g), static_cast<GLubyte>(command.b)}); break;
-        case CommandAction::Shake: {
-            // deterministic offsets, zero at both ends, no rand().
-            float amplitude = command.intensity * std::sin(t * 3.14159265f);
-            target->setPosition({m_origins[i].x + amplitude * std::sin(elapsed * 91.f),
-                m_origins[i].y + amplitude * std::sin(elapsed * 113.f)}); break;
+    return m_overlays[clip];
+}
+
+void CustomTransitionScene::applyFrame() {
+    auto size = CCDirector::get()->getWinSize();
+#if defined(GEODE_IS_MOBILE)
+    auto ptr = CursorManager::get().pointerPos();
+    auto mouse = (ptr.x >= 0.f && ptr.y >= 0.f) ? ptr : ccp(size.width * 0.5f, size.height * 0.5f);
+#else
+    auto mouse = geode::cocos::getMousePos();
+#endif
+    auto frame = m_evaluator.sample(m_elapsed, {size.width, size.height},
+        {std::clamp(mouse.x, 0.f, size.width), std::clamp(mouse.y, 0.f, size.height)}, m_sceneCut);
+    applyTransitionVisual(m_from, frame.sceneA);
+    applyTransitionVisual(m_to, frame.sceneB);
+    m_wash->setColor({static_cast<GLubyte>(frame.wash.r), static_cast<GLubyte>(frame.wash.g), static_cast<GLubyte>(frame.wash.b)});
+    m_wash->setOpacity(static_cast<GLubyte>(std::clamp(frame.wash.opacity, 0.f, 255.f)));
+    for (std::size_t i = 0; i < m_timeline.clips.size(); ++i) {
+        auto commandIndex = m_timeline.clips[i].command;
+        auto const& command = m_commands[commandIndex];
+        if (command.action != CommandAction::Image) continue;
+        auto* sprite = objectSprite(static_cast<int>(commandIndex));
+        if (!sprite) continue;
+        auto const& visual = frame.objects[commandIndex];
+        if (m_media[i] && visual.visible) {
+            float time = visual.mediaElapsed;
+            if (command.stretchMedia) time *= m_media[i]->duration() / m_timeline.clips[i].duration;
+            m_media[i]->apply(sprite, time);
         }
-        default: break;
+        applyTransitionVisual(sprite, visual, m_objBase[i]);
     }
 }

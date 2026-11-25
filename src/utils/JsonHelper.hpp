@@ -9,10 +9,22 @@
 
 namespace paimon::json {
 
+// string, or the fallback when the value is missing or not a string.
+inline std::string stringOr(matjson::Value const& value, std::string const& fallback = "") {
+    return value.asString().unwrapOr(fallback);
+}
+
 inline float floatOr(matjson::Value const& value, float fallback = 0.f) {
     auto number = value.asDouble().unwrapOr(static_cast<double>(fallback));
     if (!std::isfinite(number) || std::abs(number) > std::numeric_limits<float>::max()) return fallback;
     return static_cast<float>(number);
+}
+
+// double precision sibling for timestamps: float would lose ~128s at unix scale.
+inline double doubleOr(matjson::Value const& value, double fallback = 0.0) {
+    auto number = value.asDouble().unwrapOr(fallback);
+    if (!std::isfinite(number)) return fallback;
+    return number;
 }
 
 template <std::signed_integral T>

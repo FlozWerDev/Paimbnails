@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "YtDlpDownloader.hpp"
 #include "YtDlpBootstrap.hpp"
 #include "FfmpegBootstrap.hpp"
@@ -376,12 +377,12 @@ static std::filesystem::path resolveScoopPath() {
 static std::string detectYtDlp() {
     auto bundled = YtDlpBootstrap::get().bundledPath();
     if (fileExists(bundled)) {
-        return geode::utils::string::pathToString(bundled);
+        return paimon::paths::toUtf8(bundled);
     }
 
     std::vector<std::filesystem::path> candidates = {
-        Mod::get()->getConfigDir() / "yt-dlp" / kYtDlpExeName,
-        Mod::get()->getConfigDir() / kYtDlpExeName,
+        paimon::paths::toStdPath(Mod::get()->getConfigDir()) / "yt-dlp" / kYtDlpExeName,
+        paimon::paths::toStdPath(Mod::get()->getConfigDir()) / kYtDlpExeName,
 #ifdef GEODE_IS_WINDOWS
         std::filesystem::path("C:/ProgramData/chocolatey/bin") / kYtDlpExeName,
         std::filesystem::path("C:/Python311/Scripts") / kYtDlpExeName,
@@ -394,12 +395,12 @@ static std::string detectYtDlp() {
     };
 
     for (const auto& c : candidates) {
-        if (fileExists(c)) return geode::utils::string::pathToString(c);
+        if (fileExists(c)) return paimon::paths::toUtf8(c);
     }
 
     auto scoopPath = resolveScoopPath();
     if (!scoopPath.empty() && fileExists(scoopPath)) {
-        return geode::utils::string::pathToString(scoopPath);
+        return paimon::paths::toUtf8(scoopPath);
     }
 
 #ifdef GEODE_IS_WINDOWS
@@ -448,6 +449,52 @@ bool YtDlpDownloader::isAvailable() {
     return !locateBinary().empty();
 }
 
+std::filesystem::path YtDlpDownloader::prepareCoverForDisplay(
+    std::filesystem::path const& coverPath,
+    std::filesystem::path const& ffmpegPath
+) {
+    auto const extension = geode::utils::string::toLower(
+        paimon::paths::toUtf8(coverPath.extension()));
+    if (extension != ".webp") return coverPath;
+
+    auto pngPath = coverPath;
+    pngPath.replace_extension(".png");
+    if (fileExists(pngPath)) return pngPath;
+    if (!fileExists(coverPath) || !fileExists(ffmpegPath) || paimon::isRuntimeShuttingDown()) {
+        return coverPath;
+    }
+
+    // publish only a complete conversion; concurrent requests use separate outputs.
+    static std::atomic<std::uint64_t> sequence{0};
+    auto temporary = pngPath;
+    temporary += fmt::format(".{}-{}.tmp.png",
+        std::chrono::steady_clock::now().time_since_epoch().count(), sequence.fetch_add(1));
+    std::vector<std::string> argv = {
+        paimon::paths::toUtf8(ffmpegPath), "-nostdin", "-hide_banner", "-loglevel", "error",
+        "-y", "-i", paimon::paths::toUtf8(coverPath),
+        "-frames:v", "1", "-update", "1", paimon::paths::toUtf8(temporary)
+    };
+    auto const exitCode = runAndCaptureArgv(argv, [](std::string const& line) {
+        log::debug("[yt-dlp] cover conversion: {}", line);
+    }, 30'000);
+
+    std::error_code ec;
+    if (exitCode != 0 || !fileExists(temporary)) {
+        std::filesystem::remove(temporary, ec);
+        log::warn("[yt-dlp] could not convert cover '{}' to PNG (exit {})",
+            paimon::paths::toUtf8(coverPath), exitCode);
+        return coverPath;
+    }
+    std::filesystem::rename(temporary, pngPath, ec);
+    if (ec) {
+        log::warn("[yt-dlp] could not publish PNG cover: {}", ec.message());
+        std::filesystem::remove(temporary, ec);
+        return fileExists(pngPath) ? pngPath : coverPath;
+    }
+    log::info("[yt-dlp] prepared PNG cover '{}'", paimon::paths::toUtf8(pngPath));
+    return pngPath;
+}
+
 void YtDlpDownloader::download(
     const std::string& url,
     const std::string& trackId,
@@ -477,7 +524,18 @@ void YtDlpDownloader::download(
         return;
     }
 
-    auto ffmpegPath = geode::utils::string::pathToString(ffmpeg.bundledPath());
+    auto ffmpegBinary = ffmpeg.bundledPath();
+    auto ffmpegPath = paimon::paths::toUtf8(ffmpegBinary);
+
+    if (url.empty() || url.front() == '-') {
+        Loader::get()->queueInMainThread([onComplete, trackId]() {
+            YtDlpResult r;
+            r.trackId = trackId;
+            r.error = "invalid url";
+            if (onComplete) onComplete(std::move(r));
+        });
+        return;
+    }
 
     auto& lib = MenuMusicLibrary::get();
     auto tracksDir = lib.getTracksDir();
@@ -508,7 +566,7 @@ void YtDlpDownloader::download(
     }
 
     std::string templatePath =
-        geode::utils::string::pathToString(tracksDir / (trackId + ".%(ext)s"));
+        paimon::paths::toUtf8(tracksDir / (trackId + ".%(ext)s"));
 
     // keep user-controlled values in argv; neither platform path invokes a shell.
     std::vector<std::string> argv = {
@@ -520,11 +578,13 @@ void YtDlpDownloader::download(
         "--audio-quality", "0",
         "--ffmpeg-location", ffmpegPath,
         "--write-thumbnail",
+        "--convert-thumbnails", "png",
         "--write-info-json",
         "--no-warnings",
         "--newline",
         "--progress",
         "-o", templatePath,
+        "--",
         url,
     };
 
@@ -533,7 +593,7 @@ void YtDlpDownloader::download(
 
     m_activeJobs.fetch_add(1, std::memory_order_relaxed);
 
-    paimon::ThreadTracker::get().spawn([this, argv, trackId, url, tracksDir, coversDir, expectedExt, formatChoice,
+    paimon::ThreadTracker::get().spawn([this, argv, trackId, url, tracksDir, coversDir, expectedExt, formatChoice, ffmpegBinary,
                  onProgress, onComplete]() mutable {
         geode::utils::thread::setName("Paimon YT-DLP Worker");
         if (paimon::isRuntimeShuttingDown()) {
@@ -581,8 +641,6 @@ void YtDlpDownloader::download(
 
         result.exitCode = exitCode;
 
-        auto& lib = MenuMusicLibrary::get();
-
         std::filesystem::path foundAudio;
         std::filesystem::path foundIntermediate;
         std::filesystem::path foundCover;
@@ -597,7 +655,7 @@ void YtDlpDownloader::download(
             };
             std::error_code ec;
             log::debug("[yt-dlp] scanning {} for stem '{}' (expected {})",
-                geode::utils::string::pathToString(tracksDir), trackId, expectedExt);
+                paimon::paths::toUtf8(tracksDir), trackId, expectedExt);
             for (auto& e : std::filesystem::directory_iterator(tracksDir, ec)) {
                 if (paimon::isRuntimeShuttingDown()) {
                     m_activeJobs.fetch_sub(1, std::memory_order_relaxed);
@@ -606,7 +664,7 @@ void YtDlpDownloader::download(
                 if (!e.is_regular_file()) continue;
                 const auto& entryPath = e.path();
                 // pathtostring preserves non-ascii names on windows.
-                auto stem = geode::utils::string::pathToString(entryPath.stem());
+                auto stem = paimon::paths::toUtf8(entryPath.stem());
                 bool stemMatches =
                     (stem == trackId) ||
                     (stem.size() > trackId.size() &&
@@ -615,9 +673,9 @@ void YtDlpDownloader::download(
                 if (!stemMatches) continue;
 
                 auto ext = geode::utils::string::toLower(
-                    geode::utils::string::pathToString(entryPath.extension()));
+                    paimon::paths::toUtf8(entryPath.extension()));
                 log::debug("[yt-dlp] found file: {} (ext={})",
-                    geode::utils::string::pathToString(entryPath), ext);
+                    paimon::paths::toUtf8(entryPath), ext);
 
                 bool isFinalAudio = std::find(kFinalAudio.begin(), kFinalAudio.end(), ext)
                     != kFinalAudio.end();
@@ -654,7 +712,7 @@ void YtDlpDownloader::download(
         std::string metaTitle;
         std::string metaArtist;
         if (!foundInfoJson.empty()) {
-            auto raw = geode::utils::file::readString(foundInfoJson).unwrapOr("");
+            auto raw = geode::utils::file::readString(paimon::paths::toSdkPath(foundInfoJson)).unwrapOr("");
             if (!raw.empty()) {
                 auto parsed = matjson::parse(raw);
                 if (parsed.isOk()) {
@@ -745,7 +803,7 @@ void YtDlpDownloader::download(
                 std::filesystem::rename(foundAudio, newAudio, mv);
                 if (!mv) {
                     log::info("[yt-dlp] renamed audio to '{}'",
-                        geode::utils::string::pathToString(newAudio.filename()));
+                        paimon::paths::toUtf8(newAudio.filename()));
 
                     if (!foundCover.empty()) {
                         const auto coverExtFs = foundCover.extension();
@@ -774,7 +832,7 @@ void YtDlpDownloader::download(
         if (!foundCover.empty()) {
             std::error_code mv;
             std::filesystem::create_directories(coversDir, mv);
-            std::string coverStem = geode::utils::string::pathToString(foundAudio.stem());
+            std::string coverStem = paimon::paths::toUtf8(foundAudio.stem());
             if (coverStem.empty()) coverStem = trackId;
             const auto coverStemFs = utf8ToPath(coverStem);
             const auto coverExtFs = utf8ToPath(foundCoverExt);
@@ -789,13 +847,14 @@ void YtDlpDownloader::download(
             if (!mv) {
                 foundCover = finalCover;
             }
+            foundCover = prepareCoverForDisplay(foundCover, ffmpegBinary);
         }
 
         if (!foundIntermediate.empty()) {
             std::error_code rm;
             std::filesystem::remove(foundIntermediate, rm);
             log::debug("[yt-dlp] cleaned up intermediate file: {}",
-                geode::utils::string::pathToString(foundIntermediate));
+                paimon::paths::toUtf8(foundIntermediate));
         }
 
         // a valid output file counts as success despite nonzero warning exits.
@@ -804,13 +863,13 @@ void YtDlpDownloader::download(
             std::filesystem::exists(foundAudio, finalEc);
         if (audioExists) {
             result.success = true;
-            result.audioPath = geode::utils::string::pathToString(foundAudio);
+            result.audioPath = paimon::paths::toUtf8(foundAudio);
             result.coverPath = foundCover.empty()
                 ? std::string{}
-                : geode::utils::string::pathToString(foundCover);
+                : paimon::paths::toUtf8(foundCover);
             result.displayName = !metaTitle.empty()
                 ? metaTitle
-                : geode::utils::string::pathToString(foundAudio.stem());
+                : paimon::paths::toUtf8(foundAudio.stem());
             result.artist = metaArtist;
         } else {
             result.success = false;

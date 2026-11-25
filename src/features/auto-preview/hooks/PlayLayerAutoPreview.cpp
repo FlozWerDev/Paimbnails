@@ -76,8 +76,8 @@ void attemptAutoCapture(WeakRef<PlayLayer> weak, int levelID) {
 
 class $modify(PaimonAutoPreviewPlayLayer, PlayLayer) {
     $override
-    bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
-        if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
+    bool init(GJGameLevel* level, bool dontCreateObjects) {
+        if (!PlayLayer::init(level, dontCreateObjects)) return false;
 
         if (paimon::gameplayperf::isOptionEnabled(
                 paimon::gameplayperf::kAutoPreviewModuleId)) return true;

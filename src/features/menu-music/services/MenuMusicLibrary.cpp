@@ -1,8 +1,16 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "MenuMusicLibrary.hpp"
+#include "FfmpegBootstrap.hpp"
+#include "YtDlpDownloader.hpp"
 
 #include <Geode/binding/MusicDownloadManager.hpp>
 #include <Geode/binding/SongInfoObject.hpp>
 #include <Geode/loader/Mod.hpp>
+#include "../../../utils/JsonHelper.hpp"
+#include "../../../utils/AtomicFileWrite.hpp"
+#include "../../../utils/ThreadTracker.hpp"
+#include "../../../utils/LocalAssetStore.hpp"
+#include "../../../core/RuntimeLifecycle.hpp"
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/utils/string.hpp>
@@ -11,15 +19,54 @@
 #include <charconv>
 #include <chrono>
 #include <climits>
+#include <deque>
 #include <fmt/format.h>
+#include <unordered_set>
 
 using namespace geode::prelude;
 
 namespace paimon::menumusic {
 
+struct DownloadedSongSnapshot {
+    cocos2d::CCDictionary* dictionary = nullptr; // identity only; look up the live dictionary each frame
+    std::size_t count = 0;
+    std::uint64_t generation = 0;
+    std::string cursor;
+    std::deque<MusicTrack> candidates;
+};
+
 namespace {
 
 constexpr std::uintmax_t kMaxLibraryFileBytes = 16ull * 1024 * 1024;
+
+// read GD objects only on the main thread; workers receive independent values.
+std::vector<MusicTrack> downloadedSongCandidates(MusicDownloadManager* manager, CCDictionary* songs) {
+    std::vector<MusicTrack> candidates;
+    candidates.reserve(songs->count());
+    auto const now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    for (auto [key, song] : CCDictionaryExt<std::string_view, SongInfoObject*>(songs)) {
+        if (!song || manager->isResourceSong(song->m_songID)) continue;
+        auto path = manager->pathForSong(song->m_songID);
+        if (!MenuMusicLibrary::isAudioExtension(path)) continue;
+        MusicTrack track;
+        track.id = fmt::format("gd_{}", song->m_songID);
+        track.audioPath = std::move(path);
+        track.displayName = song->m_songName;
+        track.artist = song->m_artistName;
+        track.source = TrackSource::GeometryDash;
+        track.addedUnixMs = now;
+        candidates.push_back(std::move(track));
+    }
+    return candidates;
+}
+
+void filterMissingDownloadedSongs(std::vector<MusicTrack>& candidates) {
+    std::erase_if(candidates, [](MusicTrack const& track) {
+        std::error_code ec;
+        return !std::filesystem::is_regular_file(paimon::assets::pathFromUtf8(track.audioPath), ec) || ec;
+    });
+}
 
 } // namespace
 
@@ -38,8 +85,52 @@ void MenuMusicLibrary::ensureDirs() {
     std::filesystem::create_directories(getCoversDir(), ec);
 }
 
+void MenuMusicLibrary::repairDownloadedCoversAsync() {
+    struct CoverRepair {
+        std::string trackId;
+        std::string originalPath;
+        std::string displayPath;
+    };
+    std::vector<CoverRepair> covers;
+    for (auto const& track : m_tracks) {
+        if (track.source != TrackSource::Downloaded || track.coverPath.empty()) continue;
+        auto const extension = geode::utils::string::toLower(paimon::paths::toUtf8(
+            paimon::assets::pathFromUtf8(track.coverPath).extension()));
+        if (extension == ".webp") covers.push_back({track.id, track.coverPath, {}});
+    }
+    if (covers.empty()) return;
+
+    auto ffmpegPath = FfmpegBootstrap::get().bundledPath();
+    if (!paimon::ThreadTracker::get().spawn(
+            [this, covers = std::move(covers), ffmpegPath]() mutable {
+        for (auto& cover : covers) {
+            if (paimon::isRuntimeShuttingDown()) return;
+            cover.displayPath = paimon::paths::toUtf8(YtDlpDownloader::prepareCoverForDisplay(
+                paimon::assets::pathFromUtf8(cover.originalPath), ffmpegPath));
+        }
+        if (paimon::isRuntimeShuttingDown()) return;
+        Loader::get()->queueInMainThread([this, covers = std::move(covers)] {
+            if (paimon::isRuntimeShuttingDown()) return;
+            bool changed = false;
+            for (auto const& cover : covers) {
+                auto* track = findTrack(cover.trackId);
+                if (!track || track->source != TrackSource::Downloaded ||
+                    track->coverPath != cover.originalPath || cover.displayPath == cover.originalPath) continue;
+                track->coverPath = cover.displayPath;
+                changed = true;
+            }
+            if (changed) {
+                markDirty();
+                notifyChanged();
+            }
+        });
+    })) {
+        log::warn("[MenuMusic] could not schedule downloaded cover repair");
+    }
+}
+
 std::filesystem::path MenuMusicLibrary::getRootDir() const {
-    return Mod::get()->getSaveDir() / "menu-music";
+    return paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "menu-music";
 }
 std::filesystem::path MenuMusicLibrary::getTracksDir() const {
     return getRootDir() / "tracks";
@@ -174,18 +265,24 @@ std::size_t MenuMusicLibrary::importFolder(const std::filesystem::path& folder, 
     const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
     std::size_t added = 0;
+    // local path set: same equality as findTrackByAudioPath, O(1) per file
+    // instead of a linear scan, with no persistent index to keep in sync.
+    std::unordered_set<std::string> knownPaths;
+    knownPaths.reserve(m_tracks.size());
+    for (auto const& t : m_tracks) knownPaths.insert(t.audioPath);
     for (const auto& path : files) {
-        auto normalized = geode::utils::string::pathToString(path);
-        if (findTrackByAudioPath(normalized)) continue;
+        auto normalized = paimon::paths::toUtf8(path);
+        if (!knownPaths.insert(normalized).second) continue;
 
         MusicTrack track;
         track.id = generateId("folder");
         track.audioPath = normalized;
-        track.displayName = geode::utils::string::pathToString(path.stem());
+        track.displayName = paimon::paths::toUtf8(path.stem());
         track.source = TrackSource::Local;
         track.addedUnixMs = now;
         m_trackIndex[track.id] = m_tracks.size();
         m_tracks.push_back(std::move(track));
+        knownPaths.insert(m_tracks.back().audioPath);
         ++added;
     }
 
@@ -198,57 +295,171 @@ std::size_t MenuMusicLibrary::importFolder(const std::filesystem::path& folder, 
 
 std::size_t MenuMusicLibrary::syncDownloadedSongs(bool force) {
     auto* manager = MusicDownloadManager::sharedState();
-    auto* songs = manager ? manager->getDownloadedSongs() : nullptr;
+    auto* songs = manager ? manager->m_songObjects : nullptr;
     if (!manager || !songs) return 0;
 
-    // one stat() per song adds up on menulayer entry; force=false skips when the set is unchanged.
+    // getDownloadedSongs() calls isSongDownloaded() for every known song,
+    // including filesystem checks. Read metadata directly; validate files separately.
     const auto songCount = static_cast<std::size_t>(songs->count());
-    if (!force && m_syncedSongCount == songCount) return 0;
+    if (!force && m_syncedSongDictionary == songs && m_syncedSongCount == songCount) return 0;
     m_syncedSongCount = songCount;
+    m_syncedSongDictionary = songs;
 
-    const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+    auto candidates = downloadedSongCandidates(manager, songs);
+    filterMissingDownloadedSongs(candidates);
+    return mergeDownloadedSongs(std::move(candidates));
+}
+
+void MenuMusicLibrary::syncDownloadedSongsAsync() {
+    auto* manager = MusicDownloadManager::sharedState();
+    auto* songs = manager ? manager->m_songObjects : nullptr;
+    if (!songs || m_downloadSyncPending || paimon::isRuntimeShuttingDown()) return;
+    auto const songCount = static_cast<std::size_t>(songs->count());
+    if (m_syncedSongDictionary == songs && m_syncedSongCount == songCount) return;
+
+    auto snapshot = std::make_shared<DownloadedSongSnapshot>();
+    snapshot->dictionary = songs;
+    snapshot->count = songCount;
+    snapshot->generation = m_downloadSyncGeneration;
+    m_downloadSyncPending = true;
+    // no enumeration or path resolution during popup construction. Geode swaps
+    // its main-thread queue each frame, so every continuation runs later.
+    Loader::get()->queueInMainThread([this, snapshot] { captureDownloadedSongBatch(snapshot); });
+}
+
+void MenuMusicLibrary::restartDownloadedSongSync() {
+    m_downloadSyncPending = false;
+    syncDownloadedSongsAsync();
+    // a pending Play request must also finish when there is no work to start.
+    if (!m_downloadSyncPending && !paimon::isRuntimeShuttingDown()) notifyChanged();
+}
+
+void MenuMusicLibrary::captureDownloadedSongBatch(std::shared_ptr<DownloadedSongSnapshot> const& snapshot) {
+    if (paimon::isRuntimeShuttingDown()) { m_downloadSyncPending = false; return; }
+    auto* manager = MusicDownloadManager::sharedState();
+    auto* songs = manager ? manager->m_songObjects : nullptr;
+    if (!songs) { m_downloadSyncPending = false; notifyChanged(); return; }
+    if (songs != snapshot->dictionary || songs->count() != snapshot->count ||
+        snapshot->generation != m_downloadSyncGeneration) {
+        restartDownloadedSongSync();
+        return;
+    }
+
+    // count the cursor lookup against the same budget as metadata capture.
+    constexpr std::size_t kMaxSongsPerFrame = 64;
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1);
+    cocos2d::CCDictElement* next = songs->m_pElements;
+    if (!snapshot->cursor.empty()) {
+        cocos2d::CCDictElement* previous = nullptr;
+        HASH_FIND_STR(songs->m_pElements, snapshot->cursor.c_str(), previous);
+        if (!previous) { restartDownloadedSongSync(); return; }
+        next = static_cast<cocos2d::CCDictElement*>(previous->hh.next);
+    }
+    auto const now = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
+    std::size_t processed = 0;
+    while (next && processed < kMaxSongsPerFrame &&
+           (processed == 0 || std::chrono::steady_clock::now() < deadline)) {
+        // a key is stable across frames; CCDictElement iterators are not.
+        snapshot->cursor = next->getStrKey();
+        auto* song = static_cast<SongInfoObject*>(next->getObject());
+        if (song && !manager->isResourceSong(song->m_songID)) {
+            MusicTrack track;
+            track.id = fmt::format("gd_{}", song->m_songID);
+            track.displayName = song->m_songName;
+            track.artist = song->m_artistName;
+            track.source = TrackSource::GeometryDash;
+            track.addedUnixMs = now;
+            track.audioPath = manager->pathForSong(song->m_songID);
+            if (MenuMusicLibrary::isAudioExtension(track.audioPath)) snapshot->candidates.push_back(std::move(track));
+        }
+        ++processed;
+        // re-find before following `next`: no native dictionary element survives
+        // a yield or reentrant mutation. Hash lookup is O(1) on average.
+        if (manager->m_songObjects != songs || songs->count() != snapshot->count ||
+            snapshot->generation != m_downloadSyncGeneration) {
+            restartDownloadedSongSync();
+            return;
+        }
+        cocos2d::CCDictElement* current = nullptr;
+        HASH_FIND_STR(songs->m_pElements, snapshot->cursor.c_str(), current);
+        if (!current) { restartDownloadedSongSync(); return; }
+        next = static_cast<cocos2d::CCDictElement*>(current->hh.next);
+    }
+    if (next) {
+        Loader::get()->queueInMainThread([this, snapshot] { captureDownloadedSongBatch(snapshot); });
+        return;
+    }
+    finishDownloadedSongCapture(snapshot);
+}
+
+void MenuMusicLibrary::finishDownloadedSongCapture(std::shared_ptr<DownloadedSongSnapshot> const& snapshot) {
+    auto candidates = std::move(snapshot->candidates);
+    auto const songCount = snapshot->count;
+    auto const generation = snapshot->generation;
+    auto* dictionary = snapshot->dictionary;
+    bool started = false;
+    try {
+        started = paimon::ThreadTracker::get().spawn(
+        [this, songCount, generation, dictionary, captured = std::move(candidates)]() mutable {
+            if (paimon::isRuntimeShuttingDown()) return;
+            std::vector<MusicTrack> candidates;
+            candidates.reserve(captured.size());
+            for (auto& track : captured) candidates.push_back(std::move(track));
+            filterMissingDownloadedSongs(candidates);
+            Loader::get()->queueInMainThread([this, songCount, generation, dictionary, candidates = std::move(candidates)]() mutable {
+                if (paimon::isRuntimeShuttingDown()) return;
+                auto* manager = MusicDownloadManager::sharedState();
+                auto* songs = manager ? manager->m_songObjects : nullptr;
+                if (!songs) { m_downloadSyncPending = false; notifyChanged(); return; }
+                if (songs != dictionary || songs->count() != songCount || generation != m_downloadSyncGeneration) {
+                    restartDownloadedSongSync();
+                    return;
+                }
+                m_downloadSyncPending = false;
+                // a manual sync may have run meanwhile. Merge against the current
+                // library so user edits survive and no duplicate tracks are added.
+                m_syncedSongCount = songCount;
+                m_syncedSongDictionary = songs;
+                mergeDownloadedSongs(std::move(candidates), true);
+            });
+        });
+    } catch (std::exception const& error) {
+        log::warn("[MenuMusic] could not start downloaded song scan: {}", error.what());
+    }
+    if (!started) { m_downloadSyncPending = false; notifyChanged(); }
+}
+
+std::size_t MenuMusicLibrary::mergeDownloadedSongs(std::vector<MusicTrack> candidates, bool notifyWhenUnchanged) {
+    std::unordered_map<std::string, std::size_t> byPath;
+    byPath.reserve(m_tracks.size() + candidates.size());
+    for (std::size_t index = 0; index < m_tracks.size(); ++index)
+        byPath.emplace(m_tracks[index].audioPath, index);
     std::size_t added = 0;
     bool changed = false;
-    for (auto* song : CCArrayExt<SongInfoObject*>(songs)) {
-        if (!song || manager->isResourceSong(song->m_songID)) continue;
-
-        std::string audioPath = manager->pathForSong(song->m_songID);
-        std::error_code existsEc;
-        if (!isAudioExtension(audioPath) ||
-            !std::filesystem::is_regular_file(audioPath, existsEc) || existsEc) {
-            continue;
-        }
-
-        if (auto* existing = findTrackByAudioPath(audioPath)) {
-            if (existing->displayName.empty() && !song->m_songName.empty()) {
-                existing->displayName = song->m_songName;
+    for (auto& track : candidates) {
+        if (auto const found = byPath.find(track.audioPath); found != byPath.end()) {
+            auto& existing = m_tracks[found->second];
+            if (existing.displayName.empty() && !track.displayName.empty()) {
+                existing.displayName = track.displayName;
                 changed = true;
             }
-            if (existing->artist.empty() && !song->m_artistName.empty()) {
-                existing->artist = song->m_artistName;
+            if (existing.artist.empty() && !track.artist.empty()) {
+                existing.artist = track.artist;
                 changed = true;
             }
             continue;
         }
 
-        MusicTrack track;
-        track.id = fmt::format("gd_{}", song->m_songID);
         if (findTrack(track.id)) track.id = generateId("gd");
-        track.audioPath = audioPath;
-        track.displayName = song->m_songName;
-        track.artist = song->m_artistName;
-        track.source = TrackSource::GeometryDash;
-        track.addedUnixMs = now;
+        byPath.emplace(track.audioPath, m_tracks.size());
         m_trackIndex[track.id] = m_tracks.size();
         m_tracks.push_back(std::move(track));
         ++added;
     }
 
-    if (added || changed) {
-        markDirty();
-        notifyChanged();
-    }
+    if (added || changed) markDirty();
+    if (added || changed || notifyWhenUnchanged) notifyChanged();
     return added;
 }
 
@@ -268,7 +479,7 @@ bool MenuMusicLibrary::deleteLocalAudio(const std::string& id) {
     if (track->source == TrackSource::Downloaded) {
         std::filesystem::remove(track->audioPath, ec);
     } else if (track->source == TrackSource::GeometryDash) {
-        auto stem = geode::utils::string::pathToString(
+        auto stem = paimon::paths::toUtf8(
             std::filesystem::path(track->audioPath).stem());
         int songId = 0;
         auto [end, parseError] = std::from_chars(
@@ -410,7 +621,7 @@ std::string MenuMusicLibrary::generateId(const std::string& prefix) {
 }
 
 bool MenuMusicLibrary::isAudioExtension(const std::filesystem::path& p) {
-    auto ext = geode::utils::string::toLower(geode::utils::string::pathToString(p.extension()));
+    auto ext = geode::utils::string::toLower(paimon::paths::toUtf8(p.extension()));
     // fmod 2.02+ decodes opus only in ogg; downloader remuxes on opus request.
     static const std::array<std::string, 7> ok = {
         ".mp3", ".ogg", ".wav", ".flac", ".oga", ".m4a", ".opus"
@@ -419,7 +630,7 @@ bool MenuMusicLibrary::isAudioExtension(const std::filesystem::path& p) {
 }
 
 bool MenuMusicLibrary::isImageExtension(const std::filesystem::path& p) {
-    auto ext = geode::utils::string::toLower(geode::utils::string::pathToString(p.extension()));
+    auto ext = geode::utils::string::toLower(paimon::paths::toUtf8(p.extension()));
     static const std::array<std::string, 6> ok = {
         ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"
     };
@@ -449,7 +660,42 @@ void MenuMusicLibrary::notifyChanged() {
 }
 
 
+void MenuMusicLibrary::backupLastValidLibrary() {
+    std::error_code ec;
+    auto const src = getLibraryFile();
+    if (!std::filesystem::is_regular_file(src, ec) || ec) return;
+    auto bak = src;
+    bak += ".bak";
+    std::filesystem::copy_file(
+        src, bak, std::filesystem::copy_options::overwrite_existing, ec);
+    if (ec) {
+        log::warn("[MenuMusic] failed to back up library.json: {}", ec.message());
+    }
+}
+
 void MenuMusicLibrary::save() {
+    // never persist an empty library over a file we failed to read: without
+    // this guard the next periodic save would wipe library.json (crash #7).
+    if (m_loadFailed && m_tracks.empty() && m_playlists.empty()) {
+        log::warn("[MenuMusic] refusing to save empty library after failed load");
+        return;
+    }
+
+    if (m_loadFailed) {
+        std::error_code ec;
+        auto source = getLibraryFile();
+        if (std::filesystem::exists(source, ec) && !ec) {
+            auto corrupt = source;
+            corrupt += ".corrupt";
+            std::filesystem::rename(source, corrupt, ec);
+            if (ec) {
+                log::warn("[MenuMusic] could not preserve unreadable library: {}", ec.message());
+                return;
+            }
+            log::warn("[MenuMusic] preserved unreadable library as {}", corrupt.filename().string());
+        }
+        m_loadFailed = false;
+    }
     ensureDirs();
 
     auto root = matjson::Value::object();
@@ -490,18 +736,19 @@ void MenuMusicLibrary::save() {
     }
     root["playlists"] = playlists;
 
-    if (auto result = geode::utils::file::writeToJson(getLibraryFile(), root); result.isErr()) {
-        log::warn("[MenuMusic] failed to save library.json: {}", result.unwrapErr());
+    if (!paimon::file::writeAtomically(getLibraryFile(), root.dump())) {
+        log::warn("[MenuMusic] failed to save library.json");
     }
 }
 
 void MenuMusicLibrary::load() {
     if (m_loaded) return;
-    m_loaded = true;
     ensureDirs();
 
     std::error_code existsEc;
     if (!std::filesystem::exists(getLibraryFile(), existsEc) || existsEc) {
+        m_loaded = true;
+        m_loadFailed = false;
         save();
         return;
     }
@@ -509,24 +756,28 @@ void MenuMusicLibrary::load() {
     std::error_code sizeEc;
     auto const size = std::filesystem::file_size(getLibraryFile(), sizeEc);
     if (sizeEc || size > kMaxLibraryFileBytes) {
-        log::warn("[MenuMusic] library.json is too large or unreadable");
+        // leave m_loaded false so a later load() retries; m_loadFailed blocks
+        // save() from persisting the empty in-memory state over the file.
+        m_loadFailed = true;
+        log::warn("[MenuMusic] library.json is too large or unreadable; keeping it untouched");
         return;
     }
 
-    auto res = geode::utils::file::readFromJson<matjson::Value>(getLibraryFile());
+    auto res = geode::utils::file::readFromJson<matjson::Value>(paimon::paths::toSdkPath(getLibraryFile()));
     if (!res) {
-        log::warn("[MenuMusic] failed to read library.json: {}", res.unwrapErr());
+        m_loadFailed = true;
+        log::warn("[MenuMusic] failed to read library.json: {}; keeping it untouched", res.unwrapErr());
         return;
     }
     auto& root = res.unwrap();
 
-    int rawMode = root["mode"].asInt().unwrapOr(0);
+    int rawMode = paimon::json::integerOr<int>(root["mode"], 0);
     m_mode = (rawMode >= 0 && rawMode <= static_cast<int>(PlaybackMode::Queue))
         ? static_cast<PlaybackMode>(rawMode) : PlaybackMode::Disabled;
     m_activePlaylistId = root["activePlaylistId"].asString().unwrapOr("");
     m_lastTrackId = root["lastTrackId"].asString().unwrapOr("");
     m_idCounter = static_cast<std::uint64_t>(
-        std::max<std::int64_t>(0, root["idCounter"].asInt().unwrapOr(0)));
+        std::max<std::int64_t>(0, paimon::json::integerOr<std::int64_t>(root["idCounter"], 0)));
 
     m_tracks.clear();
     if (auto arr = root["tracks"].asArray()) {
@@ -539,12 +790,12 @@ void MenuMusicLibrary::load() {
             t.displayName = item["displayName"].asString().unwrapOr("");
             t.artist = item["artist"].asString().unwrapOr("");
             t.sourceUrl = item["sourceUrl"].asString().unwrapOr("");
-            int rawSource = item["source"].asInt().unwrapOr(0);
+            int rawSource = paimon::json::integerOr<int>(item["source"], 0);
             t.source = (rawSource >= 0 && rawSource <= static_cast<int>(TrackSource::GeometryDash))
                 ? static_cast<TrackSource>(rawSource) : TrackSource::Unknown;
-            t.addedUnixMs = item["addedUnixMs"].asInt().unwrapOr(0);
+            t.addedUnixMs = paimon::json::integerOr<std::int64_t>(item["addedUnixMs"], 0);
             t.durationMs = static_cast<std::int32_t>(std::clamp<std::int64_t>(
-                item["durationMs"].asInt().unwrapOr(0), 0, INT32_MAX));
+                paimon::json::integerOr<std::int64_t>(item["durationMs"], 0), 0, INT32_MAX));
             t.favorite = item["favorite"].asBool().unwrapOr(false);
             t.blacklisted = item["blacklisted"].asBool().unwrapOr(false);
             m_tracks.push_back(std::move(t));
@@ -558,7 +809,7 @@ void MenuMusicLibrary::load() {
             p.id = item["id"].asString().unwrapOr("");
             if (p.id.empty()) continue;
             p.name = item["name"].asString().unwrapOr("Untitled");
-            p.createdUnixMs = item["createdUnixMs"].asInt().unwrapOr(0);
+            p.createdUnixMs = paimon::json::integerOr<std::int64_t>(item["createdUnixMs"], 0);
             if (auto ids = item["trackIds"].asArray()) {
                 for (const auto& it : ids.unwrap()) {
                     p.trackIds.push_back(it.asString().unwrapOr(""));
@@ -569,6 +820,10 @@ void MenuMusicLibrary::load() {
     }
 
     rebuildTrackIndex();
+    m_loaded = true;
+    m_loadFailed = false;
+    backupLastValidLibrary();
+    repairDownloadedCoversAsync();
 
     log::info("[MenuMusic] library loaded: {} tracks, {} playlists, mode={}",
         m_tracks.size(), m_playlists.size(), static_cast<int>(m_mode));

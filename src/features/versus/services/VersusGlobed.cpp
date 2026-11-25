@@ -4,10 +4,7 @@
 
 #include <algorithm>
 
-#if __has_include(<globed/soft-link/API.hpp>)
-    #include <globed/soft-link/API.hpp>
-    #define PAIMON_VERSUS_GLOBED 1
-#endif
+#include "../../../framework/compat/GlobedAPI.hpp"
 
 using namespace geode::prelude;
 

@@ -34,7 +34,7 @@ protected:
     float contentFloor() const;
     void applyLayout();
 
-    void rebuildContent();
+    void rebuildContent() override;
     void buildSummary(cocos2d::CCNode* content);
     void buildFactRows(cocos2d::CCNode* content);
 

@@ -6,6 +6,8 @@
 #include <Geode/binding/FLAlertLayer.hpp>
 #include <Geode/binding/SliderThumb.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
+#include <Geode/cocos/touch_dispatcher/CCTouchDispatcher.h>
+#include <Geode/cocos/touch_dispatcher/CCTouchHandler.h>
 #include <Geode/ui/ColorPickPopup.hpp>
 #include <algorithm>
 #include <cmath>
@@ -236,7 +238,7 @@ class OptionPickerPopup : public PaimonPopup {
         m_mainLayer->addChild(listBg);
 
         m_search = TextInput::create(320.f, es ? "Buscar..." : "Search...", "chatFont.fnt");
-        m_search->setCommonFilter(CommonFilter::Any);
+        m_search->setCommonFilter(CommonFilter::Text);
         m_search->setMaxCharCount(64);
         m_search->setPosition({180.f, 214.f});
         m_search->setCallback([this](std::string const& query) { rebuild(query); });
@@ -378,14 +380,14 @@ CCNode* makeColorRow(
     addRowText(row, makeTitleLabel(title, textMaxW), descLbl, descLbl ? rowH - 8.f : rowH / 2.f + 6.f);
 
     auto* menu = makeRowMenu(row);
-    // GD's color channel button is white, so tinting shows the exact RGB.
+    // gD's color channel button is white, so tinting shows the exact RGB.
     auto* swatch = CCSprite::createWithSpriteFrameName("GJ_colorBtn_001.png");
     auto size = swatch->getContentSize();
     if (size.width > 0.f) swatch->setScale(kSwatch / size.width);
     swatch->setColor(value);
     if (outSwatch) *outSwatch = swatch;
 
-    // The picker can outlive a rebuilt row.
+    // the picker can outlive a rebuilt row.
     geode::Ref<CCSprite> swatchRef = swatch;
     auto* btn = CCMenuItemExt::createSpriteExtra(
         swatch, [cb = std::move(onChange), swatchRef](CCMenuItemSpriteExtra*) {
@@ -524,6 +526,8 @@ geode::ScrollLayer* makeScrollStack(
     float gap
 ) {
     auto* scroll = geode::ScrollLayer::create(size);
+    if (!scroll) return nullptr;
+    scroll->setAnchorPoint({0.f, 0.f});
 
     float totalH = 0.f;
     for (auto* n : items) if (n) totalH += n->getContentSize().height + gap;
@@ -596,12 +600,47 @@ CCNode* makeTabBar(
     return bar;
 }
 
-bool queueWheelScroll(geode::ScrollLayer* scrollLayer, float x, float y,
-    float& targetY, bool& targetSet, float speed
+namespace {
+
+// gD's CCScrollLayerExt::ccTouchCancelled never clears m_touchDown, so a drag
+// taken over by another node (a nested list, a ScrollLayer that steals the
+// touch) leaves the flag set and the wheel stayed blocked until the next click
+// on the list. A drag is only real while the touch dispatcher still holds a
+// claimed touch for the layer; otherwise the stale flag is cleared.
+bool isDraggingScrollLayer(geode::ScrollLayer* scrollLayer) {
+    if (!scrollLayer->m_touchDown) return false;
+
+    if (auto* dispatcher = CCDirector::get()->getTouchDispatcher()) {
+        auto* handler = typeinfo_cast<CCTargetedTouchHandler*>(dispatcher->findHandler(scrollLayer));
+        auto* claimed = handler ? handler->getClaimedTouches() : nullptr;
+        if (claimed && claimed->count() > 0) return true;
+    }
+
+    scrollLayer->m_touchDown = false;
+    return false;
+}
+
+}
+
+// the wheel travel already arrives smoothed and expressed in pixels, so the
+// popup just moves its content by that amount. Every zone used to apply its
+// own speed factor on top, which is why the same wheel click scrolled some
+// lists several times faster than others.
+//
+// vertical is the first scrollWheel argument (cocos hands over the vertical
+// delta first); horizontal is only kept for symmetry with the delegate.
+bool queueWheelScroll(geode::ScrollLayer* scrollLayer, float vertical, float horizontal,
+    float& targetY, bool& targetSet
 ) {
 #if !defined(GEODE_IS_WINDOWS) && !defined(GEODE_IS_MACOS)
+    (void)scrollLayer;
+    (void)vertical;
+    (void)horizontal;
+    (void)targetY;
+    (void)targetSet;
     return false;
 #else
+    (void)horizontal;
     if (!scrollLayer || !scrollLayer->getParent()) return false;
 
     CCPoint mousePos = scrollLayer->convertToNodeSpace(geode::cocos::getMousePos());
@@ -610,53 +649,53 @@ bool queueWheelScroll(geode::ScrollLayer* scrollLayer, float x, float y,
 
     auto* contentLayer = scrollLayer->m_contentLayer;
     if (!contentLayer) return false;
-    if (scrollLayer->m_touchDown) {
+    if (isDraggingScrollLayer(scrollLayer)) {
         targetSet = false;
         return true;
     }
 
-    float amount = y;
-    if (std::abs(amount) < 0.001f) amount = -x;
-
+    // this layer is driven by us, the game must not smooth it a second time.
     scrollLayer->enableScrollWheel(false);
-    float minY = scrollLayer->getContentSize().height - contentLayer->getContentSize().height;
-    float maxY = 0.f;
-    if (minY > maxY) minY = maxY;
 
+    if (std::abs(vertical) < 0.001f) {
+        // a horizontal gesture must not scroll the list vertically.
+        targetSet = false;
+        return true;
+    }
+
+    float const minY = std::min(0.f, scrollLayer->getContentSize().height - contentLayer->getContentSize().height);
+    float const maxY = 0.f;
+
+    // the target is only valid while a travel is pending: resync it with the
+    // content whenever the previous one was already applied.
     if (!targetSet) {
         targetY = contentLayer->getPositionY();
-        targetSet = true;
     }
-    targetY = std::max(minY, std::min(maxY, targetY - amount * speed));
+
+    float const nextY = std::clamp(targetY + vertical, minY, maxY);
+    targetY = nextY;
+    targetSet = true;
     return true;
 #endif
 }
 
+// applies the pending target once. The travel is already eased by the smooth
+// scroll controller, so easing it again here only added lag and made the
+// popups feel heavier than the plain scroll layers.
 void stepWheelScroll(geode::ScrollLayer* scrollLayer,
     float& targetY, bool& targetSet, float dt
 ) {
+    (void)dt;
     if (!targetSet || !scrollLayer) return;
-    if (scrollLayer->m_touchDown) { targetSet = false; return; }
-    if (!std::isfinite(dt) || dt <= 0.f) return;
+    if (isDraggingScrollLayer(scrollLayer)) { targetSet = false; return; }
     auto* contentLayer = scrollLayer->m_contentLayer;
     if (!contentLayer) { targetSet = false; return; }
 
     float const minY = std::min(0.f, scrollLayer->getContentSize().height - contentLayer->getContentSize().height);
     targetY = std::clamp(targetY, minY, 0.f);
-    float cur = contentLayer->getPositionY();
-    if (!paimon::ui::motionEnabled()) {
-        contentLayer->setPositionY(targetY);
-        targetSet = false;
-        return;
-    }
-    float diff = targetY - cur;
-    if (std::abs(diff) < 0.5f) {
-        contentLayer->setPositionY(targetY);
-        targetSet = false;
-        return;
-    }
-    float t = 1.f - std::exp(-14.f * std::min(dt, 0.1f));
-    contentLayer->setPositionY(cur + diff * t);
+    targetSet = false;
+
+    contentLayer->setPositionY(targetY);
 }
 
 void showAbove(FLAlertLayer* alert, CCNode* owner) {
@@ -664,7 +703,7 @@ void showAbove(FLAlertLayer* alert, CCNode* owner) {
     int const above = owner ? owner->getZOrder() + 1 : 100;
     alert->m_ZOrder = above;
     alert->show();
-    // Some alert implementations ignore m_ZOrder during show().
+    // some alert implementations ignore m_ZOrder during show().
     if (auto* parent = alert->getParent()) parent->reorderChild(alert, above);
 }
 

@@ -6,13 +6,14 @@
 #include "XPBarNode.hpp"
 #include "../data/ProgressionStats.hpp"
 #include "../data/ProgressionTiers.hpp"
+#include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/ScissorClipNode.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 
+#include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
-#include <Geode/ui/PopupManager.hpp>
 #include <algorithm>
 
 using namespace geode::prelude;
@@ -22,20 +23,20 @@ namespace paimon::progression {
 
 namespace {
 
-constexpr float kPopupW = 420.f;
-constexpr float kPopupH = 285.f;
-constexpr float kPageW = 400.f;
-constexpr float kPageH = 200.f;
-constexpr float kPageX = 10.f;
+constexpr float kPopupW = 448.f;
+constexpr float kPopupH = 302.f;
+constexpr float kPageW = 420.f;
+constexpr float kPageH = 208.f;
+constexpr float kPageX = 14.f;
 constexpr float kPageY = 14.f;
 
 constexpr int kTabCount = 3;
 constexpr int kGridColumns = 7;
-constexpr float kTileSize = 44.f;
-constexpr float kTileGap = 7.f;
+constexpr float kTileSize = 46.f;
+constexpr float kTileGap = 8.f;
 
-constexpr ccColor3B kIdleTint = {104, 108, 122};
-constexpr ccColor3B kMutedText = {168, 178, 198};
+constexpr ccColor3B kIdleLabel = {178, 186, 206};
+constexpr ccColor3B kMutedText = {182, 194, 218};
 
 ccColor3B sourceColor(ExpSource source) {
     switch (source) {
@@ -52,19 +53,6 @@ ccColor3B sourceColor(ExpSource source) {
     return {255, 255, 255};
 }
 
-CCNode* makeCard(float width, float height) {
-    auto* card = CCNode::create();
-    card->setContentSize({width, height});
-    if (auto* panel = paimon::SpriteHelper::safeCreateScale9("GJ_square05.png", CCRectMake(12.f, 12.f, 56.f, 56.f))) {
-        panel->setContentSize({width, height});
-        panel->setAnchorPoint({0.f, 0.f});
-        panel->setColor({0, 0, 0});
-        panel->setOpacity(85);
-        card->addChild(panel, -1);
-    }
-    return card;
-}
-
 CCLabelBMFont* makeLabel(std::string const& text, char const* font, float scale, ccColor3B color) {
     auto* label = CCLabelBMFont::create(text.c_str(), font);
     if (!label) return nullptr;
@@ -77,53 +65,25 @@ CCNode* makeTab(float width, float height, CCNode* content) {
     auto* tab = CCNode::create();
     tab->setContentSize({width, height});
 
-    if (auto* skin = paimon::SpriteHelper::safeCreateScale9WithFrameName("GJ_tabOff_001.png")) {
-        skin->setContentSize({width, height});
-        skin->setAnchorPoint({0.f, 0.f});
-        skin->setID("tab-skin"_spr);
-        tab->addChild(skin, 0);
+    if (auto* offSkin = paimon::SpriteHelper::safeCreateScale9WithFrameName("GJ_tabOff_001.png")) {
+        offSkin->setContentSize({width, height});
+        offSkin->setAnchorPoint({0.f, 0.f});
+        offSkin->setID("tab-off"_spr);
+        tab->addChild(offSkin, 0);
+    }
+    if (auto* onSkin = paimon::SpriteHelper::safeCreateScale9WithFrameName("GJ_tabOn_001.png")) {
+        onSkin->setContentSize({width, height});
+        onSkin->setAnchorPoint({0.f, 0.f});
+        onSkin->setVisible(false);
+        onSkin->setID("tab-on"_spr);
+        tab->addChild(onSkin, 0);
     }
     if (content) {
-        content->setPosition({width / 2.f, height / 2.f});
+        content->setID("tab-label"_spr);
+        content->setPosition({width / 2.f, height / 2.f + 1.f});
         tab->addChild(content, 1);
     }
     return tab;
-}
-
-CCNode* makeChip(float size, CCNode* content) {
-    auto* chip = CCNode::create();
-    chip->setContentSize({size, size});
-
-    auto place = [&](CCSprite* sprite, char const* id, int z) {
-        if (!sprite) return;
-        sprite->setScale(size / std::max(1.f, sprite->getContentSize().width));
-        sprite->setPosition({size / 2.f, size / 2.f});
-        sprite->setID(id);
-        chip->addChild(sprite, z);
-    };
-    place(paimon::SpriteHelper::safeCreate("paim_progPlateFace.png"_spr), "chip-face"_spr, 0);
-    place(paimon::SpriteHelper::safeCreate("paim_progPlate1.png"_spr), "chip-plate"_spr, 1);
-
-    if (content) {
-        content->setPosition({size / 2.f, size / 2.f});
-        chip->addChild(content, 2);
-    }
-    return chip;
-}
-
-ccColor3B dim(ccColor3B const& color, float factor) {
-    return {
-        static_cast<GLubyte>(color.r * factor),
-        static_cast<GLubyte>(color.g * factor),
-        static_cast<GLubyte>(color.b * factor),
-    };
-}
-
-void setTinted(CCNode* holder, char const* childId, ccColor3B color) {
-    if (!holder) return;
-    if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(holder->getChildByID(childId))) {
-        rgba->setColor(color);
-    }
 }
 
 } // namespace
@@ -146,10 +106,24 @@ bool ProgressionPopup::init(BadgeContext const& ctx, std::string const& username
     auto& loc = Localization::get();
     auto const& tier = tierForLevel(ctx.level);
 
-    this->setTitle(username.empty() ? loc.getString("progression.title") : username);
+    this->addCorners(SideArtStyle::PopupGold, 0.70f);
+    this->setTitle(username.empty() ? loc.getString("progression.title") : username, "goldFont.fnt", 0.72f, 18.f);
     if (m_title) m_title->setColor(tier.accent);
 
+    using namespace exp_values;
+    auto const infoBody = fmt::format(
+        fmt::runtime(loc.getString("progression.info.body")),
+        kStar, kMoon, kDiamond, kUserCoin, kSecretCoin,
+        kDemonEasy, kDemonExtreme, kCreatorPoint
+    );
+    this->addInfoButton(loc.getString("progression.info.title"), infoBody);
+
     buildTabRow();
+
+    if (auto* line = paimon::ui::makeDivider(kPageW, paimon::ui::palette::gold, 115)) {
+        line->setPosition({kPopupW / 2.f, kPopupH - 61.f});
+        m_mainLayer->addChild(line, 1);
+    }
 
     if (auto* stencil = paimon::SpriteHelper::createRectStencil(kPageW, kPageH)) {
         if (auto* clip = paimon::ScissorClipNode::create(stencil)) {
@@ -158,16 +132,6 @@ bool ProgressionPopup::init(BadgeContext const& ctx, std::string const& username
             clip->setPosition({kPageX, kPageY});
             m_pageHolder = clip;
             m_mainLayer->addChild(clip, 1);
-        }
-    }
-
-    if (auto* infoSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png")) {
-        infoSprite->setScale(0.7f);
-        if (auto* btn = CCMenuItemSpriteExtra::create(
-                infoSprite, this, menu_selector(ProgressionPopup::onFormulaInfo))) {
-            btn->setID("progression-formula-info"_spr);
-            btn->setPosition({kPopupW - 20.f, 20.f});
-            m_buttonMenu->addChild(btn);
         }
     }
 
@@ -190,20 +154,20 @@ void ProgressionPopup::buildTabRow() {
         "progression.tab.badges",
     };
 
-    constexpr float tabW = 112.f;
+    constexpr float tabW = 118.f;
     constexpr float tabH = 26.f;
     constexpr float gap = 8.f;
     float const totalW = tabW * kTabCount + gap * (kTabCount - 1);
     float const startX = (kPopupW - totalW) / 2.f + tabW / 2.f;
 
     for (int i = 0; i < kTabCount; ++i) {
-        auto* label = makeLabel(loc.getString(keys[i]).c_str(), "bigFont.fnt", 0.4f, {255, 255, 255});
-        if (label) label->limitLabelWidth(tabW - 16.f, 0.4f, 0.2f);
+        auto* label = makeLabel(loc.getString(keys[i]).c_str(), "bigFont.fnt", 0.38f, {255, 255, 255});
+        if (label) label->limitLabelWidth(tabW - 18.f, 0.38f, 0.20f);
         auto* tab = makeTab(tabW, tabH, label);
         auto* btn = CCMenuItemSpriteExtra::create(tab, this, menu_selector(ProgressionPopup::onTab));
         if (!btn) continue;
         btn->setTag(i);
-        btn->setPosition({startX + (tabW + gap) * i, kPopupH - 46.f});
+        btn->setPosition({startX + (tabW + gap) * i, kPopupH - 47.f});
         menu->addChild(btn);
         m_tabs.push_back(tab);
     }
@@ -218,13 +182,20 @@ void ProgressionPopup::onTab(CCObject* sender) {
 void ProgressionPopup::showTab(int index, bool animated) {
     if (!m_pageHolder) return;
 
-    auto const& tier = tierForLevel(m_ctx.level);
     int const previous = m_tab;
     m_tab = std::clamp(index, 0, kTabCount - 1);
     for (int i = 0; i < static_cast<int>(m_tabs.size()); ++i) {
-        setTinted(m_tabs[i], "tab-skin", i == m_tab ? tier.base : kIdleTint);
+        bool const active = (i == m_tab);
+        if (auto* off = m_tabs[i]->getChildByID("tab-off"_spr)) off->setVisible(!active);
+        if (auto* on  = m_tabs[i]->getChildByID("tab-on"_spr))  on->setVisible(active);
+        if (auto* lbl = typeinfo_cast<CCRGBAProtocol*>(m_tabs[i]->getChildByID("tab-label"_spr))) {
+            lbl->setColor(active ? ccColor3B{255, 255, 255} : kIdleLabel);
+        }
         if (auto* parent = m_tabs[i]->getParent()) {
-            parent->setPositionY(kPopupH - (i == m_tab ? 44.f : 46.f));
+            parent->setPositionY(kPopupH - (active ? 45.f : 47.f));
+            if (auto* menu = parent->getParent()) {
+                menu->reorderChild(parent, active ? 2 : 0);
+            }
         }
     }
 
@@ -263,67 +234,75 @@ CCNode* ProgressionPopup::buildOverview() {
     auto* page = CCNode::create();
     page->setContentSize({kPageW, kPageH});
 
-    // above y=110: the two cards underneath stay clear.
-    constexpr float kColX = 108.f;
-    constexpr float kColRight = kPageW - 8.f;
-
-    if (auto* badge = TierBadgeNode::create(m_ctx.level, 72.f)) {
-        badge->setProgress(levelProgress(m_ctx.exp));
-        badge->setPosition({52.f, 152.f});
-        badge->playIntro(0.04f);
-        page->addChild(badge);
+    // Top Hero Panel
+    constexpr float heroH = 96.f;
+    auto* hero = paimon::ui::makeInset({kPageW, heroH}, 105);
+    if (hero) {
+        hero->setPosition({0.f, kPageH - heroH});
+        page->addChild(hero, 0);
     }
 
-    if (auto* name = makeLabel(tier.name, "goldFont.fnt", 0.46f, {255, 255, 255})) {
+    constexpr float kColX = 104.f;
+    constexpr float kColRight = kPageW - 12.f;
+
+    if (auto* badge = TierBadgeNode::create(m_ctx.level, 66.f)) {
+        badge->setProgress(levelProgress(m_ctx.exp));
+        badge->setPosition({50.f, kPageH - heroH * 0.5f});
+        badge->playIntro(0.04f);
+        page->addChild(badge, 1);
+    }
+
+    if (auto* name = makeLabel(tier.name, "goldFont.fnt", 0.48f, {255, 255, 255})) {
         name->setAnchorPoint({0.f, 0.5f});
-        name->limitLabelWidth(150.f, 0.46f, 0.24f);
-        name->setPosition({kColX, 188.f});
-        page->addChild(name);
+        name->limitLabelWidth(175.f, 0.48f, 0.24f);
+        name->setPosition({kColX, kPageH - 17.f});
+        page->addChild(name, 1);
     }
 
     if (auto* tierIndex = makeLabel(
             fmt::format("{} {} / {}", loc.getString("progression.tier"),
                         tier.index + 1, kTierCount),
-            "chatFont.fnt", 0.38f, kMutedText)) {
+            "bigFont.fnt", 0.27f, kMutedText)) {
         tierIndex->setAnchorPoint({1.f, 0.5f});
-        tierIndex->setPosition({kColRight, 188.f});
-        page->addChild(tierIndex);
+        tierIndex->setPosition({kColRight, kPageH - 17.f});
+        page->addChild(tierIndex, 1);
     }
 
     if (auto* levelWord = makeLabel(loc.getString("progression.level"),
-                                    "chatFont.fnt", 0.44f, kMutedText)) {
+                                    "goldFont.fnt", 0.36f, paimon::ui::palette::gold)) {
         levelWord->setAnchorPoint({0.f, 0.5f});
-        levelWord->setPosition({kColX, 163.f});
-        page->addChild(levelWord);
+        levelWord->setPosition({kColX, kPageH - 42.f});
+        page->addChild(levelWord, 1);
     }
 
     if (auto* levelValue = makeLabel(std::to_string(m_ctx.level),
-                                     "bigFont.fnt", 0.85f, tier.accent)) {
+                                     "bigFont.fnt", 0.78f, tier.accent)) {
         levelValue->setAnchorPoint({0.f, 0.5f});
-        levelValue->setPosition({kColX + 36.f, 162.f});
+        levelValue->setPosition({kColX + 46.f, kPageH - 42.f});
         levelValue->setScale(0.f);
         levelValue->runAction(CCSequence::create(
             CCDelayTime::create(0.10f),
-            CCEaseBackOut::create(CCScaleTo::create(0.34f, 0.85f)),
+            CCEaseBackOut::create(CCScaleTo::create(0.34f, 0.78f)),
             nullptr
         ));
-        page->addChild(levelValue);
+        page->addChild(levelValue, 1);
     }
 
     if (auto* total = makeLabel(
             fmt::format("{}  {}", loc.getString("progression.total-xp"),
                         formatCount(m_ctx.exp)),
-            "chatFont.fnt", 0.4f, {215, 224, 240})) {
+            "bigFont.fnt", 0.28f, {255, 230, 125})) {
         total->setAnchorPoint({1.f, 0.5f});
-        total->setPosition({kColRight, 163.f});
-        page->addChild(total);
+        total->limitLabelWidth(155.f, 0.28f, 0.16f);
+        total->setPosition({kColRight, kPageH - 42.f});
+        page->addChild(total, 1);
     }
 
-    if (auto* bar = XPBarNode::create(kColRight - kColX, 18.f)) {
+    if (auto* bar = XPBarNode::create(kColRight - kColX, 17.f)) {
         bar->setTier(tier);
         bar->setExp(m_ctx.exp);
-        bar->setPosition({(kColX + kColRight) / 2.f, 138.f});
-        page->addChild(bar);
+        bar->setPosition({(kColX + kColRight) / 2.f, kPageH - 66.f});
+        page->addChild(bar, 1);
     }
 
     if (auto* hint = makeLabel(
@@ -331,42 +310,38 @@ CCNode* ProgressionPopup::buildOverview() {
                 ? loc.getString("progression.maxed")
                 : fmt::format(fmt::runtime(loc.getString("progression.to-level")),
                               m_ctx.level + 1),
-            "chatFont.fnt", 0.36f, {150, 162, 185})) {
+            "bigFont.fnt", 0.24f, kMutedText)) {
         hint->setAnchorPoint({0.f, 0.5f});
-        hint->setPosition({kColX, 119.f});
-        page->addChild(hint);
+        hint->setPosition({kColX, kPageH - 85.f});
+        page->addChild(hint, 1);
     }
 
-    constexpr float cardW = 196.f;
-    constexpr float cardH = 100.f;
-
-    auto* nextCard = makeCard(cardW, cardH);
-    nextCard->setPosition({0.f, 4.f});
-    page->addChild(nextCard);
+    // Bottom Split Cards
+    constexpr float cardW = 206.f;
+    constexpr float cardH = 104.f;
 
     bool const lastTier = tier.index >= kTierCount - 1;
     auto const& nextTier = tierAt(std::min(tier.index + 1, kTierCount - 1));
     int const goalLevel = nextTierLevel(tier.index);
 
-    if (auto* header = makeLabel(
-            loc.getString(lastTier ? "progression.max-tier" : "progression.next-tier").c_str(),
-            "goldFont.fnt", 0.4f, {255, 210, 90})) {
-        header->setAnchorPoint({0.f, 0.5f});
-        header->setPosition({12.f, cardH - 14.f});
-        nextCard->addChild(header);
-    }
+    auto* nextCard = paimon::ui::makePanel(
+        {cardW, cardH},
+        loc.getString(lastTier ? "progression.max-tier" : "progression.next-tier").c_str(),
+        105);
+    nextCard->setPosition({0.f, 2.f});
+    page->addChild(nextCard);
 
-    if (auto* preview = TierBadgeNode::create(lastTier ? m_ctx.level : goalLevel, 42.f)) {
-        preview->setPosition({36.f, 46.f});
+    if (auto* preview = TierBadgeNode::create(lastTier ? m_ctx.level : goalLevel, 40.f)) {
+        preview->setPosition({34.f, 50.f});
         preview->playIntro(0.18f);
         nextCard->addChild(preview);
     }
 
     if (auto* nextName = makeLabel(lastTier ? tier.name : nextTier.name,
-                                   "bigFont.fnt", 0.46f, nextTier.accent)) {
+                                   "bigFont.fnt", 0.40f, nextTier.accent)) {
         nextName->setAnchorPoint({0.f, 0.5f});
-        nextName->limitLabelWidth(120.f, 0.46f, 0.24f);
-        nextName->setPosition({66.f, 58.f});
+        nextName->limitLabelWidth(128.f, 0.40f, 0.22f);
+        nextName->setPosition({64.f, 58.f});
         nextCard->addChild(nextName);
     }
 
@@ -379,64 +354,78 @@ CCNode* ProgressionPopup::buildOverview() {
 
         if (auto* need = makeLabel(
                 fmt::format(fmt::runtime(loc.getString("progression.at-level")), goalLevel).c_str(),
-                "chatFont.fnt", 0.36f, {180, 192, 214})) {
+                "bigFont.fnt", 0.24f, kMutedText)) {
             need->setAnchorPoint({0.f, 0.5f});
-            need->setPosition({66.f, 42.f});
+            need->setPosition({64.f, 41.f});
             nextCard->addChild(need);
         }
 
-        if (auto* bar = GDProgressBar::create(cardW - 24.f, 10.f)) {
+        if (auto* bar = GDProgressBar::create(cardW - 22.f, 11.f)) {
             bar->setFillColor(nextTier.base);
             bar->animateTo(tierProgress, 0.22f, 0.5f);
-            bar->setPosition({cardW / 2.f, 16.f});
+            bar->setPosition({cardW / 2.f, 15.f});
             nextCard->addChild(bar);
         }
     }
 
-    auto* badgeCard = makeCard(cardW, cardH);
-    badgeCard->setPosition({kPageW - cardW, 4.f});
+    auto* badgeCard = paimon::ui::makePanel(
+        {cardW, cardH},
+        loc.getString("progression.tab.badges").c_str(),
+        105);
+    badgeCard->setPosition({kPageW - cardW, 2.f});
     page->addChild(badgeCard);
 
     int const unlocked = unlockedCount(m_ctx);
     int const totalBadges = static_cast<int>(allBadges().size());
 
-    if (auto* header = makeLabel(loc.getString("progression.tab.badges").c_str(),
-                                 "goldFont.fnt", 0.4f, {255, 210, 90})) {
-        header->setAnchorPoint({0.f, 0.5f});
-        header->setPosition({12.f, cardH - 14.f});
-        badgeCard->addChild(header);
-    }
-
     if (auto* count = makeLabel(fmt::format("{} / {}", unlocked, totalBadges).c_str(),
-                                "bigFont.fnt", 0.58f, {255, 255, 255})) {
+                                "bigFont.fnt", 0.42f, {255, 255, 255})) {
         count->setAnchorPoint({0.f, 0.5f});
-        count->setPosition({12.f, cardH - 34.f});
+        count->setPosition({12.f, 69.f});
         badgeCard->addChild(count);
     }
 
-    if (auto* bar = GDProgressBar::create(cardW - 24.f, 10.f)) {
+    int const pct = totalBadges > 0
+        ? static_cast<int>(std::lround(100.f * static_cast<float>(unlocked) / static_cast<float>(totalBadges)))
+        : 0;
+    if (auto* pctLbl = makeLabel(fmt::format("{}%", pct).c_str(), "bigFont.fnt", 0.28f, tier.accent)) {
+        pctLbl->setAnchorPoint({1.f, 0.5f});
+        pctLbl->setPosition({cardW - 12.f, 69.f});
+        badgeCard->addChild(pctLbl);
+    }
+
+    if (auto* bar = GDProgressBar::create(cardW - 22.f, 11.f)) {
         bar->setFillColor(tier.base);
         bar->animateTo(totalBadges > 0
             ? static_cast<float>(unlocked) / static_cast<float>(totalBadges) : 0.f, 0.26f, 0.5f);
-        bar->setPosition({cardW / 2.f, cardH - 54.f});
+        bar->setPosition({cardW / 2.f, 52.f});
         badgeCard->addChild(bar);
     }
 
-    // four rarest unlocked as a teaser row.
-    std::vector<BadgeDef const*> showcase;
+    // Four rarest unlocked as clickable showcase medallions.
+    m_showcaseBadges.clear();
     for (auto const& badge : allBadges()) {
-        if (isUnlocked(badge, m_ctx)) showcase.push_back(&badge);
+        if (isUnlocked(badge, m_ctx)) m_showcaseBadges.push_back(&badge);
     }
-    std::sort(showcase.begin(), showcase.end(), [](BadgeDef const* a, BadgeDef const* b) {
+    std::sort(m_showcaseBadges.begin(), m_showcaseBadges.end(), [](BadgeDef const* a, BadgeDef const* b) {
         return a->rarity > b->rarity;
     });
-    showcase.resize(std::min<size_t>(showcase.size(), 4));
+    m_showcaseBadges.resize(std::min<size_t>(m_showcaseBadges.size(), 4));
 
-    for (size_t i = 0; i < showcase.size(); ++i) {
-        if (auto* icon = BadgeIconNode::create(*showcase[i], m_ctx, 32.f)) {
-            icon->setPosition({28.f + 44.f * i, 22.f});
+    auto* showcaseMenu = CCMenu::create();
+    showcaseMenu->setPosition({0.f, 0.f});
+    badgeCard->addChild(showcaseMenu, 2);
+
+    for (size_t i = 0; i < m_showcaseBadges.size(); ++i) {
+        if (auto* icon = BadgeIconNode::create(*m_showcaseBadges[i], m_ctx, 34.f)) {
             icon->playIntro(0.28f + 0.06f * i);
-            badgeCard->addChild(icon);
+            auto* btn = CCMenuItemSpriteExtra::create(
+                icon, this, menu_selector(ProgressionPopup::onShowcaseBadge));
+            if (btn) {
+                btn->setTag(static_cast<int>(i));
+                btn->setPosition({32.f + 47.f * static_cast<float>(i), 22.f});
+                showcaseMenu->addChild(btn);
+            }
         }
     }
 
@@ -458,62 +447,100 @@ CCNode* ProgressionPopup::buildSources() {
     int64_t const peak = rows.empty() ? 0 : std::max<int64_t>(1, rows.front().exp);
 
     if (auto* header = makeLabel(loc.getString("progression.sources.title").c_str(),
-                                 "goldFont.fnt", 0.42f, {255, 210, 90})) {
+                                 "goldFont.fnt", 0.42f, paimon::ui::palette::gold)) {
         header->setAnchorPoint({0.f, 0.5f});
-        header->setPosition({8.f, kPageH - 10.f});
+        header->setPosition({6.f, kPageH - 11.f});
         page->addChild(header);
     }
 
-    constexpr float rowH = 23.f;
-    float const top = kPageH - 27.f;
+    if (auto* totalLbl = makeLabel(
+            fmt::format("{} {}", formatCount(m_ctx.exp), "XP").c_str(),
+            "bigFont.fnt", 0.28f, {255, 230, 125})) {
+        totalLbl->setAnchorPoint({1.f, 0.5f});
+        totalLbl->setPosition({kPageW - 6.f, kPageH - 11.f});
+        page->addChild(totalLbl);
+    }
 
-    for (size_t i = 0; i < rows.size(); ++i) {
-        auto const& entry = rows[i];
-        float const y = top - rowH * static_cast<float>(i);
-        auto const color = sourceColor(entry.source);
+    constexpr float listW = kPageW - 4.f;
+    constexpr float listH = kPageH - 26.f;
+    if (auto* inset = paimon::ui::makeInset({listW, listH}, 90)) {
+        inset->setPosition({2.f, 2.f});
+        page->addChild(inset, 0);
+    }
 
-        if (auto* icon = paimon::SpriteHelper::safeCreateWithFrameName(sourceIconFrame(entry.source))) {
-            float const source = std::max(icon->getContentSize().width, icon->getContentSize().height);
-            icon->setScale(15.f / std::max(1.f, source));
-            icon->setPosition({16.f, y});
-            page->addChild(icon);
+    auto* scroll = ScrollLayer::create({listW, listH});
+    if (scroll) {
+        scroll->setAnchorPoint({0.f, 0.f});
+        scroll->setPosition({2.f, 2.f});
+        page->addChild(scroll, 1);
+
+        constexpr float rowH = 26.f;
+        float const totalH = std::max(listH, rowH * static_cast<float>(rows.size()));
+        auto* content = scroll->m_contentLayer;
+        content->setContentSize({listW, totalH});
+
+        for (size_t i = 0; i < rows.size(); ++i) {
+            auto const& entry = rows[i];
+            float const rowBottom = totalH - rowH * static_cast<float>(i + 1);
+            float const y = rowBottom + rowH * 0.5f;
+            auto const color = sourceColor(entry.source);
+
+            if (auto* stripe = paimon::ui::makeInset({listW - 4.f, rowH - 2.f}, (i % 2 == 0) ? 55 : 22)) {
+                stripe->setPosition({2.f, rowBottom + 1.f});
+                content->addChild(stripe, 0);
+            }
+
+            if (auto* icon = paimon::SpriteHelper::safeCreateWithFrameName(sourceIconFrame(entry.source))) {
+                float const source = std::max(icon->getContentSize().width, icon->getContentSize().height);
+                icon->setScale(16.f / std::max(1.f, source));
+                icon->setPosition({16.f, y});
+                content->addChild(icon, 1);
+            }
+
+            if (auto* name = makeLabel(
+                    loc.getString(std::string("progression.source.") + sourceId(entry.source)).c_str(),
+                    "bigFont.fnt", 0.32f, {240, 244, 255})) {
+                name->setAnchorPoint({0.f, 0.5f});
+                name->limitLabelWidth(94.f, 0.32f, 0.18f);
+                name->setPosition({31.f, y + 4.f});
+                content->addChild(name, 1);
+            }
+
+            if (auto* count = makeLabel(formatCount(entry.count).c_str(),
+                                        "bigFont.fnt", 0.22f, kMutedText)) {
+                count->setAnchorPoint({0.f, 0.5f});
+                count->setPosition({31.f, y - 6.5f});
+                content->addChild(count, 1);
+            }
+
+            constexpr float barW = 186.f;
+            float const ratio = peak > 0
+                ? std::clamp(static_cast<float>(entry.exp) / static_cast<float>(peak), 0.f, 1.f) : 0.f;
+
+            if (auto* bar = GDProgressBar::create(barW, 11.f)) {
+                bar->setFillColor(color);
+                bar->animateTo(ratio, 0.05f + 0.045f * static_cast<float>(i), 0.42f);
+                bar->setPosition({134.f + barW / 2.f, y});
+                content->addChild(bar, 1);
+            }
+
+            if (auto* value = makeLabel(
+                    fmt::format("{} XP", formatCount(entry.exp)).c_str(),
+                    "bigFont.fnt", 0.30f, color)) {
+                value->setAnchorPoint({1.f, 0.5f});
+                value->limitLabelWidth(84.f, 0.30f, 0.18f);
+                value->setPosition({listW - 10.f, y});
+                content->addChild(value, 1);
+            }
         }
+        scroll->scrollToTop();
+    }
 
-        if (auto* name = makeLabel(
-                loc.getString(std::string("progression.source.") + sourceId(entry.source)).c_str(),
-                "bigFont.fnt", 0.36f, {235, 240, 250})) {
-            name->setAnchorPoint({0.f, 0.5f});
-            name->limitLabelWidth(84.f, 0.36f, 0.2f);
-            name->setPosition({30.f, y + 4.f});
-            page->addChild(name);
-        }
-
-        if (auto* count = makeLabel(formatCount(entry.count).c_str(),
-                                    "chatFont.fnt", 0.32f, {140, 152, 176})) {
-            count->setAnchorPoint({0.f, 0.5f});
-            count->setPosition({30.f, y - 7.f});
-            page->addChild(count);
-        }
-
-        constexpr float barW = 190.f;
-        float const ratio = peak > 0
-            ? std::clamp(static_cast<float>(entry.exp) / static_cast<float>(peak), 0.f, 1.f) : 0.f;
-
-        if (auto* bar = GDProgressBar::create(barW, 10.f)) {
-            bar->setFillColor(color);
-            bar->animateTo(ratio, 0.05f + 0.045f * static_cast<float>(i), 0.42f);
-            bar->setPosition({122.f + barW / 2.f, y});
-            page->addChild(bar);
-        }
-
-        if (auto* value = makeLabel(
-                fmt::format("{} XP", formatCount(entry.exp)).c_str(),
-                "bigFont.fnt", 0.34f, color)) {
-            value->setAnchorPoint({1.f, 0.5f});
-            value->limitLabelWidth(78.f, 0.34f, 0.2f);
-            value->setPosition({kPageW - 8.f, y});
-            page->addChild(value);
-        }
+    if (auto* borders = ListBorders::create()) {
+        borders->setContentSize({listW + 4.f, listH + 2.f});
+        borders->setAnchorPoint({0.f, 0.f});
+        borders->setPosition({0.f, 1.f});
+        page->addChild(borders, 2);
     }
 
     return page;
@@ -522,50 +549,66 @@ CCNode* ProgressionPopup::buildSources() {
 CCNode* ProgressionPopup::buildBadges() {
     auto* page = CCNode::create();
     page->setContentSize({kPageW, kPageH});
-    m_categoryChips.clear();
+    m_categoryBtns.clear();
 
     auto* menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
-    page->addChild(menu, 2);
+    page->addChild(menu, 3);
 
     auto const& categories = allCategories();
     int const buttonCount = static_cast<int>(categories.size()) + 1;
-    constexpr float chipSize = 26.f;
-    float const gap = (kPageW - 12.f - chipSize * buttonCount) / (buttonCount - 1);
-    float const startX = 6.f + chipSize / 2.f;
-    float const rowY = kPageH - 16.f;
+    std::vector<CCMenuItem*> catItems;
 
     for (int i = 0; i < buttonCount; ++i) {
+        auto* spr = ButtonSprite::create(" ", 28, true, "bigFont.fnt", "GJ_button_04.png", 30.f, 0.7f);
+        if (!spr) continue;
+
         CCNode* content = nullptr;
         if (i == 0) {
-            content = makeLabel("*", "bigFont.fnt", 0.5f, {255, 255, 255});
+            content = makeLabel("*", "bigFont.fnt", 0.56f, {255, 255, 255});
         } else if (auto* glyph = paimon::SpriteHelper::safeCreateWithFrameName(categories[i - 1].glyph)) {
             float const source = std::max(glyph->getContentSize().width, glyph->getContentSize().height);
-            glyph->setScale(15.f / std::max(1.f, source));
+            glyph->setScale(18.f / std::max(1.f, source));
             content = glyph;
         }
+        if (content) {
+            auto const sprSize = spr->getContentSize();
+            content->setPosition({sprSize.width * 0.5f, sprSize.height * 0.5f + 1.f});
+            spr->addChild(content, 5);
+        }
 
-        auto* chip = makeChip(chipSize, content);
-        auto* btn = CCMenuItemSpriteExtra::create(chip, this, menu_selector(ProgressionPopup::onCategory));
+        auto* btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(ProgressionPopup::onCategory));
         if (!btn) continue;
         btn->setTag(i - 1);
-        btn->setPosition({startX + (chipSize + gap) * i, rowY});
+        btn->setScale(0.76f);
+        btn->m_baseScale = 0.76f;
         menu->addChild(btn);
-        m_categoryChips.push_back(chip);
+        m_categoryBtns.push_back(btn);
+        catItems.push_back(btn);
     }
 
-    float const gridH = kPageH - 36.f;
-    if (auto* panel = paimon::SpriteHelper::safeCreateScale9("GJ_square05.png", CCRectMake(12.f, 12.f, 56.f, 56.f))) {
-        panel->setContentSize({kPageW, gridH});
-        panel->setAnchorPoint({0.f, 0.f});
-        panel->setColor({0, 0, 0});
-        panel->setOpacity(75);
+    paimon::ui::layoutButtonRow(catItems, 2.f, kPageW - 2.f, kPageH - 14.f, 5.f, paimon::ui::RowAlign::Center);
+
+    constexpr float gridW = kPageW - 4.f;
+    constexpr float gridH = kPageH - 36.f;
+    if (auto* panel = paimon::ui::makeInset({gridW, gridH}, 90)) {
+        panel->setPosition({2.f, 2.f});
         page->addChild(panel, 0);
     }
 
-    m_grid = ScrollLayer::create({kPageW, gridH});
-    m_grid->setPosition({0.f, 0.f});
-    page->addChild(m_grid, 1);
+    m_grid = ScrollLayer::create({gridW, gridH});
+    if (m_grid) {
+        m_grid->setAnchorPoint({0.f, 0.f});
+        m_grid->setPosition({2.f, 2.f});
+        page->addChild(m_grid, 1);
+    }
+
+    if (auto* borders = ListBorders::create()) {
+        borders->setContentSize({gridW + 4.f, gridH + 2.f});
+        borders->setAnchorPoint({0.f, 0.f});
+        borders->setPosition({0.f, 1.f});
+        page->addChild(borders, 2);
+    }
 
     rebuildBadgeGrid();
     return page;
@@ -581,14 +624,9 @@ void ProgressionPopup::onCategory(CCObject* sender) {
 void ProgressionPopup::rebuildBadgeGrid() {
     if (!m_grid || !m_grid->m_contentLayer) return;
 
-    auto const& tier = tierForLevel(m_ctx.level);
-    auto const& categories = allCategories();
-    for (int i = 0; i < static_cast<int>(m_categoryChips.size()); ++i) {
-        bool const active = (i - 1) == m_category;
-        auto const accent = i == 0 ? tier.base : categories[i - 1].color;
-        setTinted(m_categoryChips[i], "chip-plate"_spr, active ? accent : kIdleTint);
-        // idle face keeps a trace of category colour so rows stay distinct.
-        setTinted(m_categoryChips[i], "chip-face"_spr, active ? accent : dim(accent, 0.42f));
+    for (auto* btn : m_categoryBtns) {
+        bool const active = btn && btn->getTag() == m_category;
+        paimon::ui::setButtonSkin(btn, active ? paimon::ui::Btn::Green : paimon::ui::Btn::Gray);
     }
 
     auto* layer = m_grid->m_contentLayer;
@@ -649,16 +687,14 @@ void ProgressionPopup::onBadge(CCObject* sender) {
     }
 }
 
-void ProgressionPopup::onFormulaInfo(CCObject*) {
-    auto& loc = Localization::get();
-    using namespace exp_values;
+void ProgressionPopup::onShowcaseBadge(CCObject* sender) {
+    if (!sender) return;
+    int const index = sender->getTag();
+    if (index < 0 || index >= static_cast<int>(m_showcaseBadges.size())) return;
 
-    auto const body = fmt::format(
-        fmt::runtime(loc.getString("progression.info.body")),
-        kStar, kMoon, kDiamond, kUserCoin, kSecretCoin,
-        kDemonEasy, kDemonExtreme, kCreatorPoint
-    );
-    PopupManager::get().alert(loc.getString("progression.info.title"), body).showInstant();
+    if (auto* popup = BadgeDetailPopup::create(*m_showcaseBadges[index], m_ctx)) {
+        popup->show();
+    }
 }
 
 } // namespace paimon::progression

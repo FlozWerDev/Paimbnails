@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "ProfileMusicPopup.hpp"
 #include "SongSearchPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
@@ -79,7 +80,7 @@ namespace {
     std::optional<std::string> stageCustomAudioFile(std::filesystem::path const& src) {
         std::error_code ec;
 
-        auto destDir = Mod::get()->getSaveDir() / "profile-music-import";
+        auto destDir = paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "profile-music-import";
         std::filesystem::create_directories(destDir, ec);
 
 // best-effort cleanup; fmod-locked preview files are left for later.
@@ -91,7 +92,7 @@ namespace {
             }
         }
 
-        std::string ext = geode::utils::string::pathToString(src.extension());
+        std::string ext = paimon::paths::toUtf8(src.extension());
         if (ext.empty() || ext.size() > 8) {
             ext = ".mp3";
         }
@@ -103,11 +104,11 @@ namespace {
             src, dest, std::filesystem::copy_options::overwrite_existing, ec);
         if (ec) {
             log::error("[ProfileMusic] Failed to stage custom audio file '{}': {}",
-                geode::utils::string::pathToString(src), ec.message());
+                paimon::paths::toUtf8(src), ec.message());
             return std::nullopt;
         }
 
-        return geode::utils::string::pathToString(dest);
+        return paimon::paths::toUtf8(dest);
     }
 }
 
@@ -1166,7 +1167,7 @@ bool ProfileMusicPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
     return true;
 }
 
-void ProfileMusicPopup::ccTouchMoved(CCTouch* touch, CCEvent* event) {
+void ProfileMusicPopup::ccTouchMoved(CCTouch* touch, CCEvent*) {
     if (m_songDurationMs <= 0) return;
 
     auto touchPos = touch->getLocation();
@@ -1202,7 +1203,7 @@ void ProfileMusicPopup::ccTouchMoved(CCTouch* touch, CCEvent* event) {
     updateSelectionLabel();
 }
 
-void ProfileMusicPopup::ccTouchEnded(CCTouch* touch, CCEvent* event) {
+void ProfileMusicPopup::ccTouchEnded(CCTouch*, CCEvent*) {
     m_isDraggingStart     = false;
     m_isDraggingEnd       = false;
     m_isDraggingSelection = false;
@@ -1245,7 +1246,7 @@ void ProfileMusicPopup::onStopPreview(CCObject*) {
 
 void ProfileMusicPopup::onDownloadSong(CCObject*) {
     if (m_isCustomFile) {
-        PaimonNotify::create(tr("music.song_already_local").c_str(), NotificationIcon::Info)->show();
+        PaimonNotify::show(tr("music.song_already_local").c_str(), NotificationIcon::Info);
         return;
     }
 
@@ -1265,7 +1266,7 @@ void ProfileMusicPopup::onDownloadSong(CCObject*) {
 
         if (success) {
             popup->m_previewPath = path;
-            PaimonNotify::create(tr("music.song_dl_success").c_str(), NotificationIcon::Success)->show();
+            PaimonNotify::show(tr("music.song_dl_success").c_str(), NotificationIcon::Success);
         } else {
             popup->showError(tr("music.download_error"));
         }
@@ -1310,7 +1311,7 @@ void ProfileMusicPopup::onSave(CCObject*) {
     auto* accountManager = GJAccountManager::get();
     if (!accountManager) {
         hideLoading();
-        PaimonNotify::create(tr("music.account_unavailable").c_str(), NotificationIcon::Error)->show();
+        PaimonNotify::show(tr("music.account_unavailable").c_str(), NotificationIcon::Error);
         return;
     }
     std::string username = accountManager->m_username;
@@ -1325,7 +1326,7 @@ void ProfileMusicPopup::onSave(CCObject*) {
             popup->hideLoading();
 
             if (success) {
-                PaimonNotify::create(tr("music.custom_song_uploaded").c_str(), NotificationIcon::Success)->show();
+                PaimonNotify::show(tr("music.custom_song_uploaded").c_str(), NotificationIcon::Success);
                 popup->onClose(nullptr);
             } else {
                 popup->showError(fmt::format(fmt::runtime(tr("music.upload_failed_fmt")), msg));
@@ -1339,7 +1340,7 @@ void ProfileMusicPopup::onSave(CCObject*) {
             popup->hideLoading();
 
             if (success) {
-                PaimonNotify::create(tr("music.song_uploaded").c_str(), NotificationIcon::Success)->show();
+                PaimonNotify::show(tr("music.song_uploaded").c_str(), NotificationIcon::Success);
                 popup->onClose(nullptr);
             } else {
                 popup->showError(fmt::format(fmt::runtime(tr("music.upload_failed_fmt")), msg));
@@ -1366,7 +1367,7 @@ void ProfileMusicPopup::onDelete(CCObject*) {
                 auto* accountManager = GJAccountManager::get();
                 if (!accountManager) {
                     popup->hideLoading();
-                    PaimonNotify::create(tr("music.account_unavailable").c_str(), NotificationIcon::Error)->show();
+                    PaimonNotify::show(tr("music.account_unavailable").c_str(), NotificationIcon::Error);
                     return;
                 }
                 std::string username = accountManager->m_username;
@@ -1378,7 +1379,7 @@ void ProfileMusicPopup::onDelete(CCObject*) {
                     popup->hideLoading();
 
                     if (success) {
-                        PaimonNotify::create(tr("music.deleted_ok").c_str(), NotificationIcon::Success)->show();
+                        PaimonNotify::show(tr("music.deleted_ok").c_str(), NotificationIcon::Success);
                         popup->onClose(nullptr);
                     } else {
                         popup->showError(fmt::format(fmt::runtime(tr("music.delete_failed")), msg));

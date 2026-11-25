@@ -256,6 +256,7 @@ bool LevelHistoryPopup::init(GJGameLevel* level) {
 
     m_scroll = geode::ScrollLayer::create({kListW, kListH});
     if (!m_scroll) return false;
+    m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setPosition({kListX, kListY});
     m_mainLayer->addChild(m_scroll, 2);
 

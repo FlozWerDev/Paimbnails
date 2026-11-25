@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "../../../ui/PaimonPopup.hpp"
 
 #include <Geode/Geode.hpp>
@@ -9,7 +9,7 @@
 
 class SongSearchRowWidget;
 
-class SongSearchPopup : public PaimonPopup, public TextInputDelegate {
+class SongSearchPopup : public PaimonPopup {
 public:
     using SelectCallback = std::function<void(int songID)>;
 
@@ -28,12 +28,10 @@ protected:
     void runSearch();
     void onClose(cocos2d::CCObject*) override;
 
-    void textChanged(CCTextInputNode* input) override;
-
     bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchMoved(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchEnded(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
-    void scrollWheel(float vertical, float horizontal) override;
+    bool scrollWheel(float vertical, float horizontal) override;
 
     static bool fuzzyMatch(std::string const& query, std::string const& target, int& outScore);
 
@@ -59,6 +57,7 @@ private:
 
 class SongSearchRowWidget : public cocos2d::CCLayer {
 public:
+    using cocos2d::CCLayer::init;
     static SongSearchRowWidget* create(SongSearchPopup* parent);
     void setSong(SongInfoObject* song);
     void updatePlayButton();

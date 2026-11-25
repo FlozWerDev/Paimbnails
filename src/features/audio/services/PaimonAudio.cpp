@@ -36,13 +36,13 @@ void PaimonAudio::resetValues() {
     m_peakTreble   = 0.01f;
 }
 
-void PaimonAudio::activate() {
-    if (m_active) return;
+bool PaimonAudio::activate() {
+    if (m_active) return true;
 
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_system || !engine->m_backgroundMusicChannel) {
         log::warn("[PaimonAudio] No FMOD engine/system/channel available");
-        return;
+        return false;
     }
 
     if (!m_fftDSP) {
@@ -50,12 +50,12 @@ void PaimonAudio::activate() {
         if (res != FMOD_OK || !m_fftDSP) {
             log::error("[PaimonAudio] Failed to create FFT DSP (result={})", static_cast<int>(res));
             m_fftDSP = nullptr;
-            return;
+            return false;
         }
         m_fftDSP->setParameterInt(FMOD_DSP_FFT_WINDOWSIZE, 512);
     }
 
-    FMOD_RESULT res = engine->m_backgroundMusicChannel->addDSP(2, m_fftDSP);
+    FMOD_RESULT res = engine->m_backgroundMusicChannel->addDSP(FMOD_CHANNELCONTROL_DSP_TAIL, m_fftDSP);
     if (res != FMOD_OK) {
         log::warn("[PaimonAudio] Failed to add FFT DSP to channel (result={})", static_cast<int>(res));
         // dsp may already be attached — continue anyway
@@ -64,6 +64,7 @@ void PaimonAudio::activate() {
     resetValues();
     m_active = true;
     log::info("[PaimonAudio] Activated - FFT DSP attached to background music channel");
+    return true;
 }
 
 void PaimonAudio::deactivate() {

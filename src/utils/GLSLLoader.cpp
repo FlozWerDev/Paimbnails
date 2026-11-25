@@ -1,3 +1,4 @@
+#include "FilesystemPath.hpp"
 #include "GLSLLoader.hpp"
 
 #include <Geode/Geode.hpp>
@@ -33,12 +34,12 @@ ShaderSourceCache& sourceCache() {
 
 std::filesystem::path shadersDir() {
     // dev layout: src/../resources/shaders/<name>.glsl
-    return geode::Mod::get()->getResourcesDir() / "shaders";
+    return paimon::paths::toStdPath(geode::Mod::get()->getResourcesDir()) / "shaders";
 }
 
 // installed .geode flattens resources/ (no subfolders); try dev layout then flat.
 std::filesystem::path shadersDirFlat() {
-    return geode::Mod::get()->getResourcesDir();
+    return paimon::paths::toStdPath(geode::Mod::get()->getResourcesDir());
 }
 
 std::string readFileRaw(std::filesystem::path const& path) {

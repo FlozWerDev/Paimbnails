@@ -3,6 +3,7 @@
 #if defined(USE_MEDIA_FOUNDATION)
 
 #include "AudioWavCommon.hpp"
+#include "../core/RuntimeLifecycle.hpp"
 #include <Geode/loader/Log.hpp>
 #include <windows.h>
 #include <mfapi.h>
@@ -11,6 +12,7 @@
 #include <codecapi.h>
 #include <objbase.h>
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <vector>
@@ -96,7 +98,24 @@ AudioPcm extractAudioToPcm(const std::string& videoPath) {
     std::vector<uint8_t> pcm;
     pcm.reserve(1u << 20);
 
+    constexpr size_t kMaxPcmBytes = 256ull * 1024 * 1024;
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    bool aborted = false;
+    size_t iterations = 0;
+
     while (true) {
+        if ((++iterations % 64) == 0) {
+            if (paimon::isRuntimeShuttingDown()) {
+                aborted = true;
+                break;
+            }
+            if (std::chrono::steady_clock::now() > deadline) {
+                geode::log::warn("[AudioExtract] decode watchdog expired for {}", videoPath);
+                aborted = true;
+                break;
+            }
+        }
+
         DWORD streamIdx = 0, flags = 0;
         IMFSample* sample = nullptr;
         hr = reader->ReadSample(
@@ -124,6 +143,14 @@ AudioPcm extractAudioToPcm(const std::string& videoPath) {
         DWORD bufLen = 0;
         hr = buf->Lock(&data, nullptr, &bufLen);
         if (SUCCEEDED(hr) && data && bufLen > 0) {
+            if (bufLen > kMaxPcmBytes - pcm.size()) {
+                geode::log::warn("[AudioExtract] PCM cap exceeded for {}", videoPath);
+                aborted = true;
+                buf->Unlock();
+                buf->Release();
+                sample->Release();
+                break;
+            }
             pcm.insert(pcm.end(), data, data + bufLen);
             buf->Unlock();
         }
@@ -133,6 +160,8 @@ AudioPcm extractAudioToPcm(const std::string& videoPath) {
 
     reader->Release();
     MFShutdown();
+
+    if (aborted) return {};
 
     if (pcm.empty()) {
         geode::log::warn("[AudioExtract] no audio data extracted from {}", videoPath);

@@ -1,0 +1,138 @@
+// Filter the actual library list with imported, downloaded, and GD tracks.
+#include "src/features/menu-music/model/MenuMusicTypes.hpp"
+#include <algorithm>
+#include <cassert>
+#include <cctype>
+#include <filesystem>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+using namespace paimon::menumusic;
+namespace geode::utils::string {
+std::string toLower(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+        [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    return value;
+}
+}
+namespace paimon::assets {
+std::filesystem::path pathFromUtf8(std::string const& path) { return path; }
+}
+struct Point { float x, y; };
+struct Size { float width = 400.f, height = 200.f; };
+struct Node {
+    Size size;
+    Size getContentSize() const { return size; }
+    void setContentHeight(float height) { size.height = height; }
+    void removeAllChildren() {}
+    void addChild(Node*) {}
+    void setPosition(Point) {}
+};
+struct Scroll : Node {
+    Node content;
+    Node* m_contentLayer = &content;
+    void scrollToTop() {}
+};
+namespace paimon::ui {
+namespace palette { constexpr int muted = 0; }
+std::string emptyMessage;
+Node* makeText(char const* message, float, float, int, int) {
+    static Node label;
+    emptyMessage = message;
+    return &label;
+}
+}
+constexpr int kCCTextAlignmentCenter = 0;
+struct Mod {
+    static Mod* get() { static Mod mod; return &mod; }
+    template<class T> T getSavedValue(char const*, T) { return {}; }
+};
+struct MenuMusicLibrary {
+    std::vector<MusicTrack> values;
+    static MenuMusicLibrary& get() { static MenuMusicLibrary library; return library; }
+    auto& tracks() { return values; }
+    MusicTrack* findTrack(std::string const& id) {
+        for (auto& track : values) if (track.id == id) return &track;
+        return nullptr;
+    }
+};
+constexpr float kCardHeight = 48.f, kCompactCardHeight = 38.f, kCardGap = 4.f;
+#define schedule_selector(...) 0
+struct MenuMusicLibraryPopup {
+    Scroll* m_scroll = nullptr;
+    bool m_localOnly = false, m_favoritesOnly = false, m_blacklistedOnly = false;
+    bool m_sortReverse = false, m_compact = false, m_cardsDirty = false;
+    std::string m_sortMode = "alphabetical", m_query;
+    std::vector<std::string> m_trackIds;
+    void unschedule(int) {}
+    void clearTrackCards() {}
+    void onScrollCurrent(void*) {}
+    void refreshVisibleCards() {}
+    void rebuildList();
+};
+@@function|src/features/menu-music/ui/MenuMusicLibraryPopup.cpp|bool isLocalTrack(@@
+@@function|src/features/menu-music/ui/MenuMusicLibraryPopup.cpp|static bool matchesQuery(@@
+@@function|src/features/menu-music/ui/MenuMusicLibraryPopup.cpp|void MenuMusicLibraryPopup::rebuildList()@@
+
+MusicTrack track(std::string id, std::string name, TrackSource source) {
+    MusicTrack value;
+    value.id = std::move(id);
+    value.displayName = std::move(name);
+    value.source = source;
+    return value;
+}
+
+int main() {
+    auto& library = MenuMusicLibrary::get();
+    library.values = {
+        track("downloaded", "Cherry Candy - Lunak", TrackSource::Downloaded),
+        track("imported", "Imported music", TrackSource::Local),
+        track("gd_1", "Geometry Dash song", TrackSource::GeometryDash),
+        track("vanilla", "Vanilla", TrackSource::Vanilla),
+        track("unknown", "Unknown", TrackSource::Unknown),
+    };
+    Scroll scroll;
+    MenuMusicLibraryPopup popup;
+    popup.m_scroll = &scroll;
+    popup.m_localOnly = true;
+    popup.rebuildList();
+    assert((popup.m_trackIds == std::vector<std::string>{"downloaded", "imported"})
+        && "Local must include the songs downloaded through Add");
+    // Display filtering must preserve ownership/redownload metadata.
+    assert(library.findTrack("downloaded")->source == TrackSource::Downloaded);
+
+    popup.m_query = "CHERRY";
+    popup.rebuildList();
+    assert((popup.m_trackIds == std::vector<std::string>{"downloaded"}));
+    popup.m_query.clear();
+    library.findTrack("downloaded")->favorite = true;
+    popup.m_favoritesOnly = true;
+    popup.rebuildList();
+    assert((popup.m_trackIds == std::vector<std::string>{"downloaded"}));
+
+    popup.m_favoritesOnly = false;
+    library.findTrack("downloaded")->blacklisted = true;
+    popup.rebuildList();
+    assert((popup.m_trackIds == std::vector<std::string>{"imported"}));
+    popup.m_blacklistedOnly = true;
+    popup.rebuildList();
+    assert((popup.m_trackIds == std::vector<std::string>{"downloaded"}));
+
+    popup.m_blacklistedOnly = false;
+    library.findTrack("downloaded")->blacklisted = false;
+    popup.m_localOnly = false;
+    popup.rebuildList();
+    assert(popup.m_trackIds.size() == 5);
+    // Existing saved Local filters must also show a library containing only downloads.
+    library.values = {track("downloaded", "Cherry Candy - Lunak", TrackSource::Downloaded)};
+    popup.m_localOnly = true;
+    popup.rebuildList();
+    assert((popup.m_trackIds == std::vector<std::string>{"downloaded"}));
+
+    library.values = {track("gd_1", "Geometry Dash song", TrackSource::GeometryDash)};
+    popup.rebuildList();
+    assert(popup.m_trackIds.empty());
+    assert(paimon::ui::emptyMessage.find("Add") != std::string::npos);
+}

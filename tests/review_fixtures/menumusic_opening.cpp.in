@@ -1,0 +1,69 @@
+#include <cassert>
+#include <filesystem>
+#include <string>
+#include <vector>
+
+struct CCNode {};
+struct CCSize { float width, height; };
+struct PaimonPopup : CCNode { bool init(float, float) { return true; } };
+namespace paimon { void markDynamicPopup(CCNode*) {} }
+namespace geode::utils::string { std::string pathToString(std::filesystem::path const& path) { return path.string(); } }
+namespace coverlog {
+    std::filesystem::path logFilePath() { return {}; }
+    template<class... Args> void info(Args const&...) {}
+}
+struct MenuMusicLibrary {
+    int blockingScans = 0, asyncRequests = 0;
+    static MenuMusicLibrary& get() { static MenuMusicLibrary library; return library; }
+    void load() {}
+    void syncDownloadedSongs(bool = true) { ++blockingScans; }
+    void syncDownloadedSongsAsync() { ++asyncRequests; }
+};
+struct Hero {
+    int loads = 0;
+    std::string current;
+    void setCoversFromPaths(std::vector<std::string> const& paths) { ++loads; current = paths.empty() ? "" : paths.front(); }
+    std::string getCurrentCoverPath() const { return current; }
+};
+struct Cover {
+    int loads = 0;
+    void setCoverFromPath(std::string const&) { ++loads; }
+};
+struct MenuMusicPopup : PaimonPopup {
+    Hero* m_hero = nullptr;
+    Cover* m_bg = nullptr;
+    Cover* m_disc = nullptr;
+    int fullscreenLoads = 0, captions = 0;
+    std::vector<std::string> m_activeCoverPaths;
+    std::string m_lastChromeCoverPath;
+    void buildFullscreenBackdrop() {} void buildContentClipper() {}
+    void buildBlurBackground() {} void buildTopBar() {} void buildVinyl() {}
+    void buildInfoColumn() {} void buildModeSelector() {} void buildTransport() {}
+    void buildSeekBar() {} void buildActions() {} void buildBottomBar() {}
+    void refreshFromState() {}
+    void applyFullscreenCover(std::string const&) { ++fullscreenLoads; }
+    void updateCoverCaption() { ++captions; }
+    bool init(float, float);
+    void applyCovers(std::vector<std::string> const&);
+};
+@@function|src/features/menu-music/ui/MenuMusicPopup.cpp|bool MenuMusicPopup::init(@@
+@@function|src/features/menu-music/ui/MenuMusicPopup.cpp|void MenuMusicPopup::applyCovers(@@
+
+int main() {
+    MenuMusicPopup popup;
+    assert(popup.init(460, 225));
+    assert(MenuMusicLibrary::get().blockingScans == 0); // no filesystem scan during popup construction
+    assert(MenuMusicLibrary::get().asyncRequests == 1);
+    Hero hero;
+    Cover background, disc;
+    popup.m_hero = &hero; popup.m_bg = &background; popup.m_disc = &disc;
+    popup.applyCovers({"one.png", "two.png"});
+    hero.current = "two.png"; // carousel has advanced
+    popup.applyCovers({"one.png", "two.png"}); // pause/favorite/library event, same artwork
+    assert(hero.loads == 1 && background.loads == 1 && disc.loads == 1 && popup.fullscreenLoads == 1);
+    assert(hero.current == "two.png");
+    popup.applyCovers({"new.png"});
+    assert(hero.loads == 2 && background.loads == 2 && popup.fullscreenLoads == 2);
+    popup.applyCovers({});
+    assert(hero.current.empty() && hero.loads == 3);
+}

@@ -1,6 +1,7 @@
 #include "NewgroundsCatalog.hpp"
 
 #include "MenuMusicLibrary.hpp"
+#include "../../../utils/HttpClient.hpp"
 #include "../../../utils/WebHelper.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
 
@@ -77,24 +78,6 @@ std::string urlDecode(std::string const& text) {
     return out;
 }
 
-std::string urlEncode(std::string const& text) {
-    static char const* hex = "0123456789ABCDEF";
-    std::string out;
-    out.reserve(text.size() * 3);
-    for (unsigned char c : text) {
-        if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
-            out.push_back(static_cast<char>(c));
-        } else if (c == ' ') {
-            out.push_back('+');
-        } else {
-            out.push_back('%');
-            out.push_back(hex[(c >> 4) & 0xF]);
-            out.push_back(hex[c & 0xF]);
-        }
-    }
-    return out;
-}
-
 int parseDigitsAt(std::string const& text, std::size_t pos) {
     std::string digits;
     while (pos < text.size() && std::isdigit(static_cast<unsigned char>(text[pos]))) {
@@ -151,7 +134,7 @@ std::optional<NewgroundsTrack> parseSongInfoResponse(int songId, std::string con
 
 void fetchSongInfoUncached(int songId, NewgroundsSongCallback callback) {
     auto request = web::WebRequest();
-    request.timeout(std::chrono::seconds(10));
+    request.timeout(asp::Duration::fromSecs(10));
     request.userAgent("");
     request.header("Content-Type", "application/x-www-form-urlencoded");
     request.bodyString(fmt::format("songID={}&secret=Wmfd2893gb7", songId));
@@ -331,7 +314,7 @@ int parseNewgroundsSongId(std::string const& text) {
 
 void fetchWeeklyPicks(NewgroundsListCallback callback) {
     auto request = web::WebRequest();
-    request.timeout(std::chrono::seconds(12));
+    request.timeout(asp::Duration::fromSecs(12));
     request.userAgent(kBrowserUserAgent);
 
     WebHelper::dispatch(std::move(request), "GET",
@@ -355,10 +338,10 @@ void fetchWeeklyPicks(NewgroundsListCallback callback) {
 void searchNewgroundsSongs(std::string const& query, NewgroundsListCallback callback) {
     auto cleaned = geode::utils::string::trim(query);
     auto url = "https://www.newgrounds.com/search/summary?suitabilities=etm&terms=" +
-        urlEncode(cleaned);
+        HttpClient::encodeQueryParamForm(cleaned);
 
     auto request = web::WebRequest();
-    request.timeout(std::chrono::seconds(15));
+    request.timeout(asp::Duration::fromSecs(15));
     request.userAgent(kBrowserUserAgent);
     request.header("Accept", "text/html,application/xhtml+xml");
 

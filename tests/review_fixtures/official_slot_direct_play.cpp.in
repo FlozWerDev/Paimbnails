@@ -1,0 +1,319 @@
+#include <cassert>
+#include <cstdint>
+#include <functional>
+#include <iostream>
+#include <memory>
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <vector>
+@@source|src/features/official-slots/OfficialSlots.hpp@@
+struct LevelId {
+    int number = 1000000001;
+    int value() const { return number; }
+    operator int() const { return number; }
+};
+struct GJGameLevel {
+    std::string m_levelString, m_songIDs, m_sfxIDs;
+    LevelId m_levelID;
+    int m_songID = 0, m_audioTrack = 0, m_levelLength = 0;
+    bool m_levelNotDownloaded = false;
+    std::string getAudioFileName() const { return "custom-song.mp3"; }
+};
+struct CCScene;
+struct BoomScrollLayer {
+    int m_page = 27;
+    int getRelativePageForNum(int page) { assert(page == 27); return 4; }
+};
+struct LevelSelectLayer {
+    BoomScrollLayer scroll;
+    BoomScrollLayer* m_scrollLayer = &scroll;
+    static inline int requestedPage = -1;
+    static CCScene* scene(int page);
+};
+struct CCScene {
+    int kind = 0;
+    LevelSelectLayer* selector = nullptr;
+    template<class T> T* getChildByType(int) { return selector; }
+};
+CCScene* LevelSelectLayer::scene(int page) {
+    requestedPage = page;
+    static LevelSelectLayer selector;
+    static CCScene fresh{3, &selector};
+    return &fresh;
+}
+namespace paimon {
+std::vector<std::function<void()>> deferred;
+void scheduleMainThreadDelay(float delay, std::function<void()> fn) {
+    assert(delay == 0.f);
+    deferred.push_back(std::move(fn));
+}
+void nextFrame() {
+    auto ready = std::move(deferred);
+    deferred.clear();
+    for (auto& fn : ready) fn();
+}
+}
+template<class T> struct Ref {
+    T* pointer = nullptr;
+    Ref(T* value = nullptr) : pointer(value) {}
+    T* data() const { return pointer; }
+    T* operator->() const { return pointer; }
+    operator T*() const { return pointer; }
+};
+template<class T> struct WeakRef {
+    T* pointer;
+    WeakRef(T* value) : pointer(value) {}
+    Ref<T> lock() const { return Ref<T>(pointer); }
+};
+struct CCDirector {
+    LevelSelectLayer selector;
+    CCScene origin{0, &selector}, elsewhere;
+    CCScene* running = &origin;
+    int pushes = 0, replacements = 0;
+    static CCDirector* get() { static CCDirector director; return &director; }
+    CCScene* getRunningScene() const { return running; }
+    void pushScene(CCScene* scene) { running = scene; ++pushes; }
+    void popScene() { running = &origin; }
+    void replaceScene(CCScene* scene) { running = scene; ++replacements; }
+};
+struct CCTransitionFade { static CCScene* create(float, CCScene* scene) { return scene; } };
+struct LevelInfoLayer {
+    static CCScene* scene(GJGameLevel*, bool) { static CCScene scene{1}; return &scene; }
+};
+struct GameManager {
+    int m_sceneEnum = 4;
+    static GameManager* get() { static GameManager gm; return &gm; }
+};
+struct FMODAudioEngine {
+    int stops = 0, preloads = 0;
+    static FMODAudioEngine* sharedEngine() { static FMODAudioEngine engine; return &engine; }
+    void stopMusic(int channel) { assert(channel == 0); ++stops; }
+    void loadMusic(std::string const& path, float speed, float start, float volume,
+                   bool loop, int id, int channel, bool dontReset) {
+        assert(path == "custom-song.mp3" && speed == 1.f && start == 0.f && volume == 1.f);
+        assert(loop && id == 0 && channel == 0 && !dontReset);
+        assert(stops > 0);
+        ++preloads;
+    }
+};
+struct PlayLayer {
+    static inline bool fail = false;
+    static inline GJGameLevel* last = nullptr;
+    static CCScene* scene(GJGameLevel* level, bool) {
+        assert(FMODAudioEngine::sharedEngine()->preloads > 0);
+        assert(GameManager::get()->m_sceneEnum == 9);
+        last = level;
+        static CCScene scene{2};
+        return fail ? nullptr : &scene;
+    }
+};
+enum class DynSongLayer { None, LevelSelect, LevelInfo };
+struct AudioContextCoordinator {
+    bool active = false;
+    DynSongLayer context = DynSongLayer::LevelSelect;
+    int starts = 0, aborts = 0;
+    static AudioContextCoordinator& get() { static AudioContextCoordinator coordinator; return coordinator; }
+    DynSongLayer getDynamicContextLayer() const { return context; }
+    bool isGameplayActive() const { return active; }
+    void beginGameplayTransition() { active = true; context = DynSongLayer::None; ++starts; }
+    void prepareGameplayAudio(GJGameLevel*);
+    void abortGameplayTransition(DynSongLayer restored) { active = false; context = restored; ++aborts; }
+    void activateLevelSelectLevel(GJGameLevel*) { active = false; context = DynSongLayer::LevelSelect; }
+    void activateLevelSelect(int, bool) { active = false; context = DynSongLayer::LevelSelect; }
+    void deactivateLevelSelect(bool) { context = DynSongLayer::None; }
+};
+struct DynamicSongManager {
+    int handoffs = 0;
+    static DynamicSongManager* get() { static DynamicSongManager manager; return &manager; }
+    void cancelGameplayHandoff() {}
+    void finishGameplayHandoff(int) { assert(AudioContextCoordinator::get().active); ++handoffs; }
+};
+@@function|src/features/audio/services/AudioContextCoordinator.cpp|void AudioContextCoordinator::prepareGameplayAudio(@@
+struct LevelPage {
+    GJGameLevel* m_level = nullptr;
+    void playStep2() {
+        assert(AudioContextCoordinator::get().active && DynamicSongManager::get()->handoffs > 0);
+        // Native preload must run after the preview has released its channel.
+        auto* engine = FMODAudioEngine::sharedEngine();
+        engine->stopMusic(0);
+        engine->loadMusic(m_level->getAudioFileName(), 1.f, 0.f, 1.f, true, 0, 0, false);
+    }
+};
+struct OfficialPage : LevelPage {
+    @@function|src/hooks/LevelPage.cpp|void playStep2()@@
+};
+struct MusicDownloadManager {
+    bool downloaded = true;
+    static MusicDownloadManager* sharedState() { static MusicDownloadManager manager; return &manager; }
+    bool isSongDownloaded(int) const { return downloaded; }
+};
+struct ProfileMusicManager {
+    std::vector<std::function<void(bool, std::string const&)>> callbacks;
+    static ProfileMusicManager& get() { static ProfileMusicManager manager; return manager; }
+    void downloadSongForPreview(int, std::function<void(bool, std::string const&)> callback) {
+        callbacks.push_back(std::move(callback));
+    }
+};
+enum class NotificationIcon { Info, Warning, Error };
+struct PaimonNotify { static void show(std::string const&, NotificationIcon) {} };
+struct Localization {
+    static Localization& get() { static Localization localization; return localization; }
+    std::string getString(char const* key) const { return key; }
+};
+namespace paimon::officialslots {
+int selectedVisiblePage = -1;
+void selectVisiblePage(LevelSelectLayer* layer, int page) { assert(layer); selectedVisiblePage = page; }
+std::uint64_t g_playRequest = 0;
+std::optional<int> g_playReturnPage;
+GJGameLevel* g_playingLevel = nullptr;
+using SlotReadyCallback = std::function<void(GJGameLevel*)>;
+struct SlotStore {
+    std::unordered_map<std::string, Slot> slots;
+    static SlotStore& get() { static SlotStore store; return store; }
+    std::optional<Slot> find(std::string const& id) {
+        auto it = slots.find(id);
+        return it == slots.end() ? std::nullopt : std::optional(it->second);
+    }
+};
+struct SlotLevelCache {
+    GJGameLevel level;
+    static SlotLevelCache& get() { static SlotLevelCache cache; return cache; }
+    GJGameLevel* levelForSlot(Slot const&) { return &level; }
+};
+struct SlotDownloads {
+    std::vector<std::function<void(GJGameLevel*)>> callbacks;
+    static SlotDownloads& get() { static SlotDownloads downloads; return downloads; }
+    void fetch(int, std::function<void(GJGameLevel*)> callback) { callbacks.push_back(std::move(callback)); }
+};
+@@function|src/features/official-slots/services/SlotLevels.cpp|bool sameSource(@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|bool levelStringEmpty(@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|void copyPlayableData(@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|void loadSlotLevel(@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|void cacheSlotLevel(@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|void openSlotLevel(@@
+@@function|src/features/official-slots/services/SlotLevels.cpp|bool returnFromSlotLevel(@@
+}
+
+int main() {
+    using namespace paimon::officialslots;
+    Slot slot;
+    slot.id = "custom";
+    slot.levelId = 123456;
+    SlotStore::get().slots[slot.id] = slot;
+    SlotLevelCache::get().level.m_levelString = "level payload";
+    auto* director = CCDirector::get();
+    openSlotLevel(slot);
+    assert(director->replacements == 0 && FMODAudioEngine::sharedEngine()->preloads == 1);
+    paimon::nextFrame();
+    assert(director->replacements == 1 && director->pushes == 0 && director->running->kind == 2);
+    assert(PlayLayer::last == &SlotLevelCache::get().level);
+    assert(AudioContextCoordinator::get().starts == 1);
+    assert(returnFromSlotLevel(PlayLayer::last));
+    assert(director->running != &director->origin && director->running->kind == 3);
+    assert(LevelSelectLayer::requestedPage == 0 && selectedVisiblePage == 4);
+    assert(!returnFromSlotLevel(PlayLayer::last));
+    assert(!AudioContextCoordinator::get().isGameplayActive());
+    // Native LevelSelectLayer has no registered onEnter hook: a successful
+    // return must allow another click without a simulated lifecycle reset.
+    openSlotLevel(slot);
+    assert(paimon::deferred.size() == 1);
+    paimon::nextFrame();
+    assert(director->replacements == 3 && AudioContextCoordinator::get().starts == 2);
+    assert(returnFromSlotLevel(PlayLayer::last));
+
+    auto reset = [&] {
+        director->running = &director->origin;
+        director->pushes = 0;
+        director->replacements = 0;
+        *FMODAudioEngine::sharedEngine() = {};
+        GameManager::get()->m_sceneEnum = 4;
+        paimon::deferred.clear();
+        AudioContextCoordinator::get() = {};
+        SlotDownloads::get().callbacks.clear();
+        ProfileMusicManager::get().callbacks.clear();
+        SlotLevelCache::get().level = {};
+        SlotLevelCache::get().level.m_levelString = "level payload";
+        SlotStore::get().slots[slot.id] = slot;
+        MusicDownloadManager::sharedState()->downloaded = true;
+        PlayLayer::fail = false;
+    };
+    GJGameLevel downloaded;
+    downloaded.m_levelString = "downloaded payload";
+    reset();
+    SlotLevelCache::get().level.m_levelString.clear();
+    openSlotLevel(slot);
+    assert(SlotDownloads::get().callbacks.size() == 1 && director->pushes == 0);
+    SlotDownloads::get().callbacks[0](&downloaded);
+    paimon::nextFrame();
+    assert(director->replacements == 1 && director->running->kind == 2);
+    assert(PlayLayer::last->m_levelString == "downloaded payload");
+
+    reset();
+    SlotLevelCache::get().level.m_levelString.clear();
+    openSlotLevel(slot);
+    director->running = &director->elsewhere;
+    SlotDownloads::get().callbacks[0](&downloaded);
+    assert(director->pushes == 0); // Leaving the scene cancels a delayed play.
+
+    reset();
+    SlotLevelCache::get().level.m_songID = 789;
+    MusicDownloadManager::sharedState()->downloaded = false;
+    openSlotLevel(slot);
+    assert(ProfileMusicManager::get().callbacks.size() == 1 && director->pushes == 0);
+    ProfileMusicManager::get().callbacks[0](true, "789.mp3");
+    paimon::nextFrame();
+    assert(director->replacements == 1 && director->running->kind == 2);
+
+    reset();
+    SlotLevelCache::get().level.m_songID = 789;
+    MusicDownloadManager::sharedState()->downloaded = false;
+    openSlotLevel(slot);
+    SlotStore::get().slots[slot.id].levelId = 999999;
+    ProfileMusicManager::get().callbacks[0](true, "789.mp3");
+    assert(director->pushes == 0); // Editing the source cancels the previous play request.
+
+    reset();
+    SlotLevelCache::get().level.m_songID = 789;
+    MusicDownloadManager::sharedState()->downloaded = false;
+    openSlotLevel(slot);
+    openSlotLevel(slot);
+    ProfileMusicManager::get().callbacks[0](true, "789.mp3");
+    assert(director->pushes == 0);
+    ProfileMusicManager::get().callbacks[1](true, "789.mp3");
+    paimon::nextFrame();
+    assert(director->replacements == 1); // Repeated taps still open only one gameplay scene.
+
+    reset();
+    openSlotLevel(slot);
+    openSlotLevel(slot);
+    assert(paimon::deferred.size() == 1); // A staged native entry blocks additional taps.
+    director->running = &director->elsewhere;
+    paimon::nextFrame();
+    assert(director->replacements == 0);
+    assert(!AudioContextCoordinator::get().active);
+    assert(AudioContextCoordinator::get().context == DynSongLayer::None);
+
+    reset();
+    PlayLayer::fail = true;
+    openSlotLevel(slot);
+    paimon::nextFrame();
+    assert(director->pushes == 0 && AudioContextCoordinator::get().aborts == 1);
+    assert(!AudioContextCoordinator::get().active);
+    assert(GameManager::get()->m_sceneEnum == 4);
+    reset();
+    OfficialPage original;
+    original.m_level = &SlotLevelCache::get().level;
+    original.playStep2();
+    assert(AudioContextCoordinator::get().starts == 1 && FMODAudioEngine::sharedEngine()->preloads == 1);
+    reset();
+    downloaded.m_songID = 789;
+    cacheSlotLevel(slot);
+    assert(SlotDownloads::get().callbacks.size() == 1);
+    SlotDownloads::get().callbacks[0](&downloaded);
+    assert(ProfileMusicManager::get().callbacks.size() == 1);
+    ProfileMusicManager::get().callbacks[0](true, "789.mp3");
+    assert(!AudioContextCoordinator::get().active && director->replacements == 0);
+    assert(FMODAudioEngine::sharedEngine()->preloads == 0); // Prewarming never starts gameplay/music.
+    std::cout << "Direct gameplay: origin return, payload/song downloads, cancellation and failed starts passed\n";
+}

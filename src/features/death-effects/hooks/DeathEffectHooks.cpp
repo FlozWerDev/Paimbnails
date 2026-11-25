@@ -2,8 +2,8 @@
 #include "../ui/DeathEffectPopup.hpp"
 #include "../visuals/DeathAnimation.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
-#include "../../gameplay-performance/GameplayPerformance.hpp"
 #include "../../../framework/HookConventions.hpp"
+#include "../../../utils/PauseMenuNodes.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 
 #include <Geode/binding/LevelEditorLayer.hpp>
@@ -19,7 +19,9 @@ using namespace geode::prelude;
 
 namespace {
 
-bool isDeathSound(gd::string const& path) {
+bool s_deathVfxFiredThisAttempt = false;
+
+bool isDeathSound(std::string const& path) {
     auto value = geode::utils::string::toLower(std::string(path));
     std::replace(value.begin(), value.end(), '\\', '/');
     auto slash = value.find_last_of('/');
@@ -33,32 +35,35 @@ bool inGameplay() {
     return PlayLayer::get() != nullptr || LevelEditorLayer::get() != nullptr;
 }
 
-CCSprite* createDeathEffectsIcon() {
-    auto icon = paimon::SpriteHelper::safeCreateWithFrameName("edit_eSFXBtn_001.png");
-    if (!icon) {
-        icon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_musicOnBtn_001.png");
-    }
+CCSprite* createDeathVfxIcon() {
+    auto* icon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
+    if (!icon) icon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn_001.png");
     if (!icon) return nullptr;
 
-    auto circle = CircleButtonSprite::create(
+    return CircleButtonSprite::create(
+        icon,
+        CircleBaseColor::DarkPurple,
+        CircleBaseSize::Medium
+    );
+}
+
+CCSprite* createDeathEffectsIcon() {
+    auto* icon = paimon::SpriteHelper::safeCreateWithFrameName("edit_eSFXBtn_001.png");
+    if (!icon) icon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_musicOnBtn_001.png");
+    if (!icon) return nullptr;
+
+    return CircleButtonSprite::create(
         icon,
         CircleBaseColor::DarkAqua,
         CircleBaseSize::Medium
     );
-    if (!circle) return nullptr;
-
-    auto label = CCLabelBMFont::create("SFX", "bigFont.fnt");
-    label->setScale(0.28f);
-    label->setPosition({circle->getContentWidth() / 2.f, 8.f});
-    circle->addChild(label, 2);
-    return circle;
 }
 
 } // namespace
 
 class $modify(PaimonDeathEffectsPauseLayer, PauseLayer) {
     static void onModify(auto& self) {
-        paimon::hooks::veryLatePost(self, "PauseLayer::customSetup");
+        paimon::hooks::afterNodeIdsOrLate(self, "PauseLayer::customSetup");
     }
 
     $override
@@ -67,31 +72,40 @@ class $modify(PaimonDeathEffectsPauseLayer, PauseLayer) {
 
         if (!paimon::modules::isEnabled("paimbnails.deatheffects.gameplay")) return;
 
-        auto* menu = typeinfo_cast<CCMenu*>(this->getChildByID("left-button-menu"));
-        if (!menu || menu->getChildByID("death-effects-button"_spr)) return;
-
-        if (!menu->getChildByID("death-animation-button"_spr)) {
-            auto visual = ButtonSprite::create("VFX", "bigFont.fnt", "GJ_button_01.png", 0.7f);
-            visual->setScale(0.5f);
-            auto item = CCMenuItemSpriteExtra::create(visual, this,
-                menu_selector(PaimonDeathEffectsPauseLayer::onDeathAnimation));
-            item->setID("death-animation-button"_spr);
-            menu->addChild(item);
-            menu->updateLayout();
+        auto* menu = paimon::findPauseButtonMenu(this, "left-button-menu");
+        if (!menu) menu = paimon::findPauseButtonMenu(this, "right-button-menu");
+        if (!menu) {
+            log::warn("[DeathEffects] No suitable menu found in PauseLayer");
+            return;
         }
 
-        auto* sprite = createDeathEffectsIcon();
-        if (!sprite) return;
+        if (!this->getChildByIDRecursive("death-animation-button"_spr)) {
+            if (auto* vfxSpr = createDeathVfxIcon()) {
+                auto* item = CCMenuItemSpriteExtra::create(
+                    vfxSpr, this,
+                    menu_selector(PaimonDeathEffectsPauseLayer::onDeathAnimation)
+                );
+                if (item) {
+                    item->setID("death-animation-button"_spr);
+                    menu->addChild(item);
+                }
+            }
+        }
 
-        auto* button = CCMenuItemSpriteExtra::create(
-            sprite,
-            this,
-            menu_selector(PaimonDeathEffectsPauseLayer::onDeathEffects)
-        );
-        if (!button) return;
+        if (!this->getChildByIDRecursive("death-effects-button"_spr)) {
+            if (auto* sfxSpr = createDeathEffectsIcon()) {
+                auto* button = CCMenuItemSpriteExtra::create(
+                    sfxSpr,
+                    this,
+                    menu_selector(PaimonDeathEffectsPauseLayer::onDeathEffects)
+                );
+                if (button) {
+                    button->setID("death-effects-button"_spr);
+                    menu->addChild(button);
+                }
+            }
+        }
 
-        button->setID("death-effects-button"_spr);
-        menu->addChild(button);
         menu->updateLayout();
     }
 
@@ -108,14 +122,23 @@ class $modify(PaimonDeathEffectsPauseLayer, PauseLayer) {
 
 class $modify(PaimonDeathEffectsAudioEngine, FMODAudioEngine) {
     $override
-    int playEffect(gd::string path, float speed, float unknown, float volume) {
-        if (!paimon::gameplayperf::isOptionActive(
-                paimon::gameplayperf::kModVisualsModuleId) && inGameplay() && isDeathSound(path) &&
-            paimon::modules::isEnabled("paimbnails.deatheffects.gameplay") &&
-            paimon::death_effects::DeathEffectManager::get().playDeath(
-                this, speed, volume
-            )) {
-            return 1;
+    int playEffect(std::string path, float speed, float unknown, float volume) {
+        if (inGameplay() && isDeathSound(path) &&
+            paimon::modules::isEnabled("paimbnails.deatheffects.gameplay")) {
+            float deathPct = -1.f;
+            bool isNewBest = false;
+            if (auto* play = PlayLayer::get()) {
+                deathPct = play->getCurrentPercent();
+                if (play->m_level && !play->m_isPracticeMode) {
+                    isNewBest = deathPct > static_cast<float>(play->m_level->m_normalPercent.value());
+                }
+            }
+            if (paimon::death_effects::DeathEffectManager::get().playDeath(
+                    this, speed, volume, deathPct, isNewBest)) {
+                if (!paimon::death_effects::DeathEffectManager::get().layerWithVanilla()) {
+                    return 1;
+                }
+            }
         }
         return FMODAudioEngine::playEffect(path, speed, unknown, volume);
     }
@@ -124,21 +147,36 @@ class $modify(PaimonDeathEffectsAudioEngine, FMODAudioEngine) {
 class $modify(PaimonDeathEffectsPlayLayer, PlayLayer) {
     $override
     void resetLevel() {
-        if (!paimon::gameplayperf::isOptionActive(
-                paimon::gameplayperf::kModVisualsModuleId)) {
-            paimon::death_effects::DeathEffectManager::get().handleLevelReset();
-        }
-        paimon::death_effects::clearAnimations(m_objectLayer);
+        s_deathVfxFiredThisAttempt = false;
+        paimon::death_effects::DeathEffectManager::get().handleLevelReset();
+        paimon::death_effects::clearGameplayDeathEffects(this);
         PlayLayer::resetLevel();
-        if (paimon::modules::isEnabled("paimbnails.deatheffects.gameplay") &&
-            !paimon::gameplayperf::isOptionActive(paimon::gameplayperf::kModVisualsModuleId)) {
+        if (paimon::modules::isEnabled("paimbnails.deatheffects.gameplay")) {
             paimon::death_effects::prewarmAnimation();
         }
     }
 
     $override
+    void destroyPlayer(PlayerObject* player, GameObject* object) {
+        bool const wasDead = this->m_playerDied || (player && player->m_isDead);
+        PlayLayer::destroyPlayer(player, object);
+        if (!wasDead && !s_deathVfxFiredThisAttempt && player &&
+            (player == this->m_player1 || player == this->m_player2) &&
+            (this->m_playerDied || player->m_isDead) &&
+            this->m_objectLayer && player->getParent() &&
+            paimon::modules::isEnabled("paimbnails.deatheffects.gameplay")) {
+            auto position = this->m_objectLayer->convertToNodeSpace(
+                player->getParent()->convertToWorldSpace(player->getPosition()));
+            if (paimon::death_effects::triggerGameplayDeathEffects(this, player, position)) {
+                s_deathVfxFiredThisAttempt = true;
+            }
+        }
+    }
+
+    $override
     void onExit() {
-        paimon::death_effects::clearAnimations(m_objectLayer);
+        s_deathVfxFiredThisAttempt = false;
+        paimon::death_effects::clearGameplayDeathEffects(this);
         paimon::death_effects::DeathEffectManager::get().handleLevelExit();
         PlayLayer::onExit();
     }
@@ -148,16 +186,18 @@ class $modify(PaimonDeathEffectsPlayLayer, PlayLayer) {
 class $modify(PaimonDeathAnimationPlayer, PlayerObject) {
     void playDeathEffect() {
         auto play = PlayLayer::get();
-        if (play && (this == play->m_player1 || this == play->m_player2) &&
+        if (play && !s_deathVfxFiredThisAttempt &&
+            (this == play->m_player1 || this == play->m_player2) &&
             play->m_objectLayer && getParent() &&
-            paimon::modules::isEnabled("paimbnails.deatheffects.gameplay") &&
-            !paimon::gameplayperf::isOptionActive(paimon::gameplayperf::kModVisualsModuleId)) {
-            int style = paimon::death_effects::resolveAnimation(
-                paimon::death_effects::selectedAnimation());
+            paimon::modules::isEnabled("paimbnails.deatheffects.gameplay")) {
             auto position = play->m_objectLayer->convertToNodeSpace(
                 getParent()->convertToWorldSpace(getPosition()));
-            if (paimon::death_effects::spawnAnimation(
-                    play->m_objectLayer, position, style, getColor())) return;
+            bool const spawned = paimon::death_effects::triggerGameplayDeathEffects(
+                play, this, position);
+            if (spawned) {
+                s_deathVfxFiredThisAttempt = true;
+                if (paimon::death_effects::shouldSuppressVanillaExplosion()) return;
+            }
         }
         PlayerObject::playDeathEffect();
     }

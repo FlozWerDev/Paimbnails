@@ -2,6 +2,7 @@
 #include <Geode/modify/LevelAreaInnerLayer.hpp>
 #include "../utils/DynamicPopupRegistry.hpp"
 #include <Geode/modify/FLAlertLayer.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/utils/string.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
@@ -108,7 +109,7 @@ class $modify(PaimonLevelAreaInnerLayer, LevelAreaInnerLayer) {
         return true;
     }
 
-    void addThumbnailsToDoors(float dt) {
+    void addThumbnailsToDoors(float) {
         auto fields = m_fields.self();
         if (fields->m_thumbnailsAdded) return;
         fields->m_thumbnailsAdded = true;
@@ -195,6 +196,7 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
     struct Fields {
         // translated alert titles are unreliable; read the saved level id
         int m_capturedLevelID = -1;
+        bool m_exitCallbackInstalled = false;
     };
 
     $override
@@ -220,14 +222,15 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
 
         m_fields->m_capturedLevelID = levelID;
 
-        this->getScheduler()->scheduleSelector(schedule_selector(InfoBtnHookFLAlertLayer::checkAndAddButton), this, 0.0f, 0, 0.0f, false);
-    }
+        if (!m_fields->m_exitCallbackInstalled) {
+            m_fields->m_exitCallbackInstalled = true;
+            this->addOnExitCallback([this] {
+                this->unschedule(schedule_selector(InfoBtnHookFLAlertLayer::checkAndAddButton));
+                return true;
+            });
+        }
 
-    $override
-    void onExit() {
-        // selector fires a frame later; unschedule or it ticks a freed layer
-        this->unschedule(schedule_selector(InfoBtnHookFLAlertLayer::checkAndAddButton));
-        FLAlertLayer::onExit();
+        this->getScheduler()->scheduleSelector(schedule_selector(InfoBtnHookFLAlertLayer::checkAndAddButton), this, 0.0f, 0, 0.0f, false);
     }
 
     void checkAndAddButton(float) {
@@ -243,16 +246,13 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
             auto winSize = CCDirector::get()->getWinSize();
             
             // icon fallback chain
-            CCSprite* iconSpr = CCSprite::create("paim_BotonMostrarThumbnails.png"_spr);
+            CCSprite* iconSpr = CCSprite::create("paim_ui_showThumb.png"_spr);
             if (!paimon::SpriteHelper::isValidSprite(iconSpr)) iconSpr = nullptr;
             if (!iconSpr) iconSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plusBtn_001.png");
             if (!iconSpr) iconSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
             if (!iconSpr) iconSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_square01.png");
 
             if (iconSpr) {
-                iconSpr->setRotation(-90.0f);
-                iconSpr->setScale(0.8f);
-                
                 auto btnSprite = CircleButtonSprite::create(
                     iconSpr,
                     CircleBaseColor::Green,
@@ -308,7 +308,7 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
                   auto popup = SimpleThumbnailPopup::create(tex, levelName);
                   popup->show();
              } else {
-                  PaimonNotify::create("Thumbnail not found for this level", NotificationIcon::Error)->show();
+                  PaimonNotify::show("Thumbnail not found for this level", NotificationIcon::Error);
              }
          });
     }

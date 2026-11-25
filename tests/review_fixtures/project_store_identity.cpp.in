@@ -1,0 +1,108 @@
+#include "tests/review_fixtures/ReviewQueue.hpp"
+#include "src/utils/ProjectStorage.hpp"
+#include <cstdint>
+namespace fs=std::filesystem;
+inline fs::path fixtureRoot;
+struct Project {
+ std::string id,name;int type=0;long long createdAt=0,modifiedAt=0,lastBuiltAt=0;
+ bool hasBuiltOnce=false,liveRendering=true;
+};
+inline long long nowUnixMs(){return 100;}
+namespace matjson {
+struct Value {
+ std::string serialized;
+ explicit Value(Project const&p):serialized(p.id+":"+p.name){}
+ std::string dump()const{return serialized;}
+};
+}
+namespace paimon::file {
+inline bool writeAtomically(fs::path const&path,std::string const&text){std::ofstream f(path);f<<text;return bool(f);}
+}
+struct Entry {std::string id,name;long long modifiedAt=0,createdAt=0;bool hasBuiltOnce=false;};
+namespace paimon::icon_maker {
+namespace log=geode::log;
+using IconProject=Project;using IconIndexEntry=Entry;
+constexpr auto kProjectFile="project.json",kImagesDir="images",kOutputDir="output";
+struct IconPaths {
+ static fs::path slotsDir(){return fixtureRoot/"icons/slots";}
+ static fs::path slotDir(std::string_view);
+ static fs::path projectFile(std::string_view);
+ static Result<> ensureSlotDirs(std::string_view);
+};
+@@function|src/features/icon-maker/persist/IconPaths.cpp|std::filesystem::path IconPaths::slotDir@@
+@@function|src/features/icon-maker/persist/IconPaths.cpp|std::filesystem::path IconPaths::projectFile@@
+@@function|src/features/icon-maker/persist/IconPaths.cpp|geode::Result<> IconPaths::ensureSlotDirs@@
+struct IconProjectStore {
+ std::vector<Entry>m_index;std::map<std::string,Project>m_projects;
+ std::map<std::string,std::uint64_t>m_revisions;std::uint64_t m_nextRevision=0;
+ bool failIndex=false;
+ void loadIndex(){} Result<>saveIndex(){return failIndex?Result<>(Err("disk full")):Ok();}
+ void upsertIndexEntry(Project const&p){m_index.push_back({p.id,p.name});}
+ std::string canonicalId(std::string_view)const;
+ bool exists(std::string_view)const;
+ Result<std::string>createProject(Project);
+ Result<>deleteProject(std::string_view);
+};
+@@function|src/features/icon-maker/persist/IconProjectStore.cpp|std::string IconProjectStore::canonicalId@@
+@@function|src/features/icon-maker/persist/IconProjectStore.cpp|bool IconProjectStore::exists@@
+@@function|src/features/icon-maker/persist/IconProjectStore.cpp|geode::Result<std::string> IconProjectStore::createProject@@
+@@function|src/features/icon-maker/persist/IconProjectStore.cpp|geode::Result<> IconProjectStore::deleteProject@@
+}
+namespace paimon::texture_studio {
+namespace log=geode::log;
+using TextureProject=Project;using SlotIndexEntry=Entry;
+constexpr auto kProjectFile="project.json",kOverridesDir="overrides",kImagesDir="images",kFusionsDir="fusions",kCacheDir="cache",kOutputDir="output";
+struct SlotPaths {
+ static fs::path slotsDir(){return fixtureRoot/"textures/slots";}
+ static fs::path slotDir(std::string_view);
+ static fs::path projectFile(std::string_view);
+ static Result<>ensureSlotDirs(std::string_view);
+};
+@@function|src/features/texture-studio/persist/SlotPaths.cpp|std::filesystem::path SlotPaths::slotDir@@
+@@function|src/features/texture-studio/persist/SlotPaths.cpp|std::filesystem::path SlotPaths::projectFile@@
+@@function|src/features/texture-studio/persist/SlotPaths.cpp|geode::Result<> SlotPaths::ensureSlotDirs@@
+@@function|src/features/texture-studio/persist/SlotStore.cpp|geode::Result<> ensureProjectDirectory@@
+struct SlotStore {
+ std::vector<Entry>m_index;std::map<std::string,Project>m_projects;std::string m_activeSlotId;
+ bool failIndex=false;
+ void loadIndex(){} Result<>saveIndex(){return failIndex?Result<>(Err("disk full")):Ok();}
+ std::string canonicalId(std::string_view)const;
+ bool exists(std::string_view)const;
+ Result<std::string>createSlot(Project);
+ Result<>deleteSlot(std::string_view);
+};
+@@function|src/features/texture-studio/persist/SlotStore.cpp|std::string SlotStore::canonicalId@@
+@@function|src/features/texture-studio/persist/SlotStore.cpp|bool SlotStore::exists@@
+@@function|src/features/texture-studio/persist/SlotStore.cpp|geode::Result<std::string> SlotStore::createSlot@@
+@@function|src/features/texture-studio/persist/SlotStore.cpp|geode::Result<> SlotStore::deleteSlot@@
+}
+int main(){
+ fixtureRoot=fs::current_path()/("project-store-"+paimon::storage::newProjectId());
+ assert(fixtureRoot.is_absolute()&&fixtureRoot.parent_path()==fs::current_path());
+ fs::create_directories(fixtureRoot);{std::ofstream f(fixtureRoot/"outside.txt");f<<"preserved";}
+ using namespace paimon::icon_maker;
+ IconProjectStore icons;Project seed;seed.id="../../victim";seed.name="Cube";
+ auto first=icons.createProject(seed);assert(first);
+ seed.id="..";seed.name="cube";auto second=icons.createProject(seed);assert(second&&first.unwrap()!=second.unwrap());
+ assert(!fs::equivalent(IconPaths::projectFile(first.unwrap()),IconPaths::projectFile(second.unwrap())));
+ seed.name="..";auto dot=icons.createProject(seed);assert(dot&&paimon::storage::isSafeProjectId(dot.unwrap()));
+ for(auto invalid:{"..",".","../../victim","C:/outside"})assert(!icons.deleteProject(invalid));
+ icons.failIndex=true;assert(!icons.deleteProject(first.unwrap()));
+ assert(icons.exists(first.unwrap())&&fs::exists(IconPaths::projectFile(first.unwrap())));
+ icons.failIndex=false;assert(icons.deleteProject(first.unwrap()));
+ assert(fs::exists(IconPaths::projectFile(second.unwrap())));
+ using namespace paimon::texture_studio;
+ SlotStore slots;seed.id="../../victim";auto slot=slots.createSlot(seed);assert(slot);
+ assert(paimon::storage::isSafeProjectId(slot.unwrap()));
+ for(auto invalid:{"..",".","../../victim","C:/outside"})assert(!slots.deleteSlot(invalid));
+ slots.failIndex=true;assert(!slots.deleteSlot(slot.unwrap()));assert(slots.exists(slot.unwrap()));
+ slots.failIndex=false;assert(slots.deleteSlot(slot.unwrap()));
+#ifdef _WIN32
+ icons.m_index.push_back({"Legacy"});fs::create_directories(IconPaths::slotDir("Legacy"));
+ assert(icons.canonicalId("legacy")=="Legacy");assert(icons.deleteProject("legacy"));assert(!icons.exists("Legacy"));
+ slots.m_index.push_back({"Legacy"});fs::create_directories(SlotPaths::slotDir("Legacy"));
+ assert(slots.canonicalId("legacy")=="Legacy");assert(slots.deleteSlot("legacy"));assert(!slots.exists("Legacy"));
+#endif
+ assert(fs::exists(fixtureRoot/"outside.txt"));
+ std::cout<<"Project stores preserve sibling data, allocate independent IDs, and roll back index failures\n";
+}

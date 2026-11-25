@@ -29,7 +29,7 @@ enum ColorType {
 struct SimplePoint {
     CCPoint pos;
     ccColor3B color;
-    std::string imagePath;
+    std::string imagePath{};
 
     bool operator==(const SimplePoint& other) const {
         return pos.equals(other.pos) && color.r == other.color.r &&

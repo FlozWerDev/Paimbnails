@@ -62,9 +62,9 @@ bool UpdateProgressPopup::init(
 
     std::string verLine;
     if (!m_version.empty()) {
-        verLine = fmt::format("{} -> {}", checker.localVersion(), m_version);
+        verLine = fmt::format("v{} -> {}", checker.localVersion(), m_version);
     } else {
-        verLine = checker.localVersion();
+        verLine = fmt::format("v{}", checker.localVersion());
     }
     auto versionsLbl = CCLabelBMFont::create(verLine.c_str(), "bigFont.fnt");
     versionsLbl->setScale(0.45f);

@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "../../../ui/PaimonUI.hpp"
 #include "TextureStudioLayer.hpp"
 
@@ -53,9 +54,9 @@ bool TextureStudioLayer::init() {
 
     buildBackground();
 
-    paimon::ui::addSceneTitle(this, "Pack Gen");
+    paimon::ui::addSceneTitle(this, "Texture Live");
     if (auto* subtitle = paimon::ui::makeText(
-            "Color slots applied live to the game", winSize.width - 80.f, 0.55f,
+            "Choose a slot, edit its palette and preview it live", winSize.width - 80.f, 0.55f,
             paimon::ui::palette::muted, kCCTextAlignmentCenter)) {
         subtitle->setPosition({winSize.width / 2.f, winSize.height - 40.f});
         this->addChild(subtitle, 5);
@@ -70,14 +71,15 @@ bool TextureStudioLayer::init() {
         menu->addChild(backBtn);
     }
 
+    // actions have their own row below the title and description.
     if (auto* newBtn = paimon::ui::makeButton("+ New Slot",
             [this] { this->onNewPack(nullptr); }, paimon::ui::Btn::Green, 0.f, 0.5f, "bigFont.fnt")) {
-        newBtn->setPosition({winSize.width - 60.f, winSize.height - 24.f});
+        newBtn->setPosition({winSize.width * .5f + 82.f, winSize.height - 68.f});
         menu->addChild(newBtn);
     }
     if (auto* importBtn = paimon::ui::makeButton("Import JSON",
             [this] { this->onImportJson(nullptr); }, paimon::ui::Btn::Blue, 0.f, 0.45f, "bigFont.fnt")) {
-        importBtn->setPosition({winSize.width - 210.f, winSize.height - 24.f});
+        importBtn->setPosition({winSize.width * .5f - 82.f, winSize.height - 68.f});
         menu->addChild(importBtn);
     }
     if (auto* folderBtn = paimon::ui::makeButton("Folder",
@@ -87,7 +89,7 @@ bool TextureStudioLayer::init() {
     }
 
     const float gridW = winSize.width - 70.f;
-    const float gridH = winSize.height - 108.f;
+    const float gridH = winSize.height - 130.f;
     m_grid = SlotsGridView::create(gridW, gridH,
         [this](std::string const& id) { this->onApplySlot(id); },
         [this](std::string const& id) { this->onEditSlot(id);  },
@@ -95,7 +97,7 @@ bool TextureStudioLayer::init() {
         [this]() { this->onNewPack(nullptr); });
     if (m_grid) {
         m_grid->setAnchorPoint({0.5f, 0.5f});
-        m_grid->setPosition({winSize.width / 2.f, winSize.height / 2.f - 8.f});
+        m_grid->setPosition({winSize.width / 2.f, 36.f + gridH * .5f});
         this->addChild(m_grid, 5);
     }
 
@@ -158,7 +160,7 @@ void TextureStudioLayer::onImportJson(CCObject*) {
         }
         auto slotId = imported.unwrap();
         log::info("[texture-studio] imported pack json as slot '{}'", slotId);
-        Notification::create("Pack imported.", NotificationIcon::Success, 2.f)->show();
+        Notification::create("Color slot imported.", NotificationIcon::Success, 2.f)->show();
 
         Loader::get()->queueInMainThread([weakSelf, slotId]() {
             auto self = weakSelf.lock();
@@ -227,14 +229,22 @@ void TextureStudioLayer::onOpenFolder(CCObject*) {
     auto path = SlotPaths::rootDir();
     std::error_code ec;
     std::filesystem::create_directories(path, ec);
-    geode::utils::file::openFolder(path);
+#if defined(GEODE_IS_MOBILE)
+    geode::utils::clipboard::write(paimon::paths::toUtf8(path));
+    Notification::create(
+        fmt::format("Slots (ruta copiada): {}", paimon::paths::toUtf8(path)),
+        NotificationIcon::Info, 3.0f)->show();
+#else
+    geode::utils::file::openFolder(paimon::paths::toSdkPath(path));
+#endif
 }
 
 void TextureStudioLayer::refreshFooter() {
     if (!m_activeLbl) return;
     auto const& active = SlotStore::get().activeSlotId();
     if (active.empty()) {
-        m_activeLbl->setString("Active: (none)");
+        m_activeLbl->setString("Original colors / No active slot");
+        m_activeLbl->limitLabelWidth(CCDirector::get()->getWinSize().width - 122.f, .32f, .18f);
         return;
     }
     SlotStore::get().loadIndex();
@@ -246,6 +256,7 @@ void TextureStudioLayer::refreshFooter() {
         }
     }
     m_activeLbl->setString(("Active: " + display).c_str());
+    m_activeLbl->limitLabelWidth(CCDirector::get()->getWinSize().width - 122.f, .32f, .18f);
 }
 
 }  // namespace paimon::texture_studio

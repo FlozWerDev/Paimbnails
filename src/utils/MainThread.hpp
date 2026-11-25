@@ -6,9 +6,9 @@
 
 namespace paimon {
 
-// no stable geode api: captured once at mod load; false until then.
+// no stable geode api for this: captured at mod load, false before that.
 inline std::thread::id& getMainThreadId() {
-    // heap-allocated; no exit destructor.
+    // heap-allocated on purpose: no destructor runs at exit.
     static auto* id = new std::thread::id{};
     return *id;
 }
@@ -18,7 +18,7 @@ inline std::once_flag& getMainThreadInitFlag() {
     return *flag;
 }
 
-// capture the caller as main. main thread only; idempotent.
+// stores the caller as the main thread. call once from the main thread.
 inline void captureMainThread() {
     std::call_once(getMainThreadInitFlag(), []() {
         getMainThreadId() = std::this_thread::get_id();

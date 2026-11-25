@@ -1,9 +1,12 @@
 #include "DynamicTransitionManager.hpp"
 #include "DynamicPanelTransitions.hpp"
+#include "TransitionManager.hpp"
 #include "../ui/DynamicTransitionScene.hpp"
 #include "LevelEntryEffects.hpp"
+#include "NativeSceneNavigation.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
+#include "../../../utils/SceneIdentity.hpp"
 #include <array>
 #include <chrono>
 #include <string>
@@ -16,7 +19,7 @@ namespace paimon::transitions::dynamic {
 namespace {
 
 struct ButtonOrigin {
-    WeakRef<CCScene> scene;
+    paimon::SceneIdentity scene;
     Rect rect;
     std::chrono::steady_clock::time_point time;
     bool back = false;
@@ -30,16 +33,14 @@ struct Route {
 ButtonOrigin s_button;
 std::vector<Route> s_routes;
 bool s_enabled = true;
-WeakRef<CCScene> s_backScene;
+paimon::SceneIdentity s_backScene;
 unsigned s_backDepth = 0;
 uint64_t s_backGeneration = 0;
 
 bool eligible(CCScene* scene) {
     return scene && !typeinfo_cast<CCTransitionScene*>(scene) &&
         !scene->getChildByType<PlayLayer>(0) &&
-        !scene->getChildByType<LevelEditorLayer>(0) &&
-        !scene->getChildByType<EditorUI>(0) &&
-        !scene->getChildByType<LoadingLayer>(0);
+        !paimon::transitions::requiresNativeSceneNavigation(scene);
 }
 
 std::string sceneKey(CCScene* scene) {
@@ -69,38 +70,52 @@ Enum readEnum(char const* key, Enum fallback, int count) {
     return value >= 0 && value < count ? static_cast<Enum>(value) : fallback;
 }
 
+// single source for the saved-key <-> member mapping of the scalar fields.
+// enums stay explicit below: each has its own type and value count.
+struct BoolField { char const* key; bool Config::* member; };
+constexpr BoolField kBoolFields[] = {
+    {"dynamic-transition-back", &Config::animateBack},
+    {"dynamic-transition-keyboard-back", &Config::animateKeyboardBack},
+    {"dynamic-transition-popups", &Config::animatePopups},
+    {"dynamic-transition-dropdowns", &Config::animateDropdowns},
+    {"dynamic-transition-blocking-layers", &Config::animateBlockingLayers},
+    {"dynamic-transition-dialogs", &Config::animateDialogs},
+    {"dynamic-transition-editor-panels", &Config::animateEditorPanels},
+    {"dynamic-transition-gameplay-panels", &Config::animateGameplayPanels},
+    {"dynamic-transition-other-mods", &Config::animateOtherMods},
+    {"dynamic-transition-instant", &Config::includeInstant},
+    {"dynamic-transition-only-buttons", &Config::onlyFromButton},
+    {"dynamic-transition-sync-smooth-ui", &Config::syncSmoothUI},
+};
+
+struct FloatField { char const* key; float Config::* member; };
+constexpr FloatField kFloatFields[] = {
+    {"dynamic-transition-duration", &Config::duration},
+    {"dynamic-transition-back-duration", &Config::backDuration},
+    {"dynamic-transition-corners", &Config::cornerRadius},
+    {"dynamic-transition-background-scale", &Config::backgroundScale},
+    {"dynamic-transition-dim", &Config::dim},
+    {"dynamic-transition-spring", &Config::spring},
+    {"dynamic-transition-button-blend", &Config::buttonBlend},
+    {"dynamic-transition-shadow", &Config::shadow},
+    {"dynamic-transition-quality", &Config::quality},
+};
+
 }
 
 Config getConfig() {
     Config config;
     auto* mod = Mod::get();
     config.enabled = mod->getSettingValue<bool>(kEnabledSetting);
-    config.animateBack = mod->getSavedValue<bool>("dynamic-transition-back", config.animateBack);
-    config.animateKeyboardBack = mod->getSavedValue<bool>("dynamic-transition-keyboard-back", config.animateKeyboardBack);
-    config.animatePopups = mod->getSavedValue<bool>("dynamic-transition-popups", config.animatePopups);
-    config.animateDropdowns = mod->getSavedValue<bool>("dynamic-transition-dropdowns", config.animateDropdowns);
-    config.animateBlockingLayers = mod->getSavedValue<bool>("dynamic-transition-blocking-layers", config.animateBlockingLayers);
-    config.animateDialogs = mod->getSavedValue<bool>("dynamic-transition-dialogs", config.animateDialogs);
-    config.animateEditorPanels = mod->getSavedValue<bool>("dynamic-transition-editor-panels", config.animateEditorPanels);
-    config.animateGameplayPanels = mod->getSavedValue<bool>("dynamic-transition-gameplay-panels", config.animateGameplayPanels);
-    config.animateOtherMods = mod->getSavedValue<bool>("dynamic-transition-other-mods", config.animateOtherMods);
-    config.includeInstant = mod->getSavedValue<bool>("dynamic-transition-instant", config.includeInstant);
-    config.onlyFromButton = mod->getSavedValue<bool>("dynamic-transition-only-buttons", config.onlyFromButton);
-    config.syncSmoothUI = mod->getSavedValue<bool>("dynamic-transition-sync-smooth-ui", config.syncSmoothUI);
+    for (auto const& field : kBoolFields)
+        config.*field.member = mod->getSavedValue<bool>(field.key, config.*field.member);
     config.style = readEnum("dynamic-transition-style", config.style, kStyleCount);
     config.curve = readEnum("dynamic-transition-curve", config.curve, kCurveCount);
     config.origin = readEnum("dynamic-transition-origin", config.origin, kOriginCount);
     config.reducedMotion = readEnum("dynamic-transition-reduced-motion", config.reducedMotion, 2);
     config.panelStyle = readEnum("dynamic-transition-panel-style", config.panelStyle, kPanelStyleCount);
-    config.duration = mod->getSavedValue<double>("dynamic-transition-duration", config.duration);
-    config.backDuration = mod->getSavedValue<double>("dynamic-transition-back-duration", config.backDuration);
-    config.cornerRadius = mod->getSavedValue<double>("dynamic-transition-corners", config.cornerRadius);
-    config.backgroundScale = mod->getSavedValue<double>("dynamic-transition-background-scale", config.backgroundScale);
-    config.dim = mod->getSavedValue<double>("dynamic-transition-dim", config.dim);
-    config.spring = mod->getSavedValue<double>("dynamic-transition-spring", config.spring);
-    config.buttonBlend = mod->getSavedValue<double>("dynamic-transition-button-blend", config.buttonBlend);
-    config.shadow = mod->getSavedValue<double>("dynamic-transition-shadow", config.shadow);
-    config.quality = mod->getSavedValue<double>("dynamic-transition-quality", config.quality);
+    for (auto const& field : kFloatFields)
+        config.*field.member = static_cast<float>(mod->getSavedValue<double>(field.key, config.*field.member));
     return sanitize(config);
 }
 
@@ -122,32 +137,15 @@ void saveConfig(Config config) {
     auto* mod = Mod::get();
     s_enabled = config.enabled;
     mod->setSettingValue<bool>(kEnabledSetting, config.enabled);
-    mod->setSavedValue("dynamic-transition-back", config.animateBack);
-    mod->setSavedValue("dynamic-transition-keyboard-back", config.animateKeyboardBack);
-    mod->setSavedValue("dynamic-transition-popups", config.animatePopups);
-    mod->setSavedValue("dynamic-transition-dropdowns", config.animateDropdowns);
-    mod->setSavedValue("dynamic-transition-blocking-layers", config.animateBlockingLayers);
-    mod->setSavedValue("dynamic-transition-dialogs", config.animateDialogs);
-    mod->setSavedValue("dynamic-transition-editor-panels", config.animateEditorPanels);
-    mod->setSavedValue("dynamic-transition-gameplay-panels", config.animateGameplayPanels);
-    mod->setSavedValue("dynamic-transition-other-mods", config.animateOtherMods);
-    mod->setSavedValue("dynamic-transition-instant", config.includeInstant);
-    mod->setSavedValue("dynamic-transition-only-buttons", config.onlyFromButton);
-    mod->setSavedValue("dynamic-transition-sync-smooth-ui", config.syncSmoothUI);
+    for (auto const& field : kBoolFields)
+        mod->setSavedValue(field.key, config.*field.member);
     mod->setSavedValue("dynamic-transition-style", static_cast<int>(config.style));
     mod->setSavedValue("dynamic-transition-curve", static_cast<int>(config.curve));
     mod->setSavedValue("dynamic-transition-origin", static_cast<int>(config.origin));
     mod->setSavedValue("dynamic-transition-reduced-motion", static_cast<int>(config.reducedMotion));
     mod->setSavedValue("dynamic-transition-panel-style", static_cast<int>(config.panelStyle));
-    mod->setSavedValue("dynamic-transition-duration", static_cast<double>(config.duration));
-    mod->setSavedValue("dynamic-transition-back-duration", static_cast<double>(config.backDuration));
-    mod->setSavedValue("dynamic-transition-corners", static_cast<double>(config.cornerRadius));
-    mod->setSavedValue("dynamic-transition-background-scale", static_cast<double>(config.backgroundScale));
-    mod->setSavedValue("dynamic-transition-dim", static_cast<double>(config.dim));
-    mod->setSavedValue("dynamic-transition-spring", static_cast<double>(config.spring));
-    mod->setSavedValue("dynamic-transition-button-blend", static_cast<double>(config.buttonBlend));
-    mod->setSavedValue("dynamic-transition-shadow", static_cast<double>(config.shadow));
-    mod->setSavedValue("dynamic-transition-quality", static_cast<double>(config.quality));
+    for (auto const& field : kFloatFields)
+        mod->setSavedValue(field.key, static_cast<double>(config.*field.member));
     if (!config.enabled) clearHistory();
 }
 
@@ -177,7 +175,7 @@ Rect buttonRect(CCNode* button) {
 
 void captureButton(CCMenuItem* button) {
     discardButton();
-    if (!s_backDepth) { s_backScene = nullptr; ++s_backGeneration; }
+    if (!s_backDepth) { s_backScene = {}; ++s_backGeneration; }
     auto* scene = CCDirector::get()->getRunningScene();
     if (!isEnabled() || !button || !button->isEnabled() || !scene ||
         typeinfo_cast<CCTransitionScene*>(scene)) return;
@@ -186,7 +184,7 @@ void captureButton(CCMenuItem* button) {
     if (root != scene) return;
     auto rect = buttonRect(button);
     if (rect.width <= 0.f || rect.height <= 0.f) return;
-    s_button = {WeakRef<CCScene>(scene), rect, std::chrono::steady_clock::now(), isBackButton(button)};
+    s_button = {paimon::SceneIdentity(scene), rect, std::chrono::steady_clock::now(), isBackButton(button)};
 }
 
 void discardButton() {
@@ -201,8 +199,7 @@ void deferDiscardButton() {
 }
 
 bool currentButton(CCScene* scene, Rect& rect, bool& back) {
-    auto capturedScene = s_button.scene.lock();
-    if (!scene || capturedScene.data() != scene ||
+    if (!s_button.scene.matches(scene) ||
         std::chrono::steady_clock::now() - s_button.time >= std::chrono::milliseconds(1200)) return false;
     rect = s_button.rect;
     back = s_button.back;
@@ -212,7 +209,7 @@ bool currentButton(CCScene* scene, Rect& rect, bool& back) {
 void beginBackInput() {
     if (s_backDepth++ != 0) return;
     ++s_backGeneration;
-    s_backScene = CCDirector::get()->getRunningScene();
+    s_backScene = paimon::SceneIdentity(CCDirector::get()->getRunningScene());
     discardButton();
     finishPanelAnimation();
 }
@@ -220,21 +217,20 @@ void beginBackInput() {
 void endBackInput() {
     if (!s_backDepth || --s_backDepth) return;
     auto generation = s_backGeneration;
-    // Deferred navigation runs before this queued expiration.
+    // deferred navigation runs before this queued expiration.
     Loader::get()->queueInMainThread([generation] {
-        if (generation == s_backGeneration && !s_backDepth) s_backScene = nullptr;
+        if (generation == s_backGeneration && !s_backDepth) s_backScene = {};
     });
 }
 
 bool hasBackInput() {
-    auto scene = s_backScene.lock();
-    return scene && scene.data() == CCDirector::get()->getRunningScene();
+    return s_backScene.matches(CCDirector::get()->getRunningScene());
 }
 
 void clearHistory() {
     discardButton();
     s_routes.clear();
-    s_backScene = nullptr;
+    s_backScene = {};
     ++s_backGeneration;
     clearPanelHistory();
 }
@@ -242,6 +238,9 @@ void clearHistory() {
 CCScene* createTransition(CCScene* destination, bool backwards, bool instant) {
     if (paimon::isRuntimeShuttingDown()) return nullptr;
     if (!isEnabled()) { clearHistory(); return nullptr; }
+    // custom (Studio) transitions own this scene change: stand down without
+    // touching the saved Dynamic setting, so it resumes when Custom turns off.
+    if (TransitionManager::get().isCustomActiveFor(destination)) { clearHistory(); return nullptr; }
     Config config = getConfig();
     auto* director = CCDirector::get();
     auto* source = director->getRunningScene();
@@ -263,7 +262,7 @@ CCScene* createTransition(CCScene* destination, bool backwards, bool instant) {
         fallbackOrigin(size.width, size.height, config.origin);
     auto from = sceneKey(source), to = sceneKey(destination);
     auto route = s_routes.end();
-    // Recreated layers have new addresses, so return routes use their layer types.
+    // recreated layers have new addresses, so return routes use their layer types.
     for (auto it = s_routes.end(); it != s_routes.begin();) {
         --it;
         if (it->from == to && it->to == from && (from != to || backwards || backButton)) {
@@ -305,7 +304,7 @@ CCScene* createTransition(CCScene* destination, bool backwards, bool instant) {
 
 }
 
-// Panel hooks query this on every addChild, so the setting is mirrored instead of read.
+// panel hooks query this on every addChild, so the setting is mirrored instead of read.
 $execute {
     using namespace paimon::transitions::dynamic;
     s_enabled = Mod::get()->getSettingValue<bool>(kEnabledSetting);

@@ -1,5 +1,7 @@
 #include "DynamicPanelTransitions.hpp"
 #include "DynamicTransitionManager.hpp"
+#include "TransitionManager.hpp"
+#include "NativeSceneNavigation.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
@@ -67,6 +69,9 @@ CCNode* sceneChildOf(CCNode* node) {
 }
 
 PanelKind panelKind(CCNode* node) {
+    // pause owns gameplay state, input and capture visibility. A generic opening
+    // motion or a deferred closing ghost must never outlive its native resume.
+    if (typeinfo_cast<PauseLayer*>(node)) return PanelKind::None;
     if (typeinfo_cast<FLAlertLayer*>(node)) return PanelKind::Popup;
     if (typeinfo_cast<GJDropDownLayer*>(node) || typeinfo_cast<SlideInLayer*>(node))
         return PanelKind::Dropdown;
@@ -107,7 +112,7 @@ std::optional<Plan> planFor(CCNode* panel, CCNode* parent, bool opening) {
     auto* director = CCDirector::get();
     auto* scene = director->getRunningScene();
     if (!scene || director->getNextScene() || typeinfo_cast<CCTransitionScene*>(scene) ||
-        attachedScene(parent) != scene || scene->getChildByType<LoadingLayer>(0)) return std::nullopt;
+        attachedScene(parent) != scene || paimon::transitions::isLoadingScene(scene)) return std::nullopt;
     auto config = panelConfig(animationConfig(getConfig()));
     if (!allowsPanel(kind, panel, scene, config)) return std::nullopt;
     if (!opening && (!config.animateBack || (hasBackInput() && !config.animateKeyboardBack)))
@@ -499,9 +504,11 @@ PanelShowGuard::~PanelShowGuard() {
 }
 
 bool panelWillChange(CCNode* panel, CCNode* parent, bool opening) {
-    // Runs for every addChild/removeChild, so the cheapest rejections come first.
+    // runs for every addChild/removeChild, so the cheapest rejections come first.
     if (!isEnabled() || !panel || !typeinfo_cast<CCLayer*>(panel) || panelKind(panel) == PanelKind::None)
         return false;
+    // dynamic stands down entirely while a Custom (Studio) transition is active.
+    if (TransitionManager::get().isCustomActive()) return false;
     return opening ? openPanel(panel, parent) : closePanel(panel, parent);
 }
 

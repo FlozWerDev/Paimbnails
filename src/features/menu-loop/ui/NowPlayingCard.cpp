@@ -1,6 +1,7 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "NowPlayingCard.hpp"
 #include "../services/MenuLoopManager.hpp"
-#include "../../../utils/SpriteHelper.hpp"
+#include "../../menu-music/ui/components/NowPlayingToast.hpp"
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include <Geode/binding/MusicDownloadManager.hpp>
 #include <Geode/utils/string.hpp>
@@ -8,66 +9,6 @@
 
 using namespace geode::prelude;
 using namespace paimon::menuloop;
-
-NowPlayingCard* NowPlayingCard::create(const std::string& text) {
-    auto ret = new NowPlayingCard();
-    if (ret && ret->init(text)) {
-        ret->autorelease();
-        return ret;
-    }
-    CC_SAFE_DELETE(ret);
-    return nullptr;
-}
-
-bool NowPlayingCard::init(const std::string& text) {
-    if (!CCNode::init()) return false;
-
-    auto screenSize = CCDirector::get()->getWinSize();
-
-    cocos2d::CCNodeRGBA* bg = paimon::SpriteHelper::safeCreateNineSliceFromFile("GJ_square01.png");
-    if (!bg) bg = paimon::SpriteHelper::safeCreateNineSliceFromFile("square02_001.png");
-    if (!bg) bg = paimon::SpriteHelper::safeCreateScale9("GJ_square01.png");
-    if (!bg) bg = paimon::SpriteHelper::safeCreateScale9("square02_001.png");
-    if (!bg) {
-        auto layer = CCLayerColor::create({20, 20, 35, 220});
-        layer->setContentSize({340.f, 42.f});
-        layer->ignoreAnchorPointForPosition(false);
-        layer->setAnchorPoint({0.5f, 0.5f});
-        this->addChild(layer);
-    } else {
-        bg->setContentSize({340.f, 42.f});
-        bg->setColor({20, 20, 35});
-        bg->setOpacity(220);
-        bg->setAnchorPoint({0.5f, 0.5f});
-        this->addChild(bg);
-    }
-
-    auto label = CCLabelBMFont::create(text.c_str(), "chatFont.fnt");
-    label->setScale(0.55f);
-    label->setColor({255, 255, 255});
-    label->setAnchorPoint({0.5f, 0.5f});
-    label->setPosition({0, 2});
-    this->addChild(label);
-
-    this->setContentSize({340.f, 42.f});
-    this->setPosition({screenSize.width / 2.f, screenSize.height});
-    this->setID("now-playing"_spr);
-    this->setZOrder(200);
-
-    auto posx = screenSize.width / 2.f;
-    auto posy = screenSize.height;
-
-    auto sequence = cocos2d::CCSequence::create(
-        cocos2d::CCEaseInOut::create(cocos2d::CCMoveTo::create(0.8f, {posx, posy - 28.f}), 2.0f),
-        cocos2d::CCDelayTime::create(Mod::get()->getSettingValue<double>("menuLoopNotificationTime")),
-        cocos2d::CCEaseInOut::create(cocos2d::CCMoveTo::create(0.8f, {posx, posy}), 2.0f),
-        cocos2d::CCCallFunc::create(this, callfunc_selector(CCNode::removeFromParent)),
-        nullptr
-    );
-    this->runAction(sequence);
-
-    return true;
-}
 
 static std::string formatNGMLSongName(SongInfoObject* songInfo) {
     if (!songInfo) return "Unknown";
@@ -86,7 +27,7 @@ static std::string buildDisplayName() {
 
     const std::string& current = sm.getCurrentSong();
     auto path = std::filesystem::path(current);
-    auto stem = geode::utils::string::pathToString(path.stem());
+    auto stem = paimon::paths::toUtf8(path.stem());
 
     auto numRes = geode::utils::numFromString<int>(stem);
     if (numRes.isOk()) {
@@ -99,27 +40,18 @@ static std::string buildDisplayName() {
         }
     }
 
-    return geode::utils::string::pathToString(path.filename());
+    return paimon::paths::toUtf8(path.filename());
 }
 
 void NowPlayingCard::showForCurrentSong(cocos2d::CCNode* parent) {
     if (!parent) return;
-
-    if (auto old = parent->getChildByIDRecursive("now-playing"_spr)) {
-        old->removeMeAndCleanup();
-    }
-
-    auto& sm = MenuLoopManager::get();
     if (!paimon::modules::isEnabled("paimbnails.menuloop.menu")) return;
     if (!Mod::get()->getSettingValue<bool>("menuLoopEnableNotification")) return;
 
-    std::string prefix;
-    const std::string& p = Mod::get()->getSettingValue<std::string>("menuLoopCustomPrefix");
-    if (p != "[Empty]") prefix = fmt::format("{}: ", p);
-
-    std::string text = prefix + buildDisplayName();
-
-    if (auto card = NowPlayingCard::create(text)) {
-        parent->addChild(card);
-    }
+    paimon::menumusic::NowPlayingToastContent content;
+    const std::string prefix = Mod::get()->getSettingValue<std::string>("menuLoopCustomPrefix");
+    if (prefix != "[Empty]") content.prefix = prefix;
+    content.title = buildDisplayName();
+    content.subtitle = "Menu Loop";
+    paimon::menumusic::NowPlayingToast::showContent(parent, content);
 }

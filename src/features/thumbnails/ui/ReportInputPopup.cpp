@@ -40,7 +40,7 @@ bool ReportInputPopup::init(int levelID, geode::CopyableFunction<void(std::strin
     m_mainLayer->addChild(idLabel);
 
     m_textInput = geode::TextInput::create(280.f, Localization::get().getString("report.placeholder").c_str(), "chatFont.fnt");
-    m_textInput->setCommonFilter(geode::CommonFilter::Any);
+    m_textInput->setCommonFilter(geode::CommonFilter::TextEmojis);
     m_textInput->setMaxCharCount(120);
     m_textInput->setPosition({cx, contentSize.height - 80.f});
     m_textInput->setScale(0.9f);
@@ -68,7 +68,7 @@ bool ReportInputPopup::init(int levelID, geode::CopyableFunction<void(std::strin
 
     {
         auto ac = paimon::emotes::EmoteAutocomplete::create(
-            m_textInput->getInputNode(),
+            m_textInput,
             [this](std::string const& newText) {
                 if (m_textInput) m_textInput->setString(newText);
             }
@@ -96,7 +96,7 @@ bool ReportInputPopup::init(int levelID, geode::CopyableFunction<void(std::strin
 void ReportInputPopup::onSend(CCObject*) {
     std::string reason = m_textInput->getString();
     if (reason.empty()) {
-        PaimonNotify::create(Localization::get().getString("report.empty_reason").c_str(), NotificationIcon::Warning)->show();
+        PaimonNotify::show(Localization::get().getString("report.empty_reason").c_str(), NotificationIcon::Warning);
         return;
     }
 

@@ -1,5 +1,6 @@
 #include "GdUserResolver.hpp"
 #include "../../../utils/GDRobTopCache.hpp"
+#include "../../../utils/HttpClient.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 #include <Geode/utils/general.hpp>
 #include <map>
@@ -32,7 +33,9 @@ void resolveUsername(
         return;
     }
 
-    std::string body = fmt::format("str={}&page=0&secret={}", trimmed, kGdSecret);
+    // form-encoded body: a raw username with spaces or '&' would corrupt it.
+    std::string body = fmt::format("str={}&page=0&secret={}",
+        HttpClient::encodeQueryParamForm(trimmed), kGdSecret);
 
     paimon::gd::postCached("getGJUsers20.php", body,
         [cb = std::move(cb), trimmed](bool ok, std::string response) mutable {

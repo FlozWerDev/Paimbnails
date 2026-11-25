@@ -8,6 +8,8 @@
 
 namespace paimon::gifimport {
 
+inline constexpr int kMaxImportDimension = 680;
+
 enum class BackgroundMode {
     Keep,
     AutoBorder,
@@ -109,14 +111,14 @@ struct PlanStamp {
     int objectId = 0;
     float baseWidth = 30.f;
     float baseHeight = 30.f;
-    // object art rarely fills its frame, so the mold box is the painting part
+    // object art rarely fills its frame: the mold box is the painting part
     // only; this shifts the object (in box fractions) to land that part right.
     float offsetX = 0.f;
     float offsetY = 0.f;
     float rotation = 0.f;
     bool flipX = false;
-    // code-generated spare molds (analytic gaussian/ramp) for missing native glow:
-    // same blending and opacity as natives, but blending fakes the halo.
+    // spare molds generated in code (analytic gaussian/ramp) for missing
+    // native glow: same blending and opacity, but blending fakes the halo.
     bool analyticFallback = false;
     StampMask mask;
 };
@@ -135,24 +137,33 @@ struct Options {
     ImportMode mode = ImportMode::Blocks;
     GlowMode glow = GlowMode::Off;
     bool dither = false;
+    // true: normal optimized pipeline. false (solo pintura): bands over
+    // smoothed vector contours (contour method, unoptimized).
+    bool optimize = true;
     bool loop = true;
     bool motion = true;
+    // numeric resolutions are fixed; only Auto may reduce the drawing size.
     bool autoResolution = false;
     float blurRadius = 1.f;
     float blurGlowDiameter = 4.f;
     bool softBackdrop = true;
+    // internal quality passes; tests toggle them to measure each contribution.
+    bool paletteRefine = true;
+    bool detailRecovery = true;
+    int detailPercent = 5;
+    bool detailStableCount = true;
     // vertx drops a 2903 wash with the image's vertical flow.
     bool gradientWash = true;
     // snapshot of native alpha masks, prepared on the gl thread.
     std::vector<PlanStamp> softStamps;
     // best native match errors (radial, vertical, quarter) from the last
-    // buildsoftstamplibrary() run; only explains a soft-mode failure.
+    // buildsoftstamplibrary() run; only for explaining soft-mode failures.
     std::array<double, 3> softMatchErrors{1.0, 1.0, 1.0};
 };
 
 inline int sourceResolutionLimit(Options const& options) {
     return options.autoResolution && options.mode == ImportMode::Paint
-        ? 680 : options.maxDimension;
+        ? kMaxImportDimension : options.maxDimension;
 }
 
 inline bool usesSoftGeometry(ImportMode mode) {
@@ -184,6 +195,8 @@ struct Primitive {
     // stamp figures only: index into `importplan::stamps`. trailing so list
     // initializers keep working.
     std::uint16_t stamp = 0;
+    // extra angle of the y basis; gd stores the two bases as 131/132.
+    float skew = 0.f;
 };
 
 struct VisibilityTrack {
@@ -198,7 +211,7 @@ struct MotionKey {
     int y = 0;
 };
 
-// a silhouette repeated across frames at shifting spots. drawn once and run
+// a silhouette repeated across frames at shifting spots: drawn once and run
 // by move triggers instead of paying a full copy per frame.
 struct MotionTrack {
     std::vector<std::uint64_t> mask;
@@ -210,6 +223,7 @@ struct ImportPlan {
     int width = 0;
     int height = 0;
     int sourceFrames = 0;
+    int sampledFrames = 0;
     int requestedDimension = 0;
     int actualDimension = 0;
     int sourceColorCount = 0;
@@ -221,7 +235,7 @@ struct ImportPlan {
     std::vector<Primitive> staticObjects;
     std::vector<VisibilityTrack> tracks;
     std::vector<MotionTrack> motionTracks;
-    // from here the palette is glow channels: blended at half opacity.
+    // from here the palette is glow channels, blended at half opacity.
     std::size_t glowPaletteStart = static_cast<std::size_t>(-1);
     float glowOpacity = 1.f;
     std::vector<float> glowOpacityScales;
@@ -243,6 +257,15 @@ struct ImportPlan {
     float similarity = 100.f;
     float geometrySimilarity = 100.f;
     float detailSimilarity = 100.f;
+    // quality at the requested resolution: unlike `similarity`, plans built
+    // at different grid sizes stay comparable. -1 = not measured.
+    float absoluteSimilarity = -1.f;
+    // objects dropped by the rate-distortion budget pass and detail pieces
+    // added with leftover budget.
+    std::size_t trimmedObjects = 0;
+    std::size_t restoredObjects = 0;
+    // true only when trimming was needed to fit the requested object budget.
+    bool budgetTrimmed = false;
     int renderPasses = 0;
 
     bool animated() const { return frames.size() > 1; }
@@ -255,8 +278,8 @@ struct BuildResult {
     explicit operator bool() const { return error.empty(); }
 };
 
-// one rasterized frame for the progressive preview: produced by the worker,
-// the popup only uploads it to texture.
+// one rasterized frame for the progressive preview: the worker produces it,
+// the popup only uploads it to a texture.
 struct PreviewImage {
     int width = 0;
     int height = 0;

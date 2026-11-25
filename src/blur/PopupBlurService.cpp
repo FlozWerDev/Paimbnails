@@ -1,6 +1,7 @@
 #include "PopupBlurService.hpp"
 
 #include <Geode/Geode.hpp>
+#include <Geode/ui/OverlayManager.hpp>
 #include "../core/Settings.hpp"
 #include "../utils/EditorContext.hpp"
 #include "../core/RuntimeLifecycle.hpp"
@@ -38,6 +39,22 @@ static bool parentAlive(RegistryEntry const& e) {
 static std::unordered_map<CCNode*, RegistryEntry>& blurRegistry() {
     static auto* map = new std::unordered_map<CCNode*, RegistryEntry>();
     return *map;
+}
+
+static void updateBlurVisibility() {
+    CCNode* top = nullptr;
+    for (auto const& [key, entry] : blurRegistry()) {
+        auto* blur = liveBlur(entry);
+        if (!blur || entry.fadingOut || !parentAlive(entry) || !blur->getParent()) continue;
+        if (!top || blur->getZOrder() > top->getZOrder() ||
+            (blur->getZOrder() == top->getZOrder() &&
+                blur->getOrderOfArrival() > top->getOrderOfArrival())) {
+            top = blur;
+        }
+    }
+    for (auto& [key, entry] : blurRegistry()) {
+        if (auto* blur = liveBlur(entry); blur && !entry.fadingOut) blur->setVisible(blur == top);
+    }
 }
 
 class WatchdogTarget : public cocos2d::CCObject {
@@ -146,7 +163,8 @@ void WatchdogTarget::tick(float dt) {
 
         if (runningScene) {
             CCNode* blurScene = findSceneRoot(blur);
-            if (blurScene && blurScene != runningScene) {
+            auto* overlayMgr = static_cast<CCNode*>(geode::OverlayManager::get());
+            if (blurScene && blurScene != runningScene && blurScene != overlayMgr) {
                 toInstantRemoveBlurs.push_back(blur);
                 toRemoveFromRegistry.push_back(popupKey);
                 continue;
@@ -174,6 +192,7 @@ void WatchdogTarget::tick(float dt) {
     for (auto* k : toRemoveFromRegistry) {
         reg.erase(k);
     }
+    if (!toRemoveFromRegistry.empty() || !toFadeBlurs.empty()) updateBlurVisibility();
 
     if (reg.empty()) {
         unscheduleWatchdogIfIdle();
@@ -200,17 +219,6 @@ static cocos2d::CCNode* applyPaiblurDynamic(CCNode* popup, CCNode* parent, Confi
 
     parent->addChild(paiblur, popup->getZOrder() - 1);
 
-    {
-        auto& reg = blurRegistry();
-        for (auto& [key, entry] : reg) {
-            if (key == popup) continue;
-            CCNode* prevBlur = liveBlur(entry);
-            if (prevBlur && prevBlur->isVisible() && !entry.fadingOut) {
-                prevBlur->setVisible(false);
-            }
-        }
-    }
-
     RegistryEntry entry;
     entry.blurRef = Ref<CCNode>(paiblur);
     entry.blurWeak = paiblur;
@@ -218,6 +226,7 @@ static cocos2d::CCNode* applyPaiblurDynamic(CCNode* popup, CCNode* parent, Confi
     entry.ageSeconds = 0.f;
     entry.fadingOut = false;
     blurRegistry()[popup] = std::move(entry);
+    updateBlurVisibility();
     scheduleWatchdogIfNeeded();
 
     float fadeDuration = std::clamp(
@@ -249,7 +258,7 @@ bool captureAndApplyWithConfig(CCNode* popup, Config cfg) {
 
     cleanup(popup);
 
-    if (auto* applied = applyPaiblurDynamic(popup, parent, cfg)) {
+    if (applyPaiblurDynamic(popup, parent, cfg)) {
         return true;
     }
 
@@ -269,12 +278,7 @@ static void cleanupImpl(CCNode* popup, float fadeDuration) {
     reg.erase(it);
     unscheduleWatchdogIfIdle();
 
-    for (auto& [key, other] : reg) {
-        CCNode* prevBlur = liveBlur(other);
-        if (prevBlur && !prevBlur->isVisible() && !other.fadingOut) {
-            prevBlur->setVisible(true);
-        }
-    }
+    updateBlurVisibility();
 
     CCNode* blurNode = liveBlur(entry);
     // drop freed/orphaned nodes without touching their dangling parent.

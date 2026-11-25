@@ -57,6 +57,7 @@ private:
     void resetMeter();
 
     float readGroupGainDb() const;
+    float readLoudness(float (FMOD_DSP_LOUDNESS_METER_INFO_TYPE::*field)) const;
     float readMomentaryLufs() const;
     float readWindowPeakLufs() const;
     SafeDropLevels readOutputLevels() const;

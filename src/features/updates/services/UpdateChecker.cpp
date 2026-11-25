@@ -1,3 +1,4 @@
+#include "../../../utils/FilesystemPath.hpp"
 #include "UpdateChecker.hpp"
 
 #include <Geode/Geode.hpp>
@@ -6,6 +7,7 @@
 #include <Geode/loader/ModMetadata.hpp>
 
 #include "../../../utils/WebHelper.hpp"
+#include "../../../utils/HttpUrl.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
 
@@ -27,6 +29,14 @@ constexpr auto kReleasesApiUrl =
 constexpr auto kReleaseListUrl =
     "https://api.github.com/repos/FlozWerDev/Paimbnails/releases?per_page=60";
 constexpr auto kAssetName = "flozwer.paimbnails2.geode";
+
+bool isTrustedReleaseUrl(std::string const& url) {
+    auto parsed = paimon::net::parseHttpUrl(url);
+    if (!parsed || parsed->scheme != "https") return false;
+    auto const& host = parsed->host;
+    return host == "github.com" || host == "objects.githubusercontent.com"
+        || host.ends_with(".githubusercontent.com");
+}
 
 std::string sanitizeVersion(std::string v) {
     while (!v.empty() && (v.front() == ' ' || v.front() == '\t')) v.erase(v.begin());
@@ -71,12 +81,26 @@ std::string pickGeodeAsset(matjson::Value const& release, uint64_t& outSize) {
 
 } // namespace
 
+namespace {
+std::atomic<bool> s_updateCheckerInitialized{false};
+} // namespace
+
+// toNonVString keeps the bare "1.2.5"; the UI adds the "v" prefix, as it does for remoteVersion.
 UpdateChecker::UpdateChecker()
-    : m_localVersion(Mod::get()->getVersion().toVString(false)) {}
+    : m_localVersion(Mod::get()->getVersion().toNonVString(false)) {}
+
+bool UpdateChecker::isInitialized() {
+    return s_updateCheckerInitialized.load(std::memory_order_acquire);
+}
 
 UpdateChecker& UpdateChecker::get() {
-    static UpdateChecker s;
-    return s;
+    // Heap-leaked: never run ~UpdateChecker() under DllMain loader lock.
+    static auto* s = []() {
+        auto* checker = new UpdateChecker();
+        s_updateCheckerInitialized.store(true, std::memory_order_release);
+        return checker;
+    }();
+    return *s;
 }
 
 int UpdateChecker::compareVersions(std::string const& baseStr, std::string const& otherStr) {
@@ -138,10 +162,10 @@ void UpdateChecker::checkAsync(bool force, std::function<void(bool, std::string)
     m_checkLaunched = true;
     m_state.store(State::Checking);
 
-    m_localVersion = Mod::get()->getVersion().toVString(false);
+    m_localVersion = Mod::get()->getVersion().toNonVString(false);
 
     auto req = web::WebRequest()
-        .timeout(std::chrono::seconds(15))
+        .timeout(asp::Duration::fromSecs(15))
         .userAgent("Paimbnails-UpdateChecker/1.0")
         .header("Accept", "application/vnd.github+json");
     if (force) {
@@ -231,7 +255,7 @@ void UpdateChecker::fetchReleasesAsync(std::function<void(bool, std::string)> on
     m_releasesLoading = true;
 
     auto req = web::WebRequest()
-        .timeout(std::chrono::seconds(20))
+        .timeout(asp::Duration::fromSecs(20))
         .userAgent("Paimbnails-UpdateChecker/1.0")
         .header("Accept", "application/vnd.github+json");
 
@@ -328,6 +352,10 @@ void UpdateChecker::downloadRelease(
         if (onDone) onDone(false, "no download url");
         return;
     }
+    if (!isTrustedReleaseUrl(url)) {
+        if (onDone) onDone(false, "untrusted download url");
+        return;
+    }
 
     m_downloadCancelled.store(false);
     m_installedPendingRestart.store(false);
@@ -338,13 +366,13 @@ void UpdateChecker::downloadRelease(
     auto doneShared     = std::make_shared<std::function<void(bool, std::string)>>(std::move(onDone));
 
     auto req = web::WebRequest()
-        .timeout(std::chrono::minutes(5))
+        .timeout(asp::Duration::fromMinutes(5))
         .userAgent("Paimbnails-UpdateChecker/1.0")
-        // Release assets can be replaced without changing their tag or filename.
+        // release assets can be replaced without changing their tag or filename.
         .header("Cache-Control", "no-cache")
         .param("_paimbnails", std::chrono::steady_clock::now().time_since_epoch().count());
 
-    req.onProgress([progressShared, this](web::WebProgress const& p) {
+    req.onProgress([progressShared](web::WebProgress const& p) {
         if (!progressShared || !*progressShared) return;
         uint64_t cur = static_cast<uint64_t>(p.downloaded());
         uint64_t tot = static_cast<uint64_t>(p.downloadTotal());
@@ -373,7 +401,7 @@ void UpdateChecker::downloadRelease(
             }
 
             auto bytes = std::move(res).data();
-            if (bytes.empty() || bytes.size() > 256ULL * 1024 * 1024) {
+            if (bytes.empty() || bytes.size() > 64ULL * 1024 * 1024) {
                 fail("invalid payload size");
                 return;
             }
@@ -383,7 +411,7 @@ void UpdateChecker::downloadRelease(
                 return;
             }
 
-            auto packagePath = Mod::get()->getPackagePath();
+            auto packagePath = paimon::paths::toStdPath(Mod::get()->getPackagePath());
             if (packagePath.empty()) {
                 fail("no package path");
                 return;
@@ -397,13 +425,13 @@ void UpdateChecker::downloadRelease(
                 std::filesystem::remove(stagedPath, cleanupError);
                 fail(std::move(error));
             };
-            auto writeRes = geode::utils::file::writeBinary(stagedPath, bytes);
+            auto writeRes = geode::utils::file::writeBinary(paimon::paths::toSdkPath(stagedPath), bytes);
             if (!writeRes) {
                 failPackage(fmt::format("cannot write update: {}", writeRes.unwrapErr()));
                 return;
             }
 
-            auto metadata = ModMetadata::createFromGeodeFile(stagedPath);
+            auto metadata = ModMetadata::createFromGeodeFile(paimon::paths::toSdkPath(stagedPath));
             auto expected = VersionInfo::parse("v" + sanitizeVersion(version));
             if (metadata.hasErrors() || metadata.getID() != Mod::get()->getID() ||
                 !expected || metadata.getVersion() != expected.unwrap()) {
@@ -417,7 +445,7 @@ void UpdateChecker::downloadRelease(
             }
             bool hasBinary = false;
             {
-                auto archive = geode::utils::file::Unzip::create(stagedPath);
+                auto archive = geode::utils::file::Unzip::create(paimon::paths::toSdkPath(stagedPath));
                 hasBinary = archive && archive.unwrap().hasEntry(metadata.getBinaryName().data());
             }
             if (!hasBinary || m_downloadCancelled.load()) {
@@ -434,10 +462,10 @@ void UpdateChecker::downloadRelease(
             m_pendingVersion = version;
             m_installedPendingRestart.store(true);
             log::info("[UpdateChecker] Version {} written in place at {}", version,
-                geode::utils::string::pathToString(packagePath));
+                paimon::paths::toUtf8(packagePath));
 
             if (doneShared && *doneShared) {
-                (*doneShared)(true, geode::utils::string::pathToString(packagePath));
+                (*doneShared)(true, paimon::paths::toUtf8(packagePath));
             }
         }
     );

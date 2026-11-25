@@ -40,18 +40,23 @@ public:
 private:
     FramePixelCache() = default;
 
+    // callers already hold m_mutex.
+    void evictWhileOverBudget();
+    void setFrames(std::vector<SpriteFrameInfo> frames);
+
     static constexpr std::size_t kFrameCacheByteBudget = 16u * 1024u * 1024u;
     static constexpr std::size_t kFrameCacheByteFloor  = 1u * 1024u * 1024u;
 
-    std::mutex m_mutex;
+    mutable std::mutex m_mutex;
     std::string m_cachedKey;
     std::filesystem::file_time_type m_cachedPlistMtime{};
     std::filesystem::file_time_type m_cachedPngMtime{};
     bool m_haveMtimes = false;
     ImageBuffer m_atlas;
     std::vector<SpriteFrameInfo> m_frames;
+    std::unordered_map<std::string, std::size_t> m_frameIndex;
 
-    std::unordered_map<std::string, ImageBuffer> m_frameCache;
+    std::unordered_map<std::string, FrameData> m_frameCache;
     std::deque<std::string>                      m_frameOrder;
     std::size_t                                  m_frameCacheBytes = 0;
     std::size_t   m_byteBudget = kFrameCacheByteBudget;

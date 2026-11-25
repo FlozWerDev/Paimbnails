@@ -1,4 +1,7 @@
+#include "FilesystemPath.hpp"
 #include "LocalAssetStore.hpp"
+
+#include "ProjectStorage.hpp"
 
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/string.hpp>
@@ -38,7 +41,7 @@ bool kindAllowsExtension(Kind kind, std::string ext) {
 std::string sanitizeBucket(std::string bucket) {
     if (bucket.empty()) return "misc";
     std::replace_if(bucket.begin(), bucket.end(), [](unsigned char c) {
-        return !(std::isalnum(c) || c == '-' || c == '_');
+        return !paimon::storage::isPortableChar(c);
     }, '_');
     return bucket;
 }
@@ -46,15 +49,15 @@ std::string sanitizeBucket(std::string bucket) {
 std::string sanitizeFilenameStem(std::string stem) {
     if (stem.empty()) return "asset";
     std::replace_if(stem.begin(), stem.end(), [](unsigned char c) {
-        return !(std::isalnum(c) || c == '-' || c == '_' || c == '.');
+        return !paimon::storage::isPortableChar(c, true);
     }, '_');
     return stem;
 }
 
 std::string makeUniqueFilename(std::filesystem::path const& source, std::string const& bucket) {
     static std::atomic<uint64_t> sequence = 0;
-    auto stem = sanitizeFilenameStem(geode::utils::string::pathToString(source.stem()));
-    auto ext = geode::utils::string::toLower(geode::utils::string::pathToString(source.extension()));
+    auto stem = sanitizeFilenameStem(paimon::paths::toUtf8(source.stem()));
+    auto ext = geode::utils::string::toLower(paimon::paths::toUtf8(source.extension()));
 
     uintmax_t size = 0;
     std::error_code sizeEc;
@@ -63,7 +66,7 @@ std::string makeUniqueFilename(std::filesystem::path const& source, std::string 
     auto stamp = static_cast<unsigned long long>(std::hash<std::string>{}(
         fmt::format("{}|{}|{}|{}|{}",
             bucket,
-            geode::utils::string::pathToString(source),
+            paimon::paths::toUtf8(source),
             sizeEc ? 0ull : static_cast<unsigned long long>(size),
             std::chrono::steady_clock::now().time_since_epoch().count(),
             sequence.fetch_add(1, std::memory_order_relaxed)
@@ -98,7 +101,7 @@ std::filesystem::path pathFromUtf8(char const* str) {
 }
 
 std::filesystem::path rootDir() {
-    auto dir = Mod::get()->getSaveDir() / "local_assets";
+    auto dir = paimon::paths::toStdPath(Mod::get()->getSaveDir()) / "local_assets";
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     return dir;
@@ -119,8 +122,8 @@ bool isManagedPath(std::filesystem::path const& path) {
     for (auto const& component : root) {
         if (candidate == normalized.end()) return false;
 #ifdef GEODE_IS_WINDOWS
-        if (geode::utils::string::toLower(geode::utils::string::pathToString(*candidate))
-            != geode::utils::string::toLower(geode::utils::string::pathToString(component))) return false;
+        if (geode::utils::string::toLower(paimon::paths::toUtf8(*candidate))
+            != geode::utils::string::toLower(paimon::paths::toUtf8(component))) return false;
 #else
         if (*candidate != component) return false;
 #endif
@@ -148,7 +151,7 @@ std::filesystem::path normalizePath(std::string const& pathStr) {
 
 std::string normalizePathString(std::filesystem::path const& path) {
     return geode::utils::string::replace(
-        geode::utils::string::pathToString(normalizePath(path)), "\\", "/");
+        paimon::paths::toUtf8(normalizePath(path)), "\\", "/");
 }
 
 std::string normalizePathString(std::string_view pathStr) {
@@ -184,7 +187,7 @@ ImportResult importToBucket(std::filesystem::path const& source, std::string con
         return result;
     }
 
-    auto ext = geode::utils::string::pathToString(normalizedSource.extension());
+    auto ext = paimon::paths::toUtf8(normalizedSource.extension());
     if (!kindAllowsExtension(kind, ext)) {
         result.error = "unsupported_extension";
         return result;

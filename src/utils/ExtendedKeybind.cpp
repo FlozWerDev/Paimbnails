@@ -1,4 +1,5 @@
 #include "ExtendedKeybind.hpp"
+#include "../core/BanGate.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/utils/Keyboard.hpp>
@@ -48,10 +49,14 @@ std::vector<std::string> const& managedList() {
     static std::vector<std::string> const kKeys = {
         "capture-keybind",
         "capture-menu-keybind",
+        "feedback-keybind",
+        "paimon-assistant-keybind",
         "zoom-in-keybind",
         "zoom-out-keybind",
         "zoom-reset-keybind",
         "zoom-toggle-menu-keybind",
+        "versus-card-1-keybind",
+        "versus-card-2-keybind",
         "settings-panel-keybind",
         "main-menu-layout-keybind",
         "level-search-enter",
@@ -59,6 +64,17 @@ std::vector<std::string> const& managedList() {
         "volume-sfx-mod-game",
         "volume-music-mod-editor",
         "volume-sfx-mod-editor",
+        "editor-color-picker-keybind",
+        "gif-import-keybind",
+        "editor-physics-keybind",
+        "editor-animate-keybind",
+        "editor-animate-play-key",
+        "editor-animate-prev-key",
+        "editor-animate-next-key",
+        "editor-animate-new-frame-key",
+        "editor-animate-blank-frame-key",
+        "editor-music-keybind",
+        "editor-optimizer-keybind",
     };
     return kKeys;
 }
@@ -68,13 +84,28 @@ std::vector<std::string> const& triggerOnlyList() {
     static std::vector<std::string> const kKeys = {
         "capture-keybind",
         "capture-menu-keybind",
+        "feedback-keybind",
+        "paimon-assistant-keybind",
         "zoom-in-keybind",
         "zoom-out-keybind",
         "zoom-reset-keybind",
         "zoom-toggle-menu-keybind",
+        "versus-card-1-keybind",
+        "versus-card-2-keybind",
         "settings-panel-keybind",
         "main-menu-layout-keybind",
         "level-search-enter",
+        "editor-color-picker-keybind",
+        "gif-import-keybind",
+        "editor-physics-keybind",
+        "editor-animate-keybind",
+        "editor-animate-play-key",
+        "editor-animate-prev-key",
+        "editor-animate-next-key",
+        "editor-animate-new-frame-key",
+        "editor-animate-blank-frame-key",
+        "editor-music-keybind",
+        "editor-optimizer-keybind",
     };
     return kKeys;
 }
@@ -274,6 +305,9 @@ std::vector<std::string> const& allManagedKeybinds() {
 }
 
 void emitExtendedTrigger(std::string_view settingKey, double timestamp) {
+    // A banned session must not keep feature shortcuts alive.
+    if (paimon::ban::isBanned()) return;
+
     ExtendedKeybindTriggerEvent(std::string(settingKey)).send(timestamp);
 
     // mirror as a synthetic geode event so existing setting listeners react too.

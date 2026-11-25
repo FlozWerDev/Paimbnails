@@ -1,5 +1,6 @@
 #include <Geode/modify/MenuLayer.hpp>
 #include "../../../framework/HookConventions.hpp"
+#include <Geode/binding/FMODAudioEngine.hpp>
 #include <Geode/modify/GameManager.hpp>
 #include <Geode/ui/PopupManager.hpp>
 #include <chrono>
@@ -17,7 +18,7 @@ namespace {
 // reimplementing playmenumusic(), so gd's channel-0 load/resume logic is reused.
 class $modify(PaimonMenuLoopGameManager, GameManager) {
     $override
-    gd::string getMenuMusicFile() {
+    std::string getMenuMusicFile() {
         auto& sm = MenuLoopManager::get();
         const std::string& song = sm.getCurrentSong();
         if (song.empty() || song == "menuLoop.mp3") {
@@ -52,9 +53,15 @@ class $modify(PaimonMenuLoopGameManager, GameManager) {
     void fadeInMenuMusic() {
         GameManager::fadeInMenuMusic();
         auto& sm = MenuLoopManager::get();
-        if (sm.getShouldRestoreMenuLoopPoint()) {
-            sm.restoreLastMenuLoopPosition();
+        if (sm.isOriginalMenuLoop() || sm.isOverride() || !sm.getShouldRestoreMenuLoopPoint()) {
+            return;
         }
+        auto* fmod = FMODAudioEngine::get();
+        if (fmod && !sm.getPauseSongPositionTracking() && fmod->getActiveMusic(0) == sm.getCurrentSong()) {
+            sm.setPauseSongPositionTracking(false);
+            return;
+        }
+        sm.restoreLastMenuLoopPosition();
     }
 
     $override

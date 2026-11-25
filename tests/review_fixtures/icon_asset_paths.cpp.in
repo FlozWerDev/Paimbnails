@@ -1,0 +1,16 @@
+#include "tests/review_fixtures/ReviewQueue.hpp"
+#include "src/utils/ProjectStorage.hpp"
+namespace paimon::icon_maker {
+struct Piece{struct Shape{std::string file;}shape;struct Fill{struct Image{std::string file;}image;}fill;};
+struct Slot{std::vector<Piece>pieces;};
+struct IconProject{std::map<std::string,Slot>slots;bool hasSafeAssetReferences()const;};
+@@function|src/features/icon-maker/data/IconProject.cpp|bool IconProject::hasSafeAssetReferences@@
+}
+int main(){using namespace paimon::icon_maker;
+ IconProject p;p.slots["main"].pieces.push_back({});auto&piece=p.slots["main"].pieces.front();
+ assert(p.hasSafeAssetReferences());piece.shape.file="shape.png";piece.fill.image.file="fill_1.png";assert(p.hasSafeAssetReferences());
+ for(auto bad:{"..","../private.png","C:/private.png","a/b.png","a\\b.png","CON.png"}){
+  piece.shape.file=bad;assert(!p.hasSafeAssetReferences());piece.shape.file="shape.png";
+  piece.fill.image.file=bad;assert(!p.hasSafeAssetReferences());piece.fill.image.file="fill.png";
+ }
+}

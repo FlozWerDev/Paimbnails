@@ -1,4 +1,5 @@
 #include "PaimonGuideService.hpp"
+#include "GeminiClient.hpp"
 #include "PaigoritV1.hpp"
 #include "PopupRegistry.hpp"
 #include "LightLemmatizer.hpp"
@@ -18,63 +19,7 @@ namespace paimon::guide {
 
 namespace {
 
-std::string tr(char const* key, char const* fallback = "") {
-    auto value = Localization::get().getString(key);
-    if (value == key && fallback && fallback[0] != '\0') {
-        return fallback;
-    }
-    return value;
-}
-
-// minimal "accented -> plain letter" map to normalize user queries (common es/pt/fr, utf-8 0xc3 0xxx).
-std::string stripBasicAccents(std::string const& in) {
-    std::string out;
-    out.reserve(in.size());
-    for (size_t i = 0; i < in.size();) {
-        unsigned char c = static_cast<unsigned char>(in[i]);
-
-        if (c == 0xC3 && i + 1 < in.size()) {
-            unsigned char c2 = static_cast<unsigned char>(in[i + 1]);
-            char replacement = 0;
-            switch (c2) {
-                case 0xA1: case 0xA0: case 0xA2: case 0xA3: case 0xA4: case 0xA5:
-                    replacement = 'a'; break;
-                case 0xA9: case 0xA8: case 0xAA: case 0xAB:
-                    replacement = 'e'; break;
-                case 0xAD: case 0xAC: case 0xAE: case 0xAF:
-                    replacement = 'i'; break;
-                case 0xB3: case 0xB2: case 0xB4: case 0xB5: case 0xB6:
-                    replacement = 'o'; break;
-                case 0xBA: case 0xB9: case 0xBB: case 0xBC:
-                    replacement = 'u'; break;
-                case 0xB1:
-                    replacement = 'n'; break; // n with tilde (lower)
-                case 0x81: case 0x80: case 0x82: case 0x83: case 0x84: case 0x85:
-                    replacement = 'a'; break;
-                case 0x89: case 0x88: case 0x8A: case 0x8B:
-                    replacement = 'e'; break;
-                case 0x8D: case 0x8C: case 0x8E: case 0x8F:
-                    replacement = 'i'; break;
-                case 0x93: case 0x92: case 0x94: case 0x95: case 0x96:
-                    replacement = 'o'; break;
-                case 0x9A: case 0x99: case 0x9B: case 0x9C:
-                    replacement = 'u'; break;
-                case 0x91:
-                    replacement = 'n'; break; // n with tilde (upper)
-                default: break;
-            }
-            if (replacement != 0) {
-                out.push_back(replacement);
-                i += 2;
-                continue;
-            }
-        }
-
-        out.push_back(static_cast<char>(c));
-        ++i;
-    }
-    return out;
-}
+using paimon::loc::tr;
 
 }
 
@@ -116,47 +61,6 @@ void PaimonGuideService::setMode(GuideMode mode) {
     auto* mod = geode::Mod::get();
     if (!mod) return;
     mod->setSavedValue<bool>("guide-mode-max", mode == GuideMode::Max && isMaxAvailable());
-}
-
-std::string PaimonGuideService::normalize(std::string s) {
-    s = stripBasicAccents(s);
-    std::string out;
-    out.reserve(s.size());
-    bool lastSpace = true;
-    for (char c : s) {
-        unsigned char u = static_cast<unsigned char>(c);
-        if (u < 0x80) {
-            char low = static_cast<char>(std::tolower(u));
-            if (std::isalnum(static_cast<unsigned char>(low))) {
-                out.push_back(low);
-                lastSpace = false;
-            } else {
-                if (!lastSpace) {
-                    out.push_back(' ');
-                    lastSpace = true;
-                }
-            }
-        } else {
-            out.push_back(c);
-            lastSpace = false;
-        }
-    }
-    while (!out.empty() && out.back() == ' ') out.pop_back();
-    return out;
-}
-
-std::vector<std::string> PaimonGuideService::tokenize(std::string const& normalized) {
-    std::vector<std::string> tokens;
-    std::string cur;
-    for (char c : normalized) {
-        if (c == ' ') {
-            if (!cur.empty()) { tokens.push_back(cur); cur.clear(); }
-        } else {
-            cur.push_back(c);
-        }
-    }
-    if (!cur.empty()) tokens.push_back(cur);
-    return tokens;
 }
 
 void PaimonGuideService::registerIntents() {
@@ -237,11 +141,11 @@ void PaimonGuideService::registerIntents() {
         it.animation = GuideAnimation::Wave;
         it.keywordsByLang["english"] = {
             "hi", "hello", "hey", "good morning", "good evening",
-            "good afternoon", "yo", "sup"
+            "good afternoon", "yo", "sup", "helo", "hii", "hey there"
         };
         it.keywordsByLang["spanish"] = {
             "hola", "buenas", "buenos dias", "buenas tardes", "buenas noches",
-            "ey", "que tal", "saludos"
+            "ey", "que tal", "saludos", "ola", "holi", "holis", "wenas"
         };
         it.responseByLang["english"] =
             "Hi there! <cg>I'm Paimon</c>. Ask me about any popup or layer!";
@@ -674,6 +578,78 @@ void PaimonGuideService::registerIntents() {
         };
         m_intents.push_back(std::move(it));
     }
+
+    {
+        // short acknowledgements ("ok", "vale", "genial"): previously these fell
+        // through to a confusing "did you mean Collab Editor?" fallback. Catching
+        // them explicitly makes short chats feel far smarter.
+        GuideIntent it;
+        it.id = "acknowledgement";
+        it.kind = IntentKind::Conversational;
+        it.weight = 26;
+        it.animation = GuideAnimation::Wave;
+        it.keywordsByLang["english"] = {
+            "ok", "okay", "got it", "understood", "i see",
+            "alright", "sounds good"
+        };
+        it.keywordsByLang["spanish"] = {
+            "ok", "vale", "genial", "perfecto", "entendido", "de acuerdo",
+            "ya veo", "suena bien", "dale"
+        };
+        it.responseByLang["english"] =
+            "Got it! <cg>Tell me the next feature</c> and I'll take you there.";
+        it.responseByLang["spanish"] =
+            "Entendido! <cg>Dime la siguiente funcion</c> y te llevo.";
+        it.variantsByLang["english"] = {
+            "Perfect! What else do you want to configure?",
+            "Nice! I'm here if you need another popup.",
+        };
+        it.variantsByLang["spanish"] = {
+            "Perfecto! Que mas quieres configurar?",
+            "Genial! Aqui estoy si necesitas otro popup.",
+        };
+        m_intents.push_back(std::move(it));
+    }
+
+    {
+        // yes/no answers after a suggestion ("Did you mean X?"). Without this,
+        // "si"/"yes" fell back to nonsense; now they confirm the last topic.
+        GuideIntent it;
+        it.id = "affirmation";
+        it.kind = IntentKind::Conversational;
+        it.weight = 24;
+        it.animation = GuideAnimation::Talk;
+        it.keywordsByLang["english"] = {
+            "yes", "yeah", "yep", "yup", "sure", "of course", "exactly"
+        };
+        it.keywordsByLang["spanish"] = {
+            "si", "sip", "claro", "exacto", "exactamente", "por supuesto", "asi es"
+        };
+        it.responseByLang["english"] =
+            "Great! <cg>Tap \"Take me there\"</c> or tell me what to open.";
+        it.responseByLang["spanish"] =
+            "Genial! <cg>Toca \"Llevame\"</c> o dime que abrir.";
+        m_intents.push_back(std::move(it));
+    }
+
+    {
+        GuideIntent it;
+        it.id = "negation";
+        it.kind = IntentKind::Conversational;
+        it.weight = 24;
+        it.animation = GuideAnimation::Talk;
+        it.keywordsByLang["english"] = {
+            "no", "nope", "not really", "not that", "other", "another one"
+        };
+        it.keywordsByLang["spanish"] = {
+            "no", "nop", "no eso", "otro", "otra cosa", "ese no"
+        };
+        it.responseByLang["english"] =
+            "No worries! <cg>Describe it differently</c> and I'll find it.";
+        it.responseByLang["spanish"] =
+            "Sin problema! <cg>Describelo de otra forma</c> y lo encuentro.";
+        m_intents.push_back(std::move(it));
+    }
 }
 
 GuideRecommendation PaimonGuideService::makeRecommendation(
@@ -1082,7 +1058,7 @@ GuideAnswer PaimonGuideService::buildContextualAnswer(
 
 GuideAnswer PaimonGuideService::ask(std::string const& userQuery, AskCallback callback) {
     auto langId = Localization::get().getCurrentLanguageId();
-    auto normalized = normalize(userQuery);
+    auto normalized = LightLemmatizer::normalize(userQuery);
 
     if (normalized.empty()) {
         return makeFallback({}, langId);
@@ -1213,7 +1189,7 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery, AskCallback ca
         }
     }
 
-    auto tokens = tokenize(normalized);
+    auto tokens = LightLemmatizer::tokenize(normalized);
 
     {
         auto content = LightLemmatizer::removeStopwords(tokens);
@@ -1282,6 +1258,30 @@ GuideAnswer PaimonGuideService::ask(std::string const& userQuery, AskCallback ca
     GuideAnswer ans;
     if (best) {
         ans = buildAnswerFor(*best, langId);
+
+        // "si"/"yes" confirms the last functional suggestion instead of being a
+        // dead-end: re-attach its open action so Take-me-there still works.
+        if ((best->id == "affirmation" || best->id == "acknowledgement")
+            && !ans.action) {
+            if (auto last = m_memory.lastFunctionalTurn();
+                last && (std::time(nullptr) - last->timestamp) < ConversationMemory::kRecentSecs) {
+                for (auto const& it : m_intents) {
+                    if (it.id == last->matchedIntentId && it.action) {
+                        bool es = (langId == "spanish");
+                        auto name = PopupRegistry::get().displayNameFor(it.id, langId);
+                        if (!name.empty()) {
+                            ans.action = it.action;
+                            ans.matchedIntentId = it.id;
+                            ans.message = es
+                                ? ("Perfecto, te llevo a <cy>" + name + "</c>. Toca el boton!")
+                                : ("Perfect, taking you to <cy>" + name + "</c>. Hit the button!");
+                            ans.animation = GuideAnimation::Point;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
 
         GuideIntent const* runner = nullptr;
         if (paigorit.ambiguous && paigorit.runnerUp

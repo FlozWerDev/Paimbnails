@@ -450,7 +450,6 @@ std::pair<DCColor, DCColor> DominantColors::extract(const uint8_t* rgb, int widt
 
     DCColor color2 = color1;
     int bestClusterIndex = -1;
-    uint32_t bestClusterSize = 0;
 
     for (size_t i = 1; i < clusters.size(); i++) {
         if (clusters[i].pixelCount == 0) continue;
@@ -459,7 +458,6 @@ std::pair<DCColor, DCColor> DominantColors::extract(const uint8_t* rgb, int widt
 
         if (deltaE >= DELTA_E_MIN_THRESHOLD) {
             bestClusterIndex = static_cast<int>(i);
-            bestClusterSize = clusters[i].pixelCount;
             color2 = labToRGB(clusters[i].centroid);
             break;
         }

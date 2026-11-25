@@ -18,7 +18,7 @@ namespace {
     constexpr float kPopupH = 290.f;
     constexpr float kRowGap = 8.f;
 
-    // Length chip tags map to the FilterState length bools.
+    // length chip tags map to the FilterState length bools.
     bool* lengthForTag(int tag) {
         auto& f = state();
         switch (tag) {
@@ -82,7 +82,6 @@ bool MyLevelFilterPopup::init() {
     addCorners();
 
     auto size = m_mainLayer->getContentSize();
-    float const cx = size.width / 2.f;
 
     load();
 
@@ -95,6 +94,7 @@ bool MyLevelFilterPopup::init() {
     m_mainLayer->addChild(frame);
 
     m_scroll = ScrollLayer::create(scrollSize);
+    if (m_scroll) m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setPosition({14.f, bottomBar});
     m_scroll->setID("mylevels-filter-scroll"_spr);
     m_scroll->m_contentLayer->setID("mylevels-filter-content"_spr);
@@ -109,7 +109,6 @@ bool MyLevelFilterPopup::init() {
         return panel;
     };
 
-    // Length chips row.
     {
         auto* panel = addSection("Length", 52.f);
         auto* menu = CCMenu::create();
@@ -127,7 +126,6 @@ bool MyLevelFilterPopup::init() {
         panel->addChild(menu);
     }
 
-    // Status chips.
     {
         auto* panel = addSection("Status", 52.f);
         auto* menu = CCMenu::create();
@@ -145,7 +143,6 @@ bool MyLevelFilterPopup::init() {
         panel->addChild(menu);
     }
 
-    // Tri-state flag chips.
     {
         auto* panel = addSection("Flags", 84.f);
         auto* menu = CCMenu::create();
@@ -163,7 +160,6 @@ bool MyLevelFilterPopup::init() {
         panel->addChild(menu);
     }
 
-    // Text inputs: name + song id + object range.
     {
         auto* panel = addSection("Search", 110.f);
 
@@ -206,7 +202,6 @@ bool MyLevelFilterPopup::init() {
         panel->addChild(m_maxObjInput);
     }
 
-    // Sort selector.
     {
         auto* panel = addSection("Sort", 50.f);
         auto* menu = CCMenu::create();
@@ -238,7 +233,7 @@ bool MyLevelFilterPopup::init() {
         panel->addChild(m_sortLabel);
     }
 
-    // Stack the panels top-down and size the content layer.
+    // stack the panels top-down and size the content layer.
     auto* children = content->getChildren();
     float totalH = 0.f;
     for (int i = children->count() - 1; i >= 0; i--) {
@@ -258,7 +253,6 @@ bool MyLevelFilterPopup::init() {
     }
     m_scroll->scrollToTop();
 
-    // Bottom bar: count + Reset + Apply.
     m_countLabel = CCLabelBMFont::create("", "goldFont.fnt");
     m_countLabel->setScale(0.42f);
     m_countLabel->setAnchorPoint({0.f, 0.5f});

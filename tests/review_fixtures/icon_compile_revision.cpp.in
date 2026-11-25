@@ -1,0 +1,86 @@
+#include "tests/review_fixtures/ReviewQueue.hpp"
+
+namespace paimon::icon_maker {
+namespace log=geode::log;
+struct IconProject { std::string id="icon"; std::string content="old"; int type=0; bool hasBuiltOnce=false; long long lastBuiltAt=0,modifiedAt=0; };
+struct Publication {
+    static inline int published=0,committed=0,rolledBack=0;
+    static inline bool reject=false;
+    bool publishTo(std::filesystem::path const&,std::error_code& error) {
+        ++published;
+        if(reject) error=std::make_error_code(std::errc::permission_denied);
+        return !reject;
+    }
+    void commit() { ++committed; }
+    bool rollback(std::error_code&) { ++rolledBack; return true; }
+    std::filesystem::path backupPath() const { return {}; }
+};
+struct Quality { std::filesystem::path png="icon.png",plist="icon.plist"; };
+struct Compiled {
+    Quality uhd,hd,sd;
+    std::shared_ptr<Publication> staging=std::make_shared<Publication>();
+};
+struct IconPaths { static std::filesystem::path outputDir(std::string const&) { return "output"; } };
+inline long long nowUnixMs() { return 100; }
+struct IconProjectStore {
+    IconProject saved; bool present=true,failSave=false,failIndex=false; unsigned long long version=0;
+    static IconProjectStore& get() { static IconProjectStore s; return s; }
+    Result<void> saveProject(IconProject const& p) { if(failSave) return Err("disk full"); saved=p; ++version; if(failIndex) return Err("index full"); return Ok(); }
+    void loadIndex() {}
+    bool exists(std::string_view)const{return present;}
+    unsigned long long revision(std::string_view)const{return version;}
+    Result<IconProject> loadProject(std::string_view){return present?Ok(saved):Result<IconProject>(Err("deleted"));}
+};
+struct IconCompiler { static Result<Compiled> compile(IconProject const&) { return Ok(Compiled{}); } };
+struct IconThumbs { static IconThumbs& get() { static IconThumbs s; return s; } void invalidate(std::string const&) {} };
+struct MoreIconsBridge {
+    static bool available() { return false; }
+    static Result<void> registerIcon(IconProject const&,Compiled const&) { return Ok(); }
+    static bool applyIcon(IconProject const&) { return true; }
+};
+struct IconApplier {
+    static IconApplier& get() { static IconApplier s; return s; }
+    void invalidate(std::string const&) {} void setActive(int,std::string const&) {}
+};
+struct IconBuildService { using DoneCallback=std::function<void(Result<std::string>)>; static void shutdown(); };
+std::vector<std::weak_ptr<IconBuildService::DoneCallback>> s_pendingCompiles;
+@@function|src/features/icon-maker/services/IconBuildService.cpp|void runCompile(@@
+@@function|src/features/icon-maker/services/IconBuildService.cpp|void IconBuildService::shutdown@@
+}
+
+int main() {
+    using namespace paimon::icon_maker;
+    auto& store=IconProjectStore::get();
+    IconProject p; store.saveProject(p);
+    bool failed=false; runCompile(p,false,[&](auto r) { failed=!r; });
+    runJob(workers);
+    p.content="new edits saved before completion"; store.saveProject(p);
+    runJob(mainJobs);
+    assert(failed && store.saved.content == p.content);
+    assert(Publication::published==0);
+    failed=false; runCompile(p,false,[&](auto r){failed=!r;}); runJob(workers);
+    store.present=false; runJob(mainJobs); assert(failed && !store.present);
+    store.present=true;
+    bool succeeded=false; runCompile(p,false,[&](auto r){succeeded=bool(r);});
+    runJob(workers);runJob(mainJobs);assert(succeeded&&store.saved.hasBuiltOnce);
+    assert(store.saved.content==p.content);
+    assert(Publication::published==1 && Publication::committed==1);
+    store.failSave=true; failed=false;
+    runCompile(p,false,[&](auto r){failed=!r;});runJob(workers);runJob(mainJobs);
+    assert(failed && Publication::rolledBack==1 && Publication::committed==1);
+    store.failSave=false;
+    p.hasBuiltOnce=false;p.lastBuiltAt=0;store.saveProject(p);
+    store.failIndex=true;failed=false;
+    runCompile(p,false,[&](auto r){failed=!r;});runJob(workers);runJob(mainJobs);
+    assert(failed && !store.saved.hasBuiltOnce && store.saved.lastBuiltAt==0);
+    assert(Publication::committed==1 && Publication::rolledBack==2);
+    store.failIndex=false;Publication::reject=true;failed=false;
+    runCompile(p,false,[&](auto r){failed=!r;});runJob(workers);runJob(mainJobs);
+    assert(failed && Publication::committed==1);
+    Publication::reject=false;
+    auto owner=std::make_shared<int>(1);std::weak_ptr<int> weak=owner;
+    runCompile(p,false,[owner](auto) { assert(false && "shutdown callback must be dropped"); });
+    owner.reset();assert(!weak.expired());IconBuildService::shutdown();assert(weak.expired());
+    runJob(workers);runJob(mainJobs);
+    std::cout << "Compile completion preserved the current edits: '" << store.saved.content << "'.\n";
+}

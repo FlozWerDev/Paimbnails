@@ -24,16 +24,20 @@ CoverBlurBackground* CoverBlurBackground::create(CCSize const& size) {
 bool CoverBlurBackground::init(CCSize const& size) {
     if (!CCNode::init()) return false;
     m_size = size;
+    this->setID("paimon-bg-cover-blur"_spr);
     this->setContentSize(size);
     this->setAnchorPoint({0.5f, 0.5f});
     return true;
 }
 
 void CoverBlurBackground::setCoverFromPath(const std::string& absolutePath) {
-    // invalida cualquier blur async aun en vuelo.
-    m_generation++;
-    auto gen = m_generation;
+    float intensity = static_cast<float>(Mod::get()->getSavedValue<double>("menuMusicBlurIntensity", 5.0));
+    if (intensity <= 0.f) intensity = 6.f;
+    if (absolutePath == m_lastPath && intensity == m_lastIntensity && (m_currentBlur || m_blurPending)) return;
+    auto const generation = ++m_generation;
     m_lastPath = absolutePath;
+    m_lastIntensity = intensity;
+    m_blurPending = false;
 
     if (absolutePath.empty()) {
         if (m_currentBlur) {
@@ -43,32 +47,35 @@ void CoverBlurBackground::setCoverFromPath(const std::string& absolutePath) {
         return;
     }
 
-    auto* source = paimon::image::loadBudgeted(absolutePath);
-    if (!source) return;
+    m_blurPending = true;
+    WeakRef<CoverBlurBackground> weak = this;
+    paimon::image::loadBudgetedAsync(absolutePath, [weak, generation, intensity](CCTexture2D* texture) {
+        auto self = weak.lock();
+        if (!self || generation != self->m_generation) return;
+        if (!texture) {
+            self->m_blurPending = false;
+            if (self->m_currentBlur) { self->m_currentBlur->removeFromParent(); self->m_currentBlur = nullptr; }
+            return;
+        }
+        self->buildBlur(texture, generation, intensity);
+    });
+}
 
-    std::string key = fmt::format("menumusic_cover::{}", absolutePath);
+void CoverBlurBackground::buildBlur(CCTexture2D* texture, std::uint64_t generation, float intensity) {
+    WeakRef<CoverBlurBackground> weak = this;
+    BlurSystem::getInstance()->buildPaimonBlurAsync(texture, m_size, intensity,
+        fmt::format("menumusic_cover::{}", m_lastPath), [weak, generation](CCSprite* blurred) {
+            auto self = weak.lock();
+            if (!self || generation != self->m_generation) return;
+            self->m_blurPending = false;
+            if (blurred) self->applyBlurFromTexture(blurred->getTexture(), generation);
+        });
+}
 
-    float intensity = static_cast<float>(
-        Mod::get()->getSavedValue<double>("menuMusicBlurIntensity", 5.0));
-    if (intensity <= 0.f) intensity = 6.f;
-
-    auto weakThis = geode::WeakRef<cocos2d::CCNode>(this);
-    auto callback = [weakThis, gen](CCSprite* blurred) {
-        if (!blurred) return;
-        auto ref = weakThis.lock();
-        auto* self = ref ? typeinfo_cast<CoverBlurBackground*>(ref.data()) : nullptr;
-        // nodo destruido u otro setcoverfrompath posterior => blur obsoleto.
-        if (!self || gen != self->m_generation) return;
-        self->applyBlurFromTexture(blurred->getTexture(), gen);
-    };
-
-    BlurSystem::getInstance()->buildPaimonBlurPriority(
-        source,
-        m_size,
-        intensity,
-        std::move(key),
-        callback
-    );
+void CoverBlurBackground::onExit() {
+    ++m_generation;
+    m_blurPending = false;
+    CCNode::onExit();
 }
 
 void CoverBlurBackground::applyBlurFromTexture(CCTexture2D* tex, std::uint64_t generation) {

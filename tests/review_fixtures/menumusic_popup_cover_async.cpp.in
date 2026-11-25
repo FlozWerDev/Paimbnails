@@ -1,0 +1,109 @@
+#include "tests/review_fixtures/EngineLifetime.hpp"
+#include <cassert>
+#include <functional>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+struct Mod {
+    bool thumbnails = true;
+    static Mod* get() { static Mod mod; return &mod; }
+    template<class T> T getSavedValue(char const*, T) { return thumbnails; }
+};
+struct SongCoverCache {
+    using Callback = std::function<void(std::vector<std::string> const&, bool)>;
+    std::vector<std::pair<int, Callback>> diskRequests, networkRequests;
+    std::unordered_map<int, std::vector<std::string>> remembered;
+    bool failNetworkImmediately = false;
+    static inline std::vector<Callback> pathRequests;
+    std::vector<int> cancelled;
+    static SongCoverCache& get() { static SongCoverCache cache; return cache; }
+    void cancelPending(int song) { cancelled.push_back(song); }
+    std::vector<std::string> peekCachedCoverPaths(int song) { return remembered[song]; }
+    void requestCachedCoversAsync(int song, Callback callback) { diskRequests.emplace_back(song, std::move(callback)); }
+    static void validateCoverPathsAsync(std::vector<std::string>, Callback callback) { pathRequests.push_back(std::move(callback)); }
+    void requestCovers(int song, Callback callback) {
+        networkRequests.emplace_back(song, callback);
+        if (failNetworkImmediately) callback({}, false);
+    }
+};
+struct MenuMusicPopup : TestLifetime {
+    struct DetectedSong { std::string audioPath, coverPath; std::vector<std::string> coverPaths; int songID = 0; };
+    int m_cachedCoverSongID = 0, m_pendingSongCoverID = 0, m_failedSongCoverID = 0;
+    bool m_cachedCoverPending = false, m_coverValidationPending = false;
+    std::uint64_t m_cachedCoverGeneration = 0, m_coverValidationGeneration = 0;
+    std::vector<std::string> m_cachedCoverPaths, m_coverValidationInput, m_validatedCoverPaths, shown;
+    std::string m_coverValidationTrack;
+    std::string m_lastDetectedPath;
+    DetectedSong current;
+    int refreshes = 0;
+    std::vector<std::string> resolveCoverPaths(DetectedSong const&);
+    void updateDetectedTrack(DetectedSong const&);
+    void refreshFromState() { ++refreshes; updateDetectedTrack(current); shown = resolveCoverPaths(current); }
+};
+@@function|src/features/menu-music/ui/MenuMusicPopup.cpp|std::vector<std::string> MenuMusicPopup::resolveCoverPaths(@@
+@@function|src/features/menu-music/ui/MenuMusicPopup.cpp|void MenuMusicPopup::updateDetectedTrack(@@
+
+int main() {
+    auto& cache = SongCoverCache::get();
+    auto& validations = SongCoverCache::pathRequests;
+    auto popup = std::make_unique<MenuMusicPopup>();
+    popup->current = {"track-a", "missing.png", {}, 42};
+    popup->refreshFromState();
+    assert(popup->shown.empty() && cache.diskRequests.size() == 1 && validations.size() == 1);
+    assert(cache.networkRequests.empty());
+    validations[0]({}, false);
+    assert(popup->shown.empty() && cache.networkRequests.empty()); // wait for disk cache
+    cache.diskRequests[0].second({"cached.png"}, true);
+    assert(popup->shown == std::vector<std::string>{"cached.png"} && cache.networkRequests.empty());
+
+    popup->current = {"track-b", "new.png", {}, 42};
+    popup->refreshFromState();
+    assert(popup->shown.empty() && validations.size() == 2);
+    int priorRefreshes = popup->refreshes;
+    validations[0]({"old.png"}, true);
+    assert(popup->refreshes == priorRefreshes && popup->shown.empty());
+    validations[1]({"new.png"}, true);
+    assert(popup->shown == std::vector<std::string>{"new.png"});
+
+    popup->current = {"track-c", "", {}, 77}; popup->refreshFromState();
+    assert(cache.diskRequests.size() == 2 && cache.cancelled.back() == 42);
+    priorRefreshes = popup->refreshes;
+    cache.diskRequests[0].second({"stale.png"}, true);
+    assert(popup->refreshes == priorRefreshes && popup->shown.empty());
+    cache.diskRequests[1].second({}, false);
+    assert(cache.networkRequests.size() == 1 && cache.networkRequests[0].first == 77);
+    cache.networkRequests[0].second({"downloaded.png"}, true);
+    assert(popup->shown == std::vector<std::string>{"downloaded.png"});
+    popup->refreshFromState(); assert(cache.networkRequests.size() == 1);
+
+    Mod::get()->thumbnails = false;
+    popup->current = {"track-d", "", {}, 88}; popup->refreshFromState();
+    cache.diskRequests[2].second({"existing.png"}, true);
+    assert(popup->shown == std::vector<std::string>{"existing.png"}); // saved art still works with search disabled
+    popup->current = {"track-e", "", {}, 99}; popup->refreshFromState();
+    cache.diskRequests[3].second({}, false);
+    assert(cache.networkRequests.size() == 1);
+
+    cache.remembered[55] = {"remembered.png"};
+    popup->current = {"track-memo", "", {}, 55}; popup->refreshFromState();
+    assert(popup->shown == std::vector<std::string>{"remembered.png"});
+    cache.diskRequests.back().second({}, false);
+    assert(popup->shown.empty()); // deleted image is removed when the worker responds
+    popup->current = {"track-own", "own.png", {}, 55}; popup->refreshFromState();
+    validations.back()({"own.png"}, true);
+    assert(popup->shown == std::vector<std::string>{"own.png"});
+
+    Mod::get()->thumbnails = true; cache.failNetworkImmediately = true;
+    popup->current = {"track-negative", "", {}, 60}; popup->refreshFromState();
+    cache.diskRequests.back().second({}, false);
+    assert(popup->m_failedSongCoverID == 60 && cache.networkRequests.size() == 2);
+    assert(popup->refreshes < 30); // a synchronous negative cache result must not recurse forever
+    cache.failNetworkImmediately = false;
+
+    popup->current = {"track-f", "late.png", {}, 101}; popup->refreshFromState();
+    auto lateDisk = cache.diskRequests.back().second; auto lateValidation = validations.back();
+    popup.reset();
+    lateDisk({"late-cache.png"}, true); lateValidation({"late.png"}, true); // weak callbacks do not retain a closed popup
+}

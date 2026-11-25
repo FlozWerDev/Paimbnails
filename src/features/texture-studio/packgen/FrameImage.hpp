@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -59,7 +58,12 @@ public:
         auto width = static_cast<std::size_t>(std::max(0, w));
         auto height = static_cast<std::size_t>(std::max(0, h));
         if (width && height > m_px.max_size() / kBpp / width) {
-            throw std::length_error("frame image dimensions exceed buffer capacity");
+            // non-throwing: an oversized request leaves the image empty so the
+            // caller skips it instead of unwinding through the render path.
+            m_px.clear();
+            m_w = 0;
+            m_h = 0;
+            return;
         }
         m_px.assign(width * height * kBpp, 0);
         m_w = static_cast<int>(width);

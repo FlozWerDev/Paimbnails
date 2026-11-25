@@ -1,3 +1,67 @@
+# <cy>v1.2.5</c>
+
+![](flozwer.paimbnails2/paim_Paimon.png?height=32) Actualizacion con soporte para <cg>Geometry Dash 2.2091</c> en <cg>Windows</c>, con <cl>Wallpaper Engine</c>, <cl>Dynamic Ambient</c>, <cl>Liquid Glass UI</c>, <cl>Button Skins</c>, <cl>Structure Optimizer</c>, <cl>Overlay OBS</c>, <cl>Paimon Shop & Base</c>, <cl>Separate Dual Icons</c>, <cl>Transiciones v2</c>, <cl>PaiDraw</c>, <cl>Imagenes en Grupos</c>, <cl>Traductor de Comentarios</c> y mas.
+
+---
+
+## ![](frame:GJ_paintBtn_001.png?height=18) <cy>Interfaz, Estetica y Personalizacion</c>
+
+- <cl>Dynamic Ambient</c>: analiza el fondo activo en los menus para aplicar paleta adaptativa, luz direccional, brillo de borde y sombras en botones, paneles y UI.
+- <cl>Liquid Glass UI</c>: convierte popups, listas y botones de texto en cristal estilo Apple con desenfoque, refraccion, dispersion cromatica y brillo al cursor.
+- <cl>Button Skins</c>: personaliza botones (imagen, color, degradado, forma y sonido) de forma individual, por pantalla o global.
+- <cl>Separate Dual Icons</c>: iconos, colores, glow, estela, fuego y efecto de muerte independientes para el jugador 2, con opcion <cg>Switch On Dual Exit</c>.
+- <cl>Garage Hub y Global Icons</c>: nuevo boton hub en el garage para agrupar herramientas; comparte iconos de More Icons e Icon Gradients en tu perfil y elige que partes copiar de otros jugadores.
+
+---
+
+## ![](frame:GJ_starBtn_001.png?height=18) <cy>Fondos interactivos y Shaders</c>
+
+- <cl>Wallpaper Engine (Windows, Android y macOS)</c>: importa fondos de <cg>Video</c>, <cg>Web</c> (HTML5/Canvas/WebGL a 60 Hz con bridge JS), <cg>Scene</c> (PKG/scene.json con carga paralela y parallax), <cg>GIF</c> e imagenes con soporte <cg>Audio-Reactive</c>.
+- <cl>Selector y carga optimizada</c>: `WallpaperPickerPopup` carga y decodifica en segundo plano sin congelar el juego; los layouts personalizados se aplican antes del primer fotograma.
+- <cl>Nuevos Shaders</c>: `liquid-glass`, `black-hole`, `aurora-cursor`, `starwarp`, `fisheye`, `swirl-galaxy`, `embers-trail`, `crystal-glass`, `bokeh`, `caustics`, `glitch-scan` y `chromatic-ripple`.
+
+---
+
+## ![](frame:GJ_hammerIcon_001.png?height=18) <cy>Editor</c>
+
+- <cl>Structure Optimizer</c> (<cg>Ctrl+Shift+O</c>): fusiona bloques alineados identicos en menos objetos estirados respetando esquinas y limites de colision/decoracion, con vista previa.
+- <cl>GIF a Objetos (Modo Pintura)</c>: vectorizador con bloques, triangulos y elipses en espacio <cg>OKLab</c>, refinado de paleta, sellado de costuras y modo <cg>Auto</c> (hasta 680 px).
+- <cl>Editor Music renovado</c>: reproductor flotante estilo GD con vinilo giratorio, ecualizador en vivo, mini-barra y toast *Now Playing* (se pausa al probar el nivel).
+- <cl>Collab Editor</c>: edicion colaborativa en tiempo real con cursores, chat con emotes, invitaciones y chat de voz.
+- <cl>Texture Live</c>: edicion de slots en vivo sobre GPU con comparacion Original/Pintado y control de presupuesto de memoria.
+
+---
+
+## ![](frame:storeItemIcon_001.png?height=18) <cy>Comunidad, Tienda y Social</c>
+
+- <cl>Paimon Shop y Paimon Base</c>: guarda, exporta e importa presets locales (Layout, RTX y Beat Shaders) con respaldo/rollback, y usa la nube para respaldar ajustes o compartir y descargar presets, degradados, iconos y fondos de comentarios.
+- <cl>Imagenes en Mensajes y Grupos</c>: envia y visualiza imagenes y GIFs cifrados de extremo a extremo dentro de hilos y grupos.
+- <cl>Traductor de Comentarios</c>: traduce comentarios y textos al escribir dentro del juego desde las opciones de comentarios.
+- <cl>Foro y Paimbnails News</c>: foro con buscador, etiquetas, guardados y filtros por autor; panel de noticias de Paimbnails integrado en el popup de noticias.
+- <cl>PaiDraw</c>: minijuego multijugador de dibujo y adivinanza con salas por codigo de 6 letras y modo offline.
+- <cl>Menciones y Reseñas</c>: alertas por `@usuario` en comentarios y seccion de reseñas en perfiles redisenada.
+
+---
+
+## ![](flozwer.paimbnails2/paim_capturadora.png?height=18) <cy>Streams, Discord y Busqueda</c>
+
+- <cl>Overlay de Requests para OBS</c>: servidor local en `localhost:21680` (`/overlay`, `/preview`, `/gallery`) con <cg>27 estilos</c>, <cg>7 disposiciones</c>, <cg>11 animaciones</c> y colas por origen.
+- <cl>Discord Rich Presence</c>: 4 presets (`Balanced`, `Detailed`, `Minimal`, `Private`), variables dinamicas, controles de privacidad y subida automatica de portadas.
+- <cl>Auto Previews</c>: generacion local en segundo plano de miniaturas para niveles que no tienen thumbnail en servidor.
+- <cl>Historial de Busqueda</c>: desplegable en el buscador de niveles para repetir o limpiar busquedas recientes.
+
+---
+
+## ![](frame:GJ_plainBtn_001.png?height=18) <cy>Transiciones, Controles y Estabilidad</c>
+
+- <cl>Transiciones v2 y Custom Studio</c>: motor sobre `CCTransitionScene`, transiciones <cg>Stinger</c> estilo OBS, editor con linea de tiempo y <cg>Dynamic Transitions</c> en mas de 280 popups.
+- <cl>Manager Cut y Gestos</c>: gestor unificado de atajos de teclado y gestos multi-touch en `Paimon Hub > General > Manager Cut`.
+- <cl>Scroll Suave consistente</c>: resorte amortiguado con velocidad unificada en todos los menus y popups, sin doble suavizado ni ejes invertidos.
+- <cl>Paimon Guide</c>: ranking de busqueda offline mejorado (`MicroRanker`).
+- <cl>Correcciones</c>: fixes de crashes en lista de mods (`Slider::create`), recompensas y logros (`CCSceneSafety`), peticiones de red aisladas y soporte UTF-8.
+
+---
+
 # <cy>v1.2.0</c>
 
 - Inicio rapido para nuevos usuarios: idioma, fondos, personalizacion, juego, editor, utilidades y comunidad. Cada seccion o el tutorial completo se pueden saltar.

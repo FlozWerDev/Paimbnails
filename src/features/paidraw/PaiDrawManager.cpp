@@ -2,6 +2,7 @@
 
 #include "../../framework/EventBus.hpp"
 #include "../../utils/AccountVerifier.hpp"
+#include "../../utils/HttpClient.hpp"
 #include "../../utils/JsonHelper.hpp"
 #include "../../utils/MainThreadDelay.hpp"
 #include "../../core/RuntimeLifecycle.hpp"
@@ -18,44 +19,30 @@ namespace paidraw {
 
 namespace {
 
-std::string lowercase(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-    return value;
-}
-
-std::string trimString(std::string value) {
-    geode::utils::string::trimIP(value);
-    return value;
+template <typename T, typename Convert>
+T jsonOr(matjson::Value const& value, char const* key, T fallback, Convert&& convert) {
+    if (!value.contains(key)) return fallback;
+    return convert(value[key]).unwrapOr(fallback);
 }
 
 std::string jsonString(matjson::Value const& value, char const* key, std::string fallback = "") {
-    if (value.contains(key) && value[key].isString()) {
-        return value[key].asString().unwrapOr(fallback);
-    }
-    return fallback;
+    return jsonOr(value, key, std::move(fallback),
+        [](matjson::Value const& v) { return v.asString(); });
 }
 
 int jsonInt(matjson::Value const& value, char const* key, int fallback = 0) {
-    if (value.contains(key)) {
-        return value[key].asInt().unwrapOr(fallback);
-    }
-    return fallback;
+    return jsonOr(value, key, fallback,
+        [](matjson::Value const& v) { return v.asInt(); });
 }
 
 double jsonDouble(matjson::Value const& value, char const* key, double fallback = 0.0) {
-    if (value.contains(key)) {
-        return value[key].asDouble().unwrapOr(fallback);
-    }
-    return fallback;
+    return jsonOr(value, key, fallback,
+        [](matjson::Value const& v) { return v.asDouble(); });
 }
 
 bool jsonBool(matjson::Value const& value, char const* key, bool fallback = false) {
-    if (value.contains(key) && value[key].isBool()) {
-        return value[key].asBool().unwrapOr(fallback);
-    }
-    return fallback;
+    return jsonOr(value, key, fallback,
+        [](matjson::Value const& v) { return v.asBool(); });
 }
 
 uint64_t jsonUInt64(matjson::Value const& value, char const* key, uint64_t fallback = 0) {
@@ -71,38 +58,59 @@ uint64_t jsonUInt64(matjson::Value const& value, char const* key, uint64_t fallb
     return fallback;
 }
 
+// the GD session token (GJP2) must only ever go to the official PaiDraw
+// hosts; a hand-edited save file can point the server URL anywhere.
+bool isOfficialPaiDrawUrl(std::string url) {
+    if (auto scheme = url.find("://"); scheme != std::string::npos) url = url.substr(scheme + 3);
+    url = url.substr(0, url.find_first_of("/:?#"));
+    url = geode::utils::string::toLower(url);
+    return url == "paimbnailsbot.onrender.com"
+        || url == "paimbnails-emote.vercel.app";
+}
+
+std::string trimString(std::string value) {
+    geode::utils::string::trimIP(value);
+    return value;
+}
+
+template <typename Enum>
+Enum parseEnum(std::string const& text,
+               std::initializer_list<std::pair<char const*, Enum>> cases,
+               Enum fallback) {
+    auto lower = geode::utils::string::toLower(text);
+    for (auto const& [name, value] : cases) {
+        if (lower == name) return value;
+    }
+    return fallback;
+}
+
 PlayerStatus parseStatus(std::string const& text) {
-    auto lower = lowercase(text);
-    if (lower == "playing" || lower == "jugando") return PlayerStatus::Playing;
-    if (lower == "room" || lower == "in_room" || lower == "en sala") return PlayerStatus::InRoom;
-    return PlayerStatus::Free;
+    return parseEnum(text, {
+        {"playing", PlayerStatus::Playing}, {"jugando", PlayerStatus::Playing},
+        {"room", PlayerStatus::InRoom}, {"in_room", PlayerStatus::InRoom},
+        {"en sala", PlayerStatus::InRoom},
+    }, PlayerStatus::Free);
 }
 
 RoomState parseRoomState(std::string const& text) {
-    auto lower = lowercase(text);
-    if (lower == "in_game" || lower == "playing" || lower == "en juego") return RoomState::InGame;
-    return RoomState::Waiting;
+    return parseEnum(text, {
+        {"in_game", RoomState::InGame}, {"playing", RoomState::InGame},
+        {"en juego", RoomState::InGame},
+    }, RoomState::Waiting);
 }
 
 GameMode parseMode(std::string const& text) {
-    auto lower = lowercase(text);
-    if (lower == "animation" || lower == "animacion") return GameMode::Animation;
-    if (lower == "chain" || lower == "cadena") return GameMode::Chain;
-    return GameMode::Classic;
+    return parseEnum(text, {
+        {"animation", GameMode::Animation}, {"animacion", GameMode::Animation},
+        {"chain", GameMode::Chain}, {"cadena", GameMode::Chain},
+    }, GameMode::Classic);
 }
 
 WordLanguage parseLanguage(std::string const& text) {
-    auto lower = lowercase(text);
-    if (lower == "en" || lower == "english") return WordLanguage::English;
-    if (lower == "both" || lower == "ambos") return WordLanguage::Both;
-    return WordLanguage::Spanish;
-}
-
-WordDifficulty parseDifficulty(std::string const& text) {
-    auto lower = lowercase(text);
-    if (lower == "medium" || lower == "media") return WordDifficulty::Medium;
-    if (lower == "hard" || lower == "dificil") return WordDifficulty::Hard;
-    return WordDifficulty::Easy;
+    return parseEnum(text, {
+        {"en", WordLanguage::English}, {"english", WordLanguage::English},
+        {"both", WordLanguage::Both}, {"ambos", WordLanguage::Both},
+    }, WordLanguage::Spanish);
 }
 
 } // namespace
@@ -141,6 +149,20 @@ void PaiDrawManager::shutdown() {
 SessionState PaiDrawManager::snapshot() const {
     std::lock_guard lock(m_mutex);
     return m_state;
+}
+
+ActivitySnapshot PaiDrawManager::activitySnapshot(bool includeRoomName) const {
+    std::lock_guard lock(m_mutex);
+    ActivitySnapshot activity;
+    activity.connecting = m_state.connecting;
+    activity.connected = m_state.connected;
+    activity.offlinePreview = m_state.offlinePreview;
+    activity.inRoom = m_state.currentRoomId != 0;
+    activity.localPlayerIsDrawer = m_state.currentRound.localPlayerIsDrawer;
+    if (includeRoomName && activity.inRoom) activity.roomName = m_state.currentRoom.config.name;
+    activity.playerCount = m_state.currentRoom.playerCount();
+    activity.maxPlayers = m_state.currentRoom.config.maxPlayers;
+    return activity;
 }
 
 bool PaiDrawManager::isReady() const {
@@ -183,15 +205,16 @@ void PaiDrawManager::loadSavedState() {
     m_state.stats = mod->getSavedValue<matjson::Value>("paidraw_stats", matjson::Value::object());
 }
 
+SessionState PaiDrawManager::copyState() const {
+    std::lock_guard lock(m_mutex);
+    return m_state;
+}
+
 void PaiDrawManager::saveSessionData() {
     auto* mod = Mod::get();
     if (!mod) return;
 
-    SessionState state;
-    {
-        std::lock_guard lock(m_mutex);
-        state = m_state;
-    }
+    auto state = copyState();
 
     mod->setSavedValue("paidraw_auth_token", state.authToken);
     mod->setSavedValue("paidraw_server_url", state.serverURL);
@@ -204,11 +227,7 @@ void PaiDrawManager::saveStats() {
     auto* mod = Mod::get();
     if (!mod) return;
 
-    SessionState state;
-    {
-        std::lock_guard lock(m_mutex);
-        state = m_state;
-    }
+    auto state = copyState();
 
     mod->setSavedValue("paidraw_stats", state.stats);
     paimon::requestDeferredModSave();
@@ -306,6 +325,13 @@ void PaiDrawManager::disconnect() {
 void PaiDrawManager::authenticate() {
     if (!hasValidLogin()) {
         publishConnection("Inicia sesion en GD para usar PaiDraw online");
+        return;
+    }
+
+    // never send the session token to an unrecognized host.
+    if (auto const serverUrl = baseServerUrl(); !isOfficialPaiDrawUrl(serverUrl)) {
+        log::warn("[PaiDraw] refused to authenticate against unrecognized server: {}", serverUrl);
+        publishConnection("Servidor de PaiDraw no reconocido: usa la URL oficial");
         return;
     }
 
@@ -671,7 +697,6 @@ void PaiDrawManager::handleRoomHttpSnapshot(matjson::Value const& payload) {
     paimon::json::forEachInArray(payload["recentStrokes"], [&](matjson::Value const& item) {
         strokes.push_back(parseStroke(item));
     });
-    auto previousStrokeCount = snapshot().recentStrokes.size();
     if (payload.contains("round") && payload["round"].isObject()) {
         auto const& roundValue = payload["round"];
         round.currentRound = jsonInt(roundValue, "currentRound", 1);
@@ -742,11 +767,8 @@ void PaiDrawManager::handleRoomHttpSnapshot(matjson::Value const& payload) {
     publishRound();
     publishResults();
 
-    if (strokes.size() > previousStrokeCount) {
-        for (size_t i = previousStrokeCount; i < strokes.size(); ++i) {
-            publishStroke(strokes[i]);
-        }
-    }
+    // HTTP snapshots replace the canvas through the room/round update.
+    // StrokeEvent is reserved for incremental transport packets.
 
     // flush buffered strokes once round transition is confirmed (coalesced via 80ms scheduler).
     if (shouldFlushStrokes) {
@@ -772,7 +794,7 @@ void PaiDrawManager::handleGuessFeedback(matjson::Value const& payload) {
 
     {
         std::lock_guard lock(m_mutex);
-        if (lowercase(status) == "correct") {
+        if (geode::utils::string::toLower(status) == "correct") {
             for (auto& player : m_state.currentRoom.players) {
                 if (player.accountID == m_state.localAccountID) {
                     player.guessed = true;
@@ -1132,7 +1154,7 @@ void PaiDrawManager::requestJson(
 
     auto url = base + path;
     auto req = geode::utils::web::WebRequest();
-    req.timeout(std::chrono::seconds(10));
+    req.timeout(asp::Duration::fromSecs(10));
     req.acceptEncoding("gzip, deflate");
     req.header("Accept", "application/json");
 
@@ -1141,6 +1163,9 @@ void PaiDrawManager::requestJson(
         if (!token.empty()) {
             req.header("Authorization", fmt::format("Bearer {}", token));
         }
+    }
+    if (auto const sessionToken = HttpClient::get().getSessionToken(); !sessionToken.empty()) {
+        req.header("X-Session-Token", sessionToken);
     }
 
     if (body) {

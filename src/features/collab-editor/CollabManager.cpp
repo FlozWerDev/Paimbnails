@@ -1,3 +1,4 @@
+#include "../../utils/FilesystemPath.hpp"
 #include "../../utils/Base64.hpp"
 #include "CollabManager.hpp"
 
@@ -58,6 +59,14 @@ constexpr size_t kChatLogCap = 100;
 constexpr float kSelectionFlushInterval = 0.12f;
 constexpr float kPeerSelectionMaxAge = 8.f;
 constexpr size_t kMaxSelectionRects = 64;
+
+// receive-side caps: peers are untrusted, so an oversized message from a
+// broken or hostile host must not stall the editor. all are generous vs what
+// our own sender ever produces (seed chunks: 800 objects; selections: 64).
+constexpr size_t kMaxSaveBytes = 256 * 1024;
+constexpr size_t kMaxOpsPerBatch = 2048;
+constexpr size_t kMaxChatText = 2000;
+constexpr size_t kMaxChatName = 64;
 
 constexpr float kCameraFlushInterval = 0.2f;
 constexpr float kPeerCameraMaxAge = 6.f;
@@ -136,7 +145,7 @@ void addLocalCursorAppearance(PeerAppearance& appearance) {
     auto fileSize = std::filesystem::file_size(path, ec);
     if (ec || fileSize == 0 || fileSize > kMaxCursorAssetBytes) return;
 
-    auto data = geode::utils::file::readBinary(path);
+    auto data = geode::utils::file::readBinary(paimon::paths::toSdkPath(path));
     if (!data || data.unwrap().empty() || data.unwrap().size() > kMaxCursorAssetBytes) return;
 
     appearance.cursorData = paimon::base64Encode(data.unwrap());
@@ -750,8 +759,10 @@ void CollabManager::handleMessage(matjson::Value const& msg) {
         int cnt = static_cast<int>(msg["chunkCount"].asInt().unwrapOr(1));
         if (msg.contains("objects")) {
             if (auto arr = msg["objects"].asArray()) {
+                size_t accepted = 0;
                 for (auto const& item : arr.unwrap()) {
                     if (!item.isObject()) continue;
+                    if (++accepted > kSeedChunkMaxObjects) break;
                     ApplyObj op;
                     op.kind = "add";
                     op.gid = item["gid"].asString().unwrapOr("");
@@ -781,8 +792,10 @@ void CollabManager::handleMessage(matjson::Value const& msg) {
         int origin = static_cast<int>(msg["origin"].asInt().unwrapOr(0));
         std::string by = msg.contains("by") ? msg["by"].asString().unwrapOr("") : "";
         if (auto arr = msg["ops"].asArray()) {
+            size_t accepted = 0;
             for (auto const& item : arr.unwrap()) {
                 if (!item.isObject()) continue;
+                if (++accepted > kMaxOpsPerBatch) break;
                 ApplyObj op;
                 op.kind = item["kind"].asString().unwrapOr("");
                 op.gid = item["gid"].asString().unwrapOr("");
@@ -861,6 +874,8 @@ void CollabManager::handleMessage(matjson::Value const& msg) {
         cm.from = static_cast<int>(msg["from"].asInt().unwrapOr(0));
         cm.name = msg["name"].asString().unwrapOr("");
         cm.text = msg["text"].asString().unwrapOr("");
+        if (cm.name.size() > kMaxChatName) cm.name.resize(kMaxChatName);
+        if (cm.text.size() > kMaxChatText) cm.text.resize(kMaxChatText);
         if (!cm.text.empty()) pushChatMessage(std::move(cm));
         return;
     }
@@ -878,6 +893,11 @@ void CollabManager::handleMessage(matjson::Value const& msg) {
     }
 
     if (t == "perms") {
+        int from = static_cast<int>(msg["from"].asInt().unwrapOr(0));
+        if (from > 0 && from != m_clientId) {
+            auto host = m_peers.find(from);
+            if (host == m_peers.end() || !host->second.isHost) return;
+        }
         bool wasViewOnly = isViewOnly();
         if (msg.contains("permissions")) m_permissions = HostPermissions::fromJson(msg["permissions"]);
         if (!m_permissions.strictLayers) m_layerOwners.clear();
@@ -953,6 +973,15 @@ void CollabManager::handleMessage(matjson::Value const& msg) {
 
 void CollabManager::queueRemote(ApplyObj op) {
     if (op.gid.empty()) return;
+    // a single object's save string is a few hundred bytes; anything near the
+    // cap only adds memory pressure and apply time.
+    if (op.save.size() > kMaxSaveBytes) {
+        static size_t droppedSaves = 0;
+        if ((++droppedSaves % 64) == 1) {
+            log::warn("[Collab] dropped oversized remote save ({} bytes)", op.save.size());
+        }
+        return;
+    }
     auto order = remoteOrderKey(op.version, op.origin);
     auto queued = m_queuedRemoteByGid.find(op.gid);
     if (queued != m_queuedRemoteByGid.end()) {
@@ -1177,7 +1206,7 @@ void CollabManager::enqueueOp(OutOp op) {
     m_pendingOps.push_back(std::move(op));
 }
 
-void CollabManager::writeOutTransform(matjson::Value& obj, OutOp const& op) {
+void CollabManager::writeOutTransform(matjson::Value& obj, TransformFields const& op) {
     if (op.hasPos) {
         obj["x"] = static_cast<double>(op.x);
         obj["y"] = static_cast<double>(op.y);
@@ -1193,7 +1222,7 @@ void CollabManager::writeOutTransform(matjson::Value& obj, OutOp const& op) {
     }
 }
 
-void CollabManager::fillApplyTransform(ApplyObj& op, matjson::Value const& item) {
+void CollabManager::fillApplyTransform(TransformFields& op, matjson::Value const& item) {
     if (item.contains("x") && item.contains("y")) {
         op.x = static_cast<float>(item["x"].asDouble().unwrapOr(0.0));
         op.y = static_cast<float>(item["y"].asDouble().unwrapOr(0.0));
@@ -1364,7 +1393,7 @@ void CollabManager::openJoinerEditor() {
             return;
         }
 
-        level->m_levelName = room.empty() ? gd::string("Collab") : gd::string("Collab " + room);
+        level->m_levelName = room.empty() ? std::string("Collab") : std::string("Collab " + room);
         level->m_levelType = GJLevelType::Editor;
         mgr.m_joinerLevel = level;
 
@@ -1905,6 +1934,8 @@ void CollabManager::handlePeerSelection(matjson::Value const& msg) {
             float h = static_cast<float>(item["h"].asDouble().unwrapOr(0.0));
             if (w > 0.f && h > 0.f) {
                 sel.rects.push_back(cocos2d::CCRect{x, y, w, h});
+                // our sender caps at kMaxSelectionRects; ignore anything beyond.
+                if (sel.rects.size() >= kMaxSelectionRects) break;
             }
         }
     }
@@ -2047,7 +2078,7 @@ void CollabManager::applyRemoteAdd(ApplyObj const& op) {
     GameObject* mapped = nullptr;
     {
         TrackerGuard guard(m_applyingRemote);
-        CCArray* created = m_editor->createObjectsFromString(gd::string(op.save), true, true);
+        CCArray* created = m_editor->createObjectsFromString(std::string(op.save), true, true);
         if (created && created->count() > 0) {
             if (auto* obj = typeinfo_cast<GameObject*>(created->objectAtIndex(created->count() - 1))) {
                 mapGid(op.gid, obj);
@@ -2090,7 +2121,7 @@ void CollabManager::applyRemoteUpdate(ApplyObj const& op) {
             m_editor->removeObject(existing, true);
         }
         if (existing) unmapGid(op.gid);
-        CCArray* created = m_editor->createObjectsFromString(gd::string(op.save), true, true);
+        CCArray* created = m_editor->createObjectsFromString(std::string(op.save), true, true);
         if (created && created->count() > 0) {
             if (auto* obj = typeinfo_cast<GameObject*>(created->objectAtIndex(created->count() - 1))) {
                 mapGid(op.gid, obj);
@@ -2322,7 +2353,11 @@ void CollabManager::sendCameraPresence() {
     auto* layer = m_editor->m_objectLayer;
     auto win = CCDirector::sharedDirector()->getWinSize();
     auto cam = layer->convertToNodeSpace(win / 2.f);
+#if defined(GEODE_IS_MOBILE)
+    auto mouse = CursorManager::get().pointerPos();
+#else
     auto mouse = geode::cocos::getMousePos();
+#endif
     bool cursorVisible = mouse.x >= 0.f && mouse.y >= 0.f &&
         mouse.x <= win.width && mouse.y <= win.height;
     auto cursor = layer->convertToNodeSpace(mouse);
@@ -2487,6 +2522,7 @@ void CollabManager::handlePeerPing(matjson::Value const& msg) {
     p.x = static_cast<float>(msg["x"].asDouble().unwrapOr(0.0));
     p.y = static_cast<float>(msg["y"].asDouble().unwrapOr(0.0));
     p.age = 0.f;
+    if (m_peerPings.size() >= 24) m_peerPings.erase(m_peerPings.begin());
     m_peerPings.push_back(p);
     if (m_overlay) m_overlay->onPeerPing(p.clientId, p.name, p.x, p.y);
     pushChatMessage({0, "", fmt::format("{}: mira aqui ({:.0f}, {:.0f})", p.name, p.x, p.y)});
@@ -2705,7 +2741,7 @@ void CollabManager::reconcileLevelMeta() {
 void CollabManager::applyLevelSettingsSave(std::string const& save) {
     if (save.empty() || !m_editor || !m_editor->m_levelSettings) return;
     auto* live = m_editor->m_levelSettings;
-    auto* parsed = LevelSettingsObject::objectFromString(gd::string(save));
+    auto* parsed = LevelSettingsObject::objectFromString(std::string(save));
     if (!parsed) return;
 
     live->m_startMode = parsed->m_startMode;
@@ -2762,7 +2798,7 @@ void CollabManager::applyColorsSave(std::string const& save) {
     if (m_editor->m_levelSettings) em = m_editor->m_levelSettings->m_effectManager;
     if (!em) em = m_editor->m_effectManager;
     if (!em) return;
-    em->setupFromString(gd::string(save));
+    em->setupFromString(std::string(save));
 }
 
 void CollabManager::applySongMeta(matjson::Value const& msg) {
@@ -2775,16 +2811,20 @@ void CollabManager::applySongMeta(matjson::Value const& msg) {
         level->m_songID = static_cast<int>(msg["songID"].asInt().unwrapOr(level->m_songID));
     }
     if (msg.contains("songIDs")) {
-        level->m_songIDs = gd::string(msg["songIDs"].asString().unwrapOr(std::string(level->m_songIDs)));
+        level->m_songIDs = std::string(msg["songIDs"].asString().unwrapOr(std::string(level->m_songIDs)));
     }
     if (msg.contains("sfxIDs")) {
-        level->m_sfxIDs = gd::string(msg["sfxIDs"].asString().unwrapOr(std::string(level->m_sfxIDs)));
+        level->m_sfxIDs = std::string(msg["sfxIDs"].asString().unwrapOr(std::string(level->m_sfxIDs)));
     }
 }
 
 void CollabManager::handleLevelSettings(matjson::Value const& msg) {
     int from = static_cast<int>(msg["from"].asInt().unwrapOr(0));
     if (from > 0 && from == m_clientId) return;
+    if (from > 0) {
+        auto host = m_peers.find(from);
+        if (host == m_peers.end() || !host->second.isHost) return;
+    }
     if (!m_editor) {
         m_pendingLevelMeta = msg;
         m_hasPendingLevelMeta = true;

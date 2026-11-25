@@ -14,6 +14,11 @@ protected:
     CCMenuItemSpriteExtra* m_btnThumbnail = nullptr;
     CCMenuItemSpriteExtra* m_btnBanner = nullptr;
     CCMenuItemSpriteExtra* m_btnSolid = nullptr;
+    CCMenuItemSpriteExtra* m_btnCommunity = nullptr;
+
+    cocos2d::CCNode* m_communityRow = nullptr;
+    cocos2d::CCLabelBMFont* m_communityLabel = nullptr;
+    std::string m_communityTitle;
 
     cocos2d::CCNode* m_thumbnailIdRow = nullptr;
     geode::TextInput* m_inputField = nullptr;
@@ -75,7 +80,12 @@ protected:
     void onToggleBlurGaussian(cocos2d::CCObject*);
     void onToggleBlurPaimon(cocos2d::CCObject*);
 
+    void onPickCommunity(cocos2d::CCObject*);
+    void onSuggestCommunity(cocos2d::CCObject*);
+    void updateCommunityLabel();
+
 public:
     static CommentBgSettingsPopup* create(int accountID, ProfileConfig const& config);
     void onColorSelected(cocos2d::ccColor3B color);
+    void setCommunityBackground(std::string const& id, std::string const& title);
 };

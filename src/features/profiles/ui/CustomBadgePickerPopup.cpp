@@ -92,6 +92,7 @@ bool CustomBadgePickerPopup::init(int accountID, std::string const& currentBadge
     m_mainLayer->addChild(scrollBg, 1);
 
     m_scroll = geode::ScrollLayer::create({gridW, gridH});
+    if (m_scroll) m_scroll->setAnchorPoint({0.f, 0.f});
     m_scroll->setPosition({8.f, gridBot});
     m_mainLayer->addChild(m_scroll, 2);
 

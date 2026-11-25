@@ -79,7 +79,7 @@ public:
 
     static constexpr double kCoverageBonusMax = 15.0;
 
-    static constexpr double kSuggestionFloor = 45.0;
+    static constexpr double kSuggestionFloor = 60.0;
 
     static constexpr double kSearchPhraseCap = 92.0;
 

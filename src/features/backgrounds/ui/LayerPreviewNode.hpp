@@ -37,6 +37,8 @@ protected:
     bool initWithBox(cocos2d::CCSize box, std::string const& layerKey);
 
     void rebuildBackground();
+    void loadCustomBackground(LayerBgConfig const& cfg);
+    void applyCustomTexture(cocos2d::CCTexture2D* texture, LayerBgConfig const& cfg);
     void rebuildMock();
 
     // scale a sprite to cover the frame and add it to the clipper.

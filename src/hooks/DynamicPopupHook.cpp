@@ -12,9 +12,11 @@
 #include "../core/Settings.hpp"
 #include "../utils/EditorContext.hpp"
 #include "../core/RuntimeLifecycle.hpp"
+#include "../utils/MainThreadDelay.hpp"
 #include "../features/transitions/services/DynamicTransitionManager.hpp"
 #include "../features/transitions/services/DynamicPanelTransitions.hpp"
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 
 using namespace geode::prelude;
@@ -33,12 +35,18 @@ void disablePopupControls(CCNode* node) {
 }
 
 // capture before selected() (may destroy popup)
-static bool s_originCaptureEnabled = false;
+// geode dispara los callbacks de ajuste en cualquier hilo, asi que este flag
+// se escribe fuera del hilo principal mientras selected() lo lee: tiene que
+// ser atomico.
+static std::atomic<bool> s_originCaptureEnabled{false};
 
 $execute {
-    s_originCaptureEnabled = Mod::get()->getSettingValue<bool>("dynamic-popup-enabled");
+    s_originCaptureEnabled.store(
+        Mod::get()->getSettingValue<bool>("dynamic-popup-enabled"),
+        std::memory_order_release
+    );
     geode::listenForSettingChanges<bool>("dynamic-popup-enabled", [](bool v) {
-        s_originCaptureEnabled = v;
+        s_originCaptureEnabled.store(v, std::memory_order_release);
     });
 }
 
@@ -51,7 +59,7 @@ class $modify(PaimonButtonOriginCapture, CCMenuItemSpriteExtra) {
     $override
     void selected() {
         if (!isEditorContextActive()) {
-            if (s_originCaptureEnabled && this->getParent()) {
+            if (s_originCaptureEnabled.load(std::memory_order_acquire) && this->getParent()) {
                 auto sz = this->getContentSize();
                 if (sz.width > 0.f && sz.height > 0.f) {
                     paimon::storeButtonOrigin(
@@ -72,7 +80,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         CCPoint m_finalPos = {0.f, 0.f};
         float m_finalScaleX = 1.f;
         float m_finalScaleY = 1.f;
-        Ref<FLAlertLayer> m_exitGuard = nullptr;
         Ref<CCNode> m_blurNode = nullptr;
         FLAlertLayer* m_self = nullptr;
 
@@ -109,19 +116,19 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
             && !isEditorContextActive()
             && paimon::settings::smoothui::enabled()
             && !paimon::settings::smoothui::reducedMotion()
-            && Mod::get()->getSettingValue<bool>("dynamic-popup-enabled");
+            && paimon::settings::dynamicpopup::enabled();
     }
 
     bool shouldAnimateExit() {
-        return shouldAnimatePopup() && Mod::get()->getSettingValue<bool>("dynamic-exit-enabled");
+        return shouldAnimatePopup() && paimon::settings::dynamicpopup::exitEnabled();
     }
 
     bool shouldApplyPopupBlur() {
         return isPaimonPopup() && paimon::popupblur::getConfig().enabled && !isEditorContextActive();
     }
 
-    float getSpeedFor(char const* key) {
-        float speed = static_cast<float>(Mod::get()->getSavedValue<double>(key, 1.0));
+    float sanitizedSpeed(double raw) {
+        float speed = static_cast<float>(raw);
         if (!std::isfinite(speed) || speed <= 0.f) speed = 1.0f;
         if (paimon::settings::smoothui::enabled()) {
             auto globalSpeed = paimon::settings::smoothui::globalSpeed();
@@ -132,15 +139,15 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
     }
 
     float getSpeed() {
-        return getSpeedFor("dynamic-popup-speed");
+        return sanitizedSpeed(paimon::settings::dynamicpopup::popupSpeed());
     }
 
     float getExitSpeed() {
-        return getSpeedFor("dynamic-exit-speed");
+        return sanitizedSpeed(paimon::settings::dynamicpopup::exitSpeed());
     }
 
     std::string getStyle() {
-        return Mod::get()->getSavedValue<std::string>("dynamic-popup-style", "paimonUI");
+        return paimon::settings::dynamicpopup::style();
     }
 
     // unregister now; fade removes the node later
@@ -424,7 +431,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         };
         ml->stopAllActions();
         this->stopAllActions();
-        m_fields->m_exitGuard = this;
 
         float       spd = getExitSpeed();
         std::string sty = getStyle();
@@ -559,11 +565,11 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
             ml->runAction(CCEaseExponentialIn::create(scaleTo(dur, 0.60f)));
         }
 
-        this->runAction(CCSequence::create(
-            CCDelayTime::create(dur + 0.01f),
-            CCCallFunc::create(this, callfunc_selector(PaimonDynamicPopupHook::finishExit)),
-            nullptr
-        ));
+        paimon::scheduleMainThreadDelay(dur + 0.01f,
+            [self = Ref<FLAlertLayer>(this)]() {
+                if (paimon::isRuntimeShuttingDown()) return;
+                static_cast<PaimonDynamicPopupHook*>(self.data())->finishExit();
+            });
     }
 
     void finishExit() {
@@ -573,7 +579,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
 
     void deferredClose(float) {
         auto self = Ref<FLAlertLayer>(this);
-        m_fields->m_exitGuard = nullptr;
         // defer removal so a destructor cannot return into freed memory
         Loader::get()->queueInMainThread([self]() {
             if (paimon::isRuntimeShuttingDown()) return;
@@ -617,7 +622,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
 
     bool deferAnimatedRemoval() {
         if (!shouldAnimateExit() || m_fields->m_exiting) {
-            m_fields->m_exitGuard = nullptr;
             float fadeDur = std::clamp(
                 static_cast<float>(paimon::settings::popupblur::fadeDuration()),
                 0.0f, 1.0f);

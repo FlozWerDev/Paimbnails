@@ -1,0 +1,74 @@
+
+#include <algorithm>
+#include <cassert>
+#include <cctype>
+#include <cstdint>
+#include <functional>
+#include <iostream>
+#include <optional>
+#include <span>
+#include <string>
+#include <utility>
+#include <vector>
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
+#include <chrono>
+#include <cstring>
+#include <sstream>
+#include <stdexcept>
+#include <filesystem>
+#include <fstream>
+#include <charconv>
+#include <string_view>
+#define FMT_HEADER_ONLY
+#include <fmt/format.h>
+
+using ssize_t=long long;
+struct AMediaExtractor{}; struct AMediaFormat{}; struct AMediaCodec{};
+struct AMediaCodecBufferInfo {int size=0,offset=0;unsigned flags=0;};
+constexpr int AMEDIA_OK=0,AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM=4,
+ AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED=-2,AMEDIACODEC_INFO_TRY_AGAIN_LATER=-1,AMEDIACODEC_INFO_OUTPUT_BUFFERS_CHANGED=-3;
+constexpr char AMEDIAFORMAT_KEY_MIME[]="mime",AMEDIAFORMAT_KEY_SAMPLE_RATE[]="rate",
+ AMEDIAFORMAT_KEY_CHANNEL_COUNT[]="channels";
+struct InjectedStop{};
+int outputPolls=0;
+AMediaExtractor* AMediaExtractor_new(){static AMediaExtractor value;return &value;}
+int AMediaExtractor_setDataSource(AMediaExtractor*,char const*){return 0;}
+void AMediaExtractor_delete(AMediaExtractor*){}
+size_t AMediaExtractor_getTrackCount(AMediaExtractor*){return 1;}
+AMediaFormat* AMediaExtractor_getTrackFormat(AMediaExtractor*,size_t){static AMediaFormat value;return &value;}
+bool AMediaFormat_getString(AMediaFormat*,char const*,char const**value){*value="audio/aac";return true;}
+void AMediaFormat_delete(AMediaFormat*){}
+bool AMediaFormat_getInt32(AMediaFormat*,char const*key,int32_t*value){*value=std::strcmp(key,"rate")==0?48000:2;return true;}
+AMediaCodec* AMediaCodec_createDecoderByType(char const*){static AMediaCodec value;return &value;}
+int AMediaCodec_configure(AMediaCodec*,AMediaFormat*,void*,void*,int){return 0;}
+int AMediaCodec_start(AMediaCodec*){return 0;}
+void AMediaCodec_delete(AMediaCodec*){}
+void AMediaExtractor_selectTrack(AMediaExtractor*,int){}
+ssize_t AMediaCodec_dequeueInputBuffer(AMediaCodec*,int){return 0;}
+uint8_t* AMediaCodec_getInputBuffer(AMediaCodec*,ssize_t,size_t*size){static uint8_t value;*size=1;return &value;}
+int AMediaExtractor_readSampleData(AMediaExtractor*,uint8_t*,size_t){return -1;}
+int AMediaCodec_queueInputBuffer(AMediaCodec*,ssize_t,int,int,int64_t,unsigned){return 0;}
+int64_t AMediaExtractor_getSampleTime(AMediaExtractor*){return 0;}
+void AMediaExtractor_advance(AMediaExtractor*){}
+ssize_t AMediaCodec_dequeueOutputBuffer(AMediaCodec*,AMediaCodecBufferInfo*,int){
+ if(++outputPolls>16)throw InjectedStop{};
+ return -10000; // permanent codec error, not TRY_AGAIN_LATER.
+}
+uint8_t* AMediaCodec_getOutputBuffer(AMediaCodec*,ssize_t,size_t*){return nullptr;}
+void AMediaCodec_releaseOutputBuffer(AMediaCodec*,ssize_t,bool){}
+AMediaFormat* AMediaCodec_getOutputFormat(AMediaCodec*){return nullptr;}
+void AMediaCodec_stop(AMediaCodec*){}
+namespace geode {namespace log {template<class... T>void warn(T&&...){} template<class... T>void info(T&&...){} }}
+namespace paimon{bool isRuntimeShuttingDown(){return false;}}
+namespace detail {std::recursive_mutex& audioExtractorMutex(){static std::recursive_mutex value;return value;}}
+struct AudioPcm {std::vector<uint8_t> data;int channels=0,sampleRate=0,bitsPerSample=0;};
+@@function|src/video/AudioExtractorNDK.cpp|AudioPcm extractAudioToPcm(@@
+int main() {
+ bool forcedStop=false;
+ try {extractAudioToPcm("stub-video");}catch(InjectedStop const&){forcedStop=true;}
+ assert(!forcedStop && outputPolls==1);
+ std::cout << "PASS: android_audio_permanent_error_loop\n";
+}

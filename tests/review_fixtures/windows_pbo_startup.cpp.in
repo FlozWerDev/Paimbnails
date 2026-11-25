@@ -1,0 +1,117 @@
+#include <cassert>
+#include <cstdint>
+#include <limits>
+#include <string_view>
+#include <thread>
+
+#define GEODE_IS_WINDOWS 1
+using GLuint = unsigned;
+using GLenum = unsigned;
+using GLbitfield = unsigned;
+using GLboolean = unsigned char;
+using GLuint64 = std::uint64_t;
+using GLintptr = std::intptr_t;
+using GLsizeiptr = std::intptr_t;
+constexpr GLenum GL_NO_ERROR = 0, GL_PIXEL_UNPACK_BUFFER = 1, GL_STREAM_DRAW = 2;
+#define GL_SYNC_GPU_COMMANDS_COMPLETE 3
+using GLsync = void*;
+@@source|src/video/PBOUploader.hpp@@
+
+bool contextAlive = true, mapAvailable = true, syncAvailable = true;
+bool GLEW_VERSION_2_1 = true, GLEW_ARB_pixel_buffer_object = false;
+bool GLEW_VERSION_3_0 = true, GLEW_ARB_map_buffer_range = false;
+bool persistentError = false;
+int allocations = 0, errorChecks = 0, staleErrors = 0;
+std::uintptr_t missing = 0;
+void genBuffers(int count, GLuint* names) {
+    ++allocations;
+    for (int i = 0; i < count; ++i) names[i] = i + 1;
+}
+void bindBuffer(GLenum, GLuint) {}
+void bufferData(GLenum, GLsizeiptr, void const*, GLenum) {}
+void bufferSubData(GLenum, GLintptr, GLsizeiptr, void const*) {}
+void deleteBuffers(int, GLuint const*) {}
+auto glGenBuffers = &genBuffers;
+auto glBindBuffer = &bindBuffer;
+auto glBufferData = &bufferData;
+auto glBufferSubData = &bufferSubData;
+auto glDeleteBuffers = &deleteBuffers;
+GLenum glGetError() {
+    ++errorChecks;
+    if (persistentError) return 99;
+    if (staleErrors > 0) { --staleErrors; return 99; }
+    return GL_NO_ERROR;
+}
+using PROC = void(*)();
+using PFN_FENCESYNC = GLsync(*)(GLenum, GLbitfield);
+using PFN_CLIENTWAITSYNC = GLenum(*)(GLsync, GLbitfield, GLuint64);
+using PFN_DELETESYNC = void(*)(GLsync);
+using PFN_MAPBUFFERRANGE = void*(*)(GLenum, GLintptr, GLsizeiptr, GLbitfield);
+using PFN_UNMAPBUFFER = GLboolean(*)(GLenum);
+PFN_FENCESYNC pglFenceSync = nullptr;
+PFN_CLIENTWAITSYNC pglClientWaitSync = nullptr;
+PFN_DELETESYNC pglDeleteSync = nullptr;
+PFN_MAPBUFFERRANGE pglMapBufferRange = nullptr;
+PFN_UNMAPBUFFER pglUnmapBuffer = nullptr;
+void validFunction() {}
+void* wglGetCurrentContext() { return contextAlive ? &contextAlive : nullptr; }
+PROC wglGetProcAddress(char const* name) {
+    bool mapping = std::string_view(name) == "glMapBufferRange" || std::string_view(name) == "glUnmapBuffer";
+    return (mapping ? mapAvailable : syncAvailable) ? &validFunction : reinterpret_cast<PROC>(missing);
+}
+namespace geode::log {
+template<class... T> void warn(T&&...) {}
+template<class... T> void info(T&&...) {}
+}
+@@function|src/video/PBOUploader.cpp|static void loadGLSyncFunctions()@@
+namespace paimon::video {
+PBOUploader::~PBOUploader() { shutdown(); }
+void PBOUploader::shutdown() { m_initialized = false; }
+@@function|src/video/PBOUploader.cpp|bool PBOUploader::allocPBOs@@
+@@function|src/video/PBOUploader.cpp|bool PBOUploader::beginInit()@@
+@@function|src/video/PBOUploader.cpp|int PBOUploader::slotCountFor@@
+@@function|src/video/PBOUploader.cpp|bool PBOUploader::init(int ySize@@
+@@function|src/video/PBOUploader.cpp|bool PBOUploader::init(int rgbaSize)@@
+}
+int main() {
+    paimon::video::PBOUploader uploader;
+    auto rejected = [&] {
+        int before = allocations;
+        assert(!uploader.init(64));
+        assert(!uploader.init(16, 4, 4));
+        assert(!uploader.isInitialized() && allocations == before);
+    };
+    for (auto sentinel : {std::uintptr_t{0}, std::uintptr_t{1}, std::uintptr_t{2},
+                          std::uintptr_t{3}, std::numeric_limits<std::uintptr_t>::max()}) {
+        mapAvailable = false; missing = sentinel;
+        rejected();
+    }
+    mapAvailable = true;
+    GLEW_VERSION_2_1 = false;
+    rejected();
+    GLEW_ARB_pixel_buffer_object = true;
+    GLEW_VERSION_3_0 = false;
+    rejected();
+    GLEW_ARB_map_buffer_range = true;
+    syncAvailable = false;
+    assert(uploader.init(64) && uploader.isInitialized());
+    assert(!pglFenceSync && !pglClientWaitSync && !pglDeleteSync);
+    assert(uploader.init(16, 4, 4) && uploader.isInitialized());
+    // Context replacement must discard cached mapping pointers and use fallback.
+    mapAvailable = false;
+    rejected();
+    mapAvailable = true;
+    contextAlive = false;
+    rejected();
+    contextAlive = true;
+    glGenBuffers = nullptr;
+    rejected();
+    glGenBuffers = &genBuffers;
+    persistentError = true;
+    errorChecks = 0;
+    rejected();
+    assert(errorChecks == 32);
+    persistentError = false;
+    staleErrors = 3;
+    assert(uploader.init(64) && uploader.isInitialized() && staleErrors == 0);
+}

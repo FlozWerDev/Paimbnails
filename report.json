@@ -1,0 +1,53 @@
+{
+  "head_sha": "06efd2df50796651d1ac742f863e8d886be3a030",
+  "run_id": "45703002154",
+  "run_attempt": "1",
+  "stage": "summary",
+  "status": "success",
+  "run_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/45703002154",
+  "updated_at": "2026-11-25T21:42:05.010812+00:00",
+  "jobs": [
+    {
+      "id": 139517676883,
+      "name": "Android64",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/45703002154/job/139517676883"
+    },
+    {
+      "id": 139517677251,
+      "name": "Android32",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/45703002154/job/139517677251"
+    },
+    {
+      "id": 139517677385,
+      "name": "Windows",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/45703002154/job/139517677385"
+    },
+    {
+      "id": 139529729970,
+      "name": "Package Windows and Android",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/45703002154/job/139529729970"
+    },
+    {
+      "id": 139530213404,
+      "name": "Build Windows Installer",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/45703002154/job/139530213404"
+    },
+    {
+      "id": 139530471805,
+      "name": "Create official release",
+      "status": "completed",
+      "conclusion": "skipped",
+      "html_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/45703002154/job/139530471805"
+    }
+  ]
+}

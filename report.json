@@ -1,53 +1,53 @@
 {
   "head_sha": "8eafb63714a6b7d558b884a109c44b824554c189",
-  "run_id": "46049260371",
+  "run_id": "46049263211",
   "run_attempt": "1",
   "stage": "summary",
-  "status": "success",
-  "run_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/46049260371",
-  "updated_at": "2026-11-27T18:45:59.127853+00:00",
+  "status": "in_progress",
+  "run_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/46049263211",
+  "updated_at": "2026-11-27T18:59:54.685486+00:00",
   "jobs": [
     {
-      "id": 140676197352,
-      "name": "Android64",
-      "status": "completed",
-      "conclusion": "success",
-      "html_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/46049260371/job/140676197352"
-    },
-    {
-      "id": 140676197618,
+      "id": 140676206937,
       "name": "Windows",
       "status": "completed",
       "conclusion": "success",
-      "html_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/46049260371/job/140676197618"
+      "html_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/46049263211/job/140676206937"
     },
     {
-      "id": 140676198029,
+      "id": 140676207350,
+      "name": "Android64",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/46049263211/job/140676207350"
+    },
+    {
+      "id": 140676207472,
       "name": "Android32",
       "status": "completed",
       "conclusion": "success",
-      "html_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/46049260371/job/140676198029"
+      "html_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/46049263211/job/140676207472"
     },
     {
-      "id": 140684229418,
+      "id": 140689693101,
       "name": "Package Windows and Android",
       "status": "completed",
       "conclusion": "success",
-      "html_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/46049260371/job/140684229418"
+      "html_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/46049263211/job/140689693101"
     },
     {
-      "id": 140684659276,
+      "id": 140690106188,
       "name": "Build Windows Installer",
       "status": "completed",
       "conclusion": "success",
-      "html_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/46049260371/job/140684659276"
+      "html_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/46049263211/job/140690106188"
     },
     {
-      "id": 140684883437,
+      "id": 140690300022,
       "name": "Create official release",
-      "status": "completed",
-      "conclusion": "skipped",
-      "html_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/46049260371/job/140684883437"
+      "status": "in_progress",
+      "conclusion": null,
+      "html_url": "https://github.com/FlozWerDev/Paimbnails/actions/runs/46049263211/job/140690300022"
     }
   ]
 }

@@ -41,8 +41,13 @@ public:
         Ref<CCSprite> m_vehicleSpriteLineSecondary = nullptr;
         Ref<CCSprite> m_vehicleSpriteLineWhitener = nullptr;
 
-        std::vector<Ref<CCSprite>> m_animSprites;
-        std::unordered_map<CCSprite*, Ref<CCSprite>> m_animSpriteParents;
+        struct AnimOverlay {
+            Ref<CCSprite> overlay;
+            Ref<CCSprite> host;
+        };
+
+        std::vector<AnimOverlay> m_robotAnimOverlays;
+        std::vector<AnimOverlay> m_spiderAnimOverlays;
 
         // compat with the "custom ufo n ship cube" doll-replacement mod:
         // while it is loaded the menu doll needs its shaded copies shown.
@@ -83,7 +88,7 @@ public:
 
     void updateVehicleSprite(Gradient const&, Fields*);
 
-    void shadeAnimSection(auto&&, GradientConfig const&, IconType, ColorType, int, bool, bool, Fields*);
+    void shadeAnimSection(auto&&, GradientConfig const&, IconType, ColorType, int, bool, bool, std::vector<Fields::AnimOverlay>&);
 
     void updateAnimSprite(IconType, Gradient const&, Fields*);
 

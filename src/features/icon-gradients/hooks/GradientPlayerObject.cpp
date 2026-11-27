@@ -79,10 +79,13 @@ void GradientPlayerObject::updateVisibility() {
         if (CCSprite* copy = f->*copyMember)
             if (CCSprite* source = this->*sourceMember)
                 copy->setOpacity(source->getOpacity());
-    for (CCSprite* overlay : f->m_animSprites) {
-        auto it = f->m_animSpriteParents.find(overlay);
-        if (it != f->m_animSpriteParents.end() && it->second)
-            overlay->setOpacity(it->second->getOpacity());
+    for (auto const& pair : f->m_robotAnimOverlays) {
+        if (pair.overlay && pair.overlay->getParent() && pair.host && pair.host->getParent())
+            pair.overlay->setOpacity(pair.host->getOpacity());
+    }
+    for (auto const& pair : f->m_spiderAnimOverlays) {
+        if (pair.overlay && pair.overlay->getParent() && pair.host && pair.host->getParent())
+            pair.overlay->setOpacity(pair.host->getOpacity());
     }
 }
 
@@ -99,7 +102,7 @@ void GradientPlayerObject::updateSprite(CCSprite* live, Ref<CCSprite>& copy, Spr
     if ((color == ColorType::Line || color == ColorType::White)
             && Loader::get()->isModLoaded("alphalaneous.fine_outline")) {
         Loader::get()->queueInMainThread([child = Ref(copy), host = Ref(live)] {
-            if (host && child && !child->getParent()) host->addChild(child, 10);
+            if (host && host->getParent() && child && !child->getParent()) host->addChild(child, 10);
         });
     } else {
         live->addChild(copy);
@@ -161,79 +164,99 @@ void GradientPlayerObject::updateVehicleSprite(Gradient const& gradient, Fields*
 
 // single sprites keep a fixed shader seed and node id; lists advance from the base seed.
 void GradientPlayerObject::shadeAnimSection(auto&& hosts, GradientConfig const& config, IconType type,
-        ColorType color, int seedBase, bool line, bool single, Fields* f) {
-    if (config.isEmpty(color, m_isSecondPlayer)) return;
+        ColorType color, int seedBase, bool line, bool single, std::vector<Fields::AnimOverlay>& animList) {
+    bool const empty = config.isEmpty(color, m_isSecondPlayer);
     std::string kind = GradientUtils::getTypeID(SpriteType::Animation);
     bool outline = Loader::get()->isModLoaded("alphalaneous.fine_outline");
+    auto* stock = empty && !line
+        ? CCShaderCache::sharedShaderCache()->programForKey(kCCShader_PositionTextureColor)
+        : nullptr;
     int count = 0;
     for (auto* host : hosts) {
         ++count;
         if (!host) continue;
+        std::string nodeId;
+        if (single) {
+            nodeId = line ? fmt::format("{}-gradient-line"_spr, kind)
+                          : fmt::format("{}-gradient"_spr, kind);
+        } else {
+            nodeId = line ? fmt::format("{}-gradient-line-{}"_spr, kind, count)
+                          : fmt::format("{}-gradient-{}"_spr, kind, count);
+        }
+
+        CCSprite* overlay = typeinfo_cast<CCSprite*>(host->getChildByID(nodeId));
+        if (empty) {
+            if (overlay) overlay->setVisible(false);
+            if (!line && stock) host->setShaderProgram(stock);
+            continue;
+        }
+
         CCSpriteFrame* frame = host->displayFrame();
         if (!frame) continue;
-        CCSprite* overlay = CCSprite::createWithSpriteFrame(frame);
-        if (!overlay) continue;
-        if (single) {
-            if (line) overlay->setID(fmt::format("{}-gradient-line"_spr, kind).c_str());
-            else overlay->setID(fmt::format("{}-gradient"_spr, kind).c_str());
+
+        if (overlay) {
+            overlay->setDisplayFrame(frame);
+            overlay->setVisible(true);
         } else {
-            if (line) overlay->setID(fmt::format("{}-gradient-line-{}"_spr, kind, count).c_str());
-            else overlay->setID(fmt::format("{}-gradient-{}"_spr, kind, count).c_str());
-        }
-        overlay->setAnchorPoint({0, 0});
-        if (outline && (line || single)) {
-            Loader::get()->queueInMainThread([child = Ref(overlay), hostCopy = Ref(host)] {
-                if (hostCopy && child && !child->getParent()) hostCopy->addChild(child, 10);
-            });
-        } else {
-            host->addChild(overlay);
+            overlay = CCSprite::createWithSpriteFrame(frame);
+            if (!overlay) continue;
+            overlay->setID(nodeId.c_str());
+            overlay->setAnchorPoint({0, 0});
+            if (outline && (line || single)) {
+                Loader::get()->queueInMainThread([child = Ref(overlay), hostCopy = Ref(host), nodeId] {
+                    if (hostCopy && hostCopy->getParent() && child && !child->getParent() && !hostCopy->getChildByID(nodeId))
+                        hostCopy->addChild(child, 10);
+                });
+            } else {
+                host->addChild(overlay);
+            }
         }
         if (!line) GradientUtils::hideSprite(host);
-        f->m_animSprites.push_back(overlay);
-        f->m_animSpriteParents[overlay] = host;
+        animList.push_back({overlay, host});
         GradientUtils::applyGradient(overlay, config, type, color,
             single ? seedBase : seedBase + count, false, m_isSecondPlayer, true, 55, line);
     }
 }
 
 void GradientPlayerObject::updateAnimSprite(IconType type, Gradient const& gradient, Fields* f) {
+    if (type != IconType::Robot && type != IconType::Spider) return;
     GJRobotSprite* mech = type == IconType::Robot ? m_robotSprite : m_spiderSprite;
     if (!mech || !mech->m_paSprite) return;
-    // Remove stale overlays from prior robot/spider refreshes so animSprites never accumulates or leaks.
-    for (auto const& overlay : f->m_animSprites) {
-        if (overlay) overlay->removeFromParent();
-    }
-    f->m_animSprites.clear();
-    f->m_animSpriteParents.clear();
+    // Never call removeFromParent() on prior overlays here: PlayerObject::createRobot /
+    // createSpider may have already detached the old GJRobotSprite from its CCSpriteBatchNode,
+    // so calling CCSprite::removeChild on an orphaned host crashes in CCSpriteBatchNode::swap.
+    // Dropping our Refs releases orphaned hosts via ~CCNode(), while live hosts reuse overlays by ID.
+    auto& animList = type == IconType::Robot ? f->m_robotAnimOverlays : f->m_spiderAnimOverlays;
+    animList.clear();
     GradientUtils::enableChildShaders(type == IconType::Robot ? m_robotBatchNode : m_spiderBatchNode);
 
     if (mech->m_paSprite->m_spriteParts) {
         shadeAnimSection(CCArrayExt<CCSpritePart*>(mech->m_paSprite->m_spriteParts),
-            gradient.main, type, ColorType::Main, 100, false, false, f);
+            gradient.main, type, ColorType::Main, 100, false, false, animList);
     }
     if (mech->m_secondArray) {
         shadeAnimSection(CCArrayExt<CCSprite*>(mech->m_secondArray),
-            gradient.secondary, type, ColorType::Secondary, 200, false, false, f);
+            gradient.secondary, type, ColorType::Secondary, 200, false, false, animList);
     }
     if (mech->m_glowSprite) {
         shadeAnimSection(mech->m_glowSprite->getChildrenExt<CCSprite*>(),
-            gradient.glow, type, ColorType::Glow, 300, false, false, f);
+            gradient.glow, type, ColorType::Glow, 300, false, false, animList);
     }
     if (mech->m_extraSprite) {
         CCSprite* extra[] = {mech->m_extraSprite};
-        shadeAnimSection(extra, gradient.white, type, ColorType::White, 400, false, true, f);
+        shadeAnimSection(extra, gradient.white, type, ColorType::White, 400, false, true, animList);
     }
     if (mech->m_paSprite->m_spriteParts) {
         shadeAnimSection(CCArrayExt<CCSpritePart*>(mech->m_paSprite->m_spriteParts),
-            gradient.line, type, ColorType::Line, 500, true, false, f);
+            gradient.line, type, ColorType::Line, 500, true, false, animList);
     }
     if (mech->m_secondArray) {
         shadeAnimSection(CCArrayExt<CCSprite*>(mech->m_secondArray),
-            gradient.line, type, ColorType::Line, 600, true, false, f);
+            gradient.line, type, ColorType::Line, 600, true, false, animList);
     }
     if (mech->m_extraSprite) {
         CCSprite* extra[] = {mech->m_extraSprite};
-        shadeAnimSection(extra, gradient.line, type, ColorType::Line, 700, true, true, f);
+        shadeAnimSection(extra, gradient.line, type, ColorType::Line, 700, true, true, animList);
     }
 }
 

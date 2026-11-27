@@ -48,7 +48,8 @@ void GradientMenuGameLayer::updateGradient() {
 
     if (f->m_menuDollPatchLoaded) showCopies(true);
 
-    player->updateAnimSprite(type, gradient, f);
+    if (type == IconType::Robot || type == IconType::Spider)
+        player->updateAnimSprite(type, gradient, f);
     player->updateVehicleSprite(gradient, f);
     player->updateIconSprite(GradientUtils::getGradient(IconType::Cube, false), f);
 
@@ -58,6 +59,7 @@ void GradientMenuGameLayer::updateGradient() {
 
     // the doll's own sprites go back on top, fully opaque.
     for (CCSprite* spr : {player->m_iconSprite, player->m_iconSpriteSecondary}) {
+        if (!spr) continue;
         spr->setVisible(true);
         spr->setOpacity(255);
     }

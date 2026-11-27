@@ -13,8 +13,13 @@
 #include <vector>
 
 class GJGameLevel;
+class LevelEditorLayer;
 
 namespace paimon::editormusic {
+
+// True whenever vanilla editor playtest OR vanilla editor Play Music (onPlayback) is active.
+bool isEditorVanillaAudioActive(LevelEditorLayer* editor);
+void syncEditorMusicSuspend(LevelEditorLayer* editor);
 
 enum class RepeatMode : std::uint8_t { Off = 0, All = 1, One = 2 };
 

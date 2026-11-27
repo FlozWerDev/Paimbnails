@@ -189,6 +189,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
 
         if (paimon::onboarding::isAccepted()) {
             paimon::forum::ForumApi::get().sendHeartbeat([](paimon::forum::Result<bool>) {});
+            paimon::modauth::verifyStartupAccount(true);
         } else {
             this->scheduleOnce(schedule_selector(PaimonMenuLayer::openWelcomeFlow), 1.0f);
         }

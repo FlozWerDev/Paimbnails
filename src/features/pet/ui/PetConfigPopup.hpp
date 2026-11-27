@@ -56,6 +56,8 @@ protected:
     void buildSettingsTab();
     void buildAdvancedTab();
     void openLayerPicker();
+    void openDialoguesEditor(PetDialogueCategory cat = PetDialogueCategory::Idle);
+    void openAudioGesturesEditor(int initialSlot = 0);
     void pickIconStateImage(int stateIdx);
 
 public:

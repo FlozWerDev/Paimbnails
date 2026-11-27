@@ -8,8 +8,10 @@
 class PaimonPopup : public geode::Popup {
 public:
     void show() override;
+    void cleanup() override;
 
 protected:
+    bool m_cleanedUp = false;
     bool init(float width, float height, char const* bg = "GJ_square01.png",
         cocos2d::CCRect bgRect = {});
     bool init(cocos2d::CCSize size, char const* bg = "GJ_square01.png",

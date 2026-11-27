@@ -473,6 +473,7 @@ static void uploadSinglePBO(GLuint pbo, int pboSize, GLuint texId,
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
         if (data) {
             int rowBytes = (format == GL_RGBA) ? width * 4 : width;
+            if (format != GL_RGBA) glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 #ifdef GL_UNPACK_ROW_LENGTH
             glPixelStorei(GL_UNPACK_ROW_LENGTH, stride == rowBytes ? 0 : stride / ((format == GL_RGBA) ? 4 : 1));
             glBindTexture(GL_TEXTURE_2D, texId);
@@ -494,14 +495,17 @@ static void uploadSinglePBO(GLuint pbo, int pboSize, GLuint texId,
                             format, GL_UNSIGNED_BYTE, uploadPtr);
             glBindTexture(GL_TEXTURE_2D, 0);
 #endif
+            if (format != GL_RGBA) glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
         }
         return;
     }
 
+    if (format != GL_RGBA) glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glBindTexture(GL_TEXTURE_2D, texId);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height,
                     format, GL_UNSIGNED_BYTE, nullptr);
     glBindTexture(GL_TEXTURE_2D, 0);
+    if (format != GL_RGBA) glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 }
 

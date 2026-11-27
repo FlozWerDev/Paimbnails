@@ -1654,9 +1654,8 @@ void ProfileMusicManager::forceRemoveCaveEffect() {
         engine->m_backgroundMusicChannel->setVolume(std::max(0.0f, std::min(1.0f, targetVol)));
 
         auto* bgCh = getMainBgChannel(engine);
-        if (bgCh) {
-            float targetFreq = (m_originalFrequency > 0.0f) ? m_originalFrequency : 22050.0f;
-            bgCh->setFrequency(targetFreq);
+        if (bgCh && m_originalFrequency > 0.0f) {
+            bgCh->setFrequency(m_originalFrequency);
         }
     }
     if (m_lowpassDSP) {
@@ -1696,7 +1695,7 @@ void ProfileMusicManager::removeCaveEffect() {
 
     float targetVol = engine->m_musicVolume;
     if (targetVol <= 0.0f && m_originalVolume > 0.0f) targetVol = m_originalVolume;
-    float targetFreq = (m_originalFrequency > 0.0f) ? m_originalFrequency : (currentFreq > 0.0f ? currentFreq / 0.92f : 22050.0f);
+    float targetFreq = (m_originalFrequency > 0.0f) ? m_originalFrequency : (currentFreq > 0.0f ? currentFreq / 0.92f : 0.0f);
 
     log::info("[ProfileMusic] Cave effect: starting smooth transition OUT (freq:{:.0f}->{:.0f}, vol:{:.2f}->{:.2f})",
         currentFreq, targetFreq, currentVol, targetVol);

@@ -4,6 +4,7 @@
 #include "AnimateWidgets.hpp"
 #include "../AnimateText.hpp"
 #include "../services/AnimateSession.hpp"
+#include "../../editor-suite/EditorHelpers.hpp"
 #include "../../../ui/PaimonUI.hpp"
 #include "../../../utils/ScissorClipNode.hpp"
 
@@ -707,7 +708,9 @@ void TimelinePanel::tick(float dt) {
     }
 
     // menus registered while a popup forces priority would sit above that popup.
-    bool const popupOpen = CCDirector::get()->getTouchDispatcher()->isUsingForcePrio();
+    bool const popupOpen = paimon::editor::hasBlockingModal(
+        m_editor, m_editor ? m_editor->m_editorUI : nullptr
+    );
     if (s.revision() != m_shownRevision && !popupOpen) {
         if (s.currentFrame() != m_shownFrame) ensureVisible(s.currentFrame());
         rebuild();

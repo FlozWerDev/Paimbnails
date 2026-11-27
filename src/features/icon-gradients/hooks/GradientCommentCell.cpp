@@ -13,8 +13,9 @@ class $modify(GradientCommentCell, CommentCell) {
     void loadFromComment(GJComment* comment) {
         CommentCell::loadFromComment(comment);
 
-        if (!moduleEnabled() || m_accountComment || !comment) return;
-        if (comment->m_accountID != GJAccountManager::get()->m_accountID) return;
+        if (!moduleEnabled() || m_accountComment || !comment || !m_mainLayer) return;
+        auto* am = GJAccountManager::get();
+        if (!am || comment->m_accountID != am->m_accountID) return;
 
         CCNode* menu = m_mainLayer->getChildByID("main-menu");
         CCNode* userMenu = menu ? menu->getChildByID("user-menu") : nullptr;

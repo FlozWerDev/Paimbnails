@@ -594,7 +594,8 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         headDSP->getMeteringInfo(nullptr, &meteringInfo);
 
         float peak = 0.f;
-        for (int i = 0; i < meteringInfo.numchannels; i++) {
+        int const chCount = std::clamp<int>(meteringInfo.numchannels, 0, 32);
+        for (int i = 0; i < chCount; i++) {
             if (meteringInfo.peaklevel[i] > peak) peak = meteringInfo.peaklevel[i];
         }
 
@@ -753,11 +754,13 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     // creates the fill sprite on first use, otherwise swaps its texture;
     // both background layers share create/position/action/tail handling.
     CCSprite* ensureBgSprite(CCSprite* existing, CCTexture2D* tex, CCSize const& texSize, float zOrder, bool dimmed) {
+        if (!tex || texSize.width <= 0.f || texSize.height <= 0.f) return existing;
         auto win = CCDirector::get()->getWinSize();
         float scale = std::max(win.width / texSize.width, win.height / texSize.height);
         CCSprite* spr = existing;
         if (!spr) {
             spr = CCSprite::createWithTexture(tex);
+            if (!spr) return nullptr;
             spr->setPosition(win / 2);
             spr->setZOrder(zOrder);
             if (dimmed) spr->setColor({80, 80, 80});

@@ -1,12 +1,14 @@
 #include "CaptureMenuPopup.hpp"
 #include "CaptureOverlay.hpp"
 #include "../../keybinds/ui/ManagerCutPopup.hpp"
+#include "../../volume-scroll/ui/ExtendedKeybindEditPopup.hpp"
 #include "../../volume-scroll/ui/ScrollKeybindsPopup.hpp"
 #include "../../quick-hub/services/QuickHubManager.hpp"
 #include "../../quick-hub/ui/RadialConfigPopup.hpp"
 #include "../../menu-physics/services/MenuPhysicsManager.hpp"
 #include "../../smooth-scroll/ui/SmoothScrollConfigPopup.hpp"
 #include "../../../utils/ActivePauseLayer.hpp"
+#include "../../../utils/ExtendedKeybind.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
@@ -22,8 +24,50 @@ using namespace geode::prelude;
 using paimon::quickhub::QuickHubManager;
 
 namespace {
-constexpr float kPopupW   = 360.f;
-constexpr float kPopupH   = 190.f;
+constexpr float kPopupW   = 368.f;
+constexpr float kPopupH   = 212.f;
+
+std::optional<Keybind> currentCaptureMenuKeyboardBind() {
+    auto* mod = Mod::get();
+    if (!mod || !mod->hasSetting("capture-menu-keybind")) return std::nullopt;
+    auto setting = cast::typeinfo_pointer_cast<KeybindSettingV3>(mod->getSetting("capture-menu-keybind"));
+    if (!setting) return std::nullopt;
+    auto const& binds = setting->getValue();
+    if (binds.empty()) return std::nullopt;
+    return binds.front();
+}
+
+void writeCaptureMenuKeyboardBind(std::optional<Keybind> kb) {
+    auto* mod = Mod::get();
+    if (!mod || !mod->hasSetting("capture-menu-keybind")) return;
+    auto setting = cast::typeinfo_pointer_cast<KeybindSettingV3>(mod->getSetting("capture-menu-keybind"));
+    if (!setting) return;
+    std::vector<Keybind> out;
+    if (kb.has_value() && (kb->key != KEY_None || kb->modifiers != KeyboardModifier::None)) {
+        out.push_back(*kb);
+    }
+    setting->setValue(out);
+}
+
+std::string captureMenuTriggerDisplay() {
+    auto kb = currentCaptureMenuKeyboardBind();
+    auto ext = paimon::keybinds::loadExtendedKeybind("capture-menu-keybind");
+    std::string text;
+    if (kb.has_value() && (kb->key != KEY_None || kb->modifiers != KeyboardModifier::None)) {
+        text = paimon::keybinds::formatKeyboardKeybind(*kb);
+    }
+    if (!ext.isEmpty()) {
+        if (!text.empty()) text += " / ";
+        text += ext.toDisplayString();
+    }
+    if (!text.empty()) return text;
+    auto* mod = Mod::get();
+    if (mod && mod->hasSetting("capture-menu-rightclick")
+        && mod->getSettingValue<bool>("capture-menu-rightclick")) {
+        return "Right Click";
+    }
+    return "Sin boton";
+}
 
 // flag for popups opened from this menu: only those block right-click toggle.
 std::string const& captureChildFlag() {
@@ -150,8 +194,8 @@ bool CaptureMenuPopup::initContents() {
     const float rowX0 = sideMargin + leftW + gap;
     const float toggleX = rowX0 + rightW - 20.f;
     const float labelX = rowX0 + 12.f;
-    float rowY = panelBot + panelH - 40.f;
-    const float rowStep = 32.f;
+    float rowY = panelBot + panelH - 38.f;
+    const float rowStep = 31.f;
 
     auto addLabel = [&](char const* text, float y) {
         auto* lbl = CCLabelBMFont::create(text, "bigFont.fnt");
@@ -213,6 +257,20 @@ bool CaptureMenuPopup::initContents() {
             gearSpr, this, menu_selector(CaptureMenuPopup::onOpenSmoothScrollConfig));
         gearBtn->setPosition({toggleX - 26.f, rowY});
         menu->addChild(gearBtn);
+    }
+
+    rowY -= rowStep;
+    addLabel("Abrir Menu", rowY);
+    if (auto* bindBtn = paimon::ui::makeButton(
+            captureMenuTriggerDisplay().c_str(),
+            [this] { this->onEditMenuBind(nullptr); },
+            paimon::ui::Btn::Green,
+            86.f,
+            0.64f,
+            "bigFont.fnt")) {
+        m_menuBindBtnSpr = typeinfo_cast<ButtonSprite*>(bindBtn->getNormalImage());
+        bindBtn->setPosition({rowX0 + rightW - 48.f, rowY});
+        menu->addChild(bindBtn);
     }
 #endif
 
@@ -301,6 +359,61 @@ void CaptureMenuPopup::refreshHoldCtrlButton() {
     if (!m_holdCtrlBtnSpr) return;
     bool const enabled = QuickHubManager::isHoldCtrlEnabled();
     m_holdCtrlBtnSpr->updateBGImage(enabled ? "GJ_button_01.png" : "GJ_button_06.png");
+}
+
+void CaptureMenuPopup::refreshMenuBindButton() {
+    if (!m_menuBindBtnSpr) return;
+    auto const label = captureMenuTriggerDisplay();
+    m_menuBindBtnSpr->setString(label.c_str());
+    if (m_menuBindBtnSpr->m_label) {
+        float const inner = std::max(8.f, m_menuBindBtnSpr->getContentSize().width - 14.f);
+        m_menuBindBtnSpr->m_label->limitLabelWidth(inner, m_menuBindBtnSpr->m_scale, 0.1f);
+    }
+}
+
+void CaptureMenuPopup::onEditMenuBind(CCObject*) {
+    auto kb = currentCaptureMenuKeyboardBind();
+    auto ext = paimon::keybinds::loadExtendedKeybind("capture-menu-keybind");
+    auto* mod = Mod::get();
+    if ((!kb.has_value() || (kb->key == KEY_None && kb->modifiers == KeyboardModifier::None))
+        && ext.isEmpty()
+        && mod && mod->hasSetting("capture-menu-rightclick")
+        && mod->getSettingValue<bool>("capture-menu-rightclick")) {
+        ext.kind = paimon::keybinds::ExtendedKind::Mouse;
+        ext.button = paimon::keybinds::MouseButton::Right;
+    }
+
+    auto* popup = paimon::volscroll::ExtendedKeybindEditPopup::create(
+        "capture-menu-keybind",
+        "Abrir Menu de Captura",
+        kb,
+        ext,
+        /*allowScroll=*/true,
+        [this](std::optional<Keybind> newKb, paimon::keybinds::ExtendedKeybind newExt) {
+            writeCaptureMenuKeyboardBind(newKb);
+            paimon::keybinds::saveExtendedKeybind("capture-menu-keybind", newExt);
+            bool const hasAny = (newKb.has_value()
+                && (newKb->key != KEY_None || newKb->modifiers != KeyboardModifier::None))
+                || !newExt.isEmpty();
+            if (auto* m = Mod::get(); m && m->hasSetting("capture-menu-rightclick")) {
+                // Disable default right-click fallback whenever cleared or replaced by another bind
+                bool const isExplicitRight = newExt.kind == paimon::keybinds::ExtendedKind::Mouse
+                    && newExt.button == paimon::keybinds::MouseButton::Right
+                    && newExt.modifiers.value == 0;
+                m->setSettingValue<bool>("capture-menu-rightclick", hasAny && isExplicitRight);
+            }
+            if (s_instance == this) {
+                this->refreshMenuBindButton();
+            }
+            PaimonNotify::show(
+                fmt::format("Menu de captura: {}", captureMenuTriggerDisplay()).c_str(),
+                NotificationIcon::Success);
+        }
+    );
+    if (popup) {
+        markCaptureChild(popup);
+        popup->show();
+    }
 }
 
 void CaptureMenuPopup::onToggleHoldCtrl(CCObject*) {

@@ -751,6 +751,11 @@ int m_fallbackOrigin = -1;
                         renderWidth, renderHeight,
                         kCCTexture2DPixelFormat_RGBA8888,
                         GL_DEPTH24_STENCIL8);
+                    if (!renderTex) {
+                        renderTex = CCRenderTexture::create(
+                            renderWidth, renderHeight,
+                            kCCTexture2DPixelFormat_RGBA8888);
+                    }
                     if (renderTex) {
                         float renderScale = std::min(
                             static_cast<float>(renderWidth) / tex->getContentSize().width,

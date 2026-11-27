@@ -2003,6 +2003,7 @@ std::vector<Primitive> buildGeometry(
             }
             [[fallthrough]];
         case ImportMode::Render:
+        case ImportMode::Svg:
             return vectorizePaint(
                 positions, width, height, color,
                 context.ranks[static_cast<std::size_t>(color)],

@@ -33,7 +33,7 @@ class $modify(GradientImageSprite, CCSprite) {
         auto found = states.find(this);
         if (found == states.end()) return CCSprite::draw();
         auto fields = found->second;
-        if (fields && fields->atlas->texture && fields->program == getShaderProgram()) {
+        if (fields && fields->atlas && fields->atlas->texture && fields->program == getShaderProgram()) {
             auto program = getShaderProgram();
             program->use();
             ccGLBindTexture2DN(1, fields->atlas->texture->getName());

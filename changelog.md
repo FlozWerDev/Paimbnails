@@ -1,3 +1,37 @@
+# <cy>v1.2.7</c>
+
+![](flozwer.paimbnails2/paim_Paimon.png?height=32) Actualizacion con <cl>Imagenes de Referencia</c> en el editor, importacion nativa de <cl>SVG</c> y <cl>WebP</c> (con soporte <cg>OpenVector</c>), <cl>Top Foros de Noticias</c>, mejoras de sincronizacion en <cl>Collab Editor</c> y una revision profunda de estabilidad, bindings y crashes en <cg>Windows</c> y <cg>Android</c>.
+
+---
+
+## ![](frame:GJ_hammerIcon_001.png?height=18) <cy>Editor y Herramientas</c>
+
+- <cl>Imagenes de Referencia (Reference Images)</c>: coloca imagenes personalizadas en el editor como si fueran objetos nativos (<cg>mover, rotar, escalar, deformar, voltear, opacidad, capa Z detras/delante, bloqueo, visibilidad</c> y opcion para playtest). Se guardan por nivel con historial de usadas recientemente sin contaminar el string del nivel.
+- <cl>Importador SVG y WebP (OpenVector)</c>: el importador de medios ahora soporta archivos <cg>SVG</c> directos y <cg>WebP</c> estaticos o animados via `libwebp`. Todos los modos excepto <cy>Bloques</c> (pixel), <cy>Blur</c> y <cy>Circulos</c> convierten primero la imagen a <cg>SVG</c> mediante <cg>OpenVector</c> antes de generar los objetos, repartiendo en paralelo los frames de <cg>GIF</c>/animaciones para construirlos.
+- <cl>Collab Editor reforzado</c>: reconciliacion por buckets para detectar divergencias, division automatica de cargas grandes, recuperacion tras resincronizacion y prevencion de objetos fantasma o duplicados.
+- <cl>Structure Optimizer y Toolbar</c>: vista previa optimizada para niveles masivos con zoom al cursor, barra de herramientas scrollable en escritorio (sin ocultar botones en movil) y nuevos iconos dedicados en el editor.
+
+---
+
+## ![](frame:GJ_paintBtn_001.png?height=18) <cy>Interfaz, Perfiles y Comunidad</c>
+
+- <cl>Mascota (Pet) mejorada</c>: editor de <cg>dialogos con probabilidad/peso</c> y audio opcional por frase, <cg>multiples audios aleatorios</c> al hacer click y por cada <cg>gesto</c> (6 gestos con SFX de GD o propios), <cg>modo caricias con afinidad</c>, efecto escribir con colores del globo, <cg>paseo libre</c> y baile al ritmo de la musica.
+- <cl>Top Foros de Noticias</c>: nueva pantalla de ranking con los canales/servidores de noticias mas votados, buscador, verificacion de sesion y boton de favoritos (<cg>Fav +1</c>).
+- <cl>Soporte WebP global</c>: decodificacion nativa de imagenes <cg>WebP</c> integrada en la carga de imagenes del mod.
+- <cl>Menu de Pausa y Perfil Vanilla</c>: mejoras de acomodo en `PauseMenuLayout` (incluyendo <cg>Practice UI</c> y sliders) y normalizacion automatica de los menus laterales, redes y cabecera en perfiles vanilla.
+
+---
+
+## ![](frame:GJ_plainBtn_001.png?height=18) <cy>Estabilidad, Android, Bindings y Optimizaciones</c>
+
+- <cl>Crashes en Android (ProfilePage)</c>: decodificacion de imagenes de perfil separada del hilo OpenGL (corrige SIGSEGV en `ProfileImageService`), downsampling de cache en disco contra OOM en <cg>Android 32-bit</c>, deteccion real de `GLES 3.0` / extensiones en `PaiblurNode`, fallbacks de `CCRenderTexture` sin `GL_DEPTH24_STENCIL8` y correccion de recursion infinita en `GradientProfilePage`.
+- <cl>Crashes en Android (Menu de Niveles Principales)</c>: corregida corrupcion de nodos en el destructor de `BeatShaderVanillaSwap`, UAF en GIFs de fondo asincronos, lectura fuera de limites en `DecoderNDK` y metering FMOD, y liberacion segura de handles GL tras recarga de contexto EGL.
+- <cl>Crashes en Playtest y Gameplay</c>: validaciones de punteros y trails en `Separate Dual`, shaders de `Icon Gradients` reescritos para cumplir <cg>GLSL ES 1.00</c> (sin indexado dinamico de uniforms ni bucle por frame en editor P2), y prevencion de UAF en `FrameInterpolator`, `ProgressBarManager`, `GoldenBest`, `Versus` y `AnimateSession`.
+- <cl>Bindings de Geode y PC/Android</c>: migrados hooks heredados/muertos (`GJGarageLayer::onEnter`, `~PaimonLevelCell`), corregidas prioridades de `cocos2d::CCEGLViewProtocol::handleTouches*`, `ccGLBindVAO(0)` en dibujado PC, manejo seguro de `GL_REPEAT` NPOT en GLES2 y limites en bucles `glGetError()`.
+- <cl>Optimizaciones</c>: rutas rapidas sin asignaciones por toque en `HoverRuntime` y `QuickHubTouchHold`, rechazo temprano en hooks globales de `CCNode` (`DynamicPopupHook`, `DynamicTransitionPanelHook`), eliminacion de ticks innecesarios en movil para `ProfileGradientEffects` y cache estatica en `RedesignedProfile`.
+
+---
+
 # <cy>v1.2.6</c>
 
 ![](flozwer.paimbnails2/paim_Paimon.png?height=32) Actualizacion con la incorporacion de <cl>Editor MCP</c> y multiples correcciones de bugs, crashes y compatibilidad multiplataforma.

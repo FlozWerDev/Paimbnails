@@ -31,6 +31,7 @@ KeyboardModifier g_currentMods{};
 std::array<bool, 5> g_mouseDown = { false, false, false, false, false };
 
 bool g_systemInitialized = false;
+bool g_recordingKeybind = false;
 
 ScrollCaptureCallback g_scrollCaptor = nullptr;
 
@@ -357,6 +358,7 @@ void initExtendedKeybindSystem() {
 
         // ignore stale local state: focus loss drops release events.
         if (!isPress) return false;
+        if (g_recordingKeybind) return false;
 
         auto button = fromGeodeMouseButton(data.button);
         for (auto const& key : triggerOnlyList()) {
@@ -398,6 +400,14 @@ ScrollCaptureCallback const& currentScrollCaptor() {
 
 bool hasScrollCaptor() {
     return static_cast<bool>(g_scrollCaptor);
+}
+
+void setRecordingKeybind(bool active) {
+    g_recordingKeybind = active;
+}
+
+bool isRecordingKeybind() {
+    return g_recordingKeybind;
 }
 
 }

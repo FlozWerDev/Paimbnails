@@ -5,6 +5,7 @@
 #include <Geode/Geode.hpp>
 #include <Geode/ui/GeodeUI.hpp>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,7 @@ public:
     std::string m_prefix; // ".../previews/preview-" without "<n>.png"
     int m_top = 0;        // highest probe index that finished loading
     CCMenu* m_row = nullptr;
+    std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);
     std::vector<Ref<LazySprite>> m_slots;
     std::map<int, Ref<CCMenuItemSpriteExtra>> m_cells;
 
@@ -60,9 +62,11 @@ public:
             auto slot = LazySprite::create({110, 60}, false);
             m_slots.push_back(slot);
             int probe = i;
-            slot->setLoadCallback([self = WeakRef<PreviewRibbon>(this), probe, slot](Result<> res) {
-                auto ribbon = self.lock();
-                if (!ribbon || !res.isOk()) return;
+            // Avoid WeakRef<PreviewRibbon> inside m_slots's own LazySprite callbacks:
+            // releasing the ribbon from WeakRefPool::forget() would destroy m_slots
+            // and re-enter WeakRefPool::check() on the already-removed key.
+            slot->setLoadCallback([alive = m_alive, ribbon = this, probe, slot](Result<> res) {
+                if (!alive || !*alive || !res.isOk()) return;
                 ribbon->onCell(probe, slot);
             });
             slot->loadFromUrl(m_prefix + std::to_string(i) + ".png");
@@ -70,10 +74,23 @@ public:
         return true;
     }
 
-    ~PreviewRibbon() override {
+    void detachSlots() {
+        if (m_alive) *m_alive = false;
         for (auto& slot : m_slots) {
-            if (slot) slot->cancelLoad();
+            if (slot) {
+                slot->setLoadCallback(nullptr);
+                slot->cancelLoad();
+            }
         }
+    }
+
+    void onExit() override {
+        detachSlots();
+        CCNode::onExit();
+    }
+
+    ~PreviewRibbon() override {
+        detachSlots();
     }
 
     void onCell(int probe, LazySprite* slot) {

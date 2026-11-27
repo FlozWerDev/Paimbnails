@@ -1,5 +1,6 @@
 #include "PaimonPopup.hpp"
 #include "PaimonUI.hpp"
+#include "../core/RuntimeLifecycle.hpp"
 #include "../utils/DynamicPopupRegistry.hpp"
 #include <algorithm>
 
@@ -49,4 +50,23 @@ void PaimonPopup::show() {
         m_mainLayer->setScaleY(m_mainLayer->getScaleY() * fit);
     }
     FLAlertLayer::show();
+}
+
+void PaimonPopup::cleanup() {
+    if (auto* td = CCTouchDispatcher::get()) {
+        td->unregisterForcePrio(this);
+    }
+    Popup::cleanup();
+    if (!m_cleanedUp && !paimon::isRuntimeShuttingDown()) {
+        m_cleanedUp = true;
+        // Break Geode WeakRefPool cycles (child button lambdas capturing WeakRef<Popup>)
+        // on the next tick so the popup's destructor runs without tearing down an active callback.
+        geode::Ref<PaimonPopup> self = this;
+        geode::Loader::get()->queueInMainThread([self]() {
+            if (paimon::isRuntimeShuttingDown()) return;
+            if (self && !self->getParent()) {
+                self->removeAllChildrenWithCleanup(true);
+            }
+        });
+    }
 }

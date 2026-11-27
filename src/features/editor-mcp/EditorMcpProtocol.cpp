@@ -39,7 +39,19 @@ constexpr char const* kServerInstructions =
     "1. Call get_editor_state + inspect_structure_bounds (or get_objects compact=true) + get_color_channels to inspect geometry and free IDs.\n"
     "2. Call get_gd_reference (topics: decoration, geometry) and get_sprite_metrics / search_object_catalog for exact IDs/pivots.\n"
     "3. Build/decorate cleanly with place_object, place_objects_batch (supports trigger+params too), mirror_or_clone_structure, place_trigger, set_color_channel, and set_level_settings.\n"
-    "4. Verify with audit_level_quality, validate_gameplay_path (if gameplay), and render_1to1 (overview + 1to1 + zoomed corners/slopes with show_grid=true).";
+    "4. Verify with audit_level_quality, validate_gameplay_path (if gameplay), and render_1to1 (overview + 1to1 + zoomed corners/slopes with show_grid=true).\n"
+    "Mythic / Feature-Grade Visual & Art Standard (for full deco, art, or complex scenes):\n"
+    "- Macro-structured blocks (NO per-cell grid repetition): treat connected platforms/pillars as unified architectural silhouettes "
+    "(211, 694, 1759/1339, 1202/1220) with two-tone bevel bands (desaturated main body + contrasting lit side/top bevel) and "
+    "stepped diagonal shading strips (503/1009/211 + HSV Value shifts key 43), or true 3D skewing via warpY/warpX (keys 131/132). "
+    "Place 4-point corner flares (1835/1837 + 1764) sparingly ONLY on light-catching corners.\n"
+    "- Illustrated character & organic art: construct hair, clothing folds, hands, mascots, and detailed props by layering soft "
+    "gradients (1009, 1838/1835, 1764, 1887) inside thin curved lineart made of chained small 507/508 segments (0.12x-0.25x scale, "
+    "HSV-tinted) instead of crude primitive circles/triangles or raw 914 text.\n"
+    "- Depth & color discipline: B5/B4 far silhouettes low-contrast and faded with mist/clouds (129/131 + 503/1888); B2/B1 midground "
+    "muted without harsh outlines; T1-T3 foreground crisp at full contrast. Use blending=false with low opacity (0.18-0.45) on "
+    "bright/pastel palettes; reserve blending=true + 503/504 rim lights + 2065 atmospheric particles (key 145, key 146=1; triggered via "
+    "3608 Spawn Particle with 51=particleGroup, 71=posGroup) for dark/neon scenes.";
 
 matjson::Value rpcOk(matjson::Value id, matjson::Value result) {
     return matjson::makeObject({

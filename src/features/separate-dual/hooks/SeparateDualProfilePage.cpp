@@ -3,6 +3,7 @@
 #include <Geode/modify/ProfilePage.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
 #include "../../../framework/HookConventions.hpp"
+#include "../../profiles/services/VanillaProfileLayout.hpp"
 
 using namespace geode::prelude;
 using paimon::separate_dual::DualKitVault;
@@ -55,7 +56,7 @@ class $modify(PaimonSeparateDualProfile, ProfilePage) {
     }
 
     void on2PToggle(CCObject* sender) {
-        if (!moduleEnabled()) return;
+        if (!moduleEnabled() || !m_mainLayer) return;
         auto vault = DualKitVault::get();
 
         auto menu = m_mainLayer->getChildByID("player-menu");
@@ -97,29 +98,42 @@ class $modify(PaimonSeparateDualProfile, ProfilePage) {
         auto vault = DualKitVault::get();
         vault->chooseSide(false);
 
-        if (this->m_ownProfile) {
+        if (this->m_ownProfile && m_mainLayer) {
             if (auto menu = typeinfo_cast<CCMenu*>(m_mainLayer->getChildByID("player-menu"))) {
                 dressProfileDolls(menu, Side::Primary);
             }
         }
 
-        if (this->m_ownProfile && !m_fields->hasLoaded) {
+        if (this->m_ownProfile && m_mainLayer && !m_fields->hasLoaded) {
             m_fields->hasLoaded = true;
 
             if (auto menu = m_mainLayer->getChildByID("left-menu")) {
-                menu->setContentHeight(menu->getContentHeight() * 2);
-                menu->setPositionY(menu->getPositionY() - menu->getContentHeight() / 4);
+                if (!menu->getChildByID("2p-toggler"_spr)) {
+                    auto labelOff = CCLabelBMFont::create("2P", "bigFont.fnt");
+                    auto sprite2POff = labelOff ? CircleButtonSprite::create(labelOff, CircleBaseColor::Green, CircleBaseSize::Medium) : nullptr;
+                    auto labelOn = CCLabelBMFont::create("2P", "bigFont.fnt");
+                    auto sprite2POn = labelOn ? CircleButtonSprite::create(labelOn, CircleBaseColor::Cyan, CircleBaseSize::Medium) : nullptr;
 
-                auto label = CCLabelBMFont::create("2P", "bigFont.fnt");
-                auto sprite2POff = CircleButtonSprite::create(label, CircleBaseColor::Green, CircleBaseSize::Medium);
-                sprite2POff->setScale(0.7f);
-                auto sprite2POn = CircleButtonSprite::create(label, CircleBaseColor::Cyan, CircleBaseSize::Medium);
-                sprite2POn->setScale(0.7f);
+                    auto fitButton = [](CCNode* spr, float target) {
+                        if (!spr) return;
+                        float const cur = std::max(spr->getContentWidth(), spr->getContentHeight());
+                        if (cur > 0.f) spr->setScale(target / cur);
+                    };
+                    fitButton(sprite2POff, 26.f);
+                    fitButton(sprite2POn, 26.f);
 
-                auto toggler = CCMenuItemToggler::create(sprite2POff, sprite2POn, this, menu_selector(PaimonSeparateDualProfile::on2PToggle));
-                toggler->setID("2p-toggler"_spr);
-                menu->addChild(toggler);
-                menu->updateLayout();
+                    if (sprite2POff && sprite2POn) {
+                        if (auto toggler = CCMenuItemToggler::create(sprite2POff, sprite2POn, this, menu_selector(PaimonSeparateDualProfile::on2PToggle))) {
+                            toggler->setID("2p-toggler"_spr);
+                            menu->addChild(toggler);
+                        }
+                    }
+                }
+                if (paimon::settings::profiles::redesignEnabled()) {
+                    menu->updateLayout();
+                } else {
+                    paimon::profiles::normalizeVanillaLeftMenu(this->m_mainLayer);
+                }
             }
         }
     }

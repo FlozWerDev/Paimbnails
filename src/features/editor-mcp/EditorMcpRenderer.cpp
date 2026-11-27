@@ -260,7 +260,7 @@ RenderResult renderEditor1To1(RenderRequest const& req) {
 
     EditorVisualGuard guard(lel);
 
-    while (glGetError() != GL_NO_ERROR) {}
+    for (int i = 0; i < 16 && glGetError() != GL_NO_ERROR; ++i) {}
     RenderTexture rt(static_cast<uint32_t>(W), static_cast<uint32_t>(H));
     if (!rt.isValid() || !rt.begin()) {
         res.error = "Failed to initialize offscreen RenderTexture.";

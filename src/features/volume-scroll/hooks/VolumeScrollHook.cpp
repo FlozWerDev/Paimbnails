@@ -383,14 +383,15 @@ bool matchDragBinding(paimon::gestures::GestureKind dragKind, int activeFingers,
 class $modify(VolumeScrollTouchView, CCEGLViewProtocol) {
     static void onModify(auto& self) {
         // gameplay first: touches are observed, never consumed.
-        (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesBegin", geode::Priority::Normal);
-        (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesMove", geode::Priority::Normal);
-        (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesEnd", geode::Priority::Normal);
-        (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesCancel", geode::Priority::Normal);
+        (void)self.setHookPriorityPost("cocos2d::CCEGLViewProtocol::handleTouchesBegin", geode::Priority::Normal);
+        (void)self.setHookPriorityPost("cocos2d::CCEGLViewProtocol::handleTouchesMove", geode::Priority::Normal);
+        (void)self.setHookPriorityPost("cocos2d::CCEGLViewProtocol::handleTouchesEnd", geode::Priority::Normal);
+        (void)self.setHookPriorityPost("cocos2d::CCEGLViewProtocol::handleTouchesCancel", geode::Priority::Normal);
     }
 
     void handleTouchesBegin(int num, int ids[], float xs[], float ys[], double timestamp) {
         CCEGLViewProtocol::handleTouchesBegin(num, ids, xs, ys, timestamp);
+        if (num <= 0 || !ids || !xs || !ys) return;
         for (int i = 0; i < num; ++i) {
             CCPoint pt = paimon::gestures::GestureManager::viewPixelsToPoint(xs[i], ys[i]);
             auto it = std::find_if(g_volTouch.touches.begin(), g_volTouch.touches.end(),
@@ -405,6 +406,7 @@ class $modify(VolumeScrollTouchView, CCEGLViewProtocol) {
 
     void handleTouchesMove(int num, int ids[], float xs[], float ys[], double timestamp) {
         CCEGLViewProtocol::handleTouchesMove(num, ids, xs, ys, timestamp);
+        if (num <= 0 || !ids || !xs || !ys) return;
 
         for (int i = 0; i < num; ++i) {
             CCPoint pt = paimon::gestures::GestureManager::viewPixelsToPoint(xs[i], ys[i]);

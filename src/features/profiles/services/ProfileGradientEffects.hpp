@@ -69,9 +69,17 @@ public:
         m_hover = 0.f;
         m_burst = 0.f;
         m_wasHovered = false;
-        // always update-driven, even for "none": the hover burst must fire
+#if defined(GEODE_IS_WINDOWS) || defined(GEODE_IS_MACOS)
+        // always update-driven on desktop, even for "none": the hover burst must fire
         // on every mouse-enter regardless of the idle effect.
         this->scheduleUpdate();
+#else
+        if (m_effect == "none") {
+            this->unscheduleUpdate();
+        } else {
+            this->scheduleUpdate();
+        }
+#endif
     }
 
     std::string const& effect() const { return m_effect; }

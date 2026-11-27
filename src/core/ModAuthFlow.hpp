@@ -33,6 +33,22 @@ bool hasPermission(std::string_view permission);
 void refreshSession(std::function<void(SessionRoles const&)> callback = {});
 void logout(std::function<void(bool)> callback = {});
 
+enum class StartupAccountStatus {
+    Unchecked,
+    Checking,
+    Verified,
+    NoGDAccount,
+    NotRegisteredInPaimbnails,
+    NetworkError,
+};
+
+// Startup check: verifies GD account integrity and whether the player has an active
+// registered Paimbnails session, helping prevent bot spam and spoofing/injection.
+StartupAccountStatus startupAccountStatus();
+std::string startupAccountMessage();
+void verifyStartupAccount(bool notifyIfUnregistered = true, std::function<void(StartupAccountStatus)> callback = {});
+bool hasVerifiedVoteEligibility(std::string* outReason = nullptr);
+
 // Empty/zero unless the volatile moderator session is still verified. Callers
 // must never use GD fields as moderation identity.
 std::string verifiedUsername();

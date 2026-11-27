@@ -16,15 +16,46 @@
 #include "../blur/BlurSystem.hpp"
 #include "../core/RuntimeLifecycle.hpp"
 #include "../framework/HookConventions.hpp"
+#include "../utils/ExtendedKeybind.hpp"
 #include "../utils/FramePerf.hpp"
 
 using namespace geode::prelude;
+
+namespace {
+
+bool hasCustomCaptureMenuBind() {
+    auto* mod = Mod::get();
+    if (mod && mod->hasSetting("capture-menu-keybind")) {
+        if (auto setting = cast::typeinfo_pointer_cast<KeybindSettingV3>(
+                mod->getSetting("capture-menu-keybind"))) {
+            for (auto const& kb : setting->getValue()) {
+                if (kb.key != cocos2d::KEY_None || kb.modifiers != KeyboardModifier::None) {
+                    return true;
+                }
+            }
+        }
+    }
+    return !paimon::keybinds::loadExtendedKeybind("capture-menu-keybind").isEmpty();
+}
+
+} // namespace
 
 // mouseinputevent keeps right-click handling cross-platform.
 
 // leak the global listener for the session; geode frees it on unload.
 $execute {
     MouseInputEvent().listen(+[](MouseInputData& data) -> bool {
+        if (paimon::keybinds::isRecordingKeybind()) return false;
+#if defined(GEODE_IS_DESKTOP)
+        if (data.button == MouseInputData::Button::Left &&
+            data.action == MouseInputData::Action::Press) {
+            if (PetManager::get().config().enabled &&
+                PetManager::get().config().enableClickInteraction) {
+                PetManager::get().registerClick(geode::cocos::getMousePos());
+            }
+            return false;
+        }
+#endif
         if (data.button != MouseInputData::Button::Right) return false;
 
         bool const isPress = (data.action == MouseInputData::Action::Press);
@@ -40,16 +71,20 @@ $execute {
 
         // alt+right-click stays with the editor.
         if (isPress && !(data.modifiers & KeyboardModifier::Alt)
-            && (!pl || pl->m_isPaused)
-            && Mod::get()->hasSetting("capture-menu-rightclick")
-            && Mod::get()->getSettingValue<bool>("capture-menu-rightclick")) {
+            && (!pl || pl->m_isPaused)) {
             // quick hub owns clicks over its buttons.
             if (paimon::quickhub::handleQuickButtonRightClick()) return true;
 
-            Loader::get()->queueInMainThread([]() {
-                if (paimon::isRuntimeShuttingDown()) return;
-                CaptureMenuPopup::toggle();
-            });
+            // Only fall back to default right-click when the user has not
+            // bound a custom trigger to capture-menu-keybind.
+            if (!hasCustomCaptureMenuBind()
+                && Mod::get()->hasSetting("capture-menu-rightclick")
+                && Mod::get()->getSettingValue<bool>("capture-menu-rightclick")) {
+                Loader::get()->queueInMainThread([]() {
+                    if (paimon::isRuntimeShuttingDown()) return;
+                    CaptureMenuPopup::toggle();
+                });
+            }
         }
 
         return false;
@@ -60,9 +95,22 @@ $execute {
     KeybindSettingPressedEventV3(Mod::get(), "capture-menu-keybind").listen(
         +[](Keybind const&, bool down, bool repeat, double) -> void {
             if (!down || repeat) return;
+            if (paimon::keybinds::isRecordingKeybind()) return;
 
             auto* pl = PlayLayer::get();
             if (pl && !pl->m_isPaused) return;
+
+            // If the custom trigger is Right Click, keep Alt+RightClick for the editor
+            // and let Quick Hub consume clicks over its own buttons.
+            auto const ext = paimon::keybinds::loadExtendedKeybind("capture-menu-keybind");
+            if (ext.kind == paimon::keybinds::ExtendedKind::Mouse
+                && ext.button == paimon::keybinds::MouseButton::Right) {
+                if ((paimon::keybinds::currentModifiers().value & KeyboardModifier::Alt)
+                    && !(ext.modifiers.value & KeyboardModifier::Alt)) {
+                    return;
+                }
+                if (paimon::quickhub::handleQuickButtonRightClick()) return;
+            }
 
             Loader::get()->queueInMainThread([]() {
                 if (paimon::isRuntimeShuttingDown()) return;
@@ -141,17 +189,32 @@ class $modify(CaptureView, CCEGLView) {
 
 class $modify(CaptureTouchView, CCEGLViewProtocol) {
     static void onModify(auto& self) {
-        paimon::hooks::veryLatePost(self, "CCEGLViewProtocol::handleTouchesBegin");
+        paimon::hooks::veryLatePost(self, "cocos2d::CCEGLViewProtocol::handleTouchesBegin");
     }
 
     void handleTouchesBegin(int num, int ids[], float xs[], float ys[], double timestamp) {
         CCEGLViewProtocol::handleTouchesBegin(num, ids, xs, ys, timestamp);
 
-        if (!PetManager::get().config().enableClickInteraction) return;
+#if defined(GEODE_IS_MOBILE)
+        if (num <= 0 || !ids || !xs || !ys) return;
+        if (!PetManager::get().config().enabled ||
+            !PetManager::get().config().enableClickInteraction) return;
+
+        auto* dir = CCDirector::get();
+        auto* glView = dir ? dir->getOpenGLView() : nullptr;
+        auto const win = dir ? dir->getWinSize() : CCSizeZero;
+        auto const frame = glView ? glView->getFrameSize() : CCSizeZero;
+        if (win.width <= 0.f || win.height <= 0.f || frame.width <= 0.f || frame.height <= 0.f) return;
 
         for (int i = 0; i < num; ++i) {
-            PetManager::get().registerClick({xs[i], ys[i]});
+            // Convert top-left raw screen pixels into Cocos2d bottom-left design coordinates.
+            CCPoint const glPt{
+                (xs[i] / frame.width) * win.width,
+                ((frame.height - ys[i]) / frame.height) * win.height
+            };
+            PetManager::get().registerClick(glPt);
         }
+#endif
     }
 
 #if defined(GEODE_IS_ANDROID)

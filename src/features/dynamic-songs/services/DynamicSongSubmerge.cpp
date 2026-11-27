@@ -197,6 +197,9 @@ bool SubmergeEffect::ensureDsps() {
     }
 
     // added head-first, so the last one in (gain) is applied last.
+    // record m_attached before attaching so detachDsps() removes any partially
+    // attached DSPs before releasing them if a subsequent addDSP() fails.
+    m_attached = target;
     FMOD::DSP* chain[] = {m_lowpassDsp, m_highpassDsp, m_reverbDsp, m_gainDsp};
     for (auto* dsp : chain) {
         if (target->addDSP(FMOD_CHANNELCONTROL_DSP_HEAD, dsp) != FMOD_OK) {
@@ -207,7 +210,6 @@ bool SubmergeEffect::ensureDsps() {
         dsp->setActive(true);
     }
 
-    m_attached = target;
     return true;
 }
 

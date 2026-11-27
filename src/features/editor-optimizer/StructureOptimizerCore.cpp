@@ -860,27 +860,38 @@ std::vector<GridRect> greedyHistogram2D(
                         ++r0;
                     }
                     if (r0 <= r) {
-                        // Slide valid column sub-intervals within [sc, c) respecting maxU.
-                        std::size_t right = sc;
-                        for (std::size_t left = sc; left < c; ++left) {
-                            if (right < left + 1) right = left + 1;
-                            while (right < c && grid.validDims(left, right + 1, r0, r + 1)) {
-                                ++right;
-                            }
-                            if (!grid.validDims(left, right, r0, r + 1)) continue;
-
-                            std::size_t const cells = (right - left) * (r + 1 - r0);
-                            float const area = (grid.uCoords[right] - grid.uCoords[left]) *
+                        if (!preferCornerFit && grid.validDims(sc, c, r0, r + 1)) {
+                            std::size_t const cells = (c - sc) * (r + 1 - r0);
+                            float const area = (grid.uCoords[c] - grid.uCoords[sc]) *
                                                (grid.vCoords[r + 1] - grid.vCoords[r0]);
-                            double score = static_cast<double>(cells) * 1000.0 + static_cast<double>(area) * 0.01;
-                            if (preferCornerFit) {
-                                score += static_cast<double>(exposedCornerScore(left, right, r0, r + 1)) * 2500.0;
-                            }
+                            double const score = static_cast<double>(cells) * 1000.0 + static_cast<double>(area) * 0.01;
                             if (score > bestScore) {
                                 bestScore = score;
-                                bestRect = {left, right, r0, r + 1};
+                                bestRect = {sc, c, r0, r + 1};
                             }
-                            if (right == c) break;
+                        } else {
+                            // Slide valid column sub-intervals within [sc, c) respecting maxU.
+                            std::size_t right = sc;
+                            for (std::size_t left = sc; left < c; ++left) {
+                                if (right < left + 1) right = left + 1;
+                                while (right < c && grid.validDims(left, right + 1, r0, r + 1)) {
+                                    ++right;
+                                }
+                                if (!grid.validDims(left, right, r0, r + 1)) continue;
+
+                                std::size_t const cells = (right - left) * (r + 1 - r0);
+                                float const area = (grid.uCoords[right] - grid.uCoords[left]) *
+                                                   (grid.vCoords[r + 1] - grid.vCoords[r0]);
+                                double score = static_cast<double>(cells) * 1000.0 + static_cast<double>(area) * 0.01;
+                                if (preferCornerFit) {
+                                    score += static_cast<double>(exposedCornerScore(left, right, r0, r + 1)) * 200.0;
+                                }
+                                if (score > bestScore) {
+                                    bestScore = score;
+                                    bestRect = {left, right, r0, r + 1};
+                                }
+                                if (right == c) break;
+                            }
                         }
                     }
                 }
@@ -914,7 +925,6 @@ std::vector<GridRect> exactBranchAndBound2D(
     std::size_t const H = grid.H;
 
     // Max possible cells any single valid rectangle can cover in this grid (for tight LB).
-    float maxSingleArea = 0.f;
     std::size_t maxSingleCells = 1;
     for (std::size_t r0 = 0; r0 < H; ++r0) {
         for (std::size_t r1 = r0 + 1; r1 <= H; ++r1) {
@@ -933,9 +943,6 @@ std::vector<GridRect> exactBranchAndBound2D(
                     }
                     if (!allOcc) break;
                     maxSingleCells = std::max(maxSingleCells, (c1 - c0) * (r1 - r0));
-                    float const area = (grid.uCoords[c1] - grid.uCoords[c0]) *
-                                       (grid.vCoords[r1] - grid.vCoords[r0]);
-                    maxSingleArea = std::max(maxSingleArea, area);
                 }
             }
         }
@@ -1523,25 +1530,24 @@ std::vector<LocalItem> greedyRuns1D(
         active = std::move(nextActive);
     }
     for (auto& it : active) done.push_back(std::move(it));
-    auto cleanU = mergePass1D(done, Axis::U, opts);
-    auto cleanV = mergePass1D(done, Axis::V, opts);
+    auto cleanU = mergeIterative1D(done, Axis::U, opts);
+    auto cleanV = mergeIterative1D(done, Axis::V, opts);
     return cleanU.size() <= cleanV.size() ? cleanU : cleanV;
 }
 
-// Exact 2-branch strip solver for small uniform-cell Axis1D components (<= 36 items).
+// Exact 2-branch strip solver for small uniform-cell Axis1D / 1D-mode components (<= 48 items).
 std::vector<LocalItem> exactStripCoverAxis1D(
     std::vector<LocalItem> const& items,
     std::vector<LocalItem> best,
     OptimizerOptions const& opts
 ) {
     std::size_t const n = items.size();
-    if (n < 4 || n > 36 || best.size() <= 2) return best;
+    if (n < 4 || n > 48 || best.size() <= 2) return best;
 
     float const cellU = items.front().spanU;
     float const cellV = items.front().spanV;
     for (auto const& it : items) {
-        if (it.stretch != StretchCapability::Axis1D ||
-            !canStretchAlong(it, Axis::U) || !canStretchAlong(it, Axis::V) ||
+        if (!canStretchAlong(it, Axis::U) || !canStretchAlong(it, Axis::V) ||
             !approxEqual(it.spanU, cellU, opts.posTolerance) ||
             !approxEqual(it.spanV, cellV, opts.posTolerance)) {
             return best;
@@ -1557,14 +1563,21 @@ std::vector<LocalItem> exactStripCoverAxis1D(
     std::size_t const maxStripCells = static_cast<std::size_t>(std::max(maxCellsU, maxCellsV));
     if (maxStripCells <= 1) return best;
 
-    // Integer grid coordinates relative to item 0.
+    // Integer grid coordinates relative to min U/V.
     float minU = items[0].u, minV = items[0].v;
     for (auto const& it : items) {
         minU = std::min(minU, it.u);
         minV = std::min(minV, it.v);
     }
 
+    struct GridKey {
+        int x = 0;
+        int y = 0;
+        std::size_t idx = 0;
+    };
     std::vector<int> gx(n), gy(n);
+    std::vector<GridKey> sortedKeys;
+    sortedKeys.reserve(n);
     for (std::size_t i = 0; i < n; ++i) {
         float const fx = (items[i].u - minU) / cellU;
         float const fy = (items[i].v - minV) / cellV;
@@ -1576,16 +1589,31 @@ std::vector<LocalItem> exactStripCoverAxis1D(
         }
         gx[i] = ix;
         gy[i] = iy;
+        sortedKeys.push_back({ix, iy, i});
+    }
+    std::sort(sortedKeys.begin(), sortedKeys.end(), [](GridKey const& a, GridKey const& b) {
+        if (a.x != b.x) return a.x < b.x;
+        return a.y < b.y;
+    });
+    for (std::size_t i = 1; i < sortedKeys.size(); ++i) {
+        if (sortedKeys[i].x == sortedKeys[i - 1].x && sortedKeys[i].y == sortedKeys[i - 1].y) {
+            return best; // Duplicate cell
+        }
     }
 
     auto findCell = [&](int x, int y) -> int {
-        for (std::size_t i = 0; i < n; ++i) {
-            if (gx[i] == x && gy[i] == y) return static_cast<int>(i);
+        auto it = std::lower_bound(sortedKeys.begin(), sortedKeys.end(), std::pair{x, y},
+            [](GridKey const& k, std::pair<int, int> const& target) {
+                if (k.x != target.first) return k.x < target.first;
+                return k.y < target.second;
+            });
+        if (it != sortedKeys.end() && it->x == x && it->y == y) {
+            return static_cast<int>(it->idx);
         }
         return -1;
     };
 
-    std::array<int, 36> posX{}, negX{}, posY{}, negY{};
+    std::vector<int> posX(n, -1), negX(n, -1), posY(n, -1), negY(n, -1);
     for (std::size_t i = 0; i < n; ++i) {
         posX[i] = findCell(gx[i] + 1, gy[i]);
         negX[i] = findCell(gx[i] - 1, gy[i]);
@@ -1603,6 +1631,24 @@ std::vector<LocalItem> exactStripCoverAxis1D(
     bool improved = false;
     std::size_t nodes = 0;
 
+    auto lineLength = [&](std::size_t seed, Axis axis) -> int {
+        auto const& stepPos = (axis == Axis::U) ? posX : posY;
+        auto const& stepNeg = (axis == Axis::U) ? negX : negY;
+        int const maxC = (axis == Axis::U) ? maxCellsU : maxCellsV;
+        int len = 1;
+        int p = stepNeg[seed];
+        while (p >= 0 && !used[p] && len < maxC) {
+            ++len;
+            p = stepNeg[p];
+        }
+        p = stepPos[seed];
+        while (p >= 0 && !used[p] && len < maxC) {
+            ++len;
+            p = stepPos[p];
+        }
+        return len;
+    };
+
     auto search = [&](auto& self, std::size_t remCount) -> void {
         if (nodes >= kExactSearchNodeBudget) return;
         ++nodes;
@@ -1617,18 +1663,30 @@ std::vector<LocalItem> exactStripCoverAxis1D(
         std::size_t const lb = (remCount + maxStripCells - 1) / maxStripCells;
         if (cur.size() + lb >= bestLimit) return;
 
-        // Pick an exposed corner cell (fewest valid run directions) or first remaining.
+        // Pick an exposed corner cell prioritizing minimum branching (MRV).
         int seed = -1;
+        int bestMinLen = std::numeric_limits<int>::max();
+        int bestSumLen = std::numeric_limits<int>::max();
+        int fallbackSeed = -1;
         for (std::size_t i = 0; i < n; ++i) {
             if (used[i]) continue;
+            if (fallbackSeed < 0) fallbackSeed = static_cast<int>(i);
             bool const openU = (posX[i] < 0 || used[posX[i]]) || (negX[i] < 0 || used[negX[i]]);
             bool const openV = (posY[i] < 0 || used[posY[i]]) || (negY[i] < 0 || used[negY[i]]);
             if (openU && openV) {
-                seed = static_cast<int>(i);
-                break;
+                int const lu = lineLength(i, Axis::U);
+                int const lv = lineLength(i, Axis::V);
+                int const minL = std::min(lu, lv);
+                int const sumL = lu + lv;
+                if (minL < bestMinLen || (minL == bestMinLen && sumL < bestSumLen)) {
+                    bestMinLen = minL;
+                    bestSumLen = sumL;
+                    seed = static_cast<int>(i);
+                    if (minL == 1 && sumL <= 2) break;
+                }
             }
-            if (seed < 0) seed = static_cast<int>(i);
         }
+        if (seed < 0) seed = fallbackSeed;
         if (seed < 0) return;
 
         auto buildLine = [&](Axis axis) -> std::vector<std::size_t> {
@@ -1636,7 +1694,6 @@ std::vector<LocalItem> exactStripCoverAxis1D(
             auto const& stepNeg = (axis == Axis::U) ? negX : negY;
             int const maxC = (axis == Axis::U) ? maxCellsU : maxCellsV;
 
-            // Walk to negative end as far as possible within maxC, then forward.
             std::vector<std::size_t> negWalk;
             int p = stepNeg[seed];
             while (p >= 0 && !used[p] && static_cast<int>(negWalk.size()) + 1 < maxC) {
@@ -1665,7 +1722,6 @@ std::vector<LocalItem> exactStripCoverAxis1D(
         }
 
         for (std::size_t b = 0; b < 2; ++b) {
-            // Skip duplicate 1-cell branch if both runs have length 1.
             if (b == 1 && branches[0].second.size() == 1 && branches[1].second.size() == 1) break;
             auto const& members = branches[b].second;
             for (std::size_t m : members) used[m] = true;
@@ -1711,7 +1767,7 @@ std::vector<LocalItem> solveAxis1DComponent(
         if (gCorner.size() < best.size()) best = std::move(gCorner);
     }
 
-    if (items.size() <= 36) {
+    if (items.size() <= 48) {
         best = exactStripCoverAxis1D(items, std::move(best), opts);
     }
 
@@ -1751,7 +1807,7 @@ std::vector<bool> detectElbowCorners(
         pts.reserve(group.size());
         for (std::size_t idx : group) {
             auto const& r = records[idx];
-            bool const swapped = std::abs(r.baseWidth - r.baseHeight) <= 0.5f &&
+            bool const swapped = std::abs(r.baseWidth - r.baseHeight) <= 0.2f &&
                                  isOrthogonalRotationDelta(r.rotation, baseRot) &&
                                  (quarterTurnOffset(r.rotation, baseRot) % 2 == 1);
             pts.push_back({
@@ -2006,16 +2062,16 @@ OptimizationPlan planStructureOptimization(
         }
 
         Axes const ax = localAxes(b.baseRot);
-        bool const swappedAxes = std::abs(rec.baseWidth - rec.baseHeight) <= 0.5f &&
+        bool const swappedAxes = std::abs(rec.baseWidth - rec.baseHeight) <= 0.2f &&
                                  isOrthogonalRotationDelta(rec.rotation, b.baseRot) &&
                                  (quarterTurnOffset(rec.rotation, b.baseRot) % 2 == 1);
 
         float const maxScale = effectiveMaxScale(rec, options);
         float const maxSpan = effectiveMaxSpan(rec, options, maxScale);
-        float const spanU = swappedAxes ? (rec.baseHeight * std::abs(rec.scaleY))
-                                        : (rec.baseWidth * std::abs(rec.scaleX));
-        float const spanV = swappedAxes ? (rec.baseWidth * std::abs(rec.scaleX))
-                                        : (rec.baseHeight * std::abs(rec.scaleY));
+        float const localBaseU = swappedAxes ? rec.baseHeight : rec.baseWidth;
+        float const localBaseV = swappedAxes ? rec.baseWidth : rec.baseHeight;
+        float const spanU = localBaseU * std::abs(swappedAxes ? rec.scaleY : rec.scaleX);
+        float const spanV = localBaseV * std::abs(swappedAxes ? rec.scaleX : rec.scaleY);
 
         LocalItem item;
         item.recordIdx = i;
@@ -2024,11 +2080,13 @@ OptimizationPlan planStructureOptimization(
         item.v = rec.x * ax.vx + rec.y * ax.vy;
         item.spanU = spanU;
         item.spanV = spanV;
-        item.scaleX = spanU / std::max(rec.baseWidth, 1.f);
-        item.scaleY = spanV / std::max(rec.baseHeight, 1.f);
-        item.baseWidth = rec.baseWidth;
-        item.baseHeight = rec.baseHeight;
-        item.stretch = rec.stretch;
+        item.scaleX = spanU / std::max(localBaseU, 1.f);
+        item.scaleY = spanV / std::max(localBaseV, 1.f);
+        item.baseWidth = localBaseU;
+        item.baseHeight = localBaseV;
+        item.stretch = (!options.merge2DFills && rec.stretch == StretchCapability::Uniform2D)
+            ? StretchCapability::Axis1D
+            : rec.stretch;
         item.isSolid = rec.isSolid;
         item.maxScale = maxScale;
         item.maxSpan = maxSpan;
@@ -2049,10 +2107,12 @@ OptimizationPlan planStructureOptimization(
             if (comp.items.size() < 2) continue;
 
             bool allUniform2D = options.merge2DFills;
-            bool allAxis1D = true;
+            bool allBiAxis1D = true;
             for (auto const& item : comp.items) {
                 if (item.stretch != StretchCapability::Uniform2D) allUniform2D = false;
-                if (item.stretch != StretchCapability::Axis1D) allAxis1D = false;
+                bool const biAxis = (item.stretch == StretchCapability::Axis1D) ||
+                                    (!options.merge2DFills && item.stretch == StretchCapability::Uniform2D);
+                if (!biAxis) allBiAxis1D = false;
             }
 
             std::vector<LocalItem> best;
@@ -2062,7 +2122,7 @@ OptimizationPlan planStructureOptimization(
                 auto uv = mergeIterative1D(comp.items, Axis::U, options);
                 auto vu = mergeIterative1D(comp.items, Axis::V, options);
                 best = uv.size() <= vu.size() ? std::move(uv) : std::move(vu);
-            } else if (allAxis1D) {
+            } else if (allBiAxis1D) {
                 best = solveAxis1DComponent(comp.items, comp.hasOverlap, options);
             } else {
                 auto uv = mergeIterative1D(comp.items, Axis::U, options);
@@ -2079,7 +2139,7 @@ OptimizationPlan planStructureOptimization(
                     auto const& orig = records[out.sources.front()];
                     float const origU = orig.x * ax.ux + orig.y * ax.uy;
                     float const origV = orig.x * ax.vx + orig.y * ax.vy;
-                    bool const origSwapped = std::abs(orig.baseWidth - orig.baseHeight) <= 0.5f &&
+                    bool const origSwapped = std::abs(orig.baseWidth - orig.baseHeight) <= 0.2f &&
                                              isOrthogonalRotationDelta(orig.rotation, bucket.baseRot) &&
                                              (quarterTurnOffset(orig.rotation, bucket.baseRot) % 2 == 1);
                     float const origSpanU = origSwapped ? (orig.baseHeight * std::abs(orig.scaleY))
@@ -2096,16 +2156,23 @@ OptimizationPlan planStructureOptimization(
 
                 std::sort(out.sources.begin(), out.sources.end());
                 std::size_t keeperIdx = out.sources.front();
+                int bestKeeperScore = -1;
                 for (std::size_t sIdx : out.sources) {
-                    if (isOrthogonalRotationDelta(records[sIdx].rotation, bucket.baseRot) &&
-                        quarterTurnOffset(records[sIdx].rotation, bucket.baseRot) == 0) {
+                    auto const& candRec = records[sIdx];
+                    bool const alignedRot = isOrthogonalRotationDelta(candRec.rotation, bucket.baseRot) &&
+                                            quarterTurnOffset(candRec.rotation, bucket.baseRot) == 0;
+                    int score = (alignedRot ? 4 : 0) +
+                                (!candRec.flipX ? 1 : 0) +
+                                (!candRec.flipY ? 1 : 0);
+                    if (score > bestKeeperScore) {
+                        bestKeeperScore = score;
                         keeperIdx = sIdx;
-                        break;
+                        if (score == 6) break;
                     }
                 }
 
                 auto const& keeperRec = records[keeperIdx];
-                bool const keeperSwapped = std::abs(keeperRec.baseWidth - keeperRec.baseHeight) <= 0.5f &&
+                bool const keeperSwapped = std::abs(keeperRec.baseWidth - keeperRec.baseHeight) <= 0.2f &&
                                            isOrthogonalRotationDelta(keeperRec.rotation, bucket.baseRot) &&
                                            (quarterTurnOffset(keeperRec.rotation, bucket.baseRot) % 2 == 1);
 

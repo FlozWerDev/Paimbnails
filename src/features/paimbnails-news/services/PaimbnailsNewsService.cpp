@@ -1,6 +1,8 @@
 #include "PaimbnailsNewsService.hpp"
 
+#include "../../../core/ModAuthFlow.hpp"
 #include "../../../core/RuntimeLifecycle.hpp"
+#include "../../../utils/AccountVerifier.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/HttpUrl.hpp"
 #include "../../../utils/SafeText.hpp"
@@ -10,6 +12,7 @@
 #include <Geode/utils/web.hpp>
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <ctime>
 
@@ -19,7 +22,7 @@ namespace paimon::news {
 
 namespace {
 
-constexpr int64_t kFreshMs = 2 * 60 * 1000;
+constexpr int64_t kFreshMs = 20 * 1000;
 constexpr int64_t kProvidersFreshMs = 5 * 60 * 1000;
 constexpr char const* kSavedSourcesKey = "news.enabled_sources";
 constexpr char const* kSavedProvidersKey = "news.providers_cache";
@@ -56,6 +59,20 @@ int jsonDimension(matjson::Value const& v) {
 std::string safeUrl(matjson::Value const& v) {
     auto url = jsonStr(v);
     if (url.size() > kMaxUrlBytes || !isAllowedImageUrl(url)) return {};
+    // Discord's media proxy returns WebP by default on resized images unless format=png/jpeg is explicit.
+    if (auto parsed = paimon::net::parseHttpUrl(url);
+        parsed && (parsed->host == "media.discordapp.net" || parsed->host.ends_with(".discordapp.net"))) {
+        for (auto pos = url.find("&&"); pos != std::string::npos; pos = url.find("&&", pos)) {
+            url.replace(pos, 2, "&");
+        }
+        auto qPos = url.find('?');
+        if (qPos != std::string::npos && url.find("format=", qPos) == std::string::npos) {
+            if (url.size() + 11 <= kMaxUrlBytes) {
+                if (url.back() != '?' && url.back() != '&') url += '&';
+                url += "format=png";
+            }
+        }
+    }
     return url;
 }
 
@@ -204,6 +221,13 @@ bool isInvisibleOrUnsupported(char32_t cp) {
     }
 }
 
+bool isValidChannelId(std::string_view channelId) {
+    if (channelId.size() < 5 || channelId.size() > 25) return false;
+    return std::all_of(channelId.begin(), channelId.end(), [](unsigned char ch) {
+        return std::isdigit(ch) != 0;
+    });
+}
+
 std::vector<NewsProvider> builtinProviders() {
     return {
         NewsProvider{
@@ -213,16 +237,10 @@ std::vector<NewsProvider> builtinProviders() {
             .channelName = {},
             .guildName = "Paimbnails",
             .iconUrl = {},
+            .favoritesCount = 0,
+            .rank = 1,
+            .favoritedByMe = false,
             .isDefault = true,
-        },
-        NewsProvider{
-            .id = std::string(kSecondaryNewsChannelId),
-            .channelId = std::string(kSecondaryNewsChannelId),
-            .name = fmt::format("Server {}", kSecondaryNewsChannelId),
-            .channelName = {},
-            .guildName = {},
-            .iconUrl = {},
-            .isDefault = false,
         },
     };
 }
@@ -243,7 +261,7 @@ std::optional<std::vector<NewsProvider>> parseProvidersJson(std::string const& b
     for (auto const& v : arr) {
         if (!v.isObject()) continue;
         auto cid = paimon::text::sanitizeDisplayText(jsonStr(v["channelId"]), 32);
-        if (cid.empty()) continue;
+        if (!isValidChannelId(cid)) continue;
         NewsProvider p;
         p.channelId = std::move(cid);
         p.id = paimon::text::sanitizeDisplayText(jsonStr(v["id"]), 64);
@@ -253,11 +271,26 @@ std::optional<std::vector<NewsProvider>> parseProvidersJson(std::string const& b
         p.channelName = paimon::text::sanitizeDisplayText(jsonStr(v["channelName"]), kMaxNameBytes);
         p.guildName = paimon::text::sanitizeDisplayText(jsonStr(v["guildName"]), kMaxNameBytes);
         p.iconUrl = safeUrl(v["iconUrl"]);
+        p.favoritesCount = static_cast<int>(std::max<int64_t>(0, jsonInt(v["favoritesCount"])));
+        p.rank = static_cast<int>(std::max<int64_t>(0, jsonInt(v["rank"])));
+        p.favoritedByMe = v["favoritedByMe"].isBool() && v["favoritedByMe"].asBool().unwrapOr(false);
         p.isDefault = v["default"].isBool() && v["default"].asBool().unwrapOr(false);
         out.push_back(std::move(p));
     }
     if (out.empty()) return std::nullopt;
     return out;
+}
+
+std::vector<NewsProvider> sortAsTop(std::vector<NewsProvider> items) {
+    std::stable_sort(items.begin(), items.end(), [](NewsProvider const& a, NewsProvider const& b) {
+        if (a.favoritesCount != b.favoritesCount) return a.favoritesCount > b.favoritesCount;
+        if (a.isDefault != b.isDefault) return a.isDefault;
+        return false;
+    });
+    for (size_t i = 0; i < items.size(); ++i) {
+        items[i].rank = static_cast<int>(i + 1);
+    }
+    return items;
 }
 
 std::vector<NewsProvider> mergeWithBuiltins(std::vector<NewsProvider> incoming) {
@@ -290,6 +323,7 @@ void NewsService::ensureStateLoaded() {
                 m_providers = mergeWithBuiltins(std::move(*parsed));
             }
         }
+        m_topProviders = sortAsTop(m_providers);
 
         auto const savedSources = mod->getSavedValue<std::string>(kSavedSourcesKey, "");
         if (!savedSources.empty()) {
@@ -336,6 +370,8 @@ void NewsService::saveProvidersCache() {
         if (!p.channelName.empty()) obj["channelName"] = p.channelName;
         if (!p.guildName.empty()) obj["guildName"] = p.guildName;
         if (!p.iconUrl.empty()) obj["iconUrl"] = p.iconUrl;
+        obj["favoritesCount"] = p.favoritesCount;
+        obj["favoritedByMe"] = p.favoritedByMe;
         obj["default"] = p.isDefault;
         arr.push(std::move(obj));
     }
@@ -425,6 +461,7 @@ void NewsService::fetch(std::string const& channelId, bool force, Callback callb
     req.timeout(asp::Duration::fromSecs(20));
     req.acceptEncoding("gzip, deflate");
     req.header("Accept", "application/json");
+    if (force) req.header("Cache-Control", "no-cache");
     req.followRedirects(false);
 
     WebHelper::dispatch(std::move(req), "GET", url, [key](web::WebResponse res) {
@@ -485,6 +522,10 @@ void NewsService::fetchProviders(bool force, ProvidersCallback callback) {
     req.timeout(asp::Duration::fromSecs(15));
     req.acceptEncoding("gzip, deflate");
     req.header("Accept", "application/json");
+    if (auto const token = HttpClient::get().getSessionToken(); !token.empty()) {
+        req.header("X-Session-Token", token);
+    }
+    if (force) req.header("Cache-Control", "no-cache");
     req.followRedirects(false);
 
     WebHelper::dispatch(std::move(req), "GET", url, [](web::WebResponse res) {
@@ -502,6 +543,7 @@ void NewsService::fetchProviders(bool force, ProvidersCallback callback) {
             return;
         }
         self.m_providers = mergeWithBuiltins(std::move(*parsed));
+        self.m_topProviders = sortAsTop(self.m_providers);
         self.m_providersFetchedAtMs = nowMs();
         self.saveProvidersCache();
         self.finishProviders(true);
@@ -515,6 +557,184 @@ void NewsService::finishProviders(bool ok) {
     for (auto& cb : waiters) {
         if (cb) cb(ok, m_providers);
     }
+}
+
+std::vector<NewsProvider> const& NewsService::topProviders() {
+    ensureStateLoaded();
+    if (m_topProviders.empty()) m_topProviders = sortAsTop(m_providers);
+    return m_topProviders;
+}
+
+void NewsService::fetchTopProviders(bool force, ProvidersCallback callback) {
+    ensureStateLoaded();
+    if (!force && m_topProvidersFetchedAtMs > 0 && nowMs() - m_topProvidersFetchedAtMs < 20 * 1000) {
+        if (callback) callback(true, topProviders());
+        return;
+    }
+    if (callback) m_topProviderWaiters.push_back(std::move(callback));
+    if (m_topProvidersInFlight) return;
+
+    auto const base = HttpClient::get().getForumServerURL();
+    if (base.empty()) {
+        geode::queueInMainThread([] { NewsService::get().finishTopProviders(false); });
+        return;
+    }
+
+    m_topProvidersInFlight = true;
+    auto const url = fmt::format("{}/api/news/top", base);
+    web::WebRequest req;
+    req.timeout(asp::Duration::fromSecs(15));
+    req.acceptEncoding("gzip, deflate");
+    req.header("Accept", "application/json");
+    if (auto const token = HttpClient::get().getSessionToken(); !token.empty()) {
+        req.header("X-Session-Token", token);
+    }
+    if (force) req.header("Cache-Control", "no-cache");
+    req.followRedirects(false);
+
+    WebHelper::dispatch(std::move(req), "GET", url, [](web::WebResponse res) {
+        if (paimon::isRuntimeShuttingDown()) return;
+        auto& self = NewsService::get();
+        if (!res.ok()) {
+            log::warn("[PaimbnailsNews] /api/news/top failed with HTTP {}", res.code());
+            self.finishTopProviders(false);
+            return;
+        }
+        auto parsed = parseProvidersJson(res.string().unwrapOr(""));
+        if (!parsed) {
+            log::warn("[PaimbnailsNews] /api/news/top returned an unexpected payload");
+            self.finishTopProviders(false);
+            return;
+        }
+        self.m_topProviders = sortAsTop(mergeWithBuiltins(std::move(*parsed)));
+        for (auto const& topItem : self.m_topProviders) {
+            for (auto& p : self.m_providers) {
+                if (p.channelId == topItem.channelId) {
+                    p.favoritesCount = topItem.favoritesCount;
+                    p.favoritedByMe = topItem.favoritedByMe;
+                }
+            }
+        }
+        self.m_topProvidersFetchedAtMs = nowMs();
+        self.saveProvidersCache();
+        self.finishTopProviders(true);
+    });
+}
+
+void NewsService::finishTopProviders(bool ok) {
+    m_topProvidersInFlight = false;
+    auto waiters = std::move(m_topProviderWaiters);
+    m_topProviderWaiters.clear();
+    auto const& list = topProviders();
+    for (auto& cb : waiters) {
+        if (cb) cb(ok, list);
+    }
+}
+
+void NewsService::applyFavoriteUpdate(std::string const& channelId, int favoritesCount, bool favoritedByMe) {
+    for (auto& p : m_providers) {
+        if (p.channelId == channelId) {
+            p.favoritesCount = favoritesCount;
+            p.favoritedByMe = favoritedByMe;
+        }
+    }
+    for (auto& p : m_topProviders) {
+        if (p.channelId == channelId) {
+            p.favoritesCount = favoritesCount;
+            p.favoritedByMe = favoritedByMe;
+        }
+    }
+    m_topProviders = sortAsTop(std::move(m_topProviders));
+    saveProvidersCache();
+}
+
+void NewsService::toggleFavoriteProvider(
+    std::string const& channelId,
+    std::optional<bool> desired,
+    FavoriteCallback callback
+) {
+    if (!isValidChannelId(channelId)) {
+        if (callback) callback(false, 0, false, "Proveedor de noticias invalido.");
+        return;
+    }
+
+    auto const base = HttpClient::get().getForumServerURL();
+    if (base.empty()) {
+        if (callback) callback(false, 0, false, "Servidor no disponible.");
+        return;
+    }
+
+    auto const acc = AccountVerifier::get().verify();
+    if (!acc.loggedIn()) {
+        if (callback) callback(false, 0, false, "Necesitas una cuenta de Geometry Dash iniciada para votar.");
+        return;
+    }
+
+    std::string reason;
+    if (!paimon::modauth::hasVerifiedVoteEligibility(&reason)) {
+        auto const token = HttpClient::get().getSessionToken();
+        if (token.empty() || !paimon::auth::UnifiedAuthFlow::validSessionToken(token, acc.accountID)) {
+            if (callback) callback(false, 0, false, reason);
+            return;
+        }
+        // Session token is stored locally, refresh once against /api/auth/session before voting.
+        paimon::modauth::refreshSession([this, channelId, desired, callback = std::move(callback)](
+                paimon::modauth::SessionRoles const& roles) mutable {
+            if (!roles.authenticated || !paimon::modauth::isAuthenticated()) {
+                if (callback) {
+                    callback(false, 0, false, "Verifica tu cuenta en Paimbnails (Mi Cuenta) para votar.");
+                }
+                return;
+            }
+            this->toggleFavoriteProvider(channelId, desired, std::move(callback));
+        });
+        return;
+    }
+
+    matjson::Value body = matjson::makeObject({
+        {"channelId", channelId},
+        {"accountID", acc.accountID},
+        {"username", acc.username},
+    });
+    if (desired.has_value()) {
+        body["favorite"] = *desired;
+    }
+
+    auto const url = fmt::format("{}/api/news/providers/{}/favorite", base, channelId);
+    HttpClient::get().postWithAuth(url, body.dump(), [channelId, callback = std::move(callback)](
+            bool ok, std::string const& resp) {
+        if (paimon::isRuntimeShuttingDown()) return;
+        geode::queueInMainThread([channelId, callback = std::move(callback), ok, resp]() {
+            if (paimon::isRuntimeShuttingDown()) return;
+            auto jsonStart = resp.find('{');
+            std::optional<matjson::Value> parsed;
+            if (jsonStart != std::string::npos) {
+                auto res = matjson::parse(resp.substr(jsonStart));
+                if (res.isOk() && res.unwrap().isObject()) parsed = res.unwrap();
+            }
+            if (!ok || !parsed || !(*parsed)["success"].asBool().unwrapOr(false)) {
+                std::string err = parsed ? jsonStr((*parsed)["error"]) : std::string();
+                if (err.empty()) err = "No se pudo registrar tu voto. Verifica tu sesion en Paimbnails.";
+                if (callback) callback(false, 0, false, err);
+                return;
+            }
+            int const count = static_cast<int>(std::max<int64_t>(0, jsonInt((*parsed)["favoritesCount"])));
+            bool const fav = (*parsed)["favoritedByMe"].isBool()
+                && (*parsed)["favoritedByMe"].asBool().unwrapOr(false);
+            NewsService::get().applyFavoriteUpdate(channelId, count, fav);
+            if (callback) callback(true, count, fav, {});
+        });
+    });
+}
+
+void NewsService::setPendingOpenChannel(std::string channelId) {
+    m_pendingOpenChannel = std::move(channelId);
+}
+
+std::string NewsService::consumePendingOpenChannel() {
+    auto out = std::move(m_pendingOpenChannel);
+    m_pendingOpenChannel.clear();
+    return out;
 }
 
 bool isAllowedImageUrl(std::string_view url) {

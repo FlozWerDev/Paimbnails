@@ -38,7 +38,7 @@ class $modify(PaimonEditorMcpUI, EditorUI) {
         if (!featureEnabled()) return true;
 
         auto* button = paimon::editor::assets::squareButton(
-            "paim_gif_modeRender.png",
+            "paim_editor_mcp.png",
             {"GJ_optionsBtn_001.png", "GJ_infoIcon_001.png"},
             0.9f,
             EditorBaseColor::Cyan,
@@ -48,16 +48,12 @@ class $modify(PaimonEditorMcpUI, EditorUI) {
         if (!button) return true;
         button->setID("editor-mcp-button"_spr);
 
-        if (auto* menu = paimon::editor::hostToolbarMenu(this)) {
-            menu->addChild(button);
-            if (menu->getLayout()) menu->updateLayout();
-        } else {
-            auto* fallback = CCMenu::create();
-            fallback->setID("editor-mcp-menu"_spr);
-            fallback->setPosition({28.f, CCDirector::get()->getWinSize().height - 270.f});
-            fallback->addChild(button);
-            addChild(fallback, 100);
-        }
+        paimon::editor::addToolbarButton(
+            this,
+            button,
+            "editor-mcp-menu"_spr,
+            {28.f, CCDirector::get()->getWinSize().height - 270.f}
+        );
         return true;
     }
 };

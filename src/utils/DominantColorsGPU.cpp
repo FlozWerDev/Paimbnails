@@ -289,10 +289,10 @@ bool isAvailable() {
     return cached != 0;
 }
 
-void onGLContextReload() {
-    // delete while the old context is live; recreated lazily.
+void onGLContextReload(bool deleteHandles) {
+    // delete only while the old context is live; recreated lazily.
     // may fire during teardown or off the gl thread: never delete there.
-    if (paimon::isRuntimeShuttingDown()) {
+    if (!deleteHandles || paimon::isRuntimeShuttingDown()) {
         s_readbackFBO = 0;
         return;
     }

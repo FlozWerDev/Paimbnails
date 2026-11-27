@@ -63,6 +63,7 @@
 #include "../features/moderation/services/ModeratorCache.hpp"
 #include "../features/profiles/services/ProfileThumbs.hpp"
 #include "../features/profiles/services/ProfileConfigSerialization.hpp"
+#include "../features/profiles/services/VanillaProfileLayout.hpp"
 #include "../utils/SpriteHelper.hpp"
 #include "../utils/CommentBgHider.hpp"
 #include "../framework/compat/SceneLocators.hpp"
@@ -313,12 +314,25 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     void createBanButtonInto(CCMenu* menu) {
         if (!menu) return;
+        if (auto* existing = typeinfo_cast<CCMenuItemSpriteExtra*>(menu->getChildByID("ban-user-button"_spr))) {
+            m_fields->m_banBtn = existing;
+            return;
+        }
         auto banSpr = ButtonSprite::create("X", 40, true, "bigFont.fnt", "GJ_button_06.png", 18.f, 0.45f);
         auto banBtn = CCMenuItemSpriteExtra::create(banSpr, this, menu_selector(PaimonProfilePage::onBanUser));
         banBtn->setID("ban-user-button"_spr);
-        banBtn->setVisible(false);
         menu->addChild(banBtn);
         m_fields->m_banBtn = banBtn;
+    }
+
+    void removeBanButton() {
+        if (m_fields->m_banBtn) {
+            m_fields->m_banBtn->removeFromParent();
+            m_fields->m_banBtn = nullptr;
+        }
+        while (auto* btn = this->getChildByIDRecursive("ban-user-button"_spr)) {
+            btn->removeFromParent();
+        }
     }
 
     void verifyButtonIntegrity(float) {
@@ -328,19 +342,21 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (!leftMenu) return;
 
         bool needsLayout = false;
+        bool const shouldShowBan = !this->m_ownProfile && (m_fields->m_isApprovedMod || m_fields->m_isAdmin);
 
-        if (!m_fields->m_banBtn || !m_fields->m_banBtn->getParent()) {
-            createBanButtonInto(leftMenu);
-            needsLayout = true;
-        }
-
-        {
-            bool shouldShow = !this->m_ownProfile && (m_fields->m_isApprovedMod || m_fields->m_isAdmin);
-            if (m_fields->m_banBtn->isVisible() != shouldShow) {
-                m_fields->m_banBtn->setVisible(shouldShow);
-                m_fields->m_banBtn->setEnabled(shouldShow);
+        if (shouldShowBan) {
+            if (!m_fields->m_banBtn || !m_fields->m_banBtn->getParent()) {
+                createBanButtonInto(leftMenu);
                 needsLayout = true;
             }
+            if (m_fields->m_banBtn && !m_fields->m_banBtn->isVisible()) {
+                m_fields->m_banBtn->setVisible(true);
+                m_fields->m_banBtn->setEnabled(true);
+                needsLayout = true;
+            }
+        } else if (m_fields->m_banBtn || this->getChildByIDRecursive("ban-user-button"_spr)) {
+            removeBanButton();
+            needsLayout = true;
         }
 
         if (ensureReviewsButton(leftMenu)) needsLayout = true;
@@ -369,15 +385,23 @@ class $modify(PaimonProfilePage, ProfilePage) {
                     dot->removeFromParent();
                     usernameMenu->addChild(dot);
                     dot->release();
-                    if (auto menuNode = typeinfo_cast<CCMenu*>(usernameMenu)) {
-                        menuNode->updateLayout();
+                    if (paimon::settings::profiles::redesignEnabled()) {
+                        if (auto menuNode = typeinfo_cast<CCMenu*>(usernameMenu)) {
+                            menuNode->updateLayout();
+                        }
+                    } else {
+                        paimon::profiles::normalizeVanillaUsernameMenu(this->m_mainLayer, getPopupSize());
                     }
                 }
             }
         }
 
         if (needsLayout) {
-            leftMenu->updateLayout();
+            if (paimon::settings::profiles::redesignEnabled()) {
+                leftMenu->updateLayout();
+            } else {
+                paimon::profiles::normalizeVanillaLeftMenu(this->m_mainLayer, getPopupSize());
+            }
         }
     }
 
@@ -390,11 +414,13 @@ class $modify(PaimonProfilePage, ProfilePage) {
     void addRoleBadgesToProfile(paimon::roles::UserRoles const& roles) {
         auto menu = getUsernameMenu();
         if (!menu) return;
+        float const badgeHeight = paimon::settings::profiles::redesignEnabled() ? 20.0f : 16.0f;
         paimon::badges::applyRoleBadges(
             menu, roles, this,
             menu_selector(PaimonProfilePage::onPaimonBadge),
-            20.0f, nullptr
+            badgeHeight, nullptr
         );
+        paimon::profiles::normalizeVanillaUsernameMenu(this->m_mainLayer, getPopupSize());
     }
 
     void addModeratorBadge(bool isMod, bool isAdmin) {
@@ -463,7 +489,11 @@ class $modify(PaimonProfilePage, ProfilePage) {
         auto dotBtn = CCMenuItemSpriteExtra::create(dotNode, this, menu_selector(PaimonProfilePage::onUserStatusDotClicked));
         dotBtn->setID("paimon-user-status-dot"_spr);
         menu->addChild(dotBtn);
-        menu->updateLayout();
+        if (paimon::settings::profiles::redesignEnabled()) {
+            menu->updateLayout();
+        } else {
+            paimon::profiles::normalizeVanillaUsernameMenu(this->m_mainLayer, getPopupSize());
+        }
     }
 
     void addUserStatusIndicator(bool online, int64_t lastSeen) {
@@ -537,7 +567,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (!emoteOpt) return;
 
         auto emoteInfo = *emoteOpt;
-        float targetHeight = 20.0f;
+        float targetHeight = 16.0f;
 
         Ref<PaimonProfilePage> self = this;
 
@@ -560,7 +590,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
                             auto btn = CCMenuItemSpriteExtra::create(gifSpr, self, nullptr);
                             btn->setID("paimon-custom-badge"_spr);
                             menu->addChild(btn);
-                            menu->updateLayout();
+                            paimon::profiles::normalizeVanillaUsernameMenu(self->m_mainLayer, self->getPopupSize());
                         });
                     });
                 } else {
@@ -578,7 +608,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         auto btn = CCMenuItemSpriteExtra::create(spr, self, nullptr);
                         btn->setID("paimon-custom-badge"_spr);
                         menu->addChild(btn);
-                        menu->updateLayout();
+                        paimon::profiles::normalizeVanillaUsernameMenu(self->m_mainLayer, self->getPopupSize());
                     });
                 }
             });
@@ -621,35 +651,46 @@ class $modify(PaimonProfilePage, ProfilePage) {
             fmt::format("{}", uploadCount).c_str(),
             "bigFont.fnt"
         );
-        countLabel->setScale(0.6f);
-        
+        countLabel->setScale(0.5f);
+
+        float const iconTarget = 16.f;
+        float const gap = 3.f;
+        float const labelWidth = countLabel->getScaledContentSize().width;
+        float const totalWidth = (iconSprite ? (iconTarget + gap) : 0.f) + labelWidth + 4.f;
+        float const totalHeight = 20.f;
+
         auto* combinedSprite = CCNode::create();
         combinedSprite->setAnchorPoint({0.5f, 0.5f});
-        combinedSprite->setContentSize({50.f, 30.f});
-        
+        combinedSprite->setContentSize({totalWidth, totalHeight});
+
         if (iconSprite) {
-            scaleToFit(iconSprite, 20.f);
+            scaleToFit(iconSprite, iconTarget);
             iconSprite->setAnchorPoint({0.5f, 0.5f});
-            iconSprite->setPosition({15.f, 15.f});
+            iconSprite->setPosition({2.f + iconTarget * 0.5f, totalHeight * 0.5f});
             combinedSprite->addChild(iconSprite);
         }
-        
+
         countLabel->setAnchorPoint({0.f, 0.5f});
-        countLabel->setPosition({iconSprite ? 28.f : 10.f, 15.f});
+        countLabel->setPosition({iconSprite ? (2.f + iconTarget + gap) : 2.f, totalHeight * 0.5f});
         combinedSprite->addChild(countLabel);
 
-        auto* thumbBtn = CCMenuItemSpriteExtra::create(            combinedSprite,
+        auto* thumbBtn = CCMenuItemSpriteExtra::create(
+            combinedSprite,
             this,
             menu_selector(PaimonProfilePage::onThumbnailCountClicked)
         );
         thumbBtn->setID("paimon-thumb-count-btn"_spr);
-        
+
         thumbBtn->setLayoutOptions(AxisLayoutOptions::create()
             ->setScaleLimits(0.0f, 1.0f)
         );
 
         statsMenuCC->addChild(thumbBtn);
-        statsMenuCC->updateLayout();
+        if (paimon::settings::profiles::redesignEnabled()) {
+            statsMenuCC->updateLayout();
+        } else {
+            paimon::profiles::normalizeVanillaStatsMenu(this->m_mainLayer, getPopupSize());
+        }
 
         m_fields->m_thumbCountLabel = countLabel;
     }
@@ -670,17 +711,35 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     void refreshBanButtonVisibility() {
-        if (!m_fields->m_banBtn) return;
+        bool const show = !this->m_ownProfile && canShowModerationControls();
+        auto* leftMenu = getLeftMenu();
 
-        if (this->m_ownProfile) {
-            m_fields->m_banBtn->setVisible(false);
-            m_fields->m_banBtn->setEnabled(false);
+        if (!show) {
+            if (m_fields->m_banBtn || this->getChildByIDRecursive("ban-user-button"_spr)) {
+                removeBanButton();
+                if (leftMenu) {
+                    if (paimon::settings::profiles::redesignEnabled()) {
+                        leftMenu->updateLayout();
+                    } else {
+                        paimon::profiles::normalizeVanillaLeftMenu(this->m_mainLayer, getPopupSize());
+                    }
+                }
+            }
             return;
         }
 
-        bool show = canShowModerationControls();
-        m_fields->m_banBtn->setVisible(show);
-        m_fields->m_banBtn->setEnabled(show);
+        if (leftMenu && (!m_fields->m_banBtn || !m_fields->m_banBtn->getParent())) {
+            createBanButtonInto(leftMenu);
+            if (paimon::settings::profiles::redesignEnabled()) {
+                leftMenu->updateLayout();
+            } else {
+                paimon::profiles::normalizeVanillaLeftMenu(this->m_mainLayer, getPopupSize());
+            }
+        }
+        if (!m_fields->m_banBtn) return;
+
+        m_fields->m_banBtn->setVisible(true);
+        m_fields->m_banBtn->setEnabled(true);
 
         auto targetName = getViewedUsername();
         if (show && !targetName.empty()) {
@@ -705,7 +764,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
                     if (!u.isString()) continue;
                     auto nameLower = geode::utils::string::toLower(u.asString().unwrapOr(""));
                     if (nameLower == targetLower) {
-                        if (auto banBtn = typeinfo_cast<CCMenuItemSpriteExtra*>(self->getChildByIDRecursive("ban-user-button"))) {
+                        if (auto banBtn = typeinfo_cast<CCMenuItemSpriteExtra*>(self->getChildByIDRecursive("ban-user-button"_spr))) {
                             banBtn->setEnabled(false);
                             banBtn->setOpacity(120);
                         }
@@ -792,10 +851,13 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     static CCClippingNode* makeProfileBackdropClip(CCSize const& imgArea, CCPoint const& popupCenter, bool rounded) {
+        if (imgArea.width <= 0.f || imgArea.height <= 0.f) return nullptr;
         auto stencil = rounded
             ? paimon::SpriteHelper::createRoundedRectStencil(imgArea.width, imgArea.height)
             : paimon::SpriteHelper::createRectStencil(imgArea.width, imgArea.height);
+        if (!stencil) return nullptr;
         auto clip = CCClippingNode::create();
+        if (!clip) return nullptr;
         clip->setStencil(stencil);
         clip->setContentSize(imgArea);
         clip->setAnchorPoint(ccp(0.5f, 0.5f));
@@ -835,11 +897,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         auto gif = AnimatedGIFSprite::createFromCache(gifKey);
         if (!gif) return;
 
-        auto f = m_fields.self();
-        if (f->m_profileImgClip) {
-            f->m_profileImgClip->removeFromParent();
-            f->m_profileImgClip = nullptr;
-        }
+        clearProfileImgClip();
 
         auto layer = this->m_mainLayer;
         if (!layer) return;
@@ -848,6 +906,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         CCPoint popupCenter = layout.popupCenter;
 
         auto clip = makeProfileBackdropClip(imgArea, popupCenter, /*rounded=*/false);
+        if (!clip) return;
 
         float scaleX = imgArea.width / std::max(1.0f, gif->getContentWidth());
         float scaleY = imgArea.height / std::max(1.0f, gif->getContentHeight());
@@ -876,6 +935,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         CCPoint popupCenter = layout.popupCenter;
 
         auto clip = makeProfileBackdropClip(imgArea, popupCenter, /*rounded=*/false);
+        if (!clip) return;
 
         auto applyCoverScale = [imgArea](VideoThumbnailSprite* spr) {
             if (!spr) return;
@@ -904,10 +964,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
         clip->addChild(video);
 
-        Ref<VideoThumbnailSprite> videoRef = video;
         int currentAccountID = this->m_accountID;
         video->setOnFirstVisibleFrame(
-            [accountID = currentAccountID, applyCoverScale, videoRef]
+            [accountID = currentAccountID, applyCoverScale]
             (VideoThumbnailSprite* readyVideo) {
                 if (!readyVideo) return;
                 applyCoverScale(readyVideo);
@@ -1628,13 +1687,13 @@ class $modify(PaimonProfilePage, ProfilePage) {
                     auto bg = paimon::SpriteHelper::safeCreateScale9("GJ_button_04.png");
                     if (!bg) bg = paimon::SpriteHelper::safeCreateScale9("GJ_button_01.png");
                     if (bg) {
-                    bg->setContentSize({30.f, 30.f});
+                    bg->setContentSize({26.f, 26.f});
 
                     auto starIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
                     if (!starIcon) starIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_bigStar_001.png");
                     if (starIcon) {
-                        scaleToFit(starIcon, 18.f);
-                        starIcon->setPosition({15.f, 15.f});
+                        scaleToFit(starIcon, 15.f);
+                        starIcon->setPosition({13.f, 13.f});
                         bg->addChild(starIcon);
                     }
 
@@ -1644,14 +1703,17 @@ class $modify(PaimonProfilePage, ProfilePage) {
                     auto* btmMenu = typeinfo_cast<CCMenu*>(bottomMenu);
                     if (btmMenu) {
                         btmMenu->addChild(starBtn);
-                        btmMenu->updateLayout();
+                        if (paimon::settings::profiles::redesignEnabled()) {
+                            btmMenu->updateLayout();
+                        } else {
+                            paimon::profiles::normalizeVanillaBottomMenu(this->m_mainLayer, popSize);
+                        }
                     }
                     }
                 }
             }
         }
 
-        createBanButtonInto(menu);
         refreshBanButtonVisibility();
 
         if (this->m_ownProfile) {
@@ -1663,7 +1725,11 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         }
 
-        menu->updateLayout();
+        if (paimon::settings::profiles::redesignEnabled()) {
+            menu->updateLayout();
+        } else {
+            paimon::profiles::normalizeVanillaLeftMenu(this->m_mainLayer, popSize);
+        }
 
         auto* socialsMenu = getSocialsMenu();
         if (!socialsMenu) {
@@ -1686,6 +1752,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
                     ->setAxisAlignment(AxisAlignment::Center)
                     ->setAxisReverse(false)
                     ->setCrossAxisAlignment(AxisAlignment::Center)
+                    ->ignoreInvisibleChildren(true)
             );
         }
 
@@ -1695,7 +1762,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
             auto settingsSpr = paimon::SpriteHelper::safeCreateWithFrameName("accountBtn_settings_001.png");
             if (!settingsSpr) settingsSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn_001.png");
             if (!settingsSpr) settingsSpr = CCSprite::create();
-            scaleToFit(settingsSpr, 22.f);
+            scaleToFit(settingsSpr, 24.f);
             auto settingsBtn = CCMenuItemSpriteExtra::create(settingsSpr, this, menu_selector(PaimonProfilePage::onOpenProfileSettings));
             settingsBtn->setID("profile-settings-button"_spr);
             socialsMenu->addChild(settingsBtn);
@@ -1709,7 +1776,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
             if (!pauseSpr) pauseSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_fxOnBtn_001.png");
             if (!pauseSpr) pauseSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_pauseBtn_001.png");
             if (!pauseSpr) pauseSpr = cocos2d::CCSprite::create();
-            scaleToFit(pauseSpr, 20.f);
+            scaleToFit(pauseSpr, 22.f);
             auto pauseBtn = CCMenuItemSpriteExtra::create(pauseSpr, this, menu_selector(PaimonProfilePage::onToggleProfileMusic));
             pauseBtn->setID("profile-music-pause-button"_spr);
             pauseBtn->setVisible(false);
@@ -1727,14 +1794,18 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
             if (!copySpr) copySpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_duplicateBtn_001.png");
             if (copySpr) {
-                scaleToFit(copySpr, 30.f);
+                scaleToFit(copySpr, 24.f);
                 auto copyBtn = CCMenuItemSpriteExtra::create(copySpr, this, menu_selector(PaimonProfilePage::onCopyIcons));
                 copyBtn->setID("copy-icons-button"_spr);
                 socialsMenu->addChild(copyBtn);
             }
         }
 
-        socialsMenu->updateLayout();
+        if (paimon::settings::profiles::redesignEnabled()) {
+            socialsMenu->updateLayout();
+        } else {
+            paimon::profiles::normalizeVanillaSocialsMenu(this->m_mainLayer, popSize);
+        }
 
         if (auto* store = paimon::profiles::IdentityStore::get(this->m_mainLayer)) {
             store->remove("custom-badge");
@@ -2763,6 +2834,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
                 }
                 if (page->m_fields->m_musicPauseBtn) {
                     page->m_fields->m_musicPauseBtn->setVisible(false);
+                    if (auto* socialsMenu = page->getSocialsMenu()) {
+                        socialsMenu->updateLayout();
+                    }
                 }
                 page->m_fields->m_menuMusicPaused = false;
                 return;
@@ -2845,13 +2919,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     $override
     void keyBackClicked() {
-#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
-        ProfilePage::keyBackClicked();
-#else
         m_fields->m_leaveForClose = true;
         cleanupProfileAudio();
+        unscheduleProfileTimers();
         ProfilePage::keyBackClicked();
-#endif
     }
 
     $override

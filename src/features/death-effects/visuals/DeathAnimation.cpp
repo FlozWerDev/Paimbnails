@@ -698,8 +698,9 @@ void loadVfxConfig() {
 
     if (j["overrides"].isObject()) {
         for (auto const& [kStr, val] : j["overrides"]) {
-            int k = -999;
-            try { k = std::stoi(kStr); } catch (...) { continue; }
+            auto parsedKey = geode::utils::numFromString<int>(kStr);
+            if (!parsedKey) continue;
+            int k = parsedKey.unwrap();
             if (k < -1 || k > kStyleCustomMedia) continue;
             g_vfxConfig.styleOverrides[k] = parseStyle(val, defaultStyleSettings(k));
         }

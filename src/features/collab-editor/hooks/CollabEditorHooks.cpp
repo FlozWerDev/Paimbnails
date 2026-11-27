@@ -136,7 +136,7 @@ class $modify(PaimonCollabLevelEditorLayer, LevelEditorLayer) {
     $override
     bool init(GJGameLevel* level, bool noUI) {
         if (!LevelEditorLayer::init(level, noUI)) return false;
-        if (!collabEnabled()) return true;
+        if (noUI || !collabEnabled()) return true;
         m_fields->m_self = this;
         paimon::collab::CollabManager::get().setEditor(this);
         if (auto* overlay = paimon::collab::CollabEditorOverlay::create(this)) {
@@ -146,9 +146,9 @@ class $modify(PaimonCollabLevelEditorLayer, LevelEditorLayer) {
         return true;
     }
 
-    void collabTick(float) {
+    void collabTick(float dt) {
         auto& mgr = paimon::collab::CollabManager::get();
-        mgr.tick();
+        mgr.tick(dt);
 #if defined(GEODE_IS_DESKTOP)
         // middle-click pings the cursor; touch uses the overlay ping button.
         if (mgr.connected() && !mgr.isApplyingRemote()) {
@@ -338,6 +338,26 @@ class $modify(PaimonCollabEditorUI, EditorUI) {
         auto& mgr = paimon::collab::CollabManager::get();
         if (collabActive() && !mgr.isApplyingRemote()) {
             mgr.reconcileObjects(this->getSelectedObjects());
+        }
+    }
+
+    $override
+    void undoLastAction(CCObject* object) {
+        EditorUI::undoLastAction(object);
+        auto& mgr = paimon::collab::CollabManager::get();
+        if (collabActive() && !mgr.isApplyingRemote()) {
+            mgr.reconcileObjects(this->getSelectedObjects());
+            mgr.requestFastSweep();
+        }
+    }
+
+    $override
+    void redoLastAction(CCObject* sender) {
+        EditorUI::redoLastAction(sender);
+        auto& mgr = paimon::collab::CollabManager::get();
+        if (collabActive() && !mgr.isApplyingRemote()) {
+            mgr.reconcileObjects(this->getSelectedObjects());
+            mgr.requestFastSweep();
         }
     }
 };

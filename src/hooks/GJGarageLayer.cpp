@@ -1,4 +1,5 @@
 #include <Geode/modify/GJGarageLayer.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 #include "../framework/HookConventions.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../features/colorful-icons/hooks/PaimonIconsGarageGlue.hpp"
@@ -28,20 +29,18 @@ class $modify(PaimonGJGarageLayer, GJGarageLayer) {
         paimon::iconcopy::garage::onGarageInit(this);
         // accesses hang off the hub; this is the only visible button
         paimon::garage_hub::installHubButton(this);
+        this->addOnEnterCallback([this] {
+            if (m_fields->enteredOnce && !paimon::isRuntimeShuttingDown()) {
+                Ref<GJGarageLayer> ref = this;
+                Loader::get()->queueInMainThread([ref]() {
+                    if (paimon::isRuntimeShuttingDown() || !ref || !ref->getParent()) return;
+                    paimon::icon_maker::garage::refreshGarage(ref);
+                });
+            }
+            m_fields->enteredOnce = true;
+            return true;
+        });
         return true;
-    }
-
-    $override
-    void onEnter() {
-        GJGarageLayer::onEnter();
-        if (m_fields->enteredOnce && !paimon::isRuntimeShuttingDown()) {
-            Ref<GJGarageLayer> ref = this;
-            Loader::get()->queueInMainThread([ref]() {
-                if (paimon::isRuntimeShuttingDown() || !ref || !ref->getParent()) return;
-                paimon::icon_maker::garage::refreshGarage(ref);
-            });
-        }
-        m_fields->enteredOnce = true;
     }
 
     $override

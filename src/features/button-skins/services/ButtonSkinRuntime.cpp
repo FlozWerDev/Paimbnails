@@ -343,11 +343,12 @@ bool maintainState(CCMenuItem* item, SkinState* state) {
 }
 
 // buttons only live in menus and never hold other buttons (a toggle's states
-// belong to it): label glyphs, sprite batches, level objects, particles and
-// button insides are skipped whole.
+// belong to it): label glyphs, sprite batches, level objects, gameplay layers,
+// editor build palettes, particles and button insides are skipped whole.
 void collectItems(CCNode* node, std::vector<CCMenuItem*>& out) {
     if (!node || typeinfo_cast<CCLabelBMFont*>(node) || typeinfo_cast<CCSpriteBatchNode*>(node) ||
-        typeinfo_cast<GameObject*>(node) || typeinfo_cast<CCParticleSystem*>(node)) {
+        typeinfo_cast<GameObject*>(node) || typeinfo_cast<CCParticleSystem*>(node) ||
+        typeinfo_cast<GJBaseGameLayer*>(node) || typeinfo_cast<EditButtonBar*>(node)) {
         return;
     }
     if (auto* item = typeinfo_cast<CCMenuItem*>(node)) {
@@ -361,12 +362,10 @@ void collectItems(CCNode* node, std::vector<CCMenuItem*>& out) {
     }
 }
 
-// gameplay owns the frame budget; popups opened over it still get scanned.
+// gameplay and the level editor own the frame budget; popups opened over them still get scanned.
 bool gameplayRunning() {
     if (auto* play = PlayLayer::get(); play && !play->m_isPaused) return true;
-    if (auto* editor = LevelEditorLayer::get(); editor && editor->m_playbackMode == PlaybackMode::Playing) {
-        return true;
-    }
+    if (LevelEditorLayer::get() != nullptr) return true;
     return false;
 }
 

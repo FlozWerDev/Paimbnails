@@ -155,10 +155,14 @@ void decodeStaticProfileImageAsync(std::shared_ptr<std::vector<uint8_t>> data,
         std::erase_if(profileImageCompletions(), [](auto const& item) { return item.expired(); });
         profileImageCompletions().emplace_back(completion);
     }
-    auto fail = [completion]() {
-        queueInMainThread([completion]() {
+    auto takeCompletion = [completion]() -> ProfileImageService::DownloadCallback {
+        std::lock_guard lock(profileImageCompletionsMutex());
+        return std::exchange(*completion, nullptr);
+    };
+    auto fail = [completion, takeCompletion]() {
+        queueInMainThread([takeCompletion]() {
             if (paimon::isRuntimeShuttingDown()) return;
-            auto callback = std::exchange(*completion, nullptr);
+            auto callback = takeCompletion();
             if (callback) callback(false, nullptr);
         });
     };
@@ -173,18 +177,19 @@ void decodeStaticProfileImageAsync(std::shared_ptr<std::vector<uint8_t>> data,
         return;
     }
     try {
-        pool->enqueue([data = std::move(data), completion, fail]() {
+        pool->enqueue([data = std::move(data), takeCompletion, fail]() {
             if (paimon::isRuntimeShuttingDown()) return;
             try {
-                // same info-probe, dim-cap and stb decode as ImageLoadHelper;
-                // copyBuffer keeps the pixels alive for the downsample below.
-                auto decoded = ImageLoadHelper::loadWithSTBFromMemory(data->data(), data->size(), true);
-                if (!decoded.success || !decoded.buffer) {
+                // CPU-only decode on worker thread; GL texture upload happens strictly on main thread.
+                int w = 0, h = 0;
+                auto decoded = ImageLoadHelper::decodeRGBAFromMemory(data->data(), data->size(), w, h);
+                if (!decoded || w <= 0 || h <= 0) {
                     fail();
                     return;
                 }
-                int w = decoded.width, h = decoded.height;
-                std::shared_ptr<uint8_t> pixels = std::move(decoded.buffer);
+                std::shared_ptr<uint8_t> pixels(
+                    decoded.release(),
+                    [](uint8_t* ptr) { stbi_image_free(ptr); });
                 std::shared_ptr<std::vector<uint8_t>> resized;
                 auto maxDim = profileImageMaxDim();
                 if (w > maxDim || h > maxDim) {
@@ -199,9 +204,9 @@ void decodeStaticProfileImageAsync(std::shared_ptr<std::vector<uint8_t>> data,
                     pixels.reset();
                 }
                 if (paimon::isRuntimeShuttingDown()) return;
-                queueInMainThread([pixels = std::move(pixels), resized = std::move(resized), w, h, completion]() {
+                queueInMainThread([pixels = std::move(pixels), resized = std::move(resized), w, h, takeCompletion]() {
                     if (paimon::isRuntimeShuttingDown()) return;
-                    auto callback = std::exchange(*completion, nullptr);
+                    auto callback = takeCompletion();
                     if (!callback) return;
                     ImageLoadHelper::LoadedImage loaded;
                     try {
@@ -279,9 +284,9 @@ void ProfileImageService::requestShutdown() {
     {
         std::lock_guard lock(profileImageCompletionsMutex());
         completions.swap(profileImageCompletions());
-    }
-    for (auto const& weak : completions) {
-        if (auto completion = weak.lock()) *completion = nullptr;
+        for (auto const& weak : completions) {
+            if (auto completion = weak.lock()) *completion = nullptr;
+        }
     }
     std::lock_guard lock(profileImagePoolMutex());
     if (s_profileImagePool) s_profileImagePool->requestStop();

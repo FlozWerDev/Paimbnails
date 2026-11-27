@@ -656,7 +656,8 @@ float MenuMusicEffects::outputPeak() const {
     if (m_meterDsp->getMeteringInfo(nullptr, &output) != FMOD_OK) return 0.f;
 
     float peak = 0.f;
-    for (short i = 0; i < output.numchannels; ++i) {
+    short const chCount = std::clamp<short>(output.numchannels, 0, 32);
+    for (short i = 0; i < chCount; ++i) {
         peak = std::max(peak, output.peaklevel[i]);
     }
     return std::clamp(peak, 0.f, 1.f);

@@ -3,6 +3,7 @@
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include "PaimonShopPopup.hpp"
+#include "PetEditorsPopup.hpp"
 #include "../services/PetManager.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/FileDialog.hpp"
@@ -1175,6 +1176,108 @@ void PetConfigPopup::buildAdvancedTab() {
             }),
     });
 
+    auto fmtPct100 = [](double v) { return fmt::format("{}%", static_cast<int>(std::lround(v * 100.0))); };
+
+    auto* audioGestureCard = kit::makeCard(scrollW, "Audios y Gestos", {130, 235, 255}, {
+        kit::makeToggleRow(innerW,
+            "Activar audios de la mascota",
+            "Reproduce sonidos al hacer click, al acariciar o al hacer gestos.",
+            cfg.enableAudio,
+            [this](bool v) {
+                PetManager::get().config().enableAudio = v;
+                applyLive();
+            }),
+        kit::makeSliderRow(innerW,
+            "Volumen de audio", "Relativo al volumen de efectos de GD.",
+            cfg.audioVolume, 0.0, 1.0, fmtPct100,
+            [this](double v) {
+                PetManager::get().config().audioVolume = static_cast<float>(v);
+                applyLive();
+            }),
+        kit::makeSliderRow(innerW,
+            "Variacion de tono", "Cambia ligeramente el pitch para sonar mas natural.",
+            cfg.audioPitchRandom, 0.0, 0.35, fmtPct100,
+            [this](double v) {
+                PetManager::get().config().audioPitchRandom = static_cast<float>(v);
+                applyLive();
+            }),
+        kit::makeButtonRow(innerW,
+            "Audios de click y gestos",
+            "Anade varios audios aleatorios al click y a cada gesto.",
+            "Configurar",
+            [this] { openAudioGesturesEditor(0); },
+            paimon::ui::Btn::Cyan),
+        kit::makeToggleRow(innerW,
+            "Gestos espontaneos",
+            "La mascota hace gestos con su audio de vez en cuando en reposo.",
+            cfg.enableAutoGestures,
+            [this](bool v) {
+                PetManager::get().config().enableAutoGestures = v;
+                applyLive();
+            }),
+        kit::makeSliderRow(innerW,
+            "Cada cuanto hace un gesto", "Segundos entre gestos espontaneos.",
+            cfg.autoGestureInterval, 10.0, 180.0, fmtSecs,
+            [this](double v) {
+                PetManager::get().config().autoGestureInterval = static_cast<float>(v);
+                applyLive();
+            }),
+        kit::makeButtonRow(innerW,
+            "Probar gesto aleatorio",
+            "Lanza un gesto en vivo con animacion, particulas y audio.",
+            "Probar",
+            [] {
+                auto& pet = PetManager::get();
+                if (!pet.config().enabled) {
+                    PaimonNotify::show("Activa primero la mascota en Ajustes.", NotificationIcon::Info);
+                    return;
+                }
+                int idx = rand() % static_cast<int>(PetGesture::Count);
+                pet.triggerGesture(static_cast<PetGesture>(idx), pet.config().enableSpeech, true);
+            },
+            paimon::ui::Btn::Green),
+    });
+
+    auto& petMgr = PetManager::get();
+    std::string affectionDesc = fmt::format(
+        "Nivel {} ({}/{} XP)  |  Clicks: {}  |  Caricias: {}",
+        petMgr.affectionLevel(), petMgr.affectionLevelProgressXp(), petMgr.affectionLevelNeededXp(),
+        cfg.totalClicks, cfg.totalPets);
+    auto* funCard = kit::makeCard(scrollW, "Caricias, Musica y Paseo Libre", {255, 165, 220}, {
+        kit::makeHint(innerW, affectionDesc.c_str()),
+        kit::makeToggleRow(innerW,
+            "Modo caricias",
+            "Frota el cursor sobre la mascota para darle caricias, corazones y subir afinidad.",
+            cfg.enablePetting,
+            [this](bool v) {
+                PetManager::get().config().enablePetting = v;
+                applyLive();
+            }),
+        kit::makeToggleRow(innerW,
+            "Paseo libre por la pantalla",
+            "La mascota explora libremente en lugar de ir pegada al cursor.",
+            cfg.wanderMode,
+            [this](bool v) {
+                PetManager::get().config().wanderMode = v;
+                applyLive();
+            }),
+        kit::makeToggleRow(innerW,
+            "Bailar al ritmo de la musica",
+            "Rebota suavemente siguiendo el beat del juego.",
+            cfg.reactToMusic,
+            [this](bool v) {
+                PetManager::get().config().reactToMusic = v;
+                applyLive();
+            }),
+        kit::makeSliderRow(innerW,
+            "Intensidad del baile", "Que tanto pulsa con la musica.",
+            cfg.musicBounceStrength, 0.04, 0.35, fmtPct100,
+            [this](double v) {
+                PetManager::get().config().musicBounceStrength = static_cast<float>(v);
+                applyLive();
+            }),
+    });
+
     auto* speechCard = kit::makeCard(scrollW, "Dialogos", {170, 255, 170}, {
         kit::makeToggleRow(innerW,
             "Hablar de vez en cuando",
@@ -1182,6 +1285,20 @@ void PetConfigPopup::buildAdvancedTab() {
             cfg.enableSpeech,
             [this](bool v) {
                 PetManager::get().config().enableSpeech = v;
+                applyLive();
+            }),
+        kit::makeButtonRow(innerW,
+            "Editar dialogos y pesos",
+            "Cambia textos, anade frases, ajusta probabilidades y audio por frase.",
+            "Editar",
+            [this] { openDialoguesEditor(PetDialogueCategory::Idle); },
+            paimon::ui::Btn::Green),
+        kit::makeToggleRow(innerW,
+            "Efecto maquina de escribir",
+            "Las letras aparecen progresivamente en la burbuja.",
+            cfg.speechTypewriter,
+            [this](bool v) {
+                PetManager::get().config().speechTypewriter = v;
                 applyLive();
             }),
         kit::makeSliderRow(innerW,
@@ -1203,6 +1320,27 @@ void PetConfigPopup::buildAdvancedTab() {
             cfg.speechBubbleScale, 0.2, 1.0, fmtTimes,
             [this](double v) {
                 PetManager::get().config().speechBubbleScale = static_cast<float>(v);
+                applyLive();
+            }),
+        kit::makeColorRow(innerW,
+            "Color de fondo del globo", "Color interior de la burbuja.",
+            cfg.speechBgColor,
+            [this](ccColor3B col) {
+                PetManager::get().config().speechBgColor = col;
+                applyLive();
+            }),
+        kit::makeColorRow(innerW,
+            "Color del borde del globo", "Color del contorno de la burbuja.",
+            cfg.speechBorderColor,
+            [this](ccColor3B col) {
+                PetManager::get().config().speechBorderColor = col;
+                applyLive();
+            }),
+        kit::makeColorRow(innerW,
+            "Color del texto", "Color de las letras en la burbuja.",
+            cfg.speechTextColor,
+            [this](ccColor3B col) {
+                PetManager::get().config().speechTextColor = col;
                 applyLive();
             }),
     });
@@ -1306,8 +1444,8 @@ void PetConfigPopup::buildAdvancedTab() {
     });
 
     m_advancedScroll = kit::makeScrollStack({scrollW, scrollH},
-        {offsetCard, animCard, trailCard, shadowCard, particleCard,
-         speechCard, sleepCard, clickCard, reactCard, statesCard});
+        {speechCard, audioGestureCard, funCard, clickCard, reactCard,
+         offsetCard, animCard, trailCard, shadowCard, particleCard, sleepCard, statesCard});
     m_advancedScroll->setPosition({12.f, 8.f});
     m_advancedTab->addChild(m_advancedScroll, 5);
 }
@@ -1316,6 +1454,18 @@ void PetConfigPopup::buildAdvancedTab() {
 void PetConfigPopup::openLayerPicker() {
     auto popup = PetLayerPickerPopup::create(this);
     if (popup) popup->show();
+}
+
+void PetConfigPopup::openDialoguesEditor(PetDialogueCategory cat) {
+    if (auto* popup = PetDialoguesPopup::create(cat)) {
+        popup->show();
+    }
+}
+
+void PetConfigPopup::openAudioGesturesEditor(int initialSlot) {
+    if (auto* popup = PetAudioGesturesPopup::create(initialSlot)) {
+        popup->show();
+    }
 }
 
 void PetConfigPopup::pickIconStateImage(int stateIdx) {

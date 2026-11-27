@@ -21,13 +21,16 @@ private:
     static CaptureMenuPopup* s_instance;
 
     geode::Ref<ButtonSprite> m_holdCtrlBtnSpr = nullptr;
+    geode::Ref<ButtonSprite> m_menuBindBtnSpr = nullptr;
 
     void onCapture(cocos2d::CCObject* sender);
     void onOpenShortcuts(cocos2d::CCObject* sender);
+    void onEditMenuBind(cocos2d::CCObject* sender);
     void onToggleInvert(cocos2d::CCObject* sender);
     void onTogglePhysics(cocos2d::CCObject* sender);
     void onToggleSmoothScroll(cocos2d::CCObject* sender);
     void onOpenSmoothScrollConfig(cocos2d::CCObject* sender);
     void onToggleHoldCtrl(cocos2d::CCObject* sender);
     void refreshHoldCtrlButton();
+    void refreshMenuBindButton();
 };

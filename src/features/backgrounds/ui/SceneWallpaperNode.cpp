@@ -465,6 +465,9 @@ public:
             m_uploaded = false;
         }
         if (!m_vbo) glGenBuffers(1, &m_vbo);
+#if CC_TEXTURE_ATLAS_USE_VAO
+        ccGLBindVAO(0);
+#endif
         glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
         if (!m_uploaded) {
             glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(m_vertexCount * sizeof(ccV3F_C4B_T2F)),

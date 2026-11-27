@@ -394,6 +394,73 @@ void testJitteredBandsAndLargeScale() {
     assert(bigPlan.outputCount == 12);
 }
 
+void testUniform2DWith2DDisabledUses1DSolver() {
+    // Same L-shape as Axis1D, but with Uniform2D blocks and merge2DFills = false:
+    // Should still achieve optimal 1D mixed H+V cover (4 objects, not 5 or 6).
+    std::vector<ObjectRecord> lBlock;
+    for (int y = 0; y < 6; ++y) {
+        for (int x = 0; x < 5; ++x) {
+            if (x < 2 || y < 2) {
+                lBlock.push_back(makeBlock(lBlock.size(), 15.f + x * 30.f, 15.f + y * 30.f,
+                                           211, StretchCapability::Uniform2D, false));
+            }
+        }
+    }
+    OptimizerOptions opts;
+    opts.maxDecoScale = 8.f;
+    opts.merge2DFills = false;
+    opts.preserveCorners = false;
+    auto plan = planStructureOptimization(lBlock, opts);
+    assertPlanGeometryValid(lBlock, plan);
+    assert(plan.outputCount == 4);
+    for (auto const& m : plan.merges) {
+        assert(near(m.newScaleX, 1.f) || near(m.newScaleY, 1.f));
+    }
+}
+
+void testPreStretchedAndKeeperFlipSelection() {
+    // Pre-stretched 2x1 + 1x1 + 1x1 -> 4x1, preferring unflipped 0-deg keeper.
+    std::vector<ObjectRecord> objs;
+    ObjectRecord a = makeBlock(0, 30.f, 15.f, 1, StretchCapability::Axis1D, true, 0.f, "k");
+    a.scaleX = 2.f;
+    a.flipX = true;
+    objs.push_back(a);
+    ObjectRecord b = makeBlock(1, 75.f, 15.f, 1, StretchCapability::Axis1D, true, 0.f, "k");
+    objs.push_back(b);
+    ObjectRecord c = makeBlock(2, 105.f, 15.f, 1, StretchCapability::Axis1D, true, 0.f, "k");
+    objs.push_back(c);
+
+    auto plan = planStructureOptimization(objs);
+    assertPlanGeometryValid(objs, plan);
+    assert(plan.outputCount == 1);
+    assert(plan.merges.size() == 1);
+    assert(plan.merges[0].keeperIndex == 1);
+    assert(near(plan.merges[0].newX, 60.f));
+    assert(near(plan.merges[0].newScaleX, 4.f));
+    assert(near(plan.merges[0].newScaleY, 1.f));
+}
+
+void testLargerExactStripCover44Cells() {
+    // 44-cell U-shape: 2x8 left, 2x8 right, 6x2 bottom = 16 + 16 + 12 = 44 cells.
+    // With maxCollisionScale = 10, optimal = 6 strips (2+2+2).
+    std::vector<ObjectRecord> uShape;
+    for (int y = 0; y < 8; ++y) {
+        for (int x = 0; x < 10; ++x) {
+            if (x < 2 || x >= 8 || y < 2) {
+                uShape.push_back(makeBlock(uShape.size(), 15.f + x * 30.f, 15.f + y * 30.f,
+                                           1, StretchCapability::Axis1D, true));
+            }
+        }
+    }
+    assert(uShape.size() == 44);
+    OptimizerOptions opts;
+    opts.maxCollisionScale = 10.f;
+    opts.preserveCorners = false;
+    auto plan = planStructureOptimization(uShape, opts);
+    assertPlanGeometryValid(uShape, plan);
+    assert(plan.outputCount == 6);
+}
+
 } // namespace
 
 int main() {
@@ -411,6 +478,9 @@ int main() {
     testAxis1DPinwheelAndLShape();
     testMixedQuarterTurnKeeperFrame();
     testJitteredBandsAndLargeScale();
+    testUniform2DWith2DDisabledUses1DSolver();
+    testPreStretchedAndKeeperFlipSelection();
+    testLargerExactStripCover44Cells();
 
     std::cout << "All Structure Optimizer regression checks passed.\n";
     return 0;

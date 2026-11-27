@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <unordered_set>
 
 using namespace geode::prelude;
 
@@ -36,18 +37,20 @@ namespace {
 
 constexpr size_t kRemoteApplyMaxPerTick = 1000;
 constexpr auto kRemoteApplyBudget = std::chrono::milliseconds(4);
+constexpr size_t kRemoteAddBatchSize = 32;
 constexpr size_t kSeedMaxPerTick = 512;
 constexpr auto kSeedBudget = std::chrono::milliseconds(4);
 constexpr size_t kSeedChunkMaxObjects = 800;
 constexpr size_t kSeedChunkMaxBytes = 1'200'000;
 constexpr auto kLocalEditBudget = std::chrono::milliseconds(3);
+constexpr size_t kMaxTombstones = 20000;
 
 constexpr float kTickInterval = 0.05f;
 
 constexpr float kUpdateFlushInterval = 0.2f;
 
-constexpr int kReconcileEveryTicks = 10;
-constexpr size_t kReconcileMaxObjects = 500;
+constexpr int kReconcileEveryTicks = 12;
+constexpr size_t kReconcileMaxObjects = 400;
 
 constexpr int kSweepEveryTicks = 40;
 constexpr size_t kSweepMaxAddsPerPass = 1500;
@@ -64,7 +67,7 @@ constexpr size_t kMaxSelectionRects = 64;
 // broken or hostile host must not stall the editor. all are generous vs what
 // our own sender ever produces (seed chunks: 800 objects; selections: 64).
 constexpr size_t kMaxSaveBytes = 256 * 1024;
-constexpr size_t kMaxOpsPerBatch = 2048;
+constexpr size_t kMaxOpsPerBatch = 4096;
 constexpr size_t kMaxChatText = 2000;
 constexpr size_t kMaxChatName = 64;
 
@@ -93,8 +96,7 @@ bool isCheapEditKind(std::string const& kind) {
 }
 
 uint64_t remoteOrderKey(uint32_t version, int origin) {
-    return (static_cast<uint64_t>(version) << 32) |
-           static_cast<uint32_t>(std::max(origin, 0));
+    return lwwOrderKey(version, origin);
 }
 
 LocalEditKind mergeEditKind(LocalEditKind a, LocalEditKind b) {
@@ -226,9 +228,9 @@ void CollabManager::connect(std::string const& roomCode, std::string const& user
     ++m_chatRevision;
 
     m_uidToGid.clear();
-    m_gidToObj.clear();
-    m_versionByGid.clear();
-    m_lastSentSave.clear();
+    m_objects.clear();
+    m_tombstones.clear();
+    m_tombstoneOrder.clear();
     m_deferredCreates.clear();
     m_deferredEditOrder.clear();
     m_deferredEdits.clear();
@@ -246,10 +248,13 @@ void CollabManager::connect(std::string const& roomCode, std::string const& user
     m_opsPerSec = kDefaultOpsPerSecond;
     m_maxOpsPerRequest = kDefaultOpsPerRequest;
     m_syncTotal = 0;
-    m_wireHash.clear();
+    m_bucketHash.fill(0);
+    m_bucketCount.fill(0);
     m_wireDigest = 0;
     m_digestStrikes = 0;
     m_digestCooldown = 0.f;
+    m_reconcileInFlight = false;
+    ++m_reconcileEpoch;
     m_reconcileCursor = 0;
     m_sweepTicks = 0;
     m_sweepObjectCursor = 0;
@@ -463,36 +468,108 @@ std::string CollabManager::makeLocalGid() {
     return fmt::format("{}:{}", m_clientId, m_localSeq++);
 }
 
-void CollabManager::mapGid(std::string const& gid, GameObject* object) {
-    if (!object) return;
-    m_gidToObj[gid] = object;
-    m_uidToGid[object->m_uniqueID] = gid;
-}
+void CollabManager::mapObject(std::string const& gid, GameObject* object, uint32_t version, int origin,
+                              uint64_t wireHash, uint64_t localSaveHash, bool hasLocalSaveHash) {
+    if (!object || gid.empty()) return;
 
-void CollabManager::unmapGid(std::string const& gid) {
-    auto it = m_gidToObj.find(gid);
-    if (it != m_gidToObj.end()) {
-        if (it->second) m_uidToGid.erase(it->second->m_uniqueID);
-        m_gidToObj.erase(it);
+    int uid = object->m_uniqueID;
+    if (auto oldUidIt = m_uidToGid.find(uid); oldUidIt != m_uidToGid.end() && oldUidIt->second != gid) {
+        unmapGid(oldUidIt->second);
     }
-    m_lastSentSave.erase(gid);
-    eraseWireHash(gid);
-}
 
-void CollabManager::setWireHash(std::string const& gid, uint64_t hash) {
-    auto [it, inserted] = m_wireHash.try_emplace(gid, hash);
+    size_t bucket = syncBucketIndex(gid);
+    auto [it, inserted] = m_objects.try_emplace(gid);
     if (!inserted) {
-        m_wireDigest ^= it->second;
-        it->second = hash;
+        if (it->second.object && it->second.object.data() != object) {
+            int prevUid = it->second.object->m_uniqueID;
+            if (auto uIt = m_uidToGid.find(prevUid); uIt != m_uidToGid.end() && uIt->second == gid) {
+                m_uidToGid.erase(uIt);
+            }
+        }
+        m_wireDigest ^= it->second.wireHash;
+        m_bucketHash[bucket] ^= it->second.wireHash;
+    } else {
+        ++m_bucketCount[bucket];
     }
-    m_wireDigest ^= hash;
+
+    it->second.object = object;
+    it->second.version = version;
+    it->second.origin = origin;
+    it->second.wireHash = wireHash;
+    it->second.localSaveHash = localSaveHash;
+    it->second.hasLocalSaveHash = hasLocalSaveHash;
+
+    m_wireDigest ^= wireHash;
+    m_bucketHash[bucket] ^= wireHash;
+    m_uidToGid[uid] = gid;
+    m_tombstones.erase(gid);
 }
 
-void CollabManager::eraseWireHash(std::string const& gid) {
-    auto it = m_wireHash.find(gid);
-    if (it == m_wireHash.end()) return;
-    m_wireDigest ^= it->second;
-    m_wireHash.erase(it);
+void CollabManager::updateObjectSyncMeta(std::string const& gid, uint32_t version, int origin,
+                                         uint64_t wireHash, uint64_t localSaveHash, bool hasLocalSaveHash) {
+    auto it = m_objects.find(gid);
+    if (it == m_objects.end()) return;
+    size_t bucket = syncBucketIndex(gid);
+    m_wireDigest ^= it->second.wireHash;
+    m_bucketHash[bucket] ^= it->second.wireHash;
+
+    it->second.version = version;
+    it->second.origin = origin;
+    it->second.wireHash = wireHash;
+    it->second.localSaveHash = localSaveHash;
+    it->second.hasLocalSaveHash = hasLocalSaveHash;
+
+    m_wireDigest ^= wireHash;
+    m_bucketHash[bucket] ^= wireHash;
+}
+
+void CollabManager::unmapGid(std::string const& gid, uint64_t tombstoneKey) {
+    auto it = m_objects.find(gid);
+    if (it != m_objects.end()) {
+        if (it->second.object) {
+            int uid = it->second.object->m_uniqueID;
+            if (auto uIt = m_uidToGid.find(uid); uIt != m_uidToGid.end() && uIt->second == gid) {
+                m_uidToGid.erase(uIt);
+            }
+        }
+        size_t bucket = syncBucketIndex(gid);
+        m_wireDigest ^= it->second.wireHash;
+        m_bucketHash[bucket] ^= it->second.wireHash;
+        if (m_bucketCount[bucket] > 0) --m_bucketCount[bucket];
+        m_objects.erase(it);
+    }
+    if (tombstoneKey > 0) {
+        auto [tIt, inserted] = m_tombstones.try_emplace(gid, tombstoneKey);
+        if (!inserted) {
+            tIt->second = std::max(tIt->second, tombstoneKey);
+        } else {
+            m_tombstoneOrder.push_back(gid);
+            while (m_tombstoneOrder.size() > kMaxTombstones) {
+                m_tombstones.erase(m_tombstoneOrder.front());
+                m_tombstoneOrder.pop_front();
+            }
+        }
+    }
+}
+
+uint64_t CollabManager::knownLwwKey(std::string const& gid) const {
+    if (auto it = m_objects.find(gid); it != m_objects.end()) {
+        return lwwOrderKey(it->second.version, it->second.origin);
+    }
+    if (auto tIt = m_tombstones.find(gid); tIt != m_tombstones.end()) {
+        return tIt->second;
+    }
+    return 0;
+}
+
+uint32_t CollabManager::knownVersion(std::string const& gid) const {
+    if (auto it = m_objects.find(gid); it != m_objects.end()) {
+        return it->second.version;
+    }
+    if (auto tIt = m_tombstones.find(gid); tIt != m_tombstones.end()) {
+        return static_cast<uint32_t>(tIt->second >> 32);
+    }
+    return 0;
 }
 
 std::string CollabManager::saveObject(GameObject* object) const {
@@ -501,8 +578,8 @@ std::string CollabManager::saveObject(GameObject* object) const {
 }
 
 GameObject* CollabManager::findTrackedObject(std::string const& gid) const {
-    auto it = m_gidToObj.find(gid);
-    return it != m_gidToObj.end() ? it->second.data() : nullptr;
+    auto it = m_objects.find(gid);
+    return it != m_objects.end() ? it->second.object.data() : nullptr;
 }
 
 }
@@ -523,12 +600,15 @@ void CollabManager::onMessage(matjson::Value const& msg) {
     handleMessage(msg);
 }
 
-void CollabManager::tick() {
-    m_opTokens = std::min(m_opTokens + m_opsPerSec * kTickInterval,
+void CollabManager::tick(float dt) {
+    if (!std::isfinite(dt) || dt <= 0.f) dt = kTickInterval;
+    dt = std::clamp(dt, 0.001f, 0.25f);
+
+    m_opTokens = std::min(m_opTokens + m_opsPerSec * dt,
                           std::max(m_opsPerSec, static_cast<float>(m_maxOpsPerRequest)));
-    if (m_digestCooldown > 0.f) m_digestCooldown -= kTickInterval;
+    if (m_digestCooldown > 0.f) m_digestCooldown -= dt;
     if (!m_inflight.empty() && m_retryTimer > 0.f) {
-        m_retryTimer -= kTickInterval;
+        m_retryTimer -= dt;
         if (m_retryTimer <= 0.f) {
             if (connected() && m_net.isOpen()) {
                 log::info("[Collab] reintentando envio de {} op(s)", m_inflight.size());
@@ -550,6 +630,35 @@ void CollabManager::tick() {
         size_t applied = 0;
         while (!m_applyQueue.empty() && applied < kRemoteApplyMaxPerTick &&
                (applied == 0 || std::chrono::steady_clock::now() < applyDeadline)) {
+            auto const& front = m_applyQueue.front();
+            if (front.kind == "add" && !front.save.empty() && !m_objects.count(front.gid) &&
+                lwwOrderKey(front.version, front.origin) > knownLwwKey(front.gid)) {
+                std::vector<ApplyObj> batch;
+                batch.reserve(kRemoteAddBatchSize);
+                while (!m_applyQueue.empty() && batch.size() < kRemoteAddBatchSize &&
+                       applied + batch.size() < kRemoteApplyMaxPerTick) {
+                    auto const& next = m_applyQueue.front();
+                    if (next.kind != "add" || next.save.empty() || m_objects.count(next.gid) ||
+                        lwwOrderKey(next.version, next.origin) <= knownLwwKey(next.gid)) {
+                        break;
+                    }
+                    auto queued = m_applyQueue.begin();
+                    m_queuedRemoteByGid.erase(queued->gid);
+                    batch.push_back(std::move(*queued));
+                    m_applyQueue.erase(queued);
+                }
+                if (batch.size() > 1) {
+                    applyRemoteAddBatch(batch);
+                    applied += batch.size();
+                    continue;
+                }
+                if (batch.size() == 1) {
+                    applyRemoteAdd(batch[0]);
+                    ++applied;
+                    continue;
+                }
+            }
+
             auto queued = m_applyQueue.begin();
             auto op = std::move(*queued);
             m_queuedRemoteByGid.erase(op.gid);
@@ -569,7 +678,7 @@ void CollabManager::tick() {
         }
 
         for (auto it = m_peerSelections.begin(); it != m_peerSelections.end();) {
-            it->second.age += kTickInterval;
+            it->second.age += dt;
             if (it->second.age > kPeerSelectionMaxAge) {
                 if (m_overlay) m_overlay->onPeerSelectionCleared(it->first);
                 it = m_peerSelections.erase(it);
@@ -579,7 +688,7 @@ void CollabManager::tick() {
         }
 
         for (auto it = m_peerCameras.begin(); it != m_peerCameras.end();) {
-            it->second.age += kTickInterval;
+            it->second.age += dt;
             if (it->second.age > kPeerCameraMaxAge) {
                 if (m_overlay) m_overlay->onPeerCameraCleared(it->first);
                 it = m_peerCameras.erase(it);
@@ -588,7 +697,7 @@ void CollabManager::tick() {
             }
         }
         for (auto it = m_peerWorkZones.begin(); it != m_peerWorkZones.end();) {
-            it->second.age += kTickInterval;
+            it->second.age += dt;
             if (it->second.age > kPeerWorkZoneMaxAge) {
                 if (m_overlay) m_overlay->onPeerWorkZoneCleared(it->first);
                 it = m_peerWorkZones.erase(it);
@@ -596,10 +705,10 @@ void CollabManager::tick() {
                 ++it;
             }
         }
-        tickPings(kTickInterval);
-        tickHeatmap(kTickInterval);
+        tickPings(dt);
+        tickHeatmap(dt);
         // fallback if overlay creation failed; normally it updates follow mode every frame.
-        if (!m_overlay) updateFollow(kTickInterval);
+        if (!m_overlay) updateFollow(dt);
 
         bool playtesting = m_editor->m_playbackMode == PlaybackMode::Playing;
 
@@ -629,7 +738,7 @@ void CollabManager::tick() {
                     size_t end = std::min(m_reconcileCursor + kReconcileMaxObjects, total);
                     for (size_t i = m_reconcileCursor; i < end; ++i) {
                         if (auto* o = typeinfo_cast<GameObject*>(selected->objectAtIndex(static_cast<unsigned int>(i)))) {
-                            sendUpdatedObject(o);
+                            queueObjectEdit(o, LocalEditKind::Full, true);
                         }
                     }
                     m_reconcileCursor = end < total ? end : 0;
@@ -638,7 +747,8 @@ void CollabManager::tick() {
         }
 
         if (connected() && !playtesting && m_snapshotComplete && !m_seeding &&
-            m_applyQueue.empty() && ++m_sweepTicks >= kSweepEveryTicks) {
+            m_applyQueue.empty() && m_deferredCreates.empty() && m_deferredEdits.empty() &&
+            ++m_sweepTicks >= kSweepEveryTicks) {
             m_sweepTicks = 0;
             sweepEditor();
         }
@@ -650,29 +760,29 @@ void CollabManager::tick() {
         }
     }
 
-    CollabVoice::get().update(kTickInterval);
+    CollabVoice::get().update(dt);
 
     if (connected() && m_selectionDirty) {
-        m_sinceSelectionFlush += kTickInterval;
+        m_sinceSelectionFlush += dt;
         if (m_sinceSelectionFlush >= kSelectionFlushInterval) {
             flushSelectionIfNeeded();
         }
     }
     if (connected() && m_cameraDirty) {
-        m_sinceCameraFlush += kTickInterval;
+        m_sinceCameraFlush += dt;
         if (m_sinceCameraFlush >= kCameraFlushInterval) {
             flushCameraIfNeeded();
         }
     }
     if (connected() && m_workZoneDirty) {
-        m_sinceWorkZoneFlush += kTickInterval;
+        m_sinceWorkZoneFlush += dt;
         if (m_sinceWorkZoneFlush >= kWorkZoneFlushInterval) {
             flushWorkZoneIfNeeded();
         }
     }
 
     if (connected() && !m_pendingOps.empty()) {
-        m_sinceFlush += kTickInterval;
+        m_sinceFlush += dt;
         if (m_pendingStructural || m_sinceFlush >= kUpdateFlushInterval) {
             flushOutgoing();
         }
@@ -768,6 +878,7 @@ void CollabManager::handleMessage(matjson::Value const& msg) {
                     op.gid = item["gid"].asString().unwrapOr("");
                     op.save = item["save"].asString().unwrapOr("");
                     op.version = static_cast<uint32_t>(item["version"].asInt().unwrapOr(0));
+                    op.origin = static_cast<int>(item["editor"].asInt().unwrapOr(0));
                     queueRemote(std::move(op));
                     ++m_snapshotReceived;
                 }
@@ -860,6 +971,9 @@ void CollabManager::handleMessage(matjson::Value const& msg) {
 
     if (t == "resync") {
         resetEditorState();
+        m_snapshotReceived = 0;
+        m_snapshotComplete = false;
+        m_seeded = false;
         wipeEditorObjects();
         return;
     }
@@ -1350,6 +1464,29 @@ void CollabManager::onOpsAck(bool ok, int status) {
         return;
     }
 
+    if (status == 409) {
+        log::warn("[Collab] /api/ops devolvio 409 (not_joined); iniciando recuperacion");
+        if (!tryRecoverSession()) {
+            teardownAndNotify("Se perdio la sesion con la sala. Vuelve a conectar.");
+        }
+        return;
+    }
+
+    if (status == 413 && m_inflight.size() > 1) {
+        // payload too large for server limit: split the chunk in half and retry immediately.
+        size_t mid = m_inflight.size() / 2;
+        for (size_t i = m_inflight.size(); i > mid; --i) {
+            auto op = std::move(m_inflight[i - 1]);
+            std::string gid = op.gid;
+            m_outbox.push_front(std::move(op));
+            m_outboxByGid[gid] = m_outbox.begin();
+        }
+        m_inflight.resize(mid);
+        log::warn("[Collab] /api/ops 413: dividiendo chunk a {} op(s)", mid);
+        sendInflightChunk();
+        return;
+    }
+
     // keep the chunk in flight while retrying with backoff.
     ++m_sendFailures;
     float delay = 0.5f * static_cast<float>(1 << std::min(m_sendFailures - 1, 4));
@@ -1427,9 +1564,9 @@ void CollabManager::openHostEditor() {
 
 void CollabManager::resetEditorState() {
     m_uidToGid.clear();
-    m_gidToObj.clear();
-    m_versionByGid.clear();
-    m_lastSentSave.clear();
+    m_objects.clear();
+    m_tombstones.clear();
+    m_tombstoneOrder.clear();
     m_deferredCreates.clear();
     m_deferredEditOrder.clear();
     m_deferredEdits.clear();
@@ -1443,9 +1580,12 @@ void CollabManager::resetEditorState() {
     m_retryTimer = 0.f;
     m_sendFailures = 0;
     m_syncTotal = 0;
-    m_wireHash.clear();
+    m_bucketHash.fill(0);
+    m_bucketCount.fill(0);
     m_wireDigest = 0;
     m_digestStrikes = 0;
+    m_reconcileInFlight = false;
+    ++m_reconcileEpoch;
     m_applyQueue.clear();
     m_queuedRemoteByGid.clear();
     m_sinceFlush = 0.f;
@@ -1511,7 +1651,28 @@ void CollabManager::beginResync() {
         wipeEditorObjects();
         m_seeded = false;
     }
-    m_net.requestResync();
+    uint64_t epoch = m_sendEpoch;
+    m_net.requestResync([this, epoch](bool ok, int status) {
+        if (epoch != m_sendEpoch || !connected()) return;
+        if (!ok) {
+            log::warn("[Collab] /api/resync fallo (HTTP {})", status);
+            if (status == 409) {
+                tryRecoverSession();
+            } else if (m_isHost) {
+                // fallback: keep host operational and force fresh seed.
+                m_snapshotComplete = true;
+                m_seeding = true;
+                m_seedCursor = 0;
+                m_seedTotal = 0;
+                m_seedUploaded = 0;
+                m_seedChunk = matjson::Value::array();
+                m_seedChunkBytes = 0;
+                m_seedInflight = false;
+                m_seedSerializeDone = false;
+                ++m_seedEpoch;
+            }
+        }
+    });
 }
 
 size_t CollabManager::seedFromEditor() {
@@ -1556,10 +1717,9 @@ size_t CollabManager::seedFromEditor() {
         std::string save = saveObject(o);
         if (save.empty()) continue;
         std::string gid = makeLocalGid();
-        mapGid(gid, o);
-        m_versionByGid[gid] = 1;
-        m_lastSentSave[gid] = save;
-        setWireHash(gid, objectSyncHash(gid, 1, save));
+        uint64_t wHash = objectSyncHash(gid, 1, save);
+        uint64_t lHash = stringHash64(save);
+        mapObject(gid, o, 1, m_clientId, wHash, lHash, true);
 
         m_seedChunkBytes += save.size() + gid.size() + 48;
         m_seedChunk.push(matjson::makeObject({
@@ -1638,7 +1798,7 @@ void CollabManager::onSeedAck(bool ok, int status, int accepted, int roomTotal, 
         m_seeding = false;
         m_seedCursor = 0;
         setStatus(fmt::format("Nivel cargado en la sala ({} objetos)", roomTotal > 0 ? roomTotal : static_cast<int>(m_seedUploaded)));
-        log::info("[Collab] seed completo: roomTotal={} localMaps={}", roomTotal, m_gidToObj.size());
+        log::info("[Collab] seed completo: roomTotal={} localMaps={}", roomTotal, m_objects.size());
         sendLevelSettings(true);
         return;
     }
@@ -1658,10 +1818,7 @@ void CollabManager::sendCreatedObject(GameObject* object) {
     if (save.empty()) return;
     claimObjectLayer(object);
     std::string gid = makeLocalGid();
-    mapGid(gid, object);
-    m_versionByGid[gid] = 1;
-    m_lastSentSave[gid] = save;
-    setWireHash(gid, objectSyncHash(gid, 1, save));
+    mapObject(gid, object, 1, m_clientId, objectSyncHash(gid, 1, save), stringHash64(save), true);
     enqueueOp("add", gid, 1, std::move(save));
 }
 
@@ -1673,33 +1830,36 @@ void CollabManager::sendCreatedObjects(CCArray* objects) {
 }
 
 void CollabManager::sendUpdatedObject(GameObject* object) {
-    queueObjectEdit(object, LocalEditKind::Full);
+    queueObjectEdit(object, LocalEditKind::Full, false);
 }
 
 void CollabManager::sendMovedObject(GameObject* object) {
-    queueObjectEdit(object, LocalEditKind::Move);
+    queueObjectEdit(object, LocalEditKind::Move, false);
 }
 
 void CollabManager::sendRotatedObject(GameObject* object) {
-    queueObjectEdit(object, LocalEditKind::Rotate);
+    queueObjectEdit(object, LocalEditKind::Rotate, false);
 }
 
 void CollabManager::sendScaledObject(GameObject* object) {
-    queueObjectEdit(object, LocalEditKind::Scale);
+    queueObjectEdit(object, LocalEditKind::Scale, false);
 }
 
 void CollabManager::sendFlippedObject(GameObject* object) {
-    queueObjectEdit(object, LocalEditKind::Flip);
+    queueObjectEdit(object, LocalEditKind::Flip, false);
 }
 
-void CollabManager::queueObjectEdit(GameObject* object, LocalEditKind kind) {
+void CollabManager::queueObjectEdit(GameObject* object, LocalEditKind kind, bool fromReconcile) {
     if (!shouldEmit() || !object) return;
     if (!canEditObjectLayer(object)) return;
     int uid = object->m_uniqueID;
-    auto [it, inserted] = m_deferredEdits.try_emplace(uid, DeferredEdit{object, kind});
+    auto [it, inserted] = m_deferredEdits.try_emplace(uid, DeferredEdit{object, kind, fromReconcile});
     if (!inserted) {
         it->second.object = object;
-        it->second.kind = mergeEditKind(it->second.kind, kind);
+        if (!fromReconcile) {
+            it->second.kind = mergeEditKind(it->second.kind, kind);
+            it->second.fromReconcile = false;
+        }
         return;
     }
     m_deferredEditOrder.push_back(uid);
@@ -1726,40 +1886,58 @@ void CollabManager::drainDeferredLocalEdits() {
         auto edit = std::move(it->second);
         m_deferredEdits.erase(it);
         if (edit.object && edit.object->getParent()) {
-            sendObjectState(edit.object.data(), edit.kind);
+            sendObjectState(edit.object.data(), edit.kind, edit.fromReconcile);
         }
         ++processed;
     }
 }
 
-void CollabManager::sendObjectState(GameObject* object, LocalEditKind kind) {
+void CollabManager::sendObjectState(GameObject* object, LocalEditKind kind, bool fromReconcile) {
     if (!shouldEmit() || !object) return;
     if (!canEditObjectLayer(object)) return;
-    std::string save = saveObject(object);
-    if (save.empty()) return;
 
-    auto it = m_uidToGid.find(object->m_uniqueID);
-    if (it == m_uidToGid.end()) {
-    // untracked objects are registered as adds.
+    auto uIt = m_uidToGid.find(object->m_uniqueID);
+    if (uIt == m_uidToGid.end()) {
+        std::string save = saveObject(object);
+        if (save.empty()) return;
         claimObjectLayer(object);
         std::string gid = makeLocalGid();
-        mapGid(gid, object);
-        m_versionByGid[gid] = 1;
-        m_lastSentSave[gid] = save;
-        setWireHash(gid, objectSyncHash(gid, 1, save));
+        mapObject(gid, object, 1, m_clientId, objectSyncHash(gid, 1, save), stringHash64(save), true);
         enqueueOp("add", gid, 1, std::move(save));
         return;
     }
-    std::string gid = it->second;
+
+    std::string gid = uIt->second;
+    auto objIt = m_objects.find(gid);
+    if (objIt == m_objects.end()) return;
+
+    if (fromReconcile) {
+        // never downgrade an unsent cheap transform into a full object recreate.
+        if (auto pIt = m_pendingIndexByGid.find(gid); pIt != m_pendingIndexByGid.end()) {
+            auto const& pOp = m_pendingOps[pIt->second];
+            if (isCheapEditKind(pOp.kind)) return;
+        }
+        if (auto oIt = m_outboxByGid.find(gid); oIt != m_outboxByGid.end()) {
+            if (isCheapEditKind(oIt->second->kind)) return;
+        }
+    }
+
+    std::string save = saveObject(object);
+    if (save.empty()) return;
+    uint64_t newLocalHash = stringHash64(save);
+
+    if (!objIt->second.hasLocalSaveHash && fromReconcile) {
+        objIt->second.localSaveHash = newLocalHash;
+        objIt->second.hasLocalSaveHash = true;
+        return;
+    }
 
     // reconcile callbacks often repeat unchanged updates; skip no-ops.
-    auto last = m_lastSentSave.find(gid);
-    if (last != m_lastSentSave.end() && last->second == save) return;
+    if (objIt->second.hasLocalSaveHash && objIt->second.localSaveHash == newLocalHash) return;
 
     claimObjectLayer(object);
-    uint32_t version = ++m_versionByGid[gid];
-    m_lastSentSave[gid] = save;
-    setWireHash(gid, objectSyncHash(gid, version, save));
+    uint32_t version = objIt->second.version + 1;
+    updateObjectSyncMeta(gid, version, m_clientId, objectSyncHash(gid, version, save), newLocalHash, true);
 
     OutOp op;
     op.kind = kindName(kind);
@@ -1782,7 +1960,7 @@ void CollabManager::sendObjectState(GameObject* object, LocalEditKind kind) {
         op.flipY = object->isFlipY();
         op.hasFlip = true;
     } else if (kind == LocalEditKind::Full) {
-    op.hasPos = false;
+        op.hasPos = false;
     }
     enqueueOp(std::move(op));
 }
@@ -1815,8 +1993,12 @@ void CollabManager::sendFlippedObjects(CCArray* objects) {
 void CollabManager::reconcileObjects(CCArray* objects) {
     if (!objects) return;
     for (auto* obj : CCArrayExt<CCObject*>(objects)) {
-        if (auto* o = typeinfo_cast<GameObject*>(obj)) sendUpdatedObject(o);
+        if (auto* o = typeinfo_cast<GameObject*>(obj)) queueObjectEdit(o, LocalEditKind::Full, true);
     }
+}
+
+void CollabManager::requestFastSweep() {
+    m_sweepTicks = kSweepEveryTicks;
 }
 
 void CollabManager::sendSelection(CCArray* selected) {
@@ -1904,6 +2086,23 @@ void CollabManager::pollLocalSelection() {
 
     if (hash == m_selectionFingerprint) return;
     m_selectionFingerprint = hash;
+    // prime localSaveHash lazily for newly selected snapshot objects so edit popups detect changes.
+    if (count > 0 && count <= kReconcileMaxObjects) {
+        for (unsigned int i = 0; i < count; ++i) {
+            auto* object = typeinfo_cast<GameObject*>(selected->objectAtIndex(i));
+            if (!object) continue;
+            auto uIt = m_uidToGid.find(object->m_uniqueID);
+            if (uIt == m_uidToGid.end()) continue;
+            auto oIt = m_objects.find(uIt->second);
+            if (oIt != m_objects.end() && !oIt->second.hasLocalSaveHash) {
+                std::string save = saveObject(object);
+                if (!save.empty()) {
+                    oIt->second.localSaveHash = stringHash64(save);
+                    oIt->second.hasLocalSaveHash = true;
+                }
+            }
+        }
+    }
     sendSelection(selected);
 }
 
@@ -1959,10 +2158,11 @@ void CollabManager::sendDeletedObject(GameObject* object) {
     m_deferredEdits.erase(object->m_uniqueID);
     auto it = m_uidToGid.find(object->m_uniqueID);
     if (it == m_uidToGid.end()) return; // never synced
+    if (!canEditObjectLayer(object)) return;
     std::string gid = it->second;
-    uint32_t version = ++m_versionByGid[gid];
+    uint32_t version = knownVersion(gid) + 1;
     enqueueOp("delete", gid, version, "");
-    unmapGid(gid);
+    unmapGid(gid, lwwOrderKey(version, m_clientId));
 }
 
 void CollabManager::sweepEditor() {
@@ -1992,7 +2192,7 @@ void CollabManager::sweepEditor() {
     }
 
     std::vector<std::string> gone;
-    size_t bucketCount = m_gidToObj.bucket_count();
+    size_t bucketCount = m_objects.bucket_count();
     size_t bucketsChecked = 0;
     size_t trackedChecked = 0;
     while (bucketCount > 0 && bucketsChecked < bucketCount &&
@@ -2001,17 +2201,21 @@ void CollabManager::sweepEditor() {
         size_t bucket = m_sweepBucketCursor % bucketCount;
         m_sweepBucketCursor = (bucket + 1) % bucketCount;
         ++bucketsChecked;
-        for (auto it = m_gidToObj.begin(bucket); it != m_gidToObj.end(bucket); ++it) {
+        for (auto it = m_objects.begin(bucket); it != m_objects.end(bucket); ++it) {
             ++trackedChecked;
-            if (!it->second || !it->second->getParent()) gone.push_back(it->first);
+            if (!it->second.object || !it->second.object->getParent()) gone.push_back(it->first);
             if (trackedChecked >= kSweepMaxChecksPerPass ||
                 std::chrono::steady_clock::now() >= deadline) break;
         }
     }
     for (auto const& gid : gone) {
-        uint32_t version = ++m_versionByGid[gid];
+        if (auto* obj = findTrackedObject(gid); obj && !canEditObjectLayer(obj)) {
+            unmapGid(gid);
+            continue;
+        }
+        uint32_t version = knownVersion(gid) + 1;
         enqueueOp("delete", gid, version, "");
-        unmapGid(gid);
+        unmapGid(gid, lwwOrderKey(version, m_clientId));
     }
 
     if (adds > 0 || !gone.empty()) {
@@ -2022,7 +2226,7 @@ void CollabManager::sweepEditor() {
 void CollabManager::handleDigest(matjson::Value const& msg) {
     // compare digests only when both sides are quiescent.
     if (!m_editor || !connected()) return;
-    if (m_seeding || !m_snapshotComplete) return;
+    if (m_seeding || !m_snapshotComplete || m_reconcileInFlight) return;
     if (!m_applyQueue.empty() || !m_deferredCreates.empty() || !m_deferredEdits.empty() ||
         !m_pendingOps.empty() || !m_outbox.empty() || !m_inflight.empty()) return;
     if (m_digestCooldown > 0.f) return;
@@ -2033,19 +2237,177 @@ void CollabManager::handleDigest(matjson::Value const& msg) {
 
     std::string local = fmt::format("{:016x}", m_wireDigest);
 
-    if (count == static_cast<int64_t>(m_wireHash.size()) && hash == local) {
+    if (count == static_cast<int64_t>(m_objects.size()) && hash == local) {
         m_digestStrikes = 0;
         return;
     }
 
-    // two quiet mismatches indicate divergence; rebuild automatically.
+    // two quiet mismatches indicate divergence; reconcile mismatched buckets first.
     if (++m_digestStrikes < 2) return;
     m_digestStrikes = 0;
-    m_digestCooldown = m_isHost ? 60.f : 20.f;
-    log::warn("[Collab] desync detectado (server: {} obj hash={} | local: {} obj hash={}); auto-resync",
-              count, hash, m_wireHash.size(), local);
-    setStatus("Desync detectado; resincronizando...");
-    beginResync();
+    m_digestCooldown = m_isHost ? 30.f : 15.f;
+    log::warn("[Collab] desync detectado (server: {} obj hash={} | local: {} obj hash={}); reconciliando buckets",
+              count, hash, m_objects.size(), local);
+    startBucketReconcile();
+}
+
+void CollabManager::startBucketReconcile() {
+    if (m_reconcileInFlight || !connected() || !m_net.isOpen()) return;
+    m_reconcileInFlight = true;
+    uint64_t epoch = ++m_reconcileEpoch;
+
+    auto buckets = matjson::Value::array();
+    for (size_t i = 0; i < kSyncBuckets; ++i) {
+        auto pair = matjson::Value::array();
+        pair.push(static_cast<int64_t>(m_bucketCount[i]));
+        pair.push(fmt::format("{:016x}", m_bucketHash[i]));
+        buckets.push(std::move(pair));
+    }
+
+    m_net.sendReconcileBuckets(buckets, [this, epoch](bool ok, int status, matjson::Value const& body) {
+        onReconcileBucketsResult(ok, status, body, epoch);
+    });
+}
+
+void CollabManager::onReconcileBucketsResult(bool ok, int status, matjson::Value const& body, uint64_t epoch) {
+    if (epoch != m_reconcileEpoch) return;
+    m_reconcileInFlight = false;
+    if (!connected() || !m_editor) return;
+
+    if (!ok) {
+        if (status == 409) {
+            tryRecoverSession();
+        } else {
+            setStatus("Desync detectado; resincronizando...");
+            beginResync();
+        }
+        return;
+    }
+
+    if (body.contains("inSync") && body["inSync"].asBool().unwrapOr(false)) return;
+    if (body.contains("fullResync") && body["fullResync"].asBool().unwrapOr(false)) {
+        log::info("[Collab] bucket reconcile solicita resync completo");
+        setStatus("Desync detectado; resincronizando...");
+        beginResync();
+        return;
+    }
+
+    std::unordered_set<int> mismatchSet;
+    if (auto arr = body["mismatched"].asArray()) {
+        for (auto const& v : arr.unwrap()) {
+            int b = static_cast<int>(v.asInt().unwrapOr(-1));
+            if (b >= 0 && b < static_cast<int>(kSyncBuckets)) mismatchSet.insert(b);
+        }
+    }
+    if (mismatchSet.empty()) return;
+
+    if (m_isHost) {
+        struct ServerEntry {
+            uint32_t version = 0;
+            int editor = 0;
+            std::string hash;
+        };
+        std::unordered_map<std::string, ServerEntry> serverMap;
+        if (auto arr = body["serverEntries"].asArray()) {
+            for (auto const& item : arr.unwrap()) {
+                if (!item.isObject()) continue;
+                std::string gid = item["gid"].asString().unwrapOr("");
+                if (gid.empty()) continue;
+                ServerEntry se;
+                se.version = static_cast<uint32_t>(item["version"].asInt().unwrapOr(0));
+                se.editor = static_cast<int>(item["editor"].asInt().unwrapOr(0));
+                se.hash = item["hash"].asString().unwrapOr("");
+                serverMap.emplace(std::move(gid), std::move(se));
+            }
+        }
+
+        size_t pushed = 0;
+        for (auto& [gid, tracked] : m_objects) {
+            if (!mismatchSet.count(static_cast<int>(syncBucketIndex(gid)))) continue;
+            if (!tracked.object || !tracked.object->getParent()) continue;
+            auto sIt = serverMap.find(gid);
+            std::string localHex = fmt::format("{:016x}", tracked.wireHash);
+            bool matches = sIt != serverMap.end() &&
+                sIt->second.version == tracked.version &&
+                sIt->second.editor == tracked.origin &&
+                sIt->second.hash == localHex;
+            if (matches) continue;
+
+            std::string save = saveObject(tracked.object.data());
+            if (save.empty()) continue;
+            uint32_t nextVer = std::max(tracked.version, sIt != serverMap.end() ? sIt->second.version : 0u) + 1;
+            updateObjectSyncMeta(gid, nextVer, m_clientId, objectSyncHash(gid, nextVer, save),
+                                 stringHash64(save), true);
+            enqueueOp(sIt == serverMap.end() ? "add" : "update", gid, nextVer, std::move(save));
+            ++pushed;
+        }
+        for (auto const& [gid, se] : serverMap) {
+            if (m_objects.count(gid)) continue;
+            uint32_t nextVer = std::max(knownVersion(gid), se.version) + 1;
+            enqueueOp("delete", gid, nextVer, "");
+            ++pushed;
+        }
+        if (pushed > 0) {
+            flushOutgoing();
+            log::info("[Collab] host bucket reconcile: {} op(s) reparadas", pushed);
+        }
+        return;
+    }
+
+    // non-host peer: remove ghost objects in mismatched buckets and apply missing/changed ones.
+    struct ServerObj {
+        std::string save;
+        uint32_t version = 0;
+        int origin = 0;
+        uint64_t wireHash = 0;
+    };
+    std::unordered_map<std::string, ServerObj> serverMap;
+    if (auto arr = body["objects"].asArray()) {
+        for (auto const& item : arr.unwrap()) {
+            if (!item.isObject()) continue;
+            std::string gid = item["gid"].asString().unwrapOr("");
+            std::string save = item["save"].asString().unwrapOr("");
+            uint32_t ver = static_cast<uint32_t>(item["version"].asInt().unwrapOr(0));
+            int origin = static_cast<int>(item["editor"].asInt().unwrapOr(0));
+            if (gid.empty() || save.empty() || save.size() > kMaxSaveBytes) continue;
+            uint64_t wh = objectSyncHash(gid, ver, save);
+            serverMap.emplace(std::move(gid), ServerObj{std::move(save), ver, origin, wh});
+        }
+    }
+
+    std::vector<std::string> toDelete;
+    for (auto const& [gid, _] : m_objects) {
+        if (!mismatchSet.count(static_cast<int>(syncBucketIndex(gid)))) continue;
+        if (!serverMap.count(gid)) toDelete.push_back(gid);
+    }
+    for (auto const& gid : toDelete) {
+        ApplyObj del;
+        del.kind = "delete";
+        del.gid = gid;
+        del.version = knownVersion(gid) + 1;
+        applyRemoteDelete(del);
+    }
+
+    size_t queuedCount = 0;
+    for (auto& [gid, so] : serverMap) {
+        auto it = m_objects.find(gid);
+        if (it != m_objects.end() &&
+            it->second.version == so.version &&
+            it->second.origin == so.origin &&
+            it->second.wireHash == so.wireHash) {
+            continue;
+        }
+        ApplyObj op;
+        op.kind = (it != m_objects.end()) ? "update" : "add";
+        op.gid = gid;
+        op.version = so.version;
+        op.origin = so.origin;
+        op.save = std::move(so.save);
+        queueRemote(std::move(op));
+        ++queuedCount;
+    }
+    log::info("[Collab] peer bucket reconcile: {} borrados, {} actualizados ({} buckets)",
+              toDelete.size(), queuedCount, mismatchSet.size());
 }
 
 void CollabManager::notifyOverlayEdit(ApplyObj const& op, GameObject* object) {
@@ -2059,21 +2421,78 @@ void CollabManager::notifyOverlayEdit(ApplyObj const& op, GameObject* object) {
     m_overlay->onRemoteEdit(op.origin, name, pos, op.kind == "delete");
 }
 
+void CollabManager::supersedePendingLocal(std::string const& gid, uint64_t remoteKey) {
+    if (auto pIt = m_pendingIndexByGid.find(gid); pIt != m_pendingIndexByGid.end()) {
+        auto& pOp = m_pendingOps[pIt->second];
+        if (!pOp.kind.empty() && lwwOrderKey(pOp.version, m_clientId) < remoteKey) {
+            pOp.kind.clear();
+            m_pendingIndexByGid.erase(pIt);
+        }
+    }
+    if (auto oIt = m_outboxByGid.find(gid); oIt != m_outboxByGid.end()) {
+        if (lwwOrderKey(oIt->second->version, m_clientId) < remoteKey) {
+            m_outbox.erase(oIt->second);
+            m_outboxByGid.erase(oIt);
+        }
+    }
+}
+
+void CollabManager::applyRemoteAddBatch(std::vector<ApplyObj> const& batch) {
+    if (batch.empty() || !m_editor) return;
+
+    std::string joined;
+    size_t totalBytes = batch.size();
+    for (auto const& op : batch) totalBytes += op.save.size();
+    joined.reserve(totalBytes);
+    for (size_t i = 0; i < batch.size(); ++i) {
+        if (i > 0) joined.push_back(';');
+        joined += batch[i].save;
+    }
+
+    CCArray* created = nullptr;
+    {
+        TrackerGuard guard(m_applyingRemote);
+        created = m_editor->createObjectsFromString(std::string(joined), true, true);
+        if (created && created->count() == batch.size()) {
+            m_editor->updateObjectColors(created);
+            for (size_t i = 0; i < batch.size(); ++i) {
+                auto const& op = batch[i];
+                auto* obj = typeinfo_cast<GameObject*>(created->objectAtIndex(static_cast<unsigned int>(i)));
+                if (!obj) continue;
+                supersedePendingLocal(op.gid, lwwOrderKey(op.version, op.origin));
+                mapObject(op.gid, obj, op.version, op.origin,
+                          objectSyncHash(op.gid, op.version, op.save), 0, false);
+                notifyOverlayEdit(op, obj);
+            }
+            return;
+        }
+        // mismatch (corrupt/merged entry in batch): roll back batch and apply 1-by-1.
+        if (created) {
+            for (auto* item : CCArrayExt<CCObject*>(created)) {
+                if (auto* obj = typeinfo_cast<GameObject*>(item)) {
+                    if (obj->getParent()) m_editor->removeObject(obj, true);
+                }
+            }
+        }
+    }
+
+    for (auto const& op : batch) applyRemoteAdd(op);
+}
+
 void CollabManager::applyRemoteAdd(ApplyObj const& op) {
     if (op.save.empty() || op.gid.empty()) return;
 
-    if (m_gidToObj.count(op.gid)) {
+    if (m_objects.count(op.gid)) {
         applyRemoteUpdate(op);
         return;
     }
 
-    auto known = m_versionByGid.find(op.gid);
-    if (known != m_versionByGid.end() && op.version < known->second) return;
+    uint64_t incomingKey = lwwOrderKey(op.version, op.origin);
+    if (incomingKey <= knownLwwKey(op.gid)) return;
 
-    if (!m_editor) {
-        m_versionByGid[op.gid] = op.version;
-        return;
-    }
+    if (!m_editor) return;
+
+    supersedePendingLocal(op.gid, incomingKey);
 
     GameObject* mapped = nullptr;
     {
@@ -2081,19 +2500,15 @@ void CollabManager::applyRemoteAdd(ApplyObj const& op) {
         CCArray* created = m_editor->createObjectsFromString(std::string(op.save), true, true);
         if (created && created->count() > 0) {
             if (auto* obj = typeinfo_cast<GameObject*>(created->objectAtIndex(created->count() - 1))) {
-                mapGid(op.gid, obj);
+                mapObject(op.gid, obj, op.version, op.origin,
+                          objectSyncHash(op.gid, op.version, op.save), 0, false);
                 mapped = obj;
             }
             m_editor->updateObjectColors(created);
         }
     }
 
-    m_versionByGid[op.gid] = op.version;
-    if (mapped) {
-    // keep the local form so reconcile does not echo remote edits.
-        m_lastSentSave[op.gid] = saveObject(mapped);
-        setWireHash(op.gid, objectSyncHash(op.gid, op.version, op.save));
-    } else {
+    if (!mapped) {
         log::warn("[Collab] no se pudo materializar objeto remoto gid={} ({} bytes)", op.gid, op.save.size());
     }
     notifyOverlayEdit(op, mapped);
@@ -2102,21 +2517,19 @@ void CollabManager::applyRemoteAdd(ApplyObj const& op) {
 void CollabManager::applyRemoteUpdate(ApplyObj const& op) {
     if (op.save.empty() || op.gid.empty()) return;
 
-    auto known = m_versionByGid.find(op.gid);
-    if (known != m_versionByGid.end() && op.version < known->second) return;
+    uint64_t incomingKey = lwwOrderKey(op.version, op.origin);
+    if (incomingKey <= knownLwwKey(op.gid)) return;
 
-    if (!m_editor) {
-        m_versionByGid[op.gid] = op.version;
-        return;
-    }
+    if (!m_editor) return;
 
+    supersedePendingLocal(op.gid, incomingKey);
     GameObject* existing = findTrackedObject(op.gid);
 
     GameObject* mapped = nullptr;
     {
         TrackerGuard guard(m_applyingRemote);
         if (existing && existing->getParent()) {
-    // drop the editorui pointer before freeing the object.
+            // drop the editorui pointer before freeing the object.
             if (m_editor->m_editorUI) m_editor->m_editorUI->deselectObject(existing);
             m_editor->removeObject(existing, true);
         }
@@ -2124,18 +2537,15 @@ void CollabManager::applyRemoteUpdate(ApplyObj const& op) {
         CCArray* created = m_editor->createObjectsFromString(std::string(op.save), true, true);
         if (created && created->count() > 0) {
             if (auto* obj = typeinfo_cast<GameObject*>(created->objectAtIndex(created->count() - 1))) {
-                mapGid(op.gid, obj);
+                mapObject(op.gid, obj, op.version, op.origin,
+                          objectSyncHash(op.gid, op.version, op.save), 0, false);
                 mapped = obj;
             }
             m_editor->updateObjectColors(created);
         }
     }
 
-    m_versionByGid[op.gid] = op.version;
-    if (mapped) {
-        m_lastSentSave[op.gid] = saveObject(mapped);
-        setWireHash(op.gid, objectSyncHash(op.gid, op.version, op.save));
-    } else {
+    if (!mapped) {
         log::warn("[Collab] no se pudo materializar update remoto gid={} ({} bytes)", op.gid, op.save.size());
     }
     notifyOverlayEdit(op, mapped);
@@ -2144,13 +2554,10 @@ void CollabManager::applyRemoteUpdate(ApplyObj const& op) {
 void CollabManager::applyRemoteMove(ApplyObj const& op) {
     if (op.gid.empty()) return;
 
-    auto known = m_versionByGid.find(op.gid);
-    if (known != m_versionByGid.end() && op.version < known->second) return;
+    uint64_t incomingKey = lwwOrderKey(op.version, op.origin);
+    if (incomingKey <= knownLwwKey(op.gid)) return;
 
-    if (!m_editor) {
-        m_versionByGid[op.gid] = op.version;
-        return;
-    }
+    if (!m_editor) return;
 
     GameObject* existing = findTrackedObject(op.gid);
     if (!existing || !existing->getParent()) {
@@ -2163,10 +2570,12 @@ void CollabManager::applyRemoteMove(ApplyObj const& op) {
         return;
     }
 
+    supersedePendingLocal(op.gid, incomingKey);
     {
         TrackerGuard guard(m_applyingRemote);
         if (op.hasPos) {
             existing->setPosition({op.x, op.y});
+            m_editor->updateObjectSection(existing);
         } else if (!op.save.empty()) {
             ApplyObj asUpdate = op;
             asUpdate.kind = "update";
@@ -2175,15 +2584,13 @@ void CollabManager::applyRemoteMove(ApplyObj const& op) {
         }
     }
 
-    m_versionByGid[op.gid] = op.version;
     if (!op.save.empty()) {
-    // hash the wire save for reconcile no-op checks.
-        m_lastSentSave[op.gid] = saveObject(existing);
-        setWireHash(op.gid, objectSyncHash(op.gid, op.version, op.save));
+        updateObjectSyncMeta(op.gid, op.version, op.origin,
+                             objectSyncHash(op.gid, op.version, op.save), 0, false);
     } else {
         std::string save = saveObject(existing);
-        m_lastSentSave[op.gid] = save;
-        setWireHash(op.gid, objectSyncHash(op.gid, op.version, save));
+        updateObjectSyncMeta(op.gid, op.version, op.origin,
+                             objectSyncHash(op.gid, op.version, save), stringHash64(save), true);
     }
     notifyOverlayEdit(op, existing);
 }
@@ -2191,13 +2598,10 @@ void CollabManager::applyRemoteMove(ApplyObj const& op) {
 void CollabManager::applyRemoteTransform(ApplyObj const& op) {
     if (op.gid.empty()) return;
 
-    auto known = m_versionByGid.find(op.gid);
-    if (known != m_versionByGid.end() && op.version < known->second) return;
+    uint64_t incomingKey = lwwOrderKey(op.version, op.origin);
+    if (incomingKey <= knownLwwKey(op.gid)) return;
 
-    if (!m_editor) {
-        m_versionByGid[op.gid] = op.version;
-        return;
-    }
+    if (!m_editor) return;
 
     GameObject* existing = findTrackedObject(op.gid);
     if (!existing || !existing->getParent()) {
@@ -2209,6 +2613,7 @@ void CollabManager::applyRemoteTransform(ApplyObj const& op) {
         return;
     }
 
+    supersedePendingLocal(op.gid, incomingKey);
     bool applied = false;
     {
         TrackerGuard guard(m_applyingRemote);
@@ -2231,16 +2636,16 @@ void CollabManager::applyRemoteTransform(ApplyObj const& op) {
             applyRemoteUpdate(asUpdate);
             return;
         }
+        if (op.hasPos) m_editor->updateObjectSection(existing);
     }
 
-    m_versionByGid[op.gid] = op.version;
     if (!op.save.empty()) {
-        m_lastSentSave[op.gid] = saveObject(existing);
-        setWireHash(op.gid, objectSyncHash(op.gid, op.version, op.save));
+        updateObjectSyncMeta(op.gid, op.version, op.origin,
+                             objectSyncHash(op.gid, op.version, op.save), 0, false);
     } else {
         std::string save = saveObject(existing);
-        m_lastSentSave[op.gid] = save;
-        setWireHash(op.gid, objectSyncHash(op.gid, op.version, save));
+        updateObjectSyncMeta(op.gid, op.version, op.origin,
+                             objectSyncHash(op.gid, op.version, save), stringHash64(save), true);
     }
     notifyOverlayEdit(op, existing);
 }
@@ -2248,9 +2653,10 @@ void CollabManager::applyRemoteTransform(ApplyObj const& op) {
 void CollabManager::applyRemoteDelete(ApplyObj const& op) {
     if (op.gid.empty()) return;
 
-    auto known = m_versionByGid.find(op.gid);
-    if (known != m_versionByGid.end() && op.version < known->second) return;
+    uint64_t incomingKey = lwwOrderKey(op.version, op.origin);
+    if (incomingKey <= knownLwwKey(op.gid)) return;
 
+    supersedePendingLocal(op.gid, incomingKey);
     GameObject* existing = findTrackedObject(op.gid);
 
     if (m_editor && existing && existing->getParent()) {
@@ -2260,8 +2666,7 @@ void CollabManager::applyRemoteDelete(ApplyObj const& op) {
         m_editor->removeObject(existing, true);
     }
 
-    unmapGid(op.gid);
-    m_versionByGid[op.gid] = op.version; // reject stale re-adds.
+    unmapGid(op.gid, incomingKey);
 }
 
 void CollabManager::setHostPermissions(HostPermissions permissions) {

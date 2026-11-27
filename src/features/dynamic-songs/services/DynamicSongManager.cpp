@@ -582,7 +582,8 @@ void DynamicSongManager::stopSong() {
     if (hasSuspendedPlayback()) {
         goIdle();
         SubmergeEffect::get().release();
-        loadMenuTrack(FMODAudioEngine::sharedEngine()->m_musicVolume);
+        auto* fmod = FMODAudioEngine::sharedEngine();
+        loadMenuTrack(fmod ? fmod->m_musicVolume : 1.0f);
         return;
     }
 

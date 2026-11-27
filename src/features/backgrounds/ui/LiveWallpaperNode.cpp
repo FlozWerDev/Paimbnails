@@ -54,6 +54,9 @@ public:
         program->setUniformsForBuiltins();
         ccGLBlendFunc(GL_ONE, GL_ZERO);
         ccGLBindTexture2D(m_texture);
+#if CC_TEXTURE_ATLAS_USE_VAO
+        ccGLBindVAO(0);
+#endif
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         ccGLEnableVertexAttribs(kCCVertexAttribFlag_Position | kCCVertexAttribFlag_TexCoords);
         GLfloat const positions[] = {0.f, 0.f, size.width, 0.f, 0.f, size.height, size.width, size.height};

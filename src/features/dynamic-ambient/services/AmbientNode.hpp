@@ -26,7 +26,7 @@ public:
     AmbientScope scope() const { return m_scope; }
     void setRevealImmediate() { m_effectBlend = 1.f; }
 
-    static void onGLContextReloadAll();
+    static void onGLContextReloadAll(bool deleteHandles = true);
 
     void visit() override;
     void draw() override;

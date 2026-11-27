@@ -12,6 +12,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 
 using namespace geode::prelude;
 
@@ -76,10 +77,49 @@ float levelFromPeak(int peak) {
 }
 
 struct CollabVoice::Speaker {
-    // fifo behind a shared tap so an in-flight mixer callback never touches a freed speaker.
+    // fixed-capacity ring buffer behind a shared tap so the fmod audio thread never allocates.
     struct Tap {
         std::mutex mutex;
-        std::deque<int16_t> fifo;
+        std::vector<int16_t> ring;
+        size_t head = 0;
+        size_t tail = 0;
+        size_t count = 0;
+
+        Tap() : ring(kFifoMaxSamples, 0) {}
+
+        void pushSamples(uint8_t const* encoded, size_t n, int& outPeak) {
+            std::lock_guard lock(mutex);
+            size_t const cap = ring.size();
+            for (size_t i = 0; i < n; ++i) {
+                int16_t s = muLawDecode(encoded[i]);
+                outPeak = std::max(outPeak, std::abs(static_cast<int>(s)));
+                if (count == cap) {
+                    head = (head + 1) % cap;
+                    --count;
+                }
+                ring[tail] = s;
+                tail = (tail + 1) % cap;
+                ++count;
+            }
+            if (count > kFifoCatchupSamples + kFrameSamples * 2) {
+                size_t drop = count - kFifoCatchupSamples;
+                head = (head + drop) % cap;
+                count -= drop;
+            }
+        }
+
+        unsigned int popSamples(int16_t* out, unsigned int want) {
+            std::lock_guard lock(mutex);
+            unsigned int n = static_cast<unsigned int>(std::min<size_t>(want, count));
+            size_t const cap = ring.size();
+            size_t first = std::min<size_t>(n, cap - head);
+            if (first > 0) std::memcpy(out, ring.data() + head, first * sizeof(int16_t));
+            size_t second = n - first;
+            if (second > 0) std::memcpy(out + first, ring.data(), second * sizeof(int16_t));
+            head = (head + n) % cap;
+            count -= n;
+            return n;
+        }
     };
 
     FMOD::Sound* stream = nullptr;
@@ -101,7 +141,7 @@ std::mutex g_tapMutex;
 std::unordered_map<uint64_t, std::weak_ptr<CollabVoice::Speaker::Tap>> g_taps;
 std::atomic_uint64_t g_tapGen{1};
 
-// fmod mixer callback: drain the peer fifo and silence underruns.
+// fmod mixer callback: drain the peer ring buffer without allocating and silence underruns.
 FMOD_RESULT F_CALLBACK voicePcmRead(FMOD_SOUND* sound, void* data, unsigned int datalen) {
     void* userdata = nullptr;
     reinterpret_cast<FMOD::Sound*>(sound)->getUserData(&userdata);
@@ -117,13 +157,10 @@ FMOD_RESULT F_CALLBACK voicePcmRead(FMOD_SOUND* sound, void* data, unsigned int 
         std::memset(data, 0, datalen);
         return FMOD_OK;
     }
-    std::lock_guard lock(tap->mutex);
-    unsigned int n = 0;
-    for (; n < samples && !tap->fifo.empty(); ++n) {
-        out[n] = tap->fifo.front();
-        tap->fifo.pop_front();
+    unsigned int n = tap->popSamples(out, samples);
+    if (n < samples) {
+        std::memset(out + n, 0, (samples - n) * sizeof(int16_t));
     }
-    for (; n < samples; ++n) out[n] = 0;
     return FMOD_OK;
 }
 
@@ -150,6 +187,27 @@ void detachSpeaker(CollabVoice::Speaker& speaker) {
 
 CollabVoice::Speaker::~Speaker() {
     detachSpeaker(*this);
+}
+
+CollabVoice::CollabVoice() {
+    m_voiceEnabled.store(Mod::get()->getSettingValue<bool>("collab-voice"), std::memory_order_relaxed);
+    m_voiceVolume.store(voiceVolume(), std::memory_order_relaxed);
+    m_vadThreshold.store(vadThreshold(), std::memory_order_relaxed);
+
+    listenForSettingChanges<bool>("collab-voice", [this](bool v) {
+        m_voiceEnabled.store(v, std::memory_order_relaxed);
+    });
+    listenForSettingChanges<double>("collab-voice-volume", [this](double v) {
+        float vol = std::isfinite(v) ? static_cast<float>(std::clamp(v, 0.0, 1.0)) : 1.f;
+        m_voiceVolume.store(vol, std::memory_order_relaxed);
+        for (auto& [id, speaker] : m_speakers) {
+            if (speaker && speaker->channel) speaker->channel->setVolume(vol);
+        }
+    });
+    listenForSettingChanges<double>("collab-voice-sensitivity", [this](double v) {
+        if (!std::isfinite(v) || v <= 0.0) v = 0.05;
+        m_vadThreshold.store(static_cast<float>(v), std::memory_order_relaxed);
+    });
 }
 
 CollabVoice& CollabVoice::get() {
@@ -199,6 +257,7 @@ bool CollabVoice::startRecording() {
     }
     m_readPos = 0;
     m_capture.clear();
+    m_captureRead = 0;
     m_recording = true;
     log::info("[CollabVoice] recording started");
     return true;
@@ -212,6 +271,7 @@ void CollabVoice::stopRecording() {
         m_recordSound = nullptr;
     }
     m_capture.clear();
+    m_captureRead = 0;
     m_gateOpenTicks = 0;
     m_localLevel = 0.f;
     m_recording = false;
@@ -254,31 +314,46 @@ void CollabVoice::update(float) {
 
     pumpRecording();
 
-    while (m_capture.size() >= static_cast<size_t>(kFrameSamples)) {
-        std::vector<int16_t> frame(m_capture.begin(), m_capture.begin() + kFrameSamples);
-        m_capture.erase(m_capture.begin(), m_capture.begin() + kFrameSamples);
+    float const thresh = m_vadThreshold.load(std::memory_order_relaxed);
+    int const peakLimit = static_cast<int>(thresh * 32767.f);
+    while (m_capture.size() - m_captureRead >= static_cast<size_t>(kFrameSamples)) {
+        int16_t const* frame = m_capture.data() + m_captureRead;
+        m_captureRead += static_cast<size_t>(kFrameSamples);
 
         // energy vad with a short hold so word tails are not clipped.
         int peak = 0;
-        for (int16_t s : frame) peak = std::max(peak, std::abs(static_cast<int>(s)));
-        bool voiced = peak > static_cast<int>(vadThreshold() * 32767.f);
+        for (int i = 0; i < kFrameSamples; ++i) {
+            peak = std::max(peak, std::abs(static_cast<int>(frame[i])));
+        }
+        bool voiced = peak > peakLimit;
         if (voiced) {
             m_gateOpenTicks = kGateHoldFrames;
         } else if (m_gateOpenTicks > 0) {
             --m_gateOpenTicks;
         }
         m_localLevel = voiced ? levelFromPeak(peak) : m_localLevel * 0.5f;
-        if (m_gateOpenTicks > 0) emitFrame(frame);
+        if (m_gateOpenTicks > 0) emitFrame(frame, static_cast<size_t>(kFrameSamples));
+    }
+
+    if (m_captureRead == m_capture.size()) {
+        m_capture.clear();
+        m_captureRead = 0;
+    } else if (m_captureRead >= static_cast<size_t>(kFrameSamples * 4)) {
+        m_capture.erase(m_capture.begin(), m_capture.begin() + static_cast<long>(m_captureRead));
+        m_captureRead = 0;
     }
 
     // drop excessive backlog after a stall.
-    if (m_capture.size() > static_cast<size_t>(kFrameSamples * 4)) m_capture.clear();
+    if (m_capture.size() - m_captureRead > static_cast<size_t>(kFrameSamples * 4)) {
+        m_capture.clear();
+        m_captureRead = 0;
+    }
 }
 
-void CollabVoice::emitFrame(std::vector<int16_t> const& samples) {
+void CollabVoice::emitFrame(int16_t const* samples, size_t count) {
     std::vector<uint8_t> encoded;
-    encoded.reserve(samples.size());
-    for (int16_t s : samples) encoded.push_back(muLawEncode(s));
+    encoded.reserve(count);
+    for (size_t i = 0; i < count; ++i) encoded.push_back(muLawEncode(samples[i]));
     CollabManager::get().sendVoiceFrame(++m_txSeq, paimon::base64Encode(encoded));
 }
 
@@ -321,7 +396,7 @@ CollabVoice::Speaker* CollabVoice::speakerFor(int clientId, std::string const& n
         detachSpeaker(*speaker);
         return nullptr;
     }
-    speaker->channel->setVolume(voiceVolume());
+    speaker->channel->setVolume(m_voiceVolume.load(std::memory_order_relaxed));
 
     auto* raw = speaker.get();
     m_speakers[clientId] = std::move(speaker);
@@ -329,7 +404,7 @@ CollabVoice::Speaker* CollabVoice::speakerFor(int clientId, std::string const& n
 }
 
 void CollabVoice::onRemoteFrame(int from, std::string const& name, std::string const& b64) {
-    if (!Mod::get()->getSettingValue<bool>("collab-voice") || from <= 0 ||
+    if (!m_voiceEnabled.load(std::memory_order_relaxed) || from <= 0 ||
         b64.size() > ((kFifoMaxSamples + 2) / 3) * 4) return;
 
     std::vector<uint8_t> bytes;
@@ -339,22 +414,9 @@ void CollabVoice::onRemoteFrame(int from, std::string const& name, std::string c
     if (!speaker || !speaker->tap) return;
 
     int peak = 0;
-    {
-        auto tap = speaker->tap;
-        std::lock_guard lock(tap->mutex);
-        for (uint8_t b : bytes) {
-            int16_t s = muLawDecode(b);
-            peak = std::max(peak, std::abs(static_cast<int>(s)));
-            tap->fifo.push_back(s);
-        }
-        // trim accumulated fifo latency after slow poll bursts.
-        if (tap->fifo.size() > kFifoMaxSamples) {
-            while (tap->fifo.size() > kFifoCatchupSamples) tap->fifo.pop_front();
-        }
-    }
+    speaker->tap->pushSamples(bytes.data(), bytes.size(), peak);
     speaker->level = levelFromPeak(peak);
     speaker->lastFrameAt = nowSeconds();
-    if (speaker->channel) speaker->channel->setVolume(voiceVolume());
 }
 
 std::vector<SpeakingInfo> CollabVoice::speakingNow() const {

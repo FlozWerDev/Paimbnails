@@ -67,6 +67,17 @@ gfile::FilePickOptions::Filter mediaFilter() {
     return f;
 }
 
+gfile::FilePickOptions::Filter editorMediaFilter() {
+    gfile::FilePickOptions::Filter f;
+    f.description = "Images, SVG, WebP, GIF & Videos (*.svg, *.webp, *.png, *.jpg, *.gif, *.mp4 ...)";
+    f.files = {
+        "*.svg", "*.webp", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.tiff", "*.tif",
+        "*.tga", "*.psd", "*.qoi", "*.jxl",
+        "*.mp4", "*.mov", "*.m4v", "*.mpg", "*.mpeg", "*.avi", "*.wmv", "*.mkv", "*.webm"
+    };
+    return f;
+}
+
 gfile::FilePickOptions::Filter pngFilter() {
     gfile::FilePickOptions::Filter f;
     f.description = "PNG Image (*.png)";
@@ -159,6 +170,13 @@ void pickVideo(FilePickCallback cb) {
 void pickMedia(FilePickCallback cb) {
     s_filePickHolder.spawn("Paimbnails FilePicker",
         gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {mediaFilter()}}),
+        stdPickCallback(std::move(cb))
+    );
+}
+
+void pickEditorMedia(FilePickCallback cb) {
+    s_filePickHolder.spawn("Paimbnails FilePicker",
+        gfile::pick(gfile::PickMode::OpenFile, {std::nullopt, {editorMediaFilter()}}),
         stdPickCallback(std::move(cb))
     );
 }

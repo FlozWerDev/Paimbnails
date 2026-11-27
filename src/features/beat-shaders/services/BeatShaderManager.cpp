@@ -236,8 +236,22 @@ public:
         m_swaps.clear();
     }
 
+    void onExit() override {
+        if (!paimon::isRuntimeShuttingDown()) {
+            restoreAll();
+        }
+        CCNode::onExit();
+    }
+
     ~BeatShaderVanillaSwap() override {
-        restoreAll();
+        // Never call removeFromParent() on sibling nodes from a destructor:
+        // CCNode::~CCNode() may currently be iterating and releasing m_pChildren.
+        for (auto& swap : m_swaps) {
+            if (auto* repl = swap.replacement.data()) {
+                repl->unscheduleAllSelectors();
+            }
+        }
+        m_swaps.clear();
     }
 
     void updateConfig(BeatShaderConfig const& cfg) {
@@ -446,7 +460,7 @@ void BeatShaderManager::applyToLayer(CCLayer* layer, std::string const& layerKey
         return;
     }
 
-    if (layerKey != "menu") {
+    if (layerKey != "menu" && (layerActive || bgCfg.shader != oldShader)) {
         bgMgr.applyBackground(layer, layerKey);
     }
 

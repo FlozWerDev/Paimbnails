@@ -230,6 +230,7 @@ void ExtendedKeybindEditPopup::enterRecordingMode() {
     }
     g_activeRecorder = this;
     m_isRecording = true;
+    paimon::keybinds::setRecordingKeybind(true);
     this->updateRecordButtonAppearance();
 
     // the hook forwards scroll here before applying it.
@@ -250,6 +251,7 @@ void ExtendedKeybindEditPopup::exitRecordingMode() {
     paimon::keybinds::setScrollCaptor(nullptr);
     if (g_activeRecorder == this) {
         g_activeRecorder = nullptr;
+        paimon::keybinds::setRecordingKeybind(false);
     }
     this->updateRecordButtonAppearance();
 }

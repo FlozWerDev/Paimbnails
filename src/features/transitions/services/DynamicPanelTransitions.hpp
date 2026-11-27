@@ -29,6 +29,16 @@ private:
     PanelOpenScope m_scope;
 };
 
+class FastBypassGuard {
+public:
+    FastBypassGuard();
+    ~FastBypassGuard();
+    FastBypassGuard(FastBypassGuard const&) = delete;
+    FastBypassGuard& operator=(FastBypassGuard const&) = delete;
+};
+
+bool isInFastBypass();
+bool isPanelTransitionsEnabled();
 bool panelWillChange(cocos2d::CCNode* panel, cocos2d::CCNode* parent, bool opening);
 void panelDidOpen(cocos2d::CCNode* panel);
 void finishPanelAnimation();

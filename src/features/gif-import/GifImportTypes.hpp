@@ -30,6 +30,7 @@ enum class ImportMode {
     Blur,
     Vert,
     VertX,
+    Svg,
 };
 
 enum class GlowMode {
@@ -40,7 +41,16 @@ enum class GlowMode {
 
 inline bool usesPaintGeometry(ImportMode mode) {
     return mode == ImportMode::Paint || mode == ImportMode::Render ||
-        mode == ImportMode::Free || mode == ImportMode::Circles;
+        mode == ImportMode::Free || mode == ImportMode::Circles ||
+        mode == ImportMode::Svg;
+}
+
+// Every mode except Bloques (pixel), Blur, and Circulos converts raster media
+// from image -> SVG via OpenVector before converting the SVG into GD objects.
+inline bool modeUsesSvgConversion(ImportMode mode) {
+    return mode != ImportMode::Blocks &&
+        mode != ImportMode::Blur &&
+        mode != ImportMode::Circles;
 }
 
 // circles mode draws with the shape, not the grid: gd paints it on another
@@ -76,10 +86,23 @@ struct SourceFrame {
     std::vector<std::uint8_t> rgba;
 };
 
+struct SvgFrame {
+    int delayMs = 100;
+    std::string svgContent;
+};
+
 struct SourceAnimation {
     int width = 0;
     int height = 0;
     std::vector<SourceFrame> frames;
+    // Non-empty when the source is a vector SVG converted directly to GD primitives.
+    std::string svgContent;
+    // Pre-vectorized multi-frame SVGs (populated when animated media was vectorized via OpenVector).
+    std::vector<SvgFrame> svgFrames;
+    int sourceFrameCount = 0;
+
+    bool isSvg() const { return !svgContent.empty(); }
+    bool hasSvgFrames() const { return !svgFrames.empty(); }
 };
 
 struct Color {
@@ -154,6 +177,8 @@ struct Options {
     bool detailStableCount = true;
     // vertx drops a 2903 wash with the image's vertical flow.
     bool gradientWash = true;
+    // OpenVector complementary engine INPUT QUALITY: 0 = High, 1 = Medium, 2 = Low (best for GD).
+    int svgQuality = 2;
     // snapshot of native alpha masks, prepared on the gl thread.
     std::vector<PlanStamp> softStamps;
     // best native match errors (radial, vertical, quarter) from the last

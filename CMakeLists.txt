@@ -12,7 +12,7 @@ endif()
 
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
-project(Paimbnails VERSION 1.2.6)
+project(Paimbnails VERSION 1.2.7)
 
 # Allow Clang on Windows runners where MSVC STL is newer than the installed LLVM Clang.
 if (WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -112,6 +112,40 @@ if (libyuv_ADDED)
             PROPERTIES COMPILE_OPTIONS "${LIBYUV_NEON64_FLAGS}"
         )
     endif()
+endif()
+
+# libwebp — static webp image + animation decoder (bsd-3)
+CPMAddPackage(
+    NAME libwebp
+    GITHUB_REPOSITORY webmproject/libwebp
+    GIT_TAG v1.5.0
+    OPTIONS
+        "BUILD_SHARED_LIBS OFF"
+        "WEBP_BUILD_ANIM_UTILS OFF"
+        "WEBP_BUILD_CWEBP OFF"
+        "WEBP_BUILD_DWEBP OFF"
+        "WEBP_BUILD_GIF2WEBP OFF"
+        "WEBP_BUILD_IMG2WEBP OFF"
+        "WEBP_BUILD_VWEBP OFF"
+        "WEBP_BUILD_WEBPINFO OFF"
+        "WEBP_BUILD_LIBWEBPMUX OFF"
+        "WEBP_BUILD_WEBPMUX OFF"
+        "WEBP_BUILD_EXTRAS OFF"
+        "WEBP_BUILD_WEBP_JS OFF"
+        "WEBP_ENABLE_SIMD ON"
+)
+
+if (libwebp_ADDED)
+    foreach(_webp_target webp webpdecoder webpdemux sharpyuv)
+        if (TARGET ${_webp_target})
+            set_target_properties(${_webp_target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+            if (MSVC)
+                target_compile_options(${_webp_target} PRIVATE /w)
+            else()
+                target_compile_options(${_webp_target} PRIVATE -w)
+            endif()
+        endif()
+    endforeach()
 endif()
 
 # sources
@@ -258,6 +292,10 @@ endif()
 target_link_libraries(${PROJECT_NAME} pl_mpeg)
 target_link_libraries(${PROJECT_NAME} rapidfuzz)
 target_link_libraries(${PROJECT_NAME} yuv)
+if (TARGET webp AND TARGET webpdemux)
+    target_link_libraries(${PROJECT_NAME} webpdemux webp)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE PAIMON_HAS_LIBWEBP=1)
+endif()
 include(cmake/WebWallpaper.cmake)
 
 # discord rich presence uses our own self-contained ipc client
@@ -331,7 +369,7 @@ endif()
 
 include(cmake/LocalModDeploy.cmake)
 include(cmake/GifComputeShaders.cmake)
-if (PAIMBNAILS_DEPLOY_LOCAL_MOD)
+if (PAIMBNAILS_DEPLOY_LOCAL_MOD OR ANDROID)
     setup_geode_mod(${PROJECT_NAME} DONT_INSTALL)
 else()
     setup_geode_mod(${PROJECT_NAME})

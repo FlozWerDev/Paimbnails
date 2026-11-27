@@ -64,15 +64,15 @@ CCNode* createImageSlot(std::string const& url, float width, float height,
     sprite->setOpacity(0);
     clipper->addChild(sprite, 1);
 
-    WeakRef<LazySprite> weakSprite = sprite;
-    sprite->setLoadCallback([weakSprite, width, height](Result<> res) {
-        auto safeSprite = weakSprite.lock();
-        if (!res.isOk() || !safeSprite || !safeSprite->getParent()) return;
-        auto size = safeSprite->getContentSize();
+    // LazySprite invokes its own load callback while alive; capturing WeakRef<LazySprite>
+    // to itself triggers re-entrant WeakRefPool::forget() on destruction.
+    sprite->setLoadCallback([sprite, width, height](Result<> res) {
+        if (!res.isOk() || !sprite || !sprite->getParent()) return;
+        auto size = sprite->getContentSize();
         if (size.width <= 0.f || size.height <= 0.f) return;
         // cover the slot, letting the stencil crop the overflow.
-        safeSprite->setScale(std::max(width / size.width, height / size.height));
-        safeSprite->runAction(CCFadeIn::create(0.25f));
+        sprite->setScale(std::max(width / size.width, height / size.height));
+        sprite->runAction(CCFadeIn::create(0.25f));
     });
     sprite->loadFromUrl(url);
 

@@ -157,8 +157,13 @@ bool CustomProgressBarNode::init() {
         m_gdFill = CCSprite::create(fillFile);
     }
     if (m_gdFill && m_gdFill->getTexture()) {
-        ccTexParams tp{GL_LINEAR, GL_LINEAR, GL_REPEAT, GL_CLAMP_TO_EDGE};
-        m_gdFill->getTexture()->setTexParameters(&tp);
+        auto* tex = m_gdFill->getTexture();
+        auto const w = tex->getPixelsWide();
+        auto const h = tex->getPixelsHigh();
+        bool const isPot = (w > 0 && (w & (w - 1)) == 0 && h > 0 && (h & (h - 1)) == 0);
+        GLuint const wrapS = isPot ? GL_REPEAT : GL_CLAMP_TO_EDGE;
+        ccTexParams tp{GL_LINEAR, GL_LINEAR, wrapS, GL_CLAMP_TO_EDGE};
+        tex->setTexParameters(&tp);
         m_gdFill->setAnchorPoint({0.f, 0.5f});
         m_gdFill->setVisible(false);
         this->addChild(m_gdFill, 3);

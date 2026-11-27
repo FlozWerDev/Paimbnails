@@ -8,8 +8,10 @@
 #include "../../menu-music/services/SongCoverCache.hpp"
 
 #include <Geode/Geode.hpp>
+#include <Geode/binding/EditorUI.hpp>
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <Geode/binding/GJGameLevel.hpp>
+#include <Geode/binding/LevelEditorLayer.hpp>
 #include <Geode/binding/MusicDownloadManager.hpp>
 #include <fmt/format.h>
 
@@ -762,26 +764,50 @@ float EditorMusicPlayer::outputPeak() const {
     FMOD_DSP_METERING_INFO output{};
     if (m_meterDsp->getMeteringInfo(nullptr, &output) != FMOD_OK) return 0.f;
     float peak = 0.f;
-    for (short i = 0; i < output.numchannels; ++i) {
+    short const chCount = std::clamp<short>(output.numchannels, 0, 32);
+    for (short i = 0; i < chCount; ++i) {
         peak = std::max(peak, output.peaklevel[i]);
     }
     return std::clamp(peak, 0.f, 1.f);
+}
+
+bool isEditorVanillaAudioActive(LevelEditorLayer* editor) {
+    if (!editor) return false;
+    if (editor->m_playbackMode != PlaybackMode::Not) return true;
+    if (editor->m_playbackActive) return true;
+    if (auto* ui = editor->m_editorUI) {
+        if (ui->m_isPlayingMusic || ui->m_playbackActive) return true;
+    }
+    return false;
+}
+
+void syncEditorMusicSuspend(LevelEditorLayer* editor) {
+    auto& player = EditorMusicPlayer::get();
+    bool const active = isEditorVanillaAudioActive(editor);
+    if (active && !player.isSuspended()) {
+        player.suspend();
+    } else if (!active && player.isSuspended()) {
+        player.resumeFromSuspend();
+    }
 }
 
 void EditorMusicPlayer::suspend() {
     if (m_suspended || !m_channel) return;
     if (m_playtestBehavior == PlaytestBehavior::KeepPlaying) return;
 
+    int const currentPos = positionMs();
     m_suspended = true;
     if (m_playtestBehavior == PlaytestBehavior::DuckVolume) {
         m_fadeTarget = kDuckFade;
         applyVolume();
+        notifyChanged();
         return;
     }
 
-    m_suspendedPosMs = positionMs();
+    m_suspendedPosMs = currentPos;
     m_pendingPauseAfterFade = false;
     m_channel->setPaused(true);
+    notifyChanged();
 }
 
 void EditorMusicPlayer::resumeFromSuspend() {
@@ -791,12 +817,16 @@ void EditorMusicPlayer::resumeFromSuspend() {
     if (m_playtestBehavior == PlaytestBehavior::DuckVolume) {
         m_fadeTarget = m_paused ? 0.f : 1.f;
         applyVolume();
+        notifyChanged();
         return;
     }
 
     if (!channelAlive()) {
         m_channel = nullptr;
-        if (m_trackId.empty()) return;
+        if (m_trackId.empty()) {
+            notifyChanged();
+            return;
+        }
         auto pos = m_suspendedPosMs;
         if (play(m_trackId)) seekMs(pos);
         return;
@@ -807,6 +837,7 @@ void EditorMusicPlayer::resumeFromSuspend() {
         applyVolume();
         m_channel->setPaused(false);
     }
+    notifyChanged();
 }
 
 void EditorMusicPlayer::setFxConfig(EditorFxConfig cfg) {

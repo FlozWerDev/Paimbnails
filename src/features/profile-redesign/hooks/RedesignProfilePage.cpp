@@ -132,9 +132,10 @@ class $modify(RedesignProfilePage, ProfilePage) {
         // one rebuild per frame max — collapses swr + comments + badge storms.
         Ref<ProfilePage> self = this;
         Loader::get()->queueInMainThread([self]() {
-            if (!self || !self->getParent()) return;
+            if (!self) return;
             auto* page = static_cast<RedesignProfilePage*>(self.data());
             page->m_fields->m_rebuildQueued = false;
+            if (!self->getParent()) return;
             page->doRedesign();
         });
     }

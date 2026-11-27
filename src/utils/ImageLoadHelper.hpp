@@ -16,6 +16,9 @@
 #include "ImageConverter.hpp"
 #include "LocalAssetStore.hpp"
 #include "BoundedFileRead.hpp"
+#if defined(PAIMON_HAS_LIBWEBP)
+#include "WebPDecoder.hpp"
+#endif
 
 // stb_image handles formats outside ccimage's usual png/jpeg path.
 #include "stb_image.h"
@@ -142,6 +145,28 @@ namespace ImageLoadHelper {
 
         int const dataSize = static_cast<int>(fileSize);
         int channels = 0;
+#if defined(PAIMON_HAS_LIBWEBP)
+        if (WebPDecoder::isWebP(fileData, fileSize)) {
+            bool animated = false;
+            if (!WebPDecoder::getDimensions(fileData, fileSize, outW, outH, animated)) {
+                return fail(StbDecodeError::UnsupportedFormat);
+            }
+            if (outW <= 0 || outH <= 0 || outW > kMaxImageDim || outH > kMaxImageDim) {
+                return fail(StbDecodeError::InvalidDimensions);
+            }
+            auto decoded = WebPDecoder::decode(fileData, fileSize, 1, kMaxImageDim);
+            if (decoded.frames.empty() || decoded.frames.front().pixels.empty()) {
+                return fail(StbDecodeError::DecodeFailed);
+            }
+            auto const& px = decoded.frames.front().pixels;
+            auto* raw = static_cast<unsigned char*>(std::malloc(px.size()));
+            if (!raw) return fail(StbDecodeError::DecodeFailed);
+            std::memcpy(raw, px.data(), px.size());
+            outW = decoded.width;
+            outH = decoded.height;
+            return std::unique_ptr<unsigned char, decltype(&stbi_image_free)>(raw, &stbi_image_free);
+        }
+#endif
         if (!stbi_info_from_memory(fileData, dataSize, &outW, &outH, &channels)) {
             return fail(StbDecodeError::UnsupportedFormat);
         }

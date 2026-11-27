@@ -710,7 +710,7 @@ std::shared_ptr<std::vector<uint8_t>> renderPlayLayerToTextureV2(
         return nullptr;
     }
 
-    while (glGetError() != GL_NO_ERROR) {}
+    for (int i = 0; i < 16 && glGetError() != GL_NO_ERROR; ++i) {}
     SuppressCameraArtGuard suppressCameraArt;
 
     RenderTexture renderTarget(static_cast<uint32_t>(W), static_cast<uint32_t>(H));
@@ -867,7 +867,7 @@ void deletePboIfAny() {
 
 bool issuePboRead(int W, int H) {
     deletePboIfAny();
-    while (glGetError() != GL_NO_ERROR) {} // drain stale errors
+    for (int i = 0; i < 16 && glGetError() != GL_NO_ERROR; ++i) {} // drain stale errors
 
     GLuint pbo = 0;
     glGenBuffers(1, &pbo);
@@ -1559,6 +1559,9 @@ void FramebufferCapture::doCaptureNode(CCNode* node) {
     int H = std::max(1, static_cast<int>(contentSize.height * scale));
 
     auto* rt = CCRenderTexture::create(W, H, kCCTexture2DPixelFormat_RGBA8888, GL_DEPTH24_STENCIL8);
+    if (!rt) {
+        rt = CCRenderTexture::create(W, H, kCCTexture2DPixelFormat_RGBA8888);
+    }
     if (!rt) {
         fail();
         return;

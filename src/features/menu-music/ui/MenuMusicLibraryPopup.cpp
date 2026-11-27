@@ -496,16 +496,15 @@ cocos2d::CCNode* MenuMusicLibraryPopup::buildTrackCard(
                 clip->addChild(cover);
                 node->addChild(clip, 2);
                 pendingCover = cover;
-                WeakRef<LazySprite> weakCover = cover;
-                cover->setLoadCallback([weakCover, coverWidth, coverHeight, coverPath](Result<> result) {
-                    auto loaded = weakCover.lock();
-                    if (!loaded || result.isErr()) return;
+                // LazySprite runs its load callback while alive; avoid self-owned WeakRef<LazySprite>.
+                cover->setLoadCallback([cover, coverWidth, coverHeight, coverPath](Result<> result) {
+                    if (!cover || !cover->getParent() || result.isErr()) return;
                     paimon::image::touchBudgeted(coverPath);
-                    auto const size = loaded->getContentSize();
-                    loaded->setScale(std::max(coverWidth / std::max(1.f, size.width),
+                    auto const size = cover->getContentSize();
+                    cover->setScale(std::max(coverWidth / std::max(1.f, size.width),
                         coverHeight / std::max(1.f, size.height)));
-                    loaded->setVisible(true);
-                    auto* clip = loaded->getParent();
+                    cover->setVisible(true);
+                    auto* clip = cover->getParent();
                     auto* card = clip ? clip->getParent() : nullptr;
                     if (auto* fallback = card ? card->getChildByID("card-cover-fallback"_spr) : nullptr)
                         fallback->setVisible(false);

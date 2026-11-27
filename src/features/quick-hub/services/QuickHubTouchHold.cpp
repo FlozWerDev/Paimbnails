@@ -248,19 +248,22 @@ void syncTouchTicking() {
 class $modify(TouchHoldView, CCEGLViewProtocol) {
     static void onModify(auto& self) {
         // gestures first, pet clicks after.
-        (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesBegin", geode::Priority::Normal);
-        (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesMove", geode::Priority::Normal);
-        (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesEnd", geode::Priority::Normal);
-        (void)self.setHookPriorityPost("CCEGLViewProtocol::handleTouchesCancel", geode::Priority::Normal);
+        (void)self.setHookPriorityPost("cocos2d::CCEGLViewProtocol::handleTouchesBegin", geode::Priority::Normal);
+        (void)self.setHookPriorityPost("cocos2d::CCEGLViewProtocol::handleTouchesMove", geode::Priority::Normal);
+        (void)self.setHookPriorityPost("cocos2d::CCEGLViewProtocol::handleTouchesEnd", geode::Priority::Normal);
+        (void)self.setHookPriorityPost("cocos2d::CCEGLViewProtocol::handleTouchesCancel", geode::Priority::Normal);
     }
 
     $override
     void handleTouchesBegin(int num, int ids[], float xs[], float ys[], double timestamp) {
         CCEGLViewProtocol::handleTouchesBegin(num, ids, xs, ys, timestamp);
+        if (num <= 0 || !ids || !xs || !ys) return;
 
         auto* director = CCDirector::get();
         auto* scene = director ? director->getRunningScene() : nullptr;
-        bool const isUiInteraction = scene && hasTrackingMenu(scene);
+        bool const canQuickHub = scene && paimon::quickhub::QuickHubManager::canOpenInCurrentContext();
+        // Avoid walking the entire scene graph on every jump tap during active gameplay when QuickHub cannot open.
+        bool const isUiInteraction = (canQuickHub && scene && hasTrackingMenu(scene));
 
         paimon::gestures::GestureManager::get().onTouchesBegan(
             num, ids, xs, ys, timestamp, isUiInteraction);
@@ -268,9 +271,7 @@ class $modify(TouchHoldView, CCEGLViewProtocol) {
         if (paimon::quickhub::QuickHubRadial::isOpen()) return;
         if (paimon::menu_layout::MainMenuLayoutEditor::isActive()) return;
 
-        if (!scene ||
-            !paimon::quickhub::QuickHubManager::canOpenInCurrentContext() ||
-            isUiInteraction) {
+        if (!canQuickHub || isUiInteraction) {
             if (s_touch.active) resetTouch();
             return;
         }
@@ -309,6 +310,7 @@ class $modify(TouchHoldView, CCEGLViewProtocol) {
     $override
     void handleTouchesMove(int num, int ids[], float xs[], float ys[], double timestamp) {
         CCEGLViewProtocol::handleTouchesMove(num, ids, xs, ys, timestamp);
+        if (num <= 0 || !ids || !xs || !ys) return;
 
         paimon::gestures::GestureManager::get().onTouchesMoved(num, ids, xs, ys, timestamp);
 

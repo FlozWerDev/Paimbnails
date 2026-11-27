@@ -460,8 +460,8 @@ static CCMenuItem* findVanillaStatButton(CCNode* layer, char const* statID) {
 }
 
 // ids adopted by buildinplace(); needssettlepass() uses the same set.
-static std::vector<std::string> relocatableIDs(bool /*ownProfile*/) {
-    std::vector<std::string> ids = {
+static std::unordered_set<std::string> const& relocatableIDs(bool /*ownProfile*/) {
+    static std::unordered_set<std::string> const ids = {
         "close-button", "refresh-button",
         "message-button", "friend-button", "settings-button", "requests-button", "comment-button",
         "notifications-button", "block-button", "unblock-button", "report-button", "mod-button",
@@ -475,7 +475,7 @@ static std::vector<std::string> relocatableIDs(bool /*ownProfile*/) {
         "paimon-level-badge"_spr,
         "profile-reviews-btn"_spr, "rate-profile-btn"_spr,
         "paimon-thumb-count-btn"_spr, "profile-music-pause-button"_spr,
-        "copy-icons-button"_spr,
+        "copy-icons-button"_spr, "2p-toggler"_spr,
     };
     return ids;
 }
@@ -506,7 +506,7 @@ bool needsSettlePass(cocos2d::CCLayer* layer, cocos2d::CCNode* buttonMenu, bool 
     }
 // vanilla refresh rebuilds comments and invalidates the previous layout.
     if (hasVisibleVanillaCommentList(layer)) return true;
-    auto const ids = relocatableIDs(ownProfile);
+    auto const& ids = relocatableIDs(ownProfile);
     std::string const rdPrefix = "rd-"_spr;
     bool needs = false;
     std::unordered_set<std::string> seen;
@@ -515,7 +515,7 @@ bool needsSettlePass(cocos2d::CCLayer* layer, cocos2d::CCNode* buttonMenu, bool 
         auto const id = std::string(node->getID());
         if (id == "rd-comment-content"_spr || id == "rd-level-container"_spr || id == "rd-activity-panel"_spr) return;
         bool const rd = insideRd || id.rfind(rdPrefix, 0) == 0;
-        if (!id.empty() && std::find(ids.begin(), ids.end(), id) != ids.end()) {
+        if (!id.empty() && ids.contains(id)) {
             if (!rd || !seen.insert(id).second) { needs = true; return; }
         }
         if (auto* kids = node->getChildren()) {
@@ -1063,6 +1063,10 @@ void buildInPlace(CCLayer* layer, CCNode* buttonMenu, GJUserScore* score,
             ? picCfg.profileFont.c_str() : "bigFont.fnt";
 
         auto nameLabel = CCLabelBMFont::create(std::string(score->m_userName).c_str(), nameFont);
+        if (!nameLabel) {
+            nameLabel = CCLabelBMFont::create(std::string(score->m_userName).c_str(), "bigFont.fnt");
+        }
+        if (!nameLabel) return;
         nameLabel->limitLabelWidth(rowW - (kSlotW + kNameGap) * 2.f, 0.62f, 0.3f);
         if (ownProfile && picCfg.nameConfig.enabled) {
             paimon::profile_name::decorate(nameLabel, picCfg.nameConfig);

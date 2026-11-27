@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "DominantColors.hpp"
 #include <Geode/cocos/textures/CCTexture2D.h>
@@ -20,6 +20,6 @@ std::pair<DCColor, DCColor> extractFromRGBA(const uint8_t* rgba, int width, int 
 bool isAvailable();
 
 // invalidate the cached readback fbo before gd recreates the gl context.
-void onGLContextReload();
+void onGLContextReload(bool deleteHandles = true);
 
 }

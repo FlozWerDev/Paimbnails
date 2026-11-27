@@ -13,7 +13,6 @@
 #include <array>
 #include <cmath>
 #include <limits>
-#include <unordered_set>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -78,7 +77,8 @@ void drawBox(
     float h,
     float rotDeg,
     ccColor4F const& fill,
-    ccColor4F const& border
+    ccColor4F const& border,
+    float borderWidth = 0.7f
 ) {
     float const rad = -rotDeg * kDegToRad;
     float const c = std::cos(rad);
@@ -94,7 +94,7 @@ void drawBox(
         rotPt(hw, hh),
         rotPt(-hw, hh),
     };
-    draw->drawPolygon(corners.data(), 4, fill, 0.7f, border);
+    draw->drawPolygon(corners.data(), 4, fill, borderWidth, borderWidth > 0.f ? border : fill);
 }
 
 } // namespace
@@ -248,7 +248,7 @@ void OptimizerPopup::buildPreviewPanel(CCMenu* menu) {
         });
     m_viewToggle = kit::toolToggle("paim_phys_hitbox.png", "GJ_checkOn_001.png",
         EditorBaseColor::Cyan, kToolSize, m_showAfter, [self](bool) {
-            if (auto p = self.lock()) p->toggleViewMode();
+            if (auto p = self.lock()) p->toggleViewMode(false);
         });
     tools[3] = m_viewToggle;
 
@@ -436,6 +436,15 @@ void OptimizerPopup::recomputePlan() {
     refreshStats();
     rebuildPreview();
 
+    bool const hasMerges = !m_plan.merges.empty();
+    if (m_applyPill.button) {
+        m_applyPill.button->setEnabled(hasMerges);
+        GLubyte const alpha = hasMerges ? 255 : 135;
+        if (auto* rgba = typeinfo_cast<CCRGBAProtocol*>(m_applyPill.background)) rgba->setOpacity(alpha);
+        if (m_applyPill.icon) m_applyPill.icon->setOpacity(alpha);
+        if (m_applyPill.label) m_applyPill.label->setOpacity(alpha);
+    }
+
     if (m_plan.inputCount == 0) {
         setStatus(
             tr("No objects in scope. Select a structure or switch to Full Level.",
@@ -514,9 +523,9 @@ void OptimizerPopup::toggleScope() {
     analyze(true);
 }
 
-void OptimizerPopup::toggleViewMode() {
+void OptimizerPopup::toggleViewMode(bool syncToggle) {
     m_showAfter = !m_showAfter;
-    refreshOptionsUI();
+    refreshOptionsUI(syncToggle);
     rebuildPreview();
 }
 
@@ -536,7 +545,7 @@ void OptimizerPopup::adjustStepper(int field, int direction) {
     recomputePlan();
 }
 
-void OptimizerPopup::refreshOptionsUI() {
+void OptimizerPopup::refreshOptionsUI(bool syncViewToggle) {
     kit::setValue(m_stepperLabels[0], fmt::format("{}x", static_cast<int>(std::lround(m_options.maxCollisionScale))));
     kit::setValue(m_stepperLabels[1], fmt::format("{}x", static_cast<int>(std::lround(m_options.maxDecoScale))));
 
@@ -550,7 +559,7 @@ void OptimizerPopup::refreshOptionsUI() {
         m_viewPill,
         m_showAfter ? tr("View: After", "Ver: Despues") : tr("View: Before", "Ver: Antes")
     );
-    if (m_viewToggle) m_viewToggle->toggle(m_showAfter);
+    if (syncViewToggle && m_viewToggle) m_viewToggle->toggle(m_showAfter);
     updatePreviewHeader();
 }
 
@@ -590,13 +599,16 @@ void OptimizerPopup::rebuildPreview() {
     m_drawNode->clear();
     if (m_scene.records.empty()) return;
 
-    std::unordered_set<std::size_t> mergedSources;
+    std::vector<bool> mergedSources(m_scene.records.size(), false);
     for (auto const& g : m_plan.merges) {
-        for (std::size_t idx : g.sourceIndices) mergedSources.insert(idx);
+        for (std::size_t idx : g.sourceIndices) {
+            if (idx < mergedSources.size()) mergedSources[idx] = true;
+        }
     }
-    std::unordered_set<std::size_t> corners(
-        m_plan.preservedCorners.begin(), m_plan.preservedCorners.end()
-    );
+    std::vector<bool> corners(m_scene.records.size(), false);
+    for (std::size_t idx : m_plan.preservedCorners) {
+        if (idx < corners.size()) corners[idx] = true;
+    }
 
     static constexpr ccColor4F kFillMerged{0.25f, 0.90f, 0.65f, 0.42f};
     static constexpr ccColor4F kLineMerged{0.35f, 1.00f, 0.78f, 0.95f};
@@ -607,19 +619,42 @@ void OptimizerPopup::rebuildPreview() {
     static constexpr ccColor4F kFillIntact{0.50f, 0.56f, 0.72f, 0.22f};
     static constexpr ccColor4F kLineIntact{0.62f, 0.68f, 0.85f, 0.65f};
 
+    std::size_t intactCount = 0;
+    std::size_t totalToDraw = m_showAfter ? m_plan.merges.size() : 0;
+    for (std::size_t i = 0; i < m_scene.records.size(); ++i) {
+        bool const isMergedSource = mergedSources[i];
+        if (m_showAfter && isMergedSource) continue;
+        ++totalToDraw;
+        if (!corners[i] && !isMergedSource) ++intactCount;
+    }
+
+    // Keep CCDrawNode lightweight on massive levels by dropping outlines first,
+    // and striding non-optimizable background objects while keeping 100% of merges & corners.
+    bool const lightBorders = totalToDraw > 1800;
+    bool const noBorders = totalToDraw > 3500;
+    constexpr std::size_t kMaxIntactPreview = 4000;
+    std::size_t const intactStride = intactCount > kMaxIntactPreview
+        ? (intactCount + kMaxIntactPreview - 1) / kMaxIntactPreview
+        : 1;
+    std::size_t intactSeen = 0;
+
     for (std::size_t i = 0; i < m_scene.records.size(); ++i) {
         auto const& rec = m_scene.records[i];
-        bool const isMergedSource = mergedSources.contains(i);
+        bool const isMergedSource = mergedSources[i];
         if (m_showAfter && isMergedSource) continue;
 
         float const w = rec.baseWidth * rec.scaleX;
         float const h = rec.baseHeight * rec.scaleY;
-        if (corners.contains(i)) {
-            drawBox(m_drawNode, rec.x, rec.y, w, h, rec.rotation, kFillCorner, kLineCorner);
+        if (corners[i]) {
+            drawBox(m_drawNode, rec.x, rec.y, w, h, rec.rotation, kFillCorner, kLineCorner,
+                    noBorders ? 0.f : 0.7f);
         } else if (isMergedSource) {
-            drawBox(m_drawNode, rec.x, rec.y, w, h, rec.rotation, kFillSource, kLineSource);
+            drawBox(m_drawNode, rec.x, rec.y, w, h, rec.rotation, kFillSource, kLineSource,
+                    noBorders ? 0.f : 0.7f);
         } else {
-            drawBox(m_drawNode, rec.x, rec.y, w, h, rec.rotation, kFillIntact, kLineIntact);
+            if ((intactSeen++ % intactStride) != 0) continue;
+            drawBox(m_drawNode, rec.x, rec.y, w, h, rec.rotation, kFillIntact, kLineIntact,
+                    (lightBorders || noBorders) ? 0.f : 0.7f);
         }
     }
 
@@ -628,7 +663,8 @@ void OptimizerPopup::rebuildPreview() {
             auto const& keeper = m_scene.records[g.keeperIndex];
             float const w = keeper.baseWidth * g.newScaleX;
             float const h = keeper.baseHeight * g.newScaleY;
-            drawBox(m_drawNode, g.newX, g.newY, w, h, keeper.rotation, kFillMerged, kLineMerged);
+            drawBox(m_drawNode, g.newX, g.newY, w, h, keeper.rotation, kFillMerged, kLineMerged,
+                    noBorders ? 0.f : 0.7f);
         }
     }
 
@@ -645,11 +681,20 @@ void OptimizerPopup::fitCameraToScene() {
         return;
     }
 
+    bool hasEligible = false;
+    for (auto const& rec : m_scene.records) {
+        if (rec.isEligible) {
+            hasEligible = true;
+            break;
+        }
+    }
+
     float minX = std::numeric_limits<float>::max();
     float minY = std::numeric_limits<float>::max();
     float maxX = std::numeric_limits<float>::lowest();
     float maxY = std::numeric_limits<float>::lowest();
     for (auto const& rec : m_scene.records) {
+        if (hasEligible && !rec.isEligible) continue;
         float const half = std::max(rec.baseWidth * rec.scaleX, rec.baseHeight * rec.scaleY) * 0.6f;
         minX = std::min(minX, rec.x - half);
         minY = std::min(minY, rec.y - half);
@@ -680,8 +725,29 @@ void OptimizerPopup::refreshCameraTransform() {
     });
 }
 
-void OptimizerPopup::adjustZoom(float factor) {
-    m_zoom = std::clamp(m_zoom * factor, kMinZoom, kMaxZoom);
+void OptimizerPopup::adjustZoom(float factor, CCPoint const* focusMain) {
+    float const oldZoom = m_zoom;
+    float const newZoom = std::clamp(m_zoom * factor, kMinZoom, kMaxZoom);
+    if (std::abs(newZoom - oldZoom) < 1e-5f) return;
+
+    if (focusMain) {
+        float const clipW = kPreviewWidth - kPreviewInset * 2.f;
+        float const clipH = kPreviewHeight - kPreviewInset * 2.f - kHeaderBarHeight;
+        CCPoint const offset{
+            focusMain->x - (kPreviewX + kPreviewInset + clipW * 0.5f),
+            focusMain->y - (kPreviewY + kPreviewInset + clipH * 0.5f),
+        };
+        float const oldScale = std::max(m_baseScale * oldZoom, 0.0001f);
+        float const newScale = std::max(m_baseScale * newZoom, 0.0001f);
+        CCPoint const worldAtCursor{
+            m_camCenter.x + offset.x / oldScale,
+            m_camCenter.y + offset.y / oldScale,
+        };
+        m_camCenter.x = worldAtCursor.x - offset.x / newScale;
+        m_camCenter.y = worldAtCursor.y - offset.y / newScale;
+    }
+
+    m_zoom = newZoom;
     refreshCameraTransform();
     updatePreviewHeader();
 }
@@ -743,7 +809,22 @@ bool OptimizerPopup::scrollWheel(float vertical, float horizontal) {
         .filteredZoomSteps(vertical, horizontal);
     if (std::abs(steps) < 0.000001f) return true;
     float const baseFactor = steps > 0.f ? kScrollZoomIn : kScrollZoomOut;
-    adjustZoom(std::pow(baseFactor, std::abs(steps)));
+    float const factor = std::pow(baseFactor, std::abs(steps));
+
+    if (m_mainLayer) {
+        CCRect const preview{
+            kPreviewX + kPreviewInset,
+            kPreviewY + kPreviewInset,
+            kPreviewWidth - kPreviewInset * 2.f,
+            kPreviewHeight - kPreviewInset * 2.f - kHeaderBarHeight,
+        };
+        CCPoint const mouseMain = m_mainLayer->convertToNodeSpace(geode::cocos::getMousePos());
+        if (preview.containsPoint(mouseMain)) {
+            adjustZoom(factor, &mouseMain);
+            return true;
+        }
+    }
+    adjustZoom(factor);
     return true;
 }
 

@@ -213,7 +213,9 @@ void FrameInterpolator::reset() {
     m_layer = nullptr;
     m_tracked.clear();
     m_objects.clear();
-    m_pending.clear();
+    if (m_visitDepth == 0) {
+        m_pending.clear();
+    }
     m_stepPending = false;
     m_stepped = 0.0;
     m_leftover = 0.0;
@@ -271,7 +273,7 @@ void FrameInterpolator::syncTracks(GJBaseGameLayer* layer) {
 
     if (m_wanted.size() == m_tracked.size()) {
         size_t i = 0;
-        while (i < m_wanted.size() && m_tracked[i].node == m_wanted[i]) i++;
+        while (i < m_wanted.size() && m_tracked[i].raw == m_wanted[i] && m_tracked[i].node.lock()) i++;
         if (i == m_wanted.size()) return;
     }
 
@@ -280,6 +282,7 @@ void FrameInterpolator::syncTracks(GJBaseGameLayer* layer) {
     for (auto* node : m_wanted) {
         Slot slot;
         slot.node = node;
+        slot.raw = node;
         m_tracked.push_back(slot);
     }
 }
@@ -295,6 +298,10 @@ void FrameInterpolator::syncObjects(GJBaseGameLayer* layer, bool advanced) {
         seen++;
 
         auto& slot = m_objects[object];
+        if (!slot.node.lock()) {
+            slot = ObjectSlot{};
+            slot.node = object;
+        }
         if (advanced && slot.hasCur) {
             slot.prev = slot.cur;
             slot.hasPrev = true;
@@ -309,13 +316,15 @@ void FrameInterpolator::syncObjects(GJBaseGameLayer* layer, bool advanced) {
     // so long sessions don't grow it.
     if (m_frame % 600 != 0) return;
     for (auto it = m_objects.begin(); it != m_objects.end();) {
-        it = (m_frame - it->second.stamp > 600) ? m_objects.erase(it) : std::next(it);
+        it = (!it->second.node.lock() || m_frame - it->second.stamp > 600)
+            ? m_objects.erase(it)
+            : std::next(it);
     }
 }
 
 void FrameInterpolator::applyNode(CCNode* node, Transform const& authoritative,
                                   Transform const& prev) {
-    if (jumped(prev, authoritative, m_span)) return;
+    if (!node || jumped(prev, authoritative, m_span)) return;
 
     Transform const target = mix(prev, authoritative, m_alpha);
 
@@ -331,22 +340,25 @@ void FrameInterpolator::applyNode(CCNode* node, Transform const& authoritative,
     }
     if (mask == 0) return;
 
-    m_pending.push_back({node, authoritative, mask});
+    m_pending.push_back({Ref<CCNode>(node), authoritative, mask});
     writeTransform(node, target, mask);
     m_trackedCount++;
 }
 
 void FrameInterpolator::beginVisit(GJBaseGameLayer* layer) {
+    if (++m_visitDepth > 1) return;
+
     m_active = false;
     m_trackedCount = 0;
     m_pending.clear();
 
     if (!shouldRun(layer)) {
-        if (m_layer) reset();
+        if (m_layer.lock()) reset();
         return;
     }
 
-    if (layer != m_layer) {
+    auto currentLayer = m_layer.lock();
+    if (!currentLayer || currentLayer.data() != layer) {
         reset();
         m_layer = layer;
     }
@@ -371,13 +383,15 @@ void FrameInterpolator::beginVisit(GJBaseGameLayer* layer) {
 
     syncTracks(layer);
     for (auto& slot : m_tracked) {
+        auto node = slot.node.lock();
+        if (!node) continue;
         if (advanced && slot.hasCur) {
             slot.prev = slot.cur;
             slot.hasPrev = true;
         }
-        slot.cur = readTransform(slot.node);
+        slot.cur = readTransform(node.data());
         slot.hasCur = true;
-        if (slot.hasPrev) applyNode(slot.node, slot.cur, slot.prev);
+        if (slot.hasPrev) applyNode(node.data(), slot.cur, slot.prev);
     }
 
     if (m_config.movingObjects) syncObjects(layer, advanced);
@@ -386,8 +400,10 @@ void FrameInterpolator::beginVisit(GJBaseGameLayer* layer) {
 }
 
 void FrameInterpolator::endVisit() {
+    if (m_visitDepth <= 0) return;
+    if (--m_visitDepth > 0) return;
     for (auto it = m_pending.rbegin(); it != m_pending.rend(); ++it) {
-        writeTransform(it->node, it->state, it->mask);
+        if (it->node) writeTransform(it->node.data(), it->state, it->mask);
     }
     m_pending.clear();
 }

@@ -116,7 +116,16 @@ std::string buildKeyBindingLabel(KeybindDef const& def) {
         if (!text.empty()) text += " / ";
         text += ext.toDisplayString();
     }
-    if (text.empty()) return "(sin asignar)";
+    if (text.empty()) {
+        if (std::string_view(def.key) == "capture-menu-keybind") {
+            auto* mod = Mod::get();
+            if (mod && mod->hasSetting("capture-menu-rightclick")
+                && mod->getSettingValue<bool>("capture-menu-rightclick")) {
+                return "Right Click";
+            }
+        }
+        return "(sin asignar)";
+    }
     if (def.isVolume) text += " + Scroll";
     return text;
 }
@@ -541,6 +550,11 @@ CCNode* ManagerCutPopup::makeKeyRow(
         } else {
             writeKeyboardKeybind(settingKey.c_str(), std::nullopt);
             saveExtendedKeybind(settingKey, ExtendedKeybind{});
+            if (settingKey == "capture-menu-keybind") {
+                if (auto* m = Mod::get(); m && m->hasSetting("capture-menu-rightclick")) {
+                    m->setSettingValue<bool>("capture-menu-rightclick", false);
+                }
+            }
         }
         this->rebuildList();
     }, paimon::ui::Btn::Gray, 32.f, 0.45f, "bigFont.fnt");
@@ -690,6 +704,15 @@ void ManagerCutPopup::openKeyEditor(
     } else {
         kb = getFirstKeyboardKeybind(settingKey.c_str());
         ext = loadExtendedKeybind(settingKey);
+        if (settingKey == "capture-menu-keybind"
+            && (!kb.has_value() || (kb->key == KEY_None && kb->modifiers == KeyboardModifier::None))
+            && ext.isEmpty()) {
+            if (auto* m = Mod::get(); m && m->hasSetting("capture-menu-rightclick")
+                && m->getSettingValue<bool>("capture-menu-rightclick")) {
+                ext.kind = ExtendedKind::Mouse;
+                ext.button = MouseButton::Right;
+            }
+        }
     }
 
     WeakRef<ManagerCutPopup> weakSelf = this;
@@ -723,6 +746,17 @@ void ManagerCutPopup::openKeyEditor(
             } else {
                 writeKeyboardKeybind(settingKey.c_str(), newKb);
                 saveExtendedKeybind(settingKey, newExt);
+                if (settingKey == "capture-menu-keybind") {
+                    bool const hasAny = (newKb.has_value()
+                        && (newKb->key != KEY_None || newKb->modifiers != KeyboardModifier::None))
+                        || !newExt.isEmpty();
+                    bool const isExplicitRight = newExt.kind == ExtendedKind::Mouse
+                        && newExt.button == MouseButton::Right
+                        && newExt.modifiers.value == 0;
+                    if (auto* m = Mod::get(); m && m->hasSetting("capture-menu-rightclick")) {
+                        m->setSettingValue<bool>("capture-menu-rightclick", hasAny && isExplicitRight);
+                    }
+                }
             }
             if (auto self = weakSelf.lock()) {
                 self->rebuildList();
@@ -774,6 +808,9 @@ void ManagerCutPopup::onResetAll() {
                         }
                     }
                     saveExtendedKeybind(def.key, ExtendedKeybind{});
+                }
+                if (mod && mod->hasSetting("capture-menu-rightclick")) {
+                    mod->setSettingValue<bool>("capture-menu-rightclick", true);
                 }
                 PaimonNotify::show("Controles de teclado restaurados", NotificationIcon::Success, 1.5f);
             } else {

@@ -18,6 +18,7 @@ public:
 
     // shows the panel, takes the mouse wheel and refreshes a stale feed.
     void setActive(bool active);
+    void refresh();
     std::string const& channelId() const { return m_channelId; }
 
 protected:

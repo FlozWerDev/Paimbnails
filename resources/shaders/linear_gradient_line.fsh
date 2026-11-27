@@ -143,9 +143,8 @@ vec2 imageCoordinates() {
     return (0.5 + clamp(animateGradient(uv), 0.0, 1.0) * 255.0) / 256.0;
 }
 
-vec4 pointColor(int index, vec2 imageUV) {
-    if (u_imageMode == 0 || u_imageSlots[index] < 0.0) return colors[index];
-    float slot = u_imageSlots[index];
+vec4 samplePointColor(float slot, vec4 col, vec2 imageUV) {
+    if (u_imageMode == 0 || slot < 0.0 || u_imageAtlasGrid.x <= 0.0 || u_imageAtlasGrid.y <= 0.0) return col;
     vec2 tile = vec2(mod(slot, u_imageAtlasGrid.x), floor(slot / u_imageAtlasGrid.x));
     return texture2D(u_image, (tile + imageUV) / u_imageAtlasGrid);
 }
@@ -161,17 +160,18 @@ void main() {
     float closeBlack = 1.0;
     for (int x = -1; x < 2; x++) {
         for (int y = -1; y < 2; y++) {
-            vec4 texColor = texture2D(u_texture, v_texCoord + vec2(x, y) * u_pixelSize);
-            float pixelBlack = max(max(texColor.r, texColor.g), texColor.b) - 0.05;
-            closeBlack = min(closeBlack, 1.0 - ((1.0 - (pixelBlack)) * texColor.a));
+            vec4 sampleTex = texture2D(u_texture, v_texCoord + vec2(float(x), float(y)) * u_pixelSize);
+            float pixelBlack = max(max(sampleTex.r, sampleTex.g), sampleTex.b) - 0.05;
+            closeBlack = min(closeBlack, 1.0 - ((1.0 - pixelBlack) * sampleTex.a));
         }
     }
 
     float mask = (1.0 - max(max(texColor.r, texColor.g), texColor.b)) * pow(2.0, closeBlack * u_threshold);
     texColor = vec4(texColor.a * mask);
+    vec4 firstColor = samplePointColor(u_imageSlots[0], colors[0], imageUV);
 
     if (stopAt <= 1) {
-        gl_FragColor = texColor * pointColor(0, imageUV);
+        gl_FragColor = texColor * firstColor;
         return;
     }
 
@@ -179,30 +179,35 @@ void main() {
 
     float len = length(dir);
     if (len < 1e-6) {
-        gl_FragColor = texColor * pointColor(0, imageUV);
+        gl_FragColor = texColor * firstColor;
         return;
     }
 
     vec2 unit = dir / len;
-    vec2 uv = animateGradient((v_texCoord - uvMin) / (uvMax - uvMin));
+    vec2 uvSpan = max(uvMax - uvMin, vec2(1e-5));
+    vec2 uv = animateGradient((v_texCoord - uvMin) / uvSpan);
     float proj = dot(uv - startPoint, unit);
     float t = clamp(proj / len, 0.0, 1.0);
 
     if (t <= stops[0]) {
-        gl_FragColor = texColor * pointColor(0, imageUV);
+        gl_FragColor = texColor * firstColor;
         return;
     }
 
+    vec4 lastColor = firstColor;
     for (int i = 0; i < 23; ++i) {
         if (i >= stopAt - 1) break;
         float a = stops[i];
         float b = stops[i + 1];
+        vec4 c1 = samplePointColor(u_imageSlots[i + 1], colors[i + 1], imageUV);
         if (t <= b) {
-            float localT = (t - a) / (b - a);
-            gl_FragColor = texColor * mix(pointColor(i, imageUV), pointColor(i + 1, imageUV), localT);
+            float localT = clamp((t - a) / max(b - a, 1e-5), 0.0, 1.0);
+            vec4 c0 = samplePointColor(u_imageSlots[i], colors[i], imageUV);
+            gl_FragColor = texColor * mix(c0, c1, localT);
             return;
         }
+        lastColor = c1;
     }
 
-    gl_FragColor = texColor * pointColor(stopAt - 1, imageUV);
+    gl_FragColor = texColor * lastColor;
 }

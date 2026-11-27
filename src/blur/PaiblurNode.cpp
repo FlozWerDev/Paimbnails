@@ -10,7 +10,9 @@
 #include "../core/RuntimeLifecycle.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <cstring>
 #include <mutex>
 #include <unordered_set>
 #include <vector>
@@ -26,7 +28,7 @@
 #define GL_DRAW_FRAMEBUFFER 0x8CA9
 #endif
 
-// resolve glblitframebuffer at runtime on android gles2; disable blur if absent.
+// resolve glblitframebuffer at runtime on android gles3 / extension; disable blur if absent.
 #ifndef GL_APIENTRY
 #define GL_APIENTRY
 #endif
@@ -34,21 +36,55 @@ namespace {
 using PaimonBlitFramebufferFn = void (GL_APIENTRY*)(
     GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
 
+#if defined(GEODE_IS_ANDROID)
+std::atomic<bool> g_blitProbed{false};
+PaimonBlitFramebufferFn g_blitFn = nullptr;
+
+bool hasBlitFramebufferSupport() {
+    auto const* ver = reinterpret_cast<char const*>(glGetString(GL_VERSION));
+    if (ver) {
+        // Parse "OpenGL ES X.Y" major version >= 3
+        if (auto const* es = std::strstr(ver, "OpenGL ES ")) {
+            char const* digits = es + 10;
+            if (*digits >= '3' && *digits <= '9') return true;
+        }
+    }
+    auto const* exts = reinterpret_cast<char const*>(glGetString(GL_EXTENSIONS));
+    if (exts) {
+        if (std::strstr(exts, "GL_NV_framebuffer_blit") || std::strstr(exts, "GL_ANGLE_framebuffer_blit")) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void resetBlitProbe() {
+    g_blitFn = nullptr;
+    g_blitProbed.store(false, std::memory_order_release);
+}
+#endif
+
 inline bool paimonBlitFramebuffer(
     GLint sx0, GLint sy0, GLint sx1, GLint sy1,
     GLint dx0, GLint dy0, GLint dx1, GLint dy1,
     GLbitfield mask, GLenum filter
 ) {
 #if defined(GEODE_IS_ANDROID)
-    static PaimonBlitFramebufferFn fn = []() -> PaimonBlitFramebufferFn {
-        if (auto p = eglGetProcAddress("glBlitFramebuffer"))
-            return reinterpret_cast<PaimonBlitFramebufferFn>(p);
-        if (auto p = eglGetProcAddress("glBlitFramebufferNV"))
-            return reinterpret_cast<PaimonBlitFramebufferFn>(p);
-        return nullptr;
-    }();
-    if (!fn) return false;
-    fn(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1, mask, filter);
+    if (!g_blitProbed.load(std::memory_order_acquire)) {
+        PaimonBlitFramebufferFn fn = nullptr;
+        if (hasBlitFramebufferSupport()) {
+            if (auto p = eglGetProcAddress("glBlitFramebuffer"))
+                fn = reinterpret_cast<PaimonBlitFramebufferFn>(p);
+            else if (auto p = eglGetProcAddress("glBlitFramebufferNV"))
+                fn = reinterpret_cast<PaimonBlitFramebufferFn>(p);
+            else if (auto p = eglGetProcAddress("glBlitFramebufferANGLE"))
+                fn = reinterpret_cast<PaimonBlitFramebufferFn>(p);
+        }
+        g_blitFn = fn;
+        g_blitProbed.store(true, std::memory_order_release);
+    }
+    if (!g_blitFn) return false;
+    g_blitFn(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1, mask, filter);
     return true;
 #elif defined(GEODE_IS_IOS)
 // no blit symbol or loader on ios
@@ -59,6 +95,10 @@ inline bool paimonBlitFramebuffer(
     glBlitFramebuffer(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1, mask, filter);
     return true;
 #endif
+}
+
+inline void drainGlErrors() {
+    for (int i = 0; i < 16 && glGetError() != GL_NO_ERROR; ++i) {}
 }
 }
 
@@ -295,6 +335,9 @@ void PaiblurNode::onGLContextReload(bool deleteHandles) {
         m_vbo = 0;
     }
     sharedProgram() = BlurProgram{};
+#if defined(GEODE_IS_ANDROID)
+    resetBlitProbe();
+#endif
     m_broken = false;
 }
 
@@ -450,9 +493,16 @@ void PaiblurNode::visit() {
         m_steadyFrames = 0;
     }
 
-    while (glGetError() != GL_NO_ERROR) {}
+    drainGlErrors();
 
     if (needFull) {
+#if defined(GEODE_IS_ANDROID)
+        if (!hasBlitFramebufferSupport()) {
+            m_broken = true;
+            log::warn("[Paiblur] glBlitFramebuffer unsupported on this GLES context - Paiblur disabled");
+            return;
+        }
+#endif
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_fboA);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(prevFbo));
         if (!paimonBlitFramebuffer(vp[0], vp[1], vp[0] + srcW, vp[1] + srcH,

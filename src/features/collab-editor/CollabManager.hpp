@@ -4,6 +4,7 @@
 #include "CollabTypes.hpp"
 
 #include <Geode/Geode.hpp>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <deque>
@@ -69,6 +70,7 @@ public:
     void sendFlippedObjects(cocos2d::CCArray* objects);
     void sendDeletedObject(GameObject* object);
     void reconcileObjects(cocos2d::CCArray* objects);
+    void requestFastSweep();
 
     void sendSelection(cocos2d::CCArray* selected);
     std::unordered_map<int, PeerSelection> const& peerSelections() const { return m_peerSelections; }
@@ -105,7 +107,7 @@ public:
 
     void sendVoiceFrame(uint32_t seq, std::string const& b64);
 
-    void tick();
+    void tick(float dt = 0.05f);
 
     bool clientCanOpenSong() const;
     bool clientCanOpenOptions() const;
@@ -147,6 +149,16 @@ private:
     struct DeferredEdit {
         geode::Ref<GameObject> object;
         LocalEditKind kind = LocalEditKind::Full;
+        bool fromReconcile = false;
+    };
+
+    struct TrackedObject {
+        geode::Ref<GameObject> object;
+        uint32_t version = 0;
+        int origin = 0;
+        uint64_t wireHash = 0;
+        uint64_t localSaveHash = 0;
+        bool hasLocalSaveHash = false;
     };
 
     CollabManager();
@@ -194,10 +206,13 @@ private:
     // acknowledge the in-flight chunk and retry failures in order.
     void onOpsAck(bool ok, int status);
     void handleDigest(matjson::Value const& msg);
+    void startBucketReconcile();
+    void onReconcileBucketsResult(bool ok, int status, matjson::Value const& body, uint64_t epoch);
     void sweepEditor();
-    void queueObjectEdit(GameObject* object, LocalEditKind kind);
+    void queueObjectEdit(GameObject* object, LocalEditKind kind, bool fromReconcile = false);
     void drainDeferredLocalEdits();
-    void sendObjectState(GameObject* object, LocalEditKind kind);
+    void sendObjectState(GameObject* object, LocalEditKind kind, bool fromReconcile = false);
+    void supersedePendingLocal(std::string const& gid, uint64_t remoteKey);
 
     void openJoinerEditor();
     void openHostEditor();
@@ -210,6 +225,7 @@ private:
     void flushSeedChunk(bool finalChunk);
     void onSeedAck(bool ok, int status, int accepted, int roomTotal, bool wasFinal, uint64_t epoch);
     void applyRemoteAdd(ApplyObj const& op);
+    void applyRemoteAddBatch(std::vector<ApplyObj> const& batch);
     void applyRemoteUpdate(ApplyObj const& op);
     void applyRemoteMove(ApplyObj const& op);
     void applyRemoteTransform(ApplyObj const& op);
@@ -220,10 +236,13 @@ private:
 
     GameObject* findTrackedObject(std::string const& gid) const;
     std::string saveObject(GameObject* object) const;
-    void mapGid(std::string const& gid, GameObject* object);
-    void unmapGid(std::string const& gid);
-    void setWireHash(std::string const& gid, uint64_t hash);
-    void eraseWireHash(std::string const& gid);
+    void mapObject(std::string const& gid, GameObject* object, uint32_t version, int origin,
+                   uint64_t wireHash, uint64_t localSaveHash, bool hasLocalSaveHash);
+    void unmapGid(std::string const& gid, uint64_t tombstoneKey = 0);
+    void updateObjectSyncMeta(std::string const& gid, uint32_t version, int origin,
+                            uint64_t wireHash, uint64_t localSaveHash, bool hasLocalSaveHash);
+    uint64_t knownLwwKey(std::string const& gid) const;
+    uint32_t knownVersion(std::string const& gid) const;
     std::string makeLocalGid();
     bool shouldEmit() const;
 
@@ -245,12 +264,11 @@ private:
 
     HostPermissions m_permissions;
 
-    // gid mapping keeps remote lookups alive and o(1).
+    // gid mapping keeps remote lookups alive and o(1) inside one unified table.
     std::unordered_map<int, std::string> m_uidToGid;
-    std::unordered_map<std::string, geode::Ref<GameObject>> m_gidToObj;
-    std::unordered_map<std::string, uint32_t> m_versionByGid;
-    // last wire save per gid, used to skip no-op resends.
-    std::unordered_map<std::string, std::string> m_lastSentSave;
+    std::unordered_map<std::string, TrackedObject> m_objects;
+    std::unordered_map<std::string, uint64_t> m_tombstones;
+    std::deque<std::string> m_tombstoneOrder;
     uint64_t m_localSeq = 1;
 
     // bulk hooks stage refs; saves are generated within the frame budget.
@@ -278,10 +296,13 @@ private:
     size_t m_syncTotal = 0;
 
     // local gid/version/save digest for periodic server comparison.
-    std::unordered_map<std::string, uint64_t> m_wireHash;
+    std::array<uint64_t, kSyncBuckets> m_bucketHash{};
+    std::array<size_t, kSyncBuckets> m_bucketCount{};
     uint64_t m_wireDigest = 0;
     int m_digestStrikes = 0;
     float m_digestCooldown = 0.f;
+    bool m_reconcileInFlight = false;
+    uint64_t m_reconcileEpoch = 0;
 
     // rotating cursors keep large updates within the frame budget.
     size_t m_reconcileCursor = 0;

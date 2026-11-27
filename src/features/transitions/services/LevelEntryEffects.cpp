@@ -799,7 +799,11 @@ private:
     }
 
     void animatePlayers() {
-        auto mode = static_cast<IconType>(m_playLayer->m_levelSettings->m_startMode);
+        if (!m_playLayer) return;
+        IconType mode = IconType::Cube;
+        if (m_playLayer->m_levelSettings) {
+            mode = static_cast<IconType>(m_playLayer->m_levelSettings->m_startMode);
+        }
         if (m_playLayer->m_startPosObject && m_playLayer->m_startPosObject->m_startSettings) {
             mode = static_cast<IconType>(
                 m_playLayer->m_startPosObject->m_startSettings->m_startMode

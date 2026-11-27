@@ -736,10 +736,8 @@ void GlassNode::draw() {
     if (panel) capture.notePanelDrawn(m_root, bounds);
 }
 
-void GlassNode::onGLContextReloadAll() {
-    // runs while the old context is still current: delete now. A second
-    // report of the same reload finds nothing left to delete.
-    GlassCapture::get().releaseGL(true);
+void GlassNode::onGLContextReloadAll(bool deleteHandles) {
+    GlassCapture::get().releaseGL(deleteHandles);
     plateProgram() = PlateProgram{};
     invalidateSkinCache();
 }

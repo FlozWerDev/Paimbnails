@@ -390,7 +390,8 @@ class $modify(BadgeCommentCell, CommentCell) {
         }
 
         auto stencil = paimon::SpriteHelper::createRoundedRectStencil(layout.size.width, layout.size.height, layout.radius);
-        auto clipper = CCClippingNode::create(stencil);
+        auto clipper = stencil ? CCClippingNode::create(stencil) : nullptr;
+        if (!clipper) return;
         clipper->setContentSize(layout.size);
         clipper->setPosition(layout.origin);
         clipper->setZOrder(-13);
@@ -509,7 +510,7 @@ class $modify(BadgeCommentCell, CommentCell) {
 
         if (!bgNode) {
             auto bgGif = AnimatedGIFSprite::createFromCache(gifKey);
-            if (bgGif) {
+            if (bgGif && bgGif->getContentSize().width > 0.f && bgGif->getContentSize().height > 0.f) {
                 float scaleX = layout.size.width / bgGif->getContentSize().width;
                 float scaleY = layout.size.height / bgGif->getContentSize().height;
                 bgGif->setScale(std::max(scaleX, scaleY));
@@ -524,7 +525,8 @@ class $modify(BadgeCommentCell, CommentCell) {
         if (!bgNode) return;
 
         auto stencil = paimon::SpriteHelper::createRoundedRectStencil(layout.size.width, layout.size.height, layout.radius);
-        auto clipper = CCClippingNode::create(stencil);
+        auto clipper = stencil ? CCClippingNode::create(stencil) : nullptr;
+        if (!clipper) return;
         clipper->setContentSize(layout.size);
         clipper->setPosition(layout.origin);
         clipper->setZOrder(-13);
@@ -749,6 +751,7 @@ class $modify(BadgeCommentCell, CommentCell) {
                             float maxDim = std::max(gifSpr->getContentWidth(), gifSpr->getContentHeight());
                             if (maxDim > 0) gifSpr->setScale(targetHeight / maxDim);
                             auto btn = CCMenuItemSpriteExtra::create(gifSpr, self, nullptr);
+                            if (!btn) return;
                             btn->setID("paimon-custom-badge"_spr);
                             if (auto percentage = self->getChildByIDRecursive("percentage-label")) {
                                 menu->insertBefore(btn, percentage);
@@ -772,6 +775,7 @@ class $modify(BadgeCommentCell, CommentCell) {
                         float maxDim = std::max(spr->getContentWidth(), spr->getContentHeight());
                         if (maxDim > 0) spr->setScale(targetHeight / maxDim);
                         auto btn = CCMenuItemSpriteExtra::create(spr, self, nullptr);
+                        if (!btn) return;
                         btn->setID("paimon-custom-badge"_spr);
                         if (auto percentage = self->getChildByIDRecursive("percentage-label")) {
                             menu->insertBefore(btn, percentage);

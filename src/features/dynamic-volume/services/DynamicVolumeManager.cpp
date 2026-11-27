@@ -359,7 +359,8 @@ SafeDropLevels DynamicVolumeManager::readOutputLevels() const {
 
     float rms = 0.0f;
     float peak = 0.0f;
-    for (short i = 0; i < output.numchannels; ++i) {
+    short const chCount = std::clamp<short>(output.numchannels, 0, 32);
+    for (short i = 0; i < chCount; ++i) {
         rms = std::max(rms, output.rmslevel[i]);
         peak = std::max(peak, output.peaklevel[i]);
     }

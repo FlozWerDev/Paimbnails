@@ -13,7 +13,7 @@ void GradientBaseGameLayer::playExitDualEffect(PlayerObject* p0) {
     bool second = p0 == m_player2;
     auto f = m_fields.self();
 
-    if (!p0->isVanillaPlayer() || !moduleEnabled()) {
+    if (!p0 || !p0->isVanillaPlayer() || !moduleEnabled()) {
         GJBaseGameLayer::playExitDualEffect(p0);
         return;
     }

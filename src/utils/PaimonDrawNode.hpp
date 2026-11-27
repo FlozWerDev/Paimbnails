@@ -260,18 +260,14 @@ public:
 
     void draw() override {
         if (m_nBufferCount == 0 || !m_pBuffer) return;
-
-        if (m_bDirty) {
-            glBindBuffer(GL_ARRAY_BUFFER, m_uVbo);
-            glBufferData(GL_ARRAY_BUFFER,
-                sizeof(cocos2d::ccV2F_C4B_T2F) * m_uBufferCapacity,
-                m_pBuffer, GL_STREAM_DRAW);
-            m_bDirty = false;
-        }
+        m_bDirty = false;
 
         CC_NODE_DRAW_SETUP();
 
-        // unbind before client-side arrays to isolate other draw hooks.
+        // unbind VAO and VBO before client-side arrays to isolate other draw hooks.
+#if CC_TEXTURE_ATLAS_USE_VAO
+        cocos2d::ccGLBindVAO(0);
+#endif
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         if (auto* texture = getWhiteTexture()) {
             ccGLBindTexture2D(texture->getName());

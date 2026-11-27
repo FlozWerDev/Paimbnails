@@ -105,7 +105,7 @@ PhysicsWorkspace& PhysicsWorkspace::get() {
 void PhysicsWorkspace::bind(EditorUI* ui) {
     auto current = m_ui.lock();
     if (current && current.data() == ui) return;
-    m_ui = ui;
+    m_ui = ui ? WeakRef<EditorUI>(ui) : WeakRef<EditorUI>();
     m_bodies.clear();
     m_pending.reset();
 }

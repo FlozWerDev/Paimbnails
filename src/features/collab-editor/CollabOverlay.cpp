@@ -335,7 +335,10 @@ void CollabEditorOverlay::onPeerSelection(int clientId, std::string const& name,
         }
     }
     if (label) {
-        label->setString(name.c_str());
+        if (slot->lastText != name) {
+            slot->lastText = name;
+            label->setString(name.c_str());
+        }
         label->setColor(color);
         label->setOpacity(220);
         label->setScale(zoom > 0.f ? std::clamp(0.4f / zoom, 0.08f, 5.f) : 0.4f);
@@ -573,7 +576,10 @@ void CollabEditorOverlay::onPeerCamera(int clientId, std::string const& name, fl
         }
     }
     if (label) {
-        label->setString(name.c_str());
+        if (slot->lastText != name) {
+            slot->lastText = name;
+            label->setString(name.c_str());
+        }
         label->setColor(color);
         label->setOpacity(235);
         label->setScale(zoom > 0.f ? std::clamp(0.34f / zoom, 0.08f, 4.f) : 0.34f);
@@ -634,7 +640,10 @@ void CollabEditorOverlay::onPeerWorkZone(int clientId, std::string const& name,
     }
     if (label) {
         auto text = fmt::format("{} - trabajando", name);
-        label->setString(text.c_str());
+        if (slot->lastText != text) {
+            slot->lastText = text;
+            label->setString(text.c_str());
+        }
         label->setColor(color);
         label->setOpacity(150);
         label->setScale(zoom > 0.f ? std::clamp(0.32f / zoom, 0.07f, 3.5f) : 0.32f);
@@ -683,6 +692,15 @@ void CollabEditorOverlay::redrawHeatmap() {
     auto* objectLayer = m_editor ? m_editor->m_objectLayer : nullptr;
     if (!objectLayer || !m_presenceVisible) return;
 
+    auto samples = CollabManager::get().heatmapSamples(100);
+    if (samples.empty()) {
+        if (m_heatDraw && !m_heatDrawnEmpty) {
+            m_heatDraw->clear();
+            m_heatDrawnEmpty = true;
+        }
+        return;
+    }
+
     if (!m_heatDraw || !m_heatDraw->getParent()) {
         m_heatDraw = CCDrawNode::create();
         if (!m_heatDraw) return;
@@ -690,7 +708,7 @@ void CollabEditorOverlay::redrawHeatmap() {
         objectLayer->addChild(m_heatDraw);
     }
     m_heatDraw->clear();
-    auto samples = CollabManager::get().heatmapSamples(100);
+    m_heatDrawnEmpty = false;
     for (auto const& s : samples) {
         // warm yellow-orange haze, faint enough to never wash out objects.
         float t = s.intensity;
@@ -860,14 +878,44 @@ void CollabEditorOverlay::refresh(float dt) {
                     float const baseScale = cam.customCursor ? 1.f : 0.55f;
                     cam.ghostRoot->setScale(baseScale / zoom);
                 }
-                rebuildTrail(cam, id);
             }
-            auto& mgr = CollabManager::get();
-            for (auto const& [id, sel] : mgr.peerSelections()) {
-                onPeerSelection(id, sel.name, sel.rects);
+            float selScale = std::clamp(0.4f / zoom, 0.08f, 5.f);
+            for (auto& [id, sel] : m_selections) {
+                if (sel.label && sel.label->getParent() && sel.label->isVisible()) {
+                    sel.label->setScale(selScale);
+                }
             }
-            for (auto const& [id, zone] : mgr.peerWorkZones()) {
-                onPeerWorkZone(id, zone.name, zone.x, zone.y, zone.w, zone.h);
+            float zoneScale = std::clamp(0.32f / zoom, 0.07f, 3.5f);
+            for (auto& [id, zone] : m_workZones) {
+                if (zone.label && zone.label->getParent() && zone.label->isVisible()) {
+                    zone.label->setScale(zoneScale);
+                }
+            }
+            if (m_lastGeometryZoom <= 0.f ||
+                std::abs(zoom - m_lastGeometryZoom) / m_lastGeometryZoom > 0.05f) {
+                m_lastGeometryZoom = zoom;
+                for (auto& [id, cam] : m_cameras) rebuildTrail(cam, id);
+                auto& mgr = CollabManager::get();
+                float selWidth = outlineWidth(zoom, 1.6f);
+                for (auto const& [id, sel] : mgr.peerSelections()) {
+                    auto sIt = m_selections.find(id);
+                    if (sIt != m_selections.end() && sIt->second.draw && sIt->second.draw->getParent()) {
+                        sIt->second.draw->clear();
+                        auto border = drawColor(peerColor(id), 0.9f);
+                        for (auto const& r : sel.rects) {
+                            sIt->second.draw->drawRect(r, kNoFill, selWidth, border, BorderAlignment::Inside);
+                        }
+                    }
+                }
+                float zoneWidth = outlineWidth(zoom, 1.2f);
+                for (auto const& [id, zone] : mgr.peerWorkZones()) {
+                    auto zIt = m_workZones.find(id);
+                    if (zIt != m_workZones.end() && zIt->second.draw && zIt->second.draw->getParent()) {
+                        zIt->second.draw->clear();
+                        zIt->second.draw->drawRect(CCRect{zone.x, zone.y, zone.w, zone.h},
+                            kNoFill, zoneWidth, drawColor(peerColor(id), 0.55f), BorderAlignment::Inside);
+                    }
+                }
             }
         }
     }
@@ -880,19 +928,25 @@ void CollabEditorOverlay::onRemoteEdit(int clientId, std::string const& name, CC
     auto color = peerColor(clientId);
 
     if (m_flashes.size() < kMaxConcurrentFlashes) {
-        if (auto* flash = CCSprite::create("square02b_001.png")) {
-            flash->setPosition(worldPos);
-            flash->setScale(0.4f);
-            flash->setColor(isDelete ? ccColor3B{255, 70, 70} : color);
-            flash->setOpacity(110);
-            flash->setZOrder(9000);
-            objectLayer->addChild(flash);
-            flash->runAction(CCSequence::create(
-                CCFadeOut::create(kFlashLife),
-                CCCallFunc::create(flash, callfunc_selector(CCNode::removeFromParent)),
-                nullptr
-            ));
-            m_flashes.push_back({flash, 0.f});
+        auto const win = CCDirector::sharedDirector()->getWinSize();
+        auto const screenPos = objectLayer->convertToWorldSpace(worldPos);
+        bool nearView = screenPos.x >= -win.width * 0.35f && screenPos.x <= win.width * 1.35f &&
+                        screenPos.y >= -win.height * 0.35f && screenPos.y <= win.height * 1.35f;
+        if (nearView) {
+            if (auto* flash = CCSprite::create("square02b_001.png")) {
+                flash->setPosition(worldPos);
+                flash->setScale(0.4f);
+                flash->setColor(isDelete ? ccColor3B{255, 70, 70} : color);
+                flash->setOpacity(110);
+                flash->setZOrder(9000);
+                objectLayer->addChild(flash);
+                flash->runAction(CCSequence::create(
+                    CCFadeOut::create(kFlashLife),
+                    CCCallFunc::create(flash, callfunc_selector(CCNode::removeFromParent)),
+                    nullptr
+                ));
+                m_flashes.push_back({flash, 0.f});
+            }
         }
     }
 
@@ -904,8 +958,11 @@ void CollabEditorOverlay::onRemoteEdit(int clientId, std::string const& name, CC
         tag->setZOrder(9500);
         objectLayer->addChild(tag);
         m_tags[clientId] = tag;
+        m_tagTexts[clientId] = name;
+    } else if (m_tagTexts[clientId] != name) {
+        m_tagTexts[clientId] = name;
+        tag->setString(name.c_str());
     }
-    tag->setString(name.c_str());
     tag->setColor(color);
     tag->setPosition(worldPos + CCPoint{0.f, 14.f});
     float zoom = objectLayer->getScale();

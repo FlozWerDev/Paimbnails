@@ -38,7 +38,7 @@ class $modify(PaimonOptimizerEditorUI, EditorUI) {
         if (!enabled()) return true;
 
         auto* button = paimon::editor::assets::squareButton(
-            "paim_gif_optimize.png",
+            "paim_editor_optimizer.png",
             {"GJ_hammerIcon_001.png", "GJ_optionsBtn_001.png"},
             0.9f,
             EditorBaseColor::Green,
@@ -48,16 +48,12 @@ class $modify(PaimonOptimizerEditorUI, EditorUI) {
         if (!button) return true;
         button->setID("structure-optimizer-button"_spr);
 
-        if (auto* menu = paimon::editor::hostToolbarMenu(this)) {
-            menu->addChild(button);
-            if (menu->getLayout()) menu->updateLayout();
-        } else {
-            auto* fallback = CCMenu::create();
-            fallback->setID("structure-optimizer-menu"_spr);
-            fallback->setPosition({28.f, CCDirector::get()->getWinSize().height - 236.f});
-            fallback->addChild(button);
-            addChild(fallback, 100);
-        }
+        paimon::editor::addToolbarButton(
+            this,
+            button,
+            "structure-optimizer-menu"_spr,
+            {28.f, CCDirector::get()->getWinSize().height - 236.f}
+        );
         return true;
     }
 };

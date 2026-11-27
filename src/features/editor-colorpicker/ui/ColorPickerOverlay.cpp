@@ -534,7 +534,7 @@ void ColorPickerOverlay::liveSample() {
     m_lastSampleY = cyDev;
     m_lastSampleWant = want;
 
-while (glGetError() != GL_NO_ERROR) {}
+    for (int i = 0; i < 16 && glGetError() != GL_NO_ERROR; ++i) {}
 
     GLint origFBO = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &origFBO);

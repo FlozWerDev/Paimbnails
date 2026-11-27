@@ -36,11 +36,13 @@ inline void refreshVanillaStatsLabels(cocos2d::CCNode* mainLayer, GJUserScore* s
         if (std::string(lbl->getString()) == text) return;
         lbl->setString(text.c_str());
         if (auto* container = mainLayer->getChildByIDRecursive(fmt::format("{}-label-container", id))) {
-            container->setContentSize({
-                lbl->getScaledContentSize().width,
-                lbl->getScaledContentSize().height
+            auto const scaled = lbl->getScaledContentSize();
+            container->setContentSize({scaled.width, scaled.height});
+            auto const anchor = lbl->getAnchorPoint();
+            lbl->setPosition({
+                container->getContentSize().width * anchor.x,
+                container->getContentSize().height * anchor.y
             });
-            lbl->setPosition({0.f, container->getContentSize().height / 2.f});
         }
     };
 

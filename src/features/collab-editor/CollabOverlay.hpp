@@ -63,6 +63,7 @@ private:
     struct SelectionOverlay {
         geode::Ref<cocos2d::CCDrawNode> draw;
         geode::Ref<cocos2d::CCLabelBMFont> label;
+        std::string lastText;
     };
     void clearSelectionNode(int clientId);
 
@@ -70,6 +71,7 @@ private:
         geode::Ref<cocos2d::CCNode> ghostRoot;
         geode::Ref<cocos2d::CCDrawNode> trail;
         geode::Ref<cocos2d::CCLabelBMFont> label;
+        std::string lastText;
         std::deque<cocos2d::CCPoint> trailPts;
         // rendered position chases the network target each frame, smoothing 5 hz presence.
         float x = 0.f;
@@ -89,6 +91,7 @@ private:
     struct WorkZoneOverlay {
         geode::Ref<cocos2d::CCDrawNode> draw;
         geode::Ref<cocos2d::CCLabelBMFont> label;
+        std::string lastText;
     };
     void clearWorkZoneNode(int clientId);
 
@@ -126,6 +129,7 @@ private:
     cocos2d::CCSize m_hudWin{};
 
     std::unordered_map<int, geode::Ref<cocos2d::CCLabelBMFont>> m_tags;
+    std::unordered_map<int, std::string> m_tagTexts;
 
     cocos2d::CCNode* m_toastLayer = nullptr;
     std::vector<geode::Ref<cocos2d::CCNode>> m_toasts;
@@ -138,7 +142,9 @@ private:
     std::unordered_map<int, WorkZoneOverlay> m_workZones;
     geode::Ref<cocos2d::CCDrawNode> m_heatDraw;
     float m_heatRedrawAge = 0.f;
+    bool m_heatDrawnEmpty = true;
     float m_lastOverlayZoom = -1.f;
+    float m_lastGeometryZoom = -1.f;
 
     std::vector<EditFlash> m_flashes;
 };

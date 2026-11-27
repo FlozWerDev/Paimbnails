@@ -73,16 +73,12 @@ class $modify(PaimonPhysicsEditorUI, EditorUI) {
         if (!button) return true;
         button->setID("physics-lab-button"_spr);
 
-        if (auto* menu = paimon::editor::hostToolbarMenu(this)) {
-            menu->addChild(button);
-            if (menu->getLayout()) menu->updateLayout();
-        } else {
-            auto* fallback = CCMenu::create();
-            fallback->setID("physics-lab-menu"_spr);
-            fallback->setPosition({28.f, CCDirector::get()->getWinSize().height - 164.f});
-            fallback->addChild(button);
-            addChild(fallback, 100);
-        }
+        paimon::editor::addToolbarButton(
+            this,
+            button,
+            "physics-lab-menu"_spr,
+            {28.f, CCDirector::get()->getWinSize().height - 164.f}
+        );
         return true;
     }
 };

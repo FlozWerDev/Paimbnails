@@ -512,12 +512,27 @@ struct VideoBackgroundUpdateNode : public CCNode {
         bool keepUniquePlayerAliveForFade = false;
         if (player) {
             if (!doingSmoothFadeOut) {
-                player->stop();
+                auto uniquePlayer = std::shared_ptr<paimon::video::VideoPlayer>(player.release());
+                if (g_layerBgShutdown.load(std::memory_order_acquire) ||
+                    paimon::isRuntimeShuttingDown() ||
+                    paimon::ThreadTracker::get().isShuttingDown()) {
+                    uniquePlayer->forceStop();
+                    uniquePlayer.reset();
+                } else if (!paimon::ThreadTracker::get().spawn([uniquePlayer]() mutable {
+                    geode::utils::thread::setName("VideoBg Stop");
+                    uniquePlayer->forceStop();
+                    if (!g_layerBgShutdown.load(std::memory_order_acquire) &&
+                        !paimon::isRuntimeShuttingDown()) {
+                        Loader::get()->queueInMainThread([uniquePlayer]() mutable {
+                            uniquePlayer.reset();
+                        });
+                    }
+                })) {
+                    uniquePlayer->forceStop();
+                    uniquePlayer.reset();
+                }
             } else {
                 keepUniquePlayerAliveForFade = true;
-            }
-            if (!keepUniquePlayerAliveForFade) {
-                player.reset();
             }
         }
         if (sharedPlayer) {
@@ -1364,6 +1379,7 @@ void LayerBackgroundManager::applyGifBg(CCLayer* layer, std::string const& path,
     layer->addChild(container);
 
     CCNode* rawContainer = container;
+    WeakRef<CCNode> weakContainer(container);
     auto containerAlive = std::make_shared<std::atomic<bool>>(true);
     {
         std::lock_guard lk(g_containerAliveMutex);
@@ -1374,13 +1390,24 @@ void LayerBackgroundManager::applyGifBg(CCLayer* layer, std::string const& path,
     std::string shaderName = cfg.shader;
 
     AnimatedGIFSprite::pinGIF(path);
-    AnimatedGIFSprite::createAsync(path, [rawContainer, containerAlive, winSize, darkMode, darkIntensity, shaderName](AnimatedGIFSprite* anim) {
-        auto* container = rawContainer;
-        if (!anim || !containerAlive->load(std::memory_order_acquire) || !container->getParent()) return;
+    AnimatedGIFSprite::createAsync(path, [rawContainer, weakContainer, containerAlive, winSize, darkMode, darkIntensity, shaderName](AnimatedGIFSprite* anim) {
+        auto cleanupAliveFlag = [rawContainer]() {
+            std::lock_guard lk(g_containerAliveMutex);
+            g_containerAliveFlags.erase(rawContainer);
+        };
+        auto containerRef = weakContainer.lock();
+        if (!anim || !containerAlive->load(std::memory_order_acquire) || !containerRef || !containerRef->getParent()) {
+            cleanupAliveFlag();
+            return;
+        }
+        CCNode* container = containerRef.data();
 
         float cw = anim->getContentWidth();
         float ch = anim->getContentHeight();
-        if (cw <= 0 || ch <= 0) return;
+        if (cw <= 0 || ch <= 0) {
+            cleanupAliveFlag();
+            return;
+        }
 
         float sc = std::max(winSize.width / cw, winSize.height / ch);
         anim->setAnchorPoint({0.5f, 0.5f});
@@ -1410,11 +1437,7 @@ void LayerBackgroundManager::applyGifBg(CCLayer* layer, std::string const& path,
         }
 
         addLayerBgDarkOverlay(container, winSize, darkMode, darkIntensity);
-
-        {
-            std::lock_guard lk(g_containerAliveMutex);
-            g_containerAliveFlags.erase(rawContainer);
-        }
+        cleanupAliveFlag();
     });
 }
 

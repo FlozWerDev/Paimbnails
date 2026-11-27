@@ -327,8 +327,12 @@ struct EditorMcpServer::Impl {
                 req.centerY = qp.contains("y") ? std::strtof(qp["y"].c_str(), nullptr) : 105.f;
             }
             if (qp.contains("zoom")) req.zoom = std::strtof(qp["zoom"].c_str(), nullptr);
-            if (qp.contains("width")) req.width = std::atoi(qp["width"].c_str());
-            if (qp.contains("height")) req.height = std::atoi(qp["height"].c_str());
+            if (qp.contains("width")) {
+                req.width = geode::utils::numFromString<int>(qp["width"]).unwrapOr(req.width);
+            }
+            if (qp.contains("height")) {
+                req.height = geode::utils::numFromString<int>(qp["height"]).unwrapOr(req.height);
+            }
             if (qp.contains("show_grid")) req.showGrid = (qp["show_grid"] == "1" || qp["show_grid"] == "true");
             if (qp.contains("show_ui")) req.showUI = (qp["show_ui"] == "1" || qp["show_ui"] == "true");
 

@@ -756,11 +756,13 @@ void AmbientNode::draw() {
 #endif
 }
 
-void AmbientNode::onGLContextReloadAll() {
-    AmbientAnalyzer::get().releaseGL(true);
+void AmbientNode::onGLContextReloadAll(bool deleteHandles) {
+    AmbientAnalyzer::get().releaseGL(deleteHandles);
     ambientProgram() = AmbientProgram{};
     if (solidWhiteTextureSlot()) {
-        glDeleteTextures(1, &solidWhiteTextureSlot());
+        if (deleteHandles) {
+            glDeleteTextures(1, &solidWhiteTextureSlot());
+        }
         solidWhiteTextureSlot() = 0;
     }
 }

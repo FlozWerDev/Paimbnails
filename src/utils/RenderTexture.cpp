@@ -59,27 +59,75 @@ RenderTexture::RenderTexture(uint32_t width, uint32_t height) : m_width(width), 
 
     glGenRenderbuffers(1, &m_depthStencil);
     glBindRenderbuffer(GL_RENDERBUFFER, m_depthStencil);
-#ifdef PT_SEPARATE_DEPTH_STENCIL
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, m_width, m_height);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_depthStencil);
-    glGenRenderbuffers(1, &m_stencilBuffer);
-    glBindRenderbuffer(GL_RENDERBUFFER, m_stencilBuffer);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_STENCIL_INDEX8, m_width, m_height);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, m_stencilBuffer);
-#else
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, m_width, m_height);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, m_depthStencil);
-#endif
+    auto drainErr = []() {
+        for (int i = 0; i < 16 && glGetError() != GL_NO_ERROR; ++i) {}
+    };
+    drainErr();
 
-    m_valid = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE
-           && glGetError() == GL_NO_ERROR;
+    auto attachPackedDepthStencil = [&]() -> bool {
+#ifdef PT_SEPARATE_DEPTH_STENCIL
+        return false;
+#else
+        glBindRenderbuffer(GL_RENDERBUFFER, m_depthStencil);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, m_width, m_height);
+#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
+        // GLES2 OES_packed_depth_stencil attaches to DEPTH and STENCIL separately (DEPTH_STENCIL_ATTACHMENT is GLES3-only).
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_depthStencil);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, m_depthStencil);
+#else
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, m_depthStencil);
+#endif
+        bool ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE
+               && glGetError() == GL_NO_ERROR;
+        if (!ok) {
+            drainErr();
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0);
+            drainErr();
+        }
+        return ok;
+#endif
+    };
+
+    auto attachSeparateDepthStencil = [&]() -> bool {
+        glBindRenderbuffer(GL_RENDERBUFFER, m_depthStencil);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, m_width, m_height);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_depthStencil);
+        if (!m_stencilBuffer) glGenRenderbuffers(1, &m_stencilBuffer);
+        glBindRenderbuffer(GL_RENDERBUFFER, m_stencilBuffer);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_STENCIL_INDEX8, m_width, m_height);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, m_stencilBuffer);
+        bool ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE
+               && glGetError() == GL_NO_ERROR;
+        if (!ok) {
+            drainErr();
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, 0);
+            drainErr();
+        }
+        return ok;
+    };
+
+    m_valid = attachPackedDepthStencil() || attachSeparateDepthStencil();
+    if (!m_valid) {
+        // Final fallback: color-only FBO on constrained GLES2 drivers.
+        if (m_depthStencil) {
+            glDeleteRenderbuffers(1, &m_depthStencil);
+            m_depthStencil = 0;
+        }
+        if (m_stencilBuffer) {
+            glDeleteRenderbuffers(1, &m_stencilBuffer);
+            m_stencilBuffer = 0;
+        }
+        drainErr();
+        m_valid = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE
+               && glGetError() == GL_NO_ERROR;
+    }
     if (!m_valid) {
         glBindFramebuffer(GL_FRAMEBUFFER, m_oldFBO);
         if (m_texture) glDeleteTextures(1, &m_texture);
         if (m_depthStencil) glDeleteRenderbuffers(1, &m_depthStencil);
-#ifdef PT_SEPARATE_DEPTH_STENCIL
         if (m_stencilBuffer) glDeleteRenderbuffers(1, &m_stencilBuffer);
-#endif
         if (m_fbo) glDeleteFramebuffers(1, &m_fbo);
         m_texture = 0;
         m_depthStencil = 0;
@@ -103,9 +151,7 @@ RenderTexture::~RenderTexture() {
     this->end();
     if (m_texture) glDeleteTextures(1, &m_texture);
     if (m_depthStencil) glDeleteRenderbuffers(1, &m_depthStencil);
-#ifdef PT_SEPARATE_DEPTH_STENCIL
     if (m_stencilBuffer) glDeleteRenderbuffers(1, &m_stencilBuffer);
-#endif
     if (m_fbo) glDeleteFramebuffers(1, &m_fbo);
 }
 

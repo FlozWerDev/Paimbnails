@@ -11,6 +11,7 @@
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../profiles/services/ProfileIdentityStore.hpp"
+#include "../../profiles/services/VanillaProfileLayout.hpp"
 #include "../../../framework/HookConventions.hpp"
 
 #include <algorithm>
@@ -142,7 +143,7 @@ class $modify(PaimonVersusProfilePage, ProfilePage) {
             return;
         }
 
-        auto* chip = buildVersusChip(rank, 20.f);
+        auto* chip = buildVersusChip(rank, 15.f);
         if (!chip) return;
 
         auto* btn = CCMenuItemSpriteExtra::create(
@@ -150,7 +151,7 @@ class $modify(PaimonVersusProfilePage, ProfilePage) {
         if (!btn) return;
         btn->setID(kChipId);
         menu->addChild(btn);
-        menu->updateLayout();
+        paimon::profiles::normalizeVanillaUsernameMenu(this->m_mainLayer);
     }
 
     void onVersusChip(CCObject*) {

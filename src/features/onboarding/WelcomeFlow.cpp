@@ -13,6 +13,7 @@
 #include "../../features/forum/services/ForumApi.hpp"
 #include "../../features/discord-presence/services/DiscordPresenceManager.hpp"
 #include "../../core/BanGate.hpp"
+#include "../../core/ModAuthFlow.hpp"
 #include "../../features/thumb-alerts/services/NewThumbWatcher.hpp"
 #include "../../features/thumb-alerts/services/ThumbFeedSocket.hpp"
 #include "../../utils/Localization.hpp"
@@ -552,6 +553,7 @@ void WelcomePopup::finish() {
     paimon::thumbalerts::NewThumbWatcher::get().pollNow();
     paimon::thumbalerts::ThumbFeedSocket::get().resumeAfterConsent();
     paimon::forum::ForumApi::get().sendHeartbeat([](paimon::forum::Result<bool>) {});
+    paimon::modauth::verifyStartupAccount(true);
     paimon::updates::UpdateChecker::get().checkAsync();
     paimon::crash::reportPendingCrashes();
 }

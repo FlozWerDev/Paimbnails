@@ -6,13 +6,10 @@
 #include "CollabManager.hpp"
 #include "CollabPopups.hpp"
 #include "CollabTypes.hpp"
-#include "../../utils/ThreadTracker.hpp"
 #include "../../utils/MainThreadDelay.hpp"
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
-#include <chrono>
-#include <thread>
 
 using namespace geode::prelude;
 
@@ -95,6 +92,10 @@ void CollabPresence::registerSelf() {
                     if (!token.empty()) m_token = std::move(token);
                 }
                 poll();
+            } else if (res.code() == 409) {
+                // previous presence slot expires after 45s on server after a fast restart.
+                m_retryAttempts = 0;
+                scheduleRetry(gen, 5000);
             } else {
                 int shift = std::min(m_retryAttempts++, 4);
                 int delay = std::min(5000 * (1 << shift), 60000);

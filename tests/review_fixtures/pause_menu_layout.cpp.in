@@ -35,10 +35,13 @@ struct CCNode {
     void setPosition(CCPoint value) { position = value; }
     void setScale(float value) { scale = value; }
     float getScale() const { return scale; }
+    float getScaleX() const { return scale; }
+    float getScaleY() const { return scale; }
     void setRotation(float value) { rotation = value; }
     float getRotation() const { return rotation; }
     CCSize getContentSize() const { return size; }
     void setVisible(bool value) { visible = value; }
+    bool isVisible() const { return visible; }
     CCPoint convertToWorldSpace(CCPoint p) const {
         float const angle = rotation * .01745329252f;
         CCPoint result{position.x + scale * (p.x * std::cos(angle) - p.y * std::sin(angle)),
@@ -79,8 +82,8 @@ struct CCDirector {
     CCSize getWinSize() { return size; }
 };
 }
-class PauseLayer : public cocos2d::CCNode {};
 class CCMenuItemSpriteExtra : public cocos2d::CCMenuItem { public: float m_baseScale = 1.f; };
+class PauseLayer : public cocos2d::CCNode { public: CCMenuItemSpriteExtra* m_platformSettingsButton = nullptr; };
 template<class T> using CCArrayExt = std::vector<T>;
 template<class To, class From> To typeinfo_cast(From* node) { return dynamic_cast<To>(node); }
 namespace geode {
@@ -202,6 +205,65 @@ int main() {
     assert(arrangePauseMenu(&pause));
     assert(!options.visible && close(options.position.y, oldPosition.y));
     assert(CCLabelBMFont::labels.size() == oldLabelCount && caption->text == "Capture");
+    auto* practiceUiCaption = typeinfo_cast<CCLabelBMFont*>(practiceUI.getChildByID("pause-action-caption"));
+    assert(practiceUiCaption && practiceUiCaption->text == "Practice UI");
+
+    // Practice % bar clearance: center buttons must sit strictly below the
+    // practice progress bar/label and above the audio sliders.
+    CCNode normalBar, practiceBar, practiceLabel, musicSlider;
+    normalBar.size = {260.f, 20.f};
+    normalBar.position = {154.f, 224.f};
+    practiceBar.size = {260.f, 20.f};
+    practiceBar.position = {154.f, 180.f};
+    practiceLabel.size = {140.f, 12.f};
+    practiceLabel.position = {214.f, 168.f};
+    musicSlider.size = {200.f, 20.f};
+    musicSlider.position = {184.f, 62.f};
+    namedChild(main, normalBar, "normal-progress-bar");
+    namedChild(main, practiceBar, "practice-progress-bar");
+    namedChild(main, practiceLabel, "practice-progress-label");
+    namedChild(main, musicSlider, "music-slider");
+
+    // Platformer mode: extra full-restart + edit center buttons and an un-ID'd
+    // m_platformSettingsButton must fit cleanly inside both sidebars and band.
+    CCMenuItemSpriteExtra fullRestart, edit, platSettings;
+    fullRestart.size = {64.f, 64.f};
+    edit.size = {64.f, 64.f};
+    platSettings.size = {40.f, 40.f};
+    namedChild(center, fullRestart, "full-restart-button");
+    namedChild(center, edit, "edit-button");
+    left.addChild(&platSettings);
+    pause.m_platformSettingsButton = &platSettings;
+
+    assert(arrangePauseMenu(&pause));
+    assert(fullRestart.position.x < retry.position.x);
+    assert(retry.position.x < play.position.x && play.position.x < practice.position.x);
+    assert(practice.position.x < edit.position.x && edit.position.x < exit.position.x);
+    auto* platCaption = typeinfo_cast<CCLabelBMFont*>(platSettings.getChildByID("pause-action-caption"));
+    assert(platCaption && platCaption->text == "Controls");
+
+    float leftEdgeMax = 0.f;
+    for (auto* child : left.children) {
+        auto* item = typeinfo_cast<CCMenuItem*>(child);
+        auto const world = item->convertToWorldSpace({0.f, 0.f});
+        leftEdgeMax = std::max(leftEdgeMax, world.x + item->size.width * item->scale * .5f);
+    }
+    float rightEdgeMin = 568.f;
+    for (auto* child : right.children) {
+        auto* item = typeinfo_cast<CCMenuItem*>(child);
+        auto const world = item->convertToWorldSpace({0.f, 0.f});
+        rightEdgeMin = std::min(rightEdgeMin, world.x - item->size.width * item->scale * .5f);
+    }
+    for (auto* item : std::array<CCMenuItem*, 6>{&fullRestart, &retry, &play, &practice, &edit, &exit}) {
+        auto const world = item->convertToWorldSpace({0.f, 0.f});
+        float const halfW = item->size.width * item->scale * .5f;
+        float const halfH = item->size.height * item->scale * .5f;
+        assert(world.x - halfW >= leftEdgeMax);
+        assert(world.x + halfW <= rightEdgeMin);
+        assert(world.y + halfH <= practiceLabel.position.y);
+        assert(world.y - halfH >= musicSlider.position.y + musicSlider.size.height);
+    }
+
     paimon::compat::ModCompat::compact = true;
     options.position.x = 999;
     assert(!arrangePauseMenu(&pause) && options.position.x == 999);

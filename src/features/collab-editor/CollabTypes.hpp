@@ -13,7 +13,9 @@ namespace paimon::collab {
 constexpr char const* kServerBaseUrl = "http://node.akiomae.xyz:4401";
 
 // bump on any wire-incompatible change.
-constexpr uint32_t kProtocolVersion = 10;
+constexpr uint32_t kProtocolVersion = 11;
+
+constexpr size_t kSyncBuckets = 32;
 
 constexpr size_t kMaxCursorAssetBytes = 128 * 1024;
 constexpr size_t kMaxCursorDataLength = ((kMaxCursorAssetBytes + 2) / 3) * 4;
@@ -45,6 +47,18 @@ inline uint64_t objectSyncHash(std::string const& gid, uint32_t version, std::st
     input += '|';
     input += save;
     return (static_cast<uint64_t>(fnv1a32(input, 0x811c9dc5u)) << 32) | fnv1a32(input, 0xcbf29ce4u);
+}
+
+inline size_t syncBucketIndex(std::string const& gid) {
+    return static_cast<size_t>(fnv1a32(gid, 0x811c9dc5u)) & (kSyncBuckets - 1);
+}
+
+inline uint64_t stringHash64(std::string const& s) {
+    return (static_cast<uint64_t>(fnv1a32(s, 0x811c9dc5u)) << 32) | fnv1a32(s, 0xcbf29ce4u);
+}
+
+inline uint64_t lwwOrderKey(uint32_t version, int origin) {
+    return (static_cast<uint64_t>(version) << 32) | static_cast<uint32_t>(std::max(origin, 0));
 }
 
 enum class ConnState {

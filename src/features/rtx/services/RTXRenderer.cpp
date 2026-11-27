@@ -268,7 +268,7 @@ bool probeHdrTargets(GLint& format, GLenum& type) {
     glDeleteFramebuffers(1, &fbo);
     glDeleteTextures(1, &tex);
     bindTexture(0, 0);
-    while (glGetError() != GL_NO_ERROR) {}
+    for (int i = 0; i < 16 && glGetError() != GL_NO_ERROR; ++i) {}
     return ok;
 }
 
@@ -1114,7 +1114,7 @@ void RTXRenderer::renderFrame() {
     m_lastFrame = now;
     m_wasActive = true;
 
-    while (glGetError() != GL_NO_ERROR) {}
+    for (int i = 0; i < 16 && glGetError() != GL_NO_ERROR; ++i) {}
 
     if (ensureFullTargets(viewport[2], viewport[3])
         && ensureTraceTargets(viewport[2], viewport[3], m_activeScale)) {

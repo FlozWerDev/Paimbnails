@@ -653,13 +653,14 @@ class $modify(PaimonDynamicPopupRemoval, CCNode) {
     }
 
     void removeFromParentAndCleanup(bool cleanup) {
-        if (auto* popup = typeinfo_cast<FLAlertLayer*>(this);
-            popup && cleanup && getParent() && paimon::isManagedDynamicPopup(popup)
-            && !paimon::isRuntimeShuttingDown()) {
-            Ref<FLAlertLayer> keepAlive = popup;
-            if (static_cast<PaimonDynamicPopupHook*>(popup)->deferAnimatedRemoval()) return;
-            CCNode::removeFromParentAndCleanup(cleanup);
-            return;
+        if (cleanup && getParent() && !paimon::isRuntimeShuttingDown()) {
+            if (auto* popup = typeinfo_cast<FLAlertLayer*>(this);
+                popup && paimon::isManagedDynamicPopup(popup)) {
+                Ref<FLAlertLayer> keepAlive = popup;
+                if (static_cast<PaimonDynamicPopupHook*>(popup)->deferAnimatedRemoval()) return;
+                CCNode::removeFromParentAndCleanup(cleanup);
+                return;
+            }
         }
         CCNode::removeFromParentAndCleanup(cleanup);
     }

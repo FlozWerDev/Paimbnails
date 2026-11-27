@@ -401,6 +401,46 @@ subject to each site's own Terms of Service.
   ships separately through the Geode index; Paimbnails distributes none of
   its code.
 
+- **OpenVector** by **Microck** (https://github.com/Microck/openvector,
+  MIT License): optional complementary raster-to-SVG vectorization engine
+  invoked locally as an external CLI binary in the editor image-to-objects
+  converter (`src/features/gif-import/services/OpenVectorBootstrap.{hpp,cpp}`,
+  `OpenVectorRunner.{hpp,cpp}`). No OpenVector binary is bundled inside the
+  `.geode` package; when the user chooses the `SVG` mode on a raster image and
+  confirms installation, Paimbnails downloads the official OpenVector package
+  directly and credits the project in the popup's GitHub credits dialog.
+
+  ```
+  MIT License
+
+  Copyright (c) Microck / OpenVector contributors
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+  ```
+
+- **libwebp** by **The WebM Project / Google**
+  (https://github.com/webmproject/libwebp, BSD 3-Clause License): linked
+  statically via CPM (`v1.5.0`) to decode static and animated `.webp` images
+  (`src/utils/WebPDecoder.{hpp,cpp}`, `src/utils/ImageLoadHelper.hpp`).
+  Redistributed in binary form under the BSD 3-Clause License
+  (`Copyright (c) 2010, Google Inc. All rights reserved.`).
+
 ---
 
 ## 7. How to add future "inspired by" work

@@ -36,6 +36,7 @@
 #include "../features/icon-maker/services/IconApplier.hpp"
 #include "../features/icon-maker/services/IconThumbs.hpp"
 #include "../features/icon-maker/ui/IconMakerUI.hpp"
+#include "../features/icon-gradients/services/GradientImage.hpp"
 #include "../features/texture-studio/services/LiveSlotRuntime.hpp"
 #include "../features/liquid-glass/services/GlassNode.hpp"
 #include "../features/dynamic-ambient/services/AmbientNode.hpp"
@@ -86,8 +87,8 @@ void resetModGLState(bool oldContextStillAlive) {
     paimon::wallpaper::WallpaperThumbnailCache::get().clearTextures();
     paimon::paiblur::PaiblurNode::onGLContextReloadAll(oldContextStillAlive);
     BlurSystem::getInstance()->onGLContextReload();
-    paimon::glass::GlassNode::onGLContextReloadAll();
-    paimon::ambient::AmbientNode::onGLContextReloadAll();
+    paimon::glass::GlassNode::onGLContextReloadAll(oldContextStillAlive);
+    paimon::ambient::AmbientNode::onGLContextReloadAll(oldContextStillAlive);
     paimon::slider::CustomSliderManager::get().invalidateImageCache();
     ProgressBarManager::get().releaseCustomTextures();
     ProgressBarManager::get().invalidateBaseline();
@@ -95,12 +96,13 @@ void resetModGLState(bool oldContextStillAlive) {
     paimon::icon_maker::IconApplier::get().onGLContextReload();
     paimon::icon_maker::IconThumbs::get().onGLContextReload();
     paimon::icon_maker::ui::resetCheckerTexture();
+    paimon::icon_gradients::shutdownGradientImageCache();
     paimon::buttonskin::ButtonSkinRuntime::get().onGLContextReload();
 
     paimon::ThumbnailBackgroundChangedEvent::setLastTexture(nullptr);
     paimon::ThumbnailBackgroundChangedEvent::s_lastLevelID = 0;
     PaimonDrawNode::invalidateWhiteTextureCache();
-    DominantColorsGPU::onGLContextReload();
+    DominantColorsGPU::onGLContextReload(oldContextStillAlive);
 
     // mod shaders die with the context; ccshadercache only rebuilds cocos defaults.
     paimon::shaders::purgeTrackedShaders();

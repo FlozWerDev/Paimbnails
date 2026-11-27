@@ -8,6 +8,7 @@
 #include "../../../utils/ActivePauseLayer.hpp"
 #include <Geode/cocos/kazmath/include/kazmath/GL/matrix.h>
 #include <algorithm>
+#include <atomic>
 #include <optional>
 #include <vector>
 
@@ -43,6 +44,7 @@ std::vector<WeakRef<CCNode>> s_ghosts;
 // a hidden-then-removed panel must not leave a second ghost.
 std::vector<WeakRef<CCNode>> s_closed;
 unsigned s_openDepth = 0;
+std::atomic<int> s_fastBypassDepth{0};
 
 template <class T>
 void prune(std::vector<T>& list) {
@@ -294,9 +296,31 @@ void stopMotions(CCNode* panel) {
 // renders just the popup box (transparent around it) for the close animation.
 Ref<CCTexture2D> captureContent(CCNode* content, CCSize win) {
     if (!content || !content->isVisible()) return nullptr;
+    if (win.width < 1.f || win.height < 1.f) return nullptr;
+    auto* director = CCDirector::get();
+    if (!director || !director->getOpenGLView() || !director->getRunningScene()) return nullptr;
+    static bool s_capturing = false;
+    if (s_capturing) return nullptr;
+    struct CaptureGuard {
+        bool& flag;
+        CaptureGuard(bool& f) : flag(f) { flag = true; }
+        ~CaptureGuard() { flag = false; }
+    } captureGuard{s_capturing};
+
+    int w = std::max(1, static_cast<int>(win.width));
+    int h = std::max(1, static_cast<int>(win.height));
+    GLint maxTex = 0;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTex);
+    if (maxTex > 0) {
+        w = std::min(w, static_cast<int>(maxTex));
+        h = std::min(h, static_cast<int>(maxTex));
+    }
+
     Ref<CCRenderTexture> surface = CCRenderTexture::create(
-        static_cast<int>(win.width), static_cast<int>(win.height),
-        kCCTexture2DPixelFormat_RGBA8888, GL_DEPTH24_STENCIL8);
+        w, h, kCCTexture2DPixelFormat_RGBA8888, GL_DEPTH24_STENCIL8);
+    if (!surface || !surface->getSprite() || !surface->getSprite()->getTexture()) {
+        surface = CCRenderTexture::create(w, h, kCCTexture2DPixelFormat_RGBA8888);
+    }
     if (!surface || !surface->getSprite() || !surface->getSprite()->getTexture()) return nullptr;
     surface->beginWithClear(0.f, 0.f, 0.f, 0.f, 1.f, 0);
     kmGLMatrixMode(KM_GL_MODELVIEW);
@@ -503,9 +527,26 @@ PanelShowGuard::~PanelShowGuard() {
     }
 }
 
+FastBypassGuard::FastBypassGuard() {
+    s_fastBypassDepth.fetch_add(1, std::memory_order_relaxed);
+}
+
+FastBypassGuard::~FastBypassGuard() {
+    s_fastBypassDepth.fetch_sub(1, std::memory_order_relaxed);
+}
+
+bool isInFastBypass() {
+    return s_fastBypassDepth.load(std::memory_order_relaxed) > 0;
+}
+
+bool isPanelTransitionsEnabled() {
+    return isEnabled();
+}
+
 bool panelWillChange(CCNode* panel, CCNode* parent, bool opening) {
     // runs for every addChild/removeChild, so the cheapest rejections come first.
-    if (!isEnabled() || !panel || !typeinfo_cast<CCLayer*>(panel) || panelKind(panel) == PanelKind::None)
+    if (isInFastBypass() || !isEnabled() || !panel || !typeinfo_cast<CCLayer*>(panel) ||
+        panelKind(panel) == PanelKind::None)
         return false;
     // dynamic stands down entirely while a Custom (Studio) transition is active.
     if (TransitionManager::get().isCustomActive()) return false;

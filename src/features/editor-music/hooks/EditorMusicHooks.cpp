@@ -82,7 +82,7 @@ class $modify(PaimonEditorMusicLayer, LevelEditorLayer) {
     $override
     void onStopPlaytest() {
         LevelEditorLayer::onStopPlaytest();
-        paimon::editormusic::EditorMusicPlayer::get().resumeFromSuspend();
+        paimon::editormusic::syncEditorMusicSuspend(this);
     }
 };
 
@@ -97,7 +97,7 @@ class $modify(PaimonEditorMusicUI, EditorUI) {
         if (!editorMusicEnabled()) return true;
 
         auto* button = paimon::editor::assets::squareButton(
-            "",
+            "paim_editor_music.png",
             {"GJ_musicOnBtn_001.png", "GJ_playMusicBtn_001.png", "GJ_optionsBtn_001.png"},
             0.85f,
             EditorBaseColor::Aqua,
@@ -107,17 +107,29 @@ class $modify(PaimonEditorMusicUI, EditorUI) {
         if (!button) return true;
         button->setID("editor-music-button"_spr);
 
-        if (auto* menu = paimon::editor::hostToolbarMenu(this)) {
-            menu->addChild(button);
-            if (menu->getLayout()) menu->updateLayout();
-        } else {
-            auto* fallback = CCMenu::create();
-            fallback->setID("editor-music-toolbar-menu"_spr);
-            fallback->setPosition({28.f, CCDirector::get()->getWinSize().height - 200.f});
-            fallback->addChild(button);
-            addChild(fallback, 100);
-        }
+        paimon::editor::addToolbarButton(
+            this,
+            button,
+            "editor-music-toolbar-menu"_spr,
+            {28.f, CCDirector::get()->getWinSize().height - 200.f}
+        );
         return true;
+    }
+
+    $override
+    void onPlayback(CCObject* sender) {
+        // Suspend before vanilla playback starts the level track so they never overlap.
+        if (!paimon::editormusic::isEditorVanillaAudioActive(m_editorLayer)) {
+            paimon::editormusic::EditorMusicPlayer::get().suspend();
+        }
+        EditorUI::onPlayback(sender);
+        paimon::editormusic::syncEditorMusicSuspend(m_editorLayer);
+    }
+
+    $override
+    void updatePlaybackBtn() {
+        EditorUI::updatePlaybackBtn();
+        paimon::editormusic::syncEditorMusicSuspend(m_editorLayer);
     }
 
     $override

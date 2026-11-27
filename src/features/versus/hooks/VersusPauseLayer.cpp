@@ -38,24 +38,28 @@ class $modify(PaimonVersusPauseLayer, PauseLayer) {
         auto const winSize = CCDirector::get()->getWinSize();
 
         auto* menu = CCMenu::create();
+        if (!menu) return;
         menu->setPosition({0.f, 0.f});
         menu->setID("versus-pause-menu"_spr);
         this->addChild(menu, 100);
 
-        auto* face = ButtonSprite::create(
-            Localization::get().getString("versus.pause.forfeit").c_str(), 120, true,
-            "bigFont.fnt", "GJ_button_06.png", 28.f, 0.5f);
-        auto* forfeit = CCMenuItemSpriteExtra::create(
-            face, this, menu_selector(PaimonVersusPauseLayer::onPaimonForfeit));
-        forfeit->setPosition({winSize.width / 2.f, 34.f});
-        menu->addChild(forfeit);
+        if (auto* face = ButtonSprite::create(
+                Localization::get().getString("versus.pause.forfeit").c_str(), 120, true,
+                "bigFont.fnt", "GJ_button_06.png", 28.f, 0.5f)) {
+            if (auto* forfeit = CCMenuItemSpriteExtra::create(
+                    face, this, menu_selector(PaimonVersusPauseLayer::onPaimonForfeit))) {
+                forfeit->setPosition({winSize.width / 2.f, 34.f});
+                menu->addChild(forfeit);
+            }
+        }
 
-        auto* note = CCLabelBMFont::create(
-            Localization::get().getString("versus.pause.note").c_str(), "chatFont.fnt");
-        note->setScale(0.42f);
-        note->setOpacity(160);
-        note->setPosition({winSize.width / 2.f, 14.f});
-        this->addChild(note, 100);
+        if (auto* note = CCLabelBMFont::create(
+                Localization::get().getString("versus.pause.note").c_str(), "chatFont.fnt")) {
+            note->setScale(0.42f);
+            note->setOpacity(160);
+            note->setPosition({winSize.width / 2.f, 14.f});
+            this->addChild(note, 100);
+        }
     }
 
     void onPaimonForfeit(CCObject*) {

@@ -1109,7 +1109,10 @@ void ProgressiveBlurJob::tickPaimonBlur() {
             auto rt = CCRenderTexture::create(
                 static_cast<int>(upSize.width),
                 static_cast<int>(upSize.height));
-            if (!rt) break;
+            if (!rt || !rt->getSprite() || !rt->getSprite()->getTexture()) {
+                finish(m_currentSprite.data());
+                return;
+            }
 
             m_currentSprite->setShaderProgram(m_blurUp);
             m_blurUp->use();

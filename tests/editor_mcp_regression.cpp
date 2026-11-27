@@ -101,6 +101,8 @@ int main() {
         assert(instr.find("do NOT add unrequested backgrounds") != std::string::npos);
         assert(instr.find("Zero scattered or orphaned objects") != std::string::npos);
         assert(instr.find("Mandatory Visual QA") != std::string::npos);
+        assert(instr.find("Mythic / Feature-Grade Visual & Art Standard") != std::string::npos);
+        assert(instr.find("507/508") != std::string::npos);
         assert(instr.find("901 | Move") != std::string::npos);
         assert(instr.find("28=moveX") != std::string::npos);
         assert(instr.find("3619 | Item Edit") != std::string::npos);
@@ -187,6 +189,8 @@ int main() {
         auto decoText = matjson::parse(decoRes.body).unwrap()["result"]["content"][0]["text"].asString().unwrapOr("");
         assert(decoText.find("STRICT SCOPE") != std::string::npos);
         assert(decoText.find("NO SCATTERED OBJECTS") != std::string::npos);
+        assert(decoText.find("MACRO-STRUCTURED BLOCKS") != std::string::npos);
+        assert(decoText.find("ILLUSTRATED ART") != std::string::npos);
 
         auto geoRes = dispatchMcpJsonRpc(R"({"jsonrpc":"2.0","id":61,"method":"tools/call","params":{"name":"get_gd_reference","arguments":{"topic":"geometry"}}})");
         assert(geoRes.httpStatus == 200);

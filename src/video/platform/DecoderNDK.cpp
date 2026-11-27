@@ -506,14 +506,23 @@ void DecoderNDK::State::decodeLoop() {
                 break;
             }
 
-            // older ndk versions return an invalid capacity; bufferinfo.size is the payload length.
+            // older ndk versions return an invalid capacity; bufferinfo.size/offset bound the payload.
             size_t reportedCapacity = 0;
-            uint8_t* outBuf = AMediaCodec_getOutputBuffer(m_codec, outputIdx, &reportedCapacity);
-            size_t const outSize = info.size > 0 ? static_cast<size_t>(info.size) : 0;
-            if (!outBuf || outSize == 0) {
+            uint8_t* rawOutBuf = AMediaCodec_getOutputBuffer(m_codec, outputIdx, &reportedCapacity);
+            size_t const outOffset = info.offset > 0 ? static_cast<size_t>(info.offset) : 0;
+            size_t outSize = info.size > 0 ? static_cast<size_t>(info.size) : 0;
+            if (!rawOutBuf || outSize == 0 || info.offset < 0) {
                 AMediaCodec_releaseOutputBuffer(m_codec, outputIdx, false);
                 continue;
             }
+            if (reportedCapacity > 0) {
+                if (outOffset >= reportedCapacity) {
+                    AMediaCodec_releaseOutputBuffer(m_codec, outputIdx, false);
+                    continue;
+                }
+                outSize = std::min(outSize, reportedCapacity - outOffset);
+            }
+            uint8_t* outBuf = rawOutBuf + outOffset;
 
             auto* slot = m_ring.nextWrite();
             if (!slot) {

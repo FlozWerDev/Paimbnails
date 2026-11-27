@@ -41,7 +41,12 @@ public:
     bool isOpen() const;
 
     // re-send the current snapshot when re-entering an open room.
-    void requestResync();
+    using ResyncCb = std::function<void(bool ok, int status)>;
+    void requestResync(ResyncCb cb = {});
+
+    // surgical 32-bucket digest comparison to avoid full-room wipes on minor desync.
+    using ReconcileBucketsCb = std::function<void(bool ok, int status, matjson::Value const& body)>;
+    void sendReconcileBuckets(matjson::Value const& buckets, ReconcileBucketsCb cb);
 
     // route value.t ("op_batch" or "set_perms") to its endpoint.
     void sendJson(matjson::Value const& value);
@@ -72,10 +77,11 @@ private:
     void applyAppearanceBody(matjson::Value& body) const;
     void onJoinLikeSuccess(matjson::Value value);
     void poll();
-    enum class RetryAction : std::uint8_t { Join, Poll };
+    enum class RetryAction : std::uint8_t { Create, Join, Poll };
     void scheduleDelayed(uint64_t gen, int ms, RetryAction action);
     void scheduleRetry(uint64_t gen, int ms);
     void scheduleJoinRetry(uint64_t gen, int ms);
+    void scheduleCreateRetry(uint64_t gen, int ms);
     void dispatchStateJson(std::string channel, std::string suffix, matjson::Value body);
     void emitError(std::string const& code, std::string const& message);
     std::string apiUrl(std::string const& suffix) const;
@@ -95,6 +101,7 @@ private:
     int m_pollFailures = 0;
     // retry join 404s while the host or server is still starting.
     int m_joinRetries = 0;
+    int m_createRetries = 0;
     int m_hostReconnectRetries = 0;
     std::unordered_set<std::string> m_stateRequestsInFlight;
     std::unordered_map<std::string, PendingStateRequest> m_pendingStateRequests;

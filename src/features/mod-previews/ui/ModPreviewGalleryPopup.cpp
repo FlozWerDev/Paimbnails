@@ -63,6 +63,24 @@ bool ModPreviewGalleryPopup::init(int index, int total, std::string base) {
     return true;
 }
 
+ModPreviewGalleryPopup::~ModPreviewGalleryPopup() {
+    detachSprite();
+}
+
+void ModPreviewGalleryPopup::onExit() {
+    detachSprite();
+    PaimonPopup::onExit();
+}
+
+void ModPreviewGalleryPopup::detachSprite() {
+    if (m_alive) *m_alive = false;
+    if (m_sprite) {
+        m_sprite->setLoadCallback(nullptr);
+        m_sprite->cancelLoad();
+        m_sprite = nullptr;
+    }
+}
+
 void ModPreviewGalleryPopup::openIndex(int index) {
     m_index = std::clamp(index, 1, m_total);
     m_gen++;
@@ -80,11 +98,10 @@ void ModPreviewGalleryPopup::openIndex(int index) {
     m_sprite = sprite;
     sprite->setVisible(false);
     m_mainLayer->addChildAtPosition(sprite, Anchor::Center, {0, 12});
-    WeakRef<ModPreviewGalleryPopup> weakSelf = this;
-    sprite->setLoadCallback([weakSelf, gen](Result<> res) {
-        auto self = weakSelf.lock();
-        if (!self || gen != self->m_gen || res.isErr()) return;
-        auto* spr = self->m_sprite;
+    auto alive = m_alive;
+    sprite->setLoadCallback([alive, this, gen](Result<> res) {
+        if (!alive || !*alive || gen != m_gen || res.isErr()) return;
+        auto* spr = m_sprite;
         if (!spr) return;
         float w = spr->getContentWidth();
         float h = spr->getContentHeight();

@@ -90,16 +90,27 @@ float shapeSpill(
 // so outside it the point reads as rejected without asking.
 bool xformSpan(ShapeXform const& shape, float y, float& fromX, float& toX);
 
-// walks the samples a figure covers on a `scale`-samples-per-cell grid, in
-// sample coords. returning true from `fn` cuts.
+// walks the samples a figure covers on a `scale`-samples-per-cell grid, clipped to
+// sample rows [rowBegin, rowEnd), in sample coords. returning true from `fn` cuts.
 template <typename Fn>
-bool forEachSample(ShapeXform const& shape, int width, int height, int scale, Fn&& fn) {
+bool forEachSampleInRows(
+    ShapeXform const& shape,
+    int width,
+    int height,
+    int scale,
+    int rowBegin,
+    int rowEnd,
+    Fn&& fn
+) {
     auto const box = xformBox(shape, width, height);
     if (box[2] < box[0] || box[3] < box[1]) return false;
+    int const yFirst = std::max(rowBegin, box[1] * scale);
+    int const yLast = std::min(rowEnd - 1, (box[3] + 1) * scale - 1);
+    if (yFirst > yLast) return false;
     int const lowX = box[0] * scale;
     int const highX = (box[2] + 1) * scale - 1;
     float const step = 1.f / static_cast<float>(scale);
-    for (int y = box[1] * scale; y <= (box[3] + 1) * scale - 1; ++y) {
+    for (int y = yFirst; y <= yLast; ++y) {
         float const sampleY = (static_cast<float>(y) + 0.5f) * step;
         float spanFrom = 0.f;
         float spanTo = 0.f;
@@ -114,6 +125,14 @@ bool forEachSample(ShapeXform const& shape, int width, int height, int scale, Fn
         }
     }
     return false;
+}
+
+// walks the samples a figure covers on a `scale`-samples-per-cell grid, in
+// sample coords. returning true from `fn` cuts.
+template <typename Fn>
+bool forEachSample(ShapeXform const& shape, int width, int height, int scale, Fn&& fn) {
+    return forEachSampleInRows(
+        shape, width, height, scale, 0, height * scale, std::forward<Fn>(fn));
 }
 
 } // namespace paimon::gifimport

@@ -114,16 +114,25 @@ struct FrameKey {
     int x = 0, y = 0, w = 0, h = 0;
     bool rotated = false;
 
-    bool operator<(FrameKey const& other) const {
-        return std::tie(texture, x, y, w, h, rotated) <
-               std::tie(other.texture, other.x, other.y, other.w, other.h, other.rotated);
+    bool operator==(FrameKey const&) const = default;
+};
+
+struct FrameKeyHash {
+    std::size_t operator()(FrameKey const& k) const noexcept {
+        std::size_t h = reinterpret_cast<std::uintptr_t>(k.texture);
+        h = h * 1099511628211ull ^ static_cast<std::size_t>(k.x);
+        h = h * 1099511628211ull ^ static_cast<std::size_t>(k.y);
+        h = h * 1099511628211ull ^ static_cast<std::size_t>(k.w);
+        h = h * 1099511628211ull ^ static_cast<std::size_t>(k.h);
+        h = h * 1099511628211ull ^ static_cast<std::size_t>(k.rotated ? 1 : 0);
+        return h;
     }
 };
 
-FrameKey keyForFrame(CCSpriteFrame* frame) {
+FrameKey keyForFrame(CCSpriteFrame* frame, CCTexture2D* texture) {
     auto rect = frame->getRect();
     return {
-        frame->getTexture(),
+        texture,
         static_cast<int>(std::lround(rect.origin.x)),
         static_cast<int>(std::lround(rect.origin.y)),
         static_cast<int>(std::lround(rect.size.width)),
@@ -132,20 +141,26 @@ FrameKey keyForFrame(CCSpriteFrame* frame) {
     };
 }
 
-std::map<FrameKey, std::string> const& frameNameIndex() {
-    static std::map<FrameKey, std::string> index;
+std::unordered_map<FrameKey, std::string, FrameKeyHash> const& frameNameIndex() {
+    static std::unordered_map<FrameKey, std::string, FrameKeyHash> index;
     static unsigned int builtFrom = 0;
+    static unsigned int builtTextures = 0;
 
     auto* cache = CCSpriteFrameCache::sharedSpriteFrameCache();
     auto* frames = cache ? cache->m_pSpriteFrames : nullptr;
     if (!frames) return index;
-    if (!index.empty() && frames->count() == builtFrom) return index;
+    auto* texCache = CCTextureCache::sharedTextureCache();
+    unsigned int const texCount = (texCache && texCache->m_pTextures) ? texCache->m_pTextures->count() : 0;
+    if (!index.empty() && frames->count() == builtFrom && texCount == builtTextures) return index;
 
     index.clear();
+    index.reserve(frames->count());
     builtFrom = frames->count();
+    builtTextures = texCount;
     for (auto [name, frame] : frames->asExt<std::string_view, CCSpriteFrame>()) {
-        if (!frame) continue;
-        auto& slot = index[keyForFrame(frame)];
+        // Read m_pobTexture directly so we never trigger synchronous disk loads on lazy sheets.
+        if (!frame || !frame->m_pobTexture) continue;
+        auto& slot = index[keyForFrame(frame, frame->m_pobTexture)];
         if (betterFrameName(name, slot)) slot = std::string(name);
     }
     return index;
@@ -154,10 +169,11 @@ std::map<FrameKey, std::string> const& frameNameIndex() {
 std::string frameNameForSprite(CCSprite* sprite) {
     if (!sprite) return {};
     auto* displayed = sprite->displayFrame();
-    if (!displayed || !displayed->getTexture()) return {};
+    auto* tex = displayed ? displayed->m_pobTexture : nullptr;
+    if (!displayed || !tex) return {};
 
     auto const& index = frameNameIndex();
-    auto found = index.find(keyForFrame(displayed));
+    auto found = index.find(keyForFrame(displayed, tex));
     return found == index.end() ? std::string() : found->second;
 }
 

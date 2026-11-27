@@ -999,6 +999,7 @@ CCNode* CommunityHubLayer::addScrollList(float contentHeight) {
     float totalH = std::max(contentHeight, m_listH);
 
     auto scroll = ScrollLayer::create({m_listW, m_listH});
+    scroll->setAnchorPoint({0.f, 0.f});
     scroll->setPosition({m_listCenter.x - m_listW / 2.f, m_listCenter.y - m_listH / 2.f});
     scroll->m_contentLayer->setContentSize({m_listW, totalH});
     scroll->m_contentLayer->setPositionY(m_listH - totalH);

@@ -137,9 +137,8 @@ vec2 imageCoordinates() {
     return (0.5 + clamp(animateGradient(uv), 0.0, 1.0) * 255.0) / 256.0;
 }
 
-vec4 pointColor(int index, vec2 imageUV) {
-    if (u_imageMode == 0 || u_imageSlots[index] < 0.0) return colors[index];
-    float slot = u_imageSlots[index];
+vec4 samplePointColor(float slot, vec4 col, vec2 imageUV) {
+    if (u_imageMode == 0 || slot < 0.0 || u_imageAtlasGrid.x <= 0.0 || u_imageAtlasGrid.y <= 0.0) return col;
     vec2 tile = vec2(mod(slot, u_imageAtlasGrid.x), floor(slot / u_imageAtlasGrid.x));
     return texture2D(u_image, (tile + imageUV) / u_imageAtlasGrid);
 }
@@ -153,14 +152,15 @@ void main() {
     vec2 imageUV = imageCoordinates();
 
     if (stopAt <= 1) {
-        gl_FragColor = pointColor(0, imageUV) * texColor;
+        gl_FragColor = samplePointColor(u_imageSlots[0], colors[0], imageUV) * texColor;
         return;
     }
 
     vec4 finalColor = vec4(0.0);
     float totalWeight = 0.0;
 
-    vec2 uv = animateGradient((v_texCoord - uvMin) / (uvMax - uvMin));
+    vec2 uvSpan = max(uvMax - uvMin, vec2(1e-5));
+    vec2 uv = animateGradient((v_texCoord - uvMin) / uvSpan);
 
     for (int i = 0; i < 24; ++i) {
         if (i >= stopAt) break;
@@ -170,9 +170,9 @@ void main() {
 
         float weight = 1.0 / max(dist, 0.001);
 
-        finalColor += pointColor(i, imageUV) * weight;
+        finalColor += samplePointColor(u_imageSlots[i], colors[i], imageUV) * weight;
         totalWeight += weight;
     }
 
-    gl_FragColor = finalColor / totalWeight * texColor;
+    gl_FragColor = (finalColor / max(totalWeight, 1e-5)) * texColor;
 }

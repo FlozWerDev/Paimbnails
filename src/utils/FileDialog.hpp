@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/utils/file.hpp>
 #include <functional>
@@ -13,6 +13,8 @@ namespace pt {
     geode::utils::file::FilePickOptions::Filter audioFilter();
     geode::utils::file::FilePickOptions::Filter videoFilter();
     geode::utils::file::FilePickOptions::Filter mediaFilter();
+    // images, gifs, videos, webp and vector svgs for the editor object importer.
+    geode::utils::file::FilePickOptions::Filter editorMediaFilter();
     geode::utils::file::FilePickOptions::Filter pngFilter();
     geode::utils::file::FilePickOptions::Filter gifFilter();
     // images + windows cursors (.cur/.ico/.ani) + .zip packs.
@@ -31,6 +33,7 @@ namespace pt {
     void pickAudio(FilePickCallback callback);
     void pickVideo(FilePickCallback callback);
     void pickMedia(FilePickCallback callback);
+    void pickEditorMedia(FilePickCallback callback);
     void saveImage(std::string const& defaultName, FilePickCallback callback);
     void saveJson(std::string const& defaultName, FilePickCallback callback);
     void pickFolder(FilePickCallback callback);

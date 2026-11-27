@@ -910,42 +910,48 @@ void watchNode(CCNode* root, unsigned frame, CCScene* ownerScene = nullptr) {
         watches.push_back({.root = root, .isPopup = popup != nullptr});
         it = std::prev(watches.end());
     }
-    auto& watch = *it;
-    watch.seenFrame = frame;
+    std::size_t const watchIdx = static_cast<std::size_t>(std::distance(watches.begin(), it));
+    watches[watchIdx].seenFrame = frame;
 
     std::size_t const curLayout = layoutOf(tracked);
-    bool const unchanged = watch.mainLayer == tracked && watch.layout == curLayout;
+    bool const unchanged = watches[watchIdx].mainLayer == tracked && watches[watchIdx].layout == curLayout;
     if (unchanged) {
-        if (watch.isPopup && !watch.host) {
-            if (frame - watch.scanFrame < kRescanFrames) return;
+        if (watches[watchIdx].isPopup && !watches[watchIdx].host) {
+            if (frame - watches[watchIdx].scanFrame < kRescanFrames) return;
         } else {
-            bool const intact = !watch.host || plateIntact(tracked, watch.host);
-            if (intact && secondsNow() - watch.scanTime < kChromeRescanSeconds) return;
+            bool const intact = !watches[watchIdx].host || plateIntact(tracked, watches[watchIdx].host);
+            if (intact && secondsNow() - watches[watchIdx].scanTime < kChromeRescanSeconds) return;
         }
     }
 
-    watch.mainLayer = tracked;
-    watch.scanFrame = frame;
-    watch.scanTime = secondsNow();
+    watches[watchIdx].mainLayer = tracked;
+    watches[watchIdx].scanFrame = frame;
+    watches[watchIdx].scanTime = secondsNow();
+    CCNode* newHost = nullptr;
     if (popup) {
-        watch.host = decoratePopup(popup);
+        newHost = decoratePopup(popup);
     } else if (dropdown) {
         decorateDropDown(dropdown);
-        watch.host = nullptr;
     } else if (dialog) {
         decorateDialogLayer(dialog);
-        watch.host = nullptr;
     } else if (typeinfo_cast<AchievementBar*>(root) || typeinfo_cast<TextAlertPopup*>(root) ||
                typeinfo_cast<Notification*>(root)) {
         decorateBannerNode(root);
-        watch.host = nullptr;
     } else {
         ensureBackdropProbe(root);
         seedBackdropFromLayer(root, ownerScene);
         decorateUiRoot(root);
-        watch.host = nullptr;
     }
-    watch.layout = layoutOf(tracked);
+    // Re-lookup in case decorate*() caused watches to reallocate.
+    auto& updatedWatches = layerWatches();
+    if (watchIdx < updatedWatches.size() && updatedWatches[watchIdx].root == root) {
+        updatedWatches[watchIdx].host = newHost;
+        updatedWatches[watchIdx].layout = layoutOf(tracked);
+    } else if (auto retry = std::ranges::find(updatedWatches, static_cast<CCNode const*>(root), &LayerWatch::root);
+               retry != updatedWatches.end()) {
+        retry->host = newHost;
+        retry->layout = layoutOf(tracked);
+    }
 }
 
 void watchScene(CCScene* scene, unsigned frame) {
@@ -1042,6 +1048,9 @@ void decorateUiRoot(CCNode* root) {
 
 void decorateButtonSprite(ButtonSprite* button, bool immediateReveal) {
     if (!button || !AmbientRuntime::get().allows(AmbientScope::Buttons)) return;
+    if (!button->getParent() && (LevelEditorLayer::get() != nullptr || PlayLayer::get() != nullptr)) {
+        return;
+    }
     if (isNodeIgnoredForAmbient(button)) return;
     button->setUserObject("paimon-ambient-decorated"_spr, CCBool::create(true));
     if (auto* bg = button->m_BGSprite) {

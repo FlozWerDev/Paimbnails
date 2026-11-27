@@ -5,6 +5,7 @@
 #include "../services/PaimbnailsNewsService.hpp"
 #include "../ui/NewsServerPickerPopup.hpp"
 #include "../ui/PaimbnailsNewsPanel.hpp"
+#include "../ui/TopNewsForumsLayer.hpp"
 
 #include "../../../framework/HookConventions.hpp"
 #include "../../../ui/PaiConfigKit.hpp"
@@ -69,6 +70,8 @@ class $modify(PaimonNewsPopup, NewsPopup) {
         std::vector<TabEntry> tabEntries;
         std::unordered_map<std::string, WeakRef<paimon::news::PaimbnailsNewsPanel>> panelsByChannel;
         CCMenuItemSpriteExtra* plusButton = nullptr;
+        CCMenuItemSpriteExtra* topButton = nullptr;
+        CCMenuItemSpriteExtra* refreshButton = nullptr;
         std::string vanillaTitle;
         std::string activeTabId;
         float vanillaTitleScale = 1.f;
@@ -157,6 +160,9 @@ class $modify(PaimonNewsPopup, NewsPopup) {
         fields->bgWidth = bg.size.width;
         fields->tabBottomY = bg.position.y - bg.size.height * bg.anchor.y;
 
+        float const bgRightX = fields->bgCenterX + fields->bgWidth * 0.5f;
+        float const bgTopY = fields->tabBottomY + bg.size.height;
+
         // "+" opens the server picker. It sits in the tab row, on the same edge as the tabs.
         auto* plus = paimon::ui::makeButton("+", [this] { this->openNewsServerPicker(); },
             paimon::ui::Btn::Cyan, kPlusSide, kPlusScale, "bigFont.fnt");
@@ -166,8 +172,38 @@ class $modify(PaimonNewsPopup, NewsPopup) {
             fields->plusButton = plus;
         }
 
+        // "Top" opens the ranked Top News Forums layer.
+        auto* topBtn = paimon::ui::makeButton("Top", [this] { this->openTopNewsForums(); },
+            paimon::ui::Btn::Blue, 40.f, kPlusScale, "bigFont.fnt");
+        if (topBtn) {
+            topBtn->setID("news-top-forums-button"_spr);
+            menu->addChild(topBtn, 5);
+            fields->topButton = topBtn;
+        }
+
+        if (auto* refreshIcon = CCSprite::createWithSpriteFrameName("GJ_updateBtn_001.png")) {
+            constexpr float kRefreshSize = 20.f;
+            float const targetScale = refreshIcon->getContentSize().height > 0.f
+                ? (kRefreshSize / refreshIcon->getContentSize().height)
+                : 0.45f;
+            refreshIcon->setScale(targetScale);
+            auto* refresh = CCMenuItemSpriteExtra::create(
+                refreshIcon, this, menu_selector(PaimonNewsPopup::onRefreshActiveNewsTab));
+            if (refresh) {
+                refresh->setID("news-refresh-button"_spr);
+                refresh->setPosition(menu->convertToNodeSpace(
+                    layer->convertToWorldSpace({bgRightX - 40.f, bgTopY - 21.f})));
+                menu->addChild(refresh, 5);
+                fields->refreshButton = refresh;
+            }
+        }
+
         auto& newsService = paimon::news::NewsService::get();
-        if (newsService.isVanillaEnabled()) {
+        auto const pendingChannel = newsService.consumePendingOpenChannel();
+        if (!pendingChannel.empty()) {
+            newsService.setSourceEnabled(pendingChannel, true);
+            fields->activeTabId = pendingChannel;
+        } else if (newsService.isVanillaEnabled()) {
             fields->activeTabId = std::string(paimon::news::kVanillaSourceId);
         } else if (auto enabled = newsService.enabledProviders(); !enabled.empty()) {
             fields->activeTabId = enabled.front().channelId;
@@ -217,6 +253,10 @@ class $modify(PaimonNewsPopup, NewsPopup) {
         fields->tabEntries.clear();
 
         auto& newsService = paimon::news::NewsService::get();
+        if (auto const pending = newsService.consumePendingOpenChannel(); !pending.empty()) {
+            newsService.setSourceEnabled(pending, true);
+            fields->activeTabId = pending;
+        }
         if (newsService.isVanillaEnabled()) {
             fields->tabEntries.push_back(TabEntry{
                 .id = std::string(paimon::news::kVanillaSourceId),
@@ -287,12 +327,17 @@ class $modify(PaimonNewsPopup, NewsPopup) {
         }
 
         std::vector<CCMenuItem*> rowItems;
-        rowItems.reserve(fields->tabs.size() + 1);
+        rowItems.reserve(fields->tabs.size() + 2);
         for (auto* button : fields->tabs) rowItems.push_back(button);
         if (fields->plusButton) {
             fields->plusButton->setScale(kPlusScale);
             fields->plusButton->m_baseScale = kPlusScale;
             rowItems.push_back(fields->plusButton);
+        }
+        if (fields->topButton) {
+            fields->topButton->setScale(kPlusScale);
+            fields->topButton->m_baseScale = kPlusScale;
+            rowItems.push_back(fields->topButton);
         }
 
         float const maxHalf = std::max(80.f, fields->bgWidth * 0.5f - 14.f);
@@ -313,6 +358,22 @@ class $modify(PaimonNewsPopup, NewsPopup) {
             if (fields->plusButton) {
                 popInButton(fields->plusButton, kEntranceStep * static_cast<float>(fields->tabs.size() + 1));
             }
+            if (fields->topButton) {
+                popInButton(fields->topButton, kEntranceStep * static_cast<float>(fields->tabs.size() + 2));
+            }
+            if (fields->refreshButton && fields->refreshButton->isVisible()) {
+                popInButton(fields->refreshButton, kEntranceStep * static_cast<float>(fields->tabs.size() + 3));
+            }
+        }
+    }
+
+    void onRefreshActiveNewsTab(CCObject*) {
+        auto* fields = m_fields.self();
+        for (auto const& entry : fields->tabEntries) {
+            if (!entry.isVanilla && entry.id == fields->activeTabId) {
+                if (auto panel = entry.panel.lock()) panel->refresh();
+                break;
+            }
         }
     }
 
@@ -331,6 +392,17 @@ class $modify(PaimonNewsPopup, NewsPopup) {
         // retaining this popup, which then dangles once it is closed.
         fields->serverPicker = WeakRef<paimon::news::NewsServerPickerPopup>(popup);
         paimon::configkit::showAbove(popup, this);
+    }
+
+    void openTopNewsForums() {
+        WeakRef<NewsPopup> weak = this;
+        paimon::news::TopNewsForumsLayer::open([weak](std::string const& channelId) {
+            if (auto owner = weak.lock()) {
+                auto* self = static_cast<PaimonNewsPopup*>(owner.data());
+                self->m_fields->activeTabId = channelId;
+                self->rebuildNewsTabs(false);
+            }
+        });
     }
 
     void refreshPaimbnailsNewsTabSkins() {
@@ -379,6 +451,11 @@ class $modify(PaimonNewsPopup, NewsPopup) {
                 title->setString(activeTitle.c_str());
                 title->limitLabelWidth(kTitleMaxWidth, fields->vanillaTitleScale, 0.3f);
             }
+        }
+
+        if (fields->refreshButton) {
+            fields->refreshButton->setVisible(!isVanilla);
+            fields->refreshButton->setEnabled(!isVanilla);
         }
 
         this->refreshPaimbnailsNewsTabSkins();

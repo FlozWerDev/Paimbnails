@@ -52,19 +52,27 @@ bool ProfileLevelsPanel::initialize(int userID, CCSize size) {
     auto* menu = ui::makeZeroMenu();
     addChild(menu, 2);
     m_previous = ui::makeFrameButton("GJ_arrow_01_001.png", .38f, [this] { changePage(-1); });
-    m_previous->setID("rd-levels-previous"_spr);
-    m_previous->setPosition({10.f, 9.f});
-    menu->addChild(m_previous);
+    if (m_previous) {
+        m_previous->setID("rd-levels-previous"_spr);
+        m_previous->setPosition({10.f, 9.f});
+        menu->addChild(m_previous);
+    }
     m_next = ui::makeFrameButton("GJ_arrow_01_001.png", .38f, [this] { changePage(1); });
-    m_next->setID("rd-levels-next"_spr);
-    static_cast<CCSprite*>(m_next->getNormalImage())->setFlipX(true);
-    m_next->setPosition({size.width - 10.f, 9.f});
-    menu->addChild(m_next);
+    if (m_next) {
+        m_next->setID("rd-levels-next"_spr);
+        if (auto* spr = typeinfo_cast<CCSprite*>(m_next->getNormalImage())) {
+            spr->setFlipX(true);
+        }
+        m_next->setPosition({size.width - 10.f, 9.f});
+        menu->addChild(m_next);
+    }
     m_retry = ui::makeButton(localized("Reintentar", "Retry"), [this] { retryLoading(); }, ui::Btn::Cyan, 70.f, .45f);
-    m_retry->setID("rd-levels-retry"_spr);
-    m_retry->setPosition({size.width * .5f, 9.f});
-    m_retry->setVisible(false);
-    menu->addChild(m_retry);
+    if (m_retry) {
+        m_retry->setID("rd-levels-retry"_spr);
+        m_retry->setPosition({size.width * .5f, 9.f});
+        m_retry->setVisible(false);
+        menu->addChild(m_retry);
+    }
     m_pageLabel = CCLabelBMFont::create("", "chatFont.fnt");
     m_pageLabel->setID("rd-levels-page-label"_spr);
     m_pageLabel->setScale(.4f);
@@ -209,6 +217,10 @@ void ProfileLevelsPanel::renderPage() {
     m_scroll->m_contentLayer->removeAllChildren();
     m_visibleLevels.clear();
     auto const levels = m_catalog.page(m_page);
+    if (levels.empty()) {
+        showStatus(localized("Este creador no tiene niveles publicados", "This creator has no published levels"));
+        return;
+    }
     float const width = m_scroll->getContentWidth();
     constexpr float naturalHeight = 44.f;
     constexpr float rowGap = 3.f;

@@ -6,6 +6,7 @@
 
 #include <Geode/Geode.hpp>
 
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -33,6 +34,12 @@ private:
     void pickSource();
     void loadSource(std::filesystem::path const& path);
     void loadAnimated(
+        std::filesystem::path const& path,
+        std::shared_ptr<std::vector<std::uint8_t>> bytes);
+    void loadWebP(
+        std::filesystem::path const& path,
+        std::shared_ptr<std::vector<std::uint8_t>> bytes);
+    void loadSvg(
         std::filesystem::path const& path,
         std::shared_ptr<std::vector<std::uint8_t>> bytes);
     void loadStill(
@@ -75,6 +82,9 @@ private:
     void showBusy(std::string const& text);
     void hideBusy();
     void onSpawnFailed();
+    void openSvgCreditsPopup();
+    void promptInstallOpenVector();
+    void cancelVectorize();
 
     Options m_options;
     std::filesystem::path m_path;
@@ -83,6 +93,12 @@ private:
     std::shared_ptr<ImportPlan> m_plan;
     std::shared_ptr<SourceLoadState> m_sourceLoad;
     std::shared_ptr<ProcessingProgress> m_progress;
+    std::vector<SvgFrame> m_vectorizedFrames;
+    int m_vectorizedQuality = -1;
+    int m_vectorizedMaxFrames = -1;
+    int m_vectorizedSourceFrames = 0;
+    std::shared_ptr<std::atomic<bool>> m_vectorizeCancel;
+    bool m_openVectorPromptDeclined = false;
     bool m_processing = false;
     bool m_reprocess = false;
     int m_scaledFor = 0;

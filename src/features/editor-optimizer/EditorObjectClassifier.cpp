@@ -132,13 +132,16 @@ SpriteCapabilityInfo analyzeSpritePixels(int objectID, GameObject* sampleObject)
     baseSprite->setOpacity(255);
 
     CCSprite* detailSprite = nullptr;
-    if (auto* detail = probe->m_colorSprite) {
+    if (auto* detail = probe->m_colorSprite; detail && detail->isVisible()) {
         if (auto* detailFrame = detail->displayFrame()) {
             detailSprite = CCSprite::createWithSpriteFrame(detailFrame);
             if (detailSprite) {
-                detailSprite->setAnchorPoint({0.5f, 0.5f});
+                detailSprite->setAnchorPoint(detail->getAnchorPoint());
                 detailSprite->setScaleX(scaleX * detail->getScaleX());
                 detailSprite->setScaleY(scaleY * detail->getScaleY());
+                detailSprite->setRotation(detail->getRotation());
+                detailSprite->setFlipX(detail->isFlipX());
+                detailSprite->setFlipY(detail->isFlipY());
                 auto const rel = detail->getPosition() - content * 0.5f;
                 detailSprite->setPosition({
                     kSampleSide * 0.5f + rel.x * scaleX,
@@ -150,9 +153,40 @@ SpriteCapabilityInfo analyzeSpritePixels(int objectID, GameObject* sampleObject)
         }
     }
 
+    // Also collect any extra visible CCSprite children (e.g. inner patterns/black fills)
+    // so blocks with non-stretchable internal child artwork are classified accurately.
+    std::vector<CCSprite*> extraSprites;
+    if (auto* children = probe->getChildren()) {
+        for (auto* child : CCArrayExt<CCObject*>(children)) {
+            auto* sp = typeinfo_cast<CCSprite*>(child);
+            if (!sp || !sp->isVisible() || sp == probe->m_colorSprite || sp == probe->m_glowSprite) {
+                continue;
+            }
+            if (auto* childFrame = sp->displayFrame()) {
+                if (auto* copy = CCSprite::createWithSpriteFrame(childFrame)) {
+                    copy->setAnchorPoint(sp->getAnchorPoint());
+                    copy->setScaleX(scaleX * sp->getScaleX());
+                    copy->setScaleY(scaleY * sp->getScaleY());
+                    copy->setRotation(sp->getRotation());
+                    copy->setFlipX(sp->isFlipX());
+                    copy->setFlipY(sp->isFlipY());
+                    auto const rel = sp->getPosition() - content * 0.5f;
+                    copy->setPosition({
+                        kSampleSide * 0.5f + rel.x * scaleX,
+                        kSampleSide * 0.5f + rel.y * scaleY,
+                    });
+                    copy->setColor(sp->getColor());
+                    copy->setOpacity(sp->getOpacity());
+                    extraSprites.push_back(copy);
+                }
+            }
+        }
+    }
+
     canvas->beginWithClear(0.f, 0.f, 0.f, 0.f);
     baseSprite->visit();
     if (detailSprite) detailSprite->visit();
+    for (auto* extra : extraSprites) extra->visit();
     canvas->end();
 
     auto* image = canvas->newCCImage(true);
@@ -206,31 +240,51 @@ SpriteCapabilityInfo analyzeSpritePixels(int objectID, GameObject* sampleObject)
     float const symX = static_cast<float>(symXSum / std::max(symXPairs, 1));
     float const symY = static_cast<float>(symYSum / std::max(symYPairs, 1));
 
-    // Check interior uniformity across middle columns [8..23] and middle rows [8..23].
-    constexpr int kMidStart = 8;
-    constexpr int kMidEnd = 23;
+    // Check interior uniformity across middle columns [6..25] and middle rows [6..25].
+    // Track both global mean and worst-row/worst-col variance so small centered emblems
+    // or corner rivets are not diluted across 32 rows/columns.
+    constexpr int kMidStart = 6;
+    constexpr int kMidEnd = 25;
     double varXSum = 0.0;
     int varXCount = 0;
+    float maxRowVarX = 0.f;
     for (int y = 0; y < kSampleSide; ++y) {
         int const refIdx = (y * w + 16) * 4;
+        double rowSum = 0.0;
+        int rowCnt = 0;
         for (int x = kMidStart; x <= kMidEnd; ++x) {
             int const curIdx = (y * w + x) * 4;
             if (rgba[curIdx + 3] >= kAlphaThreshold || rgba[refIdx + 3] >= kAlphaThreshold) {
-                varXSum += pixelDiff(rgba, curIdx, refIdx);
+                float const d = pixelDiff(rgba, curIdx, refIdx);
+                varXSum += d;
                 ++varXCount;
+                rowSum += d;
+                ++rowCnt;
             }
+        }
+        if (rowCnt > 0) {
+            maxRowVarX = std::max(maxRowVarX, static_cast<float>(rowSum / rowCnt));
         }
     }
     double varYSum = 0.0;
     int varYCount = 0;
+    float maxColVarY = 0.f;
     for (int x = 0; x < kSampleSide; ++x) {
         int const refIdx = (16 * w + x) * 4;
+        double colSum = 0.0;
+        int colCnt = 0;
         for (int y = kMidStart; y <= kMidEnd; ++y) {
             int const curIdx = (y * w + x) * 4;
             if (rgba[curIdx + 3] >= kAlphaThreshold || rgba[refIdx + 3] >= kAlphaThreshold) {
-                varYSum += pixelDiff(rgba, curIdx, refIdx);
+                float const d = pixelDiff(rgba, curIdx, refIdx);
+                varYSum += d;
                 ++varYCount;
+                colSum += d;
+                ++colCnt;
             }
+        }
+        if (colCnt > 0) {
+            maxColVarY = std::max(maxColVarY, static_cast<float>(colSum / colCnt));
         }
     }
     float const interiorVarX = static_cast<float>(varXSum / std::max(varXCount, 1));
@@ -239,9 +293,14 @@ SpriteCapabilityInfo analyzeSpritePixels(int objectID, GameObject* sampleObject)
     // Check full-box uniformity (e.g. solid flat color square or slab).
     int const centerIdx = (16 * w + 16) * 4;
     double allVarSum = 0.0;
+    float maxCenterDiff = 0.f;
     for (int y = 0; y < kSampleSide; ++y) {
         for (int x = 0; x < kSampleSide; ++x) {
-            allVarSum += pixelDiff(rgba, (y * w + x) * 4, centerIdx);
+            float const d = pixelDiff(rgba, (y * w + x) * 4, centerIdx);
+            allVarSum += d;
+            if (x >= 1 && x <= kSampleSide - 2 && y >= 1 && y <= kSampleSide - 2) {
+                maxCenterDiff = std::max(maxCenterDiff, d);
+            }
         }
     }
     float const allVar = static_cast<float>(allVarSum / (kSampleSide * kSampleSide));
@@ -279,14 +338,17 @@ SpriteCapabilityInfo analyzeSpritePixels(int objectID, GameObject* sampleObject)
 
     bool const squareAspect = std::abs(content.width - content.height) <= 2.f && content.width >= 14.f;
     bool const flatBox = (allVar <= 0.03f) &&
+                         (maxCenterDiff <= 0.08f) &&
                          (covered >= static_cast<int>(kSampleSide * kSampleSide * 0.90f)) &&
                          (content.width >= 8.f && content.height >= 8.f);
     if (flatBox) {
         return {StretchCapability::Uniform2D, squareAspect};
     }
 
-    bool canX = (symX <= 0.07f) && (interiorVarX <= 0.06f) && !cornerGapX && (content.width >= 12.f);
-    bool canY = (symY <= 0.07f) && (interiorVarY <= 0.06f) && !cornerGapY && (content.height >= 12.f);
+    bool canX = (symX <= 0.07f) && (interiorVarX <= 0.06f) && (maxRowVarX <= 0.18f) &&
+                !cornerGapX && (content.width >= 12.f);
+    bool canY = (symY <= 0.07f) && (interiorVarY <= 0.06f) && (maxColVarY <= 0.18f) &&
+                !cornerGapY && (content.height >= 12.f);
 
     if (content.width > content.height * 1.8f) canY = false;
     if (content.height > content.width * 1.8f) canX = false;
@@ -321,7 +383,7 @@ float canonicalizeRotation(
     float baseWidth,
     float baseHeight
 ) {
-    bool const squareBase = std::abs(baseWidth - baseHeight) <= 0.5f;
+    bool const squareBase = std::abs(baseWidth - baseHeight) <= 0.2f;
     if ((stretch == StretchCapability::Uniform2D || stretch == StretchCapability::Axis1D) &&
         rot90Sym && squareBase) {
         float r = std::fmod(normRot, 90.f);
@@ -339,12 +401,17 @@ float canonicalizeRotation(
 std::string colorSignature(GJSpriteColor const* color) {
     if (!color) return "none";
     if (!color->m_usesHSV) {
-        return fmt::format("{}:{:.2f}:{}", color->m_colorID, color->m_opacity,
-                           color->m_usesCustomBlend ? 1 : 0);
+        return fmt::format("{}/{}:{:.2f}/{:.2f}:{}:{},{},{}",
+                           color->m_colorID, color->m_defaultColorID,
+                           color->m_opacity, color->m_baseOpacity,
+                           color->m_usesCustomBlend ? 1 : 0,
+                           color->m_customColor.r, color->m_customColor.g, color->m_customColor.b);
     }
-    return fmt::format("{}:{:.2f}:{}:{:.2f},{:.2f},{:.2f},{},{}",
-                       color->m_colorID, color->m_opacity,
+    return fmt::format("{}/{}:{:.2f}/{:.2f}:{}:{},{},{}:{:.2f},{:.2f},{:.2f},{},{}",
+                       color->m_colorID, color->m_defaultColorID,
+                       color->m_opacity, color->m_baseOpacity,
                        color->m_usesCustomBlend ? 1 : 0,
+                       color->m_customColor.r, color->m_customColor.g, color->m_customColor.b,
                        color->m_hsv.h, color->m_hsv.s, color->m_hsv.v,
                        color->m_hsv.absoluteSaturation ? 1 : 0,
                        color->m_hsv.absoluteBrightness ? 1 : 0);
@@ -388,8 +455,35 @@ std::string buildCompatibilityKey(
     int const flipXKey = ignoreFlipX ? 0 : (obj->isFlipX() ? 1 : 0);
     int const flipYKey = ignoreFlipY ? 0 : (obj->isFlipY() ? 1 : 0);
 
+    std::uint32_t const flags =
+        (obj->m_isHighDetail ? 1u : 0u) |
+        ((obj->m_isNoTouch ? 1u : 0u) << 1) |
+        ((obj->m_isPassable ? 1u : 0u) << 2) |
+        ((obj->m_isHide ? 1u : 0u) << 3) |
+        ((obj->m_isInvisibleBlock ? 1u : 0u) << 4) |
+        ((obj->m_hasNoGlow ? 1u : 0u) << 5) |
+        ((obj->m_isDontFade ? 1u : 0u) << 6) |
+        ((obj->m_isDontEnter ? 1u : 0u) << 7) |
+        ((obj->m_isIceBlock ? 1u : 0u) << 8) |
+        ((obj->m_isNonStickX ? 1u : 0u) << 9) |
+        ((obj->m_isNonStickY ? 1u : 0u) << 10) |
+        ((obj->m_isScaleStick ? 1u : 0u) << 11) |
+        ((obj->m_isExtraSticky ? 1u : 0u) << 12) |
+        ((obj->m_isDontBoostX ? 1u : 0u) << 13) |
+        ((obj->m_isDontBoostY ? 1u : 0u) << 14) |
+        ((obj->m_hasNoEffects ? 1u : 0u) << 15) |
+        ((obj->m_hasNoParticles ? 1u : 0u) << 16) |
+        ((obj->m_shouldBlendBase ? 1u : 0u) << 17) |
+        ((obj->m_shouldBlendDetail ? 1u : 0u) << 18) |
+        ((obj->m_isObjectBlack ? 1u : 0u) << 19) |
+        ((obj->m_isColorSpriteBlack ? 1u : 0u) << 20) |
+        ((obj->m_zFixedZLayer ? 1u : 0u) << 21) |
+        ((obj->m_hasExtendedCollision ? 1u : 0u) << 22) |
+        ((obj->m_isDisabled ? 1u : 0u) << 23) |
+        ((obj->m_isInvisible ? 1u : 0u) << 24);
+
     return fmt::format(
-        "{}|{}|{}|{},{}|{},{}|{},{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{},{}|{},{}|{},{}|{:x}|{}|{}|{}|{},{},{},{:.2f}|{}|{}|{}|{}",
         obj->m_objectID,
         static_cast<int>(obj->m_objectType),
         rotBucket,
@@ -399,28 +493,18 @@ std::string buildCompatibilityKey(
         obj->m_zOrder,
         obj->m_editorLayer,
         obj->m_editorLayer2,
-        (obj->m_isHighDetail ? 1 : 0) |
-            ((obj->m_isNoTouch ? 1 : 0) << 1) |
-            ((obj->m_isPassable ? 1 : 0) << 2) |
-            ((obj->m_isHide ? 1 : 0) << 3) |
-            ((obj->m_isInvisibleBlock ? 1 : 0) << 4) |
-            ((obj->m_hasNoGlow ? 1 : 0) << 5) |
-            ((obj->m_isDontFade ? 1 : 0) << 6) |
-            ((obj->m_isDontEnter ? 1 : 0) << 7) |
-            ((obj->m_isIceBlock ? 1 : 0) << 8) |
-            ((obj->m_isNonStickX ? 1 : 0) << 9) |
-            ((obj->m_isNonStickY ? 1 : 0) << 10) |
-            ((obj->m_isScaleStick ? 1 : 0) << 11) |
-            ((obj->m_isExtraSticky ? 1 : 0) << 12) |
-            ((obj->m_isDontBoostX ? 1 : 0) << 13) |
-            ((obj->m_isDontBoostY ? 1 : 0) << 14),
+        flags,
         colorSignature(obj->m_baseColor),
         colorSignature(obj->m_detailColor),
         groupsSignature(obj),
         obj->m_enterChannel,
+        obj->m_enterType,
+        obj->m_exitType,
+        obj->m_fadeMargin,
         obj->m_objectMaterial,
         obj->m_colorType,
-        obj->m_customColorType
+        obj->m_customColorType,
+        obj->m_parentMode
     );
 }
 
@@ -434,11 +518,15 @@ bool isEligibleObject(
     if (!obj || !liveObjects.contains(obj)) return false;
     if (obj->m_isTrigger || obj->m_isStartPos || obj->m_hasParticles) return false;
     if (obj->m_hasGroupParent || obj->m_hasAreaParent || obj->m_linkedGroup > 0) return false;
+    if (obj->m_hasAnimatedChild || obj->m_isUIObject) return false;
+    if ((obj->m_usesAudioScale && !obj->m_hasNoAudioScale) || obj->m_customAudioScale) return false;
     if (obj->m_objectType != GameObjectType::Solid &&
         obj->m_objectType != GameObjectType::Decoration) {
         return false;
     }
     if (editor && editor->isLayerLocked(obj->m_editorLayer)) return false;
+    auto& collab = paimon::collab::CollabManager::get();
+    if (collab.connected() && !collab.canEditObjectLayer(obj)) return false;
     if (obj->m_scaleX <= 0.01f || obj->m_scaleY <= 0.01f) return false;
     if (!std::isfinite(obj->m_scaleX) || !std::isfinite(obj->m_scaleY)) return false;
     if (std::abs(obj->getRotationX() - obj->getRotationY()) > 0.05f) return false;

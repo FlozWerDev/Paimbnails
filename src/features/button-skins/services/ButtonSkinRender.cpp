@@ -136,9 +136,12 @@ AssetShape snapshotAsset(CCNode* node) {
     int w = std::max(1, static_cast<int>(std::ceil(size.width * res)));
     int h = std::max(1, static_cast<int>(std::ceil(size.height * res)));
 
-    // stencil kept: assets built with clipping nodes still render right.
+    // stencil kept: assets built with clipping nodes still render right; fall back on GLES2 without packed depth-stencil.
     Ref<CCRenderTexture> rt = CCRenderTexture::create(
         w, h, kCCTexture2DPixelFormat_RGBA8888, GL_DEPTH24_STENCIL8);
+    if (!rt || !rt->getSprite() || !rt->getSprite()->getTexture()) {
+        rt = CCRenderTexture::create(w, h, kCCTexture2DPixelFormat_RGBA8888);
+    }
     if (!rt || !rt->getSprite() || !rt->getSprite()->getTexture()) return out;
 
     // pose the node so its content box fills the texture, then put everything back.

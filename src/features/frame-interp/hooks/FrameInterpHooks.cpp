@@ -1,6 +1,8 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/GJBaseGameLayer.hpp>
+#include <Geode/modify/LevelEditorLayer.hpp>
 #include <Geode/modify/PlayLayer.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 
 #include "../services/FrameInterpolator.hpp"
 
@@ -17,6 +19,15 @@ class $modify(PaimonFrameInterpBaseLayer, GJBaseGameLayer) {
         // last in the chain wraps the real draw: any other mod hooking visit
         // still sees the true positions.
         (void)self.setHookPriority("GJBaseGameLayer::visit", geode::Priority::VeryLate);
+    }
+
+    bool init() {
+        if (!GJBaseGameLayer::init()) return false;
+        this->addOnExitCallback([] {
+            interp().reset();
+            return true;
+        });
+        return true;
     }
 
     double getModifiedDelta(float dt) {
@@ -41,5 +52,17 @@ class $modify(PaimonFrameInterpPlayLayer, PlayLayer) {
     void onQuit() {
         interp().reset();
         PlayLayer::onQuit();
+    }
+};
+
+class $modify(PaimonFrameInterpEditorLayer, LevelEditorLayer) {
+    void onPlaytest() {
+        interp().reset();
+        LevelEditorLayer::onPlaytest();
+    }
+
+    void onStopPlaytest() {
+        interp().reset();
+        LevelEditorLayer::onStopPlaytest();
     }
 };

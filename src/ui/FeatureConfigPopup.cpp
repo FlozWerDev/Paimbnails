@@ -15,6 +15,8 @@
 #include "../features/discord-presence/services/DiscordPresenceManager.hpp"
 #include "../features/dynamic-songs/ui/DynamicSongPopup.hpp"
 #include "../features/profile-music/ui/ProfileMusicPopup.hpp"
+#include "../features/scorecell/ScoreCellRefresh.hpp"
+#include "../features/scorecell/ui/LeaderboardLayoutPopup.hpp"
 #include "../layers/PaiConfigLayer.hpp"
 #include "../platform/PaimSettings.hpp"
 #include "../utils/PaimonNotification.hpp"
@@ -527,6 +529,17 @@ void buildScoreCellGroup(CCNode* c, float w) {
         gsaved<std::string>("score-cell-style", "default"),
         {"default", "compact", "expanded", "minimal"},
         [](std::string const& v) { ssaved<std::string>("score-cell-style", v); },
+        w));
+
+    c->addChild(createLinkRow("Personalizar Layout",
+        []() {
+            if (auto* popup = paimon::scorecell::LeaderboardLayoutPopup::create()) {
+                popup->setOnClose([]() {
+                    paimon::scorecell::refreshAllCells();
+                });
+                popup->show();
+            }
+        },
         w));
 
     c->addChild(createHintRow(

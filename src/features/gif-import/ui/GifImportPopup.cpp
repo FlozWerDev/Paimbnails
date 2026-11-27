@@ -5,8 +5,10 @@
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../utils/FileDialog.hpp"
 #include "../../../utils/GIFDecoder.hpp"
+#include "../../../utils/WebPDecoder.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
 #include "../../../utils/PaimonNotification.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/stb_image.h"
 #include "../../../utils/ThreadTracker.hpp"
 #include "../services/GifArtVectorizer.hpp"
@@ -14,7 +16,10 @@
 #include "../services/GifObjectEmitter.hpp"
 #include "../services/GifSourceScaler.hpp"
 #include "../services/GifStampLibrary.hpp"
+#include "../services/GifSvgImporter.hpp"
 #include "../services/GifVideoSource.hpp"
+#include "../services/OpenVectorBootstrap.hpp"
+#include "../services/OpenVectorRunner.hpp"
 #include "../../editor-suite/EditorPopupKit.hpp"
 
 #include "../../../ui/PaimonUI.hpp"
@@ -22,6 +27,7 @@
 #include <Geode/binding/EditorUI.hpp>
 #include <Geode/binding/LevelEditorLayer.hpp>
 #include <Geode/utils/general.hpp>
+#include <Geode/utils/web.hpp>
 #include <fmt/format.h>
 
 #include <algorithm>
@@ -45,8 +51,18 @@ struct ProcessingProgress {
     std::atomic<int> stage = static_cast<int>(BuildStage::Preparing);
     std::atomic<int> pass = 0;
     std::atomic<int> passes = 0;
+    std::atomic<bool> vectorizing = false;
+    std::atomic<int> vectorizeDone = 0;
+    std::atomic<int> vectorizeTotal = 0;
+    int vectorizeQuality = 2;
+    int vectorizeMaxFrames = 0;
     std::mutex mutex;
     std::optional<BuildResult> result;
+    std::vector<SvgFrame> generatedSvgFrames;
+    int generatedSvgQuality = -1;
+    int generatedSvgMaxFrames = -1;
+    int generatedSvgSourceFrames = 0;
+    std::shared_ptr<SourceAnimation> generatedFor;
     // half-done drawing arrives in pixels; the main thread only uploads it to texture.
     std::mutex previewMutex;
     std::optional<PreviewImage> preview;
@@ -114,6 +130,14 @@ char const* buildStageText(BuildStage stage) {
     return "Procesando";
 }
 
+char const* svgQualityName(int quality) {
+    switch (quality) {
+        case 0: return "High";
+        case 1: return "Med";
+        default: return "Low";
+    }
+}
+
 struct ModeInfo {
     ImportMode mode;
     char const* name;
@@ -121,7 +145,7 @@ struct ModeInfo {
 };
 
 // cycle order of the mode arrows.
-constexpr std::array<ModeInfo, 9> kModes{{
+constexpr std::array<ModeInfo, 10> kModes{{
     {ImportMode::Blocks, "Bloques", "paim_gif_modeBlocks.png"},
     {ImportMode::Art, "Art", "paim_gif_modeArt.png"},
     {ImportMode::Paint, "Pintura", "paim_gif_modePaint.png"},
@@ -131,6 +155,7 @@ constexpr std::array<ModeInfo, 9> kModes{{
     {ImportMode::Blur, "Blur", "paim_gif_modeBlur.png"},
     {ImportMode::Vert, "Vert", "paim_gif_modeVert.png"},
     {ImportMode::VertX, "VertX", "paim_gif_modeVertX.png"},
+    {ImportMode::Svg, "SVG", "paim_gif_modePaint.png"},
 }};
 
 ModeInfo const& modeInfo(ImportMode mode) {
@@ -156,26 +181,40 @@ GifImportPopup* GifImportPopup::create() {
 bool GifImportPopup::init() {
     if (!PaimonPopup::init(kPopupWidth, kPopupHeight)) return false;
     setID("gif-import-popup"_spr);
-    setTitle("GIF, Video o Imagen a Objetos");
+    setTitle("GIF, Video, SVG o Imagen a Objetos");
+    if (m_title) {
+        m_title->setLimitLabelWidth(kPopupWidth - 118.f, 0.7f, 0.2f);
+    }
+    WeakRef<GifImportPopup> self = this;
     addInfoButton("GIF a objetos",
-        "Convierte un GIF, video o imagen en objetos de GD dentro del editor. "
-        "Elige el archivo con <cg>Elegir archivo</c> y ajusta a la derecha: las "
-        "flechas del <cy>Modo</c> deciden como se dibuja (bloques, pintura, art...), "
-        "<cy>Resolucion</c> y <cy>Colores</c> el detalle, y <cy>Presupuesto</c> "
-        "el limite de objetos. En <cy>Pintura</c>, el boton <cy>Optimiz</c> "
-        "desactivado usa el trazado de contornos suavizados: lineas mas suaves "
-        "a cambio de mas objetos. La resolucion numerica se conserva (hasta 680 px): "
-        "si hace falta, se usan menos frames manteniendo la duracion. "
-        "<cy>Auto</c> permite ajustar tambien la resolucion. Para mas detalle "
-        "y fluidez, aumenta el presupuesto. La vista previa usa objetos reales. "
-        "<cg>Importar</c> los coloca en el editor.");
+        "Convierte un GIF, video, SVG, WebP o imagen en objetos de GD dentro del editor. "
+        "Elige el archivo con <cg>Elegir archivo</c> y ajusta a la derecha: los archivos "
+        "<cy>SVG</c> se trazan directo desde vectores; las imagenes, <cy>WebP</c> y "
+        "<cy>GIF</c> pasan por el conversor <cg>img -> SVG</c> (OpenVector) en todos los "
+        "modos salvo <cy>Bloques</c> (pixel), <cy>Blur</c> y <cy>Circulos</c>, repartiendo "
+        "los frames de GIF en paralelo antes de generar los objetos. <cy>Resolucion</c>, "
+        "<cy>Colores</c> y <cy>Presupuesto</c> controlan detalle y limite de objetos. "
+        "<cg>Importar</c> coloca los objetos en el editor.");
+    {
+        float githubScale = 20.f / 30.f;
+        if (auto* probe = paimon::SpriteHelper::safeCreateWithFrameName("geode.loader/github.png")) {
+            if (probe->getContentSize().height > 0.f) {
+                githubScale = 20.f / probe->getContentSize().height;
+            }
+        }
+        if (auto* githubBtn = paimon::ui::makeFrameButton("geode.loader/github.png", githubScale, [self] {
+                if (auto* popup = self.lock().data()) popup->openSvgCreditsPopup();
+            })) {
+            githubBtn->setID("openvector-github-button"_spr);
+            m_buttonMenu->addChildAtPosition(githubBtn, Anchor::TopRight, {-44.f, -18.f});
+        }
+    }
     addCorners(SideArtStyle::PopupGold);
     loadOptions();
 
     auto* menu = CCMenu::create();
     menu->setPosition({0.f, 0.f});
     m_mainLayer->addChild(menu, 5);
-    WeakRef<GifImportPopup> self = this;
 
     buildSourcePanel();
     buildOptionsPanel(menu);
@@ -245,7 +284,7 @@ void GifImportPopup::buildSourcePanel() {
     hintIcon->setOpacity(110);
     hintIcon->setPosition({0.f, 12.f});
     m_previewHint->addChild(hintIcon);
-    auto* hintText = kit::label("Elige un GIF, video o imagen", "bigFont.fnt", 0.32f,
+    auto* hintText = kit::label("Elige un GIF, video, SVG o imagen", "bigFont.fnt", 0.32f,
         {125, 135, 160});
     hintText->limitLabelWidth(kColumnWidth - 22.f, 0.32f, 0.2f);
     hintText->setPosition({0.f, -17.4f});
@@ -375,7 +414,8 @@ void GifImportPopup::loadOptions() {
         ? SamplingMode::Smooth : SamplingMode::Pixel;
     int const savedMode = static_cast<int>(mod->getSavedValue<int64_t>(
         "gif-import-mode", mod->getSavedValue<bool>("gif-import-art-mode", false) ? 1 : 0));
-    m_options.mode = savedMode == 8 ? ImportMode::VertX
+    m_options.mode = savedMode == 9 ? ImportMode::Svg
+        : savedMode == 8 ? ImportMode::VertX
         : savedMode == 7 ? ImportMode::Vert
         : savedMode == 6 ? ImportMode::Blur
         : savedMode == 5 ? ImportMode::Circles
@@ -384,6 +424,8 @@ void GifImportPopup::loadOptions() {
             ? (renderEnabled() ? ImportMode::Render : ImportMode::Paint)
         : savedMode == 2 ? ImportMode::Paint
         : savedMode == 1 ? ImportMode::Art : ImportMode::Blocks;
+    m_options.svgQuality = std::clamp(static_cast<int>(
+        mod->getSavedValue<int64_t>("gif-import-svg-quality", 2)), 0, 2);
     m_options.dither = mod->getSavedValue<bool>("gif-import-dither", false);
     m_options.optimize = mod->getSavedValue<bool>("gif-import-optimize", true);
     m_options.loop = mod->getSavedValue<bool>("gif-import-loop", true);
@@ -413,6 +455,7 @@ void GifImportPopup::saveOptions() const {
     mod->setSavedValue<int64_t>("gif-import-bg-tolerance", m_options.backgroundTolerance);
     mod->setSavedValue<bool>("gif-import-smooth", m_options.sampling == SamplingMode::Smooth);
     mod->setSavedValue<int64_t>("gif-import-mode", static_cast<int64_t>(m_options.mode));
+    mod->setSavedValue<int64_t>("gif-import-svg-quality", m_options.svgQuality);
     mod->setSavedValue<bool>("gif-import-dither", m_options.dither);
     mod->setSavedValue<bool>("gif-import-optimize", m_options.optimize);
     mod->setSavedValue<bool>("gif-import-loop", m_options.loop);
@@ -427,7 +470,7 @@ void GifImportPopup::saveOptions() const {
 void GifImportPopup::pickSource() {
     if (m_busyOverlay) return;
     WeakRef<GifImportPopup> self = this;
-    pt::pickMedia([self](Result<std::optional<std::filesystem::path>> result) {
+    pt::pickEditorMedia([self](Result<std::optional<std::filesystem::path>> result) {
         auto popup = self.lock();
         if (!popup || !popup->getParent()) return;
         if (result.isErr()) {
@@ -453,6 +496,14 @@ void GifImportPopup::loadSource(std::filesystem::path const& path) {
     auto bytes = std::make_shared<std::vector<std::uint8_t>>(bytesResult.unwrap());
     if (bytes->empty() || bytes->size() > kMaxFileBytes) {
         PaimonNotify::show("El archivo esta vacio o es demasiado grande.", NotificationIcon::Warning);
+        return;
+    }
+    if (isSvgFile(path) || isSvgBytes(bytes->data(), bytes->size())) {
+        loadSvg(path, std::move(bytes));
+        return;
+    }
+    if (WebPDecoder::isWebP(bytes->data(), bytes->size())) {
+        loadWebP(path, std::move(bytes));
         return;
     }
     if (GIFDecoder::isGIF(bytes->data(), bytes->size())) {
@@ -498,6 +549,88 @@ void GifImportPopup::loadAnimated(
         }
         LoadedSource loaded{path, source, {}};
         if (source->frames.empty()) loaded.error = "No se pudo decodificar ningun frame.";
+        std::lock_guard lock(state->mutex);
+        state->result = std::move(loaded);
+    });
+    if (started) return;
+    onSpawnFailed();
+}
+
+void GifImportPopup::loadWebP(
+    std::filesystem::path const& path,
+    std::shared_ptr<std::vector<std::uint8_t>> bytes
+) {
+    int width = 0;
+    int height = 0;
+    bool animated = false;
+    if (!WebPDecoder::getDimensions(bytes->data(), bytes->size(), width, height, animated) ||
+        width <= 0 || height <= 0) {
+        PaimonNotify::show("No se pudieron leer las dimensiones del WebP.", NotificationIcon::Error);
+        return;
+    }
+    if (width > kMaxImageDimension || height > kMaxImageDimension) {
+        PaimonNotify::show(
+            fmt::format("La imagen WebP es demasiado grande (max {} px).", kMaxImageDimension),
+            NotificationIcon::Warning);
+        return;
+    }
+    std::size_t const frameBytes = static_cast<std::size_t>(width) * height * 4;
+    int const safeFrames = animated
+        ? static_cast<int>(std::clamp<std::size_t>(
+            kDecodeMemory / std::max<std::size_t>(frameBytes, 1), 1, 120))
+        : 1;
+
+    showBusy(animated ? "Decodificando WebP animado" : "Decodificando WebP");
+    cancelSourceLoad();
+    m_sourceLoad = std::make_shared<SourceLoadState>();
+    auto state = m_sourceLoad;
+    bool const started = paimon::ThreadTracker::get().spawn([state, bytes, path, safeFrames] {
+        geode::utils::thread::setName("Paimon WebP Decode");
+        auto webp = WebPDecoder::decode(bytes->data(), bytes->size(), safeFrames, kMaxImageDimension);
+        auto source = std::make_shared<SourceAnimation>();
+        source->width = webp.width;
+        source->height = webp.height;
+        source->frames.reserve(webp.frames.size());
+        for (auto& frame : webp.frames) {
+            source->frames.push_back({frame.delayMs, std::move(frame.pixels)});
+        }
+        LoadedSource loaded{path, source, {}};
+        if (source->frames.empty()) loaded.error = "No se pudo decodificar la imagen WebP.";
+        std::lock_guard lock(state->mutex);
+        state->result = std::move(loaded);
+    });
+    if (started) return;
+    onSpawnFailed();
+}
+
+void GifImportPopup::loadSvg(
+    std::filesystem::path const& path,
+    std::shared_ptr<std::vector<std::uint8_t>> bytes
+) {
+    constexpr std::size_t kMaxSvgBytes = 32 * 1024 * 1024;
+    if (bytes->size() > kMaxSvgBytes) {
+        PaimonNotify::show("El archivo SVG es demasiado grande (max 32 MB).", NotificationIcon::Warning);
+        return;
+    }
+    showBusy("Leyendo SVG");
+    cancelSourceLoad();
+    m_sourceLoad = std::make_shared<SourceLoadState>();
+    auto state = m_sourceLoad;
+    bool const started = paimon::ThreadTracker::get().spawn([state, bytes, path] {
+        geode::utils::thread::setName("Paimon SVG Load");
+        std::string content(reinterpret_cast<char const*>(bytes->data()), bytes->size());
+        int width = 0;
+        int height = 0;
+        LoadedSource loaded{path, nullptr, {}};
+        if (!probeSvgDimensions(content, width, height)) {
+            loaded.error = "El archivo SVG no contiene geometria rellena valida.";
+        } else {
+            auto source = std::make_shared<SourceAnimation>();
+            source->width = width;
+            source->height = height;
+            source->svgContent = std::move(content);
+            loaded.source = std::move(source);
+        }
         std::lock_guard lock(state->mutex);
         state->result = std::move(loaded);
     });
@@ -588,6 +721,12 @@ void GifImportPopup::applySource(
     std::filesystem::path const& path,
     std::shared_ptr<SourceAnimation> source
 ) {
+    cancelVectorize();
+    m_vectorizedFrames.clear();
+    m_vectorizedQuality = -1;
+    m_vectorizedMaxFrames = -1;
+    m_vectorizedSourceFrames = 0;
+    m_openVectorPromptDeclined = false;
     m_path = path;
     m_source = std::move(source);
     m_scaled.reset();
@@ -610,6 +749,14 @@ void GifImportPopup::requestProcess() {
     refreshControls();
     if (!m_source) return;
     if (m_processing) {
+        if (m_progress && m_progress->vectorizing.load(std::memory_order_relaxed)) {
+            int const q = std::clamp(m_options.svgQuality, 0, 2);
+            if (!modeUsesSvgConversion(m_options.mode) ||
+                m_progress->vectorizeQuality != q ||
+                m_progress->vectorizeMaxFrames != m_options.maxFrames) {
+                cancelVectorize();
+            }
+        }
         m_reprocess = true;
         return;
     }
@@ -626,6 +773,179 @@ void GifImportPopup::startProcess() {
     m_progressFill->setScaleX(0.f);
     m_progressFill->setVisible(true);
     setStats("Procesando y optimizando...", {255, 205, 105});
+
+    if (m_source->isSvg()) {
+        auto source = m_source;
+        Options const options = m_options;
+        auto progress = m_progress;
+        bool const started = paimon::ThreadTracker::get().spawn([source, options, progress] {
+            geode::utils::thread::setName("Paimon SVG Plan");
+            progress->stage.store(static_cast<int>(BuildStage::Geometry), std::memory_order_relaxed);
+            progress->value.store(0.25f, std::memory_order_relaxed);
+            auto svgRes = buildSvgPlan(source->svgContent, svgOptionsFromImportOptions(options));
+            progress->stage.store(static_cast<int>(BuildStage::Done), std::memory_order_relaxed);
+            progress->value.store(1.f, std::memory_order_relaxed);
+            BuildResult result;
+            result.plan = std::move(svgRes.plan);
+            result.error = std::move(svgRes.error);
+            std::lock_guard lock(progress->mutex);
+            progress->result = std::move(result);
+        });
+        if (started) return;
+        m_processing = false;
+        m_progress.reset();
+        m_progressTrack->setVisible(false);
+        m_progressFill->setVisible(false);
+        setStats("El juego se esta cerrando.", {255, 190, 100});
+        return;
+    }
+
+    if (modeUsesSvgConversion(m_options.mode)) {
+        int const quality = std::clamp(m_options.svgQuality, 0, 2);
+        bool const isMultiFrame = m_source->frames.size() > 1;
+        bool const cacheHit = !m_vectorizedFrames.empty() &&
+            m_vectorizedQuality == quality &&
+            (!isMultiFrame || m_vectorizedMaxFrames == m_options.maxFrames);
+
+        if (cacheHit) {
+            cancelVectorize();
+            m_vectorizeCancel = std::make_shared<std::atomic<bool>>(false);
+            auto cancelToken = m_vectorizeCancel;
+            auto cachedFrames = std::make_shared<std::vector<SvgFrame>>(m_vectorizedFrames);
+            int const sourceFrames = m_vectorizedSourceFrames > 0
+                ? m_vectorizedSourceFrames
+                : static_cast<int>(m_source->frames.size());
+            Options const options = m_options;
+            auto progress = m_progress;
+            bool const started = paimon::ThreadTracker::get().spawn(
+                [cachedFrames, sourceFrames, options, progress, cancelToken] {
+                    geode::utils::thread::setName("Paimon OpenVector SVG Plan");
+                    progress->stage.store(static_cast<int>(BuildStage::Geometry), std::memory_order_relaxed);
+                    progress->value.store(0.20f, std::memory_order_relaxed);
+                    auto svgRes = buildAnimatedSvgPlan(
+                        *cachedFrames,
+                        svgOptionsFromImportOptions(options),
+                        options.loop,
+                        sourceFrames,
+                        [progress](int done, int total) {
+                            if (total > 0) {
+                                float const frac = static_cast<float>(done) / static_cast<float>(total);
+                                progress->value.store(0.20f + frac * 0.78f, std::memory_order_relaxed);
+                            }
+                        },
+                        cancelToken.get());
+                    progress->stage.store(static_cast<int>(BuildStage::Done), std::memory_order_relaxed);
+                    progress->value.store(1.f, std::memory_order_relaxed);
+                    BuildResult result;
+                    result.plan = std::move(svgRes.plan);
+                    result.error = std::move(svgRes.error);
+                    std::lock_guard lock(progress->mutex);
+                    progress->result = std::move(result);
+                });
+            if (started) return;
+            m_processing = false;
+            m_progress.reset();
+            m_progressTrack->setVisible(false);
+            m_progressFill->setVisible(false);
+            setStats("El juego se esta cerrando.", {255, 190, 100});
+            return;
+        }
+
+        if (!OpenVectorBootstrap::get().exists()) {
+            // On mobile where OpenVector binary is unavailable, fall through to native pipeline.
+            if (!OpenVectorBootstrap::releaseUrl().empty()) {
+                m_processing = false;
+                m_progress.reset();
+                m_progressTrack->setVisible(false);
+                m_progressFill->setVisible(false);
+                displaySource();
+                if (!m_openVectorPromptDeclined && !OpenVectorBootstrap::get().isDownloading()) {
+                    promptInstallOpenVector();
+                } else {
+                    setStats(
+                        "OpenVector no instalado. Usa Bloques/Blur/Circulos o instala OpenVector.",
+                        {255, 205, 105});
+                }
+                return;
+            }
+        } else {
+            cancelVectorize();
+            m_vectorizeCancel = std::make_shared<std::atomic<bool>>(false);
+            auto cancelToken = m_vectorizeCancel;
+            auto source = m_source;
+            Options const options = m_options;
+            auto progress = m_progress;
+            int const maxFrames = options.maxFrames;
+            int const expectedFrames = std::clamp(
+                maxFrames, 1, std::max(1, static_cast<int>(source->frames.size())));
+            progress->vectorizing.store(true, std::memory_order_relaxed);
+            progress->vectorizeDone.store(0, std::memory_order_relaxed);
+            progress->vectorizeTotal.store(expectedFrames, std::memory_order_relaxed);
+            progress->vectorizeQuality = quality;
+            progress->vectorizeMaxFrames = maxFrames;
+            progress->value.store(0.05f, std::memory_order_relaxed);
+            displaySource();
+            bool const started = paimon::ThreadTracker::get().spawn(
+                [source, options, progress, quality, maxFrames, cancelToken] {
+                    geode::utils::thread::setName("Paimon OpenVector");
+                    auto vecRes = OpenVectorRunner::vectorizeFramesToSvg(
+                        *source,
+                        maxFrames,
+                        static_cast<OpenVectorQuality>(quality),
+                        [progress](int done, int total) {
+                            progress->vectorizeDone.store(done, std::memory_order_relaxed);
+                            progress->vectorizeTotal.store(total, std::memory_order_relaxed);
+                            if (total > 0) {
+                                float const frac = static_cast<float>(done) / static_cast<float>(total);
+                                progress->value.store(0.05f + frac * 0.65f, std::memory_order_relaxed);
+                            }
+                        },
+                        cancelToken.get());
+                    progress->vectorizing.store(false, std::memory_order_relaxed);
+                    BuildResult result;
+                    std::vector<SvgFrame> generatedFrames;
+                    int generatedSourceFrames = 0;
+                    if (!vecRes) {
+                        result.error = std::move(vecRes.error);
+                    } else {
+                        progress->stage.store(static_cast<int>(BuildStage::Geometry), std::memory_order_relaxed);
+                        progress->value.store(0.72f, std::memory_order_relaxed);
+                        auto svgRes = buildAnimatedSvgPlan(
+                            vecRes.frames,
+                            svgOptionsFromImportOptions(options),
+                            options.loop,
+                            vecRes.sourceFrames,
+                            [progress](int done, int total) {
+                                if (total > 0) {
+                                    float const frac = static_cast<float>(done) / static_cast<float>(total);
+                                    progress->value.store(0.72f + frac * 0.26f, std::memory_order_relaxed);
+                                }
+                            },
+                            cancelToken.get());
+                        progress->stage.store(static_cast<int>(BuildStage::Done), std::memory_order_relaxed);
+                        progress->value.store(1.f, std::memory_order_relaxed);
+                        result.plan = std::move(svgRes.plan);
+                        result.error = std::move(svgRes.error);
+                        generatedFrames = std::move(vecRes.frames);
+                        generatedSourceFrames = vecRes.sourceFrames;
+                    }
+                    std::lock_guard lock(progress->mutex);
+                    progress->generatedSvgFrames = std::move(generatedFrames);
+                    progress->generatedSvgQuality = quality;
+                    progress->generatedSvgMaxFrames = maxFrames;
+                    progress->generatedSvgSourceFrames = generatedSourceFrames;
+                    progress->generatedFor = source;
+                    progress->result = std::move(result);
+                });
+            if (started) return;
+            m_processing = false;
+            m_progress.reset();
+            m_progressTrack->setVisible(false);
+            m_progressFill->setVisible(false);
+            setStats("El juego se esta cerrando.", {255, 190, 100});
+            return;
+        }
+    }
 
     // free mode may arrive saved without touching the button.
     if (m_options.mode == ImportMode::Free && !stampLibraryReady()) buildStampLibrary();
@@ -701,9 +1021,12 @@ void GifImportPopup::refreshControls() {
         m_options.background == BackgroundMode::AutoBorder ? "Auto" : "Conservar");
     kit::setValue(m_toleranceValue, std::to_string(m_options.backgroundTolerance));
 
+    bool const svgSource = m_source && m_source->isSvg();
+    bool const svgConverted = !svgSource && modeUsesSvgConversion(m_options.mode) &&
+        (!OpenVectorBootstrap::releaseUrl().empty() || OpenVectorBootstrap::get().exists());
     auto const& mode = modeInfo(m_options.mode);
-    kit::setPillText(m_modePill, fmt::format("Modo: {}", mode.name));
-    kit::setPillIcon(m_modePill, mode.icon, "GJ_colorBtn_001.png");
+    kit::setPillText(m_modePill, svgSource ? "Modo: SVG Vector" : fmt::format("Modo: {}", mode.name));
+    kit::setPillIcon(m_modePill, svgSource ? "paim_gif_modePaint.png" : mode.icon, "GJ_colorBtn_001.png");
 
     auto setToggle = [](kit::Pill& pill, std::string const& text, bool on, char const* icon) {
         kit::setPillSkin(pill, on ? "GJ_button_01.png" : "GJ_button_04.png");
@@ -711,12 +1034,17 @@ void GifImportPopup::refreshControls() {
         kit::setPillText(pill, text);
     };
 
-    bool const blur = m_options.mode == ImportMode::Blur;
-    bool const samples = m_options.mode == ImportMode::Blocks ||
+    bool const blur = !svgSource && m_options.mode == ImportMode::Blur;
+    bool const samples = !svgSource && !svgConverted && (m_options.mode == ImportMode::Blocks ||
         m_options.mode == ImportMode::Paint || m_options.mode == ImportMode::Render ||
-        m_options.mode == ImportMode::Free;
+        m_options.mode == ImportMode::Free);
     bool const smooth = m_options.sampling == SamplingMode::Smooth;
-    if (samples) {
+    if (svgSource) {
+        setToggle(m_samplingPill, "Vector: exacto", true, "paim_gif_sampling.png");
+    } else if (svgConverted) {
+        setToggle(m_samplingPill, fmt::format("Calidad: {}", svgQualityName(m_options.svgQuality)),
+            true, "paim_gif_sampling.png");
+    } else if (samples) {
         setToggle(m_samplingPill, smooth ? "Suave" : "Pixel", smooth, "paim_gif_sampling.png");
     } else if (blur) {
         float const radius = m_options.blurRadius;
@@ -729,7 +1057,7 @@ void GifImportPopup::refreshControls() {
         setToggle(m_samplingPill, "Suave: fijo", false, "paim_gif_sampling.png");
     }
 
-    if (m_options.mode == ImportMode::Paint) {
+    if (svgSource || svgConverted || m_options.mode == ImportMode::Paint) {
         setToggle(m_ditherPill, m_options.optimize ? "Optimiz: si" : "Optimiz: no",
             m_options.optimize, "paim_gif_optimize.png");
     } else if (usesSoftGeometry(m_options.mode)) {
@@ -744,7 +1072,9 @@ void GifImportPopup::refreshControls() {
     setToggle(m_loopPill, m_options.loop ? "Loop: si" : "Loop: no", m_options.loop,
         m_options.loop ? "paim_anim_loop.png" : "paim_anim_once.png");
 
-    if (blur) {
+    if (svgConverted) {
+        setToggle(m_glowPill, "Conv: SVG", true, "paim_gif_modePaint.png");
+    } else if (blur) {
         setToggle(m_glowPill,
             fmt::format("Glow: {}x", static_cast<int>(m_options.blurGlowDiameter)), true,
             "paim_gif_glow.png");
@@ -769,7 +1099,11 @@ void GifImportPopup::refreshControls() {
         if (totalMs > 0.0) fps = m_plan->frames.size() * 1000.0 / totalMs;
     }
     std::string review;
-    if (m_plan->mode == ImportMode::Render) {
+    if (svgSource) {
+        review = " | vector directo";
+    } else if (svgConverted) {
+        review = fmt::format(" | OpenVector ({})", svgQualityName(m_options.svgQuality));
+    } else if (m_plan->mode == ImportMode::Render) {
         review = fmt::format(
             "\nfid {:.1f}% | detalle {:.1f}% | {} pasadas",
             m_plan->similarity, m_plan->detailSimilarity, m_plan->renderPasses);
@@ -843,10 +1177,26 @@ void GifImportPopup::pollSourceLoad() {
 void GifImportPopup::pollProcessing() {
     if (!m_progress) return;
     std::optional<BuildResult> result;
+    std::vector<SvgFrame> generatedFrames;
+    int generatedQuality = -1;
+    int generatedMaxFrames = -1;
+    int generatedSourceFrames = 0;
+    std::shared_ptr<SourceAnimation> generatedFor;
     {
         std::lock_guard lock(m_progress->mutex);
         if (!m_progress->result) return;
         result = std::move(m_progress->result);
+        generatedFrames = std::move(m_progress->generatedSvgFrames);
+        generatedQuality = m_progress->generatedSvgQuality;
+        generatedMaxFrames = m_progress->generatedSvgMaxFrames;
+        generatedSourceFrames = m_progress->generatedSvgSourceFrames;
+        generatedFor = std::move(m_progress->generatedFor);
+    }
+    if (!generatedFrames.empty() && generatedFor && generatedFor == m_source) {
+        m_vectorizedFrames = std::move(generatedFrames);
+        m_vectorizedQuality = generatedQuality;
+        m_vectorizedMaxFrames = generatedMaxFrames;
+        m_vectorizedSourceFrames = generatedSourceFrames;
     }
     applyProcessed(std::move(*result));
 }
@@ -855,11 +1205,23 @@ void GifImportPopup::refreshProgress() {
     if (!m_progress) return;
     float const value = std::clamp(
         m_progress->value.load(std::memory_order_relaxed), 0.f, 1.f);
+    m_progressFill->setScaleX(value);
+    if (m_progress->vectorizing.load(std::memory_order_relaxed)) {
+        int const done = m_progress->vectorizeDone.load(std::memory_order_relaxed);
+        int const total = m_progress->vectorizeTotal.load(std::memory_order_relaxed);
+        if (total > 1) {
+            setStats(fmt::format("Vectorizando frames ({}/{}) | OpenVector ({})...",
+                done, total, svgQualityName(m_progress->vectorizeQuality)), {255, 205, 105});
+        } else {
+            setStats(fmt::format("Vectorizando con OpenVector ({})...",
+                svgQualityName(m_progress->vectorizeQuality)), {255, 205, 105});
+        }
+        return;
+    }
     auto const stage = static_cast<BuildStage>(
         m_progress->stage.load(std::memory_order_relaxed));
     int const pass = m_progress->pass.load(std::memory_order_relaxed);
     int const passes = m_progress->passes.load(std::memory_order_relaxed);
-    m_progressFill->setScaleX(value);
     auto const text = passes > 1
         ? fmt::format("Render {}/{} | {} | {:.0f}%", pass, passes,
                       buildStageText(stage), value * 100.f)
@@ -895,10 +1257,11 @@ void GifImportPopup::displayPixels(
 }
 
 void GifImportPopup::displaySource() {
-    if (!m_scaled || m_scaled->frames.empty()) return;
-    int const width = m_scaled->width;
-    int const height = m_scaled->height;
-    auto const& rgba = m_scaled->frames.front().rgba;
+    auto const& src = (m_scaled && !m_scaled->frames.empty()) ? m_scaled : m_source;
+    if (!src || src->frames.empty()) return;
+    int const width = src->width;
+    int const height = src->height;
+    auto const& rgba = src->frames.front().rgba;
     if (width <= 0 || height <= 0 ||
         rgba.size() < static_cast<std::size_t>(width) * height * 4) return;
     // sources can be huge; a thumbnail suffices for the first flash.
@@ -986,19 +1349,49 @@ void GifImportPopup::runBackground() {
     auto const winSize = CCDirector::get()->getWinSize();
     CCPoint const workspaceCenter{winSize.width * 0.5f, winSize.height * 0.4f};
     auto const center = editor->m_objectLayer->convertToNodeSpace(workspaceCenter);
-    if (usesSoftGeometry(m_options.mode)) {
-        auto library = buildSoftStampLibrary();
-        m_options.softStamps = std::move(library.stamps);
-        m_options.softMatchErrors = library.errors;
+    std::shared_ptr<SourceAnimation> payloadSource = m_source;
+    if (!m_source->isSvg()) {
+        bool const useSvgConv = modeUsesSvgConversion(m_options.mode) &&
+            (!OpenVectorBootstrap::releaseUrl().empty() || OpenVectorBootstrap::get().exists());
+        if (useSvgConv) {
+            int const quality = std::clamp(m_options.svgQuality, 0, 2);
+            bool const isMultiFrame = m_source->frames.size() > 1;
+            bool const cacheHit = !m_vectorizedFrames.empty() &&
+                m_vectorizedQuality == quality &&
+                (!isMultiFrame || m_vectorizedMaxFrames == m_options.maxFrames);
+            if (cacheHit) {
+                auto cached = std::make_shared<SourceAnimation>();
+                cached->width = m_source->width;
+                cached->height = m_source->height;
+                cached->svgFrames = m_vectorizedFrames;
+                cached->sourceFrameCount = m_vectorizedSourceFrames > 0
+                    ? m_vectorizedSourceFrames
+                    : static_cast<int>(m_source->frames.size());
+                if (cached->svgFrames.size() == 1) {
+                    cached->svgContent = cached->svgFrames.front().svgContent;
+                }
+                payloadSource = std::move(cached);
+            } else if (!OpenVectorBootstrap::get().exists()) {
+                promptInstallOpenVector();
+                return;
+            }
+        } else {
+            if (usesSoftGeometry(m_options.mode)) {
+                auto library = buildSoftStampLibrary();
+                m_options.softStamps = std::move(library.stamps);
+                m_options.softMatchErrors = library.errors;
+            }
+            float const blur = m_options.mode == ImportMode::Blur ? m_options.blurRadius : 0.f;
+            int const resolutionLimit = sourceResolutionLimit(m_options);
+            if (!m_scaled || m_scaledFor != resolutionLimit || m_scaledBlur != blur) {
+                m_scaled = prescaleSource(m_source, resolutionLimit, blur);
+                m_scaledFor = resolutionLimit;
+                m_scaledBlur = blur;
+            }
+            payloadSource = m_scaled;
+        }
     }
-    float const blur = m_options.mode == ImportMode::Blur ? m_options.blurRadius : 0.f;
-    int const resolutionLimit = sourceResolutionLimit(m_options);
-    if (!m_scaled || m_scaledFor != resolutionLimit || m_scaledBlur != blur) {
-        m_scaled = prescaleSource(m_source, resolutionLimit, blur);
-        m_scaledFor = resolutionLimit;
-        m_scaledBlur = blur;
-    }
-    auto result = startBackgroundImport(ui, m_scaled, m_options, center);
+    auto result = startBackgroundImport(ui, payloadSource, m_options, center);
     if (result.isErr()) {
         PaimonNotify::show(result.unwrapErr(), NotificationIcon::Error);
         return;
@@ -1117,18 +1510,28 @@ void GifImportPopup::adjustTolerance(int direction) {
 }
 
 void GifImportPopup::cycleMode(int direction) {
+    if (m_source && m_source->isSvg()) {
+        PaimonNotify::show("Los archivos SVG usan conversion vectorial directa.", NotificationIcon::Info);
+        return;
+    }
     int const count = static_cast<int>(kModes.size());
     int index = 0;
     for (int i = 0; i < count; ++i) {
         if (kModes[static_cast<std::size_t>(i)].mode == m_options.mode) index = i;
     }
+    bool const wasSvgConv = modeUsesSvgConversion(m_options.mode);
     int const step = direction < 0 ? -1 : 1;
     do {
         index = ((index + step) % count + count) % count;
     } while (kModes[static_cast<std::size_t>(index)].mode == ImportMode::Render && !renderEnabled());
     m_options.mode = kModes[static_cast<std::size_t>(index)].mode;
-    // decoration touches gl: warn; with an active plan it rides in startprocess.
-    if (m_options.mode == ImportMode::Free && !stampLibraryReady() && !m_processing) {
+    if (modeUsesSvgConversion(m_options.mode) && (!wasSvgConv || m_options.mode == ImportMode::Svg)) {
+        m_openVectorPromptDeclined = false;
+    }
+    // decoration touches gl: only needed if Free runs natively (mobile without OpenVector).
+    bool const needsNativeFree = m_options.mode == ImportMode::Free &&
+        OpenVectorBootstrap::releaseUrl().empty() && !OpenVectorBootstrap::get().exists();
+    if (needsNativeFree && !stampLibraryReady() && !m_processing) {
         refreshControls();
         showBusy("Leyendo la decoracion de GD");
         WeakRef<GifImportPopup> self = this;
@@ -1155,6 +1558,16 @@ void GifImportPopup::toggleBackground() {
 }
 
 void GifImportPopup::toggleSampling() {
+    if (m_source && m_source->isSvg()) return;
+    bool const svgConverted = modeUsesSvgConversion(m_options.mode) &&
+        (!OpenVectorBootstrap::releaseUrl().empty() || OpenVectorBootstrap::get().exists());
+    if (svgConverted) {
+        // Low (2) -> Med (1) -> High (0) -> Low (2)
+        m_options.svgQuality = m_options.svgQuality == 2 ? 1
+            : m_options.svgQuality == 1 ? 0 : 2;
+        requestProcess();
+        return;
+    }
     if (m_options.mode == ImportMode::Blur) {
         m_options.blurRadius = m_options.blurRadius == 0.f ? 0.6f
             : m_options.blurRadius < 0.8f ? 1.f
@@ -1172,7 +1585,11 @@ void GifImportPopup::toggleSampling() {
 }
 
 void GifImportPopup::toggleDither() {
-    if (m_options.mode == ImportMode::Paint) {
+    bool const svgConverted = modeUsesSvgConversion(m_options.mode) &&
+        (!OpenVectorBootstrap::releaseUrl().empty() || OpenVectorBootstrap::get().exists());
+    if ((m_source && m_source->isSvg()) ||
+        svgConverted ||
+        m_options.mode == ImportMode::Paint) {
         m_options.optimize = !m_options.optimize;
         requestProcess();
         return;
@@ -1193,6 +1610,10 @@ void GifImportPopup::toggleLoop() {
 }
 
 void GifImportPopup::toggleGlow() {
+    bool const svgConverted = !(m_source && m_source->isSvg()) &&
+        modeUsesSvgConversion(m_options.mode) &&
+        (!OpenVectorBootstrap::releaseUrl().empty() || OpenVectorBootstrap::get().exists());
+    if (svgConverted) return;
     if (m_options.mode == ImportMode::Vert) return;
     if (m_options.mode == ImportMode::VertX) {
         m_options.gradientWash = !m_options.gradientWash;
@@ -1229,12 +1650,120 @@ void GifImportPopup::hideBusy() {
 
 GifImportPopup::~GifImportPopup() {
     cancelSourceLoad();
+    cancelVectorize();
 }
 
 void GifImportPopup::cancelSourceLoad() {
     if (m_sourceLoad && m_sourceLoad->progress) {
         m_sourceLoad->progress->cancelled.store(true, std::memory_order_relaxed);
     }
+}
+
+void GifImportPopup::cancelVectorize() {
+    if (m_vectorizeCancel) {
+        m_vectorizeCancel->store(true, std::memory_order_relaxed);
+        m_vectorizeCancel.reset();
+    }
+}
+
+void GifImportPopup::openSvgCreditsPopup() {
+    bool const installed = OpenVectorBootstrap::get().exists();
+    std::string const status = installed
+        ? "<cg>Instalado localmente</c>"
+        : "<cy>No instalado aun</c> (se descarga al usar modo SVG)";
+    std::string const body = fmt::format(
+        "El motor complementario que convierte imagenes a <cy>SVG</c> en local "
+        "fue sacado de <cg>OpenVector</c> por <cy>Microck</c> (licencia MIT).\n\n"
+        "Repositorio oficial:\n<cb>github.com/Microck/openvector</c>\n\n"
+        "Estado: {}\n"
+        "Calidad por defecto: <cg>Low</c> (mejor eficiencia y limpieza en GD).",
+        status);
+    geode::createQuickPopup(
+        "Creditos - Motor SVG",
+        body,
+        "Cerrar",
+        "Abrir GitHub",
+        [](auto*, bool openRepo) {
+            if (openRepo) {
+                geode::utils::web::openLinkInBrowser(OpenVectorBootstrap::kRepoUrl);
+            }
+        }
+    );
+}
+
+void GifImportPopup::promptInstallOpenVector() {
+    if (OpenVectorBootstrap::get().isDownloading()) {
+        PaimonNotify::show("OpenVector ya se esta descargando...", NotificationIcon::Info);
+        return;
+    }
+    if (OpenVectorBootstrap::releaseUrl().empty()) {
+        PaimonNotify::show(
+            "OpenVector solo esta disponible en PC. Usa archivos .svg o los modos nativos.",
+            NotificationIcon::Warning);
+        m_options.mode = ImportMode::Blocks;
+        requestProcess();
+        return;
+    }
+    WeakRef<GifImportPopup> self = this;
+    geode::createQuickPopup(
+        "Motor complementario OpenVector",
+        "Todos los modos excepto <cy>Bloques</c>, <cy>Blur</c> y <cy>Circulos</c> usan el "
+        "motor local <cg>OpenVector</c> (<cb>Microck/openvector</c>, licencia MIT) para "
+        "convertir imagenes y frames de GIF a <cy>SVG</c> antes de crear los objetos.\n\n"
+        "Calidad predeterminada: <cg>Low</c> (~23 MB de descarga unica).\n"
+        "Deseas descargarlo e instalarlo ahora?",
+        "Cancelar",
+        "Instalar",
+        [self](auto*, bool install) {
+            auto popupRef = self.lock();
+            auto* popup = popupRef.data();
+            if (!popup) return;
+            if (!install) {
+                popup->m_openVectorPromptDeclined = true;
+                popup->setStats(
+                    "OpenVector no instalado. Usa Bloques/Blur/Circulos o instala OpenVector.",
+                    {255, 205, 105});
+                return;
+            }
+            popup->showBusy("Instalando OpenVector...");
+            if (popup->m_progressTrack && popup->m_progressFill) {
+                popup->m_progressTrack->setVisible(true);
+                popup->m_progressFill->setVisible(true);
+                popup->m_progressFill->setScaleX(0.f);
+            }
+            popup->setStats("Descargando motor complementario OpenVector...", {255, 205, 105});
+            OpenVectorBootstrap::get().ensureInstalled(
+                [self](OpenVectorBootstrapProgress const& p) {
+                    auto ref = self.lock();
+                    auto* pop = ref.data();
+                    if (!pop) return;
+                    if (pop->m_progressFill) {
+                        pop->m_progressFill->setScaleX(std::clamp(p.percent, 0.f, 1.f));
+                    }
+                    if (!p.message.empty()) {
+                        pop->setStats(p.message, {255, 205, 105});
+                    }
+                },
+                [self](bool ok, std::string const& pathOrErr) {
+                    auto ref = self.lock();
+                    auto* pop = ref.data();
+                    if (!pop) return;
+                    pop->hideBusy();
+                    if (pop->m_progressTrack && pop->m_progressFill) {
+                        pop->m_progressTrack->setVisible(false);
+                        pop->m_progressFill->setVisible(false);
+                    }
+                    if (!ok) {
+                        PaimonNotify::show(pathOrErr, NotificationIcon::Error);
+                        pop->setStats(pathOrErr, {255, 120, 120});
+                        return;
+                    }
+                    PaimonNotify::show("Motor SVG OpenVector instalado.", NotificationIcon::Success);
+                    pop->requestProcess();
+                }
+            );
+        }
+    );
 }
 
 } // namespace paimon::gifimport

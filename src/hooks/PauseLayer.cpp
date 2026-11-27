@@ -218,6 +218,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         bool m_capturePauseWasVisible = true;
         bool m_capturePauseTouchEnabled = true;
         bool m_closing = false;
+        int m_actionDepth = 0;
         uint64_t m_captureGeneration = 0;
         paimon::NodeIdentity<PlayLayer> m_playLayer;
         WeakRef<PaimonLoadingOverlay> m_loadingOverlay;
@@ -928,10 +929,22 @@ class $modify(PaimonPauseLayer, PauseLayer) {
     // the overrides below share keepalive + begin/finish; only the base
     // call differs, and it must name PauseLayer:: explicitly (a member
     // pointer would dispatch virtually back into the override).
+    // GD's onPracticeMode / onNormalMode / onRestart internally call
+    // this->onResume(nullptr); re-entrant calls inside an active action must
+    // pass straight through to base instead of being swallowed by m_closing.
     template <typename Base>
     void forwardPauseAction(char const* name, CCObject* sender, Base&& base) {
         Ref<PaimonPauseLayer> keepAlive = this;
+        if (m_fields->m_actionDepth > 0) {
+            base(sender);
+            return;
+        }
         if (!beginPauseAction(name)) return;
+        struct DepthGuard {
+            int& depth;
+            explicit DepthGuard(int& d) : depth(d) { ++depth; }
+            ~DepthGuard() { --depth; }
+        } guard{m_fields->m_actionDepth};
         base(sender);
         finishPauseAction();
     }

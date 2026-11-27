@@ -333,8 +333,11 @@ void DualKitVault::ensureBurstArt(int id) {
 
 void DualKitVault::releaseBurstArt(int id) {
     auto gm = GameManager::get();
+    if (!gm) return;
     if (id < 1) id = 1;
     if (id != gm->m_loadedDeathEffect && id > 1) {
+        CCSpriteFrameCache::sharedSpriteFrameCache()->removeSpriteFramesFromFile(
+            CCString::createWithFormat("PlayerExplosion_%02d.plist", id - 1)->getCString());
         CCTextureCache::sharedTextureCache()->removeTextureForKey(
             CCString::createWithFormat("PlayerExplosion_%02d.png", id - 1)->getCString());
     }
@@ -369,7 +372,9 @@ IconSlot currentForm(PlayerObject* player) {
 } // namespace
 
 void DualKitVault::dressFighter(PlayerObject* player, Side side) {
+    if (!player) return;
     auto gm = GameManager::get();
+    if (!gm) return;
 
     player->setColor(gm->colorForIdx(inkOf(side)));
     player->setSecondColor(gm->colorForIdx(trimOf(side)));
@@ -416,20 +421,34 @@ void DualKitVault::dressDoll(SimplePlayer* player, IconType type, Side side) {
 }
 
 void DualKitVault::fitTrail(PlayerObject* player, Side side) {
+    if (!player || !player->m_regularTrail) return;
     int trail = slotIcon(IconSlot::Trail, side);
     if (trail < 1 || trail > 7) trail = 1;
     TrailLook const& look = kTrailLooks[trail - 1];
 
+    bool const sameTrail = (player->m_playerStreak == trail) && (player->m_regularTrail->m_pVertices != nullptr);
     player->m_streakStrokeWidth = look.width;
     player->m_alwaysShowStreak = look.idle;
     player->m_disableStreakTint = !look.tintable;
-
     player->m_playerStreak = trail;
-    player->m_regularTrail->initWithFade(
-        look.fade, 5.0f, look.width, ccc3(255, 255, 255),
-        CCString::createWithFormat("streak_%02d_001.png", trail)->getCString());
+
+    char const* texName = CCString::createWithFormat("streak_%02d_001.png", trail)->getCString();
+    auto* tex = CCTextureCache::get()->addImage(texName, false);
+    if (!tex) return;
+
+    if (sameTrail) {
+        player->m_regularTrail->reset();
+        player->m_regularTrail->setTexture(tex);
+        player->m_regularTrail->setStroke(look.width);
+        player->m_regularTrail->updateFade(look.fade);
+    } else {
+        player->m_regularTrail->initWithFade(
+            look.fade, 5.0f, look.width, ccc3(255, 255, 255), tex);
+    }
     if (look.repeat) {
         player->m_regularTrail->enableRepeatMode(0.1);
+    } else {
+        player->m_regularTrail->m_bRepeatMode = false;
     }
     player->m_regularTrail->m_fMaxSeg = 50.0f;
     player->m_regularTrail->setBlendFunc({GL_SRC_ALPHA, GL_ONE});
@@ -442,6 +461,7 @@ void DualKitVault::fitTrail(PlayerObject* player, Side side) {
 }
 
 void DualKitVault::fitShipExhaust(PlayerObject* player, Side side) {
+    if (!player) return;
     int exhaust = slotIcon(IconSlot::ShipFire, side);
     player->m_shipStreakType = static_cast<ShipStreak>(exhaust);
 
@@ -450,6 +470,7 @@ void DualKitVault::fitShipExhaust(PlayerObject* player, Side side) {
         return;
     }
     CCTexture2D* art = CCTextureCache::get()->addImage(exhaustFrame(exhaust, 0), false);
+    if (!art) return;
     if (CCMotionStreak* node = exhaustNode(side)) {
         node->setTexture(art);
         player->m_shipStreak = node;

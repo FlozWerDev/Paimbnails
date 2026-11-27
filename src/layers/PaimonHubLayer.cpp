@@ -44,6 +44,7 @@
 #include "../features/settings-panel/ui/SettingsCategoryBuilder.hpp"
 #include "../features/settings-panel/ui/SettingsControls.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
+#include "../features/paimbnails-news/ui/TopNewsForumsLayer.hpp"
 #include "../features/forum/ui/ForumPanel.hpp"
 #include "../features/dev-tools/ui/GifToSheetPopup.hpp"
 #include "../features/thumb-requests/ui/ThumbRequestsPopup.hpp"
@@ -250,6 +251,9 @@ std::vector<HubActionMeta> getHubActions(int categoryIndex) {
                 {"Comunidad", "GJ_button_02.png", [](PaimonHubLayer*) {
                     if (auto* scene = CommunityHubLayer::scene()) CCDirector::get()->pushScene(scene);
                 }, 0, "Creadores, miniaturas y mods compatibles"},
+                {"Top Noticias", "GJ_button_05.png", [](PaimonHubLayer*) {
+                    paimon::news::TopNewsForumsLayer::open();
+                }, 0, "Ranking de foros de noticias y votos Fav"},
                 {"Paimon Base", "GJ_button_01.png", [](PaimonHubLayer*) {
                     paimon::community::CommunityBasePopup::open();
                 }, 0, "Ajustes en la nube y sugerencias"},

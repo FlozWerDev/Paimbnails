@@ -12,7 +12,6 @@ namespace paimon::news {
 
 inline constexpr std::string_view kVanillaSourceId = "vanilla";
 inline constexpr std::string_view kDefaultNewsChannelId = "1476641913582129353";
-inline constexpr std::string_view kSecondaryNewsChannelId = "1565726192357605446";
 
 struct NewsProvider {
     std::string id;
@@ -21,6 +20,9 @@ struct NewsProvider {
     std::string channelName;
     std::string guildName;
     std::string iconUrl;
+    int favoritesCount = 0;
+    int rank = 0;
+    bool favoritedByMe = false;
     bool isDefault = false;
 };
 
@@ -79,6 +81,7 @@ public:
     // back the previous feed instead.
     using Callback = std::function<void(bool ok, NewsFeed const& feed)>;
     using ProvidersCallback = std::function<void(bool ok, std::vector<NewsProvider> const& providers)>;
+    using FavoriteCallback = std::function<void(bool ok, int favoritesCount, bool favoritedByMe, std::string const& error)>;
 
     static NewsService& get();
 
@@ -91,10 +94,17 @@ public:
     std::vector<NewsProvider> const& providers();
     std::optional<NewsProvider> findProvider(std::string const& channelId);
 
+    void fetchTopProviders(bool force, ProvidersCallback callback);
+    std::vector<NewsProvider> const& topProviders();
+    void toggleFavoriteProvider(std::string const& channelId, std::optional<bool> desired, FavoriteCallback callback);
+
     bool isSourceEnabled(std::string const& sourceId);
     bool setSourceEnabled(std::string const& sourceId, bool enabled);
     bool isVanillaEnabled();
     std::vector<NewsProvider> enabledProviders();
+
+    void setPendingOpenChannel(std::string channelId);
+    std::string consumePendingOpenChannel();
 
 private:
     struct ChannelFeedState {
@@ -108,16 +118,23 @@ private:
     void ensureStateLoaded();
     void saveEnabledSources();
     void saveProvidersCache();
+    void applyFavoriteUpdate(std::string const& channelId, int favoritesCount, bool favoritedByMe);
     void finishChannel(std::string const& channelKey);
     void finishProviders(bool ok);
+    void finishTopProviders(bool ok);
 
     std::unordered_map<std::string, ChannelFeedState> m_channels;
     bool m_stateLoaded = false;
     std::vector<NewsProvider> m_providers;
+    std::vector<NewsProvider> m_topProviders;
     std::vector<std::string> m_enabledSources;
+    std::string m_pendingOpenChannel;
     int64_t m_providersFetchedAtMs = 0;
+    int64_t m_topProvidersFetchedAtMs = 0;
     bool m_providersInFlight = false;
+    bool m_topProvidersInFlight = false;
     std::vector<ProvidersCallback> m_providerWaiters;
+    std::vector<ProvidersCallback> m_topProviderWaiters;
 };
 
 // image hosts the bot hands out (Discord CDN and media proxy), https only.

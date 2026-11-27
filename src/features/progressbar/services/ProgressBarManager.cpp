@@ -468,8 +468,9 @@ bool ProgressBarManager::isFreeDragActive() const {
 
 void ProgressBarManager::beginDrag(CCPoint startWorld) {
     m_dragging = true;
-    if (!m_config.useCustomPosition && m_customNode && m_customNode->getParent()) {
-        CCPoint w = m_customNode->getParent()->convertToWorldSpace(m_customNode->getPosition());
+    auto customNode = m_customNode.lock();
+    if (!m_config.useCustomPosition && customNode && customNode->getParent()) {
+        CCPoint w = customNode->getParent()->convertToWorldSpace(customNode->getPosition());
         m_config.posX = w.x;
         m_config.posY = w.y;
         m_config.useCustomPosition = true;
@@ -492,18 +493,24 @@ void ProgressBarManager::endDrag() {
 }
 
 CCNode* ProgressBarManager::getActiveBarNode(CCNode* playLayerRoot) {
-    if (m_config.enabled && m_customNode && m_customNode->getParent()) {
-        return m_customNode;
+    auto customNode = m_customNode.lock();
+    if (m_config.enabled && customNode && customNode->getParent()) {
+        return customNode.data();
     }
-    if (!playLayerRoot) playLayerRoot = m_cachedPlayLayer;
+    auto cachedPl = m_cachedPlayLayer.lock();
+    if (!playLayerRoot) playLayerRoot = cachedPl.data();
     return findBarNode(playLayerRoot);
 }
 
 CCNode* ProgressBarManager::getActiveLabelNode(CCNode* playLayerRoot) {
-    if (m_config.enabled && m_customNode && m_customNode->getParent()) {
-        if (auto* lbl = m_customNode->getLabelNode()) return lbl;
+    auto customNode = m_customNode.lock();
+    if (m_config.enabled && customNode && customNode->getParent()) {
+        if (auto* custom = typeinfo_cast<CustomProgressBarNode*>(customNode.data())) {
+            if (auto* lbl = custom->getLabelNode()) return lbl;
+        }
     }
-    if (!playLayerRoot) playLayerRoot = m_cachedPlayLayer;
+    auto cachedPl = m_cachedPlayLayer.lock();
+    if (!playLayerRoot) playLayerRoot = cachedPl.data();
     return findLabelNode(playLayerRoot);
 }
 
@@ -511,23 +518,24 @@ CCTexture2D* ProgressBarManager::resolveCustomTexture(
     CCNode* host, CustomTexture& slot, std::string const& path
 ) {
     if (path.empty()) {
-        if (slot.animHost && slot.animHost->getParent())
-            slot.animHost->removeFromParent();
+        if (auto animHost = slot.animHost.lock(); animHost && animHost->getParent())
+            animHost->removeFromParent();
         slot = {};
         return nullptr;
     }
     if (slot.path == path) {
         slot.justChanged = false;
-        if (slot.animHost) {
-            if (auto* gif = typeinfo_cast<AnimatedGIFSprite*>(slot.animHost))
+        if (auto animHost = slot.animHost.lock()) {
+            if (auto* gif = typeinfo_cast<AnimatedGIFSprite*>(animHost.data()))
                 return gif->getTexture();
             return nullptr;
         }
-        return slot.staticTex.data();
+        if (slot.staticTex) return slot.staticTex.data();
+        // Animated host was destroyed (e.g. scene changed); fall through and reload.
     }
 
-    if (slot.animHost && slot.animHost->getParent())
-        slot.animHost->removeFromParent();
+    if (auto animHost = slot.animHost.lock(); animHost && animHost->getParent())
+        animHost->removeFromParent();
     slot.animHost = nullptr;
     slot.staticTex = nullptr;
     slot.path = path;
@@ -565,8 +573,8 @@ void ProgressBarManager::invalidateBaseline() {
     m_cachedPlayLayer = nullptr;
     m_cachedBar = nullptr;
     m_cachedLabel = nullptr;
-    if (m_customNode && m_customNode->getParent()) {
-        m_customNode->removeFromParent();
+    if (auto customNode = m_customNode.lock(); customNode && customNode->getParent()) {
+        customNode->removeFromParent();
     }
     m_customNode = nullptr;
     m_barSearchCooldown = 0;
@@ -574,15 +582,15 @@ void ProgressBarManager::invalidateBaseline() {
 }
 
 void ProgressBarManager::releaseCustomTextures() {
-    if (m_fillCustom.animHost && m_fillCustom.animHost->getParent())
-        m_fillCustom.animHost->removeFromParent();
-    if (m_bgCustom.animHost && m_bgCustom.animHost->getParent())
-        m_bgCustom.animHost->removeFromParent();
+    if (auto animHost = m_fillCustom.animHost.lock(); animHost && animHost->getParent())
+        animHost->removeFromParent();
+    if (auto animHost = m_bgCustom.animHost.lock(); animHost && animHost->getParent())
+        animHost->removeFromParent();
     m_fillCustom = {};
     m_bgCustom = {};
 
-    for (auto* d : m_liveDecorations) {
-        if (d && d->getParent()) d->removeFromParent();
+    for (auto const& weakDeco : m_liveDecorations) {
+        if (auto d = weakDeco.lock(); d && d->getParent()) d->removeFromParent();
     }
     m_liveDecorations.clear();
     m_liveDecorationPaths.clear();
@@ -592,7 +600,7 @@ int ProgressBarManager::addDecoration(BarDecoration const& d) {
     if (d.path.empty()) return -1;
     if (m_config.decorations.size() >= 32) return -1;
     m_config.decorations.push_back(d);
-    m_liveDecorations.push_back(nullptr);
+    m_liveDecorations.emplace_back();
     m_liveDecorationPaths.emplace_back();
     saveConfig();
     return static_cast<int>(m_config.decorations.size()) - 1;
@@ -601,8 +609,9 @@ int ProgressBarManager::addDecoration(BarDecoration const& d) {
 void ProgressBarManager::removeDecoration(int index) {
     if (index < 0 || index >= static_cast<int>(m_config.decorations.size())) return;
     if (index < static_cast<int>(m_liveDecorations.size())) {
-        auto* live = m_liveDecorations[index];
-        if (live && live->getParent()) live->removeFromParent();
+        if (auto live = m_liveDecorations[index].lock(); live && live->getParent()) {
+            live->removeFromParent();
+        }
         m_liveDecorations.erase(m_liveDecorations.begin() + index);
     }
     if (index < static_cast<int>(m_liveDecorationPaths.size())) {
@@ -614,7 +623,7 @@ void ProgressBarManager::removeDecoration(int index) {
 
 CCNode* ProgressBarManager::getDecorationNode(int index) {
     if (index < 0 || index >= static_cast<int>(m_liveDecorations.size())) return nullptr;
-    return m_liveDecorations[index];
+    return m_liveDecorations[index].lock().data();
 }
 
 CCNode* ProgressBarManager::findBarNode(CCNode* root) {
@@ -648,8 +657,8 @@ void ProgressBarManager::captureBaselineIfNeeded(CCNode* bar, CCNode* label) {
 
 void ProgressBarManager::restoreVanillaState(CCNode* bar, CCNode* label) {
     m_practiceHidden = false;
-    if (m_customNode) {
-        m_customNode->setVisible(false);
+    if (auto customNode = m_customNode.lock()) {
+        customNode->setVisible(false);
     }
     if (bar) {
         bar->setVisible(true);
@@ -758,26 +767,30 @@ void ProgressBarManager::updateTelemetryFromPlayLayer(
 void ProgressBarManager::ensureCustomNode(CCNode* playLayerRoot, CCNode* vanillaBar) {
     if (!playLayerRoot || !vanillaBar) return;
     CCNode* parent = vanillaBar->getParent() ? vanillaBar->getParent() : playLayerRoot;
-    if (!m_customNode || !m_customNode->getParent() || m_customNode->getParent() != parent) {
-        if (m_customNode && m_customNode->getParent()) {
-            m_customNode->removeFromParent();
+    auto customNode = m_customNode.lock();
+    if (!customNode || !customNode->getParent() || customNode->getParent() != parent) {
+        if (customNode && customNode->getParent()) {
+            customNode->removeFromParent();
         }
-        m_customNode = CustomProgressBarNode::create();
-        if (!m_customNode) return;
-        parent->addChild(m_customNode, std::max(10, m_baselineZOrder));
+        auto* created = CustomProgressBarNode::create();
+        if (!created) return;
+        parent->addChild(created, std::max(10, m_baselineZOrder));
+        m_customNode = created;
+        customNode = m_customNode.lock();
+        if (!customNode) return;
     }
 
-    m_customNode->setVisible(true);
+    customNode->setVisible(true);
     if (m_config.useCustomPosition) {
         CCPoint world = ccp(m_config.posX, m_config.posY);
-        m_customNode->setPosition(parent->convertToNodeSpace(world));
+        customNode->setPosition(parent->convertToNodeSpace(world));
     } else {
-        m_customNode->setPosition(m_baselinePos);
+        customNode->setPosition(m_baselinePos);
     }
-    m_customNode->setScaleX(std::max(0.15f, m_config.scaleLength));
-    m_customNode->setScaleY(std::max(0.15f, m_config.scaleThickness));
+    customNode->setScaleX(std::max(0.15f, m_config.scaleLength));
+    customNode->setScaleY(std::max(0.15f, m_config.scaleThickness));
     float rot = (m_config.vertical ? -90.f : 0.f) + m_config.userRotation;
-    m_customNode->setRotation(rot);
+    customNode->setRotation(rot);
 }
 
 void ProgressBarManager::applyDecorations(CCNode* playLayerRoot) {
@@ -785,8 +798,9 @@ void ProgressBarManager::applyDecorations(CCNode* playLayerRoot) {
     size_t N = m_config.decorations.size();
 
     while (m_liveDecorations.size() > N) {
-        auto* back = m_liveDecorations.back();
-        if (back && back->getParent()) back->removeFromParent();
+        if (auto back = m_liveDecorations.back().lock(); back && back->getParent()) {
+            back->removeFromParent();
+        }
         m_liveDecorations.pop_back();
     }
     while (m_liveDecorationPaths.size() > N) m_liveDecorationPaths.pop_back();
@@ -795,7 +809,8 @@ void ProgressBarManager::applyDecorations(CCNode* playLayerRoot) {
 
     for (size_t i = 0; i < N; ++i) {
         auto const& cfg = m_config.decorations[i];
-        auto* live = m_liveDecorations[i];
+        auto liveRef = m_liveDecorations[i].lock();
+        CCNode* live = liveRef.data();
 
         bool needsSpawn = !live || !live->getParent()
                        || m_liveDecorationPaths[i] != cfg.path;
@@ -819,21 +834,24 @@ void ProgressBarManager::applyToPlayLayer(CCNode* playLayerRoot, bool isPractice
     if (!playLayerRoot) return;
     if (!m_config.enabled && !m_wasActive) return;
 
-    if (m_cachedPlayLayer != playLayerRoot) {
+    auto cachedPl = m_cachedPlayLayer.lock();
+    if (!cachedPl || cachedPl.data() != playLayerRoot) {
         m_cachedPlayLayer = playLayerRoot;
         m_cachedBar = findBarNode(playLayerRoot);
         m_cachedLabel = findLabelNode(playLayerRoot);
         m_barSearchCooldown = 0;
     }
-    auto* bar   = m_cachedBar;
-    auto* label = m_cachedLabel;
+    auto barRef   = m_cachedBar.lock();
+    auto labelRef = m_cachedLabel.lock();
+    auto* bar   = barRef.data();
+    auto* label = labelRef.data();
     if (!bar || !bar->getParent()) {
         if (--m_barSearchCooldown > 0) return;
         m_barSearchCooldown = kBarSearchInterval;
-        m_cachedBar = findBarNode(playLayerRoot);
-        m_cachedLabel = findLabelNode(playLayerRoot);
-        bar = m_cachedBar;
-        label = m_cachedLabel;
+        bar = findBarNode(playLayerRoot);
+        label = findLabelNode(playLayerRoot);
+        m_cachedBar = bar;
+        m_cachedLabel = label;
     }
     if (!bar) return;
 
@@ -848,7 +866,7 @@ void ProgressBarManager::applyToPlayLayer(CCNode* playLayerRoot, bool isPractice
     if (m_config.hideInPractice && isPracticeMode) {
         bar->setVisible(false);
         if (label) label->setVisible(false);
-        if (m_customNode) m_customNode->setVisible(false);
+        if (auto customNode = m_customNode.lock()) customNode->setVisible(false);
         m_practiceHidden = true;
         return;
     }
@@ -865,14 +883,16 @@ void ProgressBarManager::applyToPlayLayer(CCNode* playLayerRoot, bool isPractice
     updateTelemetryFromPlayLayer(playLayerRoot, dt, isPracticeMode);
     ensureCustomNode(playLayerRoot, bar);
 
-    if (m_customNode) {
-        CCTexture2D* fillTex = m_config.useFillTexture
-            ? resolveCustomTexture(playLayerRoot, m_fillCustom, m_config.fillTexturePath)
-            : nullptr;
-        CCTexture2D* bgTex = m_config.useBgTexture
-            ? resolveCustomTexture(playLayerRoot, m_bgCustom, m_config.bgTexturePath)
-            : nullptr;
-        m_customNode->renderState(m_config, m_telemetry, m_animTime, fillTex, bgTex);
+    if (auto customNode = m_customNode.lock()) {
+        if (auto* custom = typeinfo_cast<CustomProgressBarNode*>(customNode.data())) {
+            CCTexture2D* fillTex = m_config.useFillTexture
+                ? resolveCustomTexture(playLayerRoot, m_fillCustom, m_config.fillTexturePath)
+                : nullptr;
+            CCTexture2D* bgTex = m_config.useBgTexture
+                ? resolveCustomTexture(playLayerRoot, m_bgCustom, m_config.bgTexturePath)
+                : nullptr;
+            custom->renderState(m_config, m_telemetry, m_animTime, fillTex, bgTex);
+        }
     }
 
     applyDecorations(playLayerRoot);

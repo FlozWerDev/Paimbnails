@@ -202,7 +202,7 @@ private:
 
     struct CustomTexture {
         std::string path;
-        cocos2d::CCNode* animHost = nullptr;
+        geode::WeakRef<cocos2d::CCNode> animHost;
         geode::Ref<cocos2d::CCTexture2D> staticTex;
         bool justChanged = false;
     };
@@ -236,16 +236,16 @@ private:
     CustomTexture m_fillCustom;
     CustomTexture m_bgCustom;
 
-    std::vector<cocos2d::CCNode*> m_liveDecorations;
+    std::vector<geode::WeakRef<cocos2d::CCNode>> m_liveDecorations;
     std::vector<std::string> m_liveDecorationPaths;
 
     float m_animTime = 0.f;
     long long m_lastTickNs = 0;
 
-    cocos2d::CCNode* m_cachedPlayLayer = nullptr;
-    cocos2d::CCNode* m_cachedBar = nullptr;
-    cocos2d::CCNode* m_cachedLabel = nullptr;
-    CustomProgressBarNode* m_customNode = nullptr;
+    geode::WeakRef<cocos2d::CCNode> m_cachedPlayLayer;
+    geode::WeakRef<cocos2d::CCNode> m_cachedBar;
+    geode::WeakRef<cocos2d::CCNode> m_cachedLabel;
+    geode::WeakRef<cocos2d::CCNode> m_customNode;
 
     static constexpr int kBarSearchInterval = 30;
     int m_barSearchCooldown = 0;

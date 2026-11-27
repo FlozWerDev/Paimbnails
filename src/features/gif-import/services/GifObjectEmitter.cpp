@@ -2,6 +2,9 @@
 #include "GifImportPipeline.hpp"
 #include "GifMotionPlanner.hpp"
 #include "GifPrimitiveSerializer.hpp"
+#include "GifSvgImporter.hpp"
+#include "OpenVectorBootstrap.hpp"
+#include "OpenVectorRunner.hpp"
 
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -55,6 +58,9 @@ struct AsyncProgress {
     std::atomic<int> stage{static_cast<int>(BuildStage::Preparing)};
     std::atomic<int> pass{0};
     std::atomic<int> passes{0};
+    std::atomic<bool> vectorizing{false};
+    std::atomic<int> vecDone{0};
+    std::atomic<int> vecTotal{0};
     std::mutex mutex;
     std::optional<BuildResult> result;
 };
@@ -617,14 +623,87 @@ private:
         auto progress = m_progress;
         return paimon::ThreadTracker::get().spawn([source, options, progress] {
             geode::utils::thread::setName("Paimon GIF Background Plan");
-            auto result = buildPlan(
-                *source, options, [progress](BuildProgress const& update) {
-                    progress->value.store(update.value, std::memory_order_relaxed);
-                    progress->stage.store(
-                        static_cast<int>(update.stage), std::memory_order_relaxed);
-                    progress->pass.store(update.pass, std::memory_order_relaxed);
-                    progress->passes.store(update.passes, std::memory_order_relaxed);
-                });
+            BuildResult result;
+            if (source->isSvg()) {
+                progress->stage.store(static_cast<int>(BuildStage::Geometry), std::memory_order_relaxed);
+                progress->value.store(0.25f, std::memory_order_relaxed);
+                auto svgRes = buildSvgPlan(source->svgContent, svgOptionsFromImportOptions(options));
+                progress->stage.store(static_cast<int>(BuildStage::Done), std::memory_order_relaxed);
+                progress->value.store(1.f, std::memory_order_relaxed);
+                result.plan = std::move(svgRes.plan);
+                result.error = std::move(svgRes.error);
+            } else if (source->hasSvgFrames()) {
+                progress->stage.store(static_cast<int>(BuildStage::Geometry), std::memory_order_relaxed);
+                progress->value.store(0.20f, std::memory_order_relaxed);
+                auto svgRes = buildAnimatedSvgPlan(
+                    source->svgFrames,
+                    svgOptionsFromImportOptions(options),
+                    options.loop,
+                    source->sourceFrameCount,
+                    [progress](int done, int total) {
+                        if (total > 0) {
+                            float const frac = static_cast<float>(done) / static_cast<float>(total);
+                            progress->value.store(0.20f + frac * 0.78f, std::memory_order_relaxed);
+                        }
+                    });
+                progress->stage.store(static_cast<int>(BuildStage::Done), std::memory_order_relaxed);
+                progress->value.store(1.f, std::memory_order_relaxed);
+                result.plan = std::move(svgRes.plan);
+                result.error = std::move(svgRes.error);
+            } else if (modeUsesSvgConversion(options.mode) && OpenVectorBootstrap::get().exists()) {
+                int const expectedFrames = std::clamp(
+                    options.maxFrames, 1, std::max(1, static_cast<int>(source->frames.size())));
+                progress->vectorizing.store(true, std::memory_order_relaxed);
+                progress->vecDone.store(0, std::memory_order_relaxed);
+                progress->vecTotal.store(expectedFrames, std::memory_order_relaxed);
+                progress->stage.store(static_cast<int>(BuildStage::Preparing), std::memory_order_relaxed);
+                progress->value.store(0.05f, std::memory_order_relaxed);
+                auto const quality = static_cast<OpenVectorQuality>(
+                    std::clamp(options.svgQuality, 0, 2));
+                auto vecRes = OpenVectorRunner::vectorizeFramesToSvg(
+                    *source,
+                    options.maxFrames,
+                    quality,
+                    [progress](int done, int total) {
+                        progress->vecDone.store(done, std::memory_order_relaxed);
+                        progress->vecTotal.store(total, std::memory_order_relaxed);
+                        if (total > 0) {
+                            float const frac = static_cast<float>(done) / static_cast<float>(total);
+                            progress->value.store(0.05f + frac * 0.65f, std::memory_order_relaxed);
+                        }
+                    });
+                progress->vectorizing.store(false, std::memory_order_relaxed);
+                if (!vecRes) {
+                    result.error = std::move(vecRes.error);
+                } else {
+                    progress->stage.store(static_cast<int>(BuildStage::Geometry), std::memory_order_relaxed);
+                    progress->value.store(0.72f, std::memory_order_relaxed);
+                    auto svgRes = buildAnimatedSvgPlan(
+                        vecRes.frames,
+                        svgOptionsFromImportOptions(options),
+                        options.loop,
+                        vecRes.sourceFrames,
+                        [progress](int done, int total) {
+                            if (total > 0) {
+                                float const frac = static_cast<float>(done) / static_cast<float>(total);
+                                progress->value.store(0.72f + frac * 0.26f, std::memory_order_relaxed);
+                            }
+                        });
+                    progress->stage.store(static_cast<int>(BuildStage::Done), std::memory_order_relaxed);
+                    progress->value.store(1.f, std::memory_order_relaxed);
+                    result.plan = std::move(svgRes.plan);
+                    result.error = std::move(svgRes.error);
+                }
+            } else {
+                result = buildPlan(
+                    *source, options, [progress](BuildProgress const& update) {
+                        progress->value.store(update.value, std::memory_order_relaxed);
+                        progress->stage.store(
+                            static_cast<int>(update.stage), std::memory_order_relaxed);
+                        progress->pass.store(update.pass, std::memory_order_relaxed);
+                        progress->passes.store(update.passes, std::memory_order_relaxed);
+                    });
+            }
             std::lock_guard lock(progress->mutex);
             progress->result = std::move(result);
         });
@@ -689,11 +768,20 @@ private:
                 return;
             }
             float const value = m_progress->value.load(std::memory_order_relaxed);
+            m_fill->setScaleX(value * 0.7f);
+            if (m_progress->vectorizing.load(std::memory_order_relaxed)) {
+                int const done = m_progress->vecDone.load(std::memory_order_relaxed);
+                int const total = m_progress->vecTotal.load(std::memory_order_relaxed);
+                std::string text = total > 1
+                    ? fmt::format("Vectorizando {}/{} | {:.0f}%", done, total, value * 100.f)
+                    : fmt::format("Vectorizando SVG | {:.0f}%", value * 100.f);
+                m_label->setString(text.c_str());
+                return;
+            }
             auto const stage = static_cast<BuildStage>(
                 m_progress->stage.load(std::memory_order_relaxed));
             int const pass = m_progress->pass.load(std::memory_order_relaxed);
             int const passes = m_progress->passes.load(std::memory_order_relaxed);
-            m_fill->setScaleX(value * 0.7f);
             std::string text = passes > 1
                 ? fmt::format("Render {}/{} | {} | {:.0f}%", pass, passes,
                               stageText(stage), value * 100.f)

@@ -422,9 +422,15 @@ class $modify(PaimonHoverTouch, CCTouchDispatcher) {
             CCTouchDispatcher::touchesBegan(touches, event);
             return;
         }
-        auto* pass = CCSet::create();
         auto* director = CCDirector::get();
         auto* keyboard = director ? director->getKeyboardDispatcher() : nullptr;
+        bool const edit = Manager::get().picking ||
+            (keyboard && keyboard->getControlKeyPressed());
+        if (!edit || !allowed() || popupOpen()) {
+            CCTouchDispatcher::touchesBegan(touches, event);
+            return;
+        }
+        auto* pass = CCSet::create();
 
         for (auto it = touches->begin(); it != touches->end(); ++it) {
             auto* object = *it;
@@ -437,18 +443,14 @@ class $modify(PaimonHoverTouch, CCTouchDispatcher) {
             touchPoint = touch->getLocation();
             activeTouches.insert(id);
 
-            bool const edit = Manager::get().picking ||
-                (keyboard && keyboard->getControlKeyPressed());
-            if (allowed() && edit && !popupOpen()) {
-                if (auto* item = under(touchPoint)) {
-                    auto key = buttonKey(item);
-                    swallowedTouches.insert(id);
-                    Manager::get().picking = false;
-                    Loader::get()->queueInMainThread([key = std::move(key)] {
-                        if (!paimon::isRuntimeShuttingDown()) open(key);
-                    });
-                    continue;
-                }
+            if (auto* item = under(touchPoint)) {
+                auto key = buttonKey(item);
+                swallowedTouches.insert(id);
+                Manager::get().picking = false;
+                Loader::get()->queueInMainThread([key = std::move(key)] {
+                    if (!paimon::isRuntimeShuttingDown()) open(key);
+                });
+                continue;
             }
             pass->addObject(object);
         }
@@ -476,7 +478,7 @@ class $modify(PaimonHoverTouch, CCTouchDispatcher) {
     }
 
     void touchesMoved(CCSet* touches, CCEvent* event) {
-        if (!touches) {
+        if (!touches || (swallowedTouches.empty() && activeTouches.empty())) {
             CCTouchDispatcher::touchesMoved(touches, event);
             return;
         }
@@ -485,7 +487,7 @@ class $modify(PaimonHoverTouch, CCTouchDispatcher) {
     }
 
     void touchesEnded(CCSet* touches, CCEvent* event) {
-        if (!touches) {
+        if (!touches || (swallowedTouches.empty() && activeTouches.empty())) {
             CCTouchDispatcher::touchesEnded(touches, event);
             return;
         }
@@ -494,7 +496,7 @@ class $modify(PaimonHoverTouch, CCTouchDispatcher) {
     }
 
     void touchesCancelled(CCSet* touches, CCEvent* event) {
-        if (!touches) {
+        if (!touches || (swallowedTouches.empty() && activeTouches.empty())) {
             CCTouchDispatcher::touchesCancelled(touches, event);
             return;
         }

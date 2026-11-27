@@ -314,6 +314,17 @@ std::vector<CuratedObjectDef> const& curatedObjectCatalog() {
         {998, "Ring Arc Segment 2", "Deco Shapes", "Long curved ring arc segment (~220 deg, great for halos/crescents/ahoge)"},
         {999, "Ring Arc Segment 3", "Deco Shapes", "Short curved ring arc segment (~75 deg)"},
         {1000, "Ring Arc Segment 4", "Deco Shapes", "Tiny curved ring arc segment (~45 deg)"},
+        {507, "Perspective Curve / Line Segment 1", "Deco Shapes", "Thin vector stroke segment (persp_outline_02); chain at 0.12x-0.25x scale for organic character lineart, hair, and folds"},
+        {508, "Perspective Curve / Line Segment 2", "Deco Shapes", "Curved vector stroke segment (persp_outline_03); pairs with 507 for detailed art contours"},
+        {1009, "Compact Soft Gradient", "Glow & Deco", "10x10 smooth gradient (d_gradient_b_02); ideal for cel-shaded inner gradients, hair/cloth shading, and soft bevel bands"},
+        {1202, "Thick Outline Block", "Blocks / Deco", "Thick crisp block outline (blockOutlineThick_01) for bold structural rims"},
+        {1339, "Bevel / Slope Outline", "Blocks / Deco", "Clean structural outline segment (blockOutline_15) for unified macro-block edges"},
+        {1759, "Structural Outline Variant", "Blocks / Deco", "Clean blockOutline_15 variant for angled architectural frames"},
+        {1835, "Scale Fade Ring 1", "Glow & Deco", "Soft radial ring/star bloom (d_scaleFadeRing_01) for specular corner flares and ornaments"},
+        {1837, "Scale Fade Ring 2", "Glow & Deco", "Soft radial bloom (d_scaleFadeRing_02) for luminous highlights"},
+        {1838, "Scale Fade Ring 4", "Glow & Deco", "Compact radial fade ring (d_scaleFadeRing_04) for soft cel-shading and mist puffs"},
+        {129, "Soft Cloud 3", "Atmosphere", "Organic cloud puff (d_cloud_03) for sky framing, foreground snow/mist, and soft silhouette edges"},
+        {131, "Soft Cloud 5", "Atmosphere", "Wide cloud puff (d_cloud_05) for layered atmospheric clouds and fog banks"},
         {914, "Text Object", "Text", "Displays text in-level. Key 31 = base64-encoded UTF-8 string."},
         {1615, "Counter / Item Label", "UI / Text", "Displays an itemID / timer / points counter in-level (key 80 = itemID)."},
 
@@ -763,6 +774,9 @@ matjson::Value buildReferenceJson(std::string_view topic, std::string_view filte
                 "LAYERING & VISIBILITY: Use B5(-5)..B1(3) for depth behind structure, Default(0) for gameplay, T1(5)..T4(11) for foreground overlays. Place custom opaque covers on z_layer='T2' so default ID 1/slope sprites never bleed through.",
                 "COLOR & LIGHTING DISCIPLINE: Allocate unused color channels and group IDs per structure. Enable blending=true only for dark/neon scenes; on bright/cream palettes use non-blending translucent colors so highlights do not wash out to white.",
                 "COHERENT LEVEL DESIGN: Maintain consistent theme, clear hazard/spike readability, fair jump/orb spacing for the active speed, and clean sightlines.",
+                "MACRO-STRUCTURED BLOCKS (MYTHIC STANDARD): Avoid repeating identical 30x30 cell motifs. Treat each connected platform/pillar as one continuous architectural silhouette (211, 694, 1759/1339, 1202) with two-tone bevel bands, stepped diagonal gradient strips (503/1009 + key 43 HSV shifts), or 3D skewing (warpY=131, warpX=132). Place corner star flares (1835/1837 + 1764) sparingly only on lit corners.",
+                "ILLUSTRATED ART (CURVES + GRADIENTS): Build characters, hair, cloth folds, and detailed props by layering soft gradient shading (1009, 1838/1835, 1764, 1887) inside fine curved lineart from chained 507/508 segments at 0.12x-0.25x scale with tinted HSV outlines — never crude primitive-circle faces or raw 914 text.",
+                "DEPTH HIERARCHY & ATMOSPHERE: Keep B5/B4 silhouettes desaturated and base-faded with clouds/mist (129/131 + 503/1888), B2/B1 midground muted without heavy outlines, and T1-T3 foreground crisp. On bright/pastel scenes keep blending=false with low-opacity translucency; on dark/neon scenes use blending=true rim lights + 2065 emitters (key 145, key 146=1) and 3608 Spawn Particle (51=particleGroup, 71=posGroup).",
                 "MANDATORY ZOOMED QA: Always inspect with audit_level_quality + render_1to1 at mode='1to1' AND zoomed-in (zoom=1.8+, show_grid=true) at corners, slopes, and spikes. Fix any misaligned, clipped, or incomplete detail before finishing.",
             })},
         });
@@ -809,6 +823,8 @@ std::string buildReferenceMarkdown(std::string_view topic) {
            << "- **Strict Scope**: Build only what the user asks for. If decorating a structure, do not add unrequested backgrounds or external scenery.\n"
            << "- **Zero Scattered Objects**: Every object must connect purposefully to the structure or coherent level flow.\n"
            << "- **Complete & Flush Geometry**: Align all corners, borders, slopes, and fills precisely; avoid stray internal seam lines across adjacent blocks and overhanging border tips.\n"
+           << "- **Macro-Structured Blocks (Mythic Standard)**: Build connected structures as unified beveled silhouettes (`211`, `694`, `1759`/`1339`, `1202`) with two-tone bevel bands, stepped diagonal shading (`503`/`1009` + key `43` HSV shifts), or 3D skewing (`warpY=131`, `warpX=132`), rather than repetitive per-cell squares. Add corner flares (`1835`/`1837` + `1764`) sparingly on lit corners only.\n"
+           << "- **Illustrated Art & Depth Hierarchy**: Build character/organic art with chained thin `507`/`508` curved lineart (`0.12x–0.25x`) over layered soft shading (`1009`, `1838`, `1764`, `1887`). Separate `B5/B4` mist-faded silhouettes (`129`/`131` + `503`), muted `B2/B1` midground props, and crisp `T1–T3` foreground. Keep `blending=false` with low opacity on bright/pastel palettes; use `blending=true` + `2065` (`key 145`, `146=1`) / `3608` Spawn Particle on dark/neon scenes.\n"
            << "- **Visual QA**: Always inspect with `render_1to1` (`mode='1to1'` and zoomed `zoom=1.8+` with `show_grid=true`) on corners, slopes, and spikes before finishing.\n\n";
     }
 

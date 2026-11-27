@@ -1200,9 +1200,7 @@ void EditorMusicPanel::tick(float dt) {
     auto& player = EditorMusicPlayer::get();
     player.tick(safeDt);
 
-    bool const levelRunning = m_editor && m_editor->m_playbackMode != PlaybackMode::Not;
-    if (levelRunning && !player.isSuspended()) player.suspend();
-    else if (!levelRunning && player.isSuspended()) player.resumeFromSuspend();
+    syncEditorMusicSuspend(m_editor);
 
     updateAnimations(safeDt);
 

@@ -12,7 +12,7 @@ using namespace cocos2d;
 using namespace paimon;
 
 namespace {
-CommentTextSelector* g_activeSelector = nullptr;
+WeakRef<CommentTextSelector> g_activeSelector;
 constexpr float kMinSelectionDistance = 6.f;
 #ifndef GEODE_IS_DESKTOP
 constexpr float kLongPressDelay = 0.35f;
@@ -183,13 +183,14 @@ bool CommentTextSelector::ccTouchBegan(CCTouch* touch, CCEvent*) {
         !isVisibleAt(touch->getLocation())) return false;
     if (m_lines.empty()) rebuildLayoutCache();
     auto point = convertTouchToNodeSpace(touch);
+    auto activeSelector = g_activeSelector.lock();
     if (m_lines.empty() || !getExpandedTextRect().containsPoint(point)) {
-        if (g_activeSelector == this) dismissSelection();
+        if (activeSelector && activeSelector.data() == this) dismissSelection();
         return false;
     }
-    if (g_activeSelector && g_activeSelector != this) {
-        if (g_activeSelector->m_touch) return false;
-        g_activeSelector->dismissSelection();
+    if (activeSelector && activeSelector.data() != this) {
+        if (activeSelector->m_touch) return false;
+        activeSelector->dismissSelection();
     }
     dismissSelection();
     m_touch = touch;
@@ -350,7 +351,10 @@ void CommentTextSelector::rebuildLayoutCache() {
         size_t offset = 0;
         if (area->m_label && area->m_label->m_lines) {
             for (auto* line : CCArrayExt<CCLabelBMFont*>(area->m_label->m_lines)) {
-                std::string lineText = paimon::text::stripColorCodes(line->getString());
+                if (!line) continue;
+                char const* rawStr = line->getString();
+                if (!rawStr) continue;
+                std::string lineText = paimon::text::stripColorCodes(rawStr);
                 if (lineText.empty()) continue;
                 auto start = m_fullText.find(lineText, offset);
                 if (start == std::string::npos) continue;
@@ -522,7 +526,9 @@ void CommentTextSelector::onSelectAll(CCObject*) {
 }
 
 void CommentTextSelector::dismissSelection() {
-    if (g_activeSelector == this) g_activeSelector = nullptr;
+    if (auto active = g_activeSelector.lock(); active && active.data() == this) {
+        g_activeSelector = nullptr;
+    }
     m_startIndex = m_endIndex = 0;
     if (m_copyMenu) m_copyMenu->setVisible(false);
     if (m_highlight) {
@@ -548,8 +554,9 @@ void CommentTextSelector::attach(CCNode* parent, std::string const& text, CCNode
 }
 
 bool CommentTextSelector::handleKeyboard(KeyboardInputData& data) {
-    if (!g_activeSelector || data.action != KeyboardInputData::Action::Press) return false;
-    auto* selector = g_activeSelector;
+    auto selectorRef = g_activeSelector.lock();
+    if (!selectorRef || data.action != KeyboardInputData::Action::Press) return false;
+    auto* selector = selectorRef.data();
     if (!selector->isRunning() || !selector->isVisibleAt(selector->convertToWorldSpace(selector->m_endPos))) return false;
     bool shortcut = (data.modifiers.value & (KeyboardModifier::Control | KeyboardModifier::Super)) != 0;
     if (shortcut && data.key == KEY_C) selector->onCopy(nullptr);

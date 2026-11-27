@@ -70,8 +70,13 @@ bool GDProgressBar::init(float width, float height) {
         m_fillSprite = CCSprite::create(fillFile);
     }
     if (m_fillSprite && m_fillSprite->getTexture()) {
-        ccTexParams tp{GL_LINEAR, GL_LINEAR, GL_REPEAT, GL_CLAMP_TO_EDGE};
-        m_fillSprite->getTexture()->setTexParameters(&tp);
+        auto* tex = m_fillSprite->getTexture();
+        auto const w = tex->getPixelsWide();
+        auto const h = tex->getPixelsHigh();
+        bool const isPot = (w > 0 && (w & (w - 1)) == 0 && h > 0 && (h & (h - 1)) == 0);
+        GLuint const wrapS = isPot ? GL_REPEAT : GL_CLAMP_TO_EDGE;
+        ccTexParams tp{GL_LINEAR, GL_LINEAR, wrapS, GL_CLAMP_TO_EDGE};
+        tex->setTexParameters(&tp);
         m_fillSprite->setAnchorPoint({0.f, 0.5f});
         m_fillSprite->setPosition({m_pad, m_height / 2.f});
         m_fillSprite->setVisible(false);

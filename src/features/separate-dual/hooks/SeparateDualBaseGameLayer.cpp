@@ -13,13 +13,16 @@ class $modify(PaimonSeparateDualBase, GJBaseGameLayer) {
     // dress both live fighters from their own side of the vault.
     void refreshFighters() {
         auto vault = DualKitVault::get();
-        vault->dressFighter(m_player1, Side::Primary);
-        vault->dressFighter(m_player2, Side::Secondary);
+        if (!vault) return;
+        if (m_player1) vault->dressFighter(m_player1, Side::Primary);
+        if (m_player2) vault->dressFighter(m_player2, Side::Secondary);
     }
 
     // refresh the dual-exit preview doll for the fighter that just left.
     void refreshExitDoll(PlayerObject* fighter) {
+        if (!fighter) return;
         auto vault = DualKitVault::get();
+        if (!vault) return;
         auto doll = findFirstChildRecursive<SimplePlayer>(
             this, [](SimplePlayer* node) { return node->getZOrder() == 100; });
         if (!doll) return;
@@ -72,12 +75,13 @@ class $modify(PaimonSeparateDualBase, GJBaseGameLayer) {
         DualKitVault::get()->ensureBurstArt(
             DualKitVault::get()->slotIcon(IconSlot::Death, Side::Secondary));
         this->addOnExitCallback([this] {
-            if (!moduleEnabled()) return true;
-            DualKitVault::get()->resetRunState();
-            DualKitVault::get()->releaseBurstArt(
-                DualKitVault::get()->slotIcon(IconSlot::Death, Side::Secondary));
-            DualKitVault::get()->m_exhaustMain = nullptr;
-            DualKitVault::get()->m_exhaustSecond = nullptr;
+            if (auto* vault = DualKitVault::get()) {
+                vault->resetRunState();
+                vault->releaseBurstArt(
+                    vault->slotIcon(IconSlot::Death, Side::Secondary));
+                vault->m_exhaustMain = nullptr;
+                vault->m_exhaustSecond = nullptr;
+            }
             return true;
         });
         return true;

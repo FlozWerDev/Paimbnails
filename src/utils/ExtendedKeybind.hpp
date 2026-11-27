@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Geode/Geode.hpp>
 #include <Geode/loader/Event.hpp>
@@ -92,5 +92,8 @@ using ScrollCaptureCallback = std::function<bool(double y, geode::KeyboardModifi
 void setScrollCaptor(ScrollCaptureCallback callback);
 ScrollCaptureCallback const& currentScrollCaptor();
 bool hasScrollCaptor();
+
+void setRecordingKeybind(bool active);
+bool isRecordingKeybind();
 
 }

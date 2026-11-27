@@ -45,16 +45,12 @@ class $modify(PaimonGifImportEditorUI, EditorUI) {
         if (!button) return true;
         button->setID("gif-import-button"_spr);
 
-        if (auto* menu = paimon::editor::hostToolbarMenu(this)) {
-            menu->addChild(button);
-            if (menu->getLayout()) menu->updateLayout();
-        } else {
-            auto* fallback = CCMenu::create();
-            fallback->setID("gif-import-menu"_spr);
-            fallback->setPosition({28.f, CCDirector::get()->getWinSize().height - 128.f});
-            fallback->addChild(button);
-            addChild(fallback, 100);
-        }
+        paimon::editor::addToolbarButton(
+            this,
+            button,
+            "gif-import-menu"_spr,
+            {28.f, CCDirector::get()->getWinSize().height - 128.f}
+        );
         return true;
     }
 };

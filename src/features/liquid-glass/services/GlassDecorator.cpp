@@ -132,6 +132,7 @@ struct AssetIndex {
     std::unordered_map<CCTexture2D const*, std::string> textures;
     std::unordered_map<FrameKey, std::string, FrameKeyHash> frames;
     std::unordered_set<CCTexture2D const*> indexedTextures;
+    std::unordered_set<CCTexture2D const*> nonFrameTextures;
     unsigned textureCount = 0;
     unsigned frameCount = 0;
 };
@@ -165,6 +166,7 @@ void syncAssetIndex(bool forceFrames = false) {
         index.frames.clear();
         index.frames.reserve(fCount);
         index.indexedTextures.clear();
+        index.nonFrameTextures.clear();
         for (auto [key, frame] : CCDictionaryExt<std::string_view, CCSpriteFrame*>(frameDict)) {
             // Read m_pobTexture directly so we never trigger lazy disk loads on unrelated sheets.
             auto* tex = frame ? frame->m_pobTexture : nullptr;
@@ -204,8 +206,12 @@ std::string_view frameNameOf(CCSprite* sprite) {
     auto& idx = assetIndex();
     auto const fk = makeFrameKey(tex, sprite->getTextureRect(), sprite->isTextureRectRotated());
     auto it = idx.frames.find(fk);
-    if (it == idx.frames.end() && !idx.indexedTextures.contains(tex)) {
+    if (it == idx.frames.end() && !idx.indexedTextures.contains(tex) &&
+        !idx.nonFrameTextures.contains(tex)) {
         syncAssetIndex(true);
+        if (!idx.indexedTextures.contains(tex)) {
+            idx.nonFrameTextures.insert(tex);
+        }
         it = idx.frames.find(fk);
     }
     return it != idx.frames.end() ? std::string_view(it->second) : std::string_view{};
@@ -853,41 +859,47 @@ void watchNode(CCNode* root, unsigned frame) {
         watches.push_back({.root = root, .isPopup = popup != nullptr});
         it = std::prev(watches.end());
     }
-    auto& watch = *it;
-    watch.seenFrame = frame;
+    std::size_t const watchIdx = static_cast<std::size_t>(std::distance(watches.begin(), it));
+    watches[watchIdx].seenFrame = frame;
 
     std::size_t const curLayout = layoutOf(tracked);
-    bool const unchanged = watch.mainLayer == tracked && watch.layout == curLayout;
+    bool const unchanged = watches[watchIdx].mainLayer == tracked && watches[watchIdx].layout == curLayout;
     if (unchanged) {
-        if (watch.isPopup && !watch.host) {
-            if (frame - watch.scanFrame < kRescanFrames) return;
+        if (watches[watchIdx].isPopup && !watches[watchIdx].host) {
+            if (frame - watches[watchIdx].scanFrame < kRescanFrames) return;
         } else {
-            bool const intact = !watch.host || plateIntact(tracked, watch.host);
-            if (intact && secondsNow() - watch.scanTime < kChromeRescanSeconds) return;
+            bool const intact = !watches[watchIdx].host || plateIntact(tracked, watches[watchIdx].host);
+            if (intact && secondsNow() - watches[watchIdx].scanTime < kChromeRescanSeconds) return;
         }
     }
 
-    watch.mainLayer = tracked;
-    watch.scanFrame = frame;
-    watch.scanTime = secondsNow();
+    watches[watchIdx].mainLayer = tracked;
+    watches[watchIdx].scanFrame = frame;
+    watches[watchIdx].scanTime = secondsNow();
+    CCNode* newHost = nullptr;
     if (popup) {
-        watch.host = decoratePopup(popup);
+        newHost = decoratePopup(popup);
     } else if (dropdown) {
         decorateDropDown(dropdown);
-        watch.host = nullptr;
     } else if (dialog) {
         decorateDialogLayer(dialog);
-        watch.host = nullptr;
     } else if (typeinfo_cast<AchievementBar*>(root) || typeinfo_cast<TextAlertPopup*>(root) ||
                typeinfo_cast<Notification*>(root)) {
         decorateBannerNode(root);
-        watch.host = nullptr;
     } else {
         decorateUiRoot(root);
-        watch.host = nullptr;
     }
-    // plates and wells are children too: compare against the decorated layout.
-    watch.layout = layoutOf(tracked);
+    // Re-lookup in case decorate*() caused watches to reallocate.
+    auto& updatedWatches = layerWatches();
+    if (watchIdx < updatedWatches.size() && updatedWatches[watchIdx].root == root) {
+        updatedWatches[watchIdx].host = newHost;
+        // plates and wells are children too: compare against the decorated layout.
+        updatedWatches[watchIdx].layout = layoutOf(tracked);
+    } else if (auto retry = std::ranges::find(updatedWatches, static_cast<CCNode const*>(root), &LayerWatch::root);
+               retry != updatedWatches.end()) {
+        retry->host = newHost;
+        retry->layout = layoutOf(tracked);
+    }
 }
 
 void watchScene(CCScene* scene, unsigned frame) {
@@ -970,6 +982,11 @@ void decorateUiRoot(CCNode* root) {
 
 void decorateButtonSprite(ButtonSprite* button) {
     if (!button || !GlassRuntime::get().allows(GlassScope::Buttons)) return;
+    // Skip unparented buttons created during gameplay or level-editor construction;
+    // popups opened inside the editor are decorated once attached via FLAlertLayer::show.
+    if (!button->getParent() && (LevelEditorLayer::get() != nullptr || PlayLayer::get() != nullptr)) {
+        return;
+    }
     if (auto* background = button->m_BGSprite) {
         if (auto* plate = attachGlass(background, GlassKind::Button, GlassScope::Buttons)) {
             plate->setSkinColor(skinColorOf(background));
@@ -1115,6 +1132,7 @@ void invalidateSkinCache() {
     index.textures.clear();
     index.frames.clear();
     index.indexedTextures.clear();
+    index.nonFrameTextures.clear();
     index.textureCount = 0;
     index.frameCount = 0;
 }

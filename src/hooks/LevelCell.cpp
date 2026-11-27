@@ -207,14 +207,11 @@ class $modify(PaimonLevelCell, LevelCell) {
         Ref<CCTexture2D> m_deferredTexture = nullptr;
 
         std::chrono::steady_clock::time_point m_thumbnailRequestTime{};
-    };
-    
-    ~PaimonLevelCell() {
-        auto fields = m_fields.self();
-        if (fields) {
-            fields->m_isBeingDestroyed = true;
+
+        ~Fields() {
+            m_isBeingDestroyed = true;
         }
-    }
+    };
 
     $override
     bool init() {

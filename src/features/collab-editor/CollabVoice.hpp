@@ -1,7 +1,7 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
-#include <deque>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -48,21 +48,26 @@ public:
     void stopAll();
 
 private:
-    CollabVoice() = default;
+    CollabVoice();
 
     bool startRecording();
     void stopRecording();
     void pumpRecording();
-    void emitFrame(std::vector<int16_t> const& samples);
+    void emitFrame(int16_t const* samples, size_t count);
 
     Speaker* speakerFor(int clientId, std::string const& name);
 
     bool m_micEnabled = false;
     bool m_recording = false;
 
+    std::atomic<bool> m_voiceEnabled{true};
+    std::atomic<float> m_voiceVolume{1.f};
+    std::atomic<float> m_vadThreshold{0.05f};
+
     FMOD::Sound* m_recordSound = nullptr;
     unsigned int m_readPos = 0; // samples within the record ring.
     std::vector<int16_t> m_capture;
+    size_t m_captureRead = 0;
 
     // opens above the energy threshold and holds for a few frames.
     int m_gateOpenTicks = 0;

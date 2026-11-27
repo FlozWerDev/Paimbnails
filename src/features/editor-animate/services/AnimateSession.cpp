@@ -811,7 +811,9 @@ void AnimateSession::restore(std::vector<int> const& groups) {
     if (!editor) return;
     for (int group : groups) {
         if (auto* objects = editor->getGroup(group)) {
-            for (auto* object : CCArrayExt<GameObject*>(objects)) object->setOpacity(255);
+            for (auto* object : CCArrayExt<GameObject*>(objects)) {
+                if (object) object->setOpacity(255);
+            }
         }
     }
 }
@@ -840,7 +842,9 @@ void AnimateSession::applyOverrides() {
         m_touched.push_back(group);
         auto* objects = editor->getGroup(group);
         if (!objects) continue;
-        for (auto* object : CCArrayExt<GameObject*>(objects)) object->setOpacity(opacity);
+        for (auto* object : CCArrayExt<GameObject*>(objects)) {
+            if (object) object->setOpacity(opacity);
+        }
     }
 }
 

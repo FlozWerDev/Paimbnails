@@ -388,7 +388,9 @@ namespace {
 // clip an already cover-scaled backdrop sprite to the node rect; also adds
 // the darkness overlay to the container when requested.
 CCNode* makeClippedBackdrop(CCNode* bgSprite, CCSize const& cs, CCNode* container, float darkness) {
+    if (!bgSprite || !container || cs.width <= 0.f || cs.height <= 0.f) return nullptr;
     auto stencil = PaimonDrawNode::create();
+    if (!stencil) return nullptr;
     CCPoint rect[4];
     rect[0] = ccp(0, 0);
     rect[1] = ccp(cs.width, 0);
@@ -398,18 +400,19 @@ CCNode* makeClippedBackdrop(CCNode* bgSprite, CCSize const& cs, CCNode* containe
     stencil->drawPolygon(rect, 4, white, 0, white);
 
     auto clipper = CCClippingNode::create(stencil);
-    clipper->setAlphaThreshold(0.05f);
+    if (!clipper) return nullptr;
     clipper->setContentSize(cs);
     clipper->setPosition({0, 0});
     clipper->setZOrder(-10);
     clipper->addChild(bgSprite);
 
     if (darkness > 0.0f) {
-        auto overlay = CCLayerColor::create({0, 0, 0, static_cast<GLubyte>(darkness * 255)});
-        overlay->setContentSize(cs);
-        overlay->setPosition({0, 0});
-        overlay->setZOrder(-5);
-        container->addChild(overlay);
+        if (auto overlay = CCLayerColor::create({0, 0, 0, static_cast<GLubyte>(std::clamp(darkness, 0.f, 1.f) * 255.f)})) {
+            overlay->setContentSize(cs);
+            overlay->setPosition({0, 0});
+            overlay->setZOrder(-5);
+            container->addChild(overlay);
+        }
     }
     return clipper;
 }
@@ -442,7 +445,7 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
     if (bgType == "thumbnail") {
         if (gifSprite) {
             auto bgSprite = AnimatedGIFSprite::createFromCache(config.gifKey);
-            if (bgSprite) {
+            if (bgSprite && gifSprite->getContentSize().width > 0.f && gifSprite->getContentSize().height > 0.f) {
                 CCSize targetSize = cs;
                 targetSize.width = std::max(targetSize.width, 512.f);
                 targetSize.height = std::max(targetSize.height, 256.f);
@@ -470,7 +473,7 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
             CCSprite* bgSprite = BlurSystem::getInstance()->createBlurredSprite(texture, targetSize, config.blurIntensity);
             if (!bgSprite) bgSprite = CCSprite::createWithTexture(texture);
 
-            if (bgSprite) {
+            if (bgSprite && bgSprite->getContentSize().width > 0.f && bgSprite->getContentSize().height > 0.f) {
                 float targetW = cs.width;
                 float targetH = cs.height;
                 float finalScale = std::max(
@@ -523,9 +526,11 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
         gifSprite->scheduleUpdate();
     } else if (texture) {
         auto s = CCSprite::createWithTexture(texture);
-        mainSprite = s;
-        contentW = s->getContentWidth();
-        contentH = s->getContentHeight();
+        if (s) {
+            mainSprite = s;
+            contentW = s->getContentWidth();
+            contentH = s->getContentHeight();
+        }
     }
 
     if (mainSprite && contentW > 0 && contentH > 0) {
@@ -547,30 +552,29 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
         constexpr float angle = 18.f;
         CCSize scaledSize{ desiredWidth, contentH * scaleY };
         auto mask = PaimonDrawNode::create();
-        {
+        auto clip = mask ? CCClippingNode::create() : nullptr;
+        if (mask && clip) {
             CCPoint rect[4] = { ccp(0,0), ccp(scaledSize.width,0), ccp(scaledSize.width,scaledSize.height), ccp(0,scaledSize.height) };
             ccColor4F white = {1,1,1,1};
             mask->drawPolygon(rect, 4, white, 0, white);
-        }
-        mask->setContentSize(scaledSize);
-        mask->setAnchorPoint({1,0});
-        mask->ignoreAnchorPointForPosition(true);
-        mask->setSkewX(angle);
+            mask->setContentSize(scaledSize);
+            mask->setAnchorPoint({1,0});
+            mask->ignoreAnchorPointForPosition(true);
+            mask->setSkewX(angle);
 
-        auto clip = CCClippingNode::create();
-        clip->setStencil(mask);
-        clip->setAlphaThreshold(0.5f);
-        clip->setContentSize(scaledSize);
-        clip->setAnchorPoint({1,0});
-        
-        clip->setPosition({cs.width, 0});
-        clip->setZOrder(10);
-        
-        mainSprite->setAnchorPoint({1,0});
-        mainSprite->setPosition({scaledSize.width, 0});
-        
-        clip->addChild(mainSprite);
-        container->addChild(clip);
+            clip->setStencil(mask);
+            clip->setContentSize(scaledSize);
+            clip->setAnchorPoint({1,0});
+            
+            clip->setPosition({cs.width, 0});
+            clip->setZOrder(10);
+            
+            mainSprite->setAnchorPoint({1,0});
+            mainSprite->setPosition({scaledSize.width, 0});
+            
+            clip->addChild(mainSprite);
+            container->addChild(clip);
+        }
         
         auto separator = CCLayerColor::create({
             config.separatorColor.r, 

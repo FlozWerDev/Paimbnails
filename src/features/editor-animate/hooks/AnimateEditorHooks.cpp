@@ -144,16 +144,12 @@ class $modify(PaimonAnimateEditorUI, EditorUI) {
         if (!button) return true;
         button->setID("animate-button"_spr);
 
-        if (auto* menu = paimon::editor::hostToolbarMenu(this)) {
-            menu->addChild(button);
-            if (menu->getLayout()) menu->updateLayout();
-        } else {
-            auto* fallback = CCMenu::create();
-            fallback->setID("animate-menu"_spr);
-            fallback->setPosition({28.f, CCDirector::get()->getWinSize().height - 200.f});
-            fallback->addChild(button);
-            addChild(fallback, 100);
-        }
+        paimon::editor::addToolbarButton(
+            this,
+            button,
+            "animate-menu"_spr,
+            {28.f, CCDirector::get()->getWinSize().height - 200.f}
+        );
         return true;
     }
 

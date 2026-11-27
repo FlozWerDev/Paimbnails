@@ -40,7 +40,7 @@ bool cfgAnimates(Cfg const& c) {
 
 // frozen glyph copy used for a fading deletion ghost.
 struct GlyphShot {
-    CCTexture2D* tex = nullptr;
+    geode::Ref<CCTexture2D> tex = nullptr;
     CCRect       rect;
     CCPoint      world;
     CCPoint      anchor;

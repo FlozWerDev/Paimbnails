@@ -168,7 +168,27 @@ CCTexture2D* decodeProfileImgBytes(uint8_t const* data, size_t size) {
 
     if (paimon::format::isMp4(data, size)) return nullptr;
 
-    auto loaded = ImageLoadHelper::loadWithSTBFromMemory(data, size, false);
+    int w = 0, h = 0;
+    auto pixels = ImageLoadHelper::decodeRGBAFromMemory(data, size, w, h);
+    if (!pixels || w <= 0 || h <= 0) {
+        return nullptr;
+    }
+
+#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
+    constexpr int kMaxDim = 768;
+#else
+    constexpr int kMaxDim = 1024;
+#endif
+    ImageLoadHelper::LoadedImage loaded;
+    if (w > kMaxDim || h > kMaxDim) {
+        auto smaller = ImageLoadHelper::downsampleForCache(pixels.get(), w, h, kMaxDim);
+        if (smaller.pixels.empty() || smaller.width <= 0 || smaller.height <= 0) {
+            return nullptr;
+        }
+        loaded = ImageLoadHelper::createFromRGBA(smaller.pixels.data(), smaller.width, smaller.height, false);
+    } else {
+        loaded = ImageLoadHelper::createFromRGBA(pixels.get(), w, h, false);
+    }
     if (!loaded.success || !loaded.texture) {
         return nullptr;
     }

@@ -4,7 +4,7 @@
     "win": "2.2091",
     "android": "2.2091"
   },
-  "version": "v1.2.6",
+  "version": "v1.2.7",
   "id": "flozwer.paimbnails2",
   "name": "Paimbnails",
   "developer": "FlozWer",
@@ -1395,6 +1395,25 @@
       "name": "Open Physics Lab (Editor)",
       "description": "Opens the physics simulator and captures pending A/B selections.",
       "default": "Ctrl+Shift+P",
+      "category": "editor",
+      "allow-in-text-inputs": false
+    },
+    "editor-reference-title": {
+      "name": "Reference Images",
+      "description": "Place custom images in the level editor as selectable, transformable tracing guides.",
+      "type": "title"
+    },
+    "editor-reference-enable": {
+      "type": "bool",
+      "name": "Enable Reference Images",
+      "description": "Adds a button to the editor toolbar to place reference images that move, rotate, scale, flip and warp like native GD objects, with opacity, lock and Z-layer controls. Saved per level without adding objects to the level string.",
+      "default": true
+    },
+    "editor-reference-keybind": {
+      "type": "keybind",
+      "name": "Open Reference Images (Editor)",
+      "description": "Opens the Reference Images manager in the level editor.",
+      "default": "Ctrl+Shift+I",
       "category": "editor",
       "allow-in-text-inputs": false
     },

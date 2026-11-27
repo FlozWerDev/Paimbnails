@@ -30,16 +30,16 @@ private:
     void recomputePlan();
     void applyOptimization();
     void toggleScope();
-    void toggleViewMode();
+    void toggleViewMode(bool syncToggle = true);
     void adjustStepper(int field, int direction);
 
     void rebuildPreview();
     void refreshCameraTransform();
     void fitCameraToScene();
-    void adjustZoom(float factor);
+    void adjustZoom(float factor, cocos2d::CCPoint const* focusMain = nullptr);
     void updatePreviewHeader();
     void refreshStats();
-    void refreshOptionsUI();
+    void refreshOptionsUI(bool syncViewToggle = true);
     void setStatus(std::string const& text, cocos2d::ccColor3B color);
 
     LevelEditorLayer* editorLayer() const;

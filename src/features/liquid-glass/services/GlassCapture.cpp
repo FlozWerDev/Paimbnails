@@ -227,7 +227,7 @@ bool GlassCapture::capture(Slot& slot, GlassRect const& region, GLint framebuffe
 
     bool const validate = !m_validated;
     if (validate) {
-        while (glGetError() != GL_NO_ERROR) {}
+        for (int i = 0; i < 16 && glGetError() != GL_NO_ERROR; ++i) {}
     }
 
     auto const restoreTarget = [&] {

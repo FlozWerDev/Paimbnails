@@ -241,7 +241,7 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
 
         auto menu = CCMenu::create();
         menu->setID("paimon-leaderboards-side-menu"_spr);
-        menu->setPosition({30, 100}); 
+        menu->setPosition({30, 138});
         this->addChild(menu);
 
         CCNode* modSprite = paimon::community::createCommunityHubButtonSprite();
@@ -268,38 +268,17 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
         uploadBtn->setPosition({0, -35}); 
         menu->addChild(uploadBtn);
 
-        // gear button opens the gjscorecell fx settings popup
+        // native GD options button opens the leaderboard layout popup
         if (paimon::modules::isEnabled("paimbnails.leaderboardcells.browser")) {
-            constexpr float S = 30.f;
-            auto gearContainer = CCNode::create();
-            gearContainer->setContentSize({S, S});
-            gearContainer->setAnchorPoint({0.5f, 0.5f});
-
-            CCNode* base = paimon::SpriteHelper::safeCreateScale9WithFrameName("GJ_button_05.png");
-            if (auto* s9 = typeinfo_cast<cocos2d::extension::CCScale9Sprite*>(base)) {
-                s9->setContentSize({S, S});
-            }
-            if (!base) {
-                base = paimon::SpriteHelper::createColorPanel(S, S, {0, 0, 0}, 120, 5.f);
-            }
-            if (base) {
-                base->setAnchorPoint({0.5f, 0.5f});
-                base->setPosition({S / 2.f, S / 2.f});
-                gearContainer->addChild(base);
-            }
-
             auto gear = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn_001.png");
             if (gear) {
                 float md = std::max(gear->getContentWidth(), gear->getContentHeight());
-                if (md > 0) gear->setScale((S * 0.72f) / md);
-                gear->setPosition({S / 2.f, S / 2.f});
-                gearContainer->addChild(gear);
+                if (md > 0.f) gear->setScale(28.f / md);
+                auto gearBtn = CCMenuItemSpriteExtra::create(
+                    gear, this, menu_selector(PaimonLeaderboardsLayer::onOpenScoreCellSettings));
+                gearBtn->setPosition({0, -70});
+                menu->addChild(gearBtn);
             }
-
-            auto gearBtn = CCMenuItemSpriteExtra::create(
-                gearContainer, this, menu_selector(PaimonLeaderboardsLayer::onOpenScoreCellSettings));
-            gearBtn->setPosition({0, -70});
-            menu->addChild(gearBtn);
         }
     }
 

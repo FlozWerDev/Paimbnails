@@ -88,9 +88,13 @@ GJRobotSprite* visibleMech(SimplePlayer* icon) {
 // finds the line overlay hosted on a sprite, creating and fitting it on first
 // use. the overlay always mirrors the host frame afterwards.
 CCSprite* lineOverlay(CCSprite* host, char const* nodeId, bool keepVisible) {
+    if (!host) return nullptr;
+    CCSpriteFrame* frame = host->displayFrame();
+    if (!frame) return nullptr;
     CCSprite* overlay = typeinfo_cast<CCSprite*>(host->getChildByID(nodeId));
     if (!overlay) {
-        overlay = CCSprite::createWithSpriteFrame(host->displayFrame());
+        overlay = CCSprite::createWithSpriteFrame(frame);
+        if (!overlay) return nullptr;
         overlay->setID(nodeId);
         if (keepVisible) {
             overlay->runAction(CCRepeatForever::create(
@@ -98,7 +102,7 @@ CCSprite* lineOverlay(CCSprite* host, char const* nodeId, bool keepVisible) {
         }
         host->addChild(overlay, 1);
     } else {
-        overlay->setDisplayFrame(host->displayFrame());
+        overlay->setDisplayFrame(frame);
     }
     overlay->setContentSize(host->getContentSize());
     overlay->setPosition(host->getContentSize() / 2.f);
@@ -224,48 +228,64 @@ int64_t currentIconID(IconType type) {
 // these shader ids are part of the program cache key scheme.
 void collectMechTargets(GJRobotSprite* mech, ColorType color, bool lineVisible,
         std::vector<PaintTarget>& out) {
+    if (!mech) return;
     switch (color) {
         case ColorType::Main: {
             int id = 100;
-            for (auto* part : mech->m_headSprite->getParent()->getChildrenExt<CCSpritePart*>())
-                out.push_back({part, ++id});
+            if (mech->m_headSprite && mech->m_headSprite->getParent()) {
+                for (auto* part : mech->m_headSprite->getParent()->getChildrenExt<CCSpritePart*>())
+                    if (part) out.push_back({part, ++id});
+            }
             break;
         }
         case ColorType::Secondary: {
             int id = 200;
-            for (auto* spr : CCArrayExt<CCSprite*>(mech->m_secondArray)) {
-                if (spr == mech->m_headSprite) continue;
-                out.push_back({spr, ++id});
+            if (mech->m_secondArray) {
+                for (auto* spr : CCArrayExt<CCSprite*>(mech->m_secondArray)) {
+                    if (!spr || spr == mech->m_headSprite) continue;
+                    out.push_back({spr, ++id});
+                }
             }
             break;
         }
         case ColorType::Glow: {
             int id = 300;
-            for (auto* spr : mech->m_glowSprite->getChildrenExt<CCSprite*>())
-                out.push_back({spr, ++id});
+            if (mech->m_glowSprite) {
+                for (auto* spr : mech->m_glowSprite->getChildrenExt<CCSprite*>())
+                    if (spr) out.push_back({spr, ++id});
+            }
             break;
         }
         case ColorType::White:
-            mech->m_extraSprite->setZOrder(2);
-            out.push_back({mech->m_extraSprite, 400});
+            if (mech->m_extraSprite) {
+                mech->m_extraSprite->setZOrder(2);
+                out.push_back({mech->m_extraSprite, 400});
+            }
             break;
         case ColorType::Line: {
             int id = 500;
-            for (auto* part : mech->m_headSprite->getParent()->getChildrenExt<CCSpritePart*>()) {
-                auto* overlay = lineOverlay(part, "gradient-line"_spr, false);
-                overlay->setVisible(lineVisible);
-                out.push_back({overlay, ++id});
+            if (mech->m_headSprite && mech->m_headSprite->getParent()) {
+                for (auto* part : mech->m_headSprite->getParent()->getChildrenExt<CCSpritePart*>()) {
+                    if (auto* overlay = lineOverlay(part, "gradient-line"_spr, false)) {
+                        overlay->setVisible(lineVisible);
+                        out.push_back({overlay, ++id});
+                    }
+                }
             }
             id = 600;
-            for (auto* spr : CCArrayExt<CCSprite*>(mech->m_secondArray)) {
-                if (spr == mech->m_headSprite) continue;
-                auto* overlay = lineOverlay(spr, "gradient-line2"_spr, false);
-                overlay->setVisible(lineVisible);
-                out.push_back({overlay, ++id});
+            if (mech->m_secondArray) {
+                for (auto* spr : CCArrayExt<CCSprite*>(mech->m_secondArray)) {
+                    if (!spr || spr == mech->m_headSprite) continue;
+                    if (auto* overlay = lineOverlay(spr, "gradient-line2"_spr, false)) {
+                        overlay->setVisible(lineVisible);
+                        out.push_back({overlay, ++id});
+                    }
+                }
             }
-            auto* extra = lineOverlay(mech->m_extraSprite, "gradient-line"_spr, false);
-            extra->setVisible(lineVisible);
-            out.push_back({extra, 700});
+            if (auto* extra = lineOverlay(mech->m_extraSprite, "gradient-line"_spr, false)) {
+                extra->setVisible(lineVisible);
+                out.push_back({extra, 700});
+            }
             break;
         }
     }
@@ -274,19 +294,22 @@ void collectMechTargets(GJRobotSprite* mech, ColorType color, bool lineVisible,
 // the ball keeps its outline visible when fine outline is installed.
 void collectIconTargets(SimplePlayer* icon, IconType kind, ColorType color, bool lineVisible,
         std::vector<PaintTarget>& out) {
+    if (!icon) return;
     switch (color) {
         case ColorType::Main:
-            out.push_back({icon->m_firstLayer, 100});
+            if (icon->m_firstLayer) out.push_back({icon->m_firstLayer, 100});
             break;
         case ColorType::Secondary:
-            out.push_back({icon->m_secondLayer, 200});
+            if (icon->m_secondLayer) out.push_back({icon->m_secondLayer, 200});
             break;
         case ColorType::Glow:
-            out.push_back({icon->m_outlineSprite, 300});
+            if (icon->m_outlineSprite) out.push_back({icon->m_outlineSprite, 300});
             break;
         case ColorType::White:
-            icon->m_detailSprite->setZOrder(2);
-            out.push_back({icon->m_detailSprite, 400});
+            if (icon->m_detailSprite) {
+                icon->m_detailSprite->setZOrder(2);
+                out.push_back({icon->m_detailSprite, 400});
+            }
             break;
         case ColorType::Line: {
             bool keepVisible = kind == IconType::Ball
@@ -294,9 +317,10 @@ void collectIconTargets(SimplePlayer* icon, IconType kind, ColorType color, bool
             CCSprite* hosts[] = {icon->m_firstLayer, icon->m_secondLayer, icon->m_detailSprite};
             int id = 500;
             for (auto* host : hosts) {
-                auto* overlay = lineOverlay(host, "gradient-line"_spr, keepVisible);
-                overlay->setVisible(lineVisible);
-                out.push_back({overlay, id});
+                if (auto* overlay = lineOverlay(host, "gradient-line"_spr, keepVisible)) {
+                    overlay->setVisible(lineVisible);
+                    out.push_back({overlay, id});
+                }
                 id += 100;
             }
             break;
@@ -716,8 +740,15 @@ void GradientUtils::applyGradient(CCSprite* sprite, GradientConfig config, IconT
         GradientAnimationManager::get().track(program);
 
     CCSpriteFrame* frame = sprite->displayFrame();
+    if (!frame || !frame->getTexture()) {
+        setGradientImage(sprite, nullptr);
+        sprite->setShaderProgram(
+            CCShaderCache::sharedShaderCache()->programForKey(kCCShader_PositionTextureColor));
+        return;
+    }
     CCRect rectInPixels = frame->getRectInPixels();
     CCSize texSize = frame->getTexture()->getContentSizeInPixels();
+    if (texSize.width <= 0.f || texSize.height <= 0.f) return;
     bool rot = frame->m_bRotated;
 
     glUniform2f(uniform("uvMin"),
@@ -805,6 +836,7 @@ void GradientUtils::enableChildShaders(CCSpriteBatchNode* node) {
 }
 
 void GradientUtils::hideSprite(CCSprite* sprite) {
+    if (!sprite) return;
     auto cache = CCShaderCache::sharedShaderCache();
 
     if (CCGLProgram* known = cache->programForKey("invis-shader"_spr)) {
@@ -833,10 +865,11 @@ void GradientUtils::hideSprite(CCSprite* sprite) {
 
     CCGLProgram* shader = compileProgram(vert, frag);
     if (!shader) return;
-    shader->retain();
     cache->addProgram(shader, "invis-shader"_spr);
+    shader->release();
+    paimon::shaders::trackShaderKey("invis-shader"_spr);
 
-    sprite->setShaderProgram(shader);
+    sprite->setShaderProgram(cache->programForKey("invis-shader"_spr));
 }
 
 namespace paimon::icon_gradients {

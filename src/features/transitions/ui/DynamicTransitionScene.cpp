@@ -213,9 +213,13 @@ Ref<CCTexture2D> Visual::capture(CCNode* node, CCSize size, float quality) {
         std::sqrt(2097152.f / (size.width * size.height)) / pixelScale});
     int width = std::max(1, static_cast<int>(size.width * scale));
     int height = std::max(1, static_cast<int>(size.height * scale));
-    // keep stencil for clipped nodes; only the texture survives the capture.
+    // keep stencil for clipped nodes when supported; fall back without packed
+    // depth-stencil on mobile GLES 2.0 drivers that lack GL_OES_packed_depth_stencil.
     Ref<CCRenderTexture> surface = CCRenderTexture::create(width, height,
         kCCTexture2DPixelFormat_RGBA8888, GL_DEPTH24_STENCIL8);
+    if (!surface || !surface->getSprite() || !surface->getSprite()->getTexture()) {
+        surface = CCRenderTexture::create(width, height, kCCTexture2DPixelFormat_RGBA8888);
+    }
     if (!surface || !surface->getSprite() || !surface->getSprite()->getTexture()) return nullptr;
     surface->beginWithClear(0.f, 0.f, 0.f, 1.f, 1.f, 0);
     kmGLMatrixMode(KM_GL_MODELVIEW);
@@ -299,7 +303,10 @@ void Visual::draw() {
     if (!textured || !plain) return;
 
     ccGLBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    // client arrays keep foreign VBO state out of the draw.
+    // unbind VAO and VBO before client-side arrays so we never corrupt a Cocos VAO.
+#if CC_TEXTURE_ATLAS_USE_VAO
+    ccGLBindVAO(0);
+#endif
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     constexpr GLsizei stride = sizeof(Vertex);
     for (auto const& batch : m_batches) {

@@ -30,18 +30,27 @@ namespace dynamic = paimon::transitions::dynamic;
 
 class $modify(PaimonDynamicPanelNodes, CCNode) {
     void addChild(CCNode* child, int z, int tag) {
-        bool animated = dynamic::panelWillChange(child, this, true);
+        bool const animated = dynamic::isPanelTransitionsEnabled()
+            && !dynamic::isInFastBypass()
+            && dynamic::panelWillChange(child, this, true);
         CCNode::addChild(child, z, tag);
         if (animated) dynamic::panelDidOpen(child);
     }
 
     void removeChild(CCNode* child, bool cleanup) {
-        dynamic::panelWillChange(child, this, false);
+        if (dynamic::isPanelTransitionsEnabled() && !dynamic::isInFastBypass()) {
+            dynamic::panelWillChange(child, this, false);
+        }
         CCNode::removeChild(child, cleanup);
     }
 
     void removeAllChildrenWithCleanup(bool cleanup) {
-        if (static_cast<CCNode*>(this) == CCDirector::get()->getRunningScene()) {
+        if (dynamic::isInFastBypass() || !dynamic::isPanelTransitionsEnabled()) {
+            CCNode::removeAllChildrenWithCleanup(cleanup);
+            return;
+        }
+        if (auto* director = CCDirector::get();
+            director && static_cast<CCNode*>(this) == director->getRunningScene()) {
             dynamic::finishPanelAnimation();
             CCNode::removeAllChildrenWithCleanup(cleanup);
             return;

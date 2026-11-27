@@ -54,6 +54,12 @@ int s_verifiedAccount = 0;
 SessionRoles s_verifiedRoles;
 std::chrono::steady_clock::time_point s_verifiedAt;
 
+StartupAccountStatus s_startupStatus = StartupAccountStatus::Unchecked;
+std::string s_startupMessage;
+int s_startupCheckedAccountID = 0;
+std::string s_startupCheckedUsername;
+int s_startupNotifiedAccountID = -1;
+
 bool matchesAccount(std::string const& username, int accountID) {
     auto* account = GJAccountManager::get();
     auto* game = GameManager::get();
@@ -830,6 +836,116 @@ void showPanel() {
     if (auto* panel = createUnifiedPanel()) {
         showOnTop(panel);
     }
+}
+
+StartupAccountStatus startupAccountStatus() {
+    return s_startupStatus;
+}
+
+std::string startupAccountMessage() {
+    return s_startupMessage;
+}
+
+bool hasVerifiedVoteEligibility(std::string* outReason) {
+    auto identity = currentIdentity();
+    if (identity.accountID <= 0 || identity.username.empty() || !matchesAccount(identity.username, identity.accountID)) {
+        if (outReason) *outReason = "Necesitas iniciar sesion en Geometry Dash para votar.";
+        return false;
+    }
+    auto const token = HttpClient::get().getSessionToken();
+    if (token.empty() || !UnifiedAuthFlow::validSessionToken(token, identity.accountID)) {
+        if (outReason) *outReason = "Necesitas una cuenta verificada en Paimbnails para votar.";
+        return false;
+    }
+    if (!isAuthenticated()) {
+        if (outReason) *outReason = "Verificando tu sesion de Paimbnails con el servidor...";
+        return false;
+    }
+    return true;
+}
+
+void verifyStartupAccount(bool notifyIfUnregistered, std::function<void(StartupAccountStatus)> callback) {
+    auto identity = currentIdentity();
+    auto finish = [callback = std::move(callback)](StartupAccountStatus status, std::string message, int acctId, bool shouldNotify) {
+        s_startupStatus = status;
+        s_startupMessage = std::move(message);
+        if (shouldNotify && s_startupNotifiedAccountID != acctId) {
+            s_startupNotifiedAccountID = acctId;
+            PaimonNotify::show(s_startupMessage, NotificationIcon::Warning);
+        }
+        if (callback) callback(status);
+    };
+
+    if (identity.accountID <= 0 || identity.username.empty() || !matchesAccount(identity.username, identity.accountID)) {
+        clearVerifiedSession();
+        s_startupCheckedAccountID = 0;
+        s_startupCheckedUsername.clear();
+        finish(
+            StartupAccountStatus::NoGDAccount,
+            "Inicia sesion en Geometry Dash para verificar tu cuenta en Paimbnails.",
+            0,
+            notifyIfUnregistered
+        );
+        return;
+    }
+
+    bool const sameCheckedAccount = (s_startupCheckedAccountID == identity.accountID)
+        && paimon::ban::sameAccountName(s_startupCheckedUsername, identity.username);
+
+    auto const token = HttpClient::get().getSessionToken();
+    if (token.empty() || !UnifiedAuthFlow::validSessionToken(token, identity.accountID)) {
+        clearVerifiedSession();
+        s_startupCheckedAccountID = identity.accountID;
+        s_startupCheckedUsername = identity.username;
+        finish(
+            StartupAccountStatus::NotRegisteredInPaimbnails,
+            "Cuenta no verificada en Paimbnails. Verifica en Mi Cuenta para votar y evitar spam.",
+            identity.accountID,
+            notifyIfUnregistered
+        );
+        return;
+    }
+
+    if (sameCheckedAccount && isAuthenticated()) {
+        finish(StartupAccountStatus::Verified, "Cuenta GD y Paimbnails verificada.", identity.accountID, false);
+        return;
+    }
+
+    if (sameCheckedAccount && s_startupStatus == StartupAccountStatus::Checking) {
+        return;
+    }
+
+    s_startupStatus = StartupAccountStatus::Checking;
+    s_startupMessage = "Verificando cuenta registrada en Paimbnails...";
+    s_startupCheckedAccountID = identity.accountID;
+    s_startupCheckedUsername = identity.username;
+
+    refreshSession([identity, notifyIfUnregistered, callback = std::move(callback)](SessionRoles const& roles) {
+        if (!isCurrentIdentity(identity)) {
+            if (callback) callback(StartupAccountStatus::NoGDAccount);
+            return;
+        }
+        if (roles.authenticated && isAuthenticated()) {
+            s_startupStatus = StartupAccountStatus::Verified;
+            s_startupMessage = fmt::format("Cuenta verificada: {} (ID {})", identity.username, identity.accountID);
+            if (callback) callback(s_startupStatus);
+            return;
+        }
+
+        // If refreshSession cleared an invalid/revoked token, active token is now empty.
+        if (HttpClient::get().getSessionToken().empty()) {
+            s_startupStatus = StartupAccountStatus::NotRegisteredInPaimbnails;
+            s_startupMessage = "Tu cuenta no tiene una sesion registrada en Paimbnails. Inicia sesion en Mi Cuenta.";
+            if (notifyIfUnregistered && s_startupNotifiedAccountID != identity.accountID) {
+                s_startupNotifiedAccountID = identity.accountID;
+                PaimonNotify::show(s_startupMessage, NotificationIcon::Warning);
+            }
+        } else {
+            s_startupStatus = StartupAccountStatus::NetworkError;
+            s_startupMessage = "No se pudo verificar la cuenta en Paimbnails ahora mismo.";
+        }
+        if (callback) callback(s_startupStatus);
+    });
 }
 
 } // namespace paimon::modauth

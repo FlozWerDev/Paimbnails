@@ -2,13 +2,11 @@
 #include "../../core/RuntimeLifecycle.hpp"
 
 #include "../../utils/WebHelper.hpp"
-#include "../../utils/ThreadTracker.hpp"
+#include "../../utils/MainThreadDelay.hpp"
 
 #include <Geode/Geode.hpp>
 #include <algorithm>
 #include <cctype>
-#include <chrono>
-#include <thread>
 
 using namespace geode::prelude;
 
@@ -18,9 +16,15 @@ namespace {
 // covers the short host-startup/reconnect window without hiding a bad room code.
 constexpr int kJoinMaxRetries = 3;
 constexpr int kJoinRetryMs = 2500;
+constexpr int kTransientMaxRetries = 4;
+constexpr int kTransientRetryMs = 2000;
 constexpr int kHostReconnectMaxRetries = 40;
 constexpr int kHostReconnectRetryMs = 2500;
-constexpr int kEmptyPollDelayMs = 50;
+constexpr int kEmptyPollDelayMs = 10;
+
+bool isTransientHttpError(int status) {
+    return status == 0 || status == 408 || status == 429 || status >= 500;
+}
 
 std::string normalizeBaseUrl(std::string value) {
     while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) {
@@ -94,6 +98,7 @@ void CollabNetClient::beginStart(std::string baseUrl, std::string roomCode, std:
     m_active = true;
     m_pollFailures = 0;
     m_joinRetries = 0;
+    m_createRetries = 0;
     m_hostReconnectRetries = 0;
     ++m_gen;
     uint64_t gen = m_gen;
@@ -129,6 +134,7 @@ void CollabNetClient::stopInternal(bool notifyServer) {
     m_resyncInFlight = false;
     m_pollFailures = 0;
     m_joinRetries = 0;
+    m_createRetries = 0;
     m_hostReconnectRetries = 0;
     m_stateRequestsInFlight.clear();
     m_pendingStateRequests.clear();
@@ -187,8 +193,11 @@ bool CollabNetClient::isOpen() const {
     return m_active && m_joined;
 }
 
-void CollabNetClient::requestResync() {
-    if (!isOpen() || m_resyncInFlight) return;
+void CollabNetClient::requestResync(ResyncCb cb) {
+    if (!isOpen() || m_resyncInFlight) {
+        if (cb && !isOpen()) cb(false, 0);
+        return;
+    }
     m_resyncInFlight = true;
     uint64_t gen = m_gen;
     auto lifetime = std::weak_ptr<uint8_t>(m_lifetime);
@@ -202,9 +211,36 @@ void CollabNetClient::requestResync() {
     req.header("Authorization", "Bearer " + m_sessionToken);
     req.bodyString(body.dump(matjson::NO_INDENTATION));
     WebHelper::dispatch(std::move(req), "POST", apiUrl("/api/resync"),
-        [this, lifetime, gen](web::WebResponse) {
+        [this, lifetime, gen, cb = std::move(cb)](web::WebResponse res) {
             if (lifetime.expired() || gen != m_gen) return;
             m_resyncInFlight = false;
+            if (cb) cb(res.code() == 200, res.code());
+        });
+}
+
+void CollabNetClient::sendReconcileBuckets(matjson::Value const& buckets, ReconcileBucketsCb cb) {
+    if (!isOpen()) {
+        if (cb) cb(false, 0, matjson::Value());
+        return;
+    }
+    uint64_t gen = m_gen;
+    auto lifetime = std::weak_ptr<uint8_t>(m_lifetime);
+    auto body = matjson::makeObject({
+        {"room", m_room},
+        {"client", static_cast<int64_t>(m_clientId)},
+        {"buckets", buckets},
+    });
+    auto req = web::WebRequest();
+    req.timeout(asp::Duration::fromSecs(25));
+    req.header("Content-Type", "application/json");
+    req.header("Authorization", "Bearer " + m_sessionToken);
+    req.bodyString(body.dump(matjson::NO_INDENTATION));
+    WebHelper::dispatch(std::move(req), "POST", apiUrl("/api/reconcile-buckets"),
+        [this, lifetime, gen, cb = std::move(cb)](web::WebResponse res) {
+            if (!cb || lifetime.expired() || gen != m_gen) return;
+            auto parsed = matjson::parse(res.string().unwrapOr(""));
+            cb(res.code() == 200 && parsed.isOk(), res.code(),
+               parsed ? parsed.unwrap() : matjson::Value());
         });
 }
 
@@ -224,6 +260,7 @@ void CollabNetClient::onJoinLikeSuccess(matjson::Value value) {
     m_joined = true;
     m_pollFailures = 0;
     m_joinRetries = 0;
+    m_createRetries = 0;
     m_hostReconnectRetries = 0;
     value["t"] = "join_ok";
     bool isHost = value.contains("isHost") && value["isHost"].asBool().unwrapOr(false);
@@ -340,6 +377,19 @@ void CollabNetClient::doJoin() {
                 return;
             }
 
+            if (isTransientHttpError(res.code()) && m_joinRetries < kTransientMaxRetries) {
+                ++m_joinRetries;
+                if (m_onState) {
+                    auto onState = m_onState;
+                    onState(ConnState::Connecting, fmt::format(
+                        "Reintentando conexion ({}/{})...",
+                        m_joinRetries, kTransientMaxRetries));
+                    if (lifetime.expired() || !m_active || gen != m_gen) return;
+                }
+                scheduleJoinRetry(gen, kTransientRetryMs * m_joinRetries);
+                return;
+            }
+
             emitError(code, message);
         });
 }
@@ -382,6 +432,19 @@ void CollabNetClient::doCreate() {
             // create mode never silently joins another room; a taken code asks for a new one.
             if (res.code() == 409 && code == "room_exists") {
                 emitError("room_exists", "Ese codigo ya esta en uso. Genera uno nuevo.");
+                return;
+            }
+
+            if (isTransientHttpError(res.code()) && m_createRetries < kTransientMaxRetries) {
+                ++m_createRetries;
+                if (m_onState) {
+                    auto onState = m_onState;
+                    onState(ConnState::Connecting, fmt::format(
+                        "Reintentando crear sala ({}/{})...",
+                        m_createRetries, kTransientMaxRetries));
+                    if (lifetime.expired() || !m_active || gen != m_gen) return;
+                }
+                scheduleCreateRetry(gen, kTransientRetryMs * m_createRetries);
                 return;
             }
 
@@ -443,17 +506,18 @@ void CollabNetClient::poll() {
 
 void CollabNetClient::scheduleDelayed(uint64_t gen, int ms, RetryAction action) {
     auto lifetime = std::weak_ptr<uint8_t>(m_lifetime);
-    ThreadTracker::get().spawn([this, lifetime, gen, ms, action]() {
-        geode::utils::thread::setName("PaimonCollabRetry");
-        if (paimon::waitForShutdownOr(std::chrono::milliseconds(ms))) return;
+    float delaySec = std::max(0.f, static_cast<float>(ms) / 1000.f);
+    paimon::scheduleMainThreadDelay(delaySec, [this, lifetime, gen, action]() {
         if (lifetime.expired()) return;
-        Loader::get()->queueInMainThread([this, lifetime, gen, action]() {
-            if (lifetime.expired()) return;
-            if (!m_active || gen != m_gen) return;
-            if (action == RetryAction::Join) doJoin();
-            else poll();
-        });
+        if (!m_active || gen != m_gen) return;
+        if (action == RetryAction::Create) doCreate();
+        else if (action == RetryAction::Join) doJoin();
+        else poll();
     });
+}
+
+void CollabNetClient::scheduleCreateRetry(uint64_t gen, int ms) {
+    scheduleDelayed(gen, ms, RetryAction::Create);
 }
 
 void CollabNetClient::scheduleJoinRetry(uint64_t gen, int ms) {

@@ -1,5 +1,6 @@
 #include "GifArtVectorizer.hpp"
 #include "GifMotionPlanner.hpp"
+#include "GifParallel.hpp"
 #include "GifShapeRaster.hpp"
 #include "GifVectorMath.hpp"
 
@@ -551,18 +552,32 @@ std::vector<std::uint8_t> renderPlanFrame(
         auto const samples = renderPlanFrame(plan, frame, scale * 2, false);
         int const width = plan.width * scale, height = plan.height * scale;
         std::vector<std::uint8_t> result(static_cast<std::size_t>(width) * height * 4, 0);
-        for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
-            std::array<unsigned int, 4> sum{};
-            for (int dy = 0; dy < 2; ++dy) for (int dx = 0; dx < 2; ++dx) {
-                auto const source = (static_cast<std::size_t>(y * 2 + dy) * width * 2 + x * 2 + dx) * 4;
-                unsigned int const alpha = samples[source + 3];
-                for (int channel = 0; channel < 3; ++channel) sum[channel] += samples[source + channel] * alpha;
-                sum[3] += alpha;
+        auto downsampleRows = [&](int yBegin, int yEnd) {
+            for (int y = yBegin; y < yEnd; ++y) {
+                for (int x = 0; x < width; ++x) {
+                    std::array<unsigned int, 4> sum{};
+                    for (int dy = 0; dy < 2; ++dy) for (int dx = 0; dx < 2; ++dx) {
+                        auto const source = (static_cast<std::size_t>(y * 2 + dy) * width * 2 + x * 2 + dx) * 4;
+                        unsigned int const alpha = samples[source + 3];
+                        for (int channel = 0; channel < 3; ++channel) sum[channel] += samples[source + channel] * alpha;
+                        sum[3] += alpha;
+                    }
+                    auto const target = (static_cast<std::size_t>(y) * width + x) * 4;
+                    result[target + 3] = static_cast<std::uint8_t>((sum[3] + 2) / 4);
+                    if (sum[3]) for (int channel = 0; channel < 3; ++channel)
+                        result[target + channel] = static_cast<std::uint8_t>((sum[channel] + sum[3] / 2) / sum[3]);
+                }
             }
-            auto const target = (static_cast<std::size_t>(y) * width + x) * 4;
-            result[target + 3] = static_cast<std::uint8_t>((sum[3] + 2) / 4);
-            if (sum[3]) for (int channel = 0; channel < 3; ++channel)
-                result[target + channel] = static_cast<std::uint8_t>((sum[channel] + sum[3] / 2) / sum[3]);
+        };
+        if (height >= 64) {
+            int const stripeH = 32;
+            int const numStripes = (height + stripeH - 1) / stripeH;
+            parallelFor(static_cast<std::size_t>(numStripes), [&](std::size_t s) {
+                int const y0 = static_cast<int>(s) * stripeH;
+                downsampleRows(y0, std::min(height, y0 + stripeH));
+            });
+        } else {
+            downsampleRows(0, height);
         }
         return result;
     }
@@ -656,7 +671,78 @@ std::vector<std::uint8_t> renderPlanFrame(
     std::stable_sort(visible.begin(), visible.end(), [](auto* left, auto* right) {
         return left->layer < right->layer;
     });
-    for (auto const* object : visible) draw(*object);
+    if (!usesSoftGeometry(plan.mode) && visible.size() >= 16 && outputHeight >= 64) {
+        struct PreparedDraw {
+            ShapeXform shape{};
+            Color color{};
+            float alpha = 1.f;
+            int yMin = 1;
+            int yMax = 0;
+        };
+        std::vector<PreparedDraw> items(visible.size());
+        auto prep = [&](std::size_t i) {
+            auto const& object = *visible[i];
+            if (object.color >= plan.palette.size()) return;
+            auto& item = items[i];
+            item.color = plan.palette[object.color];
+            float const opacityScale = object.color < plan.glowOpacityScales.size()
+                ? plan.glowOpacityScales[object.color] : 1.f;
+            float const opacity = object.color >= plan.glowPaletteStart
+                ? std::clamp(plan.glowOpacity * opacityScale, 0.f, 1.f) : 1.f;
+            item.alpha = std::clamp(opacity, 0.f, 1.f);
+            item.shape = xformOf(object, plan.stamps);
+            auto const box = xformBox(item.shape, plan.width, plan.height);
+            if (box[2] >= box[0] && box[3] >= box[1]) {
+                item.yMin = box[1] * scale;
+                item.yMax = (box[3] + 1) * scale - 1;
+            }
+        };
+        if (visible.size() >= 128) parallelFor(visible.size(), prep);
+        else for (std::size_t i = 0; i < visible.size(); ++i) prep(i);
+
+        int const stripeH = 32;
+        int const numStripes = (outputHeight + stripeH - 1) / stripeH;
+        parallelFor(static_cast<std::size_t>(numStripes), [&](std::size_t s) {
+            int const rowBegin = static_cast<int>(s) * stripeH;
+            int const rowEnd = std::min(outputHeight, rowBegin + stripeH);
+            for (auto const& item : items) {
+                if (item.yMax < rowBegin || item.yMin >= rowEnd) continue;
+                if (item.alpha >= 1.f) {
+                    forEachSampleInRows(
+                        item.shape, plan.width, plan.height, scale, rowBegin, rowEnd,
+                        [&](int x, int y) {
+                            auto const index = (static_cast<std::size_t>(y) * outputWidth + x) * 4;
+                            pixels[index] = item.color.r;
+                            pixels[index + 1] = item.color.g;
+                            pixels[index + 2] = item.color.b;
+                            pixels[index + 3] = 255;
+                            return false;
+                        });
+                } else if (item.alpha > 0.f) {
+                    float const alpha = item.alpha;
+                    float const invAlpha = 1.f - alpha;
+                    std::array<std::uint8_t, 3> const rgb{item.color.r, item.color.g, item.color.b};
+                    forEachSampleInRows(
+                        item.shape, plan.width, plan.height, scale, rowBegin, rowEnd,
+                        [&](int x, int y) {
+                            auto const index = (static_cast<std::size_t>(y) * outputWidth + x) * 4;
+                            float const destinationAlpha = pixels[index + 3] / 255.f;
+                            float const outputAlpha = alpha + destinationAlpha * invAlpha;
+                            if (outputAlpha <= 0.f) return false;
+                            for (int channel = 0; channel < 3; ++channel) {
+                                pixels[index + channel] = static_cast<std::uint8_t>(std::lround(std::clamp(
+                                    (rgb[channel] * alpha + pixels[index + channel] * destinationAlpha * invAlpha) /
+                                        outputAlpha, 0.f, 255.f)));
+                            }
+                            pixels[index + 3] = static_cast<std::uint8_t>(std::lround(outputAlpha * 255.f));
+                            return false;
+                        });
+                }
+            }
+        });
+    } else {
+        for (auto const* object : visible) draw(*object);
+    }
     if (usesSoftGeometry(plan.mode)) {
         for (std::size_t i = 0; i < pixels.size(); i += 4) {
             float const alpha = plan.softBackdropColor >= 0 ? 1.f : std::min(1.f, light[i + 3]);

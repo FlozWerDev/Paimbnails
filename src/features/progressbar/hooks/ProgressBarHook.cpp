@@ -2,6 +2,7 @@
 #include "../../../framework/HookConventions.hpp"
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/PauseLayer.hpp>
+#include <Geode/ui/NodeEvent.hpp>
 
 #include "../services/ProgressBarManager.hpp"
 #include "../ui/ProgressBarConfigPopup.hpp"
@@ -139,6 +140,12 @@ class $modify(PaimonProgressBarPlayLayer, PlayLayer) {
         ensureProgressBarTicker();
         // reset baseline so it's re-sampled on first enable.
         ProgressBarManager::get().invalidateBaseline();
+        this->addOnExitCallback([] {
+            auto& mgr = ProgressBarManager::get();
+            mgr.invalidateBaseline();
+            mgr.releaseCustomTextures();
+            return true;
+        });
         return true;
     }
 
@@ -155,7 +162,8 @@ class $modify(PaimonProgressBarPlayLayer, PlayLayer) {
     }
 
     void destroyPlayer(PlayerObject* player, GameObject* object) {
-        bool const realHit = player && (player == this->m_player1 || player == this->m_player2);
+        bool const realHit = player && object != this->m_anticheatSpike
+            && (player == this->m_player1 || player == this->m_player2);
         PlayLayer::destroyPlayer(player, object);
         if (realHit && ProgressBarManager::get().config().enabled) {
             float pct = this->getCurrentPercent();

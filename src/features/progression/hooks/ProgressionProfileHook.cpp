@@ -14,6 +14,7 @@
 #include "../../../core/modules/ModuleRegistry.hpp"
 #include "../../../core/Settings.hpp"
 #include "../../profiles/services/ProfileIdentityStore.hpp"
+#include "../../profiles/services/VanillaProfileLayout.hpp"
 #include "../../../framework/HookConventions.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 
@@ -145,7 +146,7 @@ class $modify(ProgressionProfilePage, ProfilePage) {
         auto* menu = typeinfo_cast<CCMenu*>(this->getChildByIDRecursive("username-menu"));
         if (!menu) return;
 
-        auto* chip = buildLevelChip(m_fields->m_ctx, 20.f);
+        auto* chip = buildLevelChip(m_fields->m_ctx, 15.f);
         if (!chip) return;
 
         auto* btn = CCMenuItemSpriteExtra::create(
@@ -153,7 +154,7 @@ class $modify(ProgressionProfilePage, ProfilePage) {
         if (!btn) return;
         btn->setID(id);
         menu->addChild(btn);
-        menu->updateLayout();
+        paimon::profiles::normalizeVanillaUsernameMenu(this->m_mainLayer);
     }
 
     void onLevelChip(CCObject*) {

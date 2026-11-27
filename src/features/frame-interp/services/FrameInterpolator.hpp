@@ -57,7 +57,8 @@ private:
     FrameInterpolator& operator=(FrameInterpolator const&) = delete;
 
     struct Slot {
-        cocos2d::CCNode* node = nullptr;
+        geode::WeakRef<cocos2d::CCNode> node;
+        cocos2d::CCNode* raw = nullptr;
         Transform prev;
         Transform cur;
         bool hasPrev = false;
@@ -65,6 +66,7 @@ private:
     };
 
     struct ObjectSlot {
+        geode::WeakRef<cocos2d::CCNode> node;
         Transform prev;
         Transform cur;
         bool hasPrev = false;
@@ -73,7 +75,7 @@ private:
     };
 
     struct Pending {
-        cocos2d::CCNode* node;
+        geode::Ref<cocos2d::CCNode> node;
         Transform state;
         uint8_t mask;
     };
@@ -90,13 +92,14 @@ private:
     FrameInterpConfig m_config;
     bool m_loaded = false;
 
-    // identity check for the current level; never dereferenced.
-    GJBaseGameLayer* m_layer = nullptr;
+    // identity check for the current level; WeakRef guards against pointer reuse after free.
+    geode::WeakRef<cocos2d::CCNode> m_layer;
     std::vector<Slot> m_tracked;
     std::vector<cocos2d::CCNode*> m_wanted;
     std::unordered_map<cocos2d::CCNode*, ObjectSlot> m_objects;
     std::vector<Pending> m_pending;
 
+    int m_visitDepth = 0;
     bool m_stepPending = false;
     double m_stepped = 0.0;
     double m_leftover = 0.0;

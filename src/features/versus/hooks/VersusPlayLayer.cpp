@@ -32,8 +32,8 @@ class $modify(PaimonVersusPlayLayer, PlayLayer) {
     }
 
     struct Fields {
-        VersusHUDNode* m_hud = nullptr;
-        VersusHandNode* m_hand = nullptr;
+        WeakRef<VersusHUDNode> m_hud;
+        WeakRef<VersusHandNode> m_hand;
         Outcome m_shown = Outcome::Pending;
     };
 
@@ -91,19 +91,19 @@ class $modify(PaimonVersusPlayLayer, PlayLayer) {
         auto& session = VersusSession::get();
         session.onLevelTick(dt, this->getCurrentPercent(), m_attempts, m_isPracticeMode);
 
-        if (m_fields->m_hud) m_fields->m_hud->refresh();
+        if (auto hud = m_fields->m_hud.lock()) hud->refresh();
 
         if (session.phase() == Phase::Finished && m_fields->m_shown == Outcome::Pending) {
             m_fields->m_shown = session.outcome();
-            if (m_fields->m_hud) m_fields->m_hud->showResult(session.outcome());
+            if (auto hud = m_fields->m_hud.lock()) hud->showResult(session.outcome());
         }
     }
 
     $override
     void destroyPlayer(PlayerObject* player, GameObject* object) {
         PlayLayer::destroyPlayer(player, object);
-        // also fires for dual player 2 and safe-mode deaths; only the real one counts.
-        if (!duelRunning() || player != m_player1 || m_isPracticeMode) return;
+        // also fires for dual player 2, anticheat spike check, and safe-mode deaths; only the real one counts.
+        if (!duelRunning() || player != m_player1 || object == m_anticheatSpike || m_isPracticeMode) return;
         VersusSession::get().onDeath();
     }
 

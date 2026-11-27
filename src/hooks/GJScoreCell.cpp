@@ -62,7 +62,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
             cs.width = this->m_width;
             cs.height = this->m_height;
         }
-        spinner->setPosition({35.f, cs.height / 2.f + 20.f});
+        spinner->setPosition({cs.width - 10.f, 10.f});
         spinner->setZOrder(999);
         
         spinner->setID("paimon-loading-spinner"_spr);
@@ -558,6 +558,7 @@ public:
         this->addChild(sep);
         f->m_profileSeparator = sep;
 
+        paimon::scorecell::applyLeaderboardLayout(this);
     }
 
     $override void loadFromScore(GJUserScore* score) {

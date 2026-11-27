@@ -252,16 +252,21 @@ void MenuPhysicsNode::ccTouchMoved(CCTouch* touch, CCEvent*) {
 
 void MenuPhysicsNode::ccTouchEnded(CCTouch*, CCEvent*) {
     // a quick tap activates the button; a hold/drag just releases it.
+    // finish drag state before activate() because activate() can destroy this scene.
+    Ref<CCMenuItem> tappedItem;
     if (m_world.isDragging() && !m_dragMoved) {
         if (auto* item = typeinfo_cast<CCMenuItem*>(m_world.draggedNode())) {
-            if (item->isEnabled()) item->activate();
+            if (item->isEnabled()) tappedItem = item;
         }
     }
     m_world.endDrag();
+    m_dragMoved = false;
+    if (tappedItem) tappedItem->activate();
 }
 
-void MenuPhysicsNode::ccTouchCancelled(CCTouch* touch, CCEvent* e) {
-    ccTouchEnded(touch, e);
+void MenuPhysicsNode::ccTouchCancelled(CCTouch*, CCEvent*) {
+    m_world.endDrag();
+    m_dragMoved = false;
 }
 
 void MenuPhysicsNode::registerWithTouchDispatcher() {

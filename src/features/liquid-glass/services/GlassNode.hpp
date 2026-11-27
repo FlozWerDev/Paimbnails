@@ -38,8 +38,8 @@ public:
     // it is suppressed and restored together with the host's own art.
     void setCompanionArt(std::vector<cocos2d::CCNode*> const& nodes);
 
-    // drop GL-side state while the old context is still current.
-    static void onGLContextReloadAll();
+    // drop GL-side state; pass deleteHandles=false when the old EGL context is already gone.
+    static void onGLContextReloadAll(bool deleteHandles = true);
 
     void visit() override;
     void draw() override;

@@ -109,28 +109,25 @@ void loadImageInto(CCNode* box, std::string const& url, CCSize const& size) {
     spinner->setPosition({size.width / 2.f, size.height / 2.f});
     box->addChild(spinner, 2);
 
-    WeakRef<LazySprite> weakSprite = sprite;
-    WeakRef<CCNode> weakBox = box;
-    WeakRef<LoadingSpinner> weakSpinner = spinner;
-    sprite->setLoadCallback([weakSprite, weakBox, weakSpinner, size](Result<> result) {
-        if (auto spin = weakSpinner.lock()) spin->removeFromParent();
-        auto spr = weakSprite.lock();
-        auto owner = weakBox.lock();
-        if (!spr || !owner || !spr->getParent()) return;
+    // LazySprite invokes its own load callback while alive; avoid capturing
+    // WeakRef to itself or its parent box (which causes re-entrant WeakRefPool::forget).
+    sprite->setLoadCallback([sprite, box, spinner, size](Result<> result) {
+        if (spinner && spinner->getParent() == box) spinner->removeFromParent();
+        if (!sprite || !box || sprite->getParent() != box) return;
         if (!result.isOk()) {
-            spr->removeFromParent();
+            sprite->removeFromParent();
             auto* failed = CCLabelBMFont::create(
                 tr("pai.news.image_failed", "Image unavailable").c_str(), "chatFont.fnt");
             failed->setScale(0.45f);
             failed->setColor(paimon::ui::palette::dim);
             failed->setPosition({size.width / 2.f, size.height / 2.f});
-            owner->addChild(failed, 1);
+            box->addChild(failed, 1);
             return;
         }
-        auto const content = spr->getContentSize();
+        auto const content = sprite->getContentSize();
         if (content.width <= 0.f || content.height <= 0.f) return;
-        spr->setScale(std::min(size.width / content.width, size.height / content.height));
-        spr->runAction(CCFadeIn::create(0.2f));
+        sprite->setScale(std::min(size.width / content.width, size.height / content.height));
+        sprite->runAction(CCFadeIn::create(0.2f));
     });
     sprite->loadFromUrl(url);
 }
@@ -210,6 +207,10 @@ void PaimbnailsNewsPanel::setActive(bool active) {
     this->setVisible(active);
     if (m_scroll) m_scroll->setMouseEnabled(active);
     if (active) requestFeed(false);
+}
+
+void PaimbnailsNewsPanel::refresh() {
+    requestFeed(true);
 }
 
 void PaimbnailsNewsPanel::requestFeed(bool force) {

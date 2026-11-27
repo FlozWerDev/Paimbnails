@@ -601,7 +601,9 @@ matjson::Value getMcpPrompt(std::string_view name, matjson::Value const& args) {
                             "(3) Allocate unused color channels and a new group ID so existing level colors/groups remain untouched. "
                             "(4) Cover default blocks/slopes cleanly on z_layer='T2' with no_touch=true; ensure every border, corner, "
                             "and slope hypotenuse meets flush with zero overhanging tips, missing sides, or stray internal seams. "
-                            "(5) Keep decorations cohesive with zero scattered or floating orphan pieces. "
+                            "(5) Use unified macro-silhouettes (211, 694, 1759/1339, 1202) with two-tone bevel bands and diagonal gradient "
+                            "shading (503/1009 + key 43 HSV shifts or warpY/warpX 131/132) instead of repetitive per-cell tiles; keep decorations "
+                            "cohesive with zero scattered or floating orphan pieces. "
                             "(6) Inspect with render_1to1 (mode='1to1' AND zoomed zoom=2.0, show_grid=true on corners, slopes, and spikes) "
                             "and refine until every pixel and edge is clean.", style)},
                     })},
@@ -642,8 +644,10 @@ matjson::Value getMcpPrompt(std::string_view name, matjson::Value const& args) {
                             "Inspect get_color_channels, get_gd_reference(topic='geometry'), and inspect_structure_bounds for {}. "
                             "Extract the reference's palette into unused custom color channels (1..999; never overwrite existing channels "
                             "used by other structures or BG/G unless asked). On light/ivory palettes, keep blending=false for translucent "
-                            "layers so highlights do not wash out to white. Decompose signature motifs cleanly with minimal primitives "
-                            "(211, 693, 3637, 3636, 997..1000) verified via get_sprite_metrics, and inspect zoomed corners with render_1to1.", target)},
+                            "layers so highlights do not wash out to white. Build organic art with fine chained 507/508 curved lineart "
+                            "(0.12x-0.25x) over soft layered gradients (1009, 1838/1835, 1764, 1887), and build structures as unified "
+                            "two-tone beveled silhouettes (211, 694, 1759, 1202, 503, warpY/warpX 131/132) verified via get_sprite_metrics; "
+                            "inspect zoomed corners with render_1to1.", target)},
                     })},
                 }),
             })},

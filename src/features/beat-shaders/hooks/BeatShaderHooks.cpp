@@ -139,7 +139,7 @@ class $modify(PaimonBeatLeaderboardsHook, LeaderboardsLayer) {
 
 class $modify(PaimonBeatProfileHook, ProfilePage) {
     static void onModify(auto& self) {
-        paimon::hooks::afterNodeIdsOrLate(self, "ProfilePage::loadPageFromUserInfo");
+        paimon::hooks::afterNodeIdsOrLate(self, "ProfilePage::init");
     }
     bool init(int accountID, bool ownProfile) {
         if (!ProfilePage::init(accountID, ownProfile)) return false;

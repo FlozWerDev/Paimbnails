@@ -4,6 +4,7 @@
 #include <Geode/ui/ScrollLayer.hpp>
 #include <functional>
 #include <string>
+#include <unordered_set>
 
 namespace paimon::news {
 
@@ -21,10 +22,15 @@ private:
         std::string const& subtitle,
         std::string const& iconUrl,
         bool showAvatar,
-        bool enabled
+        bool enabled,
+        int favoritesCount = 0,
+        bool favoritedByMe = false,
+        bool canFavorite = false
     );
+    void onToggleFavorite(std::string const& channelId);
 
     std::function<void()> m_onChanged;
+    std::unordered_set<std::string> m_pendingVotes;
     cocos2d::CCNode* m_panel = nullptr;
     geode::ScrollLayer* m_scroll = nullptr;
 };
